@@ -1,0 +1,19 @@
+{
+  "characters": [
+    {
+      "name": "Theron Ironheart",
+      "class": "warrior",
+      "description": "A battle-scarred veteran with steel-gray hair and a prominent scar across his left eye. Wielding a massive two-handed sword passed down through his family for generations, Theron fights with disciplined precision honed through decades of combat. Despite his gruff exterior, he harbors a deep sense of honor and protects the weak without hesitation."
+    },
+    {
+      "name": "Lyra Starweaver",
+      "class": "mage",
+      "description": "A young prodigy in the arcane arts with flowing silver robes adorned with celestial patterns. Her eyes glow faintly blue when channeling powerful spells. Lyra specializes in elemental magic and astral divination, having studied at the Grand Academy since childhood. She is curious and idealistic, often getting into trouble while pursuing forbidden knowledge."
+    },
+    {
+      "name": "Rook Shadowstep",
+      "class": "thief",
+      "description": "A nimble and cunning rogue who moves through shadows like a whisper in the night. With jet-black hair, leather armor, and an array of lockpicks and daggers hidden on his person, Rook makes his living liberating treasures from those he deems unworthy of them. Behind his cocky smile lies a troubled past and a strict personal code about who deserves to be robbed."
+    }
+  ]
+}

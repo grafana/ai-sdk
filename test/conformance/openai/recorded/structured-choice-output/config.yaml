@@ -1,0 +1,10 @@
+model: gpt-4o
+prompt: "Choose one label from alpha, beta, or gamma."
+responseFormat:
+  type: json
+  outputMode: choice
+  name: label
+  choices:
+    - alpha
+    - beta
+    - gamma

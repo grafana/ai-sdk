@@ -1,0 +1,19 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"text-start","id":"0"}
+{"type":"tool-input-start","toolCallId":"tool-1","toolName":"tool-a","dynamic":false}
+{"type":"tool-input-delta","toolCallId":"tool-1","inputTextDelta":"{\"a\":\"1\"}"}
+{"type":"tool-input-error","toolCallId":"tool-1","toolName":"tool-a","input":{"a":"1"},"dynamic":true,"errorText":"An error occurred."}
+{"type":"tool-output-error","toolCallId":"tool-1","errorText":"An error occurred.","dynamic":true}
+{"type":"tool-input-start","toolCallId":"tool-2","toolName":"tool-b","dynamic":false}
+{"type":"tool-input-delta","toolCallId":"tool-2","inputTextDelta":"{\"b\":\"2\"}"}
+{"type":"tool-input-error","toolCallId":"tool-2","toolName":"tool-b","input":{"b":"2"},"dynamic":true,"errorText":"An error occurred."}
+{"type":"tool-output-error","toolCallId":"tool-2","errorText":"An error occurred.","dynamic":true}
+{"type":"text-start","id":"3"}
+{"type":"text-delta","id":"3","delta":"Final JSON."}
+{"type":"text-start","id":"4"}
+{"type":"text-delta","id":"4","delta":"{\"final\":\"result\"}"}
+{"type":"text-end","id":"4"}
+{"type":"text-delta","id":"0","delta":"Multiple tools."}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"stop"}

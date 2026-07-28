@@ -1,0 +1,4 @@
+# Maps upstream Vercel AI SDK fixture names to local test case directories.
+# Source: packages/openai-compatible/src/chat/__fixtures__/
+xai-text: xai-text
+xai-tool-call: xai-tool-call

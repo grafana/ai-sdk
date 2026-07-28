@@ -1,0 +1,5 @@
+{"messageStart":{"role":"assistant"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":"{\"labels\":[\"Spring\",\"Summer\",\"Autumn\"]}"}}}
+{"contentBlockStop":{"contentBlockIndex":0}}
+{"messageStop":{"stopReason":"end_turn"}}
+{"metadata":{"usage":{"inputTokens":10,"outputTokens":12,"totalTokens":22}}}

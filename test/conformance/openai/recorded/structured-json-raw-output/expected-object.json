@@ -1,0 +1,9 @@
+{
+  "items": [
+    1,
+    true,
+    {
+      "name": "alpha"
+    }
+  ]
+}

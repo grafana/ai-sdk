@@ -1,0 +1,3 @@
+# Simple text response from a small Anthropic-on-Bedrock model.
+model: us.anthropic.claude-haiku-4-5-20251001-v1:0
+prompt: Reply with the single word "pong".

@@ -1,0 +1,18 @@
+model: claude-sonnet-4-5-20250929
+prompt: "Update the issue list."
+tools:
+  updateIssueList:
+    description: "Update the issue list"
+    needsApproval: true
+    inputSchema:
+      type: object
+      properties: {}
+    mockResults:
+      - ok: true
+approval:
+  toolCallId: toolu_01QE1WLsSVp5hy5Q3GmGTmjP
+  toolName: updateIssueList
+  approvalId: id-0
+  approved: true
+  reason: "looks safe"
+  input: {}

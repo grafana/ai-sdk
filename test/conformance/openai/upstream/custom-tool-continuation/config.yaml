@@ -1,0 +1,35 @@
+model: gpt-5.2-codex
+providerOptions:
+  openai:
+    store: false
+messages:
+  - role: user
+    content: Write a query.
+  - role: assistant
+    content:
+      - type: tool-call
+        toolCallId: call_custom
+        toolName: write_sql
+        input: SELECT 1
+        providerOptions:
+          openai:
+            itemId: ct_history
+  - role: tool
+    content:
+      - type: tool-result
+        toolCallId: call_custom
+        toolName: write_sql
+        output:
+          type: text
+          value: Query completed
+  - role: user
+    content: Continue.
+providerTools:
+  write_sql:
+    id: openai.custom
+    args:
+      description: Write a SQL SELECT query.
+      format:
+        type: grammar
+        syntax: regex
+        definition: SELECT .+

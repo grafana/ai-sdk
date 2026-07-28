@@ -1,0 +1,14 @@
+{
+  "prompt": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "write a long essay"
+        }
+      ]
+    }
+  ],
+  "maxOutputTokens": 50
+}

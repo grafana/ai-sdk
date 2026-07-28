@@ -1,0 +1,9 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"tool-input-start","toolCallId":"call_custom_sql_001","toolName":"write_sql"}
+{"type":"tool-input-delta","toolCallId":"call_custom_sql_001","inputTextDelta":"SELECT * "}
+{"type":"tool-input-delta","toolCallId":"call_custom_sql_001","inputTextDelta":"FROM users "}
+{"type":"tool-input-delta","toolCallId":"call_custom_sql_001","inputTextDelta":"WHERE age > 25"}
+{"type":"tool-input-available","toolCallId":"call_custom_sql_001","toolName":"write_sql","input":"SELECT * FROM users WHERE age > 25","providerMetadata":{"openai":{"itemId":"ct_abc123def456"}}}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"tool-calls"}

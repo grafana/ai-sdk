@@ -1,0 +1,10 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"tool-input-start","toolCallId":"ci_1","toolName":"code_interpreter","providerExecuted":true}
+{"type":"tool-input-delta","toolCallId":"ci_1","inputTextDelta":"{\"containerId\":\"cntr_1\",\"code\":\""}
+{"type":"tool-input-delta","toolCallId":"ci_1","inputTextDelta":"print(6*7)"}
+{"type":"tool-input-delta","toolCallId":"ci_1","inputTextDelta":"\"}"}
+{"type":"tool-input-available","toolCallId":"ci_1","toolName":"code_interpreter","input":{"code":"print(6*7)","containerId":"cntr_1"},"providerExecuted":true}
+{"type":"tool-output-available","toolCallId":"ci_1","output":{"outputs":[{"type":"logs","logs":"42"}]},"providerExecuted":true}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"stop"}

@@ -1,0 +1,7 @@
+model: claude-3-haiku-20240307
+providerOptions:
+  anthropic:
+    mcpServers:
+      - type: url
+        name: echo
+        url: "https://echo.mcp.inevitable.fyi/mcp"

@@ -1,0 +1,6 @@
+model: gpt-4o
+prompt: "Generate arbitrary valid JSON."
+responseFormat:
+  type: json
+  outputMode: json
+  name: payload

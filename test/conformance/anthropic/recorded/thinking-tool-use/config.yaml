@@ -1,0 +1,23 @@
+model: claude-sonnet-4-5-20250929
+prompt: "I need to know the current weather to decide what to wear. Check the weather in Portland and recommend an outfit."
+stopWhenStepCount: 2
+providerOptions:
+  anthropic:
+    thinking:
+      type: enabled
+      budgetTokens: 5000
+tools:
+  get_weather:
+    description: "Get current weather conditions for a city"
+    inputSchema:
+      type: object
+      properties:
+        city:
+          type: string
+          description: "City name"
+      required:
+        - city
+    mockResults:
+      - temperature: 55
+        conditions: "overcast with light rain"
+        humidity: 82

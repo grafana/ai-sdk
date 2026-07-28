@@ -1,0 +1,33 @@
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "Looking up SF…"
+    },
+    {
+      "type": "tool-call",
+      "toolCallId": "tu_1",
+      "toolName": "get_weather",
+      "input": {
+        "city": "SF"
+      }
+    }
+  ],
+  "finishReason": {
+    "unified": "tool-calls",
+    "raw": "tool_use"
+  },
+  "usage": {
+    "inputTokens": {
+      "total": 15
+    },
+    "outputTokens": {
+      "total": 8
+    }
+  },
+  "response": {
+    "id": "msg_tool",
+    "modelId": "claude-sonnet-4-5",
+    "timestamp": "0001-01-01T00:00:00Z"
+  }
+}

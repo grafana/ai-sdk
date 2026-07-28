@@ -1,0 +1,9 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"tool-input-start","toolCallId":"call_weather","toolName":"get_weather"}
+{"type":"tool-input-delta","toolCallId":"call_weather","inputTextDelta":"{\"city\""}
+{"type":"tool-input-delta","toolCallId":"call_weather","inputTextDelta":":\"Berlin\""}
+{"type":"tool-input-delta","toolCallId":"call_weather","inputTextDelta":"}"}
+{"type":"tool-input-available","toolCallId":"call_weather","toolName":"get_weather","input":{"city":"Berlin"}}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"tool-calls"}

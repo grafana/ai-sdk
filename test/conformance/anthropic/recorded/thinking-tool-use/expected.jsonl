@@ -1,0 +1,35 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"reasoning-start","id":"0"}
+{"type":"reasoning-delta","id":"0","delta":"The user wants to know"}
+{"type":"reasoning-delta","id":"0","delta":" the weather in Portland so they can decide what to wear. They want me to check the weather and recommend an outfit.\n\nI need to use the get_weather function to get the weather in"}
+{"type":"reasoning-delta","id":"0","delta":" Portland. However, there are multiple cities named Portland (Portland, Oregon and Portland, Maine are the"}
+{"type":"reasoning-delta","id":"0","delta":" most famous ones in the US). I should probably ask which"}
+{"type":"reasoning-delta","id":"0","delta":" Portland they mean, but let me just go with Portland, Oregon as it's the most well-known. If they meant a different Portland"}
+{"type":"reasoning-delta","id":"0","delta":", they can clarify.\n\nLet me call the get_weather function for Portland."}
+{"type":"reasoning-delta","id":"0","delta":"","providerMetadata":{"anthropic":{"signature":"EvYFCmQIDRgCKkAYSOaXhLEXJ836YUiikLQNX8vbUud7M9cE9L7T02exvXfAsuN/cUlP5PUeMFqXLlVMMvuMI8/jiwjp3Lnu8EfFMhpjbGF1ZGUtc29ubmV0LTQtNS0yMDI1MDkyOTgAEgzgnjR3gkOPxCXxIoYaDH4voIpw+FiOZPpohiIw8bcKuEdLCrspr5EIY0uwC3IkeqGh7dKfH//sPN3Fry5lpoCSZWoKz1ik8LLBzOMQKr8E+ElYOJ2hFrjfk/LP4Rm6f3FG40He0pj0Kdb5nRbLw/ujWCf3chqw3VWeZMhbYGYnNvItSsgOdpsHwWItuw6FiZlmo96hpqIG2JDc2D5frCIblUkKc0rlUy4eD713gw5LdeRZWy0sx6SSoQmBHkW6Wd3FaS9Fxs95Nhavy2r3+gwBXjBeMH44DwocbNdWpmcsgUCJDz3TyFH6ivH0ZzWgM3FT1Gwg7HeJFtDylO4jGBu0oim7EJzweQxf8ocmumJSTy2tnlUSBnmBbeGuk3/N4DW78Jb6wJbCwKJtA88A4hGFhnVV1xHcV8vhALF5nuZ86IiJkJg+uPiylMKR/hdLqILtqXGueVO0xmXqxm7pdI17YI/UFw5zCahk8kNAwzU0NIdY+F1/rzjbRZqKAmsG+73ymI+b8Z2PfLhYOLrzuELO+N/K0MbHDlXxeqzI90i9FT6zAVa0X8Ql5tkTtWWmB+uLJv0BCszUV3DvOhBiqqqIy38EEKH+AVEEeZArziurNENiMQSudAFMcBrlMKLJ4bBnEAWYLb9dkqRprfJ4PPsUwpZacrVr/FI0iN/rKB2WgZJO6Qj2CFzDkWdcPiloLHRFJ11tJ58XA2VVxUOTeb41PAe+t7eDao33rvouDD0plOiyGbvxoHGA5VTq831nGiaalINP0tHS5hrJpQrrYwsnW9EjHj0fRjThD+7fvSpdYTAR/MkI98efumPeHF+QAL90byNiGNrWw4inL+WUzg+J6KGTpyIVfK/ZWoYvmkAYAQ=="}}}
+{"type":"reasoning-end","id":"0"}
+{"type":"text-start","id":"1"}
+{"type":"text-delta","id":"1","delta":"I'll check the weather"}
+{"type":"text-delta","id":"1","delta":" in Portland for you."}
+{"type":"text-end","id":"1"}
+{"type":"tool-input-start","toolCallId":"toolu_01RNzHVNVqneyT1KUKyNm3wA","toolName":"get_weather"}
+{"type":"tool-input-delta","toolCallId":"toolu_01RNzHVNVqneyT1KUKyNm3wA","inputTextDelta":"{\"city\": \"Portland"}
+{"type":"tool-input-delta","toolCallId":"toolu_01RNzHVNVqneyT1KUKyNm3wA","inputTextDelta":"\"}"}
+{"type":"tool-input-available","toolCallId":"toolu_01RNzHVNVqneyT1KUKyNm3wA","toolName":"get_weather","input":{"city":"Portland"},"providerMetadata":{"anthropic":{"caller":{"type":"direct"}}}}
+{"type":"tool-output-available","toolCallId":"toolu_01RNzHVNVqneyT1KUKyNm3wA","output":{"temperature":55,"conditions":"overcast with light rain","humidity":82},"providerMetadata":{"anthropic":{"caller":{"type":"direct"}}}}
+{"type":"finish-step"}
+{"type":"start-step"}
+{"type":"text-start","id":"0"}
+{"type":"text-delta","id":"0","delta":"Based"}
+{"type":"text-delta","id":"0","delta":" on the current weather in Portland, here's what you're dealing with:\n\n**Current Conditions:**\n- Temperature: 55°F\n- Conditions:"}
+{"type":"text-delta","id":"0","delta":" Overcast with light rain\n- Humidity: 82%\n\n**Outfit Recommendation:**\n\n1. **Base layer**: Long"}
+{"type":"text-delta","id":"0","delta":" pants (jeans or chinos work well)\n2. **Top**: Long-sleeve shirt or light sweater\n3. **Outer"}
+{"type":"text-delta","id":"0","delta":" layer**: Water-resistant jacket or raincoat\n4. **Footwear**: Waterproof shoes or boots\n5. **Accessories**: \n   - Bring an"}
+{"type":"text-delta","id":"0","delta":" umbrella\n   - Consider a hat with a brim to keep rain off your face\n\nThe"}
+{"type":"text-delta","id":"0","delta":" temperature is mild but the rain and high humidity will make it feel cooler and damp,"}
+{"type":"text-delta","id":"0","delta":" so layers are your friend. You'll want something waterproof as your outer layer to"}
+{"type":"text-delta","id":"0","delta":" stay comfortable!"}
+{"type":"text-end","id":"0"}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"stop"}

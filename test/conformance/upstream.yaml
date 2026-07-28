@@ -1,0 +1,62 @@
+upstream:
+  repository: https://github.com/vercel/ai
+  packageSource: npm
+  verifiedAt: "2026-07-27"
+packages:
+  ai: 7.0.37
+  "@ai-sdk/anthropic": 4.0.19
+  "@ai-sdk/amazon-bedrock": 5.0.30
+  "@ai-sdk/gateway": 4.0.28
+  "@ai-sdk/openai": 4.0.20
+  "@ai-sdk/openai-compatible": 3.0.14
+  "@ai-sdk/provider": 4.0.3
+  "@ai-sdk/provider-utils": 5.0.12
+  "@ai-sdk/react": 4.0.40
+verification:
+  status: advisory
+  conformanceScope: full
+  commands:
+    parityCheck: mise run parity-check
+    conformance: mise run test-conformance
+    regenerate: mise run generate-conformance
+knownGaps:
+  - id: ci-conformance-advisory
+    surface: ci
+    status: documented-deviation
+    description: Full conformance currently runs as CI signal and is not a required
+      merge gate.
+  - id: anthropic-base-url-normalization
+    surface: provider-anthropic
+    status: gap
+    description: Upstream @ai-sdk/anthropic normalizes a bare https://api.anthropic.com
+      base URL to include /v1. The Go provider currently exposes raw anthropic-sdk-go
+      request options rather than a first-class TypeScript-compatible base URL
+      setting, so this provider configuration behavior is not parity-covered.
+  - id: openai-base-url-validation
+    surface: provider-openai
+    status: gap
+    description: Upstream @ai-sdk/openai rejects empty explicit and environment-derived
+      base URLs during provider creation. The Go provider exposes raw openai-go request
+      options through an error-free constructor, so invalid base URLs fail later when
+      a request is made rather than at construction time.
+  - id: bedrock-anthropic-invoke-surface
+    surface: provider-bedrock
+    status: gap
+    description: Upstream @ai-sdk/amazon-bedrock exposes a separate Anthropic Invoke
+      provider that translates eager_input_streaming into the fine-grained tool
+      streaming beta. The Go Bedrock provider currently implements only the Converse
+      and ConverseStream APIs, so that provider surface and behavior are not exposed.
+  - id: transcription-model-surface
+    surface: provider-contract
+    status: gap
+    description: Upstream provider v4 includes transcription models, including
+      experimental streaming transcription in the current registered baseline. The
+      Go port currently scopes provider parity to LanguageModel surfaces and does
+      not expose transcription model APIs or conformance coverage.
+  - id: image-model-surface
+    surface: provider-contract
+    status: gap
+    description: Upstream provider v4 and registered provider packages include image
+      model APIs and provider-specific image options. The Go port currently scopes
+      provider parity to LanguageModel surfaces and does not expose image model APIs
+      or conformance coverage.

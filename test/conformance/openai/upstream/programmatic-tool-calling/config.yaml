@@ -1,0 +1,65 @@
+model: gpt-5.6-sol
+stopWhenStepCount: 4
+providerOptions:
+  openai:
+    store: false
+tools:
+  getInventory:
+    description: Get available inventory for a SKU.
+    inputSchema:
+      type: object
+      properties:
+        sku:
+          type: string
+      required:
+        - sku
+      additionalProperties: false
+    providerOptions:
+      openai:
+        allowedCallers:
+          - programmatic
+        outputSchema:
+          type: object
+          properties:
+            sku:
+              type: string
+            availableUnits:
+              type: number
+          required:
+            - sku
+            - availableUnits
+          additionalProperties: false
+    mockResults:
+      - sku: sku_123
+        availableUnits: 42
+  getDemand:
+    description: Get requested units for a SKU.
+    inputSchema:
+      type: object
+      properties:
+        sku:
+          type: string
+      required:
+        - sku
+      additionalProperties: false
+    providerOptions:
+      openai:
+        allowedCallers:
+          - programmatic
+        outputSchema:
+          type: object
+          properties:
+            sku:
+              type: string
+            requestedUnits:
+              type: number
+          required:
+            - sku
+            - requestedUnits
+          additionalProperties: false
+    mockResults:
+      - sku: sku_123
+        requestedUnits: 31
+providerTools:
+  program:
+    id: openai.programmatic_tool_calling

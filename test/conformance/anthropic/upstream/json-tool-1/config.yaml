@@ -1,0 +1,10 @@
+model: claude-3-haiku-20240307
+responseFormat:
+  type: json
+  schema:
+    type: object
+    properties:
+      name:
+        type: string
+    required: [name]
+    additionalProperties: false

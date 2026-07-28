@@ -1,0 +1,209 @@
+import { describe, expect, it } from "vitest";
+import { generateText, streamText, tool, stepCountIs } from "ai";
+import { z } from "zod";
+import { newGateway } from "./helpers";
+
+// Bidirectional upstream-client conformance: a stock upstream @ai-sdk/gateway +
+// ai client drives mock Go models through the public gateway/providerwire
+// server and asserts two-way compatibility.
+
+describe("upstream @ai-sdk/gateway <-> Go provider-wire", () => {
+  it("streams text with a system prompt", async () => {
+    const gateway = newGateway();
+    const result = streamText({
+      model: gateway("stream-text"),
+      maxRetries: 0,
+      system: "be concise",
+      prompt: "say hello",
+    });
+
+    let text = "";
+    const types: string[] = [];
+    for await (const part of result.fullStream) {
+      types.push(part.type);
+      if (part.type === "text-delta") {
+        text += (part as { text?: string; delta?: string }).text ?? (part as { delta?: string }).delta ?? "";
+      }
+    }
+
+    // System prompt round-tripped as a string and was decoded server-side.
+    expect(text).toContain("system=be concise");
+    expect(text).toContain("hello from go");
+    expect(await result.finishReason).toBe("stop");
+    const usage = await result.usage;
+    expect(usage.inputTokens).toBe(10);
+    expect(types).not.toContain("error");
+  });
+
+  it("round-trips a client-executed tool call", async () => {
+    const gateway = newGateway();
+    let executedWith: unknown;
+    const echoTool = tool({
+      description: "Echoes text back.",
+      inputSchema: z.object({ text: z.string() }),
+      execute: async (input: { text: string }) => {
+        executedWith = input;
+        return { echoed: input.text };
+      },
+    });
+
+    const result = streamText({
+      model: gateway("tool-call"),
+      maxRetries: 0,
+      tools: { echoTool },
+      stopWhen: stepCountIs(5),
+      prompt: "call the echoTool",
+    });
+
+    const toolCalls: Array<{ toolName: string; input: unknown }> = [];
+    for await (const part of result.fullStream) {
+      if (part.type === "tool-call") {
+        toolCalls.push({ toolName: (part as { toolName: string }).toolName, input: (part as { input: unknown }).input });
+      }
+    }
+
+    const finalText = await result.text;
+    expect(toolCalls[0]?.toolName).toBe("echoTool");
+    expect(executedWith).toEqual({ text: "hello from go tool call" });
+    // The second request carried the upstream-shaped tool-result, which the Go
+    // server decoded and echoed back.
+    expect(finalText).toContain("done:");
+    expect(finalText).toContain("echoTool");
+  });
+
+  it("surfaces a provider-executed tool result value", async () => {
+    const gateway = newGateway();
+    const webSearch = tool({
+      description: "Provider-executed web search.",
+      inputSchema: z.object({ query: z.string() }),
+    });
+
+    const result = streamText({
+      model: gateway("provider-tool-result"),
+      maxRetries: 0,
+      tools: { webSearch },
+      prompt: "run a provider-executed tool",
+    });
+
+    const toolResults: Array<{ output: unknown; providerMetadata: unknown }> = [];
+    for await (const part of result.fullStream) {
+      if (part.type === "tool-result") {
+        toolResults.push({
+          output: part.output,
+          providerMetadata: part.providerMetadata,
+        });
+      }
+    }
+
+    expect(toolResults).toEqual([
+      {
+        output: "Grafana is an observability platform",
+        providerMetadata: { "grafana-ai-sdk": { customer: "keep" } },
+      },
+    ]);
+  });
+
+  it("decodes an upstream file input part", async () => {
+    const gateway = newGateway();
+    const pngBase64 =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+
+    const result = streamText({
+      model: gateway("file-input"),
+      maxRetries: 0,
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "What is in this image?" },
+            { type: "file", data: pngBase64, mediaType: "image/png", filename: "pixel.png" },
+          ],
+        },
+      ],
+    });
+
+    const text = await result.text;
+    expect(text).toContain("decoded 1 file part");
+    expect(text).toMatch(/base64Len=[1-9]/);
+  });
+
+  it("receives a file part in the response stream", async () => {
+    const gateway = newGateway();
+    const result = streamText({
+      model: gateway("file-output"),
+      maxRetries: 0,
+      prompt: "generate a file",
+    });
+
+    const files: Array<{ mediaType: string }> = [];
+    for await (const part of result.fullStream) {
+      if (part.type === "file") {
+        files.push({ mediaType: (part as { file: { mediaType: string } }).file.mediaType });
+      }
+    }
+    expect(files.length).toBeGreaterThan(0);
+    expect(files[0].mediaType).toBe("image/png");
+  });
+
+  it("preserves a URL-valued file part in the response stream", async () => {
+    const gateway = newGateway();
+    const result = streamText({
+      model: gateway("file-output-url"),
+      maxRetries: 0,
+      prompt: "generate a file URL",
+    });
+
+    const files: Array<{ type: string; mediaType: string; base64: string }> = [];
+    for await (const part of result.fullStream) {
+      if (part.type === "file" || part.type === "reasoning-file") {
+        const file = part.file;
+        files.push({ type: part.type, mediaType: file.mediaType, base64: file.base64 });
+      }
+    }
+
+    expect(files).toEqual([
+      { type: "file", mediaType: "image/png", base64: "https://example.com/generated.png" },
+      { type: "reasoning-file", mediaType: "image/png", base64: "https://example.com/reasoning.png" },
+    ]);
+  });
+
+  it("surfaces a mid-stream error carrying the server message", async () => {
+    const gateway = newGateway();
+    const result = streamText({
+      model: gateway("error-mid-stream"),
+      maxRetries: 0,
+      prompt: "trigger a mid-stream error",
+    });
+
+    const errors: unknown[] = [];
+    let threw: string | undefined;
+    try {
+      for await (const part of result.fullStream) {
+        if (part.type === "error") errors.push((part as { error: unknown }).error);
+      }
+    } catch (e) {
+      threw = (e as Error).message;
+    }
+
+    const surfaced =
+      errors.some((e) => JSON.stringify(e ?? "").includes("boom mid-stream")) ||
+      (threw?.includes("boom mid-stream") ?? false);
+    expect(surfaced).toBe(true);
+  });
+
+  it("surfaces a pre-stream HTTP error with the server message", async () => {
+    const gateway = newGateway();
+    let message = "";
+    try {
+      await generateText({
+        model: gateway("error-pre-stream"),
+        maxRetries: 0,
+        prompt: "trigger a pre-stream error",
+      });
+    } catch (e) {
+      message = (e as Error).message ?? String(e);
+    }
+    // Not the generic "Invalid error response format" fallback.
+    expect(message).toContain("rate limited pre-stream");
+  });
+});

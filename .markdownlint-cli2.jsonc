@@ -1,0 +1,44 @@
+// markdownlint-cli2 config — prose/style rules for the docs surface.
+// Structural rules (dead links, anchors, nav footers, index coverage, the
+// "no reference tables in docs/" contract) live in scripts/lint-docs.py.
+// Run: npx markdownlint-cli2   (or: make lint-docs)
+{
+  "config": {
+    "default": true,
+
+    // Prose lines wrap naturally and code blocks can be wide; line length is
+    // not a useful signal for this repo.
+    "MD013": false,
+
+    // Go code blocks are gofmt-formatted and use hard tabs by convention.
+    "MD010": false,
+
+    // We intentionally repeat short headings like "Reference" and "See also"
+    // across many pages.
+    "MD024": { "siblings_only": true },
+
+    // Table pipe alignment is cosmetic; our tables are valid GitHub markdown.
+    "MD060": false,
+
+    // The root README opens with a centered HTML block (badges, nav) that
+    // GitHub renders; allow inline HTML.
+    "MD033": false,
+
+    // Bare URLs are fine inside code/examples; we use real links in prose.
+    "MD034": false,
+
+    // First line need not be a top-level heading (README starts with <div>).
+    "MD041": false
+  },
+  "globs": [
+    "README.md",
+    "CONTRIBUTING.md",
+    "AGENTS.md",
+    "docs/**/*.md",
+    "examples/**/*.md"
+  ],
+  "ignores": [
+    "**/node_modules/**",
+    "openspec/**"
+  ]
+}

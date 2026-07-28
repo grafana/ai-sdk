@@ -1,0 +1,10 @@
+# Extended thinking on a recent Anthropic-on-Bedrock model. Exercises the
+# additionalModelRequestFields.thinking pass-through and reasoningContent
+# stream decoding.
+model: us.anthropic.claude-sonnet-4-5-20250929-v1:0
+prompt: How many R's are in the word "strawberry"? Think step by step.
+providerOptions:
+  amazonBedrock:
+    reasoningConfig:
+      type: enabled
+      budgetTokens: 1024

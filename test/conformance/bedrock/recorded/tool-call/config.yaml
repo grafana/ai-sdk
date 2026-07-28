@@ -1,0 +1,16 @@
+# Single tool call captured from a real Bedrock conversation. Verifies the
+# end-to-end stream conversion against actual provider output rather than a
+# hand-built fixture.
+model: us.anthropic.claude-haiku-4-5-20251001-v1:0
+prompt: What is the weather in Berlin? Use the get_weather tool.
+stopWhenStepCount: 1
+tools:
+  get_weather:
+    description: Get the current weather for a city.
+    strict: false
+    inputSchema:
+      type: object
+      properties:
+        city:
+          type: string
+      required: [city]

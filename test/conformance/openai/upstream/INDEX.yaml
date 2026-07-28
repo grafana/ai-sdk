@@ -1,0 +1,48 @@
+# Maps upstream Vercel SDK fixture names to local test case directories.
+# Source: packages/openai/src/responses/__fixtures__/ and __snapshots__/
+#
+# Format:
+#   <upstream-fixture-name>: <local-directory>  (imported)
+#   <upstream-fixture-name>: null               (not yet imported)
+#
+# Fixture inputs are direct upstream copies when available; older imports may
+# still be hand-authored mirrors of upstream Responses SSE event shapes.
+
+simple-text: simple-text
+reasoning-summary: reasoning-summary
+json-output: json-output
+function-call: function-call
+previous-response-continuation: previous-response
+previous-response-reasoning-continuation: previous-response-reasoning
+web-search-sources: web-search-sources
+openai-code-interpreter-tool.1: code-interpreter
+programmatic-tool-calling.1: programmatic-tool-calling
+programmatic-tool-calling.2: programmatic-tool-calling
+programmatic-tool-calling.3: programmatic-tool-calling
+openai-file-search-tool.1: file-search
+openai-file-search-tool.2: file-search-results
+
+# Additional upstream fixtures:
+openai-apply-patch-tool-delete.1: null
+openai-apply-patch-tool.1: apply-patch-continuation
+openai-client-tool-search.1: null
+openai-client-tool-search.2: client-tool-search-continuation
+openai-compaction.1: null
+openai-custom-tool.1: custom-tool-continuation
+openai-error.1: null
+openai-image-generation-tool.1: null
+openai-local-shell-tool.1: local-shell-continuation
+openai-mcp-tool-approval.1: null
+openai-mcp-tool-approval.2: null
+openai-mcp-tool-approval.3: null
+openai-mcp-tool-approval.4: null
+openai-mcp-tool.1: null
+openai-phase.1: null
+openai-reasoning-encrypted-content.1: null
+openai-shell-container-multiturn.1: shell-container-multiturn
+openai-shell-container.1: null
+openai-shell-local-multiturn.1: shell-local-multiturn
+openai-shell-skills.1: null
+openai-shell-tool.1: null
+openai-tool-search.1: null
+openai-web-search-tool.1: null

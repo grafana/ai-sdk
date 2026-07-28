@@ -1,0 +1,10 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"tool-input-start","toolCallId":"call_search","toolName":"search"}
+{"type":"tool-input-delta","toolCallId":"call_search","inputTextDelta":"{\"query\":\"test\"}"}
+{"type":"tool-input-delta","toolCallId":"call_search","inputTextDelta":""}
+{"type":"tool-input-delta","toolCallId":"call_search","inputTextDelta":",\"limit\":10}"}
+{"type":"tool-input-error","toolCallId":"call_search","toolName":"search","input":"{\"query\":\"test\"},\"limit\":10}","errorText":"An error occurred."}
+{"type":"tool-output-error","toolCallId":"call_search","errorText":"An error occurred."}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"tool-calls"}

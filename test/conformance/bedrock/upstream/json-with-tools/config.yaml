@@ -1,0 +1,26 @@
+# JSON response format with multiple tool definitions available. Verifies
+# the synthetic json tool coexists with several user-defined tools without
+# affecting tool dispatch.
+model: anthropic.claude-3-haiku-20240307-v1:0
+responseFormat:
+  type: json
+  schema:
+    type: object
+    properties:
+      answer:
+        type: string
+tools:
+  weather:
+    description: Get the current weather for a city.
+    inputSchema:
+      type: object
+      properties:
+        city:
+          type: string
+  calculator:
+    description: Evaluate a math expression.
+    inputSchema:
+      type: object
+      properties:
+        expression:
+          type: string

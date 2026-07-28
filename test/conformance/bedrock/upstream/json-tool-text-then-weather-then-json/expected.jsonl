@@ -1,0 +1,15 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"text-start","id":"0"}
+{"type":"text-delta","id":"0","delta":"2 + 2 equals 4. Now let me check"}
+{"type":"text-delta","id":"0","delta":" the weather for you."}
+{"type":"text-end","id":"0"}
+{"type":"tool-input-start","toolCallId":"weather-tool-1","toolName":"weather"}
+{"type":"tool-input-delta","toolCallId":"weather-tool-1","inputTextDelta":"{\"location\":"}
+{"type":"tool-input-delta","toolCallId":"weather-tool-1","inputTextDelta":"\"San Francisco\"}"}
+{"type":"tool-input-available","toolCallId":"weather-tool-1","toolName":"weather","input":{"location":"San Francisco"}}
+{"type":"tool-input-start","toolCallId":"weather-tool-2","toolName":"weather"}
+{"type":"tool-input-delta","toolCallId":"weather-tool-2","inputTextDelta":"{\"location\":\"London\"}"}
+{"type":"tool-input-available","toolCallId":"weather-tool-2","toolName":"weather","input":{"location":"London"}}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"tool-calls"}

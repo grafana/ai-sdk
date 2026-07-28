@@ -1,0 +1,35 @@
+[
+  {
+    "type": "text-start",
+    "id": "t0"
+  },
+  {
+    "type": "text-delta",
+    "id": "t0",
+    "delta": "Hello, "
+  },
+  {
+    "type": "text-delta",
+    "id": "t0",
+    "delta": "world!"
+  },
+  {
+    "type": "text-end",
+    "id": "t0"
+  },
+  {
+    "type": "finish",
+    "usage": {
+      "inputTokens": {
+        "total": 2
+      },
+      "outputTokens": {
+        "total": 3
+      }
+    },
+    "finishReason": {
+      "unified": "stop",
+      "raw": "end_turn"
+    }
+  }
+]

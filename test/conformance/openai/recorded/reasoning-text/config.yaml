@@ -1,0 +1,6 @@
+model: o4-mini
+prompt: "What is the result of 347 * 283? Think through it step by step."
+providerOptions:
+  openai:
+    reasoningEffort: low
+    reasoningSummary: auto

@@ -1,0 +1,16 @@
+model: us.anthropic.claude-haiku-4-5-20251001-v1:0
+messages:
+  - role: user
+    content: "initial user  \n"
+  - role: assistant
+    content: "earlier assistant  \n"
+  - role: user
+    content: "follow-up user  \n"
+  - role: assistant
+    content: "earlier in final assistant block  \n"
+  - role: assistant
+    content:
+      - type: text
+        text: "preserved assistant part  \n"
+      - type: text
+        text: "final prefill  \n\n"

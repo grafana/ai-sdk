@@ -1,0 +1,8 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"text-start","id":"msg_abc123","providerMetadata":{"openai":{"itemId":"msg_abc123"}}}
+{"type":"text-delta","id":"msg_abc123","delta":"Hello"}
+{"type":"text-delta","id":"msg_abc123","delta":" there friend"}
+{"type":"text-end","id":"msg_abc123","providerMetadata":{"openai":{"itemId":"msg_abc123"}}}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"stop"}

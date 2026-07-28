@@ -1,0 +1,54 @@
+model: gpt-4o
+prompt: "Look up the population of France, then convert that number to millions, and finally format it as a short report. Use the tools in sequence — one at a time."
+stopWhenStepCount: 4
+providerOptions:
+  openai:
+    store: false
+tools:
+  lookup_data:
+    description: "Look up a factual data point"
+    inputSchema:
+      type: object
+      properties:
+        query:
+          type: string
+          description: "What to look up"
+      required:
+        - query
+    mockResults:
+      - value: 68042591
+        unit: "people"
+        source: "2024 census estimate"
+  convert_number:
+    description: "Convert a number to a different unit or format"
+    inputSchema:
+      type: object
+      properties:
+        value:
+          type: number
+          description: "The number to convert"
+        target_format:
+          type: string
+          description: "Target format or unit"
+      required:
+        - value
+        - target_format
+    mockResults:
+      - result: 68.04
+        unit: "million"
+  format_report:
+    description: "Format data into a structured report"
+    inputSchema:
+      type: object
+      properties:
+        title:
+          type: string
+          description: "Report title"
+        data:
+          type: object
+          description: "Data to include in the report"
+      required:
+        - title
+        - data
+    mockResults:
+      - report: "Population of France: 68.04 million (2024 census estimate)"

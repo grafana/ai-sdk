@@ -1,0 +1,29 @@
+[
+  {
+    "role": "user",
+    "content": [
+      {
+        "type": "text",
+        "text": "question"
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "reasoning",
+        "text": "thinking…",
+        "providerOptions": {
+          "anthropic": {
+            "signature": "sig-xyz"
+          }
+        }
+      },
+      {
+        "type": "text",
+        "text": "Here is your answer"
+      }
+    ]
+  }
+]

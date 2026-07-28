@@ -1,0 +1,9 @@
+model: us.anthropic.claude-haiku-4-5-20251001-v1:0
+prompt: Reply with the single word "pong".
+providerOptions:
+  amazonBedrock:
+    guardrailConfig:
+      guardrailIdentifier: guardrail-id
+      guardrailVersion: "1"
+      trace: enabled
+      streamProcessingMode: async

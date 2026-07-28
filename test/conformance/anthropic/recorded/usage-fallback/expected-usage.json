@@ -1,0 +1,38 @@
+[
+  {
+    "inputTokens": {
+      "total": 43,
+      "noCache": 40,
+      "cacheRead": 1,
+      "cacheWrite": 2
+    },
+    "outputTokens": {
+      "total": 7
+    },
+    "raw": {
+      "input_tokens": 40,
+      "cache_creation_input_tokens": 2,
+      "cache_read_input_tokens": 1,
+      "output_tokens": 7,
+      "service_tier": "standard",
+      "iterations": [
+        {
+          "type": "message",
+          "model": "claude-opus-4-6",
+          "input_tokens": 50,
+          "output_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "cache_read_input_tokens": 0
+        },
+        {
+          "type": "fallback_message",
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 40,
+          "output_tokens": 7,
+          "cache_creation_input_tokens": 2,
+          "cache_read_input_tokens": 1
+        }
+      ]
+    }
+  }
+]

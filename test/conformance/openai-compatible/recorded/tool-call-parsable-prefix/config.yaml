@@ -1,0 +1,15 @@
+# Tool-call arguments that are valid JSON before the stream is complete.
+model: gpt-4.1-mini
+prompt: "Search for test results with a limit."
+stopWhenStepCount: 1
+tools:
+  search:
+    description: Search documents.
+    inputSchema:
+      type: object
+      properties:
+        query:
+          type: string
+        limit:
+          type: number
+      required: [query]

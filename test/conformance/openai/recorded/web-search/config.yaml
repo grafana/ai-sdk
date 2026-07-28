@@ -1,0 +1,6 @@
+model: gpt-4o
+prompt: "Search the web for the current population of Japan and cite your sources."
+stopWhenStepCount: 2
+providerTools:
+  web_search:
+    id: openai.web_search

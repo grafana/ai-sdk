@@ -1,0 +1,4 @@
+interface:
+  display_name: "AI SDK parity upgrade"
+  short_description: "Upgrade the upstream parity baseline."
+  default_prompt: "Upgrade the ai-sdk upstream parity baseline."

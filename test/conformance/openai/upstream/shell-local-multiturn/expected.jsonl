@@ -1,0 +1,14 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"text-start","id":"msg_0b0392bd3bb81302006994e83b32748193aa637cdb31658266","providerMetadata":{"openai":{"itemId":"msg_0b0392bd3bb81302006994e83b32748193aa637cdb31658266"}}}
+{"type":"text-delta","id":"msg_0b0392bd3bb81302006994e83b32748193aa637cdb31658266","delta":"`"}
+{"type":"text-delta","id":"msg_0b0392bd3bb81302006994e83b32748193aa637cdb31658266","delta":"arm"}
+{"type":"text-delta","id":"msg_0b0392bd3bb81302006994e83b32748193aa637cdb31658266","delta":"64"}
+{"type":"text-delta","id":"msg_0b0392bd3bb81302006994e83b32748193aa637cdb31658266","delta":"`"}
+{"type":"text-delta","id":"msg_0b0392bd3bb81302006994e83b32748193aa637cdb31658266","delta":" ("}
+{"type":"text-delta","id":"msg_0b0392bd3bb81302006994e83b32748193aa637cdb31658266","delta":"Apple"}
+{"type":"text-delta","id":"msg_0b0392bd3bb81302006994e83b32748193aa637cdb31658266","delta":" Silicon"}
+{"type":"text-delta","id":"msg_0b0392bd3bb81302006994e83b32748193aa637cdb31658266","delta":")."}
+{"type":"text-end","id":"msg_0b0392bd3bb81302006994e83b32748193aa637cdb31658266","providerMetadata":{"openai":{"itemId":"msg_0b0392bd3bb81302006994e83b32748193aa637cdb31658266"}}}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"stop"}

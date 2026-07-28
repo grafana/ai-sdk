@@ -1,0 +1,30 @@
+{
+  "name": "@ai-sdk/conformance-tools",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "validate-baseline": "tsx validate-baseline.mts",
+    "upgrade-baseline": "node upgrade-baseline.mjs",
+    "coverage-inventory": "tsx coverage-inventory.mts",
+    "provider-shape": "tsx provider-shape.mts",
+    "test:baseline": "tsx --test validate-baseline.test.mts upgrade-baseline.test.mjs common.test.mts",
+    "generate": "tsx generate.mts",
+    "record": "tsx record.mts"
+  },
+  "dependencies": {
+    "@ai-sdk/amazon-bedrock": "5.0.30",
+    "@ai-sdk/anthropic": "4.0.19",
+    "@ai-sdk/openai": "4.0.20",
+    "@ai-sdk/openai-compatible": "3.0.14",
+    "@ai-sdk/provider": "4.0.3",
+    "@ai-sdk/provider-utils": "5.0.12",
+    "ai": "7.0.37",
+    "yaml": "^2.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "tsx": "^4.20.0",
+    "typescript": "^7.0.0"
+  }
+}

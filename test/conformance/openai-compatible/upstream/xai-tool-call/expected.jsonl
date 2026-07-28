@@ -1,0 +1,236 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"reasoning-start","id":"reasoning-0"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"First"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":","}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" the"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" user"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" is"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" asking"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" about"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" the"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" weather"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" in"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" San"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" Francisco"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"."}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" I"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" have"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" a"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" available"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" function"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" called"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" \""}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"weather"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"\""}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" that"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" retrieves"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" the"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" weather"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" for"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" a"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" given"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" location"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":".\n\n"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"The"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" function"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" requires"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" a"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" parameter"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":":"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" \""}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"location"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"\","}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" which"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" is"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" a"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" string"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"."}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" The"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" user"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" has"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" provided"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" \""}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"San"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" Francisco"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"\""}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" as"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" the"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" location"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":","}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" so"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" that's"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" clear"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" and"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" infer"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"able"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":".\n\n"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"I"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" should"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" call"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" this"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" function"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" to"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" get"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" the"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" weather"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" information"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"."}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" The"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" format"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" for"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" calling"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" the"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" function"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" is"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" specific"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":":"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" I"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" need"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" to"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" use"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" <"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"function"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"_call"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":">"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" tags"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" with"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" JSON"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" inside"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":","}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" like"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" <"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"function"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"_call"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":">{\""}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"action"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"\":"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" \""}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"weather"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"\","}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" \""}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"action"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"_input"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"\":"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" {\""}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"location"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"\":"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" \""}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"San"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" Francisco"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"\""}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"}}</"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"function"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"_call"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":">.\n\n"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"This"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" seems"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" to"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" be"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" a"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" direct"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" match"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":","}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" so"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" I"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" don't"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" need"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" to"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" ask"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" for"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" clarification"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"."}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" My"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" response"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" should"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" only"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" contain"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" the"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" function"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" call"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" if"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" that's"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" the"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" next"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" step"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":","}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" which"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" it"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" is"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":".\n\n"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"The"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" instructions"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" say"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":":"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" \""}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"Keep"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" your"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" response"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" to"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" user"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" clear"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":";"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" please"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" do"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" not"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" make"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" your"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" response"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" verbose"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"!\""}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" So"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":","}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" I"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" shouldn't"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" add"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" any"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" extra"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" text"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":";"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" just"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" the"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" function"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" call"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":".\n\n"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"Finally"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":","}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" after"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" calling"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" the"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" function"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":","}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" if"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" this"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" were"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" a"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" multi"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"-turn"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" conversation"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":","}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" I"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" might"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" need"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" to"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" respond"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" based"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" on"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" the"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" result"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":","}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" but"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" for"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" now"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":","}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" this"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" is"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" the"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" logical"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" next"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" step"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"."}
+{"type":"reasoning-end","id":"reasoning-0"}
+{"type":"tool-input-start","toolCallId":"call_79382389","toolName":"weather"}
+{"type":"tool-input-delta","toolCallId":"call_79382389","inputTextDelta":"{\"location\":\"San Francisco\"}"}
+{"type":"tool-input-available","toolCallId":"call_79382389","toolName":"weather","input":{"location":"San Francisco"}}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"tool-calls"}

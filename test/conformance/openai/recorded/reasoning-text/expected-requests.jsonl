@@ -1,0 +1,1 @@
+{"body":{"input":[{"content":[{"text":"What is the result of 347 * 283? Think through it step by step.","type":"input_text"}],"role":"user"}],"model":"o4-mini","reasoning":{"effort":"low","summary":"auto"},"stream":true},"headers":{"authorization":"<redacted>","content-type":"application/json"},"method":"POST","path":"/v1/responses"}

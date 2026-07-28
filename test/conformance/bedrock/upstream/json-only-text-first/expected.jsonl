@@ -1,0 +1,10 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"text-start","id":"0"}
+{"type":"text-delta","id":"0","delta":"Here is your data:"}
+{"type":"text-end","id":"0"}
+{"type":"text-start","id":"1"}
+{"type":"text-delta","id":"1","delta":"{\"name\":\"John\"}"}
+{"type":"text-end","id":"1"}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"stop"}

@@ -1,0 +1,1 @@
+{"body":{"input":[{"content":[{"text":"And the day after?","type":"input_text"}],"role":"user"}],"model":"gpt-4o","previous_response_id":"resp_prev123","stream":true},"headers":{"authorization":"<redacted>","content-type":"application/json"},"method":"POST","path":"/v1/responses"}

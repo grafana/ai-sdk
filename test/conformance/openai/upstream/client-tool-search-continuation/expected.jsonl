@@ -1,0 +1,19 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"tool-input-start","toolCallId":"call_Q7pq6EfVGRnauPLWSSYBGJ1l","toolName":"get_weather"}
+{"type":"tool-input-delta","toolCallId":"call_Q7pq6EfVGRnauPLWSSYBGJ1l","inputTextDelta":"{\""}
+{"type":"tool-input-delta","toolCallId":"call_Q7pq6EfVGRnauPLWSSYBGJ1l","inputTextDelta":"location"}
+{"type":"tool-input-delta","toolCallId":"call_Q7pq6EfVGRnauPLWSSYBGJ1l","inputTextDelta":"\":\""}
+{"type":"tool-input-delta","toolCallId":"call_Q7pq6EfVGRnauPLWSSYBGJ1l","inputTextDelta":"San"}
+{"type":"tool-input-delta","toolCallId":"call_Q7pq6EfVGRnauPLWSSYBGJ1l","inputTextDelta":" Francisco"}
+{"type":"tool-input-delta","toolCallId":"call_Q7pq6EfVGRnauPLWSSYBGJ1l","inputTextDelta":","}
+{"type":"tool-input-delta","toolCallId":"call_Q7pq6EfVGRnauPLWSSYBGJ1l","inputTextDelta":" CA"}
+{"type":"tool-input-delta","toolCallId":"call_Q7pq6EfVGRnauPLWSSYBGJ1l","inputTextDelta":"\",\""}
+{"type":"tool-input-delta","toolCallId":"call_Q7pq6EfVGRnauPLWSSYBGJ1l","inputTextDelta":"unit"}
+{"type":"tool-input-delta","toolCallId":"call_Q7pq6EfVGRnauPLWSSYBGJ1l","inputTextDelta":"\":\""}
+{"type":"tool-input-delta","toolCallId":"call_Q7pq6EfVGRnauPLWSSYBGJ1l","inputTextDelta":"fahren"}
+{"type":"tool-input-delta","toolCallId":"call_Q7pq6EfVGRnauPLWSSYBGJ1l","inputTextDelta":"heit"}
+{"type":"tool-input-delta","toolCallId":"call_Q7pq6EfVGRnauPLWSSYBGJ1l","inputTextDelta":"\"}"}
+{"type":"tool-input-available","toolCallId":"call_Q7pq6EfVGRnauPLWSSYBGJ1l","toolName":"get_weather","input":{"location":"San Francisco, CA","unit":"fahrenheit"},"providerMetadata":{"openai":{"itemId":"fc_05147bbe356953b60069ab673745c081969b5c16c333b4f179"}}}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"tool-calls"}

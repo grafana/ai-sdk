@@ -1,0 +1,162 @@
+{
+    "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+    "extends": [
+      "config:best-practices",
+      ":disableDependencyDashboard",
+      "github>grafana/grafana-renovate-config//presets/base",
+      "github>grafana/grafana-renovate-config//presets/automerge",
+      "github>grafana/grafana-renovate-config//presets/labels",
+      "github>grafana/grafana-renovate-config//presets/docker",
+      "github>grafana/grafana-renovate-config//presets/github-actions",
+      "github>grafana/grafana-renovate-config//presets/plugin-ci-workflows",
+      "github>grafana/grafana-renovate-config//presets/shared-workflows",
+      "github>grafana/grafana-renovate-config//presets/rate-limits",
+      "github>grafana/grafana-renovate-config//presets/npm",
+      ":preserveSemverRanges"
+    ],
+    "prConcurrentLimit": 10,
+    "minimumReleaseAge": "14 days",
+    "rebaseWhen": "behind-base-branch",
+    "constraints": {
+      "pnpm": ">=11.8.0"
+    },
+    "pinDigests": false,
+    "platformAutomerge": true,
+    "packageRules": [
+      {
+        "description": "Ignore self-referential dependency (replace directive makes the version cosmetic)",
+        "matchManagers": ["gomod"],
+        "matchPackageNames": ["github.com/grafana/ai-sdk"],
+        "enabled": false
+      },
+      {
+        "description": "Disable pin-type updates to prevent 'pin dependencies' PRs",
+        "matchUpdateTypes": ["pin"],
+        "enabled": false
+      },
+      {
+        "description": "Disable pinDigest updates to prevent 'pin dependencies' PRs",
+        "matchUpdateTypes": ["pinDigest"],
+        "enabled": false
+      },
+      {
+        "description": "Group and schedule all digest updates weekly to reduce noise",
+        "matchUpdateTypes": ["digest"],
+        "groupName": "Weekly digest updates",
+        "schedule": ["before 5am on Monday"],
+        "automerge": true,
+        "automergeType": "pr"
+      },
+      {
+        "description": "Group Docker image digest updates separately",
+        "matchDatasources": ["docker"],
+        "matchUpdateTypes": ["digest"],
+        "groupName": "Docker digest updates",
+        "schedule": ["before 5am on Monday"],
+        "automerge": true,
+        "automergeType": "pr"
+      },
+      {
+        "description": "Group GitHub Actions digest updates separately",
+        "matchManagers": ["github-actions"],
+        "matchUpdateTypes": ["digest"],
+        "groupName": "GitHub Actions digest updates",
+        "schedule": ["before 5am on Monday"],
+        "automerge": true,
+        "automergeType": "pr"
+      },
+      {
+        "description": "Auto-merge Go module digest updates",
+        "matchManagers": ["gomod"],
+        "matchUpdateTypes": ["digest"],
+        "groupName": "Go module digest updates",
+        "schedule": ["before 5am on Monday"],
+        "automerge": true,
+        "automergeType": "pr"
+      },
+      {
+        "description": "Group GitHub Actions version updates weekly",
+        "matchManagers": ["github-actions"],
+        "matchUpdateTypes": ["major", "minor", "patch"],
+        "groupName": "GitHub Actions updates",
+        "schedule": ["before 5am on Monday"],
+        "automerge": false
+      },
+      {
+        "description": "Group Go module patch updates weekly",
+        "matchManagers": ["gomod"],
+        "matchUpdateTypes": ["patch"],
+        "groupName": "Go module patch updates",
+        "schedule": ["before 5am on Monday"],
+        "automerge": true,
+        "automergeType": "pr"
+      },
+      {
+        "description": "Group Go module minor updates weekly",
+        "matchManagers": ["gomod"],
+        "matchUpdateTypes": ["minor"],
+        "groupName": "Go module minor updates",
+        "schedule": ["before 5am on Monday"],
+        "automerge": false
+      },
+      {
+        "description": "Group Go module major updates weekly",
+        "matchManagers": ["gomod"],
+        "matchUpdateTypes": ["major"],
+        "groupName": "Go module major updates",
+        "schedule": ["before 5am on Monday"],
+        "automerge": false
+      },
+      {
+        "description": "Group all non-major npm dependencies together and schedule weekly",
+        "matchDatasources": ["npm"],
+        "matchUpdateTypes": ["minor", "patch"],
+        "groupName": "npm non-major dependencies",
+        "schedule": ["before 5am on Monday"],
+        "automerge": true,
+        "automergeType": "pr"
+      },
+      {
+        "description": "Group npm devDependencies separately (all update types)",
+        "matchDatasources": ["npm"],
+        "matchDepTypes": ["devDependencies"],
+        "groupName": "npm devDependencies",
+        "schedule": ["before 5am on Monday"],
+        "automerge": true,
+        "automergeType": "pr"
+      },
+      {
+        "description": "Group major npm production updates separately and don't auto-merge",
+        "matchDatasources": ["npm"],
+        "matchDepTypes": ["dependencies", "peerDependencies", "optionalDependencies"],
+        "matchUpdateTypes": ["major"],
+        "groupName": "npm major dependencies",
+        "schedule": ["before 5am on Monday"],
+        "automerge": false
+      },
+      {
+        "description": "Disable all major updates for Docker images",
+        "matchDatasources": ["docker"],
+        "matchUpdateTypes": ["major"],
+        "enabled": false
+      },
+      {
+        "description": "AI SDK package versions are managed by the parity upgrade workflow",
+        "matchDatasources": ["npm"],
+        "matchPackageNames": ["ai", "@ai-sdk/**"],
+        "enabled": false
+      },
+      {
+        "description": "agento11y SDK bumps must rerun the middleware/agentobservability conformance suite. Disable auto-merge to force a human-reviewed CI check when the wire-format mapper changes.",
+        "matchManagers": ["gomod"],
+        "matchPackageNames": [
+          "github.com/grafana/agento11y/go",
+          "github.com/grafana/agento11y/go-providers/anthropic"
+        ],
+        "groupName": "agento11y bumps (require conformance review)",
+        "automerge": false,
+        "labels": ["agento11y-conformance-review"]
+      }
+    ]
+  }
+  

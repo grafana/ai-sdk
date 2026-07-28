@@ -1,0 +1,22 @@
+{
+  "prompt": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "think before answering: 2+2?"
+        }
+      ]
+    }
+  ],
+  "maxOutputTokens": 1024,
+  "providerOptions": {
+    "anthropic": {
+      "thinking": {
+        "type": "enabled",
+        "budgetTokens": 2048
+      }
+    }
+  }
+}

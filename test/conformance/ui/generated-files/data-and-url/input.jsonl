@@ -1,0 +1,5 @@
+{"type":"stream-start","warnings":[]}
+{"type":"response-metadata","id":"response-1","modelId":"test-model","timestamp":"2026-01-01T00:00:00.000Z"}
+{"type":"reasoning-file","data":{"type":"url","url":"https://example.com/reasoning.png"},"mediaType":"image/png","providerMetadata":{"test":{"kind":"reasoning"}}}
+{"type":"file","data":{"type":"data","data":"AQID"},"mediaType":"image/png","providerMetadata":{"test":{"kind":"file"}}}
+{"type":"finish","finishReason":{"unified":"stop","raw":"stop"},"usage":{"inputTokens":{"total":1},"outputTokens":{"total":1}}}

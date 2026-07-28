@@ -1,0 +1,9 @@
+model: gpt-4.1
+prompt: "Write and run Python code to calculate the first 10 Fibonacci numbers and show the result."
+stopWhenStepCount: 2
+providerTools:
+  code_interpreter:
+    id: openai.code_interpreter
+    args:
+      container:
+        type: auto

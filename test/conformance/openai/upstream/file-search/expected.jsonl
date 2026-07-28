@@ -1,0 +1,89 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"reasoning-start","id":"rs_0459517ad68504ad0068cabfba951881929654a05214361b35:0","providerMetadata":{"openai":{"itemId":"rs_0459517ad68504ad0068cabfba951881929654a05214361b35","reasoningEncryptedContent":null}}}
+{"type":"reasoning-end","id":"rs_0459517ad68504ad0068cabfba951881929654a05214361b35:0","providerMetadata":{"openai":{"itemId":"rs_0459517ad68504ad0068cabfba951881929654a05214361b35","reasoningEncryptedContent":null}}}
+{"type":"tool-input-available","toolCallId":"fs_0459517ad68504ad0068cabfbd76888192a5dc4475fadabf8a","toolName":"fileSearch","input":{},"providerExecuted":true}
+{"type":"tool-output-available","toolCallId":"fs_0459517ad68504ad0068cabfbd76888192a5dc4475fadabf8a","output":{"queries":["What is an embedding model according to this document?","What is an embedding model defined as in the document?","definition of embedding model"],"results":null},"providerExecuted":true}
+{"type":"reasoning-start","id":"rs_0459517ad68504ad0068cabfbf337881929cf5266be7a008a9:0","providerMetadata":{"openai":{"itemId":"rs_0459517ad68504ad0068cabfbf337881929cf5266be7a008a9","reasoningEncryptedContent":null}}}
+{"type":"reasoning-end","id":"rs_0459517ad68504ad0068cabfbf337881929cf5266be7a008a9:0","providerMetadata":{"openai":{"itemId":"rs_0459517ad68504ad0068cabfbf337881929cf5266be7a008a9","reasoningEncryptedContent":null}}}
+{"type":"text-start","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","providerMetadata":{"openai":{"itemId":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1"}}}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":"According"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" to"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" the"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" document"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":","}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" an"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" embedding"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" model"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" converts"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" complex"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" data"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" ("}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":"e"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":".g"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":".,"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" words"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" or"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" images"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":")"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" into"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" a"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" dense"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" vector"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" —"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" a"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" list"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" of"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" numbers"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" —"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" called"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" an"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" embedding"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" "}
+{"type":"source-document","sourceId":"src-0","mediaType":"text/plain","title":"ai.pdf","filename":"ai.pdf","providerMetadata":{"openai":{"type":"file_citation","fileId":"file-Ebzhf8H4DPGPr9pUhr7n7v","index":154}}}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":"."}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" Unlike"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" gener"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":"ative"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" models"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":","}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" embedding"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" models"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" do"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" not"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" generate"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" new"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" text"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" or"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" data"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":";"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" instead"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" they"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" produce"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" vector"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" representations"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" that"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" capture"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" semantic"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" and"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" synt"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":"actic"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" relationships"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" and"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" can"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" be"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" used"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" as"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" input"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" for"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" other"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" models"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" or"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" NLP"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" tasks"}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" "}
+{"type":"source-document","sourceId":"src-1","mediaType":"text/plain","title":"ai.pdf","filename":"ai.pdf","providerMetadata":{"openai":{"type":"file_citation","fileId":"file-Ebzhf8H4DPGPr9pUhr7n7v","index":382}}}
+{"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":"."}
+{"type":"text-end","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","providerMetadata":{"openai":{"itemId":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","annotations":[{"type":"file_citation","file_id":"file-Ebzhf8H4DPGPr9pUhr7n7v","filename":"ai.pdf","index":154},{"type":"file_citation","file_id":"file-Ebzhf8H4DPGPr9pUhr7n7v","filename":"ai.pdf","index":382}]}}}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"stop"}

@@ -1,0 +1,53 @@
+{
+  "model": {
+    "provider": "anthropic",
+    "name": "claude-sonnet-4-5"
+  },
+  "response_id": "msg_reasoning",
+  "response_model": "claude-sonnet-4-5",
+  "input": [
+    {
+      "role": "user",
+      "parts": [
+        {
+          "kind": "text",
+          "text": "think before answering: 2+2?",
+          "metadata": {}
+        }
+      ]
+    }
+  ],
+  "output": [
+    {
+      "role": "assistant",
+      "parts": [
+        {
+          "kind": "thinking",
+          "thinking": "two plus two…",
+          "metadata": {
+            "provider_type": "thinking"
+          }
+        },
+        {
+          "kind": "text",
+          "text": "4",
+          "metadata": {}
+        }
+      ]
+    }
+  ],
+  "max_tokens": 1024,
+  "thinking_enabled": true,
+  "usage": {
+    "input_tokens": 20,
+    "output_tokens": 12,
+    "total_tokens": 32,
+    "reasoning_tokens": 8
+  },
+  "stop_reason": "end_turn",
+  "started_at": "0001-01-01T00:00:00Z",
+  "completed_at": "0001-01-01T00:00:00Z",
+  "metadata": {
+    "agento11y.gen_ai.request.thinking.budget_tokens": 2048
+  }
+}

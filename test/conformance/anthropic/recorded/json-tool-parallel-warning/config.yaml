@@ -1,0 +1,26 @@
+model: claude-sonnet-4-5-20250929
+prompt: Return a JSON object with weather elements.
+providerOptions:
+  anthropic:
+    structuredOutputMode: jsonTool
+    disableParallelToolUse: false
+responseFormat:
+  type: json
+  schema:
+    type: object
+    properties:
+      elements:
+        type: array
+        items:
+          type: object
+          properties:
+            location:
+              type: string
+            temperature:
+              type: number
+            condition:
+              type: string
+          required: [location, temperature, condition]
+          additionalProperties: false
+    required: [elements]
+    additionalProperties: false

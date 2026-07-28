@@ -1,0 +1,8 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"tool-input-start","toolCallId":"tool-use-id","toolName":"test-tool"}
+{"type":"tool-input-delta","toolCallId":"tool-use-id","inputTextDelta":"{\"value\":"}
+{"type":"tool-input-delta","toolCallId":"tool-use-id","inputTextDelta":"\"Sparkle Day\"}"}
+{"type":"tool-input-available","toolCallId":"tool-use-id","toolName":"test-tool","input":{"value":"Sparkle Day"}}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"tool-calls"}

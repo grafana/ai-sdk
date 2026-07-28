@@ -1,0 +1,11 @@
+{"type":"message_start","message":{"model":"claude-sonnet-4-5-20250929","id":"msg_01E9RQPoNWqWnpfqxnT14gYt","type":"message","role":"assistant","content":[],"stop_reason":null,"stop_sequence":null,"stop_details":null,"usage":{"input_tokens":760,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":1,"service_tier":"standard","inference_geo":"not_available"}}        }
+{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}         }
+{"type": "ping"}
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Here"} }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"'s the current weather comparison:\n\n**Tokyo:**\n- Temperature: 28°C\n- Conditions: Humid and partly cloudy"}          }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"\n\n**London:**\n- Temperature: 16°C\n- Conditions: Mild and overcast\n\nTokyo is significantly warmer at 28°C compared to London's 16°C ("}            }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"a 12-degree difference). Tokyo is experiencing humid conditions with some"}          }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" clouds, while London has overcast skies with milder temperatures."}       }
+{"type":"content_block_stop","index":0         }
+{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null,"stop_details":null},"usage":{"input_tokens":760,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":103}}
+{"type":"message_stop"           }

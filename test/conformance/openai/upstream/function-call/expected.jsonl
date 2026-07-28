@@ -1,0 +1,8 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"tool-input-start","toolCallId":"call_abc","toolName":"get_weather"}
+{"type":"tool-input-delta","toolCallId":"call_abc","inputTextDelta":"{\"location\":"}
+{"type":"tool-input-delta","toolCallId":"call_abc","inputTextDelta":"\"San Francisco\"}"}
+{"type":"tool-input-available","toolCallId":"call_abc","toolName":"get_weather","input":{"location":"San Francisco"},"providerMetadata":{"openai":{"itemId":"fc_1"}}}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"tool-calls"}

@@ -1,0 +1,21 @@
+model: gpt-4o
+prompt: "What is the weather in San Francisco?"
+stopWhenStepCount: 2
+providerOptions:
+  openai:
+    store: false
+tools:
+  get_weather:
+    description: "Get the current weather for a location"
+    strict: false
+    inputSchema:
+      type: object
+      properties:
+        location:
+          type: string
+          description: "City name"
+      required:
+        - location
+    mockResults:
+      - temperature: 62
+        conditions: "foggy"

@@ -1,0 +1,25 @@
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "An essay about life is, in many ways"
+    }
+  ],
+  "finishReason": {
+    "unified": "length",
+    "raw": "max_tokens"
+  },
+  "usage": {
+    "inputTokens": {
+      "total": 5
+    },
+    "outputTokens": {
+      "total": 50
+    }
+  },
+  "response": {
+    "id": "msg_max",
+    "modelId": "claude-sonnet-4-5",
+    "timestamp": "0001-01-01T00:00:00Z"
+  }
+}

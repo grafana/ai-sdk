@@ -1,0 +1,11 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"text-start","id":"0"}
+{"type":"text-delta","id":"0","delta":"I'll update the issue list for"}
+{"type":"text-delta","id":"0","delta":" you."}
+{"type":"text-end","id":"0"}
+{"type":"tool-input-start","toolCallId":"toolu_01QE1WLsSVp5hy5Q3GmGTmjP","toolName":"updateIssueList"}
+{"type":"tool-input-available","toolCallId":"toolu_01QE1WLsSVp5hy5Q3GmGTmjP","toolName":"updateIssueList","input":{}}
+{"type":"tool-output-available","toolCallId":"toolu_01QE1WLsSVp5hy5Q3GmGTmjP","output":{"success":true}}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"tool-calls"}

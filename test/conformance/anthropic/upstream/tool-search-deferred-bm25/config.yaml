@@ -1,0 +1,15 @@
+model: claude-sonnet-4-5
+providerTools:
+  tool_search:
+    id: anthropic.tool_search_bm25_20251119
+tools:
+  get_weather:
+    description: "Get the current weather at a specific location"
+    inputSchema:
+      type: object
+      properties:
+        location:
+          type: string
+    providerOptions:
+      anthropic:
+        deferLoading: true

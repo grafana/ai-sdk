@@ -1,0 +1,6 @@
+model: claude-sonnet-4-5-20250929
+prompt: "Write Python code to calculate the first 10 Fibonacci numbers and show the result."
+stopWhenStepCount: 2
+providerTools:
+  code_execution:
+    id: anthropic.code_execution_20250825

@@ -1,0 +1,40 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"tool-input-start","toolCallId":"call_kA46f91ZwocQyMCKyyZqRyC5","toolName":"apply_patch"}
+{"type":"tool-input-delta","toolCallId":"call_kA46f91ZwocQyMCKyyZqRyC5","inputTextDelta":"{\"callId\":\"call_kA46f91ZwocQyMCKyyZqRyC5\",\"operation\":{\"type\":\"create_file\",\"path\":\"shopping-checklist.md\",\"diff\":\""}
+{"type":"tool-input-delta","toolCallId":"call_kA46f91ZwocQyMCKyyZqRyC5","inputTextDelta":"+"}
+{"type":"tool-input-delta","toolCallId":"call_kA46f91ZwocQyMCKyyZqRyC5","inputTextDelta":"##"}
+{"type":"tool-input-delta","toolCallId":"call_kA46f91ZwocQyMCKyyZqRyC5","inputTextDelta":" Shopping"}
+{"type":"tool-input-delta","toolCallId":"call_kA46f91ZwocQyMCKyyZqRyC5","inputTextDelta":" Checklist"}
+{"type":"tool-input-delta","toolCallId":"call_kA46f91ZwocQyMCKyyZqRyC5","inputTextDelta":"\\n"}
+{"type":"tool-input-delta","toolCallId":"call_kA46f91ZwocQyMCKyyZqRyC5","inputTextDelta":"+\\n"}
+{"type":"tool-input-delta","toolCallId":"call_kA46f91ZwocQyMCKyyZqRyC5","inputTextDelta":"+-"}
+{"type":"tool-input-delta","toolCallId":"call_kA46f91ZwocQyMCKyyZqRyC5","inputTextDelta":" ["}
+{"type":"tool-input-delta","toolCallId":"call_kA46f91ZwocQyMCKyyZqRyC5","inputTextDelta":" ]"}
+{"type":"tool-input-delta","toolCallId":"call_kA46f91ZwocQyMCKyyZqRyC5","inputTextDelta":" Milk"}
+{"type":"tool-input-delta","toolCallId":"call_kA46f91ZwocQyMCKyyZqRyC5","inputTextDelta":"\\n"}
+{"type":"tool-input-delta","toolCallId":"call_kA46f91ZwocQyMCKyyZqRyC5","inputTextDelta":"+-"}
+{"type":"tool-input-delta","toolCallId":"call_kA46f91ZwocQyMCKyyZqRyC5","inputTextDelta":" ["}
+{"type":"tool-input-delta","toolCallId":"call_kA46f91ZwocQyMCKyyZqRyC5","inputTextDelta":" ]"}
+{"type":"tool-input-delta","toolCallId":"call_kA46f91ZwocQyMCKyyZqRyC5","inputTextDelta":" Bread"}
+{"type":"tool-input-delta","toolCallId":"call_kA46f91ZwocQyMCKyyZqRyC5","inputTextDelta":"\\n"}
+{"type":"tool-input-delta","toolCallId":"call_kA46f91ZwocQyMCKyyZqRyC5","inputTextDelta":"+-"}
+{"type":"tool-input-delta","toolCallId":"call_kA46f91ZwocQyMCKyyZqRyC5","inputTextDelta":" ["}
+{"type":"tool-input-delta","toolCallId":"call_kA46f91ZwocQyMCKyyZqRyC5","inputTextDelta":" ]"}
+{"type":"tool-input-delta","toolCallId":"call_kA46f91ZwocQyMCKyyZqRyC5","inputTextDelta":" Eggs"}
+{"type":"tool-input-delta","toolCallId":"call_kA46f91ZwocQyMCKyyZqRyC5","inputTextDelta":"\\n"}
+{"type":"tool-input-delta","toolCallId":"call_kA46f91ZwocQyMCKyyZqRyC5","inputTextDelta":"+-"}
+{"type":"tool-input-delta","toolCallId":"call_kA46f91ZwocQyMCKyyZqRyC5","inputTextDelta":" ["}
+{"type":"tool-input-delta","toolCallId":"call_kA46f91ZwocQyMCKyyZqRyC5","inputTextDelta":" ]"}
+{"type":"tool-input-delta","toolCallId":"call_kA46f91ZwocQyMCKyyZqRyC5","inputTextDelta":" Fresh"}
+{"type":"tool-input-delta","toolCallId":"call_kA46f91ZwocQyMCKyyZqRyC5","inputTextDelta":" fruit"}
+{"type":"tool-input-delta","toolCallId":"call_kA46f91ZwocQyMCKyyZqRyC5","inputTextDelta":"\\n"}
+{"type":"tool-input-delta","toolCallId":"call_kA46f91ZwocQyMCKyyZqRyC5","inputTextDelta":"+-"}
+{"type":"tool-input-delta","toolCallId":"call_kA46f91ZwocQyMCKyyZqRyC5","inputTextDelta":" ["}
+{"type":"tool-input-delta","toolCallId":"call_kA46f91ZwocQyMCKyyZqRyC5","inputTextDelta":" ]"}
+{"type":"tool-input-delta","toolCallId":"call_kA46f91ZwocQyMCKyyZqRyC5","inputTextDelta":" Coffee"}
+{"type":"tool-input-delta","toolCallId":"call_kA46f91ZwocQyMCKyyZqRyC5","inputTextDelta":"\\n"}
+{"type":"tool-input-delta","toolCallId":"call_kA46f91ZwocQyMCKyyZqRyC5","inputTextDelta":"\"}}"}
+{"type":"tool-input-available","toolCallId":"call_kA46f91ZwocQyMCKyyZqRyC5","toolName":"apply_patch","input":{"callId":"call_kA46f91ZwocQyMCKyyZqRyC5","operation":{"type":"create_file","path":"shopping-checklist.md","diff":"+## Shopping Checklist\n+\n+- [ ] Milk\n+- [ ] Bread\n+- [ ] Eggs\n+- [ ] Fresh fruit\n+- [ ] Coffee\n"}},"providerMetadata":{"openai":{"itemId":"apc_0372d86dfc1762fe00692741f3f3dc8190879cba489ff2fc8b"}}}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"stop"}

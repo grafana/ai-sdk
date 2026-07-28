@@ -1,0 +1,6 @@
+{"type":"response.created","sequence_number":0,"response":{"id":"resp_c1","object":"response","created_at":1741290000,"status":"in_progress","model":"gpt-4o-2024-08-06","output":[]}}
+{"type":"response.output_item.added","sequence_number":1,"output_index":0,"item":{"type":"code_interpreter_call","id":"ci_1","status":"in_progress","container_id":"cntr_1","code":"","outputs":[]}}
+{"type":"response.code_interpreter_call_code.delta","sequence_number":2,"item_id":"ci_1","output_index":0,"delta":"print(6*7)"}
+{"type":"response.code_interpreter_call_code.done","sequence_number":3,"item_id":"ci_1","output_index":0,"code":"print(6*7)"}
+{"type":"response.output_item.done","sequence_number":4,"output_index":0,"item":{"type":"code_interpreter_call","id":"ci_1","status":"completed","container_id":"cntr_1","code":"print(6*7)","outputs":[{"type":"logs","logs":"42"}]}}
+{"type":"response.completed","sequence_number":5,"response":{"id":"resp_c1","object":"response","created_at":1741290000,"status":"completed","model":"gpt-4o-2024-08-06","output":[{"type":"code_interpreter_call","id":"ci_1","status":"completed","container_id":"cntr_1","code":"print(6*7)","outputs":[{"type":"logs","logs":"42"}]}],"usage":{"input_tokens":18,"input_tokens_details":{"cached_tokens":0},"output_tokens":8,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":26}}}

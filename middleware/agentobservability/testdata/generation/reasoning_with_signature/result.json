@@ -1,0 +1,30 @@
+{
+  "content": [
+    {
+      "type": "reasoning",
+      "text": "two plus two…"
+    },
+    {
+      "type": "text",
+      "text": "4"
+    }
+  ],
+  "finishReason": {
+    "unified": "stop",
+    "raw": "end_turn"
+  },
+  "usage": {
+    "inputTokens": {
+      "total": 20
+    },
+    "outputTokens": {
+      "total": 12,
+      "reasoning": 8
+    }
+  },
+  "response": {
+    "id": "msg_reasoning",
+    "modelId": "claude-sonnet-4-5",
+    "timestamp": "0001-01-01T00:00:00Z"
+  }
+}

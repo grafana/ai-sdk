@@ -1,0 +1,48 @@
+[
+  {
+    "inputTokens": {
+      "total": 138,
+      "noCache": 130,
+      "cacheRead": 3,
+      "cacheWrite": 5
+    },
+    "outputTokens": {
+      "total": 14
+    },
+    "raw": {
+      "input_tokens": 20,
+      "cache_creation_input_tokens": 5,
+      "cache_read_input_tokens": 3,
+      "cache_creation": {
+        "ephemeral_5m_input_tokens": 5,
+        "ephemeral_1h_input_tokens": 0
+      },
+      "output_tokens": 4,
+      "service_tier": "standard",
+      "iterations": [
+        {
+          "type": "compaction",
+          "input_tokens": 100,
+          "output_tokens": 10,
+          "cache_creation_input_tokens": 0,
+          "cache_read_input_tokens": 0
+        },
+        {
+          "type": "advisor_message",
+          "model": "claude-haiku-4-5",
+          "input_tokens": 200,
+          "output_tokens": 20,
+          "cache_creation_input_tokens": 0,
+          "cache_read_input_tokens": 0
+        },
+        {
+          "type": "message",
+          "input_tokens": 30,
+          "output_tokens": 4,
+          "cache_creation_input_tokens": 0,
+          "cache_read_input_tokens": 0
+        }
+      ]
+    }
+  }
+]

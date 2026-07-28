@@ -1,0 +1,23 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"reasoning-start","id":"0"}
+{"type":"reasoning-delta","id":"0","delta":"I need to calculate 347 ×"}
+{"type":"reasoning-delta","id":"0","delta":" 283. Let me do this step by step using the standard multiplication algorithm.\n\n347\n× 283\n-----\n\nI'll break this"}
+{"type":"reasoning-delta","id":"0","delta":" down by multiplying 347 by each digit of 283:\n\nFirst, multiply 347 by 3 (the ones"}
+{"type":"reasoning-delta","id":"0","delta":" place):\n347 × 3 = 1041\n\nSecond, multiply 347 by 80 (the tens place):\n347 × 8"}
+{"type":"reasoning-delta","id":"0","delta":" = 2776\nSo 347 × 80 = 27,760\n\nThird, multiply 347 by 200"}
+{"type":"reasoning-delta","id":"0","delta":" (the hundreds place):\n347 × 2 = 694\nSo 347 × 200 = 69,400\n\nNow add them all together:\n    "}
+{"type":"reasoning-delta","id":"0","delta":"1,041\n   27,760\n + 69,400\n---------\n   98"}
+{"type":"reasoning-delta","id":"0","delta":",201\n\nLet me verify this:\n1,041 + 27,760 = 28,801\n28,801 + 69,400 = 98,201\n\nSo 347 × 283 = "}
+{"type":"reasoning-delta","id":"0","delta":"98,201"}
+{"type":"reasoning-delta","id":"0","delta":"","providerMetadata":{"anthropic":{"signature":"EpQGCmQIDRgCKkCG2XcavD7wK4fI04rZR4qPWGTjSFXkQAwkGmK/mMnnaOEpXqvsPFyYYkliEdNmJLQmsN8yc8qxonmw/k3QJ+FCMhpjbGF1ZGUtc29ubmV0LTQtNS0yMDI1MDkyOTgAEgzN5vuw1KUPEyNxMAQaDNe6ucxnswmyPL7koSIwtnSUOqgY+nBr1XKSGxjl1X3d6lVdDQwpNFtWuZkrnhJ/y8fp1aW1NzpSu0T4eNjoKt0EfajaYke7XLiPaIo+e4We5478dPyRbl6Ugt6PxVkAiNRsiRos7tQ/9tG01Eq0mQABYnyUNjdV9BC6It2IksSQEc6B0jedxAFrWClO7UowpNspNNyOrxDlH87y2n9RqXi35tHu42aNUUMHvlW6d/Ee9ePgV8/0dS2qNoSHMTco02Z93BZrvOkSP2LyPBi2rwYxOhNmYIRJTeEq+yx7/vDv4tzcyD076mxhEA2QrWegu0F0GL4uq3IjxWgdXIxOeA2qnZAnWoW7OS27IwXCBI4eATuIV8wrvTxfT3pNW+7M1R1eqxUpxzopmYtN2T7e1bGmHPJ778lE18idsxqmJHz8gf5Vf44r+WFrymPhwJTk0hMtRKJvSEYRHmLyO6+I5SW/4tTP0kdJxVuXIuRVWU69H1McrLFPyi7bJtCM40Z7nSnIwuw6TfVue7mBCfdJ1k6+VsbtBIu7II2mzTB6NSxtjkF3/c5UyRY+GASlr0DLZS6nvq5bCqh2vVJ6Nlspch91CAUUZKBkDyFvK5416RSndPMctv9TZfmyxx6DjI3lw0jrTCrCH2+c2JS4+E7bzeq5b4Rh5L9m4LEmFxzJrGOzGqs1qdcRdWs8qoV5Y/+04vNIcr/1uJlIRNHS1GMK9G2dhEAYjYf5+eY4qeFByqZZhHSAxx63KrwjOp5tnPluDVeecYqoXJFHHBp37WpxNwKgItPfYC6/ErlTWw1Ap9zsGNvO8pg/wqNvvNzjqAH5RMOSWHVHLqBN+bWEjSL9+kF87OPojDQ7aCTIFC4OEKlhDPnLguzbX6BixsrycJcYAQ=="}}}
+{"type":"reasoning-end","id":"0"}
+{"type":"text-start","id":"1"}
+{"type":"text-delta","id":"1","delta":"# 347 × 283\n\nLet me break this down by multiplying 347 by each digit of 283"}
+{"type":"text-delta","id":"1","delta":":\n\n## Step 1: Multiply 347 × 3 (ones place)\n347 × 3 = **1,041**\n\n## Step 2: Multiply 347 ×"}
+{"type":"text-delta","id":"1","delta":" 80 (tens place)\n347 × 8 = 2,776\n347 × 80 = **27,760**\n\n## Step 3: Multiply 347 × 200 (hundreds place)\n347 × 2 = "}
+{"type":"text-delta","id":"1","delta":"694\n347 × 200 = **69,400**\n\n## Step 4: Add all partial products\n```\n    1,041\n   27,760\n + 69,400\n---------\n   98,"}
+{"type":"text-delta","id":"1","delta":"201\n```\n\n**Answer: 347 × 283 = 98,201**"}
+{"type":"text-end","id":"1"}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"stop"}

@@ -1,0 +1,5 @@
+model: gpt-4o
+prompt: "And the day after?"
+providerOptions:
+  openai:
+    previousResponseId: resp_prev123

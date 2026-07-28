@@ -1,0 +1,47 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"tool-input-start","toolCallId":"srvtoolu_01LKcA5qc1HwvLQSe3cLKmcK","toolName":"code_execution","providerExecuted":true}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_01LKcA5qc1HwvLQSe3cLKmcK","inputTextDelta":"{\"type\": \"programmatic-tool-call\",\"code\": \"\\nimport json"}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_01LKcA5qc1HwvLQSe3cLKmcK","inputTextDelta":"\\nresult"}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_01LKcA5qc1HwvLQSe3cLKmcK","inputTextDelta":" = await web"}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_01LKcA5qc1HwvLQSe3cLKmcK","inputTextDelta":"_fetch("}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_01LKcA5qc1HwvLQSe3cLKmcK","inputTextDelta":"{\\\"url\\\": \\\"https://example"}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_01LKcA5qc1HwvLQSe3cLKmcK","inputTextDelta":".com\\\"})\\nif"}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_01LKcA5qc1HwvLQSe3cLKmcK","inputTextDelta":" isinstance"}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_01LKcA5qc1HwvLQSe3cLKmcK","inputTextDelta":"(result, list):\\n    "}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_01LKcA5qc1HwvLQSe3cLKmcK","inputTextDelta":"print(result"}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_01LKcA5qc1HwvLQSe3cLKmcK","inputTextDelta":"[0][\\\"content"}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_01LKcA5qc1HwvLQSe3cLKmcK","inputTextDelta":"\\\"]"}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_01LKcA5qc1HwvLQSe3cLKmcK","inputTextDelta":"[:500"}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_01LKcA5qc1HwvLQSe3cLKmcK","inputTextDelta":"])"}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_01LKcA5qc1HwvLQSe3cLKmcK","inputTextDelta":"\\nelse:\\n    print(result"}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_01LKcA5qc1HwvLQSe3cLKmcK","inputTextDelta":")"}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_01LKcA5qc1HwvLQSe3cLKmcK","inputTextDelta":"\\n"}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_01LKcA5qc1HwvLQSe3cLKmcK","inputTextDelta":"\"}"}
+{"type":"tool-input-available","toolCallId":"srvtoolu_01LKcA5qc1HwvLQSe3cLKmcK","toolName":"code_execution","input":{"type":"programmatic-tool-call","code":"\nimport json\nresult = await web_fetch({\"url\": \"https://example.com\"})\nif isinstance(result, list):\n    print(result[0][\"content\"][:500])\nelse:\n    print(result)\n"},"providerExecuted":true}
+{"type":"tool-input-start","toolCallId":"srvtoolu_01SyXFZ4vqqE144ySoN6b5UG","toolName":"web_fetch","providerExecuted":true}
+{"type":"tool-input-available","toolCallId":"srvtoolu_01SyXFZ4vqqE144ySoN6b5UG","toolName":"web_fetch","input":{"url":"https://example.com"},"providerExecuted":true}
+{"type":"tool-output-available","toolCallId":"srvtoolu_01SyXFZ4vqqE144ySoN6b5UG","output":{"type":"web_fetch_result","url":"https://example.com","retrievedAt":"2026-03-03T15:05:04.091000+00:00","content":{"type":"document","title":"Example Domain","source":{"type":"text","mediaType":"text/plain","data":"Example Domain\n\n# Example Domain\n\nThis domain is for use in documentation examples without needing permission. Avoid use in operations.\n\n[Learn more](https://iana.org/domains/example)"}}},"providerExecuted":true}
+{"type":"tool-output-available","toolCallId":"srvtoolu_01LKcA5qc1HwvLQSe3cLKmcK","output":{"type":"code_execution_result","stdout":"{\"type\": \"web_fetch_result\", \"url\": \"https://example.com\", \"retrieved_at\": \"2026-03-03T15:05:04.091000+00:00\", \"content\": {\"type\": \"document\", \"source\": {\"type\": \"text\", \"media_type\": \"text/plain\", \"data\": \"Example Domain\\n\\n# Example Domain\\n\\nThis domain is for use in documentation examples without needing permission. Avoid use in operations.\\n\\n[Learn more](https://iana.org/domains/example)\"}, \"title\": \"Example Domain\"}}\n","stderr":"","return_code":0,"content":[]},"providerExecuted":true}
+{"type":"text-start","id":"4"}
+{"type":"text-delta","id":"4","delta":"The"}
+{"type":"text-delta","id":"4","delta":" page at"}
+{"type":"text-delta","id":"4","delta":" **"}
+{"type":"text-delta","id":"4","delta":"example"}
+{"type":"text-delta","id":"4","delta":".com** is"}
+{"type":"text-delta","id":"4","delta":" a simple placeholder"}
+{"type":"text-delta","id":"4","delta":" page explaining"}
+{"type":"text-delta","id":"4","delta":" that the"}
+{"type":"text-delta","id":"4","delta":" domain is reserved"}
+{"type":"text-delta","id":"4","delta":" for use"}
+{"type":"text-delta","id":"4","delta":" in illust"}
+{"type":"text-delta","id":"4","delta":"rative documentation"}
+{"type":"text-delta","id":"4","delta":" examples and"}
+{"type":"text-delta","id":"4","delta":" does"}
+{"type":"text-delta","id":"4","delta":" not require prior"}
+{"type":"text-delta","id":"4","delta":" permission to"}
+{"type":"text-delta","id":"4","delta":" reference"}
+{"type":"text-delta","id":"4","delta":"."}
+{"type":"text-end","id":"4"}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"stop"}

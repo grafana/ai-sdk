@@ -1,0 +1,1 @@
+{"body":{"messages":[{"content":"Say a single word.","role":"user"}],"model":"grok-3-mini","stream":true,"stream_options":{"include_usage":true}},"headers":{"authorization":"<redacted>","content-type":"application/json"},"method":"POST","path":"/v1/chat/completions"}

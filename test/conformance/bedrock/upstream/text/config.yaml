@@ -1,0 +1,5 @@
+# Simple text generation against an Anthropic model on Bedrock. The fixture
+# was lifted from @ai-sdk/amazon-bedrock/src/__fixtures__/amazon-bedrock-text.chunks.txt
+# and exercises the basic content_block_delta -> text path with usage and
+# stop reason metadata.
+model: anthropic.claude-3-haiku-20240307-v1:0

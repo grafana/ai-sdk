@@ -1,0 +1,64 @@
+{
+  "model": {
+    "provider": "anthropic",
+    "name": "claude-sonnet-4-5"
+  },
+  "input": [
+    {
+      "role": "user",
+      "parts": [
+        {
+          "kind": "text",
+          "text": "weather?",
+          "metadata": {}
+        }
+      ]
+    }
+  ],
+  "output": [
+    {
+      "role": "assistant",
+      "parts": [
+        {
+          "kind": "text",
+          "text": "Looking it up…",
+          "metadata": {}
+        },
+        {
+          "kind": "tool_call",
+          "tool_call": {
+            "id": "tu_s",
+            "name": "get_weather",
+            "input_json": {
+              "city": "SF"
+            }
+          },
+          "metadata": {
+            "provider_type": "tool_use"
+          }
+        }
+      ]
+    }
+  ],
+  "tools": [
+    {
+      "name": "get_weather",
+      "input_schema": {
+        "properties": {
+          "city": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    }
+  ],
+  "usage": {
+    "input_tokens": 5,
+    "output_tokens": 8,
+    "total_tokens": 13
+  },
+  "stop_reason": "tool_use",
+  "started_at": "0001-01-01T00:00:00Z",
+  "completed_at": "0001-01-01T00:00:00Z"
+}

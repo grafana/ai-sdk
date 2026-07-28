@@ -1,0 +1,22 @@
+model: gpt-4o
+prompt: "Compare the weather in Tokyo and London right now. Get both at the same time."
+stopWhenStepCount: 2
+providerOptions:
+  openai:
+    store: false
+tools:
+  get_weather:
+    description: "Get current weather conditions for a city"
+    inputSchema:
+      type: object
+      properties:
+        city:
+          type: string
+          description: "City name"
+      required:
+        - city
+    mockResults:
+      - temperature: 28
+        conditions: "humid and partly cloudy"
+      - temperature: 16
+        conditions: "mild and overcast"

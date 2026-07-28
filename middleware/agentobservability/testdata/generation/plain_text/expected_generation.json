@@ -1,0 +1,42 @@
+{
+  "model": {
+    "provider": "anthropic",
+    "name": "claude-sonnet-4-5"
+  },
+  "response_id": "msg_plain",
+  "response_model": "claude-sonnet-4-5",
+  "input": [
+    {
+      "role": "user",
+      "parts": [
+        {
+          "kind": "text",
+          "text": "what is the weather?",
+          "metadata": {}
+        }
+      ]
+    }
+  ],
+  "output": [
+    {
+      "role": "assistant",
+      "parts": [
+        {
+          "kind": "text",
+          "text": "It is sunny.",
+          "metadata": {}
+        }
+      ]
+    }
+  ],
+  "max_tokens": 1024,
+  "temperature": 0.7,
+  "usage": {
+    "input_tokens": 10,
+    "output_tokens": 20,
+    "total_tokens": 30
+  },
+  "stop_reason": "end_turn",
+  "started_at": "0001-01-01T00:00:00Z",
+  "completed_at": "0001-01-01T00:00:00Z"
+}

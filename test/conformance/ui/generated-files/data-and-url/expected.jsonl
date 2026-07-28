@@ -1,0 +1,6 @@
+{"type":"start","messageId":"message-1"}
+{"type":"start-step"}
+{"type":"reasoning-file","mediaType":"image/png","url":"data:image/png;base64,https://example.com/reasoning.png","providerMetadata":{"test":{"kind":"reasoning"}}}
+{"type":"file","mediaType":"image/png","url":"data:image/png;base64,AQID","providerMetadata":{"test":{"kind":"file"}}}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"stop"}

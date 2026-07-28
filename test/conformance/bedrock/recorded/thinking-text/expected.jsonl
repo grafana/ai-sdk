@@ -1,0 +1,57 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"reasoning-start","id":"0"}
+{"type":"reasoning-delta","id":"0","delta":"I need to count the number of R"}
+{"type":"reasoning-delta","id":"0","delta":"'s in the word \"strawberry\"."}
+{"type":"reasoning-delta","id":"0","delta":"\n\nLet me go through each"}
+{"type":"reasoning-delta","id":"0","delta":" letter:\ns - t - r"}
+{"type":"reasoning-delta","id":"0","delta":" - a - w - b - e"}
+{"type":"reasoning-delta","id":"0","delta":" - r - r - y\n\n1"}
+{"type":"reasoning-delta","id":"0","delta":". s - not an R\n2"}
+{"type":"reasoning-delta","id":"0","delta":". t - not an R\n3"}
+{"type":"reasoning-delta","id":"0","delta":". r - this is an R ("}
+{"type":"reasoning-delta","id":"0","delta":"1st R)\n4. a"}
+{"type":"reasoning-delta","id":"0","delta":" - not an R\n5. w"}
+{"type":"reasoning-delta","id":"0","delta":" - not an R\n6. b"}
+{"type":"reasoning-delta","id":"0","delta":" - not an R\n7. e"}
+{"type":"reasoning-delta","id":"0","delta":" - not an R\n8. r"}
+{"type":"reasoning-delta","id":"0","delta":" - this is an R (2nd"}
+{"type":"reasoning-delta","id":"0","delta":" R)\n9. r - this"}
+{"type":"reasoning-delta","id":"0","delta":" is an R (3rd R)"}
+{"type":"reasoning-delta","id":"0","delta":"\n10. y - not an R"}
+{"type":"reasoning-delta","id":"0","delta":"\n\nSo there"}
+{"type":"reasoning-delta","id":"0","delta":" are 3 R's in the"}
+{"type":"reasoning-delta","id":"0","delta":" word \"strawberry\"."}
+{"type":"reasoning-delta","id":"0","delta":"","providerMetadata":{"amazonBedrock":{"signature":"EpsECkgIDRABGAIqQIY7crkIm7IBG9/UgI9RApFjlUuj2tf3o9vDipzHXAOAuDcMCDYbvgF7qcYTelNLaL8MotuVPon+5g/TLXbsyOESDCugBXLPcG81cu4sERoMxtd8xYcxN1zvVrUpIjAQ8IBxbIVnh6D2XG4P+n4bwUUadqCFWg4bPdyxZz3HQJBKv5c/BJxCsShy7IFpq+0qgANAt5VakDSqZjwPYExMbMiX8EbMZ7gDvTHUw2hYd8LCGG7Q4NOngfndx2OJJjnsNPfistMULSnhu/pjx3ZxeeJp0KrI4EVvqTm7n7eXSdqCOMIsbAM7fhCBSaxVX9QeeHadEzwILMCfz2Fz/yD0dHyP00E4LwqP+43HihYjuaVQEDfLtJsMKTmSPnSU5XGkrwelolGHV3GWYrqe2NVU5vv9FeEqLGBz9OOOd+M1T5iLbLtD1sDtTE2nIT9RkYT5E4emGFao2yKaQoOvchRiyaHaIZJiVvoUdxBkhWebD0wRrTJa5Jc1HhuprdcIoPMXZqtQ61o5AMDf538Z7f3QzeOnRMFXGq/Zx3zF4Lhjk0AUmGC9fgK5Lcau6+iniTVN/E72VYFPmlrGBI2HZoLLeJ01AmijvDQTTx/QLNdsCtSHPAfXYl5DCRtESVAvY5YNJkADchEQOWnCNZpcG7WBULJGnwtVtqlG17l7VN37PJvHCIWQ+IpFPsCFFGLNbAB5Fx8YAQ=="},"bedrock":{"signature":"EpsECkgIDRABGAIqQIY7crkIm7IBG9/UgI9RApFjlUuj2tf3o9vDipzHXAOAuDcMCDYbvgF7qcYTelNLaL8MotuVPon+5g/TLXbsyOESDCugBXLPcG81cu4sERoMxtd8xYcxN1zvVrUpIjAQ8IBxbIVnh6D2XG4P+n4bwUUadqCFWg4bPdyxZz3HQJBKv5c/BJxCsShy7IFpq+0qgANAt5VakDSqZjwPYExMbMiX8EbMZ7gDvTHUw2hYd8LCGG7Q4NOngfndx2OJJjnsNPfistMULSnhu/pjx3ZxeeJp0KrI4EVvqTm7n7eXSdqCOMIsbAM7fhCBSaxVX9QeeHadEzwILMCfz2Fz/yD0dHyP00E4LwqP+43HihYjuaVQEDfLtJsMKTmSPnSU5XGkrwelolGHV3GWYrqe2NVU5vv9FeEqLGBz9OOOd+M1T5iLbLtD1sDtTE2nIT9RkYT5E4emGFao2yKaQoOvchRiyaHaIZJiVvoUdxBkhWebD0wRrTJa5Jc1HhuprdcIoPMXZqtQ61o5AMDf538Z7f3QzeOnRMFXGq/Zx3zF4Lhjk0AUmGC9fgK5Lcau6+iniTVN/E72VYFPmlrGBI2HZoLLeJ01AmijvDQTTx/QLNdsCtSHPAfXYl5DCRtESVAvY5YNJkADchEQOWnCNZpcG7WBULJGnwtVtqlG17l7VN37PJvHCIWQ+IpFPsCFFGLNbAB5Fx8YAQ=="}}}
+{"type":"reasoning-end","id":"0"}
+{"type":"text-start","id":"1"}
+{"type":"text-delta","id":"1","delta":"I'll go"}
+{"type":"text-delta","id":"1","delta":" through the word \"strawberry\" letter"}
+{"type":"text-delta","id":"1","delta":" by letter:"}
+{"type":"text-delta","id":"1","delta":"\n\ns -"}
+{"type":"text-delta","id":"1","delta":" t - r - a - w -"}
+{"type":"text-delta","id":"1","delta":" b - e - r - r -"}
+{"type":"text-delta","id":"1","delta":" y\n\n1"}
+{"type":"text-delta","id":"1","delta":". s - not an R\n2"}
+{"type":"text-delta","id":"1","delta":". t - not an R\n3"}
+{"type":"text-delta","id":"1","delta":". **"}
+{"type":"text-delta","id":"1","delta":"r** - this is an R "}
+{"type":"text-delta","id":"1","delta":"✓"}
+{"type":"text-delta","id":"1","delta":" (1st)"}
+{"type":"text-delta","id":"1","delta":"\n4. a - not an R"}
+{"type":"text-delta","id":"1","delta":"\n5. w - not an R"}
+{"type":"text-delta","id":"1","delta":"\n6. b - not an R"}
+{"type":"text-delta","id":"1","delta":"\n7. e - not an R"}
+{"type":"text-delta","id":"1","delta":"\n8. **"}
+{"type":"text-delta","id":"1","delta":"r** - this is an R "}
+{"type":"text-delta","id":"1","delta":"✓ (2nd)"}
+{"type":"text-delta","id":"1","delta":"\n9. **"}
+{"type":"text-delta","id":"1","delta":"r** - this is an R "}
+{"type":"text-delta","id":"1","delta":"✓ (3rd)"}
+{"type":"text-delta","id":"1","delta":"\n10. y - not an R"}
+{"type":"text-delta","id":"1","delta":"\n\nThere are **3 "}
+{"type":"text-delta","id":"1","delta":"R's** in the word \"straw"}
+{"type":"text-delta","id":"1","delta":"berry\"."}
+{"type":"text-end","id":"1"}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"stop"}

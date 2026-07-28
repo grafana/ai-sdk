@@ -1,0 +1,1 @@
+{"body":{"input":[{"content":[{"text":"continue","type":"input_text"}],"role":"user"}],"model":"o4-mini","previous_response_id":"resp_prev","stream":true},"headers":{"authorization":"<redacted>","content-type":"application/json"},"method":"POST","path":"/v1/responses"}

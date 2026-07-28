@@ -1,0 +1,42 @@
+model: gpt-5.2
+messages:
+  - role: user
+    content: Run uname -a
+  - role: assistant
+    content:
+      - type: tool-call
+        toolCallId: call_abc123def456ghi789jkl012
+        toolName: shell
+        providerExecuted: true
+        input:
+          action:
+            commands:
+              - uname -a
+        providerOptions:
+          openai:
+            itemId: sh_0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e50
+      - type: tool-result
+        toolCallId: call_abc123def456ghi789jkl012
+        toolName: shell
+        output:
+          type: json
+          value:
+            output:
+              - stdout: "Linux container-host 6.1.0 #1 SMP x86_64 GNU/Linux\n"
+                stderr: ""
+                outcome:
+                  type: exit
+                  exitCode: 0
+      - type: text
+        text: "Linux container-host 6.1.0 #1 SMP x86_64 GNU/Linux"
+        providerOptions:
+          openai:
+            itemId: msg_0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e52
+  - role: user
+    content: What architecture do you run in?
+providerTools:
+  shell:
+    id: openai.shell
+    args:
+      environment:
+        type: containerAuto

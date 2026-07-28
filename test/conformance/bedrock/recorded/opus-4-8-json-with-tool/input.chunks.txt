@@ -1,0 +1,8 @@
+{"messageStart":{"role":"assistant"}}
+{"contentBlockStart":{"contentBlockIndex":0,"start":{}}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":"Here is the result: "}}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":"{\"sta"}}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":"tus\":\"ok\"} trailing text"}}}
+{"contentBlockStop":{"contentBlockIndex":0}}
+{"messageStop":{"stopReason":"end_turn"}}
+{"metadata":{"usage":{"inputTokens":10,"outputTokens":5,"totalTokens":15},"metrics":{"latencyMs":20}}}

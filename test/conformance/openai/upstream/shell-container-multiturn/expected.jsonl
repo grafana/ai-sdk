@@ -1,0 +1,22 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"text-start","id":"msg_07226f71de51f72b006994e641127c81a3ba3d54eedadff969","providerMetadata":{"openai":{"itemId":"msg_07226f71de51f72b006994e641127c81a3ba3d54eedadff969"}}}
+{"type":"text-delta","id":"msg_07226f71de51f72b006994e641127c81a3ba3d54eedadff969","delta":"The"}
+{"type":"text-delta","id":"msg_07226f71de51f72b006994e641127c81a3ba3d54eedadff969","delta":" architecture"}
+{"type":"text-delta","id":"msg_07226f71de51f72b006994e641127c81a3ba3d54eedadff969","delta":" is"}
+{"type":"text-delta","id":"msg_07226f71de51f72b006994e641127c81a3ba3d54eedadff969","delta":" **"}
+{"type":"text-delta","id":"msg_07226f71de51f72b006994e641127c81a3ba3d54eedadff969","delta":"x"}
+{"type":"text-delta","id":"msg_07226f71de51f72b006994e641127c81a3ba3d54eedadff969","delta":"86"}
+{"type":"text-delta","id":"msg_07226f71de51f72b006994e641127c81a3ba3d54eedadff969","delta":"_"}
+{"type":"text-delta","id":"msg_07226f71de51f72b006994e641127c81a3ba3d54eedadff969","delta":"64"}
+{"type":"text-delta","id":"msg_07226f71de51f72b006994e641127c81a3ba3d54eedadff969","delta":"**"}
+{"type":"text-delta","id":"msg_07226f71de51f72b006994e641127c81a3ba3d54eedadff969","delta":" ("}
+{"type":"text-delta","id":"msg_07226f71de51f72b006994e641127c81a3ba3d54eedadff969","delta":"64"}
+{"type":"text-delta","id":"msg_07226f71de51f72b006994e641127c81a3ba3d54eedadff969","delta":"-bit"}
+{"type":"text-delta","id":"msg_07226f71de51f72b006994e641127c81a3ba3d54eedadff969","delta":" Intel"}
+{"type":"text-delta","id":"msg_07226f71de51f72b006994e641127c81a3ba3d54eedadff969","delta":"/"}
+{"type":"text-delta","id":"msg_07226f71de51f72b006994e641127c81a3ba3d54eedadff969","delta":"AMD"}
+{"type":"text-delta","id":"msg_07226f71de51f72b006994e641127c81a3ba3d54eedadff969","delta":")."}
+{"type":"text-end","id":"msg_07226f71de51f72b006994e641127c81a3ba3d54eedadff969","providerMetadata":{"openai":{"itemId":"msg_07226f71de51f72b006994e641127c81a3ba3d54eedadff969"}}}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"stop"}

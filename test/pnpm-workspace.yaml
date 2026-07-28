@@ -1,0 +1,15 @@
+packages:
+  - integration
+  - interop
+  - cli
+  - conformance/tools
+
+# Supply-chain hardening
+blockExoticSubdeps: true
+strictDepBuilds: true
+minimumReleaseAge: 4320
+
+# Dependencies explicitly allowed to run build scripts (required by
+# strictDepBuilds; everything not listed has its build scripts blocked).
+onlyBuiltDependencies:
+  - esbuild

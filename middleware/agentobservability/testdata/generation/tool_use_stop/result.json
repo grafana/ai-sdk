@@ -1,0 +1,29 @@
+{
+  "content": [
+    {
+      "type": "tool-call",
+      "toolCallId": "tu_x",
+      "toolName": "get_temperature",
+      "input": {
+        "city": "NYC"
+      }
+    }
+  ],
+  "finishReason": {
+    "unified": "tool-calls",
+    "raw": "tool_use"
+  },
+  "usage": {
+    "inputTokens": {
+      "total": 12
+    },
+    "outputTokens": {
+      "total": 7
+    }
+  },
+  "response": {
+    "id": "msg_tooluse",
+    "modelId": "claude-sonnet-4-5",
+    "timestamp": "0001-01-01T00:00:00Z"
+  }
+}

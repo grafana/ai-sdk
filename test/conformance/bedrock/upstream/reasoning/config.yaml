@@ -1,0 +1,8 @@
+# Reasoning (extended thinking) on an Anthropic Bedrock model. Exercises
+# reasoningContent.text and reasoningContent.signature delta handling.
+model: anthropic.claude-sonnet-4-5-20250929-v1:0
+providerOptions:
+  amazonBedrock:
+    reasoningConfig:
+      type: enabled
+      budgetTokens: 1024

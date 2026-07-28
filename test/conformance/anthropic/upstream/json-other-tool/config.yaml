@@ -1,0 +1,22 @@
+model: claude-3-haiku-20240307
+responseFormat:
+  type: json
+  schema:
+    type: object
+    properties:
+      weather:
+        type: string
+      temperature:
+        type: number
+    required: [weather, temperature]
+    additionalProperties: false
+tools:
+  weather:
+    description: "Get the weather in a location"
+    inputSchema:
+      type: object
+      properties:
+        location:
+          type: string
+      required:
+        - location

@@ -1,0 +1,9 @@
+model: claude-3-haiku-20240307
+tools:
+  updateIssueList:
+    description: "Update the issue list"
+    inputSchema:
+      type: object
+      properties: {}
+    mockResults:
+      - success: true

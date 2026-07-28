@@ -1,0 +1,46 @@
+{
+  "model": {
+    "provider": "anthropic",
+    "name": "claude-sonnet-4-5"
+  },
+  "input": [
+    {
+      "role": "user",
+      "parts": [
+        {
+          "kind": "text",
+          "text": "2+2?",
+          "metadata": {}
+        }
+      ]
+    }
+  ],
+  "output": [
+    {
+      "role": "assistant",
+      "parts": [
+        {
+          "kind": "thinking",
+          "thinking": "let me think",
+          "metadata": {
+            "provider_type": "thinking"
+          }
+        },
+        {
+          "kind": "text",
+          "text": "4",
+          "metadata": {}
+        }
+      ]
+    }
+  ],
+  "usage": {
+    "input_tokens": 4,
+    "output_tokens": 2,
+    "total_tokens": 6,
+    "reasoning_tokens": 1
+  },
+  "stop_reason": "end_turn",
+  "started_at": "0001-01-01T00:00:00Z",
+  "completed_at": "0001-01-01T00:00:00Z"
+}

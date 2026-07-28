@@ -1,0 +1,5 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"text-start","id":"t1"}
+{"type":"text-delta","id":"t1","delta":"partial"}
+{"type":"abort","reason":"manual abort"}

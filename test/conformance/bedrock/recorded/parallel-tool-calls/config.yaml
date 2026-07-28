@@ -1,0 +1,14 @@
+# Parallel tool calls in a single response. Verifies that two tool calls
+# emitted in the same step produce two separate tool-input lifecycles.
+model: us.anthropic.claude-haiku-4-5-20251001-v1:0
+prompt: Get the weather for both Berlin and Paris. Call get_weather for each city in parallel.
+stopWhenStepCount: 1
+tools:
+  get_weather:
+    description: Get the current weather for a city.
+    inputSchema:
+      type: object
+      properties:
+        city:
+          type: string
+      required: [city]

@@ -1,0 +1,402 @@
+# provider-v4-content-model Specification
+
+## Purpose
+
+Define the provider V4 message, content-part, and related stream/generate content model using flat discriminated structs that round-trip losslessly through JSON.
+
+## Requirements
+
+### Requirement: Message is a flat discriminated struct
+
+The `provider` package SHALL define `Message` as a single struct, not a sealed interface:
+
+```go
+type Message struct {
+    Role            Role            `json:"role"`
+    Content         []ContentPart   `json:"content"`
+    ProviderOptions ProviderOptions `json:"providerOptions,omitempty"`
+}
+```
+
+The `Role` field SHALL discriminate the message variant (`"system"`, `"user"`, `"assistant"`, `"tool"`). The previous `Message` sealed interface and the four concrete variants (`SystemMessage`, `UserMessage`, `AssistantMessage`, `ToolMessage`) SHALL be removed.
+
+#### Scenario: Message is a struct
+- **WHEN** the `provider.Message` type is inspected
+- **THEN** it SHALL be a Go struct exported as `provider.Message` with public fields `Role`, `Content`, `ProviderOptions`
+
+#### Scenario: Removed types
+- **WHEN** the `provider` package is inspected
+- **THEN** `provider.SystemMessage`, `provider.UserMessage`, `provider.AssistantMessage`, and `provider.ToolMessage` SHALL NOT exist as identifiers
+
+#### Scenario: Round-trip via encoding/json
+- **WHEN** a `Message` carrying every role is marshaled to JSON and unmarshaled back
+- **THEN** the decoded value SHALL equal the original (using `reflect.DeepEqual`) with no field loss
+
+### Requirement: Message constructor helpers preserved
+
+The provider package SHALL preserve constructor helpers for ergonomics: `NewSystemMessage(text string) Message`, `NewUserMessage(parts ...ContentPart) Message`, `NewAssistantMessage(parts ...ContentPart) Message`, and `NewToolMessage(parts ...ContentPart) Message`. Each SHALL set the appropriate `Role` and pack the arguments into `Content`.
+
+#### Scenario: NewSystemMessage shape
+- **WHEN** `NewSystemMessage("hello")` is called
+- **THEN** it SHALL return `Message{Role: RoleSystem, Content: []ContentPart{{Type: ContentPartTypeText, Text: "hello"}}}`
+
+#### Scenario: NewUserMessage shape
+- **WHEN** `NewUserMessage(ContentPart{Type: ContentPartTypeText, Text: "hi"})` is called
+- **THEN** it SHALL return `Message{Role: RoleUser, Content: [...]}` with the given parts
+
+#### Scenario: NewAssistantMessage shape
+- **WHEN** `NewAssistantMessage(part1, part2)` is called
+- **THEN** it SHALL return `Message{Role: RoleAssistant, Content: [...]}` with both parts in order
+
+#### Scenario: NewToolMessage shape
+- **WHEN** `NewToolMessage(ContentPart{Type: ContentPartTypeToolResult, ToolCallID: "1", ToolName: "t"})` is called
+- **THEN** it SHALL return `Message{Role: RoleTool, Content: [...]}` with the given part
+
+### Requirement: ContentPart is a flat discriminated struct
+
+The `provider` package SHALL define `ContentPart` as a single flat struct discriminated by a typed `Type` field, mirroring how `provider.StreamPart` is already modeled:
+
+```go
+type ContentPart struct {
+    Type             ContentPartType `json:"type"`
+    Text             string          `json:"text,omitempty"`
+    Data             *DataContent    `json:"data,omitempty"`
+    Filename         string          `json:"filename,omitempty"`
+    MediaType        string          `json:"mediaType,omitempty"`
+    Kind             string          `json:"kind,omitempty"`
+    ToolCallID       string          `json:"toolCallId,omitempty"`
+    ToolName         string          `json:"toolName,omitempty"`
+    Input            json.RawMessage `json:"input,omitempty"`
+    Output           *ToolResultOutput `json:"output,omitempty"`
+    ProviderExecuted bool            `json:"providerExecuted,omitempty"`
+    ApprovalID       string          `json:"approvalId,omitempty"`
+    Approved         *bool           `json:"approved,omitempty"`
+    Reason           string          `json:"reason,omitempty"`
+    ProviderOptions  ProviderOptions `json:"providerOptions,omitempty"`
+}
+```
+
+The previous sealed interfaces `UserContentPart`, `AssistantContentPart`, `ToolMessageContentPart` SHALL be removed. The previous concrete types `TextContentPart`, `FileContentPart`, `ReasoningContentPart`, `ToolCallContentPart`, `ToolResultContentPart`, `CustomContentPart`, `ReasoningFileContentPart`, and `ToolApprovalResponseContentPart` SHALL be removed.
+
+#### Scenario: Removed types
+- **WHEN** the `provider` package is inspected
+- **THEN** none of the listed concrete content-part types and none of the three `*ContentPart` interfaces SHALL exist as identifiers
+
+#### Scenario: ContentPartType constants exist
+- **WHEN** `ContentPartType` is inspected
+- **THEN** it SHALL be a typed string with constants for at least: `text`, `file`, `reasoning`, `reasoning-file`, `tool-call`, `tool-result`, `custom`, `tool-approval-response`
+
+#### Scenario: Round-trip every ContentPartType
+- **WHEN** every defined `ContentPartType` value is constructed as a `ContentPart`, marshaled to JSON, and unmarshaled back
+- **THEN** the decoded value SHALL equal the original for every type
+
+### Requirement: ContentPart constructor helpers
+
+The `provider` package SHALL provide per-variant constructor helpers that return a `ContentPart` with `Type` set to the matching `ContentPartType` constant and the relevant fields populated:
+
+- `TextPart(text string) ContentPart`
+- `FilePart(mediaType string, data DataContent) ContentPart`
+- `ReasoningPart(text string) ContentPart`
+- `ReasoningFilePart(mediaType string, data DataContent) ContentPart`
+- `ToolCallPart(toolCallID, toolName string, input json.RawMessage) ContentPart`
+- `ToolResultPart(toolCallID, toolName string, output *ToolResultOutput) ContentPart`
+- `CustomPart(kind string) ContentPart`
+- `ToolApprovalRequestPart(approvalID, toolCallID string, isAutomatic bool) ContentPart`
+- `ToolApprovalResponsePart(approvalID string, approved bool, reason string) ContentPart`
+- `ProviderExecutedToolApprovalResponsePart(approvalID string, approved bool, reason string) ContentPart`
+
+These helpers exist to keep producer call sites readable; the underlying flat `ContentPart` struct remains usable as a literal where needed.
+
+#### Scenario: TextPart shape
+- **WHEN** `TextPart("hello")` is called
+- **THEN** it SHALL return `ContentPart{Type: ContentPartTypeText, Text: "hello"}`
+
+#### Scenario: FilePart shape
+- **WHEN** `FilePart("image/png", DataContent{URL: "..."})` is called
+- **THEN** it SHALL return `ContentPart{Type: ContentPartTypeFile, MediaType: "image/png", Data: <pointer to the given DataContent>}`
+
+#### Scenario: ToolCallPart shape
+- **WHEN** `ToolCallPart("call_1", "fetch", json.RawMessage(`{"q":"x"}`))` is called
+- **THEN** it SHALL return a `ContentPart` with `Type: ContentPartTypeToolCall`, `ToolCallID: "call_1"`, `ToolName: "fetch"`, and `Input` carrying the given JSON
+
+#### Scenario: ToolResultPart shape
+- **WHEN** `ToolResultPart("call_1", "fetch", &ToolResultOutput{Type: ToolOutputText, Text: "sunny"})` is called
+- **THEN** it SHALL return a `ContentPart` with `Type: ContentPartTypeToolResult`, `ToolCallID`, `ToolName`, and `Output` populated
+
+#### Scenario: ToolApprovalRequestPart shape
+- **WHEN** `ToolApprovalRequestPart("apr_1", "call_1", false)` is called
+- **THEN** it SHALL return a `ContentPart` with `Type: ContentPartTypeToolApprovalRequest`, `ApprovalID: "apr_1"`, `ToolCallID: "call_1"`, and no approval decision fields populated
+
+### Requirement: Role-text shortcut helpers
+
+The `provider` package SHALL provide ergonomic shortcuts for the common case of a role-only message carrying a single text part:
+
+- `UserText(text string) Message` -- equivalent to `NewUserMessage(TextPart(text))`
+- `AssistantText(text string) Message` -- equivalent to `NewAssistantMessage(TextPart(text))`
+
+`NewSystemMessage` already serves the system-role text shortcut role.
+
+#### Scenario: UserText shape
+- **WHEN** `UserText("hello")` is called
+- **THEN** it SHALL return `Message{Role: RoleUser, Content: []ContentPart{TextPart("hello")}}`
+
+#### Scenario: AssistantText shape
+- **WHEN** `AssistantText("hi back")` is called
+- **THEN** it SHALL return `Message{Role: RoleAssistant, Content: []ContentPart{TextPart("hi back")}}`
+
+### Requirement: ToolMessageContentPart sealed interface
+
+The `ToolMessageContentPart` sealed interface SHALL no longer exist. Tool messages carry `[]ContentPart` like every other role; producers SHALL populate only `ContentPartTypeToolResult` and `ContentPartTypeToolApprovalResponse` parts inside a tool-role `Message.Content`. Producer-side validation lives in the orchestration layer; the wire MUST trust the `Type` discriminator on each part.
+
+#### Scenario: Tool message content uses flat ContentPart
+- **WHEN** a tool-role `Message` is constructed
+- **THEN** its `Content` SHALL be `[]ContentPart`, with each part's `Type` set to `ContentPartTypeToolResult` or `ContentPartTypeToolApprovalResponse`
+
+#### Scenario: ToolMessageContentPart removed
+- **WHEN** the `provider` package is inspected
+- **THEN** the identifier `ToolMessageContentPart` SHALL NOT exist
+
+### Requirement: ToolMessage content type expansion
+
+`ToolMessage` SHALL no longer exist as a distinct type. Tool-role messages SHALL be expressed as `Message{Role: RoleTool, Content: []ContentPart}`. The flat `ContentPart` MUST carry any of the previously-allowed shapes (tool result, tool approval response) discriminated by `Type`. Mixed content (both tool-result and tool-approval-response parts) in the same message SHALL be valid.
+
+#### Scenario: Tool-role message with mixed content
+- **WHEN** a tool-role `Message` is constructed with both a tool-result `ContentPart` and a tool-approval-response `ContentPart`
+- **THEN** both parts SHALL be valid in the same `Content` slice
+
+#### Scenario: Tool-role message with only tool results
+- **WHEN** a tool-role `Message` is constructed with only tool-result `ContentPart` entries
+- **THEN** the message SHALL be valid
+
+### Requirement: ImageContentPart removal
+
+The provider package SHALL NOT define `ImageContentPart` (already removed in the prior content-model expansion). With this change the `UserContentPart` interface SHALL also no longer exist. Image content MUST be expressed as `ContentPart{Type: ContentPartTypeFile, MediaType: "image/...", Data: ...}` in user-role messages.
+
+#### Scenario: Image as file-typed ContentPart
+- **WHEN** image content appears in a user-role message
+- **THEN** it SHALL be expressed as `ContentPart{Type: ContentPartTypeFile, Data: &DataContent{...}, MediaType: "image/png"}`
+
+### Requirement: CallOptions.Prompt is wire-serializable
+
+`CallOptions.Prompt` SHALL be tagged `json:"prompt,omitempty"` (not `json:"-"`). Its element type SHALL be the flat `Message` struct. The field SHALL round-trip losslessly through `encoding/json`.
+
+#### Scenario: Prompt JSON tag
+- **WHEN** the `CallOptions` struct is inspected
+- **THEN** the `Prompt` field SHALL carry `json:"prompt,omitempty"` (not `json:"-"`)
+
+#### Scenario: Prompt round-trip
+- **WHEN** a `CallOptions` with a non-empty `Prompt` carrying every role is marshaled and unmarshaled
+- **THEN** every message and content part SHALL be preserved
+
+### Requirement: StreamPart carries APICallError directly
+
+`StreamPart` SHALL include a field `APICallError *APICallError` (`json:"apiCallError,omitempty"`) populated only when `Type == PartError`. The previous `Error error` field SHALL be removed. Producers SHALL wrap any error into an `*APICallError` before emitting a `PartError` event so the retryability bit and HTTP status reach consumers across any boundary (including the wire).
+
+#### Scenario: Error event carries APICallError
+- **WHEN** a provider emits a stream-error event
+- **THEN** it SHALL emit `StreamPart{Type: PartError, APICallError: &APICallError{...}}` with `IsRetryable`, `StatusCode`, `Message`, `ResponseBody`, and `Data` populated as appropriate
+
+#### Scenario: Removed Error field
+- **WHEN** the `StreamPart` struct is inspected
+- **THEN** it SHALL NOT have an `Error error` field
+
+### Requirement: PartCustom stream part constant
+
+The provider package SHALL define `PartCustom StreamPartType = "custom"` as a stream part type constant. `StreamPart` SHALL include a `Kind string` field populated when `Type` is `PartCustom`. With this change the constant and field are unchanged; the stream part as a whole MUST round-trip losslessly through JSON.
+
+#### Scenario: Custom content in stream
+- **WHEN** a provider emits a `StreamPart{Type: PartCustom, Kind: "anthropic.cache-control"}`
+- **THEN** the stream part SHALL carry the `Kind` field with the custom content identifier
+
+### Requirement: PartReasoningFile stream part constant
+
+The provider package SHALL define `PartReasoningFile StreamPartType = "reasoning-file"` as a stream part type constant. `PartFile` and `PartReasoningFile` SHALL use `StreamPart.Data *StreamFileData` with the same generated-file data contract.
+
+#### Scenario: Reasoning file in stream round-trips
+- **WHEN** a provider emits a `PartReasoningFile` with inline or URL-valued `Data` and a `MediaType`, and the part is JSON round-tripped
+- **THEN** the decoded part SHALL preserve `Type`, the data variant and value, and `MediaType`
+
+### Requirement: Generated stream file data matches LanguageModelV4
+
+`StreamFileData` SHALL represent exactly the generated-file variants accepted by upstream `LanguageModelV4`: inline bytes or base64 data, and a URL. It SHALL NOT admit the prompt-only `reference` or `text` variants. `StreamPart.Data` SHALL encode inline data as `{"type":"data","data":<base64>}` and URLs as `{"type":"url","url":...}` for both `PartFile` and `PartReasoningFile`.
+
+#### Scenario: Inline stream file data round-trips
+- **WHEN** either generated stream file type carries inline bytes or base64 data
+- **THEN** the wire SHALL contain the upstream `data` tagged variant and decoding SHALL preserve the payload
+
+#### Scenario: URL stream file data round-trips
+- **WHEN** either generated stream file type carries `https://example.com/image.png`
+- **THEN** the wire SHALL contain `{"type":"url","url":"https://example.com/image.png"}` and decoding SHALL preserve the URL
+
+#### Scenario: Empty inline stream file data round-trips
+- **WHEN** either generated stream file type carries an inline data variant with an empty payload
+- **THEN** the `data` discriminator and empty payload SHALL survive encoding and decoding
+
+#### Scenario: Prompt-only variants are rejected by the stream file type
+- **WHEN** `StreamFileData` directly decodes a `reference` or `text` tagged variant
+- **THEN** decoding SHALL return an unsupported-variant error
+
+#### Scenario: Missing inline data is rejected without terminating a stream
+- **WHEN** `StreamFileData` directly decodes `{"type":"data"}` without the required `data` property
+- **THEN** direct decoding SHALL fail, while `StreamPart` response decoding SHALL remain lenient and leave the unrepresentable file data unset
+
+#### Scenario: Reasoning files propagate through orchestration
+- **WHEN** `StreamText` receives interleaved reasoning text and `PartReasoningFile` events
+- **THEN** its public reasoning result SHALL preserve both variants in provider order, emit a reasoning-file text stream part, retain the part in response messages and step content, and emit a `reasoning-file` UI chunk
+
+#### Scenario: Public content preserves generated-file order and metadata
+- **WHEN** regular files, text, reasoning files, tools, or sources are interleaved in provider output
+- **THEN** `StepResult.Content` SHALL preserve recorded provider order for those parts and regular/reasoning file content SHALL retain provider metadata
+
+### Requirement: GenerateContentPart Kind field
+
+`GenerateContentPart` SHALL include a `Kind string` field for `Type: "custom"` content in non-streaming generate results. The `Kind` field SHALL also be used for `Type: "reasoning-file"` content. The field MUST be JSON-serializable (`json:"kind,omitempty"`) and round-trip losslessly through the wire.
+
+#### Scenario: Custom content in generate result
+- **WHEN** a non-streaming generate result contains custom content
+- **THEN** the `GenerateContentPart` SHALL have `Type: "custom"` and `Kind` set to the custom content identifier
+
+#### Scenario: Reasoning file in generate result
+- **WHEN** a non-streaming generate result contains a reasoning file
+- **THEN** the `GenerateContentPart` SHALL have `Type: "reasoning-file"` with `MediaType` and `Data` fields populated
+
+### Requirement: StreamPart tool approval fields
+
+`StreamPart` SHALL include `ApprovalID string` for `PartToolApprovalRequest` parts. `PartToolApprovalRequest` SHALL carry the approval request ID and the tool call ID that needs approval, matching the current upstream V4 stream part. The provider package SHALL NOT define `PartToolApprovalResult`, because current upstream V4 does not define a `tool-approval-result` stream part.
+
+User decisions SHALL be represented as tool-message content parts with type `ContentPartTypeToolApprovalResponse`, not as provider stream parts.
+
+#### Scenario: Tool approval request in stream
+- **WHEN** a provider emits `StreamPart{Type: PartToolApprovalRequest, ApprovalID: "apr_123", ToolCallID: "call_456"}`
+- **THEN** the stream part SHALL carry both the approval ID and the tool call ID
+
+#### Scenario: Tool approval result stream part is absent
+- **WHEN** the provider stream part constants are inspected
+- **THEN** there SHALL NOT be a `PartToolApprovalResult` constant
+
+#### Scenario: Approval decision uses tool message content
+- **WHEN** a caller records an approval decision for an approval ID
+- **THEN** the decision SHALL be represented as `ContentPart{Type: ContentPartTypeToolApprovalResponse, ApprovalID: <id>, Approved: <bool>}` in a tool-role message
+
+### Requirement: Assistant approval request content part
+
+The `provider` package SHALL define `ContentPartTypeToolApprovalRequest = "tool-approval-request"` for assistant-role model messages. A tool approval request content part SHALL carry `ApprovalID`, `ToolCallID`, and optional automatic-approval metadata. It SHALL be valid in assistant-role messages so orchestration can persist approval requests across the stateless two-call flow.
+
+Provider prompt conversion SHALL use assistant approval request parts only for local correlation and missing-tool-result checks. Local approval request parts SHALL NOT be forwarded to provider APIs that do not accept them.
+
+#### Scenario: Approval request content round-trips
+- **WHEN** a `ContentPart` with `Type: ContentPartTypeToolApprovalRequest`, approval ID, and tool call ID is JSON round-tripped
+- **THEN** the decoded value SHALL preserve the type, approval ID, and tool call ID
+
+#### Scenario: Assistant message can carry approval request
+- **WHEN** an assistant-role `provider.Message` is constructed with a tool call part followed by a tool approval request part
+- **THEN** both parts SHALL be valid in the message content slice
+
+#### Scenario: Local approval request is stripped before provider call
+- **WHEN** provider request conversion receives an assistant message containing `ContentPartTypeToolApprovalRequest`
+- **THEN** the converted provider API prompt SHALL omit that approval request part
+
+#### Scenario: Provider-executed approval response is preserved
+- **WHEN** provider request conversion receives a tool-role message containing a provider-executed `ContentPartTypeToolApprovalResponse`
+- **THEN** the converted provider API prompt SHALL preserve the approval response when the provider supports it
+
+### Requirement: Root content includes approval requests
+
+The root SDK content model used by `StepResult.Content`, `StreamTextResult.Content`, and `GenerateTextResult.Content` SHALL include a tool approval request content variant. The variant SHALL carry approval ID, tool call ID, tool name, input, dynamic flag, title, provider-executed flag, and automatic-approval metadata when available.
+
+#### Scenario: Step content records approval request
+- **WHEN** a step emits an approval request for a tool call
+- **THEN** `StepResult.Content` SHALL contain a tool approval request content value correlated with the same tool call ID
+
+#### Scenario: Approval request content serializes for consumers
+- **WHEN** a result containing approval request content is marshaled to JSON by a consumer
+- **THEN** the approval ID and tool call ID SHALL be available in the serialized representation
+
+### Requirement: Provider-emitted approval requests are surfaced by orchestration
+
+When a provider emits `PartToolApprovalRequest`, orchestration SHALL surface it as a stream approval request and SHALL record it in step content. The request SHALL be associated with the previously emitted provider-executed tool call for the same tool call ID when one exists.
+
+#### Scenario: Provider approval request becomes stream event
+- **WHEN** a provider stream includes `PartToolApprovalRequest` for a provider-executed tool call ID
+- **THEN** `StreamText` SHALL emit a tool approval request stream part with the same approval ID and tool call ID
+
+#### Scenario: Provider approval request becomes content
+- **WHEN** a provider approval request is processed in a completed step
+- **THEN** the step content SHALL include a tool approval request content value for that approval ID
+
+#### Scenario: Unknown provider approval tool call is still surfaced
+- **WHEN** a provider emits `PartToolApprovalRequest` before orchestration has seen the matching tool call
+- **THEN** `StreamText` SHALL still emit the approval request with the provided approval ID and tool call ID
+- **AND** it SHALL NOT synthesize a local tool execution for that provider-executed request
+
+### Requirement: ToolResultContentPart implements AssistantContentPart
+
+Neither `ToolResultContentPart` nor `AssistantContentPart` SHALL exist after the flatten. The equivalent rule under the flat model: a `ContentPart` with `Type: ContentPartTypeToolResult` MUST be valid in an assistant-role `Message.Content` slice. This shape is used for provider-executed tool results carried back into multi-turn conversations; tooling SHALL accept it without warning.
+
+#### Scenario: Tool-result ContentPart in assistant message
+- **WHEN** an assistant-role `Message` is constructed with `ContentPart{Type: ContentPartTypeToolResult}`
+- **THEN** the message SHALL be valid; tooling SHALL accept the assistant-role tool-result form
+
+### Requirement: Warning type rename
+
+The `Warning.Type` field SHALL use `"unsupported"` (not `"unsupported-setting"`) for features the model does not support. All existing code producing `"unsupported-setting"` warnings SHALL be updated.
+
+#### Scenario: Warning type value
+- **WHEN** a provider emits a warning for an unsupported feature
+- **THEN** `Warning.Type` SHALL be `"unsupported"` (not `"unsupported-setting"`)
+
+### Requirement: Warning compatibility variant
+
+The `Warning` type SHALL support a `"compatibility"` type value for features used in a degraded/compatibility mode. The `"compatibility"` variant uses the same fields as `"unsupported"` (`Feature` and optional `Details`).
+
+#### Scenario: Compatibility warning
+- **WHEN** a provider uses a feature in compatibility mode
+- **THEN** it SHALL emit a `Warning{Type: "compatibility", Feature: "featureName", Details: "explanation"}`
+
+### Requirement: Warning type constants
+
+The provider package SHALL define string constants for warning types: `WarnUnsupported = "unsupported"`, `WarnCompatibility = "compatibility"`, `WarnOther = "other"`.
+
+#### Scenario: Warning constants used instead of string literals
+- **WHEN** code creates a `Warning`
+- **THEN** it SHALL use the defined constants for the `Type` field
+
+### Requirement: CallOptions.Reasoning field
+
+`CallOptions` SHALL include a `Reasoning *string` field for controlling model reasoning effort. The valid values SHALL be: `"provider-default"`, `"none"`, `"minimal"`, `"low"`, `"medium"`, `"high"`, `"xhigh"`. The provider package SHALL define string constants for these values.
+
+#### Scenario: Reasoning field set
+- **WHEN** `CallOptions` is constructed with `Reasoning` set to a pointer to `"high"`
+- **THEN** the field SHALL carry the reasoning effort level for the provider to interpret
+
+#### Scenario: Reasoning field nil
+- **WHEN** `CallOptions` is constructed without setting `Reasoning`
+- **THEN** the field SHALL be `nil`, indicating no reasoning preference
+
+### Requirement: Anthropic provider ImageContentPart removal
+
+The Anthropic provider's user-content conversion SHALL handle image media types on file-typed `ContentPart` (base64 or URL sources). The previous `case provider.FileContentPart` type-switch branch SHALL be replaced with discriminator dispatch on `cp.Type == ContentPartTypeFile`.
+
+#### Scenario: Image via file-typed ContentPart in user message
+- **WHEN** the Anthropic conversion receives a `ContentPart{Type: ContentPartTypeFile, MediaType: "image/jpeg", Data: &DataContent{Base64: "..."}}`
+- **THEN** the provider SHALL produce a `BetaImageBlockParam` with the image source
+
+#### Scenario: Image via URL ContentPart
+- **WHEN** the Anthropic conversion receives a `ContentPart{Type: ContentPartTypeFile, MediaType: "image/png", Data: &DataContent{URL: "..."}}`
+- **THEN** the provider SHALL produce a `BetaImageBlockParam` with a URL source
+
+#### Scenario: Non-image file ContentPart unchanged
+- **WHEN** the Anthropic conversion receives a `ContentPart{Type: ContentPartTypeFile, MediaType: "application/pdf"}`
+- **THEN** the provider SHALL produce a `BetaRequestDocumentBlockParam`
+
+### Requirement: Anthropic provider unsupported content warnings
+
+The Anthropic provider's assistant-content conversion SHALL produce a warning and skip `ContentPart` values whose `Type` it does not support natively. Specifically, `ContentPartTypeCustom` and `ContentPartTypeReasoningFile` parts MUST emit a `Warning{Type: "unsupported"}` and be omitted from the converted assistant content.
+
+#### Scenario: Custom-typed ContentPart in assistant message to Anthropic
+- **WHEN** the conversion encounters a `ContentPart{Type: ContentPartTypeCustom}`
+- **THEN** the provider SHALL add a warning with `Type: "unsupported"` and skip the part
+
+#### Scenario: Reasoning-file-typed ContentPart in assistant message to Anthropic
+- **WHEN** the conversion encounters a `ContentPart{Type: ContentPartTypeReasoningFile}`
+- **THEN** the provider SHALL add a warning with `Type: "unsupported"` and skip the part

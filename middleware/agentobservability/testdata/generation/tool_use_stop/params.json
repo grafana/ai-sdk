@@ -1,0 +1,34 @@
+{
+  "prompt": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "look up the temperature"
+        }
+      ]
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "name": "get_temperature",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "city": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "city"
+        ]
+      }
+    }
+  ],
+  "toolChoice": {
+    "type": "required"
+  },
+  "maxOutputTokens": 1024
+}

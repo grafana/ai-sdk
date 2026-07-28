@@ -1,0 +1,15 @@
+{"type":"response.created","sequence_number":0,"response":{"id":"resp_r1","object":"response","created_at":1741290000,"status":"in_progress","model":"o3-2025-04-16","output":[]}}
+{"type":"response.output_item.added","sequence_number":1,"output_index":0,"item":{"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":null}}
+{"type":"response.reasoning_summary_part.added","sequence_number":2,"item_id":"rs_1","output_index":0,"summary_index":0,"part":{"type":"summary_text","text":""}}
+{"type":"response.reasoning_summary_text.delta","sequence_number":3,"item_id":"rs_1","output_index":0,"summary_index":0,"delta":"The user asks"}
+{"type":"response.reasoning_summary_text.delta","sequence_number":4,"item_id":"rs_1","output_index":0,"summary_index":0,"delta":" a simple sum."}
+{"type":"response.reasoning_summary_text.done","sequence_number":5,"item_id":"rs_1","output_index":0,"summary_index":0,"text":"The user asks a simple sum."}
+{"type":"response.reasoning_summary_part.done","sequence_number":6,"item_id":"rs_1","output_index":0,"summary_index":0,"part":{"type":"summary_text","text":"The user asks a simple sum."}}
+{"type":"response.output_item.done","sequence_number":7,"output_index":0,"item":{"type":"reasoning","id":"rs_1","summary":[{"type":"summary_text","text":"The user asks a simple sum."}],"encrypted_content":null}}
+{"type":"response.output_item.added","sequence_number":8,"output_index":1,"item":{"type":"message","id":"msg_r1","status":"in_progress","role":"assistant","content":[]}}
+{"type":"response.content_part.added","sequence_number":9,"item_id":"msg_r1","output_index":1,"content_index":0,"part":{"type":"output_text","text":"","annotations":[]}}
+{"type":"response.output_text.delta","sequence_number":10,"item_id":"msg_r1","output_index":1,"content_index":0,"delta":"4","logprobs":[]}
+{"type":"response.output_text.done","sequence_number":11,"item_id":"msg_r1","output_index":1,"content_index":0,"text":"4","logprobs":[]}
+{"type":"response.content_part.done","sequence_number":12,"item_id":"msg_r1","output_index":1,"content_index":0,"part":{"type":"output_text","text":"4","annotations":[]}}
+{"type":"response.output_item.done","sequence_number":13,"output_index":1,"item":{"type":"message","id":"msg_r1","status":"completed","role":"assistant","content":[{"type":"output_text","text":"4","annotations":[]}]}}
+{"type":"response.completed","sequence_number":14,"response":{"id":"resp_r1","object":"response","created_at":1741290000,"status":"completed","model":"o3-2025-04-16","output":[{"type":"reasoning","id":"rs_1","summary":[{"type":"summary_text","text":"The user asks a simple sum."}],"encrypted_content":null},{"type":"message","id":"msg_r1","status":"completed","role":"assistant","content":[{"type":"output_text","text":"4","annotations":[]}]}],"usage":{"input_tokens":20,"input_tokens_details":{"cached_tokens":0},"output_tokens":10,"output_tokens_details":{"reasoning_tokens":6},"total_tokens":30}}}

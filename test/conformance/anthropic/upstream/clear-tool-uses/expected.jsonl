@@ -1,0 +1,36 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"text-start","id":"0"}
+{"type":"text-delta","id":"0","delta":"\n\nHere's a comparison of the weather"}
+{"type":"text-delta","id":"0","delta":" in"}
+{"type":"text-delta","id":"0","delta":" both"}
+{"type":"text-delta","id":"0","delta":" cities:\n\n**San Francisco:**"}
+{"type":"text-delta","id":"0","delta":"\n- Temperature: 72°F"}
+{"type":"text-delta","id":"0","delta":"\n- Condition: Sunny\n\n**"}
+{"type":"text-delta","id":"0","delta":"New York:**\n- Temperature: "}
+{"type":"text-delta","id":"0","delta":"65°F"}
+{"type":"text-delta","id":"0","delta":"\n- Condition: Cloudy"}
+{"type":"text-delta","id":"0","delta":"\n\n**"}
+{"type":"text-delta","id":"0","delta":"Summary"}
+{"type":"text-delta","id":"0","delta":":**\nSan"}
+{"type":"text-delta","id":"0","delta":" Francisco is warmer than New York by"}
+{"type":"text-delta","id":"0","delta":" 7"}
+{"type":"text-delta","id":"0","delta":" "}
+{"type":"text-delta","id":"0","delta":"degrees (72°"}
+{"type":"text-delta","id":"0","delta":"F vs 65°F)"}
+{"type":"text-delta","id":"0","delta":" and has better"}
+{"type":"text-delta","id":"0","delta":" weather conditions with"}
+{"type":"text-delta","id":"0","delta":" sunny skies,"}
+{"type":"text-delta","id":"0","delta":" while New York is experiencing"}
+{"type":"text-delta","id":"0","delta":" cloudy conditions."}
+{"type":"text-delta","id":"0","delta":" If"}
+{"type":"text-delta","id":"0","delta":" you're"}
+{"type":"text-delta","id":"0","delta":" looking"}
+{"type":"text-delta","id":"0","delta":" for warm"}
+{"type":"text-delta","id":"0","delta":" an"}
+{"type":"text-delta","id":"0","delta":"d sunny weather, San Francisco is"}
+{"type":"text-delta","id":"0","delta":" the better choice right"}
+{"type":"text-delta","id":"0","delta":" now."}
+{"type":"text-end","id":"0"}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"stop"}

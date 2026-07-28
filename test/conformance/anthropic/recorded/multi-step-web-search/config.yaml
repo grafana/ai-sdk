@@ -1,0 +1,21 @@
+model: claude-sonnet-4-5-20250929
+prompt: "Search the web for when Go programming language was first released, then call report_answer with the year."
+stopWhenStepCount: 2
+providerTools:
+  web_search:
+    id: anthropic.web_search_20250305
+    args:
+      maxUses: 1
+tools:
+  report_answer:
+    description: "Report the final answer"
+    inputSchema:
+      type: object
+      properties:
+        answer:
+          type: string
+          description: "The answer to report"
+      required:
+        - answer
+    mockResults:
+      - acknowledged: true

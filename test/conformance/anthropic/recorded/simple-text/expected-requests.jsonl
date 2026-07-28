@@ -1,0 +1,1 @@
+{"body":{"max_tokens":64000,"messages":[{"content":[{"text":"Say hello in exactly 3 words.","type":"text"}],"role":"user"}],"model":"claude-sonnet-4-5-20250929","stream":true},"headers":{"anthropic-version":"2023-06-01","content-type":"application/json","x-api-key":"<redacted>"},"method":"POST","path":"/v1/messages"}

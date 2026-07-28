@@ -1,0 +1,18 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"text-start","id":"0"}
+{"type":"text-delta","id":"0","delta":"Let"}
+{"type":"text-delta","id":"0","delta":" me count the \""}
+{"type":"text-delta","id":"0","delta":"r\"s in \""}
+{"type":"text-delta","id":"0","delta":"strawberry\":\n\ns-t-"}
+{"type":"text-delta","id":"0","delta":"**"}
+{"type":"text-delta","id":"0","delta":"r**-a-w-b"}
+{"type":"text-delta","id":"0","delta":"-e-**"}
+{"type":"text-delta","id":"0","delta":"r**-**"}
+{"type":"text-delta","id":"0","delta":"r**-y\n\nThere"}
+{"type":"text-delta","id":"0","delta":" are **3"}
+{"type":"text-delta","id":"0","delta":"** r"}
+{"type":"text-delta","id":"0","delta":"'s in \"strawberry.\""}
+{"type":"text-end","id":"0"}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"stop"}

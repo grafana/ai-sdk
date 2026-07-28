@@ -1,0 +1,34 @@
+model: gpt-5-codex
+providerOptions:
+  openai:
+    store: false
+messages:
+  - role: user
+    content: List files.
+  - role: assistant
+    content:
+      - type: tool-call
+        toolCallId: call_local
+        toolName: terminal
+        input:
+          action:
+            type: exec
+            command:
+              - ls
+        providerOptions:
+          openai:
+            itemId: lsh_history
+  - role: tool
+    content:
+      - type: tool-result
+        toolCallId: call_local
+        toolName: terminal
+        output:
+          type: json
+          value:
+            output: index.html
+  - role: user
+    content: Continue.
+providerTools:
+  terminal:
+    id: openai.local_shell

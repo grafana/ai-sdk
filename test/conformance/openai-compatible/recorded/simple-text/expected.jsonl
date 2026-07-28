@@ -1,0 +1,8 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"text-start","id":"txt-0"}
+{"type":"text-delta","id":"txt-0","delta":"Hello"}
+{"type":"text-delta","id":"txt-0","delta":" from OpenAI"}
+{"type":"text-end","id":"txt-0"}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"stop"}

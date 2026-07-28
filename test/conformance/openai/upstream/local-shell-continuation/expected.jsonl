@@ -1,0 +1,7 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"reasoning-start","id":"rs_68da7fd65a3481948bbb35ff2c79c6c20faf5df54b42d9a6:0","providerMetadata":{"openai":{"itemId":"rs_68da7fd65a3481948bbb35ff2c79c6c20faf5df54b42d9a6","reasoningEncryptedContent":null}}}
+{"type":"reasoning-end","id":"rs_68da7fd65a3481948bbb35ff2c79c6c20faf5df54b42d9a6:0","providerMetadata":{"openai":{"itemId":"rs_68da7fd65a3481948bbb35ff2c79c6c20faf5df54b42d9a6","reasoningEncryptedContent":null}}}
+{"type":"tool-input-available","toolCallId":"call_h3nm8hUG0KO9tVNuRACkL1ri","toolName":"terminal","input":{"action":{"type":"exec","command":["ls","-a","~"],"env":{}}},"providerMetadata":{"openai":{"itemId":"lsh_68da7fd99b3c8194bd624b18c0c0851b0faf5df54b42d9a6"}}}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"stop"}

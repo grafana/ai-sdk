@@ -1,0 +1,26 @@
+model: claude-sonnet-4-5-20250929
+prompt: "I'm planning a trip. Check the weather in both Barcelona and Rome, then recommend which city to visit this weekend."
+stopWhenStepCount: 2
+providerOptions:
+  anthropic:
+    thinking:
+      type: enabled
+      budgetTokens: 5000
+tools:
+  get_weather:
+    description: "Get weather forecast for a city"
+    inputSchema:
+      type: object
+      properties:
+        city:
+          type: string
+          description: "City name"
+      required:
+        - city
+    mockResults:
+      - temperature: 32
+        conditions: "sunny"
+        weekend_forecast: "clear skies, 30-34C"
+      - temperature: 29
+        conditions: "partly cloudy"
+        weekend_forecast: "scattered showers, 25-30C"

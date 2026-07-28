@@ -1,0 +1,41 @@
+{
+  "model": {
+    "provider": "anthropic",
+    "name": "claude-sonnet-4-5"
+  },
+  "response_id": "msg_max",
+  "response_model": "claude-sonnet-4-5",
+  "input": [
+    {
+      "role": "user",
+      "parts": [
+        {
+          "kind": "text",
+          "text": "write a long essay",
+          "metadata": {}
+        }
+      ]
+    }
+  ],
+  "output": [
+    {
+      "role": "assistant",
+      "parts": [
+        {
+          "kind": "text",
+          "text": "An essay about life is, in many ways",
+          "metadata": {}
+        }
+      ]
+    }
+  ],
+  "max_tokens": 50,
+  "usage": {
+    "input_tokens": 5,
+    "output_tokens": 50,
+    "total_tokens": 55
+  },
+  "stop_reason": "max_tokens",
+  "started_at": "0001-01-01T00:00:00Z",
+  "completed_at": "0001-01-01T00:00:00Z"
+}

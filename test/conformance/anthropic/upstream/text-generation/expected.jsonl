@@ -1,0 +1,12 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"text-start","id":"0"}
+{"type":"text-delta","id":"0","delta":"Hello"}
+{"type":"text-delta","id":"0","delta":"! I"}
+{"type":"text-delta","id":"0","delta":"'m doing well, thank you for asking"}
+{"type":"text-delta","id":"0","delta":". How are you doing today?"}
+{"type":"text-delta","id":"0","delta":" Is"}
+{"type":"text-delta","id":"0","delta":" there anything I can help you with?"}
+{"type":"text-end","id":"0"}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"stop"}

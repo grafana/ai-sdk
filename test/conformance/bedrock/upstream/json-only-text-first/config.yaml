@@ -1,0 +1,11 @@
+# JSON response format on a model that requires the synthetic json tool.
+# The fixture mixes a text block followed by the json tool call that the
+# stream converter must collapse into the final text output.
+model: anthropic.claude-3-haiku-20240307-v1:0
+responseFormat:
+  type: json
+  schema:
+    type: object
+    properties:
+      result:
+        type: string

@@ -1,0 +1,17 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"tool-input-start","toolCallId":"toolu_01Dm4mCPXXv6XokkJ66KTcuA","toolName":"get_weather"}
+{"type":"tool-input-delta","toolCallId":"toolu_01Dm4mCPXXv6XokkJ66KTcuA","inputTextDelta":"{\"city\": \"Berlin"}
+{"type":"tool-input-delta","toolCallId":"toolu_01Dm4mCPXXv6XokkJ66KTcuA","inputTextDelta":"\"}"}
+{"type":"tool-input-available","toolCallId":"toolu_01Dm4mCPXXv6XokkJ66KTcuA","toolName":"get_weather","input":{"city":"Berlin"},"providerMetadata":{"anthropic":{"caller":{"type":"direct"}}}}
+{"type":"tool-output-available","toolCallId":"toolu_01Dm4mCPXXv6XokkJ66KTcuA","output":{"temperature":20,"conditions":"clear sky"},"providerMetadata":{"anthropic":{"caller":{"type":"direct"}}}}
+{"type":"finish-step"}
+{"type":"start-step"}
+{"type":"text-start","id":"0"}
+{"type":"text-delta","id":"0","delta":"{\""}
+{"type":"text-delta","id":"0","delta":"city\":\"Berlin\",\"temperature\":20,\"conditions\":\"clear sky\",\"recommendation\":\"Great weather for outdoor activities! The clear sk"}
+{"type":"text-delta","id":"0","delta":"ies and comfortable temperature are perfect for sightseeing or a walk in"}
+{"type":"text-delta","id":"0","delta":" the park.\"}"}
+{"type":"text-end","id":"0"}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"stop"}

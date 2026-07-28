@@ -1,0 +1,5 @@
+model: gpt-4o
+prompt: "Compute 6 times 7 with Python."
+providerTools:
+  code_interpreter:
+    id: openai.code_interpreter

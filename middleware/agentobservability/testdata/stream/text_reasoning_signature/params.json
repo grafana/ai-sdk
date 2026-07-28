@@ -1,0 +1,13 @@
+{
+  "prompt": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "2+2?"
+        }
+      ]
+    }
+  ]
+}

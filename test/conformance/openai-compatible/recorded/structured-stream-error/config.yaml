@@ -1,0 +1,3 @@
+model: test-model
+prompt: "Trigger a structured provider error."
+expectStreamError: true

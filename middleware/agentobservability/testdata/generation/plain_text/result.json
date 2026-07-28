@@ -1,0 +1,25 @@
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "It is sunny."
+    }
+  ],
+  "finishReason": {
+    "unified": "stop",
+    "raw": "end_turn"
+  },
+  "usage": {
+    "inputTokens": {
+      "total": 10
+    },
+    "outputTokens": {
+      "total": 20
+    }
+  },
+  "response": {
+    "id": "msg_plain",
+    "modelId": "claude-sonnet-4-5",
+    "timestamp": "0001-01-01T00:00:00Z"
+  }
+}

@@ -1,0 +1,2 @@
+model: gpt-4o
+prompt: "Say hello in exactly 3 words."

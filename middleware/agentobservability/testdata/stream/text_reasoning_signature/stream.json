@@ -1,0 +1,53 @@
+[
+  {
+    "type": "reasoning-start",
+    "id": "r0"
+  },
+  {
+    "type": "reasoning-delta",
+    "id": "r0",
+    "delta": "let me think"
+  },
+  {
+    "type": "reasoning-delta",
+    "id": "r0",
+    "providerMetadata": {
+      "anthropic": {
+        "signature": "sig-abc"
+      }
+    }
+  },
+  {
+    "type": "reasoning-end",
+    "id": "r0"
+  },
+  {
+    "type": "text-start",
+    "id": "t0"
+  },
+  {
+    "type": "text-delta",
+    "id": "t0",
+    "delta": "4"
+  },
+  {
+    "type": "text-end",
+    "id": "t0"
+  },
+  {
+    "type": "finish",
+    "usage": {
+      "inputTokens": {
+        "total": 4
+      },
+      "outputTokens": {
+        "total": 2,
+        "reasoning": 1
+      }
+    },
+    "finishReason": {
+      "unified": "stop",
+      "raw": "end_turn"
+    }
+  }
+]

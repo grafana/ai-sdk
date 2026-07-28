@@ -1,0 +1,7 @@
+model: claude-sonnet-4-5-20250929
+prompt: "What is the result of 347 * 283? Think through it step by step."
+providerOptions:
+  anthropic:
+    thinking:
+      type: enabled
+      budgetTokens: 5000

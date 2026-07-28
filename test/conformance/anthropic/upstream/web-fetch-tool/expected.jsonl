@@ -1,0 +1,60 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"text-start","id":"0"}
+{"type":"text-delta","id":"0","delta":"I'll fetch the content"}
+{"type":"text-delta","id":"0","delta":" from that Wikipedia page to tell you what it's about."}
+{"type":"text-end","id":"0"}
+{"type":"tool-input-start","toolCallId":"srvtoolu_01VNMRfQny2LCrLKEdYaVcCe","toolName":"web_fetch","providerExecuted":true}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_01VNMRfQny2LCrLKEdYaVcCe","inputTextDelta":"{\"url\": "}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_01VNMRfQny2LCrLKEdYaVcCe","inputTextDelta":"\"https:/"}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_01VNMRfQny2LCrLKEdYaVcCe","inputTextDelta":"/en.wi"}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_01VNMRfQny2LCrLKEdYaVcCe","inputTextDelta":"kip"}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_01VNMRfQny2LCrLKEdYaVcCe","inputTextDelta":"ed"}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_01VNMRfQny2LCrLKEdYaVcCe","inputTextDelta":"ia.org/"}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_01VNMRfQny2LCrLKEdYaVcCe","inputTextDelta":"wiki/"}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_01VNMRfQny2LCrLKEdYaVcCe","inputTextDelta":"Maglemosian"}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_01VNMRfQny2LCrLKEdYaVcCe","inputTextDelta":"_culture\"}"}
+{"type":"tool-input-available","toolCallId":"srvtoolu_01VNMRfQny2LCrLKEdYaVcCe","toolName":"web_fetch","input":{"url":"https://en.wikipedia.org/wiki/Maglemosian_culture"},"providerExecuted":true}
+{"type":"tool-output-available","toolCallId":"srvtoolu_01VNMRfQny2LCrLKEdYaVcCe","output":{"type":"web_fetch_result","url":"https://en.wikipedia.org/wiki/Maglemosian_culture","retrievedAt":"2025-07-17T21:38:38.606000+00:00","content":{"type":"document","title":"Maglemosian culture","source":{"type":"text","mediaType":"text/plain","data":"This article needs additional citations for\n|\n![]() |\nThe\n|\n---|\nMaglemosian (c. 9000 – c. 6000 BC) is the name given to a [culture](https://en.wikipedia.org/wiki/Archaeological_culture) of the early [Mesolithic](https://en.wikipedia.org/wiki/Mesolithic) period in [Northern Europe](https://en.wikipedia.org/wiki/Northern_Europe). In [Scandinavia](https://en.wikipedia.org/wiki/Scandinavia), the culture was succeeded by the [Kongemose](https://en.wikipedia.org/wiki/Kongemose_culture) culture.\nThe name originates from the [Danish](https://en.wikipedia.org/wiki/Denmark) archeological site Maglemose, situated near [Gørlev](https://en.wikipedia.org/wiki/Gørlev) and [Høng](https://en.wikipedia.org/wiki/Høng) on western [Zealand](https://en.wikipedia.org/wiki/Zealand_(Denmark)), southwest of lake [Tissø](https://en.wikipedia.org/wiki/Tissø). Here the first settlement of the culture was excavated in 1900, by George Sarauw.[[1]](./Maglemosian_culture#cite_note-1) During the following century a long series of similar settlements were excavated from [England](https://en.wikipedia.org/wiki/England) to [Poland](https://en.wikipedia.org/wiki/Poland) and from [Skåne](https://en.wikipedia.org/wiki/Skåne) in [Sweden](https://en.wikipedia.org/wiki/Sweden) to northern [France](https://en.wikipedia.org/wiki/France).\nWhen the Maglemosian culture flourished, sea levels were much lower than now and what is now mainland Europe and Scandinavia were linked with Britain. The cultural period overlaps the end of the [last ice age](https://en.wikipedia.org/wiki/Weichselian_glaciation),[[2]](./Maglemosian_culture#cite_note-2) when the ice retreated and the glaciers melted. It was a long process and sea levels in [Northern Europe](https://en.wikipedia.org/wiki/Northern_Europe) did not reach current levels until almost 6000 BC, by which time they had inundated large territories previously inhabited by Maglemosian people. Therefore, there is hope that the emerging discipline of [underwater archaeology](https://en.wikipedia.org/wiki/Underwater_archaeology) may reveal interesting findings related to the Maglemosian culture in the future.\nThe Maglemosian people lived in forest and wetland environments, using fishing and hunting tools made from wood, bone, and flint [microliths](https://en.wikipedia.org/wiki/Microlith). It appears that they had domesticated the [dog](https://en.wikipedia.org/wiki/Dog).[[3]](./Maglemosian_culture#cite_note-3) Some may have lived settled lives, but most were nomadic.[[citation needed](https://en.wikipedia.org/wiki/Wikipedia:Citation_needed)]\nHuts made of bark have been preserved, in addition to tools made of [flint](https://en.wikipedia.org/wiki/Flint), [bone](https://en.wikipedia.org/wiki/Bone), and [horn](https://en.wikipedia.org/wiki/Horn_(anatomy)). A characteristic feature of the culture is the sharply edged [microliths](https://en.wikipedia.org/wiki/Microlith) of flintstone, used for spear and arrow heads.[[4]](./Maglemosian_culture#cite_note-4) Another notable feature is the [leister](https://en.wikipedia.org/wiki/Leister), a characteristic type of fishing spear, used for [gigging](https://en.wikipedia.org/wiki/Gigging).\nEra | Timespan |\n|\n---|\n![]() |\nThis section needs expansion. You can help by [adding to it](//en.wikipedia.org/w/index.php?title=Maglemosian_culture&action=edit§ion=). (January 2020)\n[↑](https://en.wikipedia.org/wiki/Maglemosian_culture#cite_ref-1)[Sarauw, G. F. L.](https://en.wikipedia.org/wiki/Georg_F.L._Sarauw)(1903).[\"En Stenaldersboplads i Maglemose ved Mullerup – sammenholdt med beslægtede fund\"](https://books.google.com/books?id=n5VePAAACAAJ)[A Stone Age settlement in Maglemose near Mullerup – compared with related finds. Resumé: Études sur le premier âge de la pierre du Nord de l'Europe]. Aarbøger for Nordisk Oldkyndighed og Historie (in Danish). 1903. A[German](https://en.wikipedia.org/wiki/German_language)translation appeared in Prähistorische Zeitschrift in 1911[↑](https://en.wikipedia.org/wiki/Maglemosian_culture#cite_ref-2)Jessen, Catherine A.; Pedersen, Kristoffer Buck; Christensen, Charlie; Olsen, Jesper; Mortensen, Morten Fischer; Hansen, Keld Møller (2015).[\"Early Maglemosian culture in the Preboreal landscape: Archaeology and vegetation from the earliest Mesolithic site in Denmark at Lundby Mose, Sjælland\"](https://doi.org/10.1016%2Fj.quaint.2014.03.056). Quaternary International. 378: 73–87.[Bibcode](https://en.wikipedia.org/wiki/Bibcode_(identifier)):[2015QuInt.378...73J](https://ui.adsabs.harvard.edu/abs/2015QuInt.378...73J).[doi](https://en.wikipedia.org/wiki/Doi_(identifier)):[10.1016/j.quaint.2014.03.056](https://doi.org/10.1016%2Fj.quaint.2014.03.056).[↑](https://en.wikipedia.org/wiki/Maglemosian_culture#cite_ref-3)[\"Stone Age remains are Britain's earliest house\"](http://www.manchester.ac.uk/discover/news/stone-age-remains-are-britains-earliest-house/). Retrieved 28 January 2018.[↑](https://en.wikipedia.org/wiki/Maglemosian_culture#cite_ref-4)[Med bue, pil og fiskespyd](http://www.denstoredanske.dk/Danmarks_Oldtid/Stenalder/De_vejl%C3%B8se_skove_9.500-6.400_f.Kr/Med_bue,_pil_og_fiskespyd)Gyldendals Open Encyclopedia (in Danish). Pictures of some Maglemosian tools.\n- Anders Fischer: \"Submerged Stone Age – Danish Examples and North sea potential\"; i: N.C.Flemming: Submarine Prehistory and Archaeology of the North Sea: research priorities and collaboration with industry. CBA Research Report 141, 2004, s. 23ff\nDanish-language texts\n- Geoffrey Bibby: Spadens vidnedsbyrd; Wormanium 1980,\n[ISBN](https://en.wikipedia.org/wiki/ISBN_(identifier))[87-8516-071-7](https://en.wikipedia.org/wiki/Special:BookSources/87-8516-071-7)s. 109f - Gyldendal og Politikens Danmarkshistorie (red. af Olaf Olsen); Bind 1: I begyndelsen. Fra de ældste tider til ca. år 200 f.Kr. (ved Jørgen Jensen); 1988, s. 47ff\n- Jørgen Jensen: Danmarks Oldtid. Stenalder, 13.000–2.000 f.Kr.; Gyldendal 2001,\n[ISBN](https://en.wikipedia.org/wiki/ISBN_(identifier))[87-00-49038-5](https://en.wikipedia.org/wiki/Special:BookSources/87-00-49038-5)s. 86ff - Anders Fischer: \"En håndfuld flint\", Skalk nr. 5, 1973, s. 8ff\n- Anders Fischer: \"Mennesket og havet i ældre stenalder\"; i: Carin Bunte (red): Arkeologi och Naturvetenskab, Lund 2005, s. 276ff\n- Kim Aaris-Sørensen: \"Uroksejagt\", Skalk nr. 6, 1984, s. 10ff\n- Ole Grøn: \"Teltning\", Skalk nr. 1, 1988, s. 13f\n- Søren A. Sørensen: \"Hytte ved sø\", Skalk nr. 3, 1988, s. 25ff\n- Peter Vang Petersen: \"Bjørnejagt\", Skalk nr. 5, 1991, s. 3ff\n- Poul og Kristian Krabbe: \"Vest for Valhal\", Skalk nr. 6, 1995, s. 11ff\n- Axel Degn Johansen: \"Ikke en sky og ikke en vind!\", Skalk nr 2, 2008, s. 8ff"}}},"providerExecuted":true}
+{"type":"text-start","id":"3"}
+{"type":"text-delta","id":"3","delta":"This"}
+{"type":"text-delta","id":"3","delta":" Wikipedia page is about the **Maglemosian culture**, which"}
+{"type":"text-delta","id":"3","delta":" was an early Mesolithic (Middle"}
+{"type":"text-delta","id":"3","delta":" Stone Age) archaeological culture that existe"}
+{"type":"text-delta","id":"3","delta":"d in Northern Europe from approximately 9,000 to "}
+{"type":"text-delta","id":"3","delta":"6,000 BC.\n\nHere are"}
+{"type":"text-delta","id":"3","delta":" the key points about what this page covers"}
+{"type":"text-delta","id":"3","delta":":\n\n**Geographic and Temporal Context:**\n- The culture"}
+{"type":"text-delta","id":"3","delta":" spanned across Northern Europe, from England to Poland and from southern"}
+{"type":"text-delta","id":"3","delta":" Sweden to northern France\n- It existe"}
+{"type":"text-delta","id":"3","delta":"d during a period when sea levels were much lower an"}
+{"type":"text-delta","id":"3","delta":"d Britain was connected to mainland Europe"}
+{"type":"text-delta","id":"3","delta":"\n- The culture overlapped with the en"}
+{"type":"text-delta","id":"3","delta":"d of the last ice age\n\n**Origins an"}
+{"type":"text-delta","id":"3","delta":"d Discovery:**\n- Named after the Danish archaeological site Maglem"}
+{"type":"text-delta","id":"3","delta":"ose, located near Gørlev and Høng in"}
+{"type":"text-delta","id":"3","delta":" western Zealand, Denmark\n- First"}
+{"type":"text-delta","id":"3","delta":" excavated in 1900 by"}
+{"type":"text-delta","id":"3","delta":" George Sarauw\n- Similar"}
+{"type":"text-delta","id":"3","delta":" settlements were subsequently discovered across a"}
+{"type":"text-delta","id":"3","delta":" wide area of Northern Europe\n\n**"}
+{"type":"text-delta","id":"3","delta":"Lifestyle and Technology:**\n- The Maglemosian people lived in"}
+{"type":"text-delta","id":"3","delta":" forest and wetland environments\n- They were"}
+{"type":"text-delta","id":"3","delta":" primarily hunter-gatherers who used fishing and hunting tools"}
+{"type":"text-delta","id":"3","delta":"\n- They had domesticated dogs\n- Most"}
+{"type":"text-delta","id":"3","delta":" were nomadic, though some may have lived more"}
+{"type":"text-delta","id":"3","delta":" settled lives\n- They built huts made"}
+{"type":"text-delta","id":"3","delta":" of bark\n\n**Distinctive Tools"}
+{"type":"text-delta","id":"3","delta":" and Artifacts:**\n- Used tools"}
+{"type":"text-delta","id":"3","delta":" made from wood, bone, fl"}
+{"type":"text-delta","id":"3","delta":"int, and horn\n- Characteristic shar"}
+{"type":"text-delta","id":"3","delta":"ply-edged flint microliths for spear an"}
+{"type":"text-delta","id":"3","delta":"d arrow heads\n- Notable fishing spears called \"leis"}
+{"type":"text-delta","id":"3","delta":"ters\" used for gigging (spear"}
+{"type":"text-delta","id":"3","delta":" fishing)\n\nThe page also discusses"}
+{"type":"text-delta","id":"3","delta":" the archaeological significance of the culture and mentions"}
+{"type":"text-delta","id":"3","delta":" that underwater archaeology may reveal more findings"}
+{"type":"text-delta","id":"3","delta":" since much of their territory was later submerged by rising sea levels."}
+{"type":"text-end","id":"3"}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"stop"}

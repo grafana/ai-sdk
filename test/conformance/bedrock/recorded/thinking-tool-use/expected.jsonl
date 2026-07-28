@@ -1,0 +1,95 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"reasoning-start","id":"0"}
+{"type":"reasoning-delta","id":"0","delta":"The user is asking me to:"}
+{"type":"reasoning-delta","id":"0","delta":"\n1. Think about which city is more"}
+{"type":"reasoning-delta","id":"0","delta":" likely to be sunny right now\n2"}
+{"type":"reasoning-delta","id":"0","delta":". Use get"}
+{"type":"reasoning-delta","id":"0","delta":"_weather to check Berlin\n\nHowever"}
+{"type":"reasoning-delta","id":"0","delta":", they"}
+{"type":"reasoning-delta","id":"0","delta":" haven't specified what"}
+{"type":"reasoning-delta","id":"0","delta":" other"}
+{"type":"reasoning-delta","id":"0","delta":" city to"}
+{"type":"reasoning-delta","id":"0","delta":" compare"}
+{"type":"reasoning-delta","id":"0","delta":" Berlin"}
+{"type":"reasoning-delta","id":"0","delta":" to. But"}
+{"type":"reasoning-delta","id":"0","delta":" they"}
+{"type":"reasoning-delta","id":"0","delta":"'re"}
+{"type":"reasoning-delta","id":"0","delta":" specifically"}
+{"type":"reasoning-delta","id":"0","delta":" asking me to check"}
+{"type":"reasoning-delta","id":"0","delta":" Berlin's"}
+{"type":"reasoning-delta","id":"0","delta":" weather, so"}
+{"type":"reasoning-delta","id":"0","delta":" I should do"}
+{"type":"reasoning-delta","id":"0","delta":" that.\n\nLet"}
+{"type":"reasoning-delta","id":"0","delta":" me think"}
+{"type":"reasoning-delta","id":"0","delta":" about the"}
+{"type":"reasoning-delta","id":"0","delta":" request"}
+{"type":"reasoning-delta","id":"0","delta":":"}
+{"type":"reasoning-delta","id":"0","delta":" they"}
+{"type":"reasoning-delta","id":"0","delta":" want me to think"}
+{"type":"reasoning-delta","id":"0","delta":" about which city is more likely to be"}
+{"type":"reasoning-delta","id":"0","delta":" sunny, but"}
+{"type":"reasoning-delta","id":"0","delta":" they only"}
+{"type":"reasoning-delta","id":"0","delta":" mention"}
+{"type":"reasoning-delta","id":"0","delta":" Berlin."}
+{"type":"reasoning-delta","id":"0","delta":" I'll"}
+{"type":"reasoning-delta","id":"0","delta":" provide"}
+{"type":"reasoning-delta","id":"0","delta":" some"}
+{"type":"reasoning-delta","id":"0","delta":" thoughts"}
+{"type":"reasoning-delta","id":"0","delta":" about Berlin's climate"}
+{"type":"reasoning-delta","id":"0","delta":"/"}
+{"type":"reasoning-delta","id":"0","delta":"weather patterns"}
+{"type":"reasoning-delta","id":"0","delta":", then"}
+{"type":"reasoning-delta","id":"0","delta":" check"}
+{"type":"reasoning-delta","id":"0","delta":" Berlin's weather as"}
+{"type":"reasoning-delta","id":"0","delta":" requested."}
+{"type":"reasoning-delta","id":"0","delta":"","providerMetadata":{"amazonBedrock":{"signature":"Eq8FCkgIDRABGAIqQFbfmFrxmh57mAuMbS6lBjFY6ijzLoQfh0VeRU5peElhVthR3aGuJT3QJiqf56ebTeh6vPs1eAesoIKxr3r38/8SDFGS4rdpV/jxdnhYXBoMUM3zXJQ7D/fIeQvZIjDgAmi038eEOE2jFK3erMvJO7BQ8AYix34qhP0gwt+qCogTY+uSSbZhhLwqvGX6HPEqlAQAP/0oQ80ZE5/Lse+Po7tPGMVpEVq/Bbo9g+rcsIwQ7C6NP1Pj5w0u+v6bowDyQfOd0J6/Tx3ltwug6ouceV2LBpWr0KfLXbSb817BpC9kb2IUraNTq/rBNLKSH68jai/CDUV92Ud5IanqHKYrOKHgccXFT0urrF6NdwznfS6d3DU9aHRchqFUlufXxxJ7jU7QjIhDgkjLQqrOJkPZBt/aJnAy8okm02I2s3qUoq5uAUilWXdInan7pd+uZG3PQqaCWsM0KJkZvCfl6sryuxtSHm9iOgOWvqIc5L6/bL3q+XaDcdPPsECMFb06+ScpUYHT4TJdX7Gkb7h5siJBRNHw5ER+QzrONIXsHQnrv4jHNc9X0JrlomnnmpEn/j8Whv3wK2QnZ8hkOxeXFZFAJ/TkKlRg+37xGWslMb/ob3bebHx+PIsE+EenqRfAs3hjqlDblIEdfL7WDgXb96H4qdBFJaaw8NU5kgtxe5LEonOw5DFKGToRXz9b3PXYyafwukXCXOiyLcPbRySs6sdBdLPaYDKutm/Zds4Q/C4t+7XqqS4OZSM9rhEbnbSuMmqjCi7DNft2W5ah47X/xLNp/EXgAfLq6cydbQ48m0gKaKRRU/ClHFbk0nO7QIOGjaGymKq+TxaoYUJoD9V0PJi3A6w4JMZ99mFaEcRcsKYXIuL9xqzC5rzeOvoAr+4lkqyOUcG7YxpNGAE="},"bedrock":{"signature":"Eq8FCkgIDRABGAIqQFbfmFrxmh57mAuMbS6lBjFY6ijzLoQfh0VeRU5peElhVthR3aGuJT3QJiqf56ebTeh6vPs1eAesoIKxr3r38/8SDFGS4rdpV/jxdnhYXBoMUM3zXJQ7D/fIeQvZIjDgAmi038eEOE2jFK3erMvJO7BQ8AYix34qhP0gwt+qCogTY+uSSbZhhLwqvGX6HPEqlAQAP/0oQ80ZE5/Lse+Po7tPGMVpEVq/Bbo9g+rcsIwQ7C6NP1Pj5w0u+v6bowDyQfOd0J6/Tx3ltwug6ouceV2LBpWr0KfLXbSb817BpC9kb2IUraNTq/rBNLKSH68jai/CDUV92Ud5IanqHKYrOKHgccXFT0urrF6NdwznfS6d3DU9aHRchqFUlufXxxJ7jU7QjIhDgkjLQqrOJkPZBt/aJnAy8okm02I2s3qUoq5uAUilWXdInan7pd+uZG3PQqaCWsM0KJkZvCfl6sryuxtSHm9iOgOWvqIc5L6/bL3q+XaDcdPPsECMFb06+ScpUYHT4TJdX7Gkb7h5siJBRNHw5ER+QzrONIXsHQnrv4jHNc9X0JrlomnnmpEn/j8Whv3wK2QnZ8hkOxeXFZFAJ/TkKlRg+37xGWslMb/ob3bebHx+PIsE+EenqRfAs3hjqlDblIEdfL7WDgXb96H4qdBFJaaw8NU5kgtxe5LEonOw5DFKGToRXz9b3PXYyafwukXCXOiyLcPbRySs6sdBdLPaYDKutm/Zds4Q/C4t+7XqqS4OZSM9rhEbnbSuMmqjCi7DNft2W5ah47X/xLNp/EXgAfLq6cydbQ48m0gKaKRRU/ClHFbk0nO7QIOGjaGymKq+TxaoYUJoD9V0PJi3A6w4JMZ99mFaEcRcsKYXIuL9xqzC5rzeOvoAr+4lkqyOUcG7YxpNGAE="}}}
+{"type":"reasoning-end","id":"0"}
+{"type":"text-start","id":"1"}
+{"type":"text-delta","id":"1","delta":"I"}
+{"type":"text-delta","id":"1","delta":"'ll think"}
+{"type":"text-delta","id":"1","delta":" about Berlin's weather patterns and then check"}
+{"type":"text-delta","id":"1","delta":" the current weather there"}
+{"type":"text-delta","id":"1","delta":".\n\nBerlin"}
+{"type":"text-delta","id":"1","delta":" is"}
+{"type":"text-delta","id":"1","delta":" located"}
+{"type":"text-delta","id":"1","delta":" in central"}
+{"type":"text-delta","id":"1","delta":" Europe with"}
+{"type":"text-delta","id":"1","delta":" a temperate seasonal"}
+{"type":"text-delta","id":"1","delta":" climate. The"}
+{"type":"text-delta","id":"1","delta":" likelihood"}
+{"type":"text-delta","id":"1","delta":" of sunny weather"}
+{"type":"text-delta","id":"1","delta":" depends on the"}
+{"type":"text-delta","id":"1","delta":" season -"}
+{"type":"text-delta","id":"1","delta":" summers"}
+{"type":"text-delta","id":"1","delta":" (June-August) tend"}
+{"type":"text-delta","id":"1","delta":" to have"}
+{"type":"text-delta","id":"1","delta":" more sunny days, while winters are"}
+{"type":"text-delta","id":"1","delta":" often"}
+{"type":"text-delta","id":"1","delta":" cloudy and gray"}
+{"type":"text-delta","id":"1","delta":". Without"}
+{"type":"text-delta","id":"1","delta":" knowing the current"}
+{"type":"text-delta","id":"1","delta":" season"}
+{"type":"text-delta","id":"1","delta":" or"}
+{"type":"text-delta","id":"1","delta":" having"}
+{"type":"text-delta","id":"1","delta":" another"}
+{"type":"text-delta","id":"1","delta":" city"}
+{"type":"text-delta","id":"1","delta":" to compare it to, it"}
+{"type":"text-delta","id":"1","delta":"'s hard"}
+{"type":"text-delta","id":"1","delta":" to predict"}
+{"type":"text-delta","id":"1","delta":","}
+{"type":"text-delta","id":"1","delta":" but let"}
+{"type":"text-delta","id":"1","delta":" me check"}
+{"type":"text-delta","id":"1","delta":" the"}
+{"type":"text-delta","id":"1","delta":" actual"}
+{"type":"text-delta","id":"1","delta":" weather right"}
+{"type":"text-delta","id":"1","delta":" now."}
+{"type":"text-end","id":"1"}
+{"type":"tool-input-start","toolCallId":"tooluse_CieCiNzrhcm7lkkTeO6L1z","toolName":"get_weather"}
+{"type":"tool-input-delta","toolCallId":"tooluse_CieCiNzrhcm7lkkTeO6L1z","inputTextDelta":""}
+{"type":"tool-input-delta","toolCallId":"tooluse_CieCiNzrhcm7lkkTeO6L1z","inputTextDelta":"{\"city\""}
+{"type":"tool-input-delta","toolCallId":"tooluse_CieCiNzrhcm7lkkTeO6L1z","inputTextDelta":": \"Berl"}
+{"type":"tool-input-delta","toolCallId":"tooluse_CieCiNzrhcm7lkkTeO6L1z","inputTextDelta":"in\"}"}
+{"type":"tool-input-available","toolCallId":"tooluse_CieCiNzrhcm7lkkTeO6L1z","toolName":"get_weather","input":{"city":"Berlin"}}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"tool-calls"}

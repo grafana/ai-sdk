@@ -1,0 +1,24 @@
+model: claude-sonnet-4-20250514
+system: "You are a tool-using assistant. Use tools when needed, then continue with a concise final answer."
+prompt: "Use a tool to check the weather in San Francisco, then continue and recommend whether I should bring a jacket."
+stopWhenStepCount: 2
+providerOptions:
+  anthropic:
+    thinking:
+      type: enabled
+      budgetTokens: 2048
+tools:
+  get_weather:
+    description: "Get current weather conditions for a location"
+    inputSchema:
+      type: object
+      properties:
+        location:
+          type: string
+          description: "City or place name"
+      required:
+        - location
+    mockResults:
+      - temperature: 57
+        conditions: "windy fog with light drizzle"
+        wind_mph: 18

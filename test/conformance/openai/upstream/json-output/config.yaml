@@ -1,0 +1,13 @@
+model: gpt-4o
+prompt: "Return the weather as JSON."
+responseFormat:
+  type: json
+  schema:
+    type: object
+    properties:
+      weather:
+        type: string
+      temperature:
+        type: number
+    required: [weather, temperature]
+    additionalProperties: false

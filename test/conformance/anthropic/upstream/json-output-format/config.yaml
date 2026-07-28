@@ -1,0 +1,22 @@
+model: claude-sonnet-4-5
+responseFormat:
+  type: json
+  schema:
+    type: object
+    properties:
+      characters:
+        type: array
+        items:
+          type: object
+          properties:
+            name:
+              type: string
+            class:
+              type: string
+              enum: [warrior, mage, rogue]
+            description:
+              type: string
+          required: [name, class, description]
+          additionalProperties: false
+    required: [characters]
+    additionalProperties: false

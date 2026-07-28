@@ -1,0 +1,10 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"text-start","id":"msg_010a729b746e389e016a3abbcfd35c81a28f9bfb374b099a4d","providerMetadata":{"openai":{"itemId":"msg_010a729b746e389e016a3abbcfd35c81a28f9bfb374b099a4d"}}}
+{"type":"text-delta","id":"msg_010a729b746e389e016a3abbcfd35c81a28f9bfb374b099a4d","delta":"Hello"}
+{"type":"text-delta","id":"msg_010a729b746e389e016a3abbcfd35c81a28f9bfb374b099a4d","delta":" to"}
+{"type":"text-delta","id":"msg_010a729b746e389e016a3abbcfd35c81a28f9bfb374b099a4d","delta":" you"}
+{"type":"text-delta","id":"msg_010a729b746e389e016a3abbcfd35c81a28f9bfb374b099a4d","delta":"!"}
+{"type":"text-end","id":"msg_010a729b746e389e016a3abbcfd35c81a28f9bfb374b099a4d","providerMetadata":{"openai":{"itemId":"msg_010a729b746e389e016a3abbcfd35c81a28f9bfb374b099a4d"}}}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"stop"}

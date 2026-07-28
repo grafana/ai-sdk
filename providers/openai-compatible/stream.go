@@ -1,0 +1,492 @@
+package openaicompatible
+
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"net/http"
+	"sort"
+	"strings"
+
+	"github.com/grafana/ai-sdk/provider"
+)
+
+type streamState struct {
+	ctx             context.Context
+	out             chan<- provider.StreamPart
+	endpoint        string
+	responseHeaders http.Header
+	providerName    string
+	metadataKey     string
+	includeRaw      bool
+
+	textActive      bool
+	reasoningActive bool
+	finishReason    provider.FinishReason
+	usage           *provider.Usage
+	rawUsage        *openAIUsage
+	toolCalls       map[int]*streamToolCall
+	toolCallIDs     map[string]int
+	errorEmitted    bool
+}
+
+type streamToolCall struct {
+	id               string
+	providerID       string
+	name             string
+	args             string
+	started          bool
+	finished         bool
+	providerMetadata provider.ProviderMetadata
+}
+
+func (m *model) runStream(ctx context.Context, endpoint string, requestBody []byte, body io.Reader, headers http.Header, warnings []provider.Warning, includeRaw bool, metadataKey string, out chan<- provider.StreamPart) {
+	state := &streamState{
+		ctx:             ctx,
+		out:             out,
+		endpoint:        endpoint,
+		responseHeaders: headers,
+		providerName:    m.providerName,
+		metadataKey:     metadataKey,
+		includeRaw:      includeRaw,
+		finishReason:    provider.FinishReason{Unified: provider.FinishReasonOther},
+		toolCalls:       map[int]*streamToolCall{},
+		toolCallIDs:     map[string]int{},
+	}
+
+	if !sendStreamPart(ctx, out, provider.StreamPart{Type: provider.PartStreamStart, Warnings: warnings}) {
+		return
+	}
+
+	reader := newOpenAISSEReader(body)
+	firstChunk := true
+	for {
+		data, err := reader.Next()
+		if errors.Is(err, io.EOF) {
+			state.flush()
+			return
+		}
+		if err != nil {
+			state.emitError(streamDecodeError(endpoint, err))
+			state.flush()
+			return
+		}
+		if string(data) == "[DONE]" {
+			state.flush()
+			return
+		}
+		if includeRaw {
+			if !sendStreamPart(ctx, out, provider.StreamPart{
+				Type:     provider.PartRaw,
+				RawValue: json.RawMessage(append([]byte(nil), data...)),
+			}) {
+				return
+			}
+		}
+
+		errorData, errorMessage, hasError, err := streamError(data)
+		if err != nil {
+			state.emitError(streamDecodeError(endpoint, err))
+			state.flush()
+			return
+		}
+		if hasError {
+			retryable := false
+			state.emitProviderError(provider.NewAPICallError(provider.APICallErrorOptions{
+				Message:           errorMessage,
+				URL:               endpoint,
+				RequestBodyValues: json.RawMessage(append([]byte(nil), requestBody...)),
+				ResponseHeaders:   cloneHeaders(headers),
+				ResponseBody:      string(data),
+				IsRetryable:       &retryable,
+				Data:              errorData,
+			}))
+			continue
+		}
+
+		var chunk chatCompletionResponse
+		if err := json.Unmarshal(data, &chunk); err != nil {
+			state.emitError(streamDecodeError(endpoint, err))
+			state.flush()
+			return
+		}
+
+		if firstChunk {
+			firstChunk = false
+			if !sendStreamPart(ctx, out, provider.StreamPart{
+				Type:            provider.PartResponseMeta,
+				ResponseID:      chunk.ID,
+				ModelID:         chunk.Model,
+				Provider:        m.providerName,
+				ResponseHeaders: flattenHeaders(headers),
+			}) {
+				return
+			}
+		}
+		if chunk.Usage != nil {
+			usage := convertUsage(chunk.Usage)
+			state.usage = &usage
+			state.rawUsage = chunk.Usage
+		}
+		if len(chunk.Choices) == 0 {
+			continue
+		}
+		if !state.handleChoice(chunk.Choices[0]) {
+			return
+		}
+	}
+}
+
+func streamError(data []byte) (json.RawMessage, string, bool, error) {
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(data, &envelope); err != nil {
+		return nil, "", false, err
+	}
+	raw, ok := envelope["error"]
+	if !ok {
+		return nil, "", false, nil
+	}
+
+	copied := json.RawMessage(append([]byte(nil), raw...))
+	var payload openAIErrorPayload
+	if err := json.Unmarshal(raw, &payload); err == nil && payload.Message != "" {
+		return copied, "openai: " + payload.Message, true, nil
+	}
+	return copied, "openai: stream error: " + string(raw), true, nil
+}
+
+func (s *streamState) handleChoice(choice chatChoice) bool {
+	if choice.FinishReason != nil {
+		s.finishReason = mapFinishReason(choice.FinishReason)
+	}
+
+	delta := choice.Delta
+	reasoning := delta.ReasoningContent
+	if reasoning == "" {
+		reasoning = delta.Reasoning
+	}
+	if reasoning != "" {
+		if !s.reasoningActive {
+			if !sendStreamPart(s.ctx, s.out, provider.StreamPart{Type: provider.PartReasoningStart, ID: "reasoning-0"}) {
+				return false
+			}
+			s.reasoningActive = true
+		}
+		if !sendStreamPart(s.ctx, s.out, provider.StreamPart{Type: provider.PartReasoningDelta, ID: "reasoning-0", Delta: reasoning}) {
+			return false
+		}
+	}
+
+	if delta.Content != "" {
+		if s.reasoningActive {
+			if !sendStreamPart(s.ctx, s.out, provider.StreamPart{Type: provider.PartReasoningEnd, ID: "reasoning-0"}) {
+				return false
+			}
+			s.reasoningActive = false
+		}
+		if !s.textActive {
+			if !sendStreamPart(s.ctx, s.out, provider.StreamPart{Type: provider.PartTextStart, ID: "txt-0"}) {
+				return false
+			}
+			s.textActive = true
+		}
+		if !sendStreamPart(s.ctx, s.out, provider.StreamPart{Type: provider.PartTextDelta, ID: "txt-0", Delta: delta.Content}) {
+			return false
+		}
+	}
+
+	if len(delta.ToolCalls) > 0 {
+		if s.reasoningActive {
+			if !sendStreamPart(s.ctx, s.out, provider.StreamPart{Type: provider.PartReasoningEnd, ID: "reasoning-0"}) {
+				return false
+			}
+			s.reasoningActive = false
+		}
+		for position, toolDelta := range delta.ToolCalls {
+			if !s.handleToolCallDelta(toolDelta, position) {
+				return false
+			}
+		}
+	}
+
+	return true
+}
+
+func (s *streamState) handleToolCallDelta(delta chatToolCallDelta, position int) bool {
+	index := s.toolCallIndex(delta, position)
+	state := s.toolCalls[index]
+	if state == nil {
+		state = &streamToolCall{}
+		s.toolCalls[index] = state
+	}
+	if state.finished {
+		return true
+	}
+	if delta.ID != "" && !state.started && state.id == "" {
+		state.id = delta.ID
+		state.providerID = delta.ID
+	}
+	if delta.Function.Name != "" {
+		state.name = delta.Function.Name
+	}
+	argumentPresent := delta.Function.Arguments != nil
+	argument := ""
+	if argumentPresent {
+		argument = *delta.Function.Arguments
+		if state.started {
+			state.args += argument
+			return sendStreamPart(s.ctx, s.out, provider.StreamPart{
+				Type:       provider.PartToolInputDelta,
+				ID:         state.id,
+				ToolCallID: state.id,
+				ToolName:   state.name,
+				Delta:      argument,
+			})
+		}
+		state.args += argument
+	}
+	if !state.started && state.providerMetadata == nil {
+		state.providerMetadata = toolCallProviderMetadata(s.metadataKey, delta.ExtraContent)
+	}
+	if !state.started && state.name != "" {
+		if state.id == "" {
+			s.emitError(provider.NewAPICallError(provider.APICallErrorOptions{
+				Message: "openai: stream tool call missing id",
+				URL:     s.endpoint,
+			}))
+			state.finished = true
+			return true
+		}
+		if !sendStreamPart(s.ctx, s.out, provider.StreamPart{
+			Type:       provider.PartToolInputStart,
+			ID:         state.id,
+			ToolCallID: state.id,
+			ToolName:   state.name,
+		}) {
+			return false
+		}
+		state.started = true
+		if state.args != "" {
+			if !sendStreamPart(s.ctx, s.out, provider.StreamPart{
+				Type:       provider.PartToolInputDelta,
+				ID:         state.id,
+				ToolCallID: state.id,
+				ToolName:   state.name,
+				Delta:      state.args,
+			}) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func (s *streamState) toolCallIndex(delta chatToolCallDelta, position int) int {
+	if delta.Index != nil {
+		if delta.ID != "" {
+			s.toolCallIDs[delta.ID] = *delta.Index
+		}
+		return *delta.Index
+	}
+	if delta.ID == "" {
+		return position
+	}
+	if index, ok := s.toolCallIDs[delta.ID]; ok {
+		return index
+	}
+	if state := s.toolCalls[position]; state != nil {
+		switch {
+		case state.id == "" || state.id == delta.ID || state.providerID == delta.ID:
+			s.toolCallIDs[delta.ID] = position
+			return position
+		}
+	} else {
+		s.toolCallIDs[delta.ID] = position
+		return position
+	}
+	index := s.nextToolCallIndex()
+	s.toolCallIDs[delta.ID] = index
+	return index
+}
+
+func (s *streamState) nextToolCallIndex() int {
+	for index := 0; ; index++ {
+		if s.toolCalls[index] == nil {
+			return index
+		}
+	}
+}
+
+func (s *streamState) flush() {
+	if s.reasoningActive {
+		_ = sendStreamPart(s.ctx, s.out, provider.StreamPart{Type: provider.PartReasoningEnd, ID: "reasoning-0"})
+		s.reasoningActive = false
+	}
+	if s.textActive {
+		_ = sendStreamPart(s.ctx, s.out, provider.StreamPart{Type: provider.PartTextEnd, ID: "txt-0"})
+		s.textActive = false
+	}
+
+	indices := make([]int, 0, len(s.toolCalls))
+	for index := range s.toolCalls {
+		indices = append(indices, index)
+	}
+	sort.Ints(indices)
+	for _, index := range indices {
+		tc := s.toolCalls[index]
+		if tc.finished {
+			continue
+		}
+		if tc.name == "" {
+			s.emitError(provider.NewAPICallError(provider.APICallErrorOptions{
+				Message: "openai: stream tool call missing function name",
+				URL:     s.endpoint,
+			}))
+			continue
+		}
+		if tc.id == "" {
+			s.emitError(provider.NewAPICallError(provider.APICallErrorOptions{
+				Message: "openai: stream tool call missing id",
+				URL:     s.endpoint,
+			}))
+			continue
+		}
+		if !tc.started {
+			if !sendStreamPart(s.ctx, s.out, provider.StreamPart{
+				Type:       provider.PartToolInputStart,
+				ID:         tc.id,
+				ToolCallID: tc.id,
+				ToolName:   tc.name,
+			}) {
+				return
+			}
+			if tc.args != "" {
+				if !sendStreamPart(s.ctx, s.out, provider.StreamPart{
+					Type:       provider.PartToolInputDelta,
+					ID:         tc.id,
+					ToolCallID: tc.id,
+					ToolName:   tc.name,
+					Delta:      tc.args,
+				}) {
+					return
+				}
+			}
+		}
+		if !s.finishToolCall(tc) {
+			return
+		}
+	}
+
+	finish := s.finishReason
+	if s.errorEmitted {
+		finish = provider.FinishReason{Unified: provider.FinishReasonError}
+	}
+	_ = sendStreamPart(s.ctx, s.out, provider.StreamPart{
+		Type:             provider.PartFinish,
+		FinishReason:     &finish,
+		Usage:            s.usage,
+		ProviderMetadata: responseProviderMetadata(s.metadataKey, s.rawUsage),
+	})
+}
+
+func (s *streamState) finishToolCall(tc *streamToolCall) bool {
+	if !sendStreamPart(s.ctx, s.out, provider.StreamPart{
+		Type:       provider.PartToolInputEnd,
+		ID:         tc.id,
+		ToolCallID: tc.id,
+		ToolName:   tc.name,
+	}) {
+		return false
+	}
+	input := tc.args
+	if strings.TrimSpace(input) == "" {
+		input = "{}"
+	}
+	if !sendStreamPart(s.ctx, s.out, provider.StreamPart{
+		Type:             provider.PartToolCall,
+		ToolCallID:       tc.id,
+		ToolName:         tc.name,
+		Input:            input,
+		ProviderMetadata: tc.providerMetadata,
+	}) {
+		return false
+	}
+	tc.finished = true
+	return true
+}
+
+func (s *streamState) emitProviderError(err *provider.APICallError) {
+	s.finishReason = provider.FinishReason{Unified: provider.FinishReasonError}
+	_ = sendStreamPart(s.ctx, s.out, provider.StreamPart{
+		Type:         provider.PartError,
+		APICallError: err,
+	})
+}
+
+func (s *streamState) emitError(err *provider.APICallError) {
+	s.errorEmitted = true
+	_ = sendStreamPart(s.ctx, s.out, provider.StreamPart{
+		Type:         provider.PartError,
+		APICallError: err,
+	})
+}
+
+func sendStreamPart(ctx context.Context, ch chan<- provider.StreamPart, part provider.StreamPart) bool {
+	select {
+	case <-ctx.Done():
+		return false
+	case ch <- part:
+		return true
+	}
+}
+
+type openAISSEReader struct {
+	br *bufio.Reader
+}
+
+func newOpenAISSEReader(r io.Reader) *openAISSEReader {
+	return &openAISSEReader{br: bufio.NewReader(r)}
+}
+
+func (r *openAISSEReader) Next() ([]byte, error) {
+	var data strings.Builder
+	for {
+		line, err := r.br.ReadString('\n')
+		eof := errors.Is(err, io.EOF)
+		if err != nil && !eof {
+			return nil, err
+		}
+
+		if line != "" {
+			line = strings.TrimRight(line, "\r\n")
+			if line == "" {
+				if data.Len() == 0 {
+					if eof {
+						return nil, io.EOF
+					}
+					continue
+				}
+				return []byte(data.String()), nil
+			}
+			if !strings.HasPrefix(line, ":") {
+				field, value, ok := strings.Cut(line, ":")
+				if ok && field == "data" {
+					value = strings.TrimPrefix(value, " ")
+					if data.Len() > 0 {
+						data.WriteByte('\n')
+					}
+					data.WriteString(value)
+				}
+			}
+		}
+
+		if eof {
+			if data.Len() == 0 {
+				return nil, io.EOF
+			}
+			return []byte(data.String()), nil
+		}
+	}
+}

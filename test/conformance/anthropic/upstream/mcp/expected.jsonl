@@ -1,0 +1,11 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"tool-input-available","toolCallId":"mcptoolu_017CuqaJcXe5ZHJjaz3KS1AT","toolName":"echo","input":{},"providerExecuted":true,"providerMetadata":{"anthropic":{"type":"mcp-tool-use","serverName":"echo"}},"dynamic":true}
+{"type":"tool-output-available","toolCallId":"mcptoolu_017CuqaJcXe5ZHJjaz3KS1AT","output":[{"type":"text","text":"Tool echo: hello world"}],"providerExecuted":true,"providerMetadata":{"anthropic":{"type":"mcp-tool-use","serverName":"echo"}},"dynamic":true}
+{"type":"text-start","id":"2"}
+{"type":"text-delta","id":"2","delta":"The echo tool responde"}
+{"type":"text-delta","id":"2","delta":"d back with: **hello world**\n\nIt simply echoed back"}
+{"type":"text-delta","id":"2","delta":" the exact message that was sent to it."}
+{"type":"text-end","id":"2"}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"stop"}

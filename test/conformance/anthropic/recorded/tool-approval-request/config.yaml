@@ -1,0 +1,25 @@
+model: claude-sonnet-4-5-20250929
+prompt: "Look up a release note, then update the issue list with the result. Use the tools in sequence, one at a time."
+stopWhenStepCount: 5
+tools:
+  lookup_data:
+    description: "Look up a factual data point"
+    inputSchema:
+      type: object
+      properties:
+        query:
+          type: string
+          description: "What to look up"
+      required:
+        - query
+    mockResults:
+      - value: "release note found"
+        source: "mock release database"
+  updateIssueList:
+    description: "Update the issue list"
+    needsApproval: true
+    inputSchema:
+      type: object
+      properties: {}
+    mockResults:
+      - ok: true

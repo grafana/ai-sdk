@@ -1,0 +1,16 @@
+{"type":"message_start","message":{"model":"claude-sonnet-4-5-20250929","id":"msg_0123WpJKVj1ZbHgbSp1prZvs","type":"message","role":"assistant","content":[],"stop_reason":null,"stop_sequence":null,"stop_details":null,"usage":{"input_tokens":907,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":1,"service_tier":"standard","inference_geo":"not_available"}}          }
+{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}              }
+{"type": "ping"}
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Based"}       }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" on the weather forecasts, here's my recommendation:\n\n**Barcelona** is the clear winner for this weekend! "}             }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"🌞\n\n**Barcelona:**\n- Current: 32°C and sunny\n- Weekend forecast: Clear skies with"}       }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" temperatures 30-34°C\n- Perfect beach weather and ideal for outdoor sightseeing"}    }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"\n\n**Rome:**\n- Current: 29°C and partly cloudy\n- Weekend forecast: Scattered showers with temperatures 25-30°C\n- The rain could dis"}  }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"rupt outdoor activities and sightseeing\n\n**Recommendation:** Visit **Barcelona** this weekend. You"}          }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"'ll have beautiful clear weather perfect for exploring the city, enjoying the beaches, visiting"} }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" Park Güell, strolling Las Ramblas, and dining at outdoor cafés. Rome would be lovely"}     }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" too, but the scattered showers might put a damper on your plans. Save Rome for a"}             }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" weekend with better weather!"}      }
+{"type":"content_block_stop","index":0               }
+{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null,"stop_details":null},"usage":{"input_tokens":907,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":200} }
+{"type":"message_stop"  }

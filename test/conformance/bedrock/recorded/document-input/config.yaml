@@ -1,0 +1,11 @@
+model: us.anthropic.claude-haiku-4-5-20251001-v1:0
+prompt: Summarize the attached document.
+messages:
+  - role: user
+    content:
+      - type: text
+        text: Summarize the attached document.
+      - type: file
+        data: JVBERi0xLjQ=
+        mediaType: application
+        filename: report.pdf

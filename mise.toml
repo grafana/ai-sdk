@@ -1,0 +1,320 @@
+min_version = "2026.5.4"
+
+[settings]
+experimental = true
+
+[tools]
+go = "1.26.5"
+jq = "1.8.2"
+node = "24"
+pnpm = "11.15.1"
+python = "3.14.6"
+golangci-lint = "2.12.2"
+"npm:@fission-ai/openspec" = "1"
+"npm:markdownlint-cli2" = "0.23.1"
+
+[deps.test]
+auto = false
+sources = [
+  "test/package.json",
+  "test/pnpm-lock.yaml",
+  "test/pnpm-workspace.yaml",
+  "test/cli/package.json",
+  "test/conformance/tools/package.json",
+  "test/integration/package.json",
+  "test/interop/package.json",
+]
+outputs = ["test/node_modules/.modules.yaml"]
+run = "cd test && pnpm install --frozen-lockfile"
+
+[tasks.test]
+description = "Run all Go tests across all modules"
+run = """
+mise run test-root
+mise run test-anthropic
+mise run test-bedrock
+mise run test-openai
+mise run test-openai-compatible
+mise run test-grafana
+mise run test-logger-middleware
+mise run test-agent-observability-middleware
+mise run test-enrichment-middleware
+mise run test-prometheus-middleware
+"""
+
+[tasks.test-root]
+description = "Run root module tests"
+run = "go test ./..."
+
+[tasks.test-anthropic]
+description = "Run Anthropic provider tests"
+run = "cd providers/anthropic && go test ./..."
+
+[tasks.test-bedrock]
+description = "Run Bedrock provider tests"
+run = "cd providers/bedrock && go test ./..."
+
+[tasks.test-openai]
+description = "Run OpenAI provider tests"
+run = "cd providers/openai && go test ./..."
+
+[tasks.test-openai-compatible]
+description = "Run OpenAI-compatible provider tests"
+run = "cd providers/openai-compatible && go test ./..."
+
+[tasks.test-grafana]
+description = "Run Grafana provider tests"
+run = "cd providers/grafana && go test ./..."
+
+[tasks.test-logger-middleware]
+description = "Run logger middleware tests"
+run = "cd middleware/logger && go test ./..."
+
+[tasks.test-agent-observability-middleware]
+description = "Run Agent Observability middleware tests"
+run = "cd middleware/agentobservability && go test ./..."
+
+[tasks.test-enrichment-middleware]
+description = "Run enrichment middleware tests"
+run = "cd middleware/enrichment && go test ./..."
+
+[tasks.test-prometheus-middleware]
+description = "Run Prometheus middleware tests"
+run = "cd middleware/prometheus && go test ./..."
+
+[tasks.test-agent-observability-conformance]
+description = "Run Agent Observability middleware conformance and parity tests"
+run = "cd middleware/agentobservability && go test -run 'TestConformance|TestParity' ./..."
+
+[tasks.test-short]
+description = "Run short tests across all modules"
+run = """
+go test -short ./...
+(cd providers/anthropic && go test -short ./...)
+(cd providers/bedrock && go test -short ./...)
+(cd providers/openai && go test -short ./...)
+(cd providers/openai-compatible && go test -short ./...)
+(cd providers/grafana && go test -short ./...)
+(cd middleware/logger && go test -short ./...)
+(cd middleware/agentobservability && go test -short ./...)
+(cd middleware/enrichment && go test -short ./...)
+(cd middleware/prometheus && go test -short ./...)
+"""
+
+[tasks.fmt]
+description = "Format all Go files"
+run = "gofmt -w ."
+
+[tasks.fmt-check]
+description = "Check Go formatting"
+run = """
+mise run fmt
+git diff --exit-code || (echo "Code is not formatted. Run 'mise run fmt' and commit." && exit 1)
+"""
+
+[tasks.vet]
+description = "Run go vet across all modules"
+run = """
+go vet ./...
+(cd providers/anthropic && go vet ./...)
+(cd providers/bedrock && go vet ./...)
+(cd providers/openai && go vet ./...)
+(cd providers/openai-compatible && go vet ./...)
+(cd providers/grafana && go vet ./...)
+(cd middleware/logger && go vet ./...)
+(cd middleware/agentobservability && go vet ./...)
+(cd middleware/enrichment && go vet ./...)
+(cd middleware/prometheus && go vet ./...)
+"""
+
+[tasks.lint]
+description = "Run golangci-lint across all modules"
+run = """
+for mod in $(find . -name go.mod -not -path './.git/*' -exec dirname {} \\; | sort); do
+  packages=$(cd "$mod" && go list ./... 2>/dev/null || true)
+  if [ -n "$packages" ]; then
+    echo "lint $mod"
+    (cd "$mod" && golangci-lint run ./...)
+    continue
+  fi
+
+  conformance_packages=$(cd "$mod" && go list -tags conformance ./... 2>/dev/null || true)
+  if [ -n "$conformance_packages" ]; then
+    echo "lint $mod -tags conformance"
+    (cd "$mod" && golangci-lint run --build-tags conformance ./...)
+    continue
+  fi
+
+  echo "lint $mod (skipped: no packages)"
+done
+"""
+
+[tasks.lint-docs]
+description = "Lint documentation structure and markdown style"
+run = """
+python3 scripts/lint-docs.py
+markdownlint-cli2
+"""
+
+[tasks.update-openspec]
+description = "Upgrade OpenSpec and refresh centralized agent skills"
+run = "bash scripts/update-openspec-skills.sh"
+
+[tasks.test-update-openspec]
+description = "Test centralized OpenSpec skill freshness and rollback"
+run = "bash scripts/update-openspec-skills_test.sh"
+
+[tasks.tidy]
+description = "Run go mod tidy across all modules"
+run = """
+go mod tidy
+(cd providers/anthropic && go mod tidy)
+(cd providers/bedrock && go mod tidy)
+(cd providers/openai && go mod tidy)
+(cd providers/openai-compatible && go mod tidy)
+(cd providers/grafana && go mod tidy)
+(cd middleware/logger && go mod tidy)
+(cd middleware/agentobservability && go mod tidy)
+(cd middleware/enrichment && go mod tidy)
+(cd middleware/prometheus && go mod tidy)
+"""
+
+[tasks.build]
+description = "Build all modules and examples"
+run = """
+mise run build-examples
+go build ./...
+(cd providers/anthropic && go build ./...)
+(cd providers/bedrock && go build ./...)
+(cd providers/openai && go build ./...)
+(cd providers/openai-compatible && go build ./...)
+(cd providers/grafana && go build ./...)
+(cd middleware/logger && go build ./...)
+(cd middleware/agentobservability && go build ./...)
+(cd middleware/enrichment && go build ./...)
+(cd middleware/prometheus && go build ./...)
+"""
+
+[tasks.build-examples]
+description = "Build every example module"
+run = """
+for mod in $(find examples -name go.mod -exec dirname {} \\;); do
+  echo "build $mod"
+  (cd "$mod" && go build ./...)
+done
+"""
+
+[tasks.test-integration]
+description = "Run cross-language integration tests"
+run = """
+mise deps install --only test
+cd test && pnpm --filter @ai-sdk/test-integration test
+"""
+
+[tasks.test-interop]
+description = "Run bidirectional upstream-client (@ai-sdk/gateway) interop tests"
+run = """
+mise deps install --only test
+cd test && pnpm --filter @ai-sdk/test-interop test
+"""
+
+[tasks.test-cli]
+description = "Run the stream inspection CLI; set SCENARIO or URL"
+run = """
+mise deps install --only test
+if [ -n "${SCENARIO:-}" ]; then
+  cd test && pnpm --filter @ai-sdk/test-cli start -- --scenario "$SCENARIO"
+elif [ -n "${URL:-}" ]; then
+  cd test && pnpm --filter @ai-sdk/test-cli start -- --url "$URL"
+else
+  echo "Usage: SCENARIO=<name> mise run test-cli  or  URL=<url> mise run test-cli"
+  exit 1
+fi
+"""
+
+[tasks.typecheck-conformance]
+description = "Typecheck conformance TypeScript tools"
+run = """
+mise deps install --only test
+cd test && pnpm --filter @ai-sdk/conformance-tools typecheck
+"""
+
+[tasks.validate-parity-baseline]
+description = "Validate the registered upstream parity baseline"
+run = """
+mise deps install --only test
+cd test
+pnpm --filter @ai-sdk/conformance-tools validate-baseline
+pnpm --filter @ai-sdk/conformance-tools test:baseline
+"""
+
+[tasks.parity-coverage]
+description = "Validate conformance fixture inventory and upstream fixture coverage"
+run = """
+mise deps install --only test
+cd test && pnpm --filter @ai-sdk/conformance-tools coverage-inventory
+"""
+
+[tasks.parity-provider-shape]
+description = "Report provider V4 discriminator drift against local upstream source"
+run = """
+mise deps install --only test
+cd test && pnpm --filter @ai-sdk/conformance-tools provider-shape
+"""
+
+[tasks.test-conformance]
+description = "Run conformance tests"
+run = """
+mise run typecheck-conformance
+cd test/conformance && go test -tags conformance -v ./...
+"""
+
+[tasks.parity-check]
+description = "Run upstream parity baseline validation and conformance"
+run = """
+mise run validate-parity-baseline
+mise run parity-coverage
+mise run parity-provider-shape
+mise run test-conformance
+"""
+
+[tasks.generate-conformance]
+description = "Regenerate expected conformance output from fixtures"
+run = """
+mise deps install --only test
+cd test && pnpm --filter @ai-sdk/conformance-tools generate
+"""
+
+[tasks.parity-upgrade]
+description = "Upgrade to mature stable upstream packages and regenerate conformance expectations"
+run = """
+cd test/conformance/tools
+pnpm run upgrade-baseline
+cd ../..
+pnpm install --lockfile-only --no-frozen-lockfile
+cd ..
+mise deps install --only test
+mise run generate-conformance
+mise run validate-parity-baseline
+"""
+
+[tasks.record-conformance]
+description = "Record conformance fixtures from live provider APIs"
+run = """
+mise deps install --only test
+if [ -n "${SCENARIO:-}" ]; then
+  cd test && pnpm --filter @ai-sdk/conformance-tools record -- --scenario "$SCENARIO"
+else
+  cd test && pnpm --filter @ai-sdk/conformance-tools record
+fi
+"""
+
+[tasks.check]
+description = "Run formatting, vet, lint, docs lint, and tests"
+run = """
+mise run fmt
+mise run vet
+mise run lint
+mise run lint-docs
+mise run test
+"""

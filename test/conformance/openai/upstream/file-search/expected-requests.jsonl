@@ -1,0 +1,1 @@
+{"body":{"input":[{"content":[{"text":"Hello","type":"input_text"}],"role":"user"}],"model":"gpt-5-nano","stream":true,"tool_choice":"auto","tools":[{"type":"file_search","vector_store_ids":["vs_68caad8bd5d88191ab766cf043d89a18"]}]},"headers":{"authorization":"<redacted>","content-type":"application/json"},"method":"POST","path":"/v1/responses"}

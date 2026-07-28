@@ -1,0 +1,26 @@
+# Code owners for grafana/ai-sdk.
+#
+# Owners are requested for review automatically and their approval is required
+# to merge. See CONTRIBUTING.md for the review expectations that go with each
+# area, in particular the upstream-parity rules for anything that touches the
+# wire format or the provider contract.
+
+# Default owner for everything not matched below.
+* @grafana/grafana-assistant-loop
+
+# Upstream parity governance. The registered baseline and the coverage map
+# define what this port guarantees against the Vercel AI SDK; moving them
+# changes the contract, not just the code.
+/test/conformance/upstream.yaml @grafana/grafana-assistant-loop
+/test/conformance/PARITY.md @grafana/grafana-assistant-loop
+
+# Licensing and community files.
+/LICENSE @grafana/grafana-assistant-loop
+/NOTICE @grafana/grafana-assistant-loop
+/CODE_OF_CONDUCT.md @grafana/grafana-assistant-loop
+/CONTRIBUTING.md @grafana/grafana-assistant-loop
+
+# CI, release, and repository automation.
+/.github/ @grafana/grafana-assistant-loop
+/mise.toml @grafana/grafana-assistant-loop
+/renovate.json @grafana/grafana-assistant-loop

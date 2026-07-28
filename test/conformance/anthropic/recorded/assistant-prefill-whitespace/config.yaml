@@ -1,0 +1,14 @@
+model: claude-sonnet-4-5-20250929
+messages:
+  - role: user
+    content: "First question"
+  - role: assistant
+    content: "Earlier assistant text  \n"
+  - role: user
+    content: "Follow-up question"
+  - role: assistant
+    content:
+      - type: text
+        text: "Prefill prefix  \n"
+      - type: text
+        text: "Final assistant prefill  \n"

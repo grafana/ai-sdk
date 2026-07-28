@@ -1,0 +1,10 @@
+# Tool call with no arguments (input is empty). Verifies the stream
+# converter emits `{}` as the final tool input when no toolUse delta arrives.
+model: anthropic.claude-3-haiku-20240307-v1:0
+stopWhenStepCount: 1
+tools:
+  list_issues:
+    description: List all issues in the project.
+    inputSchema:
+      type: object
+      properties: {}

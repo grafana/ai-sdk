@@ -1,0 +1,36 @@
+model: gpt-5.1-2025-11-13
+providerOptions:
+  openai:
+    store: false
+messages:
+  - role: user
+    content: Create a file.
+  - role: assistant
+    content:
+      - type: tool-call
+        toolCallId: call_patch
+        toolName: apply_patch
+        input:
+          callId: call_patch
+          operation:
+            type: create_file
+            path: index.html
+            diff: "+<!doctype html>"
+        providerOptions:
+          openai:
+            itemId: apc_history
+  - role: tool
+    content:
+      - type: tool-result
+        toolCallId: call_patch
+        toolName: apply_patch
+        output:
+          type: json
+          value:
+            status: completed
+            output: Created index.html
+  - role: user
+    content: Continue.
+providerTools:
+  apply_patch:
+    id: openai.apply_patch

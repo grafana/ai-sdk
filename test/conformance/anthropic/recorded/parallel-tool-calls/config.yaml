@@ -1,0 +1,20 @@
+model: claude-sonnet-4-5-20250929
+prompt: "Compare the weather in Tokyo and London right now. Get both at the same time."
+stopWhenStepCount: 2
+tools:
+  get_weather:
+    description: "Get current weather conditions for a city"
+    strict: true
+    inputSchema:
+      type: object
+      properties:
+        city:
+          type: string
+          description: "City name"
+      required:
+        - city
+    mockResults:
+      - temperature: 28
+        conditions: "humid and partly cloudy"
+      - temperature: 16
+        conditions: "mild and overcast"

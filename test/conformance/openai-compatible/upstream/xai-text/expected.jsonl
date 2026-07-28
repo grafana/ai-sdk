@@ -1,0 +1,350 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"reasoning-start","id":"reasoning-0"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"First"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":","}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" the"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" user"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" said"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":":"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" \""}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"Say"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" a"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" single"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" word"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":".\""}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" That's"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" straightforward"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"."}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" They"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" want"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" me"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" to"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" respond"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" with"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" just"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" one"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" word"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":".\n\n"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"As"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" Gro"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"k"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":","}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" I'm"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" supposed"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" to"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" be"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" helpful"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":","}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" truthful"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":","}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" and"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" not"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" verbose"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"."}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" So"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":","}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" I"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" should"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" keep"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" my"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" response"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" simple"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" and"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" directly"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" answer"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" the"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" request"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":".\n\n"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"The"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" instruction"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" is"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" to"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" say"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" a"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" single"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" word"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":","}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" so"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" my"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" response"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" should"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" be"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" exactly"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" that"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":":"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" one"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" word"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"."}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" I"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" shouldn't"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" add"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" any"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" explanations"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":","}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" greetings"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":","}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" or"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" extra"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" text"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":".\n\n"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"What"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" word"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" should"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" I"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" choose"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"?"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" The"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" user"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" didn't"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" specify"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" which"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" word"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":","}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" so"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" I"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" have"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" the"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" freedom"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" to"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" pick"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" any"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"."}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" To"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" make"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" it"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" fun"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" and"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" aligned"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" with"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" my"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" personality"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":","}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" I"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" could"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" choose"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" something"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" relevant"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" or"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" witty"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":".\n\n"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"I'm"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" Gro"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"k"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":","}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" created"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" by"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" x"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"AI"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":","}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" and"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" I'm"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" meant"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" to"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" be"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" maximally"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" truthful"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" and"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" helpful"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"."}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" Maybe"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" I"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" could"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" choose"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" a"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" word"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" that"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" reflects"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" that"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":","}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" like"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" \""}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"Hello"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"\""}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" or"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" \""}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"G"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"rok"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"\","}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" but"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" I"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" need"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" to"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" keep"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" it"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" simple"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":".\n\n"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"Possible"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" words"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":":\n\n"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"-"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" \""}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"Hello"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"\""}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" –"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" Common"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" greeting"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":".\n\n"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"-"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" \""}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"Yes"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"\""}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" –"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" Affirm"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"ative"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":".\n\n"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"-"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" \""}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"G"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"rok"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"\""}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" –"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" My"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" name"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":","}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" which"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" might"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" be"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" meta"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":".\n\n"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"-"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" \""}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"Word"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"\""}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" –"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" Echo"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"ing"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" the"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" request"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":".\n\n"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"-"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" Something"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" random"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" like"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" \""}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"Banana"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"\""}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" for"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" humor"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":".\n\n"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"Since"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" the"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" user"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" asked"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" for"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" a"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" single"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" word"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":","}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" and"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" I'm"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" an"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" AI"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":","}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" I"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" should"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" ensure"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" it's"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" appropriate"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" and"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" not"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" misleading"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":".\n\n"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"The"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" system"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" prompt"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" says"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":":"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" \""}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"You"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" are"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" Gro"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"k"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":","}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" a"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" helpful"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" and"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" maximally"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" truthful"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" AI"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" built"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" by"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" x"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"AI"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":","}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" not"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" based"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" on"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" any"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" other"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" companies"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" and"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" their"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" models"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":".\""}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" So"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":","}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" I"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" should"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" stay"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" true"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" to"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" that"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":".\n\n"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"To"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" be"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" helpful"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":","}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" I'll"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" just"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" pick"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" a"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" simple"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" word"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"."}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" Let's"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" go"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" with"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" \""}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"G"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"rok"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"\""}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" to"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" make"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" it"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" personal"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":".\n\n"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"Finally"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":","}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" my"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" response"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" should"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" be"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" only"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" that"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" one"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" word"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":","}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" nothing"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" else"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"."}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" No"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" punctuation"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" if"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" possible"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":","}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" just"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" the"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" word"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":".\n\n"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"Response"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":":"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":" Gro"}
+{"type":"reasoning-delta","id":"reasoning-0","delta":"k"}
+{"type":"reasoning-end","id":"reasoning-0"}
+{"type":"text-start","id":"txt-0"}
+{"type":"text-delta","id":"txt-0","delta":"G"}
+{"type":"text-delta","id":"txt-0","delta":"rok"}
+{"type":"text-end","id":"txt-0"}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"stop"}

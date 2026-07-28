@@ -1,0 +1,109 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"reasoning-start","id":"0"}
+{"type":"reasoning-delta","id":"0","delta":"I"}
+{"type":"reasoning-delta","id":"0","delta":" need to calculate 25 * "}
+{"type":"reasoning-delta","id":"0","delta":"37 step by step.\n\nLet"}
+{"type":"reasoning-delta","id":"0","delta":" me break this down using"}
+{"type":"reasoning-delta","id":"0","delta":" the distribution"}
+{"type":"reasoning-delta","id":"0","delta":" method"}
+{"type":"reasoning-delta","id":"0","delta":":"}
+{"type":"reasoning-delta","id":"0","delta":"\n\n25 * 37 = "}
+{"type":"reasoning-delta","id":"0","delta":"25 * (30 + "}
+{"type":"reasoning-delta","id":"0","delta":"7)"}
+{"type":"reasoning-delta","id":"0","delta":"\n       "}
+{"type":"reasoning-delta","id":"0","delta":"= ("}
+{"type":"reasoning-delta","id":"0","delta":"25 * 30) + ("}
+{"type":"reasoning-delta","id":"0","delta":"25 * 7)"}
+{"type":"reasoning-delta","id":"0","delta":"\n\nFirst, let me calculate 25 "}
+{"type":"reasoning-delta","id":"0","delta":"* 30:\n25 *"}
+{"type":"reasoning-delta","id":"0","delta":" 30 = 25 *"}
+{"type":"reasoning-delta","id":"0","delta":" 3 * 10"}
+{"type":"reasoning-delta","id":"0","delta":"\n       = 75 * 10"}
+{"type":"reasoning-delta","id":"0","delta":"\n       = 750\n\nNext"}
+{"type":"reasoning-delta","id":"0","delta":", let me calculate 25 *"}
+{"type":"reasoning-delta","id":"0","delta":" 7:\n25 * "}
+{"type":"reasoning-delta","id":"0","delta":"7 = ("}
+{"type":"reasoning-delta","id":"0","delta":"20 + 5) * "}
+{"type":"reasoning-delta","id":"0","delta":"7\n       "}
+{"type":"reasoning-delta","id":"0","delta":"= ("}
+{"type":"reasoning-delta","id":"0","delta":"20 * 7) + ("}
+{"type":"reasoning-delta","id":"0","delta":"5"}
+{"type":"reasoning-delta","id":"0","delta":" * 7)\n       ="}
+{"type":"reasoning-delta","id":"0","delta":" 140 + 35\n       "}
+{"type":"reasoning-delta","id":"0","delta":"= 175\n\nNow"}
+{"type":"reasoning-delta","id":"0","delta":" I add"}
+{"type":"reasoning-delta","id":"0","delta":" them together:\n750 + "}
+{"type":"reasoning-delta","id":"0","delta":"175 = 925\n\nLet"}
+{"type":"reasoning-delta","id":"0","delta":" me verify"}
+{"type":"reasoning-delta","id":"0","delta":" this another"}
+{"type":"reasoning-delta","id":"0","delta":" way:\n25 * 37"}
+{"type":"reasoning-delta","id":"0","delta":" = 25 * 37"}
+{"type":"reasoning-delta","id":"0","delta":"\n\nUsing"}
+{"type":"reasoning-delta","id":"0","delta":" the standard algorithm"}
+{"type":"reasoning-delta","id":"0","delta":":\n    "}
+{"type":"reasoning-delta","id":"0","delta":"37"}
+{"type":"reasoning-delta","id":"0","delta":"\n  "}
+{"type":"reasoning-delta","id":"0","delta":"× 25\n  ----"}
+{"type":"reasoning-delta","id":"0","delta":"\n   "}
+{"type":"reasoning-delta","id":"0","delta":"185"}
+{"type":"reasoning-delta","id":"0","delta":"  "}
+{"type":"reasoning-delta","id":"0","delta":"(37"}
+{"type":"reasoning-delta","id":"0","delta":" × 5)\n  740"}
+{"type":"reasoning-delta","id":"0","delta":"   (37"}
+{"type":"reasoning-delta","id":"0","delta":" × 20)\n  "}
+{"type":"reasoning-delta","id":"0","delta":"----\n  925\n\nYes, "}
+{"type":"reasoning-delta","id":"0","delta":"25 * 37 = "}
+{"type":"reasoning-delta","id":"0","delta":"925"}
+{"type":"reasoning-delta","id":"0","delta":""}
+{"type":"reasoning-delta","id":"0","delta":"","providerMetadata":{"anthropic":{"signature":"EtQFCkYICxgCKkC6mX3q5F227lNUFReMQGWY0Vfr33jLdTeIs1jqrtSjwH4/huGliPEyYr9Kd15UJIm2Q3ipEDQ6NhUekxB7abI7EgwKlrwtZBC++WweHhgaDOgbW3U6fApUIw4+giIwm+fYdm9TieL8tP1Y4GBm+m9zBx9+qQ9Xckf88ffwm++E8YNOcLA0sTuPgjncKYvaKrsEo07f77Oxcr+CpnvDNskXfJgIQ6DCb1GM8nk5XPVJIA7Jq0HpEDnJesayPHQyRk7vrld8uEaRypFSYQBN71l5+BvXe5DZHH7Y6Ckoz1JDXpWIl2HBkNbTFDXn/tY93SKmHWWnCJ9j7RIgih/1NurD2v4wUAhrfbOeCY36LVhf3fgjqzUR3fS6hyDrlp5huG8AgC+bIwdFin0BCXcSnYec66p+9a6LjfzkAjKXU19fvNQ/wCSsrKCyGRriZy9J98kjvRtaSPEB07ac7DSxkMxRry7xLCn4nn0oiJvtxa9UFQ/lt+e3O6CWG42Ig9he3TWIkN3fDzrk49outY+MXYMf4xEzcVGEcVLpwZPyu+aXAw2b6rpYokwQi5N5Mk1Vln5rXqd3KP/5ahpGSMARCOG31YuX6kXkBbUyPZiF2FK7ON9cGcul9nquLTxreRmCg+RjW/62BnUwZuJk8ZVJgw0O8wshb7aBS2cWPYnRnm102FczkdqRmNuGJwfBOTSO3X9o6IagtLHllfu/O7wIjMO7YZQvAIdPoN6I3wkbvMBXEYk+13pBMLqZkGwNm8Nxicb89jFsZ6nsQwPfXOcdu/Wen+KYx6eW62t3njuhhVP6IHecHVfmpwVhj/fhVN0l0O96jvnNJTFskmwyF4U1Gz0Yjfa8blVFdtSXMeASEN9czLyEJT3AL4Ohlr5l+DNfKuAKxydbiy7BaP496x+QYAJNY/344mwcBxaHJz2t8J3rvpBVlXj4yujmnFM+nBgB"}}}
+{"type":"reasoning-end","id":"0"}
+{"type":"text-start","id":"1"}
+{"type":"text-delta","id":"1","delta":"#"}
+{"type":"text-delta","id":"1","delta":" "}
+{"type":"text-delta","id":"1","delta":"25 ×"}
+{"type":"text-delta","id":"1","delta":" 37"}
+{"type":"text-delta","id":"1","delta":"\n\nLet"}
+{"type":"text-delta","id":"1","delta":" me break"}
+{"type":"text-delta","id":"1","delta":" this down step by step:\n\n##"}
+{"type":"text-delta","id":"1","delta":" Method"}
+{"type":"text-delta","id":"1","delta":":"}
+{"type":"text-delta","id":"1","delta":" Break"}
+{"type":"text-delta","id":"1","delta":" "}
+{"type":"text-delta","id":"1","delta":"37"}
+{"type":"text-delta","id":"1","delta":" into 30"}
+{"type":"text-delta","id":"1","delta":" + 7\n\n**25"}
+{"type":"text-delta","id":"1","delta":" × 37 = 25"}
+{"type":"text-delta","id":"1","delta":" × (30 + 7"}
+{"type":"text-delta","id":"1","delta":")**"}
+{"type":"text-delta","id":"1","delta":"\n\n###"}
+{"type":"text-delta","id":"1","delta":" Step 1: Calculate 25 "}
+{"type":"text-delta","id":"1","delta":"× 30\n-"}
+{"type":"text-delta","id":"1","delta":" 25 × 30 ="}
+{"type":"text-delta","id":"1","delta":" 25"}
+{"type":"text-delta","id":"1","delta":" × 3 × 10"}
+{"type":"text-delta","id":"1","delta":"\n- 25 × 3 "}
+{"type":"text-delta","id":"1","delta":"= 75\n- 75 "}
+{"type":"text-delta","id":"1","delta":"× 10 = **"}
+{"type":"text-delta","id":"1","delta":"750**\n\n### Step 2:"}
+{"type":"text-delta","id":"1","delta":" Calculate 25 × 7"}
+{"type":"text-delta","id":"1","delta":"\n- 25 × 7 "}
+{"type":"text-delta","id":"1","delta":"= 175"}
+{"type":"text-delta","id":"1","delta":"\n  "}
+{"type":"text-delta","id":"1","delta":"-"}
+{"type":"text-delta","id":"1","delta":" ("}
+{"type":"text-delta","id":"1","delta":"25 × 7"}
+{"type":"text-delta","id":"1","delta":" "}
+{"type":"text-delta","id":"1","delta":"= 20"}
+{"type":"text-delta","id":"1","delta":"×"}
+{"type":"text-delta","id":"1","delta":"7 + 5×7 "}
+{"type":"text-delta","id":"1","delta":"= 140 + 35 "}
+{"type":"text-delta","id":"1","delta":"= 175)"}
+{"type":"text-delta","id":"1","delta":"\n\n### Step 3: Add the results"}
+{"type":"text-delta","id":"1","delta":"\n750"}
+{"type":"text-delta","id":"1","delta":" + 175 = **925"}
+{"type":"text-delta","id":"1","delta":"**\n\n**Answer: 25 "}
+{"type":"text-delta","id":"1","delta":"× 37 = 925**"}
+{"type":"text-end","id":"1"}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"stop"}

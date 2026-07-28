@@ -1,0 +1,15 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"text-start","id":"0"}
+{"type":"tool-input-start","toolCallId":"tool-1","toolName":"get-weather","dynamic":false}
+{"type":"tool-input-delta","toolCallId":"tool-1","inputTextDelta":"{\"location\":\"SF\"}"}
+{"type":"tool-input-error","toolCallId":"tool-1","toolName":"get-weather","input":{"location":"SF"},"dynamic":true,"errorText":"An error occurred."}
+{"type":"tool-output-error","toolCallId":"tool-1","errorText":"An error occurred.","dynamic":true}
+{"type":"text-start","id":"2"}
+{"type":"text-delta","id":"2","delta":"Now JSON."}
+{"type":"text-start","id":"3"}
+{"type":"text-delta","id":"3","delta":"{\"result\":\"data\"}"}
+{"type":"text-end","id":"3"}
+{"type":"text-delta","id":"0","delta":"Calling a tool first."}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"stop"}

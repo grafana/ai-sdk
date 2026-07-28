@@ -1,0 +1,14 @@
+model: anthropic.claude-sonnet-4-5-20250929-v1:0
+prompt: Return the season labels as JSON.
+responseFormat:
+  type: json
+  schema:
+    type: object
+    properties:
+      labels:
+        type: array
+        maxItems: 3
+        items:
+          type: string
+    required: [labels]
+    additionalProperties: false

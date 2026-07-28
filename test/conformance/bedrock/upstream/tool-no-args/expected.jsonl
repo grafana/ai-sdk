@@ -1,0 +1,11 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"text-start","id":"0"}
+{"type":"text-delta","id":"0","delta":"I'll update the issue list for you."}
+{"type":"text-end","id":"0"}
+{"type":"tool-input-start","toolCallId":"tool-use-id","toolName":"updateIssueList","dynamic":false}
+{"type":"tool-input-delta","toolCallId":"tool-use-id","inputTextDelta":""}
+{"type":"tool-input-error","toolCallId":"tool-use-id","toolName":"updateIssueList","input":{},"dynamic":true,"errorText":"An error occurred."}
+{"type":"tool-output-error","toolCallId":"tool-use-id","errorText":"An error occurred.","dynamic":true}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"tool-calls"}

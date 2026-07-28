@@ -1,0 +1,34 @@
+# Maps upstream Vercel SDK fixture names to local test case directories.
+# Source: packages/anthropic/src/__fixtures__/
+#
+# Format:
+#   <upstream-fixture-name>: <local-directory>  (imported)
+#   <upstream-fixture-name>: null               (not yet imported)
+
+anthropic-advisor-20250301.1: null
+anthropic-text: text-generation
+anthropic-tool-no-args: tool-call-no-args
+anthropic-clear-thinking.1: clear-thinking
+anthropic-clear-tool-uses.1: clear-tool-uses
+anthropic-code-execution-20250825.1: code-execution-1
+anthropic-code-execution-20250825.2: code-execution-2
+anthropic-code-execution-20250825.pptx-skill: code-execution-pptx-skill
+anthropic-code-execution-file-upload.1: null
+anthropic-combined-context-editing.1: combined-context-editing
+anthropic-compaction.1: compaction
+anthropic-fallback: null
+anthropic-json-other-tool.1: json-other-tool
+anthropic-json-output-format.1: json-output-format
+anthropic-json-tool.1: json-tool-1
+anthropic-json-tool.2: json-tool-2
+anthropic-mcp.1: mcp
+anthropic-message-delta-input-tokens: message-delta-input-tokens
+anthropic-programmatic-tool-calling.1: programmatic-tool-calling
+anthropic-refusal: null
+anthropic-tool-search-bm25.1: tool-search-bm25
+anthropic-tool-search-deferred-bm25: tool-search-deferred-bm25
+anthropic-tool-search-deferred-regex: tool-search-deferred-regex
+anthropic-tool-search-regex.1: tool-search-regex
+anthropic-web-fetch-tool.1: web-fetch-tool
+anthropic-web-fetch-tool-20260209.1: web-fetch-tool-20260209
+anthropic-web-search-tool.1: web-search-tool

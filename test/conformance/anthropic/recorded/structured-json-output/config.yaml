@@ -1,0 +1,36 @@
+model: claude-sonnet-4-5-20250929
+prompt: "Get the weather in Berlin and return it as structured data."
+stopWhenStepCount: 2
+responseFormat:
+  type: json
+  schema:
+    type: object
+    properties:
+      city:
+        type: string
+      temperature:
+        type: number
+      conditions:
+        type: string
+      recommendation:
+        type: string
+    required:
+      - city
+      - temperature
+      - conditions
+      - recommendation
+    additionalProperties: false
+tools:
+  get_weather:
+    description: "Get current weather conditions for a city"
+    inputSchema:
+      type: object
+      properties:
+        city:
+          type: string
+          description: "City name"
+      required:
+        - city
+    mockResults:
+      - temperature: 20
+        conditions: "clear sky"

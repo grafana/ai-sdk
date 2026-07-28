@@ -1,0 +1,8 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"tool-input-start","toolCallId":"toolu_019Zvehfe1XQWweT1pm7okyt","toolName":"weather"}
+{"type":"tool-input-delta","toolCallId":"toolu_019Zvehfe1XQWweT1pm7okyt","inputTextDelta":"{\"location\": \"San Francisco"}
+{"type":"tool-input-delta","toolCallId":"toolu_019Zvehfe1XQWweT1pm7okyt","inputTextDelta":"\"}"}
+{"type":"tool-input-available","toolCallId":"toolu_019Zvehfe1XQWweT1pm7okyt","toolName":"weather","input":{"location":"San Francisco"}}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"tool-calls"}

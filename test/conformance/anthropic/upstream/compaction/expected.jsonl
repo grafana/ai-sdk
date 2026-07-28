@@ -1,0 +1,748 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"text-start","id":"0","providerMetadata":{"anthropic":{"type":"compaction"}}}
+{"type":"text-delta","id":"0","delta":"## Summary of Conversation\n\n### Task Context\nThe user shared a very long reference document about web development and software engineering (duplicated 5 times for \"redundancy\"). They asked a series of questions about different topics covered in the documentation.\n\n### Conversation Flow\n1. **React vs Vue.js State Management**: I explained React's hooks (useState, useReducer, useContext) and Redux vs Vue's Composition API (ref, computed, watch) and Pinia (defineStore with state, getters, actions).\n\n2. **Docker and Kubernetes**: I explained Docker's containerization (Dockerfile, Docker Compose) and Kubernetes orchestration (Deployments, Services, Ingress), plus how they work together in a development-to-production workflow.\n\n3. **Testing Strategies**: I covered the differences between Unit Testing (Jest - isolated functions, fast), Integration Testing (supertest - API endpoints, service communication), and E2E Testing (Playwright - real user flows in browsers), plus the testing pyramid concept.\n\n4. **SQL vs NoSQL Databases**: I explained SQL databases (DDL, DML, JOINs, window functions, CTEs, indexing) vs NoSQL options (MongoDB for documents, Redis for key-value/caching, Neo4j for graphs), and when to use each.\n\n5. **Current Question**: The user asked me to summarize key algorithms and data structures from the documentation. This is the pending question I need to answer.\n\n### Pending Response Needed\nI need to provide a comprehensive summary of algorithms and data structures from the documentation, covering:\n- **Data Structures**: Arrays, Linked Lists, Stacks, Queues, Priority Queues, Binary Search Trees, Hash Tables, Graphs\n- **Sorting Algorithms**: Quick Sort, Merge Sort, Heap Sort\n- **Searching Algorithms**: Binary Search (and variants)\n- **Dynamic Programming**: Fibonacci, LCS, Knapsack, Coin Change, Edit Distance\n- **Big O Notation**: Common complexities from O(1) to O(n!)\n\n### Key Pattern\nThe user asks broad questions about sections of the documentation and expects organized, structured answers that summarize the key concepts. They've been asking follow-up questions sequentially through the major sections. This was their \"final\" question in the series."}
+{"type":"text-end","id":"0"}
+{"type":"text-start","id":"1"}
+{"type":"text-delta","id":"1","delta":"Based"}
+{"type":"text-delta","id":"1","delta":" on the conversation"}
+{"type":"text-delta","id":"1","delta":" history"}
+{"type":"text-delta","id":"1","delta":", you"}
+{"type":"text-delta","id":"1","delta":" asked"}
+{"type":"text-delta","id":"1","delta":" me to summarize the"}
+{"type":"text-delta","id":"1","delta":" key algorithms and data structures from the documentation"}
+{"type":"text-delta","id":"1","delta":". Here's a"}
+{"type":"text-delta","id":"1","delta":" comprehensive summary:\n\n---"}
+{"type":"text-delta","id":"1","delta":"\n\n#"}
+{"type":"text-delta","id":"1","delta":" Algorithms &"}
+{"type":"text-delta","id":"1","delta":" Data Structures Summary\n\n## "}
+{"type":"text-delta","id":"1","delta":"📦"}
+{"type":"text-delta","id":"1","delta":" Core"}
+{"type":"text-delta","id":"1","delta":" Data"}
+{"type":"text-delta","id":"1","delta":" Structures\n\n### Arrays"}
+{"type":"text-delta","id":"1","delta":"\n- **Fixed"}
+{"type":"text-delta","id":"1","delta":"-size**"}
+{"type":"text-delta","id":"1","delta":" ("}
+{"type":"text-delta","id":"1","delta":"or"}
+{"type":"text-delta","id":"1","delta":" dynam"}
+{"type":"text-delta","id":"1","delta":"ically res"}
+{"type":"text-delta","id":"1","delta":"ized"}
+{"type":"text-delta","id":"1","delta":") cont"}
+{"type":"text-delta","id":"1","delta":"iguous memory blocks"}
+{"type":"text-delta","id":"1","delta":"\n- **Access"}
+{"type":"text-delta","id":"1","delta":"**: O(1) by"}
+{"type":"text-delta","id":"1","delta":" index\n- **Search"}
+{"type":"text-delta","id":"1","delta":"**: O(n) linear"}
+{"type":"text-delta","id":"1","delta":","}
+{"type":"text-delta","id":"1","delta":" O(log n) if"}
+{"type":"text-delta","id":"1","delta":" sorted"}
+{"type":"text-delta","id":"1","delta":" ("}
+{"type":"text-delta","id":"1","delta":"binary"}
+{"type":"text-delta","id":"1","delta":" search)\n- **Insertion/"}
+{"type":"text-delta","id":"1","delta":"Deletion**: O(n) due"}
+{"type":"text-delta","id":"1","delta":" to shifting elements"}
+{"type":"text-delta","id":"1","delta":"\n- Great"}
+{"type":"text-delta","id":"1","delta":" for random"}
+{"type":"text-delta","id":"1","delta":" access;"}
+{"type":"text-delta","id":"1","delta":" less"}
+{"type":"text-delta","id":"1","delta":" ideal"}
+{"type":"text-delta","id":"1","delta":" for frequent insertions/remov"}
+{"type":"text-delta","id":"1","delta":"als\n\n### Linked Lists\n-"}
+{"type":"text-delta","id":"1","delta":" **Singly Linked**:"}
+{"type":"text-delta","id":"1","delta":" Each"}
+{"type":"text-delta","id":"1","delta":" node points"}
+{"type":"text-delta","id":"1","delta":" to the next"}
+{"type":"text-delta","id":"1","delta":"\n- **Doubly Linked**:"}
+{"type":"text-delta","id":"1","delta":" Each node points to both next"}
+{"type":"text-delta","id":"1","delta":" and previous\n- **Insertion"}
+{"type":"text-delta","id":"1","delta":"/Deletion**"}
+{"type":"text-delta","id":"1","delta":" at head:"}
+{"type":"text-delta","id":"1","delta":" O(1)\n- **Search"}
+{"type":"text-delta","id":"1","delta":"/"}
+{"type":"text-delta","id":"1","delta":"Access"}
+{"type":"text-delta","id":"1","delta":"**: O(n) —"}
+{"type":"text-delta","id":"1","delta":" no"}
+{"type":"text-delta","id":"1","delta":" random access\n- Useful"}
+{"type":"text-delta","id":"1","delta":" when"}
+{"type":"text-delta","id":"1","delta":" you need frequent"}
+{"type":"text-delta","id":"1","delta":" insertions/deletions and"}
+{"type":"text-delta","id":"1","delta":" don"}
+{"type":"text-delta","id":"1","delta":"'t need"}
+{"type":"text-delta","id":"1","delta":" index"}
+{"type":"text-delta","id":"1","delta":"ing\n\n### Stacks ("}
+{"type":"text-delta","id":"1","delta":"LIFO)\n- **Push/"}
+{"type":"text-delta","id":"1","delta":"Pop/"}
+{"type":"text-delta","id":"1","delta":"Peek**: O(1)"}
+{"type":"text-delta","id":"1","delta":"\n- Use"}
+{"type":"text-delta","id":"1","delta":" cases"}
+{"type":"text-delta","id":"1","delta":": function call"}
+{"type":"text-delta","id":"1","delta":" st"}
+{"type":"text-delta","id":"1","delta":"acks, "}
+{"type":"text-delta","id":"1","delta":"undo operations, expression evaluation,"}
+{"type":"text-delta","id":"1","delta":" D"}
+{"type":"text-delta","id":"1","delta":"FS"}
+{"type":"text-delta","id":"1","delta":"\n- Can"}
+{"type":"text-delta","id":"1","delta":" be implemented with arrays or linked lists"}
+{"type":"text-delta","id":"1","delta":"\n\n### Queues ("}
+{"type":"text-delta","id":"1","delta":"FIFO)\n- **"}
+{"type":"text-delta","id":"1","delta":"Enqueue/Dequeue/"}
+{"type":"text-delta","id":"1","delta":"Peek**: O(1)"}
+{"type":"text-delta","id":"1","delta":"\n- Use cases: B"}
+{"type":"text-delta","id":"1","delta":"FS, task"}
+{"type":"text-delta","id":"1","delta":" scheduling, buff"}
+{"type":"text-delta","id":"1","delta":"ering"}
+{"type":"text-delta","id":"1","delta":"\n-"}
+{"type":"text-delta","id":"1","delta":" Variants"}
+{"type":"text-delta","id":"1","delta":": **"}
+{"type":"text-delta","id":"1","delta":"Circular Queue**,"}
+{"type":"text-delta","id":"1","delta":" **"}
+{"type":"text-delta","id":"1","delta":"Deque** (double-ended)"}
+{"type":"text-delta","id":"1","delta":"\n\n### Priority Queues /"}
+{"type":"text-delta","id":"1","delta":" Heaps\n-"}
+{"type":"text-delta","id":"1","delta":" Typically"}
+{"type":"text-delta","id":"1","delta":" implemented as a"}
+{"type":"text-delta","id":"1","delta":" **"}
+{"type":"text-delta","id":"1","delta":"binary"}
+{"type":"text-delta","id":"1","delta":" heap**"}
+{"type":"text-delta","id":"1","delta":" (min-heap or max-heap"}
+{"type":"text-delta","id":"1","delta":")\n- **Insert"}
+{"type":"text-delta","id":"1","delta":"**: O(log n)\n-"}
+{"type":"text-delta","id":"1","delta":" **Extract min"}
+{"type":"text-delta","id":"1","delta":"/max**: O(log n)"}
+{"type":"text-delta","id":"1","delta":"\n- **"}
+{"type":"text-delta","id":"1","delta":"Peek"}
+{"type":"text-delta","id":"1","delta":"**: O(1)\n- Use"}
+{"type":"text-delta","id":"1","delta":" cases:"}
+{"type":"text-delta","id":"1","delta":" Dijkstra's algorithm, task"}
+{"type":"text-delta","id":"1","delta":" scheduling by"}
+{"type":"text-delta","id":"1","delta":" priority,"}
+{"type":"text-delta","id":"1","delta":" median"}
+{"type":"text-delta","id":"1","delta":" finding\n\n### Binary Search Trees (BS"}
+{"type":"text-delta","id":"1","delta":"T"}
+{"type":"text-delta","id":"1","delta":")\n- Each"}
+{"type":"text-delta","id":"1","delta":" node:"}
+{"type":"text-delta","id":"1","delta":" left"}
+{"type":"text-delta","id":"1","delta":" child < parent < right child\n-"}
+{"type":"text-delta","id":"1","delta":" **Average"}
+{"type":"text-delta","id":"1","delta":"**"}
+{"type":"text-delta","id":"1","delta":" search"}
+{"type":"text-delta","id":"1","delta":"/"}
+{"type":"text-delta","id":"1","delta":"insert/"}
+{"type":"text-delta","id":"1","delta":"delete: O(log n)"}
+{"type":"text-delta","id":"1","delta":"\n- **Worst case"}
+{"type":"text-delta","id":"1","delta":"**"}
+{"type":"text-delta","id":"1","delta":" (de"}
+{"type":"text-delta","id":"1","delta":"generate/"}
+{"type":"text-delta","id":"1","delta":"skewed): O(n)"}
+{"type":"text-delta","id":"1","delta":"\n- **"}
+{"type":"text-delta","id":"1","delta":"Balanced"}
+{"type":"text-delta","id":"1","delta":" variants"}
+{"type":"text-delta","id":"1","delta":"**: AVL trees"}
+{"type":"text-delta","id":"1","delta":", Red-Black trees →"}
+{"type":"text-delta","id":"1","delta":" guarantee"}
+{"type":"text-delta","id":"1","delta":" O(log n)"}
+{"type":"text-delta","id":"1","delta":"\n- **"}
+{"type":"text-delta","id":"1","delta":"In"}
+{"type":"text-delta","id":"1","delta":"-order traversal**"}
+{"type":"text-delta","id":"1","delta":" yields"}
+{"type":"text-delta","id":"1","delta":" sorted output"}
+{"type":"text-delta","id":"1","delta":"\n\n### Hash Tables\n- **Key"}
+{"type":"text-delta","id":"1","delta":" →"}
+{"type":"text-delta","id":"1","delta":" hash"}
+{"type":"text-delta","id":"1","delta":" function →"}
+{"type":"text-delta","id":"1","delta":" bucket index"}
+{"type":"text-delta","id":"1","delta":"**\n- **Average"}
+{"type":"text-delta","id":"1","delta":"** insert"}
+{"type":"text-delta","id":"1","delta":"/search"}
+{"type":"text-delta","id":"1","delta":"/"}
+{"type":"text-delta","id":"1","delta":"delete: O(1)"}
+{"type":"text-delta","id":"1","delta":"\n- **Worst case**"}
+{"type":"text-delta","id":"1","delta":" (many"}
+{"type":"text-delta","id":"1","delta":" collisions): O(n)"}
+{"type":"text-delta","id":"1","delta":"\n-"}
+{"type":"text-delta","id":"1","delta":" Collision"}
+{"type":"text-delta","id":"1","delta":" resolution: **"}
+{"type":"text-delta","id":"1","delta":"ch"}
+{"type":"text-delta","id":"1","delta":"aining** ("}
+{"type":"text-delta","id":"1","delta":"linked"}
+{"type":"text-delta","id":"1","delta":" lists in"}
+{"type":"text-delta","id":"1","delta":" buckets)"}
+{"type":"text-delta","id":"1","delta":" or **open addressing**"}
+{"type":"text-delta","id":"1","delta":" (pro"}
+{"type":"text-delta","id":"1","delta":"bing)"}
+{"type":"text-delta","id":"1","delta":"\n- Use"}
+{"type":"text-delta","id":"1","delta":" cases: dict"}
+{"type":"text-delta","id":"1","delta":"ionaries, caches"}
+{"type":"text-delta","id":"1","delta":", frequency"}
+{"type":"text-delta","id":"1","delta":" counting,"}
+{"type":"text-delta","id":"1","delta":" de"}
+{"type":"text-delta","id":"1","delta":"duplication\n\n### Graphs\n-"}
+{"type":"text-delta","id":"1","delta":" **Representations"}
+{"type":"text-delta","id":"1","delta":"**:"}
+{"type":"text-delta","id":"1","delta":" Adjacency List"}
+{"type":"text-delta","id":"1","delta":" ("}
+{"type":"text-delta","id":"1","delta":"space"}
+{"type":"text-delta","id":"1","delta":"-efficient for"}
+{"type":"text-delta","id":"1","delta":" sparse)"}
+{"type":"text-delta","id":"1","delta":" vs"}
+{"type":"text-delta","id":"1","delta":"."}
+{"type":"text-delta","id":"1","delta":" Adjacency Matrix (fast"}
+{"type":"text-delta","id":"1","delta":" edge"}
+{"type":"text-delta","id":"1","delta":" lookup)\n- **Types"}
+{"type":"text-delta","id":"1","delta":"**: Directed/"}
+{"type":"text-delta","id":"1","delta":"Undirected,"}
+{"type":"text-delta","id":"1","delta":" Weighted/Unweighted,"}
+{"type":"text-delta","id":"1","delta":" Cyclic/"}
+{"type":"text-delta","id":"1","delta":"Acyclic\n- **Key"}
+{"type":"text-delta","id":"1","delta":" algorithms"}
+{"type":"text-delta","id":"1","delta":"**:\n  - **"}
+{"type":"text-delta","id":"1","delta":"B"}
+{"type":"text-delta","id":"1","delta":"FS**"}
+{"type":"text-delta","id":"1","delta":" (Breadth-First Search):"}
+{"type":"text-delta","id":"1","delta":" O(V + E),"}
+{"type":"text-delta","id":"1","delta":" uses"}
+{"type":"text-delta","id":"1","delta":" queue —"}
+{"type":"text-delta","id":"1","delta":" shortest"}
+{"type":"text-delta","id":"1","delta":" path in"}
+{"type":"text-delta","id":"1","delta":" unweighted graphs"}
+{"type":"text-delta","id":"1","delta":"\n  - **DFS** ("}
+{"type":"text-delta","id":"1","delta":"Depth-First Search): O("}
+{"type":"text-delta","id":"1","delta":"V + E), uses stack/"}
+{"type":"text-delta","id":"1","delta":"recursion — cycle"}
+{"type":"text-delta","id":"1","delta":" detection,"}
+{"type":"text-delta","id":"1","delta":" topological sort\n  - **"}
+{"type":"text-delta","id":"1","delta":"Dijkstra's**:"}
+{"type":"text-delta","id":"1","delta":" Shortest"}
+{"type":"text-delta","id":"1","delta":" path in"}
+{"type":"text-delta","id":"1","delta":" weighted graphs ("}
+{"type":"text-delta","id":"1","delta":"non-negative weights),"}
+{"type":"text-delta","id":"1","delta":" O"}
+{"type":"text-delta","id":"1","delta":"((V + E) log V)"}
+{"type":"text-delta","id":"1","delta":" with"}
+{"type":"text-delta","id":"1","delta":" min"}
+{"type":"text-delta","id":"1","delta":"-heap\n  - **Bell"}
+{"type":"text-delta","id":"1","delta":"man-Ford**: Handles"}
+{"type":"text-delta","id":"1","delta":" negative weights, O(V × E"}
+{"type":"text-delta","id":"1","delta":")"}
+{"type":"text-delta","id":"1","delta":"\n  - **"}
+{"type":"text-delta","id":"1","delta":"Top"}
+{"type":"text-delta","id":"1","delta":"ological Sort"}
+{"type":"text-delta","id":"1","delta":"**: Linear"}
+{"type":"text-delta","id":"1","delta":" ordering of DA"}
+{"type":"text-delta","id":"1","delta":"G vertices"}
+{"type":"text-delta","id":"1","delta":"\n\n---"}
+{"type":"text-delta","id":"1","delta":"\n\n## 🔄"}
+{"type":"text-delta","id":"1","delta":" Sorting Algorithms\n\n### Quick"}
+{"type":"text-delta","id":"1","delta":" Sort\n```"}
+{"type":"text-delta","id":"1","delta":"\nfunction quickSort(arr):"}
+{"type":"text-delta","id":"1","delta":"\n    if arr."}
+{"type":"text-delta","id":"1","delta":"length <= 1:"}
+{"type":"text-delta","id":"1","delta":" return arr\n    pick"}
+{"type":"text-delta","id":"1","delta":" pivot (e.g., last element"}
+{"type":"text-delta","id":"1","delta":")\n    partition into"}
+{"type":"text-delta","id":"1","delta":" ["}
+{"type":"text-delta","id":"1","delta":"less],"}
+{"type":"text-delta","id":"1","delta":" [equal"}
+{"type":"text-delta","id":"1","delta":"], [greater]\n    return"}
+{"type":"text-delta","id":"1","delta":" [..."}
+{"type":"text-delta","id":"1","delta":"quickSort(less), ..."}
+{"type":"text-delta","id":"1","delta":"equal"}
+{"type":"text-delta","id":"1","delta":", ...quickSort(greater)]"}
+{"type":"text-delta","id":"1","delta":"\n```"}
+{"type":"text-delta","id":"1","delta":"\n-"}
+{"type":"text-delta","id":"1","delta":" **Average**: O(n log n"}
+{"type":"text-delta","id":"1","delta":")\n- **Worst**"}
+{"type":"text-delta","id":"1","delta":" (bad"}
+{"type":"text-delta","id":"1","delta":" pivot selection"}
+{"type":"text-delta","id":"1","delta":"): O(n²)\n-"}
+{"type":"text-delta","id":"1","delta":" **Space"}
+{"type":"text-delta","id":"1","delta":"**: O(log"}
+{"type":"text-delta","id":"1","delta":" n) for recursion stack ("}
+{"type":"text-delta","id":"1","delta":"in"}
+{"type":"text-delta","id":"1","delta":"-place variant"}
+{"type":"text-delta","id":"1","delta":")"}
+{"type":"text-delta","id":"1","delta":"\n- **Not"}
+{"type":"text-delta","id":"1","delta":" stable** (by"}
+{"type":"text-delta","id":"1","delta":" default)"}
+{"type":"text-delta","id":"1","delta":"\n- In"}
+{"type":"text-delta","id":"1","delta":" practice"}
+{"type":"text-delta","id":"1","delta":","}
+{"type":"text-delta","id":"1","delta":" often the"}
+{"type":"text-delta","id":"1","delta":" fastest"}
+{"type":"text-delta","id":"1","delta":" general"}
+{"type":"text-delta","id":"1","delta":"-purpose sort"}
+{"type":"text-delta","id":"1","delta":"\n\n### Merge Sort\n```"}
+{"type":"text-delta","id":"1","delta":"\nfunction mergeSort(arr):"}
+{"type":"text-delta","id":"1","delta":"\n    if arr.length <= 1"}
+{"type":"text-delta","id":"1","delta":": return arr\n    split"}
+{"type":"text-delta","id":"1","delta":" into"}
+{"type":"text-delta","id":"1","delta":" left"}
+{"type":"text-delta","id":"1","delta":" half,"}
+{"type":"text-delta","id":"1","delta":" right half\n    return"}
+{"type":"text-delta","id":"1","delta":" merge(mergeSort(left),"}
+{"type":"text-delta","id":"1","delta":" mergeSort(right))\n```"}
+{"type":"text-delta","id":"1","delta":"\n- **Always"}
+{"type":"text-delta","id":"1","delta":"**:"}
+{"type":"text-delta","id":"1","delta":" O(n log n)"}
+{"type":"text-delta","id":"1","delta":" — guaranteed"}
+{"type":"text-delta","id":"1","delta":"\n- **Space"}
+{"type":"text-delta","id":"1","delta":"**: O(n) for the"}
+{"type":"text-delta","id":"1","delta":" merge"}
+{"type":"text-delta","id":"1","delta":" step"}
+{"type":"text-delta","id":"1","delta":"\n- **Stable**"}
+{"type":"text-delta","id":"1","delta":" sort"}
+{"type":"text-delta","id":"1","delta":" (preserves relative order of equal elements"}
+{"type":"text-delta","id":"1","delta":")\n- Preferred"}
+{"type":"text-delta","id":"1","delta":" when"}
+{"type":"text-delta","id":"1","delta":" stability"}
+{"type":"text-delta","id":"1","delta":" matters"}
+{"type":"text-delta","id":"1","delta":" or"}
+{"type":"text-delta","id":"1","delta":" for"}
+{"type":"text-delta","id":"1","delta":" linked"}
+{"type":"text-delta","id":"1","delta":" lists"}
+{"type":"text-delta","id":"1","delta":"\n\n### Heap Sort\n```"}
+{"type":"text-delta","id":"1","delta":"\nfunction heapSort(arr):"}
+{"type":"text-delta","id":"1","delta":"\n    build"}
+{"type":"text-delta","id":"1","delta":"Max"}
+{"type":"text-delta","id":"1","delta":"Heap(arr)\n    for"}
+{"type":"text-delta","id":"1","delta":" i from end"}
+{"type":"text-delta","id":"1","delta":" to"}
+{"type":"text-delta","id":"1","delta":" start"}
+{"type":"text-delta","id":"1","delta":":\n        swap arr"}
+{"type":"text-delta","id":"1","delta":"[0] with"}
+{"type":"text-delta","id":"1","delta":" arr[i]\n        he"}
+{"type":"text-delta","id":"1","delta":"apify"}
+{"type":"text-delta","id":"1","delta":"Down(arr, "}
+{"type":"text-delta","id":"1","delta":"0,"}
+{"type":"text-delta","id":"1","delta":" i)"}
+{"type":"text-delta","id":"1","delta":"\n```\n- **Always"}
+{"type":"text-delta","id":"1","delta":"**: O(n log n)"}
+{"type":"text-delta","id":"1","delta":"\n- **Space**: O(1"}
+{"type":"text-delta","id":"1","delta":") —"}
+{"type":"text-delta","id":"1","delta":" in-place\n- **Not"}
+{"type":"text-delta","id":"1","delta":" stable**\n- Useful"}
+{"type":"text-delta","id":"1","delta":" when"}
+{"type":"text-delta","id":"1","delta":" guaranteed"}
+{"type":"text-delta","id":"1","delta":" O(n log n) is"}
+{"type":"text-delta","id":"1","delta":" needed"}
+{"type":"text-delta","id":"1","delta":" with"}
+{"type":"text-delta","id":"1","delta":" O"}
+{"type":"text-delta","id":"1","delta":"(1) extra"}
+{"type":"text-delta","id":"1","delta":" space\n\n###"}
+{"type":"text-delta","id":"1","delta":" Comparison"}
+{"type":"text-delta","id":"1","delta":" Table"}
+{"type":"text-delta","id":"1","delta":"\n\n| Algorithm"}
+{"type":"text-delta","id":"1","delta":" | Best"}
+{"type":"text-delta","id":"1","delta":" | Average | Worst | Space |"}
+{"type":"text-delta","id":"1","delta":" Stable?"}
+{"type":"text-delta","id":"1","delta":" |\n|-----------|------|------"}
+{"type":"text-delta","id":"1","delta":"---|-------|-------|---------|"}
+{"type":"text-delta","id":"1","delta":"\n| Quick Sort | O"}
+{"type":"text-delta","id":"1","delta":"(n log n) | O("}
+{"type":"text-delta","id":"1","delta":"n log"}
+{"type":"text-delta","id":"1","delta":" n) | O(n²)"}
+{"type":"text-delta","id":"1","delta":" | O(log n) | No"}
+{"type":"text-delta","id":"1","delta":" |\n| Merge Sort | O"}
+{"type":"text-delta","id":"1","delta":"(n log n) | O("}
+{"type":"text-delta","id":"1","delta":"n log n) | O(n"}
+{"type":"text-delta","id":"1","delta":" log"}
+{"type":"text-delta","id":"1","delta":" n) | O(n) |"}
+{"type":"text-delta","id":"1","delta":" Yes |\n| Heap Sort |"}
+{"type":"text-delta","id":"1","delta":" O(n log n) | O"}
+{"type":"text-delta","id":"1","delta":"(n log n) | O("}
+{"type":"text-delta","id":"1","delta":"n"}
+{"type":"text-delta","id":"1","delta":" log"}
+{"type":"text-delta","id":"1","delta":" n) | O(1) |"}
+{"type":"text-delta","id":"1","delta":" No |"}
+{"type":"text-delta","id":"1","delta":"\n\n---\n\n## 🔍"}
+{"type":"text-delta","id":"1","delta":" Searching Algorithms\n\n### Binary"}
+{"type":"text-delta","id":"1","delta":" Search"}
+{"type":"text-delta","id":"1","delta":"\n```python"}
+{"type":"text-delta","id":"1","delta":"\ndef binary"}
+{"type":"text-delta","id":"1","delta":"_search(arr, target):"}
+{"type":"text-delta","id":"1","delta":"\n    low"}
+{"type":"text-delta","id":"1","delta":", high = 0, len("}
+{"type":"text-delta","id":"1","delta":"arr) - 1\n    while"}
+{"type":"text-delta","id":"1","delta":" low <= high:\n        mid ="}
+{"type":"text-delta","id":"1","delta":" (low + high) // 2"}
+{"type":"text-delta","id":"1","delta":"\n        if arr[mid] =="}
+{"type":"text-delta","id":"1","delta":" target:\n            return mid"}
+{"type":"text-delta","id":"1","delta":"\n        elif arr[mid] "}
+{"type":"text-delta","id":"1","delta":"< target:\n            low = mid +"}
+{"type":"text-delta","id":"1","delta":" 1\n        else:\n            "}
+{"type":"text-delta","id":"1","delta":"high = mid - 1\n    "}
+{"type":"text-delta","id":"1","delta":"return -1\n```\n- **"}
+{"type":"text-delta","id":"1","delta":"Prerequis"}
+{"type":"text-delta","id":"1","delta":"ite**: Array must be **"}
+{"type":"text-delta","id":"1","delta":"sorted**\n- **Time"}
+{"type":"text-delta","id":"1","delta":"**: O(log n)\n-"}
+{"type":"text-delta","id":"1","delta":" **Space**: O(1)"}
+{"type":"text-delta","id":"1","delta":" iter"}
+{"type":"text-delta","id":"1","delta":"ative,"}
+{"type":"text-delta","id":"1","delta":" O(log n) recursive"}
+{"type":"text-delta","id":"1","delta":"\n\n### Common"}
+{"type":"text-delta","id":"1","delta":" Variants\n- **Lower"}
+{"type":"text-delta","id":"1","delta":" Bound**: Find first"}
+{"type":"text-delta","id":"1","delta":" occurrence"}
+{"type":"text-delta","id":"1","delta":" of target ("}
+{"type":"text-delta","id":"1","delta":"or"}
+{"type":"text-delta","id":"1","delta":" first"}
+{"type":"text-delta","id":"1","delta":" element "}
+{"type":"text-delta","id":"1","delta":"≥ target)\n- **"}
+{"type":"text-delta","id":"1","delta":"Upper Bound**: Find last"}
+{"type":"text-delta","id":"1","delta":" occurrence ("}
+{"type":"text-delta","id":"1","delta":"or first"}
+{"type":"text-delta","id":"1","delta":" element >"}
+{"type":"text-delta","id":"1","delta":" target)\n- **Search"}
+{"type":"text-delta","id":"1","delta":" in"}
+{"type":"text-delta","id":"1","delta":" Rot"}
+{"type":"text-delta","id":"1","delta":"ated Sorted Array**: Modified"}
+{"type":"text-delta","id":"1","delta":" binary search checking"}
+{"type":"text-delta","id":"1","delta":" which"}
+{"type":"text-delta","id":"1","delta":" half is"}
+{"type":"text-delta","id":"1","delta":" sorted"}
+{"type":"text-delta","id":"1","delta":"\n- **Binary"}
+{"type":"text-delta","id":"1","delta":" Search on Answer"}
+{"type":"text-delta","id":"1","delta":"**: Search"}
+{"type":"text-delta","id":"1","delta":" over"}
+{"type":"text-delta","id":"1","delta":" the"}
+{"type":"text-delta","id":"1","delta":" solution"}
+{"type":"text-delta","id":"1","delta":" space ("}
+{"type":"text-delta","id":"1","delta":"e"}
+{"type":"text-delta","id":"1","delta":".g., \"minimum"}
+{"type":"text-delta","id":"1","delta":" capacity"}
+{"type":"text-delta","id":"1","delta":" to"}
+{"type":"text-delta","id":"1","delta":" ship"}
+{"type":"text-delta","id":"1","delta":" packages"}
+{"type":"text-delta","id":"1","delta":" in"}
+{"type":"text-delta","id":"1","delta":" D"}
+{"type":"text-delta","id":"1","delta":" days\")\n\n---\n\n## "}
+{"type":"text-delta","id":"1","delta":"🧠"}
+{"type":"text-delta","id":"1","delta":" Dynamic Programming ("}
+{"type":"text-delta","id":"1","delta":"DP)\n\nThe"}
+{"type":"text-delta","id":"1","delta":" core"}
+{"type":"text-delta","id":"1","delta":" idea: **break"}
+{"type":"text-delta","id":"1","delta":" problems"}
+{"type":"text-delta","id":"1","delta":" into overl"}
+{"type":"text-delta","id":"1","delta":"apping subproblems**,"}
+{"type":"text-delta","id":"1","delta":" store"}
+{"type":"text-delta","id":"1","delta":" results"}
+{"type":"text-delta","id":"1","delta":" to"}
+{"type":"text-delta","id":"1","delta":" avoid re"}
+{"type":"text-delta","id":"1","delta":"computation."}
+{"type":"text-delta","id":"1","delta":"\n\nTwo"}
+{"type":"text-delta","id":"1","delta":" approaches:\n-"}
+{"type":"text-delta","id":"1","delta":" **Top"}
+{"type":"text-delta","id":"1","delta":"-Down"}
+{"type":"text-delta","id":"1","delta":" ("}
+{"type":"text-delta","id":"1","delta":"Memoization)**: Recursive"}
+{"type":"text-delta","id":"1","delta":" +"}
+{"type":"text-delta","id":"1","delta":" cache"}
+{"type":"text-delta","id":"1","delta":"\n- **Bottom-Up (Tab"}
+{"type":"text-delta","id":"1","delta":"ulation)**: Iterative,"}
+{"type":"text-delta","id":"1","delta":" build"}
+{"type":"text-delta","id":"1","delta":" table"}
+{"type":"text-delta","id":"1","delta":" from base"}
+{"type":"text-delta","id":"1","delta":" cases\n\n### Classic"}
+{"type":"text-delta","id":"1","delta":" Problems"}
+{"type":"text-delta","id":"1","delta":"\n\n####"}
+{"type":"text-delta","id":"1","delta":" 1."}
+{"type":"text-delta","id":"1","delta":" Fibonacci"}
+{"type":"text-delta","id":"1","delta":"\n```python\n#"}
+{"type":"text-delta","id":"1","delta":" Bottom"}
+{"type":"text-delta","id":"1","delta":"-up O"}
+{"type":"text-delta","id":"1","delta":"(n) time"}
+{"type":"text-delta","id":"1","delta":", O(1) space\ndef"}
+{"type":"text-delta","id":"1","delta":" fib(n):\n    a"}
+{"type":"text-delta","id":"1","delta":", b = 0, 1"}
+{"type":"text-delta","id":"1","delta":"\n    for _ in range(n"}
+{"type":"text-delta","id":"1","delta":"):\n        a, b = b"}
+{"type":"text-delta","id":"1","delta":", a + b\n    return a"}
+{"type":"text-delta","id":"1","delta":"\n```\n\n#### 2."}
+{"type":"text-delta","id":"1","delta":" Longest Common Subsequence (LCS"}
+{"type":"text-delta","id":"1","delta":")\n```"}
+{"type":"text-delta","id":"1","delta":"\ndp"}
+{"type":"text-delta","id":"1","delta":"[i][j] = length of"}
+{"type":"text-delta","id":"1","delta":" LCS of str"}
+{"type":"text-delta","id":"1","delta":"1[0.."}
+{"type":"text-delta","id":"1","delta":"i-1] and str2["}
+{"type":"text-delta","id":"1","delta":"0..j-1]"}
+{"type":"text-delta","id":"1","delta":"\n\nif"}
+{"type":"text-delta","id":"1","delta":" str1[i-1] =="}
+{"type":"text-delta","id":"1","delta":" str2[j-1]:"}
+{"type":"text-delta","id":"1","delta":"\n    dp[i][j] ="}
+{"type":"text-delta","id":"1","delta":" dp[i-1][j-"}
+{"type":"text-delta","id":"1","delta":"1] + 1\nelse:"}
+{"type":"text-delta","id":"1","delta":"\n    dp[i][j]"}
+{"type":"text-delta","id":"1","delta":" = max(dp[i-1"}
+{"type":"text-delta","id":"1","delta":"][j], dp[i][j"}
+{"type":"text-delta","id":"1","delta":"-1])\n```"}
+{"type":"text-delta","id":"1","delta":"\n- **Time**: O(m"}
+{"type":"text-delta","id":"1","delta":" × n),"}
+{"type":"text-delta","id":"1","delta":" **"}
+{"type":"text-delta","id":"1","delta":"Space**: O(m × n),"}
+{"type":"text-delta","id":"1","delta":" optim"}
+{"type":"text-delta","id":"1","delta":"izable"}
+{"type":"text-delta","id":"1","delta":" to"}
+{"type":"text-delta","id":"1","delta":" O(min"}
+{"type":"text-delta","id":"1","delta":"(m,"}
+{"type":"text-delta","id":"1","delta":" n))"}
+{"type":"text-delta","id":"1","delta":"\n\n#### 3. "}
+{"type":"text-delta","id":"1","delta":"0/1 Knapsack"}
+{"type":"text-delta","id":"1","delta":"\n```\ndp[i][w"}
+{"type":"text-delta","id":"1","delta":"] = max"}
+{"type":"text-delta","id":"1","delta":" value using items 1"}
+{"type":"text-delta","id":"1","delta":"..i with capacity"}
+{"type":"text-delta","id":"1","delta":" w\n\ndp"}
+{"type":"text-delta","id":"1","delta":"[i][w] = max("}
+{"type":"text-delta","id":"1","delta":"\n    dp[i-1][w"}
+{"type":"text-delta","id":"1","delta":"],              "}
+{"type":"text-delta","id":"1","delta":"// skip"}
+{"type":"text-delta","id":"1","delta":" item i\n    dp[i-"}
+{"type":"text-delta","id":"1","delta":"1][w -"}
+{"type":"text-delta","id":"1","delta":" weight[i]] + value[i"}
+{"type":"text-delta","id":"1","delta":"]  // take"}
+{"type":"text-delta","id":"1","delta":" item i\n)\n```\n-"}
+{"type":"text-delta","id":"1","delta":" **Time**: O(n × W"}
+{"type":"text-delta","id":"1","delta":"), **Space**: O(n"}
+{"type":"text-delta","id":"1","delta":" × W),"}
+{"type":"text-delta","id":"1","delta":" optimizable to O(W)"}
+{"type":"text-delta","id":"1","delta":"\n\n#### 4."}
+{"type":"text-delta","id":"1","delta":" Coin Change ("}
+{"type":"text-delta","id":"1","delta":"minimum"}
+{"type":"text-delta","id":"1","delta":" coins)\n```\ndp[amount"}
+{"type":"text-delta","id":"1","delta":"] = min coins"}
+{"type":"text-delta","id":"1","delta":" needed"}
+{"type":"text-delta","id":"1","delta":" to make "}
+{"type":"text-delta","id":"1","delta":"'amount'"}
+{"type":"text-delta","id":"1","delta":"\ndp"}
+{"type":"text-delta","id":"1","delta":"[0] = 0"}
+{"type":"text-delta","id":"1","delta":"\n\nfor each coin in"}
+{"type":"text-delta","id":"1","delta":" coins"}
+{"type":"text-delta","id":"1","delta":":\n    for"}
+{"type":"text-delta","id":"1","delta":" a"}
+{"type":"text-delta","id":"1","delta":" from"}
+{"type":"text-delta","id":"1","delta":" coin to target"}
+{"type":"text-delta","id":"1","delta":":\n        dp[a] ="}
+{"type":"text-delta","id":"1","delta":" min(dp[a], dp["}
+{"type":"text-delta","id":"1","delta":"a - coin] + 1)"}
+{"type":"text-delta","id":"1","delta":"\n```\n- **Time**: O"}
+{"type":"text-delta","id":"1","delta":"(amount × |"}
+{"type":"text-delta","id":"1","delta":"coins|)"}
+{"type":"text-delta","id":"1","delta":"\n\n#### 5. Edit Distance ("}
+{"type":"text-delta","id":"1","delta":"Levenshtein)\n```"}
+{"type":"text-delta","id":"1","delta":"\ndp[i][j] = min"}
+{"type":"text-delta","id":"1","delta":" ed"}
+{"type":"text-delta","id":"1","delta":"its to transform str1[0.."}
+{"type":"text-delta","id":"1","delta":"i-1] →"}
+{"type":"text-delta","id":"1","delta":" str2[0..j-1"}
+{"type":"text-delta","id":"1","delta":"]\n\nif str1[i-"}
+{"type":"text-delta","id":"1","delta":"1] == str2[j-"}
+{"type":"text-delta","id":"1","delta":"1]:\n    dp[i]["}
+{"type":"text-delta","id":"1","delta":"j] = dp[i-1"}
+{"type":"text-delta","id":"1","delta":"][j-1]"}
+{"type":"text-delta","id":"1","delta":"\nelse:\n    dp[i"}
+{"type":"text-delta","id":"1","delta":"][j] = 1 +"}
+{"type":"text-delta","id":"1","delta":" min("}
+{"type":"text-delta","id":"1","delta":"\n        dp[i-1][j"}
+{"type":"text-delta","id":"1","delta":"],      "}
+{"type":"text-delta","id":"1","delta":"// delete"}
+{"type":"text-delta","id":"1","delta":"\n        dp[i][j-1"}
+{"type":"text-delta","id":"1","delta":"],      // insert\n        dp["}
+{"type":"text-delta","id":"1","delta":"i-1][j-1]"}
+{"type":"text-delta","id":"1","delta":"     // replace"}
+{"type":"text-delta","id":"1","delta":"\n    )\n```\n- **"}
+{"type":"text-delta","id":"1","delta":"Time**: O(m × n)"}
+{"type":"text-delta","id":"1","delta":"\n\n---\n\n## 📊 "}
+{"type":"text-delta","id":"1","delta":"Big O Complexity"}
+{"type":"text-delta","id":"1","delta":" Reference"}
+{"type":"text-delta","id":"1","delta":"\n\nFrom"}
+{"type":"text-delta","id":"1","delta":" fastest"}
+{"type":"text-delta","id":"1","delta":" to slowest:"}
+{"type":"text-delta","id":"1","delta":"\n\n| Notation"}
+{"type":"text-delta","id":"1","delta":" | Name"}
+{"type":"text-delta","id":"1","delta":" | Example"}
+{"type":"text-delta","id":"1","delta":" |"}
+{"type":"text-delta","id":"1","delta":"\n|----------|------|---------|"}
+{"type":"text-delta","id":"1","delta":"\n| O(1) |"}
+{"type":"text-delta","id":"1","delta":" Constant | Hash"}
+{"type":"text-delta","id":"1","delta":" table lookup,"}
+{"type":"text-delta","id":"1","delta":" array access by"}
+{"type":"text-delta","id":"1","delta":" index |\n| O(log n"}
+{"type":"text-delta","id":"1","delta":") | Logarithmic | Binary"}
+{"type":"text-delta","id":"1","delta":" search, balanced"}
+{"type":"text-delta","id":"1","delta":" BS"}
+{"type":"text-delta","id":"1","delta":"T operations"}
+{"type":"text-delta","id":"1","delta":" |\n| O(n) |"}
+{"type":"text-delta","id":"1","delta":" Linear | Linear"}
+{"type":"text-delta","id":"1","delta":" search, single"}
+{"type":"text-delta","id":"1","delta":" array"}
+{"type":"text-delta","id":"1","delta":" travers"}
+{"type":"text-delta","id":"1","delta":"al |\n| O(n log"}
+{"type":"text-delta","id":"1","delta":" n) | Linearithmic |"}
+{"type":"text-delta","id":"1","delta":" Merge sort, heap sort, efficient"}
+{"type":"text-delta","id":"1","delta":" sorting |\n| O(n²"}
+{"type":"text-delta","id":"1","delta":") | Quadratic | Bubble"}
+{"type":"text-delta","id":"1","delta":" sort, nested"}
+{"type":"text-delta","id":"1","delta":" loops,"}
+{"type":"text-delta","id":"1","delta":" br"}
+{"type":"text-delta","id":"1","delta":"ute-"}
+{"type":"text-delta","id":"1","delta":"force pairs"}
+{"type":"text-delta","id":"1","delta":" |\n| O(n³"}
+{"type":"text-delta","id":"1","delta":") | Cubic | Floyd"}
+{"type":"text-delta","id":"1","delta":"-Warshall, naive"}
+{"type":"text-delta","id":"1","delta":" matrix"}
+{"type":"text-delta","id":"1","delta":" multiplication |\n| O(2"}
+{"type":"text-delta","id":"1","delta":"ⁿ) | Expon"}
+{"type":"text-delta","id":"1","delta":"ential | Recursive"}
+{"type":"text-delta","id":"1","delta":" Fibonacci ("}
+{"type":"text-delta","id":"1","delta":"naive"}
+{"type":"text-delta","id":"1","delta":"), power"}
+{"type":"text-delta","id":"1","delta":" set"}
+{"type":"text-delta","id":"1","delta":" generation"}
+{"type":"text-delta","id":"1","delta":" |\n| O(n!) |"}
+{"type":"text-delta","id":"1","delta":" Factorial | Generating"}
+{"type":"text-delta","id":"1","delta":" all permutations, br"}
+{"type":"text-delta","id":"1","delta":"ute-force TS"}
+{"type":"text-delta","id":"1","delta":"P |\n\n###"}
+{"type":"text-delta","id":"1","delta":" Key Rules"}
+{"type":"text-delta","id":"1","delta":" for"}
+{"type":"text-delta","id":"1","delta":" Analysis"}
+{"type":"text-delta","id":"1","delta":"\n1. **Drop"}
+{"type":"text-delta","id":"1","delta":" constants**: O(2"}
+{"type":"text-delta","id":"1","delta":"n"}
+{"type":"text-delta","id":"1","delta":") →"}
+{"type":"text-delta","id":"1","delta":" O(n)"}
+{"type":"text-delta","id":"1","delta":"\n2. **Drop lower"}
+{"type":"text-delta","id":"1","delta":"-"}
+{"type":"text-delta","id":"1","delta":"order terms**: O(n²"}
+{"type":"text-delta","id":"1","delta":" +"}
+{"type":"text-delta","id":"1","delta":" n)"}
+{"type":"text-delta","id":"1","delta":" → O(n²"}
+{"type":"text-delta","id":"1","delta":")\n3. **Different"}
+{"type":"text-delta","id":"1","delta":" inputs"}
+{"type":"text-delta","id":"1","delta":" ="}
+{"type":"text-delta","id":"1","delta":" different variables"}
+{"type":"text-delta","id":"1","delta":"**: O(n ×"}
+{"type":"text-delta","id":"1","delta":" m),"}
+{"type":"text-delta","id":"1","delta":" not"}
+{"type":"text-delta","id":"1","delta":" O(n"}
+{"type":"text-delta","id":"1","delta":"²)\n4. **Am"}
+{"type":"text-delta","id":"1","delta":"ortized analysis**: Some"}
+{"type":"text-delta","id":"1","delta":" operations"}
+{"type":"text-delta","id":"1","delta":" are"}
+{"type":"text-delta","id":"1","delta":" expensive"}
+{"type":"text-delta","id":"1","delta":" rarely"}
+{"type":"text-delta","id":"1","delta":" ("}
+{"type":"text-delta","id":"1","delta":"e.g., dynamic"}
+{"type":"text-delta","id":"1","delta":" array"}
+{"type":"text-delta","id":"1","delta":" resizing is"}
+{"type":"text-delta","id":"1","delta":" O(1"}
+{"type":"text-delta","id":"1","delta":") amortized)\n\n###"}
+{"type":"text-delta","id":"1","delta":" Space"}
+{"type":"text-delta","id":"1","delta":" Complexity"}
+{"type":"text-delta","id":"1","delta":" Matters"}
+{"type":"text-delta","id":"1","delta":" Too"}
+{"type":"text-delta","id":"1","delta":"\n-"}
+{"type":"text-delta","id":"1","delta":" Recursive algorithms"}
+{"type":"text-delta","id":"1","delta":": count"}
+{"type":"text-delta","id":"1","delta":" the"}
+{"type":"text-delta","id":"1","delta":" **"}
+{"type":"text-delta","id":"1","delta":"call"}
+{"type":"text-delta","id":"1","delta":" stack depth"}
+{"type":"text-delta","id":"1","delta":"**\n- In"}
+{"type":"text-delta","id":"1","delta":"-place algorithms ("}
+{"type":"text-delta","id":"1","delta":"like heap"}
+{"type":"text-delta","id":"1","delta":" sort)"}
+{"type":"text-delta","id":"1","delta":" use"}
+{"type":"text-delta","id":"1","delta":" O"}
+{"type":"text-delta","id":"1","delta":"(1) extra space\n-"}
+{"type":"text-delta","id":"1","delta":" M"}
+{"type":"text-delta","id":"1","delta":"emoization/"}
+{"type":"text-delta","id":"1","delta":"tab"}
+{"type":"text-delta","id":"1","delta":"ulation trade"}
+{"type":"text-delta","id":"1","delta":" space"}
+{"type":"text-delta","id":"1","delta":" for time"}
+{"type":"text-delta","id":"1","delta":"\n\n---\n\n## "}
+{"type":"text-delta","id":"1","delta":"🎯 Key"}
+{"type":"text-delta","id":"1","delta":" Takeaways\n\n1. **"}
+{"type":"text-delta","id":"1","delta":"Choose"}
+{"type":"text-delta","id":"1","delta":" data"}
+{"type":"text-delta","id":"1","delta":" structures"}
+{"type":"text-delta","id":"1","delta":" based on your"}
+{"type":"text-delta","id":"1","delta":" access"}
+{"type":"text-delta","id":"1","delta":" patterns**:"}
+{"type":"text-delta","id":"1","delta":" Random"}
+{"type":"text-delta","id":"1","delta":" access →"}
+{"type":"text-delta","id":"1","delta":" array"}
+{"type":"text-delta","id":"1","delta":"/hash"}
+{"type":"text-delta","id":"1","delta":" table;"}
+{"type":"text-delta","id":"1","delta":" Ordered"}
+{"type":"text-delta","id":"1","delta":" data"}
+{"type":"text-delta","id":"1","delta":" → BS"}
+{"type":"text-delta","id":"1","delta":"T;"}
+{"type":"text-delta","id":"1","delta":" FI"}
+{"type":"text-delta","id":"1","delta":"FO →"}
+{"type":"text-delta","id":"1","delta":" queue; LIFO → stack"}
+{"type":"text-delta","id":"1","delta":"\n\n2. **Sorting"}
+{"type":"text-delta","id":"1","delta":"**:"}
+{"type":"text-delta","id":"1","delta":" Quick sort is"}
+{"type":"text-delta","id":"1","delta":" fastest"}
+{"type":"text-delta","id":"1","delta":" in"}
+{"type":"text-delta","id":"1","delta":" practice;"}
+{"type":"text-delta","id":"1","delta":" Merge sort when"}
+{"type":"text-delta","id":"1","delta":" stability matters; Heap sort for guaranteed"}
+{"type":"text-delta","id":"1","delta":" O(n log n)"}
+{"type":"text-delta","id":"1","delta":" with"}
+{"type":"text-delta","id":"1","delta":" O(1) space\n\n3."}
+{"type":"text-delta","id":"1","delta":" **Binary"}
+{"type":"text-delta","id":"1","delta":" search**"}
+{"type":"text-delta","id":"1","delta":" applies"}
+{"type":"text-delta","id":"1","delta":" far"}
+{"type":"text-delta","id":"1","delta":" beyond"}
+{"type":"text-delta","id":"1","delta":" sorted"}
+{"type":"text-delta","id":"1","delta":" arrays —"}
+{"type":"text-delta","id":"1","delta":" any"}
+{"type":"text-delta","id":"1","delta":" monot"}
+{"type":"text-delta","id":"1","delta":"onic condition"}
+{"type":"text-delta","id":"1","delta":" over"}
+{"type":"text-delta","id":"1","delta":" a search"}
+{"type":"text-delta","id":"1","delta":" space\n\n4. **Dynamic programming**"}
+{"type":"text-delta","id":"1","delta":" ="}
+{"type":"text-delta","id":"1","delta":" recursion + memoization (or"}
+{"type":"text-delta","id":"1","delta":" bottom"}
+{"type":"text-delta","id":"1","delta":"-up tabulation)."}
+{"type":"text-delta","id":"1","delta":" Look"}
+{"type":"text-delta","id":"1","delta":" for **"}
+{"type":"text-delta","id":"1","delta":"optimal"}
+{"type":"text-delta","id":"1","delta":" substructure** and **overlapping"}
+{"type":"text-delta","id":"1","delta":" subproblems**\n\n5."}
+{"type":"text-delta","id":"1","delta":" **Always"}
+{"type":"text-delta","id":"1","delta":" consider"}
+{"type":"text-delta","id":"1","delta":" the"}
+{"type":"text-delta","id":"1","delta":" tr"}
+{"type":"text-delta","id":"1","delta":"adeoff**: Time vs. Space"}
+{"type":"text-delta","id":"1","delta":","}
+{"type":"text-delta","id":"1","delta":" Simpl"}
+{"type":"text-delta","id":"1","delta":"icity vs. Performance"}
+{"type":"text-delta","id":"1","delta":","}
+{"type":"text-delta","id":"1","delta":" Average"}
+{"type":"text-delta","id":"1","delta":" case"}
+{"type":"text-delta","id":"1","delta":" vs. Worst case\n\nThis"}
+{"type":"text-delta","id":"1","delta":" covers"}
+{"type":"text-delta","id":"1","delta":" the core"}
+{"type":"text-delta","id":"1","delta":" algorithms and data structures section"}
+{"type":"text-delta","id":"1","delta":" from"}
+{"type":"text-delta","id":"1","delta":" the documentation."}
+{"type":"text-delta","id":"1","delta":" Would"}
+{"type":"text-delta","id":"1","delta":" you like me to dive"}
+{"type":"text-delta","id":"1","delta":" deeper into any specific algorithm"}
+{"type":"text-delta","id":"1","delta":","}
+{"type":"text-delta","id":"1","delta":" walk"}
+{"type":"text-delta","id":"1","delta":" through a particular problem"}
+{"type":"text-delta","id":"1","delta":", or cover"}
+{"type":"text-delta","id":"1","delta":" another"}
+{"type":"text-delta","id":"1","delta":" section?"}
+{"type":"text-end","id":"1"}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"stop"}

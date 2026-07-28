@@ -1,0 +1,29 @@
+{
+  "prompt": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "weather in SF?"
+        }
+      ]
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "name": "get_weather",
+      "description": "Get weather",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "city": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  ],
+  "maxOutputTokens": 1024
+}

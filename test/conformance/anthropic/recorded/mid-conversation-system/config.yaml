@@ -1,0 +1,13 @@
+model: claude-sonnet-4-5-20250929
+allowSystemInMessages: true
+messages:
+  - role: system
+    content: "You are helpful."
+  - role: user
+    content: "Hello."
+  - role: assistant
+    content: "Hi."
+  - role: system
+    content: "Reply concisely."
+  - role: user
+    content: "Say hello in exactly 3 words."

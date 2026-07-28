@@ -1,0 +1,4 @@
+interface:
+  display_name: "AI SDK parity review"
+  short_description: "Review any scope for upstream parity risks."
+  default_prompt: "Use $ai-sdk-parity-review to review this ai-sdk scope for upstream parity risks."

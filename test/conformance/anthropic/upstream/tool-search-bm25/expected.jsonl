@@ -1,0 +1,40 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"text-start","id":"0"}
+{"type":"text-delta","id":"0","delta":"I'll search for a"}
+{"type":"text-delta","id":"0","delta":" weather"}
+{"type":"text-delta","id":"0","delta":"-"}
+{"type":"text-delta","id":"0","delta":"related tool"}
+{"type":"text-delta","id":"0","delta":" to help"}
+{"type":"text-delta","id":"0","delta":" you get the weather"}
+{"type":"text-delta","id":"0","delta":" information for San Francisco."}
+{"type":"text-end","id":"0"}
+{"type":"tool-input-start","toolCallId":"srvtoolu_01Gj33J3YUAAxF9TWRAThxtu","toolName":"tool_search","providerExecuted":true}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_01Gj33J3YUAAxF9TWRAThxtu","inputTextDelta":"{\"query\": \"weather forecast current"}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_01Gj33J3YUAAxF9TWRAThxtu","inputTextDelta":" conditions"}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_01Gj33J3YUAAxF9TWRAThxtu","inputTextDelta":"\"}"}
+{"type":"tool-input-available","toolCallId":"srvtoolu_01Gj33J3YUAAxF9TWRAThxtu","toolName":"tool_search","input":{"query":"weather forecast current conditions"},"providerExecuted":true}
+{"type":"tool-output-available","toolCallId":"srvtoolu_01Gj33J3YUAAxF9TWRAThxtu","output":[{"type":"tool_reference","toolName":"get_weather"}],"providerExecuted":true}
+{"type":"text-start","id":"3"}
+{"type":"text-delta","id":"3","delta":"Great"}
+{"type":"text-delta","id":"3","delta":"! I found a weather tool."}
+{"type":"text-delta","id":"3","delta":" Let me get the current weather for"}
+{"type":"text-delta","id":"3","delta":" San Francisco."}
+{"type":"text-end","id":"3"}
+{"type":"tool-input-start","toolCallId":"toolu_019nRrfqqXcU5NPTUSYfEMAY","toolName":"get_weather"}
+{"type":"tool-input-delta","toolCallId":"toolu_019nRrfqqXcU5NPTUSYfEMAY","inputTextDelta":"{\"location\": \"San"}
+{"type":"tool-input-delta","toolCallId":"toolu_019nRrfqqXcU5NPTUSYfEMAY","inputTextDelta":" Francisco, CA"}
+{"type":"tool-input-delta","toolCallId":"toolu_019nRrfqqXcU5NPTUSYfEMAY","inputTextDelta":"\"}"}
+{"type":"tool-input-available","toolCallId":"toolu_019nRrfqqXcU5NPTUSYfEMAY","toolName":"get_weather","input":{"location":"San Francisco, CA"},"providerMetadata":{"anthropic":{"caller":{"type":"direct"}}}}
+{"type":"text-start","id":"0"}
+{"type":"text-delta","id":"0","delta":"The"}
+{"type":"text-delta","id":"0","delta":" current"}
+{"type":"text-delta","id":"0","delta":" weather in San Francisco,"}
+{"type":"text-delta","id":"0","delta":" CA is:\n- **Temperature:**"}
+{"type":"text-delta","id":"0","delta":" 64°F"}
+{"type":"text-delta","id":"0","delta":"\n- **Condition:** Partly clou"}
+{"type":"text-delta","id":"0","delta":"dy\n- **Humidity:** "}
+{"type":"text-delta","id":"0","delta":"65%"}
+{"type":"text-end","id":"0"}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"stop"}

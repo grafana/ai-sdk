@@ -1,0 +1,1 @@
+{"body":{"include":["web_search_call.action.sources"],"input":[{"content":[{"text":"What is the latest Go version?","type":"input_text"}],"role":"user"}],"model":"gpt-4o","stream":true,"tool_choice":"auto","tools":[{"type":"web_search"}]},"headers":{"authorization":"<redacted>","content-type":"application/json"},"method":"POST","path":"/v1/responses"}

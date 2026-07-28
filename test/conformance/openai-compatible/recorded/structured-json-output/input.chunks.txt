@@ -1,0 +1,5 @@
+{"id":"chatcmpl-openai-json","object":"chat.completion.chunk","created":1710000002,"model":"gpt-4.1-mini","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
+{"id":"chatcmpl-openai-json","object":"chat.completion.chunk","created":1710000002,"model":"gpt-4.1-mini","choices":[{"index":0,"delta":{"content":"{\"status\":\"ok\""},"finish_reason":null}]}
+{"id":"chatcmpl-openai-json","object":"chat.completion.chunk","created":1710000002,"model":"gpt-4.1-mini","choices":[{"index":0,"delta":{"content":",\"count\":2}"},"finish_reason":null}]}
+{"id":"chatcmpl-openai-json","object":"chat.completion.chunk","created":1710000002,"model":"gpt-4.1-mini","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+{"id":"chatcmpl-openai-json","object":"chat.completion.chunk","created":1710000002,"model":"gpt-4.1-mini","choices":[],"usage":{"prompt_tokens":30,"completion_tokens":9,"total_tokens":39}}

@@ -1,0 +1,6 @@
+{
+  "action": "deny",
+  "rule_id": "rule-42",
+  "reason": "policy violation",
+  "evaluations": null
+}

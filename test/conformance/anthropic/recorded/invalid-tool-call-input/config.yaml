@@ -1,0 +1,22 @@
+model: claude-sonnet-4-5-20250929
+prompt: "Continue after the tool call."
+tools:
+  cityAttractions:
+    description: "List attractions for a city."
+    needsApproval: true
+    inputSchema:
+      type: object
+      properties:
+        city:
+          type: string
+      required:
+        - city
+    mockResults:
+      - attractions:
+          - Golden Gate Bridge
+approval:
+  toolCallId: call-1
+  toolName: cityAttractions
+  approvalId: approval-1
+  approved: true
+  input: '{ "city": "San Francisco", }'

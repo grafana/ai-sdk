@@ -1,0 +1,49 @@
+[
+  {
+    "type": "text-start",
+    "id": "t0"
+  },
+  {
+    "type": "text-delta",
+    "id": "t0",
+    "delta": "Looking it up…"
+  },
+  {
+    "type": "text-end",
+    "id": "t0"
+  },
+  {
+    "type": "tool-input-start",
+    "id": "tu_s",
+    "toolName": "get_weather"
+  },
+  {
+    "type": "tool-input-delta",
+    "id": "tu_s",
+    "delta": "{\"city\":"
+  },
+  {
+    "type": "tool-input-delta",
+    "id": "tu_s",
+    "delta": "\"SF\"}"
+  },
+  {
+    "type": "tool-input-end",
+    "id": "tu_s"
+  },
+  {
+    "type": "finish",
+    "usage": {
+      "inputTokens": {
+        "total": 5
+      },
+      "outputTokens": {
+        "total": 8
+      }
+    },
+    "finishReason": {
+      "unified": "tool-calls",
+      "raw": "tool_use"
+    }
+  }
+]

@@ -1,0 +1,8 @@
+model: computer-preview
+prompt: "Open the settings page and take a screenshot."
+toolChoice:
+  type: tool
+  toolName: browser
+providerTools:
+  browser:
+    id: openai.computer

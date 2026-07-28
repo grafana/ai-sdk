@@ -1,0 +1,23 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"tool-input-start","toolCallId":"toolu_01G9ygLdQkqCaLqDK3cKjEUh","toolName":"get_weather"}
+{"type":"tool-input-delta","toolCallId":"toolu_01G9ygLdQkqCaLqDK3cKjEUh","inputTextDelta":"{\"city\": \"Tokyo"}
+{"type":"tool-input-delta","toolCallId":"toolu_01G9ygLdQkqCaLqDK3cKjEUh","inputTextDelta":"\"}"}
+{"type":"tool-input-available","toolCallId":"toolu_01G9ygLdQkqCaLqDK3cKjEUh","toolName":"get_weather","input":{"city":"Tokyo"},"providerMetadata":{"anthropic":{"caller":{"type":"direct"}}}}
+{"type":"tool-input-start","toolCallId":"toolu_01RwwH52e8arPTFfyoRGVU1L","toolName":"get_weather"}
+{"type":"tool-input-delta","toolCallId":"toolu_01RwwH52e8arPTFfyoRGVU1L","inputTextDelta":"{\"city\": \"London"}
+{"type":"tool-input-delta","toolCallId":"toolu_01RwwH52e8arPTFfyoRGVU1L","inputTextDelta":"\"}"}
+{"type":"tool-input-available","toolCallId":"toolu_01RwwH52e8arPTFfyoRGVU1L","toolName":"get_weather","input":{"city":"London"},"providerMetadata":{"anthropic":{"caller":{"type":"direct"}}}}
+{"type":"tool-output-available","toolCallId":"toolu_01G9ygLdQkqCaLqDK3cKjEUh","output":{"temperature":28,"conditions":"humid and partly cloudy"},"providerMetadata":{"anthropic":{"caller":{"type":"direct"}}}}
+{"type":"tool-output-available","toolCallId":"toolu_01RwwH52e8arPTFfyoRGVU1L","output":{"temperature":16,"conditions":"mild and overcast"},"providerMetadata":{"anthropic":{"caller":{"type":"direct"}}}}
+{"type":"finish-step"}
+{"type":"start-step"}
+{"type":"text-start","id":"0"}
+{"type":"text-delta","id":"0","delta":"Here"}
+{"type":"text-delta","id":"0","delta":"'s the current weather comparison:\n\n**Tokyo:**\n- Temperature: 28°C\n- Conditions: Humid and partly cloudy"}
+{"type":"text-delta","id":"0","delta":"\n\n**London:**\n- Temperature: 16°C\n- Conditions: Mild and overcast\n\nTokyo is significantly warmer at 28°C compared to London's 16°C ("}
+{"type":"text-delta","id":"0","delta":"a 12-degree difference). Tokyo is experiencing humid conditions with some"}
+{"type":"text-delta","id":"0","delta":" clouds, while London has overcast skies with milder temperatures."}
+{"type":"text-end","id":"0"}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"stop"}

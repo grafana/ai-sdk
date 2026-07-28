@@ -1,0 +1,12 @@
+model: claude-3-haiku-20240307
+providerTools:
+  code_execution:
+    id: anthropic.code_execution_20250825
+tools:
+  rollDie:
+    description: "Roll a die"
+    inputSchema:
+      type: object
+      properties:
+        player:
+          type: string

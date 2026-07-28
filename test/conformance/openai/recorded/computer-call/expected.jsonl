@@ -1,0 +1,7 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"tool-input-start","toolCallId":"call_computer","toolName":"browser"}
+{"type":"tool-input-delta","toolCallId":"call_computer","inputTextDelta":"{\"actions\":[{\"type\":\"click\",\"button\":\"left\",\"x\":100,\"y\":200,\"keys\":[\"SHIFT\"]},{\"type\":\"scroll\",\"x\":10,\"y\":20,\"scrollX\":0,\"scrollY\":500},{\"type\":\"screenshot\"}],\"pendingSafetyChecks\":[{\"id\":\"safe_1\",\"code\":\"policy\",\"message\":\"Confirm navigation\"}],\"status\":\"completed\"}"}
+{"type":"tool-input-available","toolCallId":"call_computer","toolName":"browser","input":{"actions":[{"type":"click","button":"left","x":100,"y":200,"keys":["SHIFT"]},{"type":"scroll","x":10,"y":20,"scrollX":0,"scrollY":500},{"type":"screenshot"}],"pendingSafetyChecks":[{"id":"safe_1","code":"policy","message":"Confirm navigation"}],"status":"completed"},"providerMetadata":{"openai":{"itemId":"item_computer"}}}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"tool-calls"}

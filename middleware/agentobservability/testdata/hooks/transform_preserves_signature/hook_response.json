@@ -1,0 +1,28 @@
+{
+  "action": "allow",
+  "transformed_input": {
+    "messages": [
+      {
+        "role": "user",
+        "parts": [
+          {
+            "kind": "text",
+            "text": "modified question",
+            "metadata": {}
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "parts": [
+          {
+            "kind": "text",
+            "text": "Here is your answer",
+            "metadata": {}
+          }
+        ]
+      }
+    ]
+  },
+  "evaluations": null
+}

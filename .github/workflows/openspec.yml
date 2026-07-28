@@ -1,0 +1,166 @@
+name: OpenSpec
+
+on:
+  pull_request:
+
+permissions: {}
+
+jobs:
+  check:
+    name: Validate Changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Check for OpenSpec file changes
+        id: files
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        with:
+          script: |
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+            });
+            const has = files.some(f => f.filename.startsWith('openspec/'));
+            core.setOutput('has_openspec', has.toString());
+
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        if: steps.files.outputs.has_openspec == 'true'
+        with:
+          persist-credentials: false
+
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
+        if: steps.files.outputs.has_openspec == 'true'
+        with:
+          version: "2026.5.4"
+          experimental: true
+
+      - name: Collect change info
+        if: steps.files.outputs.has_openspec == 'true'
+        id: info
+        run: |
+          changes_json=$(openspec list --json)
+          count=$(echo "$changes_json" | jq '.changes | length')
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+
+          if [ "$count" -eq 0 ]; then
+            echo "status=clean" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "$count" -gt 1 ]; then
+            echo "status=too-many" >> "$GITHUB_OUTPUT"
+            names=$(echo "$changes_json" | jq -r '.changes[].name' | paste -sd ', ')
+            echo "names=$names" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          name=$(echo "$changes_json" | jq -r '.changes[0].name')
+          change_status=$(echo "$changes_json" | jq -r '.changes[0].status')
+          completed=$(echo "$changes_json" | jq -r '.changes[0].completedTasks')
+          total=$(echo "$changes_json" | jq -r '.changes[0].totalTasks')
+
+          echo "status=active" >> "$GITHUB_OUTPUT"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "change_status=$change_status" >> "$GITHUB_OUTPUT"
+          echo "completed=$completed" >> "$GITHUB_OUTPUT"
+          echo "total=$total" >> "$GITHUB_OUTPUT"
+
+          validate_json=$(openspec validate "$name" --type change --json)
+          valid=$(echo "$validate_json" | jq -r '.items[0].valid')
+          echo "valid=$valid" >> "$GITHUB_OUTPUT"
+
+          if [ "$valid" = "false" ]; then
+            issues=$(echo "$validate_json" | jq -r '.items[0].issues[] | "- \(.level): \(.message)"')
+            {
+              echo "issues<<ISSUES_EOF"
+              echo "$issues"
+              echo "ISSUES_EOF"
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Post PR comment
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        with:
+          script: |
+            const hasOpenspec = '${{ steps.files.outputs.has_openspec }}' === 'true';
+            let body = '### OpenSpec Status\n\n';
+
+            if (!hasOpenspec) {
+              body += '> [!NOTE]\n';
+              body += '> No OpenSpec changes found in this PR.\n';
+              body += '>\n';
+              body += '> This repository is OpenSpec-driven. Consider using OpenSpec to plan and track changes.\n';
+              body += '> Ask your AI coding agent to propose an OpenSpec change to get started.\n';
+            } else {
+              const status = '${{ steps.info.outputs.status }}';
+
+              if (status === 'clean') {
+                body += 'All changes archived. Ready to merge.\n';
+              } else if (status === 'too-many') {
+                const count = parseInt('${{ steps.info.outputs.count }}');
+                const names = '${{ steps.info.outputs.names }}';
+                body += '> [!CAUTION]\n';
+                body += `> Found **${count}** active changes (max 1 allowed): ${names}\n`;
+                body += '>\n';
+                body += '> Archive changes locally before merging.\n';
+                body += '> Ask your AI coding agent to archive the OpenSpec changes, then push.\n';
+              } else {
+                const name = '${{ steps.info.outputs.name }}';
+                const changeStatus = '${{ steps.info.outputs.change_status }}';
+                const completed = '${{ steps.info.outputs.completed }}';
+                const total = '${{ steps.info.outputs.total }}';
+                const valid = '${{ steps.info.outputs.valid }}';
+
+                body += `| Field | Value |\n`;
+                body += `|-------|-------|\n`;
+                body += `| Change | \`${name}\` |\n`;
+                body += `| Tasks | ${completed}/${total} |\n`;
+                body += `| Status | ${changeStatus} |\n`;
+                body += `| Valid | ${valid} |\n`;
+
+                if (valid === 'false') {
+                  const issues = `${{ steps.info.outputs.issues }}`;
+                  body += '\n**Validation issues:**\n' + issues + '\n';
+                }
+
+                body += '\n> [!WARNING]\n';
+                body += '> Active changes must be archived before merge.\n';
+                body += '> Ask your AI coding agent to archive the OpenSpec change, then push.\n';
+              }
+            }
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const marker = '### OpenSpec Status';
+            const existing = comments.find(c =>
+              c.user.type === 'Bot' && c.body.startsWith(marker)
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+
+      - name: Fail if active changes
+        if: steps.info.outputs.status == 'active' || steps.info.outputs.status == 'too-many'
+        run: |
+          echo "::error::Active OpenSpec changes must be archived before merge. Ask your AI coding agent to archive the OpenSpec change and push."
+          exit 1

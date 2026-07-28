@@ -1,0 +1,10 @@
+model: gpt-5-nano
+prompt: "Hello"
+providerTools:
+  fileSearch:
+    id: openai.file_search
+    args:
+      vectorStoreIds:
+        - vs_68caad8bd5d88191ab766cf043d89a18
+streamOptions:
+  sendSources: true

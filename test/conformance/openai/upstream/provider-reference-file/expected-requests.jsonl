@@ -1,0 +1,1 @@
+{"body":{"input":[{"content":[{"file_id":"file-abc123","type":"input_file"},{"text":"Summarize this","type":"input_text"}],"role":"user"}],"model":"gpt-4o","stream":true},"headers":{"authorization":"<redacted>","content-type":"application/json"},"method":"POST","path":"/v1/responses"}

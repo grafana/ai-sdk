@@ -1,0 +1,35 @@
+model: claude-sonnet-4-5-20250929
+uiMessages:
+  - id: user-1
+    role: user
+    parts:
+      - type: text
+        text: Show the persisted weather result.
+  - id: assistant-1
+    role: assistant
+    parts:
+      - type: tool-weather
+        toolCallId: call-1
+        state: output-available
+        input:
+          city: Portland
+        output:
+          temperature: 72
+tools:
+  weather:
+    description: Get the weather for a city
+    inputSchema:
+      type: object
+      properties:
+        city:
+          type: string
+      required:
+        - city
+    modelOutput:
+      type: content
+      content:
+        - type: text
+          text: 72 degrees and sunny
+        - type: file-data
+          data: iVBORw0KGgo=
+          mediaType: image/png

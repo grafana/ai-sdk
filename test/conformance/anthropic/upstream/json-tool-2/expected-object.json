@@ -1,0 +1,9 @@
+{
+  "elements": [
+    {
+      "location": "San Francisco",
+      "temperature": 58,
+      "condition": "sunny"
+    }
+  ]
+}

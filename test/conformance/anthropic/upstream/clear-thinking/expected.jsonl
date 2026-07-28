@@ -1,0 +1,22 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"reasoning-start","id":"0"}
+{"type":"reasoning-delta","id":"0","delta":"The previous"}
+{"type":"reasoning-delta","id":"0","delta":" result"}
+{"type":"reasoning-delta","id":"0","delta":" was"}
+{"type":"reasoning-delta","id":"0","delta":" 925."}
+{"type":"reasoning-delta","id":"0","delta":" Now"}
+{"type":"reasoning-delta","id":"0","delta":" I need to divide that"}
+{"type":"reasoning-delta","id":"0","delta":" by 5.\n\n925"}
+{"type":"reasoning-delta","id":"0","delta":" ÷ 5 "}
+{"type":"reasoning-delta","id":"0","delta":"= 185"}
+{"type":"reasoning-delta","id":"0","delta":""}
+{"type":"reasoning-delta","id":"0","delta":"","providerMetadata":{"anthropic":{"signature":"EvQBCkYICxgCKkAxhD4NUKFzudtZ6NzbZdEiBACIScTzqjPViM596iWLZIk4EFKYYBj3B6Ptl3b0dcQv/VeJBNbejNWIWRBn+KPNEgz6HWtKx7p+QRgKsEoaDGjsiqfht7gTRFYHiyIwD1VSmNqHxv3wy8KEMP+LYb/TC4UH3H97tuoaADARFFcA0phdfxnzKQxFnc9lwY+dKlzUsaKSUAFeu1bDL5ikZJ1vL0Fkz6JjoFke0L/wOJRIUDUlDUOFJ1tZ3ea7g6LGE/5hwuvWgLwewdcm64d+43l7F57XrOmqNd6flI2K/oPr/4yzNgvi/EhT6Ca17BgB"}}}
+{"type":"reasoning-end","id":"0"}
+{"type":"text-start","id":"1"}
+{"type":"text-delta","id":"1","delta":"925"}
+{"type":"text-delta","id":"1","delta":" ÷ 5 "}
+{"type":"text-delta","id":"1","delta":"= 185"}
+{"type":"text-end","id":"1"}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"stop"}

@@ -1,0 +1,13 @@
+# Single tool call on Anthropic Bedrock. Streams tool input as a JSON
+# fragment, then emits messageStop with tool_use.
+model: anthropic.claude-3-haiku-20240307-v1:0
+stopWhenStepCount: 1
+tools:
+  test-tool:
+    description: A test tool that echoes the input value.
+    inputSchema:
+      type: object
+      properties:
+        value:
+          type: string
+      required: [value]

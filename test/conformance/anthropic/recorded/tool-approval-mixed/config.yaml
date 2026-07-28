@@ -1,0 +1,32 @@
+model: claude-sonnet-4-5-20250929
+prompt: "Update the issue list and delete the archived issue list."
+tools:
+  updateIssueList:
+    description: "Update the issue list"
+    needsApproval: true
+    inputSchema:
+      type: object
+      properties: {}
+    mockResults:
+      - ok: true
+  deleteIssueList:
+    description: "Delete the archived issue list"
+    needsApproval: true
+    inputSchema:
+      type: object
+      properties: {}
+    mockResults:
+      - ok: true
+approvals:
+  - toolCallId: toolu_approved
+    toolName: updateIssueList
+    approvalId: id-0
+    approved: true
+    reason: "looks safe"
+    input: {}
+  - toolCallId: toolu_denied
+    toolName: deleteIssueList
+    approvalId: id-1
+    approved: false
+    reason: "not allowed"
+    input: {}

@@ -1,0 +1,4 @@
+interface:
+  display_name: "PR description writer"
+  short_description: "Draft descriptive pull request bodies."
+  default_prompt: "Use $pr-description-writer to write a descriptive pull request body from this diff."

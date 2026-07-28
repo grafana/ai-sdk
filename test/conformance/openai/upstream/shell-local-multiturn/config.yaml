@@ -1,0 +1,45 @@
+model: gpt-5.2
+providerOptions:
+  openai:
+    store: false
+messages:
+  - role: user
+    content: Run uname -a
+  - role: assistant
+    content:
+      - type: tool-call
+        toolCallId: call_abc123def456ghi789jkl012
+        toolName: shell
+        input:
+          action:
+            commands:
+              - uname -a
+        providerOptions:
+          openai:
+            itemId: sh_0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e50
+  - role: tool
+    content:
+      - type: tool-result
+        toolCallId: call_abc123def456ghi789jkl012
+        toolName: shell
+        output:
+          type: json
+          value:
+            output:
+              - stdout: "Darwin mac-host 24.6.0 Darwin Kernel Version 24.6.0 root:xnu-11417.60.45.601.5~1/RELEASE_ARM64_T6041 arm64\n"
+                stderr: ""
+                outcome:
+                  type: exit
+                  exitCode: 0
+  - role: assistant
+    content:
+      - type: text
+        text: Darwin mac-host 24.6.0 Darwin Kernel Version 24.6.0 arm64
+        providerOptions:
+          openai:
+            itemId: msg_0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e52
+  - role: user
+    content: What architecture do you run in?
+providerTools:
+  shell:
+    id: openai.shell

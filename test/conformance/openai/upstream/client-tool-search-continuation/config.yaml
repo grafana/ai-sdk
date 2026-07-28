@@ -1,0 +1,59 @@
+model: gpt-5.4
+providerOptions:
+  openai:
+    store: false
+messages:
+  - role: user
+    content: Find a weather tool.
+  - role: assistant
+    content:
+      - type: tool-call
+        toolCallId: call_search
+        toolName: findTools
+        input:
+          arguments:
+            goal: Find weather tools
+          call_id: call_search
+        providerOptions:
+          openai:
+            itemId: tsc_history
+  - role: tool
+    content:
+      - type: tool-result
+        toolCallId: call_search
+        toolName: findTools
+        output:
+          type: json
+          value:
+            tools:
+              - type: function
+                name: get_weather
+                description: Get weather
+                defer_loading: true
+                parameters:
+                  type: object
+                  properties:
+                    location:
+                      type: string
+                  required:
+                    - location
+  - role: user
+    content: Use the weather tool.
+tools:
+  get_weather:
+    description: Get weather
+    inputSchema:
+      type: object
+      properties:
+        location:
+          type: string
+      required:
+        - location
+    providerOptions:
+      openai:
+        deferLoading: true
+providerTools:
+  findTools:
+    id: openai.tool_search
+    args:
+      execution: client

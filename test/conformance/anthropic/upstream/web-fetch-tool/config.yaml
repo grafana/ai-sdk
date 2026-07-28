@@ -1,0 +1,6 @@
+model: claude-3-haiku-20240307
+providerTools:
+  web_fetch:
+    id: anthropic.web_fetch_20250910
+    args:
+      maxUses: 1

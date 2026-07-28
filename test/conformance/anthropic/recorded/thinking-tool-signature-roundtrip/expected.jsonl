@@ -1,0 +1,28 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"reasoning-start","id":"0"}
+{"type":"reasoning-delta","id":"0","delta":"The user is"}
+{"type":"reasoning-delta","id":"0","delta":" asking me to check the weather in San Francisco and then recommend whether they should bring a jacket. I have a get_weather function available that takes a location parameter."}
+{"type":"reasoning-delta","id":"0","delta":" The location is clearly specified as \"San Francisco\", so I have all the required parameters to make the tool"}
+{"type":"reasoning-delta","id":"0","delta":" call.\n\nLet me call the get_weather function with \"San Francisco\" as the location parameter."}
+{"type":"reasoning-delta","id":"0","delta":"","providerMetadata":{"anthropic":{"signature":"EskECmIIDRgCKkDngiOa6WcytLdPwYViaCbnOVQv5so8pArbeDhkhEAAXWMrIjvsNwO83zMjCUGlfQE6yHJy9n/sUY2rQteFDLZWMhhjbGF1ZGUtc29ubmV0LTQtMjAyNTA1MTQ4ABIMXPqRrgLRHe6uknSLGgxhjkB7ary+FErE9joiMIRSYKErqWPaB6K/9CaBALtNEdeExKqTRivPZQzVDM99BQmNopxrgft8OpOMtmx1tiqUA3K5/yg6Vh4NyQkSxzVoRdTvXWGyS2muqeumwSOxtOUuxLktjRJBo7n+Vzt9wygBkQwQSYd79acN9ZsvyTlNIGWt0FwSemw/tRh5EVUdt+/MOXhTwXfauidsM4t7c/UZlE/cpRC+qGyZIVqu/bav1c074Zn3p3mcsRvhtacyjHP7/rRHt5WWEbCZLGYpa+fPiOxUQjVXMVw3HsvAh+Z4FumSSBslryPkpHX6XrKDh6YQMJLBX9bUOvx+tsjOfo6sUKrSx5TuznqeEBOg1/lIByN6x01mVkae2YW383lJVxTzK2QYaVruUefShyoma6nD7OHHtLMql+r212uqs1xFk+4JdqDw5SNXSzQLbGWPoF3Y4uSfgpz4OWY/g19ugLNL2ihMlC7F6d1cm1pzmpo0Wm4OYyeOCruX+5REZIg+cBsom6XHTzuqhGn5RaKpVU9mCBKEgC4JyyCX9MzW/WYlzgO1P0iQttasoDt/mpnnWe/RI7v2FQs+P+6dWXYF57/EHh0w2tuwXGIVvXQuiCMAEGw1MNyEGAE="}}}
+{"type":"reasoning-end","id":"0"}
+{"type":"tool-input-start","toolCallId":"toolu_01SViYfS4ffb21BaiGqW2D91","toolName":"get_weather"}
+{"type":"tool-input-delta","toolCallId":"toolu_01SViYfS4ffb21BaiGqW2D91","inputTextDelta":"{\"location\": \"San Francisco"}
+{"type":"tool-input-delta","toolCallId":"toolu_01SViYfS4ffb21BaiGqW2D91","inputTextDelta":"\"}"}
+{"type":"tool-input-available","toolCallId":"toolu_01SViYfS4ffb21BaiGqW2D91","toolName":"get_weather","input":{"location":"San Francisco"},"providerMetadata":{"anthropic":{"caller":{"type":"direct"}}}}
+{"type":"tool-output-available","toolCallId":"toolu_01SViYfS4ffb21BaiGqW2D91","output":{"temperature":57,"conditions":"windy fog with light drizzle","wind_mph":18},"providerMetadata":{"anthropic":{"caller":{"type":"direct"}}}}
+{"type":"finish-step"}
+{"type":"start-step"}
+{"type":"text-start","id":"0"}
+{"type":"text-delta","id":"0","delta":"Based on the current"}
+{"type":"text-delta","id":"0","delta":" weather in San Francisco, I'd definitely recommend bringing a jacket! Here's why:\n\n- **Temperature**: 57°F - This is on"}
+{"type":"text-delta","id":"0","delta":" the cool side and you'll likely feel chilly without a layer"}
+{"type":"text-delta","id":"0","delta":"\n- **Conditions**: Windy fog with light drizzle - The combination of wind and moisture will make it feel colder than"}
+{"type":"text-delta","id":"0","delta":" the actual temperature\n- **Wind**: 18 mph winds - This will create a significant wind chill effect"}
+{"type":"text-delta","id":"0","delta":"\n\nA light to medium jacket or windbreaker would be perfect for these conditions. The wind and"}
+{"type":"text-delta","id":"0","delta":" drizzle mean you'll want something that offers both warmth and some protection from the elements. Classic"}
+{"type":"text-delta","id":"0","delta":" San Francisco weather!"}
+{"type":"text-end","id":"0"}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"stop"}

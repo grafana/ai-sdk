@@ -1,0 +1,19 @@
+# Extended thinking combined with a tool call. Verifies thinking + tool
+# call interleaving in the stream conversion.
+model: us.anthropic.claude-sonnet-4-5-20250929-v1:0
+prompt: Think about which city is more likely to be sunny right now, then use get_weather to check Berlin.
+stopWhenStepCount: 1
+providerOptions:
+  amazonBedrock:
+    reasoningConfig:
+      type: enabled
+      budgetTokens: 1024
+tools:
+  get_weather:
+    description: Get the current weather for a city.
+    inputSchema:
+      type: object
+      properties:
+        city:
+          type: string
+      required: [city]

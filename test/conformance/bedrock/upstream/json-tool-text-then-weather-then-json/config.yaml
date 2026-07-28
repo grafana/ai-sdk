@@ -1,0 +1,21 @@
+# JSON-tool flow where the model emits text, then a real tool call, then
+# eventually a json tool call (over multiple steps simulated as one fixture
+# stream). The converter must keep the regular tool-call output and only
+# collapse the json tool into text.
+model: anthropic.claude-3-haiku-20240307-v1:0
+stopWhenStepCount: 1
+responseFormat:
+  type: json
+  schema:
+    type: object
+    properties:
+      answer:
+        type: string
+tools:
+  weather:
+    description: Get the current weather for a city.
+    inputSchema:
+      type: object
+      properties:
+        city:
+          type: string

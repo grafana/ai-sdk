@@ -1,0 +1,23 @@
+model: gpt-4o
+prompt: "Generate structured data describing the weather in Berlin: clear sky, 20C."
+assertOutputValue: true
+responseFormat:
+  type: json
+  name: weather
+  schema:
+    type: object
+    properties:
+      city:
+        type: string
+      temperature:
+        type: number
+      conditions:
+        type: string
+      recommendation:
+        type: string
+    required:
+      - city
+      - temperature
+      - conditions
+      - recommendation
+    additionalProperties: false
