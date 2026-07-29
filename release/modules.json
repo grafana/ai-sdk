@@ -1,0 +1,93 @@
+{
+  "modules": [
+    {
+      "id": "core",
+      "directory": ".",
+      "modulePath": "github.com/grafana/ai-sdk",
+      "tagPrefix": "",
+      "changelog": "CHANGELOG.md",
+      "initialVersion": "v0.1.0-alpha.1"
+    },
+    {
+      "id": "providers/anthropic",
+      "directory": "providers/anthropic",
+      "modulePath": "github.com/grafana/ai-sdk/providers/anthropic",
+      "tagPrefix": "providers/anthropic",
+      "changelog": "providers/anthropic/CHANGELOG.md",
+      "initialVersion": "v0.1.0-alpha.1",
+      "dependencies": ["core"]
+    },
+    {
+      "id": "providers/bedrock",
+      "directory": "providers/bedrock",
+      "modulePath": "github.com/grafana/ai-sdk/providers/bedrock",
+      "tagPrefix": "providers/bedrock",
+      "changelog": "providers/bedrock/CHANGELOG.md",
+      "initialVersion": "v0.1.0-alpha.1",
+      "dependencies": ["core"]
+    },
+    {
+      "id": "providers/grafana",
+      "directory": "providers/grafana",
+      "modulePath": "github.com/grafana/ai-sdk/providers/grafana",
+      "tagPrefix": "providers/grafana",
+      "changelog": "providers/grafana/CHANGELOG.md",
+      "initialVersion": "v0.1.0-alpha.1",
+      "dependencies": ["core"]
+    },
+    {
+      "id": "providers/openai",
+      "directory": "providers/openai",
+      "modulePath": "github.com/grafana/ai-sdk/providers/openai",
+      "tagPrefix": "providers/openai",
+      "changelog": "providers/openai/CHANGELOG.md",
+      "initialVersion": "v0.1.0-alpha.1",
+      "dependencies": ["core"]
+    },
+    {
+      "id": "providers/openai-compatible",
+      "directory": "providers/openai-compatible",
+      "modulePath": "github.com/grafana/ai-sdk/providers/openai-compatible",
+      "tagPrefix": "providers/openai-compatible",
+      "changelog": "providers/openai-compatible/CHANGELOG.md",
+      "initialVersion": "v0.1.0-alpha.1",
+      "dependencies": ["core"]
+    },
+    {
+      "id": "middleware/agentobservability",
+      "directory": "middleware/agentobservability",
+      "modulePath": "github.com/grafana/ai-sdk/middleware/agentobservability",
+      "tagPrefix": "middleware/agentobservability",
+      "changelog": "middleware/agentobservability/CHANGELOG.md",
+      "initialVersion": "v0.1.0-alpha.1",
+      "dependencies": ["core"]
+    },
+    {
+      "id": "middleware/enrichment",
+      "directory": "middleware/enrichment",
+      "modulePath": "github.com/grafana/ai-sdk/middleware/enrichment",
+      "tagPrefix": "middleware/enrichment",
+      "changelog": "middleware/enrichment/CHANGELOG.md",
+      "initialVersion": "v0.1.0-alpha.1",
+      "dependencies": ["core"]
+    },
+    {
+      "id": "middleware/logger",
+      "directory": "middleware/logger",
+      "modulePath": "github.com/grafana/ai-sdk/middleware/logger",
+      "tagPrefix": "middleware/logger",
+      "changelog": "middleware/logger/CHANGELOG.md",
+      "initialVersion": "v0.1.0-alpha.1",
+      "dependencies": ["core"]
+    },
+    {
+      "id": "middleware/prometheus",
+      "directory": "middleware/prometheus",
+      "modulePath": "github.com/grafana/ai-sdk/middleware/prometheus",
+      "tagPrefix": "middleware/prometheus",
+      "changelog": "middleware/prometheus/CHANGELOG.md",
+      "initialVersion": "v0.1.0-alpha.1",
+      "dependencies": ["core"]
+    }
+  ]
+}

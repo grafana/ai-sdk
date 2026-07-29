@@ -1,0 +1,27 @@
+name: Release intent
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled, edited]
+
+permissions: {}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Require a release decision
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HAS_RELEASE_NONE: ${{ contains(github.event.pull_request.labels.*.name, 'release:none') }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: bash scripts/check-release-intent.sh

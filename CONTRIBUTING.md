@@ -29,6 +29,7 @@ for AI coding agents but is the most complete reference for humans too.
 - [Testing](#testing)
 - [Documentation: where things go](#documentation-where-things-go)
 - [Submitting a pull request](#submitting-a-pull-request)
+- [Release intent and independent modules](#release-intent-and-independent-modules)
 - [Dependency management](#dependency-management)
 - [Reporting security issues](#reporting-security-issues)
 - [License](#license)
@@ -432,11 +433,41 @@ Checklist:
    `upstream.yaml`, `PARITY.md`, and any regenerated fixtures.
 6. **OpenSpec change is archived** if the pull request touches `openspec/`.
 7. **Docs** are updated for any user-visible change, in the right surface.
-8. **Branch is synced** with `main`.
+8. **Release intent** is recorded for public module changes, or the pull request
+   explains why no release fragment is needed.
+9. **Branch is synced** with `main`.
 
 Reviewers are assigned automatically from
 [`.github/CODEOWNERS`](.github/CODEOWNERS). Community pull requests need a
 maintainer to trigger CI.
+
+## Release intent and independent modules
+
+Core, providers, and middleware are released independently. A public behavior
+change records its intent in a reviewed `.changes/*.md` fragment; examples,
+tests, CI, and internal-only changes do not need one.
+
+The complete maintainer workflow, including selective releases and
+prereleases, is in the [release runbook](release/README.md).
+
+Create fragments and preview their calculated tags through the dependency-free
+Go release command:
+
+```bash
+mise run release -- change \
+  --name continuation-support \
+  --summary "Add continuation support to streamed responses." \
+  --bump core=minor \
+  --bump providers/openai=patch
+mise run release -- check
+mise run release -- plan
+```
+
+Maintainers use `mise run release -- prepare` to create a reviewable release
+diff with per-module changelogs and `release/plan.json`. `publish` is a dry run;
+only the explicitly confirmed manual workflow creates Go-compatible tags and
+GitHub Releases. Root tags use `vX.Y.Z`; nested module tags use
+`<module-directory>/vX.Y.Z`.
 
 ## Dependency management
 

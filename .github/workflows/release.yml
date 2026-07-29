@@ -1,0 +1,40 @@
+name: Publish Go module releases
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Confirm creation of every tag and GitHub Release in release/plan.json
+        required: true
+        type: boolean
+        default: false
+
+permissions: {}
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Require main and explicit confirmation
+        env:
+          CONFIRMED: ${{ inputs.confirm }}
+          RELEASE_REF: ${{ github.ref }}
+        run: |
+          test "$RELEASE_REF" = "refs/heads/main"
+          test "$CONFIRMED" = "true"
+
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          fetch-depth: 0
+
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
+        with:
+          version: "2026.5.4"
+          experimental: true
+
+      - name: Publish prepared release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: mise run release -- publish --confirm

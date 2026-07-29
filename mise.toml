@@ -187,6 +187,17 @@ markdownlint-cli2
 description = "Upgrade OpenSpec and refresh centralized agent skills"
 run = "bash scripts/update-openspec-skills.sh"
 
+[tasks.release]
+description = "Plan, prepare, or publish independent Go module releases"
+run = "go run ./internal/cmd/release"
+
+[tasks.release-check]
+description = "Test the release command and validate repository publishability"
+run = """
+go test ./internal/release ./internal/cmd/release
+go run ./internal/cmd/release check
+"""
+
 [tasks.test-update-openspec]
 description = "Test centralized OpenSpec skill freshness and rollback"
 run = "bash scripts/update-openspec-skills_test.sh"
