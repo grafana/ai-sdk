@@ -2,10 +2,8 @@ module github.com/grafana/ai-sdk/providers/grafana
 
 go 1.26.3
 
-replace github.com/grafana/ai-sdk => ../../
-
 require (
-	github.com/grafana/ai-sdk v0.0.0-20260505163418-f09b307b3ae6
+	github.com/grafana/ai-sdk v0.1.0-alpha.1
 	github.com/grafana/authlib v0.0.0-20260715211933-78f2ab179aa0
 	github.com/stretchr/testify v1.11.1
 )
