@@ -227,9 +227,10 @@ manifest, the conformance dependency pins, the generated snapshots, and the
 lockfiles together. The selected package set must satisfy the
 `minimumReleaseAge` gate in `test/pnpm-workspace.yaml`; do not bypass it.
 
-In CI, the `parity-baseline` job is a merge gate. The `conformance-test` and
-`interop-test` jobs are advisory parity signals rather than gates, as documented
-in `PARITY.md`.
+In CI, every parity job is a required status check: `parity-baseline`,
+`conformance-test`, `interop-test`, and `integration-test` all block the merge,
+as documented in `PARITY.md`. A fixture regeneration therefore has to land in
+the same pull request as the behavior change it covers.
 
 ## Spec-driven development with OpenSpec
 

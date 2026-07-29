@@ -141,9 +141,6 @@ jobs:
 
   interop-test:
     runs-on: ubuntu-latest
-    # Advisory (non-blocking): upstream-client interop is a parity signal, not a
-    # merge gate, mirroring conformance-test. See test/conformance/PARITY.md.
-    continue-on-error: true
     permissions:
       contents: read
     steps:
@@ -187,7 +184,6 @@ jobs:
 
   conformance-test:
     runs-on: ubuntu-latest
-    continue-on-error: true
     permissions:
       contents: read
     steps:
