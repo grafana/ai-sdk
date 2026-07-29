@@ -97,11 +97,25 @@ func TestExtractTriage(t *testing.T) {
 	})
 
 	t.Run("returns validation error", func(t *testing.T) {
-		model := &outputModel{response: `{"severity":"unknown"}`}
+		tests := []struct {
+			name     string
+			response string
+		}{
+			{name: "invalid enum", response: `{"severity":"unknown"}`},
+			{
+				name:     "empty required values",
+				response: `{"severity":"critical","category":"application","rootCause":"","runbook":"","relatedSvcs":[]}`,
+			},
+		}
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				model := &outputModel{response: tc.response}
 
-		_, err := extractTriage(t.Context(), model, alertText)
-		require.Error(t, err)
-		assert.ErrorContains(t, err, "validating triage")
+				_, err := extractTriage(t.Context(), model, alertText)
+				require.Error(t, err)
+				assert.ErrorContains(t, err, "validating triage")
+			})
+		}
 	})
 }
 

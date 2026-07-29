@@ -18,9 +18,9 @@ import (
 type AlertTriage struct {
 	Severity    string   `json:"severity" jsonschema:"enum=critical,enum=warning,enum=info,description=Overall severity"`
 	Category    string   `json:"category" jsonschema:"enum=infrastructure,enum=application,enum=security,enum=network"`
-	RootCause   string   `json:"rootCause" jsonschema:"description=One-sentence likely root cause"`
-	Runbook     string   `json:"runbook" jsonschema:"description=Concrete next step for the on-call engineer"`
-	RelatedSvcs []string `json:"relatedSvcs" jsonschema:"description=Services likely affected"`
+	RootCause   string   `json:"rootCause" jsonschema:"minLength=1,description=One-sentence likely root cause"`
+	Runbook     string   `json:"runbook" jsonschema:"minLength=1,description=Concrete next step for the on-call engineer"`
+	RelatedSvcs []string `json:"relatedSvcs" jsonschema:"minItems=1,description=At least one service likely affected"`
 }
 
 const alertText = `FIRING: HighErrorRate on payments-api
@@ -41,7 +41,7 @@ func extractTriage(ctx context.Context, model provider.LanguageModel, alert stri
 	}
 
 	result, err := output.GenerateObject[AlertTriage](ctx, model, triageOutput,
-		aisdk.WithSystem("You are an SRE assistant. Triage the alert into the required structure."),
+		aisdk.WithSystem("You are an SRE assistant. Populate every field with a concrete triage, including a likely root cause, an actionable runbook step, and at least one affected service."),
 		aisdk.WithModelMessages(provider.UserText(alert)),
 	)
 	if err != nil {
