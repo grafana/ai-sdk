@@ -2,11 +2,9 @@ module github.com/grafana/ai-sdk/providers/anthropic
 
 go 1.26.3
 
-replace github.com/grafana/ai-sdk => ../../
-
 require (
 	github.com/anthropics/anthropic-sdk-go v1.58.0
-	github.com/grafana/ai-sdk v0.0.0-20260319195831-ff28eeeaf243
+	github.com/grafana/ai-sdk v0.1.0-alpha.1
 	github.com/stretchr/testify v1.11.1
 )
 

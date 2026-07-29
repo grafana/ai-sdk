@@ -2,10 +2,8 @@ module github.com/grafana/ai-sdk/providers/openai-compatible
 
 go 1.26.3
 
-replace github.com/grafana/ai-sdk => ../../
-
 require (
-	github.com/grafana/ai-sdk v0.0.0-20260529150048-3b7c97543d0e
+	github.com/grafana/ai-sdk v0.1.0-alpha.1
 	github.com/stretchr/testify v1.11.1
 )
 
