@@ -1,0 +1,4 @@
+interface:
+  display_name: "Release AI SDK"
+  short_description: "Plan and publish independent AI SDK modules"
+  default_prompt: "Use $release-ai-sdk to plan an independent module release safely."
