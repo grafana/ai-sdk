@@ -12,8 +12,8 @@ You need:
 - Node.js and npm for the React application;
 - an `ANTHROPIC_API_KEY` for the runnable backend example.
 
-The completed Go backend lives in
-[`examples/chat-server`](../../examples/chat-server).
+A completed Go agent backend that extends this handler with a typed tool lives
+in [`examples/agent-chat`](../../examples/agent-chat).
 
 ## Run the Go backend
 
@@ -52,7 +52,7 @@ when the application intends to show or process it in the browser.
 From a repository checkout, start the complete backend:
 
 ```bash
-cd examples/chat-server
+cd examples/agent-chat
 ANTHROPIC_API_KEY=sk-... go run .
 ```
 
@@ -67,7 +67,7 @@ packages:
 npm create vite@latest ai-chat-web -- --template react-ts
 cd ai-chat-web
 npm install
-npm install ai@7.0.22 @ai-sdk/react@4.0.23
+npm install ai@7.0.37 @ai-sdk/react@4.0.40
 ```
 
 Replace `src/App.tsx` with:

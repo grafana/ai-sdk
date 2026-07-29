@@ -186,8 +186,9 @@ User-facing docs are centralized in `docs/` -- avoid per-module `README.md`
 files for user-facing setup/behavior; fold that content into the right `docs/`
 page (`doc.go` stays as the godoc API reference). Non-user-facing tooling
 READMEs (e.g. under `test/`) may stay co-located. Runnable examples go under
-`examples/` as self-contained modules and must `go build`
-(CI: `mise run build`).
+`examples/` as self-contained, outcome-oriented modules. They must `go build`
+and include deterministic credential-free tests
+(CI: `mise run build-examples` and `mise run test-examples`).
 
 ## Code Style
 

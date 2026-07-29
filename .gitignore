@@ -40,11 +40,8 @@ test/integration/testserver/testserver
 test/integration/.test-server-url
 
 # Compiled example binaries (each example dir builds a binary named after itself)
-examples/generate-text/generate-text
-examples/streaming-cli/streaming-cli
-examples/tools-agent/tools-agent
-examples/structured-output/structured-output
-examples/chat-server/chat-server
+examples/agent-chat/agent-chat
+examples/structured-extraction/structured-extraction
 
 # Node dependencies (integration/conformance test harnesses, tooling)
 node_modules/

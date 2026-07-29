@@ -1,64 +1,25 @@
 # Examples
 
-Complete programs for making a model call, streaming a response, adding tools,
-generating typed data, and serving React chat. Start with the result you want
-and run each example with an Anthropic API key.
+The runnable examples are complete Go application outcomes rather than one
+program for every SDK function. Use the README and guides for focused API
+recipes such as a first `GenerateText` call or consuming `FullStream` directly.
 
-## Learning path
+## Choose an application
 
-| # | Example | What you will build |
-|---|---|---|
-| 1 | [generate-text](generate-text) | Make one model call and print the complete response |
-| 2 | [streaming-cli](streaming-cli) | Print text as it arrives and inspect stream events and usage |
-| 3 | [tools-agent](tools-agent) | Let a model call typed Go functions across several steps |
-| 4 | [structured-output](structured-output) | Convert model output into a validated Go value |
-| 5 | [chat-server](chat-server) | Serve a streaming endpoint for `@ai-sdk/react` `useChat` |
+| Example | Use it when you are building |
+|---|---|
+| [agent-chat](agent-chat) | A Go agent backend that executes typed tools and streams UI messages to `@ai-sdk/react` `useChat` |
+| [structured-extraction](structured-extraction) | A job or service that converts unstructured input into a schema-validated Go value |
 
-```text
-generate-text      make the first call
-      │
-streaming-cli      receive output as it arrives
-      │
-tools-agent        let the model call Go functions
-      │
-structured-output  return validated data
-      │
-chat-server        connect a React frontend
-```
+Both examples use Anthropic when run normally. Their tests use deterministic
+local models and require no credentials or network access.
 
-## Run the examples
+## Run agent chat
 
-Make one complete model call:
+Start the backend:
 
 ```bash
-(cd examples/generate-text && \
-  ANTHROPIC_API_KEY=sk-... go run . "Explain channels in one sentence.")
-```
-
-Stream text in the terminal:
-
-```bash
-(cd examples/streaming-cli && \
-  ANTHROPIC_API_KEY=sk-... go run . "Explain channels in two sentences.")
-```
-
-Run a multi-step tool workflow:
-
-```bash
-(cd examples/tools-agent && \
-  ANTHROPIC_API_KEY=sk-... go run . "Weather in Tokyo in Fahrenheit, plus 10?")
-```
-
-Generate a typed object:
-
-```bash
-(cd examples/structured-output && ANTHROPIC_API_KEY=sk-... go run .)
-```
-
-Start the chat backend:
-
-```bash
-(cd examples/chat-server && ANTHROPIC_API_KEY=sk-... go run .)
+(cd examples/agent-chat && ANTHROPIC_API_KEY=sk-... go run .)
 ```
 
 Connect the React client from the
@@ -68,8 +29,33 @@ the stream directly:
 ```bash
 curl -N http://localhost:8080/api/chat \
   -H 'content-type: application/json' \
-  -d '{"messages":[{"id":"user-1","role":"user","parts":[{"type":"text","text":"Explain goroutines briefly."}]}]}'
+  -d '{"messages":[{"id":"user-1","role":"user","parts":[{"type":"text","text":"What is the weather in Paris?"}]}]}'
 ```
 
-Credentials are needed only when running examples. Every example builds without
-credentials.
+The agent can call its typed weather tool, feed the result into another model
+step, and stream both tool state and the final answer to the client. The tool
+returns deterministic sample data so the example stays focused on orchestration;
+replace it with a real weather client in an application.
+
+## Run structured extraction
+
+```bash
+(cd examples/structured-extraction && ANTHROPIC_API_KEY=sk-... go run .)
+```
+
+The program turns a sample alert into a validated `AlertTriage` value and prints
+fields that ordinary Go application code can consume.
+
+## Test the examples
+
+Run every example test without credentials:
+
+```bash
+mise run test-examples
+```
+
+Build every runnable command:
+
+```bash
+mise run build-examples
+```

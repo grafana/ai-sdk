@@ -116,7 +116,7 @@ aisdk/                  root module — orchestration (StreamText, UIMessage, SS
   middleware/           in-tree middleware; integrations are their own modules
 providers/<name>/       one Go module per provider (anthropic, bedrock, openai, ...)
 docs/                   concepts, guides, providers, middleware, best practices
-examples/               runnable programs, one self-contained module each
+examples/               outcome-oriented programs, one self-contained module each
 test/                   integration, interop, CLI, and conformance harnesses
 openspec/               specs and change proposals
 ```
@@ -402,9 +402,11 @@ Complete, runnable programs live under [`examples/`](examples) as self-contained
 Go modules (with `replace` directives to the local SDK and providers). Guides
 link to them rather than embedding large programs.
 
-Examples must `go build` — they are wired into CI via `mise run build`. New
-example modules are picked up automatically. Examples that call a real provider
-need credentials to *run*, but must always compile without them.
+Examples must `go build` and include deterministic credential-free behavioral
+tests. New example modules are picked up automatically by `mise run
+build-examples` and `mise run test-examples`, both wired into blocking CI.
+Examples that call a real provider need credentials to *run*, but must always
+compile and test without them.
 
 ## Submitting a pull request
 
