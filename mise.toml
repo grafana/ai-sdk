@@ -127,6 +127,33 @@ go vet ./...
 (cd middleware/prometheus && go vet ./...)
 """
 
+[tasks.verify-module-resolution]
+description = "Verify each published module's requirements resolve from the module proxy"
+run = """
+set -e
+module_cache=$(mktemp -d)
+trap 'chmod -R u+w "$module_cache" 2>/dev/null || true; rm -rf "$module_cache"' EXIT
+export GOMODCACHE="$module_cache"
+export GOPROXY="https://proxy.golang.org"
+export GOWORK=off
+for go_mod in $(git ls-files 'go.mod' '*/go.mod' | sort); do
+  module_path=$(go mod edit -json "$go_mod" | jq -r '.Module.Path')
+  case "$module_path" in
+    github.com/grafana/ai-sdk/examples/*|github.com/grafana/ai-sdk/test/*)
+      continue
+      ;;
+  esac
+  replacements=$(go mod edit -json "$go_mod" | jq '(.Replace // []) | length')
+  if [ "$replacements" -ne 0 ]; then
+    echo "$module_path contains replace directives"
+    exit 1
+  fi
+  mod=$(dirname "$go_mod")
+  echo "==> $mod"
+  (cd "$mod" && go mod download && go mod verify > /dev/null)
+done
+"""
+
 [tasks.lint]
 description = "Run golangci-lint across all modules"
 run = """
