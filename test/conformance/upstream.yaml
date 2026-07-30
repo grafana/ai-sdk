@@ -13,18 +13,13 @@ packages:
   "@ai-sdk/provider-utils": 5.0.12
   "@ai-sdk/react": 4.0.40
 verification:
-  status: advisory
+  status: enforced
   conformanceScope: full
   commands:
     parityCheck: mise run parity-check
     conformance: mise run test-conformance
     regenerate: mise run generate-conformance
 knownGaps:
-  - id: ci-conformance-advisory
-    surface: ci
-    status: documented-deviation
-    description: Full conformance currently runs as CI signal and is not a required
-      merge gate.
   - id: anthropic-base-url-normalization
     surface: provider-anthropic
     status: gap
