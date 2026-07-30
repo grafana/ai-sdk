@@ -1,0 +1,19 @@
+go 1.26.3
+
+use (
+	.
+	./examples/agent-chat
+	./examples/structured-extraction
+	./middleware/agentobservability
+	./middleware/enrichment
+	./middleware/logger
+	./middleware/prometheus
+	./providers/anthropic
+	./providers/bedrock
+	./providers/grafana
+	./providers/openai
+	./providers/openai-compatible
+	./test/conformance
+	./test/integration/testserver
+	./test/interop/testserver
+)
