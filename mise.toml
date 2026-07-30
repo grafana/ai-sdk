@@ -30,6 +30,7 @@ run = "cd test && pnpm install --frozen-lockfile"
 [tasks.test]
 description = "Run all Go tests across all modules"
 run = """
+mise run test-examples
 mise run test-root
 mise run test-anthropic
 mise run test-bedrock
@@ -89,6 +90,7 @@ run = "cd middleware/agentobservability && go test -run 'TestConformance|TestPar
 [tasks.test-short]
 description = "Run short tests across all modules"
 run = """
+mise run test-examples
 go test -short ./...
 (cd providers/anthropic && go test -short ./...)
 (cd providers/bedrock && go test -short ./...)
@@ -228,6 +230,20 @@ run = """
 for mod in $(find examples -name go.mod -exec dirname {} \\;); do
   echo "build $mod"
   (cd "$mod" && go build ./...)
+done
+"""
+
+[tasks.test-examples]
+description = "Run short tests in every example module"
+run = """
+for mod in $(find examples -name go.mod -exec dirname {} \\; | sort); do
+  test_file=$(find "$mod" -name '*_test.go' -type f -print -quit)
+  if [ -z "$test_file" ]; then
+    echo "test $mod (failed: no test files)"
+    exit 1
+  fi
+  echo "test $mod"
+  (cd "$mod" && go test -short ./...)
 done
 """
 

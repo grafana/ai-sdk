@@ -59,8 +59,8 @@ to an HTTP writer all consume the same underlying stream. Choose one consumer.
 Blocking accessors such as `Text()` and `TotalUsage()` are populated after the
 stream finishes.
 
-Run [`examples/streaming-cli`](../../examples/streaming-cli) to see text,
-reasoning, step, and finish events in a terminal.
+The loop above is the complete terminal-consumption pattern. For larger
+application outcomes, continue to the runnable [examples](../../examples/).
 
 ## Choose the next capability
 

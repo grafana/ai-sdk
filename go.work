@@ -2,11 +2,8 @@ go 1.26.3
 
 use (
 	.
-	./examples/chat-server
-	./examples/generate-text
-	./examples/streaming-cli
-	./examples/structured-output
-	./examples/tools-agent
+	./examples/agent-chat
+	./examples/structured-extraction
 	./middleware/agentobservability
 	./middleware/enrichment
 	./middleware/logger

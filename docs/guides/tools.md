@@ -40,8 +40,9 @@ Tool names and descriptions help the model choose correctly. Input schema
 descriptions and constraints should explain valid values and their business
 meaning.
 
-Run [`examples/tools-agent`](../../examples/tools-agent) for a complete
-multi-tool flow.
+Run [`examples/agent-chat`](../../examples/agent-chat) for a complete agent
+that executes a typed tool across model steps and streams the result to
+`useChat`.
 
 ## Decide where execution happens
 

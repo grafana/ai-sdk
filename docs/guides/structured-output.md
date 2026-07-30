@@ -59,8 +59,8 @@ if err != nil {
 `Object()` returns the typed value only after JSON parsing and schema validation.
 Handle both the generation error and the output-access error.
 
-Run [`examples/structured-output`](../../examples/structured-output) for a
-complete extraction workflow.
+Run [`examples/structured-extraction`](../../examples/structured-extraction)
+for a complete alert-triage workflow.
 
 ## Stream structured output
 

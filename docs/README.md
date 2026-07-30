@@ -110,13 +110,12 @@ These guides are for teams hosting shared model access or extending the SDK:
 
 ## Runnable examples
 
-- [generate-text](../examples/generate-text) — make one complete model call.
-- [streaming-cli](../examples/streaming-cli) — consume a text stream in Go.
-- [tools-agent](../examples/tools-agent) — execute typed tools across steps.
-- [structured-output](../examples/structured-output) — extract validated data.
-- [chat-server](../examples/chat-server) — serve a `useChat` endpoint.
+- [agent-chat](../examples/agent-chat) — run a typed-tool agent behind a
+  `useChat`-compatible Go endpoint.
+- [structured-extraction](../examples/structured-extraction) — turn an alert
+  into a validated Go value.
 
-See the [examples learning path](../examples/README.md) for run commands.
+See the [examples index](../examples/README.md) for run and test commands.
 
 ---
 

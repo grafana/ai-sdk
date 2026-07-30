@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { useChat, useCompletion, useObject } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
+import { useEffect, useState } from "react";
 import { z } from "zod";
 import { describe, expect, it } from "vitest";
 import { getServerUrl } from "./helpers.js";
@@ -27,6 +28,52 @@ function ChatProbe() {
           .map((part) => (part.type === "text" ? part.text : ""))
           .join("")}
       </div>
+    </div>
+  );
+}
+
+type AgentToolMessage = {
+  role: string;
+  parts: Array<{
+    type: string;
+    state?: string;
+    input?: unknown;
+    output?: unknown;
+    text?: string;
+  }>;
+};
+
+function AgentToolProbe() {
+  const { messages, sendMessage } = useChat({
+    transport: new DefaultChatTransport({
+      api: `${getServerUrl()}/scenario/agent-tool`,
+    }),
+  });
+  const [history, setHistory] = useState<AgentToolMessage[][]>([]);
+
+  useEffect(() => {
+    const snapshot = JSON.parse(JSON.stringify(messages)) as AgentToolMessage[];
+    setHistory(current => {
+      if (JSON.stringify(current.at(-1)) === JSON.stringify(snapshot)) {
+        return current;
+      }
+      return [...current, snapshot];
+    });
+  }, [messages]);
+
+  return (
+    <div>
+      <button
+        data-testid="agent-tool-send"
+        onClick={() =>
+          sendMessage({
+            role: "user",
+            parts: [{ type: "text", text: "Weather in Paris?" }],
+          })
+        }
+      />
+      <div data-testid="agent-tool-state">{JSON.stringify(messages)}</div>
+      <div data-testid="agent-tool-history">{JSON.stringify(history)}</div>
     </div>
   );
 }
@@ -71,6 +118,53 @@ describe("React hook interop", () => {
 
     await waitFor(() => {
       expect(screen.getByTestId("chat-text").textContent).toContain("Hello, world!");
+    });
+  });
+
+  it("useChat receives agent tool state and final text", async () => {
+    render(<AgentToolProbe />);
+
+    screen.getByTestId("agent-tool-send").click();
+
+    await waitFor(() => {
+      const historyState =
+        screen.getByTestId("agent-tool-history").textContent ?? "[]";
+      const history = JSON.parse(historyState) as AgentToolMessage[][];
+      const inputAvailable = history
+        .flatMap(snapshot => snapshot)
+        .flatMap(message => message.parts)
+        .find(
+          part =>
+            part.type === "tool-get_weather" && part.state === "input-available",
+        );
+      expect({
+        state: inputAvailable?.state,
+        input: inputAvailable?.input,
+      }).toEqual({
+        state: "input-available",
+        input: { city: "Paris" },
+      });
+
+      const state = screen.getByTestId("agent-tool-state").textContent ?? "[]";
+      const messages = JSON.parse(state) as AgentToolMessage[];
+      const assistant = messages.find(message => message.role === "assistant");
+      const tool = assistant?.parts.find(part => part.type === "tool-get_weather");
+
+      expect({
+        state: tool?.state,
+        input: tool?.input,
+        output: tool?.output,
+      }).toEqual({
+        state: "output-available",
+        input: { city: "Paris" },
+        output: { city: "Paris", celsius: 18, conditions: "partly cloudy" },
+      });
+      expect(
+        assistant?.parts
+          .filter(part => part.type === "text")
+          .map(part => part.text)
+          .join(""),
+      ).toBe("Paris is 18°C and partly cloudy.");
     });
   });
 
