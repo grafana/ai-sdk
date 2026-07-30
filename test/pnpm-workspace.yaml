@@ -11,8 +11,5 @@ minimumReleaseAge: 4320
 
 # Dependencies explicitly allowed to run build scripts (required by
 # strictDepBuilds; everything not listed has its build scripts blocked).
-onlyBuiltDependencies:
-  - esbuild
-minimumReleaseAgeExclude:
-  # Renovate security update: pnpm@11.5.3
-  - pnpm@11.5.3
+allowBuilds:
+  esbuild: true
