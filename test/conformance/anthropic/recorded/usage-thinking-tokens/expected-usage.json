@@ -1,29 +1,29 @@
 [
   {
     "inputTokens": {
-      "total": 16,
-      "noCache": 16,
+      "total": 30,
+      "noCache": 30,
       "cacheRead": 0,
       "cacheWrite": 0
     },
     "outputTokens": {
-      "total": 7,
-      "text": 6,
-      "reasoning": 1
+      "total": 47,
+      "text": 35,
+      "reasoning": 12
     },
     "raw": {
-      "input_tokens": 16,
+      "input_tokens": 30,
       "cache_creation_input_tokens": 0,
       "cache_read_input_tokens": 0,
       "cache_creation": {
         "ephemeral_5m_input_tokens": 0,
         "ephemeral_1h_input_tokens": 0
       },
-      "output_tokens": 7,
+      "output_tokens": 47,
       "service_tier": "standard",
-      "inference_geo": "not_available",
+      "inference_geo": "global",
       "output_tokens_details": {
-        "thinking_tokens": 1
+        "thinking_tokens": 12
       }
     }
   }

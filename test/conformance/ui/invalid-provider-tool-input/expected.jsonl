@@ -1,0 +1,6 @@
+{"type":"start","messageId":"message-1"}
+{"type":"start-step"}
+{"type":"tool-input-error","toolCallId":"srvtool_invalid","toolName":"web_search","input":{},"providerExecuted":true,"errorText":"An error occurred."}
+{"type":"tool-output-error","toolCallId":"srvtool_invalid","errorText":"{\"type\":\"web_search_tool_result_error\",\"errorCode\":\"invalid_tool_input\"}","providerExecuted":true}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"stop"}

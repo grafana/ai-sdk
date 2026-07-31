@@ -12,6 +12,7 @@ import (
 
 	"github.com/grafana/ai-sdk"
 	"github.com/grafana/ai-sdk/provider"
+	"github.com/grafana/ai-sdk/schema"
 	"github.com/stretchr/testify/require"
 )
 
@@ -44,6 +45,33 @@ func TestUIConformance_ReasoningFiles(t *testing.T) {
 
 	result := aisdk.StreamText(context.Background(), uiFixtureModel{parts: parts},
 		aisdk.WithModelMessages(provider.UserText("test")),
+	)
+	var actual []map[string]any
+	for chunk := range result.ToUIMessageStream(
+		aisdk.WithUIMessageStreamGenerateID(func() string { return "message-1" }),
+	) {
+		data, err := json.Marshal(chunk)
+		require.NoError(t, err)
+		var decoded map[string]any
+		require.NoError(t, json.Unmarshal(data, &decoded))
+		actual = append(actual, decoded)
+	}
+
+	require.Equal(t, expected, actual)
+}
+
+func TestUIConformance_InvalidProviderToolInput(t *testing.T) {
+	fixtureDir := filepath.Join("ui", "invalid-provider-tool-input")
+	parts := loadUIFixtureParts(t, filepath.Join(fixtureDir, "input.jsonl"))
+	expected := loadUIExpected(t, filepath.Join(fixtureDir, "expected.jsonl"))
+	inputSchema, err := schema.SchemaFromJSON(json.RawMessage(`{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}`))
+	require.NoError(t, err)
+
+	result := aisdk.StreamText(context.Background(), uiFixtureModel{parts: parts},
+		aisdk.WithModelMessages(provider.UserText("test")),
+		aisdk.WithTools(aisdk.ToolSet{
+			"web_search": {InputSchema: inputSchema},
+		}),
 	)
 	var actual []map[string]any
 	for chunk := range result.ToUIMessageStream(

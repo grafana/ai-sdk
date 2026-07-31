@@ -1,8 +1,10 @@
 {"type":"start"}
 {"type":"start-step"}
-{"type":"text-start","id":"0"}
-{"type":"text-delta","id":"0","delta":"Hello"}
-{"type":"text-delta","id":"0","delta":" to you."}
-{"type":"text-end","id":"0"}
+{"type":"reasoning-start","id":"0"}
+{"type":"reasoning-delta","id":"0","delta":"","providerMetadata":{"anthropic":{"signature":"CAIS+QEKhwEIEBgCKkCdbfcx9RzJTwhABVFUuT2IFaMLdtLzIl7y8k1JO1EAAY0sPzilFWfvEzYPBe9rzjoEXgtG2Mrs9LXn8GjuXkfPMg1jbGF1ZGUtb3B1cy01OAFCCHRoaW5raW5nWiQ0NDIxMGI4Zi05MGQ3LTQxMjEtODIyMS03YmI4NWI1ZmJkNTgSDDhRjPIldb0Awmky9xoMq8PLreqaM80eO389IjArFoGLMSvgoG+7ajoLCv6O6/SZatt8BZn4l+74PiwFgiJj4cRlOmS7pCPldp8yQuoqHw/lUsL3H8tC3dndm4J92pnbBUtFYaiTPPbiYmDYP5gYAQ=="}}}
+{"type":"reasoning-end","id":"0"}
+{"type":"text-start","id":"1"}
+{"type":"text-delta","id":"1","delta":"17 × 23 = (17 × 20) + (17 × 3) = 340 + 51\n\n**391**"}
+{"type":"text-end","id":"1"}
 {"type":"finish-step"}
 {"type":"finish","finishReason":"stop"}

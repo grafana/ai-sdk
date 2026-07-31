@@ -1,12 +1,12 @@
-model: claude-sonnet-4-5-20250929
+# Live-recorded from the Anthropic API on 2026-07-31 with record-conformance.
+model: claude-opus-4-8
+prompt: Hello.
 allowSystemInMessages: true
 messages:
   - role: system
     content: "You are helpful."
   - role: user
     content: "Hello."
-  - role: assistant
-    content: "Hi."
   - role: system
     content: ""
     providerOptions:
@@ -16,8 +16,6 @@ messages:
             toolName: get_forecast
           - type: tool_removal
             toolName: get_weather
-  - role: user
-    content: "Continue."
 tools:
   get_forecast:
     description: Get a forecast.

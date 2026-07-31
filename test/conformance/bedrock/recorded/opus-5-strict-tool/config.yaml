@@ -1,3 +1,4 @@
+# Live-recorded from Amazon Bedrock on 2026-07-31 with record-conformance.
 model: us.anthropic.claude-opus-5
 prompt: What is the weather in Berlin? Use the get_weather tool.
 stopWhenStepCount: 1

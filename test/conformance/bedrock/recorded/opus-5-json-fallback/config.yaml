@@ -1,3 +1,4 @@
+# Live-recorded from Amazon Bedrock on 2026-07-31 with record-conformance.
 model: us.anthropic.claude-opus-5
 prompt: "Return the current status as JSON."
 responseFormat:

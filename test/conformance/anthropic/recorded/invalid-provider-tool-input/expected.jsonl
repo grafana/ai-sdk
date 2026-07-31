@@ -1,8 +1,0 @@
-{"type":"start"}
-{"type":"start-step"}
-{"type":"tool-input-start","toolCallId":"srvtoolu_invalid","toolName":"web_search","providerExecuted":true}
-{"type":"tool-input-delta","toolCallId":"srvtoolu_invalid","inputTextDelta":"{}"}
-{"type":"tool-input-error","toolCallId":"srvtoolu_invalid","toolName":"web_search","input":{},"providerExecuted":true,"errorText":"An error occurred."}
-{"type":"tool-output-error","toolCallId":"srvtoolu_invalid","errorText":"{\"type\":\"web_search_tool_result_error\",\"errorCode\":\"invalid_tool_input\"}","providerExecuted":true}
-{"type":"finish-step"}
-{"type":"finish","finishReason":"stop"}
