@@ -80,6 +80,36 @@ provider options, frontend interop, and conformance fixtures.
   fixture first, confirm the Go replay fails, then implement the fix. For new
   parity-sensitive features, record or import upstream behavior alongside the
   implementation so the fixture becomes the regression contract.
+
+#### Conformance Fixture Provenance
+
+Provider fixture inputs are evidence, not test data to invent. The provenance of
+`input.chunks.txt` and `input-*.chunks.txt` determines whether a conformance test
+can support a parity claim.
+
+- Files under `test/conformance/<provider>/recorded/` must be captured from a
+  real provider API by `mise run record-conformance`. Never hand-author,
+  synthesize, or assemble provider events and present them as recorded input.
+- A recorded input may be mechanically derived only from a named real capture
+  for deterministic transport-failure coverage that a normal API call cannot
+  reproduce, such as truncating an existing stream. Keep the provider event
+  shapes unchanged, make the smallest necessary transformation, and document
+  the source fixture and exact transformation in the fixture config and PR.
+  Do not derive feature, request-conversion, model-capability, or successful
+  response fixtures from invented or unrelated payloads.
+- Files under `test/conformance/<provider>/upstream/` must be copied from the
+  matching registered upstream package fixtures and listed in `INDEX.yaml`.
+  Never place locally invented inputs in `upstream/`.
+- `mise run generate-conformance` only regenerates expectations from existing
+  inputs. It does not record provider responses, establish input provenance, or
+  make synthetic inputs valid conformance evidence.
+- If a live provider recording or matching upstream fixture is unavailable,
+  use focused unit tests or a provider-independent `test/conformance/ui/`
+  fixture when appropriate, and document the remaining provider-boundary
+  coverage gap. Never substitute invented provider payloads.
+- Reviews must verify the provenance of every added or changed provider
+  `input*.chunks.txt` file before accepting its snapshots as parity evidence.
+
 - **Baseline checks**: Run `mise run parity-check` when changing committed
   parity behavior. For metadata-only changes, run
   `mise run validate-parity-baseline`.
