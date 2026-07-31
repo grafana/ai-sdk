@@ -14,6 +14,7 @@ import (
 var (
 	_ provider.ProviderOption = AnthropicOptions{}
 	_ provider.ProviderOption = AnthropicToolOptions{}
+	_ provider.ProviderOption = AnthropicSystemMessageOptions{}
 	_ provider.ProviderOption = AnthropicCacheControl{}
 )
 
@@ -69,6 +70,280 @@ func TestBuildParams_SystemMessage(t *testing.T) {
 		assert.Equal(t, "Reply concisely", p.Messages[2].Content[0].OfText.Text)
 		assert.EqualValues(t, "user", p.Messages[3].Role)
 		assert.Contains(t, p.Betas, midConversationSystemBeta)
+	})
+
+	t.Run("mid-conversation tool changes", func(t *testing.T) {
+		midSystem := provider.NewSystemMessage("tools changed")
+		midSystem.ProviderOptions = provider.BuildProviderOptions(AnthropicSystemMessageOptions{ToolChanges: []ToolChange{
+			{Type: ToolAddition, ToolName: "forecast"},
+			{Type: ToolRemoval, ToolName: "weather"},
+		}})
+		opts := provider.CallOptions{
+			Prompt: []provider.Message{
+				provider.NewSystemMessage("initial"),
+				provider.UserText("hello"),
+				provider.AssistantText("hi"),
+				midSystem,
+			},
+			Tools: []provider.Tool{
+				{Type: provider.ToolTypeFunction, Name: "forecast", InputSchema: json.RawMessage(`{"type":"object"}`)},
+				{Type: provider.ToolTypeFunction, Name: "weather", InputSchema: json.RawMessage(`{"type":"object"}`)},
+			},
+		}
+
+		p, _, warnings, _, err := buildParams("claude-sonnet-4-6", opts, false)
+		require.NoError(t, err)
+		assert.Empty(t, warnings)
+		require.Len(t, p.Messages, 3)
+		data, err := json.Marshal(p.Messages[2].Content)
+		require.NoError(t, err)
+		assert.JSONEq(t, `[
+			{"type":"text","text":"tools changed"},
+			{"type":"tool_addition","tool":{"type":"tool_reference","name":"forecast"}},
+			{"type":"tool_removal","tool":{"type":"tool_reference","name":"weather"}}
+		]`, string(data))
+		assert.Contains(t, p.Betas, midConversationSystemBeta)
+		assert.Contains(t, p.Betas, midConversationToolChangesBeta)
+	})
+
+	t.Run("tool-change-only message omits empty text", func(t *testing.T) {
+		midSystem := provider.NewSystemMessage("")
+		midSystem.ProviderOptions = provider.BuildProviderOptions(AnthropicSystemMessageOptions{ToolChanges: []ToolChange{{Type: ToolRemoval, ToolName: "weather"}}})
+		p, _, _, _, err := buildParams("claude-sonnet-4-6", provider.CallOptions{Prompt: []provider.Message{
+			provider.NewSystemMessage("initial"),
+			provider.UserText("hello"),
+			midSystem,
+		}}, false)
+		require.NoError(t, err)
+		require.Len(t, p.Messages, 2)
+		data, err := json.Marshal(p.Messages[1].Content)
+		require.NoError(t, err)
+		assert.JSONEq(t, `[{"type":"tool_removal","tool":{"type":"tool_reference","name":"weather"}}]`, string(data))
+	})
+
+	t.Run("initial tool changes are dropped with warning", func(t *testing.T) {
+		initial := provider.NewSystemMessage("initial")
+		initial.ProviderOptions = provider.BuildProviderOptions(AnthropicSystemMessageOptions{ToolChanges: []ToolChange{{Type: ToolAddition, ToolName: "forecast"}}})
+		p, _, warnings, _, err := buildParams("claude-sonnet-4-6", provider.CallOptions{Prompt: []provider.Message{initial, provider.UserText("hello")}}, false)
+		require.NoError(t, err)
+		require.Len(t, p.System, 1)
+		assert.Equal(t, "initial", p.System[0].Text)
+		assert.NotContains(t, p.Betas, midConversationToolChangesBeta)
+		require.Len(t, warnings, 1)
+		assert.Equal(t, provider.WarnOther, warnings[0].Type)
+		assert.Contains(t, warnings[0].Message, "initial system message")
+	})
+
+	t.Run("empty initial system does not hoist a later system block", func(t *testing.T) {
+		initial := provider.NewSystemMessage("")
+		initial.ProviderOptions = provider.BuildProviderOptions(AnthropicSystemMessageOptions{ToolChanges: []ToolChange{{Type: ToolAddition, ToolName: "forecast"}}})
+		p, _, warnings, _, err := buildParams("claude-sonnet-4-6", provider.CallOptions{Prompt: []provider.Message{
+			initial,
+			provider.UserText("hello"),
+			provider.NewSystemMessage("later"),
+		}}, false)
+		require.NoError(t, err)
+		assert.Empty(t, p.System)
+		require.Len(t, p.Messages, 2)
+		assert.EqualValues(t, sdk.BetaMessageParamRoleSystem, p.Messages[1].Role)
+		require.Len(t, p.Messages[1].Content, 1)
+		require.NotNil(t, p.Messages[1].Content[0].OfText)
+		assert.Equal(t, "later", p.Messages[1].Content[0].OfText.Text)
+		assert.Contains(t, p.Betas, midConversationSystemBeta)
+		require.Len(t, warnings, 1)
+	})
+
+	t.Run("Vertex ignores tool changes with warning", func(t *testing.T) {
+		midSystem := provider.NewSystemMessage("tools changed")
+		midSystem.ProviderOptions = provider.BuildProviderOptions(AnthropicSystemMessageOptions{ToolChanges: []ToolChange{{Type: ToolRemoval, ToolName: "weather"}}})
+		p, _, warnings, _, err := buildParamsWithCapabilities("claude-sonnet-4-6", provider.CallOptions{Prompt: []provider.Message{
+			provider.NewSystemMessage("initial"),
+			provider.UserText("hello"),
+			midSystem,
+		}}, false, vertexProviderCapabilities)
+		require.NoError(t, err)
+		assert.NotContains(t, p.Betas, midConversationToolChangesBeta)
+		require.Len(t, warnings, 1)
+		assert.Equal(t, "providerOptions.anthropic.toolChanges", warnings[0].Feature)
+	})
+
+	t.Run("Vertex omits a tool-change-only system message", func(t *testing.T) {
+		midSystem := provider.NewSystemMessage("")
+		midSystem.ProviderOptions = provider.BuildProviderOptions(AnthropicSystemMessageOptions{ToolChanges: []ToolChange{{Type: ToolRemoval, ToolName: "weather"}}})
+		p, _, warnings, _, err := buildParamsWithCapabilities("claude-sonnet-4-6", provider.CallOptions{Prompt: []provider.Message{
+			provider.NewSystemMessage("initial"),
+			provider.UserText("hello"),
+			midSystem,
+		}}, false, vertexProviderCapabilities)
+		require.NoError(t, err)
+		require.Len(t, p.Messages, 1)
+		assert.EqualValues(t, sdk.BetaMessageParamRoleUser, p.Messages[0].Role)
+		assert.NotContains(t, p.Betas, midConversationSystemBeta)
+		require.Len(t, warnings, 1)
+		assert.Equal(t, "providerOptions.anthropic.toolChanges", warnings[0].Feature)
+	})
+
+	t.Run("raw provider options preserve valid tool changes", func(t *testing.T) {
+		midSystem := provider.NewSystemMessage("")
+		midSystem.ProviderOptions = provider.ProviderOptions{"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(`{"toolChanges":[{"type":"tool_removal","toolName":"weather"}]}`)}}
+		p, _, warnings, _, err := buildParams("claude-sonnet-4-6", provider.CallOptions{Prompt: []provider.Message{
+			provider.NewSystemMessage("initial"),
+			provider.UserText("hello"),
+			midSystem,
+		}}, false)
+		require.NoError(t, err)
+		assert.Empty(t, warnings)
+		require.Len(t, p.Messages, 2)
+		data, err := json.Marshal(p.Messages[1].Content)
+		require.NoError(t, err)
+		assert.JSONEq(t, `[{"type":"tool_removal","tool":{"type":"tool_reference","name":"weather"}}]`, string(data))
+	})
+
+	for _, tc := range []struct {
+		name string
+		raw  string
+	}{
+		{name: "malformed JSON", raw: `{`},
+		{name: "null toolChanges", raw: `{"toolChanges":null}`},
+		{name: "non-array toolChanges", raw: `{"toolChanges":"bad"}`},
+		{name: "missing tool name", raw: `{"toolChanges":[{"type":"tool_removal"}]}`},
+		{name: "unknown discriminator", raw: `{"toolChanges":[{"type":"unknown","toolName":"weather"}]}`},
+	} {
+		t.Run("invalid raw options "+tc.name, func(t *testing.T) {
+			midSystem := provider.NewSystemMessage("")
+			midSystem.ProviderOptions = provider.ProviderOptions{"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(tc.raw)}}
+			_, _, _, _, err := buildParams("claude-sonnet-4-6", provider.CallOptions{Prompt: []provider.Message{
+				provider.NewSystemMessage("initial"),
+				provider.UserText("hello"),
+				midSystem,
+			}}, false)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "invalid system message provider options")
+		})
+	}
+
+	t.Run("invalid typed discriminator is rejected", func(t *testing.T) {
+		midSystem := provider.NewSystemMessage("")
+		midSystem.ProviderOptions = provider.BuildProviderOptions(AnthropicSystemMessageOptions{ToolChanges: []ToolChange{{Type: "unknown", ToolName: "weather"}}})
+		_, _, _, _, err := buildParams("claude-sonnet-4-6", provider.CallOptions{Prompt: []provider.Message{
+			provider.NewSystemMessage("initial"),
+			provider.UserText("hello"),
+			midSystem,
+		}}, false)
+		require.Error(t, err)
+		assert.ErrorContains(t, err, "toolChanges[0].type")
+	})
+}
+
+func TestFallbackConfig_JSONRoundTrip(t *testing.T) {
+	tests := []struct {
+		name string
+		in   *FallbackConfig
+		want string
+	}{
+		{name: "default", in: DefaultFallbacks(), want: `"default"`},
+		{name: "chain", in: FallbackChain(Fallback{Model: "claude-sonnet-5", Speed: FallbackSpeedFast}), want: `[{"model":"claude-sonnet-5","speed":"fast"}]`},
+		{name: "empty chain", in: FallbackChain(), want: `[]`},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			data, err := json.Marshal(tc.in)
+			require.NoError(t, err)
+			assert.JSONEq(t, tc.want, string(data))
+			var decoded FallbackConfig
+			require.NoError(t, json.Unmarshal(data, &decoded))
+			assert.Equal(t, tc.in.Default, decoded.Default)
+			assert.Equal(t, tc.in.Chain, decoded.Chain)
+		})
+	}
+
+	t.Run("zero value normalizes to an empty chain", func(t *testing.T) {
+		data, err := json.Marshal(FallbackConfig{})
+		require.NoError(t, err)
+		assert.JSONEq(t, `[]`, string(data))
+	})
+
+	t.Run("null is rejected", func(t *testing.T) {
+		var decoded FallbackConfig
+		require.Error(t, json.Unmarshal([]byte("null"), &decoded))
+	})
+
+	t.Run("default and explicit chain conflict", func(t *testing.T) {
+		_, err := json.Marshal(FallbackConfig{Default: true, Chain: []Fallback{{Model: "claude-sonnet-5"}}})
+		require.Error(t, err)
+	})
+
+	for _, tc := range []struct {
+		name string
+		raw  string
+	}{
+		{name: "missing model", raw: `[{}]`},
+		{name: "invalid speed", raw: `[{"model":"claude-sonnet-5","speed":"turbo"}]`},
+		{name: "scalar thinking", raw: `[{"model":"claude-sonnet-5","thinking":"disabled"}]`},
+		{name: "scalar output config", raw: `[{"model":"claude-sonnet-5","output_config":"high"}]`},
+	} {
+		t.Run("invalid chain "+tc.name, func(t *testing.T) {
+			var decoded FallbackConfig
+			require.Error(t, json.Unmarshal([]byte(tc.raw), &decoded))
+		})
+	}
+}
+
+func TestBuildParams_Fallbacks(t *testing.T) {
+	t.Run("default uses custom JSON request option and beta", func(t *testing.T) {
+		p, _, warnings, br, err := buildParams("claude-opus-5", provider.CallOptions{ProviderOptions: provider.BuildProviderOptions(AnthropicOptions{Fallbacks: DefaultFallbacks()})}, false)
+		require.NoError(t, err)
+		assert.Empty(t, warnings)
+		assert.Empty(t, p.Fallbacks)
+		assert.Contains(t, p.Betas, serverSideFallbackDefaultBeta)
+		require.Len(t, br.requestOptions, 1)
+	})
+
+	t.Run("explicit chain uses typed request and beta", func(t *testing.T) {
+		maxTokens := 2048
+		p, _, warnings, br, err := buildParams("claude-opus-5", provider.CallOptions{ProviderOptions: provider.BuildProviderOptions(AnthropicOptions{Fallbacks: FallbackChain(Fallback{
+			Model:        "claude-sonnet-5",
+			MaxTokens:    &maxTokens,
+			Thinking:     json.RawMessage(`{"type":"disabled"}`),
+			OutputConfig: json.RawMessage(`{"effort":"high"}`),
+			Speed:        FallbackSpeedFast,
+		})})}, false)
+		require.NoError(t, err)
+		assert.Empty(t, warnings)
+		assert.Empty(t, br.requestOptions)
+		require.Len(t, p.Fallbacks, 1)
+		assert.Equal(t, sdk.Model("claude-sonnet-5"), p.Fallbacks[0].Model)
+		assert.Equal(t, int64(2048), p.Fallbacks[0].MaxTokens.Value)
+		assert.Contains(t, p.Betas, serverSideFallbackExplicitBeta)
+	})
+
+	t.Run("invalid typed config is rejected", func(t *testing.T) {
+		_, _, _, _, err := buildParams("claude-opus-5", provider.CallOptions{ProviderOptions: provider.BuildProviderOptions(AnthropicOptions{Fallbacks: &FallbackConfig{
+			Default: true,
+			Chain:   []Fallback{{Model: "claude-sonnet-5"}},
+		}})}, false)
+		require.Error(t, err)
+		assert.ErrorContains(t, err, "default fallbacks")
+	})
+
+	t.Run("empty chain is omitted", func(t *testing.T) {
+		p, _, warnings, br, err := buildParams("claude-opus-5", provider.CallOptions{ProviderOptions: provider.BuildProviderOptions(AnthropicOptions{Fallbacks: FallbackChain()})}, false)
+		require.NoError(t, err)
+		assert.Empty(t, warnings)
+		assert.Empty(t, p.Fallbacks)
+		assert.Empty(t, br.requestOptions)
+		assert.NotContains(t, p.Betas, serverSideFallbackExplicitBeta)
+	})
+
+	t.Run("Vertex ignores fallbacks with warning", func(t *testing.T) {
+		p, _, warnings, br, err := buildParamsWithCapabilities("claude-opus-5", provider.CallOptions{ProviderOptions: provider.BuildProviderOptions(AnthropicOptions{Fallbacks: DefaultFallbacks()})}, false, vertexProviderCapabilities)
+		require.NoError(t, err)
+		assert.Empty(t, p.Fallbacks)
+		assert.Empty(t, br.requestOptions)
+		assert.NotContains(t, p.Betas, serverSideFallbackDefaultBeta)
+		require.Len(t, warnings, 1)
+		assert.Equal(t, "providerOptions.anthropic.fallbacks", warnings[0].Feature)
 	})
 }
 

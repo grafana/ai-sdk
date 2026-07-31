@@ -175,10 +175,14 @@ type StreamToolCall struct {
 	ToolCallID       string
 	ToolName         string
 	Input            json.RawMessage
+	Invalid          bool
+	Error            error
 	ProviderExecuted bool
 	Dynamic          *bool
 	Title            string
 	ProviderMetadata provider.ProviderMetadata
+	uiDynamic        *bool
+	useUIDynamic     bool
 }
 
 func (StreamToolCall) textStreamPart() {}
@@ -248,6 +252,8 @@ type StreamToolError struct {
 	Dynamic          *bool
 	Title            string
 	ProviderMetadata provider.ProviderMetadata
+	uiDynamic        *bool
+	useUIDynamic     bool
 }
 
 func (StreamToolError) textStreamPart() {}

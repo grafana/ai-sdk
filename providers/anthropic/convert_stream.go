@@ -455,10 +455,7 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 func (a *streamAdapter) emitWebSearchResult(block anthropic.BetaWebSearchToolResultBlock, ch chan<- provider.StreamPart) error {
 	content := block.Content
 	if content.Type == "web_search_tool_result_error" {
-		errData, err := json.Marshal(map[string]any{
-			"type":      "web_search_tool_result_error",
-			"errorCode": string(content.ErrorCode),
-		})
+		errData, err := marshalToolResultError("web_search_tool_result_error", string(content.ErrorCode))
 		if err != nil {
 			return fmt.Errorf("marshaling web search error: %w", err)
 		}

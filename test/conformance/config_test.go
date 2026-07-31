@@ -4,6 +4,7 @@ package conformance
 
 import (
 	"context"
+	"encoding/json"
 	"regexp"
 	"testing"
 
@@ -85,6 +86,11 @@ func TestConfig_BuildToolSetProviderToolOptions(t *testing.T) {
 				Args: map[string]any{
 					"maxUses": 1,
 				},
+				InputSchema: map[string]any{
+					"type":       "object",
+					"properties": map[string]any{"query": map[string]any{"type": "string"}},
+					"required":   []string{"query"},
+				},
 				ProviderOptions: map[string]any{
 					"anthropic": map[string]any{"deferLoading": true},
 				},
@@ -99,6 +105,8 @@ func TestConfig_BuildToolSetProviderToolOptions(t *testing.T) {
 	assert.Equal(t, "anthropic.web_search_20250305", tool.ID)
 	assert.Contains(t, tool.Args, "maxUses")
 	assert.Contains(t, tool.ProviderOptions, "anthropic")
+	assert.NoError(t, tool.InputSchema.Validate(json.RawMessage(`{"query":"weather"}`)))
+	assert.Error(t, tool.InputSchema.Validate(json.RawMessage(`{}`)))
 }
 
 func TestConfig_BuildToolSetPreservesExplicitFalseStrict(t *testing.T) {

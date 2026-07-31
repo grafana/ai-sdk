@@ -1,7 +1,6 @@
 package aisdk
 
 import (
-	"encoding/json"
 	"sort"
 
 	"github.com/grafana/ai-sdk/provider"
@@ -40,8 +39,8 @@ import (
 // the on-wire ordering of interleaved text / reasoning / call / result
 // sequences.
 //
-// Invalid tool-call inputs that are not JSON objects (e.g. raw strings)
-// are sanitized to {} to mirror upstream's invalid-call collapse.
+// Tool-call inputs are preserved verbatim. [StreamText] and [GenerateText]
+// sanitize invalid non-object inputs before calling this helper.
 //
 // The function does not perform any I/O and never returns an error: tool
 // output normalization happens earlier via [ToolResult.ModelOutput] and the
@@ -119,15 +118,11 @@ func ToResponseMessages(parts []provider.ContentPart) []provider.Message {
 			if _, ok := toolCallOrder[p.ToolCallID]; !ok {
 				toolCallOrder[p.ToolCallID] = len(toolCallOrder)
 			}
-			input := p.Input
-			if len(input) > 0 && !isJSONObject(input) {
-				input = json.RawMessage(`{}`)
-			}
 			assistantContent = append(assistantContent, provider.ContentPart{
 				Type:             provider.ContentPartTypeToolCall,
 				ToolCallID:       p.ToolCallID,
 				ToolName:         p.ToolName,
-				Input:            input,
+				Input:            p.Input,
 				ProviderExecuted: p.ProviderExecuted,
 				ProviderOptions:  p.ProviderOptions,
 			})

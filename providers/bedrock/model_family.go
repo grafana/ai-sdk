@@ -54,18 +54,25 @@ func supportsNativeStructuredOutput(modelID string) bool {
 	return strings.Contains(modelID, "claude-") && !legacyClaudeModelPattern.MatchString(modelID)
 }
 
-func rejectsNativeStructuredOutput(modelID string) bool {
-	for _, marker := range []string{
-		"claude-opus-4-7",
-		"claude-opus-4-8",
-		"claude-fable-5",
-		"claude-sonnet-5",
-	} {
+var modelsRejectingNewerSchemaFields = []string{
+	"claude-opus-4-7",
+	"claude-opus-4-8",
+	"claude-opus-5",
+	"claude-fable-5",
+	"claude-sonnet-5",
+}
+
+func rejectsNewerSchemaFields(modelID string) bool {
+	for _, marker := range modelsRejectingNewerSchemaFields {
 		if strings.Contains(modelID, marker) {
 			return true
 		}
 	}
 	return false
+}
+
+func rejectsNativeStructuredOutput(modelID string) bool {
+	return rejectsNewerSchemaFields(modelID)
 }
 
 func usesJSONInstructionForStructuredOutput(modelID string) bool {

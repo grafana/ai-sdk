@@ -1,0 +1,13 @@
+model: claude-sonnet-4-20250514
+prompt: Search the web.
+providerTools:
+  web_search:
+    id: anthropic.web_search_20250305
+    args:
+      maxUses: 1
+    inputSchema:
+      type: object
+      properties:
+        query:
+          type: string
+      required: [query]

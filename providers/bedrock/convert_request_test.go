@@ -195,8 +195,11 @@ func TestBuildRequest_FunctionToolStrict(t *testing.T) {
 		{name: "absent", modelID: testAnthropicModel},
 		{name: "true", modelID: testAnthropicModel, strict: &strictTrue, want: &strictTrue},
 		{name: "false", modelID: testAnthropicModel, strict: &strictFalse, want: &strictFalse},
-		{name: "unsupported true", modelID: "anthropic.claude-opus-4-7", strict: &strictTrue},
-		{name: "unsupported false", modelID: "anthropic.claude-opus-4-8", strict: &strictFalse},
+		{name: "unsupported opus 4.7 true", modelID: "anthropic.claude-opus-4-7", strict: &strictTrue},
+		{name: "unsupported opus 4.8 false", modelID: "anthropic.claude-opus-4-8", strict: &strictFalse},
+		{name: "unsupported regional opus 5 true", modelID: "us.anthropic.claude-opus-5", strict: &strictTrue},
+		{name: "unsupported fable 5 false", modelID: "eu.anthropic.claude-fable-5", strict: &strictFalse},
+		{name: "unsupported sonnet 5 true", modelID: "anthropic.claude-sonnet-5", strict: &strictTrue},
 	}
 
 	for _, tc := range tests {
@@ -690,7 +693,7 @@ func TestBuildRequest_Opus47And48StructuredOutputFallback(t *testing.T) {
 	})
 
 	t.Run("other rejected models use json tool", func(t *testing.T) {
-		for _, modelID := range []string{"anthropic.claude-fable-5-v1:0", "anthropic.claude-sonnet-5-v1:0"} {
+		for _, modelID := range []string{"us.anthropic.claude-opus-5", "anthropic.claude-fable-5-v1:0", "anthropic.claude-sonnet-5-v1:0"} {
 			req, _, meta := mustBuildRequest(t, modelID, provider.CallOptions{
 				Prompt:         []provider.Message{provider.UserText("give me JSON")},
 				ResponseFormat: &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Schema: schema},

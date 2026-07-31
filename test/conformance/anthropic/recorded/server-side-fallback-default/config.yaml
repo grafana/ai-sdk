@@ -1,0 +1,5 @@
+model: claude-opus-5
+prompt: Say hello.
+providerOptions:
+  anthropic:
+    fallbacks: default

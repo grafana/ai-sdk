@@ -1,0 +1,30 @@
+[
+  {
+    "inputTokens": {
+      "total": 16,
+      "noCache": 16,
+      "cacheRead": 0,
+      "cacheWrite": 0
+    },
+    "outputTokens": {
+      "total": 7,
+      "text": 6,
+      "reasoning": 1
+    },
+    "raw": {
+      "input_tokens": 16,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "cache_creation": {
+        "ephemeral_5m_input_tokens": 0,
+        "ephemeral_1h_input_tokens": 0
+      },
+      "output_tokens": 7,
+      "service_tier": "standard",
+      "inference_geo": "not_available",
+      "output_tokens_details": {
+        "thinking_tokens": 1
+      }
+    }
+  }
+]

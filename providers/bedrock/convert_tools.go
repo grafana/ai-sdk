@@ -122,7 +122,7 @@ func prepareTools(tools []provider.Tool, toolChoice *provider.ToolChoice, modelI
 		if desc := strings.TrimSpace(t.Description); desc != "" {
 			spec.Description = desc
 		}
-		if !isStrictUnsupportedModel(modelID) {
+		if !rejectsNewerSchemaFields(modelID) {
 			spec.Strict = t.Strict
 		}
 		tc.Tools = append(tc.Tools, toolDefinition{ToolSpec: spec})
@@ -166,10 +166,6 @@ func prepareTools(tools []provider.Tool, toolChoice *provider.ToolChoice, modelI
 		res.toolConfig = tc
 	}
 	return res
-}
-
-func isStrictUnsupportedModel(modelID string) bool {
-	return strings.Contains(modelID, "claude-opus-4-7") || strings.Contains(modelID, "claude-opus-4-8")
 }
 
 func jsonOrEmptyObject(raw json.RawMessage) json.RawMessage {

@@ -176,10 +176,7 @@ func convertResponse(msg *anthropic.BetaMessage, mapping toolNameMapping, usesJs
 			ws := block.AsWebSearchToolResult()
 			wsContent := ws.Content
 			if wsContent.Type == "web_search_tool_result_error" {
-				errData, err := json.Marshal(map[string]any{
-					"type":      "web_search_tool_result_error",
-					"errorCode": string(wsContent.ErrorCode),
-				})
+				errData, err := marshalToolResultError("web_search_tool_result_error", string(wsContent.ErrorCode))
 				if err != nil {
 					return nil, fmt.Errorf("marshaling web search error: %w", err)
 				}
@@ -431,6 +428,7 @@ func convertResponse(msg *anthropic.BetaMessage, mapping toolNameMapping, usesJs
 		outputTokens:             msg.Usage.OutputTokens,
 		cacheCreationInputTokens: msg.Usage.CacheCreationInputTokens,
 		cacheReadInputTokens:     msg.Usage.CacheReadInputTokens,
+		reasoningTokens:          thinkingTokenCount(msg.Usage.OutputTokensDetails),
 		iterations:               msg.Usage.Iterations,
 		raw:                      json.RawMessage(msg.Usage.RawJSON()),
 	})
@@ -491,3 +489,10 @@ func mapFinishReason(reason anthropic.BetaStopReason) provider.FinishReason {
 }
 
 func ptrBool(b bool) *bool { return &b }
+
+func marshalToolResultError(errorType, errorCode string) (json.RawMessage, error) {
+	return json.Marshal(struct {
+		Type      string `json:"type"`
+		ErrorCode string `json:"errorCode"`
+	}{Type: errorType, ErrorCode: errorCode})
+}

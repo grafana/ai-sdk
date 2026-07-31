@@ -1,0 +1,10 @@
+model: us.anthropic.claude-opus-5
+prompt: "Return the current status as JSON."
+responseFormat:
+  type: json
+  schema:
+    type: object
+    properties:
+      status:
+        type: string
+    required: [status]

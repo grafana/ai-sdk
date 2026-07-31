@@ -172,6 +172,7 @@ type ToolCall struct {
 	ToolName         string                    `json:"toolName"`
 	Input            json.RawMessage           `json:"input"`
 	Invalid          bool                      `json:"-"`
+	Error            error                     `json:"-"`
 	ProviderExecuted bool                      `json:"providerExecuted,omitempty"`
 	ProviderMetadata provider.ProviderMetadata `json:"providerMetadata,omitempty"`
 	Dynamic          *bool                     `json:"dynamic,omitempty"`

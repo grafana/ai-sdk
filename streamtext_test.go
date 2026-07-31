@@ -454,7 +454,9 @@ func TestStreamText_ToolInputSchemaValidation(t *testing.T) {
 			WithStopWhen(StepCountIs(5)),
 		)
 
-		for range result.FullStream() {
+		var chunks []UIMessageChunk
+		for chunk := range result.ToUIMessageStream() {
+			chunks = append(chunks, chunk)
 		}
 
 		require.NoError(t, result.Err())
@@ -468,6 +470,21 @@ func TestStreamText_ToolInputSchemaValidation(t *testing.T) {
 		require.Len(t, steps[0].ToolResults, 1)
 		require.NotNil(t, steps[0].ToolResults[0].ModelOutput)
 		assert.Contains(t, steps[0].ToolResults[0].ModelOutput.Text, "invalid input for tool search")
+
+		var inputError, outputError *UIMessageChunk
+		for i := range chunks {
+			switch chunks[i].Type {
+			case ChunkToolInputError:
+				inputError = &chunks[i]
+			case ChunkToolOutputError:
+				outputError = &chunks[i]
+			}
+		}
+		require.NotNil(t, inputError)
+		require.NotNil(t, outputError)
+		assert.Nil(t, inputError.Dynamic)
+		assert.Nil(t, outputError.Dynamic)
+		assert.Nil(t, outputError.ProviderMetadata)
 	})
 
 	t.Run("optional empty string is valid without minLength", func(t *testing.T) {
@@ -582,13 +599,14 @@ func TestStreamText_ToolInputSchemaValidation(t *testing.T) {
 		assert.Equal(t, int32(1), executeCount.Load())
 	})
 
-	t.Run("invalid provider executed tool error is reconstructed as tool result", func(t *testing.T) {
+	t.Run("invalid provider executed tool call preserves provider result without synthetic client result", func(t *testing.T) {
 		model := &mockModel{
 			streamFunc: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
 				ch := make(chan provider.StreamPart, 4)
 				go func() {
 					defer close(ch)
 					ch <- provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "c1", ToolName: "server", Input: `{"summarize":""}`, ProviderExecuted: true}
+					ch <- provider.StreamPart{Type: provider.PartToolResult, ToolCallID: "c1", ToolName: "server", Result: json.RawMessage(`{"type":"server_tool_result_error","errorCode":"invalid_tool_input"}`), IsError: true, ProviderExecuted: true}
 					ch <- provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonToolCalls}}
 				}()
 				return &provider.StreamResult{Stream: ch}, nil
@@ -606,17 +624,132 @@ func TestStreamText_ToolInputSchemaValidation(t *testing.T) {
 			WithStopWhen(StepCountIs(1)),
 		)
 
+		var streamCalls []StreamToolCall
+		var chunks []UIMessageChunk
+		for part := range result.FullStream() {
+			if call, ok := part.(StreamToolCall); ok {
+				streamCalls = append(streamCalls, call)
+			}
+			chunks = append(chunks, translateToChunks(part, uiMessageStreamConfig{})...)
+		}
+
+		require.NoError(t, result.Err())
+		require.Len(t, streamCalls, 1)
+		assert.True(t, streamCalls[0].Invalid)
+		assert.Error(t, streamCalls[0].Error)
+		assert.Equal(t, boolPtr(true), streamCalls[0].Dynamic)
+		var inputErrorCount, outputErrorCount int
+		for _, chunk := range chunks {
+			switch chunk.Type {
+			case ChunkToolInputError:
+				inputErrorCount++
+			case ChunkToolOutputError:
+				outputErrorCount++
+			}
+		}
+		assert.Equal(t, 1, inputErrorCount)
+		assert.Equal(t, 1, outputErrorCount)
+		step := result.Steps()[0]
+		require.Len(t, step.ToolCalls, 1)
+		assert.True(t, step.ToolCalls[0].Invalid)
+		assert.Error(t, step.ToolCalls[0].Error)
+		assert.True(t, step.ToolCalls[0].ProviderExecuted)
+		assert.Equal(t, boolPtr(true), step.ToolCalls[0].Dynamic)
+		require.Len(t, step.ToolResults, 1)
+		assert.True(t, step.ToolResults[0].ProviderExecuted)
+
+		messages := step.Response.Messages
+		require.Len(t, messages, 1)
+		assert.Equal(t, provider.RoleAssistant, messages[0].Role)
+		require.Len(t, messages[0].Content, 2)
+		assert.Equal(t, provider.ContentPartTypeToolCall, messages[0].Content[0].Type)
+		assert.True(t, messages[0].Content[0].ProviderExecuted)
+		assert.Equal(t, provider.ContentPartTypeToolResult, messages[0].Content[1].Type)
+	})
+
+	t.Run("GenerateText preserves invalid provider call and provider result", func(t *testing.T) {
+		model := &mockModel{streamFunc: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+			ch := make(chan provider.StreamPart, 4)
+			go func() {
+				defer close(ch)
+				ch <- provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "c1", ToolName: "server", Input: `{"summarize":""}`, ProviderExecuted: true}
+				ch <- provider.StreamPart{Type: provider.PartToolResult, ToolCallID: "c1", ToolName: "server", Result: json.RawMessage(`{"type":"server_tool_result_error","errorCode":"invalid_tool_input"}`), IsError: true, ProviderExecuted: true}
+				ch <- provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonToolCalls}}
+			}()
+			return &provider.StreamResult{Stream: ch}, nil
+		}}
+
+		result, err := GenerateText(context.Background(), model,
+			WithModelMessages(provider.UserText("server")),
+			WithTools(ToolSet{"server": Tool{InputSchema: testMustSchema(t, `{"type":"object","properties":{"summarize":{"type":"boolean"}}}`)}}),
+		)
+		require.NoError(t, err)
+		require.Len(t, result.ToolCalls, 1)
+		assert.True(t, result.ToolCalls[0].Invalid)
+		assert.Error(t, result.ToolCalls[0].Error)
+		assert.True(t, result.ToolCalls[0].ProviderExecuted)
+		assert.Equal(t, boolPtr(true), result.ToolCalls[0].Dynamic)
+		require.Len(t, result.ToolResults, 1)
+		assert.True(t, result.ToolResults[0].ProviderExecuted)
+	})
+
+	t.Run("malformed provider executed input does not reuse the previous call", func(t *testing.T) {
+		model := &mockModel{streamFunc: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+			ch := make(chan provider.StreamPart, 5)
+			go func() {
+				defer close(ch)
+				ch <- provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "c1", ToolName: "server", Input: `{"summarize":true}`, ProviderExecuted: true}
+				ch <- provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "c2", ToolName: "server", Input: `{`, ProviderExecuted: true}
+				ch <- provider.StreamPart{Type: provider.PartToolResult, ToolCallID: "c2", ToolName: "server", Result: json.RawMessage(`{"type":"server_tool_result_error","errorCode":"invalid_tool_input"}`), IsError: true, ProviderExecuted: true}
+				ch <- provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonToolCalls}}
+			}()
+			return &provider.StreamResult{Stream: ch}, nil
+		}}
+
+		result := StreamText(context.Background(), model,
+			WithModelMessages(provider.UserText("server")),
+			WithTools(ToolSet{"server": Tool{InputSchema: testMustSchema(t, `{"type":"object","properties":{"summarize":{"type":"boolean"}}}`)}}),
+		)
 		for range result.FullStream() {
 		}
 
 		require.NoError(t, result.Err())
-		messages := result.Steps()[0].Response.Messages
-		require.Len(t, messages, 2)
-		assert.Equal(t, provider.RoleAssistant, messages[0].Role)
-		assert.Equal(t, provider.RoleTool, messages[1].Role)
-		require.Len(t, messages[1].Content, 1)
-		assert.Equal(t, provider.ContentPartTypeToolResult, messages[1].Content[0].Type)
-		assert.False(t, messages[1].Content[0].ProviderExecuted)
+		step := result.Steps()[0]
+		require.Len(t, step.ToolCalls, 2)
+		assert.Equal(t, "c1", step.ToolCalls[0].ToolCallID)
+		assert.False(t, step.ToolCalls[0].Invalid)
+		assert.Equal(t, "c2", step.ToolCalls[1].ToolCallID)
+		assert.True(t, step.ToolCalls[1].Invalid)
+		assert.Error(t, step.ToolCalls[1].Error)
+		require.Len(t, step.Response.Messages, 1)
+		require.Len(t, step.Response.Messages[0].Content, 3)
+		assert.Equal(t, "c1", step.Response.Messages[0].Content[0].ToolCallID)
+		assert.Equal(t, "c2", step.Response.Messages[0].Content[1].ToolCallID)
+		assert.Equal(t, "c2", step.Response.Messages[0].Content[2].ToolCallID)
+	})
+
+	t.Run("GenerateText preserves malformed provider call and provider result", func(t *testing.T) {
+		model := &mockModel{streamFunc: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+			ch := make(chan provider.StreamPart, 4)
+			go func() {
+				defer close(ch)
+				ch <- provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "c1", ToolName: "server", Input: `{`, ProviderExecuted: true}
+				ch <- provider.StreamPart{Type: provider.PartToolResult, ToolCallID: "c1", ToolName: "server", Result: json.RawMessage(`{"type":"server_tool_result_error","errorCode":"invalid_tool_input"}`), IsError: true, ProviderExecuted: true}
+				ch <- provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonToolCalls}}
+			}()
+			return &provider.StreamResult{Stream: ch}, nil
+		}}
+
+		result, err := GenerateText(context.Background(), model,
+			WithModelMessages(provider.UserText("server")),
+			WithTools(ToolSet{"server": Tool{InputSchema: testMustSchema(t, `{"type":"object"}`)}}),
+		)
+		require.NoError(t, err)
+		require.Len(t, result.ToolCalls, 1)
+		assert.True(t, result.ToolCalls[0].Invalid)
+		assert.Error(t, result.ToolCalls[0].Error)
+		require.Len(t, result.ToolResults, 1)
+		assert.True(t, result.ToolResults[0].ProviderExecuted)
 	})
 }
 
