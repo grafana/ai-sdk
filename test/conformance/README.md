@@ -124,9 +124,9 @@ test/conformance/
         input.chunks.txt
         expected.jsonl
         expected-requests.jsonl
-    recorded/                    # real provider captures; narrowly permitted failure derivations
+    recorded/                    # unmodified real provider captures
       <test-name>/
-        config.yaml              # includes prompt and any permitted derivation provenance
+        config.yaml              # includes prompt for provenance and re-recording
         input.chunks.txt         # or input-1.chunks.txt, input-2.chunks.txt for multi-step
         expected.jsonl
         expected-requests.jsonl
@@ -164,18 +164,15 @@ Never hand-author, synthesize, or assemble provider events for a recorded
 fixture, including feature, request-conversion, model-capability, or successful
 response scenarios.
 
-The only permitted derivation is a minimal mechanical transformation of a named
-real capture for deterministic transport-failure coverage that a normal API
-call cannot reproduce, such as truncating an existing stream. A derived fixture
-must preserve the captured provider event shapes and document both the source
-fixture and exact transformation in `config.yaml` comments and the PR. An
-invented payload, an unrelated capture adapted to a new feature, or a synthetic
-successful response is not a recorded fixture.
+Recorded inputs must remain exactly as captured by the recording tool. Do not
+truncate, splice, rewrite, or otherwise derive provider events. Synthetic
+responses and transport-failure scenarios belong in focused unit or integration
+tests, or in provider-independent `ui/` fixtures when they exercise core stream
+behavior.
 
 If live credentials, provider access, or a matching upstream fixture are not
-available, use focused unit tests or a provider-independent `ui/` fixture when
-appropriate and document the remaining provider-boundary coverage gap. Do not
-substitute synthetic provider payloads.
+available, use those alternatives and document any remaining provider-boundary
+coverage gap. Do not substitute synthetic provider payloads.
 
 ## config.yaml
 

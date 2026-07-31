@@ -90,13 +90,11 @@ can support a parity claim.
 - Files under `test/conformance/<provider>/recorded/` must be captured from a
   real provider API by `mise run record-conformance`. Never hand-author,
   synthesize, or assemble provider events and present them as recorded input.
-- A recorded input may be mechanically derived only from a named real capture
-  for deterministic transport-failure coverage that a normal API call cannot
-  reproduce, such as truncating an existing stream. Keep the provider event
-  shapes unchanged, make the smallest necessary transformation, and document
-  the source fixture and exact transformation in the fixture config and PR.
-  Do not derive feature, request-conversion, model-capability, or successful
-  response fixtures from invented or unrelated payloads.
+- Recorded inputs must remain the provider events captured by the recording
+  tool. Do not derive, truncate, splice, rewrite, or otherwise modify them.
+  Synthetic provider responses and transport-failure scenarios belong in
+  focused unit or integration tests, or in provider-independent
+  `test/conformance/ui/` fixtures when they exercise core stream behavior.
 - Files under `test/conformance/<provider>/upstream/` must be copied from the
   matching registered upstream package fixtures and listed in `INDEX.yaml`.
   Never place locally invented inputs in `upstream/`.
