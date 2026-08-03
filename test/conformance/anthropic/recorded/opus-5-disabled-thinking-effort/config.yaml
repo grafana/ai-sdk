@@ -1,0 +1,8 @@
+# Live-recorded from the Anthropic API on 2026-07-31 with record-conformance.
+model: claude-opus-5
+prompt: Say hello.
+providerOptions:
+  anthropic:
+    thinking:
+      type: disabled
+    effort: xhigh

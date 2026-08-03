@@ -276,6 +276,41 @@ func TestStreamText_ToolsAndStructuredOutput(t *testing.T) {
 	assert.Equal(t, "Result", val.Name)
 }
 
+func TestStreamText_ObjectOutputPreservesMetadataOnlyTextDelta(t *testing.T) {
+	metadata := provider.ProviderMetadata{
+		"test": json.RawMessage(`{"signature":"test-signature"}`),
+	}
+	model := &testModel{
+		streamFunc: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+			ch := make(chan provider.StreamPart, 6)
+			ch <- provider.StreamPart{Type: provider.PartTextStart, ID: "t1"}
+			ch <- provider.StreamPart{Type: provider.PartTextDelta, ID: "t1", Delta: `{"value":"ok"}`}
+			ch <- provider.StreamPart{Type: provider.PartTextDelta, ID: "t1", ProviderMetadata: metadata}
+			ch <- provider.StreamPart{Type: provider.PartTextEnd, ID: "t1"}
+			ch <- provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}}
+			close(ch)
+			return &provider.StreamResult{Stream: ch}, nil
+		},
+	}
+
+	result := aisdk.StreamText(context.Background(), model,
+		aisdk.WithModelMessages(provider.UserText("test")),
+		aisdk.WithOutput(output.JSON()),
+	)
+
+	var metadataDelta *aisdk.StreamTextDelta
+	for part := range result.FullStream() {
+		if delta, ok := part.(aisdk.StreamTextDelta); ok && delta.Text == "" && delta.ProviderMetadata != nil {
+			copy := delta
+			metadataDelta = &copy
+		}
+	}
+
+	require.NotNil(t, metadataDelta)
+	assert.Equal(t, "t1", metadataDelta.ID)
+	assert.Equal(t, metadata, metadataDelta.ProviderMetadata)
+}
+
 func TestStreamText_PartialOutputStream(t *testing.T) {
 	t.Run("delivers more partials than the channel buffer", func(t *testing.T) {
 		out := output.JSON()

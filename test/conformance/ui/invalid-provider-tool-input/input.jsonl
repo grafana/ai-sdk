@@ -1,0 +1,4 @@
+{"type":"stream-start","warnings":[]}
+{"type":"tool-call","toolCallId":"srvtool_invalid","toolName":"web_search","input":"{}","providerExecuted":true}
+{"type":"tool-result","toolCallId":"srvtool_invalid","toolName":"web_search","result":{"type":"web_search_tool_result_error","errorCode":"invalid_tool_input"},"isError":true}
+{"type":"finish","finishReason":{"unified":"stop","raw":"end_turn"},"usage":{"inputTokens":{"total":10},"outputTokens":{"total":5}}}

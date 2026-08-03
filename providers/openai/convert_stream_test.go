@@ -27,7 +27,7 @@ func collectParts(t *testing.T, events ...string) []provider.StreamPart {
 
 func collectPartsWithBuildResult(t *testing.T, br buildResult, events ...string) []provider.StreamPart {
 	t.Helper()
-	a := newStreamAdapter(nil, br, seqIDGen(), "openai")
+	a := newStreamAdapter(nil, br, responses.ResponseNewParams{}, nil, seqIDGen(), "openai")
 	ch := make(chan provider.StreamPart, 256)
 	for _, raw := range events {
 		a.handleEvent(unmarshalEvent(t, raw), ch)
@@ -145,6 +145,31 @@ func TestStream_AnnotationEmitsSource(t *testing.T) {
 	assert.Equal(t, "Example", source.Source.Title)
 }
 
+func TestStream_ErrorThenResponseFailedEmitsSingleErrorAndFinish(t *testing.T) {
+	parts := collectParts(t,
+		`{"type":"error","sequence_number":1,"message":"stream failed","code":"rate_limit_error","param":null}`,
+		`{"type":"response.failed","sequence_number":2,"response":{"id":"resp_1","model":"gpt-4o","status":"failed","error":{"message":"stream failed","code":"rate_limit_error"},"usage":{"input_tokens":3,"output_tokens":1,"total_tokens":4}}}`,
+	)
+
+	var errorsSeen, finishesSeen int
+	for _, part := range parts {
+		switch part.Type {
+		case provider.PartError:
+			errorsSeen++
+		case provider.PartFinish:
+			finishesSeen++
+			require.NotNil(t, part.FinishReason)
+			assert.Equal(t, provider.FinishReasonError, part.FinishReason.Unified)
+			require.NotNil(t, part.Usage)
+			require.NotNil(t, part.Usage.InputTokens.Total)
+			assert.Equal(t, 3, *part.Usage.InputTokens.Total)
+			assert.JSONEq(t, `{"responseId":"resp_1"}`, string(part.ProviderMetadata["openai"]))
+		}
+	}
+	assert.Equal(t, 1, errorsSeen)
+	assert.Equal(t, 1, finishesSeen)
+}
+
 func TestStream_TextCarriesPhaseMetadata(t *testing.T) {
 	parts := collectParts(t,
 		`{"type":"response.output_item.added","sequence_number":1,"output_index":0,"item":{"type":"message","id":"msg_1","role":"assistant","phase":"commentary","status":"in_progress","content":[]}}`,
@@ -173,7 +198,7 @@ func TestStream_TextCarriesPhaseMetadata(t *testing.T) {
 }
 
 func TestStream_WebSearchOutputIncludesQueries(t *testing.T) {
-	a := newStreamAdapter(nil, buildResult{}, seqIDGen(), "openai")
+	a := newStreamAdapter(nil, buildResult{}, responses.ResponseNewParams{}, nil, seqIDGen(), "openai")
 	ch := make(chan provider.StreamPart, 64)
 	a.handleEvent(unmarshalEvent(t,
 		`{"type":"response.output_item.done","sequence_number":1,"output_index":0,"item":{"type":"web_search_call","id":"ws_1","status":"completed","action":{"type":"search","query":"go release year","queries":["go release year"]}}}`,
@@ -324,7 +349,7 @@ func TestStream_FunctionCallNamespaceMetadata(t *testing.T) {
 }
 
 func TestStream_WebSearchEagerCall(t *testing.T) {
-	a := newStreamAdapter(nil, buildResult{}, seqIDGen(), "openai")
+	a := newStreamAdapter(nil, buildResult{}, responses.ResponseNewParams{}, nil, seqIDGen(), "openai")
 	ch := make(chan provider.StreamPart, 64)
 	a.handleEvent(unmarshalEvent(t,
 		`{"type":"response.output_item.added","sequence_number":1,"output_index":0,"item":{"type":"web_search_call","id":"ws_1","status":"in_progress","action":{"type":"search","query":"go"}}}`,

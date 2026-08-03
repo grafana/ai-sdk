@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { safeValidateTypes } from "@ai-sdk/provider-utils";
 import {
   buildMessages,
   buildStreamTextOptions,
@@ -38,11 +39,16 @@ describe("conformance common config", () => {
     );
   });
 
-  it("builds provider tool provider options", () => {
+  it("builds provider tool provider options and input schema", async () => {
     const tools = buildTools(undefined, {
       web_search: {
         id: "anthropic.web_search_20250305",
         args: { maxUses: 1 },
+        inputSchema: {
+          type: "object",
+          properties: { query: { type: "string" } },
+          required: ["query"],
+        },
         providerOptions: { anthropic: { deferLoading: true } },
       },
     });
@@ -50,6 +56,14 @@ describe("conformance common config", () => {
     assert.deepEqual(tools?.web_search.providerOptions, {
       anthropic: { deferLoading: true },
     });
+    assert.equal(
+      (await safeValidateTypes({ value: { query: "weather" }, schema: tools!.web_search.inputSchema })).success,
+      true,
+    );
+    assert.equal(
+      (await safeValidateTypes({ value: {}, schema: tools!.web_search.inputSchema })).success,
+      false,
+    );
   });
 
   it("builds function tool execution errors", async () => {

@@ -23,6 +23,7 @@ var directAnthropicModelIDs = []string{
 	"claude-opus-4-6",
 	"claude-opus-4-7",
 	"claude-opus-4-8",
+	"claude-opus-5",
 	"claude-sonnet-4-0",
 	"claude-sonnet-4-20250514",
 	"claude-sonnet-4-5",
@@ -132,12 +133,13 @@ func ResolveVertexModelID(modelID string) string {
 // modelCapabilities holds per-model limits and feature flags used when building
 // Anthropic requests. It mirrors @ai-sdk/anthropic getModelCapabilities.
 type modelCapabilities struct {
-	maxOutputTokens          int
-	supportsAdaptiveThinking bool
-	supportsStructuredOutput bool
-	rejectsSamplingParams    bool
-	supportsXHighEffort      bool
-	isKnownModel             bool
+	maxOutputTokens                        int
+	supportsAdaptiveThinking               bool
+	supportsStructuredOutput               bool
+	rejectsSamplingParams                  bool
+	supportsXHighEffort                    bool
+	rejectsThinkingDisabledAboveHighEffort bool
+	isKnownModel                           bool
 }
 
 var legacyClaudeModelPattern = regexp.MustCompile(`claude-(instant($|-)|v?2($|[-.:])|3($|[-.]))`)
@@ -146,6 +148,8 @@ var legacyClaudeModelPattern = regexp.MustCompile(`claude-(instant($|-)|v?2($|[-
 // known Claude families (substring checks, most specific first).
 func getModelCapabilities(modelID string) modelCapabilities {
 	switch {
+	case strings.Contains(modelID, "claude-opus-5"):
+		return modelCapabilities{maxOutputTokens: 128000, supportsAdaptiveThinking: true, supportsStructuredOutput: true, rejectsSamplingParams: true, supportsXHighEffort: true, rejectsThinkingDisabledAboveHighEffort: true, isKnownModel: true}
 	case strings.Contains(modelID, "claude-opus-4-8") ||
 		strings.Contains(modelID, "claude-opus-4-7") ||
 		strings.Contains(modelID, "claude-fable-5") ||
@@ -168,7 +172,7 @@ func getModelCapabilities(modelID string) modelCapabilities {
 	case legacyClaudeModelPattern.MatchString(modelID):
 		return modelCapabilities{maxOutputTokens: 4096}
 	case strings.Contains(modelID, "claude-"):
-		return modelCapabilities{maxOutputTokens: 128000, supportsAdaptiveThinking: true, supportsStructuredOutput: true, rejectsSamplingParams: true, supportsXHighEffort: true}
+		return modelCapabilities{maxOutputTokens: 128000, supportsAdaptiveThinking: true, supportsStructuredOutput: true, rejectsSamplingParams: true, supportsXHighEffort: true, rejectsThinkingDisabledAboveHighEffort: true}
 	default:
 		return modelCapabilities{maxOutputTokens: 4096}
 	}

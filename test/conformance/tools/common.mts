@@ -3,6 +3,7 @@ import type { IncomingHttpHeaders } from "node:http";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { Output, jsonSchema, type ModelMessage, type Tool, type UIMessage } from "ai";
+import { z } from "zod";
 import type { ProviderOptions, ToolResultOutput } from "@ai-sdk/provider-utils";
 
 // --- Types ---
@@ -48,6 +49,7 @@ export interface ApprovalConfig {
 export interface ProviderToolConfig {
   id: string;
   args?: Record<string, unknown>;
+  inputSchema?: Record<string, unknown>;
   providerOptions?: Record<string, Record<string, unknown>>;
 }
 
@@ -230,7 +232,9 @@ export function buildTools(
           ? { providerOptions: ptc.providerOptions as ProviderOptions }
           : {}),
         isProviderExecuted: true as const,
-        inputSchema: jsonSchema({ type: "object" }),
+        inputSchema: ptc.inputSchema
+          ? z.fromJSONSchema(ptc.inputSchema)
+          : jsonSchema({ type: "object" }),
       };
     }
   }

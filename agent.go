@@ -41,10 +41,10 @@ type Agent interface {
 // order and inherit StreamText's concurrency behavior.
 //
 // Agent runtime context is a wrapper-level Go adaptation of upstream runtimeContext:
-// the resolved value is propagated through PrepareStepResult.Context and
-// ToolExecutionOptions.Context. A nil PrepareStepResult.Context preserves the
-// resolved Agent context because the current result shape cannot distinguish an
-// omitted context from an intentional nil clear.
+// the resolved value is propagated through PrepareStepState.Context and
+// ToolExecutionOptions.Context. Non-nil PrepareStepResult.Context values carry
+// forward to later steps; nil preserves the effective context because the current
+// result shape cannot distinguish an omitted context from an intentional nil clear.
 //
 // The Agent user-agent marker is added only to provider.CallOptions headers;
 // provider modules must honor call headers for it to reach the network. OpenAI
@@ -97,8 +97,8 @@ func WithToolLoopAgentOptions(opts ...StreamOption) ToolLoopAgentOption {
 
 // WithToolLoopAgentRuntimeContext sets reusable Agent runtime context.
 //
-// The context is delivered to tools through the existing PrepareStepResult.Context
-// and ToolExecutionOptions.Context path. A per-call Agent runtime context
+// The context is delivered to callbacks and tools through PrepareStepState.Context
+// and ToolExecutionOptions.Context. A per-call Agent runtime context
 // overrides this value only when supplied.
 func WithToolLoopAgentRuntimeContext(value any) ToolLoopAgentOption {
 	return toolLoopAgentOptionFunc(func(c *toolLoopAgentConfig) {
@@ -314,28 +314,7 @@ func (a *ToolLoopAgent) finalizeConfig(cfg *streamConfig, callRuntimeContext any
 		runtimeContextSet = true
 	}
 	if runtimeContextSet {
-		cfg.prepareStep = prepareStepWithRuntimeContext(cfg.prepareStep, runtimeContext)
-	}
-}
-
-func prepareStepWithRuntimeContext(user PrepareStepFunc, runtimeContext any) PrepareStepFunc {
-	return func(state PrepareStepState) (*PrepareStepResult, error) {
-		result := &PrepareStepResult{Context: runtimeContext}
-		if user == nil {
-			return result, nil
-		}
-		userResult, err := user(state)
-		if err != nil {
-			return nil, err
-		}
-		if userResult == nil {
-			return result, nil
-		}
-		merged := *userResult
-		if userResult.Context == nil {
-			merged.Context = runtimeContext
-		}
-		return &merged, nil
+		cfg.runtimeContext = runtimeContext
 	}
 }
 
@@ -405,8 +384,9 @@ func mergeBaseConfig(dst *baseConfig, call *baseConfig) {
 		v := *call.toolChoice
 		dst.toolChoice = &v
 	}
-	if call.activeTools != nil {
+	if call.activeToolsSet {
 		dst.activeTools = append([]string(nil), call.activeTools...)
+		dst.activeToolsSet = true
 	}
 	if len(call.stopWhen) > 0 {
 		dst.stopWhen = append([]StopCondition(nil), call.stopWhen...)

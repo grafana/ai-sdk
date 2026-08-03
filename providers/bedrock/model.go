@@ -97,7 +97,10 @@ var s3URLPattern = regexp.MustCompile(`^s3://`)
 
 // SupportedURLs implements provider.LanguageModel.
 func (m *model) SupportedURLs() map[string][]*regexp.Regexp {
-	return map[string][]*regexp.Regexp{"image/*": {s3URLPattern}}
+	return map[string][]*regexp.Regexp{
+		"image/*": {s3URLPattern},
+		"video/*": {s3URLPattern},
+	}
 }
 
 // DoGenerate is the non-streaming entry point. Implemented in http.go.

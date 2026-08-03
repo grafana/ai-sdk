@@ -533,7 +533,11 @@ func reasoningMeta(providerName, itemID, encrypted string) provider.ProviderMeta
 }
 
 func responseMeta(providerName string, resp *responses.Response) provider.ProviderMetadata {
-	m := map[string]any{"responseId": resp.ID}
+	var responseID any
+	if resp.ID != "" {
+		responseID = resp.ID
+	}
+	m := map[string]any{"responseId": responseID}
 	if resp.ServiceTier != "" {
 		m["serviceTier"] = string(resp.ServiceTier)
 	}

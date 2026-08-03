@@ -65,6 +65,12 @@ func TestModelIDLists_Contracts(t *testing.T) {
 	}
 }
 
+func TestModelIDs_Opus5IsDirectOnly(t *testing.T) {
+	assert.Contains(t, ModelIDs(), "claude-opus-5")
+	assert.NotContains(t, VertexModelIDs(), "claude-opus-5")
+	assert.NotContains(t, DualAvailableModelIDs(), "claude-opus-5")
+}
+
 func TestDualAvailableModelIDs_Subsets(t *testing.T) {
 	directIDs := stringSet(ModelIDs())
 	vertexIDs := stringSet(VertexModelIDs())
@@ -99,6 +105,12 @@ func stringSet(values []string) map[string]struct{} {
 	return set
 }
 
+func TestGetModelCapabilities_ThinkingDisabledEffortConstraint(t *testing.T) {
+	assert.True(t, getModelCapabilities("claude-opus-5").rejectsThinkingDisabledAboveHighEffort)
+	assert.True(t, getModelCapabilities("claude-future-9").rejectsThinkingDisabledAboveHighEffort)
+	assert.False(t, getModelCapabilities("claude-opus-4-8").rejectsThinkingDisabledAboveHighEffort)
+}
+
 func TestGetModelCapabilities_AllBranches(t *testing.T) {
 	tests := []struct {
 		id                   string
@@ -113,6 +125,7 @@ func TestGetModelCapabilities_AllBranches(t *testing.T) {
 		{"claude-opus-4-8@vertex", 128000, true, true, true, true, true},
 		{"claude-opus-4-7", 128000, true, true, true, true, true},
 		{"claude-opus-4-7@vertex", 128000, true, true, true, true, true},
+		{"claude-opus-5", 128000, true, true, true, true, true},
 		{"claude-fable-5", 128000, true, true, true, true, true},
 		{"claude-sonnet-5", 128000, true, true, true, true, true},
 		{"claude-sonnet-5-20260701", 128000, true, true, true, true, true},

@@ -1,0 +1,32 @@
+# Live-recorded from the Anthropic API on 2026-07-31 with record-conformance.
+model: claude-opus-4-8
+prompt: Hello.
+allowSystemInMessages: true
+messages:
+  - role: system
+    content: "You are helpful."
+  - role: user
+    content: "Hello."
+  - role: system
+    content: ""
+    providerOptions:
+      anthropic:
+        toolChanges:
+          - type: tool_addition
+            toolName: get_forecast
+          - type: tool_removal
+            toolName: get_weather
+tools:
+  get_forecast:
+    description: Get a forecast.
+    inputSchema:
+      type: object
+      properties: {}
+    providerOptions:
+      anthropic:
+        deferLoading: true
+  get_weather:
+    description: Get weather.
+    inputSchema:
+      type: object
+      properties: {}

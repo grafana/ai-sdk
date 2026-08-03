@@ -15,6 +15,7 @@ func TestGetModelCapabilities(t *testing.T) {
 		modelID string
 		want    modelCapabilities
 	}{
+		{"opus 5", "claude-opus-5", modelCapabilities{maxOutputTokens: 128000, supportsAdaptiveThinking: true, supportsStructuredOutput: true, rejectsSamplingParams: true, supportsXHighEffort: true, rejectsThinkingDisabledAboveHighEffort: true, isKnownModel: true}},
 		{"opus 4-7", "claude-opus-4-7", modelCapabilities{maxOutputTokens: 128000, supportsAdaptiveThinking: true, supportsStructuredOutput: true, rejectsSamplingParams: true, supportsXHighEffort: true, isKnownModel: true}},
 		{"sonnet 5", "claude-sonnet-5", modelCapabilities{maxOutputTokens: 128000, supportsAdaptiveThinking: true, supportsStructuredOutput: true, rejectsSamplingParams: true, supportsXHighEffort: true, isKnownModel: true}},
 		{"sonnet 4-6", "claude-sonnet-4-6-20260101", modelCapabilities{maxOutputTokens: 128000, supportsAdaptiveThinking: true, supportsStructuredOutput: true, isKnownModel: true}},
@@ -28,8 +29,8 @@ func TestGetModelCapabilities(t *testing.T) {
 		{"claude 3 haiku", "claude-3-haiku-20240307", modelCapabilities{maxOutputTokens: 4096, isKnownModel: true}},
 		{"legacy claude 3.7", "us.anthropic.claude-3-7-sonnet-20250219-v1:0", modelCapabilities{maxOutputTokens: 4096}},
 		{"legacy claude 2", "anthropic.claude-v2:1", modelCapabilities{maxOutputTokens: 4096}},
-		{"future claude", "claude-future-9", modelCapabilities{maxOutputTokens: 128000, supportsAdaptiveThinking: true, supportsStructuredOutput: true, rejectsSamplingParams: true, supportsXHighEffort: true}},
-		{"platform future claude", "us.anthropic.claude-future-9-20990101-v1:0", modelCapabilities{maxOutputTokens: 128000, supportsAdaptiveThinking: true, supportsStructuredOutput: true, rejectsSamplingParams: true, supportsXHighEffort: true}},
+		{"future claude", "claude-future-9", modelCapabilities{maxOutputTokens: 128000, supportsAdaptiveThinking: true, supportsStructuredOutput: true, rejectsSamplingParams: true, supportsXHighEffort: true, rejectsThinkingDisabledAboveHighEffort: true}},
+		{"platform future claude", "us.anthropic.claude-future-9-20990101-v1:0", modelCapabilities{maxOutputTokens: 128000, supportsAdaptiveThinking: true, supportsStructuredOutput: true, rejectsSamplingParams: true, supportsXHighEffort: true, rejectsThinkingDisabledAboveHighEffort: true}},
 		{"unknown model", "some-future-model", modelCapabilities{maxOutputTokens: 4096}},
 	}
 	for _, tc := range tests {
@@ -185,6 +186,48 @@ func TestBuildParams_Opus47SupportsXHighEffort(t *testing.T) {
 	assert.NotContains(t, p.Betas, "effort-2025-11-24",
 		"effort-2025-11-24 beta is GA and rejected by Vertex AI; must not be appended")
 	assert.Empty(t, warnings)
+}
+
+func TestBuildParams_ThinkingDisabledEffortConstraint(t *testing.T) {
+	tests := []struct {
+		name        string
+		modelID     string
+		effort      string
+		wantEffort  string
+		wantWarning bool
+	}{
+		{name: "opus 5 xhigh", modelID: "claude-opus-5", effort: "xhigh", wantEffort: "high", wantWarning: true},
+		{name: "opus 5 max", modelID: "claude-opus-5", effort: "max", wantEffort: "high", wantWarning: true},
+		{name: "future Claude xhigh", modelID: "claude-future-9", effort: "xhigh", wantEffort: "high", wantWarning: true},
+		{name: "opus 5 high", modelID: "claude-opus-5", effort: "high", wantEffort: "high"},
+		{name: "opus 4.8 unchanged", modelID: "claude-opus-4-8", effort: "xhigh", wantEffort: "xhigh"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := provider.CallOptions{ProviderOptions: provider.BuildProviderOptions(AnthropicOptions{
+				Thinking: &ThinkingConfig{Type: ThinkingDisabled},
+				Effort:   tc.effort,
+			})}
+
+			p, _, warnings, _, err := buildParams(tc.modelID, opts, false)
+			require.NoError(t, err)
+			require.NotNil(t, p.Thinking.OfDisabled)
+			assert.Equal(t, tc.wantEffort, string(p.OutputConfig.Effort))
+			if tc.wantWarning {
+				var effortWarning *provider.Warning
+				for i := range warnings {
+					if warnings[i].Feature == "providerOptions.anthropic.effort" {
+						effortWarning = &warnings[i]
+					}
+				}
+				require.NotNil(t, effortWarning)
+				assert.Equal(t, provider.WarnUnsupported, effortWarning.Type)
+			} else {
+				assert.NotContains(t, warningFeatures(warnings), "providerOptions.anthropic.effort")
+			}
+		})
+	}
 }
 
 func TestBuildParams_ReasoningNilAndProviderDefault(t *testing.T) {

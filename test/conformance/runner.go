@@ -155,6 +155,7 @@ func (mc *MessageConfig) UnmarshalYAML(value *yaml.Node) error {
 type ProviderToolConfig struct {
 	ID              string         `yaml:"id"`
 	Args            map[string]any `yaml:"args,omitempty"`
+	InputSchema     any            `yaml:"inputSchema,omitempty"`
 	ProviderOptions map[string]any `yaml:"providerOptions,omitempty"`
 }
 
@@ -599,6 +600,18 @@ func (cfg *Config) approvalConfigs() []ApprovalConfig {
 }
 
 func (ptc *ProviderToolConfig) buildTool() (aisdk.Tool, error) {
+	var inputSchema schema.Schema
+	if ptc.InputSchema != nil {
+		raw, err := json.Marshal(ptc.InputSchema)
+		if err != nil {
+			return aisdk.Tool{}, fmt.Errorf("marshaling provider tool input schema: %w", err)
+		}
+		inputSchema, err = schema.SchemaFromJSON(raw)
+		if err != nil {
+			return aisdk.Tool{}, fmt.Errorf("compiling provider tool input schema: %w", err)
+		}
+	}
+
 	var args map[string]json.RawMessage
 	if ptc.Args != nil {
 		args = make(map[string]json.RawMessage, len(ptc.Args))
@@ -625,6 +638,7 @@ func (ptc *ProviderToolConfig) buildTool() (aisdk.Tool, error) {
 		Type:            aisdk.UserToolProvider,
 		ID:              ptc.ID,
 		Args:            args,
+		InputSchema:     inputSchema,
 		ProviderOptions: providerOpts,
 	}, nil
 }
