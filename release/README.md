@@ -85,16 +85,19 @@ Never move or delete a published tag. Correct a bad release with a new version.
 
 Nested modules require a published core version. Because the core tag does not
 exist until the release pull request merges, the requirement bump cannot be part
-of that pull request without breaking module resolution for it.
+of that pull request without making it unresolvable.
 
-Instead, the release workflow opens a follow-up
-`chore(deps): require core vX.Y.Z in nested modules` pull request after the core
-tag is published. It runs
-[`scripts/sync-core-requirement.sh`](../scripts/sync-core-requirement.sh), which
-updates `go.mod` and `go.sum` together from the module proxy. Merging it is a
-normal, fully verifiable pull request.
+Renovate owns that bump. Once the core tag is published, it opens a
+`fix(deps): update core module requirement` pull request that updates `go.mod`
+and `go.sum` for every nested module. Its rule is the last entry in
+[`renovate.json`](../renovate.json) because it has to override the weekly
+schedule and the 14-day `minimumReleaseAge` that the generic Go rules apply.
 
-Nested modules pick up the new core requirement in their own next release.
+Two consequences are worth knowing. Renovate commits through the GitHub API, so
+its commits are signed and satisfy the repository's signed-commit rule, which a
+workflow pushing with `git` cannot do. And because Renovate labels the bump
+`fix(deps)`, merging it makes each nested module's next release include the new
+core requirement.
 
 ## Force a release for an unchanged module
 
@@ -116,19 +119,29 @@ Release-As: 0.2.0
 
 ## Graduate the alpha channel
 
-The `alpha` channel is configured repository-wide in
-`release-please-config.json`:
+The channel lives in `release-please-config.json`. The versioning strategy is
+repository-wide:
 
 ```json
 "versioning": "prerelease",
-"prerelease": true,
-"prerelease-type": "alpha"
+"prerelease": true
 ```
 
-To move to `beta`, change `prerelease-type`. To graduate to stable versions,
-set `"prerelease": false`; the next release drops the prerelease suffix, so
-`v0.1.0-alpha.7` becomes `v0.1.0`. Both are reviewed configuration changes
-rather than release-time flags, so the channel is always visible in `main`.
+The channel name is per package, because the configuration schema only accepts
+`prerelease-type` inside a package entry:
+
+```json
+"providers/openai": { "prerelease-type": "alpha" }
+```
+
+To move to `beta`, change `prerelease-type` in every package that moves. To
+graduate to stable versions, set `"prerelease": false`; the next release drops
+the prerelease suffix, so `v0.1.0-alpha.7` becomes `v0.1.0`. Both are reviewed
+configuration changes rather than release-time flags, so the channel is always
+visible in `main`.
+
+`mise run release-check` fails if a registered package is missing its
+`prerelease-type`.
 
 ## Add a public module
 

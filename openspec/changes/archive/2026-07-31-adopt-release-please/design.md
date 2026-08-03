@@ -71,11 +71,16 @@ version: that version is not published until the pull request merges, so
 `module-resolution` and any `GOWORK=off` build would fail on the release pull
 request itself, and `go.sum` could not be updated at all.
 
-The release workflow therefore raises a follow-up
-`chore(deps): require core vX.Y.Z in nested modules` pull request after the core
-tag is published. `scripts/sync-core-requirement.sh` runs `go get` and
-`go mod tidy` per module, so `go.mod` and `go.sum` move together and the
-follow-up pull request is verified by the same CI as any other change.
+Renovate therefore owns the bump, in a dedicated `renovate.json` rule that
+clears the weekly schedule and the 14-day `minimumReleaseAge` the generic Go
+rules apply and allows unstable versions so the alpha channel is followed. It
+opens a normal pull request that moves `go.mod` and `go.sum` together and is
+verified by the same CI as any other change.
+
+A release workflow job pushing the bump with `git` was tried first and cannot
+work: the repository's `Signed Commits` ruleset requires verified signatures on
+`~ALL` refs with no bypass actors, so a runner-created commit is rejected at
+push time. Renovate commits through the GitHub API, so GitHub signs its commits.
 
 Nested modules pick up the requirement in their own next release. This is
 accepted: a nested release always names a core version that is already
@@ -83,9 +88,10 @@ published.
 
 ### Model the alpha channel as configuration
 
-`versioning: prerelease` with `prerelease: true` and `prerelease-type: alpha`
-keeps every release in the `alpha` channel and marks its GitHub Release as a
-prerelease. Graduation is a reviewed configuration change (`prerelease: false`),
+`versioning: prerelease` with `prerelease: true` repository-wide, plus
+`prerelease-type: alpha` per package (the only place the configuration schema
+accepts it), keeps every release in the `alpha` channel and marks its GitHub
+Release as a prerelease. Graduation is a reviewed configuration change (`prerelease: false`),
 not a release-time flag, so the current channel is always visible in `main`.
 
 A consequence of the prerelease strategy is that while a `0.1.0-alpha.N` line is

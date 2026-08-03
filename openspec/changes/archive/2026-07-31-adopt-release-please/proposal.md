@@ -18,9 +18,9 @@ hand-maintained intent format.
   from the root module.
 - Publish through a continuously groomed release pull request: pushes to `main`
   refresh it, and merging it creates every tag and GitHub Release.
-- Repoint nested modules at a released core version in a follow-up pull request
-  raised after the core tag exists, so `go.mod` and `go.sum` are updated
-  together and module resolution stays verifiable in CI.
+- Let Renovate repoint nested modules at a released core version once the core
+  tag exists, so `go.mod` and `go.sum` are updated together and module
+  resolution stays verifiable in CI.
 - Add CI validation that every published module is registered, that its tag
   shape resolves for the Go tool, and that it has no local `replace` directive.
 - Add a CI gate that every commit in a pull request is a Conventional Commit,

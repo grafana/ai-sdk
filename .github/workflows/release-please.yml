@@ -12,13 +12,6 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-    outputs:
-      releases_created: ${{ steps.release.outputs.releases_created }}
-      # release-please-action prefixes per-package outputs with "<path>--", but
-      # the root package is the exception: its outputs are unprefixed, so the
-      # core module is reported as release_created and tag_name.
-      core_released: ${{ steps.release.outputs.release_created }}
-      core_tag: ${{ steps.release.outputs.tag_name }}
     steps:
       # The default GITHUB_TOKEN cannot trigger the required CI checks on the
       # release pull request it opens, so the release pull request could never
@@ -40,73 +33,3 @@ jobs:
           token: ${{ steps.app-token.outputs.token }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
-
-      # A core release must be followed by the requirement sync below. Record
-      # what was published so that a follow-up which never ran is visible on
-      # the run instead of silently leaving nested modules on the old core.
-      - name: Summarize published releases
-        if: steps.release.outputs.releases_created == 'true'
-        env:
-          CORE_RELEASED: ${{ steps.release.outputs.release_created }}
-          CORE_TAG: ${{ steps.release.outputs.tag_name }}
-          PATHS_RELEASED: ${{ steps.release.outputs.paths_released }}
-        run: |
-          {
-            echo "| Field | Value |"
-            echo "|-------|-------|"
-            echo "| Paths released | ${PATHS_RELEASED:-[]} |"
-            echo "| Core released | ${CORE_RELEASED:-false} |"
-            echo "| Core tag | ${CORE_TAG:-none} |"
-          } >>"$GITHUB_STEP_SUMMARY"
-
-  sync-core-requirement:
-    needs: release-please
-    if: needs.release-please.outputs.core_released == 'true'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - name: Mint release app token
-        id: app-token
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
-        with:
-          app-id: ${{ vars.RELEASE_APP_ID }}
-          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
-          permission-contents: write
-          permission-pull-requests: write
-
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          token: ${{ steps.app-token.outputs.token }}
-
-      - uses: jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14 # v4.2.3
-        with:
-          version: "2026.5.4"
-          experimental: true
-
-      # Nested modules are repointed at the core module only after its tag
-      # exists, so the follow-up pull request always resolves from the module
-      # proxy and keeps the module-resolution check green.
-      - name: Repoint nested modules at the released core version
-        id: sync
-        env:
-          CORE_TAG: ${{ needs.release-please.outputs.core_tag }}
-        run: bash scripts/sync-core-requirement.sh "$CORE_TAG"
-
-      - name: Open the requirement update pull request
-        if: steps.sync.outputs.changed == 'true'
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          CORE_TAG: ${{ needs.release-please.outputs.core_tag }}
-        run: |
-          branch="chore/core-requirement-${CORE_TAG}"
-          git config user.name "grafana-ai-sdk-release[bot]"
-          git config user.email "grafana-ai-sdk-release[bot]@users.noreply.github.com"
-          git checkout -b "$branch"
-          git commit --all --message "chore(deps): require core ${CORE_TAG} in nested modules"
-          git push origin "$branch"
-          gh pr create \
-            --base main \
-            --head "$branch" \
-            --title "chore(deps): require core ${CORE_TAG} in nested modules" \
-            --body "Automated follow-up to the ${CORE_TAG} release. Nested modules now require the published core version."
