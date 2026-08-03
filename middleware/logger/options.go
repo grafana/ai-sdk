@@ -63,6 +63,8 @@ type CaptureOptions struct {
 	ResponseBody bool
 	// ProviderMetadata enables provider metadata capture.
 	ProviderMetadata bool
+	// ErrorMessages enables opaque error message capture.
+	ErrorMessages bool
 	// MaxStringLen bounds captured string values. Zero uses DefaultMaxStringLen.
 	MaxStringLen int
 	// MaxJSONBytes bounds captured JSON payloads. Zero uses DefaultMaxJSONBytes.

@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
+	"os"
 	"reflect"
 	"regexp"
 	"strings"
@@ -244,16 +246,77 @@ func TestMiddleware_GenerateErrorLogsAndPropagates(t *testing.T) {
 	assertAttr(t, attrs, "ai_sdk.outcome", outcomeError)
 	assertAttr(t, attrs, "ai_sdk.duration_ms", float64(50))
 	assertAttr(t, attrs, "ai_sdk.error.type", "unknown")
-	if !strings.Contains(attrs["ai_sdk.error.message"].(string), "sentinel failure") {
-		t.Fatalf("missing error message: %#v", attrs)
+	assertAttr(t, attrs, "ai_sdk.error.type.go", "*errors.errorString")
+	if _, ok := attrs["ai_sdk.error.message"]; ok {
+		t.Fatalf("default logging captured opaque error message: %#v", attrs)
 	}
+	if encoded := handler.JSON(t); strings.Contains(encoded, "sentinel failure") {
+		t.Fatalf("default records leaked opaque error message: %s", encoded)
+	}
+}
+
+func TestMiddleware_GenerateContextErrorsOmitMessages(t *testing.T) {
+	tests := []struct {
+		name      string
+		err       error
+		errorType string
+	}{
+		{name: "cancellation", err: context.Canceled, errorType: "context_canceled"},
+		{name: "deadline", err: context.DeadlineExceeded, errorType: "context_deadline_exceeded"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			handler := newTestHandler()
+			model := &mockModel{generateFunc: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
+				return nil, tc.err
+			}}
+			wrapped := Wrap(model, Options{Logger: slog.New(handler)})
+
+			_, err := wrapped.DoGenerate(context.Background(), provider.CallOptions{})
+			if !errors.Is(err, tc.err) {
+				t.Fatalf("expected context error, got %v", err)
+			}
+			attrs := handler.Records()[1].AttrsMap()
+			assertAttr(t, attrs, "ai_sdk.error.type", tc.errorType)
+			if _, ok := attrs["ai_sdk.error.message"]; ok {
+				t.Fatalf("default logging captured context error message: %#v", attrs)
+			}
+			if encoded := handler.JSON(t); strings.Contains(encoded, tc.err.Error()) {
+				t.Fatalf("default records leaked context error message: %s", encoded)
+			}
+		})
+	}
+}
+
+func TestMiddleware_ErrorMessageCaptureIsOptInAndBounded(t *testing.T) {
+	handler := newTestHandler()
+	sentinel := errors.New("sentinel failure with opaque details")
+	model := &mockModel{generateFunc: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
+		return nil, sentinel
+	}}
+	wrapped := Wrap(model, Options{
+		Logger: slog.New(handler),
+		Capture: CaptureOptions{
+			ErrorMessages: true,
+			MaxStringLen:  18,
+		},
+	})
+
+	_, err := wrapped.DoGenerate(context.Background(), provider.CallOptions{})
+	if !errors.Is(err, sentinel) {
+		t.Fatalf("expected sentinel error, got %v", err)
+	}
+	attrs := handler.Records()[1].AttrsMap()
+	assertAttr(t, attrs, "ai_sdk.error.message", "sent...[truncated]")
 }
 
 func TestMiddleware_APICallErrorURLRequiresExplicitCapture(t *testing.T) {
 	handler := newTestHandler()
 	secret := "TOP-SECRET-VALUE"
+	messageSecret := "OPAQUE-ERROR-MESSAGE-SECRET"
 	apiErr := provider.NewAPICallError(provider.APICallErrorOptions{
-		Message:    "failed",
+		Message:    "failed: " + messageSecret,
 		StatusCode: 401,
 		URL:        "https://example.test/v1/chat?access_token=" + secret,
 	})
@@ -266,8 +329,15 @@ func TestMiddleware_APICallErrorURLRequiresExplicitCapture(t *testing.T) {
 	if !errors.Is(err, apiErr) {
 		t.Fatalf("expected API error, got %v", err)
 	}
+	attrs := handler.Records()[1].AttrsMap()
+	assertAttr(t, attrs, "ai_sdk.error.type", "api_call_error")
+	assertAttr(t, attrs, "ai_sdk.error.status_code", int64(401))
+	assertAttr(t, attrs, "ai_sdk.error.retryable", false)
+	if _, ok := attrs["ai_sdk.error.message"]; ok {
+		t.Fatalf("default logging captured opaque API error message: %#v", attrs)
+	}
 	encoded := handler.JSON(t)
-	if strings.Contains(encoded, secret) || strings.Contains(encoded, "ai_sdk.error.url") {
+	if strings.Contains(encoded, secret) || strings.Contains(encoded, messageSecret) || strings.Contains(encoded, "ai_sdk.error.url") {
 		t.Fatalf("default records leaked API URL or secret: %s", encoded)
 	}
 }
@@ -348,7 +418,7 @@ func TestMiddleware_PanickingRedactorFallsBackToDefaultRedactor(t *testing.T) {
 		Logger: slog.New(handler),
 		Attrs:  []slog.Attr{slog.String("authorization", "Bearer "+secret)},
 		Redactor: RedactorFunc(func(context.Context, EventKind, []slog.Attr) []slog.Attr {
-			panic("boom")
+			panic(secret)
 		}),
 	})
 
@@ -366,10 +436,11 @@ func TestMiddleware_PanickingRedactorFallsBackToDefaultRedactor(t *testing.T) {
 
 func TestMiddleware_PanickingDynamicAttrsLogsDiagnostic(t *testing.T) {
 	handler := newTestHandler()
+	secret := "DYNAMIC-ATTRS-PANIC-SECRET"
 	wrapped := Wrap(&mockModel{}, Options{
 		Logger: slog.New(handler),
 		DynamicAttrs: func(context.Context) []slog.Attr {
-			panic("boom")
+			panic(secret)
 		},
 	})
 
@@ -377,8 +448,70 @@ func TestMiddleware_PanickingDynamicAttrsLogsDiagnostic(t *testing.T) {
 		t.Fatalf("DoGenerate returned error: %v", err)
 	}
 	encoded := handler.JSON(t)
+	if strings.Contains(encoded, secret) {
+		t.Fatalf("dynamic attrs panic leaked recovered message: %s", encoded)
+	}
 	if !strings.Contains(encoded, "dynamic attrs panic") {
 		t.Fatalf("expected dynamic attrs panic diagnostic: %s", encoded)
+	}
+}
+
+func TestMiddleware_PanickingHandlerOmitsRecoveredMessage(t *testing.T) {
+	fallback := newTestHandler()
+	previousDefault := slog.Default()
+	slog.SetDefault(slog.New(fallback))
+	defer slog.SetDefault(previousDefault)
+
+	secret := "SLOG-HANDLER-PANIC-SECRET"
+	wrapped := Wrap(&mockModel{}, Options{Logger: slog.New(panickingHandler{recovered: secret})})
+
+	if _, err := wrapped.DoGenerate(context.Background(), provider.CallOptions{}); err != nil {
+		t.Fatalf("DoGenerate returned error: %v", err)
+	}
+	encoded := fallback.JSON(t)
+	if strings.Contains(encoded, secret) {
+		t.Fatalf("slog handler panic leaked recovered message: %s", encoded)
+	}
+	if !strings.Contains(encoded, "slog handler panic") {
+		t.Fatalf("expected slog handler panic diagnostic: %s", encoded)
+	}
+}
+
+func TestMiddleware_NonComparablePanickingDefaultHandlerFailsOpen(t *testing.T) {
+	secret := "DEFAULT-SLOG-HANDLER-PANIC-SECRET"
+	previousDefault := slog.Default()
+	slog.SetDefault(slog.New(panickingHandler{recovered: secret, nonComparable: []string{"value"}}))
+	defer slog.SetDefault(previousDefault)
+
+	stderr, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("create stderr pipe: %v", err)
+	}
+	previousStderr := os.Stderr
+	os.Stderr = writer
+	defer func() {
+		os.Stderr = previousStderr
+		_ = stderr.Close()
+		_ = writer.Close()
+	}()
+
+	wrapped := Wrap(&mockModel{}, Options{})
+	if _, err := wrapped.DoGenerate(context.Background(), provider.CallOptions{}); err != nil {
+		t.Fatalf("DoGenerate returned error: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close stderr writer: %v", err)
+	}
+	os.Stderr = previousStderr
+	output, err := io.ReadAll(stderr)
+	if err != nil {
+		t.Fatalf("read stderr: %v", err)
+	}
+	if strings.Contains(string(output), secret) {
+		t.Fatalf("default slog handler panic leaked recovered message: %s", output)
+	}
+	if !strings.Contains(string(output), "slog handler panic") {
+		t.Fatalf("expected static slog handler panic diagnostic: %s", output)
 	}
 }
 
@@ -419,6 +552,18 @@ func TestMiddleware_CaptureOptionsOptInPayloadsStillRedactsKnownSecrets(t *testi
 		t.Fatalf("expected redaction marker in records: %s", encoded)
 	}
 }
+
+type panickingHandler struct {
+	recovered     any
+	nonComparable []string
+}
+
+func (panickingHandler) Enabled(context.Context, slog.Level) bool { return true }
+func (h panickingHandler) Handle(context.Context, slog.Record) error {
+	panic(h.recovered)
+}
+func (h panickingHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
+func (h panickingHandler) WithGroup(string) slog.Handler      { return h }
 
 type mockModel struct {
 	provider_          string
