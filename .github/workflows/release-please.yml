@@ -14,8 +14,11 @@ jobs:
       pull-requests: write
     outputs:
       releases_created: ${{ steps.release.outputs.releases_created }}
-      core_released: ${{ steps.release.outputs['.--release_created'] }}
-      core_tag: ${{ steps.release.outputs['.--tag_name'] }}
+      # release-please-action prefixes per-package outputs with "<path>--", but
+      # the root package is the exception: its outputs are unprefixed, so the
+      # core module is reported as release_created and tag_name.
+      core_released: ${{ steps.release.outputs.release_created }}
+      core_tag: ${{ steps.release.outputs.tag_name }}
     steps:
       # The default GITHUB_TOKEN cannot trigger the required CI checks on the
       # release pull request it opens, so the release pull request could never
@@ -37,6 +40,24 @@ jobs:
           token: ${{ steps.app-token.outputs.token }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+
+      # A core release must be followed by the requirement sync below. Record
+      # what was published so that a follow-up which never ran is visible on
+      # the run instead of silently leaving nested modules on the old core.
+      - name: Summarize published releases
+        if: steps.release.outputs.releases_created == 'true'
+        env:
+          CORE_RELEASED: ${{ steps.release.outputs.release_created }}
+          CORE_TAG: ${{ steps.release.outputs.tag_name }}
+          PATHS_RELEASED: ${{ steps.release.outputs.paths_released }}
+        run: |
+          {
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| Paths released | ${PATHS_RELEASED:-[]} |"
+            echo "| Core released | ${CORE_RELEASED:-false} |"
+            echo "| Core tag | ${CORE_TAG:-none} |"
+          } >>"$GITHUB_STEP_SUMMARY"
 
   sync-core-requirement:
     needs: release-please
