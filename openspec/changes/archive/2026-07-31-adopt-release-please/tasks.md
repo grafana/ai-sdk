@@ -8,7 +8,7 @@
 ## 2. Publication
 
 - [x] 2.1 Add the release workflow that grooms the release pull request and publishes tags
-- [x] 2.2 Add the post-release core requirement synchronization script and job
+- [x] 2.2 Delegate the post-release core requirement bump to Renovate
 - [x] 2.3 Document the GitHub App credentials the release workflow requires
 
 ## 3. Validation
