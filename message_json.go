@@ -66,6 +66,9 @@ func marshalPart(p Part) (json.RawMessage, error) {
 	case DataPart:
 		typeName = "data-" + v.DataName
 		return marshalDataPart(typeName, v)
+	case CustomPart:
+		typeName = string(UIPartCustom)
+		return marshalWithType(typeName, v)
 	case StepStartPart:
 		return json.Marshal(map[string]string{"type": string(UIPartStepStart)})
 	case rawPart:
@@ -165,6 +168,13 @@ func unmarshalPart(data json.RawMessage) (Part, error) {
 
 	case partType == UIPartSourceDocument:
 		var p SourceDocumentPart
+		if err := json.Unmarshal(data, &p); err != nil {
+			return nil, err
+		}
+		return p, nil
+
+	case partType == UIPartCustom:
+		var p CustomPart
 		if err := json.Unmarshal(data, &p); err != nil {
 			return nil, err
 		}

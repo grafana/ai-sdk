@@ -1,0 +1,1 @@
+{"body":{"input":[{"content":[{"text":"Hello","type":"input_text"}],"role":"user"}],"model":"gpt-5.2","stream":true,"tool_choice":"auto","tools":[{"environment":{"type":"container_auto"},"type":"shell"}]},"headers":{"authorization":"<redacted>","content-type":"application/json"},"method":"POST","path":"/v1/responses"}

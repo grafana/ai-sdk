@@ -22,6 +22,7 @@ var providerToolNames = map[string]string{
 	"anthropic.web_search_20260209":        "web_search",
 	"anthropic.web_fetch_20250910":         "web_fetch",
 	"anthropic.web_fetch_20260209":         "web_fetch",
+	"anthropic.advisor_20260301":           "advisor",
 }
 
 type toolNameMapping struct {

@@ -5,6 +5,8 @@ package conformance
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"regexp"
 	"testing"
 
@@ -14,6 +16,53 @@ import (
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 )
+
+func TestConfig_Operation(t *testing.T) {
+	tests := []struct {
+		name      string
+		operation string
+		extra     string
+		want      Operation
+		wantErr   bool
+	}{
+		{name: "defaults to stream", want: OperationStream},
+		{name: "accepts generate", operation: "generate", want: OperationGenerate},
+		{
+			name:      "accepts empty unsupported collections",
+			operation: "generate",
+			extra:     "uiMessages: []\ntools: {}\nproviderTools: {}\nactiveTools: []\napprovals: []\nreasoning: \"\"\n",
+			want:      OperationGenerate,
+		},
+		{name: "rejects unknown", operation: "invalid", wantErr: true},
+		{
+			name:      "rejects unsupported generate fields",
+			operation: "generate",
+			extra:     "reasoning: high\n",
+			wantErr:   true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			config := "model: test\n"
+			if tc.operation != "" {
+				config += "operation: " + tc.operation + "\n"
+			}
+			config += tc.extra
+			path := filepath.Join(dir, "config.yaml")
+			require.NoError(t, os.WriteFile(path, []byte(config), 0o600))
+
+			cfg, err := LoadConfig(path)
+			if tc.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, cfg.Operation)
+		})
+	}
+}
 
 func TestConfig_UIToolModelOutput(t *testing.T) {
 	cfg, err := LoadConfig("anthropic/recorded/ui-tool-model-output/config.yaml")
@@ -199,6 +248,46 @@ messages:
 	assert.Equal(t, "doc.pdf", part.Filename)
 	require.NotNil(t, part.Data)
 	assert.JSONEq(t, `{"openai":"file-abc123"}`, string(part.Data.Reference))
+}
+
+func TestConfig_BuildMessagesConfiguredToolApproval(t *testing.T) {
+	raw := []byte(`
+model: m
+messages:
+  - role: assistant
+    content:
+      - type: tool-approval-request
+        approvalId: approval-1
+        toolCallId: call-1
+        isAutomatic: true
+  - role: tool
+    content:
+      - type: tool-approval-response
+        approvalId: approval-1
+        approved: false
+        reason: denied
+        providerExecuted: true
+`)
+	var cfg Config
+	require.NoError(t, yaml.Unmarshal(raw, &cfg))
+
+	messages, err := cfg.BuildMessages("fallback")
+	require.NoError(t, err)
+
+	require.Len(t, messages, 2)
+	request := messages[0].Content[0]
+	assert.Equal(t, provider.ContentPartTypeToolApprovalRequest, request.Type)
+	assert.Equal(t, "approval-1", request.ApprovalID)
+	assert.Equal(t, "call-1", request.ToolCallID)
+	assert.True(t, request.IsAutomatic)
+
+	response := messages[1].Content[0]
+	assert.Equal(t, provider.ContentPartTypeToolApprovalResponse, response.Type)
+	assert.Equal(t, "approval-1", response.ApprovalID)
+	require.NotNil(t, response.Approved)
+	assert.False(t, *response.Approved)
+	assert.Equal(t, "denied", response.Reason)
+	assert.True(t, response.ProviderExecuted)
 }
 
 func TestConfig_BuildMessagesConfiguredReasoning(t *testing.T) {

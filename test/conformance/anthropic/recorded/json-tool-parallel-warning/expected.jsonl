@@ -1,8 +1,18 @@
 {"type":"start"}
 {"type":"start-step"}
 {"type":"text-start","id":"0"}
-{"type":"text-delta","id":"0","delta":"{\"elements\": [{\"location\": \"San Francisco\", \"temperature\": 58, \"condition\": \"sunny\"}]"}
-{"type":"text-delta","id":"0","delta":"}"}
+{"type":"text-delta","id":"0","delta":"{\"elements\": [{\"location\": \"New"}
+{"type":"text-delta","id":"0","delta":" York\", \"temperature\": 72,"}
+{"type":"text-delta","id":"0","delta":" \"condition\": \""}
+{"type":"text-delta","id":"0","delta":"Partly"}
+{"type":"text-delta","id":"0","delta":" Cloudy\""}
+{"type":"text-delta","id":"0","delta":"}, {\"location\": \"Los Angeles\","}
+{"type":"text-delta","id":"0","delta":" \"temperature\": 85"}
+{"type":"text-delta","id":"0","delta":", \"condition\": \"Sunny\""}
+{"type":"text-delta","id":"0","delta":"}, {\"location\": \"Chicago\", \""}
+{"type":"text-delta","id":"0","delta":"temperature\": 65"}
+{"type":"text-delta","id":"0","delta":", \"condition\": \"Cloudy"}
+{"type":"text-delta","id":"0","delta":"\"}]}"}
 {"type":"text-end","id":"0"}
 {"type":"finish-step"}
 {"type":"finish","finishReason":"stop"}

@@ -11,7 +11,8 @@ import (
 // and stream converters.
 type buildResult struct {
 	// store is the resolved store flag (defaults true).
-	store bool
+	store                  bool
+	storeExplicitlyEnabled bool
 	// providerOptionsName is "openai" (or "azure" for the Azure variant).
 	providerOptionsName        string
 	toolNameMapping            toolNameMapping
@@ -51,6 +52,7 @@ func buildParams(modelID string, opts provider.CallOptions) (responses.ResponseN
 
 	br := buildResult{
 		store:                      store,
+		storeExplicitlyEnabled:     popts.Store != nil && *popts.Store,
 		providerOptionsName:        poptsName,
 		toolNameMapping:            newToolNameMapping(opts.Tools),
 		approvalRequestToolCallIDs: approvalRequestToolCallIDMapping(opts.Prompt, poptsName),

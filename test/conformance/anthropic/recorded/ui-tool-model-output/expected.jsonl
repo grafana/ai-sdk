@@ -1,8 +1,10 @@
 {"type":"start"}
 {"type":"start-step"}
 {"type":"text-start","id":"0"}
-{"type":"text-delta","id":"0","delta":"Hello"}
-{"type":"text-delta","id":"0","delta":" to you."}
+{"type":"text-delta","id":"0","delta":"I"}
+{"type":"text-delta","id":"0","delta":" don't have access to any previously persisted weather results from earlier sessions. However"}
+{"type":"text-delta","id":"0","delta":", I just retrieved the current weather for Portland, which shows **72 degrees and sunny**.\n\nIf you'd like me to get weather information"}
+{"type":"text-delta","id":"0","delta":" for a different city, please let me know which city you're interested in!"}
 {"type":"text-end","id":"0"}
 {"type":"finish-step"}
 {"type":"finish","finishReason":"stop"}

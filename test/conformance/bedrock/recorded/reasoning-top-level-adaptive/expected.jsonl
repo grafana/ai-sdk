@@ -1,28 +1,27 @@
 {"type":"start"}
 {"type":"start-step"}
 {"type":"reasoning-start","id":"0"}
-{"type":"reasoning-delta","id":"0","delta":"Let me count the r"}
-{"type":"reasoning-delta","id":"0","delta":"'s in \""}
-{"type":"reasoning-delta","id":"0","delta":"strawberry\":"}
-{"type":"reasoning-delta","id":"0","delta":"\n\ns-t-r-a"}
-{"type":"reasoning-delta","id":"0","delta":"-w-b-e-r"}
-{"type":"reasoning-delta","id":"0","delta":"-r-y\n\nr"}
-{"type":"reasoning-delta","id":"0","delta":" appears at positions "}
-{"type":"reasoning-delta","id":"0","delta":"3, 8"}
-{"type":"reasoning-delta","id":"0","delta":", and 9.\n\nSo there"}
-{"type":"reasoning-delta","id":"0","delta":" are 3 r's."}
-{"type":"reasoning-delta","id":"0","delta":"","providerMetadata":{"amazonBedrock":{"signature":"Ep0CCkgICxABGAIqQOWPB6/PmA5SW9jC6FvaNq3E+U9ev4FMWcFWuAho+VGLCtazKc5WDjQ5i0MuxsY0o5pKDSVWVKii8KJDusXH4eASDK7jyzuk8iij7fJNihoMxHO9haYzt48R36HVIjCb/EmIFrJLIXShqN6DN//T6vZBtO9qj1QhNWJa3CGm8VZoq80S2/Ok4U0aVaIDiZcqggHC2b8BHuv8BHZrmsR0wjU1ynansBGMdfjnG+iIv8R5lPpRmYGhSVwNybwP3aQZ6o8Dr48Rau8TJfdsArW+r7bvL7bPs4f5nnlp2vG7WkMzWwABHK3fdM44zZ1GZQaWyECNWR2GfY6dXiklo94vgpFTPuZ97mfiN3LY6uYyBwL8RkDaGAE="},"bedrock":{"signature":"Ep0CCkgICxABGAIqQOWPB6/PmA5SW9jC6FvaNq3E+U9ev4FMWcFWuAho+VGLCtazKc5WDjQ5i0MuxsY0o5pKDSVWVKii8KJDusXH4eASDK7jyzuk8iij7fJNihoMxHO9haYzt48R36HVIjCb/EmIFrJLIXShqN6DN//T6vZBtO9qj1QhNWJa3CGm8VZoq80S2/Ok4U0aVaIDiZcqggHC2b8BHuv8BHZrmsR0wjU1ynansBGMdfjnG+iIv8R5lPpRmYGhSVwNybwP3aQZ6o8Dr48Rau8TJfdsArW+r7bvL7bPs4f5nnlp2vG7WkMzWwABHK3fdM44zZ1GZQaWyECNWR2GfY6dXiklo94vgpFTPuZ97mfiN3LY6uYyBwL8RkDaGAE="}}}
+{"type":"reasoning-delta","id":"0","delta":"The"}
+{"type":"reasoning-delta","id":"0","delta":" user just"}
+{"type":"reasoning-delta","id":"0","delta":" sent"}
+{"type":"reasoning-delta","id":"0","delta":" \"test\"."}
+{"type":"reasoning-delta","id":"0","delta":" I"}
+{"type":"reasoning-delta","id":"0","delta":"'ll"}
+{"type":"reasoning-delta","id":"0","delta":" respond simply"}
+{"type":"reasoning-delta","id":"0","delta":"."}
+{"type":"reasoning-delta","id":"0","delta":"","providerMetadata":{"amazonBedrock":{"signature":"EvkBCmcIEBABGAIqQBAa2cMxBJySTjL5j6eXxAqu+p/f+kLKQ+8qAr+qrVOI3wPgezWID/sYeL/IUKZmknY7OPLd0bp/L/gawLdlBOMyEWNsYXVkZS1zb25uZXQtNC02OABCCHRoaW5raW5nEgwmV7mWnEhNLkESd6kaDE8cBMsZxiW0aeK7kyIwVNRocPG0QObqo8Pk0GmnEGN9edu329zDuOMEBFdZ+i29+jpfMjG0vdMB9EwEgsDMKkAD+D8lOc4/X5k3YYbPjORaRhW8X3BZbOvvLyWnZ2xaWU49d0sRcnTEQK6j3o1yIMC8RhQaU0I5fn2oX9oIdGT3GAE="},"bedrock":{"signature":"EvkBCmcIEBABGAIqQBAa2cMxBJySTjL5j6eXxAqu+p/f+kLKQ+8qAr+qrVOI3wPgezWID/sYeL/IUKZmknY7OPLd0bp/L/gawLdlBOMyEWNsYXVkZS1zb25uZXQtNC02OABCCHRoaW5raW5nEgwmV7mWnEhNLkESd6kaDE8cBMsZxiW0aeK7kyIwVNRocPG0QObqo8Pk0GmnEGN9edu329zDuOMEBFdZ+i29+jpfMjG0vdMB9EwEgsDMKkAD+D8lOc4/X5k3YYbPjORaRhW8X3BZbOvvLyWnZ2xaWU49d0sRcnTEQK6j3o1yIMC8RhQaU0I5fn2oX9oIdGT3GAE="}}}
 {"type":"reasoning-end","id":"0"}
 {"type":"text-start","id":"1"}
-{"type":"text-delta","id":"1","delta":"There"}
-{"type":"text-delta","id":"1","delta":" are **3** r's in \""}
-{"type":"text-delta","id":"1","delta":"strawberry\":"}
-{"type":"text-delta","id":"1","delta":"\n\n1"}
-{"type":"text-delta","id":"1","delta":". st"}
-{"type":"text-delta","id":"1","delta":"**"}
-{"type":"text-delta","id":"1","delta":"r**awbe"}
-{"type":"text-delta","id":"1","delta":"**r****"}
-{"type":"text-delta","id":"1","delta":"r**y"}
+{"type":"text-delta","id":"1","delta":"It"}
+{"type":"text-delta","id":"1","delta":" looks like you're"}
+{"type":"text-delta","id":"1","delta":" testing"}
+{"type":"text-delta","id":"1","delta":"!"}
+{"type":"text-delta","id":"1","delta":" Everything"}
+{"type":"text-delta","id":"1","delta":" seems"}
+{"type":"text-delta","id":"1","delta":" to be working."}
+{"type":"text-delta","id":"1","delta":" "}
+{"type":"text-delta","id":"1","delta":"😊\n\nHow"}
+{"type":"text-delta","id":"1","delta":" can I help you today?"}
 {"type":"text-end","id":"1"}
 {"type":"finish-step"}
 {"type":"finish","finishReason":"stop"}

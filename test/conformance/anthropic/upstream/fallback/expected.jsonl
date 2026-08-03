@@ -1,0 +1,8 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"text-start","id":"1"}
+{"type":"text-delta","id":"1","delta":"The printing press was invented "}
+{"type":"text-delta","id":"1","delta":"by Johannes Gutenberg around 1440."}
+{"type":"text-end","id":"1"}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"stop"}

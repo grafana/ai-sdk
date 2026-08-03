@@ -1,6 +1,48 @@
-{"messageStart": {"p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJ", "role": "assistant"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"text": "p"}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012345678"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"text": "ong"}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRS"}}
-{"contentBlockStop": {"contentBlockIndex": 0, "p": "abcdefghijklmnopqrstuvwxyzABCD"}}
-{"messageStop": {"additionalModelResponseFields": {"delta": {"stop_sequence": null}}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0", "stopReason": "end_turn"}}
-{"metadata": {"metrics": {"latencyMs": 980}, "p": "abcdefghijklmnopqrstuvwxyzABCDE", "usage": {"inputTokens": 16, "outputTokens": 5, "serverToolUsage": {}, "totalTokens": 21}}}
+{"messageStart":{"p":"abcdefghijklmno","role":"assistant"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":"I've"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUV"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" retrieve"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTU"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":"d some"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" attractions"},"p":"abcd"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" for San Francisco!"},"p":"abcdefghijklmnopqrstuvwxyzABCDEF"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" The Golden Gate Bridge is liste"},"p":"abcdefghijklmnopqrstuvwxyzABCDE"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":"d as a"},"p":"abcdefghijk"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" major"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" attraction. "},"p":"abcdefghijklmnopqrstuvwx"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":"\n\nTo"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNO"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" provide"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNO"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" you"},"p":"abcdefghij"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" with more helpful"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNO"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" information,"},"p":"abcdefghij"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" could you please"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJK"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" let"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWX"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" me know:\n1. What specific"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" city"},"p":"abcdef"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" you"},"p":"abcdefghijklmnopqrstuvwxyzABCDE"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":"'"},"p":"abcd"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":"d like to explore?\n2. What"},"p":"abcdefghijklmnopqrstuvwxyzAB"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" type of attractions are you intereste"},"p":"abcdefghijklmnopqrstuvwxy"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":"d in ("},"p":"abcdefghijklmnopqrstuvwxyzAB"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":"museums, parks, landmarks"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRS"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":", restaurants"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":", etc.)?"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUV"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":"\n3. Are you"},"p":"abcdefghijk"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" planning"},"p":"abcdefg"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" a"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" trip"},"p":"abcde"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" an"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":"d looking"},"p":"abcdefghijklmnopqrstuvwxyzABC"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" for recommendations?\n\nFeel"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFG"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" free to ask about"},"p":"abcdefgh"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" attractions"},"p":"abcd"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" in any"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXY"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" city"},"p":"abcdefghijklmn"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":","},"p":"abcdefghijklmnopqrstuvwx"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" and I can"},"p":"abcdefghijklmnopqrst"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" help you discover"},"p":"abcdefghi"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" what"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" that"},"p":"abcdefghijklmnop"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" destination"},"p":"abcdefghijklmnopq"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" has to offer!"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGH"}}
+{"contentBlockStop":{"contentBlockIndex":0,"p":"abcdefghijkl"}}
+{"messageStop":{"additionalModelResponseFields":{"delta":{"stop_sequence":null}},"p":"abcd","stopReason":"end_turn"}}
+{"metadata":{"metrics":{"latencyMs":1514},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP","usage":{"inputTokens":649,"outputTokens":112,"serverToolUsage":{},"totalTokens":761}}}

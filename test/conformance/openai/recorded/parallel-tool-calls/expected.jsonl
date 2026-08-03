@@ -1,48 +1,50 @@
 {"type":"start"}
 {"type":"start-step"}
-{"type":"tool-input-start","toolCallId":"call_8Yf8f7eZtEieoS01XNnPotTy","toolName":"get_weather"}
-{"type":"tool-input-delta","toolCallId":"call_8Yf8f7eZtEieoS01XNnPotTy","inputTextDelta":"{\"city\":\"Tokyo\"}"}
-{"type":"tool-input-available","toolCallId":"call_8Yf8f7eZtEieoS01XNnPotTy","toolName":"get_weather","input":{"city":"Tokyo"},"providerMetadata":{"openai":{"itemId":"fc_0e8373d3406fd53d016a3abbbbeb2c819e90435d76cf184d10"}}}
-{"type":"tool-input-start","toolCallId":"call_2HfUCP8ppqPzvmf1u137ngKK","toolName":"get_weather"}
-{"type":"tool-input-delta","toolCallId":"call_2HfUCP8ppqPzvmf1u137ngKK","inputTextDelta":"{\"city\":\"London\"}"}
-{"type":"tool-input-available","toolCallId":"call_2HfUCP8ppqPzvmf1u137ngKK","toolName":"get_weather","input":{"city":"London"},"providerMetadata":{"openai":{"itemId":"fc_0e8373d3406fd53d016a3abbbbeb48819eab56ec54e59b2dba"}}}
-{"type":"tool-output-available","toolCallId":"call_8Yf8f7eZtEieoS01XNnPotTy","output":{"temperature":28,"conditions":"humid and partly cloudy"},"providerMetadata":{"openai":{"itemId":"fc_0e8373d3406fd53d016a3abbbbeb2c819e90435d76cf184d10"}}}
-{"type":"tool-output-available","toolCallId":"call_2HfUCP8ppqPzvmf1u137ngKK","output":{"temperature":16,"conditions":"mild and overcast"},"providerMetadata":{"openai":{"itemId":"fc_0e8373d3406fd53d016a3abbbbeb48819eab56ec54e59b2dba"}}}
+{"type":"tool-input-start","toolCallId":"call_i2prFozWQPKmzkjYCTOyBzhm","toolName":"get_weather"}
+{"type":"tool-input-delta","toolCallId":"call_i2prFozWQPKmzkjYCTOyBzhm","inputTextDelta":"{\"city\":\"Tokyo\"}"}
+{"type":"tool-input-available","toolCallId":"call_i2prFozWQPKmzkjYCTOyBzhm","toolName":"get_weather","input":{"city":"Tokyo"},"providerMetadata":{"openai":{"itemId":"fc_0ba8840d156a7eaa016a6ce052026481929374f01d9e2906a1"}}}
+{"type":"tool-input-start","toolCallId":"call_77OXoVmgtBvmSoxoXoeD1PLj","toolName":"get_weather"}
+{"type":"tool-input-delta","toolCallId":"call_77OXoVmgtBvmSoxoXoeD1PLj","inputTextDelta":"{\"city\":\"London\"}"}
+{"type":"tool-input-available","toolCallId":"call_77OXoVmgtBvmSoxoXoeD1PLj","toolName":"get_weather","input":{"city":"London"},"providerMetadata":{"openai":{"itemId":"fc_0ba8840d156a7eaa016a6ce05202788192a11963b2a0dadb51"}}}
+{"type":"tool-output-available","toolCallId":"call_i2prFozWQPKmzkjYCTOyBzhm","output":{"temperature":28,"conditions":"humid and partly cloudy"},"providerMetadata":{"openai":{"itemId":"fc_0ba8840d156a7eaa016a6ce052026481929374f01d9e2906a1"}}}
+{"type":"tool-output-available","toolCallId":"call_77OXoVmgtBvmSoxoXoeD1PLj","output":{"temperature":16,"conditions":"mild and overcast"},"providerMetadata":{"openai":{"itemId":"fc_0ba8840d156a7eaa016a6ce05202788192a11963b2a0dadb51"}}}
 {"type":"finish-step"}
 {"type":"start-step"}
-{"type":"text-start","id":"msg_0e8373d3406fd53d016a3abbbd56c0819e915b0efba4f9fb6b","providerMetadata":{"openai":{"itemId":"msg_0e8373d3406fd53d016a3abbbd56c0819e915b0efba4f9fb6b"}}}
-{"type":"text-delta","id":"msg_0e8373d3406fd53d016a3abbbd56c0819e915b0efba4f9fb6b","delta":"Here's"}
-{"type":"text-delta","id":"msg_0e8373d3406fd53d016a3abbbd56c0819e915b0efba4f9fb6b","delta":" the"}
-{"type":"text-delta","id":"msg_0e8373d3406fd53d016a3abbbd56c0819e915b0efba4f9fb6b","delta":" current"}
-{"type":"text-delta","id":"msg_0e8373d3406fd53d016a3abbbd56c0819e915b0efba4f9fb6b","delta":" weather"}
-{"type":"text-delta","id":"msg_0e8373d3406fd53d016a3abbbd56c0819e915b0efba4f9fb6b","delta":" comparison"}
-{"type":"text-delta","id":"msg_0e8373d3406fd53d016a3abbbd56c0819e915b0efba4f9fb6b","delta":":\n\n"}
-{"type":"text-delta","id":"msg_0e8373d3406fd53d016a3abbbd56c0819e915b0efba4f9fb6b","delta":"-"}
-{"type":"text-delta","id":"msg_0e8373d3406fd53d016a3abbbd56c0819e915b0efba4f9fb6b","delta":" **"}
-{"type":"text-delta","id":"msg_0e8373d3406fd53d016a3abbbd56c0819e915b0efba4f9fb6b","delta":"Tokyo"}
-{"type":"text-delta","id":"msg_0e8373d3406fd53d016a3abbbd56c0819e915b0efba4f9fb6b","delta":":**"}
-{"type":"text-delta","id":"msg_0e8373d3406fd53d016a3abbbd56c0819e915b0efba4f9fb6b","delta":" "}
-{"type":"text-delta","id":"msg_0e8373d3406fd53d016a3abbbd56c0819e915b0efba4f9fb6b","delta":"28"}
-{"type":"text-delta","id":"msg_0e8373d3406fd53d016a3abbbd56c0819e915b0efba4f9fb6b","delta":"°C"}
-{"type":"text-delta","id":"msg_0e8373d3406fd53d016a3abbbd56c0819e915b0efba4f9fb6b","delta":","}
-{"type":"text-delta","id":"msg_0e8373d3406fd53d016a3abbbd56c0819e915b0efba4f9fb6b","delta":" humid"}
-{"type":"text-delta","id":"msg_0e8373d3406fd53d016a3abbbd56c0819e915b0efba4f9fb6b","delta":" and"}
-{"type":"text-delta","id":"msg_0e8373d3406fd53d016a3abbbd56c0819e915b0efba4f9fb6b","delta":" partly"}
-{"type":"text-delta","id":"msg_0e8373d3406fd53d016a3abbbd56c0819e915b0efba4f9fb6b","delta":" cloudy"}
-{"type":"text-delta","id":"msg_0e8373d3406fd53d016a3abbbd56c0819e915b0efba4f9fb6b","delta":".\n"}
-{"type":"text-delta","id":"msg_0e8373d3406fd53d016a3abbbd56c0819e915b0efba4f9fb6b","delta":"-"}
-{"type":"text-delta","id":"msg_0e8373d3406fd53d016a3abbbd56c0819e915b0efba4f9fb6b","delta":" **"}
-{"type":"text-delta","id":"msg_0e8373d3406fd53d016a3abbbd56c0819e915b0efba4f9fb6b","delta":"London"}
-{"type":"text-delta","id":"msg_0e8373d3406fd53d016a3abbbd56c0819e915b0efba4f9fb6b","delta":":**"}
-{"type":"text-delta","id":"msg_0e8373d3406fd53d016a3abbbd56c0819e915b0efba4f9fb6b","delta":" "}
-{"type":"text-delta","id":"msg_0e8373d3406fd53d016a3abbbd56c0819e915b0efba4f9fb6b","delta":"16"}
-{"type":"text-delta","id":"msg_0e8373d3406fd53d016a3abbbd56c0819e915b0efba4f9fb6b","delta":"°C"}
-{"type":"text-delta","id":"msg_0e8373d3406fd53d016a3abbbd56c0819e915b0efba4f9fb6b","delta":","}
-{"type":"text-delta","id":"msg_0e8373d3406fd53d016a3abbbd56c0819e915b0efba4f9fb6b","delta":" mild"}
-{"type":"text-delta","id":"msg_0e8373d3406fd53d016a3abbbd56c0819e915b0efba4f9fb6b","delta":" and"}
-{"type":"text-delta","id":"msg_0e8373d3406fd53d016a3abbbd56c0819e915b0efba4f9fb6b","delta":" over"}
-{"type":"text-delta","id":"msg_0e8373d3406fd53d016a3abbbd56c0819e915b0efba4f9fb6b","delta":"cast"}
-{"type":"text-delta","id":"msg_0e8373d3406fd53d016a3abbbd56c0819e915b0efba4f9fb6b","delta":"."}
-{"type":"text-end","id":"msg_0e8373d3406fd53d016a3abbbd56c0819e915b0efba4f9fb6b","providerMetadata":{"openai":{"itemId":"msg_0e8373d3406fd53d016a3abbbd56c0819e915b0efba4f9fb6b"}}}
+{"type":"text-start","id":"msg_0b10b6178926421c016a6ce0532420819fb144770c01e9ec53","providerMetadata":{"openai":{"itemId":"msg_0b10b6178926421c016a6ce0532420819fb144770c01e9ec53"}}}
+{"type":"text-delta","id":"msg_0b10b6178926421c016a6ce0532420819fb144770c01e9ec53","delta":"Here's"}
+{"type":"text-delta","id":"msg_0b10b6178926421c016a6ce0532420819fb144770c01e9ec53","delta":" the"}
+{"type":"text-delta","id":"msg_0b10b6178926421c016a6ce0532420819fb144770c01e9ec53","delta":" current"}
+{"type":"text-delta","id":"msg_0b10b6178926421c016a6ce0532420819fb144770c01e9ec53","delta":" weather"}
+{"type":"text-delta","id":"msg_0b10b6178926421c016a6ce0532420819fb144770c01e9ec53","delta":" comparison"}
+{"type":"text-delta","id":"msg_0b10b6178926421c016a6ce0532420819fb144770c01e9ec53","delta":":\n\n"}
+{"type":"text-delta","id":"msg_0b10b6178926421c016a6ce0532420819fb144770c01e9ec53","delta":"-"}
+{"type":"text-delta","id":"msg_0b10b6178926421c016a6ce0532420819fb144770c01e9ec53","delta":" **"}
+{"type":"text-delta","id":"msg_0b10b6178926421c016a6ce0532420819fb144770c01e9ec53","delta":"Tokyo"}
+{"type":"text-delta","id":"msg_0b10b6178926421c016a6ce0532420819fb144770c01e9ec53","delta":"**"}
+{"type":"text-delta","id":"msg_0b10b6178926421c016a6ce0532420819fb144770c01e9ec53","delta":":"}
+{"type":"text-delta","id":"msg_0b10b6178926421c016a6ce0532420819fb144770c01e9ec53","delta":" "}
+{"type":"text-delta","id":"msg_0b10b6178926421c016a6ce0532420819fb144770c01e9ec53","delta":"28"}
+{"type":"text-delta","id":"msg_0b10b6178926421c016a6ce0532420819fb144770c01e9ec53","delta":"°C"}
+{"type":"text-delta","id":"msg_0b10b6178926421c016a6ce0532420819fb144770c01e9ec53","delta":","}
+{"type":"text-delta","id":"msg_0b10b6178926421c016a6ce0532420819fb144770c01e9ec53","delta":" humid"}
+{"type":"text-delta","id":"msg_0b10b6178926421c016a6ce0532420819fb144770c01e9ec53","delta":" and"}
+{"type":"text-delta","id":"msg_0b10b6178926421c016a6ce0532420819fb144770c01e9ec53","delta":" partly"}
+{"type":"text-delta","id":"msg_0b10b6178926421c016a6ce0532420819fb144770c01e9ec53","delta":" cloudy"}
+{"type":"text-delta","id":"msg_0b10b6178926421c016a6ce0532420819fb144770c01e9ec53","delta":".\n"}
+{"type":"text-delta","id":"msg_0b10b6178926421c016a6ce0532420819fb144770c01e9ec53","delta":"-"}
+{"type":"text-delta","id":"msg_0b10b6178926421c016a6ce0532420819fb144770c01e9ec53","delta":" **"}
+{"type":"text-delta","id":"msg_0b10b6178926421c016a6ce0532420819fb144770c01e9ec53","delta":"London"}
+{"type":"text-delta","id":"msg_0b10b6178926421c016a6ce0532420819fb144770c01e9ec53","delta":"**"}
+{"type":"text-delta","id":"msg_0b10b6178926421c016a6ce0532420819fb144770c01e9ec53","delta":":"}
+{"type":"text-delta","id":"msg_0b10b6178926421c016a6ce0532420819fb144770c01e9ec53","delta":" "}
+{"type":"text-delta","id":"msg_0b10b6178926421c016a6ce0532420819fb144770c01e9ec53","delta":"16"}
+{"type":"text-delta","id":"msg_0b10b6178926421c016a6ce0532420819fb144770c01e9ec53","delta":"°C"}
+{"type":"text-delta","id":"msg_0b10b6178926421c016a6ce0532420819fb144770c01e9ec53","delta":","}
+{"type":"text-delta","id":"msg_0b10b6178926421c016a6ce0532420819fb144770c01e9ec53","delta":" mild"}
+{"type":"text-delta","id":"msg_0b10b6178926421c016a6ce0532420819fb144770c01e9ec53","delta":" and"}
+{"type":"text-delta","id":"msg_0b10b6178926421c016a6ce0532420819fb144770c01e9ec53","delta":" over"}
+{"type":"text-delta","id":"msg_0b10b6178926421c016a6ce0532420819fb144770c01e9ec53","delta":"cast"}
+{"type":"text-delta","id":"msg_0b10b6178926421c016a6ce0532420819fb144770c01e9ec53","delta":"."}
+{"type":"text-end","id":"msg_0b10b6178926421c016a6ce0532420819fb144770c01e9ec53","providerMetadata":{"openai":{"itemId":"msg_0b10b6178926421c016a6ce0532420819fb144770c01e9ec53"}}}
 {"type":"finish-step"}
 {"type":"finish","finishReason":"stop"}

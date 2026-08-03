@@ -1,24 +1,24 @@
-{"type":"message_start","message":{"model":"claude-sonnet-4-5-20250929","id":"msg_01WYPhwxg9UeyCvfZhXSARfG","type":"message","role":"assistant","content":[],"stop_reason":null,"stop_sequence":null,"stop_details":null,"usage":{"input_tokens":618,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":3,"service_tier":"standard","inference_geo":"not_available"}}      }
-{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":""}             }
+{"type":"message_start","message":{"model":"claude-sonnet-4-5-20250929","id":"msg_011CdaZAF2PbxdAaajjiCm8t","type":"message","role":"assistant","content":[],"stop_reason":null,"stop_sequence":null,"stop_details":null,"usage":{"input_tokens":618,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":3,"service_tier":"standard","inference_geo":"not_available"}}         }
+{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":""}      }
 {"type": "ping"}
-{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"The user wants"}      }
-{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" me to check the weather in Barcelona and Rome, then recommend which city to visit. I need to:\n1. Get weather for Barcelona\n2. Get weather for Rome\n3. Compare them and make"}        }
-{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" a recommendation\n\nSince these two weather calls are independent, I can make them both in the same function_"}          }
-{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"calls block."}             }
-{"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"EvkDCmQIDRgCKkCZNpXxjvC61rMfxfOWL+APgtCrysR1H1/HHacHhf9FpXntsfJT/MxweC6nFDvRxEF6uqy/odCHlFF7zoKwcEAGMhpjbGF1ZGUtc29ubmV0LTQtNS0yMDI1MDkyOTgAEgzzyrqwxxBw9QIc9SQaDLm1mo+OHa3T+rpB6SIwlIOGY6iUX7KHMV5m3Rph8a3U2UpE6RAEC030UoHhLa0XvbvP/JlDlq8VMN/CrhosKsICjhkaW0vHT2cr0BNys8nC2i5SzOFtATHx4Jt0peiIZME8wRngswAANTgzGepOYLZ7t7hbzLo9Gi1Ohbvq4hz56T/8l2iC4O9+B6++UGo420hVdcUgq3jiMjZrsRjnV++RbJRxtEt60dBE9lXrYNUHvTCRnFC1tUT5MKwUnRlOKS4eaSzRArRLNYL5viZHSYeTLAq3XCmrMYy7QQbLwCzdCqUPCOqqe4nfGIT0RPpF4GN6efnHHMf0dADfErD2/PxQ/npjSll1gV5RBpgEmF7CIyyIdu2bE4kUHKhglD2llTOjaiUCFDFDx5cK1cH3jZ3iYGJeGvGw4lmgAEqhvObYvdHduD1+vz5HBYxvR/JVeBlyxMZ+eDs955pzilDeDwNg1CfEd1N5cH5uAVdpTH/Q1nreus7BOfv+lm7wvkcJRwuQtRgB"}      }
-{"type":"content_block_stop","index":0   }
+{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"The user wants"}              }
+{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" me to check the weather in Barcelona and Rome, and then recommend which city to visit. I need to:\n1. Get the weather for Barcelona\n2. Get the weather for Rome"}            }
+{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"\n3. Compare them and make a recommendation\n\nSince these two weather checks are independent of each other, I can"}          }
+{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" make both calls in the same function_calls block."}  }
+{"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"EsYECpQBCBAYAipAVYOM5Cv2VtKBaoSEWOEVuRG4bnf1TH20Jso4tC+yj95UeeQlyPr59h1Wx9x7D39K8BIvcPJ/eWhfpMXdKZLtCTIaY2xhdWRlLXNvbm5ldC00LTUtMjAyNTA5Mjk4AEIIdGhpbmtpbmdaJDQ0MjEwYjhmLTkwZDctNDEyMS04MjIxLTdiYjg1YjVmYmQ1OBIMy9JmWbAp4fqpI7jzGgw+6C9C795F0oANSVYiMBreVjbPj612rFe9U8U60kRbY9+m8Bo+FLIktW31s/Bq8L0K6KKPycL8xYFLe9Cd1CreAl2YPLwGqcfN4VOuFqnuYfgq3fW7YH0a6KhL/UpabFXj4q76kL2+vnKQycwo2j8yo9ykNr44GuumtyByqo0Agkh2BRoOpqAtsP0Sv5cyhOEFxVgaE5ugcjXc8xWP4Uwg9XN+7vXI4WjotXxIq29vN5LA/EY+EndZjsgv8IVTHLvQBGrvd6vInFWksFL4CYDv0ScFTHpq/DYeFMrfYr9YhryuSFT8alLccZgzx0XmnrRdOTdZ33KK1CnNL2pCbmOCcrJYnl6vH3HmHf9FwElKLbD8/0Sj6Qps+lLiykTRFqilFpO2QFzBV43/vkel/NgKCzsPRwdvOcOgBjJX7rvDEYBxDvZBD2PsxS7IGs579gqcamKKWFAqcZY0dCMElB1bZndB3uiVsV7vNniEeR3rNXhqfKOmURnCvyHlAQIebfHXR6cSqObxKMWuMvxTYPjo/GkH1hZhdXwbaNQKGrgSGAE="}  }
+{"type":"content_block_stop","index":0          }
 {"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}        }
-{"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"I'll check the weather in both cities for you."}     }
-{"type":"content_block_stop","index":1              }
-{"type":"content_block_start","index":2,"content_block":{"type":"tool_use","id":"toolu_01JmbRxQzRkb8DY7v8iTpWPP","name":"get_weather","input":{},"caller":{"type":"direct"}}             }
-{"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":""}        }
-{"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":"{\"city\": \"Barcelona"}              }
-{"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":"\"}"}              }
-{"type":"content_block_stop","index":2    }
-{"type":"content_block_start","index":3,"content_block":{"type":"tool_use","id":"toolu_01T7bP6Y9QNFVankU3jHcdrq","name":"get_weather","input":{},"caller":{"type":"direct"}}         }
-{"type":"content_block_delta","index":3,"delta":{"type":"input_json_delta","partial_json":""}             }
-{"type":"content_block_delta","index":3,"delta":{"type":"input_json_delta","partial_json":"{\"city\": \"Rome"}        }
-{"type":"content_block_delta","index":3,"delta":{"type":"input_json_delta","partial_json":"\"}"}              }
-{"type":"content_block_stop","index":3       }
-{"type":"message_delta","delta":{"stop_reason":"tool_use","stop_sequence":null,"stop_details":null},"usage":{"input_tokens":618,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":178}               }
-{"type":"message_stop"           }
+{"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"I'll check the weather in both Barcelona and Rome for you."}  }
+{"type":"content_block_stop","index":1          }
+{"type":"content_block_start","index":2,"content_block":{"type":"tool_use","id":"toolu_01Kpx6fhtzbVUhTLpK5xK5hw","name":"get_weather","input":{},"caller":{"type":"direct"}}    }
+{"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":""}             }
+{"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":"{\"city\": \"Barcelona"}}
+{"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":"\"}"}   }
+{"type":"content_block_stop","index":2  }
+{"type":"content_block_start","index":3,"content_block":{"type":"tool_use","id":"toolu_01H4PmG4vKw4pE6gPU7NnZEK","name":"get_weather","input":{},"caller":{"type":"direct"}}         }
+{"type":"content_block_delta","index":3,"delta":{"type":"input_json_delta","partial_json":""}}
+{"type":"content_block_delta","index":3,"delta":{"type":"input_json_delta","partial_json":"{\"city\": \"Rome"}  }
+{"type":"content_block_delta","index":3,"delta":{"type":"input_json_delta","partial_json":"\"}"}      }
+{"type":"content_block_stop","index":3          }
+{"type":"message_delta","delta":{"stop_reason":"tool_use","stop_sequence":null,"stop_details":null},"usage":{"input_tokens":618,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":186,"output_tokens_details":{"thinking_tokens":80}}      }
+{"type":"message_stop"      }

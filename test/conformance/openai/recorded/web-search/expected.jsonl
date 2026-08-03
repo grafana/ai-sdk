@@ -1,49 +1,24 @@
 {"type":"start"}
 {"type":"start-step"}
-{"type":"tool-input-start","toolCallId":"ws_0e0d2d22adcb6b69016a3abbd46154819e8530ded9006e6e2d","toolName":"web_search","providerExecuted":true}
-{"type":"tool-input-available","toolCallId":"ws_0e0d2d22adcb6b69016a3abbd46154819e8530ded9006e6e2d","toolName":"web_search","input":{},"providerExecuted":true}
-{"type":"tool-output-available","toolCallId":"ws_0e0d2d22adcb6b69016a3abbd46154819e8530ded9006e6e2d","output":{"action":{"type":"search","query":"current population of Japan 2023","queries":["current population of Japan 2023"]}},"providerExecuted":true}
-{"type":"text-start","id":"msg_0e0d2d22adcb6b69016a3abbd5ec84819e8c8317cb5b887e3c","providerMetadata":{"openai":{"itemId":"msg_0e0d2d22adcb6b69016a3abbd5ec84819e8c8317cb5b887e3c"}}}
-{"type":"text-delta","id":"msg_0e0d2d22adcb6b69016a3abbd5ec84819e8c8317cb5b887e3c","delta":"Here are the most up-to-date and reliable estimates for Japan’s population as of"}
-{"type":"text-delta","id":"msg_0e0d2d22adcb6b69016a3abbd5ec84819e8c8317cb5b887e3c","delta":" mid‑2026:\n\n• According to **"}
-{"type":"text-delta","id":"msg_0e0d2d22adcb6b69016a3abbd5ec84819e8c8317cb5b887e3c","delta":"Worldometer**, which compiles data based on United Nations projections"}
-{"type":"text-delta","id":"msg_0e0d2d22adcb6b69016a3abbd5ec84819e8c8317cb5b887e3c","delta":", the **mid‑year (July 1, 2026) population** of Japan is estimated at **122,427"}
-{"type":"text-delta","id":"msg_0e0d2d22adcb6b69016a3abbd5ec84819e8c8317cb5b887e3c","delta":",731**—approximately **122.43 million** "}
-{"type":"text-delta","id":"msg_0e0d2d22adcb6b69016a3abbd5ec84819e8c8317cb5b887e3c","delta":"([worldometers.info](https://www.worldometers.info/world-population/japan-population?utm_source=openai)"}
-{"type":"text-delta","id":"msg_0e0d2d22adcb6b69016a3abbd5ec84819e8c8317cb5b887e3c","delta":").\n\n• **Trading Economics**, using data"}
-{"type":"text-delta","id":"msg_0e0d2d22adcb6b69016a3abbd5ec84819e8c8317cb5b887e3c","delta":" from the Statistics Bureau of Japan, estimated a **2025"}
-{"type":"text-delta","id":"msg_0e0d2d22adcb6b69016a3abbd5ec84819e8c8317cb5b887e3c","delta":" population** of **approximately 123.22 million**, and projects the population will decrease to **about "}
-{"type":"text-delta","id":"msg_0e0d2d22adcb6b69016a3abbd5ec84819e8c8317cb5b887e3c","delta":"122.60 million by the end of 2026** "}
-{"type":"text-delta","id":"msg_0e0d2d22adcb6b69016a3abbd5ec84819e8c8317cb5b887e3c","delta":"([tradingeconomics.com](https://tradingeconomics.com/japan/population?utm_source=openai)).\n"}
-{"type":"text-delta","id":"msg_0e0d2d22adcb6b69016a3abbd5ec84819e8c8317cb5b887e3c","delta":"\n• **Statista**, based"}
-{"type":"text-delta","id":"msg_0e0d2d22adcb6b69016a3abbd5ec84819e8c8317cb5b887e3c","delta":" on IMF projections, similarly estimates"}
-{"type":"text-delta","id":"msg_0e0d2d22adcb6b69016a3abbd5ec84819e8c8317cb5b887e3c","delta":" Japan’s 2026 population at around **122.7 million** "}
-{"type":"text-delta","id":"msg_0e0d2d22adcb6b69016a3abbd5ec84819e8c8317cb5b887e3c","delta":"([statista.com](https://www.statista.com/statistics/263746/total-population-in-japan/?utm_source=openai)).\n\n•"}
-{"type":"text-delta","id":"msg_0e0d2d22adcb6b69016a3abbd5ec84819e8c8317cb5b887e3c","delta":" **StatisticsTimes.com**, referencing UN data, provides a June"}
-{"type":"text-delta","id":"msg_0e0d2d22adcb6b69016a3abbd5ec84819e8c8317cb5b887e3c","delta":" 9,"}
-{"type":"text-delta","id":"msg_0e0d2d22adcb6b69016a3abbd5ec84819e8c8317cb5b887e3c","delta":" 2026 estimate of **122,469,583**, with the projected figure for July 1, 2026 being"}
-{"type":"text-delta","id":"msg_0e0d2d22adcb6b69016a3abbd5ec84819e8c8317cb5b887e3c","delta":" **122,427,731** ([statisticstimes.com](https://statisticstimes.com/demographics/country/japan-population.php?utm_source=openai)).\n\n• **"}
-{"type":"text-delta","id":"msg_0e0d2d22adcb6b69016a3abbd5ec84819e8c8317cb5b887e3c","delta":"NationsGeo.com** offers a more recent"}
-{"type":"text-delta","id":"msg_0e0d2d22adcb6b69016a3abbd5ec84819e8c8317cb5b887e3c","delta":" “live” estimate: as of **June 17, 2026**, Japan’s"}
-{"type":"text-delta","id":"msg_0e0d2d22adcb6b69016a3abbd5ec84819e8c8317cb5b887e3c","delta":" population is estimated at **122,455,577**, with an annual decline rate of –0.56% "}
-{"type":"text-delta","id":"msg_0e0d2d22adcb6b69016a3abbd5ec84819e8c8317cb5b887e3c","delta":"([nationsgeo.com](https://nationsgeo.com/population/asia/jp/?utm_source=openai)).\n"}
-{"type":"text-delta","id":"msg_0e0d2d22adcb6b69016a3abbd5ec84819e8c8317cb5b887e3c","delta":"\n---\n\n**Summary**\n\nAcross leading sources, Japan’s estimated population"}
-{"type":"text-delta","id":"msg_0e0d2d22adcb6b69016a3abbd5ec84819e8c8317cb5b887e3c","delta":" for mid‑2026 consistently falls within the range of **122.4 million to 122.5 million**:\n\n- **Worldometer / United Nations-based estimate"}
-{"type":"text-delta","id":"msg_0e0d2d22adcb6b69016a3abbd5ec84819e8c8317cb5b887e3c","delta":"**: 122.43 million (July"}
-{"type":"text-delta","id":"msg_0e0d2d22adcb6b69016a3abbd5ec84819e8c8317cb5b887e3c","delta":" 1, 2026)  \n- **Trading Economics"}
-{"type":"text-delta","id":"msg_0e0d2d22adcb6b69016a3abbd5ec84819e8c8317cb5b887e3c","delta":" projection**: ~122.60 million (end of 2026)"}
-{"type":"text-delta","id":"msg_0e0d2d22adcb6b69016a3abbd5ec84819e8c8317cb5b887e3c","delta":"  \n- **Statista (IMF-based)**: ~122.7"}
-{"type":"text-delta","id":"msg_0e0d2d22adcb6b69016a3abbd5ec84819e8c8317cb5b887e3c","delta":" million  \n- **StatisticsTimes.com**: ~122.47 million ("}
-{"type":"text-delta","id":"msg_0e0d2d22adcb6b69016a3abbd5ec84819e8c8317cb5b887e3c","delta":"June 9, 2026 estimate)"}
-{"type":"text-delta","id":"msg_0e0d2d22adcb6b69016a3abbd5ec84819e8c8317cb5b887e3c","delta":"  \n- **NationsGeo.com (live counter)**:"}
-{"type":"text-delta","id":"msg_0e0d2d22adcb6b69016a3abbd5ec84819e8c8317cb5b887e3c","delta":" 122.46 million (June 17, 2026)  \n\n---\n\n**Conclusion"}
-{"type":"text-delta","id":"msg_0e0d2d22adcb6b69016a3abbd5ec84819e8c8317cb5b887e3c","delta":"**\n\nAs of mid‑2026, the current population of"}
-{"type":"text-delta","id":"msg_0e0d2d22adcb6b69016a3abbd5ec84819e8c8317cb5b887e3c","delta":" Japan is best approximated at around **122.4 "}
-{"type":"text-delta","id":"msg_0e0d2d22adcb6b69016a3abbd5ec84819e8c8317cb5b887e3c","delta":"million**. Different models and live counters provide slightly varying figures, but the"}
-{"type":"text-delta","id":"msg_0e0d2d22adcb6b69016a3abbd5ec84819e8c8317cb5b887e3c","delta":" consensus falls within"}
-{"type":"text-delta","id":"msg_0e0d2d22adcb6b69016a3abbd5ec84819e8c8317cb5b887e3c","delta":" a narrow range of **122.4 to"}
-{"type":"text-delta","id":"msg_0e0d2d22adcb6b69016a3abbd5ec84819e8c8317cb5b887e3c","delta":" 122."}
-{"type":"text-delta","id":"msg_0e0d2d22adcb6b69016a3abbd5ec84819e8c8317cb5b887e3c","delta":"5 million**. Let me know if you’d like further details—such as historical trends, demographic breakdowns, or projections!"}
-{"type":"text-end","id":"msg_0e0d2d22adcb6b69016a3abbd5ec84819e8c8317cb5b887e3c","providerMetadata":{"openai":{"itemId":"msg_0e0d2d22adcb6b69016a3abbd5ec84819e8c8317cb5b887e3c","annotations":[{"type":"url_citation","start_index":298,"end_index":402,"url":"https://www.worldometers.info/world-population/japan-population?utm_source=openai","title":"Japan Population (2026) - Worldometer"},{"type":"url_citation","start_index":636,"end_index":725,"url":"https://tradingeconomics.com/japan/population?utm_source=openai","title":"Japan Population"},{"type":"url_citation","start_index":842,"end_index":947,"url":"https://www.statista.com/statistics/263746/total-population-in-japan/?utm_source=openai","title":"Japan population 2026| Statista"},{"type":"url_citation","start_index":1116,"end_index":1228,"url":"https://statisticstimes.com/demographics/country/japan-population.php?utm_source=openai","title":"Japan population 2026 - StatisticsTimes.com"},{"type":"url_citation","start_index":1405,"end_index":1485,"url":"https://nationsgeo.com/population/asia/jp/?utm_source=openai","title":"Japan population, June 2026"}]}}}
+{"type":"tool-input-start","toolCallId":"ws_05e62118df42d4d5016a6ce0787ecc819d8c32f612ba5a49ee","toolName":"web_search","providerExecuted":true}
+{"type":"tool-input-available","toolCallId":"ws_05e62118df42d4d5016a6ce0787ecc819d8c32f612ba5a49ee","toolName":"web_search","input":{},"providerExecuted":true}
+{"type":"tool-output-available","toolCallId":"ws_05e62118df42d4d5016a6ce0787ecc819d8c32f612ba5a49ee","output":{"action":{"type":"search","query":"current population of Japan 2023","queries":["current population of Japan 2023"]}},"providerExecuted":true}
+{"type":"text-start","id":"msg_05e62118df42d4d5016a6ce07a3b18819da6fade06ae53be13","providerMetadata":{"openai":{"itemId":"msg_05e62118df42d4d5016a6ce07a3b18819da6fade06ae53be13"}}}
+{"type":"text-delta","id":"msg_05e62118df42d4d5016a6ce07a3b18819da6fade06ae53be13","delta":"Here are the most up-to-date estimates for Japan"}
+{"type":"text-delta","id":"msg_05e62118df42d4d5016a6ce07a3b18819da6fade06ae53be13","delta":"’s population, based on official Japanese government statistics and reputable international sources:\n\n1"}
+{"type":"text-delta","id":"msg_05e62118df42d4d5016a6ce07a3b18819da6fade06ae53be13","delta":".  According to the **Statistics Bureau of Japan**, the"}
+{"type":"text-delta","id":"msg_05e62118df42d4d5016a6ce07a3b18819da6fade06ae53be13","delta":" total population as of October 1, 2025 (from the preliminary"}
+{"type":"text-delta","id":"msg_05e62118df42d4d5016a6ce07a3b18819da6fade06ae53be13","delta":" counts of the 2025 Population Census),"}
+{"type":"text-delta","id":"msg_05e62118df42d4d5016a6ce07a3b18819da6fade06ae53be13","delta":" was approximately **123.05 million**. This represented a decrease of"}
+{"type":"text-delta","id":"msg_05e62118df42d4d5016a6ce07a3b18819da6fade06ae53be13","delta":" about 3.097 million people (–2.5%) compared to the 2020 census"}
+{"type":"text-delta","id":"msg_05e62118df42d4d5016a6ce07a3b18819da6fade06ae53be13","delta":". "}
+{"type":"text-delta","id":"msg_05e62118df42d4d5016a6ce07a3b18819da6fade06ae53be13","delta":"([stat.go.jp](https://www.stat.go.jp/english/info/news/20260625.html?utm_source=openai)"}
+{"type":"text-delta","id":"msg_05e62118df42d4d5016a6ce07a3b18819da6fade06ae53be13","delta":")\n\n2.  The **Population Estimates**, based on calculations as of **June 1, "}
+{"type":"text-delta","id":"msg_05e62118df42d4d5016a6ce07a3b18819da6fade06ae53be13","delta":"2026**, indicate a total population of approximately **122."}
+{"type":"text-delta","id":"msg_05e62118df42d4d5016a6ce07a3b18819da6fade06ae53be13","delta":"85 million** (this figure is provisional). ([stat.go.jp](https://www.stat.go.jp/data/jinsui/?vm=r&utm_source=openai))\n\nTherefore"}
+{"type":"text-delta","id":"msg_05e62118df42d4d5016a6ce07a3b18819da6fade06ae53be13","delta":", as of **July 31, 2026**—the current date—the most recent and authoritative estimate places Japan"}
+{"type":"text-delta","id":"msg_05e62118df42d4d5016a6ce07a3b18819da6fade06ae53be13","delta":"’s population at **approximately 122.85 million** residents.\n\nIf"}
+{"type":"text-delta","id":"msg_05e62118df42d4d5016a6ce07a3b18819da6fade06ae53be13","delta":" you'd like, I can also provide details on the age distribution or foreign resident population."}
+{"type":"text-end","id":"msg_05e62118df42d4d5016a6ce07a3b18819da6fade06ae53be13","providerMetadata":{"openai":{"itemId":"msg_05e62118df42d4d5016a6ce07a3b18819da6fade06ae53be13","annotations":[{"type":"url_citation","start_index":440,"end_index":528,"url":"https://www.stat.go.jp/english/info/news/20260625.html?utm_source=openai","title":"Statistics Bureau Home Page/News Bulletin June 25, 2026"},{"type":"url_citation","start_index":704,"end_index":778,"url":"https://www.stat.go.jp/data/jinsui/?vm=r&utm_source=openai","title":"統計局ホームページ/人口推計"}]}}}
 {"type":"finish-step"}
 {"type":"finish","finishReason":"stop"}

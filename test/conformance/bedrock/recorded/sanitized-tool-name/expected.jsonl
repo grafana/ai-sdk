@@ -1,8 +1,27 @@
 {"type":"start"}
 {"type":"start-step"}
 {"type":"text-start","id":"0"}
-{"type":"text-delta","id":"0","delta":"p"}
-{"type":"text-delta","id":"0","delta":"ong"}
+{"type":"text-delta","id":"0","delta":"I"}
+{"type":"text-delta","id":"0","delta":"'m"}
+{"type":"text-delta","id":"0","delta":" ready to help you continue!"}
+{"type":"text-delta","id":"0","delta":" However"}
+{"type":"text-delta","id":"0","delta":", I nee"}
+{"type":"text-delta","id":"0","delta":"d more"}
+{"type":"text-delta","id":"0","delta":" information about"}
+{"type":"text-delta","id":"0","delta":" what you'd like me to "}
+{"type":"text-delta","id":"0","delta":"do next"}
+{"type":"text-delta","id":"0","delta":". \n\nCoul"}
+{"type":"text-delta","id":"0","delta":"d you please clar"}
+{"type":"text-delta","id":"0","delta":"ify:\n1"}
+{"type":"text-delta","id":"0","delta":". What file"}
+{"type":"text-delta","id":"0","delta":" woul"}
+{"type":"text-delta","id":"0","delta":"d you like me to read?\n2"}
+{"type":"text-delta","id":"0","delta":". What specific task"}
+{"type":"text-delta","id":"0","delta":" would you like me to help"}
+{"type":"text-delta","id":"0","delta":" with?"}
+{"type":"text-delta","id":"0","delta":"\n\nOnce you provide these details, I'll"}
+{"type":"text-delta","id":"0","delta":" be able to assist you further"}
+{"type":"text-delta","id":"0","delta":"."}
 {"type":"text-end","id":"0"}
 {"type":"finish-step"}
 {"type":"finish","finishReason":"stop"}

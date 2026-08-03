@@ -1,3 +1,0 @@
-model: claude-sonnet-4-5-20250929
-prompt: "Trigger an overloaded error."
-expectStreamError: true

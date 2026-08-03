@@ -1,0 +1,39 @@
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "2 + 2 equals 4."
+    },
+    {
+      "type": "text",
+      "text": "{\"firstName\":\"John\",\"lastName\":\"Doe\"}"
+    }
+  ],
+  "finishReason": {
+    "unified": "stop",
+    "raw": "tool_use"
+  },
+  "usage": {
+    "inputTokens": {
+      "total": 156,
+      "noCache": 156,
+      "cacheRead": 0,
+      "cacheWrite": 0
+    },
+    "outputTokens": {
+      "total": 35,
+      "text": 35
+    },
+    "raw": {
+      "inputTokens": 156,
+      "outputTokens": 35,
+      "totalTokens": 191
+    }
+  },
+  "providerMetadata": {
+    "bedrock": {
+      "isJsonResponseFromTool": true,
+      "stopSequence": null
+    }
+  }
+}

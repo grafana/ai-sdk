@@ -1,7 +1,13 @@
 {"type":"start"}
 {"type":"start-step"}
 {"type":"text-start","id":"0"}
-{"type":"text-delta","id":"0","delta":"Fallback."}
+{"type":"text-delta","id":"0","delta":"I'm"}
+{"type":"text-delta","id":"0","delta":" not sure what you mean by \"test fallback usage.\" Could you clarify what you're referring to? For example,"}
+{"type":"text-delta","id":"0","delta":" are you asking about:\n\n1. **Software/Code** – Testing fall"}
+{"type":"text-delta","id":"0","delta":"back mechanisms in an application (e.g., fallback functions, error handling, default values)?\n2. **AI"}
+{"type":"text-delta","id":"0","delta":"/LLM** – Testing how an AI model responds when it can't answer"}
+{"type":"text-delta","id":"0","delta":" a question?\n3. **Networking** – Testing fallback servers or connections?\n4. **CSS/UI** – Testing fallback fonts, colors, or styles"}
+{"type":"text-delta","id":"0","delta":"?\n5. **Something else entirely?**\n\nPlease provide more context and I'll be happy to help! 😊"}
 {"type":"text-end","id":"0"}
 {"type":"finish-step"}
 {"type":"finish","finishReason":"stop"}

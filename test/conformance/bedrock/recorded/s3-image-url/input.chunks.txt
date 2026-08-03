@@ -1,6 +1,123 @@
-{"messageStart": {"p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJ", "role": "assistant"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"text": "p"}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012345678"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"text": "ong"}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRS"}}
-{"contentBlockStop": {"contentBlockIndex": 0, "p": "abcdefghijklmnopqrstuvwxyzABCD"}}
-{"messageStop": {"additionalModelResponseFields": {"delta": {"stop_sequence": null}}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0", "stopReason": "end_turn"}}
-{"metadata": {"metrics": {"latencyMs": 980}, "p": "abcdefghijklmnopqrstuvwxyzABCDE", "usage": {"inputTokens": 16, "outputTokens": 5, "serverToolUsage": {}, "totalTokens": 21}}}
+{"messageStart":{"p":"abcdefghijklmnopqr","role":"assistant"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":"The"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012345678"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" image"},"p":"abcdefghijklmnopqrstuvwxyzABCDEF"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" shows"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQR"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" a"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFG"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" black"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":"-"},"p":"abcdefghijklmnopqrstuv"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":"and"},"p":"abcdefghijklmnopqrstuvwxy"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":"-"},"p":"abcdefghijklmnopqrstuvwxyzABCDEF"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":"white"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" photograph"},"p":"abcdefghijklmnopq"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" of"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVW"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" a"},"p":"abcdefghijklmnopqrstu"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" person"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHI"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" standing"},"p":"abcdefghij"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" on"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012345"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" a"},"p":"abcdefghijklmnopqrstuvwxy"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" beach"},"p":"abcdefghijklmno"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" with"},"p":"abcdef"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" their"},"p":"abcdefghijklmno"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" back"},"p":"abcdefghijk"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" turned"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" towards"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTU"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" the"},"p":"abcdefghijklm"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" camera"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":"."},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNO"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" The"},"p":"abcdefghijklmnopqrstuvwxyzABCDEF"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" person"},"p":"abcdefghijklmnopqrstuvwxyz"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" is"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" wearing"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" a"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUV"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" hat"},"p":"abcdefghijklmnopqrstuvwx"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" and"},"p":"abcdefghijklmno"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" a"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" long"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTU"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":"-"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":"sleeve"},"p":"abcdefghijklmnopqrstuvw"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" shirt"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWX"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":"."},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" The"},"p":"abcdefghijklmnopq"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" beach"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVW"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" is"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFG"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" sandy"},"p":"abcdefghijk"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":","},"p":"abcdefghijklmnopqrstuv"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" and"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRS"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" there"},"p":"abcdefghijklmnop"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" is"},"p":"abcde"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" a"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" large"},"p":"abcdefghijklmnopqrstuvwxyz"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" rock"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTU"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" formation"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHI"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" in"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVW"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" the"},"p":"abcdefghijklmnopqrstuvwxyzABCD"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" background"},"p":"abcdefghijklmnopqrstu"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":"."},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" The"},"p":"abcdefghijkl"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" sky"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" is"},"p":"abcdefghijklmnopqrstuvwxy"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" clear"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":","},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" and"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJ"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" there"},"p":"abcdefghijklmnopqrstuvwxyzABCDEF"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" are"},"p":"abcdefghijklmnopqrstuvwx"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" no"},"p":"abcdefghijklmnopqrstuvwx"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" clouds"},"p":"abcdefghijklmnopqrstuvwxyzABCDEF"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" visible"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012345678"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":"."},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGH"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" The"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" image"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHI"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" appears"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKL"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" to"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLM"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" have"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" been"},"p":"abcdefghijklmnopqrs"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" taken"},"p":"abcdefghijklmnopqrstuvwxyzA"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" during"},"p":"abcdefghijklmnopqrs"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" the"},"p":"abcdefghijklmnopqrstuvwx"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" daytime"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":","},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" as"},"p":"abcdefghijklmnopqrstuvwx"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" there"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRS"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" is"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" enough"},"p":"abc"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" light"},"p":"abcdefghijklmnopqr"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" to"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRS"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" capture"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNO"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" the"},"p":"abcdefghijklmnopqrstuvwxyzA"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" details"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXY"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" of"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRS"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" the"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJK"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" person"},"p":"abcdefghi"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" and"},"p":"abcdefghijklmnop"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" the"},"p":"abcdef"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" beach"},"p":"abcdefghijk"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":"."},"p":"abcdefghijklmnopqrstuvwxyzABC"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" The"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" overall"},"p":"abcde"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" mood"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" of"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" the"},"p":"abcdefghijklmno"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" image"},"p":"abcdefghijklmnopqrstuvwxyzABCDE"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" is"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" peaceful"},"p":"abcdefghijklmnopqrstuvwxyz"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" and"},"p":"abcdefghijklmnopqrstuvwxyzABCDE"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" serene"},"p":"abcdefghijklmnopqrstuv"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":","},"p":"abcdefghijklmnopqrstuvwx"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" with"},"p":"abcdefghijklmnopq"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" the"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" person"},"p":"abcdefghijklmnopqrstuvwxyzABC"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" appearing"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" relaxed"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" and"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJ"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" content"},"p":"abcdefghijklmnopqrstuvwxyzAB"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" as"},"p":"abcdefghijklmnopqrstuvw"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" they"},"p":"abcdefghijklmnopqrs"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" stand"},"p":"abcdefghijklmnopqrstuvwx"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" on"},"p":"abcde"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" the"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" beach"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":"."},"p":"abcdefghijklmnopqrstu"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":""},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTU"}}
+{"contentBlockStop":{"contentBlockIndex":0,"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRS"}}
+{"messageStop":{"p":"abcdefghij","stopReason":"end_turn"}}
+{"metadata":{"metrics":{"latencyMs":1760},"p":"abcdefghi","usage":{"inputTokens":534,"outputTokens":119,"serverToolUsage":{},"totalTokens":653}}}

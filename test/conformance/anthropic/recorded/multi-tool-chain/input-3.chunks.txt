@@ -1,16 +1,16 @@
-{"type":"message_start","message":{"model":"claude-sonnet-4-5-20250929","id":"msg_013JmYSczqcXNHxxN6t9UazX","type":"message","role":"assistant","content":[],"stop_reason":null,"stop_sequence":null,"stop_details":null,"usage":{"input_tokens":1003,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":8,"service_tier":"standard","inference_geo":"not_available"}}            }
-{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}     }
+{"type":"message_start","message":{"model":"claude-sonnet-4-5-20250929","id":"msg_011CdaZ7Q2nvACrMGMF3b4p3","type":"message","role":"assistant","content":[],"stop_reason":null,"stop_sequence":null,"stop_details":null,"usage":{"input_tokens":993,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":6,"service_tier":"standard","inference_geo":"not_available"}}}
+{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}  }
 {"type": "ping"}
-{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Now let me format this as a report"}               }
-{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":":"}}
-{"type":"content_block_stop","index":0      }
-{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_012EXxyxcussR3D8bkaaxm8A","name":"format_report","input":{},"caller":{"type":"direct"}}  }
-{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":""}        }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Now let me format this information"}}
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" as a short report."}  }
+{"type":"content_block_stop","index":0        }
+{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_017g9vLaM9BN7XXWfuTsUQ4R","name":"format_report","input":{},"caller":{"type":"direct"}}        }
+{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":""}              }
 {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"title\": \"France Population Report"}}
-{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"\", \"data\": {\n  \"Country\": \"France\",\n  \"Population"}         }
-{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"\": \"68.04 million\",\n  \"Exact Count\": \"68,042,591 people\",\n  \"Source\": \"2024 census estimate\""}              }
-{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"\n}"}    }
-{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"}"}   }
+{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"\", \"data\": {\n  \"Country"}}
+{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"\": \"France\",\n  \"Population\": \"68.04 million\",\n  \"Exact Population\": \"68,042,591 people\","}       }
+{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"\n  \"Source\": \"2024 census estimate\"\n}"}          }
+{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"}"}      }
 {"type":"content_block_stop","index":1  }
-{"type":"message_delta","delta":{"stop_reason":"tool_use","stop_sequence":null,"stop_details":null},"usage":{"input_tokens":1003,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":131}         }
-{"type":"message_stop"           }
+{"type":"message_delta","delta":{"stop_reason":"tool_use","stop_sequence":null,"stop_details":null},"usage":{"input_tokens":993,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":133}   }
+{"type":"message_stop"  }

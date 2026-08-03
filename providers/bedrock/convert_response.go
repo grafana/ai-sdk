@@ -1,8 +1,12 @@
 package bedrock
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/grafana/ai-sdk/provider"
@@ -45,9 +49,13 @@ func parseResponse(body []byte, headers map[string][]string, modelID string, met
 			// downstream output parsers receive the JSON.
 			if meta.usesJSONResponseTool && part.ToolUse.Name == jsonResponseToolName {
 				isJSONResponseFromTool = true
+				text := string(part.ToolUse.Input)
+				if encoded, err := stringifyJSON(part.ToolUse.Input); err == nil {
+					text = encoded
+				}
 				content = append(content, provider.GenerateContentPart{
 					Type: provider.ContentText,
-					Text: string(part.ToolUse.Input),
+					Text: text,
 				})
 				continue
 			}
@@ -168,6 +176,188 @@ func convertUsage(u *converseUsage) provider.Usage {
 
 func intPtr(v int) *int { return &v }
 
+type orderedJSONObject []orderedJSONMember
+
+type orderedJSONMember struct {
+	key   string
+	value any
+}
+
+func stringifyJSON(raw json.RawMessage) (string, error) {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	value, err := decodeOrderedJSON(decoder)
+	if err != nil {
+		return "", err
+	}
+	if decoder.More() {
+		return "", fmt.Errorf("bedrock: unexpected trailing JSON value")
+	}
+	var out bytes.Buffer
+	if err := encodeJSONLikeJavaScript(&out, value); err != nil {
+		return "", err
+	}
+	return out.String(), nil
+}
+
+func decodeOrderedJSON(decoder *json.Decoder) (any, error) {
+	token, err := decoder.Token()
+	if err != nil {
+		return nil, err
+	}
+	switch token := token.(type) {
+	case json.Delim:
+		switch token {
+		case '{':
+			var object orderedJSONObject
+			positions := make(map[string]int)
+			for decoder.More() {
+				keyToken, err := decoder.Token()
+				if err != nil {
+					return nil, err
+				}
+				key := keyToken.(string)
+				value, err := decodeOrderedJSON(decoder)
+				if err != nil {
+					return nil, err
+				}
+				if position, ok := positions[key]; ok {
+					object[position].value = value
+				} else {
+					positions[key] = len(object)
+					object = append(object, orderedJSONMember{key: key, value: value})
+				}
+			}
+			_, err = decoder.Token()
+			return object, err
+		case '[':
+			var array []any
+			for decoder.More() {
+				value, err := decodeOrderedJSON(decoder)
+				if err != nil {
+					return nil, err
+				}
+				array = append(array, value)
+			}
+			_, err = decoder.Token()
+			return array, err
+		}
+	case json.Number:
+		return strconv.ParseFloat(string(token), 64)
+	case string, bool, nil:
+		return token, nil
+	}
+	return nil, fmt.Errorf("bedrock: unsupported JSON token %T", token)
+}
+
+func encodeJSONLikeJavaScript(out *bytes.Buffer, value any) error {
+	switch value := value.(type) {
+	case orderedJSONObject:
+		members := append(orderedJSONObject(nil), value...)
+		sort.SliceStable(members, func(i, j int) bool {
+			iIndex, iIsIndex := javascriptArrayIndex(members[i].key)
+			jIndex, jIsIndex := javascriptArrayIndex(members[j].key)
+			switch {
+			case iIsIndex && jIsIndex:
+				return iIndex < jIndex
+			case iIsIndex:
+				return true
+			case jIsIndex:
+				return false
+			default:
+				return false
+			}
+		})
+		out.WriteByte('{')
+		for i, member := range members {
+			if i > 0 {
+				out.WriteByte(',')
+			}
+			if err := encodeJSONString(out, member.key); err != nil {
+				return err
+			}
+			out.WriteByte(':')
+			if err := encodeJSONLikeJavaScript(out, member.value); err != nil {
+				return err
+			}
+		}
+		out.WriteByte('}')
+	case []any:
+		out.WriteByte('[')
+		for i, item := range value {
+			if i > 0 {
+				out.WriteByte(',')
+			}
+			if err := encodeJSONLikeJavaScript(out, item); err != nil {
+				return err
+			}
+		}
+		out.WriteByte(']')
+	case string:
+		return encodeJSONString(out, value)
+	case float64:
+		out.WriteString(formatJSONNumberLikeJavaScript(value))
+	case bool:
+		out.WriteString(strconv.FormatBool(value))
+	case nil:
+		out.WriteString("null")
+	default:
+		return fmt.Errorf("bedrock: unsupported JSON value %T", value)
+	}
+	return nil
+}
+
+func javascriptArrayIndex(key string) (uint64, bool) {
+	if key == "" {
+		return 0, false
+	}
+	value, err := strconv.ParseUint(key, 10, 32)
+	if err != nil || value == 1<<32-1 || strconv.FormatUint(value, 10) != key {
+		return 0, false
+	}
+	return value, true
+}
+
+func encodeJSONString(out *bytes.Buffer, value string) error {
+	var encoded bytes.Buffer
+	encoder := json.NewEncoder(&encoded)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(value); err != nil {
+		return err
+	}
+	text := strings.TrimSuffix(encoded.String(), "\n")
+	text = strings.ReplaceAll(text, `\u2028`, "\u2028")
+	text = strings.ReplaceAll(text, `\u2029`, "\u2029")
+	out.WriteString(text)
+	return nil
+}
+
+func formatJSONNumberLikeJavaScript(value float64) string {
+	if value == 0 {
+		return "0"
+	}
+	absolute := value
+	if absolute < 0 {
+		absolute = -absolute
+	}
+	if absolute >= 1e-6 && absolute < 1e21 {
+		return strconv.FormatFloat(value, 'f', -1, 64)
+	}
+	formatted := strconv.FormatFloat(value, 'e', -1, 64)
+	parts := strings.SplitN(formatted, "e", 2)
+	exponent := parts[1]
+	sign := ""
+	if exponent[0] == '+' || exponent[0] == '-' {
+		sign = exponent[:1]
+		exponent = exponent[1:]
+	}
+	exponent = strings.TrimLeft(exponent, "0")
+	if exponent == "" {
+		exponent = "0"
+	}
+	return parts[0] + "e" + sign + exponent
+}
+
 // buildResponseMetadata builds GenerateResult.Response from Bedrock response
 // headers. Bedrock sets x-amzn-requestid; the date header carries the
 // response time.
@@ -285,7 +475,7 @@ func buildProviderMetadata(resp converseResponse, isJSONResponseFromTool bool) p
 		stopSequence = resp.AdditionalModelResponseFields.Delta.StopSequence
 	}
 
-	if len(payload) == 0 && stopSequence == nil {
+	if len(payload) == 0 && stopSequence == nil && resp.Usage == nil {
 		return nil
 	}
 	// Always include stopSequence (as null or value) once the payload exists,

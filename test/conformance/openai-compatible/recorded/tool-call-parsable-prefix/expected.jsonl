@@ -1,10 +1,16 @@
 {"type":"start"}
 {"type":"start-step"}
-{"type":"tool-input-start","toolCallId":"call_search","toolName":"search"}
-{"type":"tool-input-delta","toolCallId":"call_search","inputTextDelta":"{\"query\":\"test\"}"}
-{"type":"tool-input-delta","toolCallId":"call_search","inputTextDelta":""}
-{"type":"tool-input-delta","toolCallId":"call_search","inputTextDelta":",\"limit\":10}"}
-{"type":"tool-input-error","toolCallId":"call_search","toolName":"search","input":"{\"query\":\"test\"},\"limit\":10}","errorText":"An error occurred."}
-{"type":"tool-output-error","toolCallId":"call_search","errorText":"An error occurred."}
+{"type":"tool-input-start","toolCallId":"call_KM8uS26zv2HN1YaVWn6CFIGX","toolName":"search"}
+{"type":"tool-input-delta","toolCallId":"call_KM8uS26zv2HN1YaVWn6CFIGX","inputTextDelta":"{\""}
+{"type":"tool-input-delta","toolCallId":"call_KM8uS26zv2HN1YaVWn6CFIGX","inputTextDelta":"query"}
+{"type":"tool-input-delta","toolCallId":"call_KM8uS26zv2HN1YaVWn6CFIGX","inputTextDelta":"\":\""}
+{"type":"tool-input-delta","toolCallId":"call_KM8uS26zv2HN1YaVWn6CFIGX","inputTextDelta":"test"}
+{"type":"tool-input-delta","toolCallId":"call_KM8uS26zv2HN1YaVWn6CFIGX","inputTextDelta":" results"}
+{"type":"tool-input-delta","toolCallId":"call_KM8uS26zv2HN1YaVWn6CFIGX","inputTextDelta":"\",\""}
+{"type":"tool-input-delta","toolCallId":"call_KM8uS26zv2HN1YaVWn6CFIGX","inputTextDelta":"limit"}
+{"type":"tool-input-delta","toolCallId":"call_KM8uS26zv2HN1YaVWn6CFIGX","inputTextDelta":"\":"}
+{"type":"tool-input-delta","toolCallId":"call_KM8uS26zv2HN1YaVWn6CFIGX","inputTextDelta":"5"}
+{"type":"tool-input-delta","toolCallId":"call_KM8uS26zv2HN1YaVWn6CFIGX","inputTextDelta":"}"}
+{"type":"tool-input-available","toolCallId":"call_KM8uS26zv2HN1YaVWn6CFIGX","toolName":"search","input":{"query":"test results","limit":5}}
 {"type":"finish-step"}
 {"type":"finish","finishReason":"tool-calls"}

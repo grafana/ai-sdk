@@ -1,0 +1,8 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"reasoning-start","id":"rs_04a97b4fce127879006949a83904c88195977de6cc3f06064a:0","providerMetadata":{"openai":{"itemId":"rs_04a97b4fce127879006949a83904c88195977de6cc3f06064a","reasoningEncryptedContent":null}}}
+{"type":"reasoning-end","id":"rs_04a97b4fce127879006949a83904c88195977de6cc3f06064a:0","providerMetadata":{"openai":{"itemId":"rs_04a97b4fce127879006949a83904c88195977de6cc3f06064a","reasoningEncryptedContent":null}}}
+{"type":"tool-input-available","toolCallId":"src-0","toolName":"mcp.create_short_url","input":{"alias":"","description":"Shortened link for ai-sdk.dev","max_clicks":100,"password":"","url":"https://ai-sdk.dev/"},"providerExecuted":true,"dynamic":true}
+{"type":"tool-approval-request","approvalId":"mcpr_04a97b4fce127879006949a83ac9308195a7f7b69ea82e91fe","toolCallId":"src-0"}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"stop"}

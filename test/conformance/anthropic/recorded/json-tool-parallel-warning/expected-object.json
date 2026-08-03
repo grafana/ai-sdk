@@ -1,9 +1,19 @@
 {
   "elements": [
     {
-      "location": "San Francisco",
-      "temperature": 58,
-      "condition": "sunny"
+      "location": "New York",
+      "temperature": 72,
+      "condition": "Partly Cloudy"
+    },
+    {
+      "location": "Los Angeles",
+      "temperature": 85,
+      "condition": "Sunny"
+    },
+    {
+      "location": "Chicago",
+      "temperature": 65,
+      "condition": "Cloudy"
     }
   ]
 }

@@ -1,94 +1,95 @@
 {"type":"start"}
 {"type":"start-step"}
-{"type":"tool-input-start","toolCallId":"call_gC1oS9e5LUHUdgLveGwPr8yd","toolName":"lookup_data"}
-{"type":"tool-input-delta","toolCallId":"call_gC1oS9e5LUHUdgLveGwPr8yd","inputTextDelta":"{\""}
-{"type":"tool-input-delta","toolCallId":"call_gC1oS9e5LUHUdgLveGwPr8yd","inputTextDelta":"query"}
-{"type":"tool-input-delta","toolCallId":"call_gC1oS9e5LUHUdgLveGwPr8yd","inputTextDelta":"\":\""}
-{"type":"tool-input-delta","toolCallId":"call_gC1oS9e5LUHUdgLveGwPr8yd","inputTextDelta":"population"}
-{"type":"tool-input-delta","toolCallId":"call_gC1oS9e5LUHUdgLveGwPr8yd","inputTextDelta":" of"}
-{"type":"tool-input-delta","toolCallId":"call_gC1oS9e5LUHUdgLveGwPr8yd","inputTextDelta":" France"}
-{"type":"tool-input-delta","toolCallId":"call_gC1oS9e5LUHUdgLveGwPr8yd","inputTextDelta":" "}
-{"type":"tool-input-delta","toolCallId":"call_gC1oS9e5LUHUdgLveGwPr8yd","inputTextDelta":"202"}
-{"type":"tool-input-delta","toolCallId":"call_gC1oS9e5LUHUdgLveGwPr8yd","inputTextDelta":"3"}
-{"type":"tool-input-delta","toolCallId":"call_gC1oS9e5LUHUdgLveGwPr8yd","inputTextDelta":"\"}"}
-{"type":"tool-input-available","toolCallId":"call_gC1oS9e5LUHUdgLveGwPr8yd","toolName":"lookup_data","input":{"query":"population of France 2023"},"providerMetadata":{"openai":{"itemId":"fc_05dc7c2628e9b990016a3abbb5cbac81a1ae2a71d3294cbf95"}}}
-{"type":"tool-output-available","toolCallId":"call_gC1oS9e5LUHUdgLveGwPr8yd","output":{"value":68042591,"unit":"people","source":"2024 census estimate"},"providerMetadata":{"openai":{"itemId":"fc_05dc7c2628e9b990016a3abbb5cbac81a1ae2a71d3294cbf95"}}}
+{"type":"tool-input-start","toolCallId":"call_5oreVR9RfE0Pzjat7wAJzFVz","toolName":"lookup_data"}
+{"type":"tool-input-delta","toolCallId":"call_5oreVR9RfE0Pzjat7wAJzFVz","inputTextDelta":"{\""}
+{"type":"tool-input-delta","toolCallId":"call_5oreVR9RfE0Pzjat7wAJzFVz","inputTextDelta":"query"}
+{"type":"tool-input-delta","toolCallId":"call_5oreVR9RfE0Pzjat7wAJzFVz","inputTextDelta":"\":\""}
+{"type":"tool-input-delta","toolCallId":"call_5oreVR9RfE0Pzjat7wAJzFVz","inputTextDelta":"population"}
+{"type":"tool-input-delta","toolCallId":"call_5oreVR9RfE0Pzjat7wAJzFVz","inputTextDelta":" of"}
+{"type":"tool-input-delta","toolCallId":"call_5oreVR9RfE0Pzjat7wAJzFVz","inputTextDelta":" France"}
+{"type":"tool-input-delta","toolCallId":"call_5oreVR9RfE0Pzjat7wAJzFVz","inputTextDelta":" "}
+{"type":"tool-input-delta","toolCallId":"call_5oreVR9RfE0Pzjat7wAJzFVz","inputTextDelta":"202"}
+{"type":"tool-input-delta","toolCallId":"call_5oreVR9RfE0Pzjat7wAJzFVz","inputTextDelta":"3"}
+{"type":"tool-input-delta","toolCallId":"call_5oreVR9RfE0Pzjat7wAJzFVz","inputTextDelta":"\"}"}
+{"type":"tool-input-available","toolCallId":"call_5oreVR9RfE0Pzjat7wAJzFVz","toolName":"lookup_data","input":{"query":"population of France 2023"},"providerMetadata":{"openai":{"itemId":"fc_0faba6d02c83bca2016a6ce04a0b9881a2908fdb6822fb37c2"}}}
+{"type":"tool-output-available","toolCallId":"call_5oreVR9RfE0Pzjat7wAJzFVz","output":{"value":68042591,"unit":"people","source":"2024 census estimate"},"providerMetadata":{"openai":{"itemId":"fc_0faba6d02c83bca2016a6ce04a0b9881a2908fdb6822fb37c2"}}}
 {"type":"finish-step"}
 {"type":"start-step"}
-{"type":"tool-input-start","toolCallId":"call_m5LR8ppvNuB5YWU9hpa6624K","toolName":"convert_number"}
-{"type":"tool-input-delta","toolCallId":"call_m5LR8ppvNuB5YWU9hpa6624K","inputTextDelta":"{\""}
-{"type":"tool-input-delta","toolCallId":"call_m5LR8ppvNuB5YWU9hpa6624K","inputTextDelta":"value"}
-{"type":"tool-input-delta","toolCallId":"call_m5LR8ppvNuB5YWU9hpa6624K","inputTextDelta":"\":"}
-{"type":"tool-input-delta","toolCallId":"call_m5LR8ppvNuB5YWU9hpa6624K","inputTextDelta":"680"}
-{"type":"tool-input-delta","toolCallId":"call_m5LR8ppvNuB5YWU9hpa6624K","inputTextDelta":"425"}
-{"type":"tool-input-delta","toolCallId":"call_m5LR8ppvNuB5YWU9hpa6624K","inputTextDelta":"91"}
-{"type":"tool-input-delta","toolCallId":"call_m5LR8ppvNuB5YWU9hpa6624K","inputTextDelta":",\""}
-{"type":"tool-input-delta","toolCallId":"call_m5LR8ppvNuB5YWU9hpa6624K","inputTextDelta":"target"}
-{"type":"tool-input-delta","toolCallId":"call_m5LR8ppvNuB5YWU9hpa6624K","inputTextDelta":"_format"}
-{"type":"tool-input-delta","toolCallId":"call_m5LR8ppvNuB5YWU9hpa6624K","inputTextDelta":"\":\""}
-{"type":"tool-input-delta","toolCallId":"call_m5LR8ppvNuB5YWU9hpa6624K","inputTextDelta":"mill"}
-{"type":"tool-input-delta","toolCallId":"call_m5LR8ppvNuB5YWU9hpa6624K","inputTextDelta":"ions"}
-{"type":"tool-input-delta","toolCallId":"call_m5LR8ppvNuB5YWU9hpa6624K","inputTextDelta":"\"}"}
-{"type":"tool-input-available","toolCallId":"call_m5LR8ppvNuB5YWU9hpa6624K","toolName":"convert_number","input":{"value":68042591,"target_format":"millions"},"providerMetadata":{"openai":{"itemId":"fc_05dc7c2628e9b990016a3abbb7ba2c81a185b7cf6ca3f26d00"}}}
-{"type":"tool-output-available","toolCallId":"call_m5LR8ppvNuB5YWU9hpa6624K","output":{"result":68.04,"unit":"million"},"providerMetadata":{"openai":{"itemId":"fc_05dc7c2628e9b990016a3abbb7ba2c81a185b7cf6ca3f26d00"}}}
+{"type":"tool-input-start","toolCallId":"call_QFxf9QH6aPd6XTVcqjC5iGYV","toolName":"convert_number"}
+{"type":"tool-input-delta","toolCallId":"call_QFxf9QH6aPd6XTVcqjC5iGYV","inputTextDelta":"{\""}
+{"type":"tool-input-delta","toolCallId":"call_QFxf9QH6aPd6XTVcqjC5iGYV","inputTextDelta":"value"}
+{"type":"tool-input-delta","toolCallId":"call_QFxf9QH6aPd6XTVcqjC5iGYV","inputTextDelta":"\":"}
+{"type":"tool-input-delta","toolCallId":"call_QFxf9QH6aPd6XTVcqjC5iGYV","inputTextDelta":"680"}
+{"type":"tool-input-delta","toolCallId":"call_QFxf9QH6aPd6XTVcqjC5iGYV","inputTextDelta":"425"}
+{"type":"tool-input-delta","toolCallId":"call_QFxf9QH6aPd6XTVcqjC5iGYV","inputTextDelta":"91"}
+{"type":"tool-input-delta","toolCallId":"call_QFxf9QH6aPd6XTVcqjC5iGYV","inputTextDelta":",\""}
+{"type":"tool-input-delta","toolCallId":"call_QFxf9QH6aPd6XTVcqjC5iGYV","inputTextDelta":"target"}
+{"type":"tool-input-delta","toolCallId":"call_QFxf9QH6aPd6XTVcqjC5iGYV","inputTextDelta":"_format"}
+{"type":"tool-input-delta","toolCallId":"call_QFxf9QH6aPd6XTVcqjC5iGYV","inputTextDelta":"\":\""}
+{"type":"tool-input-delta","toolCallId":"call_QFxf9QH6aPd6XTVcqjC5iGYV","inputTextDelta":"mill"}
+{"type":"tool-input-delta","toolCallId":"call_QFxf9QH6aPd6XTVcqjC5iGYV","inputTextDelta":"ions"}
+{"type":"tool-input-delta","toolCallId":"call_QFxf9QH6aPd6XTVcqjC5iGYV","inputTextDelta":"\"}"}
+{"type":"tool-input-available","toolCallId":"call_QFxf9QH6aPd6XTVcqjC5iGYV","toolName":"convert_number","input":{"value":68042591,"target_format":"millions"},"providerMetadata":{"openai":{"itemId":"fc_0d0ab0090e8b3030016a6ce04b4620819fa1a433832283fe6e"}}}
+{"type":"tool-output-available","toolCallId":"call_QFxf9QH6aPd6XTVcqjC5iGYV","output":{"result":68.04,"unit":"million"},"providerMetadata":{"openai":{"itemId":"fc_0d0ab0090e8b3030016a6ce04b4620819fa1a433832283fe6e"}}}
 {"type":"finish-step"}
 {"type":"start-step"}
-{"type":"tool-input-start","toolCallId":"call_ZffOgpbqUwx7yRsZ6HXNqumh","toolName":"format_report"}
-{"type":"tool-input-delta","toolCallId":"call_ZffOgpbqUwx7yRsZ6HXNqumh","inputTextDelta":"{\""}
-{"type":"tool-input-delta","toolCallId":"call_ZffOgpbqUwx7yRsZ6HXNqumh","inputTextDelta":"title"}
-{"type":"tool-input-delta","toolCallId":"call_ZffOgpbqUwx7yRsZ6HXNqumh","inputTextDelta":"\":\""}
-{"type":"tool-input-delta","toolCallId":"call_ZffOgpbqUwx7yRsZ6HXNqumh","inputTextDelta":"Population"}
-{"type":"tool-input-delta","toolCallId":"call_ZffOgpbqUwx7yRsZ6HXNqumh","inputTextDelta":" of"}
-{"type":"tool-input-delta","toolCallId":"call_ZffOgpbqUwx7yRsZ6HXNqumh","inputTextDelta":" France"}
-{"type":"tool-input-delta","toolCallId":"call_ZffOgpbqUwx7yRsZ6HXNqumh","inputTextDelta":" "}
-{"type":"tool-input-delta","toolCallId":"call_ZffOgpbqUwx7yRsZ6HXNqumh","inputTextDelta":"202"}
-{"type":"tool-input-delta","toolCallId":"call_ZffOgpbqUwx7yRsZ6HXNqumh","inputTextDelta":"3"}
-{"type":"tool-input-delta","toolCallId":"call_ZffOgpbqUwx7yRsZ6HXNqumh","inputTextDelta":"\",\""}
-{"type":"tool-input-delta","toolCallId":"call_ZffOgpbqUwx7yRsZ6HXNqumh","inputTextDelta":"data"}
-{"type":"tool-input-delta","toolCallId":"call_ZffOgpbqUwx7yRsZ6HXNqumh","inputTextDelta":"\":{\""}
-{"type":"tool-input-delta","toolCallId":"call_ZffOgpbqUwx7yRsZ6HXNqumh","inputTextDelta":"Population"}
-{"type":"tool-input-delta","toolCallId":"call_ZffOgpbqUwx7yRsZ6HXNqumh","inputTextDelta":" in"}
-{"type":"tool-input-delta","toolCallId":"call_ZffOgpbqUwx7yRsZ6HXNqumh","inputTextDelta":" Millions"}
-{"type":"tool-input-delta","toolCallId":"call_ZffOgpbqUwx7yRsZ6HXNqumh","inputTextDelta":"\":"}
-{"type":"tool-input-delta","toolCallId":"call_ZffOgpbqUwx7yRsZ6HXNqumh","inputTextDelta":"68"}
-{"type":"tool-input-delta","toolCallId":"call_ZffOgpbqUwx7yRsZ6HXNqumh","inputTextDelta":"."}
-{"type":"tool-input-delta","toolCallId":"call_ZffOgpbqUwx7yRsZ6HXNqumh","inputTextDelta":"04"}
-{"type":"tool-input-delta","toolCallId":"call_ZffOgpbqUwx7yRsZ6HXNqumh","inputTextDelta":",\""}
-{"type":"tool-input-delta","toolCallId":"call_ZffOgpbqUwx7yRsZ6HXNqumh","inputTextDelta":"Source"}
-{"type":"tool-input-delta","toolCallId":"call_ZffOgpbqUwx7yRsZ6HXNqumh","inputTextDelta":"\":\""}
-{"type":"tool-input-delta","toolCallId":"call_ZffOgpbqUwx7yRsZ6HXNqumh","inputTextDelta":"202"}
-{"type":"tool-input-delta","toolCallId":"call_ZffOgpbqUwx7yRsZ6HXNqumh","inputTextDelta":"4"}
-{"type":"tool-input-delta","toolCallId":"call_ZffOgpbqUwx7yRsZ6HXNqumh","inputTextDelta":" census"}
-{"type":"tool-input-delta","toolCallId":"call_ZffOgpbqUwx7yRsZ6HXNqumh","inputTextDelta":" estimate"}
-{"type":"tool-input-delta","toolCallId":"call_ZffOgpbqUwx7yRsZ6HXNqumh","inputTextDelta":"\"}}"}
-{"type":"tool-input-available","toolCallId":"call_ZffOgpbqUwx7yRsZ6HXNqumh","toolName":"format_report","input":{"title":"Population of France 2023","data":{"Population in Millions":68.04,"Source":"2024 census estimate"}},"providerMetadata":{"openai":{"itemId":"fc_05dc7c2628e9b990016a3abbb9679c81a1b718f4ab8cc20394"}}}
-{"type":"tool-output-available","toolCallId":"call_ZffOgpbqUwx7yRsZ6HXNqumh","output":{"report":"Population of France: 68.04 million (2024 census estimate)"},"providerMetadata":{"openai":{"itemId":"fc_05dc7c2628e9b990016a3abbb9679c81a1b718f4ab8cc20394"}}}
+{"type":"tool-input-start","toolCallId":"call_xWdDlnUOxHiAFXOZdrlSHX5T","toolName":"format_report"}
+{"type":"tool-input-delta","toolCallId":"call_xWdDlnUOxHiAFXOZdrlSHX5T","inputTextDelta":"{\""}
+{"type":"tool-input-delta","toolCallId":"call_xWdDlnUOxHiAFXOZdrlSHX5T","inputTextDelta":"title"}
+{"type":"tool-input-delta","toolCallId":"call_xWdDlnUOxHiAFXOZdrlSHX5T","inputTextDelta":"\":\""}
+{"type":"tool-input-delta","toolCallId":"call_xWdDlnUOxHiAFXOZdrlSHX5T","inputTextDelta":"Population"}
+{"type":"tool-input-delta","toolCallId":"call_xWdDlnUOxHiAFXOZdrlSHX5T","inputTextDelta":" Report"}
+{"type":"tool-input-delta","toolCallId":"call_xWdDlnUOxHiAFXOZdrlSHX5T","inputTextDelta":":"}
+{"type":"tool-input-delta","toolCallId":"call_xWdDlnUOxHiAFXOZdrlSHX5T","inputTextDelta":" France"}
+{"type":"tool-input-delta","toolCallId":"call_xWdDlnUOxHiAFXOZdrlSHX5T","inputTextDelta":"\",\""}
+{"type":"tool-input-delta","toolCallId":"call_xWdDlnUOxHiAFXOZdrlSHX5T","inputTextDelta":"data"}
+{"type":"tool-input-delta","toolCallId":"call_xWdDlnUOxHiAFXOZdrlSHX5T","inputTextDelta":"\":{\""}
+{"type":"tool-input-delta","toolCallId":"call_xWdDlnUOxHiAFXOZdrlSHX5T","inputTextDelta":"Population"}
+{"type":"tool-input-delta","toolCallId":"call_xWdDlnUOxHiAFXOZdrlSHX5T","inputTextDelta":" ("}
+{"type":"tool-input-delta","toolCallId":"call_xWdDlnUOxHiAFXOZdrlSHX5T","inputTextDelta":"202"}
+{"type":"tool-input-delta","toolCallId":"call_xWdDlnUOxHiAFXOZdrlSHX5T","inputTextDelta":"3"}
+{"type":"tool-input-delta","toolCallId":"call_xWdDlnUOxHiAFXOZdrlSHX5T","inputTextDelta":")"}
+{"type":"tool-input-delta","toolCallId":"call_xWdDlnUOxHiAFXOZdrlSHX5T","inputTextDelta":" in"}
+{"type":"tool-input-delta","toolCallId":"call_xWdDlnUOxHiAFXOZdrlSHX5T","inputTextDelta":" Millions"}
+{"type":"tool-input-delta","toolCallId":"call_xWdDlnUOxHiAFXOZdrlSHX5T","inputTextDelta":"\":"}
+{"type":"tool-input-delta","toolCallId":"call_xWdDlnUOxHiAFXOZdrlSHX5T","inputTextDelta":"68"}
+{"type":"tool-input-delta","toolCallId":"call_xWdDlnUOxHiAFXOZdrlSHX5T","inputTextDelta":"."}
+{"type":"tool-input-delta","toolCallId":"call_xWdDlnUOxHiAFXOZdrlSHX5T","inputTextDelta":"04"}
+{"type":"tool-input-delta","toolCallId":"call_xWdDlnUOxHiAFXOZdrlSHX5T","inputTextDelta":",\""}
+{"type":"tool-input-delta","toolCallId":"call_xWdDlnUOxHiAFXOZdrlSHX5T","inputTextDelta":"Source"}
+{"type":"tool-input-delta","toolCallId":"call_xWdDlnUOxHiAFXOZdrlSHX5T","inputTextDelta":"\":\""}
+{"type":"tool-input-delta","toolCallId":"call_xWdDlnUOxHiAFXOZdrlSHX5T","inputTextDelta":"202"}
+{"type":"tool-input-delta","toolCallId":"call_xWdDlnUOxHiAFXOZdrlSHX5T","inputTextDelta":"4"}
+{"type":"tool-input-delta","toolCallId":"call_xWdDlnUOxHiAFXOZdrlSHX5T","inputTextDelta":" census"}
+{"type":"tool-input-delta","toolCallId":"call_xWdDlnUOxHiAFXOZdrlSHX5T","inputTextDelta":" estimate"}
+{"type":"tool-input-delta","toolCallId":"call_xWdDlnUOxHiAFXOZdrlSHX5T","inputTextDelta":"\"}}"}
+{"type":"tool-input-available","toolCallId":"call_xWdDlnUOxHiAFXOZdrlSHX5T","toolName":"format_report","input":{"title":"Population Report: France","data":{"Population (2023) in Millions":68.04,"Source":"2024 census estimate"}},"providerMetadata":{"openai":{"itemId":"fc_0dc2780920676e2e016a6ce04d9d348192ae98e5d2793e2dbb"}}}
+{"type":"tool-output-available","toolCallId":"call_xWdDlnUOxHiAFXOZdrlSHX5T","output":{"report":"Population of France: 68.04 million (2024 census estimate)"},"providerMetadata":{"openai":{"itemId":"fc_0dc2780920676e2e016a6ce04d9d348192ae98e5d2793e2dbb"}}}
 {"type":"finish-step"}
 {"type":"start-step"}
-{"type":"text-start","id":"msg_05dc7c2628e9b990016a3abbbad08481a1b9d61473587b356a","providerMetadata":{"openai":{"itemId":"msg_05dc7c2628e9b990016a3abbbad08481a1b9d61473587b356a"}}}
-{"type":"text-delta","id":"msg_05dc7c2628e9b990016a3abbbad08481a1b9d61473587b356a","delta":"###"}
-{"type":"text-delta","id":"msg_05dc7c2628e9b990016a3abbbad08481a1b9d61473587b356a","delta":" Population"}
-{"type":"text-delta","id":"msg_05dc7c2628e9b990016a3abbbad08481a1b9d61473587b356a","delta":" of"}
-{"type":"text-delta","id":"msg_05dc7c2628e9b990016a3abbbad08481a1b9d61473587b356a","delta":" France"}
-{"type":"text-delta","id":"msg_05dc7c2628e9b990016a3abbbad08481a1b9d61473587b356a","delta":" "}
-{"type":"text-delta","id":"msg_05dc7c2628e9b990016a3abbbad08481a1b9d61473587b356a","delta":"202"}
-{"type":"text-delta","id":"msg_05dc7c2628e9b990016a3abbbad08481a1b9d61473587b356a","delta":"3"}
-{"type":"text-delta","id":"msg_05dc7c2628e9b990016a3abbbad08481a1b9d61473587b356a","delta":"\n\n"}
-{"type":"text-delta","id":"msg_05dc7c2628e9b990016a3abbbad08481a1b9d61473587b356a","delta":"Population"}
-{"type":"text-delta","id":"msg_05dc7c2628e9b990016a3abbbad08481a1b9d61473587b356a","delta":" of"}
-{"type":"text-delta","id":"msg_05dc7c2628e9b990016a3abbbad08481a1b9d61473587b356a","delta":" France"}
-{"type":"text-delta","id":"msg_05dc7c2628e9b990016a3abbbad08481a1b9d61473587b356a","delta":":"}
-{"type":"text-delta","id":"msg_05dc7c2628e9b990016a3abbbad08481a1b9d61473587b356a","delta":" "}
-{"type":"text-delta","id":"msg_05dc7c2628e9b990016a3abbbad08481a1b9d61473587b356a","delta":"68"}
-{"type":"text-delta","id":"msg_05dc7c2628e9b990016a3abbbad08481a1b9d61473587b356a","delta":"."}
-{"type":"text-delta","id":"msg_05dc7c2628e9b990016a3abbbad08481a1b9d61473587b356a","delta":"04"}
-{"type":"text-delta","id":"msg_05dc7c2628e9b990016a3abbbad08481a1b9d61473587b356a","delta":" million"}
-{"type":"text-delta","id":"msg_05dc7c2628e9b990016a3abbbad08481a1b9d61473587b356a","delta":" ("}
-{"type":"text-delta","id":"msg_05dc7c2628e9b990016a3abbbad08481a1b9d61473587b356a","delta":"202"}
-{"type":"text-delta","id":"msg_05dc7c2628e9b990016a3abbbad08481a1b9d61473587b356a","delta":"4"}
-{"type":"text-delta","id":"msg_05dc7c2628e9b990016a3abbbad08481a1b9d61473587b356a","delta":" census"}
-{"type":"text-delta","id":"msg_05dc7c2628e9b990016a3abbbad08481a1b9d61473587b356a","delta":" estimate"}
-{"type":"text-delta","id":"msg_05dc7c2628e9b990016a3abbbad08481a1b9d61473587b356a","delta":")"}
-{"type":"text-end","id":"msg_05dc7c2628e9b990016a3abbbad08481a1b9d61473587b356a","providerMetadata":{"openai":{"itemId":"msg_05dc7c2628e9b990016a3abbbad08481a1b9d61473587b356a"}}}
+{"type":"text-start","id":"msg_03138c2eb667f865016a6ce04f2fb881a3b8b9b4da9636711a","providerMetadata":{"openai":{"itemId":"msg_03138c2eb667f865016a6ce04f2fb881a3b8b9b4da9636711a"}}}
+{"type":"text-delta","id":"msg_03138c2eb667f865016a6ce04f2fb881a3b8b9b4da9636711a","delta":"Here"}
+{"type":"text-delta","id":"msg_03138c2eb667f865016a6ce04f2fb881a3b8b9b4da9636711a","delta":" is"}
+{"type":"text-delta","id":"msg_03138c2eb667f865016a6ce04f2fb881a3b8b9b4da9636711a","delta":" the"}
+{"type":"text-delta","id":"msg_03138c2eb667f865016a6ce04f2fb881a3b8b9b4da9636711a","delta":" short"}
+{"type":"text-delta","id":"msg_03138c2eb667f865016a6ce04f2fb881a3b8b9b4da9636711a","delta":" report"}
+{"type":"text-delta","id":"msg_03138c2eb667f865016a6ce04f2fb881a3b8b9b4da9636711a","delta":":\n\n"}
+{"type":"text-delta","id":"msg_03138c2eb667f865016a6ce04f2fb881a3b8b9b4da9636711a","delta":"**"}
+{"type":"text-delta","id":"msg_03138c2eb667f865016a6ce04f2fb881a3b8b9b4da9636711a","delta":"Population"}
+{"type":"text-delta","id":"msg_03138c2eb667f865016a6ce04f2fb881a3b8b9b4da9636711a","delta":" of"}
+{"type":"text-delta","id":"msg_03138c2eb667f865016a6ce04f2fb881a3b8b9b4da9636711a","delta":" France"}
+{"type":"text-delta","id":"msg_03138c2eb667f865016a6ce04f2fb881a3b8b9b4da9636711a","delta":":**"}
+{"type":"text-delta","id":"msg_03138c2eb667f865016a6ce04f2fb881a3b8b9b4da9636711a","delta":" "}
+{"type":"text-delta","id":"msg_03138c2eb667f865016a6ce04f2fb881a3b8b9b4da9636711a","delta":"68"}
+{"type":"text-delta","id":"msg_03138c2eb667f865016a6ce04f2fb881a3b8b9b4da9636711a","delta":"."}
+{"type":"text-delta","id":"msg_03138c2eb667f865016a6ce04f2fb881a3b8b9b4da9636711a","delta":"04"}
+{"type":"text-delta","id":"msg_03138c2eb667f865016a6ce04f2fb881a3b8b9b4da9636711a","delta":" million"}
+{"type":"text-delta","id":"msg_03138c2eb667f865016a6ce04f2fb881a3b8b9b4da9636711a","delta":" ("}
+{"type":"text-delta","id":"msg_03138c2eb667f865016a6ce04f2fb881a3b8b9b4da9636711a","delta":"202"}
+{"type":"text-delta","id":"msg_03138c2eb667f865016a6ce04f2fb881a3b8b9b4da9636711a","delta":"4"}
+{"type":"text-delta","id":"msg_03138c2eb667f865016a6ce04f2fb881a3b8b9b4da9636711a","delta":" census"}
+{"type":"text-delta","id":"msg_03138c2eb667f865016a6ce04f2fb881a3b8b9b4da9636711a","delta":" estimate"}
+{"type":"text-delta","id":"msg_03138c2eb667f865016a6ce04f2fb881a3b8b9b4da9636711a","delta":")"}
+{"type":"text-end","id":"msg_03138c2eb667f865016a6ce04f2fb881a3b8b9b4da9636711a","providerMetadata":{"openai":{"itemId":"msg_03138c2eb667f865016a6ce04f2fb881a3b8b9b4da9636711a"}}}
 {"type":"finish-step"}
 {"type":"finish","finishReason":"stop"}

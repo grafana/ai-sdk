@@ -375,7 +375,7 @@ func TestStream_ToolSearchOutputUsesHostedCallID(t *testing.T) {
 	parts := collectParts(t,
 		`{"type":"response.output_item.added","sequence_number":1,"output_index":0,"item":{"type":"tool_search_call","id":"tsc_1","status":"in_progress","execution":"server","arguments":{}}}`,
 		`{"type":"response.output_item.done","sequence_number":2,"output_index":0,"item":{"type":"tool_search_call","id":"tsc_1","status":"completed","execution":"server","arguments":{"query":"docs"}}}`,
-		`{"type":"response.output_item.done","sequence_number":3,"output_index":1,"item":{"type":"tool_search_output","id":"tso_1","status":"completed","execution":"server","tools":[]}}`,
+		`{"type":"response.output_item.done","sequence_number":3,"output_index":1,"item":{"type":"tool_search_output","id":"tso_1","status":"completed","execution":"server","tools":[{"type":"function","name":"weather","parameters":{"type":"object"},"strict":true,"defer_loading":true}]}}`,
 	)
 
 	var toolCall, toolResult *provider.StreamPart
@@ -395,6 +395,39 @@ func TestStream_ToolSearchOutputUsesHostedCallID(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(toolCall.Input), &input))
 	assert.Contains(t, input, "call_id")
 	assert.Nil(t, input["call_id"])
+	assert.JSONEq(t, `{"tools":[{"type":"function","name":"weather","parameters":{"type":"object"},"strict":true,"defer_loading":true}]}`, string(toolResult.Result))
+}
+
+func TestStream_ShellUsesProviderToolSchema(t *testing.T) {
+	parts := collectPartsWithBuildResult(t, buildResult{isShellProviderExecuted: true},
+		`{"type":"response.output_item.done","sequence_number":1,"output_index":0,"item":{"type":"shell_call","id":"sh_1","call_id":"call_1","status":"completed","action":{"commands":["echo hi"],"timeout_ms":1000,"max_output_length":2048}}}`,
+		`{"type":"response.output_item.done","sequence_number":2,"output_index":1,"item":{"type":"shell_call_output","id":"sho_1","call_id":"call_1","status":"completed","output":[{"stdout":"hi\n","stderr":"","outcome":{"type":"exit","exit_code":0},"created_by":"sdk-only"}]}}`,
+	)
+
+	var toolCall, toolResult *provider.StreamPart
+	for i := range parts {
+		switch parts[i].Type {
+		case provider.PartToolCall:
+			toolCall = &parts[i]
+		case provider.PartToolResult:
+			toolResult = &parts[i]
+		}
+	}
+	require.NotNil(t, toolCall)
+	require.NotNil(t, toolResult)
+	assert.JSONEq(t, `{"action":{"commands":["echo hi"]}}`, toolCall.Input)
+	assert.JSONEq(t, `{"output":[{"stdout":"hi\n","stderr":"","outcome":{"type":"exit","exitCode":0}}]}`, string(toolResult.Result))
+}
+
+func TestStream_Compaction(t *testing.T) {
+	parts := collectParts(t,
+		`{"type":"response.output_item.done","sequence_number":1,"output_index":0,"item":{"type":"compaction","id":"cmp_1","encrypted_content":"ENC"}}`,
+	)
+
+	require.Len(t, parts, 2)
+	assert.Equal(t, provider.PartCustom, parts[1].Type)
+	assert.Equal(t, "openai.compaction", parts[1].Kind)
+	assert.JSONEq(t, `{"type":"compaction","itemId":"cmp_1","encryptedContent":"ENC"}`, string(parts[1].ProviderMetadata["openai"]))
 }
 
 func TestStream_MCPCallResultFieldPresence(t *testing.T) {
@@ -573,6 +606,27 @@ func TestStream_ImageGenerationPartialImage(t *testing.T) {
 	assert.True(t, *part.Preliminary)
 }
 
+func TestStream_ApplyPatchDeleteOmitsDiff(t *testing.T) {
+	parts := collectParts(t,
+		`{"type":"response.output_item.added","sequence_number":1,"output_index":0,"item":{"type":"apply_patch_call","id":"ap_1","call_id":"call_1","status":"in_progress","operation":{"type":"delete_file","path":"old.txt"}}}`,
+		`{"type":"response.output_item.done","sequence_number":2,"output_index":0,"item":{"type":"apply_patch_call","id":"ap_1","call_id":"call_1","status":"completed","operation":{"type":"delete_file","path":"old.txt"}}}`,
+	)
+
+	var delta, toolCall *provider.StreamPart
+	for i := range parts {
+		switch parts[i].Type {
+		case provider.PartToolInputDelta:
+			delta = &parts[i]
+		case provider.PartToolCall:
+			toolCall = &parts[i]
+		}
+	}
+	require.NotNil(t, delta)
+	require.NotNil(t, toolCall)
+	assert.JSONEq(t, `{"callId":"call_1","operation":{"type":"delete_file","path":"old.txt"}}`, delta.Delta)
+	assert.JSONEq(t, `{"callId":"call_1","operation":{"type":"delete_file","path":"old.txt"}}`, toolCall.Input)
+}
+
 func TestStream_ApplyPatchDiffEvents(t *testing.T) {
 	parts := collectParts(t,
 		`{"type":"response.output_item.added","sequence_number":1,"output_index":0,"item":{"type":"apply_patch_call","id":"ap_1","call_id":"call_1","status":"in_progress","operation":{"type":"update_file","path":"main.go","diff":""}}}`,
@@ -667,9 +721,50 @@ func TestStream_ReasoningSummaryPartsFollowStoreSemantics(t *testing.T) {
 		"reasoning-end:rs_1:1",
 	}, reasoningIDs)
 
-	raw, ok := parts[3].ProviderMetadata["openai"]
-	require.True(t, ok)
-	var meta map[string]any
-	require.NoError(t, json.Unmarshal(raw, &meta))
-	assert.Equal(t, "enc", meta["reasoningEncryptedContent"])
+	var priorMeta map[string]any
+	require.NoError(t, json.Unmarshal(parts[3].ProviderMetadata["openai"], &priorMeta))
+	assert.NotContains(t, priorMeta, "reasoningEncryptedContent")
+
+	var terminalMeta map[string]any
+	require.NoError(t, json.Unmarshal(parts[len(parts)-1].ProviderMetadata["openai"], &terminalMeta))
+	assert.Equal(t, "enc", terminalMeta["reasoningEncryptedContent"])
+}
+
+func TestStream_ReasoningSummaryStoreOptionControlsTerminalEvent(t *testing.T) {
+	tests := []struct {
+		name                  string
+		br                    buildResult
+		wantEndBeforeItemDone bool
+	}{
+		{name: "omitted waits for output item done", br: buildResult{}},
+		{name: "explicit false waits for output item done", br: buildResult{store: false}},
+		{name: "explicit true ends at summary part done", br: buildResult{store: true, storeExplicitlyEnabled: true}, wantEndBeforeItemDone: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			a := newStreamAdapter(nil, tc.br, responses.ResponseNewParams{}, nil, seqIDGen(), "openai")
+			ch := make(chan provider.StreamPart, 16)
+			a.handleEvent(unmarshalEvent(t, `{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":"initial"}}`), ch)
+			a.handleEvent(unmarshalEvent(t, `{"type":"response.reasoning_summary_part.done","output_index":0,"item_id":"rs_1","summary_index":0}`), ch)
+			assert.Equal(t, tc.wantEndBeforeItemDone, len(ch) == 3)
+
+			a.handleEvent(unmarshalEvent(t, `{"type":"response.output_item.done","output_index":0,"item":{"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":"terminal"}}`), ch)
+			close(ch)
+			var ends []provider.StreamPart
+			for part := range ch {
+				if part.Type == provider.PartReasoningEnd {
+					ends = append(ends, part)
+				}
+			}
+			require.Len(t, ends, 1)
+			var metadata map[string]any
+			require.NoError(t, json.Unmarshal(ends[0].ProviderMetadata["openai"], &metadata))
+			if tc.wantEndBeforeItemDone {
+				assert.NotContains(t, metadata, "reasoningEncryptedContent")
+			} else {
+				assert.Equal(t, "terminal", metadata["reasoningEncryptedContent"])
+			}
+		})
+	}
 }

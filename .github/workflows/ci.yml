@@ -107,7 +107,16 @@ jobs:
       - name: Validate parity baseline
         run: mise run validate-parity-baseline
 
+      - name: Fetch pinned upstream fixtures
+        run: |
+          commit=$(awk '/^  commit:/ { print $2 }' test/conformance/upstream.yaml)
+          git init "$RUNNER_TEMP/vercel-ai"
+          git -C "$RUNNER_TEMP/vercel-ai" remote add origin https://github.com/vercel/ai.git
+          git -C "$RUNNER_TEMP/vercel-ai" fetch --depth=1 origin "$commit"
+
       - name: Validate parity coverage
+        env:
+          AI_SDK_UPSTREAM_ROOT: ${{ runner.temp }}/vercel-ai
         run: mise run parity-coverage
 
       - name: Report provider API shape parity

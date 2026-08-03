@@ -5,16 +5,8 @@
 #   <upstream-fixture-name>: <local-directory>  (imported)
 #   <upstream-fixture-name>: null               (not yet imported)
 #
-# Fixture inputs are direct upstream copies when available; older imports may
-# still be hand-authored mirrors of upstream Responses SSE event shapes.
+# Every mapped input is a byte-identical copy of the named pinned fixture.
 
-simple-text: simple-text
-reasoning-summary: reasoning-summary
-json-output: json-output
-function-call: function-call
-previous-response-continuation: previous-response
-previous-response-reasoning-continuation: previous-response-reasoning
-web-search-sources: web-search-sources
 openai-code-interpreter-tool.1: code-interpreter
 programmatic-tool-calling.1: programmatic-tool-calling
 programmatic-tool-calling.2: programmatic-tool-calling
@@ -23,26 +15,59 @@ openai-file-search-tool.1: file-search
 openai-file-search-tool.2: file-search-results
 
 # Additional upstream fixtures:
-openai-apply-patch-tool-delete.1: null
+openai-apply-patch-tool-delete.1: apply-patch-delete
 openai-apply-patch-tool.1: apply-patch-continuation
-openai-client-tool-search.1: null
-openai-client-tool-search.2: client-tool-search-continuation
-openai-compaction.1: null
+openai-client-tool-search.1: client-tool-search-1
+openai-client-tool-search.2: client-tool-search-2
+openai-compaction.1: compaction
 openai-custom-tool.1: custom-tool-continuation
-openai-error.1: null
-openai-image-generation-tool.1: null
+openai-error.1: error
+openai-image-generation-tool.1: image-generation
 openai-local-shell-tool.1: local-shell-continuation
-openai-mcp-tool-approval.1: null
-openai-mcp-tool-approval.2: null
-openai-mcp-tool-approval.3: null
-openai-mcp-tool-approval.4: null
-openai-mcp-tool.1: null
-openai-phase.1: null
-openai-reasoning-encrypted-content.1: null
+openai-mcp-tool-approval.1: mcp-tool-approval-1
+openai-mcp-tool-approval.2: mcp-tool-approval-2
+openai-mcp-tool-approval.3: mcp-tool-approval-3
+openai-mcp-tool-approval.4: mcp-tool-approval-4
+openai-mcp-tool.1: mcp
+openai-phase.1: phase
+openai-reasoning-encrypted-content.1: reasoning-encrypted-content
 openai-shell-container-multiturn.1: shell-container-multiturn
-openai-shell-container.1: null
+openai-shell-container.1: shell-container
 openai-shell-local-multiturn.1: shell-local-multiturn
-openai-shell-skills.1: null
-openai-shell-tool.1: null
-openai-tool-search.1: null
-openai-web-search-tool.1: null
+openai-shell-skills.1: shell-skills
+openai-shell-tool.1: shell
+openai-tool-search.1: tool-search
+openai-web-search-tool.1: web-search-tool
+
+# Non-streaming fixtures not yet imported:
+reasoning-model-temperature-error: null
+
+# Non-streaming counterparts to imported streaming fixtures:
+openai-apply-patch-tool.1.json: null
+openai-client-tool-search.1.json: null
+openai-client-tool-search.2.json: null
+openai-code-interpreter-tool.1.json: null
+openai-compaction.1.json: null
+openai-custom-tool.1.json: null
+openai-error.1.json: null
+openai-file-search-tool.1.json: null
+openai-file-search-tool.2.json: null
+openai-image-generation-tool.1.json: null
+openai-local-shell-tool.1.json: null
+openai-mcp-tool-approval.1.json: null
+openai-mcp-tool-approval.2.json: null
+openai-mcp-tool-approval.3.json: null
+openai-mcp-tool-approval.4.json: null
+openai-mcp-tool.1.json: null
+openai-phase.1.json: null
+openai-reasoning-encrypted-content.1.json: null
+openai-shell-container-multiturn.1.json: null
+openai-shell-container.1.json: null
+openai-shell-local-multiturn.1.json: null
+openai-shell-skills.1.json: null
+openai-shell-tool.1.json: null
+openai-tool-search.1.json: null
+openai-web-search-tool.1.json: null
+programmatic-tool-calling.1.json: null
+programmatic-tool-calling.2.json: null
+programmatic-tool-calling.3.json: null

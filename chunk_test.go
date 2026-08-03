@@ -183,6 +183,15 @@ func TestTranslateToChunks_ProviderMetadataPassthrough(t *testing.T) {
 		assert.Equal(t, meta, chunks[0].ProviderMetadata)
 	})
 
+	t.Run("StreamCustom_to_ChunkCustom", func(t *testing.T) {
+		meta := provider.ProviderMetadata{"openai": json.RawMessage(`{"type":"compaction"}`)}
+		chunks := translateToChunks(StreamCustom{Kind: "openai.compaction", ProviderMetadata: meta}, uiMessageStreamConfig{})
+		require.Len(t, chunks, 1)
+		assert.Equal(t, ChunkCustom, chunks[0].Type)
+		assert.Equal(t, "openai.compaction", chunks[0].Kind)
+		assert.Equal(t, meta, chunks[0].ProviderMetadata)
+	})
+
 	t.Run("StreamToolApprovalRequest_to_ChunkToolApprovalRequest", func(t *testing.T) {
 		part := StreamToolApprovalRequest{ApprovalID: "apr_1", ToolCallID: "call_1"}
 		chunks := translateToChunks(part, uiMessageStreamConfig{})
@@ -247,6 +256,7 @@ var (
 	_ TextStreamPart = StreamAbort{}
 	_ TextStreamPart = StreamError{}
 	_ TextStreamPart = StreamRaw{}
+	_ TextStreamPart = StreamCustom{}
 	_ TextStreamPart = StreamTextStart{}
 	_ TextStreamPart = StreamTextDelta{}
 	_ TextStreamPart = StreamTextEnd{}

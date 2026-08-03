@@ -1,0 +1,6 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"tool-input-start","toolCallId":"call_RWTIIVfxsJW9fecsg6fy23Dy","toolName":"toolSearch"}
+{"type":"tool-input-available","toolCallId":"call_RWTIIVfxsJW9fecsg6fy23Dy","toolName":"toolSearch","input":{"arguments":{"goal":"Find a tool that can provide current weather information for San Francisco."},"call_id":"call_RWTIIVfxsJW9fecsg6fy23Dy"},"providerMetadata":{"openai":{"itemId":"tsc_05147bbe356953b60069ab673598f88196b499a756b524b64c"}}}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"stop"}

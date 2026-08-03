@@ -1,7 +1,11 @@
 {"type":"start"}
 {"type":"start-step"}
 {"type":"text-start","id":"0"}
-{"type":"text-delta","id":"0","delta":"{\"labels\":[\"Spring\",\"Summer\",\"Autumn\"]}"}
+{"type":"text-delta","id":"0","delta":"{\""}
+{"type":"text-delta","id":"0","delta":"labels\": [\"winter"}
+{"type":"text-delta","id":"0","delta":"\", \"spring\", \"summer\", \""}
+{"type":"text-delta","id":"0","delta":"fall"}
+{"type":"text-delta","id":"0","delta":"\"]}"}
 {"type":"text-end","id":"0"}
 {"type":"finish-step"}
 {"type":"finish","finishReason":"stop"}

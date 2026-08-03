@@ -2,8 +2,50 @@
 {"type":"tool-output-available","toolCallId":"call-1","output":{"attractions":["Golden Gate Bridge"]}}
 {"type":"start-step"}
 {"type":"text-start","id":"0"}
-{"type":"text-delta","id":"0","delta":"p"}
-{"type":"text-delta","id":"0","delta":"ong"}
+{"type":"text-delta","id":"0","delta":"I've"}
+{"type":"text-delta","id":"0","delta":" retrieve"}
+{"type":"text-delta","id":"0","delta":"d some"}
+{"type":"text-delta","id":"0","delta":" attractions"}
+{"type":"text-delta","id":"0","delta":" for San Francisco!"}
+{"type":"text-delta","id":"0","delta":" The Golden Gate Bridge is liste"}
+{"type":"text-delta","id":"0","delta":"d as a"}
+{"type":"text-delta","id":"0","delta":" major"}
+{"type":"text-delta","id":"0","delta":" attraction. "}
+{"type":"text-delta","id":"0","delta":"\n\nTo"}
+{"type":"text-delta","id":"0","delta":" provide"}
+{"type":"text-delta","id":"0","delta":" you"}
+{"type":"text-delta","id":"0","delta":" with more helpful"}
+{"type":"text-delta","id":"0","delta":" information,"}
+{"type":"text-delta","id":"0","delta":" could you please"}
+{"type":"text-delta","id":"0","delta":" let"}
+{"type":"text-delta","id":"0","delta":" me know:\n1. What specific"}
+{"type":"text-delta","id":"0","delta":" city"}
+{"type":"text-delta","id":"0","delta":" you"}
+{"type":"text-delta","id":"0","delta":"'"}
+{"type":"text-delta","id":"0","delta":"d like to explore?\n2. What"}
+{"type":"text-delta","id":"0","delta":" type of attractions are you intereste"}
+{"type":"text-delta","id":"0","delta":"d in ("}
+{"type":"text-delta","id":"0","delta":"museums, parks, landmarks"}
+{"type":"text-delta","id":"0","delta":", restaurants"}
+{"type":"text-delta","id":"0","delta":", etc.)?"}
+{"type":"text-delta","id":"0","delta":"\n3. Are you"}
+{"type":"text-delta","id":"0","delta":" planning"}
+{"type":"text-delta","id":"0","delta":" a"}
+{"type":"text-delta","id":"0","delta":" trip"}
+{"type":"text-delta","id":"0","delta":" an"}
+{"type":"text-delta","id":"0","delta":"d looking"}
+{"type":"text-delta","id":"0","delta":" for recommendations?\n\nFeel"}
+{"type":"text-delta","id":"0","delta":" free to ask about"}
+{"type":"text-delta","id":"0","delta":" attractions"}
+{"type":"text-delta","id":"0","delta":" in any"}
+{"type":"text-delta","id":"0","delta":" city"}
+{"type":"text-delta","id":"0","delta":","}
+{"type":"text-delta","id":"0","delta":" and I can"}
+{"type":"text-delta","id":"0","delta":" help you discover"}
+{"type":"text-delta","id":"0","delta":" what"}
+{"type":"text-delta","id":"0","delta":" that"}
+{"type":"text-delta","id":"0","delta":" destination"}
+{"type":"text-delta","id":"0","delta":" has to offer!"}
 {"type":"text-end","id":"0"}
 {"type":"finish-step"}
 {"type":"finish","finishReason":"stop"}

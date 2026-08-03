@@ -1,8 +1,11 @@
 [
   {
-    "name": "alpha"
+    "name": "Item 1"
   },
   {
-    "name": "beta"
+    "name": "Item 2"
+  },
+  {
+    "name": "Item 3"
   }
 ]

@@ -1,4 +1,4 @@
-model: us.anthropic.claude-haiku-4-5-20251001-v1:0
+model: us.amazon.nova-lite-v1:0
 prompt: Describe an image stored in S3.
 messages:
   - role: user
@@ -6,5 +6,5 @@ messages:
       - type: text
         text: Describe the image.
       - type: file
-        url: s3://my-test-bucket/path/to/image.png
+        url: s3://${BEDROCK_S3_BUCKET}/fixture/image.png
         mediaType: image/png

@@ -1,0 +1,5 @@
+model: gpt-5-nano
+prompt: Hello
+providerTools:
+  webSearch:
+    id: openai.web_search

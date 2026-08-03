@@ -229,7 +229,7 @@ func convertResponse(resp *responses.Response, br buildResult, generateID func()
 
 		case responses.ResponseFunctionShellToolCallOutput:
 			toolName := br.toolNameMapping.toCustomToolName("shell")
-			result, _ := json.Marshal(map[string]any{"output": v.Output})
+			result := shellOutput(v.RawJSON())
 			content = append(content, provider.GenerateContentPart{
 				Type:       provider.ContentToolResult,
 				ToolCallID: v.CallID,
@@ -250,7 +250,7 @@ func convertResponse(resp *responses.Response, br buildResult, generateID func()
 
 		case responses.ResponseApplyPatchToolCall:
 			toolName := br.toolNameMapping.toCustomToolName("apply_patch")
-			input, _ := json.Marshal(map[string]any{"callId": v.CallID, "operation": v.Operation})
+			input := applyPatchInput(v.CallID, v.Operation)
 			content = append(content, provider.GenerateContentPart{
 				Type:             provider.ContentToolCall,
 				ToolCallID:       v.CallID,
@@ -292,7 +292,7 @@ func convertResponse(resp *responses.Response, br buildResult, generateID func()
 					toolCallID = v.ID
 				}
 			}
-			result, _ := json.Marshal(map[string]any{"tools": v.Tools})
+			result := toolSearchOutput(v.RawJSON())
 			content = append(content, provider.GenerateContentPart{
 				Type:             provider.ContentToolResult,
 				ToolCallID:       toolCallID,
@@ -302,15 +302,10 @@ func convertResponse(resp *responses.Response, br buildResult, generateID func()
 			})
 
 		case responses.ResponseCompactionItem:
-			b, _ := json.Marshal(map[string]any{
-				"type":             "compaction",
-				"itemId":           v.ID,
-				"encryptedContent": v.EncryptedContent,
-			})
 			content = append(content, provider.GenerateContentPart{
 				Type:             provider.ContentCustom,
 				Kind:             "openai.compaction",
-				ProviderMetadata: provider.ProviderMetadata{providerName: b},
+				ProviderMetadata: compactionMetadata(providerName, v.ID, v.EncryptedContent),
 			})
 		}
 	}
@@ -354,22 +349,87 @@ func (br buildResult) webSearchCustomToolName() string {
 
 func shellInput(raw string, commands []string) json.RawMessage {
 	var value struct {
-		Commands        []string     `json:"commands"`
-		TimeoutMs       *json.Number `json:"timeout_ms"`
-		MaxOutputLength *json.Number `json:"max_output_length"`
+		Commands []string `json:"commands"`
 	}
 	if json.Unmarshal([]byte(raw), &value) != nil {
 		value.Commands = commands
 	}
-	action := map[string]any{"commands": value.Commands}
-	if value.TimeoutMs != nil {
-		action["timeoutMs"] = *value.TimeoutMs
-	}
-	if value.MaxOutputLength != nil {
-		action["maxOutputLength"] = *value.MaxOutputLength
-	}
-	input, _ := json.Marshal(map[string]any{"action": action})
+	input, _ := json.Marshal(map[string]any{"action": map[string]any{"commands": value.Commands}})
 	return input
+}
+
+func shellOutput(raw string) json.RawMessage {
+	var item struct {
+		Output []struct {
+			Stdout  string `json:"stdout"`
+			Stderr  string `json:"stderr"`
+			Outcome struct {
+				Type     string `json:"type"`
+				ExitCode int64  `json:"exit_code"`
+			} `json:"outcome"`
+		} `json:"output"`
+	}
+	_ = json.Unmarshal([]byte(raw), &item)
+	output := make([]map[string]any, 0, len(item.Output))
+	for _, value := range item.Output {
+		outcome := map[string]any{"type": value.Outcome.Type}
+		if value.Outcome.Type == "exit" {
+			outcome["exitCode"] = value.Outcome.ExitCode
+		}
+		output = append(output, map[string]any{
+			"stdout":  value.Stdout,
+			"stderr":  value.Stderr,
+			"outcome": outcome,
+		})
+	}
+	result, _ := json.Marshal(map[string]any{"output": output})
+	return result
+}
+
+func applyPatchInput(callID string, operation responses.ResponseApplyPatchToolCallOperationUnion) json.RawMessage {
+	raw := json.RawMessage(operation.RawJSON())
+	if !json.Valid(raw) {
+		if operation.Type == "delete_file" {
+			raw, _ = json.Marshal(struct {
+				Type string `json:"type"`
+				Path string `json:"path"`
+			}{Type: operation.Type, Path: operation.Path})
+		} else {
+			raw, _ = json.Marshal(struct {
+				Type string `json:"type"`
+				Path string `json:"path"`
+				Diff string `json:"diff"`
+			}{Type: operation.Type, Path: operation.Path, Diff: operation.Diff})
+		}
+	}
+	input, _ := json.Marshal(struct {
+		CallID    string          `json:"callId"`
+		Operation json.RawMessage `json:"operation"`
+	}{CallID: callID, Operation: raw})
+	return input
+}
+
+func toolSearchOutput(raw string) json.RawMessage {
+	var item struct {
+		Tools json.RawMessage `json:"tools"`
+	}
+	_ = json.Unmarshal([]byte(raw), &item)
+	if !json.Valid(item.Tools) {
+		item.Tools = json.RawMessage(`[]`)
+	}
+	result, _ := json.Marshal(struct {
+		Tools json.RawMessage `json:"tools"`
+	}{Tools: item.Tools})
+	return result
+}
+
+func compactionMetadata(providerName, itemID, encryptedContent string) provider.ProviderMetadata {
+	b, _ := json.Marshal(map[string]any{
+		"type":             "compaction",
+		"itemId":           itemID,
+		"encryptedContent": encryptedContent,
+	})
+	return provider.ProviderMetadata{providerName: b}
 }
 
 func localShellInput(raw string) json.RawMessage {

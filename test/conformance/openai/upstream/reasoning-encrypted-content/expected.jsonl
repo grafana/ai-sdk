@@ -1,0 +1,93 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"reasoning-start","id":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9:0","providerMetadata":{"openai":{"itemId":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9","reasoningEncryptedContent":"gAAAAABpPDIUph8czEXzDePCV2lJ27wm7TsbCvazrvHSn0yWitN7RGWq8sjrPtfEYNkSVR8GZzB59nmPMV9haW4HIeHtIFfWz2boJ58r5pqNxfC3bI5TeUSP_O5MmkuIXjU3jHPqpYVyIBGGW7G3ER79DJGZKdBGMiYFNiodJez0fxOuRtRwAJKyIG4ySE3z6an38XFE6ZqHW58_WfI5ASZ_nuNIZtclNTl2qkW9N5X2TaxZj7evx3e24DXjcbMHJvwAnDropoufqTSC5Ec8uBbD_trspO6Ofc44hIOg5osGY8rtEg_Havfv8X6kP5KESMAPjte2aVIK2PdNz6iZFw7F4IWyNJfrREedu1B8q6Xj5XlwIprwZ0EttT9lf1SEIFmjsSzBKUo4vdxYlDLguW1UiX0uCZWQtpMm8BDYYfJnGXgsHuFBkp4wRSpwIEmAboPnHJ7fPm5YKlq-tW9mqMx7jH14aOOhTI6NT-BMWxmHOhSwXRjs6QkC3HPJBPe-GuVdrOeaF6toplDVr3jawhsFiRGX6v25inDLjTvegukgpsBlkpEQUxRtsb1q5OvBQRGaCXdsTPvBFfVPW9fPwz8durYiY4cGCySIt2yyuptC6M4i4dZfF2Fk5Y1LtHCQ-C2BLMo-1nbuae6uFnbEBGztbd8JWDKHX-6z22FhJy9U1GI9qq8n5qUFoVmgp6qIK8v1YSjKG4YTK_sE95ZwJ3X-A_U_MjOZfMyaEgxqX8FCSo_CZMAqT5K9_IRCPPC4fGA1HYgzxPs8P5Ml_-_5q0YnxsbW2SrgzZoKeYMsImgNLPeTk7Wll27KnB3zWeHnpbKZBhhgTybX"}}}
+{"type":"reasoning-delta","id":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9:0","delta":"**Calcul","providerMetadata":{"openai":{"itemId":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9"}}}
+{"type":"reasoning-delta","id":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9:0","delta":"ating","providerMetadata":{"openai":{"itemId":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9"}}}
+{"type":"reasoning-delta","id":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9:0","delta":" step","providerMetadata":{"openai":{"itemId":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9"}}}
+{"type":"reasoning-delta","id":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9:0","delta":"-by","providerMetadata":{"openai":{"itemId":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9"}}}
+{"type":"reasoning-delta","id":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9:0","delta":"-step","providerMetadata":{"openai":{"itemId":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9"}}}
+{"type":"reasoning-delta","id":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9:0","delta":" using","providerMetadata":{"openai":{"itemId":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9"}}}
+{"type":"reasoning-delta","id":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9:0","delta":" calculator","providerMetadata":{"openai":{"itemId":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9"}}}
+{"type":"reasoning-delta","id":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9:0","delta":"**\n\nI'll","providerMetadata":{"openai":{"itemId":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9"}}}
+{"type":"reasoning-delta","id":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9:0","delta":" compute","providerMetadata":{"openai":{"itemId":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9"}}}
+{"type":"reasoning-delta","id":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9:0","delta":" 12","providerMetadata":{"openai":{"itemId":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9"}}}
+{"type":"reasoning-delta","id":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9:0","delta":" plus","providerMetadata":{"openai":{"itemId":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9"}}}
+{"type":"reasoning-delta","id":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9:0","delta":" 7","providerMetadata":{"openai":{"itemId":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9"}}}
+{"type":"reasoning-delta","id":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9:0","delta":",","providerMetadata":{"openai":{"itemId":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9"}}}
+{"type":"reasoning-delta","id":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9:0","delta":" then","providerMetadata":{"openai":{"itemId":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9"}}}
+{"type":"reasoning-delta","id":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9:0","delta":" multiply","providerMetadata":{"openai":{"itemId":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9"}}}
+{"type":"reasoning-delta","id":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9:0","delta":" the","providerMetadata":{"openai":{"itemId":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9"}}}
+{"type":"reasoning-delta","id":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9:0","delta":" result","providerMetadata":{"openai":{"itemId":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9"}}}
+{"type":"reasoning-delta","id":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9:0","delta":" by","providerMetadata":{"openai":{"itemId":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9"}}}
+{"type":"reasoning-delta","id":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9:0","delta":" 3","providerMetadata":{"openai":{"itemId":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9"}}}
+{"type":"reasoning-delta","id":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9:0","delta":",","providerMetadata":{"openai":{"itemId":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9"}}}
+{"type":"reasoning-delta","id":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9:0","delta":" and","providerMetadata":{"openai":{"itemId":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9"}}}
+{"type":"reasoning-delta","id":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9:0","delta":" finally","providerMetadata":{"openai":{"itemId":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9"}}}
+{"type":"reasoning-delta","id":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9:0","delta":" multiply","providerMetadata":{"openai":{"itemId":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9"}}}
+{"type":"reasoning-delta","id":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9:0","delta":" that","providerMetadata":{"openai":{"itemId":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9"}}}
+{"type":"reasoning-delta","id":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9:0","delta":" by","providerMetadata":{"openai":{"itemId":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9"}}}
+{"type":"reasoning-delta","id":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9:0","delta":" 10","providerMetadata":{"openai":{"itemId":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9"}}}
+{"type":"reasoning-delta","id":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9:0","delta":",","providerMetadata":{"openai":{"itemId":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9"}}}
+{"type":"reasoning-delta","id":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9:0","delta":" reporting","providerMetadata":{"openai":{"itemId":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9"}}}
+{"type":"reasoning-delta","id":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9:0","delta":" the","providerMetadata":{"openai":{"itemId":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9"}}}
+{"type":"reasoning-delta","id":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9:0","delta":" final","providerMetadata":{"openai":{"itemId":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9"}}}
+{"type":"reasoning-delta","id":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9:0","delta":" product","providerMetadata":{"openai":{"itemId":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9"}}}
+{"type":"reasoning-delta","id":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9:0","delta":".","providerMetadata":{"openai":{"itemId":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9"}}}
+{"type":"reasoning-end","id":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9:0","providerMetadata":{"openai":{"itemId":"rs_01830d662ab3856501693c321405c88190be3ab04d5782d5f9","reasoningEncryptedContent":"gAAAAABpPDIVOKrsHNZ0GwsoEKA_IGfuJ5f8Ma_6-EojH4yZFL50qlfUzM7FREdQlpkqlnIHLRx2YJxZfzvbnc0E3J_yvIuoeoGQp2hYUfiV5XWs5d0XfqJps9ZgtUBRR1dqB43ooABehaMjM6BjaSGz-3PeUHZfedawAcRKhdJuLF1Q2YPL0OI4i97zy3O1u_2ypHd9JTE1pWoJMwPqx3myOs1_eeg5_yzgiQ0WsRHLvginFvEUyt-N7uxubO6bHfSN_TVTyXiDhCI6lf1v1r8ElDAkFfpbEKvIhUs4SGhykBWkYauqsB9B79Nfr6gwmaUnRGAct8ZsX394UVAqqokBqLIB8EzDjckb5EkUh0F33Ye_9-Nyjo7zLN_gTGxf3JI5DxsbFsZAylpEsEAX6_UbH0o3-2dfy_p9_rgNUNfQmg4nty8z0ZIKdEC7hihyD-4gj7lRYEKcDhQmDVKJW-6asLIpFVoX65yJRo-xOBPf3lLzXczlXWvvYiooHFAF5h1YFFzfjS8pnXkpnq-cFS4Ot8i63pAKgTcRMQEgOB1AxjXOX-QRnX_ncyJmYDVAl-Q7zJwc2cynXXCiaoYfaFxN0P26An7bV18Dwrz3ed-hd-mKUQM_nS9z59kyvCb8Ug7KxD10Me8jyzOFXgtmb76vTRxa7zjMdQhoGE2wRO348n28yM4flAKqUS7b0TsUljeSSnoBXMJSqpuqKXrpmLWjt8_Ws9dEgP3ql8QcQwnQ5QAePNXoleQGBjiF_C5WI8Qoyd6yxFcYM939msh9gfA94QAQiMB7-KUpmo_8ViQOVAggnt1QlXXHrrHuEDDgL2l42_aAIVL3GlHCuSlIChiET8y2iRZmxhDoEg61zQAuknapDM8-5POFTRcbniqN6eHJjxKOJpD45JkH1HYAOHAX3llk6M1MNx_YkYc7mOXmcPIHUYvHOjTv7dAhntZhxn4iHXHRvFRd22b4pUNxSPHDJQ8_UgJ0OgCZIoy1axBR84rbicty4RCaGkbotBee75SdYcE__rOXQxSo_8XMnObfNxat0wz4uQ=="}}}
+{"type":"tool-input-start","toolCallId":"call_AB6AaRZ1FYZB2RwS6A5vbdqn","toolName":"calculator"}
+{"type":"tool-input-delta","toolCallId":"call_AB6AaRZ1FYZB2RwS6A5vbdqn","inputTextDelta":"{\""}
+{"type":"tool-input-delta","toolCallId":"call_AB6AaRZ1FYZB2RwS6A5vbdqn","inputTextDelta":"a"}
+{"type":"tool-input-delta","toolCallId":"call_AB6AaRZ1FYZB2RwS6A5vbdqn","inputTextDelta":"\":"}
+{"type":"tool-input-delta","toolCallId":"call_AB6AaRZ1FYZB2RwS6A5vbdqn","inputTextDelta":"12"}
+{"type":"tool-input-delta","toolCallId":"call_AB6AaRZ1FYZB2RwS6A5vbdqn","inputTextDelta":",\""}
+{"type":"tool-input-delta","toolCallId":"call_AB6AaRZ1FYZB2RwS6A5vbdqn","inputTextDelta":"b"}
+{"type":"tool-input-delta","toolCallId":"call_AB6AaRZ1FYZB2RwS6A5vbdqn","inputTextDelta":"\":"}
+{"type":"tool-input-delta","toolCallId":"call_AB6AaRZ1FYZB2RwS6A5vbdqn","inputTextDelta":"7"}
+{"type":"tool-input-delta","toolCallId":"call_AB6AaRZ1FYZB2RwS6A5vbdqn","inputTextDelta":",\""}
+{"type":"tool-input-delta","toolCallId":"call_AB6AaRZ1FYZB2RwS6A5vbdqn","inputTextDelta":"op"}
+{"type":"tool-input-delta","toolCallId":"call_AB6AaRZ1FYZB2RwS6A5vbdqn","inputTextDelta":"\":\""}
+{"type":"tool-input-delta","toolCallId":"call_AB6AaRZ1FYZB2RwS6A5vbdqn","inputTextDelta":"add"}
+{"type":"tool-input-delta","toolCallId":"call_AB6AaRZ1FYZB2RwS6A5vbdqn","inputTextDelta":"\"}"}
+{"type":"tool-input-available","toolCallId":"call_AB6AaRZ1FYZB2RwS6A5vbdqn","toolName":"calculator","input":{"a":12,"b":7,"op":"add"},"providerMetadata":{"openai":{"itemId":"fc_01830d662ab3856501693c32151234819091cfca267e98cc5f"}}}
+{"type":"tool-input-start","toolCallId":"call_Q6pW65MUgW9vF59BmItYGos3","toolName":"calculator"}
+{"type":"tool-input-delta","toolCallId":"call_Q6pW65MUgW9vF59BmItYGos3","inputTextDelta":"{\""}
+{"type":"tool-input-delta","toolCallId":"call_Q6pW65MUgW9vF59BmItYGos3","inputTextDelta":"a"}
+{"type":"tool-input-delta","toolCallId":"call_Q6pW65MUgW9vF59BmItYGos3","inputTextDelta":"\":"}
+{"type":"tool-input-delta","toolCallId":"call_Q6pW65MUgW9vF59BmItYGos3","inputTextDelta":"19"}
+{"type":"tool-input-delta","toolCallId":"call_Q6pW65MUgW9vF59BmItYGos3","inputTextDelta":",\""}
+{"type":"tool-input-delta","toolCallId":"call_Q6pW65MUgW9vF59BmItYGos3","inputTextDelta":"b"}
+{"type":"tool-input-delta","toolCallId":"call_Q6pW65MUgW9vF59BmItYGos3","inputTextDelta":"\":"}
+{"type":"tool-input-delta","toolCallId":"call_Q6pW65MUgW9vF59BmItYGos3","inputTextDelta":"3"}
+{"type":"tool-input-delta","toolCallId":"call_Q6pW65MUgW9vF59BmItYGos3","inputTextDelta":",\""}
+{"type":"tool-input-delta","toolCallId":"call_Q6pW65MUgW9vF59BmItYGos3","inputTextDelta":"op"}
+{"type":"tool-input-delta","toolCallId":"call_Q6pW65MUgW9vF59BmItYGos3","inputTextDelta":"\":\""}
+{"type":"tool-input-delta","toolCallId":"call_Q6pW65MUgW9vF59BmItYGos3","inputTextDelta":"multiply"}
+{"type":"tool-input-delta","toolCallId":"call_Q6pW65MUgW9vF59BmItYGos3","inputTextDelta":"\"}"}
+{"type":"tool-input-available","toolCallId":"call_Q6pW65MUgW9vF59BmItYGos3","toolName":"calculator","input":{"a":19,"b":3,"op":"multiply"},"providerMetadata":{"openai":{"itemId":"fc_01830d662ab3856501693c32165be4819098c08f205f8932ef"}}}
+{"type":"tool-input-start","toolCallId":"call_Zl5vIMnD7dVAjgU6FkhmiCZh","toolName":"calculator"}
+{"type":"tool-input-delta","toolCallId":"call_Zl5vIMnD7dVAjgU6FkhmiCZh","inputTextDelta":"{\""}
+{"type":"tool-input-delta","toolCallId":"call_Zl5vIMnD7dVAjgU6FkhmiCZh","inputTextDelta":"a"}
+{"type":"tool-input-delta","toolCallId":"call_Zl5vIMnD7dVAjgU6FkhmiCZh","inputTextDelta":"\":"}
+{"type":"tool-input-delta","toolCallId":"call_Zl5vIMnD7dVAjgU6FkhmiCZh","inputTextDelta":"57"}
+{"type":"tool-input-delta","toolCallId":"call_Zl5vIMnD7dVAjgU6FkhmiCZh","inputTextDelta":",\""}
+{"type":"tool-input-delta","toolCallId":"call_Zl5vIMnD7dVAjgU6FkhmiCZh","inputTextDelta":"b"}
+{"type":"tool-input-delta","toolCallId":"call_Zl5vIMnD7dVAjgU6FkhmiCZh","inputTextDelta":"\":"}
+{"type":"tool-input-delta","toolCallId":"call_Zl5vIMnD7dVAjgU6FkhmiCZh","inputTextDelta":"10"}
+{"type":"tool-input-delta","toolCallId":"call_Zl5vIMnD7dVAjgU6FkhmiCZh","inputTextDelta":",\""}
+{"type":"tool-input-delta","toolCallId":"call_Zl5vIMnD7dVAjgU6FkhmiCZh","inputTextDelta":"op"}
+{"type":"tool-input-delta","toolCallId":"call_Zl5vIMnD7dVAjgU6FkhmiCZh","inputTextDelta":"\":\""}
+{"type":"tool-input-delta","toolCallId":"call_Zl5vIMnD7dVAjgU6FkhmiCZh","inputTextDelta":"multiply"}
+{"type":"tool-input-delta","toolCallId":"call_Zl5vIMnD7dVAjgU6FkhmiCZh","inputTextDelta":"\"}"}
+{"type":"tool-input-available","toolCallId":"call_Zl5vIMnD7dVAjgU6FkhmiCZh","toolName":"calculator","input":{"a":57,"b":10,"op":"multiply"},"providerMetadata":{"openai":{"itemId":"fc_01830d662ab3856501693c32173d5081908f2121e1c3ff2901"}}}
+{"type":"text-start","id":"msg_01830d662ab3856501693c32183a488190a612c410a0a39823","providerMetadata":{"openai":{"itemId":"msg_01830d662ab3856501693c32183a488190a612c410a0a39823"}}}
+{"type":"text-delta","id":"msg_01830d662ab3856501693c32183a488190a612c410a0a39823","delta":"The"}
+{"type":"text-delta","id":"msg_01830d662ab3856501693c32183a488190a612c410a0a39823","delta":" final"}
+{"type":"text-delta","id":"msg_01830d662ab3856501693c32183a488190a612c410a0a39823","delta":" result"}
+{"type":"text-delta","id":"msg_01830d662ab3856501693c32183a488190a612c410a0a39823","delta":" is"}
+{"type":"text-delta","id":"msg_01830d662ab3856501693c32183a488190a612c410a0a39823","delta":" **"}
+{"type":"text-delta","id":"msg_01830d662ab3856501693c32183a488190a612c410a0a39823","delta":"570"}
+{"type":"text-delta","id":"msg_01830d662ab3856501693c32183a488190a612c410a0a39823","delta":"**"}
+{"type":"text-delta","id":"msg_01830d662ab3856501693c32183a488190a612c410a0a39823","delta":"."}
+{"type":"text-end","id":"msg_01830d662ab3856501693c32183a488190a612c410a0a39823","providerMetadata":{"openai":{"itemId":"msg_01830d662ab3856501693c32183a488190a612c410a0a39823"}}}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"tool-calls"}

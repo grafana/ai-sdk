@@ -1,7 +1,54 @@
 {"type":"start"}
 {"type":"start-step"}
 {"type":"text-start","id":"0"}
-{"type":"text-delta","id":"0","delta":"Compacted."}
+{"type":"text-delta","id":"0","delta":"#"}
+{"type":"text-delta","id":"0","delta":" Test Compaction Usage\n\nTest compaction is a technique used to **reduce the number of tests** while maintaining fault"}
+{"type":"text-delta","id":"0","delta":" detection effectiveness. Here's a comprehensive overview:\n\n---\n\n## What is Test Compaction?\n\nTest compaction (also called **"}
+{"type":"text-delta","id":"0","delta":"test suite minimization/reduction**) is the process of eliminating redundant tests from a test suite without"}
+{"type":"text-delta","id":"0","delta":" significantly losing fault coverage.\n\n---\n\n## Why Use"}
+{"type":"text-delta","id":"0","delta":" Test Compaction?\n\n| Reason | Benefit |\n|--------|---------|\n| Reduce execution"}
+{"type":"text-delta","id":"0","delta":" time | Faster CI/CD pipelines |\n| Lower maintenance cost | Fewer tests to update |\n| Remove"}
+{"type":"text-delta","id":"0","delta":" redundancy | Eliminate duplicate coverage |\n| Resource efficiency | Less compute/memory usage |"}
+{"type":"text-delta","id":"0","delta":"\n\n---\n\n## Common Techniques\n\n### 1. **Coverage-Based Compaction**\n```\n- Remove"}
+{"type":"text-delta","id":"0","delta":" tests that cover only already-covered code\n- Keep tests with unique coverage contributions\n- Use"}
+{"type":"text-delta","id":"0","delta":" code coverage tools (JaCoCo, Istanbul, Coverage.py)\n```\n\n### 2. **Greedy Algorithm"}
+{"type":"text-delta","id":"0","delta":" Approach**\n```\n1. Start with empty test suite T'\n2. Select test with highest new"}
+{"type":"text-delta","id":"0","delta":" coverage\n3. Add to T', remove covered elements\n4. Repeat until all elements covered"}
+{"type":"text-delta","id":"0","delta":"\n```\n\n### 3. **Integer Linear Programming (ILP)**\n```\nMinimize: |T'|"}
+{"type":"text-delta","id":"0","delta":"\nSubject to: All fault types covered\n           T' ⊆ T\n```\n\n###"}
+{"type":"text-delta","id":"0","delta":" 4. **Mutation-Based Compaction**\n```python\n# Keep tests that kill unique"}
+{"type":"text-delta","id":"0","delta":" mutants\nfor test in test_suite:\n    if test.kills_unique_mutants():\n        keep("}
+{"type":"text-delta","id":"0","delta":"test)\n    else:\n        remove(test)\n```\n\n---\n\n## Example Workflow\n\n```\nOriginal Suite:"}
+{"type":"text-delta","id":"0","delta":" [T1, T2, T3, T4, T5]\n\nCoverage Matrix:\n       L"}
+{"type":"text-delta","id":"0","delta":"1  L2  L3  L4  L5\nT1:    ✓   ✓   -   -   -\nT2:    ✓   -"}
+{"type":"text-delta","id":"0","delta":"   ✓   -   -\nT3:    -   ✓   -   ✓   -\nT4:    -   -   ✓   ✓   ✓\nT5:    "}
+{"type":"text-delta","id":"0","delta":"✓   ✓   ✓   -   -\n\nCompacted Suite: [T1, T4] or"}
+{"type":"text-delta","id":"0","delta":" [T3, T2]\n→ Still covers L1-L5"}
+{"type":"text-delta","id":"0","delta":"\n→ 60% reduction in test count\n```\n\n---\n\n## Tools & Frameworks"}
+{"type":"text-delta","id":"0","delta":"\n\n| Tool | Language | Method |\n|------|----------|--------|\n| **Pytest-cov** | Python | Coverage-"}
+{"type":"text-delta","id":"0","delta":"based |\n| **JaCoCo** | Java | Coverage-based |\n| **PIT** | Java | Mutation-based |\n| **"}
+{"type":"text-delta","id":"0","delta":"ACTS** | Multiple | Combinatorial |\n| **Stryker** | JS/TS | Mutation-based"}
+{"type":"text-delta","id":"0","delta":" |\n| **TestIQ** | Multiple | AI-based |\n\n---\n\n## Practical Example (Python"}
+{"type":"text-delta","id":"0","delta":")\n\n```python\nimport pytest\nfrom coverage import Coverage\n\ndef compact_test_suite(tests, target_coverage=0.95"}
+{"type":"text-delta","id":"0","delta":"):\n    \"\"\"\n    Simple greedy test compaction\n    \"\"\"\n    covered_lines = set()\n    selected_tests = []\n    "}
+{"type":"text-delta","id":"0","delta":"\n    # Sort tests by unique coverage contribution\n    tests_sorted = sorted(\n        tests,\n        key=lambda t: len(t.covered_lines - covered_lines),\n        reverse"}
+{"type":"text-delta","id":"0","delta":"=True\n    )\n    \n    for test in tests_sorted:\n        new_coverage = test.covered_lines - covered_lines\n        \n        if new_coverage:  "}
+{"type":"text-delta","id":"0","delta":"# Test adds new coverage\n            selected_tests.append(test)\n            covered_lines.update(new_coverage)\n        \n        if coverage"}
+{"type":"text-delta","id":"0","delta":"_rate(covered_lines) >= target_coverage:\n            break\n    \n    return selected_tests\n\n# Usage\noriginal = load"}
+{"type":"text-delta","id":"0","delta":"_test_suite(\"tests/\")\ncompacted = compact_test_suite(original, target_coverage=0.95)"}
+{"type":"text-delta","id":"0","delta":"\n\nprint(f\"Original: {len(original)} tests\")\nprint(f\"Compacted: {len(compacted)} tests\")\nprint(f\"Reduction: {(1"}
+{"type":"text-delta","id":"0","delta":" - len(compacted)/len(original))*100:.1f}%\")\n```\n\n---\n\n## Trade-offs\n\n```\n✅ PROS                "}
+{"type":"text-delta","id":"0","delta":"          ❌ CONS\n─────────────────────────────────────────────\nFaster test execution           May miss some faults\nLower"}
+{"type":"text-delta","id":"0","delta":" CI costs                  Coverage ≠ fault detection\nEasier maintenance              Loss of regression"}
+{"type":"text-delta","id":"0","delta":" safety\nFocus on high-value tests       Complex to implement well\n```\n\n---\n\n## Best Practices\n\n1. **Never fully"}
+{"type":"text-delta","id":"0","delta":" automate** — review compacted suites manually\n2. **Use mutation"}
+{"type":"text-delta","id":"0","delta":" testing** as a quality check after compaction\n3. **Keep safety-"}
+{"type":"text-delta","id":"0","delta":"critical tests** regardless of redundancy\n4. **Re-compact periodically** as code evolves"}
+{"type":"text-delta","id":"0","delta":"\n5. **Track metrics** — monitor fault escape rate after compaction\n\n---\n\n## When"}
+{"type":"text-delta","id":"0","delta":" NOT to Compact\n\n- 🚫 Safety-critical systems (medical, aerospace)\n- 🚫 Regulatory"}
+{"type":"text-delta","id":"0","delta":" compliance requirements\n- 🚫 Small test suites (< 50 tests)\n- 🚫 High-change codebases ("}
+{"type":"text-delta","id":"0","delta":"tests may become relevant again)\n\n---\n\nWould you like a deeper"}
+{"type":"text-delta","id":"0","delta":" dive into any specific compaction technique or tool?"}
 {"type":"text-end","id":"0"}
 {"type":"finish-step"}
 {"type":"finish","finishReason":"stop"}

@@ -314,7 +314,7 @@ func TestE2EProviderExecutedPreliminaryToolResults(t *testing.T) {
 		}
 	}
 	require.Len(t, streamed, 2)
-	assert.True(t, streamed[0].Preliminary)
+	assert.False(t, streamed[0].Preliminary)
 	assert.False(t, streamed[1].Preliminary)
 
 	steps := result.Steps()

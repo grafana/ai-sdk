@@ -1,6 +1,25 @@
-{"messageStart": {"p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJ", "role": "assistant"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"text": "p"}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012345678"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"text": "ong"}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRS"}}
-{"contentBlockStop": {"contentBlockIndex": 0, "p": "abcdefghijklmnopqrstuvwxyzABCD"}}
-{"messageStop": {"additionalModelResponseFields": {"delta": {"stop_sequence": null}}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0", "stopReason": "end_turn"}}
-{"metadata": {"metrics": {"latencyMs": 980}, "p": "abcdefghijklmnopqrstuvwxyzABCDE", "usage": {"inputTokens": 16, "outputTokens": 5, "serverToolUsage": {}, "totalTokens": 21}}}
+{"messageStart":{"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012345678","role":"assistant"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":"I"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJ"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":"'m"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012345"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" ready to help you continue!"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" However"},"p":"abcdefghijklmnopqrstuvwxy"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":", I nee"},"p":"abcdefghijklmnopqr"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":"d more"},"p":"abcdefghijklmnopqrstuvwxyzAB"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" information about"},"p":"abcdefghijkl"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" what you'd like me to "},"p":"abcdefghijkl"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":"do next"},"p":"abcdefghijklmnopqrstuvwxyzABCDEF"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":". \n\nCoul"},"p":"ab"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":"d you please clar"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":"ify:\n1"},"p":"abc"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":". What file"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" woul"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":"d you like me to read?\n2"},"p":"abcdefghijklmnopqrstuvwxyzABC"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":". What specific task"},"p":"abcdefghijklmnopqrs"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" would you like me to help"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" with?"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRS"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":"\n\nOnce you provide these details, I'll"},"p":"abcd"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" be able to assist you further"},"p":"abcdef"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":"."},"p":"abcdefghijklmnopqrs"}}
+{"contentBlockStop":{"contentBlockIndex":0,"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNO"}}
+{"messageStop":{"additionalModelResponseFields":{"delta":{"stop_sequence":null}},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJK","stopReason":"end_turn"}}
+{"metadata":{"metrics":{"latencyMs":1052},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKL","usage":{"inputTokens":613,"outputTokens":74,"serverToolUsage":{},"totalTokens":687}}}

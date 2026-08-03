@@ -150,6 +150,10 @@ Fixtures copied from the Vercel AI SDK test fixtures
 (`packages/<provider>/src/__fixtures__/`). These are static — we don't
 control the original test scenario, so the fixture files can't be
 re-recorded. They can be refreshed by re-copying from the upstream repo.
+`mise run parity-coverage` verifies that every mapped provider input remains
+byte-identical to the matching fixture at the exact commit recorded in
+`upstream.yaml`; it fails when that Git object is unavailable. CI fetches that
+commit before running the check.
 
 Each provider's `upstream/` directory has an `INDEX.yaml` that maps
 upstream fixture names to local test case directories. Entries with
@@ -159,10 +163,12 @@ yet. Update this file when importing new fixtures.
 ### Recorded
 
 Locally controlled fixtures captured by `record.mts` from real provider APIs.
-They have a `prompt` field in `config.yaml` for provenance and re-recording.
+They have a prompt, configured messages, or UI messages in `config.yaml` for
+provenance and re-recording. The recorder stages inputs and expectations before
+replacing the previous generated files, and removes stale numbered inputs.
 Never hand-author, synthesize, or assemble provider events for a recorded
-fixture, including feature, request-conversion, model-capability, or successful
-response scenarios.
+fixture, including feature, request-conversion, model-capability, error, or
+successful response scenarios.
 
 Recorded inputs must remain exactly as captured by the recording tool. Do not
 truncate, splice, rewrite, or otherwise derive provider events. Synthetic
@@ -171,8 +177,14 @@ tests, or in provider-independent `ui/` fixtures when they exercise core stream
 behavior.
 
 If live credentials, provider access, or a matching upstream fixture are not
-available, use those alternatives and document any remaining provider-boundary
-coverage gap. Do not substitute synthetic provider payloads.
+available, use focused unit/integration coverage or remove the provider fixture
+and document any remaining provider-boundary gap. Do not substitute synthetic
+provider payloads.
+
+Recorded scenarios that need temporary external resources can use environment
+placeholders such as `s3://${BEDROCK_S3_BUCKET}/fixture/image.png`. `record.mts`
+resolves them only for the live request and restores the placeholder in request
+snapshots; raw provider response events are never rewritten.
 
 ## config.yaml
 
@@ -180,8 +192,12 @@ Each test case directory has a `config.yaml` with replay metadata.
 The provider is inferred from the directory path, not from the YAML.
 
 ```yaml
-# Minimal (upstream fixture)
+# Minimal streaming fixture
 model: claude-sonnet-4-5-20250929
+
+# Non-streaming provider fixture
+operation: generate
+model: anthropic.claude-3-haiku-20240307-v1:0
 
 # Full (recorded fixture with tools)
 model: claude-sonnet-4-5-20250929
@@ -218,9 +234,10 @@ approval:
 ```
 
 Fields:
+- `operation` (optional, default `stream`): provider operation (`stream` or `generate`); unary `generate` is currently Bedrock-only and supports prompt/configured messages, system text, headers, provider options, and response format
 - `model` (required): model ID used for the provider
 - `system` (optional): system prompt text passed as a system-role model message
-- `prompt` (optional): prompt text, needed for recording, ignored during replay
+- `prompt` (optional): prompt text; recording requires it unless `messages` or `uiMessages` is configured
 - `stopWhenStepCount` (optional, default 1): number of steps for multi-step tool calling
 - `toolChoice` (optional): model tool-choice strategy (`auto`, `none`, `required`, or `tool` with `toolName`)
 - `activeTools` (optional): list of tool names available for the call
@@ -235,6 +252,7 @@ Fields:
 - `assertOutputValue` (optional): requires `expected-object.json` to match the parsed `OutputValue` instead of reconstructed text
 - `approval` (optional): seeds a prior tool call, approval request, and approval response for replaying approved/denied second-call flows
 - `expectStreamError` (optional): requires the Go replay to end with an error while still comparing emitted UI chunks
+- `maxRetries` (optional): core replay retry count; live recording defaults to zero retries unless this is explicitly set
 
 ## Request Input Assertions
 
@@ -487,11 +505,11 @@ Recording caveats:
   `include: ["reasoning.encrypted_content"]`, which the provider auto-populates
   when `store` is false.
 - **`previous_response_id` continuation** cannot be recorded on a ZDR org (it
-  requires server-side storage); it is covered by the `upstream/previous-response`
-  fixture and unit tests instead.
-- **MCP tool-approval** requires a live remote MCP server; it is covered by unit
-  tests (`prepare_tools_test.go`, `convert_response_test.go`) rather than a
-  recorded fixture.
+  requires server-side storage); it remains covered by focused provider unit
+  tests rather than a recorded fixture.
+- **MCP tool-approval** requires a live remote MCP server; pinned upstream MCP
+  approval fixtures provide provider input, with focused request/response unit
+  tests covering additional edge cases.
 - Normalization: `function_call_output.output` carries the tool result as a JSON
   string; both the Go runner and `common.mts` parse it so object field ordering
   is compared insensitively.

@@ -63,6 +63,7 @@ export interface ResponseFormatConfig {
 }
 
 export interface Config {
+  operation?: "stream" | "generate";
   model: string;
   system?: string;
   prompt?: string;
@@ -83,6 +84,7 @@ export interface Config {
   approval?: ApprovalConfig;
   approvals?: ApprovalConfig[];
   expectStreamError?: boolean;
+  maxRetries?: number;
 }
 
 export interface MessageConfig {
@@ -92,7 +94,14 @@ export interface MessageConfig {
 }
 
 export interface MessagePartConfig {
-  type: "text" | "reasoning" | "file" | "tool-call" | "tool-result";
+  type:
+    | "text"
+    | "reasoning"
+    | "file"
+    | "tool-call"
+    | "tool-result"
+    | "tool-approval-request"
+    | "tool-approval-response";
   text?: string;
   data?: string;
   url?: string;
@@ -101,8 +110,12 @@ export interface MessagePartConfig {
   reference?: Record<string, string>;
   toolCallId?: string;
   toolName?: string;
+  approvalId?: string;
   input?: unknown;
   output?: unknown;
+  approved?: boolean;
+  reason?: string;
+  isAutomatic?: boolean;
   providerExecuted?: boolean;
   providerOptions?: Record<string, Record<string, unknown>>;
 }
@@ -282,6 +295,33 @@ export function buildOutput(cfg: Config): unknown {
   }
 }
 
+export function unsupportedGenerateFields(cfg: Config): string[] {
+  const nonEmptyArray = (value: unknown[] | undefined) =>
+    value && value.length > 0 ? value : undefined;
+  const nonEmptyObject = (value: Record<string, unknown> | undefined) =>
+    value && Object.keys(value).length > 0 ? value : undefined;
+  return [
+    ["uiMessages", nonEmptyArray(cfg.uiMessages)],
+    ["tools", nonEmptyObject(cfg.tools)],
+    ["providerTools", nonEmptyObject(cfg.providerTools)],
+    ["toolChoice", cfg.toolChoice],
+    ["activeTools", nonEmptyArray(cfg.activeTools)],
+    ["reasoning", cfg.reasoning || undefined],
+    ["streamOptions", cfg.streamOptions],
+    ["approval", cfg.approval],
+    ["approvals", nonEmptyArray(cfg.approvals)],
+    ["assertOutputValue", cfg.assertOutputValue || undefined],
+    ["expectStreamError", cfg.expectStreamError || undefined],
+    ["maxRetries", cfg.maxRetries],
+    [
+      "stopWhenStepCount",
+      cfg.stopWhenStepCount != null && cfg.stopWhenStepCount > 1
+        ? cfg.stopWhenStepCount
+        : undefined,
+    ],
+  ].filter(([, value]) => value !== undefined).map(([name]) => name as string);
+}
+
 export function buildStreamTextOptions(
   cfg: Config,
   opts: StreamTextOptionsConfig,
@@ -297,6 +337,7 @@ export function buildStreamTextOptions(
     ...(cfg.activeTools ? { activeTools: cfg.activeTools } : {}),
     ...(cfg.reasoning ? { reasoning: cfg.reasoning } : {}),
     ...(cfg.headers ? { headers: cfg.headers } : {}),
+    ...(cfg.maxRetries != null ? { maxRetries: cfg.maxRetries } : {}),
     ...(opts.output ? { output: opts.output } : {}),
     stopWhen: opts.stopWhen,
     ...(cfg.providerOptions ? { providerOptions: cfg.providerOptions } : {}),
@@ -415,6 +456,27 @@ function buildConfiguredPart(part: MessagePartConfig) {
         toolCallId: part.toolCallId ?? "",
         toolName: part.toolName ?? "",
         output: part.output,
+        ...(part.providerOptions
+          ? { providerOptions: part.providerOptions as ProviderOptions }
+          : {}),
+      };
+    case "tool-approval-request":
+      return {
+        type: "tool-approval-request" as const,
+        approvalId: part.approvalId ?? "",
+        toolCallId: part.toolCallId ?? "",
+        ...(part.isAutomatic ? { isAutomatic: true } : {}),
+        ...(part.providerOptions
+          ? { providerOptions: part.providerOptions as ProviderOptions }
+          : {}),
+      };
+    case "tool-approval-response":
+      return {
+        type: "tool-approval-response" as const,
+        approvalId: part.approvalId ?? "",
+        approved: part.approved ?? false,
+        ...(part.reason ? { reason: part.reason } : {}),
+        ...(part.providerExecuted ? { providerExecuted: true } : {}),
         ...(part.providerOptions
           ? { providerOptions: part.providerOptions as ProviderOptions }
           : {}),

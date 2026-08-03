@@ -7,9 +7,9 @@
       "cacheWrite": 0
     },
     "outputTokens": {
-      "total": 47,
-      "text": 35,
-      "reasoning": 12
+      "total": 22,
+      "text": 11,
+      "reasoning": 11
     },
     "raw": {
       "input_tokens": 30,
@@ -19,11 +19,11 @@
         "ephemeral_5m_input_tokens": 0,
         "ephemeral_1h_input_tokens": 0
       },
-      "output_tokens": 47,
+      "output_tokens": 22,
       "service_tier": "standard",
       "inference_geo": "global",
       "output_tokens_details": {
-        "thinking_tokens": 12
+        "thinking_tokens": 11
       }
     }
   }
