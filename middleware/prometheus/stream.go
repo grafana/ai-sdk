@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/grafana/ai-sdk/internal/streamusage"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -12,7 +13,7 @@ const streamBufferSize = 64
 type streamObservation struct {
 	responseIdentity  identity
 	finishReason      string
-	usage             *provider.Usage
+	usage             streamusage.Aggregator
 	streamError       *outcome
 	chunkCounts       map[provider.StreamPartType]int
 	firstPayloadAfter *float64
@@ -57,10 +58,10 @@ func (i *instrumentation) runStreamTee(
 				i.finalizeStream(ctx, requested, obs, start, false)
 				return
 			}
+			obs.observe(part, start, receivedAt)
 
 			select {
 			case tee <- part:
-				obs.observe(part, start, receivedAt)
 			case <-ctx.Done():
 				go drainUntilClosed(upstream)
 				i.finalizeStream(ctx, requested, obs, start, true)
@@ -90,8 +91,8 @@ func (i *instrumentation) finalizeStream(ctx context.Context, requested identity
 	}
 
 	i.observeRequest(operationStream, finalID, out, time.Since(start).Seconds())
-	if obs.usage != nil {
-		i.observeUsage(operationStream, finalID, *obs.usage)
+	if usage, ok := obs.usage.Usage(); ok {
+		i.observeUsage(operationStream, finalID, usage)
 	}
 	if obs.firstPayloadAfter != nil {
 		i.collectors.timeToFirstOutput.WithLabelValues(operationStream, finalID.provider, finalID.model, out.status).Observe(*obs.firstPayloadAfter)
@@ -110,6 +111,7 @@ func (i *instrumentation) finalizeStream(ctx context.Context, requested identity
 
 func (o *streamObservation) observe(part provider.StreamPart, start, receivedAt time.Time) {
 	o.chunkCounts[part.Type]++
+	o.usage.Observe(part)
 
 	switch part.Type {
 	case provider.PartResponseMeta:
@@ -117,10 +119,6 @@ func (o *streamObservation) observe(part provider.StreamPart, start, receivedAt 
 			o.responseIdentity = identity{provider: part.Provider, model: part.ModelID}
 		}
 	case provider.PartFinish:
-		if part.Usage != nil {
-			usage := *part.Usage
-			o.usage = &usage
-		}
 		if part.FinishReason != nil {
 			o.finishReason = finishReasonLabel(*part.FinishReason)
 		}

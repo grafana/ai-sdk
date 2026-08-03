@@ -55,6 +55,9 @@ The middleware records:
 - time to first stream output;
 - optional stream-part counts and inter-chunk delay.
 
+Streaming token metrics combine every usage-bearing part and preserve the
+greatest value observed independently for each normalized counter.
+
 `GenerateText` calls providers through the streaming path, so provider
 middleware may observe it as a stream operation. Use orchestration-level
 callbacks or separate HTTP metrics for one measurement of the entire user

@@ -31,9 +31,10 @@ provider registry when every resolved model should use the same policy.
 
 Default records include call identity, provider/model identity, duration,
 outcome, request summaries, usage, finish reason, warnings, response metadata,
-and stream timing/counts. Prompt text, output text, reasoning, tool payloads,
-files, headers, bodies, provider options, and raw chunks are not captured by
-default.
+and stream timing/counts. Streaming usage combines every usage-bearing part and
+preserves the greatest value observed for each normalized counter. Prompt text,
+output text, reasoning, tool payloads, files, headers, bodies, provider options,
+and raw chunks are not captured by default.
 
 This default is appropriate for most production environments. Add payload
 capture only for a defined debugging or audit requirement:

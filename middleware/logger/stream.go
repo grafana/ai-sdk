@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/grafana/ai-sdk/internal/streamusage"
 	"github.com/grafana/ai-sdk/middleware"
 	"github.com/grafana/ai-sdk/provider"
 )
@@ -180,7 +181,7 @@ type streamSummary struct {
 	total               int
 	byType              map[provider.StreamPartType]int
 	response            provider.ResponseMetadata
-	usage               *provider.Usage
+	usage               streamusage.Aggregator
 	finish              *provider.FinishReason
 	metadata            provider.ProviderMetadata
 	firstContentLatency *time.Duration
@@ -206,6 +207,7 @@ func (s *streamSummary) observe(part provider.StreamPart) {
 		s.byType = make(map[provider.StreamPartType]int)
 	}
 	s.byType[part.Type]++
+	s.usage.Observe(part)
 
 	switch part.Type {
 	case provider.PartResponseMeta:
@@ -216,10 +218,6 @@ func (s *streamSummary) observe(part provider.StreamPart) {
 			Timestamp: part.Timestamp,
 		}
 	case provider.PartFinish:
-		if part.Usage != nil {
-			usage := *part.Usage
-			s.usage = &usage
-		}
 		if part.FinishReason != nil {
 			finish := *part.FinishReason
 			s.finish = &finish
@@ -259,8 +257,8 @@ func (s streamSummary) Attrs(capture CaptureOptions) []slog.Attr {
 	if s.firstContentLatency != nil {
 		attrs = append(attrs, slog.Float64("ai_sdk.stream.time_to_first_content_ms", durationMs(*s.firstContentLatency)))
 	}
-	if s.usage != nil {
-		attrs = append(attrs, usageAttrs(*s.usage)...)
+	if usage, ok := s.usage.Usage(); ok {
+		attrs = append(attrs, usageAttrs(usage)...)
 	}
 	if s.finish != nil {
 		attrs = append(attrs, finishReasonAttrs(*s.finish)...)
