@@ -237,6 +237,12 @@ func ConvertToModelMessages(messages []UIMessage, opts ...ConvertOption) ([]prov
 						MediaType:       v.MediaType,
 						ProviderOptions: providerMetadataToOptions(v.ProviderMetadata),
 					})
+				case CustomPart:
+					assistParts = append(assistParts, provider.ContentPart{
+						Type:            provider.ContentPartTypeCustom,
+						Kind:            v.Kind,
+						ProviderOptions: providerMetadataToOptions(v.ProviderMetadata),
+					})
 				case ToolInvocationPart:
 					if err := processToolPart(toolPartFields(v)); err != nil {
 						return nil, err

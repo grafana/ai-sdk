@@ -1,6 +1,54 @@
-{"type":"message_start","message":{"id":"msg_usage_compaction","type":"message","role":"assistant","model":"claude-sonnet-4-6","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":20,"cache_creation_input_tokens":5,"cache_read_input_tokens":3,"cache_creation":{"ephemeral_5m_input_tokens":5,"ephemeral_1h_input_tokens":0},"output_tokens":1,"service_tier":"standard"}}}
-{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
-{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Compacted."}}
-{"type":"content_block_stop","index":0}
-{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"input_tokens":20,"cache_creation_input_tokens":5,"cache_read_input_tokens":3,"output_tokens":4,"iterations":[{"type":"compaction","input_tokens":100,"output_tokens":10,"cache_creation_input_tokens":0,"cache_read_input_tokens":0},{"type":"advisor_message","model":"claude-haiku-4-5","input_tokens":200,"output_tokens":20,"cache_creation_input_tokens":0,"cache_read_input_tokens":0},{"type":"message","input_tokens":30,"output_tokens":4,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}]}}
-{"type":"message_stop"}
+{"type":"message_start","message":{"model":"claude-sonnet-4-6","id":"msg_011CdaZEY4S7eKGRbVHscAJJ","type":"message","role":"assistant","content":[],"stop_reason":null,"stop_sequence":null,"stop_details":null,"usage":{"input_tokens":12,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":1,"service_tier":"standard","inference_geo":"global"}}           }
+{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}   }
+{"type": "ping"}
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"#"}            }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" Test Compaction Usage\n\nTest compaction is a technique used to **reduce the number of tests** while maintaining fault"}               }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" detection effectiveness. Here's a comprehensive overview:\n\n---\n\n## What is Test Compaction?\n\nTest compaction (also called **"}           }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"test suite minimization/reduction**) is the process of eliminating redundant tests from a test suite without"}             }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" significantly losing fault coverage.\n\n---\n\n## Why Use"}             }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" Test Compaction?\n\n| Reason | Benefit |\n|--------|---------|\n| Reduce execution"} }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" time | Faster CI/CD pipelines |\n| Lower maintenance cost | Fewer tests to update |\n| Remove"}               }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" redundancy | Eliminate duplicate coverage |\n| Resource efficiency | Less compute/memory usage |"} }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"\n\n---\n\n## Common Techniques\n\n### 1. **Coverage-Based Compaction**\n```\n- Remove"}}
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" tests that cover only already-covered code\n- Keep tests with unique coverage contributions\n- Use"}    }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" code coverage tools (JaCoCo, Istanbul, Coverage.py)\n```\n\n### 2. **Greedy Algorithm"}       }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" Approach**\n```\n1. Start with empty test suite T'\n2. Select test with highest new"} }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" coverage\n3. Add to T', remove covered elements\n4. Repeat until all elements covered"}  }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"\n```\n\n### 3. **Integer Linear Programming (ILP)**\n```\nMinimize: |T'|"}           }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"\nSubject to: All fault types covered\n           T' ⊆ T\n```\n\n###"}           }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" 4. **Mutation-Based Compaction**\n```python\n# Keep tests that kill unique"}    }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" mutants\nfor test in test_suite:\n    if test.kills_unique_mutants():\n        keep("}      }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"test)\n    else:\n        remove(test)\n```\n\n---\n\n## Example Workflow\n\n```\nOriginal Suite:"}}
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" [T1, T2, T3, T4, T5]\n\nCoverage Matrix:\n       L"}         }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"1  L2  L3  L4  L5\nT1:    ✓   ✓   -   -   -\nT2:    ✓   -"}         }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"   ✓   -   -\nT3:    -   ✓   -   ✓   -\nT4:    -   -   ✓   ✓   ✓\nT5:    "} }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"✓   ✓   ✓   -   -\n\nCompacted Suite: [T1, T4] or"}    }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" [T3, T2]\n→ Still covers L1-L5"}         }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"\n→ 60% reduction in test count\n```\n\n---\n\n## Tools & Frameworks"} }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"\n\n| Tool | Language | Method |\n|------|----------|--------|\n| **Pytest-cov** | Python | Coverage-"}             }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"based |\n| **JaCoCo** | Java | Coverage-based |\n| **PIT** | Java | Mutation-based |\n| **"}   }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ACTS** | Multiple | Combinatorial |\n| **Stryker** | JS/TS | Mutation-based"}    }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" |\n| **TestIQ** | Multiple | AI-based |\n\n---\n\n## Practical Example (Python"}   }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":")\n\n```python\nimport pytest\nfrom coverage import Coverage\n\ndef compact_test_suite(tests, target_coverage=0.95"}         }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"):\n    \"\"\"\n    Simple greedy test compaction\n    \"\"\"\n    covered_lines = set()\n    selected_tests = []\n    "}           }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"\n    # Sort tests by unique coverage contribution\n    tests_sorted = sorted(\n        tests,\n        key=lambda t: len(t.covered_lines - covered_lines),\n        reverse"}    }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"=True\n    )\n    \n    for test in tests_sorted:\n        new_coverage = test.covered_lines - covered_lines\n        \n        if new_coverage:  "}  }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"# Test adds new coverage\n            selected_tests.append(test)\n            covered_lines.update(new_coverage)\n        \n        if coverage"}         }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"_rate(covered_lines) >= target_coverage:\n            break\n    \n    return selected_tests\n\n# Usage\noriginal = load"}   }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"_test_suite(\"tests/\")\ncompacted = compact_test_suite(original, target_coverage=0.95)"}           }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"\n\nprint(f\"Original: {len(original)} tests\")\nprint(f\"Compacted: {len(compacted)} tests\")\nprint(f\"Reduction: {(1"}          }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" - len(compacted)/len(original))*100:.1f}%\")\n```\n\n---\n\n## Trade-offs\n\n```\n✅ PROS                "}        }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"          ❌ CONS\n─────────────────────────────────────────────\nFaster test execution           May miss some faults\nLower"}             }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" CI costs                  Coverage ≠ fault detection\nEasier maintenance              Loss of regression"} }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" safety\nFocus on high-value tests       Complex to implement well\n```\n\n---\n\n## Best Practices\n\n1. **Never fully"}  }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" automate** — review compacted suites manually\n2. **Use mutation"}      }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" testing** as a quality check after compaction\n3. **Keep safety-"} }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"critical tests** regardless of redundancy\n4. **Re-compact periodically** as code evolves"}}
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"\n5. **Track metrics** — monitor fault escape rate after compaction\n\n---\n\n## When"}       }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" NOT to Compact\n\n- 🚫 Safety-critical systems (medical, aerospace)\n- 🚫 Regulatory"}               }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" compliance requirements\n- 🚫 Small test suites (< 50 tests)\n- 🚫 High-change codebases ("}          }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"tests may become relevant again)\n\n---\n\nWould you like a deeper"}          }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" dive into any specific compaction technique or tool?"}   }
+{"type":"content_block_stop","index":0           }
+{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null,"stop_details":null},"usage":{"input_tokens":12,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":1245}            }
+{"type":"message_stop"               }

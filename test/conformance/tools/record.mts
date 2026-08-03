@@ -8,12 +8,16 @@ import {
 } from "node:http";
 import { request as httpsRequest } from "node:https";
 import {
-  writeFileSync,
-  readdirSync,
   existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
 } from "node:fs";
-import { join, resolve, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createAmazonBedrock } from "@ai-sdk/amazon-bedrock";
@@ -161,12 +165,16 @@ function extractDataLines(sseBody: string): string[] {
 // completion. Used in place of the HTTP proxy for Bedrock recording because
 // SigV4 signs the request URL — proxying through 127.0.0.1 breaks the
 // canonical request hash.
-function makeBedrockFetchTap(
+export function makeBedrockFetchTap(
   onResponse: (index: number, body: string) => void,
   onRequest: (index: number, request: RequestSnapshot) => void
-): typeof fetch {
+): { fetch: typeof fetch; waitForCaptures: () => Promise<void> } {
   let callIndex = 0;
-  return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  const capturePromises: Promise<void>[] = [];
+  const tappedFetch = async (
+    input: RequestInfo | URL,
+    init?: RequestInit,
+  ): Promise<Response> => {
     const idx = callIndex++;
 
     // Capture the request snapshot from the outbound fetch before delegating
@@ -204,9 +212,7 @@ function makeBedrockFetchTap(
       return realResponse;
     }
     const [forwardStream, captureStream] = realResponse.body.tee();
-    // Drain the capture stream in the background; emit decoded JSON lines
-    // when complete.
-    (async () => {
+    const capturePromise = (async () => {
       const reader = captureStream.getReader();
       const chunks: Uint8Array[] = [];
       while (true) {
@@ -217,14 +223,18 @@ function makeBedrockFetchTap(
       const buf = Buffer.concat(chunks.map((u) => Buffer.from(u)));
       const lines = decodeBedrockEventStreamToJSONLines(buf);
       onResponse(idx, lines.join("\n") + "\n");
-    })().catch((err) => {
-      console.error(`  Bedrock fetch tap error: ${err}`);
-    });
+    })();
+    capturePromise.catch(() => {});
+    capturePromises.push(capturePromise);
     return new Response(forwardStream, {
       status: realResponse.status,
       statusText: realResponse.statusText,
       headers: realResponse.headers,
     });
+  };
+  return {
+    fetch: tappedFetch,
+    waitForCaptures: () => Promise.all(capturePromises).then(() => undefined),
   };
 }
 
@@ -329,11 +339,159 @@ function discoverRecordedCases(): TestCase[] {
 
 // --- Record ---
 
-async function recordTestCase(tc: TestCase): Promise<void> {
-  const cfg = loadConfig(tc.dir);
+const recordingPlaceholderPattern = /\$\{([A-Z][A-Z0-9_]*)\}/g;
 
-  if (!cfg.prompt) {
-    console.error(`  SKIP: no prompt in config (required for recording)`);
+export function resolveRecordingPlaceholders<T>(value: T): {
+  value: T;
+  replacements: Map<string, string>;
+} {
+  const replacements = new Map<string, string>();
+
+  function resolveValue(current: unknown): unknown {
+    if (typeof current === "string") {
+      const environmentNames = [
+        ...current.matchAll(recordingPlaceholderPattern),
+      ].map(match => match[1]);
+      if (environmentNames.length === 0) return current;
+
+      let resolved = current;
+      for (const name of environmentNames) {
+        const environmentValue = process.env[name];
+        if (!environmentValue) {
+          throw new Error(`Missing recording environment variable: ${name}`);
+        }
+        resolved = resolved.replaceAll(`\${${name}}`, environmentValue);
+      }
+      replacements.set(resolved, current);
+      return resolved;
+    }
+    if (Array.isArray(current)) return current.map(resolveValue);
+    if (current !== null && typeof current === "object") {
+      return Object.fromEntries(
+        Object.entries(current).map(([key, child]) => [key, resolveValue(child)]),
+      );
+    }
+    return current;
+  }
+
+  return { value: resolveValue(value) as T, replacements };
+}
+
+export function normalizeRecordingValue(value: unknown, replacements: Map<string, string>): unknown {
+  if (typeof value === "string") {
+    let normalized = value;
+    for (const [actual, placeholder] of replacements) {
+      normalized = normalized.replaceAll(actual, placeholder);
+    }
+    return normalized;
+  }
+  if (Array.isArray(value)) {
+    return value.map(child => normalizeRecordingValue(child, replacements));
+  }
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, child]) => [
+        key,
+        normalizeRecordingValue(child, replacements),
+      ]),
+    );
+  }
+  return value;
+}
+
+function normalizeRecordingSnapshot(
+  snapshot: RequestSnapshot,
+  replacements: Map<string, string>,
+): RequestSnapshot {
+  return normalizeRecordingValue(snapshot, replacements) as RequestSnapshot;
+}
+
+export function commitRecording(dir: string, writeStagedFiles: (stageDir: string) => void): void {
+  const stageDir = mkdtempSync(join(dir, ".recording-"));
+  const backupDir = join(stageDir, "backup");
+  const managedFilePattern = /^(?:input(?:-\d+)?\.chunks\.txt|expected\.jsonl|expected-requests\.jsonl)$/;
+  let removeStage = true;
+
+  try {
+    writeStagedFiles(stageDir);
+    const stagedNames = readdirSync(stageDir).filter(name => managedFilePattern.test(name));
+    const stagedInputs = stagedNames.filter(name => /^input(?:-\d+)?\.chunks\.txt$/.test(name));
+    const hasSingleInput = stagedInputs.includes("input.chunks.txt");
+    const numberedInputs = stagedInputs
+      .map(name => /^input-(\d+)\.chunks\.txt$/.exec(name))
+      .filter((match): match is RegExpExecArray => match !== null)
+      .map(match => Number(match[1]))
+      .sort((a, b) => a - b);
+    const hasContiguousNumberedInputs =
+      numberedInputs.length > 0 &&
+      numberedInputs.every((number, index) => number === index + 1);
+    if (
+      !stagedNames.includes("expected.jsonl") ||
+      !stagedNames.includes("expected-requests.jsonl") ||
+      stagedInputs.length === 0 ||
+      (hasSingleInput && numberedInputs.length > 0) ||
+      (!hasSingleInput && !hasContiguousNumberedInputs)
+    ) {
+      throw new Error("recording did not stage a complete fixture set");
+    }
+
+    mkdirSync(backupDir);
+    const existingNames = readdirSync(dir).filter(name => managedFilePattern.test(name));
+    const movedBackups: string[] = [];
+    const committed: string[] = [];
+    try {
+      for (const name of existingNames) {
+        renameSync(join(dir, name), join(backupDir, name));
+        movedBackups.push(name);
+      }
+      for (const name of stagedNames) {
+        renameSync(join(stageDir, name), join(dir, name));
+        committed.push(name);
+      }
+    } catch (err) {
+      const rollbackErrors: unknown[] = [];
+      for (const name of committed) {
+        try {
+          rmSync(join(dir, name), { force: true });
+        } catch (rollbackErr) {
+          rollbackErrors.push(rollbackErr);
+        }
+      }
+      for (const name of movedBackups.reverse()) {
+        try {
+          renameSync(join(backupDir, name), join(dir, name));
+        } catch (rollbackErr) {
+          rollbackErrors.push(rollbackErr);
+        }
+      }
+      if (rollbackErrors.length > 0) {
+        removeStage = false;
+        throw new AggregateError(
+          [err, ...rollbackErrors],
+          `recording rollback failed; recovery files remain in ${stageDir}`,
+        );
+      }
+      throw err;
+    }
+  } finally {
+    if (removeStage) {
+      rmSync(stageDir, { force: true, recursive: true });
+    }
+  }
+}
+
+async function recordTestCase(tc: TestCase): Promise<void> {
+  const resolved = resolveRecordingPlaceholders(loadConfig(tc.dir));
+  const cfg = {
+    ...resolved.value,
+    maxRetries: resolved.value.maxRetries ?? 0,
+  };
+
+  if (cfg.operation === "generate") {
+    throw new Error("recording operation: generate is not supported");
+  }
+  if (!cfg.prompt && !cfg.messages && !cfg.uiMessages) {
+    console.error(`  SKIP: no prompt or messages in config (required for recording)`);
     return;
   }
 
@@ -342,18 +500,24 @@ async function recordTestCase(tc: TestCase): Promise<void> {
 
   let port = 0;
   let close: () => Promise<void> = async () => {};
+  let waitForCaptures: () => Promise<void> = async () => {};
   let bedrockFetch: typeof fetch | undefined;
   if (tc.provider === "bedrock") {
     // Bedrock cannot use a host-changing HTTP proxy because SigV4 binds
     // the signature to the URL host. Use a fetch tap instead.
-    bedrockFetch = makeBedrockFetchTap(
+    const tap = makeBedrockFetchTap(
       (index, body) => {
         fixtures.set(index, body);
       },
       (index, request) => {
-        requestSnapshots.set(index, request);
+        requestSnapshots.set(
+          index,
+          normalizeRecordingSnapshot(request, resolved.replacements),
+        );
       }
     );
+    bedrockFetch = tap.fetch;
+    waitForCaptures = tap.waitForCaptures;
   } else {
     const proxy = await startRecordingProxy(
       tc.provider,
@@ -361,7 +525,10 @@ async function recordTestCase(tc: TestCase): Promise<void> {
         fixtures.set(index, body);
       },
       (index, request) => {
-        requestSnapshots.set(index, request);
+        requestSnapshots.set(
+          index,
+          normalizeRecordingSnapshot(request, resolved.replacements),
+        );
       }
     );
     port = proxy.port;
@@ -415,7 +582,7 @@ async function recordTestCase(tc: TestCase): Promise<void> {
     const stopWhenStepCount = cfg.stopWhenStepCount ?? 1;
     const messages = cfg.uiMessages
       ? await convertToModelMessages(cfg.uiMessages, { tools })
-      : buildMessages(cfg, cfg.prompt);
+      : buildMessages(cfg, cfg.prompt ?? "");
 
     const output = buildOutput(cfg);
 
@@ -437,8 +604,19 @@ async function recordTestCase(tc: TestCase): Promise<void> {
     for await (const chunk of uiStream) {
       chunks.push(normalizeSourceId(chunk));
     }
+    await waitForCaptures();
 
+    if (fixtures.size !== requestSnapshots.size) {
+      throw new Error(
+        `Captured ${fixtures.size} response(s) for ${requestSnapshots.size} request(s)`,
+      );
+    }
     const sortedKeys = [...fixtures.keys()].sort((a, b) => a - b);
+    for (let i = 0; i < sortedKeys.length; i++) {
+      if (sortedKeys[i] !== i) {
+        throw new Error(`Non-contiguous captured response index: ${sortedKeys[i]}`);
+      }
+    }
 
     for (const key of sortedKeys) {
       const content = fixtures.get(key)!;
@@ -449,27 +627,27 @@ async function recordTestCase(tc: TestCase): Promise<void> {
       }
     }
 
-    if (sortedKeys.length === 1) {
-      writeFileSync(join(tc.dir, "input.chunks.txt"), fixtures.get(sortedKeys[0])!);
-    } else {
-      for (let i = 0; i < sortedKeys.length; i++) {
-        writeFileSync(
-          join(tc.dir, `input-${i + 1}.chunks.txt`),
-          fixtures.get(sortedKeys[i])!
-        );
-      }
-    }
-    writeRequestSnapshots(
-      join(tc.dir, "expected-requests.jsonl"),
-      sortedKeys.map((key) => {
-        const request = requestSnapshots.get(key);
-        if (!request) throw new Error(`Missing request snapshot for step ${key + 1}`);
-        return request;
-      }),
-    );
-
+    const requests = sortedKeys.map((key) => {
+      const request = requestSnapshots.get(key);
+      if (!request) throw new Error(`Missing request snapshot for step ${key + 1}`);
+      return request;
+    });
     const jsonl = chunks.map((c) => JSON.stringify(c)).join("\n") + "\n";
-    writeFileSync(join(tc.dir, "expected.jsonl"), jsonl);
+
+    commitRecording(tc.dir, stageDir => {
+      if (sortedKeys.length === 1) {
+        writeFileSync(join(stageDir, "input.chunks.txt"), fixtures.get(sortedKeys[0])!);
+      } else {
+        for (let i = 0; i < sortedKeys.length; i++) {
+          writeFileSync(
+            join(stageDir, `input-${i + 1}.chunks.txt`),
+            fixtures.get(sortedKeys[i])!,
+          );
+        }
+      }
+      writeRequestSnapshots(join(stageDir, "expected-requests.jsonl"), requests);
+      writeFileSync(join(stageDir, "expected.jsonl"), jsonl);
+    });
 
     console.log(
       `  OK: ${sortedKeys.length} fixture(s), ${requestSnapshots.size} request(s), ${chunks.length} chunks`
@@ -564,7 +742,12 @@ async function main() {
   console.log("\nDone.");
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(resolve(process.argv[1])).href
+) {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}

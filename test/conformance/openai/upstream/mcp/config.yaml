@@ -1,0 +1,9 @@
+model: gpt-5-mini
+prompt: Hello
+providerTools:
+  MCP:
+    id: openai.mcp
+    args:
+      serverLabel: dmcp
+      serverUrl: https://mcp.exa.ai/mcp
+      serverDescription: A web-search API for AI agents

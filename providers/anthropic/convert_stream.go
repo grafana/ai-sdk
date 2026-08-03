@@ -37,6 +37,7 @@ type streamAdapter struct {
 	usesJsonResponseTool   bool
 	isJsonResponseFromTool bool
 	usage                  anthropicUsage
+	metadataFields         map[string]json.RawMessage
 
 	// markCodeExecutionDynamic mirrors upstream
 	// hasWebTool20260209WithoutCodeExecution: when set, code_execution
@@ -61,6 +62,7 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 		if err := a.resetUsage(msg.Usage); err != nil {
 			return err
 		}
+		a.metadataFields = messageMetadataFields(msg.RawJSON())
 		usage := convertAnthropicUsage(a.usage)
 		ch <- provider.StreamPart{
 			Type:       provider.PartResponseMeta,
@@ -216,6 +218,11 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 		case "tool_search_tool_result":
 			tsResult := cb.AsToolSearchToolResult()
 			if err := a.emitToolSearchResult(tsResult, ch); err != nil {
+				return err
+			}
+		case "advisor_tool_result":
+			advisorResult := cb.AsAdvisorToolResult()
+			if err := a.emitAdvisorResult(advisorResult, ch); err != nil {
 				return err
 			}
 		case "code_execution_tool_result":
@@ -437,16 +444,22 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 		if err := a.updateUsage(e.Usage); err != nil {
 			return err
 		}
+		a.metadataFields = mergeMessageDeltaMetadata(a.metadataFields, e.RawJSON())
 		usage := convertAnthropicUsage(a.usage)
 		fr := mapFinishReason(e.Delta.StopReason)
 		if a.isJsonResponseFromTool && e.Delta.StopReason == anthropic.BetaStopReasonToolUse {
 			fr = provider.FinishReason{Unified: provider.FinishReasonStop, Raw: string(e.Delta.StopReason)}
 		}
+		providerMetadata, err := buildAnthropicProviderMetadata(a.metadataFields, a.usage.raw)
+		if err != nil {
+			return err
+		}
 		ch <- provider.StreamPart{
-			Type:         provider.PartFinish,
-			FinishReason: &fr,
-			Usage:        &usage,
-			Warnings:     a.warnings,
+			Type:             provider.PartFinish,
+			FinishReason:     &fr,
+			Usage:            &usage,
+			Warnings:         a.warnings,
+			ProviderMetadata: providerMetadata,
 		}
 	}
 	return nil
@@ -455,10 +468,7 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 func (a *streamAdapter) emitWebSearchResult(block anthropic.BetaWebSearchToolResultBlock, ch chan<- provider.StreamPart) error {
 	content := block.Content
 	if content.Type == "web_search_tool_result_error" {
-		errData, err := json.Marshal(map[string]any{
-			"type":      "web_search_tool_result_error",
-			"errorCode": string(content.ErrorCode),
-		})
+		errData, err := marshalToolResultError("web_search_tool_result_error", string(content.ErrorCode))
 		if err != nil {
 			return fmt.Errorf("marshaling web search error: %w", err)
 		}
@@ -638,6 +648,22 @@ func marshalToolSearchReferences(refs []anthropic.BetaToolReferenceBlock) []map[
 		}
 	}
 	return out
+}
+
+func (a *streamAdapter) emitAdvisorResult(block anthropic.BetaAdvisorToolResultBlock, ch chan<- provider.StreamPart) error {
+	resultJSON, isError, err := marshalAdvisorResult(block.Content)
+	if err != nil {
+		return err
+	}
+	ch <- provider.StreamPart{
+		Type:             provider.PartToolResult,
+		ToolCallID:       block.ToolUseID,
+		ToolName:         a.mapping.toCustomToolName("advisor"),
+		Result:           resultJSON,
+		IsError:          isError,
+		ProviderExecuted: true,
+	}
+	return nil
 }
 
 func (a *streamAdapter) emitCodeExecutionResult(block anthropic.BetaCodeExecutionToolResultBlock, ch chan<- provider.StreamPart) error {

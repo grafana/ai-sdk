@@ -1,0 +1,26 @@
+model: gpt-5.1-codex-max
+prompt: Hello
+providerOptions:
+  openai:
+    reasoningEffort: high
+    maxCompletionTokens: 32000
+    store: false
+    include:
+      - reasoning.encrypted_content
+    reasoningSummary: auto
+    forceReasoning: true
+tools:
+  calculator:
+    inputSchema:
+      type: object
+      properties:
+        a:
+          type: number
+        b:
+          type: number
+        op:
+          type: string
+      required:
+        - a
+        - b
+      additionalProperties: false

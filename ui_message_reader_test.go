@@ -288,6 +288,23 @@ func TestStreamUIMessage_ProgressiveReasoningAndNonText(t *testing.T) {
 	assert.JSONEq(t, `{"temp":72}`, string(dp.Data))
 }
 
+func TestStreamUIMessage_CustomChunk(t *testing.T) {
+	meta := provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":"cmp-1"}`)}
+	messages := collectMessages(StreamUIMessage(chunks(
+		UIMessageChunk{Type: ChunkStart, MessageID: "msg-1"},
+		UIMessageChunk{Type: ChunkCustom, Kind: "openai.compaction", ProviderMetadata: meta},
+		UIMessageChunk{Type: ChunkFinish},
+	)))
+
+	require.Len(t, messages, 2)
+	last := messages[len(messages)-1]
+	require.Len(t, last.Parts, 1)
+	custom, ok := last.Parts[0].(CustomPart)
+	require.True(t, ok)
+	assert.Equal(t, "openai.compaction", custom.Kind)
+	assert.Equal(t, meta, custom.ProviderMetadata)
+}
+
 func TestStreamUIMessage_ProgressiveToolLifecycle(t *testing.T) {
 	dynamic := true
 	messages := collectMessages(StreamUIMessage(chunks(

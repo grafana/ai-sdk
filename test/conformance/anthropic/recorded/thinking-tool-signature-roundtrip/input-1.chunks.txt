@@ -1,16 +1,15 @@
-{"type":"message_start","message":{"model":"claude-sonnet-4-20250514","id":"msg_01VBzwJf3dkJQuRbig8Fmkjs","type":"message","role":"assistant","content":[],"stop_reason":null,"stop_sequence":null,"stop_details":null,"usage":{"input_tokens":459,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":3,"service_tier":"standard","inference_geo":"not_available"}}      }
-{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":""}  }
+{"type":"message_start","message":{"model":"claude-sonnet-4-5-20250929","id":"msg_011CdbEyQ1yxKjXTkodfDj66","type":"message","role":"assistant","content":[],"stop_reason":null,"stop_sequence":null,"stop_details":null,"usage":{"input_tokens":642,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":8,"service_tier":"standard","inference_geo":"not_available"}}           }
+{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":""}            }
 {"type": "ping"}
-{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"The user is"}}
-{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" asking me to check the weather in San Francisco and then recommend whether they should bring a jacket. I have a get_weather function available that takes a location parameter."}    }
-{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" The location is clearly specified as \"San Francisco\", so I have all the required parameters to make the tool"}    }
-{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" call.\n\nLet me call the get_weather function with \"San Francisco\" as the location parameter."}               }
-{"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"EskECmIIDRgCKkDngiOa6WcytLdPwYViaCbnOVQv5so8pArbeDhkhEAAXWMrIjvsNwO83zMjCUGlfQE6yHJy9n/sUY2rQteFDLZWMhhjbGF1ZGUtc29ubmV0LTQtMjAyNTA1MTQ4ABIMXPqRrgLRHe6uknSLGgxhjkB7ary+FErE9joiMIRSYKErqWPaB6K/9CaBALtNEdeExKqTRivPZQzVDM99BQmNopxrgft8OpOMtmx1tiqUA3K5/yg6Vh4NyQkSxzVoRdTvXWGyS2muqeumwSOxtOUuxLktjRJBo7n+Vzt9wygBkQwQSYd79acN9ZsvyTlNIGWt0FwSemw/tRh5EVUdt+/MOXhTwXfauidsM4t7c/UZlE/cpRC+qGyZIVqu/bav1c074Zn3p3mcsRvhtacyjHP7/rRHt5WWEbCZLGYpa+fPiOxUQjVXMVw3HsvAh+Z4FumSSBslryPkpHX6XrKDh6YQMJLBX9bUOvx+tsjOfo6sUKrSx5TuznqeEBOg1/lIByN6x01mVkae2YW383lJVxTzK2QYaVruUefShyoma6nD7OHHtLMql+r212uqs1xFk+4JdqDw5SNXSzQLbGWPoF3Y4uSfgpz4OWY/g19ugLNL2ihMlC7F6d1cm1pzmpo0Wm4OYyeOCruX+5REZIg+cBsom6XHTzuqhGn5RaKpVU9mCBKEgC4JyyCX9MzW/WYlzgO1P0iQttasoDt/mpnnWe/RI7v2FQs+P+6dWXYF57/EHh0w2tuwXGIVvXQuiCMAEGw1MNyEGAE="}           }
-{"type":"content_block_stop","index":0          }
-{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_01SViYfS4ffb21BaiGqW2D91","name":"get_weather","input":{},"caller":{"type":"direct"}} }
-{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":""}  }
-{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"location\": \"San Francisco"}            }
-{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"\"}"}       }
-{"type":"content_block_stop","index":1      }
-{"type":"message_delta","delta":{"stop_reason":"tool_use","stop_sequence":null,"stop_details":null},"usage":{"input_tokens":459,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":140}          }
-{"type":"message_stop"    }
+{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"The user wants me to:\n1"}              }
+{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":". Check the weather in San Francisco using a tool\n2. Then recommend whether they should bring a jacket based on that weather\n\nI have"}        }
+{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" the get_weather function available. Let me call it with \"San Francisco\" as the location."}             }
+{"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"EuwDCpQBCBAYAipArRKN+VpDZCISqbSY4GhdxtPkJean3JyeRt4lkCrS/TXEWoEcBS+TJZVmeFJ92sVRM7iWLX0jDC09fxYvpIq4mjIaY2xhdWRlLXNvbm5ldC00LTUtMjAyNTA5Mjk4AEIIdGhpbmtpbmdaJDQ0MjEwYjhmLTkwZDctNDEyMS04MjIxLTdiYjg1YjVmYmQ1OBIMl9BtEzWSzExX7BjpGgxiC44PAqRLrM6vJ50iMIcNarvMzb1EDwUBmzcsViMeUpFKoc2IQ/iUizo0dzbQ3x+glG/VvZyXGgnYwN6NbyqEAl96COLChDVBQUZ/4zHTIay+uVazYFKI28aSsEm205Ijb5Eb2DiLEMzPX4TVyjiuumBaG9uGkuA+yQN0jBO8xvXr2MqzY3MEdTP/fDbNbEsFHL4nZlJY1Rsq1NV6pKGkAwh2rjnt56DWsAptLMkWXnU8cy87aSx9obOGuoLBQOeSqCtCHgTIdtTx/XI6oVtL0vZ+niafXYNx7qyKYukwuHyJwY/pXfUlO4K2TfJ4s+BphaJSz+e8jNutlMMyVVHwLoXrAMp0/zVG5k3rC7RKYE9TadikSc4oevH6H6Tur2iQ3g6uKB3FTWVYJNsyGWtviYgSV+w62RdYyU8zCEAXGlpuBS48GAE="}   }
+{"type":"content_block_stop","index":0         }
+{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_01GmoKhPBg7XQpSmZR2v4usf","name":"get_weather","input":{},"caller":{"type":"direct"}}              }
+{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":""}      }
+{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"location\": \"San Francisco"}   }
+{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"\"}"}      }
+{"type":"content_block_stop","index":1             }
+{"type":"message_delta","delta":{"stop_reason":"tool_use","stop_sequence":null,"stop_details":null},"usage":{"input_tokens":642,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":118,"output_tokens_details":{"thinking_tokens":61}}           }
+{"type":"message_stop"       }

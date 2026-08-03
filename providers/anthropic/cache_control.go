@@ -81,6 +81,11 @@ func extractCacheControl(opts provider.ProviderOptions) *cacheControlConfig {
 			return &cacheControlConfig{Type: v.CacheControl.Type, TTL: v.CacheControl.TTL}
 		}
 		return nil
+	case AnthropicSystemMessageOptions:
+		if v.CacheControl != nil {
+			return &cacheControlConfig{Type: v.CacheControl.Type, TTL: v.CacheControl.TTL}
+		}
+		return nil
 	case provider.RawProviderOption:
 		var data struct {
 			CacheControl *cacheControlConfig `json:"cacheControl,omitempty"`

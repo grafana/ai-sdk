@@ -838,11 +838,14 @@ func TestBuildParams_ProviderToolContinuationFlexibleSchemas(t *testing.T) {
 	assert.Equal(t, "future_tool", input[3].(map[string]any)["tools"].([]any)[0].(map[string]any)["type"])
 }
 
-func TestProviderToolContinuationInput_PreservesShellOptions(t *testing.T) {
+func TestShellInput_OnlyExposesCommands(t *testing.T) {
 	assert.JSONEq(t,
-		`{"action":{"commands":["echo hi"],"timeoutMs":1000.5,"maxOutputLength":2048.5}}`,
+		`{"action":{"commands":["echo hi"]}}`,
 		string(shellInput(`{"commands":["echo hi"],"timeout_ms":1000.5,"max_output_length":2048.5}`, nil)),
 	)
+}
+
+func TestProviderToolContinuationInput_PreservesShellOptions(t *testing.T) {
 	assert.JSONEq(t,
 		`{"action":{"type":"exec","command":["pwd"],"env":{"A":"B"},"timeoutMs":1000.5,"user":"nara","workingDirectory":"/tmp"}}`,
 		string(localShellInput(`{"action":{"type":"exec","command":["pwd"],"env":{"A":"B"},"timeout_ms":1000.5,"user":"nara","working_directory":"/tmp"}}`)),

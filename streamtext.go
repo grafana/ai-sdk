@@ -320,6 +320,13 @@ func translateToChunksWithMetadata(part TextStreamPart, cfg uiMessageStreamConfi
 	case StreamToolInputEnd:
 		return nil // not sent to wire
 	case StreamToolCall:
+		if p.Invalid {
+			dynamic := p.Dynamic
+			if p.useUIDynamic {
+				dynamic = p.uiDynamic
+			}
+			return []UIMessageChunk{{Type: ChunkToolInputError, ToolCallID: p.ToolCallID, ToolName: p.ToolName, Input: p.Input, ErrorText: errorText(p.Error, cfg), ProviderExecuted: p.ProviderExecuted, Dynamic: dynamic, Title: p.Title, ProviderMetadata: p.ProviderMetadata, ToolMetadata: toolMetadataFromProviderMetadata(p.ProviderMetadata)}}
+		}
 		return []UIMessageChunk{{Type: ChunkToolInputAvailable, ToolCallID: p.ToolCallID, ToolName: p.ToolName, Input: p.Input, ProviderExecuted: p.ProviderExecuted, Dynamic: p.Dynamic, Title: p.Title, ProviderMetadata: p.ProviderMetadata, ToolMetadata: toolMetadataFromProviderMetadata(p.ProviderMetadata)}}
 	case StreamToolApprovalRequest:
 		return []UIMessageChunk{{Type: ChunkToolApprovalRequest, ApprovalID: p.ApprovalID, ToolCallID: p.ToolCallID, IsAutomatic: p.IsAutomatic, Signature: p.Signature}}
@@ -335,13 +342,11 @@ func translateToChunksWithMetadata(part TextStreamPart, cfg uiMessageStreamConfi
 		if p.ProviderExecuted {
 			errText = p.Error.Error()
 		}
-		if p.Input != nil && !p.ProviderExecuted {
-			return []UIMessageChunk{
-				{Type: ChunkToolInputError, ToolCallID: p.ToolCallID, ToolName: p.ToolName, Input: p.Input, Dynamic: p.Dynamic, ErrorText: errText, ProviderExecuted: p.ProviderExecuted, ProviderMetadata: p.ProviderMetadata, ToolMetadata: toolMetadataFromProviderMetadata(p.ProviderMetadata)},
-				{Type: ChunkToolOutputError, ToolCallID: p.ToolCallID, ErrorText: errText, Dynamic: p.Dynamic},
-			}
+		dynamic := p.Dynamic
+		if p.useUIDynamic {
+			dynamic = p.uiDynamic
 		}
-		return []UIMessageChunk{{Type: ChunkToolOutputError, ToolCallID: p.ToolCallID, ErrorText: errText, ProviderExecuted: p.ProviderExecuted, Dynamic: p.Dynamic, ProviderMetadata: p.ProviderMetadata}}
+		return []UIMessageChunk{{Type: ChunkToolOutputError, ToolCallID: p.ToolCallID, ErrorText: errText, ProviderExecuted: p.ProviderExecuted, Dynamic: dynamic, ProviderMetadata: p.ProviderMetadata}}
 	case StreamSource:
 		src := p.Source
 		if src.SourceType == provider.SourceTypeURL {
@@ -356,6 +361,8 @@ func translateToChunksWithMetadata(part TextStreamPart, cfg uiMessageStreamConfi
 		return []UIMessageChunk{{Type: ChunkError, ErrorText: errorText(p.Error, cfg)}}
 	case StreamRaw:
 		return nil // not sent to wire
+	case StreamCustom:
+		return []UIMessageChunk{{Type: ChunkCustom, Kind: p.Kind, ProviderMetadata: p.ProviderMetadata}}
 	default:
 		return nil
 	}
@@ -461,6 +468,7 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 
 	retryCfg := buildRetryConfig(&cfg.baseConfig)
 	stepNum := 0
+	currentRuntimeContext := cfg.runtimeContext
 
 	for {
 		stepNum++
@@ -468,8 +476,18 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 		currentMsgs := msgs
 		toolChoice := cfg.toolChoice
 		activeTools := cfg.activeTools
+		activeToolsSet := cfg.activeToolsSet
 		providerOpts := cfg.providerOptions
-		var stepContext any
+		maxOutputTokens := cfg.maxOutputTokens
+		temperature := cfg.temperature
+		topP := cfg.topP
+		topK := cfg.topK
+		presencePenalty := cfg.presencePenalty
+		frequencyPenalty := cfg.frequencyPenalty
+		stopSequences := cfg.stopSequences
+		seed := cfg.seed
+		reasoning := cfg.reasoning
+		stepContext := currentRuntimeContext
 
 		// PrepareStep
 		if cfg.prepareStep != nil {
@@ -480,6 +498,7 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 				Messages:         currentMsgs,
 				InitialMessages:  initialMessages,
 				ResponseMessages: responseMessages,
+				Context:          currentRuntimeContext,
 			})
 			if err != nil {
 				if ctx.Err() != nil && cfg.onAbort != nil {
@@ -507,15 +526,55 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 				}
 				if result.ActiveTools != nil {
 					activeTools = result.ActiveTools
+					activeToolsSet = true
 				}
 				if result.Messages != nil {
 					currentMsgs = result.Messages
 				}
 				if result.ProviderOptions != nil {
-					providerOpts = result.ProviderOptions
+					providerOpts, err = mergeStepProviderOptions(providerOpts, result.ProviderOptions)
+					if err != nil {
+						r.emitError(fmt.Errorf("aisdk: merging prepareStep provider options: %w", err), cfg.onError)
+						return
+					}
 				}
-				stepContext = result.Context
+				if result.MaxOutputTokens != nil {
+					maxOutputTokens = result.MaxOutputTokens
+				}
+				if result.Temperature != nil {
+					temperature = result.Temperature
+				}
+				if result.TopP != nil {
+					topP = result.TopP
+				}
+				if result.TopK != nil {
+					topK = result.TopK
+				}
+				if result.PresencePenalty != nil {
+					presencePenalty = result.PresencePenalty
+				}
+				if result.FrequencyPenalty != nil {
+					frequencyPenalty = result.FrequencyPenalty
+				}
+				if result.StopSequences != nil {
+					stopSequences = result.StopSequences
+				}
+				if result.Seed != nil {
+					seed = result.Seed
+				}
+				if result.Reasoning != nil {
+					reasoning = result.Reasoning
+				}
+				if result.Context != nil {
+					currentRuntimeContext = result.Context
+					stepContext = currentRuntimeContext
+				}
 			}
+		}
+
+		if maxOutputTokens != nil && *maxOutputTokens < 1 {
+			r.emitError(errors.New("aisdk: maxOutputTokens must be >= 1"), cfg.onError)
+			return
 		}
 
 		stepModel := StepModel{
@@ -530,7 +589,7 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 		// Build provider tools (sorted for deterministic order)
 		provTools, toolWarnings := toolSetToProviderTools(cfg.tools)
 		r.allWarnings = append(r.allWarnings, toolWarnings...)
-		if len(activeTools) > 0 {
+		if activeToolsSet {
 			provTools = filterProviderTools(provTools, activeTools)
 		}
 		if toolChoice == nil && len(provTools) > 0 {
@@ -553,16 +612,16 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 			Prompt:           providerPrompt,
 			Tools:            provTools,
 			ToolChoice:       toolChoice,
-			MaxOutputTokens:  cfg.maxOutputTokens,
-			Temperature:      cfg.temperature,
-			TopP:             cfg.topP,
-			TopK:             cfg.topK,
-			PresencePenalty:  cfg.presencePenalty,
-			FrequencyPenalty: cfg.frequencyPenalty,
-			StopSequences:    cfg.stopSequences,
+			MaxOutputTokens:  maxOutputTokens,
+			Temperature:      temperature,
+			TopP:             topP,
+			TopK:             topK,
+			PresencePenalty:  presencePenalty,
+			FrequencyPenalty: frequencyPenalty,
+			StopSequences:    stopSequences,
 			ResponseFormat:   responseFormat,
-			Seed:             cfg.seed,
-			Reasoning:        cfg.reasoning,
+			Seed:             seed,
+			Reasoning:        reasoning,
 			IncludeRawChunks: cfg.includeRawChunks,
 			Headers:          cfg.headers,
 			ProviderOptions:  providerOpts,
@@ -856,6 +915,12 @@ loop:
 				if part.ProviderMetadata != nil {
 					outputTextMeta = part.ProviderMetadata
 				}
+				if part.Delta == "" && part.ProviderMetadata != nil {
+					tsp := StreamTextDelta{ID: part.ID, ProviderMetadata: part.ProviderMetadata}
+					r.emit(tsp)
+					r.callOnChunk(cfg, tsp)
+					continue
+				}
 				parsed := r.emitPartialOutput(cfg.output, textBuilder.String())
 				if parsed != lastPublishedOutput && parsed != "" {
 					lastPublishedOutput = parsed
@@ -1127,7 +1192,14 @@ loop:
 			r.callOnChunk(cfg, tsp)
 
 		case provider.PartCustom:
-			// No orchestration-level handling yet. No current provider emits custom parts.
+			step.responseContent = append(step.responseContent, provider.ContentPart{
+				Type:            provider.ContentPartTypeCustom,
+				Kind:            part.Kind,
+				ProviderOptions: providerMetadataToOptions(part.ProviderMetadata),
+			})
+			tsp := StreamCustom{Kind: part.Kind, ProviderMetadata: part.ProviderMetadata}
+			r.emit(tsp)
+			r.callOnChunk(cfg, tsp)
 
 		case provider.PartError:
 			terminated = true
@@ -1231,14 +1303,7 @@ func (r *StreamTextResult) handleToolCall(
 	} else {
 		if !json.Valid([]byte(part.Input)) {
 			input, _ := json.Marshal(string(part.Input))
-			tsp := StreamToolError{
-				ToolCallID: part.ToolCallID,
-				ToolName:   part.ToolName,
-				Input:      json.RawMessage(input),
-				Error:      fmt.Errorf("invalid JSON input for tool %q", part.ToolName),
-			}
-			r.emit(tsp)
-			r.callOnChunk(cfg, tsp)
+			r.rejectToolCall(part, json.RawMessage(input), step, cfg, toolTitleByID, fmt.Errorf("invalid JSON input for tool %q", part.ToolName))
 			return
 		}
 		parsedInput = json.RawMessage(part.Input)
@@ -1261,7 +1326,6 @@ func (r *StreamTextResult) handleToolCall(
 
 	_, toolExists := cfg.tools[part.ToolName]
 	if !toolExists && !part.ProviderExecuted {
-		dynamicTrue := true
 		availableTools := make([]string, 0, len(cfg.tools))
 		for name := range cfg.tools {
 			availableTools = append(availableTools, name)
@@ -1271,40 +1335,7 @@ func (r *StreamTextResult) handleToolCall(
 		// format in @ai-sdk/provider. Keeping it byte-identical lets
 		// conformance fixtures compare without per-provider patching.
 		errMsg := fmt.Sprintf("AI_NoSuchToolError: Model tried to call unavailable tool '%s'. Available tools: %s.", part.ToolName, strings.Join(availableTools, ", "))
-
-		tc := ToolCall{
-			ToolCallID:       part.ToolCallID,
-			ToolName:         part.ToolName,
-			Input:            parsedInput,
-			Invalid:          true,
-			Dynamic:          &dynamicTrue,
-			ProviderMetadata: part.ProviderMetadata,
-		}
-		step.ToolCalls = append(step.ToolCalls, tc)
-
-		toolErr := errors.New(errMsg)
-		step.ToolResults = append(step.ToolResults, ToolResult{
-			ToolCallID:       part.ToolCallID,
-			ToolName:         part.ToolName,
-			Input:            parsedInput,
-			Dynamic:          &dynamicTrue,
-			ProviderMetadata: part.ProviderMetadata,
-			ModelOutput: &provider.ToolResultOutput{
-				Type: provider.ToolOutputErrorText,
-				Text: errMsg,
-			},
-		})
-
-		tsp := StreamToolError{
-			ToolCallID:       part.ToolCallID,
-			ToolName:         part.ToolName,
-			Input:            parsedInput,
-			Dynamic:          &dynamicTrue,
-			ProviderMetadata: part.ProviderMetadata,
-			Error:            toolErr,
-		}
-		r.emit(tsp)
-		r.callOnChunk(cfg, tsp)
+		r.rejectToolCall(part, parsedInput, step, cfg, toolTitleByID, errors.New(errMsg))
 		return
 	}
 
@@ -1345,7 +1376,7 @@ func (r *StreamTextResult) handleToolResult(
 	cfg *streamConfig,
 ) error {
 	preliminary := part.Preliminary != nil && *part.Preliminary
-	dynamic := isDynamic(part.ToolName, part.Dynamic, cfg.tools)
+	dynamic := part.Dynamic
 	var input json.RawMessage
 	for _, toolCall := range step.ToolCalls {
 		if toolCall.ToolCallID == part.ToolCallID {
@@ -1366,12 +1397,13 @@ func (r *StreamTextResult) handleToolResult(
 		ProviderMetadata: part.ProviderMetadata,
 	}
 	if part.IsError {
+		tr.Error = toolResultError(part.Result)
 		if !preliminary {
 			step.ToolResults = append(step.ToolResults, tr)
 		}
 		tsp := StreamToolError{
 			ToolCallID: part.ToolCallID, ToolName: part.ToolName,
-			Input: input, Error: toolResultError(part.Result), ProviderExecuted: true,
+			Input: input, Error: tr.Error, ProviderExecuted: true,
 			Dynamic: dynamic, ProviderMetadata: part.ProviderMetadata,
 		}
 		r.emit(tsp)
@@ -1382,7 +1414,7 @@ func (r *StreamTextResult) handleToolResult(
 	tsp := StreamToolResult{
 		ToolCallID: part.ToolCallID, ToolName: part.ToolName,
 		Input: input, Output: part.Result, ProviderExecuted: true,
-		Dynamic: dynamic, Preliminary: preliminary, ProviderMetadata: part.ProviderMetadata,
+		Dynamic: dynamic, ProviderMetadata: part.ProviderMetadata,
 	}
 	r.emit(tsp)
 	r.callOnChunk(cfg, tsp)
@@ -1413,8 +1445,7 @@ type toolExecOutcome struct {
 	event  TextStreamPart // StreamToolResult or StreamToolError
 }
 
-// rejectToolCall records a schema-invalid tool call and emits the same error
-// event pair used for other invalid tool inputs.
+// rejectToolCall records an invalid tool call and emits its call/error events.
 func (r *StreamTextResult) rejectToolCall(
 	part provider.StreamPart,
 	input json.RawMessage,
@@ -1427,44 +1458,66 @@ func (r *StreamTextResult) rejectToolCall(
 	if title == "" {
 		title = toolTitleByID[part.ToolCallID]
 	}
-	dynamic := isDynamic(part.ToolName, part.Dynamic, cfg.tools)
+	dynamicTrue := true
+	uiDynamic := isDynamic(part.ToolName, &dynamicTrue, cfg.tools)
 
 	tc := ToolCall{
 		ToolCallID:       part.ToolCallID,
 		ToolName:         part.ToolName,
 		Input:            input,
 		Invalid:          true,
+		Error:            err,
 		ProviderExecuted: part.ProviderExecuted,
-		Dynamic:          dynamic,
+		Dynamic:          &dynamicTrue,
 		Title:            title,
 		ProviderMetadata: part.ProviderMetadata,
 	}
 	step.ToolCalls = append(step.ToolCalls, tc)
-	step.ToolResults = append(step.ToolResults, ToolResult{
+	toolCallPart := StreamToolCall{
 		ToolCallID:       part.ToolCallID,
 		ToolName:         part.ToolName,
 		Input:            input,
-		Dynamic:          dynamic,
+		Invalid:          true,
+		Error:            err,
+		ProviderExecuted: part.ProviderExecuted,
+		Dynamic:          &dynamicTrue,
 		Title:            title,
 		ProviderMetadata: part.ProviderMetadata,
+		uiDynamic:        uiDynamic,
+		useUIDynamic:     true,
+	}
+	r.emit(toolCallPart)
+	r.callOnChunk(cfg, toolCallPart)
+	if part.ProviderExecuted {
+		return
+	}
+
+	step.ToolResults = append(step.ToolResults, ToolResult{
+		ToolCallID: part.ToolCallID,
+		ToolName:   part.ToolName,
+		Input:      input,
+		IsError:    true,
+		Error:      err,
+		Dynamic:    &dynamicTrue,
+		Title:      title,
 		ModelOutput: &provider.ToolResultOutput{
 			Type: provider.ToolOutputErrorText,
 			Text: err.Error(),
 		},
 	})
 
-	tsp := StreamToolError{
-		ToolCallID:       part.ToolCallID,
-		ToolName:         part.ToolName,
-		Input:            input,
-		Error:            err,
-		ProviderExecuted: part.ProviderExecuted,
-		Dynamic:          dynamic,
-		Title:            title,
-		ProviderMetadata: part.ProviderMetadata,
+	toolErrorPart := StreamToolError{
+		ToolCallID:   part.ToolCallID,
+		ToolName:     part.ToolName,
+		Input:        input,
+		Error:        err,
+		Dynamic:      &dynamicTrue,
+		Title:        title,
+		uiDynamic:    uiDynamic,
+		useUIDynamic: true,
 	}
-	r.emit(tsp)
-	r.callOnChunk(cfg, tsp)
+	r.emit(toolErrorPart)
+	r.callOnChunk(cfg, toolErrorPart)
 }
 
 // executeTools runs after PartFinish and processes every tool call recorded
@@ -1667,9 +1720,14 @@ func (r *StreamTextResult) executeSingleTool(
 	if err != nil {
 		outcomes[index] = toolExecOutcome{
 			result: ToolResult{
-				ToolCallID: tc.ToolCallID,
-				ToolName:   tc.ToolName,
-				Input:      tc.Input,
+				ToolCallID:       tc.ToolCallID,
+				ToolName:         tc.ToolName,
+				Input:            tc.Input,
+				IsError:          true,
+				Error:            err,
+				ProviderMetadata: tc.ProviderMetadata,
+				Dynamic:          tc.Dynamic,
+				Title:            tc.Title,
 				ModelOutput: &provider.ToolResultOutput{
 					Type: provider.ToolOutputErrorText,
 					Text: err.Error(),
@@ -1677,7 +1735,8 @@ func (r *StreamTextResult) executeSingleTool(
 			},
 			event: StreamToolError{
 				ToolCallID: tc.ToolCallID, ToolName: tc.ToolName,
-				Input: tc.Input, Error: err,
+				Input: tc.Input, Error: err, Dynamic: tc.Dynamic,
+				Title: tc.Title, ProviderMetadata: tc.ProviderMetadata,
 			},
 		}
 
@@ -1704,9 +1763,14 @@ func (r *StreamTextResult) executeSingleTool(
 		if moErr != nil {
 			outcomes[index] = toolExecOutcome{
 				result: ToolResult{
-					ToolCallID: tc.ToolCallID,
-					ToolName:   tc.ToolName,
-					Input:      tc.Input,
+					ToolCallID:       tc.ToolCallID,
+					ToolName:         tc.ToolName,
+					Input:            tc.Input,
+					IsError:          true,
+					Error:            moErr,
+					ProviderMetadata: tc.ProviderMetadata,
+					Dynamic:          tc.Dynamic,
+					Title:            tc.Title,
 					ModelOutput: &provider.ToolResultOutput{
 						Type: provider.ToolOutputErrorText,
 						Text: moErr.Error(),
@@ -1714,7 +1778,8 @@ func (r *StreamTextResult) executeSingleTool(
 				},
 				event: StreamToolError{
 					ToolCallID: tc.ToolCallID, ToolName: tc.ToolName,
-					Input: tc.Input, Error: moErr,
+					Input: tc.Input, Error: moErr, Dynamic: tc.Dynamic,
+					Title: tc.Title, ProviderMetadata: tc.ProviderMetadata,
 				},
 			}
 
@@ -1803,13 +1868,25 @@ func (r *StreamTextResult) emitPartialOutput(out Output, text string) string {
 			return ""
 		}
 	}
-	s := string(data)
-	if s == r.lastPartialJSON {
+	canonical, err := canonicalPartialJSON(data)
+	if err != nil || canonical == r.lastPartialJSON {
 		return ""
 	}
-	r.lastPartialJSON = s
+	r.lastPartialJSON = canonical
 	r.partialOutputStream.send(data)
-	return s
+	return canonical
+}
+
+func canonicalPartialJSON(data json.RawMessage) (string, error) {
+	var value any
+	if err := json.Unmarshal(data, &value); err != nil {
+		return "", err
+	}
+	canonical, err := json.Marshal(value)
+	if err != nil {
+		return "", err
+	}
+	return string(canonical), nil
 }
 
 func (r *StreamTextResult) emitError(err error, onError func(error)) {
@@ -2746,8 +2823,8 @@ func isDynamic(toolName string, providerDynamic *bool, tools map[string]Tool) *b
 		if providerDynamic != nil {
 			return providerDynamic
 		}
-		d := false
-		return &d
+		dynamic := false
+		return &dynamic
 	}
 	if t.Type == UserToolDynamic {
 		d := true
@@ -2809,6 +2886,11 @@ func buildRecordedContent(step StepResult) []ContentPart {
 				Filename:         recorded.Filename,
 				ProviderMetadata: optionsToProviderMetadata(recorded.ProviderOptions),
 			}})
+		case provider.ContentPartTypeCustom:
+			parts = append(parts, CustomContent{
+				Kind:             recorded.Kind,
+				ProviderMetadata: optionsToProviderMetadata(recorded.ProviderOptions),
+			})
 		case provider.ContentPartTypeToolCall:
 			call, ok := toolCalls[recorded.ToolCallID]
 			if !ok {
@@ -2891,14 +2973,7 @@ func buildGroupedContent(step StepResult) []ContentPart {
 	seenToolCallID := make(map[string]bool, len(step.ToolCalls))
 	for _, tc := range step.ToolCalls {
 		seenToolCallID[tc.ToolCallID] = true
-		parts = append(parts, ToolCallContent{
-			ToolCallID:       tc.ToolCallID,
-			ToolName:         tc.ToolName,
-			Input:            tc.Input,
-			ProviderExecuted: tc.ProviderExecuted,
-			Dynamic:          tc.Dynamic,
-			Title:            tc.Title,
-		})
+		parts = append(parts, toolCallContent(tc))
 		for _, ar := range requestsByToolCallID[tc.ToolCallID] {
 			parts = append(parts, ToolApprovalRequestContent{ToolApprovalRequest: ar})
 		}
@@ -2906,16 +2981,7 @@ func buildGroupedContent(step StepResult) []ContentPart {
 			parts = append(parts, ToolApprovalResponseContent{ToolApprovalResponse: ar})
 		}
 		for _, tr := range resultsByToolCallID[tc.ToolCallID] {
-			parts = append(parts, ToolResultContent{
-				ToolCallID:       tr.ToolCallID,
-				ToolName:         tr.ToolName,
-				Input:            tr.Input,
-				Output:           tr.Output,
-				ProviderExecuted: tr.ProviderExecuted,
-				Dynamic:          tr.Dynamic,
-				Preliminary:      tr.Preliminary,
-				Title:            tr.Title,
-			})
+			parts = append(parts, toolResultContent(tr))
 		}
 	}
 	for _, ar := range step.ToolApprovalRequests {
@@ -2934,16 +3000,7 @@ func buildGroupedContent(step StepResult) []ContentPart {
 		if tr.Preliminary || seenToolCallID[tr.ToolCallID] {
 			continue
 		}
-		parts = append(parts, ToolResultContent{
-			ToolCallID:       tr.ToolCallID,
-			ToolName:         tr.ToolName,
-			Input:            tr.Input,
-			Output:           tr.Output,
-			ProviderExecuted: tr.ProviderExecuted,
-			Dynamic:          tr.Dynamic,
-			Preliminary:      tr.Preliminary,
-			Title:            tr.Title,
-		})
+		parts = append(parts, toolResultContent(tr))
 	}
 	for _, src := range step.Sources {
 		parts = append(parts, SourceContent{Source: src})
@@ -2959,6 +3016,8 @@ func toolCallContent(call ToolCall) ToolCallContent {
 		ToolCallID:       call.ToolCallID,
 		ToolName:         call.ToolName,
 		Input:            call.Input,
+		Invalid:          call.Invalid,
+		Error:            call.Error,
 		ProviderExecuted: call.ProviderExecuted,
 		Dynamic:          call.Dynamic,
 		Title:            call.Title,
@@ -2966,7 +3025,25 @@ func toolCallContent(call ToolCall) ToolCallContent {
 	}
 }
 
-func toolResultContent(result ToolResult) ToolResultContent {
+func toolResultContent(result ToolResult) ContentPart {
+	if result.IsError {
+		var errorValue any = result.Error
+		if result.ProviderExecuted && len(result.Output) > 0 {
+			errorValue = append(json.RawMessage(nil), result.Output...)
+		} else if errorValue == nil {
+			errorValue = toolResultError(result.Output)
+		}
+		return ToolErrorContent{
+			ToolCallID:       result.ToolCallID,
+			ToolName:         result.ToolName,
+			Input:            result.Input,
+			Error:            errorValue,
+			ProviderExecuted: result.ProviderExecuted,
+			Dynamic:          result.Dynamic,
+			Title:            result.Title,
+			ProviderMetadata: result.ProviderMetadata,
+		}
+	}
 	return ToolResultContent{
 		ToolCallID:       result.ToolCallID,
 		ToolName:         result.ToolName,

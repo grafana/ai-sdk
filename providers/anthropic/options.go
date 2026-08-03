@@ -1,6 +1,10 @@
 package anthropic
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/grafana/ai-sdk/provider"
 )
@@ -40,10 +44,143 @@ type AnthropicOptions struct {
 	// is treated as true, matching upstream's `?? true` semantics.
 	// Per-tool AnthropicToolOptions.EagerInputStreaming always wins over
 	// this model-level default.
-	ToolStreaming *bool `json:"toolStreaming,omitempty"`
+	ToolStreaming *bool           `json:"toolStreaming,omitempty"`
+	Fallbacks     *FallbackConfig `json:"fallbacks,omitempty"`
 }
 
 func (AnthropicOptions) ProviderKey() string { return "anthropic" }
+
+// FallbackConfig configures Anthropic server-side refusal fallbacks.
+// Use [DefaultFallbacks] for Anthropic's recommended model or
+// [FallbackChain] for an explicit ordered chain.
+type FallbackConfig struct {
+	Default bool
+	Chain   []Fallback
+}
+
+// DefaultFallbacks selects Anthropic's recommended fallback model.
+func DefaultFallbacks() *FallbackConfig { return &FallbackConfig{Default: true} }
+
+// FallbackChain configures an explicit ordered server-side fallback chain.
+func FallbackChain(entries ...Fallback) *FallbackConfig {
+	chain := make([]Fallback, len(entries))
+	copy(chain, entries)
+	return &FallbackConfig{Chain: chain}
+}
+
+// MarshalJSON emits the upstream `"default" | Fallback[]` provider-option shape.
+func (f FallbackConfig) MarshalJSON() ([]byte, error) {
+	if err := validateFallbackConfig(&f); err != nil {
+		return nil, err
+	}
+	if f.Default {
+		return json.Marshal("default")
+	}
+	if f.Chain == nil {
+		return []byte("[]"), nil
+	}
+	return json.Marshal(f.Chain)
+}
+
+// UnmarshalJSON decodes the upstream `"default" | Fallback[]` provider-option shape.
+func (f *FallbackConfig) UnmarshalJSON(data []byte) error {
+	trimmed := bytes.TrimSpace(data)
+	if bytes.Equal(trimmed, []byte("null")) {
+		return fmt.Errorf("anthropic: fallbacks must be \"default\" or an array")
+	}
+	if bytes.Equal(trimmed, []byte(`"default"`)) {
+		f.Default = true
+		f.Chain = nil
+		return nil
+	}
+	var chain []Fallback
+	if err := json.Unmarshal(data, &chain); err != nil {
+		return fmt.Errorf("anthropic: decoding fallbacks: %w", err)
+	}
+	f.Default = false
+	f.Chain = chain
+	return validateFallbackConfig(f)
+}
+
+func validateFallbackConfig(config *FallbackConfig) error {
+	if config == nil {
+		return nil
+	}
+	if config.Default {
+		if len(config.Chain) > 0 {
+			return fmt.Errorf("anthropic: default fallbacks cannot include an explicit chain")
+		}
+		return nil
+	}
+	for i, fallback := range config.Chain {
+		if fallback.Model == "" {
+			return fmt.Errorf("anthropic: fallback %d requires a model", i)
+		}
+		if fallback.Speed != "" && fallback.Speed != FallbackSpeedFast && fallback.Speed != FallbackSpeedStandard {
+			return fmt.Errorf("anthropic: fallback %d has invalid speed %q", i, fallback.Speed)
+		}
+		for _, field := range []struct {
+			name  string
+			value json.RawMessage
+		}{
+			{name: "thinking", value: fallback.Thinking},
+			{name: "output_config", value: fallback.OutputConfig},
+		} {
+			name, value := field.name, field.value
+			if len(value) == 0 {
+				continue
+			}
+			trimmed := bytes.TrimSpace(value)
+			if !json.Valid(trimmed) || len(trimmed) == 0 || trimmed[0] != '{' {
+				return fmt.Errorf("anthropic: fallback %d %s must be an object", i, name)
+			}
+		}
+	}
+	return nil
+}
+
+// Fallback describes one explicit Anthropic server-side fallback attempt.
+type Fallback struct {
+	Model        string          `json:"model"`
+	MaxTokens    *int            `json:"max_tokens,omitempty"`
+	Thinking     json.RawMessage `json:"thinking,omitempty"`
+	OutputConfig json.RawMessage `json:"output_config,omitempty"`
+	Speed        FallbackSpeed   `json:"speed,omitempty"`
+}
+
+// FallbackSpeed identifies a fallback inference speed mode.
+type FallbackSpeed string
+
+const (
+	// FallbackSpeedStandard uses standard Anthropic inference.
+	FallbackSpeedStandard FallbackSpeed = "standard"
+	// FallbackSpeedFast uses Anthropic fast-mode inference.
+	FallbackSpeedFast FallbackSpeed = "fast"
+)
+
+// AnthropicSystemMessageOptions carries Anthropic options for a system message.
+type AnthropicSystemMessageOptions struct {
+	ToolChanges  []ToolChange      `json:"toolChanges,omitempty"`
+	CacheControl *CacheControlType `json:"cacheControl,omitempty"`
+}
+
+func (AnthropicSystemMessageOptions) ProviderKey() string { return "anthropic" }
+
+// ToolChangeType identifies a mid-conversation tool-set mutation.
+type ToolChangeType string
+
+const (
+	// ToolAddition adds a declared tool to the active conversation tool set.
+	ToolAddition ToolChangeType = "tool_addition"
+	// ToolRemoval removes a declared tool from the active conversation tool set.
+	ToolRemoval ToolChangeType = "tool_removal"
+)
+
+// ToolChange adds or removes a declared tool from a conversation.
+type ToolChange struct {
+	Type     ToolChangeType `json:"type"`
+	ToolName string         `json:"toolName"`
+}
 
 // MCPServer configures a remote MCP server for tool execution.
 type MCPServer struct {

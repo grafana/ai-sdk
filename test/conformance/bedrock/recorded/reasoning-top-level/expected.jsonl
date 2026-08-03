@@ -1,28 +1,33 @@
 {"type":"start"}
 {"type":"start-step"}
 {"type":"reasoning-start","id":"0"}
-{"type":"reasoning-delta","id":"0","delta":"Let me count the r"}
-{"type":"reasoning-delta","id":"0","delta":"'s in \""}
-{"type":"reasoning-delta","id":"0","delta":"strawberry\":"}
-{"type":"reasoning-delta","id":"0","delta":"\n\ns-t-r-a"}
-{"type":"reasoning-delta","id":"0","delta":"-w-b-e-r"}
-{"type":"reasoning-delta","id":"0","delta":"-r-y\n\nr"}
-{"type":"reasoning-delta","id":"0","delta":" appears at positions "}
-{"type":"reasoning-delta","id":"0","delta":"3, 8"}
-{"type":"reasoning-delta","id":"0","delta":", and 9.\n\nSo there"}
-{"type":"reasoning-delta","id":"0","delta":" are 3 r's."}
-{"type":"reasoning-delta","id":"0","delta":"","providerMetadata":{"amazonBedrock":{"signature":"Ep0CCkgICxABGAIqQOWPB6/PmA5SW9jC6FvaNq3E+U9ev4FMWcFWuAho+VGLCtazKc5WDjQ5i0MuxsY0o5pKDSVWVKii8KJDusXH4eASDK7jyzuk8iij7fJNihoMxHO9haYzt48R36HVIjCb/EmIFrJLIXShqN6DN//T6vZBtO9qj1QhNWJa3CGm8VZoq80S2/Ok4U0aVaIDiZcqggHC2b8BHuv8BHZrmsR0wjU1ynansBGMdfjnG+iIv8R5lPpRmYGhSVwNybwP3aQZ6o8Dr48Rau8TJfdsArW+r7bvL7bPs4f5nnlp2vG7WkMzWwABHK3fdM44zZ1GZQaWyECNWR2GfY6dXiklo94vgpFTPuZ97mfiN3LY6uYyBwL8RkDaGAE="},"bedrock":{"signature":"Ep0CCkgICxABGAIqQOWPB6/PmA5SW9jC6FvaNq3E+U9ev4FMWcFWuAho+VGLCtazKc5WDjQ5i0MuxsY0o5pKDSVWVKii8KJDusXH4eASDK7jyzuk8iij7fJNihoMxHO9haYzt48R36HVIjCb/EmIFrJLIXShqN6DN//T6vZBtO9qj1QhNWJa3CGm8VZoq80S2/Ok4U0aVaIDiZcqggHC2b8BHuv8BHZrmsR0wjU1ynansBGMdfjnG+iIv8R5lPpRmYGhSVwNybwP3aQZ6o8Dr48Rau8TJfdsArW+r7bvL7bPs4f5nnlp2vG7WkMzWwABHK3fdM44zZ1GZQaWyECNWR2GfY6dXiklo94vgpFTPuZ97mfiN3LY6uYyBwL8RkDaGAE="}}}
+{"type":"reasoning-delta","id":"0","delta":"The user has"}
+{"type":"reasoning-delta","id":"0","delta":" simply"}
+{"type":"reasoning-delta","id":"0","delta":" sent"}
+{"type":"reasoning-delta","id":"0","delta":" \""}
+{"type":"reasoning-delta","id":"0","delta":"test\"."}
+{"type":"reasoning-delta","id":"0","delta":" This"}
+{"type":"reasoning-delta","id":"0","delta":" appears"}
+{"type":"reasoning-delta","id":"0","delta":" to be a test"}
+{"type":"reasoning-delta","id":"0","delta":" message to"}
+{"type":"reasoning-delta","id":"0","delta":" see"}
+{"type":"reasoning-delta","id":"0","delta":" if I"}
+{"type":"reasoning-delta","id":"0","delta":"'m"}
+{"type":"reasoning-delta","id":"0","delta":" working"}
+{"type":"reasoning-delta","id":"0","delta":" properly. I should respond in a helpful"}
+{"type":"reasoning-delta","id":"0","delta":" and"}
+{"type":"reasoning-delta","id":"0","delta":" friendly way, acknowledging their message and"}
+{"type":"reasoning-delta","id":"0","delta":" offering to assist"}
+{"type":"reasoning-delta","id":"0","delta":" them"}
+{"type":"reasoning-delta","id":"0","delta":" with anything"}
+{"type":"reasoning-delta","id":"0","delta":" they need."}
+{"type":"reasoning-delta","id":"0","delta":"","providerMetadata":{"amazonBedrock":{"signature":"ErYDCnAIEBABGAIqQKsH88T9um/U239Dc+6mi3qTKf8u8IR7B+7nCDC6HmLfrnnQL2orvv6qDqLxdA1umHLbrQa5RRXuTGiZpNr9bUcyGmNsYXVkZS1zb25uZXQtNC01LTIwMjUwOTI5OABCCHRoaW5raW5nEgzlwpYMn/tnq3X/BjkaDE4QbtdXO6VdsQAuoSIweFtC4Nn4GXpPwg1UniGnn9Se5BQoMDA/ClgXD4pSD7OTVJh5u+6xoJoTwIxqLA15KvMBDc4J0iqTuQqazV6jTNT1YfgTnqLZvm5NT5sB4HttFJTZgjh6/muVN8XtEQ3AAebFieMWURACJy2ODEgY7Ymv879ccYlwwsM+3b5YY7I1HS1oovrHfYumdvv/BilP7wOj2v+AL5XUA8FW1+2zzY9HMh2uSUcmH5K2PhyTP9pv/gd6je1gOUt2jgN+mJuCkSvA1SjH3y7GOPaEuYVX/5WjIWI9DK0wAsGDitaCVOO678BwkCZTJxIN+d1WmGL9Le8R1d+nPrcqdQH3PDKNSaHIa07QTZGszUaH2TWlReV/MNYgurIwxAJfV/lILRaIEWLgwVnqGAE="},"bedrock":{"signature":"ErYDCnAIEBABGAIqQKsH88T9um/U239Dc+6mi3qTKf8u8IR7B+7nCDC6HmLfrnnQL2orvv6qDqLxdA1umHLbrQa5RRXuTGiZpNr9bUcyGmNsYXVkZS1zb25uZXQtNC01LTIwMjUwOTI5OABCCHRoaW5raW5nEgzlwpYMn/tnq3X/BjkaDE4QbtdXO6VdsQAuoSIweFtC4Nn4GXpPwg1UniGnn9Se5BQoMDA/ClgXD4pSD7OTVJh5u+6xoJoTwIxqLA15KvMBDc4J0iqTuQqazV6jTNT1YfgTnqLZvm5NT5sB4HttFJTZgjh6/muVN8XtEQ3AAebFieMWURACJy2ODEgY7Ymv879ccYlwwsM+3b5YY7I1HS1oovrHfYumdvv/BilP7wOj2v+AL5XUA8FW1+2zzY9HMh2uSUcmH5K2PhyTP9pv/gd6je1gOUt2jgN+mJuCkSvA1SjH3y7GOPaEuYVX/5WjIWI9DK0wAsGDitaCVOO678BwkCZTJxIN+d1WmGL9Le8R1d+nPrcqdQH3PDKNSaHIa07QTZGszUaH2TWlReV/MNYgurIwxAJfV/lILRaIEWLgwVnqGAE="}}}
 {"type":"reasoning-end","id":"0"}
 {"type":"text-start","id":"1"}
-{"type":"text-delta","id":"1","delta":"There"}
-{"type":"text-delta","id":"1","delta":" are **3** r's in \""}
-{"type":"text-delta","id":"1","delta":"strawberry\":"}
-{"type":"text-delta","id":"1","delta":"\n\n1"}
-{"type":"text-delta","id":"1","delta":". st"}
-{"type":"text-delta","id":"1","delta":"**"}
-{"type":"text-delta","id":"1","delta":"r**awbe"}
-{"type":"text-delta","id":"1","delta":"**r****"}
-{"type":"text-delta","id":"1","delta":"r**y"}
+{"type":"text-delta","id":"1","delta":"Hello! I'm working"}
+{"type":"text-delta","id":"1","delta":" and"}
+{"type":"text-delta","id":"1","delta":" ready to help."}
+{"type":"text-delta","id":"1","delta":" What can I assist you with today?"}
 {"type":"text-end","id":"1"}
 {"type":"finish-step"}
 {"type":"finish","finishReason":"stop"}

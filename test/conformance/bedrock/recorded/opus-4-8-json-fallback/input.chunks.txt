@@ -1,6 +1,9 @@
-{"messageStart":{"role":"assistant"}}
-{"contentBlockStart":{"contentBlockIndex":0,"start":{"toolUse":{"toolUseId":"json_1","name":"json","input":{}}}}}
-{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"toolUse":{"input":"{\"status\":\"ok\"}"}}}}
-{"contentBlockStop":{"contentBlockIndex":0}}
-{"messageStop":{"stopReason":"tool_use"}}
-{"metadata":{"usage":{"inputTokens":10,"outputTokens":5,"totalTokens":15},"metrics":{"latencyMs":20}}}
+{"messageStart":{"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXY","role":"assistant"}}
+{"contentBlockStart":{"contentBlockIndex":0,"p":"abcdefghij","start":{"toolUse":{"name":"json","toolUseId":"tooluse_5VVgKxkhOCDfmE4j0niaAV","type":"tool_use"}}}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"toolUse":{"input":""}},"p":"abcdefghijklmnopqrstuvwxyz"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"toolUse":{"input":"{\"s"}},"p":"abcdefghijklmnopqrstuvwxyzABCDEFG"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"toolUse":{"input":"tat"}},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWX"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"toolUse":{"input":"us\": \"ok\"}"}},"p":"abcdefghi"}}
+{"contentBlockStop":{"contentBlockIndex":0,"p":"abcdefg"}}
+{"messageStop":{"additionalModelResponseFields":{"delta":{"stop_sequence":null}},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN","stopReason":"tool_use"}}
+{"metadata":{"metrics":{"latencyMs":1264},"p":"abcdefghijkl","usage":{"inputTokens":495,"outputTokens":36,"serverToolUsage":{},"totalTokens":531}}}

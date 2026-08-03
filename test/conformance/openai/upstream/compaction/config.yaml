@@ -1,0 +1,8 @@
+model: gpt-5.2
+prompt: Hello
+providerOptions:
+  openai:
+    store: false
+    contextManagement:
+      - type: compaction
+        compactThreshold: 50000

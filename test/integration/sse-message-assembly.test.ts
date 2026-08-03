@@ -56,6 +56,50 @@ describe("SSE message assembly", () => {
     expect(fullText).toBe("Hello, world!");
   });
 
+  it("merges metadata-only text deltas into the assembled text part", async () => {
+    const messages = await readScenarioMessages("text-metadata-only-delta");
+    const lastMessage = messages[messages.length - 1];
+    const text = lastMessage.parts.find((part) => part.type === "text");
+
+    expect(text).toMatchObject({
+      type: "text",
+      text: '{"value":"ok"}',
+      providerMetadata: { test: { signature: "test-signature" } },
+    });
+  });
+
+  it("assembles invalid provider tool errors into output-error state", async () => {
+    const messages = await readScenarioMessages("invalid-provider-tool");
+    const lastMessage = messages[messages.length - 1];
+    const tool = lastMessage.parts.find(
+      (part) => part.type === "tool-web_search" && part.toolCallId === "search-1",
+    );
+
+    expect(tool).toMatchObject({
+      type: "tool-web_search",
+      toolCallId: "search-1",
+      state: "output-error",
+      input: {},
+      providerExecuted: true,
+      errorText:
+        '{"type":"web_search_tool_result_error","errorCode":"invalid_tool_input"}',
+    });
+  });
+
+  it("preserves custom provider content", async () => {
+    const messages = await readScenarioMessages("provider-tool-metadata");
+    const lastMessage = messages[messages.length - 1];
+    const custom = lastMessage.parts.find((part) => part.type === "custom");
+
+    expect(custom).toEqual({
+      type: "custom",
+      kind: "openai.compaction",
+      providerMetadata: {
+        openai: { itemId: "cmp-1", encryptedContent: "encrypted" },
+      },
+    });
+  });
+
   it("preserves document source filenames", async () => {
     const messages = await readScenarioMessages("source-document");
     const lastMessage = messages[messages.length - 1];

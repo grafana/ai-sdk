@@ -65,10 +65,12 @@ func TestConvertPrompt_UpstreamFiveZeroThirty(t *testing.T) {
 	})
 }
 
-func TestModelSupportedURLs_S3Images(t *testing.T) {
+func TestModelSupportedURLs_S3Media(t *testing.T) {
 	model := New("test-model")
-	patterns := model.SupportedURLs()["image/*"]
-	require.Len(t, patterns, 1)
-	assert.True(t, patterns[0].MatchString("s3://bucket/image.png"))
-	assert.False(t, patterns[0].MatchString("https://example.com/image.png"))
+	for _, mediaType := range []string{"image/*", "video/*"} {
+		patterns := model.SupportedURLs()[mediaType]
+		require.Len(t, patterns, 1)
+		assert.True(t, patterns[0].MatchString("s3://bucket/media"))
+		assert.False(t, patterns[0].MatchString("https://example.com/media"))
+	}
 }

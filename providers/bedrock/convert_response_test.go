@@ -24,6 +24,11 @@ func TestParseResponse_TextOnly(t *testing.T) {
 	assert.Equal(t, "end_turn", result.FinishReason.Raw)
 	assert.Equal(t, 10, *result.Usage.InputTokens.NoCache)
 	assert.Equal(t, 5, *result.Usage.OutputTokens.Total)
+	require.Contains(t, result.ProviderMetadata, "bedrock")
+	var metadata map[string]any
+	require.NoError(t, json.Unmarshal(result.ProviderMetadata["bedrock"], &metadata))
+	require.Contains(t, metadata, "stopSequence")
+	assert.Nil(t, metadata["stopSequence"])
 }
 
 func TestParseResponse_JSONInstructionExtractsObject(t *testing.T) {
@@ -139,7 +144,7 @@ func TestMapFinishReason(t *testing.T) {
 func TestParseResponse_JSONResponseToolCollapse(t *testing.T) {
 	body := []byte(`{
 		"output": {"message": {"role": "assistant", "content": [
-			{"toolUse": {"toolUseId": "call-1", "name": "json", "input": {"foo":"bar"}}}
+			{"toolUse": {"toolUseId": "call-1", "name": "json", "input": {"url":"https:\/\/x","n":1e+2,"small":1e-7,"threshold":1e-6,"html":"<tag>","2":"two","1":"one","dup":"first","orderB":1,"dup":"last","orderA":2}}}
 		]}},
 		"stopReason": "tool_use",
 		"usage": {"inputTokens": 10, "outputTokens": 5}
@@ -149,7 +154,7 @@ func TestParseResponse_JSONResponseToolCollapse(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, result.Content, 1)
 	assert.Equal(t, provider.ContentText, result.Content[0].Type)
-	assert.JSONEq(t, `{"foo":"bar"}`, result.Content[0].Text)
+	assert.Equal(t, `{"1":"one","2":"two","url":"https://x","n":100,"small":1e-7,"threshold":0.000001,"html":"<tag>","dup":"last","orderB":1,"orderA":2}`, result.Content[0].Text)
 	// FinishReason flipped to "stop" because the JSON tool acted as the final answer.
 	assert.Equal(t, provider.FinishReasonStop, result.FinishReason.Unified)
 	// ProviderMetadata should record isJsonResponseFromTool.

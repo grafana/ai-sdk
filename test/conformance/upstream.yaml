@@ -1,17 +1,18 @@
 upstream:
   repository: https://github.com/vercel/ai
+  commit: c527d7b3b26287598d2c80e7bce8f16b21653363
   packageSource: npm
-  verifiedAt: "2026-07-27"
+  verifiedAt: "2026-08-03"
 packages:
-  ai: 7.0.37
-  "@ai-sdk/anthropic": 4.0.19
-  "@ai-sdk/amazon-bedrock": 5.0.30
-  "@ai-sdk/gateway": 4.0.28
-  "@ai-sdk/openai": 4.0.20
-  "@ai-sdk/openai-compatible": 3.0.14
-  "@ai-sdk/provider": 4.0.3
-  "@ai-sdk/provider-utils": 5.0.12
-  "@ai-sdk/react": 4.0.40
+  ai: 7.0.44
+  "@ai-sdk/anthropic": 4.0.25
+  "@ai-sdk/amazon-bedrock": 5.0.38
+  "@ai-sdk/gateway": 4.0.33
+  "@ai-sdk/openai": 4.0.25
+  "@ai-sdk/openai-compatible": 3.0.18
+  "@ai-sdk/provider": 4.0.4
+  "@ai-sdk/provider-utils": 5.0.16
+  "@ai-sdk/react": 4.0.47
 verification:
   status: enforced
   conformanceScope: full
@@ -55,3 +56,18 @@ knownGaps:
       model APIs and provider-specific image options. The Go port currently scopes
       provider parity to LanguageModel surfaces and does not expose image model APIs
       or conformance coverage.
+  - id: speech-translation-model-surface
+    surface: provider-contract
+    status: gap
+    description: Upstream provider v4 and ai expose the experimental streaming speech
+      translation model contract and orchestration, and the registered OpenAI package
+      exposes a realtime translation model. The Go port currently scopes provider
+      parity to LanguageModel surfaces and does not expose speech translation models,
+      stream orchestration, realtime translation transport, or conformance coverage.
+  - id: structured-output-repair-text
+    surface: core-orchestration
+    status: gap
+    description: Upstream ai exposes stable repairText callbacks on its legacy
+      generateObject and streamObject APIs. The Go port uses the Output abstraction
+      and typed output wrappers and does not currently expose a repair callback for
+      invalid-but-repairable structured output.

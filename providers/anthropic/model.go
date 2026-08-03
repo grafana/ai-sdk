@@ -97,7 +97,9 @@ func (m *model) DoStream(ctx context.Context, params provider.CallOptions) (*pro
 	}
 
 	citDocs := extractCitationDocuments(params.Prompt)
-	stream := m.client.Beta.Messages.NewStreaming(ctx, p, m.requestOpts...)
+	requestOpts := append([]option.RequestOption{}, br.requestOptions...)
+	requestOpts = append(requestOpts, m.requestOpts...)
+	stream := m.client.Beta.Messages.NewStreaming(ctx, p, requestOpts...)
 
 	var firstEvent *anthropic.BetaRawMessageStreamEventUnion
 	if stream.Next() {
@@ -124,8 +126,10 @@ func (m *model) DoGenerate(ctx context.Context, params provider.CallOptions) (*p
 	}
 
 	citDocs := extractCitationDocuments(params.Prompt)
+	requestOpts := append([]option.RequestOption{}, br.requestOptions...)
+	requestOpts = append(requestOpts, m.requestOpts...)
 
-	msg, err := m.client.Beta.Messages.New(ctx, p, m.requestOpts...)
+	msg, err := m.client.Beta.Messages.New(ctx, p, requestOpts...)
 	if err != nil {
 		return nil, wrapAPIError(err, "", p)
 	}

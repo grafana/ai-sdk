@@ -39,6 +39,49 @@ func TestConvertResponse_CarriesProviderAndModel(t *testing.T) {
 	}
 }
 
+func TestConvertResponse_FallbackProviderMetadata(t *testing.T) {
+	msg := unmarshalMessage(t, `{
+		"id":"msg_1",
+		"type":"message",
+		"role":"assistant",
+		"model":"claude-opus-5",
+		"content":[{"type":"text","text":"fallback answer"}],
+		"stop_reason":"refusal",
+		"stop_sequence":null,
+		"stop_details":{"type":"refusal","category":"policy","explanation":"fallback unavailable","recommended_model":"claude-opus-4-8"},
+		"container":null,
+		"context_management":null,
+		"usage":{"input_tokens":12,"output_tokens":5,"iterations":[{"type":"message","input_tokens":12,"output_tokens":0},{"type":"fallback_message","model":"claude-opus-4-8","input_tokens":12,"output_tokens":5}]}
+	}`)
+
+	result, err := convertResponse(msg, toolNameMapping{}, false, nil, defaultGenerateID, "anthropic", false)
+	require.NoError(t, err)
+	require.NotNil(t, result.ProviderMetadata)
+	assert.JSONEq(t, `{
+		"usage":{"input_tokens":12,"output_tokens":5,"iterations":[{"type":"message","input_tokens":12,"output_tokens":0},{"type":"fallback_message","model":"claude-opus-4-8","input_tokens":12,"output_tokens":5}]},
+		"stopSequence":null,
+		"stopDetails":{"type":"refusal","category":"policy","explanation":"fallback unavailable","recommendedModel":"claude-opus-4-8"},
+		"iterations":[{"type":"message","inputTokens":12,"outputTokens":0},{"type":"fallback_message","model":"claude-opus-4-8","inputTokens":12,"outputTokens":5}],
+		"container":null,
+		"contextManagement":null
+	}`, string(result.ProviderMetadata["anthropic"]))
+}
+
+func TestBuildAnthropicProviderMetadata_PreservesEmptyStrings(t *testing.T) {
+	metadata, err := buildAnthropicProviderMetadata(map[string]json.RawMessage{
+		"stop_details": json.RawMessage(`{"type":"refusal","category":"","explanation":"","recommended_model":""}`),
+	}, json.RawMessage(`{"input_tokens":1,"output_tokens":0,"iterations":[{"type":"fallback_message","model":"","input_tokens":1,"output_tokens":0}]}`))
+	require.NoError(t, err)
+	assert.JSONEq(t, `{
+		"usage":{"input_tokens":1,"output_tokens":0,"iterations":[{"type":"fallback_message","model":"","input_tokens":1,"output_tokens":0}]},
+		"stopSequence":null,
+		"stopDetails":{"type":"refusal","category":"","explanation":"","recommendedModel":""},
+		"iterations":[{"type":"fallback_message","model":"","inputTokens":1,"outputTokens":0}],
+		"container":null,
+		"contextManagement":null
+	}`, string(metadata["anthropic"]))
+}
+
 func TestConvertResponse_ServerToolUse(t *testing.T) {
 	msg := unmarshalMessage(t, `{
 		"id": "msg_1",

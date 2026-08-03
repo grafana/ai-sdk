@@ -1,8 +1,0 @@
-model: gpt-4o
-prompt: "Run the MCP tool."
-providerTools:
-  mcp.do_thing:
-    id: openai.mcp
-    args:
-      serverLabel: srv
-      serverUrl: https://mcp.example.com

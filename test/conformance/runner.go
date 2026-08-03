@@ -29,7 +29,15 @@ import (
 
 // --- Config ---
 
+type Operation string
+
+const (
+	OperationStream   Operation = "stream"
+	OperationGenerate Operation = "generate"
+)
+
 type Config struct {
+	Operation         Operation                     `yaml:"operation,omitempty"`
 	Model             string                        `yaml:"model"`
 	System            string                        `yaml:"system,omitempty"`
 	Prompt            string                        `yaml:"prompt,omitempty"`
@@ -49,6 +57,7 @@ type Config struct {
 	Approval          *ApprovalConfig               `yaml:"approval,omitempty"`
 	Approvals         []ApprovalConfig              `yaml:"approvals,omitempty"`
 	ExpectStreamError bool                          `yaml:"expectStreamError,omitempty"`
+	MaxRetries        *int                          `yaml:"maxRetries,omitempty"`
 }
 
 type UIMessageConfig struct {
@@ -74,8 +83,12 @@ type MessagePartConfig struct {
 	Reference        map[string]string        `yaml:"reference,omitempty"`
 	ToolCallID       string                   `yaml:"toolCallId,omitempty"`
 	ToolName         string                   `yaml:"toolName,omitempty"`
+	ApprovalID       string                   `yaml:"approvalId,omitempty"`
 	Input            any                      `yaml:"input,omitempty"`
 	Output           any                      `yaml:"output,omitempty"`
+	Approved         bool                     `yaml:"approved,omitempty"`
+	Reason           string                   `yaml:"reason,omitempty"`
+	IsAutomatic      bool                     `yaml:"isAutomatic,omitempty"`
 	ProviderExecuted bool                     `yaml:"providerExecuted,omitempty"`
 	ProviderOptions  map[string]any           `yaml:"providerOptions,omitempty"`
 }
@@ -155,6 +168,7 @@ func (mc *MessageConfig) UnmarshalYAML(value *yaml.Node) error {
 type ProviderToolConfig struct {
 	ID              string         `yaml:"id"`
 	Args            map[string]any `yaml:"args,omitempty"`
+	InputSchema     any            `yaml:"inputSchema,omitempty"`
 	ProviderOptions map[string]any `yaml:"providerOptions,omitempty"`
 }
 
@@ -175,6 +189,57 @@ func LoadConfig(path string) (*Config, error) {
 	var cfg Config
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parsing config: %w", err)
+	}
+	if cfg.Operation == "" {
+		cfg.Operation = OperationStream
+	}
+	if cfg.Operation != OperationStream && cfg.Operation != OperationGenerate {
+		return nil, fmt.Errorf("unknown operation %q", cfg.Operation)
+	}
+	if cfg.Operation == OperationGenerate {
+		var unsupported []string
+		if len(cfg.UIMessages) > 0 {
+			unsupported = append(unsupported, "uiMessages")
+		}
+		if len(cfg.Tools) > 0 {
+			unsupported = append(unsupported, "tools")
+		}
+		if len(cfg.ProviderTools) > 0 {
+			unsupported = append(unsupported, "providerTools")
+		}
+		if cfg.ToolChoice != nil {
+			unsupported = append(unsupported, "toolChoice")
+		}
+		if len(cfg.ActiveTools) > 0 {
+			unsupported = append(unsupported, "activeTools")
+		}
+		if cfg.Reasoning != "" {
+			unsupported = append(unsupported, "reasoning")
+		}
+		if cfg.StreamOptions != nil {
+			unsupported = append(unsupported, "streamOptions")
+		}
+		if cfg.Approval != nil {
+			unsupported = append(unsupported, "approval")
+		}
+		if len(cfg.Approvals) > 0 {
+			unsupported = append(unsupported, "approvals")
+		}
+		if cfg.AssertOutputValue {
+			unsupported = append(unsupported, "assertOutputValue")
+		}
+		if cfg.ExpectStreamError {
+			unsupported = append(unsupported, "expectStreamError")
+		}
+		if cfg.MaxRetries != nil {
+			unsupported = append(unsupported, "maxRetries")
+		}
+		if cfg.StopWhenStepCount > 1 {
+			unsupported = append(unsupported, "stopWhenStepCount")
+		}
+		if len(unsupported) > 0 {
+			return nil, fmt.Errorf("operation generate does not support: %s", strings.Join(unsupported, ", "))
+		}
 	}
 	if cfg.StopWhenStepCount == 0 {
 		cfg.StopWhenStepCount = 1
@@ -564,6 +629,11 @@ func (mc *MessageConfig) buildContentParts() ([]provider.ContentPart, error) {
 				return nil, fmt.Errorf("parsing configured tool output: %w", err)
 			}
 			part = provider.ToolResultPart(partConfig.ToolCallID, partConfig.ToolName, &toolOutput)
+		case provider.ContentPartTypeToolApprovalRequest:
+			part = provider.ToolApprovalRequestPart(partConfig.ApprovalID, partConfig.ToolCallID, partConfig.IsAutomatic)
+		case provider.ContentPartTypeToolApprovalResponse:
+			part = provider.ToolApprovalResponsePart(partConfig.ApprovalID, partConfig.Approved, partConfig.Reason)
+			part.ProviderExecuted = partConfig.ProviderExecuted
 		default:
 			return nil, fmt.Errorf("unsupported configured message part type %q", partConfig.Type)
 		}
@@ -599,6 +669,18 @@ func (cfg *Config) approvalConfigs() []ApprovalConfig {
 }
 
 func (ptc *ProviderToolConfig) buildTool() (aisdk.Tool, error) {
+	var inputSchema schema.Schema
+	if ptc.InputSchema != nil {
+		raw, err := json.Marshal(ptc.InputSchema)
+		if err != nil {
+			return aisdk.Tool{}, fmt.Errorf("marshaling provider tool input schema: %w", err)
+		}
+		inputSchema, err = schema.SchemaFromJSON(raw)
+		if err != nil {
+			return aisdk.Tool{}, fmt.Errorf("compiling provider tool input schema: %w", err)
+		}
+	}
+
 	var args map[string]json.RawMessage
 	if ptc.Args != nil {
 		args = make(map[string]json.RawMessage, len(ptc.Args))
@@ -625,6 +707,7 @@ func (ptc *ProviderToolConfig) buildTool() (aisdk.Tool, error) {
 		Type:            aisdk.UserToolProvider,
 		ID:              ptc.ID,
 		Args:            args,
+		InputSchema:     inputSchema,
 		ProviderOptions: providerOpts,
 	}, nil
 }
@@ -632,13 +715,14 @@ func (ptc *ProviderToolConfig) buildTool() (aisdk.Tool, error) {
 // --- Replay Server ---
 
 type ReplayServer struct {
-	Server       *httptest.Server
-	providerName string
-	counter      atomic.Int32
-	fixtures     [][]byte
-	framing      Framing
-	requestsMu   sync.Mutex
-	requests     []RequestSnapshot
+	Server           *httptest.Server
+	providerName     string
+	counter          atomic.Int32
+	fixtures         [][]byte
+	generateResponse []byte
+	framing          Framing
+	requestsMu       sync.Mutex
+	requests         []RequestSnapshot
 }
 
 // NewReplayServer creates a replay server using the default SSE framing used by
@@ -654,20 +738,25 @@ func NewReplayServer(fixtureDir string, providerName string) (*ReplayServer, err
 func NewReplayServerWithFraming(fixtureDir string, providerName string, framing Framing) (*ReplayServer, error) {
 	rs := &ReplayServer{providerName: providerName, framing: framing}
 
-	singlePath := filepath.Join(fixtureDir, "input.chunks.txt")
-	if data, err := os.ReadFile(singlePath); err == nil {
-		rs.fixtures = append(rs.fixtures, data)
+	generatePath := filepath.Join(fixtureDir, "input.response.json")
+	if data, err := os.ReadFile(generatePath); err == nil {
+		rs.generateResponse = data
 	} else {
-		for i := 1; ; i++ {
-			path := filepath.Join(fixtureDir, fmt.Sprintf("input-%d.chunks.txt", i))
-			data, err := os.ReadFile(path)
-			if err != nil {
-				if i == 1 {
-					return nil, fmt.Errorf("no fixture files found in %s", fixtureDir)
-				}
-				break
-			}
+		singlePath := filepath.Join(fixtureDir, "input.chunks.txt")
+		if data, err := os.ReadFile(singlePath); err == nil {
 			rs.fixtures = append(rs.fixtures, data)
+		} else {
+			for i := 1; ; i++ {
+				path := filepath.Join(fixtureDir, fmt.Sprintf("input-%d.chunks.txt", i))
+				data, err := os.ReadFile(path)
+				if err != nil {
+					if i == 1 {
+						return nil, fmt.Errorf("no fixture files found in %s", fixtureDir)
+					}
+					break
+				}
+				rs.fixtures = append(rs.fixtures, data)
+			}
 		}
 	}
 
@@ -688,6 +777,17 @@ func (rs *ReplayServer) handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rs.addRequest(snapshot)
+
+	if rs.generateResponse != nil {
+		if idx > 0 {
+			http.Error(w, "generate fixture already served", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(rs.generateResponse)
+		return
+	}
 
 	if idx >= len(rs.fixtures) {
 		http.Error(w, fmt.Sprintf("no more fixtures (request %d, have %d)", idx+1, len(rs.fixtures)), http.StatusInternalServerError)
@@ -1021,11 +1121,6 @@ func RunTestCaseWithServer(t *testing.T, tc TestCase, factory ProviderFactory, s
 	responseFormat, err := cfg.BuildResponseFormat()
 	require.NoError(t, err, "building response format")
 
-	out, err := cfg.BuildOutput()
-	require.NoError(t, err, "building output")
-
-	stopConditions := []aisdk.StopCondition{aisdk.StepCountIs(cfg.StopWhenStepCount)}
-
 	prompt := cfg.Prompt
 	if prompt == "" {
 		prompt = "test"
@@ -1042,7 +1137,19 @@ func RunTestCaseWithServer(t *testing.T, tc TestCase, factory ProviderFactory, s
 		require.NoError(t, err, "building messages")
 	}
 
+	if cfg.Operation == OperationGenerate {
+		require.Equal(t, "bedrock", tc.Provider, "operation generate is currently supported only for Bedrock")
+		runGenerateTestCase(t, tc, cfg, ts, model, messages, providerOpts, responseFormat)
+		return
+	}
+
+	out, err := cfg.BuildOutput()
+	require.NoError(t, err, "building output")
+	stopConditions := []aisdk.StopCondition{aisdk.StepCountIs(cfg.StopWhenStepCount)}
 	streamOpts := cfg.buildStreamOptions(messages, tools, providerOpts, stopConditions, out, responseFormat)
+	if cfg.MaxRetries != nil {
+		streamOpts = append(streamOpts, aisdk.WithMaxRetries(*cfg.MaxRetries))
+	}
 	result := aisdk.StreamText(t.Context(), model, streamOpts...)
 
 	uiStream := result.ToUIMessageStream(cfg.BuildUIMessageStreamOptions()...)
@@ -1098,6 +1205,68 @@ func RunTestCaseWithServer(t *testing.T, tc TestCase, factory ProviderFactory, s
 	if _, err := os.Stat(expectedObjectPath); err == nil {
 		compareOutputObject(t, expectedObjectPath, result.OutputValue(), actual, cfg.AssertOutputValue)
 	}
+}
+
+type generateResultSnapshot struct {
+	Content          []provider.GenerateContentPart `json:"content"`
+	FinishReason     provider.FinishReason          `json:"finishReason"`
+	Usage            provider.Usage                 `json:"usage"`
+	ProviderMetadata provider.ProviderMetadata      `json:"providerMetadata,omitempty"`
+	Warnings         []provider.Warning             `json:"warnings,omitempty"`
+}
+
+func runGenerateTestCase(
+	t *testing.T,
+	tc TestCase,
+	cfg *Config,
+	ts *TestServer,
+	model provider.LanguageModel,
+	messages []provider.Message,
+	providerOpts []provider.ProviderOption,
+	responseFormat *provider.ResponseFormat,
+) {
+	t.Helper()
+
+	if cfg.System != "" {
+		messages = append(
+			[]provider.Message{provider.NewSystemMessage(cfg.System)},
+			messages...,
+		)
+	}
+	callOpts := provider.CallOptions{
+		Prompt:          messages,
+		ResponseFormat:  responseFormat,
+		Headers:         cfg.Headers,
+		ProviderOptions: provider.BuildProviderOptions(providerOpts...),
+	}
+
+	result, err := model.DoGenerate(t.Context(), callOpts)
+	require.NoError(t, err, "generate error")
+	require.Positive(t, ts.RequestCount(), "replay server received no requests — check provider URL configuration")
+
+	metadata := make(provider.ProviderMetadata)
+	if bedrockMetadata, ok := result.ProviderMetadata["bedrock"]; ok {
+		metadata["bedrock"] = bedrockMetadata
+	}
+	if len(metadata) == 0 {
+		metadata = nil
+	}
+	actual := generateResultSnapshot{
+		Content:          result.Content,
+		FinishReason:     result.FinishReason,
+		Usage:            result.Usage,
+		ProviderMetadata: metadata,
+		Warnings:         result.Warnings,
+	}
+	actualJSON, err := json.Marshal(actual)
+	require.NoError(t, err, "marshaling generate result")
+	expectedJSON, err := os.ReadFile(filepath.Join(tc.Dir, "expected-generate.json"))
+	require.NoError(t, err, "loading expected generate result")
+	require.JSONEq(t, string(expectedJSON), string(actualJSON), "generate result mismatch")
+
+	expectedRequests, err := LoadExpectedRequests(filepath.Join(tc.Dir, "expected-requests.jsonl"))
+	require.NoError(t, err, "loading expected request inputs")
+	CompareRequestSnapshots(t, expectedRequests, ts.Requests())
 }
 
 func defaultTestServerFactory(_ *testing.T, tc TestCase) (*TestServer, error) {

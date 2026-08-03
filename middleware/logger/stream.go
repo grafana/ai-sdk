@@ -115,14 +115,7 @@ streamLoop:
 	}
 
 	if summary.firstErrSet {
-		if summary.firstErr != nil {
-			attrs = append(attrs, apiCallPartErrorAttrs(summary.firstErr, l.opts.capture)...)
-		} else {
-			attrs = append(attrs,
-				slog.String("ai_sdk.error.type", "stream_part_error"),
-				slog.String("ai_sdk.error.message", "provider stream emitted an error part"),
-			)
-		}
+		attrs = append(attrs, streamPartErrorAttrs(summary.firstErr, l.opts.capture)...)
 		l.log(ctx, EventStreamError, l.opts.errorLevel, attrs...)
 		return
 	}
@@ -172,7 +165,7 @@ func (l *modelLogger) logStreamPart(ctx context.Context, callID string, model pr
 	level := l.opts.partLevel
 	if part.Type == provider.PartError {
 		level = l.opts.errorLevel
-		attrs = append(attrs, apiCallPartErrorAttrs(part.APICallError, l.opts.capture)...)
+		attrs = append(attrs, streamPartErrorAttrs(part.APICallError, l.opts.capture)...)
 	}
 	l.log(ctx, EventStreamPart, level, attrs...)
 }

@@ -17,5 +17,17 @@ amazon-bedrock-json-with-tool.1: json-with-tool
 amazon-bedrock-json-with-tools.1: json-with-tools
 amazon-bedrock-json-tool-text-then-weather-then-json.1: json-tool-text-then-weather-then-json
 
-# Not imported (no streaming fixture available, only non-streaming .json):
-amazon-bedrock-json-tool-with-answer.1: null
+# Non-streaming Converse fixture:
+amazon-bedrock-json-tool-with-answer.1: json-tool-with-answer/input.response.json
+
+# Non-streaming counterparts to imported streaming fixtures:
+amazon-bedrock-json-other-tool.1.json: null
+amazon-bedrock-json-tool.1.json: null
+amazon-bedrock-json-tool.2.json: null
+amazon-bedrock-json-tool.3.json: null
+amazon-bedrock-json-with-tool.1.json: null
+amazon-bedrock-json-with-tools.1.json: null
+amazon-bedrock-reasoning.json: null
+amazon-bedrock-text.json: null
+amazon-bedrock-tool-call.1.json: null
+amazon-bedrock-tool-no-args.json: null

@@ -1,8 +1,0 @@
-{"type":"start"}
-{"type":"start-step"}
-{"type":"error","errorText":"An error occurred."}
-{"type":"text-start","id":"txt-0"}
-{"type":"text-delta","id":"txt-0","delta":"recovered"}
-{"type":"text-end","id":"txt-0"}
-{"type":"finish-step"}
-{"type":"finish","finishReason":"stop"}

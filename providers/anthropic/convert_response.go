@@ -176,10 +176,7 @@ func convertResponse(msg *anthropic.BetaMessage, mapping toolNameMapping, usesJs
 			ws := block.AsWebSearchToolResult()
 			wsContent := ws.Content
 			if wsContent.Type == "web_search_tool_result_error" {
-				errData, err := json.Marshal(map[string]any{
-					"type":      "web_search_tool_result_error",
-					"errorCode": string(wsContent.ErrorCode),
-				})
+				errData, err := marshalToolResultError("web_search_tool_result_error", string(wsContent.ErrorCode))
 				if err != nil {
 					return nil, fmt.Errorf("marshaling web search error: %w", err)
 				}
@@ -289,6 +286,20 @@ func convertResponse(msg *anthropic.BetaMessage, mapping toolNameMapping, usesJs
 					Result:     resultJSON,
 				})
 			}
+		case "advisor_tool_result":
+			advisorResult := block.AsAdvisorToolResult()
+			resultJSON, isError, err := marshalAdvisorResult(advisorResult.Content)
+			if err != nil {
+				return nil, err
+			}
+			content = append(content, provider.GenerateContentPart{
+				Type:             provider.ContentToolResult,
+				ToolCallID:       advisorResult.ToolUseID,
+				ToolName:         mapping.toCustomToolName("advisor"),
+				IsError:          isError,
+				ProviderExecuted: true,
+				Result:           resultJSON,
+			})
 		case "code_execution_tool_result":
 			ceResult := block.AsCodeExecutionToolResult()
 			ceContent := ceResult.Content
@@ -431,6 +442,7 @@ func convertResponse(msg *anthropic.BetaMessage, mapping toolNameMapping, usesJs
 		outputTokens:             msg.Usage.OutputTokens,
 		cacheCreationInputTokens: msg.Usage.CacheCreationInputTokens,
 		cacheReadInputTokens:     msg.Usage.CacheReadInputTokens,
+		reasoningTokens:          thinkingTokenCount(msg.Usage.OutputTokensDetails),
 		iterations:               msg.Usage.Iterations,
 		raw:                      json.RawMessage(msg.Usage.RawJSON()),
 	})
@@ -439,11 +451,16 @@ func convertResponse(msg *anthropic.BetaMessage, mapping toolNameMapping, usesJs
 	if isJsonResponseFromTool && msg.StopReason == anthropic.BetaStopReasonToolUse {
 		fr = provider.FinishReason{Unified: provider.FinishReasonStop, Raw: string(msg.StopReason)}
 	}
+	providerMetadata, err := buildAnthropicProviderMetadata(messageMetadataFields(msg.RawJSON()), json.RawMessage(msg.Usage.RawJSON()))
+	if err != nil {
+		return nil, err
+	}
 
 	return &provider.GenerateResult{
-		Content:      content,
-		FinishReason: fr,
-		Usage:        usage,
+		Content:          content,
+		FinishReason:     fr,
+		Usage:            usage,
+		ProviderMetadata: providerMetadata,
 		Response: &provider.GenerateResponse{
 			ResponseMetadata: provider.ResponseMetadata{
 				ID:       msg.ID,
@@ -491,3 +508,40 @@ func mapFinishReason(reason anthropic.BetaStopReason) provider.FinishReason {
 }
 
 func ptrBool(b bool) *bool { return &b }
+
+func marshalAdvisorResult(content anthropic.BetaAdvisorToolResultBlockContentUnion) (json.RawMessage, bool, error) {
+	var value any
+	isError := false
+	switch content.Type {
+	case "advisor_result":
+		value = struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		}{Type: "advisor_result", Text: content.Text}
+	case "advisor_redacted_result":
+		value = struct {
+			Type             string `json:"type"`
+			EncryptedContent string `json:"encryptedContent"`
+		}{Type: "advisor_redacted_result", EncryptedContent: content.EncryptedContent}
+	case "advisor_tool_result_error":
+		isError = true
+		value = struct {
+			Type      string `json:"type"`
+			ErrorCode string `json:"errorCode"`
+		}{Type: "advisor_tool_result_error", ErrorCode: string(content.ErrorCode)}
+	default:
+		return nil, false, fmt.Errorf("unsupported advisor result type %q", content.Type)
+	}
+	result, err := json.Marshal(value)
+	if err != nil {
+		return nil, false, fmt.Errorf("marshaling advisor result: %w", err)
+	}
+	return result, isError, nil
+}
+
+func marshalToolResultError(errorType, errorCode string) (json.RawMessage, error) {
+	return json.Marshal(struct {
+		Type      string `json:"type"`
+		ErrorCode string `json:"errorCode"`
+	}{Type: errorType, ErrorCode: errorCode})
+}

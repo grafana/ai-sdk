@@ -21,6 +21,7 @@ type anthropicUsage struct {
 	outputTokens             int64
 	cacheCreationInputTokens int64
 	cacheReadInputTokens     int64
+	reasoningTokens          *int64
 	iterations               anthropic.BetaIterationsUsage
 	raw                      json.RawMessage
 }
@@ -31,6 +32,7 @@ func (a *streamAdapter) resetUsage(usage anthropic.BetaUsage) error {
 		outputTokens:             usage.OutputTokens,
 		cacheCreationInputTokens: usage.CacheCreationInputTokens,
 		cacheReadInputTokens:     usage.CacheReadInputTokens,
+		reasoningTokens:          thinkingTokenCount(usage.OutputTokensDetails),
 	}
 	return a.mergeRawUsage(usage.RawJSON())
 }
@@ -40,6 +42,9 @@ func (a *streamAdapter) updateUsage(usage anthropic.BetaMessageDeltaUsage) error
 		a.usage.inputTokens = usage.InputTokens
 	}
 	a.usage.outputTokens = usage.OutputTokens
+	if usage.JSON.OutputTokensDetails.Valid() {
+		a.usage.reasoningTokens = thinkingTokenCount(usage.OutputTokensDetails)
+	}
 	if usage.JSON.CacheCreationInputTokens.Valid() {
 		a.usage.cacheCreationInputTokens = usage.CacheCreationInputTokens
 	}
@@ -115,6 +120,13 @@ func convertAnthropicUsage(usage anthropicUsage) provider.Usage {
 	cacheWrite := int(usage.cacheCreationInputTokens)
 	totalInput := noCache + cacheRead + cacheWrite
 	totalOutput := int(outputTokens)
+	var textOutput, reasoningOutput *int
+	if usage.reasoningTokens != nil {
+		reasoning := int(*usage.reasoningTokens)
+		text := totalOutput - reasoning
+		reasoningOutput = &reasoning
+		textOutput = &text
+	}
 
 	return provider.Usage{
 		InputTokens: provider.InputTokenUsage{
@@ -123,7 +135,16 @@ func convertAnthropicUsage(usage anthropicUsage) provider.Usage {
 			CacheRead:  &cacheRead,
 			CacheWrite: &cacheWrite,
 		},
-		OutputTokens: provider.OutputTokenUsage{Total: &totalOutput},
+		OutputTokens: provider.OutputTokenUsage{Total: &totalOutput, Text: textOutput, Reasoning: reasoningOutput},
 		Raw:          usage.raw,
 	}
 }
+
+func thinkingTokenCount(details anthropic.BetaOutputTokensDetails) *int64 {
+	if !details.JSON.ThinkingTokens.Valid() {
+		return nil
+	}
+	return ptrInt64(details.ThinkingTokens)
+}
+
+func ptrInt64(value int64) *int64 { return &value }

@@ -1,15 +1,19 @@
-{"type":"message_start","message":{"model":"claude-sonnet-4-5-20250929","id":"msg_0171L64W1b9APtSNCT9ZV1x5","type":"message","role":"assistant","content":[],"stop_reason":null,"stop_sequence":null,"stop_details":null,"usage":{"input_tokens":840,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":1,"service_tier":"standard","inference_geo":"not_available"}}     }
-{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}             }
+{"type":"message_start","message":{"model":"claude-sonnet-4-5-20250929","id":"msg_011CdaZC1pTGEtPrwU6ihLoQ","type":"message","role":"assistant","content":[],"stop_reason":null,"stop_sequence":null,"stop_details":null,"usage":{"input_tokens":835,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":6,"service_tier":"standard","inference_geo":"not_available"}}      }
+{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}               }
 {"type": "ping"}
-{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Based"}       }
-{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" on the current weather in Portland, here's what you're dealing with:\n\n**Current Conditions:**\n- Temperature: 55°F\n- Conditions:"}             }
-{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" Overcast with light rain\n- Humidity: 82%\n\n**Outfit Recommendation:**\n\n1. **Base layer**: Long"} }
-{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" pants (jeans or chinos work well)\n2. **Top**: Long-sleeve shirt or light sweater\n3. **Outer"}             }
-{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" layer**: Water-resistant jacket or raincoat\n4. **Footwear**: Waterproof shoes or boots\n5. **Accessories**: \n   - Bring an"}          }
-{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" umbrella\n   - Consider a hat with a brim to keep rain off your face\n\nThe"}         }
-{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" temperature is mild but the rain and high humidity will make it feel cooler and damp,"}           }
-{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" so layers are your friend. You'll want something waterproof as your outer layer to"}      }
-{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" stay comfortable!"} }
-{"type":"content_block_stop","index":0           }
-{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null,"stop_details":null},"usage":{"input_tokens":840,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":197}       }
-{"type":"message_stop"        }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Based on the current weather in"}  }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" Portland, here's what I found:\n\n**Current Weather:**\n- Temperature: 55°F (13°C)\n- Conditions: Overcast with light rain\n- Humidity: 82%"}         }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"\n\n**Outfit Recommendation:**\n\nFor this cool, rainy weather, I'd suggest:\n\n1"} }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":". **Layers**: A light sweater or long-sleeve shirt with a medium-weight jacket\n2. **Rain protection"}          }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"**: A waterproof or water-resistant jacket/raincoat\n3. **Bottoms**: Jeans or pants"}}
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" (avoid light colors that show water spots)\n4. **Footw"}        }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ear**: Waterproof shoes, boots, or rain boots\n5. **Accessories**: \n   - An"}}
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" umbrella (definitely!)\n   - A scarf if you tend to feel"}             }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" cold\n   - Consider a hat with a brim to keep rain off"}           }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" your face\n\nThe temperature is mild but on the cooler side, and with"}}
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" the rain and high humidity, you'll want to stay dry and have layers you can adjust."}      }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" The layered approach will keep you comfortable if you're going"}          }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" in and out of buildings."}          }
+{"type":"content_block_stop","index":0              }
+{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null,"stop_details":null},"usage":{"input_tokens":835,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":254,"output_tokens_details":{"thinking_tokens":0}}        }
+{"type":"message_stop"         }

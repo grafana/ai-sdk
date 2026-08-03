@@ -1,14 +1,13 @@
-{"type":"message_start","message":{"model":"claude-sonnet-4-20250514","id":"msg_014Ce9ybxc54kgDRzWDQTQ6K","type":"message","role":"assistant","content":[],"stop_reason":null,"stop_sequence":null,"stop_details":null,"usage":{"input_tokens":632,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":4,"service_tier":"standard","inference_geo":"not_available"}}               }
-{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}    }
+{"type":"message_start","message":{"model":"claude-sonnet-4-5-20250929","id":"msg_011CdbEyaYjvMkUKpGq7z8dF","type":"message","role":"assistant","content":[],"stop_reason":null,"stop_sequence":null,"stop_details":null,"usage":{"input_tokens":793,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":4,"service_tier":"standard","inference_geo":"not_available"}}          }
+{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}         }
 {"type": "ping"}
-{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Based on the current"}     }
-{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" weather in San Francisco, I'd definitely recommend bringing a jacket! Here's why:\n\n- **Temperature**: 57°F - This is on"} }
-{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" the cool side and you'll likely feel chilly without a layer"}         }
-{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"\n- **Conditions**: Windy fog with light drizzle - The combination of wind and moisture will make it feel colder than"}       }
-{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" the actual temperature\n- **Wind**: 18 mph winds - This will create a significant wind chill effect"}             }
-{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"\n\nA light to medium jacket or windbreaker would be perfect for these conditions. The wind and"}      }
-{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" drizzle mean you'll want something that offers both warmth and some protection from the elements. Classic"}  }
-{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" San Francisco weather!"}            }
-{"type":"content_block_stop","index":0         }
-{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null,"stop_details":null},"usage":{"input_tokens":632,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":147}    }
-{"type":"message_stop"       }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Based on the current"}         }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" weather in San Francisco, **yes, you should definitely bring a jacket!**\n\nThe conditions are:\n- **"}       }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Temperature**: 57°F (14°C)\n- **Conditions**: Windy fog with light drizzle\n- **Wind**: 18 mph\n\nWith temperatures"}        }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" in the mid-50s, wind, fog, and light drizzle, a"}      }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" jacket is essential. I'd recommend a windbreaker or water"}              }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"-resistant jacket to keep you comfortable and dry. San Francisco can feel much cooler than the actual temperature suggests"}  }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" when you factor in the wind and moisture."}       }
+{"type":"content_block_stop","index":0          }
+{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null,"stop_details":null},"usage":{"input_tokens":793,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":131,"output_tokens_details":{"thinking_tokens":0}}        }
+{"type":"message_stop"             }

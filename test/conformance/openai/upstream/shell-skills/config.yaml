@@ -1,0 +1,8 @@
+model: gpt-5.2
+prompt: Hello
+providerTools:
+  shell:
+    id: openai.shell
+    args:
+      environment:
+        type: containerAuto

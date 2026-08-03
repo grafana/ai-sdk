@@ -1,0 +1,22 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"tool-input-start","toolCallId":"tsc_08a14073c7135dc10069aa686296c88190bff77ad137e79d59","toolName":"toolSearch","providerExecuted":true}
+{"type":"tool-input-available","toolCallId":"tsc_08a14073c7135dc10069aa686296c88190bff77ad137e79d59","toolName":"toolSearch","input":{"arguments":{"paths":["get_weather"]},"call_id":null},"providerExecuted":true,"providerMetadata":{"openai":{"itemId":"tsc_08a14073c7135dc10069aa686296c88190bff77ad137e79d59"}}}
+{"type":"tool-output-available","toolCallId":"tsc_08a14073c7135dc10069aa686296c88190bff77ad137e79d59","output":{"tools":[{"type":"function","defer_loading":true,"description":"Get the current weather at a specific location","name":"get_weather","parameters":{"type":"object","properties":{"location":{"type":"string","description":"The city and state, e.g. San Francisco, CA"},"unit":{"type":"string","enum":["celsius","fahrenheit"],"description":"Temperature unit"}},"required":["location","unit"],"additionalProperties":false},"strict":true}]},"providerExecuted":true,"providerMetadata":{"openai":{"itemId":"tso_08a14073c7135dc10069aa6862b1248190ba40cbba918ecfa2"}}}
+{"type":"tool-input-start","toolCallId":"call_pddfxhfOx4gY56zn4vIIEbFp","toolName":"get_weather"}
+{"type":"tool-input-delta","toolCallId":"call_pddfxhfOx4gY56zn4vIIEbFp","inputTextDelta":"{\""}
+{"type":"tool-input-delta","toolCallId":"call_pddfxhfOx4gY56zn4vIIEbFp","inputTextDelta":"location"}
+{"type":"tool-input-delta","toolCallId":"call_pddfxhfOx4gY56zn4vIIEbFp","inputTextDelta":"\":\""}
+{"type":"tool-input-delta","toolCallId":"call_pddfxhfOx4gY56zn4vIIEbFp","inputTextDelta":"San"}
+{"type":"tool-input-delta","toolCallId":"call_pddfxhfOx4gY56zn4vIIEbFp","inputTextDelta":" Francisco"}
+{"type":"tool-input-delta","toolCallId":"call_pddfxhfOx4gY56zn4vIIEbFp","inputTextDelta":","}
+{"type":"tool-input-delta","toolCallId":"call_pddfxhfOx4gY56zn4vIIEbFp","inputTextDelta":" CA"}
+{"type":"tool-input-delta","toolCallId":"call_pddfxhfOx4gY56zn4vIIEbFp","inputTextDelta":"\",\""}
+{"type":"tool-input-delta","toolCallId":"call_pddfxhfOx4gY56zn4vIIEbFp","inputTextDelta":"unit"}
+{"type":"tool-input-delta","toolCallId":"call_pddfxhfOx4gY56zn4vIIEbFp","inputTextDelta":"\":\""}
+{"type":"tool-input-delta","toolCallId":"call_pddfxhfOx4gY56zn4vIIEbFp","inputTextDelta":"fahren"}
+{"type":"tool-input-delta","toolCallId":"call_pddfxhfOx4gY56zn4vIIEbFp","inputTextDelta":"heit"}
+{"type":"tool-input-delta","toolCallId":"call_pddfxhfOx4gY56zn4vIIEbFp","inputTextDelta":"\"}"}
+{"type":"tool-input-available","toolCallId":"call_pddfxhfOx4gY56zn4vIIEbFp","toolName":"get_weather","input":{"location":"San Francisco, CA","unit":"fahrenheit"},"providerMetadata":{"openai":{"itemId":"fc_08a14073c7135dc10069aa68630840819098f7c17c4e577327","namespace":"get_weather"}}}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"tool-calls"}

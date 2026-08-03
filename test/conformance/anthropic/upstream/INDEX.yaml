@@ -5,7 +5,7 @@
 #   <upstream-fixture-name>: <local-directory>  (imported)
 #   <upstream-fixture-name>: null               (not yet imported)
 
-anthropic-advisor-20250301.1: null
+anthropic-advisor-20250301.1: advisor
 anthropic-text: text-generation
 anthropic-tool-no-args: tool-call-no-args
 anthropic-clear-thinking.1: clear-thinking
@@ -13,10 +13,10 @@ anthropic-clear-tool-uses.1: clear-tool-uses
 anthropic-code-execution-20250825.1: code-execution-1
 anthropic-code-execution-20250825.2: code-execution-2
 anthropic-code-execution-20250825.pptx-skill: code-execution-pptx-skill
-anthropic-code-execution-file-upload.1: null
+anthropic-code-execution-file-upload.1: code-execution-file-upload
 anthropic-combined-context-editing.1: combined-context-editing
 anthropic-compaction.1: compaction
-anthropic-fallback: null
+anthropic-fallback: fallback
 anthropic-json-other-tool.1: json-other-tool
 anthropic-json-output-format.1: json-output-format
 anthropic-json-tool.1: json-tool-1
@@ -24,7 +24,7 @@ anthropic-json-tool.2: json-tool-2
 anthropic-mcp.1: mcp
 anthropic-message-delta-input-tokens: message-delta-input-tokens
 anthropic-programmatic-tool-calling.1: programmatic-tool-calling
-anthropic-refusal: null
+anthropic-refusal: refusal
 anthropic-tool-search-bm25.1: tool-search-bm25
 anthropic-tool-search-deferred-bm25: tool-search-deferred-bm25
 anthropic-tool-search-deferred-regex: tool-search-deferred-regex
@@ -32,3 +32,37 @@ anthropic-tool-search-regex.1: tool-search-regex
 anthropic-web-fetch-tool.1: web-fetch-tool
 anthropic-web-fetch-tool-20260209.1: web-fetch-tool-20260209
 anthropic-web-search-tool.1: web-search-tool
+
+# Non-streaming fixtures not yet imported:
+anthropic-advisor-20260301.1: null
+anthropic-claude-opus-5-reasoning-high.1: null
+anthropic-memory-20250818.1: null
+anthropic-refusal-no-details: null
+anthropic-tool-search-deferred-bm25.2: null
+anthropic-tool-search-deferred-regex.2: null
+anthropic-web-fetch-tool.2: null
+anthropic-web-fetch-tool.error: null
+
+# Non-streaming counterparts to imported streaming fixtures:
+anthropic-clear-thinking.1.json: null
+anthropic-clear-tool-uses.1.json: null
+anthropic-code-execution-20250825.1.json: null
+anthropic-code-execution-20250825.2.json: null
+anthropic-code-execution-20250825.pptx-skill.json: null
+anthropic-code-execution-file-upload.1.json: null
+anthropic-combined-context-editing.1.json: null
+anthropic-compaction.1.json: null
+anthropic-fallback.json: null
+anthropic-json-other-tool.1.json: null
+anthropic-json-output-format.1.json: null
+anthropic-json-tool.1.json: null
+anthropic-mcp.1.json: null
+anthropic-programmatic-tool-calling.1.json: null
+anthropic-refusal.json: null
+anthropic-text.json: null
+anthropic-tool-no-args.json: null
+anthropic-tool-search-bm25.1.json: null
+anthropic-tool-search-regex.1.json: null
+anthropic-web-fetch-tool-20260209.1.json: null
+anthropic-web-fetch-tool.1.json: null
+anthropic-web-search-tool.1.json: null

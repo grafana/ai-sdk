@@ -1,9 +1,9 @@
 {"type":"start"}
 {"type":"start-step"}
-{"type":"tool-input-start","toolCallId":"tooluse_OUTDTbSSSrqAEmwXlOGPnU","toolName":"get_weather"}
-{"type":"tool-input-delta","toolCallId":"tooluse_OUTDTbSSSrqAEmwXlOGPnU","inputTextDelta":""}
-{"type":"tool-input-delta","toolCallId":"tooluse_OUTDTbSSSrqAEmwXlOGPnU","inputTextDelta":"{\"city\": \"Be"}
-{"type":"tool-input-delta","toolCallId":"tooluse_OUTDTbSSSrqAEmwXlOGPnU","inputTextDelta":"rlin\"}"}
-{"type":"tool-input-available","toolCallId":"tooluse_OUTDTbSSSrqAEmwXlOGPnU","toolName":"get_weather","input":{"city":"Berlin"}}
+{"type":"tool-input-start","toolCallId":"tooluse_OzkNttmIERgoHmxk6IGfZh","toolName":"get_weather"}
+{"type":"tool-input-delta","toolCallId":"tooluse_OzkNttmIERgoHmxk6IGfZh","inputTextDelta":""}
+{"type":"tool-input-delta","toolCallId":"tooluse_OzkNttmIERgoHmxk6IGfZh","inputTextDelta":"{\"city\""}
+{"type":"tool-input-delta","toolCallId":"tooluse_OzkNttmIERgoHmxk6IGfZh","inputTextDelta":": \"Berlin\"}"}
+{"type":"tool-input-available","toolCallId":"tooluse_OzkNttmIERgoHmxk6IGfZh","toolName":"get_weather","input":{"city":"Berlin"}}
 {"type":"finish-step"}
 {"type":"finish","finishReason":"tool-calls"}

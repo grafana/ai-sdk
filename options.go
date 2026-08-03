@@ -46,6 +46,7 @@ type baseConfig struct {
 	tools              ToolSet
 	toolChoice         *provider.ToolChoice
 	activeTools        []string
+	activeToolsSet     bool
 	stopWhen           []StopCondition
 	toolApproval       toolApprovalConfig
 	toolApprovalSecret []byte
@@ -77,9 +78,10 @@ type baseConfig struct {
 	onToolCallStart  func(OnToolCallStartState)
 	onToolCallFinish func(OnToolCallFinishState)
 
-	reasoning   *provider.ReasoningEffort
-	prepareStep PrepareStepFunc
-	output      Output
+	reasoning      *provider.ReasoningEffort
+	prepareStep    PrepareStepFunc
+	runtimeContext any
+	output         Output
 }
 
 type streamConfig struct {
@@ -289,7 +291,10 @@ func WithToolChoice(tc provider.ToolChoice) Option {
 
 // WithActiveTools filters which tools are active for a call.
 func WithActiveTools(names ...string) Option {
-	return sharedOption{fn: func(c *baseConfig) { c.activeTools = names }}
+	return sharedOption{fn: func(c *baseConfig) {
+		c.activeTools = names
+		c.activeToolsSet = true
+	}}
 }
 
 // WithStopWhen sets stop conditions for the multi-step loop.

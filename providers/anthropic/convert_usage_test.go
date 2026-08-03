@@ -74,6 +74,148 @@ func TestConvertAnthropicUsage(t *testing.T) {
 	}
 }
 
+func TestConvertAnthropicUsage_ThinkingTokens(t *testing.T) {
+	var usage anthropic.BetaUsage
+	require.NoError(t, json.Unmarshal([]byte(`{"input_tokens":10,"output_tokens":20,"output_tokens_details":{"thinking_tokens":7}}`), &usage))
+
+	adapter := &streamAdapter{}
+	require.NoError(t, adapter.resetUsage(usage))
+	got := convertAnthropicUsage(adapter.usage)
+	require.NotNil(t, got.OutputTokens.Total)
+	assert.Equal(t, 20, *got.OutputTokens.Total)
+	require.NotNil(t, got.OutputTokens.Reasoning)
+	assert.Equal(t, 7, *got.OutputTokens.Reasoning)
+	require.NotNil(t, got.OutputTokens.Text)
+	assert.Equal(t, 13, *got.OutputTokens.Text)
+
+	var delta anthropic.BetaMessageDeltaUsage
+	require.NoError(t, json.Unmarshal([]byte(`{"output_tokens":25,"output_tokens_details":{"thinking_tokens":9}}`), &delta))
+	require.NoError(t, adapter.updateUsage(delta))
+	got = convertAnthropicUsage(adapter.usage)
+	assert.Equal(t, 25, *got.OutputTokens.Total)
+	assert.Equal(t, 9, *got.OutputTokens.Reasoning)
+	assert.Equal(t, 16, *got.OutputTokens.Text)
+}
+
+func TestConvertAnthropicUsage_MissingOrNullThinkingTokensRemainNil(t *testing.T) {
+	tests := []struct {
+		name  string
+		usage string
+	}{
+		{name: "parent omitted", usage: `{"input_tokens":10,"output_tokens":20}`},
+		{name: "parent null", usage: `{"input_tokens":10,"output_tokens":20,"output_tokens_details":null}`},
+		{name: "child omitted", usage: `{"input_tokens":10,"output_tokens":20,"output_tokens_details":{}}`},
+		{name: "child null", usage: `{"input_tokens":10,"output_tokens":20,"output_tokens_details":{"thinking_tokens":null}}`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var usage anthropic.BetaUsage
+			require.NoError(t, json.Unmarshal([]byte(tc.usage), &usage))
+			adapter := &streamAdapter{}
+			require.NoError(t, adapter.resetUsage(usage))
+			got := convertAnthropicUsage(adapter.usage)
+			assert.Nil(t, got.OutputTokens.Reasoning)
+			assert.Nil(t, got.OutputTokens.Text)
+		})
+	}
+
+	t.Run("explicit zero is retained", func(t *testing.T) {
+		var usage anthropic.BetaUsage
+		require.NoError(t, json.Unmarshal([]byte(`{"input_tokens":10,"output_tokens":20,"output_tokens_details":{"thinking_tokens":0}}`), &usage))
+		adapter := &streamAdapter{}
+		require.NoError(t, adapter.resetUsage(usage))
+		got := convertAnthropicUsage(adapter.usage)
+		require.NotNil(t, got.OutputTokens.Reasoning)
+		assert.Equal(t, 0, *got.OutputTokens.Reasoning)
+		require.NotNil(t, got.OutputTokens.Text)
+		assert.Equal(t, 20, *got.OutputTokens.Text)
+	})
+}
+
+func TestConvertAnthropicUsage_DeltaThinkingTokenPresence(t *testing.T) {
+	var initial anthropic.BetaUsage
+	require.NoError(t, json.Unmarshal([]byte(`{"input_tokens":10,"output_tokens":20,"output_tokens_details":{"thinking_tokens":7}}`), &initial))
+
+	t.Run("omitted parent preserves the previous count", func(t *testing.T) {
+		adapter := &streamAdapter{}
+		require.NoError(t, adapter.resetUsage(initial))
+		var delta anthropic.BetaMessageDeltaUsage
+		require.NoError(t, json.Unmarshal([]byte(`{"output_tokens":25}`), &delta))
+		require.NoError(t, adapter.updateUsage(delta))
+		got := convertAnthropicUsage(adapter.usage)
+		assert.Equal(t, 7, *got.OutputTokens.Reasoning)
+		assert.Equal(t, 18, *got.OutputTokens.Text)
+	})
+
+	t.Run("parent null preserves the previous count", func(t *testing.T) {
+		adapter := &streamAdapter{}
+		require.NoError(t, adapter.resetUsage(initial))
+		var delta anthropic.BetaMessageDeltaUsage
+		require.NoError(t, json.Unmarshal([]byte(`{"output_tokens":25,"output_tokens_details":null}`), &delta))
+		require.NoError(t, adapter.updateUsage(delta))
+		got := convertAnthropicUsage(adapter.usage)
+		assert.Equal(t, 7, *got.OutputTokens.Reasoning)
+		assert.Equal(t, 18, *got.OutputTokens.Text)
+	})
+
+	for _, tc := range []struct {
+		name  string
+		delta string
+	}{
+		{name: "child omitted clears", delta: `{"output_tokens":25,"output_tokens_details":{}}`},
+		{name: "child null clears", delta: `{"output_tokens":25,"output_tokens_details":{"thinking_tokens":null}}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			adapter := &streamAdapter{}
+			require.NoError(t, adapter.resetUsage(initial))
+			var delta anthropic.BetaMessageDeltaUsage
+			require.NoError(t, json.Unmarshal([]byte(tc.delta), &delta))
+			require.NoError(t, adapter.updateUsage(delta))
+			got := convertAnthropicUsage(adapter.usage)
+			assert.Nil(t, got.OutputTokens.Reasoning)
+			assert.Nil(t, got.OutputTokens.Text)
+		})
+	}
+}
+
+func TestConvertResponse_ThinkingTokenUsage(t *testing.T) {
+	msg := unmarshalMessage(t, `{
+		"id":"msg_1",
+		"type":"message",
+		"role":"assistant",
+		"model":"claude-opus-5",
+		"content":[{"type":"text","text":"done"}],
+		"stop_reason":"end_turn",
+		"usage":{"input_tokens":10,"output_tokens":20,"output_tokens_details":{"thinking_tokens":7}}
+	}`)
+
+	result, err := convertResponse(msg, toolNameMapping{}, false, nil, defaultGenerateID, "anthropic", false)
+	require.NoError(t, err)
+	require.NotNil(t, result.Usage.OutputTokens.Total)
+	assert.Equal(t, 20, *result.Usage.OutputTokens.Total)
+	require.NotNil(t, result.Usage.OutputTokens.Reasoning)
+	assert.Equal(t, 7, *result.Usage.OutputTokens.Reasoning)
+	require.NotNil(t, result.Usage.OutputTokens.Text)
+	assert.Equal(t, 13, *result.Usage.OutputTokens.Text)
+}
+
+func TestConvertResponse_NullThinkingTokenUsageRemainsNil(t *testing.T) {
+	msg := unmarshalMessage(t, `{
+		"id":"msg_1",
+		"type":"message",
+		"role":"assistant",
+		"model":"claude-opus-5",
+		"content":[{"type":"text","text":"done"}],
+		"stop_reason":"end_turn",
+		"usage":{"input_tokens":10,"output_tokens":20,"output_tokens_details":{"thinking_tokens":null}}
+	}`)
+
+	result, err := convertResponse(msg, toolNameMapping{}, false, nil, defaultGenerateID, "anthropic", false)
+	require.NoError(t, err)
+	assert.Nil(t, result.Usage.OutputTokens.Reasoning)
+	assert.Nil(t, result.Usage.OutputTokens.Text)
+}
+
 func TestConvertResponse_Usage(t *testing.T) {
 	msg := unmarshalMessage(t, `{
 		"id":"msg_1",

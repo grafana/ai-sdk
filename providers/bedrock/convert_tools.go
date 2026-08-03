@@ -122,7 +122,15 @@ func prepareTools(tools []provider.Tool, toolChoice *provider.ToolChoice, modelI
 		if desc := strings.TrimSpace(t.Description); desc != "" {
 			spec.Description = desc
 		}
-		if !isStrictUnsupportedModel(modelID) {
+		if rejectsNewerSchemaFields(modelID) {
+			if t.Strict != nil {
+				res.warnings = append(res.warnings, provider.Warning{
+					Type:    provider.WarnUnsupported,
+					Feature: "strict",
+					Details: fmt.Sprintf("Tool '%s' has strict: %t, but strict mode is not supported by this model on Amazon Bedrock. The strict property will be ignored.", t.Name, *t.Strict),
+				})
+			}
+		} else {
 			spec.Strict = t.Strict
 		}
 		tc.Tools = append(tc.Tools, toolDefinition{ToolSpec: spec})
@@ -166,10 +174,6 @@ func prepareTools(tools []provider.Tool, toolChoice *provider.ToolChoice, modelI
 		res.toolConfig = tc
 	}
 	return res
-}
-
-func isStrictUnsupportedModel(modelID string) bool {
-	return strings.Contains(modelID, "claude-opus-4-7") || strings.Contains(modelID, "claude-opus-4-8")
 }
 
 func jsonOrEmptyObject(raw json.RawMessage) json.RawMessage {

@@ -1,0 +1,12 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"text-start","id":"msg_0a63f40a2632b74300699f8819a5e08196ac270722d369af5a","providerMetadata":{"openai":{"itemId":"msg_0a63f40a2632b74300699f8819a5e08196ac270722d369af5a","phase":"commentary"}}}
+{"type":"text-delta","id":"msg_0a63f40a2632b74300699f8819a5e08196ac270722d369af5a","delta":"Got"}
+{"type":"text-delta","id":"msg_0a63f40a2632b74300699f8819a5e08196ac270722d369af5a","delta":" it"}
+{"type":"text-end","id":"msg_0a63f40a2632b74300699f8819a5e08196ac270722d369af5a","providerMetadata":{"openai":{"itemId":"msg_0a63f40a2632b74300699f8819a5e08196ac270722d369af5a","phase":"commentary"}}}
+{"type":"text-start","id":"msg_0a63f40a2632b74300699f881bfbc88196aec38f30c3dd24b0","providerMetadata":{"openai":{"itemId":"msg_0a63f40a2632b74300699f881bfbc88196aec38f30c3dd24b0","phase":"final_answer"}}}
+{"type":"text-delta","id":"msg_0a63f40a2632b74300699f881bfbc88196aec38f30c3dd24b0","delta":"Here are a"}
+{"type":"text-delta","id":"msg_0a63f40a2632b74300699f881bfbc88196aec38f30c3dd24b0","delta":" few **AI"}
+{"type":"text-end","id":"msg_0a63f40a2632b74300699f881bfbc88196aec38f30c3dd24b0","providerMetadata":{"openai":{"itemId":"msg_0a63f40a2632b74300699f881bfbc88196aec38f30c3dd24b0","phase":"final_answer"}}}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"stop"}

@@ -1,0 +1,15 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"text-start","id":"0"}
+{"type":"text-delta","id":"0","delta":"I'll check"}
+{"type":"text-delta","id":"0","delta":" the we"}
+{"type":"text-delta","id":"0","delta":"ather in"}
+{"type":"text-delta","id":"0","delta":" Berlin for you."}
+{"type":"text-end","id":"0"}
+{"type":"tool-input-start","toolCallId":"tooluse_3t4Z8JjReZui521GHFayVk","toolName":"get_weather"}
+{"type":"tool-input-delta","toolCallId":"tooluse_3t4Z8JjReZui521GHFayVk","inputTextDelta":""}
+{"type":"tool-input-delta","toolCallId":"tooluse_3t4Z8JjReZui521GHFayVk","inputTextDelta":"{\"cit"}
+{"type":"tool-input-delta","toolCallId":"tooluse_3t4Z8JjReZui521GHFayVk","inputTextDelta":"y\": \"Berlin\"}"}
+{"type":"tool-input-available","toolCallId":"tooluse_3t4Z8JjReZui521GHFayVk","toolName":"get_weather","input":{"city":"Berlin"}}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"tool-calls"}

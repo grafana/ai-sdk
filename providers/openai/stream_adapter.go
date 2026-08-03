@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -40,10 +41,14 @@ type activeReasoningState struct {
 type streamAdapter struct {
 	warnings     []provider.Warning
 	br           buildResult
+	requestBody  responses.ResponseNewParams
+	response     *http.Response
 	generateID   func() string
 	providerName string
 
-	startEmitted bool
+	startEmitted           bool
+	encounteredStreamError bool
+	finishEmitted          bool
 
 	ongoingToolCalls          map[int64]*ongoingToolCall
 	ongoingAnnotations        []json.RawMessage
@@ -56,10 +61,12 @@ type streamAdapter struct {
 }
 
 // newStreamAdapter constructs a streamAdapter with initialized maps.
-func newStreamAdapter(warnings []provider.Warning, br buildResult, generateID func() string, providerName string) *streamAdapter {
+func newStreamAdapter(warnings []provider.Warning, br buildResult, requestBody responses.ResponseNewParams, response *http.Response, generateID func() string, providerName string) *streamAdapter {
 	return &streamAdapter{
 		warnings:                  warnings,
 		br:                        br,
+		requestBody:               requestBody,
+		response:                  response,
 		generateID:                generateID,
 		providerName:              providerName,
 		ongoingToolCalls:          make(map[int64]*ongoingToolCall),
@@ -127,7 +134,7 @@ func (a *streamAdapter) handleEvent(event responses.ResponseStreamEventUnion, ch
 					ch <- provider.StreamPart{
 						Type:             provider.PartReasoningEnd,
 						ID:               fmt.Sprintf("%s:%d", e.ItemID, index),
-						ProviderMetadata: reasoningMeta(a.providerName, e.ItemID, state.encryptedContent),
+						ProviderMetadata: itemIDMeta(a.providerName, e.ItemID),
 					}
 					state.summaryParts[index] = reasoningSummaryConcluded
 				}
@@ -142,11 +149,11 @@ func (a *streamAdapter) handleEvent(event responses.ResponseStreamEventUnion, ch
 
 	case responses.ResponseReasoningSummaryPartDoneEvent:
 		state := a.reasoningState(e.ItemID)
-		if a.br.store {
+		if a.br.storeExplicitlyEnabled {
 			ch <- provider.StreamPart{
 				Type:             provider.PartReasoningEnd,
 				ID:               fmt.Sprintf("%s:%d", e.ItemID, e.SummaryIndex),
-				ProviderMetadata: reasoningMeta(a.providerName, e.ItemID, state.encryptedContent),
+				ProviderMetadata: itemIDMeta(a.providerName, e.ItemID),
 			}
 			state.summaryParts[e.SummaryIndex] = reasoningSummaryConcluded
 		} else {
@@ -193,16 +200,21 @@ func (a *streamAdapter) handleEvent(event responses.ResponseStreamEventUnion, ch
 		a.emitFinish(e.Response, ch)
 
 	case responses.ResponseFailedEvent:
-		fr := provider.FinishReason{Unified: provider.FinishReasonError}
-		ch <- provider.StreamPart{Type: provider.PartFinish, FinishReason: &fr}
+		if !a.encounteredStreamError {
+			if apiErr := openAIStreamEventError(event, a.requestBody, a.response); apiErr != nil {
+				a.encounteredStreamError = true
+				ch <- provider.StreamPart{Type: provider.PartError, APICallError: apiErr}
+			}
+		}
+		a.emitFailedFinish(e.Response, ch)
 
 	case responses.ResponseErrorEvent:
-		ch <- provider.StreamPart{
-			Type: provider.PartError,
-			APICallError: provider.NewAPICallError(provider.APICallErrorOptions{
-				Message: e.Message,
-			}),
+		a.encounteredStreamError = true
+		apiErr := openAIStreamEventError(event, a.requestBody, a.response)
+		if apiErr == nil {
+			apiErr = provider.NewAPICallError(provider.APICallErrorOptions{Message: e.Message})
 		}
+		ch <- provider.StreamPart{Type: provider.PartError, APICallError: apiErr}
 
 	default:
 		a.handleRawEvent(event.RawJSON(), ch)
@@ -285,7 +297,7 @@ func (a *streamAdapter) handleOutputItemAdded(e responses.ResponseOutputItemAdde
 		a.ongoingToolCalls[e.OutputIndex] = tc
 		ch <- provider.StreamPart{Type: provider.PartToolInputStart, ID: v.CallID, ToolName: name}
 		if v.Operation.Type == "delete_file" {
-			input, _ := json.Marshal(map[string]any{"callId": v.CallID, "operation": v.Operation})
+			input := applyPatchInput(v.CallID, v.Operation)
 			ch <- provider.StreamPart{Type: provider.PartToolInputDelta, ID: v.CallID, Delta: string(input)}
 			ch <- provider.StreamPart{Type: provider.PartToolInputEnd, ID: v.CallID}
 			tc.applyPatchDone = true
@@ -480,7 +492,7 @@ func (a *streamAdapter) handleOutputItemDone(e responses.ResponseOutputItemDoneE
 				toolCallID = v.ID
 			}
 		}
-		result, _ := json.Marshal(map[string]any{"tools": v.Tools})
+		result := toolSearchOutput(v.RawJSON())
 		ch <- provider.StreamPart{Type: provider.PartToolResult, ToolCallID: toolCallID, ToolName: name, Result: result, ProviderMetadata: itemIDMeta(a.providerName, v.ID)}
 
 	case responses.ResponseApplyPatchToolCall:
@@ -494,7 +506,7 @@ func (a *streamAdapter) handleOutputItemDone(e responses.ResponseOutputItemDoneE
 			ch <- provider.StreamPart{Type: provider.PartToolInputEnd, ID: tc.toolCallID}
 			tc.applyPatchDone = true
 		}
-		input, _ := json.Marshal(map[string]any{"callId": v.CallID, "operation": v.Operation})
+		input := applyPatchInput(v.CallID, v.Operation)
 		ch <- provider.StreamPart{Type: provider.PartToolCall, ToolCallID: v.CallID, ToolName: name, Input: string(input), ProviderMetadata: itemIDMeta(a.providerName, v.ID)}
 		delete(a.ongoingToolCalls, e.OutputIndex)
 
@@ -510,8 +522,15 @@ func (a *streamAdapter) handleOutputItemDone(e responses.ResponseOutputItemDoneE
 
 	case responses.ResponseFunctionShellToolCallOutput:
 		name := a.br.toolNameMapping.toCustomToolName("shell")
-		result, _ := json.Marshal(map[string]any{"output": v.Output})
+		result := shellOutput(v.RawJSON())
 		ch <- provider.StreamPart{Type: provider.PartToolResult, ToolCallID: v.CallID, ToolName: name, Result: result}
+
+	case responses.ResponseCompactionItem:
+		ch <- provider.StreamPart{
+			Type:             provider.PartCustom,
+			Kind:             "openai.compaction",
+			ProviderMetadata: compactionMetadata(a.providerName, v.ID, v.EncryptedContent),
+		}
 
 	case responses.ResponseOutputItemLocalShellCall:
 		name := a.br.toolNameMapping.toCustomToolName("local_shell")
@@ -692,8 +711,46 @@ func jsonEscape(s string) string {
 
 // emitFinish emits the finish part with usage and finish reason.
 func (a *streamAdapter) emitFinish(resp responses.Response, ch chan<- provider.StreamPart) {
+	if a.finishEmitted {
+		return
+	}
+	a.finishEmitted = true
 	fr := mapFinishReason(resp.IncompleteDetails.Reason, a.hasFunctionCall)
 	usage := convertUsage(resp.Usage, json.RawMessage(resp.Usage.RawJSON()))
+	ch <- provider.StreamPart{
+		Type:             provider.PartFinish,
+		FinishReason:     &fr,
+		Usage:            &usage,
+		ProviderMetadata: responseMeta(a.providerName, &resp),
+	}
+}
+
+func (a *streamAdapter) emitFailedFinish(resp responses.Response, ch chan<- provider.StreamPart) {
+	if a.finishEmitted {
+		return
+	}
+	a.finishEmitted = true
+	fr := provider.FinishReason{Unified: provider.FinishReasonError, Raw: "error"}
+	if resp.IncompleteDetails.Reason != "" {
+		fr = mapFinishReason(resp.IncompleteDetails.Reason, a.hasFunctionCall)
+	}
+	usage := convertUsage(resp.Usage, json.RawMessage(resp.Usage.RawJSON()))
+	ch <- provider.StreamPart{
+		Type:             provider.PartFinish,
+		FinishReason:     &fr,
+		Usage:            &usage,
+		ProviderMetadata: responseMeta(a.providerName, &resp),
+	}
+}
+
+func (a *streamAdapter) emitPendingErrorFinish(ch chan<- provider.StreamPart) {
+	if !a.encounteredStreamError || a.finishEmitted {
+		return
+	}
+	a.finishEmitted = true
+	fr := provider.FinishReason{Unified: provider.FinishReasonError, Raw: "error"}
+	usage := convertUsage(responses.ResponseUsage{}, nil)
+	resp := responses.Response{ID: a.responseID}
 	ch <- provider.StreamPart{
 		Type:             provider.PartFinish,
 		FinishReason:     &fr,

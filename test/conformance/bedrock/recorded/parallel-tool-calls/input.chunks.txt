@@ -1,15 +1,15 @@
-{"messageStart": {"p": "abcdefghijklmnopqrstuvwxyzABCDEFGH", "role": "assistant"}}
-{"contentBlockStart": {"contentBlockIndex": 0, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGH", "start": {"toolUse": {"name": "get_weather", "toolUseId": "tooluse_HrL955wrYfwpBfqRtpc6QB", "type": "tool_use", "input": {}}}}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"toolUse": {"input": ""}}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"toolUse": {"input": "{\""}}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"toolUse": {"input": "city\": \""}}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRS"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"toolUse": {"input": "Be"}}, "p": "abcdefghijklmnopqrstuvwxy"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"toolUse": {"input": "rlin\"}"}}, "p": "abcdefghijklmnopqrstuvwxyzA"}}
-{"contentBlockStop": {"contentBlockIndex": 0, "p": "ab"}}
-{"contentBlockStart": {"contentBlockIndex": 1, "p": "abcdefghijklmnopqrstuv", "start": {"toolUse": {"name": "get_weather", "toolUseId": "tooluse_IlYXFsk74OPYH3eHh1fd9X", "type": "tool_use", "input": {}}}}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"toolUse": {"input": ""}}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWX"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"toolUse": {"input": "{\"city\": \""}}, "p": "abcdefghijklmnopqrstuv"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"toolUse": {"input": "Paris\"}"}}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVW"}}
-{"contentBlockStop": {"contentBlockIndex": 1, "p": "abcdefghijklmnopqrst"}}
-{"messageStop": {"additionalModelResponseFields": {"delta": {"stop_sequence": null}}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012345678", "stopReason": "tool_use"}}
-{"metadata": {"metrics": {"latencyMs": 4834}, "p": "abcdefghijklmnopqrstuvwxyzABCDEF", "usage": {"inputTokens": 577, "outputTokens": 90, "serverToolUsage": {}, "totalTokens": 667}}}
+{"messageStart":{"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ","role":"assistant"}}
+{"contentBlockStart":{"contentBlockIndex":0,"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRST","start":{"toolUse":{"name":"get_weather","toolUseId":"tooluse_KwOc7yNU1oNSN1wcVZdzqE","type":"tool_use"}}}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"toolUse":{"input":""}},"p":"abcdefghijklmnopqrstu"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"toolUse":{"input":"{\"city\": \"B"}},"p":"abcdefghijklmnopqrstuvw"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"toolUse":{"input":"erl"}},"p":"abcdefg"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"toolUse":{"input":"in\"}"}},"p":"abcdefghijklmnopqrstu"}}
+{"contentBlockStop":{"contentBlockIndex":0,"p":"abcd"}}
+{"contentBlockStart":{"contentBlockIndex":1,"p":"abcdefghijklmnopqrstuvwxyzABC","start":{"toolUse":{"name":"get_weather","toolUseId":"tooluse_ND7QeZsnnz7UgnMoQc9HaH","type":"tool_use"}}}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"toolUse":{"input":""}},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"toolUse":{"input":"{\"city\": \"Pa"}},"p":"abcdefghijklmnopqrstuvwxyzAB"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"toolUse":{"input":"ris"}},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXY"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"toolUse":{"input":"\"}"}},"p":"abcde"}}
+{"contentBlockStop":{"contentBlockIndex":1,"p":"abcdefghijklmnopqrstuvwxyzABCD"}}
+{"messageStop":{"additionalModelResponseFields":{"delta":{"stop_sequence":null}},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUV","stopReason":"tool_use"}}
+{"metadata":{"metrics":{"latencyMs":948},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVW","usage":{"inputTokens":577,"outputTokens":90,"serverToolUsage":{},"totalTokens":667}}}

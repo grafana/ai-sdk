@@ -1,4 +1,5 @@
 # Top-level reasoning on an Anthropic Bedrock model. Exercises the shared
 # CallOptions.reasoning path instead of provider-specific reasoningConfig.
-model: anthropic.claude-sonnet-4-5-20250929-v1:0
+model: us.anthropic.claude-sonnet-4-5-20250929-v1:0
+prompt: test
 reasoning: high

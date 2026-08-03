@@ -448,30 +448,21 @@ func TestToResponseMessages(t *testing.T) {
 		assert.Equal(t, provider.RoleAssistant, got[0].Role)
 	})
 
-	t.Run("tool-call with non-object input is sanitized to {}", func(t *testing.T) {
+	t.Run("tool-call with valid primitive input is preserved", func(t *testing.T) {
 		got := ToResponseMessages(
 			[]provider.ContentPart{
 				{
 					Type:       provider.ContentPartTypeToolCall,
 					ToolCallID: "call-1",
 					ToolName:   "weather",
-					Input:      json.RawMessage(`"raw string, not an object"`),
-				},
-				{
-					Type:       provider.ContentPartTypeToolResult,
-					ToolCallID: "call-1",
-					ToolName:   "weather",
-					Output: &provider.ToolResultOutput{
-						Type: provider.ToolOutputErrorText,
-						Text: "Invalid input for tool weather: JSON parsing failed",
-					},
+					Input:      json.RawMessage(`42`),
 				},
 			},
 		)
-		require.Len(t, got, 2)
+		require.Len(t, got, 1)
 		require.Len(t, got[0].Content, 1)
 		assert.Equal(t, provider.ContentPartTypeToolCall, got[0].Content[0].Type)
-		assert.JSONEq(t, `{}`, string(got[0].Content[0].Input))
+		assert.JSONEq(t, `42`, string(got[0].Content[0].Input))
 	})
 
 	t.Run("tool-call with valid object input is preserved verbatim", func(t *testing.T) {

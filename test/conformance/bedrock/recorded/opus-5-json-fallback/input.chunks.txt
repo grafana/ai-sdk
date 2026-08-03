@@ -1,0 +1,8 @@
+{"messageStart":{"p":"abcdefghij","role":"assistant"}}
+{"contentBlockStart":{"contentBlockIndex":0,"p":"abcdefghijklmnopqrstuvwxyzABCDE","start":{"toolUse":{"name":"json","toolUseId":"tooluse_GHQPnfax6o8Y8Lh4wyoK0c","type":"tool_use"}}}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"toolUse":{"input":""}},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"toolUse":{"input":"{\"status\": "}},"p":"abcdefghijklmnopqrstu"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"toolUse":{"input":"\"ok\"}"}},"p":"abcde"}}
+{"contentBlockStop":{"contentBlockIndex":0,"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"}}
+{"messageStop":{"additionalModelResponseFields":{"delta":{"stop_sequence":null}},"p":"abcdefghijklmnopqrstuvwxyzABCDE","stopReason":"tool_use"}}
+{"metadata":{"metrics":{"latencyMs":1329},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ","usage":{"inputTokens":491,"outputTokens":36,"serverToolUsage":{},"totalTokens":527}}}

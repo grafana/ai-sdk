@@ -1,5 +1,0 @@
-model: gpt-4o
-prompt: "What is the latest Go version?"
-providerTools:
-  web_search:
-    id: openai.web_search

@@ -1,4 +1,4 @@
-model: computer-preview
+model: gpt-5.4
 prompt: "Open the settings page and take a screenshot."
 toolChoice:
   type: tool

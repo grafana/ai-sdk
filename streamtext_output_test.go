@@ -276,6 +276,41 @@ func TestStreamText_ToolsAndStructuredOutput(t *testing.T) {
 	assert.Equal(t, "Result", val.Name)
 }
 
+func TestStreamText_ObjectOutputPreservesMetadataOnlyTextDelta(t *testing.T) {
+	metadata := provider.ProviderMetadata{
+		"test": json.RawMessage(`{"signature":"test-signature"}`),
+	}
+	model := &testModel{
+		streamFunc: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+			ch := make(chan provider.StreamPart, 6)
+			ch <- provider.StreamPart{Type: provider.PartTextStart, ID: "t1"}
+			ch <- provider.StreamPart{Type: provider.PartTextDelta, ID: "t1", Delta: `{"value":"ok"}`}
+			ch <- provider.StreamPart{Type: provider.PartTextDelta, ID: "t1", ProviderMetadata: metadata}
+			ch <- provider.StreamPart{Type: provider.PartTextEnd, ID: "t1"}
+			ch <- provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}}
+			close(ch)
+			return &provider.StreamResult{Stream: ch}, nil
+		},
+	}
+
+	result := aisdk.StreamText(context.Background(), model,
+		aisdk.WithModelMessages(provider.UserText("test")),
+		aisdk.WithOutput(output.JSON()),
+	)
+
+	var metadataDelta *aisdk.StreamTextDelta
+	for part := range result.FullStream() {
+		if delta, ok := part.(aisdk.StreamTextDelta); ok && delta.Text == "" && delta.ProviderMetadata != nil {
+			copy := delta
+			metadataDelta = &copy
+		}
+	}
+
+	require.NotNil(t, metadataDelta)
+	assert.Equal(t, "t1", metadataDelta.ID)
+	assert.Equal(t, metadata, metadataDelta.ProviderMetadata)
+}
+
 func TestStreamText_PartialOutputStream(t *testing.T) {
 	t.Run("delivers more partials than the channel buffer", func(t *testing.T) {
 		out := output.JSON()
@@ -295,10 +330,14 @@ func TestStreamText_PartialOutputStream(t *testing.T) {
 				continue
 			}
 			raw := partial.(json.RawMessage)
-			if string(raw) == last {
+			var value any
+			require.NoError(t, json.Unmarshal(raw, &value))
+			canonical, err := json.Marshal(value)
+			require.NoError(t, err)
+			if string(canonical) == last {
 				continue
 			}
-			last = string(raw)
+			last = string(canonical)
 			expected = append(expected, append(json.RawMessage(nil), raw...))
 		}
 		require.Greater(t, len(expected), 256)
@@ -333,6 +372,45 @@ func TestStreamText_PartialOutputStream(t *testing.T) {
 		for i := range expected {
 			assert.Equal(t, string(expected[i]), string(partials[i]), "partial %d", i)
 		}
+	})
+
+	t.Run("does not republish semantic duplicates", func(t *testing.T) {
+		deltas := []string{`{
+  "outer": {
+    "value": "x"`, "\n  }", "\n}"}
+		ch := make(chan provider.StreamPart, len(deltas)+3)
+		ch <- provider.StreamPart{Type: provider.PartTextStart, ID: "t1"}
+		for _, delta := range deltas {
+			ch <- provider.StreamPart{Type: provider.PartTextDelta, ID: "t1", Delta: delta}
+		}
+		ch <- provider.StreamPart{Type: provider.PartTextEnd, ID: "t1"}
+		ch <- provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}}
+		close(ch)
+
+		model := &testModel{
+			streamFunc: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+				return &provider.StreamResult{Stream: ch}, nil
+			},
+		}
+		result := aisdk.StreamText(context.Background(), model,
+			aisdk.WithModelMessages(provider.UserText("test")),
+			aisdk.WithOutput(output.JSON()),
+		)
+
+		var textDeltas []string
+		for part := range result.FullStream() {
+			if delta, ok := part.(aisdk.StreamTextDelta); ok {
+				textDeltas = append(textDeltas, delta.Text)
+			}
+		}
+		var partials []json.RawMessage
+		for partial := range result.PartialOutputStream() {
+			partials = append(partials, partial)
+		}
+
+		require.Len(t, partials, 1)
+		assert.JSONEq(t, `{"outer":{"value":"x"}}`, string(partials[0]))
+		assert.Equal(t, []string{deltas[0], deltas[1] + deltas[2]}, textDeltas)
 	})
 
 	t.Run("emits partial JSON objects", func(t *testing.T) {

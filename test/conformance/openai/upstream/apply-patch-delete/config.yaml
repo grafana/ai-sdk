@@ -1,0 +1,5 @@
+model: gpt-5.1-2025-11-13
+prompt: Hello
+providerTools:
+  apply_patch:
+    id: openai.apply_patch

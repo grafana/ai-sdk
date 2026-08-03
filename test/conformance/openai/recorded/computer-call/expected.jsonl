@@ -1,7 +1,7 @@
 {"type":"start"}
 {"type":"start-step"}
-{"type":"tool-input-start","toolCallId":"call_computer","toolName":"browser"}
-{"type":"tool-input-delta","toolCallId":"call_computer","inputTextDelta":"{\"actions\":[{\"type\":\"click\",\"button\":\"left\",\"x\":100,\"y\":200,\"keys\":[\"SHIFT\"]},{\"type\":\"scroll\",\"x\":10,\"y\":20,\"scrollX\":0,\"scrollY\":500},{\"type\":\"screenshot\"}],\"pendingSafetyChecks\":[{\"id\":\"safe_1\",\"code\":\"policy\",\"message\":\"Confirm navigation\"}],\"status\":\"completed\"}"}
-{"type":"tool-input-available","toolCallId":"call_computer","toolName":"browser","input":{"actions":[{"type":"click","button":"left","x":100,"y":200,"keys":["SHIFT"]},{"type":"scroll","x":10,"y":20,"scrollX":0,"scrollY":500},{"type":"screenshot"}],"pendingSafetyChecks":[{"id":"safe_1","code":"policy","message":"Confirm navigation"}],"status":"completed"},"providerMetadata":{"openai":{"itemId":"item_computer"}}}
+{"type":"tool-input-start","toolCallId":"call_gBYpOSGxzBQOxYCoDJLSmYxO","toolName":"browser"}
+{"type":"tool-input-delta","toolCallId":"call_gBYpOSGxzBQOxYCoDJLSmYxO","inputTextDelta":"{\"actions\":[{\"type\":\"screenshot\"}],\"pendingSafetyChecks\":[],\"status\":\"completed\"}"}
+{"type":"tool-input-available","toolCallId":"call_gBYpOSGxzBQOxYCoDJLSmYxO","toolName":"browser","input":{"actions":[{"type":"screenshot"}],"pendingSafetyChecks":[],"status":"completed"},"providerMetadata":{"openai":{"itemId":"cu_0519d98416682f60016a6d59c77d14819591e6199fac07aa2b"}}}
 {"type":"finish-step"}
 {"type":"finish","finishReason":"tool-calls"}

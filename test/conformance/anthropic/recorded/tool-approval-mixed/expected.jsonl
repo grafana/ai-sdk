@@ -3,11 +3,10 @@
 {"type":"tool-output-available","toolCallId":"toolu_approved","output":{"ok":true}}
 {"type":"start-step"}
 {"type":"text-start","id":"0"}
-{"type":"text-delta","id":"0","delta":"I"}
-{"type":"text-delta","id":"0","delta":"'ve completed the requested actions:\n\n1. **Update the issue list** - Successfully completed"}
-{"type":"text-delta","id":"0","delta":" ✓\n2. **Delete the archived issue list** - This operation was not allowed\n\nThe issue list has been updated,"}
-{"type":"text-delta","id":"0","delta":" but the system is not permitting the deletion of the archived issue list. This could be due to permission"}
-{"type":"text-delta","id":"0","delta":" restrictions or system policies that prevent deletion of archived data."}
+{"type":"text-delta","id":"0","delta":"I've completed"}
+{"type":"text-delta","id":"0","delta":" the requested operations:\n\n1. ✅ **Updated the issue list** - Successfully completed\n2. ❌ **Delete the"}
+{"type":"text-delta","id":"0","delta":" archived issue list** - This operation is not allowed\n\nThe issue list has been updated, but the system does not permit"}
+{"type":"text-delta","id":"0","delta":" deletion of the archived issue list."}
 {"type":"text-end","id":"0"}
 {"type":"finish-step"}
 {"type":"finish","finishReason":"stop"}

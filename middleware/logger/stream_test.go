@@ -157,13 +157,22 @@ func TestMiddleware_StreamOpenErrorLogsAndPropagates(t *testing.T) {
 	if records[1].Message != string(EventStreamError) {
 		t.Fatalf("expected stream error record, got %s", records[1].Message)
 	}
-	assertAttr(t, records[1].AttrsMap(), "ai_sdk.success", false)
-	assertAttr(t, records[1].AttrsMap(), "ai_sdk.outcome", outcomeError)
+	attrs := records[1].AttrsMap()
+	assertAttr(t, attrs, "ai_sdk.success", false)
+	assertAttr(t, attrs, "ai_sdk.outcome", outcomeError)
+	assertAttr(t, attrs, "ai_sdk.error.type", "unknown")
+	if _, ok := attrs["ai_sdk.error.message"]; ok {
+		t.Fatalf("default logging captured opaque stream-open error message: %#v", attrs)
+	}
+	if encoded := handler.JSON(t); strings.Contains(encoded, "stream open failed") {
+		t.Fatalf("default records leaked opaque stream-open error message: %s", encoded)
+	}
 }
 
 func TestMiddleware_StreamPartErrorLogsTerminalError(t *testing.T) {
 	handler := newTestHandler()
-	apiErr := provider.NewAPICallError(provider.APICallErrorOptions{Message: "rate limited", StatusCode: 429})
+	messageSecret := "STREAM-PART-ERROR-MESSAGE-SECRET"
+	apiErr := provider.NewAPICallError(provider.APICallErrorOptions{Message: messageSecret, StatusCode: 429})
 	parts := []provider.StreamPart{
 		{Type: provider.PartTextDelta, Delta: "before"},
 		{Type: provider.PartError, APICallError: apiErr},
@@ -200,6 +209,60 @@ func TestMiddleware_StreamPartErrorLogsTerminalError(t *testing.T) {
 	assertAttr(t, attrs, "ai_sdk.stream.parts.error.count", int64(1))
 	assertAttr(t, attrs, "ai_sdk.error.status_code", int64(429))
 	assertAttr(t, attrs, "ai_sdk.error.retryable", true)
+	if _, ok := attrs["ai_sdk.error.message"]; ok {
+		t.Fatalf("default logging captured opaque stream-part error message: %#v", attrs)
+	}
+	if encoded := handler.JSON(t); strings.Contains(encoded, messageSecret) {
+		t.Fatalf("default records leaked opaque stream-part error message: %s", encoded)
+	}
+}
+
+func TestMiddleware_StreamPartErrorMessageCaptureIsOptIn(t *testing.T) {
+	messageSecret := "STREAM-PART-ERROR-MESSAGE-SECRET"
+	apiErr := provider.NewAPICallError(provider.APICallErrorOptions{Message: messageSecret, StatusCode: 500})
+	handler := newTestHandler()
+	wrapped := Wrap(streamModel([]provider.StreamPart{{Type: provider.PartError, APICallError: apiErr}}), Options{
+		Logger:  slog.New(handler),
+		Capture: CaptureOptions{ErrorMessages: true},
+	})
+
+	result, err := wrapped.DoStream(context.Background(), provider.CallOptions{})
+	if err != nil {
+		t.Fatalf("DoStream returned error: %v", err)
+	}
+	drainStream(result.Stream)
+
+	attrs := handler.Records()[1].AttrsMap()
+	message, ok := attrs["ai_sdk.error.message"].(string)
+	if !ok || !strings.Contains(message, messageSecret) {
+		t.Fatalf("missing opted-in stream-part error message: %#v", attrs)
+	}
+}
+
+func TestMiddleware_StreamPartLoggingClassifiesNilError(t *testing.T) {
+	handler := newTestHandler()
+	wrapped := Wrap(streamModel([]provider.StreamPart{{Type: provider.PartError}}), Options{
+		Logger:         slog.New(handler),
+		LogStreamParts: true,
+	})
+
+	result, err := wrapped.DoStream(context.Background(), provider.CallOptions{})
+	if err != nil {
+		t.Fatalf("DoStream returned error: %v", err)
+	}
+	drainStream(result.Stream)
+
+	records := handler.Records()
+	if len(records) != 3 {
+		t.Fatalf("expected start, part, and terminal records, got %d", len(records))
+	}
+	for _, record := range records[1:] {
+		attrs := record.AttrsMap()
+		assertAttr(t, attrs, "ai_sdk.error.type", "stream_part_error")
+		if _, ok := attrs["ai_sdk.error.message"]; ok {
+			t.Fatalf("default logging captured stream-part error message: %#v", attrs)
+		}
+	}
 }
 
 func TestMiddleware_StreamContextCancellationClosesIdleStream(t *testing.T) {
@@ -231,6 +294,45 @@ func TestMiddleware_StreamContextCancellationClosesIdleStream(t *testing.T) {
 	attrs := records[1].AttrsMap()
 	assertAttr(t, attrs, "ai_sdk.outcome", outcomeCancelled)
 	assertAttr(t, attrs, "ai_sdk.error.type", "context_canceled")
+	if _, ok := attrs["ai_sdk.error.message"]; ok {
+		t.Fatalf("default logging captured context cancellation message: %#v", attrs)
+	}
+}
+
+func TestMiddleware_StreamContextDeadlineOmitsMessage(t *testing.T) {
+	handler := newTestHandler()
+	upstream := make(chan provider.StreamPart)
+	model := &mockModel{streamFunc: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+		return &provider.StreamResult{Stream: upstream}, nil
+	}}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Nanosecond)
+	defer cancel()
+	<-ctx.Done()
+	wrapped := Wrap(model, Options{Logger: slog.New(handler)})
+
+	result, err := wrapped.DoStream(ctx, provider.CallOptions{})
+	if err != nil {
+		t.Fatalf("DoStream returned error: %v", err)
+	}
+	select {
+	case _, ok := <-result.Stream:
+		if ok {
+			t.Fatal("expected stream to close after deadline")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for deadline stream to close")
+	}
+
+	records := waitForRecords(t, handler, 2)
+	if records[1].Message != string(EventStreamError) {
+		t.Fatalf("expected stream error terminal record, got %s", records[1].Message)
+	}
+	attrs := records[1].AttrsMap()
+	assertAttr(t, attrs, "ai_sdk.outcome", outcomeTimeout)
+	assertAttr(t, attrs, "ai_sdk.error.type", "context_deadline_exceeded")
+	if _, ok := attrs["ai_sdk.error.message"]; ok {
+		t.Fatalf("default logging captured context deadline message: %#v", attrs)
+	}
 }
 
 func TestMiddleware_StreamContextCancellationDoesNotLeak(t *testing.T) {
@@ -307,7 +409,7 @@ func TestMiddleware_StreamPartLoggingWithProviderMetadataDoesNotLeakAPICallError
 	parts := []provider.StreamPart{{
 		Type: provider.PartError,
 		APICallError: provider.NewAPICallError(provider.APICallErrorOptions{
-			Message:           "failed",
+			Message:           secret,
 			StatusCode:        500,
 			URL:               "https://example.test/v1?access_token=" + secret,
 			RequestBodyValues: json.RawMessage(`{"secret":"STREAM-API-SECRET"}`),

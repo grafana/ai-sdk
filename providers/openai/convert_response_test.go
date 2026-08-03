@@ -367,7 +367,7 @@ func TestConvertResponse_ToolSearchOutputUsesHostedCallID(t *testing.T) {
 		"id":"resp_1","created_at":1700000000,"model":"gpt-4o","object":"response","status":"completed",
 		"output":[
 			{"type":"tool_search_call","id":"tsc_1","status":"completed","execution":"server","arguments":{"query":"docs"}},
-			{"type":"tool_search_output","id":"tso_1","status":"completed","execution":"server","tools":[]}
+			{"type":"tool_search_output","id":"tso_1","status":"completed","execution":"server","tools":[{"type":"function","name":"weather","parameters":{"type":"object"},"strict":true,"defer_loading":true}]}
 		],
 		"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2,"input_tokens_details":{"cached_tokens":0},"output_tokens_details":{"reasoning_tokens":0}}
 	}`)
@@ -378,6 +378,35 @@ func TestConvertResponse_ToolSearchOutputUsesHostedCallID(t *testing.T) {
 	assert.Equal(t, "tsc_1", res.Content[0].ToolCallID)
 	assert.Equal(t, provider.ContentToolResult, res.Content[1].Type)
 	assert.Equal(t, "tsc_1", res.Content[1].ToolCallID)
+	assert.JSONEq(t, `{"tools":[{"type":"function","name":"weather","parameters":{"type":"object"},"strict":true,"defer_loading":true}]}`, string(res.Content[1].Result))
+}
+
+func TestConvertResponse_ShellUsesProviderToolSchema(t *testing.T) {
+	resp := decodeResponse(t, `{
+		"id":"resp_1","created_at":1700000000,"model":"gpt-4o","object":"response","status":"completed",
+		"output":[
+			{"type":"shell_call","id":"sh_1","call_id":"call_1","status":"completed","action":{"commands":["echo hi"],"timeout_ms":1000,"max_output_length":2048}},
+			{"type":"shell_call_output","id":"sho_1","call_id":"call_1","status":"completed","output":[{"stdout":"hi\n","stderr":"","outcome":{"type":"exit","exit_code":0},"created_by":"sdk-only"}]}
+		],
+		"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2,"input_tokens_details":{"cached_tokens":0},"output_tokens_details":{"reasoning_tokens":0}}
+	}`)
+
+	res := mustConvertResponse(t, resp, buildResult{isShellProviderExecuted: true})
+	require.Len(t, res.Content, 2)
+	assert.JSONEq(t, `{"action":{"commands":["echo hi"]}}`, string(res.Content[0].Input))
+	assert.JSONEq(t, `{"output":[{"stdout":"hi\n","stderr":"","outcome":{"type":"exit","exitCode":0}}]}`, string(res.Content[1].Result))
+}
+
+func TestConvertResponse_ApplyPatchDeleteOmitsDiff(t *testing.T) {
+	resp := decodeResponse(t, `{
+		"id":"resp_1","created_at":1700000000,"model":"gpt-4o","object":"response","status":"completed",
+		"output":[{"type":"apply_patch_call","id":"ap_1","call_id":"call_1","status":"completed","operation":{"type":"delete_file","path":"old.txt"}}],
+		"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2,"input_tokens_details":{"cached_tokens":0},"output_tokens_details":{"reasoning_tokens":0}}
+	}`)
+
+	res := mustConvertResponse(t, resp, buildResult{})
+	require.Len(t, res.Content, 1)
+	assert.JSONEq(t, `{"callId":"call_1","operation":{"type":"delete_file","path":"old.txt"}}`, string(res.Content[0].Input))
 }
 
 func TestConvertResponse_ShellProviderExecutedOnlyForContainerShell(t *testing.T) {
@@ -435,6 +464,7 @@ func TestConvertResponse_Compaction(t *testing.T) {
 	require.Len(t, res.Content, 1)
 	assert.Equal(t, provider.ContentCustom, res.Content[0].Type)
 	assert.Equal(t, "openai.compaction", res.Content[0].Kind)
+	assert.JSONEq(t, `{"type":"compaction","itemId":"cmp_1","encryptedContent":"ENC"}`, string(res.Content[0].ProviderMetadata["openai"]))
 }
 
 func TestConvertResponse_ReasoningContextMetadata(t *testing.T) {

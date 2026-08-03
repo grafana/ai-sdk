@@ -1,5 +1,0 @@
-model: o3
-prompt: "What is 2+2?"
-providerOptions:
-  openai:
-    reasoningSummary: auto

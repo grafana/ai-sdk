@@ -68,6 +68,14 @@ type StreamRaw struct {
 
 func (StreamRaw) textStreamPart() {}
 
+// StreamCustom carries provider-specific custom content.
+type StreamCustom struct {
+	Kind             string
+	ProviderMetadata provider.ProviderMetadata
+}
+
+func (StreamCustom) textStreamPart() {}
+
 // StreamTextStart opens a text block.
 type StreamTextStart struct {
 	ID               string
@@ -175,10 +183,14 @@ type StreamToolCall struct {
 	ToolCallID       string
 	ToolName         string
 	Input            json.RawMessage
+	Invalid          bool
+	Error            error
 	ProviderExecuted bool
 	Dynamic          *bool
 	Title            string
 	ProviderMetadata provider.ProviderMetadata
+	uiDynamic        *bool
+	useUIDynamic     bool
 }
 
 func (StreamToolCall) textStreamPart() {}
@@ -248,6 +260,8 @@ type StreamToolError struct {
 	Dynamic          *bool
 	Title            string
 	ProviderMetadata provider.ProviderMetadata
+	uiDynamic        *bool
+	useUIDynamic     bool
 }
 
 func (StreamToolError) textStreamPart() {}

@@ -46,6 +46,93 @@ describe("SSE wire format", () => {
     expect(fullText).toBe("Hello, world!");
   });
 
+  it("preserves metadata-only structured text deltas", async () => {
+    const res = await fetchScenario("text-metadata-only-delta");
+    const stream = parseJsonEventStream({
+      stream: res.body!,
+      schema: uiMessageChunkSchema,
+    });
+
+    const chunks: UIMessageChunk[] = [];
+    for await (const value of stream) {
+      expect(value.success).toBe(true);
+      if (value.success) chunks.push(value.value);
+    }
+
+    expect(chunks).toContainEqual({
+      type: "text-delta",
+      id: "text-1",
+      delta: "",
+      providerMetadata: { test: { signature: "test-signature" } },
+    });
+  });
+
+  it("invalid provider tool input preserves separate input and provider errors", async () => {
+    const res = await fetchScenario("invalid-provider-tool");
+    const stream = parseJsonEventStream({
+      stream: res.body!,
+      schema: uiMessageChunkSchema,
+    });
+
+    const chunks: UIMessageChunk[] = [];
+    for await (const value of stream) {
+      expect(value.success).toBe(true);
+      if (value.success) chunks.push(value.value);
+    }
+
+    expect(chunks).toContainEqual({
+      type: "tool-input-error",
+      toolCallId: "search-1",
+      toolName: "web_search",
+      input: {},
+      providerExecuted: true,
+      errorText: "An error occurred.",
+    });
+    expect(chunks).toContainEqual({
+      type: "tool-output-error",
+      toolCallId: "search-1",
+      providerExecuted: true,
+      errorText:
+        '{"type":"web_search_tool_result_error","errorCode":"invalid_tool_input"}',
+    });
+  });
+
+  it("provider tool output omits absent dynamic and preliminary metadata", async () => {
+    const res = await fetchScenario("provider-tool-metadata");
+    const stream = parseJsonEventStream({
+      stream: res.body!,
+      schema: uiMessageChunkSchema,
+    });
+
+    const chunks: UIMessageChunk[] = [];
+    for await (const value of stream) {
+      expect(value.success).toBe(true);
+      if (value.success) chunks.push(value.value);
+    }
+
+    const toolCall = chunks.find(
+      (chunk) => chunk.type === "tool-input-available",
+    );
+    expect(toolCall).toMatchObject({ dynamic: false });
+
+    const toolOutputs = chunks.filter(
+      (chunk) => chunk.type === "tool-output-available",
+    );
+    expect(toolOutputs).toHaveLength(2);
+    for (const chunk of toolOutputs) {
+      expect(chunk).not.toHaveProperty("dynamic");
+      expect(chunk).not.toHaveProperty("preliminary");
+    }
+
+    expect(chunks).toContainEqual({
+      type: "custom",
+      kind: "openai.compaction",
+      providerMetadata: {
+        openai: { itemId: "cmp-1", encryptedContent: "encrypted" },
+      },
+    });
+  });
+
   it("unknown scenario returns 404", async () => {
     const res = await fetchScenario("nonexistent");
     expect(res.status).toBe(404);

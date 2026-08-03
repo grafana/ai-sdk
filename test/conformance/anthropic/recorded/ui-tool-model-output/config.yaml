@@ -31,5 +31,5 @@ tools:
         - type: text
           text: 72 degrees and sunny
         - type: file-data
-          data: iVBORw0KGgo=
+          data: iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=
           mediaType: image/png

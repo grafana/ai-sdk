@@ -350,6 +350,13 @@ func (s *uiMessageReaderState) apply(chunk UIMessageChunk) (bool, error) {
 		})
 		return true, nil
 
+	case ChunkCustom:
+		s.message.Parts = append(s.message.Parts, CustomPart{
+			Kind:             chunk.Kind,
+			ProviderMetadata: cloneProviderMetadata(chunk.ProviderMetadata),
+		})
+		return true, nil
+
 	case ChunkData:
 		return s.applyDataChunk(chunk)
 	}
@@ -848,6 +855,9 @@ func clonePart(part Part) Part {
 		return p
 	case DataPart:
 		p.Data = cloneRawMessage(p.Data)
+		return p
+	case CustomPart:
+		p.ProviderMetadata = cloneProviderMetadata(p.ProviderMetadata)
 		return p
 	case StepStartPart:
 		return p

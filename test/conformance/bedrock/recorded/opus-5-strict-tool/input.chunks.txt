@@ -1,0 +1,13 @@
+{"messageStart":{"p":"abcdefghijklmnopqrstuvwxyzABC","role":"assistant"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":"I'll check"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNO"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" the we"},"p":"ab"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":"ather in"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012345678"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" Berlin for you."},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01"}}
+{"contentBlockStop":{"contentBlockIndex":0,"p":"abcdefgh"}}
+{"contentBlockStart":{"contentBlockIndex":1,"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWX","start":{"toolUse":{"name":"get_weather","toolUseId":"tooluse_3t4Z8JjReZui521GHFayVk","type":"tool_use"}}}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"toolUse":{"input":""}},"p":"abcdefghijklmnopqrstuvwxyzA"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"toolUse":{"input":"{\"cit"}},"p":"abcdefghijklmnopqrst"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"toolUse":{"input":"y\": \"Berlin\"}"}},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP"}}
+{"contentBlockStop":{"contentBlockIndex":1,"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012345678"}}
+{"messageStop":{"additionalModelResponseFields":{"delta":{"stop_sequence":null}},"p":"abcdefg","stopReason":"tool_use"}}
+{"metadata":{"metrics":{"latencyMs":1581},"p":"abcdefg","usage":{"inputTokens":385,"outputTokens":67,"serverToolUsage":{},"totalTokens":452}}}

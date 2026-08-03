@@ -1,34 +1,37 @@
 {"type":"start"}
 {"type":"start-step"}
-{"type":"text-start","id":"msg_0debaef2816f0fdd016a3abbd12b90819c9275a81e19c2bb09","providerMetadata":{"openai":{"itemId":"msg_0debaef2816f0fdd016a3abbd12b90819c9275a81e19c2bb09"}}}
-{"type":"text-delta","id":"msg_0debaef2816f0fdd016a3abbd12b90819c9275a81e19c2bb09","delta":"{\""}
-{"type":"text-delta","id":"msg_0debaef2816f0fdd016a3abbd12b90819c9275a81e19c2bb09","delta":"city\":\""}
-{"type":"text-delta","id":"msg_0debaef2816f0fdd016a3abbd12b90819c9275a81e19c2bb09","delta":"Berlin"}
-{"type":"text-delta","id":"msg_0debaef2816f0fdd016a3abbd12b90819c9275a81e19c2bb09","delta":"\",\"temperature\":20"}
-{"type":"text-delta","id":"msg_0debaef2816f0fdd016a3abbd12b90819c9275a81e19c2bb09","delta":",\"conditions\":\""}
-{"type":"text-delta","id":"msg_0debaef2816f0fdd016a3abbd12b90819c9275a81e19c2bb09","delta":"clear"}
-{"type":"text-delta","id":"msg_0debaef2816f0fdd016a3abbd12b90819c9275a81e19c2bb09","delta":" sky"}
-{"type":"text-delta","id":"msg_0debaef2816f0fdd016a3abbd12b90819c9275a81e19c2bb09","delta":"\",\"recommendation\":\""}
-{"type":"text-delta","id":"msg_0debaef2816f0fdd016a3abbd12b90819c9275a81e19c2bb09","delta":"It's"}
-{"type":"text-delta","id":"msg_0debaef2816f0fdd016a3abbd12b90819c9275a81e19c2bb09","delta":" a"}
-{"type":"text-delta","id":"msg_0debaef2816f0fdd016a3abbd12b90819c9275a81e19c2bb09","delta":" nice"}
-{"type":"text-delta","id":"msg_0debaef2816f0fdd016a3abbd12b90819c9275a81e19c2bb09","delta":" day"}
-{"type":"text-delta","id":"msg_0debaef2816f0fdd016a3abbd12b90819c9275a81e19c2bb09","delta":" to"}
-{"type":"text-delta","id":"msg_0debaef2816f0fdd016a3abbd12b90819c9275a81e19c2bb09","delta":" be"}
-{"type":"text-delta","id":"msg_0debaef2816f0fdd016a3abbd12b90819c9275a81e19c2bb09","delta":" outside"}
-{"type":"text-delta","id":"msg_0debaef2816f0fdd016a3abbd12b90819c9275a81e19c2bb09","delta":","}
-{"type":"text-delta","id":"msg_0debaef2816f0fdd016a3abbd12b90819c9275a81e19c2bb09","delta":" perhaps"}
-{"type":"text-delta","id":"msg_0debaef2816f0fdd016a3abbd12b90819c9275a81e19c2bb09","delta":" consider"}
-{"type":"text-delta","id":"msg_0debaef2816f0fdd016a3abbd12b90819c9275a81e19c2bb09","delta":" going"}
-{"type":"text-delta","id":"msg_0debaef2816f0fdd016a3abbd12b90819c9275a81e19c2bb09","delta":" for"}
-{"type":"text-delta","id":"msg_0debaef2816f0fdd016a3abbd12b90819c9275a81e19c2bb09","delta":" a"}
-{"type":"text-delta","id":"msg_0debaef2816f0fdd016a3abbd12b90819c9275a81e19c2bb09","delta":" walk"}
-{"type":"text-delta","id":"msg_0debaef2816f0fdd016a3abbd12b90819c9275a81e19c2bb09","delta":" or"}
-{"type":"text-delta","id":"msg_0debaef2816f0fdd016a3abbd12b90819c9275a81e19c2bb09","delta":" having"}
-{"type":"text-delta","id":"msg_0debaef2816f0fdd016a3abbd12b90819c9275a81e19c2bb09","delta":" a"}
-{"type":"text-delta","id":"msg_0debaef2816f0fdd016a3abbd12b90819c9275a81e19c2bb09","delta":" picnic"}
-{"type":"text-delta","id":"msg_0debaef2816f0fdd016a3abbd12b90819c9275a81e19c2bb09","delta":".\""}
-{"type":"text-delta","id":"msg_0debaef2816f0fdd016a3abbd12b90819c9275a81e19c2bb09","delta":"}"}
-{"type":"text-end","id":"msg_0debaef2816f0fdd016a3abbd12b90819c9275a81e19c2bb09","providerMetadata":{"openai":{"itemId":"msg_0debaef2816f0fdd016a3abbd12b90819c9275a81e19c2bb09"}}}
+{"type":"text-start","id":"msg_03beb1093b6ac17e016a6ce06f80508192baadb2a26b1d2d14","providerMetadata":{"openai":{"itemId":"msg_03beb1093b6ac17e016a6ce06f80508192baadb2a26b1d2d14"}}}
+{"type":"text-delta","id":"msg_03beb1093b6ac17e016a6ce06f80508192baadb2a26b1d2d14","delta":"{\""}
+{"type":"text-delta","id":"msg_03beb1093b6ac17e016a6ce06f80508192baadb2a26b1d2d14","delta":"city\":\""}
+{"type":"text-delta","id":"msg_03beb1093b6ac17e016a6ce06f80508192baadb2a26b1d2d14","delta":"Berlin"}
+{"type":"text-delta","id":"msg_03beb1093b6ac17e016a6ce06f80508192baadb2a26b1d2d14","delta":"\",\"temperature\":20"}
+{"type":"text-delta","id":"msg_03beb1093b6ac17e016a6ce06f80508192baadb2a26b1d2d14","delta":",\"conditions\":\""}
+{"type":"text-delta","id":"msg_03beb1093b6ac17e016a6ce06f80508192baadb2a26b1d2d14","delta":"Clear"}
+{"type":"text-delta","id":"msg_03beb1093b6ac17e016a6ce06f80508192baadb2a26b1d2d14","delta":" sky"}
+{"type":"text-delta","id":"msg_03beb1093b6ac17e016a6ce06f80508192baadb2a26b1d2d14","delta":"\",\"recommendation\":\""}
+{"type":"text-delta","id":"msg_03beb1093b6ac17e016a6ce06f80508192baadb2a26b1d2d14","delta":"It's"}
+{"type":"text-delta","id":"msg_03beb1093b6ac17e016a6ce06f80508192baadb2a26b1d2d14","delta":" a"}
+{"type":"text-delta","id":"msg_03beb1093b6ac17e016a6ce06f80508192baadb2a26b1d2d14","delta":" beautiful"}
+{"type":"text-delta","id":"msg_03beb1093b6ac17e016a6ce06f80508192baadb2a26b1d2d14","delta":" day"}
+{"type":"text-delta","id":"msg_03beb1093b6ac17e016a6ce06f80508192baadb2a26b1d2d14","delta":" to"}
+{"type":"text-delta","id":"msg_03beb1093b6ac17e016a6ce06f80508192baadb2a26b1d2d14","delta":" be"}
+{"type":"text-delta","id":"msg_03beb1093b6ac17e016a6ce06f80508192baadb2a26b1d2d14","delta":" outside"}
+{"type":"text-delta","id":"msg_03beb1093b6ac17e016a6ce06f80508192baadb2a26b1d2d14","delta":","}
+{"type":"text-delta","id":"msg_03beb1093b6ac17e016a6ce06f80508192baadb2a26b1d2d14","delta":" perhaps"}
+{"type":"text-delta","id":"msg_03beb1093b6ac17e016a6ce06f80508192baadb2a26b1d2d14","delta":" enjoy"}
+{"type":"text-delta","id":"msg_03beb1093b6ac17e016a6ce06f80508192baadb2a26b1d2d14","delta":" a"}
+{"type":"text-delta","id":"msg_03beb1093b6ac17e016a6ce06f80508192baadb2a26b1d2d14","delta":" walk"}
+{"type":"text-delta","id":"msg_03beb1093b6ac17e016a6ce06f80508192baadb2a26b1d2d14","delta":" in"}
+{"type":"text-delta","id":"msg_03beb1093b6ac17e016a6ce06f80508192baadb2a26b1d2d14","delta":" the"}
+{"type":"text-delta","id":"msg_03beb1093b6ac17e016a6ce06f80508192baadb2a26b1d2d14","delta":" park"}
+{"type":"text-delta","id":"msg_03beb1093b6ac17e016a6ce06f80508192baadb2a26b1d2d14","delta":" or"}
+{"type":"text-delta","id":"msg_03beb1093b6ac17e016a6ce06f80508192baadb2a26b1d2d14","delta":" a"}
+{"type":"text-delta","id":"msg_03beb1093b6ac17e016a6ce06f80508192baadb2a26b1d2d14","delta":" visit"}
+{"type":"text-delta","id":"msg_03beb1093b6ac17e016a6ce06f80508192baadb2a26b1d2d14","delta":" to"}
+{"type":"text-delta","id":"msg_03beb1093b6ac17e016a6ce06f80508192baadb2a26b1d2d14","delta":" a"}
+{"type":"text-delta","id":"msg_03beb1093b6ac17e016a6ce06f80508192baadb2a26b1d2d14","delta":" café"}
+{"type":"text-delta","id":"msg_03beb1093b6ac17e016a6ce06f80508192baadb2a26b1d2d14","delta":".\""}
+{"type":"text-delta","id":"msg_03beb1093b6ac17e016a6ce06f80508192baadb2a26b1d2d14","delta":"}"}
+{"type":"text-end","id":"msg_03beb1093b6ac17e016a6ce06f80508192baadb2a26b1d2d14","providerMetadata":{"openai":{"itemId":"msg_03beb1093b6ac17e016a6ce06f80508192baadb2a26b1d2d14"}}}
 {"type":"finish-step"}
-{"type":"finish","finishReason":"length"}
+{"type":"finish","finishReason":"stop"}

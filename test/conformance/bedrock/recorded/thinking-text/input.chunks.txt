@@ -1,55 +1,55 @@
-{"messageStart": {"p": "abcdefghi", "role": "assistant"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": "I need to count the number of R"}}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": "'s in the word \"strawberry\"."}}, "p": "abcdefghijklmnop"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": "\n\nLet me go through each"}}, "p": "abcdefghijklmnopqrstuvwxyzABC"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": " letter:\ns - t - r"}}, "p": "abcdefghijklmnopqrstuvwxyzAB"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": " - a - w - b - e"}}, "p": "abcdefghijklmnop"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": " - r - r - y\n\n1"}}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVW"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": ". s - not an R\n2"}}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVW"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": ". t - not an R\n3"}}, "p": "abcdefgh"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": ". r - this is an R ("}}, "p": "abcdefgh"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": "1st R)\n4. a"}}, "p": "abcdefghi"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": " - not an R\n5. w"}}, "p": "abcdefghi"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": " - not an R\n6. b"}}, "p": "abcdefghijklmnopqrstuvwx"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": " - not an R\n7. e"}}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVW"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": " - not an R\n8. r"}}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": " - this is an R (2nd"}}, "p": "abcdefghijklm"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": " R)\n9. r - this"}}, "p": "abcdefghijklmnopqrs"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": " is an R (3rd R)"}}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNO"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": "\n10. y - not an R"}}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUV"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": "\n\nSo there"}}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGH"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": " are 3 R's in the"}}, "p": "abcdefghijklmnopqrstuvwxyz"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": " word \"strawberry\"."}}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTU"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": ""}}, "p": "abcdefghijklm"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"signature": "EpsECkgIDRABGAIqQIY7crkIm7IBG9/UgI9RApFjlUuj2tf3o9vDipzHXAOAuDcMCDYbvgF7qcYTelNLaL8MotuVPon+5g/TLXbsyOESDCugBXLPcG81cu4sERoMxtd8xYcxN1zvVrUpIjAQ8IBxbIVnh6D2XG4P+n4bwUUadqCFWg4bPdyxZz3HQJBKv5c/BJxCsShy7IFpq+0qgANAt5VakDSqZjwPYExMbMiX8EbMZ7gDvTHUw2hYd8LCGG7Q4NOngfndx2OJJjnsNPfistMULSnhu/pjx3ZxeeJp0KrI4EVvqTm7n7eXSdqCOMIsbAM7fhCBSaxVX9QeeHadEzwILMCfz2Fz/yD0dHyP00E4LwqP+43HihYjuaVQEDfLtJsMKTmSPnSU5XGkrwelolGHV3GWYrqe2NVU5vv9FeEqLGBz9OOOd+M1T5iLbLtD1sDtTE2nIT9RkYT5E4emGFao2yKaQoOvchRiyaHaIZJiVvoUdxBkhWebD0wRrTJa5Jc1HhuprdcIoPMXZqtQ61o5AMDf538Z7f3QzeOnRMFXGq/Zx3zF4Lhjk0AUmGC9fgK5Lcau6+iniTVN/E72VYFPmlrGBI2HZoLLeJ01AmijvDQTTx/QLNdsCtSHPAfXYl5DCRtESVAvY5YNJkADchEQOWnCNZpcG7WBULJGnwtVtqlG17l7VN37PJvHCIWQ+IpFPsCFFGLNbAB5Fx8YAQ=="}}, "p": "abcdefghijklmnopqrstu"}}
-{"contentBlockStop": {"contentBlockIndex": 0, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": "I'll go"}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRS"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": " through the word \"strawberry\" letter"}, "p": "abcdefghijklmnopqrstuv"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": " by letter:"}, "p": "abcdefghijklmnopqrstuvwxyzABC"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": "\n\ns -"}, "p": "abcdefghijklmnopq"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": " t - r - a - w -"}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWX"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": " b - e - r - r -"}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": " y\n\n1"}, "p": "abcdefghijklmnopqrstuvw"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": ". s - not an R\n2"}, "p": "abcdefghijklmnopqrstuvwxyzAB"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": ". t - not an R\n3"}, "p": "abcdefghij"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": ". **"}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKL"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": "r** - this is an R "}, "p": "abcdefghijklmnopqrstuvwxy"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": "\u2713"}, "p": "abcdefghijklmnopqrstuvwxyzA"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": " (1st)"}, "p": "abcdefghijklmnopqrstuvwxyzABCDE"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": "\n4. a - not an R"}, "p": "abcdefghijklmnopqrstuvw"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": "\n5. w - not an R"}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJK"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": "\n6. b - not an R"}, "p": "abcde"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": "\n7. e - not an R"}, "p": "abcdefghijklm"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": "\n8. **"}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": "r** - this is an R "}, "p": "abcdefghijklmnopqrstuvwxyzABCDE"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": "\u2713 (2nd)"}, "p": "abcdefghijklmnopq"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": "\n9. **"}, "p": "abcdefghijklmno"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": "r** - this is an R "}, "p": "abcde"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": "\u2713 (3rd)"}, "p": "abcdefghijklmnopqrstuvwxyzAB"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": "\n10. y - not an R"}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": "\n\nThere are **3 "}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTU"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": "R's** in the word \"straw"}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWX"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": "berry\"."}, "p": "abcdefghijklmnopqrstuvwxyzABCD"}}
-{"contentBlockStop": {"contentBlockIndex": 1, "p": "abcdefghijklmnopqrstuvwxyzABC"}}
-{"messageStop": {"additionalModelResponseFields": {"delta": {"stop_sequence": null}}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKL", "stopReason": "end_turn"}}
-{"metadata": {"metrics": {"latencyMs": 4465}, "p": "abcdefghijklmnopqrstuvwxyz", "usage": {"inputTokens": 54, "outputTokens": 332, "serverToolUsage": {}, "totalTokens": 386}}}
+{"messageStart":{"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012","role":"assistant"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":"I need to count the number of R"}},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHI"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":"'s in the word \"strawberry\"."}},"p":"abcdefghijklmnopqrstuvwxy"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":"\n\nLet me go through each"}},"p":"abcdefghij"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":" letter:\ns - t - r"}},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":" - a - w - b - e"}},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012345"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":" - r - r - y\n\n1"}},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRST"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":". s - not an R\n2"}},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":". t - not an R\n3"}},"p":"abcdefghijklmnopqrstu"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":". r - this is an R ("}},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":"1st R)\n4. a"}},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":" - not an R\n5. w"}},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKL"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":" - not an R\n6. b"}},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":" - not an R\n7. e"}},"p":"abcdefghijklm"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":" - not an R\n8. r"}},"p":"abcdefghijklmnopqrstuvwxyzABCDEF"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":" - this is an R (2nd"}},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKL"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":" R)\n9. r - this"}},"p":"ab"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":" is an R (3rd R)"}},"p":"abcdefghijklmnopqrs"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":"\n10. y - not an R"}},"p":"abcd"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":"\n\nSo there"}},"p":"abcdefghijklmnopqrstuvwxyzA"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":" are 3 R's in the"}},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":" word \"strawberry\"."}},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":""}},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRS"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"signature":"EsgECnAIEBABGAIqQIY7crkIm7IBG9/UgI9RApFjlUuj2tf3o9vDipzHXAOAuDcMCDYbvgF7qcYTelNLaL8MotuVPon+5g/TLXbsyOEyGmNsYXVkZS1zb25uZXQtNC01LTIwMjUwOTI5OABCCHRoaW5raW5nEgyWozzK/CMUBYvPkz8aDGV2pPC29WtSEuuIwiIwhrkU6R6k8nLyzYHKoOz8c5Mzw+DVfAxR5vEN7HIx1cNm+6kriXuH3RgcCtlEt78/KoUDIykNzz344G+uz1ezILq/5Dn4I0GrPbzDMMI8gLfIalJVfSn743Ux54gAJXChf/1hzPgNH+/Ms/yiPwP4ak527YCOP03eTOo9qm7EQaNdvXG7JIqogQjY+W+dHPIJTcV9LiLpkyk2R9nBuH5V0gwwIDcnONPxQikIEJ4iQHu/FbxT/KNa6oV+v3GrESRtp+JbzkWe3ybblKWk0DsmAWkXJYhLigbPWd0zWIK152PsVnE41KR8n93kBZXxK8TSW9J7StUet487yMU3Ad9V9g3ZOThwslq5axL/WXeB3+myOXFR4/SlOM1fwgmPmvgVE8A80/6Zu44IeVAwtGgVtxs/Mg5lhYz845sbNv5FSOA6qwHRXiDRYebHpRHx1YjoviVXm7eZnmi2aHg9IkbM53F8DrxPbtLBIR1kRKQ5nXWqnS9D7uirVXcYFjS4mjHJ+pUIGIEunBW7BEfiS6D0x2yiMs1AMhBVRla0ygpug7MzHjvPsNdOjC0QhctXBzluSdsTPBCOwUwYAQ=="}},"p":"abcdefghijklmn"}}
+{"contentBlockStop":{"contentBlockIndex":0,"p":"abcdefghijklmno"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":"I'll go"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" through the word \"strawberry\" letter"},"p":"abcdefghijklmnopqrstu"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" by letter:"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWX"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":"\n\ns -"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKL"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" t - r - a - w -"},"p":"abcdefghijklmnopqrstuv"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" b - e - r - r -"},"p":"abcdefghijklmnopqrstuv"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" y\n\n1"},"p":"abcde"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":". s - not an R\n2"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012345"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":". t - not an R\n3"},"p":"abcde"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":". **"},"p":"abcdefghijk"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":"r** - this is an R "},"p":"abcdefghijklmn"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":"✓"},"p":"abcdefghij"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" (1st)"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRST"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":"\n4. a - not an R"},"p":"abcdefghijklmnopqrstuvwxyzA"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":"\n5. w - not an R"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNO"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":"\n6. b - not an R"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVW"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":"\n7. e - not an R"},"p":"abcdefghij"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":"\n8. **"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012345678"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":"r** - this is an R "},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUV"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":"✓ (2nd)"},"p":"abcdefghijklmnopq"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":"\n9. **"},"p":"abcdefghijklmnopqrst"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":"r** - this is an R "},"p":"abcdefghijklm"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":"✓ (3rd)"},"p":"abcdefghijklmnopqrstuvwx"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":"\n10. y - not an R"},"p":"abcdefghijklmnopqrs"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":"\n\nThere are **3 "},"p":"abcdefghijklmnopqr"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":"R's** in the word \"straw"},"p":"abcdefghijklmnopqrstuv"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":"berry\"."},"p":"abcdefghijklmnopqrstuvwxyzAB"}}
+{"contentBlockStop":{"contentBlockIndex":1,"p":"abcdefghijklmnopqrstuvwxyzABC"}}
+{"messageStop":{"additionalModelResponseFields":{"delta":{"stop_sequence":null}},"p":"abcdefghijklmnopqrstuvwxyzABCD","stopReason":"end_turn"}}
+{"metadata":{"metrics":{"latencyMs":3544},"p":"abcd","usage":{"inputTokens":54,"outputTokens":332,"serverToolUsage":{},"totalTokens":386}}}

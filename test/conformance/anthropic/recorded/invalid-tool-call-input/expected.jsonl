@@ -2,8 +2,10 @@
 {"type":"tool-output-available","toolCallId":"call-1","output":{"attractions":["Golden Gate Bridge"]}}
 {"type":"start-step"}
 {"type":"text-start","id":"0"}
-{"type":"text-delta","id":"0","delta":"Hello"}
-{"type":"text-delta","id":"0","delta":" to you."}
+{"type":"text-delta","id":"0","delta":"Based"}
+{"type":"text-delta","id":"0","delta":" on the results, here are some popular attractions in San Francisco:\n\n**San Francisco Attractions:**\n- **Golden Gate Bridge** - This iconic suspension bridge is one of the most"}
+{"type":"text-delta","id":"0","delta":" recognizable landmarks in the world, offering stunning views of the bay and city.\n\nIs there anything"}
+{"type":"text-delta","id":"0","delta":" specific you'd like to know about San Francisco or would you like information about attractions in another city?"}
 {"type":"text-end","id":"0"}
 {"type":"finish-step"}
 {"type":"finish","finishReason":"stop"}

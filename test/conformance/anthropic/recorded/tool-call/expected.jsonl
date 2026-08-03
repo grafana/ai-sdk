@@ -1,15 +1,15 @@
 {"type":"start"}
 {"type":"start-step"}
-{"type":"tool-input-start","toolCallId":"toolu_01VKdv6KiTmoDM6PAKCbXJbd","toolName":"get_weather"}
-{"type":"tool-input-delta","toolCallId":"toolu_01VKdv6KiTmoDM6PAKCbXJbd","inputTextDelta":"{\"location\": \"San Francisco"}
-{"type":"tool-input-delta","toolCallId":"toolu_01VKdv6KiTmoDM6PAKCbXJbd","inputTextDelta":"\"}"}
-{"type":"tool-input-available","toolCallId":"toolu_01VKdv6KiTmoDM6PAKCbXJbd","toolName":"get_weather","input":{"location":"San Francisco"},"providerMetadata":{"anthropic":{"caller":{"type":"direct"}}}}
-{"type":"tool-output-available","toolCallId":"toolu_01VKdv6KiTmoDM6PAKCbXJbd","output":{"temperature":62,"conditions":"foggy"},"providerMetadata":{"anthropic":{"caller":{"type":"direct"}}}}
+{"type":"tool-input-start","toolCallId":"toolu_01HYP2aQ4zmqz8g8greomeyW","toolName":"get_weather"}
+{"type":"tool-input-delta","toolCallId":"toolu_01HYP2aQ4zmqz8g8greomeyW","inputTextDelta":"{\"location\": \"San Francisco"}
+{"type":"tool-input-delta","toolCallId":"toolu_01HYP2aQ4zmqz8g8greomeyW","inputTextDelta":"\"}"}
+{"type":"tool-input-available","toolCallId":"toolu_01HYP2aQ4zmqz8g8greomeyW","toolName":"get_weather","input":{"location":"San Francisco"},"providerMetadata":{"anthropic":{"caller":{"type":"direct"}}}}
+{"type":"tool-output-available","toolCallId":"toolu_01HYP2aQ4zmqz8g8greomeyW","output":{"temperature":62,"conditions":"foggy"},"providerMetadata":{"anthropic":{"caller":{"type":"direct"}}}}
 {"type":"finish-step"}
 {"type":"start-step"}
 {"type":"text-start","id":"0"}
-{"type":"text-delta","id":"0","delta":"The current"}
-{"type":"text-delta","id":"0","delta":" weather in San Francisco is 62°F (about 17°C) and foggy."}
+{"type":"text-delta","id":"0","delta":"The"}
+{"type":"text-delta","id":"0","delta":" current weather in San Francisco is **62°F and foggy**."}
 {"type":"text-end","id":"0"}
 {"type":"finish-step"}
 {"type":"finish","finishReason":"stop"}

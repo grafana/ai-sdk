@@ -1,31 +1,31 @@
 {"type":"start"}
 {"type":"start-step"}
-{"type":"tool-input-start","toolCallId":"call_sup9AU8o2FSM23JavrfFrmxg","toolName":"get_weather"}
-{"type":"tool-input-delta","toolCallId":"call_sup9AU8o2FSM23JavrfFrmxg","inputTextDelta":"{\""}
-{"type":"tool-input-delta","toolCallId":"call_sup9AU8o2FSM23JavrfFrmxg","inputTextDelta":"location"}
-{"type":"tool-input-delta","toolCallId":"call_sup9AU8o2FSM23JavrfFrmxg","inputTextDelta":"\":\""}
-{"type":"tool-input-delta","toolCallId":"call_sup9AU8o2FSM23JavrfFrmxg","inputTextDelta":"San"}
-{"type":"tool-input-delta","toolCallId":"call_sup9AU8o2FSM23JavrfFrmxg","inputTextDelta":" Francisco"}
-{"type":"tool-input-delta","toolCallId":"call_sup9AU8o2FSM23JavrfFrmxg","inputTextDelta":"\"}"}
-{"type":"tool-input-available","toolCallId":"call_sup9AU8o2FSM23JavrfFrmxg","toolName":"get_weather","input":{"location":"San Francisco"},"providerMetadata":{"openai":{"itemId":"fc_0e42005cf9de32af016a3abbd2657c81a09ef33de8c2c49401"}}}
-{"type":"tool-output-available","toolCallId":"call_sup9AU8o2FSM23JavrfFrmxg","output":{"temperature":62,"conditions":"foggy"},"providerMetadata":{"openai":{"itemId":"fc_0e42005cf9de32af016a3abbd2657c81a09ef33de8c2c49401"}}}
+{"type":"tool-input-start","toolCallId":"call_Ps3OcVZ3uCTQjWM2NQiuGeUg","toolName":"get_weather"}
+{"type":"tool-input-delta","toolCallId":"call_Ps3OcVZ3uCTQjWM2NQiuGeUg","inputTextDelta":"{\""}
+{"type":"tool-input-delta","toolCallId":"call_Ps3OcVZ3uCTQjWM2NQiuGeUg","inputTextDelta":"location"}
+{"type":"tool-input-delta","toolCallId":"call_Ps3OcVZ3uCTQjWM2NQiuGeUg","inputTextDelta":"\":\""}
+{"type":"tool-input-delta","toolCallId":"call_Ps3OcVZ3uCTQjWM2NQiuGeUg","inputTextDelta":"San"}
+{"type":"tool-input-delta","toolCallId":"call_Ps3OcVZ3uCTQjWM2NQiuGeUg","inputTextDelta":" Francisco"}
+{"type":"tool-input-delta","toolCallId":"call_Ps3OcVZ3uCTQjWM2NQiuGeUg","inputTextDelta":"\"}"}
+{"type":"tool-input-available","toolCallId":"call_Ps3OcVZ3uCTQjWM2NQiuGeUg","toolName":"get_weather","input":{"location":"San Francisco"},"providerMetadata":{"openai":{"itemId":"fc_082e3c2f9d83f7f8016a6ce0757e90819dac5429d77a58ba45"}}}
+{"type":"tool-output-available","toolCallId":"call_Ps3OcVZ3uCTQjWM2NQiuGeUg","output":{"temperature":62,"conditions":"foggy"},"providerMetadata":{"openai":{"itemId":"fc_082e3c2f9d83f7f8016a6ce0757e90819dac5429d77a58ba45"}}}
 {"type":"finish-step"}
 {"type":"start-step"}
-{"type":"text-start","id":"msg_0e42005cf9de32af016a3abbd3415881a0a7611a313f69743c","providerMetadata":{"openai":{"itemId":"msg_0e42005cf9de32af016a3abbd3415881a0a7611a313f69743c"}}}
-{"type":"text-delta","id":"msg_0e42005cf9de32af016a3abbd3415881a0a7611a313f69743c","delta":"The"}
-{"type":"text-delta","id":"msg_0e42005cf9de32af016a3abbd3415881a0a7611a313f69743c","delta":" weather"}
-{"type":"text-delta","id":"msg_0e42005cf9de32af016a3abbd3415881a0a7611a313f69743c","delta":" in"}
-{"type":"text-delta","id":"msg_0e42005cf9de32af016a3abbd3415881a0a7611a313f69743c","delta":" San"}
-{"type":"text-delta","id":"msg_0e42005cf9de32af016a3abbd3415881a0a7611a313f69743c","delta":" Francisco"}
-{"type":"text-delta","id":"msg_0e42005cf9de32af016a3abbd3415881a0a7611a313f69743c","delta":" is"}
-{"type":"text-delta","id":"msg_0e42005cf9de32af016a3abbd3415881a0a7611a313f69743c","delta":" currently"}
-{"type":"text-delta","id":"msg_0e42005cf9de32af016a3abbd3415881a0a7611a313f69743c","delta":" "}
-{"type":"text-delta","id":"msg_0e42005cf9de32af016a3abbd3415881a0a7611a313f69743c","delta":"62"}
-{"type":"text-delta","id":"msg_0e42005cf9de32af016a3abbd3415881a0a7611a313f69743c","delta":"°F"}
-{"type":"text-delta","id":"msg_0e42005cf9de32af016a3abbd3415881a0a7611a313f69743c","delta":" and"}
-{"type":"text-delta","id":"msg_0e42005cf9de32af016a3abbd3415881a0a7611a313f69743c","delta":" fog"}
-{"type":"text-delta","id":"msg_0e42005cf9de32af016a3abbd3415881a0a7611a313f69743c","delta":"gy"}
-{"type":"text-delta","id":"msg_0e42005cf9de32af016a3abbd3415881a0a7611a313f69743c","delta":"."}
-{"type":"text-end","id":"msg_0e42005cf9de32af016a3abbd3415881a0a7611a313f69743c","providerMetadata":{"openai":{"itemId":"msg_0e42005cf9de32af016a3abbd3415881a0a7611a313f69743c"}}}
+{"type":"text-start","id":"msg_0c645090d6439415016a6ce07650e081a2b0b8d2cbbb62ac06","providerMetadata":{"openai":{"itemId":"msg_0c645090d6439415016a6ce07650e081a2b0b8d2cbbb62ac06"}}}
+{"type":"text-delta","id":"msg_0c645090d6439415016a6ce07650e081a2b0b8d2cbbb62ac06","delta":"The"}
+{"type":"text-delta","id":"msg_0c645090d6439415016a6ce07650e081a2b0b8d2cbbb62ac06","delta":" weather"}
+{"type":"text-delta","id":"msg_0c645090d6439415016a6ce07650e081a2b0b8d2cbbb62ac06","delta":" in"}
+{"type":"text-delta","id":"msg_0c645090d6439415016a6ce07650e081a2b0b8d2cbbb62ac06","delta":" San"}
+{"type":"text-delta","id":"msg_0c645090d6439415016a6ce07650e081a2b0b8d2cbbb62ac06","delta":" Francisco"}
+{"type":"text-delta","id":"msg_0c645090d6439415016a6ce07650e081a2b0b8d2cbbb62ac06","delta":" is"}
+{"type":"text-delta","id":"msg_0c645090d6439415016a6ce07650e081a2b0b8d2cbbb62ac06","delta":" currently"}
+{"type":"text-delta","id":"msg_0c645090d6439415016a6ce07650e081a2b0b8d2cbbb62ac06","delta":" "}
+{"type":"text-delta","id":"msg_0c645090d6439415016a6ce07650e081a2b0b8d2cbbb62ac06","delta":"62"}
+{"type":"text-delta","id":"msg_0c645090d6439415016a6ce07650e081a2b0b8d2cbbb62ac06","delta":"°F"}
+{"type":"text-delta","id":"msg_0c645090d6439415016a6ce07650e081a2b0b8d2cbbb62ac06","delta":" and"}
+{"type":"text-delta","id":"msg_0c645090d6439415016a6ce07650e081a2b0b8d2cbbb62ac06","delta":" fog"}
+{"type":"text-delta","id":"msg_0c645090d6439415016a6ce07650e081a2b0b8d2cbbb62ac06","delta":"gy"}
+{"type":"text-delta","id":"msg_0c645090d6439415016a6ce07650e081a2b0b8d2cbbb62ac06","delta":"."}
+{"type":"text-end","id":"msg_0c645090d6439415016a6ce07650e081a2b0b8d2cbbb62ac06","providerMetadata":{"openai":{"itemId":"msg_0c645090d6439415016a6ce07650e081a2b0b8d2cbbb62ac06"}}}
 {"type":"finish-step"}
 {"type":"finish","finishReason":"stop"}

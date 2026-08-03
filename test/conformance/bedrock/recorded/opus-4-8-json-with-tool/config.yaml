@@ -1,4 +1,4 @@
-model: anthropic.claude-opus-4-8-v1:0
+model: us.anthropic.claude-opus-4-8
 prompt: "Return the current status as JSON."
 responseFormat:
   type: json

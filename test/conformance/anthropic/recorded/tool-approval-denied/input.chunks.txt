@@ -1,11 +1,9 @@
-{"type":"message_start","message":{"model":"claude-sonnet-4-5-20250929","id":"msg_018u8RA9E1HFmpiAsUmHigT6","type":"message","role":"assistant","content":[],"stop_reason":null,"stop_sequence":null,"stop_details":null,"usage":{"input_tokens":601,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":2,"service_tier":"standard","inference_geo":"not_available"}}           }
-{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""} }
+{"type":"message_start","message":{"model":"claude-sonnet-4-5-20250929","id":"msg_011CdaZD2HWYULs64ZSsymFi","type":"message","role":"assistant","content":[],"stop_reason":null,"stop_sequence":null,"stop_details":null,"usage":{"input_tokens":601,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":2,"service_tier":"standard","inference_geo":"not_available"}}    }
+{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}  }
 {"type": "ping"}
-{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"I wasn"}               }
-{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"'t able to update the issue list. It appears I don't have the necessary permissions to perform this action. You"}       }
-{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" may need to:\n\n1. Check if you have the appropriate access rights\n2. Contact an"}              }
-{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" administrator to grant the necessary permissions\n3. Try updating the issue list directly through your system's interface\n\nIs"}   }
-{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" there anything else I can help you with?"}          }
-{"type":"content_block_stop","index":0 }
-{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null,"stop_details":null},"usage":{"input_tokens":601,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":79}          }
-{"type":"message_stop"    }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"I apolog"}        }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ize, but I don't have permission to update the issue list. It appears this action is restricted."}          }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" You may need to check your permissions or contact an administrator to perform this update."}            }
+{"type":"content_block_stop","index":0            }
+{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null,"stop_details":null},"usage":{"input_tokens":601,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":42}    }
+{"type":"message_stop"           }

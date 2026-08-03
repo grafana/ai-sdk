@@ -1,0 +1,9 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"text-start","id":"0"}
+{"type":"text-delta","id":"0","delta":"Hello! How can I help you"}
+{"type":"text-delta","id":"0","delta":" today?\n\nWhether you'd like the current weather or a forecast, I'm happy to look"}
+{"type":"text-delta","id":"0","delta":" that up for you. Just let me know what you need!"}
+{"type":"text-end","id":"0"}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"stop"}
