@@ -1,93 +1,126 @@
-{"messageStart": {"p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRST", "role": "assistant"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": "The user is asking me to:"}}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": "\n1. Think about which city is more"}}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKL"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": " likely to be sunny right now\n2"}}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRST"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": ". Use get"}}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVW"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": "_weather to check Berlin\n\nHowever"}}, "p": "abcdefghijklmn"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": ", they"}}, "p": "abcdefghijklm"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": " haven't specified what"}}, "p": "abcdefghijklmnopqrstuvwxyzABC"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": " other"}}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWX"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": " city to"}}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJK"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": " compare"}}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLM"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": " Berlin"}}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": " to. But"}}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKL"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": " they"}}, "p": "abcdefghijklmnopqrstuvw"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": "'re"}}, "p": "abcdefghijklmnopqrstuvwxy"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": " specifically"}}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRST"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": " asking me to check"}}, "p": "abcdefg"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": " Berlin's"}}, "p": "abcdefghijklmn"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": " weather, so"}}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": " I should do"}}, "p": "abcdefghijklmnopqrstuvwxyzABCDEF"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": " that.\n\nLet"}}, "p": "abcde"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": " me think"}}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJ"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": " about the"}}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": " request"}}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": ":"}}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": " they"}}, "p": "abcdefghijklmnop"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": " want me to think"}}, "p": "abcdefghijklmnopqrstuvwxyzABC"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": " about which city is more likely to be"}}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": " sunny, but"}}, "p": "abcdef"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": " they only"}}, "p": "abcdefgh"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": " mention"}}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": " Berlin."}}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXY"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": " I'll"}}, "p": "abcdefghijklmnopq"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": " provide"}}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": " some"}}, "p": "abcdefghijklmnopqrstuvwxyzAB"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": " thoughts"}}, "p": "abcdefghijklmnopqrstuvw"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": " about Berlin's climate"}}, "p": "abcdefghijklmnopqrstuvwxy"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": "/"}}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRS"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": "weather patterns"}}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNO"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": ", then"}}, "p": "ab"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": " check"}}, "p": "abcde"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": " Berlin's weather as"}}, "p": "abcdefghijklmnopqrstuvwxyz"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": " requested."}}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRS"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"text": ""}}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNO"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"reasoningContent": {"signature": "Eq8FCkgIDRABGAIqQFbfmFrxmh57mAuMbS6lBjFY6ijzLoQfh0VeRU5peElhVthR3aGuJT3QJiqf56ebTeh6vPs1eAesoIKxr3r38/8SDFGS4rdpV/jxdnhYXBoMUM3zXJQ7D/fIeQvZIjDgAmi038eEOE2jFK3erMvJO7BQ8AYix34qhP0gwt+qCogTY+uSSbZhhLwqvGX6HPEqlAQAP/0oQ80ZE5/Lse+Po7tPGMVpEVq/Bbo9g+rcsIwQ7C6NP1Pj5w0u+v6bowDyQfOd0J6/Tx3ltwug6ouceV2LBpWr0KfLXbSb817BpC9kb2IUraNTq/rBNLKSH68jai/CDUV92Ud5IanqHKYrOKHgccXFT0urrF6NdwznfS6d3DU9aHRchqFUlufXxxJ7jU7QjIhDgkjLQqrOJkPZBt/aJnAy8okm02I2s3qUoq5uAUilWXdInan7pd+uZG3PQqaCWsM0KJkZvCfl6sryuxtSHm9iOgOWvqIc5L6/bL3q+XaDcdPPsECMFb06+ScpUYHT4TJdX7Gkb7h5siJBRNHw5ER+QzrONIXsHQnrv4jHNc9X0JrlomnnmpEn/j8Whv3wK2QnZ8hkOxeXFZFAJ/TkKlRg+37xGWslMb/ob3bebHx+PIsE+EenqRfAs3hjqlDblIEdfL7WDgXb96H4qdBFJaaw8NU5kgtxe5LEonOw5DFKGToRXz9b3PXYyafwukXCXOiyLcPbRySs6sdBdLPaYDKutm/Zds4Q/C4t+7XqqS4OZSM9rhEbnbSuMmqjCi7DNft2W5ah47X/xLNp/EXgAfLq6cydbQ48m0gKaKRRU/ClHFbk0nO7QIOGjaGymKq+TxaoYUJoD9V0PJi3A6w4JMZ99mFaEcRcsKYXIuL9xqzC5rzeOvoAr+4lkqyOUcG7YxpNGAE="}}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGH"}}
-{"contentBlockStop": {"contentBlockIndex": 0, "p": "abcdef"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": "I"}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGH"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": "'ll think"}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJ"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": " about Berlin's weather patterns and then check"}, "p": "abcd"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": " the current weather there"}, "p": "abcdefghijk"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": ".\n\nBerlin"}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": " is"}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVW"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": " located"}, "p": "abcdefghijklmnopqrstuv"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": " in central"}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012345678"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": " Europe with"}, "p": "abcdefghijklmnopqrstuvwxyzAB"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": " a temperate seasonal"}, "p": "abcd"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": " climate. The"}, "p": "abcdefghijklmnopqrstuvwxyzABC"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": " likelihood"}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": " of sunny weather"}, "p": "abcdefghijklmnopqrstuvwxyzABCDEF"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": " depends on the"}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": " season -"}, "p": "abcdefghij"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": " summers"}, "p": "abcdefghijklmnopq"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": " (June-August) tend"}, "p": "abcdefghijk"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": " to have"}, "p": "abcdefghijklmnopqrs"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": " more sunny days, while winters are"}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUV"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": " often"}, "p": "abcdefghijklmnopqrstuvwxyzAB"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": " cloudy and gray"}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLM"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": ". Without"}, "p": "abcdefghij"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": " knowing the current"}, "p": "abc"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": " season"}, "p": "ab"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": " or"}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": " having"}, "p": "abcdefghijklmnopqrstuvwxyzABCDEF"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": " another"}, "p": "abcdefghijklmnopqrstuvwxyz"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": " city"}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVW"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": " to compare it to, it"}, "p": "abcdefghijklmnopqrstu"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": "'s hard"}, "p": "abcdefghijklmnopqr"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": " to predict"}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": ","}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUV"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": " but let"}, "p": "abcdefghijk"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": " me check"}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": " the"}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": " actual"}, "p": "abcdefghijklmn"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": " weather right"}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012"}}
-{"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": " now."}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012345"}}
-{"contentBlockStop": {"contentBlockIndex": 1, "p": "abcdefghijklmnopqrstuvwxyzAB"}}
-{"contentBlockStart": {"contentBlockIndex": 2, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ", "start": {"toolUse": {"name": "get_weather", "toolUseId": "tooluse_CieCiNzrhcm7lkkTeO6L1z", "type": "tool_use", "input": {}}}}}
-{"contentBlockDelta": {"contentBlockIndex": 2, "delta": {"toolUse": {"input": ""}}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXY"}}
-{"contentBlockDelta": {"contentBlockIndex": 2, "delta": {"toolUse": {"input": "{\"city\""}}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0"}}
-{"contentBlockDelta": {"contentBlockIndex": 2, "delta": {"toolUse": {"input": ": \"Berl"}}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTU"}}
-{"contentBlockDelta": {"contentBlockIndex": 2, "delta": {"toolUse": {"input": "in\"}"}}, "p": "abcdefghijk"}}
-{"contentBlockStop": {"contentBlockIndex": 2, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567"}}
-{"messageStop": {"additionalModelResponseFields": {"delta": {"stop_sequence": null}}, "p": "abcdefghijklmnopqrstuvwxyzABCDE", "stopReason": "tool_use"}}
-{"metadata": {"metrics": {"latencyMs": 6639}, "p": "abcdefghijklmnopqrstuvwxyzA", "usage": {"inputTokens": 610, "outputTokens": 269, "serverToolUsage": {}, "totalTokens": 879}}}
+{"messageStart":{"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWX","role":"assistant"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":"The user wants me to:\n1"}},"p":"abcde"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":". Think about which city is more likely"}},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":" to be sunny right now\n2."}},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":" Use get"}},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUV"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":"_weather to check Berlin\n\nHowever"}},"p":"abcdefghij"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":", they"}},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWX"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":" didn"}},"p":"abcdefghij"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":"'t specify which cities"}},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":" to compare"}},"p":"abcdefghijklmnopqrstuvwx"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":". They"}},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":" just said \"which"}},"p":"abcdefghijk"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":" city\""}},"p":"abcd"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":" without"}},"p":"abcdef"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":" giving"}},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":" me options"}},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":". But"}},"p":"abcd"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":" then"}},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":" they specifically"}},"p":"abcdefghijklmnopqrstuvwxyzABCDEFG"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":" ask"}},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":" me to check"}},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":" Berlin. So"}},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012345678"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":" I should think"}},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNO"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":" about cities"}},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGH"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":" in"}},"p":"abcdefg"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":" general and which"}},"p":"abcdefghijklmnopqrst"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":" might"}},"p":"abcdefghijklmnopqrst"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":" be sunny,"}},"p":"abcdefghijklmnopq"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":" then check"}},"p":"abcd"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":" Berlin as"}},"p":"abcd"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":" requested.\n\nLet me think about sunny"}},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012345678"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":" weather"}},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":" patterns and"}},"p":"abcdefghijkl"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":" then"}},"p":"abcdefghijklmnopqrstu"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":" check Berlin."}},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":""}},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"signature":"EpEFCnAIEBABGAIqQLuyP3A9icykzML36EGLi0iNhQzyh1Zc+RCGM27vjAsV3SoEWepaj+Xk0UYsFbxTUTgKAmtAk8INvC7SdQvQqDkyGmNsYXVkZS1zb25uZXQtNC01LTIwMjUwOTI5OABCCHRoaW5raW5nEgwMtrhiin/sUsK7F24aDHRQwVbEPBimedFdRyIwKLEZAz3KXy4Jk+20QcQHum7iYxNgiZj5bmX9ibEjcjegOllASZXKneoOiuetoYIHKs4DuD9Llu6lDUV8DqaOAiOZ7ap438FIuzxDVHkm54Yx9oNpz8HNPG5NGTHQps66HL/wIztxCMRCvW2vlhmlc0nhfZUcYwKVZxWJTH/gUJszTEyrLY43bhE9TkWyER7HTS9pj3twdov3NnjzYO33XTX9nmAst3ud63Vuf3lSpFrTuSWrITCQJZqwnTEIgUeXxIZifXZI4qr1zkudAuf108k5Xx5J7Y5/RNU0vr6i8vU9tEhP9z8uYM88A5P3LCvkXzw4jrbn4aD7E2xqI++KsxUBOK7DOA1rHcG9UBKa7o2+gZ1ZuDsjcpBGg8nr7EfEAXp+y+BqaD/krDUPTcgXFdlJhSrrf06OOZsV1vHArhyxl+uHQp3cwe+tiMTQSL6zB5ULVRgkTP0j4JB3kxUM+DoQYNGNpZuGxiCOkGdwgs0zVA/cS5CctRw77UgET7f/QE+IyejrcGACUUOmJWWUfmEC3GT5EErV/iQIV/zhzID2xx1rjvdzX023ZpGsMzeysoGnDFk0lli4noJbkWXY9FhAMdwX8HZ1qaqBRhQPoT3tH89ws9cITgc61HtWMf2dqvrmocYO1/ViZ1jygC1FnBRzw/s9D9vkMbwB9OFfWu5+GAE="}},"p":"abcdefghijklmnopqrst"}}
+{"contentBlockStop":{"contentBlockIndex":0,"p":"abcdefghijklmn"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":"Let"},"p":"abcdefghijklmno"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" me think about this first"},"p":"abcdefghij"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":". When"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRST"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" considering"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" which cities"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" are likely"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVW"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" to be sunny, it"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" depends"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHI"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" on several"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWX"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" factors:"},"p":"abcdefghijklmnopqrstuvwxyzABC"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":"\n- **Time"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" of year"},"p":"abcdefghijklmnopqrst"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" and"},"p":"abcde"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" season** - Cities"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJ"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" closer"},"p":"abcdefg"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" to the equator or"},"p":"abcdefghijkl"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" in"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXY"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" their"},"p":"abcd"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" warm"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" season tend"},"p":"abcdefghijklmn"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" to have"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" more sun"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFG"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":"\n- **Geographic"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNO"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" location** - Desert"},"p":"abcdefghijklmnopqrstuvwxyzABCDEF"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" cities ("},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":"Phoenix"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012345678"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":", Dubai) have"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQR"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" more consistent"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" sunshine\n- **Climate"},"p":"abcdefghijklmnopqrstuvw"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" patterns** - Mediterranean"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" climates (Los"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUV"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" Angeles, Barcelona"},"p":"abcdefghijklmnopqrs"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":") tend to be sunny"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVW"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":"\n- **Current"},"p":"abcdefgh"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" season"},"p":"abcdefghijklmnopqrstu"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" in"},"p":"abcdefghijklmnopqrstuvwxyzABCDE"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" hemisphere"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTU"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":"** - Northern vs"},"p":"abcdefgh"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" Southern"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012345678"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" hemisphere are"},"p":"abcdefghi"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" in"},"p":"abcdefgh"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" opposite"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFG"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" seasons\n\nWithout"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012345"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" knowing the"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTU"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" current"},"p":"abcdefg"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" exact"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKL"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" date/"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFG"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":"time, generally"},"p":"abcdefghijklmnopqrst"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" speaking:\n- **Desert"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFG"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" cities** like"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" Phoenix, Las"},"p":"abcdefghijklmnopqrstuvwxyzABCDEF"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" Vegas, or"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" Dubai tend"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJK"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" to have"},"p":"abcdefghijklmnopqr"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" the"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRS"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" highest"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQR"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" probability"},"p":"abcdefghijklmnopqrstuvwxyzABCDE"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" of sunshine year"},"p":"abcdefghijklmnopqrstu"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":"-round\n- **Mediterranean climate"},"p":"abcdefghijklmn"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" cities** like Los Angeles, Barcelona,"},"p":"abcdefghijklmnopqrstu"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" or Athens"},"p":"abcdefghijkl"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" have high"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012345"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" sunshine probability"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":"\n- **Northern European"},"p":"abcdefg"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" cities** like"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLM"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" Berlin"},"p":"abcdefghi"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":", London"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKL"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":", or Stockholm tend"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRS"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" to have more variable"},"p":"ab"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" weather"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJ"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" with"},"p":"abcdefghijklmnopqrstuvwxyzABC"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" less"},"p":"abcde"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" consistent sunshine,"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJK"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" especially in winter months"},"p":"abcdefghijklmnopqr"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":"\n\nNow"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" let"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012345"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" me check Berlin as"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKL"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" you"},"p":"abcdefgh"}}
+{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":" requested:"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVW"}}
+{"contentBlockStop":{"contentBlockIndex":1,"p":"abcd"}}
+{"contentBlockStart":{"contentBlockIndex":2,"p":"abcdefghijklmnop","start":{"toolUse":{"name":"get_weather","toolUseId":"tooluse_c6ohQ1O3kFRxOR2T8Os7Xg","type":"tool_use"}}}}
+{"contentBlockDelta":{"contentBlockIndex":2,"delta":{"toolUse":{"input":""}},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHI"}}
+{"contentBlockDelta":{"contentBlockIndex":2,"delta":{"toolUse":{"input":"{\"city\""}},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKL"}}
+{"contentBlockDelta":{"contentBlockIndex":2,"delta":{"toolUse":{"input":": \"Berli"}},"p":"ab"}}
+{"contentBlockDelta":{"contentBlockIndex":2,"delta":{"toolUse":{"input":"n\"}"}},"p":"abcdefgh"}}
+{"contentBlockStop":{"contentBlockIndex":2,"p":"abcdefghijklmnopqrs"}}
+{"messageStop":{"additionalModelResponseFields":{"delta":{"stop_sequence":null}},"p":"abcdefghijklmnopqrstuvwxyzA","stopReason":"tool_use"}}
+{"metadata":{"metrics":{"latencyMs":7218},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012","usage":{"inputTokens":610,"outputTokens":360,"serverToolUsage":{},"totalTokens":970}}}

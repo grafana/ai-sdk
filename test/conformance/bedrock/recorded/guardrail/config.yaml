@@ -3,7 +3,7 @@ prompt: Reply with the single word "pong".
 providerOptions:
   amazonBedrock:
     guardrailConfig:
-      guardrailIdentifier: guardrail-id
+      guardrailIdentifier: ${BEDROCK_GUARDRAIL_ID}
       guardrailVersion: "1"
       trace: enabled
       streamProcessingMode: async

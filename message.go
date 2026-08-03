@@ -29,7 +29,7 @@ type UIMessage struct {
 // Part is the interface for all UIMessage part types.
 // Consumers type-switch on concrete types: TextPart, ReasoningPart,
 // ToolInvocationPart, DynamicToolUIPart, FilePart, ReasoningFilePart,
-// SourceURLPart, SourceDocumentPart, DataPart, StepStartPart.
+// SourceURLPart, SourceDocumentPart, DataPart, CustomPart, StepStartPart.
 type Part interface {
 	PartType() string
 }
@@ -47,6 +47,7 @@ const (
 	UIPartSourceURL      UIPartType = "source-url"
 	UIPartSourceDocument UIPartType = "source-document"
 	UIPartData           UIPartType = "data"
+	UIPartCustom         UIPartType = "custom"
 	UIPartStepStart      UIPartType = "step-start"
 )
 
@@ -203,6 +204,15 @@ type DataPart struct {
 
 // PartType implements Part.
 func (p DataPart) PartType() string { return "data-" + p.DataName }
+
+// CustomPart carries provider-specific custom content in a UIMessage.
+type CustomPart struct {
+	Kind             string                    `json:"kind"`
+	ProviderMetadata provider.ProviderMetadata `json:"providerMetadata,omitempty"`
+}
+
+// PartType implements Part.
+func (CustomPart) PartType() string { return string(UIPartCustom) }
 
 // StepStartPart marks the beginning of a new step in a UIMessage.
 type StepStartPart struct{}

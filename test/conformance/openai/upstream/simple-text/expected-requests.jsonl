@@ -1,1 +1,0 @@
-{"body":{"input":[{"content":[{"text":"Say hello in exactly 3 words.","type":"input_text"}],"role":"user"}],"model":"gpt-4o","stream":true},"headers":{"authorization":"<redacted>","content-type":"application/json"},"method":"POST","path":"/v1/responses"}

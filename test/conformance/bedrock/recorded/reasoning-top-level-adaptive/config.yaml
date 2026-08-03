@@ -1,6 +1,6 @@
 # Top-level reasoning on an adaptive-thinking-capable Anthropic Bedrock model.
 # Exercises capability-gated mapping to adaptive thinking and effort.
-model: anthropic.claude-sonnet-4-6-v1:0
+model: us.anthropic.claude-sonnet-4-6
 prompt: test
 reasoning: high
 providerOptions:

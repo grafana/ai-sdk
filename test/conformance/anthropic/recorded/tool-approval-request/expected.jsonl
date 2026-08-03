@@ -1,22 +1,22 @@
 {"type":"start"}
 {"type":"start-step"}
 {"type":"text-start","id":"0"}
-{"type":"text-delta","id":"0","delta":"I'll help you look"}
-{"type":"text-delta","id":"0","delta":" up a release note and then update the issue list. Let me start by looking up a release note."}
+{"type":"text-delta","id":"0","delta":"I'll help you look up a release"}
+{"type":"text-delta","id":"0","delta":" note first, then update the issue list. Let me start by looking up the release note."}
 {"type":"text-end","id":"0"}
-{"type":"tool-input-start","toolCallId":"toolu_01RNv1waD3JdJutLHT3zvGGi","toolName":"lookup_data"}
-{"type":"tool-input-delta","toolCallId":"toolu_01RNv1waD3JdJutLHT3zvGGi","inputTextDelta":"{\"query\": \"release note"}
-{"type":"tool-input-delta","toolCallId":"toolu_01RNv1waD3JdJutLHT3zvGGi","inputTextDelta":"\"}"}
-{"type":"tool-input-available","toolCallId":"toolu_01RNv1waD3JdJutLHT3zvGGi","toolName":"lookup_data","input":{"query":"release note"},"providerMetadata":{"anthropic":{"caller":{"type":"direct"}}}}
-{"type":"tool-output-available","toolCallId":"toolu_01RNv1waD3JdJutLHT3zvGGi","output":{"value":"release note found","source":"mock release database"},"providerMetadata":{"anthropic":{"caller":{"type":"direct"}}}}
+{"type":"tool-input-start","toolCallId":"toolu_01BVLaUcN7yGsoUn6otVrS7E","toolName":"lookup_data"}
+{"type":"tool-input-delta","toolCallId":"toolu_01BVLaUcN7yGsoUn6otVrS7E","inputTextDelta":"{\"query\": \"release note"}
+{"type":"tool-input-delta","toolCallId":"toolu_01BVLaUcN7yGsoUn6otVrS7E","inputTextDelta":"\"}"}
+{"type":"tool-input-available","toolCallId":"toolu_01BVLaUcN7yGsoUn6otVrS7E","toolName":"lookup_data","input":{"query":"release note"},"providerMetadata":{"anthropic":{"caller":{"type":"direct"}}}}
+{"type":"tool-output-available","toolCallId":"toolu_01BVLaUcN7yGsoUn6otVrS7E","output":{"value":"release note found","source":"mock release database"},"providerMetadata":{"anthropic":{"caller":{"type":"direct"}}}}
 {"type":"finish-step"}
 {"type":"start-step"}
 {"type":"text-start","id":"0"}
 {"type":"text-delta","id":"0","delta":"Now I'll update the issue list with"}
 {"type":"text-delta","id":"0","delta":" this result."}
 {"type":"text-end","id":"0"}
-{"type":"tool-input-start","toolCallId":"toolu_011i12bv6xQsaDRKnefcRurk","toolName":"updateIssueList"}
-{"type":"tool-input-available","toolCallId":"toolu_011i12bv6xQsaDRKnefcRurk","toolName":"updateIssueList","input":{},"providerMetadata":{"anthropic":{"caller":{"type":"direct"}}}}
-{"type":"tool-approval-request","approvalId":"id-2","toolCallId":"toolu_011i12bv6xQsaDRKnefcRurk"}
+{"type":"tool-input-start","toolCallId":"toolu_01MEdVoJRgqjaPowpBoLAWx4","toolName":"updateIssueList"}
+{"type":"tool-input-available","toolCallId":"toolu_01MEdVoJRgqjaPowpBoLAWx4","toolName":"updateIssueList","input":{},"providerMetadata":{"anthropic":{"caller":{"type":"direct"}}}}
+{"type":"tool-approval-request","approvalId":"id-2","toolCallId":"toolu_01MEdVoJRgqjaPowpBoLAWx4"}
 {"type":"finish-step"}
 {"type":"finish","finishReason":"tool-calls"}

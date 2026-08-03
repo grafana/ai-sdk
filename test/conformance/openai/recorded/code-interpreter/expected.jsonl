@@ -1,120 +1,135 @@
 {"type":"start"}
 {"type":"start-step"}
-{"type":"tool-input-start","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","toolName":"code_interpreter","providerExecuted":true}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":"{\"containerId\":\"cntr_6a3abb989da48191a19ab3f4d53a21890e56bec32d22ab0b\",\"code\":\""}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":"#"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":" Calculate"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":" the"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":" first"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":" "}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":"10"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":" Fibonacci"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":" numbers"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":"\\n"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":"def"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":" fibonacci"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":"(n"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":"):\\n"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":"   "}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":" fib"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":"_sequence"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":" ="}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":" ["}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":"0"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":","}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":" "}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":"1"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":"]\\n"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":"   "}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":" while"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":" len"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":"(f"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":"ib"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":"_sequence"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":")"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":" <"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":" n"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":":\\n"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":"       "}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":" fib"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":"_sequence"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":".append"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":"(f"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":"ib"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":"_sequence"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":"[-"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":"1"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":"]"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":" +"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":" fib"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":"_sequence"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":"[-"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":"2"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":"])\\n"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":"   "}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":" return"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":" fib"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":"_sequence"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":"\\n\\n"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":"first"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":"_"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":"10"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":"_f"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":"ib"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":" ="}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":" fibonacci"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":"("}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":"10"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":")\\n"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":"first"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":"_"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":"10"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":"_f"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":"ib"}
-{"type":"tool-input-delta","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","inputTextDelta":"\"}"}
-{"type":"tool-input-available","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","toolName":"code_interpreter","input":{"code":"# Calculate the first 10 Fibonacci numbers\ndef fibonacci(n):\n    fib_sequence = [0, 1]\n    while len(fib_sequence) < n:\n        fib_sequence.append(fib_sequence[-1] + fib_sequence[-2])\n    return fib_sequence\n\nfirst_10_fib = fibonacci(10)\nfirst_10_fib","containerId":"cntr_6a3abb989da48191a19ab3f4d53a21890e56bec32d22ab0b"},"providerExecuted":true}
-{"type":"tool-output-available","toolCallId":"ci_05711b42ee4685a6016a3abb99238c81a2a90d7fde3b3d2b2b","output":{"outputs":[{"type":"logs","logs":"[0, 1, 1, 2, 3, 5, 8, 13, 21, 34]"}]},"providerExecuted":true}
-{"type":"text-start","id":"msg_05711b42ee4685a6016a3abbb3237081a28b5ddf4f77fb10b2","providerMetadata":{"openai":{"itemId":"msg_05711b42ee4685a6016a3abbb3237081a28b5ddf4f77fb10b2"}}}
-{"type":"text-delta","id":"msg_05711b42ee4685a6016a3abbb3237081a28b5ddf4f77fb10b2","delta":"The"}
-{"type":"text-delta","id":"msg_05711b42ee4685a6016a3abbb3237081a28b5ddf4f77fb10b2","delta":" first"}
-{"type":"text-delta","id":"msg_05711b42ee4685a6016a3abbb3237081a28b5ddf4f77fb10b2","delta":" "}
-{"type":"text-delta","id":"msg_05711b42ee4685a6016a3abbb3237081a28b5ddf4f77fb10b2","delta":"10"}
-{"type":"text-delta","id":"msg_05711b42ee4685a6016a3abbb3237081a28b5ddf4f77fb10b2","delta":" Fibonacci"}
-{"type":"text-delta","id":"msg_05711b42ee4685a6016a3abbb3237081a28b5ddf4f77fb10b2","delta":" numbers"}
-{"type":"text-delta","id":"msg_05711b42ee4685a6016a3abbb3237081a28b5ddf4f77fb10b2","delta":" are"}
-{"type":"text-delta","id":"msg_05711b42ee4685a6016a3abbb3237081a28b5ddf4f77fb10b2","delta":":"}
-{"type":"text-delta","id":"msg_05711b42ee4685a6016a3abbb3237081a28b5ddf4f77fb10b2","delta":"  \n"}
-{"type":"text-delta","id":"msg_05711b42ee4685a6016a3abbb3237081a28b5ddf4f77fb10b2","delta":"\\["}
-{"type":"text-delta","id":"msg_05711b42ee4685a6016a3abbb3237081a28b5ddf4f77fb10b2","delta":"0"}
-{"type":"text-delta","id":"msg_05711b42ee4685a6016a3abbb3237081a28b5ddf4f77fb10b2","delta":","}
-{"type":"text-delta","id":"msg_05711b42ee4685a6016a3abbb3237081a28b5ddf4f77fb10b2","delta":" "}
-{"type":"text-delta","id":"msg_05711b42ee4685a6016a3abbb3237081a28b5ddf4f77fb10b2","delta":"1"}
-{"type":"text-delta","id":"msg_05711b42ee4685a6016a3abbb3237081a28b5ddf4f77fb10b2","delta":","}
-{"type":"text-delta","id":"msg_05711b42ee4685a6016a3abbb3237081a28b5ddf4f77fb10b2","delta":" "}
-{"type":"text-delta","id":"msg_05711b42ee4685a6016a3abbb3237081a28b5ddf4f77fb10b2","delta":"1"}
-{"type":"text-delta","id":"msg_05711b42ee4685a6016a3abbb3237081a28b5ddf4f77fb10b2","delta":","}
-{"type":"text-delta","id":"msg_05711b42ee4685a6016a3abbb3237081a28b5ddf4f77fb10b2","delta":" "}
-{"type":"text-delta","id":"msg_05711b42ee4685a6016a3abbb3237081a28b5ddf4f77fb10b2","delta":"2"}
-{"type":"text-delta","id":"msg_05711b42ee4685a6016a3abbb3237081a28b5ddf4f77fb10b2","delta":","}
-{"type":"text-delta","id":"msg_05711b42ee4685a6016a3abbb3237081a28b5ddf4f77fb10b2","delta":" "}
-{"type":"text-delta","id":"msg_05711b42ee4685a6016a3abbb3237081a28b5ddf4f77fb10b2","delta":"3"}
-{"type":"text-delta","id":"msg_05711b42ee4685a6016a3abbb3237081a28b5ddf4f77fb10b2","delta":","}
-{"type":"text-delta","id":"msg_05711b42ee4685a6016a3abbb3237081a28b5ddf4f77fb10b2","delta":" "}
-{"type":"text-delta","id":"msg_05711b42ee4685a6016a3abbb3237081a28b5ddf4f77fb10b2","delta":"5"}
-{"type":"text-delta","id":"msg_05711b42ee4685a6016a3abbb3237081a28b5ddf4f77fb10b2","delta":","}
-{"type":"text-delta","id":"msg_05711b42ee4685a6016a3abbb3237081a28b5ddf4f77fb10b2","delta":" "}
-{"type":"text-delta","id":"msg_05711b42ee4685a6016a3abbb3237081a28b5ddf4f77fb10b2","delta":"8"}
-{"type":"text-delta","id":"msg_05711b42ee4685a6016a3abbb3237081a28b5ddf4f77fb10b2","delta":","}
-{"type":"text-delta","id":"msg_05711b42ee4685a6016a3abbb3237081a28b5ddf4f77fb10b2","delta":" "}
-{"type":"text-delta","id":"msg_05711b42ee4685a6016a3abbb3237081a28b5ddf4f77fb10b2","delta":"13"}
-{"type":"text-delta","id":"msg_05711b42ee4685a6016a3abbb3237081a28b5ddf4f77fb10b2","delta":","}
-{"type":"text-delta","id":"msg_05711b42ee4685a6016a3abbb3237081a28b5ddf4f77fb10b2","delta":" "}
-{"type":"text-delta","id":"msg_05711b42ee4685a6016a3abbb3237081a28b5ddf4f77fb10b2","delta":"21"}
-{"type":"text-delta","id":"msg_05711b42ee4685a6016a3abbb3237081a28b5ddf4f77fb10b2","delta":","}
-{"type":"text-delta","id":"msg_05711b42ee4685a6016a3abbb3237081a28b5ddf4f77fb10b2","delta":" "}
-{"type":"text-delta","id":"msg_05711b42ee4685a6016a3abbb3237081a28b5ddf4f77fb10b2","delta":"34"}
-{"type":"text-delta","id":"msg_05711b42ee4685a6016a3abbb3237081a28b5ddf4f77fb10b2","delta":"\\"}
-{"type":"text-delta","id":"msg_05711b42ee4685a6016a3abbb3237081a28b5ddf4f77fb10b2","delta":"]"}
-{"type":"text-end","id":"msg_05711b42ee4685a6016a3abbb3237081a28b5ddf4f77fb10b2","providerMetadata":{"openai":{"itemId":"msg_05711b42ee4685a6016a3abbb3237081a28b5ddf4f77fb10b2"}}}
+{"type":"tool-input-start","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","toolName":"code_interpreter","providerExecuted":true}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":"{\"containerId\":\"cntr_6a6ce03ae16c8191b98dd92101ea32bf0433c57def797f4f\",\"code\":\""}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":"#"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":" Function"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":" to"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":" calculate"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":" the"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":" first"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":" n"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":" Fibonacci"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":" numbers"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":"\\n"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":"def"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":" fibonacci"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":"_numbers"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":"(n"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":"):\\n"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":"   "}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":" fib"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":"_sequence"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":" ="}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":" ["}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":"0"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":","}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":" "}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":"1"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":"]\\n"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":"   "}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":" while"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":" len"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":"(f"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":"ib"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":"_sequence"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":")"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":" <"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":" n"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":":\\n"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":"       "}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":" fib"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":"_sequence"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":".append"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":"(f"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":"ib"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":"_sequence"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":"[-"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":"1"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":"]"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":" +"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":" fib"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":"_sequence"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":"[-"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":"2"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":"])\\n"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":"   "}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":" return"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":" fib"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":"_sequence"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":"[:"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":"n"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":"]\\n\\n"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":"#"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":" Calculate"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":" the"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":" first"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":" "}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":"10"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":" Fibonacci"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":" numbers"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":"\\n"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":"first"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":"_"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":"10"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":"_f"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":"ib"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":" ="}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":" fibonacci"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":"_numbers"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":"("}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":"10"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":")\\n"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":"first"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":"_"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":"10"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":"_f"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":"ib"}
+{"type":"tool-input-delta","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","inputTextDelta":"\"}"}
+{"type":"tool-input-available","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","toolName":"code_interpreter","input":{"code":"# Function to calculate the first n Fibonacci numbers\ndef fibonacci_numbers(n):\n    fib_sequence = [0, 1]\n    while len(fib_sequence) < n:\n        fib_sequence.append(fib_sequence[-1] + fib_sequence[-2])\n    return fib_sequence[:n]\n\n# Calculate the first 10 Fibonacci numbers\nfirst_10_fib = fibonacci_numbers(10)\nfirst_10_fib","containerId":"cntr_6a6ce03ae16c8191b98dd92101ea32bf0433c57def797f4f"},"providerExecuted":true}
+{"type":"tool-output-available","toolCallId":"ci_01a2d89b33eca7cb016a6ce03b52a481a0b9c7d1a74f8c7d52","output":{"outputs":[{"type":"logs","logs":"[0, 1, 1, 2, 3, 5, 8, 13, 21, 34]"}]},"providerExecuted":true}
+{"type":"text-start","id":"msg_01a2d89b33eca7cb016a6ce040d87881a0afda992ebc709b7d","providerMetadata":{"openai":{"itemId":"msg_01a2d89b33eca7cb016a6ce040d87881a0afda992ebc709b7d"}}}
+{"type":"text-delta","id":"msg_01a2d89b33eca7cb016a6ce040d87881a0afda992ebc709b7d","delta":"The"}
+{"type":"text-delta","id":"msg_01a2d89b33eca7cb016a6ce040d87881a0afda992ebc709b7d","delta":" first"}
+{"type":"text-delta","id":"msg_01a2d89b33eca7cb016a6ce040d87881a0afda992ebc709b7d","delta":" "}
+{"type":"text-delta","id":"msg_01a2d89b33eca7cb016a6ce040d87881a0afda992ebc709b7d","delta":"10"}
+{"type":"text-delta","id":"msg_01a2d89b33eca7cb016a6ce040d87881a0afda992ebc709b7d","delta":" Fibonacci"}
+{"type":"text-delta","id":"msg_01a2d89b33eca7cb016a6ce040d87881a0afda992ebc709b7d","delta":" numbers"}
+{"type":"text-delta","id":"msg_01a2d89b33eca7cb016a6ce040d87881a0afda992ebc709b7d","delta":" are"}
+{"type":"text-delta","id":"msg_01a2d89b33eca7cb016a6ce040d87881a0afda992ebc709b7d","delta":":\n"}
+{"type":"text-delta","id":"msg_01a2d89b33eca7cb016a6ce040d87881a0afda992ebc709b7d","delta":"\\["}
+{"type":"text-delta","id":"msg_01a2d89b33eca7cb016a6ce040d87881a0afda992ebc709b7d","delta":" ["}
+{"type":"text-delta","id":"msg_01a2d89b33eca7cb016a6ce040d87881a0afda992ebc709b7d","delta":"0"}
+{"type":"text-delta","id":"msg_01a2d89b33eca7cb016a6ce040d87881a0afda992ebc709b7d","delta":","}
+{"type":"text-delta","id":"msg_01a2d89b33eca7cb016a6ce040d87881a0afda992ebc709b7d","delta":" "}
+{"type":"text-delta","id":"msg_01a2d89b33eca7cb016a6ce040d87881a0afda992ebc709b7d","delta":"1"}
+{"type":"text-delta","id":"msg_01a2d89b33eca7cb016a6ce040d87881a0afda992ebc709b7d","delta":","}
+{"type":"text-delta","id":"msg_01a2d89b33eca7cb016a6ce040d87881a0afda992ebc709b7d","delta":" "}
+{"type":"text-delta","id":"msg_01a2d89b33eca7cb016a6ce040d87881a0afda992ebc709b7d","delta":"1"}
+{"type":"text-delta","id":"msg_01a2d89b33eca7cb016a6ce040d87881a0afda992ebc709b7d","delta":","}
+{"type":"text-delta","id":"msg_01a2d89b33eca7cb016a6ce040d87881a0afda992ebc709b7d","delta":" "}
+{"type":"text-delta","id":"msg_01a2d89b33eca7cb016a6ce040d87881a0afda992ebc709b7d","delta":"2"}
+{"type":"text-delta","id":"msg_01a2d89b33eca7cb016a6ce040d87881a0afda992ebc709b7d","delta":","}
+{"type":"text-delta","id":"msg_01a2d89b33eca7cb016a6ce040d87881a0afda992ebc709b7d","delta":" "}
+{"type":"text-delta","id":"msg_01a2d89b33eca7cb016a6ce040d87881a0afda992ebc709b7d","delta":"3"}
+{"type":"text-delta","id":"msg_01a2d89b33eca7cb016a6ce040d87881a0afda992ebc709b7d","delta":","}
+{"type":"text-delta","id":"msg_01a2d89b33eca7cb016a6ce040d87881a0afda992ebc709b7d","delta":" "}
+{"type":"text-delta","id":"msg_01a2d89b33eca7cb016a6ce040d87881a0afda992ebc709b7d","delta":"5"}
+{"type":"text-delta","id":"msg_01a2d89b33eca7cb016a6ce040d87881a0afda992ebc709b7d","delta":","}
+{"type":"text-delta","id":"msg_01a2d89b33eca7cb016a6ce040d87881a0afda992ebc709b7d","delta":" "}
+{"type":"text-delta","id":"msg_01a2d89b33eca7cb016a6ce040d87881a0afda992ebc709b7d","delta":"8"}
+{"type":"text-delta","id":"msg_01a2d89b33eca7cb016a6ce040d87881a0afda992ebc709b7d","delta":","}
+{"type":"text-delta","id":"msg_01a2d89b33eca7cb016a6ce040d87881a0afda992ebc709b7d","delta":" "}
+{"type":"text-delta","id":"msg_01a2d89b33eca7cb016a6ce040d87881a0afda992ebc709b7d","delta":"13"}
+{"type":"text-delta","id":"msg_01a2d89b33eca7cb016a6ce040d87881a0afda992ebc709b7d","delta":","}
+{"type":"text-delta","id":"msg_01a2d89b33eca7cb016a6ce040d87881a0afda992ebc709b7d","delta":" "}
+{"type":"text-delta","id":"msg_01a2d89b33eca7cb016a6ce040d87881a0afda992ebc709b7d","delta":"21"}
+{"type":"text-delta","id":"msg_01a2d89b33eca7cb016a6ce040d87881a0afda992ebc709b7d","delta":","}
+{"type":"text-delta","id":"msg_01a2d89b33eca7cb016a6ce040d87881a0afda992ebc709b7d","delta":" "}
+{"type":"text-delta","id":"msg_01a2d89b33eca7cb016a6ce040d87881a0afda992ebc709b7d","delta":"34"}
+{"type":"text-delta","id":"msg_01a2d89b33eca7cb016a6ce040d87881a0afda992ebc709b7d","delta":"]"}
+{"type":"text-delta","id":"msg_01a2d89b33eca7cb016a6ce040d87881a0afda992ebc709b7d","delta":" \\"}
+{"type":"text-delta","id":"msg_01a2d89b33eca7cb016a6ce040d87881a0afda992ebc709b7d","delta":"]"}
+{"type":"text-end","id":"msg_01a2d89b33eca7cb016a6ce040d87881a0afda992ebc709b7d","providerMetadata":{"openai":{"itemId":"msg_01a2d89b33eca7cb016a6ce040d87881a0afda992ebc709b7d"}}}
 {"type":"finish-step"}
 {"type":"finish","finishReason":"stop"}

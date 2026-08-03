@@ -1,8 +1,11 @@
 {"type":"start"}
 {"type":"start-step"}
 {"type":"text-start","id":"txt-0"}
-{"type":"text-delta","id":"txt-0","delta":"{\"status\":\"ok\""}
-{"type":"text-delta","id":"txt-0","delta":",\"count\":2}"}
+{"type":"text-delta","id":"txt-0","delta":"{\""}
+{"type":"text-delta","id":"txt-0","delta":"status\":\""}
+{"type":"text-delta","id":"txt-0","delta":"ok"}
+{"type":"text-delta","id":"txt-0","delta":"\",\"count\":2"}
+{"type":"text-delta","id":"txt-0","delta":"}"}
 {"type":"text-end","id":"txt-0"}
 {"type":"finish-step"}
 {"type":"finish","finishReason":"stop"}

@@ -1,0 +1,118 @@
+{"type":"start"}
+{"type":"tool-output-denied","toolCallId":"mcpr_04a97b4fce127879006949a83ac9308195a7f7b69ea82e91fe"}
+{"type":"start-step"}
+{"type":"reasoning-start","id":"rs_04a97b4fce127879006949a857b7c88195818dab6d25ff091d:0","providerMetadata":{"openai":{"itemId":"rs_04a97b4fce127879006949a857b7c88195818dab6d25ff091d","reasoningEncryptedContent":null}}}
+{"type":"reasoning-end","id":"rs_04a97b4fce127879006949a857b7c88195818dab6d25ff091d:0","providerMetadata":{"openai":{"itemId":"rs_04a97b4fce127879006949a857b7c88195818dab6d25ff091d","reasoningEncryptedContent":null}}}
+{"type":"text-start","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","providerMetadata":{"openai":{"itemId":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e"}}}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":"I"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" wasn"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":"’t"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" able"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" to"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" create"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" the"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" short"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" link"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" because"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" the"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" URL"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":"-short"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":"ening"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" tool"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" call"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" was"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" not"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" approved"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":"."}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" I"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" won"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":"’t"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" retry"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" it"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" without"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" your"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" permission"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":".\n\n"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":"Options"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":":\n"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":"-"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" Appro"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":"ve"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" the"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" tool"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" call"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" and"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" I"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":"’ll"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" create"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" the"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" short"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" URL"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" with"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" max"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" clicks"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" ="}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" "}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":"100"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" now"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":".\n"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":"-"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" I"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" can"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" suggest"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" a"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" short"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" alias"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" ("}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":"e"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":".g"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":".,"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" ai"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":"-sdk"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":","}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" ai"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":"-sdk"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":"-dev"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":")"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" for"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" you"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" to"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" use"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" when"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" creating"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" the"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" short"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" link"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" yourself"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":".\n"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":"-"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" I"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" can"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" give"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" step"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":"-by"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":"-step"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" instructions"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" to"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" create"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" the"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" shortened"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" link"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" manually"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" on"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" zip"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":"1"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":".io"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" or"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" another"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" short"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":"ener"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":".\n\n"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":"Which"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" would"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" you"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":" like"}
+{"type":"text-delta","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","delta":"?"}
+{"type":"text-end","id":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e","providerMetadata":{"openai":{"itemId":"msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e"}}}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"stop"}

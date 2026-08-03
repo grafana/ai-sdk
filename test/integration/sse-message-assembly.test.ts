@@ -86,6 +86,20 @@ describe("SSE message assembly", () => {
     });
   });
 
+  it("preserves custom provider content", async () => {
+    const messages = await readScenarioMessages("provider-tool-metadata");
+    const lastMessage = messages[messages.length - 1];
+    const custom = lastMessage.parts.find((part) => part.type === "custom");
+
+    expect(custom).toEqual({
+      type: "custom",
+      kind: "openai.compaction",
+      providerMetadata: {
+        openai: { itemId: "cmp-1", encryptedContent: "encrypted" },
+      },
+    });
+  });
+
   it("preserves document source filenames", async () => {
     const messages = await readScenarioMessages("source-document");
     const lastMessage = messages[messages.length - 1];

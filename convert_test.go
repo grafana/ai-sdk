@@ -280,6 +280,24 @@ func TestConvertToModelMessages_AssistantContent(t *testing.T) {
 	}
 }
 
+func TestConvertToModelMessages_CustomPart(t *testing.T) {
+	metadata := provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":"cmp-1"}`)}
+	messages, err := ConvertToModelMessages([]UIMessage{{
+		Role: RoleAssistant,
+		Parts: []Part{CustomPart{
+			Kind:             "openai.compaction",
+			ProviderMetadata: metadata,
+		}},
+	}})
+	require.NoError(t, err)
+	require.Len(t, messages, 1)
+	require.Len(t, messages[0].Content, 1)
+	part := messages[0].Content[0]
+	assert.Equal(t, provider.ContentPartTypeCustom, part.Type)
+	assert.Equal(t, "openai.compaction", part.Kind)
+	assert.Equal(t, providerMetadataToOptions(metadata), part.ProviderOptions)
+}
+
 func TestConvertToModelMessages_Tools(t *testing.T) {
 	approved := true
 	tests := []struct {

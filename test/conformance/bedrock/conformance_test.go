@@ -15,15 +15,10 @@ import (
 
 // TestConformance discovers Bedrock fixtures under upstream/ and recorded/
 // and replays each through the Go Bedrock provider against a replay server
-// using the AWS Smithy event-stream binary framing. The resulting
-// UIMessageChunk sequence is compared byte-identical against
-// expected.jsonl, which was produced by piping the same fixture chunks
-// through the upstream TypeScript `@ai-sdk/amazon-bedrock` SDK.
-//
-// Cases without a generated expected.jsonl are skipped with a message so
-// fixtures can be imported in stages (input.chunks.txt + config.yaml land
-// first; expected.jsonl is generated via `mise run generate-conformance` after
-// the TS tools support Bedrock).
+// using the AWS Smithy event-stream binary framing. Streaming cases compare
+// UIMessageChunk sequences against expected.jsonl; unary cases compare the
+// provider result against expected-generate.json. Both are generated through
+// the pinned upstream TypeScript `@ai-sdk/amazon-bedrock` SDK.
 func TestConformance(t *testing.T) {
 	providerDir := "."
 	cases := conformance.DiscoverTestCases(t, providerDir)
@@ -49,9 +44,16 @@ func TestConformance(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.Name, func(t *testing.T) {
 			t.Parallel()
-			expected := filepath.Join(tc.Dir, "expected.jsonl")
-			if _, err := os.Stat(expected); err != nil {
-				t.Skip("expected.jsonl missing; run `mise run generate-conformance` after TS tools support Bedrock")
+			cfg, err := conformance.LoadConfig(filepath.Join(tc.Dir, "config.yaml"))
+			if err != nil {
+				t.Fatalf("loading config: %v", err)
+			}
+			expectedName := "expected.jsonl"
+			if cfg.Operation == conformance.OperationGenerate {
+				expectedName = "expected-generate.json"
+			}
+			if _, err := os.Stat(filepath.Join(tc.Dir, expectedName)); err != nil {
+				t.Skipf("%s missing; run `mise run generate-conformance`", expectedName)
 			}
 			conformance.RunTestCaseWithServer(t, tc, factory, conformance.BedrockTestServerFactory)
 		})

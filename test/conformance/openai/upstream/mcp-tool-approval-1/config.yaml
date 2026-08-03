@@ -1,0 +1,10 @@
+model: gpt-5-mini
+prompt: Hello
+providerTools:
+  MCP:
+    id: openai.mcp
+    args:
+      serverLabel: zip1
+      serverUrl: https://zip1.io/mcp
+      serverDescription: Link shortener
+      requireApproval: always

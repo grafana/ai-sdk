@@ -1,273 +1,274 @@
 {"type":"start"}
 {"type":"start-step"}
-{"type":"reasoning-start","id":"rs_005cf245fd3ec8ce016a3abbcaa9d8819eb594b5812da59607:0","providerMetadata":{"openai":{"itemId":"rs_005cf245fd3ec8ce016a3abbcaa9d8819eb594b5812da59607","reasoningEncryptedContent":"gAAAAABqOrvKPmmqIUXC9sj1hUlBiu6-MY9WtHR3wSpz5Jj426GI3VwdINBndKtJWCh1OUpSLTtnrRPVEqFGyZ4oMqPitcs6ZOzqcJn_aalkOO8eWcm1U0KVnT-ueDySeyInV2XWFkPg1bwuog-hDy9YEaq5oUjg9HOdBCfDXWEATDWe9c238pBmTsEyowBXrz2rFjxfk7ztanfvFOeyiAeWTLBqp_mfwWdMi2ilRmMvX8qt7TvGO8iK_4OSbiNXbd8noLJHX4P2l-NaFy7hHA5BX9mcEaHjX0p89KY7AckwKXzdw7u_zGLrPg8bXUC49KnAQbraYy4QEfvGL4m8ahGNJGiSPkbMbUFbgxu5_ItEE7OYZNWEpfhtzITWfS5lHqQGVSAymT2kVNV-gdlT_JNQI2ZffHj3N4pALuHarwGXIwn2Dj8we0N3x0KoNZ0coERRqY_uYM6_I32x3lDIJQH0zn77v88pa47rACpJWK-lHV7HHP-XAQlVhs9Yt254qzxoHHxb1Q5Qd9i-TFS6YCHZJRGBQxTkAK9co3a1KlktItwAPA3GCEsdiFEJ-EEyrmzsnEigkjUHLYVcUsXkM8s0Jp5tkq6Lgr0JjbiuK9L9BaPN3W3VZin-znNbpE2RXshAFIfBKkyByq8qNRVucdq1hHbGnxZ1KwbushwnBB1TgZBPECO7HoHWMlE70y0YJDaAJCTddD-VW3zofBuND7a7kSfQWZDnq9VUp0cCChF1ZIBZQQAzEZYGADU1DG_9TAgRQrcFOFcK5MY00JgJUgALTbw0lbCYIHarRGU_FWyXJAREOdbnJ60auiz_qtZ2Ou_4I0BVRBFh1WGrYEtRKsrB5rD8p7xlexTwFOOyCV743-aIuKmlwS-3fICBHyTaVtLcUAXDUnJ6HVv0zLQxGLnLJH0azEpCCm1XAmlBVHJRJi5e5Rd6-FI="}}}
-{"type":"reasoning-end","id":"rs_005cf245fd3ec8ce016a3abbcaa9d8819eb594b5812da59607:0","providerMetadata":{"openai":{"itemId":"rs_005cf245fd3ec8ce016a3abbcaa9d8819eb594b5812da59607","reasoningEncryptedContent":"gAAAAABqOrvMDfHDGMR_w_ZFgyY5rHBykp49VjkDg1bwPTdNp2RuNn2TSn0DIrzPvCOhgI-Uh498wCGWHQ3b1FuUc_ZE3Fgz5jZ1YJXS-Y4MLOu8hjBYCp42zjStJPrBvCw_P7RYYrRht5dXw41Yi5RQ6QqcwAF31AeG9u7tCdtDvyzxDHLV6k972w8fHaunLX0p76CYNK9dm9mMf09pZS9L-v9gQzpFlp7O3dGOraRy_1GSr_aBRnMUX0m0pfL2w1To1YdLcudMbbzfWBpRZFsMTpta8Bvw6QVqpPY-65ezDjRt_j6MRzi1OR_u0UYWurI5OMetfTtsyPm6H9gJxDsnMPwSo7hRWCVYQnpFlagwwL002pECUDryxcDLx9KE5oQE10ulm7pbAw5kpSqeYup37oB0R2oCTFrfZgrgxw4XpB_7SzuvqqznluX57t_siF34gPTAkJqoVE3w64dn6_xNAoVcpsO0RnbQcvBiiAlnQTpT7M5TNBRtC66Gu_Lh-4ELDwR51lapOzys18ht6HQoTpJmEdpyRQC0kwbbx-I2qSYHkETg8YPxyJDwbz1bt9NkKJP1pvfvShttRo7S6EJuqfrUU3etRdH9JeUlRaUAP3RlEyLJszJjwrRFSUehT0M98iAYJbc81FfjqTSl49KNpdFPRDPlF4FOkiJzPYcknUlk94Q2Sp5bZMRqevIm3oiAVlx56-zuXu4eHJ4N88FRXKWRF6mDYiI4gJL-F_KAVz1SRk8LVunfsWToGy_7l-O5gME14mIAGMp6uZBgSdtrsNdody7_DRqaKBskXBzGf98crMjSsSjQRiWaa-saU4wc93_-ouBIU3wtTSa2WHN5bk_zGsHL2JrnGZlzGRltSbf99VOpPzNNMHOOEr9YC4kq1kLxpp9nbKIeuRzYdJTWNnhrIobSDwLXuWrpIENdxOmdyEtXSHdwRR6PYgbCqRPJdt1DA6Sl2shWWy0uxIU1mphh5DIeBri0LWBJLF86bjXNp_lEGQn5FjWEUoOWUnCRbRQ9Q876db1J8ryMkG2BblD_nG2zclEujCjLZKJD3WIHa_b0vRZjgbzlJG-zrBQCtuyWK0HKFz0DrpM3aTHdz_4SEY2q12q3RnPEdw5uktUSdqMiNLtHvfnoRxIiQ4ZAFMlHNQlYWP39LnPEnoSmQpSQq-61Pe1Zay80tLah4ahzaFsOj7QAfBldw3fyCk01Q0jY9kejOweQ57MwcL-iwQ8nAUj0MtE9HhbCQrs3HZOTGm_tV0-fFQwgbYaN9jH4PMNDjyC1Lj3PV3e8jEplp2MR-7OL1BWJyGMv1Pqwrvp-P3CsJrwLf_BBeMY2u5iAih4hpi5K4Hb0ftPuayn35kxDPPtr96An52ShKBCMBi--b3fxMcrjfXjiZ7FzGbfJg35socUOybedV4Cb9M9q2pbhZfiGSfbHWNwfLXrMqqSpGo-FLoJabxLAuIaErBS_qAfkOlv-jVDf0rdeS763LGKdhIctt-z8rbjoT5jYxZcKGrJpjC8KoVeczRAilUhlTclAUcgBLNjR4Zb6FNsxPR26zQnokuiq1CJ9aLMpBTvpNEi4jMmR8orYFUFTQLEJCnzQyVYeEl9bpsF5sDvLjxGw2L8bhgeSXGJnwfWvYvPwzij5JgA="}}}
-{"type":"tool-input-start","toolCallId":"call_p4HEknK5LaY81ZRJgP5ckT7x","toolName":"get_weather"}
-{"type":"tool-input-delta","toolCallId":"call_p4HEknK5LaY81ZRJgP5ckT7x","inputTextDelta":"{\""}
-{"type":"tool-input-delta","toolCallId":"call_p4HEknK5LaY81ZRJgP5ckT7x","inputTextDelta":"city"}
-{"type":"tool-input-delta","toolCallId":"call_p4HEknK5LaY81ZRJgP5ckT7x","inputTextDelta":"\":\""}
-{"type":"tool-input-delta","toolCallId":"call_p4HEknK5LaY81ZRJgP5ckT7x","inputTextDelta":"Port"}
-{"type":"tool-input-delta","toolCallId":"call_p4HEknK5LaY81ZRJgP5ckT7x","inputTextDelta":"land"}
-{"type":"tool-input-delta","toolCallId":"call_p4HEknK5LaY81ZRJgP5ckT7x","inputTextDelta":"\"}"}
-{"type":"tool-input-available","toolCallId":"call_p4HEknK5LaY81ZRJgP5ckT7x","toolName":"get_weather","input":{"city":"Portland"},"providerMetadata":{"openai":{"itemId":"fc_005cf245fd3ec8ce016a3abbcc1070819ebba6aa6d20ffadf2"}}}
-{"type":"tool-output-available","toolCallId":"call_p4HEknK5LaY81ZRJgP5ckT7x","output":{"temperature":55,"conditions":"overcast with light rain","humidity":82},"providerMetadata":{"openai":{"itemId":"fc_005cf245fd3ec8ce016a3abbcc1070819ebba6aa6d20ffadf2"}}}
+{"type":"reasoning-start","id":"rs_01dda7a7cf82f7e4016a6ce05d4b5c819d9d76273192602be3:0","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05d4b5c819d9d76273192602be3","reasoningEncryptedContent":"gAAAAABqbOBdue2LWgEb_6N20qX3z66znYB2wrFXMDPmVrNeOoShBtVrPE5sKodWwz32X1K4qL1hI9_dIO94d1_ta--MR9tWgXxKVCcPUNJHpPvtghTsZaXiMDQ2CbOfgRBjfKmjLjQzhF8gggsfFw6Ql863UkInb2kHebwr608ugYi-oAMbQm1QPIDXFU-8bZgWF73TWdl0flMTh0apqeMhzhToTcKNHrIXHNyQxYWX6kkQ6f4AuuKaVXxw2mTSxohTvI3-yaTs9yT-SbUh165V-pJBOR6YdbraoeJczaxLq6biuA4-dvk_K--VL3G-rkN5U7P0ldQjU2n5ZuS3pInBVlbJi4qd8EVkqIFhxk0qVWOk7me16ZSefsP6Wkr1WGH2oIihXr05UTRzRLVu-Tyr5GaZyfIPuH_BblHQQBM1NZPvDLH0TljnPSEQEBJNU1nX-OfjGZB7YGi3BvyS84_acWLfyVrMjw4lK0zI2CvlxQpCfVhlhGki-tMdUa_HowR1NHH-V6tCCJvWAn3PjvhNscUPD1ejnyPCQEJHbrzWOktzyGDjcYa3AaIlneQq4TI6Nl5tAyKsaL0AecrcPhIuoNHZqlDliGqZFacV5sooO8wpCPWSBqN8QKeekCyYhQ-64RSXAUxZ8Gtu4__3ggn08Allf2xFCFm8HKowB_RlBJ5LBJp1mYuQg1xQ54IBNxnYllS5B2fAZ_gK96Egsp2TB4e409FCViPLnl_WRQJioNSB-vuvkBjzWP8KnerKIKVOI0vupZnwxRAAt12Tvjpc2ZruUjfnisxA86-GPnmA0bL50J3filgSbp_PhESKVKVNYi6VChIlYIFCaAgPllYzCFBDNtpAe8SdEPysOh2v98LPac_NMZoP_mujku1ZtfpnbXdWr1WlRPcjS5CvBNmgdlIqL5KzErCwePTWSdcHovnD2wRGVrk="}}}
+{"type":"reasoning-end","id":"rs_01dda7a7cf82f7e4016a6ce05d4b5c819d9d76273192602be3:0","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05d4b5c819d9d76273192602be3","reasoningEncryptedContent":"gAAAAABqbOBdj5nJdOlwe0vFrra1h9afkpCYlmVx1f1qPJ4rSvWFJjo2WkwFuN5cI8YqxZMugr592ZIbyEnuPy8k2h4kwBQvR_bm1jIranR_7HV2qYIC13XvncF0fViQHzaVhCCnaw0deTXHYyN9cBQs1PrI34GI_oWetstMaJJDXBo7gmlbZMyJKV7kUaTStTlr1AbblBKdrhe5zDwyyvw_sfx2RP2QFB9Q8QW2xvXetmhnv7-CKZeZwFvdWirvCYABp2fpG1nTq-IfITfpl5WKknNEYgmRKoGwkPCykKNxGJ4lRTlRnqgS8YNuJJ0JSf4h2xXHwuYU0hsMuNF4ZKJgYseZ18FaBH_igQRPEsndcJMD9EXqAp6I8oTFRXz49EjfFKhxJrlr5uDA9Ga_wWZ6tFNgvnxhmp3fMS6o_VmjXks_pTxaNlo5diAk6a2shQlfRiFVBCb82sj4sxDknw9_hpjPW7KiP0pRR1L0Ip4nWeEgFho3hXgcw60MdzqHJX3Iki_jHaPhHr0z8f0nd57gqnlkBLOlpk3wQNU3gW0XGyLzxHINaTUqDfDtuFqu6WYWzeNi_qOu3yOx8f5MFtAWUNv099bcuovqyNvpnpBW0M7I7xZcXf-M-9LrxaYr30li3KlwxcWQ9filKlCjH2uu0OJ_eDuhlqY9P7GE2Z5g_In3DmefPTyFQ-wsJH2BgjFI6C-EEeHT9BYQ4SB_Okn9aA2DxYqL43gJNWXGnhYTsXjwgHyCSFP9ojY_-F1O_qzMFmcw_YM0PzUD5EIWZDXbz2UijT44Sq-ZwVtxxx_3T7N4nuktltIFStOez2h_Z_B10CvHDONHqHBJ8T1nAC-6RGAksDjc7Vhy4D7T7CGJkvKYdstSfdrqtXuKQOuc_XKdti05JXFCrTpSv106rRLwCeJmSUNr1zUJnCr1aHrDrqCzkSymEPr9yvZU4T0fVpUmjcYB-la56naIjgCwS8PH8a_0jOZY5Ok-4d0NdbSn45Wjo4X5sHnqUSkKhe90_9HVBTz4F7jxquGDlPVaL4kCkw7-M_SeMv_0IyxspJWqgOYLF6GIgfdcFE2RDTAEeAYAIpfCF5Ymg-OhirX7KcRRaYSIAavAQu04xv4XjxxskicqnfLxYLOYi4V3eWsMG4lR3xeCxydySos_i15EOgmGkiSOprb76RWnLALRixjRNXxxvui_dGHMmMBEZHNUKH_6aUrMk7bL"}}}
+{"type":"tool-input-start","toolCallId":"call_64DvCsGeB4CSIsk3XgfUV2Sw","toolName":"get_weather"}
+{"type":"tool-input-delta","toolCallId":"call_64DvCsGeB4CSIsk3XgfUV2Sw","inputTextDelta":"{\""}
+{"type":"tool-input-delta","toolCallId":"call_64DvCsGeB4CSIsk3XgfUV2Sw","inputTextDelta":"city"}
+{"type":"tool-input-delta","toolCallId":"call_64DvCsGeB4CSIsk3XgfUV2Sw","inputTextDelta":"\":\""}
+{"type":"tool-input-delta","toolCallId":"call_64DvCsGeB4CSIsk3XgfUV2Sw","inputTextDelta":"Port"}
+{"type":"tool-input-delta","toolCallId":"call_64DvCsGeB4CSIsk3XgfUV2Sw","inputTextDelta":"land"}
+{"type":"tool-input-delta","toolCallId":"call_64DvCsGeB4CSIsk3XgfUV2Sw","inputTextDelta":"\"}"}
+{"type":"tool-input-available","toolCallId":"call_64DvCsGeB4CSIsk3XgfUV2Sw","toolName":"get_weather","input":{"city":"Portland"},"providerMetadata":{"openai":{"itemId":"fc_01dda7a7cf82f7e4016a6ce05df8ec819db82fd79e524d9afc"}}}
+{"type":"tool-output-available","toolCallId":"call_64DvCsGeB4CSIsk3XgfUV2Sw","output":{"temperature":55,"conditions":"overcast with light rain","humidity":82},"providerMetadata":{"openai":{"itemId":"fc_01dda7a7cf82f7e4016a6ce05df8ec819db82fd79e524d9afc"}}}
 {"type":"finish-step"}
 {"type":"start-step"}
-{"type":"text-start","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","providerMetadata":{"openai":{"itemId":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862"}}}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"Current"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" conditions"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" in"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" Portland"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":":"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"  \n"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"-"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" Temperature"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":":"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" "}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"55"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"°F"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" ("}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"13"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"°C"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":")"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"  \n"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"-"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" Conditions"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":":"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" over"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"cast"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" with"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" light"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" rain"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"  \n"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"-"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" Hum"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"idity"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":":"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" "}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"82"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"%"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"  \n\n"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"Out"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"fit"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" recommendation"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":":"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"  \n"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"1"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"."}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" Top"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" layers"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"  \n"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"  "}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" •"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" Waterproof"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" rain"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" jacket"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" or"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" trench"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" coat"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" with"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" a"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" hood"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"  \n"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"  "}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" •"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" Light"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" to"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" mid"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"-"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"weight"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" sweater"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" or"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" long"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"-"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"s"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"lee"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"ve"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" shirt"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" underneath"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"  \n\n"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"2"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"."}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" Bottom"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"s"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"  \n"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"  "}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" •"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" Water"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"-"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"res"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"istant"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" pants"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" or"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" dark"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" jeans"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"  \n"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"  "}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" •"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" Option"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"ally"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":","}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" lined"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" leggings"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" under"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" pants"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" if"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" you"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" tend"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" to"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" feel"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" cold"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"  \n\n"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"3"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"."}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" Foot"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"wear"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"  \n"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"  "}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" •"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" Waterproof"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" or"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" water"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"-"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"res"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"istant"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" boots"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" ("}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"rub"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"ber"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"-"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"so"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"led"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" for"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" traction"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":")"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"  \n"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"  "}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" •"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" Moist"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"ure"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"-"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"wick"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"ing"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" socks"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" to"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" keep"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" feet"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" dry"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"  \n\n"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"4"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"."}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" Accessories"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"  \n"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"  "}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" •"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" Compact"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" umbrella"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" or"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" hood"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"ed"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" jacket"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" ("}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"in"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" case"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" the"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" rain"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" picks"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" up"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":")"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"  \n"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"  "}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" •"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" A"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" lightweight"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" scarf"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" to"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" block"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" wind"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" and"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" add"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" warmth"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"  \n"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"  "}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" •"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" Hat"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" or"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" be"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"anie"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" to"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" keep"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" your"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" head"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" warm"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"  \n\n"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"5"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"."}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" Extras"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"  \n"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"  "}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" •"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" Carry"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" a"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" small"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" towel"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" or"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" pack"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"able"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" rain"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" cover"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" for"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" your"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" bag"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"  \n"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"  "}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" •"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" If"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" you"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"’ll"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" be"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" outside"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" for"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" long"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":","}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" bring"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" a"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" therm"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"os"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" with"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" a"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" hot"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" drink"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"  \n\n"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"This"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" layering"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" approach"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" will"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" keep"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" you"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" dry"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" and"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" comfortable"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" in"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" the"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" cool"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":","}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" damp"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" conditions"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"."}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" Feel"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" free"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" to"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" adjust"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" based"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" on"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" how"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" long"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" you"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"’ll"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" be"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":" outdoors"}
-{"type":"text-delta","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","delta":"."}
-{"type":"text-end","id":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862","providerMetadata":{"openai":{"itemId":"msg_005cf245fd3ec8ce016a3abbcd8ff4819ea77490af7c06b862"}}}
+{"type":"reasoning-start","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448","reasoningEncryptedContent":"gAAAAABqbOBfb-TfZfexMKKRNWs6j1Czn8aydwiSSvL5jdnXwBC5liicruzg300wtcfdhawxmjF7jznWz5uvpNg6byADhh_YaqJvzZMvMn5a7W4bNHMY8Ji6rLN9woVh_3PH6Nsv4ge0JHlWjXTd3t4Xa140iBicL75EHSI0Tsp8tRIcbiKuKp790jhkHgxukKVqE2uqB0zVEknWcwsxXSNTPkLkaXHYG2KvAQLPlC7C9ixxi_n0OuNSsBo9ib4-29vteWHF_kAVYb4Rd3n6jePgEz_CC12Bqky1VhwtPtFJufcAgFqwPaoHDns13tHp9_0VwBpCn9ghkQIDtOYE63SnKYaFL18Ma0E_ws4klzTxmj4ZlYLcUZ8QpdeC20SfD2-imPtSadAuieh09Au6vlI_2CADi_njiJafmrQ75PJ_zlU92o3nw5mZdOvngoozucyYxr7eXtOODjvqAt54ubzru_tPHdUinlqLu-f3bna4WH6KzkEpGLddR5TqNb1DZv97xQJrk7u82_AOZKlNRWFM_UnXVrd1Ux8iVZZJimMEPly1_gq4d910M9wbkQhLS-ccF9enCvJDFTYF0ljJXfM54UY5RTuPVnHjmE7rZ_5rm2an2KPQm98ixM0ie8gqrpVRnwmB-ehppcNte2ApPPv_kayjAfA9-Oq8Mq7ILQlAoj0hfbn7woz6Bh1nyV78aQTHbT7vct7GaQSVh12UnigWaT1MW_uQI0E7QYecNXkRlh3UvGYCsuNS7SkaFRJqR5Pl0B8PWZpftPKki8edTZkSzuRIhD3Etww4w3lm5Wus1kg1UVAmRgDmnEQu81QsdkUlrVi_LGIi5i_DFJJGVeNmwI7VXIn9x_CUpYNJmPPskbSdHnHIaTKNlrJ8uB8oF_NAjCY0-HOUWqrLT8N-_XLho04ELpQJoPXk-2-x-tKxazQdTlTdWeE="}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":"**Considering weather attire**\n\nIt","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":"’s","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" 55","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":"°F","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" outside","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" and","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" pretty","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" over","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":"cast","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" with","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" some","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" light","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" rain","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":",","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" which","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" definitely","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" boosts","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" the","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" humidity","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":".","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" I","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" think","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" layering","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" is","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" the","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" way","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" to","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" go","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" here","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":"!","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" A","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" waterproof","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" jacket","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" sounds","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" essential","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" to","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" stay","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" dry","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":",","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" and","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" an","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" umbrella","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" might","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" come","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" in","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" handy","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" too","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":".","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" Oh","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":",","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" and","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" don","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":"’t","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" forget","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" about","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" boots","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" to","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" keep","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" those","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" feet","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" nice","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" and","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" warm","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":"!","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" This","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" weather","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" definitely","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" calls","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" for","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" some","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" thoughtful","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" outfit","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":" planning","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-delta","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","delta":".","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448"}}}
+{"type":"reasoning-end","id":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448:0","providerMetadata":{"openai":{"itemId":"rs_01dda7a7cf82f7e4016a6ce05f4a94819dafae14fa17e48448","reasoningEncryptedContent":"gAAAAABqbOBgemPFZ2RuSi_7262-GSqUqInZEISI9YT2s8gfwDNnUcWkzTzbKSrMi9lgpmppmDMTWDpI_DPrTiy3G8liBGE3LdE44ZBfuTH3tZo9tYaBkeMU0CuQMCpW26VE6qy8_YvW9iHk-3ZrnCfp5FEJZ8Zp_h3jhbviEs0Iit9jUoxMQ0XDDuSyjeSmq2MH3UHHSyW7eO0UrUX5cZOAqPNHrKaxXI2Tb2JQ1hHhCOu1qTU8xESF3Joy_5gke2_TZnmFjeRmVsTvYxKIIpGA06-Y87vW6yMO6aQJKDehnsglTkRuYyfZyoaa4auahTaAXc4bEZuy-Hn-flajgzfaeQqgidKzzLzJ459GcbIFwcnE2XRo9N632WptpBBiiAo8oiE7kUo49HkrHqSRUIzPji1DFhnNCHL0gdm5v1dfeWQAB9mgCW4ow-xWKcNQ2HI3mxAvQFOxRTlgQBltmOgyPQwIvmdTxB5T4T_6icqKHgcqzxtbjx6DLWACd1Bs7iZC67siSk2ob6igryn-6il_W9B1PZlku6kqO5eT77p_B0UZQMh-sv3gwgHeyVKeF9eaSdpQbRwrfpgtctAWn2Djjvk7Wne9SzI_j7P2zApWp2l8Xqspa5WUFlPedQkAO2KFCfFsuZnlmjN1GNP7HNm_wyqQoAhUq1qf5qRcgeIM8IQiJWSX11ykAx4txdcbTeEfttGhf8uAhED2EH5cMjDAw0LG7j6kaBMpwguPZXLZkVHlAFdXkfIQIO8w7rzXGVuJi3PuMhsT0OZo4jf3NJQ6KDKonDnMAt2QJ-TfwyiY9d_O3bizbatP_dawIo9ljJ_wKU41V1ZYM-H38aOpIIuz3xFfZuCkoMKCPoxPyAtBCiq_2PCDd2nAIfCH-lVeH6F8wEiXW8AovH3YjpBXndnMwDa4lCjRHHThJDr_GmxyLTgypXtpq1F53y_ZoNW50VpV_sBCkRhv_oPHeN09vve_d4-_-ryhM1LXe0kG7m5zw0_ABciCvM0RHTXHWhLTVESum9nYC02qzDDeuPdEoIrRUf014HVGuZ3YZJ_sDJei5A04MZajg6KDJsjmiGVNMxTXW_nS6IC1UqhVbgVCt77xZfODdEKEuA=="}}}
+{"type":"text-start","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","providerMetadata":{"openai":{"itemId":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76"}}}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"Current"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" conditions"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" in"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" Portland"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":":\n"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"-"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" Temperature"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":":"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" "}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"55"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"°F"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" ("}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"13"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"°C"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":")"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"  \n"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"-"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" Sky"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":":"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" Over"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"cast"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" with"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" light"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" rain"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"  \n"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"-"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" Hum"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"idity"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":":"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" "}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"82"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"%\n\n"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"Out"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"fit"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" recommendation"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":":\n"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"1"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"."}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" Outer"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" layer"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":":"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" Waterproof"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" rain"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" jacket"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" or"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" trench"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" coat"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" with"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" a"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" hood"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"  \n"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"2"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"."}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" Mid"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" layer"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":":"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" Light"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" sweater"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" or"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" long"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"-"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"s"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"lee"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"ve"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" shirt"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" for"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" warmth"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" ("}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"temper"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"atures"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" are"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" mild"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" but"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" chilly"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" when"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" damp"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":")"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"  \n"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"3"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"."}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" Bottom"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"s"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":":"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" Water"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"-"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"res"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"istant"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" or"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" quick"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"-"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"dry"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" pants"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" ("}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"e"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":".g"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":".,"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" synthetic"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" jog"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"gers"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" or"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" treated"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" denim"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":")"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"  \n"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"4"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"."}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" Foot"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"wear"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":":"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" Waterproof"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" boots"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" or"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" rain"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"-"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"res"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"istant"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" sneakers"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" with"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" good"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" grip"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"  \n"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"5"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"."}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" Accessories"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":":\n"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"  "}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" •"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" Compact"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" umbrella"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" or"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" rain"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" hat"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"  \n"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"  "}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" •"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" Moist"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"ure"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"-"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"wick"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"ing"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" socks"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" to"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" keep"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" feet"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" dry"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"  \n"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"  "}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" •"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" A"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" lightweight"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" scarf"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" or"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" neck"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" gait"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"er"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" if"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" you"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" tend"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" to"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" feel"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" cold"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"  \n\n"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"With"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" these"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" layers"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" you"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"’ll"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" stay"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" dry"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" and"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" comfortable"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" in"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" Portland"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"’s"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" cool"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":","}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" rainy"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":" weather"}
+{"type":"text-delta","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","delta":"."}
+{"type":"text-end","id":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76","providerMetadata":{"openai":{"itemId":"msg_01dda7a7cf82f7e4016a6ce060ddf8819db906fd2995952b76"}}}
 {"type":"finish-step"}
 {"type":"finish","finishReason":"stop"}

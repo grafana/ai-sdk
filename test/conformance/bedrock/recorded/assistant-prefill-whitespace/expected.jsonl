@@ -1,8 +1,4 @@
 {"type":"start"}
 {"type":"start-step"}
-{"type":"text-start","id":"0"}
-{"type":"text-delta","id":"0","delta":"p"}
-{"type":"text-delta","id":"0","delta":"ong"}
-{"type":"text-end","id":"0"}
 {"type":"finish-step"}
 {"type":"finish","finishReason":"stop"}

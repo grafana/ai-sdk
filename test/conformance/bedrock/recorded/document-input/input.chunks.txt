@@ -1,6 +1,26 @@
-{"messageStart": {"p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJ", "role": "assistant"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"text": "p"}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012345678"}}
-{"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"text": "ong"}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRS"}}
-{"contentBlockStop": {"contentBlockIndex": 0, "p": "abcdefghijklmnopqrstuvwxyzABCD"}}
-{"messageStop": {"additionalModelResponseFields": {"delta": {"stop_sequence": null}}, "p": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0", "stopReason": "end_turn"}}
-{"metadata": {"metrics": {"latencyMs": 980}, "p": "abcdefghijklmnopqrstuvwxyzABCDE", "usage": {"inputTokens": 16, "outputTokens": 5, "serverToolUsage": {}, "totalTokens": 21}}}
+{"messageStart":{"p":"abcdefghijklmnop","role":"assistant"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":"#"},"p":"abcdefgh"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" Document"},"p":"abcdefghij"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" Summary"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJ"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":"\n\nThe"},"p":"abcdefgh"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" document is"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" a simple"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTU"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" one"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFG"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":"-page PDF"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" containing"},"p":"abcdefgh"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" only"},"p":"abcdefghijklmnopqrs"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" the"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJ"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" text \"Hello"},"p":"abcd"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" Be"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNO"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":"drock\""},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" displaye"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":"d in the"},"p":"abc"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" center of the page. There is"},"p":"abcdefghijklmnopqr"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" no additional"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" content, data"},"p":"ab"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":", or information"},"p":"abcdefghij"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":" provide"},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":"d."},"p":"abcdefghijklmnopqrst"}}
+{"contentBlockStop":{"contentBlockIndex":0,"p":"abcdef"}}
+{"messageStop":{"additionalModelResponseFields":{"delta":{"stop_sequence":null}},"p":"abcdefghijk","stopReason":"end_turn"}}
+{"metadata":{"metrics":{"latencyMs":1265},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUV","usage":{"inputTokens":1594,"outputTokens":43,"serverToolUsage":{},"totalTokens":1637}}}

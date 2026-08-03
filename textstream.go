@@ -68,6 +68,14 @@ type StreamRaw struct {
 
 func (StreamRaw) textStreamPart() {}
 
+// StreamCustom carries provider-specific custom content.
+type StreamCustom struct {
+	Kind             string
+	ProviderMetadata provider.ProviderMetadata
+}
+
+func (StreamCustom) textStreamPart() {}
+
 // StreamTextStart opens a text block.
 type StreamTextStart struct {
 	ID               string

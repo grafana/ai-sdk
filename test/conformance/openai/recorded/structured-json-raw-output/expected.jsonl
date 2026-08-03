@@ -1,18 +1,58 @@
 {"type":"start"}
 {"type":"start-step"}
-{"type":"text-start","id":"msg_0debaef2816f0fdd016a3abbd12b90819c9275a81e19c2bb09","providerMetadata":{"openai":{"itemId":"msg_0debaef2816f0fdd016a3abbd12b90819c9275a81e19c2bb09"}}}
-{"type":"text-delta","id":"msg_0debaef2816f0fdd016a3abbd12b90819c9275a81e19c2bb09","delta":"{"}
-{"type":"text-delta","id":"msg_0debaef2816f0fdd016a3abbd12b90819c9275a81e19c2bb09","delta":"\"items\":["}
-{"type":"text-delta","id":"msg_0debaef2816f0fdd016a3abbd12b90819c9275a81e19c2bb09","delta":"1"}
-{"type":"text-delta","id":"msg_0debaef2816f0fdd016a3abbd12b90819c9275a81e19c2bb09","delta":",t"}
-{"type":"text-delta","id":"msg_0debaef2816f0fdd016a3abbd12b90819c9275a81e19c2bb09","delta":"rue,{"}
-{"type":"text-delta","id":"msg_0debaef2816f0fdd016a3abbd12b90819c9275a81e19c2bb09","delta":"\"name\":\""}
-{"type":"text-delta","id":"msg_0debaef2816f0fdd016a3abbd12b90819c9275a81e19c2bb09","delta":"a"}
-{"type":"text-delta","id":"msg_0debaef2816f0fdd016a3abbd12b90819c9275a81e19c2bb09","delta":"l"}
-{"type":"text-delta","id":"msg_0debaef2816f0fdd016a3abbd12b90819c9275a81e19c2bb09","delta":"p"}
-{"type":"text-delta","id":"msg_0debaef2816f0fdd016a3abbd12b90819c9275a81e19c2bb09","delta":"h"}
-{"type":"text-delta","id":"msg_0debaef2816f0fdd016a3abbd12b90819c9275a81e19c2bb09","delta":"a"}
-{"type":"text-delta","id":"msg_0debaef2816f0fdd016a3abbd12b90819c9275a81e19c2bb09","delta":"\"}]}"}
-{"type":"text-end","id":"msg_0debaef2816f0fdd016a3abbd12b90819c9275a81e19c2bb09","providerMetadata":{"openai":{"itemId":"msg_0debaef2816f0fdd016a3abbd12b90819c9275a81e19c2bb09"}}}
+{"type":"text-start","id":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf","providerMetadata":{"openai":{"itemId":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf"}}}
+{"type":"text-delta","id":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf","delta":"{\n"}
+{"type":"text-delta","id":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf","delta":"  \"name\": \""}
+{"type":"text-delta","id":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf","delta":"Jane"}
+{"type":"text-delta","id":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf","delta":" Doe"}
+{"type":"text-delta","id":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf","delta":"\",\n  \"age\": 28"}
+{"type":"text-delta","id":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf","delta":",\n  \"email\": \""}
+{"type":"text-delta","id":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf","delta":"jan"}
+{"type":"text-delta","id":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf","delta":"ed"}
+{"type":"text-delta","id":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf","delta":"oe"}
+{"type":"text-delta","id":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf","delta":"@example"}
+{"type":"text-delta","id":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf","delta":".com"}
+{"type":"text-delta","id":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf","delta":"\",\n  \"isActive\": true"}
+{"type":"text-delta","id":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf","delta":",\n  \"address\": {\n"}
+{"type":"text-delta","id":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf","delta":"    \"street\": \""}
+{"type":"text-delta","id":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf","delta":"123"}
+{"type":"text-delta","id":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf","delta":" Main"}
+{"type":"text-delta","id":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf","delta":" St"}
+{"type":"text-delta","id":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf","delta":"\",\n    \"city\": \""}
+{"type":"text-delta","id":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf","delta":"An"}
+{"type":"text-delta","id":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf","delta":"yt"}
+{"type":"text-delta","id":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf","delta":"own"}
+{"type":"text-delta","id":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf","delta":"\",\n    \"state\": \""}
+{"type":"text-delta","id":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf","delta":"CA"}
+{"type":"text-delta","id":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf","delta":"\",\n    \"postalCode\": \""}
+{"type":"text-delta","id":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf","delta":"123"}
+{"type":"text-delta","id":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf","delta":"45"}
+{"type":"text-delta","id":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf","delta":"\"\n  },\n  \"hobbies\": [\n"}
+{"type":"text-delta","id":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf","delta":"    \""}
+{"type":"text-delta","id":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf","delta":"reading"}
+{"type":"text-delta","id":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf","delta":"\",\n    \""}
+{"type":"text-delta","id":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf","delta":"cycling"}
+{"type":"text-delta","id":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf","delta":"\",\n    \""}
+{"type":"text-delta","id":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf","delta":"gard"}
+{"type":"text-delta","id":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf","delta":"ening"}
+{"type":"text-delta","id":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf","delta":"\"\n  ],\n  \"preferences\": {\n"}
+{"type":"text-delta","id":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf","delta":"    \"newsletter\": false"}
+{"type":"text-delta","id":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf","delta":",\n    \"smsAlerts\": true"}
+{"type":"text-delta","id":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf","delta":"\n  },\n  \"lastLogin\": \""}
+{"type":"text-delta","id":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf","delta":"202"}
+{"type":"text-delta","id":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf","delta":"3"}
+{"type":"text-delta","id":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf","delta":"-"}
+{"type":"text-delta","id":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf","delta":"10"}
+{"type":"text-delta","id":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf","delta":"-"}
+{"type":"text-delta","id":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf","delta":"05"}
+{"type":"text-delta","id":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf","delta":"T"}
+{"type":"text-delta","id":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf","delta":"14"}
+{"type":"text-delta","id":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf","delta":":"}
+{"type":"text-delta","id":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf","delta":"48"}
+{"type":"text-delta","id":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf","delta":":"}
+{"type":"text-delta","id":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf","delta":"00"}
+{"type":"text-delta","id":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf","delta":"Z"}
+{"type":"text-delta","id":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf","delta":"\"\n}"}
+{"type":"text-end","id":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf","providerMetadata":{"openai":{"itemId":"msg_0e18492faa927260016a6ce071df788192a2bdb3bc716ec4bf"}}}
 {"type":"finish-step"}
 {"type":"finish","finishReason":"stop"}

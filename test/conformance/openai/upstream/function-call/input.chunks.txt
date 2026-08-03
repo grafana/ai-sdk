@@ -1,7 +1,0 @@
-{"type":"response.created","sequence_number":0,"response":{"id":"resp_f1","object":"response","created_at":1741290000,"status":"in_progress","model":"gpt-4o-2024-08-06","output":[]}}
-{"type":"response.output_item.added","sequence_number":1,"output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_abc","name":"get_weather","arguments":""}}
-{"type":"response.function_call_arguments.delta","sequence_number":2,"item_id":"fc_1","output_index":0,"delta":"{\"location\":"}
-{"type":"response.function_call_arguments.delta","sequence_number":3,"item_id":"fc_1","output_index":0,"delta":"\"San Francisco\"}"}
-{"type":"response.function_call_arguments.done","sequence_number":4,"item_id":"fc_1","output_index":0,"arguments":"{\"location\":\"San Francisco\"}"}
-{"type":"response.output_item.done","sequence_number":5,"output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_abc","name":"get_weather","arguments":"{\"location\":\"San Francisco\"}","status":"completed"}}
-{"type":"response.completed","sequence_number":6,"response":{"id":"resp_f1","object":"response","created_at":1741290000,"status":"completed","model":"gpt-4o-2024-08-06","output":[{"type":"function_call","id":"fc_1","call_id":"call_abc","name":"get_weather","arguments":"{\"location\":\"San Francisco\"}","status":"completed"}],"usage":{"input_tokens":18,"input_tokens_details":{"cached_tokens":0},"output_tokens":8,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":26}}}

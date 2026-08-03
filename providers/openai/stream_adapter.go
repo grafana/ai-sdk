@@ -134,7 +134,7 @@ func (a *streamAdapter) handleEvent(event responses.ResponseStreamEventUnion, ch
 					ch <- provider.StreamPart{
 						Type:             provider.PartReasoningEnd,
 						ID:               fmt.Sprintf("%s:%d", e.ItemID, index),
-						ProviderMetadata: reasoningMeta(a.providerName, e.ItemID, state.encryptedContent),
+						ProviderMetadata: itemIDMeta(a.providerName, e.ItemID),
 					}
 					state.summaryParts[index] = reasoningSummaryConcluded
 				}
@@ -149,11 +149,11 @@ func (a *streamAdapter) handleEvent(event responses.ResponseStreamEventUnion, ch
 
 	case responses.ResponseReasoningSummaryPartDoneEvent:
 		state := a.reasoningState(e.ItemID)
-		if a.br.store {
+		if a.br.storeExplicitlyEnabled {
 			ch <- provider.StreamPart{
 				Type:             provider.PartReasoningEnd,
 				ID:               fmt.Sprintf("%s:%d", e.ItemID, e.SummaryIndex),
-				ProviderMetadata: reasoningMeta(a.providerName, e.ItemID, state.encryptedContent),
+				ProviderMetadata: itemIDMeta(a.providerName, e.ItemID),
 			}
 			state.summaryParts[e.SummaryIndex] = reasoningSummaryConcluded
 		} else {
@@ -297,7 +297,7 @@ func (a *streamAdapter) handleOutputItemAdded(e responses.ResponseOutputItemAdde
 		a.ongoingToolCalls[e.OutputIndex] = tc
 		ch <- provider.StreamPart{Type: provider.PartToolInputStart, ID: v.CallID, ToolName: name}
 		if v.Operation.Type == "delete_file" {
-			input, _ := json.Marshal(map[string]any{"callId": v.CallID, "operation": v.Operation})
+			input := applyPatchInput(v.CallID, v.Operation)
 			ch <- provider.StreamPart{Type: provider.PartToolInputDelta, ID: v.CallID, Delta: string(input)}
 			ch <- provider.StreamPart{Type: provider.PartToolInputEnd, ID: v.CallID}
 			tc.applyPatchDone = true
@@ -492,7 +492,7 @@ func (a *streamAdapter) handleOutputItemDone(e responses.ResponseOutputItemDoneE
 				toolCallID = v.ID
 			}
 		}
-		result, _ := json.Marshal(map[string]any{"tools": v.Tools})
+		result := toolSearchOutput(v.RawJSON())
 		ch <- provider.StreamPart{Type: provider.PartToolResult, ToolCallID: toolCallID, ToolName: name, Result: result, ProviderMetadata: itemIDMeta(a.providerName, v.ID)}
 
 	case responses.ResponseApplyPatchToolCall:
@@ -506,7 +506,7 @@ func (a *streamAdapter) handleOutputItemDone(e responses.ResponseOutputItemDoneE
 			ch <- provider.StreamPart{Type: provider.PartToolInputEnd, ID: tc.toolCallID}
 			tc.applyPatchDone = true
 		}
-		input, _ := json.Marshal(map[string]any{"callId": v.CallID, "operation": v.Operation})
+		input := applyPatchInput(v.CallID, v.Operation)
 		ch <- provider.StreamPart{Type: provider.PartToolCall, ToolCallID: v.CallID, ToolName: name, Input: string(input), ProviderMetadata: itemIDMeta(a.providerName, v.ID)}
 		delete(a.ongoingToolCalls, e.OutputIndex)
 
@@ -522,8 +522,15 @@ func (a *streamAdapter) handleOutputItemDone(e responses.ResponseOutputItemDoneE
 
 	case responses.ResponseFunctionShellToolCallOutput:
 		name := a.br.toolNameMapping.toCustomToolName("shell")
-		result, _ := json.Marshal(map[string]any{"output": v.Output})
+		result := shellOutput(v.RawJSON())
 		ch <- provider.StreamPart{Type: provider.PartToolResult, ToolCallID: v.CallID, ToolName: name, Result: result}
+
+	case responses.ResponseCompactionItem:
+		ch <- provider.StreamPart{
+			Type:             provider.PartCustom,
+			Kind:             "openai.compaction",
+			ProviderMetadata: compactionMetadata(a.providerName, v.ID, v.EncryptedContent),
+		}
 
 	case responses.ResponseOutputItemLocalShellCall:
 		name := a.br.toolNameMapping.toCustomToolName("local_shell")

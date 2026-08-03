@@ -56,6 +56,29 @@ func TestPartRoundTrip(t *testing.T) {
 		assert.NotNil(t, rp.ProviderMetadata["anthropic"])
 	})
 
+	t.Run("custom part preserves provider metadata", func(t *testing.T) {
+		msg := UIMessage{
+			ID:   "msg-1",
+			Role: RoleAssistant,
+			Parts: []Part{
+				CustomPart{
+					Kind:             "openai.compaction",
+					ProviderMetadata: provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":"cmp-1"}`)},
+				},
+			},
+		}
+		encoded, err := json.Marshal(msg)
+		require.NoError(t, err)
+		assert.JSONEq(t, `{"id":"msg-1","role":"assistant","parts":[{"type":"custom","kind":"openai.compaction","providerMetadata":{"openai":{"itemId":"cmp-1"}}}]}`, string(encoded))
+
+		var got UIMessage
+		require.NoError(t, json.Unmarshal(encoded, &got))
+		custom, ok := got.Parts[0].(CustomPart)
+		require.True(t, ok, "expected CustomPart, got %T", got.Parts[0])
+		assert.Equal(t, "openai.compaction", custom.Kind)
+		assert.JSONEq(t, `{"itemId":"cmp-1"}`, string(custom.ProviderMetadata["openai"]))
+	})
+
 	t.Run("empty assistant message survives round-trip", func(t *testing.T) {
 		msg := UIMessage{ID: "msg-empty", Role: RoleAssistant, Parts: []Part{}}
 		encoded, err := json.Marshal(msg)
@@ -236,6 +259,7 @@ func TestAllPartTypes(t *testing.T) {
 			SourceURLPart{SourceID: "s1", URL: "https://example.com"},
 			SourceDocumentPart{SourceID: "s2", MediaType: "application/pdf"},
 			DataPart{DataName: "x", Data: json.RawMessage(`{}`)},
+			CustomPart{Kind: "openai.compaction"},
 			StepStartPart{},
 		},
 	}
@@ -244,11 +268,11 @@ func TestAllPartTypes(t *testing.T) {
 
 	var got UIMessage
 	require.NoError(t, json.Unmarshal(b, &got))
-	require.Len(t, got.Parts, 10)
+	require.Len(t, got.Parts, 11)
 
 	expectedTypes := []string{
 		"text", "reasoning", "tool-w", "dynamic-tool",
-		"file", "reasoning-file", "source-url", "source-document", "data-x", "step-start",
+		"file", "reasoning-file", "source-url", "source-document", "data-x", "custom", "step-start",
 	}
 	for i, p := range got.Parts {
 		assert.Equal(t, expectedTypes[i], p.PartType(), "part %d", i)

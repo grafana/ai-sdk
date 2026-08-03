@@ -1,0 +1,65 @@
+model: gpt-5-nano
+prompt: Hello
+providerTools:
+  toolSearch:
+    id: openai.tool_search
+tools:
+  get_weather:
+    description: Get the current weather at a specific location
+    strict: true
+    inputSchema:
+      type: object
+      properties:
+        location:
+          type: string
+        unit:
+          type: string
+          enum:
+            - celsius
+            - fahrenheit
+      required:
+        - location
+        - unit
+      additionalProperties: false
+    providerOptions:
+      openai:
+        deferLoading: true
+  search_files:
+    description: Search through files in the workspace
+    strict: true
+    inputSchema:
+      type: object
+      properties:
+        query:
+          type: string
+        file_types:
+          type: array
+          items:
+            type: string
+      required:
+        - query
+        - file_types
+      additionalProperties: false
+    providerOptions:
+      openai:
+        deferLoading: true
+  send_email:
+    description: Send an email to a recipient
+    strict: true
+    inputSchema:
+      type: object
+      properties:
+        to:
+          type: string
+        subject:
+          type: string
+        body:
+          type: string
+      required:
+        - to
+        - subject
+        - body
+      additionalProperties: false
+    providerOptions:
+      openai:
+        deferLoading: true

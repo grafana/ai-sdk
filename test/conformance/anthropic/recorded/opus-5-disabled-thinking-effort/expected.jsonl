@@ -1,8 +1,8 @@
 {"type":"start"}
 {"type":"start-step"}
 {"type":"text-start","id":"0"}
-{"type":"text-delta","id":"0","delta":"Hello!"}
-{"type":"text-delta","id":"0","delta":" How can I help you today?"}
+{"type":"text-delta","id":"0","delta":"Hello"}
+{"type":"text-delta","id":"0","delta":"! How can I help you today?"}
 {"type":"text-end","id":"0"}
 {"type":"finish-step"}
 {"type":"finish","finishReason":"stop"}

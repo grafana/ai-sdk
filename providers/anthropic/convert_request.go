@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"unicode"
 
@@ -16,6 +18,7 @@ import (
 
 const (
 	jsonResponseToolName           = "json"
+	filesAPIBeta                   = anthropic.AnthropicBeta("files-api-2025-04-14")
 	midConversationSystemBeta      = anthropic.AnthropicBeta("mid-conversation-system-2026-04-07")
 	midConversationToolChangesBeta = anthropic.AnthropicBeta("mid-conversation-tool-changes-2026-07-01")
 	serverSideFallbackDefaultBeta  = anthropic.AnthropicBeta("server-side-fallback-2026-07-01")
@@ -176,6 +179,9 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 	}
 	v := &cacheControlValidator{}
 	mapping := newToolNameMapping(opts.Tools)
+	if err := validateAdvisorResultContent(opts.Prompt, mapping); err != nil {
+		return anthropic.BetaMessageNewParams{}, toolNameMapping{}, nil, buildResult{}, err
+	}
 
 	caps := getModelCapabilities(modelID)
 	supportsNativeStructuredOutput := providerCaps.supportsNativeStructuredOutput && caps.supportsStructuredOutput
@@ -204,6 +210,9 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 
 	var toolBetas []string
 	if len(opts.Tools) > 0 {
+		if err := validateProviderToolArgs(opts.Tools); err != nil {
+			return anthropic.BetaMessageNewParams{}, toolNameMapping{}, nil, buildResult{}, err
+		}
 		var toolWarnings []provider.Warning
 		p.Tools, toolWarnings, toolBetas = convertToolsWithStrictTools(v, opts.Tools, defaultEagerInputStreaming, supportsStrictTools)
 		warnings = append(warnings, toolWarnings...)
@@ -294,7 +303,11 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 			for _, msg := range block.messages {
 				switch msg.Role {
 				case provider.RoleUser:
-					content = append(content, convertUserContent(v, msg.Content, msg.ProviderOptions, &p.Betas, mcpToolUseIDs, &warnings)...)
+					converted, err := convertUserContent(v, msg.Content, msg.ProviderOptions, &p.Betas, mcpToolUseIDs, &warnings)
+					if err != nil {
+						return anthropic.BetaMessageNewParams{}, toolNameMapping{}, nil, buildResult{}, err
+					}
+					content = append(content, converted...)
 				case provider.RoleTool:
 					content = append(content, convertToolContent(v, msg.Content, msg.ProviderOptions, mcpToolUseIDs, &warnings)...)
 				}
@@ -671,7 +684,7 @@ func convertUserContent(
 	betas *[]anthropic.AnthropicBeta,
 	mcpToolUseIDs map[string]bool,
 	warnings *[]provider.Warning,
-) []anthropic.BetaContentBlockParamUnion {
+) ([]anthropic.BetaContentBlockParamUnion, error) {
 	var blocks []anthropic.BetaContentBlockParamUnion
 	for i, p := range parts {
 		isLast := i == len(parts)-1
@@ -683,6 +696,37 @@ func convertUserContent(
 			})
 		case provider.ContentPartTypeFile:
 			cc := v.resolveCacheControl(p.ProviderOptions, msgOpts, isLast, true)
+			if p.Data != nil && len(p.Data.Reference) > 0 {
+				fileID, availableProviders, ok := resolveAnthropicFileReference(p.Data.Reference)
+				if !ok {
+					return nil, fmt.Errorf("anthropic: no provider reference found for provider anthropic; available providers: %s", strings.Join(availableProviders, ", "))
+				}
+				*betas = appendBetaUnique(*betas, filesAPIBeta)
+				if useContainerUpload(p.ProviderOptions) {
+					blocks = append(blocks, anthropic.BetaContentBlockParamUnion{
+						OfContainerUpload: &anthropic.BetaContainerUploadBlockParam{FileID: fileID},
+					})
+				} else if strings.HasPrefix(p.MediaType, "image/") {
+					blocks = append(blocks, anthropic.BetaContentBlockParamUnion{
+						OfImage: &anthropic.BetaImageBlockParam{
+							Source: anthropic.BetaImageBlockParamSourceUnion{
+								OfFile: &anthropic.BetaFileImageSourceParam{FileID: fileID},
+							},
+							CacheControl: cc,
+						},
+					})
+				} else {
+					blocks = append(blocks, anthropic.BetaContentBlockParamUnion{
+						OfDocument: &anthropic.BetaRequestDocumentBlockParam{
+							Source: anthropic.BetaRequestDocumentBlockSourceUnionParam{
+								OfFile: &anthropic.BetaFileDocumentSourceParam{FileID: fileID},
+							},
+							CacheControl: cc,
+						},
+					})
+				}
+				continue
+			}
 			switch {
 			case strings.HasPrefix(p.MediaType, "image/"):
 				if b, ok := convertImageFileContentPart(p, cc); ok {
@@ -707,7 +751,35 @@ func convertUserContent(
 			// [convertToolContent].
 		}
 	}
-	return blocks
+	return blocks, nil
+}
+
+func resolveAnthropicFileReference(reference json.RawMessage) (string, []string, bool) {
+	var references map[string]*string
+	if json.Unmarshal(reference, &references) != nil {
+		return "", nil, false
+	}
+	availableProviders := make([]string, 0, len(references))
+	for providerName := range references {
+		availableProviders = append(availableProviders, providerName)
+	}
+	sort.Strings(availableProviders)
+	fileID, ok := references["anthropic"]
+	if !ok || fileID == nil {
+		return "", availableProviders, false
+	}
+	return *fileID, availableProviders, true
+}
+
+func useContainerUpload(opts provider.ProviderOptions) bool {
+	raw := extractRawJSON(opts)
+	if raw == nil {
+		return false
+	}
+	var fileOptions struct {
+		ContainerUpload bool `json:"containerUpload"`
+	}
+	return json.Unmarshal(raw, &fileOptions) == nil && fileOptions.ContainerUpload
 }
 
 func convertImageFileContentPart(p provider.ContentPart, cc anthropic.BetaCacheControlEphemeralParam) (anthropic.BetaContentBlockParamUnion, bool) {
@@ -1004,6 +1076,7 @@ func convertAssistantContent(v *cacheControlValidator, mapping toolNameMapping, 
 }
 
 var serverToolNames = map[string]anthropic.BetaServerToolUseBlockParamName{
+	"advisor":                anthropic.BetaServerToolUseBlockParamNameAdvisor,
 	"code_execution":         anthropic.BetaServerToolUseBlockParamNameCodeExecution,
 	"web_search":             anthropic.BetaServerToolUseBlockParamNameWebSearch,
 	"web_fetch":              anthropic.BetaServerToolUseBlockParamNameWebFetch,
@@ -1073,6 +1146,10 @@ func convertProviderExecutedToolCall(p provider.ContentPart, mapping toolNameMap
 		}
 	}
 
+	if providerToolName == "advisor" {
+		input = map[string]any{}
+	}
+
 	name, ok := serverToolNames[providerToolName]
 	if !ok {
 		*warnings = append(*warnings, provider.Warning{
@@ -1128,6 +1205,8 @@ func convertProviderExecutedToolResult(p provider.ContentPart, mapping toolNameM
 		return convertInlineCodeExecutionResult(p, cc, warnings)
 	case "tool_search_tool_regex", "tool_search_tool_bm25":
 		return convertInlineToolSearchResult(p, cc, warnings)
+	case "advisor":
+		return convertInlineAdvisorResult(p, cc, warnings)
 	default:
 		*warnings = append(*warnings, provider.Warning{
 			Type:    provider.WarnOther,
@@ -1481,6 +1560,60 @@ func convertTextEditorCodeExecutionResult(p provider.ContentPart, outputJSON jso
 	return &block
 }
 
+func convertInlineAdvisorResult(p provider.ContentPart, cc anthropic.BetaCacheControlEphemeralParam, warnings *[]provider.Warning) *anthropic.BetaContentBlockParamUnion {
+	if p.Output == nil || (p.Output.Type != provider.ToolOutputJSON && p.Output.Type != provider.ToolOutputErrorJSON) {
+		*warnings = append(*warnings, provider.Warning{
+			Type:    provider.WarnOther,
+			Feature: "providerExecutedToolResult",
+			Message: fmt.Sprintf("provider executed tool result output type %s for tool %s is not supported", toolOutputTypeLabel(p.Output), p.ToolName),
+		})
+		return nil
+	}
+
+	var output struct {
+		Type             string `json:"type"`
+		Text             string `json:"text"`
+		EncryptedContent string `json:"encryptedContent"`
+		ErrorCode        string `json:"errorCode"`
+	}
+	if err := json.Unmarshal(p.Output.JSON, &output); err != nil {
+		*warnings = append(*warnings, provider.Warning{
+			Type:    provider.WarnOther,
+			Feature: "providerExecutedToolResult",
+			Message: fmt.Sprintf("failed to unmarshal advisor result: %v", err),
+		})
+		return nil
+	}
+
+	content := anthropic.BetaAdvisorToolResultBlockParamContentUnion{}
+	switch output.Type {
+	case "advisor_result":
+		content.OfRequestAdvisorResultBlock = &anthropic.BetaAdvisorResultBlockParam{Text: output.Text}
+	case "advisor_redacted_result":
+		content.OfRequestAdvisorRedactedResultBlock = &anthropic.BetaAdvisorRedactedResultBlockParam{EncryptedContent: output.EncryptedContent}
+	case "advisor_tool_result_error":
+		content.OfRequestAdvisorToolResultError = &anthropic.BetaAdvisorToolResultErrorParam{
+			ErrorCode: anthropic.BetaAdvisorToolResultErrorParamErrorCode(output.ErrorCode),
+		}
+	default:
+		*warnings = append(*warnings, provider.Warning{
+			Type:    provider.WarnOther,
+			Feature: "providerExecutedToolResult",
+			Message: fmt.Sprintf("provider executed tool result output value is not a valid advisor result for tool %s", p.ToolName),
+		})
+		return nil
+	}
+
+	block := anthropic.BetaContentBlockParamUnion{
+		OfAdvisorToolResult: &anthropic.BetaAdvisorToolResultBlockParam{
+			ToolUseID:    p.ToolCallID,
+			Content:      content,
+			CacheControl: cc,
+		},
+	}
+	return &block
+}
+
 func convertInlineToolSearchResult(p provider.ContentPart, cc anthropic.BetaCacheControlEphemeralParam, warnings *[]provider.Warning) *anthropic.BetaContentBlockParamUnion {
 	outputJSON := extractOutputJSON(p.Output)
 	if outputJSON == nil {
@@ -1673,6 +1806,94 @@ func serializeToolOutput(output *provider.ToolResultOutput, warnings *[]provider
 			{OfText: &anthropic.BetaTextBlockParam{Text: ""}},
 		}
 	}
+}
+
+func validateAdvisorResultContent(prompt []provider.Message, mapping toolNameMapping) error {
+	for _, message := range prompt {
+		if message.Role != provider.RoleAssistant {
+			continue
+		}
+		for _, part := range message.Content {
+			if part.Type != provider.ContentPartTypeToolResult || mapping.toProviderToolName(part.ToolName) != "advisor" {
+				continue
+			}
+			if err := validateAdvisorResult(part.Output); err != nil {
+				return fmt.Errorf("anthropic: invalid advisor tool result: %w", err)
+			}
+		}
+	}
+	return nil
+}
+
+func validateAdvisorResult(output *provider.ToolResultOutput) error {
+	if output == nil || (output.Type != provider.ToolOutputJSON && output.Type != provider.ToolOutputErrorJSON) {
+		return errors.New("output must be JSON")
+	}
+	var value struct {
+		Type             *string `json:"type"`
+		Text             *string `json:"text"`
+		EncryptedContent *string `json:"encryptedContent"`
+		ErrorCode        *string `json:"errorCode"`
+	}
+	if err := json.Unmarshal(output.JSON, &value); err != nil {
+		return errors.New("output must be a valid advisor result object")
+	}
+	if value.Type == nil {
+		return errors.New("type is required")
+	}
+	switch *value.Type {
+	case "advisor_result":
+		if value.Text == nil {
+			return errors.New("text is required for advisor_result")
+		}
+	case "advisor_redacted_result":
+		if value.EncryptedContent == nil {
+			return errors.New("encryptedContent is required for advisor_redacted_result")
+		}
+	case "advisor_tool_result_error":
+		if value.ErrorCode == nil {
+			return errors.New("errorCode is required for advisor_tool_result_error")
+		}
+	default:
+		return fmt.Errorf("unsupported advisor result type %q", *value.Type)
+	}
+	return nil
+}
+
+func validateProviderToolArgs(tools []provider.Tool) error {
+	for _, tool := range tools {
+		if tool.Type != provider.ToolTypeProvider || tool.ID != "anthropic.advisor_20260301" {
+			continue
+		}
+		if err := validateAdvisorToolArgs(tool.Args); err != nil {
+			return fmt.Errorf("anthropic: invalid advisor tool arguments: %w", err)
+		}
+	}
+	return nil
+}
+
+func validateAdvisorToolArgs(args map[string]json.RawMessage) error {
+	modelJSON, ok := args["model"]
+	if !ok {
+		return errors.New("model is required")
+	}
+	var model *string
+	if err := json.Unmarshal(modelJSON, &model); err != nil || model == nil {
+		return errors.New("model must be a string")
+	}
+	if maxUsesJSON, ok := args["maxUses"]; ok {
+		var maxUses *int64
+		if err := json.Unmarshal(maxUsesJSON, &maxUses); err != nil || maxUses == nil {
+			return errors.New("maxUses must be an integer")
+		}
+	}
+	if cachingJSON, ok := args["caching"]; ok {
+		var caching *CacheControlType
+		if err := json.Unmarshal(cachingJSON, &caching); err != nil || caching == nil || caching.Type != "ephemeral" || (caching.TTL != "5m" && caching.TTL != "1h") {
+			return errors.New("caching must have type ephemeral and ttl 5m or 1h")
+		}
+	}
+	return nil
 }
 
 func convertTools(v *cacheControlValidator, tools []provider.Tool, defaultEagerInputStreaming bool) ([]anthropic.BetaToolUnionParam, []provider.Warning, []string) {
@@ -1976,6 +2197,34 @@ func convertProviderTool(t provider.Tool) (anthropic.BetaToolUnionParam, []strin
 			}
 		}
 		return anthropic.BetaToolUnionParam{OfWebSearchTool20260209: param}, []string{"code-execution-web-tools-2026-02-09"}, nil
+
+	case "anthropic.advisor_20260301":
+		param := &anthropic.BetaAdvisorTool20260301Param{}
+		if raw, ok := t.Args["model"]; ok {
+			var model string
+			if json.Unmarshal(raw, &model) == nil {
+				param.Model = anthropic.Model(model)
+			}
+		}
+		if raw, ok := t.Args["maxUses"]; ok {
+			var maxUses int64
+			if json.Unmarshal(raw, &maxUses) == nil {
+				param.MaxUses = anthropic.Opt(maxUses)
+			}
+		}
+		if raw, ok := t.Args["caching"]; ok {
+			var caching CacheControlType
+			if json.Unmarshal(raw, &caching) == nil && caching.Type == "ephemeral" {
+				param.Caching = anthropic.NewBetaCacheControlEphemeralParam()
+				switch caching.TTL {
+				case "5m":
+					param.Caching.TTL = anthropic.BetaCacheControlEphemeralTTLTTL5m
+				case "1h":
+					param.Caching.TTL = anthropic.BetaCacheControlEphemeralTTLTTL1h
+				}
+			}
+		}
+		return anthropic.BetaToolUnionParam{OfAdvisorTool20260301: param}, []string{"advisor-tool-2026-03-01"}, nil
 
 	default:
 		return anthropic.BetaToolUnionParam{}, nil, &provider.Warning{

@@ -2,3 +2,7 @@
 # Source: packages/openai-compatible/src/chat/__fixtures__/
 xai-text: xai-text
 xai-tool-call: xai-tool-call
+
+# Non-streaming counterparts to imported streaming fixtures:
+xai-text.json: null
+xai-tool-call.json: null

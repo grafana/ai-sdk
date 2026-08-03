@@ -1,0 +1,5 @@
+model: gpt-5.1
+prompt: Hello
+providerTools:
+  shell:
+    id: openai.shell

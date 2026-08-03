@@ -1,10 +1,12 @@
 {"type":"start"}
 {"type":"start-step"}
-{"type":"text-start","id":"msg_010a729b746e389e016a3abbcfd35c81a28f9bfb374b099a4d","providerMetadata":{"openai":{"itemId":"msg_010a729b746e389e016a3abbcfd35c81a28f9bfb374b099a4d"}}}
-{"type":"text-delta","id":"msg_010a729b746e389e016a3abbcfd35c81a28f9bfb374b099a4d","delta":"Hello"}
-{"type":"text-delta","id":"msg_010a729b746e389e016a3abbcfd35c81a28f9bfb374b099a4d","delta":" to"}
-{"type":"text-delta","id":"msg_010a729b746e389e016a3abbcfd35c81a28f9bfb374b099a4d","delta":" you"}
-{"type":"text-delta","id":"msg_010a729b746e389e016a3abbcfd35c81a28f9bfb374b099a4d","delta":"!"}
-{"type":"text-end","id":"msg_010a729b746e389e016a3abbcfd35c81a28f9bfb374b099a4d","providerMetadata":{"openai":{"itemId":"msg_010a729b746e389e016a3abbcfd35c81a28f9bfb374b099a4d"}}}
+{"type":"text-start","id":"msg_02a0f6006b57e593016a6ce06441488192b7145932bedfa6e8","providerMetadata":{"openai":{"itemId":"msg_02a0f6006b57e593016a6ce06441488192b7145932bedfa6e8"}}}
+{"type":"text-delta","id":"msg_02a0f6006b57e593016a6ce06441488192b7145932bedfa6e8","delta":"Hello"}
+{"type":"text-delta","id":"msg_02a0f6006b57e593016a6ce06441488192b7145932bedfa6e8","delta":","}
+{"type":"text-delta","id":"msg_02a0f6006b57e593016a6ce06441488192b7145932bedfa6e8","delta":" how"}
+{"type":"text-delta","id":"msg_02a0f6006b57e593016a6ce06441488192b7145932bedfa6e8","delta":"’s"}
+{"type":"text-delta","id":"msg_02a0f6006b57e593016a6ce06441488192b7145932bedfa6e8","delta":" it"}
+{"type":"text-delta","id":"msg_02a0f6006b57e593016a6ce06441488192b7145932bedfa6e8","delta":"?"}
+{"type":"text-end","id":"msg_02a0f6006b57e593016a6ce06441488192b7145932bedfa6e8","providerMetadata":{"openai":{"itemId":"msg_02a0f6006b57e593016a6ce06441488192b7145932bedfa6e8"}}}
 {"type":"finish-step"}
 {"type":"finish","finishReason":"stop"}

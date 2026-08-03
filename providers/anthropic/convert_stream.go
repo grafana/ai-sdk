@@ -220,6 +220,11 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 			if err := a.emitToolSearchResult(tsResult, ch); err != nil {
 				return err
 			}
+		case "advisor_tool_result":
+			advisorResult := cb.AsAdvisorToolResult()
+			if err := a.emitAdvisorResult(advisorResult, ch); err != nil {
+				return err
+			}
 		case "code_execution_tool_result":
 			ceResult := cb.AsCodeExecutionToolResult()
 			if err := a.emitCodeExecutionResult(ceResult, ch); err != nil {
@@ -643,6 +648,22 @@ func marshalToolSearchReferences(refs []anthropic.BetaToolReferenceBlock) []map[
 		}
 	}
 	return out
+}
+
+func (a *streamAdapter) emitAdvisorResult(block anthropic.BetaAdvisorToolResultBlock, ch chan<- provider.StreamPart) error {
+	resultJSON, isError, err := marshalAdvisorResult(block.Content)
+	if err != nil {
+		return err
+	}
+	ch <- provider.StreamPart{
+		Type:             provider.PartToolResult,
+		ToolCallID:       block.ToolUseID,
+		ToolName:         a.mapping.toCustomToolName("advisor"),
+		Result:           resultJSON,
+		IsError:          isError,
+		ProviderExecuted: true,
+	}
+	return nil
 }
 
 func (a *streamAdapter) emitCodeExecutionResult(block anthropic.BetaCodeExecutionToolResultBlock, ch chan<- provider.StreamPart) error {

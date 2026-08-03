@@ -1,9 +1,22 @@
 {
-  "items": [
-    1,
-    true,
-    {
-      "name": "alpha"
-    }
-  ]
+  "name": "Jane Doe",
+  "age": 28,
+  "email": "janedoe@example.com",
+  "isActive": true,
+  "address": {
+    "street": "123 Main St",
+    "city": "Anytown",
+    "state": "CA",
+    "postalCode": "12345"
+  },
+  "hobbies": [
+    "reading",
+    "cycling",
+    "gardening"
+  ],
+  "preferences": {
+    "newsletter": false,
+    "smsAlerts": true
+  },
+  "lastLogin": "2023-10-05T14:48:00Z"
 }

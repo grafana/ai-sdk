@@ -15,8 +15,9 @@ type SystemModelMessage struct {
 // ContentPart is the interface for structured content in a StepResult.
 // NOT the same as UIMessage Part -- this is the model output side.
 // Consumers type-switch on: TextContent, ReasoningContent, SourceContent,
-// FileContent, ReasoningFileContent, ToolCallContent, ToolApprovalRequestContent, ToolApprovalResponseContent,
-// ToolResultContent, ToolErrorContent.
+// FileContent, ReasoningFileContent, CustomContent, ToolCallContent,
+// ToolApprovalRequestContent, ToolApprovalResponseContent, ToolResultContent,
+// ToolErrorContent.
 type ContentPart interface {
 	contentPart()
 }
@@ -59,6 +60,14 @@ type ReasoningFileContent struct {
 }
 
 func (ReasoningFileContent) contentPart() {}
+
+// CustomContent carries provider-specific custom generated content.
+type CustomContent struct {
+	Kind             string                    `json:"kind"`
+	ProviderMetadata provider.ProviderMetadata `json:"providerMetadata,omitempty"`
+}
+
+func (CustomContent) contentPart() {}
 
 // ToolCallContent represents a tool call in the generated content.
 type ToolCallContent struct {

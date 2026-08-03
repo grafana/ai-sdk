@@ -1,11 +1,10 @@
-{"type":"message_start","message":{"model":"claude-sonnet-4-5-20250929","id":"msg_01LxaVp2pKe7sewjy3MGuu9G","type":"message","role":"assistant","content":[],"stop_reason":null,"stop_sequence":null,"stop_details":null,"usage":{"input_tokens":728,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":1,"service_tier":"standard","inference_geo":"not_available"}}       }
-{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}   }
+{"type":"message_start","message":{"model":"claude-sonnet-4-5-20250929","id":"msg_011CdaZDHjCGZWSpq2NwymRD","type":"message","role":"assistant","content":[],"stop_reason":null,"stop_sequence":null,"stop_details":null,"usage":{"input_tokens":728,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":3,"service_tier":"standard","inference_geo":"not_available"}}          }
+{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}    }
 {"type": "ping"}
-{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"I"}               }
-{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"'ve completed the requested actions:\n\n1. **Update the issue list** - Successfully completed"}              }
-{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" ✓\n2. **Delete the archived issue list** - This operation was not allowed\n\nThe issue list has been updated,"}             }
-{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" but the system is not permitting the deletion of the archived issue list. This could be due to permission"}             }
-{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" restrictions or system policies that prevent deletion of archived data."}   }
-{"type":"content_block_stop","index":0          }
-{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null,"stop_details":null},"usage":{"input_tokens":728,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":81}          }
-{"type":"message_stop"    }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"I've completed"}          }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" the requested operations:\n\n1. ✅ **Updated the issue list** - Successfully completed\n2. ❌ **Delete the"}              }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" archived issue list** - This operation is not allowed\n\nThe issue list has been updated, but the system does not permit"}       }
+{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" deletion of the archived issue list."}               }
+{"type":"content_block_stop","index":0              }
+{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null,"stop_details":null},"usage":{"input_tokens":728,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":67}          }
+{"type":"message_stop"     }

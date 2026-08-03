@@ -361,6 +361,8 @@ func translateToChunksWithMetadata(part TextStreamPart, cfg uiMessageStreamConfi
 		return []UIMessageChunk{{Type: ChunkError, ErrorText: errorText(p.Error, cfg)}}
 	case StreamRaw:
 		return nil // not sent to wire
+	case StreamCustom:
+		return []UIMessageChunk{{Type: ChunkCustom, Kind: p.Kind, ProviderMetadata: p.ProviderMetadata}}
 	default:
 		return nil
 	}
@@ -1190,7 +1192,14 @@ loop:
 			r.callOnChunk(cfg, tsp)
 
 		case provider.PartCustom:
-			// No orchestration-level handling yet. No current provider emits custom parts.
+			step.responseContent = append(step.responseContent, provider.ContentPart{
+				Type:            provider.ContentPartTypeCustom,
+				Kind:            part.Kind,
+				ProviderOptions: providerMetadataToOptions(part.ProviderMetadata),
+			})
+			tsp := StreamCustom{Kind: part.Kind, ProviderMetadata: part.ProviderMetadata}
+			r.emit(tsp)
+			r.callOnChunk(cfg, tsp)
 
 		case provider.PartError:
 			terminated = true
@@ -1367,7 +1376,7 @@ func (r *StreamTextResult) handleToolResult(
 	cfg *streamConfig,
 ) error {
 	preliminary := part.Preliminary != nil && *part.Preliminary
-	dynamic := isDynamic(part.ToolName, part.Dynamic, cfg.tools)
+	dynamic := part.Dynamic
 	var input json.RawMessage
 	for _, toolCall := range step.ToolCalls {
 		if toolCall.ToolCallID == part.ToolCallID {
@@ -1405,7 +1414,7 @@ func (r *StreamTextResult) handleToolResult(
 	tsp := StreamToolResult{
 		ToolCallID: part.ToolCallID, ToolName: part.ToolName,
 		Input: input, Output: part.Result, ProviderExecuted: true,
-		Dynamic: dynamic, Preliminary: preliminary, ProviderMetadata: part.ProviderMetadata,
+		Dynamic: dynamic, ProviderMetadata: part.ProviderMetadata,
 	}
 	r.emit(tsp)
 	r.callOnChunk(cfg, tsp)
@@ -1859,13 +1868,25 @@ func (r *StreamTextResult) emitPartialOutput(out Output, text string) string {
 			return ""
 		}
 	}
-	s := string(data)
-	if s == r.lastPartialJSON {
+	canonical, err := canonicalPartialJSON(data)
+	if err != nil || canonical == r.lastPartialJSON {
 		return ""
 	}
-	r.lastPartialJSON = s
+	r.lastPartialJSON = canonical
 	r.partialOutputStream.send(data)
-	return s
+	return canonical
+}
+
+func canonicalPartialJSON(data json.RawMessage) (string, error) {
+	var value any
+	if err := json.Unmarshal(data, &value); err != nil {
+		return "", err
+	}
+	canonical, err := json.Marshal(value)
+	if err != nil {
+		return "", err
+	}
+	return string(canonical), nil
 }
 
 func (r *StreamTextResult) emitError(err error, onError func(error)) {
@@ -2802,8 +2823,8 @@ func isDynamic(toolName string, providerDynamic *bool, tools map[string]Tool) *b
 		if providerDynamic != nil {
 			return providerDynamic
 		}
-		d := false
-		return &d
+		dynamic := false
+		return &dynamic
 	}
 	if t.Type == UserToolDynamic {
 		d := true
@@ -2865,6 +2886,11 @@ func buildRecordedContent(step StepResult) []ContentPart {
 				Filename:         recorded.Filename,
 				ProviderMetadata: optionsToProviderMetadata(recorded.ProviderOptions),
 			}})
+		case provider.ContentPartTypeCustom:
+			parts = append(parts, CustomContent{
+				Kind:             recorded.Kind,
+				ProviderMetadata: optionsToProviderMetadata(recorded.ProviderOptions),
+			})
 		case provider.ContentPartTypeToolCall:
 			call, ok := toolCalls[recorded.ToolCallID]
 			if !ok {

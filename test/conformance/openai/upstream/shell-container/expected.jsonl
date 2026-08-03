@@ -1,0 +1,12 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"tool-input-available","toolCallId":"call_abc123def456ghi789jkl012","toolName":"shell","input":{"action":{"commands":["echo 'Hello from container!' && uname -a"]}},"providerExecuted":true,"providerMetadata":{"openai":{"itemId":"sh_0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e50"}}}
+{"type":"tool-output-available","toolCallId":"call_abc123def456ghi789jkl012","output":{"output":[{"stdout":"Hello from container!\nLinux container-host 6.1.0 #1 SMP x86_64 GNU/Linux\n","stderr":"","outcome":{"type":"exit","exitCode":0}}]},"providerExecuted":true}
+{"type":"text-start","id":"msg_0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e52","providerMetadata":{"openai":{"itemId":"msg_0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e52"}}}
+{"type":"text-delta","id":"msg_0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e52","delta":"The"}
+{"type":"text-delta","id":"msg_0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e52","delta":" command"}
+{"type":"text-delta","id":"msg_0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e52","delta":" ran"}
+{"type":"text-delta","id":"msg_0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e52","delta":" successfully."}
+{"type":"text-end","id":"msg_0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e52","providerMetadata":{"openai":{"itemId":"msg_0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e52"}}}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"stop"}

@@ -41,9 +41,10 @@ const (
 	ChunkSourceURL      ChunkType = "source-url"
 	ChunkSourceDocument ChunkType = "source-document"
 
-	ChunkFile  ChunkType = "file"
-	ChunkData  ChunkType = "data"
-	ChunkError ChunkType = "error"
+	ChunkFile   ChunkType = "file"
+	ChunkData   ChunkType = "data"
+	ChunkCustom ChunkType = "custom"
+	ChunkError  ChunkType = "error"
 )
 
 // UIMessageChunk is a single SSE event in the UI message stream protocol.
@@ -60,6 +61,7 @@ type UIMessageChunk struct {
 
 	// Content fields
 	ID             string `json:"id,omitempty"`
+	Kind           string `json:"kind,omitempty"`
 	Delta          string `json:"delta,omitempty"`
 	InputTextDelta string `json:"inputTextDelta,omitempty"`
 
@@ -124,7 +126,7 @@ func isKnownChunkType(chunkType ChunkType) bool {
 		ChunkToolInputStart, ChunkToolInputDelta, ChunkToolInputAvailable, ChunkToolInputError,
 		ChunkToolApprovalRequest, ChunkToolApprovalResponse, ChunkToolOutputDenied,
 		ChunkToolOutputAvailable, ChunkToolOutputError, ChunkSourceURL, ChunkSourceDocument,
-		ChunkFile, ChunkData, ChunkError:
+		ChunkFile, ChunkData, ChunkCustom, ChunkError:
 		return true
 	default:
 		return false
@@ -148,6 +150,10 @@ func (c UIMessageChunk) MarshalJSON() ([]byte, error) {
 
 	case ChunkAbort:
 		setOpt(m, "reason", c.Reason)
+
+	case ChunkCustom:
+		m["kind"] = c.Kind
+		setOptMeta(m, c.ProviderMetadata)
 
 	case ChunkStartStep, ChunkFinishStep:
 		// no additional fields

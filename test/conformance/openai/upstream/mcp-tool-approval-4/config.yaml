@@ -1,0 +1,28 @@
+model: gpt-5-mini
+messages:
+  - role: user
+    content: shorten ai-sdk.dev
+  - role: assistant
+    content:
+      - type: tool-call
+        toolCallId: mcpr_04a97b4fce127879006949a8672ac081959f95aa8ceedb7cd9
+        toolName: mcp.create_short_url
+        input:
+          url: https://ai-sdk.dev/
+        providerExecuted: true
+      - type: tool-approval-request
+        approvalId: mcpr_04a97b4fce127879006949a8672ac081959f95aa8ceedb7cd9
+        toolCallId: mcpr_04a97b4fce127879006949a8672ac081959f95aa8ceedb7cd9
+  - role: tool
+    content:
+      - type: tool-approval-response
+        approvalId: mcpr_04a97b4fce127879006949a8672ac081959f95aa8ceedb7cd9
+        approved: true
+providerTools:
+  MCP:
+    id: openai.mcp
+    args:
+      serverLabel: zip1
+      serverUrl: https://zip1.io/mcp
+      serverDescription: Link shortener
+      requireApproval: always

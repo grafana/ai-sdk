@@ -8,7 +8,7 @@
     "upgrade-baseline": "node upgrade-baseline.mjs",
     "coverage-inventory": "tsx coverage-inventory.mts",
     "provider-shape": "tsx provider-shape.mts",
-    "test:baseline": "tsx --test validate-baseline.test.mts upgrade-baseline.test.mjs common.test.mts",
+    "test:baseline": "tsx --test validate-baseline.test.mts upgrade-baseline.test.mjs common.test.mts fixture-inventory.test.mts record.test.mts",
     "generate": "tsx generate.mts",
     "record": "tsx record.mts"
   },

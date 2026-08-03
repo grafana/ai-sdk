@@ -7,6 +7,7 @@ import {
   buildToolChoice,
   buildTools,
   createSourceIdNormalizer,
+  unsupportedGenerateFields,
 } from "./common.mts";
 
 describe("conformance common config", () => {
@@ -29,6 +30,28 @@ describe("conformance common config", () => {
       type: "text-delta",
       id: "text-1",
     });
+  });
+
+  it("validates unary generate fields by semantic value", () => {
+    assert.deepEqual(
+      unsupportedGenerateFields({
+        model: "m",
+        uiMessages: [],
+        tools: {},
+        providerTools: {},
+        activeTools: [],
+        approvals: [],
+      }),
+      [],
+    );
+    assert.deepEqual(
+      unsupportedGenerateFields({
+        model: "m",
+        reasoning: "high",
+        stopWhenStepCount: 2,
+      }),
+      ["reasoning", "stopWhenStepCount"],
+    );
   });
 
   it("builds tool choice configs", () => {

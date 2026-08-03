@@ -1,1 +1,0 @@
-{"body":{"messages":[{"content":"Trigger a structured provider error.","role":"user"}],"model":"test-model","stream":true,"stream_options":{"include_usage":true}},"headers":{"authorization":"<redacted>","content-type":"application/json"},"method":"POST","path":"/v1/chat/completions"}

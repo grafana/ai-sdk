@@ -1,2 +1,0 @@
-{"error":{"message":"request blocked","code":"CONTENT_FILTER","details":{"category":"safety"},"unknown":"preserve"}}
-{"id":"chatcmpl-recovered","object":"chat.completion.chunk","created":1710000000,"model":"test-model","choices":[{"index":0,"delta":{"content":"recovered"},"finish_reason":"stop"}]}

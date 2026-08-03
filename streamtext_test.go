@@ -4290,6 +4290,39 @@ func TestStreamTextContent_TextDeltaMetadata(t *testing.T) {
 	assert.Equal(t, providerMetadataToOptions(deltaMetadata), steps[0].Response.Messages[0].Content[0].ProviderOptions)
 }
 
+func TestStreamTextContent_CustomPartPreserved(t *testing.T) {
+	metadata := provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":"cmp-1"}`)}
+	model := &mockModel{streamFunc: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+		stream := make(chan provider.StreamPart, 2)
+		stream <- provider.StreamPart{Type: provider.PartCustom, Kind: "openai.compaction", ProviderMetadata: metadata}
+		stream <- provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}}
+		close(stream)
+		return &provider.StreamResult{Stream: stream}, nil
+	}}
+
+	result := StreamText(context.Background(), model, WithModelMessages(provider.UserText("test")))
+	var streamed []StreamCustom
+	for part := range result.FullStream() {
+		if custom, ok := part.(StreamCustom); ok {
+			streamed = append(streamed, custom)
+		}
+	}
+
+	require.Len(t, streamed, 1)
+	assert.Equal(t, "openai.compaction", streamed[0].Kind)
+	assert.Equal(t, metadata, streamed[0].ProviderMetadata)
+	steps := result.Steps()
+	require.Len(t, steps, 1)
+	require.Len(t, steps[0].Content, 1)
+	custom, ok := steps[0].Content[0].(CustomContent)
+	require.True(t, ok)
+	assert.Equal(t, "openai.compaction", custom.Kind)
+	assert.Equal(t, metadata, custom.ProviderMetadata)
+	require.Len(t, steps[0].Response.Messages, 1)
+	require.Len(t, steps[0].Response.Messages[0].Content, 1)
+	assert.Equal(t, provider.ContentPartTypeCustom, steps[0].Response.Messages[0].Content[0].Type)
+}
+
 func TestStreamTextContent_EmptyRecordedTextPreserved(t *testing.T) {
 	model := &mockModel{streamFunc: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
 		stream := make(chan provider.StreamPart, 5)
@@ -4529,6 +4562,18 @@ func TestBuildContent(t *testing.T) {
 		assert.IsType(t, ToolResultContent{}, content[3])
 		assert.IsType(t, ToolCallContent{}, content[4])
 		assert.IsType(t, ToolResultContent{}, content[5])
+	})
+}
+
+func TestIsDynamic_UnknownToolPreservesProviderValue(t *testing.T) {
+	t.Run("absent", func(t *testing.T) {
+		assert.Equal(t, boolPtr(false), isDynamic("provider.tool", nil, nil))
+	})
+	t.Run("explicit false", func(t *testing.T) {
+		assert.Equal(t, boolPtr(false), isDynamic("provider.tool", boolPtr(false), nil))
+	})
+	t.Run("explicit true", func(t *testing.T) {
+		assert.Equal(t, boolPtr(true), isDynamic("provider.tool", boolPtr(true), nil))
 	})
 }
 

@@ -1,7 +1,8 @@
-model: claude-sonnet-4-20250514
+model: claude-sonnet-4-5-20250929
 system: "You are a tool-using assistant. Use tools when needed, then continue with a concise final answer."
 prompt: "Use a tool to check the weather in San Francisco, then continue and recommend whether I should bring a jacket."
 stopWhenStepCount: 2
+maxRetries: 0
 providerOptions:
   anthropic:
     thinking:

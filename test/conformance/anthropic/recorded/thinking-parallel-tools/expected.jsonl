@@ -2,37 +2,37 @@
 {"type":"start-step"}
 {"type":"reasoning-start","id":"0"}
 {"type":"reasoning-delta","id":"0","delta":"The user wants"}
-{"type":"reasoning-delta","id":"0","delta":" me to check the weather in Barcelona and Rome, then recommend which city to visit. I need to:\n1. Get weather for Barcelona\n2. Get weather for Rome\n3. Compare them and make"}
-{"type":"reasoning-delta","id":"0","delta":" a recommendation\n\nSince these two weather calls are independent, I can make them both in the same function_"}
-{"type":"reasoning-delta","id":"0","delta":"calls block."}
-{"type":"reasoning-delta","id":"0","delta":"","providerMetadata":{"anthropic":{"signature":"EvkDCmQIDRgCKkCZNpXxjvC61rMfxfOWL+APgtCrysR1H1/HHacHhf9FpXntsfJT/MxweC6nFDvRxEF6uqy/odCHlFF7zoKwcEAGMhpjbGF1ZGUtc29ubmV0LTQtNS0yMDI1MDkyOTgAEgzzyrqwxxBw9QIc9SQaDLm1mo+OHa3T+rpB6SIwlIOGY6iUX7KHMV5m3Rph8a3U2UpE6RAEC030UoHhLa0XvbvP/JlDlq8VMN/CrhosKsICjhkaW0vHT2cr0BNys8nC2i5SzOFtATHx4Jt0peiIZME8wRngswAANTgzGepOYLZ7t7hbzLo9Gi1Ohbvq4hz56T/8l2iC4O9+B6++UGo420hVdcUgq3jiMjZrsRjnV++RbJRxtEt60dBE9lXrYNUHvTCRnFC1tUT5MKwUnRlOKS4eaSzRArRLNYL5viZHSYeTLAq3XCmrMYy7QQbLwCzdCqUPCOqqe4nfGIT0RPpF4GN6efnHHMf0dADfErD2/PxQ/npjSll1gV5RBpgEmF7CIyyIdu2bE4kUHKhglD2llTOjaiUCFDFDx5cK1cH3jZ3iYGJeGvGw4lmgAEqhvObYvdHduD1+vz5HBYxvR/JVeBlyxMZ+eDs955pzilDeDwNg1CfEd1N5cH5uAVdpTH/Q1nreus7BOfv+lm7wvkcJRwuQtRgB"}}}
+{"type":"reasoning-delta","id":"0","delta":" me to check the weather in Barcelona and Rome, and then recommend which city to visit. I need to:\n1. Get the weather for Barcelona\n2. Get the weather for Rome"}
+{"type":"reasoning-delta","id":"0","delta":"\n3. Compare them and make a recommendation\n\nSince these two weather checks are independent of each other, I can"}
+{"type":"reasoning-delta","id":"0","delta":" make both calls in the same function_calls block."}
+{"type":"reasoning-delta","id":"0","delta":"","providerMetadata":{"anthropic":{"signature":"EsYECpQBCBAYAipAVYOM5Cv2VtKBaoSEWOEVuRG4bnf1TH20Jso4tC+yj95UeeQlyPr59h1Wx9x7D39K8BIvcPJ/eWhfpMXdKZLtCTIaY2xhdWRlLXNvbm5ldC00LTUtMjAyNTA5Mjk4AEIIdGhpbmtpbmdaJDQ0MjEwYjhmLTkwZDctNDEyMS04MjIxLTdiYjg1YjVmYmQ1OBIMy9JmWbAp4fqpI7jzGgw+6C9C795F0oANSVYiMBreVjbPj612rFe9U8U60kRbY9+m8Bo+FLIktW31s/Bq8L0K6KKPycL8xYFLe9Cd1CreAl2YPLwGqcfN4VOuFqnuYfgq3fW7YH0a6KhL/UpabFXj4q76kL2+vnKQycwo2j8yo9ykNr44GuumtyByqo0Agkh2BRoOpqAtsP0Sv5cyhOEFxVgaE5ugcjXc8xWP4Uwg9XN+7vXI4WjotXxIq29vN5LA/EY+EndZjsgv8IVTHLvQBGrvd6vInFWksFL4CYDv0ScFTHpq/DYeFMrfYr9YhryuSFT8alLccZgzx0XmnrRdOTdZ33KK1CnNL2pCbmOCcrJYnl6vH3HmHf9FwElKLbD8/0Sj6Qps+lLiykTRFqilFpO2QFzBV43/vkel/NgKCzsPRwdvOcOgBjJX7rvDEYBxDvZBD2PsxS7IGs579gqcamKKWFAqcZY0dCMElB1bZndB3uiVsV7vNniEeR3rNXhqfKOmURnCvyHlAQIebfHXR6cSqObxKMWuMvxTYPjo/GkH1hZhdXwbaNQKGrgSGAE="}}}
 {"type":"reasoning-end","id":"0"}
 {"type":"text-start","id":"1"}
-{"type":"text-delta","id":"1","delta":"I'll check the weather in both cities for you."}
+{"type":"text-delta","id":"1","delta":"I'll check the weather in both Barcelona and Rome for you."}
 {"type":"text-end","id":"1"}
-{"type":"tool-input-start","toolCallId":"toolu_01JmbRxQzRkb8DY7v8iTpWPP","toolName":"get_weather"}
-{"type":"tool-input-delta","toolCallId":"toolu_01JmbRxQzRkb8DY7v8iTpWPP","inputTextDelta":"{\"city\": \"Barcelona"}
-{"type":"tool-input-delta","toolCallId":"toolu_01JmbRxQzRkb8DY7v8iTpWPP","inputTextDelta":"\"}"}
-{"type":"tool-input-available","toolCallId":"toolu_01JmbRxQzRkb8DY7v8iTpWPP","toolName":"get_weather","input":{"city":"Barcelona"},"providerMetadata":{"anthropic":{"caller":{"type":"direct"}}}}
-{"type":"tool-input-start","toolCallId":"toolu_01T7bP6Y9QNFVankU3jHcdrq","toolName":"get_weather"}
-{"type":"tool-input-delta","toolCallId":"toolu_01T7bP6Y9QNFVankU3jHcdrq","inputTextDelta":"{\"city\": \"Rome"}
-{"type":"tool-input-delta","toolCallId":"toolu_01T7bP6Y9QNFVankU3jHcdrq","inputTextDelta":"\"}"}
-{"type":"tool-input-available","toolCallId":"toolu_01T7bP6Y9QNFVankU3jHcdrq","toolName":"get_weather","input":{"city":"Rome"},"providerMetadata":{"anthropic":{"caller":{"type":"direct"}}}}
-{"type":"tool-output-available","toolCallId":"toolu_01JmbRxQzRkb8DY7v8iTpWPP","output":{"temperature":32,"conditions":"sunny","weekend_forecast":"clear skies, 30-34C"},"providerMetadata":{"anthropic":{"caller":{"type":"direct"}}}}
-{"type":"tool-output-available","toolCallId":"toolu_01T7bP6Y9QNFVankU3jHcdrq","output":{"temperature":29,"conditions":"partly cloudy","weekend_forecast":"scattered showers, 25-30C"},"providerMetadata":{"anthropic":{"caller":{"type":"direct"}}}}
+{"type":"tool-input-start","toolCallId":"toolu_01Kpx6fhtzbVUhTLpK5xK5hw","toolName":"get_weather"}
+{"type":"tool-input-delta","toolCallId":"toolu_01Kpx6fhtzbVUhTLpK5xK5hw","inputTextDelta":"{\"city\": \"Barcelona"}
+{"type":"tool-input-delta","toolCallId":"toolu_01Kpx6fhtzbVUhTLpK5xK5hw","inputTextDelta":"\"}"}
+{"type":"tool-input-available","toolCallId":"toolu_01Kpx6fhtzbVUhTLpK5xK5hw","toolName":"get_weather","input":{"city":"Barcelona"},"providerMetadata":{"anthropic":{"caller":{"type":"direct"}}}}
+{"type":"tool-input-start","toolCallId":"toolu_01H4PmG4vKw4pE6gPU7NnZEK","toolName":"get_weather"}
+{"type":"tool-input-delta","toolCallId":"toolu_01H4PmG4vKw4pE6gPU7NnZEK","inputTextDelta":"{\"city\": \"Rome"}
+{"type":"tool-input-delta","toolCallId":"toolu_01H4PmG4vKw4pE6gPU7NnZEK","inputTextDelta":"\"}"}
+{"type":"tool-input-available","toolCallId":"toolu_01H4PmG4vKw4pE6gPU7NnZEK","toolName":"get_weather","input":{"city":"Rome"},"providerMetadata":{"anthropic":{"caller":{"type":"direct"}}}}
+{"type":"tool-output-available","toolCallId":"toolu_01Kpx6fhtzbVUhTLpK5xK5hw","output":{"temperature":32,"conditions":"sunny","weekend_forecast":"clear skies, 30-34C"},"providerMetadata":{"anthropic":{"caller":{"type":"direct"}}}}
+{"type":"tool-output-available","toolCallId":"toolu_01H4PmG4vKw4pE6gPU7NnZEK","output":{"temperature":29,"conditions":"partly cloudy","weekend_forecast":"scattered showers, 25-30C"},"providerMetadata":{"anthropic":{"caller":{"type":"direct"}}}}
 {"type":"finish-step"}
 {"type":"start-step"}
 {"type":"text-start","id":"0"}
 {"type":"text-delta","id":"0","delta":"Based"}
-{"type":"text-delta","id":"0","delta":" on the weather forecasts, here's my recommendation:\n\n**Barcelona** is the clear winner for this weekend! "}
-{"type":"text-delta","id":"0","delta":"🌞\n\n**Barcelona:**\n- Current: 32°C and sunny\n- Weekend forecast: Clear skies with"}
-{"type":"text-delta","id":"0","delta":" temperatures 30-34°C\n- Perfect beach weather and ideal for outdoor sightseeing"}
-{"type":"text-delta","id":"0","delta":"\n\n**Rome:**\n- Current: 29°C and partly cloudy\n- Weekend forecast: Scattered showers with temperatures 25-30°C\n- The rain could dis"}
-{"type":"text-delta","id":"0","delta":"rupt outdoor activities and sightseeing\n\n**Recommendation:** Visit **Barcelona** this weekend. You"}
-{"type":"text-delta","id":"0","delta":"'ll have beautiful clear weather perfect for exploring the city, enjoying the beaches, visiting"}
-{"type":"text-delta","id":"0","delta":" Park Güell, strolling Las Ramblas, and dining at outdoor cafés. Rome would be lovely"}
-{"type":"text-delta","id":"0","delta":" too, but the scattered showers might put a damper on your plans. Save Rome for a"}
-{"type":"text-delta","id":"0","delta":" weekend with better weather!"}
+{"type":"text-delta","id":"0","delta":" on the weather forecasts:\n\n**Barcelona:**\n- Current: 32°C and sunny\n- Weekend: Clear skies, 30-34°C\n\n**Rome:**\n- Current: "}
+{"type":"text-delta","id":"0","delta":"29°C and partly cloudy\n- Weekend: Scattered showers, 25-30°C\n\n**Recommendation: Barcelona** ☀️\n\nI'd"}
+{"type":"text-delta","id":"0","delta":" recommend visiting Barcelona this weekend! Here's why:\n- **Perfect weather**: Clear skies and sunny conditions throughout the weekend"}
+{"type":"text-delta","id":"0","delta":"\n- **Warm temperatures**: Ideal for enjoying the beaches, outdoor dining, and walking"}
+{"type":"text-delta","id":"0","delta":" around the Gothic Quarter\n- **No rain**: Unlike Rome's scattered showers, you won"}
+{"type":"text-delta","id":"0","delta":"'t need to worry about your plans being disrupted\n\nBarcelona's Mediterranean climate will give you consistent"}
+{"type":"text-delta","id":"0","delta":", beautiful weather perfect for sightseeing, beach time, and exploring the city's amazing architecture ("}
+{"type":"text-delta","id":"0","delta":"Sagrada Familia, Park Güell, etc.). Rome will still be pleasant, but the scattered"}
+{"type":"text-delta","id":"0","delta":" showers could interrupt outdoor activities."}
 {"type":"text-end","id":"0"}
 {"type":"finish-step"}
 {"type":"finish","finishReason":"stop"}

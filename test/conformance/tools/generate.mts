@@ -31,6 +31,7 @@ import {
   loadConfig,
   mockId,
   normalizeRequestSnapshot,
+  unsupportedGenerateFields,
   writeRequestSnapshots,
 } from "./common.mts";
 
@@ -61,6 +62,10 @@ function extractEventType(json: string): string {
   } catch {
     return "unknown";
   }
+}
+
+function loadGenerateFixture(dir: string): string {
+  return readFileSync(join(dir, "input.response.json"), "utf8");
 }
 
 function fixtureToSSE(fixture: string): string {
@@ -203,6 +208,52 @@ async function startReplayServer(
   });
 }
 
+async function startGenerateReplayServer(
+  providerName: string,
+  fixture: string,
+): Promise<{ port: number; close: () => Promise<void>; requests: RequestSnapshot[] }> {
+  const requests: RequestSnapshot[] = [];
+  let served = false;
+  const server = createServer((req: IncomingMessage, res: ServerResponse) => {
+    const chunks: Buffer[] = [];
+    req.on("data", (chunk: Buffer) => chunks.push(chunk));
+    req.on("end", () => {
+      if (served) {
+        res.writeHead(500);
+        res.end("Generate fixture already served");
+        return;
+      }
+      try {
+        requests.push(
+          normalizeRequestSnapshot(
+            providerName,
+            req,
+            Buffer.concat(chunks).toString("utf8"),
+          ),
+        );
+      } catch (err) {
+        res.writeHead(400);
+        res.end(`Invalid request snapshot: ${err}`);
+        return;
+      }
+      served = true;
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(fixture);
+    });
+  });
+
+  return new Promise(resolve => {
+    server.listen(0, "127.0.0.1", () => {
+      const addr = server.address() as { port: number };
+      resolve({
+        port: addr.port,
+        requests,
+        close: () => new Promise<void>(done => server.close(() => done())),
+      });
+    });
+  });
+}
+
 // --- Test Case Discovery ---
 
 function discoverTestCases(): TestCase[] {
@@ -284,6 +335,72 @@ function createModel(
 
 // --- Generate Expected Output ---
 
+function generateResultSnapshot(result: any): Record<string, unknown> {
+  const bedrockMetadata = result.providerMetadata?.bedrock;
+  return {
+    content: result.content,
+    finishReason: result.finishReason,
+    usage: result.usage,
+    ...(bedrockMetadata ? { providerMetadata: { bedrock: bedrockMetadata } } : {}),
+    ...(result.warnings?.length ? { warnings: result.warnings } : {}),
+  };
+}
+
+async function generateExpectedResponse(tc: TestCase): Promise<void> {
+  const cfg = loadConfig(tc.dir);
+  if (tc.provider !== "bedrock") {
+    throw new Error("operation: generate is currently supported only for Bedrock");
+  }
+  const unsupported = unsupportedGenerateFields(cfg);
+  if (unsupported.length > 0) {
+    throw new Error(`operation: generate does not support: ${unsupported.join(", ")}`);
+  }
+  const fixture = loadGenerateFixture(tc.dir);
+  const { port, close, requests } = await startGenerateReplayServer(tc.provider, fixture);
+
+  try {
+    const model = createModel(tc.provider, cfg.model, port) as any;
+    const prompt = cfg.messages
+      ? [
+          ...(cfg.system ? [{ role: "system", content: cfg.system }] : []),
+          ...(buildMessages(cfg, cfg.prompt ?? "test") ?? []),
+        ]
+      : [
+          ...(cfg.system ? [{ role: "system", content: cfg.system }] : []),
+          {
+            role: "user",
+            content: [{ type: "text", text: cfg.prompt ?? "test" }],
+          },
+        ];
+    const responseFormat = cfg.responseFormat
+      ? {
+          type: "json",
+          schema: cfg.responseFormat.schema,
+          ...(cfg.responseFormat.name ? { name: cfg.responseFormat.name } : {}),
+          ...(cfg.responseFormat.description
+            ? { description: cfg.responseFormat.description }
+            : {}),
+        }
+      : undefined;
+
+    const result = await model.doGenerate({
+      prompt,
+      ...(responseFormat ? { responseFormat } : {}),
+      ...(cfg.providerOptions ? { providerOptions: cfg.providerOptions } : {}),
+      ...(cfg.headers ? { headers: cfg.headers } : {}),
+    });
+
+    writeFileSync(
+      join(tc.dir, "expected-generate.json"),
+      JSON.stringify(generateResultSnapshot(result), null, 2) + "\n",
+    );
+    writeRequestSnapshots(join(tc.dir, "expected-requests.jsonl"), requests);
+    console.log(`  OK: generate response, ${requests.length} request(s)`);
+  } finally {
+    await close();
+  }
+}
+
 function toProviderUsage(usage: LanguageModelUsage) {
   return {
     inputTokens: {
@@ -355,6 +472,10 @@ function normalizeOpenAIApprovalToolCallIds(
 
 async function generateExpected(tc: TestCase): Promise<void> {
   const cfg = loadConfig(tc.dir);
+  if (cfg.operation === "generate") {
+    await generateExpectedResponse(tc);
+    return;
+  }
   const fixtures = loadFixtures(tc.dir);
 
   if (fixtures.length === 0) {

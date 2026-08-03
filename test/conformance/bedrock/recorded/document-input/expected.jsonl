@@ -1,8 +1,28 @@
 {"type":"start"}
 {"type":"start-step"}
 {"type":"text-start","id":"0"}
-{"type":"text-delta","id":"0","delta":"p"}
-{"type":"text-delta","id":"0","delta":"ong"}
+{"type":"text-delta","id":"0","delta":"#"}
+{"type":"text-delta","id":"0","delta":" Document"}
+{"type":"text-delta","id":"0","delta":" Summary"}
+{"type":"text-delta","id":"0","delta":"\n\nThe"}
+{"type":"text-delta","id":"0","delta":" document is"}
+{"type":"text-delta","id":"0","delta":" a simple"}
+{"type":"text-delta","id":"0","delta":" one"}
+{"type":"text-delta","id":"0","delta":"-page PDF"}
+{"type":"text-delta","id":"0","delta":" containing"}
+{"type":"text-delta","id":"0","delta":" only"}
+{"type":"text-delta","id":"0","delta":" the"}
+{"type":"text-delta","id":"0","delta":" text \"Hello"}
+{"type":"text-delta","id":"0","delta":" Be"}
+{"type":"text-delta","id":"0","delta":"drock\""}
+{"type":"text-delta","id":"0","delta":" displaye"}
+{"type":"text-delta","id":"0","delta":"d in the"}
+{"type":"text-delta","id":"0","delta":" center of the page. There is"}
+{"type":"text-delta","id":"0","delta":" no additional"}
+{"type":"text-delta","id":"0","delta":" content, data"}
+{"type":"text-delta","id":"0","delta":", or information"}
+{"type":"text-delta","id":"0","delta":" provide"}
+{"type":"text-delta","id":"0","delta":"d."}
 {"type":"text-end","id":"0"}
 {"type":"finish-step"}
 {"type":"finish","finishReason":"stop"}

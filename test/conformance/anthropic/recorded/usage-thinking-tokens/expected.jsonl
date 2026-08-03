@@ -1,10 +1,10 @@
 {"type":"start"}
 {"type":"start-step"}
 {"type":"reasoning-start","id":"0"}
-{"type":"reasoning-delta","id":"0","delta":"","providerMetadata":{"anthropic":{"signature":"CAIS+QEKhwEIEBgCKkCdbfcx9RzJTwhABVFUuT2IFaMLdtLzIl7y8k1JO1EAAY0sPzilFWfvEzYPBe9rzjoEXgtG2Mrs9LXn8GjuXkfPMg1jbGF1ZGUtb3B1cy01OAFCCHRoaW5raW5nWiQ0NDIxMGI4Zi05MGQ3LTQxMjEtODIyMS03YmI4NWI1ZmJkNTgSDDhRjPIldb0Awmky9xoMq8PLreqaM80eO389IjArFoGLMSvgoG+7ajoLCv6O6/SZatt8BZn4l+74PiwFgiJj4cRlOmS7pCPldp8yQuoqHw/lUsL3H8tC3dndm4J92pnbBUtFYaiTPPbiYmDYP5gYAQ=="}}}
+{"type":"reasoning-delta","id":"0","delta":"","providerMetadata":{"anthropic":{"signature":"CAIS+AEKhwEIEBgCKkAYUCyW+dWzNY5/wSPcE3iyhy13e8GFnsBv/RNJrfCg3Ujm3RfePECGxO7CNg/0aTCFgP2ATZ7Men6LIO62v1giMg1jbGF1ZGUtb3B1cy01OAFCCHRoaW5raW5nWiQ0NDIxMGI4Zi05MGQ3LTQxMjEtODIyMS03YmI4NWI1ZmJkNTgSDKc3DXDx+Tlqpa1PQhoM5V+UtzUmOWH9kUBYIjBPM3Mo7o30TQX9GmZSJQMorQMU5WvDuv8BLQjYtK/J4fp6P+B4w2tHDk+Ev0OspBUqHv2uESurlJgW9J83NOy1QEq/K0t2OOlKKnAfWBx8ZRgB"}}}
 {"type":"reasoning-end","id":"0"}
 {"type":"text-start","id":"1"}
-{"type":"text-delta","id":"1","delta":"17 × 23 = (17 × 20) + (17 × 3) = 340 + 51\n\n**391**"}
+{"type":"text-delta","id":"1","delta":"17 × 23 = 391"}
 {"type":"text-end","id":"1"}
 {"type":"finish-step"}
 {"type":"finish","finishReason":"stop"}
