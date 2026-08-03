@@ -24,7 +24,7 @@
     "platformAutomerge": true,
     "packageRules": [
       {
-        "description": "Ignore self-referential dependency (replace directive makes the version cosmetic)",
+        "description": "Ignore self-referential dependency (the release workflow repoints nested modules at each published core version)",
         "matchManagers": ["gomod"],
         "matchPackageNames": ["github.com/grafana/ai-sdk"],
         "enabled": false
