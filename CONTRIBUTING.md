@@ -29,6 +29,7 @@ for AI coding agents but is the most complete reference for humans too.
 - [Testing](#testing)
 - [Documentation: where things go](#documentation-where-things-go)
 - [Submitting a pull request](#submitting-a-pull-request)
+- [Releases and independent modules](#releases-and-independent-modules)
 - [Dependency management](#dependency-management)
 - [Reporting security issues](#reporting-security-issues)
 - [License](#license)
@@ -423,9 +424,10 @@ mise run build      # verify modules and examples compile
 Checklist:
 
 1. **Commits are signed.** See [Before you contribute](#before-you-contribute).
-2. **Title uses a conventional commit prefix** (`feat:`, `fix:`, `docs:`,
-   `refactor:`, `test:`, `chore:`, `ci:`, `build:`, `perf:`, `style:`). Write it
-   for a reader with no other context.
+2. **Every commit is a Conventional Commit** (`feat:`, `fix:`, `docs:`,
+   `refactor:`, `test:`, `chore:`, `ci:`, `build:`, `perf:`, `style:`). Write
+   them for a reader with no other context: they become the released changelog.
+   See [Releases and independent modules](#releases-and-independent-modules).
 3. **Description** explains what changed, why, and how you validated it. For
    parity-sensitive work, name the upstream package and version you compared
    against.
@@ -435,11 +437,42 @@ Checklist:
    `upstream.yaml`, `PARITY.md`, and any regenerated fixtures.
 6. **OpenSpec change is archived** if the pull request touches `openspec/`.
 7. **Docs** are updated for any user-visible change, in the right surface.
-8. **Branch is synced** with `main`.
+8. **Release intent** is carried by the commit types, and is verifiably correct
+   for the modules the pull request touches.
+9. **Branch is synced** with `main`.
 
 Reviewers are assigned automatically from
 [`.github/CODEOWNERS`](.github/CODEOWNERS). Community pull requests need a
 maintainer to trigger CI.
+
+## Releases and independent modules
+
+Core, providers, and middleware are released independently as Go modules.
+Versions, changelogs, tags, and GitHub Releases are produced by
+[release-please](https://github.com/googleapis/release-please) from the
+Conventional Commits that land on `main`, so a pull request records its release
+intent by using the right commit type:
+
+- `fix:` and `perf:` produce a patch release.
+- `feat:` produces a minor release.
+- `feat!:` or a `BREAKING CHANGE:` footer produces a major release.
+- `chore:`, `ci:`, `docs:`, `refactor:`, `test:`, and `build:` produce no
+  release.
+
+A commit is attributed to a module by the files it touches, so a change under
+`providers/openai/` releases only that provider. While the modules are in the
+`alpha` channel, each release advances the prerelease counter
+(`v0.1.0-alpha.1` to `v0.1.0-alpha.2`).
+
+Validate the configuration after adding a module or changing tag settings:
+
+```bash
+mise run release-check      # config, tag shapes, and publishability
+mise run release-preview    # dry-run of the next release pull request
+```
+
+Maintainers merge the `chore(main): release Go modules` pull request to publish.
+The complete workflow is in the [release runbook](release/README.md).
 
 ## Dependency management
 
