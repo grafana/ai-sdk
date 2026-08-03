@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/grafana/ai-sdk"
+	"github.com/grafana/ai-sdk/output"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/grafana/ai-sdk/schema"
 	"github.com/stretchr/testify/require"
@@ -72,6 +73,29 @@ func TestUIConformance_InvalidProviderToolInput(t *testing.T) {
 		aisdk.WithTools(aisdk.ToolSet{
 			"web_search": {InputSchema: inputSchema},
 		}),
+	)
+	var actual []map[string]any
+	for chunk := range result.ToUIMessageStream(
+		aisdk.WithUIMessageStreamGenerateID(func() string { return "message-1" }),
+	) {
+		data, err := json.Marshal(chunk)
+		require.NoError(t, err)
+		var decoded map[string]any
+		require.NoError(t, json.Unmarshal(data, &decoded))
+		actual = append(actual, decoded)
+	}
+
+	require.Equal(t, expected, actual)
+}
+
+func TestUIConformance_TextMetadataOnlyDelta(t *testing.T) {
+	fixtureDir := filepath.Join("ui", "text-metadata-only-delta")
+	parts := loadUIFixtureParts(t, filepath.Join(fixtureDir, "input.jsonl"))
+	expected := loadUIExpected(t, filepath.Join(fixtureDir, "expected.jsonl"))
+
+	result := aisdk.StreamText(context.Background(), uiFixtureModel{parts: parts},
+		aisdk.WithModelMessages(provider.UserText("test")),
+		aisdk.WithOutput(output.JSON()),
 	)
 	var actual []map[string]any
 	for chunk := range result.ToUIMessageStream(

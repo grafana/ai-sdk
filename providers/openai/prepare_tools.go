@@ -229,8 +229,14 @@ func webSearchTool(t provider.Tool) *responses.WebSearchToolParam {
 	if size := stringArg(t.Args, "searchContextSize"); size != "" {
 		ws.SearchContextSize = responses.WebSearchToolSearchContextSize(size)
 	}
-	if allowedDomains := stringSliceNestedArg(t.Args, "filters", "allowedDomains"); len(allowedDomains) > 0 {
-		ws.Filters = responses.WebSearchToolFiltersParam{AllowedDomains: allowedDomains}
+	allowedDomains := stringSliceNestedArg(t.Args, "filters", "allowedDomains")
+	blockedDomains := stringSliceNestedArg(t.Args, "filters", "blockedDomains")
+	if len(allowedDomains) > 0 || len(blockedDomains) > 0 {
+		filters := responses.WebSearchToolFiltersParam{AllowedDomains: allowedDomains}
+		if len(blockedDomains) > 0 {
+			filters.SetExtraFields(map[string]any{"blocked_domains": blockedDomains})
+		}
+		ws.Filters = filters
 	}
 	if loc, ok := userLocationArg[responses.WebSearchToolUserLocationParam](t.Args); ok {
 		ws.UserLocation = loc

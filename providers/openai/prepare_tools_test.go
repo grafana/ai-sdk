@@ -152,6 +152,27 @@ func TestPrepareTools_WebSearchAutoIncludesSources(t *testing.T) {
 	assert.Contains(t, include, "web_search_call.action.sources")
 }
 
+func TestPrepareTools_WebSearchBlockedDomainsOnly(t *testing.T) {
+	body, warnings := buildBody(t, "gpt-4o", provider.CallOptions{
+		Prompt: []provider.Message{provider.UserText("hi")},
+		Tools: []provider.Tool{{
+			Type: provider.ToolTypeProvider,
+			ID:   toolIDWebSearch,
+			Name: "web_search",
+			Args: map[string]json.RawMessage{
+				"filters": json.RawMessage(`{"blockedDomains":["example.com"]}`),
+			},
+		}},
+	})
+	require.Empty(t, warnings)
+
+	tools := toolsArray(t, body)
+	require.Len(t, tools, 1)
+	filters := tools[0]["filters"].(map[string]any)
+	assert.NotContains(t, filters, "allowed_domains")
+	assert.Equal(t, []any{"example.com"}, filters["blocked_domains"])
+}
+
 func TestPrepareTools_CodeInterpreterAutoIncludesOutputs(t *testing.T) {
 	body, _ := buildBody(t, "gpt-4o", provider.CallOptions{
 		Prompt: []provider.Message{provider.UserText("hi")},
@@ -229,7 +250,7 @@ func TestPrepareTools_ProviderToolArgs(t *testing.T) {
 				Name: "search",
 				Args: map[string]json.RawMessage{
 					"externalWebAccess": json.RawMessage(`true`),
-					"filters":           json.RawMessage(`{"allowedDomains":["grafana.com"]}`),
+					"filters":           json.RawMessage(`{"allowedDomains":["grafana.com"],"blockedDomains":["example.com"]}`),
 					"searchContextSize": json.RawMessage(`"high"`),
 					"userLocation":      json.RawMessage(`{"type":"approximate","country":"US","city":"New York"}`),
 				},
@@ -310,6 +331,7 @@ func TestPrepareTools_ProviderToolArgs(t *testing.T) {
 	assert.Equal(t, true, webSearch["external_web_access"])
 	assert.Equal(t, "high", webSearch["search_context_size"])
 	assert.Equal(t, []any{"grafana.com"}, webSearch["filters"].(map[string]any)["allowed_domains"])
+	assert.Equal(t, []any{"example.com"}, webSearch["filters"].(map[string]any)["blocked_domains"])
 	assert.Equal(t, "US", webSearch["user_location"].(map[string]any)["country"])
 
 	codeInterpreter := tools[2]

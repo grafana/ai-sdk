@@ -76,7 +76,7 @@ func rejectsNativeStructuredOutput(modelID string) bool {
 }
 
 func usesJSONInstructionForStructuredOutput(modelID string) bool {
-	return strings.Contains(modelID, "claude-opus-4-7") || strings.Contains(modelID, "claude-opus-4-8")
+	return rejectsNewerSchemaFields(modelID)
 }
 
 type anthropicReasoningCapabilities struct {

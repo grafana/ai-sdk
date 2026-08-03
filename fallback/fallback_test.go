@@ -69,12 +69,12 @@ func TestDoGenerate(t *testing.T) {
 		}
 		secondary := &mockModel{
 			providerName: "anthropic.vertex",
-			modelID:      "claude-sonnet-4-6",
+			modelID:      "claude-sonnet-4-8",
 			doGenerate: func(_ context.Context, _ provider.CallOptions) (*provider.GenerateResult, error) {
 				return &provider.GenerateResult{
 					FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop},
 					Response: &provider.GenerateResponse{
-						ResponseMetadata: provider.ResponseMetadata{ModelID: "claude-sonnet-4-6", Provider: "anthropic.vertex"},
+						ResponseMetadata: provider.ResponseMetadata{ModelID: "claude-sonnet-4-8", Provider: "anthropic.vertex"},
 					},
 				}, nil
 			},
@@ -85,6 +85,7 @@ func TestDoGenerate(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, result.Response)
 		assert.Equal(t, "anthropic.vertex", result.Response.Provider, "served (fallback) provider must be forwarded")
+		assert.Equal(t, "claude-sonnet-4-8", result.Response.ModelID, "served (fallback) model must be forwarded")
 	})
 
 	t.Run("PrimarySucceeds", func(t *testing.T) {
@@ -235,7 +236,8 @@ func TestDoStream(t *testing.T) {
 		primaryCh <- provider.StreamPart{Type: provider.PartError, APICallError: provider.NewAPICallError(provider.APICallErrorOptions{Message: "model not found", StatusCode: 503})}
 		close(primaryCh)
 
-		secondaryCh := make(chan provider.StreamPart, 2)
+		secondaryCh := make(chan provider.StreamPart, 3)
+		secondaryCh <- provider.StreamPart{Type: provider.PartResponseMeta, ModelID: "fallback-model", Provider: "secondary"}
 		secondaryCh <- provider.StreamPart{Type: provider.PartTextDelta, Delta: "hello"}
 		secondaryCh <- provider.StreamPart{Type: provider.PartFinish}
 		close(secondaryCh)
@@ -259,10 +261,13 @@ func TestDoStream(t *testing.T) {
 		for p := range got.Stream {
 			parts = append(parts, p)
 		}
-		require.Len(t, parts, 2)
-		assert.Equal(t, provider.PartTextDelta, parts[0].Type)
-		assert.Equal(t, "hello", parts[0].Delta)
-		assert.Equal(t, provider.PartFinish, parts[1].Type)
+		require.Len(t, parts, 3)
+		assert.Equal(t, provider.PartResponseMeta, parts[0].Type)
+		assert.Equal(t, "fallback-model", parts[0].ModelID)
+		assert.Equal(t, "secondary", parts[0].Provider)
+		assert.Equal(t, provider.PartTextDelta, parts[1].Type)
+		assert.Equal(t, "hello", parts[1].Delta)
+		assert.Equal(t, provider.PartFinish, parts[2].Type)
 	})
 
 	t.Run("PrimaryStreamError_DeciderRejects", func(t *testing.T) {

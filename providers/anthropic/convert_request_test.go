@@ -312,9 +312,10 @@ func TestBuildParams_Fallbacks(t *testing.T) {
 		require.NoError(t, err)
 		assert.Empty(t, warnings)
 		assert.Empty(t, br.requestOptions)
-		require.Len(t, p.Fallbacks, 1)
-		assert.Equal(t, sdk.Model("claude-sonnet-5"), p.Fallbacks[0].Model)
-		assert.Equal(t, int64(2048), p.Fallbacks[0].MaxTokens.Value)
+		require.Len(t, p.Fallbacks.OfBetaFallbackArray, 1)
+		fallback := p.Fallbacks.OfBetaFallbackArray[0]
+		assert.Equal(t, sdk.Model("claude-sonnet-5"), fallback.Model)
+		assert.Equal(t, int64(2048), fallback.MaxTokens.Value)
 		assert.Contains(t, p.Betas, serverSideFallbackExplicitBeta)
 	})
 

@@ -187,24 +187,25 @@ func TestBuildRequest_FunctionToolStrict(t *testing.T) {
 	strictTrue := true
 	strictFalse := false
 	tests := []struct {
-		name    string
-		modelID string
-		strict  *bool
-		want    *bool
+		name        string
+		modelID     string
+		strict      *bool
+		want        *bool
+		wantWarning bool
 	}{
 		{name: "absent", modelID: testAnthropicModel},
 		{name: "true", modelID: testAnthropicModel, strict: &strictTrue, want: &strictTrue},
 		{name: "false", modelID: testAnthropicModel, strict: &strictFalse, want: &strictFalse},
-		{name: "unsupported opus 4.7 true", modelID: "anthropic.claude-opus-4-7", strict: &strictTrue},
-		{name: "unsupported opus 4.8 false", modelID: "anthropic.claude-opus-4-8", strict: &strictFalse},
-		{name: "unsupported regional opus 5 true", modelID: "us.anthropic.claude-opus-5", strict: &strictTrue},
-		{name: "unsupported fable 5 false", modelID: "eu.anthropic.claude-fable-5", strict: &strictFalse},
-		{name: "unsupported sonnet 5 true", modelID: "anthropic.claude-sonnet-5", strict: &strictTrue},
+		{name: "unsupported opus 4.7 true", modelID: "anthropic.claude-opus-4-7", strict: &strictTrue, wantWarning: true},
+		{name: "unsupported opus 4.8 false", modelID: "anthropic.claude-opus-4-8", strict: &strictFalse, wantWarning: true},
+		{name: "unsupported regional opus 5 true", modelID: "us.anthropic.claude-opus-5", strict: &strictTrue, wantWarning: true},
+		{name: "unsupported fable 5 false", modelID: "eu.anthropic.claude-fable-5", strict: &strictFalse, wantWarning: true},
+		{name: "unsupported sonnet 5 true", modelID: "anthropic.claude-sonnet-5", strict: &strictTrue, wantWarning: true},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			req, _, _ := mustBuildRequest(t, tc.modelID, provider.CallOptions{
+			req, warnings, _ := mustBuildRequest(t, tc.modelID, provider.CallOptions{
 				Prompt: []provider.Message{provider.UserText("x")},
 				Tools: []provider.Tool{{
 					Type:        provider.ToolTypeFunction,
@@ -218,6 +219,14 @@ func TestBuildRequest_FunctionToolStrict(t *testing.T) {
 			spec := req.ToolConfig.Tools[0].ToolSpec
 			require.NotNil(t, spec)
 			assert.Equal(t, tc.want, spec.Strict)
+			if tc.wantWarning {
+				require.Len(t, warnings, 1)
+				assert.Equal(t, provider.WarnUnsupported, warnings[0].Type)
+				assert.Equal(t, "strict", warnings[0].Feature)
+				assert.Contains(t, warnings[0].Details, "strict mode is not supported")
+			} else {
+				assert.Empty(t, warnings)
+			}
 		})
 	}
 }
@@ -660,23 +669,33 @@ func TestBuildRequest_Opus47And48StructuredOutputFallback(t *testing.T) {
 	}
 
 	t.Run("with user tool injects instruction", func(t *testing.T) {
-		req, _, meta := mustBuildRequest(t, "anthropic.claude-opus-4-8-v1:0", provider.CallOptions{
-			Prompt: []provider.Message{
-				provider.NewSystemMessage("existing system"),
-				provider.UserText("give me JSON"),
-			},
-			Tools:          []provider.Tool{{Type: provider.ToolTypeFunction, Name: "weather", InputSchema: json.RawMessage(`{"type":"object"}`)}},
-			ResponseFormat: &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Schema: schema},
-		})
-		assert.False(t, meta.usesJSONResponseTool)
-		require.NotNil(t, req.ToolConfig)
-		require.Len(t, req.ToolConfig.Tools, 1)
-		assert.Equal(t, "weather", req.ToolConfig.Tools[0].ToolSpec.Name)
-		require.Len(t, req.System, 1)
-		assert.Contains(t, req.System[0].Text, "existing system\n\nJSON schema:")
-		assert.Contains(t, req.System[0].Text, string(schema))
-		assert.Contains(t, req.System[0].Text, "Do not wrap it in markdown fences")
-		assert.NotContains(t, req.AdditionalModelRequestFields, "output_config")
+		for _, modelID := range []string{
+			"anthropic.claude-opus-4-7-v1:0",
+			"anthropic.claude-opus-4-8-v1:0",
+			"us.anthropic.claude-opus-5",
+			"anthropic.claude-fable-5-v1:0",
+			"anthropic.claude-sonnet-5-v1:0",
+		} {
+			t.Run(modelID, func(t *testing.T) {
+				req, _, meta := mustBuildRequest(t, modelID, provider.CallOptions{
+					Prompt: []provider.Message{
+						provider.NewSystemMessage("existing system"),
+						provider.UserText("give me JSON"),
+					},
+					Tools:          []provider.Tool{{Type: provider.ToolTypeFunction, Name: "weather", InputSchema: json.RawMessage(`{"type":"object"}`)}},
+					ResponseFormat: &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Schema: schema},
+				})
+				assert.False(t, meta.usesJSONResponseTool)
+				require.NotNil(t, req.ToolConfig)
+				require.Len(t, req.ToolConfig.Tools, 1)
+				assert.Equal(t, "weather", req.ToolConfig.Tools[0].ToolSpec.Name)
+				require.Len(t, req.System, 1)
+				assert.Contains(t, req.System[0].Text, "existing system\n\nJSON schema:")
+				assert.Contains(t, req.System[0].Text, string(schema))
+				assert.Contains(t, req.System[0].Text, "Do not wrap it in markdown fences")
+				assert.NotContains(t, req.AdditionalModelRequestFields, "output_config")
+			})
+		}
 	})
 
 	t.Run("empty system message is replaced by instruction", func(t *testing.T) {
@@ -941,6 +960,82 @@ func TestBuildRequest_ImageMessage(t *testing.T) {
 	assert.Empty(t, warnings)
 }
 
+func TestBuildRequest_VideoMessage(t *testing.T) {
+	t.Run("inline", func(t *testing.T) {
+		req, warnings, _ := mustBuildRequest(t, testAnthropicModel, provider.CallOptions{
+			Prompt: []provider.Message{
+				provider.NewUserMessage(provider.FilePart("video/mp4", provider.DataContent{Base64: "AAECAw=="})),
+			},
+		})
+		require.Len(t, req.Messages, 1)
+		require.Len(t, req.Messages[0].Content, 1)
+		video := req.Messages[0].Content[0].Video
+		require.NotNil(t, video)
+		assert.Equal(t, "mp4", video.Format)
+		assert.Equal(t, "AAECAw==", video.Source.Bytes)
+		assert.Empty(t, warnings)
+	})
+
+	t.Run("S3", func(t *testing.T) {
+		req, warnings, _ := mustBuildRequest(t, testAnthropicModel, provider.CallOptions{
+			Prompt: []provider.Message{
+				provider.NewUserMessage(provider.FilePart("video/webm", provider.DataContent{URL: "s3://bucket/video.webm"})),
+			},
+		})
+		video := req.Messages[0].Content[0].Video
+		require.NotNil(t, video)
+		assert.Equal(t, "webm", video.Format)
+		require.NotNil(t, video.Source.S3Location)
+		assert.Equal(t, "s3://bucket/video.webm", video.Source.S3Location.URI)
+		assert.Empty(t, warnings)
+	})
+
+	t.Run("unsupported media type", func(t *testing.T) {
+		_, _, _, err := buildRequest(testAnthropicModel, provider.CallOptions{
+			Prompt: []provider.Message{
+				provider.NewUserMessage(provider.FilePart("video/unsupported", provider.DataContent{Base64: "AAECAw=="})),
+			},
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), `video media type "video/unsupported" is not supported`)
+	})
+}
+
+func TestBuildRequest_ToolResultVideo(t *testing.T) {
+	t.Run("inline", func(t *testing.T) {
+		req, warnings, _ := mustBuildRequest(t, testAnthropicModel, toolResultFileCallOptions(provider.ToolResultContentValue{
+			Type:      provider.ToolContentFileData,
+			Data:      "AAECAw==",
+			MediaType: "video/mp4",
+		}))
+		result := req.Messages[0].Content[0].ToolResult
+		require.NotNil(t, result)
+		require.Len(t, result.Content, 1)
+		video := result.Content[0].Video
+		require.NotNil(t, video)
+		assert.Equal(t, "mp4", video.Format)
+		assert.Equal(t, "AAECAw==", video.Source.Bytes)
+		assert.Empty(t, warnings)
+	})
+
+	t.Run("S3", func(t *testing.T) {
+		req, warnings, _ := mustBuildRequest(t, testAnthropicModel, toolResultFileCallOptions(provider.ToolResultContentValue{
+			Type:      provider.ToolContentFileURL,
+			URL:       "s3://bucket/video.mov",
+			MediaType: "video/quicktime",
+		}))
+		result := req.Messages[0].Content[0].ToolResult
+		require.NotNil(t, result)
+		require.Len(t, result.Content, 1)
+		video := result.Content[0].Video
+		require.NotNil(t, video)
+		assert.Equal(t, "mov", video.Format)
+		require.NotNil(t, video.Source.S3Location)
+		assert.Equal(t, "s3://bucket/video.mov", video.Source.S3Location.URI)
+		assert.Empty(t, warnings)
+	})
+}
+
 func TestBuildRequest_TopLevelMediaTypes(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -991,6 +1086,15 @@ func TestBuildRequest_TopLevelMediaTypes(t *testing.T) {
 			check: func(t *testing.T, block contentBlock) {
 				require.NotNil(t, block.Image)
 				assert.Equal(t, "png", block.Image.Format)
+			},
+		},
+		{
+			name:      "video",
+			mediaType: "video",
+			base64:    "AAAAGGZ0eXA=",
+			check: func(t *testing.T, block contentBlock) {
+				require.NotNil(t, block.Video)
+				assert.Equal(t, "mp4", block.Video.Format)
 			},
 		},
 		{

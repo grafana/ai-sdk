@@ -267,6 +267,153 @@ func TestStreamTextPrepareStep_SystemMessages(t *testing.T) {
 	}, state.Messages)
 }
 
+func TestStreamTextPrepareStep_CallSettings(t *testing.T) {
+	t.Run("overrides apply to the current step", func(t *testing.T) {
+		maxOutputTokens := 1
+		temperature := 0.0
+		topP := 0.0
+		topK := 0
+		presencePenalty := 0.0
+		frequencyPenalty := 0.0
+		seed := 0
+		reasoning := provider.ReasoningNone
+		var call provider.CallOptions
+
+		model := &mockModel{streamFunc: func(_ context.Context, opts provider.CallOptions) (*provider.StreamResult, error) {
+			call = opts
+			return &provider.StreamResult{Stream: textStreamParts("done")}, nil
+		}}
+
+		result := StreamText(context.Background(), model,
+			WithModelMessages(provider.UserText("hello")),
+			WithMaxOutputTokens(100),
+			WithTemperature(0.8),
+			WithTopP(0.9),
+			WithTopK(40),
+			WithPresencePenalty(0.4),
+			WithFrequencyPenalty(0.5),
+			WithStopSequences("STOP"),
+			WithSeed(42),
+			WithReasoning(provider.ReasoningHigh),
+			WithPrepareStep(func(PrepareStepState) (*PrepareStepResult, error) {
+				return &PrepareStepResult{
+					MaxOutputTokens:  &maxOutputTokens,
+					Temperature:      &temperature,
+					TopP:             &topP,
+					TopK:             &topK,
+					PresencePenalty:  &presencePenalty,
+					FrequencyPenalty: &frequencyPenalty,
+					StopSequences:    []string{},
+					Seed:             &seed,
+					Reasoning:        &reasoning,
+				}, nil
+			}),
+		)
+		for range result.FullStream() {
+		}
+
+		require.NotNil(t, call.MaxOutputTokens)
+		assert.Equal(t, 1, *call.MaxOutputTokens)
+		require.NotNil(t, call.Temperature)
+		assert.Equal(t, 0.0, *call.Temperature)
+		require.NotNil(t, call.TopP)
+		assert.Equal(t, 0.0, *call.TopP)
+		require.NotNil(t, call.TopK)
+		assert.Equal(t, 0, *call.TopK)
+		require.NotNil(t, call.PresencePenalty)
+		assert.Equal(t, 0.0, *call.PresencePenalty)
+		require.NotNil(t, call.FrequencyPenalty)
+		assert.Equal(t, 0.0, *call.FrequencyPenalty)
+		assert.Empty(t, call.StopSequences)
+		require.NotNil(t, call.Seed)
+		assert.Equal(t, 0, *call.Seed)
+		require.NotNil(t, call.Reasoning)
+		assert.Equal(t, provider.ReasoningNone, *call.Reasoning)
+	})
+
+	t.Run("invalid max output tokens stops before model call", func(t *testing.T) {
+		calls := 0
+		model := &mockModel{streamFunc: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+			calls++
+			return &provider.StreamResult{Stream: textStreamParts("done")}, nil
+		}}
+		maxOutputTokens := 0
+
+		result := StreamText(context.Background(), model,
+			WithModelMessages(provider.UserText("hello")),
+			WithPrepareStep(func(PrepareStepState) (*PrepareStepResult, error) {
+				return &PrepareStepResult{MaxOutputTokens: &maxOutputTokens}, nil
+			}),
+		)
+		for range result.FullStream() {
+		}
+
+		assert.Zero(t, calls)
+		require.Error(t, result.Err())
+		assert.ErrorContains(t, result.Err(), "maxOutputTokens must be >= 1")
+	})
+
+	t.Run("undefined settings fall back to outer settings", func(t *testing.T) {
+		var call provider.CallOptions
+		model := &mockModel{streamFunc: func(_ context.Context, opts provider.CallOptions) (*provider.StreamResult, error) {
+			call = opts
+			return &provider.StreamResult{Stream: textStreamParts("done")}, nil
+		}}
+
+		result := StreamText(context.Background(), model,
+			WithModelMessages(provider.UserText("hello")),
+			WithTemperature(0.7),
+			WithStopSequences("STOP"),
+			WithPrepareStep(func(PrepareStepState) (*PrepareStepResult, error) {
+				return &PrepareStepResult{}, nil
+			}),
+		)
+		for range result.FullStream() {
+		}
+
+		require.NotNil(t, call.Temperature)
+		assert.Equal(t, 0.7, *call.Temperature)
+		assert.Equal(t, []string{"STOP"}, call.StopSequences)
+	})
+
+	t.Run("overrides do not carry to later steps", func(t *testing.T) {
+		var temperatures []float64
+		callCount := 0
+		model := &mockModel{streamFunc: func(_ context.Context, opts provider.CallOptions) (*provider.StreamResult, error) {
+			require.NotNil(t, opts.Temperature)
+			temperatures = append(temperatures, *opts.Temperature)
+			callCount++
+			if callCount < 3 {
+				return &provider.StreamResult{Stream: toolCallStreamParts("lookup", `{}`)}, nil
+			}
+			return &provider.StreamResult{Stream: textStreamParts("done")}, nil
+		}}
+		override := 0.0
+
+		result := StreamText(context.Background(), model,
+			WithModelMessages(provider.UserText("hello")),
+			WithTemperature(0.7),
+			WithTools(ToolSet{"lookup": {
+				InputSchema: testMustSchema(t, `{"type":"object"}`),
+				Execute: func(context.Context, json.RawMessage, ToolExecutionOptions) (json.RawMessage, error) {
+					return json.RawMessage(`{"ok":true}`), nil
+				},
+			}}),
+			WithStopWhen(StepCountIs(3)),
+			WithPrepareStep(func(state PrepareStepState) (*PrepareStepResult, error) {
+				if state.StepNumber == 1 {
+					return &PrepareStepResult{Temperature: &override}, nil
+				}
+				return nil, nil
+			}),
+		)
+		for range result.FullStream() {
+		}
+
+		assert.Equal(t, []float64{0.7, 0, 0.7}, temperatures)
+	})
+}
+
 func TestStreamTextIncompleteProviderStream(t *testing.T) {
 	t.Run("first step without output", func(t *testing.T) {
 		model := &mockModel{

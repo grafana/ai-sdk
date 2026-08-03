@@ -258,11 +258,20 @@ type PrepareStepFunc func(PrepareStepState) (*PrepareStepResult, error)
 
 // PrepareStepResult contains per-step overrides from PrepareStep.
 type PrepareStepResult struct {
-	Model           provider.LanguageModel
-	System          []SystemModelMessage
-	ToolChoice      *provider.ToolChoice
-	ActiveTools     []string
-	Messages        []provider.Message
-	ProviderOptions provider.ProviderOptions
-	Context         any
+	Model            provider.LanguageModel
+	System           []SystemModelMessage
+	ToolChoice       *provider.ToolChoice
+	ActiveTools      []string
+	Messages         []provider.Message
+	ProviderOptions  provider.ProviderOptions
+	Context          any
+	MaxOutputTokens  *int
+	Temperature      *float64
+	TopP             *float64
+	TopK             *int
+	PresencePenalty  *float64
+	FrequencyPenalty *float64
+	StopSequences    []string
+	Seed             *int
+	Reasoning        *provider.ReasoningEffort
 }

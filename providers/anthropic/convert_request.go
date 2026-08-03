@@ -2089,7 +2089,7 @@ func applyFallbacks(p *anthropic.BetaMessageNewParams, fallbacks *FallbackConfig
 		return
 	}
 
-	p.Fallbacks = make([]anthropic.BetaFallbackParam, len(fallbacks.Chain))
+	convertedFallbacks := make([]anthropic.BetaFallbackParam, len(fallbacks.Chain))
 	for i, fallback := range fallbacks.Chain {
 		converted := anthropic.BetaFallbackParam{
 			Model: anthropic.Model(fallback.Model),
@@ -2104,8 +2104,9 @@ func applyFallbacks(p *anthropic.BetaMessageNewParams, fallbacks *FallbackConfig
 		if len(fallback.OutputConfig) > 0 {
 			converted.OutputConfig = param.Override[anthropic.BetaOutputConfigParam](fallback.OutputConfig)
 		}
-		p.Fallbacks[i] = converted
+		convertedFallbacks[i] = converted
 	}
+	p.Fallbacks = anthropic.BetaFallbacksParamUnion{OfBetaFallbackArray: convertedFallbacks}
 	p.Betas = appendBetaUnique(p.Betas, serverSideFallbackExplicitBeta)
 }
 

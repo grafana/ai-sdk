@@ -66,6 +66,7 @@ type converseMessage struct {
 type contentBlock struct {
 	Text             string                 `json:"text,omitempty"`
 	Image            *imageBlock            `json:"image,omitempty"`
+	Video            *videoBlock            `json:"video,omitempty"`
 	Document         *documentBlock         `json:"document,omitempty"`
 	ToolUse          *toolUseBlock          `json:"toolUse,omitempty"`
 	ToolResult       *toolResultBlock       `json:"toolResult,omitempty"`
@@ -80,6 +81,16 @@ type imageBlock struct {
 }
 
 type imageSource struct {
+	Bytes      string           `json:"bytes,omitempty"`
+	S3Location *s3LocationBlock `json:"s3Location,omitempty"`
+}
+
+type videoBlock struct {
+	Format string      `json:"format"`
+	Source videoSource `json:"source"`
+}
+
+type videoSource struct {
 	Bytes      string           `json:"bytes,omitempty"`
 	S3Location *s3LocationBlock `json:"s3Location,omitempty"`
 }
@@ -126,6 +137,7 @@ type toolResultBlock struct {
 type toolResultContent struct {
 	Text     string         `json:"text,omitempty"`
 	Image    *imageBlock    `json:"image,omitempty"`
+	Video    *videoBlock    `json:"video,omitempty"`
 	Document *documentBlock `json:"document,omitempty"`
 }
 

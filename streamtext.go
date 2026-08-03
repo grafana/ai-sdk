@@ -474,6 +474,15 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 		toolChoice := cfg.toolChoice
 		activeTools := cfg.activeTools
 		providerOpts := cfg.providerOptions
+		maxOutputTokens := cfg.maxOutputTokens
+		temperature := cfg.temperature
+		topP := cfg.topP
+		topK := cfg.topK
+		presencePenalty := cfg.presencePenalty
+		frequencyPenalty := cfg.frequencyPenalty
+		stopSequences := cfg.stopSequences
+		seed := cfg.seed
+		reasoning := cfg.reasoning
 		var stepContext any
 
 		// PrepareStep
@@ -519,8 +528,40 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 				if result.ProviderOptions != nil {
 					providerOpts = result.ProviderOptions
 				}
+				if result.MaxOutputTokens != nil {
+					maxOutputTokens = result.MaxOutputTokens
+				}
+				if result.Temperature != nil {
+					temperature = result.Temperature
+				}
+				if result.TopP != nil {
+					topP = result.TopP
+				}
+				if result.TopK != nil {
+					topK = result.TopK
+				}
+				if result.PresencePenalty != nil {
+					presencePenalty = result.PresencePenalty
+				}
+				if result.FrequencyPenalty != nil {
+					frequencyPenalty = result.FrequencyPenalty
+				}
+				if result.StopSequences != nil {
+					stopSequences = result.StopSequences
+				}
+				if result.Seed != nil {
+					seed = result.Seed
+				}
+				if result.Reasoning != nil {
+					reasoning = result.Reasoning
+				}
 				stepContext = result.Context
 			}
+		}
+
+		if maxOutputTokens != nil && *maxOutputTokens < 1 {
+			r.emitError(errors.New("aisdk: maxOutputTokens must be >= 1"), cfg.onError)
+			return
 		}
 
 		stepModel := StepModel{
@@ -558,16 +599,16 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 			Prompt:           providerPrompt,
 			Tools:            provTools,
 			ToolChoice:       toolChoice,
-			MaxOutputTokens:  cfg.maxOutputTokens,
-			Temperature:      cfg.temperature,
-			TopP:             cfg.topP,
-			TopK:             cfg.topK,
-			PresencePenalty:  cfg.presencePenalty,
-			FrequencyPenalty: cfg.frequencyPenalty,
-			StopSequences:    cfg.stopSequences,
+			MaxOutputTokens:  maxOutputTokens,
+			Temperature:      temperature,
+			TopP:             topP,
+			TopK:             topK,
+			PresencePenalty:  presencePenalty,
+			FrequencyPenalty: frequencyPenalty,
+			StopSequences:    stopSequences,
 			ResponseFormat:   responseFormat,
-			Seed:             cfg.seed,
-			Reasoning:        cfg.reasoning,
+			Seed:             seed,
+			Reasoning:        reasoning,
 			IncludeRawChunks: cfg.includeRawChunks,
 			Headers:          cfg.headers,
 			ProviderOptions:  providerOpts,
@@ -860,6 +901,12 @@ loop:
 				outputTextChunk.WriteString(part.Delta)
 				if part.ProviderMetadata != nil {
 					outputTextMeta = part.ProviderMetadata
+				}
+				if part.Delta == "" && part.ProviderMetadata != nil {
+					tsp := StreamTextDelta{ID: part.ID, ProviderMetadata: part.ProviderMetadata}
+					r.emit(tsp)
+					r.callOnChunk(cfg, tsp)
+					continue
 				}
 				parsed := r.emitPartialOutput(cfg.output, textBuilder.String())
 				if parsed != lastPublishedOutput && parsed != "" {
