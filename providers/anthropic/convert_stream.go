@@ -37,6 +37,7 @@ type streamAdapter struct {
 	usesJsonResponseTool   bool
 	isJsonResponseFromTool bool
 	usage                  anthropicUsage
+	metadataFields         map[string]json.RawMessage
 
 	// markCodeExecutionDynamic mirrors upstream
 	// hasWebTool20260209WithoutCodeExecution: when set, code_execution
@@ -61,6 +62,7 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 		if err := a.resetUsage(msg.Usage); err != nil {
 			return err
 		}
+		a.metadataFields = messageMetadataFields(msg.RawJSON())
 		usage := convertAnthropicUsage(a.usage)
 		ch <- provider.StreamPart{
 			Type:       provider.PartResponseMeta,
@@ -437,16 +439,22 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 		if err := a.updateUsage(e.Usage); err != nil {
 			return err
 		}
+		a.metadataFields = mergeMessageDeltaMetadata(a.metadataFields, e.RawJSON())
 		usage := convertAnthropicUsage(a.usage)
 		fr := mapFinishReason(e.Delta.StopReason)
 		if a.isJsonResponseFromTool && e.Delta.StopReason == anthropic.BetaStopReasonToolUse {
 			fr = provider.FinishReason{Unified: provider.FinishReasonStop, Raw: string(e.Delta.StopReason)}
 		}
+		providerMetadata, err := buildAnthropicProviderMetadata(a.metadataFields, a.usage.raw)
+		if err != nil {
+			return err
+		}
 		ch <- provider.StreamPart{
-			Type:         provider.PartFinish,
-			FinishReason: &fr,
-			Usage:        &usage,
-			Warnings:     a.warnings,
+			Type:             provider.PartFinish,
+			FinishReason:     &fr,
+			Usage:            &usage,
+			Warnings:         a.warnings,
+			ProviderMetadata: providerMetadata,
 		}
 	}
 	return nil

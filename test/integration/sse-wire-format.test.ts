@@ -46,6 +46,27 @@ describe("SSE wire format", () => {
     expect(fullText).toBe("Hello, world!");
   });
 
+  it("preserves metadata-only structured text deltas", async () => {
+    const res = await fetchScenario("text-metadata-only-delta");
+    const stream = parseJsonEventStream({
+      stream: res.body!,
+      schema: uiMessageChunkSchema,
+    });
+
+    const chunks: UIMessageChunk[] = [];
+    for await (const value of stream) {
+      expect(value.success).toBe(true);
+      if (value.success) chunks.push(value.value);
+    }
+
+    expect(chunks).toContainEqual({
+      type: "text-delta",
+      id: "text-1",
+      delta: "",
+      providerMetadata: { test: { signature: "test-signature" } },
+    });
+  });
+
   it("invalid provider tool input preserves separate input and provider errors", async () => {
     const res = await fetchScenario("invalid-provider-tool");
     const stream = parseJsonEventStream({

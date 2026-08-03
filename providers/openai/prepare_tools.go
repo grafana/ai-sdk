@@ -157,7 +157,7 @@ func providerTool(t provider.Tool, br *buildResult) (responses.ToolUnionParam, [
 			br.webSearchToolName = t.Name
 		}
 		br.hasWebSearchTool = true
-		return responses.ToolUnionParam{OfWebSearch: webSearchTool(t)}, nil, true, nil
+		return webSearchTool(t), nil, true, nil
 
 	case toolIDWebSearchPreview:
 		if br.webSearchToolName == "" {
@@ -224,19 +224,25 @@ func toolOptions(t provider.Tool) (OpenAIToolOptions, error) {
 	return options, nil
 }
 
-func webSearchTool(t provider.Tool) *responses.WebSearchToolParam {
+func webSearchTool(t provider.Tool) responses.ToolUnionParam {
 	ws := responses.WebSearchToolParam{Type: "web_search"}
+	var explicitFilters map[string]any
 	if size := stringArg(t.Args, "searchContextSize"); size != "" {
 		ws.SearchContextSize = responses.WebSearchToolSearchContextSize(size)
 	}
-	allowedDomains := stringSliceNestedArg(t.Args, "filters", "allowedDomains")
-	blockedDomains := stringSliceNestedArg(t.Args, "filters", "blockedDomains")
-	if len(allowedDomains) > 0 || len(blockedDomains) > 0 {
-		filters := responses.WebSearchToolFiltersParam{AllowedDomains: allowedDomains}
-		if len(blockedDomains) > 0 {
-			filters.SetExtraFields(map[string]any{"blocked_domains": blockedDomains})
+	if rawFilters, ok := rawArg(t.Args, "filters"); ok {
+		var values map[string]json.RawMessage
+		if json.Unmarshal(rawFilters, &values) == nil {
+			allowedDomains, allowedSet := stringSliceArgPresent(values, "allowedDomains")
+			blockedDomains, blockedSet := stringSliceArgPresent(values, "blockedDomains")
+			explicitFilters = map[string]any{}
+			if allowedSet {
+				explicitFilters["allowed_domains"] = allowedDomains
+			}
+			if blockedSet {
+				explicitFilters["blocked_domains"] = blockedDomains
+			}
 		}
-		ws.Filters = filters
 	}
 	if loc, ok := userLocationArg[responses.WebSearchToolUserLocationParam](t.Args); ok {
 		ws.UserLocation = loc
@@ -244,7 +250,14 @@ func webSearchTool(t provider.Tool) *responses.WebSearchToolParam {
 	if externalWebAccess, ok := boolArg(t.Args, "externalWebAccess"); ok {
 		ws.SetExtraFields(map[string]any{"external_web_access": externalWebAccess})
 	}
-	return &ws
+	if explicitFilters != nil {
+		data, _ := json.Marshal(ws)
+		var fields map[string]any
+		_ = json.Unmarshal(data, &fields)
+		fields["filters"] = explicitFilters
+		return param.Override[responses.ToolUnionParam](fields)
+	}
+	return responses.ToolUnionParam{OfWebSearch: &ws}
 }
 
 func webSearchPreviewTool(t provider.Tool) *responses.WebSearchPreviewToolParam {
@@ -571,21 +584,6 @@ func stringMapArg(args map[string]json.RawMessage, key string) map[string]string
 	return m
 }
 
-func stringSliceNestedArg(args map[string]json.RawMessage, objectKey, sliceKey string) []string {
-	if args == nil {
-		return nil
-	}
-	raw, ok := args[objectKey]
-	if !ok {
-		return nil
-	}
-	var obj map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &obj); err != nil {
-		return nil
-	}
-	return stringSliceArg(obj, sliceKey)
-}
-
 func fileSearchRankingArg(args map[string]json.RawMessage) (responses.FileSearchToolRankingOptionsParam, bool) {
 	raw, ok := rawArg(args, "ranking")
 	if !ok {
@@ -767,14 +765,24 @@ func containerNetworkPolicyArg(policy shellNetworkPolicyArg) responses.Container
 }
 
 func stringSliceArg(args map[string]json.RawMessage, key string) []string {
+	values, _ := stringSliceArgPresent(args, key)
+	return values
+}
+
+func stringSliceArgPresent(args map[string]json.RawMessage, key string) ([]string, bool) {
 	if args == nil {
-		return nil
+		return nil, false
 	}
 	raw, ok := args[key]
 	if !ok {
-		return nil
+		return nil, false
 	}
-	var s []string
-	_ = json.Unmarshal(raw, &s)
-	return s
+	var values []string
+	if err := json.Unmarshal(raw, &values); err != nil {
+		return nil, false
+	}
+	if values == nil {
+		values = []string{}
+	}
+	return values, true
 }

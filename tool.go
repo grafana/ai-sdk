@@ -187,6 +187,7 @@ type ToolResult struct {
 	Output           json.RawMessage            `json:"output"`
 	ModelOutput      *provider.ToolResultOutput `json:"-"`
 	IsError          bool                       `json:"isError,omitempty"`
+	Error            error                      `json:"-"`
 	ProviderExecuted bool                       `json:"providerExecuted,omitempty"`
 	ProviderMetadata provider.ProviderMetadata  `json:"providerMetadata,omitempty"`
 	Dynamic          *bool                      `json:"dynamic,omitempty"`

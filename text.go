@@ -16,7 +16,7 @@ type SystemModelMessage struct {
 // NOT the same as UIMessage Part -- this is the model output side.
 // Consumers type-switch on: TextContent, ReasoningContent, SourceContent,
 // FileContent, ReasoningFileContent, ToolCallContent, ToolApprovalRequestContent, ToolApprovalResponseContent,
-// ToolResultContent.
+// ToolResultContent, ToolErrorContent.
 type ContentPart interface {
 	contentPart()
 }
@@ -65,6 +65,8 @@ type ToolCallContent struct {
 	ToolCallID       string                    `json:"toolCallId"`
 	ToolName         string                    `json:"toolName"`
 	Input            json.RawMessage           `json:"input"`
+	Invalid          bool                      `json:"-"`
+	Error            error                     `json:"-"`
 	ProviderExecuted bool                      `json:"providerExecuted,omitempty"`
 	Dynamic          *bool                     `json:"dynamic,omitempty"`
 	Title            string                    `json:"title,omitempty"`
@@ -101,6 +103,20 @@ type ToolResultContent struct {
 }
 
 func (ToolResultContent) contentPart() {}
+
+// ToolErrorContent represents a failed tool execution in the generated content.
+type ToolErrorContent struct {
+	ToolCallID       string                    `json:"toolCallId"`
+	ToolName         string                    `json:"toolName"`
+	Input            json.RawMessage           `json:"input"`
+	Error            any                       `json:"-"`
+	ProviderExecuted bool                      `json:"providerExecuted,omitempty"`
+	Dynamic          *bool                     `json:"dynamic,omitempty"`
+	Title            string                    `json:"title,omitempty"`
+	ProviderMetadata provider.ProviderMetadata `json:"providerMetadata,omitempty"`
+}
+
+func (ToolErrorContent) contentPart() {}
 
 // ResponseMetadata carries metadata about the provider response.
 //
@@ -251,6 +267,8 @@ type PrepareStepState struct {
 	// ResponseMessages contains response messages accumulated before the current
 	// step, including approval-generated tool results from the initial input.
 	ResponseMessages []provider.Message
+	// Context contains the effective runtime context for the current step.
+	Context any
 }
 
 // PrepareStepFunc is a callback that customizes each step before the provider call.

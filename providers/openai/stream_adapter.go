@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -40,10 +41,14 @@ type activeReasoningState struct {
 type streamAdapter struct {
 	warnings     []provider.Warning
 	br           buildResult
+	requestBody  responses.ResponseNewParams
+	response     *http.Response
 	generateID   func() string
 	providerName string
 
-	startEmitted bool
+	startEmitted           bool
+	encounteredStreamError bool
+	finishEmitted          bool
 
 	ongoingToolCalls          map[int64]*ongoingToolCall
 	ongoingAnnotations        []json.RawMessage
@@ -56,10 +61,12 @@ type streamAdapter struct {
 }
 
 // newStreamAdapter constructs a streamAdapter with initialized maps.
-func newStreamAdapter(warnings []provider.Warning, br buildResult, generateID func() string, providerName string) *streamAdapter {
+func newStreamAdapter(warnings []provider.Warning, br buildResult, requestBody responses.ResponseNewParams, response *http.Response, generateID func() string, providerName string) *streamAdapter {
 	return &streamAdapter{
 		warnings:                  warnings,
 		br:                        br,
+		requestBody:               requestBody,
+		response:                  response,
 		generateID:                generateID,
 		providerName:              providerName,
 		ongoingToolCalls:          make(map[int64]*ongoingToolCall),
@@ -193,16 +200,21 @@ func (a *streamAdapter) handleEvent(event responses.ResponseStreamEventUnion, ch
 		a.emitFinish(e.Response, ch)
 
 	case responses.ResponseFailedEvent:
-		fr := provider.FinishReason{Unified: provider.FinishReasonError}
-		ch <- provider.StreamPart{Type: provider.PartFinish, FinishReason: &fr}
+		if !a.encounteredStreamError {
+			if apiErr := openAIStreamEventError(event, a.requestBody, a.response); apiErr != nil {
+				a.encounteredStreamError = true
+				ch <- provider.StreamPart{Type: provider.PartError, APICallError: apiErr}
+			}
+		}
+		a.emitFailedFinish(e.Response, ch)
 
 	case responses.ResponseErrorEvent:
-		ch <- provider.StreamPart{
-			Type: provider.PartError,
-			APICallError: provider.NewAPICallError(provider.APICallErrorOptions{
-				Message: e.Message,
-			}),
+		a.encounteredStreamError = true
+		apiErr := openAIStreamEventError(event, a.requestBody, a.response)
+		if apiErr == nil {
+			apiErr = provider.NewAPICallError(provider.APICallErrorOptions{Message: e.Message})
 		}
+		ch <- provider.StreamPart{Type: provider.PartError, APICallError: apiErr}
 
 	default:
 		a.handleRawEvent(event.RawJSON(), ch)
@@ -692,8 +704,46 @@ func jsonEscape(s string) string {
 
 // emitFinish emits the finish part with usage and finish reason.
 func (a *streamAdapter) emitFinish(resp responses.Response, ch chan<- provider.StreamPart) {
+	if a.finishEmitted {
+		return
+	}
+	a.finishEmitted = true
 	fr := mapFinishReason(resp.IncompleteDetails.Reason, a.hasFunctionCall)
 	usage := convertUsage(resp.Usage, json.RawMessage(resp.Usage.RawJSON()))
+	ch <- provider.StreamPart{
+		Type:             provider.PartFinish,
+		FinishReason:     &fr,
+		Usage:            &usage,
+		ProviderMetadata: responseMeta(a.providerName, &resp),
+	}
+}
+
+func (a *streamAdapter) emitFailedFinish(resp responses.Response, ch chan<- provider.StreamPart) {
+	if a.finishEmitted {
+		return
+	}
+	a.finishEmitted = true
+	fr := provider.FinishReason{Unified: provider.FinishReasonError, Raw: "error"}
+	if resp.IncompleteDetails.Reason != "" {
+		fr = mapFinishReason(resp.IncompleteDetails.Reason, a.hasFunctionCall)
+	}
+	usage := convertUsage(resp.Usage, json.RawMessage(resp.Usage.RawJSON()))
+	ch <- provider.StreamPart{
+		Type:             provider.PartFinish,
+		FinishReason:     &fr,
+		Usage:            &usage,
+		ProviderMetadata: responseMeta(a.providerName, &resp),
+	}
+}
+
+func (a *streamAdapter) emitPendingErrorFinish(ch chan<- provider.StreamPart) {
+	if !a.encounteredStreamError || a.finishEmitted {
+		return
+	}
+	a.finishEmitted = true
+	fr := provider.FinishReason{Unified: provider.FinishReasonError, Raw: "error"}
+	usage := convertUsage(responses.ResponseUsage{}, nil)
+	resp := responses.Response{ID: a.responseID}
 	ch <- provider.StreamPart{
 		Type:             provider.PartFinish,
 		FinishReason:     &fr,

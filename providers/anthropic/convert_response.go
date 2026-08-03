@@ -437,11 +437,16 @@ func convertResponse(msg *anthropic.BetaMessage, mapping toolNameMapping, usesJs
 	if isJsonResponseFromTool && msg.StopReason == anthropic.BetaStopReasonToolUse {
 		fr = provider.FinishReason{Unified: provider.FinishReasonStop, Raw: string(msg.StopReason)}
 	}
+	providerMetadata, err := buildAnthropicProviderMetadata(messageMetadataFields(msg.RawJSON()), json.RawMessage(msg.Usage.RawJSON()))
+	if err != nil {
+		return nil, err
+	}
 
 	return &provider.GenerateResult{
-		Content:      content,
-		FinishReason: fr,
-		Usage:        usage,
+		Content:          content,
+		FinishReason:     fr,
+		Usage:            usage,
+		ProviderMetadata: providerMetadata,
 		Response: &provider.GenerateResponse{
 			ResponseMetadata: provider.ResponseMetadata{
 				ID:       msg.ID,

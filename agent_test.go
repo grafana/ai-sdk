@@ -326,6 +326,33 @@ func TestToolLoopAgent_CallbacksAndRuntimeContext(t *testing.T) {
 
 		assert.Equal(t, []any{"agent-context", "call-context", "step-context", "agent-context"}, contexts)
 	})
+
+	t.Run("per-call active tools override reusable settings", func(t *testing.T) {
+		var calls [][]provider.Tool
+		model := &mockModel{streamFunc: func(_ context.Context, opts provider.CallOptions) (*provider.StreamResult, error) {
+			calls = append(calls, opts.Tools)
+			return &provider.StreamResult{Stream: textStreamParts("ok")}, nil
+		}}
+		agent := NewToolLoopAgent(model, WithToolLoopAgentOptions(
+			WithTools(ToolSet{"a": {Description: "a"}, "b": {Description: "b"}}),
+			WithActiveTools("b"),
+		))
+
+		result := agent.Stream(context.Background(), WithAgentPrompt("subset"), WithAgentOptions(WithActiveTools("a")))
+		for range result.FullStream() {
+		}
+		require.NoError(t, result.Err())
+
+		result = agent.Stream(context.Background(), WithAgentPrompt("none"), WithAgentOptions(WithActiveTools()))
+		for range result.FullStream() {
+		}
+		require.NoError(t, result.Err())
+
+		require.Len(t, calls, 2)
+		require.Len(t, calls[0], 1)
+		assert.Equal(t, "a", calls[0][0].Name)
+		assert.Empty(t, calls[1])
+	})
 }
 
 func TestAgentUIStreamHelpers(t *testing.T) {

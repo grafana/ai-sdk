@@ -466,6 +466,7 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 
 	retryCfg := buildRetryConfig(&cfg.baseConfig)
 	stepNum := 0
+	currentRuntimeContext := cfg.runtimeContext
 
 	for {
 		stepNum++
@@ -473,6 +474,7 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 		currentMsgs := msgs
 		toolChoice := cfg.toolChoice
 		activeTools := cfg.activeTools
+		activeToolsSet := cfg.activeToolsSet
 		providerOpts := cfg.providerOptions
 		maxOutputTokens := cfg.maxOutputTokens
 		temperature := cfg.temperature
@@ -483,7 +485,7 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 		stopSequences := cfg.stopSequences
 		seed := cfg.seed
 		reasoning := cfg.reasoning
-		var stepContext any
+		stepContext := currentRuntimeContext
 
 		// PrepareStep
 		if cfg.prepareStep != nil {
@@ -494,6 +496,7 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 				Messages:         currentMsgs,
 				InitialMessages:  initialMessages,
 				ResponseMessages: responseMessages,
+				Context:          currentRuntimeContext,
 			})
 			if err != nil {
 				if ctx.Err() != nil && cfg.onAbort != nil {
@@ -521,12 +524,17 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 				}
 				if result.ActiveTools != nil {
 					activeTools = result.ActiveTools
+					activeToolsSet = true
 				}
 				if result.Messages != nil {
 					currentMsgs = result.Messages
 				}
 				if result.ProviderOptions != nil {
-					providerOpts = result.ProviderOptions
+					providerOpts, err = mergeStepProviderOptions(providerOpts, result.ProviderOptions)
+					if err != nil {
+						r.emitError(fmt.Errorf("aisdk: merging prepareStep provider options: %w", err), cfg.onError)
+						return
+					}
 				}
 				if result.MaxOutputTokens != nil {
 					maxOutputTokens = result.MaxOutputTokens
@@ -555,7 +563,10 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 				if result.Reasoning != nil {
 					reasoning = result.Reasoning
 				}
-				stepContext = result.Context
+				if result.Context != nil {
+					currentRuntimeContext = result.Context
+					stepContext = currentRuntimeContext
+				}
 			}
 		}
 
@@ -576,7 +587,7 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 		// Build provider tools (sorted for deterministic order)
 		provTools, toolWarnings := toolSetToProviderTools(cfg.tools)
 		r.allWarnings = append(r.allWarnings, toolWarnings...)
-		if len(activeTools) > 0 {
+		if activeToolsSet {
 			provTools = filterProviderTools(provTools, activeTools)
 		}
 		if toolChoice == nil && len(provTools) > 0 {
@@ -1377,12 +1388,13 @@ func (r *StreamTextResult) handleToolResult(
 		ProviderMetadata: part.ProviderMetadata,
 	}
 	if part.IsError {
+		tr.Error = toolResultError(part.Result)
 		if !preliminary {
 			step.ToolResults = append(step.ToolResults, tr)
 		}
 		tsp := StreamToolError{
 			ToolCallID: part.ToolCallID, ToolName: part.ToolName,
-			Input: input, Error: toolResultError(part.Result), ProviderExecuted: true,
+			Input: input, Error: tr.Error, ProviderExecuted: true,
 			Dynamic: dynamic, ProviderMetadata: part.ProviderMetadata,
 		}
 		r.emit(tsp)
@@ -1475,6 +1487,8 @@ func (r *StreamTextResult) rejectToolCall(
 		ToolCallID: part.ToolCallID,
 		ToolName:   part.ToolName,
 		Input:      input,
+		IsError:    true,
+		Error:      err,
 		Dynamic:    &dynamicTrue,
 		Title:      title,
 		ModelOutput: &provider.ToolResultOutput{
@@ -1697,9 +1711,14 @@ func (r *StreamTextResult) executeSingleTool(
 	if err != nil {
 		outcomes[index] = toolExecOutcome{
 			result: ToolResult{
-				ToolCallID: tc.ToolCallID,
-				ToolName:   tc.ToolName,
-				Input:      tc.Input,
+				ToolCallID:       tc.ToolCallID,
+				ToolName:         tc.ToolName,
+				Input:            tc.Input,
+				IsError:          true,
+				Error:            err,
+				ProviderMetadata: tc.ProviderMetadata,
+				Dynamic:          tc.Dynamic,
+				Title:            tc.Title,
 				ModelOutput: &provider.ToolResultOutput{
 					Type: provider.ToolOutputErrorText,
 					Text: err.Error(),
@@ -1707,7 +1726,8 @@ func (r *StreamTextResult) executeSingleTool(
 			},
 			event: StreamToolError{
 				ToolCallID: tc.ToolCallID, ToolName: tc.ToolName,
-				Input: tc.Input, Error: err,
+				Input: tc.Input, Error: err, Dynamic: tc.Dynamic,
+				Title: tc.Title, ProviderMetadata: tc.ProviderMetadata,
 			},
 		}
 
@@ -1734,9 +1754,14 @@ func (r *StreamTextResult) executeSingleTool(
 		if moErr != nil {
 			outcomes[index] = toolExecOutcome{
 				result: ToolResult{
-					ToolCallID: tc.ToolCallID,
-					ToolName:   tc.ToolName,
-					Input:      tc.Input,
+					ToolCallID:       tc.ToolCallID,
+					ToolName:         tc.ToolName,
+					Input:            tc.Input,
+					IsError:          true,
+					Error:            moErr,
+					ProviderMetadata: tc.ProviderMetadata,
+					Dynamic:          tc.Dynamic,
+					Title:            tc.Title,
 					ModelOutput: &provider.ToolResultOutput{
 						Type: provider.ToolOutputErrorText,
 						Text: moErr.Error(),
@@ -1744,7 +1769,8 @@ func (r *StreamTextResult) executeSingleTool(
 				},
 				event: StreamToolError{
 					ToolCallID: tc.ToolCallID, ToolName: tc.ToolName,
-					Input: tc.Input, Error: moErr,
+					Input: tc.Input, Error: moErr, Dynamic: tc.Dynamic,
+					Title: tc.Title, ProviderMetadata: tc.ProviderMetadata,
 				},
 			}
 
@@ -2921,14 +2947,7 @@ func buildGroupedContent(step StepResult) []ContentPart {
 	seenToolCallID := make(map[string]bool, len(step.ToolCalls))
 	for _, tc := range step.ToolCalls {
 		seenToolCallID[tc.ToolCallID] = true
-		parts = append(parts, ToolCallContent{
-			ToolCallID:       tc.ToolCallID,
-			ToolName:         tc.ToolName,
-			Input:            tc.Input,
-			ProviderExecuted: tc.ProviderExecuted,
-			Dynamic:          tc.Dynamic,
-			Title:            tc.Title,
-		})
+		parts = append(parts, toolCallContent(tc))
 		for _, ar := range requestsByToolCallID[tc.ToolCallID] {
 			parts = append(parts, ToolApprovalRequestContent{ToolApprovalRequest: ar})
 		}
@@ -2936,16 +2955,7 @@ func buildGroupedContent(step StepResult) []ContentPart {
 			parts = append(parts, ToolApprovalResponseContent{ToolApprovalResponse: ar})
 		}
 		for _, tr := range resultsByToolCallID[tc.ToolCallID] {
-			parts = append(parts, ToolResultContent{
-				ToolCallID:       tr.ToolCallID,
-				ToolName:         tr.ToolName,
-				Input:            tr.Input,
-				Output:           tr.Output,
-				ProviderExecuted: tr.ProviderExecuted,
-				Dynamic:          tr.Dynamic,
-				Preliminary:      tr.Preliminary,
-				Title:            tr.Title,
-			})
+			parts = append(parts, toolResultContent(tr))
 		}
 	}
 	for _, ar := range step.ToolApprovalRequests {
@@ -2964,16 +2974,7 @@ func buildGroupedContent(step StepResult) []ContentPart {
 		if tr.Preliminary || seenToolCallID[tr.ToolCallID] {
 			continue
 		}
-		parts = append(parts, ToolResultContent{
-			ToolCallID:       tr.ToolCallID,
-			ToolName:         tr.ToolName,
-			Input:            tr.Input,
-			Output:           tr.Output,
-			ProviderExecuted: tr.ProviderExecuted,
-			Dynamic:          tr.Dynamic,
-			Preliminary:      tr.Preliminary,
-			Title:            tr.Title,
-		})
+		parts = append(parts, toolResultContent(tr))
 	}
 	for _, src := range step.Sources {
 		parts = append(parts, SourceContent{Source: src})
@@ -2989,6 +2990,8 @@ func toolCallContent(call ToolCall) ToolCallContent {
 		ToolCallID:       call.ToolCallID,
 		ToolName:         call.ToolName,
 		Input:            call.Input,
+		Invalid:          call.Invalid,
+		Error:            call.Error,
 		ProviderExecuted: call.ProviderExecuted,
 		Dynamic:          call.Dynamic,
 		Title:            call.Title,
@@ -2996,7 +2999,25 @@ func toolCallContent(call ToolCall) ToolCallContent {
 	}
 }
 
-func toolResultContent(result ToolResult) ToolResultContent {
+func toolResultContent(result ToolResult) ContentPart {
+	if result.IsError {
+		var errorValue any = result.Error
+		if result.ProviderExecuted && len(result.Output) > 0 {
+			errorValue = append(json.RawMessage(nil), result.Output...)
+		} else if errorValue == nil {
+			errorValue = toolResultError(result.Output)
+		}
+		return ToolErrorContent{
+			ToolCallID:       result.ToolCallID,
+			ToolName:         result.ToolName,
+			Input:            result.Input,
+			Error:            errorValue,
+			ProviderExecuted: result.ProviderExecuted,
+			Dynamic:          result.Dynamic,
+			Title:            result.Title,
+			ProviderMetadata: result.ProviderMetadata,
+		}
+	}
 	return ToolResultContent{
 		ToolCallID:       result.ToolCallID,
 		ToolName:         result.ToolName,

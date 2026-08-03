@@ -127,12 +127,19 @@ func (m *model) DoStream(ctx context.Context, params provider.CallOptions) (*pro
 	if err != nil {
 		return nil, err
 	}
-	stream := m.client.NewStreaming(ctx, body, m.requestOptions(params.Headers)...)
+	var rawResponse *http.Response
+	requestOptions := append(m.requestOptions(params.Headers), option.WithResponseInto(&rawResponse))
+	stream := m.client.NewStreaming(ctx, body, requestOptions...)
+	items := pumpResponseStream(ctx, stream)
+	buffered, err := preflightResponseStream(ctx, items, body, rawResponse)
+	if err != nil {
+		return nil, err
+	}
 
 	ch := make(chan provider.StreamPart, 64)
 	go func() {
 		defer close(ch)
-		consumeStream(stream, ch, warnings, br, m.generateID, m.provider)
+		consumeStream(ctx, items, buffered, ch, warnings, br, body, rawResponse, m.generateID, m.provider)
 	}()
 	return &provider.StreamResult{Stream: ch}, nil
 }

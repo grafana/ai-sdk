@@ -173,6 +173,40 @@ func TestPrepareTools_WebSearchBlockedDomainsOnly(t *testing.T) {
 	assert.Equal(t, []any{"example.com"}, filters["blocked_domains"])
 }
 
+func TestPrepareTools_WebSearchPreservesEmptyFilters(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		filters string
+		check   func(*testing.T, map[string]any)
+	}{
+		{name: "empty object", filters: `{}`, check: func(t *testing.T, filters map[string]any) {
+			assert.Empty(t, filters)
+		}},
+		{name: "empty arrays", filters: `{"allowedDomains":[],"blockedDomains":[]}`, check: func(t *testing.T, filters map[string]any) {
+			assert.Equal(t, []any{}, filters["allowed_domains"])
+			assert.Equal(t, []any{}, filters["blocked_domains"])
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body, warnings := buildBody(t, "gpt-4o", provider.CallOptions{
+				Prompt: []provider.Message{provider.UserText("hi")},
+				Tools: []provider.Tool{{
+					Type: provider.ToolTypeProvider,
+					ID:   toolIDWebSearch,
+					Name: "web_search",
+					Args: map[string]json.RawMessage{"filters": json.RawMessage(tc.filters)},
+				}},
+			})
+			require.Empty(t, warnings)
+			tools := toolsArray(t, body)
+			require.Len(t, tools, 1)
+			filters, ok := tools[0]["filters"].(map[string]any)
+			require.True(t, ok)
+			tc.check(t, filters)
+		})
+	}
+}
+
 func TestPrepareTools_CodeInterpreterAutoIncludesOutputs(t *testing.T) {
 	body, _ := buildBody(t, "gpt-4o", provider.CallOptions{
 		Prompt: []provider.Message{provider.UserText("hi")},

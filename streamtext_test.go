@@ -412,6 +412,111 @@ func TestStreamTextPrepareStep_CallSettings(t *testing.T) {
 
 		assert.Equal(t, []float64{0.7, 0, 0.7}, temperatures)
 	})
+
+	t.Run("provider options deep merge for the current step", func(t *testing.T) {
+		var calls []provider.CallOptions
+		callCount := 0
+		model := &mockModel{streamFunc: func(_ context.Context, opts provider.CallOptions) (*provider.StreamResult, error) {
+			calls = append(calls, opts)
+			callCount++
+			if callCount == 1 {
+				return &provider.StreamResult{Stream: toolCallStreamParts("lookup", `{}`)}, nil
+			}
+			return &provider.StreamResult{Stream: textStreamParts("done")}, nil
+		}}
+		outer := provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(`{"thinking":{"type":"enabled","budgetTokens":1000},"effort":"high"}`)}
+		step := provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(`{"thinking":{"budgetTokens":2000}}`)}
+
+		result := StreamText(context.Background(), model,
+			WithModelMessages(provider.UserText("hello")),
+			WithTools(ToolSet{"lookup": {Execute: func(context.Context, json.RawMessage, ToolExecutionOptions) (json.RawMessage, error) {
+				return json.RawMessage(`{"ok":true}`), nil
+			}}}),
+			WithProviderOptions(outer),
+			WithStopWhen(StepCountIs(2)),
+			WithPrepareStep(func(state PrepareStepState) (*PrepareStepResult, error) {
+				if state.StepNumber == 0 {
+					return &PrepareStepResult{ProviderOptions: provider.BuildProviderOptions(step)}, nil
+				}
+				return nil, nil
+			}),
+		)
+		for range result.FullStream() {
+		}
+
+		require.Len(t, calls, 2)
+		first, err := json.Marshal(calls[0].ProviderOptions)
+		require.NoError(t, err)
+		assert.JSONEq(t, `{"anthropic":{"thinking":{"type":"enabled","budgetTokens":2000},"effort":"high"}}`, string(first))
+		second, err := json.Marshal(calls[1].ProviderOptions)
+		require.NoError(t, err)
+		assert.JSONEq(t, `{"anthropic":{"thinking":{"type":"enabled","budgetTokens":1000},"effort":"high"}}`, string(second))
+	})
+}
+
+func TestStreamTextPrepareStep_ActiveToolsAndContext(t *testing.T) {
+	t.Run("explicit empty active tools disables every tool", func(t *testing.T) {
+		for _, tc := range []struct {
+			name string
+			opts []StreamOption
+		}{
+			{name: "outer", opts: []StreamOption{WithActiveTools()}},
+			{name: "prepare step", opts: []StreamOption{WithPrepareStep(func(PrepareStepState) (*PrepareStepResult, error) {
+				return &PrepareStepResult{ActiveTools: []string{}}, nil
+			})}},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				var call provider.CallOptions
+				model := &mockModel{streamFunc: func(_ context.Context, opts provider.CallOptions) (*provider.StreamResult, error) {
+					call = opts
+					return &provider.StreamResult{Stream: textStreamParts("done")}, nil
+				}}
+				opts := []StreamOption{
+					WithModelMessages(provider.UserText("hello")),
+					WithTools(ToolSet{"lookup": {Description: "lookup"}}),
+				}
+				opts = append(opts, tc.opts...)
+				result := StreamText(context.Background(), model, opts...)
+				for range result.FullStream() {
+				}
+				assert.Empty(t, call.Tools)
+			})
+		}
+	})
+
+	t.Run("runtime context carries forward", func(t *testing.T) {
+		var states []any
+		var executionContext any
+		callCount := 0
+		model := &mockModel{streamFunc: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+			callCount++
+			if callCount == 1 {
+				return &provider.StreamResult{Stream: toolCallStreamParts("lookup", `{}`)}, nil
+			}
+			return &provider.StreamResult{Stream: textStreamParts("done")}, nil
+		}}
+
+		result := StreamText(context.Background(), model,
+			WithModelMessages(provider.UserText("hello")),
+			WithTools(ToolSet{"lookup": {Execute: func(_ context.Context, _ json.RawMessage, opts ToolExecutionOptions) (json.RawMessage, error) {
+				executionContext = opts.Context
+				return json.RawMessage(`{"ok":true}`), nil
+			}}}),
+			WithStopWhen(StepCountIs(2)),
+			WithPrepareStep(func(state PrepareStepState) (*PrepareStepResult, error) {
+				states = append(states, state.Context)
+				if state.StepNumber == 0 {
+					return &PrepareStepResult{Context: "step-context"}, nil
+				}
+				return nil, nil
+			}),
+		)
+		for range result.FullStream() {
+		}
+
+		assert.Equal(t, []any{nil, "step-context"}, states)
+		assert.Equal(t, "step-context", executionContext)
+	})
 }
 
 func TestStreamTextIncompleteProviderStream(t *testing.T) {
@@ -804,6 +909,19 @@ func TestStreamText_ToolInputSchemaValidation(t *testing.T) {
 		assert.Equal(t, boolPtr(true), step.ToolCalls[0].Dynamic)
 		require.Len(t, step.ToolResults, 1)
 		assert.True(t, step.ToolResults[0].ProviderExecuted)
+		assert.True(t, step.ToolResults[0].IsError)
+		assert.Error(t, step.ToolResults[0].Error)
+		require.Len(t, step.Content, 2)
+		callContent, ok := step.Content[0].(ToolCallContent)
+		require.True(t, ok)
+		assert.True(t, callContent.Invalid)
+		assert.Error(t, callContent.Error)
+		errorContent, ok := step.Content[1].(ToolErrorContent)
+		require.True(t, ok)
+		rawError, ok := errorContent.Error.(json.RawMessage)
+		require.True(t, ok)
+		assert.JSONEq(t, `{"type":"server_tool_result_error","errorCode":"invalid_tool_input"}`, string(rawError))
+		assert.True(t, errorContent.ProviderExecuted)
 
 		messages := step.Response.Messages
 		require.Len(t, messages, 1)
@@ -838,6 +956,17 @@ func TestStreamText_ToolInputSchemaValidation(t *testing.T) {
 		assert.Equal(t, boolPtr(true), result.ToolCalls[0].Dynamic)
 		require.Len(t, result.ToolResults, 1)
 		assert.True(t, result.ToolResults[0].ProviderExecuted)
+		require.Len(t, result.Content, 2)
+		callContent, ok := result.Content[0].(ToolCallContent)
+		require.True(t, ok)
+		assert.True(t, callContent.Invalid)
+		assert.Error(t, callContent.Error)
+		errorContent, ok := result.Content[1].(ToolErrorContent)
+		require.True(t, ok)
+		rawError, ok := errorContent.Error.(json.RawMessage)
+		require.True(t, ok)
+		assert.JSONEq(t, `{"type":"server_tool_result_error","errorCode":"invalid_tool_input"}`, string(rawError))
+		assert.True(t, errorContent.ProviderExecuted)
 	})
 
 	t.Run("malformed provider executed input does not reuse the previous call", func(t *testing.T) {
@@ -3097,11 +3226,17 @@ func TestStopConditions(t *testing.T) {
 
 func TestStreamTextToolErrorProducesToolResult(t *testing.T) {
 	callNum := 0
+	dynamic := true
+	metadata := provider.ProviderMetadata{"test": json.RawMessage(`{"itemId":"call-1"}`)}
 	model := &mockModel{
 		streamFunc: func(_ context.Context, opts provider.CallOptions) (*provider.StreamResult, error) {
 			callNum++
 			if callNum == 1 {
-				return &provider.StreamResult{Stream: toolCallStreamParts("flaky", `{"x":1}`)}, nil
+				stream := make(chan provider.StreamPart, 2)
+				stream <- provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "call-1", ToolName: "flaky", Input: `{"x":1}`, Dynamic: &dynamic, ProviderMetadata: metadata}
+				stream <- provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonToolCalls}}
+				close(stream)
+				return &provider.StreamResult{Stream: stream}, nil
 			}
 			return &provider.StreamResult{Stream: textStreamParts("recovered")}, nil
 		},
@@ -3111,6 +3246,7 @@ func TestStreamTextToolErrorProducesToolResult(t *testing.T) {
 		WithModelMessages(provider.UserText("hi")),
 		WithTools(ToolSet{
 			"flaky": Tool{
+				Type:        UserToolDynamic,
 				Description: "Flaky tool",
 				InputSchema: testMustSchema(t, `{"type":"object"}`),
 				Execute: func(_ context.Context, _ json.RawMessage, _ ToolExecutionOptions) (json.RawMessage, error) {
@@ -3132,6 +3268,17 @@ func TestStreamTextToolErrorProducesToolResult(t *testing.T) {
 	require.NotNil(t, tr.ModelOutput)
 	assert.Equal(t, provider.ToolOutputErrorText, tr.ModelOutput.Type)
 	assert.Equal(t, "transient failure", tr.ModelOutput.Text)
+	assert.Equal(t, boolPtr(true), tr.Dynamic)
+	assert.Equal(t, metadata, tr.ProviderMetadata)
+	assert.True(t, tr.IsError)
+	require.Error(t, tr.Error)
+	require.Len(t, steps[0].Content, 2)
+	toolError, ok := steps[0].Content[1].(ToolErrorContent)
+	require.True(t, ok)
+	_, ok = toolError.Error.(error)
+	assert.True(t, ok)
+	assert.Equal(t, boolPtr(true), toolError.Dynamic)
+	assert.Equal(t, metadata, toolError.ProviderMetadata)
 	assert.Equal(t, "recovered", result.Text())
 }
 

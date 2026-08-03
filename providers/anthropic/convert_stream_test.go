@@ -50,6 +50,26 @@ func collectPartsWithOpts(events []anthropic.BetaRawMessageStreamEventUnion, map
 	return parts
 }
 
+func TestStreamAdapter_FallbackProviderMetadata(t *testing.T) {
+	events := []anthropic.BetaRawMessageStreamEventUnion{
+		unmarshalEvent(t, `{"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","model":"claude-opus-5","content":[],"stop_reason":null,"stop_sequence":null,"stop_details":null,"container":{"id":"container-1","expires_at":"2026-08-03T15:00:00Z"},"context_management":null,"usage":{"input_tokens":12,"output_tokens":0}}}`),
+		unmarshalEvent(t, `{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null,"stop_details":null},"usage":{"input_tokens":12,"output_tokens":5,"iterations":[{"type":"message","input_tokens":12,"output_tokens":0},{"type":"fallback_message","model":"claude-opus-4-8","input_tokens":12,"output_tokens":5}]}}`),
+	}
+
+	parts := collectParts(events)
+	require.Len(t, parts, 2)
+	finish := parts[1]
+	assert.Equal(t, provider.PartFinish, finish.Type)
+	require.NotNil(t, finish.ProviderMetadata)
+	var metadata map[string]any
+	require.NoError(t, json.Unmarshal(finish.ProviderMetadata["anthropic"], &metadata))
+	assert.Equal(t, []any{
+		map[string]any{"type": "message", "inputTokens": float64(12), "outputTokens": float64(0)},
+		map[string]any{"type": "fallback_message", "model": "claude-opus-4-8", "inputTokens": float64(12), "outputTokens": float64(5)},
+	}, metadata["iterations"])
+	assert.Nil(t, metadata["container"])
+}
+
 func TestStreamAdapter_ContentLifecycle(t *testing.T) {
 	t.Run("text", func(t *testing.T) {
 		events := []anthropic.BetaRawMessageStreamEventUnion{
