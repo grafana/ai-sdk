@@ -22,7 +22,8 @@
 // response metadata, and stream part counts. Streams also report time to first
 // content when content is observed. Prompt text, generated text, reasoning,
 // tool payloads, files, raw chunks, headers, request/response bodies, provider
-// options, and provider metadata require explicit CaptureOptions.
+// options, provider metadata, and opaque error messages require explicit
+// CaptureOptions.
 //
 // Terminal records prefer response provider/model metadata when a gateway or
 // router reports the backend that served the call. The original wrapper identity

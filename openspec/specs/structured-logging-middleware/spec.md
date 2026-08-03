@@ -45,7 +45,7 @@ The `Options` type SHALL include:
 - `LogStreamParts bool`
 - `Clock func() time.Time`
 
-The `CaptureOptions` type SHALL include explicit opt-in controls for `Inputs`, `Outputs`, `Reasoning`, `ToolInputs`, `ToolOutputs`, `Files`, `RawChunks`, `Headers`, `ProviderOptions`, `RequestBody`, `ResponseBody`, and `ProviderMetadata`, plus bounded payload controls `MaxStringLen` and `MaxJSONBytes`.
+The `CaptureOptions` type SHALL include explicit opt-in controls for `Inputs`, `Outputs`, `Reasoning`, `ToolInputs`, `ToolOutputs`, `Files`, `RawChunks`, `Headers`, `ProviderOptions`, `RequestBody`, `ResponseBody`, `ProviderMetadata`, and `ErrorMessages`, plus bounded payload controls `MaxStringLen` and `MaxJSONBytes`.
 
 The package SHALL expose a `Redactor` interface, a `RedactorFunc` adapter, `DefaultRedactor() Redactor`, and `DefaultRedactorWithExtraKeys(keys ...string) Redactor`.
 
@@ -111,7 +111,7 @@ The logger SHALL use documented stable keys for optional captured payloads and S
 
 ### Requirement: Privacy-first capture policy
 
-By default, the logger SHALL NOT log prompt/message content, generated text, reasoning text, tool inputs, tool outputs, file data, raw chunks, request bodies, response bodies, headers, provider options, or provider metadata.
+By default, the logger SHALL NOT log prompt/message content, generated text, reasoning text, tool inputs, tool outputs, file data, raw chunks, request bodies, response bodies, headers, provider options, provider metadata, or opaque error messages.
 
 By default, the logger MAY log safe scalar summaries and counts, including provider/model identity, transport identity when a routed backend differs, duration, outcome, success/failure, max output tokens, temperature, top-p, top-k, seed, reasoning effort value, stop sequence count, tool count, response format type, usage totals/subfields, finish reason, warning count/types, response metadata, stream part counts, and stream time to first content.
 
@@ -129,6 +129,19 @@ Sensitive fields SHALL only become eligible for logging when the corresponding `
 - **WHEN** `Capture.Inputs`, `Capture.Headers`, and `Capture.ProviderOptions` are enabled
 - **THEN** prompt, header, and provider option attributes MAY be emitted
 - **AND** those attributes SHALL still pass through the configured redactor before logging
+
+#### Scenario: Metadata-only errors omit opaque messages
+
+- **WHEN** a unary error, stream-open error, streamed error part, context cancellation, or timeout contains an opaque message
+- **AND** `Capture.ErrorMessages` is false
+- **THEN** no emitted record SHALL contain the opaque message
+- **AND** error class/type, HTTP status, retryability, operation, outcome, timing, and model identity metadata SHALL remain available when applicable
+
+#### Scenario: Error message capture is opt-in
+
+- **WHEN** `Capture.ErrorMessages` is true
+- **THEN** the bounded opaque error message MAY be emitted
+- **AND** the message SHALL still pass through the configured redactor before logging
 
 #### Scenario: Captured payloads are bounded
 
@@ -166,7 +179,7 @@ For each generate call, the middleware SHALL:
 1. Build start attributes from `middleware.WrapGenerateParams`, including call type, provider, model, safe request summary, and any opted-in captured request fields.
 2. Log `EventGenerateStart` before invoking the inner call.
 3. Invoke `p.DoGenerate(ctx)` exactly once.
-4. On returned error, log `EventGenerateError` with duration, `ai_sdk.outcome="error"`, `ai_sdk.success=false`, stable error classification/message, optional Go error type, and API-call status/retryability when available; then return the original error unchanged.
+4. On returned error, log `EventGenerateError` with duration, `ai_sdk.outcome="error"`, `ai_sdk.success=false`, stable error classification, Go error type, API-call status/retryability when available, and a bounded opaque message only when `Capture.ErrorMessages` is true; then return the original error unchanged.
 5. On success, log `EventGenerateFinish` with duration, `ai_sdk.outcome="success"`, `ai_sdk.success=true`, finish reason, usage, warning count/types, response metadata, and opted-in captured response fields; then return the original `*provider.GenerateResult` unchanged.
 
 Serialization, capture, redaction, or logging failures SHALL NOT fail the model call. Best-effort serialization failures SHALL be represented as `ai_sdk.serialization_error` attrs when possible.

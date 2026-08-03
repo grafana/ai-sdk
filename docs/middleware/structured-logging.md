@@ -31,11 +31,13 @@ provider registry when every resolved model should use the same policy.
 
 Default records include call identity, provider/model identity, duration,
 outcome, request summaries, usage, finish reason, warnings, response metadata,
-and stream timing/counts. Prompt text, output text, reasoning, tool payloads,
-files, headers, bodies, provider options, and raw chunks are not captured by
-default.
+and stream timing/counts. Error records retain structured classification, Go
+type, HTTP status, and retryability when available. Prompt text, output text,
+reasoning, tool payloads, files, headers, bodies, provider options, raw chunks,
+and opaque error messages are not captured by default.
 
-This default is appropriate for most production environments. Add payload
+This default is appropriate for most production environments. A host can make
+its metadata-only policy explicit with `ErrorMessages: false`. Add payload
 capture only for a defined debugging or audit requirement:
 
 ```go
@@ -52,6 +54,30 @@ model := logger.Wrap(baseModel, logger.Options{
 
 Keep capture bounded, sampled, and short-lived. Confirm that retention,
 regional, tenant, and user-consent requirements allow the selected content.
+
+## Choose whether to capture error messages
+
+Error class/type, HTTP status, retryability, operation, outcome, timing, and
+model identity are structured metadata and remain available when opaque error
+messages are disabled. This policy applies to generate errors, stream-open
+errors, streamed error parts, cancellation, and timeouts.
+
+Set `ErrorMessages` only when the provider, transport, middleware, and hook
+error text is safe for your logging environment:
+
+```go
+model := logger.Wrap(baseModel, logger.Options{
+	Logger: log,
+	Capture: logger.CaptureOptions{
+		ErrorMessages: true,
+	},
+})
+```
+
+Captured messages are bounded by `MaxStringLen` and pass through the configured
+redactor. They remain opaque strings, however, so the default redactor cannot
+reliably remove request details, response details, URLs, or other sensitive
+values embedded in them.
 
 ## Add request correlation
 

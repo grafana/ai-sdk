@@ -88,8 +88,8 @@ func (l *modelLogger) dynamicAttrs(ctx context.Context) (attrs []slog.Attr) {
 		return nil
 	}
 	defer func() {
-		if recovered := recover(); recovered != nil {
-			attrs = []slog.Attr{slog.String("ai_sdk.serialization_error", fmt.Sprintf("dynamic attrs panic: %v", recovered))}
+		if recover() != nil {
+			attrs = []slog.Attr{slog.String("ai_sdk.serialization_error", "dynamic attrs panic")}
 		}
 	}()
 	return l.opts.dynamicAttrs(ctx)
@@ -97,9 +97,9 @@ func (l *modelLogger) dynamicAttrs(ctx context.Context) (attrs []slog.Attr) {
 
 func (l *modelLogger) redactAttrs(ctx context.Context, event EventKind, attrs []slog.Attr) (out []slog.Attr) {
 	defer func() {
-		if recovered := recover(); recovered != nil {
+		if recover() != nil {
 			out = DefaultRedactor().RedactAttrs(ctx, event, attrs)
-			out = append(out, slog.String("ai_sdk.serialization_error", fmt.Sprintf("redactor panic: %v", recovered)))
+			out = append(out, slog.String("ai_sdk.serialization_error", "redactor panic"))
 		}
 	}()
 	return l.opts.redactor.RedactAttrs(ctx, event, attrs)
@@ -107,29 +107,26 @@ func (l *modelLogger) redactAttrs(ctx context.Context, event EventKind, attrs []
 
 func (l *modelLogger) logAttrs(ctx context.Context, level slog.Level, message string, attrs ...slog.Attr) {
 	defer func() {
-		if recovered := recover(); recovered != nil {
-			logHandlerPanic(ctx, l.opts.logger, recovered)
+		if recover() != nil {
+			logHandlerPanic(ctx)
 		}
 	}()
 	l.opts.logger.LogAttrs(ctx, level, message, attrs...)
 }
 
-func logHandlerPanic(ctx context.Context, logger *slog.Logger, recovered any) {
-	defaultLogger := slog.Default()
-	if logger.Handler() != defaultLogger.Handler() {
-		logged := false
-		func() {
-			defer func() { _ = recover() }()
-			defaultLogger.LogAttrs(ctx, slog.LevelError, "logger: slog handler panic",
-				slog.Any("panic", recovered),
-			)
-			logged = true
-		}()
-		if logged {
-			return
-		}
+func logHandlerPanic(ctx context.Context) {
+	logged := false
+	func() {
+		defer func() { _ = recover() }()
+		slog.Default().LogAttrs(ctx, slog.LevelError, "logger: slog handler panic",
+			slog.String("ai_sdk.serialization_error", "slog handler panic"),
+		)
+		logged = true
+	}()
+	if logged {
+		return
 	}
-	_, _ = fmt.Fprintf(os.Stderr, "logger: slog handler panic: %v\n", recovered)
+	_, _ = fmt.Fprintln(os.Stderr, "logger: slog handler panic")
 }
 
 func commonAttrs(callID, callType string, model provider.LanguageModel) []slog.Attr {
@@ -416,11 +413,14 @@ func baseErrorAttrs(err error, capture CaptureOptions) []slog.Attr {
 	if err == nil {
 		return nil
 	}
-	return []slog.Attr{
+	attrs := []slog.Attr{
 		slog.String("ai_sdk.error.type", errorClass(err)),
 		slog.String("ai_sdk.error.type.go", errorType(err)),
-		slog.String("ai_sdk.error.message", boundString(err.Error(), capture.MaxStringLen)),
 	}
+	if capture.ErrorMessages {
+		attrs = append(attrs, slog.String("ai_sdk.error.message", boundString(err.Error(), capture.MaxStringLen)))
+	}
+	return attrs
 }
 
 func apiCallErrorAttrs(err *provider.APICallError, capture CaptureOptions) []slog.Attr {
@@ -452,6 +452,17 @@ func apiCallPartErrorAttrs(err *provider.APICallError, capture CaptureOptions) [
 	}
 	attrs := baseErrorAttrs(err, capture)
 	attrs = append(attrs, apiCallErrorAttrs(err, capture)...)
+	return attrs
+}
+
+func streamPartErrorAttrs(err *provider.APICallError, capture CaptureOptions) []slog.Attr {
+	if err != nil {
+		return apiCallPartErrorAttrs(err, capture)
+	}
+	attrs := []slog.Attr{slog.String("ai_sdk.error.type", "stream_part_error")}
+	if capture.ErrorMessages {
+		attrs = append(attrs, slog.String("ai_sdk.error.message", "provider stream emitted an error part"))
+	}
 	return attrs
 }
 
