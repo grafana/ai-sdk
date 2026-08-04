@@ -43,7 +43,7 @@ var nilContextProviderLogger sync.Once
 // the wrapped model as an Agent Observability generation. The Generate path records on
 // success or call error; the Stream path tees the result channel, observes
 // each part via a StreamRecorder, and records the assembled Generation when
-// upstream closes.
+// upstream closes or the request context is canceled.
 //
 // This middleware does NOT open its own OTel span. The agento11y client's
 // StartGeneration / StartStreamingGeneration already opens the canonical
@@ -128,9 +128,9 @@ func wrapRecordingStream(ctx context.Context, opts RecordingOptions, p middlewar
 
 // runStreamTee shuttles parts from the inner-model stream to the consumer
 // while observing each event through the StreamRecorder. It finalizes the
-// recorder (SetResult or SetCallError) once the upstream channel closes —
-// or once the request context cancels, in which case the upstream is
-// drained on a best-effort basis to release the producer goroutine.
+// recorder (SetResult and, for stream errors, SetCallError) once the upstream
+// channel closes or the request context cancels. After cancellation, upstream
+// is drained on a best-effort basis to release the producer goroutine.
 func runStreamTee(
 	ctx context.Context,
 	upstream <-chan provider.StreamPart,
@@ -144,31 +144,35 @@ func runStreamTee(
 
 	consumerDisconnected := false
 
+streamLoop:
 	for {
-		part, ok := <-upstream
-		if !ok {
-			break
-		}
-		streamRec.Observe(part)
-
-		if consumerDisconnected {
-			continue
-		}
-
 		select {
-		case tee <- part:
+		case part, ok := <-upstream:
+			if !ok {
+				break streamLoop
+			}
+			streamRec.Observe(part)
+
+			select {
+			case tee <- part:
+			case <-ctx.Done():
+				consumerDisconnected = true
+				break streamLoop
+			}
 		case <-ctx.Done():
 			consumerDisconnected = true
-			// Continue the loop so we keep draining `upstream` until it closes.
+			break streamLoop
 		}
 	}
 
+	if consumerDisconnected {
+		go drainProviderStream(upstream)
+	}
 	if first := streamRec.FirstChunkAt(); !first.IsZero() {
 		recorder.SetFirstTokenAt(first)
 	}
 	if callErr := streamRec.CallError(); callErr != nil {
 		recorder.SetCallError(callErr)
-		return
 	}
 
 	gen := streamRec.Generation()
@@ -184,6 +188,11 @@ func runStreamTee(
 		gen.AgentVersion = ctxInfo.AgentVersion
 	}
 	recorder.SetResult(gen, nil)
+}
+
+func drainProviderStream(upstream <-chan provider.StreamPart) {
+	for range upstream {
+	}
 }
 
 // resolveClient returns the *agento11y.Client for the request, treating a

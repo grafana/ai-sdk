@@ -46,6 +46,36 @@ func TestStreamRecorder_TextOnlyStream(t *testing.T) {
 	assert.Equal(t, "end_turn", gen.StopReason)
 }
 
+func TestStreamRecorder_UsageAggregatesEveryPart(t *testing.T) {
+	r := newRecorderForStreamTest()
+	inputTotal, inputNoCache, cacheRead, cacheWrite := 120, 80, 30, 10
+	outputTotal, outputText, outputReasoning := 50, 30, 20
+	provisionalInput, provisionalCacheRead, provisionalCacheWrite := 100, 20, 5
+	provisionalOutput, provisionalText, provisionalReasoning := 45, 25, 15
+	r.Observe(provider.StreamPart{Type: provider.PartResponseMeta, Usage: &provider.Usage{InputTokens: provider.InputTokenUsage{
+		Total: &inputTotal, NoCache: &inputNoCache, CacheRead: &cacheRead, CacheWrite: &cacheWrite,
+	}}})
+	r.Observe(provider.StreamPart{Type: provider.PartTextDelta, Usage: &provider.Usage{OutputTokens: provider.OutputTokenUsage{
+		Total: &outputTotal, Text: &outputText, Reasoning: &outputReasoning,
+	}}})
+	r.Observe(provider.StreamPart{Type: provider.PartFinish, Usage: &provider.Usage{
+		InputTokens: provider.InputTokenUsage{
+			Total: &provisionalInput, CacheRead: &provisionalCacheRead, CacheWrite: &provisionalCacheWrite,
+		},
+		OutputTokens: provider.OutputTokenUsage{
+			Total: &provisionalOutput, Text: &provisionalText, Reasoning: &provisionalReasoning,
+		},
+	}})
+
+	usage := r.Generation().Usage
+	assert.Equal(t, int64(inputTotal), usage.InputTokens)
+	assert.Equal(t, int64(outputTotal), usage.OutputTokens)
+	assert.Equal(t, int64(inputTotal+outputTotal), usage.TotalTokens)
+	assert.Equal(t, int64(cacheRead), usage.CacheReadInputTokens)
+	assert.Equal(t, int64(cacheWrite), usage.CacheWriteInputTokens)
+	assert.Equal(t, int64(outputReasoning), usage.ReasoningTokens)
+}
+
 func TestStreamRecorder_FilePartsPreserveObservedOrder(t *testing.T) {
 	r := newRecorderForStreamTest()
 	r.Observe(provider.StreamPart{

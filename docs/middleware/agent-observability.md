@@ -86,9 +86,11 @@ export.
 ## Record generation relationships
 
 Recording captures unary and streaming generations, including results, usage,
-and errors. Context helpers relate parent, child, and linked generations across
-agents and tool workflows. Use these helpers for generation relationships and
-reserve generic enrichment for other provider-bound metadata.
+and errors. Streaming usage combines every usage-bearing part and preserves the
+greatest value observed for each normalized counter. Context helpers relate
+parent, child, and linked generations across agents and tool workflows. Use
+these helpers for generation relationships and reserve generic enrichment for
+other provider-bound metadata.
 
 For gateway providers, response metadata can identify the backend model while
 transport metadata retains the gateway identity. This supports provider and cost

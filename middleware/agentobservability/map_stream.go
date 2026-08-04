@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/grafana/agento11y/go/agento11y"
+	"github.com/grafana/ai-sdk/internal/streamusage"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -40,9 +41,9 @@ type StreamRecorder struct {
 	outputOrder []streamOutputRef
 	toolResults []streamToolResultAcc
 
-	// Aggregated finish state.
+	// Aggregated stream state.
 	finishReason *provider.FinishReason
-	usage        *provider.Usage
+	usage        streamusage.Aggregator
 	responseID   string
 	response     generationModelIdentity
 
@@ -133,6 +134,7 @@ func (r *StreamRecorder) Observe(part provider.StreamPart) {
 	if r.firstChunkAt.IsZero() && isPayloadPart(part) {
 		r.firstChunkAt = time.Now().UTC()
 	}
+	r.usage.Observe(part)
 
 	switch part.Type {
 	case provider.PartTextStart:
@@ -212,10 +214,6 @@ func (r *StreamRecorder) Observe(part provider.StreamPart) {
 		if part.FinishReason != nil {
 			fr := *part.FinishReason
 			r.finishReason = &fr
-		}
-		if part.Usage != nil {
-			usage := *part.Usage
-			r.usage = &usage
 		}
 
 	case provider.PartResponseMeta:
@@ -312,8 +310,8 @@ func (r *StreamRecorder) Generation() agento11y.Generation {
 	}
 	applyModelIdentity(&gen, modelIdentityFromStart(r.seed), r.response)
 
-	if r.usage != nil {
-		gen.Usage = usageToAgento11y(*r.usage)
+	if usage, ok := r.usage.Usage(); ok {
+		gen.Usage = usageToAgento11y(usage)
 	}
 	if r.finishReason != nil {
 		gen.StopReason = finishReasonToAgento11yStop(*r.finishReason)
