@@ -6,8 +6,8 @@
     "test": "vitest run"
   },
   "devDependencies": {
-    "@ai-sdk/gateway": "4.0.33",
-    "ai": "7.0.44",
+    "@ai-sdk/gateway": "4.0.36",
+    "ai": "7.0.47",
     "vitest": "^4.0.0",
     "typescript": "^7.0.0",
     "zod": "^4.4.3"

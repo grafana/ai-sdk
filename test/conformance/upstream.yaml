@@ -2,17 +2,17 @@ upstream:
   repository: https://github.com/vercel/ai
   commit: c527d7b3b26287598d2c80e7bce8f16b21653363
   packageSource: npm
-  verifiedAt: "2026-08-03"
+  verifiedAt: "2026-08-04"
 packages:
-  ai: 7.0.44
-  "@ai-sdk/anthropic": 4.0.25
-  "@ai-sdk/amazon-bedrock": 5.0.38
-  "@ai-sdk/gateway": 4.0.33
-  "@ai-sdk/openai": 4.0.25
-  "@ai-sdk/openai-compatible": 3.0.18
+  ai: 7.0.47
+  "@ai-sdk/anthropic": 4.0.27
+  "@ai-sdk/amazon-bedrock": 5.0.40
+  "@ai-sdk/gateway": 4.0.36
+  "@ai-sdk/openai": 4.0.27
+  "@ai-sdk/openai-compatible": 3.0.20
   "@ai-sdk/provider": 4.0.4
-  "@ai-sdk/provider-utils": 5.0.16
-  "@ai-sdk/react": 4.0.47
+  "@ai-sdk/provider-utils": 5.0.18
+  "@ai-sdk/react": 4.0.50
 verification:
   status: enforced
   conformanceScope: full

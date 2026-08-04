@@ -102,6 +102,18 @@ func TestToolLoopAgent_GenerateIgnoresReusableStreamTimeouts(t *testing.T) {
 	result, err := agent.Generate(context.Background(), WithAgentPrompt("hi"))
 	require.NoError(t, err)
 	assert.Equal(t, "xx", result.Text)
+	assert.Equal(t, []provider.Warning{
+		{
+			Type:    provider.WarnUnsupported,
+			Feature: "timeout.firstChunkMs",
+			Details: "The firstChunkMs timeout is only supported by streaming functions.",
+		},
+		{
+			Type:    provider.WarnUnsupported,
+			Feature: "timeout.chunkMs",
+			Details: "The chunkMs timeout is only supported by streaming functions.",
+		},
+	}, result.Warnings)
 }
 
 func TestToolLoopAgent_GenerateIgnoresReusableStreamOnlyOptions(t *testing.T) {

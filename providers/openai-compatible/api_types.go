@@ -152,7 +152,7 @@ type streamOptions struct {
 
 type chatCompletionResponse struct {
 	ID      string              `json:"id"`
-	Created int64               `json:"created"`
+	Created *int64              `json:"created"`
 	Model   string              `json:"model"`
 	Choices []chatChoice        `json:"choices"`
 	Usage   *openAIUsage        `json:"usage,omitempty"`

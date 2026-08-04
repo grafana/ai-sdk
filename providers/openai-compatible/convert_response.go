@@ -83,14 +83,14 @@ func resolveMetadataKey(opts provider.ProviderOptions, providerName string) stri
 	return rawName
 }
 
-func responseMetadata(id, modelID, providerName string, created int64) provider.ResponseMetadata {
+func responseMetadata(id, modelID, providerName string, created *int64) provider.ResponseMetadata {
 	md := provider.ResponseMetadata{
 		ID:       id,
 		ModelID:  modelID,
 		Provider: providerName,
 	}
-	if created > 0 {
-		md.Timestamp = time.Unix(created, 0).UTC()
+	if created != nil {
+		md.Timestamp = time.Unix(*created, 0).UTC()
 	}
 	return md
 }

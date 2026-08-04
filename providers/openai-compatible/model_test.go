@@ -8,8 +8,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/grafana/ai-sdk/provider"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -112,6 +114,28 @@ func TestDoGenerateSendsCompatibleRequest(t *testing.T) {
 	require.Equal(t, 3, *result.Usage.OutputTokens.Total)
 	require.JSONEq(t, `{"prompt_tokens":7,"completion_tokens":3,"total_tokens":10,"prompt_tokens_details":{"cached_tokens":2},"queue_time":0.061348671}`, string(result.Usage.Raw))
 	require.Equal(t, "chatcmpl_1", result.Response.ID)
+	require.Equal(t, time.Unix(1710000000, 0).UTC(), result.Response.Timestamp)
+}
+
+func TestDoGeneratePreservesEpochTimestamp(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"id":"chatcmpl_1",
+			"created":0,
+			"model":"test-model",
+			"choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]
+		}`))
+	}))
+	defer server.Close()
+
+	result, err := New("test-model", WithBaseURL(server.URL)).DoGenerate(context.Background(), provider.CallOptions{
+		Prompt: []provider.Message{provider.UserText("hi")},
+	})
+	require.NoError(t, err)
+	require.Equal(t, time.Unix(0, 0).UTC(), result.Response.Timestamp)
 }
 
 func TestPrepareToolsStrict(t *testing.T) {
@@ -814,6 +838,7 @@ func TestDoStreamTextAndUsage(t *testing.T) {
 	require.Equal(t, provider.PartRaw, parts[1].Type)
 	require.Equal(t, provider.PartResponseMeta, parts[2].Type)
 	require.Equal(t, "chatcmpl_stream", parts[2].ResponseID)
+	require.Equal(t, time.Unix(1710000000, 0).UTC(), parts[2].Timestamp)
 	require.Equal(t, provider.PartTextStart, parts[4].Type)
 	require.Equal(t, provider.PartTextDelta, parts[5].Type)
 	require.Equal(t, "hel", parts[5].Delta)
@@ -825,6 +850,47 @@ func TestDoStreamTextAndUsage(t *testing.T) {
 	require.Equal(t, 2, *parts[len(parts)-1].Usage.InputTokens.Total)
 	require.Equal(t, 3, *parts[len(parts)-1].Usage.OutputTokens.Total)
 	require.JSONEq(t, `{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5,"queue_time":0.061348671}`, string(parts[len(parts)-1].Usage.Raw))
+}
+
+func TestDoStreamRecoversAfterMalformedChunk(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(
+			`data: not-json` + "\n\n" +
+				`data: {"id":"chatcmpl_stream","created":0,"model":"test-model","choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}` + "\n\n" +
+				`data: [DONE]` + "\n\n",
+		))
+	}))
+	defer server.Close()
+
+	result, err := New("test-model", WithBaseURL(server.URL)).DoStream(context.Background(), provider.CallOptions{
+		Prompt: []provider.Message{provider.UserText("hi")},
+	})
+	require.NoError(t, err)
+
+	parts := collectStreamParts(result)
+	var sawError, sawText bool
+	for _, part := range parts {
+		switch part.Type {
+		case provider.PartError:
+			sawError = true
+		case provider.PartTextDelta:
+			sawText = sawText || part.Delta == "ok"
+		}
+	}
+	assert.True(t, sawError)
+	assert.True(t, sawText)
+	responseMeta := parts[2]
+	require.Equal(t, provider.PartResponseMeta, responseMeta.Type)
+	assert.Equal(t, time.Unix(0, 0).UTC(), responseMeta.Timestamp)
+	finish := parts[len(parts)-1]
+	require.Equal(t, provider.PartFinish, finish.Type)
+	assert.Equal(t, provider.FinishReasonStop, finish.FinishReason.Unified)
+	require.NotNil(t, finish.Usage)
+	assert.Nil(t, finish.Usage.InputTokens.Total)
+	assert.Nil(t, finish.Usage.OutputTokens.Total)
 }
 
 func TestDoStreamRawProviderOptionsKeyWarning(t *testing.T) {
