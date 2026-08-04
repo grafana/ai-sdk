@@ -489,11 +489,12 @@ func mapFinishReason(reason anthropic.BetaStopReason) provider.FinishReason {
 	raw := string(reason)
 	var unified provider.UnifiedFinishReason
 	switch reason {
-	case anthropic.BetaStopReasonEndTurn:
+	case anthropic.BetaStopReasonPauseTurn,
+		anthropic.BetaStopReasonEndTurn,
+		anthropic.BetaStopReasonStopSequence:
 		unified = provider.FinishReasonStop
-	case anthropic.BetaStopReasonStopSequence:
-		unified = provider.FinishReasonStop
-	case anthropic.BetaStopReasonMaxTokens:
+	case anthropic.BetaStopReasonMaxTokens,
+		anthropic.BetaStopReasonModelContextWindowExceeded:
 		unified = provider.FinishReasonLength
 	case anthropic.BetaStopReasonToolUse:
 		unified = provider.FinishReasonToolCalls

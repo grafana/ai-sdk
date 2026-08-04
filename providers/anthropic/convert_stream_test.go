@@ -201,16 +201,29 @@ func TestStreamAdapter_MessageEvents(t *testing.T) {
 	})
 
 	t.Run("message_delta", func(t *testing.T) {
-		events := []anthropic.BetaRawMessageStreamEventUnion{
-			unmarshalEvent(t, `{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"input_tokens":10,"output_tokens":50}}`),
+		tests := []struct {
+			reason  anthropic.BetaStopReason
+			unified provider.UnifiedFinishReason
+		}{
+			{anthropic.BetaStopReasonEndTurn, provider.FinishReasonStop},
+			{anthropic.BetaStopReasonPauseTurn, provider.FinishReasonStop},
+			{anthropic.BetaStopReasonModelContextWindowExceeded, provider.FinishReasonLength},
 		}
 
-		parts := collectParts(events)
+		for _, tt := range tests {
+			t.Run(string(tt.reason), func(t *testing.T) {
+				events := []anthropic.BetaRawMessageStreamEventUnion{
+					unmarshalEvent(t, `{"type":"message_delta","delta":{"stop_reason":"`+string(tt.reason)+`"},"usage":{"input_tokens":10,"output_tokens":50}}`),
+				}
 
-		require.Len(t, parts, 1)
-		assert.Equal(t, provider.PartFinish, parts[0].Type)
-		require.NotNil(t, parts[0].FinishReason)
-		assert.Equal(t, provider.FinishReasonStop, parts[0].FinishReason.Unified)
+				parts := collectParts(events)
+
+				require.Len(t, parts, 1)
+				assert.Equal(t, provider.PartFinish, parts[0].Type)
+				require.NotNil(t, parts[0].FinishReason)
+				assert.Equal(t, provider.FinishReason{Unified: tt.unified, Raw: string(tt.reason)}, *parts[0].FinishReason)
+			})
+		}
 	})
 }
 
