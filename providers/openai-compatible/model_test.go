@@ -893,6 +893,50 @@ func TestDoStreamRecoversAfterMalformedChunk(t *testing.T) {
 	assert.Nil(t, finish.Usage.OutputTokens.Total)
 }
 
+func TestDoStreamRecoversAfterStructurallyInvalidChunk(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		chunk string
+	}{
+		{name: "missing choices", chunk: `{}`},
+		{name: "null choices", chunk: `{"choices":null}`},
+		{name: "null choice", chunk: `{"choices":[null]}`},
+		{name: "invalid role", chunk: `{"choices":[{"delta":{"role":"user"}}]}`},
+		{name: "tool call missing function", chunk: `{"choices":[{"delta":{"tool_calls":[{"id":"call_1"}]}}]}`},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "text/event-stream")
+				_, _ = w.Write([]byte(
+					"data: " + tc.chunk + "\n\n" +
+						`data: {"id":"chatcmpl_stream","model":"test-model","choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}` + "\n\n" +
+						"data: [DONE]\n\n",
+				))
+			}))
+			defer server.Close()
+
+			result, err := New("test-model", WithBaseURL(server.URL)).DoStream(context.Background(), provider.CallOptions{
+				Prompt: []provider.Message{provider.UserText("hi")},
+			})
+			require.NoError(t, err)
+
+			parts := collectStreamParts(result)
+			require.Len(t, parts, 7)
+			assert.Equal(t, provider.PartStreamStart, parts[0].Type)
+			assert.Equal(t, provider.PartError, parts[1].Type)
+			assert.Equal(t, provider.PartResponseMeta, parts[2].Type)
+			assert.Equal(t, provider.PartTextDelta, parts[4].Type)
+			assert.Equal(t, "ok", parts[4].Delta)
+			require.Equal(t, provider.PartFinish, parts[6].Type)
+			assert.Equal(t, provider.FinishReasonStop, parts[6].FinishReason.Unified)
+		})
+	}
+}
+
 func TestDoStreamRawProviderOptionsKeyWarning(t *testing.T) {
 	t.Parallel()
 

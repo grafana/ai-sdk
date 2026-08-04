@@ -116,6 +116,32 @@ func TestToolLoopAgent_GenerateIgnoresReusableStreamTimeouts(t *testing.T) {
 	}, result.Warnings)
 }
 
+func TestToolLoopAgent_GenerateWarnsForPerCallStreamTimeouts(t *testing.T) {
+	model := &mockModel{streamFunc: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+		return &provider.StreamResult{Stream: stallingStreamParts(200 * time.Millisecond)}, nil
+	}}
+	agent := NewToolLoopAgent(model)
+
+	result, err := agent.Generate(context.Background(),
+		WithAgentPrompt("hi"),
+		WithAgentGenerateOptions(WithTimeout(TimeoutConfig{FirstChunk: 50 * time.Millisecond, Chunk: 50 * time.Millisecond})),
+	)
+	require.NoError(t, err)
+	assert.Equal(t, "xx", result.Text)
+	assert.Equal(t, []provider.Warning{
+		{
+			Type:    provider.WarnUnsupported,
+			Feature: "timeout.firstChunkMs",
+			Details: "The firstChunkMs timeout is only supported by streaming functions.",
+		},
+		{
+			Type:    provider.WarnUnsupported,
+			Feature: "timeout.chunkMs",
+			Details: "The chunkMs timeout is only supported by streaming functions.",
+		},
+	}, result.Warnings)
+}
+
 func TestToolLoopAgent_GenerateIgnoresReusableStreamOnlyOptions(t *testing.T) {
 	model := &mockModel{streamFunc: func(_ context.Context, opts provider.CallOptions) (*provider.StreamResult, error) {
 		assert.False(t, opts.IncludeRawChunks)

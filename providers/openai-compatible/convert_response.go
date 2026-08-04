@@ -15,7 +15,7 @@ func parseGenerateResponse(body []byte, headers http.Header, providerName, metad
 	if err := json.Unmarshal(body, &parsed); err != nil {
 		return nil, fmt.Errorf("openai: decoding response: %w", err)
 	}
-	if len(parsed.Choices) == 0 {
+	if len(parsed.Choices) == 0 || parsed.Choices[0] == nil {
 		return nil, fmt.Errorf("openai: response contained no choices")
 	}
 

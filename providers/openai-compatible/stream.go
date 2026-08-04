@@ -110,6 +110,10 @@ func (m *model) runStream(ctx context.Context, endpoint string, requestBody []by
 			state.emitRecoverableError(streamDecodeError(endpoint, err))
 			continue
 		}
+		if err := validateStreamChunk(chunk); err != nil {
+			state.emitRecoverableError(streamDecodeError(endpoint, err))
+			continue
+		}
 
 		if firstChunk {
 			firstChunk = false
@@ -133,10 +137,30 @@ func (m *model) runStream(ctx context.Context, endpoint string, requestBody []by
 		if len(chunk.Choices) == 0 {
 			continue
 		}
-		if !state.handleChoice(chunk.Choices[0]) {
+		if !state.handleChoice(*chunk.Choices[0]) {
 			return
 		}
 	}
+}
+
+func validateStreamChunk(chunk chatCompletionResponse) error {
+	if chunk.Choices == nil {
+		return errors.New("response chunk contained no choices")
+	}
+	for _, choice := range chunk.Choices {
+		if choice == nil {
+			return errors.New("response chunk contained invalid choice")
+		}
+		if choice.Delta.Role != "" && choice.Delta.Role != "assistant" {
+			return errors.New("stream choice contained invalid role")
+		}
+		for _, toolCall := range choice.Delta.ToolCalls {
+			if toolCall.Function == nil {
+				return errors.New("stream tool call missing function")
+			}
+		}
+	}
+	return nil
 }
 
 func streamError(data []byte) (json.RawMessage, string, bool, error) {
