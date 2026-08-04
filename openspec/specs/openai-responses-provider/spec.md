@@ -238,7 +238,21 @@ inputs SHALL preserve optional execution constraints while translating API
 snake_case fields to the provider content model's camelCase fields so later
 turns can reconstruct equivalent request items. The conversion SHALL map usage
 and finish reason, set provider metadata (`responseId`, logprobs,
-`serviceTier`), and carry warnings.
+`serviceTier`), and carry warnings. When logprobs were requested and an output-text
+content part returns non-empty logprobs, `ProviderMetadata["openai"].logprobs`
+SHALL contain one outer entry per such content part in response order. Each entry
+SHALL preserve token order and contain `token`, `logprob`, and `top_logprobs`
+alternatives with `token` and `logprob`, without provider-only byte arrays. Empty
+or unrequested logprobs SHALL NOT add a `logprobs` metadata field.
+
+#### Scenario: Generated output logprobs metadata
+- **WHEN** logprobs are requested and output-text content returns non-empty token logprobs with top alternatives
+- **THEN** `ProviderMetadata["openai"].logprobs` contains the content-part arrays in response order
+- **AND** each token and top alternative preserves its `token` and `logprob` fields in order
+
+#### Scenario: Generated logprobs metadata is omitted
+- **WHEN** logprobs were not requested or every returned output-text logprobs array is empty
+- **THEN** `ProviderMetadata["openai"]` does not contain a `logprobs` field
 
 #### Scenario: Text and url citation
 - **WHEN** the response contains a `message` item with text and a `url_citation` annotation
@@ -295,7 +309,22 @@ stream and emit `provider.StreamPart`s with ordering matching upstream:
 reasoning start/delta/end; provider-executed tools -> their lifecycle parts with
 `ProviderExecuted`; `response.completed`/`response.incomplete`/`response.failed`
 -> finish with usage and finish reason; `error` -> error part. Unknown events
-SHALL NOT error.
+SHALL NOT error. When logprobs were requested, non-empty
+`response.output_text.delta.logprobs` arrays SHALL be accumulated in event order
+and included as `ProviderMetadata["openai"].logprobs` on the final `PartFinish`,
+using the same normalized token and top-alternative shape as non-streaming
+responses. Empty or unrequested stream logprobs SHALL NOT add a `logprobs`
+metadata field.
+
+#### Scenario: Stream finish with logprobs
+- **WHEN** logprobs are requested and output-text delta events return non-empty token logprobs with top alternatives
+- **THEN** the final `PartFinish` contains `ProviderMetadata["openai"].logprobs`
+- **AND** its outer arrays preserve delta order while each array preserves token and top-alternative order
+- **AND** entries contain `token`, `logprob`, and `top_logprobs` fields without provider-only byte arrays
+
+#### Scenario: Stream logprobs metadata is omitted
+- **WHEN** logprobs were not requested or every output-text delta logprobs array is empty
+- **THEN** the final `PartFinish` provider metadata does not contain a `logprobs` field
 
 #### Scenario: Text streaming lifecycle
 - **WHEN** the stream contains message added, two `output_text.delta` events, and message done
