@@ -630,11 +630,31 @@ func buildToolResult(p provider.ContentPart, documentCounter *int, isMistral boo
 			switch c.Type {
 			case provider.ToolContentText:
 				out.Content = append(out.Content, toolResultContent{Text: c.Text})
-			case provider.ToolContentFileData:
+			case provider.ToolContentFile:
+				if c.Data == nil {
+					*warnings = append(*warnings, provider.Warning{
+						Type:    provider.WarnUnsupported,
+						Feature: "toolResultContentPart",
+						Details: "Bedrock tool result file has no data",
+					})
+					continue
+				}
+				base64Data := c.Data.Base64
+				if base64Data == "" && len(c.Data.Bytes) > 0 {
+					base64Data = base64.StdEncoding.EncodeToString(c.Data.Bytes)
+				}
+				if base64Data == "" {
+					*warnings = append(*warnings, provider.Warning{
+						Type:    provider.WarnUnsupported,
+						Feature: "toolResultContentPart",
+						Details: "Bedrock tool result files support only inline data",
+					})
+					continue
+				}
 				filePart := provider.ContentPart{
 					MediaType:       c.MediaType,
 					Filename:        c.Filename,
-					Data:            &provider.DataContent{Base64: c.Data},
+					Data:            c.Data,
 					ProviderOptions: c.ProviderOptions,
 				}
 				mediaType, err := resolveFullMediaType(filePart)
@@ -648,7 +668,7 @@ func buildToolResult(p provider.ContentPart, documentCounter *int, isMistral boo
 						return nil, fmt.Errorf("bedrock: image media type %q is not supported", mediaType)
 					}
 					out.Content = append(out.Content, toolResultContent{
-						Image: &imageBlock{Format: format, Source: imageSource{Bytes: c.Data}},
+						Image: &imageBlock{Format: format, Source: imageSource{Bytes: base64Data}},
 					})
 					continue
 				case "video":
@@ -661,7 +681,7 @@ func buildToolResult(p provider.ContentPart, documentCounter *int, isMistral boo
 					})
 					continue
 				}
-				document, err := buildDocumentBlock(mediaType, c.Filename, c.Data, c.ProviderOptions, documentCounter)
+				document, err := buildDocumentBlock(mediaType, c.Filename, base64Data, c.ProviderOptions, documentCounter)
 				if err != nil {
 					return nil, err
 				}

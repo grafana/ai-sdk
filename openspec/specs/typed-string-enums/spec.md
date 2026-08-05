@@ -82,11 +82,17 @@ The `provider` package SHALL define a `SourceType` typed string with constants: 
 
 ### Requirement: ToolResultContentType typed string enum
 
-The `provider` package SHALL define a `ToolResultContentType` typed string with constants: `ToolContentText` ("text"), `ToolContentFileData` ("file-data"), `ToolContentFileURL` ("file-url"), `ToolContentFileReference` ("file-reference"), `ToolContentCustom` ("custom"). These match upstream V4 exactly -- images are represented as `ToolContentFileData` with an image mediaType, not as separate image-specific types. The `ToolResultContentValue.Type` field SHALL be typed as `ToolResultContentType`. The `ToolResultContentValue.ProviderReference` field (json `"providerReference"`) SHALL hold the provider-specific reference, matching the upstream V4 `providerReference` field.
+The `provider` package SHALL define a `ToolResultContentType` typed string with canonical constants: `ToolContentText` ("text"), `ToolContentFile` ("file"), and `ToolContentCustom` ("custom"). The `ToolResultContentValue.Type` field SHALL be typed as `ToolResultContentType`, and file values SHALL carry `Data *DataContent` using the LanguageModelV4 tagged data union.
+
+The legacy constants `ToolContentFileData` ("file-data"), `ToolContentFileURL` ("file-url"), and `ToolContentFileReference` ("file-reference") SHALL remain available to recognize legacy wire input. Decoding SHALL normalize them to `ToolContentFile`, and marshaling SHALL emit `"file"`.
 
 #### Scenario: ToolResultContentValue uses typed constant
-- **WHEN** a test constructs `ToolResultContentValue{Type: "file-data", Data: "base64data"}`
-- **THEN** it SHALL use `ToolContentFileData` instead of the bare string
+- **WHEN** a test constructs a canonical file content value
+- **THEN** it SHALL use `ToolContentFile` instead of the bare string `"file"`
+
+#### Scenario: legacy discriminator normalization
+- **WHEN** a legacy `"file-data"`, `"file-url"`, or `"file-reference"` value is decoded
+- **THEN** its `Type` SHALL normalize to `ToolContentFile`
 
 ### Requirement: GenerateContentType typed string enum
 

@@ -814,8 +814,8 @@ func TestBuildRequest_ToolResultDocument(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			req, warnings, _ := mustBuildRequest(t, testAnthropicModel, toolResultFileCallOptions(provider.ToolResultContentValue{
-				Type:            provider.ToolContentFileData,
-				Data:            "base64data",
+				Type:            provider.ToolContentFile,
+				Data:            &provider.DataContent{Base64: "base64data"},
 				MediaType:       tt.mediaType,
 				Filename:        tt.filename,
 				ProviderOptions: tt.providerOptions,
@@ -844,8 +844,8 @@ func TestBuildRequest_ToolResultDocument(t *testing.T) {
 
 func TestBuildRequest_ToolResultImage(t *testing.T) {
 	req, warnings, _ := mustBuildRequest(t, testAnthropicModel, toolResultFileCallOptions(provider.ToolResultContentValue{
-		Type:      provider.ToolContentFileData,
-		Data:      "base64data",
+		Type:      provider.ToolContentFile,
+		Data:      &provider.DataContent{Base64: "base64data"},
 		MediaType: "image/jpeg",
 	}))
 
@@ -877,8 +877,8 @@ func TestBuildRequest_UnsupportedToolResultFileMediaType(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.mediaType, func(t *testing.T) {
 			_, _, _, err := buildRequest(testAnthropicModel, toolResultFileCallOptions(provider.ToolResultContentValue{
-				Type:      provider.ToolContentFileData,
-				Data:      "base64data",
+				Type:      provider.ToolContentFile,
+				Data:      &provider.DataContent{Base64: "base64data"},
 				MediaType: tt.mediaType,
 			}))
 
@@ -895,8 +895,8 @@ func TestBuildRequest_DocumentNamesShareCounterWithToolResults(t *testing.T) {
 			provider.NewToolMessage(provider.ToolResultPart("call-123", "document-reader", &provider.ToolResultOutput{
 				Type: provider.ToolOutputContent,
 				Content: []provider.ToolResultContentValue{{
-					Type:      provider.ToolContentFileData,
-					Data:      "base64data",
+					Type:      provider.ToolContentFile,
+					Data:      &provider.DataContent{Base64: "base64data"},
 					MediaType: "application/pdf",
 				}},
 			})),

@@ -45,6 +45,25 @@ func TestDecodeCallOptions_UpstreamGatewayBody(t *testing.T) {
 	}, opts.Prompt[1].Content)
 }
 
+func TestDecodeCallOptions_UpstreamToolResultFileData(t *testing.T) {
+	body := []byte(`{"prompt":[{"role":"tool","content":[{` +
+		`"type":"tool-result","toolCallId":"call-1","toolName":"weather",` +
+		`"output":{"type":"content","value":[` +
+		`{"type":"text","text":"72 degrees and sunny"},` +
+		`{"type":"file","data":{"type":"data","data":"iVBORw0KGgo="},"mediaType":"image/png"}` +
+		`]}}]}]}`)
+
+	opts, err := DecodeCallOptions(body)
+	require.NoError(t, err)
+	require.Len(t, opts.Prompt, 1)
+	require.Len(t, opts.Prompt[0].Content, 1)
+	require.NotNil(t, opts.Prompt[0].Content[0].Output)
+	assert.Equal(t, []provider.ToolResultContentValue{
+		{Type: provider.ToolContentText, Text: "72 degrees and sunny"},
+		{Type: provider.ToolContentFile, Data: &provider.DataContent{Base64: "iVBORw0KGgo="}, MediaType: "image/png"},
+	}, opts.Prompt[0].Content[0].Output.Content)
+}
+
 // TestEncodeDecodeCallOptions_FullRoundTrip asserts every notable
 // CallOptions field round-trips losslessly through wire encoding.
 func TestEncodeDecodeCallOptions_FullRoundTrip(t *testing.T) {

@@ -415,7 +415,7 @@ func TestConvertToModelMessages_ToolModelOutput(t *testing.T) {
 		Type: provider.ToolOutputContent,
 		Content: []provider.ToolResultContentValue{
 			{Type: provider.ToolContentText, Text: "weather report"},
-			{Type: provider.ToolContentFileData, Data: "aGVsbG8=", MediaType: "image/png"},
+			{Type: provider.ToolContentFile, Data: &provider.DataContent{Base64: "aGVsbG8="}, MediaType: "image/png"},
 		},
 	}
 

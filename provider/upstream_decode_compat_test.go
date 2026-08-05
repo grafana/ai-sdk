@@ -151,6 +151,46 @@ func TestStreamFileData_UnmarshalRejectsUnsupportedVariants(t *testing.T) {
 	}
 }
 
+func TestToolResultContentValue_UnmarshalLegacyFileVariants(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want ToolResultContentValue
+	}{
+		{
+			name: "raw base64",
+			in:   `{"type":"file-data","data":"aGk=","mediaType":"image/png"}`,
+			want: ToolResultContentValue{Type: ToolContentFile, Data: &DataContent{Base64: "aGk="}, MediaType: "image/png"},
+		},
+		{
+			name: "empty raw base64",
+			in:   `{"type":"file-data","data":"","mediaType":"image/png"}`,
+			want: ToolResultContentValue{Type: ToolContentFile, Data: &DataContent{}, MediaType: "image/png"},
+		},
+		{
+			name: "URL",
+			in:   `{"type":"file-url","url":"https://example.com/file.pdf","mediaType":"application/pdf"}`,
+			want: ToolResultContentValue{Type: ToolContentFile, Data: &DataContent{URL: "https://example.com/file.pdf"}, MediaType: "application/pdf"},
+		},
+		{
+			name: "provider reference",
+			in:   `{"type":"file-reference","providerReference":{"openai":"file-123"},"mediaType":"application/pdf"}`,
+			want: ToolResultContentValue{Type: ToolContentFile, Data: &DataContent{Reference: json.RawMessage(`{"openai":"file-123"}`)}, MediaType: "application/pdf"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var value ToolResultContentValue
+			require.NoError(t, json.Unmarshal([]byte(tc.in), &value))
+			assert.Equal(t, tc.want, value)
+
+			encoded, err := json.Marshal(value)
+			require.NoError(t, err)
+			assert.Contains(t, string(encoded), `"type":"file"`)
+		})
+	}
+}
+
 // TestDataContent_UnmarshalUnknownVariantFailsClosed locks the fail-closed
 // policy: an unknown tagged file-data variant is rejected with a decode error,
 // not silently turned into an empty DataContent. Supported variants
