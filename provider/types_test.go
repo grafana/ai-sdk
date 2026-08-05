@@ -81,56 +81,49 @@ func TestUsageJSONSerialization(t *testing.T) {
 	assert.Nil(t, decoded.InputTokens.CacheWrite)
 }
 
-func TestToolResultContentValue_ExpandedTypes(t *testing.T) {
+func TestToolResultContentValue_RoundTrip(t *testing.T) {
 	tests := []struct {
 		name string
 		val  ToolResultContentValue
-		key  ToolResultContentType
+		want string
 	}{
 		{
-			name: "file-data",
-			val:  ToolResultContentValue{Type: ToolContentFileData, Data: "base64data", MediaType: "application/pdf", Filename: "report.pdf"},
-			key:  ToolContentFileData,
+			name: "file data",
+			val:  ToolResultContentValue{Type: ToolContentFile, Data: &DataContent{Base64: "base64data"}, MediaType: "application/pdf", Filename: "report.pdf"},
+			want: `{"type":"file","data":{"type":"data","data":"base64data"},"mediaType":"application/pdf","filename":"report.pdf"}`,
 		},
 		{
-			name: "file-url",
-			val:  ToolResultContentValue{Type: ToolContentFileURL, URL: "https://example.com/file.pdf"},
-			key:  ToolContentFileURL,
+			name: "file URL",
+			val:  ToolResultContentValue{Type: ToolContentFile, Data: &DataContent{URL: "https://example.com/file.pdf"}, MediaType: "application/pdf"},
+			want: `{"type":"file","data":{"type":"url","url":"https://example.com/file.pdf"},"mediaType":"application/pdf"}`,
 		},
 		{
-			name: "file-reference",
-			val:  ToolResultContentValue{Type: ToolContentFileReference, ProviderReference: map[string]string{"openai": "file-abc123"}},
-			key:  ToolContentFileReference,
+			name: "file reference",
+			val:  ToolResultContentValue{Type: ToolContentFile, Data: &DataContent{Reference: json.RawMessage(`{"openai":"file-abc123"}`)}, MediaType: "application/pdf"},
+			want: `{"type":"file","data":{"type":"reference","reference":{"openai":"file-abc123"}},"mediaType":"application/pdf"}`,
 		},
 		{
-			name: "file-data with image mediaType",
-			val:  ToolResultContentValue{Type: ToolContentFileData, Data: "base64img", MediaType: "image/png"},
-			key:  ToolContentFileData,
+			name: "file text",
+			val:  ToolResultContentValue{Type: ToolContentFile, Data: &DataContent{Text: "document"}, MediaType: "text/plain"},
+			want: `{"type":"file","data":{"type":"text","text":"document"},"mediaType":"text/plain"}`,
 		},
 		{
 			name: "custom",
 			val:  ToolResultContentValue{Type: ToolContentCustom},
-			key:  ToolContentCustom,
+			want: `{"type":"custom"}`,
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			assert.Equal(t, tc.key, tc.val.Type)
 			data, err := json.Marshal(tc.val)
 			require.NoError(t, err)
+			assert.JSONEq(t, tc.want, string(data))
+
 			var decoded ToolResultContentValue
 			require.NoError(t, json.Unmarshal(data, &decoded))
-			assert.Equal(t, tc.val.Type, decoded.Type)
+			assert.Equal(t, tc.val, decoded)
 		})
 	}
-
-	t.Run("file-reference serialization", func(t *testing.T) {
-		val := ToolResultContentValue{Type: ToolContentFileReference, ProviderReference: map[string]string{"openai": "file-abc123"}}
-		data, err := json.Marshal(val)
-		require.NoError(t, err)
-		assert.Contains(t, string(data), `"providerReference"`)
-		assert.Contains(t, string(data), `"openai"`)
-	})
 }
 
 func TestToolResultOutput(t *testing.T) {

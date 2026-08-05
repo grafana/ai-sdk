@@ -1534,7 +1534,7 @@ func TestSerializeToolOutput_Content(t *testing.T) {
 		Type: provider.ToolOutputContent,
 		Content: []provider.ToolResultContentValue{
 			{Type: provider.ToolContentText, Text: "result text"},
-			{Type: provider.ToolContentFileData, Data: "imgdata", MediaType: "image/png"},
+			{Type: provider.ToolContentFile, Data: &provider.DataContent{Base64: "imgdata"}, MediaType: "image/png"},
 		},
 	}
 
