@@ -669,35 +669,88 @@ func TestBuildParams_ReturnsToolNameMapping(t *testing.T) {
 }
 
 func TestBuildParams_ToolChoice(t *testing.T) {
+	functionTool := provider.Tool{
+		Type:        provider.ToolTypeFunction,
+		Name:        "search",
+		Description: "Search the web",
+		InputSchema: json.RawMessage(`{"type":"object"}`),
+	}
 	tests := []struct {
+		name   string
+		tools  []provider.Tool
 		choice provider.ToolChoice
-		check  func(t *testing.T, p interface{})
+		check  func(t *testing.T, p sdk.BetaMessageNewParams)
 	}{
 		{
-			provider.ToolChoice{Type: provider.ToolChoiceAuto},
-			func(t *testing.T, _ interface{}) {},
+			name:   "auto without tools is omitted",
+			choice: provider.ToolChoice{Type: provider.ToolChoiceAuto},
+			check: func(t *testing.T, p sdk.BetaMessageNewParams) {
+				assert.Nil(t, p.ToolChoice.OfNone)
+				assert.Nil(t, p.ToolChoice.OfAuto)
+				assert.Nil(t, p.ToolChoice.OfAny)
+				assert.Nil(t, p.ToolChoice.OfTool)
+				body, err := json.Marshal(p)
+				require.NoError(t, err)
+				assert.NotContains(t, string(body), `"tool_choice"`)
+			},
 		},
 		{
-			provider.ToolChoice{Type: provider.ToolChoiceNone},
-			func(t *testing.T, _ interface{}) {},
+			name:   "auto with tools is preserved",
+			tools:  []provider.Tool{functionTool},
+			choice: provider.ToolChoice{Type: provider.ToolChoiceAuto},
+			check: func(t *testing.T, p sdk.BetaMessageNewParams) {
+				require.NotNil(t, p.ToolChoice.OfAuto)
+			},
 		},
 		{
-			provider.ToolChoice{Type: provider.ToolChoiceRequired},
-			func(t *testing.T, _ interface{}) {},
+			name: "auto with unsupported tools is preserved",
+			tools: []provider.Tool{{
+				Type: provider.ToolTypeProvider,
+				ID:   "anthropic.unsupported",
+			}},
+			choice: provider.ToolChoice{Type: provider.ToolChoiceAuto},
+			check: func(t *testing.T, p sdk.BetaMessageNewParams) {
+				assert.Empty(t, p.Tools)
+				require.NotNil(t, p.ToolChoice.OfAuto)
+			},
 		},
 		{
-			provider.ToolChoice{Type: provider.ToolChoiceTool, ToolName: "search"},
-			func(t *testing.T, _ interface{}) {},
+			name:   "required without tools is preserved",
+			choice: provider.ToolChoice{Type: provider.ToolChoiceRequired},
+			check: func(t *testing.T, p sdk.BetaMessageNewParams) {
+				require.NotNil(t, p.ToolChoice.OfAny)
+			},
+		},
+		{
+			name:   "specific tool without tools is preserved",
+			choice: provider.ToolChoice{Type: provider.ToolChoiceTool, ToolName: "search"},
+			check: func(t *testing.T, p sdk.BetaMessageNewParams) {
+				require.NotNil(t, p.ToolChoice.OfTool)
+				assert.Equal(t, "search", p.ToolChoice.OfTool.Name)
+			},
+		},
+		{
+			name:   "none without tools is omitted",
+			choice: provider.ToolChoice{Type: provider.ToolChoiceNone},
+			check: func(t *testing.T, p sdk.BetaMessageNewParams) {
+				assert.Empty(t, p.Tools)
+				assert.Nil(t, p.ToolChoice.OfNone)
+				assert.Nil(t, p.ToolChoice.OfAuto)
+				assert.Nil(t, p.ToolChoice.OfAny)
+				assert.Nil(t, p.ToolChoice.OfTool)
+			},
 		},
 	}
 
 	for _, tt := range tests {
-		t.Run(string(tt.choice.Type), func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			opts := provider.CallOptions{
+				Tools:      tt.tools,
 				ToolChoice: &tt.choice,
 			}
-			_, _, _, _, err := buildParams("claude-sonnet-4-6", opts, false)
+			p, _, _, _, err := buildParams("claude-sonnet-4-6", opts, false)
 			require.NoError(t, err)
+			tt.check(t, p)
 		})
 	}
 }

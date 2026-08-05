@@ -30,7 +30,10 @@ func TestDecodeCallOptions_UpstreamGatewayBody(t *testing.T) {
 	opts, err := DecodeCallOptions(body)
 	require.NoError(t, err)
 	require.Len(t, opts.Prompt, 2)
+	require.NotNil(t, opts.ToolChoice)
 
+	assert.Empty(t, opts.Tools)
+	assert.Equal(t, provider.ToolChoiceAuto, opts.ToolChoice.Type)
 	assert.Equal(t, provider.RoleSystem, opts.Prompt[0].Role)
 	assert.Equal(t, []provider.ContentPart{
 		{Type: provider.ContentPartTypeText, Text: "You are a helpful assistant."},
