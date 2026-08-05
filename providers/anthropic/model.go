@@ -14,6 +14,10 @@ import (
 
 const specVersion = "v4"
 
+const vertexCloudPlatformScope = "https://www.googleapis.com/auth/cloud-platform"
+
+var vertexGoogleAuth = vertexsdk.WithGoogleAuth
+
 type model struct {
 	client       anthropic.Client
 	modelID      string
@@ -82,7 +86,7 @@ func vertexAuth(ctx context.Context, location, projectID string) (opt option.Req
 			opt = nil
 		}
 	}()
-	return vertexsdk.WithGoogleAuth(ctx, location, projectID), nil
+	return vertexGoogleAuth(ctx, location, projectID, vertexCloudPlatformScope), nil
 }
 
 func (m *model) SpecificationVersion() string               { return specVersion }
