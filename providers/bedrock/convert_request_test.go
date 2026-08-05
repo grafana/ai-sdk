@@ -860,6 +860,23 @@ func TestBuildRequest_ToolResultImage(t *testing.T) {
 	assert.Empty(t, warnings)
 }
 
+func TestBuildRequest_ToolResultEmptyData(t *testing.T) {
+	emptyData := provider.Base64DataContent("")
+	req, warnings, _ := mustBuildRequest(t, testAnthropicModel, toolResultFileCallOptions(provider.ToolResultContentValue{
+		Type:      provider.ToolContentFile,
+		Data:      &emptyData,
+		MediaType: "image/jpeg",
+	}))
+
+	require.Len(t, req.Messages, 1)
+	result := req.Messages[0].Content[0].ToolResult
+	require.NotNil(t, result)
+	require.Len(t, result.Content, 1)
+	require.NotNil(t, result.Content[0].Image)
+	assert.Empty(t, result.Content[0].Image.Source.Bytes)
+	assert.Empty(t, warnings)
+}
+
 func TestBuildRequest_UnsupportedToolResultFileMediaType(t *testing.T) {
 	tests := []struct {
 		mediaType     string

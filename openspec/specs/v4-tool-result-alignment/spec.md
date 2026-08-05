@@ -25,7 +25,7 @@ The `ToolResultContentValue` struct SHALL support the following `Type` values:
 - `"file"` -- file content with `Data *DataContent`, `MediaType`, and optional `Filename`
 - `"custom"` -- custom provider-specific content with `ProviderOptions` only
 
-File content SHALL use the LanguageModelV4 tagged `DataContent` union for inline data, URLs, provider references, and inline text. Images SHALL use `"file"` with an image media type (e.g. `image/png`).
+File content SHALL require both `Data` and `MediaType` and use the LanguageModelV4 tagged `DataContent` union for inline data, URLs, provider references, and inline text. `MediaType` SHALL accept a full IANA media type, a top-level segment, or an equivalent `*`-subtype wildcard. Images SHALL use `"file"` with an image media type (e.g. `image/png`).
 
 The legacy `"file-data"`, `"file-url"`, and `"file-reference"` wire discriminators SHALL remain accepted during decoding and SHALL normalize to `"file"`. Marshaling SHALL emit the canonical `"file"` discriminator and tagged data union.
 

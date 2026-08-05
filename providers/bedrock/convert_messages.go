@@ -643,7 +643,7 @@ func buildToolResult(p provider.ContentPart, documentCounter *int, isMistral boo
 				if base64Data == "" && len(c.Data.Bytes) > 0 {
 					base64Data = base64.StdEncoding.EncodeToString(c.Data.Bytes)
 				}
-				if base64Data == "" {
+				if !c.Data.IsData() {
 					*warnings = append(*warnings, provider.Warning{
 						Type:    provider.WarnUnsupported,
 						Feature: "toolResultContentPart",

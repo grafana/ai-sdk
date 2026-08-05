@@ -2,6 +2,7 @@ package provider
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 )
 
@@ -164,6 +165,8 @@ func (t ToolResultOutput) MarshalJSON() ([]byte, error) {
 			}
 			out["reason"] = b
 		}
+	default:
+		return nil, fmt.Errorf("provider: unsupported tool-result output type %q", t.Type)
 	}
 	if len(t.ProviderOptions) > 0 {
 		b, err := json.Marshal(t.ProviderOptions)
@@ -184,6 +187,10 @@ func (t ToolResultOutput) MarshalJSON() ([]byte, error) {
 // carrying a shape this build cannot represent), the error is returned rather
 // than silently dropping the payload.
 func (t *ToolResultOutput) UnmarshalJSON(data []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
 	var raw struct {
 		Type            ToolResultOutputType     `json:"type"`
 		Text            string                   `json:"text"`
@@ -204,10 +211,21 @@ func (t *ToolResultOutput) UnmarshalJSON(data []byte) error {
 		Reason:          raw.Reason,
 		ProviderOptions: raw.ProviderOptions,
 	}
+	if raw.Type != ToolOutputText && raw.Type != ToolOutputErrorText &&
+		raw.Type != ToolOutputJSON && raw.Type != ToolOutputErrorJSON &&
+		raw.Type != ToolOutputContent && raw.Type != ToolOutputExecutionDenied {
+		return fmt.Errorf("provider: unsupported tool-result output type %q", raw.Type)
+	}
 	// Upstream single-`value` shape: map onto the canonical split fields.
-	if len(raw.Value) != 0 && string(raw.Value) != "null" {
+	if _, ok := fields["value"]; ok {
+		if raw.Type == ToolOutputExecutionDenied {
+			return errors.New("provider: execution-denied tool result must not contain value")
+		}
 		switch raw.Type {
 		case ToolOutputText, ToolOutputErrorText:
+			if string(raw.Value) == "null" {
+				return fmt.Errorf("provider: decoding tool-result %q value: value is required", raw.Type)
+			}
 			var s string
 			if err := json.Unmarshal(raw.Value, &s); err != nil {
 				return fmt.Errorf("provider: decoding tool-result %q value as string: %w", raw.Type, err)
@@ -216,11 +234,31 @@ func (t *ToolResultOutput) UnmarshalJSON(data []byte) error {
 		case ToolOutputJSON, ToolOutputErrorJSON:
 			t.JSON = raw.Value
 		case ToolOutputContent:
+			if string(raw.Value) == "null" {
+				return errors.New("provider: decoding tool-result content value: value is required")
+			}
 			var cv []ToolResultContentValue
 			if err := json.Unmarshal(raw.Value, &cv); err != nil {
 				return fmt.Errorf("provider: decoding tool-result content value: %w", err)
 			}
 			t.Content = cv
+		}
+	} else {
+		switch raw.Type {
+		case ToolOutputText, ToolOutputErrorText:
+			rawText, ok := fields["text"]
+			if !ok || string(rawText) == "null" {
+				return fmt.Errorf("provider: decoding legacy tool-result %q: text is required", raw.Type)
+			}
+		case ToolOutputJSON, ToolOutputErrorJSON:
+			if _, ok := fields["json"]; !ok {
+				return fmt.Errorf("provider: decoding legacy tool-result %q: json is required", raw.Type)
+			}
+		case ToolOutputContent:
+			rawContent, ok := fields["content"]
+			if !ok || string(rawContent) == "null" {
+				return errors.New("provider: decoding legacy tool-result content: content is required")
+			}
 		}
 	}
 	return nil
@@ -254,33 +292,51 @@ type ToolResultContentValue struct {
 
 // MarshalJSON emits the upstream LanguageModelV4 tool-result content union.
 func (v ToolResultContentValue) MarshalJSON() ([]byte, error) {
-	type wireValue struct {
-		Type            ToolResultContentType `json:"type"`
-		Text            string                `json:"text,omitempty"`
-		Data            *DataContent          `json:"data,omitempty"`
-		MediaType       string                `json:"mediaType,omitempty"`
-		Filename        string                `json:"filename,omitempty"`
-		ProviderOptions ProviderOptions       `json:"providerOptions,omitempty"`
+	switch v.Type {
+	case ToolContentText:
+		return json.Marshal(struct {
+			Type            ToolResultContentType `json:"type"`
+			Text            string                `json:"text"`
+			ProviderOptions ProviderOptions       `json:"providerOptions,omitempty"`
+		}{Type: ToolContentText, Text: v.Text, ProviderOptions: v.ProviderOptions})
+	case ToolContentFile, ToolContentFileData, ToolContentFileURL, ToolContentFileReference:
+		if v.Data == nil {
+			return nil, errors.New("provider: tool-result file content data is required")
+		}
+		if err := v.Data.Validate(); err != nil {
+			return nil, fmt.Errorf("provider: validating tool-result file data: %w", err)
+		}
+		return json.Marshal(struct {
+			Type            ToolResultContentType `json:"type"`
+			Data            *DataContent          `json:"data"`
+			MediaType       string                `json:"mediaType"`
+			Filename        string                `json:"filename,omitempty"`
+			ProviderOptions ProviderOptions       `json:"providerOptions,omitempty"`
+		}{
+			Type:            ToolContentFile,
+			Data:            v.Data,
+			MediaType:       v.MediaType,
+			Filename:        v.Filename,
+			ProviderOptions: v.ProviderOptions,
+		})
+	case ToolContentCustom:
+		return json.Marshal(struct {
+			Type            ToolResultContentType `json:"type"`
+			ProviderOptions ProviderOptions       `json:"providerOptions,omitempty"`
+		}{Type: ToolContentCustom, ProviderOptions: v.ProviderOptions})
+	default:
+		type alias ToolResultContentValue
+		return json.Marshal(alias(v))
 	}
-
-	typeValue := v.Type
-	switch typeValue {
-	case ToolContentFileData, ToolContentFileURL, ToolContentFileReference:
-		typeValue = ToolContentFile
-	}
-	return json.Marshal(wireValue{
-		Type:            typeValue,
-		Text:            v.Text,
-		Data:            v.Data,
-		MediaType:       v.MediaType,
-		Filename:        v.Filename,
-		ProviderOptions: v.ProviderOptions,
-	})
 }
 
 // UnmarshalJSON decodes canonical LanguageModelV4 tool-result content and the
 // legacy flat file-data, file-url, and file-reference variants.
 func (v *ToolResultContentValue) UnmarshalJSON(data []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
 	var raw struct {
 		Type              ToolResultContentType `json:"type"`
 		Text              string                `json:"text"`
@@ -304,35 +360,77 @@ func (v *ToolResultContentValue) UnmarshalJSON(data []byte) error {
 	}
 
 	switch raw.Type {
-	case ToolContentFile:
-		if len(raw.Data) != 0 && string(raw.Data) != "null" {
-			var fileData DataContent
-			if err := json.Unmarshal(raw.Data, &fileData); err != nil {
-				return fmt.Errorf("provider: decoding tool-result file data: %w", err)
-			}
-			v.Data = &fileData
+	case ToolContentText:
+		rawText, ok := fields["text"]
+		if !ok || string(rawText) == "null" {
+			return errors.New("provider: tool-result text content text is required")
 		}
+	case ToolContentFile:
+		rawData, ok := fields["data"]
+		if !ok || string(rawData) == "null" {
+			return errors.New("provider: tool-result file content data is required")
+		}
+		rawMediaType, ok := fields["mediaType"]
+		if !ok || string(rawMediaType) == "null" {
+			return errors.New("provider: tool-result file content mediaType is required")
+		}
+		var dataFields map[string]json.RawMessage
+		if err := json.Unmarshal(rawData, &dataFields); err != nil {
+			return fmt.Errorf("provider: decoding tool-result file data: %w", err)
+		}
+		if _, ok := dataFields["type"]; !ok {
+			return errors.New("provider: tool-result file data type is required")
+		}
+		var fileData DataContent
+		if err := json.Unmarshal(raw.Data, &fileData); err != nil {
+			return fmt.Errorf("provider: decoding tool-result file data: %w", err)
+		}
+		if err := fileData.Validate(); err != nil {
+			return fmt.Errorf("provider: validating tool-result file data: %w", err)
+		}
+		v.Data = &fileData
 	case ToolContentFileData:
+		rawData, ok := fields["data"]
+		if !ok || string(rawData) == "null" {
+			return errors.New("provider: legacy tool-result file data is required")
+		}
+		rawMediaType, ok := fields["mediaType"]
+		if !ok || string(rawMediaType) == "null" {
+			return errors.New("provider: legacy tool-result file mediaType is required")
+		}
 		var base64Data string
-		if len(raw.Data) != 0 && string(raw.Data) != "null" {
-			if err := json.Unmarshal(raw.Data, &base64Data); err != nil {
-				return fmt.Errorf("provider: decoding legacy tool-result file data: %w", err)
-			}
+		if err := json.Unmarshal(raw.Data, &base64Data); err != nil {
+			return fmt.Errorf("provider: decoding legacy tool-result file data: %w", err)
 		}
 		v.Type = ToolContentFile
 		v.Data = &DataContent{Base64: base64Data}
+		if base64Data == "" {
+			v.Data.variant = dataContentVariantData
+		}
 	case ToolContentFileURL:
+		rawURL, ok := fields["url"]
+		if !ok || string(rawURL) == "null" {
+			return errors.New("provider: legacy tool-result file URL is required")
+		}
 		v.Type = ToolContentFile
 		v.Data = &DataContent{URL: raw.URL}
-	case ToolContentFileReference:
-		v.Type = ToolContentFile
-		if raw.ProviderReference != nil {
-			reference, err := json.Marshal(raw.ProviderReference)
-			if err != nil {
-				return fmt.Errorf("provider: encoding legacy tool-result file reference: %w", err)
-			}
-			v.Data = &DataContent{Reference: reference}
+		if raw.URL == "" {
+			v.Data.variant = dataContentVariantURL
 		}
+	case ToolContentFileReference:
+		rawReference, ok := fields["providerReference"]
+		if !ok || string(rawReference) == "null" {
+			return errors.New("provider: legacy tool-result providerReference is required")
+		}
+		reference, err := json.Marshal(raw.ProviderReference)
+		if err != nil {
+			return fmt.Errorf("provider: encoding legacy tool-result file reference: %w", err)
+		}
+		v.Type = ToolContentFile
+		v.Data = &DataContent{Reference: reference}
+	case ToolContentCustom:
+	default:
+		return fmt.Errorf("provider: unsupported tool-result content type %q", raw.Type)
 	}
 	return nil
 }

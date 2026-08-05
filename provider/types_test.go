@@ -88,6 +88,11 @@ func TestToolResultContentValue_RoundTrip(t *testing.T) {
 		want string
 	}{
 		{
+			name: "empty text",
+			val:  ToolResultContentValue{Type: ToolContentText},
+			want: `{"type":"text","text":""}`,
+		},
+		{
 			name: "file data",
 			val:  ToolResultContentValue{Type: ToolContentFile, Data: &DataContent{Base64: "base64data"}, MediaType: "application/pdf", Filename: "report.pdf"},
 			want: `{"type":"file","data":{"type":"data","data":"base64data"},"mediaType":"application/pdf","filename":"report.pdf"}`,
@@ -126,6 +131,35 @@ func TestToolResultContentValue_RoundTrip(t *testing.T) {
 	}
 }
 
+func TestToolResultContentValue_MarshalRejectsInvalidFileData(t *testing.T) {
+	tests := []struct {
+		name string
+		data *DataContent
+	}{
+		{name: "missing", data: nil},
+		{name: "empty", data: &DataContent{}},
+		{name: "multiple sources", data: &DataContent{Base64: "aGk=", URL: "https://example.com/file"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := json.Marshal(ToolResultContentValue{Type: ToolContentFile, Data: tc.data, MediaType: "image/png"})
+			require.Error(t, err)
+		})
+	}
+}
+
+func TestToolResultContentValue_MarshalOmitsInactiveVariantFields(t *testing.T) {
+	data, err := json.Marshal(ToolResultContentValue{
+		Type:      ToolContentCustom,
+		Text:      "not custom content",
+		Data:      &DataContent{Base64: "ignored"},
+		MediaType: "image/png",
+		Filename:  "ignored.png",
+	})
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"type":"custom"}`, string(data))
+}
+
 func TestToolResultOutput(t *testing.T) {
 	t.Run("text variant has zero-valued non-text fields", func(t *testing.T) {
 		out := ToolResultOutput{Type: ToolOutputText, Text: "result data"}
@@ -139,6 +173,11 @@ func TestToolResultOutput(t *testing.T) {
 		assert.Empty(t, out.Text)
 		assert.Nil(t, out.Content)
 		assert.Empty(t, out.Reason)
+	})
+
+	t.Run("unknown variant cannot marshal", func(t *testing.T) {
+		_, err := json.Marshal(ToolResultOutput{Type: ToolResultOutputType("future")})
+		require.Error(t, err)
 	})
 }
 
