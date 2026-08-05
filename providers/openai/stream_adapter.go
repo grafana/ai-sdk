@@ -52,6 +52,7 @@ type streamAdapter struct {
 
 	ongoingToolCalls          map[int64]*ongoingToolCall
 	ongoingAnnotations        []json.RawMessage
+	logprobs                  [][]responseLogprob
 	activeReasoning           map[string]*activeReasoningState
 	hasFunctionCall           bool
 	responseID                string
@@ -98,6 +99,9 @@ func (a *streamAdapter) handleEvent(event responses.ResponseStreamEventUnion, ch
 
 	case responses.ResponseTextDeltaEvent:
 		ch <- provider.StreamPart{Type: provider.PartTextDelta, ID: e.ItemID, Delta: e.Delta}
+		if a.br.logprobsRequested && len(e.Logprobs) > 0 {
+			a.logprobs = append(a.logprobs, convertTextDeltaLogprobs(e.Logprobs))
+		}
 
 	case responses.ResponseOutputTextAnnotationAddedEvent:
 		// Accumulate the raw annotation; attached to the text-end metadata.
@@ -721,7 +725,7 @@ func (a *streamAdapter) emitFinish(resp responses.Response, ch chan<- provider.S
 		Type:             provider.PartFinish,
 		FinishReason:     &fr,
 		Usage:            &usage,
-		ProviderMetadata: responseMeta(a.providerName, &resp),
+		ProviderMetadata: responseMeta(a.providerName, &resp, a.logprobs),
 	}
 }
 
@@ -739,7 +743,7 @@ func (a *streamAdapter) emitFailedFinish(resp responses.Response, ch chan<- prov
 		Type:             provider.PartFinish,
 		FinishReason:     &fr,
 		Usage:            &usage,
-		ProviderMetadata: responseMeta(a.providerName, &resp),
+		ProviderMetadata: responseMeta(a.providerName, &resp, a.logprobs),
 	}
 }
 
@@ -755,6 +759,6 @@ func (a *streamAdapter) emitPendingErrorFinish(ch chan<- provider.StreamPart) {
 		Type:             provider.PartFinish,
 		FinishReason:     &fr,
 		Usage:            &usage,
-		ProviderMetadata: responseMeta(a.providerName, &resp),
+		ProviderMetadata: responseMeta(a.providerName, &resp, a.logprobs),
 	}
 }

@@ -75,6 +75,57 @@ func TestStream_TextLifecycle(t *testing.T) {
 	require.NotNil(t, finish.Usage)
 }
 
+func TestStream_Logprobs(t *testing.T) {
+	const firstDelta = `{"type":"response.output_text.delta","sequence_number":1,"output_index":0,"content_index":0,"item_id":"msg_1","delta":"N","logprobs":[{"bytes":[78],"token":"N","logprob":-2.9266366958618164,"top_logprobs":[{"bytes":[80,108,101,97,115,101],"token":"Please","logprob":-0.5516367554664612},{"bytes":[89],"token":"Y","logprob":-1.0516366958618164}]}]}`
+	const secondDelta = `{"type":"response.output_text.delta","sequence_number":2,"output_index":0,"content_index":0,"item_id":"msg_1","delta":"!","logprobs":[{"bytes":[33],"token":"!","logprob":-0.13410144,"top_logprobs":[{"bytes":[33],"token":"!","logprob":-0.13410144}]}]}`
+	const emptyDelta = `{"type":"response.output_text.delta","sequence_number":1,"output_index":0,"content_index":0,"item_id":"msg_1","delta":"N","logprobs":[]}`
+	const completed = `{"type":"response.completed","sequence_number":3,"response":{"id":"resp_1","created_at":1,"model":"gpt-4o","object":"response","status":"completed","service_tier":"default","output":[],"usage":{"input_tokens":1,"output_tokens":2,"total_tokens":3,"input_tokens_details":{"cached_tokens":0},"output_tokens_details":{"reasoning_tokens":0}}}}`
+	tests := []struct {
+		name      string
+		deltas    []string
+		requested bool
+		want      string
+	}{
+		{
+			name:      "requested non-empty logprobs",
+			deltas:    []string{firstDelta, secondDelta},
+			requested: true,
+			want: `[
+				[{"token":"N","logprob":-2.9266366958618164,"top_logprobs":[
+					{"token":"Please","logprob":-0.5516367554664612},
+					{"token":"Y","logprob":-1.0516366958618164}
+				]}],
+				[{"token":"!","logprob":-0.13410144,"top_logprobs":[
+					{"token":"!","logprob":-0.13410144}
+				]}]
+			]`,
+		},
+		{name: "requested empty logprobs", deltas: []string{emptyDelta}, requested: true},
+		{name: "unrequested returned logprobs", deltas: []string{firstDelta}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			events := append(append([]string(nil), tc.deltas...), completed)
+			parts := collectPartsWithBuildResult(t, buildResult{logprobsRequested: tc.requested}, events...)
+			var finish *provider.StreamPart
+			for i := range parts {
+				if parts[i].Type == provider.PartFinish {
+					finish = &parts[i]
+				}
+			}
+			require.NotNil(t, finish)
+			var metadata map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal(finish.ProviderMetadata["openai"], &metadata))
+			if tc.want == "" {
+				assert.NotContains(t, metadata, "logprobs")
+				return
+			}
+			assert.JSONEq(t, tc.want, string(metadata["logprobs"]))
+		})
+	}
+}
+
 func TestStream_FinishCarriesResponseMetadata(t *testing.T) {
 	parts := collectParts(t,
 		`{"type":"response.completed","sequence_number":1,"response":{"id":"resp_1","created_at":1,"model":"gpt-5.6","object":"response","status":"completed","reasoning":{"context":"all_turns"},"output":[],"usage":{"input_tokens":100,"output_tokens":50,"total_tokens":150,"input_tokens_details":{"cached_tokens":30,"cache_write_tokens":10},"output_tokens_details":{"reasoning_tokens":20}}}}`,

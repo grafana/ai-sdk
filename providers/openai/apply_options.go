@@ -205,6 +205,7 @@ func applyIncludeAndReasoning(body *responses.ResponseNewParams, opts provider.C
 	if topLogprobs > 0 {
 		body.TopLogprobs = param.NewOpt(topLogprobs)
 		includes[responses.ResponseIncludableMessageOutputTextLogprobs] = true
+		br.logprobsRequested = true
 	}
 
 	if br.hasWebSearchTool {

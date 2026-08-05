@@ -1279,13 +1279,18 @@ func TestBuildParams_ProviderOptions(t *testing.T) {
 
 	t.Run("logprobs auto-include", func(t *testing.T) {
 		n := int64(3)
-		body, _ := buildBody(t, "gpt-4o", provider.CallOptions{
+		opts := provider.CallOptions{
 			Prompt:          []provider.Message{provider.UserText("hi")},
 			ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{Logprobs: &LogprobsOption{Int: &n}}),
-		})
+		}
+		body, _ := buildBody(t, "gpt-4o", opts)
 		assert.EqualValues(t, 3, body["top_logprobs"])
 		include := toStringSlice(body["include"])
 		assert.Contains(t, include, "message.output_text.logprobs")
+
+		_, _, br, err := buildParams("gpt-4o", opts)
+		require.NoError(t, err)
+		assert.True(t, br.logprobsRequested)
 	})
 
 	t.Run("gpt-5.6 prompt cache and reasoning options", func(t *testing.T) {
