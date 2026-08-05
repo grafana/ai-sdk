@@ -40,6 +40,9 @@ jobs:
       - name: Check formatting
         run: mise run fmt-check
 
+      - name: Validate release configuration
+        run: mise run release-check
+
       - name: Vet
         run: mise run vet
 

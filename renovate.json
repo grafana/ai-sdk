@@ -24,12 +24,6 @@
     "platformAutomerge": true,
     "packageRules": [
       {
-        "description": "Ignore self-referential dependency (replace directive makes the version cosmetic)",
-        "matchManagers": ["gomod"],
-        "matchPackageNames": ["github.com/grafana/ai-sdk"],
-        "enabled": false
-      },
-      {
         "description": "Disable pin-type updates to prevent 'pin dependencies' PRs",
         "matchUpdateTypes": ["pin"],
         "enabled": false
@@ -156,6 +150,19 @@
         "groupName": "agento11y bumps (require conformance review)",
         "automerge": false,
         "labels": ["agento11y-conformance-review"]
+      },
+      {
+        "description": "Carry each published core release into the nested modules. Must stay last: later rules win, and the weekly schedule and 14-day minimumReleaseAge from the generic gomod rules would leave nested modules on a stale core. Unstable versions are allowed because the modules release on the alpha channel.",
+        "matchManagers": ["gomod"],
+        "matchPackageNames": ["github.com/grafana/ai-sdk"],
+        "groupName": "core module requirement",
+        "postUpdateOptions": ["gomodTidy"],
+        "minimumReleaseAge": null,
+        "schedule": [],
+        "ignoreUnstable": false,
+        "respectLatest": false,
+        "automerge": true,
+        "automergeType": "pr"
       }
     ]
   }
