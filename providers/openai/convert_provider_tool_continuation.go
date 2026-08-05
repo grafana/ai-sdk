@@ -672,7 +672,7 @@ func customToolCallOutputItem(part provider.ContentPart, ctx inputConversionCont
 			}
 			options := ctx.contentOptions(value)
 			switch {
-			case value.Data.URL != "":
+			case value.Data.IsURL():
 				if topLevelMediaType(value.MediaType) == "image" {
 					image := responses.ResponseInputImageParam{ImageURL: param.NewOpt(value.Data.URL)}
 					if options.ImageDetail != "" {
@@ -689,7 +689,7 @@ func customToolCallOutputItem(part provider.ContentPart, ctx inputConversionCont
 					}
 					content = append(content, responses.ResponseCustomToolCallOutputOutputOutputContentListItemUnionParam{OfInputFile: &file})
 				}
-			case value.Data.Base64 != "" || len(value.Data.Bytes) > 0:
+			case value.Data.IsData():
 				base64Data := value.Data.Base64
 				if base64Data == "" {
 					base64Data = base64.StdEncoding.EncodeToString(value.Data.Bytes)

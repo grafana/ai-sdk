@@ -189,6 +189,14 @@ func TestDataContentValidate_ProviderReference(t *testing.T) {
 	assert.Error(t, (DataContent{URL: "https://example.com/doc.pdf", Reference: json.RawMessage(`{}`)}).Validate())
 }
 
+func TestDataContentValidate_EmptyVariantConflict(t *testing.T) {
+	data := Base64DataContent("")
+	assert.NoError(t, data.Validate())
+
+	data.URL = "https://example.com/file"
+	assert.Error(t, data.Validate())
+}
+
 func TestContentPartType_AllConstantsCovered(t *testing.T) {
 	defined := []ContentPartType{
 		ContentPartTypeText,
