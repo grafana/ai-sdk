@@ -890,6 +890,7 @@ func TestBuildParams_MCPApprovalContinuation(t *testing.T) {
 func TestBuildParams_CustomToolContentOptions(t *testing.T) {
 	noStore := false
 	breakpoint := &PromptCacheBreakpoint{Mode: "explicit"}
+	emptyData := provider.Base64DataContent("")
 	body, _ := buildBody(t, "gpt-5", provider.CallOptions{
 		Prompt: []provider.Message{provider.NewToolMessage(provider.ToolResultPart("call_custom", "write_sql", &provider.ToolResultOutput{
 			Type: provider.ToolOutputContent,
@@ -900,10 +901,20 @@ func TestBuildParams_CustomToolContentOptions(t *testing.T) {
 					ProviderOptions: provider.BuildProviderOptions(OpenAIPartOptions{PromptCacheBreakpoint: breakpoint}),
 				},
 				{
-					Type:            provider.ToolContentFileURL,
-					URL:             "https://example.com/image.png",
+					Type:            provider.ToolContentFile,
+					Data:            &provider.DataContent{URL: "https://example.com/image.png"},
 					MediaType:       "image/png",
 					ProviderOptions: provider.BuildProviderOptions(OpenAIPartOptions{ImageDetail: "high"}),
+				},
+				{
+					Type:      provider.ToolContentFile,
+					Data:      &provider.DataContent{Base64: "aW1hZ2U="},
+					MediaType: "image/png",
+				},
+				{
+					Type:      provider.ToolContentFile,
+					Data:      &emptyData,
+					MediaType: "image/png",
 				},
 			},
 		}))},
@@ -912,9 +923,12 @@ func TestBuildParams_CustomToolContentOptions(t *testing.T) {
 	})
 
 	output := findInput(body, "custom_tool_call_output")["output"].([]any)
-	require.Len(t, output, 2)
+	require.Len(t, output, 4)
 	assert.Equal(t, map[string]any{"mode": "explicit"}, output[0].(map[string]any)["prompt_cache_breakpoint"])
+	assert.Equal(t, "https://example.com/image.png", output[1].(map[string]any)["image_url"])
 	assert.Equal(t, "high", output[1].(map[string]any)["detail"])
+	assert.Equal(t, "data:image/png;base64,aW1hZ2U=", output[2].(map[string]any)["image_url"])
+	assert.Equal(t, "data:image/png;base64,", output[3].(map[string]any)["image_url"])
 }
 
 func TestBuildParams_ComputerCallRoundTrip(t *testing.T) {

@@ -30,8 +30,8 @@ func TestConvertPrompt_UpstreamFiveZeroThirty(t *testing.T) {
 		output := &provider.ToolResultOutput{
 			Type: provider.ToolOutputContent,
 			Content: []provider.ToolResultContentValue{{
-				Type:      provider.ToolContentFileURL,
-				URL:       "s3://my-test-bucket/path/to/image.png",
+				Type:      provider.ToolContentFile,
+				Data:      &provider.DataContent{URL: "s3://my-test-bucket/path/to/image.png"},
 				MediaType: "image/png",
 			}},
 		}
