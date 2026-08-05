@@ -19,7 +19,7 @@
     "@ai-sdk/openai-compatible": "3.0.20",
     "@ai-sdk/provider": "4.0.4",
     "@ai-sdk/provider-utils": "5.0.18",
-    "ai": "7.0.47",
+    "ai": "7.0.48",
     "yaml": "^2.7.0",
     "zod": "4.4.3"
   },
