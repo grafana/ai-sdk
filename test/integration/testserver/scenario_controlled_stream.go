@@ -20,9 +20,13 @@ const (
 func init() {
 	registerScenario("controlled-ui-stream", handleControlledUIStream)
 	registerScenario("controlled-text-stream", handleControlledTextStream)
+	registerScenario("abortable-ui-stream", handleAbortableUIStream)
+	registerScenario("abortable-text-stream", handleAbortableTextStream)
 }
 
-type controlledStreamModel struct{}
+type controlledStreamModel struct {
+	waitForCancellation bool
+}
 
 func (*controlledStreamModel) SpecificationVersion() string               { return "v4" }
 func (*controlledStreamModel) Provider() string                           { return "test" }
@@ -31,7 +35,7 @@ func (*controlledStreamModel) SupportedURLs() map[string][]*regexp.Regexp { retu
 func (*controlledStreamModel) DoGenerate(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
 	return nil, nil
 }
-func (*controlledStreamModel) DoStream(ctx context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+func (m *controlledStreamModel) DoStream(ctx context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
 	stream := make(chan provider.StreamPart, 1)
 	go func() {
 		defer close(stream)
@@ -39,6 +43,10 @@ func (*controlledStreamModel) DoStream(ctx context.Context, _ provider.CallOptio
 			return
 		}
 		if !sendProviderPart(ctx, stream, provider.StreamPart{Type: provider.PartTextDelta, ID: "controlled-text", Delta: controlledPartialText}) {
+			return
+		}
+		if m.waitForCancellation {
+			<-ctx.Done()
 			return
 		}
 		if !waitForContext(ctx, controlledStreamHold) {
@@ -63,7 +71,15 @@ func handleControlledUIStream(w http.ResponseWriter, r *http.Request) {
 	if !waitForContext(r.Context(), controlledStreamStartDelay) {
 		return
 	}
-	result := aisdk.StreamText(r.Context(), &controlledStreamModel{},
+	writeControlledUIStream(w, r, &controlledStreamModel{})
+}
+
+func handleAbortableUIStream(w http.ResponseWriter, r *http.Request) {
+	writeControlledUIStream(w, r, &controlledStreamModel{waitForCancellation: true})
+}
+
+func writeControlledUIStream(w http.ResponseWriter, r *http.Request, model *controlledStreamModel) {
+	result := aisdk.StreamText(r.Context(), model,
 		aisdk.WithModelMessages(provider.UserText("hello")),
 	)
 	if err := aisdk.WriteUIMessageStream(w, result); err != nil && r.Context().Err() == nil {
@@ -72,7 +88,15 @@ func handleControlledUIStream(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleControlledTextStream(w http.ResponseWriter, r *http.Request) {
-	result := aisdk.StreamText(r.Context(), &controlledStreamModel{},
+	writeControlledTextStream(w, r, &controlledStreamModel{})
+}
+
+func handleAbortableTextStream(w http.ResponseWriter, r *http.Request) {
+	writeControlledTextStream(w, r, &controlledStreamModel{waitForCancellation: true})
+}
+
+func writeControlledTextStream(w http.ResponseWriter, r *http.Request, model *controlledStreamModel) {
+	result := aisdk.StreamText(r.Context(), model,
 		aisdk.WithModelMessages(provider.UserText("hello")),
 	)
 	if err := aisdk.WriteTextStream(w, result); err != nil && r.Context().Err() == nil {

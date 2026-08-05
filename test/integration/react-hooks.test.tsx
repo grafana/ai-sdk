@@ -317,7 +317,7 @@ describe("React hook interop", () => {
   });
 
   it("useChat stop retains partial output and returns to ready", async () => {
-    render(<ChatProbe scenario="controlled-ui-stream" />);
+    render(<ChatProbe scenario="abortable-ui-stream" />);
 
     screen.getByTestId("chat-send").click();
 
@@ -386,7 +386,8 @@ describe("React hook interop", () => {
       approved: true,
       reason: "approved by integration test",
       finalState: "output-available",
-      finalText: "The approved action was executed.",
+      finalText:
+        "The approved action was executed. Reason: approved by integration test",
       output: { action: "deploy", executed: true },
     },
     {
@@ -395,7 +396,7 @@ describe("React hook interop", () => {
       approved: false,
       reason: "denied by integration test",
       finalState: "output-denied",
-      finalText: "The action was denied.",
+      finalText: "The action was denied. Reason: denied by integration test",
       output: undefined,
     },
   ])(
@@ -503,7 +504,7 @@ describe("React hook interop", () => {
   });
 
   it("useCompletion stop retains partial output and clears loading", async () => {
-    render(<CompletionProbe scenario="controlled-text-stream" />);
+    render(<CompletionProbe scenario="abortable-text-stream" />);
 
     screen.getByTestId("completion-send").click();
     await waitFor(() => {

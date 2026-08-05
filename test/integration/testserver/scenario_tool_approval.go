@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"regexp"
 
@@ -28,6 +29,7 @@ type approvalToolOutput struct {
 type approvalModel struct {
 	responded bool
 	approved  bool
+	reason    string
 }
 
 func (*approvalModel) SpecificationVersion() string               { return "v4" }
@@ -56,6 +58,7 @@ func (m *approvalModel) DoStream(context.Context, provider.CallOptions) (*provid
 		if m.approved {
 			text = "The approved action was executed."
 		}
+		text = fmt.Sprintf("%s Reason: %s", text, m.reason)
 		stream <- provider.StreamPart{Type: provider.PartTextStart, ID: "approval-result"}
 		stream <- provider.StreamPart{Type: provider.PartTextDelta, ID: "approval-result", Delta: text}
 		stream <- provider.StreamPart{Type: provider.PartTextEnd, ID: "approval-result"}
@@ -78,7 +81,7 @@ func handleToolApproval(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	responded, approved := findApprovalResponse(body.Messages)
+	responded, approved, reason := findApprovalResponse(body.Messages)
 	tool, err := aisdk.TypedTool(aisdk.TypedToolDef[approvalToolInput, approvalToolOutput]{
 		Name:        approvalToolName,
 		Description: "Execute an action after user approval.",
@@ -92,7 +95,7 @@ func handleToolApproval(w http.ResponseWriter, r *http.Request) {
 	}
 	tool.NeedsApproval = aisdk.ApprovalRequired()
 
-	agent := aisdk.NewToolLoopAgent(&approvalModel{responded: responded, approved: approved},
+	agent := aisdk.NewToolLoopAgent(&approvalModel{responded: responded, approved: approved, reason: reason},
 		aisdk.WithToolLoopAgentOptions(
 			aisdk.WithTools(aisdk.ToolSet{approvalToolName: tool}),
 			aisdk.WithStopWhen(aisdk.StepCountIs(5)),
@@ -103,15 +106,15 @@ func handleToolApproval(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func findApprovalResponse(messages []aisdk.UIMessage) (responded bool, approved bool) {
+func findApprovalResponse(messages []aisdk.UIMessage) (responded bool, approved bool, reason string) {
 	for _, message := range messages {
 		for _, part := range message.Parts {
 			toolPart, ok := part.(aisdk.ToolInvocationPart)
-			if !ok || toolPart.ToolName != approvalToolName || toolPart.Approval == nil || toolPart.Approval.Approved == nil {
+			if !ok || toolPart.ToolName != approvalToolName || toolPart.Approval == nil || toolPart.Approval.ID == "" || toolPart.Approval.Approved == nil {
 				continue
 			}
-			return true, *toolPart.Approval.Approved
+			return true, *toolPart.Approval.Approved, toolPart.Approval.Reason
 		}
 	}
-	return false, false
+	return false, false, ""
 }
