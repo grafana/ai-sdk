@@ -1021,8 +1021,8 @@ func TestBuildRequest_VideoMessage(t *testing.T) {
 func TestBuildRequest_ToolResultVideo(t *testing.T) {
 	t.Run("inline", func(t *testing.T) {
 		req, warnings, _ := mustBuildRequest(t, testAnthropicModel, toolResultFileCallOptions(provider.ToolResultContentValue{
-			Type:      provider.ToolContentFileData,
-			Data:      "AAECAw==",
+			Type:      provider.ToolContentFile,
+			Data:      &provider.DataContent{Base64: "AAECAw=="},
 			MediaType: "video/mp4",
 		}))
 		result := req.Messages[0].Content[0].ToolResult
@@ -1037,8 +1037,8 @@ func TestBuildRequest_ToolResultVideo(t *testing.T) {
 
 	t.Run("S3", func(t *testing.T) {
 		req, warnings, _ := mustBuildRequest(t, testAnthropicModel, toolResultFileCallOptions(provider.ToolResultContentValue{
-			Type:      provider.ToolContentFileURL,
-			URL:       "s3://bucket/video.mov",
+			Type:      provider.ToolContentFile,
+			Data:      &provider.DataContent{URL: "s3://bucket/video.mov"},
 			MediaType: "video/quicktime",
 		}))
 		result := req.Messages[0].Content[0].ToolResult

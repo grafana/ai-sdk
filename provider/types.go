@@ -403,10 +403,8 @@ func (v *ToolResultContentValue) UnmarshalJSON(data []byte) error {
 			return fmt.Errorf("provider: decoding legacy tool-result file data: %w", err)
 		}
 		v.Type = ToolContentFile
-		v.Data = &DataContent{Base64: base64Data}
-		if base64Data == "" {
-			v.Data.variant = dataContentVariantData
-		}
+		fileData := Base64DataContent(base64Data)
+		v.Data = &fileData
 	case ToolContentFileURL:
 		rawURL, ok := fields["url"]
 		if !ok || string(rawURL) == "null" {
