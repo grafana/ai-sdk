@@ -639,6 +639,33 @@ func buildToolResult(p provider.ContentPart, documentCounter *int, isMistral boo
 					})
 					continue
 				}
+				if c.Data.IsURL() {
+					url := c.Data.URL
+					if !isS3URL(url) {
+						*warnings = append(*warnings, provider.Warning{
+							Type:    provider.WarnUnsupported,
+							Feature: "toolResultFileURL",
+							Details: fmt.Sprintf("Bedrock tool results only accept S3 image or video URLs; got %q with media type %q", url, c.MediaType),
+						})
+						continue
+					}
+					if format, ok := imageMediaTypeFormat[c.MediaType]; ok {
+						out.Content = append(out.Content, toolResultContent{
+							Image: &imageBlock{Format: format, Source: imageSource{S3Location: &s3LocationBlock{URI: url}}},
+						})
+					} else if format, ok := videoMediaTypeFormat[c.MediaType]; ok {
+						out.Content = append(out.Content, toolResultContent{
+							Video: &videoBlock{Format: format, Source: videoSource{S3Location: &s3LocationBlock{URI: url}}},
+						})
+					} else {
+						*warnings = append(*warnings, provider.Warning{
+							Type:    provider.WarnUnsupported,
+							Feature: "toolResultFileURL",
+							Details: fmt.Sprintf("Bedrock tool results only accept supported image or video media types; got %q", c.MediaType),
+						})
+					}
+					continue
+				}
 				base64Data := c.Data.Base64
 				if base64Data == "" && len(c.Data.Bytes) > 0 {
 					base64Data = base64.StdEncoding.EncodeToString(c.Data.Bytes)
@@ -677,7 +704,7 @@ func buildToolResult(p provider.ContentPart, documentCounter *int, isMistral boo
 						return nil, fmt.Errorf("bedrock: video media type %q is not supported", mediaType)
 					}
 					out.Content = append(out.Content, toolResultContent{
-						Video: &videoBlock{Format: format, Source: videoSource{Bytes: c.Data}},
+						Video: &videoBlock{Format: format, Source: videoSource{Bytes: base64Data}},
 					})
 					continue
 				}
@@ -686,30 +713,6 @@ func buildToolResult(p provider.ContentPart, documentCounter *int, isMistral boo
 					return nil, err
 				}
 				out.Content = append(out.Content, toolResultContent{Document: document})
-			case provider.ToolContentFileURL:
-				if !isS3URL(c.URL) {
-					*warnings = append(*warnings, provider.Warning{
-						Type:    provider.WarnUnsupported,
-						Feature: "toolResultFileURL",
-						Details: fmt.Sprintf("Bedrock tool results only accept S3 image or video URLs; got %q with media type %q", c.URL, c.MediaType),
-					})
-					continue
-				}
-				if format, ok := imageMediaTypeFormat[c.MediaType]; ok {
-					out.Content = append(out.Content, toolResultContent{
-						Image: &imageBlock{Format: format, Source: imageSource{S3Location: &s3LocationBlock{URI: c.URL}}},
-					})
-				} else if format, ok := videoMediaTypeFormat[c.MediaType]; ok {
-					out.Content = append(out.Content, toolResultContent{
-						Video: &videoBlock{Format: format, Source: videoSource{S3Location: &s3LocationBlock{URI: c.URL}}},
-					})
-				} else {
-					*warnings = append(*warnings, provider.Warning{
-						Type:    provider.WarnUnsupported,
-						Feature: "toolResultFileURL",
-						Details: fmt.Sprintf("Bedrock tool results only accept supported image or video media types; got %q", c.MediaType),
-					})
-				}
 			default:
 				*warnings = append(*warnings, provider.Warning{
 					Type:    provider.WarnUnsupported,

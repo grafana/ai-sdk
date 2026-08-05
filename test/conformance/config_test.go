@@ -78,7 +78,7 @@ func TestConfig_UIToolModelOutput(t *testing.T) {
 	require.Equal(t, provider.ToolOutputContent, output.Type)
 	require.Len(t, output.Content, 2)
 	assert.Equal(t, provider.ToolContentFile, output.Content[1].Type)
-	assert.Equal(t, &provider.DataContent{Base64: "iVBORw0KGgo="}, output.Content[1].Data)
+	assert.Equal(t, &provider.DataContent{Base64: cfg.Tools["weather"].ModelOutput.Content[1].Data}, output.Content[1].Data)
 	assert.Equal(t, "image/png", output.Content[1].MediaType)
 
 	uiMessages, err := cfg.BuildUIMessages()

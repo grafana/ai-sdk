@@ -173,7 +173,7 @@ func TestToolResultContentValue_UnmarshalLegacyFileVariants(t *testing.T) {
 		{
 			name:    "empty raw base64",
 			in:      `{"type":"file-data","data":"","mediaType":"image/png"}`,
-			want:    ToolResultContentValue{Type: ToolContentFile, Data: &DataContent{variant: dataContentVariantData}, MediaType: "image/png"},
+			want:    ToolResultContentValue{Type: ToolContentFile, Data: &DataContent{Bytes: []byte{}}, MediaType: "image/png"},
 			encoded: `{"type":"file","data":{"type":"data","data":""},"mediaType":"image/png"}`,
 		},
 		{
