@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -66,4 +67,20 @@ func TestVertexAuth_PanicRecovery(t *testing.T) {
 		require.NotNil(t, inner, "expected wrapped inner error from panic recovery")
 		assert.Contains(t, inner.Error(), "failed to find default credentials")
 	})
+}
+
+func TestVertexAuth_RequestsCloudPlatformScope(t *testing.T) {
+	originalGoogleAuth := vertexGoogleAuth
+	t.Cleanup(func() { vertexGoogleAuth = originalGoogleAuth })
+
+	var gotScopes []string
+	vertexGoogleAuth = func(_ context.Context, _, _ string, scopes ...string) option.RequestOption {
+		gotScopes = append([]string(nil), scopes...)
+		return option.WithAPIKey("test-key")
+	}
+
+	opt, err := vertexAuth(context.Background(), "us-east5", "my-project")
+	require.NoError(t, err)
+	require.NotNil(t, opt)
+	assert.Equal(t, []string{vertexCloudPlatformScope}, gotScopes)
 }
