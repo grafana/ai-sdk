@@ -336,9 +336,6 @@ func (h *Handler) serveStream(ctx context.Context, w http.ResponseWriter, model 
 				abort(fmt.Errorf("providerwire: writing stream part: %w", err))
 				return
 			}
-			if part.Type == provider.PartError {
-				return
-			}
 			resetTimer(idle, h.idleTimeout)
 		}
 	}

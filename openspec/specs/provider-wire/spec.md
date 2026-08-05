@@ -70,9 +70,9 @@ For streaming `DoStream` calls, a 2xx response SHALL have `Content-Type: text/ev
 - **WHEN** the server has emitted all stream parts
 - **THEN** it SHALL close the response body with no terminator event; the client SHALL treat EOF as clean stream completion
 
-#### Scenario: Mid-stream error is a PartError event
-- **WHEN** the server encounters an error after emitting some content
-- **THEN** it SHALL emit a final SSE event encoding `provider.StreamPart{Type: PartError, APICallError: <reconstructable APICallError>}` and then close the body
+#### Scenario: Handler timeout or cancellation is a final PartError event
+- **WHEN** the request is canceled or times out after SSE commitment and the writer remains available
+- **THEN** the server SHALL emit a final SSE event encoding `provider.StreamPart{Type: PartError, APICallError: <reconstructable APICallError>}` and then close the body
 
 ### Requirement: Error envelope for non-2xx generate responses
 
@@ -360,7 +360,7 @@ plus pre-stream errors.
 - **WHEN** the Go server emits file and reasoning-file parts whose `data` is a URL variant
 - **THEN** the upstream client SHALL receive each exact URL string in the corresponding generated file value
 
-#### Scenario: Upstream client surfaces a mid-stream error
-- **WHEN** the server emits a `PartError` mid-stream
-- **THEN** the upstream client SHALL surface a non-empty error carrying the
-  server's message (not `error: undefined`)
+#### Scenario: Upstream client continues after a provider error
+- **WHEN** the server emits a `PartError` followed by additional stream parts
+- **THEN** the upstream client SHALL receive the non-empty error carrying the
+  server's message and every subsequent part in order

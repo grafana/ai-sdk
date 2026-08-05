@@ -205,6 +205,9 @@ func streamMidStreamError() *provider.StreamResult {
 				IsRetryable: boolPtr(false),
 			}),
 		},
+		provider.StreamPart{Type: provider.PartTextDelta, ID: "t0", Delta: "continued after error"},
+		provider.StreamPart{Type: provider.PartTextEnd, ID: "t0"},
+		finish(provider.FinishReasonError, "error", 8, 4),
 	)
 }
 
