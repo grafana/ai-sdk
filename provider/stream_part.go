@@ -203,6 +203,7 @@ type StreamPart struct {
 // recursion), unmarshaling that into a map, mutating only the keys that differ
 // from upstream, and re-marshaling. The transformed types and their mappings:
 //
+//   - text-delta / reasoning-delta / tool-input-delta: preserves the required `delta` field when empty
 //   - tool-result: suppresses the Go-only `providerExecuted` field
 //   - source:                nested `source` -> flat `sourceType`/`id`/`url`/`title`/`mediaType`/`filename`
 //   - error:                 `apiCallError` -> `error`
@@ -245,6 +246,12 @@ func (p StreamPart) MarshalJSON() ([]byte, error) {
 	}
 
 	switch p.Type {
+	case PartTextDelta, PartReasoningDelta, PartToolInputDelta:
+		delta, derr := json.Marshal(p.Delta)
+		if derr != nil {
+			return nil, derr
+		}
+		m["delta"] = delta
 	case PartToolResult:
 		delete(m, "providerExecuted")
 	case PartSource:

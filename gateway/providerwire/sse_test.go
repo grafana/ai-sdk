@@ -97,6 +97,38 @@ func TestSSE_AllStreamPartTypes_Coverage(t *testing.T) {
 	assert.Len(t, defined, 21, "if this fails, update sse_test.go round-trip table for the new StreamPartType")
 }
 
+func TestSSE_DeltaPartsPreserveEmptyDeltaAndWireFields(t *testing.T) {
+	cases := []struct {
+		name string
+		typ  provider.StreamPartType
+	}{
+		{name: "text-delta", typ: provider.PartTextDelta},
+		{name: "reasoning-delta", typ: provider.PartReasoningDelta},
+		{name: "tool-input-delta", typ: provider.PartToolInputDelta},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			wire := `{"type":"` + string(tc.typ) + `","id":"part_1","delta":"","providerMetadata":{"test":{"keep":true}}}`
+
+			decoded, err := NewSSEReader(strings.NewReader("data: " + wire + "\n\n")).Next()
+			require.NoError(t, err)
+			assert.Equal(t, provider.StreamPart{
+				Type:  tc.typ,
+				ID:    "part_1",
+				Delta: "",
+				ProviderMetadata: provider.ProviderMetadata{
+					"test": json.RawMessage(`{"keep":true}`),
+				},
+			}, decoded)
+
+			var encoded bytes.Buffer
+			require.NoError(t, WriteSSEStreamPart(&encoded, decoded))
+			assert.JSONEq(t, wire, strings.TrimSuffix(strings.TrimPrefix(encoded.String(), "data: "), "\n\n"))
+		})
+	}
+}
+
 func TestSSE_MultipleEvents_Sequenced(t *testing.T) {
 	parts := []provider.StreamPart{
 		{Type: provider.PartTextStart, ID: "b1"},
