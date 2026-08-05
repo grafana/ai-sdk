@@ -231,9 +231,16 @@ Hook preflight evaluation SHALL exclude `file` and `reasoning-file` media so rec
 - Append `PartToolCallDelta` payloads into the active assistant tool-call part.
 - Map supported `PartFile` and `PartReasoningFile` events to media parts.
 - Record the first observed payload-bearing part's timestamp via `FirstChunkAt()`; supported file events SHALL be payload-bearing.
-- Capture `FinishReason` and `Usage` from `PartFinish` / `PartFinishStep` (whichever the provider emits).
+- Capture `FinishReason` from `PartFinish` and observe `Usage` from every usage-bearing stream part using the shared streaming aggregation behavior.
 
 `Generation()` SHALL return an `agento11y.Generation` whose `Output` is a single assistant message constructed from the accumulated state. Assistant text, reasoning, tool-call, and media parts SHALL retain the order in which their first provider events were observed.
+
+#### Scenario: Stream usage preserves strongest values
+
+- **GIVEN** usage is split across multiple stream parts
+- **AND** a later finish part omits or reports lower provisional normalized counters
+- **WHEN** the recorder produces a generation
+- **THEN** its usage SHALL use the independently aggregated strongest normalized counters supported by the Agent Observability usage schema
 
 #### Scenario: Reasoning text accumulates across deltas
 
@@ -336,7 +343,7 @@ When response metadata changes the canonical generation model identity from the 
 5. On success:
    - For generate: call `recorder.SetResult(MapGenerateResult(params, result, ctxInfo))`.
    - For stream: tee the result stream channel, feed each part to a `StreamRecorder`, and at end-of-stream call `recorder.SetResult(streamRecorder.Generation())`.
-6. On error: call `recorder.SetCallError(err)`.
+6. On an error returned before a stream opens: call `recorder.SetCallError(err)`. When a stream emits `PartError`, call `recorder.SetCallError(err)` and also call `recorder.SetResult` with the partial generation, including aggregated usage observed before or on the error part.
 
 `RecordingMiddleware` SHALL NOT modify `params` and SHALL NOT modify the result.
 
@@ -356,6 +363,13 @@ For streams, the recording goroutine SHALL select on `ctx.Done()` to avoid block
 - **WHEN** the inner model's `DoGenerate` returns a non-nil error
 - **THEN** the middleware SHALL call `recorder.SetCallError(err)` once
 - **AND** the same error SHALL be returned to the caller
+
+#### Scenario: Stream error records partial generation usage
+
+- **GIVEN** a stream reports usage and then emits `PartError`
+- **WHEN** the recording goroutine finalizes
+- **THEN** it SHALL call `recorder.SetCallError` with the stream error
+- **AND** it SHALL call `recorder.SetResult` with the partial generation and aggregated usage
 
 #### Scenario: Stream path records at end of stream
 

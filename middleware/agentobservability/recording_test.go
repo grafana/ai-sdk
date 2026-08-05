@@ -294,6 +294,47 @@ func TestRecordingMiddleware_StreamSuccess_RecordsAccumulated(t *testing.T) {
 	assert.Equal(t, "claude", testkit.StringValue(t, gen, "model", "name"))
 }
 
+func TestRecordingMiddleware_StreamPartError_RecordsUsageAndCallError(t *testing.T) {
+	env := testkit.NewEnv(t)
+	inputTokens, outputTokens := 120, 50
+	apiErr := provider.NewAPICallError(provider.APICallErrorOptions{Message: "upstream stream failed", StatusCode: 500})
+	model := &mockLanguageModel{
+		provider_: "anthropic",
+		modelID:   "claude",
+		doStream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+			stream := make(chan provider.StreamPart, 2)
+			stream <- provider.StreamPart{Type: provider.PartResponseMeta, Usage: &provider.Usage{
+				InputTokens: provider.InputTokenUsage{Total: &inputTokens},
+			}}
+			stream <- provider.StreamPart{Type: provider.PartError, APICallError: apiErr, Usage: &provider.Usage{
+				OutputTokens: provider.OutputTokenUsage{Total: &outputTokens},
+			}}
+			close(stream)
+			return &provider.StreamResult{Stream: stream}, nil
+		},
+	}
+
+	streamResult, err := streamWith(t, model, RecordingOptions{
+		ClientResolver: func(context.Context) *agento11y.Client { return env.Client },
+	})
+	require.NoError(t, err)
+	for range streamResult.Stream {
+	}
+	assert.Eventually(t, func() bool {
+		return env.RequestCount() == 1
+	}, 2*time.Second, 10*time.Millisecond)
+	require.NoError(t, env.Client.Shutdown(context.Background()))
+
+	gen := env.SingleGenerationJSON(t)
+	callErr, _ := gen["call_error"].(string)
+	assert.Contains(t, callErr, "upstream stream failed")
+	usage, ok := gen["usage"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "120", usage["input_tokens"])
+	assert.Equal(t, "50", usage["output_tokens"])
+	assert.Equal(t, "170", usage["total_tokens"])
+}
+
 func TestRecordingMiddleware_StreamConsumerAbandons_DrainsAndRecords(t *testing.T) {
 	env := testkit.NewEnv(t)
 	model := &mockLanguageModel{provider_: "anthropic", modelID: "claude"}
@@ -314,14 +355,48 @@ func TestRecordingMiddleware_StreamConsumerAbandons_DrainsAndRecords(t *testing.
 	require.True(t, ok)
 	cancel()
 
-	// Drain the rest of the tee channel — the recorder should finalize despite
-	// consumer disconnect, because we drain upstream on the abandonment path.
+	// Drain the rest of the tee channel. The recorder finalizes promptly after
+	// consumer disconnect while the provider stream drains in the background.
 	for range streamResult.Stream {
 	}
 
 	assert.Eventually(t, func() bool {
 		return env.RequestCount() >= 1
 	}, 2*time.Second, 10*time.Millisecond, "recording finalized even after consumer abandonment")
+}
+
+func TestRecordingMiddleware_StreamCancellationFinalizesIdleProvider(t *testing.T) {
+	env := testkit.NewEnv(t)
+	upstream := make(chan provider.StreamPart)
+	defer close(upstream)
+	model := &mockLanguageModel{
+		provider_: "anthropic",
+		modelID:   "claude",
+		doStream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+			return &provider.StreamResult{Stream: upstream}, nil
+		},
+	}
+	wrapped := middleware.Wrap(middleware.WrapOptions{
+		Model: model,
+		Middleware: []middleware.Middleware{RecordingMiddleware(RecordingOptions{
+			ClientResolver: func(context.Context) *agento11y.Client { return env.Client },
+		})},
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	streamResult, err := wrapped.DoStream(ctx, provider.CallOptions{})
+	require.NoError(t, err)
+
+	cancel()
+	select {
+	case _, ok := <-streamResult.Stream:
+		assert.False(t, ok)
+	case <-time.After(time.Second):
+		t.Fatal("recording stream did not close after cancellation")
+	}
+	assert.Eventually(t, func() bool {
+		return env.RequestCount() == 1
+	}, 2*time.Second, 10*time.Millisecond)
+	require.NoError(t, env.Client.Shutdown(context.Background()))
 }
 
 func TestRecordingMiddleware_NilContextProvider_LogsOnce(t *testing.T) {

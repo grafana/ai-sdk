@@ -212,12 +212,19 @@ For each stream call, the middleware SHALL:
 3. If opening the stream returns an error, log `EventStreamError` with duration and sanitized error details, then return the original error unchanged.
 4. If opening succeeds, return a new `*provider.StreamResult` that preserves the upstream `Request` and `Response` fields and exposes a tee stream channel.
 5. Forward every upstream `provider.StreamPart` to the downstream consumer unchanged and in order.
-6. Observe stream parts to accumulate counts, time to first content, response metadata from `provider.PartResponseMeta`, usage/finish reason/provider metadata from `provider.PartFinish`, and the first `provider.PartError`.
+6. Observe stream parts to accumulate counts, time to first content, response metadata from `provider.PartResponseMeta`, normalized usage from every usage-bearing part using the shared streaming aggregation behavior, finish reason/provider metadata from `provider.PartFinish`, and the first `provider.PartError`.
 7. Log `EventStreamPart` records only when `Options.LogStreamParts` is true, using `Options.PartLevel` except for error parts.
 8. Log exactly one terminal event when upstream closes: `EventStreamFinish` for successful completion, `EventStreamError` when a part error or deadline timeout is observed, or `EventStreamCancelled` when cancellation is observed.
 9. Close the returned stream channel exactly once.
 
 The tee channel SHALL use a bounded buffer of 64 entries unless a future measured change updates this requirement.
+
+#### Scenario: Stream usage preserves strongest values
+
+- **GIVEN** usage is split across multiple stream parts
+- **AND** a later finish part omits or reports lower provisional normalized counters
+- **WHEN** the stream completes
+- **THEN** the terminal log record SHALL contain the independently aggregated strongest normalized counters
 
 #### Scenario: Stream success tees unmodified parts
 

@@ -325,6 +325,57 @@ func TestStreamMetrics(t *testing.T) {
 	assertNoLabelContains(t, reg, "secret")
 }
 
+func TestStreamUsageAggregatesEveryPart(t *testing.T) {
+	reg := promclient.NewRegistry()
+	mw, err := Middleware(Options{Registerer: reg})
+	require.NoError(t, err)
+
+	inputTotal, inputNoCache, cacheRead, cacheWrite := 120, 80, 30, 10
+	outputTotal, outputText, outputReasoning := 50, 30, 20
+	provisionalInput, provisionalCacheRead, provisionalCacheWrite := 100, 20, 5
+	provisionalOutput, provisionalText, provisionalReasoning := 45, 25, 15
+	parts := []provider.StreamPart{
+		{Type: provider.PartResponseMeta, Usage: &provider.Usage{InputTokens: provider.InputTokenUsage{
+			Total: &inputTotal, NoCache: &inputNoCache, CacheRead: &cacheRead, CacheWrite: &cacheWrite,
+		}}},
+		{Type: provider.PartTextDelta, Usage: &provider.Usage{OutputTokens: provider.OutputTokenUsage{
+			Total: &outputTotal, Text: &outputText, Reasoning: &outputReasoning,
+		}}},
+		{Type: provider.PartFinish, Usage: &provider.Usage{
+			InputTokens: provider.InputTokenUsage{
+				Total: &provisionalInput, CacheRead: &provisionalCacheRead, CacheWrite: &provisionalCacheWrite,
+			},
+			OutputTokens: provider.OutputTokenUsage{
+				Total: &provisionalOutput, Text: &provisionalText, Reasoning: &provisionalReasoning,
+			},
+		}},
+	}
+	model := &mockModel{providerName: "test", modelID: "model"}
+	model.streamFunc = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+		return streamResult(parts...), nil
+	}
+	wrapped := aimiddleware.Wrap(aimiddleware.WrapOptions{Model: model, Middleware: []aimiddleware.Middleware{mw}})
+
+	result, err := wrapped.DoStream(context.Background(), provider.CallOptions{})
+	require.NoError(t, err)
+	drain(result.Stream)
+
+	want := map[string]int{
+		tokenTypeInput:           inputTotal,
+		tokenTypeInputNoCache:    inputNoCache,
+		tokenTypeInputCacheRead:  cacheRead,
+		tokenTypeInputCacheWrite: cacheWrite,
+		tokenTypeOutput:          outputTotal,
+		tokenTypeOutputText:      outputText,
+		tokenTypeOutputReasoning: outputReasoning,
+	}
+	for tokenType, count := range want {
+		assertCounter(t, reg, metricTokensTotal, map[string]string{
+			"operation": operationStream, "provider": "test", "model": "model", "token_type": tokenType,
+		}, float64(count))
+	}
+}
+
 func TestStreamErrorPaths(t *testing.T) {
 	t.Run("context cancellation", func(t *testing.T) {
 		reg := promclient.NewRegistry()
@@ -356,6 +407,59 @@ func TestStreamErrorPaths(t *testing.T) {
 		}
 		assertCounter(t, reg, metricRequestsTotal, map[string]string{"operation": operationStream, "status": statusCanceled, "error_type": errorTypeContextCanceled}, 1)
 		assertInflightGauge(t, reg, map[string]string{"operation": operationStream, "provider": "openai", "model": "gpt"})
+	})
+
+	t.Run("cancellation preserves usage from a received part", func(t *testing.T) {
+		reg := promclient.NewRegistry()
+		mw, err := Middleware(Options{Registerer: reg})
+		require.NoError(t, err)
+		upstream := make(chan provider.StreamPart)
+		model := &mockModel{providerName: "openai", modelID: "gpt"}
+		model.streamFunc = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+			return &provider.StreamResult{Stream: upstream}, nil
+		}
+		wrapped := aimiddleware.Wrap(aimiddleware.WrapOptions{Model: model, Middleware: []aimiddleware.Middleware{mw}})
+		ctx, cancel := context.WithCancel(context.Background())
+		result, err := wrapped.DoStream(ctx, provider.CallOptions{})
+		require.NoError(t, err)
+
+		inputTokens := 9
+		usageReceived := make(chan struct{})
+		go func() {
+			for range streamBufferSize {
+				upstream <- provider.StreamPart{Type: provider.PartTextDelta, Delta: "x"}
+			}
+			upstream <- provider.StreamPart{Type: provider.PartResponseMeta, Usage: &provider.Usage{
+				InputTokens: provider.InputTokenUsage{Total: &inputTokens},
+			}}
+			close(usageReceived)
+			close(upstream)
+		}()
+
+		select {
+		case <-usageReceived:
+		case <-time.After(time.Second):
+			t.Fatal("middleware did not receive usage part")
+		}
+		cancel()
+
+		require.Eventually(t, func() bool {
+			families, gatherErr := reg.Gather()
+			if gatherErr != nil {
+				return false
+			}
+			family := findFamily(families, metricTokensTotal)
+			if family == nil {
+				return false
+			}
+			for _, metric := range family.GetMetric() {
+				if metricHasLabels(metric, map[string]string{"operation": operationStream, "token_type": tokenTypeInput}) {
+					return metric.GetCounter().GetValue() == float64(inputTokens)
+				}
+			}
+			return false
+		}, time.Second, 10*time.Millisecond)
+		drain(result.Stream)
 	})
 
 	t.Run("nil stream result", func(t *testing.T) {

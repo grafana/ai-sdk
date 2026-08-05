@@ -233,7 +233,7 @@ Finish reason labels SHALL use the unified finish reason values `stop`, `length`
 
 ### Requirement: Token usage metrics
 
-The middleware SHALL increment `aisdk_model_tokens_total` only for positive token counts present in provider usage. Generate usage SHALL come from `provider.GenerateResult.Usage`. Stream usage SHALL come from the final observed `provider.PartFinish.Usage`.
+The middleware SHALL increment `aisdk_model_tokens_total` only for positive token counts present in provider usage. Generate usage SHALL come from `provider.GenerateResult.Usage`. Stream usage SHALL observe every stream part with non-nil `Usage` and use the shared streaming aggregation behavior, preserving the greatest value observed independently for each normalized counter.
 
 Token type labels SHALL be limited to:
 
@@ -246,6 +246,13 @@ Token type labels SHALL be limited to:
 - `output_reasoning` from `Usage.OutputTokens.Reasoning`
 
 The middleware SHALL NOT expose `Usage.Raw` as a metric label.
+
+#### Scenario: Stream usage preserves strongest values
+
+- **GIVEN** usage is split across multiple stream parts
+- **AND** a later finish part omits or reports lower provisional normalized counters
+- **WHEN** the stream completes
+- **THEN** token counters SHALL increment from the independently aggregated strongest normalized values
 
 #### Scenario: Positive usage increments fixed token types
 
