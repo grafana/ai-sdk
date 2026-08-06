@@ -74,6 +74,13 @@ func TestAPICallError_Error(t *testing.T) {
 	assert.Equal(t, "aisdk: API call error (status 429): rate limit exceeded", msg)
 }
 
+func TestAPICallError_TypedNilIsSafeForErrorTraversal(t *testing.T) {
+	var apiErr *APICallError
+	assert.Equal(t, "aisdk: nil API call error", apiErr.Error())
+	assert.Nil(t, apiErr.Unwrap())
+	assert.False(t, errors.Is(apiErr, errors.New("other")))
+}
+
 func TestAPICallError_JSONRoundTrip(t *testing.T) {
 	cause := errors.New("transport boom")
 	original := NewAPICallError(APICallErrorOptions{

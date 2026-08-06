@@ -254,3 +254,12 @@ Speculative mock Chat/Responses DTO tests are not part of this change. They woul
 
 - Which deployment prefix or host will expose the strict handler during rollout is host-owned and must be selected by the consuming service.
 - Which registered `GatewayOptions` fields the first host will honor is deployment policy; unsupported fields must fail rather than be silently ignored.
+
+## Residual Risks
+
+- Host policy remains responsible for gateway-control support and raw/provider-bound data exposure; the catalog adapter fails closed for controls it cannot honor.
+- Providers that ignore context may keep synchronous generate or stream setup calls blocked after the runtime deadline, and blocked network writes still depend on host server deadlines.
+- The pinned TypeScript client treats HTTP 500 as retryable even when the strict envelope and Grafana client classify the failure as non-retryable.
+- Unary and event limits prevent partial commitment but may allocate the complete encoded value before rejection.
+- Deployment routing must keep legacy clients on the legacy endpoint and strict clients on the strict endpoint; the service does not negotiate or replay streams automatically.
+- Model-reported identity cannot identify the specific backend attempt selected inside a provider-managed fallback sequence.

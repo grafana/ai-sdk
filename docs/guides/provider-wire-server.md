@@ -36,6 +36,80 @@ The handler validates and decodes provider calls, invokes the model, and writes
 unary JSON or streaming SSE responses. It derives model contexts from the HTTP
 request so disconnects and deadlines can cancel work.
 
+## Migrate to the strict V4 service
+
+The legacy handler remains available for clients that depend on tolerant Go-only
+payloads or its existing error disclosure. The strict handler implements the
+same external LanguageModelV4 route and headers through independent canonical
+DTOs, a shared execution runtime, safe errors, and bounded responses.
+
+Mount the handlers under distinct base URLs because both serve the same
+`/language-model` relative path:
+
+```go
+catalogResolver, err := runtime.AdaptCatalogResolver(modelCatalog)
+if err != nil {
+	return err
+}
+
+gatewayRuntime, err := runtime.New(
+	catalogResolver,
+	runtime.WithCallPolicies(callPolicy),
+	runtime.WithMiddleware(modelMiddleware...),
+)
+if err != nil {
+	return err
+}
+
+strictHandler, err := providerwirev4.NewHandler(
+	gatewayRuntime,
+	providerwirev4.WithMetadataExtractor(authenticatedMetadata),
+)
+if err != nil {
+	return err
+}
+
+mux.Handle("/legacy"+providerwire.PathLanguageModel, legacyHandler)
+mux.Handle("/strict"+providerwirev4.PathLanguageModel, strictHandler)
+```
+
+The metadata extractor runs after host authentication. It may supply a gateway
+request ID and authenticated tenant or project attributes. The handler generates
+a request ID when one is absent. Request bodies and caller headers never become
+trusted metadata automatically.
+
+The default catalog adapter accepts calls without gateway routing controls. It
+rejects non-empty `providerOptions.gateway` controls it cannot honor rather than
+forwarding or ignoring them. A host that supports provider ordering, fallback,
+BYOK, or other controls supplies a call-aware runtime resolver and policy.
+
+Migrate a Grafana client explicitly by changing both its base URL and codec:
+
+```go
+client, err := grafana.NewWithAccessToken(
+	grafana.AccessTokenConfig{
+		AccessToken: token,
+		BaseURL:     "https://gateway.example.com/strict",
+	},
+	grafana.WithStrictProviderWire(),
+)
+```
+
+The default Grafana mode remains legacy. There is no automatic codec negotiation
+and an established streaming POST is never replayed during cutover. Roll back by
+restoring the legacy base URL and removing the strict option.
+
+Strict request reads are bounded before unbounded allocation. Unary results and
+SSE events are encoded and size-checked before their bytes are committed, but
+encoding may allocate a value that is subsequently rejected. The server and
+strict Grafana client count complete canonical events identically: `data:`
+followed by one space, the JSON bytes, and the terminating blank line.
+
+The intended follow-up end state is to make strict V4 canonical after adoption
+evidence, then switch Grafana's default and remove its mode selection. Legacy
+provider wire and provider-owned transport JSON can be deprecated and removed
+only through a coordinated breaking change.
+
 ## Keep host policy outside the handler
 
 The host remains responsible for:

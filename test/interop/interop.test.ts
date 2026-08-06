@@ -1,13 +1,107 @@
 import { describe, expect, it } from "vitest";
 import { generateText, streamText, tool, stepCountIs } from "ai";
 import { z } from "zod";
-import { newGateway } from "./helpers";
+import { getGatewayBaseURL, newGateway as newGatewayFor, type ProviderWireEndpoint } from "./helpers";
 
 // Bidirectional upstream-client conformance: a stock upstream @ai-sdk/gateway +
 // ai client drives mock Go models through the public gateway/providerwire
 // server and asserts two-way compatibility.
 
-describe("upstream @ai-sdk/gateway <-> Go provider-wire", () => {
+describe.each(["legacy", "strict"] as const)("upstream @ai-sdk/gateway <-> Go %s provider-wire", (endpoint: ProviderWireEndpoint) => {
+  const newGateway = () => newGatewayFor(endpoint);
+
+  it("generates a rich unary result while owning transport metadata", async () => {
+    const gateway = newGateway();
+    const result = await gateway("generate-rich").doGenerate({
+      prompt: [{ role: "user", content: [{ type: "text", text: "generate everything" }] }],
+    });
+
+    expect(result.content.map((part) => part.type)).toEqual([
+      "text",
+      "reasoning",
+      "tool-call",
+      "tool-result",
+      "file",
+      "source",
+    ]);
+    expect(result.content[2]).toMatchObject({
+      type: "tool-call",
+      toolCallId: "call_1",
+      toolName: "lookup",
+      input: '{"query":"grafana"}',
+    });
+    expect(result.content[3]).toMatchObject({
+      type: "tool-result",
+      toolCallId: "call_1",
+      result: { answer: 42 },
+    });
+    expect(result.content[4]).toMatchObject({
+      type: "file",
+      mediaType: "application/octet-stream",
+      data: { type: "data", data: "AAEC" },
+    });
+    expect(result.content[5]).toMatchObject({
+      type: "source",
+      sourceType: "url",
+      id: "source_1",
+      url: "https://example.com/source",
+    });
+    expect(result.finishReason).toEqual({ unified: "stop", raw: "end_turn" });
+    expect(result.usage).toMatchObject({
+      inputTokens: { total: 11, noCache: 7, cacheRead: 4 },
+      outputTokens: { total: 6, text: 4, reasoning: 2 },
+    });
+    expect(result.providerMetadata).toEqual({ interop: { trace: "public" } });
+
+    // The pinned gateway client replaces server warning/request/response fields
+    // with values owned by its own HTTP transport.
+    expect(result.warnings).toEqual([]);
+    expect(result.request.body).toMatchObject({ prompt: expect.any(Array) });
+    expect(result.request.body).not.toEqual({ serverRequest: "private" });
+    expect(result.response.headers).toHaveProperty("content-type");
+    expect(result.response.headers).not.toHaveProperty("x-backend-secret");
+    expect(result.response.body).toBeDefined();
+  });
+
+  it.each([
+    ["Uint8Array", new Uint8Array([0, 1, 2])],
+    ["already encoded", "AAEC"],
+  ] as const)("encodes canonical tool-result file data from %s", async (_name, fileData) => {
+    const gateway = newGateway();
+    const result = await gateway("tool-result-file-input").doGenerate({
+      prompt: [
+        {
+          role: "tool",
+          content: [
+            {
+              type: "tool-result",
+              toolCallId: "call_file_1",
+              toolName: "readFile",
+              output: {
+                type: "content",
+                value: [
+                  {
+                    type: "file",
+                    data: { type: "data", data: fileData },
+                    mediaType: "application/octet-stream",
+                    filename: "input.bin",
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(result.content).toEqual([
+      {
+        type: "text",
+        text: "data=AAEC mediaType=application/octet-stream filename=input.bin",
+      },
+    ]);
+  });
+
   it("streams text with a system prompt", async () => {
     const gateway = newGateway();
     const result = streamText({
@@ -167,6 +261,35 @@ describe("upstream @ai-sdk/gateway <-> Go provider-wire", () => {
     ]);
   });
 
+  it("streams URL and document sources", async () => {
+    const gateway = newGateway();
+    const { stream } = await gateway("stream-sources").doStream({
+      prompt: [{ role: "user", content: [{ type: "text", text: "cite sources" }] }],
+    });
+
+    const sources: unknown[] = [];
+    for await (const part of stream) {
+      if (part.type === "source") sources.push(part);
+    }
+    expect(sources).toEqual([
+      {
+        type: "source",
+        sourceType: "url",
+        id: "url-source",
+        url: "https://example.com",
+        title: "Example",
+      },
+      {
+        type: "source",
+        sourceType: "document",
+        id: "document-source",
+        title: "Document",
+        mediaType: "application/pdf",
+        filename: "document.pdf",
+      },
+    ]);
+  });
+
   it("continues after a mid-stream provider error", async () => {
     const gateway = newGateway();
     const { stream } = await gateway("error-mid-stream").doStream({
@@ -188,7 +311,12 @@ describe("upstream @ai-sdk/gateway <-> Go provider-wire", () => {
       "text-end",
       "finish",
     ]);
-    expect(JSON.stringify(parts[4].error)).toContain("boom mid-stream");
+    if (endpoint === "legacy") {
+      expect(JSON.stringify(parts[4].error)).toContain("boom mid-stream");
+    } else {
+      expect(JSON.stringify(parts[4].error)).not.toContain("boom mid-stream");
+      expect(JSON.stringify(parts[4].error)).toContain("upstream dependency failed");
+    }
     expect(parts[5].delta).toBe("continued after error");
     expect(parts[7].finishReason).toEqual({ unified: "error", raw: "error" });
   });
@@ -205,7 +333,57 @@ describe("upstream @ai-sdk/gateway <-> Go provider-wire", () => {
     } catch (e) {
       message = (e as Error).message ?? String(e);
     }
-    // Not the generic "Invalid error response format" fallback.
-    expect(message).toContain("rate limited pre-stream");
+    // Not the generic "Invalid error response format" fallback. Strict mode
+    // intentionally redacts provider detail to its stable category message.
+    expect(message).toContain(endpoint === "legacy" ? "rate limited pre-stream" : "rate limit exceeded");
+  });
+});
+
+describe("strict provider-wire policy", () => {
+  it("rejects before model resolution", async () => {
+    const gateway = newGatewayFor("strict");
+    let observed: { statusCode?: number; type?: string } = {};
+    try {
+      await gateway("policy-reject").doGenerate({
+        prompt: [{ role: "user", content: [{ type: "text", text: "reject" }] }],
+      });
+    } catch (error) {
+      observed = error as typeof observed;
+    }
+    expect(observed.statusCode).toBe(403);
+    expect(observed.type).toBe("forbidden");
+    const response = await fetch(`${getGatewayBaseURL("strict")}/policy-resolver-calls`);
+    expect(await response.text()).toBe("0");
+  });
+});
+
+describe("strict provider-wire error projection", () => {
+  it.each([
+    ["authentication", 401, "authentication_error", false],
+    ["invalid", 400, "invalid_request_error", false],
+    ["unknown-model", 404, "model_not_found", false],
+    ["forbidden", 403, "forbidden", false],
+    ["rate-limit", 429, "rate_limit_exceeded", true],
+    ["timeout", 504, "internal_server_error", true],
+    ["canceled", 499, "internal_server_error", false],
+    ["failed-permanent", 424, "failed_dependency", false],
+    ["failed-transient", 502, "failed_dependency", true],
+    // The envelope says non-retryable, but the pinned TypeScript client derives
+    // retryability from HTTP 500. Grafana preserves the explicit false value.
+    ["internal", 500, "internal_server_error", true],
+  ] as const)("observes %s", async (scenario, statusCode, type, isRetryable) => {
+    const gateway = newGatewayFor("strict");
+    let observed: { statusCode?: number; type?: string; isRetryable?: boolean } = {};
+    try {
+      await gateway(`strict-error-${scenario}`).doGenerate({
+        prompt: [{ role: "user", content: [{ type: "text", text: "fail" }] }],
+      });
+    } catch (error) {
+      observed = error as typeof observed;
+    }
+
+    expect(observed.statusCode).toBe(statusCode);
+    expect(observed.type).toBe(type);
+    expect(observed.isRetryable).toBe(isRetryable);
   });
 });

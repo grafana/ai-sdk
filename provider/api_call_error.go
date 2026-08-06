@@ -37,10 +37,16 @@ type APICallError struct {
 var _ error = (*APICallError)(nil)
 
 func (e *APICallError) Error() string {
+	if e == nil {
+		return "aisdk: nil API call error"
+	}
 	return fmt.Sprintf("aisdk: API call error (status %d): %s", e.StatusCode, e.Message)
 }
 
 func (e *APICallError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
 	return e.cause
 }
 

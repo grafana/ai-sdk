@@ -61,9 +61,16 @@ export async function setup(): Promise<void> {
   console.log(`[global-setup] Waiting for health at ${baseUrl}...`);
   await pollHealth(baseUrl, HEALTH_TIMEOUT_MS);
 
-  // The provider-wire language-model route is mounted under /api/v1/aisdk, which
-  // is the gateway baseURL the client points at.
-  writeFileSync(URL_FILE, `${baseUrl}/api/v1/aisdk`, "utf-8");
+  // Both handlers use the same relative route, so the harness exposes distinct
+  // base URLs and never relies on in-band protocol negotiation.
+  writeFileSync(
+    URL_FILE,
+    JSON.stringify({
+      legacy: `${baseUrl}/api/v1/aisdk/legacy`,
+      strict: `${baseUrl}/api/v1/aisdk/strict`,
+    }),
+    "utf-8",
+  );
   console.log(`[global-setup] Interop test server ready at ${baseUrl}`);
 }
 

@@ -793,7 +793,7 @@ func TestHTTPErrorMapping(t *testing.T) {
 			cfg.HTTPClient = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 				return &http.Response{
 					StatusCode: http.StatusOK,
-					Header:     http.Header{"X-Trace": {"abc"}},
+					Header:     http.Header{"X-Trace": {"abc"}, "Content-Type": {providerwire.MIMEJSON}},
 					Body:       readErrorBody{err: io.ErrUnexpectedEOF},
 					Request:    req,
 				}, nil
@@ -807,7 +807,7 @@ func TestHTTPErrorMapping(t *testing.T) {
 		require.ErrorAs(t, err, &got)
 		assert.True(t, got.IsRetryable)
 		assert.Equal(t, http.StatusOK, got.StatusCode)
-		assert.Equal(t, map[string][]string{"X-Trace": {"abc"}}, got.ResponseHeaders)
+		assert.Equal(t, map[string][]string{"X-Trace": {"abc"}, "Content-Type": {providerwire.MIMEJSON}}, got.ResponseHeaders)
 	})
 
 	t.Run("synthesizes non-retryable generate decode error", func(t *testing.T) {

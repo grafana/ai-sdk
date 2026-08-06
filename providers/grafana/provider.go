@@ -17,6 +17,13 @@ const (
 	providerName      = "grafana"
 	accessTokenHeader = "X-Access-Token"
 	userIDHeader      = "X-Grafana-Id"
+
+	// DefaultMaxUnaryResponseBytes is the default complete unary success read limit.
+	DefaultMaxUnaryResponseBytes int64 = 16 << 20
+	// DefaultMaxErrorResponseBytes is the default non-success and diagnostic read limit.
+	DefaultMaxErrorResponseBytes int64 = 1 << 20
+	// DefaultMaxSSEEventBytes is the default complete framed SSE event read limit.
+	DefaultMaxSSEEventBytes int64 = 8 << 20
 )
 
 // CloudAuthConfig configures internally provisioned Grafana Cloud
@@ -45,11 +52,25 @@ type AccessTokenConfig struct {
 	HTTPClient *http.Client
 }
 
+// ProviderWireMode selects the provider-wire codec used by remote models.
+type ProviderWireMode string
+
+const (
+	// ProviderWireLegacy preserves the deployed tolerant provider-wire codec.
+	ProviderWireLegacy ProviderWireMode = "legacy"
+	// ProviderWireStrict selects the canonical strict LanguageModelV4 codec.
+	ProviderWireStrict ProviderWireMode = "strict"
+)
+
 // Option configures a Grafana provider.
 type Option func(*providerOptions)
 
 type providerOptions struct {
-	httpClient *http.Client
+	httpClient            *http.Client
+	providerWireMode      ProviderWireMode
+	maxUnaryResponseBytes *int64
+	maxErrorResponseBytes *int64
+	maxSSEEventBytes      *int64
 }
 
 // WithHTTPClient sets the HTTP client used for provider-wire and token exchange
@@ -58,14 +79,41 @@ func WithHTTPClient(client *http.Client) Option {
 	return func(opts *providerOptions) { opts.httpClient = client }
 }
 
+// WithProviderWireMode selects the legacy or strict provider-wire codec.
+func WithProviderWireMode(mode ProviderWireMode) Option {
+	return func(opts *providerOptions) { opts.providerWireMode = mode }
+}
+
+// WithStrictProviderWire selects the canonical strict LanguageModelV4 codec.
+func WithStrictProviderWire() Option { return WithProviderWireMode(ProviderWireStrict) }
+
+// WithMaxUnaryResponseBytes sets the complete unary success read limit.
+func WithMaxUnaryResponseBytes(limit int64) Option {
+	return func(opts *providerOptions) { opts.maxUnaryResponseBytes = &limit }
+}
+
+// WithMaxErrorResponseBytes sets the non-success and diagnostic read limit.
+func WithMaxErrorResponseBytes(limit int64) Option {
+	return func(opts *providerOptions) { opts.maxErrorResponseBytes = &limit }
+}
+
+// WithMaxSSEEventBytes sets the complete framed SSE event read limit.
+func WithMaxSSEEventBytes(limit int64) Option {
+	return func(opts *providerOptions) { opts.maxSSEEventBytes = &limit }
+}
+
 // Provider creates Grafana hosted language models and satisfies
 // registry.Provider.
 type Provider struct {
-	baseURL        string
-	namespace      string
-	audience       string
-	httpClient     *http.Client
-	tokenExchanger authn.TokenExchanger
+	baseURL               string
+	namespace             string
+	audience              string
+	httpClient            *http.Client
+	tokenExchanger        authn.TokenExchanger
+	wireCodec             wireCodec
+	maxUnaryResponseBytes int64
+	maxErrorResponseBytes int64
+	maxSSEEventBytes      int64
 }
 
 var _ registry.Provider = (*Provider)(nil)
@@ -88,7 +136,10 @@ func NewWithCloudAuth(cfg CloudAuthConfig, opts ...Option) (*Provider, error) {
 		return nil, err
 	}
 
-	options := collectProviderOptions(opts)
+	options, err := collectProviderOptions(opts)
+	if err != nil {
+		return nil, err
+	}
 	httpClient := configuredHTTPClient(cfg.HTTPClient, options.httpClient)
 
 	audience := cfg.Audience
@@ -105,11 +156,15 @@ func NewWithCloudAuth(cfg CloudAuthConfig, opts ...Option) (*Provider, error) {
 	}
 
 	return &Provider{
-		baseURL:        baseURL,
-		namespace:      cfg.Namespace,
-		audience:       audience,
-		httpClient:     httpClient,
-		tokenExchanger: client,
+		baseURL:               baseURL,
+		namespace:             cfg.Namespace,
+		audience:              audience,
+		httpClient:            httpClient,
+		tokenExchanger:        client,
+		wireCodec:             codecForMode(options.providerWireMode),
+		maxUnaryResponseBytes: resolvedLimit(options.maxUnaryResponseBytes, DefaultMaxUnaryResponseBytes),
+		maxErrorResponseBytes: resolvedLimit(options.maxErrorResponseBytes, DefaultMaxErrorResponseBytes),
+		maxSSEEventBytes:      resolvedLimit(options.maxSSEEventBytes, DefaultMaxSSEEventBytes),
 	}, nil
 }
 
@@ -125,13 +180,20 @@ func NewWithAccessToken(cfg AccessTokenConfig, opts ...Option) (*Provider, error
 		return nil, err
 	}
 
-	options := collectProviderOptions(opts)
+	options, err := collectProviderOptions(opts)
+	if err != nil {
+		return nil, err
+	}
 	httpClient := configuredHTTPClient(cfg.HTTPClient, options.httpClient)
 
 	return &Provider{
-		baseURL:        baseURL,
-		httpClient:     httpClient,
-		tokenExchanger: authn.NewStaticTokenExchanger(cfg.AccessToken),
+		baseURL:               baseURL,
+		httpClient:            httpClient,
+		tokenExchanger:        authn.NewStaticTokenExchanger(cfg.AccessToken),
+		wireCodec:             codecForMode(options.providerWireMode),
+		maxUnaryResponseBytes: resolvedLimit(options.maxUnaryResponseBytes, DefaultMaxUnaryResponseBytes),
+		maxErrorResponseBytes: resolvedLimit(options.maxErrorResponseBytes, DefaultMaxErrorResponseBytes),
+		maxSSEEventBytes:      resolvedLimit(options.maxSSEEventBytes, DefaultMaxSSEEventBytes),
 	}, nil
 }
 
@@ -140,12 +202,34 @@ func (p *Provider) LanguageModel(modelID string) (provider.LanguageModel, error)
 	return &model{provider: p, modelID: modelID}, nil
 }
 
-func collectProviderOptions(opts []Option) providerOptions {
-	options := providerOptions{}
+func collectProviderOptions(opts []Option) (providerOptions, error) {
+	options := providerOptions{providerWireMode: ProviderWireLegacy}
 	for _, opt := range opts {
+		if opt == nil {
+			return providerOptions{}, fmt.Errorf("grafana: nil option")
+		}
 		opt(&options)
 	}
-	return options
+	if options.providerWireMode != ProviderWireLegacy && options.providerWireMode != ProviderWireStrict {
+		return providerOptions{}, fmt.Errorf("grafana: unsupported provider-wire mode %q", options.providerWireMode)
+	}
+	for name, limit := range map[string]*int64{
+		"unary response": options.maxUnaryResponseBytes,
+		"error response": options.maxErrorResponseBytes,
+		"SSE event":      options.maxSSEEventBytes,
+	} {
+		if limit != nil && *limit <= 0 {
+			return providerOptions{}, fmt.Errorf("grafana: maximum %s bytes must be positive", name)
+		}
+	}
+	return options, nil
+}
+
+func resolvedLimit(configured *int64, defaultValue int64) int64 {
+	if configured == nil {
+		return defaultValue
+	}
+	return *configured
 }
 
 func configuredHTTPClient(configClient, optionClient *http.Client) *http.Client {

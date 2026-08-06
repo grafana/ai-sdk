@@ -14,11 +14,13 @@ import (
 type GatewayErrorType string
 
 const (
-	GatewayErrorAuthentication GatewayErrorType = "authentication_error"
-	GatewayErrorInvalidRequest GatewayErrorType = "invalid_request_error"
-	GatewayErrorRateLimit      GatewayErrorType = "rate_limit_exceeded"
-	GatewayErrorModelNotFound  GatewayErrorType = "model_not_found"
-	GatewayErrorInternalServer GatewayErrorType = "internal_server_error"
+	GatewayErrorAuthentication   GatewayErrorType = "authentication_error"
+	GatewayErrorInvalidRequest   GatewayErrorType = "invalid_request_error"
+	GatewayErrorRateLimit        GatewayErrorType = "rate_limit_exceeded"
+	GatewayErrorModelNotFound    GatewayErrorType = "model_not_found"
+	GatewayErrorForbidden        GatewayErrorType = "forbidden"
+	GatewayErrorFailedDependency GatewayErrorType = "failed_dependency"
+	GatewayErrorInternalServer   GatewayErrorType = "internal_server_error"
 )
 
 // GatewayError is the normalized, category-driven error produced by the Grafana
@@ -82,6 +84,10 @@ func NormalizeAPICallError(apiErr *provider.APICallError) *GatewayError {
 		gwType = GatewayErrorRateLimit
 	case "not_found_error", "model_not_found":
 		gwType = GatewayErrorModelNotFound
+	case "forbidden":
+		gwType = GatewayErrorForbidden
+	case "failed_dependency":
+		gwType = GatewayErrorFailedDependency
 	case "internal_server_error", "api_error", "timeout_error":
 		gwType = GatewayErrorInternalServer
 	}
