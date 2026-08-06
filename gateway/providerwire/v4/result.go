@@ -55,8 +55,8 @@ type generateContentDTO struct {
 	ProviderMetadata providerMetadataDTO `json:"providerMetadata,omitempty"`
 }
 
-// EncodeGenerateResult encodes one canonical LanguageModelV4 generate result.
-func EncodeGenerateResult(result *provider.GenerateResult) ([]byte, error) {
+// encodeGenerateResultJSON encodes one canonical LanguageModelV4 generate result.
+func encodeGenerateResultJSON(result *provider.GenerateResult) ([]byte, error) {
 	if result == nil {
 		return nil, errors.New("providerwirev4: nil generate result")
 	}
@@ -234,9 +234,6 @@ func decodeGenerateResult(dto generateResultDTO) (*provider.GenerateResult, erro
 }
 
 func encodeGenerateContent(part provider.GenerateContentPart) (generateContentDTO, error) {
-	if err := validateGenerateContentFields(part); err != nil {
-		return generateContentDTO{}, err
-	}
 	metadata, err := encodeProviderMetadata(part.ProviderMetadata)
 	if err != nil {
 		return generateContentDTO{}, err
@@ -271,18 +268,23 @@ func encodeGenerateContent(part provider.GenerateContentPart) (generateContentDT
 		}
 		sourceType := string(part.SourceType)
 		dto.SourceType, dto.ID = &sourceType, &part.ID
-		if part.URL != "" {
+		switch part.SourceType {
+		case provider.SourceTypeURL:
+			if part.URL == "" {
+				return generateContentDTO{}, errors.New("providerwirev4: URL source URL is required")
+			}
 			dto.URL = &part.URL
-		}
-		if part.Title != "" {
-			dto.Title = &part.Title
-		}
-		if part.MediaType != "" {
-			dto.MediaType = &part.MediaType
-		}
-		dto.Filename = part.Filename
-		if err := validateSource(part.SourceType, part.URL, part.Title, part.MediaType, part.Filename); err != nil {
-			return generateContentDTO{}, err
+			if part.Title != "" {
+				dto.Title = &part.Title
+			}
+		case provider.SourceTypeDocument:
+			if part.Title == "" || part.MediaType == "" {
+				return generateContentDTO{}, errors.New("providerwirev4: document source title and mediaType are required")
+			}
+			dto.Title, dto.MediaType = &part.Title, &part.MediaType
+			dto.Filename = part.Filename
+		default:
+			return generateContentDTO{}, fmt.Errorf("providerwirev4: unsupported source type %q", part.SourceType)
 		}
 	case provider.ContentFile, provider.ContentReasoningFile:
 		if part.Filename != "" {
@@ -322,27 +324,44 @@ func decodeGenerateContent(data json.RawMessage) (provider.GenerateContentPart, 
 	if err != nil {
 		return provider.GenerateContentPart{}, err
 	}
-	knownFields := []string{"text", "kind", "approvalId", "toolCallId", "toolName", "input", "result", "isError", "preliminary", "providerExecuted", "dynamic", "sourceType", "id", "url", "title", "data", "mediaType", "filename"}
-	allowedFields := map[string][]string{
-		"text": {"text"}, "reasoning": {"text"},
-		"tool-call":   {"toolCallId", "toolName", "input", "providerExecuted", "dynamic"},
-		"tool-result": {"toolCallId", "toolName", "result", "isError", "preliminary", "dynamic"},
-		"source":      {"sourceType", "id", "url", "title", "mediaType", "filename"},
-		"file":        {"data", "mediaType"}, "reasoning-file": {"data", "mediaType"},
-		"custom": {"kind"}, "tool-approval-request": {"approvalId", "toolCallId"},
-	}
-	allowed, supported := allowedFields[variant]
-	if !supported {
+	fields := []string{"type", "providerMetadata"}
+	switch provider.GenerateContentType(variant) {
+	case provider.ContentText, provider.ContentReasoning:
+		fields = append(fields, "text")
+	case provider.ContentToolCall:
+		fields = append(fields, "toolCallId", "toolName", "input", "providerExecuted", "dynamic")
+	case provider.ContentToolResult:
+		fields = append(fields, "toolCallId", "toolName", "result", "isError", "preliminary", "dynamic")
+	case provider.ContentSource:
+		sourceType, err := decodeRequiredString(object, "sourceType", "generate source")
+		if err != nil {
+			return provider.GenerateContentPart{}, err
+		}
+		switch provider.SourceType(sourceType) {
+		case provider.SourceTypeURL:
+			fields = append(fields, "sourceType", "id", "url", "title")
+		case provider.SourceTypeDocument:
+			fields = append(fields, "sourceType", "id", "title", "mediaType", "filename")
+		default:
+			return provider.GenerateContentPart{}, fmt.Errorf("providerwirev4: unsupported source type %q", sourceType)
+		}
+	case provider.ContentFile, provider.ContentReasoningFile:
+		if _, exists := object["filename"]; exists {
+			return provider.GenerateContentPart{}, errors.New("providerwirev4: generated file filename is not in LanguageModelV4")
+		}
+		fields = append(fields, "data", "mediaType")
+	case provider.ContentCustom:
+		fields = append(fields, "kind")
+	case provider.ContentToolApprovalRequest:
+		fields = append(fields, "approvalId", "toolCallId")
+	default:
 		return provider.GenerateContentPart{}, fmt.Errorf("providerwirev4: unsupported generate content type %q", variant)
 	}
-	if err := rejectContradictoryFields(object, "generate content", knownFields, allowed...); err != nil {
-		return provider.GenerateContentPart{}, err
-	}
-	if err := rejectNullFields(object, "generate content", "text", "kind", "approvalId", "toolCallId", "toolName", "input", "result", "isError", "preliminary", "providerExecuted", "dynamic", "sourceType", "id", "url", "title", "data", "mediaType", "filename", "providerMetadata"); err != nil {
+	if err := rejectNullFields(object, "generate content", fields...); err != nil {
 		return provider.GenerateContentPart{}, err
 	}
 	var dto generateContentDTO
-	if err := json.Unmarshal(data, &dto); err != nil {
+	if err := decodeSelectedObject(object, &dto, fields...); err != nil {
 		return provider.GenerateContentPart{}, err
 	}
 	metadata, err := decodeProviderMetadata(dto.ProviderMetadata)
@@ -390,8 +409,19 @@ func decodeGenerateContent(data json.RawMessage) (provider.GenerateContentPart, 
 			part.MediaType = *dto.MediaType
 		}
 		part.Filename = dto.Filename
-		if err := validateSource(part.SourceType, part.URL, part.Title, part.MediaType, part.Filename); err != nil {
-			return provider.GenerateContentPart{}, err
+		switch part.SourceType {
+		case provider.SourceTypeURL:
+			if part.URL == "" {
+				return provider.GenerateContentPart{}, errors.New("providerwirev4: URL source URL is required")
+			}
+			part.MediaType, part.Filename = "", ""
+		case provider.SourceTypeDocument:
+			if part.Title == "" || part.MediaType == "" {
+				return provider.GenerateContentPart{}, errors.New("providerwirev4: document source title and mediaType are required")
+			}
+			part.URL = ""
+		default:
+			return provider.GenerateContentPart{}, fmt.Errorf("providerwirev4: unsupported source type %q", part.SourceType)
 		}
 	case provider.ContentFile, provider.ContentReasoningFile:
 		if len(dto.Data) == 0 || dto.MediaType == nil {
@@ -419,28 +449,6 @@ func decodeGenerateContent(data json.RawMessage) (provider.GenerateContentPart, 
 		return provider.GenerateContentPart{}, fmt.Errorf("providerwirev4: unsupported generate content type %q", variant)
 	}
 	return part, nil
-}
-
-func validateSource(sourceType provider.SourceType, url, title, mediaType, filename string) error {
-	switch sourceType {
-	case provider.SourceTypeURL:
-		if url == "" {
-			return errors.New("providerwirev4: URL source URL is required")
-		}
-		if mediaType != "" || filename != "" {
-			return errors.New("providerwirev4: URL source contains document fields")
-		}
-	case provider.SourceTypeDocument:
-		if title == "" || mediaType == "" {
-			return errors.New("providerwirev4: document source title and mediaType are required")
-		}
-		if url != "" {
-			return errors.New("providerwirev4: document source contains URL field")
-		}
-	default:
-		return fmt.Errorf("providerwirev4: unsupported source type %q", sourceType)
-	}
-	return nil
 }
 
 func validateNonNullJSON(value json.RawMessage, context string) error {

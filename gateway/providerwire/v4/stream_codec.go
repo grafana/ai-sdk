@@ -54,8 +54,8 @@ type apiCallErrorDTO struct {
 	Data              json.RawMessage     `json:"data,omitempty"`
 }
 
-// EncodeStreamPart encodes one canonical LanguageModelV4 stream part.
-func EncodeStreamPart(part provider.StreamPart) ([]byte, error) {
+// encodeStreamPartJSON encodes one canonical LanguageModelV4 stream part.
+func encodeStreamPartJSON(part provider.StreamPart) ([]byte, error) {
 	dto, err := encodeStreamPart(part)
 	if err != nil {
 		return nil, err
@@ -82,46 +82,76 @@ func DecodeStreamPart(data []byte) (provider.StreamPart, error) {
 			return provider.StreamPart{}, fmt.Errorf("providerwirev4: legacy stream field %q is not supported", legacy)
 		}
 	}
-	knownFields := []string{"id", "delta", "toolCallId", "toolName", "input", "providerExecuted", "isError", "dynamic", "preliminary", "kind", "approvalId", "sourceType", "url", "title", "data", "mediaType", "filename", "warnings", "modelId", "timestamp", "usage", "finishReason", "rawValue", "error", "result", "providerMetadata"}
-	allowedFields := map[string][]string{
-		"text-start": {"id", "providerMetadata"}, "text-delta": {"id", "delta", "providerMetadata"}, "text-end": {"id", "providerMetadata"},
-		"reasoning-start": {"id", "providerMetadata"}, "reasoning-delta": {"id", "delta", "providerMetadata"}, "reasoning-end": {"id", "providerMetadata"},
-		"tool-input-start": {"id", "toolName", "providerExecuted", "dynamic", "title", "providerMetadata"},
-		"tool-input-delta": {"id", "delta", "providerMetadata"}, "tool-input-end": {"id", "providerMetadata"},
-		"tool-call":   {"toolCallId", "toolName", "input", "providerExecuted", "dynamic", "providerMetadata"},
-		"tool-result": {"toolCallId", "toolName", "result", "isError", "preliminary", "dynamic", "providerMetadata"},
-		"source":      {"sourceType", "id", "url", "title", "mediaType", "filename", "providerMetadata"},
-		"file":        {"data", "mediaType", "providerMetadata"}, "reasoning-file": {"data", "mediaType", "providerMetadata"},
-		"stream-start": {"warnings"}, "response-metadata": {"id", "modelId", "timestamp"},
-		"finish": {"usage", "finishReason", "providerMetadata"}, "raw": {"rawValue"}, "error": {"error"},
-		"tool-approval-request": {"approvalId", "toolCallId", "providerMetadata"}, "custom": {"kind", "providerMetadata"},
-	}
-	allowed, supported := allowedFields[variant]
-	if !supported {
+	fields := []string{"type"}
+	switch provider.StreamPartType(variant) {
+	case provider.PartTextStart, provider.PartTextEnd, provider.PartReasoningStart, provider.PartReasoningEnd, provider.PartToolInputEnd:
+		fields = append(fields, "id", "providerMetadata")
+	case provider.PartTextDelta, provider.PartReasoningDelta, provider.PartToolInputDelta:
+		fields = append(fields, "id", "delta", "providerMetadata")
+	case provider.PartToolInputStart:
+		fields = append(fields, "id", "toolName", "providerExecuted", "dynamic", "title", "providerMetadata")
+	case provider.PartToolCall:
+		fields = append(fields, "toolCallId", "toolName", "input", "providerExecuted", "dynamic", "providerMetadata")
+	case provider.PartToolResult:
+		fields = append(fields, "toolCallId", "toolName", "result", "isError", "preliminary", "dynamic", "providerMetadata")
+	case provider.PartSource:
+		sourceType, err := decodeRequiredString(object, "sourceType", "stream source")
+		if err != nil {
+			return provider.StreamPart{}, err
+		}
+		switch provider.SourceType(sourceType) {
+		case provider.SourceTypeURL:
+			fields = append(fields, "sourceType", "id", "url", "title", "providerMetadata")
+		case provider.SourceTypeDocument:
+			fields = append(fields, "sourceType", "id", "title", "mediaType", "filename", "providerMetadata")
+		default:
+			return provider.StreamPart{}, fmt.Errorf("providerwirev4: unsupported source type %q", sourceType)
+		}
+	case provider.PartFile, provider.PartReasoningFile:
+		if _, exists := object["filename"]; exists {
+			return provider.StreamPart{}, errors.New("providerwirev4: stream file filename is not in LanguageModelV4")
+		}
+		fields = append(fields, "data", "mediaType", "providerMetadata")
+	case provider.PartStreamStart:
+		fields = append(fields, "warnings")
+	case provider.PartResponseMeta:
+		fields = append(fields, "id", "modelId", "timestamp")
+	case provider.PartFinish:
+		fields = append(fields, "usage", "finishReason", "providerMetadata")
+	case provider.PartRaw:
+		fields = append(fields, "rawValue")
+	case provider.PartError:
+		fields = append(fields, "error")
+	case provider.PartToolApprovalRequest:
+		fields = append(fields, "approvalId", "toolCallId", "providerMetadata")
+	case provider.PartCustom:
+		fields = append(fields, "kind", "providerMetadata")
+	default:
 		return provider.StreamPart{}, fmt.Errorf("providerwirev4: unsupported stream part type %q", variant)
 	}
-	if err := rejectContradictoryFields(object, "stream part", knownFields, allowed...); err != nil {
-		return provider.StreamPart{}, err
+	nonNullFields := fields
+	if provider.StreamPartType(variant) == provider.PartRaw {
+		nonNullFields = []string{"type"}
 	}
-	if err := rejectNullFields(object, "stream part", "id", "delta", "toolCallId", "toolName", "input", "providerExecuted", "isError", "dynamic", "preliminary", "kind", "approvalId", "sourceType", "url", "title", "data", "mediaType", "filename", "warnings", "modelId", "timestamp", "usage", "finishReason", "result", "providerMetadata"); err != nil {
+	if err := rejectNullFields(object, "stream part", nonNullFields...); err != nil {
 		return provider.StreamPart{}, err
 	}
 	var dto streamPartDTO
-	if err := json.Unmarshal(data, &dto); err != nil {
+	if err := decodeSelectedObject(object, &dto, fields...); err != nil {
 		return provider.StreamPart{}, fmt.Errorf("providerwirev4: decoding stream part: %w", err)
 	}
 	return decodeStreamPart(variant, object, dto)
 }
 
 func encodeStreamPart(part provider.StreamPart) (streamPartDTO, error) {
-	if err := validateStreamPartFields(part); err != nil {
-		return streamPartDTO{}, err
+	if part.Signature != "" || part.Approved != nil || part.Reason != "" {
+		return streamPartDTO{}, errors.New("providerwirev4: stream part contains private fields")
 	}
 	metadata, err := encodeProviderMetadata(part.ProviderMetadata)
 	if err != nil {
 		return streamPartDTO{}, err
 	}
-	dto := streamPartDTO{Type: string(part.Type), ProviderMetadata: metadata}
+	dto := streamPartDTO{Type: string(part.Type)}
 	requireID := func() error {
 		if part.ID == "" {
 			return fmt.Errorf("providerwirev4: stream part %q ID is required", part.Type)
@@ -171,14 +201,21 @@ func encodeStreamPart(part provider.StreamPart) (streamPartDTO, error) {
 		if part.Source == nil || part.Source.ID == "" {
 			return streamPartDTO{}, errors.New("providerwirev4: stream source and ID are required")
 		}
-		if err := validateSource(part.Source.SourceType, part.Source.URL, part.Source.Title, part.Source.MediaType, part.Source.Filename); err != nil {
-			return streamPartDTO{}, err
-		}
 		sourceType := string(part.Source.SourceType)
 		dto.SourceType, dto.ID = &sourceType, &part.Source.ID
-		dto.URL, dto.Title, dto.Filename = part.Source.URL, part.Source.Title, part.Source.Filename
-		if part.Source.MediaType != "" {
-			dto.MediaType = &part.Source.MediaType
+		switch part.Source.SourceType {
+		case provider.SourceTypeURL:
+			if part.Source.URL == "" {
+				return streamPartDTO{}, errors.New("providerwirev4: URL source URL is required")
+			}
+			dto.URL, dto.Title = part.Source.URL, part.Source.Title
+		case provider.SourceTypeDocument:
+			if part.Source.Title == "" || part.Source.MediaType == "" {
+				return streamPartDTO{}, errors.New("providerwirev4: document source title and mediaType are required")
+			}
+			dto.Title, dto.MediaType, dto.Filename = part.Source.Title, &part.Source.MediaType, part.Source.Filename
+		default:
+			return streamPartDTO{}, fmt.Errorf("providerwirev4: unsupported source type %q", part.Source.SourceType)
 		}
 		dto.ProviderMetadata, err = encodeProviderMetadata(part.Source.ProviderMetadata)
 		if err != nil {
@@ -252,9 +289,6 @@ func encodeStreamPart(part provider.StreamPart) (streamPartDTO, error) {
 		if part.ApprovalID == "" || part.ToolCallID == "" {
 			return streamPartDTO{}, errors.New("providerwirev4: stream tool approval IDs are required")
 		}
-		if part.Signature != "" {
-			return streamPartDTO{}, errors.New("providerwirev4: tool approval signature is not in LanguageModelV4")
-		}
 		dto.ApprovalID, dto.ToolCallID = &part.ApprovalID, &part.ToolCallID
 	case provider.PartCustom:
 		if err := validateQualifiedIdentifier(part.Kind, "stream custom kind"); err != nil {
@@ -263,6 +297,14 @@ func encodeStreamPart(part provider.StreamPart) (streamPartDTO, error) {
 		dto.Kind = &part.Kind
 	default:
 		return streamPartDTO{}, fmt.Errorf("providerwirev4: unsupported stream part type %q", part.Type)
+	}
+	switch part.Type {
+	case provider.PartTextStart, provider.PartTextDelta, provider.PartTextEnd,
+		provider.PartReasoningStart, provider.PartReasoningDelta, provider.PartReasoningEnd,
+		provider.PartToolInputStart, provider.PartToolInputDelta, provider.PartToolInputEnd,
+		provider.PartToolCall, provider.PartToolResult, provider.PartFile, provider.PartReasoningFile,
+		provider.PartFinish, provider.PartToolApprovalRequest, provider.PartCustom:
+		dto.ProviderMetadata = metadata
 	}
 	return dto, nil
 }
@@ -328,8 +370,20 @@ func decodeStreamPart(variant string, object map[string]json.RawMessage, dto str
 		if dto.MediaType != nil {
 			mediaType = *dto.MediaType
 		}
-		if err := validateSource(sourceType, dto.URL, dto.Title, mediaType, dto.Filename); err != nil {
-			return provider.StreamPart{}, err
+		switch sourceType {
+		case provider.SourceTypeURL:
+			if dto.URL == "" {
+				return provider.StreamPart{}, errors.New("providerwirev4: URL source URL is required")
+			}
+			mediaType = ""
+			dto.Filename = ""
+		case provider.SourceTypeDocument:
+			if dto.Title == "" || mediaType == "" {
+				return provider.StreamPart{}, errors.New("providerwirev4: document source title and mediaType are required")
+			}
+			dto.URL = ""
+		default:
+			return provider.StreamPart{}, fmt.Errorf("providerwirev4: unsupported source type %q", sourceType)
 		}
 		part.Source = &provider.SourceInfo{SourceType: sourceType, ID: *dto.ID, URL: dto.URL, Title: dto.Title, MediaType: mediaType, Filename: dto.Filename, ProviderMetadata: metadata}
 		part.ProviderMetadata = nil
@@ -407,18 +461,25 @@ func encodeStreamFileData(data *provider.StreamFileData) (*dataDTO, error) {
 	if data == nil {
 		return nil, errors.New("providerwirev4: stream file data is required")
 	}
-	if err := data.Validate(); err != nil {
-		return nil, fmt.Errorf("providerwirev4: validating stream file data: %w", err)
-	}
-	if data.Type == provider.StreamFileDataTypeURL || data.URL != "" {
+	switch data.Type {
+	case provider.StreamFileDataTypeData:
+		if data.Bytes != nil && data.Base64 != "" {
+			return nil, errors.New("providerwirev4: stream file data has ambiguous inline values")
+		}
+		value := data.Base64
+		if data.Bytes != nil {
+			value = base64.StdEncoding.EncodeToString(data.Bytes)
+		}
+		return &dataDTO{Type: "data", Data: &value}, nil
+	case provider.StreamFileDataTypeURL:
+		if data.URL == "" {
+			return nil, errors.New("providerwirev4: stream file URL is required")
+		}
 		value := data.URL
 		return &dataDTO{Type: "url", URL: &value}, nil
+	default:
+		return nil, fmt.Errorf("providerwirev4: unsupported stream file data type %q", data.Type)
 	}
-	value := data.Base64
-	if data.Bytes != nil {
-		value = base64.StdEncoding.EncodeToString(data.Bytes)
-	}
-	return &dataDTO{Type: "data", Data: &value}, nil
 }
 
 func decodeStreamFileData(data json.RawMessage) (*provider.StreamFileData, error) {
@@ -430,21 +491,14 @@ func decodeStreamFileData(data json.RawMessage) (*provider.StreamFileData, error
 	if err != nil {
 		return nil, err
 	}
-	knownFields := []string{"data", "url"}
 	switch variant {
 	case "data":
-		if err := rejectContradictoryFields(object, "stream file data", knownFields, "data"); err != nil {
-			return nil, err
-		}
 		value, err := decodeRequiredString(object, "data", "stream file data")
 		if err != nil {
 			return nil, err
 		}
 		return &provider.StreamFileData{Type: provider.StreamFileDataTypeData, Base64: value}, nil
 	case "url":
-		if err := rejectContradictoryFields(object, "stream file data", knownFields, "url"); err != nil {
-			return nil, err
-		}
 		value, err := decodeRequiredString(object, "url", "stream file data")
 		if err != nil || value == "" {
 			return nil, errors.New("providerwirev4: stream file URL is required")

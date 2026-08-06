@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { generateText, streamText, tool, stepCountIs } from "ai";
 import { z } from "zod";
-import { getGatewayBaseURL, newGateway as newGatewayFor, type ProviderWireEndpoint } from "./helpers";
+import { newGateway as newGatewayFor, type ProviderWireEndpoint } from "./helpers";
 
 // Bidirectional upstream-client conformance: a stock upstream @ai-sdk/gateway +
 // ai client drives mock Go models through the public gateway/providerwire
@@ -63,10 +63,8 @@ describe.each(["legacy", "strict"] as const)("upstream @ai-sdk/gateway <-> Go %s
     expect(result.response.body).toBeDefined();
   });
 
-  it.each([
-    ["Uint8Array", new Uint8Array([0, 1, 2])],
-    ["already encoded", "AAEC"],
-  ] as const)("encodes canonical tool-result file data from %s", async (_name, fileData) => {
+  it("encodes canonical Uint8Array tool-result file data", async () => {
+    const fileData = new Uint8Array([0, 1, 2]);
     const gateway = newGateway();
     const result = await gateway("tool-result-file-input").doGenerate({
       prompt: [
@@ -165,38 +163,6 @@ describe.each(["legacy", "strict"] as const)("upstream @ai-sdk/gateway <-> Go %s
     expect(finalText).toContain("echoTool");
   });
 
-  it("surfaces a provider-executed tool result value", async () => {
-    const gateway = newGateway();
-    const webSearch = tool({
-      description: "Provider-executed web search.",
-      inputSchema: z.object({ query: z.string() }),
-    });
-
-    const result = streamText({
-      model: gateway("provider-tool-result"),
-      maxRetries: 0,
-      tools: { webSearch },
-      prompt: "run a provider-executed tool",
-    });
-
-    const toolResults: Array<{ output: unknown; providerMetadata: unknown }> = [];
-    for await (const part of result.fullStream) {
-      if (part.type === "tool-result") {
-        toolResults.push({
-          output: part.output,
-          providerMetadata: part.providerMetadata,
-        });
-      }
-    }
-
-    expect(toolResults).toEqual([
-      {
-        output: "Grafana is an observability platform",
-        providerMetadata: { "grafana-ai-sdk": { customer: "keep" } },
-      },
-    ]);
-  });
-
   it("decodes an upstream file input part", async () => {
     const gateway = newGateway();
     const pngBase64 =
@@ -219,46 +185,6 @@ describe.each(["legacy", "strict"] as const)("upstream @ai-sdk/gateway <-> Go %s
     const text = await result.text;
     expect(text).toContain("decoded 1 file part");
     expect(text).toMatch(/base64Len=[1-9]/);
-  });
-
-  it("receives a file part in the response stream", async () => {
-    const gateway = newGateway();
-    const result = streamText({
-      model: gateway("file-output"),
-      maxRetries: 0,
-      prompt: "generate a file",
-    });
-
-    const files: Array<{ mediaType: string }> = [];
-    for await (const part of result.fullStream) {
-      if (part.type === "file") {
-        files.push({ mediaType: (part as { file: { mediaType: string } }).file.mediaType });
-      }
-    }
-    expect(files.length).toBeGreaterThan(0);
-    expect(files[0].mediaType).toBe("image/png");
-  });
-
-  it("preserves a URL-valued file part in the response stream", async () => {
-    const gateway = newGateway();
-    const result = streamText({
-      model: gateway("file-output-url"),
-      maxRetries: 0,
-      prompt: "generate a file URL",
-    });
-
-    const files: Array<{ type: string; mediaType: string; base64: string }> = [];
-    for await (const part of result.fullStream) {
-      if (part.type === "file" || part.type === "reasoning-file") {
-        const file = part.file;
-        files.push({ type: part.type, mediaType: file.mediaType, base64: file.base64 });
-      }
-    }
-
-    expect(files).toEqual([
-      { type: "file", mediaType: "image/png", base64: "https://example.com/generated.png" },
-      { type: "reasoning-file", mediaType: "image/png", base64: "https://example.com/reasoning.png" },
-    ]);
   });
 
   it("streams URL and document sources", async () => {
@@ -339,51 +265,18 @@ describe.each(["legacy", "strict"] as const)("upstream @ai-sdk/gateway <-> Go %s
   });
 });
 
-describe("strict provider-wire policy", () => {
-  it("rejects before model resolution", async () => {
-    const gateway = newGatewayFor("strict");
-    let observed: { statusCode?: number; type?: string } = {};
-    try {
-      await gateway("policy-reject").doGenerate({
-        prompt: [{ role: "user", content: [{ type: "text", text: "reject" }] }],
-      });
-    } catch (error) {
-      observed = error as typeof observed;
-    }
-    expect(observed.statusCode).toBe(403);
-    expect(observed.type).toBe("forbidden");
-    const response = await fetch(`${getGatewayBaseURL("strict")}/policy-resolver-calls`);
-    expect(await response.text()).toBe("0");
-  });
-});
-
-describe("strict provider-wire error projection", () => {
-  it.each([
-    ["authentication", 401, "authentication_error", false],
-    ["invalid", 400, "invalid_request_error", false],
-    ["unknown-model", 404, "model_not_found", false],
-    ["forbidden", 403, "forbidden", false],
-    ["rate-limit", 429, "rate_limit_exceeded", true],
-    ["timeout", 504, "internal_server_error", true],
-    ["canceled", 499, "internal_server_error", false],
-    ["failed-permanent", 424, "failed_dependency", false],
-    ["failed-transient", 502, "failed_dependency", true],
-    // The envelope says non-retryable, but the pinned TypeScript client derives
-    // retryability from HTTP 500. Grafana preserves the explicit false value.
-    ["internal", 500, "internal_server_error", true],
-  ] as const)("observes %s", async (scenario, statusCode, type, isRetryable) => {
+describe("strict provider-wire HTTP retry behavior", () => {
+  it("keeps the pinned HTTP-500 retry asymmetry", async () => {
     const gateway = newGatewayFor("strict");
     let observed: { statusCode?: number; type?: string; isRetryable?: boolean } = {};
     try {
-      await gateway(`strict-error-${scenario}`).doGenerate({
-        prompt: [{ role: "user", content: [{ type: "text", text: "fail" }] }],
-      });
+      await gateway("strict-error-internal").doGenerate({ prompt: [] });
     } catch (error) {
       observed = error as typeof observed;
     }
 
-    expect(observed.statusCode).toBe(statusCode);
-    expect(observed.type).toBe(type);
-    expect(observed.isRetryable).toBe(isRetryable);
+    expect(observed.statusCode).toBe(500);
+    expect(observed.type).toBe("internal_server_error");
+    expect(observed.isRetryable).toBe(true);
   });
 });

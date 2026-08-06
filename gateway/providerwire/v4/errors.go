@@ -1,12 +1,13 @@
 package providerwirev4
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 
-	"github.com/grafana/ai-sdk/gateway/failure"
+	"github.com/grafana/ai-sdk/gateway/catalog"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -22,10 +23,110 @@ type gatewayErrorDTO struct {
 	Param       json.RawMessage `json:"param"`
 }
 
-// EncodeFailure maps a runtime classification to the registered safe V4
-// gateway envelope and HTTP status.
-func EncodeFailure(classification failure.Classification) (int, []byte, error) {
-	dto := projectFailure(classification)
+type failureKind uint8
+
+const (
+	failureInternal failureKind = iota
+	failureUnknownModel
+	failureRateLimited
+	failureTimeout
+	failureCanceled
+	failureDependency
+)
+
+type safeFailure struct {
+	kind             failureKind
+	retryable        bool
+	cause            error
+	requestedModelID string
+}
+
+func classifyResolverError(ctx context.Context, err error, modelID string) safeFailure {
+	if contextFailure, ok := classifyContextError(ctx, err); ok {
+		return contextFailure
+	}
+	if errors.Is(err, catalog.ErrUnknownModel) {
+		return safeFailure{kind: failureUnknownModel, cause: err, requestedModelID: modelID}
+	}
+	return safeFailure{kind: failureInternal, cause: err}
+}
+
+func classifyInvocationError(ctx context.Context, err error) safeFailure {
+	if contextFailure, ok := classifyContextError(ctx, err); ok {
+		return contextFailure
+	}
+	return classifyProviderError(err)
+}
+
+func classifyProviderError(err error) safeFailure {
+	if err == nil {
+		return internalFailure(errors.New("providerwirev4: provider error part is nil"))
+	}
+	var apiErr *provider.APICallError
+	if errors.As(err, &apiErr) {
+		if apiErr == nil {
+			return internalFailure(errors.Join(errors.New("providerwirev4: provider returned a nil API call error"), err))
+		}
+		if apiErr.StatusCode == http.StatusTooManyRequests {
+			return safeFailure{kind: failureRateLimited, retryable: true, cause: err}
+		}
+		retryable := apiErr.StatusCode == http.StatusRequestTimeout || apiErr.StatusCode >= http.StatusInternalServerError || (apiErr.StatusCode == 0 && apiErr.IsRetryable)
+		return safeFailure{kind: failureDependency, retryable: retryable, cause: err}
+	}
+	return safeFailure{kind: failureDependency, cause: err}
+}
+
+func classifyContextError(ctx context.Context, err error) (safeFailure, bool) {
+	cause := errors.Join(err, context.Cause(ctx))
+	switch {
+	case errors.Is(context.Cause(ctx), ErrTotalTimeout), errors.Is(ctx.Err(), context.DeadlineExceeded), errors.Is(err, context.DeadlineExceeded):
+		return safeFailure{kind: failureTimeout, retryable: true, cause: cause}, true
+	case errors.Is(ctx.Err(), context.Canceled), errors.Is(err, context.Canceled):
+		return safeFailure{kind: failureCanceled, cause: cause}, true
+	default:
+		return safeFailure{}, false
+	}
+}
+
+func internalFailure(err error) safeFailure {
+	return safeFailure{kind: failureInternal, cause: err}
+}
+
+func timeoutFailure(err error) safeFailure {
+	return safeFailure{kind: failureTimeout, retryable: true, cause: err}
+}
+
+func projectFailure(failure safeFailure) gatewayErrorDTO {
+	dto := gatewayErrorDTO{IsRetryable: failure.retryable, Param: json.RawMessage("null")}
+	switch failure.kind {
+	case failureUnknownModel:
+		dto.Message, dto.Type, dto.StatusCode = "model not found", "model_not_found", http.StatusNotFound
+		if failure.requestedModelID != "" {
+			dto.Param, _ = json.Marshal(struct {
+				ModelID string `json:"modelId"`
+			}{ModelID: failure.requestedModelID})
+		}
+	case failureRateLimited:
+		dto.Message, dto.Type, dto.StatusCode = "rate limit exceeded", "rate_limit_exceeded", http.StatusTooManyRequests
+	case failureTimeout:
+		dto.Message, dto.Type, dto.StatusCode = "request timed out", "internal_server_error", http.StatusGatewayTimeout
+	case failureCanceled:
+		dto.Message, dto.Type, dto.StatusCode = "request canceled", "internal_server_error", 499
+	case failureDependency:
+		dto.Message, dto.Type = "upstream dependency failed", "failed_dependency"
+		if failure.retryable {
+			dto.StatusCode = http.StatusBadGateway
+		} else {
+			dto.StatusCode = http.StatusFailedDependency
+		}
+	default:
+		dto.Message, dto.Type, dto.StatusCode = "internal server error", "internal_server_error", http.StatusInternalServerError
+	}
+	return dto
+}
+
+func encodeFailure(failure safeFailure) (int, []byte, error) {
+	dto := projectFailure(failure)
 	data, err := json.Marshal(gatewayErrorEnvelopeDTO{Error: dto})
 	if err != nil {
 		return 0, nil, fmt.Errorf("providerwirev4: encoding failure: %w", err)
@@ -33,9 +134,7 @@ func EncodeFailure(classification failure.Classification) (int, []byte, error) {
 	return dto.StatusCode, data, nil
 }
 
-// EncodeProtocolError encodes an adapter-owned transport or DTO error without
-// exposing its private cause.
-func EncodeProtocolError(status int, message string) ([]byte, error) {
+func encodeProtocolError(status int, message string) ([]byte, error) {
 	if status < 400 || status > 599 {
 		return nil, fmt.Errorf("providerwirev4: invalid protocol error status %d", status)
 	}
@@ -97,50 +196,18 @@ func DecodeErrorResponse(data []byte, httpStatus int) (*provider.APICallError, e
 	}), nil
 }
 
-func projectFailure(classification failure.Classification) gatewayErrorDTO {
-	dto := gatewayErrorDTO{IsRetryable: classification.Retryable, Param: json.RawMessage("null")}
-	switch classification.Kind {
-	case failure.KindUnauthenticated:
-		dto.Message, dto.Type, dto.StatusCode = "authentication required", "authentication_error", http.StatusUnauthorized
-	case failure.KindInvalidCall:
-		dto.Message, dto.Type, dto.StatusCode = "invalid request", "invalid_request_error", http.StatusBadRequest
-	case failure.KindUnknownModel:
-		dto.Message, dto.Type, dto.StatusCode = "model not found", "model_not_found", http.StatusNotFound
-		if classification.SafeParameters.RequestedModelID != "" {
-			dto.Param, _ = json.Marshal(struct {
-				ModelID string `json:"modelId"`
-			}{ModelID: classification.SafeParameters.RequestedModelID})
-		}
-	case failure.KindForbidden:
-		dto.Message, dto.Type, dto.StatusCode = "request forbidden", "forbidden", http.StatusForbidden
-	case failure.KindRateLimited:
-		dto.Message, dto.Type, dto.StatusCode = "rate limit exceeded", "rate_limit_exceeded", http.StatusTooManyRequests
-	case failure.KindTimeout:
-		dto.Message, dto.Type, dto.StatusCode = "request timed out", "internal_server_error", http.StatusGatewayTimeout
-	case failure.KindCanceled:
-		dto.Message, dto.Type, dto.StatusCode = "request canceled", "internal_server_error", 499
-	case failure.KindFailedDependency:
-		dto.Message, dto.Type = "upstream dependency failed", "failed_dependency"
-		if classification.Retryable {
-			dto.StatusCode = http.StatusBadGateway
-		} else {
-			dto.StatusCode = http.StatusFailedDependency
-		}
-	default:
-		dto.Message, dto.Type, dto.StatusCode = "internal server error", "internal_server_error", http.StatusInternalServerError
-	}
-	return dto
-}
-
 func sanitizePartError(apiErr *provider.APICallError) *provider.APICallError {
-	return apiCallErrorForClassification(failure.Classify(apiErr))
+	if apiErr == nil {
+		return apiCallErrorForFailure(internalFailure(errors.New("providerwirev4: provider error part is nil")))
+	}
+	return apiCallErrorForFailure(classifyProviderError(apiErr))
 }
 
-func apiCallErrorForClassification(classification failure.Classification) *provider.APICallError {
-	dto := projectFailure(classification)
+func apiCallErrorForFailure(failure safeFailure) *provider.APICallError {
+	dto := projectFailure(failure)
 	data, _ := json.Marshal(dto)
 	retryable := dto.IsRetryable
 	return provider.NewAPICallError(provider.APICallErrorOptions{
-		Message: dto.Message, StatusCode: dto.StatusCode, IsRetryable: &retryable, Data: data,
+		Message: dto.Message, StatusCode: dto.StatusCode, IsRetryable: &retryable, Data: data, Cause: failure.cause,
 	})
 }

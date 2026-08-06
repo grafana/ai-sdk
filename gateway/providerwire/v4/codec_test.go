@@ -10,8 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grafana/ai-sdk/gateway/failure"
-	"github.com/grafana/ai-sdk/gateway/runtime"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -71,10 +69,9 @@ func TestCallOptions_StrictCanonicalRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, string(data), `"role":"system","content":"system"`)
 	assert.Contains(t, string(data), `"output":{"type":"content","value"`)
-	decoded, err := DecodeCallOptions(data)
+	decoded, err := decodeCallOptionsJSON(data)
 	require.NoError(t, err)
-	assert.Equal(t, options, decoded.CallOptions)
-	assert.True(t, decoded.GatewayOptions.Empty())
+	assert.Equal(t, options, decoded)
 }
 
 func TestCallOptions_PinnedCanonicalGolden(t *testing.T) {
@@ -91,33 +88,24 @@ func TestCallOptions_PinnedCanonicalGolden(t *testing.T) {
 		"toolChoice":{"type":"auto"},
 		"responseFormat":{"type":"json","schema":{"type":"object"}}
 	}`
-	decoded, err := DecodeCallOptions([]byte(golden))
+	decoded, err := decodeCallOptionsJSON([]byte(golden))
 	require.NoError(t, err)
-	encoded, err := EncodeCallOptions(decoded.CallOptions)
+	encoded, err := EncodeCallOptions(decoded)
 	require.NoError(t, err)
 	assert.JSONEq(t, golden, string(encoded))
 }
 
-func TestCallOptions_FileDataVariants(t *testing.T) {
-	cases := []struct {
-		name  string
-		wire  string
-		check func(*testing.T, *provider.DataContent)
-	}{
-		{name: "data", wire: `{"type":"data","data":"AAEC"}`, check: func(t *testing.T, data *provider.DataContent) { assert.Equal(t, "AAEC", data.Base64) }},
-		{name: "url", wire: `{"type":"url","url":"https://example.com/file"}`, check: func(t *testing.T, data *provider.DataContent) { assert.Equal(t, "https://example.com/file", data.URL) }},
-		{name: "reference", wire: `{"type":"reference","reference":{"provider":"file-1"}}`, check: func(t *testing.T, data *provider.DataContent) {
-			assert.JSONEq(t, `{"provider":"file-1"}`, string(data.Reference))
-		}},
-		{name: "text", wire: `{"type":"text","text":"inline"}`, check: func(t *testing.T, data *provider.DataContent) { assert.Equal(t, "inline", data.Text) }},
+func TestCallOptions_EmptyInlineTextFileDataRoundTrips(t *testing.T) {
+	wires := []string{
+		`{"prompt":[{"role":"user","content":[{"type":"file","data":{"type":"text","text":""},"mediaType":"text/plain"}]}]}`,
+		`{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"call","toolName":"tool","output":{"type":"content","value":[{"type":"file","data":{"type":"text","text":""},"mediaType":"text/plain"}]}}]}]}`,
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			wire := `{"prompt":[{"role":"user","content":[{"type":"file","data":` + tc.wire + `,"mediaType":"text/plain"}]}]}`
-			decoded, err := DecodeCallOptions([]byte(wire))
-			require.NoError(t, err)
-			tc.check(t, decoded.CallOptions.Prompt[0].Content[0].Data)
-		})
+	for _, wire := range wires {
+		decoded, err := decodeCallOptionsJSON([]byte(wire))
+		require.NoError(t, err)
+		encoded, err := EncodeCallOptions(decoded)
+		require.NoError(t, err)
+		assert.JSONEq(t, wire, string(encoded))
 	}
 }
 
@@ -142,80 +130,41 @@ func TestCallOptions_PinnedContentAndFileDataGoldens(t *testing.T) {
 			require.NoError(t, err)
 			assert.JSONEq(t, tc.wire, string(encoded))
 
-			decoded, err := DecodeCallOptions([]byte(tc.wire))
+			decoded, err := decodeCallOptionsJSON([]byte(tc.wire))
 			require.NoError(t, err)
-			assert.Equal(t, tc.options, decoded.CallOptions)
+			assert.Equal(t, tc.options, decoded)
 		})
 	}
 }
 
-func TestCallOptions_ExtractsEveryGatewayOptionAndExtensions(t *testing.T) {
-	wire := []byte(`{"prompt":[],"providerOptions":{"provider":{"keep":true},"gateway":{` +
-		`"byok":{"anthropic":[{"apiKey":"secret"}]},"caching":"auto","disallowPromptTraining":true,` +
-		`"has":["implicit-caching"],"models":["fallback"],"only":["anthropic"],"order":["anthropic"],` +
-		`"providerTimeouts":{"byok":{"anthropic":500}},"quotaEntityId":"tenant","serviceTier":"priority",` +
-		`"sort":"ttft","tags":["prod"],"user":"user","zeroDataRetention":false,` +
-		`"future":{"mode": "fast"}}}}`)
-	decoded, err := DecodeCallOptions(wire)
+func TestCallOptions_GatewayNamespaceIsRemovedOrRejected(t *testing.T) {
+	for _, wire := range []string{
+		`{"prompt":[]}`,
+		`{"prompt":[],"providerOptions":{"gateway":{}}}`,
+		`{"prompt":[],"providerOptions":{"provider":{"keep":true},"gateway":{}}}`,
+	} {
+		decoded, err := decodeCallOptionsJSON([]byte(wire))
+		require.NoError(t, err)
+		assert.NotContains(t, decoded.ProviderOptions, "gateway")
+	}
+
+	for _, gateway := range []string{`null`, `[]`, `{"models":["fallback"]}`, `{"future":null}`} {
+		_, err := decodeCallOptionsJSON([]byte(`{"prompt":[],"providerOptions":{"gateway":` + gateway + `}}`))
+		require.Error(t, err)
+	}
+
+	empty := provider.CallOptions{ProviderOptions: provider.ProviderOptions{
+		"gateway":  provider.RawProviderOption{Key: "gateway", Raw: json.RawMessage(`{}`)},
+		"provider": provider.RawProviderOption{Key: "provider", Raw: json.RawMessage(`{"keep":true}`)},
+	}}
+	encoded, err := EncodeCallOptions(empty)
 	require.NoError(t, err)
-	options := decoded.GatewayOptions
-	assert.Equal(t, "secret", mustJSONString(t, options.BYOK["anthropic"][0]["apiKey"]))
-	assert.Equal(t, runtime.GatewayCachingAuto, *options.Caching)
-	assert.True(t, *options.DisallowPromptTraining)
-	assert.Equal(t, []runtime.GatewayCapability{runtime.GatewayCapabilityImplicitCaching}, options.Has)
-	assert.Equal(t, []string{"fallback"}, options.Models)
-	assert.Equal(t, []string{"anthropic"}, options.Only)
-	assert.Equal(t, []string{"anthropic"}, options.Order)
-	assert.Equal(t, float64(500), options.ProviderTimeouts.BYOK["anthropic"])
-	assert.Equal(t, "tenant", *options.QuotaEntityID)
-	assert.Equal(t, runtime.GatewayServiceTierPriority, *options.ServiceTier)
-	assert.Equal(t, runtime.GatewaySortTTFT, *options.Sort)
-	assert.Equal(t, []string{"prod"}, options.Tags)
-	assert.Equal(t, "user", *options.User)
-	assert.False(t, *options.ZeroDataRetention)
-	assert.Equal(t, `{"mode": "fast"}`, string(options.Extensions["future"]))
-	assert.NotContains(t, decoded.CallOptions.ProviderOptions, "gateway")
-	assert.Contains(t, decoded.CallOptions.ProviderOptions, "provider")
-}
+	assert.NotContains(t, string(encoded), `"gateway"`)
 
-func TestCallOptions_RejectsNullRegisteredGatewayOptions(t *testing.T) {
-	keys := []string{"byok", "caching", "disallowPromptTraining", "has", "models", "only", "order", "providerTimeouts", "quotaEntityId", "serviceTier", "sort", "tags", "user", "zeroDataRetention"}
-	for _, key := range keys {
-		t.Run(key, func(t *testing.T) {
-			_, err := DecodeCallOptions([]byte(`{"prompt":[],"providerOptions":{"gateway":{"` + key + `":null}}}`))
-			require.Error(t, err)
-		})
-	}
-	invalidNested := []string{
-		`{"byok":{"openai":null}}`,
-		`{"byok":{"openai":[null]}}`,
-		`{"byok":{"openai":[1]}}`,
-		`{"providerTimeouts":{"byok":null}}`,
-		`{"providerTimeouts":{"byok":[]}}`,
-		`{"providerTimeouts":{"future":{"provider":100}}}`,
-	}
-	for i, gateway := range invalidNested {
-		t.Run(fmt.Sprintf("nested-%d", i), func(t *testing.T) {
-			_, err := DecodeCallOptions([]byte(`{"prompt":[],"providerOptions":{"gateway":` + gateway + `}}`))
-			require.Error(t, err)
-		})
-	}
-
-	decoded, err := DecodeCallOptions([]byte(`{"prompt":[],"providerOptions":{"gateway":{"future":null}}}`))
-	require.NoError(t, err)
-	assert.Equal(t, "null", string(decoded.GatewayOptions.Extensions["future"]))
-}
-
-func TestCallOptions_RejectsMalformedGatewayStringArrays(t *testing.T) {
-	for _, key := range []string{"models", "only", "order", "tags", "has"} {
-		for _, value := range []string{`null`, `{}`, `"value"`, `[null]`, `[1]`, `[{}]`} {
-			t.Run(key+"-"+value, func(t *testing.T) {
-				wire := `{"prompt":[],"providerOptions":{"gateway":{"` + key + `":` + value + `}}}`
-				_, err := DecodeCallOptions([]byte(wire))
-				require.Error(t, err)
-			})
-		}
-	}
+	nonEmpty := empty
+	nonEmpty.ProviderOptions = provider.ProviderOptions{"gateway": provider.RawProviderOption{Key: "gateway", Raw: json.RawMessage(`{"models":["fallback"]}`)}}
+	_, err = EncodeCallOptions(nonEmpty)
+	require.Error(t, err)
 }
 
 func TestProviderReferenceValidationInRequestAndToolResultFiles(t *testing.T) {
@@ -246,7 +195,7 @@ func TestProviderReferenceValidationInRequestAndToolResultFiles(t *testing.T) {
 	}
 	for i, wire := range decodeCases {
 		t.Run(fmt.Sprintf("decode-%d", i), func(t *testing.T) {
-			_, err := DecodeCallOptions([]byte(wire))
+			_, err := decodeCallOptionsJSON([]byte(wire))
 			require.Error(t, err)
 		})
 	}
@@ -282,9 +231,9 @@ func TestCallOptions_ToolResultOutputVariants(t *testing.T) {
 			assert.JSONEq(t, tc.wire, string(encoded.Prompt[0].Content[0].Output))
 
 			wire := `{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"call","toolName":"tool","output":` + tc.wire + `}]}]}`
-			decoded, err := DecodeCallOptions([]byte(wire))
+			decoded, err := decodeCallOptionsJSON([]byte(wire))
 			require.NoError(t, err)
-			assert.Equal(t, options, decoded.CallOptions)
+			assert.Equal(t, options, decoded)
 		})
 	}
 }
@@ -294,26 +243,20 @@ func TestCallOptions_ProviderToolRequiresCanonicalArgs(t *testing.T) {
 	data, err := EncodeCallOptions(options)
 	require.NoError(t, err)
 	assert.JSONEq(t, `{"prompt":[],"tools":[{"type":"provider","name":"tool","id":"p.tool","args":{}}]}`, string(data))
-	decoded, err := DecodeCallOptions(data)
+	decoded, err := decodeCallOptionsJSON(data)
 	require.NoError(t, err)
-	require.Len(t, decoded.CallOptions.Tools, 1)
-	assert.NotNil(t, decoded.CallOptions.Tools[0].Args)
-	assert.Empty(t, decoded.CallOptions.Tools[0].Args)
+	require.Len(t, decoded.Tools, 1)
+	assert.NotNil(t, decoded.Tools[0].Args)
+	assert.Empty(t, decoded.Tools[0].Args)
 
 	invalid := []string{
 		`{"type":"provider","name":"tool","id":"p.tool"}`,
 		`{"type":"provider","name":"tool","id":"p.tool","args":null}`,
-		`{"type":"provider","name":"tool","id":"p.tool","args":{},"description":""}`,
-		`{"type":"provider","name":"tool","id":"p.tool","args":{},"inputSchema":null}`,
-		`{"type":"provider","name":"tool","id":"p.tool","args":{},"inputExamples":null}`,
-		`{"type":"provider","name":"tool","id":"p.tool","args":{},"strict":null}`,
 		`{"type":"provider","name":"tool","id":"p.tool","args":{},"providerOptions":null}`,
-		`{"type":"function","name":"tool","inputSchema":{},"args":{}}`,
-		`{"type":"function","name":"tool","inputSchema":{},"id":""}`,
 	}
 	for i, tool := range invalid {
 		t.Run(fmt.Sprintf("invalid-%d", i), func(t *testing.T) {
-			_, err := DecodeCallOptions([]byte(`{"prompt":[],"tools":[` + tool + `]}`))
+			_, err := decodeCallOptionsJSON([]byte(`{"prompt":[],"tools":[` + tool + `]}`))
 			require.Error(t, err)
 		})
 	}
@@ -323,14 +266,14 @@ func TestCallOptions_FunctionToolExamplesRequireObjects(t *testing.T) {
 	for _, input := range []string{`null`, `1`, `[]`, `"value"`} {
 		t.Run(input, func(t *testing.T) {
 			wire := `{"prompt":[],"tools":[{"type":"function","name":"tool","inputSchema":{},"inputExamples":[{"input":` + input + `}]}]}`
-			_, err := DecodeCallOptions([]byte(wire))
+			_, err := decodeCallOptionsJSON([]byte(wire))
 			require.Error(t, err)
 		})
 	}
 	valid := `{"prompt":[],"tools":[{"type":"function","name":"tool","inputSchema":{},"inputExamples":[{"input":{"value":1}}]}]}`
-	decoded, err := DecodeCallOptions([]byte(valid))
+	decoded, err := decodeCallOptionsJSON([]byte(valid))
 	require.NoError(t, err)
-	encoded, err := EncodeCallOptions(decoded.CallOptions)
+	encoded, err := EncodeCallOptions(decoded)
 	require.NoError(t, err)
 	assert.JSONEq(t, valid, string(encoded))
 }
@@ -339,12 +282,12 @@ func TestJSONObjectBoundaries(t *testing.T) {
 	invalid := []string{`null`, `1`, `[]`, `"value"`}
 	for _, value := range invalid {
 		t.Run(value, func(t *testing.T) {
-			_, err := DecodeCallOptions([]byte(`{"prompt":[],"tools":[{"type":"function","name":"tool","inputSchema":` + value + `}]}`))
+			_, err := decodeCallOptionsJSON([]byte(`{"prompt":[],"tools":[{"type":"function","name":"tool","inputSchema":` + value + `}]}`))
 			require.Error(t, err)
 			_, err = EncodeCallOptions(provider.CallOptions{Tools: []provider.Tool{{Type: provider.ToolTypeFunction, Name: "tool", InputSchema: json.RawMessage(value)}}})
 			require.Error(t, err)
 
-			_, err = DecodeCallOptions([]byte(`{"prompt":[],"responseFormat":{"type":"json","schema":` + value + `}}`))
+			_, err = decodeCallOptionsJSON([]byte(`{"prompt":[],"responseFormat":{"type":"json","schema":` + value + `}}`))
 			require.Error(t, err)
 			_, err = EncodeCallOptions(provider.CallOptions{ResponseFormat: &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Schema: json.RawMessage(value)}})
 			require.Error(t, err)
@@ -354,13 +297,13 @@ func TestJSONObjectBoundaries(t *testing.T) {
 			unary := `{"content":[{"type":"tool-call","toolCallId":"call","toolName":"tool","input":` + string(quoted) + `}],"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}},"warnings":[]}`
 			_, err = DecodeGenerateResult([]byte(unary))
 			require.Error(t, err)
-			_, err = EncodeGenerateResult(&provider.GenerateResult{Content: []provider.GenerateContentPart{{Type: provider.ContentToolCall, ToolCallID: "call", ToolName: "tool", Input: json.RawMessage(value)}}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}, Warnings: []provider.Warning{}})
+			_, err = encodeGenerateResultJSON(&provider.GenerateResult{Content: []provider.GenerateContentPart{{Type: provider.ContentToolCall, ToolCallID: "call", ToolName: "tool", Input: json.RawMessage(value)}}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}, Warnings: []provider.Warning{}})
 			require.Error(t, err)
 
 			stream := `{"type":"tool-call","toolCallId":"call","toolName":"tool","input":` + string(quoted) + `}`
 			_, err = DecodeStreamPart([]byte(stream))
 			require.Error(t, err)
-			_, err = EncodeStreamPart(provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "call", ToolName: "tool", Input: value})
+			_, err = encodeStreamPartJSON(provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "call", ToolName: "tool", Input: value})
 			require.Error(t, err)
 		})
 	}
@@ -371,14 +314,14 @@ func TestJSONObjectBoundaries(t *testing.T) {
 	}
 	encoded, err := EncodeCallOptions(validCall)
 	require.NoError(t, err)
-	_, err = DecodeCallOptions(encoded)
+	_, err = decodeCallOptionsJSON(encoded)
 	require.NoError(t, err)
 	result := &provider.GenerateResult{Content: []provider.GenerateContentPart{{Type: provider.ContentToolCall, ToolCallID: "call", ToolName: "tool", Input: json.RawMessage(`{}`)}}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}, Warnings: []provider.Warning{}}
-	encoded, err = EncodeGenerateResult(result)
+	encoded, err = encodeGenerateResultJSON(result)
 	require.NoError(t, err)
 	_, err = DecodeGenerateResult(encoded)
 	require.NoError(t, err)
-	encoded, err = EncodeStreamPart(provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "call", ToolName: "tool", Input: `{}`})
+	encoded, err = encodeStreamPartJSON(provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "call", ToolName: "tool", Input: `{}`})
 	require.NoError(t, err)
 	_, err = DecodeStreamPart(encoded)
 	require.NoError(t, err)
@@ -393,8 +336,6 @@ func TestCallOptions_StrictRejectionAndAdditiveFields(t *testing.T) {
 		{name: "legacy system array", wire: `{"prompt":[{"role":"system","content":[{"type":"text","text":"legacy"}]}]}`},
 		{name: "unknown role", wire: `{"prompt":[{"role":"future","content":[]}]}`},
 		{name: "unknown content", wire: `{"prompt":[{"role":"user","content":[{"type":"future"}]}]}`},
-		{name: "contradictory content fields", wire: `{"prompt":[{"role":"user","content":[{"type":"text","text":"x","data":{"type":"data","data":"AAEC"}}]}]}`},
-		{name: "contradictory file data fields", wire: `{"prompt":[{"role":"user","content":[{"type":"file","data":{"type":"data","data":"AAEC","url":"https://example.com"},"mediaType":"x"}]}]}`},
 		{name: "wrong role content", wire: `{"prompt":[{"role":"user","content":[{"type":"reasoning","text":"x"}]}]}`},
 		{name: "legacy tool output", wire: `{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"c","toolName":"t","output":{"type":"text","text":"legacy"}}]}]}`},
 		{name: "legacy tool file", wire: `{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"c","toolName":"t","output":{"type":"content","value":[{"type":"file-data","data":"AAEC","mediaType":"x"}]}}]}]}`},
@@ -406,17 +347,21 @@ func TestCallOptions_StrictRejectionAndAdditiveFields(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := DecodeCallOptions([]byte(tc.wire))
+			_, err := decodeCallOptionsJSON([]byte(tc.wire))
 			require.Error(t, err)
 		})
 	}
 
-	decoded, err := DecodeCallOptions([]byte(`{"prompt":[],"futureField":{"safe":true}}`))
+	additive := `{"prompt":[{"role":"user","content":[{"type":"text","text":"x","data":false}]}],"tools":[{"type":"function","name":"tool","inputSchema":{},"args":false}],"toolChoice":{"type":"none","toolName":false},"responseFormat":{"type":"text","schema":false},"futureField":{"safe":true}}`
+	decoded, err := decodeCallOptionsJSON([]byte(additive))
 	require.NoError(t, err)
-	assert.Empty(t, decoded.CallOptions.Prompt)
+	assert.Empty(t, decoded.Prompt[0].Content[0].Data)
+	assert.Empty(t, decoded.Tools[0].Args)
+	assert.Empty(t, decoded.ToolChoice.ToolName)
+	assert.Empty(t, decoded.ResponseFormat.Schema)
 }
 
-func TestCallOptions_EncodingRejectsContradictoryAndInvalidValues(t *testing.T) {
+func TestCallOptions_EncodingRejectsInvalidValues(t *testing.T) {
 	cases := []provider.CallOptions{
 		{Prompt: []provider.Message{provider.NewUserMessage(provider.FilePart("image/png", provider.DataContent{Bytes: []byte{1}, Base64: "AQ=="}))}},
 		{Prompt: []provider.Message{provider.NewAssistantMessage(provider.ToolCallPart("call", "tool", json.RawMessage(`{`)))}},
@@ -426,20 +371,6 @@ func TestCallOptions_EncodingRejectsContradictoryAndInvalidValues(t *testing.T) 
 		{ProviderOptions: provider.ProviderOptions{"p": provider.RawProviderOption{Key: "p", Raw: json.RawMessage(`1`)}}},
 	}
 	for _, options := range cases {
-		_, err := EncodeCallOptions(options)
-		require.Error(t, err)
-	}
-
-	invalidOutputs := []provider.ToolResultOutput{
-		{Type: provider.ToolOutputText, Text: "ok", JSON: json.RawMessage(`{}`)},
-		{Type: provider.ToolOutputErrorText, Text: "error", Reason: "unexpected"},
-		{Type: provider.ToolOutputJSON, JSON: json.RawMessage(`{}`), Text: "unexpected"},
-		{Type: provider.ToolOutputErrorJSON, JSON: json.RawMessage(`{}`), Content: []provider.ToolResultContentValue{}},
-		{Type: provider.ToolOutputContent, Content: []provider.ToolResultContentValue{}, Reason: "unexpected"},
-		{Type: provider.ToolOutputExecutionDenied, Reason: "denied", Text: "unexpected"},
-	}
-	for _, output := range invalidOutputs {
-		options := provider.CallOptions{Prompt: []provider.Message{provider.NewToolMessage(provider.ToolResultPart("call", "tool", &output))}}
 		_, err := EncodeCallOptions(options)
 		require.Error(t, err)
 	}
@@ -477,7 +408,7 @@ func TestGenerateResult_AllCanonicalVariantsRoundTrip(t *testing.T) {
 		Response:         &provider.GenerateResponse{ResponseMetadata: provider.ResponseMetadata{ID: "response-1", ModelID: "backend-model", Timestamp: timestamp}, Headers: map[string]string{"x-id": "id"}, Body: json.RawMessage(`{"raw":true}`)},
 	}
 
-	data, err := EncodeGenerateResult(result)
+	data, err := encodeGenerateResultJSON(result)
 	require.NoError(t, err)
 	assert.Contains(t, string(data), `"input":"{\"q\":\"go\"}"`)
 	decoded, err := DecodeGenerateResult(data)
@@ -508,7 +439,7 @@ func TestGenerateResult_PinnedCanonicalGolden(t *testing.T) {
 	}`
 	decoded, err := DecodeGenerateResult([]byte(golden))
 	require.NoError(t, err)
-	encoded, err := EncodeGenerateResult(decoded)
+	encoded, err := encodeGenerateResultJSON(decoded)
 	require.NoError(t, err)
 	assert.JSONEq(t, golden, string(encoded))
 }
@@ -519,7 +450,7 @@ func TestUsage_RequiresTokenObjects(t *testing.T) {
 	decoded, err := DecodeGenerateResult([]byte(unary))
 	require.NoError(t, err)
 	assert.Equal(t, provider.Usage{}, decoded.Usage)
-	encoded, err := EncodeGenerateResult(decoded)
+	encoded, err := encodeGenerateResultJSON(decoded)
 	require.NoError(t, err)
 	assert.JSONEq(t, unary, string(encoded))
 
@@ -528,7 +459,7 @@ func TestUsage_RequiresTokenObjects(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, part.Usage)
 	assert.Equal(t, provider.Usage{}, *part.Usage)
-	encoded, err = EncodeStreamPart(part)
+	encoded, err = encodeStreamPartJSON(part)
 	require.NoError(t, err)
 	assert.JSONEq(t, stream, string(encoded))
 
@@ -562,7 +493,7 @@ func TestUsage_RawRequiresJSONObject(t *testing.T) {
 		Usage:        provider.Usage{Raw: json.RawMessage(`{"providerTokens":1}`)},
 		Warnings:     []provider.Warning{},
 	}
-	data, err := EncodeGenerateResult(valid)
+	data, err := encodeGenerateResultJSON(valid)
 	require.NoError(t, err)
 	decoded, err := DecodeGenerateResult(data)
 	require.NoError(t, err)
@@ -572,7 +503,7 @@ func TestUsage_RawRequiresJSONObject(t *testing.T) {
 		t.Run(raw, func(t *testing.T) {
 			invalid := *valid
 			invalid.Usage.Raw = json.RawMessage(raw)
-			_, err := EncodeGenerateResult(&invalid)
+			_, err := encodeGenerateResultJSON(&invalid)
 			require.Error(t, err)
 
 			wire := `{"content":[],"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{},"raw":` + raw + `},"warnings":[]}`
@@ -590,7 +521,7 @@ func TestWarnings_AllPinnedVariantsAndRequiredEmptyStrings(t *testing.T) {
 		{Type: provider.WarnOther, Message: ""},
 	}
 	result := &provider.GenerateResult{FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}, Warnings: warnings}
-	data, err := EncodeGenerateResult(result)
+	data, err := encodeGenerateResultJSON(result)
 	require.NoError(t, err)
 	assert.Contains(t, string(data), `"feature":""`)
 	assert.Contains(t, string(data), `"setting":"","message":""`)
@@ -604,8 +535,6 @@ func TestWarnings_AllPinnedVariantsAndRequiredEmptyStrings(t *testing.T) {
 		`{"type":"deprecated","setting":"x"}`,
 		`{"type":"deprecated","message":"x"}`,
 		`{"type":"other"}`,
-		`{"type":"other","message":"x","details":"not-allowed"}`,
-		`{"type":"deprecated","setting":"x","message":"x","feature":"not-allowed"}`,
 	}
 	for _, warning := range invalid {
 		wire := `{"content":[],"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}},"warnings":[` + warning + `]}`
@@ -619,12 +548,9 @@ func TestGenerateResult_StrictRejections(t *testing.T) {
 	cases := []string{
 		`{}`,
 		`{"content":[{"type":"future"}],"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}},"warnings":[]}`,
-		`{"content":[{"type":"text","text":"x","data":{"type":"data","data":"AAEC"}}],"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}},"warnings":[]}`,
 		`{"content":[{"type":"tool-call","toolCallId":"c","toolName":"t","input":"{"}],"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}},"warnings":[]}`,
 		`{"content":[],"finishReason":{"unified":"future"},"usage":{"inputTokens":{},"outputTokens":{}},"warnings":[]}`,
 		`{"content":[{"type":"file","data":{"type":"data","data":"AAEC"},"mediaType":"image/png","filename":"x.png"}],"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}},"warnings":[]}`,
-		`{"content":[{"type":"source","sourceType":"url","id":"s","url":"https://example.com","mediaType":"text/html"}],"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}},"warnings":[]}`,
-		`{"content":[{"type":"source","sourceType":"document","id":"s","url":"https://example.com","title":"doc","mediaType":"application/pdf"}],"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}},"warnings":[]}`,
 		`{"content":[],"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}},"warnings":[],"providerMetadata":{"p":1}}`,
 	}
 	for _, wire := range cases {
@@ -635,9 +561,9 @@ func TestGenerateResult_StrictRejections(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, decoded.Content)
 
-	_, err = EncodeGenerateResult(&provider.GenerateResult{Content: []provider.GenerateContentPart{{Type: provider.ContentToolCall, ToolCallID: "c", ToolName: "t", Input: json.RawMessage(`{`)}}})
+	_, err = encodeGenerateResultJSON(&provider.GenerateResult{Content: []provider.GenerateContentPart{{Type: provider.ContentToolCall, ToolCallID: "c", ToolName: "t", Input: json.RawMessage(`{`)}}})
 	require.Error(t, err)
-	_, err = EncodeGenerateResult(&provider.GenerateResult{Content: []provider.GenerateContentPart{{Type: provider.ContentFile, Filename: "x.png", MediaType: "image/png", Data: &provider.DataContent{Base64: "AAEC"}}}})
+	_, err = encodeGenerateResultJSON(&provider.GenerateResult{Content: []provider.GenerateContentPart{{Type: provider.ContentFile, Filename: "x.png", MediaType: "image/png", Data: &provider.DataContent{Base64: "AAEC"}}}})
 	require.Error(t, err)
 }
 
@@ -674,7 +600,7 @@ func TestStreamPart_AllCanonicalDiscriminatorsRoundTrip(t *testing.T) {
 
 	for _, part := range parts {
 		t.Run(string(part.Type), func(t *testing.T) {
-			data, err := EncodeStreamPart(part)
+			data, err := encodeStreamPartJSON(part)
 			require.NoError(t, err)
 			if part.Type == provider.PartTextDelta {
 				assert.Contains(t, string(data), `"delta":""`)
@@ -719,7 +645,7 @@ func TestStreamPart_PinnedCanonicalGoldens(t *testing.T) {
 		t.Run(discriminator.Type, func(t *testing.T) {
 			part, err := DecodeStreamPart([]byte(golden))
 			require.NoError(t, err)
-			encoded, err := EncodeStreamPart(part)
+			encoded, err := encodeStreamPartJSON(part)
 			require.NoError(t, err)
 			assert.JSONEq(t, golden, string(encoded))
 		})
@@ -730,15 +656,12 @@ func TestStreamPart_StrictRejectionsAndAdditiveFields(t *testing.T) {
 	cases := []string{
 		`{"type":"future"}`,
 		`{"type":"text-delta","id":"text"}`,
-		`{"type":"text-delta","id":"text","delta":"x","result":{"contradictory":true}}`,
 		`{"type":"tool-call","toolCallId":"c","toolName":"t","input":"{"}`,
 		`{"type":"source","source":{"sourceType":"url","id":"s","url":"https://example.com"}}`,
 		`{"type":"file","fileData":"AAEC","mediaType":"image/png"}`,
 		`{"type":"error","apiCallError":{"message":"legacy"}}`,
 		`{"type":"finish"}`,
 		`{"type":"file","data":{"type":"data","data":"AAEC"},"mediaType":"image/png","filename":"x.png"}`,
-		`{"type":"source","sourceType":"url","id":"s","url":"https://example.com","filename":"x"}`,
-		`{"type":"source","sourceType":"document","id":"s","url":"https://example.com","title":"doc","mediaType":"application/pdf"}`,
 		`{"type":"stream-start","warnings":[{"type":"other"}]}`,
 	}
 	for _, wire := range cases {
@@ -756,21 +679,22 @@ func TestFailureProjectionAndSanitization(t *testing.T) {
 		RequestBodyValues: json.RawMessage(`{"secret":true}`), ResponseHeaders: map[string][]string{"X-Secret": {"secret"}},
 		ResponseBody: "private body", Data: json.RawMessage(`{"private":true}`),
 	})
-	classification := failure.Classify(failure.Wrap(failure.ErrFailedDependency, private), failure.WithRetryable(false))
-	status, body, err := EncodeFailure(classification)
+	failure := classifyProviderError(private)
+	status, body, err := encodeFailure(failure)
 	require.NoError(t, err)
-	assert.Equal(t, http.StatusFailedDependency, status)
+	assert.Equal(t, http.StatusBadGateway, status)
 	assert.NotContains(t, string(body), "private")
 	assert.NotContains(t, string(body), "backend")
 	apiErr, err := DecodeErrorResponse(body, status)
 	require.NoError(t, err)
 	assert.Equal(t, "upstream dependency failed", apiErr.Message)
-	assert.False(t, apiErr.IsRetryable)
+	assert.True(t, apiErr.IsRetryable)
 
 	safe := sanitizePartError(private)
 	assert.Equal(t, http.StatusBadGateway, safe.StatusCode)
 	assert.NotContains(t, safe.Message, "private")
 	assert.NotContains(t, string(safe.Data), "private")
+	assert.ErrorIs(t, safe, private)
 }
 
 func TestDecodeErrorResponse_StrictValidation(t *testing.T) {
@@ -787,48 +711,15 @@ func TestDecodeErrorResponse_StrictValidation(t *testing.T) {
 	}
 }
 
-func TestFailureProjection_CategoryMatrix(t *testing.T) {
-	cases := []struct {
-		kind      failure.Kind
-		retryable bool
-		status    int
-		typeValue string
-	}{
-		{failure.KindUnauthenticated, false, 401, "authentication_error"},
-		{failure.KindInvalidCall, false, 400, "invalid_request_error"},
-		{failure.KindUnknownModel, false, 404, "model_not_found"},
-		{failure.KindForbidden, false, 403, "forbidden"},
-		{failure.KindRateLimited, true, 429, "rate_limit_exceeded"},
-		{failure.KindTimeout, true, 504, "internal_server_error"},
-		{failure.KindCanceled, false, 499, "internal_server_error"},
-		{failure.KindFailedDependency, false, 424, "failed_dependency"},
-		{failure.KindFailedDependency, true, 502, "failed_dependency"},
-		{failure.KindInternal, false, 500, "internal_server_error"},
-	}
-	for _, tc := range cases {
-		classification := failure.Classification{Kind: tc.kind, Retryable: tc.retryable, SafeParameters: failure.SafeParameters{RequestedModelID: "alias"}}
-		status, body, err := EncodeFailure(classification)
-		require.NoError(t, err)
-		assert.Equal(t, tc.status, status)
-		var envelope gatewayErrorEnvelopeDTO
-		require.NoError(t, json.Unmarshal(body, &envelope))
-		assert.Equal(t, tc.typeValue, envelope.Error.Type)
-		assert.Equal(t, tc.retryable, envelope.Error.IsRetryable)
-		if tc.kind == failure.KindUnknownModel {
-			assert.JSONEq(t, `{"modelId":"alias"}`, string(envelope.Error.Param))
-		}
-	}
-}
-
 func TestEncodedLimitsAndBoundedSSEReader(t *testing.T) {
 	part := provider.StreamPart{Type: provider.PartTextDelta, ID: "text", Delta: "x"}
-	event, err := EncodeSSEEventWithinLimit(part, 1024)
+	event, err := encodeSSEEventWithinLimit(part, 1024)
 	require.NoError(t, err)
-	atLimit, err := EncodeSSEEventWithinLimit(part, int64(len(event)))
+	atLimit, err := encodeSSEEventWithinLimit(part, int64(len(event)))
 	require.NoError(t, err)
 	assert.Equal(t, event, atLimit)
-	_, err = EncodeSSEEventWithinLimit(part, int64(len(event)-1))
-	assert.ErrorIs(t, err, ErrSSEEventTooLarge)
+	_, err = encodeSSEEventWithinLimit(part, int64(len(event)-1))
+	assert.ErrorIs(t, err, errSSEEventTooLarge)
 
 	reader, err := NewSSEReader(bytes.NewReader(event), int64(len(event)))
 	require.NoError(t, err)
@@ -841,7 +732,7 @@ func TestEncodedLimitsAndBoundedSSEReader(t *testing.T) {
 	reader, err = NewSSEReader(bytes.NewReader(event), int64(len(event)-1))
 	require.NoError(t, err)
 	_, err = reader.Next()
-	assert.ErrorIs(t, err, ErrSSEEventTooLarge)
+	assert.ErrorIs(t, err, errSSEEventTooLarge)
 
 	multiline := "data: {\"type\":\"text-delta\",\n" + "data: \"id\":\"text\",\"delta\":\"x\"}\n\n"
 	reader, err = NewSSEReader(bytes.NewBufferString(multiline), int64(len(multiline)))
@@ -858,112 +749,24 @@ func TestEncodedLimitsAndBoundedSSEReader(t *testing.T) {
 	assert.Equal(t, part, decoded)
 }
 
-func TestFlatUnionEncodingRejectsIncompatibleKnownFields(t *testing.T) {
-	approved := true
-	providerOption := provider.ProviderOptions{"provider": provider.RawProviderOption{Key: "provider", Raw: json.RawMessage(`{}`)}}
+func TestFlatUnionEncodingUsesDiscriminator(t *testing.T) {
+	options := provider.CallOptions{
+		Prompt: []provider.Message{provider.NewUserMessage(provider.ContentPart{
+			Type: provider.ContentPartTypeText, Text: "text", Data: &provider.DataContent{Base64: "ignored"},
+		})},
+		Tools: []provider.Tool{{
+			Type: provider.ToolTypeFunction, Name: "tool", InputSchema: json.RawMessage(`{}`),
+			ID: "provider.ignored", Args: map[string]json.RawMessage{"ignored": json.RawMessage(`true`)},
+		}},
+	}
+	encoded, err := EncodeCallOptions(options)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"prompt":[{"role":"user","content":[{"type":"text","text":"text"}]}],"tools":[{"type":"function","name":"tool","inputSchema":{}}]}`, string(encoded))
 
-	messages := []provider.Message{
-		{Role: provider.RoleSystem, Content: []provider.ContentPart{{Type: provider.ContentPartTypeText, Text: "text", Data: &provider.DataContent{Base64: "AA=="}}}},
-		{Role: provider.Role("future")},
-	}
-	for _, message := range messages {
-		t.Run("message-"+string(message.Role), func(t *testing.T) {
-			_, err := encodeMessage(message)
-			require.Error(t, err)
-		})
-	}
-
-	tools := []provider.Tool{
-		{Type: provider.ToolTypeFunction, Name: "tool", InputSchema: json.RawMessage(`{}`), ID: "provider.tool"},
-		{Type: provider.ToolTypeFunction, Name: "tool", InputSchema: json.RawMessage(`{}`), Args: map[string]json.RawMessage{}},
-		{Type: provider.ToolTypeProvider, Name: "tool", ID: "provider.tool", Args: map[string]json.RawMessage{}, Description: "extra"},
-		{Type: provider.ToolTypeProvider, Name: "tool", ID: "provider.tool", Args: map[string]json.RawMessage{}, InputSchema: json.RawMessage(`{}`)},
-		{Type: provider.ToolTypeProvider, Name: "tool", ID: "provider.tool", Args: map[string]json.RawMessage{}, InputExamples: []provider.InputExample{{Input: json.RawMessage(`{}`)}}},
-		{Type: provider.ToolTypeProvider, Name: "tool", ID: "provider.tool", Args: map[string]json.RawMessage{}, Strict: boolPointer(true)},
-		{Type: provider.ToolTypeProvider, Name: "tool", ID: "provider.tool", Args: map[string]json.RawMessage{}, ProviderOptions: providerOption},
-	}
-	for i, tool := range tools {
-		t.Run(fmt.Sprintf("tool-%s-%d", tool.Type, i), func(t *testing.T) {
-			_, err := encodeTool(tool)
-			require.Error(t, err)
-		})
-	}
-
-	toolResultContent := []provider.ToolResultContentValue{
-		{Type: provider.ToolContentText, Text: "text", Data: &provider.DataContent{Base64: "AA=="}},
-		{Type: provider.ToolContentText, Text: "text", MediaType: "text/plain"},
-		{Type: provider.ToolContentText, Text: "text", Filename: "extra.txt"},
-		{Type: provider.ToolContentFile, Data: &provider.DataContent{Base64: "AA=="}, MediaType: "image/png", Text: "extra"},
-		{Type: provider.ToolContentFile, Data: &provider.DataContent{Base64: "AA==", URL: "https://example.com/file"}, MediaType: "image/png"},
-		{Type: provider.ToolContentCustom, Text: "extra"},
-	}
-	for i, content := range toolResultContent {
-		t.Run(fmt.Sprintf("tool-result-content-%s-%d", content.Type, i), func(t *testing.T) {
-			_, err := encodeToolResultContent(content)
-			require.Error(t, err)
-		})
-	}
-
-	contentParts := []provider.ContentPart{
-		{Type: provider.ContentPartTypeText, Text: "text", Data: &provider.DataContent{Base64: "AA=="}},
-		{Type: provider.ContentPartTypeReasoning, Text: "text", Kind: "p.kind"},
-		{Type: provider.ContentPartTypeFile, Data: &provider.DataContent{Base64: "AA=="}, MediaType: "image/png", Text: "extra"},
-		{Type: provider.ContentPartTypeReasoningFile, Data: &provider.DataContent{Base64: "AA=="}, MediaType: "image/png", Filename: "extra"},
-		{Type: provider.ContentPartTypeCustom, Kind: "p.kind", Text: "extra"},
-		{Type: provider.ContentPartTypeToolCall, ToolCallID: "call", ToolName: "tool", Input: json.RawMessage(`{}`), Text: "extra"},
-		{Type: provider.ContentPartTypeToolResult, ToolCallID: "call", ToolName: "tool", Output: &provider.ToolResultOutput{Type: provider.ToolOutputText, Text: "ok"}, Text: "extra"},
-		{Type: provider.ContentPartTypeToolApprovalResponse, ApprovalID: "approval", Approved: &approved, Text: "extra"},
-		{Type: provider.ContentPartTypeSource, ID: "source", SourceType: provider.SourceTypeURL, URL: "https://example.com", Text: "extra"},
-		{Type: provider.ContentPartTypeToolApprovalRequest, ApprovalID: "approval", ToolCallID: "call", Text: "extra"},
-	}
-	for _, part := range contentParts {
-		t.Run("content-"+string(part.Type), func(t *testing.T) {
-			_, err := encodeContentPart(part)
-			require.Error(t, err)
-		})
-	}
-
-	generateParts := []provider.GenerateContentPart{
-		{Type: provider.ContentText, Text: "text", Kind: "p.kind"},
-		{Type: provider.ContentReasoning, Text: "text", Kind: "p.kind"},
-		{Type: provider.ContentToolCall, ToolCallID: "call", ToolName: "tool", Input: json.RawMessage(`{}`), Kind: "p.kind"},
-		{Type: provider.ContentToolResult, ToolCallID: "call", ToolName: "tool", Result: json.RawMessage(`{}`), Kind: "p.kind"},
-		{Type: provider.ContentSource, SourceType: provider.SourceTypeURL, ID: "source", URL: "https://example.com", Kind: "p.kind"},
-		{Type: provider.ContentFile, Data: &provider.DataContent{Base64: "AA=="}, MediaType: "image/png", Kind: "p.kind"},
-		{Type: provider.ContentReasoningFile, Data: &provider.DataContent{Base64: "AA=="}, MediaType: "image/png", Kind: "p.kind"},
-		{Type: provider.ContentCustom, Kind: "p.kind", Text: "extra"},
-		{Type: provider.ContentToolApprovalRequest, ApprovalID: "approval", ToolCallID: "call", Kind: "p.kind"},
-	}
-	for _, part := range generateParts {
-		t.Run("generate-"+string(part.Type), func(t *testing.T) {
-			_, err := encodeGenerateContent(part)
-			require.Error(t, err)
-		})
-	}
-
-	usage := provider.Usage{}
-	finish := provider.FinishReason{Unified: provider.FinishReasonStop}
-	streamParts := []provider.StreamPart{
-		{Type: provider.PartTextStart, ID: "id"}, {Type: provider.PartTextDelta, ID: "id"}, {Type: provider.PartTextEnd, ID: "id"},
-		{Type: provider.PartReasoningStart, ID: "id"}, {Type: provider.PartReasoningDelta, ID: "id"}, {Type: provider.PartReasoningEnd, ID: "id"},
-		{Type: provider.PartToolInputStart, ID: "id", ToolName: "tool"}, {Type: provider.PartToolInputDelta, ID: "id"}, {Type: provider.PartToolInputEnd, ID: "id"},
-		{Type: provider.PartToolCall, ToolCallID: "call", ToolName: "tool", Input: `{}`},
-		{Type: provider.PartToolResult, ToolCallID: "call", ToolName: "tool", Result: json.RawMessage(`{}`)},
-		{Type: provider.PartSource, Source: &provider.SourceInfo{SourceType: provider.SourceTypeURL, ID: "source", URL: "https://example.com"}},
-		{Type: provider.PartFile, Data: &provider.StreamFileData{Type: provider.StreamFileDataTypeData, Base64: "AA=="}, MediaType: "image/png"},
-		{Type: provider.PartReasoningFile, Data: &provider.StreamFileData{Type: provider.StreamFileDataTypeData, Base64: "AA=="}, MediaType: "image/png"},
-		{Type: provider.PartStreamStart, Warnings: []provider.Warning{}}, {Type: provider.PartResponseMeta},
-		{Type: provider.PartFinish, Usage: &usage, FinishReason: &finish}, {Type: provider.PartRaw, RawValue: json.RawMessage(`null`)},
-		{Type: provider.PartError, APICallError: provider.NewAPICallError(provider.APICallErrorOptions{Message: "error", StatusCode: 500})},
-		{Type: provider.PartToolApprovalRequest, ApprovalID: "approval", ToolCallID: "call"}, {Type: provider.PartCustom, Kind: "p.kind"},
-	}
-	for _, part := range streamParts {
-		part.Reason = "incompatible"
-		t.Run("stream-"+string(part.Type), func(t *testing.T) {
-			_, err := EncodeStreamPart(part)
-			require.Error(t, err)
-		})
-	}
+	_, err = EncodeCallOptions(provider.CallOptions{Prompt: []provider.Message{provider.NewUserMessage(
+		provider.FilePart("text/plain", provider.DataContent{Bytes: []byte{}, URL: "https://example.com"}),
+	)}})
+	require.Error(t, err)
 }
 
 func TestCallOptions_NestedGatewayProviderOptionsAreRejected(t *testing.T) {
@@ -998,43 +801,38 @@ func TestCallOptions_NestedGatewayProviderOptionsAreRejected(t *testing.T) {
 	}
 	for _, tc := range decodeCases {
 		t.Run("decode-"+tc.name, func(t *testing.T) {
-			_, err := DecodeCallOptions([]byte(tc.wire))
+			_, err := decodeCallOptionsJSON([]byte(tc.wire))
 			require.Error(t, err)
 		})
 	}
 
 	topLevel := provider.CallOptions{ProviderOptions: provider.ProviderOptions{
-		"gateway":  provider.RawProviderOption{Key: "gateway", Raw: json.RawMessage(`{"models":["fallback"]}`)},
-		"provider": provider.RawProviderOption{Key: "provider", Raw: json.RawMessage(`{"keep":true}`)},
+		"gateway": provider.RawProviderOption{Key: "gateway", Raw: json.RawMessage(`{"models":["fallback"]}`)},
 	}}
-	encoded, err := EncodeCallOptions(topLevel)
-	require.NoError(t, err)
-	decoded, err := DecodeCallOptions(encoded)
-	require.NoError(t, err)
-	assert.Equal(t, []string{"fallback"}, decoded.GatewayOptions.Models)
-	assert.NotContains(t, decoded.CallOptions.ProviderOptions, "gateway")
-	assert.Contains(t, decoded.CallOptions.ProviderOptions, "provider")
+	_, err := EncodeCallOptions(topLevel)
+	require.Error(t, err)
 
 	nestedUnknown := `{"prompt":[{"role":"user","content":[{"type":"text","text":"text","providerOptions":{"provider":{"part":true}}}],"providerOptions":{"provider":{"message":true}}},{"role":"tool","content":[{"type":"tool-result","toolCallId":"call","toolName":"tool","output":{"type":"content","value":[{"type":"text","text":"ok","providerOptions":{"provider":{"content":true}}}],"providerOptions":{"provider":{"output":true}}}}]}],"tools":[{"type":"function","name":"tool","inputSchema":{},"providerOptions":{"provider":{"tool":true}}}]}`
-	decoded, err = DecodeCallOptions([]byte(nestedUnknown))
+	decoded, err := decodeCallOptionsJSON([]byte(nestedUnknown))
 	require.NoError(t, err)
-	encoded, err = EncodeCallOptions(decoded.CallOptions)
+	encoded, err := EncodeCallOptions(decoded)
 	require.NoError(t, err)
 	assert.JSONEq(t, nestedUnknown, string(encoded))
 }
 
 func TestStreamPart_ProviderMetadataEligibility(t *testing.T) {
 	metadata := provider.ProviderMetadata{"p": json.RawMessage(`{}`)}
-	forbidden := []provider.StreamPart{
+	ineligible := []provider.StreamPart{
 		{Type: provider.PartStreamStart, Warnings: []provider.Warning{}, ProviderMetadata: metadata},
 		{Type: provider.PartResponseMeta, ProviderMetadata: metadata},
 		{Type: provider.PartRaw, RawValue: json.RawMessage(`null`), ProviderMetadata: metadata},
 		{Type: provider.PartError, APICallError: provider.NewAPICallError(provider.APICallErrorOptions{Message: "error", StatusCode: 500}), ProviderMetadata: metadata},
 	}
-	for _, part := range forbidden {
-		t.Run("encode-forbidden-"+string(part.Type), func(t *testing.T) {
-			_, err := EncodeStreamPart(part)
-			require.Error(t, err)
+	for _, part := range ineligible {
+		t.Run("encode-ignored-"+string(part.Type), func(t *testing.T) {
+			encoded, err := encodeStreamPartJSON(part)
+			require.NoError(t, err)
+			assert.NotContains(t, string(encoded), "providerMetadata")
 		})
 	}
 
@@ -1046,9 +844,10 @@ func TestStreamPart_ProviderMetadataEligibility(t *testing.T) {
 			"error":             `{"type":"error","error":{"message":"error","statusCode":500,"isRetryable":false}}`,
 		}[variant]
 		wire := strings.TrimSuffix(base, "}") + `,"providerMetadata":{"p":{}}}`
-		t.Run("decode-forbidden-"+variant, func(t *testing.T) {
-			_, err := DecodeStreamPart([]byte(wire))
-			require.Error(t, err)
+		t.Run("decode-ignored-"+variant, func(t *testing.T) {
+			part, err := DecodeStreamPart([]byte(wire))
+			require.NoError(t, err)
+			assert.Empty(t, part.ProviderMetadata)
 		})
 	}
 
@@ -1092,7 +891,7 @@ func TestStrictCodec_RejectsTypedNullAndPrivateFields(t *testing.T) {
 	}
 	for i, wire := range requests {
 		t.Run(fmt.Sprintf("request-%d", i), func(t *testing.T) {
-			_, err := DecodeCallOptions([]byte(wire))
+			_, err := decodeCallOptionsJSON([]byte(wire))
 			require.Error(t, err)
 		})
 	}
@@ -1128,12 +927,11 @@ func TestStrictCodec_RejectsTypedNullAndPrivateFields(t *testing.T) {
 }
 
 func TestStrictCodec_AllowsNullOnlyForOpaqueNullableValues(t *testing.T) {
-	request := `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"tool","input":null}]},{"role":"tool","content":[{"type":"tool-result","toolCallId":"call","toolName":"tool","output":{"type":"json","value":null}}]}],"providerOptions":{"gateway":{"future":null}}}`
-	decoded, err := DecodeCallOptions([]byte(request))
+	request := `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"tool","input":null}]},{"role":"tool","content":[{"type":"tool-result","toolCallId":"call","toolName":"tool","output":{"type":"json","value":null}}]}]}`
+	decoded, err := decodeCallOptionsJSON([]byte(request))
 	require.NoError(t, err)
-	assert.Equal(t, "null", string(decoded.CallOptions.Prompt[0].Content[0].Input))
-	assert.Equal(t, "null", string(decoded.CallOptions.Prompt[1].Content[0].Output.JSON))
-	assert.Equal(t, "null", string(decoded.GatewayOptions.Extensions["future"]))
+	assert.Equal(t, "null", string(decoded.Prompt[0].Content[0].Input))
+	assert.Equal(t, "null", string(decoded.Prompt[1].Content[0].Output.JSON))
 
 	part, err := DecodeStreamPart([]byte(`{"type":"raw","rawValue":null}`))
 	require.NoError(t, err)
@@ -1146,7 +944,7 @@ func TestProviderQualifiedIdentifiers_EncodeAndDecode(t *testing.T) {
 		t.Run(fmt.Sprintf("provider-tool-%q", value), func(t *testing.T) {
 			_, err := EncodeCallOptions(provider.CallOptions{Tools: []provider.Tool{{Type: provider.ToolTypeProvider, ID: value, Name: "tool", Args: map[string]json.RawMessage{}}}})
 			require.Error(t, err)
-			_, err = DecodeCallOptions([]byte(`{"prompt":[],"tools":[{"type":"provider","id":` + mustJSON(t, value) + `,"name":"tool","args":{}}]}`))
+			_, err = decodeCallOptionsJSON([]byte(`{"prompt":[],"tools":[{"type":"provider","id":` + mustJSON(t, value) + `,"name":"tool","args":{}}]}`))
 			require.Error(t, err)
 		})
 		for _, tc := range []struct {
@@ -1169,7 +967,7 @@ func TestProviderQualifiedIdentifiers_EncodeAndDecode(t *testing.T) {
 				return err
 			}},
 			{name: "stream-custom", encode: func() error {
-				_, err := EncodeStreamPart(provider.StreamPart{Type: provider.PartCustom, Kind: value})
+				_, err := encodeStreamPartJSON(provider.StreamPart{Type: provider.PartCustom, Kind: value})
 				return err
 			}, decode: func() error {
 				_, err := DecodeStreamPart([]byte(`{"type":"custom","kind":` + mustJSON(t, value) + `}`))
@@ -1200,9 +998,9 @@ func TestLiteralToolChoiceAndResponseFormatGoldens(t *testing.T) {
 			encoded, err := EncodeCallOptions(tc.options)
 			require.NoError(t, err)
 			assert.JSONEq(t, tc.wire, string(encoded))
-			decoded, err := DecodeCallOptions([]byte(tc.wire))
+			decoded, err := decodeCallOptionsJSON([]byte(tc.wire))
 			require.NoError(t, err)
-			assert.Equal(t, tc.options, decoded.CallOptions)
+			assert.Equal(t, tc.options, decoded)
 		})
 	}
 }
@@ -1212,13 +1010,6 @@ func mustJSON(t *testing.T, value string) string {
 	data, err := json.Marshal(value)
 	require.NoError(t, err)
 	return string(data)
-}
-
-func mustJSONString(t *testing.T, raw json.RawMessage) string {
-	t.Helper()
-	var value string
-	require.NoError(t, json.Unmarshal(raw, &value))
-	return value
 }
 
 func intPointer(value int) *int    { return &value }

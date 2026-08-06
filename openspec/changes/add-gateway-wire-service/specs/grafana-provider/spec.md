@@ -1,107 +1,92 @@
 ## ADDED Requirements
 
-### Requirement: Bounded remote response reads
+### Requirement: Strict remote response reads are bounded
 
-The Grafana provider SHALL bound memory used to read remote provider-wire responses. It SHALL default to 16 MiB for a complete unary success body, 1 MiB for a complete non-2xx or invalid-content-type error body, and 8 MiB for one complete SSE event. It SHALL expose positive functional options for each limit, apply the configured limits to both cloud-auth and access-token providers, and reject zero or negative configured limits during construction.
+When `WithStrictProviderWire()` is enabled, the Grafana provider SHALL default to 16 MiB for unary success, 1 MiB for non-2xx or invalid-content-type diagnostics, and 8 MiB for one complete SSE event. Positive options SHALL configure both cloud-auth and access-token constructors; zero, negative, or nil options SHALL fail construction. Existing constructor calls and HTTP-client precedence SHALL remain source compatible.
 
-This is a deliberate security correction: constructors and request bytes remain source and wire compatible, but a response accepted only because prior reads were unbounded MAY now fail unless the caller explicitly raises the applicable limit.
+#### Scenario: Strict unary exact limit succeeds
 
-#### Scenario: Unary response at limit succeeds
+- **WHEN** a valid strict unary body equals its configured limit
+- **THEN** the provider SHALL decode it normally
 
-- **WHEN** a valid generate response body is exactly the configured unary-success limit
-- **THEN** the provider SHALL decode and return it normally
+#### Scenario: Strict unary limit plus one fails
 
-#### Scenario: Unary response exceeds limit
+- **WHEN** a strict unary body exceeds its configured limit by one byte
+- **THEN** the provider SHALL return a non-retryable bounded protocol error
 
-- **WHEN** a generate response body exceeds the configured unary-success limit by one byte
-- **THEN** the provider SHALL return a non-retryable protocol `*provider.APICallError` without reading the unbounded remainder into memory
+#### Scenario: Strict diagnostic read remains bounded
 
-#### Scenario: Error body exceeds limit
+- **WHEN** a strict non-success or invalid-content-type body exceeds its diagnostic limit
+- **THEN** the provider SHALL not retain the unbounded remainder
 
-- **WHEN** a non-2xx or invalid-content-type response body exceeds the configured error-body limit
-- **THEN** the provider SHALL return a bounded synthesized `*provider.APICallError` and SHALL NOT retain the full response body
+#### Scenario: Both strict constructors share limits
 
-#### Scenario: Limits apply to both constructors
+- **WHEN** equivalent limit options configure strict cloud-auth and access-token providers
+- **THEN** their models SHALL enforce the same limits
 
-- **WHEN** providers are created through `NewWithCloudAuth` and `NewWithAccessToken` with the same limit options
-- **THEN** models from both providers SHALL enforce the same response limits
+### Requirement: Strict SSE event parsing is bounded
 
-#### Scenario: Invalid limit is rejected
+Strict Grafana mode SHALL parse SSE incrementally and apply its limit to the complete accumulated event, including prefixes, multiline data, line endings, and terminating blank line. Canonical strict events SHALL count exactly `data: `, JSON, and `\n\n`, matching the strict server. Final bytes returned with `io.EOF` SHALL be processed before clean completion.
 
-- **WHEN** either constructor receives a zero or negative explicit response limit
-- **THEN** it SHALL return an error and no provider
+#### Scenario: Strict SSE exact limit succeeds
 
-#### Scenario: Existing constructor calls remain source compatible
+- **WHEN** a complete valid strict event equals its configured limit
+- **THEN** its stream part SHALL be decoded
 
-- **WHEN** an external consumer uses the existing `Option` type, calls either constructor with no new limit options, configures `WithHTTPClient`, or relies on the existing config-level HTTP client precedence
-- **THEN** the code SHALL compile unchanged and preserve the pre-limit client-selection behavior
+#### Scenario: Strict SSE limit plus one fails
 
-### Requirement: Bounded SSE event parsing
+- **WHEN** a complete or unterminated strict event exceeds its limit
+- **THEN** Grafana SHALL emit one non-retryable protocol error part and close
 
-The Grafana provider SHALL parse SSE incrementally without unbounded `ReadString` or equivalent allocation. The configured SSE limit SHALL apply to the exact complete accumulated event bytes, including every field prefix, multiline `data:` fields, line endings, and terminating blank line. For a canonical strict-service event, both server and client SHALL count `data: ` plus canonical JSON plus `\n\n`. A valid event at the limit SHALL decode; limit-plus-one SHALL emit one final non-retryable protocol `PartError` and close the channel. Final bytes returned together with `io.EOF` SHALL still be processed before clean completion is decided.
+#### Scenario: Strict multiline size is aggregate
 
-#### Scenario: SSE event at limit succeeds
+- **WHEN** individually small strict SSE lines exceed the limit together
+- **THEN** the complete event SHALL fail the aggregate limit
 
-- **WHEN** one valid complete SSE event is exactly the configured event limit
-- **THEN** the provider SHALL decode and forward its `provider.StreamPart`
+#### Scenario: Strict final EOF bytes are decoded
 
-#### Scenario: Unterminated event exceeds limit
+- **WHEN** a valid final strict data event has no trailing newline
+- **THEN** Grafana SHALL decode it before returning clean EOF
 
-- **WHEN** a server sends an unterminated SSE data line beyond the configured event limit
-- **THEN** the provider SHALL stop buffering, emit one non-retryable protocol error part, cancel or close the response, and close the stream channel
+### Requirement: Legacy mode remains unchanged
 
-#### Scenario: Multiline event uses aggregate limit
+Without `WithStrictProviderWire()`, Grafana SHALL retain its original legacy request and response codecs and original reader behavior. The new strict unary, diagnostic, and SSE limits SHALL NOT apply to legacy mode or change its `/language-model` path, headers, authentication, streaming selection, request bytes, retry behavior, or client precedence.
 
-- **WHEN** individually small `data:` lines combine into an event larger than the configured limit
-- **THEN** the aggregate event SHALL fail the same limit rather than allocating without bound
+#### Scenario: Default request remains legacy
 
-#### Scenario: Final-line EOF is preserved
+- **WHEN** a model call uses either constructor without `WithStrictProviderWire()`
+- **THEN** its request and response behavior SHALL remain legacy compatible
 
-- **WHEN** a valid final SSE data event has no trailing newline and the reader returns its bytes with `io.EOF`
-- **THEN** the provider SHALL decode that event before subsequently treating EOF as clean completion
+#### Scenario: Legacy limit options do not bound reads
 
-### Requirement: Response limits do not alter the provider-wire request contract
+- **WHEN** a legacy client is constructed with one of the new response-limit options
+- **THEN** its original unary, diagnostic, and SSE readers SHALL remain unchanged
 
-Adding response limits SHALL NOT change the Grafana provider's `/language-model` path, request headers, authentication headers, streaming selection, or default use of the legacy-tolerant `gateway/providerwire` codec.
+### Requirement: Strict bidirectional codec opt-in remains explicit
 
-#### Scenario: Existing canonical request remains unchanged
+Grafana SHALL expose only the binary `WithStrictProviderWire()` opt-in rather than a general provider-wire mode enum. Strict mode SHALL use only `gateway/providerwire/v4` for request encoding and unary, error, and SSE decoding, reject legacy-only response shapes, apply strict response limits, and preserve the existing model API. Changing the default or deleting legacy mode is deferred.
 
-- **WHEN** a model call is made in default legacy mode with default or overridden response limits
-- **THEN** its method, URL, headers, and request body SHALL equal the pre-limit canonical provider-wire request
+#### Scenario: Strict request uses V4 codec
 
-### Requirement: Grafana exposes an explicit strict bidirectional codec mode
+- **WHEN** strict mode performs generate or stream
+- **THEN** request and response conversion SHALL use the strict V4 package without legacy fallback
 
-The Grafana provider SHALL define a typed provider-wire mode with legacy and strict values and a functional option selecting strict mode. Existing constructors without the option SHALL remain in legacy mode. In strict mode, request encoding plus unary and stream response decoding SHALL use only `gateway/providerwire/v4` conversion and MUST NOT call legacy `gateway/providerwire` codecs or provider custom JSON methods.
+#### Scenario: Strict legacy response is rejected
 
-Strict mode SHALL accept canonical V4 results/events, reject legacy-only response shapes, apply the same configured read limits, and preserve the existing Grafana public model API. This mode is the migration seam toward strict V4 becoming canonical; flipping the default and removing legacy mode are follow-up changes.
+- **WHEN** strict mode receives a legacy-only result or event
+- **THEN** it SHALL return a non-retryable protocol error
 
-#### Scenario: Existing constructors retain legacy mode
+#### Scenario: Strict service error normalizes
 
-- **WHEN** callers use either existing constructor without the strict option
-- **THEN** request and response codec behavior SHALL remain unchanged
+- **WHEN** strict unary service returns a registered safe category
+- **THEN** Grafana SHALL preserve status and retryability and normalize it without provider-private data
 
-#### Scenario: Strict mode is independent of legacy codecs
+#### Scenario: Strict stream category remains recoverable
 
-- **WHEN** a Grafana model in strict mode performs generate or stream against the strict service
-- **THEN** all request/result/part conversion SHALL use the V4 package and unary/streaming calls SHALL complete through the existing Grafana public model API
+- **WHEN** a strict stream error carries safe category data
+- **THEN** `NormalizeAPICallError` SHALL recover the category without changing the stream contract
 
-#### Scenario: Strict mode rejects legacy response shape
+#### Scenario: Strict server and client sizes agree
 
-- **WHEN** a strict-mode Grafana client receives a legacy-only generate result or stream event
-- **THEN** it SHALL return a non-retryable protocol error rather than invoking legacy normalization
-
-#### Scenario: Strict and server event limits agree
-
-- **WHEN** the strict server emits an event exactly at or one byte above the configured framed-event limit
-- **THEN** Grafana strict mode SHALL make the same at-limit decision using identical framing-byte accounting
-
-#### Scenario: Strict unary service errors normalize safely
-
-- **WHEN** the strict service returns a unary error in a supported safe category
-- **THEN** the Grafana provider SHALL preserve status and retryability and SHALL automatically normalize recognized categories, including `forbidden` and `failed_dependency`, without exposing private provider data
-
-#### Scenario: Strict stream categories remain recoverable
-
-- **WHEN** the strict service emits a safe categorized stream error
-- **THEN** the Grafana provider SHALL preserve it as `provider.StreamPart.APICallError` with status, retryability, and safe category data intact
-- **AND** a consumer SHALL be able to recover the category by calling `NormalizeAPICallError` without changing the provider stream contract
+- **WHEN** a canonical event is at or above the configured limit
+- **THEN** server and strict Grafana client SHALL make the same framed-byte decision

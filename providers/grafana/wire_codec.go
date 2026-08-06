@@ -2,8 +2,6 @@ package grafana
 
 import (
 	"bytes"
-	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 
@@ -26,8 +24,8 @@ type streamPartReader interface {
 type legacyWireCodec struct{}
 type strictWireCodec struct{}
 
-func codecForMode(mode ProviderWireMode) wireCodec {
-	if mode == ProviderWireStrict {
+func codecForStrictMode(strict bool) wireCodec {
+	if strict {
 		return strictWireCodec{}
 	}
 	return legacyWireCodec{}
@@ -41,26 +39,8 @@ func (legacyWireCodec) decodeGenerateResult(data []byte) (*provider.GenerateResu
 	return providerwire.DecodeGenerateResult(data)
 }
 
-func (legacyWireCodec) newStreamReader(reader io.Reader, limit int64) (streamPartReader, error) {
-	payloadReader, err := newSSEPayloadReader(reader, limit)
-	if err != nil {
-		return nil, err
-	}
-	return &legacyStreamReader{payloadReader: payloadReader}, nil
-}
-
-type legacyStreamReader struct {
-	payloadReader *ssePayloadReader
-}
-
-func (reader *legacyStreamReader) Next() (provider.StreamPart, error) {
-	payload, err := reader.payloadReader.next()
-	if err != nil {
-		return provider.StreamPart{}, err
-	}
-	var part provider.StreamPart
-	err = json.Unmarshal(payload, &part)
-	return part, err
+func (legacyWireCodec) newStreamReader(reader io.Reader, _ int64) (streamPartReader, error) {
+	return providerwire.NewSSEReader(reader), nil
 }
 
 func (legacyWireCodec) decodeErrorResponse(response *http.Response, data []byte) (*provider.APICallError, error) {
@@ -78,26 +58,7 @@ func (strictWireCodec) decodeGenerateResult(data []byte) (*provider.GenerateResu
 }
 
 func (strictWireCodec) newStreamReader(reader io.Reader, limit int64) (streamPartReader, error) {
-	strictReader, err := providerwirev4.NewSSEReader(reader, limit)
-	if err != nil {
-		return nil, err
-	}
-	return &strictStreamReader{reader: strictReader}, nil
-}
-
-type strictStreamReader struct {
-	reader *providerwirev4.SSEReader
-}
-
-func (reader *strictStreamReader) Next() (provider.StreamPart, error) {
-	part, err := reader.reader.Next()
-	if err == nil || errors.Is(err, io.EOF) {
-		return part, err
-	}
-	if errors.Is(err, providerwirev4.ErrSSEEventTooLarge) {
-		return provider.StreamPart{}, errors.Join(errProtocolResponse, errSSEEventTooLarge, err)
-	}
-	return provider.StreamPart{}, errors.Join(errProtocolResponse, err)
+	return providerwirev4.NewSSEReader(reader, limit)
 }
 
 func (strictWireCodec) decodeErrorResponse(response *http.Response, data []byte) (*provider.APICallError, error) {

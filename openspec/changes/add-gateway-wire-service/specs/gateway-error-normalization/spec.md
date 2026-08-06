@@ -2,79 +2,55 @@
 
 ### Requirement: Normalized gateway error with type discriminator
 
-The Grafana gateway provider package (`providers/grafana`) SHALL export a `GatewayError` type that carries a normalized category as a typed string discriminator field `Type GatewayErrorType`, mirroring the registered `@ai-sdk/gateway@4.0.33` `GatewayError.type` contract. Like upstream, this lives in the gateway provider package, not in the core `provider` package. `GatewayError` SHALL implement the `error` interface and expose `Error()` and `Unwrap()`. The package SHALL define typed constants for the registered category vocabulary used by the strict service:
+The Grafana provider SHALL export `GatewayError` with `Type GatewayErrorType`, `Message`, `StatusCode`, and optional `ModelID`. It SHALL implement `error`, preserve the originating `*provider.APICallError` as its private cause, and retain the registered category constants:
 
-- `GatewayErrorAuthentication` = `"authentication_error"`
-- `GatewayErrorInvalidRequest` = `"invalid_request_error"`
-- `GatewayErrorRateLimit` = `"rate_limit_exceeded"`
-- `GatewayErrorModelNotFound` = `"model_not_found"`
-- `GatewayErrorForbidden` = `"forbidden"`
-- `GatewayErrorFailedDependency` = `"failed_dependency"`
-- `GatewayErrorInternalServer` = `"internal_server_error"`
+- `authentication_error`
+- `invalid_request_error`
+- `rate_limit_exceeded`
+- `model_not_found`
+- `forbidden`
+- `failed_dependency`
+- `internal_server_error`
 
-`GatewayError` SHALL carry `Message string`, `StatusCode int`, and an optional `ModelID string` populated for `model_not_found`.
+The strict V4 handler is not required to produce policy-only categories, but strict decoding SHALL remain compatible with the registered Grafana vocabulary.
 
-#### Scenario: Implements error interface
+#### Scenario: Gateway error implements error
 
-- **WHEN** a `*GatewayError` value is assigned to a variable of type `error`
-- **THEN** the assignment SHALL compile successfully
+- **WHEN** `*GatewayError` is assigned to `error`
+- **THEN** compilation SHALL succeed and `Unwrap` SHALL expose its API-call cause
 
-#### Scenario: Type is a typed string enum
+#### Scenario: Gateway type remains named
 
-- **WHEN** the `GatewayError.Type` field is inspected
-- **THEN** it SHALL be of named type `GatewayErrorType`, and the listed constants SHALL hold exactly the listed string values
-
-#### Scenario: Error includes status code and message
-
-- **WHEN** `Error()` is called on a `GatewayError` with `StatusCode` 429 and `Message` "rate limit exceeded"
-- **THEN** the returned string SHALL contain both "429" and "rate limit exceeded"
+- **WHEN** the `Type` field is inspected
+- **THEN** it SHALL use named type `GatewayErrorType` with the registered string constants
 
 ### Requirement: Normalizer maps structured provider error to a normalized type
 
-The Grafana gateway provider package SHALL expose a normalizer that converts a `*provider.APICallError` into a `*GatewayError`, reading the structured provider error `type` from `APICallError.Data` and falling back to parsing `APICallError.ResponseBody` when `Data` is absent, mirroring the registered upstream `extractApiCallResponse` and `createGatewayErrorFromResponse` behavior. The mapping SHALL be:
+`NormalizeAPICallError` SHALL read a structured type from `APICallError.Data` and fall back to `ResponseBody`. It SHALL map authentication and permission to authentication; invalid request and billing to invalid request; rate-limit and overloaded signals to rate limit; model-not-found and not-found to model not found; `forbidden` to forbidden; `failed_dependency` to failed dependency; and internal, API, timeout, missing, or unknown types to internal server error.
 
-- `authentication_error` or `permission_error` -> `GatewayErrorAuthentication`
-- `invalid_request_error` or `billing_error` -> `GatewayErrorInvalidRequest`
-- `rate_limit_exceeded`, provider rate-limit, or overloaded signals -> `GatewayErrorRateLimit`
-- `model_not_found` or `not_found_error` -> `GatewayErrorModelNotFound`, populating `ModelID` when reported
-- `forbidden` -> `GatewayErrorForbidden`
-- `failed_dependency` -> `GatewayErrorFailedDependency`
-- `internal_server_error`, `api_error`, or `timeout_error` -> `GatewayErrorInternalServer`
-- any other or missing type -> `GatewayErrorInternalServer`
+The originating API-call error SHALL remain the cause with status and retryability intact. Strict stream errors SHALL carry only the safe category envelope in `Data`, never the original provider data.
 
-The originating `*provider.APICallError` SHALL be set as the resulting `GatewayError`'s cause with its status and retryability preserved. A strict-service stream error SHALL place only its safe category envelope in `APICallError.Data`, allowing the same normalizer to recover the category without exposing a private provider cause.
+#### Scenario: Failed dependency preserves retryability
 
-#### Scenario: Maps authentication error
+- **WHEN** safe structured data contains `failed_dependency`
+- **THEN** normalization SHALL return `GatewayErrorFailedDependency` and the caused API error SHALL retain explicit retryability
 
-- **WHEN** the normalizer receives an `APICallError` whose `Data` carries `type: "authentication_error"`
-- **THEN** the result SHALL be a `*GatewayError` with `Type == GatewayErrorAuthentication`
+#### Scenario: Model not found preserves public ID
 
-#### Scenario: Maps rate-limit error
+- **WHEN** safe structured data contains `model_not_found` and `param.modelId`
+- **THEN** normalization SHALL populate `GatewayError.ModelID` with that public ID
 
-- **WHEN** the normalizer receives an `APICallError` whose `Data` carries a rate-limit type
-- **THEN** the result SHALL be a `*GatewayError` with `Type == GatewayErrorRateLimit`
+#### Scenario: Registered forbidden type decodes
 
-#### Scenario: Maps model-not-found with model id
+- **WHEN** strict decoding receives a registered `forbidden` envelope
+- **THEN** normalization SHALL return `GatewayErrorForbidden` even though the simplified handler has no policy producer
 
-- **WHEN** the normalizer receives an `APICallError` whose `Data` carries `type: "model_not_found"` and a model identifier
-- **THEN** the result SHALL be a `*GatewayError` with `Type == GatewayErrorModelNotFound` and `ModelID` equal to that identifier
+#### Scenario: Response body remains fallback
 
-#### Scenario: Maps forbidden
+- **WHEN** `Data` is empty and `ResponseBody` contains a structured registered type
+- **THEN** normalization SHALL use that body type
 
-- **WHEN** the normalizer receives an `APICallError` whose safe structured data carries `type: "forbidden"`
-- **THEN** the result SHALL be a `*GatewayError` with `Type == GatewayErrorForbidden`
+#### Scenario: Unknown type becomes internal
 
-#### Scenario: Maps failed dependency with retryability
-
-- **WHEN** the normalizer receives an `APICallError` whose safe structured data carries `type: "failed_dependency"`
-- **THEN** the result SHALL be a `*GatewayError` with `Type == GatewayErrorFailedDependency` and the underlying `APICallError.IsRetryable` value SHALL remain reachable through `errors.As`
-
-#### Scenario: Falls back to ResponseBody when Data is empty
-
-- **WHEN** the normalizer receives an `APICallError` with empty `Data` but a `ResponseBody` containing a parseable structured error type
-- **THEN** the type SHALL be read from `ResponseBody` and mapped accordingly
-
-#### Scenario: Unknown type defaults to internal server error
-
-- **WHEN** the normalizer receives an `APICallError` whose structured error type is missing or unrecognized
-- **THEN** the result SHALL be a `*GatewayError` with `Type == GatewayErrorInternalServer` and the originating `APICallError` preserved as cause
+- **WHEN** no registered type can be recovered
+- **THEN** normalization SHALL return `GatewayErrorInternalServer` with the API-call cause preserved

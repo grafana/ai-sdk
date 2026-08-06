@@ -74,7 +74,7 @@ func (reader *SSEReader) readLine(event *bytes.Buffer) ([]byte, error) {
 	for {
 		fragment, err := reader.reader.ReadSlice('\n')
 		if int64(event.Len()+len(fragment)) > reader.limit {
-			return nil, ErrSSEEventTooLarge
+			return nil, errSSEEventTooLarge
 		}
 		event.Write(fragment)
 		line.Write(fragment)

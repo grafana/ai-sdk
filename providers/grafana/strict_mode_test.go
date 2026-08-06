@@ -7,11 +7,13 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/grafana/ai-sdk/gateway/failure"
+	"github.com/grafana/ai-sdk/gateway/catalog"
 	"github.com/grafana/ai-sdk/gateway/providerwire"
 	providerwirev4 "github.com/grafana/ai-sdk/gateway/providerwire/v4"
 	"github.com/grafana/ai-sdk/provider"
@@ -19,15 +21,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestProviderWireMode_DefaultsAndValidation(t *testing.T) {
+func TestStrictProviderWire_DefaultsAndValidation(t *testing.T) {
 	legacy := newAccessTokenProvider(t, "https://example.com")
 	assert.IsType(t, legacyWireCodec{}, legacy.wireCodec)
+	assert.False(t, legacy.strictProviderWire)
 	assert.Equal(t, DefaultMaxUnaryResponseBytes, legacy.maxUnaryResponseBytes)
 	assert.Equal(t, DefaultMaxErrorResponseBytes, legacy.maxErrorResponseBytes)
 	assert.Equal(t, DefaultMaxSSEEventBytes, legacy.maxSSEEventBytes)
 
 	strict := newAccessTokenProvider(t, "https://example.com", WithStrictProviderWire(), WithMaxUnaryResponseBytes(10), WithMaxErrorResponseBytes(11), WithMaxSSEEventBytes(12))
 	assert.IsType(t, strictWireCodec{}, strict.wireCodec)
+	assert.True(t, strict.strictProviderWire)
 	assert.Equal(t, int64(10), strict.maxUnaryResponseBytes)
 	assert.Equal(t, int64(11), strict.maxErrorResponseBytes)
 	assert.Equal(t, int64(12), strict.maxSSEEventBytes)
@@ -35,12 +39,12 @@ func TestProviderWireMode_DefaultsAndValidation(t *testing.T) {
 	cloud, err := NewWithCloudAuth(CloudAuthConfig{CAPToken: "cap", TokenExchangeURL: "https://example.com/exchange", Namespace: "stack", BaseURL: "https://example.com"}, WithStrictProviderWire(), WithMaxUnaryResponseBytes(10), WithMaxErrorResponseBytes(11), WithMaxSSEEventBytes(12))
 	require.NoError(t, err)
 	assert.IsType(t, strictWireCodec{}, cloud.wireCodec)
+	assert.True(t, cloud.strictProviderWire)
 	assert.Equal(t, int64(10), cloud.maxUnaryResponseBytes)
 	assert.Equal(t, int64(11), cloud.maxErrorResponseBytes)
 	assert.Equal(t, int64(12), cloud.maxSSEEventBytes)
 
 	invalidOptions := []Option{
-		WithProviderWireMode("future"),
 		WithMaxUnaryResponseBytes(0),
 		WithMaxErrorResponseBytes(-1),
 		WithMaxSSEEventBytes(0),
@@ -62,7 +66,7 @@ func TestStrictMode_UsesCanonicalRequestAndResponseCodecs(t *testing.T) {
 		Warnings:     []provider.Warning{{Type: provider.WarnOther, Message: "public"}},
 		Response:     &provider.GenerateResponse{ResponseMetadata: provider.ResponseMetadata{ID: "response", Timestamp: timestamp}},
 	}
-	endpoint := newFakeHostedEndpoint(t, strictGenerateSuccess(result))
+	endpoint := newFakeHostedEndpoint(t, rawResponse(http.StatusOK, providerwirev4.MIMEJSON, string(strictGenerateBytes(t, result))))
 	providerClient := newAccessTokenProvider(t, endpoint.URL(), WithStrictProviderWire())
 	model, err := providerClient.LanguageModel("claude-sonnet-4-5-20250929")
 	require.NoError(t, err)
@@ -177,295 +181,160 @@ func TestStrictMode_DoesNotFallBackToLegacyNormalization(t *testing.T) {
 	})
 }
 
-func TestBoundedUnaryAndErrorResponses(t *testing.T) {
+func TestStrictResponseLimitsDoNotChangeLegacyMode(t *testing.T) {
 	result := &provider.GenerateResult{
 		Content:      []provider.GenerateContentPart{{Type: provider.ContentText, Text: "bounded"}},
 		FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop},
 		Warnings:     []provider.Warning{},
 	}
-	strictEncoded, err := providerwirev4.EncodeGenerateResult(result)
-	require.NoError(t, err)
-	legacyEncoded, err := providerwire.EncodeGenerateResult(result)
-	require.NoError(t, err)
+	strictEncoded := strictGenerateBytes(t, result)
 
-	clients := []struct {
-		name    string
-		strict  bool
-		cloud   bool
-		options []Option
+	for _, tc := range []struct {
+		name  string
+		limit int64
+		ok    bool
 	}{
-		{name: "legacy access token"},
-		{name: "strict access token", strict: true, options: []Option{WithStrictProviderWire()}},
-		{name: "legacy cloud auth", cloud: true},
-		{name: "strict cloud auth", strict: true, cloud: true, options: []Option{WithStrictProviderWire()}},
-	}
-	for _, tc := range clients {
-		encoded := legacyEncoded
-		if tc.strict {
-			encoded = strictEncoded
-		}
-		t.Run("unary exact limit "+tc.name, func(t *testing.T) {
-			endpoint := newFakeHostedEndpoint(t, rawResponse(http.StatusOK, providerwirev4.MIMEJSON, string(encoded)))
-			options := append(append([]Option(nil), tc.options...), WithMaxUnaryResponseBytes(int64(len(encoded))))
-			client := newResponseLimitTestProvider(t, endpoint.URL(), tc.cloud, options...)
+		{name: "strict unary exact limit", limit: int64(len(strictEncoded)), ok: true},
+		{name: "strict unary limit plus one", limit: int64(len(strictEncoded) - 1)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			endpoint := newFakeHostedEndpoint(t, rawResponse(http.StatusOK, providerwirev4.MIMEJSON, string(strictEncoded)))
+			client := newAccessTokenProvider(t, endpoint.URL(), WithStrictProviderWire(), WithMaxUnaryResponseBytes(tc.limit))
 			model, _ := client.LanguageModel("claude-sonnet-4-5-20250929")
 			got, err := model.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{}})
-			require.NoError(t, err)
-			assert.Equal(t, "bounded", got.Content[0].Text)
-		})
-
-		t.Run("unary limit plus one "+tc.name, func(t *testing.T) {
-			endpoint := newFakeHostedEndpoint(t, rawResponse(http.StatusOK, providerwirev4.MIMEJSON, string(encoded)))
-			options := append(append([]Option(nil), tc.options...), WithMaxUnaryResponseBytes(int64(len(encoded)-1)))
-			client := newResponseLimitTestProvider(t, endpoint.URL(), tc.cloud, options...)
-			model, _ := client.LanguageModel("claude-sonnet-4-5-20250929")
-			_, err := model.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{}})
-			var apiErr *provider.APICallError
-			require.ErrorAs(t, err, &apiErr)
-			assert.False(t, apiErr.IsRetryable)
-			assert.ErrorIs(t, apiErr, errResponseTooLarge)
-			assert.LessOrEqual(t, len(apiErr.ResponseBody), len(encoded)-1)
-		})
-
-		t.Run("error body exact limit "+tc.name, func(t *testing.T) {
-			status := http.StatusForbidden
-			var body []byte
-			var err error
-			if tc.strict {
-				status, body, err = providerwirev4.EncodeFailure(failure.Classification{Kind: failure.KindForbidden})
-			} else {
-				retryable := false
-				body, err = providerwire.EncodeAPICallError(provider.NewAPICallError(provider.APICallErrorOptions{
-					Message: "request forbidden", StatusCode: status, IsRetryable: &retryable,
-				}))
+			if tc.ok {
+				require.NoError(t, err)
+				assert.Equal(t, "bounded", got.Content[0].Text)
+				return
 			}
-			require.NoError(t, err)
-			endpoint := newFakeHostedEndpoint(t, rawResponse(status, providerwirev4.MIMEJSON, string(body)))
-			options := append(append([]Option(nil), tc.options...), WithMaxErrorResponseBytes(int64(len(body))))
-			client := newResponseLimitTestProvider(t, endpoint.URL(), tc.cloud, options...)
-			model, _ := client.LanguageModel("claude-sonnet-4-5-20250929")
-			_, err = model.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{}})
-			var apiErr *provider.APICallError
-			require.ErrorAs(t, err, &apiErr)
-			assert.NotErrorIs(t, apiErr, errResponseTooLarge)
-			assert.Equal(t, status, apiErr.StatusCode)
-		})
-
-		t.Run("error body limit plus one "+tc.name, func(t *testing.T) {
-			body := strings.Repeat("x", 11)
-			endpoint := newFakeHostedEndpoint(t, rawResponse(http.StatusBadGateway, providerwirev4.MIMEJSON, body))
-			options := append(append([]Option(nil), tc.options...), WithMaxErrorResponseBytes(10))
-			client := newResponseLimitTestProvider(t, endpoint.URL(), tc.cloud, options...)
-			model, _ := client.LanguageModel("claude-sonnet-4-5-20250929")
-			_, err := model.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{}})
 			var apiErr *provider.APICallError
 			require.ErrorAs(t, err, &apiErr)
 			assert.False(t, apiErr.IsRetryable)
-			assert.Len(t, apiErr.ResponseBody, 10)
 			assert.ErrorIs(t, apiErr, errResponseTooLarge)
 		})
 	}
 
-	t.Run("invalid stream content type diagnostic is bounded", func(t *testing.T) {
-		body := strings.Repeat("x", 11)
-		endpoint := newFakeHostedEndpoint(t, rawResponse(http.StatusOK, "text/plain", body))
-		client := newAccessTokenProvider(t, endpoint.URL(), WithStrictProviderWire(), WithMaxErrorResponseBytes(10))
-		model, _ := client.LanguageModel("claude-sonnet-4-5-20250929")
-		_, err := model.DoStream(context.Background(), provider.CallOptions{Prompt: []provider.Message{}})
-		var apiErr *provider.APICallError
-		require.ErrorAs(t, err, &apiErr)
-		assert.False(t, apiErr.IsRetryable)
-		assert.Len(t, apiErr.ResponseBody, 10)
-		assert.ErrorIs(t, apiErr, errResponseTooLarge)
-	})
-
-	for _, tc := range clients {
-		t.Run("invalid unary content type exact limit "+tc.name, func(t *testing.T) {
-			body := strings.Repeat("x", 10)
-			endpoint := newFakeHostedEndpoint(t, rawResponse(http.StatusOK, "text/plain; charset=utf-8", body))
-			options := append(append([]Option(nil), tc.options...), WithMaxErrorResponseBytes(10))
-			client := newResponseLimitTestProvider(t, endpoint.URL(), tc.cloud, options...)
-			model, _ := client.LanguageModel("claude-sonnet-4-5-20250929")
-			_, err := model.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{}})
-			var apiErr *provider.APICallError
-			require.ErrorAs(t, err, &apiErr)
-			assert.False(t, apiErr.IsRetryable)
-			assert.Equal(t, body, apiErr.ResponseBody)
-			assert.NotErrorIs(t, apiErr, errResponseTooLarge)
-		})
-
-		t.Run("invalid unary content type limit plus one "+tc.name, func(t *testing.T) {
-			body := strings.Repeat("x", 11)
-			endpoint := newFakeHostedEndpoint(t, rawResponse(http.StatusOK, "invalid content type", body))
-			options := append(append([]Option(nil), tc.options...), WithMaxErrorResponseBytes(10))
-			client := newResponseLimitTestProvider(t, endpoint.URL(), tc.cloud, options...)
-			model, _ := client.LanguageModel("claude-sonnet-4-5-20250929")
-			_, err := model.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{}})
-			var apiErr *provider.APICallError
-			require.ErrorAs(t, err, &apiErr)
-			assert.False(t, apiErr.IsRetryable)
-			assert.Len(t, apiErr.ResponseBody, 10)
-			assert.ErrorIs(t, apiErr, errResponseTooLarge)
-		})
-	}
-}
-
-func TestBoundedSSEEvents(t *testing.T) {
-	part := provider.StreamPart{Type: provider.PartTextDelta, ID: "text", Delta: "x"}
-	event, err := providerwirev4.EncodeSSEEventWithinLimit(part, 1024)
-	require.NoError(t, err)
-
-	t.Run("exact complete event", func(t *testing.T) {
-		endpoint := newFakeHostedEndpoint(t, rawResponse(http.StatusOK, providerwirev4.MIMESSE, string(event)))
-		client := newAccessTokenProvider(t, endpoint.URL(), WithStrictProviderWire(), WithMaxSSEEventBytes(int64(len(event))))
-		model, _ := client.LanguageModel("claude-sonnet-4-5-20250929")
-		stream, err := model.DoStream(context.Background(), provider.CallOptions{Prompt: []provider.Message{}})
-		require.NoError(t, err)
-		parts := collectStream(stream.Stream)
-		require.Len(t, parts, 1)
-		assert.Equal(t, part, parts[0])
-	})
-
-	t.Run("limit plus one", func(t *testing.T) {
-		endpoint := newFakeHostedEndpoint(t, rawResponse(http.StatusOK, providerwirev4.MIMESSE, string(event)))
-		client := newAccessTokenProvider(t, endpoint.URL(), WithStrictProviderWire(), WithMaxSSEEventBytes(int64(len(event)-1)))
-		model, _ := client.LanguageModel("claude-sonnet-4-5-20250929")
-		stream, err := model.DoStream(context.Background(), provider.CallOptions{Prompt: []provider.Message{}})
-		require.NoError(t, err)
-		parts := collectStream(stream.Stream)
-		require.Len(t, parts, 1)
-		assert.Equal(t, provider.PartError, parts[0].Type)
-		assert.False(t, parts[0].APICallError.IsRetryable)
-		assert.ErrorIs(t, parts[0].APICallError, errSSEEventTooLarge)
-	})
-
-	t.Run("long unterminated line", func(t *testing.T) {
-		wire := "data: " + strings.Repeat("x", 100)
-		endpoint := newFakeHostedEndpoint(t, rawResponse(http.StatusOK, providerwirev4.MIMESSE, wire))
-		client := newAccessTokenProvider(t, endpoint.URL(), WithStrictProviderWire(), WithMaxSSEEventBytes(32))
-		model, _ := client.LanguageModel("claude-sonnet-4-5-20250929")
-		stream, err := model.DoStream(context.Background(), provider.CallOptions{Prompt: []provider.Message{}})
-		require.NoError(t, err)
-		parts := collectStream(stream.Stream)
-		require.Len(t, parts, 1)
-		assert.ErrorIs(t, parts[0].APICallError, errSSEEventTooLarge)
-	})
-
-	t.Run("multiline aggregate and final EOF", func(t *testing.T) {
-		wire := "data: {\"type\":\"text-delta\",\n" + "data: \"id\":\"text\",\"delta\":\"x\"}"
-		endpoint := newFakeHostedEndpoint(t, rawResponse(http.StatusOK, providerwirev4.MIMESSE, wire))
-		client := newAccessTokenProvider(t, endpoint.URL(), WithStrictProviderWire(), WithMaxSSEEventBytes(int64(len(wire))))
-		model, _ := client.LanguageModel("claude-sonnet-4-5-20250929")
-		stream, err := model.DoStream(context.Background(), provider.CallOptions{Prompt: []provider.Message{}})
-		require.NoError(t, err)
-		parts := collectStream(stream.Stream)
-		require.Len(t, parts, 1)
-		assert.Equal(t, part, parts[0])
-	})
-}
-
-func TestBoundedSSEEvents_LegacyAndStrictModes(t *testing.T) {
-	part := provider.StreamPart{Type: provider.PartTextDelta, ID: "text", Delta: "x"}
-	event, err := providerwirev4.EncodeSSEEventWithinLimit(part, 1024)
-	require.NoError(t, err)
+	errorBody := strictErrorBody(t, http.StatusBadGateway, "failed_dependency", "upstream dependency failed", true, nil)
 	for _, tc := range []struct {
-		name    string
-		cloud   bool
-		options []Option
+		name  string
+		limit int64
+		ok    bool
 	}{
-		{name: "legacy access token"},
-		{name: "strict access token", options: []Option{WithStrictProviderWire()}},
-		{name: "legacy cloud auth", cloud: true},
-		{name: "strict cloud auth", cloud: true, options: []Option{WithStrictProviderWire()}},
+		{name: "strict error exact limit", limit: int64(len(errorBody)), ok: true},
+		{name: "strict error limit plus one", limit: int64(len(errorBody) - 1)},
 	} {
-		t.Run(tc.name+" exact", func(t *testing.T) {
-			endpoint := newFakeHostedEndpoint(t, rawResponse(http.StatusOK, providerwirev4.MIMESSE, string(event)))
-			options := append(append([]Option(nil), tc.options...), WithMaxSSEEventBytes(int64(len(event))))
-			client := newResponseLimitTestProvider(t, endpoint.URL(), tc.cloud, options...)
+		t.Run(tc.name, func(t *testing.T) {
+			endpoint := newFakeHostedEndpoint(t, rawResponse(http.StatusBadGateway, providerwirev4.MIMEJSON, string(errorBody)))
+			client := newAccessTokenProvider(t, endpoint.URL(), WithStrictProviderWire(), WithMaxErrorResponseBytes(tc.limit))
 			model, _ := client.LanguageModel("claude-sonnet-4-5-20250929")
-			stream, err := model.DoStream(context.Background(), provider.CallOptions{Prompt: []provider.Message{}})
-			require.NoError(t, err)
-			assert.Equal(t, []provider.StreamPart{part}, collectStream(stream.Stream))
+			_, err := model.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{}})
+			var apiErr *provider.APICallError
+			require.ErrorAs(t, err, &apiErr)
+			if tc.ok {
+				assert.NotErrorIs(t, apiErr, errResponseTooLarge)
+				assert.Equal(t, http.StatusBadGateway, apiErr.StatusCode)
+				return
+			}
+			assert.False(t, apiErr.IsRetryable)
+			assert.Len(t, apiErr.ResponseBody, int(tc.limit))
+			assert.ErrorIs(t, apiErr, errResponseTooLarge)
 		})
-		t.Run(tc.name+" over limit", func(t *testing.T) {
+	}
+
+	t.Run("legacy ignores new unary limit", func(t *testing.T) {
+		legacyEncoded, err := providerwire.EncodeGenerateResult(result)
+		require.NoError(t, err)
+		endpoint := newFakeHostedEndpoint(t, rawResponse(http.StatusOK, providerwire.MIMEJSON, string(legacyEncoded)))
+		client := newAccessTokenProvider(t, endpoint.URL(), WithMaxUnaryResponseBytes(1))
+		model, _ := client.LanguageModel("claude-sonnet-4-5-20250929")
+		got, err := model.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{}})
+		require.NoError(t, err)
+		assert.Equal(t, "bounded", got.Content[0].Text)
+	})
+}
+
+func TestStrictSSEEventLimitDoesNotChangeLegacyMode(t *testing.T) {
+	part := provider.StreamPart{Type: provider.PartTextDelta, ID: "text", Delta: "x"}
+	event := strictStreamBytes(t, part)
+
+	for _, tc := range []struct {
+		name  string
+		limit int64
+		ok    bool
+	}{
+		{name: "strict event exact limit", limit: int64(len(event)), ok: true},
+		{name: "strict event limit plus one", limit: int64(len(event) - 1)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			endpoint := newFakeHostedEndpoint(t, rawResponse(http.StatusOK, providerwirev4.MIMESSE, string(event)))
-			options := append(append([]Option(nil), tc.options...), WithMaxSSEEventBytes(int64(len(event)-1)))
-			client := newResponseLimitTestProvider(t, endpoint.URL(), tc.cloud, options...)
+			client := newAccessTokenProvider(t, endpoint.URL(), WithStrictProviderWire(), WithMaxSSEEventBytes(tc.limit))
 			model, _ := client.LanguageModel("claude-sonnet-4-5-20250929")
 			stream, err := model.DoStream(context.Background(), provider.CallOptions{Prompt: []provider.Message{}})
 			require.NoError(t, err)
 			parts := collectStream(stream.Stream)
 			require.Len(t, parts, 1)
+			if tc.ok {
+				assert.Equal(t, part, parts[0])
+				return
+			}
 			assert.Equal(t, provider.PartError, parts[0].Type)
-			assert.ErrorIs(t, parts[0].APICallError, errSSEEventTooLarge)
+			assert.False(t, parts[0].APICallError.IsRetryable)
+			assert.ErrorIs(t, parts[0].APICallError, errProtocolResponse)
 		})
 	}
+
+	t.Run("legacy ignores new event limit", func(t *testing.T) {
+		endpoint := newFakeHostedEndpoint(t, rawResponse(http.StatusOK, providerwire.MIMESSE, string(event)))
+		client := newAccessTokenProvider(t, endpoint.URL(), WithMaxSSEEventBytes(1))
+		model, _ := client.LanguageModel("claude-sonnet-4-5-20250929")
+		stream, err := model.DoStream(context.Background(), provider.CallOptions{Prompt: []provider.Message{}})
+		require.NoError(t, err)
+		assert.Equal(t, []provider.StreamPart{part}, collectStream(stream.Stream))
+	})
 }
 
-func TestStrictMode_MalformedNon2xxEnvelopesRemainProtocolAPICallErrors(t *testing.T) {
-	cases := []struct {
-		name string
-		body string
-	}{
-		{name: "malformed JSON", body: `{"error":`},
-		{name: "incomplete strict envelope", body: `{"error":{"message":"internal","type":"internal_server_error","statusCode":500}}`},
-		{name: "legacy envelope", body: `{"error":{"message":"legacy","statusCode":500,"isRetryable":true}}`},
-		{name: "status mismatch", body: `{"error":{"message":"internal","type":"internal_server_error","statusCode":502,"isRetryable":true}}`},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			endpoint := newFakeHostedEndpoint(t, rawResponse(http.StatusInternalServerError, providerwirev4.MIMEJSON, tc.body))
-			client := newAccessTokenProvider(t, endpoint.URL(), WithStrictProviderWire())
-			model, err := client.LanguageModel("claude-sonnet-4-5-20250929")
-			require.NoError(t, err)
+func TestStrictMode_MalformedNon2xxEnvelopeRemainsProtocolAPICallError(t *testing.T) {
+	endpoint := newFakeHostedEndpoint(t, rawResponse(http.StatusInternalServerError, providerwirev4.MIMEJSON, `{"error":`))
+	client := newAccessTokenProvider(t, endpoint.URL(), WithStrictProviderWire())
+	model, err := client.LanguageModel("claude-sonnet-4-5-20250929")
+	require.NoError(t, err)
 
-			_, err = model.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{}})
-			var apiErr *provider.APICallError
-			require.ErrorAs(t, err, &apiErr)
-			assert.Equal(t, http.StatusInternalServerError, apiErr.StatusCode)
-			assert.False(t, apiErr.IsRetryable)
-			assert.ErrorIs(t, apiErr, errProtocolResponse)
-			var gatewayErr *GatewayError
-			assert.False(t, errors.As(err, &gatewayErr))
-		})
-	}
+	_, err = model.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{}})
+	var apiErr *provider.APICallError
+	require.ErrorAs(t, err, &apiErr)
+	assert.Equal(t, http.StatusInternalServerError, apiErr.StatusCode)
+	assert.False(t, apiErr.IsRetryable)
+	assert.ErrorIs(t, apiErr, errProtocolResponse)
+	var gatewayErr *GatewayError
+	assert.False(t, errors.As(err, &gatewayErr))
 }
 
-func TestStrictErrorsNormalizeEverySafeCategory(t *testing.T) {
+func TestStrictErrorsPreservePublicCategoryDistinctions(t *testing.T) {
 	cases := []struct {
-		kind      failure.Kind
+		name      string
+		status    int
+		typeValue string
 		retryable bool
 		want      GatewayErrorType
 	}{
-		{failure.KindUnauthenticated, false, GatewayErrorAuthentication},
-		{failure.KindInvalidCall, false, GatewayErrorInvalidRequest},
-		{failure.KindUnknownModel, false, GatewayErrorModelNotFound},
-		{failure.KindForbidden, false, GatewayErrorForbidden},
-		{failure.KindRateLimited, true, GatewayErrorRateLimit},
-		{failure.KindTimeout, true, GatewayErrorInternalServer},
-		{failure.KindCanceled, false, GatewayErrorInternalServer},
-		{failure.KindFailedDependency, false, GatewayErrorFailedDependency},
-		{failure.KindFailedDependency, true, GatewayErrorFailedDependency},
-		{failure.KindInternal, false, GatewayErrorInternalServer},
+		{"forbidden", 403, "forbidden", false, GatewayErrorForbidden},
+		{"permanent dependency", 424, "failed_dependency", false, GatewayErrorFailedDependency},
+		{"transient dependency", 502, "failed_dependency", true, GatewayErrorFailedDependency},
+		{"internal", 500, "internal_server_error", false, GatewayErrorInternalServer},
 	}
 	for _, tc := range cases {
-		t.Run(string(tc.kind), func(t *testing.T) {
-			classification := failure.Classification{Kind: tc.kind, Retryable: tc.retryable, SafeParameters: failure.SafeParameters{RequestedModelID: "alias"}}
-			status, body, err := providerwirev4.EncodeFailure(classification)
-			require.NoError(t, err)
-			endpoint := newFakeHostedEndpoint(t, rawResponse(status, providerwirev4.MIMEJSON, string(body)))
+		t.Run(tc.name, func(t *testing.T) {
+			body := strictErrorBody(t, tc.status, tc.typeValue, "safe message", tc.retryable, nil)
+			endpoint := newFakeHostedEndpoint(t, rawResponse(tc.status, providerwirev4.MIMEJSON, string(body)))
 			client := newAccessTokenProvider(t, endpoint.URL(), WithStrictProviderWire())
 			model, _ := client.LanguageModel("claude-sonnet-4-5-20250929")
-			_, err = model.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{}})
+			_, err := model.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{}})
 			var gatewayErr *GatewayError
 			require.ErrorAs(t, err, &gatewayErr)
 			assert.Equal(t, tc.want, gatewayErr.Type)
 			var apiErr *provider.APICallError
 			require.ErrorAs(t, err, &apiErr)
 			assert.Equal(t, tc.retryable, apiErr.IsRetryable)
-			if tc.kind == failure.KindUnknownModel {
-				assert.Equal(t, "alias", gatewayErr.ModelID)
-			}
 		})
 	}
 }
@@ -490,11 +359,11 @@ func TestStrictMode_StreamCancellationClosesChannel(t *testing.T) {
 }
 
 func TestStrictStreamErrorCategoryIsRecoverable(t *testing.T) {
-	classification := failure.Classification{Kind: failure.KindFailedDependency, Retryable: true}
-	apiErr := strictSafeAPICallError(t, classification)
-	part := provider.StreamPart{Type: provider.PartError, APICallError: apiErr}
-	event, err := providerwirev4.EncodeSSEEventWithinLimit(part, 1024)
+	body := strictErrorBody(t, http.StatusBadGateway, "failed_dependency", "upstream dependency failed", true, nil)
+	apiErr, err := providerwirev4.DecodeErrorResponse(body, http.StatusBadGateway)
 	require.NoError(t, err)
+	part := provider.StreamPart{Type: provider.PartError, APICallError: apiErr}
+	event := strictStreamBytes(t, part)
 	endpoint := newFakeHostedEndpoint(t, rawResponse(http.StatusOK, providerwirev4.MIMESSE, string(event)))
 	client := newAccessTokenProvider(t, endpoint.URL(), WithStrictProviderWire())
 	model, _ := client.LanguageModel("claude-sonnet-4-5-20250929")
@@ -508,33 +377,62 @@ func TestStrictStreamErrorCategoryIsRecoverable(t *testing.T) {
 	assert.True(t, parts[0].APICallError.IsRetryable)
 }
 
-func newResponseLimitTestProvider(t *testing.T, baseURL string, cloud bool, options ...Option) *Provider {
-	t.Helper()
-	if !cloud {
-		return newAccessTokenProvider(t, baseURL, options...)
-	}
-	client, err := NewWithCloudAuth(CloudAuthConfig{
-		CAPToken:         "cap",
-		TokenExchangeURL: baseURL + "/exchange",
-		Namespace:        "stack",
-		BaseURL:          baseURL,
-	}, options...)
-	require.NoError(t, err)
-	client.tokenExchanger = &fakeTokenExchanger{token: "access-token"}
-	return client
+type strictFixtureModel struct {
+	generateResult *provider.GenerateResult
+	streamParts    []provider.StreamPart
 }
 
-func strictGenerateSuccess(result *provider.GenerateResult) http.HandlerFunc {
-	return func(writer http.ResponseWriter, _ *http.Request) {
-		data, err := providerwirev4.EncodeGenerateResult(result)
-		if err != nil {
-			http.Error(writer, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		writer.Header().Set("Content-Type", providerwirev4.MIMEJSON)
-		writer.WriteHeader(http.StatusOK)
-		_, _ = writer.Write(data)
+func (m *strictFixtureModel) SpecificationVersion() string               { return "v4" }
+func (m *strictFixtureModel) Provider() string                           { return "fixture" }
+func (m *strictFixtureModel) ModelID() string                            { return "fixture" }
+func (m *strictFixtureModel) SupportedURLs() map[string][]*regexp.Regexp { return nil }
+func (m *strictFixtureModel) DoGenerate(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
+	return m.generateResult, nil
+}
+func (m *strictFixtureModel) DoStream(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+	parts := make(chan provider.StreamPart, len(m.streamParts))
+	for _, part := range m.streamParts {
+		parts <- part
 	}
+	close(parts)
+	return &provider.StreamResult{Stream: parts}, nil
+}
+
+type strictFixtureResolver struct{ model provider.LanguageModel }
+
+func (r strictFixtureResolver) ResolveModel(_ context.Context, modelID string) (catalog.ResolvedModel, error) {
+	return catalog.ResolvedModel{ID: modelID, Model: r.model}, nil
+}
+
+func strictGenerateBytes(t *testing.T, result *provider.GenerateResult) []byte {
+	t.Helper()
+	return strictHandlerBytes(t, &strictFixtureModel{generateResult: result}, false)
+}
+
+func strictStreamBytes(t *testing.T, parts ...provider.StreamPart) []byte {
+	t.Helper()
+	return strictHandlerBytes(t, &strictFixtureModel{streamParts: parts}, true)
+}
+
+func strictHandlerBytes(t *testing.T, model provider.LanguageModel, streaming bool) []byte {
+	t.Helper()
+	handler, err := providerwirev4.NewHandler(strictFixtureResolver{model: model})
+	require.NoError(t, err)
+	request := httptest.NewRequest(http.MethodPost, providerwirev4.PathLanguageModel, strings.NewReader(`{"prompt":[]}`))
+	request.Header.Set(providerwirev4.HeaderModelID, "fixture")
+	request.Header.Set(providerwirev4.HeaderSpecVersion, providerwirev4.SpecVersionV4)
+	request.Header.Set("Content-Type", providerwirev4.MIMEJSON)
+	if streaming {
+		request.Header.Set(providerwirev4.HeaderStreaming, "true")
+		request.Header.Set("Accept", providerwirev4.MIMESSE)
+	} else {
+		request.Header.Set(providerwirev4.HeaderStreaming, "false")
+		request.Header.Set("Accept", providerwirev4.MIMEJSON)
+	}
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+	require.Equal(t, http.StatusOK, recorder.Code)
+	return recorder.Body.Bytes()
 }
 
 func rawResponse(status int, contentType, body string) http.HandlerFunc {
@@ -545,11 +443,12 @@ func rawResponse(status int, contentType, body string) http.HandlerFunc {
 	}
 }
 
-func strictSafeAPICallError(t *testing.T, classification failure.Classification) *provider.APICallError {
+func strictErrorBody(t *testing.T, status int, typeValue, message string, retryable bool, param any) []byte {
 	t.Helper()
-	status, body, err := providerwirev4.EncodeFailure(classification)
+	body, err := json.Marshal(map[string]any{"error": map[string]any{
+		"message": message, "type": typeValue, "statusCode": status,
+		"isRetryable": retryable, "param": param,
+	}})
 	require.NoError(t, err)
-	apiErr, err := providerwirev4.DecodeErrorResponse(body, status)
-	require.NoError(t, err)
-	return apiErr
+	return body
 }

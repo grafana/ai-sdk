@@ -36,39 +36,6 @@ func (m *model) Provider() string                           { return providerNam
 func (m *model) ModelID() string                            { return m.modelID }
 func (m *model) SupportedURLs() map[string][]*regexp.Regexp { return nil }
 
-func (m *model) codec() wireCodec {
-	if m.provider != nil && m.provider.wireCodec != nil {
-		return m.provider.wireCodec
-	}
-	return legacyWireCodec{}
-}
-
-func (m *model) strictMode() bool {
-	_, strict := m.codec().(strictWireCodec)
-	return strict
-}
-
-func (m *model) maxUnaryResponseBytes() int64 {
-	if m.provider != nil && m.provider.maxUnaryResponseBytes > 0 {
-		return m.provider.maxUnaryResponseBytes
-	}
-	return DefaultMaxUnaryResponseBytes
-}
-
-func (m *model) maxErrorResponseBytes() int64 {
-	if m.provider != nil && m.provider.maxErrorResponseBytes > 0 {
-		return m.provider.maxErrorResponseBytes
-	}
-	return DefaultMaxErrorResponseBytes
-}
-
-func (m *model) maxSSEEventBytes() int64 {
-	if m.provider != nil && m.provider.maxSSEEventBytes > 0 {
-		return m.provider.maxSSEEventBytes
-	}
-	return DefaultMaxSSEEventBytes
-}
-
 func (m *model) DoStream(ctx context.Context, opts provider.CallOptions) (*provider.StreamResult, error) {
 	resp, body, err := m.doRequest(ctx, opts, true)
 	if err != nil {
@@ -103,17 +70,28 @@ func (m *model) DoGenerate(ctx context.Context, opts provider.CallOptions) (*pro
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return nil, m.surfaceHTTPError(resp)
 	}
-	if !isJSONContentType(resp.Header.Get("Content-Type")) {
+	if m.provider.strictProviderWire && !isJSONContentType(resp.Header.Get("Content-Type")) {
 		return nil, m.newInvalidGenerateContentTypeError(resp)
 	}
 
-	body, err := readResponseWithinLimit(resp.Body, m.maxUnaryResponseBytes())
+	var body []byte
+	if m.provider.strictProviderWire {
+		body, err = readResponseWithinLimit(resp.Body, m.provider.maxUnaryResponseBytes)
+	} else {
+		body, err = io.ReadAll(resp.Body)
+	}
 	if err != nil {
+		if !m.provider.strictProviderWire {
+			body = nil
+		}
 		return nil, newGenerateAPICallError(resp, body, err)
 	}
-	result, err := m.codec().decodeGenerateResult(body)
+	result, err := m.provider.wireCodec.decodeGenerateResult(body)
 	if err != nil {
-		return nil, newGenerateAPICallError(resp, body, errors.Join(errProtocolResponse, err))
+		if m.provider.strictProviderWire {
+			err = errors.Join(errProtocolResponse, err)
+		}
+		return nil, newGenerateAPICallError(resp, body, err)
 	}
 	if result.Request == nil {
 		result.Request = &provider.RequestMetadata{Body: json.RawMessage(requestBody)}
@@ -145,7 +123,7 @@ func isJSONContentType(value string) bool {
 }
 
 func (m *model) doRequest(ctx context.Context, opts provider.CallOptions, streaming bool) (*http.Response, []byte, error) {
-	body, err := m.codec().encodeCallOptions(opts)
+	body, err := m.provider.wireCodec.encodeCallOptions(opts)
 	if err != nil {
 		return nil, nil, fmt.Errorf("grafana: encoding call options: %w", err)
 	}
@@ -219,7 +197,7 @@ func (m *model) readStream(ctx context.Context, resp *http.Response, ch chan<- p
 	defer close(ch)
 	defer func() { _ = resp.Body.Close() }()
 
-	reader, err := m.codec().newStreamReader(resp.Body, m.maxSSEEventBytes())
+	reader, err := m.provider.wireCodec.newStreamReader(resp.Body, m.provider.maxSSEEventBytes)
 	if err != nil {
 		if ctx.Err() == nil {
 			_ = sendStreamPart(ctx, ch, provider.StreamPart{Type: provider.PartError, APICallError: newStreamAPICallError(resp, err)})
@@ -240,6 +218,9 @@ func (m *model) readStream(ctx context.Context, resp *http.Response, ch chan<- p
 		if err != nil {
 			if ctx.Err() != nil {
 				return
+			}
+			if m.provider.strictProviderWire {
+				err = errors.Join(errProtocolResponse, err)
 			}
 			if !sendStreamPart(ctx, ch, provider.StreamPart{
 				Type:         provider.PartError,
@@ -273,15 +254,15 @@ func sendStreamPart(ctx context.Context, ch chan<- provider.StreamPart, part pro
 	}
 }
 
-// surfaceHTTPError decodes a bounded non-2xx response and normalizes recognized
+// surfaceHTTPError decodes a non-2xx response and normalizes recognized
 // gateway categories while preserving the APICallError as the cause.
 func (m *model) surfaceHTTPError(resp *http.Response) error {
 	apiErr, decoded := m.decodeOrSynthesizeHTTPError(resp)
-	if m.strictMode() && !decoded {
+	if m.provider.strictProviderWire && !decoded {
 		return apiErr
 	}
 	if gatewayErr := NormalizeAPICallError(apiErr); gatewayErr != nil {
-		if m.strictMode() || gatewayErr.Type != GatewayErrorInternalServer {
+		if m.provider.strictProviderWire || gatewayErr.Type != GatewayErrorInternalServer {
 			return gatewayErr
 		}
 	}
@@ -289,21 +270,30 @@ func (m *model) surfaceHTTPError(resp *http.Response) error {
 }
 
 func (m *model) decodeOrSynthesizeHTTPError(resp *http.Response) (*provider.APICallError, bool) {
-	body, readErr := readResponseWithinLimit(resp.Body, m.maxErrorResponseBytes())
+	var body []byte
+	var readErr error
+	if m.provider.strictProviderWire {
+		body, readErr = readResponseWithinLimit(resp.Body, m.provider.maxErrorResponseBytes)
+	} else {
+		body, readErr = io.ReadAll(resp.Body)
+	}
 	if readErr != nil {
-		retryable := !errors.Is(readErr, errResponseTooLarge)
-		return provider.NewAPICallError(provider.APICallErrorOptions{
+		options := provider.APICallErrorOptions{
 			Message:         fmt.Sprintf("grafana: reading error response body: %v", readErr),
 			URL:             responseURL(resp),
 			StatusCode:      resp.StatusCode,
 			ResponseHeaders: cloneHeader(resp.Header),
-			ResponseBody:    string(body),
-			IsRetryable:     &retryable,
 			Cause:           readErr,
-		}), false
+		}
+		if m.provider.strictProviderWire {
+			retryable := !errors.Is(readErr, errResponseTooLarge)
+			options.ResponseBody = string(body)
+			options.IsRetryable = &retryable
+		}
+		return provider.NewAPICallError(options), false
 	}
 
-	apiErr, err := m.codec().decodeErrorResponse(resp, body)
+	apiErr, err := m.provider.wireCodec.decodeErrorResponse(resp, body)
 	if err == nil {
 		if apiErr.URL == "" {
 			apiErr.URL = responseURL(resp)
@@ -323,11 +313,12 @@ func (m *model) decodeOrSynthesizeHTTPError(resp *http.Response) (*provider.APIC
 		StatusCode:      resp.StatusCode,
 		ResponseHeaders: cloneHeader(resp.Header),
 		ResponseBody:    string(body),
-		Cause:           errors.Join(errProtocolResponse, err),
+		Cause:           err,
 	}
-	if m.strictMode() {
+	if m.provider.strictProviderWire {
 		retryable := false
 		options.IsRetryable = &retryable
+		options.Cause = errors.Join(errProtocolResponse, err)
 	}
 	return provider.NewAPICallError(options), false
 }
@@ -351,11 +342,17 @@ func (m *model) newInvalidStreamContentTypeError(resp *http.Response) *provider.
 }
 
 func (m *model) newInvalidContentTypeError(resp *http.Response, expected, operation string) *provider.APICallError {
-	body, readErr := readResponseWithinLimit(resp.Body, m.maxErrorResponseBytes())
+	var body []byte
+	var readErr error
+	if m.provider.strictProviderWire {
+		body, readErr = readResponseWithinLimit(resp.Body, m.provider.maxErrorResponseBytes)
+	} else {
+		body, _ = io.ReadAll(resp.Body)
+	}
 	retryable := false
 	contentType := resp.Header.Get("Content-Type")
 	cause := error(fmt.Errorf("grafana: invalid %s response content type %q", operation, contentType))
-	if readErr != nil {
+	if m.provider.strictProviderWire && readErr != nil {
 		cause = errors.Join(cause, readErr)
 	}
 	return provider.NewAPICallError(provider.APICallErrorOptions{
@@ -409,7 +406,7 @@ func isProtocolGenerateError(err error) bool {
 }
 
 func isProtocolStreamError(err error) bool {
-	if errors.Is(err, errProtocolResponse) || errors.Is(err, errSSEEventTooLarge) {
+	if errors.Is(err, errProtocolResponse) {
 		return true
 	}
 	var syntaxErr *json.SyntaxError

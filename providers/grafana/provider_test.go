@@ -171,6 +171,7 @@ func newTestProvider(t *testing.T, baseURL string, exchanger authn.TokenExchange
 		audience:       audience,
 		httpClient:     configuredHTTPClient(cfg.HTTPClient, nil),
 		tokenExchanger: exchanger,
+		wireCodec:      legacyWireCodec{},
 	}
 }
 
@@ -968,7 +969,7 @@ func TestStreamFailureMappingAndCancellation(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		ch := make(chan provider.StreamPart, streamBufferSize)
 
-		go (&model{}).readStream(ctx, resp, ch, false)
+		go (&model{provider: &Provider{wireCodec: legacyWireCodec{}}}).readStream(ctx, resp, ch, false)
 		require.Eventually(t, func() bool { return len(ch) == streamBufferSize }, time.Second, 10*time.Millisecond)
 		cancel()
 

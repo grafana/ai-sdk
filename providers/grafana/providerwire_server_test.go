@@ -14,7 +14,6 @@ import (
 	"github.com/grafana/ai-sdk/gateway/catalog"
 	"github.com/grafana/ai-sdk/gateway/providerwire"
 	providerwirev4 "github.com/grafana/ai-sdk/gateway/providerwire/v4"
-	gatewayruntime "github.com/grafana/ai-sdk/gateway/runtime"
 	"github.com/grafana/ai-sdk/provider"
 	grafana "github.com/grafana/ai-sdk/providers/grafana"
 	"github.com/stretchr/testify/assert"
@@ -38,6 +37,12 @@ func (m *serverTestModel) DoStream(ctx context.Context, opts provider.CallOption
 }
 
 var _ provider.LanguageModel = (*serverTestModel)(nil)
+
+type serverCatalogResolver func(context.Context, string) (catalog.ResolvedModel, error)
+
+func (f serverCatalogResolver) ResolveModel(ctx context.Context, modelID string) (catalog.ResolvedModel, error) {
+	return f(ctx, modelID)
+}
 
 func serverIntPtr(value int) *int { return &value }
 
@@ -71,12 +76,11 @@ func newPublicServerClient(t *testing.T, model provider.LanguageModel, strict bo
 		return clientModel
 	}
 
-	runtime, err := gatewayruntime.New(gatewayruntime.ModelResolverFunc(func(_ context.Context, call gatewayruntime.GatewayCall) (catalog.ResolvedModel, error) {
-		assert.Equal(t, "server-model", call.RequestedModelID)
+	resolver := serverCatalogResolver(func(_ context.Context, modelID string) (catalog.ResolvedModel, error) {
+		assert.Equal(t, "server-model", modelID)
 		return catalog.ResolvedModel{ID: "server-model", Model: model}, nil
-	}))
-	require.NoError(t, err)
-	handler, err := providerwirev4.NewHandler(runtime, providerwirev4.WithRequestIDGenerator(func() (string, error) { return "test-request", nil }))
+	})
+	handler, err := providerwirev4.NewHandler(resolver)
 	require.NoError(t, err)
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)

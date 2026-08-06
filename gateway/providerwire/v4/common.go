@@ -32,14 +32,29 @@ type warningDTO struct {
 
 func (dto *warningDTO) UnmarshalJSON(data []byte) error {
 	type warningAlias warningDTO
-	var object map[string]json.RawMessage
-	if err := json.Unmarshal(data, &object); err != nil {
+	object, err := decodeObject(data, "warning")
+	if err != nil {
 		return err
 	}
-	if err := rejectNullFields(object, "warning", "type", "feature", "setting", "message", "details"); err != nil {
+	variant, err := decodeRequiredString(object, "type", "warning")
+	if err != nil {
 		return err
 	}
-	return json.Unmarshal(data, (*warningAlias)(dto))
+	fields := []string{"type"}
+	switch provider.WarningType(variant) {
+	case provider.WarnUnsupported, provider.WarnCompatibility:
+		fields = append(fields, "feature", "details")
+	case provider.WarnDeprecated:
+		fields = append(fields, "setting", "message")
+	case provider.WarnOther:
+		fields = append(fields, "message")
+	default:
+		return fmt.Errorf("providerwirev4: unsupported warning type %q", variant)
+	}
+	if err := rejectNullFields(object, "warning", fields...); err != nil {
+		return err
+	}
+	return decodeSelectedObject(object, (*warningAlias)(dto), fields...)
 }
 
 type finishReasonDTO struct {
@@ -163,6 +178,20 @@ func rejectNullFields(object map[string]json.RawMessage, context string, fields 
 	return nil
 }
 
+func decodeSelectedObject(object map[string]json.RawMessage, destination any, fields ...string) error {
+	selected := make(map[string]json.RawMessage, len(fields))
+	for _, field := range fields {
+		if value, exists := object[field]; exists {
+			selected[field] = value
+		}
+	}
+	data, err := json.Marshal(selected)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(data, destination)
+}
+
 func validateProviderReference(value json.RawMessage, context string) error {
 	object, err := decodeObject(value, context)
 	if err != nil {
@@ -220,22 +249,6 @@ func validateStringArray(value json.RawMessage, context string) error {
 		var value string
 		if err := json.Unmarshal(raw, &value); err != nil {
 			return fmt.Errorf("providerwirev4: %s element %d must be a string", context, i)
-		}
-	}
-	return nil
-}
-
-func rejectContradictoryFields(object map[string]json.RawMessage, context string, known []string, allowed ...string) error {
-	allowedSet := make(map[string]struct{}, len(allowed))
-	for _, field := range allowed {
-		allowedSet[field] = struct{}{}
-	}
-	for _, field := range known {
-		if _, present := object[field]; !present {
-			continue
-		}
-		if _, ok := allowedSet[field]; !ok {
-			return fmt.Errorf("providerwirev4: %s contains contradictory field %q", context, field)
 		}
 	}
 	return nil
@@ -326,7 +339,9 @@ func encodeData(data *provider.DataContent, allowReferenceText bool) (*dataDTO, 
 		return nil, errors.New("providerwirev4: file data is required")
 	}
 	if err := data.Validate(); err != nil {
-		return nil, fmt.Errorf("providerwirev4: validating file data: %w", err)
+		if !allowReferenceText || data.Bytes != nil || data.Base64 != "" || data.URL != "" || len(data.Reference) != 0 || data.Text != "" {
+			return nil, fmt.Errorf("providerwirev4: validating file data: %w", err)
+		}
 	}
 	switch {
 	case data.Bytes != nil || data.Base64 != "":
@@ -343,7 +358,7 @@ func encodeData(data *provider.DataContent, allowReferenceText bool) (*dataDTO, 
 			return nil, err
 		}
 		return &dataDTO{Type: "reference", Reference: append(json.RawMessage(nil), data.Reference...)}, nil
-	case data.Text != "" && allowReferenceText:
+	case allowReferenceText:
 		value := data.Text
 		return &dataDTO{Type: "text", Text: &value}, nil
 	default:
@@ -360,21 +375,14 @@ func decodeData(raw json.RawMessage, allowReferenceText bool) (*provider.DataCon
 	if err != nil {
 		return nil, err
 	}
-	knownFields := []string{"data", "url", "reference", "text"}
 	switch variant {
 	case "data":
-		if err := rejectContradictoryFields(object, "file data", knownFields, "data"); err != nil {
-			return nil, err
-		}
 		value, err := decodeRequiredString(object, "data", "file data")
 		if err != nil {
 			return nil, err
 		}
 		return dataContent(value), nil
 	case "url":
-		if err := rejectContradictoryFields(object, "file data", knownFields, "url"); err != nil {
-			return nil, err
-		}
 		value, err := decodeRequiredString(object, "url", "file data")
 		if err != nil || value == "" {
 			if err == nil {
@@ -384,9 +392,6 @@ func decodeData(raw json.RawMessage, allowReferenceText bool) (*provider.DataCon
 		}
 		return &provider.DataContent{URL: value}, nil
 	case "reference":
-		if err := rejectContradictoryFields(object, "file data", knownFields, "reference"); err != nil {
-			return nil, err
-		}
 		if !allowReferenceText {
 			return nil, errors.New("providerwirev4: reference file data is not supported here")
 		}
@@ -399,9 +404,6 @@ func decodeData(raw json.RawMessage, allowReferenceText bool) (*provider.DataCon
 		}
 		return &provider.DataContent{Reference: append(json.RawMessage(nil), value...)}, nil
 	case "text":
-		if err := rejectContradictoryFields(object, "file data", knownFields, "text"); err != nil {
-			return nil, err
-		}
 		if !allowReferenceText {
 			return nil, errors.New("providerwirev4: text file data is not supported here")
 		}
@@ -431,22 +433,13 @@ func encodeWarnings(warnings []provider.Warning) ([]warningDTO, error) {
 		dto := warningDTO{Type: string(warning.Type)}
 		switch warning.Type {
 		case provider.WarnUnsupported, provider.WarnCompatibility:
-			if warning.Setting != "" || warning.Message != "" {
-				return nil, fmt.Errorf("providerwirev4: warning %q contains contradictory fields", warning.Type)
-			}
 			dto.Feature = &warning.Feature
 			if warning.Details != "" {
 				dto.Details = &warning.Details
 			}
 		case provider.WarnDeprecated:
-			if warning.Feature != "" || warning.Details != "" {
-				return nil, errors.New("providerwirev4: deprecated warning contains contradictory fields")
-			}
 			dto.Setting, dto.Message = &warning.Setting, &warning.Message
 		case provider.WarnOther:
-			if warning.Feature != "" || warning.Setting != "" || warning.Details != "" {
-				return nil, errors.New("providerwirev4: other warning contains contradictory fields")
-			}
 			dto.Message = &warning.Message
 		default:
 			return nil, fmt.Errorf("providerwirev4: unsupported warning type %q", warning.Type)
@@ -469,17 +462,17 @@ func decodeWarnings(warnings []warningDTO) ([]provider.Warning, error) {
 		}
 		switch typeValue {
 		case provider.WarnUnsupported, provider.WarnCompatibility:
-			if warning.Feature == nil || warning.Setting != nil || warning.Message != nil {
-				return nil, fmt.Errorf("providerwirev4: warning %q fields do not match its variant", warning.Type)
+			if warning.Feature == nil {
+				return nil, fmt.Errorf("providerwirev4: warning %q feature is required", warning.Type)
 			}
 			value.Feature = *warning.Feature
 		case provider.WarnDeprecated:
-			if warning.Setting == nil || warning.Message == nil || warning.Feature != nil || warning.Details != nil {
+			if warning.Setting == nil || warning.Message == nil {
 				return nil, errors.New("providerwirev4: deprecated warning setting and message are required")
 			}
 			value.Setting, value.Message = *warning.Setting, *warning.Message
 		case provider.WarnOther:
-			if warning.Message == nil || warning.Feature != nil || warning.Setting != nil || warning.Details != nil {
+			if warning.Message == nil {
 				return nil, errors.New("providerwirev4: other warning message is required")
 			}
 			value.Message = *warning.Message

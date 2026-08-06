@@ -8,37 +8,37 @@ import (
 )
 
 var (
-	// ErrEncodedUnaryTooLarge identifies an encoded unary result over its
+	// errEncodedUnaryTooLarge identifies an encoded unary result over its
 	// transport commitment limit.
-	ErrEncodedUnaryTooLarge = errors.New("providerwirev4: encoded unary result exceeds limit")
-	// ErrSSEEventTooLarge identifies a complete framed SSE event over its limit.
-	ErrSSEEventTooLarge = errors.New("providerwirev4: SSE event exceeds limit")
+	errEncodedUnaryTooLarge = errors.New("providerwirev4: encoded unary result exceeds limit")
+	// errSSEEventTooLarge identifies a complete framed SSE event over its limit.
+	errSSEEventTooLarge = errors.New("providerwirev4: SSE event exceeds limit")
 )
 
-// EncodeUnaryWithinLimit encodes a result and checks its complete byte length
+// encodeUnaryWithinLimit encodes a result and checks its complete byte length
 // before transport commitment. Encoding may allocate the rejected value.
-func EncodeUnaryWithinLimit(result *provider.GenerateResult, limit int64) ([]byte, error) {
+func encodeUnaryWithinLimit(result *provider.GenerateResult, limit int64) ([]byte, error) {
 	if limit <= 0 {
 		return nil, fmt.Errorf("providerwirev4: unary limit must be positive")
 	}
-	data, err := EncodeGenerateResult(result)
+	data, err := encodeGenerateResultJSON(result)
 	if err != nil {
 		return nil, err
 	}
 	if int64(len(data)) > limit {
-		return nil, ErrEncodedUnaryTooLarge
+		return nil, errEncodedUnaryTooLarge
 	}
 	return data, nil
 }
 
-// EncodeSSEEventWithinLimit encodes one complete canonical event and checks
+// encodeSSEEventWithinLimit encodes one complete canonical event and checks
 // data-prefix, JSON, and terminating blank-line bytes before writing. Encoding
 // may allocate the rejected value.
-func EncodeSSEEventWithinLimit(part provider.StreamPart, limit int64) ([]byte, error) {
+func encodeSSEEventWithinLimit(part provider.StreamPart, limit int64) ([]byte, error) {
 	if limit <= 0 {
 		return nil, fmt.Errorf("providerwirev4: SSE event limit must be positive")
 	}
-	data, err := EncodeStreamPart(part)
+	data, err := encodeStreamPartJSON(part)
 	if err != nil {
 		return nil, err
 	}
@@ -47,7 +47,7 @@ func EncodeSSEEventWithinLimit(part provider.StreamPart, limit int64) ([]byte, e
 	event = append(event, data...)
 	event = append(event, '\n', '\n')
 	if int64(len(event)) > limit {
-		return nil, ErrSSEEventTooLarge
+		return nil, errSSEEventTooLarge
 	}
 	return event, nil
 }

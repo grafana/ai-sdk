@@ -10,14 +10,11 @@
 //   - "tool-result-file-input" -> decode canonical tool-result file data
 //   - "stream-text"            -> streaming text with a system + user prompt
 //   - "tool-call"              -> client-executed tool-call round trip
-//   - "provider-tool-result"   -> provider-executed tool-result part
 //   - "file-input"             -> decode an upstream file/image input part
-//   - "file-output"            -> emit an inline-data file part in the response stream
-//   - "file-output-url"        -> emit URL-valued file and reasoning-file parts
 //   - "stream-sources"         -> emit URL and document sources
-//   - "policy-reject"          -> reject through strict call policy before resolution
 //   - "error-mid-stream"       -> mid-stream provider error part
 //   - "error-pre-stream"       -> pre-stream HTTP error envelope
+//   - "strict-error-internal"  -> nil unary result for safe HTTP 500 projection
 //
 // It also exposes GET /health for the vitest global setup.
 package main
@@ -33,14 +30,11 @@ import (
 	"os"
 	"regexp"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"github.com/grafana/ai-sdk/gateway/catalog"
-	"github.com/grafana/ai-sdk/gateway/failure"
 	"github.com/grafana/ai-sdk/gateway/providerwire"
 	providerwirev4 "github.com/grafana/ai-sdk/gateway/providerwire/v4"
-	gatewayruntime "github.com/grafana/ai-sdk/gateway/runtime"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -209,26 +203,6 @@ func streamToolCall(opts provider.CallOptions) *provider.StreamResult {
 	)
 }
 
-func streamProviderToolResult() *provider.StreamResult {
-	const toolCallID, toolName = "call_pe_1", "webSearch"
-	return streamResult(
-		provider.StreamPart{Type: provider.PartStreamStart},
-		provider.StreamPart{Type: provider.PartResponseMeta, ResponseID: "resp_ptr_1", ModelID: "provider-tool-result", Timestamp: time.Now().UTC()},
-		provider.StreamPart{Type: provider.PartToolInputStart, ID: toolCallID, ToolName: toolName, ProviderExecuted: true},
-		provider.StreamPart{Type: provider.PartToolCall, ToolCallID: toolCallID, ToolName: toolName, Input: `{"query":"grafana"}`, ProviderExecuted: true},
-		provider.StreamPart{
-			Type:       provider.PartToolResult,
-			ToolCallID: toolCallID,
-			ToolName:   toolName,
-			Result:     json.RawMessage(`"Grafana is an observability platform"`),
-			ProviderMetadata: provider.ProviderMetadata{
-				"grafana-ai-sdk": json.RawMessage(`{"customer":"keep"}`),
-			},
-		},
-		finish(provider.FinishReasonStop, "end_turn", 15, 8),
-	)
-}
-
 func streamFileInput(opts provider.CallOptions) *provider.StreamResult {
 	files := promptFileParts(opts)
 	summary := fmt.Sprintf("decoded %d file part(s): %s", len(files), strings.Join(files, " | "))
@@ -239,26 +213,6 @@ func streamFileInput(opts provider.CallOptions) *provider.StreamResult {
 		provider.StreamPart{Type: provider.PartTextDelta, ID: "t0", Delta: summary},
 		provider.StreamPart{Type: provider.PartTextEnd, ID: "t0"},
 		finish(provider.FinishReasonStop, "end_turn", 12, 6),
-	)
-}
-
-func streamFileOutput() *provider.StreamResult {
-	png := []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a}
-	return streamResult(
-		provider.StreamPart{Type: provider.PartStreamStart},
-		provider.StreamPart{Type: provider.PartResponseMeta, ResponseID: "resp_file_out", ModelID: "file-output", Timestamp: time.Now().UTC()},
-		provider.StreamPart{Type: provider.PartFile, Data: &provider.StreamFileData{Type: provider.StreamFileDataTypeData, Bytes: png}, MediaType: "image/png"},
-		finish(provider.FinishReasonStop, "end_turn", 4, 2),
-	)
-}
-
-func streamFileOutputURL() *provider.StreamResult {
-	return streamResult(
-		provider.StreamPart{Type: provider.PartStreamStart},
-		provider.StreamPart{Type: provider.PartResponseMeta, ResponseID: "resp_file_out_url", ModelID: "file-output-url", Timestamp: time.Now().UTC()},
-		provider.StreamPart{Type: provider.PartFile, Data: &provider.StreamFileData{Type: provider.StreamFileDataTypeURL, URL: "https://example.com/generated.png"}, MediaType: "image/png"},
-		provider.StreamPart{Type: provider.PartReasoningFile, Data: &provider.StreamFileData{Type: provider.StreamFileDataTypeURL, URL: "https://example.com/reasoning.png"}, MediaType: "image/png"},
-		finish(provider.FinishReasonStop, "end_turn", 4, 2),
 	)
 }
 
@@ -302,16 +256,10 @@ func (m *scenarioModel) SupportedURLs() map[string][]*regexp.Regexp { return nil
 
 func (m *scenarioModel) DoStream(_ context.Context, opts provider.CallOptions) (*provider.StreamResult, error) {
 	switch {
-	case strings.Contains(m.modelID, "provider-tool-result"):
-		return streamProviderToolResult(), nil
 	case strings.Contains(m.modelID, "tool-call"):
 		return streamToolCall(opts), nil
 	case strings.Contains(m.modelID, "file-input"):
 		return streamFileInput(opts), nil
-	case strings.Contains(m.modelID, "file-output-url"):
-		return streamFileOutputURL(), nil
-	case strings.Contains(m.modelID, "file-output"):
-		return streamFileOutput(), nil
 	case strings.Contains(m.modelID, "error-pre-stream"):
 		return nil, provider.NewAPICallError(provider.APICallErrorOptions{
 			Message:    "rate limited pre-stream",
@@ -339,35 +287,10 @@ func (m *scenarioModel) DoGenerate(_ context.Context, opts provider.CallOptions)
 			Message:    "rate limited pre-stream",
 			StatusCode: http.StatusTooManyRequests,
 		})
+	case strings.Contains(m.modelID, "strict-error-internal"):
+		return nil, nil
 	default:
 		return nil, unknownScenarioError(m.modelID)
-	}
-}
-
-func strictResolutionError(modelID string) error {
-	switch modelID {
-	case "strict-error-authentication":
-		return failure.ErrUnauthenticated
-	case "strict-error-invalid":
-		return failure.ErrInvalidCall
-	case "strict-error-unknown-model":
-		return failure.ErrUnknownModel
-	case "strict-error-forbidden":
-		return failure.ErrForbidden
-	case "strict-error-rate-limit":
-		return failure.ErrRateLimited
-	case "strict-error-timeout":
-		return failure.ErrTimeout
-	case "strict-error-canceled":
-		return failure.ErrCanceled
-	case "strict-error-failed-permanent":
-		return failure.ErrFailedDependency
-	case "strict-error-failed-transient":
-		return failure.Wrap(failure.ErrFailedDependency, provider.NewAPICallError(provider.APICallErrorOptions{Message: "private transient dependency", StatusCode: http.StatusServiceUnavailable}))
-	case "strict-error-internal":
-		return failure.ErrInternal
-	default:
-		return nil
 	}
 }
 
@@ -378,33 +301,21 @@ func unknownScenarioError(modelID string) *provider.APICallError {
 	})
 }
 
+type interopCatalogResolver func(context.Context, string) (catalog.ResolvedModel, error)
+
+func (f interopCatalogResolver) ResolveModel(ctx context.Context, modelID string) (catalog.ResolvedModel, error) {
+	return f(ctx, modelID)
+}
+
 func main() {
-	var policyRejectResolverCalls atomic.Int64
 	legacyHandler, err := providerwire.NewHandler(providerwire.ModelResolverFunc(func(_ *http.Request, modelID string) (provider.LanguageModel, error) {
 		return &scenarioModel{modelID: modelID}, nil
 	}))
 	if err != nil {
 		log.Fatalf("failed to construct legacy provider-wire handler: %v", err)
 	}
-	gatewayRuntime, err := gatewayruntime.New(gatewayruntime.ModelResolverFunc(func(_ context.Context, call gatewayruntime.GatewayCall) (catalog.ResolvedModel, error) {
-		if call.RequestedModelID == "policy-reject" {
-			policyRejectResolverCalls.Add(1)
-		}
-		if resolveErr := strictResolutionError(call.RequestedModelID); resolveErr != nil {
-			return catalog.ResolvedModel{}, resolveErr
-		}
-		return catalog.ResolvedModel{ID: call.RequestedModelID, Model: &scenarioModel{modelID: call.RequestedModelID}}, nil
-	}), gatewayruntime.WithCallPolicies(gatewayruntime.CallPolicyFunc(func(_ context.Context, call gatewayruntime.GatewayCall) (gatewayruntime.GatewayCall, error) {
-		if call.RequestedModelID == "policy-reject" {
-			return gatewayruntime.GatewayCall{}, failure.ErrForbidden
-		}
-		return call, nil
-	})))
-	if err != nil {
-		log.Fatalf("failed to construct gateway runtime: %v", err)
-	}
-	strictHandler, err := providerwirev4.NewHandler(gatewayRuntime, providerwirev4.WithRequestIDGenerator(func() (string, error) {
-		return "interop-request", nil
+	strictHandler, err := providerwirev4.NewHandler(interopCatalogResolver(func(_ context.Context, modelID string) (catalog.ResolvedModel, error) {
+		return catalog.ResolvedModel{ID: modelID, Model: &scenarioModel{modelID: modelID}}, nil
 	}))
 	if err != nil {
 		log.Fatalf("failed to construct strict provider-wire handler: %v", err)
@@ -414,9 +325,6 @@ func main() {
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = fmt.Fprint(w, "ok")
-	})
-	mux.HandleFunc("GET "+strictMountPrefix+"/policy-resolver-calls", func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = fmt.Fprint(w, policyRejectResolverCalls.Load())
 	})
 	mux.Handle(legacyMountPrefix+providerwire.PathLanguageModel, legacyHandler)
 	mux.Handle(strictMountPrefix+providerwirev4.PathLanguageModel, strictHandler)

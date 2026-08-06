@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestStrictPackage_DoesNotImportLegacyProviderWire(t *testing.T) {
+func TestStrictPackage_DoesNotImportRemovedGatewayLayers(t *testing.T) {
 	files, err := filepath.Glob("*.go")
 	require.NoError(t, err)
 	for _, filename := range files {
@@ -24,7 +24,11 @@ func TestStrictPackage_DoesNotImportLegacyProviderWire(t *testing.T) {
 		for _, spec := range file.Imports {
 			path, err := strconv.Unquote(spec.Path.Value)
 			require.NoError(t, err)
-			assert.NotEqual(t, "github.com/grafana/ai-sdk/gateway/providerwire", path)
+			assert.NotContains(t, []string{
+				"github.com/grafana/ai-sdk/gateway/providerwire",
+				"github.com/grafana/ai-sdk/gateway/runtime",
+				"github.com/grafana/ai-sdk/gateway/failure",
+			}, path)
 		}
 	}
 }

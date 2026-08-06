@@ -1,29 +1,28 @@
 package providerwirev4
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/grafana/ai-sdk/gateway/catalog"
-	"github.com/grafana/ai-sdk/gateway/failure"
-	gatewayruntime "github.com/grafana/ai-sdk/gateway/runtime"
-	"github.com/grafana/ai-sdk/middleware"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type handlerResolverFunc func(context.Context, string) (catalog.ResolvedModel, error)
+
+func (f handlerResolverFunc) ResolveModel(ctx context.Context, modelID string) (catalog.ResolvedModel, error) {
+	return f(ctx, modelID)
+}
 
 type handlerModel struct {
 	generate func(context.Context, provider.CallOptions) (*provider.GenerateResult, error)
@@ -31,836 +30,545 @@ type handlerModel struct {
 }
 
 func (*handlerModel) SpecificationVersion() string               { return "v4" }
-func (*handlerModel) Provider() string                           { return "provider" }
+func (*handlerModel) Provider() string                           { return "test" }
 func (*handlerModel) ModelID() string                            { return "backend-model" }
 func (*handlerModel) SupportedURLs() map[string][]*regexp.Regexp { return nil }
-func (model *handlerModel) DoGenerate(ctx context.Context, options provider.CallOptions) (*provider.GenerateResult, error) {
-	if model.generate == nil {
-		return &provider.GenerateResult{FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}, Warnings: []provider.Warning{}}, nil
+func (m *handlerModel) DoGenerate(ctx context.Context, options provider.CallOptions) (*provider.GenerateResult, error) {
+	if m.generate != nil {
+		return m.generate(ctx, options)
 	}
-	return model.generate(ctx, options)
+	return &provider.GenerateResult{FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}, Warnings: []provider.Warning{}}, nil
 }
-func (model *handlerModel) DoStream(ctx context.Context, options provider.CallOptions) (*provider.StreamResult, error) {
-	if model.stream == nil {
-		parts := make(chan provider.StreamPart)
-		close(parts)
-		return &provider.StreamResult{Stream: parts}, nil
+func (m *handlerModel) DoStream(ctx context.Context, options provider.CallOptions) (*provider.StreamResult, error) {
+	if m.stream != nil {
+		return m.stream(ctx, options)
 	}
-	return model.stream(ctx, options)
+	parts := make(chan provider.StreamPart)
+	close(parts)
+	return &provider.StreamResult{Stream: parts}, nil
 }
 
 func TestNewHandler_ValidationAndDefaults(t *testing.T) {
-	runtime := newHandlerRuntime(t, &handlerModel{}, nil)
-	handler, err := NewHandler(runtime)
+	resolver := fixedHandlerResolver(&handlerModel{})
+	handler, err := NewHandler(resolver)
 	require.NoError(t, err)
+	assert.Equal(t, DefaultTotalTimeout, handler.totalTimeout)
+	assert.Equal(t, DefaultIdleTimeout, handler.idleTimeout)
 	assert.Equal(t, DefaultMaxRequestBodyBytes, handler.maxRequestBodyBytes)
 	assert.Equal(t, DefaultMaxUnaryResponseBytes, handler.maxUnaryResponseBytes)
 	assert.Equal(t, DefaultMaxSSEEventBytes, handler.maxSSEEventBytes)
-	assert.Equal(t, DefaultIdleTimeout, handler.idleTimeout)
 
+	var nilResolver *testNilResolver
 	cases := []struct {
-		name    string
-		runtime *gatewayruntime.Runtime
-		option  Option
+		name     string
+		resolver catalog.ModelResolver
+		option   Option
 	}{
-		{name: "nil runtime"},
-		{name: "nil option", runtime: runtime},
-		{name: "zero request limit", runtime: runtime, option: WithMaxRequestBodyBytes(0)},
-		{name: "zero unary limit", runtime: runtime, option: WithMaxUnaryResponseBytes(0)},
-		{name: "zero event limit", runtime: runtime, option: WithMaxSSEEventBytes(0)},
-		{name: "zero idle", runtime: runtime, option: WithIdleTimeout(0)},
-		{name: "nil extractor", runtime: runtime, option: WithMetadataExtractor(nil)},
-		{name: "nil ID generator", runtime: runtime, option: WithRequestIDGenerator(nil)},
+		{name: "nil resolver"},
+		{name: "typed nil resolver", resolver: nilResolver},
+		{name: "nil option", resolver: resolver},
+		{name: "zero total", resolver: resolver, option: WithTotalTimeout(0)},
+		{name: "zero idle", resolver: resolver, option: WithIdleTimeout(0)},
+		{name: "zero request", resolver: resolver, option: WithMaxRequestBodyBytes(0)},
+		{name: "zero unary", resolver: resolver, option: WithMaxUnaryResponseBytes(0)},
+		{name: "zero event", resolver: resolver, option: WithMaxSSEEventBytes(0)},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			options := []Option{}
+			var options []Option
 			if tc.name == "nil option" {
-				options = append(options, nil)
+				options = []Option{nil}
 			} else if tc.option != nil {
-				options = append(options, tc.option)
+				options = []Option{tc.option}
 			}
-			got, err := NewHandler(tc.runtime, options...)
+			_, err := NewHandler(tc.resolver, options...)
 			require.Error(t, err)
-			assert.Nil(t, got)
 		})
 	}
 }
 
-func TestHandler_AdapterLocalValidationBypassesRuntime(t *testing.T) {
-	var resolverCalls atomic.Int32
-	runtime, err := gatewayruntime.New(gatewayruntime.ModelResolverFunc(func(context.Context, gatewayruntime.GatewayCall) (catalog.ResolvedModel, error) {
-		resolverCalls.Add(1)
-		return catalog.ResolvedModel{ID: "canonical", Model: &handlerModel{}}, nil
-	}))
-	require.NoError(t, err)
-	handler, err := NewHandler(runtime, WithMaxRequestBodyBytes(2))
-	require.NoError(t, err)
+type testNilResolver struct{}
 
-	cases := []struct {
-		name    string
-		mutate  func(*http.Request)
-		body    []byte
-		status  int
-		message string
-	}{
-		{name: "method", mutate: func(request *http.Request) { request.Method = http.MethodGet }, status: 405, message: "method not allowed"},
-		{name: "missing model", mutate: func(request *http.Request) { request.Header.Del(HeaderModelID) }, status: 400, message: "model ID is required"},
-		{name: "wrong version", mutate: func(request *http.Request) { request.Header.Set(HeaderSpecVersion, "3") }, status: 400, message: "unsupported specification version"},
-		{name: "invalid streaming", mutate: func(request *http.Request) { request.Header.Set(HeaderStreaming, "TRUE") }, status: 400, message: "streaming header must be true or false"},
-		{name: "missing content type", mutate: func(request *http.Request) { request.Header.Del("Content-Type") }, status: 415, message: "Content-Type must be application/json"},
-		{name: "wrong content type", mutate: func(request *http.Request) { request.Header.Set("Content-Type", "text/plain") }, status: 415, message: "Content-Type must be application/json"},
-		{name: "unary unacceptable", mutate: func(request *http.Request) { request.Header.Set("Accept", "application/json;q=0") }, status: 406, message: "requested response media type is not acceptable"},
-		{name: "stream unacceptable", mutate: func(request *http.Request) {
-			request.Header.Set(HeaderStreaming, "true")
-			request.Header.Set("Accept", "text/event-stream;q=0")
-		}, status: 406, message: "requested response media type is not acceptable"},
-		{name: "oversized", body: []byte("{} "), status: 413, message: "request body too large"},
-		{name: "malformed DTO", body: []byte("{}"), status: 400, message: "invalid LanguageModelV4 request"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			request := validStrictRequest(t, false, tc.body)
-			if tc.mutate != nil {
-				tc.mutate(request)
-			}
-			recorder := httptest.NewRecorder()
-			handler.ServeHTTP(recorder, request)
-			assert.Equal(t, tc.status, recorder.Code)
-			apiErr, err := DecodeErrorResponse(recorder.Body.Bytes(), recorder.Code)
-			require.NoError(t, err)
-			assert.False(t, apiErr.IsRetryable)
-			assert.Equal(t, tc.message, apiErr.Message)
-			var envelope gatewayErrorEnvelopeDTO
-			require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &envelope))
-			assert.Equal(t, "invalid_request_error", envelope.Error.Type)
-			assert.JSONEq(t, "null", string(envelope.Error.Param))
-		})
-	}
-	assert.Zero(t, resolverCalls.Load())
+func (*testNilResolver) ResolveModel(context.Context, string) (catalog.ResolvedModel, error) {
+	return catalog.ResolvedModel{}, nil
 }
 
-func TestHandler_RejectsMalformedNestedGatewayControlsBeforeResolution(t *testing.T) {
-	var policyCalls atomic.Int32
-	var resolverCalls atomic.Int32
-	runtime, err := gatewayruntime.New(gatewayruntime.ModelResolverFunc(func(context.Context, gatewayruntime.GatewayCall) (catalog.ResolvedModel, error) {
-		resolverCalls.Add(1)
-		return catalog.ResolvedModel{ID: "canonical", Model: &handlerModel{}}, nil
-	}), gatewayruntime.WithCallPolicies(gatewayruntime.CallPolicyFunc(func(_ context.Context, call gatewayruntime.GatewayCall) (gatewayruntime.GatewayCall, error) {
-		policyCalls.Add(1)
-		return call, nil
-	})))
-	require.NoError(t, err)
-	handler, err := NewHandler(runtime)
-	require.NoError(t, err)
-
-	gateways := []string{
-		`{"byok":{"openai":null}}`,
-		`{"byok":{"openai":[null]}}`,
-		`{"providerTimeouts":{"byok":null}}`,
-		`{"providerTimeouts":{"future":{"provider":100}}}`,
-		`{"models":[null]}`,
-		`{"only":[1]}`,
-		`{"order":{}}`,
-		`{"tags":"prod"}`,
-		`{"has":[{}]}`,
-	}
-	for i, gateway := range gateways {
-		t.Run(fmt.Sprintf("case-%d", i), func(t *testing.T) {
-			body := []byte(`{"prompt":[],"providerOptions":{"gateway":` + gateway + `}}`)
-			recorder := httptest.NewRecorder()
-			handler.ServeHTTP(recorder, validStrictRequest(t, false, body))
-			assert.Equal(t, http.StatusBadRequest, recorder.Code)
-			apiErr, err := DecodeErrorResponse(recorder.Body.Bytes(), recorder.Code)
-			require.NoError(t, err)
-			assert.False(t, apiErr.IsRetryable)
-		})
-	}
-	assert.Zero(t, policyCalls.Load())
-	assert.Zero(t, resolverCalls.Load())
-}
-
-func TestHandler_StandardsConsistentNegotiation(t *testing.T) {
-	handler, err := NewHandler(newHandlerRuntime(t, &handlerModel{}, nil))
-	require.NoError(t, err)
-	cases := []struct {
-		name      string
-		streaming bool
-		accept    string
-		status    int
-	}{
-		{name: "missing", status: 200},
-		{name: "unary wildcard", accept: "application/*;q=0.5", status: 200},
-		{name: "all wildcard", accept: "*/*", status: 200},
-		{name: "stream wildcard", streaming: true, accept: "text/*;q=0.5", status: 200},
-		{name: "exact unary exclusion overrides wildcard", accept: "application/json;q=0, */*;q=1", status: 406},
-		{name: "exact stream exclusion overrides wildcard", streaming: true, accept: "text/event-stream;q=0, */*;q=1", status: 406},
-		{name: "type exclusion overrides all wildcard", accept: "application/*;q=0, */*;q=1", status: 406},
-		{name: "empty entries", accept: ", ;q=0", status: 406},
-		{name: "malformed", accept: "application/json;q=nope", status: 406},
-		{name: "unsupported unary parameter", accept: "application/json;profile=unsupported", status: 406},
-		{name: "unsupported stream parameter", streaming: true, accept: "text/event-stream;charset=utf-8", status: 406},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			request := validStrictRequest(t, tc.streaming, nil)
-			if tc.accept != "" {
-				request.Header.Set("Accept", tc.accept)
-			}
-			recorder := httptest.NewRecorder()
-			handler.ServeHTTP(recorder, request)
-			assert.Equal(t, tc.status, recorder.Code)
-		})
-	}
-}
-
-func TestHandler_StreamSetupErrorsRetainRuntimeClassification(t *testing.T) {
-	cases := []struct {
-		name      string
-		status    int
-		retryable bool
-		want      int
-	}{
-		{name: "rate limit", status: http.StatusTooManyRequests, retryable: true, want: http.StatusTooManyRequests},
-		{name: "permanent dependency", status: http.StatusBadRequest, want: http.StatusFailedDependency},
-		{name: "transient dependency", status: http.StatusServiceUnavailable, retryable: true, want: http.StatusBadGateway},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			model := &handlerModel{stream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
-				return nil, provider.NewAPICallError(provider.APICallErrorOptions{
-					Message: "private setup failure", StatusCode: tc.status, IsRetryable: &tc.retryable,
-				})
-			}}
-			handler, err := NewHandler(newHandlerRuntime(t, model, nil))
-			require.NoError(t, err)
-			recorder := httptest.NewRecorder()
-			handler.ServeHTTP(recorder, validStrictRequest(t, true, nil))
-			assert.Equal(t, tc.want, recorder.Code)
-			apiErr, err := DecodeErrorResponse(recorder.Body.Bytes(), recorder.Code)
-			require.NoError(t, err)
-			assert.Equal(t, tc.retryable, apiErr.IsRetryable)
-			assert.NotContains(t, recorder.Body.String(), "private")
-		})
-	}
-}
-
-func TestHandler_GatewayCallMetadataPolicyResolutionAndMiddlewareOrder(t *testing.T) {
-	var sequence []string
-	var sourceAttributes = map[string]string{"tenant": "trusted"}
-	policy := gatewayruntime.CallPolicyFunc(func(_ context.Context, call gatewayruntime.GatewayCall) (gatewayruntime.GatewayCall, error) {
-		sequence = append(sequence, "policy")
-		assert.Equal(t, "request-fixed", call.CallMetadata.RequestID)
-		assert.Equal(t, " public-alias ", call.RequestedModelID)
-		assert.Equal(t, "trusted", call.CallMetadata.AuthenticatedAttributes["tenant"])
-		assert.NotEqual(t, "caller", call.CallMetadata.AuthenticatedAttributes["tenant"])
-		assert.NotContains(t, call.CallOptions.ProviderOptions, "gateway")
-		assert.Equal(t, []string{"fallback"}, call.GatewayOptions.Models)
-		return call, nil
+func TestHandler_ValidationGatewayAndRawRejectionBypassResolution(t *testing.T) {
+	var calls atomic.Int32
+	resolver := handlerResolverFunc(func(context.Context, string) (catalog.ResolvedModel, error) {
+		calls.Add(1)
+		return catalog.ResolvedModel{ID: "model", Model: &handlerModel{}}, nil
 	})
-	model := &handlerModel{generate: func(ctx context.Context, _ provider.CallOptions) (*provider.GenerateResult, error) {
-		sequence = append(sequence, "model")
-		requestID, ok := gatewayruntime.RequestIDFromContext(ctx)
-		require.True(t, ok)
-		assert.Equal(t, "request-fixed", requestID)
+	handler, err := NewHandler(resolver, WithMaxRequestBodyBytes(256))
+	require.NoError(t, err)
+
+	cases := []struct {
+		name       string
+		request    *http.Request
+		wantStatus int
+	}{
+		{name: "method", request: requestFor(t, http.MethodGet, "model", false, `{}`), wantStatus: 405},
+		{name: "content type", request: requestFor(t, http.MethodPost, "model", false, `{"prompt":[]}`), wantStatus: 415},
+		{name: "accept", request: strictRequest(t, "model", false, `{"prompt":[]}`), wantStatus: 406},
+		{name: "zero quality accept", request: strictRequest(t, "model", false, `{"prompt":[]}`), wantStatus: 406},
+		{name: "malformed", request: strictRequest(t, "model", false, `{`), wantStatus: 400},
+		{name: "gateway", request: strictRequest(t, "model", false, `{"prompt":[],"providerOptions":{"gateway":{"models":["x"]}}}`), wantStatus: 400},
+		{name: "raw", request: strictRequest(t, "model", false, `{"prompt":[],"includeRawChunks":true}`), wantStatus: 400},
+		{name: "too large", request: strictRequest(t, "model", false, strings.Repeat("x", 257)), wantStatus: 413},
+	}
+	cases[1].request.Header.Del("Content-Type")
+	cases[2].request.Header.Set("Accept", "text/plain")
+	cases[3].request.Header.Set("Accept", "application/json;q=0")
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, tc.request)
+			assert.Equal(t, tc.wantStatus, recorder.Code)
+			assert.NotContains(t, recorder.Body.String(), "models")
+		})
+	}
+	assert.Zero(t, calls.Load())
+}
+
+func TestHandler_ResolvesExactModelWithRequestContextAndRemovedEmptyGateway(t *testing.T) {
+	type requestContextKey struct{}
+	requestContextValue := requestContextKey{}
+	model := &handlerModel{generate: func(ctx context.Context, options provider.CallOptions) (*provider.GenerateResult, error) {
+		assert.Equal(t, "value", ctx.Value(requestContextValue))
+		assert.NotContains(t, options.ProviderOptions, "gateway")
+		assert.Contains(t, options.ProviderOptions, "provider")
 		return &provider.GenerateResult{FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}, Warnings: []provider.Warning{}}, nil
 	}}
-	resolver := gatewayruntime.ModelResolverFunc(func(_ context.Context, call gatewayruntime.GatewayCall) (catalog.ResolvedModel, error) {
-		sequence = append(sequence, "resolver")
-		assert.Equal(t, " public-alias ", call.RequestedModelID)
-		assert.Equal(t, []string{"fallback"}, call.GatewayOptions.Models)
+	resolver := handlerResolverFunc(func(ctx context.Context, modelID string) (catalog.ResolvedModel, error) {
+		assert.Equal(t, " public-alias ", modelID)
+		assert.Equal(t, "value", ctx.Value(requestContextValue))
 		return catalog.ResolvedModel{ID: "canonical", Model: model}, nil
 	})
-	mw := middleware.Middleware{TransformParams: func(_ context.Context, input middleware.TransformParamsInput) (provider.CallOptions, error) {
-		sequence = append(sequence, "middleware")
-		return input.Params, nil
-	}}
-	runtime, err := gatewayruntime.New(resolver, gatewayruntime.WithCallPolicies(policy), gatewayruntime.WithMiddleware(mw))
+	handler, err := NewHandler(resolver)
 	require.NoError(t, err)
-	handler, err := NewHandler(runtime,
-		WithMetadataExtractor(func(*http.Request) (gatewayruntime.CallMetadata, error) {
-			return gatewayruntime.CallMetadata{AuthenticatedAttributes: sourceAttributes}, nil
-		}),
-		WithRequestIDGenerator(func() (string, error) { return "request-fixed", nil }),
-	)
-	require.NoError(t, err)
-
-	body := []byte(`{"prompt":[],"headers":{"X-Tenant":"caller"},"providerOptions":{"gateway":{"models":["fallback"]}}}`)
-	request := validStrictRequest(t, false, body)
-	request.Header.Set(HeaderModelID, " public-alias ")
-	request.Header.Set("X-Tenant", "caller")
+	request := strictRequest(t, " public-alias ", false, `{"prompt":[],"providerOptions":{"provider":{"keep":true},"gateway":{}}}`)
+	request = request.WithContext(context.WithValue(request.Context(), requestContextValue, "value"))
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, request)
 	assert.Equal(t, http.StatusOK, recorder.Code)
-	assert.Equal(t, []string{"policy", "resolver", "middleware", "model"}, sequence)
-	assert.Equal(t, map[string]string{"tenant": "trusted"}, sourceAttributes)
 }
 
-func TestHandler_UnaryPrivacyAndLimits(t *testing.T) {
+func TestHandler_UnaryPrivacyLimitsAndInternalDefects(t *testing.T) {
 	timestamp := time.Date(2026, 4, 1, 10, 0, 0, 0, time.UTC)
 	result := &provider.GenerateResult{
-		Content:      []provider.GenerateContentPart{{Type: provider.ContentText, Text: "hello"}},
+		Content:      []provider.GenerateContentPart{{Type: provider.ContentText, Text: "public"}},
 		FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop},
-		Warnings:     []provider.Warning{{Type: provider.WarnOther, Message: "public"}},
+		Warnings:     []provider.Warning{{Type: provider.WarnOther, Message: "public warning"}},
 		Request:      &provider.RequestMetadata{Body: json.RawMessage(`{"secret":"request"}`)},
-		Response:     &provider.GenerateResponse{ResponseMetadata: provider.ResponseMetadata{ID: "response", ModelID: "backend-model", Provider: "backend", Timestamp: timestamp}, Headers: map[string]string{"X-Secret": "header"}, Body: json.RawMessage(`{"secret":"body"}`)},
+		Response: &provider.GenerateResponse{
+			ResponseMetadata: provider.ResponseMetadata{ID: "response", ModelID: "private-model", Provider: "private-provider", Timestamp: timestamp},
+			Headers:          map[string]string{"X-Secret": "secret"}, Body: json.RawMessage(`{"secret":"body"}`),
+		},
 	}
 	model := &handlerModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) { return result, nil }}
-	runtime := newHandlerRuntime(t, model, nil)
-	handler, err := NewHandler(runtime)
+	handler, err := NewHandler(fixedHandlerResolver(model))
 	require.NoError(t, err)
-	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, validStrictRequest(t, false, nil))
-	require.Equal(t, http.StatusOK, recorder.Code)
-	decoded, err := DecodeGenerateResult(recorder.Body.Bytes())
-	require.NoError(t, err)
-	assert.Nil(t, decoded.Request)
-	require.NotNil(t, decoded.Response)
-	assert.Equal(t, "response", decoded.Response.ID)
-	assert.Equal(t, timestamp, decoded.Response.Timestamp)
-	assert.Empty(t, decoded.Response.ModelID)
-	assert.Empty(t, decoded.Response.Provider)
-	assert.Empty(t, decoded.Response.Headers)
-	assert.Empty(t, decoded.Response.Body)
-	assert.Equal(t, result.Warnings, decoded.Warnings)
-	assert.NotContains(t, recorder.Body.String(), "secret")
-	assert.NotContains(t, recorder.Body.String(), "backend-model")
+	recorder := serveStrict(t, handler, "model", false)
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	assert.Contains(t, recorder.Body.String(), "public warning")
+	assert.Contains(t, recorder.Body.String(), "response")
+	for _, private := range []string{"secret", "private-model", "private-provider"} {
+		assert.NotContains(t, recorder.Body.String(), private)
+	}
 
-	sanitized, err := EncodeGenerateResult(sanitizeGenerateResult(result))
+	encoded, err := encodeGenerateResultJSON(sanitizeGenerateResult(result))
 	require.NoError(t, err)
-	limited, err := NewHandler(runtime, WithMaxUnaryResponseBytes(int64(len(sanitized)-1)))
+	limited, err := NewHandler(fixedHandlerResolver(model), WithMaxUnaryResponseBytes(int64(len(encoded)-1)))
 	require.NoError(t, err)
-	recorder = httptest.NewRecorder()
-	limited.ServeHTTP(recorder, validStrictRequest(t, false, nil))
+	recorder = serveStrict(t, limited, "model", false)
 	assert.Equal(t, http.StatusInternalServerError, recorder.Code)
-	assert.NotContains(t, recorder.Body.String(), "hello")
+	assert.NotContains(t, recorder.Body.String(), "public")
+
+	for name, broken := range map[string]catalog.ModelResolver{
+		"nil resolved model": handlerResolverFunc(func(context.Context, string) (catalog.ResolvedModel, error) {
+			return catalog.ResolvedModel{ID: "model"}, nil
+		}),
+		"nil generate result": fixedHandlerResolver(&handlerModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) { return nil, nil }}),
+	} {
+		t.Run(name, func(t *testing.T) {
+			h, err := NewHandler(broken)
+			require.NoError(t, err)
+			r := serveStrict(t, h, "model", false)
+			assert.Equal(t, http.StatusInternalServerError, r.Code)
+			assert.Contains(t, r.Body.String(), `"isRetryable":false`)
+		})
+	}
 }
 
-func TestHandler_ExactTransportLimits(t *testing.T) {
-	body, err := EncodeCallOptions(provider.CallOptions{Prompt: []provider.Message{}})
-	require.NoError(t, err)
-	model := &handlerModel{}
-	runtime := newHandlerRuntime(t, model, nil)
-
-	exactRequest, err := NewHandler(runtime, WithMaxRequestBodyBytes(int64(len(body))))
-	require.NoError(t, err)
-	recorder := httptest.NewRecorder()
-	exactRequest.ServeHTTP(recorder, validStrictRequest(t, false, body))
-	assert.Equal(t, http.StatusOK, recorder.Code)
-
-	overRequest, err := NewHandler(runtime, WithMaxRequestBodyBytes(int64(len(body)-1)))
-	require.NoError(t, err)
-	recorder = httptest.NewRecorder()
-	overRequest.ServeHTTP(recorder, validStrictRequest(t, false, body))
-	assert.Equal(t, http.StatusRequestEntityTooLarge, recorder.Code)
-
+func TestHandler_ExactRequestAndUnaryLimits(t *testing.T) {
+	body := `{"prompt":[]}`
 	result := &provider.GenerateResult{FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}, Warnings: []provider.Warning{}}
-	encodedResult, err := EncodeGenerateResult(result)
+	model := &handlerModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
+		return result, nil
+	}}
+	encoded, err := encodeGenerateResultJSON(sanitizeGenerateResult(result))
 	require.NoError(t, err)
-	exactUnary, err := NewHandler(runtime, WithMaxUnaryResponseBytes(int64(len(encodedResult))))
+
+	cases := []struct {
+		name       string
+		option     Option
+		wantStatus int
+	}{
+		{name: "request exact", option: WithMaxRequestBodyBytes(int64(len(body))), wantStatus: http.StatusOK},
+		{name: "request limit plus one", option: WithMaxRequestBodyBytes(int64(len(body) - 1)), wantStatus: http.StatusRequestEntityTooLarge},
+		{name: "unary exact", option: WithMaxUnaryResponseBytes(int64(len(encoded))), wantStatus: http.StatusOK},
+		{name: "unary limit plus one", option: WithMaxUnaryResponseBytes(int64(len(encoded) - 1)), wantStatus: http.StatusInternalServerError},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			handler, err := NewHandler(fixedHandlerResolver(model), tc.option)
+			require.NoError(t, err)
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, strictRequest(t, "model", false, body))
+			assert.Equal(t, tc.wantStatus, recorder.Code)
+		})
+	}
+}
+
+func TestHandler_SafeErrorMappings(t *testing.T) {
+	private := errors.New("private cause")
+	permanentRetryable := false
+	transientRetryable := true
+	cases := []struct {
+		name       string
+		resolver   catalog.ModelResolver
+		modelError error
+		status     int
+		typeValue  string
+		retryable  bool
+	}{
+		{name: "unknown model", resolver: handlerResolverFunc(func(context.Context, string) (catalog.ResolvedModel, error) {
+			return catalog.ResolvedModel{}, errors.Join(catalog.ErrUnknownModel, private)
+		}), status: 404, typeValue: "model_not_found"},
+		{name: "rate limit", modelError: provider.NewAPICallError(provider.APICallErrorOptions{Message: "private rate", StatusCode: 429, Cause: private}), status: 429, typeValue: "rate_limit_exceeded", retryable: true},
+		{name: "permanent dependency", modelError: provider.NewAPICallError(provider.APICallErrorOptions{Message: "private permanent", StatusCode: 401, IsRetryable: &permanentRetryable, Cause: private}), status: 424, typeValue: "failed_dependency"},
+		{name: "transient dependency", modelError: provider.NewAPICallError(provider.APICallErrorOptions{Message: "private transient", StatusCode: 503, IsRetryable: &transientRetryable, Cause: private}), status: 502, typeValue: "failed_dependency", retryable: true},
+		{name: "generic invocation dependency", modelError: private, status: 424, typeValue: "failed_dependency"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			resolver := tc.resolver
+			if resolver == nil {
+				model := &handlerModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
+					return nil, tc.modelError
+				}}
+				resolver = fixedHandlerResolver(model)
+			}
+			handler, err := NewHandler(resolver)
+			require.NoError(t, err)
+			recorder := serveStrict(t, handler, "public-model", false)
+			assert.Equal(t, tc.status, recorder.Code)
+			assert.Contains(t, recorder.Body.String(), `"type":"`+tc.typeValue+`"`)
+			assert.Contains(t, recorder.Body.String(), `"isRetryable":`+map[bool]string{true: "true", false: "false"}[tc.retryable])
+			assert.NotContains(t, recorder.Body.String(), "private")
+			if tc.name == "unknown model" {
+				assert.Contains(t, recorder.Body.String(), `"modelId":"public-model"`)
+			}
+		})
+	}
+}
+
+func TestHandler_TotalTimeoutAndCancellation(t *testing.T) {
+	model := &handlerModel{generate: func(ctx context.Context, _ provider.CallOptions) (*provider.GenerateResult, error) {
+		<-ctx.Done()
+		return nil, context.Cause(ctx)
+	}}
+	handler, err := NewHandler(fixedHandlerResolver(model), WithTotalTimeout(10*time.Millisecond))
 	require.NoError(t, err)
+	recorder := serveStrict(t, handler, "model", false)
+	assert.Equal(t, http.StatusGatewayTimeout, recorder.Code)
+	assert.Contains(t, recorder.Body.String(), `"isRetryable":true`)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	request := strictRequest(t, "model", false, `{"prompt":[]}`).WithContext(ctx)
 	recorder = httptest.NewRecorder()
-	exactUnary.ServeHTTP(recorder, validStrictRequest(t, false, body))
+	handler.ServeHTTP(recorder, request)
+	assert.Equal(t, 499, recorder.Code)
+	assert.Contains(t, recorder.Body.String(), `"isRetryable":false`)
+}
+
+func TestHandler_ResolverSuccessAfterContextTerminationDoesNotInvokeModel(t *testing.T) {
+	t.Run("total timeout", func(t *testing.T) {
+		var modelCalls atomic.Int32
+		model := &handlerModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
+			modelCalls.Add(1)
+			return &provider.GenerateResult{}, nil
+		}}
+		resolver := handlerResolverFunc(func(ctx context.Context, _ string) (catalog.ResolvedModel, error) {
+			<-ctx.Done()
+			return catalog.ResolvedModel{ID: "model", Model: model}, nil
+		})
+		handler, err := NewHandler(resolver, WithTotalTimeout(10*time.Millisecond))
+		require.NoError(t, err)
+		recorder := serveStrict(t, handler, "model", false)
+		assert.Equal(t, http.StatusGatewayTimeout, recorder.Code)
+		assert.Zero(t, modelCalls.Load())
+	})
+
+	t.Run("custom cancellation", func(t *testing.T) {
+		var modelCalls atomic.Int32
+		model := &handlerModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
+			modelCalls.Add(1)
+			return &provider.GenerateResult{}, nil
+		}}
+		requestCtx, cancel := context.WithCancelCause(context.Background())
+		resolver := handlerResolverFunc(func(ctx context.Context, _ string) (catalog.ResolvedModel, error) {
+			cancel(errors.New("private cancellation"))
+			<-ctx.Done()
+			return catalog.ResolvedModel{ID: "model", Model: model}, nil
+		})
+		handler, err := NewHandler(resolver)
+		require.NoError(t, err)
+		request := strictRequest(t, "model", false, `{"prompt":[]}`).WithContext(requestCtx)
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, request)
+		assert.Equal(t, 499, recorder.Code)
+		assert.Zero(t, modelCalls.Load())
+		assert.NotContains(t, recorder.Body.String(), "private cancellation")
+	})
+}
+
+func TestHandler_StreamOrderingPrivacyErrorsAndCleanEOF(t *testing.T) {
+	private := provider.NewAPICallError(provider.APICallErrorOptions{Message: "private provider detail", URL: "https://private", StatusCode: 503, Data: json.RawMessage(`{"secret":true}`)})
+	parts := make(chan provider.StreamPart, 8)
+	parts <- provider.StreamPart{Type: provider.PartResponseMeta, ResponseID: "response", ModelID: "private-model", Provider: "private-provider", ResponseHeaders: map[string]string{"X-Secret": "secret"}}
+	parts <- provider.StreamPart{Type: provider.PartTextStart, ID: "text"}
+	parts <- provider.StreamPart{Type: provider.PartError}
+	parts <- provider.StreamPart{Type: provider.PartError, APICallError: private}
+	parts <- provider.StreamPart{Type: provider.PartRaw, RawValue: json.RawMessage(`{"secret":"raw"}`)}
+	parts <- provider.StreamPart{Type: provider.PartTextDelta, ID: "text", Delta: "after error"}
+	parts <- provider.StreamPart{Type: provider.PartTextEnd, ID: "text"}
+	parts <- provider.StreamPart{Type: provider.PartFinish, Usage: &provider.Usage{}, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}}
+	close(parts)
+	model := &handlerModel{stream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+		return &provider.StreamResult{Stream: parts, Request: &provider.RequestMetadata{Body: json.RawMessage(`{"secret":true}`)}, Response: &provider.ResponseHeaders{Headers: map[string]string{"X-Secret": "secret"}}}, nil
+	}}
+	handler, err := NewHandler(fixedHandlerResolver(model))
+	require.NoError(t, err)
+	recorder := serveStrict(t, handler, "model", true)
 	assert.Equal(t, http.StatusOK, recorder.Code)
-
-	part := provider.StreamPart{Type: provider.PartTextDelta, ID: "text", Delta: "x"}
-	event, err := EncodeSSEEventWithinLimit(part, 1024)
-	require.NoError(t, err)
-	streamModel := &handlerModel{stream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
-		parts := make(chan provider.StreamPart, 1)
-		parts <- part
-		close(parts)
-		return &provider.StreamResult{Stream: parts}, nil
-	}}
-	exactEvent, err := NewHandler(newHandlerRuntime(t, streamModel, nil), WithMaxSSEEventBytes(int64(len(event))))
-	require.NoError(t, err)
-	recorder = httptest.NewRecorder()
-	exactEvent.ServeHTTP(recorder, validStrictRequest(t, true, body))
-	assert.Equal(t, event, recorder.Body.Bytes())
-}
-
-func TestHandler_RuntimeFailuresAreRedacted(t *testing.T) {
-	private := provider.NewAPICallError(provider.APICallErrorOptions{
-		Message: "private message", URL: "https://backend", StatusCode: 401,
-		RequestBodyValues: json.RawMessage(`{"secret":true}`), ResponseBody: "private body",
-	})
-	model := &handlerModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) { return nil, private }}
-	handler, err := NewHandler(newHandlerRuntime(t, model, nil))
-	require.NoError(t, err)
-	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, validStrictRequest(t, false, nil))
-	assert.Equal(t, http.StatusFailedDependency, recorder.Code)
-	assert.NotContains(t, recorder.Body.String(), "private")
-	assert.NotContains(t, recorder.Body.String(), "backend")
-}
-
-func TestHandler_NilStreamPartErrorFailsClosedAndContinues(t *testing.T) {
-	model := &handlerModel{stream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
-		parts := make(chan provider.StreamPart, 2)
-		parts <- provider.StreamPart{Type: provider.PartError}
-		parts <- provider.StreamPart{Type: provider.PartTextDelta, ID: "text", Delta: "after"}
-		close(parts)
-		return &provider.StreamResult{Stream: parts}, nil
-	}}
-	handler, err := NewHandler(newHandlerRuntime(t, model, nil))
-	require.NoError(t, err)
-	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, validStrictRequest(t, true, nil))
-	require.Equal(t, http.StatusOK, recorder.Code)
-
-	reader, err := NewSSEReader(bytes.NewReader(recorder.Body.Bytes()), DefaultMaxSSEEventBytes)
-	require.NoError(t, err)
-	first, err := reader.Next()
-	require.NoError(t, err)
-	require.NotNil(t, first.APICallError)
-	assert.Equal(t, provider.PartError, first.Type)
-	assert.Equal(t, http.StatusInternalServerError, first.APICallError.StatusCode)
-	assert.False(t, first.APICallError.IsRetryable)
-	second, err := reader.Next()
-	require.NoError(t, err)
-	assert.Equal(t, provider.PartTextDelta, second.Type)
-	assert.Equal(t, "after", second.Delta)
-}
-
-func TestHandler_StreamOrderingPrivacyRawFilteringAndCleanEOF(t *testing.T) {
-	usage := provider.Usage{}
-	finish := provider.FinishReason{Unified: provider.FinishReasonStop}
-	parts := []provider.StreamPart{
-		{Type: provider.PartResponseMeta, ResponseID: "response", ModelID: "backend-model", Provider: "backend", ResponseHeaders: map[string]string{"X-Secret": "secret"}},
-		{Type: provider.PartError, APICallError: provider.NewAPICallError(provider.APICallErrorOptions{Message: "private", URL: "https://backend", StatusCode: 429})},
-		{Type: provider.PartRaw, RawValue: json.RawMessage(`{"raw":true}`)},
-		{Type: provider.PartTextStart, ID: "text"},
-		{Type: provider.PartTextDelta, ID: "text", Delta: "after"},
-		{Type: provider.PartTextEnd, ID: "text"},
-		{Type: provider.PartFinish, Usage: &usage, FinishReason: &finish},
-	}
-	model := &handlerModel{stream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
-		stream := make(chan provider.StreamPart, len(parts))
-		for _, part := range parts {
-			stream <- part
-		}
-		close(stream)
-		return &provider.StreamResult{Stream: stream, Request: &provider.RequestMetadata{Body: json.RawMessage(`{"secret":true}`)}, Response: &provider.ResponseHeaders{Headers: map[string]string{"X-Secret": "secret"}}}, nil
-	}}
-	handler, err := NewHandler(newHandlerRuntime(t, model, nil))
-	require.NoError(t, err)
-	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, validStrictRequest(t, true, nil))
-	require.Equal(t, http.StatusOK, recorder.Code)
 	assert.Equal(t, MIMESSE, recorder.Header().Get("Content-Type"))
-	assert.Equal(t, "no-cache, no-transform", recorder.Header().Get("Cache-Control"))
-	assert.Equal(t, "no", recorder.Header().Get("X-Accel-Buffering"))
 	assert.Empty(t, recorder.Header().Get("Connection"))
-
-	reader, err := NewSSEReader(bytes.NewReader(recorder.Body.Bytes()), DefaultMaxSSEEventBytes)
-	require.NoError(t, err)
-	var got []provider.StreamPart
-	for {
-		part, err := reader.Next()
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		require.NoError(t, err)
-		got = append(got, part)
-	}
-	require.Len(t, got, 6)
-	assert.Equal(t, []provider.StreamPartType{provider.PartResponseMeta, provider.PartError, provider.PartTextStart, provider.PartTextDelta, provider.PartTextEnd, provider.PartFinish}, streamTypes(got))
-	assert.Empty(t, got[0].ModelID)
-	assert.Empty(t, got[0].Provider)
-	assert.Empty(t, got[0].ResponseHeaders)
-	assert.Equal(t, "rate limit exceeded", got[1].APICallError.Message)
-	assert.NotContains(t, recorder.Body.String(), "private")
-	assert.NotContains(t, recorder.Body.String(), "backend")
 	assert.NotContains(t, recorder.Body.String(), "[DONE]")
+	assert.NotContains(t, recorder.Body.String(), "private")
+	assert.NotContains(t, recorder.Body.String(), `"raw"`)
+	assert.Contains(t, recorder.Body.String(), "internal server error")
+	assert.Contains(t, recorder.Body.String(), "upstream dependency failed")
+	assert.Contains(t, recorder.Body.String(), "after error")
+	assert.Less(t, strings.Index(recorder.Body.String(), "upstream dependency failed"), strings.Index(recorder.Body.String(), "after error"))
+	assert.Contains(t, recorder.Body.String(), `"type":"finish"`)
 }
 
-func TestHandler_StreamRawChunkRequiresRequestAndPolicyAcceptance(t *testing.T) {
-	stream := make(chan provider.StreamPart, 1)
-	stream <- provider.StreamPart{Type: provider.PartRaw, RawValue: json.RawMessage(`{"raw":true}`)}
-	close(stream)
-	model := &handlerModel{stream: func(_ context.Context, options provider.CallOptions) (*provider.StreamResult, error) {
-		assert.True(t, options.IncludeRawChunks)
-		return &provider.StreamResult{Stream: stream}, nil
-	}}
-	policy := gatewayruntime.CallPolicyFunc(func(_ context.Context, call gatewayruntime.GatewayCall) (gatewayruntime.GatewayCall, error) {
-		if !call.CallOptions.IncludeRawChunks {
-			return gatewayruntime.GatewayCall{}, failure.ErrForbidden
-		}
-		return call, nil
-	})
-	runtime := newHandlerRuntime(t, model, []gatewayruntime.Option{gatewayruntime.WithCallPolicies(policy)})
-	handler, err := NewHandler(runtime)
-	require.NoError(t, err)
-	body, err := EncodeCallOptions(provider.CallOptions{Prompt: []provider.Message{}, IncludeRawChunks: true})
-	require.NoError(t, err)
-	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, validStrictRequest(t, true, body))
-	reader, err := NewSSEReader(bytes.NewReader(recorder.Body.Bytes()), DefaultMaxSSEEventBytes)
-	require.NoError(t, err)
-	part, err := reader.Next()
-	require.NoError(t, err)
-	assert.Equal(t, provider.PartRaw, part.Type)
-	assert.JSONEq(t, `{"raw":true}`, string(part.RawValue))
-}
-
-func TestHandler_StreamIdleAndEventLimit(t *testing.T) {
-	t.Run("idle timeout", func(t *testing.T) {
-		stream := make(chan provider.StreamPart)
-		model := &handlerModel{stream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
-			return &provider.StreamResult{Stream: stream}, nil
+func TestHandler_StreamIdleTotalAndEventLimit(t *testing.T) {
+	newBlockedModel := func(contexts chan<- context.Context) *handlerModel {
+		return &handlerModel{stream: func(ctx context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+			contexts <- ctx
+			return &provider.StreamResult{Stream: make(chan provider.StreamPart)}, nil
 		}}
-		handler, err := NewHandler(newHandlerRuntime(t, model, nil), WithIdleTimeout(10*time.Millisecond))
+	}
+	t.Run("idle", func(t *testing.T) {
+		contexts := make(chan context.Context, 1)
+		handler, err := NewHandler(fixedHandlerResolver(newBlockedModel(contexts)), WithIdleTimeout(10*time.Millisecond), WithTotalTimeout(time.Second))
 		require.NoError(t, err)
-		recorder := httptest.NewRecorder()
-		handler.ServeHTTP(recorder, validStrictRequest(t, true, nil))
-		reader, err := NewSSEReader(bytes.NewReader(recorder.Body.Bytes()), DefaultMaxSSEEventBytes)
-		require.NoError(t, err)
-		part, err := reader.Next()
-		require.NoError(t, err)
-		assert.Equal(t, provider.PartError, part.Type)
-		assert.Equal(t, http.StatusGatewayTimeout, part.APICallError.StatusCode)
+		recorder := serveStrict(t, handler, "model", true)
+		assert.Contains(t, recorder.Body.String(), "request timed out")
+		assert.ErrorIs(t, context.Cause(<-contexts), ErrIdleTimeout)
 	})
-
-	t.Run("runtime total timeout after commitment", func(t *testing.T) {
-		stream := make(chan provider.StreamPart)
-		model := &handlerModel{stream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
-			return &provider.StreamResult{Stream: stream}, nil
-		}}
-		runtime := newHandlerRuntime(t, model, []gatewayruntime.Option{gatewayruntime.WithTotalTimeout(10 * time.Millisecond)})
-		handler, err := NewHandler(runtime, WithIdleTimeout(time.Second))
+	t.Run("total", func(t *testing.T) {
+		contexts := make(chan context.Context, 1)
+		handler, err := NewHandler(fixedHandlerResolver(newBlockedModel(contexts)), WithIdleTimeout(time.Second), WithTotalTimeout(10*time.Millisecond))
 		require.NoError(t, err)
-		recorder := httptest.NewRecorder()
-		handler.ServeHTTP(recorder, validStrictRequest(t, true, nil))
-		reader, err := NewSSEReader(bytes.NewReader(recorder.Body.Bytes()), DefaultMaxSSEEventBytes)
-		require.NoError(t, err)
-		part, err := reader.Next()
-		require.NoError(t, err)
-		assert.Equal(t, provider.PartError, part.Type)
-		assert.Equal(t, http.StatusGatewayTimeout, part.APICallError.StatusCode)
+		recorder := serveStrict(t, handler, "model", true)
+		assert.Contains(t, recorder.Body.String(), "request timed out")
+		assert.ErrorIs(t, context.Cause(<-contexts), ErrTotalTimeout)
 	})
-
-	t.Run("oversized event is not written", func(t *testing.T) {
-		stream := make(chan provider.StreamPart, 1)
-		stream <- provider.StreamPart{Type: provider.PartTextDelta, ID: "text", Delta: strings.Repeat("oversized", 100)}
-		close(stream)
+	t.Run("event limit", func(t *testing.T) {
+		parts := make(chan provider.StreamPart, 1)
+		parts <- provider.StreamPart{Type: provider.PartTextDelta, ID: "text", Delta: strings.Repeat("x", 1024)}
+		close(parts)
 		model := &handlerModel{stream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
-			return &provider.StreamResult{Stream: stream}, nil
+			return &provider.StreamResult{Stream: parts}, nil
 		}}
-		errorPart := provider.StreamPart{Type: provider.PartError, APICallError: apiCallErrorForClassification(failure.Classify(failure.ErrInternal))}
-		errorEvent, err := EncodeSSEEventWithinLimit(errorPart, 1024)
+		errorPart := provider.StreamPart{Type: provider.PartError, APICallError: apiCallErrorForFailure(internalFailure(errors.New("private")))}
+		errorEvent, err := encodeSSEEventWithinLimit(errorPart, 1024)
 		require.NoError(t, err)
-		handler, err := NewHandler(newHandlerRuntime(t, model, nil), WithMaxSSEEventBytes(int64(len(errorEvent))))
+		handler, err := NewHandler(fixedHandlerResolver(model), WithMaxSSEEventBytes(int64(len(errorEvent))))
 		require.NoError(t, err)
-		recorder := httptest.NewRecorder()
-		handler.ServeHTTP(recorder, validStrictRequest(t, true, nil))
-		assert.NotContains(t, recorder.Body.String(), "oversized")
+		recorder := serveStrict(t, handler, "model", true)
+		assert.NotContains(t, recorder.Body.String(), strings.Repeat("x", 1024))
 		assert.Contains(t, recorder.Body.String(), "internal server error")
 	})
 }
 
-func TestHandler_CommittedStreamRequestContextTermination(t *testing.T) {
+func TestHandler_StreamContextWinsOverReadyProviderChannel(t *testing.T) {
+	handler := &Handler{idleTimeout: time.Hour}
 	cases := []struct {
-		name       string
-		newContext func() (context.Context, context.CancelFunc)
-		terminate  func(context.CancelFunc)
-		wantStatus int
+		name  string
+		cause error
+		parts func() <-chan provider.StreamPart
 	}{
-		{
-			name: "custom cancellation cause",
-			newContext: func() (context.Context, context.CancelFunc) {
-				ctx, cancel := context.WithCancelCause(context.Background())
-				return ctx, func() {
-					cancel(failure.Wrap(failure.ErrInternal, errors.New("private custom cancellation")))
-				}
-			},
-			terminate:  func(cancel context.CancelFunc) { cancel() },
-			wantStatus: 499,
-		},
-		{
-			name: "request deadline",
-			newContext: func() (context.Context, context.CancelFunc) {
-				return context.WithDeadlineCause(context.Background(), time.Now().Add(50*time.Millisecond), errors.New("private deadline cause"))
-			},
-			terminate:  func(context.CancelFunc) {},
-			wantStatus: http.StatusGatewayTimeout,
-		},
+		{name: "closed on timeout", cause: ErrTotalTimeout, parts: func() <-chan provider.StreamPart {
+			parts := make(chan provider.StreamPart)
+			close(parts)
+			return parts
+		}},
+		{name: "buffered after cancel", cause: errors.New("private cancellation"), parts: func() <-chan provider.StreamPart {
+			parts := make(chan provider.StreamPart, 1)
+			parts <- provider.StreamPart{Type: provider.PartTextDelta, ID: "text", Delta: "stale"}
+			return parts
+		}},
 	}
-
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			stream := make(chan provider.StreamPart)
-			model := &handlerModel{stream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
-				return &provider.StreamResult{Stream: stream}, nil
-			}}
-			handler, err := NewHandler(newHandlerRuntime(t, model, nil), WithIdleTimeout(time.Second))
-			require.NoError(t, err)
-			ctx, cancel := tc.newContext()
-			defer cancel()
-			request := validStrictRequest(t, true, nil).WithContext(ctx)
-			writer := newCommitSignalResponseWriter()
-			done := make(chan struct{})
-			go func() {
-				handler.ServeHTTP(writer, request)
-				close(done)
-			}()
-
-			select {
-			case <-writer.committed:
-			case <-time.After(time.Second):
-				t.Fatal("stream was not committed")
-			}
-			tc.terminate(cancel)
-			select {
-			case <-done:
-			case <-time.After(time.Second):
-				t.Fatal("handler did not finish after request context termination")
-			}
-
-			assert.Equal(t, http.StatusOK, writer.status)
-			reader, err := NewSSEReader(bytes.NewReader(writer.body.Bytes()), DefaultMaxSSEEventBytes)
-			require.NoError(t, err)
-			part, err := reader.Next()
-			require.NoError(t, err)
-			require.NotNil(t, part.APICallError)
-			assert.Equal(t, provider.PartError, part.Type)
-			assert.Equal(t, tc.wantStatus, part.APICallError.StatusCode)
-			assert.NotEqual(t, "internal server error", part.APICallError.Message)
+			ctx, cancel := context.WithCancelCause(context.Background())
+			cancel(tc.cause)
+			part, open, err := handler.nextPart(ctx, tc.parts())
+			assert.ErrorIs(t, err, tc.cause)
+			assert.False(t, open)
+			assert.Equal(t, provider.StreamPart{}, part)
 		})
 	}
 }
 
-func TestRequestContextError_PreservesPrivateCause(t *testing.T) {
-	privateCancellation := errors.New("private cancellation")
-	cancellationCause := failure.Wrap(failure.ErrInternal, privateCancellation)
-	canceledCtx, cancel := context.WithCancelCause(context.Background())
-	cancel(cancellationCause)
-	canceledErr := requestContextError(canceledCtx)
-	assert.ErrorIs(t, canceledErr, failure.ErrCanceled)
-	assert.ErrorIs(t, canceledErr, privateCancellation)
-	canceledClassification := classifyLifecycleError(canceledCtx, errors.New("runtime lifecycle failure"))
-	assert.Equal(t, failure.KindCanceled, canceledClassification.Kind)
-	assert.ErrorIs(t, canceledClassification.Cause, privateCancellation)
-
-	deadlineCause := errors.New("private deadline")
-	deadlineCtx, deadlineCancel := context.WithDeadlineCause(context.Background(), time.Now().Add(-time.Second), deadlineCause)
-	defer deadlineCancel()
-	deadlineErr := requestContextError(deadlineCtx)
-	assert.ErrorIs(t, deadlineErr, failure.ErrTimeout)
-	assert.ErrorIs(t, deadlineErr, deadlineCause)
-	deadlineClassification := classifyLifecycleError(deadlineCtx, errors.New("runtime lifecycle failure"))
-	assert.Equal(t, failure.KindTimeout, deadlineClassification.Kind)
-	assert.ErrorIs(t, deadlineClassification.Cause, deadlineCause)
-}
-
-func TestHandler_ResponseControllerAndWriteFailures(t *testing.T) {
-	partStream := func(context.Context) (*provider.StreamResult, error) {
-		stream := make(chan provider.StreamPart, 1)
-		stream <- provider.StreamPart{Type: provider.PartTextDelta, ID: "text", Delta: "x"}
-		close(stream)
-		return &provider.StreamResult{Stream: stream}, nil
-	}
-	model := &handlerModel{stream: func(ctx context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
-		return partStream(ctx)
+func TestHandler_StreamSetupAndResponseControllerFailures(t *testing.T) {
+	setup := &handlerModel{stream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+		return nil, provider.NewAPICallError(provider.APICallErrorOptions{Message: "private", StatusCode: 503})
 	}}
-	handler, err := NewHandler(newHandlerRuntime(t, model, nil))
+	handler, err := NewHandler(fixedHandlerResolver(setup))
 	require.NoError(t, err)
+	recorder := serveStrict(t, handler, "model", true)
+	assert.Equal(t, http.StatusBadGateway, recorder.Code)
+	assert.Equal(t, MIMEJSON, recorder.Header().Get("Content-Type"))
 
-	t.Run("wrapped writer flushes", func(t *testing.T) {
-		base := httptest.NewRecorder()
-		writer := &unwrapResponseWriter{ResponseWriter: base}
-		handler.ServeHTTP(writer, validStrictRequest(t, true, nil))
-		assert.True(t, base.Flushed)
-		assert.Contains(t, base.Body.String(), `"delta":"x"`)
+	streamModel := func(contexts chan<- context.Context) *handlerModel {
+		return &handlerModel{stream: func(ctx context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+			contexts <- ctx
+			parts := make(chan provider.StreamPart, 1)
+			parts <- provider.StreamPart{Type: provider.PartTextDelta, ID: "text", Delta: "value"}
+			close(parts)
+			return &provider.StreamResult{Stream: parts}, nil
+		}}
+	}
+
+	t.Run("wrapped writer flushes initial headers and event", func(t *testing.T) {
+		contexts := make(chan context.Context, 1)
+		handler, err := NewHandler(fixedHandlerResolver(streamModel(contexts)))
+		require.NoError(t, err)
+		base := newStreamTestWriter()
+		handler.ServeHTTP(&unwrapHandlerResponseWriter{ResponseWriter: base}, strictRequest(t, "model", true, `{"prompt":[]}`))
+		assert.Equal(t, 2, base.flushes)
+		assert.Equal(t, 1, base.writes)
+		assert.Contains(t, base.body.String(), `"delta":"value"`)
 	})
 
-	t.Run("unsupported flush cancels", func(t *testing.T) {
+	t.Run("initial flush failure cancels without writing", func(t *testing.T) {
 		contexts := make(chan context.Context, 1)
-		localModel := &handlerModel{stream: func(ctx context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
-			contexts <- ctx
-			return &provider.StreamResult{Stream: make(chan provider.StreamPart)}, nil
-		}}
-		localHandler, err := NewHandler(newHandlerRuntime(t, localModel, nil))
+		handler, err := NewHandler(fixedHandlerResolver(streamModel(contexts)))
 		require.NoError(t, err)
-		writer := newBasicResponseWriter()
-		localHandler.ServeHTTP(writer, validStrictRequest(t, true, nil))
-		assert.Empty(t, writer.body.String())
-		invocationContext := <-contexts
-		select {
-		case <-invocationContext.Done():
-		case <-time.After(time.Second):
-			t.Fatal("runtime context was not canceled after flush failure")
-		}
-	})
-
-	t.Run("failed flush stops without error event", func(t *testing.T) {
-		contexts := make(chan context.Context, 1)
-		localModel := &handlerModel{stream: func(ctx context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
-			contexts <- ctx
-			stream := make(chan provider.StreamPart, 1)
-			stream <- provider.StreamPart{Type: provider.PartTextDelta, ID: "text", Delta: "x"}
-			return &provider.StreamResult{Stream: stream}, nil
-		}}
-		localHandler, err := NewHandler(newHandlerRuntime(t, localModel, nil))
-		require.NoError(t, err)
-		writer := &flushErrorWriter{basicResponseWriter: *newBasicResponseWriter(), err: errors.New("flush failed")}
-		localHandler.ServeHTTP(writer, validStrictRequest(t, true, nil))
-		assert.Empty(t, writer.body.String())
+		writer := newStreamTestWriter()
+		writer.failFlushAt = 1
+		handler.ServeHTTP(writer, strictRequest(t, "model", true, `{"prompt":[]}`))
+		assertContextDone(t, <-contexts)
 		assert.Equal(t, 1, writer.flushes)
-		assertContextCanceled(t, <-contexts)
+		assert.Zero(t, writer.writes)
 	})
 
-	t.Run("write failure stops without second event", func(t *testing.T) {
-		contexts := make(chan context.Context, 1)
-		localModel := &handlerModel{stream: func(ctx context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
-			contexts <- ctx
-			stream := make(chan provider.StreamPart, 1)
-			stream <- provider.StreamPart{Type: provider.PartTextDelta, ID: "text", Delta: "x"}
-			return &provider.StreamResult{Stream: stream}, nil
-		}}
-		localHandler, err := NewHandler(newHandlerRuntime(t, localModel, nil))
-		require.NoError(t, err)
-		writer := &writeErrorWriter{basicResponseWriter: *newBasicResponseWriter()}
-		localHandler.ServeHTTP(writer, validStrictRequest(t, true, nil))
-		assert.Equal(t, 1, writer.writes)
-		assertContextCanceled(t, <-contexts)
-	})
-
-	t.Run("synchronous write time is excluded from idle timeout", func(t *testing.T) {
-		localHandler, err := NewHandler(newHandlerRuntime(t, model, nil), WithIdleTimeout(10*time.Millisecond))
-		require.NoError(t, err)
-		writer := newBlockingResponseWriter()
-		done := make(chan struct{})
-		go func() {
-			localHandler.ServeHTTP(writer, validStrictRequest(t, true, nil))
-			close(done)
-		}()
-		<-writer.entered
-		time.Sleep(30 * time.Millisecond)
-		close(writer.release)
-		select {
-		case <-done:
-		case <-time.After(time.Second):
-			t.Fatal("handler did not finish after write release")
-		}
-		assert.Contains(t, writer.body.String(), `"delta":"x"`)
-		assert.NotContains(t, writer.body.String(), "timed out")
-	})
+	for _, tc := range []struct {
+		name        string
+		failWrite   bool
+		failFlushAt int
+		wantFlushes int
+	}{
+		{name: "post-commit write failure", failWrite: true, wantFlushes: 1},
+		{name: "post-commit flush failure", failFlushAt: 2, wantFlushes: 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			contexts := make(chan context.Context, 1)
+			handler, err := NewHandler(fixedHandlerResolver(streamModel(contexts)))
+			require.NoError(t, err)
+			writer := newStreamTestWriter()
+			writer.failWrite = tc.failWrite
+			writer.failFlushAt = tc.failFlushAt
+			handler.ServeHTTP(writer, strictRequest(t, "model", true, `{"prompt":[]}`))
+			assertContextDone(t, <-contexts)
+			assert.Equal(t, 1, writer.writes)
+			assert.Equal(t, tc.wantFlushes, writer.flushes)
+		})
+	}
 }
 
-func assertContextCanceled(t *testing.T, ctx context.Context) {
+type unwrapHandlerResponseWriter struct{ http.ResponseWriter }
+
+func (writer *unwrapHandlerResponseWriter) Unwrap() http.ResponseWriter { return writer.ResponseWriter }
+
+type streamTestWriter struct {
+	header      http.Header
+	body        strings.Builder
+	writes      int
+	flushes     int
+	failWrite   bool
+	failFlushAt int
+}
+
+func newStreamTestWriter() *streamTestWriter         { return &streamTestWriter{header: make(http.Header)} }
+func (writer *streamTestWriter) Header() http.Header { return writer.header }
+func (*streamTestWriter) WriteHeader(int)            {}
+func (writer *streamTestWriter) Write(data []byte) (int, error) {
+	writer.writes++
+	if writer.failWrite {
+		return 0, errors.New("write failed")
+	}
+	return writer.body.Write(data)
+}
+func (writer *streamTestWriter) FlushError() error {
+	writer.flushes++
+	if writer.flushes == writer.failFlushAt {
+		return errors.New("flush failed")
+	}
+	return nil
+}
+
+func assertContextDone(t *testing.T, ctx context.Context) {
 	t.Helper()
 	select {
 	case <-ctx.Done():
 	case <-time.After(time.Second):
-		t.Fatal("runtime context was not canceled")
+		t.Fatal("model context was not canceled")
 	}
 }
 
-func validStrictRequest(t *testing.T, streaming bool, body []byte) *http.Request {
+func fixedHandlerResolver(model provider.LanguageModel) catalog.ModelResolver {
+	return handlerResolverFunc(func(context.Context, string) (catalog.ResolvedModel, error) {
+		return catalog.ResolvedModel{ID: "canonical", Model: model}, nil
+	})
+}
+
+func requestFor(t *testing.T, method, modelID string, streaming bool, body string) *http.Request {
 	t.Helper()
-	if body == nil {
-		var err error
-		body, err = EncodeCallOptions(provider.CallOptions{Prompt: []provider.Message{}})
-		require.NoError(t, err)
-	}
-	request := httptest.NewRequest(http.MethodPost, PathLanguageModel, bytes.NewReader(body))
-	request.Header.Set(HeaderModelID, "model")
+	request := httptest.NewRequest(method, PathLanguageModel, strings.NewReader(body))
+	request.Header.Set(HeaderModelID, modelID)
 	request.Header.Set(HeaderSpecVersion, SpecVersionV4)
 	request.Header.Set(HeaderStreaming, map[bool]string{true: "true", false: "false"}[streaming])
-	request.Header.Set("Content-Type", MIMEJSON)
 	return request
 }
 
-func newHandlerRuntime(t *testing.T, model provider.LanguageModel, options []gatewayruntime.Option) *gatewayruntime.Runtime {
+func strictRequest(t *testing.T, modelID string, streaming bool, body string) *http.Request {
 	t.Helper()
-	resolver := gatewayruntime.ModelResolverFunc(func(context.Context, gatewayruntime.GatewayCall) (catalog.ResolvedModel, error) {
-		return catalog.ResolvedModel{ID: "canonical", Model: model}, nil
-	})
-	runtime, err := gatewayruntime.New(resolver, options...)
-	require.NoError(t, err)
-	return runtime
+	request := requestFor(t, http.MethodPost, modelID, streaming, body)
+	request.Header.Set("Content-Type", MIMEJSON)
+	request.Header.Set("Accept", map[bool]string{true: MIMESSE, false: MIMEJSON}[streaming])
+	return request
 }
 
-func streamTypes(parts []provider.StreamPart) []provider.StreamPartType {
-	types := make([]provider.StreamPartType, len(parts))
-	for i, part := range parts {
-		types[i] = part.Type
-	}
-	return types
-}
-
-type unwrapResponseWriter struct{ http.ResponseWriter }
-
-func (writer *unwrapResponseWriter) Unwrap() http.ResponseWriter { return writer.ResponseWriter }
-
-type basicResponseWriter struct {
-	header http.Header
-	body   bytes.Buffer
-	status int
-}
-
-func newBasicResponseWriter() *basicResponseWriter {
-	return &basicResponseWriter{header: make(http.Header)}
-}
-func (writer *basicResponseWriter) Header() http.Header            { return writer.header }
-func (writer *basicResponseWriter) WriteHeader(status int)         { writer.status = status }
-func (writer *basicResponseWriter) Write(data []byte) (int, error) { return writer.body.Write(data) }
-
-type commitSignalResponseWriter struct {
-	basicResponseWriter
-	committed chan struct{}
-	once      sync.Once
-}
-
-func newCommitSignalResponseWriter() *commitSignalResponseWriter {
-	return &commitSignalResponseWriter{
-		basicResponseWriter: *newBasicResponseWriter(),
-		committed:           make(chan struct{}),
-	}
-}
-
-func (writer *commitSignalResponseWriter) FlushError() error {
-	writer.once.Do(func() { close(writer.committed) })
-	return nil
-}
-
-type flushErrorWriter struct {
-	basicResponseWriter
-	err     error
-	flushes int
-}
-
-func (writer *flushErrorWriter) FlushError() error { writer.flushes++; return writer.err }
-
-type writeErrorWriter struct {
-	basicResponseWriter
-	writes int
-}
-
-func (*writeErrorWriter) FlushError() error { return nil }
-func (writer *writeErrorWriter) Write([]byte) (int, error) {
-	writer.writes++
-	return 0, errors.New("write failed")
-}
-
-type blockingResponseWriter struct {
-	basicResponseWriter
-	entered chan struct{}
-	release chan struct{}
-	once    sync.Once
-}
-
-func newBlockingResponseWriter() *blockingResponseWriter {
-	return &blockingResponseWriter{
-		basicResponseWriter: *newBasicResponseWriter(),
-		entered:             make(chan struct{}),
-		release:             make(chan struct{}),
-	}
-}
-
-func (*blockingResponseWriter) FlushError() error { return nil }
-func (writer *blockingResponseWriter) Write(data []byte) (int, error) {
-	writer.once.Do(func() { close(writer.entered) })
-	<-writer.release
-	return writer.body.Write(data)
+func serveStrict(t *testing.T, handler *Handler, modelID string, streaming bool) *httptest.ResponseRecorder {
+	t.Helper()
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, strictRequest(t, modelID, streaming, `{"prompt":[]}`))
+	return recorder
 }
