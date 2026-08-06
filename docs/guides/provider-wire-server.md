@@ -36,6 +36,69 @@ The handler validates and decodes provider calls, invokes the model, and writes
 unary JSON or streaming SSE responses. It derives model contexts from the HTTP
 request so disconnects and deadlines can cancel work.
 
+## Migrate to the strict V4 service
+
+The legacy handler remains available for clients that depend on tolerant Go-only
+payloads or its existing error disclosure. The strict handler implements the
+same external LanguageModelV4 route and headers through independent canonical
+DTOs, direct model-catalog resolution, safe errors, and bounded responses.
+
+Mount the handlers under distinct base URLs because both serve the same
+`/language-model` relative path:
+
+```go
+strictHandler, err := providerwirev4.NewHandler(
+	modelCatalog,
+	providerwirev4.WithTotalTimeout(2*time.Minute),
+	providerwirev4.WithIdleTimeout(time.Minute),
+)
+if err != nil {
+	return err
+}
+
+mux.Handle("/legacy"+providerwire.PathLanguageModel, legacyHandler)
+mux.Handle("/strict"+providerwirev4.PathLanguageModel, strictHandler)
+```
+
+The strict handler passes the request-derived context and exact requested model
+ID to `catalog.ModelResolver`, then invokes the returned model directly. It does
+not add gateway middleware, identity, metadata, request IDs, policy, or a stream
+proxy. Authenticate and decorate the catalog resolver outside the handler.
+
+An absent or empty top-level `providerOptions.gateway` object is removed before
+model invocation. Non-empty gateway controls and raw-chunk requests are rejected
+before catalog resolution because this handler has no routing or raw-exposure
+policy seam.
+
+Migrate a Grafana client explicitly by changing both its base URL and codec:
+
+```go
+client, err := grafana.NewWithAccessToken(
+	grafana.AccessTokenConfig{
+		AccessToken: token,
+		BaseURL:     "https://gateway.example.com/strict",
+	},
+	grafana.WithStrictProviderWire(),
+)
+```
+
+The default Grafana mode remains legacy. There is no automatic codec negotiation
+and an established streaming POST is never replayed during cutover. Roll back by
+restoring the legacy base URL and removing the strict option.
+
+Strict request reads are bounded before unbounded allocation. Unary results and
+SSE events are encoded and size-checked before their bytes are committed, but
+encoding may allocate a value that is subsequently rejected. The server and
+strict Grafana client count complete canonical events identically: `data:`
+followed by one space, the JSON bytes, and the terminating blank line. These new
+Grafana response limits apply only with `WithStrictProviderWire()`; default
+legacy clients retain their original readers and behavior.
+
+The intended follow-up end state is to make strict V4 canonical after adoption
+evidence, then switch Grafana's default and remove its mode selection. Legacy
+provider wire and provider-owned transport JSON can be deprecated and removed
+only through a coordinated breaking change.
+
 ## Keep host policy outside the handler
 
 The host remains responsible for:
@@ -56,15 +119,17 @@ Adapt a [gateway model catalog](gateway-model-catalog.md) when clients should us
 stable public names. Preserve `ResolvedModel.ID` for policy and logs, even though
 the handler ultimately needs only the resolved `LanguageModel`.
 
-Map `catalog.ErrUnknownModel` to a non-retryable not-found API error. Let other
-provider and infrastructure errors retain their classification so the handler
-can normalize them consistently.
+Legacy host adapters map `catalog.ErrUnknownModel` to their existing
+non-retryable not-found API error. The strict handler recognizes that catalog
+sentinel directly and redacts other catalog failures as internal errors.
 
 ## Configure cancellation and limits
 
-The total timeout bounds the call after validation and resolution. The idle
-timeout detects a streaming model that stops producing parts. Models and tools
-must honor context cancellation for those bounds to work.
+The strict total timeout bounds catalog resolution, model invocation, and stream
+consumption after request validation. The idle timeout detects an established
+stream that stops producing parts. Both handlers rely on models and tools to
+honor context cancellation; neither launches a goroutine to force a blocking
+provider call to return.
 
 Provider wire exports timeout sentinel errors for host observability. Classify
 client cancellation separately from provider failure and server timeout.

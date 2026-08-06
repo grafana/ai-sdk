@@ -43,11 +43,11 @@ func (m *model) DoStream(ctx context.Context, opts provider.CallOptions) (*provi
 	}
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		defer func() { _ = resp.Body.Close() }()
-		return nil, surfaceHTTPError(resp)
+		return nil, m.surfaceHTTPError(resp)
 	}
 	if !isEventStreamContentType(resp.Header.Get("Content-Type")) {
 		defer func() { _ = resp.Body.Close() }()
-		return nil, newInvalidStreamContentTypeError(resp)
+		return nil, m.newInvalidStreamContentTypeError(resp)
 	}
 
 	ch := make(chan provider.StreamPart, streamBufferSize)
@@ -68,15 +68,29 @@ func (m *model) DoGenerate(ctx context.Context, opts provider.CallOptions) (*pro
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return nil, surfaceHTTPError(resp)
+		return nil, m.surfaceHTTPError(resp)
+	}
+	if m.provider.strictProviderWire && !isJSONContentType(resp.Header.Get("Content-Type")) {
+		return nil, m.newInvalidGenerateContentTypeError(resp)
 	}
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, newGenerateAPICallError(resp, nil, err)
+	var body []byte
+	if m.provider.strictProviderWire {
+		body, err = readResponseWithinLimit(resp.Body, m.provider.maxUnaryResponseBytes)
+	} else {
+		body, err = io.ReadAll(resp.Body)
 	}
-	result, err := providerwire.DecodeGenerateResult(body)
 	if err != nil {
+		if !m.provider.strictProviderWire {
+			body = nil
+		}
+		return nil, newGenerateAPICallError(resp, body, err)
+	}
+	result, err := m.provider.wireCodec.decodeGenerateResult(body)
+	if err != nil {
+		if m.provider.strictProviderWire {
+			err = errors.Join(errProtocolResponse, err)
+		}
 		return nil, newGenerateAPICallError(resp, body, err)
 	}
 	if result.Request == nil {
@@ -103,8 +117,13 @@ func isEventStreamContentType(value string) bool {
 	return err == nil && mediaType == providerwire.MIMESSE
 }
 
+func isJSONContentType(value string) bool {
+	mediaType, _, err := mime.ParseMediaType(value)
+	return err == nil && mediaType == providerwire.MIMEJSON
+}
+
 func (m *model) doRequest(ctx context.Context, opts provider.CallOptions, streaming bool) (*http.Response, []byte, error) {
-	body, err := providerwire.EncodeCallOptions(opts)
+	body, err := m.provider.wireCodec.encodeCallOptions(opts)
 	if err != nil {
 		return nil, nil, fmt.Errorf("grafana: encoding call options: %w", err)
 	}
@@ -178,7 +197,13 @@ func (m *model) readStream(ctx context.Context, resp *http.Response, ch chan<- p
 	defer close(ch)
 	defer func() { _ = resp.Body.Close() }()
 
-	reader := providerwire.NewSSEReader(resp.Body)
+	reader, err := m.provider.wireCodec.newStreamReader(resp.Body, m.provider.maxSSEEventBytes)
+	if err != nil {
+		if ctx.Err() == nil {
+			_ = sendStreamPart(ctx, ch, provider.StreamPart{Type: provider.PartError, APICallError: newStreamAPICallError(resp, err)})
+		}
+		return
+	}
 	for {
 		select {
 		case <-ctx.Done():
@@ -193,6 +218,9 @@ func (m *model) readStream(ctx context.Context, resp *http.Response, ch chan<- p
 		if err != nil {
 			if ctx.Err() != nil {
 				return
+			}
+			if m.provider.strictProviderWire {
+				err = errors.Join(errProtocolResponse, err)
 			}
 			if !sendStreamPart(ctx, ch, provider.StreamPart{
 				Type:         provider.PartError,
@@ -226,47 +254,73 @@ func sendStreamPart(ctx context.Context, ch chan<- provider.StreamPart, part pro
 	}
 }
 
-// surfaceHTTPError decodes a non-2xx HTTP response into an *provider.APICallError
-// and, as the gateway analog of the Vercel AI SDK gateway, runs the provider
-// normalizer to surface a *provider.GatewayError when a normalized category is
-// identified. When no category is identified the plain *provider.APICallError is
-// surfaced. Either way the decoded APICallError (with its Data, status, headers,
-// body, and retryability) remains reachable via errors.As.
-func surfaceHTTPError(resp *http.Response) error {
-	apiErr := decodeOrSynthesizeHTTPError(resp)
-	if gw := NormalizeAPICallError(apiErr); gw != nil && gw.Type != GatewayErrorInternalServer {
-		return gw
+// surfaceHTTPError decodes a non-2xx response and normalizes recognized
+// gateway categories while preserving the APICallError as the cause.
+func (m *model) surfaceHTTPError(resp *http.Response) error {
+	apiErr, decoded := m.decodeOrSynthesizeHTTPError(resp)
+	if m.provider.strictProviderWire && !decoded {
+		return apiErr
+	}
+	if gatewayErr := NormalizeAPICallError(apiErr); gatewayErr != nil {
+		if m.provider.strictProviderWire || gatewayErr.Type != GatewayErrorInternalServer {
+			return gatewayErr
+		}
 	}
 	return apiErr
 }
 
-func decodeOrSynthesizeHTTPError(resp *http.Response) *provider.APICallError {
-	body, readErr := io.ReadAll(resp.Body)
+func (m *model) decodeOrSynthesizeHTTPError(resp *http.Response) (*provider.APICallError, bool) {
+	var body []byte
+	var readErr error
+	if m.provider.strictProviderWire {
+		body, readErr = readResponseWithinLimit(resp.Body, m.provider.maxErrorResponseBytes)
+	} else {
+		body, readErr = io.ReadAll(resp.Body)
+	}
 	if readErr != nil {
-		return provider.NewAPICallError(provider.APICallErrorOptions{
+		options := provider.APICallErrorOptions{
 			Message:         fmt.Sprintf("grafana: reading error response body: %v", readErr),
 			URL:             responseURL(resp),
 			StatusCode:      resp.StatusCode,
 			ResponseHeaders: cloneHeader(resp.Header),
 			Cause:           readErr,
-		})
+		}
+		if m.provider.strictProviderWire {
+			retryable := !errors.Is(readErr, errResponseTooLarge)
+			options.ResponseBody = string(body)
+			options.IsRetryable = &retryable
+		}
+		return provider.NewAPICallError(options), false
 	}
 
-	clone := *resp
-	clone.Body = io.NopCloser(bytes.NewReader(body))
-	apiErr, err := providerwire.DecodeErrorResponse(&clone)
+	apiErr, err := m.provider.wireCodec.decodeErrorResponse(resp, body)
 	if err == nil {
-		return apiErr
+		if apiErr.URL == "" {
+			apiErr.URL = responseURL(resp)
+		}
+		if apiErr.ResponseHeaders == nil {
+			apiErr.ResponseHeaders = cloneHeader(resp.Header)
+		}
+		if apiErr.ResponseBody == "" {
+			apiErr.ResponseBody = string(body)
+		}
+		return apiErr, true
 	}
 
-	return provider.NewAPICallError(provider.APICallErrorOptions{
+	options := provider.APICallErrorOptions{
 		Message:         fmt.Sprintf("grafana: decoding error response: %v", err),
 		URL:             responseURL(resp),
 		StatusCode:      resp.StatusCode,
 		ResponseHeaders: cloneHeader(resp.Header),
 		ResponseBody:    string(body),
 		Cause:           err,
-	})
+	}
+	if m.provider.strictProviderWire {
+		retryable := false
+		options.IsRetryable = &retryable
+		options.Cause = errors.Join(errProtocolResponse, err)
+	}
+	return provider.NewAPICallError(options), false
 }
 
 func newTransportAPICallError(endpoint string, err error) *provider.APICallError {
@@ -279,18 +333,36 @@ func newTransportAPICallError(endpoint string, err error) *provider.APICallError
 	})
 }
 
-func newInvalidStreamContentTypeError(resp *http.Response) *provider.APICallError {
-	body, _ := io.ReadAll(resp.Body)
+func (m *model) newInvalidGenerateContentTypeError(resp *http.Response) *provider.APICallError {
+	return m.newInvalidContentTypeError(resp, providerwire.MIMEJSON, "generate")
+}
+
+func (m *model) newInvalidStreamContentTypeError(resp *http.Response) *provider.APICallError {
+	return m.newInvalidContentTypeError(resp, providerwire.MIMESSE, "stream")
+}
+
+func (m *model) newInvalidContentTypeError(resp *http.Response, expected, operation string) *provider.APICallError {
+	var body []byte
+	var readErr error
+	if m.provider.strictProviderWire {
+		body, readErr = readResponseWithinLimit(resp.Body, m.provider.maxErrorResponseBytes)
+	} else {
+		body, _ = io.ReadAll(resp.Body)
+	}
 	retryable := false
 	contentType := resp.Header.Get("Content-Type")
+	cause := error(fmt.Errorf("grafana: invalid %s response content type %q", operation, contentType))
+	if m.provider.strictProviderWire && readErr != nil {
+		cause = errors.Join(cause, readErr)
+	}
 	return provider.NewAPICallError(provider.APICallErrorOptions{
-		Message:         fmt.Sprintf("grafana: expected stream response content type %q, got %q", providerwire.MIMESSE, contentType),
+		Message:         fmt.Sprintf("grafana: expected %s response content type %q, got %q", operation, expected, contentType),
 		URL:             responseURL(resp),
 		StatusCode:      resp.StatusCode,
 		ResponseHeaders: cloneHeader(resp.Header),
 		ResponseBody:    string(body),
 		IsRetryable:     &retryable,
-		Cause:           fmt.Errorf("grafana: invalid stream response content type %q", contentType),
+		Cause:           cause,
 	})
 }
 
@@ -319,7 +391,12 @@ func newGenerateAPICallError(resp *http.Response, body []byte, err error) *provi
 	})
 }
 
+var errProtocolResponse = errors.New("grafana: invalid provider-wire response")
+
 func isProtocolGenerateError(err error) bool {
+	if errors.Is(err, errProtocolResponse) || errors.Is(err, errResponseTooLarge) {
+		return true
+	}
 	var syntaxErr *json.SyntaxError
 	if errors.As(err, &syntaxErr) {
 		return true
@@ -329,6 +406,9 @@ func isProtocolGenerateError(err error) bool {
 }
 
 func isProtocolStreamError(err error) bool {
+	if errors.Is(err, errProtocolResponse) {
+		return true
+	}
 	var syntaxErr *json.SyntaxError
 	if errors.As(err, &syntaxErr) {
 		return true
@@ -337,7 +417,7 @@ func isProtocolStreamError(err error) bool {
 	if errors.As(err, &typeErr) {
 		return true
 	}
-	return strings.HasPrefix(err.Error(), "wire: empty SSE event")
+	return strings.Contains(err.Error(), "empty SSE data event") || strings.HasPrefix(err.Error(), "wire: empty SSE event")
 }
 
 func responseURL(resp *http.Response) string {

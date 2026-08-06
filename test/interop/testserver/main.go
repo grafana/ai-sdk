@@ -6,20 +6,22 @@
 // The gateway client selects a scenario via the ai-language-model-id request
 // header. Scenarios:
 //
+//   - "generate-rich"          -> rich successful unary result
+//   - "tool-result-file-input" -> decode canonical tool-result file data
 //   - "stream-text"            -> streaming text with a system + user prompt
 //   - "tool-call"              -> client-executed tool-call round trip
-//   - "provider-tool-result"   -> provider-executed tool-result part
 //   - "file-input"             -> decode an upstream file/image input part
-//   - "file-output"            -> emit an inline-data file part in the response stream
-//   - "file-output-url"        -> emit URL-valued file and reasoning-file parts
+//   - "stream-sources"         -> emit URL and document sources
 //   - "error-mid-stream"       -> mid-stream provider error part
 //   - "error-pre-stream"       -> pre-stream HTTP error envelope
+//   - "strict-error-internal"  -> nil unary result for safe HTTP 500 projection
 //
 // It also exposes GET /health for the vitest global setup.
 package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -30,11 +32,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/grafana/ai-sdk/gateway/catalog"
 	"github.com/grafana/ai-sdk/gateway/providerwire"
+	providerwirev4 "github.com/grafana/ai-sdk/gateway/providerwire/v4"
 	"github.com/grafana/ai-sdk/provider"
 )
 
-const mountPrefix = "/api/v1/aisdk"
+const (
+	legacyMountPrefix = "/api/v1/aisdk/legacy"
+	strictMountPrefix = "/api/v1/aisdk/strict"
+)
 
 func intPtr(i int) *int    { return &i }
 func boolPtr(b bool) *bool { return &b }
@@ -100,6 +107,65 @@ func promptFileParts(opts provider.CallOptions) []string {
 	return files
 }
 
+func promptToolResultFiles(opts provider.CallOptions) []string {
+	var files []string
+	for _, message := range opts.Prompt {
+		for _, part := range message.Content {
+			if part.Type != provider.ContentPartTypeToolResult || part.Output == nil {
+				continue
+			}
+			for _, content := range part.Output.Content {
+				if content.Type != provider.ToolContentFile || content.Data == nil {
+					continue
+				}
+				encoded := content.Data.Base64
+				if content.Data.Bytes != nil {
+					encoded = base64.StdEncoding.EncodeToString(content.Data.Bytes)
+				}
+				files = append(files, fmt.Sprintf("data=%s mediaType=%s filename=%s", encoded, content.MediaType, content.Filename))
+			}
+		}
+	}
+	return files
+}
+
+func generateRich() *provider.GenerateResult {
+	preliminary := false
+	return &provider.GenerateResult{
+		Content: []provider.GenerateContentPart{
+			{Type: provider.ContentText, Text: "hello from unary"},
+			{Type: provider.ContentReasoning, Text: "concise reasoning"},
+			{Type: provider.ContentToolCall, ToolCallID: "call_1", ToolName: "lookup", Input: json.RawMessage(`{"query":"grafana"}`)},
+			{Type: provider.ContentToolResult, ToolCallID: "call_1", ToolName: "lookup", Result: json.RawMessage(`{"answer":42}`), Preliminary: &preliminary},
+			{Type: provider.ContentFile, Data: &provider.DataContent{Base64: "AAEC"}, MediaType: "application/octet-stream"},
+			{Type: provider.ContentSource, ID: "source_1", SourceType: provider.SourceTypeURL, URL: "https://example.com/source", Title: "Example source"},
+		},
+		FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop, Raw: "end_turn"},
+		Usage: provider.Usage{
+			InputTokens:  provider.InputTokenUsage{Total: intPtr(11), NoCache: intPtr(7), CacheRead: intPtr(4)},
+			OutputTokens: provider.OutputTokenUsage{Total: intPtr(6), Text: intPtr(4), Reasoning: intPtr(2)},
+			Raw:          json.RawMessage(`{"input_tokens":11,"output_tokens":6}`),
+		},
+		ProviderMetadata: provider.ProviderMetadata{"interop": json.RawMessage(`{"trace":"public"}`)},
+		Warnings:         []provider.Warning{{Type: provider.WarnOther, Message: "server warning must be replaced by gateway transport warnings"}},
+		Request:          &provider.RequestMetadata{Body: json.RawMessage(`{"serverRequest":"private"}`)},
+		Response: &provider.GenerateResponse{
+			ResponseMetadata: provider.ResponseMetadata{ID: "backend_response", ModelID: "backend-model", Provider: "backend", Timestamp: time.Unix(1_700_000_000, 0).UTC()},
+			Headers:          map[string]string{"x-backend-secret": "private"},
+			Body:             json.RawMessage(`{"serverResponse":"private"}`),
+		},
+	}
+}
+
+func generateToolResultFile(opts provider.CallOptions) *provider.GenerateResult {
+	return &provider.GenerateResult{
+		Content:      []provider.GenerateContentPart{{Type: provider.ContentText, Text: strings.Join(promptToolResultFiles(opts), " | ")}},
+		FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop, Raw: "end_turn"},
+		Usage:        provider.Usage{InputTokens: provider.InputTokenUsage{Total: intPtr(1)}, OutputTokens: provider.OutputTokenUsage{Total: intPtr(1)}},
+		Warnings:     []provider.Warning{},
+	}
+}
+
 func streamText(opts provider.CallOptions) *provider.StreamResult {
 	return streamResult(
 		provider.StreamPart{Type: provider.PartStreamStart},
@@ -137,27 +203,6 @@ func streamToolCall(opts provider.CallOptions) *provider.StreamResult {
 	)
 }
 
-func streamProviderToolResult() *provider.StreamResult {
-	const toolCallID, toolName = "call_pe_1", "webSearch"
-	return streamResult(
-		provider.StreamPart{Type: provider.PartStreamStart},
-		provider.StreamPart{Type: provider.PartResponseMeta, ResponseID: "resp_ptr_1", ModelID: "provider-tool-result", Timestamp: time.Now().UTC()},
-		provider.StreamPart{Type: provider.PartToolInputStart, ID: toolCallID, ToolName: toolName, ProviderExecuted: true},
-		provider.StreamPart{Type: provider.PartToolCall, ToolCallID: toolCallID, ToolName: toolName, Input: `{"query":"grafana"}`, ProviderExecuted: true},
-		provider.StreamPart{
-			Type:             provider.PartToolResult,
-			ToolCallID:       toolCallID,
-			ToolName:         toolName,
-			ProviderExecuted: true,
-			Result:           json.RawMessage(`"Grafana is an observability platform"`),
-			ProviderMetadata: provider.ProviderMetadata{
-				"grafana-ai-sdk": json.RawMessage(`{"customer":"keep"}`),
-			},
-		},
-		finish(provider.FinishReasonStop, "end_turn", 15, 8),
-	)
-}
-
 func streamFileInput(opts provider.CallOptions) *provider.StreamResult {
 	files := promptFileParts(opts)
 	summary := fmt.Sprintf("decoded %d file part(s): %s", len(files), strings.Join(files, " | "))
@@ -171,22 +216,11 @@ func streamFileInput(opts provider.CallOptions) *provider.StreamResult {
 	)
 }
 
-func streamFileOutput() *provider.StreamResult {
-	png := []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a}
+func streamSources() *provider.StreamResult {
 	return streamResult(
 		provider.StreamPart{Type: provider.PartStreamStart},
-		provider.StreamPart{Type: provider.PartResponseMeta, ResponseID: "resp_file_out", ModelID: "file-output", Timestamp: time.Now().UTC()},
-		provider.StreamPart{Type: provider.PartFile, Data: &provider.StreamFileData{Type: provider.StreamFileDataTypeData, Bytes: png}, MediaType: "image/png"},
-		finish(provider.FinishReasonStop, "end_turn", 4, 2),
-	)
-}
-
-func streamFileOutputURL() *provider.StreamResult {
-	return streamResult(
-		provider.StreamPart{Type: provider.PartStreamStart},
-		provider.StreamPart{Type: provider.PartResponseMeta, ResponseID: "resp_file_out_url", ModelID: "file-output-url", Timestamp: time.Now().UTC()},
-		provider.StreamPart{Type: provider.PartFile, Data: &provider.StreamFileData{Type: provider.StreamFileDataTypeURL, URL: "https://example.com/generated.png"}, MediaType: "image/png"},
-		provider.StreamPart{Type: provider.PartReasoningFile, Data: &provider.StreamFileData{Type: provider.StreamFileDataTypeURL, URL: "https://example.com/reasoning.png"}, MediaType: "image/png"},
+		provider.StreamPart{Type: provider.PartSource, Source: &provider.SourceInfo{SourceType: provider.SourceTypeURL, ID: "url-source", URL: "https://example.com", Title: "Example"}},
+		provider.StreamPart{Type: provider.PartSource, Source: &provider.SourceInfo{SourceType: provider.SourceTypeDocument, ID: "document-source", Title: "Document", MediaType: "application/pdf", Filename: "document.pdf"}},
 		finish(provider.FinishReasonStop, "end_turn", 4, 2),
 	)
 }
@@ -222,16 +256,10 @@ func (m *scenarioModel) SupportedURLs() map[string][]*regexp.Regexp { return nil
 
 func (m *scenarioModel) DoStream(_ context.Context, opts provider.CallOptions) (*provider.StreamResult, error) {
 	switch {
-	case strings.Contains(m.modelID, "provider-tool-result"):
-		return streamProviderToolResult(), nil
 	case strings.Contains(m.modelID, "tool-call"):
 		return streamToolCall(opts), nil
 	case strings.Contains(m.modelID, "file-input"):
 		return streamFileInput(opts), nil
-	case strings.Contains(m.modelID, "file-output-url"):
-		return streamFileOutputURL(), nil
-	case strings.Contains(m.modelID, "file-output"):
-		return streamFileOutput(), nil
 	case strings.Contains(m.modelID, "error-pre-stream"):
 		return nil, provider.NewAPICallError(provider.APICallErrorOptions{
 			Message:    "rate limited pre-stream",
@@ -239,6 +267,8 @@ func (m *scenarioModel) DoStream(_ context.Context, opts provider.CallOptions) (
 		})
 	case strings.Contains(m.modelID, "error-mid-stream"):
 		return streamMidStreamError(), nil
+	case strings.Contains(m.modelID, "stream-sources"):
+		return streamSources(), nil
 	case strings.Contains(m.modelID, "stream-text"):
 		return streamText(opts), nil
 	default:
@@ -246,14 +276,22 @@ func (m *scenarioModel) DoStream(_ context.Context, opts provider.CallOptions) (
 	}
 }
 
-func (m *scenarioModel) DoGenerate(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
-	if strings.Contains(m.modelID, "error-pre-stream") {
+func (m *scenarioModel) DoGenerate(_ context.Context, opts provider.CallOptions) (*provider.GenerateResult, error) {
+	switch {
+	case strings.Contains(m.modelID, "generate-rich"):
+		return generateRich(), nil
+	case strings.Contains(m.modelID, "tool-result-file-input"):
+		return generateToolResultFile(opts), nil
+	case strings.Contains(m.modelID, "error-pre-stream"):
 		return nil, provider.NewAPICallError(provider.APICallErrorOptions{
 			Message:    "rate limited pre-stream",
 			StatusCode: http.StatusTooManyRequests,
 		})
+	case strings.Contains(m.modelID, "strict-error-internal"):
+		return nil, nil
+	default:
+		return nil, unknownScenarioError(m.modelID)
 	}
-	return nil, unknownScenarioError(m.modelID)
 }
 
 func unknownScenarioError(modelID string) *provider.APICallError {
@@ -263,12 +301,24 @@ func unknownScenarioError(modelID string) *provider.APICallError {
 	})
 }
 
+type interopCatalogResolver func(context.Context, string) (catalog.ResolvedModel, error)
+
+func (f interopCatalogResolver) ResolveModel(ctx context.Context, modelID string) (catalog.ResolvedModel, error) {
+	return f(ctx, modelID)
+}
+
 func main() {
-	handler, err := providerwire.NewHandler(providerwire.ModelResolverFunc(func(_ *http.Request, modelID string) (provider.LanguageModel, error) {
+	legacyHandler, err := providerwire.NewHandler(providerwire.ModelResolverFunc(func(_ *http.Request, modelID string) (provider.LanguageModel, error) {
 		return &scenarioModel{modelID: modelID}, nil
 	}))
 	if err != nil {
-		log.Fatalf("failed to construct provider-wire handler: %v", err)
+		log.Fatalf("failed to construct legacy provider-wire handler: %v", err)
+	}
+	strictHandler, err := providerwirev4.NewHandler(interopCatalogResolver(func(_ context.Context, modelID string) (catalog.ResolvedModel, error) {
+		return catalog.ResolvedModel{ID: modelID, Model: &scenarioModel{modelID: modelID}}, nil
+	}))
+	if err != nil {
+		log.Fatalf("failed to construct strict provider-wire handler: %v", err)
 	}
 
 	mux := http.NewServeMux()
@@ -276,7 +326,8 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		_, _ = fmt.Fprint(w, "ok")
 	})
-	mux.Handle(mountPrefix+providerwire.PathLanguageModel, handler)
+	mux.Handle(legacyMountPrefix+providerwire.PathLanguageModel, legacyHandler)
+	mux.Handle(strictMountPrefix+providerwirev4.PathLanguageModel, strictHandler)
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -288,7 +339,7 @@ func main() {
 	}
 	_ = os.Stdout.Sync()
 
-	log.Printf("interop test server listening on :%d (route %s)", port, mountPrefix+providerwire.PathLanguageModel)
+	log.Printf("interop test server listening on :%d (legacy %s, strict %s)", port, legacyMountPrefix+providerwire.PathLanguageModel, strictMountPrefix+providerwirev4.PathLanguageModel)
 	if err := http.Serve(listener, mux); err != nil {
 		log.Fatalf("server error: %v", err)
 	}

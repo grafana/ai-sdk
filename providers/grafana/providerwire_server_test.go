@@ -13,6 +13,7 @@ import (
 
 	"github.com/grafana/ai-sdk/gateway/catalog"
 	"github.com/grafana/ai-sdk/gateway/providerwire"
+	providerwirev4 "github.com/grafana/ai-sdk/gateway/providerwire/v4"
 	"github.com/grafana/ai-sdk/provider"
 	grafana "github.com/grafana/ai-sdk/providers/grafana"
 	"github.com/stretchr/testify/assert"
@@ -37,6 +38,14 @@ func (m *serverTestModel) DoStream(ctx context.Context, opts provider.CallOption
 
 var _ provider.LanguageModel = (*serverTestModel)(nil)
 
+type serverCatalogResolver func(context.Context, string) (catalog.ResolvedModel, error)
+
+func (f serverCatalogResolver) ResolveModel(ctx context.Context, modelID string) (catalog.ResolvedModel, error) {
+	return f(ctx, modelID)
+}
+
+func serverIntPtr(value int) *int { return &value }
+
 func newPublicServerProvider(t *testing.T, resolver providerwire.ModelResolver) *grafana.Provider {
 	t.Helper()
 	handler, err := providerwire.NewHandler(resolver)
@@ -53,14 +62,30 @@ func newPublicServerProvider(t *testing.T, resolver providerwire.ModelResolver) 
 	return clientProvider
 }
 
-func newPublicServerClient(t *testing.T, model provider.LanguageModel) provider.LanguageModel {
+func newPublicServerClient(t *testing.T, model provider.LanguageModel, strict bool) provider.LanguageModel {
 	t.Helper()
-	resolver := providerwire.ModelResolverFunc(func(r *http.Request, modelID string) (provider.LanguageModel, error) {
+	if !strict {
+		resolver := providerwire.ModelResolverFunc(func(r *http.Request, modelID string) (provider.LanguageModel, error) {
+			assert.Equal(t, "server-model", modelID)
+			assert.Equal(t, "access-token", r.Header.Get("X-Access-Token"))
+			return model, nil
+		})
+		clientProvider := newPublicServerProvider(t, resolver)
+		clientModel, err := clientProvider.LanguageModel("server-model")
+		require.NoError(t, err)
+		return clientModel
+	}
+
+	resolver := serverCatalogResolver(func(_ context.Context, modelID string) (catalog.ResolvedModel, error) {
 		assert.Equal(t, "server-model", modelID)
-		assert.Equal(t, "access-token", r.Header.Get("X-Access-Token"))
-		return model, nil
+		return catalog.ResolvedModel{ID: "server-model", Model: model}, nil
 	})
-	clientProvider := newPublicServerProvider(t, resolver)
+	handler, err := providerwirev4.NewHandler(resolver)
+	require.NoError(t, err)
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	clientProvider, err := grafana.NewWithAccessToken(grafana.AccessTokenConfig{AccessToken: "access-token", BaseURL: server.URL}, grafana.WithStrictProviderWire())
+	require.NoError(t, err)
 	clientModel, err := clientProvider.LanguageModel("server-model")
 	require.NoError(t, err)
 	return clientModel
@@ -80,49 +105,113 @@ func TestPublicProviderWireServer_RealGrafanaClientUnary(t *testing.T) {
 		Content:      []provider.GenerateContentPart{{Type: provider.ContentText, Text: "yes"}},
 		FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop},
 	}
-	var got provider.CallOptions
-	model := &serverTestModel{generate: func(_ context.Context, actual provider.CallOptions) (*provider.GenerateResult, error) {
-		got = actual
-		return expected, nil
-	}}
-	client := newPublicServerClient(t, model)
-	result, err := client.DoGenerate(context.Background(), opts)
-	require.NoError(t, err)
-	assert.Equal(t, opts, got)
-	assert.Equal(t, expected.Content, result.Content)
-	assert.Equal(t, expected.FinishReason, result.FinishReason)
+	for _, strict := range []bool{false, true} {
+		name := map[bool]string{false: "legacy", true: "strict"}[strict]
+		t.Run(name, func(t *testing.T) {
+			var got provider.CallOptions
+			model := &serverTestModel{generate: func(_ context.Context, actual provider.CallOptions) (*provider.GenerateResult, error) {
+				got = actual
+				return expected, nil
+			}}
+			client := newPublicServerClient(t, model, strict)
+			result, err := client.DoGenerate(context.Background(), opts)
+			require.NoError(t, err)
+			assert.Equal(t, opts, got)
+			assert.Equal(t, expected.Content, result.Content)
+			assert.Equal(t, expected.FinishReason, result.FinishReason)
+		})
+	}
+}
+
+func TestPublicProviderWireServer_RealGrafanaClientRichUnary(t *testing.T) {
+	timestamp := time.Date(2026, 4, 1, 10, 0, 0, 0, time.UTC)
+	expected := &provider.GenerateResult{
+		Content: []provider.GenerateContentPart{
+			{Type: provider.ContentText, Text: "yes"},
+			{Type: provider.ContentToolCall, ToolCallID: "call", ToolName: "search", Input: json.RawMessage(`{"q":"go"}`)},
+			{Type: provider.ContentToolResult, ToolCallID: "call", ToolName: "search", Result: json.RawMessage(`{"ok":true}`)},
+			{Type: provider.ContentFile, Data: &provider.DataContent{Base64: "AAEC"}, MediaType: "image/png"},
+			{Type: provider.ContentSource, ID: "source", SourceType: provider.SourceTypeURL, URL: "https://example.com"},
+		},
+		FinishReason:     provider.FinishReason{Unified: provider.FinishReasonStop, Raw: "end_turn"},
+		Usage:            provider.Usage{InputTokens: provider.InputTokenUsage{Total: serverIntPtr(10)}, OutputTokens: provider.OutputTokenUsage{Total: serverIntPtr(5)}},
+		Warnings:         []provider.Warning{{Type: provider.WarnOther, Message: "public warning"}},
+		ProviderMetadata: provider.ProviderMetadata{"test": json.RawMessage(`{"keep":true}`)},
+		Request:          &provider.RequestMetadata{Body: json.RawMessage(`{"privateRequest":"secret"}`)},
+		Response: &provider.GenerateResponse{
+			ResponseMetadata: provider.ResponseMetadata{ID: "response", ModelID: "backend-model", Provider: "private-provider", Timestamp: timestamp},
+			Headers:          map[string]string{"X-Private": "secret"},
+			Body:             json.RawMessage(`{"privateResponse":"secret"}`),
+		},
+	}
+	for _, strict := range []bool{false, true} {
+		name := map[bool]string{false: "legacy", true: "strict"}[strict]
+		t.Run(name, func(t *testing.T) {
+			model := &serverTestModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) { return expected, nil }}
+			client := newPublicServerClient(t, model, strict)
+			result, err := client.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{provider.UserText("hello")}})
+			require.NoError(t, err)
+			assert.Equal(t, expected.Content, result.Content)
+			assert.Equal(t, expected.FinishReason, result.FinishReason)
+			assert.Equal(t, expected.Usage, result.Usage)
+			assert.Equal(t, expected.Warnings, result.Warnings)
+			assert.Equal(t, expected.ProviderMetadata, result.ProviderMetadata)
+			require.NotNil(t, result.Response)
+			assert.Equal(t, "response", result.Response.ID)
+			assert.Equal(t, timestamp, result.Response.Timestamp)
+			if strict {
+				assert.Empty(t, result.Response.ModelID)
+				assert.Empty(t, result.Response.Provider)
+				requestJSON, err := json.Marshal(result.Request)
+				require.NoError(t, err)
+				responseJSON, err := json.Marshal(result.Response)
+				require.NoError(t, err)
+				assert.NotContains(t, string(requestJSON), "privateRequest")
+				assert.NotContains(t, string(responseJSON), "private-provider")
+				assert.NotContains(t, string(responseJSON), "X-Private")
+				assert.NotContains(t, string(responseJSON), "privateResponse")
+			} else {
+				assert.Equal(t, "backend-model", result.Response.ModelID)
+			}
+		})
+	}
 }
 
 func TestPublicProviderWireServer_RealGrafanaClientStreaming(t *testing.T) {
-	stream := make(chan provider.StreamPart)
-	var once sync.Once
-	model := &serverTestModel{stream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
-		return &provider.StreamResult{Stream: stream}, nil
-	}}
-	client := newPublicServerClient(t, model)
-	result, err := client.DoStream(context.Background(), provider.CallOptions{Prompt: []provider.Message{provider.UserText("hello")}})
-	require.NoError(t, err)
+	for _, strict := range []bool{false, true} {
+		name := map[bool]string{false: "legacy", true: "strict"}[strict]
+		t.Run(name, func(t *testing.T) {
+			stream := make(chan provider.StreamPart)
+			var once sync.Once
+			model := &serverTestModel{stream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+				return &provider.StreamResult{Stream: stream}, nil
+			}}
+			client := newPublicServerClient(t, model, strict)
+			result, err := client.DoStream(context.Background(), provider.CallOptions{Prompt: []provider.Message{provider.UserText("hello")}})
+			require.NoError(t, err)
 
-	parts := []provider.StreamPart{
-		{Type: provider.PartTextStart, ID: "text"},
-		{Type: provider.PartTextDelta, ID: "text", Delta: "hello"},
-		{Type: provider.PartTextEnd, ID: "text"},
-	}
-	for _, part := range parts {
-		stream <- part
-		select {
-		case got := <-result.Stream:
-			assert.Equal(t, part, got)
-		case <-time.After(time.Second):
-			t.Fatal("stream part was not delivered immediately")
-		}
-	}
-	once.Do(func() { close(stream) })
-	select {
-	case _, open := <-result.Stream:
-		assert.False(t, open)
-	case <-time.After(time.Second):
-		t.Fatal("stream did not close cleanly")
+			parts := []provider.StreamPart{
+				{Type: provider.PartTextStart, ID: "text"},
+				{Type: provider.PartTextDelta, ID: "text", Delta: "hello"},
+				{Type: provider.PartTextEnd, ID: "text"},
+			}
+			for _, part := range parts {
+				stream <- part
+				select {
+				case got := <-result.Stream:
+					assert.Equal(t, part, got)
+				case <-time.After(time.Second):
+					t.Fatal("stream part was not delivered immediately")
+				}
+			}
+			once.Do(func() { close(stream) })
+			select {
+			case _, open := <-result.Stream:
+				assert.False(t, open)
+			case <-time.After(time.Second):
+				t.Fatal("stream did not close cleanly")
+			}
+		})
 	}
 }
 
@@ -178,39 +267,45 @@ func TestPublicProviderWireServer_GatewayCatalog(t *testing.T) {
 }
 
 func TestPublicProviderWireServer_RealGrafanaClientContinuesAfterPartError(t *testing.T) {
-	retryable := true
-	apiErr := provider.NewAPICallError(provider.APICallErrorOptions{
-		Message:     "upstream failed",
-		StatusCode:  http.StatusBadGateway,
-		IsRetryable: &retryable,
-		Data:        json.RawMessage(`{"code":"upstream"}`),
-	})
-	stream := make(chan provider.StreamPart, 4)
-	stream <- provider.StreamPart{Type: provider.PartTextStart, ID: "text"}
-	stream <- provider.StreamPart{Type: provider.PartError, APICallError: apiErr}
-	stream <- provider.StreamPart{Type: provider.PartTextDelta, ID: "text", Delta: "forwarded after error"}
-	stream <- provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonError}, Usage: &provider.Usage{}}
-	close(stream)
-	model := &serverTestModel{stream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
-		return &provider.StreamResult{Stream: stream}, nil
-	}}
-	client := newPublicServerClient(t, model)
-	result, err := client.DoStream(context.Background(), provider.CallOptions{})
-	require.NoError(t, err)
-	var got []provider.StreamPart
-	for part := range result.Stream {
-		got = append(got, part)
+	for _, strict := range []bool{false, true} {
+		name := map[bool]string{false: "legacy", true: "strict"}[strict]
+		t.Run(name, func(t *testing.T) {
+			retryable := true
+			apiErr := provider.NewAPICallError(provider.APICallErrorOptions{Message: "upstream failed", StatusCode: http.StatusBadGateway, IsRetryable: &retryable, Data: json.RawMessage(`{"code":"upstream"}`)})
+			stream := make(chan provider.StreamPart, 4)
+			stream <- provider.StreamPart{Type: provider.PartTextStart, ID: "text"}
+			stream <- provider.StreamPart{Type: provider.PartError, APICallError: apiErr}
+			stream <- provider.StreamPart{Type: provider.PartTextDelta, ID: "text", Delta: "forwarded after error"}
+			stream <- provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonError}, Usage: &provider.Usage{}}
+			close(stream)
+			model := &serverTestModel{stream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+				return &provider.StreamResult{Stream: stream}, nil
+			}}
+			client := newPublicServerClient(t, model, strict)
+			result, err := client.DoStream(context.Background(), provider.CallOptions{Prompt: []provider.Message{}})
+			require.NoError(t, err)
+			var got []provider.StreamPart
+			for part := range result.Stream {
+				got = append(got, part)
+			}
+			require.Len(t, got, 4)
+			require.Equal(t, provider.PartError, got[1].Type)
+			require.NotNil(t, got[1].APICallError)
+			if strict {
+				assert.Equal(t, http.StatusBadGateway, got[1].APICallError.StatusCode)
+				assert.Equal(t, "upstream dependency failed", got[1].APICallError.Message)
+				assert.NotContains(t, string(got[1].APICallError.Data), `"code"`)
+			} else {
+				assert.Equal(t, apiErr.StatusCode, got[1].APICallError.StatusCode)
+				assert.Equal(t, apiErr.IsRetryable, got[1].APICallError.IsRetryable)
+				assert.JSONEq(t, string(apiErr.Data), string(got[1].APICallError.Data))
+			}
+			assert.False(t, errors.Is(got[1].APICallError, apiErr))
+			assert.Equal(t, provider.PartTextDelta, got[2].Type)
+			assert.Equal(t, "forwarded after error", got[2].Delta)
+			assert.Equal(t, provider.PartFinish, got[3].Type)
+			require.NotNil(t, got[3].FinishReason)
+			assert.Equal(t, provider.FinishReasonError, got[3].FinishReason.Unified)
+		})
 	}
-	require.Len(t, got, 4)
-	require.Equal(t, provider.PartError, got[1].Type)
-	require.NotNil(t, got[1].APICallError)
-	assert.Equal(t, apiErr.StatusCode, got[1].APICallError.StatusCode)
-	assert.Equal(t, apiErr.IsRetryable, got[1].APICallError.IsRetryable)
-	assert.JSONEq(t, string(apiErr.Data), string(got[1].APICallError.Data))
-	assert.False(t, errors.Is(got[1].APICallError, apiErr))
-	assert.Equal(t, provider.PartTextDelta, got[2].Type)
-	assert.Equal(t, "forwarded after error", got[2].Delta)
-	assert.Equal(t, provider.PartFinish, got[3].Type)
-	require.NotNil(t, got[3].FinishReason)
-	assert.Equal(t, provider.FinishReasonError, got[3].FinishReason.Unified)
 }

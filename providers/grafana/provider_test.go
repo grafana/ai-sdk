@@ -171,6 +171,7 @@ func newTestProvider(t *testing.T, baseURL string, exchanger authn.TokenExchange
 		audience:       audience,
 		httpClient:     configuredHTTPClient(cfg.HTTPClient, nil),
 		tokenExchanger: exchanger,
+		wireCodec:      legacyWireCodec{},
 	}
 }
 
@@ -793,7 +794,7 @@ func TestHTTPErrorMapping(t *testing.T) {
 			cfg.HTTPClient = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 				return &http.Response{
 					StatusCode: http.StatusOK,
-					Header:     http.Header{"X-Trace": {"abc"}},
+					Header:     http.Header{"X-Trace": {"abc"}, "Content-Type": {providerwire.MIMEJSON}},
 					Body:       readErrorBody{err: io.ErrUnexpectedEOF},
 					Request:    req,
 				}, nil
@@ -807,7 +808,7 @@ func TestHTTPErrorMapping(t *testing.T) {
 		require.ErrorAs(t, err, &got)
 		assert.True(t, got.IsRetryable)
 		assert.Equal(t, http.StatusOK, got.StatusCode)
-		assert.Equal(t, map[string][]string{"X-Trace": {"abc"}}, got.ResponseHeaders)
+		assert.Equal(t, map[string][]string{"X-Trace": {"abc"}, "Content-Type": {providerwire.MIMEJSON}}, got.ResponseHeaders)
 	})
 
 	t.Run("synthesizes non-retryable generate decode error", func(t *testing.T) {
@@ -968,7 +969,7 @@ func TestStreamFailureMappingAndCancellation(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		ch := make(chan provider.StreamPart, streamBufferSize)
 
-		go (&model{}).readStream(ctx, resp, ch, false)
+		go (&model{provider: &Provider{wireCodec: legacyWireCodec{}}}).readStream(ctx, resp, ch, false)
 		require.Eventually(t, func() bool { return len(ch) == streamBufferSize }, time.Second, 10*time.Millisecond)
 		cancel()
 

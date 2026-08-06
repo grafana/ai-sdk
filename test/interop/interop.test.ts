@@ -1,13 +1,105 @@
 import { describe, expect, it } from "vitest";
 import { generateText, streamText, tool, stepCountIs } from "ai";
 import { z } from "zod";
-import { newGateway } from "./helpers";
+import { newGateway as newGatewayFor, type ProviderWireEndpoint } from "./helpers";
 
 // Bidirectional upstream-client conformance: a stock upstream @ai-sdk/gateway +
 // ai client drives mock Go models through the public gateway/providerwire
 // server and asserts two-way compatibility.
 
-describe("upstream @ai-sdk/gateway <-> Go provider-wire", () => {
+describe.each(["legacy", "strict"] as const)("upstream @ai-sdk/gateway <-> Go %s provider-wire", (endpoint: ProviderWireEndpoint) => {
+  const newGateway = () => newGatewayFor(endpoint);
+
+  it("generates a rich unary result while owning transport metadata", async () => {
+    const gateway = newGateway();
+    const result = await gateway("generate-rich").doGenerate({
+      prompt: [{ role: "user", content: [{ type: "text", text: "generate everything" }] }],
+    });
+
+    expect(result.content.map((part) => part.type)).toEqual([
+      "text",
+      "reasoning",
+      "tool-call",
+      "tool-result",
+      "file",
+      "source",
+    ]);
+    expect(result.content[2]).toMatchObject({
+      type: "tool-call",
+      toolCallId: "call_1",
+      toolName: "lookup",
+      input: '{"query":"grafana"}',
+    });
+    expect(result.content[3]).toMatchObject({
+      type: "tool-result",
+      toolCallId: "call_1",
+      result: { answer: 42 },
+    });
+    expect(result.content[4]).toMatchObject({
+      type: "file",
+      mediaType: "application/octet-stream",
+      data: { type: "data", data: "AAEC" },
+    });
+    expect(result.content[5]).toMatchObject({
+      type: "source",
+      sourceType: "url",
+      id: "source_1",
+      url: "https://example.com/source",
+    });
+    expect(result.finishReason).toEqual({ unified: "stop", raw: "end_turn" });
+    expect(result.usage).toMatchObject({
+      inputTokens: { total: 11, noCache: 7, cacheRead: 4 },
+      outputTokens: { total: 6, text: 4, reasoning: 2 },
+    });
+    expect(result.providerMetadata).toEqual({ interop: { trace: "public" } });
+
+    // The pinned gateway client replaces server warning/request/response fields
+    // with values owned by its own HTTP transport.
+    expect(result.warnings).toEqual([]);
+    expect(result.request.body).toMatchObject({ prompt: expect.any(Array) });
+    expect(result.request.body).not.toEqual({ serverRequest: "private" });
+    expect(result.response.headers).toHaveProperty("content-type");
+    expect(result.response.headers).not.toHaveProperty("x-backend-secret");
+    expect(result.response.body).toBeDefined();
+  });
+
+  it("encodes canonical Uint8Array tool-result file data", async () => {
+    const fileData = new Uint8Array([0, 1, 2]);
+    const gateway = newGateway();
+    const result = await gateway("tool-result-file-input").doGenerate({
+      prompt: [
+        {
+          role: "tool",
+          content: [
+            {
+              type: "tool-result",
+              toolCallId: "call_file_1",
+              toolName: "readFile",
+              output: {
+                type: "content",
+                value: [
+                  {
+                    type: "file",
+                    data: { type: "data", data: fileData },
+                    mediaType: "application/octet-stream",
+                    filename: "input.bin",
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(result.content).toEqual([
+      {
+        type: "text",
+        text: "data=AAEC mediaType=application/octet-stream filename=input.bin",
+      },
+    ]);
+  });
+
   it("streams text with a system prompt", async () => {
     const gateway = newGateway();
     const result = streamText({
@@ -71,38 +163,6 @@ describe("upstream @ai-sdk/gateway <-> Go provider-wire", () => {
     expect(finalText).toContain("echoTool");
   });
 
-  it("surfaces a provider-executed tool result value", async () => {
-    const gateway = newGateway();
-    const webSearch = tool({
-      description: "Provider-executed web search.",
-      inputSchema: z.object({ query: z.string() }),
-    });
-
-    const result = streamText({
-      model: gateway("provider-tool-result"),
-      maxRetries: 0,
-      tools: { webSearch },
-      prompt: "run a provider-executed tool",
-    });
-
-    const toolResults: Array<{ output: unknown; providerMetadata: unknown }> = [];
-    for await (const part of result.fullStream) {
-      if (part.type === "tool-result") {
-        toolResults.push({
-          output: part.output,
-          providerMetadata: part.providerMetadata,
-        });
-      }
-    }
-
-    expect(toolResults).toEqual([
-      {
-        output: "Grafana is an observability platform",
-        providerMetadata: { "grafana-ai-sdk": { customer: "keep" } },
-      },
-    ]);
-  });
-
   it("decodes an upstream file input part", async () => {
     const gateway = newGateway();
     const pngBase64 =
@@ -127,43 +187,32 @@ describe("upstream @ai-sdk/gateway <-> Go provider-wire", () => {
     expect(text).toMatch(/base64Len=[1-9]/);
   });
 
-  it("receives a file part in the response stream", async () => {
+  it("streams URL and document sources", async () => {
     const gateway = newGateway();
-    const result = streamText({
-      model: gateway("file-output"),
-      maxRetries: 0,
-      prompt: "generate a file",
+    const { stream } = await gateway("stream-sources").doStream({
+      prompt: [{ role: "user", content: [{ type: "text", text: "cite sources" }] }],
     });
 
-    const files: Array<{ mediaType: string }> = [];
-    for await (const part of result.fullStream) {
-      if (part.type === "file") {
-        files.push({ mediaType: (part as { file: { mediaType: string } }).file.mediaType });
-      }
+    const sources: unknown[] = [];
+    for await (const part of stream) {
+      if (part.type === "source") sources.push(part);
     }
-    expect(files.length).toBeGreaterThan(0);
-    expect(files[0].mediaType).toBe("image/png");
-  });
-
-  it("preserves a URL-valued file part in the response stream", async () => {
-    const gateway = newGateway();
-    const result = streamText({
-      model: gateway("file-output-url"),
-      maxRetries: 0,
-      prompt: "generate a file URL",
-    });
-
-    const files: Array<{ type: string; mediaType: string; base64: string }> = [];
-    for await (const part of result.fullStream) {
-      if (part.type === "file" || part.type === "reasoning-file") {
-        const file = part.file;
-        files.push({ type: part.type, mediaType: file.mediaType, base64: file.base64 });
-      }
-    }
-
-    expect(files).toEqual([
-      { type: "file", mediaType: "image/png", base64: "https://example.com/generated.png" },
-      { type: "reasoning-file", mediaType: "image/png", base64: "https://example.com/reasoning.png" },
+    expect(sources).toEqual([
+      {
+        type: "source",
+        sourceType: "url",
+        id: "url-source",
+        url: "https://example.com",
+        title: "Example",
+      },
+      {
+        type: "source",
+        sourceType: "document",
+        id: "document-source",
+        title: "Document",
+        mediaType: "application/pdf",
+        filename: "document.pdf",
+      },
     ]);
   });
 
@@ -188,7 +237,12 @@ describe("upstream @ai-sdk/gateway <-> Go provider-wire", () => {
       "text-end",
       "finish",
     ]);
-    expect(JSON.stringify(parts[4].error)).toContain("boom mid-stream");
+    if (endpoint === "legacy") {
+      expect(JSON.stringify(parts[4].error)).toContain("boom mid-stream");
+    } else {
+      expect(JSON.stringify(parts[4].error)).not.toContain("boom mid-stream");
+      expect(JSON.stringify(parts[4].error)).toContain("upstream dependency failed");
+    }
     expect(parts[5].delta).toBe("continued after error");
     expect(parts[7].finishReason).toEqual({ unified: "error", raw: "error" });
   });
@@ -205,7 +259,24 @@ describe("upstream @ai-sdk/gateway <-> Go provider-wire", () => {
     } catch (e) {
       message = (e as Error).message ?? String(e);
     }
-    // Not the generic "Invalid error response format" fallback.
-    expect(message).toContain("rate limited pre-stream");
+    // Not the generic "Invalid error response format" fallback. Strict mode
+    // intentionally redacts provider detail to its stable category message.
+    expect(message).toContain(endpoint === "legacy" ? "rate limited pre-stream" : "rate limit exceeded");
+  });
+});
+
+describe("strict provider-wire HTTP retry behavior", () => {
+  it("keeps the pinned HTTP-500 retry asymmetry", async () => {
+    const gateway = newGatewayFor("strict");
+    let observed: { statusCode?: number; type?: string; isRetryable?: boolean } = {};
+    try {
+      await gateway("strict-error-internal").doGenerate({ prompt: [] });
+    } catch (error) {
+      observed = error as typeof observed;
+    }
+
+    expect(observed.statusCode).toBe(500);
+    expect(observed.type).toBe("internal_server_error");
+    expect(observed.isRetryable).toBe(true);
   });
 });

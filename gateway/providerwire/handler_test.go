@@ -275,14 +275,16 @@ func TestHandler_BodyValidationAndResolverOrder(t *testing.T) {
 	require.NoError(t, err)
 	ctxKey := handlerContextKey{}
 	cases := []struct {
-		name    string
-		body    []byte
-		reader  io.ReadCloser
-		limit   int64
-		status  int
-		resolve bool
+		name         string
+		body         []byte
+		reader       io.ReadCloser
+		limit        int64
+		status       int
+		resolve      bool
+		legacySystem bool
 	}{
 		{name: "canonical", body: encoded, limit: int64(len(encoded)), status: http.StatusOK, resolve: true},
+		{name: "legacy system content array", body: []byte(`{"prompt":[{"role":"system","content":[{"type":"text","text":"legacy"}]}]}`), limit: 100, status: http.StatusOK, resolve: true, legacySystem: true},
 		{name: "malformed", body: []byte(`{`), limit: 10, status: http.StatusBadRequest},
 		{name: "exact boundary", body: []byte(`{} `), limit: 3, status: http.StatusOK, resolve: true},
 		{name: "maximum limit", body: []byte(`{}`), limit: math.MaxInt64, status: http.StatusOK, resolve: true},
@@ -316,6 +318,9 @@ func TestHandler_BodyValidationAndResolverOrder(t *testing.T) {
 			}
 			if tc.name == "canonical" {
 				assert.Equal(t, provider.CallOptions{MaxOutputTokens: &maxTokens}, gotOpts)
+			}
+			if tc.legacySystem {
+				assert.Equal(t, []provider.Message{provider.NewSystemMessage("legacy")}, gotOpts.Prompt)
 			}
 		})
 	}
