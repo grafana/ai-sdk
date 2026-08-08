@@ -119,6 +119,25 @@ func buildGenerateConfig(opts []GenerateOption) *generateConfig {
 	return cfg
 }
 
+func generateTimeoutWarnings(timeout TimeoutConfig) []provider.Warning {
+	var warnings []provider.Warning
+	if timeout.FirstChunk > 0 {
+		warnings = append(warnings, provider.Warning{
+			Type:    provider.WarnUnsupported,
+			Feature: "timeout.firstChunkMs",
+			Details: "The firstChunkMs timeout is only supported by streaming functions.",
+		})
+	}
+	if timeout.Chunk > 0 {
+		warnings = append(warnings, provider.Warning{
+			Type:    provider.WarnUnsupported,
+			Feature: "timeout.chunkMs",
+			Details: "The chunkMs timeout is only supported by streaming functions.",
+		})
+	}
+	return warnings
+}
+
 // sharedOption implements Option (both StreamOption and GenerateOption).
 type sharedOption struct {
 	fn func(*baseConfig)

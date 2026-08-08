@@ -716,7 +716,7 @@ func (a *streamAdapter) emitFinish(resp responses.Response, ch chan<- provider.S
 	}
 	a.finishEmitted = true
 	fr := mapFinishReason(resp.IncompleteDetails.Reason, a.hasFunctionCall)
-	usage := convertUsage(resp.Usage, json.RawMessage(resp.Usage.RawJSON()))
+	usage := convertResponseUsage(resp.Usage)
 	ch <- provider.StreamPart{
 		Type:             provider.PartFinish,
 		FinishReason:     &fr,
@@ -734,7 +734,7 @@ func (a *streamAdapter) emitFailedFinish(resp responses.Response, ch chan<- prov
 	if resp.IncompleteDetails.Reason != "" {
 		fr = mapFinishReason(resp.IncompleteDetails.Reason, a.hasFunctionCall)
 	}
-	usage := convertUsage(resp.Usage, json.RawMessage(resp.Usage.RawJSON()))
+	usage := convertResponseUsage(resp.Usage)
 	ch <- provider.StreamPart{
 		Type:             provider.PartFinish,
 		FinishReason:     &fr,
@@ -749,7 +749,7 @@ func (a *streamAdapter) emitPendingErrorFinish(ch chan<- provider.StreamPart) {
 	}
 	a.finishEmitted = true
 	fr := provider.FinishReason{Unified: provider.FinishReasonError, Raw: "error"}
-	usage := convertUsage(responses.ResponseUsage{}, nil)
+	usage := provider.Usage{}
 	resp := responses.Response{ID: a.responseID}
 	ch <- provider.StreamPart{
 		Type:             provider.PartFinish,

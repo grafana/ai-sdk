@@ -88,9 +88,8 @@ func (m *model) runStream(ctx context.Context, endpoint string, requestBody []by
 
 		errorData, errorMessage, hasError, err := streamError(data)
 		if err != nil {
-			state.emitError(streamDecodeError(endpoint, err))
-			state.flush()
-			return
+			state.emitRecoverableError(streamDecodeError(endpoint, err))
+			continue
 		}
 		if hasError {
 			retryable := false
@@ -108,18 +107,23 @@ func (m *model) runStream(ctx context.Context, endpoint string, requestBody []by
 
 		var chunk chatCompletionResponse
 		if err := json.Unmarshal(data, &chunk); err != nil {
-			state.emitError(streamDecodeError(endpoint, err))
-			state.flush()
-			return
+			state.emitRecoverableError(streamDecodeError(endpoint, err))
+			continue
+		}
+		if err := validateStreamChunk(chunk); err != nil {
+			state.emitRecoverableError(streamDecodeError(endpoint, err))
+			continue
 		}
 
 		if firstChunk {
 			firstChunk = false
+			metadata := responseMetadata(chunk.ID, chunk.Model, m.providerName, chunk.Created)
 			if !sendStreamPart(ctx, out, provider.StreamPart{
 				Type:            provider.PartResponseMeta,
-				ResponseID:      chunk.ID,
-				ModelID:         chunk.Model,
-				Provider:        m.providerName,
+				ResponseID:      metadata.ID,
+				ModelID:         metadata.ModelID,
+				Provider:        metadata.Provider,
+				Timestamp:       metadata.Timestamp,
 				ResponseHeaders: flattenHeaders(headers),
 			}) {
 				return
@@ -133,10 +137,30 @@ func (m *model) runStream(ctx context.Context, endpoint string, requestBody []by
 		if len(chunk.Choices) == 0 {
 			continue
 		}
-		if !state.handleChoice(chunk.Choices[0]) {
+		if !state.handleChoice(*chunk.Choices[0]) {
 			return
 		}
 	}
+}
+
+func validateStreamChunk(chunk chatCompletionResponse) error {
+	if chunk.Choices == nil {
+		return errors.New("response chunk contained no choices")
+	}
+	for _, choice := range chunk.Choices {
+		if choice == nil {
+			return errors.New("response chunk contained invalid choice")
+		}
+		if choice.Delta.Role != "" && choice.Delta.Role != "assistant" {
+			return errors.New("stream choice contained invalid role")
+		}
+		for _, toolCall := range choice.Delta.ToolCalls {
+			if toolCall.Function == nil {
+				return errors.New("stream tool call missing function")
+			}
+		}
+	}
+	return nil
 }
 
 func streamError(data []byte) (json.RawMessage, string, bool, error) {
@@ -379,14 +403,17 @@ func (s *streamState) flush() {
 		}
 	}
 
-	finish := s.finishReason
 	if s.errorEmitted {
-		finish = provider.FinishReason{Unified: provider.FinishReasonError}
+		s.finishReason = provider.FinishReason{Unified: provider.FinishReasonError}
+	}
+	usage := s.usage
+	if usage == nil {
+		usage = &provider.Usage{}
 	}
 	_ = sendStreamPart(s.ctx, s.out, provider.StreamPart{
 		Type:             provider.PartFinish,
-		FinishReason:     &finish,
-		Usage:            s.usage,
+		FinishReason:     &s.finishReason,
+		Usage:            usage,
 		ProviderMetadata: responseProviderMetadata(s.metadataKey, s.rawUsage),
 	})
 }
@@ -427,6 +454,11 @@ func (s *streamState) emitProviderError(err *provider.APICallError) {
 
 func (s *streamState) emitError(err *provider.APICallError) {
 	s.errorEmitted = true
+	s.emitRecoverableError(err)
+}
+
+func (s *streamState) emitRecoverableError(err *provider.APICallError) {
+	s.finishReason = provider.FinishReason{Unified: provider.FinishReasonError}
 	_ = sendStreamPart(s.ctx, s.out, provider.StreamPart{
 		Type:         provider.PartError,
 		APICallError: err,

@@ -44,7 +44,7 @@ func resolveReasoningConfig(reasoning provider.ReasoningEffort, caps modelCapabi
 			return nil
 		}
 		return &reasoningConfig{
-			thinking: &ThinkingConfig{Type: ThinkingAdaptive},
+			thinking: &ThinkingConfig{Type: ThinkingAdaptive, Display: ThinkingDisplaySummarized},
 			effort:   effort,
 		}
 	}
@@ -147,7 +147,9 @@ func applyReasoningConfigWithProviderHints(p *anthropic.BetaMessageNewParams, rc
 			}
 		case ThinkingAdaptive:
 			p.Thinking = anthropic.BetaThinkingConfigParamUnion{
-				OfAdaptive: &anthropic.BetaThinkingConfigAdaptiveParam{},
+				OfAdaptive: &anthropic.BetaThinkingConfigAdaptiveParam{
+					Display: anthropic.BetaThinkingConfigAdaptiveDisplay(rc.thinking.Display),
+				},
 			}
 		}
 	}

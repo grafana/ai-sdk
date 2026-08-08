@@ -310,11 +310,10 @@ func convertResponse(resp *responses.Response, br buildResult, generateID func()
 		}
 	}
 
-	usageRaw := json.RawMessage(resp.Usage.RawJSON())
 	result := &provider.GenerateResult{
 		Content:          content,
 		FinishReason:     mapFinishReason(resp.IncompleteDetails.Reason, hasFunctionCall),
-		Usage:            convertUsage(resp.Usage, usageRaw),
+		Usage:            convertResponseUsage(resp.Usage),
 		ProviderMetadata: responseMeta(providerName, resp),
 		Response: &provider.GenerateResponse{
 			ResponseMetadata: provider.ResponseMetadata{

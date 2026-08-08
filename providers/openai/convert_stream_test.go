@@ -170,6 +170,33 @@ func TestStream_ErrorThenResponseFailedEmitsSingleErrorAndFinish(t *testing.T) {
 	assert.Equal(t, 1, finishesSeen)
 }
 
+func TestStream_FailedResponseWithUnavailableUsage(t *testing.T) {
+	parts := collectParts(t,
+		`{"type":"response.failed","sequence_number":1,"response":{"id":"resp_1","model":"gpt-4o","status":"failed","error":{"message":"stream failed","code":"rate_limit_error"},"usage":null}}`,
+	)
+
+	finish := parts[len(parts)-1]
+	require.Equal(t, provider.PartFinish, finish.Type)
+	require.NotNil(t, finish.Usage)
+	assert.Nil(t, finish.Usage.InputTokens.Total)
+	assert.Nil(t, finish.Usage.OutputTokens.Total)
+	assert.Empty(t, finish.Usage.Raw)
+}
+
+func TestStream_PendingErrorFinishHasUnavailableUsage(t *testing.T) {
+	adapter := newStreamAdapter(nil, buildResult{}, responses.ResponseNewParams{}, nil, seqIDGen(), "openai")
+	adapter.encounteredStreamError = true
+	ch := make(chan provider.StreamPart, 1)
+	adapter.emitPendingErrorFinish(ch)
+	close(ch)
+
+	finish := <-ch
+	require.NotNil(t, finish.Usage)
+	assert.Nil(t, finish.Usage.InputTokens.Total)
+	assert.Nil(t, finish.Usage.OutputTokens.Total)
+	assert.Empty(t, finish.Usage.Raw)
+}
+
 func TestStream_TextCarriesPhaseMetadata(t *testing.T) {
 	parts := collectParts(t,
 		`{"type":"response.output_item.added","sequence_number":1,"output_index":0,"item":{"type":"message","id":"msg_1","role":"assistant","phase":"commentary","status":"in_progress","content":[]}}`,
