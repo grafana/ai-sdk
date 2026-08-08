@@ -16,6 +16,23 @@ const packagePaths = [
 ];
 const stableVersionPattern = /^(\d+)\.(\d+)\.(\d+)$/;
 
+export function parseTagCommit(output, tag) {
+  const directRef = `refs/tags/${tag}`;
+  const peeledRef = `${directRef}^{}`;
+  const commits = new Map(
+    output
+      .trim()
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => line.split(/\s+/, 2).reverse()),
+  );
+  const commit = commits.get(peeledRef) ?? commits.get(directRef);
+  if (!commit || !/^[0-9a-f]{40,64}$/.test(commit)) {
+    throw new Error(`unable to resolve upstream tag ${tag}`);
+  }
+  return commit;
+}
+
 export function parseMinimumReleaseAge(yaml) {
   const match = yaml.match(/^minimumReleaseAge:\s*(\d+)\s*(?:#.*)?$/m);
   if (!match) {
@@ -224,12 +241,15 @@ function packageVersionsFromBaseline(yaml) {
   return versions;
 }
 
-function updateBaseline(yaml, versions, verifiedAt) {
+function updateBaseline(yaml, versions, verifiedAt, commit) {
   let inPackages = false;
 
   return yaml
     .split("\n")
     .map((line) => {
+      if (line.startsWith("  commit:")) {
+        return `  commit: ${commit}`;
+      }
       if (line.startsWith("  verifiedAt:")) {
         return `  verifiedAt: "${verifiedAt.toISOString().slice(0, 10)}"`;
       }
@@ -256,6 +276,15 @@ function updateBaseline(yaml, versions, verifiedAt) {
       return `${match[1]}${match[2]}: ${version}`;
     })
     .join("\n");
+}
+
+function resolveTagCommit(repository, tag) {
+  const output = execFileSync(
+    "git",
+    ["ls-remote", "--tags", repository, `refs/tags/${tag}`, `refs/tags/${tag}^{}`],
+    { encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] },
+  );
+  return parseTagCommit(output, tag);
 }
 
 function main() {
@@ -292,6 +321,17 @@ function main() {
     console.log(`${packageName}@${version} (published ${release.publishedAt.toISOString()})`);
   }
 
+  const repository = baselineYaml.match(/^\s*repository:\s*(\S+)\s*$/m)?.[1];
+  if (!repository) {
+    throw new Error("test/conformance/upstream.yaml must declare upstream.repository");
+  }
+  const aiVersion = versions.get("ai");
+  if (!aiVersion) {
+    throw new Error("test/conformance/upstream.yaml must track the ai package");
+  }
+  const commit = resolveTagCommit(repository, `ai@${aiVersion}`);
+  console.log(`upstream commit: ${commit}`);
+
   const packageManifests = packagePaths.map((path) => ({
     path,
     manifest: JSON.parse(readFileSync(path, "utf8")),
@@ -310,7 +350,7 @@ function main() {
     writeFileSync(path, `${JSON.stringify(manifest, null, 2)}\n`);
   }
 
-  writeFileSync(baselinePath, updateBaseline(baselineYaml, versions, now));
+  writeFileSync(baselinePath, updateBaseline(baselineYaml, versions, now, commit));
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

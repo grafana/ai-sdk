@@ -111,6 +111,23 @@ func TestConvertResponse_ServerToolUse(t *testing.T) {
 	assert.True(t, part.ProviderExecuted, "expected ProviderExecuted=true")
 }
 
+func TestConvertResponse_CodeExecutionPreservesInputFieldOrder(t *testing.T) {
+	msg := unmarshalMessage(t, `{
+		"id":"msg_1",
+		"type":"message",
+		"role":"assistant",
+		"model":"claude-sonnet-5",
+		"content":[{"type":"server_tool_use","id":"stu_1","name":"text_editor_code_execution","input":{"command":"create","path":"/tmp/example.py","file_text":"print('hi')"}}],
+		"stop_reason":"end_turn",
+		"usage":{"input_tokens":10,"output_tokens":5}
+	}`)
+
+	result, err := convertResponse(msg, toolNameMapping{}, false, nil, defaultGenerateID, "anthropic", false)
+	require.NoError(t, err)
+	require.Len(t, result.Content, 1)
+	assert.Equal(t, `{"type":"text_editor_code_execution","command":"create","path":"/tmp/example.py","file_text":"print('hi')"}`, string(result.Content[0].Input))
+}
+
 func TestConvertResponse_WebSearchToolResult(t *testing.T) {
 	msg := unmarshalMessage(t, `{
 		"id": "msg_1",

@@ -13,6 +13,7 @@ anthropic-clear-tool-uses.1: clear-tool-uses
 anthropic-code-execution-20250825.1: code-execution-1
 anthropic-code-execution-20250825.2: code-execution-2
 anthropic-code-execution-20250825.pptx-skill: code-execution-pptx-skill
+anthropic-code-execution-20260120-prompt-cache.1: code-execution-prompt-cache
 anthropic-code-execution-file-upload.1: code-execution-file-upload
 anthropic-combined-context-editing.1: combined-context-editing
 anthropic-compaction.1: compaction

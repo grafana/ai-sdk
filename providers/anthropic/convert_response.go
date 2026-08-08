@@ -123,23 +123,28 @@ func convertResponse(msg *anthropic.BetaMessage, mapping toolNameMapping, usesJs
 			switch wireName {
 			case "bash_code_execution", "text_editor_code_execution":
 				resolvedName = "code_execution"
-				if inputMap, ok := stu.Input.(map[string]any); ok {
-					wrapped := make(map[string]any, len(inputMap)+1)
-					wrapped["type"] = wireName
-					for k, v := range inputMap {
-						wrapped[k] = v
+				rawInput, err := json.Marshal(stu.Input)
+				if err != nil {
+					return nil, fmt.Errorf("marshaling server tool use input: %w", err)
+				}
+				if rawBlock := stu.RawJSON(); rawBlock != "" {
+					var blockFields struct {
+						Input json.RawMessage `json:"input"`
 					}
-					var err error
-					inputJSON, err = json.Marshal(wrapped)
-					if err != nil {
-						return nil, fmt.Errorf("marshaling server tool use input: %w", err)
+					if err := json.Unmarshal([]byte(rawBlock), &blockFields); err != nil {
+						return nil, fmt.Errorf("unmarshaling server tool use input: %w", err)
 					}
-				} else {
-					var err error
-					inputJSON, err = json.Marshal(stu.Input)
-					if err != nil {
-						return nil, fmt.Errorf("marshaling server tool use input: %w", err)
+					if len(blockFields.Input) > 0 {
+						rawInput = blockFields.Input
 					}
+				}
+				typeJSON, err := json.Marshal(wireName)
+				if err != nil {
+					return nil, fmt.Errorf("marshaling server tool use type: %w", err)
+				}
+				inputJSON, err = prependJSONObjectMember(rawInput, "type", typeJSON)
+				if err != nil {
+					return nil, fmt.Errorf("marshaling server tool use input: %w", err)
 				}
 			case "code_execution":
 				var err error
