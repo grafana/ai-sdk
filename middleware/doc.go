@@ -7,6 +7,7 @@
 // LanguageModel transparent to all consumers (StreamText, GenerateText, etc.).
 //
 // Built-in middlewares:
+//   - DefaultInstructions: applies system instructions when calls do not provide them
 //   - DefaultSettings: applies fallback values for CallOptions fields
 //   - SimulateStreaming: wraps non-streaming models to present a streaming interface
 //   - ExtractReasoning: strips XML-tagged reasoning from text output into reasoning parts

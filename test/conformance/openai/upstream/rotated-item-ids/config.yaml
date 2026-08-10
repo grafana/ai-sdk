@@ -1,0 +1,7 @@
+model: gpt-5.3-codex
+prompt: How many letter r's are in strawberry?
+providerOptions:
+  openai:
+    reasoningEffort: low
+    reasoningSummary: detailed
+    store: false

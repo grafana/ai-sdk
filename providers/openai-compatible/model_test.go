@@ -1169,6 +1169,62 @@ func TestDoStreamToolCallDeltas(t *testing.T) {
 	require.Equal(t, provider.FinishReasonToolCalls, parts[len(parts)-1].FinishReason.Unified)
 }
 
+func TestDoStreamToolCallIndexTracking(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		chunks   string
+		expected []provider.StreamPart
+	}{
+		{
+			name: "non-zero index",
+			chunks: `data: {"id":"chatcmpl_tools","model":"test-model","choices":[{"delta":{"tool_calls":[{"index":1,"id":"call_1","type":"function","function":{"name":"read_file","arguments":"{\"path\":"}}]},"finish_reason":null}]}` + "\n\n" +
+				`data: {"id":"chatcmpl_tools","model":"test-model","choices":[{"delta":{"tool_calls":[{"index":1,"function":{"arguments":"\"a.txt\"}"}}]},"finish_reason":"tool_calls"}]}` + "\n\n",
+			expected: []provider.StreamPart{{ToolCallID: "call_1", ToolName: "read_file", Input: `{"path":"a.txt"}`}},
+		},
+		{
+			name: "reused index",
+			chunks: `data: {"id":"chatcmpl_tools","model":"test-model","choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"first","arguments":"{\"value\":1}"}}]},"finish_reason":null}]}` + "\n\n" +
+				`data: {"id":"chatcmpl_tools","model":"test-model","choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_2","type":"function","function":{"name":"second","arguments":"{\"value\":2}"}}]},"finish_reason":"tool_calls"}]}` + "\n\n",
+			expected: []provider.StreamPart{
+				{ToolCallID: "call_1", ToolName: "first", Input: `{"value":1}`},
+				{ToolCallID: "call_2", ToolName: "second", Input: `{"value":2}`},
+			},
+		},
+		{
+			name: "omitted continuation index",
+			chunks: `data: {"id":"chatcmpl_tools","model":"test-model","choices":[{"delta":{"tool_calls":[{"index":7,"id":"call_1","type":"function","function":{"name":"read_file","arguments":"{\"pa"}}]},"finish_reason":null}]}` + "\n\n" +
+				`data: {"id":"chatcmpl_tools","model":"test-model","choices":[{"delta":{"tool_calls":[{"function":{"arguments":"th\":\"a.txt\"}"}}]},"finish_reason":"tool_calls"}]}` + "\n\n",
+			expected: []provider.StreamPart{{ToolCallID: "call_1", ToolName: "read_file", Input: `{"path":"a.txt"}`}},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "text/event-stream")
+				_, _ = w.Write([]byte(tc.chunks + `data: [DONE]` + "\n\n"))
+			}))
+			defer server.Close()
+
+			result, err := New("test-model", WithBaseURL(server.URL)).DoStream(context.Background(), provider.CallOptions{
+				Prompt: []provider.Message{provider.UserText("use tools")},
+			})
+			require.NoError(t, err)
+
+			toolCalls := findParts(collectStreamParts(result), provider.PartToolCall)
+			require.Len(t, toolCalls, len(tc.expected))
+			for i, expected := range tc.expected {
+				assert.Equal(t, expected.ToolCallID, toolCalls[i].ToolCallID)
+				assert.Equal(t, expected.ToolName, toolCalls[i].ToolName)
+				assert.JSONEq(t, expected.Input, toolCalls[i].Input)
+			}
+		})
+	}
+}
+
 func TestDoStreamSkipsInitialEmptyToolInputDelta(t *testing.T) {
 	t.Parallel()
 
@@ -1241,7 +1297,7 @@ func TestDoStreamMissingToolCallIDEmitsError(t *testing.T) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = w.Write([]byte(
 			`data: {"id":"chatcmpl_tools","model":"test-model","choices":[{"delta":{"tool_calls":[{"index":0,"type":"function","function":{"name":"weather","arguments":""}}]},"finish_reason":null}]}` + "\n\n" +
-				`data: {"id":"chatcmpl_tools","model":"test-model","choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_provider","type":"function","function":{"arguments":"{\"city\":\"Paris\"}"}}]},"finish_reason":"tool_calls"}]}` + "\n\n" +
+				`data: {"id":"chatcmpl_tools","model":"test-model","choices":[{"delta":{"tool_calls":[{"index":0,"type":"function","function":{"arguments":"{\"city\":\"Paris\"}"}}]},"finish_reason":"tool_calls"}]}` + "\n\n" +
 				`data: [DONE]` + "\n\n",
 		))
 	}))

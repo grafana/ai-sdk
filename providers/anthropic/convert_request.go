@@ -1648,10 +1648,11 @@ func convertInlineAdvisorResult(p provider.ContentPart, cc anthropic.BetaCacheCo
 	}
 
 	var output struct {
-		Type             string `json:"type"`
-		Text             string `json:"text"`
-		EncryptedContent string `json:"encryptedContent"`
-		ErrorCode        string `json:"errorCode"`
+		Type             string  `json:"type"`
+		Text             string  `json:"text"`
+		EncryptedContent string  `json:"encryptedContent"`
+		StopReason       *string `json:"stopReason"`
+		ErrorCode        string  `json:"errorCode"`
 	}
 	if err := json.Unmarshal(p.Output.JSON, &output); err != nil {
 		*warnings = append(*warnings, provider.Warning{
@@ -1665,9 +1666,17 @@ func convertInlineAdvisorResult(p provider.ContentPart, cc anthropic.BetaCacheCo
 	content := anthropic.BetaAdvisorToolResultBlockParamContentUnion{}
 	switch output.Type {
 	case "advisor_result":
-		content.OfRequestAdvisorResultBlock = &anthropic.BetaAdvisorResultBlockParam{Text: output.Text}
+		result := &anthropic.BetaAdvisorResultBlockParam{Text: output.Text}
+		if output.StopReason != nil {
+			result.StopReason = anthropic.Opt(*output.StopReason)
+		}
+		content.OfRequestAdvisorResultBlock = result
 	case "advisor_redacted_result":
-		content.OfRequestAdvisorRedactedResultBlock = &anthropic.BetaAdvisorRedactedResultBlockParam{EncryptedContent: output.EncryptedContent}
+		result := &anthropic.BetaAdvisorRedactedResultBlockParam{EncryptedContent: output.EncryptedContent}
+		if output.StopReason != nil {
+			result.StopReason = anthropic.Opt(*output.StopReason)
+		}
+		content.OfRequestAdvisorRedactedResultBlock = result
 	case "advisor_tool_result_error":
 		content.OfRequestAdvisorToolResultError = &anthropic.BetaAdvisorToolResultErrorParam{
 			ErrorCode: anthropic.BetaAdvisorToolResultErrorParamErrorCode(output.ErrorCode),
@@ -1915,6 +1924,16 @@ func validateAdvisorResult(output *provider.ToolResultOutput) error {
 	if err := json.Unmarshal(output.JSON, &value); err != nil {
 		return errors.New("output must be a valid advisor result object")
 	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(output.JSON, &fields); err != nil {
+		return errors.New("output must be a valid advisor result object")
+	}
+	if raw, ok := fields["stopReason"]; ok {
+		var stopReason *string
+		if err := json.Unmarshal(raw, &stopReason); err != nil || stopReason == nil {
+			return errors.New("stopReason must be a string")
+		}
+	}
 	if value.Type == nil {
 		return errors.New("type is required")
 	}
@@ -1964,6 +1983,12 @@ func validateAdvisorToolArgs(args map[string]json.RawMessage) error {
 			return errors.New("maxUses must be an integer")
 		}
 	}
+	if maxTokensJSON, ok := args["maxTokens"]; ok {
+		var maxTokens *int64
+		if err := json.Unmarshal(maxTokensJSON, &maxTokens); err != nil || maxTokens == nil || *maxTokens < 1024 {
+			return errors.New("maxTokens must be an integer greater than or equal to 1024")
+		}
+	}
 	if cachingJSON, ok := args["caching"]; ok {
 		var caching *CacheControlType
 		if err := json.Unmarshal(cachingJSON, &caching); err != nil || caching == nil || caching.Type != "ephemeral" || (caching.TTL != "5m" && caching.TTL != "1h") {
@@ -2006,9 +2031,11 @@ func convertToolsWithStrictTools(v *cacheControlValidator, tools []provider.Tool
 
 			tp := &anthropic.BetaToolParam{
 				Name:         t.Name,
-				Description:  anthropic.String(t.Description),
 				InputSchema:  schema,
 				CacheControl: cc,
+			}
+			if t.Description != "" {
+				tp.Description = anthropic.String(t.Description)
 			}
 			if t.Strict != nil {
 				if supportsStrictTools {
@@ -2287,6 +2314,12 @@ func convertProviderTool(t provider.Tool) (anthropic.BetaToolUnionParam, []strin
 			var maxUses int64
 			if json.Unmarshal(raw, &maxUses) == nil {
 				param.MaxUses = anthropic.Opt(maxUses)
+			}
+		}
+		if raw, ok := t.Args["maxTokens"]; ok {
+			var maxTokens int64
+			if json.Unmarshal(raw, &maxTokens) == nil {
+				param.MaxTokens = anthropic.Opt(maxTokens)
 			}
 		}
 		if raw, ok := t.Args["caching"]; ok {

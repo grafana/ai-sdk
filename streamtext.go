@@ -1258,6 +1258,17 @@ loop:
 	if partialCompleted {
 		step.FinishReason = provider.FinishReason{Unified: provider.FinishReasonOther}
 	}
+	if terminated && !completed {
+		step.FinishReason = provider.FinishReason{Unified: provider.FinishReasonError}
+		step.Content = buildContent(step)
+		step.Response.Messages = ToResponseMessages(buildResponseContent(step))
+		r.emit(StreamFinishStep{
+			Response:         &responseMeta,
+			Usage:            &step.Usage,
+			FinishReason:     step.FinishReason,
+			ProviderMetadata: step.ProviderMetadata,
+		})
+	}
 	if completed || partialCompleted {
 		if err := r.executeTools(ctx, &step, cfg, stepContext, currentMsgs); err != nil {
 			return step, false, false, hasOutput, err

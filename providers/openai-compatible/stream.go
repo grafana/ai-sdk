@@ -7,7 +7,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"sort"
 	"strings"
 
 	"github.com/grafana/ai-sdk/provider"
@@ -22,14 +21,16 @@ type streamState struct {
 	metadataKey     string
 	includeRaw      bool
 
-	textActive      bool
-	reasoningActive bool
-	finishReason    provider.FinishReason
-	usage           *provider.Usage
-	rawUsage        *openAIUsage
-	toolCalls       map[int]*streamToolCall
-	toolCallIDs     map[string]int
-	errorEmitted    bool
+	textActive       bool
+	reasoningActive  bool
+	finishReason     provider.FinishReason
+	usage            *provider.Usage
+	rawUsage         *openAIUsage
+	toolCalls        []*streamToolCall
+	toolCallsByID    map[string]*streamToolCall
+	toolCallsByIndex map[int]*streamToolCall
+	latestToolCall   *streamToolCall
+	errorEmitted     bool
 }
 
 type streamToolCall struct {
@@ -44,16 +45,16 @@ type streamToolCall struct {
 
 func (m *model) runStream(ctx context.Context, endpoint string, requestBody []byte, body io.Reader, headers http.Header, warnings []provider.Warning, includeRaw bool, metadataKey string, out chan<- provider.StreamPart) {
 	state := &streamState{
-		ctx:             ctx,
-		out:             out,
-		endpoint:        endpoint,
-		responseHeaders: headers,
-		providerName:    m.providerName,
-		metadataKey:     metadataKey,
-		includeRaw:      includeRaw,
-		finishReason:    provider.FinishReason{Unified: provider.FinishReasonOther},
-		toolCalls:       map[int]*streamToolCall{},
-		toolCallIDs:     map[string]int{},
+		ctx:              ctx,
+		out:              out,
+		endpoint:         endpoint,
+		responseHeaders:  headers,
+		providerName:     m.providerName,
+		metadataKey:      metadataKey,
+		includeRaw:       includeRaw,
+		finishReason:     provider.FinishReason{Unified: provider.FinishReasonOther},
+		toolCallsByID:    map[string]*streamToolCall{},
+		toolCallsByIndex: map[int]*streamToolCall{},
 	}
 
 	if !sendStreamPart(ctx, out, provider.StreamPart{Type: provider.PartStreamStart, Warnings: warnings}) {
@@ -228,8 +229,8 @@ func (s *streamState) handleChoice(choice chatChoice) bool {
 			}
 			s.reasoningActive = false
 		}
-		for position, toolDelta := range delta.ToolCalls {
-			if !s.handleToolCallDelta(toolDelta, position) {
+		for _, toolDelta := range delta.ToolCalls {
+			if !s.handleToolCallDelta(toolDelta) {
 				return false
 			}
 		}
@@ -238,19 +239,24 @@ func (s *streamState) handleChoice(choice chatChoice) bool {
 	return true
 }
 
-func (s *streamState) handleToolCallDelta(delta chatToolCallDelta, position int) bool {
-	index := s.toolCallIndex(delta, position)
-	state := s.toolCalls[index]
+func (s *streamState) handleToolCallDelta(delta chatToolCallDelta) bool {
+	state := s.resolveToolCall(delta)
 	if state == nil {
 		state = &streamToolCall{}
-		s.toolCalls[index] = state
+		s.toolCalls = append(s.toolCalls, state)
 	}
+	if delta.Index != nil {
+		s.toolCallsByIndex[*delta.Index] = state
+	}
+	s.latestToolCall = state
+
 	if state.finished {
 		return true
 	}
 	if delta.ID != "" && !state.started && state.id == "" {
 		state.id = delta.ID
 		state.providerID = delta.ID
+		s.toolCallsByID[delta.ID] = state
 	}
 	if delta.Function.Name != "" {
 		state.name = delta.Function.Name
@@ -307,40 +313,14 @@ func (s *streamState) handleToolCallDelta(delta chatToolCallDelta, position int)
 	return true
 }
 
-func (s *streamState) toolCallIndex(delta chatToolCallDelta, position int) int {
+func (s *streamState) resolveToolCall(delta chatToolCallDelta) *streamToolCall {
+	if delta.ID != "" {
+		return s.toolCallsByID[delta.ID]
+	}
 	if delta.Index != nil {
-		if delta.ID != "" {
-			s.toolCallIDs[delta.ID] = *delta.Index
-		}
-		return *delta.Index
+		return s.toolCallsByIndex[*delta.Index]
 	}
-	if delta.ID == "" {
-		return position
-	}
-	if index, ok := s.toolCallIDs[delta.ID]; ok {
-		return index
-	}
-	if state := s.toolCalls[position]; state != nil {
-		switch {
-		case state.id == "" || state.id == delta.ID || state.providerID == delta.ID:
-			s.toolCallIDs[delta.ID] = position
-			return position
-		}
-	} else {
-		s.toolCallIDs[delta.ID] = position
-		return position
-	}
-	index := s.nextToolCallIndex()
-	s.toolCallIDs[delta.ID] = index
-	return index
-}
-
-func (s *streamState) nextToolCallIndex() int {
-	for index := 0; ; index++ {
-		if s.toolCalls[index] == nil {
-			return index
-		}
-	}
+	return s.latestToolCall
 }
 
 func (s *streamState) flush() {
@@ -353,13 +333,7 @@ func (s *streamState) flush() {
 		s.textActive = false
 	}
 
-	indices := make([]int, 0, len(s.toolCalls))
-	for index := range s.toolCalls {
-		indices = append(indices, index)
-	}
-	sort.Ints(indices)
-	for _, index := range indices {
-		tc := s.toolCalls[index]
+	for _, tc := range s.toolCalls {
 		if tc.finished {
 			continue
 		}

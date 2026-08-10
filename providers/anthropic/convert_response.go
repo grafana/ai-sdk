@@ -519,15 +519,25 @@ func marshalAdvisorResult(content anthropic.BetaAdvisorToolResultBlockContentUni
 	isError := false
 	switch content.Type {
 	case "advisor_result":
+		var stopReason *string
+		if content.JSON.StopReason.Valid() {
+			stopReason = &content.StopReason
+		}
 		value = struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
-		}{Type: "advisor_result", Text: content.Text}
+			Type       string  `json:"type"`
+			Text       string  `json:"text"`
+			StopReason *string `json:"stopReason,omitempty"`
+		}{Type: "advisor_result", Text: content.Text, StopReason: stopReason}
 	case "advisor_redacted_result":
+		var stopReason *string
+		if content.JSON.StopReason.Valid() {
+			stopReason = &content.StopReason
+		}
 		value = struct {
-			Type             string `json:"type"`
-			EncryptedContent string `json:"encryptedContent"`
-		}{Type: "advisor_redacted_result", EncryptedContent: content.EncryptedContent}
+			Type             string  `json:"type"`
+			EncryptedContent string  `json:"encryptedContent"`
+			StopReason       *string `json:"stopReason,omitempty"`
+		}{Type: "advisor_redacted_result", EncryptedContent: content.EncryptedContent, StopReason: stopReason}
 	case "advisor_tool_result_error":
 		isError = true
 		value = struct {

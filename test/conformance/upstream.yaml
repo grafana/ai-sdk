@@ -1,18 +1,18 @@
 upstream:
   repository: https://github.com/vercel/ai
-  commit: 22095f409fdf70dc858546fe26b1cf92f12f87f1
+  commit: d440c9de912e3f450e9aa8fc52a97517ee06ebd3
   packageSource: npm
-  verifiedAt: "2026-08-07"
+  verifiedAt: "2026-08-10"
 packages:
-  ai: 7.0.51
-  "@ai-sdk/anthropic": 4.0.29
-  "@ai-sdk/amazon-bedrock": 5.0.42
-  "@ai-sdk/gateway": 4.0.40
-  "@ai-sdk/openai": 4.0.29
-  "@ai-sdk/openai-compatible": 3.0.22
-  "@ai-sdk/provider": 4.0.5
-  "@ai-sdk/provider-utils": 5.0.20
-  "@ai-sdk/react": 4.0.54
+  ai: 7.0.56
+  "@ai-sdk/anthropic": 4.0.34
+  "@ai-sdk/amazon-bedrock": 5.0.48
+  "@ai-sdk/gateway": 4.0.44
+  "@ai-sdk/openai": 4.0.34
+  "@ai-sdk/openai-compatible": 3.0.25
+  "@ai-sdk/provider": 4.0.6
+  "@ai-sdk/provider-utils": 5.0.23
+  "@ai-sdk/react": 4.0.59
 verification:
   status: enforced
   conformanceScope: full
@@ -72,6 +72,14 @@ knownGaps:
       exposes a realtime translation model. The Go port currently scopes provider
       parity to LanguageModel surfaces and does not expose speech translation models,
       stream orchestration, realtime translation transport, or conformance coverage.
+  - id: batch-language-model-surface
+    surface: provider-contract
+    status: gap
+    description: Upstream provider v4 exposes optional language-model batch submission
+      and ai exposes batch orchestration, with Anthropic and OpenAI implementations in
+      the registered baseline. The Go LanguageModel contract and providers currently
+      expose only synchronous generate and stream calls, without batch APIs or
+      conformance coverage.
   - id: structured-output-repair-text
     surface: core-orchestration
     status: gap

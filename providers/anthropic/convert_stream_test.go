@@ -212,6 +212,43 @@ func TestStreamAdapter_MessageEvents(t *testing.T) {
 		require.NotNil(t, parts[0].FinishReason)
 		assert.Equal(t, provider.FinishReasonStop, parts[0].FinishReason.Unified)
 	})
+
+	t.Run("duplicate open message start", func(t *testing.T) {
+		events := []anthropic.BetaRawMessageStreamEventUnion{
+			unmarshalEvent(t, `{"type":"message_start","message":{"id":"msg_1","model":"claude-sonnet-4-6","usage":{"input_tokens":10,"output_tokens":0}}}`),
+			unmarshalEvent(t, `{"type":"message_start","message":{"id":"msg_1","model":"claude-sonnet-4-6","usage":{"input_tokens":10,"output_tokens":0}}}`),
+		}
+
+		parts := collectParts(events)
+		require.Len(t, parts, 1)
+		assert.Equal(t, provider.PartResponseMeta, parts[0].Type)
+	})
+
+	t.Run("different message starts while open", func(t *testing.T) {
+		adapter := &streamAdapter{blocks: make(map[int64]*blockState)}
+		ch := make(chan provider.StreamPart, 8)
+		require.NoError(t, adapter.handleEvent(
+			unmarshalEvent(t, `{"type":"message_start","message":{"id":"msg_1","model":"claude-sonnet-4-6","usage":{"input_tokens":10,"output_tokens":0}}}`),
+			ch,
+		))
+		err := adapter.handleEvent(
+			unmarshalEvent(t, `{"type":"message_start","message":{"id":"msg_2","model":"claude-sonnet-4-6","usage":{"input_tokens":10,"output_tokens":0}}}`),
+			ch,
+		)
+		require.ErrorContains(t, err, `message "msg_2" while message "msg_1" is still open`)
+		require.NoError(t, adapter.handleEvent(
+			unmarshalEvent(t, `{"type":"content_block_start","index":0,"content_block":{"type":"text","text":"ignored"}}`),
+			ch,
+		))
+		close(ch)
+
+		parts := make([]provider.StreamPart, 0, len(ch))
+		for part := range ch {
+			parts = append(parts, part)
+		}
+		require.Len(t, parts, 1)
+		assert.Equal(t, "msg_1", parts[0].ResponseID)
+	})
 }
 
 func TestStreamAdapter_CacheMetrics(t *testing.T) {

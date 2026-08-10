@@ -725,6 +725,29 @@ func TestStream_ReasoningSummary(t *testing.T) {
 	assert.Nil(t, meta["reasoningEncryptedContent"])
 }
 
+func TestStream_RotatedItemIDsUseOutputIndex(t *testing.T) {
+	parts := collectParts(t,
+		`{"type":"response.output_item.added","sequence_number":1,"output_index":0,"item":{"type":"reasoning","id":"reasoning-stable","summary":[],"encrypted_content":"enc"}}`,
+		`{"type":"response.reasoning_summary_text.delta","sequence_number":2,"output_index":0,"item_id":"reasoning-rotated","summary_index":0,"delta":"thinking"}`,
+		`{"type":"response.output_item.done","sequence_number":3,"output_index":0,"item":{"type":"reasoning","id":"reasoning-done-rotated","summary":[{"type":"summary_text","text":"thinking"}],"encrypted_content":"enc"}}`,
+		`{"type":"response.output_item.added","sequence_number":4,"output_index":1,"item":{"type":"message","id":"message-stable","role":"assistant","status":"in_progress","content":[]}}`,
+		`{"type":"response.output_text.delta","sequence_number":5,"output_index":1,"content_index":0,"item_id":"message-rotated","delta":"answer","logprobs":[]}`,
+		`{"type":"response.output_item.done","sequence_number":6,"output_index":1,"item":{"type":"message","id":"message-done-rotated","role":"assistant","status":"completed","content":[{"type":"output_text","text":"answer","annotations":[],"logprobs":[]}]}}`,
+	)
+
+	var reasoningIDs, textIDs []string
+	for _, part := range parts {
+		switch part.Type {
+		case provider.PartReasoningStart, provider.PartReasoningDelta, provider.PartReasoningEnd:
+			reasoningIDs = append(reasoningIDs, part.ID)
+		case provider.PartTextStart, provider.PartTextDelta, provider.PartTextEnd:
+			textIDs = append(textIDs, part.ID)
+		}
+	}
+	assert.Equal(t, []string{"reasoning-stable:0", "reasoning-stable:0", "reasoning-stable:0"}, reasoningIDs)
+	assert.Equal(t, []string{"message-stable", "message-stable", "message-stable"}, textIDs)
+}
+
 func TestStream_ReasoningSummaryPartsFollowStoreSemantics(t *testing.T) {
 	parts := collectPartsWithBuildResult(t, buildResult{store: false},
 		`{"type":"response.output_item.added","sequence_number":1,"output_index":0,"item":{"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":"enc"}}`,

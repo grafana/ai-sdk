@@ -6,6 +6,7 @@
 #   <upstream-fixture-name>: null               (not yet imported)
 
 anthropic-advisor-20250301.1: advisor
+anthropic-advisor-stop-reasons: advisor-stop-reasons
 anthropic-text: text-generation
 anthropic-tool-no-args: tool-call-no-args
 anthropic-clear-thinking.1: clear-thinking
@@ -24,7 +25,9 @@ anthropic-json-tool.1: json-tool-1
 anthropic-json-tool.2: json-tool-2
 anthropic-mcp.1: mcp
 anthropic-message-delta-input-tokens: message-delta-input-tokens
+duplicate-message-start: duplicate-message-start
 anthropic-programmatic-tool-calling.1: programmatic-tool-calling
+spliced-message-start: spliced-message-start
 anthropic-refusal: refusal
 anthropic-tool-search-bm25.1: tool-search-bm25
 anthropic-tool-search-deferred-bm25: tool-search-deferred-bm25
@@ -36,6 +39,7 @@ anthropic-web-search-tool.1: web-search-tool
 
 # Non-streaming fixtures not yet imported:
 anthropic-advisor-20260301.1: null
+anthropic-advisor-stop-reasons.json: null
 anthropic-claude-opus-5-reasoning-high.1: null
 anthropic-memory-20250818.1: null
 anthropic-refusal-no-details: null
