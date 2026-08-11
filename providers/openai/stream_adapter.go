@@ -99,7 +99,7 @@ func (a *streamAdapter) handleEvent(event responses.ResponseStreamEventUnion, ch
 		a.handleOutputItemAdded(e, ch)
 
 	case responses.ResponseTextDeltaEvent:
-		itemID := a.resolveOutputItemID(e.ItemID, e.OutputIndex)
+		itemID := a.resolveOptionalOutputItemID(e.ItemID, e.OutputIndex, e.JSON.OutputIndex.Valid())
 		ch <- provider.StreamPart{Type: provider.PartTextDelta, ID: itemID, Delta: e.Delta}
 
 	case responses.ResponseOutputTextAnnotationAddedEvent:
@@ -122,7 +122,7 @@ func (a *streamAdapter) handleEvent(event responses.ResponseStreamEventUnion, ch
 		ch <- provider.StreamPart{Type: provider.PartToolInputDelta, ID: id, Delta: e.Delta}
 
 	case responses.ResponseReasoningSummaryTextDeltaEvent:
-		itemID := a.resolveOutputItemID(e.ItemID, e.OutputIndex)
+		itemID := a.resolveOptionalOutputItemID(e.ItemID, e.OutputIndex, e.JSON.OutputIndex.Valid())
 		ch <- provider.StreamPart{
 			Type:             provider.PartReasoningDelta,
 			ID:               fmt.Sprintf("%s:%d", itemID, e.SummaryIndex),
@@ -131,9 +131,9 @@ func (a *streamAdapter) handleEvent(event responses.ResponseStreamEventUnion, ch
 		}
 
 	case responses.ResponseReasoningSummaryPartAddedEvent:
-		itemID := a.resolveOutputItemID(e.ItemID, e.OutputIndex)
-		if e.SummaryIndex > 0 {
-			state := a.reasoningState(itemID)
+		itemID := a.resolveOptionalOutputItemID(e.ItemID, e.OutputIndex, e.JSON.OutputIndex.Valid())
+		state := a.activeReasoning[itemID]
+		if e.SummaryIndex > 0 && state != nil {
 			for index, status := range state.summaryParts {
 				if status == reasoningSummaryCanConclude {
 					ch <- provider.StreamPart{
@@ -153,8 +153,11 @@ func (a *streamAdapter) handleEvent(event responses.ResponseStreamEventUnion, ch
 		}
 
 	case responses.ResponseReasoningSummaryPartDoneEvent:
-		itemID := a.resolveOutputItemID(e.ItemID, e.OutputIndex)
-		state := a.reasoningState(itemID)
+		itemID := a.resolveOptionalOutputItemID(e.ItemID, e.OutputIndex, e.JSON.OutputIndex.Valid())
+		state := a.activeReasoning[itemID]
+		if state == nil {
+			break
+		}
 		if a.br.storeExplicitlyEnabled {
 			ch <- provider.StreamPart{
 				Type:             provider.PartReasoningEnd,
@@ -372,25 +375,20 @@ func (a *streamAdapter) handleOutputItemDone(e responses.ResponseOutputItemDoneE
 
 	case responses.ResponseReasoningItem:
 		itemID := a.resolveOutputItemID(v.ID, e.OutputIndex)
-		encrypted := v.EncryptedContent
 		state := a.activeReasoning[itemID]
-		if encrypted == "" && state != nil {
-			encrypted = state.encryptedContent
-		}
-		if state == nil {
-			state = &activeReasoningState{summaryParts: map[int64]reasoningSummaryState{0: reasoningSummaryActive}}
-		}
-		for index, status := range state.summaryParts {
-			if status != reasoningSummaryActive && status != reasoningSummaryCanConclude {
-				continue
+		if state != nil {
+			for index, status := range state.summaryParts {
+				if status != reasoningSummaryActive && status != reasoningSummaryCanConclude {
+					continue
+				}
+				ch <- provider.StreamPart{
+					Type:             provider.PartReasoningEnd,
+					ID:               fmt.Sprintf("%s:%d", itemID, index),
+					ProviderMetadata: reasoningMeta(a.providerName, itemID, v.EncryptedContent),
+				}
 			}
-			ch <- provider.StreamPart{
-				Type:             provider.PartReasoningEnd,
-				ID:               fmt.Sprintf("%s:%d", itemID, index),
-				ProviderMetadata: reasoningMeta(a.providerName, itemID, encrypted),
-			}
+			delete(a.activeReasoning, itemID)
 		}
-		delete(a.activeReasoning, itemID)
 		delete(a.activeOutputItemIDs, e.OutputIndex)
 
 	case responses.ResponseFunctionWebSearch:
@@ -605,13 +603,11 @@ func (a *streamAdapter) resolveOutputItemID(itemID string, outputIndex int64) st
 	return itemID
 }
 
-func (a *streamAdapter) reasoningState(itemID string) *activeReasoningState {
-	state := a.activeReasoning[itemID]
-	if state == nil {
-		state = &activeReasoningState{summaryParts: map[int64]reasoningSummaryState{}}
-		a.activeReasoning[itemID] = state
+func (a *streamAdapter) resolveOptionalOutputItemID(itemID string, outputIndex int64, outputIndexPresent bool) string {
+	if !outputIndexPresent {
+		return itemID
 	}
-	return state
+	return a.resolveOutputItemID(itemID, outputIndex)
 }
 
 func (a *streamAdapter) emitAnnotationSource(raw string, annotation any, ch chan<- provider.StreamPart) {

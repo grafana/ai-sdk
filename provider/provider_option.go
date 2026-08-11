@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 )
@@ -112,13 +113,16 @@ func BuildProviderOptions(opts ...ProviderOption) ProviderOptions {
 func ResolveOption[T any](opts ProviderOptions, key string) (T, bool, error) {
 	var zero T
 	opt, ok := opts[key]
-	if !ok {
+	if !ok || opt == nil {
 		return zero, false, nil
 	}
 	switch v := opt.(type) {
 	case T:
 		return v, true, nil
 	case RawProviderOption:
+		if bytes.Equal(bytes.TrimSpace(v.Raw), []byte("null")) {
+			return zero, false, nil
+		}
 		var result T
 		if err := json.Unmarshal(v.Raw, &result); err != nil {
 			return zero, true, fmt.Errorf("provider: unmarshaling %q option: %w", key, err)

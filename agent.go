@@ -262,15 +262,17 @@ func (a *ToolLoopAgent) Generate(ctx context.Context, opts ...AgentGenerateOptio
 	call := buildAgentGenerateCall(opts)
 	settingsCfg := cloneStreamConfig(a.settingsConfig)
 	callGenerateCfg := buildGenerateConfig(call.generateOptions)
-	timeoutWarnings := generateTimeoutWarnings(callGenerateCfg.timeout)
+	effectiveTimeout := settingsCfg.timeout
+	if callGenerateCfg.timeoutSet {
+		effectiveTimeout = callGenerateCfg.timeout
+	}
+	timeoutWarnings := generateTimeoutWarnings(effectiveTimeout)
 	callCfg := callGenerateCfg.toStreamConfig()
 	cfg := mergeStreamConfig(settingsCfg, callCfg)
 	cfg.onChunk = nil
 	cfg.onAbort = nil
 	cfg.includeRawChunks = false
 	cfg.parseOutputOnNonStop = false
-	cfg.timeout = callGenerateCfg.timeout
-	cfg.timeoutSet = callGenerateCfg.timeoutSet
 	cfg.timeout.FirstChunk = 0
 	cfg.timeout.Chunk = 0
 	a.finalizeConfig(cfg, call.runtimeContext, call.runtimeContextSet)
@@ -280,6 +282,9 @@ func (a *ToolLoopAgent) Generate(ctx context.Context, opts ...AgentGenerateOptio
 	}
 	result.Wait()
 	if err := result.Err(); err != nil {
+		return nil, err
+	}
+	if err := result.abortError(); err != nil {
 		return nil, err
 	}
 	generateResult := streamResultToGenerateResult(result)

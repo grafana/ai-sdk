@@ -90,19 +90,43 @@ func TestToolLoopAgent_PerCallZeroTimeoutClearsReusableTimeout(t *testing.T) {
 	assert.Equal(t, "xx", result.Text)
 }
 
-func TestToolLoopAgent_GenerateIgnoresReusableTimeout(t *testing.T) {
+func TestToolLoopAgent_GenerateUsesReusableTotalTimeout(t *testing.T) {
 	model := &mockModel{streamFunc: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
 		return &provider.StreamResult{Stream: stallingStreamParts(200 * time.Millisecond)}, nil
 	}}
 	agent := NewToolLoopAgent(model, WithToolLoopAgentOptions(
-		WithTimeout(TimeoutConfig{Total: 50 * time.Millisecond, FirstChunk: 50 * time.Millisecond, Chunk: 50 * time.Millisecond}),
+		WithTimeout(TimeoutConfig{Total: 50 * time.Millisecond}),
 		WithMaxRetries(0),
 	))
 
 	result, err := agent.Generate(context.Background(), WithAgentPrompt("hi"))
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.Nil(t, result)
+}
+
+func TestToolLoopAgent_GenerateWarnsForReusableStreamTimeouts(t *testing.T) {
+	model := &mockModel{streamFunc: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+		return &provider.StreamResult{Stream: textStreamParts("hello")}, nil
+	}}
+	agent := NewToolLoopAgent(model, WithToolLoopAgentOptions(
+		WithTimeout(TimeoutConfig{FirstChunk: 50 * time.Millisecond, Chunk: 50 * time.Millisecond}),
+	))
+
+	result, err := agent.Generate(context.Background(), WithAgentPrompt("hi"))
 	require.NoError(t, err)
-	assert.Equal(t, "xx", result.Text)
-	assert.Empty(t, result.Warnings)
+	assert.Equal(t, "hello", result.Text)
+	assert.Equal(t, []provider.Warning{
+		{
+			Type:    provider.WarnUnsupported,
+			Feature: "timeout.firstChunkMs",
+			Details: "The firstChunkMs timeout is only supported by streaming functions.",
+		},
+		{
+			Type:    provider.WarnUnsupported,
+			Feature: "timeout.chunkMs",
+			Details: "The chunkMs timeout is only supported by streaming functions.",
+		},
+	}, result.Warnings)
 }
 
 func TestToolLoopAgent_GenerateWarnsForPerCallStreamTimeouts(t *testing.T) {

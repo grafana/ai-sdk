@@ -244,18 +244,27 @@ func serializeToolCallArguments(input []byte) string {
 }
 
 // toolResultOutputString renders a tool result output to its string form.
-func toolResultOutputString(out *provider.ToolResultOutput) string {
+func toolResultOutputString(out *provider.ToolResultOutput, encodeTextAsJSON bool) string {
 	if out == nil {
 		return ""
 	}
 	switch out.Type {
 	case provider.ToolOutputText, provider.ToolOutputErrorText:
+		if encodeTextAsJSON {
+			encoded, _ := json.Marshal(out.Text)
+			return string(encoded)
+		}
 		return out.Text
 	case provider.ToolOutputExecutionDenied:
-		if out.Reason != "" {
-			return out.Reason
+		reason := out.Reason
+		if reason == "" {
+			reason = "Tool call execution denied."
 		}
-		return "Tool call execution denied."
+		if encodeTextAsJSON {
+			encoded, _ := json.Marshal(reason)
+			return string(encoded)
+		}
+		return reason
 	case provider.ToolOutputJSON, provider.ToolOutputErrorJSON:
 		return string(out.JSON)
 	default:

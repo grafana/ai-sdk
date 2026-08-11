@@ -428,6 +428,34 @@ func TestBuildParams_FunctionCallRoundTrip(t *testing.T) {
 	assert.True(t, foFound, "function_call_output present")
 }
 
+func TestBuildParams_OutputSchemaTextResultsAreJSONEncoded(t *testing.T) {
+	body, _ := buildBody(t, "gpt-4o", provider.CallOptions{
+		Prompt: []provider.Message{provider.NewToolMessage(
+			provider.ToolResultPart("call_text", "search", &provider.ToolResultOutput{Type: provider.ToolOutputText, Text: "The weather is sunny"}),
+			provider.ToolResultPart("call_error", "search", &provider.ToolResultOutput{Type: provider.ToolOutputErrorText, Text: "Error: boom"}),
+			provider.ToolResultPart("call_denied", "search", &provider.ToolResultOutput{Type: provider.ToolOutputExecutionDenied, Reason: "User denied the tool execution"}),
+			provider.ToolResultPart("call_without_schema", "lookup", &provider.ToolResultOutput{Type: provider.ToolOutputErrorText, Text: "Error: unchanged"}),
+		)},
+		Tools: []provider.Tool{
+			{
+				Type: provider.ToolTypeFunction,
+				Name: "search",
+				ProviderOptions: provider.BuildProviderOptions(OpenAIToolOptions{
+					OutputSchema: json.RawMessage(`{"type":"object"}`),
+				}),
+			},
+			{Type: provider.ToolTypeFunction, Name: "lookup"},
+		},
+	})
+
+	input := body["input"].([]any)
+	require.Len(t, input, 4)
+	assert.Equal(t, `"The weather is sunny"`, input[0].(map[string]any)["output"])
+	assert.Equal(t, `"Error: boom"`, input[1].(map[string]any)["output"])
+	assert.Equal(t, `"User denied the tool execution"`, input[2].(map[string]any)["output"])
+	assert.Equal(t, "Error: unchanged", input[3].(map[string]any)["output"])
+}
+
 func TestBuildParams_ProviderToolContinuationTaxonomy(t *testing.T) {
 	noStore := false
 

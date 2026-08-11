@@ -748,6 +748,33 @@ func TestStream_RotatedItemIDsUseOutputIndex(t *testing.T) {
 	assert.Equal(t, []string{"message-stable", "message-stable", "message-stable"}, textIDs)
 }
 
+func TestStream_NullishOutputIndexDoesNotReuseActiveItemID(t *testing.T) {
+	parts := collectParts(t,
+		`{"type":"response.output_item.added","sequence_number":1,"output_index":0,"item":{"type":"message","id":"message-stable","role":"assistant","status":"in_progress","content":[]}}`,
+		`{"type":"response.output_text.delta","sequence_number":2,"content_index":0,"item_id":"message-omitted","delta":"omitted","logprobs":[]}`,
+		`{"type":"response.output_text.delta","sequence_number":3,"output_index":null,"content_index":0,"item_id":"message-null","delta":"null","logprobs":[]}`,
+		`{"type":"response.output_text.delta","sequence_number":4,"output_index":0,"content_index":0,"item_id":"message-rotated","delta":"zero","logprobs":[]}`,
+	)
+
+	var ids []string
+	for _, part := range parts {
+		if part.Type == provider.PartTextDelta {
+			ids = append(ids, part.ID)
+		}
+	}
+	assert.Equal(t, []string{"message-omitted", "message-null", "message-stable"}, ids)
+}
+
+func TestStream_OrphanReasoningLifecycleEventsAreIgnored(t *testing.T) {
+	parts := collectParts(t,
+		`{"type":"response.reasoning_summary_part.added","sequence_number":1,"output_index":0,"item_id":"rs_orphan","summary_index":1,"part":{"type":"summary_text","text":""}}`,
+		`{"type":"response.reasoning_summary_part.done","sequence_number":2,"output_index":0,"item_id":"rs_orphan","summary_index":1,"part":{"type":"summary_text","text":"orphan"}}`,
+		`{"type":"response.output_item.done","sequence_number":3,"output_index":0,"item":{"type":"reasoning","id":"rs_orphan","summary":[{"type":"summary_text","text":"orphan"}],"encrypted_content":null}}`,
+	)
+
+	assert.Equal(t, []provider.StreamPartType{provider.PartStreamStart}, partTypes(parts))
+}
+
 func TestStream_ReasoningSummaryPartsFollowStoreSemantics(t *testing.T) {
 	parts := collectPartsWithBuildResult(t, buildResult{store: false},
 		`{"type":"response.output_item.added","sequence_number":1,"output_index":0,"item":{"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":"enc"}}`,
@@ -778,6 +805,19 @@ func TestStream_ReasoningSummaryPartsFollowStoreSemantics(t *testing.T) {
 	var terminalMeta map[string]any
 	require.NoError(t, json.Unmarshal(parts[len(parts)-1].ProviderMetadata["openai"], &terminalMeta))
 	assert.Equal(t, "enc", terminalMeta["reasoningEncryptedContent"])
+}
+
+func TestStream_ReasoningEndUsesTerminalEncryptedContent(t *testing.T) {
+	parts := collectPartsWithBuildResult(t, buildResult{store: false},
+		`{"type":"response.output_item.added","sequence_number":1,"output_index":0,"item":{"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":"initial"}}`,
+		`{"type":"response.output_item.done","sequence_number":2,"output_index":0,"item":{"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":null}}`,
+	)
+
+	require.Len(t, parts, 3)
+	assert.Equal(t, provider.PartReasoningEnd, parts[2].Type)
+	var metadata map[string]any
+	require.NoError(t, json.Unmarshal(parts[2].ProviderMetadata["openai"], &metadata))
+	assert.Nil(t, metadata["reasoningEncryptedContent"])
 }
 
 func TestStream_ReasoningSummaryStoreOptionControlsTerminalEvent(t *testing.T) {
