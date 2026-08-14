@@ -141,7 +141,7 @@ func convertUsage(usage *openAIUsage) provider.Usage {
 		},
 		OutputTokens: provider.OutputTokenUsage{
 			Total:     ptr(outputTotal),
-			Text:      ptr(outputTotal - reasoning),
+			Text:      ptr(max(0, outputTotal-reasoning)),
 			Reasoning: ptr(reasoning),
 		},
 		Raw: raw,

@@ -975,7 +975,7 @@ func TestDoStreamRawProviderOptionsKeyWarning(t *testing.T) {
 	}, parts[0].Warnings)
 }
 
-func TestDoStreamUsagePreservesGenericReasoningAccounting(t *testing.T) {
+func TestDoStreamUsageClampsNegativeTextTokens(t *testing.T) {
 	t.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1000,7 +1000,7 @@ func TestDoStreamUsagePreservesGenericReasoningAccounting(t *testing.T) {
 	require.Equal(t, 1, *finish.Usage.InputTokens.NoCache)
 	require.Equal(t, 11, *finish.Usage.InputTokens.CacheRead)
 	require.Equal(t, 2, *finish.Usage.OutputTokens.Total)
-	require.Equal(t, -338, *finish.Usage.OutputTokens.Text)
+	require.Equal(t, 0, *finish.Usage.OutputTokens.Text)
 	require.Equal(t, 340, *finish.Usage.OutputTokens.Reasoning)
 	require.JSONEq(t, `{"prompt_tokens":12,"completion_tokens":2,"total_tokens":354,"prompt_tokens_details":{"cached_tokens":11},"completion_tokens_details":{"reasoning_tokens":340},"cost_in_usd_ticks":1721250}`, string(finish.Usage.Raw))
 }
