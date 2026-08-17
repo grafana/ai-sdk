@@ -428,6 +428,32 @@ func TestBuildParams_FunctionCallRoundTrip(t *testing.T) {
 	assert.True(t, foFound, "function_call_output present")
 }
 
+func TestBuildParams_PreviousResponseIDPreservesClientToolCallPair(t *testing.T) {
+	call := provider.ToolCallPart("call_123", "getWeather", json.RawMessage(`{"location":"San Francisco"}`))
+	call.ProviderOptions = provider.BuildProviderOptions(OpenAIPartOptions{ItemID: "fc_123"})
+	body, _ := buildBody(t, "gpt-5", provider.CallOptions{
+		Prompt: []provider.Message{
+			provider.NewAssistantMessage(call),
+			provider.NewToolMessage(provider.ToolResultPart("call_123", "getWeather", &provider.ToolResultOutput{
+				Type: provider.ToolOutputJSON,
+				JSON: json.RawMessage(`{"temp":72}`),
+			})),
+		},
+		Tools:           []provider.Tool{{Type: provider.ToolTypeFunction, Name: "getWeather"}},
+		ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{PreviousResponseID: "resp_prev"}),
+	})
+
+	input := body["input"].([]any)
+	require.Len(t, input, 2)
+	callItem := input[0].(map[string]any)
+	assert.Equal(t, "function_call", callItem["type"])
+	assert.Equal(t, "call_123", callItem["call_id"])
+	assert.Equal(t, "getWeather", callItem["name"])
+	outputItem := input[1].(map[string]any)
+	assert.Equal(t, "function_call_output", outputItem["type"])
+	assert.Equal(t, "call_123", outputItem["call_id"])
+}
+
 func TestBuildParams_OutputSchemaTextResultsAreJSONEncoded(t *testing.T) {
 	body, _ := buildBody(t, "gpt-4o", provider.CallOptions{
 		Prompt: []provider.Message{provider.NewToolMessage(
@@ -581,6 +607,37 @@ func TestBuildParams_ProviderToolContinuationTaxonomy(t *testing.T) {
 		assert.Equal(t, "call_local", input[0].(map[string]any)["call_id"])
 		assert.Equal(t, "local_shell_call_output", input[1].(map[string]any)["type"])
 		assert.Equal(t, "call_local", input[1].(map[string]any)["call_id"])
+	})
+
+	t.Run("provider-executed shell call pairs with output without storage", func(t *testing.T) {
+		body, _ := buildBody(t, "gpt-5", provider.CallOptions{
+			Prompt: []provider.Message{provider.NewAssistantMessage(
+				provider.ContentPart{
+					Type:             provider.ContentPartTypeToolCall,
+					ToolCallID:       "call_shell",
+					ToolName:         "terminal",
+					Input:            json.RawMessage(`{"action":{"commands":["printf hello"]}}`),
+					ProviderExecuted: true,
+					ProviderOptions:  provider.BuildProviderOptions(OpenAIPartOptions{ItemID: "shell_item"}),
+				},
+				provider.ToolResultPart("call_shell", "terminal", &provider.ToolResultOutput{
+					Type: provider.ToolOutputJSON,
+					JSON: json.RawMessage(`{"output":[{"stdout":"hello","stderr":"","outcome":{"type":"exit","exitCode":0}}]}`),
+				}),
+			)},
+			Tools:           []provider.Tool{{Type: provider.ToolTypeProvider, ID: toolIDShell, Name: "terminal"}},
+			ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{Store: &noStore}),
+		})
+
+		input := body["input"].([]any)
+		require.Len(t, input, 2)
+		call := input[0].(map[string]any)
+		assert.Equal(t, "shell_call", call["type"])
+		assert.Equal(t, "call_shell", call["call_id"])
+		assert.Equal(t, "shell_item", call["id"])
+		output := input[1].(map[string]any)
+		assert.Equal(t, "shell_call_output", output["type"])
+		assert.Equal(t, "call_shell", output["call_id"])
 	})
 
 	t.Run("stored shell call pairs with reconstructed output", func(t *testing.T) {
@@ -902,17 +959,42 @@ func TestBuildParams_MCPApprovalContinuation(t *testing.T) {
 		Reason:          "denied",
 		ProviderOptions: provider.BuildProviderOptions(OpenAIPartOptions{ApprovalID: "approval_1"}),
 	})
-	body, _ := buildBody(t, "gpt-4o", provider.CallOptions{
-		Prompt: []provider.Message{provider.NewToolMessage(approved, approved, deniedResult)},
+	prompt := []provider.Message{provider.NewToolMessage(approved, approved, deniedResult)}
+
+	t.Run("standalone stored request references approval", func(t *testing.T) {
+		body, _ := buildBody(t, "gpt-4o", provider.CallOptions{Prompt: prompt})
+
+		input := body["input"].([]any)
+		require.Len(t, input, 2)
+		assert.Equal(t, map[string]any{"type": "item_reference", "id": "approval_1"}, input[0])
+		response := input[1].(map[string]any)
+		assert.Equal(t, "mcp_approval_response", response["type"])
+		assert.Equal(t, "approval_1", response["approval_request_id"])
+		assert.Equal(t, true, response["approve"])
 	})
 
-	input := body["input"].([]any)
-	require.Len(t, input, 2)
-	assert.Equal(t, map[string]any{"type": "item_reference", "id": "approval_1"}, input[0])
-	response := input[1].(map[string]any)
-	assert.Equal(t, "mcp_approval_response", response["type"])
-	assert.Equal(t, "approval_1", response["approval_request_id"])
-	assert.Equal(t, true, response["approve"])
+	continuations := []struct {
+		name    string
+		options OpenAIResponsesOptions
+	}{
+		{name: "previous response", options: OpenAIResponsesOptions{PreviousResponseID: "resp_prev"}},
+		{name: "conversation", options: OpenAIResponsesOptions{Conversation: "conv_1"}},
+	}
+	for _, tc := range continuations {
+		t.Run(tc.name, func(t *testing.T) {
+			body, _ := buildBody(t, "gpt-4o", provider.CallOptions{
+				Prompt:          prompt,
+				ProviderOptions: withOpenAIOptions(tc.options),
+			})
+
+			input := body["input"].([]any)
+			require.Len(t, input, 1)
+			response := input[0].(map[string]any)
+			assert.Equal(t, "mcp_approval_response", response["type"])
+			assert.Equal(t, "approval_1", response["approval_request_id"])
+			assert.Equal(t, true, response["approve"])
+		})
+	}
 }
 
 func TestBuildParams_CustomToolContentOptions(t *testing.T) {

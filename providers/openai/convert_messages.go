@@ -223,7 +223,7 @@ func convertToolMessage(msg provider.Message, ctx inputConversionContext) ([]res
 				continue
 			}
 			ctx.processedApprovalIDs[approvalID] = struct{}{}
-			if ctx.store {
+			if ctx.store && !ctx.hasConversation && !ctx.hasPreviousResponseID {
 				items = append(items, itemReference(approvalID))
 			}
 			approved := part.Approved != nil && *part.Approved

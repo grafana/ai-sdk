@@ -32,12 +32,13 @@ func TestPartRoundTrip(t *testing.T) {
 		assert.Equal(t, "done", tp.State)
 	})
 
-	t.Run("reasoning part preserves provider metadata", func(t *testing.T) {
+	t.Run("reasoning part preserves id and provider metadata", func(t *testing.T) {
 		msg := UIMessage{
 			ID:   "msg-1",
 			Role: RoleAssistant,
 			Parts: []Part{
 				ReasoningPart{
+					ID:               "reasoning-1",
 					Text:             "thinking...",
 					State:            "done",
 					ProviderMetadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"cacheTokens":100}`)},
@@ -51,6 +52,7 @@ func TestPartRoundTrip(t *testing.T) {
 		require.NoError(t, json.Unmarshal(b, &got))
 		rp, ok := got.Parts[0].(ReasoningPart)
 		require.True(t, ok, "expected ReasoningPart, got %T", got.Parts[0])
+		assert.Equal(t, "reasoning-1", rp.ID)
 		assert.Equal(t, "thinking...", rp.Text)
 		assert.Equal(t, "done", rp.State)
 		assert.NotNil(t, rp.ProviderMetadata["anthropic"])

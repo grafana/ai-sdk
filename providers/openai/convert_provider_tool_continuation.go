@@ -130,17 +130,18 @@ func convertAssistantToolCall(part provider.ContentPart, ctx inputConversionCont
 			item := itemReference(po.ItemID)
 			return &item, nil
 		}
-		return nil, nil
-	}
-
-	if ctx.hasPreviousResponseID && ctx.store && po.ItemID != "" {
-		return nil, nil
+		if ctx.store || !ctx.hasShellTool || toolName != "shell" {
+			return nil, nil
+		}
 	}
 
 	providerDefined := (ctx.hasLocalShellTool && toolName == "local_shell") ||
 		(ctx.hasShellTool && toolName == "shell") ||
 		(ctx.hasApplyPatchTool && toolName == "apply_patch") ||
 		ctx.isCustomProviderTool(toolName)
+	if ctx.hasPreviousResponseID && ctx.store && po.ItemID != "" && providerDefined {
+		return nil, nil
+	}
 	if ctx.store && po.ItemID != "" && providerDefined {
 		item := itemReference(po.ItemID)
 		return &item, nil
