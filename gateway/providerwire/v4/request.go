@@ -10,7 +10,7 @@ import (
 
 type callOptionsDTO struct {
 	Prompt           []json.RawMessage  `json:"prompt"`
-	Tools            []toolDTO          `json:"tools,omitempty"`
+	Tools            *[]toolDTO         `json:"tools,omitempty"`
 	ToolChoice       *toolChoiceDTO     `json:"toolChoice,omitempty"`
 	MaxOutputTokens  *int               `json:"maxOutputTokens,omitempty"`
 	Temperature      *float64           `json:"temperature,omitempty"`
@@ -18,7 +18,7 @@ type callOptionsDTO struct {
 	TopK             *int               `json:"topK,omitempty"`
 	PresencePenalty  *float64           `json:"presencePenalty,omitempty"`
 	FrequencyPenalty *float64           `json:"frequencyPenalty,omitempty"`
-	StopSequences    []string           `json:"stopSequences,omitempty"`
+	StopSequences    *[]string          `json:"stopSequences,omitempty"`
 	ResponseFormat   *responseFormatDTO `json:"responseFormat,omitempty"`
 	Seed             *int               `json:"seed,omitempty"`
 	Reasoning        *string            `json:"reasoning,omitempty"`
@@ -143,13 +143,22 @@ func encodeCallOptions(options provider.CallOptions) (callOptionsDTO, error) {
 		}
 		prompt[i] = encoded
 	}
-	tools := make([]toolDTO, len(options.Tools))
-	for i, tool := range options.Tools {
-		encoded, err := encodeTool(tool)
-		if err != nil {
-			return callOptionsDTO{}, fmt.Errorf("providerwirev4: encoding tool %d: %w", i, err)
+	var tools *[]toolDTO
+	if options.Tools != nil {
+		values := make([]toolDTO, len(options.Tools))
+		for i, tool := range options.Tools {
+			encoded, err := encodeTool(tool)
+			if err != nil {
+				return callOptionsDTO{}, fmt.Errorf("providerwirev4: encoding tool %d: %w", i, err)
+			}
+			values[i] = encoded
 		}
-		tools[i] = encoded
+		tools = &values
+	}
+	var stopSequences *[]string
+	if options.StopSequences != nil {
+		values := append([]string{}, options.StopSequences...)
+		stopSequences = &values
 	}
 	providerOptions, err := encodeProviderOptions(options.ProviderOptions)
 	if err != nil {
@@ -164,7 +173,7 @@ func encodeCallOptions(options provider.CallOptions) (callOptionsDTO, error) {
 		Prompt: prompt, Tools: tools,
 		MaxOutputTokens: options.MaxOutputTokens, Temperature: options.Temperature,
 		TopP: options.TopP, TopK: options.TopK, PresencePenalty: options.PresencePenalty,
-		FrequencyPenalty: options.FrequencyPenalty, StopSequences: options.StopSequences,
+		FrequencyPenalty: options.FrequencyPenalty, StopSequences: stopSequences,
 		Seed: options.Seed, IncludeRawChunks: options.IncludeRawChunks,
 		Headers: options.Headers, ProviderOptions: providerOptions,
 	}
@@ -214,14 +223,18 @@ func decodeCallOptions(dto callOptionsDTO) (provider.CallOptions, error) {
 	}
 	var tools []provider.Tool
 	if dto.Tools != nil {
-		tools = make([]provider.Tool, len(dto.Tools))
-		for i, tool := range dto.Tools {
+		tools = make([]provider.Tool, len(*dto.Tools))
+		for i, tool := range *dto.Tools {
 			decoded, err := decodeTool(tool)
 			if err != nil {
 				return provider.CallOptions{}, fmt.Errorf("providerwirev4: decoding tool %d: %w", i, err)
 			}
 			tools[i] = decoded
 		}
+	}
+	var stopSequences []string
+	if dto.StopSequences != nil {
+		stopSequences = append([]string{}, (*dto.StopSequences)...)
 	}
 	encodedProviderOptions, err := validateAndRemoveGatewayOptions(dto.ProviderOptions)
 	if err != nil {
@@ -236,7 +249,7 @@ func decodeCallOptions(dto callOptionsDTO) (provider.CallOptions, error) {
 		Prompt: prompt, Tools: tools,
 		MaxOutputTokens: dto.MaxOutputTokens, Temperature: dto.Temperature,
 		TopP: dto.TopP, TopK: dto.TopK, PresencePenalty: dto.PresencePenalty,
-		FrequencyPenalty: dto.FrequencyPenalty, StopSequences: dto.StopSequences,
+		FrequencyPenalty: dto.FrequencyPenalty, StopSequences: stopSequences,
 		Seed: dto.Seed, IncludeRawChunks: dto.IncludeRawChunks,
 		Headers: dto.Headers, ProviderOptions: providerOptions,
 	}

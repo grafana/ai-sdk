@@ -44,3 +44,5 @@
 - [x] 6.3 Update the proposal, design, canonical and archived specifications, and parity classification to distinguish fail-fast request fields from response-side additive tolerance.
 - [x] 6.4 Run focused race tests, vet, parity checks, strict OpenSpec validation, `git diff --check`, and a final request-only scope review.
 - [x] 6.5 Reject the reserved `type` key in provider references, document Gateway controls as intentionally unsupported for this phase, and rerun focused and parity validation.
+- [x] 6.6 Preserve explicit empty `tools` and `stopSequences` across strict request encoding and decoding so downstream defaults remain disabled, then rerun focused and parity validation.
+- [x] 6.7 Preserve both value and pointer forms of object-valued `provider.RawProviderOption` without exposing Go wrapper fields, and reject nil pointers.

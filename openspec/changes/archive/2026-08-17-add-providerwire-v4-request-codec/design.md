@@ -35,7 +35,7 @@ Keeping the implementations independent prevents compatibility behavior in the l
 
 ### 2. Own the wire shape with private DTOs
 
-Request objects and nested unions will use unexported DTOs. Conversion to and from `provider.CallOptions` will copy fields explicitly. Opaque JSON values—schemas, tool inputs, tool arguments, provider options, and JSON tool outputs—may remain `json.RawMessage` after validation.
+Request objects and nested unions will use unexported DTOs. Conversion to and from `provider.CallOptions` will copy fields explicitly. Presence-aware DTO fields will preserve non-nil empty `tools` and `stopSequences`, because downstream default-setting middleware distinguishes those values from absence. Opaque JSON values—schemas, tool inputs, tool arguments, provider options, and JSON tool outputs—may remain `json.RawMessage` after validation.
 
 Directly marshaling `provider.CallOptions` was rejected because provider-domain JSON methods accept compatibility forms and can change canonical bytes outside this package. Exporting DTOs was rejected because it would create a second public provider data model.
 

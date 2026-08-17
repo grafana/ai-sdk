@@ -41,7 +41,7 @@ Intrinsically opaque request values MAY pass through as copied `json.RawMessage`
 
 `EncodeCallOptions` SHALL emit canonical LanguageModelV4 request JSON for every request field represented by `provider.CallOptions`: `prompt`, `tools`, `toolChoice`, `maxOutputTokens`, `temperature`, `topP`, `topK`, `presencePenalty`, `frequencyPenalty`, `stopSequences`, `responseFormat`, `seed`, `reasoning`, `includeRawChunks`, `headers`, and `providerOptions`.
 
-The encoded object SHALL always contain `prompt`, using an empty array when the provider value has no messages. The private decoder SHALL require `prompt` to be a non-null array and SHALL produce the equivalent provider value for every supported canonical request.
+The encoded object SHALL always contain `prompt`, using an empty array when the provider value has no messages. The codec SHALL preserve the distinction between absent and explicitly empty `tools` or `stopSequences` so an empty caller value continues to suppress downstream defaults. The private decoder SHALL require `prompt` to be a non-null array and SHALL produce the equivalent provider value for every supported canonical request.
 
 #### Scenario: Full canonical request round trip
 
@@ -52,6 +52,11 @@ The encoded object SHALL always contain `prompt`, using an empty array when the 
 
 - **WHEN** zero-valued call options are encoded
 - **THEN** the canonical JSON SHALL contain `"prompt":[]`
+
+#### Scenario: Explicit empty optional collections remain present
+
+- **WHEN** call options contain non-nil empty `tools` or `stopSequences`
+- **THEN** strict encoding SHALL emit the corresponding empty array and strict decoding SHALL preserve a non-nil empty slice
 
 #### Scenario: Missing or null prompt is rejected
 
@@ -227,7 +232,7 @@ For a recognized discriminator, fields defined by the same union but belonging o
 
 ### Requirement: Provider options and reserved gateway namespace
 
-Every provider-options value accepted by the strict codec SHALL be a JSON object and SHALL round trip as a `provider.RawProviderOption` after decoding. At the top-level call-options boundary, an absent `gateway` entry or a `gateway` entry equal to an empty object SHALL be removed. A top-level `gateway` value that is non-empty, `null`, or not an object SHALL be rejected.
+Every provider-options value accepted by the strict codec SHALL be a JSON object and SHALL round trip as a `provider.RawProviderOption` after decoding. Encoding SHALL preserve the opaque payload for both value and non-nil pointer forms of `provider.RawProviderOption`; a nil pointer value SHALL be rejected. At the top-level call-options boundary, an absent `gateway` entry or a `gateway` entry equal to an empty object SHALL be removed. A top-level `gateway` value that is non-empty, `null`, or not an object SHALL be rejected.
 
 A `gateway` provider-options entry nested in a message, content part, function tool, tool-result output, or tool-result content value SHALL always be rejected, including when it is an empty object.
 
@@ -252,6 +257,12 @@ This request-only codec intentionally does not implement Gateway routing, fallba
 
 - **WHEN** a provider-options namespace contains a scalar, array, or null value
 - **THEN** strict encoding or decoding SHALL fail
+
+#### Scenario: Raw provider option representations preserve their payload
+
+- **WHEN** strict encoding receives an object-valued `provider.RawProviderOption` in value or non-nil pointer form
+- **THEN** it SHALL emit the wrapped JSON object without serializing the Go wrapper fields
+- **AND** it SHALL reject a nil `provider.RawProviderOption` pointer
 
 ### Requirement: Legacy provider-wire behavior remains unchanged
 

@@ -93,6 +93,30 @@ func TestCallOptions_PinnedCanonicalGolden(t *testing.T) {
 	assert.Equal(t, compact.String(), string(encoded))
 }
 
+func TestCallOptions_PreservesExplicitEmptyOptionalCollections(t *testing.T) {
+	options := provider.CallOptions{
+		Prompt:        []provider.Message{},
+		Tools:         []provider.Tool{},
+		StopSequences: []string{},
+	}
+
+	encoded, err := EncodeCallOptions(options)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"prompt":[],"tools":[],"stopSequences":[]}`, string(encoded))
+
+	decoded, err := decodeCallOptionsJSON(encoded)
+	require.NoError(t, err)
+	require.NotNil(t, decoded.Tools)
+	assert.Empty(t, decoded.Tools)
+	require.NotNil(t, decoded.StopSequences)
+	assert.Empty(t, decoded.StopSequences)
+
+	absent, err := decodeCallOptionsJSON([]byte(`{"prompt":[]}`))
+	require.NoError(t, err)
+	assert.Nil(t, absent.Tools)
+	assert.Nil(t, absent.StopSequences)
+}
+
 func TestJSONObjectBoundaries(t *testing.T) {
 	invalid := []string{`null`, `1`, `[]`, `"value"`}
 	for _, value := range invalid {

@@ -16,9 +16,15 @@ func encodeProviderOptions(options provider.ProviderOptions) (providerOptionsDTO
 	encoded := make(providerOptionsDTO, len(options))
 	for key, option := range options {
 		var value json.RawMessage
-		if raw, ok := option.(provider.RawProviderOption); ok {
+		switch raw := option.(type) {
+		case provider.RawProviderOption:
 			value = append(json.RawMessage(nil), raw.Raw...)
-		} else {
+		case *provider.RawProviderOption:
+			if raw == nil {
+				return nil, fmt.Errorf("providerwirev4: provider option %q must not be nil", key)
+			}
+			value = append(json.RawMessage(nil), raw.Raw...)
+		default:
 			data, err := json.Marshal(option)
 			if err != nil {
 				return nil, fmt.Errorf("providerwirev4: encoding provider option %q: %w", key, err)

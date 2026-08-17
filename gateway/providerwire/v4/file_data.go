@@ -70,7 +70,8 @@ func decodeRequestData(raw json.RawMessage, allowReferenceText bool) (*provider.
 		if err != nil {
 			return nil, err
 		}
-		return dataContent(value), nil
+		data := provider.Base64DataContent(value)
+		return &data, nil
 	case "url":
 		value, err := decodeRequiredString(object, "url", "file data")
 		if err != nil || value == "" {
@@ -104,9 +105,4 @@ func decodeRequestData(raw json.RawMessage, allowReferenceText bool) (*provider.
 	default:
 		return nil, fmt.Errorf("providerwirev4: unsupported file data type %q", variant)
 	}
-}
-
-func dataContent(value string) *provider.DataContent {
-	data := provider.Base64DataContent(value)
-	return &data
 }

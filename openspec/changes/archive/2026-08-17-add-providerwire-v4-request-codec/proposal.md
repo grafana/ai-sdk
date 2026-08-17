@@ -9,7 +9,7 @@ The existing provider-wire request helpers intentionally accept historical Go en
 - Add strict internal request decoding that validates required fields, discriminators, active union arms, provider references including rejection of the reserved `type` key, opaque JSON boundaries, typed nulls, request privacy constraints, and the complete set of understood standard fields.
 - Remove absent or empty top-level `providerOptions.gateway` values and reject non-empty or nested reserved gateway namespaces; specific Gateway controls may be implemented by a future host policy layer but are outside this request-codec phase.
 - Reject unknown standard request fields before invocation while preserving inactive sibling-arm fields and explicit opaque extension boundaries.
-- Preserve all supported request semantics, including empty inline-text file data, tools, tool results, provider options, headers, and model settings.
+- Preserve all supported request semantics, including explicit empty `tools` and `stopSequences` that suppress downstream defaults, empty inline-text file data, tool results, provider options, headers, and model settings.
 - Keep the existing `gateway/providerwire` public API and tolerant request decoding unchanged.
 
 ## Capabilities

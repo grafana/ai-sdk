@@ -9,6 +9,26 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestCallOptions_RawProviderOptionPointer(t *testing.T) {
+	options := provider.CallOptions{ProviderOptions: provider.ProviderOptions{
+		"provider": &provider.RawProviderOption{Key: "provider", Raw: json.RawMessage(`{"keep":true}`)},
+	}}
+
+	encoded, err := EncodeCallOptions(options)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"prompt":[],"providerOptions":{"provider":{"keep":true}}}`, string(encoded))
+
+	decoded, err := decodeCallOptionsJSON(encoded)
+	require.NoError(t, err)
+	raw, ok := decoded.ProviderOptions["provider"].(provider.RawProviderOption)
+	require.True(t, ok)
+	assert.JSONEq(t, `{"keep":true}`, string(raw.Raw))
+
+	options.ProviderOptions["provider"] = (*provider.RawProviderOption)(nil)
+	_, err = EncodeCallOptions(options)
+	require.EqualError(t, err, `providerwirev4: provider option "provider" must not be nil`)
+}
+
 func TestCallOptions_GatewayNamespaceIsRemovedOrRejected(t *testing.T) {
 	for _, wire := range []string{
 		`{"prompt":[]}`,
