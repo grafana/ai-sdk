@@ -2,7 +2,7 @@ package providerwirev4
 
 import "fmt"
 
-func cleanGatewayOptions(options providerOptionsDTO) (providerOptionsDTO, error) {
+func validateAndRemoveGatewayOptions(options providerOptionsDTO) (providerOptionsDTO, error) {
 	gateway, exists := options["gateway"]
 	if !exists {
 		return options, nil
