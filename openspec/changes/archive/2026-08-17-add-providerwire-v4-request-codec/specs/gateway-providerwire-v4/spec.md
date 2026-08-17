@@ -114,7 +114,7 @@ Unknown standard request fields SHALL be rejected by the fail-fast request-objec
 
 Prompt `file` and tool-result `file` content SHALL support canonical `data`, `url`, `reference`, and `text` tagged file-data variants. Prompt `reasoning-file` content SHALL support only `data` and `url`. File content SHALL require `data` and `mediaType`; reasoning files MUST NOT carry `filename`.
 
-Inline bytes SHALL encode as base64 in the `data` variant. At a full-file or tool-result-file boundary, a present zero-valued `provider.DataContent` SHALL represent canonical empty inline text; this convention MUST NOT apply to reasoning files. A URL SHALL be non-empty. A provider reference SHALL be an open provider-keyed object whose values are strings. Encoding SHALL reject provider values with no representable canonical variant or with multiple populated representations.
+Inline bytes SHALL encode as base64 in the `data` variant. At a full-file or tool-result-file boundary, a present zero-valued `provider.DataContent` SHALL represent canonical empty inline text; this convention MUST NOT apply to reasoning files. A URL SHALL be non-empty. A provider reference SHALL be an open provider-keyed object whose values are strings and SHALL reject the exact key `type`, which is reserved to distinguish provider references from tagged file-data objects. Encoding SHALL reject provider values with no representable canonical variant or with multiple populated representations.
 
 #### Scenario: Every prompt file-data variant round trips
 
@@ -133,7 +133,7 @@ Inline bytes SHALL encode as base64 in the `data` variant. At a full-file or too
 
 #### Scenario: Invalid provider reference is rejected
 
-- **WHEN** a provider reference is not an object or contains a non-string value
+- **WHEN** a provider reference is not an object, contains a non-string value, or contains the reserved key `type`
 - **THEN** strict encoding or decoding SHALL fail
 
 ### Requirement: Canonical tool and tool-result unions
@@ -230,6 +230,8 @@ For a recognized discriminator, fields defined by the same union but belonging o
 Every provider-options value accepted by the strict codec SHALL be a JSON object and SHALL round trip as a `provider.RawProviderOption` after decoding. At the top-level call-options boundary, an absent `gateway` entry or a `gateway` entry equal to an empty object SHALL be removed. A top-level `gateway` value that is non-empty, `null`, or not an object SHALL be rejected.
 
 A `gateway` provider-options entry nested in a message, content part, function tool, tool-result output, or tool-result content value SHALL always be rejected, including when it is an empty object.
+
+This request-only codec intentionally does not implement Gateway routing, fallback, credential, caching, timeout, tier, attribution, or data-governance controls. Specific top-level controls MAY be introduced by a future gateway policy layer, but they are outside this phase and MUST NOT pass through to provider-visible options.
 
 #### Scenario: Top-level empty gateway options are removed
 

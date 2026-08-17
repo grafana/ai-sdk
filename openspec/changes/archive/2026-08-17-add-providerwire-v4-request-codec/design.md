@@ -59,11 +59,11 @@ JSON `null` remains valid only where the canonical value itself is opaque and nu
 
 At the top-level provider-options map, an absent or empty `gateway` object will be removed before producing provider options. A non-empty, null, or non-object top-level value will fail. Any nested `gateway` namespace will fail, including an empty object.
 
-This keeps routing controls out of provider-visible options and prevents nested data from bypassing the single top-level control boundary. Introducing a public gateway-control DTO was rejected because request routing is outside this codec.
+This keeps routing controls out of provider-visible options and prevents nested data from bypassing the single top-level control boundary. Introducing a public gateway-control DTO was rejected because request routing is outside this codec. Controls supported by upstream clients—including fallback models, provider ordering and filtering, BYOK, caching, provider timeouts, service tiers, attribution, and data-governance settings—remain intentionally unsupported in this phase. A future host-owned policy layer may implement specific controls before model invocation without passing the reserved namespace through to providers.
 
 ### 7. Preserve tagged empty file data explicitly
 
-File data conversion will preserve each canonical tagged variant. In particular, empty inline data and `{"type":"text","text":""}` must survive decode and re-encode without collapsing to an absent or different variant. Provider references must remain open provider-keyed JSON objects with string values.
+File data conversion will preserve each canonical tagged variant. In particular, empty inline data and `{"type":"text","text":""}` must survive decode and re-encode without collapsing to an absent or different variant. Provider references must remain open provider-keyed JSON objects with string values while rejecting the exact key `type`, as required by the registered provider contract to distinguish references from tagged file-data objects.
 
 This requires an explicit boundary convention rather than provider JSON methods: empty inline data uses a non-nil empty byte slice, while a present zero-valued `DataContent` in a full file or tool-result file arm represents canonical empty inline text. Reasoning-file conversion does not use that convention because its contract excludes text data.
 

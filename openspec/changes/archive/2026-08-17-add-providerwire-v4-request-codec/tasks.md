@@ -43,3 +43,4 @@
 - [x] 6.2 Implement shared unknown-field validation across every strict request object without widening the public API or changing legacy production behavior.
 - [x] 6.3 Update the proposal, design, canonical and archived specifications, and parity classification to distinguish fail-fast request fields from response-side additive tolerance.
 - [x] 6.4 Run focused race tests, vet, parity checks, strict OpenSpec validation, `git diff --check`, and a final request-only scope review.
+- [x] 6.5 Reject the reserved `type` key in provider references, document Gateway controls as intentionally unsupported for this phase, and rerun focused and parity validation.

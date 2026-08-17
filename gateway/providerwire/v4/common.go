@@ -116,6 +116,13 @@ func decodeSelectedObject(object map[string]json.RawMessage, destination any, fi
 }
 
 func validateProviderReference(value json.RawMessage, context string) error {
+	object, err := decodeObject(value, context)
+	if err != nil {
+		return err
+	}
+	if _, exists := object["type"]; exists {
+		return fmt.Errorf("providerwirev4: %s contains reserved field %q", context, "type")
+	}
 	return validateStringMap(value, context)
 }
 

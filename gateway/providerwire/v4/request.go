@@ -149,7 +149,9 @@ type toolResultContentDTO struct {
 }
 
 // EncodeCallOptions encodes canonical LanguageModelV4 call options without
-// invoking provider CallOptions or nested polymorphic JSON methods.
+// invoking provider CallOptions or nested polymorphic JSON methods. An empty
+// top-level providerOptions.gateway object is omitted; non-empty and nested
+// gateway namespaces are reserved for gateway policy and are unsupported.
 func EncodeCallOptions(options provider.CallOptions) ([]byte, error) {
 	dto, err := encodeCallOptions(options)
 	if err != nil {

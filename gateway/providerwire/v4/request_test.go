@@ -146,7 +146,16 @@ func TestCallOptions_GatewayNamespaceIsRemovedOrRejected(t *testing.T) {
 		assert.NotContains(t, decoded.ProviderOptions, "gateway")
 	}
 
-	for _, gateway := range []string{`null`, `[]`, `{"models":["fallback"]}`, `{"future":null}`} {
+	for _, gateway := range []string{
+		`null`,
+		`[]`,
+		`{"models":["fallback"]}`,
+		`{"only":["provider"]}`,
+		`{"order":["provider"]}`,
+		`{"byok":{"provider":[{"credentialId":"reference"}]}}`,
+		`{"serviceTier":"priority"}`,
+		`{"future":null}`,
+	} {
 		_, err := decodeCallOptionsJSON([]byte(`{"prompt":[],"providerOptions":{"gateway":` + gateway + `}}`))
 		require.Error(t, err)
 	}
@@ -171,6 +180,7 @@ func TestProviderReferenceValidationInRequestAndToolResultFiles(t *testing.T) {
 		json.RawMessage(`[]`),
 		json.RawMessage(`{"p":null}`),
 		json.RawMessage(`{"p":1}`),
+		json.RawMessage(`{"type":"file-id"}`),
 	}
 	for i, reference := range invalid {
 		t.Run(fmt.Sprintf("request-encode-%d", i), func(t *testing.T) {
@@ -186,13 +196,19 @@ func TestProviderReferenceValidationInRequestAndToolResultFiles(t *testing.T) {
 		})
 	}
 
-	invalidWire := `{"prompt":[{"role":"user","content":[{"type":"file","data":{"type":"reference","reference":{"p":null}},"mediaType":"application/pdf"}]}]}`
-	_, err := decodeCallOptionsJSON([]byte(invalidWire))
-	require.Error(t, err)
-
-	validWires := []string{
+	invalidWires := []string{
+		`{"prompt":[{"role":"user","content":[{"type":"file","data":{"type":"reference","reference":{"p":null}},"mediaType":"application/pdf"}]}]}`,
 		`{"prompt":[{"role":"user","content":[{"type":"file","data":{"type":"reference","reference":{"type":"file-id"}},"mediaType":"application/pdf"}]}]}`,
 		`{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"call","toolName":"tool","output":{"type":"content","value":[{"type":"file","data":{"type":"reference","reference":{"type":"file-id"}},"mediaType":"application/pdf"}]}}]}]}`,
+	}
+	for _, wire := range invalidWires {
+		_, err := decodeCallOptionsJSON([]byte(wire))
+		require.Error(t, err)
+	}
+
+	validWires := []string{
+		`{"prompt":[{"role":"user","content":[{"type":"file","data":{"type":"reference","reference":{"provider":"file-id"}},"mediaType":"application/pdf"}]}]}`,
+		`{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"call","toolName":"tool","output":{"type":"content","value":[{"type":"file","data":{"type":"reference","reference":{"provider":"file-id"}},"mediaType":"application/pdf"}]}}]}]}`,
 	}
 	for _, wire := range validWires {
 		decoded, err := decodeCallOptionsJSON([]byte(wire))
@@ -423,7 +439,7 @@ func TestCallOptions_StrictRejectionAndUnknownFields(t *testing.T) {
 func TestCallOptions_ExplicitExtensionBoundariesRemainOpen(t *testing.T) {
 	wire := `{
 		"prompt":[
-			{"role":"user","content":[{"type":"file","data":{"type":"reference","reference":{"future.provider":"file-id","type":"type-id"}},"mediaType":"application/octet-stream"}]},
+			{"role":"user","content":[{"type":"file","data":{"type":"reference","reference":{"future.provider":"file-id"}},"mediaType":"application/octet-stream"}]},
 			{"role":"assistant","content":[
 				{"type":"tool-call","toolCallId":"call","toolName":"tool","input":{"future":{"nested":true}}},
 				{"type":"tool-result","toolCallId":"call","toolName":"tool","output":{"type":"json","value":{"future":[1,null,true]}}}
