@@ -116,20 +116,7 @@ func decodeSelectedObject(object map[string]json.RawMessage, destination any, fi
 }
 
 func validateProviderReference(value json.RawMessage, context string) error {
-	object, err := decodeObject(value, context)
-	if err != nil {
-		return err
-	}
-	for providerID, reference := range object {
-		if bytes.Equal(bytes.TrimSpace(reference), []byte("null")) {
-			return fmt.Errorf("providerwirev4: %s field %q must be a string", context, providerID)
-		}
-		var id string
-		if err := json.Unmarshal(reference, &id); err != nil {
-			return fmt.Errorf("providerwirev4: %s field %q must be a string", context, providerID)
-		}
-	}
-	return nil
+	return validateStringMap(value, context)
 }
 
 func validateQualifiedIdentifier(value, context string) error {

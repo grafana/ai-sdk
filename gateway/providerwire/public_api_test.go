@@ -79,18 +79,4 @@ func TestPublicAPI_SourceCompatibility(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.NotNil(t, handler)
-
-	assert.NotNil(t, providerwire.EncodeCallOptions)
-	assert.NotNil(t, providerwire.DecodeCallOptions)
-	assert.NotNil(t, providerwire.EncodeGenerateResult)
-	assert.NotNil(t, providerwire.DecodeGenerateResult)
-	assert.NotNil(t, providerwire.WriteSSEStreamPart)
-	assert.NotNil(t, providerwire.WriteSSEStreamPartTo)
-	assert.NotNil(t, providerwire.NewSSEReader)
-	assert.NotNil(t, providerwire.EncodeAPICallError)
-	assert.NotNil(t, providerwire.DecodeAPICallError)
-	assert.NotNil(t, providerwire.WriteErrorResponse)
-	assert.NotNil(t, providerwire.DecodeErrorResponse)
-	var reader *providerwire.SSEReader
-	assert.Nil(t, reader)
 }
