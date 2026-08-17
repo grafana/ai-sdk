@@ -35,8 +35,10 @@ type streamState struct {
 
 type streamToolCall struct {
 	id               string
+	idSet            bool
 	providerID       string
 	name             string
+	nameSet          bool
 	args             string
 	started          bool
 	finished         bool
@@ -79,9 +81,13 @@ func (m *model) runStream(ctx context.Context, endpoint string, requestBody []by
 			return
 		}
 		if includeRaw {
+			var rawValue json.RawMessage
+			if json.Valid(data) {
+				rawValue = json.RawMessage(append([]byte(nil), data...))
+			}
 			if !sendStreamPart(ctx, out, provider.StreamPart{
 				Type:     provider.PartRaw,
-				RawValue: json.RawMessage(append([]byte(nil), data...)),
+				RawValue: rawValue,
 			}) {
 				return
 			}
@@ -244,6 +250,27 @@ func (s *streamState) handleToolCallDelta(delta chatToolCallDelta) bool {
 	if state == nil {
 		state = &streamToolCall{}
 		s.toolCalls = append(s.toolCalls, state)
+		if delta.Index == nil && delta.Function.Name == nil {
+			if delta.ID != nil {
+				state.id = *delta.ID
+				state.idSet = true
+				state.providerID = *delta.ID
+				if *delta.ID != "" {
+					s.toolCallsByID[*delta.ID] = state
+				}
+			}
+			state.finished = true
+			s.latestToolCall = state
+			message := "openai: stream tool call missing function name"
+			if delta.ID == nil {
+				message = "openai: stream tool call missing id"
+			}
+			s.emitError(provider.NewAPICallError(provider.APICallErrorOptions{
+				Message: message,
+				URL:     s.endpoint,
+			}))
+			return true
+		}
 	}
 	if delta.Index != nil {
 		s.toolCallsByIndex[*delta.Index] = state
@@ -253,13 +280,17 @@ func (s *streamState) handleToolCallDelta(delta chatToolCallDelta) bool {
 	if state.finished {
 		return true
 	}
-	if delta.ID != "" && !state.started && state.id == "" {
-		state.id = delta.ID
-		state.providerID = delta.ID
-		s.toolCallsByID[delta.ID] = state
+	if delta.ID != nil && !state.started && !state.idSet {
+		state.id = *delta.ID
+		state.idSet = true
+		state.providerID = *delta.ID
+		if *delta.ID != "" {
+			s.toolCallsByID[*delta.ID] = state
+		}
 	}
-	if delta.Function.Name != "" {
-		state.name = delta.Function.Name
+	if delta.Function.Name != nil {
+		state.name = *delta.Function.Name
+		state.nameSet = true
 	}
 	argumentPresent := delta.Function.Arguments != nil
 	argument := ""
@@ -280,8 +311,8 @@ func (s *streamState) handleToolCallDelta(delta chatToolCallDelta) bool {
 	if !state.started && state.providerMetadata == nil {
 		state.providerMetadata = toolCallProviderMetadata(s.metadataKey, delta.ExtraContent)
 	}
-	if !state.started && state.name != "" {
-		if state.id == "" {
+	if !state.started && state.nameSet {
+		if !state.idSet {
 			s.emitError(provider.NewAPICallError(provider.APICallErrorOptions{
 				Message: "openai: stream tool call missing id",
 				URL:     s.endpoint,
@@ -314,8 +345,16 @@ func (s *streamState) handleToolCallDelta(delta chatToolCallDelta) bool {
 }
 
 func (s *streamState) resolveToolCall(delta chatToolCallDelta) *streamToolCall {
-	if delta.ID != "" {
-		return s.toolCallsByID[delta.ID]
+	if delta.ID != nil && *delta.ID != "" {
+		if state := s.toolCallsByID[*delta.ID]; state != nil {
+			return state
+		}
+		if delta.Index != nil {
+			if state := s.toolCallsByIndex[*delta.Index]; state != nil && !state.started {
+				return state
+			}
+		}
+		return nil
 	}
 	if delta.Index != nil {
 		return s.toolCallsByIndex[*delta.Index]
@@ -337,14 +376,14 @@ func (s *streamState) flush() {
 		if tc.finished {
 			continue
 		}
-		if tc.name == "" {
+		if !tc.nameSet {
 			s.emitError(provider.NewAPICallError(provider.APICallErrorOptions{
 				Message: "openai: stream tool call missing function name",
 				URL:     s.endpoint,
 			}))
 			continue
 		}
-		if tc.id == "" {
+		if !tc.idSet {
 			s.emitError(provider.NewAPICallError(provider.APICallErrorOptions{
 				Message: "openai: stream tool call missing id",
 				URL:     s.endpoint,

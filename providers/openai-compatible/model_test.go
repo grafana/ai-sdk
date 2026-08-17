@@ -866,11 +866,19 @@ func TestDoStreamRecoversAfterMalformedChunk(t *testing.T) {
 	defer server.Close()
 
 	result, err := New("test-model", WithBaseURL(server.URL)).DoStream(context.Background(), provider.CallOptions{
-		Prompt: []provider.Message{provider.UserText("hi")},
+		Prompt:           []provider.Message{provider.UserText("hi")},
+		IncludeRawChunks: true,
 	})
 	require.NoError(t, err)
 
 	parts := collectStreamParts(result)
+	rawParts := findParts(parts, provider.PartRaw)
+	require.Len(t, rawParts, 2)
+	assert.Empty(t, rawParts[0].RawValue)
+	_, err = json.Marshal(rawParts[0])
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"id":"chatcmpl_stream","created":0,"model":"test-model","choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}`, string(rawParts[1].RawValue))
+
 	var sawError, sawText bool
 	for _, part := range parts {
 		switch part.Type {
@@ -882,7 +890,7 @@ func TestDoStreamRecoversAfterMalformedChunk(t *testing.T) {
 	}
 	assert.True(t, sawError)
 	assert.True(t, sawText)
-	responseMeta := parts[2]
+	responseMeta := findPart(parts, provider.PartResponseMeta)
 	require.Equal(t, provider.PartResponseMeta, responseMeta.Type)
 	assert.Equal(t, time.Unix(0, 0).UTC(), responseMeta.Timestamp)
 	finish := parts[len(parts)-1]
@@ -935,6 +943,28 @@ func TestDoStreamRecoversAfterStructurallyInvalidChunk(t *testing.T) {
 			assert.Equal(t, provider.FinishReasonStop, parts[6].FinishReason.Unified)
 		})
 	}
+}
+
+func TestDoStreamRawChunkPreservesStructurallyInvalidJSON(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {}\n\ndata: [DONE]\n\n"))
+	}))
+	defer server.Close()
+
+	result, err := New("test-model", WithBaseURL(server.URL)).DoStream(context.Background(), provider.CallOptions{
+		Prompt:           []provider.Message{provider.UserText("hi")},
+		IncludeRawChunks: true,
+	})
+	require.NoError(t, err)
+
+	parts := collectStreamParts(result)
+	rawParts := findParts(parts, provider.PartRaw)
+	require.Len(t, rawParts, 1)
+	assert.JSONEq(t, `{}`, string(rawParts[0].RawValue))
+	require.Len(t, findParts(parts, provider.PartError), 1)
 }
 
 func TestDoStreamRawProviderOptionsKeyWarning(t *testing.T) {
@@ -1198,6 +1228,22 @@ func TestDoStreamToolCallIndexTracking(t *testing.T) {
 				`data: {"id":"chatcmpl_tools","model":"test-model","choices":[{"delta":{"tool_calls":[{"function":{"arguments":"th\":\"a.txt\"}"}}]},"finish_reason":"tool_calls"}]}` + "\n\n",
 			expected: []provider.StreamPart{{ToolCallID: "call_1", ToolName: "read_file", Input: `{"path":"a.txt"}`}},
 		},
+		{
+			name: "late id with index",
+			chunks: `data: {"id":"chatcmpl_tools","model":"test-model","choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"path\":"}}]},"finish_reason":null}]}` + "\n\n" +
+				`data: {"id":"chatcmpl_tools","model":"test-model","choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"read_file","arguments":"\"a.txt\"}"}}]},"finish_reason":"tool_calls"}]}` + "\n\n",
+			expected: []provider.StreamPart{{ToolCallID: "call_1", ToolName: "read_file", Input: `{"path":"a.txt"}`}},
+		},
+		{
+			name:     "empty id",
+			chunks:   `data: {"id":"chatcmpl_tools","model":"test-model","choices":[{"delta":{"tool_calls":[{"index":0,"id":"","type":"function","function":{"name":"read_file","arguments":"{}"}}]},"finish_reason":"tool_calls"}]}` + "\n\n",
+			expected: []provider.StreamPart{{ToolCallID: "", ToolName: "read_file", Input: `{}`}},
+		},
+		{
+			name:     "empty name",
+			chunks:   `data: {"id":"chatcmpl_tools","model":"test-model","choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"","arguments":"{}"}}]},"finish_reason":"tool_calls"}]}` + "\n\n",
+			expected: []provider.StreamPart{{ToolCallID: "call_1", ToolName: "", Input: `{}`}},
+		},
 	}
 
 	for _, tc := range tests {
@@ -1214,15 +1260,76 @@ func TestDoStreamToolCallIndexTracking(t *testing.T) {
 			})
 			require.NoError(t, err)
 
-			toolCalls := findParts(collectStreamParts(result), provider.PartToolCall)
+			parts := collectStreamParts(result)
+			toolCalls := findParts(parts, provider.PartToolCall)
 			require.Len(t, toolCalls, len(tc.expected))
 			for i, expected := range tc.expected {
 				assert.Equal(t, expected.ToolCallID, toolCalls[i].ToolCallID)
 				assert.Equal(t, expected.ToolName, toolCalls[i].ToolName)
 				assert.JSONEq(t, expected.Input, toolCalls[i].Input)
 			}
+			finish := parts[len(parts)-1]
+			require.NotNil(t, finish.FinishReason)
+			assert.Equal(t, provider.FinishReasonToolCalls, finish.FinishReason.Unified)
 		})
 	}
+}
+
+func TestDoStreamRejectsUnindexedToolCallWithoutName(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(
+			`data: {"id":"chatcmpl_tools","model":"test-model","choices":[{"delta":{"tool_calls":[{"id":"call_1","type":"function","function":{"arguments":"{\"path\":"}}]},"finish_reason":null}]}` + "\n\n" +
+				`data: {"id":"chatcmpl_tools","model":"test-model","choices":[{"delta":{"tool_calls":[{"id":"call_1","type":"function","function":{"name":"read_file","arguments":"\"a.txt\"}"}}]},"finish_reason":"tool_calls"}]}` + "\n\n" +
+				`data: [DONE]` + "\n\n",
+		))
+	}))
+	defer server.Close()
+
+	result, err := New("test-model", WithBaseURL(server.URL)).DoStream(context.Background(), provider.CallOptions{
+		Prompt: []provider.Message{provider.UserText("use tools")},
+	})
+	require.NoError(t, err)
+
+	parts := collectStreamParts(result)
+	errors := findParts(parts, provider.PartError)
+	require.Len(t, errors, 1)
+	require.NotNil(t, errors[0].APICallError)
+	assert.Contains(t, errors[0].APICallError.Message, "missing function name")
+	assert.Empty(t, findParts(parts, provider.PartToolCall))
+	finish := parts[len(parts)-1]
+	require.NotNil(t, finish.FinishReason)
+	assert.Equal(t, provider.FinishReasonError, finish.FinishReason.Unified)
+}
+
+func TestDoStreamRejectsUnindexedToolCallWithoutIDOrName(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(
+			`data: {"id":"chatcmpl_tools","model":"test-model","choices":[{"delta":{"tool_calls":[{"type":"function","function":{"arguments":"{}"}}]},"finish_reason":"tool_calls"}]}` + "\n\n" +
+				`data: [DONE]` + "\n\n",
+		))
+	}))
+	defer server.Close()
+
+	result, err := New("test-model", WithBaseURL(server.URL)).DoStream(context.Background(), provider.CallOptions{
+		Prompt: []provider.Message{provider.UserText("use tools")},
+	})
+	require.NoError(t, err)
+
+	parts := collectStreamParts(result)
+	errors := findParts(parts, provider.PartError)
+	require.Len(t, errors, 1)
+	require.NotNil(t, errors[0].APICallError)
+	assert.Contains(t, errors[0].APICallError.Message, "missing id")
+	assert.Empty(t, findParts(parts, provider.PartToolCall))
+	finish := parts[len(parts)-1]
+	require.NotNil(t, finish.FinishReason)
+	assert.Equal(t, provider.FinishReasonError, finish.FinishReason.Unified)
 }
 
 func TestDoStreamSkipsInitialEmptyToolInputDelta(t *testing.T) {

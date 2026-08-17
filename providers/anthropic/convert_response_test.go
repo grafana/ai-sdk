@@ -502,6 +502,8 @@ func TestMapFinishReason(t *testing.T) {
 		{anthropic.BetaStopReasonEndTurn, provider.FinishReason{Unified: provider.FinishReasonStop, Raw: "end_turn"}},
 		{anthropic.BetaStopReasonStopSequence, provider.FinishReason{Unified: provider.FinishReasonStop, Raw: "stop_sequence"}},
 		{anthropic.BetaStopReasonMaxTokens, provider.FinishReason{Unified: provider.FinishReasonLength, Raw: "max_tokens"}},
+		{anthropic.BetaStopReasonModelContextWindowExceeded, provider.FinishReason{Unified: provider.FinishReasonLength, Raw: "model_context_window_exceeded"}},
+		{anthropic.BetaStopReasonPauseTurn, provider.FinishReason{Unified: provider.FinishReasonStop, Raw: "pause_turn"}},
 		{anthropic.BetaStopReasonToolUse, provider.FinishReason{Unified: provider.FinishReasonToolCalls, Raw: "tool_use"}},
 		{"content_filter", provider.FinishReason{Unified: provider.FinishReasonContentFilter, Raw: "content_filter"}},
 		{"refusal", provider.FinishReason{Unified: provider.FinishReasonContentFilter, Raw: "refusal"}},

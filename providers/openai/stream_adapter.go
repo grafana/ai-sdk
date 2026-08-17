@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -34,6 +35,15 @@ const (
 type activeReasoningState struct {
 	encryptedContent string
 	summaryParts     map[int64]reasoningSummaryState
+}
+
+func sortedReasoningSummaryIndices(summaryParts map[int64]reasoningSummaryState) []int64 {
+	indices := make([]int64, 0, len(summaryParts))
+	for index := range summaryParts {
+		indices = append(indices, index)
+	}
+	slices.Sort(indices)
+	return indices
 }
 
 // streamAdapter holds mutable per-stream state and converts Responses SSE
@@ -134,8 +144,9 @@ func (a *streamAdapter) handleEvent(event responses.ResponseStreamEventUnion, ch
 		itemID := a.resolveOptionalOutputItemID(e.ItemID, e.OutputIndex, e.JSON.OutputIndex.Valid())
 		state := a.activeReasoning[itemID]
 		if e.SummaryIndex > 0 && state != nil {
-			for index, status := range state.summaryParts {
-				if status == reasoningSummaryCanConclude {
+			state.summaryParts[e.SummaryIndex] = reasoningSummaryActive
+			for _, index := range sortedReasoningSummaryIndices(state.summaryParts) {
+				if state.summaryParts[index] == reasoningSummaryCanConclude {
 					ch <- provider.StreamPart{
 						Type:             provider.PartReasoningEnd,
 						ID:               fmt.Sprintf("%s:%d", itemID, index),
@@ -144,7 +155,6 @@ func (a *streamAdapter) handleEvent(event responses.ResponseStreamEventUnion, ch
 					state.summaryParts[index] = reasoningSummaryConcluded
 				}
 			}
-			state.summaryParts[e.SummaryIndex] = reasoningSummaryActive
 			ch <- provider.StreamPart{
 				Type:             provider.PartReasoningStart,
 				ID:               fmt.Sprintf("%s:%d", itemID, e.SummaryIndex),
@@ -377,7 +387,8 @@ func (a *streamAdapter) handleOutputItemDone(e responses.ResponseOutputItemDoneE
 		itemID := a.resolveOutputItemID(v.ID, e.OutputIndex)
 		state := a.activeReasoning[itemID]
 		if state != nil {
-			for index, status := range state.summaryParts {
+			for _, index := range sortedReasoningSummaryIndices(state.summaryParts) {
+				status := state.summaryParts[index]
 				if status != reasoningSummaryActive && status != reasoningSummaryCanConclude {
 					continue
 				}
@@ -555,7 +566,7 @@ func (a *streamAdapter) handleOutputItemDone(e responses.ResponseOutputItemDoneE
 
 	case responses.ResponseOutputItemMcpCall:
 		toolCallID := v.ID
-		if v.ApprovalRequestID != "" {
+		if v.JSON.ApprovalRequestID.Valid() || v.ApprovalRequestID != "" {
 			if mapped := a.streamApprovalToolCallIDs[v.ApprovalRequestID]; mapped != "" {
 				toolCallID = mapped
 			} else if mapped := a.br.approvalRequestToolCallIDs[v.ApprovalRequestID]; mapped != "" {
@@ -575,7 +586,7 @@ func (a *streamAdapter) handleOutputItemDone(e responses.ResponseOutputItemDoneE
 	case responses.ResponseOutputItemMcpApprovalRequest:
 		toolName := "mcp." + v.Name
 		dummyID := a.generateID()
-		approvalID := v.ID
+		approvalID := mcpApprovalRequestID(v)
 		a.streamApprovalToolCallIDs[approvalID] = dummyID
 		dyn := true
 		ch <- provider.StreamPart{Type: provider.PartToolCall, ToolCallID: dummyID, ToolName: toolName, Input: orEmptyObject(v.Arguments), ProviderExecuted: true, Dynamic: &dyn}

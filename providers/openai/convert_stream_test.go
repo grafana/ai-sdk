@@ -580,8 +580,31 @@ func TestStream_MCPCallPreservesNullableFieldPresence(t *testing.T) {
 
 func TestStream_MCPCallUsesSameStreamApprovalToolCallID(t *testing.T) {
 	parts := collectParts(t,
-		`{"type":"response.output_item.done","sequence_number":1,"output_index":0,"item":{"type":"mcp_approval_request","id":"appr_1","approval_request_id":"appr_1","name":"do_thing","server_label":"srv","arguments":"{}"}}`,
+		`{"type":"response.output_item.done","sequence_number":1,"output_index":0,"item":{"type":"mcp_approval_request","id":"item_1","approval_request_id":"appr_1","name":"do_thing","server_label":"srv","arguments":"{}"}}`,
 		`{"type":"response.output_item.done","sequence_number":2,"output_index":1,"item":{"type":"mcp_call","id":"mcp_1","approval_request_id":"appr_1","name":"do_thing","server_label":"srv","arguments":"{}","output":"ok"}}`,
+	)
+
+	var approvalID string
+	var approvalToolCallID string
+	var resultToolCallID string
+	for _, part := range parts {
+		switch part.Type {
+		case provider.PartToolApprovalRequest:
+			approvalID = part.ApprovalID
+			approvalToolCallID = part.ToolCallID
+		case provider.PartToolResult:
+			resultToolCallID = part.ToolCallID
+		}
+	}
+	assert.Equal(t, "appr_1", approvalID)
+	require.NotEmpty(t, approvalToolCallID)
+	assert.Equal(t, approvalToolCallID, resultToolCallID)
+}
+
+func TestStream_MCPCallUsesEmptyApprovalRequestID(t *testing.T) {
+	parts := collectParts(t,
+		`{"type":"response.output_item.done","sequence_number":1,"output_index":0,"item":{"type":"mcp_approval_request","id":"item_1","approval_request_id":"","name":"do_thing","server_label":"srv","arguments":"{}"}}`,
+		`{"type":"response.output_item.done","sequence_number":2,"output_index":1,"item":{"type":"mcp_call","id":"mcp_1","approval_request_id":"","name":"do_thing","server_label":"srv","arguments":"{}","output":"ok"}}`,
 	)
 
 	var approvalToolCallID string
@@ -805,6 +828,49 @@ func TestStream_ReasoningSummaryPartsFollowStoreSemantics(t *testing.T) {
 	var terminalMeta map[string]any
 	require.NoError(t, json.Unmarshal(parts[len(parts)-1].ProviderMetadata["openai"], &terminalMeta))
 	assert.Equal(t, "enc", terminalMeta["reasoningEncryptedContent"])
+}
+
+func TestStream_ReasoningEndOrderIsDeterministic(t *testing.T) {
+	for range 50 {
+		a := newStreamAdapter(nil, buildResult{}, responses.ResponseNewParams{}, nil, seqIDGen(), "openai")
+		a.activeReasoning["rs_1"] = &activeReasoningState{
+			summaryParts: map[int64]reasoningSummaryState{
+				2: reasoningSummaryActive,
+				0: reasoningSummaryActive,
+				1: reasoningSummaryCanConclude,
+			},
+		}
+		ch := make(chan provider.StreamPart, 4)
+		a.handleEvent(unmarshalEvent(t, `{"type":"response.output_item.done","output_index":0,"item":{"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":null}}`), ch)
+		close(ch)
+
+		var ids []string
+		for part := range ch {
+			if part.Type == provider.PartReasoningEnd {
+				ids = append(ids, part.ID)
+			}
+		}
+		assert.Equal(t, []string{"rs_1:0", "rs_1:1", "rs_1:2"}, ids)
+	}
+}
+
+func TestStream_ReaddedReasoningSummaryPartDoesNotEndItself(t *testing.T) {
+	parts := collectPartsWithBuildResult(t, buildResult{store: false},
+		`{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":null}}`,
+		`{"type":"response.reasoning_summary_part.done","output_index":0,"item_id":"rs_1","summary_index":1}`,
+		`{"type":"response.reasoning_summary_part.added","output_index":0,"item_id":"rs_1","summary_index":1,"part":{"type":"summary_text","text":""}}`,
+	)
+
+	var lifecycle []string
+	for _, part := range parts {
+		if part.Type == provider.PartReasoningStart || part.Type == provider.PartReasoningEnd {
+			lifecycle = append(lifecycle, string(part.Type)+":"+part.ID)
+		}
+	}
+	assert.Equal(t, []string{
+		"reasoning-start:rs_1:0",
+		"reasoning-start:rs_1:1",
+	}, lifecycle)
 }
 
 func TestStream_ReasoningEndUsesTerminalEncryptedContent(t *testing.T) {
