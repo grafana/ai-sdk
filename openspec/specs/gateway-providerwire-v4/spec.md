@@ -99,7 +99,7 @@ System provider options MAY appear on the message, but system content SHALL cont
 
 The strict request codec SHALL reject provider-domain prompt values and request JSON that contain known non-request or private fields. Prompt content MUST reject `sourceType`, `id`, `url`, `title`, `signature`, and `isAutomatic` when any is present. Tool approval responses MUST reject `toolCallId`, `toolName`, and `providerExecuted` when any is present. Top-level `abortSignal` MUST be rejected because cancellation belongs to the local transport and is not request JSON.
 
-Unknown fields that are not known private, legacy, or reserved fields SHALL remain governed by additive-field tolerance.
+Unknown standard request fields SHALL be rejected by the fail-fast request-object policy below. Known private fields retain explicit contextual rejection regardless of their JSON value.
 
 #### Scenario: Private field with any JSON value is rejected
 
@@ -120,7 +120,7 @@ Unknown fields that are not known private, legacy, or reserved fields SHALL rema
 
 Prompt `file` and tool-result `file` content SHALL support canonical `data`, `url`, `reference`, and `text` tagged file-data variants. Prompt `reasoning-file` content SHALL support only `data` and `url`. File content SHALL require `data` and `mediaType`; reasoning files MUST NOT carry `filename`.
 
-Inline bytes SHALL encode as base64 in the `data` variant. At a full-file or tool-result-file boundary, a present zero-valued `provider.DataContent` SHALL represent canonical empty inline text; this convention MUST NOT apply to reasoning files. A URL SHALL be non-empty. A provider reference SHALL be an object whose values are strings and which does not contain a `type` property. Encoding SHALL reject provider values with no representable canonical variant or with multiple populated representations.
+Inline bytes SHALL encode as base64 in the `data` variant. At a full-file or tool-result-file boundary, a present zero-valued `provider.DataContent` SHALL represent canonical empty inline text; this convention MUST NOT apply to reasoning files. A URL SHALL be non-empty. A provider reference SHALL be an open provider-keyed object whose values are strings. Encoding SHALL reject provider values with no representable canonical variant or with multiple populated representations.
 
 #### Scenario: Every prompt file-data variant round trips
 
@@ -139,16 +139,16 @@ Inline bytes SHALL encode as base64 in the `data` variant. At a full-file or too
 
 #### Scenario: Invalid provider reference is rejected
 
-- **WHEN** a provider reference is not an object, contains a non-string value, or contains a `type` property
+- **WHEN** a provider reference is not an object or contains a non-string value
 - **THEN** strict encoding or decoding SHALL fail
 
 ### Requirement: Canonical tool and tool-result unions
 
-The strict codec SHALL support function and provider tools. A function tool SHALL require a non-empty name and an object-valued input schema; each input example SHALL contain an object-valued input. A provider tool SHALL require a non-empty name, a provider-qualified ID, and a present object-valued `args` field, including when the object is empty. Provider tools MUST NOT carry `providerOptions`.
+The strict codec SHALL support function and provider tools. A function tool SHALL require a non-empty name and an object-valued input schema; each input example SHALL contain an object-valued input. A provider tool SHALL require a non-empty name, a provider-qualified ID, and a present object-valued `args` field, including when the object is empty. Strict encoding SHALL reject non-empty provider-domain `providerOptions` on a provider tool. Strict decoding SHALL treat non-reserved `providerOptions` as a known inactive function-tool sibling field and ignore it, while still rejecting a detectable nested `gateway` namespace.
 
 Tool calls SHALL require a non-empty call ID, non-empty tool name, and one valid JSON input value. Tool results SHALL require a non-empty call ID, non-empty tool name, and one canonical output arm: `text`, `json`, `error-text`, `error-json`, `content`, or `execution-denied`. Content output SHALL support canonical `text`, `file`, and `custom` values. The JSON and error-JSON output arms SHALL preserve JSON `null` as a valid value.
 
-Output-level `providerOptions` SHALL be supported on every output arm except `content`, where the registered contract admits provider options only on nested content values. Strict encoding SHALL reject a `content` output with non-empty output-level provider options. Strict decoding SHALL ignore a non-reserved output-level provider-options field on the `content` arm as an inactive additive field, while still rejecting a nested reserved `gateway` namespace.
+Output-level `providerOptions` SHALL be supported on every output arm except `content`, where the registered contract admits provider options only on nested content values. Strict encoding SHALL reject a `content` output with non-empty output-level provider options. Strict decoding SHALL ignore a non-reserved output-level provider-options field on the `content` arm as a known inactive sibling-arm field, while still rejecting a nested reserved `gateway` namespace.
 
 #### Scenario: Function tool schema and examples use object boundaries
 
@@ -165,6 +165,16 @@ Output-level `providerOptions` SHALL be supported on every output arm except `co
 - **WHEN** a provider tool ID lacks a non-empty provider component or a non-empty tool component separated by a dot
 - **THEN** strict encoding or decoding SHALL fail
 
+#### Scenario: Provider-tool options are inactive on decode
+
+- **WHEN** strict decoding receives a provider tool with non-reserved `providerOptions`
+- **THEN** decoding SHALL ignore that known inactive sibling field while preserving the provider tool's active fields
+
+#### Scenario: Provider-tool options cannot be encoded
+
+- **WHEN** a provider-domain provider tool contains non-empty `providerOptions`
+- **THEN** strict encoding SHALL fail rather than emit a field absent from the active arm
+
 #### Scenario: Every canonical tool-result output arm round trips
 
 - **WHEN** a tool result uses any supported output discriminator with valid active-arm data
@@ -175,7 +185,7 @@ Output-level `providerOptions` SHALL be supported on every output arm except `co
 - **WHEN** a provider-domain `content` output has non-empty output-level provider options
 - **THEN** strict encoding SHALL fail rather than emit a field absent from the canonical arm
 
-#### Scenario: Additive content-output provider options are inactive
+#### Scenario: Content-output provider options are an inactive sibling field
 
 - **WHEN** strict decoding receives a `content` output with non-reserved output-level provider options
 - **THEN** decoding SHALL ignore that inactive field while preserving provider options on nested content values
@@ -185,16 +195,21 @@ Output-level `providerOptions` SHALL be supported on every output arm except `co
 - **WHEN** strict decoding receives split `text`, `json`, or `content` output fields or legacy `file-data`, `file-url`, or `file-reference` content discriminators
 - **THEN** decoding SHALL fail
 
-### Requirement: Strict active-arm validation with additive-field tolerance
+### Requirement: Strict active-arm validation with fail-fast unknown fields
 
-The private decoder SHALL reject non-object boundaries, unknown discriminators, missing required fields, malformed active fields, known legacy fields, and `null` for typed fields that require a concrete string, number, boolean, array, or object. It SHALL accept JSON `null` only for opaque values whose canonical type admits null, including tool-call input and JSON tool-result output.
+The private decoder SHALL reject non-object boundaries, unknown discriminators, unknown standard fields, missing required fields, malformed active fields, known legacy fields, and `null` for typed fields that require a concrete string, number, boolean, array, or object. Unknown-field rejection SHALL apply to the top-level call-options object and every nested standard request object before model invocation. The decoder SHALL accept JSON `null` only for opaque values whose canonical type admits null, including tool-call input and JSON tool-result output.
 
-For a recognized discriminator, unrelated unknown fields and fields belonging only to inactive sibling arms SHALL be ignored. Top-level unrelated additive fields SHALL also be ignored.
+For a recognized discriminator, fields defined by the same union but belonging only to inactive sibling arms SHALL be ignored. Provider-options namespaces, provider references, headers, schemas, tool inputs, tool arguments, and JSON tool-result values SHALL remain explicit keyed or opaque extension boundaries and SHALL NOT apply a fixed inner-field allowlist beyond their own structural contract.
 
 #### Scenario: Unknown discriminator fails closed
 
 - **WHEN** a message, content, file-data, tool, tool-choice, response-format, tool-output, or tool-result-content union carries an unknown discriminator
 - **THEN** decoding SHALL fail without a partial provider value
+
+#### Scenario: Unknown standard field fails closed
+
+- **WHEN** the top-level call options or a nested standard request object contains a field outside its complete understood field set
+- **THEN** decoding SHALL fail before model invocation rather than silently discard caller intent
 
 #### Scenario: Typed null fails closed
 
@@ -206,10 +221,15 @@ For a recognized discriminator, unrelated unknown fields and fields belonging on
 - **WHEN** tool-call input or a JSON tool-result output is the JSON value `null`
 - **THEN** strict decoding SHALL preserve that JSON value
 
-#### Scenario: Additive fields do not widen active arms
+#### Scenario: Inactive sibling fields do not widen active arms
 
-- **WHEN** a known object contains an unrelated future field or an inactive sibling-arm field with an incompatible value
-- **THEN** decoding SHALL ignore that field and preserve the supported active-arm semantics
+- **WHEN** a known union object contains a field defined only for an inactive sibling arm with an incompatible value
+- **THEN** decoding SHALL ignore that field and preserve the selected active-arm semantics
+
+#### Scenario: Explicit extension boundaries remain open
+
+- **WHEN** provider options or another defined opaque or keyed request value contains arbitrary valid inner fields
+- **THEN** strict decoding SHALL preserve those fields subject to that boundary's structural, privacy, and reserved-namespace rules
 
 ### Requirement: Provider options and reserved gateway namespace
 
@@ -258,7 +278,7 @@ Introducing the strict V4 request package MUST NOT change production files, expo
 
 ### Requirement: Request codec verification evidence
 
-The strict request capability SHALL include focused tests for canonical conversion, every supported request union arm, invalid provider-domain encoding, strict decode rejection, additive-field tolerance, typed null handling, request privacy, reserved namespaces, package dependencies, and legacy compatibility. Verification SHALL include race-enabled tests for both provider-wire packages, gateway provider-wire vetting, and the repository's registered parity validation.
+The strict request capability SHALL include focused tests for canonical conversion, every supported request union arm, invalid provider-domain encoding, strict decode rejection, unknown-field rejection, inactive sibling-arm tolerance, opaque extension boundaries, typed null handling, request privacy, reserved namespaces, package dependencies, and legacy compatibility. Verification SHALL include race-enabled tests for both provider-wire packages, gateway provider-wire vetting, and the repository's registered parity validation.
 
 #### Scenario: Focused verification succeeds
 

@@ -6,8 +6,9 @@ The existing provider-wire request helpers intentionally accept historical Go en
 
 - Add an independent `gateway/providerwire/v4` package for canonical LanguageModelV4 request encoding.
 - Add private request DTOs and field-by-field conversion between `provider.CallOptions` and canonical JSON.
-- Add strict internal request decoding that validates required fields, discriminators, active union arms, provider references, opaque JSON boundaries, typed nulls, and request privacy constraints while tolerating unrelated additive fields.
+- Add strict internal request decoding that validates required fields, discriminators, active union arms, provider references, opaque JSON boundaries, typed nulls, request privacy constraints, and the complete set of understood standard fields.
 - Remove absent or empty top-level `providerOptions.gateway` values and reject non-empty or nested reserved gateway namespaces.
+- Reject unknown standard request fields before invocation while preserving inactive sibling-arm fields and explicit opaque extension boundaries.
 - Preserve all supported request semantics, including empty inline-text file data, tools, tool results, provider options, headers, and model settings.
 - Keep the existing `gateway/providerwire` public API and tolerant request decoding unchanged.
 

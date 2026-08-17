@@ -171,7 +171,6 @@ func TestProviderReferenceValidationInRequestAndToolResultFiles(t *testing.T) {
 		json.RawMessage(`[]`),
 		json.RawMessage(`{"p":null}`),
 		json.RawMessage(`{"p":1}`),
-		json.RawMessage(`{"type":"file-id"}`),
 	}
 	for i, reference := range invalid {
 		t.Run(fmt.Sprintf("request-encode-%d", i), func(t *testing.T) {
@@ -187,15 +186,20 @@ func TestProviderReferenceValidationInRequestAndToolResultFiles(t *testing.T) {
 		})
 	}
 
-	decodeCases := []string{
-		`{"prompt":[{"role":"user","content":[{"type":"file","data":{"type":"reference","reference":{"p":null}},"mediaType":"application/pdf"}]}]}`,
-		`{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"call","toolName":"tool","output":{"type":"content","value":[{"type":"file","data":{"type":"reference","reference":{"type":"id"}},"mediaType":"application/pdf"}]}}]}]}`,
+	invalidWire := `{"prompt":[{"role":"user","content":[{"type":"file","data":{"type":"reference","reference":{"p":null}},"mediaType":"application/pdf"}]}]}`
+	_, err := decodeCallOptionsJSON([]byte(invalidWire))
+	require.Error(t, err)
+
+	validWires := []string{
+		`{"prompt":[{"role":"user","content":[{"type":"file","data":{"type":"reference","reference":{"type":"file-id"}},"mediaType":"application/pdf"}]}]}`,
+		`{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"call","toolName":"tool","output":{"type":"content","value":[{"type":"file","data":{"type":"reference","reference":{"type":"file-id"}},"mediaType":"application/pdf"}]}}]}]}`,
 	}
-	for i, wire := range decodeCases {
-		t.Run(fmt.Sprintf("decode-%d", i), func(t *testing.T) {
-			_, err := decodeCallOptionsJSON([]byte(wire))
-			require.Error(t, err)
-		})
+	for _, wire := range validWires {
+		decoded, err := decodeCallOptionsJSON([]byte(wire))
+		require.NoError(t, err)
+		encoded, err := EncodeCallOptions(decoded)
+		require.NoError(t, err)
+		assert.JSONEq(t, wire, string(encoded))
 	}
 }
 
@@ -295,7 +299,6 @@ func TestCallOptions_ProviderToolRequiresCanonicalArgs(t *testing.T) {
 	invalid := []string{
 		`{"type":"provider","name":"tool","id":"p.tool"}`,
 		`{"type":"provider","name":"tool","id":"p.tool","args":null}`,
-		`{"type":"provider","name":"tool","id":"p.tool","args":{},"providerOptions":null}`,
 	}
 	for i, tool := range invalid {
 		t.Run(fmt.Sprintf("invalid-%d", i), func(t *testing.T) {
@@ -361,7 +364,7 @@ func TestJSONObjectBoundaries(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestCallOptions_StrictRejectionAndAdditiveFields(t *testing.T) {
+func TestCallOptions_StrictRejectionAndUnknownFields(t *testing.T) {
 	cases := []struct {
 		name string
 		wire string
@@ -381,8 +384,16 @@ func TestCallOptions_StrictRejectionAndAdditiveFields(t *testing.T) {
 		{name: "unknown tool result content", wire: `{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"c","toolName":"t","output":{"type":"content","value":[{"type":"future"}]}}]}]}`},
 		{name: "invalid tool choice", wire: `{"prompt":[],"toolChoice":{"type":"tool"}}`},
 		{name: "provider option scalar", wire: `{"prompt":[],"providerOptions":{"provider":1}}`},
-		{name: "provider tool options", wire: `{"prompt":[],"tools":[{"type":"provider","id":"p.tool","name":"tool","args":{},"providerOptions":{"p":{}}}]}`},
-		{name: "provider tool empty options", wire: `{"prompt":[],"tools":[{"type":"provider","id":"p.tool","name":"tool","args":{},"providerOptions":{}}]}`},
+		{name: "unknown call options field", wire: `{"prompt":[],"future":true}`},
+		{name: "unknown message field", wire: `{"prompt":[{"role":"user","content":[],"future":true}]}`},
+		{name: "unknown content field", wire: `{"prompt":[{"role":"user","content":[{"type":"text","text":"x","future":true}]}]}`},
+		{name: "unknown file data field", wire: `{"prompt":[{"role":"user","content":[{"type":"file","data":{"type":"data","data":"","future":true},"mediaType":"x"}]}]}`},
+		{name: "unknown tool field", wire: `{"prompt":[],"tools":[{"type":"function","name":"tool","inputSchema":{},"future":true}]}`},
+		{name: "unknown tool input example field", wire: `{"prompt":[],"tools":[{"type":"function","name":"tool","inputSchema":{},"inputExamples":[{"input":{},"future":true}]}]}`},
+		{name: "unknown tool choice field", wire: `{"prompt":[],"toolChoice":{"type":"none","future":true}}`},
+		{name: "unknown response format field", wire: `{"prompt":[],"responseFormat":{"type":"text","future":true}}`},
+		{name: "unknown tool output field", wire: `{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"c","toolName":"t","output":{"type":"text","value":"ok","future":true}}]}]}`},
+		{name: "unknown tool result content field", wire: `{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"c","toolName":"t","output":{"type":"content","value":[{"type":"text","text":"ok","future":true}]}}]}]}`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -391,13 +402,45 @@ func TestCallOptions_StrictRejectionAndAdditiveFields(t *testing.T) {
 		})
 	}
 
-	additive := `{"prompt":[{"role":"user","content":[{"type":"text","text":"x","data":false}]}],"tools":[{"type":"function","name":"tool","inputSchema":{},"args":false}],"toolChoice":{"type":"none","toolName":false},"responseFormat":{"type":"text","schema":false},"futureField":{"safe":true}}`
-	decoded, err := decodeCallOptionsJSON([]byte(additive))
+	inactive := `{"prompt":[{"role":"user","content":[{"type":"text","text":"x","data":false},{"type":"file","data":{"type":"data","data":"","url":false,"reference":false,"text":false},"mediaType":"x"}]}],"tools":[{"type":"function","name":"tool","inputSchema":{},"id":false,"args":false}],"toolChoice":{"type":"none","toolName":false},"responseFormat":{"type":"text","schema":false,"name":false,"description":false},"providerOptions":{"provider":{"future":true}}}`
+	decoded, err := decodeCallOptionsJSON([]byte(inactive))
 	require.NoError(t, err)
 	assert.Empty(t, decoded.Prompt[0].Content[0].Data)
 	assert.Empty(t, decoded.Tools[0].Args)
 	assert.Empty(t, decoded.ToolChoice.ToolName)
 	assert.Empty(t, decoded.ResponseFormat.Schema)
+	assert.Contains(t, decoded.ProviderOptions, "provider")
+
+	for _, options := range []string{`null`, `false`, `[]`, `{"provider":{"future":true}}`} {
+		providerToolInactive := `{"prompt":[],"tools":[{"type":"provider","id":"p.tool","name":"tool","args":{},"description":false,"inputSchema":false,"inputExamples":false,"strict":"invalid","providerOptions":` + options + `}]}`
+		decoded, err = decodeCallOptionsJSON([]byte(providerToolInactive))
+		require.NoError(t, err)
+		require.Len(t, decoded.Tools, 1)
+		assert.Empty(t, decoded.Tools[0].ProviderOptions)
+	}
+}
+
+func TestCallOptions_ExplicitExtensionBoundariesRemainOpen(t *testing.T) {
+	wire := `{
+		"prompt":[
+			{"role":"user","content":[{"type":"file","data":{"type":"reference","reference":{"future.provider":"file-id","type":"type-id"}},"mediaType":"application/octet-stream"}]},
+			{"role":"assistant","content":[
+				{"type":"tool-call","toolCallId":"call","toolName":"tool","input":{"future":{"nested":true}}},
+				{"type":"tool-result","toolCallId":"call","toolName":"tool","output":{"type":"json","value":{"future":[1,null,true]}}}
+			]}
+		],
+		"tools":[
+			{"type":"function","name":"function","inputSchema":{"futureKeyword":{"enabled":true}},"inputExamples":[{"input":{"futureExample":true}}]},
+			{"type":"provider","name":"provider","id":"provider.tool","args":{"futureArgument":{"nested":true}}}
+		],
+		"headers":{"x-future-header":"value"},
+		"providerOptions":{"future-provider":{"futureOption":{"nested":true}}}
+	}`
+	decoded, err := decodeCallOptionsJSON([]byte(wire))
+	require.NoError(t, err)
+	encoded, err := EncodeCallOptions(decoded)
+	require.NoError(t, err)
+	assert.JSONEq(t, wire, string(encoded))
 }
 
 func TestCallOptions_EncodingRejectsInvalidValues(t *testing.T) {
@@ -470,6 +513,7 @@ func TestCallOptions_NestedGatewayProviderOptionsAreRejected(t *testing.T) {
 		{name: "message", wire: `{"prompt":[{"role":"user","content":[],"providerOptions":{"gateway":{}}}]}`},
 		{name: "content part", wire: `{"prompt":[{"role":"user","content":[{"type":"text","text":"text","providerOptions":{"gateway":{}}}]}]}`},
 		{name: "function tool", wire: `{"prompt":[],"tools":[{"type":"function","name":"tool","inputSchema":{},"providerOptions":{"gateway":{}}}]}`},
+		{name: "provider tool inactive options", wire: `{"prompt":[],"tools":[{"type":"provider","id":"p.tool","name":"tool","args":{},"providerOptions":{"gateway":{}}}]}`},
 		{name: "tool output", wire: `{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"call","toolName":"tool","output":{"type":"text","value":"ok","providerOptions":{"gateway":{}}}}]}]}`},
 		{name: "inactive content tool output gateway", wire: `{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"call","toolName":"tool","output":{"type":"content","value":[],"providerOptions":{"gateway":{}}}}]}]}`},
 		{name: "tool result content", wire: `{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"call","toolName":"tool","output":{"type":"content","value":[{"type":"text","text":"text","providerOptions":{"gateway":{}}]}}]}]}`},
@@ -502,7 +546,6 @@ func TestStrictCodec_RejectsTypedNullAndPrivateFields(t *testing.T) {
 		`{"prompt":[{"role":"user","content":[{"type":"text","text":null}]}]}`,
 		`{"prompt":[{"role":"user","content":[{"type":"text","text":"x","sourceType":null}]}]}`,
 		`{"prompt":[{"role":"user","content":[{"type":"file","data":{"type":"reference","reference":{"p":null}},"mediaType":"x"}]}]}`,
-		`{"prompt":[{"role":"user","content":[{"type":"file","data":{"type":"reference","reference":{"type":"id"}},"mediaType":"x"}]}]}`,
 	}
 	for i, wire := range requests {
 		t.Run(fmt.Sprintf("request-%d", i), func(t *testing.T) {

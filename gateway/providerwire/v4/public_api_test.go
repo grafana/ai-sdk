@@ -8,7 +8,8 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+var _ func(provider.CallOptions) ([]byte, error) = providerwirev4.EncodeCallOptions
+
 func TestPublicAPI_RequestEncoder(t *testing.T) {
-	var encode func(provider.CallOptions) ([]byte, error) = providerwirev4.EncodeCallOptions
-	assert.NotNil(t, encode)
+	assert.NotNil(t, providerwirev4.EncodeCallOptions)
 }

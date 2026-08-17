@@ -74,13 +74,20 @@ func (dto *toolDTO) UnmarshalJSON(data []byte) error {
 	if err != nil {
 		return err
 	}
+	if err := rejectUnknownFields(object, "tool", "type", "name", "description", "inputSchema", "inputExamples", "strict", "id", "args", "providerOptions"); err != nil {
+		return err
+	}
 	fields := []string{"type", "name"}
 	switch provider.ToolType(variant) {
 	case provider.ToolTypeFunction:
 		fields = append(fields, "description", "inputSchema", "inputExamples", "strict", "providerOptions")
 	case provider.ToolTypeProvider:
-		if _, exists := object["providerOptions"]; exists {
-			return errors.New("providerwirev4: provider tool providerOptions are not in LanguageModelV4")
+		if raw, exists := object["providerOptions"]; exists {
+			if options, objectErr := decodeObject(raw, "inactive provider tool options"); objectErr == nil {
+				if _, reserved := options["gateway"]; reserved {
+					return errors.New("providerwirev4: provider tool must not contain reserved provider option \"gateway\"")
+				}
+			}
 		}
 		fields = append(fields, "id", "args")
 	default:
@@ -99,6 +106,18 @@ func (dto *toolDTO) UnmarshalJSON(data []byte) error {
 
 type inputExampleDTO struct {
 	Input json.RawMessage `json:"input"`
+}
+
+func (dto *inputExampleDTO) UnmarshalJSON(data []byte) error {
+	type inputExampleAlias inputExampleDTO
+	object, err := decodeObject(data, "tool input example")
+	if err != nil {
+		return err
+	}
+	if err := rejectUnknownFields(object, "tool input example", "input"); err != nil {
+		return err
+	}
+	return decodeSelectedObject(object, (*inputExampleAlias)(dto), "input")
 }
 
 type toolChoiceDTO struct {
@@ -154,6 +173,9 @@ func decodeCallOptionsJSON(data []byte) (provider.CallOptions, error) {
 	if _, exists := object["abortSignal"]; exists {
 		return provider.CallOptions{}, errors.New("providerwirev4: abortSignal is transport-private and is not supported")
 	}
+	if err := rejectUnknownFields(object, "call options", "prompt", "tools", "toolChoice", "maxOutputTokens", "temperature", "topP", "topK", "presencePenalty", "frequencyPenalty", "stopSequences", "responseFormat", "seed", "reasoning", "includeRawChunks", "headers", "providerOptions"); err != nil {
+		return provider.CallOptions{}, err
+	}
 	if err := rejectNullFields(object, "call options", "tools", "toolChoice", "maxOutputTokens", "temperature", "topP", "topK", "presencePenalty", "frequencyPenalty", "stopSequences", "responseFormat", "seed", "reasoning", "includeRawChunks", "headers", "providerOptions"); err != nil {
 		return provider.CallOptions{}, err
 	}
@@ -178,6 +200,13 @@ func decodeCallOptionsJSON(data []byte) (provider.CallOptions, error) {
 		}
 		variant, err := decodeRequiredString(nested, "type", context)
 		if err != nil {
+			return provider.CallOptions{}, err
+		}
+		knownFields := []string{"type", "toolName"}
+		if field == "responseFormat" {
+			knownFields = []string{"type", "schema", "name", "description"}
+		}
+		if err := rejectUnknownFields(nested, context, knownFields...); err != nil {
 			return provider.CallOptions{}, err
 		}
 		fields := []string{"type"}
@@ -398,6 +427,9 @@ func decodeMessage(data json.RawMessage) (provider.Message, error) {
 	if err != nil {
 		return provider.Message{}, err
 	}
+	if err := rejectUnknownFields(object, "message", "role", "content", "providerOptions"); err != nil {
+		return provider.Message{}, err
+	}
 	if err := rejectNullFields(object, "message", "providerOptions"); err != nil {
 		return provider.Message{}, err
 	}
@@ -546,6 +578,9 @@ func decodeContentPart(data json.RawMessage) (provider.ContentPart, error) {
 			return provider.ContentPart{}, fmt.Errorf("providerwirev4: private prompt content field %q is not supported", private)
 		}
 	}
+	if err := rejectUnknownFields(object, "content part", "type", "text", "data", "filename", "mediaType", "kind", "toolCallId", "toolName", "input", "output", "providerExecuted", "approvalId", "approved", "reason", "providerOptions"); err != nil {
+		return provider.ContentPart{}, err
+	}
 	fields := []string{"type", "providerOptions"}
 	switch provider.ContentPartType(variant) {
 	case provider.ContentPartTypeText, provider.ContentPartTypeReasoning:
@@ -604,7 +639,7 @@ func decodeContentPart(data json.RawMessage) (provider.ContentPart, error) {
 		if len(dto.Data) == 0 || dto.MediaType == nil {
 			return provider.ContentPart{}, fmt.Errorf("providerwirev4: %s data and mediaType are required", variant)
 		}
-		part.Data, err = decodeData(dto.Data, part.Type == provider.ContentPartTypeFile)
+		part.Data, err = decodeRequestData(dto.Data, part.Type == provider.ContentPartTypeFile)
 		if err != nil {
 			return provider.ContentPart{}, err
 		}
@@ -835,6 +870,9 @@ func decodeToolResultOutput(data json.RawMessage) (provider.ToolResultOutput, er
 	if _, legacy := object["content"]; legacy {
 		return provider.ToolResultOutput{}, errors.New("providerwirev4: legacy split tool result fields are not supported")
 	}
+	if err := rejectUnknownFields(object, "tool result output", "type", "value", "reason", "providerOptions"); err != nil {
+		return provider.ToolResultOutput{}, err
+	}
 	fields := []string{"type"}
 	outputType := provider.ToolResultOutputType(variant)
 	switch outputType {
@@ -943,6 +981,9 @@ func decodeToolResultContent(data json.RawMessage) (provider.ToolResultContentVa
 	if err != nil {
 		return provider.ToolResultContentValue{}, err
 	}
+	if err := rejectUnknownFields(object, "tool result content", "type", "text", "data", "mediaType", "filename", "providerOptions"); err != nil {
+		return provider.ToolResultContentValue{}, err
+	}
 	fields := []string{"type", "providerOptions"}
 	switch provider.ToolResultContentType(variant) {
 	case provider.ToolContentText:
@@ -977,7 +1018,7 @@ func decodeToolResultContent(data json.RawMessage) (provider.ToolResultContentVa
 		if len(dto.Data) == 0 || dto.MediaType == nil {
 			return provider.ToolResultContentValue{}, errors.New("providerwirev4: tool result file data and mediaType are required")
 		}
-		content.Data, err = decodeData(dto.Data, true)
+		content.Data, err = decodeRequestData(dto.Data, true)
 		if err != nil {
 			return provider.ToolResultContentValue{}, err
 		}

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/grafana/ai-sdk/provider"
@@ -82,6 +83,24 @@ func rejectNullFields(object map[string]json.RawMessage, context string, fields 
 	return nil
 }
 
+func rejectUnknownFields(object map[string]json.RawMessage, context string, fields ...string) error {
+	known := make(map[string]struct{}, len(fields))
+	for _, field := range fields {
+		known[field] = struct{}{}
+	}
+	unknown := make([]string, 0)
+	for field := range object {
+		if _, exists := known[field]; !exists {
+			unknown = append(unknown, field)
+		}
+	}
+	if len(unknown) == 0 {
+		return nil
+	}
+	sort.Strings(unknown)
+	return fmt.Errorf("providerwirev4: %s contains unsupported field %q", context, unknown[0])
+}
+
 func decodeSelectedObject(object map[string]json.RawMessage, destination any, fields ...string) error {
 	selected := make(map[string]json.RawMessage, len(fields))
 	for _, field := range fields {
@@ -100,9 +119,6 @@ func validateProviderReference(value json.RawMessage, context string) error {
 	object, err := decodeObject(value, context)
 	if err != nil {
 		return err
-	}
-	if _, exists := object["type"]; exists {
-		return fmt.Errorf("providerwirev4: %s must not contain field %q", context, "type")
 	}
 	for providerID, reference := range object {
 		if bytes.Equal(bytes.TrimSpace(reference), []byte("null")) {
@@ -245,13 +261,16 @@ func encodeData(data *provider.DataContent, allowReferenceText bool) (*dataDTO, 
 	}
 }
 
-func decodeData(raw json.RawMessage, allowReferenceText bool) (*provider.DataContent, error) {
+func decodeRequestData(raw json.RawMessage, allowReferenceText bool) (*provider.DataContent, error) {
 	object, err := decodeObject(raw, "file data")
 	if err != nil {
 		return nil, err
 	}
 	variant, err := decodeRequiredString(object, "type", "file data")
 	if err != nil {
+		return nil, err
+	}
+	if err := rejectUnknownFields(object, "file data", "type", "data", "url", "reference", "text"); err != nil {
 		return nil, err
 	}
 	switch variant {

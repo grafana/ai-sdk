@@ -13,7 +13,8 @@ The registered provider contract defines TypeScript discriminated unions for cal
 - Strictly decode canonical request JSON into `provider.CallOptions` for package-internal consumers.
 - Keep canonical wire decisions in private DTOs and explicit conversion code.
 - Reject invalid, ambiguous, legacy-only, private, or reserved values during strict request conversion so a later transport boundary can fail before provider invocation.
-- Preserve harmless additive fields and every supported request semantic value.
+- Reject unknown standard request fields before model invocation while preserving inactive sibling-arm fields and explicit opaque extension boundaries.
+- Preserve every supported request semantic value.
 - Preserve the existing provider-wire package's public API and tolerant behavior.
 
 **Non-Goals:**
@@ -44,9 +45,9 @@ Directly marshaling `provider.CallOptions` was rejected because provider-domain 
 
 ### 4. Validate raw objects before typed conversion
 
-Decoding will first inspect each JSON object as `map[string]json.RawMessage`, require the discriminator and active-arm fields, reject typed nulls where the contract requires a concrete value, and then decode only fields selected by the active discriminator. Unknown unrelated fields and inactive sibling-arm fields will therefore be ignored, while unknown discriminators and malformed active fields fail closed.
+Decoding will first inspect each JSON object as `map[string]json.RawMessage`, require the discriminator and active-arm fields, reject typed nulls where the contract requires a concrete value, and reject field names outside the complete understood field set for that request object. It will then decode only fields selected by the active discriminator, so known fields belonging exclusively to inactive sibling arms remain harmless and ignored.
 
-This selective approach is preferred over `DisallowUnknownFields`, which would reject additive protocol evolution, and over direct `json.Unmarshal`, which would silently turn missing, null, or malformed union values into unsafe zero values.
+Provider-options namespaces, provider references, headers, schemas, tool inputs, tool arguments, and JSON tool outputs remain explicit opaque or keyed extension boundaries and are validated according to their own contracts rather than a fixed inner-field allowlist. This selective approach is preferred over `DisallowUnknownFields`, which cannot distinguish standard request objects from extension maps or inactive union fields, and over direct `json.Unmarshal`, which would silently discard unsupported caller intent or turn missing, null, or malformed union values into unsafe zero values.
 
 ### 5. Enforce request semantics at the DTO boundary
 
@@ -62,20 +63,21 @@ This keeps routing controls out of provider-visible options and prevents nested 
 
 ### 7. Preserve tagged empty file data explicitly
 
-File data conversion will preserve each canonical tagged variant. In particular, empty inline data and `{"type":"text","text":""}` must survive decode and re-encode without collapsing to an absent or different variant. Provider references must be JSON objects with string values and no `type` property.
+File data conversion will preserve each canonical tagged variant. In particular, empty inline data and `{"type":"text","text":""}` must survive decode and re-encode without collapsing to an absent or different variant. Provider references must remain open provider-keyed JSON objects with string values.
 
 This requires an explicit boundary convention rather than provider JSON methods: empty inline data uses a non-nil empty byte slice, while a present zero-valued `DataContent` in a full file or tool-result file arm represents canonical empty inline text. Reasoning-file conversion does not use that convention because its contract excludes text data.
 
 ### 8. Prove strict and legacy behavior separately
 
-Focused strict-package tests will cover canonical request JSON, every supported union arm, encoding rejection, strict decoding rejection, additive-field tolerance, typed nulls, privacy fields, reserved namespaces, and empty file data. Dependency tests will enforce package independence. Existing-package tests will compile its exported API and confirm its tolerant request path remains unchanged.
+Focused strict-package tests will cover canonical request JSON, every supported union arm, encoding rejection, strict decoding rejection, unknown standard fields, inactive sibling-arm tolerance, opaque extension boundaries, typed nulls, privacy fields, reserved namespaces, and empty file data. Dependency tests will enforce package independence. Existing-package tests will compile its exported API and confirm its tolerant request path remains unchanged.
 
 Parity validation will run against the registered provider baseline in addition to focused Go tests. The parity coverage map will classify the canonical-only codec and its reserved gateway-namespace restriction. No frontend interop scenario is required because this change does not add an HTTP route or alter bytes emitted by the existing transport.
 
 ## Risks / Trade-offs
 
 - **Canonical definitions can drift from the registered provider contract** → Keep request cases exhaustive, run parity checks, and compare contract changes before extending the codec.
-- **Strict validation can reject future additive protocol fields** → Ignore unrelated fields and validate only discriminators, active arms, explicitly private fields, and known reserved namespaces.
+- **A newer caller can send a standard request field this baseline does not understand** → Reject it before model invocation instead of silently changing caller intent; adopt the field through an explicit pinned-baseline codec update.
+- **Fail-fast validation reduces forward availability for harmless request additions** → Preserve designated opaque extension boundaries and inactive sibling-arm fields; prefer an explicit compatibility error over executing with unknown semantics.
 - **Go zero values can erase tagged empty file variants** → Use explicit DTO presence and round-trip tests for empty inline data and text.
 - **Two request codecs increase maintenance cost** → Keep the strict package small and independent; preserve the legacy package rather than mixing incompatible policies.
 - **A provider type may represent values outside canonical LanguageModelV4** → Reject ambiguous or unrepresentable values during strict encoding instead of choosing a lossy representation.
