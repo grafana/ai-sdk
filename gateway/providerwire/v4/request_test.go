@@ -1,6 +1,7 @@
 package providerwirev4
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"testing"
@@ -87,7 +88,9 @@ func TestCallOptions_PinnedCanonicalGolden(t *testing.T) {
 	require.NoError(t, err)
 	encoded, err := EncodeCallOptions(decoded)
 	require.NoError(t, err)
-	assert.JSONEq(t, golden, string(encoded))
+	var compact bytes.Buffer
+	require.NoError(t, json.Compact(&compact, []byte(golden)))
+	assert.Equal(t, compact.String(), string(encoded))
 }
 
 func TestCallOptions_EmptyInlineTextFileDataRoundTrips(t *testing.T) {
@@ -652,6 +655,14 @@ func TestCallOptions_EmptyInlineDataAndReasoningFileRestrictions(t *testing.T) {
 	require.NotNil(t, decoded.Prompt[0].Content[0].Data.Bytes)
 	assert.Empty(t, decoded.Prompt[0].Content[0].Data.Bytes)
 
+	var emptyURL provider.DataContent
+	require.NoError(t, json.Unmarshal([]byte(`{"type":"url","url":""}`), &emptyURL))
+	require.True(t, emptyURL.IsURL())
+	_, err = EncodeCallOptions(provider.CallOptions{Prompt: []provider.Message{provider.NewUserMessage(
+		provider.FilePart("application/octet-stream", emptyURL),
+	)}})
+	require.Error(t, err)
+
 	for _, data := range []provider.DataContent{
 		{Reference: json.RawMessage(`{"provider":"file"}`)},
 		{Text: "inline"},
@@ -666,6 +677,11 @@ func TestCallOptions_EmptyInlineDataAndReasoningFileRestrictions(t *testing.T) {
 		`{"type":"text","text":"inline"}`,
 	} {
 		wire := `{"prompt":[{"role":"assistant","content":[{"type":"reasoning-file","data":` + variant + `,"mediaType":"text/plain"}]}]}`
+		_, err := decodeCallOptionsJSON([]byte(wire))
+		require.Error(t, err)
+	}
+	for _, filename := range []string{`null`, `""`, `"secret"`} {
+		wire := `{"prompt":[{"role":"assistant","content":[{"type":"reasoning-file","data":{"type":"data","data":""},"mediaType":"text/plain","filename":` + filename + `}]}]}`
 		_, err := decodeCallOptionsJSON([]byte(wire))
 		require.Error(t, err)
 	}

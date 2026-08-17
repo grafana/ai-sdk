@@ -226,7 +226,10 @@ func encodeData(data *provider.DataContent, allowReferenceText bool) (*dataDTO, 
 			value = base64.StdEncoding.EncodeToString(data.Bytes)
 		}
 		return &dataDTO{Type: "data", Data: &value}, nil
-	case data.URL != "":
+	case data.IsURL():
+		if data.URL == "" {
+			return nil, errors.New("providerwirev4: file data URL must not be empty")
+		}
 		value := data.URL
 		return &dataDTO{Type: "url", URL: &value}, nil
 	case len(data.Reference) > 0 && allowReferenceText:

@@ -553,6 +553,9 @@ func decodeContentPart(data json.RawMessage) (provider.ContentPart, error) {
 	case provider.ContentPartTypeFile:
 		fields = append(fields, "data", "filename", "mediaType")
 	case provider.ContentPartTypeReasoningFile:
+		if _, exists := object["filename"]; exists {
+			return provider.ContentPart{}, errors.New("providerwirev4: reasoning file filename is not in LanguageModelV4")
+		}
 		fields = append(fields, "data", "mediaType")
 	case provider.ContentPartTypeCustom:
 		fields = append(fields, "kind")

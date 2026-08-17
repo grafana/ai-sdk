@@ -1,6 +1,7 @@
 package providerwire_test
 
 import (
+	"io"
 	"net/http"
 	"testing"
 	"time"
@@ -11,9 +12,49 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type externalModelResolver struct{}
+
+func (externalModelResolver) ResolveLanguageModel(*http.Request, string) (provider.LanguageModel, error) {
+	return nil, nil
+}
+
 var (
-	_ providerwire.ModelResolver = providerwire.ModelResolverFunc(nil)
-	_ http.Handler               = (*providerwire.Handler)(nil)
+	_ providerwire.ModelResolver     = providerwire.ModelResolverFunc(nil)
+	_ providerwire.ModelResolver     = externalModelResolver{}
+	_ providerwire.ModelResolverFunc = func(*http.Request, string) (provider.LanguageModel, error) {
+		return nil, nil
+	}
+	_ http.Handler = (*providerwire.Handler)(nil)
+
+	_ string        = providerwire.PathLanguageModel
+	_ string        = providerwire.HeaderModelID
+	_ string        = providerwire.HeaderStreaming
+	_ string        = providerwire.HeaderSpecVersion
+	_ string        = providerwire.SpecVersionV4
+	_ string        = providerwire.MIMEJSON
+	_ string        = providerwire.MIMESSE
+	_ time.Duration = providerwire.DefaultTotalTimeout
+	_ time.Duration = providerwire.DefaultIdleTimeout
+	_ int64         = providerwire.DefaultMaxRequestBodyBytes
+	_ error         = providerwire.ErrTotalTimeout
+	_ error         = providerwire.ErrIdleTimeout
+
+	_ func(providerwire.ModelResolver, ...providerwire.Option) (*providerwire.Handler, error) = providerwire.NewHandler
+	_ func(time.Duration) providerwire.Option                                                 = providerwire.WithTotalTimeout
+	_ func(time.Duration) providerwire.Option                                                 = providerwire.WithIdleTimeout
+	_ func(int64) providerwire.Option                                                         = providerwire.WithMaxRequestBodyBytes
+	_ func(provider.CallOptions) ([]byte, error)                                              = providerwire.EncodeCallOptions
+	_ func([]byte) (provider.CallOptions, error)                                              = providerwire.DecodeCallOptions
+	_ func(*provider.GenerateResult) ([]byte, error)                                          = providerwire.EncodeGenerateResult
+	_ func([]byte) (*provider.GenerateResult, error)                                          = providerwire.DecodeGenerateResult
+	_ func(io.Writer, provider.StreamPart) error                                              = providerwire.WriteSSEStreamPart
+	_ func(http.ResponseWriter, provider.StreamPart) error                                    = providerwire.WriteSSEStreamPartTo
+	_ func(io.Reader) *providerwire.SSEReader                                                 = providerwire.NewSSEReader
+	_ func(*providerwire.SSEReader) (provider.StreamPart, error)                              = (*providerwire.SSEReader).Next
+	_ func(*provider.APICallError) ([]byte, error)                                            = providerwire.EncodeAPICallError
+	_ func([]byte) (*provider.APICallError, error)                                            = providerwire.DecodeAPICallError
+	_ func(http.ResponseWriter, *provider.APICallError) error                                 = providerwire.WriteErrorResponse
+	_ func(*http.Response) (*provider.APICallError, error)                                    = providerwire.DecodeErrorResponse
 )
 
 func TestPublicAPI_SourceCompatibility(t *testing.T) {
@@ -30,11 +71,8 @@ func TestPublicAPI_SourceCompatibility(t *testing.T) {
 	require.NotNil(t, providerwire.ErrTotalTimeout)
 	require.NotNil(t, providerwire.ErrIdleTimeout)
 
-	resolver := providerwire.ModelResolverFunc(func(*http.Request, string) (provider.LanguageModel, error) {
-		return nil, nil
-	})
 	handler, err := providerwire.NewHandler(
-		resolver,
+		externalModelResolver{},
 		providerwire.WithTotalTimeout(time.Second),
 		providerwire.WithIdleTimeout(time.Second),
 		providerwire.WithMaxRequestBodyBytes(1),
