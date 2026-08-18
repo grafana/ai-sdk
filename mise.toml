@@ -251,6 +251,7 @@ done
 description = "Run cross-language integration tests"
 run = """
 mise deps install --only test
+(cd test/integration/testserver && go test ./...)
 cd test && pnpm --filter @ai-sdk/test-integration test
 """
 

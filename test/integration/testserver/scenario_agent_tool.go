@@ -26,7 +26,7 @@ func (m *agentToolModel) SupportedURLs() map[string][]*regexp.Regexp { return ni
 func (m *agentToolModel) DoGenerate(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
 	return nil, nil
 }
-func (m *agentToolModel) DoStream(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+func (m *agentToolModel) DoStream(ctx context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
 	m.callCount++
 	stream := make(chan provider.StreamPart, 4)
 	if m.callCount == 1 {
@@ -36,17 +36,30 @@ func (m *agentToolModel) DoStream(_ context.Context, _ provider.CallOptions) (*p
 			FinishReason: &provider.FinishReason{Unified: provider.FinishReasonToolCalls},
 			Usage:        &provider.Usage{},
 		}
-	} else {
-		stream <- provider.StreamPart{Type: provider.PartTextStart, ID: "text-1"}
-		stream <- provider.StreamPart{Type: provider.PartTextDelta, ID: "text-1", Delta: "Paris is 18°C and partly cloudy."}
-		stream <- provider.StreamPart{Type: provider.PartTextEnd, ID: "text-1"}
-		stream <- provider.StreamPart{
+		close(stream)
+		return &provider.StreamResult{Stream: stream}, nil
+	}
+
+	go func() {
+		defer close(stream)
+		if !waitForContext(ctx, controlledStreamStartDelay) {
+			return
+		}
+		if !sendProviderPart(ctx, stream, provider.StreamPart{Type: provider.PartTextStart, ID: "text-1"}) {
+			return
+		}
+		if !sendProviderPart(ctx, stream, provider.StreamPart{Type: provider.PartTextDelta, ID: "text-1", Delta: "Paris is 18°C and partly cloudy."}) {
+			return
+		}
+		if !sendProviderPart(ctx, stream, provider.StreamPart{Type: provider.PartTextEnd, ID: "text-1"}) {
+			return
+		}
+		sendProviderPart(ctx, stream, provider.StreamPart{
 			Type:         provider.PartFinish,
 			FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop},
 			Usage:        &provider.Usage{},
-		}
-	}
-	close(stream)
+		})
+	}()
 	return &provider.StreamResult{Stream: stream}, nil
 }
 
