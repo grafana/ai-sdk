@@ -73,7 +73,7 @@ type OpenAIResponsesOptions struct {
 	ReasoningSummary string `json:"reasoningSummary,omitempty"`
 	// SafetyIdentifier is a stable identifier for end users.
 	SafetyIdentifier string `json:"safetyIdentifier,omitempty"`
-	// ServiceTier is "auto","flex","priority","default".
+	// ServiceTier is "auto","flex","priority","fast","default".
 	ServiceTier string `json:"serviceTier,omitempty"`
 	// Store controls whether the response is persisted. Defaults to true.
 	Store *bool `json:"store,omitempty"`

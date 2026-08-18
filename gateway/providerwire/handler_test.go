@@ -582,12 +582,12 @@ func TestHandler_StreamSetupAndForwarding(t *testing.T) {
 	assert.ErrorIs(t, err, io.EOF)
 }
 
-func TestHandler_UpstreamPartErrorIsTerminal(t *testing.T) {
+func TestHandler_UpstreamPartErrorDoesNotTerminate(t *testing.T) {
 	retryable := true
 	parts := make(chan provider.StreamPart, 3)
-	parts <- provider.StreamPart{Type: provider.PartTextDelta, Delta: "before"}
 	parts <- provider.StreamPart{Type: provider.PartError, APICallError: provider.NewAPICallError(provider.APICallErrorOptions{Message: "boom", StatusCode: 502, IsRetryable: &retryable})}
-	parts <- provider.StreamPart{Type: provider.PartTextDelta, Delta: "after"}
+	parts <- provider.StreamPart{Type: provider.PartTextDelta, ID: "text", Delta: "after"}
+	parts <- provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonError}, Usage: &provider.Usage{}}
 	close(parts)
 	model := &handlerTestModel{stream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
 		return &provider.StreamResult{Stream: parts}, nil
@@ -596,9 +596,14 @@ func TestHandler_UpstreamPartErrorIsTerminal(t *testing.T) {
 	require.NoError(t, err)
 	rec := executeHandler(t, h, validHandlerRequest(t, true, nil))
 	got := readAllHandlerParts(t, rec.Body.String())
-	require.Len(t, got, 2)
-	assert.Equal(t, provider.PartError, got[1].Type)
-	assert.True(t, got[1].APICallError.IsRetryable)
+	require.Len(t, got, 3)
+	require.NotNil(t, got[0].APICallError)
+	assert.True(t, got[0].APICallError.IsRetryable)
+	assert.Equal(t, provider.PartTextDelta, got[1].Type)
+	assert.Equal(t, "after", got[1].Delta)
+	assert.Equal(t, provider.PartFinish, got[2].Type)
+	require.NotNil(t, got[2].FinishReason)
+	assert.Equal(t, provider.FinishReasonError, got[2].FinishReason.Unified)
 }
 
 func readAllHandlerParts(t *testing.T, body string) []provider.StreamPart {
@@ -718,30 +723,40 @@ func TestHandler_StreamTimeouts(t *testing.T) {
 	}
 }
 
-func TestHandler_IdleTimeoutResetsOnActivity(t *testing.T) {
+func TestHandler_IdleTimeoutResetsAfterPartError(t *testing.T) {
+	retryable := false
 	stream := make(chan provider.StreamPart)
 	model := &handlerTestModel{stream: func(ctx context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
 		go func() {
 			defer close(stream)
-			for i := 0; i < 3; i++ {
+			parts := []provider.StreamPart{
+				{Type: provider.PartTextDelta, ID: "text", Delta: "before"},
+				{Type: provider.PartError, APICallError: provider.NewAPICallError(provider.APICallErrorOptions{Message: "provider error", IsRetryable: &retryable})},
+				{Type: provider.PartTextDelta, ID: "text", Delta: "after"},
+			}
+			for i, part := range parts {
 				select {
-				case stream <- provider.StreamPart{Type: provider.PartTextDelta, Delta: fmt.Sprint(i)}:
+				case stream <- part:
 				case <-ctx.Done():
 					return
 				}
-				time.Sleep(5 * time.Millisecond)
+				if i < len(parts)-1 {
+					time.Sleep(60 * time.Millisecond)
+				}
 			}
 		}()
 		return &provider.StreamResult{Stream: stream}, nil
 	}}
-	h, err := NewHandler(&handlerTestResolver{model: model}, WithTotalTimeout(time.Second), WithIdleTimeout(20*time.Millisecond))
+	h, err := NewHandler(&handlerTestResolver{model: model}, WithTotalTimeout(time.Second), WithIdleTimeout(100*time.Millisecond))
 	require.NoError(t, err)
 	rec := executeHandler(t, h, validHandlerRequest(t, true, nil))
 	parts := readAllHandlerParts(t, rec.Body.String())
 	require.Len(t, parts, 3)
-	for _, part := range parts {
-		assert.NotEqual(t, provider.PartError, part.Type)
-	}
+	assert.Equal(t, provider.PartTextDelta, parts[0].Type)
+	assert.Equal(t, "before", parts[0].Delta)
+	assert.Equal(t, provider.PartError, parts[1].Type)
+	assert.Equal(t, provider.PartTextDelta, parts[2].Type)
+	assert.Equal(t, "after", parts[2].Delta)
 }
 
 func TestHandler_CanceledRequestAfterCommitEmits499(t *testing.T) {

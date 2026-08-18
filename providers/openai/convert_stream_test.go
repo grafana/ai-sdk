@@ -300,6 +300,33 @@ func TestStream_ErrorThenResponseFailedEmitsSingleErrorAndFinish(t *testing.T) {
 	assert.Equal(t, 1, finishesSeen)
 }
 
+func TestStream_FailedResponseWithUnavailableUsage(t *testing.T) {
+	parts := collectParts(t,
+		`{"type":"response.failed","sequence_number":1,"response":{"id":"resp_1","model":"gpt-4o","status":"failed","error":{"message":"stream failed","code":"rate_limit_error"},"usage":null}}`,
+	)
+
+	finish := parts[len(parts)-1]
+	require.Equal(t, provider.PartFinish, finish.Type)
+	require.NotNil(t, finish.Usage)
+	assert.Nil(t, finish.Usage.InputTokens.Total)
+	assert.Nil(t, finish.Usage.OutputTokens.Total)
+	assert.Empty(t, finish.Usage.Raw)
+}
+
+func TestStream_PendingErrorFinishHasUnavailableUsage(t *testing.T) {
+	adapter := newStreamAdapter(nil, buildResult{}, responses.ResponseNewParams{}, nil, seqIDGen(), "openai")
+	adapter.encounteredStreamError = true
+	ch := make(chan provider.StreamPart, 1)
+	adapter.emitPendingErrorFinish(ch)
+	close(ch)
+
+	finish := <-ch
+	require.NotNil(t, finish.Usage)
+	assert.Nil(t, finish.Usage.InputTokens.Total)
+	assert.Nil(t, finish.Usage.OutputTokens.Total)
+	assert.Empty(t, finish.Usage.Raw)
+}
+
 func TestStream_TextCarriesPhaseMetadata(t *testing.T) {
 	parts := collectParts(t,
 		`{"type":"response.output_item.added","sequence_number":1,"output_index":0,"item":{"type":"message","id":"msg_1","role":"assistant","phase":"commentary","status":"in_progress","content":[]}}`,
@@ -683,8 +710,31 @@ func TestStream_MCPCallPreservesNullableFieldPresence(t *testing.T) {
 
 func TestStream_MCPCallUsesSameStreamApprovalToolCallID(t *testing.T) {
 	parts := collectParts(t,
-		`{"type":"response.output_item.done","sequence_number":1,"output_index":0,"item":{"type":"mcp_approval_request","id":"appr_1","approval_request_id":"appr_1","name":"do_thing","server_label":"srv","arguments":"{}"}}`,
+		`{"type":"response.output_item.done","sequence_number":1,"output_index":0,"item":{"type":"mcp_approval_request","id":"item_1","approval_request_id":"appr_1","name":"do_thing","server_label":"srv","arguments":"{}"}}`,
 		`{"type":"response.output_item.done","sequence_number":2,"output_index":1,"item":{"type":"mcp_call","id":"mcp_1","approval_request_id":"appr_1","name":"do_thing","server_label":"srv","arguments":"{}","output":"ok"}}`,
+	)
+
+	var approvalID string
+	var approvalToolCallID string
+	var resultToolCallID string
+	for _, part := range parts {
+		switch part.Type {
+		case provider.PartToolApprovalRequest:
+			approvalID = part.ApprovalID
+			approvalToolCallID = part.ToolCallID
+		case provider.PartToolResult:
+			resultToolCallID = part.ToolCallID
+		}
+	}
+	assert.Equal(t, "appr_1", approvalID)
+	require.NotEmpty(t, approvalToolCallID)
+	assert.Equal(t, approvalToolCallID, resultToolCallID)
+}
+
+func TestStream_MCPCallUsesEmptyApprovalRequestID(t *testing.T) {
+	parts := collectParts(t,
+		`{"type":"response.output_item.done","sequence_number":1,"output_index":0,"item":{"type":"mcp_approval_request","id":"item_1","approval_request_id":"","name":"do_thing","server_label":"srv","arguments":"{}"}}`,
+		`{"type":"response.output_item.done","sequence_number":2,"output_index":1,"item":{"type":"mcp_call","id":"mcp_1","approval_request_id":"","name":"do_thing","server_label":"srv","arguments":"{}","output":"ok"}}`,
 	)
 
 	var approvalToolCallID string
@@ -828,6 +878,56 @@ func TestStream_ReasoningSummary(t *testing.T) {
 	assert.Nil(t, meta["reasoningEncryptedContent"])
 }
 
+func TestStream_RotatedItemIDsUseOutputIndex(t *testing.T) {
+	parts := collectParts(t,
+		`{"type":"response.output_item.added","sequence_number":1,"output_index":0,"item":{"type":"reasoning","id":"reasoning-stable","summary":[],"encrypted_content":"enc"}}`,
+		`{"type":"response.reasoning_summary_text.delta","sequence_number":2,"output_index":0,"item_id":"reasoning-rotated","summary_index":0,"delta":"thinking"}`,
+		`{"type":"response.output_item.done","sequence_number":3,"output_index":0,"item":{"type":"reasoning","id":"reasoning-done-rotated","summary":[{"type":"summary_text","text":"thinking"}],"encrypted_content":"enc"}}`,
+		`{"type":"response.output_item.added","sequence_number":4,"output_index":1,"item":{"type":"message","id":"message-stable","role":"assistant","status":"in_progress","content":[]}}`,
+		`{"type":"response.output_text.delta","sequence_number":5,"output_index":1,"content_index":0,"item_id":"message-rotated","delta":"answer","logprobs":[]}`,
+		`{"type":"response.output_item.done","sequence_number":6,"output_index":1,"item":{"type":"message","id":"message-done-rotated","role":"assistant","status":"completed","content":[{"type":"output_text","text":"answer","annotations":[],"logprobs":[]}]}}`,
+	)
+
+	var reasoningIDs, textIDs []string
+	for _, part := range parts {
+		switch part.Type {
+		case provider.PartReasoningStart, provider.PartReasoningDelta, provider.PartReasoningEnd:
+			reasoningIDs = append(reasoningIDs, part.ID)
+		case provider.PartTextStart, provider.PartTextDelta, provider.PartTextEnd:
+			textIDs = append(textIDs, part.ID)
+		}
+	}
+	assert.Equal(t, []string{"reasoning-stable:0", "reasoning-stable:0", "reasoning-stable:0"}, reasoningIDs)
+	assert.Equal(t, []string{"message-stable", "message-stable", "message-stable"}, textIDs)
+}
+
+func TestStream_NullishOutputIndexDoesNotReuseActiveItemID(t *testing.T) {
+	parts := collectParts(t,
+		`{"type":"response.output_item.added","sequence_number":1,"output_index":0,"item":{"type":"message","id":"message-stable","role":"assistant","status":"in_progress","content":[]}}`,
+		`{"type":"response.output_text.delta","sequence_number":2,"content_index":0,"item_id":"message-omitted","delta":"omitted","logprobs":[]}`,
+		`{"type":"response.output_text.delta","sequence_number":3,"output_index":null,"content_index":0,"item_id":"message-null","delta":"null","logprobs":[]}`,
+		`{"type":"response.output_text.delta","sequence_number":4,"output_index":0,"content_index":0,"item_id":"message-rotated","delta":"zero","logprobs":[]}`,
+	)
+
+	var ids []string
+	for _, part := range parts {
+		if part.Type == provider.PartTextDelta {
+			ids = append(ids, part.ID)
+		}
+	}
+	assert.Equal(t, []string{"message-omitted", "message-null", "message-stable"}, ids)
+}
+
+func TestStream_OrphanReasoningLifecycleEventsAreIgnored(t *testing.T) {
+	parts := collectParts(t,
+		`{"type":"response.reasoning_summary_part.added","sequence_number":1,"output_index":0,"item_id":"rs_orphan","summary_index":1,"part":{"type":"summary_text","text":""}}`,
+		`{"type":"response.reasoning_summary_part.done","sequence_number":2,"output_index":0,"item_id":"rs_orphan","summary_index":1,"part":{"type":"summary_text","text":"orphan"}}`,
+		`{"type":"response.output_item.done","sequence_number":3,"output_index":0,"item":{"type":"reasoning","id":"rs_orphan","summary":[{"type":"summary_text","text":"orphan"}],"encrypted_content":null}}`,
+	)
+
+	assert.Equal(t, []provider.StreamPartType{provider.PartStreamStart}, partTypes(parts))
+}
+
 func TestStream_ReasoningSummaryPartsFollowStoreSemantics(t *testing.T) {
 	parts := collectPartsWithBuildResult(t, buildResult{store: false},
 		`{"type":"response.output_item.added","sequence_number":1,"output_index":0,"item":{"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":"enc"}}`,
@@ -858,6 +958,62 @@ func TestStream_ReasoningSummaryPartsFollowStoreSemantics(t *testing.T) {
 	var terminalMeta map[string]any
 	require.NoError(t, json.Unmarshal(parts[len(parts)-1].ProviderMetadata["openai"], &terminalMeta))
 	assert.Equal(t, "enc", terminalMeta["reasoningEncryptedContent"])
+}
+
+func TestStream_ReasoningEndOrderIsDeterministic(t *testing.T) {
+	for range 50 {
+		a := newStreamAdapter(nil, buildResult{}, responses.ResponseNewParams{}, nil, seqIDGen(), "openai")
+		a.activeReasoning["rs_1"] = &activeReasoningState{
+			summaryParts: map[int64]reasoningSummaryState{
+				2: reasoningSummaryActive,
+				0: reasoningSummaryActive,
+				1: reasoningSummaryCanConclude,
+			},
+		}
+		ch := make(chan provider.StreamPart, 4)
+		a.handleEvent(unmarshalEvent(t, `{"type":"response.output_item.done","output_index":0,"item":{"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":null}}`), ch)
+		close(ch)
+
+		var ids []string
+		for part := range ch {
+			if part.Type == provider.PartReasoningEnd {
+				ids = append(ids, part.ID)
+			}
+		}
+		assert.Equal(t, []string{"rs_1:0", "rs_1:1", "rs_1:2"}, ids)
+	}
+}
+
+func TestStream_ReaddedReasoningSummaryPartDoesNotEndItself(t *testing.T) {
+	parts := collectPartsWithBuildResult(t, buildResult{store: false},
+		`{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":null}}`,
+		`{"type":"response.reasoning_summary_part.done","output_index":0,"item_id":"rs_1","summary_index":1}`,
+		`{"type":"response.reasoning_summary_part.added","output_index":0,"item_id":"rs_1","summary_index":1,"part":{"type":"summary_text","text":""}}`,
+	)
+
+	var lifecycle []string
+	for _, part := range parts {
+		if part.Type == provider.PartReasoningStart || part.Type == provider.PartReasoningEnd {
+			lifecycle = append(lifecycle, string(part.Type)+":"+part.ID)
+		}
+	}
+	assert.Equal(t, []string{
+		"reasoning-start:rs_1:0",
+		"reasoning-start:rs_1:1",
+	}, lifecycle)
+}
+
+func TestStream_ReasoningEndUsesTerminalEncryptedContent(t *testing.T) {
+	parts := collectPartsWithBuildResult(t, buildResult{store: false},
+		`{"type":"response.output_item.added","sequence_number":1,"output_index":0,"item":{"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":"initial"}}`,
+		`{"type":"response.output_item.done","sequence_number":2,"output_index":0,"item":{"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":null}}`,
+	)
+
+	require.Len(t, parts, 3)
+	assert.Equal(t, provider.PartReasoningEnd, parts[2].Type)
+	var metadata map[string]any
+	require.NoError(t, json.Unmarshal(parts[2].ProviderMetadata["openai"], &metadata))
+	assert.Nil(t, metadata["reasoningEncryptedContent"])
 }
 
 func TestStream_ReasoningSummaryStoreOptionControlsTerminalEvent(t *testing.T) {

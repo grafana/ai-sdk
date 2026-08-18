@@ -269,6 +269,7 @@ func TestStreamUIMessage_ProgressiveReasoningAndNonText(t *testing.T) {
 	require.Len(t, last.Parts, 6)
 	rp, ok := last.Parts[0].(ReasoningPart)
 	require.True(t, ok)
+	assert.Equal(t, "r1", rp.ID)
 	assert.Equal(t, "think", rp.Text)
 	assert.Equal(t, "done", rp.State)
 	assert.Equal(t, meta, rp.ProviderMetadata)

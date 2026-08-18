@@ -1461,6 +1461,22 @@ func TestBuildRequest_SkipsUnsignedReasoning(t *testing.T) {
 	assert.Equal(t, "answer", req.Messages[0].Content[0].Text)
 }
 
+func TestBuildRequest_OmitsUnsignedReasoningOnlyAssistantMessage(t *testing.T) {
+	req, _, _ := mustBuildRequest(t, testAnthropicModel, provider.CallOptions{
+		Prompt: []provider.Message{
+			provider.NewUserMessage(provider.TextPart("think hard")),
+			provider.NewAssistantMessage(provider.ReasoningPart("private chain")),
+			provider.NewUserMessage(provider.TextPart("hello?")),
+		},
+	})
+
+	require.Len(t, req.Messages, 2)
+	assert.Equal(t, "user", req.Messages[0].Role)
+	assert.Equal(t, "think hard", req.Messages[0].Content[0].Text)
+	assert.Equal(t, "user", req.Messages[1].Role)
+	assert.Equal(t, "hello?", req.Messages[1].Content[0].Text)
+}
+
 func TestBuildRequest_ToolResultErrorsDoNotSetStatus(t *testing.T) {
 	req, _, _ := mustBuildRequest(t, testAnthropicModel, provider.CallOptions{
 		Prompt: []provider.Message{

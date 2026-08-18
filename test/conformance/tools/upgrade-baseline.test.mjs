@@ -4,12 +4,40 @@ import {
   buildPackageMetadata,
   compareStableVersions,
   parseMinimumReleaseAge,
+  parseTagCommit,
   selectMaturePackageSet,
 } from "./upgrade-baseline.mjs";
 
 function dependencies(entries) {
   return (packageName, version) => entries[`${packageName}@${version}`] ?? {};
 }
+
+describe("parseTagCommit", () => {
+  it("prefers the peeled commit for annotated tags", () => {
+    assert.equal(
+      parseTagCommit(
+        "1111111111111111111111111111111111111111\trefs/tags/ai@7.0.51\n" +
+          "2222222222222222222222222222222222222222\trefs/tags/ai@7.0.51^{}\n",
+        "ai@7.0.51",
+      ),
+      "2222222222222222222222222222222222222222",
+    );
+  });
+
+  it("accepts lightweight tags", () => {
+    assert.equal(
+      parseTagCommit(
+        "3333333333333333333333333333333333333333\trefs/tags/ai@7.0.51\n",
+        "ai@7.0.51",
+      ),
+      "3333333333333333333333333333333333333333",
+    );
+  });
+
+  it("rejects missing tags", () => {
+    assert.throws(() => parseTagCommit("", "ai@7.0.51"), /unable to resolve/);
+  });
+});
 
 describe("parseMinimumReleaseAge", () => {
   it("reads the workspace age in minutes", () => {

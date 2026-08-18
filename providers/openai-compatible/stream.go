@@ -7,7 +7,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"sort"
 	"strings"
 
 	"github.com/grafana/ai-sdk/provider"
@@ -22,20 +21,24 @@ type streamState struct {
 	metadataKey     string
 	includeRaw      bool
 
-	textActive      bool
-	reasoningActive bool
-	finishReason    provider.FinishReason
-	usage           *provider.Usage
-	rawUsage        *openAIUsage
-	toolCalls       map[int]*streamToolCall
-	toolCallIDs     map[string]int
-	errorEmitted    bool
+	textActive       bool
+	reasoningActive  bool
+	finishReason     provider.FinishReason
+	usage            *provider.Usage
+	rawUsage         *openAIUsage
+	toolCalls        []*streamToolCall
+	toolCallsByID    map[string]*streamToolCall
+	toolCallsByIndex map[int]*streamToolCall
+	latestToolCall   *streamToolCall
+	errorEmitted     bool
 }
 
 type streamToolCall struct {
 	id               string
+	idSet            bool
 	providerID       string
 	name             string
+	nameSet          bool
 	args             string
 	started          bool
 	finished         bool
@@ -44,16 +47,16 @@ type streamToolCall struct {
 
 func (m *model) runStream(ctx context.Context, endpoint string, requestBody []byte, body io.Reader, headers http.Header, warnings []provider.Warning, includeRaw bool, metadataKey string, out chan<- provider.StreamPart) {
 	state := &streamState{
-		ctx:             ctx,
-		out:             out,
-		endpoint:        endpoint,
-		responseHeaders: headers,
-		providerName:    m.providerName,
-		metadataKey:     metadataKey,
-		includeRaw:      includeRaw,
-		finishReason:    provider.FinishReason{Unified: provider.FinishReasonOther},
-		toolCalls:       map[int]*streamToolCall{},
-		toolCallIDs:     map[string]int{},
+		ctx:              ctx,
+		out:              out,
+		endpoint:         endpoint,
+		responseHeaders:  headers,
+		providerName:     m.providerName,
+		metadataKey:      metadataKey,
+		includeRaw:       includeRaw,
+		finishReason:     provider.FinishReason{Unified: provider.FinishReasonOther},
+		toolCallsByID:    map[string]*streamToolCall{},
+		toolCallsByIndex: map[int]*streamToolCall{},
 	}
 
 	if !sendStreamPart(ctx, out, provider.StreamPart{Type: provider.PartStreamStart, Warnings: warnings}) {
@@ -78,9 +81,13 @@ func (m *model) runStream(ctx context.Context, endpoint string, requestBody []by
 			return
 		}
 		if includeRaw {
+			var rawValue json.RawMessage
+			if json.Valid(data) {
+				rawValue = json.RawMessage(append([]byte(nil), data...))
+			}
 			if !sendStreamPart(ctx, out, provider.StreamPart{
 				Type:     provider.PartRaw,
-				RawValue: json.RawMessage(append([]byte(nil), data...)),
+				RawValue: rawValue,
 			}) {
 				return
 			}
@@ -88,9 +95,8 @@ func (m *model) runStream(ctx context.Context, endpoint string, requestBody []by
 
 		errorData, errorMessage, hasError, err := streamError(data)
 		if err != nil {
-			state.emitError(streamDecodeError(endpoint, err))
-			state.flush()
-			return
+			state.emitRecoverableError(streamDecodeError(endpoint, err))
+			continue
 		}
 		if hasError {
 			retryable := false
@@ -108,18 +114,23 @@ func (m *model) runStream(ctx context.Context, endpoint string, requestBody []by
 
 		var chunk chatCompletionResponse
 		if err := json.Unmarshal(data, &chunk); err != nil {
-			state.emitError(streamDecodeError(endpoint, err))
-			state.flush()
-			return
+			state.emitRecoverableError(streamDecodeError(endpoint, err))
+			continue
+		}
+		if err := validateStreamChunk(chunk); err != nil {
+			state.emitRecoverableError(streamDecodeError(endpoint, err))
+			continue
 		}
 
 		if firstChunk {
 			firstChunk = false
+			metadata := responseMetadata(chunk.ID, chunk.Model, m.providerName, chunk.Created)
 			if !sendStreamPart(ctx, out, provider.StreamPart{
 				Type:            provider.PartResponseMeta,
-				ResponseID:      chunk.ID,
-				ModelID:         chunk.Model,
-				Provider:        m.providerName,
+				ResponseID:      metadata.ID,
+				ModelID:         metadata.ModelID,
+				Provider:        metadata.Provider,
+				Timestamp:       metadata.Timestamp,
 				ResponseHeaders: flattenHeaders(headers),
 			}) {
 				return
@@ -133,10 +144,30 @@ func (m *model) runStream(ctx context.Context, endpoint string, requestBody []by
 		if len(chunk.Choices) == 0 {
 			continue
 		}
-		if !state.handleChoice(chunk.Choices[0]) {
+		if !state.handleChoice(*chunk.Choices[0]) {
 			return
 		}
 	}
+}
+
+func validateStreamChunk(chunk chatCompletionResponse) error {
+	if chunk.Choices == nil {
+		return errors.New("response chunk contained no choices")
+	}
+	for _, choice := range chunk.Choices {
+		if choice == nil {
+			return errors.New("response chunk contained invalid choice")
+		}
+		if choice.Delta.Role != "" && choice.Delta.Role != "assistant" {
+			return errors.New("stream choice contained invalid role")
+		}
+		for _, toolCall := range choice.Delta.ToolCalls {
+			if toolCall.Function == nil {
+				return errors.New("stream tool call missing function")
+			}
+		}
+	}
+	return nil
 }
 
 func streamError(data []byte) (json.RawMessage, string, bool, error) {
@@ -204,8 +235,8 @@ func (s *streamState) handleChoice(choice chatChoice) bool {
 			}
 			s.reasoningActive = false
 		}
-		for position, toolDelta := range delta.ToolCalls {
-			if !s.handleToolCallDelta(toolDelta, position) {
+		for _, toolDelta := range delta.ToolCalls {
+			if !s.handleToolCallDelta(toolDelta) {
 				return false
 			}
 		}
@@ -214,22 +245,52 @@ func (s *streamState) handleChoice(choice chatChoice) bool {
 	return true
 }
 
-func (s *streamState) handleToolCallDelta(delta chatToolCallDelta, position int) bool {
-	index := s.toolCallIndex(delta, position)
-	state := s.toolCalls[index]
+func (s *streamState) handleToolCallDelta(delta chatToolCallDelta) bool {
+	state := s.resolveToolCall(delta)
 	if state == nil {
 		state = &streamToolCall{}
-		s.toolCalls[index] = state
+		s.toolCalls = append(s.toolCalls, state)
+		if delta.Index == nil && delta.Function.Name == nil {
+			if delta.ID != nil {
+				state.id = *delta.ID
+				state.idSet = true
+				state.providerID = *delta.ID
+				if *delta.ID != "" {
+					s.toolCallsByID[*delta.ID] = state
+				}
+			}
+			state.finished = true
+			s.latestToolCall = state
+			message := "openai: stream tool call missing function name"
+			if delta.ID == nil {
+				message = "openai: stream tool call missing id"
+			}
+			s.emitError(provider.NewAPICallError(provider.APICallErrorOptions{
+				Message: message,
+				URL:     s.endpoint,
+			}))
+			return true
+		}
 	}
+	if delta.Index != nil {
+		s.toolCallsByIndex[*delta.Index] = state
+	}
+	s.latestToolCall = state
+
 	if state.finished {
 		return true
 	}
-	if delta.ID != "" && !state.started && state.id == "" {
-		state.id = delta.ID
-		state.providerID = delta.ID
+	if delta.ID != nil && !state.started && !state.idSet {
+		state.id = *delta.ID
+		state.idSet = true
+		state.providerID = *delta.ID
+		if *delta.ID != "" {
+			s.toolCallsByID[*delta.ID] = state
+		}
 	}
-	if delta.Function.Name != "" {
-		state.name = delta.Function.Name
+	if delta.Function.Name != nil {
+		state.name = *delta.Function.Name
+		state.nameSet = true
 	}
 	argumentPresent := delta.Function.Arguments != nil
 	argument := ""
@@ -250,8 +311,8 @@ func (s *streamState) handleToolCallDelta(delta chatToolCallDelta, position int)
 	if !state.started && state.providerMetadata == nil {
 		state.providerMetadata = toolCallProviderMetadata(s.metadataKey, delta.ExtraContent)
 	}
-	if !state.started && state.name != "" {
-		if state.id == "" {
+	if !state.started && state.nameSet {
+		if !state.idSet {
 			s.emitError(provider.NewAPICallError(provider.APICallErrorOptions{
 				Message: "openai: stream tool call missing id",
 				URL:     s.endpoint,
@@ -283,40 +344,22 @@ func (s *streamState) handleToolCallDelta(delta chatToolCallDelta, position int)
 	return true
 }
 
-func (s *streamState) toolCallIndex(delta chatToolCallDelta, position int) int {
+func (s *streamState) resolveToolCall(delta chatToolCallDelta) *streamToolCall {
+	if delta.ID != nil && *delta.ID != "" {
+		if state := s.toolCallsByID[*delta.ID]; state != nil {
+			return state
+		}
+		if delta.Index != nil {
+			if state := s.toolCallsByIndex[*delta.Index]; state != nil && !state.started {
+				return state
+			}
+		}
+		return nil
+	}
 	if delta.Index != nil {
-		if delta.ID != "" {
-			s.toolCallIDs[delta.ID] = *delta.Index
-		}
-		return *delta.Index
+		return s.toolCallsByIndex[*delta.Index]
 	}
-	if delta.ID == "" {
-		return position
-	}
-	if index, ok := s.toolCallIDs[delta.ID]; ok {
-		return index
-	}
-	if state := s.toolCalls[position]; state != nil {
-		switch {
-		case state.id == "" || state.id == delta.ID || state.providerID == delta.ID:
-			s.toolCallIDs[delta.ID] = position
-			return position
-		}
-	} else {
-		s.toolCallIDs[delta.ID] = position
-		return position
-	}
-	index := s.nextToolCallIndex()
-	s.toolCallIDs[delta.ID] = index
-	return index
-}
-
-func (s *streamState) nextToolCallIndex() int {
-	for index := 0; ; index++ {
-		if s.toolCalls[index] == nil {
-			return index
-		}
-	}
+	return s.latestToolCall
 }
 
 func (s *streamState) flush() {
@@ -329,24 +372,18 @@ func (s *streamState) flush() {
 		s.textActive = false
 	}
 
-	indices := make([]int, 0, len(s.toolCalls))
-	for index := range s.toolCalls {
-		indices = append(indices, index)
-	}
-	sort.Ints(indices)
-	for _, index := range indices {
-		tc := s.toolCalls[index]
+	for _, tc := range s.toolCalls {
 		if tc.finished {
 			continue
 		}
-		if tc.name == "" {
+		if !tc.nameSet {
 			s.emitError(provider.NewAPICallError(provider.APICallErrorOptions{
 				Message: "openai: stream tool call missing function name",
 				URL:     s.endpoint,
 			}))
 			continue
 		}
-		if tc.id == "" {
+		if !tc.idSet {
 			s.emitError(provider.NewAPICallError(provider.APICallErrorOptions{
 				Message: "openai: stream tool call missing id",
 				URL:     s.endpoint,
@@ -379,14 +416,17 @@ func (s *streamState) flush() {
 		}
 	}
 
-	finish := s.finishReason
 	if s.errorEmitted {
-		finish = provider.FinishReason{Unified: provider.FinishReasonError}
+		s.finishReason = provider.FinishReason{Unified: provider.FinishReasonError}
+	}
+	usage := s.usage
+	if usage == nil {
+		usage = &provider.Usage{}
 	}
 	_ = sendStreamPart(s.ctx, s.out, provider.StreamPart{
 		Type:             provider.PartFinish,
-		FinishReason:     &finish,
-		Usage:            s.usage,
+		FinishReason:     &s.finishReason,
+		Usage:            usage,
 		ProviderMetadata: responseProviderMetadata(s.metadataKey, s.rawUsage),
 	})
 }
@@ -427,6 +467,11 @@ func (s *streamState) emitProviderError(err *provider.APICallError) {
 
 func (s *streamState) emitError(err *provider.APICallError) {
 	s.errorEmitted = true
+	s.emitRecoverableError(err)
+}
+
+func (s *streamState) emitRecoverableError(err *provider.APICallError) {
+	s.finishReason = provider.FinishReason{Unified: provider.FinishReasonError}
 	_ = sendStreamPart(s.ctx, s.out, provider.StreamPart{
 		Type:         provider.PartError,
 		APICallError: err,

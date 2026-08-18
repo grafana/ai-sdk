@@ -37,6 +37,14 @@ func convertUsage(u responses.ResponseUsage, raw []byte) provider.Usage {
 	}
 }
 
+func convertResponseUsage(u responses.ResponseUsage) provider.Usage {
+	raw := []byte(u.RawJSON())
+	if len(raw) == 0 {
+		return provider.Usage{}
+	}
+	return convertUsage(u, raw)
+}
+
 func cacheWriteTokens(u responses.ResponseUsage) *int {
 	if !u.InputTokensDetails.JSON.CacheWriteTokens.Valid() {
 		return nil

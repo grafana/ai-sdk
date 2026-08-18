@@ -608,6 +608,27 @@ func TestStreamTextIncompleteProviderStream(t *testing.T) {
 		assert.Equal(t, 0, streamFinishCount)
 	})
 
+	t.Run("provider error without finish emits finish step", func(t *testing.T) {
+		model := &mockModel{
+			streamFunc: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+				ch := make(chan provider.StreamPart, 1)
+				ch <- provider.StreamPart{Type: provider.PartError, APICallError: provider.NewAPICallError(provider.APICallErrorOptions{Message: "invalid provider stream"})}
+				close(ch)
+				return &provider.StreamResult{Stream: ch}, nil
+			},
+		}
+
+		result := StreamText(context.Background(), model, WithModelMessages(provider.UserText("hi")))
+		var types []string
+		for part := range result.FullStream() {
+			types = append(types, typeName(part))
+		}
+
+		require.Error(t, result.Err())
+		assert.Equal(t, []string{"start", "start-step", "error", "finish-step", "finish"}, types)
+		assert.Equal(t, provider.FinishReasonError, result.FinishReason().Unified)
+	})
+
 	t.Run("partial output", func(t *testing.T) {
 		model := &mockModel{
 			streamFunc: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {

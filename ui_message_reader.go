@@ -169,7 +169,7 @@ func (s *uiMessageReaderState) apply(chunk UIMessageChunk) (bool, error) {
 		return true, nil
 
 	case ChunkReasoningStart:
-		part := ReasoningPart{State: "streaming", ProviderMetadata: cloneProviderMetadata(chunk.ProviderMetadata)}
+		part := ReasoningPart{ID: chunk.ID, State: "streaming", ProviderMetadata: cloneProviderMetadata(chunk.ProviderMetadata)}
 		s.message.Parts = append(s.message.Parts, part)
 		s.activeReasoningParts[chunk.ID] = len(s.message.Parts) - 1
 		return true, nil

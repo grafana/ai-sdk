@@ -31,6 +31,7 @@ type GenerateTextResult struct {
 // populated result or the first error encountered.
 func GenerateText(ctx context.Context, model provider.LanguageModel, opts ...GenerateOption) (*GenerateTextResult, error) {
 	cfg := buildGenerateConfig(opts)
+	timeoutWarnings := generateTimeoutWarnings(cfg.timeout)
 	result := streamTextWithConfig(ctx, model, cfg.toStreamConfig())
 
 	for range result.FullStream() {
@@ -56,7 +57,7 @@ func GenerateText(ctx context.Context, model provider.LanguageModel, opts ...Gen
 		Usage:            result.Usage(),
 		TotalUsage:       result.TotalUsage(),
 		Steps:            result.Steps(),
-		Warnings:         result.Warnings(),
+		Warnings:         append(timeoutWarnings, result.Warnings()...),
 		Content:          result.Content(),
 		Response:         result.Response(),
 		ProviderMetadata: result.ProviderMetadata(),

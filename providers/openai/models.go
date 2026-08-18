@@ -29,8 +29,23 @@ type gptVersion struct {
 }
 
 // getModelCapabilities returns capability flags using anchored OpenAI model
-// family parsing.
+// family parsing and endpoint-specific overrides.
 func getModelCapabilities(modelID string) modelCapabilities {
+	if canonicalID, ok := strings.CutPrefix(modelID, "openai."); ok {
+		return getBedrockMantleModelCapabilities(canonicalID)
+	}
+	return getOpenAIModelCapabilities(modelID)
+}
+
+func getBedrockMantleModelCapabilities(modelID string) modelCapabilities {
+	caps := getOpenAIModelCapabilities(modelID)
+	caps.supportsFlexProcessing = false
+	caps.supportsPriorityProcessing = false
+	caps.supportsNonReasoningParameters = false
+	return caps
+}
+
+func getOpenAIModelCapabilities(modelID string) modelCapabilities {
 	oVersion, hasOSeriesVersion := parseOSeriesVersion(modelID)
 	gpt, hasGPTVersion := parseGPTVersion(modelID)
 	isGPTChat := hasGPTVersion && gpt.minor == nil && strings.HasPrefix(gpt.variant, "chat")

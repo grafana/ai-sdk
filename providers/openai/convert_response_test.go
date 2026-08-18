@@ -368,10 +368,31 @@ func TestConvertResponse_LegacyComputerCall(t *testing.T) {
 	assert.Equal(t, provider.FinishReasonStop, res.FinishReason.Unified)
 }
 
+func TestMCPApprovalRequestID(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{name: "absent", raw: `{"type":"mcp_approval_request","id":"item_1","name":"do_thing","server_label":"srv","arguments":"{}"}`, want: "item_1"},
+		{name: "null", raw: `{"type":"mcp_approval_request","id":"item_1","approval_request_id":null,"name":"do_thing","server_label":"srv","arguments":"{}"}`, want: "item_1"},
+		{name: "empty", raw: `{"type":"mcp_approval_request","id":"item_1","approval_request_id":"","name":"do_thing","server_label":"srv","arguments":"{}"}`, want: ""},
+		{name: "value", raw: `{"type":"mcp_approval_request","id":"item_1","approval_request_id":"appr_1","name":"do_thing","server_label":"srv","arguments":"{}"}`, want: "appr_1"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var item responses.ResponseOutputItemMcpApprovalRequest
+			require.NoError(t, json.Unmarshal([]byte(tc.raw), &item))
+			assert.Equal(t, tc.want, mcpApprovalRequestID(item))
+		})
+	}
+}
+
 func TestConvertResponse_MCPApprovalRequest(t *testing.T) {
 	resp := decodeResponse(t, `{
 		"id":"resp_1","created_at":1700000000,"model":"gpt-4o","object":"response","status":"completed",
-		"output":[{"type":"mcp_approval_request","id":"appr_1","name":"do_thing","server_label":"srv","arguments":"{}"}],
+		"output":[{"type":"mcp_approval_request","id":"item_1","approval_request_id":"appr_1","name":"do_thing","server_label":"srv","arguments":"{}"}],
 		"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2,"input_tokens_details":{"cached_tokens":0},"output_tokens_details":{"reasoning_tokens":0}}
 	}`)
 
@@ -395,6 +416,21 @@ func TestConvertResponse_MCPCallUsesApprovalToolCallID(t *testing.T) {
 
 	res := mustConvertResponse(t, resp, buildResult{
 		approvalRequestToolCallIDs: map[string]string{"appr_1": "dummy_call_1"},
+	})
+	require.Len(t, res.Content, 2)
+	assert.Equal(t, "dummy_call_1", res.Content[0].ToolCallID)
+	assert.Equal(t, "dummy_call_1", res.Content[1].ToolCallID)
+}
+
+func TestConvertResponse_MCPCallUsesEmptyApprovalRequestID(t *testing.T) {
+	resp := decodeResponse(t, `{
+		"id":"resp_1","created_at":1700000000,"model":"gpt-4o","object":"response","status":"completed",
+		"output":[{"type":"mcp_call","id":"mcp_1","approval_request_id":"","name":"do_thing","server_label":"srv","arguments":"{}","output":"ok"}],
+		"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2,"input_tokens_details":{"cached_tokens":0},"output_tokens_details":{"reasoning_tokens":0}}
+	}`)
+
+	res := mustConvertResponse(t, resp, buildResult{
+		approvalRequestToolCallIDs: map[string]string{"": "dummy_call_1"},
 	})
 	require.Len(t, res.Content, 2)
 	assert.Equal(t, "dummy_call_1", res.Content[0].ToolCallID)

@@ -1,0 +1,40 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"tool-input-start","toolCallId":"srvtoolu_011fxGj786xCAh2kPk9GMxQw","toolName":"code_execution","providerExecuted":true}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_011fxGj786xCAh2kPk9GMxQw","inputTextDelta":"{\"type\": \"bash_code_execution\",\"command"}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_011fxGj786xCAh2kPk9GMxQw","inputTextDelta":"\":"}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_011fxGj786xCAh2kPk9GMxQw","inputTextDelta":" \""}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_011fxGj786xCAh2kPk9GMxQw","inputTextDelta":"for"}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_011fxGj786xCAh2kPk9GMxQw","inputTextDelta":" n in $(seq "}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_011fxGj786xCAh2kPk9GMxQw","inputTextDelta":"1 12)"}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_011fxGj786xCAh2kPk9GMxQw","inputTextDelta":"; do echo "}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_011fxGj786xCAh2kPk9GMxQw","inputTextDelta":"\\\"$n: $("}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_011fxGj786xCAh2kPk9GMxQw","inputTextDelta":"(n*n))\\\"; d"}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_011fxGj786xCAh2kPk9GMxQw","inputTextDelta":"one\"}"}
+{"type":"tool-input-available","toolCallId":"srvtoolu_011fxGj786xCAh2kPk9GMxQw","toolName":"code_execution","input":{"type":"bash_code_execution","command":"for n in $(seq 1 12); do echo \"$n: $((n*n))\"; done"},"providerExecuted":true}
+{"type":"tool-output-available","toolCallId":"srvtoolu_011fxGj786xCAh2kPk9GMxQw","output":{"type":"bash_code_execution_result","content":[],"stdout":"1: 1\n2: 4\n3: 9\n4: 16\n5: 25\n6: 36\n7: 49\n8: 64\n9: 81\n10: 100\n11: 121\n12: 144\n","stderr":"","return_code":0},"providerExecuted":true}
+{"type":"tool-input-start","toolCallId":"srvtoolu_013eUksWZnfcjFk1iarJsYgM","toolName":"code_execution","providerExecuted":true}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_013eUksWZnfcjFk1iarJsYgM","inputTextDelta":"{\"type\": \"bash_code_execution\",\"c"}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_013eUksWZnfcjFk1iarJsYgM","inputTextDelta":"ommand"}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_013eUksWZnfcjFk1iarJsYgM","inputTextDelta":"\": \"sum=0"}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_013eUksWZnfcjFk1iarJsYgM","inputTextDelta":"; for n in"}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_013eUksWZnfcjFk1iarJsYgM","inputTextDelta":" $(s"}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_013eUksWZnfcjFk1iarJsYgM","inputTextDelta":"eq 1 12); "}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_013eUksWZnfcjFk1iarJsYgM","inputTextDelta":"do"}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_013eUksWZnfcjFk1iarJsYgM","inputTextDelta":" s"}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_013eUksWZnfcjFk1iarJsYgM","inputTextDelta":"um=$(("}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_013eUksWZnfcjFk1iarJsYgM","inputTextDelta":"sum "}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_013eUksWZnfcjFk1iarJsYgM","inputTextDelta":"+ n*"}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_013eUksWZnfcjFk1iarJsYgM","inputTextDelta":"n)"}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_013eUksWZnfcjFk1iarJsYgM","inputTextDelta":"); do"}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_013eUksWZnfcjFk1iarJsYgM","inputTextDelta":"ne; echo"}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_013eUksWZnfcjFk1iarJsYgM","inputTextDelta":" \\\"Sum: "}
+{"type":"tool-input-delta","toolCallId":"srvtoolu_013eUksWZnfcjFk1iarJsYgM","inputTextDelta":"$sum\\\"\"}"}
+{"type":"tool-input-available","toolCallId":"srvtoolu_013eUksWZnfcjFk1iarJsYgM","toolName":"code_execution","input":{"type":"bash_code_execution","command":"sum=0; for n in $(seq 1 12); do sum=$((sum + n*n)); done; echo \"Sum: $sum\""},"providerExecuted":true}
+{"type":"tool-output-available","toolCallId":"srvtoolu_013eUksWZnfcjFk1iarJsYgM","output":{"type":"bash_code_execution_result","content":[],"stdout":"Sum: 650\n","stderr":"","return_code":0},"providerExecuted":true}
+{"type":"text-start","id":"4"}
+{"type":"text-delta","id":"4","delta":"The"}
+{"type":"text-delta","id":"4","delta":" sum of the squares of the numbers 1 through 12 is **650**."}
+{"type":"text-end","id":"4"}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"stop"}

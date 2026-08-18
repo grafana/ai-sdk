@@ -123,23 +123,28 @@ func convertResponse(msg *anthropic.BetaMessage, mapping toolNameMapping, usesJs
 			switch wireName {
 			case "bash_code_execution", "text_editor_code_execution":
 				resolvedName = "code_execution"
-				if inputMap, ok := stu.Input.(map[string]any); ok {
-					wrapped := make(map[string]any, len(inputMap)+1)
-					wrapped["type"] = wireName
-					for k, v := range inputMap {
-						wrapped[k] = v
+				rawInput, err := json.Marshal(stu.Input)
+				if err != nil {
+					return nil, fmt.Errorf("marshaling server tool use input: %w", err)
+				}
+				if rawBlock := stu.RawJSON(); rawBlock != "" {
+					var blockFields struct {
+						Input json.RawMessage `json:"input"`
 					}
-					var err error
-					inputJSON, err = json.Marshal(wrapped)
-					if err != nil {
-						return nil, fmt.Errorf("marshaling server tool use input: %w", err)
+					if err := json.Unmarshal([]byte(rawBlock), &blockFields); err != nil {
+						return nil, fmt.Errorf("unmarshaling server tool use input: %w", err)
 					}
-				} else {
-					var err error
-					inputJSON, err = json.Marshal(stu.Input)
-					if err != nil {
-						return nil, fmt.Errorf("marshaling server tool use input: %w", err)
+					if len(blockFields.Input) > 0 {
+						rawInput = blockFields.Input
 					}
+				}
+				typeJSON, err := json.Marshal(wireName)
+				if err != nil {
+					return nil, fmt.Errorf("marshaling server tool use type: %w", err)
+				}
+				inputJSON, err = prependJSONObjectMember(rawInput, "type", typeJSON)
+				if err != nil {
+					return nil, fmt.Errorf("marshaling server tool use input: %w", err)
 				}
 			case "code_execution":
 				var err error
@@ -491,9 +496,13 @@ func mapFinishReason(reason anthropic.BetaStopReason) provider.FinishReason {
 	switch reason {
 	case anthropic.BetaStopReasonEndTurn:
 		unified = provider.FinishReasonStop
+	case anthropic.BetaStopReasonPauseTurn:
+		unified = provider.FinishReasonStop
 	case anthropic.BetaStopReasonStopSequence:
 		unified = provider.FinishReasonStop
 	case anthropic.BetaStopReasonMaxTokens:
+		unified = provider.FinishReasonLength
+	case anthropic.BetaStopReasonModelContextWindowExceeded:
 		unified = provider.FinishReasonLength
 	case anthropic.BetaStopReasonToolUse:
 		unified = provider.FinishReasonToolCalls
@@ -514,15 +523,25 @@ func marshalAdvisorResult(content anthropic.BetaAdvisorToolResultBlockContentUni
 	isError := false
 	switch content.Type {
 	case "advisor_result":
+		var stopReason *string
+		if content.JSON.StopReason.Valid() {
+			stopReason = &content.StopReason
+		}
 		value = struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
-		}{Type: "advisor_result", Text: content.Text}
+			Type       string  `json:"type"`
+			Text       string  `json:"text"`
+			StopReason *string `json:"stopReason,omitempty"`
+		}{Type: "advisor_result", Text: content.Text, StopReason: stopReason}
 	case "advisor_redacted_result":
+		var stopReason *string
+		if content.JSON.StopReason.Valid() {
+			stopReason = &content.StopReason
+		}
 		value = struct {
-			Type             string `json:"type"`
-			EncryptedContent string `json:"encryptedContent"`
-		}{Type: "advisor_redacted_result", EncryptedContent: content.EncryptedContent}
+			Type             string  `json:"type"`
+			EncryptedContent string  `json:"encryptedContent"`
+			StopReason       *string `json:"stopReason,omitempty"`
+		}{Type: "advisor_redacted_result", EncryptedContent: content.EncryptedContent, StopReason: stopReason}
 	case "advisor_tool_result_error":
 		isError = true
 		value = struct {

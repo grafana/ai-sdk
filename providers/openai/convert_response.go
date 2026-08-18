@@ -9,6 +9,16 @@ import (
 	"github.com/openai/openai-go/v3/responses"
 )
 
+func mcpApprovalRequestID(item responses.ResponseOutputItemMcpApprovalRequest) string {
+	var raw struct {
+		ApprovalRequestID *string `json:"approval_request_id"`
+	}
+	if err := json.Unmarshal([]byte(item.RawJSON()), &raw); err == nil && raw.ApprovalRequestID != nil {
+		return *raw.ApprovalRequestID
+	}
+	return item.ID
+}
+
 // convertResponse converts a non-streaming Responses response into a
 // provider.GenerateResult, mapping every output item to provider content.
 func convertResponse(resp *responses.Response, br buildResult, generateID func() string, providerName string) (*provider.GenerateResult, error) {
@@ -115,7 +125,7 @@ func convertResponse(resp *responses.Response, br buildResult, generateID func()
 
 		case responses.ResponseOutputItemMcpCall:
 			toolCallID := v.ID
-			if v.ApprovalRequestID != "" {
+			if v.JSON.ApprovalRequestID.Valid() || v.ApprovalRequestID != "" {
 				if mapped := br.approvalRequestToolCallIDs[v.ApprovalRequestID]; mapped != "" {
 					toolCallID = mapped
 				}
@@ -145,7 +155,7 @@ func convertResponse(resp *responses.Response, br buildResult, generateID func()
 		case responses.ResponseOutputItemMcpApprovalRequest:
 			toolName := "mcp." + v.Name
 			dummyID := generateID()
-			approvalID := v.ID
+			approvalID := mcpApprovalRequestID(v)
 			dyn := true
 			content = append(content, provider.GenerateContentPart{
 				Type:             provider.ContentToolCall,
@@ -314,11 +324,10 @@ func convertResponse(resp *responses.Response, br buildResult, generateID func()
 		}
 	}
 
-	usageRaw := json.RawMessage(resp.Usage.RawJSON())
 	result := &provider.GenerateResult{
 		Content:          content,
 		FinishReason:     mapFinishReason(resp.IncompleteDetails.Reason, hasFunctionCall),
-		Usage:            convertUsage(resp.Usage, usageRaw),
+		Usage:            convertResponseUsage(resp.Usage),
 		ProviderMetadata: responseMeta(providerName, resp, logprobs),
 		Response: &provider.GenerateResponse{
 			ResponseMetadata: provider.ResponseMetadata{

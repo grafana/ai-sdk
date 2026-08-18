@@ -111,6 +111,23 @@ func TestConvertResponse_ServerToolUse(t *testing.T) {
 	assert.True(t, part.ProviderExecuted, "expected ProviderExecuted=true")
 }
 
+func TestConvertResponse_CodeExecutionPreservesInputFieldOrder(t *testing.T) {
+	msg := unmarshalMessage(t, `{
+		"id":"msg_1",
+		"type":"message",
+		"role":"assistant",
+		"model":"claude-sonnet-5",
+		"content":[{"type":"server_tool_use","id":"stu_1","name":"text_editor_code_execution","input":{"command":"create","path":"/tmp/example.py","file_text":"print('hi')"}}],
+		"stop_reason":"end_turn",
+		"usage":{"input_tokens":10,"output_tokens":5}
+	}`)
+
+	result, err := convertResponse(msg, toolNameMapping{}, false, nil, defaultGenerateID, "anthropic", false)
+	require.NoError(t, err)
+	require.Len(t, result.Content, 1)
+	assert.Equal(t, `{"type":"text_editor_code_execution","command":"create","path":"/tmp/example.py","file_text":"print('hi')"}`, string(result.Content[0].Input))
+}
+
 func TestConvertResponse_WebSearchToolResult(t *testing.T) {
 	msg := unmarshalMessage(t, `{
 		"id": "msg_1",
@@ -485,6 +502,8 @@ func TestMapFinishReason(t *testing.T) {
 		{anthropic.BetaStopReasonEndTurn, provider.FinishReason{Unified: provider.FinishReasonStop, Raw: "end_turn"}},
 		{anthropic.BetaStopReasonStopSequence, provider.FinishReason{Unified: provider.FinishReasonStop, Raw: "stop_sequence"}},
 		{anthropic.BetaStopReasonMaxTokens, provider.FinishReason{Unified: provider.FinishReasonLength, Raw: "max_tokens"}},
+		{anthropic.BetaStopReasonModelContextWindowExceeded, provider.FinishReason{Unified: provider.FinishReasonLength, Raw: "model_context_window_exceeded"}},
+		{anthropic.BetaStopReasonPauseTurn, provider.FinishReason{Unified: provider.FinishReasonStop, Raw: "pause_turn"}},
 		{anthropic.BetaStopReasonToolUse, provider.FinishReason{Unified: provider.FinishReasonToolCalls, Raw: "tool_use"}},
 		{"content_filter", provider.FinishReason{Unified: provider.FinishReasonContentFilter, Raw: "content_filter"}},
 		{"refusal", provider.FinishReason{Unified: provider.FinishReasonContentFilter, Raw: "refusal"}},

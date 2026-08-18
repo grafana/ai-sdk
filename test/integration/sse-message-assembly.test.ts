@@ -56,6 +56,29 @@ describe("SSE message assembly", () => {
     expect(fullText).toBe("Hello, world!");
   });
 
+  it("preserves reasoning block IDs in assembled messages", async () => {
+    const messages = await readScenarioMessages("reasoning");
+    const lastMessage = messages[messages.length - 1];
+    const reasoning = lastMessage.parts.filter(part => part.type === "reasoning");
+
+    expect(reasoning).toEqual([
+      {
+        type: "reasoning",
+        id: "reasoning-1",
+        text: "First thought.",
+        state: "done",
+        providerMetadata: undefined,
+      },
+      {
+        type: "reasoning",
+        id: "reasoning-2",
+        text: "Second thought.",
+        state: "done",
+        providerMetadata: undefined,
+      },
+    ]);
+  });
+
   it("merges metadata-only text deltas into the assembled text part", async () => {
     const messages = await readScenarioMessages("text-metadata-only-delta");
     const lastMessage = messages[messages.length - 1];

@@ -43,28 +43,37 @@ func Array[T any](elementSchema schema.Schema, opts ...ObjectOption) (*ArrayOutp
 }
 
 func buildArrayWrapperSchema(elementSchema json.RawMessage) (json.RawMessage, error) {
-	itemSchema := json.RawMessage(elementSchema)
-	var item map[string]any
-	if err := json.Unmarshal(elementSchema, &item); err == nil {
-		delete(item, "$schema")
-		data, err := json.Marshal(item)
-		if err != nil {
-			return nil, err
-		}
-		itemSchema = data
+	elements := map[string]any{
+		"type":  "array",
+		"items": json.RawMessage(elementSchema),
 	}
 	wrapper := map[string]any{
 		"$schema": "http://json-schema.org/draft-07/schema#",
 		"type":    "object",
 		"properties": map[string]any{
-			"elements": map[string]any{
-				"type":  "array",
-				"items": itemSchema,
-			},
+			"elements": elements,
 		},
 		"required":             []string{"elements"},
 		"additionalProperties": false,
 	}
+
+	var item map[string]json.RawMessage
+	if err := json.Unmarshal(elementSchema, &item); err == nil {
+		delete(item, "$schema")
+		for _, keyword := range []string{"definitions", "$defs"} {
+			definition, ok := item[keyword]
+			delete(item, keyword)
+			if ok && string(definition) != "null" {
+				wrapper[keyword] = definition
+			}
+		}
+		data, err := json.Marshal(item)
+		if err != nil {
+			return nil, err
+		}
+		elements["items"] = json.RawMessage(data)
+	}
+
 	return json.Marshal(wrapper)
 }
 

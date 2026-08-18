@@ -131,6 +131,26 @@ func TestArrayOutput_ResponseFormat(t *testing.T) {
 	assert.Equal(t, "array", elements["type"])
 	items := elements["items"].(map[string]any)
 	assert.NotContains(t, items, "$schema")
+
+	rootDefinitions := map[string]string{
+		"definitions": `{"type":"object","properties":{"shared":{"$ref":"#/definitions/Shared"}},"required":["shared"],"definitions":{"Shared":{"type":"string"}}}`,
+		"$defs":       `{"type":"object","properties":{"shared":{"$ref":"#/$defs/Shared"}},"required":["shared"],"$defs":{"Shared":{"type":"string"}}}`,
+	}
+	for keyword, raw := range rootDefinitions {
+		t.Run(keyword, func(t *testing.T) {
+			out, err := Array[map[string]string](mustSchema(t, raw))
+			require.NoError(t, err)
+
+			var wrapped map[string]any
+			require.NoError(t, json.Unmarshal(out.ResponseFormat().Schema, &wrapped))
+			assert.Equal(t, map[string]any{"Shared": map[string]any{"type": "string"}}, wrapped[keyword])
+			properties := wrapped["properties"].(map[string]any)
+			elements := properties["elements"].(map[string]any)
+			items := elements["items"].(map[string]any)
+			assert.NotContains(t, items, keyword)
+			assert.Equal(t, "#/"+keyword+"/Shared", items["properties"].(map[string]any)["shared"].(map[string]any)["$ref"])
+		})
+	}
 }
 
 func TestArrayOutput_ParsePartial(t *testing.T) {

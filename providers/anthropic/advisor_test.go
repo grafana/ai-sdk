@@ -18,9 +18,10 @@ func TestBuildParams_AdvisorProviderTool(t *testing.T) {
 			ID:   "anthropic.advisor_20260301",
 			Name: "consult",
 			Args: map[string]json.RawMessage{
-				"model":   json.RawMessage(`"claude-opus-4-7"`),
-				"maxUses": json.RawMessage(`5`),
-				"caching": json.RawMessage(`{"type":"ephemeral","ttl":"1h"}`),
+				"model":     json.RawMessage(`"claude-opus-4-7"`),
+				"maxUses":   json.RawMessage(`5`),
+				"maxTokens": json.RawMessage(`2048`),
+				"caching":   json.RawMessage(`{"type":"ephemeral","ttl":"1h"}`),
 			},
 		}},
 	}
@@ -34,6 +35,8 @@ func TestBuildParams_AdvisorProviderTool(t *testing.T) {
 	assert.Equal(t, sdk.Model("claude-opus-4-7"), advisor.Model)
 	assert.Equal(t, int64(5), advisor.MaxUses.Value)
 	assert.True(t, advisor.MaxUses.Valid())
+	assert.Equal(t, int64(2048), advisor.MaxTokens.Value)
+	assert.True(t, advisor.MaxTokens.Valid())
 	assert.Equal(t, sdk.BetaCacheControlEphemeralTTLTTL1h, advisor.Caching.TTL)
 	assert.Contains(t, params.Betas, sdk.AnthropicBetaAdvisorTool2026_03_01)
 	assert.Equal(t, "advisor", mapping.toProviderToolName("consult"))
@@ -55,7 +58,7 @@ func TestBuildParams_AdvisorRoundTrip(t *testing.T) {
 			ToolName:   "consult",
 			Output: &provider.ToolResultOutput{
 				Type: provider.ToolOutputJSON,
-				JSON: json.RawMessage(`{"type":"advisor_redacted_result","encryptedContent":"ciphertext"}`),
+				JSON: json.RawMessage(`{"type":"advisor_redacted_result","encryptedContent":"ciphertext","stopReason":"end_turn"}`),
 			},
 		},
 	}
@@ -85,6 +88,8 @@ func TestBuildParams_AdvisorRoundTrip(t *testing.T) {
 	assert.Equal(t, "advisor-1", result.ToolUseID)
 	require.NotNil(t, result.Content.OfRequestAdvisorRedactedResultBlock)
 	assert.Equal(t, "ciphertext", result.Content.OfRequestAdvisorRedactedResultBlock.EncryptedContent)
+	assert.Equal(t, "end_turn", result.Content.OfRequestAdvisorRedactedResultBlock.StopReason.Value)
+	assert.True(t, result.Content.OfRequestAdvisorRedactedResultBlock.StopReason.Valid())
 }
 
 func TestConvertResponse_AdvisorResults(t *testing.T) {
@@ -94,8 +99,8 @@ func TestConvertResponse_AdvisorResults(t *testing.T) {
 		expected string
 		isError  bool
 	}{
-		{name: "success", content: `{"type":"advisor_result","text":"use a bounded queue"}`, expected: `{"type":"advisor_result","text":"use a bounded queue"}`},
-		{name: "redacted", content: `{"type":"advisor_redacted_result","encrypted_content":"ciphertext"}`, expected: `{"type":"advisor_redacted_result","encryptedContent":"ciphertext"}`},
+		{name: "success", content: `{"type":"advisor_result","text":"use a bounded queue","stop_reason":"max_tokens"}`, expected: `{"type":"advisor_result","text":"use a bounded queue","stopReason":"max_tokens"}`},
+		{name: "redacted", content: `{"type":"advisor_redacted_result","encrypted_content":"ciphertext","stop_reason":"end_turn"}`, expected: `{"type":"advisor_redacted_result","encryptedContent":"ciphertext","stopReason":"end_turn"}`},
 		{name: "error", content: `{"type":"advisor_tool_result_error","error_code":"overloaded"}`, expected: `{"type":"advisor_tool_result_error","errorCode":"overloaded"}`, isError: true},
 	}
 	mapping := newToolNameMapping([]provider.Tool{{Type: provider.ToolTypeProvider, ID: "anthropic.advisor_20260301", Name: "consult"}})
@@ -134,8 +139,8 @@ func TestStreamAdapter_AdvisorResults(t *testing.T) {
 		expected string
 		isError  bool
 	}{
-		{name: "success", content: `{"type":"advisor_result","text":"advice"}`, expected: `{"type":"advisor_result","text":"advice"}`},
-		{name: "redacted", content: `{"type":"advisor_redacted_result","encrypted_content":"ciphertext"}`, expected: `{"type":"advisor_redacted_result","encryptedContent":"ciphertext"}`},
+		{name: "success", content: `{"type":"advisor_result","text":"advice","stop_reason":"max_tokens"}`, expected: `{"type":"advisor_result","text":"advice","stopReason":"max_tokens"}`},
+		{name: "redacted", content: `{"type":"advisor_redacted_result","encrypted_content":"ciphertext","stop_reason":"end_turn"}`, expected: `{"type":"advisor_redacted_result","encryptedContent":"ciphertext","stopReason":"end_turn"}`},
 		{name: "error", content: `{"type":"advisor_tool_result_error","error_code":"unavailable"}`, expected: `{"type":"advisor_tool_result_error","errorCode":"unavailable"}`, isError: true},
 	}
 	mapping := newToolNameMapping([]provider.Tool{{Type: provider.ToolTypeProvider, ID: "anthropic.advisor_20260301", Name: "consult"}})
@@ -230,6 +235,10 @@ func TestBuildParams_AdvisorProviderToolRejectsInvalidArgs(t *testing.T) {
 		{name: "invalid model", args: map[string]json.RawMessage{"model": json.RawMessage(`1`)}},
 		{name: "null max uses", args: map[string]json.RawMessage{"model": json.RawMessage(`"claude-opus-4-7"`), "maxUses": json.RawMessage(`null`)}},
 		{name: "invalid max uses", args: map[string]json.RawMessage{"model": json.RawMessage(`"claude-opus-4-7"`), "maxUses": json.RawMessage(`"five"`)}},
+		{name: "null max tokens", args: map[string]json.RawMessage{"model": json.RawMessage(`"claude-opus-4-7"`), "maxTokens": json.RawMessage(`null`)}},
+		{name: "fractional max tokens", args: map[string]json.RawMessage{"model": json.RawMessage(`"claude-opus-4-7"`), "maxTokens": json.RawMessage(`2048.5`)}},
+		{name: "max tokens below minimum", args: map[string]json.RawMessage{"model": json.RawMessage(`"claude-opus-4-7"`), "maxTokens": json.RawMessage(`1023`)}},
+		{name: "invalid max tokens", args: map[string]json.RawMessage{"model": json.RawMessage(`"claude-opus-4-7"`), "maxTokens": json.RawMessage(`"many"`)}},
 		{name: "null caching", args: map[string]json.RawMessage{"model": json.RawMessage(`"claude-opus-4-7"`), "caching": json.RawMessage(`null`)}},
 		{name: "invalid caching type", args: map[string]json.RawMessage{"model": json.RawMessage(`"claude-opus-4-7"`), "caching": json.RawMessage(`{"type":"persistent","ttl":"5m"}`)}},
 		{name: "invalid caching ttl", args: map[string]json.RawMessage{"model": json.RawMessage(`"claude-opus-4-7"`), "caching": json.RawMessage(`{"type":"ephemeral","ttl":"2h"}`)}},
@@ -260,6 +269,8 @@ func TestBuildParams_AdvisorRoundTripRejectsInvalidResults(t *testing.T) {
 		{name: "null text", output: json.RawMessage(`{"type":"advisor_result","text":null}`)},
 		{name: "missing encrypted content", output: json.RawMessage(`{"type":"advisor_redacted_result"}`)},
 		{name: "null error code", output: json.RawMessage(`{"type":"advisor_tool_result_error","errorCode":null}`)},
+		{name: "null stop reason", output: json.RawMessage(`{"type":"advisor_result","text":"advice","stopReason":null}`)},
+		{name: "invalid stop reason", output: json.RawMessage(`{"type":"advisor_result","text":"advice","stopReason":1}`)},
 		{name: "unknown type", output: json.RawMessage(`{"type":"future_advisor_result"}`)},
 	}
 

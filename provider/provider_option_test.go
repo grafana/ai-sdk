@@ -97,6 +97,24 @@ func TestResolveOption(t *testing.T) {
 		assert.Equal(t, 42, val.Count)
 	})
 
+	t.Run("nil option is absent", func(t *testing.T) {
+		opts := ProviderOptions{"test": nil}
+		val, ok, err := ResolveOption[resolveTarget](opts, "test")
+		require.NoError(t, err)
+		assert.False(t, ok)
+		assert.Equal(t, resolveTarget{}, val)
+	})
+
+	t.Run("raw null option is absent", func(t *testing.T) {
+		opts := ProviderOptions{
+			"test": RawProviderOption{Key: "test", Raw: json.RawMessage(`null`)},
+		}
+		val, ok, err := ResolveOption[resolveTarget](opts, "test")
+		require.NoError(t, err)
+		assert.False(t, ok)
+		assert.Equal(t, resolveTarget{}, val)
+	})
+
 	t.Run("key not present", func(t *testing.T) {
 		opts := ProviderOptions{}
 		val, ok, err := ResolveOption[testOption](opts, "missing")

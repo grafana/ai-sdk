@@ -38,6 +38,9 @@ type streamAdapter struct {
 	isJsonResponseFromTool bool
 	usage                  anthropicUsage
 	metadataFields         map[string]json.RawMessage
+	messageOpen            bool
+	activeMessageID        string
+	invalidMessageSequence bool
 
 	// markCodeExecutionDynamic mirrors upstream
 	// hasWebTool20260209WithoutCodeExecution: when set, code_execution
@@ -56,9 +59,22 @@ func blockID(idx int64) string {
 }
 
 func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUnion, ch chan<- provider.StreamPart) error {
+	if a.invalidMessageSequence {
+		return nil
+	}
+
 	switch e := event.AsAny().(type) {
 	case anthropic.BetaRawMessageStartEvent:
 		msg := e.Message
+		if a.messageOpen {
+			if a.activeMessageID == msg.ID {
+				return nil
+			}
+			a.invalidMessageSequence = true
+			return fmt.Errorf("received message_start for message %q while message %q is still open", msg.ID, a.activeMessageID)
+		}
+		a.messageOpen = true
+		a.activeMessageID = msg.ID
 		if err := a.resetUsage(msg.Usage); err != nil {
 			return err
 		}
@@ -461,6 +477,10 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 			Warnings:         a.warnings,
 			ProviderMetadata: providerMetadata,
 		}
+
+	case anthropic.BetaRawMessageStopEvent:
+		a.messageOpen = false
+		a.activeMessageID = ""
 	}
 	return nil
 }
