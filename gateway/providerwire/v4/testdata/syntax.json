@@ -1,0 +1,64 @@
+{
+  "invalid": [
+    {
+      "name": "nested duplicate decoded name",
+      "encoding": "utf8",
+      "value": "{\"outer\":{\"a\":1,\"a\":2}}",
+      "category": "invalid-json-syntax"
+    },
+    {
+      "name": "escaped equivalent duplicate name",
+      "encoding": "utf8",
+      "value": "{\"a\":1,\"\\u0061\":2}",
+      "category": "invalid-json-syntax"
+    },
+    {
+      "name": "trailing value",
+      "encoding": "utf8",
+      "value": "{\"a\":1} true",
+      "category": "invalid-json-syntax"
+    },
+    {
+      "name": "truncated object",
+      "encoding": "utf8",
+      "value": "{\"a\":",
+      "category": "invalid-json-syntax"
+    },
+    {
+      "name": "malformed escape",
+      "encoding": "utf8",
+      "value": "{\"a\":\"\\x20\"}",
+      "category": "invalid-json-syntax"
+    },
+    {
+      "name": "invalid raw utf8",
+      "encoding": "base64",
+      "value": "eyJhIjoi/yJ9",
+      "category": "invalid-json-syntax"
+    },
+    {
+      "name": "lone high surrogate",
+      "encoding": "utf8",
+      "value": "{\"a\":\"\\uD800\"}",
+      "category": "invalid-json-syntax"
+    },
+    {
+      "name": "lone low surrogate",
+      "encoding": "utf8",
+      "value": "{\"a\":\"\\uDC00\"}",
+      "category": "invalid-json-syntax"
+    }
+  ],
+  "valid": [
+    {
+      "name": "valid surrogate pair",
+      "encoding": "utf8",
+      "value": "{\"a\":\"\\uD83D\\uDE00\"}"
+    },
+    {
+      "name": "trailing whitespace",
+      "encoding": "utf8",
+      "value": "{\"a\":1} \n\t\r"
+    }
+  ]
+}

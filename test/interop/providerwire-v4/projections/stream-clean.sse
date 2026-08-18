@@ -1,0 +1,14 @@
+data: {"type":"stream-start","warnings":[]}
+
+data: {"type":"response-metadata","id":"response-1","modelId":"capture/model","timestamp":"2026-01-02T03:04:05.000Z"}
+
+data: {"type":"text-start","id":"text-1"}
+
+data: {"type":"raw","rawValue":{"safe":"raw"}}
+
+data: {"type":"text-delta","id":"text-1","delta":"final-before-eof"}
+
+data: {"type":"text-end","id":"text-1"}
+
+data: {"type":"finish","finishReason":{"unified":"stop","raw":"stop"},"usage":{"inputTokens":{"total":1},"outputTokens":{"total":1}}}
+

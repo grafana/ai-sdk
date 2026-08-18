@@ -1,0 +1,174 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://grafana.com/ai-sdk/providerwire/v4/schema/generate-result.json",
+  "title": "ProviderWire V4 generate result",
+  "type": "object",
+  "properties": {
+    "content": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/content" }
+    },
+    "finishReason": { "$ref": "common.json#/$defs/finishReason" },
+    "usage": { "$ref": "common.json#/$defs/usage" },
+    "providerMetadata": { "$ref": "common.json#/$defs/providerMetadata" },
+    "request": {
+      "type": "object",
+      "properties": {
+        "body": { "$ref": "common.json#/$defs/jsonValue" }
+      },
+      "additionalProperties": false
+    },
+    "response": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "modelId": { "type": "string" },
+        "headers": { "$ref": "common.json#/$defs/headers" },
+        "body": { "$ref": "common.json#/$defs/jsonValue" }
+      },
+      "additionalProperties": false
+    },
+    "warnings": {
+      "type": "array",
+      "items": { "$ref": "common.json#/$defs/warning" }
+    }
+  },
+  "required": ["content", "finishReason", "usage", "warnings"],
+  "additionalProperties": false,
+  "$defs": {
+    "content": {
+      "oneOf": [
+        { "$ref": "#/$defs/text" },
+        { "$ref": "#/$defs/reasoning" },
+        { "$ref": "#/$defs/custom" },
+        { "$ref": "#/$defs/file" },
+        { "$ref": "#/$defs/reasoningFile" },
+        { "$ref": "#/$defs/sourceURL" },
+        { "$ref": "#/$defs/sourceDocument" },
+        { "$ref": "#/$defs/toolCall" },
+        { "$ref": "#/$defs/toolResult" },
+        { "$ref": "#/$defs/toolApprovalRequest" }
+      ]
+    },
+    "text": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "text" },
+        "text": { "type": "string" },
+        "providerMetadata": { "$ref": "common.json#/$defs/providerMetadata" }
+      },
+      "required": ["type", "text"],
+      "additionalProperties": false
+    },
+    "reasoning": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "reasoning" },
+        "text": { "type": "string" },
+        "providerMetadata": { "$ref": "common.json#/$defs/providerMetadata" }
+      },
+      "required": ["type", "text"],
+      "additionalProperties": false
+    },
+    "custom": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "custom" },
+        "kind": { "type": "string", "pattern": "\\." },
+        "providerMetadata": { "$ref": "common.json#/$defs/providerMetadata" }
+      },
+      "required": ["type", "kind"],
+      "additionalProperties": false
+    },
+    "file": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "file" },
+        "mediaType": { "type": "string" },
+        "data": { "$ref": "common.json#/$defs/generatedFileData" },
+        "providerMetadata": { "$ref": "common.json#/$defs/providerMetadata" }
+      },
+      "required": ["type", "mediaType", "data"],
+      "additionalProperties": false
+    },
+    "reasoningFile": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "reasoning-file" },
+        "mediaType": { "type": "string" },
+        "data": { "$ref": "common.json#/$defs/generatedFileData" },
+        "providerMetadata": { "$ref": "common.json#/$defs/providerMetadata" }
+      },
+      "required": ["type", "mediaType", "data"],
+      "additionalProperties": false
+    },
+    "sourceURL": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "source" },
+        "sourceType": { "const": "url" },
+        "id": { "type": "string" },
+        "url": { "type": "string" },
+        "title": { "type": "string" },
+        "providerMetadata": { "$ref": "common.json#/$defs/providerMetadata" }
+      },
+      "required": ["type", "sourceType", "id", "url"],
+      "additionalProperties": false
+    },
+    "sourceDocument": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "source" },
+        "sourceType": { "const": "document" },
+        "id": { "type": "string" },
+        "mediaType": { "type": "string" },
+        "title": { "type": "string" },
+        "filename": { "type": "string" },
+        "providerMetadata": { "$ref": "common.json#/$defs/providerMetadata" }
+      },
+      "required": ["type", "sourceType", "id", "mediaType", "title"],
+      "additionalProperties": false
+    },
+    "toolCall": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "tool-call" },
+        "toolCallId": { "type": "string" },
+        "toolName": { "type": "string" },
+        "input": { "type": "string" },
+        "providerExecuted": { "type": "boolean" },
+        "dynamic": { "type": "boolean" },
+        "providerMetadata": { "$ref": "common.json#/$defs/providerMetadata" }
+      },
+      "required": ["type", "toolCallId", "toolName", "input"],
+      "additionalProperties": false
+    },
+    "toolResult": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "tool-result" },
+        "toolCallId": { "type": "string" },
+        "toolName": { "type": "string" },
+        "result": { "$ref": "common.json#/$defs/nonNullJSONValue" },
+        "isError": { "type": "boolean" },
+        "preliminary": { "type": "boolean" },
+        "dynamic": { "type": "boolean" },
+        "providerMetadata": { "$ref": "common.json#/$defs/providerMetadata" }
+      },
+      "required": ["type", "toolCallId", "toolName", "result"],
+      "additionalProperties": false
+    },
+    "toolApprovalRequest": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "tool-approval-request" },
+        "approvalId": { "type": "string" },
+        "toolCallId": { "type": "string" },
+        "providerMetadata": { "$ref": "common.json#/$defs/providerMetadata" }
+      },
+      "required": ["type", "approvalId", "toolCallId"],
+      "additionalProperties": false
+    }
+  }
+}

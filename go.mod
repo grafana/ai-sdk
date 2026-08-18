@@ -3,6 +3,7 @@ module github.com/grafana/ai-sdk
 go 1.26.3
 
 require (
+	github.com/go-json-experiment/json v0.0.0-20260623181947-01eb4420fa68
 	github.com/invopop/jsonschema v0.14.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
 	github.com/stretchr/testify v1.11.1

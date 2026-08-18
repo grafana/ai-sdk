@@ -1,0 +1,294 @@
+{
+  "cases": [
+    {
+      "name": "unary exact",
+      "method": "POST",
+      "path": "/language-model",
+      "headers": {
+        "ai-language-model-id": "model.v4",
+        "ai-language-model-specification-version": "4",
+        "ai-language-model-streaming": "false",
+        "content-type": "application/json"
+      },
+      "wantMediaType": "application/json"
+    },
+    {
+      "name": "stream exact",
+      "method": "POST",
+      "path": "/language-model",
+      "headers": {
+        "Ai-Language-Model-Id": "model.v4",
+        "AI-Language-Model-Specification-Version": "4",
+        "ai-language-model-streaming": "true",
+        "Content-Type": "application/json; charset=utf-8",
+        "Accept": "text/event-stream"
+      },
+      "wantMediaType": "text/event-stream"
+    },
+    {
+      "name": "unary omitted accept",
+      "method": "POST",
+      "path": "/language-model",
+      "headers": {
+        "ai-language-model-id": "model v4",
+        "ai-language-model-specification-version": "4",
+        "ai-language-model-streaming": "false",
+        "content-type": "application/json; profile=contract"
+      },
+      "wantMediaType": "application/json"
+    },
+    {
+      "name": "present empty accept",
+      "method": "POST",
+      "path": "/language-model",
+      "headers": {
+        "ai-language-model-id": "model.v4",
+        "ai-language-model-specification-version": "4",
+        "ai-language-model-streaming": "false",
+        "content-type": "application/json",
+        "accept": ""
+      },
+      "wantCategory": "accept"
+    },
+    {
+      "name": "unary type wildcard",
+      "method": "POST",
+      "path": "/language-model",
+      "headers": {
+        "ai-language-model-id": "model.v4",
+        "ai-language-model-specification-version": "4",
+        "ai-language-model-streaming": "false",
+        "content-type": "application/json",
+        "accept": "text/plain;q=0.8, application/*;q=0.5"
+      },
+      "wantMediaType": "application/json"
+    },
+    {
+      "name": "wrong method",
+      "method": "GET",
+      "path": "/language-model",
+      "headers": {},
+      "wantCategory": "method"
+    },
+    {
+      "name": "wrong path",
+      "method": "POST",
+      "path": "/v4/language-model",
+      "headers": {},
+      "wantCategory": "path"
+    },
+    {
+      "name": "missing model id",
+      "method": "POST",
+      "path": "/language-model",
+      "headers": {
+        "ai-language-model-specification-version": "4",
+        "ai-language-model-streaming": "false",
+        "content-type": "application/json"
+      },
+      "wantCategory": "model-id"
+    },
+    {
+      "name": "padded model id",
+      "method": "POST",
+      "path": "/language-model",
+      "headers": {
+        "ai-language-model-id": " model.v4 ",
+        "ai-language-model-specification-version": "4",
+        "ai-language-model-streaming": "false",
+        "content-type": "application/json"
+      },
+      "wantCategory": "model-id"
+    },
+    {
+      "name": "wrong version",
+      "method": "POST",
+      "path": "/language-model",
+      "headers": {
+        "ai-language-model-id": "model.v4",
+        "ai-language-model-specification-version": "v4",
+        "ai-language-model-streaming": "false",
+        "content-type": "application/json"
+      },
+      "wantCategory": "specification-version"
+    },
+    {
+      "name": "uppercase streaming",
+      "method": "POST",
+      "path": "/language-model",
+      "headers": {
+        "ai-language-model-id": "model.v4",
+        "ai-language-model-specification-version": "4",
+        "ai-language-model-streaming": "TRUE",
+        "content-type": "application/json"
+      },
+      "wantCategory": "streaming"
+    },
+    {
+      "name": "missing content type",
+      "method": "POST",
+      "path": "/language-model",
+      "headers": {
+        "ai-language-model-id": "model.v4",
+        "ai-language-model-specification-version": "4",
+        "ai-language-model-streaming": "false"
+      },
+      "wantCategory": "content-type"
+    },
+    {
+      "name": "wrong content type",
+      "method": "POST",
+      "path": "/language-model",
+      "headers": {
+        "ai-language-model-id": "model.v4",
+        "ai-language-model-specification-version": "4",
+        "ai-language-model-streaming": "false",
+        "content-type": "text/plain"
+      },
+      "wantCategory": "content-type"
+    },
+    {
+      "name": "incompatible accept",
+      "method": "POST",
+      "path": "/language-model",
+      "headers": {
+        "ai-language-model-id": "model.v4",
+        "ai-language-model-specification-version": "4",
+        "ai-language-model-streaming": "true",
+        "content-type": "application/json",
+        "accept": "application/json"
+      },
+      "wantCategory": "accept"
+    },
+    {
+      "name": "quality zero",
+      "method": "POST",
+      "path": "/language-model",
+      "headers": {
+        "ai-language-model-id": "model.v4",
+        "ai-language-model-specification-version": "4",
+        "ai-language-model-streaming": "false",
+        "content-type": "application/json",
+        "accept": "application/json;q=0"
+      },
+      "wantCategory": "accept"
+    },
+    {
+      "name": "full wildcard is not a type wildcard",
+      "method": "POST",
+      "path": "/language-model",
+      "headers": {
+        "ai-language-model-id": "model.v4",
+        "ai-language-model-specification-version": "4",
+        "ai-language-model-streaming": "false",
+        "content-type": "application/json",
+        "accept": "*/*"
+      },
+      "wantCategory": "accept"
+    },
+    {
+      "name": "empty accept member",
+      "method": "POST",
+      "path": "/language-model",
+      "headers": {
+        "ai-language-model-id": "model.v4",
+        "ai-language-model-specification-version": "4",
+        "ai-language-model-streaming": "false",
+        "content-type": "application/json",
+        "accept": "application/json,"
+      },
+      "wantCategory": "accept"
+    },
+    {
+      "name": "minimum positive quality",
+      "method": "POST",
+      "path": "/language-model",
+      "headers": {
+        "ai-language-model-id": "model.v4",
+        "ai-language-model-specification-version": "4",
+        "ai-language-model-streaming": "false",
+        "content-type": "application/json",
+        "accept": "application/json;q=0.001"
+      },
+      "wantMediaType": "application/json"
+    },
+    {
+      "name": "quoted quality is invalid",
+      "method": "POST",
+      "path": "/language-model",
+      "headers": {
+        "ai-language-model-id": "model.v4",
+        "ai-language-model-specification-version": "4",
+        "ai-language-model-streaming": "false",
+        "content-type": "application/json",
+        "accept": "application/json;q=\"0.5\""
+      },
+      "wantCategory": "accept"
+    },
+    {
+      "name": "whitespace around quality equals is invalid",
+      "method": "POST",
+      "path": "/language-model",
+      "headers": {
+        "ai-language-model-id": "model.v4",
+        "ai-language-model-specification-version": "4",
+        "ai-language-model-streaming": "false",
+        "content-type": "application/json",
+        "accept": "application/json;q = 0.5"
+      },
+      "wantCategory": "accept"
+    },
+    {
+      "name": "scientific quality is invalid",
+      "method": "POST",
+      "path": "/language-model",
+      "headers": {
+        "ai-language-model-id": "model.v4",
+        "ai-language-model-specification-version": "4",
+        "ai-language-model-streaming": "false",
+        "content-type": "application/json",
+        "accept": "application/json;q=1e-1"
+      },
+      "wantCategory": "accept"
+    },
+    {
+      "name": "quality precision over three digits is invalid",
+      "method": "POST",
+      "path": "/language-model",
+      "headers": {
+        "ai-language-model-id": "model.v4",
+        "ai-language-model-specification-version": "4",
+        "ai-language-model-streaming": "false",
+        "content-type": "application/json",
+        "accept": "application/json;q=0.0001"
+      },
+      "wantCategory": "accept"
+    },
+    {
+      "name": "quality above one is invalid",
+      "method": "POST",
+      "path": "/language-model",
+      "headers": {
+        "ai-language-model-id": "model.v4",
+        "ai-language-model-specification-version": "4",
+        "ai-language-model-streaming": "false",
+        "content-type": "application/json",
+        "accept": "application/json;q=1.001"
+      },
+      "wantCategory": "accept"
+    },
+    {
+      "name": "malformed accept quality",
+      "method": "POST",
+      "path": "/language-model",
+      "headers": {
+        "ai-language-model-id": "model.v4",
+        "ai-language-model-specification-version": "4",
+        "ai-language-model-streaming": "false",
+        "content-type": "application/json",
+        "accept": "application/json;q=wat"
+      },
+      "wantCategory": "accept"
+    }
+  ]
+}

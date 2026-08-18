@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://grafana.com/ai-sdk/providerwire/v4/schema/error.json",
+  "title": "ProviderWire V4 safe error projection",
+  "type": "object",
+  "properties": {
+    "error": { "$ref": "#/$defs/safeError" },
+    "generationId": { "type": "string" }
+  },
+  "required": ["error"],
+  "additionalProperties": false,
+  "$defs": {
+    "safeError": {
+      "oneOf": [
+        { "$ref": "#/$defs/authentication" },
+        { "$ref": "#/$defs/invalidRequest" },
+        { "$ref": "#/$defs/rateLimit" },
+        { "$ref": "#/$defs/modelNotFound" },
+        { "$ref": "#/$defs/internalServer" },
+        { "$ref": "#/$defs/failedDependency" },
+        { "$ref": "#/$defs/forbidden" }
+      ]
+    },
+    "authentication": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "authentication_error" },
+        "message": { "type": "string" },
+        "statusCode": { "type": "integer" },
+        "isRetryable": { "type": "boolean" }
+      },
+      "required": ["type", "message", "statusCode", "isRetryable"],
+      "additionalProperties": false
+    },
+    "invalidRequest": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "invalid_request_error" },
+        "message": { "type": "string" },
+        "statusCode": { "type": "integer" },
+        "isRetryable": { "type": "boolean" }
+      },
+      "required": ["type", "message", "statusCode", "isRetryable"],
+      "additionalProperties": false
+    },
+    "rateLimit": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "rate_limit_exceeded" },
+        "message": { "type": "string" },
+        "statusCode": { "type": "integer" },
+        "isRetryable": { "type": "boolean" }
+      },
+      "required": ["type", "message", "statusCode", "isRetryable"],
+      "additionalProperties": false
+    },
+    "modelNotFound": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "model_not_found" },
+        "message": { "type": "string" },
+        "statusCode": { "type": "integer" },
+        "isRetryable": { "type": "boolean" },
+        "param": {
+          "type": "object",
+          "properties": {
+            "modelId": { "type": "string" }
+          },
+          "required": ["modelId"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["type", "message", "statusCode", "isRetryable"],
+      "additionalProperties": false
+    },
+    "internalServer": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "internal_server_error" },
+        "message": { "type": "string" },
+        "statusCode": { "type": "integer" },
+        "isRetryable": { "type": "boolean" }
+      },
+      "required": ["type", "message", "statusCode", "isRetryable"],
+      "additionalProperties": false
+    },
+    "failedDependency": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "failed_dependency" },
+        "message": { "type": "string" },
+        "statusCode": { "type": "integer" },
+        "isRetryable": { "type": "boolean" }
+      },
+      "required": ["type", "message", "statusCode", "isRetryable"],
+      "additionalProperties": false
+    },
+    "forbidden": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "forbidden" },
+        "message": { "type": "string" },
+        "statusCode": { "type": "integer" },
+        "isRetryable": { "type": "boolean" },
+        "param": {
+          "type": "object",
+          "properties": {
+            "ruleId": { "type": "string" }
+          },
+          "required": ["ruleId"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["type", "message", "statusCode", "isRetryable"],
+      "additionalProperties": false
+    }
+  }
+}

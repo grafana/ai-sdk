@@ -1,0 +1,90 @@
+openapi: 3.1.0
+info:
+  title: ProviderWire V4 HTTP contract
+  version: 4.0.0
+  description: >-
+    Contract-only projection of the registered @ai-sdk/gateway LanguageModelV4
+    exchange. It defines no deployed handler and makes no private-server claim.
+paths:
+  /language-model:
+    post:
+      operationId: callLanguageModelV4
+      summary: Generate or stream a LanguageModelV4 result
+      parameters:
+        - $ref: '#/components/parameters/SpecificationVersion'
+        - $ref: '#/components/parameters/ModelID'
+        - $ref: '#/components/parameters/Streaming'
+        - $ref: '#/components/parameters/Accept'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './schema/request.json'
+      responses:
+        '200':
+          description: >-
+            Unary JSON when ai-language-model-streaming is false; JSON-over-SSE
+            when it is true. Selection and SSE framing are defined by the
+            ProviderWire V4 requirements and focused tests.
+          content:
+            application/json:
+              schema:
+                $ref: './schema/generate-result.json'
+            text/event-stream:
+              schema:
+                type: string
+                description: One data field containing a stream-part JSON value per SSE event.
+              x-event-data-schema:
+                $ref: '#/components/schemas/StreamPart'
+        4XX:
+          $ref: '#/components/responses/Error'
+        5XX:
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
+components:
+  parameters:
+    SpecificationVersion:
+      name: ai-language-model-specification-version
+      in: header
+      required: true
+      schema:
+        type: string
+        const: '4'
+    ModelID:
+      name: ai-language-model-id
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        pattern: '^\S(?:.*\S)?$'
+    Streaming:
+      name: ai-language-model-streaming
+      in: header
+      required: true
+      schema:
+        type: string
+        enum: ['true', 'false']
+    Accept:
+      name: Accept
+      in: header
+      required: false
+      description: >-
+        When present, a syntactically valid exact or type-wildcard range with
+        positive quality must permit the representation selected by the
+        streaming header. Detailed negotiation is defined by focused tests.
+      schema:
+        type: string
+        minLength: 1
+  schemas:
+    StreamPart:
+      $ref: './schema/stream-part.json'
+  responses:
+    Error:
+      description: Safe non-2xx ProviderWire V4 error projection.
+      content:
+        application/json:
+          schema:
+            $ref: './schema/error.json'

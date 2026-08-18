@@ -1,0 +1,206 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://grafana.com/ai-sdk/providerwire/v4/schema/common.json",
+  "title": "ProviderWire V4 shared serialized values",
+  "$defs": {
+    "jsonValue": {
+      "oneOf": [
+        { "type": "null" },
+        { "type": "string" },
+        { "type": "number" },
+        { "type": "boolean" },
+        {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/jsonValue" }
+        },
+        {
+          "type": "array",
+          "items": { "$ref": "#/$defs/jsonValue" }
+        }
+      ]
+    },
+    "nonNullJSONValue": {
+      "oneOf": [
+        { "type": "string" },
+        { "type": "number" },
+        { "type": "boolean" },
+        {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/jsonValue" }
+        },
+        {
+          "type": "array",
+          "items": { "$ref": "#/$defs/jsonValue" }
+        }
+      ]
+    },
+    "jsonObject": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/jsonValue" }
+    },
+    "jsonSchemaObject": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/jsonValue" }
+    },
+    "providerOptions": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/jsonObject" }
+    },
+    "providerMetadata": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/jsonObject" }
+    },
+    "headers": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "providerReference": {
+      "type": "object",
+      "propertyNames": { "not": { "const": "type" } },
+      "additionalProperties": { "type": "string" }
+    },
+    "fileData": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "data" },
+            "data": { "type": "string" }
+          },
+          "required": ["type", "data"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "url" },
+            "url": { "type": "string" }
+          },
+          "required": ["type", "url"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "reference" },
+            "reference": { "$ref": "#/$defs/providerReference" }
+          },
+          "required": ["type", "reference"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "text" },
+            "text": { "type": "string" }
+          },
+          "required": ["type", "text"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "generatedFileData": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "data" },
+            "data": { "type": "string" }
+          },
+          "required": ["type", "data"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "url" },
+            "url": { "type": "string" }
+          },
+          "required": ["type", "url"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "warning": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "unsupported" },
+            "feature": { "type": "string" },
+            "details": { "type": "string" }
+          },
+          "required": ["type", "feature"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "compatibility" },
+            "feature": { "type": "string" },
+            "details": { "type": "string" }
+          },
+          "required": ["type", "feature"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "deprecated" },
+            "setting": { "type": "string" },
+            "message": { "type": "string" }
+          },
+          "required": ["type", "setting", "message"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "other" },
+            "message": { "type": "string" }
+          },
+          "required": ["type", "message"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "finishReason": {
+      "type": "object",
+      "properties": {
+        "unified": {
+          "enum": ["stop", "length", "content-filter", "tool-calls", "error", "other"]
+        },
+        "raw": { "type": "string" }
+      },
+      "required": ["unified"],
+      "additionalProperties": false
+    },
+    "usage": {
+      "type": "object",
+      "properties": {
+        "inputTokens": {
+          "type": "object",
+          "properties": {
+            "total": { "type": "number" },
+            "noCache": { "type": "number" },
+            "cacheRead": { "type": "number" },
+            "cacheWrite": { "type": "number" }
+          },
+          "additionalProperties": false
+        },
+        "outputTokens": {
+          "type": "object",
+          "properties": {
+            "total": { "type": "number" },
+            "text": { "type": "number" },
+            "reasoning": { "type": "number" }
+          },
+          "additionalProperties": false
+        },
+        "raw": { "$ref": "#/$defs/jsonObject" }
+      },
+      "required": ["inputTokens", "outputTokens"],
+      "additionalProperties": false
+    }
+  }
+}

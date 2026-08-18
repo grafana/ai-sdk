@@ -71,11 +71,36 @@ client cancellation separately from provider failure and server timeout.
 
 ## Understand the protocol boundary
 
-Provider wire transports provider-level call options, results, errors, and
-stream parts. It intentionally does not emit UI message chunks or the browser
-`[DONE]` sentinel. The wire format tracks the registered upstream
-LanguageModelV4 baseline so upstream gateway clients and the Go Grafana provider
-can use the same endpoint.
+The public `gateway/providerwire` package is the active tolerant legacy
+transport. It carries provider-level call options, results, errors, and stream
+parts, and remains the default for Grafana. It intentionally does not emit UI
+message chunks or the browser `[DONE]` sentinel.
+
+The sibling `gateway/providerwire/v4` directory contains the future strict
+contract: OpenAPI 3.1, curated JSON Schema 2020-12 resources, stock-client
+captures, response projections, and executable validation. It has no decoder,
+handler, client, model adapter, host policy, or public DTO API, so it cannot be
+mounted or selected at runtime.
+
+The contract uses the exact package versions in
+`test/conformance/upstream.yaml` as executable authority. Its registered source
+commit has older Gateway, provider-utils, and ai workspace manifests; relied-on
+source paths therefore carry explicit release-equivalence evidence, while ai
+orchestration is captured from the exact installed package. Captures establish
+stock-client request emission or response consumption only. They do not claim
+private Vercel server behavior or live provider-recording provenance.
+
+Compatibility is semantic JSON compatibility, not byte identity. Standard
+objects and selected union arms are closed, while only documented opaque JSON
+and keyed provider boundaries remain open. Moving the baseline requires one
+coordinated update of the manifest, package pins, source evidence, schemas,
+captures, projections, negative corpus, parity map, and lockfiles.
+
+This contract phase defines status, media type, JSON SSE event framing, and EOF
+termination. Server commitment, flushing, cancellation, timeouts, write
+failures, and post-commit errors belong to the later streaming-service phase.
+Until a later capability implements and adopts a strict runtime, use the legacy
+package shown in this guide.
 
 ## Reference
 

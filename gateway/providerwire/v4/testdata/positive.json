@@ -1,0 +1,184 @@
+{
+  "cases": [
+    {
+      "name": "request complete union inventory",
+      "schema": "request",
+      "document": {
+        "prompt": [
+          {
+            "role": "system",
+            "content": "system",
+            "providerOptions": { "system-provider": {} }
+          },
+          {
+            "role": "user",
+            "content": [
+              { "type": "text", "text": "user", "providerOptions": { "text-provider": { "enabled": true } } },
+              { "type": "file", "data": { "type": "data", "data": "AQIDBA==" }, "mediaType": "image/png", "filename": "pixel.png" },
+              { "type": "file", "data": { "type": "url", "url": "https://example.test/file.png" }, "mediaType": "image/png" },
+              { "type": "file", "data": { "type": "reference", "reference": {} }, "mediaType": "application/pdf" },
+              { "type": "file", "data": { "type": "text", "text": "inline" }, "mediaType": "text/plain" }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": [
+              { "type": "text", "text": "assistant" },
+              { "type": "reasoning", "text": "reasoning" },
+              { "type": "custom", "kind": "provider.custom", "providerOptions": { "custom-provider": {} } },
+              { "type": "file", "data": { "type": "reference", "reference": { "provider": "file-1" } }, "mediaType": "application/pdf" },
+              { "type": "reasoning-file", "data": { "type": "data", "data": "BQY=" }, "mediaType": "application/octet-stream" },
+              { "type": "tool-call", "toolCallId": "call-1", "toolName": "echo", "input": null, "providerExecuted": false },
+              { "type": "tool-result", "toolCallId": "call-1", "toolName": "echo", "output": { "type": "json", "value": null } }
+            ]
+          },
+          {
+            "role": "tool",
+            "content": [
+              { "type": "tool-result", "toolCallId": "call-text", "toolName": "echo", "output": { "type": "text", "value": "ok" } },
+              { "type": "tool-result", "toolCallId": "call-error-text", "toolName": "echo", "output": { "type": "error-text", "value": "failed" } },
+              { "type": "tool-result", "toolCallId": "call-error-json", "toolName": "echo", "output": { "type": "error-json", "value": { "reason": [1, true, null] } } },
+              { "type": "tool-result", "toolCallId": "call-denied", "toolName": "echo", "output": { "type": "execution-denied", "reason": "policy", "providerOptions": {} } },
+              {
+                "type": "tool-result",
+                "toolCallId": "call-content",
+                "toolName": "echo",
+                "output": {
+                  "type": "content",
+                  "value": [
+                    { "type": "text", "text": "nested" },
+                    { "type": "file", "data": { "type": "data", "data": "AQIDBA==" }, "mediaType": "application/octet-stream", "filename": "bytes.bin" },
+                    { "type": "file", "data": { "type": "url", "url": "https://example.test/nested" }, "mediaType": "text/plain" },
+                    { "type": "file", "data": { "type": "reference", "reference": { "provider": "nested-1" } }, "mediaType": "application/pdf" },
+                    { "type": "file", "data": { "type": "text", "text": "nested inline" }, "mediaType": "text/plain" },
+                    { "type": "custom", "providerOptions": { "custom-provider": { "value": null } } }
+                  ]
+                }
+              },
+              { "type": "tool-approval-response", "approvalId": "approval-1", "approved": false, "reason": "not approved" }
+            ]
+          }
+        ],
+        "maxOutputTokens": 0,
+        "temperature": 0,
+        "stopSequences": [],
+        "topP": 0,
+        "topK": 0,
+        "presencePenalty": 0,
+        "frequencyPenalty": 0,
+        "responseFormat": { "type": "json", "schema": { "type": "object" }, "name": "result", "description": "structured" },
+        "seed": 0,
+        "tools": [
+          {
+            "type": "function",
+            "name": "echo",
+            "description": "echo input",
+            "inputSchema": { "type": "object", "properties": { "text": { "type": "string" } } },
+            "inputExamples": [{ "input": {} }, { "input": { "text": "example" } }],
+            "strict": false,
+            "providerOptions": { "function-provider": {} }
+          },
+          { "type": "provider", "id": "provider.search", "name": "search", "args": { "limit": 0, "filters": {} } }
+        ],
+        "toolChoice": { "type": "tool", "toolName": "echo" },
+        "includeRawChunks": false,
+        "headers": { "x-body-header": "body" },
+        "reasoning": "provider-default",
+        "providerOptions": { "gateway": { "order": ["provider-a"], "nullable": null } }
+      }
+    },
+    {
+      "name": "request text response auto choice",
+      "schema": "request",
+      "document": { "prompt": [], "responseFormat": { "type": "text" }, "toolChoice": { "type": "auto" } }
+    },
+    {
+      "name": "request none choice explicit empties",
+      "schema": "request",
+      "document": { "prompt": [], "tools": [], "stopSequences": [], "headers": {}, "providerOptions": {}, "includeRawChunks": false, "toolChoice": { "type": "none" } }
+    },
+    {
+      "name": "request required choice",
+      "schema": "request",
+      "document": { "prompt": [], "toolChoice": { "type": "required" }, "reasoning": "xhigh" }
+    },
+    {
+      "name": "generate complete union inventory",
+      "schema": "generate-result",
+      "document": {
+        "content": [
+          { "type": "text", "text": "text", "providerMetadata": { "provider": {} } },
+          { "type": "reasoning", "text": "reasoning" },
+          { "type": "custom", "kind": "provider.custom" },
+          { "type": "file", "mediaType": "image/png", "data": { "type": "data", "data": "AQID" } },
+          { "type": "reasoning-file", "mediaType": "text/plain", "data": { "type": "url", "url": "https://example.test/reasoning" } },
+          { "type": "source", "sourceType": "url", "id": "source-url", "url": "https://example.test/source", "title": "URL" },
+          { "type": "source", "sourceType": "document", "id": "source-document", "mediaType": "application/pdf", "title": "Document", "filename": "doc.pdf" },
+          { "type": "tool-call", "toolCallId": "call-1", "toolName": "echo", "input": "{\"text\":\"hello\"}", "providerExecuted": false, "dynamic": false },
+          { "type": "tool-result", "toolCallId": "call-1", "toolName": "echo", "result": { "nested": [1, true, null] }, "isError": false, "preliminary": false, "dynamic": false },
+          { "type": "tool-approval-request", "approvalId": "approval-1", "toolCallId": "call-2" }
+        ],
+        "finishReason": { "unified": "stop", "raw": "end_turn" },
+        "usage": {
+          "inputTokens": { "total": 10, "noCache": 7, "cacheRead": 2, "cacheWrite": 1 },
+          "outputTokens": { "total": 5, "text": 3, "reasoning": 2 },
+          "raw": { "providerTokens": 15 }
+        },
+        "providerMetadata": { "provider": { "safe": true } },
+        "request": { "body": null },
+        "response": {
+          "id": "response-1",
+          "timestamp": "2026-01-02T03:04:05Z",
+          "modelId": "public-model",
+          "headers": { "x-safe": "value" },
+          "body": ["opaque", null]
+        },
+        "warnings": [
+          { "type": "unsupported", "feature": "feature-a", "details": "detail" },
+          { "type": "compatibility", "feature": "feature-b" },
+          { "type": "deprecated", "setting": "old", "message": "use new" },
+          { "type": "other", "message": "other warning" }
+        ]
+      }
+    },
+    {
+      "name": "generate undefined counters omitted",
+      "schema": "generate-result",
+      "document": {
+        "content": [],
+        "finishReason": { "unified": "other" },
+        "usage": { "inputTokens": {}, "outputTokens": {} },
+        "warnings": []
+      }
+    },
+    { "name": "stream text start", "schema": "stream-part", "document": { "type": "text-start", "id": "text-1" } },
+    { "name": "stream text delta", "schema": "stream-part", "document": { "type": "text-delta", "id": "text-1", "delta": "" } },
+    { "name": "stream text end", "schema": "stream-part", "document": { "type": "text-end", "id": "text-1" } },
+    { "name": "stream reasoning start", "schema": "stream-part", "document": { "type": "reasoning-start", "id": "reasoning-1" } },
+    { "name": "stream reasoning delta", "schema": "stream-part", "document": { "type": "reasoning-delta", "id": "reasoning-1", "delta": "reason" } },
+    { "name": "stream reasoning end", "schema": "stream-part", "document": { "type": "reasoning-end", "id": "reasoning-1" } },
+    { "name": "stream tool input start", "schema": "stream-part", "document": { "type": "tool-input-start", "id": "tool-1", "toolName": "echo", "providerExecuted": false, "dynamic": false, "title": "Echo" } },
+    { "name": "stream tool input delta", "schema": "stream-part", "document": { "type": "tool-input-delta", "id": "tool-1", "delta": "{}" } },
+    { "name": "stream tool input end", "schema": "stream-part", "document": { "type": "tool-input-end", "id": "tool-1" } },
+    { "name": "stream tool approval", "schema": "stream-part", "document": { "type": "tool-approval-request", "approvalId": "approval-1", "toolCallId": "tool-1" } },
+    { "name": "stream tool call", "schema": "stream-part", "document": { "type": "tool-call", "toolCallId": "tool-1", "toolName": "echo", "input": "{}", "providerExecuted": false, "dynamic": false } },
+    { "name": "stream tool result", "schema": "stream-part", "document": { "type": "tool-result", "toolCallId": "tool-1", "toolName": "echo", "result": false, "isError": false, "preliminary": false, "dynamic": false } },
+    { "name": "stream custom", "schema": "stream-part", "document": { "type": "custom", "kind": "provider.custom" } },
+    { "name": "stream file data", "schema": "stream-part", "document": { "type": "file", "mediaType": "image/png", "data": { "type": "data", "data": "AQID" } } },
+    { "name": "stream reasoning file url", "schema": "stream-part", "document": { "type": "reasoning-file", "mediaType": "text/plain", "data": { "type": "url", "url": "https://example.test/reasoning" } } },
+    { "name": "stream URL source", "schema": "stream-part", "document": { "type": "source", "sourceType": "url", "id": "source-1", "url": "https://example.test" } },
+    { "name": "stream document source", "schema": "stream-part", "document": { "type": "source", "sourceType": "document", "id": "source-2", "mediaType": "application/pdf", "title": "Document" } },
+    { "name": "stream start", "schema": "stream-part", "document": { "type": "stream-start", "warnings": [] } },
+    { "name": "stream response metadata", "schema": "stream-part", "document": { "type": "response-metadata", "id": "response-1", "timestamp": "2026-01-02T03:04:05Z", "modelId": "public-model" } },
+    { "name": "stream finish", "schema": "stream-part", "document": { "type": "finish", "usage": { "inputTokens": {}, "outputTokens": {} }, "finishReason": { "unified": "stop" } } },
+    { "name": "stream raw null", "schema": "stream-part", "document": { "type": "raw", "rawValue": null } },
+    { "name": "stream error null", "schema": "stream-part", "document": { "type": "error", "error": null } },
+    { "name": "error authentication", "schema": "error", "status": 401, "document": { "error": { "type": "authentication_error", "message": "authentication failed", "statusCode": 401, "isRetryable": false } } },
+    { "name": "error invalid request retry override", "schema": "error", "status": 400, "document": { "error": { "type": "invalid_request_error", "message": "retry later", "statusCode": 400, "isRetryable": true } } },
+    { "name": "error rate limit", "schema": "error", "status": 429, "document": { "error": { "type": "rate_limit_exceeded", "message": "rate limited", "statusCode": 429, "isRetryable": true } } },
+    { "name": "error model not found", "schema": "error", "status": 404, "document": { "error": { "type": "model_not_found", "message": "not found", "statusCode": 404, "isRetryable": false, "param": { "modelId": "public-model" } } } },
+    { "name": "error internal nonretry override", "schema": "error", "status": 500, "document": { "generationId": "generation-safe", "error": { "type": "internal_server_error", "message": "failed", "statusCode": 500, "isRetryable": false } } },
+    { "name": "error failed dependency", "schema": "error", "status": 424, "document": { "error": { "type": "failed_dependency", "message": "dependency failed", "statusCode": 424, "isRetryable": true } } },
+    { "name": "error forbidden", "schema": "error", "status": 403, "document": { "error": { "type": "forbidden", "message": "forbidden", "statusCode": 403, "isRetryable": false, "param": { "ruleId": "rule-safe" } } } }
+  ]
+}

@@ -262,6 +262,44 @@ mise deps install --only test
 cd test && pnpm --filter @ai-sdk/test-interop test
 """
 
+[tasks.validate-providerwire-v4-contract]
+description = "Validate the contract-only ProviderWire V4 OpenAPI, schemas, and corpus"
+run = """
+set -e
+mise deps install --only test
+cd test
+pnpm --filter @ai-sdk/test-interop openapi:lint
+bundle_dir=$(mktemp -d)
+bundle="$bundle_dir/openapi.yaml"
+trap 'rm -rf "$bundle_dir"' EXIT
+pnpm --filter @ai-sdk/test-interop openapi:bundle --output "$bundle"
+test -s "$bundle"
+if grep '$ref:' "$bundle" | grep -Eq '([.][.]?/|https?://)'; then
+  echo "bundled OpenAPI contains a non-local reference"
+  exit 1
+fi
+cd ..
+GOWORK=off go test ./gateway/providerwire/v4
+"""
+
+[tasks.test-interop-contract]
+description = "Verify pinned ProviderWire V4 request captures and response consumption"
+run = """
+set -e
+mise run validate-parity-baseline
+cd test
+pnpm --filter @ai-sdk/test-interop typecheck
+pnpm --filter @ai-sdk/test-interop capture:verify
+pnpm --filter @ai-sdk/test-interop test:responses
+"""
+
+[tasks.update-providerwire-v4-captures]
+description = "Explicitly replace committed ProviderWire V4 stock-client request captures"
+run = """
+mise deps install --only test
+cd test && pnpm --filter @ai-sdk/test-interop capture:update
+"""
+
 [tasks.test-cli]
 description = "Run the stream inspection CLI; set SCENARIO or URL"
 run = """

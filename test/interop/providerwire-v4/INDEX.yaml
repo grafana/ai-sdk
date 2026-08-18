@@ -1,0 +1,41 @@
+version: 1
+contract: ../../../gateway/providerwire/v4/openapi.yaml
+baseline: ../../conformance/upstream.yaml
+provenance:
+  source: ../../../gateway/providerwire/v4/PROVENANCE.md
+  executable: provenance.json
+  requestCaptures:
+    authority: pinned-stock-client
+    description: Exact-package request emission recorded by the local deterministic recorder.
+  responseProjections:
+    authority: local-serialized-projection
+    description: Locally authored responses used only to prove pinned-client consumption.
+  negativeFixtures:
+    authority: local-contract-fixture
+    description: Locally authored invalid examples used only to prove strict local rejection.
+requestCaptures:
+  - path: captures/requests.json
+    scenarios:
+      - direct-do-generate-complete
+      - direct-do-stream
+      - orchestration-generate-text
+      - orchestration-client-tool-flow
+      - orchestration-stream-text
+responseProjections:
+  - path: projections/unary.json
+    kind: unary-json
+  - path: projections/stream-clean.sse
+    kind: eof-terminated-json-sse
+  - path: projections/stream-done.sse
+    kind: tolerated-done-json-sse
+  - path: projections/error-retryable-400.json
+    kind: explicit-retryability-override
+  - path: projections/error-nonretryable-500.json
+    kind: explicit-retryability-override
+negativeFixtures:
+  - path: ../../../gateway/providerwire/v4/testdata/negative.json
+    stages: [schema, envelope]
+  - path: ../../../gateway/providerwire/v4/testdata/syntax.json
+    stages: [syntax]
+  - path: ../../../gateway/providerwire/v4/testdata/envelopes.json
+    stages: [envelope]

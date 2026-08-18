@@ -205,8 +205,14 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pnpm-
 
-      - name: Interop tests
+      - name: Legacy interop tests
         run: mise run test-interop
+
+      - name: ProviderWire V4 contract validation
+        run: mise run validate-providerwire-v4-contract
+
+      - name: ProviderWire V4 pinned-client evidence
+        run: mise run test-interop-contract
 
   conformance-test:
     runs-on: ubuntu-latest

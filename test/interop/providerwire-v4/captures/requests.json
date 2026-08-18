@@ -1,0 +1,565 @@
+{
+  "formatVersion": 1,
+  "captures": [
+    {
+      "scenario": "direct-do-generate-complete",
+      "sequence": 0,
+      "request": {
+        "method": "POST",
+        "path": "/language-model",
+        "headers": {
+          "ai-gateway-auth-method": "api-key",
+          "ai-gateway-protocol-version": "0.0.1",
+          "ai-language-model-id": "capture/model",
+          "ai-language-model-specification-version": "4",
+          "ai-language-model-streaming": "false",
+          "ai-o11y-project-id": "<present>",
+          "authorization": "Bearer <redacted>",
+          "content-type": "application/json",
+          "user-agent": "<present>",
+          "x-call": "call",
+          "x-collision": "call-wins",
+          "x-configured": "configured",
+          "x-vercel-ai-gateway-team": "capture-team"
+        },
+        "body": {
+          "prompt": [
+            {
+              "role": "system",
+              "content": "capture system",
+              "providerOptions": {
+                "system": {}
+              }
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "capture user"
+                },
+                {
+                  "type": "file",
+                  "data": {
+                    "type": "data",
+                    "data": "AQIDBA=="
+                  },
+                  "mediaType": "application/octet-stream",
+                  "filename": "prompt.bin"
+                },
+                {
+                  "type": "file",
+                  "data": {
+                    "type": "url",
+                    "url": "https://example.test/prompt.txt"
+                  },
+                  "mediaType": "text/plain"
+                },
+                {
+                  "type": "file",
+                  "data": {
+                    "type": "reference",
+                    "reference": {}
+                  },
+                  "mediaType": "application/pdf"
+                },
+                {
+                  "type": "file",
+                  "data": {
+                    "type": "text",
+                    "text": "inline prompt"
+                  },
+                  "mediaType": "text/plain"
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "assistant text"
+                },
+                {
+                  "type": "reasoning",
+                  "text": "assistant reasoning"
+                },
+                {
+                  "type": "custom",
+                  "kind": "capture.custom",
+                  "providerOptions": {
+                    "custom": {}
+                  }
+                },
+                {
+                  "type": "reasoning-file",
+                  "data": {
+                    "type": "data",
+                    "data": "BQY="
+                  },
+                  "mediaType": "application/octet-stream"
+                },
+                {
+                  "type": "tool-call",
+                  "toolCallId": "provider-call",
+                  "toolName": "providerSearch",
+                  "input": {
+                    "query": "capture"
+                  },
+                  "providerExecuted": true
+                },
+                {
+                  "type": "tool-result",
+                  "toolCallId": "provider-call",
+                  "toolName": "providerSearch",
+                  "output": {
+                    "type": "json",
+                    "value": null
+                  }
+                }
+              ]
+            },
+            {
+              "role": "tool",
+              "content": [
+                {
+                  "type": "tool-result",
+                  "toolCallId": "nested-file-call",
+                  "toolName": "fileTool",
+                  "output": {
+                    "type": "content",
+                    "value": [
+                      {
+                        "type": "text",
+                        "text": "nested text"
+                      },
+                      {
+                        "type": "file",
+                        "data": {
+                          "type": "data",
+                          "data": "BwgJ"
+                        },
+                        "mediaType": "application/octet-stream",
+                        "filename": "nested.bin"
+                      },
+                      {
+                        "type": "custom",
+                        "providerOptions": {
+                          "nested": {
+                            "safe": true
+                          }
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "type": "tool-approval-response",
+                  "approvalId": "approval-1",
+                  "approved": false,
+                  "reason": "capture denial"
+                }
+              ]
+            }
+          ],
+          "maxOutputTokens": 0,
+          "temperature": 0,
+          "stopSequences": [],
+          "topP": 0,
+          "topK": 0,
+          "presencePenalty": 0,
+          "frequencyPenalty": 0,
+          "responseFormat": {
+            "type": "json",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "string"
+                }
+              }
+            },
+            "name": "capture",
+            "description": "capture schema"
+          },
+          "seed": 0,
+          "tools": [
+            {
+              "type": "function",
+              "name": "echo",
+              "description": "echoes input",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  }
+                }
+              },
+              "inputExamples": [
+                {
+                  "input": {}
+                }
+              ],
+              "strict": false,
+              "providerOptions": {
+                "function": {}
+              }
+            },
+            {
+              "type": "provider",
+              "id": "capture.search",
+              "name": "providerSearch",
+              "args": {
+                "maxResults": 0,
+                "filters": {}
+              }
+            }
+          ],
+          "toolChoice": {
+            "type": "tool",
+            "toolName": "echo"
+          },
+          "includeRawChunks": false,
+          "headers": {
+            "x-call": "call",
+            "x-collision": "call-wins",
+            "ai-language-model-id": "call-model-loses",
+            "ai-language-model-specification-version": "call-version-loses",
+            "ai-language-model-streaming": "call-streaming-loses",
+            "ai-o11y-project-id": "call-project-loses"
+          },
+          "reasoning": "provider-default",
+          "providerOptions": {
+            "gateway": {
+              "order": [
+                "provider-a",
+                "provider-b"
+              ],
+              "only": [
+                "provider-a"
+              ],
+              "nullable": null
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "direct-do-stream",
+      "sequence": 0,
+      "request": {
+        "method": "POST",
+        "path": "/language-model",
+        "headers": {
+          "ai-gateway-auth-method": "api-key",
+          "ai-gateway-protocol-version": "0.0.1",
+          "ai-language-model-id": "capture/model",
+          "ai-language-model-specification-version": "4",
+          "ai-language-model-streaming": "true",
+          "ai-o11y-project-id": "<present>",
+          "authorization": "Bearer <redacted>",
+          "content-type": "application/json",
+          "user-agent": "<present>",
+          "x-collision": "configured-loses",
+          "x-configured": "configured",
+          "x-vercel-ai-gateway-team": "capture-team"
+        },
+        "body": {
+          "prompt": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "stream directly"
+                }
+              ]
+            }
+          ],
+          "includeRawChunks": true,
+          "tools": [],
+          "stopSequences": [],
+          "providerOptions": {},
+          "headers": {}
+        }
+      }
+    },
+    {
+      "scenario": "orchestration-generate-text",
+      "sequence": 0,
+      "request": {
+        "method": "POST",
+        "path": "/language-model",
+        "headers": {
+          "ai-gateway-auth-method": "api-key",
+          "ai-gateway-protocol-version": "0.0.1",
+          "ai-language-model-id": "capture/model",
+          "ai-language-model-specification-version": "4",
+          "ai-language-model-streaming": "false",
+          "ai-o11y-project-id": "<present>",
+          "authorization": "Bearer <redacted>",
+          "content-type": "application/json",
+          "user-agent": "<present>",
+          "x-call": "orchestration",
+          "x-collision": "configured-loses",
+          "x-configured": "configured",
+          "x-vercel-ai-gateway-team": "capture-team"
+        },
+        "body": {
+          "tools": [
+            {
+              "type": "function",
+              "name": "echo",
+              "inputSchema": {
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "additionalProperties": false
+              },
+              "description": "echo"
+            }
+          ],
+          "toolChoice": {
+            "type": "tool",
+            "toolName": "echo"
+          },
+          "prompt": [
+            {
+              "role": "system",
+              "content": "orchestration system"
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "orchestration generate"
+                }
+              ]
+            }
+          ],
+          "providerOptions": {
+            "gateway": {
+              "order": [
+                "provider-a"
+              ]
+            }
+          },
+          "headers": {
+            "user-agent": "ai/7.0.44",
+            "x-call": "orchestration"
+          }
+        }
+      }
+    },
+    {
+      "scenario": "orchestration-client-tool-flow",
+      "sequence": 0,
+      "request": {
+        "method": "POST",
+        "path": "/language-model",
+        "headers": {
+          "ai-gateway-auth-method": "api-key",
+          "ai-gateway-protocol-version": "0.0.1",
+          "ai-language-model-id": "capture/model",
+          "ai-language-model-specification-version": "4",
+          "ai-language-model-streaming": "false",
+          "ai-o11y-project-id": "<present>",
+          "authorization": "Bearer <redacted>",
+          "content-type": "application/json",
+          "user-agent": "<present>",
+          "x-collision": "configured-loses",
+          "x-configured": "configured",
+          "x-vercel-ai-gateway-team": "capture-team"
+        },
+        "body": {
+          "tools": [
+            {
+              "type": "function",
+              "name": "echo",
+              "inputSchema": {
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "additionalProperties": false
+              }
+            }
+          ],
+          "toolChoice": {
+            "type": "auto"
+          },
+          "prompt": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "execute the client tool"
+                }
+              ]
+            }
+          ],
+          "headers": {
+            "user-agent": "ai/7.0.44"
+          }
+        }
+      }
+    },
+    {
+      "scenario": "orchestration-client-tool-flow",
+      "sequence": 1,
+      "request": {
+        "method": "POST",
+        "path": "/language-model",
+        "headers": {
+          "ai-gateway-auth-method": "api-key",
+          "ai-gateway-protocol-version": "0.0.1",
+          "ai-language-model-id": "capture/model",
+          "ai-language-model-specification-version": "4",
+          "ai-language-model-streaming": "false",
+          "ai-o11y-project-id": "<present>",
+          "authorization": "Bearer <redacted>",
+          "content-type": "application/json",
+          "user-agent": "<present>",
+          "x-collision": "configured-loses",
+          "x-configured": "configured",
+          "x-vercel-ai-gateway-team": "capture-team"
+        },
+        "body": {
+          "tools": [
+            {
+              "type": "function",
+              "name": "echo",
+              "inputSchema": {
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "additionalProperties": false
+              }
+            }
+          ],
+          "toolChoice": {
+            "type": "auto"
+          },
+          "prompt": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "execute the client tool"
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "tool-call",
+                  "toolCallId": "client-call",
+                  "toolName": "echo",
+                  "input": {
+                    "text": "client execution"
+                  }
+                }
+              ]
+            },
+            {
+              "role": "tool",
+              "content": [
+                {
+                  "type": "tool-result",
+                  "toolCallId": "client-call",
+                  "toolName": "echo",
+                  "output": {
+                    "type": "json",
+                    "value": {
+                      "echoed": "client execution"
+                    }
+                  }
+                }
+              ]
+            }
+          ],
+          "headers": {
+            "user-agent": "ai/7.0.44"
+          }
+        }
+      }
+    },
+    {
+      "scenario": "orchestration-stream-text",
+      "sequence": 0,
+      "request": {
+        "method": "POST",
+        "path": "/language-model",
+        "headers": {
+          "ai-gateway-auth-method": "api-key",
+          "ai-gateway-protocol-version": "0.0.1",
+          "ai-language-model-id": "capture/model",
+          "ai-language-model-specification-version": "4",
+          "ai-language-model-streaming": "true",
+          "ai-o11y-project-id": "<present>",
+          "authorization": "Bearer <redacted>",
+          "content-type": "application/json",
+          "user-agent": "<present>",
+          "x-call": "stream-orchestration",
+          "x-collision": "configured-loses",
+          "x-configured": "configured",
+          "x-vercel-ai-gateway-team": "capture-team"
+        },
+        "body": {
+          "toolChoice": {
+            "type": "auto"
+          },
+          "prompt": [
+            {
+              "role": "system",
+              "content": "stream orchestration system"
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "orchestration stream"
+                }
+              ]
+            }
+          ],
+          "providerOptions": {
+            "gateway": {
+              "order": []
+            }
+          },
+          "headers": {
+            "x-call": "stream-orchestration"
+          },
+          "includeRawChunks": true
+        }
+      }
+    }
+  ]
+}

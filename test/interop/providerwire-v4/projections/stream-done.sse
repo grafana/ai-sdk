@@ -1,0 +1,12 @@
+data: {"type":"stream-start","warnings":[]}
+
+data: {"type":"text-start","id":"text-1"}
+
+data: {"type":"text-delta","id":"text-1","delta":"before-done"}
+
+data: {"type":"text-end","id":"text-1"}
+
+data: {"type":"finish","finishReason":{"unified":"stop","raw":"stop"},"usage":{"inputTokens":{"total":1},"outputTokens":{"total":1}}}
+
+data: [DONE]
+

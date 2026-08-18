@@ -1,0 +1,9 @@
+extends:
+  - minimal
+rules:
+  no-unresolved-refs: error
+  spec-strict-refs: off
+  no-empty-servers: off
+  security-defined: off
+  operation-4xx-response: off
+  no-server-example.com: off

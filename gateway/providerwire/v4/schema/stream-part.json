@@ -1,0 +1,180 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://grafana.com/ai-sdk/providerwire/v4/schema/stream-part.json",
+  "title": "ProviderWire V4 stream part",
+  "oneOf": [
+    { "$ref": "#/$defs/textStart" },
+    { "$ref": "#/$defs/textDelta" },
+    { "$ref": "#/$defs/textEnd" },
+    { "$ref": "#/$defs/reasoningStart" },
+    { "$ref": "#/$defs/reasoningDelta" },
+    { "$ref": "#/$defs/reasoningEnd" },
+    { "$ref": "#/$defs/toolInputStart" },
+    { "$ref": "#/$defs/toolInputDelta" },
+    { "$ref": "#/$defs/toolInputEnd" },
+    { "$ref": "generate-result.json#/$defs/toolApprovalRequest" },
+    { "$ref": "generate-result.json#/$defs/toolCall" },
+    { "$ref": "generate-result.json#/$defs/toolResult" },
+    { "$ref": "generate-result.json#/$defs/custom" },
+    { "$ref": "generate-result.json#/$defs/file" },
+    { "$ref": "generate-result.json#/$defs/reasoningFile" },
+    { "$ref": "generate-result.json#/$defs/sourceURL" },
+    { "$ref": "generate-result.json#/$defs/sourceDocument" },
+    { "$ref": "#/$defs/streamStart" },
+    { "$ref": "#/$defs/responseMetadata" },
+    { "$ref": "#/$defs/finish" },
+    { "$ref": "#/$defs/raw" },
+    { "$ref": "#/$defs/streamError" }
+  ],
+  "$defs": {
+    "textStart": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "text-start" },
+        "id": { "type": "string" },
+        "providerMetadata": { "$ref": "common.json#/$defs/providerMetadata" }
+      },
+      "required": ["type", "id"],
+      "additionalProperties": false
+    },
+    "textDelta": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "text-delta" },
+        "id": { "type": "string" },
+        "delta": { "type": "string" },
+        "providerMetadata": { "$ref": "common.json#/$defs/providerMetadata" }
+      },
+      "required": ["type", "id", "delta"],
+      "additionalProperties": false
+    },
+    "textEnd": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "text-end" },
+        "id": { "type": "string" },
+        "providerMetadata": { "$ref": "common.json#/$defs/providerMetadata" }
+      },
+      "required": ["type", "id"],
+      "additionalProperties": false
+    },
+    "reasoningStart": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "reasoning-start" },
+        "id": { "type": "string" },
+        "providerMetadata": { "$ref": "common.json#/$defs/providerMetadata" }
+      },
+      "required": ["type", "id"],
+      "additionalProperties": false
+    },
+    "reasoningDelta": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "reasoning-delta" },
+        "id": { "type": "string" },
+        "delta": { "type": "string" },
+        "providerMetadata": { "$ref": "common.json#/$defs/providerMetadata" }
+      },
+      "required": ["type", "id", "delta"],
+      "additionalProperties": false
+    },
+    "reasoningEnd": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "reasoning-end" },
+        "id": { "type": "string" },
+        "providerMetadata": { "$ref": "common.json#/$defs/providerMetadata" }
+      },
+      "required": ["type", "id"],
+      "additionalProperties": false
+    },
+    "toolInputStart": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "tool-input-start" },
+        "id": { "type": "string" },
+        "toolName": { "type": "string" },
+        "providerMetadata": { "$ref": "common.json#/$defs/providerMetadata" },
+        "providerExecuted": { "type": "boolean" },
+        "dynamic": { "type": "boolean" },
+        "title": { "type": "string" }
+      },
+      "required": ["type", "id", "toolName"],
+      "additionalProperties": false
+    },
+    "toolInputDelta": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "tool-input-delta" },
+        "id": { "type": "string" },
+        "delta": { "type": "string" },
+        "providerMetadata": { "$ref": "common.json#/$defs/providerMetadata" }
+      },
+      "required": ["type", "id", "delta"],
+      "additionalProperties": false
+    },
+    "toolInputEnd": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "tool-input-end" },
+        "id": { "type": "string" },
+        "providerMetadata": { "$ref": "common.json#/$defs/providerMetadata" }
+      },
+      "required": ["type", "id"],
+      "additionalProperties": false
+    },
+    "streamStart": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "stream-start" },
+        "warnings": {
+          "type": "array",
+          "items": { "$ref": "common.json#/$defs/warning" }
+        }
+      },
+      "required": ["type", "warnings"],
+      "additionalProperties": false
+    },
+    "responseMetadata": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "response-metadata" },
+        "id": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "modelId": { "type": "string" }
+      },
+      "required": ["type"],
+      "additionalProperties": false
+    },
+    "finish": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "finish" },
+        "usage": { "$ref": "common.json#/$defs/usage" },
+        "finishReason": { "$ref": "common.json#/$defs/finishReason" },
+        "providerMetadata": { "$ref": "common.json#/$defs/providerMetadata" }
+      },
+      "required": ["type", "usage", "finishReason"],
+      "additionalProperties": false
+    },
+    "raw": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "raw" },
+        "rawValue": { "$ref": "common.json#/$defs/jsonValue" }
+      },
+      "required": ["type", "rawValue"],
+      "additionalProperties": false
+    },
+    "streamError": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "error" },
+        "error": { "$ref": "common.json#/$defs/jsonValue" }
+      },
+      "required": ["type", "error"],
+      "additionalProperties": false
+    }
+  }
+}

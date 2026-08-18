@@ -1,0 +1,229 @@
+{
+  "cases": [
+    {
+      "name": "request unknown root field",
+      "stage": "schema",
+      "category": "schema-validation",
+      "schema": "request",
+      "path": "",
+      "document": { "prompt": [], "unknown": true }
+    },
+    {
+      "name": "request inactive response format sibling",
+      "stage": "schema",
+      "category": "schema-validation",
+      "schema": "request",
+      "path": "/responseFormat",
+      "document": { "prompt": [], "responseFormat": { "type": "text", "schema": {} } }
+    },
+    {
+      "name": "request missing prompt",
+      "stage": "schema",
+      "category": "schema-validation",
+      "schema": "request",
+      "path": "",
+      "document": {}
+    },
+    {
+      "name": "request typed null",
+      "stage": "schema",
+      "category": "schema-validation",
+      "schema": "request",
+      "path": "/includeRawChunks",
+      "document": { "prompt": [], "includeRawChunks": null }
+    },
+    {
+      "name": "request role violation",
+      "stage": "schema",
+      "category": "schema-validation",
+      "schema": "request",
+      "path": "/prompt/0/content/0",
+      "document": { "prompt": [{ "role": "user", "content": [{ "type": "reasoning", "text": "not allowed" }] }] }
+    },
+    {
+      "name": "request string user content",
+      "stage": "schema",
+      "category": "schema-validation",
+      "schema": "request",
+      "path": "/prompt/0/content",
+      "document": { "prompt": [{ "role": "user", "content": "not allowed" }] }
+    },
+    {
+      "name": "request invalid file data arm",
+      "stage": "schema",
+      "category": "schema-validation",
+      "schema": "request",
+      "path": "/prompt/0/content/0/data",
+      "document": { "prompt": [{ "role": "user", "content": [{ "type": "file", "mediaType": "text/plain", "data": { "type": "url", "data": "inactive" } }] }] }
+    },
+    {
+      "name": "request provider reference discriminator collision",
+      "stage": "schema",
+      "category": "schema-validation",
+      "schema": "request",
+      "path": "/prompt/0/content/0/data/reference",
+      "document": { "prompt": [{ "role": "user", "content": [{ "type": "file", "mediaType": "text/plain", "data": { "type": "reference", "reference": { "type": "id" } } }] }] }
+    },
+    {
+      "name": "request scalar provider namespace",
+      "stage": "schema",
+      "category": "schema-validation",
+      "schema": "request",
+      "path": "/providerOptions/provider",
+      "document": { "prompt": [], "providerOptions": { "provider": 1 } }
+    },
+    {
+      "name": "request abort signal is excluded",
+      "stage": "schema",
+      "category": "schema-validation",
+      "schema": "request",
+      "path": "",
+      "document": { "prompt": [], "abortSignal": {} }
+    },
+    {
+      "name": "generate missing required warnings",
+      "stage": "schema",
+      "category": "schema-validation",
+      "schema": "generate-result",
+      "path": "",
+      "document": { "content": [], "finishReason": { "unified": "stop" }, "usage": { "inputTokens": {}, "outputTokens": {} } }
+    },
+    {
+      "name": "generate required field null",
+      "stage": "schema",
+      "category": "schema-validation",
+      "schema": "generate-result",
+      "path": "/content",
+      "document": { "content": null, "finishReason": { "unified": "stop" }, "usage": { "inputTokens": {}, "outputTokens": {} }, "warnings": [] }
+    },
+    {
+      "name": "generate Go-only response provider",
+      "stage": "schema",
+      "category": "schema-validation",
+      "schema": "generate-result",
+      "path": "/response",
+      "document": { "content": [], "finishReason": { "unified": "stop" }, "usage": { "inputTokens": {}, "outputTokens": {} }, "warnings": [], "response": { "provider": "go-only" } }
+    },
+    {
+      "name": "generate invalid timestamp",
+      "stage": "schema",
+      "category": "schema-validation",
+      "schema": "generate-result",
+      "path": "/response/timestamp",
+      "document": { "content": [], "finishReason": { "unified": "stop" }, "usage": { "inputTokens": {}, "outputTokens": {} }, "warnings": [], "response": { "timestamp": "not-a-date" } }
+    },
+    {
+      "name": "generate null tool result",
+      "stage": "schema",
+      "category": "schema-validation",
+      "schema": "generate-result",
+      "path": "/content/0/result",
+      "document": { "content": [{ "type": "tool-result", "toolCallId": "call", "toolName": "tool", "result": null }], "finishReason": { "unified": "stop" }, "usage": { "inputTokens": {}, "outputTokens": {} }, "warnings": [] }
+    },
+    {
+      "name": "request unknown role discriminator",
+      "stage": "schema",
+      "category": "schema-validation",
+      "schema": "request",
+      "path": "/prompt/0/role",
+      "document": { "prompt": [{ "role": "unknown", "content": [] }] }
+    },
+    {
+      "name": "generate unknown content discriminator",
+      "stage": "schema",
+      "category": "schema-validation",
+      "schema": "generate-result",
+      "path": "/content/0/type",
+      "document": { "content": [{ "type": "unknown" }], "finishReason": { "unified": "stop" }, "usage": { "inputTokens": {}, "outputTokens": {} }, "warnings": [] }
+    },
+    {
+      "name": "stream unknown discriminator",
+      "stage": "schema",
+      "category": "schema-validation",
+      "schema": "stream-part",
+      "path": "/type",
+      "document": { "type": "unknown" }
+    },
+    {
+      "name": "stream unknown field",
+      "stage": "schema",
+      "category": "schema-validation",
+      "schema": "stream-part",
+      "path": "",
+      "document": { "type": "text-start", "id": "text", "unknown": true }
+    },
+    {
+      "name": "stream inactive sibling",
+      "stage": "schema",
+      "category": "schema-validation",
+      "schema": "stream-part",
+      "path": "",
+      "document": { "type": "text-start", "id": "text", "delta": "inactive" }
+    },
+    {
+      "name": "stream null tool result",
+      "stage": "schema",
+      "category": "schema-validation",
+      "schema": "stream-part",
+      "path": "/result",
+      "document": { "type": "tool-result", "toolCallId": "call", "toolName": "tool", "result": null }
+    },
+    {
+      "name": "stream generated file reference is excluded",
+      "stage": "schema",
+      "category": "schema-validation",
+      "schema": "stream-part",
+      "path": "/data",
+      "document": { "type": "file", "mediaType": "image/png", "data": { "type": "reference", "reference": {} } }
+    },
+    {
+      "name": "stream response provider is Go-only",
+      "stage": "schema",
+      "category": "schema-validation",
+      "schema": "stream-part",
+      "path": "",
+      "document": { "type": "response-metadata", "provider": "go-only" }
+    },
+    {
+      "name": "error unsafe code",
+      "stage": "schema",
+      "category": "schema-validation",
+      "schema": "error",
+      "path": "/error",
+      "document": { "error": { "type": "invalid_request_error", "message": "bad", "statusCode": 400, "isRetryable": false, "code": "backend" } }
+    },
+    {
+      "name": "error client-only type",
+      "stage": "schema",
+      "category": "schema-validation",
+      "schema": "error",
+      "path": "/error/type",
+      "document": { "error": { "type": "timeout_error", "message": "timeout", "statusCode": 504, "isRetryable": true } }
+    },
+    {
+      "name": "error unrestricted param",
+      "stage": "schema",
+      "category": "schema-validation",
+      "schema": "error",
+      "path": "/error",
+      "document": { "error": { "type": "invalid_request_error", "message": "bad", "statusCode": 400, "isRetryable": false, "param": { "field": "prompt" } } }
+    },
+    {
+      "name": "error backend debugging field",
+      "stage": "schema",
+      "category": "schema-validation",
+      "schema": "error",
+      "path": "/error",
+      "document": { "error": { "type": "internal_server_error", "message": "failed", "statusCode": 500, "isRetryable": false, "responseBody": "secret" } }
+    },
+    {
+      "name": "error status mismatch",
+      "stage": "envelope",
+      "category": "status-correlation",
+      "schema": "error",
+      "status": 429,
+      "path": "/error/statusCode",
+      "document": { "error": { "type": "rate_limit_exceeded", "message": "rate limited", "statusCode": 500, "isRetryable": true } }
+    }
+  ]
+}
