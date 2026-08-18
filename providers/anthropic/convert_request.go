@@ -1867,7 +1867,7 @@ func serializeToolOutput(output *provider.ToolResultOutput, warnings *[]provider
 				if data == "" && len(v.Data.Bytes) > 0 {
 					data = base64.StdEncoding.EncodeToString(v.Data.Bytes)
 				}
-				if data != "" {
+				if v.Data.IsData() {
 					blocks = append(blocks, anthropic.BetaToolResultBlockParamContentUnion{
 						OfImage: &anthropic.BetaImageBlockParam{
 							Source: anthropic.BetaImageBlockParamSourceUnion{

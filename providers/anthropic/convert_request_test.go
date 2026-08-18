@@ -630,6 +630,30 @@ func TestBuildParams_ToolMessage(t *testing.T) {
 	assert.Equal(t, "call_1", p.Messages[0].Content[0].OfToolResult.ToolUseID)
 }
 
+func TestBuildParams_ToolMessage_EmptyFileData(t *testing.T) {
+	data := provider.Base64DataContent("")
+	opts := provider.CallOptions{
+		Prompt: []provider.Message{
+			provider.NewToolMessage(provider.ToolResultPart("call_1", "search", &provider.ToolResultOutput{
+				Type: provider.ToolOutputContent,
+				Content: []provider.ToolResultContentValue{
+					{Type: provider.ToolContentFile, Data: &data, MediaType: "image/png"},
+				},
+			})),
+		},
+	}
+
+	p, _, _, _, err := buildParams("claude-sonnet-4-6", opts, false)
+	require.NoError(t, err)
+
+	result := p.Messages[0].Content[0].OfToolResult
+	require.NotNil(t, result)
+	require.Len(t, result.Content, 1)
+	require.NotNil(t, result.Content[0].OfImage)
+	require.NotNil(t, result.Content[0].OfImage.Source.OfBase64)
+	assert.Empty(t, result.Content[0].OfImage.Source.OfBase64.Data)
+}
+
 func TestBuildParams_Tools(t *testing.T) {
 	opts := provider.CallOptions{
 		Tools: []provider.Tool{
