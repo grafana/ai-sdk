@@ -1,6 +1,8 @@
 package openai
 
 import (
+	"fmt"
+
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/openai/openai-go/v3/packages/param"
 	"github.com/openai/openai-go/v3/responses"
@@ -125,12 +127,27 @@ func resolveProviderOptions(opts provider.CallOptions) (OpenAIResponsesOptions, 
 		return OpenAIResponsesOptions{}, name, err
 	}
 	if !ok {
-		// Try azure namespace for parity.
-		if azure, aok, aerr := provider.ResolveOption[OpenAIResponsesOptions](opts.ProviderOptions, "azure"); aerr == nil && aok {
-			return azure, "azure", nil
+		po, ok, err = provider.ResolveOption[OpenAIResponsesOptions](opts.ProviderOptions, "azure")
+		if err != nil {
+			return OpenAIResponsesOptions{}, "azure", err
+		}
+		if ok {
+			name = "azure"
 		}
 	}
+	if err := validateOpenAIResponsesOptions(po); err != nil {
+		return OpenAIResponsesOptions{}, name, err
+	}
 	return po, name, nil
+}
+
+func validateOpenAIResponsesOptions(options OpenAIResponsesOptions) error {
+	switch options.ServiceTier {
+	case "", "auto", "flex", "priority", "fast", "default":
+		return nil
+	default:
+		return fmt.Errorf("openai: invalid serviceTier %q", options.ServiceTier)
+	}
 }
 
 // resolveSystemMessageMode determines how system messages are mapped.

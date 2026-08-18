@@ -1121,11 +1121,20 @@ func convertProviderExecutedToolCall(p provider.ContentPart, mapping toolNameMap
 				typeStr, _ := typeVal.(string)
 				switch typeStr {
 				case "bash_code_execution", "text_editor_code_execution":
+					inputWithoutType, err := removeJSONObjectMember(p.Input, "type")
+					if err != nil {
+						*warnings = append(*warnings, provider.Warning{
+							Type:    provider.WarnOther,
+							Feature: "providerExecutedToolCall",
+							Message: fmt.Sprintf("failed to convert code execution input for %s: %v", p.ToolName, err),
+						})
+						return nil
+					}
 					block := anthropic.BetaContentBlockParamUnion{
 						OfServerToolUse: &anthropic.BetaServerToolUseBlockParam{
 							ID:           p.ToolCallID,
 							Name:         anthropic.BetaServerToolUseBlockParamName(typeStr),
-							Input:        input,
+							Input:        inputWithoutType,
 							CacheControl: cc,
 						},
 					}
@@ -1169,6 +1178,73 @@ func convertProviderExecutedToolCall(p provider.ContentPart, mapping toolNameMap
 		},
 	}
 	return &block
+}
+
+type orderedBashCodeExecutionOutput struct {
+	Type   string `json:"type"`
+	FileID string `json:"file_id"`
+}
+
+type orderedBashCodeExecutionResult struct {
+	Type       string                           `json:"type"`
+	Stdout     string                           `json:"stdout"`
+	Stderr     string                           `json:"stderr"`
+	ReturnCode int64                            `json:"return_code"`
+	Content    []orderedBashCodeExecutionOutput `json:"content"`
+}
+
+type bashCodeExecutionOutputPayload struct {
+	Type   *string `json:"type"`
+	FileID *string `json:"file_id"`
+}
+
+type bashCodeExecutionResultPayload struct {
+	Type       *string                           `json:"type"`
+	Stdout     *string                           `json:"stdout"`
+	Stderr     *string                           `json:"stderr"`
+	ReturnCode *int64                            `json:"return_code"`
+	Content    *[]bashCodeExecutionOutputPayload `json:"content"`
+}
+
+func parseBashCodeExecutionResult(input json.RawMessage) (orderedBashCodeExecutionResult, error) {
+	var payload bashCodeExecutionResultPayload
+	if err := json.Unmarshal(input, &payload); err != nil {
+		return orderedBashCodeExecutionResult{}, err
+	}
+	if payload.Type == nil || *payload.Type != "bash_code_execution_result" {
+		return orderedBashCodeExecutionResult{}, fmt.Errorf("invalid type")
+	}
+	if payload.Stdout == nil {
+		return orderedBashCodeExecutionResult{}, fmt.Errorf("missing stdout")
+	}
+	if payload.Stderr == nil {
+		return orderedBashCodeExecutionResult{}, fmt.Errorf("missing stderr")
+	}
+	if payload.ReturnCode == nil {
+		return orderedBashCodeExecutionResult{}, fmt.Errorf("missing return_code")
+	}
+	if payload.Content == nil {
+		return orderedBashCodeExecutionResult{}, fmt.Errorf("missing content")
+	}
+
+	content := make([]orderedBashCodeExecutionOutput, len(*payload.Content))
+	for index, output := range *payload.Content {
+		if output.Type == nil || *output.Type != "bash_code_execution_output" {
+			return orderedBashCodeExecutionResult{}, fmt.Errorf("invalid content item %d type", index)
+		}
+		if output.FileID == nil {
+			return orderedBashCodeExecutionResult{}, fmt.Errorf("missing content item %d file_id", index)
+		}
+		content[index] = orderedBashCodeExecutionOutput{Type: *output.Type, FileID: *output.FileID}
+	}
+
+	return orderedBashCodeExecutionResult{
+		Type:       *payload.Type,
+		Stdout:     *payload.Stdout,
+		Stderr:     *payload.Stderr,
+		ReturnCode: *payload.ReturnCode,
+		Content:    content,
+	}, nil
 }
 
 func convertProviderExecutedToolResult(p provider.ContentPart, mapping toolNameMapping, cc anthropic.BetaCacheControlEphemeralParam, mcpToolUseIDs map[string]bool, warnings *[]provider.Warning) *anthropic.BetaContentBlockParamUnion {
@@ -1445,15 +1521,16 @@ func convertInlineCodeExecutionResult(p provider.ContentPart, cc anthropic.BetaC
 		return &block
 
 	case "bash_code_execution_result":
-		var result anthropic.BetaBashCodeExecutionResultBlockParam
-		if err := json.Unmarshal(outputJSON, &result); err != nil {
+		orderedResult, err := parseBashCodeExecutionResult(outputJSON)
+		if err != nil {
 			*warnings = append(*warnings, provider.Warning{
 				Type:    provider.WarnOther,
 				Feature: "providerExecutedToolResult",
-				Message: fmt.Sprintf("failed to unmarshal %s: %v", typeCheck.Type, err),
+				Message: fmt.Sprintf("failed to validate %s: %v", typeCheck.Type, err),
 			})
 			return nil
 		}
+		result := param.Override[anthropic.BetaBashCodeExecutionResultBlockParam](orderedResult)
 		block := anthropic.BetaContentBlockParamUnion{
 			OfBashCodeExecutionToolResult: &anthropic.BetaBashCodeExecutionToolResultBlockParam{
 				ToolUseID: p.ToolCallID,
@@ -1571,10 +1648,11 @@ func convertInlineAdvisorResult(p provider.ContentPart, cc anthropic.BetaCacheCo
 	}
 
 	var output struct {
-		Type             string `json:"type"`
-		Text             string `json:"text"`
-		EncryptedContent string `json:"encryptedContent"`
-		ErrorCode        string `json:"errorCode"`
+		Type             string  `json:"type"`
+		Text             string  `json:"text"`
+		EncryptedContent string  `json:"encryptedContent"`
+		StopReason       *string `json:"stopReason"`
+		ErrorCode        string  `json:"errorCode"`
 	}
 	if err := json.Unmarshal(p.Output.JSON, &output); err != nil {
 		*warnings = append(*warnings, provider.Warning{
@@ -1588,9 +1666,17 @@ func convertInlineAdvisorResult(p provider.ContentPart, cc anthropic.BetaCacheCo
 	content := anthropic.BetaAdvisorToolResultBlockParamContentUnion{}
 	switch output.Type {
 	case "advisor_result":
-		content.OfRequestAdvisorResultBlock = &anthropic.BetaAdvisorResultBlockParam{Text: output.Text}
+		result := &anthropic.BetaAdvisorResultBlockParam{Text: output.Text}
+		if output.StopReason != nil {
+			result.StopReason = anthropic.Opt(*output.StopReason)
+		}
+		content.OfRequestAdvisorResultBlock = result
 	case "advisor_redacted_result":
-		content.OfRequestAdvisorRedactedResultBlock = &anthropic.BetaAdvisorRedactedResultBlockParam{EncryptedContent: output.EncryptedContent}
+		result := &anthropic.BetaAdvisorRedactedResultBlockParam{EncryptedContent: output.EncryptedContent}
+		if output.StopReason != nil {
+			result.StopReason = anthropic.Opt(*output.StopReason)
+		}
+		content.OfRequestAdvisorRedactedResultBlock = result
 	case "advisor_tool_result_error":
 		content.OfRequestAdvisorToolResultError = &anthropic.BetaAdvisorToolResultErrorParam{
 			ErrorCode: anthropic.BetaAdvisorToolResultErrorParamErrorCode(output.ErrorCode),
@@ -1838,6 +1924,16 @@ func validateAdvisorResult(output *provider.ToolResultOutput) error {
 	if err := json.Unmarshal(output.JSON, &value); err != nil {
 		return errors.New("output must be a valid advisor result object")
 	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(output.JSON, &fields); err != nil {
+		return errors.New("output must be a valid advisor result object")
+	}
+	if raw, ok := fields["stopReason"]; ok {
+		var stopReason *string
+		if err := json.Unmarshal(raw, &stopReason); err != nil || stopReason == nil {
+			return errors.New("stopReason must be a string")
+		}
+	}
 	if value.Type == nil {
 		return errors.New("type is required")
 	}
@@ -1887,6 +1983,12 @@ func validateAdvisorToolArgs(args map[string]json.RawMessage) error {
 			return errors.New("maxUses must be an integer")
 		}
 	}
+	if maxTokensJSON, ok := args["maxTokens"]; ok {
+		var maxTokens *int64
+		if err := json.Unmarshal(maxTokensJSON, &maxTokens); err != nil || maxTokens == nil || *maxTokens < 1024 {
+			return errors.New("maxTokens must be an integer greater than or equal to 1024")
+		}
+	}
 	if cachingJSON, ok := args["caching"]; ok {
 		var caching *CacheControlType
 		if err := json.Unmarshal(cachingJSON, &caching); err != nil || caching == nil || caching.Type != "ephemeral" || (caching.TTL != "5m" && caching.TTL != "1h") {
@@ -1929,9 +2031,11 @@ func convertToolsWithStrictTools(v *cacheControlValidator, tools []provider.Tool
 
 			tp := &anthropic.BetaToolParam{
 				Name:         t.Name,
-				Description:  anthropic.String(t.Description),
 				InputSchema:  schema,
 				CacheControl: cc,
+			}
+			if t.Description != "" {
+				tp.Description = anthropic.String(t.Description)
 			}
 			if t.Strict != nil {
 				if supportsStrictTools {
@@ -2210,6 +2314,12 @@ func convertProviderTool(t provider.Tool) (anthropic.BetaToolUnionParam, []strin
 			var maxUses int64
 			if json.Unmarshal(raw, &maxUses) == nil {
 				param.MaxUses = anthropic.Opt(maxUses)
+			}
+		}
+		if raw, ok := t.Args["maxTokens"]; ok {
+			var maxTokens int64
+			if json.Unmarshal(raw, &maxTokens) == nil {
+				param.MaxTokens = anthropic.Opt(maxTokens)
 			}
 		}
 		if raw, ok := t.Args["caching"]; ok {

@@ -1,0 +1,64 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"reasoning-start","id":"capture-id-3:0","providerMetadata":{"openai":{"itemId":"capture-id-3","reasoningEncryptedContent":null}}}
+{"type":"reasoning-delta","id":"capture-id-3:0","delta":"**Counting character occurrences**","providerMetadata":{"openai":{"itemId":"capture-id-3"}}}
+{"type":"reasoning-end","id":"capture-id-3:0","providerMetadata":{"openai":{"itemId":"capture-id-3","reasoningEncryptedContent":null}}}
+{"type":"text-start","id":"capture-id-9","providerMetadata":{"openai":{"itemId":"capture-id-9","phase":"final_answer"}}}
+{"type":"text-delta","id":"capture-id-9","delta":"There"}
+{"type":"text-delta","id":"capture-id-9","delta":" are"}
+{"type":"text-delta","id":"capture-id-9","delta":" **"}
+{"type":"text-delta","id":"capture-id-9","delta":"3"}
+{"type":"text-delta","id":"capture-id-9","delta":"**"}
+{"type":"text-delta","id":"capture-id-9","delta":" letter"}
+{"type":"text-delta","id":"capture-id-9","delta":" **"}
+{"type":"text-delta","id":"capture-id-9","delta":"“"}
+{"type":"text-delta","id":"capture-id-9","delta":"r"}
+{"type":"text-delta","id":"capture-id-9","delta":"”"}
+{"type":"text-delta","id":"capture-id-9","delta":"**"}
+{"type":"text-delta","id":"capture-id-9","delta":"s"}
+{"type":"text-delta","id":"capture-id-9","delta":" in"}
+{"type":"text-delta","id":"capture-id-9","delta":" **"}
+{"type":"text-delta","id":"capture-id-9","delta":"“"}
+{"type":"text-delta","id":"capture-id-9","delta":"st"}
+{"type":"text-delta","id":"capture-id-9","delta":"raw"}
+{"type":"text-delta","id":"capture-id-9","delta":"berry"}
+{"type":"text-delta","id":"capture-id-9","delta":".”"}
+{"type":"text-delta","id":"capture-id-9","delta":"**\n\n"}
+{"type":"text-delta","id":"capture-id-9","delta":"Break"}
+{"type":"text-delta","id":"capture-id-9","delta":"down"}
+{"type":"text-delta","id":"capture-id-9","delta":":"}
+{"type":"text-delta","id":"capture-id-9","delta":" **"}
+{"type":"text-delta","id":"capture-id-9","delta":"s"}
+{"type":"text-delta","id":"capture-id-9","delta":" t"}
+{"type":"text-delta","id":"capture-id-9","delta":" r"}
+{"type":"text-delta","id":"capture-id-9","delta":" a"}
+{"type":"text-delta","id":"capture-id-9","delta":" w"}
+{"type":"text-delta","id":"capture-id-9","delta":" b"}
+{"type":"text-delta","id":"capture-id-9","delta":" e"}
+{"type":"text-delta","id":"capture-id-9","delta":" r"}
+{"type":"text-delta","id":"capture-id-9","delta":" r"}
+{"type":"text-delta","id":"capture-id-9","delta":" y"}
+{"type":"text-delta","id":"capture-id-9","delta":"**"}
+{"type":"text-delta","id":"capture-id-9","delta":"  \n"}
+{"type":"text-delta","id":"capture-id-9","delta":"You"}
+{"type":"text-delta","id":"capture-id-9","delta":" can"}
+{"type":"text-delta","id":"capture-id-9","delta":" see"}
+{"type":"text-delta","id":"capture-id-9","delta":" **"}
+{"type":"text-delta","id":"capture-id-9","delta":"r"}
+{"type":"text-delta","id":"capture-id-9","delta":"**"}
+{"type":"text-delta","id":"capture-id-9","delta":" at"}
+{"type":"text-delta","id":"capture-id-9","delta":" positions"}
+{"type":"text-delta","id":"capture-id-9","delta":" **"}
+{"type":"text-delta","id":"capture-id-9","delta":"3"}
+{"type":"text-delta","id":"capture-id-9","delta":","}
+{"type":"text-delta","id":"capture-id-9","delta":" "}
+{"type":"text-delta","id":"capture-id-9","delta":"8"}
+{"type":"text-delta","id":"capture-id-9","delta":","}
+{"type":"text-delta","id":"capture-id-9","delta":" and"}
+{"type":"text-delta","id":"capture-id-9","delta":" "}
+{"type":"text-delta","id":"capture-id-9","delta":"9"}
+{"type":"text-delta","id":"capture-id-9","delta":"**"}
+{"type":"text-delta","id":"capture-id-9","delta":"."}
+{"type":"text-end","id":"capture-id-9","providerMetadata":{"openai":{"itemId":"capture-id-9","phase":"final_answer"}}}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"stop"}

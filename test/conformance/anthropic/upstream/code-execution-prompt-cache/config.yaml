@@ -1,0 +1,5 @@
+model: claude-sonnet-5
+prompt: Hello
+providerTools:
+  code_execution:
+    id: anthropic.code_execution_20260120

@@ -353,7 +353,7 @@ func TestConvertToModelMessages_Tools(t *testing.T) {
 			},
 		},
 		{
-			name: "approval-requested survives incomplete filter",
+			name: "approval-requested filtered when option set",
 			parts: []Part{ToolInvocationPart{
 				ToolCallID: "c1", ToolName: "weather", State: ToolStateApprovalRequested,
 				Input:    json.RawMessage(`{"city":"NYC"}`),
@@ -361,11 +361,17 @@ func TestConvertToModelMessages_Tools(t *testing.T) {
 			}},
 			opts: []ConvertOption{WithIgnoreIncompleteToolCalls()},
 			check: func(t *testing.T, result []provider.Message) {
-				require.Len(t, result, 1)
-				require.Len(t, result[0].Content, 2)
-				assert.Equal(t, provider.ContentPartTypeToolCall, result[0].Content[0].Type)
-				assert.Equal(t, provider.ContentPartTypeToolApprovalRequest, result[0].Content[1].Type)
-				assert.Equal(t, "apr_1", result[0].Content[1].ApprovalID)
+				assert.Empty(t, result)
+			},
+		},
+		{
+			name: "missing state filtered when option set",
+			parts: []Part{ToolInvocationPart{
+				ToolCallID: "c1", ToolName: "weather", Input: json.RawMessage(`{"city":"NYC"}`),
+			}},
+			opts: []ConvertOption{WithIgnoreIncompleteToolCalls()},
+			check: func(t *testing.T, result []provider.Message) {
+				assert.Empty(t, result)
 			},
 		},
 		{

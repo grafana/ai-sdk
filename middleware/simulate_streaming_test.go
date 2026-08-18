@@ -3,6 +3,7 @@ package middleware
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/stretchr/testify/assert"
@@ -184,6 +185,7 @@ func TestSimulateStreaming(t *testing.T) {
 	})
 
 	t.Run("ResponseMetadata_Preserved", func(t *testing.T) {
+		timestamp := time.Unix(1710000000, 0).UTC()
 		model := &mockModel{
 			doGenerate: func(_ context.Context, _ provider.CallOptions) (*provider.GenerateResult, error) {
 				return &provider.GenerateResult{
@@ -192,8 +194,9 @@ func TestSimulateStreaming(t *testing.T) {
 					Request:      &provider.RequestMetadata{},
 					Response: &provider.GenerateResponse{
 						ResponseMetadata: provider.ResponseMetadata{
-							ID:      "resp-123",
-							ModelID: "test-model",
+							ID:        "resp-123",
+							ModelID:   "test-model",
+							Timestamp: timestamp,
 						},
 						Headers: map[string]string{"x-req-id": "abc"},
 					},
@@ -218,6 +221,7 @@ func TestSimulateStreaming(t *testing.T) {
 		assert.Equal(t, provider.PartResponseMeta, responseMeta.Type)
 		assert.Equal(t, "resp-123", responseMeta.ResponseID)
 		assert.Equal(t, "test-model", responseMeta.ModelID)
+		assert.Equal(t, timestamp, responseMeta.Timestamp)
 	})
 
 	t.Run("ResponseMetadata_EmittedWhenNilResponse", func(t *testing.T) {

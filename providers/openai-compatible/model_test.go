@@ -8,8 +8,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/grafana/ai-sdk/provider"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -112,6 +114,28 @@ func TestDoGenerateSendsCompatibleRequest(t *testing.T) {
 	require.Equal(t, 3, *result.Usage.OutputTokens.Total)
 	require.JSONEq(t, `{"prompt_tokens":7,"completion_tokens":3,"total_tokens":10,"prompt_tokens_details":{"cached_tokens":2},"queue_time":0.061348671}`, string(result.Usage.Raw))
 	require.Equal(t, "chatcmpl_1", result.Response.ID)
+	require.Equal(t, time.Unix(1710000000, 0).UTC(), result.Response.Timestamp)
+}
+
+func TestDoGeneratePreservesEpochTimestamp(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"id":"chatcmpl_1",
+			"created":0,
+			"model":"test-model",
+			"choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]
+		}`))
+	}))
+	defer server.Close()
+
+	result, err := New("test-model", WithBaseURL(server.URL)).DoGenerate(context.Background(), provider.CallOptions{
+		Prompt: []provider.Message{provider.UserText("hi")},
+	})
+	require.NoError(t, err)
+	require.Equal(t, time.Unix(0, 0).UTC(), result.Response.Timestamp)
 }
 
 func TestPrepareToolsStrict(t *testing.T) {
@@ -814,6 +838,7 @@ func TestDoStreamTextAndUsage(t *testing.T) {
 	require.Equal(t, provider.PartRaw, parts[1].Type)
 	require.Equal(t, provider.PartResponseMeta, parts[2].Type)
 	require.Equal(t, "chatcmpl_stream", parts[2].ResponseID)
+	require.Equal(t, time.Unix(1710000000, 0).UTC(), parts[2].Timestamp)
 	require.Equal(t, provider.PartTextStart, parts[4].Type)
 	require.Equal(t, provider.PartTextDelta, parts[5].Type)
 	require.Equal(t, "hel", parts[5].Delta)
@@ -825,6 +850,121 @@ func TestDoStreamTextAndUsage(t *testing.T) {
 	require.Equal(t, 2, *parts[len(parts)-1].Usage.InputTokens.Total)
 	require.Equal(t, 3, *parts[len(parts)-1].Usage.OutputTokens.Total)
 	require.JSONEq(t, `{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5,"queue_time":0.061348671}`, string(parts[len(parts)-1].Usage.Raw))
+}
+
+func TestDoStreamRecoversAfterMalformedChunk(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(
+			`data: not-json` + "\n\n" +
+				`data: {"id":"chatcmpl_stream","created":0,"model":"test-model","choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}` + "\n\n" +
+				`data: [DONE]` + "\n\n",
+		))
+	}))
+	defer server.Close()
+
+	result, err := New("test-model", WithBaseURL(server.URL)).DoStream(context.Background(), provider.CallOptions{
+		Prompt:           []provider.Message{provider.UserText("hi")},
+		IncludeRawChunks: true,
+	})
+	require.NoError(t, err)
+
+	parts := collectStreamParts(result)
+	rawParts := findParts(parts, provider.PartRaw)
+	require.Len(t, rawParts, 2)
+	assert.Empty(t, rawParts[0].RawValue)
+	_, err = json.Marshal(rawParts[0])
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"id":"chatcmpl_stream","created":0,"model":"test-model","choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}`, string(rawParts[1].RawValue))
+
+	var sawError, sawText bool
+	for _, part := range parts {
+		switch part.Type {
+		case provider.PartError:
+			sawError = true
+		case provider.PartTextDelta:
+			sawText = sawText || part.Delta == "ok"
+		}
+	}
+	assert.True(t, sawError)
+	assert.True(t, sawText)
+	responseMeta := findPart(parts, provider.PartResponseMeta)
+	require.Equal(t, provider.PartResponseMeta, responseMeta.Type)
+	assert.Equal(t, time.Unix(0, 0).UTC(), responseMeta.Timestamp)
+	finish := parts[len(parts)-1]
+	require.Equal(t, provider.PartFinish, finish.Type)
+	assert.Equal(t, provider.FinishReasonStop, finish.FinishReason.Unified)
+	require.NotNil(t, finish.Usage)
+	assert.Nil(t, finish.Usage.InputTokens.Total)
+	assert.Nil(t, finish.Usage.OutputTokens.Total)
+}
+
+func TestDoStreamRecoversAfterStructurallyInvalidChunk(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		chunk string
+	}{
+		{name: "missing choices", chunk: `{}`},
+		{name: "null choices", chunk: `{"choices":null}`},
+		{name: "null choice", chunk: `{"choices":[null]}`},
+		{name: "invalid role", chunk: `{"choices":[{"delta":{"role":"user"}}]}`},
+		{name: "tool call missing function", chunk: `{"choices":[{"delta":{"tool_calls":[{"id":"call_1"}]}}]}`},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "text/event-stream")
+				_, _ = w.Write([]byte(
+					"data: " + tc.chunk + "\n\n" +
+						`data: {"id":"chatcmpl_stream","model":"test-model","choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}` + "\n\n" +
+						"data: [DONE]\n\n",
+				))
+			}))
+			defer server.Close()
+
+			result, err := New("test-model", WithBaseURL(server.URL)).DoStream(context.Background(), provider.CallOptions{
+				Prompt: []provider.Message{provider.UserText("hi")},
+			})
+			require.NoError(t, err)
+
+			parts := collectStreamParts(result)
+			require.Len(t, parts, 7)
+			assert.Equal(t, provider.PartStreamStart, parts[0].Type)
+			assert.Equal(t, provider.PartError, parts[1].Type)
+			assert.Equal(t, provider.PartResponseMeta, parts[2].Type)
+			assert.Equal(t, provider.PartTextDelta, parts[4].Type)
+			assert.Equal(t, "ok", parts[4].Delta)
+			require.Equal(t, provider.PartFinish, parts[6].Type)
+			assert.Equal(t, provider.FinishReasonStop, parts[6].FinishReason.Unified)
+		})
+	}
+}
+
+func TestDoStreamRawChunkPreservesStructurallyInvalidJSON(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {}\n\ndata: [DONE]\n\n"))
+	}))
+	defer server.Close()
+
+	result, err := New("test-model", WithBaseURL(server.URL)).DoStream(context.Background(), provider.CallOptions{
+		Prompt:           []provider.Message{provider.UserText("hi")},
+		IncludeRawChunks: true,
+	})
+	require.NoError(t, err)
+
+	parts := collectStreamParts(result)
+	rawParts := findParts(parts, provider.PartRaw)
+	require.Len(t, rawParts, 1)
+	assert.JSONEq(t, `{}`, string(rawParts[0].RawValue))
+	require.Len(t, findParts(parts, provider.PartError), 1)
 }
 
 func TestDoStreamRawProviderOptionsKeyWarning(t *testing.T) {
@@ -865,7 +1005,7 @@ func TestDoStreamRawProviderOptionsKeyWarning(t *testing.T) {
 	}, parts[0].Warnings)
 }
 
-func TestDoStreamUsagePreservesGenericReasoningAccounting(t *testing.T) {
+func TestDoStreamUsageClampsNegativeTextTokens(t *testing.T) {
 	t.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -890,7 +1030,7 @@ func TestDoStreamUsagePreservesGenericReasoningAccounting(t *testing.T) {
 	require.Equal(t, 1, *finish.Usage.InputTokens.NoCache)
 	require.Equal(t, 11, *finish.Usage.InputTokens.CacheRead)
 	require.Equal(t, 2, *finish.Usage.OutputTokens.Total)
-	require.Equal(t, -338, *finish.Usage.OutputTokens.Text)
+	require.Equal(t, 0, *finish.Usage.OutputTokens.Text)
 	require.Equal(t, 340, *finish.Usage.OutputTokens.Reasoning)
 	require.JSONEq(t, `{"prompt_tokens":12,"completion_tokens":2,"total_tokens":354,"prompt_tokens_details":{"cached_tokens":11},"completion_tokens_details":{"reasoning_tokens":340},"cost_in_usd_ticks":1721250}`, string(finish.Usage.Raw))
 }
@@ -1059,6 +1199,139 @@ func TestDoStreamToolCallDeltas(t *testing.T) {
 	require.Equal(t, provider.FinishReasonToolCalls, parts[len(parts)-1].FinishReason.Unified)
 }
 
+func TestDoStreamToolCallIndexTracking(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		chunks   string
+		expected []provider.StreamPart
+	}{
+		{
+			name: "non-zero index",
+			chunks: `data: {"id":"chatcmpl_tools","model":"test-model","choices":[{"delta":{"tool_calls":[{"index":1,"id":"call_1","type":"function","function":{"name":"read_file","arguments":"{\"path\":"}}]},"finish_reason":null}]}` + "\n\n" +
+				`data: {"id":"chatcmpl_tools","model":"test-model","choices":[{"delta":{"tool_calls":[{"index":1,"function":{"arguments":"\"a.txt\"}"}}]},"finish_reason":"tool_calls"}]}` + "\n\n",
+			expected: []provider.StreamPart{{ToolCallID: "call_1", ToolName: "read_file", Input: `{"path":"a.txt"}`}},
+		},
+		{
+			name: "reused index",
+			chunks: `data: {"id":"chatcmpl_tools","model":"test-model","choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"first","arguments":"{\"value\":1}"}}]},"finish_reason":null}]}` + "\n\n" +
+				`data: {"id":"chatcmpl_tools","model":"test-model","choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_2","type":"function","function":{"name":"second","arguments":"{\"value\":2}"}}]},"finish_reason":"tool_calls"}]}` + "\n\n",
+			expected: []provider.StreamPart{
+				{ToolCallID: "call_1", ToolName: "first", Input: `{"value":1}`},
+				{ToolCallID: "call_2", ToolName: "second", Input: `{"value":2}`},
+			},
+		},
+		{
+			name: "omitted continuation index",
+			chunks: `data: {"id":"chatcmpl_tools","model":"test-model","choices":[{"delta":{"tool_calls":[{"index":7,"id":"call_1","type":"function","function":{"name":"read_file","arguments":"{\"pa"}}]},"finish_reason":null}]}` + "\n\n" +
+				`data: {"id":"chatcmpl_tools","model":"test-model","choices":[{"delta":{"tool_calls":[{"function":{"arguments":"th\":\"a.txt\"}"}}]},"finish_reason":"tool_calls"}]}` + "\n\n",
+			expected: []provider.StreamPart{{ToolCallID: "call_1", ToolName: "read_file", Input: `{"path":"a.txt"}`}},
+		},
+		{
+			name: "late id with index",
+			chunks: `data: {"id":"chatcmpl_tools","model":"test-model","choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"path\":"}}]},"finish_reason":null}]}` + "\n\n" +
+				`data: {"id":"chatcmpl_tools","model":"test-model","choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"read_file","arguments":"\"a.txt\"}"}}]},"finish_reason":"tool_calls"}]}` + "\n\n",
+			expected: []provider.StreamPart{{ToolCallID: "call_1", ToolName: "read_file", Input: `{"path":"a.txt"}`}},
+		},
+		{
+			name:     "empty id",
+			chunks:   `data: {"id":"chatcmpl_tools","model":"test-model","choices":[{"delta":{"tool_calls":[{"index":0,"id":"","type":"function","function":{"name":"read_file","arguments":"{}"}}]},"finish_reason":"tool_calls"}]}` + "\n\n",
+			expected: []provider.StreamPart{{ToolCallID: "", ToolName: "read_file", Input: `{}`}},
+		},
+		{
+			name:     "empty name",
+			chunks:   `data: {"id":"chatcmpl_tools","model":"test-model","choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"","arguments":"{}"}}]},"finish_reason":"tool_calls"}]}` + "\n\n",
+			expected: []provider.StreamPart{{ToolCallID: "call_1", ToolName: "", Input: `{}`}},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "text/event-stream")
+				_, _ = w.Write([]byte(tc.chunks + `data: [DONE]` + "\n\n"))
+			}))
+			defer server.Close()
+
+			result, err := New("test-model", WithBaseURL(server.URL)).DoStream(context.Background(), provider.CallOptions{
+				Prompt: []provider.Message{provider.UserText("use tools")},
+			})
+			require.NoError(t, err)
+
+			parts := collectStreamParts(result)
+			toolCalls := findParts(parts, provider.PartToolCall)
+			require.Len(t, toolCalls, len(tc.expected))
+			for i, expected := range tc.expected {
+				assert.Equal(t, expected.ToolCallID, toolCalls[i].ToolCallID)
+				assert.Equal(t, expected.ToolName, toolCalls[i].ToolName)
+				assert.JSONEq(t, expected.Input, toolCalls[i].Input)
+			}
+			finish := parts[len(parts)-1]
+			require.NotNil(t, finish.FinishReason)
+			assert.Equal(t, provider.FinishReasonToolCalls, finish.FinishReason.Unified)
+		})
+	}
+}
+
+func TestDoStreamRejectsUnindexedToolCallWithoutName(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(
+			`data: {"id":"chatcmpl_tools","model":"test-model","choices":[{"delta":{"tool_calls":[{"id":"call_1","type":"function","function":{"arguments":"{\"path\":"}}]},"finish_reason":null}]}` + "\n\n" +
+				`data: {"id":"chatcmpl_tools","model":"test-model","choices":[{"delta":{"tool_calls":[{"id":"call_1","type":"function","function":{"name":"read_file","arguments":"\"a.txt\"}"}}]},"finish_reason":"tool_calls"}]}` + "\n\n" +
+				`data: [DONE]` + "\n\n",
+		))
+	}))
+	defer server.Close()
+
+	result, err := New("test-model", WithBaseURL(server.URL)).DoStream(context.Background(), provider.CallOptions{
+		Prompt: []provider.Message{provider.UserText("use tools")},
+	})
+	require.NoError(t, err)
+
+	parts := collectStreamParts(result)
+	errors := findParts(parts, provider.PartError)
+	require.Len(t, errors, 1)
+	require.NotNil(t, errors[0].APICallError)
+	assert.Contains(t, errors[0].APICallError.Message, "missing function name")
+	assert.Empty(t, findParts(parts, provider.PartToolCall))
+	finish := parts[len(parts)-1]
+	require.NotNil(t, finish.FinishReason)
+	assert.Equal(t, provider.FinishReasonError, finish.FinishReason.Unified)
+}
+
+func TestDoStreamRejectsUnindexedToolCallWithoutIDOrName(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(
+			`data: {"id":"chatcmpl_tools","model":"test-model","choices":[{"delta":{"tool_calls":[{"type":"function","function":{"arguments":"{}"}}]},"finish_reason":"tool_calls"}]}` + "\n\n" +
+				`data: [DONE]` + "\n\n",
+		))
+	}))
+	defer server.Close()
+
+	result, err := New("test-model", WithBaseURL(server.URL)).DoStream(context.Background(), provider.CallOptions{
+		Prompt: []provider.Message{provider.UserText("use tools")},
+	})
+	require.NoError(t, err)
+
+	parts := collectStreamParts(result)
+	errors := findParts(parts, provider.PartError)
+	require.Len(t, errors, 1)
+	require.NotNil(t, errors[0].APICallError)
+	assert.Contains(t, errors[0].APICallError.Message, "missing id")
+	assert.Empty(t, findParts(parts, provider.PartToolCall))
+	finish := parts[len(parts)-1]
+	require.NotNil(t, finish.FinishReason)
+	assert.Equal(t, provider.FinishReasonError, finish.FinishReason.Unified)
+}
+
 func TestDoStreamSkipsInitialEmptyToolInputDelta(t *testing.T) {
 	t.Parallel()
 
@@ -1131,7 +1404,7 @@ func TestDoStreamMissingToolCallIDEmitsError(t *testing.T) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = w.Write([]byte(
 			`data: {"id":"chatcmpl_tools","model":"test-model","choices":[{"delta":{"tool_calls":[{"index":0,"type":"function","function":{"name":"weather","arguments":""}}]},"finish_reason":null}]}` + "\n\n" +
-				`data: {"id":"chatcmpl_tools","model":"test-model","choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_provider","type":"function","function":{"arguments":"{\"city\":\"Paris\"}"}}]},"finish_reason":"tool_calls"}]}` + "\n\n" +
+				`data: {"id":"chatcmpl_tools","model":"test-model","choices":[{"delta":{"tool_calls":[{"index":0,"type":"function","function":{"arguments":"{\"city\":\"Paris\"}"}}]},"finish_reason":"tool_calls"}]}` + "\n\n" +
 				`data: [DONE]` + "\n\n",
 		))
 	}))

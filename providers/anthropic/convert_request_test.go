@@ -3788,12 +3788,12 @@ func TestConvertAssistantContent_ProviderExecutedToolCalls(t *testing.T) {
 		assert.Equal(t, sdk.BetaServerToolUseBlockParamNameCodeExecution, blocks[0].OfServerToolUse.Name)
 	})
 
-	t.Run("bash_code_execution sub-tool uses sub-tool name", func(t *testing.T) {
+	t.Run("code execution sub-tool preserves input field order", func(t *testing.T) {
 		parts := []provider.ContentPart{
 			provider.ContentPart{Type: provider.ContentPartTypeToolCall,
 				ToolCallID:       "srv-3",
 				ToolName:         "code_execution",
-				Input:            json.RawMessage(`{"type":"bash_code_execution","code":"ls"}`),
+				Input:            json.RawMessage(`{"type":"text_editor_code_execution","command":"create","path":"/tmp/example.py","file_text":"print('hi')"}`),
 				ProviderExecuted: true,
 			},
 		}
@@ -3801,7 +3801,13 @@ func TestConvertAssistantContent_ProviderExecutedToolCalls(t *testing.T) {
 		blocks := convertAssistantContent(v, mapping, parts, nil, mcpIDs, &warnings)
 		require.Len(t, blocks, 1)
 		require.NotNil(t, blocks[0].OfServerToolUse)
-		assert.Equal(t, sdk.BetaServerToolUseBlockParamName("bash_code_execution"), blocks[0].OfServerToolUse.Name)
+		assert.Equal(t, sdk.BetaServerToolUseBlockParamName("text_editor_code_execution"), blocks[0].OfServerToolUse.Name)
+		inputJSON, ok := blocks[0].OfServerToolUse.Input.(json.RawMessage)
+		require.True(t, ok)
+		assert.JSONEq(t, `{"command":"create","path":"/tmp/example.py","file_text":"print('hi')"}`, string(inputJSON))
+		encoded, err := json.Marshal(blocks[0])
+		require.NoError(t, err)
+		assert.Contains(t, string(encoded), `"input":{"command":"create","path":"/tmp/example.py","file_text":"print('hi')"}`)
 	})
 
 	t.Run("programmatic-tool-call type stripped", func(t *testing.T) {
@@ -3957,6 +3963,43 @@ func TestConvertAssistantContent_InlineToolResults(t *testing.T) {
 		require.NotNil(t, content.OfRequestBashCodeExecutionToolResultError)
 		assert.Nil(t, content.OfRequestBashCodeExecutionResultBlock)
 		assert.Equal(t, sdk.BetaBashCodeExecutionToolResultErrorParamErrorCodeExecutionTimeExceeded, content.OfRequestBashCodeExecutionToolResultError.ErrorCode)
+	})
+
+	t.Run("bash code execution result preserves prompt cache field order", func(t *testing.T) {
+		parts := []provider.ContentPart{
+			provider.ContentPart{Type: provider.ContentPartTypeToolResult,
+				ToolCallID: "srv-bash-result",
+				ToolName:   "code_execution",
+				Output: &provider.ToolResultOutput{
+					Type: provider.ToolOutputJSON,
+					JSON: json.RawMessage(`{"type":"bash_code_execution_result","stdout":"out","stderr":"err","return_code":1,"content":[{"type":"bash_code_execution_output","file_id":"file_1"}]}`),
+				},
+			},
+		}
+		warnings = nil
+		blocks := convertAssistantContent(v, mapping, parts, nil, mcpIDs, &warnings)
+		require.Len(t, blocks, 1)
+		encoded, err := json.Marshal(blocks[0])
+		require.NoError(t, err)
+		assert.Contains(t, string(encoded), `"content":{"type":"bash_code_execution_result","stdout":"out","stderr":"err","return_code":1,"content":[{"type":"bash_code_execution_output","file_id":"file_1"}]}`)
+	})
+
+	t.Run("invalid bash code execution result is omitted with warning", func(t *testing.T) {
+		parts := []provider.ContentPart{
+			provider.ContentPart{Type: provider.ContentPartTypeToolResult,
+				ToolCallID: "srv-invalid-bash-result",
+				ToolName:   "code_execution",
+				Output: &provider.ToolResultOutput{
+					Type: provider.ToolOutputJSON,
+					JSON: json.RawMessage(`{"type":"bash_code_execution_result","stdout":"out","stderr":"err","return_code":1}`),
+				},
+			},
+		}
+		warnings = nil
+		blocks := convertAssistantContent(v, mapping, parts, nil, mcpIDs, &warnings)
+		assert.Empty(t, blocks)
+		require.Len(t, warnings, 1)
+		assert.Contains(t, warnings[0].Message, "missing content")
 	})
 
 	t.Run("web_search result without pageAge omits page_age", func(t *testing.T) {

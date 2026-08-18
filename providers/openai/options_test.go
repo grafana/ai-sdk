@@ -22,6 +22,42 @@ func TestOpenAIResponsesOptions_ProviderKey(t *testing.T) {
 	assert.Equal(t, "openai", OpenAIPartOptions{}.ProviderKey())
 }
 
+func TestApplyProviderOptions_ServiceTierFast(t *testing.T) {
+	t.Run("supported model", func(t *testing.T) {
+		body, warnings := buildBody(t, "gpt-4o", provider.CallOptions{
+			Prompt:          []provider.Message{provider.UserText("hi")},
+			ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{ServiceTier: "fast"}),
+		})
+
+		assert.Equal(t, "fast", body["service_tier"])
+		assert.Empty(t, warnings)
+	})
+
+	t.Run("unsupported model", func(t *testing.T) {
+		body, warnings := buildBody(t, "gpt-5-nano", provider.CallOptions{
+			Prompt:          []provider.Message{provider.UserText("hi")},
+			ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{ServiceTier: "fast"}),
+		})
+
+		assert.NotContains(t, body, "service_tier")
+		assert.Equal(t, []provider.Warning{{
+			Type:    provider.WarnUnsupported,
+			Feature: "serviceTier",
+			Details: "priority processing is only available for supported models (gpt-4, gpt-5, gpt-5-mini, o3, o4-mini) and requires Enterprise access. gpt-5-nano is not supported",
+		}}, warnings)
+	})
+}
+
+func TestResolveProviderOptions_RejectsUnknownServiceTier(t *testing.T) {
+	_, _, _, err := buildParams("gpt-4o", provider.CallOptions{
+		Prompt:          []provider.Message{provider.UserText("hi")},
+		ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{ServiceTier: "turbo"}),
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "serviceTier")
+}
+
 func TestOpenAIResponsesOptions_MarshalRoundTrip(t *testing.T) {
 	store := false
 	parallel := true

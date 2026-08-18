@@ -7,6 +7,7 @@
 #
 # Every mapped input is a byte-identical copy of the named pinned fixture.
 
+github-copilot-id-rotation.1: rotated-item-ids
 openai-code-interpreter-tool.1: code-interpreter
 programmatic-tool-calling.1: programmatic-tool-calling
 programmatic-tool-calling.2: programmatic-tool-calling

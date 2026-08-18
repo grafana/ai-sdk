@@ -33,6 +33,7 @@ func SimulateStreaming() Middleware {
 				if result.Response != nil {
 					responseMeta.ResponseID = result.Response.ID
 					responseMeta.ModelID = result.Response.ModelID
+					responseMeta.Timestamp = result.Response.Timestamp
 					responseMeta.ResponseHeaders = result.Response.Headers
 				}
 				ch <- responseMeta
