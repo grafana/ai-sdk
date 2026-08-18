@@ -2,7 +2,7 @@
 
 The existing `gateway/providerwire` package is a tolerant Go-oriented transport: it serializes flat `provider` structs, accepts legacy and selected upstream forms, serves requests, and is used by Grafana and the current stock-client interop suite. It remains the deployed rollback path. It is not suitable as the normative strict contract because the Go structs collapse some absent/empty/zero distinctions, represent discriminated unions as sibling fields, and apply custom JSON projections that reflection cannot describe accurately.
 
-The registered compatibility baseline combines source commit `d76eb85a9a7f2dbe44ab2f3dc858ad5cdcb5242e` with exact npm packages. Its workspace manifests match the registered package set: `@ai-sdk/provider@4.0.7`, `@ai-sdk/gateway@4.0.52`, `@ai-sdk/provider-utils@5.0.27`, and `ai@7.0.65`. Executable captures run those exact installed npm pins, while the matching registered commit remains the source-inspection authority.
+The registered compatibility baseline is `test/conformance/upstream.yaml`. Executable captures run its exact installed npm pins, while its registered commit remains the source-inspection authority.
 
 The pinned Gateway client removes `abortSignal`, base64-encodes supported inline file bytes, retains body `headers`, `providerOptions`, and `includeRawChunks`, combines multiple HTTP header sources, and posts JSON to `/language-model`. It validates successful and failed response payloads with permissive runtime schemas. Captures therefore establish emitted requests and accepted responses, but response strictness must be identified as a curated local serialized projection rather than evidence of private Vercel server acceptance.
 
@@ -12,8 +12,8 @@ The pinned Gateway client removes `abortSignal`, base64-encodes supported inline
 
 - Establish a language-neutral, executable HTTP and JSON contract for the registered package set.
 - Make standardized objects and selected union arms exact while preserving explicitly declared extension boundaries.
-- Separate captured stock-client evidence, curated response projections, and locally authored negative fixtures by provenance.
-- Resolve strict JSON syntax, OpenAPI validation, schema compilation, and code-generation decisions before production decoding.
+- Separate regenerated stock-client evidence, curated response projections, and locally authored negative fixtures by ownership and authority.
+- Resolve strict JSON syntax, OpenAPI validation, and schema compilation before production decoding.
 - Preserve legacy provider wire behavior while clarifying that it is not the strict V4 contract authority.
 
 **Non-Goals:**
@@ -28,21 +28,21 @@ The pinned Gateway client removes `abortSignal`, base64-encodes supported inline
 
 ### 1. Split source authority from executable package authority
 
-Exact registered npm pins govern executable capture and consumption behavior. The registered commit remains the source reference, with path-level Git object evidence recorded for the relied-on protocol files and explicit release-equivalence evidence required whenever a future commit's package manifest differs. Capture provenance records the package versions, source commit, capture command, and normalized fields. A future baseline upgrade updates the manifest, package pins, source record, captures, schemas, corpus, and lockfile together.
+`test/conformance/upstream.yaml` is the sole human-maintained authority for the registered source commit and package versions. Exact registered npm pins govern executable capture and consumption behavior, while the registered commit remains the source reference. The fixture index records artifact ownership, update commands, normalization, claims, and non-claims. A future baseline upgrade updates the manifest, package pins, captures, schemas, corpus, and lockfile together.
 
-This avoids silently substituting source from `main` or another release. Using only release tags was rejected because the repository baseline intentionally records a source commit; executing packages inferred from a checkout was rejected because the manifest's exact npm pins are the executable authority.
+This avoids duplicating baseline values in protocol-local prose or silently substituting source from `main` or another release. Executing packages inferred from a checkout was rejected because the manifest's exact npm pins are the executable authority.
 
 ### 2. Keep H1 artifacts contract-only and protocol-local
 
-The new directory contains package documentation, `openapi.yaml`, `schema/request.json`, `schema/generate-result.json`, `schema/stream-part.json`, `schema/error.json`, contract tests, and maintainer evidence. `schema/BOUNDARIES.md` records every standardized object and union arm, required/optional/omitted fields, nullable versus non-null opaque values, keyed map value constraints, explicit-empty behavior, and Go representability. `schema/GENERATION.md` records the bounded generator evaluation. It exports no handler, client, DTO, decoder, or adapter API.
+The new directory contains package documentation, `openapi.yaml`, `schema/request.json`, `schema/generate-result.json`, `schema/stream-part.json`, `schema/error.json`, curated test corpora, and contract tests. The schemas are the sole field-level serialized-shape authority. It exports no handler, client, DTO, decoder, or adapter API.
 
-Pinned capture tooling and evidence live under `test/interop/providerwire-v4`. An `INDEX.yaml` distinguishes stock-client request captures, locally authored response-consumption projections, and local negative fixtures. User-facing coexistence and upgrade guidance remains in `docs/` rather than a package README.
+Pinned capture tooling and evidence live under `test/interop/providerwire-v4`. Its `INDEX.yaml` distinguishes regenerated stock-client request captures from curated response-consumption projections and negative fixtures. User-facing provider-wire documentation remains unchanged until a runtime capability is implemented.
 
 ### 3. Give each artifact one authority boundary
 
 OpenAPI 3.1 owns the method, path, routing headers, request media type, unary JSON success, streaming SSE success, and JSON error responses. External schema references remain relative and offline-resolvable.
 
-JSON Schema 2020-12 owns serialized payload structure. H1 OpenSpec requirements and focused tests own behavior OpenAPI cannot express accurately: streaming-header response selection, detailed Accept handling, strict JSON syntax, JSON SSE event framing and EOF termination, capture provenance, and the absence of a production implementation. A later streaming-service capability owns server commitment, flush timing, cancellation, timeouts, and post-commit failure behavior.
+JSON Schema 2020-12 owns serialized payload structure. H1 OpenSpec requirements and focused tests own behavior OpenAPI cannot express accurately: streaming-header response selection, detailed Accept handling, strict JSON syntax, JSON SSE event framing and EOF termination, fixture ownership, and the absence of a production implementation. A later streaming-service capability owns server commitment, flush timing, cancellation, timeouts, and post-commit failure behavior.
 
 `@redocly/cli@2.46.1` is pinned as test-only tooling to lint and bundle the complete OpenAPI document with local references and no network resolution. The existing `santhosh-tekuri/jsonschema/v6` dependency compiles every schema through a protocol-local registry that loads all checked-in resources by stable `$id`. Reusing only the existing single-resource schema helper was rejected because it cannot prove the complete reference graph.
 
@@ -84,28 +84,21 @@ H1 pins `github.com/go-json-experiment/json` at `v0.0.0-20260623181947-01eb4420f
 
 A standard `encoding/json.Decoder.Token` scanner was rejected because it replaces invalid UTF-8 and unpaired surrogates, which can also corrupt duplicate-name detection. Repository-wide JSON experiments were rejected. H2 may promote the narrow wrapper into production after reevaluating the pinned dependency; H1 itself provides no production decoder.
 
-### 9. Bound the generator evaluation and default to deferral
-
-The spike evaluates `github.com/atombender/go-jsonschema@v0.24.1` as the JSON-Schema-native candidate and `github.com/oapi-codegen/oapi-codegen/v2@v2.8.0` as the OpenAPI-oriented candidate. A standalone difficult schema fragment covers role/tool/file unions, absent versus empty values, optional booleans, non-null and nullable opaque JSON, keyed object maps, and exact inactive-arm rejection.
-
-The report records commands, versions, deterministic clean regeneration, compilation, semantic round trips, presence preservation, discriminator behavior, raw JSON behavior, and whether manual edits are required. Generated output stays in temporary or ignored evaluation paths and is deleted after the run. Production generation remains deferred unless a candidate passes every gate; even a passing result does not add generated production types in H1.
-
-### 10. Make validation and parity claims precise
+### 9. Make validation and parity claims precise
 
 `mise run validate-providerwire-v4-contract` validates the complete OpenAPI document and local references, compiles every schema as Draft 2020-12, validates all positive payloads, and checks each negative fixture against an expected structured schema/syntax category and instance path. `mise run test-interop-contract` verifies captures with exact package pins and runs stock-client response-consumption scenarios. Capture updates use a separate explicit task.
 
-The parity map gains a ProviderWire V4 HTTP contract row. H1 claims exact pinned request emission, curated payload validation, and pinned response consumption only. It does not claim a V4 runtime, private-server acceptance, byte-canonical JSON, or provider recording provenance. Existing legacy interop rows remain unchanged.
+The parity map gains a ProviderWire V4 HTTP contract row. H1 claims exact pinned request emission, curated payload validation, and pinned response consumption only. It does not claim a V4 runtime, private-server acceptance, byte-canonical JSON, or provider recording evidence. Existing legacy interop rows remain unchanged.
 
 ## Risks / Trade-offs
 
-- **Closed schemas require coordinated updates when upstream adds fields without changing specification version 4** → Treat every baseline movement as a governed upgrade of pins, captures, boundary ledger, schemas, corpus, and lockfiles.
+- **Closed schemas require coordinated updates when upstream adds fields without changing specification version 4** → Treat every baseline movement as a governed upgrade of pins, captures, schemas, corpus, and lockfiles.
 - **A future registered commit may not contain every registered package version** → Require explicit source-equivalence evidence for any mismatch and execute only exact npm pins.
 - **Pinned clients permissively validate responses** → Maintain comprehensive curated response fixtures and label them local serialized projections.
 - **The strict JSON dependency is pre-v1** → Pin one revision, isolate its use, avoid production exposure in H1, and reevaluate promotion in H2.
 - **OpenAPI cannot express all content negotiation or SSE framing rules** → Keep H1 syntax, selection, framing, and EOF semantics in OpenSpec/tests, and assign server commitment/flushing/lifecycle to the later streaming-service capability.
-- **Curated schemas can diverge from Go representability** → Complete the boundary ledger first and stop if a required distinction cannot be preserved by a future approved adapter.
+- **Curated schemas can diverge from Go representability** → Stop if a future approved adapter cannot preserve a required distinction rather than weakening the schemas.
 - **Capture fixtures can leak credentials or volatile values** → Record only an allowlist, use synthetic credentials/headers, and scan committed fixtures for secrets and machine-local data.
-- **Generator evaluation can become open-ended** → Limit it to two pinned candidates, one representative corpus, one durable report, and no generated production code.
 
 ## Migration Plan
 

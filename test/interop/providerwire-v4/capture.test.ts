@@ -5,7 +5,6 @@ import { describe, expect, it } from "vitest";
 import { captureAllRequests, type CaptureArtifact } from "./scenarios";
 
 const CAPTURE_PATH = resolve(import.meta.dirname, "captures/requests.json");
-const PROVENANCE_PATH = resolve(import.meta.dirname, "provenance.json");
 const EXPECTED_PACKAGES = {
   "@ai-sdk/provider": "4.0.7",
   "@ai-sdk/gateway": "4.0.52",
@@ -18,15 +17,6 @@ describe("ProviderWire V4 stock-client request captures", () => {
     for (const [name, expected] of Object.entries(EXPECTED_PACKAGES)) {
       expect(installedPackageVersion(name)).toBe(expected);
     }
-    const provenance = JSON.parse(readFileSync(PROVENANCE_PATH, "utf8")) as {
-      authority: string;
-      packages: Record<string, string>;
-      nonClaims: string[];
-    };
-    expect(provenance.authority).toBe("pinned-stock-client-emission");
-    expect(provenance.packages).toEqual(EXPECTED_PACKAGES);
-    expect(provenance.nonClaims).toContain("Vercel private server acceptance");
-    expect(provenance.nonClaims).toContain("live provider response recording");
   });
 
   it("recaptures semantically without mutating committed fixtures", async () => {

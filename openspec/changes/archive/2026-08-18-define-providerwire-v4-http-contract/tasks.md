@@ -3,24 +3,24 @@
 - [x] 1.1 Recheck the live prerequisite behavior, clean worktree, registered source commit, exact npm pins, and relevant commit-to-release source equivalence; stop and replan on parent or baseline drift.
 - [x] 1.2 Create the contract-only `gateway/providerwire/v4` package documentation, OpenAPI/schema directories, contract testdata layout, and interop fixture index without adding production handler, decoder, client, adapter, or DTO APIs.
 - [x] 1.3 Add the pinned test-only `@redocly/cli@2.46.1` and `github.com/go-json-experiment/json@v0.0.0-20260623181947-01eb4420fa68` dependencies and update lock/module metadata without enabling repository-wide JSON experiments.
-- [x] 1.4 Record the registered package/source provenance and path-equivalence evidence used by the contract, distinguishing executable npm authority from inspected source authority.
+- [x] 1.4 Use `test/conformance/upstream.yaml` as the baseline authority and record generated-versus-curated fixture ownership in the interop index.
 
-## 2. Serialized Boundary Ledger
+## 2. Serialized Contract Inventory
 
 - [x] 2.1 Inventory every post-serialization request field, message role, content arm, tool/tool-choice arm, response-format arm, file-data arm, and tool-result arm from the exact pinned packages, including undefined omission and explicit-empty behavior.
 - [x] 2.2 Inventory every generate-result object and content arm, including required top-level fields, usage/finish-reason undefined omission, warnings, request/response values, metadata maps, and timestamp serialization.
 - [x] 2.3 Inventory every stream-part arm and safe error field, including exact discriminator membership, generated-file restrictions, source variants, non-null streamed tool results, raw values, and retryability semantics.
-- [x] 2.4 Write `schema/BOUNDARIES.md` with closed/open classifications, required/optional/nullability rules, keyed map value types, Go-only exclusions, and absent/null/empty/false representability; stop if a required future Go adaptation would be lossy.
+- [x] 2.4 Encode the field-level inventory directly in the normative schemas and keep cross-cutting open-boundary and representability rules in the capability specification.
 
 ## 3. Pinned Stock-Client Capture Harness
 
-- [x] 3.1 Implement a deterministic TypeScript recording server that is independent of both provider-wire handlers and stores method/path, allowlisted normalized headers, semantic JSON, and provenance separately.
+- [x] 3.1 Implement a deterministic TypeScript recording server that is independent of both provider-wire handlers and stores method/path, allowlisted normalized headers, and semantic JSON with ownership recorded in the fixture index.
 - [x] 3.2 Add direct `doGenerate` and `doStream` capture scenarios that prove the pinned method, path, routing headers, body transformations, and unary/streaming selection.
 - [x] 3.3 Add orchestration-level `generateText` and `streamText` capture scenarios so `ai@7.0.65` request construction is executable evidence rather than inferred from provider types.
 - [x] 3.4 Capture all message roles, function/provider tools, tool choice, client/provider-executed tool flows, prompt files, reasoning files, and nested tool-result file data, including `Uint8Array` base64 conversion.
 - [x] 3.5 Capture structured response formats, opaque null where allowed, body headers, provider options and representative Gateway controls, raw-chunk intent, explicit empty collections, and configured/call/model/observability header collisions.
 - [x] 3.6 Implement temporary-directory recapture and semantic comparison for normal verification plus a separate explicit fixture-update command.
-- [x] 3.7 Enforce capture provenance and privacy by excluding credential values, volatile identifiers, full user agents, machine-local data, and provider-recording claims from committed fixtures.
+- [x] 3.7 Enforce capture ownership and privacy by excluding credential values, volatile identifiers, full user agents, machine-local data, and provider-recording claims from committed fixtures.
 
 ## 4. Curated JSON Schema 2020-12 Contracts
 
@@ -53,24 +53,18 @@
 - [x] 7.3 Add representative non-2xx projections proving the pinned client recognizes the safe nested error shape and documenting its HTTP-status retry inference separately from explicit wire retryability.
 - [x] 7.4 Add retryable-400 and non-retryable-500 fixtures that preserve explicit booleans for the future Go client while remaining consumable by the pinned stock client.
 
-## 8. Bounded Code-Generation Evaluation
+## 8. Tasks and Parity Metadata
 
-- [x] 8.1 Create a standalone difficult-union evaluation corpus and reproducible commands for `go-jsonschema@v0.24.1` and `oapi-codegen@v2.8.0` without coupling generation to production schemas or checked-in DTOs.
-- [x] 8.2 Evaluate deterministic clean generation, compilation, round trips, absent/empty/false presence, discriminator exactness, nullable/non-null opaque JSON, keyed object maps, raw JSON preservation, and manual-edit requirements.
-- [x] 8.3 Record versions, commands, results, and the adoption/deferral decision in `schema/GENERATION.md`, then remove or ignore all generated evaluation output.
+- [x] 8.1 Add `mise run validate-providerwire-v4-contract`, `mise run test-interop-contract`, and a separate explicit capture-update task with non-mutating verification defaults.
+- [x] 8.2 Extend baseline-consumer validation and tests as needed so every new TypeScript AI SDK import remains pinned to `test/conformance/upstream.yaml`.
+- [x] 8.3 Add a separate ProviderWire V4 HTTP contract row to `test/conformance/PARITY.md` that claims request emission, curated schema validation, and response consumption only while preserving legacy transport classifications.
+- [x] 8.4 Leave user-facing provider-wire documentation unchanged until a V4 runtime capability is implemented.
+- [x] 8.5 Run existing legacy package, Grafana, interop, and frontend checks without adding source-shape assertions to the V4 contract package.
 
-## 9. Tasks, Documentation, and Parity Metadata
+## 9. Validation and OpenSpec Completion
 
-- [x] 9.1 Add `mise run validate-providerwire-v4-contract`, `mise run test-interop-contract`, and a separate explicit capture-update task with non-mutating verification defaults.
-- [x] 9.2 Extend baseline-consumer validation and tests as needed so every new TypeScript AI SDK import remains pinned to `test/conformance/upstream.yaml`.
-- [x] 9.3 Add a separate ProviderWire V4 HTTP contract row to `test/conformance/PARITY.md` that claims request emission, curated schema validation, and response consumption only while preserving legacy transport classifications.
-- [x] 9.4 Update provider-wire documentation with protocol authority, exact baseline/package mismatch handling, semantic-not-byte compatibility, capture provenance, coordinated upgrade workflow, legacy coexistence, the explicit absence of a V4 runtime, and the deferral of server stream commitment/flushing/lifecycle to the streaming-service phase.
-- [x] 9.5 Add focused assertions that existing legacy package APIs, Grafana defaults, legacy interop behavior, and frontend wire behavior remain unchanged.
-
-## 10. Validation and OpenSpec Completion
-
-- [x] 10.1 Run formatting, TypeScript type checking, `mise run validate-providerwire-v4-contract`, and `mise run test-interop-contract`; resolve all failures without weakening exact union or syntax rules.
-- [x] 10.2 Run `go test -race ./gateway/providerwire/...`, the existing `mise run test-interop`, and relevant Grafana provider tests to prove legacy coexistence.
-- [x] 10.3 Run `mise run validate-parity-baseline` and `mise run parity-check`; classify every observed difference as pinned-client behavior, local serialized projection, host restriction, Go adaptation, defect, or coverage gap.
-- [x] 10.4 Run `git diff --check` and provenance/privacy scans for secrets, machine-local paths, unrelated branches or plans, mislabeled provider recordings, generated DTOs, and accidental production V4 decoder/handler/client code.
-- [x] 10.5 Validate the change strictly, verify implementation against all artifacts, synchronize the three capability specs, archive the change, confirm zero active changes, and run `openspec validate --all --strict`.
+- [x] 9.1 Run formatting, TypeScript type checking, `mise run validate-providerwire-v4-contract`, and `mise run test-interop-contract`; resolve all failures without weakening exact union or syntax rules.
+- [x] 9.2 Run `go test -race ./gateway/providerwire/...`, the existing `mise run test-interop`, and relevant Grafana provider tests to prove legacy coexistence.
+- [x] 9.3 Run `mise run validate-parity-baseline` and `mise run parity-check`; classify every observed difference as pinned-client behavior, local serialized projection, host restriction, Go adaptation, defect, or coverage gap.
+- [x] 9.4 Run `git diff --check` and privacy scans for secrets, machine-local paths, unrelated branches or plans, mislabeled provider recordings, and accidental production V4 decoder/handler/client code.
+- [x] 9.5 Validate the change strictly, verify implementation against all artifacts, synchronize the three capability specs, archive the change, confirm zero active changes, and run `openspec validate --all --strict`.

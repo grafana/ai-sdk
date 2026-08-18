@@ -64,31 +64,11 @@ func TestResponseProjections_ValidateContractPayloads(t *testing.T) {
 	}
 }
 
-func TestContractEvidence_ProvenancePrivacyAndIndex(t *testing.T) {
+func TestContractEvidence_PrivacyAndIndex(t *testing.T) {
 	captureRaw, err := os.ReadFile(filepath.Join(interopContractDir, "captures", "requests.json"))
 	require.NoError(t, err)
 	_, err = validateStrictJSON(captureRaw)
 	require.NoError(t, err)
-
-	provenanceRaw, err := os.ReadFile(filepath.Join(interopContractDir, "provenance.json"))
-	require.NoError(t, err)
-	_, err = validateStrictJSON(provenanceRaw)
-	require.NoError(t, err)
-	var provenance struct {
-		Authority string            `json:"authority"`
-		Packages  map[string]string `json:"packages"`
-		NonClaims []string          `json:"nonClaims"`
-	}
-	require.NoError(t, json.Unmarshal(provenanceRaw, &provenance))
-	assert.Equal(t, "pinned-stock-client-emission", provenance.Authority)
-	assert.Equal(t, map[string]string{
-		"@ai-sdk/provider":       "4.0.7",
-		"@ai-sdk/gateway":        "4.0.52",
-		"@ai-sdk/provider-utils": "5.0.27",
-		"ai":                     "7.0.65",
-	}, provenance.Packages)
-	assert.Contains(t, provenance.NonClaims, "Vercel private server acceptance")
-	assert.Contains(t, provenance.NonClaims, "live provider response recording")
 
 	var evidenceRelative []string
 	for _, directory := range []string{"captures", "projections"} {
@@ -108,8 +88,7 @@ func TestContractEvidence_ProvenancePrivacyAndIndex(t *testing.T) {
 		})
 		require.NoError(t, err)
 	}
-	privacyPaths := append([]string{"provenance.json"}, evidenceRelative...)
-	for _, relative := range privacyPaths {
+	for _, relative := range evidenceRelative {
 		raw, err := os.ReadFile(filepath.Join(interopContractDir, filepath.FromSlash(relative)))
 		require.NoError(t, err)
 		text := string(raw)
@@ -124,10 +103,14 @@ func TestContractEvidence_ProvenancePrivacyAndIndex(t *testing.T) {
 	indexRaw, err := os.ReadFile(indexPath)
 	require.NoError(t, err)
 	indexText := string(indexRaw)
+	assert.Contains(t, indexText, "artifactKind: regenerated")
+	assert.Contains(t, indexText, "artifactKind: curated")
 	assert.Contains(t, indexText, "authority: pinned-stock-client")
 	assert.Contains(t, indexText, "authority: local-serialized-projection")
 	assert.Contains(t, indexText, "authority: local-contract-fixture")
-	assert.Contains(t, indexText, "executable: provenance.json")
+	assert.Contains(t, indexText, "updateCommand: mise run update-providerwire-v4-captures")
+	assert.Contains(t, indexText, "Vercel private server acceptance")
+	assert.Contains(t, indexText, "live provider response recording")
 	pathPattern := regexp.MustCompile(`(?m)^\s*-?\s*path:\s*(\S+)\s*$`)
 	var indexedEvidence []string
 	for _, match := range pathPattern.FindAllStringSubmatch(indexText, -1) {

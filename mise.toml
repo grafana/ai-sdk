@@ -289,8 +289,7 @@ set -e
 mise run validate-parity-baseline
 cd test
 pnpm --filter @ai-sdk/test-interop typecheck
-pnpm --filter @ai-sdk/test-interop capture:verify
-pnpm --filter @ai-sdk/test-interop test:responses
+pnpm --filter @ai-sdk/test-interop test:contract
 """
 
 [tasks.update-providerwire-v4-captures]

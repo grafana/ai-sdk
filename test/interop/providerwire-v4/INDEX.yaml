@@ -1,41 +1,54 @@
 version: 1
 contract: ../../../gateway/providerwire/v4/openapi.yaml
 baseline: ../../conformance/upstream.yaml
-provenance:
-  source: ../../../gateway/providerwire/v4/PROVENANCE.md
-  executable: provenance.json
-  requestCaptures:
-    authority: pinned-stock-client
-    description: Exact-package request emission recorded by the local deterministic recorder.
-  responseProjections:
-    authority: local-serialized-projection
-    description: Locally authored responses used only to prove pinned-client consumption.
-  negativeFixtures:
-    authority: local-contract-fixture
-    description: Locally authored invalid examples used only to prove strict local rejection.
+claims:
+  - pinned client request emission
+  - pinned client response consumption
+nonClaims:
+  - Vercel private server acceptance
+  - live provider response recording
+  - canonical JSON member ordering
+normalization:
+  body: parsed semantic JSON
+  headers: explicit allowlist with authorization, user-agent, and observability values redacted
+  comparison: semantic JSON equality
 requestCaptures:
-  - path: captures/requests.json
-    scenarios:
-      - direct-do-generate-complete
-      - direct-do-stream
-      - orchestration-generate-text
-      - orchestration-client-tool-flow
-      - orchestration-stream-text
+  artifactKind: regenerated
+  authority: pinned-stock-client
+  updateCommand: mise run update-providerwire-v4-captures
+  verificationCommand: mise run test-interop-contract
+  description: Exact-package request emission recorded by the local deterministic recorder.
+  artifacts:
+    - path: captures/requests.json
+      scenarios:
+        - direct-do-generate-complete
+        - direct-do-stream
+        - orchestration-generate-text
+        - orchestration-client-tool-flow
+        - orchestration-stream-text
 responseProjections:
-  - path: projections/unary.json
-    kind: unary-json
-  - path: projections/stream-clean.sse
-    kind: eof-terminated-json-sse
-  - path: projections/stream-done.sse
-    kind: tolerated-done-json-sse
-  - path: projections/error-retryable-400.json
-    kind: explicit-retryability-override
-  - path: projections/error-nonretryable-500.json
-    kind: explicit-retryability-override
+  artifactKind: curated
+  authority: local-serialized-projection
+  description: Locally authored responses used only to prove pinned-client consumption.
+  artifacts:
+    - path: projections/unary.json
+      kind: unary-json
+    - path: projections/stream-clean.sse
+      kind: eof-terminated-json-sse
+    - path: projections/stream-done.sse
+      kind: tolerated-done-json-sse
+    - path: projections/error-retryable-400.json
+      kind: explicit-retryability-override
+    - path: projections/error-nonretryable-500.json
+      kind: explicit-retryability-override
 negativeFixtures:
-  - path: ../../../gateway/providerwire/v4/testdata/negative.json
-    stages: [schema, envelope]
-  - path: ../../../gateway/providerwire/v4/testdata/syntax.json
-    stages: [syntax]
-  - path: ../../../gateway/providerwire/v4/testdata/envelopes.json
-    stages: [envelope]
+  artifactKind: curated
+  authority: local-contract-fixture
+  description: Locally authored invalid examples used only to prove strict local rejection.
+  artifacts:
+    - path: ../../../gateway/providerwire/v4/testdata/negative.json
+      stages: [schema, envelope]
+    - path: ../../../gateway/providerwire/v4/testdata/syntax.json
+      stages: [syntax]
+    - path: ../../../gateway/providerwire/v4/testdata/envelopes.json
+      stages: [envelope]

@@ -6,8 +6,6 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "test:contract": "PROVIDERWIRE_V4_UPDATE=0 vitest run --config providerwire-v4/vitest.config.ts",
-    "test:responses": "vitest run --config providerwire-v4/vitest.config.ts consumption.test.ts",
-    "capture:verify": "PROVIDERWIRE_V4_UPDATE=0 vitest run --config providerwire-v4/vitest.config.ts capture.test.ts",
     "capture:update": "PROVIDERWIRE_V4_UPDATE=1 vitest run --config providerwire-v4/vitest.config.ts capture.test.ts",
     "openapi:lint": "redocly lint --config ../../gateway/providerwire/v4/redocly.yaml ../../gateway/providerwire/v4/openapi.yaml",
     "openapi:bundle": "redocly bundle --config ../../gateway/providerwire/v4/redocly.yaml ../../gateway/providerwire/v4/openapi.yaml"
