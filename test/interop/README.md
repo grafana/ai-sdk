@@ -5,7 +5,7 @@ This harness runs a real upstream Vercel AI SDK client (`@ai-sdk/gateway` +
 is the executable contract for `provider-wire-upstream-full-compat`: it proves a
 stock upstream client interoperates with the Go server for streaming text, tool
 calls, provider-executed tool results, inline and URL-valued file input/output,
-and errors (mid-stream and pre-stream).
+and errors (continued streaming after provider errors and pre-stream failures).
 
 ## How it works
 
@@ -16,7 +16,7 @@ and errors (mid-stream and pre-stream).
 - `global-setup.ts` builds and boots the Go server on an ephemeral port and
   writes the gateway base URL (`http://127.0.0.1:PORT/api/v1/aisdk`).
 - `interop.test.ts` points a real `@ai-sdk/gateway` provider at that base URL
-  and drives each scenario through `streamText` / `generateText`.
+  and drives scenarios through `doStream`, `streamText`, or `generateText`.
 
 ## Run
 
@@ -36,5 +36,5 @@ pnpm test
 | `file-input`           | upstream file-data union decoded server-side           |
 | `file-output`          | file stream part emitted with inline `data`             |
 | `file-output-url`      | file/reasoning-file parts with URL-valued `data`        |
-| `error-mid-stream`     | mid-stream `error` part carrying the server message     |
+| `error-mid-stream`     | continued ordered parts after a provider `error`        |
 | `error-pre-stream`     | pre-stream HTTP `{"error":{...}}` envelope             |

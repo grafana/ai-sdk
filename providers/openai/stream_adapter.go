@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -36,6 +37,15 @@ type activeReasoningState struct {
 	summaryParts     map[int64]reasoningSummaryState
 }
 
+func sortedReasoningSummaryIndices(summaryParts map[int64]reasoningSummaryState) []int64 {
+	indices := make([]int64, 0, len(summaryParts))
+	for index := range summaryParts {
+		indices = append(indices, index)
+	}
+	slices.Sort(indices)
+	return indices
+}
+
 // streamAdapter holds mutable per-stream state and converts Responses SSE
 // events into provider.StreamParts.
 type streamAdapter struct {
@@ -53,6 +63,7 @@ type streamAdapter struct {
 	ongoingToolCalls          map[int64]*ongoingToolCall
 	ongoingAnnotations        []json.RawMessage
 	activeReasoning           map[string]*activeReasoningState
+	activeOutputItemIDs       map[int64]string
 	hasFunctionCall           bool
 	responseID                string
 	activeMessagePhase        string
@@ -71,6 +82,7 @@ func newStreamAdapter(warnings []provider.Warning, br buildResult, requestBody r
 		providerName:              providerName,
 		ongoingToolCalls:          make(map[int64]*ongoingToolCall),
 		activeReasoning:           make(map[string]*activeReasoningState),
+		activeOutputItemIDs:       make(map[int64]string),
 		streamApprovalToolCallIDs: make(map[string]string),
 	}
 }
@@ -97,7 +109,8 @@ func (a *streamAdapter) handleEvent(event responses.ResponseStreamEventUnion, ch
 		a.handleOutputItemAdded(e, ch)
 
 	case responses.ResponseTextDeltaEvent:
-		ch <- provider.StreamPart{Type: provider.PartTextDelta, ID: e.ItemID, Delta: e.Delta}
+		itemID := a.resolveOptionalOutputItemID(e.ItemID, e.OutputIndex, e.JSON.OutputIndex.Valid())
+		ch <- provider.StreamPart{Type: provider.PartTextDelta, ID: itemID, Delta: e.Delta}
 
 	case responses.ResponseOutputTextAnnotationAddedEvent:
 		// Accumulate the raw annotation; attached to the text-end metadata.
@@ -119,41 +132,47 @@ func (a *streamAdapter) handleEvent(event responses.ResponseStreamEventUnion, ch
 		ch <- provider.StreamPart{Type: provider.PartToolInputDelta, ID: id, Delta: e.Delta}
 
 	case responses.ResponseReasoningSummaryTextDeltaEvent:
+		itemID := a.resolveOptionalOutputItemID(e.ItemID, e.OutputIndex, e.JSON.OutputIndex.Valid())
 		ch <- provider.StreamPart{
 			Type:             provider.PartReasoningDelta,
-			ID:               fmt.Sprintf("%s:%d", e.ItemID, e.SummaryIndex),
+			ID:               fmt.Sprintf("%s:%d", itemID, e.SummaryIndex),
 			Delta:            e.Delta,
-			ProviderMetadata: itemIDMeta(a.providerName, e.ItemID),
+			ProviderMetadata: itemIDMeta(a.providerName, itemID),
 		}
 
 	case responses.ResponseReasoningSummaryPartAddedEvent:
-		if e.SummaryIndex > 0 {
-			state := a.reasoningState(e.ItemID)
-			for index, status := range state.summaryParts {
-				if status == reasoningSummaryCanConclude {
+		itemID := a.resolveOptionalOutputItemID(e.ItemID, e.OutputIndex, e.JSON.OutputIndex.Valid())
+		state := a.activeReasoning[itemID]
+		if e.SummaryIndex > 0 && state != nil {
+			state.summaryParts[e.SummaryIndex] = reasoningSummaryActive
+			for _, index := range sortedReasoningSummaryIndices(state.summaryParts) {
+				if state.summaryParts[index] == reasoningSummaryCanConclude {
 					ch <- provider.StreamPart{
 						Type:             provider.PartReasoningEnd,
-						ID:               fmt.Sprintf("%s:%d", e.ItemID, index),
-						ProviderMetadata: itemIDMeta(a.providerName, e.ItemID),
+						ID:               fmt.Sprintf("%s:%d", itemID, index),
+						ProviderMetadata: itemIDMeta(a.providerName, itemID),
 					}
 					state.summaryParts[index] = reasoningSummaryConcluded
 				}
 			}
-			state.summaryParts[e.SummaryIndex] = reasoningSummaryActive
 			ch <- provider.StreamPart{
 				Type:             provider.PartReasoningStart,
-				ID:               fmt.Sprintf("%s:%d", e.ItemID, e.SummaryIndex),
-				ProviderMetadata: reasoningMeta(a.providerName, e.ItemID, state.encryptedContent),
+				ID:               fmt.Sprintf("%s:%d", itemID, e.SummaryIndex),
+				ProviderMetadata: reasoningMeta(a.providerName, itemID, state.encryptedContent),
 			}
 		}
 
 	case responses.ResponseReasoningSummaryPartDoneEvent:
-		state := a.reasoningState(e.ItemID)
+		itemID := a.resolveOptionalOutputItemID(e.ItemID, e.OutputIndex, e.JSON.OutputIndex.Valid())
+		state := a.activeReasoning[itemID]
+		if state == nil {
+			break
+		}
 		if a.br.storeExplicitlyEnabled {
 			ch <- provider.StreamPart{
 				Type:             provider.PartReasoningEnd,
-				ID:               fmt.Sprintf("%s:%d", e.ItemID, e.SummaryIndex),
-				ProviderMetadata: itemIDMeta(a.providerName, e.ItemID),
+				ID:               fmt.Sprintf("%s:%d", itemID, e.SummaryIndex),
+				ProviderMetadata: itemIDMeta(a.providerName, itemID),
 			}
 			state.summaryParts[e.SummaryIndex] = reasoningSummaryConcluded
 		} else {
@@ -225,6 +244,7 @@ func (a *streamAdapter) handleEvent(event responses.ResponseStreamEventUnion, ch
 func (a *streamAdapter) handleOutputItemAdded(e responses.ResponseOutputItemAddedEvent, ch chan<- provider.StreamPart) {
 	switch v := e.Item.AsAny().(type) {
 	case responses.ResponseOutputMessage:
+		a.activeOutputItemIDs[e.OutputIndex] = v.ID
 		a.ongoingAnnotations = nil
 		a.activeMessagePhase = string(v.Phase)
 		ch <- provider.StreamPart{Type: provider.PartTextStart, ID: v.ID, ProviderMetadata: textMeta(a.providerName, v.ID, string(v.Phase), nil)}
@@ -234,6 +254,7 @@ func (a *streamAdapter) handleOutputItemAdded(e responses.ResponseOutputItemAdde
 		ch <- provider.StreamPart{Type: provider.PartToolInputStart, ID: v.CallID, ToolName: v.Name}
 
 	case responses.ResponseReasoningItem:
+		a.activeOutputItemIDs[e.OutputIndex] = v.ID
 		a.activeReasoning[v.ID] = &activeReasoningState{
 			encryptedContent: v.EncryptedContent,
 			summaryParts:     map[int64]reasoningSummaryState{0: reasoningSummaryActive},
@@ -317,13 +338,15 @@ func (a *streamAdapter) handleOutputItemAdded(e responses.ResponseOutputItemAdde
 func (a *streamAdapter) handleOutputItemDone(e responses.ResponseOutputItemDoneEvent, ch chan<- provider.StreamPart) {
 	switch v := e.Item.AsAny().(type) {
 	case responses.ResponseOutputMessage:
+		itemID := a.resolveOutputItemID(v.ID, e.OutputIndex)
 		phase := string(v.Phase)
 		if phase == "" {
 			phase = a.activeMessagePhase
 		}
 		a.activeMessagePhase = ""
-		ch <- provider.StreamPart{Type: provider.PartTextEnd, ID: v.ID, ProviderMetadata: textEndMeta(a.providerName, v.ID, phase, a.ongoingAnnotations)}
+		ch <- provider.StreamPart{Type: provider.PartTextEnd, ID: itemID, ProviderMetadata: textEndMeta(a.providerName, itemID, phase, a.ongoingAnnotations)}
 		a.ongoingAnnotations = nil
+		delete(a.activeOutputItemIDs, e.OutputIndex)
 
 	case responses.ResponseFunctionToolCall:
 		a.hasFunctionCall = true
@@ -361,25 +384,23 @@ func (a *streamAdapter) handleOutputItemDone(e responses.ResponseOutputItemDoneE
 		}
 
 	case responses.ResponseReasoningItem:
-		encrypted := v.EncryptedContent
-		state := a.activeReasoning[v.ID]
-		if encrypted == "" && state != nil {
-			encrypted = state.encryptedContent
-		}
-		if state == nil {
-			state = &activeReasoningState{summaryParts: map[int64]reasoningSummaryState{0: reasoningSummaryActive}}
-		}
-		for index, status := range state.summaryParts {
-			if status != reasoningSummaryActive && status != reasoningSummaryCanConclude {
-				continue
+		itemID := a.resolveOutputItemID(v.ID, e.OutputIndex)
+		state := a.activeReasoning[itemID]
+		if state != nil {
+			for _, index := range sortedReasoningSummaryIndices(state.summaryParts) {
+				status := state.summaryParts[index]
+				if status != reasoningSummaryActive && status != reasoningSummaryCanConclude {
+					continue
+				}
+				ch <- provider.StreamPart{
+					Type:             provider.PartReasoningEnd,
+					ID:               fmt.Sprintf("%s:%d", itemID, index),
+					ProviderMetadata: reasoningMeta(a.providerName, itemID, v.EncryptedContent),
+				}
 			}
-			ch <- provider.StreamPart{
-				Type:             provider.PartReasoningEnd,
-				ID:               fmt.Sprintf("%s:%d", v.ID, index),
-				ProviderMetadata: reasoningMeta(a.providerName, v.ID, encrypted),
-			}
+			delete(a.activeReasoning, itemID)
 		}
-		delete(a.activeReasoning, v.ID)
+		delete(a.activeOutputItemIDs, e.OutputIndex)
 
 	case responses.ResponseFunctionWebSearch:
 		delete(a.ongoingToolCalls, e.OutputIndex)
@@ -545,7 +566,7 @@ func (a *streamAdapter) handleOutputItemDone(e responses.ResponseOutputItemDoneE
 
 	case responses.ResponseOutputItemMcpCall:
 		toolCallID := v.ID
-		if v.ApprovalRequestID != "" {
+		if v.JSON.ApprovalRequestID.Valid() || v.ApprovalRequestID != "" {
 			if mapped := a.streamApprovalToolCallIDs[v.ApprovalRequestID]; mapped != "" {
 				toolCallID = mapped
 			} else if mapped := a.br.approvalRequestToolCallIDs[v.ApprovalRequestID]; mapped != "" {
@@ -565,7 +586,7 @@ func (a *streamAdapter) handleOutputItemDone(e responses.ResponseOutputItemDoneE
 	case responses.ResponseOutputItemMcpApprovalRequest:
 		toolName := "mcp." + v.Name
 		dummyID := a.generateID()
-		approvalID := v.ID
+		approvalID := mcpApprovalRequestID(v)
 		a.streamApprovalToolCallIDs[approvalID] = dummyID
 		dyn := true
 		ch <- provider.StreamPart{Type: provider.PartToolCall, ToolCallID: dummyID, ToolName: toolName, Input: orEmptyObject(v.Arguments), ProviderExecuted: true, Dynamic: &dyn}
@@ -586,13 +607,18 @@ func (a *streamAdapter) emitCodeInterpreterToolCall(tc *ongoingToolCall, code st
 	}
 }
 
-func (a *streamAdapter) reasoningState(itemID string) *activeReasoningState {
-	state := a.activeReasoning[itemID]
-	if state == nil {
-		state = &activeReasoningState{summaryParts: map[int64]reasoningSummaryState{}}
-		a.activeReasoning[itemID] = state
+func (a *streamAdapter) resolveOutputItemID(itemID string, outputIndex int64) string {
+	if activeID := a.activeOutputItemIDs[outputIndex]; activeID != "" {
+		return activeID
 	}
-	return state
+	return itemID
+}
+
+func (a *streamAdapter) resolveOptionalOutputItemID(itemID string, outputIndex int64, outputIndexPresent bool) string {
+	if !outputIndexPresent {
+		return itemID
+	}
+	return a.resolveOutputItemID(itemID, outputIndex)
 }
 
 func (a *streamAdapter) emitAnnotationSource(raw string, annotation any, ch chan<- provider.StreamPart) {
@@ -716,7 +742,7 @@ func (a *streamAdapter) emitFinish(resp responses.Response, ch chan<- provider.S
 	}
 	a.finishEmitted = true
 	fr := mapFinishReason(resp.IncompleteDetails.Reason, a.hasFunctionCall)
-	usage := convertUsage(resp.Usage, json.RawMessage(resp.Usage.RawJSON()))
+	usage := convertResponseUsage(resp.Usage)
 	ch <- provider.StreamPart{
 		Type:             provider.PartFinish,
 		FinishReason:     &fr,
@@ -734,7 +760,7 @@ func (a *streamAdapter) emitFailedFinish(resp responses.Response, ch chan<- prov
 	if resp.IncompleteDetails.Reason != "" {
 		fr = mapFinishReason(resp.IncompleteDetails.Reason, a.hasFunctionCall)
 	}
-	usage := convertUsage(resp.Usage, json.RawMessage(resp.Usage.RawJSON()))
+	usage := convertResponseUsage(resp.Usage)
 	ch <- provider.StreamPart{
 		Type:             provider.PartFinish,
 		FinishReason:     &fr,
@@ -749,7 +775,7 @@ func (a *streamAdapter) emitPendingErrorFinish(ch chan<- provider.StreamPart) {
 	}
 	a.finishEmitted = true
 	fr := provider.FinishReason{Unified: provider.FinishReasonError, Raw: "error"}
-	usage := convertUsage(responses.ResponseUsage{}, nil)
+	usage := provider.Usage{}
 	resp := responses.Response{ID: a.responseID}
 	ch <- provider.StreamPart{
 		Type:             provider.PartFinish,

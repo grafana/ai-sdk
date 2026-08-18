@@ -1,0 +1,10 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"tool-input-start","toolCallId":"srvtoolu_advisor_plaintext","toolName":"advisor","providerExecuted":true}
+{"type":"tool-input-available","toolCallId":"srvtoolu_advisor_plaintext","toolName":"advisor","input":{},"providerExecuted":true}
+{"type":"tool-output-available","toolCallId":"srvtoolu_advisor_plaintext","output":{"type":"advisor_result","text":"Partial plaintext advice.","stopReason":"max_tokens"},"providerExecuted":true}
+{"type":"tool-input-start","toolCallId":"srvtoolu_advisor_redacted","toolName":"advisor","providerExecuted":true}
+{"type":"tool-input-available","toolCallId":"srvtoolu_advisor_redacted","toolName":"advisor","input":{},"providerExecuted":true}
+{"type":"tool-output-available","toolCallId":"srvtoolu_advisor_redacted","output":{"type":"advisor_redacted_result","encryptedContent":"opaque-encrypted-advice","stopReason":"end_turn"},"providerExecuted":true}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"stop"}

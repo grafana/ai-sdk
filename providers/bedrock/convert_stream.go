@@ -522,15 +522,16 @@ func (c *streamConsumer) emitFinish(ctx context.Context) {
 		c.providerMD["bedrock"] = encoded
 	}
 
-	part := provider.StreamPart{
+	usage := c.usage
+	if usage == nil {
+		usage = &provider.Usage{}
+	}
+	_ = sendStreamPart(ctx, c.out, provider.StreamPart{
 		Type:             provider.PartFinish,
 		FinishReason:     &c.finish,
+		Usage:            usage,
 		ProviderMetadata: c.providerMD,
-	}
-	if c.usage != nil {
-		part.Usage = c.usage
-	}
-	_ = sendStreamPart(ctx, c.out, part)
+	})
 }
 
 // bedrockExceptionToAPIError builds an APICallError from a Bedrock exception

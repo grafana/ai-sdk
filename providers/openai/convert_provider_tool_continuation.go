@@ -21,6 +21,7 @@ type inputConversionContext struct {
 	hasApplyPatchTool       bool
 	hasComputerTool         bool
 	customProviderToolNames map[string]struct{}
+	outputSchemaToolNames   map[string]struct{}
 	processedApprovalIDs    map[string]struct{}
 }
 
@@ -32,9 +33,17 @@ func newInputConversionContext(tools []provider.Tool, mapping toolNameMapping, s
 		hasPreviousResponseID:   hasPreviousResponseID,
 		toolNameMapping:         mapping,
 		customProviderToolNames: make(map[string]struct{}),
+		outputSchemaToolNames:   make(map[string]struct{}),
 		processedApprovalIDs:    make(map[string]struct{}),
 	}
 	for _, tool := range tools {
+		if tool.Type == provider.ToolTypeFunction {
+			options, err := toolOptions(tool)
+			if err == nil && len(options.OutputSchema) > 0 && !isJSONNull(options.OutputSchema) {
+				ctx.outputSchemaToolNames[tool.Name] = struct{}{}
+			}
+			continue
+		}
 		if tool.Type != provider.ToolTypeProvider {
 			continue
 		}
@@ -56,6 +65,11 @@ func newInputConversionContext(tools []provider.Tool, mapping toolNameMapping, s
 
 func (c inputConversionContext) isCustomProviderTool(name string) bool {
 	_, ok := c.customProviderToolNames[name]
+	return ok
+}
+
+func (c inputConversionContext) hasOutputSchema(name string) bool {
+	_, ok := c.outputSchemaToolNames[name]
 	return ok
 }
 
@@ -116,17 +130,18 @@ func convertAssistantToolCall(part provider.ContentPart, ctx inputConversionCont
 			item := itemReference(po.ItemID)
 			return &item, nil
 		}
-		return nil, nil
-	}
-
-	if ctx.hasPreviousResponseID && ctx.store && po.ItemID != "" {
-		return nil, nil
+		if ctx.store || !ctx.hasShellTool || toolName != "shell" {
+			return nil, nil
+		}
 	}
 
 	providerDefined := (ctx.hasLocalShellTool && toolName == "local_shell") ||
 		(ctx.hasShellTool && toolName == "shell") ||
 		(ctx.hasApplyPatchTool && toolName == "apply_patch") ||
 		ctx.isCustomProviderTool(toolName)
+	if ctx.hasPreviousResponseID && ctx.store && po.ItemID != "" && providerDefined {
+		return nil, nil
+	}
 	if ctx.store && po.ItemID != "" && providerDefined {
 		item := itemReference(po.ItemID)
 		return &item, nil
@@ -240,7 +255,7 @@ func convertProviderToolResult(part provider.ContentPart, ctx inputConversionCon
 		item, warnings := customToolCallOutputItem(part, ctx)
 		return item, warnings, nil
 	default:
-		item := responses.ResponseInputItemParamOfFunctionCallOutput(part.ToolCallID, toolResultOutputString(part.Output))
+		item := responses.ResponseInputItemParamOfFunctionCallOutput(part.ToolCallID, toolResultOutputString(part.Output, ctx.hasOutputSchema(part.ToolName)))
 		item.OfFunctionCallOutput.Caller = functionCallOutputCallerParam(ctx.partOptions(part).Caller)
 		return &item, nil, nil
 	}
@@ -632,7 +647,7 @@ func customToolCallOutputItem(part provider.ContentPart, ctx inputConversionCont
 		return &item, nil
 	}
 	if part.Output.Type != provider.ToolOutputContent {
-		item := responses.ResponseInputItemParamOfCustomToolCallOutput(part.ToolCallID, toolResultOutputString(part.Output))
+		item := responses.ResponseInputItemParamOfCustomToolCallOutput(part.ToolCallID, toolResultOutputString(part.Output, false))
 		return &item, nil
 	}
 

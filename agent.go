@@ -261,7 +261,13 @@ func (a *ToolLoopAgent) Stream(ctx context.Context, opts ...AgentStreamOption) *
 func (a *ToolLoopAgent) Generate(ctx context.Context, opts ...AgentGenerateOption) (*GenerateTextResult, error) {
 	call := buildAgentGenerateCall(opts)
 	settingsCfg := cloneStreamConfig(a.settingsConfig)
-	callCfg := buildGenerateConfig(call.generateOptions).toStreamConfig()
+	callGenerateCfg := buildGenerateConfig(call.generateOptions)
+	effectiveTimeout := settingsCfg.timeout
+	if callGenerateCfg.timeoutSet {
+		effectiveTimeout = callGenerateCfg.timeout
+	}
+	timeoutWarnings := generateTimeoutWarnings(effectiveTimeout)
+	callCfg := callGenerateCfg.toStreamConfig()
 	cfg := mergeStreamConfig(settingsCfg, callCfg)
 	cfg.onChunk = nil
 	cfg.onAbort = nil
@@ -278,7 +284,12 @@ func (a *ToolLoopAgent) Generate(ctx context.Context, opts ...AgentGenerateOptio
 	if err := result.Err(); err != nil {
 		return nil, err
 	}
-	return streamResultToGenerateResult(result), nil
+	if err := result.abortError(); err != nil {
+		return nil, err
+	}
+	generateResult := streamResultToGenerateResult(result)
+	generateResult.Warnings = append(timeoutWarnings, generateResult.Warnings...)
+	return generateResult, nil
 }
 
 func buildAgentStreamCall(opts []AgentStreamOption) agentCallConfig {

@@ -152,9 +152,9 @@ type streamOptions struct {
 
 type chatCompletionResponse struct {
 	ID      string              `json:"id"`
-	Created int64               `json:"created"`
+	Created *int64              `json:"created"`
 	Model   string              `json:"model"`
-	Choices []chatChoice        `json:"choices"`
+	Choices []*chatChoice       `json:"choices"`
 	Usage   *openAIUsage        `json:"usage,omitempty"`
 	Error   *openAIErrorPayload `json:"error,omitempty"`
 }
@@ -182,15 +182,15 @@ type chatDeltaMessage struct {
 }
 
 type chatToolCallDelta struct {
-	Index        *int              `json:"index"`
-	ID           string            `json:"id"`
-	Type         string            `json:"type"`
-	Function     toolCallDeltaFunc `json:"function"`
-	ExtraContent *extraContent     `json:"extra_content,omitempty"`
+	Index        *int               `json:"index"`
+	ID           *string            `json:"id"`
+	Type         string             `json:"type"`
+	Function     *toolCallDeltaFunc `json:"function"`
+	ExtraContent *extraContent      `json:"extra_content,omitempty"`
 }
 
 type toolCallDeltaFunc struct {
-	Name      string  `json:"name"`
+	Name      *string `json:"name"`
 	Arguments *string `json:"arguments"`
 }
 

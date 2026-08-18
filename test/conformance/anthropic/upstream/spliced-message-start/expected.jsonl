@@ -1,0 +1,11 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"reasoning-start","id":"0"}
+{"type":"reasoning-delta","id":"0","delta":"I will call the tool."}
+{"type":"reasoning-delta","id":"0","delta":"","providerMetadata":{"anthropic":{"signature":"sig-first"}}}
+{"type":"reasoning-end","id":"0"}
+{"type":"tool-input-start","toolCallId":"toolu_first","toolName":"test-tool"}
+{"type":"tool-input-delta","toolCallId":"toolu_first","inputTextDelta":"{\"value\":\"Spark"}
+{"type":"error","errorText":"An error occurred."}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"error"}

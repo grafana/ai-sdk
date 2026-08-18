@@ -1,0 +1,8 @@
+model: claude-sonnet-4-6
+prompt: Hello
+providerTools:
+  advisor:
+    id: anthropic.advisor_20260301
+    args:
+      model: claude-opus-4-7
+      maxTokens: 2048

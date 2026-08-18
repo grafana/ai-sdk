@@ -4,11 +4,11 @@ min_version = "2026.5.4"
 experimental = true
 
 [tools]
-go = "1.26.5"
+go = "1.26.6"
 jq = "1.8.2"
 node = "24"
 pnpm = "11.18.0"
-python = "3.14.6"
+python = "3.14.7"
 golangci-lint = "2.12.2"
 "npm:@fission-ai/openspec" = "1"
 "npm:markdownlint-cli2" = "0.23.2"
@@ -251,6 +251,7 @@ done
 description = "Run cross-language integration tests"
 run = """
 mise deps install --only test
+(cd test/integration/testserver && go test ./...)
 cd test && pnpm --filter @ai-sdk/test-integration test
 """
 

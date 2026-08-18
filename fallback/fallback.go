@@ -3,7 +3,9 @@ package fallback
 import (
 	"context"
 	"errors"
+	"fmt"
 	"regexp"
+	"time"
 
 	"github.com/grafana/ai-sdk/provider"
 )
@@ -17,7 +19,21 @@ var ErrNoCandidates = errors.New("fallback: at least one candidate is required")
 type Model struct {
 	candidates []provider.LanguageModel
 	decider    func(error) bool
+	observer   AttemptObserver
 }
+
+// Attempt describes one candidate invocation made by a fallback model.
+type Attempt struct {
+	Index      int
+	Provider   string
+	ModelID    string
+	StartedAt  time.Time
+	FinishedAt time.Time
+	Err        error
+}
+
+// AttemptObserver observes a completed fallback candidate attempt.
+type AttemptObserver func(context.Context, Attempt)
 
 // New creates a FallbackModel from the given candidates.
 // Returns ErrNoCandidates if no candidates are provided.
@@ -38,47 +54,59 @@ func (m *Model) WithDecider(fn func(error) bool) *Model {
 	return m
 }
 
+// WithAttemptObserver registers a callback invoked after each candidate
+// attempt. Index is one-based. For streams, an attempt finishes when the first
+// part arrives, the stream closes, or the provider returns an error.
+func (m *Model) WithAttemptObserver(fn AttemptObserver) *Model {
+	m.observer = fn
+	return m
+}
+
 func (m *Model) SpecificationVersion() string               { return m.candidates[0].SpecificationVersion() }
 func (m *Model) Provider() string                           { return m.candidates[0].Provider() }
 func (m *Model) ModelID() string                            { return m.candidates[0].ModelID() }
 func (m *Model) SupportedURLs() map[string][]*regexp.Regexp { return m.candidates[0].SupportedURLs() }
 
 func (m *Model) DoGenerate(ctx context.Context, params provider.CallOptions) (*provider.GenerateResult, error) {
-	var lastErr error
-	for _, c := range m.candidates {
+	var failures []failedAttempt
+	for i, c := range m.candidates {
 		if ctx.Err() != nil {
-			if lastErr != nil {
-				return nil, lastErr
+			if len(failures) > 0 {
+				return nil, failedAttemptsError(failures)
 			}
 			return nil, ctx.Err()
 		}
+		startedAt := time.Now()
 		result, err := c.DoGenerate(ctx, params)
+		m.observeAttempt(ctx, i, c, startedAt, err)
 		if err == nil {
 			return result, nil
 		}
-		lastErr = err
+		failures = append(failures, failedAttempt{candidate: c, err: err})
 		if !m.decider(err) {
-			return nil, err
+			return nil, failedAttemptsError(failures)
 		}
 	}
-	return nil, lastErr
+	return nil, failedAttemptsError(failures)
 }
 
 func (m *Model) DoStream(ctx context.Context, params provider.CallOptions) (*provider.StreamResult, error) {
-	var lastErr error
-	for _, c := range m.candidates {
+	var failures []failedAttempt
+	for i, c := range m.candidates {
 		if ctx.Err() != nil {
-			if lastErr != nil {
-				return nil, lastErr
+			if len(failures) > 0 {
+				return nil, failedAttemptsError(failures)
 			}
 			return nil, ctx.Err()
 		}
 
+		startedAt := time.Now()
 		result, err := c.DoStream(ctx, params)
 		if err != nil {
-			lastErr = err
+			m.observeAttempt(ctx, i, c, startedAt, err)
+			failures = append(failures, failedAttempt{candidate: c, err: err})
 			if !m.decider(err) {
-				return nil, err
+				return nil, failedAttemptsError(failures)
 			}
 			continue
 		}
@@ -92,13 +120,15 @@ func (m *Model) DoStream(ctx context.Context, params provider.CallOptions) (*pro
 				for range result.Stream {
 				}
 			}()
-			if lastErr != nil {
-				return nil, lastErr
+			m.observeAttempt(ctx, i, c, startedAt, ctx.Err())
+			if len(failures) > 0 {
+				return nil, failedAttemptsError(failures)
 			}
 			return nil, ctx.Err()
 		}
 
 		if !ok {
+			m.observeAttempt(ctx, i, c, startedAt, nil)
 			return result, nil
 		}
 
@@ -119,13 +149,15 @@ func (m *Model) DoStream(ctx context.Context, params provider.CallOptions) (*pro
 				})
 			}
 			var partErr error = apiErr
-			lastErr = partErr
+			m.observeAttempt(ctx, i, c, startedAt, partErr)
+			failures = append(failures, failedAttempt{candidate: c, err: partErr})
 			if !m.decider(partErr) {
-				return nil, partErr
+				return nil, failedAttemptsError(failures)
 			}
 			continue
 		}
 
+		m.observeAttempt(ctx, i, c, startedAt, nil)
 		ch := make(chan provider.StreamPart, 64)
 		go func() {
 			defer close(ch)
@@ -140,7 +172,42 @@ func (m *Model) DoStream(ctx context.Context, params provider.CallOptions) (*pro
 			Response: result.Response,
 		}, nil
 	}
-	return nil, lastErr
+	return nil, failedAttemptsError(failures)
+}
+
+type failedAttempt struct {
+	candidate provider.LanguageModel
+	err       error
+}
+
+func (m *Model) observeAttempt(ctx context.Context, index int, candidate provider.LanguageModel, startedAt time.Time, err error) {
+	if m.observer == nil {
+		return
+	}
+	m.observer(ctx, Attempt{
+		Index:      index + 1,
+		Provider:   candidate.Provider(),
+		ModelID:    candidate.ModelID(),
+		StartedAt:  startedAt,
+		FinishedAt: time.Now(),
+		Err:        err,
+	})
+}
+
+func failedAttemptsError(failures []failedAttempt) error {
+	if len(failures) == 0 {
+		return nil
+	}
+	if len(failures) == 1 {
+		return failures[0].err
+	}
+
+	errs := make([]error, 0, len(failures))
+	for i := len(failures) - 1; i >= 0; i-- {
+		failure := failures[i]
+		errs = append(errs, fmt.Errorf("fallback: provider %q model %q: %w", failure.candidate.Provider(), failure.candidate.ModelID(), failure.err))
+	}
+	return errors.Join(errs...)
 }
 
 // defaultDecider returns true (try next candidate) for retryable API errors

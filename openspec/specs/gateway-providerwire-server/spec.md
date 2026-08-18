@@ -206,7 +206,7 @@ For `providerwire.HeaderStreaming: true`, the handler SHALL call the resolved mo
 
 ### Requirement: Canonical SSE framing, flushing, and termination
 
-The handler SHALL encode each stream part with the co-located `providerwire.WriteSSEStreamPartTo` in received order. It SHALL flush once immediately after committing successful SSE headers and after every event when the response writer supports `http.Flusher`. A clean upstream channel close SHALL end the response without a synthetic event or `[DONE]` sentinel. After forwarding an upstream `provider.PartError`, the handler SHALL terminate the response even if the producer sends more parts.
+The handler SHALL encode each stream part with the co-located `providerwire.WriteSSEStreamPartTo` in received order. It SHALL flush once immediately after committing successful SSE headers and after every event when the response writer supports `http.Flusher`. A clean upstream channel close SHALL end the response without a synthetic event or `[DONE]` sentinel. A provider-emitted `provider.PartError` is a stream event and SHALL NOT terminate forwarding; the handler SHALL continue until the provider closes the stream, the request is canceled, a timeout expires, or a write fails.
 
 #### Scenario: Initial headers are flushed
 
@@ -225,13 +225,13 @@ The handler SHALL encode each stream part with the co-located `providerwire.Writ
 
 #### Scenario: Clean stream closes without sentinel
 
-- **WHEN** the model stream channel closes without an error part
+- **WHEN** the model stream channel closes
 - **THEN** the handler SHALL end the HTTP body without emitting `[DONE]` or any synthetic terminal part
 
-#### Scenario: Upstream PartError is terminal
+#### Scenario: Upstream PartError does not terminate forwarding
 
-- **WHEN** the model emits a `provider.PartError`
-- **THEN** the handler SHALL forward that part unchanged, flush it, and stop reading and writing subsequent parts
+- **WHEN** the model emits a `provider.PartError` followed by additional stream parts
+- **THEN** the handler SHALL forward the error and every subsequent part unchanged and in order until the stream closes or another handler termination condition occurs
 
 ### Requirement: Error normalization and commit-aware encoding
 
@@ -317,7 +317,7 @@ The handler SHALL derive one total-timeout context after successful resolution a
 
 ### Requirement: Streaming idle timeout behavior
 
-The handler SHALL enforce the idle timeout only after a valid stream is committed. The default SHALL be 60 seconds unless configured otherwise. The timer SHALL cover the wait for the first stream part and SHALL reset after every successfully forwarded non-error part. On expiry, the handler SHALL cancel the model with an exported `ErrIdleTimeout` cause and emit a final API-call error with status 504, `IsRetryable: true`, and message `idle timeout: no stream parts produced within configured window`.
+The handler SHALL enforce the idle timeout only after a valid stream is committed. The default SHALL be 60 seconds unless configured otherwise. The timer SHALL cover the wait for the first stream part and SHALL reset after every successfully forwarded part. On expiry, the handler SHALL cancel the model with an exported `ErrIdleTimeout` cause and emit a final API-call error with status 504, `IsRetryable: true`, and message `idle timeout: no stream parts produced within configured window`.
 
 #### Scenario: Initial stream idle timeout
 
@@ -331,7 +331,7 @@ The handler SHALL enforce the idle timeout only after a valid stream is committe
 
 #### Scenario: Activity resets idle timer
 
-- **WHEN** each non-error part arrives within the configured idle interval
+- **WHEN** each part arrives within the configured idle interval
 - **THEN** the handler SHALL reset the timer after each successful write and SHALL not time out solely because the total stream age exceeds one idle interval
 
 #### Scenario: Idle timeout does not govern DoStream setup
@@ -355,7 +355,7 @@ If canonical SSE encoding or writing to the response writer returns an error, th
 
 ### Requirement: Real Grafana client/server conformance without module cycles
 
-Tests SHALL exercise the public handler over a real `httptest.Server` using `providers/grafana.NewWithAccessToken` as the client. Such tests MUST live in the `providers/grafana` module or the independent conformance module, not in root-module tests that would create a dependency cycle. Coverage SHALL include unary success, ordered streaming success with clean EOF, and a retryable mid-stream `PartError`.
+Tests SHALL exercise the public handler over a real `httptest.Server` using `providers/grafana.NewWithAccessToken` as the client. Such tests MUST live in the `providers/grafana` module or the independent conformance module, not in root-module tests that would create a dependency cycle. Coverage SHALL include unary success, ordered streaming success with clean EOF, and continued ordered forwarding after a retryable mid-stream `PartError`.
 
 #### Scenario: Real client unary round-trip
 
@@ -367,10 +367,10 @@ Tests SHALL exercise the public handler over a real `httptest.Server` using `pro
 - **WHEN** the Grafana client's `DoStream` calls the public handler
 - **THEN** all model parts SHALL reach the client in order and the channel SHALL close cleanly without `[DONE]`
 
-#### Scenario: Real client receives retryable mid-stream error
+#### Scenario: Real client continues after retryable mid-stream error
 
-- **WHEN** the resolved model emits a retryable `provider.PartError`
-- **THEN** the real Grafana client SHALL receive a terminal part preserving status and retryability
+- **WHEN** the resolved model emits a retryable `provider.PartError` followed by additional parts
+- **THEN** the real Grafana client SHALL receive the error preserving status and retryability followed by every subsequent part in order
 
 #### Scenario: Test dependency graph remains acyclic
 

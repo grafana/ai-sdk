@@ -257,12 +257,24 @@ type responseToolUseBlock struct {
 // converseUsage mirrors upstream usage block, including optional cache fields
 // emitted on cached calls.
 type converseUsage struct {
+	Raw                   json.RawMessage `json:"-"`
 	InputTokens           int             `json:"inputTokens"`
 	OutputTokens          int             `json:"outputTokens"`
 	TotalTokens           int             `json:"totalTokens,omitempty"`
 	CacheReadInputTokens  *int            `json:"cacheReadInputTokens,omitempty"`
 	CacheWriteInputTokens *int            `json:"cacheWriteInputTokens,omitempty"`
 	CacheDetails          json.RawMessage `json:"cacheDetails,omitempty"`
+}
+
+func (u *converseUsage) UnmarshalJSON(data []byte) error {
+	type alias converseUsage
+	var decoded alias
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*u = converseUsage(decoded)
+	u.Raw = json.RawMessage(append([]byte(nil), data...))
+	return nil
 }
 
 type converseMetrics struct {

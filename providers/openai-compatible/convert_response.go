@@ -15,7 +15,7 @@ func parseGenerateResponse(body []byte, headers http.Header, providerName, metad
 	if err := json.Unmarshal(body, &parsed); err != nil {
 		return nil, fmt.Errorf("openai: decoding response: %w", err)
 	}
-	if len(parsed.Choices) == 0 {
+	if len(parsed.Choices) == 0 || parsed.Choices[0] == nil {
 		return nil, fmt.Errorf("openai: response contained no choices")
 	}
 
@@ -83,14 +83,14 @@ func resolveMetadataKey(opts provider.ProviderOptions, providerName string) stri
 	return rawName
 }
 
-func responseMetadata(id, modelID, providerName string, created int64) provider.ResponseMetadata {
+func responseMetadata(id, modelID, providerName string, created *int64) provider.ResponseMetadata {
 	md := provider.ResponseMetadata{
 		ID:       id,
 		ModelID:  modelID,
 		Provider: providerName,
 	}
-	if created > 0 {
-		md.Timestamp = time.Unix(created, 0).UTC()
+	if created != nil {
+		md.Timestamp = time.Unix(*created, 0).UTC()
 	}
 	return md
 }
@@ -141,7 +141,7 @@ func convertUsage(usage *openAIUsage) provider.Usage {
 		},
 		OutputTokens: provider.OutputTokenUsage{
 			Total:     ptr(outputTotal),
-			Text:      ptr(outputTotal - reasoning),
+			Text:      ptr(max(0, outputTotal-reasoning)),
 			Reasoning: ptr(reasoning),
 		},
 		Raw: raw,

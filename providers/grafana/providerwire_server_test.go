@@ -177,7 +177,7 @@ func TestPublicProviderWireServer_GatewayCatalog(t *testing.T) {
 	assert.Contains(t, apiErr.Message, `unknown model "missing-model"`)
 }
 
-func TestPublicProviderWireServer_RealGrafanaClientPartError(t *testing.T) {
+func TestPublicProviderWireServer_RealGrafanaClientContinuesAfterPartError(t *testing.T) {
 	retryable := true
 	apiErr := provider.NewAPICallError(provider.APICallErrorOptions{
 		Message:     "upstream failed",
@@ -185,10 +185,11 @@ func TestPublicProviderWireServer_RealGrafanaClientPartError(t *testing.T) {
 		IsRetryable: &retryable,
 		Data:        json.RawMessage(`{"code":"upstream"}`),
 	})
-	stream := make(chan provider.StreamPart, 3)
+	stream := make(chan provider.StreamPart, 4)
 	stream <- provider.StreamPart{Type: provider.PartTextStart, ID: "text"}
 	stream <- provider.StreamPart{Type: provider.PartError, APICallError: apiErr}
-	stream <- provider.StreamPart{Type: provider.PartTextDelta, Delta: "not forwarded"}
+	stream <- provider.StreamPart{Type: provider.PartTextDelta, ID: "text", Delta: "forwarded after error"}
+	stream <- provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonError}, Usage: &provider.Usage{}}
 	close(stream)
 	model := &serverTestModel{stream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
 		return &provider.StreamResult{Stream: stream}, nil
@@ -200,11 +201,16 @@ func TestPublicProviderWireServer_RealGrafanaClientPartError(t *testing.T) {
 	for part := range result.Stream {
 		got = append(got, part)
 	}
-	require.Len(t, got, 2)
+	require.Len(t, got, 4)
 	require.Equal(t, provider.PartError, got[1].Type)
 	require.NotNil(t, got[1].APICallError)
 	assert.Equal(t, apiErr.StatusCode, got[1].APICallError.StatusCode)
 	assert.Equal(t, apiErr.IsRetryable, got[1].APICallError.IsRetryable)
 	assert.JSONEq(t, string(apiErr.Data), string(got[1].APICallError.Data))
 	assert.False(t, errors.Is(got[1].APICallError, apiErr))
+	assert.Equal(t, provider.PartTextDelta, got[2].Type)
+	assert.Equal(t, "forwarded after error", got[2].Delta)
+	assert.Equal(t, provider.PartFinish, got[3].Type)
+	require.NotNil(t, got[3].FinishReason)
+	assert.Equal(t, provider.FinishReasonError, got[3].FinishReason.Unified)
 }

@@ -167,28 +167,30 @@ describe("upstream @ai-sdk/gateway <-> Go provider-wire", () => {
     ]);
   });
 
-  it("surfaces a mid-stream error carrying the server message", async () => {
+  it("continues after a mid-stream provider error", async () => {
     const gateway = newGateway();
-    const result = streamText({
-      model: gateway("error-mid-stream"),
-      maxRetries: 0,
-      prompt: "trigger a mid-stream error",
+    const { stream } = await gateway("error-mid-stream").doStream({
+      prompt: [{ role: "user", content: [{ type: "text", text: "trigger a mid-stream error" }] }],
     });
 
-    const errors: unknown[] = [];
-    let threw: string | undefined;
-    try {
-      for await (const part of result.fullStream) {
-        if (part.type === "error") errors.push((part as { error: unknown }).error);
-      }
-    } catch (e) {
-      threw = (e as Error).message;
+    const parts: Array<{ type: string; [key: string]: unknown }> = [];
+    for await (const part of stream) {
+      parts.push(part as { type: string; [key: string]: unknown });
     }
 
-    const surfaced =
-      errors.some((e) => JSON.stringify(e ?? "").includes("boom mid-stream")) ||
-      (threw?.includes("boom mid-stream") ?? false);
-    expect(surfaced).toBe(true);
+    expect(parts.map((part) => part.type)).toEqual([
+      "stream-start",
+      "response-metadata",
+      "text-start",
+      "text-delta",
+      "error",
+      "text-delta",
+      "text-end",
+      "finish",
+    ]);
+    expect(JSON.stringify(parts[4].error)).toContain("boom mid-stream");
+    expect(parts[5].delta).toBe("continued after error");
+    expect(parts[7].finishReason).toEqual({ unified: "error", raw: "error" });
   });
 
   it("surfaces a pre-stream HTTP error with the server message", async () => {

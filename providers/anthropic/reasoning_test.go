@@ -48,6 +48,7 @@ func TestResolveReasoningConfig_XHighEffort(t *testing.T) {
 	rc := resolveReasoningConfig(provider.ReasoningXHigh, caps, &warnings)
 	require.NotNil(t, rc)
 	assert.Equal(t, ThinkingAdaptive, rc.thinking.Type)
+	assert.Equal(t, ThinkingDisplaySummarized, rc.thinking.Display)
 	assert.Equal(t, "xhigh", rc.effort)
 	assert.Empty(t, warnings)
 }
@@ -74,6 +75,7 @@ func TestResolveReasoningConfig_AdaptivePath(t *testing.T) {
 			rc := resolveReasoningConfig(tc.reasoning, caps, &warnings)
 			require.NotNil(t, rc)
 			assert.Equal(t, tc.wantThinking, rc.thinking.Type)
+			assert.Equal(t, ThinkingDisplaySummarized, rc.thinking.Display)
 			assert.Equal(t, tc.wantEffort, rc.effort)
 
 			if tc.wantWarningType != "" {
@@ -167,6 +169,7 @@ func TestBuildParams_ReasoningPrecedence(t *testing.T) {
 		require.NoError(t, err)
 
 		require.NotNil(t, p.Thinking.OfAdaptive, "should set adaptive thinking from reasoning")
+		assert.Equal(t, "summarized", string(p.Thinking.OfAdaptive.Display))
 		assert.Equal(t, "medium", string(p.OutputConfig.Effort))
 		assert.Empty(t, warnings)
 	})
@@ -182,6 +185,7 @@ func TestBuildParams_Opus47SupportsXHighEffort(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NotNil(t, p.Thinking.OfAdaptive)
+	assert.Equal(t, "summarized", string(p.Thinking.OfAdaptive.Display))
 	assert.Equal(t, "xhigh", string(p.OutputConfig.Effort))
 	assert.NotContains(t, p.Betas, "effort-2025-11-24",
 		"effort-2025-11-24 beta is GA and rejected by Vertex AI; must not be appended")

@@ -63,6 +63,7 @@ func (TextPart) PartType() string { return string(UIPartText) }
 
 // ReasoningPart carries model reasoning in a UIMessage.
 type ReasoningPart struct {
+	ID               string                    `json:"id,omitempty"`
 	Text             string                    `json:"text"`
 	State            string                    `json:"state,omitempty"`
 	ProviderMetadata provider.ProviderMetadata `json:"providerMetadata,omitempty"`

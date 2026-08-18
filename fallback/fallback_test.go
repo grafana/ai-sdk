@@ -150,22 +150,61 @@ func TestDoGenerate(t *testing.T) {
 		assert.False(t, secondaryCalled, "secondary should not be called when decider rejects")
 	})
 
-	t.Run("AllFail_ReturnsLastError", func(t *testing.T) {
+	t.Run("AllFail_PreservesEveryAttempt", func(t *testing.T) {
+		primaryErr := errors.New("primary error")
+		secondaryErr := errors.New("secondary error")
 		primary := &mockModel{
+			providerName: "bedrock",
+			modelID:      "bedrock-model",
 			doGenerate: func(_ context.Context, _ provider.CallOptions) (*provider.GenerateResult, error) {
-				return nil, errors.New("primary error")
+				return nil, primaryErr
 			},
 		}
 		secondary := &mockModel{
+			providerName: "vertex",
+			modelID:      "vertex-model",
 			doGenerate: func(_ context.Context, _ provider.CallOptions) (*provider.GenerateResult, error) {
-				return nil, errors.New("secondary error")
+				return nil, secondaryErr
 			},
 		}
 
 		m := mustNew(t, primary, secondary)
 		_, err := m.DoGenerate(context.Background(), provider.CallOptions{})
 		require.Error(t, err)
-		assert.Equal(t, "secondary error", err.Error())
+		assert.ErrorIs(t, err, primaryErr)
+		assert.ErrorIs(t, err, secondaryErr)
+		assert.Contains(t, err.Error(), `provider "vertex" model "vertex-model": secondary error`)
+		assert.Contains(t, err.Error(), `provider "bedrock" model "bedrock-model": primary error`)
+	})
+
+	t.Run("AttemptObserver", func(t *testing.T) {
+		primaryErr := errors.New("primary error")
+		primary := &mockModel{
+			providerName: "bedrock",
+			modelID:      "bedrock-model",
+			doGenerate: func(_ context.Context, _ provider.CallOptions) (*provider.GenerateResult, error) {
+				return nil, primaryErr
+			},
+		}
+		secondary := &mockModel{
+			providerName: "vertex",
+			modelID:      "vertex-model",
+			doGenerate: func(_ context.Context, _ provider.CallOptions) (*provider.GenerateResult, error) {
+				return &provider.GenerateResult{}, nil
+			},
+		}
+
+		var attempts []Attempt
+		m := mustNew(t, primary, secondary).WithAttemptObserver(func(_ context.Context, attempt Attempt) {
+			attempts = append(attempts, attempt)
+		})
+		_, err := m.DoGenerate(context.Background(), provider.CallOptions{})
+		require.NoError(t, err)
+		require.Len(t, attempts, 2)
+		assert.Equal(t, Attempt{Index: 1, Provider: "bedrock", ModelID: "bedrock-model", StartedAt: attempts[0].StartedAt, FinishedAt: attempts[0].FinishedAt, Err: primaryErr}, attempts[0])
+		assert.Equal(t, Attempt{Index: 2, Provider: "vertex", ModelID: "vertex-model", StartedAt: attempts[1].StartedAt, FinishedAt: attempts[1].FinishedAt}, attempts[1])
+		assert.False(t, attempts[0].FinishedAt.Before(attempts[0].StartedAt))
+		assert.False(t, attempts[1].FinishedAt.Before(attempts[1].StartedAt))
 	})
 
 	t.Run("ContextCancelled", func(t *testing.T) {
@@ -190,6 +229,42 @@ func TestDoGenerate(t *testing.T) {
 }
 
 func TestDoStream(t *testing.T) {
+	t.Run("AttemptObserver", func(t *testing.T) {
+		primaryErr := provider.NewAPICallError(provider.APICallErrorOptions{Message: "primary error", StatusCode: 503})
+		primaryCh := make(chan provider.StreamPart, 1)
+		primaryCh <- provider.StreamPart{Type: provider.PartError, APICallError: primaryErr}
+		close(primaryCh)
+		secondaryCh := make(chan provider.StreamPart)
+		close(secondaryCh)
+
+		primary := &mockModel{
+			providerName: "bedrock",
+			modelID:      "bedrock-model",
+			doStream: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+				return &provider.StreamResult{Stream: primaryCh}, nil
+			},
+		}
+		secondary := &mockModel{
+			providerName: "vertex",
+			modelID:      "vertex-model",
+			doStream: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+				return &provider.StreamResult{Stream: secondaryCh}, nil
+			},
+		}
+
+		var attempts []Attempt
+		m := mustNew(t, primary, secondary).WithAttemptObserver(func(_ context.Context, attempt Attempt) {
+			attempts = append(attempts, attempt)
+		})
+		_, err := m.DoStream(context.Background(), provider.CallOptions{})
+		require.NoError(t, err)
+		require.Len(t, attempts, 2)
+		assert.Equal(t, "bedrock", attempts[0].Provider)
+		assert.ErrorIs(t, attempts[0].Err, primaryErr)
+		assert.Equal(t, "vertex", attempts[1].Provider)
+		assert.NoError(t, attempts[1].Err)
+	})
+
 	t.Run("PrimarySyncError_SecondarySucceeds", func(t *testing.T) {
 		ch := make(chan provider.StreamPart)
 		close(ch)

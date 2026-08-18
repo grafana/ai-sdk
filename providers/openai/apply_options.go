@@ -134,12 +134,12 @@ func applyProviderOptions(body *responses.ResponseNewParams, popts OpenAIRespons
 			} else {
 				body.ServiceTier = responses.ResponseNewParamsServiceTier(popts.ServiceTier)
 			}
-		case "priority":
+		case "priority", "fast":
 			if !caps.supportsPriorityProcessing {
 				warnings = append(warnings, provider.Warning{
 					Type:    provider.WarnUnsupported,
 					Feature: "serviceTier",
-					Details: "priority processing is only available for supported models and requires Enterprise access",
+					Details: "priority processing is only available for supported models (gpt-4, gpt-5, gpt-5-mini, o3, o4-mini) and requires Enterprise access. gpt-5-nano is not supported",
 				})
 			} else {
 				body.ServiceTier = responses.ResponseNewParamsServiceTier(popts.ServiceTier)

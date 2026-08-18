@@ -168,7 +168,9 @@ func convertUsage(u *converseUsage) provider.Usage {
 			Text:  intPtr(u.OutputTokens),
 		},
 	}
-	if raw, err := json.Marshal(u); err == nil {
+	if len(u.Raw) > 0 {
+		out.Raw = json.RawMessage(append([]byte(nil), u.Raw...))
+	} else if raw, err := json.Marshal(u); err == nil {
 		out.Raw = raw
 	}
 	return out

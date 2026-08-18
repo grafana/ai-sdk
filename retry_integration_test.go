@@ -659,6 +659,11 @@ func TestGenerateText_FirstChunkTimeoutIgnored(t *testing.T) {
 
 	require.NoError(t, err, "first chunk timeout should be ignored for GenerateText")
 	assert.Equal(t, "slow", gen.Text)
+	assert.Equal(t, []provider.Warning{{
+		Type:    provider.WarnUnsupported,
+		Feature: "timeout.firstChunkMs",
+		Details: "The firstChunkMs timeout is only supported by streaming functions.",
+	}}, gen.Warnings)
 }
 
 func TestGenerateText_ChunkTimeoutIgnored(t *testing.T) {
@@ -676,6 +681,11 @@ func TestGenerateText_ChunkTimeoutIgnored(t *testing.T) {
 
 	require.NoError(t, err, "chunk timeout should be ignored for GenerateText")
 	assert.Equal(t, "xx", gen.Text)
+	assert.Equal(t, []provider.Warning{{
+		Type:    provider.WarnUnsupported,
+		Feature: "timeout.chunkMs",
+		Details: "The chunkMs timeout is only supported by streaming functions.",
+	}}, gen.Warnings)
 }
 
 func TestStreamText_DefaultMaxRetries(t *testing.T) {

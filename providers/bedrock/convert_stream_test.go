@@ -229,6 +229,20 @@ func TestRunStream_JSONResponseToolCollapse(t *testing.T) {
 	assert.Equal(t, provider.FinishReasonStop, last.FinishReason.Unified)
 }
 
+func TestRunStream_FinishIncludesUnavailableUsage(t *testing.T) {
+	body := encodeFixtures(t,
+		`{"messageStart":{"role":"assistant"}}`,
+		`{"messageStop":{"stopReason":"end_turn"}}`,
+	)
+	parts := drainStream(t, body, requestMeta{})
+
+	finish := parts[len(parts)-1]
+	require.Equal(t, provider.PartFinish, finish.Type)
+	require.NotNil(t, finish.Usage)
+	assert.Nil(t, finish.Usage.InputTokens.Total)
+	assert.Nil(t, finish.Usage.OutputTokens.Total)
+}
+
 func TestRunStream_ThrottlingExceptionEvent(t *testing.T) {
 	// Build a payload mixing some text frames and then an exception frame.
 	textFrame := encodeFixture(t, `{"messageStart":{"role":"assistant"}}`)
@@ -255,6 +269,9 @@ func TestRunStream_ThrottlingExceptionEvent(t *testing.T) {
 	require.Equal(t, provider.PartFinish, last.Type)
 	require.NotNil(t, last.FinishReason)
 	assert.Equal(t, provider.FinishReasonError, last.FinishReason.Unified)
+	require.NotNil(t, last.Usage)
+	assert.Nil(t, last.Usage.InputTokens.Total)
+	assert.Nil(t, last.Usage.OutputTokens.Total)
 }
 
 func TestRunStream_ValidationExceptionNotRetryable(t *testing.T) {

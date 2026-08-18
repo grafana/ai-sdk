@@ -31,6 +31,24 @@ func TestParseResponse_TextOnly(t *testing.T) {
 	assert.Nil(t, metadata["stopSequence"])
 }
 
+func TestConvertUsagePreservesExplicitNullRawFields(t *testing.T) {
+	var usage converseUsage
+	require.NoError(t, json.Unmarshal([]byte(`{
+		"inputTokens":10,
+		"outputTokens":5,
+		"cacheReadInputTokens":null,
+		"cacheWriteInputTokens":null
+	}`), &usage))
+
+	got := convertUsage(&usage)
+	require.JSONEq(t, `{
+		"inputTokens":10,
+		"outputTokens":5,
+		"cacheReadInputTokens":null,
+		"cacheWriteInputTokens":null
+	}`, string(got.Raw))
+}
+
 func TestParseResponse_JSONInstructionExtractsObject(t *testing.T) {
 	body := []byte(`{
 		"output": {"message": {"role": "assistant", "content": [
