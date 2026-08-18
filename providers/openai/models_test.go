@@ -25,6 +25,7 @@ func TestGetModelCapabilities(t *testing.T) {
 		{"gpt-5.1", true, "developer", true, true, true},
 		{"gpt-5.6", true, "developer", true, true, true},
 		{"gpt-5.6-luna", true, "developer", true, true, true},
+		{"openai.gpt-5.6-luna", true, "developer", false, false, false},
 		{"gpt-5.99-chat-latest", true, "developer", true, true, true},
 		{"gpt-99", true, "developer", true, true, true},
 		{"gpt-99-mini", true, "developer", true, true, true},

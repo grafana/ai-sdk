@@ -1184,20 +1184,78 @@ func TestBuildParams_JSONSchemaStructuredOutput(t *testing.T) {
 }
 
 func TestBuildParams_ReasoningModelStripsTemperature(t *testing.T) {
-	temp := 0.7
-	topP := 0.9
-	body, warnings := buildBody(t, "o3", provider.CallOptions{
-		Prompt:      []provider.Message{provider.UserText("hi")},
-		Temperature: &temp,
-		TopP:        &topP,
-	})
-	_, hasTemp := body["temperature"]
-	_, hasTopP := body["top_p"]
-	assert.False(t, hasTemp, "temperature should be stripped")
-	assert.False(t, hasTopP, "top_p should be stripped")
-	feats := warningFeatures(warnings)
-	assert.Contains(t, feats, "temperature")
-	assert.Contains(t, feats, "topP")
+	for _, modelID := range []string{"o3", "openai.gpt-5.6-luna"} {
+		t.Run(modelID, func(t *testing.T) {
+			temp := 0.7
+			topP := 0.9
+			body, warnings := buildBody(t, modelID, provider.CallOptions{
+				Prompt:      []provider.Message{provider.UserText("hi")},
+				Temperature: &temp,
+				TopP:        &topP,
+			})
+			assert.Equal(t, modelID, body["model"], "wire model ID should remain unchanged")
+			_, hasTemp := body["temperature"]
+			_, hasTopP := body["top_p"]
+			assert.False(t, hasTemp, "temperature should be stripped")
+			assert.False(t, hasTopP, "top_p should be stripped")
+			feats := warningFeatures(warnings)
+			assert.Contains(t, feats, "temperature")
+			assert.Contains(t, feats, "topP")
+		})
+	}
+}
+
+func TestBuildParams_BedrockMantleRejectsUnsupportedServiceTiers(t *testing.T) {
+	for _, serviceTier := range []string{"flex", "priority"} {
+		t.Run(serviceTier, func(t *testing.T) {
+			body, warnings := buildBody(t, "openai.gpt-5.6-luna", provider.CallOptions{
+				Prompt: []provider.Message{provider.UserText("hi")},
+				ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{
+					ServiceTier: serviceTier,
+				}),
+			})
+			assert.NotContains(t, body, "service_tier")
+			require.Len(t, warnings, 1)
+			assert.Equal(t, provider.WarnUnsupported, warnings[0].Type)
+			assert.Equal(t, "serviceTier", warnings[0].Feature)
+		})
+	}
+}
+
+func TestBuildParams_BedrockMantleReasoningNoneStripsSamplingParameters(t *testing.T) {
+	tests := []struct {
+		modelID      string
+		wantSampling bool
+	}{
+		{modelID: "gpt-5.6-luna", wantSampling: true},
+		{modelID: "openai.gpt-5.6-luna", wantSampling: false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.modelID, func(t *testing.T) {
+			temp := 0.7
+			topP := 0.9
+			body, warnings := buildBody(t, tc.modelID, provider.CallOptions{
+				Prompt:      []provider.Message{provider.UserText("hi")},
+				Temperature: &temp,
+				TopP:        &topP,
+				ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{
+					ReasoningEffort: "none",
+				}),
+			})
+			if tc.wantSampling {
+				assert.Equal(t, temp, body["temperature"])
+				assert.Equal(t, topP, body["top_p"])
+				assert.NotContains(t, warningFeatures(warnings), "temperature")
+				assert.NotContains(t, warningFeatures(warnings), "topP")
+				return
+			}
+			assert.NotContains(t, body, "temperature")
+			assert.NotContains(t, body, "top_p")
+			assert.Contains(t, warningFeatures(warnings), "temperature")
+			assert.Contains(t, warningFeatures(warnings), "topP")
+		})
+	}
 }
 
 func TestBuildParams_ReasoningSummaryDefault(t *testing.T) {
