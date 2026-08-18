@@ -7,6 +7,7 @@
 // header. Scenarios:
 //
 //   - "stream-text"            -> streaming text with a system + user prompt
+//   - "empty-deltas"           -> empty text, reasoning, and tool-input deltas
 //   - "tool-call"              -> client-executed tool-call round trip
 //   - "provider-tool-result"   -> provider-executed tool-result part
 //   - "file-input"             -> decode an upstream file/image input part
@@ -109,6 +110,32 @@ func streamText(opts provider.CallOptions) *provider.StreamResult {
 		provider.StreamPart{Type: provider.PartTextDelta, ID: "t0", Delta: "hello from go"},
 		provider.StreamPart{Type: provider.PartTextEnd, ID: "t0"},
 		finish(provider.FinishReasonStop, "end_turn", 10, 5),
+	)
+}
+
+func streamEmptyDeltas() *provider.StreamResult {
+	const toolCallID, toolName = "call_empty_1", "echoTool"
+	const input = `{"text":"ok"}`
+	metadata := provider.ProviderMetadata{
+		"interop": json.RawMessage(`{"empty":true}`),
+	}
+	return streamResult(
+		provider.StreamPart{Type: provider.PartStreamStart},
+		provider.StreamPart{Type: provider.PartResponseMeta, ResponseID: "resp_empty", ModelID: "empty-deltas", Timestamp: time.Now().UTC()},
+		provider.StreamPart{Type: provider.PartReasoningStart, ID: "r0"},
+		provider.StreamPart{Type: provider.PartReasoningDelta, ID: "r0", Delta: "", ProviderMetadata: metadata},
+		provider.StreamPart{Type: provider.PartReasoningDelta, ID: "r0", Delta: "thought"},
+		provider.StreamPart{Type: provider.PartReasoningEnd, ID: "r0"},
+		provider.StreamPart{Type: provider.PartTextStart, ID: "t0"},
+		provider.StreamPart{Type: provider.PartTextDelta, ID: "t0", Delta: "", ProviderMetadata: metadata},
+		provider.StreamPart{Type: provider.PartTextDelta, ID: "t0", Delta: "done"},
+		provider.StreamPart{Type: provider.PartTextEnd, ID: "t0"},
+		provider.StreamPart{Type: provider.PartToolInputStart, ID: toolCallID, ToolName: toolName},
+		provider.StreamPart{Type: provider.PartToolInputDelta, ID: toolCallID, Delta: "", ProviderMetadata: metadata},
+		provider.StreamPart{Type: provider.PartToolInputDelta, ID: toolCallID, Delta: input},
+		provider.StreamPart{Type: provider.PartToolInputEnd, ID: toolCallID},
+		provider.StreamPart{Type: provider.PartToolCall, ToolCallID: toolCallID, ToolName: toolName, Input: input},
+		finish(provider.FinishReasonToolCalls, "tool_use", 10, 3),
 	)
 }
 
@@ -239,6 +266,8 @@ func (m *scenarioModel) DoStream(_ context.Context, opts provider.CallOptions) (
 		})
 	case strings.Contains(m.modelID, "error-mid-stream"):
 		return streamMidStreamError(), nil
+	case strings.Contains(m.modelID, "empty-deltas"):
+		return streamEmptyDeltas(), nil
 	case strings.Contains(m.modelID, "stream-text"):
 		return streamText(opts), nil
 	default:
