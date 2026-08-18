@@ -35,6 +35,81 @@ describe("upstream @ai-sdk/gateway <-> Go provider-wire", () => {
     expect(types).not.toContain("error");
   });
 
+  it("preserves required empty delta fields through the gateway and ai client", async () => {
+    const gateway = newGateway();
+    const { stream } = await gateway("empty-deltas").doStream({
+      prompt: [{ role: "user", content: [{ type: "text", text: "emit empty deltas" }] }],
+    });
+
+    const emptyDeltas: Array<{
+      type: string;
+      id: string;
+      delta: string;
+      hasDelta: boolean;
+      providerMetadata: unknown;
+    }> = [];
+    for await (const part of stream) {
+      if (
+        (part.type === "text-delta" ||
+          part.type === "reasoning-delta" ||
+          part.type === "tool-input-delta") &&
+        part.delta === ""
+      ) {
+        emptyDeltas.push({
+          type: part.type,
+          id: part.id,
+          delta: part.delta,
+          hasDelta: Object.prototype.hasOwnProperty.call(part, "delta"),
+          providerMetadata: part.providerMetadata,
+        });
+      }
+    }
+
+    expect(emptyDeltas).toEqual([
+      {
+        type: "reasoning-delta",
+        id: "r0",
+        delta: "",
+        hasDelta: true,
+        providerMetadata: { interop: { empty: true } },
+      },
+      {
+        type: "text-delta",
+        id: "t0",
+        delta: "",
+        hasDelta: true,
+        providerMetadata: { interop: { empty: true } },
+      },
+      {
+        type: "tool-input-delta",
+        id: "call_empty_1",
+        delta: "",
+        hasDelta: true,
+        providerMetadata: { interop: { empty: true } },
+      },
+    ]);
+
+    const result = streamText({
+      model: gateway("empty-deltas"),
+      maxRetries: 0,
+      tools: {
+        echoTool: tool({ inputSchema: z.object({ text: z.string() }) }),
+      },
+      prompt: "consume empty deltas",
+    });
+    const consumedTypes: string[] = [];
+    for await (const part of result.fullStream) {
+      consumedTypes.push(part.type);
+    }
+
+    expect(consumedTypes).toContain("text-delta");
+    expect(consumedTypes).toContain("reasoning-delta");
+    expect(consumedTypes).toContain("tool-input-delta");
+    expect(await result.text).toBe("done");
+    expect(await result.reasoningText).toBe("thought");
+    expect(await result.finishReason).toBe("tool-calls");
+  });
+
   it("round-trips a client-executed tool call", async () => {
     const gateway = newGateway();
     let executedWith: unknown;

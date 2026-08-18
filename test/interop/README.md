@@ -3,9 +3,10 @@
 This harness runs a real upstream Vercel AI SDK client (`@ai-sdk/gateway` +
 `ai`) against the Go provider-wire server and asserts two-way compatibility. It
 is the executable contract for `provider-wire-upstream-full-compat`: it proves a
-stock upstream client interoperates with the Go server for streaming text, tool
-calls, provider-executed tool results, inline and URL-valued file input/output,
-and errors (continued streaming after provider errors and pre-stream failures).
+stock upstream client interoperates with the Go server for streaming text,
+required empty delta fields, tool calls, provider-executed tool results, inline
+and URL-valued file input/output, and errors (continued streaming after provider
+errors and pre-stream failures).
 
 ## How it works
 
@@ -31,6 +32,7 @@ pnpm test
 | Scenario (model id)    | Exercises                                              |
 | ---------------------- | ------------------------------------------------------ |
 | `stream-text`          | streaming text + system prompt (system-as-string req)  |
+| `empty-deltas`         | required empty text/reasoning/tool-input delta fields  |
 | `tool-call`            | client-executed tool-call round trip                   |
 | `provider-tool-result` | provider-executed tool-result (`result` value)         |
 | `file-input`           | upstream file-data union decoded server-side           |
