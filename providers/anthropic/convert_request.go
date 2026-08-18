@@ -344,7 +344,7 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 	if opts.ToolChoice != nil {
 		if opts.ToolChoice.Type == provider.ToolChoiceNone {
 			p.Tools = nil
-		} else {
+		} else if opts.ToolChoice.Type != provider.ToolChoiceAuto || len(opts.Tools) > 0 {
 			p.ToolChoice = convertToolChoice(*opts.ToolChoice, mapping)
 		}
 	}
