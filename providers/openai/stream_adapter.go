@@ -99,7 +99,7 @@ func (a *streamAdapter) handleEvent(event responses.ResponseStreamEventUnion, ch
 
 	case responses.ResponseTextDeltaEvent:
 		ch <- provider.StreamPart{Type: provider.PartTextDelta, ID: e.ItemID, Delta: e.Delta}
-		if a.br.logprobsRequested && len(e.Logprobs) > 0 {
+		if a.br.logprobsRequested && e.JSON.Logprobs.Valid() {
 			a.logprobs = append(a.logprobs, convertTextDeltaLogprobs(e.Logprobs))
 		}
 

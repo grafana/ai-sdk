@@ -23,7 +23,7 @@ func convertResponse(resp *responses.Response, br buildResult, generateID func()
 			for _, c := range v.Content {
 				if t := c.AsAny(); t != nil {
 					if ot, ok := t.(responses.ResponseOutputText); ok {
-						if br.logprobsRequested && len(ot.Logprobs) > 0 {
+						if br.logprobsRequested && ot.JSON.Logprobs.Valid() {
 							logprobs = append(logprobs, convertOutputTextLogprobs(ot.Logprobs))
 						}
 						content = append(content, provider.GenerateContentPart{

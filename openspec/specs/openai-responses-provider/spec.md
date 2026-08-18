@@ -239,19 +239,24 @@ snake_case fields to the provider content model's camelCase fields so later
 turns can reconstruct equivalent request items. The conversion SHALL map usage
 and finish reason, set provider metadata (`responseId`, logprobs,
 `serviceTier`), and carry warnings. When logprobs were requested and an output-text
-content part returns non-empty logprobs, `ProviderMetadata["openai"].logprobs`
-SHALL contain one outer entry per such content part in response order. Each entry
-SHALL preserve token order and contain `token`, `logprob`, and `top_logprobs`
-alternatives with `token` and `logprob`, without provider-only byte arrays. Empty
-or unrequested logprobs SHALL NOT add a `logprobs` metadata field.
+content part returns a non-null logprobs array, including an empty array,
+`ProviderMetadata["openai"].logprobs` SHALL contain one outer entry for that
+content part in response order. Each entry SHALL preserve token order and contain
+`token`, `logprob`, and `top_logprobs` alternatives with `token` and `logprob`,
+without provider-only byte arrays. Null or missing arrays SHALL NOT add outer
+entries, and unrequested logprobs SHALL NOT add a `logprobs` metadata field.
 
 #### Scenario: Generated output logprobs metadata
-- **WHEN** logprobs are requested and output-text content returns non-empty token logprobs with top alternatives
+- **WHEN** logprobs are requested and output-text content returns token logprobs with top alternatives
 - **THEN** `ProviderMetadata["openai"].logprobs` contains the content-part arrays in response order
 - **AND** each token and top alternative preserves its `token` and `logprob` fields in order
 
+#### Scenario: Generated empty logprobs array is retained
+- **WHEN** logprobs are requested and output-text content returns an empty logprobs array
+- **THEN** `ProviderMetadata["openai"].logprobs` contains an empty array entry for that content part
+
 #### Scenario: Generated logprobs metadata is omitted
-- **WHEN** logprobs were not requested or every returned output-text logprobs array is empty
+- **WHEN** logprobs were not requested or every output-text logprobs field is null or missing
 - **THEN** `ProviderMetadata["openai"]` does not contain a `logprobs` field
 
 #### Scenario: Text and url citation
@@ -309,21 +314,26 @@ stream and emit `provider.StreamPart`s with ordering matching upstream:
 reasoning start/delta/end; provider-executed tools -> their lifecycle parts with
 `ProviderExecuted`; `response.completed`/`response.incomplete`/`response.failed`
 -> finish with usage and finish reason; `error` -> error part. Unknown events
-SHALL NOT error. When logprobs were requested, non-empty
-`response.output_text.delta.logprobs` arrays SHALL be accumulated in event order
-and included as `ProviderMetadata["openai"].logprobs` on the final `PartFinish`,
-using the same normalized token and top-alternative shape as non-streaming
-responses. Empty or unrequested stream logprobs SHALL NOT add a `logprobs`
-metadata field.
+SHALL NOT error. When logprobs were requested, non-null
+`response.output_text.delta.logprobs` arrays, including empty arrays, SHALL be
+accumulated in event order and included as `ProviderMetadata["openai"].logprobs`
+on the final `PartFinish`, using the same normalized token and top-alternative
+shape as non-streaming responses. Null or missing arrays SHALL NOT add outer
+entries, and unrequested stream logprobs SHALL NOT add a `logprobs` metadata
+field.
 
 #### Scenario: Stream finish with logprobs
-- **WHEN** logprobs are requested and output-text delta events return non-empty token logprobs with top alternatives
+- **WHEN** logprobs are requested and output-text delta events return token logprobs with top alternatives
 - **THEN** the final `PartFinish` contains `ProviderMetadata["openai"].logprobs`
 - **AND** its outer arrays preserve delta order while each array preserves token and top-alternative order
 - **AND** entries contain `token`, `logprob`, and `top_logprobs` fields without provider-only byte arrays
 
+#### Scenario: Stream empty logprobs array is retained
+- **WHEN** logprobs are requested and an output-text delta returns an empty logprobs array
+- **THEN** the final `PartFinish` logprobs metadata contains an empty array entry for that delta
+
 #### Scenario: Stream logprobs metadata is omitted
-- **WHEN** logprobs were not requested or every output-text delta logprobs array is empty
+- **WHEN** logprobs were not requested or every output-text delta logprobs field is null or missing
 - **THEN** the final `PartFinish` provider metadata does not contain a `logprobs` field
 
 #### Scenario: Text streaming lifecycle
