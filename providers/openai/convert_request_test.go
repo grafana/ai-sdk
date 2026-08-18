@@ -1184,20 +1184,25 @@ func TestBuildParams_JSONSchemaStructuredOutput(t *testing.T) {
 }
 
 func TestBuildParams_ReasoningModelStripsTemperature(t *testing.T) {
-	temp := 0.7
-	topP := 0.9
-	body, warnings := buildBody(t, "o3", provider.CallOptions{
-		Prompt:      []provider.Message{provider.UserText("hi")},
-		Temperature: &temp,
-		TopP:        &topP,
-	})
-	_, hasTemp := body["temperature"]
-	_, hasTopP := body["top_p"]
-	assert.False(t, hasTemp, "temperature should be stripped")
-	assert.False(t, hasTopP, "top_p should be stripped")
-	feats := warningFeatures(warnings)
-	assert.Contains(t, feats, "temperature")
-	assert.Contains(t, feats, "topP")
+	for _, modelID := range []string{"o3", "openai.gpt-5.6-luna"} {
+		t.Run(modelID, func(t *testing.T) {
+			temp := 0.7
+			topP := 0.9
+			body, warnings := buildBody(t, modelID, provider.CallOptions{
+				Prompt:      []provider.Message{provider.UserText("hi")},
+				Temperature: &temp,
+				TopP:        &topP,
+			})
+			assert.Equal(t, modelID, body["model"], "wire model ID should remain unchanged")
+			_, hasTemp := body["temperature"]
+			_, hasTopP := body["top_p"]
+			assert.False(t, hasTemp, "temperature should be stripped")
+			assert.False(t, hasTopP, "top_p should be stripped")
+			feats := warningFeatures(warnings)
+			assert.Contains(t, feats, "temperature")
+			assert.Contains(t, feats, "topP")
+		})
+	}
 }
 
 func TestBuildParams_ReasoningSummaryDefault(t *testing.T) {

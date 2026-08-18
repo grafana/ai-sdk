@@ -31,6 +31,8 @@ type gptVersion struct {
 // getModelCapabilities returns capability flags using anchored OpenAI model
 // family parsing.
 func getModelCapabilities(modelID string) modelCapabilities {
+	// Bedrock Mantle namespaces OpenAI model IDs without changing their capabilities.
+	modelID = strings.TrimPrefix(modelID, "openai.")
 	oVersion, hasOSeriesVersion := parseOSeriesVersion(modelID)
 	gpt, hasGPTVersion := parseGPTVersion(modelID)
 	isGPTChat := hasGPTVersion && gpt.minor == nil && strings.HasPrefix(gpt.variant, "chat")
