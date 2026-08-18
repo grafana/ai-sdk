@@ -2,13 +2,13 @@
 
 ### Requirement: Registered protocol authority and baseline
 
-The repository SHALL define the ProviderWire V4 HTTP contract against Vercel AI SDK source commit `c527d7b3b26287598d2c80e7bce8f16b21653363` and the exact registered package set `@ai-sdk/provider@4.0.4`, `@ai-sdk/gateway@4.0.33`, `@ai-sdk/provider-utils@5.0.16`, and `ai@7.0.44`. Executable stock-client evidence SHALL run the exact package pins. Source inspection SHALL use the registered commit and, where its workspace package version differs, SHALL record verified equivalence to the corresponding registered release source before relying on that path.
+The repository SHALL define the ProviderWire V4 HTTP contract against Vercel AI SDK source commit `d76eb85a9a7f2dbe44ab2f3dc858ad5cdcb5242e` and the exact registered package set `@ai-sdk/provider@4.0.7`, `@ai-sdk/gateway@4.0.52`, `@ai-sdk/provider-utils@5.0.27`, and `ai@7.0.65`. Executable stock-client evidence SHALL run the exact package pins. Source inspection SHALL use the registered commit and, where its workspace package version differs, SHALL record verified equivalence to the corresponding registered release source before relying on that path.
 
 The authority order SHALL be pinned Gateway HTTP behavior, deterministic stock-client captures and response consumption, checked-in OpenAPI and JSON Schemas plus these requirements, Go implementations, and language-specific in-memory types. Every discrepancy SHALL be classified as pinned-client behavior, local serialized projection, intentional host-policy restriction, parity-preserving Go adaptation, implementation defect, or coverage gap.
 
 #### Scenario: Exact client packages produce captures
 - **WHEN** the contract capture suite runs
-- **THEN** it SHALL execute Gateway 4.0.33 and ai 7.0.44 with provider 4.0.4 and provider-utils 5.0.16 rather than packages inferred from another checkout
+- **THEN** it SHALL execute Gateway 4.0.52 and ai 7.0.65 with provider 4.0.7 and provider-utils 5.0.27 rather than packages inferred from another checkout
 
 #### Scenario: Registered commit package mismatch is explicit
 - **WHEN** a relied-on source path belongs to a package whose manifest version at the registered commit differs from the registered npm version

@@ -4,7 +4,7 @@ The reusable provider wire is currently defined by tolerant Go codecs and implem
 
 ## What Changes
 
-- Add a contract-only `gateway-providerwire-v4` capability for the registered baseline: Vercel AI SDK commit `c527d7b3b26287598d2c80e7bce8f16b21653363`, `@ai-sdk/provider@4.0.4`, `@ai-sdk/gateway@4.0.33`, `@ai-sdk/provider-utils@5.0.16`, and `ai@7.0.44`.
+- Add a contract-only `gateway-providerwire-v4` capability for the registered baseline: Vercel AI SDK commit `d76eb85a9a7f2dbe44ab2f3dc858ad5cdcb5242e`, `@ai-sdk/provider@4.0.7`, `@ai-sdk/gateway@4.0.52`, `@ai-sdk/provider-utils@5.0.27`, and `ai@7.0.65`.
 - Check in OpenAPI 3.1 for `POST /language-model` and curated JSON Schema 2020-12 contracts for requests, unary results, stream parts, and safe errors.
 - Define closed standard objects and exact discriminator-selected union arms while keeping only declared opaque JSON and keyed extension boundaries open.
 - Add reproducible, privacy-safe captures from the exact pinned stock Gateway client, storing the HTTP envelope separately from semantic JSON and recording capture provenance.

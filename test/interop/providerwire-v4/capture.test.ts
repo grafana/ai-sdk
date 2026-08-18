@@ -7,10 +7,10 @@ import { captureAllRequests, type CaptureArtifact } from "./scenarios";
 const CAPTURE_PATH = resolve(import.meta.dirname, "captures/requests.json");
 const PROVENANCE_PATH = resolve(import.meta.dirname, "provenance.json");
 const EXPECTED_PACKAGES = {
-  "@ai-sdk/provider": "4.0.4",
-  "@ai-sdk/gateway": "4.0.33",
-  "@ai-sdk/provider-utils": "5.0.16",
-  ai: "7.0.44",
+  "@ai-sdk/provider": "4.0.7",
+  "@ai-sdk/gateway": "4.0.52",
+  "@ai-sdk/provider-utils": "5.0.27",
+  ai: "7.0.65",
 } as const;
 
 describe("ProviderWire V4 stock-client request captures", () => {
@@ -76,6 +76,6 @@ function assertPrivateText(encoded: string): void {
   expect(encoded).not.toMatch(/\/(?:home|Users)\//);
   expect(encoded).not.toMatch(/Bearer (?!<redacted>)/);
   expect(encoded).not.toContain("synthetic-capture-project");
-  expect(encoded).not.toContain("ai-sdk/gateway/4.0.33");
+  expect(encoded).not.toContain("ai-sdk/gateway/4.0.52");
   expect(encoded).not.toContain("provider recording");
 }

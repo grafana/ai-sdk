@@ -5,10 +5,10 @@ The executable authority is the exact package set registered in
 
 | Package | Version |
 | --- | --- |
-| `@ai-sdk/provider` | `4.0.4` |
-| `@ai-sdk/gateway` | `4.0.33` |
-| `@ai-sdk/provider-utils` | `5.0.16` |
-| `ai` | `7.0.44` |
+| `@ai-sdk/provider` | `4.0.7` |
+| `@ai-sdk/gateway` | `4.0.52` |
+| `@ai-sdk/provider-utils` | `5.0.27` |
+| `ai` | `7.0.65` |
 
 Request captures and response-consumption tests execute these npm versions. They
 prove stock-client emission or consumption, not acceptance by Vercel's private
@@ -17,37 +17,33 @@ server.
 ## Source authority
 
 The registered source commit is
-`c527d7b3b26287598d2c80e7bce8f16b21653363`. Its workspace manifests contain
-provider `4.0.4`, Gateway `4.0.30`, provider-utils `5.0.14`, and ai `7.0.40`.
-Consequently, the commit alone is not executable evidence for the registered
-package set.
+`d76eb85a9a7f2dbe44ab2f3dc858ad5cdcb5242e`. Its workspace manifests match the
+registered package set, so no release-equivalence substitution is required.
+The relied-on protocol paths are pinned by their Git objects:
 
-The provider V4 source trees at the commit are byte-identical to the
-`@ai-sdk/provider@4.0.4` tag:
-
-| Source tree | Git tree object |
-| --- | --- |
-| `packages/provider/src/language-model/v4` | `13363d184fc4cbbb5fc8908923e72d5d1d937b6e` |
-| `packages/provider/src/shared/v4` | `6aeaf1740ec862f09e3336b49a52be4251a14e2a` |
-
-The HTTP/error paths relied on from Gateway and provider-utils are
-byte-identical between the registered commit and the corresponding release tag:
-
-| Release tag | Source path | Git blob object |
+| Package | Source path | Git object |
 | --- | --- | --- |
-| `@ai-sdk/gateway@4.0.33` | `packages/gateway/src/gateway-language-model.ts` | `0848a5fa9b16c1cd750d5299f1440722e1405d3e` |
-| `@ai-sdk/gateway@4.0.33` | `packages/gateway/src/gateway-provider.ts` | `2630ab9954e8a52fdf700422d6420aeafe90ce6a` |
-| `@ai-sdk/gateway@4.0.33` | `packages/gateway/src/gateway-config.ts` | `cb375d24c4c2d8966787948ec323d07fc6ce8e9c` |
-| `@ai-sdk/gateway@4.0.33` | `packages/gateway/src/errors/create-gateway-error.ts` | `d90f86688f62df6f2889c9c690ec08cdfe310202` |
-| `@ai-sdk/gateway@4.0.33` | `packages/gateway/src/errors/as-gateway-error.ts` | `8d7bd4d32acc074a8ea03a0866f6aaf8f205d499` |
-| `@ai-sdk/gateway@4.0.33` | `packages/gateway/src/errors/parse-auth-method.ts` | `39ed93f4625570e756a8a2ea4241f7365c1fa5cc` |
-| `@ai-sdk/provider-utils@5.0.16` | `packages/provider-utils/src/post-to-api.ts` | `520a7b0589dc9de0e940e91ef3f53ff01cc882d6` |
-| `@ai-sdk/provider-utils@5.0.16` | `packages/provider-utils/src/response-handler.ts` | `69836ee1fac46cae1fd0e03fa4e1c7a3d33d3710` |
-| `@ai-sdk/provider-utils@5.0.16` | `packages/provider-utils/src/parse-json-event-stream.ts` | `4769ebcf28c4b20ee46223137599ead2c6822db7` |
-| `@ai-sdk/provider-utils@5.0.16` | `packages/provider-utils/src/combine-headers.ts` | `5f842268d4044cea1269fbc637cb818c14da5d33` |
+| `@ai-sdk/provider@4.0.7` | `packages/provider/src/language-model/v4` | `b1750eeeda29c46461e6d758390eb4c86b5661e4` |
+| `@ai-sdk/provider@4.0.7` | `packages/provider/src/shared/v4` | `6aeaf1740ec862f09e3336b49a52be4251a14e2a` |
+| `@ai-sdk/gateway@4.0.52` | `packages/gateway/src/gateway-language-model.ts` | `19d3182e3070ba806cd4acade0c2da0788fb1a6a` |
+| `@ai-sdk/gateway@4.0.52` | `packages/gateway/src/gateway-provider.ts` | `1b30f58ffd729b7991ffec9d408970f101560c61` |
+| `@ai-sdk/gateway@4.0.52` | `packages/gateway/src/gateway-config.ts` | `cb375d24c4c2d8966787948ec323d07fc6ce8e9c` |
+| `@ai-sdk/gateway@4.0.52` | `packages/gateway/src/errors/create-gateway-error.ts` | `f7a5766353d0a8f76189e195ecd440e88d2b1906` |
+| `@ai-sdk/gateway@4.0.52` | `packages/gateway/src/errors/as-gateway-error.ts` | `8d7bd4d32acc074a8ea03a0866f6aaf8f205d499` |
+| `@ai-sdk/gateway@4.0.52` | `packages/gateway/src/errors/parse-auth-method.ts` | `6f04551ae0cad772ea6896386be451205f3e5edd` |
+| `@ai-sdk/provider-utils@5.0.27` | `packages/provider-utils/src/post-to-api.ts` | `b7747a1b0a95bb03b321d0ffdcdd7847b16e4cc3` |
+| `@ai-sdk/provider-utils@5.0.27` | `packages/provider-utils/src/response-handler.ts` | `69836ee1fac46cae1fd0e03fa4e1c7a3d33d3710` |
+| `@ai-sdk/provider-utils@5.0.27` | `packages/provider-utils/src/parse-json-event-stream.ts` | `4769ebcf28c4b20ee46223137599ead2c6822db7` |
+| `@ai-sdk/provider-utils@5.0.27` | `packages/provider-utils/src/combine-headers.ts` | `5f842268d4044cea1269fbc637cb818c14da5d33` |
 
-The registered ai package differs from the commit and is evaluated only through
-`ai@7.0.44` execution.
+Source comparison from the previous registered baseline found no change to the
+existing LanguageModelV4 serialized type shapes, request preprocessing, routing
+headers, response selection, SSE parsing, or header combination used by this
+contract. Provider 4.0.7 adds a batch-language-model surface outside this
+language-model HTTP capability. Provider-utils widens POST body input to `Blob`
+without changing JSON requests. Gateway 4.0.52 changes failed-response message
+extraction to `getErrorMessage`; response-consumption projections execute that
+behavior directly.
 
 ## Divergence classification
 
@@ -66,7 +62,8 @@ object.
 
 ## Upgrade rule
 
-A baseline change updates the manifest, exact TypeScript pins, this equivalence
+A baseline change updates the manifest, exact TypeScript pins, this source
 record, captures, schemas, fixture index, boundary ledger, parity map, and
-lockfiles together. A missing or changed equivalence proof is a stop condition;
+lockfiles together. If a future registered commit's workspace versions differ
+from the package manifest, path-level release-equivalence evidence is required;
 it must not be replaced silently with source from `main`.

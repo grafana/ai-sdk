@@ -16,7 +16,7 @@
 
 - [x] 3.1 Implement a deterministic TypeScript recording server that is independent of both provider-wire handlers and stores method/path, allowlisted normalized headers, semantic JSON, and provenance separately.
 - [x] 3.2 Add direct `doGenerate` and `doStream` capture scenarios that prove the pinned method, path, routing headers, body transformations, and unary/streaming selection.
-- [x] 3.3 Add orchestration-level `generateText` and `streamText` capture scenarios so `ai@7.0.44` request construction is executable evidence rather than inferred from provider types.
+- [x] 3.3 Add orchestration-level `generateText` and `streamText` capture scenarios so `ai@7.0.65` request construction is executable evidence rather than inferred from provider types.
 - [x] 3.4 Capture all message roles, function/provider tools, tool choice, client/provider-executed tool flows, prompt files, reasoning files, and nested tool-result file data, including `Uint8Array` base64 conversion.
 - [x] 3.5 Capture structured response formats, opaque null where allowed, body headers, provider options and representative Gateway controls, raw-chunk intent, explicit empty collections, and configured/call/model/observability header collisions.
 - [x] 3.6 Implement temporary-directory recapture and semantic comparison for normal verification plus a separate explicit fixture-update command.

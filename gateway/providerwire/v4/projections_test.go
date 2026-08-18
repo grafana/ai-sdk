@@ -82,10 +82,10 @@ func TestContractEvidence_ProvenancePrivacyAndIndex(t *testing.T) {
 	require.NoError(t, json.Unmarshal(provenanceRaw, &provenance))
 	assert.Equal(t, "pinned-stock-client-emission", provenance.Authority)
 	assert.Equal(t, map[string]string{
-		"@ai-sdk/provider":       "4.0.4",
-		"@ai-sdk/gateway":        "4.0.33",
-		"@ai-sdk/provider-utils": "5.0.16",
-		"ai":                     "7.0.44",
+		"@ai-sdk/provider":       "4.0.7",
+		"@ai-sdk/gateway":        "4.0.52",
+		"@ai-sdk/provider-utils": "5.0.27",
+		"ai":                     "7.0.65",
 	}, provenance.Packages)
 	assert.Contains(t, provenance.NonClaims, "Vercel private server acceptance")
 	assert.Contains(t, provenance.NonClaims, "live provider response recording")
@@ -117,7 +117,7 @@ func TestContractEvidence_ProvenancePrivacyAndIndex(t *testing.T) {
 		assert.NotRegexp(t, regexp.MustCompile(`Bearer [A-Za-z0-9]`), text)
 		assert.NotContains(t, text, "capture-not-a-real-key")
 		assert.NotContains(t, text, "synthetic-capture-project")
-		assert.NotContains(t, text, "ai-sdk/gateway/4.0.33")
+		assert.NotContains(t, text, "ai-sdk/gateway/4.0.52")
 	}
 
 	indexPath := filepath.Join(interopContractDir, "INDEX.yaml")

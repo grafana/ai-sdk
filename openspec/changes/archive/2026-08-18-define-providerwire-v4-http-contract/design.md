@@ -2,7 +2,7 @@
 
 The existing `gateway/providerwire` package is a tolerant Go-oriented transport: it serializes flat `provider` structs, accepts legacy and selected upstream forms, serves requests, and is used by Grafana and the current stock-client interop suite. It remains the deployed rollback path. It is not suitable as the normative strict contract because the Go structs collapse some absent/empty/zero distinctions, represent discriminated unions as sibling fields, and apply custom JSON projections that reflection cannot describe accurately.
 
-The registered compatibility baseline combines source commit `c527d7b3b26287598d2c80e7bce8f16b21653363` with exact npm packages. That commit contains `@ai-sdk/provider@4.0.4`, but its workspace manifests contain Gateway 4.0.30, provider-utils 5.0.14, and ai 7.0.40 rather than the registered Gateway 4.0.33, provider-utils 5.0.16, and ai 7.0.44. The relevant Gateway HTTP/error and provider-utils POST/response/SSE files are byte-identical between the commit and the registered package release tags; provider V4 types match provider 4.0.4. The `ai` orchestration package differs, so executable captures must run the exact installed npm pins.
+The registered compatibility baseline combines source commit `d76eb85a9a7f2dbe44ab2f3dc858ad5cdcb5242e` with exact npm packages. Its workspace manifests match the registered package set: `@ai-sdk/provider@4.0.7`, `@ai-sdk/gateway@4.0.52`, `@ai-sdk/provider-utils@5.0.27`, and `ai@7.0.65`. Executable captures run those exact installed npm pins, while the matching registered commit remains the source-inspection authority.
 
 The pinned Gateway client removes `abortSignal`, base64-encodes supported inline file bytes, retains body `headers`, `providerOptions`, and `includeRawChunks`, combines multiple HTTP header sources, and posts JSON to `/language-model`. It validates successful and failed response payloads with permissive runtime schemas. Captures therefore establish emitted requests and accepted responses, but response strictness must be identified as a curated local serialized projection rather than evidence of private Vercel server acceptance.
 
@@ -28,9 +28,9 @@ The pinned Gateway client removes `abortSignal`, base64-encodes supported inline
 
 ### 1. Split source authority from executable package authority
 
-Exact registered npm pins govern executable capture and consumption behavior. The registered commit remains the source reference, with path-level equivalence evidence recorded where its package manifest version differs. Capture provenance records the package versions, source commit, capture command, and normalized fields. A future baseline upgrade updates the manifest, package pins, source-equivalence record, captures, schemas, corpus, and lockfile together.
+Exact registered npm pins govern executable capture and consumption behavior. The registered commit remains the source reference, with path-level Git object evidence recorded for the relied-on protocol files and explicit release-equivalence evidence required whenever a future commit's package manifest differs. Capture provenance records the package versions, source commit, capture command, and normalized fields. A future baseline upgrade updates the manifest, package pins, source record, captures, schemas, corpus, and lockfile together.
 
-This avoids silently treating the commit's older `ai` orchestration as the registered client. Using only release tags was rejected because the repository baseline intentionally records a source commit; using only the commit was rejected because it would execute the wrong package set.
+This avoids silently substituting source from `main` or another release. Using only release tags was rejected because the repository baseline intentionally records a source commit; executing packages inferred from a checkout was rejected because the manifest's exact npm pins are the executable authority.
 
 ### 2. Keep H1 artifacts contract-only and protocol-local
 
@@ -99,7 +99,7 @@ The parity map gains a ProviderWire V4 HTTP contract row. H1 claims exact pinned
 ## Risks / Trade-offs
 
 - **Closed schemas require coordinated updates when upstream adds fields without changing specification version 4** → Treat every baseline movement as a governed upgrade of pins, captures, boundary ledger, schemas, corpus, and lockfiles.
-- **The registered commit does not contain every registered package version** → Preserve explicit source-equivalence evidence and execute only exact npm pins.
+- **A future registered commit may not contain every registered package version** → Require explicit source-equivalence evidence for any mismatch and execute only exact npm pins.
 - **Pinned clients permissively validate responses** → Maintain comprehensive curated response fixtures and label them local serialized projections.
 - **The strict JSON dependency is pre-v1** → Pin one revision, isolate its use, avoid production exposure in H1, and reevaluate promotion in H2.
 - **OpenAPI cannot express all content negotiation or SSE framing rules** → Keep H1 syntax, selection, framing, and EOF semantics in OpenSpec/tests, and assign server commitment/flushing/lifecycle to the later streaming-service capability.
