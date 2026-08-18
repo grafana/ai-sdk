@@ -494,6 +494,34 @@ func TestConvertResponse_MCPToolResult(t *testing.T) {
 	})
 }
 
+func TestConvertResponse_FinishReason(t *testing.T) {
+	tests := []struct {
+		reason  anthropic.BetaStopReason
+		unified provider.UnifiedFinishReason
+	}{
+		{anthropic.BetaStopReasonPauseTurn, provider.FinishReasonStop},
+		{anthropic.BetaStopReasonModelContextWindowExceeded, provider.FinishReasonLength},
+	}
+
+	for _, tt := range tests {
+		t.Run(string(tt.reason), func(t *testing.T) {
+			msg := unmarshalMessage(t, `{
+				"id": "msg_1",
+				"type": "message",
+				"role": "assistant",
+				"model": "claude-sonnet-4-6",
+				"content": [{"type": "text", "text": "hi"}],
+				"stop_reason": "`+string(tt.reason)+`",
+				"usage": {"input_tokens": 10, "output_tokens": 5}
+			}`)
+
+			result, err := convertResponse(msg, toolNameMapping{}, false, nil, defaultGenerateID, "anthropic", false)
+			require.NoError(t, err)
+			assert.Equal(t, provider.FinishReason{Unified: tt.unified, Raw: string(tt.reason)}, result.FinishReason)
+		})
+	}
+}
+
 func TestMapFinishReason(t *testing.T) {
 	tests := []struct {
 		reason anthropic.BetaStopReason

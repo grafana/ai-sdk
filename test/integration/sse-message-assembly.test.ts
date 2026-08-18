@@ -23,16 +23,21 @@ async function readScenarioMessages(name: string): Promise<UIMessage[]> {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        if (value.success) {
-          controller.enqueue(value.value);
+        if (!value.success) {
+          controller.error(value.error);
+          return;
         }
+        controller.enqueue(value.value);
       }
       controller.close();
     },
   });
 
   const messages: UIMessage[] = [];
-  for await (const message of readUIMessageStream({ stream: chunkStream })) {
+  for await (const message of readUIMessageStream({
+    stream: chunkStream,
+    terminateOnError: true,
+  })) {
     messages.push(message);
   }
   return messages;
@@ -77,6 +82,17 @@ describe("SSE message assembly", () => {
         providerMetadata: undefined,
       },
     ]);
+  });
+
+  it("assembles a message terminated by a length finish reason", async () => {
+    const messages = await readScenarioMessages("finish-reason-length");
+    const lastMessage = messages[messages.length - 1];
+    const text = lastMessage.parts.find((part) => part.type === "text");
+
+    expect(text).toMatchObject({
+      type: "text",
+      text: "Partial response",
+    });
   });
 
   it("merges metadata-only text deltas into the assembled text part", async () => {

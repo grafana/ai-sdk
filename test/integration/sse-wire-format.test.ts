@@ -46,6 +46,25 @@ describe("SSE wire format", () => {
     expect(fullText).toBe("Hello, world!");
   });
 
+  it("preserves a length finish reason", async () => {
+    const res = await fetchScenario("finish-reason-length");
+    const stream = parseJsonEventStream({
+      stream: res.body!,
+      schema: uiMessageChunkSchema,
+    });
+
+    const chunks: UIMessageChunk[] = [];
+    for await (const value of stream) {
+      expect(value.success).toBe(true);
+      if (value.success) chunks.push(value.value);
+    }
+
+    expect(chunks).toContainEqual({
+      type: "finish",
+      finishReason: "length",
+    });
+  });
+
   it("preserves metadata-only structured text deltas", async () => {
     const res = await fetchScenario("text-metadata-only-delta");
     const stream = parseJsonEventStream({
