@@ -2,6 +2,7 @@ package openai
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 
@@ -661,46 +662,64 @@ func customToolCallOutputItem(part provider.ContentPart, ctx inputConversionCont
 				text.SetExtraFields(map[string]any{"prompt_cache_breakpoint": breakpoint})
 			}
 			content = append(content, responses.ResponseCustomToolCallOutputOutputOutputContentListItemUnionParam{OfInputText: &text})
-		case provider.ToolContentFileURL:
-			options := ctx.contentOptions(value)
-			if topLevelMediaType(value.MediaType) == "image" {
-				image := responses.ResponseInputImageParam{ImageURL: param.NewOpt(value.URL)}
-				if options.ImageDetail != "" {
-					image.Detail = responses.ResponseInputImageDetail(options.ImageDetail)
-				}
-				if options.PromptCacheBreakpoint != nil {
-					image.SetExtraFields(map[string]any{"prompt_cache_breakpoint": options.PromptCacheBreakpoint})
-				}
-				content = append(content, responses.ResponseCustomToolCallOutputOutputOutputContentListItemUnionParam{OfInputImage: &image})
-			} else {
-				file := responses.ResponseInputFileParam{FileURL: param.NewOpt(value.URL)}
-				if options.PromptCacheBreakpoint != nil {
-					file.SetExtraFields(map[string]any{"prompt_cache_breakpoint": options.PromptCacheBreakpoint})
-				}
-				content = append(content, responses.ResponseCustomToolCallOutputOutputOutputContentListItemUnionParam{OfInputFile: &file})
+		case provider.ToolContentFile:
+			if value.Data == nil {
+				warnings = append(warnings, provider.Warning{
+					Type:    provider.WarnOther,
+					Message: "unsupported custom tool file content without data",
+				})
+				continue
 			}
-		case provider.ToolContentFileData:
 			options := ctx.contentOptions(value)
-			uri := dataURI(value.MediaType, value.Data)
-			if topLevelMediaType(value.MediaType) == "image" {
-				image := responses.ResponseInputImageParam{ImageURL: param.NewOpt(uri)}
-				if options.ImageDetail != "" {
-					image.Detail = responses.ResponseInputImageDetail(options.ImageDetail)
+			switch {
+			case value.Data.IsURL():
+				if topLevelMediaType(value.MediaType) == "image" {
+					image := responses.ResponseInputImageParam{ImageURL: param.NewOpt(value.Data.URL)}
+					if options.ImageDetail != "" {
+						image.Detail = responses.ResponseInputImageDetail(options.ImageDetail)
+					}
+					if options.PromptCacheBreakpoint != nil {
+						image.SetExtraFields(map[string]any{"prompt_cache_breakpoint": options.PromptCacheBreakpoint})
+					}
+					content = append(content, responses.ResponseCustomToolCallOutputOutputOutputContentListItemUnionParam{OfInputImage: &image})
+				} else {
+					file := responses.ResponseInputFileParam{FileURL: param.NewOpt(value.Data.URL)}
+					if options.PromptCacheBreakpoint != nil {
+						file.SetExtraFields(map[string]any{"prompt_cache_breakpoint": options.PromptCacheBreakpoint})
+					}
+					content = append(content, responses.ResponseCustomToolCallOutputOutputOutputContentListItemUnionParam{OfInputFile: &file})
 				}
-				if options.PromptCacheBreakpoint != nil {
-					image.SetExtraFields(map[string]any{"prompt_cache_breakpoint": options.PromptCacheBreakpoint})
+			case value.Data.IsData():
+				base64Data := value.Data.Base64
+				if base64Data == "" {
+					base64Data = base64.StdEncoding.EncodeToString(value.Data.Bytes)
 				}
-				content = append(content, responses.ResponseCustomToolCallOutputOutputOutputContentListItemUnionParam{OfInputImage: &image})
-			} else {
-				filename := value.Filename
-				if filename == "" {
-					filename = "data"
+				uri := dataURI(value.MediaType, base64Data)
+				if topLevelMediaType(value.MediaType) == "image" {
+					image := responses.ResponseInputImageParam{ImageURL: param.NewOpt(uri)}
+					if options.ImageDetail != "" {
+						image.Detail = responses.ResponseInputImageDetail(options.ImageDetail)
+					}
+					if options.PromptCacheBreakpoint != nil {
+						image.SetExtraFields(map[string]any{"prompt_cache_breakpoint": options.PromptCacheBreakpoint})
+					}
+					content = append(content, responses.ResponseCustomToolCallOutputOutputOutputContentListItemUnionParam{OfInputImage: &image})
+				} else {
+					filename := value.Filename
+					if filename == "" {
+						filename = "data"
+					}
+					file := responses.ResponseInputFileParam{FileData: param.NewOpt(uri), Filename: param.NewOpt(filename)}
+					if options.PromptCacheBreakpoint != nil {
+						file.SetExtraFields(map[string]any{"prompt_cache_breakpoint": options.PromptCacheBreakpoint})
+					}
+					content = append(content, responses.ResponseCustomToolCallOutputOutputOutputContentListItemUnionParam{OfInputFile: &file})
 				}
-				file := responses.ResponseInputFileParam{FileData: param.NewOpt(uri), Filename: param.NewOpt(filename)}
-				if options.PromptCacheBreakpoint != nil {
-					file.SetExtraFields(map[string]any{"prompt_cache_breakpoint": options.PromptCacheBreakpoint})
-				}
-				content = append(content, responses.ResponseCustomToolCallOutputOutputOutputContentListItemUnionParam{OfInputFile: &file})
+			default:
+				warnings = append(warnings, provider.Warning{
+					Type:    provider.WarnOther,
+					Message: "unsupported custom tool file data variant",
+				})
 			}
 		default:
 			warnings = append(warnings, provider.Warning{

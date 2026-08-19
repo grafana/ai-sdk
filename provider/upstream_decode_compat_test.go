@@ -79,13 +79,19 @@ func TestDataContent_UnmarshalUpstreamUnion(t *testing.T) {
 	}{
 		{"url", `{"type":"url","url":"https://example.com/x.png"}`, DataContent{URL: "https://example.com/x.png"}},
 		{"data-base64", `{"type":"data","data":"aGVsbG8="}`, DataContent{Base64: "aGVsbG8="}},
-		{"empty-data", `{"type":"data","data":""}`, DataContent{Bytes: []byte{}}},
+		{"empty data", `{"type":"data","data":""}`, DataContent{Bytes: []byte{}}},
+		{"empty URL", `{"type":"url","url":""}`, DataContent{variant: dataContentVariantURL}},
+		{"empty text", `{"type":"text","text":""}`, DataContent{variant: dataContentVariantText}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			var d DataContent
 			require.NoError(t, json.Unmarshal([]byte(tc.in), &d))
 			assert.Equal(t, tc.want, d)
+
+			encoded, err := json.Marshal(d)
+			require.NoError(t, err)
+			assert.JSONEq(t, tc.in, string(encoded))
 		})
 	}
 }
@@ -151,6 +157,51 @@ func TestStreamFileData_UnmarshalRejectsUnsupportedVariants(t *testing.T) {
 	}
 }
 
+func TestToolResultContentValue_UnmarshalLegacyFileVariants(t *testing.T) {
+	cases := []struct {
+		name    string
+		in      string
+		want    ToolResultContentValue
+		encoded string
+	}{
+		{
+			name:    "raw base64",
+			in:      `{"type":"file-data","data":"aGk=","mediaType":"image/png"}`,
+			want:    ToolResultContentValue{Type: ToolContentFile, Data: &DataContent{Base64: "aGk="}, MediaType: "image/png"},
+			encoded: `{"type":"file","data":{"type":"data","data":"aGk="},"mediaType":"image/png"}`,
+		},
+		{
+			name:    "empty raw base64",
+			in:      `{"type":"file-data","data":"","mediaType":"image/png"}`,
+			want:    ToolResultContentValue{Type: ToolContentFile, Data: &DataContent{Bytes: []byte{}}, MediaType: "image/png"},
+			encoded: `{"type":"file","data":{"type":"data","data":""},"mediaType":"image/png"}`,
+		},
+		{
+			name:    "URL",
+			in:      `{"type":"file-url","url":"https://example.com/file.pdf","mediaType":"application/pdf"}`,
+			want:    ToolResultContentValue{Type: ToolContentFile, Data: &DataContent{URL: "https://example.com/file.pdf"}, MediaType: "application/pdf"},
+			encoded: `{"type":"file","data":{"type":"url","url":"https://example.com/file.pdf"},"mediaType":"application/pdf"}`,
+		},
+		{
+			name:    "provider reference",
+			in:      `{"type":"file-reference","providerReference":{"openai":"file-123"},"mediaType":"application/pdf"}`,
+			want:    ToolResultContentValue{Type: ToolContentFile, Data: &DataContent{Reference: json.RawMessage(`{"openai":"file-123"}`)}, MediaType: "application/pdf"},
+			encoded: `{"type":"file","data":{"type":"reference","reference":{"openai":"file-123"}},"mediaType":"application/pdf"}`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var value ToolResultContentValue
+			require.NoError(t, json.Unmarshal([]byte(tc.in), &value))
+			assert.Equal(t, tc.want, value)
+
+			encoded, err := json.Marshal(value)
+			require.NoError(t, err)
+			assert.JSONEq(t, tc.encoded, string(encoded))
+		})
+	}
+}
+
 // TestDataContent_UnmarshalUnknownVariantFailsClosed locks the fail-closed
 // policy: an unknown tagged file-data variant is rejected with a decode error,
 // not silently turned into an empty DataContent. Supported variants
@@ -163,6 +214,28 @@ func TestDataContent_UnmarshalUnknownVariantFailsClosed(t *testing.T) {
 	assert.Contains(t, err.Error(), "unsupported file-data variant")
 }
 
+func TestDataContent_UnmarshalMalformedTaggedVariantFailsClosed(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+	}{
+		{"data has wrong type", `{"type":"data","data":{"oops":true}}`},
+		{"data is missing", `{"type":"data"}`},
+		{"URL has wrong type", `{"type":"url","url":42}`},
+		{"URL is null", `{"type":"url","url":null}`},
+		{"reference has wrong type", `{"type":"reference","reference":"file-1"}`},
+		{"reference value has wrong type", `{"type":"reference","reference":{"openai":42}}`},
+		{"text has wrong type", `{"type":"text","text":[]}`},
+		{"text is missing", `{"type":"text"}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var d DataContent
+			require.Error(t, json.Unmarshal([]byte(tc.in), &d))
+		})
+	}
+}
+
 // TestToolResultOutput_UnmarshalMalformedValueFailsClosed locks the fail-closed
 // policy: an upstream `value` that cannot be mapped onto the canonical field
 // for its type returns a decode error instead of silently dropping the payload.
@@ -171,14 +244,46 @@ func TestToolResultOutput_UnmarshalMalformedValueFailsClosed(t *testing.T) {
 		name string
 		in   string
 	}{
+		{"text value is missing", `{"type":"text"}`},
 		{"text value is not a string", `{"type":"text","value":123}`},
+		{"text value is null", `{"type":"text","value":null}`},
+		{"legacy text is missing", `{"type":"text","providerOptions":{}}`},
+		{"json value is missing", `{"type":"json"}`},
+		{"content value is missing", `{"type":"content"}`},
+		{"unknown output type", `{"type":"future","value":"x"}`},
+		{"execution denied has value", `{"type":"execution-denied","value":"no"}`},
 		{"content value is not an array", `{"type":"content","value":"nope"}`},
+		{"content value is null", `{"type":"content","value":null}`},
+		{"content item is null", `{"type":"content","value":[null]}`},
+		{"content item type is missing", `{"type":"content","value":[{}]}`},
+		{"content item type is unknown", `{"type":"content","value":[{"type":"future"}]}`},
 		{
-			// Upstream content file item carries a nested file-data union that
-			// the canonical ToolResultContentValue (flat Data string) cannot
-			// represent; it must error, not decode to empty content.
-			name: "content value with nested file-data union",
-			in:   `{"type":"content","value":[{"type":"file","data":{"type":"data","data":"aGk="},"mediaType":"image/png"}]}`,
+			name: "content file has unknown data variant",
+			in:   `{"type":"content","value":[{"type":"file","data":{"type":"future","data":"aGk="},"mediaType":"image/png"}]}`,
+		},
+		{
+			name: "content file has malformed data variant",
+			in:   `{"type":"content","value":[{"type":"file","data":{"type":"data","data":{"oops":true}},"mediaType":"image/png"}]}`,
+		},
+		{
+			name: "content file data is missing",
+			in:   `{"type":"content","value":[{"type":"file","mediaType":"image/png"}]}`,
+		},
+		{
+			name: "content file data type is missing",
+			in:   `{"type":"content","value":[{"type":"file","data":{},"mediaType":"image/png"}]}`,
+		},
+		{
+			name: "content file mediaType is missing",
+			in:   `{"type":"content","value":[{"type":"file","data":{"type":"data","data":"aGk="}}]}`,
+		},
+		{
+			name: "content text value is missing text",
+			in:   `{"type":"content","value":[{"type":"text"}]}`,
+		},
+		{
+			name: "legacy content file data is not a string",
+			in:   `{"type":"content","value":[{"type":"file-data","data":{"type":"data","data":"aGk="},"mediaType":"image/png"}]}`,
 		},
 	}
 	for _, tc := range cases {

@@ -484,12 +484,19 @@ func (tc *ToolConfig) buildTool(name string) (aisdk.Tool, error) {
 	if tc.ModelOutput != nil {
 		content := make([]provider.ToolResultContentValue, len(tc.ModelOutput.Content))
 		for i, value := range tc.ModelOutput.Content {
+			contentType := value.Type
+			if contentType == provider.ToolContentFileData {
+				contentType = provider.ToolContentFile
+			}
 			content[i] = provider.ToolResultContentValue{
-				Type:      value.Type,
+				Type:      contentType,
 				Text:      value.Text,
-				Data:      value.Data,
 				MediaType: value.MediaType,
 				Filename:  value.Filename,
+			}
+			if value.Type == provider.ToolContentFileData {
+				data := provider.Base64DataContent(value.Data)
+				content[i].Data = &data
 			}
 		}
 		modelOutput := &provider.ToolResultOutput{

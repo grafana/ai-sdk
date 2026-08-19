@@ -814,8 +814,8 @@ func TestBuildRequest_ToolResultDocument(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			req, warnings, _ := mustBuildRequest(t, testAnthropicModel, toolResultFileCallOptions(provider.ToolResultContentValue{
-				Type:            provider.ToolContentFileData,
-				Data:            "base64data",
+				Type:            provider.ToolContentFile,
+				Data:            &provider.DataContent{Base64: "base64data"},
 				MediaType:       tt.mediaType,
 				Filename:        tt.filename,
 				ProviderOptions: tt.providerOptions,
@@ -844,8 +844,8 @@ func TestBuildRequest_ToolResultDocument(t *testing.T) {
 
 func TestBuildRequest_ToolResultImage(t *testing.T) {
 	req, warnings, _ := mustBuildRequest(t, testAnthropicModel, toolResultFileCallOptions(provider.ToolResultContentValue{
-		Type:      provider.ToolContentFileData,
-		Data:      "base64data",
+		Type:      provider.ToolContentFile,
+		Data:      &provider.DataContent{Base64: "base64data"},
 		MediaType: "image/jpeg",
 	}))
 
@@ -857,6 +857,23 @@ func TestBuildRequest_ToolResultImage(t *testing.T) {
 	require.NotNil(t, image)
 	assert.Equal(t, "jpeg", image.Format)
 	assert.Equal(t, "base64data", image.Source.Bytes)
+	assert.Empty(t, warnings)
+}
+
+func TestBuildRequest_ToolResultEmptyData(t *testing.T) {
+	emptyData := provider.Base64DataContent("")
+	req, warnings, _ := mustBuildRequest(t, testAnthropicModel, toolResultFileCallOptions(provider.ToolResultContentValue{
+		Type:      provider.ToolContentFile,
+		Data:      &emptyData,
+		MediaType: "image/jpeg",
+	}))
+
+	require.Len(t, req.Messages, 1)
+	result := req.Messages[0].Content[0].ToolResult
+	require.NotNil(t, result)
+	require.Len(t, result.Content, 1)
+	require.NotNil(t, result.Content[0].Image)
+	assert.Empty(t, result.Content[0].Image.Source.Bytes)
 	assert.Empty(t, warnings)
 }
 
@@ -877,8 +894,8 @@ func TestBuildRequest_UnsupportedToolResultFileMediaType(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.mediaType, func(t *testing.T) {
 			_, _, _, err := buildRequest(testAnthropicModel, toolResultFileCallOptions(provider.ToolResultContentValue{
-				Type:      provider.ToolContentFileData,
-				Data:      "base64data",
+				Type:      provider.ToolContentFile,
+				Data:      &provider.DataContent{Base64: "base64data"},
 				MediaType: tt.mediaType,
 			}))
 
@@ -895,8 +912,8 @@ func TestBuildRequest_DocumentNamesShareCounterWithToolResults(t *testing.T) {
 			provider.NewToolMessage(provider.ToolResultPart("call-123", "document-reader", &provider.ToolResultOutput{
 				Type: provider.ToolOutputContent,
 				Content: []provider.ToolResultContentValue{{
-					Type:      provider.ToolContentFileData,
-					Data:      "base64data",
+					Type:      provider.ToolContentFile,
+					Data:      &provider.DataContent{Base64: "base64data"},
 					MediaType: "application/pdf",
 				}},
 			})),
@@ -1004,8 +1021,8 @@ func TestBuildRequest_VideoMessage(t *testing.T) {
 func TestBuildRequest_ToolResultVideo(t *testing.T) {
 	t.Run("inline", func(t *testing.T) {
 		req, warnings, _ := mustBuildRequest(t, testAnthropicModel, toolResultFileCallOptions(provider.ToolResultContentValue{
-			Type:      provider.ToolContentFileData,
-			Data:      "AAECAw==",
+			Type:      provider.ToolContentFile,
+			Data:      &provider.DataContent{Base64: "AAECAw=="},
 			MediaType: "video/mp4",
 		}))
 		result := req.Messages[0].Content[0].ToolResult
@@ -1020,8 +1037,8 @@ func TestBuildRequest_ToolResultVideo(t *testing.T) {
 
 	t.Run("S3", func(t *testing.T) {
 		req, warnings, _ := mustBuildRequest(t, testAnthropicModel, toolResultFileCallOptions(provider.ToolResultContentValue{
-			Type:      provider.ToolContentFileURL,
-			URL:       "s3://bucket/video.mov",
+			Type:      provider.ToolContentFile,
+			Data:      &provider.DataContent{URL: "s3://bucket/video.mov"},
 			MediaType: "video/quicktime",
 		}))
 		result := req.Messages[0].Content[0].ToolResult

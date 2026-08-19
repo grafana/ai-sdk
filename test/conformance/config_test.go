@@ -77,6 +77,8 @@ func TestConfig_UIToolModelOutput(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, provider.ToolOutputContent, output.Type)
 	require.Len(t, output.Content, 2)
+	assert.Equal(t, provider.ToolContentFile, output.Content[1].Type)
+	assert.Equal(t, &provider.DataContent{Base64: cfg.Tools["weather"].ModelOutput.Content[1].Data}, output.Content[1].Data)
 	assert.Equal(t, "image/png", output.Content[1].MediaType)
 
 	uiMessages, err := cfg.BuildUIMessages()
@@ -85,6 +87,25 @@ func TestConfig_UIToolModelOutput(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, messages, 3)
 	require.Equal(t, provider.ToolOutputContent, messages[2].Content[0].Output.Type)
+}
+
+func TestToolConfig_EmptyFileDataModelOutput(t *testing.T) {
+	tool, err := (&ToolConfig{InputSchema: map[string]any{"type": "object"}, ModelOutput: &ToolModelOutputConfig{
+		Type: provider.ToolOutputContent,
+		Content: []ToolModelOutputContent{{
+			Type:      provider.ToolContentFileData,
+			Data:      "",
+			MediaType: "application/octet-stream",
+		}},
+	}}).buildTool("empty-file")
+	require.NoError(t, err)
+
+	output, err := tool.ToModelOutput(aisdk.ToolOutputContext{})
+	require.NoError(t, err)
+	require.Len(t, output.Content, 1)
+	encoded, err := json.Marshal(output.Content[0])
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"type":"file","data":{"type":"data","data":""},"mediaType":"application/octet-stream"}`, string(encoded))
 }
 
 type configCaptureModel struct {

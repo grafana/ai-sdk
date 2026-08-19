@@ -7,6 +7,15 @@ import (
 	"fmt"
 )
 
+type dataContentVariant string
+
+const (
+	dataContentVariantData dataContentVariant = "data"
+	dataContentVariantURL  dataContentVariant = "url"
+	dataContentVariantRef  dataContentVariant = "reference"
+	dataContentVariantText dataContentVariant = "text"
+)
+
 // DataContent represents file data as bytes, base64, a URL, a provider reference, or inline text.
 // Exactly one of Bytes, Base64, URL, Reference, or Text should be set.
 type DataContent struct {
@@ -18,7 +27,8 @@ type DataContent struct {
 	Reference json.RawMessage `json:"reference,omitempty"`
 	// Text carries the upstream `{type:"text",text}` variant, an inline text
 	// document.
-	Text string `json:"text,omitempty"`
+	Text    string `json:"text,omitempty"`
+	variant dataContentVariant
 }
 
 // MarshalJSON emits the upstream Vercel AI SDK LanguageModelV4 tagged file-data
@@ -32,29 +42,46 @@ type DataContent struct {
 // This supersedes the legacy Go-to-Go `{"bytes"|"base64"|"url":...}` emitted
 // form. Decoding remains tolerant of both shapes (see [DataContent.UnmarshalJSON]).
 // See openspec change provider-wire-upstream-full-compat.
+// Base64DataContent constructs inline base64 file data, including an empty payload.
+func Base64DataContent(data string) DataContent {
+	if data == "" {
+		return DataContent{Bytes: []byte{}}
+	}
+	return DataContent{Base64: data}
+}
+
+// IsData reports whether d represents inline bytes or base64 data.
+func (d DataContent) IsData() bool {
+	return d.Bytes != nil || d.Base64 != ""
+}
+
+// IsURL reports whether d represents a file URL.
+func (d DataContent) IsURL() bool {
+	return d.variant == dataContentVariantURL || d.URL != ""
+}
+
 func (d DataContent) MarshalJSON() ([]byte, error) {
 	switch {
-	case d.Bytes != nil:
+	case d.IsData():
+		data := d.Base64
+		if d.Bytes != nil {
+			data = base64.StdEncoding.EncodeToString(d.Bytes)
+		}
 		return json.Marshal(struct {
 			Type string `json:"type"`
 			Data string `json:"data"`
-		}{Type: "data", Data: base64.StdEncoding.EncodeToString(d.Bytes)})
-	case d.Base64 != "":
-		return json.Marshal(struct {
-			Type string `json:"type"`
-			Data string `json:"data"`
-		}{Type: "data", Data: d.Base64})
-	case d.URL != "":
+		}{Type: "data", Data: data})
+	case d.IsURL():
 		return json.Marshal(struct {
 			Type string `json:"type"`
 			URL  string `json:"url"`
 		}{Type: "url", URL: d.URL})
-	case len(d.Reference) > 0:
+	case d.variant == dataContentVariantRef || len(d.Reference) > 0:
 		return json.Marshal(struct {
 			Type      string          `json:"type"`
 			Reference json.RawMessage `json:"reference"`
 		}{Type: "reference", Reference: d.Reference})
-	case d.Text != "":
+	case d.variant == dataContentVariantText || d.Text != "":
 		return json.Marshal(struct {
 			Type string `json:"type"`
 			Text string `json:"text"`
@@ -74,30 +101,62 @@ func (d DataContent) MarshalJSON() ([]byte, error) {
 // than silently decoding to an empty DataContent. See openspec change
 // provider-wire-upstream-full-compat.
 func (d *DataContent) UnmarshalJSON(data []byte) error {
-	var tagged struct {
-		Type      string          `json:"type"`
-		Data      string          `json:"data"`
-		URL       string          `json:"url"`
-		Reference json.RawMessage `json:"reference"`
-		Text      string          `json:"text"`
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
 	}
-	if err := json.Unmarshal(data, &tagged); err == nil && tagged.Type != "" {
+	if rawType, ok := fields["type"]; ok {
+		var variant dataContentVariant
+		if err := json.Unmarshal(rawType, &variant); err != nil {
+			return fmt.Errorf("provider: decoding file-data variant: %w", err)
+		}
 		*d = DataContent{}
-		switch tagged.Type {
-		case "data":
-			if tagged.Data == "" {
-				d.Bytes = []byte{}
-			} else {
-				d.Base64 = tagged.Data
+		switch variant {
+		case dataContentVariantData:
+			raw, ok := fields["data"]
+			if !ok || string(raw) == "null" {
+				return errors.New("provider: file-data variant data is required")
 			}
-		case "url":
-			d.URL = tagged.URL
-		case "reference":
-			d.Reference = tagged.Reference
-		case "text":
-			d.Text = tagged.Text
+			if err := json.Unmarshal(raw, &d.Base64); err != nil {
+				return fmt.Errorf("provider: decoding file-data data: %w", err)
+			}
+			if d.Base64 == "" {
+				d.Bytes = []byte{}
+			}
+		case dataContentVariantURL:
+			raw, ok := fields["url"]
+			if !ok || string(raw) == "null" {
+				return errors.New("provider: file-data variant url is required")
+			}
+			if err := json.Unmarshal(raw, &d.URL); err != nil {
+				return fmt.Errorf("provider: decoding file-data url: %w", err)
+			}
+			if d.URL == "" {
+				d.variant = variant
+			}
+		case dataContentVariantRef:
+			raw, ok := fields["reference"]
+			if !ok || string(raw) == "null" {
+				return errors.New("provider: file-data variant reference is required")
+			}
+			var reference map[string]string
+			if err := json.Unmarshal(raw, &reference); err != nil {
+				return fmt.Errorf("provider: decoding file-data reference: %w", err)
+			}
+			d.Reference = append(json.RawMessage(nil), raw...)
+		case dataContentVariantText:
+			raw, ok := fields["text"]
+			if !ok || string(raw) == "null" {
+				return errors.New("provider: file-data variant text is required")
+			}
+			if err := json.Unmarshal(raw, &d.Text); err != nil {
+				return fmt.Errorf("provider: decoding file-data text: %w", err)
+			}
+			if d.Text == "" {
+				d.variant = variant
+			}
 		default:
-			return fmt.Errorf("provider: unsupported file-data variant %q (supported: data, url, reference, text)", tagged.Type)
+			return fmt.Errorf("provider: unsupported file-data variant %q (supported: data, url, reference, text)", variant)
 		}
 		return nil
 	}
@@ -126,6 +185,9 @@ func (d DataContent) Validate() error {
 		n++
 	}
 	if d.Text != "" {
+		n++
+	}
+	if d.variant != "" {
 		n++
 	}
 	if n == 0 {

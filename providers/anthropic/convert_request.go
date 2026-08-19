@@ -1859,13 +1859,20 @@ func serializeToolOutput(output *provider.ToolResultOutput, warnings *[]provider
 				blocks = append(blocks, anthropic.BetaToolResultBlockParamContentUnion{
 					OfText: &anthropic.BetaTextBlockParam{Text: v.Text},
 				})
-			case provider.ToolContentFileData:
-				if v.Data != "" && strings.HasPrefix(v.MediaType, "image/") {
+			case provider.ToolContentFile:
+				if v.Data == nil || !strings.HasPrefix(v.MediaType, "image/") {
+					continue
+				}
+				data := v.Data.Base64
+				if data == "" && len(v.Data.Bytes) > 0 {
+					data = base64.StdEncoding.EncodeToString(v.Data.Bytes)
+				}
+				if v.Data.IsData() {
 					blocks = append(blocks, anthropic.BetaToolResultBlockParamContentUnion{
 						OfImage: &anthropic.BetaImageBlockParam{
 							Source: anthropic.BetaImageBlockParamSourceUnion{
 								OfBase64: &anthropic.BetaBase64ImageSourceParam{
-									Data:      v.Data,
+									Data:      data,
 									MediaType: anthropic.BetaBase64ImageSourceMediaType(v.MediaType),
 								},
 							},
