@@ -190,6 +190,22 @@ func convertAssistantMessage(msg provider.Message, ctx inputConversionContext) (
 				continue
 			}
 			items = append(items, reasoningItem(po.ItemID, *po.ReasoningEncryptedContent, part.Text))
+
+		case provider.ContentPartTypeCustom:
+			if part.Kind != "openai.compaction" {
+				continue
+			}
+			po := ctx.partOptions(part)
+			if ctx.hasConversation && po.ItemID != "" {
+				continue
+			}
+			if ctx.store && po.ItemID != "" {
+				items = append(items, itemReference(po.ItemID))
+				continue
+			}
+			if po.ItemID != "" {
+				items = append(items, compactionInputItem(po.ItemID, po.EncryptedContent))
+			}
 		}
 	}
 

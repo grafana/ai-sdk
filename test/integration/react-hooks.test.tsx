@@ -105,6 +105,7 @@ function ChatProbe({ scenario }: { scenario: string }) {
       <div data-testid="chat-status-history">{JSON.stringify(statusHistory)}</div>
       <div data-testid="chat-error">{error?.message}</div>
       <div data-testid="chat-abort-count">{abortCount}</div>
+      <div data-testid="chat-message-count">{messages.length}</div>
       <div data-testid="chat-text">
         {assistantText(messages as AgentToolMessage[])}
       </div>
@@ -292,6 +293,26 @@ describe("React hook interop", () => {
       ) as ChatStatus[];
       expectOrderedSubsequence(history, ["submitted", "streaming", "ready"]);
     });
+  });
+
+  it("useChat stays submitted after a start ID until content arrives", async () => {
+    render(<ChatProbe scenario="start-id-ui-stream" />);
+
+    screen.getByTestId("chat-send").click();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("chat-message-count").textContent).toBe("2");
+      expect(screen.getByTestId("chat-status").textContent).toBe("submitted");
+      expect(screen.getByTestId("chat-text").textContent).toBe("");
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("chat-text").textContent).toBe("Hello, world!");
+      const history = JSON.parse(
+        screen.getByTestId("chat-status-history").textContent ?? "[]",
+      ) as ChatStatus[];
+      expectOrderedSubsequence(history, ["submitted", "streaming", "ready"]);
+    }, { timeout: 3000 });
   });
 
   it.each([

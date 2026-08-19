@@ -19,12 +19,14 @@ const (
 
 func init() {
 	registerScenario("controlled-ui-stream", handleControlledUIStream)
+	registerScenario("start-id-ui-stream", handleStartIDUIStream)
 	registerScenario("controlled-text-stream", handleControlledTextStream)
 	registerScenario("abortable-ui-stream", handleAbortableUIStream)
 	registerScenario("abortable-text-stream", handleAbortableTextStream)
 }
 
 type controlledStreamModel struct {
+	waitBeforeContent   bool
 	waitForCancellation bool
 }
 
@@ -39,6 +41,9 @@ func (m *controlledStreamModel) DoStream(ctx context.Context, _ provider.CallOpt
 	stream := make(chan provider.StreamPart, 1)
 	go func() {
 		defer close(stream)
+		if m.waitBeforeContent && !waitForContext(ctx, controlledStreamHold) {
+			return
+		}
 		if !sendProviderPart(ctx, stream, provider.StreamPart{Type: provider.PartTextStart, ID: "controlled-text"}) {
 			return
 		}
@@ -72,6 +77,18 @@ func handleControlledUIStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeControlledUIStream(w, r, &controlledStreamModel{})
+}
+
+func handleStartIDUIStream(w http.ResponseWriter, r *http.Request) {
+	result := aisdk.StreamText(r.Context(), &controlledStreamModel{waitBeforeContent: true},
+		aisdk.WithModelMessages(provider.UserText("hello")),
+	)
+	if err := aisdk.WriteUIMessageStream(w, result,
+		aisdk.WithUIMessageStreamOriginalMessages(),
+		aisdk.WithUIMessageStreamGenerateID(func() string { return "start-id-message" }),
+	); err != nil && r.Context().Err() == nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 }
 
 func handleAbortableUIStream(w http.ResponseWriter, r *http.Request) {

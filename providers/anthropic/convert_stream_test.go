@@ -330,7 +330,7 @@ func TestStreamAdapter_ServerToolUse(t *testing.T) {
 			Name: "search_docs",
 		}})
 		events := []anthropic.BetaRawMessageStreamEventUnion{
-			unmarshalEvent(t, `{"type":"content_block_start","index":0,"content_block":{"type":"server_tool_use","id":"stu_1","name":"web_search"}}`),
+			unmarshalEvent(t, `{"type":"content_block_start","index":0,"content_block":{"type":"server_tool_use","id":"stu_1","name":"web_search","caller":{"type":"direct"}}}`),
 			unmarshalEvent(t, `{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"query\":"}}`),
 			unmarshalEvent(t, `{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"\"test\"}"}}`),
 			unmarshalEvent(t, `{"type":"content_block_stop","index":0}`),
@@ -354,6 +354,7 @@ func TestStreamAdapter_ServerToolUse(t *testing.T) {
 		assert.Equal(t, "stu_1", parts[4].ToolCallID)
 		assert.Equal(t, "search_docs", parts[4].ToolName)
 		assert.Equal(t, `{"query":"test"}`, parts[4].Input)
+		assert.JSONEq(t, `{"caller":{"type":"direct"}}`, string(parts[4].ProviderMetadata["anthropic"]))
 	})
 
 	t.Run("unknown_name", func(t *testing.T) {
@@ -469,7 +470,7 @@ func TestStreamAdapter_ToolResults(t *testing.T) {
 			Name: "search_docs",
 		}})
 		events := []anthropic.BetaRawMessageStreamEventUnion{
-			unmarshalEvent(t, `{"type":"content_block_start","index":1,"content_block":{"type":"web_search_tool_result","tool_use_id":"stu_1","content":[{"type":"web_search_result","title":"Test Page","url":"https://example.com","page_age":"2d","encrypted_content":"abc"},{"type":"web_search_result","title":"Other Page","url":"https://other.com","page_age":"1w","encrypted_content":"def"}]}}`),
+			unmarshalEvent(t, `{"type":"content_block_start","index":1,"content_block":{"type":"web_search_tool_result","tool_use_id":"stu_1","caller":{"type":"code_execution_20260120","tool_id":"stu_parent"},"content":[{"type":"web_search_result","title":"Test Page","url":"https://example.com","page_age":"2d","encrypted_content":"abc"},{"type":"web_search_result","title":"Other Page","url":"https://other.com","page_age":"1w","encrypted_content":"def"}]}}`),
 			unmarshalEvent(t, `{"type":"content_block_stop","index":1}`),
 		}
 
@@ -481,6 +482,7 @@ func TestStreamAdapter_ToolResults(t *testing.T) {
 		assert.Equal(t, "stu_1", parts[0].ToolCallID)
 		assert.Equal(t, "search_docs", parts[0].ToolName)
 		assert.True(t, parts[0].ProviderExecuted, "part[0] should have ProviderExecuted=true")
+		assert.JSONEq(t, `{"caller":{"type":"code_execution_20260120","toolId":"stu_parent"}}`, string(parts[0].ProviderMetadata["anthropic"]))
 
 		assert.Equal(t, provider.PartSource, parts[1].Type)
 		require.NotNil(t, parts[1].Source)
@@ -523,7 +525,7 @@ func TestStreamAdapter_ToolResults(t *testing.T) {
 			Name: "fetch_page",
 		}})
 		events := []anthropic.BetaRawMessageStreamEventUnion{
-			unmarshalEvent(t, `{"type":"content_block_start","index":1,"content_block":{"type":"web_fetch_tool_result","tool_use_id":"stu_1","content":{"type":"web_fetch_result","url":"https://example.com","retrieved_at":"2025-01-01T00:00:00Z","content":{"type":"document","title":"Example Page","citations":{"enabled":true},"source":{"type":"text","media_type":"text/plain","data":"Hello world"}}}}}`),
+			unmarshalEvent(t, `{"type":"content_block_start","index":1,"content_block":{"type":"web_fetch_tool_result","tool_use_id":"stu_1","caller":{"type":"direct"},"content":{"type":"web_fetch_result","url":"https://example.com","retrieved_at":"2025-01-01T00:00:00Z","content":{"type":"document","title":"Example Page","citations":{"enabled":true},"source":{"type":"text","media_type":"text/plain","data":"Hello world"}}}}}`),
 			unmarshalEvent(t, `{"type":"content_block_stop","index":1}`),
 		}
 
@@ -535,6 +537,7 @@ func TestStreamAdapter_ToolResults(t *testing.T) {
 		assert.Equal(t, "fetch_page", parts[0].ToolName)
 		assert.True(t, parts[0].ProviderExecuted)
 		assert.False(t, parts[0].IsError)
+		assert.JSONEq(t, `{"caller":{"type":"direct"}}`, string(parts[0].ProviderMetadata["anthropic"]))
 
 		var result map[string]any
 		require.NoError(t, json.Unmarshal(parts[0].Result, &result))

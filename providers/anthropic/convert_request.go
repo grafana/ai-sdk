@@ -1101,6 +1101,7 @@ func toAnthropicToolInput(input json.RawMessage) any {
 
 func convertProviderExecutedToolCall(p provider.ContentPart, mapping toolNameMapping, cc anthropic.BetaCacheControlEphemeralParam, warnings *[]provider.Warning) *anthropic.BetaContentBlockParamUnion {
 	providerToolName := mapping.toProviderToolName(p.ToolName)
+	caller, _ := extractServerToolUseCallerMetadata(p.ProviderOptions)
 
 	var input any
 	if len(p.Input) > 0 {
@@ -1135,6 +1136,7 @@ func convertProviderExecutedToolCall(p provider.ContentPart, mapping toolNameMap
 							ID:           p.ToolCallID,
 							Name:         anthropic.BetaServerToolUseBlockParamName(typeStr),
 							Input:        inputWithoutType,
+							Caller:       caller,
 							CacheControl: cc,
 						},
 					}
@@ -1146,6 +1148,7 @@ func convertProviderExecutedToolCall(p provider.ContentPart, mapping toolNameMap
 							ID:           p.ToolCallID,
 							Name:         anthropic.BetaServerToolUseBlockParamNameCodeExecution,
 							Input:        inputMap,
+							Caller:       caller,
 							CacheControl: cc,
 						},
 					}
@@ -1174,6 +1177,7 @@ func convertProviderExecutedToolCall(p provider.ContentPart, mapping toolNameMap
 			ID:           p.ToolCallID,
 			Name:         name,
 			Input:        input,
+			Caller:       caller,
 			CacheControl: cc,
 		},
 	}
@@ -1326,12 +1330,14 @@ func convertInlineWebSearchResult(p provider.ContentPart, cc anthropic.BetaCache
 		}
 	}
 
+	caller, _ := extractWebSearchToolResultCallerMetadata(p.ProviderOptions)
 	block := anthropic.BetaContentBlockParamUnion{
 		OfWebSearchToolResult: &anthropic.BetaWebSearchToolResultBlockParam{
 			ToolUseID: p.ToolCallID,
 			Content: anthropic.BetaWebSearchToolResultBlockParamContentUnion{
 				OfResultBlock: sdkResults,
 			},
+			Caller:       caller,
 			CacheControl: cc,
 		},
 	}
@@ -1339,6 +1345,7 @@ func convertInlineWebSearchResult(p provider.ContentPart, cc anthropic.BetaCache
 }
 
 func convertInlineWebFetchResult(p provider.ContentPart, cc anthropic.BetaCacheControlEphemeralParam, warnings *[]provider.Warning) *anthropic.BetaContentBlockParamUnion {
+	caller, _ := extractWebFetchToolResultCallerMetadata(p.ProviderOptions)
 	if p.Output == nil {
 		*warnings = append(*warnings, provider.Warning{
 			Type:    provider.WarnOther,
@@ -1372,6 +1379,7 @@ func convertInlineWebFetchResult(p provider.ContentPart, cc anthropic.BetaCacheC
 						ErrorCode: anthropic.BetaWebFetchToolResultErrorCode(errorInfo.ErrorCode),
 					},
 				},
+				Caller:       caller,
 				CacheControl: cc,
 			},
 		}
@@ -1436,6 +1444,7 @@ func convertInlineWebFetchResult(p provider.ContentPart, cc anthropic.BetaCacheC
 			Content: anthropic.BetaWebFetchToolResultBlockParamContentUnion{
 				OfRequestWebFetchResultBlock: &fetchParam,
 			},
+			Caller:       caller,
 			CacheControl: cc,
 		},
 	}
@@ -2700,9 +2709,57 @@ func extractMCPServerName(opts provider.ProviderOptions) (string, bool) {
 }
 
 func extractCallerMetadata(opts provider.ProviderOptions) (anthropic.BetaToolUseBlockParamCallerUnion, bool) {
+	raw, ok := extractCallerMetadataJSON(opts)
+	if !ok {
+		return anthropic.BetaToolUseBlockParamCallerUnion{}, false
+	}
+	var caller struct {
+		Type   string `json:"type"`
+		ToolID string `json:"tool_id"`
+	}
+	if err := json.Unmarshal(raw, &caller); err != nil {
+		return anthropic.BetaToolUseBlockParamCallerUnion{}, false
+	}
+	switch caller.Type {
+	case "direct":
+		return anthropic.BetaToolUseBlockParamCallerUnion{OfDirect: &anthropic.BetaDirectCallerParam{}}, true
+	case "code_execution_20250825":
+		return anthropic.BetaToolUseBlockParamCallerUnion{OfCodeExecution20250825: &anthropic.BetaServerToolCallerParam{ToolID: caller.ToolID}}, true
+	case "code_execution_20260120":
+		return anthropic.BetaToolUseBlockParamCallerUnion{OfCodeExecution20260120: &anthropic.BetaServerToolCaller20260120Param{ToolID: caller.ToolID}}, true
+	default:
+		return anthropic.BetaToolUseBlockParamCallerUnion{}, false
+	}
+}
+
+func extractServerToolUseCallerMetadata(opts provider.ProviderOptions) (anthropic.BetaServerToolUseBlockParamCallerUnion, bool) {
+	raw, ok := extractCallerMetadataJSON(opts)
+	if !ok {
+		return anthropic.BetaServerToolUseBlockParamCallerUnion{}, false
+	}
+	return param.Override[anthropic.BetaServerToolUseBlockParamCallerUnion](raw), true
+}
+
+func extractWebSearchToolResultCallerMetadata(opts provider.ProviderOptions) (anthropic.BetaWebSearchToolResultBlockParamCallerUnion, bool) {
+	raw, ok := extractCallerMetadataJSON(opts)
+	if !ok {
+		return anthropic.BetaWebSearchToolResultBlockParamCallerUnion{}, false
+	}
+	return param.Override[anthropic.BetaWebSearchToolResultBlockParamCallerUnion](raw), true
+}
+
+func extractWebFetchToolResultCallerMetadata(opts provider.ProviderOptions) (anthropic.BetaWebFetchToolResultBlockParamCallerUnion, bool) {
+	raw, ok := extractCallerMetadataJSON(opts)
+	if !ok {
+		return anthropic.BetaWebFetchToolResultBlockParamCallerUnion{}, false
+	}
+	return param.Override[anthropic.BetaWebFetchToolResultBlockParamCallerUnion](raw), true
+}
+
+func extractCallerMetadataJSON(opts provider.ProviderOptions) (json.RawMessage, bool) {
 	raw := extractRawJSON(opts)
 	if raw == nil {
-		return anthropic.BetaToolUseBlockParamCallerUnion{}, false
+		return nil, false
 	}
 	var data struct {
 		Caller *struct {
@@ -2711,23 +2768,23 @@ func extractCallerMetadata(opts provider.ProviderOptions) (anthropic.BetaToolUse
 		} `json:"caller"`
 	}
 	if json.Unmarshal(raw, &data) != nil || data.Caller == nil {
-		return anthropic.BetaToolUseBlockParamCallerUnion{}, false
+		return nil, false
+	}
+	if data.Caller.Type != "direct" && data.Caller.ToolID == "" {
+		return nil, false
 	}
 	switch data.Caller.Type {
-	case "direct":
-		return anthropic.BetaToolUseBlockParamCallerUnion{OfDirect: &anthropic.BetaDirectCallerParam{}}, true
-	case "code_execution_20250825":
-		if data.Caller.ToolID == "" {
-			return anthropic.BetaToolUseBlockParamCallerUnion{}, false
+	case "direct", "code_execution_20250825", "code_execution_20260120":
+		callerJSON, err := json.Marshal(struct {
+			Type   string `json:"type"`
+			ToolID string `json:"tool_id,omitempty"`
+		}{Type: data.Caller.Type, ToolID: data.Caller.ToolID})
+		if err != nil {
+			return nil, false
 		}
-		return anthropic.BetaToolUseBlockParamCallerUnion{OfCodeExecution20250825: &anthropic.BetaServerToolCallerParam{ToolID: data.Caller.ToolID}}, true
-	case "code_execution_20260120":
-		if data.Caller.ToolID == "" {
-			return anthropic.BetaToolUseBlockParamCallerUnion{}, false
-		}
-		return anthropic.BetaToolUseBlockParamCallerUnion{OfCodeExecution20260120: &anthropic.BetaServerToolCaller20260120Param{ToolID: data.Caller.ToolID}}, true
+		return callerJSON, true
 	default:
-		return anthropic.BetaToolUseBlockParamCallerUnion{}, false
+		return nil, false
 	}
 }
 

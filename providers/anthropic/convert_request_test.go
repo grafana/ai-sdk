@@ -3,6 +3,7 @@ package anthropic
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 
 	sdk "github.com/anthropics/anthropic-sdk-go"
@@ -3825,6 +3826,24 @@ func TestConvertResponse_ToolUseCallerMetadata(t *testing.T) {
 	})
 }
 
+func TestExtractCallerMetadataJSON_Invalid(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+	}{
+		{name: "unknown type", raw: `{"caller":{"type":"future_caller","toolId":"toolu_1"}}`},
+		{name: "20250825 missing tool ID", raw: `{"caller":{"type":"code_execution_20250825"}}`},
+		{name: "20260120 missing tool ID", raw: `{"caller":{"type":"code_execution_20260120"}}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			raw, ok := extractCallerMetadataJSON(makeProviderOpts(tt.raw))
+			assert.False(t, ok)
+			assert.Nil(t, raw)
+		})
+	}
+}
+
 func TestConvertAssistantContent_ProviderExecutedToolCalls(t *testing.T) {
 	mapping := toolNameMapping{}
 	v := &cacheControlValidator{}
@@ -3838,6 +3857,7 @@ func TestConvertAssistantContent_ProviderExecutedToolCalls(t *testing.T) {
 				ToolName:         "web_search",
 				Input:            json.RawMessage(`{"query":"test"}`),
 				ProviderExecuted: true,
+				ProviderOptions:  makeProviderOpts(`{"caller":{"type":"direct"}}`),
 			},
 		}
 		warnings = nil
@@ -3846,6 +3866,9 @@ func TestConvertAssistantContent_ProviderExecutedToolCalls(t *testing.T) {
 		require.NotNil(t, blocks[0].OfServerToolUse)
 		assert.Equal(t, "srv-1", blocks[0].OfServerToolUse.ID)
 		assert.Equal(t, sdk.BetaServerToolUseBlockParamNameWebSearch, blocks[0].OfServerToolUse.Name)
+		encoded, err := json.Marshal(blocks[0])
+		require.NoError(t, err)
+		assert.JSONEq(t, `{"type":"server_tool_use","id":"srv-1","name":"web_search","input":{"query":"test"},"caller":{"type":"direct"}}`, string(encoded))
 		assert.Empty(t, warnings)
 	})
 
@@ -3924,6 +3947,41 @@ func TestConvertAssistantContent_ProviderExecutedToolCalls(t *testing.T) {
 		assert.Equal(t, sdk.BetaServerToolUseBlockParamNameToolSearchToolRegex, blocks[0].OfServerToolUse.Name)
 	})
 
+	t.Run("dynamic filtering preserves nested caller order", func(t *testing.T) {
+		direct := makeProviderOpts(`{"caller":{"type":"direct"}}`)
+		nested := makeProviderOpts(`{"caller":{"type":"code_execution_20260120","toolId":"code-execution-call"}}`)
+		parts := []provider.ContentPart{
+			{Type: provider.ContentPartTypeToolCall, ToolCallID: "code-execution-call", ToolName: "code_execution", Input: json.RawMessage(`{"type":"programmatic-tool-call","code":"run searches"}`), ProviderExecuted: true, ProviderOptions: direct},
+			{Type: provider.ContentPartTypeToolCall, ToolCallID: "web-search-call-1", ToolName: "web_search", Input: json.RawMessage(`{"query":"AI SDK"}`), ProviderExecuted: true, ProviderOptions: nested},
+			{Type: provider.ContentPartTypeToolResult, ToolCallID: "web-search-call-1", ToolName: "web_search", Output: &provider.ToolResultOutput{Type: provider.ToolOutputJSON, JSON: json.RawMessage(`[]`)}, ProviderOptions: nested},
+			{Type: provider.ContentPartTypeToolCall, ToolCallID: "web-search-call-2", ToolName: "web_search", Input: json.RawMessage(`{"query":"Anthropic"}`), ProviderExecuted: true, ProviderOptions: nested},
+			{Type: provider.ContentPartTypeToolResult, ToolCallID: "web-search-call-2", ToolName: "web_search", Output: &provider.ToolResultOutput{Type: provider.ToolOutputJSON, JSON: json.RawMessage(`[]`)}, ProviderOptions: nested},
+			{Type: provider.ContentPartTypeToolResult, ToolCallID: "code-execution-call", ToolName: "code_execution", Output: &provider.ToolResultOutput{Type: provider.ToolOutputJSON, JSON: json.RawMessage(`{"type":"encrypted_code_execution_result","encrypted_stdout":"encrypted-output","stderr":"","return_code":0,"content":[]}`)}},
+		}
+
+		warnings = nil
+		blocks := convertAssistantContent(v, mapping, parts, nil, mcpIDs, &warnings)
+		require.Len(t, blocks, 6)
+		require.NotNil(t, blocks[0].OfServerToolUse)
+		assert.Equal(t, "code-execution-call", blocks[0].OfServerToolUse.ID)
+		require.NotNil(t, blocks[1].OfServerToolUse)
+		assert.Equal(t, "web-search-call-1", blocks[1].OfServerToolUse.ID)
+		require.NotNil(t, blocks[2].OfWebSearchToolResult)
+		assert.Equal(t, "web-search-call-1", blocks[2].OfWebSearchToolResult.ToolUseID)
+		require.NotNil(t, blocks[3].OfServerToolUse)
+		assert.Equal(t, "web-search-call-2", blocks[3].OfServerToolUse.ID)
+		require.NotNil(t, blocks[4].OfWebSearchToolResult)
+		assert.Equal(t, "web-search-call-2", blocks[4].OfWebSearchToolResult.ToolUseID)
+		require.NotNil(t, blocks[5].OfCodeExecutionToolResult)
+		assert.Equal(t, "code-execution-call", blocks[5].OfCodeExecutionToolResult.ToolUseID)
+
+		encoded, err := json.Marshal(blocks[:5])
+		require.NoError(t, err)
+		assert.Contains(t, string(encoded), `"caller":{"type":"direct"}`)
+		assert.Equal(t, 4, strings.Count(string(encoded), `"caller":{"type":"code_execution_20260120","tool_id":"code-execution-call"}`))
+		assert.Empty(t, warnings)
+	})
+
 	t.Run("unknown provider-executed tool produces warning", func(t *testing.T) {
 		parts := []provider.ContentPart{
 			provider.ContentPart{Type: provider.ContentPartTypeToolCall,
@@ -4000,8 +4058,9 @@ func TestConvertAssistantContent_InlineToolResults(t *testing.T) {
 	t.Run("web_search result emits web_search_tool_result", func(t *testing.T) {
 		parts := []provider.ContentPart{
 			provider.ContentPart{Type: provider.ContentPartTypeToolResult,
-				ToolCallID: "srv-1",
-				ToolName:   "web_search",
+				ToolCallID:      "srv-1",
+				ToolName:        "web_search",
+				ProviderOptions: makeProviderOpts(`{"caller":{"type":"code_execution_20260120","toolId":"stu_parent"}}`),
 				Output: &provider.ToolResultOutput{
 					Type: provider.ToolOutputJSON,
 					JSON: json.RawMessage(`[{"type":"web_search_result","url":"https://example.com","title":"Example","encryptedContent":"abc","pageAge":"1 day"}]`),
@@ -4019,6 +4078,9 @@ func TestConvertAssistantContent_InlineToolResults(t *testing.T) {
 		assert.Equal(t, "Example", results[0].Title)
 		assert.Equal(t, "abc", results[0].EncryptedContent)
 		assert.Equal(t, "1 day", results[0].PageAge.Value)
+		encoded, err := json.Marshal(blocks[0])
+		require.NoError(t, err)
+		assert.Contains(t, string(encoded), `"caller":{"type":"code_execution_20260120","tool_id":"stu_parent"}`)
 	})
 
 	t.Run("bash code execution error preserves error variant", func(t *testing.T) {
@@ -4167,8 +4229,9 @@ func TestConvertAssistantContent_InlineToolResults(t *testing.T) {
 	t.Run("web_fetch result emits web_fetch_tool_result", func(t *testing.T) {
 		parts := []provider.ContentPart{
 			provider.ContentPart{Type: provider.ContentPartTypeToolResult,
-				ToolCallID: "srv-wf-1",
-				ToolName:   "web_fetch",
+				ToolCallID:      "srv-wf-1",
+				ToolName:        "web_fetch",
+				ProviderOptions: makeProviderOpts(`{"caller":{"type":"direct"}}`),
 				Output: &provider.ToolResultOutput{
 					Type: provider.ToolOutputJSON,
 					JSON: json.RawMessage(`{"type":"web_fetch_result","url":"https://example.com","retrievedAt":"2026-01-01T00:00:00Z","content":{"type":"document","title":"Example","citations":{"enabled":true},"source":{"type":"text","mediaType":"text/plain","data":"hello"}}}`),
@@ -4187,6 +4250,9 @@ func TestConvertAssistantContent_InlineToolResults(t *testing.T) {
 		require.NotNil(t, fetchBlock.Content.Source.OfText)
 		assert.Equal(t, "hello", fetchBlock.Content.Source.OfText.Data)
 		assert.Equal(t, "Example", fetchBlock.Content.Title.Value)
+		encoded, err := json.Marshal(blocks[0])
+		require.NoError(t, err)
+		assert.Contains(t, string(encoded), `"caller":{"type":"direct"}`)
 	})
 
 	t.Run("web_fetch error result emits web_fetch_tool_result with error", func(t *testing.T) {
@@ -4600,6 +4666,39 @@ func TestBuildParams_AssistantToolUserGrouping(t *testing.T) {
 	assert.Equal(t, "call_1", p.Messages[1].Content[0].OfToolResult.ToolUseID)
 	require.NotNil(t, p.Messages[1].Content[1].OfText)
 	assert.Equal(t, "ok", p.Messages[1].Content[1].OfText.Text)
+}
+
+func TestBuildParams_DeferredServerResultPreservesMessageBoundaries(t *testing.T) {
+	direct := makeProviderOpts(`{"caller":{"type":"direct"}}`)
+	nested := makeProviderOpts(`{"caller":{"type":"code_execution_20260120","toolId":"code-execution-call"}}`)
+	serverCall := provider.ContentPart{Type: provider.ContentPartTypeToolCall, ToolCallID: "code-execution-call", ToolName: "code_execution", Input: json.RawMessage(`{"type":"programmatic-tool-call","code":"fetch"}`), ProviderExecuted: true, ProviderOptions: direct}
+	clientCall := provider.ToolCallPart("client-tool-call", "fetch_url", json.RawMessage(`{"url":"https://example.com"}`))
+	clientCall.ProviderOptions = nested
+	serverResult := provider.ContentPart{Type: provider.ContentPartTypeToolResult, ToolCallID: "code-execution-call", ToolName: "code_execution", Output: &provider.ToolResultOutput{Type: provider.ToolOutputJSON, JSON: json.RawMessage(`{"type":"encrypted_code_execution_result","encrypted_stdout":"encrypted-output","stderr":"","return_code":0,"content":[]}`)}}
+
+	p, _, _, _, err := buildParams("claude-sonnet-4-6", provider.CallOptions{Prompt: []provider.Message{
+		provider.NewAssistantMessage(serverCall, clientCall),
+		provider.NewToolMessage(provider.ToolResultPart("client-tool-call", "fetch_url", &provider.ToolResultOutput{Type: provider.ToolOutputText, Text: "Example Domain"})),
+		provider.NewAssistantMessage(serverResult),
+	}}, false)
+	require.NoError(t, err)
+
+	require.Len(t, p.Messages, 3)
+	assert.EqualValues(t, "assistant", p.Messages[0].Role)
+	require.Len(t, p.Messages[0].Content, 2)
+	require.NotNil(t, p.Messages[0].Content[0].OfServerToolUse)
+	require.NotNil(t, p.Messages[0].Content[1].OfToolUse)
+	assert.EqualValues(t, "user", p.Messages[1].Role)
+	require.Len(t, p.Messages[1].Content, 1)
+	require.NotNil(t, p.Messages[1].Content[0].OfToolResult)
+	assert.EqualValues(t, "assistant", p.Messages[2].Role)
+	require.Len(t, p.Messages[2].Content, 1)
+	require.NotNil(t, p.Messages[2].Content[0].OfCodeExecutionToolResult)
+
+	encoded, err := json.Marshal(p.Messages[0])
+	require.NoError(t, err)
+	assert.Contains(t, string(encoded), `"caller":{"type":"direct"}`)
+	assert.Contains(t, string(encoded), `"caller":{"tool_id":"code-execution-call","type":"code_execution_20260120"}`)
 }
 
 // TestBuildParams_StandaloneToolMessage is a regression guard: a single

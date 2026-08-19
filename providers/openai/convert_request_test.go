@@ -1431,6 +1431,69 @@ func TestBuildParams_ProviderOptions(t *testing.T) {
 		assert.Equal(t, "resp_prev", body["previous_response_id"])
 	})
 
+	t.Run("compaction trigger follows replayed compaction history", func(t *testing.T) {
+		encryptedContent := "encrypted_compaction_state"
+		compaction := provider.CustomPart("openai.compaction")
+		compaction.ProviderOptions = provider.BuildProviderOptions(OpenAIPartOptions{
+			Type:             "compaction",
+			ItemID:           "cmp_123",
+			EncryptedContent: &encryptedContent,
+		})
+		store := false
+		body, _ := buildBody(t, "gpt-5.2", provider.CallOptions{
+			Prompt: []provider.Message{
+				provider.NewAssistantMessage(compaction),
+				provider.UserText("Continue from this context."),
+			},
+			ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{Store: &store, CompactionTrigger: true}),
+		})
+		assert.Equal(t, []any{
+			map[string]any{"type": "compaction", "id": "cmp_123", "encrypted_content": "encrypted_compaction_state"},
+			map[string]any{"role": "user", "content": []any{map[string]any{"type": "input_text", "text": "Continue from this context."}}},
+			map[string]any{"type": "compaction_trigger"},
+		}, body["input"])
+	})
+
+	t.Run("stored compaction history uses an item reference", func(t *testing.T) {
+		compaction := provider.CustomPart("openai.compaction")
+		compaction.ProviderOptions = provider.BuildProviderOptions(OpenAIPartOptions{Type: "compaction", ItemID: "cmp_123"})
+		body, _ := buildBody(t, "gpt-5.2", provider.CallOptions{Prompt: []provider.Message{provider.NewAssistantMessage(compaction)}})
+		assert.Equal(t, []any{map[string]any{"type": "item_reference", "id": "cmp_123"}}, body["input"])
+	})
+
+	t.Run("conversation omits stored compaction history", func(t *testing.T) {
+		compaction := provider.CustomPart("openai.compaction")
+		compaction.ProviderOptions = provider.BuildProviderOptions(OpenAIPartOptions{Type: "compaction", ItemID: "cmp_123"})
+		body, _ := buildBody(t, "gpt-5.2", provider.CallOptions{
+			Prompt:          []provider.Message{provider.NewAssistantMessage(compaction)},
+			ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{Conversation: "conv_123"}),
+		})
+		assert.Empty(t, body["input"])
+	})
+
+	t.Run("Azure namespace preserves compaction history and trigger", func(t *testing.T) {
+		encryptedContent := "azure_compaction_state"
+		compaction := provider.CustomPart("openai.compaction")
+		compaction.ProviderOptions = withAzureOptions(t, OpenAIPartOptions{Type: "compaction", ItemID: "cmp_azure", EncryptedContent: &encryptedContent})
+		store := false
+		body, _ := buildBody(t, "gpt-5.2", provider.CallOptions{
+			Prompt:          []provider.Message{provider.NewAssistantMessage(compaction)},
+			ProviderOptions: withAzureOptions(t, OpenAIResponsesOptions{Store: &store, CompactionTrigger: true}),
+		})
+		assert.Equal(t, []any{
+			map[string]any{"type": "compaction", "id": "cmp_azure", "encrypted_content": "azure_compaction_state"},
+			map[string]any{"type": "compaction_trigger"},
+		}, body["input"])
+	})
+
+	t.Run("disabled compaction trigger is omitted", func(t *testing.T) {
+		body, _ := buildBody(t, "gpt-5.2", provider.CallOptions{
+			Prompt:          []provider.Message{provider.UserText("keep this context")},
+			ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{CompactionTrigger: false}),
+		})
+		assert.Len(t, body["input"], 1)
+	})
+
 	t.Run("previousResponseId skips stored reasoning references", func(t *testing.T) {
 		reasoning := provider.ReasoningPart("thinking")
 		reasoning.ProviderOptions = provider.BuildProviderOptions(OpenAIPartOptions{ItemID: "rs_prev"})
