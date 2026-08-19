@@ -263,7 +263,7 @@ cd test && pnpm --filter @ai-sdk/test-interop test
 """
 
 [tasks.validate-providerwire-v4-contract]
-description = "Validate the contract-only ProviderWire V4 OpenAPI, schemas, and corpus"
+description = "Validate the ProviderWire V4 OpenAPI, schemas, syntax, envelopes, and contract corpora"
 run = """
 set -e
 mise deps install --only test
@@ -279,11 +279,11 @@ if grep '$ref:' "$bundle" | grep -Eq '([.][.]?/|https?://)'; then
   exit 1
 fi
 cd ..
-GOWORK=off go test ./gateway/providerwire/v4
+GOWORK=off go test ./gateway/providerwire/v4 -run '^(TestContract|TestCapturedRequests|TestProviderWireV4UnaryResultArtifact|TestValidateUnaryResultArtifact|TestHTTPEnvelope|TestDecodeJSONPointer|TestResponseProjections|TestConformanceTransportInputs|TestStrictJSON)'
 """
 
 [tasks.test-interop-contract]
-description = "Verify pinned ProviderWire V4 request captures and response consumption"
+description = "Verify pinned ProviderWire V4 captures, response consumption, and strict unary runtime interop"
 run = """
 set -e
 mise run validate-parity-baseline
@@ -293,19 +293,29 @@ pnpm --filter @ai-sdk/test-interop test:contract
 """
 
 [tasks.check-providerwire-v4]
-description = "Run all non-mutating ProviderWire V4 contract and pinned-client checks"
+description = "Run all non-mutating ProviderWire V4 contract, unary runtime, oracle, and selected provider checks"
 run = """
 set -e
 mise run validate-providerwire-v4-contract
+GOWORK=off go test -race ./gateway/providerwire/v4
+GOWORK=off go vet ./gateway/providerwire/v4
 mise run test-interop-contract
+mise run parity-coverage
+cd test
+pnpm --filter @ai-sdk/conformance-tools typecheck
+pnpm --filter @ai-sdk/conformance-tools test:providerwire-v4-unary
+cd conformance
+go test -tags conformance -race -count=1 -run '^TestProviderWireV4_JSONToolWithAnswer$' ./bedrock
 """
 
 [tasks.update-providerwire-v4-artifacts]
-description = "Explicitly and atomically replace generated ProviderWire V4 artifacts"
+description = "Explicitly validate and atomically replace ProviderWire V4 captures and normalized unary projection"
 run = """
 set -e
 mise run validate-parity-baseline
-cd test && pnpm --filter @ai-sdk/test-interop capture:update
+cd test
+pnpm --filter @ai-sdk/test-interop capture:update
+pnpm --filter @ai-sdk/conformance-tools update:providerwire-v4-unary
 """
 
 [tasks.test-cli]

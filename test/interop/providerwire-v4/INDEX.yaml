@@ -1,16 +1,23 @@
-version: 1
+version: 2
 contract: ../../../gateway/providerwire/v4/openapi.yaml
 baseline: ../../conformance/upstream.yaml
 claims:
-  - pinned client request emission
-  - pinned client response consumption
-  - provider-independent raw transport projection
+  - pinned stock-client request emission and response consumption
+  - provider-independent raw streaming transport preserves selected pinned UI expectations
+  - selected unchanged Bedrock unary provider output survives exact-package raw transport to the pinned Gateway client
+  - the independent H2 TypeScript policy projection removes only the fixed disclosure fields
+  - the real Go Bedrock provider and strict Go ProviderWire V4 handler match the independent normalized unary expectation
+  - pinned stock-Gateway doGenerate and ai.generateText interoperate with the strict Go unary handler
+  - pinned stock-Gateway consumes safe unary errors and unsupported requests bypass the resolver
 nonClaims:
   - Vercel private server acceptance
-  - live provider response recording
-  - host policy enforcement
-  - Go ProviderWire V4 runtime behavior
+  - ProviderWire V4 streaming service
+  - reusable Go ProviderWire V4 client
+  - Grafana ProviderWire V4 adoption
+  - frontend runtime behavior
   - canonical JSON member ordering
+  - provider-boundary unary behavior for providers without provenance-valid unary inputs
+  - new live provider response recording
 normalization:
   body: parsed semantic JSON
   headers: explicit allowlist with authorization, user-agent, and observability values redacted
@@ -18,6 +25,12 @@ normalization:
 requestCaptures:
   artifactKind: regenerated
   authority: pinned-stock-client
+  direction: exact-registered-client-to-local-deterministic-recorder
+  claims:
+    - exact-package request emission
+  nonClaims:
+    - Vercel private server acceptance
+    - Go handler behavior
   updateCommand: mise run update-providerwire-v4-artifacts
   verificationCommand: mise run check-providerwire-v4
   description: Exact-package request emission recorded by the local deterministic recorder.
@@ -32,6 +45,12 @@ requestCaptures:
 responseSeeds:
   artifactKind: curated-seed
   authority: local-serialized-projection
+  direction: local-curated-response-to-pinned-stock-client
+  claims:
+    - pinned-client consumption of reviewed semantic response shapes
+  nonClaims:
+    - provider provenance
+    - Go handler behavior
   description: Locally reviewed semantic responses used only to prove pinned-client consumption.
   artifacts:
     - path: projections/unary.json
@@ -41,6 +60,7 @@ responseSeeds:
 derivedResponseVariants:
   artifactKind: derived-in-memory
   authority: deterministic-test-projection
+  direction: committed-curated-seed-to-mechanical-in-memory-variant-to-pinned-client
   updateCommand: none
   description: Mechanical response variants rendered during tests and never committed as response artifacts.
   variants:
@@ -59,6 +79,7 @@ derivedResponseVariants:
       derivation: select-named-positive-case
 contractCorpora:
   authority: local-contract-policy
+  direction: local-curated-seeds-and-recipes-to-checked-in-json-schemas
   artifacts:
     - path: ../../../gateway/providerwire/v4/testdata/positive.json
       artifactKind: curated-semantic-seed
@@ -71,15 +92,17 @@ contractCorpora:
     - path: ../../../gateway/providerwire/v4/testdata/envelopes.json
       artifactKind: curated-seeds-and-mutation-recipes
       operations: [set, remove]
-conformanceTransportCases:
+providerIndependentStreamingTransport:
   artifactKind: derived-in-memory
+  authority: pinned-typescript-packages-and-existing-ui-oracles
   direction: provider-independent-language-model-v4-parts-to-providerwire-sse-to-pinned-gateway-to-ui-chunks
   claims:
-    - raw ProviderWire transport preserves the existing pinned UI expectation
+    - raw ProviderWire streaming transport preserves the existing pinned UI expectation
   nonClaims:
     - authentic provider response recording
-    - host policy enforcement
+    - ProviderWire V4 streaming service
     - Go ProviderWire V4 runtime behavior
+    - host policy enforcement
   cases:
     - name: generated-files/data-and-url
       input:
@@ -104,3 +127,97 @@ conformanceTransportCases:
       expected:
         path: ../../conformance/ui/text-metadata-only-delta/expected.jsonl
         authority: pinned-typescript-ui-expectation
+selectedBedrockUnaryTransport:
+  artifactKind: derived-in-memory
+  authority: exact-registered-typescript-bedrock-and-gateway-packages
+  direction: unchanged-pinned-upstream-bedrock-input-to-exact-bedrock-doGenerate-to-h1-raw-result-to-pinned-gateway-doGenerate-to-existing-semantic-oracle
+  fixture:
+    name: bedrock/upstream/json-tool-with-answer
+    upstreamKey: amazon-bedrock-json-tool-with-answer.1
+    input:
+      path: ../../conformance/bedrock/upstream/json-tool-with-answer/input.response.json
+      authority: byte-identical-pinned-upstream-provider-input
+      sha256: 3d4b8310bf7b16160385f2e568a64b6c6aa59e818a54ddd0c72c3da2d8e6ba2e
+    semanticOracle:
+      path: ../../conformance/bedrock/upstream/json-tool-with-answer/expected-generate.json
+      authority: existing-pinned-typescript-provider-expectation
+    requestOracle:
+      path: ../../conformance/bedrock/upstream/json-tool-with-answer/expected-requests.jsonl
+      authority: existing-pinned-typescript-provider-request-expectation
+  checkCommand: mise run check-providerwire-v4
+  directCheckCommand: cd test && pnpm --filter @ai-sdk/conformance-tools test:providerwire-v4-unary
+  claims:
+    - selected provider-output and pinned-Gateway raw unary transport preservation
+    - provider input and existing semantic/request expectations remain unchanged
+  nonClaims:
+    - H2 host policy behavior
+    - Go handler correctness
+    - Vercel private server acceptance
+    - providers without provenance-valid unary inputs
+independentUnaryPolicyProjection:
+  artifactKind: derived-policy-projection
+  authority: independent-typescript-h2-projector
+  generationAuthority: test/conformance/tools/providerwire-v4-unary.mts independent TypeScript projector
+  policyProfile: providerwire-v4-h2-unary-v1
+  direction: exact-package-raw-unary-result-to-fixed-h2-disclosure-projection-to-committed-normalized-expectation
+  source:
+    path: ../../conformance/tools/providerwire-v4-unary.mts
+    fixture: bedrock/upstream/json-tool-with-answer
+    inputSha256: 3d4b8310bf7b16160385f2e568a64b6c6aa59e818a54ddd0c72c3da2d8e6ba2e
+  artifact:
+    path: generated/bedrock-json-tool-with-answer.normalized.json
+    authority: independently-generated-policy-normalized-unary-expectation
+  checkCommand: mise run check-providerwire-v4
+  directCheckCommand: cd test && pnpm --filter @ai-sdk/conformance-tools test:providerwire-v4-unary
+  updateCommand: mise run update-providerwire-v4-artifacts
+  directUpdateCommand: cd test && pnpm --filter @ai-sdk/conformance-tools update:providerwire-v4-unary
+  claims:
+    - fixed H2 disclosure-field projection independent of Go runtime code
+    - staged schema validation before atomic replacement
+  nonClaims:
+    - Vercel private server policy
+    - Go handler output as generation authority
+realGoUnaryRuntime:
+  artifactKind: executable-conformance
+  authority: real-go-bedrock-provider-real-go-v4-handler-independent-typescript-expectation
+  direction: unchanged-pinned-upstream-bedrock-input-to-real-go-bedrock-doGenerate-to-real-go-v4-handler-to-independent-normalized-expectation
+  test:
+    path: ../../conformance/bedrock/providerwire_v4_test.go
+  input:
+    path: ../../conformance/bedrock/upstream/json-tool-with-answer/input.response.json
+    authority: byte-identical-pinned-upstream-provider-input
+  expected:
+    path: generated/bedrock-json-tool-with-answer.normalized.json
+    authority: independent-typescript-h2-projector
+  downstreamRequest:
+    path: ../../conformance/bedrock/upstream/json-tool-with-answer/expected-requests.jsonl
+    authority: existing-pinned-typescript-provider-request-expectation
+  checkCommand: mise run check-providerwire-v4
+  directCheckCommand: cd test/conformance && go test -tags conformance -race -count=1 -run TestProviderWireV4_JSONToolWithAnswer ./bedrock
+  claims:
+    - strict Go unary handler policy output matches the independent normalized expectation
+    - resolver and real provider DoGenerate each run exactly once
+    - downstream Bedrock request remains semantically identical to the existing oracle
+  nonClaims:
+    - providers without provenance-valid unary inputs
+    - streaming service behavior
+pinnedUnaryRuntimeInterop:
+  artifactKind: executable-cross-language-runtime
+  authority: exact-registered-gateway-and-ai-packages-with-real-go-v4-handler
+  direction: pinned-stock-gateway-and-ai-clients-over-http-to-real-go-v4-handler-and-test-model
+  test:
+    path: runtime.test.ts
+  checkCommand: mise run test-interop-contract
+  directCheckCommand: cd test && pnpm --filter @ai-sdk/test-interop test:contract
+  scenarios:
+    - direct doGenerate request adaptation, explicit empties, opaque provider options, structured response format, and response privacy
+    - ai.generateText with the exact pinned orchestration user-agent marker isolated before provider invocation
+    - safe 429 and 503 categories with stock status-derived retryability
+    - body headers, Gateway controls, raw-chunk intent, and streaming selection rejected before resolver or model invocation
+  claims:
+    - exact pinned doGenerate and generateText unary interoperability with the strict Go handler
+    - safe unary error consumption and fixed pre-resolution host policy
+  nonClaims:
+    - frontend runtime behavior
+    - reusable Go client
+    - Grafana ProviderWire V4 adoption

@@ -67,6 +67,40 @@ This proves the Grafana provider is a transparent transport boundary: the
 `UIMessageChunk` sequence must remain byte-identical to the direct
 Anthropic conformance run for the same `expected.jsonl` files.
 
+## ProviderWire V4 unary evidence
+
+The V4 unary lane uses only the pinned Bedrock
+`upstream/json-tool-with-answer` input, currently the sole registered unary
+fixture with valid provider provenance. The exact TypeScript Bedrock provider
+produces the raw generate result; the pinned Gateway client consumes it against
+the existing semantic oracle. An independent TypeScript H2 projector then
+creates the committed policy-normalized expectation without using the Go V4
+handler. The derived expectation is stored under
+`test/interop/providerwire-v4/generated/`, outside provider provenance trees;
+the oracle inventories every provenance-valid `operation: generate` fixture and
+fails until each is explicitly classified.
+
+The tagged Go conformance test replays that unchanged input through the real Go
+Bedrock provider behind the real strict V4 handler. It compares the complete
+result with the independent normalized expectation, checks the existing
+provider request snapshot, and requires one resolver and one `DoGenerate` call.
+Normal verification is non-mutating:
+
+```bash
+mise run check-providerwire-v4
+```
+
+The explicit artifact update command validates staged request captures and the
+normalized unary projection before each atomic replacement:
+
+```bash
+mise run update-providerwire-v4-artifacts
+```
+
+This evidence is bounded to that Bedrock fixture. It does not establish other
+providers, V4 streaming, Grafana V4 adoption, frontend runtime, or Vercel's
+private server.
+
 ## Prerequisites
 
 - **Go 1.26+**
@@ -99,7 +133,7 @@ cd .. && go test -run TestUIConformance_ReasoningFiles ./...
 
 ## Structure
 
-```
+```text
 test/conformance/
   go.mod                         # separate Go module (imports aisdk + providers)
   upstream.yaml                  # registered upstream parity baseline
@@ -234,6 +268,7 @@ approval:
 ```
 
 Fields:
+
 - `operation` (optional, default `stream`): provider operation (`stream` or `generate`); unary `generate` is currently Bedrock-only and supports prompt/configured messages, system text, headers, provider options, and response format
 - `model` (required): model ID used for the provider
 - `system` (optional): system prompt text passed as a system-role model message
@@ -267,6 +302,7 @@ The Go runner captures requests received by the replay server and compares them
 against these snapshots after the stream completes.
 
 Comparison rules:
+
 - JSON request bodies are decoded and compared semantically, so object field ordering does not matter.
 - Array order remains significant for messages, content blocks, stop sequences, and multi-step request order.
 - Tool declaration arrays are sorted by tool name/type before comparison because Go exposes tools as a map.
@@ -335,6 +371,7 @@ grep -n '<fixture-name>' ../ai/packages/anthropic/src/anthropic-messages-languag
 ```
 
 Check for:
+
 - **Provider tools** (`type: 'provider'`) — add as `providerTools` in config
 - **Function tools** — add as `tools` with `inputSchema` and `mockResults`
 - **providerOptions** — thinking config, MCP servers, container skills, etc.
@@ -455,6 +492,7 @@ mise run test-conformance
 ## Adding a New Provider
 
 1. Create the provider directory:
+
    ```bash
    mkdir -p test/conformance/<provider>/upstream test/conformance/<provider>/recorded
    ```

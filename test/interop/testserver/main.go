@@ -29,13 +29,120 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/grafana/ai-sdk/gateway/providerwire"
+	providerwirev4 "github.com/grafana/ai-sdk/gateway/providerwire/v4"
 	"github.com/grafana/ai-sdk/provider"
 )
 
-const mountPrefix = "/api/v1/aisdk"
+const (
+	mountPrefix   = "/api/v1/aisdk"
+	v4MountPrefix = "/api/v1/aisdk-v4"
+)
+
+type v4ResponseFormatSummary struct {
+	Type        provider.ResponseFormatType `json:"type"`
+	Name        string                      `json:"name"`
+	Description string                      `json:"description"`
+	HasSchema   bool                        `json:"hasSchema"`
+}
+
+type v4CallSummary struct {
+	PromptRoles          []provider.Role          `json:"promptRoles"`
+	ToolsPresent         bool                     `json:"toolsPresent"`
+	ToolCount            int                      `json:"toolCount"`
+	StopSequencesPresent bool                     `json:"stopSequencesPresent"`
+	StopSequenceCount    int                      `json:"stopSequenceCount"`
+	HeadersPresent       bool                     `json:"headersPresent"`
+	ProviderOptions      json.RawMessage          `json:"providerOptions"`
+	ResponseFormat       *v4ResponseFormatSummary `json:"responseFormat"`
+}
+
+type v4ScenarioStats struct {
+	ResolverCalls int            `json:"resolverCalls"`
+	GenerateCalls int            `json:"generateCalls"`
+	StreamCalls   int            `json:"streamCalls"`
+	Last          *v4CallSummary `json:"last,omitempty"`
+}
+
+type v4StatsStore struct {
+	mu     sync.Mutex
+	models map[string]*v4ScenarioStats
+}
+
+func newV4StatsStore() *v4StatsStore {
+	return &v4StatsStore{models: make(map[string]*v4ScenarioStats)}
+}
+
+func (s *v4StatsStore) entry(modelID string) *v4ScenarioStats {
+	stats, ok := s.models[modelID]
+	if !ok {
+		stats = &v4ScenarioStats{}
+		s.models[modelID] = stats
+	}
+	return stats
+}
+
+func (s *v4StatsStore) recordResolver(modelID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.entry(modelID).ResolverCalls++
+}
+
+func (s *v4StatsStore) recordGenerate(modelID string, options provider.CallOptions) {
+	providerOptions, _ := json.Marshal(options.ProviderOptions)
+	roles := make([]provider.Role, len(options.Prompt))
+	for i, message := range options.Prompt {
+		roles[i] = message.Role
+	}
+	summary := &v4CallSummary{
+		PromptRoles:          roles,
+		ToolsPresent:         options.Tools != nil,
+		ToolCount:            len(options.Tools),
+		StopSequencesPresent: options.StopSequences != nil,
+		StopSequenceCount:    len(options.StopSequences),
+		HeadersPresent:       len(options.Headers) != 0,
+		ProviderOptions:      providerOptions,
+	}
+	if options.ResponseFormat != nil {
+		summary.ResponseFormat = &v4ResponseFormatSummary{
+			Type:        options.ResponseFormat.Type,
+			Name:        options.ResponseFormat.Name,
+			Description: options.ResponseFormat.Description,
+			HasSchema:   len(options.ResponseFormat.Schema) != 0,
+		}
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	stats := s.entry(modelID)
+	stats.GenerateCalls++
+	stats.Last = summary
+}
+
+func (s *v4StatsStore) recordStream(modelID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.entry(modelID).StreamCalls++
+}
+
+func (s *v4StatsStore) snapshot(modelID string) v4ScenarioStats {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	stats, ok := s.models[modelID]
+	if !ok {
+		return v4ScenarioStats{}
+	}
+	result := *stats
+	if stats.Last != nil {
+		last := *stats.Last
+		last.PromptRoles = append([]provider.Role(nil), stats.Last.PromptRoles...)
+		last.ProviderOptions = append(json.RawMessage(nil), stats.Last.ProviderOptions...)
+		result.Last = &last
+	}
+	return result
+}
 
 func intPtr(i int) *int    { return &i }
 func boolPtr(b bool) *bool { return &b }
@@ -240,6 +347,7 @@ func streamMidStreamError() *provider.StreamResult {
 
 type scenarioModel struct {
 	modelID string
+	v4Stats *v4StatsStore
 }
 
 func (m *scenarioModel) SpecificationVersion() string               { return "v4" }
@@ -248,6 +356,9 @@ func (m *scenarioModel) ModelID() string                            { return m.m
 func (m *scenarioModel) SupportedURLs() map[string][]*regexp.Regexp { return nil }
 
 func (m *scenarioModel) DoStream(_ context.Context, opts provider.CallOptions) (*provider.StreamResult, error) {
+	if m.v4Stats != nil {
+		m.v4Stats.recordStream(m.modelID)
+	}
 	switch {
 	case strings.Contains(m.modelID, "provider-tool-result"):
 		return streamProviderToolResult(), nil
@@ -275,14 +386,70 @@ func (m *scenarioModel) DoStream(_ context.Context, opts provider.CallOptions) (
 	}
 }
 
-func (m *scenarioModel) DoGenerate(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
-	if strings.Contains(m.modelID, "error-pre-stream") {
+func (m *scenarioModel) DoGenerate(_ context.Context, options provider.CallOptions) (*provider.GenerateResult, error) {
+	if m.v4Stats != nil {
+		m.v4Stats.recordGenerate(m.modelID, options)
+	}
+	switch {
+	case strings.Contains(m.modelID, "v4-direct-adaptation"):
+		return v4UnaryResult("direct unary from go"), nil
+	case strings.Contains(m.modelID, "v4-generate-text"):
+		return v4UnaryResult("generated text from v4 go"), nil
+	case strings.Contains(m.modelID, "v4-error-429"):
+		return nil, v4UnsafeAPIError(http.StatusTooManyRequests)
+	case strings.Contains(m.modelID, "v4-error-503"):
+		return nil, v4UnsafeAPIError(http.StatusServiceUnavailable)
+	case strings.Contains(m.modelID, "error-pre-stream"):
 		return nil, provider.NewAPICallError(provider.APICallErrorOptions{
 			Message:    "rate limited pre-stream",
 			StatusCode: http.StatusTooManyRequests,
 		})
+	default:
+		return nil, unknownScenarioError(m.modelID)
 	}
-	return nil, unknownScenarioError(m.modelID)
+}
+
+func v4UnaryResult(text string) *provider.GenerateResult {
+	return &provider.GenerateResult{
+		Content: []provider.GenerateContentPart{{
+			Type:             provider.ContentText,
+			Text:             text,
+			ProviderMetadata: provider.ProviderMetadata{"unsafe": json.RawMessage(`{"secret":true}`)},
+		}},
+		FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop, Raw: "stop"},
+		Usage: provider.Usage{
+			InputTokens:  provider.InputTokenUsage{Total: intPtr(7), NoCache: intPtr(7)},
+			OutputTokens: provider.OutputTokenUsage{Total: intPtr(4), Text: intPtr(4)},
+			Raw:          json.RawMessage(`{"unsafeTokens":11}`),
+		},
+		ProviderMetadata: provider.ProviderMetadata{"unsafe": json.RawMessage(`{"secret":true}`)},
+		Warnings:         []provider.Warning{},
+		Request:          &provider.RequestMetadata{Body: json.RawMessage(`{"secretRequest":true}`)},
+		Response: &provider.GenerateResponse{
+			ResponseMetadata: provider.ResponseMetadata{
+				ID:        "safe-response-id",
+				ModelID:   "backend-secret-model",
+				Provider:  "backend-secret-provider",
+				Timestamp: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC),
+			},
+			Headers: map[string]string{"authorization": "backend-secret-credential"},
+			Body:    json.RawMessage(`{"secretResponse":true}`),
+		},
+	}
+}
+
+func v4UnsafeAPIError(status int) *provider.APICallError {
+	retryable := false
+	return provider.NewAPICallError(provider.APICallErrorOptions{
+		Message:           "backend-secret-diagnostic",
+		URL:               "https://backend-secret.invalid",
+		RequestBodyValues: json.RawMessage(`{"credential":"backend-secret"}`),
+		StatusCode:        status,
+		ResponseHeaders:   map[string][]string{"authorization": {"backend-secret"}},
+		ResponseBody:      `{"backend":"secret"}`,
+		IsRetryable:       &retryable,
+		Data:              json.RawMessage(`{"backend":"secret"}`),
+	})
 }
 
 func unknownScenarioError(modelID string) *provider.APICallError {
@@ -299,13 +466,26 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to construct provider-wire handler: %v", err)
 	}
+	v4Stats := newV4StatsStore()
+	v4Handler, err := providerwirev4.NewHandler(providerwirev4.ModelResolverFunc(func(_ *http.Request, modelID string) (provider.LanguageModel, error) {
+		v4Stats.recordResolver(modelID)
+		return &scenarioModel{modelID: modelID, v4Stats: v4Stats}, nil
+	}))
+	if err != nil {
+		log.Fatalf("failed to construct ProviderWire V4 handler: %v", err)
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = fmt.Fprint(w, "ok")
 	})
+	mux.HandleFunc("GET /v4-stats", func(w http.ResponseWriter, request *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(v4Stats.snapshot(request.URL.Query().Get("model")))
+	})
 	mux.Handle(mountPrefix+providerwire.PathLanguageModel, handler)
+	mux.Handle(v4MountPrefix+providerwirev4.PathLanguageModel, http.StripPrefix(v4MountPrefix, v4Handler))
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -317,7 +497,7 @@ func main() {
 	}
 	_ = os.Stdout.Sync()
 
-	log.Printf("interop test server listening on :%d (route %s)", port, mountPrefix+providerwire.PathLanguageModel)
+	log.Printf("interop test server listening on :%d (routes %s and %s)", port, mountPrefix+providerwire.PathLanguageModel, v4MountPrefix+providerwirev4.PathLanguageModel)
 	if err := http.Serve(listener, mux); err != nil {
 		log.Fatalf("server error: %v", err)
 	}

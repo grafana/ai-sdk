@@ -5,6 +5,7 @@ import { writeFileSync, unlinkSync } from "node:fs";
 const SERVER_DIR = resolve(import.meta.dirname, "testserver");
 const BINARY_PATH = resolve(SERVER_DIR, "testserver");
 const URL_FILE = resolve(import.meta.dirname, ".test-server-url");
+const V4_URL_FILE = resolve(import.meta.dirname, ".test-server-v4-url");
 const HEALTH_TIMEOUT_MS = 15_000;
 const HEALTH_POLL_MS = 200;
 
@@ -64,6 +65,7 @@ export async function setup(): Promise<void> {
   // The provider-wire language-model route is mounted under /api/v1/aisdk, which
   // is the gateway baseURL the client points at.
   writeFileSync(URL_FILE, `${baseUrl}/api/v1/aisdk`, "utf-8");
+  writeFileSync(V4_URL_FILE, `${baseUrl}/api/v1/aisdk-v4`, "utf-8");
   console.log(`[global-setup] Interop test server ready at ${baseUrl}`);
 }
 
@@ -79,9 +81,11 @@ export async function teardown(): Promise<void> {
       }, 5_000);
     });
   }
-  try {
-    unlinkSync(URL_FILE);
-  } catch {
-    // File may not exist
+  for (const path of [URL_FILE, V4_URL_FILE]) {
+    try {
+      unlinkSync(path);
+    } catch {
+      // File may not exist
+    }
   }
 }

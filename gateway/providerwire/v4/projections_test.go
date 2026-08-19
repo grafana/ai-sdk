@@ -82,7 +82,7 @@ func TestContractEvidence_PrivacyAndIndex(t *testing.T) {
 	require.NoError(t, err)
 
 	var evidenceRelative []string
-	for _, directory := range []string{"captures", "projections"} {
+	for _, directory := range []string{"captures", "generated", "projections"} {
 		err := filepath.Walk(filepath.Join(interopContractDir, directory), func(path string, info os.FileInfo, err error) error {
 			if err != nil {
 				return err
@@ -123,20 +123,33 @@ func TestContractEvidence_PrivacyAndIndex(t *testing.T) {
 	assert.Contains(t, indexText, "authority: local-contract-policy")
 	assert.Contains(t, indexText, "authority: provider-independent-curated-input")
 	assert.Contains(t, indexText, "authority: pinned-typescript-ui-expectation")
+	assert.Contains(t, indexText, "selectedBedrockUnaryTransport:")
+	assert.Contains(t, indexText, "independentUnaryPolicyProjection:")
+	assert.Contains(t, indexText, "authority: independent-typescript-h2-projector")
+	assert.Contains(t, indexText, "policyProfile: providerwire-v4-h2-unary-v1")
+	assert.Contains(t, indexText, "realGoUnaryRuntime:")
+	assert.Contains(t, indexText, "pinnedUnaryRuntimeInterop:")
 	assert.Contains(t, indexText, "updateCommand: mise run update-providerwire-v4-artifacts")
 	assert.Contains(t, indexText, "verificationCommand: mise run check-providerwire-v4")
 	assert.Contains(t, indexText, "Vercel private server acceptance")
-	assert.Contains(t, indexText, "live provider response recording")
-	assert.Contains(t, indexText, "host policy enforcement")
-	assert.Contains(t, indexText, "Go ProviderWire V4 runtime behavior")
+	assert.Contains(t, indexText, "ProviderWire V4 streaming service")
+	assert.Contains(t, indexText, "reusable Go ProviderWire V4 client")
+	assert.Contains(t, indexText, "Grafana ProviderWire V4 adoption")
+	assert.Contains(t, indexText, "frontend runtime behavior")
+	assert.Contains(t, indexText, "canonical JSON member ordering")
+	assert.Contains(t, indexText, "providers without provenance-valid unary inputs")
 	pathPattern := regexp.MustCompile(`(?m)^\s*-?\s*path:\s*(\S+)\s*$`)
 	var indexedEvidence []string
+	seenIndexedEvidence := make(map[string]struct{})
 	for _, match := range pathPattern.FindAllStringSubmatch(indexText, -1) {
 		relative := filepath.ToSlash(filepath.Clean(match[1]))
 		_, err := os.Stat(filepath.Clean(filepath.Join(filepath.Dir(indexPath), match[1])))
 		require.NoError(t, err, "missing indexed evidence %s", match[1])
-		if strings.HasPrefix(relative, "captures/") || strings.HasPrefix(relative, "projections/") {
-			indexedEvidence = append(indexedEvidence, relative)
+		if strings.HasPrefix(relative, "captures/") || strings.HasPrefix(relative, "generated/") || strings.HasPrefix(relative, "projections/") {
+			if _, seen := seenIndexedEvidence[relative]; !seen {
+				indexedEvidence = append(indexedEvidence, relative)
+				seenIndexedEvidence[relative] = struct{}{}
+			}
 		}
 	}
 	assert.ElementsMatch(t, evidenceRelative, indexedEvidence)

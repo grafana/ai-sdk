@@ -1,0 +1,55 @@
+{
+  "artifactKind": "derived-policy-projection",
+  "source": {
+    "fixture": "bedrock/upstream/json-tool-with-answer",
+    "upstreamKey": "amazon-bedrock-json-tool-with-answer.1",
+    "input": "input.response.json",
+    "inputSha256": "3d4b8310bf7b16160385f2e568a64b6c6aa59e818a54ddd0c72c3da2d8e6ba2e"
+  },
+  "baseline": {
+    "commit": "d76eb85a9a7f2dbe44ab2f3dc858ad5cdcb5242e",
+    "packages": {
+      "@ai-sdk/amazon-bedrock": "5.0.55",
+      "@ai-sdk/gateway": "4.0.52",
+      "@ai-sdk/provider": "4.0.7"
+    }
+  },
+  "policyProfile": "providerwire-v4-h2-unary-v1",
+  "generationAuthority": "test/conformance/tools/providerwire-v4-unary.mts independent TypeScript projector",
+  "commands": {
+    "check": "mise run check-providerwire-v4",
+    "update": "mise run update-providerwire-v4-artifacts"
+  },
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "2 + 2 equals 4."
+      },
+      {
+        "type": "text",
+        "text": "{\"firstName\":\"John\",\"lastName\":\"Doe\"}"
+      }
+    ],
+    "finishReason": {
+      "unified": "stop",
+      "raw": "tool_use"
+    },
+    "usage": {
+      "inputTokens": {
+        "total": 156,
+        "noCache": 156,
+        "cacheRead": 0,
+        "cacheWrite": 0
+      },
+      "outputTokens": {
+        "total": 35,
+        "text": 35
+      }
+    },
+    "response": {
+      "timestamp": "2026-01-02T03:04:05.000Z"
+    },
+    "warnings": []
+  }
+}

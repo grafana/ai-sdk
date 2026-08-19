@@ -3,13 +3,15 @@ info:
   title: ProviderWire V4 HTTP contract
   version: 4.0.0
   description: >-
-    Contract-only projection of the registered @ai-sdk/gateway LanguageModelV4
-    exchange. It defines no deployed handler and makes no private-server claim.
+    Contract projection of the registered @ai-sdk/gateway LanguageModelV4
+    exchange with a deployed strict unary Go handler. The streaming shape remains
+    contract evidence only; no ProviderWire V4 streaming service or private-server
+    compatibility is claimed.
 paths:
   /language-model:
     post:
       operationId: callLanguageModelV4
-      summary: Generate or stream a LanguageModelV4 result
+      summary: Generate a unary LanguageModelV4 result; streaming remains contract-only
       parameters:
         - $ref: '#/components/parameters/SpecificationVersion'
         - $ref: '#/components/parameters/ModelID'
@@ -24,9 +26,10 @@ paths:
       responses:
         '200':
           description: >-
-            Unary JSON when ai-language-model-streaming is false; JSON-over-SSE
-            when it is true. Selection and SSE framing are defined by the
-            ProviderWire V4 requirements and focused tests.
+            Unary JSON is served by the strict handler when
+            ai-language-model-streaming is false. JSON-over-SSE describes the
+            registered streaming contract when it is true, but no deployed V4
+            streaming handler is provided.
           content:
             application/json:
               schema:
@@ -72,9 +75,9 @@ components:
       in: header
       required: false
       description: >-
-        When present, a syntactically valid exact or type-wildcard range with
-        positive quality must permit the representation selected by the
-        streaming header. Detailed negotiation is defined by focused tests.
+        When present, a syntactically valid exact, type-wildcard, or full-wildcard
+        range with positive quality must permit the representation selected by
+        the streaming header. Detailed negotiation is defined by focused tests.
       schema:
         type: string
         minLength: 1

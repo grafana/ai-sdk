@@ -113,9 +113,9 @@
       "mutations": [{ "operation": "set", "path": "/headers/accept", "value": "application/json;q=0" }]
     },
     {
-      "name": "full wildcard is not a type wildcard",
+      "name": "stock client full wildcard",
       "base": "unary",
-      "wantCategory": "accept",
+      "wantMediaType": "application/json",
       "mutations": [{ "operation": "set", "path": "/headers/accept", "value": "*/*" }]
     },
     {

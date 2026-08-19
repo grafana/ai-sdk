@@ -18,6 +18,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	aisdk "github.com/grafana/ai-sdk"
 	"github.com/grafana/ai-sdk/output"
@@ -727,6 +728,7 @@ type ReplayServer struct {
 	counter          atomic.Int32
 	fixtures         [][]byte
 	generateResponse []byte
+	generateDate     string
 	framing          Framing
 	requestsMu       sync.Mutex
 	requests         []RequestSnapshot
@@ -791,6 +793,9 @@ func (rs *ReplayServer) handler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
+		if rs.generateDate != "" {
+			w.Header().Set("Date", rs.generateDate)
+		}
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(rs.generateResponse)
 		return
@@ -817,6 +822,11 @@ func (rs *ReplayServer) handler(w http.ResponseWriter, r *http.Request) {
 
 func (rs *ReplayServer) Close() {
 	rs.Server.Close()
+}
+
+// SetGenerateResponseDate fixes the HTTP Date header for a unary replay.
+func (rs *ReplayServer) SetGenerateResponseDate(timestamp time.Time) {
+	rs.generateDate = timestamp.UTC().Format(http.TimeFormat)
 }
 
 func (rs *ReplayServer) RequestCount() int {

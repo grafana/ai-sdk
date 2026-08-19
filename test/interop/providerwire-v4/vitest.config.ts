@@ -5,8 +5,9 @@ export default defineConfig({
   root: resolve(import.meta.dirname, ".."),
   test: {
     environment: "node",
+    globalSetup: ["global-setup.ts"],
     include: ["providerwire-v4/**/*.test.ts"],
     testTimeout: 30_000,
-    hookTimeout: 30_000,
+    hookTimeout: 60_000,
   },
 });

@@ -1,22 +1,18 @@
 package providerwirev4
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"testing"
 
 	validateschema "github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-const schemaIDPrefix = "https://grafana.com/ai-sdk/providerwire/v4/schema/"
 
 var streamArmNegativeFields = map[string]string{
 	"custom":                "kind",
@@ -41,10 +37,6 @@ var streamArmNegativeFields = map[string]string{
 	"tool-input-end":        "id",
 	"tool-input-start":      "toolName",
 	"tool-result":           "result",
-}
-
-type contractRegistry struct {
-	compiled map[string]*validateschema.Schema
 }
 
 type corpus struct {
@@ -83,94 +75,11 @@ type captureArtifact struct {
 	} `json:"captures"`
 }
 
-func loadContractRegistry(t *testing.T) *contractRegistry {
+func loadContractRegistry(t *testing.T) *schemaRegistry {
 	t.Helper()
-
-	entries, err := os.ReadDir("schema")
+	registry, err := loadEmbeddedContractRegistry()
 	require.NoError(t, err)
-
-	type resource struct {
-		id  string
-		doc any
-	}
-	resources := make([]resource, 0)
-	known := make(map[string]struct{})
-
-	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
-			continue
-		}
-		raw, err := os.ReadFile(filepath.Join("schema", entry.Name()))
-		require.NoError(t, err)
-		_, err = validateStrictJSON(raw)
-		require.NoError(t, err)
-
-		var metadata struct {
-			ID string `json:"$id"`
-		}
-		require.NoError(t, json.Unmarshal(raw, &metadata))
-		require.True(t, strings.HasPrefix(metadata.ID, schemaIDPrefix), "unexpected schema id %q", metadata.ID)
-		_, duplicate := known[metadata.ID]
-		require.False(t, duplicate, "duplicate schema id %q", metadata.ID)
-		known[metadata.ID] = struct{}{}
-
-		doc, err := validateschema.UnmarshalJSON(bytes.NewReader(raw))
-		require.NoError(t, err)
-		resources = append(resources, resource{id: metadata.ID, doc: doc})
-	}
-
-	require.Len(t, resources, 5)
-	compiler := validateschema.NewCompiler()
-	compiler.DefaultDraft(validateschema.Draft2020)
-	compiler.AssertFormat()
-	compiler.UseLoader(validateschema.SchemeURLLoader{})
-	for _, resource := range resources {
-		require.NoError(t, compiler.AddResource(resource.id, resource.doc))
-	}
-
-	compiled := make(map[string]*validateschema.Schema)
-	for _, resource := range resources {
-		schema, err := compiler.Compile(resource.id)
-		require.NoError(t, err)
-		name := strings.TrimSuffix(strings.TrimPrefix(resource.id, schemaIDPrefix), ".json")
-		if name != "common" {
-			compiled[name] = schema
-		}
-	}
-	return &contractRegistry{compiled: compiled}
-}
-
-func (r *contractRegistry) validate(name string, raw json.RawMessage) error {
-	schema, ok := r.compiled[name]
-	if !ok {
-		return fmt.Errorf("unknown contract schema %q", name)
-	}
-	if _, err := validateStrictJSON(raw); err != nil {
-		return fmt.Errorf("syntax: %w", err)
-	}
-	var value any
-	if err := json.Unmarshal(raw, &value); err != nil {
-		return fmt.Errorf("semantic json: %w", err)
-	}
-	return schema.Validate(value)
-}
-
-func (r *contractRegistry) validateErrorEnvelope(raw json.RawMessage, status int) error {
-	if err := r.validate("error", raw); err != nil {
-		return err
-	}
-	var payload struct {
-		Error struct {
-			StatusCode int `json:"statusCode"`
-		} `json:"error"`
-	}
-	if err := json.Unmarshal(raw, &payload); err != nil {
-		return fmt.Errorf("decoding error envelope: %w", err)
-	}
-	if payload.Error.StatusCode != status {
-		return fmt.Errorf("status correlation: HTTP status %d differs from nested status %d", status, payload.Error.StatusCode)
-	}
-	return nil
+	return registry
 }
 
 func readPositiveCorpus(t *testing.T) corpus {
@@ -228,7 +137,7 @@ func TestContractSchemas_CompileOffline(t *testing.T) {
 func TestContractSchemas_RejectReferencesOutsideRegistry(t *testing.T) {
 	compiler := validateschema.NewCompiler()
 	compiler.UseLoader(validateschema.SchemeURLLoader{})
-	id := schemaIDPrefix + "outside-registry.json"
+	id := embeddedSchemaIDPrefix + "outside-registry.json"
 	require.NoError(t, compiler.AddResource(id, map[string]any{"$ref": "https://example.test/unknown.json"}))
 	_, err := compiler.Compile(id)
 	require.Error(t, err)
@@ -347,7 +256,7 @@ func TestContractCorpus_EveryStreamArmHasNegativeCoverage(t *testing.T) {
 }
 
 func validationErrorContainsPath(err *validateschema.ValidationError, want string) bool {
-	if jsonPointer(err.InstanceLocation) == want {
+	if safeJSONPointer(err.InstanceLocation) == want {
 		return true
 	}
 	for _, cause := range err.Causes {
@@ -356,16 +265,6 @@ func validationErrorContainsPath(err *validateschema.ValidationError, want strin
 		}
 	}
 	return false
-}
-
-func jsonPointer(segments []string) string {
-	if len(segments) == 0 {
-		return ""
-	}
-	for i, segment := range segments {
-		segments[i] = strings.ReplaceAll(strings.ReplaceAll(segment, "~", "~0"), "/", "~1")
-	}
-	return "/" + strings.Join(segments, "/")
 }
 
 func streamCaseKey(value map[string]any) string {
@@ -384,4 +283,64 @@ func mapKeys[T any](values map[string]T) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+type unaryResultArtifact struct {
+	Result json.RawMessage `json:"result"`
+}
+
+func validateUnaryResultArtifact(path string) error {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("reading unary result artifact: %w", err)
+	}
+	if _, err := validateStrictJSON(raw); err != nil {
+		return fmt.Errorf("validating unary result artifact syntax: %w", err)
+	}
+	var artifact unaryResultArtifact
+	if err := json.Unmarshal(raw, &artifact); err != nil {
+		return fmt.Errorf("decoding unary result artifact: %w", err)
+	}
+	if len(artifact.Result) == 0 {
+		return errors.New("unary result artifact is missing result")
+	}
+	registry, err := loadEmbeddedContractRegistry()
+	if err != nil {
+		return err
+	}
+	if err := registry.validate("generate-result", artifact.Result); err != nil {
+		return fmt.Errorf("validating unary result artifact: %w", err)
+	}
+	return nil
+}
+
+func TestProviderWireV4UnaryResultArtifact(t *testing.T) {
+	path := os.Getenv("PROVIDERWIRE_V4_UNARY_RESULT_PATH")
+	if path == "" {
+		t.Skip("PROVIDERWIRE_V4_UNARY_RESULT_PATH is not set")
+	}
+	require.NoError(t, validateUnaryResultArtifact(path))
+}
+
+func TestValidateUnaryResultArtifact(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		content string
+		wantErr bool
+	}{
+		{name: "valid", content: `{"result":{"content":[],"finishReason":{"unified":"other"},"usage":{"inputTokens":{},"outputTokens":{}},"warnings":[]}}`},
+		{name: "missing result", content: `{}`, wantErr: true},
+		{name: "invalid result", content: `{"result":{"content":[]}}`, wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "artifact.json")
+			require.NoError(t, os.WriteFile(path, []byte(tc.content), 0o600))
+			err := validateUnaryResultArtifact(path)
+			if tc.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
 }

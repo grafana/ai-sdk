@@ -1,16 +1,11 @@
 package providerwirev4
 
 import (
-	"bytes"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
-	"fmt"
-	"io"
 	"os"
 	"testing"
 
-	"github.com/go-json-experiment/json/jsontext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -25,20 +20,6 @@ type syntaxCase struct {
 	Encoding string `json:"encoding"`
 	Value    string `json:"value"`
 	Category string `json:"category"`
-}
-
-func validateStrictJSON(src []byte) ([]byte, error) {
-	decoder := jsontext.NewDecoder(bytes.NewReader(src))
-	if _, err := decoder.ReadValue(); err != nil {
-		return nil, fmt.Errorf("invalid-json-syntax: %w", err)
-	}
-	if _, err := decoder.ReadValue(); !errors.Is(err, io.EOF) {
-		if err == nil {
-			return nil, errors.New("invalid-json-syntax: trailing value")
-		}
-		return nil, fmt.Errorf("invalid-json-syntax: %w", err)
-	}
-	return src, nil
 }
 
 func TestStrictJSON_Corpus(t *testing.T) {
