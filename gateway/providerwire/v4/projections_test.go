@@ -108,7 +108,7 @@ func TestContractEvidence_PrivacyAndIndex(t *testing.T) {
 		assert.NotRegexp(t, regexp.MustCompile(`Bearer [A-Za-z0-9]`), text)
 		assert.NotContains(t, text, "capture-not-a-real-key")
 		assert.NotContains(t, text, "synthetic-capture-project")
-		assert.NotContains(t, text, "ai-sdk/gateway/4.0.52")
+		assert.NotContains(t, text, "ai-sdk/gateway/")
 	}
 
 	indexPath := filepath.Join(interopContractDir, "INDEX.yaml")
@@ -141,17 +141,6 @@ func TestContractEvidence_PrivacyAndIndex(t *testing.T) {
 		}
 	}
 	assert.ElementsMatch(t, evidenceRelative, indexedEvidence)
-}
-
-func findCorpusCase(t *testing.T, fixtures corpus, name string) corpusCase {
-	t.Helper()
-	for _, fixture := range fixtures.Cases {
-		if fixture.Name == name {
-			return fixture
-		}
-	}
-	t.Fatalf("missing corpus case %q", name)
-	return corpusCase{}
 }
 
 func readProjection(t *testing.T, name string) json.RawMessage {

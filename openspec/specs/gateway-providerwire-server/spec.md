@@ -10,7 +10,7 @@ Define the public provider-wire HTTP server contract and reusable handler behavi
 
 The repository SHALL provide a public `github.com/grafana/ai-sdk/gateway/providerwire` package that owns the complete active legacy remote `provider.LanguageModel` protocol and reusable server execution surface. The package SHALL co-locate legacy route/header constants, JSON request/response codecs, SSE framing/readers/writers, error envelopes, and the `net/http` handler. It SHALL depend on `github.com/grafana/ai-sdk/provider` as the transport-agnostic in-process contract and MUST NOT import a router, auth library, host catalog, billing, IAM, deployment, or frontend orchestration package. The repository SHALL keep `github.com/grafana/ai-sdk/provider/wire` deleted and MUST NOT provide aliases, compatibility re-exports, or a forwarding shim at that path.
 
-The sibling `gateway/providerwire/v4` capability SHALL define contract artifacts only during its contract phase. It SHALL NOT replace, wrap, or change the active legacy handler. Grafana SHALL continue to use the legacy server and client behavior by default until a later capability explicitly introduces and adopts a strict V4 runtime.
+The sibling `gateway/providerwire/v4` capability SHALL own the strict contract artifacts and any runtime built from them. It SHALL NOT replace, wrap, or change the active legacy handler. Grafana SHALL continue to use the legacy server and client behavior by default unless an explicit strict-mode capability adopts V4.
 
 #### Scenario: Public legacy handler import
 - **WHEN** a Go host imports `github.com/grafana/ai-sdk/gateway/providerwire`
@@ -32,8 +32,8 @@ The sibling `gateway/providerwire/v4` capability SHALL define contract artifacts
 - **WHEN** imports and public types in `gateway/providerwire` are inspected
 - **THEN** no Gorilla mux, authlib, JWKS, Grafana Assistant catalog, IAM, billing, route-prefix, or deployment type SHALL be present
 
-#### Scenario: V4 contract artifacts do not alter runtime dispatch
-- **WHEN** the V4 contract phase is complete
+#### Scenario: V4 evolution does not alter legacy dispatch
+- **WHEN** the strict V4 contract or runtime evolves
 - **THEN** requests served through the public legacy handler SHALL follow the existing legacy codecs, validation, resolver, invocation, and response behavior
 
 #### Scenario: Grafana remains on the rollback path

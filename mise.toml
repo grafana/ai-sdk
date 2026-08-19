@@ -303,7 +303,8 @@ mise run test-interop-contract
 [tasks.update-providerwire-v4-artifacts]
 description = "Explicitly and atomically replace generated ProviderWire V4 artifacts"
 run = """
-mise deps install --only test
+set -e
+mise run validate-parity-baseline
 cd test && pnpm --filter @ai-sdk/test-interop capture:update
 """
 

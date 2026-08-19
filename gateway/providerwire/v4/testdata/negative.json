@@ -3,226 +3,164 @@
     {
       "name": "request unknown root field",
       "base": "request text response auto choice",
-      "stage": "schema",
-      "category": "schema-validation",
       "path": "",
       "mutations": [{ "operation": "set", "path": "/unknown", "value": true }]
     },
     {
       "name": "request inactive response format sibling",
       "base": "request text response auto choice",
-      "stage": "schema",
-      "category": "schema-validation",
       "path": "/responseFormat",
       "mutations": [{ "operation": "set", "path": "/responseFormat/schema", "value": {} }]
     },
     {
       "name": "request missing prompt",
       "base": "request text response auto choice",
-      "stage": "schema",
-      "category": "schema-validation",
       "path": "",
       "mutations": [{ "operation": "remove", "path": "/prompt" }]
     },
     {
       "name": "request typed null",
       "base": "request none choice explicit empties",
-      "stage": "schema",
-      "category": "schema-validation",
       "path": "/includeRawChunks",
       "mutations": [{ "operation": "set", "path": "/includeRawChunks", "value": null }]
     },
     {
       "name": "request role violation",
       "base": "request user text",
-      "stage": "schema",
-      "category": "schema-validation",
       "path": "/prompt/0/content/0",
       "mutations": [{ "operation": "set", "path": "/prompt/0/content/0/type", "value": "reasoning" }]
     },
     {
       "name": "request string user content",
       "base": "request user text",
-      "stage": "schema",
-      "category": "schema-validation",
       "path": "/prompt/0/content",
       "mutations": [{ "operation": "set", "path": "/prompt/0/content", "value": "not allowed" }]
     },
     {
       "name": "request invalid file data arm",
       "base": "request user data file",
-      "stage": "schema",
-      "category": "schema-validation",
       "path": "/prompt/0/content/0/data",
       "mutations": [{ "operation": "set", "path": "/prompt/0/content/0/data/type", "value": "url" }]
     },
     {
       "name": "request provider reference discriminator collision",
       "base": "request user provider reference",
-      "stage": "schema",
-      "category": "schema-validation",
       "path": "/prompt/0/content/0/data/reference",
       "mutations": [{ "operation": "set", "path": "/prompt/0/content/0/data/reference/type", "value": "id" }]
     },
     {
       "name": "request scalar provider namespace",
       "base": "request complete union inventory",
-      "stage": "schema",
-      "category": "schema-validation",
       "path": "/providerOptions/provider",
       "mutations": [{ "operation": "set", "path": "/providerOptions/provider", "value": 1 }]
     },
     {
       "name": "request abort signal is excluded",
       "base": "request text response auto choice",
-      "stage": "schema",
-      "category": "schema-validation",
       "path": "",
       "mutations": [{ "operation": "set", "path": "/abortSignal", "value": {} }]
     },
     {
       "name": "generate missing required warnings",
       "base": "generate undefined counters omitted",
-      "stage": "schema",
-      "category": "schema-validation",
       "path": "",
       "mutations": [{ "operation": "remove", "path": "/warnings" }]
     },
     {
       "name": "generate required field null",
       "base": "generate undefined counters omitted",
-      "stage": "schema",
-      "category": "schema-validation",
       "path": "/content",
       "mutations": [{ "operation": "set", "path": "/content", "value": null }]
     },
     {
       "name": "generate Go-only response provider",
       "base": "generate complete union inventory",
-      "stage": "schema",
-      "category": "schema-validation",
       "path": "/response",
       "mutations": [{ "operation": "set", "path": "/response/provider", "value": "go-only" }]
     },
     {
       "name": "generate invalid timestamp",
       "base": "generate complete union inventory",
-      "stage": "schema",
-      "category": "schema-validation",
       "path": "/response/timestamp",
       "mutations": [{ "operation": "set", "path": "/response/timestamp", "value": "not-a-date" }]
     },
     {
       "name": "generate null tool result",
       "base": "generate undefined counters omitted",
-      "stage": "schema",
-      "category": "schema-validation",
       "path": "/content/0/result",
       "mutations": [{ "operation": "set", "path": "/content", "value": [{ "type": "tool-result", "toolCallId": "call", "toolName": "tool", "result": null }] }]
     },
     {
       "name": "request unknown role discriminator",
       "base": "request user text",
-      "stage": "schema",
-      "category": "schema-validation",
       "path": "/prompt/0/role",
       "mutations": [{ "operation": "set", "path": "/prompt/0/role", "value": "unknown" }]
     },
     {
       "name": "generate unknown content discriminator",
       "base": "generate undefined counters omitted",
-      "stage": "schema",
-      "category": "schema-validation",
       "path": "/content/0/type",
       "mutations": [{ "operation": "set", "path": "/content", "value": [{ "type": "unknown" }] }]
     },
     {
       "name": "stream unknown discriminator",
       "base": "stream text start",
-      "stage": "schema",
-      "category": "schema-validation",
       "path": "/type",
       "mutations": [{ "operation": "set", "path": "/type", "value": "unknown" }]
     },
     {
       "name": "stream unknown field",
       "base": "stream text start",
-      "stage": "schema",
-      "category": "schema-validation",
       "path": "",
       "mutations": [{ "operation": "set", "path": "/unknown", "value": true }]
     },
     {
       "name": "stream inactive sibling",
       "base": "stream text start",
-      "stage": "schema",
-      "category": "schema-validation",
       "path": "",
       "mutations": [{ "operation": "set", "path": "/delta", "value": "inactive" }]
     },
     {
       "name": "stream null tool result",
       "base": "stream tool result",
-      "stage": "schema",
-      "category": "schema-validation",
       "path": "/result",
       "mutations": [{ "operation": "set", "path": "/result", "value": null }]
     },
     {
       "name": "stream generated file reference is excluded",
       "base": "stream file data",
-      "stage": "schema",
-      "category": "schema-validation",
       "path": "/data",
       "mutations": [{ "operation": "set", "path": "/data", "value": { "type": "reference", "reference": {} } }]
     },
     {
       "name": "stream response provider is Go-only",
       "base": "stream response metadata",
-      "stage": "schema",
-      "category": "schema-validation",
       "path": "",
       "mutations": [{ "operation": "set", "path": "/provider", "value": "go-only" }]
     },
     {
       "name": "error unsafe code",
       "base": "error invalid request retry override",
-      "stage": "schema",
-      "category": "schema-validation",
       "path": "/error",
       "mutations": [{ "operation": "set", "path": "/error/code", "value": "backend" }]
     },
     {
       "name": "error client-only type",
       "base": "error failed dependency",
-      "stage": "schema",
-      "category": "schema-validation",
       "path": "/error/type",
       "mutations": [{ "operation": "set", "path": "/error/type", "value": "timeout_error" }]
     },
     {
       "name": "error unrestricted param",
       "base": "error invalid request retry override",
-      "stage": "schema",
-      "category": "schema-validation",
       "path": "/error",
       "mutations": [{ "operation": "set", "path": "/error/param", "value": { "field": "prompt" } }]
     },
     {
       "name": "error backend debugging field",
       "base": "error internal nonretry override",
-      "stage": "schema",
-      "category": "schema-validation",
       "path": "/error",
       "mutations": [{ "operation": "set", "path": "/error/responseBody", "value": "secret" }]
-    },
-    {
-      "name": "error status mismatch",
-      "base": "error rate limit",
-      "stage": "envelope",
-      "category": "status-correlation",
-      "path": "/error/statusCode",
-      "mutations": [{ "operation": "set", "path": "/error/statusCode", "value": 500 }]
     }
   ]
 }

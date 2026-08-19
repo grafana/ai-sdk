@@ -19,6 +19,31 @@ import (
 
 const schemaIDPrefix = "https://grafana.com/ai-sdk/providerwire/v4/schema/"
 
+var streamArmNegativeFields = map[string]string{
+	"custom":                "kind",
+	"error":                 "error",
+	"file":                  "data",
+	"finish":                "usage",
+	"raw":                   "rawValue",
+	"reasoning-delta":       "delta",
+	"reasoning-end":         "id",
+	"reasoning-file":        "data",
+	"reasoning-start":       "id",
+	"response-metadata":     "warnings",
+	"source:document":       "id",
+	"source:url":            "id",
+	"stream-start":          "warnings",
+	"text-delta":            "delta",
+	"text-end":              "id",
+	"text-start":            "id",
+	"tool-approval-request": "approvalId",
+	"tool-call":             "input",
+	"tool-input-delta":      "delta",
+	"tool-input-end":        "id",
+	"tool-input-start":      "toolName",
+	"tool-result":           "result",
+}
+
 type contractRegistry struct {
 	compiled map[string]*validateschema.Schema
 }
@@ -29,8 +54,6 @@ type corpus struct {
 
 type corpusCase struct {
 	Name     string          `json:"name"`
-	Stage    string          `json:"stage"`
-	Category string          `json:"category"`
 	Schema   string          `json:"schema"`
 	Path     string          `json:"path"`
 	Status   int             `json:"status"`
@@ -44,8 +67,6 @@ type corpusRecipeFile struct {
 type corpusRecipe struct {
 	Name      string            `json:"name"`
 	Base      string            `json:"base"`
-	Stage     string            `json:"stage"`
-	Category  string            `json:"category"`
 	Path      string            `json:"path"`
 	Mutations []fixtureMutation `json:"mutations"`
 }
@@ -182,6 +203,17 @@ func readCorpus(t *testing.T, name string) corpus {
 	return result
 }
 
+func findCorpusCase(t *testing.T, fixtures corpus, name string) corpusCase {
+	t.Helper()
+	for _, fixture := range fixtures.Cases {
+		if fixture.Name == name {
+			return fixture
+		}
+	}
+	t.Fatalf("missing corpus case %q", name)
+	return corpusCase{}
+}
+
 func readNegativeCorpus(t *testing.T) corpus {
 	t.Helper()
 	positive := readCorpus(t, "positive.json")
@@ -202,8 +234,6 @@ func readNegativeCorpus(t *testing.T) corpus {
 		base, ok := bases[recipe.Base]
 		require.True(t, ok, "unknown positive fixture %q", recipe.Base)
 		base.Name = recipe.Name
-		base.Stage = recipe.Stage
-		base.Category = recipe.Category
 		base.Path = recipe.Path
 		base.Document = applyFixtureMutations(t, base.Document, recipe.Mutations)
 		result.Cases = append(result.Cases, base)
@@ -273,25 +303,28 @@ func TestContractCorpus_Negative(t *testing.T) {
 
 	for _, fixture := range fixtures.Cases {
 		t.Run(fixture.Name, func(t *testing.T) {
-			switch fixture.Stage {
-			case "schema":
-				err := registry.validate(fixture.Schema, fixture.Document)
-				require.Error(t, err)
-				assert.Equal(t, "schema-validation", fixture.Category)
-				if fixture.Path != "" {
-					var validationError *validateschema.ValidationError
-					require.True(t, errors.As(err, &validationError))
-					assert.True(t, validationErrorContainsPath(validationError, fixture.Path), "validation tree did not contain %s: %v", fixture.Path, err)
-				}
-			case "envelope":
-				require.NoError(t, registry.validate(fixture.Schema, fixture.Document))
-				assert.Equal(t, "status-correlation", fixture.Category)
-				assert.NotEqual(t, fixture.Status, nestedErrorStatus(t, fixture.Document))
-			default:
-				t.Fatalf("unknown negative stage %q", fixture.Stage)
+			err := registry.validate(fixture.Schema, fixture.Document)
+			require.Error(t, err)
+			if fixture.Path != "" {
+				var validationError *validateschema.ValidationError
+				require.True(t, errors.As(err, &validationError))
+				assert.True(t, validationErrorContainsPath(validationError, fixture.Path), "validation tree did not contain %s: %v", fixture.Path, err)
 			}
 		})
 	}
+}
+
+func TestContractCorpus_ErrorStatusCorrelation(t *testing.T) {
+	registry := loadContractRegistry(t)
+	fixture := findCorpusCase(t, readCorpus(t, "positive.json"), "error rate limit")
+	mismatched := applyFixtureMutations(t, fixture.Document, []fixtureMutation{{
+		Operation: "set",
+		Path:      "/error/statusCode",
+		Value:     json.RawMessage("500"),
+	}})
+
+	require.NoError(t, registry.validate(fixture.Schema, mismatched))
+	assert.NotEqual(t, fixture.Status, nestedErrorStatus(t, mismatched))
 }
 
 func TestContractCorpus_EveryStreamArmHasNegativeCoverage(t *testing.T) {
@@ -306,10 +339,13 @@ func TestContractCorpus_EveryStreamArmHasNegativeCoverage(t *testing.T) {
 		var value map[string]any
 		require.NoError(t, json.Unmarshal(fixture.Document, &value))
 		key := streamCaseKey(value)
+		field, ok := streamArmNegativeFields[key]
+		require.True(t, ok, "missing negative coverage definition for stream arm %q", key)
 		seen[key] = struct{}{}
-		delete(value, requiredStreamField(value))
 		if key == "response-metadata" {
-			value["warnings"] = []any{}
+			value[field] = []any{}
+		} else {
+			delete(value, field)
 		}
 		invalid, err := json.Marshal(value)
 		require.NoError(t, err)
@@ -318,13 +354,7 @@ func TestContractCorpus_EveryStreamArmHasNegativeCoverage(t *testing.T) {
 		})
 	}
 
-	expected := []string{
-		"custom", "error", "file", "finish", "raw", "reasoning-delta", "reasoning-end", "reasoning-file",
-		"reasoning-start", "response-metadata", "source:document", "source:url", "stream-start", "text-delta",
-		"text-end", "text-start", "tool-approval-request", "tool-call", "tool-input-delta", "tool-input-end",
-		"tool-input-start", "tool-result",
-	}
-	assert.ElementsMatch(t, expected, mapKeys(seen))
+	assert.ElementsMatch(t, mapKeys(streamArmNegativeFields), mapKeys(seen))
 }
 
 func nestedErrorStatus(t *testing.T, raw json.RawMessage) int {
@@ -367,41 +397,6 @@ func streamCaseKey(value map[string]any) string {
 		return kind + ":" + sourceType
 	}
 	return kind
-}
-
-func requiredStreamField(value map[string]any) string {
-	switch value["type"] {
-	case "text-start", "text-end", "reasoning-start", "reasoning-end", "tool-input-end":
-		return "id"
-	case "text-delta", "reasoning-delta", "tool-input-delta":
-		return "delta"
-	case "tool-input-start":
-		return "toolName"
-	case "tool-approval-request":
-		return "approvalId"
-	case "tool-call":
-		return "input"
-	case "tool-result":
-		return "result"
-	case "custom":
-		return "kind"
-	case "file", "reasoning-file":
-		return "data"
-	case "source":
-		return "id"
-	case "stream-start":
-		return "warnings"
-	case "finish":
-		return "usage"
-	case "raw":
-		return "rawValue"
-	case "error":
-		return "error"
-	case "response-metadata":
-		return ""
-	default:
-		return "type"
-	}
 }
 
 func mapKeys[T any](values map[string]T) []string {

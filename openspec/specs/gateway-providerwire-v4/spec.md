@@ -24,23 +24,19 @@ Pinned Gateway HTTP behavior and stock-client captures SHALL be the behavioral a
 - **WHEN** request emission or response consumption succeeds
 - **THEN** the repository SHALL claim pinned-client behavior only, not acceptance by Vercel's private server
 
-### Requirement: Contract-only capability and legacy coexistence
+### Requirement: Contract ownership and legacy coexistence
 
-`gateway/providerwire/v4` SHALL contain curated OpenAPI, JSON Schemas, test corpora, response projections, and validation tests. The pinned request capture SHALL be the only regenerated contract fixture and SHALL be identified as such in the interop index and GitHub review metadata.
+`gateway/providerwire/v4` SHALL own the curated OpenAPI, JSON Schemas, test corpora, response projections, validation tests, and any strict runtime built from that contract. The pinned request capture SHALL be the only regenerated contract fixture and SHALL be identified as such in the interop index and GitHub review metadata.
 
-This phase MUST NOT expose or implement a production decoder, handler, client, resolver, provider adapter, host policy, SSE server, or public wire DTO hierarchy. The existing `gateway/providerwire` package and Grafana transport SHALL remain active with unchanged defaults and behavior.
-
-#### Scenario: No V4 invocation path exists
-- **WHEN** production files and exported symbols under `gateway/providerwire/v4` are inspected
-- **THEN** `doc.go` SHALL be the only production Go file and no V4 code SHALL invoke a language model
+The strict V4 capability MUST NOT replace, wrap, or change the existing `gateway/providerwire` package. The legacy package and Grafana transport SHALL remain active with unchanged defaults and behavior until an explicit strict-mode capability adopts V4.
 
 #### Scenario: Legacy behavior remains active
-- **WHEN** existing provider-wire, Grafana, and interop tests run
+- **WHEN** existing provider-wire, Grafana, and interop tests run without explicit strict-mode adoption
 - **THEN** they SHALL continue to use the parent `gateway/providerwire` package
 
-#### Scenario: Contract artifacts are not generated DTOs
-- **WHEN** the V4 package is inspected
-- **THEN** it SHALL contain no generated or hand-written production request, result, stream-part, or error types
+#### Scenario: Contract remains the wire authority
+- **WHEN** production runtime representations are introduced under `gateway/providerwire/v4`
+- **THEN** the checked-in OpenAPI and JSON Schemas SHALL remain normative rather than being generated from those representations
 
 ### Requirement: Language-model HTTP envelope
 
@@ -90,7 +86,7 @@ The request schema SHALL represent post-Gateway semantic JSON: JavaScript `undef
 
 The stream schema SHALL define exact arms for every registered LanguageModelV4 stream part and SHALL require complete JSON values. Each HTTP event SHALL be framed as `data: <JSON>\n\n` without an `event:` discriminator. Normal completion SHALL be response-body EOF after the final event; `[DONE]` SHALL not be required or schema-valid.
 
-H1 SHALL define status, media type, event framing, and EOF only. Server commitment, flush timing, cancellation, timeout, write failure, and post-commit behavior SHALL belong to a later streaming-service capability.
+The contract artifacts SHALL define status, media type, event framing, and EOF. Server commitment, flush timing, cancellation, timeout, write failure, and post-commit behavior SHALL be owned by streaming-service requirements rather than inferred from the wire schema.
 
 #### Scenario: Every stream arm is covered
 - **WHEN** the contract corpus is evaluated
@@ -104,8 +100,8 @@ H1 SHALL define status, media type, event framing, and EOF only. Server commitme
 - **WHEN** a local response projection includes `data: [DONE]`
 - **THEN** the pinned client MAY ignore it, but the contract SHALL not classify it as a stream part
 
-#### Scenario: Runtime lifecycle remains deferred
-- **WHEN** H1 artifacts are inspected
+#### Scenario: Contract evidence does not define runtime lifecycle
+- **WHEN** contract artifacts or pinned-client projections are inspected
 - **THEN** they SHALL make no claim about server commitment, flushing, cancellation, timeout, or post-commit failures
 
 ### Requirement: Safe error projection with explicit retryability
@@ -130,7 +126,7 @@ Only `model_not_found` MAY carry exact `param: {modelId: string}` and only `forb
 
 Before schema validation, contract tooling SHALL require exactly one top-level JSON value followed only by whitespace. It SHALL reject duplicate decoded names at every depth, escaped-equivalent names, invalid raw UTF-8, lone surrogate escapes, malformed escapes, truncation, and trailing values. It SHALL accept valid surrogate pairs and preserve the original bytes.
 
-The strict decoder SHALL remain test-only during H1.
+Contract validation SHALL enforce this syntax policy independently of any production decoder implementation.
 
 #### Scenario: Invalid syntax precedes schema validation
 - **WHEN** input contains a duplicate name, invalid encoding, malformed escape, truncation, or trailing value
@@ -140,9 +136,9 @@ The strict decoder SHALL remain test-only during H1.
 - **WHEN** a valid JSON value has optional trailing whitespace
 - **THEN** syntax validation SHALL return the original bytes unchanged
 
-#### Scenario: Production code cannot use the strict decoder
-- **WHEN** production Go files are inspected
-- **THEN** none SHALL import the experimental JSON dependency or call the test helper
+#### Scenario: Contract validation is implementation-independent
+- **WHEN** production decoding changes
+- **THEN** the contract syntax corpus SHALL continue to enforce the same accepted and rejected inputs
 
 ### Requirement: Reproducible and privacy-safe interop evidence
 
