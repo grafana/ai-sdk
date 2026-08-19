@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -96,7 +95,6 @@ func loadContractRegistry(t *testing.T) *contractRegistry {
 	}
 	resources := make([]resource, 0)
 	known := make(map[string]struct{})
-	var documents []any
 
 	for _, entry := range entries {
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
@@ -119,64 +117,27 @@ func loadContractRegistry(t *testing.T) *contractRegistry {
 		doc, err := validateschema.UnmarshalJSON(bytes.NewReader(raw))
 		require.NoError(t, err)
 		resources = append(resources, resource{id: metadata.ID, doc: doc})
-		documents = append(documents, doc)
 	}
 
 	require.Len(t, resources, 5)
-	for i, document := range documents {
-		require.NoError(t, validateReferences(resources[i].id, document, known))
-	}
-
 	compiler := validateschema.NewCompiler()
 	compiler.DefaultDraft(validateschema.Draft2020)
 	compiler.AssertFormat()
+	compiler.UseLoader(validateschema.SchemeURLLoader{})
 	for _, resource := range resources {
 		require.NoError(t, compiler.AddResource(resource.id, resource.doc))
 	}
 
 	compiled := make(map[string]*validateschema.Schema)
-	for _, name := range []string{"request", "generate-result", "stream-part", "error"} {
-		id := schemaIDPrefix + name + ".json"
-		schema, err := compiler.Compile(id)
+	for _, resource := range resources {
+		schema, err := compiler.Compile(resource.id)
 		require.NoError(t, err)
-		compiled[name] = schema
+		name := strings.TrimSuffix(strings.TrimPrefix(resource.id, schemaIDPrefix), ".json")
+		if name != "common" {
+			compiled[name] = schema
+		}
 	}
 	return &contractRegistry{compiled: compiled}
-}
-
-func validateReferences(baseID string, value any, known map[string]struct{}) error {
-	switch value := value.(type) {
-	case map[string]any:
-		if reference, ok := value["$ref"].(string); ok {
-			base, err := url.Parse(baseID)
-			if err != nil {
-				return err
-			}
-			ref, err := url.Parse(reference)
-			if err != nil {
-				return fmt.Errorf("invalid reference %q: %w", reference, err)
-			}
-			resolved := base.ResolveReference(ref)
-			resolved.Fragment = ""
-			if resolved.String() != baseID {
-				if _, ok := known[resolved.String()]; !ok {
-					return fmt.Errorf("reference %q resolves outside the offline registry", reference)
-				}
-			}
-		}
-		for _, child := range value {
-			if err := validateReferences(baseID, child, known); err != nil {
-				return err
-			}
-		}
-	case []any:
-		for _, child := range value {
-			if err := validateReferences(baseID, child, known); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
 }
 
 func (r *contractRegistry) validate(name string, raw json.RawMessage) error {
@@ -192,6 +153,24 @@ func (r *contractRegistry) validate(name string, raw json.RawMessage) error {
 		return fmt.Errorf("semantic json: %w", err)
 	}
 	return schema.Validate(value)
+}
+
+func (r *contractRegistry) validateErrorEnvelope(raw json.RawMessage, status int) error {
+	if err := r.validate("error", raw); err != nil {
+		return err
+	}
+	var payload struct {
+		Error struct {
+			StatusCode int `json:"statusCode"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return fmt.Errorf("decoding error envelope: %w", err)
+	}
+	if payload.Error.StatusCode != status {
+		return fmt.Errorf("status correlation: HTTP status %d differs from nested status %d", status, payload.Error.StatusCode)
+	}
+	return nil
 }
 
 func readPositiveCorpus(t *testing.T) corpus {
@@ -247,15 +226,23 @@ func TestContractSchemas_CompileOffline(t *testing.T) {
 }
 
 func TestContractSchemas_RejectReferencesOutsideRegistry(t *testing.T) {
-	known := map[string]struct{}{schemaIDPrefix + "request.json": {}}
-	err := validateReferences(schemaIDPrefix+"request.json", map[string]any{"$ref": "https://example.test/unknown.json"}, known)
+	compiler := validateschema.NewCompiler()
+	compiler.UseLoader(validateschema.SchemeURLLoader{})
+	id := schemaIDPrefix + "outside-registry.json"
+	require.NoError(t, compiler.AddResource(id, map[string]any{"$ref": "https://example.test/unknown.json"}))
+	_, err := compiler.Compile(id)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "outside the offline registry")
+	var loadError *validateschema.LoadURLError
+	assert.ErrorAs(t, err, &loadError)
 }
 
 func TestCapturedRequests_ValidateAgainstRequestSchema(t *testing.T) {
 	registry := loadContractRegistry(t)
-	raw, err := os.ReadFile("../../../test/interop/providerwire-v4/captures/requests.json")
+	path := os.Getenv("PROVIDERWIRE_V4_CAPTURE_PATH")
+	if path == "" {
+		path = "../../../test/interop/providerwire-v4/captures/requests.json"
+	}
+	raw, err := os.ReadFile(path)
 	require.NoError(t, err)
 	_, err = validateStrictJSON(raw)
 	require.NoError(t, err)
@@ -288,10 +275,11 @@ func TestContractCorpus_Positive(t *testing.T) {
 
 	for _, fixture := range fixtures.Cases {
 		t.Run(fixture.Name, func(t *testing.T) {
-			require.NoError(t, registry.validate(fixture.Schema, fixture.Document))
 			if fixture.Schema == "error" {
-				require.Equal(t, fixture.Status, nestedErrorStatus(t, fixture.Document))
+				require.NoError(t, registry.validateErrorEnvelope(fixture.Document, fixture.Status))
+				return
 			}
+			require.NoError(t, registry.validate(fixture.Schema, fixture.Document))
 		})
 	}
 }
@@ -323,8 +311,9 @@ func TestContractCorpus_ErrorStatusCorrelation(t *testing.T) {
 		Value:     json.RawMessage("500"),
 	}})
 
-	require.NoError(t, registry.validate(fixture.Schema, mismatched))
-	assert.NotEqual(t, fixture.Status, nestedErrorStatus(t, mismatched))
+	err := registry.validateErrorEnvelope(mismatched, fixture.Status)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "status correlation")
 }
 
 func TestContractCorpus_EveryStreamArmHasNegativeCoverage(t *testing.T) {
@@ -355,17 +344,6 @@ func TestContractCorpus_EveryStreamArmHasNegativeCoverage(t *testing.T) {
 	}
 
 	assert.ElementsMatch(t, mapKeys(streamArmNegativeFields), mapKeys(seen))
-}
-
-func nestedErrorStatus(t *testing.T, raw json.RawMessage) int {
-	t.Helper()
-	var payload struct {
-		Error struct {
-			StatusCode int `json:"statusCode"`
-		} `json:"error"`
-	}
-	require.NoError(t, json.Unmarshal(raw, &payload))
-	return payload.Error.StatusCode
 }
 
 func validationErrorContainsPath(err *validateschema.ValidationError, want string) bool {

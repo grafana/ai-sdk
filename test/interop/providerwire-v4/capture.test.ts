@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -5,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { captureAllRequests, type CaptureArtifact } from "./scenarios";
 
 const CAPTURE_PATH = resolve(import.meta.dirname, "captures/requests.json");
+const REPOSITORY_ROOT = resolve(import.meta.dirname, "../../..");
 
 describe("ProviderWire V4 stock-client request captures", () => {
   it("recaptures semantically without mutating committed fixtures", async () => {
@@ -33,7 +35,7 @@ describe("ProviderWire V4 stock-client request captures", () => {
       const invalid: CaptureArtifact = {
         formatVersion: 1,
         captures: [{
-          scenario: "capture-not-a-real-key",
+          scenario: "schema-invalid",
           sequence: 1,
           request: { method: "POST", path: "/language-model", headers: {}, body: {} },
         }],
@@ -66,10 +68,23 @@ function replaceArtifactAtomically(path: string, artifact: CaptureArtifact): voi
     const stagedPath = join(directory, "requests.json");
     writeArtifact(stagedPath, artifact);
     assertPrivateDataExcluded(readArtifact(stagedPath));
+    validateStagedArtifact(stagedPath);
     renameSync(stagedPath, path);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
+}
+
+function validateStagedArtifact(path: string): void {
+  execFileSync(
+    "go",
+    ["test", "-count=1", "-run", "^TestCapturedRequests_ValidateAgainstRequestSchema$", "./gateway/providerwire/v4"],
+    {
+      cwd: REPOSITORY_ROOT,
+      env: { ...process.env, GOWORK: "off", PROVIDERWIRE_V4_CAPTURE_PATH: path },
+      stdio: "pipe",
+    },
+  );
 }
 
 function assertPrivateDataExcluded(artifact: CaptureArtifact): void {

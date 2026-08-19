@@ -41,9 +41,8 @@ func TestResponseProjections_ValidateContractPayloads(t *testing.T) {
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			fixture := findCorpusCase(t, positive, testCase.name)
-			require.NoError(t, registry.validate("error", fixture.Document))
 			assert.Equal(t, testCase.status, fixture.Status)
-			assert.Equal(t, testCase.status, nestedErrorStatus(t, fixture.Document))
+			require.NoError(t, registry.validateErrorEnvelope(fixture.Document, fixture.Status))
 			var payload struct {
 				Error struct {
 					IsRetryable bool `json:"isRetryable"`
