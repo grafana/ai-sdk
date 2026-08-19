@@ -27,7 +27,7 @@
 {"type":"tool-input-delta","toolCallId":"srvtoolu_01H4HgrFsi9xizPtvnx1Tm7D","inputTextDelta":"|create"}
 {"type":"tool-input-delta","toolCallId":"srvtoolu_01H4HgrFsi9xizPtvnx1Tm7D","inputTextDelta":"\", \"limit\": 10"}
 {"type":"tool-input-delta","toolCallId":"srvtoolu_01H4HgrFsi9xizPtvnx1Tm7D","inputTextDelta":"}"}
-{"type":"tool-input-available","toolCallId":"srvtoolu_01H4HgrFsi9xizPtvnx1Tm7D","toolName":"tool_search","input":{"pattern":"add|insert|bullet|create","limit":10},"providerExecuted":true}
+{"type":"tool-input-available","toolCallId":"srvtoolu_01H4HgrFsi9xizPtvnx1Tm7D","toolName":"tool_search","input":{"pattern":"add|insert|bullet|create","limit":10},"providerExecuted":true,"providerMetadata":{"anthropic":{"caller":{"type":"direct"}}}}
 {"type":"tool-output-available","toolCallId":"srvtoolu_01H4HgrFsi9xizPtvnx1Tm7D","output":[{"type":"tool_reference","toolName":"readNoteTree"},{"type":"tool_reference","toolName":"executeEditorOperation"}],"providerExecuted":true}
 {"type":"text-start","id":"1"}
 {"type":"text-delta","id":"1","delta":"Perfect"}

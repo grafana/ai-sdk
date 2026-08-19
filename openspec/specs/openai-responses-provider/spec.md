@@ -184,8 +184,9 @@ including `previousResponseId`, `conversation`, `instructions`, `reasoningEffort
 `parallelToolCalls`, `serviceTier`, `textVerbosity`, `user`, `logprobs`,
 `strictJsonSchema`, `systemMessageMode`, `forceReasoning`, `allowedTools`,
 `promptCacheKey`, `promptCacheRetention`, `safetyIdentifier`,
-`passThroughUnsupportedFiles`, and `contextManagement`. Setting both
-`conversation` and `previousResponseId` SHALL emit an `unsupported` warning.
+`passThroughUnsupportedFiles`, `contextManagement`, and `compactionTrigger`.
+Setting both `conversation` and `previousResponseId` SHALL emit an `unsupported`
+warning.
 
 #### Scenario: previousResponseId continuation
 - **WHEN** the `openai` provider option `previousResponseId` is set
@@ -198,6 +199,30 @@ including `previousResponseId`, `conversation`, `instructions`, `reasoningEffort
 #### Scenario: Logprobs auto-include
 - **WHEN** the `logprobs` option is set to a positive number
 - **THEN** the request `include` contains `message.output_text.logprobs` and `top_logprobs` is set
+
+#### Scenario: Explicit compaction trigger
+- **WHEN** `compactionTrigger` is enabled
+- **THEN** the request appends a `compaction_trigger` item after every converted prompt item
+
+### Requirement: Compaction history conversion
+The provider SHALL round-trip `openai.compaction` custom parts using their
+provider item ID and encrypted content. Stored histories SHALL use an
+`item_reference`; stateless histories SHALL use a full `compaction` item; and
+conversation-owned histories SHALL omit compaction items that already have an
+item ID. An explicit compaction trigger SHALL remain the final input item after
+history conversion.
+
+#### Scenario: Stored compaction history
+- **WHEN** a compaction part has an item ID and storage is enabled
+- **THEN** assistant history contains an `item_reference` for that ID
+
+#### Scenario: Stateless compaction history
+- **WHEN** a compaction part has an item ID and storage is disabled
+- **THEN** assistant history contains a full `compaction` item preserving encrypted content
+
+#### Scenario: Conversation-owned compaction history
+- **WHEN** a conversation is set and a compaction part has an item ID
+- **THEN** that history item is omitted because the conversation already owns it
 
 ### Requirement: Tool preparation and tool choice
 The provider SHALL prepare function tools as `function` tool declarations and

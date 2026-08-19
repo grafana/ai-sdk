@@ -27,7 +27,7 @@
 {"type":"tool-input-delta","toolCallId":"srvtoolu_01FjZe9o4YXXJjGxLmfj44Rf","inputTextDelta":" editor"}
 {"type":"tool-input-delta","toolCallId":"srvtoolu_01FjZe9o4YXXJjGxLmfj44Rf","inputTextDelta":"\", \"limit\": 5"}
 {"type":"tool-input-delta","toolCallId":"srvtoolu_01FjZe9o4YXXJjGxLmfj44Rf","inputTextDelta":"}"}
-{"type":"tool-input-available","toolCallId":"srvtoolu_01FjZe9o4YXXJjGxLmfj44Rf","toolName":"tool_search","input":{"query":"add bullet point insert text editor","limit":5},"providerExecuted":true}
+{"type":"tool-input-available","toolCallId":"srvtoolu_01FjZe9o4YXXJjGxLmfj44Rf","toolName":"tool_search","input":{"query":"add bullet point insert text editor","limit":5},"providerExecuted":true,"providerMetadata":{"anthropic":{"caller":{"type":"direct"}}}}
 {"type":"tool-output-available","toolCallId":"srvtoolu_01FjZe9o4YXXJjGxLmfj44Rf","output":[{"type":"tool_reference","toolName":"executeEditorOperation"}],"providerExecuted":true}
 {"type":"text-start","id":"1"}
 {"type":"text-delta","id":"1","delta":"Perfect"}

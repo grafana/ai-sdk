@@ -72,6 +72,10 @@ func buildParams(modelID string, opts provider.CallOptions) (responses.ResponseN
 		return responses.ResponseNewParams{}, nil, buildResult{}, err
 	}
 	warnings = append(warnings, inputWarnings...)
+	if popts.CompactionTrigger {
+		trigger := responses.NewResponseInputItemCompactionTriggerParam()
+		input = append(input, responses.ResponseInputItemUnionParam{OfCompactionTrigger: &trigger})
+	}
 	body.Input = responses.ResponseNewParamsInputUnion{OfInputItemList: input}
 
 	// Scalar params + unsupported-param warnings.

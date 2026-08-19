@@ -13,7 +13,7 @@
 {"type":"tool-input-delta","toolCallId":"srvtoolu_01Gj33J3YUAAxF9TWRAThxtu","inputTextDelta":"{\"query\": \"weather forecast current"}
 {"type":"tool-input-delta","toolCallId":"srvtoolu_01Gj33J3YUAAxF9TWRAThxtu","inputTextDelta":" conditions"}
 {"type":"tool-input-delta","toolCallId":"srvtoolu_01Gj33J3YUAAxF9TWRAThxtu","inputTextDelta":"\"}"}
-{"type":"tool-input-available","toolCallId":"srvtoolu_01Gj33J3YUAAxF9TWRAThxtu","toolName":"tool_search","input":{"query":"weather forecast current conditions"},"providerExecuted":true}
+{"type":"tool-input-available","toolCallId":"srvtoolu_01Gj33J3YUAAxF9TWRAThxtu","toolName":"tool_search","input":{"query":"weather forecast current conditions"},"providerExecuted":true,"providerMetadata":{"anthropic":{"caller":{"type":"direct"}}}}
 {"type":"tool-output-available","toolCallId":"srvtoolu_01Gj33J3YUAAxF9TWRAThxtu","output":[{"type":"tool_reference","toolName":"get_weather"}],"providerExecuted":true}
 {"type":"text-start","id":"3"}
 {"type":"text-delta","id":"3","delta":"Great"}
