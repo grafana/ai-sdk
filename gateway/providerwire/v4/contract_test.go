@@ -194,9 +194,9 @@ func (r *contractRegistry) validate(name string, raw json.RawMessage) error {
 	return schema.Validate(value)
 }
 
-func readCorpus(t *testing.T, name string) corpus {
+func readPositiveCorpus(t *testing.T) corpus {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join("testdata", name))
+	raw, err := os.ReadFile(filepath.Join("testdata", "positive.json"))
 	require.NoError(t, err)
 	var result corpus
 	require.NoError(t, json.Unmarshal(raw, &result))
@@ -216,7 +216,7 @@ func findCorpusCase(t *testing.T, fixtures corpus, name string) corpusCase {
 
 func readNegativeCorpus(t *testing.T) corpus {
 	t.Helper()
-	positive := readCorpus(t, "positive.json")
+	positive := readPositiveCorpus(t)
 	bases := make(map[string]corpusCase, len(positive.Cases))
 	for _, fixture := range positive.Cases {
 		_, duplicate := bases[fixture.Name]
@@ -283,7 +283,7 @@ func TestCapturedRequests_ValidateAgainstRequestSchema(t *testing.T) {
 
 func TestContractCorpus_Positive(t *testing.T) {
 	registry := loadContractRegistry(t)
-	fixtures := readCorpus(t, "positive.json")
+	fixtures := readPositiveCorpus(t)
 	require.NotEmpty(t, fixtures.Cases)
 
 	for _, fixture := range fixtures.Cases {
@@ -316,7 +316,7 @@ func TestContractCorpus_Negative(t *testing.T) {
 
 func TestContractCorpus_ErrorStatusCorrelation(t *testing.T) {
 	registry := loadContractRegistry(t)
-	fixture := findCorpusCase(t, readCorpus(t, "positive.json"), "error rate limit")
+	fixture := findCorpusCase(t, readPositiveCorpus(t), "error rate limit")
 	mismatched := applyFixtureMutations(t, fixture.Document, []fixtureMutation{{
 		Operation: "set",
 		Path:      "/error/statusCode",
@@ -329,7 +329,7 @@ func TestContractCorpus_ErrorStatusCorrelation(t *testing.T) {
 
 func TestContractCorpus_EveryStreamArmHasNegativeCoverage(t *testing.T) {
 	registry := loadContractRegistry(t)
-	fixtures := readCorpus(t, "positive.json")
+	fixtures := readPositiveCorpus(t)
 	seen := make(map[string]struct{})
 
 	for _, fixture := range fixtures.Cases {

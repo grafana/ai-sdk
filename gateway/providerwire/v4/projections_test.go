@@ -30,7 +30,7 @@ func TestResponseProjections_ValidateContractPayloads(t *testing.T) {
 		require.NoError(t, registry.validate("stream-part", json.RawMessage(strings.TrimPrefix(frame, "data: "))))
 	}
 
-	positive := readCorpus(t, "positive.json")
+	positive := readPositiveCorpus(t)
 	for _, testCase := range []struct {
 		name      string
 		status    int
