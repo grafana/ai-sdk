@@ -23,6 +23,7 @@ func mcpApprovalRequestID(item responses.ResponseOutputItemMcpApprovalRequest) s
 // provider.GenerateResult, mapping every output item to provider content.
 func convertResponse(resp *responses.Response, br buildResult, generateID func() string, providerName string) (*provider.GenerateResult, error) {
 	var content []provider.GenerateContentPart
+	var logprobs [][]responseLogprob
 	hasFunctionCall := false
 	var hostedToolSearchCallIDs []string
 
@@ -32,6 +33,9 @@ func convertResponse(resp *responses.Response, br buildResult, generateID func()
 			for _, c := range v.Content {
 				if t := c.AsAny(); t != nil {
 					if ot, ok := t.(responses.ResponseOutputText); ok {
+						if br.logprobsRequested && ot.JSON.Logprobs.Valid() {
+							logprobs = append(logprobs, convertOutputTextLogprobs(ot.Logprobs))
+						}
 						content = append(content, provider.GenerateContentPart{
 							Type:             provider.ContentText,
 							Text:             ot.Text,
@@ -324,7 +328,7 @@ func convertResponse(resp *responses.Response, br buildResult, generateID func()
 		Content:          content,
 		FinishReason:     mapFinishReason(resp.IncompleteDetails.Reason, hasFunctionCall),
 		Usage:            convertResponseUsage(resp.Usage),
-		ProviderMetadata: responseMeta(providerName, resp),
+		ProviderMetadata: responseMeta(providerName, resp, logprobs),
 		Response: &provider.GenerateResponse{
 			ResponseMetadata: provider.ResponseMetadata{
 				ID:        resp.ID,
@@ -601,12 +605,50 @@ func reasoningMeta(providerName, itemID, encrypted string) provider.ProviderMeta
 	return provider.ProviderMetadata{providerName: b}
 }
 
-func responseMeta(providerName string, resp *responses.Response) provider.ProviderMetadata {
+type responseLogprob struct {
+	Token       string               `json:"token"`
+	Logprob     float64              `json:"logprob"`
+	TopLogprobs []responseTopLogprob `json:"top_logprobs"`
+}
+
+type responseTopLogprob struct {
+	Token   string  `json:"token"`
+	Logprob float64 `json:"logprob"`
+}
+
+func convertOutputTextLogprobs(values []responses.ResponseOutputTextLogprob) []responseLogprob {
+	logprobs := make([]responseLogprob, len(values))
+	for i, value := range values {
+		topLogprobs := make([]responseTopLogprob, len(value.TopLogprobs))
+		for j, topLogprob := range value.TopLogprobs {
+			topLogprobs[j] = responseTopLogprob{Token: topLogprob.Token, Logprob: topLogprob.Logprob}
+		}
+		logprobs[i] = responseLogprob{Token: value.Token, Logprob: value.Logprob, TopLogprobs: topLogprobs}
+	}
+	return logprobs
+}
+
+func convertTextDeltaLogprobs(values []responses.ResponseTextDeltaEventLogprob) []responseLogprob {
+	logprobs := make([]responseLogprob, len(values))
+	for i, value := range values {
+		topLogprobs := make([]responseTopLogprob, len(value.TopLogprobs))
+		for j, topLogprob := range value.TopLogprobs {
+			topLogprobs[j] = responseTopLogprob{Token: topLogprob.Token, Logprob: topLogprob.Logprob}
+		}
+		logprobs[i] = responseLogprob{Token: value.Token, Logprob: value.Logprob, TopLogprobs: topLogprobs}
+	}
+	return logprobs
+}
+
+func responseMeta(providerName string, resp *responses.Response, logprobs [][]responseLogprob) provider.ProviderMetadata {
 	var responseID any
 	if resp.ID != "" {
 		responseID = resp.ID
 	}
 	m := map[string]any{"responseId": responseID}
+	if len(logprobs) > 0 {
+		m["logprobs"] = logprobs
+	}
 	if resp.ServiceTier != "" {
 		m["serviceTier"] = string(resp.ServiceTier)
 	}

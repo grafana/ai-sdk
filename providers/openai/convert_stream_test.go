@@ -2,6 +2,7 @@ package openai
 
 import (
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/grafana/ai-sdk/provider"
@@ -73,6 +74,135 @@ func TestStream_TextLifecycle(t *testing.T) {
 	require.NotNil(t, finish.FinishReason)
 	assert.Equal(t, provider.FinishReasonStop, finish.FinishReason.Unified)
 	require.NotNil(t, finish.Usage)
+}
+
+func TestStream_Logprobs(t *testing.T) {
+	const firstDelta = `{"type":"response.output_text.delta","sequence_number":1,"output_index":0,"content_index":0,"item_id":"msg_1","delta":"N","logprobs":[{"bytes":[78],"token":"N","logprob":-2.9266366958618164,"top_logprobs":[{"bytes":[80,108,101,97,115,101],"token":"Please","logprob":-0.5516367554664612},{"bytes":[89],"token":"Y","logprob":-1.0516366958618164}]}]}`
+	const secondDelta = `{"type":"response.output_text.delta","sequence_number":2,"output_index":0,"content_index":0,"item_id":"msg_1","delta":"!","logprobs":[{"bytes":[33],"token":"!","logprob":-0.13410144,"top_logprobs":[{"bytes":[33],"token":"!","logprob":-0.13410144}]}]}`
+	const emptyDelta = `{"type":"response.output_text.delta","sequence_number":1,"output_index":0,"content_index":0,"item_id":"msg_1","delta":"N","logprobs":[]}`
+	const nullDelta = `{"type":"response.output_text.delta","sequence_number":1,"output_index":0,"content_index":0,"item_id":"msg_1","delta":"N","logprobs":null}`
+	const missingDelta = `{"type":"response.output_text.delta","sequence_number":1,"output_index":0,"content_index":0,"item_id":"msg_1","delta":"N"}`
+	const completed = `{"type":"response.completed","sequence_number":3,"response":{"id":"resp_1","created_at":1,"model":"gpt-4o","object":"response","status":"completed","service_tier":"default","output":[],"usage":{"input_tokens":1,"output_tokens":2,"total_tokens":3,"input_tokens_details":{"cached_tokens":0},"output_tokens_details":{"reasoning_tokens":0}}}}`
+	tests := []struct {
+		name      string
+		deltas    []string
+		requested bool
+		want      string
+	}{
+		{
+			name:      "requested non-empty logprobs",
+			deltas:    []string{firstDelta, secondDelta},
+			requested: true,
+			want: `[
+				[{"token":"N","logprob":-2.9266366958618164,"top_logprobs":[
+					{"token":"Please","logprob":-0.5516367554664612},
+					{"token":"Y","logprob":-1.0516366958618164}
+				]}],
+				[{"token":"!","logprob":-0.13410144,"top_logprobs":[
+					{"token":"!","logprob":-0.13410144}
+				]}]
+			]`,
+		},
+		{name: "requested empty logprobs", deltas: []string{emptyDelta}, requested: true, want: `[[]]`},
+		{name: "requested null logprobs", deltas: []string{nullDelta}, requested: true},
+		{name: "requested missing logprobs", deltas: []string{missingDelta}, requested: true},
+		{
+			name:      "preserves present arrays while skipping null and missing values",
+			deltas:    []string{emptyDelta, nullDelta, missingDelta, firstDelta},
+			requested: true,
+			want: `[
+				[],
+				[{"token":"N","logprob":-2.9266366958618164,"top_logprobs":[
+					{"token":"Please","logprob":-0.5516367554664612},
+					{"token":"Y","logprob":-1.0516366958618164}
+				]}]
+			]`,
+		},
+		{name: "unrequested returned logprobs", deltas: []string{firstDelta}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			events := append(append([]string(nil), tc.deltas...), completed)
+			parts := collectPartsWithBuildResult(t, buildResult{logprobsRequested: tc.requested}, events...)
+			var finish *provider.StreamPart
+			for i := range parts {
+				if parts[i].Type == provider.PartFinish {
+					finish = &parts[i]
+				}
+			}
+			require.NotNil(t, finish)
+			var metadata map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal(finish.ProviderMetadata["openai"], &metadata))
+			if tc.want == "" {
+				assert.NotContains(t, metadata, "logprobs")
+				return
+			}
+			assert.JSONEq(t, tc.want, string(metadata["logprobs"]))
+		})
+	}
+}
+
+func TestStream_LogprobsTerminalFinishPaths(t *testing.T) {
+	const delta = `{"type":"response.output_text.delta","sequence_number":1,"output_index":0,"content_index":0,"item_id":"msg_1","delta":"N","logprobs":[{"bytes":[78],"token":"N","logprob":-2.9266366958618164,"top_logprobs":[{"bytes":[89],"token":"Y","logprob":-1.0516366958618164}]}]}`
+	const want = `[[{"token":"N","logprob":-2.9266366958618164,"top_logprobs":[{"token":"Y","logprob":-1.0516366958618164}]}]]`
+	assertFinishLogprobs := func(t *testing.T, parts []provider.StreamPart) {
+		t.Helper()
+		for _, part := range parts {
+			if part.Type != provider.PartFinish {
+				continue
+			}
+			var metadata map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal(part.ProviderMetadata["openai"], &metadata))
+			assert.JSONEq(t, want, string(metadata["logprobs"]))
+			return
+		}
+		require.Fail(t, "finish part not found")
+	}
+
+	tests := []struct {
+		name     string
+		terminal string
+	}{
+		{
+			name:     "incomplete response",
+			terminal: `{"type":"response.incomplete","sequence_number":2,"response":{"id":"resp_1","model":"gpt-4o","status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}}`,
+		},
+		{
+			name:     "failed response",
+			terminal: `{"type":"response.failed","sequence_number":2,"response":{"id":"resp_1","model":"gpt-4o","status":"failed","error":{"message":"failed","code":"server_error"},"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}}`,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			parts := collectPartsWithBuildResult(t, buildResult{logprobsRequested: true}, delta, tc.terminal)
+			assertFinishLogprobs(t, parts)
+		})
+	}
+
+	t.Run("pending transport error", func(t *testing.T) {
+		items := make(chan responseStreamItem, 1)
+		items <- responseStreamItem{err: errors.New("stream failed")}
+		close(items)
+		ch := make(chan provider.StreamPart, 16)
+		consumeStreamParts(
+			items,
+			[]responses.ResponseStreamEventUnion{unmarshalEvent(t, delta)},
+			ch,
+			nil,
+			buildResult{logprobsRequested: true},
+			responses.ResponseNewParams{},
+			nil,
+			seqIDGen(),
+			"openai",
+		)
+		close(ch)
+		var parts []provider.StreamPart
+		for part := range ch {
+			parts = append(parts, part)
+		}
+		assertFinishLogprobs(t, parts)
+	})
 }
 
 func TestStream_FinishCarriesResponseMetadata(t *testing.T) {

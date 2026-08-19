@@ -88,6 +88,87 @@ func TestConvertResponse_TextAndURLCitation(t *testing.T) {
 	assert.Equal(t, provider.FinishReasonStop, res.FinishReason.Unified)
 }
 
+func TestConvertResponse_Logprobs(t *testing.T) {
+	const nonEmptyLogprobs = `[
+		{"bytes":[72,101,108,108,111],"token":"Hello","logprob":-0.0009994634,"top_logprobs":[
+			{"bytes":[72,101,108,108,111],"token":"Hello","logprob":-0.0009994634},
+			{"bytes":[72,105],"token":"Hi","logprob":-0.2}
+		]},
+		{"bytes":[33],"token":"!","logprob":-0.13410144,"top_logprobs":[
+			{"bytes":[33],"token":"!","logprob":-0.13410144}
+		]}
+	]`
+	const normalizedLogprobs = `[
+		{"token":"Hello","logprob":-0.0009994634,"top_logprobs":[
+			{"token":"Hello","logprob":-0.0009994634},
+			{"token":"Hi","logprob":-0.2}
+		]},
+		{"token":"!","logprob":-0.13410144,"top_logprobs":[
+			{"token":"!","logprob":-0.13410144}
+		]}
+	]`
+	tests := []struct {
+		name      string
+		logprobs  string
+		requested bool
+		want      string
+	}{
+		{
+			name:      "requested non-empty logprobs",
+			logprobs:  nonEmptyLogprobs,
+			requested: true,
+			want:      `[` + normalizedLogprobs + `]`,
+		},
+		{name: "requested empty logprobs", logprobs: `[]`, requested: true, want: `[[]]`},
+		{name: "requested null logprobs", logprobs: `null`, requested: true},
+		{name: "requested missing logprobs", requested: true},
+		{name: "unrequested returned logprobs", logprobs: nonEmptyLogprobs},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			logprobsField := ""
+			if tc.logprobs != "" {
+				logprobsField = `,"logprobs":` + tc.logprobs
+			}
+			resp := decodeResponse(t, `{
+				"id":"resp_1","created_at":1700000000,"model":"gpt-4o","object":"response","status":"completed",
+				"output":[{"type":"message","id":"msg_1","role":"assistant","status":"completed","content":[
+					{"type":"output_text","text":"Hello!","annotations":[]`+logprobsField+`}
+				]}],
+				"usage":{"input_tokens":1,"output_tokens":2,"total_tokens":3,"input_tokens_details":{"cached_tokens":0},"output_tokens_details":{"reasoning_tokens":0}}
+			}`)
+
+			res := mustConvertResponse(t, resp, buildResult{logprobsRequested: tc.requested})
+			var metadata map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal(res.ProviderMetadata["openai"], &metadata))
+			if tc.want == "" {
+				assert.NotContains(t, metadata, "logprobs")
+				return
+			}
+			assert.JSONEq(t, tc.want, string(metadata["logprobs"]))
+		})
+	}
+
+	t.Run("preserves present arrays while skipping null and missing values", func(t *testing.T) {
+		resp := decodeResponse(t, `{
+			"id":"resp_1","created_at":1700000000,"model":"gpt-4o","object":"response","status":"completed",
+			"output":[{"type":"message","id":"msg_1","role":"assistant","status":"completed","content":[
+				{"type":"output_text","text":"empty","annotations":[],"logprobs":[]},
+				{"type":"output_text","text":"null","annotations":[],"logprobs":null},
+				{"type":"output_text","text":"missing","annotations":[]},
+				{"type":"output_text","text":"non-empty","annotations":[],"logprobs":`+nonEmptyLogprobs+`}
+			]}],
+			"usage":{"input_tokens":1,"output_tokens":2,"total_tokens":3,"input_tokens_details":{"cached_tokens":0},"output_tokens_details":{"reasoning_tokens":0}}
+		}`)
+
+		res := mustConvertResponse(t, resp, buildResult{logprobsRequested: true})
+		var metadata map[string]json.RawMessage
+		require.NoError(t, json.Unmarshal(res.ProviderMetadata["openai"], &metadata))
+		assert.JSONEq(t, `[[],`+normalizedLogprobs+`]`, string(metadata["logprobs"]))
+	})
+}
+
 func TestConvertResponse_TextPhaseAndFunctionNamespaceMetadata(t *testing.T) {
 	resp := decodeResponse(t, `{
 		"id":"resp_1","created_at":1700000000,"model":"gpt-4o","object":"response","status":"completed",

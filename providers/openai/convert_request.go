@@ -26,7 +26,8 @@ type buildResult struct {
 	// hasCodeInterpreterTool indicates a code_interpreter tool is present.
 	hasCodeInterpreterTool bool
 	// hasComputerTool indicates the client-executed computer tool is present.
-	hasComputerTool bool
+	hasComputerTool   bool
+	logprobsRequested bool
 }
 
 // buildParams converts provider.CallOptions into an OpenAI Responses request.
