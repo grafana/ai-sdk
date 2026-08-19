@@ -1454,6 +1454,17 @@ func TestBuildParams_ProviderOptions(t *testing.T) {
 		}, body["input"])
 	})
 
+	t.Run("stateless compaction history omits absent encrypted content", func(t *testing.T) {
+		compaction := provider.CustomPart("openai.compaction")
+		compaction.ProviderOptions = provider.BuildProviderOptions(OpenAIPartOptions{Type: "compaction", ItemID: "cmp_123"})
+		store := false
+		body, _ := buildBody(t, "gpt-5.2", provider.CallOptions{
+			Prompt:          []provider.Message{provider.NewAssistantMessage(compaction)},
+			ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{Store: &store}),
+		})
+		assert.Equal(t, []any{map[string]any{"type": "compaction", "id": "cmp_123"}}, body["input"])
+	})
+
 	t.Run("stored compaction history uses an item reference", func(t *testing.T) {
 		compaction := provider.CustomPart("openai.compaction")
 		compaction.ProviderOptions = provider.BuildProviderOptions(OpenAIPartOptions{Type: "compaction", ItemID: "cmp_123"})

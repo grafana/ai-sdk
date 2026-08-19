@@ -584,6 +584,11 @@ func TestConvertResponse_Compaction(t *testing.T) {
 	assert.JSONEq(t, `{"type":"compaction","itemId":"cmp_1","encryptedContent":"ENC"}`, string(res.Content[0].ProviderMetadata["openai"]))
 }
 
+func TestCompactionMetadata_OmitsEmptyEncryptedContent(t *testing.T) {
+	metadata := compactionMetadata("openai", "cmp_1", "")
+	assert.JSONEq(t, `{"type":"compaction","itemId":"cmp_1"}`, string(metadata["openai"]))
+}
+
 func TestConvertResponse_ReasoningContextMetadata(t *testing.T) {
 	resp := decodeResponse(t, `{
 		"id":"resp_1","created_at":1,"model":"gpt-5.6","object":"response","status":"completed","reasoning":{"context":"all_turns"},"output":[],

@@ -1298,6 +1298,26 @@ func convertProviderExecutedToolResult(p provider.ContentPart, mapping toolNameM
 }
 
 func convertInlineWebSearchResult(p provider.ContentPart, cc anthropic.BetaCacheControlEphemeralParam, warnings *[]provider.Warning) *anthropic.BetaContentBlockParamUnion {
+	caller, _ := extractWebSearchToolResultCallerMetadata(p.ProviderOptions)
+	if p.Output != nil && p.Output.Type == provider.ToolOutputErrorJSON {
+		errorInfo := extractProviderToolErrorInfo(p.Output)
+		if errorInfo.ErrorCode == "" {
+			errorInfo.ErrorCode = "unavailable"
+		}
+		return &anthropic.BetaContentBlockParamUnion{
+			OfWebSearchToolResult: &anthropic.BetaWebSearchToolResultBlockParam{
+				ToolUseID: p.ToolCallID,
+				Content: anthropic.BetaWebSearchToolResultBlockParamContentUnion{
+					OfError: &anthropic.BetaWebSearchToolRequestErrorParam{
+						ErrorCode: anthropic.BetaWebSearchToolResultErrorCode(errorInfo.ErrorCode),
+					},
+				},
+				Caller:       caller,
+				CacheControl: cc,
+			},
+		}
+	}
+
 	outputJSON := extractOutputJSON(p.Output)
 	if outputJSON == nil {
 		*warnings = append(*warnings, provider.Warning{
@@ -1330,7 +1350,6 @@ func convertInlineWebSearchResult(p provider.ContentPart, cc anthropic.BetaCache
 		}
 	}
 
-	caller, _ := extractWebSearchToolResultCallerMetadata(p.ProviderOptions)
 	block := anthropic.BetaContentBlockParamUnion{
 		OfWebSearchToolResult: &anthropic.BetaWebSearchToolResultBlockParam{
 			ToolUseID: p.ToolCallID,
@@ -1355,19 +1374,7 @@ func convertInlineWebFetchResult(p provider.ContentPart, cc anthropic.BetaCacheC
 		return nil
 	}
 	if p.Output.Type == provider.ToolOutputErrorJSON || p.Output.Type == provider.ToolOutputErrorText {
-		var errorInfo struct {
-			ErrorCode string `json:"errorCode"`
-		}
-		outputJSON := extractOutputJSON(p.Output)
-		if outputJSON != nil {
-			if err := json.Unmarshal(outputJSON, &errorInfo); err != nil {
-				*warnings = append(*warnings, provider.Warning{
-					Type:    provider.WarnOther,
-					Feature: "providerExecutedToolResult",
-					Message: fmt.Sprintf("failed to unmarshal web_fetch error info: %v", err),
-				})
-			}
-		}
+		errorInfo := extractProviderToolErrorInfo(p.Output)
 		if errorInfo.ErrorCode == "" {
 			errorInfo.ErrorCode = "unavailable"
 		}
@@ -1461,7 +1468,7 @@ func convertInlineCodeExecutionResult(p provider.ContentPart, cc anthropic.BetaC
 		return nil
 	}
 	if p.Output.Type == provider.ToolOutputErrorJSON || p.Output.Type == provider.ToolOutputErrorText {
-		return convertCodeExecutionErrorResult(p, cc, warnings)
+		return convertCodeExecutionErrorResult(p, cc)
 	}
 
 	outputJSON := extractOutputJSON(p.Output)
@@ -1577,20 +1584,11 @@ func convertInlineCodeExecutionResult(p provider.ContentPart, cc anthropic.BetaC
 	}
 }
 
-func convertCodeExecutionErrorResult(p provider.ContentPart, cc anthropic.BetaCacheControlEphemeralParam, warnings *[]provider.Warning) *anthropic.BetaContentBlockParamUnion {
-	outputJSON := extractOutputJSON(p.Output)
-	var errorInfo struct {
-		Type      string `json:"type"`
-		ErrorCode string `json:"errorCode"`
-	}
-	if outputJSON != nil {
-		if err := json.Unmarshal(outputJSON, &errorInfo); err != nil {
-			*warnings = append(*warnings, provider.Warning{
-				Type:    provider.WarnOther,
-				Feature: "providerExecutedToolResult",
-				Message: fmt.Sprintf("failed to unmarshal code_execution error info: %v", err),
-			})
-		}
+func convertCodeExecutionErrorResult(p provider.ContentPart, cc anthropic.BetaCacheControlEphemeralParam) *anthropic.BetaContentBlockParamUnion {
+	errorInfo := extractProviderToolErrorInfo(p.Output)
+	errorCode := errorInfo.ErrorCode
+	if errorCode == "" {
+		errorCode = "unknown"
 	}
 
 	if errorInfo.Type == "code_execution_tool_result_error" {
@@ -1599,7 +1597,7 @@ func convertCodeExecutionErrorResult(p provider.ContentPart, cc anthropic.BetaCa
 				ToolUseID: p.ToolCallID,
 				Content: anthropic.BetaCodeExecutionToolResultBlockParamContentUnion{
 					OfError: &anthropic.BetaCodeExecutionToolResultErrorParam{
-						ErrorCode: anthropic.BetaCodeExecutionToolResultErrorCode(errorInfo.ErrorCode),
+						ErrorCode: anthropic.BetaCodeExecutionToolResultErrorCode(errorCode),
 					},
 				},
 				CacheControl: cc,
@@ -1608,10 +1606,6 @@ func convertCodeExecutionErrorResult(p provider.ContentPart, cc anthropic.BetaCa
 		return &block
 	}
 
-	errorCode := errorInfo.ErrorCode
-	if errorCode == "" {
-		errorCode = "unknown"
-	}
 	block := anthropic.BetaContentBlockParamUnion{
 		OfBashCodeExecutionToolResult: &anthropic.BetaBashCodeExecutionToolResultBlockParam{
 			ToolUseID: p.ToolCallID,
@@ -1763,6 +1757,36 @@ func extractOutputJSON(output *provider.ToolResultOutput) json.RawMessage {
 	default:
 		return nil
 	}
+}
+
+type providerToolErrorInfo struct {
+	Type      string `json:"type"`
+	ErrorCode string `json:"errorCode"`
+}
+
+func extractProviderToolErrorInfo(output *provider.ToolResultOutput) providerToolErrorInfo {
+	if output == nil {
+		return providerToolErrorInfo{}
+	}
+	var raw []byte
+	switch output.Type {
+	case provider.ToolOutputErrorJSON:
+		raw = output.JSON
+	case provider.ToolOutputErrorText:
+		raw = []byte(output.Text)
+	default:
+		return providerToolErrorInfo{}
+	}
+
+	var info providerToolErrorInfo
+	if json.Unmarshal(raw, &info) == nil {
+		return info
+	}
+	var encoded string
+	if json.Unmarshal(raw, &encoded) == nil {
+		_ = json.Unmarshal([]byte(encoded), &info)
+	}
+	return info
 }
 
 func toolOutputTypeLabel(output *provider.ToolResultOutput) string {
@@ -2770,14 +2794,22 @@ func extractCallerMetadataJSON(opts provider.ProviderOptions) (json.RawMessage, 
 	if json.Unmarshal(raw, &data) != nil || data.Caller == nil {
 		return nil, false
 	}
-	if data.Caller.Type != "direct" && data.Caller.ToolID == "" {
-		return nil, false
-	}
 	switch data.Caller.Type {
-	case "direct", "code_execution_20250825", "code_execution_20260120":
+	case "direct":
+		callerJSON, err := json.Marshal(struct {
+			Type string `json:"type"`
+		}{Type: data.Caller.Type})
+		if err != nil {
+			return nil, false
+		}
+		return callerJSON, true
+	case "code_execution_20250825", "code_execution_20260120":
+		if data.Caller.ToolID == "" {
+			return nil, false
+		}
 		callerJSON, err := json.Marshal(struct {
 			Type   string `json:"type"`
-			ToolID string `json:"tool_id,omitempty"`
+			ToolID string `json:"tool_id"`
 		}{Type: data.Caller.Type, ToolID: data.Caller.ToolID})
 		if err != nil {
 			return nil, false

@@ -90,7 +90,13 @@ function ChatProbe({ scenario }: { scenario: string }) {
       fetch: trackedFetch,
     }),
   });
+  const text = assistantText(messages as AgentToolMessage[]);
   const statusHistory = useSnapshotHistory<ChatStatus>(status);
+  const snapshotHistory = useSnapshotHistory({
+    status,
+    messageCount: messages.length,
+    text,
+  });
 
   return (
     <div>
@@ -103,12 +109,13 @@ function ChatProbe({ scenario }: { scenario: string }) {
       <button data-testid="chat-stop" onClick={stop} />
       <div data-testid="chat-status">{status}</div>
       <div data-testid="chat-status-history">{JSON.stringify(statusHistory)}</div>
+      <div data-testid="chat-snapshot-history">
+        {JSON.stringify(snapshotHistory)}
+      </div>
       <div data-testid="chat-error">{error?.message}</div>
       <div data-testid="chat-abort-count">{abortCount}</div>
       <div data-testid="chat-message-count">{messages.length}</div>
-      <div data-testid="chat-text">
-        {assistantText(messages as AgentToolMessage[])}
-      </div>
+      <div data-testid="chat-text">{text}</div>
     </div>
   );
 }
@@ -300,19 +307,30 @@ describe("React hook interop", () => {
 
     screen.getByTestId("chat-send").click();
 
-    await waitFor(() => {
-      expect(screen.getByTestId("chat-message-count").textContent).toBe("2");
-      expect(screen.getByTestId("chat-status").textContent).toBe("submitted");
-      expect(screen.getByTestId("chat-text").textContent).toBe("");
-    });
-
-    await waitFor(() => {
-      expect(screen.getByTestId("chat-text").textContent).toBe("Hello, world!");
-      const history = JSON.parse(
-        screen.getByTestId("chat-status-history").textContent ?? "[]",
-      ) as ChatStatus[];
-      expectOrderedSubsequence(history, ["submitted", "streaming", "ready"]);
-    }, { timeout: 3000 });
+    await waitFor(
+      () => {
+        expect(screen.getByTestId("chat-text").textContent).toBe(
+          "Hello, world!",
+        );
+        const history = JSON.parse(
+          screen.getByTestId("chat-snapshot-history").textContent ?? "[]",
+        ) as Array<{
+          status: ChatStatus;
+          messageCount: number;
+          text: string;
+        }>;
+        expect(history).toContainEqual({
+          status: "submitted",
+          messageCount: 2,
+          text: "",
+        });
+        expectOrderedSubsequence(
+          history.map(snapshot => snapshot.status),
+          ["submitted", "streaming", "ready"],
+        );
+      },
+      { timeout: 3000 },
+    );
   });
 
   it.each([

@@ -38,15 +38,11 @@ func itemReference(id string) responses.ResponseInputItemUnionParam {
 }
 
 func compactionInputItem(id string, encryptedContent *string) responses.ResponseInputItemUnionParam {
-	item := map[string]any{
-		"type": "compaction",
-		"id":   id,
-	}
-	if encryptedContent != nil {
-		item["encrypted_content"] = *encryptedContent
-	}
-	raw, _ := json.Marshal(item)
-	value := param.Override[responses.ResponseCompactionItemParam](json.RawMessage(raw))
+	value := param.Override[responses.ResponseCompactionItemParam](struct {
+		Type             string  `json:"type"`
+		ID               string  `json:"id"`
+		EncryptedContent *string `json:"encrypted_content,omitempty"`
+	}{Type: "compaction", ID: id, EncryptedContent: encryptedContent})
 	return responses.ResponseInputItemUnionParam{OfCompaction: &value}
 }
 

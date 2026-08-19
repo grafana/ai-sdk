@@ -437,11 +437,14 @@ func toolSearchOutput(raw string) json.RawMessage {
 }
 
 func compactionMetadata(providerName, itemID, encryptedContent string) provider.ProviderMetadata {
-	b, _ := json.Marshal(map[string]any{
-		"type":             "compaction",
-		"itemId":           itemID,
-		"encryptedContent": encryptedContent,
-	})
+	metadata := map[string]any{
+		"type":   "compaction",
+		"itemId": itemID,
+	}
+	if encryptedContent != "" {
+		metadata["encryptedContent"] = encryptedContent
+	}
+	b, _ := json.Marshal(metadata)
 	return provider.ProviderMetadata{providerName: b}
 }
 
