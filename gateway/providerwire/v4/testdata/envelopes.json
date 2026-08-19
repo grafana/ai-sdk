@@ -1,294 +1,170 @@
 {
+  "seeds": [
+    {
+      "name": "unary",
+      "document": {
+        "method": "POST",
+        "path": "/language-model",
+        "headers": {
+          "ai-language-model-id": "model.v4",
+          "ai-language-model-specification-version": "4",
+          "ai-language-model-streaming": "false",
+          "content-type": "application/json"
+        }
+      }
+    },
+    {
+      "name": "stream",
+      "document": {
+        "method": "POST",
+        "path": "/language-model",
+        "headers": {
+          "Ai-Language-Model-Id": "model.v4",
+          "AI-Language-Model-Specification-Version": "4",
+          "ai-language-model-streaming": "true",
+          "Content-Type": "application/json; charset=utf-8",
+          "Accept": "text/event-stream"
+        }
+      }
+    }
+  ],
   "cases": [
-    {
-      "name": "unary exact",
-      "method": "POST",
-      "path": "/language-model",
-      "headers": {
-        "ai-language-model-id": "model.v4",
-        "ai-language-model-specification-version": "4",
-        "ai-language-model-streaming": "false",
-        "content-type": "application/json"
-      },
-      "wantMediaType": "application/json"
-    },
-    {
-      "name": "stream exact",
-      "method": "POST",
-      "path": "/language-model",
-      "headers": {
-        "Ai-Language-Model-Id": "model.v4",
-        "AI-Language-Model-Specification-Version": "4",
-        "ai-language-model-streaming": "true",
-        "Content-Type": "application/json; charset=utf-8",
-        "Accept": "text/event-stream"
-      },
-      "wantMediaType": "text/event-stream"
-    },
+    { "name": "unary exact", "base": "unary", "wantMediaType": "application/json" },
+    { "name": "stream exact", "base": "stream", "wantMediaType": "text/event-stream" },
     {
       "name": "unary omitted accept",
-      "method": "POST",
-      "path": "/language-model",
-      "headers": {
-        "ai-language-model-id": "model v4",
-        "ai-language-model-specification-version": "4",
-        "ai-language-model-streaming": "false",
-        "content-type": "application/json; profile=contract"
-      },
-      "wantMediaType": "application/json"
+      "base": "unary",
+      "wantMediaType": "application/json",
+      "mutations": [
+        { "operation": "set", "path": "/headers/ai-language-model-id", "value": "model v4" },
+        { "operation": "set", "path": "/headers/content-type", "value": "application/json; profile=contract" }
+      ]
     },
     {
       "name": "present empty accept",
-      "method": "POST",
-      "path": "/language-model",
-      "headers": {
-        "ai-language-model-id": "model.v4",
-        "ai-language-model-specification-version": "4",
-        "ai-language-model-streaming": "false",
-        "content-type": "application/json",
-        "accept": ""
-      },
-      "wantCategory": "accept"
+      "base": "unary",
+      "wantCategory": "accept",
+      "mutations": [{ "operation": "set", "path": "/headers/accept", "value": "" }]
     },
     {
       "name": "unary type wildcard",
-      "method": "POST",
-      "path": "/language-model",
-      "headers": {
-        "ai-language-model-id": "model.v4",
-        "ai-language-model-specification-version": "4",
-        "ai-language-model-streaming": "false",
-        "content-type": "application/json",
-        "accept": "text/plain;q=0.8, application/*;q=0.5"
-      },
-      "wantMediaType": "application/json"
+      "base": "unary",
+      "wantMediaType": "application/json",
+      "mutations": [{ "operation": "set", "path": "/headers/accept", "value": "text/plain;q=0.8, application/*;q=0.5" }]
     },
     {
       "name": "wrong method",
-      "method": "GET",
-      "path": "/language-model",
-      "headers": {},
-      "wantCategory": "method"
+      "base": "unary",
+      "wantCategory": "method",
+      "mutations": [{ "operation": "set", "path": "/method", "value": "GET" }]
     },
     {
       "name": "wrong path",
-      "method": "POST",
-      "path": "/v4/language-model",
-      "headers": {},
-      "wantCategory": "path"
+      "base": "unary",
+      "wantCategory": "path",
+      "mutations": [{ "operation": "set", "path": "/path", "value": "/v4/language-model" }]
     },
     {
       "name": "missing model id",
-      "method": "POST",
-      "path": "/language-model",
-      "headers": {
-        "ai-language-model-specification-version": "4",
-        "ai-language-model-streaming": "false",
-        "content-type": "application/json"
-      },
-      "wantCategory": "model-id"
+      "base": "unary",
+      "wantCategory": "model-id",
+      "mutations": [{ "operation": "remove", "path": "/headers/ai-language-model-id" }]
     },
     {
       "name": "padded model id",
-      "method": "POST",
-      "path": "/language-model",
-      "headers": {
-        "ai-language-model-id": " model.v4 ",
-        "ai-language-model-specification-version": "4",
-        "ai-language-model-streaming": "false",
-        "content-type": "application/json"
-      },
-      "wantCategory": "model-id"
+      "base": "unary",
+      "wantCategory": "model-id",
+      "mutations": [{ "operation": "set", "path": "/headers/ai-language-model-id", "value": " model.v4 " }]
     },
     {
       "name": "wrong version",
-      "method": "POST",
-      "path": "/language-model",
-      "headers": {
-        "ai-language-model-id": "model.v4",
-        "ai-language-model-specification-version": "v4",
-        "ai-language-model-streaming": "false",
-        "content-type": "application/json"
-      },
-      "wantCategory": "specification-version"
+      "base": "unary",
+      "wantCategory": "specification-version",
+      "mutations": [{ "operation": "set", "path": "/headers/ai-language-model-specification-version", "value": "v4" }]
     },
     {
       "name": "uppercase streaming",
-      "method": "POST",
-      "path": "/language-model",
-      "headers": {
-        "ai-language-model-id": "model.v4",
-        "ai-language-model-specification-version": "4",
-        "ai-language-model-streaming": "TRUE",
-        "content-type": "application/json"
-      },
-      "wantCategory": "streaming"
+      "base": "unary",
+      "wantCategory": "streaming",
+      "mutations": [{ "operation": "set", "path": "/headers/ai-language-model-streaming", "value": "TRUE" }]
     },
     {
       "name": "missing content type",
-      "method": "POST",
-      "path": "/language-model",
-      "headers": {
-        "ai-language-model-id": "model.v4",
-        "ai-language-model-specification-version": "4",
-        "ai-language-model-streaming": "false"
-      },
-      "wantCategory": "content-type"
+      "base": "unary",
+      "wantCategory": "content-type",
+      "mutations": [{ "operation": "remove", "path": "/headers/content-type" }]
     },
     {
       "name": "wrong content type",
-      "method": "POST",
-      "path": "/language-model",
-      "headers": {
-        "ai-language-model-id": "model.v4",
-        "ai-language-model-specification-version": "4",
-        "ai-language-model-streaming": "false",
-        "content-type": "text/plain"
-      },
-      "wantCategory": "content-type"
+      "base": "unary",
+      "wantCategory": "content-type",
+      "mutations": [{ "operation": "set", "path": "/headers/content-type", "value": "text/plain" }]
     },
     {
       "name": "incompatible accept",
-      "method": "POST",
-      "path": "/language-model",
-      "headers": {
-        "ai-language-model-id": "model.v4",
-        "ai-language-model-specification-version": "4",
-        "ai-language-model-streaming": "true",
-        "content-type": "application/json",
-        "accept": "application/json"
-      },
-      "wantCategory": "accept"
+      "base": "stream",
+      "wantCategory": "accept",
+      "mutations": [{ "operation": "set", "path": "/headers/Accept", "value": "application/json" }]
     },
     {
       "name": "quality zero",
-      "method": "POST",
-      "path": "/language-model",
-      "headers": {
-        "ai-language-model-id": "model.v4",
-        "ai-language-model-specification-version": "4",
-        "ai-language-model-streaming": "false",
-        "content-type": "application/json",
-        "accept": "application/json;q=0"
-      },
-      "wantCategory": "accept"
+      "base": "unary",
+      "wantCategory": "accept",
+      "mutations": [{ "operation": "set", "path": "/headers/accept", "value": "application/json;q=0" }]
     },
     {
       "name": "full wildcard is not a type wildcard",
-      "method": "POST",
-      "path": "/language-model",
-      "headers": {
-        "ai-language-model-id": "model.v4",
-        "ai-language-model-specification-version": "4",
-        "ai-language-model-streaming": "false",
-        "content-type": "application/json",
-        "accept": "*/*"
-      },
-      "wantCategory": "accept"
+      "base": "unary",
+      "wantCategory": "accept",
+      "mutations": [{ "operation": "set", "path": "/headers/accept", "value": "*/*" }]
     },
     {
       "name": "empty accept member",
-      "method": "POST",
-      "path": "/language-model",
-      "headers": {
-        "ai-language-model-id": "model.v4",
-        "ai-language-model-specification-version": "4",
-        "ai-language-model-streaming": "false",
-        "content-type": "application/json",
-        "accept": "application/json,"
-      },
-      "wantCategory": "accept"
+      "base": "unary",
+      "wantCategory": "accept",
+      "mutations": [{ "operation": "set", "path": "/headers/accept", "value": "application/json," }]
     },
     {
       "name": "minimum positive quality",
-      "method": "POST",
-      "path": "/language-model",
-      "headers": {
-        "ai-language-model-id": "model.v4",
-        "ai-language-model-specification-version": "4",
-        "ai-language-model-streaming": "false",
-        "content-type": "application/json",
-        "accept": "application/json;q=0.001"
-      },
-      "wantMediaType": "application/json"
+      "base": "unary",
+      "wantMediaType": "application/json",
+      "mutations": [{ "operation": "set", "path": "/headers/accept", "value": "application/json;q=0.001" }]
     },
     {
       "name": "quoted quality is invalid",
-      "method": "POST",
-      "path": "/language-model",
-      "headers": {
-        "ai-language-model-id": "model.v4",
-        "ai-language-model-specification-version": "4",
-        "ai-language-model-streaming": "false",
-        "content-type": "application/json",
-        "accept": "application/json;q=\"0.5\""
-      },
-      "wantCategory": "accept"
+      "base": "unary",
+      "wantCategory": "accept",
+      "mutations": [{ "operation": "set", "path": "/headers/accept", "value": "application/json;q=\"0.5\"" }]
     },
     {
       "name": "whitespace around quality equals is invalid",
-      "method": "POST",
-      "path": "/language-model",
-      "headers": {
-        "ai-language-model-id": "model.v4",
-        "ai-language-model-specification-version": "4",
-        "ai-language-model-streaming": "false",
-        "content-type": "application/json",
-        "accept": "application/json;q = 0.5"
-      },
-      "wantCategory": "accept"
+      "base": "unary",
+      "wantCategory": "accept",
+      "mutations": [{ "operation": "set", "path": "/headers/accept", "value": "application/json;q = 0.5" }]
     },
     {
       "name": "scientific quality is invalid",
-      "method": "POST",
-      "path": "/language-model",
-      "headers": {
-        "ai-language-model-id": "model.v4",
-        "ai-language-model-specification-version": "4",
-        "ai-language-model-streaming": "false",
-        "content-type": "application/json",
-        "accept": "application/json;q=1e-1"
-      },
-      "wantCategory": "accept"
+      "base": "unary",
+      "wantCategory": "accept",
+      "mutations": [{ "operation": "set", "path": "/headers/accept", "value": "application/json;q=1e-1" }]
     },
     {
       "name": "quality precision over three digits is invalid",
-      "method": "POST",
-      "path": "/language-model",
-      "headers": {
-        "ai-language-model-id": "model.v4",
-        "ai-language-model-specification-version": "4",
-        "ai-language-model-streaming": "false",
-        "content-type": "application/json",
-        "accept": "application/json;q=0.0001"
-      },
-      "wantCategory": "accept"
+      "base": "unary",
+      "wantCategory": "accept",
+      "mutations": [{ "operation": "set", "path": "/headers/accept", "value": "application/json;q=0.0001" }]
     },
     {
       "name": "quality above one is invalid",
-      "method": "POST",
-      "path": "/language-model",
-      "headers": {
-        "ai-language-model-id": "model.v4",
-        "ai-language-model-specification-version": "4",
-        "ai-language-model-streaming": "false",
-        "content-type": "application/json",
-        "accept": "application/json;q=1.001"
-      },
-      "wantCategory": "accept"
+      "base": "unary",
+      "wantCategory": "accept",
+      "mutations": [{ "operation": "set", "path": "/headers/accept", "value": "application/json;q=1.001" }]
     },
     {
       "name": "malformed accept quality",
-      "method": "POST",
-      "path": "/language-model",
-      "headers": {
-        "ai-language-model-id": "model.v4",
-        "ai-language-model-specification-version": "4",
-        "ai-language-model-streaming": "false",
-        "content-type": "application/json",
-        "accept": "application/json;q=wat"
-      },
-      "wantCategory": "accept"
+      "base": "unary",
+      "wantCategory": "accept",
+      "mutations": [{ "operation": "set", "path": "/headers/accept", "value": "application/json;q=wat" }]
     }
   ]
 }

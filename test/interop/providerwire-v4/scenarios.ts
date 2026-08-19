@@ -2,6 +2,7 @@ import { createGateway } from "@ai-sdk/gateway";
 import type { LanguageModelV4CallOptions } from "@ai-sdk/provider";
 import { generateText, stepCountIs, streamText, tool } from "ai";
 import { z } from "zod";
+import { streamScriptedResponse, unaryScriptedResponse } from "./projections";
 import { startRecorder, type RecordedRequest, type ScriptedResponse } from "./recorder";
 
 export interface RequestCapture {
@@ -14,27 +15,6 @@ export interface CaptureArtifact {
   formatVersion: 1;
   captures: RequestCapture[];
 }
-
-const unaryResponse: ScriptedResponse = {
-  contentType: "application/json",
-  body: JSON.stringify({
-    content: [{ type: "text", text: "captured response" }],
-    finishReason: { unified: "stop", raw: "stop" },
-    usage: { inputTokens: { total: 1 }, outputTokens: { total: 1 } },
-    warnings: [],
-  }),
-};
-
-const streamResponse: ScriptedResponse = {
-  contentType: "text/event-stream",
-  body: [
-    `data: ${JSON.stringify({ type: "stream-start", warnings: [] })}\n\n`,
-    `data: ${JSON.stringify({ type: "text-start", id: "text-1" })}\n\n`,
-    `data: ${JSON.stringify({ type: "text-delta", id: "text-1", delta: "captured stream" })}\n\n`,
-    `data: ${JSON.stringify({ type: "text-end", id: "text-1" })}\n\n`,
-    `data: ${JSON.stringify({ type: "finish", finishReason: { unified: "stop", raw: "stop" }, usage: { inputTokens: { total: 1 }, outputTokens: { total: 1 } } })}\n\n`,
-  ].join(""),
-};
 
 export async function captureAllRequests(): Promise<CaptureArtifact> {
   return withSyntheticObservability(async () => {
@@ -193,7 +173,7 @@ async function captureDirectUnary(): Promise<RequestCapture[]> {
 
   return recordScenario(
     "direct-do-generate-complete",
-    [unaryResponse],
+    [unaryScriptedResponse()],
     async (baseURL) => {
       const gateway = newCaptureGateway(baseURL);
       await gateway("capture/model").doGenerate(options);
@@ -203,7 +183,7 @@ async function captureDirectUnary(): Promise<RequestCapture[]> {
 }
 
 async function captureDirectStream(): Promise<RequestCapture[]> {
-  return recordScenario("direct-do-stream", [streamResponse], async (baseURL) => {
+  return recordScenario("direct-do-stream", [streamScriptedResponse()], async (baseURL) => {
     const gateway = newCaptureGateway(baseURL);
     const result = await gateway("capture/model").doStream({
       prompt: [{ role: "user", content: [{ type: "text", text: "stream directly" }] }],
@@ -219,7 +199,7 @@ async function captureDirectStream(): Promise<RequestCapture[]> {
 }
 
 async function captureGenerateText(): Promise<RequestCapture[]> {
-  return recordScenario("orchestration-generate-text", [unaryResponse], async (baseURL) => {
+  return recordScenario("orchestration-generate-text", [unaryScriptedResponse()], async (baseURL) => {
     const gateway = newCaptureGateway(baseURL);
     await generateText({
       model: gateway("capture/model"),
@@ -258,7 +238,7 @@ async function captureClientToolFlow(): Promise<RequestCapture[]> {
     }),
   };
 
-  return recordScenario("orchestration-client-tool-flow", [toolCallResponse, unaryResponse], async (baseURL) => {
+  return recordScenario("orchestration-client-tool-flow", [toolCallResponse, unaryScriptedResponse()], async (baseURL) => {
     const gateway = newCaptureGateway(baseURL);
     await generateText({
       model: gateway("capture/model"),
@@ -276,7 +256,7 @@ async function captureClientToolFlow(): Promise<RequestCapture[]> {
 }
 
 async function captureStreamText(): Promise<RequestCapture[]> {
-  return recordScenario("orchestration-stream-text", [streamResponse], async (baseURL) => {
+  return recordScenario("orchestration-stream-text", [streamScriptedResponse()], async (baseURL) => {
     const gateway = newCaptureGateway(baseURL);
     const result = streamText({
       model: gateway("capture/model"),

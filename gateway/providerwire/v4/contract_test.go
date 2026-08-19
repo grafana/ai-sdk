@@ -37,6 +37,19 @@ type corpusCase struct {
 	Document json.RawMessage `json:"document"`
 }
 
+type corpusRecipeFile struct {
+	Cases []corpusRecipe `json:"cases"`
+}
+
+type corpusRecipe struct {
+	Name      string            `json:"name"`
+	Base      string            `json:"base"`
+	Stage     string            `json:"stage"`
+	Category  string            `json:"category"`
+	Path      string            `json:"path"`
+	Mutations []fixtureMutation `json:"mutations"`
+}
+
 type captureArtifact struct {
 	Captures []struct {
 		Scenario string `json:"scenario"`
@@ -169,6 +182,35 @@ func readCorpus(t *testing.T, name string) corpus {
 	return result
 }
 
+func readNegativeCorpus(t *testing.T) corpus {
+	t.Helper()
+	positive := readCorpus(t, "positive.json")
+	bases := make(map[string]corpusCase, len(positive.Cases))
+	for _, fixture := range positive.Cases {
+		_, duplicate := bases[fixture.Name]
+		require.False(t, duplicate, "duplicate positive fixture %q", fixture.Name)
+		bases[fixture.Name] = fixture
+	}
+
+	raw, err := os.ReadFile(filepath.Join("testdata", "negative.json"))
+	require.NoError(t, err)
+	var recipes corpusRecipeFile
+	require.NoError(t, json.Unmarshal(raw, &recipes))
+
+	result := corpus{Cases: make([]corpusCase, 0, len(recipes.Cases))}
+	for _, recipe := range recipes.Cases {
+		base, ok := bases[recipe.Base]
+		require.True(t, ok, "unknown positive fixture %q", recipe.Base)
+		base.Name = recipe.Name
+		base.Stage = recipe.Stage
+		base.Category = recipe.Category
+		base.Path = recipe.Path
+		base.Document = applyFixtureMutations(t, base.Document, recipe.Mutations)
+		result.Cases = append(result.Cases, base)
+	}
+	return result
+}
+
 func TestContractSchemas_CompileOffline(t *testing.T) {
 	registry := loadContractRegistry(t)
 	assert.ElementsMatch(t, []string{"request", "generate-result", "stream-part", "error"}, mapKeys(registry.compiled))
@@ -226,7 +268,7 @@ func TestContractCorpus_Positive(t *testing.T) {
 
 func TestContractCorpus_Negative(t *testing.T) {
 	registry := loadContractRegistry(t)
-	fixtures := readCorpus(t, "negative.json")
+	fixtures := readNegativeCorpus(t)
 	require.NotEmpty(t, fixtures.Cases)
 
 	for _, fixture := range fixtures.Cases {

@@ -21,7 +21,21 @@ var (
 )
 
 type envelopeCorpus struct {
-	Cases []envelopeCase `json:"cases"`
+	Seeds []envelopeSeed   `json:"seeds"`
+	Cases []envelopeRecipe `json:"cases"`
+}
+
+type envelopeSeed struct {
+	Name     string          `json:"name"`
+	Document json.RawMessage `json:"document"`
+}
+
+type envelopeRecipe struct {
+	Name          string            `json:"name"`
+	Base          string            `json:"base"`
+	Mutations     []fixtureMutation `json:"mutations"`
+	WantMediaType string            `json:"wantMediaType"`
+	WantCategory  string            `json:"wantCategory"`
 }
 
 type envelopeCase struct {
@@ -125,11 +139,25 @@ func acceptsRepresentation(header, target string) (compatible, valid bool) {
 func TestHTTPEnvelope_Corpus(t *testing.T) {
 	raw, err := os.ReadFile("testdata/envelopes.json")
 	require.NoError(t, err)
-	var fixtures envelopeCorpus
-	require.NoError(t, json.Unmarshal(raw, &fixtures))
+	var corpus envelopeCorpus
+	require.NoError(t, json.Unmarshal(raw, &corpus))
 
-	for _, fixture := range fixtures.Cases {
-		t.Run(fixture.Name, func(t *testing.T) {
+	seeds := make(map[string]json.RawMessage, len(corpus.Seeds))
+	for _, seed := range corpus.Seeds {
+		_, duplicate := seeds[seed.Name]
+		require.False(t, duplicate, "duplicate envelope seed %q", seed.Name)
+		seeds[seed.Name] = seed.Document
+	}
+	for _, recipe := range corpus.Cases {
+		t.Run(recipe.Name, func(t *testing.T) {
+			seed, ok := seeds[recipe.Base]
+			require.True(t, ok, "unknown envelope seed %q", recipe.Base)
+			raw := applyFixtureMutations(t, seed, recipe.Mutations)
+			var fixture envelopeCase
+			require.NoError(t, json.Unmarshal(raw, &fixture))
+			fixture.Name = recipe.Name
+			fixture.WantCategory = recipe.WantCategory
+			fixture.WantMediaType = recipe.WantMediaType
 			mediaType, category := validateEnvelope(fixture)
 			assert.Equal(t, fixture.WantCategory, category)
 			assert.Equal(t, fixture.WantMediaType, mediaType)

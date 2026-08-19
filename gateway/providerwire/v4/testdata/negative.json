@@ -2,228 +2,227 @@
   "cases": [
     {
       "name": "request unknown root field",
+      "base": "request text response auto choice",
       "stage": "schema",
       "category": "schema-validation",
-      "schema": "request",
       "path": "",
-      "document": { "prompt": [], "unknown": true }
+      "mutations": [{ "operation": "set", "path": "/unknown", "value": true }]
     },
     {
       "name": "request inactive response format sibling",
+      "base": "request text response auto choice",
       "stage": "schema",
       "category": "schema-validation",
-      "schema": "request",
       "path": "/responseFormat",
-      "document": { "prompt": [], "responseFormat": { "type": "text", "schema": {} } }
+      "mutations": [{ "operation": "set", "path": "/responseFormat/schema", "value": {} }]
     },
     {
       "name": "request missing prompt",
+      "base": "request text response auto choice",
       "stage": "schema",
       "category": "schema-validation",
-      "schema": "request",
       "path": "",
-      "document": {}
+      "mutations": [{ "operation": "remove", "path": "/prompt" }]
     },
     {
       "name": "request typed null",
+      "base": "request none choice explicit empties",
       "stage": "schema",
       "category": "schema-validation",
-      "schema": "request",
       "path": "/includeRawChunks",
-      "document": { "prompt": [], "includeRawChunks": null }
+      "mutations": [{ "operation": "set", "path": "/includeRawChunks", "value": null }]
     },
     {
       "name": "request role violation",
+      "base": "request user text",
       "stage": "schema",
       "category": "schema-validation",
-      "schema": "request",
       "path": "/prompt/0/content/0",
-      "document": { "prompt": [{ "role": "user", "content": [{ "type": "reasoning", "text": "not allowed" }] }] }
+      "mutations": [{ "operation": "set", "path": "/prompt/0/content/0/type", "value": "reasoning" }]
     },
     {
       "name": "request string user content",
+      "base": "request user text",
       "stage": "schema",
       "category": "schema-validation",
-      "schema": "request",
       "path": "/prompt/0/content",
-      "document": { "prompt": [{ "role": "user", "content": "not allowed" }] }
+      "mutations": [{ "operation": "set", "path": "/prompt/0/content", "value": "not allowed" }]
     },
     {
       "name": "request invalid file data arm",
+      "base": "request user data file",
       "stage": "schema",
       "category": "schema-validation",
-      "schema": "request",
       "path": "/prompt/0/content/0/data",
-      "document": { "prompt": [{ "role": "user", "content": [{ "type": "file", "mediaType": "text/plain", "data": { "type": "url", "data": "inactive" } }] }] }
+      "mutations": [{ "operation": "set", "path": "/prompt/0/content/0/data/type", "value": "url" }]
     },
     {
       "name": "request provider reference discriminator collision",
+      "base": "request user provider reference",
       "stage": "schema",
       "category": "schema-validation",
-      "schema": "request",
       "path": "/prompt/0/content/0/data/reference",
-      "document": { "prompt": [{ "role": "user", "content": [{ "type": "file", "mediaType": "text/plain", "data": { "type": "reference", "reference": { "type": "id" } } }] }] }
+      "mutations": [{ "operation": "set", "path": "/prompt/0/content/0/data/reference/type", "value": "id" }]
     },
     {
       "name": "request scalar provider namespace",
+      "base": "request complete union inventory",
       "stage": "schema",
       "category": "schema-validation",
-      "schema": "request",
       "path": "/providerOptions/provider",
-      "document": { "prompt": [], "providerOptions": { "provider": 1 } }
+      "mutations": [{ "operation": "set", "path": "/providerOptions/provider", "value": 1 }]
     },
     {
       "name": "request abort signal is excluded",
+      "base": "request text response auto choice",
       "stage": "schema",
       "category": "schema-validation",
-      "schema": "request",
       "path": "",
-      "document": { "prompt": [], "abortSignal": {} }
+      "mutations": [{ "operation": "set", "path": "/abortSignal", "value": {} }]
     },
     {
       "name": "generate missing required warnings",
+      "base": "generate undefined counters omitted",
       "stage": "schema",
       "category": "schema-validation",
-      "schema": "generate-result",
       "path": "",
-      "document": { "content": [], "finishReason": { "unified": "stop" }, "usage": { "inputTokens": {}, "outputTokens": {} } }
+      "mutations": [{ "operation": "remove", "path": "/warnings" }]
     },
     {
       "name": "generate required field null",
+      "base": "generate undefined counters omitted",
       "stage": "schema",
       "category": "schema-validation",
-      "schema": "generate-result",
       "path": "/content",
-      "document": { "content": null, "finishReason": { "unified": "stop" }, "usage": { "inputTokens": {}, "outputTokens": {} }, "warnings": [] }
+      "mutations": [{ "operation": "set", "path": "/content", "value": null }]
     },
     {
       "name": "generate Go-only response provider",
+      "base": "generate complete union inventory",
       "stage": "schema",
       "category": "schema-validation",
-      "schema": "generate-result",
       "path": "/response",
-      "document": { "content": [], "finishReason": { "unified": "stop" }, "usage": { "inputTokens": {}, "outputTokens": {} }, "warnings": [], "response": { "provider": "go-only" } }
+      "mutations": [{ "operation": "set", "path": "/response/provider", "value": "go-only" }]
     },
     {
       "name": "generate invalid timestamp",
+      "base": "generate complete union inventory",
       "stage": "schema",
       "category": "schema-validation",
-      "schema": "generate-result",
       "path": "/response/timestamp",
-      "document": { "content": [], "finishReason": { "unified": "stop" }, "usage": { "inputTokens": {}, "outputTokens": {} }, "warnings": [], "response": { "timestamp": "not-a-date" } }
+      "mutations": [{ "operation": "set", "path": "/response/timestamp", "value": "not-a-date" }]
     },
     {
       "name": "generate null tool result",
+      "base": "generate undefined counters omitted",
       "stage": "schema",
       "category": "schema-validation",
-      "schema": "generate-result",
       "path": "/content/0/result",
-      "document": { "content": [{ "type": "tool-result", "toolCallId": "call", "toolName": "tool", "result": null }], "finishReason": { "unified": "stop" }, "usage": { "inputTokens": {}, "outputTokens": {} }, "warnings": [] }
+      "mutations": [{ "operation": "set", "path": "/content", "value": [{ "type": "tool-result", "toolCallId": "call", "toolName": "tool", "result": null }] }]
     },
     {
       "name": "request unknown role discriminator",
+      "base": "request user text",
       "stage": "schema",
       "category": "schema-validation",
-      "schema": "request",
       "path": "/prompt/0/role",
-      "document": { "prompt": [{ "role": "unknown", "content": [] }] }
+      "mutations": [{ "operation": "set", "path": "/prompt/0/role", "value": "unknown" }]
     },
     {
       "name": "generate unknown content discriminator",
+      "base": "generate undefined counters omitted",
       "stage": "schema",
       "category": "schema-validation",
-      "schema": "generate-result",
       "path": "/content/0/type",
-      "document": { "content": [{ "type": "unknown" }], "finishReason": { "unified": "stop" }, "usage": { "inputTokens": {}, "outputTokens": {} }, "warnings": [] }
+      "mutations": [{ "operation": "set", "path": "/content", "value": [{ "type": "unknown" }] }]
     },
     {
       "name": "stream unknown discriminator",
+      "base": "stream text start",
       "stage": "schema",
       "category": "schema-validation",
-      "schema": "stream-part",
       "path": "/type",
-      "document": { "type": "unknown" }
+      "mutations": [{ "operation": "set", "path": "/type", "value": "unknown" }]
     },
     {
       "name": "stream unknown field",
+      "base": "stream text start",
       "stage": "schema",
       "category": "schema-validation",
-      "schema": "stream-part",
       "path": "",
-      "document": { "type": "text-start", "id": "text", "unknown": true }
+      "mutations": [{ "operation": "set", "path": "/unknown", "value": true }]
     },
     {
       "name": "stream inactive sibling",
+      "base": "stream text start",
       "stage": "schema",
       "category": "schema-validation",
-      "schema": "stream-part",
       "path": "",
-      "document": { "type": "text-start", "id": "text", "delta": "inactive" }
+      "mutations": [{ "operation": "set", "path": "/delta", "value": "inactive" }]
     },
     {
       "name": "stream null tool result",
+      "base": "stream tool result",
       "stage": "schema",
       "category": "schema-validation",
-      "schema": "stream-part",
       "path": "/result",
-      "document": { "type": "tool-result", "toolCallId": "call", "toolName": "tool", "result": null }
+      "mutations": [{ "operation": "set", "path": "/result", "value": null }]
     },
     {
       "name": "stream generated file reference is excluded",
+      "base": "stream file data",
       "stage": "schema",
       "category": "schema-validation",
-      "schema": "stream-part",
       "path": "/data",
-      "document": { "type": "file", "mediaType": "image/png", "data": { "type": "reference", "reference": {} } }
+      "mutations": [{ "operation": "set", "path": "/data", "value": { "type": "reference", "reference": {} } }]
     },
     {
       "name": "stream response provider is Go-only",
+      "base": "stream response metadata",
       "stage": "schema",
       "category": "schema-validation",
-      "schema": "stream-part",
       "path": "",
-      "document": { "type": "response-metadata", "provider": "go-only" }
+      "mutations": [{ "operation": "set", "path": "/provider", "value": "go-only" }]
     },
     {
       "name": "error unsafe code",
+      "base": "error invalid request retry override",
       "stage": "schema",
       "category": "schema-validation",
-      "schema": "error",
       "path": "/error",
-      "document": { "error": { "type": "invalid_request_error", "message": "bad", "statusCode": 400, "isRetryable": false, "code": "backend" } }
+      "mutations": [{ "operation": "set", "path": "/error/code", "value": "backend" }]
     },
     {
       "name": "error client-only type",
+      "base": "error failed dependency",
       "stage": "schema",
       "category": "schema-validation",
-      "schema": "error",
       "path": "/error/type",
-      "document": { "error": { "type": "timeout_error", "message": "timeout", "statusCode": 504, "isRetryable": true } }
+      "mutations": [{ "operation": "set", "path": "/error/type", "value": "timeout_error" }]
     },
     {
       "name": "error unrestricted param",
+      "base": "error invalid request retry override",
       "stage": "schema",
       "category": "schema-validation",
-      "schema": "error",
       "path": "/error",
-      "document": { "error": { "type": "invalid_request_error", "message": "bad", "statusCode": 400, "isRetryable": false, "param": { "field": "prompt" } } }
+      "mutations": [{ "operation": "set", "path": "/error/param", "value": { "field": "prompt" } }]
     },
     {
       "name": "error backend debugging field",
+      "base": "error internal nonretry override",
       "stage": "schema",
       "category": "schema-validation",
-      "schema": "error",
       "path": "/error",
-      "document": { "error": { "type": "internal_server_error", "message": "failed", "statusCode": 500, "isRetryable": false, "responseBody": "secret" } }
+      "mutations": [{ "operation": "set", "path": "/error/responseBody", "value": "secret" }]
     },
     {
       "name": "error status mismatch",
+      "base": "error rate limit",
       "stage": "envelope",
       "category": "status-correlation",
-      "schema": "error",
-      "status": 429,
       "path": "/error/statusCode",
-      "document": { "error": { "type": "rate_limit_exceeded", "message": "rate limited", "statusCode": 500, "isRetryable": true } }
+      "mutations": [{ "operation": "set", "path": "/error/statusCode", "value": 500 }]
     }
   ]
 }

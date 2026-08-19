@@ -103,6 +103,21 @@
       "document": { "prompt": [], "toolChoice": { "type": "required" }, "reasoning": "xhigh" }
     },
     {
+      "name": "request user text",
+      "schema": "request",
+      "document": { "prompt": [{ "role": "user", "content": [{ "type": "text", "text": "user" }] }] }
+    },
+    {
+      "name": "request user data file",
+      "schema": "request",
+      "document": { "prompt": [{ "role": "user", "content": [{ "type": "file", "data": { "type": "data", "data": "AQID" }, "mediaType": "application/octet-stream" }] }] }
+    },
+    {
+      "name": "request user provider reference",
+      "schema": "request",
+      "document": { "prompt": [{ "role": "user", "content": [{ "type": "file", "data": { "type": "reference", "reference": {} }, "mediaType": "application/pdf" }] }] }
+    },
+    {
       "name": "generate complete union inventory",
       "schema": "generate-result",
       "document": {

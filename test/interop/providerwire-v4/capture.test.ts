@@ -1,6 +1,6 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { captureAllRequests, type CaptureArtifact } from "./scenarios";
 
@@ -20,8 +20,10 @@ describe("ProviderWire V4 stock-client request captures", () => {
   });
 
   it("recaptures semantically without mutating committed fixtures", async () => {
+    const committedBefore = readFileSync(CAPTURE_PATH, "utf8");
     const generated = await captureAllRequests();
     assertPrivateDataExcluded(generated);
+    expect(readFileSync(CAPTURE_PATH, "utf8")).toBe(committedBefore);
 
     const directory = mkdtempSync(join(tmpdir(), "providerwire-v4-capture-"));
     try {
@@ -31,12 +33,35 @@ describe("ProviderWire V4 stock-client request captures", () => {
       expect(recaptured).toEqual(generated);
 
       if (process.env.PROVIDERWIRE_V4_UPDATE === "1") {
-        writeArtifact(CAPTURE_PATH, recaptured);
+        replaceArtifactAtomically(CAPTURE_PATH, recaptured);
       } else {
         const committedRaw = readFileSync(CAPTURE_PATH, "utf8");
         assertPrivateText(committedRaw);
         expect(recaptured).toEqual(JSON.parse(committedRaw) as CaptureArtifact);
       }
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("preserves the destination when staged artifact validation fails", () => {
+    const directory = mkdtempSync(join(tmpdir(), "providerwire-v4-update-failure-"));
+    try {
+      const destination = join(directory, "requests.json");
+      const original = "original artifact\n";
+      writeFileSync(destination, original, "utf8");
+      const invalid: CaptureArtifact = {
+        formatVersion: 1,
+        captures: [{
+          scenario: "capture-not-a-real-key",
+          sequence: 1,
+          request: { method: "POST", path: "/language-model", headers: {}, body: {} },
+        }],
+      };
+
+      expect(() => replaceArtifactAtomically(destination, invalid)).toThrow();
+      expect(readFileSync(destination, "utf8")).toBe(original);
+      expect(readdirSync(directory)).toEqual(["requests.json"]);
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }
@@ -54,6 +79,18 @@ function readArtifact(path: string): CaptureArtifact {
 
 function writeArtifact(path: string, artifact: CaptureArtifact): void {
   writeFileSync(path, `${JSON.stringify(artifact, null, 2)}\n`, "utf8");
+}
+
+function replaceArtifactAtomically(path: string, artifact: CaptureArtifact): void {
+  const directory = mkdtempSync(join(dirname(path), ".providerwire-v4-update-"));
+  try {
+    const stagedPath = join(directory, "requests.json");
+    writeArtifact(stagedPath, artifact);
+    assertPrivateDataExcluded(readArtifact(stagedPath));
+    renameSync(stagedPath, path);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 }
 
 function assertPrivateDataExcluded(artifact: CaptureArtifact): void {

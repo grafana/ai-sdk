@@ -20,46 +20,58 @@ func TestResponseProjections_ValidateContractPayloads(t *testing.T) {
 	unary := readProjection(t, "unary.json")
 	require.NoError(t, registry.validate("generate-result", unary))
 
-	for _, name := range []string{"stream-clean.sse", "stream-done.sse"} {
-		t.Run(name, func(t *testing.T) {
-			body := string(readProjection(t, name))
-			require.True(t, strings.HasSuffix(body, "\n\n"))
-			frames := strings.Split(strings.TrimSuffix(body, "\n\n"), "\n\n")
-			for index, frame := range frames {
-				require.NotContains(t, frame, "\nevent:")
-				require.True(t, strings.HasPrefix(frame, "data: "), "invalid frame %q", frame)
-				payload := strings.TrimPrefix(frame, "data: ")
-				if payload == "[DONE]" {
-					assert.Equal(t, "stream-done.sse", name)
-					assert.Equal(t, len(frames)-1, index)
-					continue
-				}
-				require.NotContains(t, frame, "\n")
-				require.NoError(t, registry.validate("stream-part", json.RawMessage(payload)))
-			}
-		})
+	body := string(readProjection(t, "stream-clean.sse"))
+	require.True(t, strings.HasSuffix(body, "\n\n"))
+	frames := strings.Split(strings.TrimSuffix(body, "\n\n"), "\n\n")
+	for _, frame := range frames {
+		require.NotContains(t, frame, "\nevent:")
+		require.True(t, strings.HasPrefix(frame, "data: "), "invalid frame %q", frame)
+		require.NotContains(t, frame, "\n")
+		require.NoError(t, registry.validate("stream-part", json.RawMessage(strings.TrimPrefix(frame, "data: "))))
 	}
 
-	errorCases := []struct {
+	positive := readCorpus(t, "positive.json")
+	for _, testCase := range []struct {
 		name      string
 		status    int
 		retryable bool
 	}{
-		{name: "error-retryable-400.json", status: 400, retryable: true},
-		{name: "error-nonretryable-500.json", status: 500, retryable: false},
-	}
-	for _, testCase := range errorCases {
+		{name: "error invalid request retry override", status: 400, retryable: true},
+		{name: "error internal nonretry override", status: 500, retryable: false},
+	} {
 		t.Run(testCase.name, func(t *testing.T) {
-			raw := readProjection(t, testCase.name)
-			require.NoError(t, registry.validate("error", raw))
-			assert.Equal(t, testCase.status, nestedErrorStatus(t, raw))
+			fixture := findCorpusCase(t, positive, testCase.name)
+			require.NoError(t, registry.validate("error", fixture.Document))
+			assert.Equal(t, testCase.status, fixture.Status)
+			assert.Equal(t, testCase.status, nestedErrorStatus(t, fixture.Document))
 			var payload struct {
 				Error struct {
 					IsRetryable bool `json:"isRetryable"`
 				} `json:"error"`
 			}
-			require.NoError(t, json.Unmarshal(raw, &payload))
+			require.NoError(t, json.Unmarshal(fixture.Document, &payload))
 			assert.Equal(t, testCase.retryable, payload.Error.IsRetryable)
+		})
+	}
+}
+
+func TestConformanceTransportInputs_ValidateStreamSchema(t *testing.T) {
+	registry := loadContractRegistry(t)
+	for _, fixture := range []string{
+		"generated-files/data-and-url",
+		"invalid-provider-tool-input",
+		"text-metadata-only-delta",
+	} {
+		t.Run(fixture, func(t *testing.T) {
+			raw, err := os.ReadFile(filepath.Join("../../../test/conformance/ui", fixture, "input.jsonl"))
+			require.NoError(t, err)
+			require.True(t, strings.HasSuffix(string(raw), "\n"))
+			lines := strings.Split(strings.TrimSuffix(string(raw), "\n"), "\n")
+			require.NotEmpty(t, lines)
+			for index, line := range lines {
+				require.NotEmpty(t, line)
+				require.NoError(t, registry.validate("stream-part", json.RawMessage(line)), "line %d", index+1)
+			}
 		})
 	}
 }
@@ -104,13 +116,20 @@ func TestContractEvidence_PrivacyAndIndex(t *testing.T) {
 	require.NoError(t, err)
 	indexText := string(indexRaw)
 	assert.Contains(t, indexText, "artifactKind: regenerated")
-	assert.Contains(t, indexText, "artifactKind: curated")
+	assert.Contains(t, indexText, "artifactKind: curated-seed")
+	assert.Contains(t, indexText, "artifactKind: derived-in-memory")
+	assert.Contains(t, indexText, "artifactKind: curated-mutation-recipes")
 	assert.Contains(t, indexText, "authority: pinned-stock-client")
 	assert.Contains(t, indexText, "authority: local-serialized-projection")
-	assert.Contains(t, indexText, "authority: local-contract-fixture")
-	assert.Contains(t, indexText, "updateCommand: mise run update-providerwire-v4-captures")
+	assert.Contains(t, indexText, "authority: local-contract-policy")
+	assert.Contains(t, indexText, "authority: provider-independent-curated-input")
+	assert.Contains(t, indexText, "authority: pinned-typescript-ui-expectation")
+	assert.Contains(t, indexText, "updateCommand: mise run update-providerwire-v4-artifacts")
+	assert.Contains(t, indexText, "verificationCommand: mise run check-providerwire-v4")
 	assert.Contains(t, indexText, "Vercel private server acceptance")
 	assert.Contains(t, indexText, "live provider response recording")
+	assert.Contains(t, indexText, "host policy enforcement")
+	assert.Contains(t, indexText, "Go ProviderWire V4 runtime behavior")
 	pathPattern := regexp.MustCompile(`(?m)^\s*-?\s*path:\s*(\S+)\s*$`)
 	var indexedEvidence []string
 	for _, match := range pathPattern.FindAllStringSubmatch(indexText, -1) {
@@ -122,6 +141,17 @@ func TestContractEvidence_PrivacyAndIndex(t *testing.T) {
 		}
 	}
 	assert.ElementsMatch(t, evidenceRelative, indexedEvidence)
+}
+
+func findCorpusCase(t *testing.T, fixtures corpus, name string) corpusCase {
+	t.Helper()
+	for _, fixture := range fixtures.Cases {
+		if fixture.Name == name {
+			return fixture
+		}
+	}
+	t.Fatalf("missing corpus case %q", name)
+	return corpusCase{}
 }
 
 func readProjection(t *testing.T, name string) json.RawMessage {

@@ -292,8 +292,16 @@ pnpm --filter @ai-sdk/test-interop typecheck
 pnpm --filter @ai-sdk/test-interop test:contract
 """
 
-[tasks.update-providerwire-v4-captures]
-description = "Explicitly replace committed ProviderWire V4 stock-client request captures"
+[tasks.check-providerwire-v4]
+description = "Run all non-mutating ProviderWire V4 contract and pinned-client checks"
+run = """
+set -e
+mise run validate-providerwire-v4-contract
+mise run test-interop-contract
+"""
+
+[tasks.update-providerwire-v4-artifacts]
+description = "Explicitly and atomically replace generated ProviderWire V4 artifacts"
 run = """
 mise deps install --only test
 cd test && pnpm --filter @ai-sdk/test-interop capture:update

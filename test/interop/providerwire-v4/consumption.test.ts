@@ -1,14 +1,16 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { createGateway } from "@ai-sdk/gateway";
 import { describe, expect, it } from "vitest";
+import {
+  cleanStreamProjection,
+  doneStreamProjection,
+  positiveProjection,
+  unaryProjection,
+} from "./projections";
 import { startRecorder } from "./recorder";
-
-const projection = (name: string) => readFileSync(resolve(import.meta.dirname, "projections", name), "utf8");
 
 describe("ProviderWire V4 pinned stock-client response consumption", () => {
   it("consumes the curated unary projection", async () => {
-    const recorder = await startRecorder([{ contentType: "application/json", body: projection("unary.json") }]);
+    const recorder = await startRecorder([{ contentType: "application/json", body: unaryProjection() }]);
     try {
       const result = await model(recorder.baseURL).doGenerate(minimalOptions());
       expect(result.content).toEqual([{ type: "text", text: "projected unary" }]);
@@ -19,7 +21,7 @@ describe("ProviderWire V4 pinned stock-client response consumption", () => {
   });
 
   it("consumes exact data framing through final event and clean EOF", async () => {
-    const body = projection("stream-clean.sse");
+    const body = cleanStreamProjection();
     expect(body).toContain("data: {\"type\":\"stream-start\"");
     expect(body).not.toContain("event:");
     expect(body).not.toContain("[DONE]");
@@ -42,51 +44,33 @@ describe("ProviderWire V4 pinned stock-client response consumption", () => {
   });
 
   it("filters raw parts when includeRawChunks is false", async () => {
-    const hidden = await consumeStream(projection("stream-clean.sse"), false);
-    const visible = await consumeStream(projection("stream-clean.sse"), true);
+    const hidden = await consumeStream(cleanStreamProjection(), false);
+    const visible = await consumeStream(cleanStreamProjection(), true);
     expect(hidden.map((part) => part.type)).not.toContain("raw");
     expect(visible.map((part) => part.type)).toContain("raw");
   });
 
-  it("tolerates DONE without exposing it as a stream part", async () => {
-    const parts = await consumeStream(projection("stream-done.sse"), true);
-    expect(parts.map((part) => part.type)).toEqual([
-      "stream-start",
-      "text-start",
-      "text-delta",
-      "text-end",
-      "finish",
-    ]);
-    expect(parts.some((part) => JSON.stringify(part).includes("DONE"))).toBe(false);
+  it("tolerates a DONE frame derived from the clean stream seed", async () => {
+    const clean = await consumeStream(cleanStreamProjection(), true);
+    const done = await consumeStream(doneStreamProjection(), true);
+    expect(done).toEqual(clean);
+    expect(done.some((part) => JSON.stringify(part).includes("DONE"))).toBe(false);
   });
 
   it.each([
-    {
-      name: "wire retryable 400",
-      status: 400,
-      fixture: "error-retryable-400.json",
-      type: "invalid_request_error",
-      message: "retryable invalid request",
-      wireRetryable: true,
-      stockRetryable: false,
-      generationId: undefined,
-    },
-    {
-      name: "wire non-retryable 500",
-      status: 500,
-      fixture: "error-nonretryable-500.json",
-      type: "internal_server_error",
-      message: "non-retryable internal failure",
-      wireRetryable: false,
-      stockRetryable: true,
-      generationId: "generation-safe",
-    },
-  ])("recognizes $name while deriving stock retryability from status", async (testCase) => {
-    const body = projection(testCase.fixture);
-    const wire = JSON.parse(body) as { error: { isRetryable: boolean } };
-    expect(wire.error.isRetryable).toBe(testCase.wireRetryable);
+    { source: "error invalid request retry override", stockRetryable: false },
+    { source: "error internal nonretry override", stockRetryable: true },
+  ])("recognizes $source while deriving stock retryability from status", async ({ source, stockRetryable }) => {
+    const projection = positiveProjection(source);
+    expect(projection.status).toBeDefined();
+    const wire = JSON.parse(projection.body) as {
+      generationId?: string;
+      error: { type: string; message: string; statusCode: number; isRetryable: boolean };
+    };
+    expect(wire.error.statusCode).toBe(projection.status);
+
     const recorder = await startRecorder([
-      { status: testCase.status, contentType: "application/json", body },
+      { status: projection.status, contentType: "application/json", body: projection.body },
     ]);
     try {
       let caught: unknown;
@@ -96,12 +80,12 @@ describe("ProviderWire V4 pinned stock-client response consumption", () => {
         caught = error;
       }
       expect(caught).toMatchObject({
-        type: testCase.type,
-        statusCode: testCase.status,
-        isRetryable: testCase.stockRetryable,
-        generationId: testCase.generationId,
+        type: wire.error.type,
+        statusCode: projection.status,
+        isRetryable: stockRetryable,
+        generationId: wire.generationId,
       });
-      expect((caught as Error).message).toContain(testCase.message);
+      expect((caught as Error).message).toContain(wire.error.message);
     } finally {
       await recorder.close();
     }

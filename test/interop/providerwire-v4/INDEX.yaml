@@ -4,9 +4,12 @@ baseline: ../../conformance/upstream.yaml
 claims:
   - pinned client request emission
   - pinned client response consumption
+  - provider-independent raw transport projection
 nonClaims:
   - Vercel private server acceptance
   - live provider response recording
+  - host policy enforcement
+  - Go ProviderWire V4 runtime behavior
   - canonical JSON member ordering
 normalization:
   body: parsed semantic JSON
@@ -15,8 +18,8 @@ normalization:
 requestCaptures:
   artifactKind: regenerated
   authority: pinned-stock-client
-  updateCommand: mise run update-providerwire-v4-captures
-  verificationCommand: mise run test-interop-contract
+  updateCommand: mise run update-providerwire-v4-artifacts
+  verificationCommand: mise run check-providerwire-v4
   description: Exact-package request emission recorded by the local deterministic recorder.
   artifacts:
     - path: captures/requests.json
@@ -26,29 +29,78 @@ requestCaptures:
         - orchestration-generate-text
         - orchestration-client-tool-flow
         - orchestration-stream-text
-responseProjections:
-  artifactKind: curated
+responseSeeds:
+  artifactKind: curated-seed
   authority: local-serialized-projection
-  description: Locally authored responses used only to prove pinned-client consumption.
+  description: Locally reviewed semantic responses used only to prove pinned-client consumption.
   artifacts:
     - path: projections/unary.json
       kind: unary-json
     - path: projections/stream-clean.sse
       kind: eof-terminated-json-sse
-    - path: projections/stream-done.sse
-      kind: tolerated-done-json-sse
-    - path: projections/error-retryable-400.json
-      kind: explicit-retryability-override
-    - path: projections/error-nonretryable-500.json
-      kind: explicit-retryability-override
-negativeFixtures:
-  artifactKind: curated
-  authority: local-contract-fixture
-  description: Locally authored invalid examples used only to prove strict local rejection.
+derivedResponseVariants:
+  artifactKind: derived-in-memory
+  authority: deterministic-test-projection
+  updateCommand: none
+  description: Mechanical response variants rendered during tests and never committed as response artifacts.
+  variants:
+    - name: tolerated-done-json-sse
+      source: projections/stream-clean.sse
+      derivation: append-final-data-done-frame
+    - name: explicit-retryability-override-400
+      source:
+        path: ../../../gateway/providerwire/v4/testdata/positive.json
+        case: error invalid request retry override
+      derivation: select-named-positive-case
+    - name: explicit-retryability-override-500
+      source:
+        path: ../../../gateway/providerwire/v4/testdata/positive.json
+        case: error internal nonretry override
+      derivation: select-named-positive-case
+contractCorpora:
+  authority: local-contract-policy
   artifacts:
-    - path: ../../../gateway/providerwire/v4/testdata/negative.json
-      stages: [schema, envelope]
+    - path: ../../../gateway/providerwire/v4/testdata/positive.json
+      artifactKind: curated-semantic-seed
     - path: ../../../gateway/providerwire/v4/testdata/syntax.json
-      stages: [syntax]
+      artifactKind: curated-syntax-cases
+    - path: ../../../gateway/providerwire/v4/testdata/negative.json
+      artifactKind: curated-mutation-recipes
+      base: positive.json
+      operations: [set, remove]
     - path: ../../../gateway/providerwire/v4/testdata/envelopes.json
-      stages: [envelope]
+      artifactKind: curated-seeds-and-mutation-recipes
+      operations: [set, remove]
+conformanceTransportCases:
+  artifactKind: derived-in-memory
+  direction: provider-independent-language-model-v4-parts-to-providerwire-sse-to-pinned-gateway-to-ui-chunks
+  claims:
+    - raw ProviderWire transport preserves the existing pinned UI expectation
+  nonClaims:
+    - authentic provider response recording
+    - host policy enforcement
+    - Go ProviderWire V4 runtime behavior
+  cases:
+    - name: generated-files/data-and-url
+      input:
+        path: ../../conformance/ui/generated-files/data-and-url/input.jsonl
+        authority: provider-independent-curated-input
+      expected:
+        path: ../../conformance/ui/generated-files/data-and-url/expected.jsonl
+        authority: pinned-typescript-ui-expectation
+    - name: invalid-provider-tool-input
+      input:
+        path: ../../conformance/ui/invalid-provider-tool-input/input.jsonl
+        authority: provider-independent-curated-input
+      context: declared web_search input schema from the fixture generator
+      expected:
+        path: ../../conformance/ui/invalid-provider-tool-input/expected.jsonl
+        authority: pinned-typescript-ui-expectation
+    - name: text-metadata-only-delta
+      input:
+        path: ../../conformance/ui/text-metadata-only-delta/input.jsonl
+        authority: provider-independent-curated-input
+      context: Output.json from the fixture generator
+      expected:
+        path: ../../conformance/ui/text-metadata-only-delta/expected.jsonl
+        authority: pinned-typescript-ui-expectation
