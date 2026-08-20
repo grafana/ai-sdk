@@ -262,11 +262,11 @@ mise deps install --only test
 cd test && pnpm --filter @ai-sdk/test-interop test
 """
 
-[tasks.validate-providerwire-v4-contract]
-description = "Validate the contract-only ProviderWire V4 OpenAPI, schemas, and corpus"
+[tasks.check-providerwire-v4]
+description = "Run all non-mutating ProviderWire V4 contract and pinned-client checks"
 run = """
 set -e
-mise deps install --only test
+mise run validate-parity-baseline
 cd test
 pnpm --filter @ai-sdk/test-interop openapi:lint
 bundle_dir=$(mktemp -d)
@@ -280,24 +280,9 @@ if grep '$ref:' "$bundle" | grep -Eq '([.][.]?/|https?://)'; then
 fi
 cd ..
 GOWORK=off go test ./gateway/providerwire/v4
-"""
-
-[tasks.test-interop-contract]
-description = "Verify pinned ProviderWire V4 request captures and response consumption"
-run = """
-set -e
-mise run validate-parity-baseline
 cd test
 pnpm --filter @ai-sdk/test-interop typecheck
 pnpm --filter @ai-sdk/test-interop test:contract
-"""
-
-[tasks.check-providerwire-v4]
-description = "Run all non-mutating ProviderWire V4 contract and pinned-client checks"
-run = """
-set -e
-mise run validate-providerwire-v4-contract
-mise run test-interop-contract
 """
 
 [tasks.update-providerwire-v4-artifacts]

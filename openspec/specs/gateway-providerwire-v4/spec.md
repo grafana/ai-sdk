@@ -176,23 +176,15 @@ Selected provider-independent conformance stream inputs SHALL be rendered in mem
 
 ### Requirement: Repeatable validation and coordinated evolution
 
-`mise run validate-providerwire-v4-contract` SHALL validate OpenAPI, offline references, strict syntax, HTTP envelopes, schema compilation, positive payloads, mutation-derived negative failures, response seeds, and selected conformance transport inputs. `mise run test-interop-contract` SHALL validate baseline pins, type-check capture tooling, verify request captures, consume seeded and derived response projections, and compare selected transported conformance inputs with existing UI expectations.
+`mise run check-providerwire-v4` SHALL validate baseline pins, OpenAPI, offline references, strict syntax, HTTP envelopes, schema compilation, positive payloads, mutation-derived negative failures, response seeds, selected conformance transport inputs, capture tooling types, request captures, seeded and derived response consumption, and comparison with existing UI expectations. The command SHALL be non-mutating.
 
-`mise run check-providerwire-v4` SHALL aggregate those non-mutating checks. Committed artifact replacement SHALL require `mise run update-providerwire-v4-artifacts`, which SHALL validate generated content before atomically replacing the request capture.
+Committed artifact replacement SHALL require the separate `mise run update-providerwire-v4-artifacts` command, which SHALL validate generated content before atomically replacing the request capture.
 
 The parity map SHALL classify V4 contract evidence separately from legacy transport. A baseline change SHALL update the manifest, dependency pins, required source-equivalence evidence, schemas, captures, semantic seeds, recipes, parity classification, and lockfiles together.
 
-#### Scenario: Contract validation is one command
-- **WHEN** a contributor runs `mise run validate-providerwire-v4-contract`
-- **THEN** every machine-readable contract, curated seed, recipe, and selected transport input SHALL be checked without network access
-
-#### Scenario: Interop verification uses baseline pins
-- **WHEN** a contributor runs `mise run test-interop-contract`
-- **THEN** baseline validation and all non-mutating client evidence SHALL run
-
-#### Scenario: Aggregate verification does not update artifacts
+#### Scenario: Complete verification is one non-mutating command
 - **WHEN** a contributor runs `mise run check-providerwire-v4`
-- **THEN** contract and interop evidence SHALL be checked without changing committed files
+- **THEN** baseline, contract, and pinned-client evidence SHALL be checked without changing committed files
 
 #### Scenario: Artifact refresh is explicit and atomic
 - **WHEN** a contributor runs `mise run update-providerwire-v4-artifacts`
