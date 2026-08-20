@@ -156,6 +156,23 @@ for go_mod in $(git ls-files 'go.mod' '*/go.mod' | sort); do
 done
 """
 
+[tasks.release-check]
+description = "Validate the release-please configuration against published modules"
+run = "go test ./internal/releasecheck"
+
+[tasks.release-preview]
+description = "Dry-run the next release pull request against GitHub"
+run = """
+npx --yes --ignore-scripts release-please@17.10.4 release-pr \
+  --repo-url=grafana/ai-sdk \
+  --target-branch=main \
+  --config-file=release-please-config.json \
+  --manifest-file=.release-please-manifest.json \
+  --token="$(gh auth token)" \
+  --dry-run \
+  --debug
+"""
+
 [tasks.lint]
 description = "Run golangci-lint across all modules"
 run = """

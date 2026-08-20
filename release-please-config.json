@@ -1,0 +1,93 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "release-type": "go",
+  "bootstrap-sha": "6846799f298ced5702ff3b37f8662db6f248b5c2",
+  "include-component-in-tag": true,
+  "include-v-in-tag": true,
+  "tag-separator": "/",
+  "versioning": "prerelease",
+  "prerelease": true,
+  "bump-minor-pre-major": true,
+  "separate-pull-requests": false,
+  "group-pull-request-title-pattern": "chore(main): release Go modules",
+  "pull-request-header": "Merging this pull request tags every module listed below and publishes its GitHub Release.",
+  "pull-request-footer": "Versions and changelog entries are derived from Conventional Commits. See [release/README.md](https://github.com/grafana/ai-sdk/blob/main/release/README.md).",
+  "changelog-sections": [
+    { "type": "feat", "section": "Features" },
+    { "type": "fix", "section": "Bug Fixes" },
+    { "type": "perf", "section": "Performance Improvements" },
+    { "type": "revert", "section": "Reverts" },
+    { "type": "deps", "section": "Dependencies" },
+    { "type": "docs", "section": "Documentation", "hidden": true },
+    { "type": "chore", "section": "Miscellaneous Chores", "hidden": true },
+    { "type": "refactor", "section": "Code Refactoring", "hidden": true },
+    { "type": "test", "section": "Tests", "hidden": true },
+    { "type": "build", "section": "Build System", "hidden": true },
+    { "type": "ci", "section": "Continuous Integration", "hidden": true },
+    { "type": "style", "section": "Styles", "hidden": true }
+  ],
+  "packages": {
+    ".": {
+      "include-component-in-tag": false,
+      "prerelease-type": "alpha",
+      "exclude-paths": [
+        "providers",
+        "middleware",
+        "examples",
+        "test",
+        "docs",
+        "openspec",
+        "release",
+        "scripts",
+        ".agents",
+        ".claude",
+        ".github"
+      ]
+    },
+    "providers/anthropic": {
+      "component": "providers/anthropic",
+      "prerelease-type": "alpha",
+      "initial-version": "0.1.0-alpha.1"
+    },
+    "providers/bedrock": {
+      "component": "providers/bedrock",
+      "prerelease-type": "alpha",
+      "initial-version": "0.1.0-alpha.1"
+    },
+    "providers/grafana": {
+      "component": "providers/grafana",
+      "prerelease-type": "alpha",
+      "initial-version": "0.1.0-alpha.1"
+    },
+    "providers/openai": {
+      "component": "providers/openai",
+      "prerelease-type": "alpha",
+      "initial-version": "0.1.0-alpha.1"
+    },
+    "providers/openai-compatible": {
+      "component": "providers/openai-compatible",
+      "prerelease-type": "alpha",
+      "initial-version": "0.1.0-alpha.1"
+    },
+    "middleware/agentobservability": {
+      "component": "middleware/agentobservability",
+      "prerelease-type": "alpha",
+      "initial-version": "0.1.0-alpha.1"
+    },
+    "middleware/enrichment": {
+      "component": "middleware/enrichment",
+      "prerelease-type": "alpha",
+      "initial-version": "0.1.0-alpha.1"
+    },
+    "middleware/logger": {
+      "component": "middleware/logger",
+      "prerelease-type": "alpha",
+      "initial-version": "0.1.0-alpha.1"
+    },
+    "middleware/prometheus": {
+      "component": "middleware/prometheus",
+      "prerelease-type": "alpha",
+      "initial-version": "0.1.0-alpha.1"
+    }
+  }
+}

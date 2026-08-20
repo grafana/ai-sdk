@@ -1,0 +1,4 @@
+interface:
+  display_name: "Release AI SDK"
+  short_description: "Decide release intent for independent AI SDK modules"
+  default_prompt: "Use $release-ai-sdk to choose the right release intent for this change."
