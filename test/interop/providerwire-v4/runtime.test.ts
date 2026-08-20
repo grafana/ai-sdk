@@ -88,13 +88,24 @@ describe("pinned unary client <-> strict Go ProviderWire V4 handler", () => {
       inputTokens: { total: 7, noCache: 7 },
       outputTokens: { total: 4, text: 4 },
     });
+    const publicResult = result as unknown as {
+      request?: unknown;
+      response?: {
+        provider?: unknown;
+        modelId?: unknown;
+        headers?: unknown;
+        body?: unknown;
+      };
+    };
     expect(result.providerMetadata).toBeUndefined();
     expect(result.usage.raw).toBeUndefined();
     expect(result.warnings).toEqual([]);
-    expect(result.response).toBeDefined();
-    expect(result.response?.modelId).toBeUndefined();
-    expect(JSON.stringify(result.response?.body)).not.toMatch(
-      /backend-secret|secretRequest|secretResponse|unsafeTokens/,
+    expect(publicResult.request).toBeDefined();
+    expect(publicResult.response).toBeDefined();
+    expect(publicResult.response?.provider).toBeUndefined();
+    expect(publicResult.response?.modelId).toBeUndefined();
+    expect(JSON.stringify(result)).not.toMatch(
+      /backend-secret|secretRequest|secretResponse|unsafeTokens|authorization/,
     );
 
     expect(await stats(modelId)).toEqual({

@@ -108,10 +108,7 @@ func (a *requestAdapter) adaptPolicyChecked(request wireRequest) (provider.CallO
 	if err != nil {
 		return provider.CallOptions{}, err
 	}
-	providerOptions, err := adaptProviderOptions(request.ProviderOptions, true)
-	if err != nil {
-		return provider.CallOptions{}, err
-	}
+	providerOptions := adaptProviderOptions(request.ProviderOptions)
 	maxOutputTokens, err := adaptInteger(request.MaxOutputTokens, "maxOutputTokens")
 	if err != nil {
 		return provider.CallOptions{}, err
@@ -270,10 +267,7 @@ func validateProviderOptionMap(raw map[string]json.RawMessage, topLevel bool) er
 }
 
 func (a *requestAdapter) adaptMessage(message wireMessage) (provider.Message, error) {
-	providerOptions, err := adaptProviderOptions(message.ProviderOptions, false)
-	if err != nil {
-		return provider.Message{}, err
-	}
+	providerOptions := adaptProviderOptions(message.ProviderOptions)
 	if message.Role == provider.RoleSystem {
 		var text string
 		if err := json.Unmarshal(message.Content, &text); err != nil {
@@ -301,10 +295,7 @@ func (a *requestAdapter) adaptPart(raw json.RawMessage) (provider.ContentPart, e
 	if err := json.Unmarshal(raw, &part); err != nil {
 		return provider.ContentPart{}, fmt.Errorf("decoding content part: %w", err)
 	}
-	options, err := adaptProviderOptions(part.ProviderOptions, false)
-	if err != nil {
-		return provider.ContentPart{}, err
-	}
+	options := adaptProviderOptions(part.ProviderOptions)
 	result := provider.ContentPart{ProviderOptions: options}
 	switch part.Type {
 	case "text":
@@ -405,10 +396,7 @@ func (a *requestAdapter) adaptToolResultOutput(raw json.RawMessage) (*provider.T
 	if err := json.Unmarshal(raw, &output); err != nil {
 		return nil, fmt.Errorf("decoding tool result output: %w", err)
 	}
-	options, err := adaptProviderOptions(output.ProviderOptions, false)
-	if err != nil {
-		return nil, err
-	}
+	options := adaptProviderOptions(output.ProviderOptions)
 	result := &provider.ToolResultOutput{Type: output.Type, Reason: output.Reason, ProviderOptions: options}
 	switch output.Type {
 	case provider.ToolOutputText, provider.ToolOutputErrorText:
@@ -442,10 +430,7 @@ func (a *requestAdapter) adaptToolResultContent(raw json.RawMessage) (provider.T
 	if err := json.Unmarshal(raw, &part); err != nil {
 		return provider.ToolResultContentValue{}, fmt.Errorf("decoding tool result content: %w", err)
 	}
-	options, err := adaptProviderOptions(part.ProviderOptions, false)
-	if err != nil {
-		return provider.ToolResultContentValue{}, err
-	}
+	options := adaptProviderOptions(part.ProviderOptions)
 	result := provider.ToolResultContentValue{ProviderOptions: options, Text: part.Text, MediaType: part.MediaType, Filename: part.Filename}
 	switch part.Type {
 	case "text":
@@ -484,10 +469,7 @@ func (a *requestAdapter) adaptTools(rawTools []json.RawMessage) ([]provider.Tool
 		if err := json.Unmarshal(raw, &tool); err != nil {
 			return nil, fmt.Errorf("tools/%d: %w", i, err)
 		}
-		options, err := adaptProviderOptions(tool.ProviderOptions, false)
-		if err != nil {
-			return nil, fmt.Errorf("tools/%d: %w", i, err)
-		}
+		options := adaptProviderOptions(tool.ProviderOptions)
 		tools[i] = provider.Tool{Type: tool.Type, Name: tool.Name, Description: tool.Description, InputSchema: cloneRaw(tool.InputSchema), InputExamples: tool.InputExamples, Strict: tool.Strict, ID: tool.ID, Args: cloneRawMap(tool.Args), ProviderOptions: options}
 	}
 	return tools, nil
@@ -520,27 +502,15 @@ func adaptResponseFormat(raw json.RawMessage) (*provider.ResponseFormat, error) 
 	return &provider.ResponseFormat{Type: format.Type, Schema: cloneRaw(format.Schema), Name: format.Name, Description: format.Description}, nil
 }
 
-func adaptProviderOptions(raw map[string]json.RawMessage, topLevel bool) (provider.ProviderOptions, error) {
+func adaptProviderOptions(raw map[string]json.RawMessage) provider.ProviderOptions {
 	if raw == nil {
-		return nil, nil
+		return nil
 	}
 	result := make(provider.ProviderOptions, len(raw))
 	for key, value := range raw {
-		if key == "gateway" {
-			if topLevel {
-				var object map[string]json.RawMessage
-				if err := json.Unmarshal(value, &object); err == nil && len(object) == 0 {
-					continue
-				}
-			}
-			return nil, fmt.Errorf("reserved gateway provider option is not supported")
-		}
-		if containsReservedGateway(value) {
-			return nil, fmt.Errorf("provider option %q contains reserved gateway member", key)
-		}
 		result[key] = provider.RawProviderOption{Key: key, Raw: cloneRaw(value)}
 	}
-	return result, nil
+	return result
 }
 
 func containsReservedGateway(raw json.RawMessage) bool {

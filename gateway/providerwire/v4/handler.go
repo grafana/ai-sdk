@@ -1,6 +1,7 @@
 package providerwirev4
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	jsonv2 "github.com/go-json-experiment/json"
+	jsonv1 "github.com/go-json-experiment/json/v1"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -221,6 +224,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithTimeoutCause(r.Context(), h.totalTimeout, ErrTotalTimeout)
 	defer cancel()
+	if err := ctx.Err(); err != nil {
+		h.writeFailure(w, normalizeOperationError(ctx, err, operationResolver, modelID))
+		return
+	}
 	operationResult := make(chan unaryOperationResult, 1)
 	go h.runUnaryOperation(ctx, r.WithContext(ctx), modelID, callOptions, operationResult)
 
@@ -248,33 +255,42 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		result = outcome.result
 	}
-	encoded, err := h.prepareGenerateResponse(result)
+	encoded, err := h.prepareGenerateResponse(ctx, result)
 	if err != nil {
-		h.writeFailure(w, internalFailure())
+		if ctx.Err() != nil {
+			h.writeFailure(w, normalizeOperationError(ctx, err, operationProvider, modelID))
+		} else {
+			h.writeFailure(w, internalFailure())
+		}
 		return
 	}
 	h.commitGenerateResponse(w, ctx, modelID, encoded)
 }
 
-func (h *Handler) prepareGenerateResponse(result *provider.GenerateResult) ([]byte, error) {
-	if estimate, err := estimateGenerateResultUpperBound(result); err != nil || estimate > h.maxResponseBodyBytes {
-		return nil, errors.New("providerwirev4: response exceeds configured limit")
+func (h *Handler) prepareGenerateResponse(ctx context.Context, result *provider.GenerateResult) ([]byte, error) {
+	if _, err := estimateGenerateResultPayload(ctx, result, h.maxResponseBodyBytes); err != nil {
+		return nil, fmt.Errorf("providerwirev4: sizing response: %w", err)
 	}
-	projected, err := projectGenerateResult(result)
-	if err != nil {
-		return nil, fmt.Errorf("providerwirev4: projecting response: %w", err)
-	}
-	encoded, err := json.Marshal(projected)
-	if err != nil {
+	encoded := limitedBuffer{limit: h.maxResponseBodyBytes}
+	if err := jsonv2.MarshalWrite(&encoded, streamingGenerateResult{ctx: ctx, result: result}, jsonv1.DefaultOptionsV1()); err != nil {
 		return nil, fmt.Errorf("providerwirev4: marshaling response: %w", err)
 	}
-	if int64(len(encoded)) > h.maxResponseBodyBytes {
-		return nil, errors.New("providerwirev4: encoded response exceeds configured limit")
-	}
-	if err := h.registry.validate("generate-result", encoded); err != nil {
+	if err := h.registry.validate("generate-result", encoded.Bytes()); err != nil {
 		return nil, fmt.Errorf("providerwirev4: validating response: %w", err)
 	}
-	return encoded, nil
+	return encoded.Bytes(), nil
+}
+
+type limitedBuffer struct {
+	bytes.Buffer
+	limit int64
+}
+
+func (b *limitedBuffer) Write(value []byte) (int, error) {
+	if int64(len(value)) > b.limit-int64(b.Len()) {
+		return 0, errResponseTooLarge
+	}
+	return b.Buffer.Write(value)
 }
 
 func (h *Handler) commitGenerateResponse(w http.ResponseWriter, ctx context.Context, modelID string, encoded []byte) {
@@ -301,6 +317,10 @@ func (h *Handler) runUnaryOperation(ctx context.Context, request *http.Request, 
 		}
 		result <- outcome
 	}()
+	if err := ctx.Err(); err != nil {
+		outcome.err = err
+		return
+	}
 	model, err := h.resolver.ResolveLanguageModel(request, modelID)
 	if err != nil {
 		outcome.err = err
@@ -327,16 +347,22 @@ func validateUnaryEnvelope(r *http.Request) (string, *safeFailure) {
 		failure := requestFailure(http.StatusNotFound, "path must be /language-model")
 		return "", &failure
 	}
-	modelID := r.Header.Get(HeaderModelID)
-	if modelID == "" || strings.TrimSpace(modelID) != modelID {
-		failure := requestFailure(http.StatusBadRequest, "model id is required and must be unpadded")
+	modelID, ok := singleHeaderValue(r.Header, HeaderModelID)
+	if !ok || modelID == "" || strings.TrimSpace(modelID) != modelID {
+		failure := requestFailure(http.StatusBadRequest, "model id is required exactly once and must be unpadded")
 		return "", &failure
 	}
-	if r.Header.Get(HeaderSpecVersion) != SpecVersionV4 {
-		failure := requestFailure(http.StatusBadRequest, "specification version must be 4")
+	specificationVersion, ok := singleHeaderValue(r.Header, HeaderSpecVersion)
+	if !ok || specificationVersion != SpecVersionV4 {
+		failure := requestFailure(http.StatusBadRequest, "specification version must be exactly one value of 4")
 		return "", &failure
 	}
-	switch r.Header.Get(HeaderStreaming) {
+	streaming, ok := singleHeaderValue(r.Header, HeaderStreaming)
+	if !ok {
+		failure := requestFailure(http.StatusBadRequest, "streaming selection must be exactly one value")
+		return "", &failure
+	}
+	switch streaming {
 	case "false":
 	case "true":
 		failure := requestFailure(http.StatusBadRequest, "streaming is not supported")
@@ -363,6 +389,21 @@ func validateUnaryEnvelope(r *http.Request) (string, *safeFailure) {
 		}
 	}
 	return modelID, nil
+}
+
+func singleHeaderValue(header http.Header, name string) (string, bool) {
+	var value string
+	count := 0
+	for headerName, values := range header {
+		if !strings.EqualFold(headerName, name) {
+			continue
+		}
+		for _, current := range values {
+			value = current
+			count++
+		}
+	}
+	return value, count == 1
 }
 
 func (h *Handler) readRequestBody(r *http.Request) ([]byte, *safeFailure) {

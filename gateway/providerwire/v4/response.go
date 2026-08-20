@@ -1,11 +1,16 @@
 package providerwirev4
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
+	"unicode/utf8"
 
+	jsonv2 "github.com/go-json-experiment/json"
+	"github.com/go-json-experiment/json/jsontext"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -81,29 +86,77 @@ type wireWarning struct {
 	Details string               `json:"details,omitempty"`
 }
 
+var errResponseTooLarge = errors.New("providerwirev4: response exceeds configured limit")
+
 type responseSizeEstimate struct {
+	ctx   context.Context
+	limit int64
 	total int64
 }
 
 func (e *responseSizeEstimate) add(size int64) error {
+	if err := e.ctx.Err(); err != nil {
+		return err
+	}
 	if size < 0 || e.total > math.MaxInt64-size {
 		return fmt.Errorf("response size overflow")
+	}
+	if e.total+size > e.limit {
+		return errResponseTooLarge
 	}
 	e.total += size
 	return nil
 }
 
 func (e *responseSizeEstimate) addString(value string) error {
-	length := int64(len(value))
-	if length > (math.MaxInt64-2)/6 {
-		return fmt.Errorf("response string size overflow")
+	if err := e.add(int64(len(value)) + 2); err != nil {
+		return err
 	}
-	return e.add(length*6 + 2)
+	for index := 0; index < len(value); {
+		if index%4096 == 0 {
+			if err := e.ctx.Err(); err != nil {
+				return err
+			}
+		}
+		byteValue := value[index]
+		extra := int64(0)
+		switch {
+		case byteValue == '"' || byteValue == '\\' || byteValue == '\b' || byteValue == '\f' || byteValue == '\n' || byteValue == '\r' || byteValue == '\t':
+			extra = 1
+			index++
+		case byteValue < 0x20 || byteValue == '<' || byteValue == '>' || byteValue == '&':
+			extra = 5
+			index++
+		case byteValue < utf8.RuneSelf:
+			index++
+		default:
+			runeValue, size := utf8.DecodeRuneInString(value[index:])
+			if runeValue == utf8.RuneError && size == 1 {
+				extra = 2
+			} else if runeValue == '\u2028' || runeValue == '\u2029' {
+				extra = 3
+			}
+			index += size
+		}
+		if extra > 0 {
+			if err := e.add(extra); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (e *responseSizeEstimate) addRawJSON(value json.RawMessage) error {
-	size := int64(len(value))
+	if err := e.add(int64(len(value))); err != nil {
+		return err
+	}
 	for index := 0; index < len(value); index++ {
+		if index%4096 == 0 {
+			if err := e.ctx.Err(); err != nil {
+				return err
+			}
+		}
 		extra := int64(0)
 		switch value[index] {
 		case '<', '>', '&':
@@ -113,22 +166,20 @@ func (e *responseSizeEstimate) addRawJSON(value json.RawMessage) error {
 				extra = 3
 			}
 		}
-		if size > math.MaxInt64-extra {
-			return fmt.Errorf("response raw JSON size overflow")
+		if extra > 0 {
+			if err := e.add(extra); err != nil {
+				return err
+			}
 		}
-		size += extra
 	}
-	return e.add(size)
+	return nil
 }
 
-func estimateGenerateResultUpperBound(result *provider.GenerateResult) (int64, error) {
+func estimateGenerateResultPayload(ctx context.Context, result *provider.GenerateResult, limit int64) (int64, error) {
 	if result == nil {
 		return 0, fmt.Errorf("nil generate result")
 	}
-	estimate := responseSizeEstimate{}
-	if err := estimate.add(512); err != nil {
-		return 0, err
-	}
+	estimate := responseSizeEstimate{ctx: ctx, limit: limit}
 	if err := estimate.addString(string(result.FinishReason.Unified)); err != nil {
 		return 0, err
 	}
@@ -136,17 +187,11 @@ func estimateGenerateResultUpperBound(result *provider.GenerateResult) (int64, e
 		return 0, err
 	}
 	for i, part := range result.Content {
-		if err := estimate.add(512); err != nil {
-			return 0, err
-		}
 		if err := estimateGenerateContentSize(&estimate, part); err != nil {
 			return 0, fmt.Errorf("content/%d: %w", i, err)
 		}
 	}
 	for i, warning := range result.Warnings {
-		if err := estimate.add(256); err != nil {
-			return 0, err
-		}
 		if err := estimateWarningSize(&estimate, warning); err != nil {
 			return 0, fmt.Errorf("warnings/%d: %w", i, err)
 		}
@@ -155,13 +200,87 @@ func estimateGenerateResultUpperBound(result *provider.GenerateResult) (int64, e
 		if err := estimate.addString(result.Response.ID); err != nil {
 			return 0, err
 		}
-		if !result.Response.Timestamp.IsZero() {
-			if err := estimate.add(64); err != nil {
-				return 0, err
-			}
-		}
 	}
 	return estimate.total, nil
+}
+
+type streamingGenerateResult struct {
+	ctx    context.Context
+	result *provider.GenerateResult
+}
+
+func (r streamingGenerateResult) MarshalJSONTo(encoder *jsontext.Encoder) error {
+	if r.result == nil {
+		return fmt.Errorf("nil generate result")
+	}
+	if err := encoder.WriteToken(jsontext.BeginObject); err != nil {
+		return err
+	}
+	if err := writeJSONName(encoder, "content"); err != nil {
+		return err
+	}
+	if err := encoder.WriteToken(jsontext.BeginArray); err != nil {
+		return err
+	}
+	for i, part := range r.result.Content {
+		if err := r.ctx.Err(); err != nil {
+			return err
+		}
+		projected, err := projectGenerateContent(part)
+		if err != nil {
+			return fmt.Errorf("content/%d: %w", i, err)
+		}
+		if err := jsonv2.MarshalEncode(encoder, projected); err != nil {
+			return err
+		}
+	}
+	if err := encoder.WriteToken(jsontext.EndArray); err != nil {
+		return err
+	}
+	if err := writeJSONMember(encoder, "finishReason", wireFinishReason{Unified: r.result.FinishReason.Unified, Raw: r.result.FinishReason.Raw}); err != nil {
+		return err
+	}
+	if err := writeJSONMember(encoder, "usage", projectUsage(r.result.Usage)); err != nil {
+		return err
+	}
+	if response := projectResponse(r.result.Response); response != nil {
+		if err := writeJSONMember(encoder, "response", response); err != nil {
+			return err
+		}
+	}
+	if err := writeJSONName(encoder, "warnings"); err != nil {
+		return err
+	}
+	if err := encoder.WriteToken(jsontext.BeginArray); err != nil {
+		return err
+	}
+	for i, warning := range r.result.Warnings {
+		if err := r.ctx.Err(); err != nil {
+			return err
+		}
+		projected, err := projectWarning(warning)
+		if err != nil {
+			return fmt.Errorf("warnings/%d: %w", i, err)
+		}
+		if err := jsonv2.MarshalEncode(encoder, projected); err != nil {
+			return err
+		}
+	}
+	if err := encoder.WriteToken(jsontext.EndArray); err != nil {
+		return err
+	}
+	return encoder.WriteToken(jsontext.EndObject)
+}
+
+func writeJSONName(encoder *jsontext.Encoder, name string) error {
+	return jsonv2.MarshalEncode(encoder, name)
+}
+
+func writeJSONMember(encoder *jsontext.Encoder, name string, value any) error {
+	if err := writeJSONName(encoder, name); err != nil {
+		return err
+	}
+	return jsonv2.MarshalEncode(encoder, value)
 }
 
 func estimateGenerateContentSize(estimate *responseSizeEstimate, part provider.GenerateContentPart) error {
@@ -222,14 +341,11 @@ func estimateGeneratedFileSize(estimate *responseSizeEstimate, data provider.Dat
 		if err != nil {
 			return err
 		}
-		return estimate.add(length + 64)
+		return estimate.add(length + 2)
 	case data.Base64 != "":
-		return estimate.add(int64(len(data.Base64)) + 64)
+		return estimate.addString(data.Base64)
 	case data.IsURL():
-		if err := estimate.addString(data.URL); err != nil {
-			return err
-		}
-		return estimate.add(64)
+		return estimate.addString(data.URL)
 	default:
 		return fmt.Errorf("generated file data is not representable")
 	}
@@ -272,36 +388,44 @@ func projectGenerateResult(result *provider.GenerateResult) (wireGenerateResult,
 		}
 		warnings[i] = projected
 	}
-	projected := wireGenerateResult{
+	return wireGenerateResult{
 		Content: content,
 		FinishReason: wireFinishReason{
 			Unified: result.FinishReason.Unified,
 			Raw:     result.FinishReason.Raw,
 		},
-		Usage: wireUsage{
-			InputTokens: wireInputUsage{
-				Total:      result.Usage.InputTokens.Total,
-				NoCache:    result.Usage.InputTokens.NoCache,
-				CacheRead:  result.Usage.InputTokens.CacheRead,
-				CacheWrite: result.Usage.InputTokens.CacheWrite,
-			},
-			OutputTokens: wireOutputUsage{
-				Total:     result.Usage.OutputTokens.Total,
-				Text:      result.Usage.OutputTokens.Text,
-				Reasoning: result.Usage.OutputTokens.Reasoning,
-			},
-		},
+		Usage:    projectUsage(result.Usage),
+		Response: projectResponse(result.Response),
 		Warnings: warnings,
+	}, nil
+}
+
+func projectUsage(usage provider.Usage) wireUsage {
+	return wireUsage{
+		InputTokens: wireInputUsage{
+			Total:      usage.InputTokens.Total,
+			NoCache:    usage.InputTokens.NoCache,
+			CacheRead:  usage.InputTokens.CacheRead,
+			CacheWrite: usage.InputTokens.CacheWrite,
+		},
+		OutputTokens: wireOutputUsage{
+			Total:     usage.OutputTokens.Total,
+			Text:      usage.OutputTokens.Text,
+			Reasoning: usage.OutputTokens.Reasoning,
+		},
 	}
-	if result.Response != nil && (result.Response.ID != "" || !result.Response.Timestamp.IsZero()) {
-		response := &wireResponse{ID: result.Response.ID}
-		if !result.Response.Timestamp.IsZero() {
-			timestamp := result.Response.Timestamp.UTC().Format("2006-01-02T15:04:05.000Z")
-			response.Timestamp = &timestamp
-		}
-		projected.Response = response
+}
+
+func projectResponse(response *provider.GenerateResponse) *wireResponse {
+	if response == nil || (response.ID == "" && response.Timestamp.IsZero()) {
+		return nil
 	}
-	return projected, nil
+	projected := &wireResponse{ID: response.ID}
+	if !response.Timestamp.IsZero() {
+		timestamp := response.Timestamp.UTC().Format("2006-01-02T15:04:05.000Z")
+		projected.Timestamp = &timestamp
+	}
+	return projected
 }
 
 func projectGenerateContent(part provider.GenerateContentPart) (wireGenerateContent, error) {

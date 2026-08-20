@@ -7,10 +7,12 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -144,8 +146,14 @@ func TestHandler_RequestGatesBypassResolver(t *testing.T) {
 		{name: "method", status: 405, body: `{"prompt":[]}`, mutate: func(r *http.Request) { r.Method = http.MethodGet }},
 		{name: "path", status: 404, body: `{"prompt":[]}`, mutate: func(r *http.Request) { r.URL.Path = "/prefix/language-model" }},
 		{name: "model id", status: 400, body: `{"prompt":[]}`, mutate: func(r *http.Request) { r.Header.Set(HeaderModelID, " padded ") }},
+		{name: "duplicate model id", status: 400, body: `{"prompt":[]}`, mutate: func(r *http.Request) { r.Header.Add(HeaderModelID, "other-model") }},
+		{name: "duplicate equal model id", status: 400, body: `{"prompt":[]}`, mutate: func(r *http.Request) { r.Header.Add(HeaderModelID, "public-model") }},
 		{name: "version", status: 400, body: `{"prompt":[]}`, mutate: func(r *http.Request) { r.Header.Set(HeaderSpecVersion, "v4") }},
+		{name: "duplicate version", status: 400, body: `{"prompt":[]}`, mutate: func(r *http.Request) { r.Header.Add(HeaderSpecVersion, "3") }},
+		{name: "duplicate equal version", status: 400, body: `{"prompt":[]}`, mutate: func(r *http.Request) { r.Header.Add(HeaderSpecVersion, SpecVersionV4) }},
 		{name: "stream", status: 400, body: `{"prompt":[]}`, mutate: func(r *http.Request) { r.Header.Set(HeaderStreaming, "true") }},
+		{name: "duplicate stream", status: 400, body: `{"prompt":[]}`, mutate: func(r *http.Request) { r.Header.Add(HeaderStreaming, "true") }},
+		{name: "duplicate equal stream", status: 400, body: `{"prompt":[]}`, mutate: func(r *http.Request) { r.Header.Add(HeaderStreaming, "false") }},
 		{name: "missing content type", status: 415, body: `{"prompt":[]}`, mutate: func(r *http.Request) { r.Header.Del("Content-Type") }},
 		{name: "accept", status: 406, body: `{"prompt":[]}`, mutate: func(r *http.Request) { r.Header.Set("Accept", "text/plain") }},
 		{name: "body limit plus one", status: 413, body: `{"prompt":[]}`, option: WithMaxRequestBodyBytes(12)},
@@ -221,6 +229,19 @@ func TestHandler_RequestBodyReadFailureAndClose(t *testing.T) {
 		assert.False(t, decodeSafeFailure(t, recorder).Error.IsRetryable)
 		assert.True(t, body.closed)
 	})
+	assert.Zero(t, resolver.calls.Load())
+}
+
+func TestHandler_PreCanceledRequestBypassesResolver(t *testing.T) {
+	resolver := &handlerTestResolver{model: &handlerTestModel{}}
+	handler, err := NewHandler(resolver)
+	require.NoError(t, err)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	recorder := serveV4(t, handler, validV4Request(`{"prompt":[]}`).WithContext(ctx))
+
+	assert.Equal(t, 499, recorder.Code)
 	assert.Zero(t, resolver.calls.Load())
 }
 
@@ -661,7 +682,7 @@ func TestHandler_ResolverAndTimeoutLifecycle(t *testing.T) {
 func TestHandler_PreCommitContextRecheck(t *testing.T) {
 	handler, err := NewHandler(&handlerTestResolver{model: &handlerTestModel{}})
 	require.NoError(t, err)
-	encoded, err := handler.prepareGenerateResponse(emptyGenerateResult())
+	encoded, err := handler.prepareGenerateResponse(context.Background(), emptyGenerateResult())
 	require.NoError(t, err)
 
 	parentCanceled, cancelParent := context.WithCancel(context.Background())
@@ -856,7 +877,7 @@ func TestHandler_ResultRequiredEmptyValuesRemainPresent(t *testing.T) {
 	assert.Contains(t, recorder.Body.String(), `"feature":""`)
 }
 
-func TestGenerateResultSizeEstimate_BoundsEncodedProjection(t *testing.T) {
+func TestGenerateResultSizeEstimate_AccountsForEscapedPayload(t *testing.T) {
 	falseValue := false
 	htmlSensitiveResult := json.RawMessage("\"<>&\u2028\u2029\"")
 	result := &provider.GenerateResult{
@@ -880,16 +901,21 @@ func TestGenerateResultSizeEstimate_BoundsEncodedProjection(t *testing.T) {
 		},
 		Response: &provider.GenerateResponse{ResponseMetadata: provider.ResponseMetadata{ID: "response", Timestamp: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)}},
 	}
-	estimate, err := estimateGenerateResultUpperBound(result)
+	estimate, err := estimateGenerateResultPayload(context.Background(), result, math.MaxInt64)
 	require.NoError(t, err)
 	projected, err := projectGenerateResult(result)
 	require.NoError(t, err)
 	encoded, err := json.Marshal(projected)
 	require.NoError(t, err)
-	assert.GreaterOrEqual(t, estimate, int64(len(encoded)))
+	assert.LessOrEqual(t, estimate, int64(len(encoded)))
 	assert.Contains(t, string(encoded), `\u003c\u003e\u0026\u2028\u2029`)
+	handler, err := NewHandler(&handlerTestResolver{model: &handlerTestModel{}})
+	require.NoError(t, err)
+	streamed, err := handler.prepareGenerateResponse(context.Background(), result)
+	require.NoError(t, err)
+	assert.Equal(t, encoded, streamed)
 
-	rawEstimate := responseSizeEstimate{}
+	rawEstimate := responseSizeEstimate{ctx: context.Background(), limit: math.MaxInt64}
 	require.NoError(t, rawEstimate.addRawJSON(htmlSensitiveResult))
 	assert.Equal(t, int64(len(htmlSensitiveResult)+5*3+3*2), rawEstimate.total)
 }
@@ -905,7 +931,7 @@ func TestHandler_HTMLEscapedToolResultRejectedByPreflightLimit(t *testing.T) {
 		FinishReason: provider.FinishReason{Unified: provider.FinishReasonOther},
 		Warnings:     []provider.Warning{},
 	}
-	estimate, err := estimateGenerateResultUpperBound(result)
+	estimate, err := estimateGenerateResultPayload(context.Background(), result, math.MaxInt64)
 	require.NoError(t, err)
 	model := &handlerTestModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
 		return result, nil
@@ -950,18 +976,81 @@ func TestProjectGeneratedFileData_Validation(t *testing.T) {
 	}
 }
 
-func TestHandler_ExactResponsePreflightLimit(t *testing.T) {
+func TestHandler_ExactResponseLimit(t *testing.T) {
 	result := emptyGenerateResult()
-	estimate, err := estimateGenerateResultUpperBound(result)
+	projected, err := projectGenerateResult(result)
+	require.NoError(t, err)
+	encoded, err := json.Marshal(projected)
 	require.NoError(t, err)
 	model := &handlerTestModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
 		return result, nil
 	}}
-	handler, err := NewHandler(&handlerTestResolver{model: model}, WithMaxResponseBodyBytes(estimate))
+	for _, tc := range []struct {
+		name   string
+		limit  int64
+		status int
+	}{
+		{name: "exact", limit: int64(len(encoded)), status: http.StatusOK},
+		{name: "one byte over", limit: int64(len(encoded) - 1), status: http.StatusInternalServerError},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			handler, err := NewHandler(&handlerTestResolver{model: model}, WithMaxResponseBodyBytes(tc.limit))
+			require.NoError(t, err)
+			recorder := serveV4(t, handler, validV4Request(`{"prompt":[]}`))
+			assert.Equal(t, tc.status, recorder.Code)
+		})
+	}
+}
+
+func TestHandler_LargeTextResponseBelowLimitSucceeds(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		text string
+	}{
+		{name: "ASCII", text: strings.Repeat("x", 1_400_000)},
+		{name: "invalid UTF-8", text: strings.Repeat("\xff", 1_400_000)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			result := &provider.GenerateResult{
+				Content:      []provider.GenerateContentPart{{Type: provider.ContentText, Text: tc.text}},
+				FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop},
+				Warnings:     []provider.Warning{},
+			}
+			model := &handlerTestModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
+				return result, nil
+			}}
+			handler, err := NewHandler(&handlerTestResolver{model: model})
+			require.NoError(t, err)
+
+			recorder := serveV4(t, handler, validV4Request(`{"prompt":[]}`))
+
+			assert.Equal(t, http.StatusOK, recorder.Code)
+			assert.Less(t, int64(recorder.Body.Len()), DefaultMaxResponseBodyBytes)
+			require.NoError(t, handler.registry.validate("generate-result", recorder.Body.Bytes()))
+		})
+	}
+}
+
+func TestHandler_StructurallyOversizedResponseFailsBeforeSuccess(t *testing.T) {
+	content := make([]provider.GenerateContentPart, 10_000)
+	for i := range content {
+		content[i] = provider.GenerateContentPart{Type: provider.ContentText}
+	}
+	result := &provider.GenerateResult{
+		Content:      content,
+		FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop},
+		Warnings:     []provider.Warning{},
+	}
+	model := &handlerTestModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
+		return result, nil
+	}}
+	handler, err := NewHandler(&handlerTestResolver{model: model}, WithMaxResponseBodyBytes(100_000))
 	require.NoError(t, err)
+
 	recorder := serveV4(t, handler, validV4Request(`{"prompt":[]}`))
-	assert.Equal(t, http.StatusOK, recorder.Code)
-	assert.LessOrEqual(t, int64(recorder.Body.Len()), estimate)
+
+	assert.Equal(t, http.StatusInternalServerError, recorder.Code)
+	assert.JSONEq(t, fallbackErrorJSON, recorder.Body.String())
 }
 
 func TestHandler_InvalidOrOversizedResultFailsBeforeSuccess(t *testing.T) {
@@ -1048,20 +1137,38 @@ func TestEmbeddedRegistry_SharedConcurrentAndUnknown(t *testing.T) {
 		require.NoError(t, registry.validate("request", []byte(`{"prompt":[]}`)))
 	})
 
-	first, err := loadEmbeddedContractRegistry()
-	require.NoError(t, err)
-	second, err := loadEmbeddedContractRegistry()
-	require.NoError(t, err)
-	assert.Same(t, first, second)
-	assert.Error(t, first.validate("unknown", []byte(`{}`)))
+	resolver := &handlerTestResolver{model: &handlerTestModel{}}
+	handlers := make([]*Handler, 8)
+	for i := range handlers {
+		handler, err := NewHandler(resolver)
+		require.NoError(t, err)
+		handlers[i] = handler
+		assert.Same(t, handlers[0].registry, handler.registry)
+	}
+	assert.Error(t, handlers[0].registry.validate("unknown", []byte(`{}`)))
 
-	errCh := make(chan error, 32)
-	for range 32 {
-		go func() { errCh <- first.validate("request", []byte(`{"prompt":[]}`)) }()
+	statuses := make(chan int, 32)
+	var wait sync.WaitGroup
+	for i := range 32 {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			body := `{"prompt":[]}`
+			want := http.StatusOK
+			if i%2 != 0 {
+				body = `{"prompt":[],"unknown":true}`
+				want = http.StatusBadRequest
+			}
+			recorder := httptest.NewRecorder()
+			handlers[i%len(handlers)].ServeHTTP(recorder, validV4Request(body))
+			if recorder.Code != want {
+				statuses <- recorder.Code
+			}
+		}()
 	}
-	for range 32 {
-		require.NoError(t, <-errCh)
-	}
+	wait.Wait()
+	close(statuses)
+	assert.Empty(t, statuses)
 }
 
 func TestSafeValidationPath_NormalizesJSONPointer(t *testing.T) {
@@ -1073,10 +1180,25 @@ func TestSafeValidationPath_NormalizesJSONPointer(t *testing.T) {
 	assert.True(t, path == "" || strings.HasPrefix(path, "/"))
 }
 
-func TestAcceptRepresentation_PositiveWildcardWins(t *testing.T) {
-	compatible, valid := acceptsRepresentation("application/json;q=0, */*;q=0.5", MIMEJSON)
-	assert.True(t, valid)
-	assert.True(t, compatible)
+func TestAcceptRepresentation(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		header     string
+		compatible bool
+		valid      bool
+	}{
+		{name: "positive wildcard wins", header: "application/json;q=0, */*;q=0.5", compatible: true, valid: true},
+		{name: "quoted comma", header: `application/json;q=1;foo="a,b"`, compatible: true, valid: true},
+		{name: "quoted q text", header: `application/json;foo="q=invalid"`, compatible: true, valid: true},
+		{name: "quoted q value", header: `application/json;q="0.5"`, compatible: false, valid: false},
+		{name: "unterminated quote", header: `application/json;foo="a,b`, compatible: false, valid: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			compatible, valid := acceptsRepresentation(tc.header, MIMEJSON)
+			assert.Equal(t, tc.compatible, compatible)
+			assert.Equal(t, tc.valid, valid)
+		})
+	}
 }
 
 func TestWritePreparedResponse_DoesNotRetry(t *testing.T) {

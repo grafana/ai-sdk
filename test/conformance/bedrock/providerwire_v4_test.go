@@ -11,7 +11,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -26,24 +25,18 @@ import (
 )
 
 type countingUnaryModel struct {
-	model         provider.LanguageModel
+	provider.LanguageModel
 	generateCalls atomic.Int32
 	streamCalls   atomic.Int32
 }
 
-func (m *countingUnaryModel) SpecificationVersion() string { return m.model.SpecificationVersion() }
-func (m *countingUnaryModel) Provider() string             { return m.model.Provider() }
-func (m *countingUnaryModel) ModelID() string              { return m.model.ModelID() }
-func (m *countingUnaryModel) SupportedURLs() map[string][]*regexp.Regexp {
-	return m.model.SupportedURLs()
-}
 func (m *countingUnaryModel) DoGenerate(ctx context.Context, options provider.CallOptions) (*provider.GenerateResult, error) {
 	m.generateCalls.Add(1)
-	return m.model.DoGenerate(ctx, options)
+	return m.LanguageModel.DoGenerate(ctx, options)
 }
 func (m *countingUnaryModel) DoStream(ctx context.Context, options provider.CallOptions) (*provider.StreamResult, error) {
 	m.streamCalls.Add(1)
-	return m.model.DoStream(ctx, options)
+	return m.LanguageModel.DoStream(ctx, options)
 }
 
 type normalizedUnaryArtifact struct {
@@ -68,7 +61,7 @@ func TestProviderWireV4_JSONToolWithAnswer(t *testing.T) {
 		bedrockProvider.WithRegion("us-east-1"),
 		bedrockProvider.WithCredentials(creds),
 	)
-	countedModel := &countingUnaryModel{model: realModel}
+	countedModel := &countingUnaryModel{LanguageModel: realModel}
 	var resolverCalls atomic.Int32
 	handler, err := providerwirev4.NewHandler(providerwirev4.ModelResolverFunc(func(_ *http.Request, modelID string) (provider.LanguageModel, error) {
 		resolverCalls.Add(1)

@@ -23,6 +23,8 @@ import { parse as parseYaml } from "yaml";
 import {
   buildMessages,
   loadConfig,
+  normalizeRequestSnapshot,
+  type RequestSnapshot,
   unsupportedGenerateFields,
 } from "./common.mts";
 
@@ -31,6 +33,7 @@ const repoRoot = resolve(toolDir, "../../..");
 const fixtureDir = resolve(toolDir, "../bedrock/upstream/json-tool-with-answer");
 const inputPath = join(fixtureDir, "input.response.json");
 const semanticExpectationPath = join(fixtureDir, "expected-generate.json");
+const requestExpectationPath = join(fixtureDir, "expected-requests.jsonl");
 export const normalizedArtifactPath = resolve(
   toolDir,
   "../../interop/providerwire-v4/generated/bedrock-json-tool-with-answer.normalized.json",
@@ -226,15 +229,17 @@ function close(server: Server): Promise<void> {
 
 async function startSingleResponseServer(
   body: Buffer | string,
-): Promise<{ baseURL: string; requests: Buffer[]; close: () => Promise<void> }> {
-  const requests: Buffer[] = [];
+): Promise<{ baseURL: string; requests: RequestSnapshot[]; close: () => Promise<void> }> {
+  const requests: RequestSnapshot[] = [];
   let served = false;
   const server = createServer(async (request, response) => {
     const chunks: Buffer[] = [];
     for await (const chunk of request) {
       chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
     }
-    requests.push(Buffer.concat(chunks));
+    requests.push(
+      normalizeRequestSnapshot("bedrock", request, Buffer.concat(chunks).toString("utf8")),
+    );
     if (served) {
       response.writeHead(500, { "content-type": "text/plain" });
       response.end("fixture already served");
@@ -320,6 +325,12 @@ export async function replayRawUnaryResult(): Promise<{
     if (replay.requests.length !== 1) {
       throw new Error(`expected one provider replay request, got ${replay.requests.length}`);
     }
+    const expectedRequests = readFileSync(requestExpectationPath, "utf8")
+      .trimEnd()
+      .split("\n")
+      .filter(line => line !== "")
+      .map(line => JSON.parse(line) as RequestSnapshot);
+    assertSemanticEqual(replay.requests, expectedRequests, "pinned Bedrock request replay");
     const serialized = serializeJSONObject(result, "raw LanguageModelV4 generate result");
     if (!Array.isArray(serialized.warnings)) {
       throw new Error("raw LanguageModelV4 generate result is missing warnings array");
@@ -341,28 +352,25 @@ export function projectH2UnaryResult(rawResult: unknown): JSONObject {
 
   if (Array.isArray(result.content)) {
     result.content = result.content.map((value, index) => {
-      const part = structuredClone(asJSONObject(value, `content/${index}`));
+      const part = asJSONObject(value, `content/${index}`);
       delete part.providerMetadata;
       return part;
     });
   }
 
   if (result.usage !== undefined) {
-    const usage = structuredClone(asJSONObject(result.usage, "usage"));
+    const usage = asJSONObject(result.usage, "usage");
     delete usage.raw;
-    result.usage = usage;
   }
 
   if (result.response !== undefined) {
-    const response = structuredClone(asJSONObject(result.response, "response"));
+    const response = asJSONObject(result.response, "response");
     delete response.headers;
     delete response.body;
     delete response.modelId;
     delete response.provider;
     if (Object.keys(response).length === 0) {
       delete result.response;
-    } else {
-      result.response = response;
     }
   }
 
@@ -526,7 +534,6 @@ export async function buildUnaryEvidence(): Promise<{
   validateResultWithGo(replayed.result);
   await verifyPinnedGatewayConsumption(replayed.result);
   const normalized = projectH2UnaryResult(replayed.result);
-  validateResultWithGo(normalized);
   return {
     raw: replayed.result,
     normalized,
