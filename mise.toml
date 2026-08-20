@@ -23,6 +23,7 @@ sources = [
   "test/conformance/tools/package.json",
   "test/integration/package.json",
   "test/interop/package.json",
+  "test/providerwire-v4/package.json",
 ]
 outputs = ["test/node_modules/.modules.yaml"]
 run = "cd test && pnpm install --frozen-lockfile"
@@ -319,6 +320,7 @@ run = """
 mise run validate-parity-baseline
 mise run parity-coverage
 mise run parity-provider-shape
+mise run check-providerwire-v4
 mise run test-conformance
 """
 
@@ -329,8 +331,31 @@ mise deps install --only test
 cd test && pnpm --filter @ai-sdk/conformance-tools generate
 """
 
+[tasks.check-providerwire-v4]
+description = "Verify pinned ProviderWire V4 contract evidence without modifying artifacts"
+run = """
+mise deps install --only test
+cd test
+pnpm --filter @ai-sdk/conformance-tools validate-baseline
+pnpm --filter @ai-sdk/providerwire-v4-evidence typecheck
+pnpm --filter @ai-sdk/providerwire-v4-evidence test
+pnpm --filter @ai-sdk/providerwire-v4-evidence check
+cd ..
+go test ./provider -run '^TestProviderWireV4Loss_'
+"""
+
+[tasks.update-providerwire-v4-artifacts]
+description = "Regenerate ProviderWire V4 request evidence and verify it"
+run = """
+mise deps install --only test
+cd test
+pnpm --filter @ai-sdk/providerwire-v4-evidence update-artifacts
+cd ..
+mise run check-providerwire-v4
+"""
+
 [tasks.parity-upgrade]
-description = "Upgrade to mature stable upstream packages and regenerate conformance expectations"
+description = "Upgrade to mature stable upstream packages and regenerate parity evidence"
 run = """
 cd test/conformance/tools
 pnpm run upgrade-baseline
@@ -339,6 +364,10 @@ pnpm install --lockfile-only --no-frozen-lockfile
 cd ..
 mise deps install --only test
 mise run generate-conformance
+cd test
+pnpm --filter @ai-sdk/providerwire-v4-evidence refresh-source-equivalence
+cd ..
+mise run update-providerwire-v4-artifacts
 mise run validate-parity-baseline
 """
 
@@ -360,5 +389,6 @@ mise run fmt
 mise run vet
 mise run lint
 mise run lint-docs
+mise run check-providerwire-v4
 mise run test
 """

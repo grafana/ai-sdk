@@ -1,0 +1,1502 @@
+{
+  "baseline": {
+    "commit": "d76eb85a9a7f2dbe44ab2f3dc858ad5cdcb5242e",
+    "packages": {
+      "@ai-sdk/gateway": "4.0.52",
+      "@ai-sdk/provider": "4.0.7",
+      "@ai-sdk/provider-utils": "5.0.27",
+      "ai": "7.0.65"
+    }
+  },
+  "capturePolicy": {
+    "excludedTransportHeaders": [
+      "accept",
+      "accept-encoding",
+      "accept-language",
+      "connection",
+      "content-length",
+      "host",
+      "sec-fetch-mode"
+    ],
+    "normalizedHeaders": [
+      "authorization",
+      "user-agent"
+    ],
+    "path": "relative to configured baseURL; requestPath retains /api/v1/aisdk composition",
+    "preserved": [
+      "array and request order",
+      "absence and null",
+      "empty strings, arrays, and objects",
+      "zero and false",
+      "union selection",
+      "non-client-owned outer header values and lower-case last-value outcomes"
+    ]
+  },
+  "scenarios": [
+    {
+      "name": "unary-settings",
+      "requests": [
+        {
+          "body": {
+            "frequencyPenalty": 0,
+            "headers": {},
+            "includeRawChunks": false,
+            "maxOutputTokens": 0,
+            "presencePenalty": 0,
+            "prompt": [],
+            "providerOptions": {
+              "example": {
+                "empty": [],
+                "false": false,
+                "nested": null,
+                "text": "",
+                "zero": 0
+              }
+            },
+            "reasoning": "xhigh",
+            "responseFormat": {
+              "description": "",
+              "name": "",
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "value": {
+                    "type": "string"
+                  }
+                },
+                "required": [],
+                "type": "object"
+              },
+              "type": "json"
+            },
+            "seed": 0,
+            "stopSequences": [],
+            "temperature": 0,
+            "tools": [],
+            "topK": 0,
+            "topP": 0
+          },
+          "envelope": "supported",
+          "headers": {
+            "ai-gateway-auth-method": "api-key",
+            "ai-gateway-protocol-version": "0.0.1",
+            "ai-language-model-id": "provider/model-v4-evidence",
+            "ai-language-model-specification-version": "4",
+            "ai-language-model-streaming": "false",
+            "authorization": "<client-owned-authorization>",
+            "content-type": "application/json",
+            "user-agent": "<client-owned-user-agent>"
+          },
+          "method": "POST",
+          "path": "/language-model",
+          "requestPath": "/api/v1/aisdk/language-model",
+          "sequence": 1
+        }
+      ]
+    },
+    {
+      "name": "response-format-text",
+      "requests": [
+        {
+          "body": {
+            "prompt": [],
+            "responseFormat": {
+              "type": "text"
+            }
+          },
+          "envelope": "supported",
+          "headers": {
+            "ai-gateway-auth-method": "api-key",
+            "ai-gateway-protocol-version": "0.0.1",
+            "ai-language-model-id": "provider/model-v4-evidence",
+            "ai-language-model-specification-version": "4",
+            "ai-language-model-streaming": "false",
+            "authorization": "<client-owned-authorization>",
+            "content-type": "application/json",
+            "user-agent": "<client-owned-user-agent>"
+          },
+          "method": "POST",
+          "path": "/language-model",
+          "requestPath": "/api/v1/aisdk/language-model",
+          "sequence": 1
+        }
+      ]
+    },
+    {
+      "name": "reasoning-provider-default",
+      "requests": [
+        {
+          "body": {
+            "prompt": [],
+            "reasoning": "provider-default"
+          },
+          "envelope": "supported",
+          "headers": {
+            "ai-gateway-auth-method": "api-key",
+            "ai-gateway-protocol-version": "0.0.1",
+            "ai-language-model-id": "provider/model-v4-evidence",
+            "ai-language-model-specification-version": "4",
+            "ai-language-model-streaming": "false",
+            "authorization": "<client-owned-authorization>",
+            "content-type": "application/json",
+            "user-agent": "<client-owned-user-agent>"
+          },
+          "method": "POST",
+          "path": "/language-model",
+          "requestPath": "/api/v1/aisdk/language-model",
+          "sequence": 1
+        }
+      ]
+    },
+    {
+      "name": "reasoning-none",
+      "requests": [
+        {
+          "body": {
+            "prompt": [],
+            "reasoning": "none"
+          },
+          "envelope": "supported",
+          "headers": {
+            "ai-gateway-auth-method": "api-key",
+            "ai-gateway-protocol-version": "0.0.1",
+            "ai-language-model-id": "provider/model-v4-evidence",
+            "ai-language-model-specification-version": "4",
+            "ai-language-model-streaming": "false",
+            "authorization": "<client-owned-authorization>",
+            "content-type": "application/json",
+            "user-agent": "<client-owned-user-agent>"
+          },
+          "method": "POST",
+          "path": "/language-model",
+          "requestPath": "/api/v1/aisdk/language-model",
+          "sequence": 1
+        }
+      ]
+    },
+    {
+      "name": "reasoning-minimal",
+      "requests": [
+        {
+          "body": {
+            "prompt": [],
+            "reasoning": "minimal"
+          },
+          "envelope": "supported",
+          "headers": {
+            "ai-gateway-auth-method": "api-key",
+            "ai-gateway-protocol-version": "0.0.1",
+            "ai-language-model-id": "provider/model-v4-evidence",
+            "ai-language-model-specification-version": "4",
+            "ai-language-model-streaming": "false",
+            "authorization": "<client-owned-authorization>",
+            "content-type": "application/json",
+            "user-agent": "<client-owned-user-agent>"
+          },
+          "method": "POST",
+          "path": "/language-model",
+          "requestPath": "/api/v1/aisdk/language-model",
+          "sequence": 1
+        }
+      ]
+    },
+    {
+      "name": "reasoning-low",
+      "requests": [
+        {
+          "body": {
+            "prompt": [],
+            "reasoning": "low"
+          },
+          "envelope": "supported",
+          "headers": {
+            "ai-gateway-auth-method": "api-key",
+            "ai-gateway-protocol-version": "0.0.1",
+            "ai-language-model-id": "provider/model-v4-evidence",
+            "ai-language-model-specification-version": "4",
+            "ai-language-model-streaming": "false",
+            "authorization": "<client-owned-authorization>",
+            "content-type": "application/json",
+            "user-agent": "<client-owned-user-agent>"
+          },
+          "method": "POST",
+          "path": "/language-model",
+          "requestPath": "/api/v1/aisdk/language-model",
+          "sequence": 1
+        }
+      ]
+    },
+    {
+      "name": "reasoning-medium",
+      "requests": [
+        {
+          "body": {
+            "prompt": [],
+            "reasoning": "medium"
+          },
+          "envelope": "supported",
+          "headers": {
+            "ai-gateway-auth-method": "api-key",
+            "ai-gateway-protocol-version": "0.0.1",
+            "ai-language-model-id": "provider/model-v4-evidence",
+            "ai-language-model-specification-version": "4",
+            "ai-language-model-streaming": "false",
+            "authorization": "<client-owned-authorization>",
+            "content-type": "application/json",
+            "user-agent": "<client-owned-user-agent>"
+          },
+          "method": "POST",
+          "path": "/language-model",
+          "requestPath": "/api/v1/aisdk/language-model",
+          "sequence": 1
+        }
+      ]
+    },
+    {
+      "name": "reasoning-high",
+      "requests": [
+        {
+          "body": {
+            "prompt": [],
+            "reasoning": "high"
+          },
+          "envelope": "supported",
+          "headers": {
+            "ai-gateway-auth-method": "api-key",
+            "ai-gateway-protocol-version": "0.0.1",
+            "ai-language-model-id": "provider/model-v4-evidence",
+            "ai-language-model-specification-version": "4",
+            "ai-language-model-streaming": "false",
+            "authorization": "<client-owned-authorization>",
+            "content-type": "application/json",
+            "user-agent": "<client-owned-user-agent>"
+          },
+          "method": "POST",
+          "path": "/language-model",
+          "requestPath": "/api/v1/aisdk/language-model",
+          "sequence": 1
+        }
+      ]
+    },
+    {
+      "name": "reasoning-xhigh",
+      "requests": [
+        {
+          "body": {
+            "prompt": [],
+            "reasoning": "xhigh"
+          },
+          "envelope": "supported",
+          "headers": {
+            "ai-gateway-auth-method": "api-key",
+            "ai-gateway-protocol-version": "0.0.1",
+            "ai-language-model-id": "provider/model-v4-evidence",
+            "ai-language-model-specification-version": "4",
+            "ai-language-model-streaming": "false",
+            "authorization": "<client-owned-authorization>",
+            "content-type": "application/json",
+            "user-agent": "<client-owned-user-agent>"
+          },
+          "method": "POST",
+          "path": "/language-model",
+          "requestPath": "/api/v1/aisdk/language-model",
+          "sequence": 1
+        }
+      ]
+    },
+    {
+      "name": "streaming-prompt-tools",
+      "requests": [
+        {
+          "body": {
+            "prompt": [
+              {
+                "content": "system",
+                "providerOptions": {
+                  "example": {
+                    "nested": null,
+                    "trace": "prompt"
+                  }
+                },
+                "role": "system"
+              },
+              {
+                "content": [
+                  {
+                    "providerOptions": {
+                      "example": {
+                        "nested": null,
+                        "trace": "prompt"
+                      }
+                    },
+                    "text": "user",
+                    "type": "text"
+                  },
+                  {
+                    "data": {
+                      "data": "AAEC/w==",
+                      "type": "data"
+                    },
+                    "filename": "",
+                    "mediaType": "application/octet-stream",
+                    "providerOptions": {
+                      "example": {
+                        "nested": null,
+                        "trace": "prompt"
+                      }
+                    },
+                    "type": "file"
+                  },
+                  {
+                    "data": {
+                      "type": "url",
+                      "url": "https://example.test/file"
+                    },
+                    "mediaType": "text/plain",
+                    "providerOptions": {
+                      "example": {
+                        "nested": null,
+                        "trace": "prompt"
+                      }
+                    },
+                    "type": "file"
+                  },
+                  {
+                    "data": {
+                      "reference": {
+                        "example": "file-1"
+                      },
+                      "type": "reference"
+                    },
+                    "mediaType": "image/png",
+                    "providerOptions": {
+                      "example": {
+                        "nested": null,
+                        "trace": "prompt"
+                      }
+                    },
+                    "type": "file"
+                  },
+                  {
+                    "data": {
+                      "text": "inline",
+                      "type": "text"
+                    },
+                    "mediaType": "text/plain",
+                    "providerOptions": {
+                      "example": {
+                        "nested": null,
+                        "trace": "prompt"
+                      }
+                    },
+                    "type": "file"
+                  }
+                ],
+                "providerOptions": {
+                  "example": {
+                    "nested": null,
+                    "trace": "prompt"
+                  }
+                },
+                "role": "user"
+              },
+              {
+                "content": [
+                  {
+                    "providerOptions": {
+                      "example": {
+                        "nested": null,
+                        "trace": "prompt"
+                      }
+                    },
+                    "text": "assistant",
+                    "type": "text"
+                  },
+                  {
+                    "data": {
+                      "data": "AQI=",
+                      "type": "data"
+                    },
+                    "mediaType": "application/octet-stream",
+                    "providerOptions": {
+                      "example": {
+                        "nested": null,
+                        "trace": "prompt"
+                      }
+                    },
+                    "type": "file"
+                  },
+                  {
+                    "kind": "example.custom",
+                    "providerOptions": {
+                      "example": {
+                        "nested": null,
+                        "trace": "prompt"
+                      }
+                    },
+                    "type": "custom"
+                  },
+                  {
+                    "providerOptions": {
+                      "example": {
+                        "nested": null,
+                        "trace": "prompt"
+                      }
+                    },
+                    "text": "reasoning",
+                    "type": "reasoning"
+                  },
+                  {
+                    "data": {
+                      "data": "AwQ=",
+                      "type": "data"
+                    },
+                    "mediaType": "application/octet-stream",
+                    "providerOptions": {
+                      "example": {
+                        "nested": null,
+                        "trace": "prompt"
+                      }
+                    },
+                    "type": "reasoning-file"
+                  },
+                  {
+                    "data": {
+                      "type": "url",
+                      "url": "https://example.test/reasoning"
+                    },
+                    "mediaType": "text/plain",
+                    "providerOptions": {
+                      "example": {
+                        "nested": null,
+                        "trace": "prompt"
+                      }
+                    },
+                    "type": "reasoning-file"
+                  },
+                  {
+                    "input": {
+                      "city": "Berlin"
+                    },
+                    "providerExecuted": false,
+                    "providerOptions": {
+                      "example": {
+                        "nested": null,
+                        "trace": "prompt"
+                      }
+                    },
+                    "toolCallId": "call-1",
+                    "toolName": "lookup",
+                    "type": "tool-call"
+                  },
+                  {
+                    "output": {
+                      "providerOptions": {
+                        "example": {
+                          "nested": null,
+                          "trace": "prompt"
+                        }
+                      },
+                      "type": "text",
+                      "value": "ok"
+                    },
+                    "providerOptions": {
+                      "example": {
+                        "result": "result-text"
+                      }
+                    },
+                    "toolCallId": "result-text",
+                    "toolName": "lookup",
+                    "type": "tool-result"
+                  },
+                  {
+                    "output": {
+                      "providerOptions": {
+                        "example": {
+                          "nested": null,
+                          "trace": "prompt"
+                        }
+                      },
+                      "type": "json",
+                      "value": null
+                    },
+                    "providerOptions": {
+                      "example": {
+                        "result": "result-json"
+                      }
+                    },
+                    "toolCallId": "result-json",
+                    "toolName": "lookup",
+                    "type": "tool-result"
+                  },
+                  {
+                    "output": {
+                      "providerOptions": {
+                        "example": {
+                          "nested": null,
+                          "trace": "prompt"
+                        }
+                      },
+                      "reason": "",
+                      "type": "execution-denied"
+                    },
+                    "providerOptions": {
+                      "example": {
+                        "result": "result-denied"
+                      }
+                    },
+                    "toolCallId": "result-denied",
+                    "toolName": "lookup",
+                    "type": "tool-result"
+                  },
+                  {
+                    "output": {
+                      "providerOptions": {
+                        "example": {
+                          "nested": null,
+                          "trace": "prompt"
+                        }
+                      },
+                      "type": "error-text",
+                      "value": "failed"
+                    },
+                    "providerOptions": {
+                      "example": {
+                        "result": "result-error-text"
+                      }
+                    },
+                    "toolCallId": "result-error-text",
+                    "toolName": "lookup",
+                    "type": "tool-result"
+                  },
+                  {
+                    "output": {
+                      "providerOptions": {
+                        "example": {
+                          "nested": null,
+                          "trace": "prompt"
+                        }
+                      },
+                      "type": "error-json",
+                      "value": {
+                        "code": 0,
+                        "detail": null
+                      }
+                    },
+                    "providerOptions": {
+                      "example": {
+                        "result": "result-error-json"
+                      }
+                    },
+                    "toolCallId": "result-error-json",
+                    "toolName": "lookup",
+                    "type": "tool-result"
+                  },
+                  {
+                    "output": {
+                      "type": "content",
+                      "value": [
+                        {
+                          "providerOptions": {
+                            "example": {
+                              "nested": null,
+                              "trace": "prompt"
+                            }
+                          },
+                          "text": "content",
+                          "type": "text"
+                        },
+                        {
+                          "data": {
+                            "data": "BQY=",
+                            "type": "data"
+                          },
+                          "filename": "",
+                          "mediaType": "application/octet-stream",
+                          "providerOptions": {
+                            "example": {
+                              "nested": null,
+                              "trace": "prompt"
+                            }
+                          },
+                          "type": "file"
+                        },
+                        {
+                          "providerOptions": {
+                            "example": {
+                              "nested": null,
+                              "trace": "prompt"
+                            }
+                          },
+                          "type": "custom"
+                        }
+                      ]
+                    },
+                    "providerOptions": {
+                      "example": {
+                        "result": "result-content"
+                      }
+                    },
+                    "toolCallId": "result-content",
+                    "toolName": "lookup",
+                    "type": "tool-result"
+                  }
+                ],
+                "providerOptions": {
+                  "example": {
+                    "nested": null,
+                    "trace": "prompt"
+                  }
+                },
+                "role": "assistant"
+              },
+              {
+                "content": [
+                  {
+                    "output": {
+                      "type": "json",
+                      "value": {
+                        "ok": true
+                      }
+                    },
+                    "providerOptions": {
+                      "example": {
+                        "result": "tool-role-result"
+                      }
+                    },
+                    "toolCallId": "tool-role-result",
+                    "toolName": "lookup",
+                    "type": "tool-result"
+                  },
+                  {
+                    "approvalId": "approval-1",
+                    "approved": false,
+                    "providerOptions": {
+                      "example": {
+                        "nested": null,
+                        "trace": "prompt"
+                      }
+                    },
+                    "reason": "",
+                    "type": "tool-approval-response"
+                  }
+                ],
+                "providerOptions": {
+                  "example": {
+                    "nested": null,
+                    "trace": "prompt"
+                  }
+                },
+                "role": "tool"
+              }
+            ],
+            "providerOptions": {
+              "example": {
+                "nested": null,
+                "trace": "prompt"
+              }
+            },
+            "toolChoice": {
+              "type": "auto"
+            },
+            "tools": [
+              {
+                "description": "",
+                "inputExamples": [
+                  {
+                    "input": {
+                      "city": "Berlin"
+                    }
+                  }
+                ],
+                "inputSchema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "city": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "city"
+                  ],
+                  "type": "object"
+                },
+                "name": "lookup",
+                "providerOptions": {
+                  "example": {
+                    "nested": null,
+                    "trace": "prompt"
+                  }
+                },
+                "strict": false,
+                "type": "function"
+              },
+              {
+                "args": {},
+                "id": "example.search",
+                "name": "providerSearch",
+                "type": "provider"
+              }
+            ]
+          },
+          "envelope": "supported",
+          "headers": {
+            "ai-gateway-auth-method": "api-key",
+            "ai-gateway-protocol-version": "0.0.1",
+            "ai-language-model-id": "provider/model-v4-evidence",
+            "ai-language-model-specification-version": "4",
+            "ai-language-model-streaming": "true",
+            "authorization": "<client-owned-authorization>",
+            "content-type": "application/json",
+            "user-agent": "<client-owned-user-agent>"
+          },
+          "method": "POST",
+          "path": "/language-model",
+          "requestPath": "/api/v1/aisdk/language-model",
+          "sequence": 1
+        }
+      ]
+    },
+    {
+      "name": "presence-losses",
+      "requests": [
+        {
+          "body": {
+            "maxOutputTokens": 1.5,
+            "prompt": [
+              {
+                "content": "",
+                "providerOptions": {},
+                "role": "system"
+              },
+              {
+                "content": [
+                  {
+                    "providerOptions": {},
+                    "text": "",
+                    "type": "text"
+                  },
+                  {
+                    "data": {
+                      "text": "",
+                      "type": "text"
+                    },
+                    "filename": "",
+                    "mediaType": "",
+                    "providerOptions": {},
+                    "type": "file"
+                  }
+                ],
+                "providerOptions": {},
+                "role": "user"
+              },
+              {
+                "content": [
+                  {
+                    "kind": ".",
+                    "providerOptions": {},
+                    "type": "custom"
+                  },
+                  {
+                    "input": {},
+                    "providerExecuted": false,
+                    "providerOptions": {},
+                    "toolCallId": "",
+                    "toolName": "",
+                    "type": "tool-call"
+                  },
+                  {
+                    "output": {
+                      "providerOptions": {},
+                      "type": "text",
+                      "value": ""
+                    },
+                    "providerOptions": {},
+                    "toolCallId": "",
+                    "toolName": "",
+                    "type": "tool-result"
+                  }
+                ],
+                "providerOptions": {},
+                "role": "assistant"
+              },
+              {
+                "content": [
+                  {
+                    "approvalId": "",
+                    "approved": false,
+                    "providerOptions": {},
+                    "reason": "",
+                    "type": "tool-approval-response"
+                  },
+                  {
+                    "output": {
+                      "type": "content",
+                      "value": [
+                        {
+                          "data": {
+                            "text": "",
+                            "type": "text"
+                          },
+                          "filename": "",
+                          "mediaType": "",
+                          "providerOptions": {},
+                          "type": "file"
+                        }
+                      ]
+                    },
+                    "toolCallId": "nested-file-result",
+                    "toolName": "lookup",
+                    "type": "tool-result"
+                  }
+                ],
+                "providerOptions": {},
+                "role": "tool"
+              }
+            ],
+            "providerOptions": {},
+            "responseFormat": {
+              "description": "",
+              "name": "",
+              "schema": {
+                "$defs": {
+                  "value": {
+                    "type": "string"
+                  }
+                },
+                "$ref": "#/$defs/value"
+              },
+              "type": "json"
+            },
+            "seed": 3.5,
+            "toolChoice": {
+              "toolName": "",
+              "type": "tool"
+            },
+            "tools": [
+              {
+                "description": "",
+                "inputExamples": [],
+                "inputSchema": {
+                  "$defs": {
+                    "input": {
+                      "additionalProperties": false,
+                      "type": "object"
+                    }
+                  },
+                  "$ref": "#/$defs/input"
+                },
+                "name": "",
+                "providerOptions": {},
+                "strict": false,
+                "type": "function"
+              },
+              {
+                "args": {},
+                "id": ".",
+                "name": "",
+                "type": "provider"
+              }
+            ],
+            "topK": 2.5
+          },
+          "envelope": "supported",
+          "headers": {
+            "ai-gateway-auth-method": "api-key",
+            "ai-gateway-protocol-version": "0.0.1",
+            "ai-language-model-id": "provider/model-v4-evidence",
+            "ai-language-model-specification-version": "4",
+            "ai-language-model-streaming": "false",
+            "authorization": "<client-owned-authorization>",
+            "content-type": "application/json",
+            "user-agent": "<client-owned-user-agent>"
+          },
+          "method": "POST",
+          "path": "/language-model",
+          "requestPath": "/api/v1/aisdk/language-model",
+          "sequence": 1
+        }
+      ]
+    },
+    {
+      "name": "tool-choice-auto",
+      "requests": [
+        {
+          "body": {
+            "prompt": [],
+            "toolChoice": {
+              "type": "auto"
+            },
+            "tools": [
+              {
+                "inputSchema": {
+                  "additionalProperties": false,
+                  "properties": {},
+                  "type": "object"
+                },
+                "name": "lookup",
+                "type": "function"
+              }
+            ]
+          },
+          "envelope": "supported",
+          "headers": {
+            "ai-gateway-auth-method": "api-key",
+            "ai-gateway-protocol-version": "0.0.1",
+            "ai-language-model-id": "provider/model-v4-evidence",
+            "ai-language-model-specification-version": "4",
+            "ai-language-model-streaming": "false",
+            "authorization": "<client-owned-authorization>",
+            "content-type": "application/json",
+            "user-agent": "<client-owned-user-agent>"
+          },
+          "method": "POST",
+          "path": "/language-model",
+          "requestPath": "/api/v1/aisdk/language-model",
+          "sequence": 1
+        }
+      ]
+    },
+    {
+      "name": "tool-choice-none",
+      "requests": [
+        {
+          "body": {
+            "prompt": [],
+            "toolChoice": {
+              "type": "none"
+            },
+            "tools": [
+              {
+                "inputSchema": {
+                  "additionalProperties": false,
+                  "properties": {},
+                  "type": "object"
+                },
+                "name": "lookup",
+                "type": "function"
+              }
+            ]
+          },
+          "envelope": "supported",
+          "headers": {
+            "ai-gateway-auth-method": "api-key",
+            "ai-gateway-protocol-version": "0.0.1",
+            "ai-language-model-id": "provider/model-v4-evidence",
+            "ai-language-model-specification-version": "4",
+            "ai-language-model-streaming": "false",
+            "authorization": "<client-owned-authorization>",
+            "content-type": "application/json",
+            "user-agent": "<client-owned-user-agent>"
+          },
+          "method": "POST",
+          "path": "/language-model",
+          "requestPath": "/api/v1/aisdk/language-model",
+          "sequence": 1
+        }
+      ]
+    },
+    {
+      "name": "tool-choice-required",
+      "requests": [
+        {
+          "body": {
+            "prompt": [],
+            "toolChoice": {
+              "type": "required"
+            },
+            "tools": [
+              {
+                "inputSchema": {
+                  "additionalProperties": false,
+                  "properties": {},
+                  "type": "object"
+                },
+                "name": "lookup",
+                "type": "function"
+              }
+            ]
+          },
+          "envelope": "supported",
+          "headers": {
+            "ai-gateway-auth-method": "api-key",
+            "ai-gateway-protocol-version": "0.0.1",
+            "ai-language-model-id": "provider/model-v4-evidence",
+            "ai-language-model-specification-version": "4",
+            "ai-language-model-streaming": "false",
+            "authorization": "<client-owned-authorization>",
+            "content-type": "application/json",
+            "user-agent": "<client-owned-user-agent>"
+          },
+          "method": "POST",
+          "path": "/language-model",
+          "requestPath": "/api/v1/aisdk/language-model",
+          "sequence": 1
+        }
+      ]
+    },
+    {
+      "name": "tool-choice-tool",
+      "requests": [
+        {
+          "body": {
+            "prompt": [],
+            "toolChoice": {
+              "toolName": "lookup",
+              "type": "tool"
+            },
+            "tools": [
+              {
+                "inputSchema": {
+                  "additionalProperties": false,
+                  "properties": {},
+                  "type": "object"
+                },
+                "name": "lookup",
+                "type": "function"
+              }
+            ]
+          },
+          "envelope": "supported",
+          "headers": {
+            "ai-gateway-auth-method": "api-key",
+            "ai-gateway-protocol-version": "0.0.1",
+            "ai-language-model-id": "provider/model-v4-evidence",
+            "ai-language-model-specification-version": "4",
+            "ai-language-model-streaming": "false",
+            "authorization": "<client-owned-authorization>",
+            "content-type": "application/json",
+            "user-agent": "<client-owned-user-agent>"
+          },
+          "method": "POST",
+          "path": "/language-model",
+          "requestPath": "/api/v1/aisdk/language-model",
+          "sequence": 1
+        }
+      ]
+    },
+    {
+      "name": "header-call",
+      "requests": [
+        {
+          "body": {
+            "headers": {
+              "traceparent": "00-trace-parent",
+              "x-call": "call-value"
+            },
+            "prompt": []
+          },
+          "envelope": "supported",
+          "headers": {
+            "ai-gateway-auth-method": "api-key",
+            "ai-gateway-protocol-version": "0.0.1",
+            "ai-language-model-id": "provider/model-v4-evidence",
+            "ai-language-model-specification-version": "4",
+            "ai-language-model-streaming": "false",
+            "authorization": "<client-owned-authorization>",
+            "content-type": "application/json",
+            "traceparent": "00-trace-parent",
+            "user-agent": "<client-owned-user-agent>",
+            "x-call": "call-value"
+          },
+          "method": "POST",
+          "path": "/language-model",
+          "requestPath": "/api/v1/aisdk/language-model",
+          "sequence": 1
+        }
+      ]
+    },
+    {
+      "name": "header-exact-custom",
+      "requests": [
+        {
+          "body": {
+            "headers": {
+              "x-exact": "call"
+            },
+            "prompt": []
+          },
+          "envelope": "supported",
+          "headers": {
+            "ai-gateway-auth-method": "api-key",
+            "ai-gateway-protocol-version": "0.0.1",
+            "ai-language-model-id": "provider/model-v4-evidence",
+            "ai-language-model-specification-version": "4",
+            "ai-language-model-streaming": "false",
+            "authorization": "<client-owned-authorization>",
+            "content-type": "application/json",
+            "user-agent": "<client-owned-user-agent>",
+            "x-exact": "call"
+          },
+          "method": "POST",
+          "path": "/language-model",
+          "requestPath": "/api/v1/aisdk/language-model",
+          "sequence": 1
+        }
+      ]
+    },
+    {
+      "name": "header-case-custom",
+      "requests": [
+        {
+          "body": {
+            "headers": {
+              "x-case": "call"
+            },
+            "prompt": []
+          },
+          "envelope": "supported",
+          "headers": {
+            "ai-gateway-auth-method": "api-key",
+            "ai-gateway-protocol-version": "0.0.1",
+            "ai-language-model-id": "provider/model-v4-evidence",
+            "ai-language-model-specification-version": "4",
+            "ai-language-model-streaming": "false",
+            "authorization": "<client-owned-authorization>",
+            "content-type": "application/json",
+            "user-agent": "<client-owned-user-agent>",
+            "x-case": "call"
+          },
+          "method": "POST",
+          "path": "/language-model",
+          "requestPath": "/api/v1/aisdk/language-model",
+          "sequence": 1
+        }
+      ]
+    },
+    {
+      "name": "header-exact-protocol",
+      "requests": [
+        {
+          "body": {
+            "headers": {
+              "ai-language-model-specification-version": "caller"
+            },
+            "prompt": []
+          },
+          "envelope": "supported",
+          "headers": {
+            "ai-gateway-auth-method": "api-key",
+            "ai-gateway-protocol-version": "0.0.1",
+            "ai-language-model-id": "provider/model-v4-evidence",
+            "ai-language-model-specification-version": "4",
+            "ai-language-model-streaming": "false",
+            "authorization": "<client-owned-authorization>",
+            "content-type": "application/json",
+            "user-agent": "<client-owned-user-agent>"
+          },
+          "method": "POST",
+          "path": "/language-model",
+          "requestPath": "/api/v1/aisdk/language-model",
+          "sequence": 1
+        }
+      ]
+    },
+    {
+      "name": "header-case-protocol",
+      "requests": [
+        {
+          "body": {
+            "headers": {
+              "Ai-Language-Model-Specification-Version": "caller"
+            },
+            "prompt": []
+          },
+          "envelope": "supported",
+          "headers": {
+            "ai-gateway-auth-method": "api-key",
+            "ai-gateway-protocol-version": "0.0.1",
+            "ai-language-model-id": "provider/model-v4-evidence",
+            "ai-language-model-specification-version": "4",
+            "ai-language-model-streaming": "false",
+            "authorization": "<client-owned-authorization>",
+            "content-type": "application/json",
+            "user-agent": "<client-owned-user-agent>"
+          },
+          "method": "POST",
+          "path": "/language-model",
+          "requestPath": "/api/v1/aisdk/language-model",
+          "sequence": 1
+        }
+      ]
+    },
+    {
+      "name": "header-exact-content-type",
+      "requests": [
+        {
+          "body": {
+            "headers": {
+              "Content-Type": "text/plain"
+            },
+            "prompt": []
+          },
+          "envelope": "unsupported-reserved-collision",
+          "headers": {
+            "ai-gateway-auth-method": "api-key",
+            "ai-gateway-protocol-version": "0.0.1",
+            "ai-language-model-id": "provider/model-v4-evidence",
+            "ai-language-model-specification-version": "4",
+            "ai-language-model-streaming": "false",
+            "authorization": "<client-owned-authorization>",
+            "content-type": "text/plain",
+            "user-agent": "<client-owned-user-agent>"
+          },
+          "method": "POST",
+          "path": "/language-model",
+          "requestPath": "/api/v1/aisdk/language-model",
+          "sequence": 1
+        }
+      ]
+    },
+    {
+      "name": "header-case-content-type",
+      "requests": [
+        {
+          "body": {
+            "headers": {
+              "content-type": "text/plain"
+            },
+            "prompt": []
+          },
+          "envelope": "unsupported-reserved-collision",
+          "headers": {
+            "ai-gateway-auth-method": "api-key",
+            "ai-gateway-protocol-version": "0.0.1",
+            "ai-language-model-id": "provider/model-v4-evidence",
+            "ai-language-model-specification-version": "4",
+            "ai-language-model-streaming": "false",
+            "authorization": "<client-owned-authorization>",
+            "content-type": "text/plain",
+            "user-agent": "<client-owned-user-agent>"
+          },
+          "method": "POST",
+          "path": "/language-model",
+          "requestPath": "/api/v1/aisdk/language-model",
+          "sequence": 1
+        }
+      ]
+    },
+    {
+      "name": "header-observability",
+      "requests": [
+        {
+          "body": {
+            "headers": {
+              "ai-o11y-deployment-id": "caller-observability"
+            },
+            "prompt": []
+          },
+          "envelope": "supported",
+          "headers": {
+            "ai-gateway-auth-method": "api-key",
+            "ai-gateway-protocol-version": "0.0.1",
+            "ai-language-model-id": "provider/model-v4-evidence",
+            "ai-language-model-specification-version": "4",
+            "ai-language-model-streaming": "false",
+            "ai-o11y-deployment-id": "deployment-evidence",
+            "authorization": "<client-owned-authorization>",
+            "content-type": "application/json",
+            "user-agent": "<client-owned-user-agent>"
+          },
+          "method": "POST",
+          "path": "/language-model",
+          "requestPath": "/api/v1/aisdk/language-model",
+          "sequence": 1
+        }
+      ]
+    },
+    {
+      "name": "multi-step-tool",
+      "requests": [
+        {
+          "body": {
+            "includeRawChunks": false,
+            "prompt": [
+              {
+                "content": [
+                  {
+                    "text": "continue after the approved provider tool",
+                    "type": "text"
+                  }
+                ],
+                "role": "user"
+              },
+              {
+                "content": [
+                  {
+                    "input": {
+                      "query": "grafana"
+                    },
+                    "providerExecuted": true,
+                    "toolCallId": "provider-call-1",
+                    "toolName": "providerSearch",
+                    "type": "tool-call"
+                  }
+                ],
+                "role": "assistant"
+              },
+              {
+                "content": [
+                  {
+                    "approvalId": "approval-1",
+                    "approved": true,
+                    "reason": "approved",
+                    "type": "tool-approval-response"
+                  }
+                ],
+                "role": "tool"
+              }
+            ],
+            "toolChoice": {
+              "type": "auto"
+            },
+            "tools": [
+              {
+                "description": "Echoes deterministic input.",
+                "inputSchema": {
+                  "$schema": "http://json-schema.org/draft-07/schema#",
+                  "additionalProperties": false,
+                  "properties": {
+                    "text": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "text"
+                  ],
+                  "type": "object"
+                },
+                "name": "echoTool",
+                "type": "function"
+              }
+            ]
+          },
+          "envelope": "supported",
+          "headers": {
+            "ai-gateway-auth-method": "api-key",
+            "ai-gateway-protocol-version": "0.0.1",
+            "ai-language-model-id": "provider/model-v4-evidence",
+            "ai-language-model-specification-version": "4",
+            "ai-language-model-streaming": "true",
+            "authorization": "<client-owned-authorization>",
+            "content-type": "application/json",
+            "user-agent": "<client-owned-user-agent>"
+          },
+          "method": "POST",
+          "path": "/language-model",
+          "requestPath": "/api/v1/aisdk/language-model",
+          "sequence": 1
+        },
+        {
+          "body": {
+            "includeRawChunks": false,
+            "prompt": [
+              {
+                "content": [
+                  {
+                    "text": "continue after the approved provider tool",
+                    "type": "text"
+                  }
+                ],
+                "role": "user"
+              },
+              {
+                "content": [
+                  {
+                    "input": {
+                      "query": "grafana"
+                    },
+                    "providerExecuted": true,
+                    "toolCallId": "provider-call-1",
+                    "toolName": "providerSearch",
+                    "type": "tool-call"
+                  }
+                ],
+                "role": "assistant"
+              },
+              {
+                "content": [
+                  {
+                    "approvalId": "approval-1",
+                    "approved": true,
+                    "reason": "approved",
+                    "type": "tool-approval-response"
+                  }
+                ],
+                "role": "tool"
+              },
+              {
+                "content": [
+                  {
+                    "input": {
+                      "text": "hello"
+                    },
+                    "toolCallId": "call-echo-1",
+                    "toolName": "echoTool",
+                    "type": "tool-call"
+                  }
+                ],
+                "role": "assistant"
+              },
+              {
+                "content": [
+                  {
+                    "output": {
+                      "type": "json",
+                      "value": {
+                        "echoed": "hello"
+                      }
+                    },
+                    "toolCallId": "call-echo-1",
+                    "toolName": "echoTool",
+                    "type": "tool-result"
+                  }
+                ],
+                "role": "tool"
+              }
+            ],
+            "toolChoice": {
+              "type": "auto"
+            },
+            "tools": [
+              {
+                "description": "Echoes deterministic input.",
+                "inputSchema": {
+                  "$schema": "http://json-schema.org/draft-07/schema#",
+                  "additionalProperties": false,
+                  "properties": {
+                    "text": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "text"
+                  ],
+                  "type": "object"
+                },
+                "name": "echoTool",
+                "type": "function"
+              }
+            ]
+          },
+          "envelope": "supported",
+          "headers": {
+            "ai-gateway-auth-method": "api-key",
+            "ai-gateway-protocol-version": "0.0.1",
+            "ai-language-model-id": "provider/model-v4-evidence",
+            "ai-language-model-specification-version": "4",
+            "ai-language-model-streaming": "true",
+            "authorization": "<client-owned-authorization>",
+            "content-type": "application/json",
+            "user-agent": "<client-owned-user-agent>"
+          },
+          "method": "POST",
+          "path": "/language-model",
+          "requestPath": "/api/v1/aisdk/language-model",
+          "sequence": 2
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 1
+}

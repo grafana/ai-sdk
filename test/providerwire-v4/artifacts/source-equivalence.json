@@ -1,0 +1,543 @@
+{
+  "schemaVersion": 1,
+  "upstream": {
+    "repository": "https://github.com/vercel/ai",
+    "commit": "d76eb85a9a7f2dbe44ab2f3dc858ad5cdcb5242e"
+  },
+  "packages": {
+    "ai": "7.0.65",
+    "@ai-sdk/gateway": "4.0.52",
+    "@ai-sdk/provider": "4.0.7",
+    "@ai-sdk/provider-utils": "5.0.27"
+  },
+  "files": [
+    {
+      "package": "@ai-sdk/provider",
+      "installedPath": "src/errors/ai-sdk-error.ts",
+      "upstreamPath": "packages/provider/src/errors/ai-sdk-error.ts",
+      "sha256": "d307f5fcfaeb9aba6ebd06dda911a75b0795671d13afd37a618b74e4a4f0b059"
+    },
+    {
+      "package": "@ai-sdk/provider",
+      "installedPath": "src/errors/api-call-error.ts",
+      "upstreamPath": "packages/provider/src/errors/api-call-error.ts",
+      "sha256": "c5797b3db888abff0c9ef1778875dcc2cbca7ffaf6e2ac42d75ce54fb69d387b"
+    },
+    {
+      "package": "@ai-sdk/provider",
+      "installedPath": "src/errors/empty-response-body-error.ts",
+      "upstreamPath": "packages/provider/src/errors/empty-response-body-error.ts",
+      "sha256": "5c7eee94765c3e4a7d89e3ff054884d07df1a0a966f28c9067942393b9f2b81f"
+    },
+    {
+      "package": "@ai-sdk/provider",
+      "installedPath": "src/errors/invalid-response-data-error.ts",
+      "upstreamPath": "packages/provider/src/errors/invalid-response-data-error.ts",
+      "sha256": "f99e803be11fa773934be95b739bca88442dc583f32a2a784d99c8c75de08f4b"
+    },
+    {
+      "package": "@ai-sdk/provider",
+      "installedPath": "src/errors/json-parse-error.ts",
+      "upstreamPath": "packages/provider/src/errors/json-parse-error.ts",
+      "sha256": "cc5c2e6a1d2973275fc84e4d4e78b77d5c39053e9ba47fdb042dcfbb627dd965"
+    },
+    {
+      "package": "@ai-sdk/provider",
+      "installedPath": "src/errors/type-validation-error.ts",
+      "upstreamPath": "packages/provider/src/errors/type-validation-error.ts",
+      "sha256": "b94d1f99f03934e6f43a3efbfe44b6c140152c3d63d4df7acdafb62299271d36"
+    },
+    {
+      "package": "@ai-sdk/provider",
+      "installedPath": "src/json-value/index.ts",
+      "upstreamPath": "packages/provider/src/json-value/index.ts",
+      "sha256": "fe407cdc70a15d9cd3a2b007f5efeff1e59e0d5fb9bb0ec2747d186c1777ac2e"
+    },
+    {
+      "package": "@ai-sdk/provider",
+      "installedPath": "src/json-value/json-value.ts",
+      "upstreamPath": "packages/provider/src/json-value/json-value.ts",
+      "sha256": "c7bbd280e0dcefbd547f042459880ea0bc78388f8fc3e368cadb95b499dc96ab"
+    },
+    {
+      "package": "@ai-sdk/provider",
+      "installedPath": "src/language-model/v4/index.ts",
+      "upstreamPath": "packages/provider/src/language-model/v4/index.ts",
+      "sha256": "4d879c35d62136b08d2fa28a35f94e59dd78ec60a82c5b37772f83320d189f52"
+    },
+    {
+      "package": "@ai-sdk/provider",
+      "installedPath": "src/language-model/v4/language-model-v4-call-options.ts",
+      "upstreamPath": "packages/provider/src/language-model/v4/language-model-v4-call-options.ts",
+      "sha256": "e2f261e2a4c843596ff95721a9887ae1d17fb04ac68df25ef84f4f537dab3baa"
+    },
+    {
+      "package": "@ai-sdk/provider",
+      "installedPath": "src/language-model/v4/language-model-v4-content.ts",
+      "upstreamPath": "packages/provider/src/language-model/v4/language-model-v4-content.ts",
+      "sha256": "055215a2329324a2f9b99fa3f9598d8a77ad6527a629e3ee0f0a78e6e641bf53"
+    },
+    {
+      "package": "@ai-sdk/provider",
+      "installedPath": "src/language-model/v4/language-model-v4-custom-content.ts",
+      "upstreamPath": "packages/provider/src/language-model/v4/language-model-v4-custom-content.ts",
+      "sha256": "8bc34153afbf4353491a7c20393b0a2c979282462d310b491d33ab6477565467"
+    },
+    {
+      "package": "@ai-sdk/provider",
+      "installedPath": "src/language-model/v4/language-model-v4-file.ts",
+      "upstreamPath": "packages/provider/src/language-model/v4/language-model-v4-file.ts",
+      "sha256": "08178665acb3b04c0cffb2940c12b7080f93e0fe4d70df988003e3ab40baec83"
+    },
+    {
+      "package": "@ai-sdk/provider",
+      "installedPath": "src/language-model/v4/language-model-v4-finish-reason.ts",
+      "upstreamPath": "packages/provider/src/language-model/v4/language-model-v4-finish-reason.ts",
+      "sha256": "db70dd3824233e22a128cebf6f53de34adf8c4b7e2110896f20bfbd6ad2b6e6e"
+    },
+    {
+      "package": "@ai-sdk/provider",
+      "installedPath": "src/language-model/v4/language-model-v4-function-tool.ts",
+      "upstreamPath": "packages/provider/src/language-model/v4/language-model-v4-function-tool.ts",
+      "sha256": "43c0f0c116877cc4e99254408fba349c94da79b5a181ed73fab203a269be1429"
+    },
+    {
+      "package": "@ai-sdk/provider",
+      "installedPath": "src/language-model/v4/language-model-v4-generate-result.ts",
+      "upstreamPath": "packages/provider/src/language-model/v4/language-model-v4-generate-result.ts",
+      "sha256": "1b3124cbee9f5cb48689915ca01598b0dd54f496ebf616db17be06fc33f0bd29"
+    },
+    {
+      "package": "@ai-sdk/provider",
+      "installedPath": "src/language-model/v4/language-model-v4-prompt.ts",
+      "upstreamPath": "packages/provider/src/language-model/v4/language-model-v4-prompt.ts",
+      "sha256": "3fbc3e75e33c0b9ef4b2727fc652fd43e6b3e38a57ccd74f5b6534c4f5977b87"
+    },
+    {
+      "package": "@ai-sdk/provider",
+      "installedPath": "src/language-model/v4/language-model-v4-provider-tool.ts",
+      "upstreamPath": "packages/provider/src/language-model/v4/language-model-v4-provider-tool.ts",
+      "sha256": "ae84a3774568a6fe3005d2afae8ed115e256fd854a21e15ac8ac182044536292"
+    },
+    {
+      "package": "@ai-sdk/provider",
+      "installedPath": "src/language-model/v4/language-model-v4-reasoning-file.ts",
+      "upstreamPath": "packages/provider/src/language-model/v4/language-model-v4-reasoning-file.ts",
+      "sha256": "d378ff61ed606ce6e6b1cc27a2daf60da814254a79da495ecd0f81ceaf29b675"
+    },
+    {
+      "package": "@ai-sdk/provider",
+      "installedPath": "src/language-model/v4/language-model-v4-reasoning.ts",
+      "upstreamPath": "packages/provider/src/language-model/v4/language-model-v4-reasoning.ts",
+      "sha256": "aa89a4ad670aa03b50f42b96477c64d652ea9eace2f28588d70bb98b39783837"
+    },
+    {
+      "package": "@ai-sdk/provider",
+      "installedPath": "src/language-model/v4/language-model-v4-response-metadata.ts",
+      "upstreamPath": "packages/provider/src/language-model/v4/language-model-v4-response-metadata.ts",
+      "sha256": "7415c29f733af6319cfdfd4116191bb1c9deecbf2f03928ae50e255da8921cd3"
+    },
+    {
+      "package": "@ai-sdk/provider",
+      "installedPath": "src/language-model/v4/language-model-v4-source.ts",
+      "upstreamPath": "packages/provider/src/language-model/v4/language-model-v4-source.ts",
+      "sha256": "6967ecbcbcadf641011846341480a99b74ed1fb5a1e820463632d30e4a003a9f"
+    },
+    {
+      "package": "@ai-sdk/provider",
+      "installedPath": "src/language-model/v4/language-model-v4-stream-part.ts",
+      "upstreamPath": "packages/provider/src/language-model/v4/language-model-v4-stream-part.ts",
+      "sha256": "eb17a33d107c5f9c43113592da438e37d9a0728adeb02b8f10f87386d9fb383e"
+    },
+    {
+      "package": "@ai-sdk/provider",
+      "installedPath": "src/language-model/v4/language-model-v4-stream-result.ts",
+      "upstreamPath": "packages/provider/src/language-model/v4/language-model-v4-stream-result.ts",
+      "sha256": "666655282d858fe734e07bb0dc30600b35ecc2de4f3b8d693c79db9d4ddf969d"
+    },
+    {
+      "package": "@ai-sdk/provider",
+      "installedPath": "src/language-model/v4/language-model-v4-text.ts",
+      "upstreamPath": "packages/provider/src/language-model/v4/language-model-v4-text.ts",
+      "sha256": "091795f2d7e6ab59f3fd4c34b52ab94948753abde7fb02add0f352515a0825bd"
+    },
+    {
+      "package": "@ai-sdk/provider",
+      "installedPath": "src/language-model/v4/language-model-v4-tool-approval-request.ts",
+      "upstreamPath": "packages/provider/src/language-model/v4/language-model-v4-tool-approval-request.ts",
+      "sha256": "ce8fc107c64417ee1aae51cb658e0d4e0c02fec2d22f4abb7b5cd43c74904764"
+    },
+    {
+      "package": "@ai-sdk/provider",
+      "installedPath": "src/language-model/v4/language-model-v4-tool-call.ts",
+      "upstreamPath": "packages/provider/src/language-model/v4/language-model-v4-tool-call.ts",
+      "sha256": "dce73a2f8f52468632686253830f81e30cd11a4a1366d863d8833e6ff4d84ded"
+    },
+    {
+      "package": "@ai-sdk/provider",
+      "installedPath": "src/language-model/v4/language-model-v4-tool-choice.ts",
+      "upstreamPath": "packages/provider/src/language-model/v4/language-model-v4-tool-choice.ts",
+      "sha256": "da1732e22c1fa3ca8bccc1829a07602da77136a5f064517b17cff231b208dbdb"
+    },
+    {
+      "package": "@ai-sdk/provider",
+      "installedPath": "src/language-model/v4/language-model-v4-tool-result.ts",
+      "upstreamPath": "packages/provider/src/language-model/v4/language-model-v4-tool-result.ts",
+      "sha256": "50881cdb1446f60c36d0564c33c246dd11d49a76076790587b18ee62100f343b"
+    },
+    {
+      "package": "@ai-sdk/provider",
+      "installedPath": "src/language-model/v4/language-model-v4-usage.ts",
+      "upstreamPath": "packages/provider/src/language-model/v4/language-model-v4-usage.ts",
+      "sha256": "9ae326e89d75f4c7531e9e5560282121dcd964bc2ca343b28a92b150b60a747a"
+    },
+    {
+      "package": "@ai-sdk/provider",
+      "installedPath": "src/language-model/v4/language-model-v4.ts",
+      "upstreamPath": "packages/provider/src/language-model/v4/language-model-v4.ts",
+      "sha256": "e02ca6315380f381f42bf30425049b68473ac91fd6cc2d89e68b4c21045b481a"
+    },
+    {
+      "package": "@ai-sdk/provider",
+      "installedPath": "src/shared/v4/index.ts",
+      "upstreamPath": "packages/provider/src/shared/v4/index.ts",
+      "sha256": "81338c1d603abd1bbb62741a24cb08c43b73b48352c9be8ff67197a30515a974"
+    },
+    {
+      "package": "@ai-sdk/provider",
+      "installedPath": "src/shared/v4/shared-v4-file-data.ts",
+      "upstreamPath": "packages/provider/src/shared/v4/shared-v4-file-data.ts",
+      "sha256": "47c6a25575330d23d543eff773ce4deac9107ebac5dc0217bd6e0572f095a526"
+    },
+    {
+      "package": "@ai-sdk/provider",
+      "installedPath": "src/shared/v4/shared-v4-headers.ts",
+      "upstreamPath": "packages/provider/src/shared/v4/shared-v4-headers.ts",
+      "sha256": "8d1400ca0723cc16cc538c5983194d28f8bbc8ca6e04ece2c075b3540e89e040"
+    },
+    {
+      "package": "@ai-sdk/provider",
+      "installedPath": "src/shared/v4/shared-v4-provider-metadata.ts",
+      "upstreamPath": "packages/provider/src/shared/v4/shared-v4-provider-metadata.ts",
+      "sha256": "e683101b04fde5a78ffbbb9a38dd6c5c448cfcf957b5f6bcad3b106709978d8a"
+    },
+    {
+      "package": "@ai-sdk/provider",
+      "installedPath": "src/shared/v4/shared-v4-provider-options.ts",
+      "upstreamPath": "packages/provider/src/shared/v4/shared-v4-provider-options.ts",
+      "sha256": "ddd99038ddb6a6f21484663fef173c19d4474fcf200c43eee60433aab1fbffd4"
+    },
+    {
+      "package": "@ai-sdk/provider",
+      "installedPath": "src/shared/v4/shared-v4-provider-reference.ts",
+      "upstreamPath": "packages/provider/src/shared/v4/shared-v4-provider-reference.ts",
+      "sha256": "370b367ed68b11368b5587e14cd46c5f592d2a13d36f49d810d26a869685c0ce"
+    },
+    {
+      "package": "@ai-sdk/provider",
+      "installedPath": "src/shared/v4/shared-v4-warning.ts",
+      "upstreamPath": "packages/provider/src/shared/v4/shared-v4-warning.ts",
+      "sha256": "972685a55d11f9e15975f111032556d2c8a85b68d2b6bc6fa1dc35ced5876caf"
+    },
+    {
+      "package": "@ai-sdk/gateway",
+      "installedPath": "src/errors/as-gateway-error.ts",
+      "upstreamPath": "packages/gateway/src/errors/as-gateway-error.ts",
+      "sha256": "7e21c0bf276750b382f923fce5558f063a2e30967d0064b5eb6170aa62bf1ef8"
+    },
+    {
+      "package": "@ai-sdk/gateway",
+      "installedPath": "src/errors/create-gateway-error.ts",
+      "upstreamPath": "packages/gateway/src/errors/create-gateway-error.ts",
+      "sha256": "37870dd11790affd3abcf2466a72cfcddf72832360512c212a9fdd88f87c662e"
+    },
+    {
+      "package": "@ai-sdk/gateway",
+      "installedPath": "src/errors/extract-api-call-response.ts",
+      "upstreamPath": "packages/gateway/src/errors/extract-api-call-response.ts",
+      "sha256": "f2e13fb4a5dc04e5f32096750e71118dd8b00525908822a3576c282b510a1972"
+    },
+    {
+      "package": "@ai-sdk/gateway",
+      "installedPath": "src/errors/gateway-authentication-error.ts",
+      "upstreamPath": "packages/gateway/src/errors/gateway-authentication-error.ts",
+      "sha256": "bee89efa2119682c0d2951671a48defe1c4381488cbd9d25c48ae844012550fb"
+    },
+    {
+      "package": "@ai-sdk/gateway",
+      "installedPath": "src/errors/gateway-error.ts",
+      "upstreamPath": "packages/gateway/src/errors/gateway-error.ts",
+      "sha256": "b6dbcd5125bd798b871981e47a51fed3e75d481adef8ded4e3a2f68869493d77"
+    },
+    {
+      "package": "@ai-sdk/gateway",
+      "installedPath": "src/errors/gateway-failed-dependency-error.ts",
+      "upstreamPath": "packages/gateway/src/errors/gateway-failed-dependency-error.ts",
+      "sha256": "0a7c269de8823c0bfef7857c171179e3d6ab08577e54882924db1d7d32ab1264"
+    },
+    {
+      "package": "@ai-sdk/gateway",
+      "installedPath": "src/errors/gateway-forbidden-error.ts",
+      "upstreamPath": "packages/gateway/src/errors/gateway-forbidden-error.ts",
+      "sha256": "5e023250a4994611954b31c0d3e2ad63d2db807250edfea30260f231d346304e"
+    },
+    {
+      "package": "@ai-sdk/gateway",
+      "installedPath": "src/errors/gateway-internal-server-error.ts",
+      "upstreamPath": "packages/gateway/src/errors/gateway-internal-server-error.ts",
+      "sha256": "fa3558fa03207b7a496baacef7fd0e641af7afd093295a5dfdba3d92e1da4322"
+    },
+    {
+      "package": "@ai-sdk/gateway",
+      "installedPath": "src/errors/gateway-invalid-request-error.ts",
+      "upstreamPath": "packages/gateway/src/errors/gateway-invalid-request-error.ts",
+      "sha256": "1a46fd132bfdcb06d5d94d8e1fe8d8344719bac259ecf951cc7d4a3735087154"
+    },
+    {
+      "package": "@ai-sdk/gateway",
+      "installedPath": "src/errors/gateway-model-not-found-error.ts",
+      "upstreamPath": "packages/gateway/src/errors/gateway-model-not-found-error.ts",
+      "sha256": "fb90d46f9d19cbe6bad0f3524744d6d791a3104c53bc1e5b55d7f3b1770399cd"
+    },
+    {
+      "package": "@ai-sdk/gateway",
+      "installedPath": "src/errors/gateway-rate-limit-error.ts",
+      "upstreamPath": "packages/gateway/src/errors/gateway-rate-limit-error.ts",
+      "sha256": "6b601d69b4983e9f97e218f289e5f4a8187c64cec71b4817fba14bebef0a3b14"
+    },
+    {
+      "package": "@ai-sdk/gateway",
+      "installedPath": "src/errors/gateway-response-error.ts",
+      "upstreamPath": "packages/gateway/src/errors/gateway-response-error.ts",
+      "sha256": "a489ff60172dd054d6f262669e03830c2c281bddfefd7aac9bcd0ead3d8251d4"
+    },
+    {
+      "package": "@ai-sdk/gateway",
+      "installedPath": "src/errors/gateway-timeout-error.ts",
+      "upstreamPath": "packages/gateway/src/errors/gateway-timeout-error.ts",
+      "sha256": "3b0d8d02bc0acfba07ed3febfeb11c91c3895b6117242770b0e768868c313410"
+    },
+    {
+      "package": "@ai-sdk/gateway",
+      "installedPath": "src/errors/index.ts",
+      "upstreamPath": "packages/gateway/src/errors/index.ts",
+      "sha256": "943d9fa452b281d7ab7443b29d67c128372c5c2683a085bb18b4941e3dccd67f"
+    },
+    {
+      "package": "@ai-sdk/gateway",
+      "installedPath": "src/errors/parse-auth-method.ts",
+      "upstreamPath": "packages/gateway/src/errors/parse-auth-method.ts",
+      "sha256": "764279dffbbde23dd58a950ede84315d325df38bbe59adf6c77b21359a920b65"
+    },
+    {
+      "package": "@ai-sdk/gateway",
+      "installedPath": "src/gateway-config.ts",
+      "upstreamPath": "packages/gateway/src/gateway-config.ts",
+      "sha256": "28d9317d4ff8c4af43bb8bf116d5d2f7b846b7d4d553aa260d737d5f246ebc98"
+    },
+    {
+      "package": "@ai-sdk/gateway",
+      "installedPath": "src/gateway-headers.ts",
+      "upstreamPath": "packages/gateway/src/gateway-headers.ts",
+      "sha256": "0f9c648fe97e4e9d145f10bcfddb599b29955d338f7e06b315ead7f426afa6f4"
+    },
+    {
+      "package": "@ai-sdk/gateway",
+      "installedPath": "src/gateway-language-model-settings.ts",
+      "upstreamPath": "packages/gateway/src/gateway-language-model-settings.ts",
+      "sha256": "c95f956d3c9c106b9943f92385a9219956688732e2d78ebb4d71b17615b643dd"
+    },
+    {
+      "package": "@ai-sdk/gateway",
+      "installedPath": "src/gateway-language-model.ts",
+      "upstreamPath": "packages/gateway/src/gateway-language-model.ts",
+      "sha256": "2c47140dd725df9abab895f61266cd61ca3f14eed4669ccd619b288c3f4d3993"
+    },
+    {
+      "package": "@ai-sdk/gateway",
+      "installedPath": "src/gateway-provider.ts",
+      "upstreamPath": "packages/gateway/src/gateway-provider.ts",
+      "sha256": "1722a8a5d730579084a4793b5022c1cd94f7382de86a9db0c97ad2ccda9efc78"
+    },
+    {
+      "package": "@ai-sdk/gateway",
+      "installedPath": "src/vercel-environment.ts",
+      "upstreamPath": "packages/gateway/src/vercel-environment.ts",
+      "sha256": "0c4cc997d33053bb4ed7164eded8d2685cf7355bdd3363dd1eaa56a967b97cb8"
+    },
+    {
+      "package": "@ai-sdk/gateway",
+      "installedPath": "src/version.ts",
+      "upstreamPath": "packages/gateway/src/version.ts",
+      "sha256": "5fc7056782ac343ab841a10b452f5c71136dc9c882e01ad3b14f5c61911d0263"
+    },
+    {
+      "package": "@ai-sdk/gateway",
+      "installedPath": "src/zod.ts",
+      "upstreamPath": "packages/gateway/src/zod.ts",
+      "sha256": "9321d7c85841861048834efacf1aef44738ee9257b9ce1f3b378306efab8ad90"
+    },
+    {
+      "package": "@ai-sdk/provider-utils",
+      "installedPath": "src/cancel-response-body.ts",
+      "upstreamPath": "packages/provider-utils/src/cancel-response-body.ts",
+      "sha256": "81389dde21fb0fec905d62d015043be575d72b2880ad4e9301737649b3ecd5a8"
+    },
+    {
+      "package": "@ai-sdk/provider-utils",
+      "installedPath": "src/combine-headers.ts",
+      "upstreamPath": "packages/provider-utils/src/combine-headers.ts",
+      "sha256": "8554f2b523b8027be8c96f3c16d1b74c776d8a72701c1b6ca14f80242c97252f"
+    },
+    {
+      "package": "@ai-sdk/provider-utils",
+      "installedPath": "src/download-error.ts",
+      "upstreamPath": "packages/provider-utils/src/download-error.ts",
+      "sha256": "619f88551237ac97b83a726bdd77287b6d0a8225f1ccd3b105394712f853b06d"
+    },
+    {
+      "package": "@ai-sdk/provider-utils",
+      "installedPath": "src/extract-response-headers.ts",
+      "upstreamPath": "packages/provider-utils/src/extract-response-headers.ts",
+      "sha256": "6f9f44a63922561cb1d0ef477ddc0ac95f6c33249e3a44e69a4a13c26fc86c63"
+    },
+    {
+      "package": "@ai-sdk/provider-utils",
+      "installedPath": "src/fetch-function.ts",
+      "upstreamPath": "packages/provider-utils/src/fetch-function.ts",
+      "sha256": "ed66bfd794e659db2c74eca9127411407ee620eaa8971417809f3a09b35f0f85"
+    },
+    {
+      "package": "@ai-sdk/provider-utils",
+      "installedPath": "src/get-error-message.ts",
+      "upstreamPath": "packages/provider-utils/src/get-error-message.ts",
+      "sha256": "ce0fcec5b0e851e0f1fbaca33d6a19d1f68576c474959dee99aa53bc1c347922"
+    },
+    {
+      "package": "@ai-sdk/provider-utils",
+      "installedPath": "src/get-runtime-environment-user-agent.ts",
+      "upstreamPath": "packages/provider-utils/src/get-runtime-environment-user-agent.ts",
+      "sha256": "7ea0d288fa65bb9afc3106999d20143fc48274d5a3b47f5499b8029ecb59496f"
+    },
+    {
+      "package": "@ai-sdk/provider-utils",
+      "installedPath": "src/handle-fetch-error.ts",
+      "upstreamPath": "packages/provider-utils/src/handle-fetch-error.ts",
+      "sha256": "76f19775990676f04b802cf846c15967ba87fb52e5ce061a6e2491392bef3691"
+    },
+    {
+      "package": "@ai-sdk/provider-utils",
+      "installedPath": "src/is-abort-error.ts",
+      "upstreamPath": "packages/provider-utils/src/is-abort-error.ts",
+      "sha256": "42912ad64bb3dc283e97109df6644d5e2d2ee75d0a7128f8d6af6b3de1b33e6d"
+    },
+    {
+      "package": "@ai-sdk/provider-utils",
+      "installedPath": "src/is-json-serializable.ts",
+      "upstreamPath": "packages/provider-utils/src/is-json-serializable.ts",
+      "sha256": "90f712474ab272ed94f83a7d4b16aaf9de1f87ad2c456dead0d9fb25d6bd4f92"
+    },
+    {
+      "package": "@ai-sdk/provider-utils",
+      "installedPath": "src/load-optional-setting.ts",
+      "upstreamPath": "packages/provider-utils/src/load-optional-setting.ts",
+      "sha256": "3be36feb5bbab9d71de22c372d0595ac8a1558be56f3fc706430d08155ddb043"
+    },
+    {
+      "package": "@ai-sdk/provider-utils",
+      "installedPath": "src/maybe-promise-like.ts",
+      "upstreamPath": "packages/provider-utils/src/maybe-promise-like.ts",
+      "sha256": "c1ee2580e3030c95f20f48d09bcab9bda6802d58725aa459058d3042a10b70ec"
+    },
+    {
+      "package": "@ai-sdk/provider-utils",
+      "installedPath": "src/normalize-headers.ts",
+      "upstreamPath": "packages/provider-utils/src/normalize-headers.ts",
+      "sha256": "23be706827c3d009b823621fea6fa49fcf04970375deaaaa998df08b078794cc"
+    },
+    {
+      "package": "@ai-sdk/provider-utils",
+      "installedPath": "src/parse-json-event-stream.ts",
+      "upstreamPath": "packages/provider-utils/src/parse-json-event-stream.ts",
+      "sha256": "2dbe4fdeed94dd10436bdc12065c98f7d840c4de7f4a8f2a7562bed4029a7128"
+    },
+    {
+      "package": "@ai-sdk/provider-utils",
+      "installedPath": "src/parse-json.ts",
+      "upstreamPath": "packages/provider-utils/src/parse-json.ts",
+      "sha256": "338382aea2958864883cd9e9410b604d81bc663f35f935f2bd62c8f6e13ca0f0"
+    },
+    {
+      "package": "@ai-sdk/provider-utils",
+      "installedPath": "src/post-to-api.ts",
+      "upstreamPath": "packages/provider-utils/src/post-to-api.ts",
+      "sha256": "e7a64b7419b3939d881c53f387d3097999ef63a639798621b647f918c661ec38"
+    },
+    {
+      "package": "@ai-sdk/provider-utils",
+      "installedPath": "src/read-response-with-size-limit.ts",
+      "upstreamPath": "packages/provider-utils/src/read-response-with-size-limit.ts",
+      "sha256": "c66982cb96e0a315408927c63401db9a9a8edb5116edb96206af7910c7bddd6e"
+    },
+    {
+      "package": "@ai-sdk/provider-utils",
+      "installedPath": "src/resolve.ts",
+      "upstreamPath": "packages/provider-utils/src/resolve.ts",
+      "sha256": "47921b17f36d510763e20a53767004d2108491a06d2a712b7f8591b98cc2450c"
+    },
+    {
+      "package": "@ai-sdk/provider-utils",
+      "installedPath": "src/response-handler.ts",
+      "upstreamPath": "packages/provider-utils/src/response-handler.ts",
+      "sha256": "f33b96d6b2b8e7bd4dfec271719b62e163733f22dcef3f34e9df96b7066e966d"
+    },
+    {
+      "package": "@ai-sdk/provider-utils",
+      "installedPath": "src/schema.ts",
+      "upstreamPath": "packages/provider-utils/src/schema.ts",
+      "sha256": "a7d86863451b2b4075cef669df1cc87201a14b39b557d28aeb5c8f82df4da652"
+    },
+    {
+      "package": "@ai-sdk/provider-utils",
+      "installedPath": "src/secure-json-parse.ts",
+      "upstreamPath": "packages/provider-utils/src/secure-json-parse.ts",
+      "sha256": "d91fac98db01e3cd0a450d09d92094c908d40ba47b886e0de9f753c34bc1e6ac"
+    },
+    {
+      "package": "@ai-sdk/provider-utils",
+      "installedPath": "src/serialization-error.ts",
+      "upstreamPath": "packages/provider-utils/src/serialization-error.ts",
+      "sha256": "df90d171700b3ead5412dadcbb62e8ef7d34e2c293ea8d1cda4ee842dba2fc81"
+    },
+    {
+      "package": "@ai-sdk/provider-utils",
+      "installedPath": "src/serialize-model-options.ts",
+      "upstreamPath": "packages/provider-utils/src/serialize-model-options.ts",
+      "sha256": "defa7e206691dc7c07c0c88dc31601970c8d65833f14aad2dbd400d1eb49bf41"
+    },
+    {
+      "package": "@ai-sdk/provider-utils",
+      "installedPath": "src/validate-types.ts",
+      "upstreamPath": "packages/provider-utils/src/validate-types.ts",
+      "sha256": "c2275a4a6c5414a2bc6c7e778ae0de09838b78c9be1ad24262bc61b613967539"
+    },
+    {
+      "package": "@ai-sdk/provider-utils",
+      "installedPath": "src/version.ts",
+      "upstreamPath": "packages/provider-utils/src/version.ts",
+      "sha256": "5fc7056782ac343ab841a10b452f5c71136dc9c882e01ad3b14f5c61911d0263"
+    },
+    {
+      "package": "@ai-sdk/provider-utils",
+      "installedPath": "src/with-user-agent-suffix.ts",
+      "upstreamPath": "packages/provider-utils/src/with-user-agent-suffix.ts",
+      "sha256": "ee887e2955b2466c677364e0b34579af4073a31885cefe4e6e66bcea20c53253"
+    },
+    {
+      "package": "@ai-sdk/provider-utils",
+      "installedPath": "src/without-trailing-slash.ts",
+      "upstreamPath": "packages/provider-utils/src/without-trailing-slash.ts",
+      "sha256": "310ed89cd088c9fe62dd2d0d60afd4ec116b54e8cbf8f3368957724fa30dbb9f"
+    }
+  ]
+}
