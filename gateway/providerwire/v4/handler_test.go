@@ -527,7 +527,8 @@ func TestRequestPolicy_RejectsReservedGatewayAtEveryProviderOptionLocation(t *te
 
 func TestHandler_ResolverAndTimeoutLifecycle(t *testing.T) {
 	t.Run("same timed context reaches resolver and model", func(t *testing.T) {
-		key := struct{}{}
+		type contextKey struct{}
+		key := contextKey{}
 		var resolverContext context.Context
 		var modelContext context.Context
 		model := &handlerTestModel{generate: func(ctx context.Context, _ provider.CallOptions) (*provider.GenerateResult, error) {

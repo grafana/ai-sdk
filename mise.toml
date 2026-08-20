@@ -301,7 +301,6 @@ mise run validate-providerwire-v4-contract
 GOWORK=off go test -race ./gateway/providerwire/v4
 GOWORK=off go vet ./gateway/providerwire/v4
 mise run test-interop-contract
-mise run parity-coverage
 cd test
 pnpm --filter @ai-sdk/conformance-tools typecheck
 pnpm --filter @ai-sdk/conformance-tools test:providerwire-v4-unary

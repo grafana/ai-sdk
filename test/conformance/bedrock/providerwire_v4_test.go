@@ -100,7 +100,7 @@ func TestProviderWireV4_JSONToolWithAnswer(t *testing.T) {
 
 	response, err := http.DefaultClient.Do(request)
 	require.NoError(t, err)
-	defer response.Body.Close()
+	t.Cleanup(func() { require.NoError(t, response.Body.Close()) })
 	body, err := io.ReadAll(response.Body)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, response.StatusCode, string(body))
