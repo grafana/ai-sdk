@@ -4,8 +4,8 @@ go 1.26.3
 
 require (
 	github.com/anthropics/anthropic-sdk-go v1.61.0
-	github.com/grafana/agento11y/go v0.15.0
-	github.com/grafana/agento11y/go-providers/anthropic v0.15.0
+	github.com/grafana/agento11y/go v0.17.0
+	github.com/grafana/agento11y/go-providers/anthropic v0.17.0
 	github.com/grafana/ai-sdk v0.1.0-alpha.1
 	github.com/stretchr/testify v1.11.1
 	go.opentelemetry.io/otel v1.44.0
