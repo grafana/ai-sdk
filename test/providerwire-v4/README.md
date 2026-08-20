@@ -17,6 +17,16 @@ This workspace is separate from:
 
 No artifact here establishes compatibility with Vercel's private Gateway server, another package version, or real provider output.
 
+## Contract evidence model
+
+The request contract is established from three independent views:
+
+1. The generated captures record requests actually emitted by the registered Gateway client for the maintained scenarios.
+2. The manually curated JSON Schema defines the repository's reviewed strict request-body contract. It is not generated from the upstream TypeScript declarations, captures, or coverage map. Every captured request body must satisfy it, while focused negative tests verify that known-invalid shapes are rejected.
+3. The canonical typed coverage map inventories the finite request members and discriminators. Every supported item must point to an exact observation in a designated capture; unsupported items require an explicit exclusion.
+
+Keeping these views separate reduces the chance that one implementation mistake defines both the evidence and its validator. Together they demonstrate that the curated schema represents the observed pinned-client requests and that the classified request surface was considered. They do not prove that every possible unobserved request combination is accepted or rejected exactly like an upstream private server; negative cases, installed-source equivalence, and human review constrain that remaining boundary.
+
 ## Artifacts
 
 Maintained inputs:
