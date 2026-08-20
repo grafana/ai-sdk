@@ -1,6 +1,6 @@
 # ProviderWire V4 contract evidence
 
-This private workspace records the request contract emitted by the exact Vercel AI SDK packages registered in [`../conformance/upstream.yaml`](../conformance/upstream.yaml). It covers `ai@7.0.65`, `@ai-sdk/gateway@4.0.52`, `@ai-sdk/provider@4.0.7`, and `@ai-sdk/provider-utils@5.0.27` at upstream commit `d76eb85a9a7f2dbe44ab2f3dc858ad5cdcb5242e`.
+This private workspace records the request contract emitted by the exact Vercel AI SDK packages registered in [`../conformance/upstream.yaml`](../conformance/upstream.yaml). The manifest is the source of truth for the package versions and upstream commit.
 
 ## Claim boundary
 
@@ -34,8 +34,16 @@ Generated artifacts:
 
 Artifact metadata is derived from or checked against `upstream.yaml` and this workspace's exact package pins.
 
+## Request capture generation
+
+`mise run update-providerwire-v4-artifacts` runs the maintained scenarios in `src/scenarios.ts`. Each scenario starts a local HTTP capture server, points the registered public Gateway client at it, and executes `doGenerate`, `doStream`, or the multi-step `streamText` flow. The server strictly parses each raw request body before semantic normalization and records the method, path, headers, body, and request order.
+
+The command validates the observations before writing all of `artifacts/semantic-requests.json` and `classification.json`; neither file is hand-edited. Source-equivalence evidence is refreshed only by the coordinated parity-upgrade workflow because it compares installed package sources with the registered upstream commit.
+
 Semantic outer-header captures retain every emitted header except transport-generated `host`, `connection`, `content-length`, `accept`, `accept-language`, `accept-encoding`, and `sec-fetch-mode`. Authentication and user-agent values are normalized; deterministic protocol, caller, configured, and observability values remain evidence.
 
 `mise run check-providerwire-v4` is non-mutating. It regenerates request evidence in temporary storage, compares it with committed artifacts, validates exact pins and source-equivalence hashes against installed npm inputs, runs schema and observation checks, Go loss witnesses, and smoke probes.
 
-`mise run update-providerwire-v4-artifacts` is the explicit request-artifact writer. Source-equivalence evidence is refreshed only by the coordinated parity-upgrade workflow because it compares installed package sources with the registered upstream commit.
+## Go loss witnesses
+
+[`provider/providerwire_v4_loss_test.go`](../../provider/providerwire_v4_loss_test.go) uses the external `provider_test` package so it can observe only the public Go provider contract. Its passing Phase 1 tests demonstrate distinctions that the current transport-neutral model cannot represent, including fractional numeric settings, optional false or empty scalar presence, and publicly selecting empty inline-text file data. Phase 2 should invert the relevant witness before changing the provider model.
