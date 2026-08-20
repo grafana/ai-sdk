@@ -279,7 +279,7 @@ if grep '$ref:' "$bundle" | grep -Eq '([.][.]?/|https?://)'; then
   exit 1
 fi
 cd ..
-GOWORK=off go test ./gateway/providerwire/v4 -run '^(TestContract|TestCapturedRequests|TestProviderWireV4UnaryResultArtifact|TestValidateUnaryResultArtifact|TestHTTPEnvelope|TestDecodeJSONPointer|TestResponseProjections|TestConformanceTransportInputs|TestStrictJSON)'
+GOWORK=off go test ./gateway/providerwire/v4
 """
 
 [tasks.test-interop-contract]
