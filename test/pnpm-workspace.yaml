@@ -3,6 +3,7 @@ packages:
   - interop
   - cli
   - conformance/tools
+  - providerwire-v4
 
 # Supply-chain hardening
 blockExoticSubdeps: true

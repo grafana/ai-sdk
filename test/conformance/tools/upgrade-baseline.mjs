@@ -8,11 +8,12 @@ import { fileURLToPath } from "node:url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const baselinePath = join(__dirname, "..", "upstream.yaml");
 const workspacePath = join(__dirname, "..", "..", "pnpm-workspace.yaml");
-const packagePaths = [
+export const packagePaths = [
   join(__dirname, "package.json"),
   join(__dirname, "..", "..", "integration", "package.json"),
   join(__dirname, "..", "..", "interop", "package.json"),
   join(__dirname, "..", "..", "cli", "package.json"),
+  join(__dirname, "..", "..", "providerwire-v4", "package.json"),
 ];
 const stableVersionPattern = /^(\d+)\.(\d+)\.(\d+)$/;
 

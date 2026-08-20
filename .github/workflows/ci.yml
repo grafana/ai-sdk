@@ -122,6 +122,9 @@ jobs:
       - name: Report provider API shape parity
         run: mise run parity-provider-shape
 
+      - name: Verify ProviderWire V4 contract evidence
+        run: mise run check-providerwire-v4
+
   integration-test:
     runs-on: ubuntu-latest
     permissions:

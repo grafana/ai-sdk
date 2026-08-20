@@ -1,0 +1,1198 @@
+{
+  "baseline": {
+    "commit": "d76eb85a9a7f2dbe44ab2f3dc858ad5cdcb5242e",
+    "packages": {
+      "@ai-sdk/gateway": "4.0.52",
+      "@ai-sdk/provider": "4.0.7",
+      "@ai-sdk/provider-utils": "5.0.27",
+      "ai": "7.0.65"
+    }
+  },
+  "categories": [
+    {
+      "id": "call-options",
+      "members": {
+        "abortSignal": {
+          "exclusion": "Gateway getArgs removes abortSignal before body serialization and uses it only for Fetch cancellation."
+        },
+        "frequencyPenalty": {
+          "expected": 0,
+          "path": "/requests/0/body/frequencyPenalty",
+          "scenario": "unary-settings"
+        },
+        "headers": {
+          "expected": {},
+          "path": "/requests/0/body/headers",
+          "scenario": "unary-settings"
+        },
+        "includeRawChunks": {
+          "expected": false,
+          "path": "/requests/0/body/includeRawChunks",
+          "scenario": "unary-settings"
+        },
+        "maxOutputTokens": {
+          "expected": 0,
+          "path": "/requests/0/body/maxOutputTokens",
+          "scenario": "unary-settings"
+        },
+        "presencePenalty": {
+          "expected": 0,
+          "path": "/requests/0/body/presencePenalty",
+          "scenario": "unary-settings"
+        },
+        "prompt": {
+          "expected": [],
+          "path": "/requests/0/body/prompt",
+          "scenario": "unary-settings"
+        },
+        "providerOptions": {
+          "expected": {},
+          "path": "/requests/0/body/providerOptions",
+          "scenario": "presence-losses"
+        },
+        "reasoning": {
+          "path": "/requests/0/body/reasoning",
+          "presence": "present",
+          "scenario": "unary-settings"
+        },
+        "responseFormat": {
+          "path": "/requests/0/body/responseFormat",
+          "presence": "present",
+          "scenario": "unary-settings"
+        },
+        "seed": {
+          "expected": 0,
+          "path": "/requests/0/body/seed",
+          "scenario": "unary-settings"
+        },
+        "stopSequences": {
+          "expected": [],
+          "path": "/requests/0/body/stopSequences",
+          "scenario": "unary-settings"
+        },
+        "temperature": {
+          "expected": 0,
+          "path": "/requests/0/body/temperature",
+          "scenario": "unary-settings"
+        },
+        "toolChoice": {
+          "path": "/requests/0/body/toolChoice",
+          "presence": "present",
+          "scenario": "tool-choice-auto"
+        },
+        "tools": {
+          "expected": [],
+          "path": "/requests/0/body/tools",
+          "scenario": "unary-settings"
+        },
+        "topK": {
+          "expected": 0,
+          "path": "/requests/0/body/topK",
+          "scenario": "unary-settings"
+        },
+        "topP": {
+          "expected": 0,
+          "path": "/requests/0/body/topP",
+          "scenario": "unary-settings"
+        }
+      },
+      "source": "@ai-sdk/provider/src/language-model/v4/language-model-v4-call-options.ts"
+    },
+    {
+      "id": "message-role",
+      "members": {
+        "assistant": {
+          "expected": "assistant",
+          "path": "/requests/0/body/prompt/2/role",
+          "scenario": "streaming-prompt-tools"
+        },
+        "system": {
+          "expected": "system",
+          "path": "/requests/0/body/prompt/0/role",
+          "scenario": "streaming-prompt-tools"
+        },
+        "tool": {
+          "expected": "tool",
+          "path": "/requests/0/body/prompt/3/role",
+          "scenario": "streaming-prompt-tools"
+        },
+        "user": {
+          "expected": "user",
+          "path": "/requests/0/body/prompt/1/role",
+          "scenario": "streaming-prompt-tools"
+        }
+      },
+      "source": "@ai-sdk/provider/src/language-model/v4/language-model-v4-prompt.ts"
+    },
+    {
+      "id": "file-data",
+      "members": {
+        "data": {
+          "expected": "data",
+          "path": "/requests/0/body/prompt/1/content/1/data/type",
+          "scenario": "streaming-prompt-tools"
+        },
+        "reference": {
+          "expected": "reference",
+          "path": "/requests/0/body/prompt/1/content/3/data/type",
+          "scenario": "streaming-prompt-tools"
+        },
+        "text": {
+          "expected": "text",
+          "path": "/requests/0/body/prompt/1/content/4/data/type",
+          "scenario": "streaming-prompt-tools"
+        },
+        "url": {
+          "expected": "url",
+          "path": "/requests/0/body/prompt/1/content/2/data/type",
+          "scenario": "streaming-prompt-tools"
+        }
+      },
+      "source": "@ai-sdk/provider/src/shared/v4/shared-v4-file-data.ts"
+    },
+    {
+      "id": "tool",
+      "members": {
+        "function": {
+          "expected": "function",
+          "path": "/requests/0/body/tools/0/type",
+          "scenario": "streaming-prompt-tools"
+        },
+        "provider": {
+          "expected": "provider",
+          "path": "/requests/0/body/tools/1/type",
+          "scenario": "streaming-prompt-tools"
+        }
+      },
+      "source": "@ai-sdk/provider/src/language-model/v4/language-model-v4-function-tool.ts and language-model-v4-provider-tool.ts"
+    },
+    {
+      "id": "tool-choice",
+      "members": {
+        "auto": {
+          "expected": "auto",
+          "path": "/requests/0/body/toolChoice/type",
+          "scenario": "tool-choice-auto"
+        },
+        "none": {
+          "expected": "none",
+          "path": "/requests/0/body/toolChoice/type",
+          "scenario": "tool-choice-none"
+        },
+        "required": {
+          "expected": "required",
+          "path": "/requests/0/body/toolChoice/type",
+          "scenario": "tool-choice-required"
+        },
+        "tool": {
+          "expected": "tool",
+          "path": "/requests/0/body/toolChoice/type",
+          "scenario": "tool-choice-tool"
+        }
+      },
+      "source": "@ai-sdk/provider/src/language-model/v4/language-model-v4-tool-choice.ts"
+    },
+    {
+      "id": "response-format",
+      "members": {
+        "json": {
+          "expected": "json",
+          "path": "/requests/0/body/responseFormat/type",
+          "scenario": "unary-settings"
+        },
+        "text": {
+          "expected": "text",
+          "path": "/requests/0/body/responseFormat/type",
+          "scenario": "response-format-text"
+        }
+      },
+      "source": "@ai-sdk/provider/src/language-model/v4/language-model-v4-call-options.ts"
+    },
+    {
+      "id": "reasoning",
+      "members": {
+        "high": {
+          "expected": "high",
+          "path": "/requests/0/body/reasoning",
+          "scenario": "reasoning-high"
+        },
+        "low": {
+          "expected": "low",
+          "path": "/requests/0/body/reasoning",
+          "scenario": "reasoning-low"
+        },
+        "medium": {
+          "expected": "medium",
+          "path": "/requests/0/body/reasoning",
+          "scenario": "reasoning-medium"
+        },
+        "minimal": {
+          "expected": "minimal",
+          "path": "/requests/0/body/reasoning",
+          "scenario": "reasoning-minimal"
+        },
+        "none": {
+          "expected": "none",
+          "path": "/requests/0/body/reasoning",
+          "scenario": "reasoning-none"
+        },
+        "provider-default": {
+          "expected": "provider-default",
+          "path": "/requests/0/body/reasoning",
+          "scenario": "reasoning-provider-default"
+        },
+        "xhigh": {
+          "expected": "xhigh",
+          "path": "/requests/0/body/reasoning",
+          "scenario": "reasoning-xhigh"
+        }
+      },
+      "source": "@ai-sdk/provider/src/language-model/v4/language-model-v4-call-options.ts"
+    },
+    {
+      "id": "tool-result-output",
+      "members": {
+        "content": {
+          "expected": "content",
+          "path": "/requests/0/body/prompt/2/content/12/output/type",
+          "scenario": "streaming-prompt-tools"
+        },
+        "error-json": {
+          "expected": "error-json",
+          "path": "/requests/0/body/prompt/2/content/11/output/type",
+          "scenario": "streaming-prompt-tools"
+        },
+        "error-text": {
+          "expected": "error-text",
+          "path": "/requests/0/body/prompt/2/content/10/output/type",
+          "scenario": "streaming-prompt-tools"
+        },
+        "execution-denied": {
+          "expected": "execution-denied",
+          "path": "/requests/0/body/prompt/2/content/9/output/type",
+          "scenario": "streaming-prompt-tools"
+        },
+        "json": {
+          "expected": "json",
+          "path": "/requests/0/body/prompt/2/content/8/output/type",
+          "scenario": "streaming-prompt-tools"
+        },
+        "text": {
+          "expected": "text",
+          "path": "/requests/0/body/prompt/2/content/7/output/type",
+          "scenario": "streaming-prompt-tools"
+        }
+      },
+      "source": "@ai-sdk/provider/src/language-model/v4/language-model-v4-prompt.ts"
+    },
+    {
+      "id": "tool-result-content",
+      "members": {
+        "custom": {
+          "expected": "custom",
+          "path": "/requests/0/body/prompt/2/content/12/output/value/2/type",
+          "scenario": "streaming-prompt-tools"
+        },
+        "file": {
+          "expected": "file",
+          "path": "/requests/0/body/prompt/2/content/12/output/value/1/type",
+          "scenario": "streaming-prompt-tools"
+        },
+        "text": {
+          "expected": "text",
+          "path": "/requests/0/body/prompt/2/content/12/output/value/0/type",
+          "scenario": "streaming-prompt-tools"
+        }
+      },
+      "source": "@ai-sdk/provider/src/language-model/v4/language-model-v4-prompt.ts"
+    },
+    {
+      "id": "user-content",
+      "members": {
+        "file": {
+          "expected": "file",
+          "path": "/requests/0/body/prompt/1/content/1/type",
+          "scenario": "streaming-prompt-tools"
+        },
+        "text": {
+          "expected": "text",
+          "path": "/requests/0/body/prompt/1/content/0/type",
+          "scenario": "streaming-prompt-tools"
+        }
+      },
+      "source": "@ai-sdk/provider/src/language-model/v4/language-model-v4-prompt.ts"
+    },
+    {
+      "id": "assistant-content",
+      "members": {
+        "custom": {
+          "expected": "custom",
+          "path": "/requests/0/body/prompt/2/content/2/type",
+          "scenario": "streaming-prompt-tools"
+        },
+        "file": {
+          "expected": "file",
+          "path": "/requests/0/body/prompt/2/content/1/type",
+          "scenario": "streaming-prompt-tools"
+        },
+        "reasoning": {
+          "expected": "reasoning",
+          "path": "/requests/0/body/prompt/2/content/3/type",
+          "scenario": "streaming-prompt-tools"
+        },
+        "reasoning-file": {
+          "expected": "reasoning-file",
+          "path": "/requests/0/body/prompt/2/content/4/type",
+          "scenario": "streaming-prompt-tools"
+        },
+        "text": {
+          "expected": "text",
+          "path": "/requests/0/body/prompt/2/content/0/type",
+          "scenario": "streaming-prompt-tools"
+        },
+        "tool-call": {
+          "expected": "tool-call",
+          "path": "/requests/0/body/prompt/2/content/6/type",
+          "scenario": "streaming-prompt-tools"
+        },
+        "tool-result": {
+          "expected": "tool-result",
+          "path": "/requests/0/body/prompt/2/content/7/type",
+          "scenario": "streaming-prompt-tools"
+        }
+      },
+      "source": "@ai-sdk/provider/src/language-model/v4/language-model-v4-prompt.ts"
+    },
+    {
+      "id": "tool-content",
+      "members": {
+        "tool-approval-response": {
+          "expected": "tool-approval-response",
+          "path": "/requests/0/body/prompt/3/content/1/type",
+          "scenario": "streaming-prompt-tools"
+        },
+        "tool-result": {
+          "expected": "tool-result",
+          "path": "/requests/0/body/prompt/3/content/0/type",
+          "scenario": "streaming-prompt-tools"
+        }
+      },
+      "source": "@ai-sdk/provider/src/language-model/v4/language-model-v4-prompt.ts"
+    },
+    {
+      "id": "reasoning-file-data",
+      "members": {
+        "data": {
+          "expected": "data",
+          "path": "/requests/0/body/prompt/2/content/4/data/type",
+          "scenario": "streaming-prompt-tools"
+        },
+        "url": {
+          "expected": "url",
+          "path": "/requests/0/body/prompt/2/content/5/data/type",
+          "scenario": "streaming-prompt-tools"
+        }
+      },
+      "source": "@ai-sdk/provider/src/language-model/v4/language-model-v4-prompt.ts"
+    },
+    {
+      "id": "system-message",
+      "members": {
+        "content": {
+          "path": "/requests/0/body/prompt/0/content",
+          "presence": "present",
+          "scenario": "streaming-prompt-tools"
+        },
+        "providerOptions": {
+          "path": "/requests/0/body/prompt/0/providerOptions",
+          "presence": "present",
+          "scenario": "streaming-prompt-tools"
+        },
+        "role": {
+          "expected": "system",
+          "path": "/requests/0/body/prompt/0/role",
+          "scenario": "streaming-prompt-tools"
+        }
+      },
+      "source": "@ai-sdk/provider/src/language-model/v4/language-model-v4-prompt.ts"
+    },
+    {
+      "id": "user-message",
+      "members": {
+        "content": {
+          "path": "/requests/0/body/prompt/1/content",
+          "presence": "present",
+          "scenario": "streaming-prompt-tools"
+        },
+        "providerOptions": {
+          "path": "/requests/0/body/prompt/1/providerOptions",
+          "presence": "present",
+          "scenario": "streaming-prompt-tools"
+        },
+        "role": {
+          "expected": "user",
+          "path": "/requests/0/body/prompt/1/role",
+          "scenario": "streaming-prompt-tools"
+        }
+      },
+      "source": "@ai-sdk/provider/src/language-model/v4/language-model-v4-prompt.ts"
+    },
+    {
+      "id": "assistant-message",
+      "members": {
+        "content": {
+          "path": "/requests/0/body/prompt/2/content",
+          "presence": "present",
+          "scenario": "streaming-prompt-tools"
+        },
+        "providerOptions": {
+          "path": "/requests/0/body/prompt/2/providerOptions",
+          "presence": "present",
+          "scenario": "streaming-prompt-tools"
+        },
+        "role": {
+          "expected": "assistant",
+          "path": "/requests/0/body/prompt/2/role",
+          "scenario": "streaming-prompt-tools"
+        }
+      },
+      "source": "@ai-sdk/provider/src/language-model/v4/language-model-v4-prompt.ts"
+    },
+    {
+      "id": "tool-message",
+      "members": {
+        "content": {
+          "path": "/requests/0/body/prompt/3/content",
+          "presence": "present",
+          "scenario": "streaming-prompt-tools"
+        },
+        "providerOptions": {
+          "path": "/requests/0/body/prompt/3/providerOptions",
+          "presence": "present",
+          "scenario": "streaming-prompt-tools"
+        },
+        "role": {
+          "expected": "tool",
+          "path": "/requests/0/body/prompt/3/role",
+          "scenario": "streaming-prompt-tools"
+        }
+      },
+      "source": "@ai-sdk/provider/src/language-model/v4/language-model-v4-prompt.ts"
+    },
+    {
+      "id": "text-part",
+      "members": {
+        "providerOptions": {
+          "expected": {},
+          "path": "/requests/0/body/prompt/1/content/0/providerOptions",
+          "scenario": "presence-losses"
+        },
+        "text": {
+          "expected": "",
+          "path": "/requests/0/body/prompt/1/content/0/text",
+          "scenario": "presence-losses"
+        },
+        "type": {
+          "expected": "text",
+          "path": "/requests/0/body/prompt/1/content/0/type",
+          "scenario": "presence-losses"
+        }
+      },
+      "source": "@ai-sdk/provider/src/language-model/v4/language-model-v4-prompt.ts"
+    },
+    {
+      "id": "file-part",
+      "members": {
+        "data": {
+          "path": "/requests/0/body/prompt/1/content/1/data",
+          "presence": "present",
+          "scenario": "presence-losses"
+        },
+        "filename": {
+          "expected": "",
+          "path": "/requests/0/body/prompt/1/content/1/filename",
+          "scenario": "presence-losses"
+        },
+        "mediaType": {
+          "expected": "",
+          "path": "/requests/0/body/prompt/1/content/1/mediaType",
+          "scenario": "presence-losses"
+        },
+        "providerOptions": {
+          "expected": {},
+          "path": "/requests/0/body/prompt/1/content/1/providerOptions",
+          "scenario": "presence-losses"
+        },
+        "type": {
+          "expected": "file",
+          "path": "/requests/0/body/prompt/1/content/1/type",
+          "scenario": "presence-losses"
+        }
+      },
+      "source": "@ai-sdk/provider/src/language-model/v4/language-model-v4-prompt.ts"
+    },
+    {
+      "id": "custom-part",
+      "members": {
+        "kind": {
+          "path": "/requests/0/body/prompt/2/content/0/kind",
+          "presence": "present",
+          "scenario": "presence-losses"
+        },
+        "providerOptions": {
+          "expected": {},
+          "path": "/requests/0/body/prompt/2/content/0/providerOptions",
+          "scenario": "presence-losses"
+        },
+        "type": {
+          "expected": "custom",
+          "path": "/requests/0/body/prompt/2/content/0/type",
+          "scenario": "presence-losses"
+        }
+      },
+      "source": "@ai-sdk/provider/src/language-model/v4/language-model-v4-prompt.ts"
+    },
+    {
+      "id": "reasoning-part",
+      "members": {
+        "providerOptions": {
+          "path": "/requests/0/body/prompt/2/content/3/providerOptions",
+          "presence": "present",
+          "scenario": "streaming-prompt-tools"
+        },
+        "text": {
+          "path": "/requests/0/body/prompt/2/content/3/text",
+          "presence": "present",
+          "scenario": "streaming-prompt-tools"
+        },
+        "type": {
+          "expected": "reasoning",
+          "path": "/requests/0/body/prompt/2/content/3/type",
+          "scenario": "streaming-prompt-tools"
+        }
+      },
+      "source": "@ai-sdk/provider/src/language-model/v4/language-model-v4-prompt.ts"
+    },
+    {
+      "id": "reasoning-file-part",
+      "members": {
+        "data": {
+          "path": "/requests/0/body/prompt/2/content/4/data",
+          "presence": "present",
+          "scenario": "streaming-prompt-tools"
+        },
+        "mediaType": {
+          "path": "/requests/0/body/prompt/2/content/4/mediaType",
+          "presence": "present",
+          "scenario": "streaming-prompt-tools"
+        },
+        "providerOptions": {
+          "path": "/requests/0/body/prompt/2/content/4/providerOptions",
+          "presence": "present",
+          "scenario": "streaming-prompt-tools"
+        },
+        "type": {
+          "expected": "reasoning-file",
+          "path": "/requests/0/body/prompt/2/content/4/type",
+          "scenario": "streaming-prompt-tools"
+        }
+      },
+      "source": "@ai-sdk/provider/src/language-model/v4/language-model-v4-prompt.ts"
+    },
+    {
+      "id": "tool-call-part",
+      "members": {
+        "input": {
+          "expected": {},
+          "path": "/requests/0/body/prompt/2/content/1/input",
+          "scenario": "presence-losses"
+        },
+        "providerExecuted": {
+          "expected": false,
+          "path": "/requests/0/body/prompt/2/content/1/providerExecuted",
+          "scenario": "presence-losses"
+        },
+        "providerOptions": {
+          "expected": {},
+          "path": "/requests/0/body/prompt/2/content/1/providerOptions",
+          "scenario": "presence-losses"
+        },
+        "toolCallId": {
+          "expected": "",
+          "path": "/requests/0/body/prompt/2/content/1/toolCallId",
+          "scenario": "presence-losses"
+        },
+        "toolName": {
+          "expected": "",
+          "path": "/requests/0/body/prompt/2/content/1/toolName",
+          "scenario": "presence-losses"
+        },
+        "type": {
+          "expected": "tool-call",
+          "path": "/requests/0/body/prompt/2/content/1/type",
+          "scenario": "presence-losses"
+        }
+      },
+      "source": "@ai-sdk/provider/src/language-model/v4/language-model-v4-prompt.ts"
+    },
+    {
+      "id": "tool-result-part",
+      "members": {
+        "output": {
+          "path": "/requests/0/body/prompt/2/content/2/output",
+          "presence": "present",
+          "scenario": "presence-losses"
+        },
+        "providerOptions": {
+          "expected": {},
+          "path": "/requests/0/body/prompt/2/content/2/providerOptions",
+          "scenario": "presence-losses"
+        },
+        "toolCallId": {
+          "expected": "",
+          "path": "/requests/0/body/prompt/2/content/2/toolCallId",
+          "scenario": "presence-losses"
+        },
+        "toolName": {
+          "expected": "",
+          "path": "/requests/0/body/prompt/2/content/2/toolName",
+          "scenario": "presence-losses"
+        },
+        "type": {
+          "expected": "tool-result",
+          "path": "/requests/0/body/prompt/2/content/2/type",
+          "scenario": "presence-losses"
+        }
+      },
+      "source": "@ai-sdk/provider/src/language-model/v4/language-model-v4-prompt.ts"
+    },
+    {
+      "id": "approval-response-part",
+      "members": {
+        "approvalId": {
+          "expected": "",
+          "path": "/requests/0/body/prompt/3/content/0/approvalId",
+          "scenario": "presence-losses"
+        },
+        "approved": {
+          "expected": false,
+          "path": "/requests/0/body/prompt/3/content/0/approved",
+          "scenario": "presence-losses"
+        },
+        "providerOptions": {
+          "expected": {},
+          "path": "/requests/0/body/prompt/3/content/0/providerOptions",
+          "scenario": "presence-losses"
+        },
+        "reason": {
+          "expected": "",
+          "path": "/requests/0/body/prompt/3/content/0/reason",
+          "scenario": "presence-losses"
+        },
+        "type": {
+          "expected": "tool-approval-response",
+          "path": "/requests/0/body/prompt/3/content/0/type",
+          "scenario": "presence-losses"
+        }
+      },
+      "source": "@ai-sdk/provider/src/language-model/v4/language-model-v4-prompt.ts"
+    },
+    {
+      "id": "file-data-data",
+      "members": {
+        "data": {
+          "path": "/requests/0/body/prompt/1/content/1/data/data",
+          "presence": "present",
+          "scenario": "streaming-prompt-tools"
+        },
+        "type": {
+          "expected": "data",
+          "path": "/requests/0/body/prompt/1/content/1/data/type",
+          "scenario": "streaming-prompt-tools"
+        }
+      },
+      "source": "@ai-sdk/provider/src/shared/v4/shared-v4-file-data.ts"
+    },
+    {
+      "id": "file-data-url",
+      "members": {
+        "type": {
+          "expected": "url",
+          "path": "/requests/0/body/prompt/1/content/2/data/type",
+          "scenario": "streaming-prompt-tools"
+        },
+        "url": {
+          "path": "/requests/0/body/prompt/1/content/2/data/url",
+          "presence": "present",
+          "scenario": "streaming-prompt-tools"
+        }
+      },
+      "source": "@ai-sdk/provider/src/shared/v4/shared-v4-file-data.ts"
+    },
+    {
+      "id": "file-data-reference",
+      "members": {
+        "reference": {
+          "path": "/requests/0/body/prompt/1/content/3/data/reference",
+          "presence": "present",
+          "scenario": "streaming-prompt-tools"
+        },
+        "type": {
+          "expected": "reference",
+          "path": "/requests/0/body/prompt/1/content/3/data/type",
+          "scenario": "streaming-prompt-tools"
+        }
+      },
+      "source": "@ai-sdk/provider/src/shared/v4/shared-v4-file-data.ts"
+    },
+    {
+      "id": "file-data-text",
+      "members": {
+        "text": {
+          "expected": "",
+          "path": "/requests/0/body/prompt/1/content/1/data/text",
+          "scenario": "presence-losses"
+        },
+        "type": {
+          "expected": "text",
+          "path": "/requests/0/body/prompt/1/content/1/data/type",
+          "scenario": "presence-losses"
+        }
+      },
+      "source": "@ai-sdk/provider/src/shared/v4/shared-v4-file-data.ts"
+    },
+    {
+      "id": "function-tool",
+      "members": {
+        "description": {
+          "expected": "",
+          "path": "/requests/0/body/tools/0/description",
+          "scenario": "presence-losses"
+        },
+        "inputExamples": {
+          "expected": [],
+          "path": "/requests/0/body/tools/0/inputExamples",
+          "scenario": "presence-losses"
+        },
+        "inputSchema": {
+          "path": "/requests/0/body/tools/0/inputSchema",
+          "presence": "present",
+          "scenario": "presence-losses"
+        },
+        "name": {
+          "expected": "",
+          "path": "/requests/0/body/tools/0/name",
+          "scenario": "presence-losses"
+        },
+        "providerOptions": {
+          "expected": {},
+          "path": "/requests/0/body/tools/0/providerOptions",
+          "scenario": "presence-losses"
+        },
+        "strict": {
+          "expected": false,
+          "path": "/requests/0/body/tools/0/strict",
+          "scenario": "presence-losses"
+        },
+        "type": {
+          "expected": "function",
+          "path": "/requests/0/body/tools/0/type",
+          "scenario": "presence-losses"
+        }
+      },
+      "source": "@ai-sdk/provider/src/language-model/v4/language-model-v4-function-tool.ts and language-model-v4-provider-tool.ts"
+    },
+    {
+      "id": "provider-tool",
+      "members": {
+        "args": {
+          "expected": {},
+          "path": "/requests/0/body/tools/1/args",
+          "scenario": "presence-losses"
+        },
+        "id": {
+          "path": "/requests/0/body/tools/1/id",
+          "presence": "present",
+          "scenario": "presence-losses"
+        },
+        "name": {
+          "expected": "",
+          "path": "/requests/0/body/tools/1/name",
+          "scenario": "presence-losses"
+        },
+        "type": {
+          "expected": "provider",
+          "path": "/requests/0/body/tools/1/type",
+          "scenario": "presence-losses"
+        }
+      },
+      "source": "@ai-sdk/provider/src/language-model/v4/language-model-v4-function-tool.ts and language-model-v4-provider-tool.ts"
+    },
+    {
+      "id": "input-example",
+      "members": {
+        "input": {
+          "path": "/requests/0/body/tools/0/inputExamples/0/input",
+          "presence": "present",
+          "scenario": "streaming-prompt-tools"
+        }
+      },
+      "source": "@ai-sdk/provider/src/language-model/v4/language-model-v4-function-tool.ts"
+    },
+    {
+      "id": "tool-choice-auto-arm",
+      "members": {
+        "type": {
+          "expected": "auto",
+          "path": "/requests/0/body/toolChoice/type",
+          "scenario": "tool-choice-auto"
+        }
+      },
+      "source": "@ai-sdk/provider/src/language-model/v4/language-model-v4-tool-choice.ts"
+    },
+    {
+      "id": "tool-choice-none-arm",
+      "members": {
+        "type": {
+          "expected": "none",
+          "path": "/requests/0/body/toolChoice/type",
+          "scenario": "tool-choice-none"
+        }
+      },
+      "source": "@ai-sdk/provider/src/language-model/v4/language-model-v4-tool-choice.ts"
+    },
+    {
+      "id": "tool-choice-required-arm",
+      "members": {
+        "type": {
+          "expected": "required",
+          "path": "/requests/0/body/toolChoice/type",
+          "scenario": "tool-choice-required"
+        }
+      },
+      "source": "@ai-sdk/provider/src/language-model/v4/language-model-v4-tool-choice.ts"
+    },
+    {
+      "id": "tool-choice-tool-arm",
+      "members": {
+        "toolName": {
+          "expected": "",
+          "path": "/requests/0/body/toolChoice/toolName",
+          "scenario": "presence-losses"
+        },
+        "type": {
+          "expected": "tool",
+          "path": "/requests/0/body/toolChoice/type",
+          "scenario": "presence-losses"
+        }
+      },
+      "source": "@ai-sdk/provider/src/language-model/v4/language-model-v4-tool-choice.ts"
+    },
+    {
+      "id": "response-format-text-arm",
+      "members": {
+        "type": {
+          "expected": "text",
+          "path": "/requests/0/body/responseFormat/type",
+          "scenario": "response-format-text"
+        }
+      },
+      "source": "@ai-sdk/provider/src/language-model/v4/language-model-v4-call-options.ts"
+    },
+    {
+      "id": "response-format-json-arm",
+      "members": {
+        "description": {
+          "expected": "",
+          "path": "/requests/0/body/responseFormat/description",
+          "scenario": "presence-losses"
+        },
+        "name": {
+          "expected": "",
+          "path": "/requests/0/body/responseFormat/name",
+          "scenario": "presence-losses"
+        },
+        "schema": {
+          "path": "/requests/0/body/responseFormat/schema",
+          "presence": "present",
+          "scenario": "presence-losses"
+        },
+        "type": {
+          "expected": "json",
+          "path": "/requests/0/body/responseFormat/type",
+          "scenario": "presence-losses"
+        }
+      },
+      "source": "@ai-sdk/provider/src/language-model/v4/language-model-v4-call-options.ts"
+    },
+    {
+      "id": "tool-output-text",
+      "members": {
+        "providerOptions": {
+          "expected": {},
+          "path": "/requests/0/body/prompt/2/content/2/output/providerOptions",
+          "scenario": "presence-losses"
+        },
+        "type": {
+          "expected": "text",
+          "path": "/requests/0/body/prompt/2/content/2/output/type",
+          "scenario": "presence-losses"
+        },
+        "value": {
+          "expected": "",
+          "path": "/requests/0/body/prompt/2/content/2/output/value",
+          "scenario": "presence-losses"
+        }
+      },
+      "source": "@ai-sdk/provider/src/language-model/v4/language-model-v4-prompt.ts"
+    },
+    {
+      "id": "tool-output-json",
+      "members": {
+        "providerOptions": {
+          "path": "/requests/0/body/prompt/2/content/8/output/providerOptions",
+          "presence": "present",
+          "scenario": "streaming-prompt-tools"
+        },
+        "type": {
+          "expected": "json",
+          "path": "/requests/0/body/prompt/2/content/8/output/type",
+          "scenario": "streaming-prompt-tools"
+        },
+        "value": {
+          "path": "/requests/0/body/prompt/2/content/8/output/value",
+          "presence": "present",
+          "scenario": "streaming-prompt-tools"
+        }
+      },
+      "source": "@ai-sdk/provider/src/language-model/v4/language-model-v4-prompt.ts"
+    },
+    {
+      "id": "tool-output-denied",
+      "members": {
+        "providerOptions": {
+          "path": "/requests/0/body/prompt/2/content/9/output/providerOptions",
+          "presence": "present",
+          "scenario": "streaming-prompt-tools"
+        },
+        "reason": {
+          "expected": "",
+          "path": "/requests/0/body/prompt/2/content/9/output/reason",
+          "scenario": "streaming-prompt-tools"
+        },
+        "type": {
+          "expected": "execution-denied",
+          "path": "/requests/0/body/prompt/2/content/9/output/type",
+          "scenario": "streaming-prompt-tools"
+        }
+      },
+      "source": "@ai-sdk/provider/src/language-model/v4/language-model-v4-prompt.ts"
+    },
+    {
+      "id": "tool-output-error-text",
+      "members": {
+        "providerOptions": {
+          "path": "/requests/0/body/prompt/2/content/10/output/providerOptions",
+          "presence": "present",
+          "scenario": "streaming-prompt-tools"
+        },
+        "type": {
+          "expected": "error-text",
+          "path": "/requests/0/body/prompt/2/content/10/output/type",
+          "scenario": "streaming-prompt-tools"
+        },
+        "value": {
+          "path": "/requests/0/body/prompt/2/content/10/output/value",
+          "presence": "present",
+          "scenario": "streaming-prompt-tools"
+        }
+      },
+      "source": "@ai-sdk/provider/src/language-model/v4/language-model-v4-prompt.ts"
+    },
+    {
+      "id": "tool-output-error-json",
+      "members": {
+        "providerOptions": {
+          "path": "/requests/0/body/prompt/2/content/11/output/providerOptions",
+          "presence": "present",
+          "scenario": "streaming-prompt-tools"
+        },
+        "type": {
+          "expected": "error-json",
+          "path": "/requests/0/body/prompt/2/content/11/output/type",
+          "scenario": "streaming-prompt-tools"
+        },
+        "value": {
+          "path": "/requests/0/body/prompt/2/content/11/output/value",
+          "presence": "present",
+          "scenario": "streaming-prompt-tools"
+        }
+      },
+      "source": "@ai-sdk/provider/src/language-model/v4/language-model-v4-prompt.ts"
+    },
+    {
+      "id": "tool-output-content",
+      "members": {
+        "type": {
+          "expected": "content",
+          "path": "/requests/0/body/prompt/2/content/12/output/type",
+          "scenario": "streaming-prompt-tools"
+        },
+        "value": {
+          "path": "/requests/0/body/prompt/2/content/12/output/value",
+          "presence": "present",
+          "scenario": "streaming-prompt-tools"
+        }
+      },
+      "source": "@ai-sdk/provider/src/language-model/v4/language-model-v4-prompt.ts"
+    },
+    {
+      "id": "tool-output-content-text",
+      "members": {
+        "providerOptions": {
+          "path": "/requests/0/body/prompt/2/content/12/output/value/0/providerOptions",
+          "presence": "present",
+          "scenario": "streaming-prompt-tools"
+        },
+        "text": {
+          "path": "/requests/0/body/prompt/2/content/12/output/value/0/text",
+          "presence": "present",
+          "scenario": "streaming-prompt-tools"
+        },
+        "type": {
+          "expected": "text",
+          "path": "/requests/0/body/prompt/2/content/12/output/value/0/type",
+          "scenario": "streaming-prompt-tools"
+        }
+      },
+      "source": "@ai-sdk/provider/src/language-model/v4/language-model-v4-prompt.ts"
+    },
+    {
+      "id": "tool-output-content-file",
+      "members": {
+        "data": {
+          "path": "/requests/0/body/prompt/3/content/1/output/value/0/data",
+          "presence": "present",
+          "scenario": "presence-losses"
+        },
+        "filename": {
+          "expected": "",
+          "path": "/requests/0/body/prompt/3/content/1/output/value/0/filename",
+          "scenario": "presence-losses"
+        },
+        "mediaType": {
+          "expected": "",
+          "path": "/requests/0/body/prompt/3/content/1/output/value/0/mediaType",
+          "scenario": "presence-losses"
+        },
+        "providerOptions": {
+          "expected": {},
+          "path": "/requests/0/body/prompt/3/content/1/output/value/0/providerOptions",
+          "scenario": "presence-losses"
+        },
+        "type": {
+          "expected": "file",
+          "path": "/requests/0/body/prompt/3/content/1/output/value/0/type",
+          "scenario": "presence-losses"
+        }
+      },
+      "source": "@ai-sdk/provider/src/language-model/v4/language-model-v4-prompt.ts"
+    },
+    {
+      "id": "tool-output-content-custom",
+      "members": {
+        "providerOptions": {
+          "path": "/requests/0/body/prompt/2/content/12/output/value/2/providerOptions",
+          "presence": "present",
+          "scenario": "streaming-prompt-tools"
+        },
+        "type": {
+          "expected": "custom",
+          "path": "/requests/0/body/prompt/2/content/12/output/value/2/type",
+          "scenario": "streaming-prompt-tools"
+        }
+      },
+      "source": "@ai-sdk/provider/src/language-model/v4/language-model-v4-prompt.ts"
+    },
+    {
+      "id": "gateway-transform",
+      "members": {
+        "abort-signal-excluded": {
+          "exclusion": "abortSignal is removed from the JSON body and passed to Fetch."
+        },
+        "call-header-body": {
+          "expected": "call-value",
+          "path": "/requests/0/body/headers/x-call",
+          "scenario": "header-call"
+        },
+        "call-header-outer": {
+          "expected": "call-value",
+          "path": "/requests/0/headers/x-call",
+          "scenario": "header-call"
+        },
+        "call-trace-body": {
+          "expected": "00-trace-parent",
+          "path": "/requests/0/body/headers/traceparent",
+          "scenario": "header-call"
+        },
+        "call-trace-outer": {
+          "expected": "00-trace-parent",
+          "path": "/requests/0/headers/traceparent",
+          "scenario": "header-call"
+        },
+        "case-variant-content-type-exclusion": {
+          "expected": "unsupported-reserved-collision",
+          "path": "/requests/0/envelope",
+          "scenario": "header-case-content-type"
+        },
+        "case-variant-last-value": {
+          "expected": "call",
+          "path": "/requests/0/headers/x-case",
+          "scenario": "header-case-custom"
+        },
+        "case-variant-protocol-last-value": {
+          "expected": "4",
+          "path": "/requests/0/headers/ai-language-model-specification-version",
+          "scenario": "header-case-protocol"
+        },
+        "exact-content-type-exclusion": {
+          "expected": "unsupported-reserved-collision",
+          "path": "/requests/0/envelope",
+          "scenario": "header-exact-content-type"
+        },
+        "exact-protocol-replacement": {
+          "expected": "4",
+          "path": "/requests/0/headers/ai-language-model-specification-version",
+          "scenario": "header-exact-protocol"
+        },
+        "language-model-relative-url": {
+          "expected": "/language-model",
+          "path": "/requests/0/path",
+          "scenario": "unary-settings"
+        },
+        "observability-body": {
+          "expected": "caller-observability",
+          "path": "/requests/0/body/headers/ai-o11y-deployment-id",
+          "scenario": "header-observability"
+        },
+        "observability-last-value": {
+          "expected": "deployment-evidence",
+          "path": "/requests/0/headers/ai-o11y-deployment-id",
+          "scenario": "header-observability"
+        },
+        "same-key-replacement": {
+          "expected": "call",
+          "path": "/requests/0/headers/x-exact",
+          "scenario": "header-exact-custom"
+        },
+        "uint8array-base64": {
+          "expected": "AAEC/w==",
+          "path": "/requests/0/body/prompt/1/content/1/data/data",
+          "scenario": "streaming-prompt-tools"
+        }
+      },
+      "source": "@ai-sdk/gateway/src/gateway-language-model.ts and @ai-sdk/provider-utils request helpers"
+    }
+  ],
+  "schemaVersion": 1
+}

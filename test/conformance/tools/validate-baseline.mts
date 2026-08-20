@@ -57,6 +57,14 @@ export function validateBaselineFiles(manifestPath: string, packagePaths: string
   return errors;
 }
 
+export const defaultPackagePaths = [
+  join(__dirname, "package.json"),
+  join(__dirname, "..", "..", "integration", "package.json"),
+  join(__dirname, "..", "..", "interop", "package.json"),
+  join(__dirname, "..", "..", "cli", "package.json"),
+  join(__dirname, "..", "..", "providerwire-v4", "package.json"),
+];
+
 function argValue(name: string): string | undefined {
   const prefix = `${name}=`;
   const match = process.argv.find((arg) => arg.startsWith(prefix));
@@ -68,15 +76,7 @@ function main(): void {
   const packageArgs = process.argv
     .filter((arg) => arg.startsWith("--package="))
     .map((arg) => arg.slice("--package=".length));
-  const packagePaths =
-    packageArgs.length > 0
-      ? packageArgs
-      : [
-          join(__dirname, "package.json"),
-          join(__dirname, "..", "..", "integration", "package.json"),
-          join(__dirname, "..", "..", "interop", "package.json"),
-          join(__dirname, "..", "..", "cli", "package.json"),
-        ];
+  const packagePaths = packageArgs.length > 0 ? packageArgs : defaultPackagePaths;
   const errors = validateBaselineFiles(manifestPath, packagePaths);
   if (errors.length > 0) {
     for (const error of errors) {

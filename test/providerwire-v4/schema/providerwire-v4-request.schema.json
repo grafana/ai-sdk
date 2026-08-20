@@ -1,0 +1,560 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://grafana.com/schemas/providerwire-v4/request.json",
+  "title": "ProviderWire V4 language-model request body",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["prompt"],
+  "properties": {
+    "prompt": { "$ref": "#/$defs/prompt" },
+    "maxOutputTokens": { "type": "number" },
+    "temperature": { "type": "number" },
+    "stopSequences": { "type": "array", "items": { "type": "string" } },
+    "topP": { "type": "number" },
+    "topK": { "type": "number" },
+    "presencePenalty": { "type": "number" },
+    "frequencyPenalty": { "type": "number" },
+    "responseFormat": { "$ref": "#/$defs/responseFormat" },
+    "seed": { "type": "number" },
+    "tools": { "type": "array", "items": { "$ref": "#/$defs/tool" } },
+    "toolChoice": { "$ref": "#/$defs/toolChoice" },
+    "includeRawChunks": { "type": "boolean" },
+    "headers": { "$ref": "#/$defs/headers" },
+    "reasoning": {
+      "enum": ["provider-default", "none", "minimal", "low", "medium", "high", "xhigh"]
+    },
+    "providerOptions": { "$ref": "#/$defs/providerOptions" }
+  },
+  "$defs": {
+    "providerOptions": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    "headers": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "prompt": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/message" }
+    },
+    "message": {
+      "oneOf": [
+        { "$ref": "#/$defs/systemMessage" },
+        { "$ref": "#/$defs/userMessage" },
+        { "$ref": "#/$defs/assistantMessage" },
+        { "$ref": "#/$defs/toolMessage" }
+      ]
+    },
+    "systemMessage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "content"],
+      "properties": {
+        "role": { "const": "system" },
+        "content": { "type": "string" },
+        "providerOptions": { "$ref": "#/$defs/providerOptions" }
+      }
+    },
+    "userMessage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "content"],
+      "properties": {
+        "role": { "const": "user" },
+        "content": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              { "$ref": "#/$defs/textPart" },
+              { "$ref": "#/$defs/filePart" }
+            ]
+          }
+        },
+        "providerOptions": { "$ref": "#/$defs/providerOptions" }
+      }
+    },
+    "assistantMessage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "content"],
+      "properties": {
+        "role": { "const": "assistant" },
+        "content": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              { "$ref": "#/$defs/textPart" },
+              { "$ref": "#/$defs/filePart" },
+              { "$ref": "#/$defs/customPart" },
+              { "$ref": "#/$defs/reasoningPart" },
+              { "$ref": "#/$defs/reasoningFilePart" },
+              { "$ref": "#/$defs/toolCallPart" },
+              { "$ref": "#/$defs/toolResultPart" }
+            ]
+          }
+        },
+        "providerOptions": { "$ref": "#/$defs/providerOptions" }
+      }
+    },
+    "toolMessage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "content"],
+      "properties": {
+        "role": { "const": "tool" },
+        "content": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              { "$ref": "#/$defs/toolResultPart" },
+              { "$ref": "#/$defs/toolApprovalResponsePart" }
+            ]
+          }
+        },
+        "providerOptions": { "$ref": "#/$defs/providerOptions" }
+      }
+    },
+    "textPart": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "text"],
+      "properties": {
+        "type": { "const": "text" },
+        "text": { "type": "string" },
+        "providerOptions": { "$ref": "#/$defs/providerOptions" }
+      }
+    },
+    "reasoningPart": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "text"],
+      "properties": {
+        "type": { "const": "reasoning" },
+        "text": { "type": "string" },
+        "providerOptions": { "$ref": "#/$defs/providerOptions" }
+      }
+    },
+    "customPart": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "kind"],
+      "properties": {
+        "type": { "const": "custom" },
+        "kind": { "type": "string", "pattern": "^.*\\..*$" },
+        "providerOptions": { "$ref": "#/$defs/providerOptions" }
+      }
+    },
+    "filePart": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "data", "mediaType"],
+      "properties": {
+        "type": { "const": "file" },
+        "data": { "$ref": "#/$defs/fileData" },
+        "mediaType": { "type": "string" },
+        "filename": { "type": "string" },
+        "providerOptions": { "$ref": "#/$defs/providerOptions" }
+      }
+    },
+    "reasoningFilePart": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "data", "mediaType"],
+      "properties": {
+        "type": { "const": "reasoning-file" },
+        "data": {
+          "oneOf": [
+            { "$ref": "#/$defs/fileDataData" },
+            { "$ref": "#/$defs/fileDataUrl" }
+          ]
+        },
+        "mediaType": { "type": "string" },
+        "providerOptions": { "$ref": "#/$defs/providerOptions" }
+      }
+    },
+    "fileData": {
+      "oneOf": [
+        { "$ref": "#/$defs/fileDataData" },
+        { "$ref": "#/$defs/fileDataUrl" },
+        { "$ref": "#/$defs/fileDataReference" },
+        { "$ref": "#/$defs/fileDataText" }
+      ]
+    },
+    "fileDataData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "data"],
+      "properties": {
+        "type": { "const": "data" },
+        "data": { "type": "string" }
+      }
+    },
+    "fileDataUrl": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "url"],
+      "properties": {
+        "type": { "const": "url" },
+        "url": { "type": "string" }
+      }
+    },
+    "fileDataReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "reference"],
+      "properties": {
+        "type": { "const": "reference" },
+        "reference": {
+          "type": "object",
+          "propertyNames": { "not": { "const": "type" } },
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    },
+    "fileDataText": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "text"],
+      "properties": {
+        "type": { "const": "text" },
+        "text": { "type": "string" }
+      }
+    },
+    "toolCallPart": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "toolCallId", "toolName", "input"],
+      "properties": {
+        "type": { "const": "tool-call" },
+        "toolCallId": { "type": "string" },
+        "toolName": { "type": "string" },
+        "input": true,
+        "providerExecuted": { "type": "boolean" },
+        "providerOptions": { "$ref": "#/$defs/providerOptions" }
+      }
+    },
+    "toolResultPart": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "toolCallId", "toolName", "output"],
+      "properties": {
+        "type": { "const": "tool-result" },
+        "toolCallId": { "type": "string" },
+        "toolName": { "type": "string" },
+        "output": { "$ref": "#/$defs/toolResultOutput" },
+        "providerOptions": { "$ref": "#/$defs/providerOptions" }
+      }
+    },
+    "toolApprovalResponsePart": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "approvalId", "approved"],
+      "properties": {
+        "type": { "const": "tool-approval-response" },
+        "approvalId": { "type": "string" },
+        "approved": { "type": "boolean" },
+        "reason": { "type": "string" },
+        "providerOptions": { "$ref": "#/$defs/providerOptions" }
+      }
+    },
+    "toolResultOutput": {
+      "oneOf": [
+        { "$ref": "#/$defs/textToolOutput" },
+        { "$ref": "#/$defs/jsonToolOutput" },
+        { "$ref": "#/$defs/executionDeniedToolOutput" },
+        { "$ref": "#/$defs/errorTextToolOutput" },
+        { "$ref": "#/$defs/errorJsonToolOutput" },
+        { "$ref": "#/$defs/contentToolOutput" }
+      ]
+    },
+    "textToolOutput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "value"],
+      "properties": {
+        "type": { "const": "text" },
+        "value": { "type": "string" },
+        "providerOptions": { "$ref": "#/$defs/providerOptions" }
+      }
+    },
+    "jsonToolOutput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "value"],
+      "properties": {
+        "type": { "const": "json" },
+        "value": true,
+        "providerOptions": { "$ref": "#/$defs/providerOptions" }
+      }
+    },
+    "executionDeniedToolOutput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": { "const": "execution-denied" },
+        "reason": { "type": "string" },
+        "providerOptions": { "$ref": "#/$defs/providerOptions" }
+      }
+    },
+    "errorTextToolOutput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "value"],
+      "properties": {
+        "type": { "const": "error-text" },
+        "value": { "type": "string" },
+        "providerOptions": { "$ref": "#/$defs/providerOptions" }
+      }
+    },
+    "errorJsonToolOutput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "value"],
+      "properties": {
+        "type": { "const": "error-json" },
+        "value": true,
+        "providerOptions": { "$ref": "#/$defs/providerOptions" }
+      }
+    },
+    "contentToolOutput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "value"],
+      "properties": {
+        "type": { "const": "content" },
+        "value": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              { "$ref": "#/$defs/toolOutputTextPart" },
+              { "$ref": "#/$defs/toolOutputFilePart" },
+              { "$ref": "#/$defs/toolOutputCustomPart" }
+            ]
+          }
+        }
+      }
+    },
+    "toolOutputTextPart": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "text"],
+      "properties": {
+        "type": { "const": "text" },
+        "text": { "type": "string" },
+        "providerOptions": { "$ref": "#/$defs/providerOptions" }
+      }
+    },
+    "toolOutputFilePart": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "data", "mediaType"],
+      "properties": {
+        "type": { "const": "file" },
+        "data": { "$ref": "#/$defs/fileData" },
+        "mediaType": { "type": "string" },
+        "filename": { "type": "string" },
+        "providerOptions": { "$ref": "#/$defs/providerOptions" }
+      }
+    },
+    "toolOutputCustomPart": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": { "const": "custom" },
+        "providerOptions": { "$ref": "#/$defs/providerOptions" }
+      }
+    },
+    "tool": {
+      "oneOf": [
+        { "$ref": "#/$defs/functionTool" },
+        { "$ref": "#/$defs/providerTool" }
+      ]
+    },
+    "functionTool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "name", "inputSchema"],
+      "properties": {
+        "type": { "const": "function" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "inputSchema": { "$ref": "#/$defs/jsonSchema7" },
+        "inputExamples": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["input"],
+            "properties": {
+              "input": { "type": "object", "additionalProperties": true }
+            }
+          }
+        },
+        "strict": { "type": "boolean" },
+        "providerOptions": { "$ref": "#/$defs/providerOptions" }
+      }
+    },
+    "providerTool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id", "name", "args"],
+      "properties": {
+        "type": { "const": "provider" },
+        "id": { "type": "string", "pattern": "^.*\\..*$" },
+        "name": { "type": "string" },
+        "args": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "toolChoice": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type"],
+          "properties": { "type": { "const": "auto" } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type"],
+          "properties": { "type": { "const": "none" } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type"],
+          "properties": { "type": { "const": "required" } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "toolName"],
+          "properties": {
+            "type": { "const": "tool" },
+            "toolName": { "type": "string" }
+          }
+        }
+      ]
+    },
+    "jsonSchema7Definition": {
+      "oneOf": [
+        { "type": "boolean" },
+        { "$ref": "#/$defs/jsonSchema7" }
+      ]
+    },
+    "jsonSchema7": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "$id": { "type": "string" },
+        "$ref": { "type": "string" },
+        "$schema": { "type": "string" },
+        "$comment": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "default": true,
+        "readOnly": { "type": "boolean" },
+        "writeOnly": { "type": "boolean" },
+        "examples": { "type": "array", "items": true },
+        "multipleOf": { "type": "number" },
+        "maximum": { "type": "number" },
+        "exclusiveMaximum": { "type": "number" },
+        "minimum": { "type": "number" },
+        "exclusiveMinimum": { "type": "number" },
+        "maxLength": { "type": "integer", "minimum": 0 },
+        "minLength": { "type": "integer", "minimum": 0 },
+        "pattern": { "type": "string" },
+        "additionalItems": { "$ref": "#/$defs/jsonSchema7Definition" },
+        "items": {
+          "oneOf": [
+            { "$ref": "#/$defs/jsonSchema7Definition" },
+            { "type": "array", "items": { "$ref": "#/$defs/jsonSchema7Definition" } }
+          ]
+        },
+        "maxItems": { "type": "integer", "minimum": 0 },
+        "minItems": { "type": "integer", "minimum": 0 },
+        "uniqueItems": { "type": "boolean" },
+        "contains": { "$ref": "#/$defs/jsonSchema7Definition" },
+        "maxProperties": { "type": "integer", "minimum": 0 },
+        "minProperties": { "type": "integer", "minimum": 0 },
+        "required": { "type": "array", "items": { "type": "string" } },
+        "additionalProperties": { "$ref": "#/$defs/jsonSchema7Definition" },
+        "definitions": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/jsonSchema7Definition" }
+        },
+        "$defs": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/jsonSchema7Definition" }
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/jsonSchema7Definition" }
+        },
+        "patternProperties": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/jsonSchema7Definition" }
+        },
+        "dependencies": {
+          "type": "object",
+          "additionalProperties": {
+            "oneOf": [
+              { "$ref": "#/$defs/jsonSchema7Definition" },
+              { "type": "array", "items": { "type": "string" } }
+            ]
+          }
+        },
+        "propertyNames": { "$ref": "#/$defs/jsonSchema7Definition" },
+        "const": true,
+        "enum": { "type": "array", "items": true },
+        "type": {
+          "oneOf": [
+            { "enum": ["null", "boolean", "object", "array", "number", "string", "integer"] },
+            {
+              "type": "array",
+              "items": { "enum": ["null", "boolean", "object", "array", "number", "string", "integer"] },
+              "uniqueItems": true
+            }
+          ]
+        },
+        "format": { "type": "string" },
+        "contentMediaType": { "type": "string" },
+        "contentEncoding": { "type": "string" },
+        "if": { "$ref": "#/$defs/jsonSchema7Definition" },
+        "then": { "$ref": "#/$defs/jsonSchema7Definition" },
+        "else": { "$ref": "#/$defs/jsonSchema7Definition" },
+        "allOf": { "type": "array", "items": { "$ref": "#/$defs/jsonSchema7Definition" } },
+        "anyOf": { "type": "array", "items": { "$ref": "#/$defs/jsonSchema7Definition" } },
+        "oneOf": { "type": "array", "items": { "$ref": "#/$defs/jsonSchema7Definition" } },
+        "not": { "$ref": "#/$defs/jsonSchema7Definition" }
+      }
+    },
+    "responseFormat": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type"],
+          "properties": { "type": { "const": "text" } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type"],
+          "properties": {
+            "type": { "const": "json" },
+            "schema": { "$ref": "#/$defs/jsonSchema7" },
+            "name": { "type": "string" },
+            "description": { "type": "string" }
+          }
+        }
+      ]
+    }
+  }
+}

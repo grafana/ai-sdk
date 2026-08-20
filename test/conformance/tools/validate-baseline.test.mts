@@ -1,8 +1,38 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { validateBaseline } from "./validate-baseline.mts";
+import { defaultPackagePaths, validateBaseline } from "./validate-baseline.mts";
 
 describe("validateBaseline", () => {
+  it("registers the ProviderWire V4 evidence workspace", () => {
+    assert.ok(
+      defaultPackagePaths.some((packagePath) =>
+        packagePath.endsWith("/test/providerwire-v4/package.json"),
+      ),
+    );
+  });
+
+  it("accepts matching ProviderWire V4 package versions", () => {
+    const errors = validateBaseline(
+      {
+        packages: {
+          ai: "7.0.65",
+          "@ai-sdk/gateway": "4.0.52",
+          "@ai-sdk/provider": "4.0.7",
+        },
+      },
+      {
+        dependencies: {
+          ai: "7.0.65",
+          "@ai-sdk/gateway": "4.0.52",
+          "@ai-sdk/provider": "4.0.7",
+        },
+      },
+      "test/providerwire-v4/package.json",
+    );
+
+    assert.deepEqual(errors, []);
+  });
+
   it("accepts matching AI SDK package versions", () => {
     const errors = validateBaseline(
       {

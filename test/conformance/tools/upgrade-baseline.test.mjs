@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   buildPackageMetadata,
   compareStableVersions,
+  packagePaths,
   parseMinimumReleaseAge,
   parseTagCommit,
   selectMaturePackageSet,
@@ -11,6 +12,16 @@ import {
 function dependencies(entries) {
   return (packageName, version) => entries[`${packageName}@${version}`] ?? {};
 }
+
+describe("parity package consumers", () => {
+  it("registers the ProviderWire V4 evidence workspace", () => {
+    assert.ok(
+      packagePaths.some((packagePath) =>
+        packagePath.endsWith("/test/providerwire-v4/package.json"),
+      ),
+    );
+  });
+});
 
 describe("parseTagCommit", () => {
   it("prefers the peeled commit for annotated tags", () => {
