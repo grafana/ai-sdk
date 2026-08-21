@@ -82,22 +82,11 @@ func TestBuildRequest_EmptyFileDataArms(t *testing.T) {
 	})
 }
 
-func TestBuildRequest_RejectsInvalidRequestArms(t *testing.T) {
+func TestBuildRequest_InvokesSharedRequestValidation(t *testing.T) {
 	model := &model{modelID: "test", providerName: "test"}
-	data := provider.TextDataContent("value")
-	invalidNumber := provider.LanguageModelNumber{}
-	invalid := []provider.CallOptions{
-		{Prompt: []provider.Message{{Role: provider.Role("unsupported")}}},
-		{TopK: &invalidNumber},
-		{Prompt: []provider.Message{provider.NewUserMessage(provider.ContentPart{
-			Type: provider.ContentPartTypeFile, Data: &data, MediaType: "text/plain", Filename: "response.txt",
-		})}},
-		{Prompt: []provider.Message{provider.NewUserMessage(provider.ContentPart{Type: provider.ContentPartTypeText, Text: "value", ToolName: "inactive"})}},
-	}
-	for _, options := range invalid {
-		_, _, err := model.buildRequest(options, false)
-		require.ErrorContains(t, err, "invalid request")
-	}
+	invalid := provider.LanguageModelNumber{}
+	_, _, err := model.buildRequest(provider.CallOptions{TopK: &invalid}, false)
+	require.ErrorContains(t, err, "openai: invalid request: provider request topK is invalid")
 }
 
 func compatibleWarningHasFeature(warnings []provider.Warning, feature string) bool {

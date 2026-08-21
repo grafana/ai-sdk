@@ -106,11 +106,20 @@ func TestLegacyRequestAdapter_RejectsConflictingSelectedData(t *testing.T) {
 	emptyURLWithText := provider.URLDataContent("")
 	emptyURLWithText.Text = "value"
 
-	for _, data := range []provider.DataContent{emptyTextWithURL, emptyURLWithText} {
-		_, err := EncodeCallOptions(provider.CallOptions{Prompt: []provider.Message{
-			provider.NewUserMessage(provider.FilePart("text/plain", data)),
-		}})
-		require.ErrorContains(t, err, "selected file-data type")
+	tests := []struct {
+		name string
+		data provider.DataContent
+	}{
+		{name: "selected empty text with URL", data: emptyTextWithURL},
+		{name: "selected empty URL with text", data: emptyURLWithText},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := EncodeCallOptions(provider.CallOptions{Prompt: []provider.Message{
+				provider.NewUserMessage(provider.FilePart("text/plain", tc.data)),
+			}})
+			require.ErrorContains(t, err, "selected file-data type")
+		})
 	}
 }
 

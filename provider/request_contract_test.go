@@ -57,6 +57,8 @@ func TestDataContent_ConstructorsCopyInputs(t *testing.T) {
 }
 
 func TestDataContent_DataTypeConflicts(t *testing.T) {
+	selectedConflict := TextDataContent("")
+	selectedConflict.URL = "https://example.com"
 	tests := []struct {
 		name     string
 		data     DataContent
@@ -65,7 +67,7 @@ func TestDataContent_DataTypeConflicts(t *testing.T) {
 	}{
 		{name: "zero value"},
 		{name: "inferred conflict", data: DataContent{URL: "https://example.com", Text: "value"}, wantType: DataContentTypeURL},
-		{name: "selected conflict", data: DataContent{variant: DataContentTypeText, URL: "https://example.com"}, wantType: DataContentTypeText},
+		{name: "selected conflict", data: selectedConflict, wantType: DataContentTypeText},
 		{name: "same data arm", data: DataContent{Bytes: []byte{}, Base64: "dmFsdWU="}, wantType: DataContentTypeData, wantOK: true},
 	}
 	for _, tc := range tests {
@@ -78,34 +80,46 @@ func TestDataContent_DataTypeConflicts(t *testing.T) {
 }
 
 func TestDataContent_InvalidStates(t *testing.T) {
-	invalid := []DataContent{
-		{},
-		{Bytes: []byte{}, Base64: "dmFsdWU="},
-		{URL: "https://example.com", Text: "value"},
-		{variant: DataContentTypeText, URL: "https://example.com"},
-		ReferenceDataContent(nil),
-		ReferenceDataContent(json.RawMessage(`null`)),
-		ReferenceDataContent(json.RawMessage(`[]`)),
-		ReferenceDataContent(json.RawMessage(`{"count":1}`)),
+	selectedConflict := TextDataContent("")
+	selectedConflict.URL = "https://example.com"
+	invalid := []struct {
+		name string
+		data DataContent
+	}{
+		{name: "zero value"},
+		{name: "bytes and base64", data: DataContent{Bytes: []byte{}, Base64: "dmFsdWU="}},
+		{name: "inferred arm conflict", data: DataContent{URL: "https://example.com", Text: "value"}},
+		{name: "selected arm conflict", data: selectedConflict},
+		{name: "missing reference", data: ReferenceDataContent(nil)},
+		{name: "null reference", data: ReferenceDataContent(json.RawMessage(`null`))},
+		{name: "array reference", data: ReferenceDataContent(json.RawMessage(`[]`))},
+		{name: "non-string reference value", data: ReferenceDataContent(json.RawMessage(`{"count":1}`))},
 	}
-	for _, data := range invalid {
-		require.Error(t, data.Validate())
-		_, err := json.Marshal(data)
-		require.Error(t, err)
+	for _, tc := range invalid {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Error(t, tc.data.Validate())
+			_, err := json.Marshal(tc.data)
+			require.Error(t, err)
+		})
 	}
 }
 
 func TestDataContent_JSONRejectsInactivePayloads(t *testing.T) {
-	invalid := []string{
-		`{"type":"text","text":"","url":"https://example.com"}`,
-		`{"type":"data","data":"","reference":{}}`,
-		`{"type":"url","url":"","data":null}`,
-		`{"type":"reference","reference":{},"text":""}`,
-		`{"type":"data","data":"","bytes":""}`,
+	invalid := []struct {
+		name  string
+		input string
+	}{
+		{name: "text with URL", input: `{"type":"text","text":"","url":"https://example.com"}`},
+		{name: "data with reference", input: `{"type":"data","data":"","reference":{}}`},
+		{name: "URL with null data", input: `{"type":"url","url":"","data":null}`},
+		{name: "reference with text", input: `{"type":"reference","reference":{},"text":""}`},
+		{name: "data with bytes", input: `{"type":"data","data":"","bytes":""}`},
 	}
-	for _, input := range invalid {
-		var data DataContent
-		require.Error(t, json.Unmarshal([]byte(input), &data))
+	for _, tc := range invalid {
+		t.Run(tc.name, func(t *testing.T) {
+			var data DataContent
+			require.Error(t, json.Unmarshal([]byte(tc.input), &data))
+		})
 	}
 }
 

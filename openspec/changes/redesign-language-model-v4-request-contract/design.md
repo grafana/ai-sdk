@@ -137,7 +137,7 @@ func TextDataContent(text string) DataContent
 func (d DataContent) DataType() (DataContentType, bool)
 ```
 
-Bytes and raw JSON inputs are copied. `DataType` first uses private selection state when an empty payload requires it; otherwise it infers exactly one arm from legacy payload fields: non-nil bytes or non-empty base64, non-empty URL, non-empty reference, or non-empty text. `DataContent{}` and conflicting values are invalid.
+Bytes and raw JSON inputs are copied. `DataType` first uses private selection state when an empty payload requires it; otherwise it infers exactly one arm from legacy payload fields: non-nil bytes or non-empty base64, non-empty URL, non-empty reference, or non-empty text. `DataContent{}` and conflicting values are invalid. On conflict, `DataType` returns the selected or first inferred candidate with `ok == false`; callers must not treat that candidate as valid.
 
 The data arm permits empty bytes and empty base64; `Base64DataContent("")` uses the established non-nil empty-byte representation so selection and structural round trips remain stable. It rejects simultaneous non-nil bytes and non-empty base64. `URLDataContent("")` and `TextDataContent("")` record private URL or text selection. The reference arm requires a non-null JSON object whose values are strings and permits `{}`. Every selected or inferred arm rejects non-zero or non-nil payloads belonging to another arm.
 

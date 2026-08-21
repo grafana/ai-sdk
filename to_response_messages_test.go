@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/grafana/ai-sdk/internal/providerrequest"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -261,6 +262,7 @@ func TestToResponseMessages(t *testing.T) {
 		require.NotNil(t, file.FilePartFilename)
 		assert.Equal(t, "report.txt", *file.FilePartFilename)
 		assert.Empty(t, file.Filename)
+		require.NoError(t, providerrequest.Validate(provider.CallOptions{Prompt: got}))
 	})
 
 	t.Run("request filename presence is copied defensively", func(t *testing.T) {
@@ -352,6 +354,7 @@ func TestToResponseMessages(t *testing.T) {
 		assert.Equal(t, provider.ContentPartTypeText, got[0].Content[0].Type)
 		assert.Equal(t, provider.ContentPartTypeToolCall, got[0].Content[1].Type)
 		assert.Equal(t, provider.ContentPartTypeToolResult, got[0].Content[2].Type)
+		assert.Nil(t, got[0].Content[2].ProviderExecuted)
 		assert.Equal(t, provider.ContentPartTypeText, got[0].Content[3].Type)
 	})
 

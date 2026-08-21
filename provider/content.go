@@ -66,7 +66,9 @@ func TextDataContent(text string) DataContent {
 	return content
 }
 
-// DataType returns the uniquely selected or inferred data arm.
+// DataType returns the selected or inferred data arm and whether it is unique.
+// On conflicting arms, it returns the selected or first inferred candidate with
+// false; callers must not treat that candidate as valid.
 func (d DataContent) DataType() (DataContentType, bool) {
 	selected := d.variant
 	valid := true

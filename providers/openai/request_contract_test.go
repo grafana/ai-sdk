@@ -104,20 +104,10 @@ func TestBuildParams_CustomToolFileFilenamePresence(t *testing.T) {
 	}
 }
 
-func TestBuildParams_RejectsInvalidRequestArms(t *testing.T) {
-	data := provider.TextDataContent("value")
-	invalidNumber := provider.LanguageModelNumber{}
-	invalid := []provider.CallOptions{
-		{Prompt: []provider.Message{{Role: provider.Role("unsupported")}}},
-		{TopK: &invalidNumber},
-		{Prompt: []provider.Message{provider.NewUserMessage(provider.ContentPart{
-			Type: provider.ContentPartTypeFile, Data: &data, MediaType: "text/plain", Filename: "response.txt",
-		})}},
-	}
-	for _, options := range invalid {
-		_, _, _, err := buildParams("gpt-4.1", options)
-		require.ErrorContains(t, err, "invalid")
-	}
+func TestBuildParams_InvokesSharedRequestValidation(t *testing.T) {
+	invalid := provider.LanguageModelNumber{}
+	_, _, _, err := buildParams("gpt-4.1", provider.CallOptions{TopK: &invalid})
+	require.ErrorContains(t, err, "openai: invalid request: provider request topK is invalid")
 }
 
 func dataContentPointer(value provider.DataContent) *provider.DataContent { return &value }

@@ -32,7 +32,7 @@ func TextDataContent(text string) DataContent
 func (d DataContent) DataType() (DataContentType, bool)
 ```
 
-Bytes and raw JSON inputs SHALL be copied. `DataType` SHALL use private selection only when an empty payload requires it; otherwise it SHALL infer exactly one arm from non-nil bytes or non-empty base64, non-empty URL, non-empty reference, or non-empty text. `DataContent{}` and conflicting values SHALL remain invalid.
+Bytes and raw JSON inputs SHALL be copied. `DataType` SHALL use private selection only when an empty payload requires it; otherwise it SHALL infer exactly one arm from non-nil bytes or non-empty base64, non-empty URL, non-empty reference, or non-empty text. `DataContent{}` and conflicting values SHALL remain invalid. For a conflict, `DataType` SHALL return the selected or first inferred candidate with `ok == false`; callers MUST NOT treat that candidate as valid.
 
 The data arm SHALL permit empty bytes and empty base64. `Base64DataContent("")` SHALL use the established non-nil empty-byte representation so selection and structural round trips remain stable. Simultaneous non-nil bytes and non-empty base64 SHALL be invalid. Empty URL and empty text constructors SHALL record private selection. The reference arm SHALL require a non-null JSON object with string values and SHALL permit `{}`. Every selected or inferred arm SHALL reject non-zero or non-nil payloads belonging to another arm.
 

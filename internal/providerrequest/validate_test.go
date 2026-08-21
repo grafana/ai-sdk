@@ -28,27 +28,32 @@ func TestValidate_RequestArms(t *testing.T) {
 	}
 	require.NoError(t, Validate(valid))
 
-	invalid := []provider.CallOptions{
-		{Prompt: []provider.Message{{Role: provider.RoleSystem, Content: []provider.ContentPart{provider.TextPart("one"), provider.TextPart("two")}}}},
-		{Prompt: []provider.Message{{Role: provider.Role("unsupported")}}},
-		{Prompt: []provider.Message{{}}},
-		{Prompt: []provider.Message{provider.NewUserMessage(provider.ContentPart{Type: provider.ContentPartTypeFile, Data: &data, MediaType: "text/plain", Filename: "response.txt"})}},
-		{Prompt: []provider.Message{provider.NewUserMessage(provider.ContentPart{Type: provider.ContentPartTypeText, Text: "value", ToolName: "inactive"})}},
-		{Tools: []provider.Tool{{Type: provider.ToolTypeFunction, Name: "lookup", ID: "inactive"}}},
-		{ToolChoice: &provider.ToolChoice{Type: provider.ToolChoiceAuto, ToolName: "inactive"}},
-		{ToolChoice: &provider.ToolChoice{Type: provider.ToolChoiceType("unsupported")}},
-		{ResponseFormat: &provider.ResponseFormat{Type: provider.ResponseFormatText, Name: &empty}},
-		{Prompt: []provider.Message{provider.NewToolMessage(provider.ToolResultPart("call", "tool", &provider.ToolResultOutput{
+	invalid := []struct {
+		name    string
+		options provider.CallOptions
+	}{
+		{name: "system message with multiple parts", options: provider.CallOptions{Prompt: []provider.Message{{Role: provider.RoleSystem, Content: []provider.ContentPart{provider.TextPart("one"), provider.TextPart("two")}}}}},
+		{name: "unsupported role", options: provider.CallOptions{Prompt: []provider.Message{{Role: provider.Role("unsupported")}}}},
+		{name: "zero role", options: provider.CallOptions{Prompt: []provider.Message{{}}}},
+		{name: "response filename on request file", options: provider.CallOptions{Prompt: []provider.Message{provider.NewUserMessage(provider.ContentPart{Type: provider.ContentPartTypeFile, Data: &data, MediaType: "text/plain", Filename: "response.txt"})}}},
+		{name: "inactive text field", options: provider.CallOptions{Prompt: []provider.Message{provider.NewUserMessage(provider.ContentPart{Type: provider.ContentPartTypeText, Text: "value", ToolName: "inactive"})}}},
+		{name: "inactive function tool field", options: provider.CallOptions{Tools: []provider.Tool{{Type: provider.ToolTypeFunction, Name: "lookup", ID: "inactive"}}}},
+		{name: "inactive automatic tool name", options: provider.CallOptions{ToolChoice: &provider.ToolChoice{Type: provider.ToolChoiceAuto, ToolName: "inactive"}}},
+		{name: "unsupported tool choice", options: provider.CallOptions{ToolChoice: &provider.ToolChoice{Type: provider.ToolChoiceType("unsupported")}}},
+		{name: "inactive text response format field", options: provider.CallOptions{ResponseFormat: &provider.ResponseFormat{Type: provider.ResponseFormatText, Name: &empty}}},
+		{name: "inactive tool result output field", options: provider.CallOptions{Prompt: []provider.Message{provider.NewToolMessage(provider.ToolResultPart("call", "tool", &provider.ToolResultOutput{
 			Type: provider.ToolOutputText, Text: "value", Reason: &empty,
-		}))}},
-		{Prompt: []provider.Message{provider.NewToolMessage(provider.ToolResultPart("call", "tool", &provider.ToolResultOutput{
+		}))}}},
+		{name: "inactive tool result content field", options: provider.CallOptions{Prompt: []provider.Message{provider.NewToolMessage(provider.ToolResultPart("call", "tool", &provider.ToolResultOutput{
 			Type: provider.ToolOutputContent, Content: []provider.ToolResultContentValue{{
 				Type: provider.ToolContentText, Text: "value", MediaType: "inactive",
 			}},
-		}))}},
+		}))}}},
 	}
-	for _, options := range invalid {
-		require.Error(t, Validate(options))
+	for _, tc := range invalid {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Error(t, Validate(tc.options))
+		})
 	}
 }
 
@@ -58,6 +63,14 @@ func TestValidate_DomainStructFieldExhaustiveness(t *testing.T) {
 		value any
 		want  []string
 	}{
+		{
+			name:  "call options",
+			value: provider.CallOptions{},
+			want: []string{
+				"Prompt", "Tools", "ToolChoice", "MaxOutputTokens", "Temperature", "TopP", "TopK", "PresencePenalty", "FrequencyPenalty",
+				"StopSequences", "ResponseFormat", "Seed", "Reasoning", "IncludeRawChunks", "Headers", "ProviderOptions",
+			},
+		},
 		{
 			name:  "content part",
 			value: provider.ContentPart{},
@@ -104,7 +117,7 @@ func TestValidate_DomainStructFieldExhaustiveness(t *testing.T) {
 			for index := range typeOf.NumField() {
 				fields[index] = typeOf.Field(index).Name
 			}
-			require.Equal(t, tc.want, fields, "update providerrequest validation for the changed domain struct")
+			require.ElementsMatch(t, tc.want, fields, "update providerrequest validation for the changed domain struct")
 		})
 	}
 }

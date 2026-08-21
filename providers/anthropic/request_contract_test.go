@@ -196,21 +196,10 @@ func TestBuildParams_EmptyFileDataAndFilenamePresence(t *testing.T) {
 	})
 }
 
-func TestBuildParams_RejectsInvalidRequestArms(t *testing.T) {
-	data := provider.TextDataContent("value")
-	invalidNumber := provider.LanguageModelNumber{}
-	invalid := []provider.CallOptions{
-		{Prompt: []provider.Message{{Role: provider.Role("unsupported")}}},
-		{Seed: &invalidNumber},
-		{Prompt: []provider.Message{provider.NewUserMessage(provider.ContentPart{
-			Type: provider.ContentPartTypeFile, Data: &data, MediaType: "text/plain", Filename: "response.txt",
-		})}},
-		{Prompt: []provider.Message{provider.NewUserMessage(provider.ContentPart{Type: provider.ContentPartTypeText, Text: "value", ToolName: "inactive"})}},
-	}
-	for _, options := range invalid {
-		_, _, _, _, err := buildParams("claude-sonnet-4-6", options, false)
-		require.ErrorContains(t, err, "invalid request")
-	}
+func TestBuildParams_InvokesSharedRequestValidation(t *testing.T) {
+	invalid := provider.LanguageModelNumber{}
+	_, _, _, _, err := buildParams("claude-sonnet-4-6", provider.CallOptions{Seed: &invalid}, false)
+	require.ErrorContains(t, err, "anthropic: invalid request: provider request seed is invalid")
 }
 
 func warningHasFeature(warnings []provider.Warning, feature string) bool {
