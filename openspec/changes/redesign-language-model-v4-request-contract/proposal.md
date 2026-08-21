@@ -1,6 +1,6 @@
 ## Why
 
-The current Go `provider.LanguageModel` request model collapses valid distinctions emitted by the registered `@ai-sdk/gateway@4.0.52` client: fractional numeric settings, explicit false and empty optional scalars, and empty inline-text file data. Phase 1 established the exact pinned request evidence and executable loss witnesses; the provider contract must now preserve those semantics before a strict ProviderWire V4 mapper can be implemented.
+The current Go `provider.LanguageModel` request model collapses valid distinctions emitted by the registered `@ai-sdk/gateway@4.0.52` client: fractional numeric settings, explicit false and empty optional scalars, and empty inline-text file data. The pinned request evidence and archived loss analysis establish those distinctions; the provider contract must preserve them before a strict ProviderWire V4 mapper can be implemented.
 
 ## What Changes
 
@@ -11,7 +11,7 @@ The current Go `provider.LanguageModel` request model collapses valid distinctio
 - Update root orchestration, middleware, fallback, and every affected provider implementation to preserve exact supported behavior for the three redesigned numeric settings; their `LanguageModelNumber` values reject NaN and infinities.
 - Preserve the deployed tolerant legacy ProviderWire bytes for every request accepted by the parent encoder, including permissive inactive-arm states, while pinning parent-decoder evidence to commit `32e5ab7f1ab9e524477cc0ece04c690a89854a24` only where that decoder succeeded.
 - Retain provider custom request JSON methods only as compatibility behavior while moving legacy HTTP request authority to a request-only private adapter; response codecs remain unchanged.
-- Resolve the Phase 1 delta lifecycle by replacing loss witnesses with positive provider-contract assertions and keeping `check-providerwire-v4` non-mutating and non-vacuous.
+- Replace the temporary loss witnesses with durable positive public request-contract assertions, retire the completed handoff artifacts, and keep `check-providerwire-v4` focused on non-mutating pinned-client evidence validation.
 - Keep response-domain APIs and strict ProviderWire V4 runtime work out of this change.
 
 ## Capabilities
@@ -27,7 +27,7 @@ None.
 - `provider-wire`: Recast only legacy request transport around a private explicit adapter while preserving parent-pinned bytes and decoder evidence; keep response codecs unchanged.
 - `grafana-provider`: Keep hosted-client request transport compatible with the redesigned provider contract and the deployed legacy wire.
 - `gateway-providerwire-server`: Preserve handler request semantics and legacy wire behavior while passing redesigned request values to models.
-- `providerwire-v4-contract-evidence`: Mark the Phase 2 delta resolved and replace historical loss witnesses with non-vacuous positive provider-contract checks.
+- `providerwire-v4-contract-evidence`: Retire the completed provider-model handoff while preserving durable pinned-client evidence, positive public request-contract coverage, and non-mutating checks.
 - `v4-tool-result-alignment`: Preserve absent versus explicit-empty tool-result file filenames while retaining the existing tagged file-data and stream-result behavior.
 - `v4-tool-type-split`: Make function-tool descriptions presence-aware while retaining the flat tool model and compatibility JSON behavior.
 - `to-response-messages`: Move generated file filenames into the request-only field when response content is converted into the next provider prompt.

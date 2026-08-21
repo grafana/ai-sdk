@@ -321,7 +321,7 @@ func TestHandler_BodyValidationAndResolverOrder(t *testing.T) {
 	}
 }
 
-func TestHandler_RedesignedAndParentPermissiveValuesReachModel(t *testing.T) {
+func TestHandler_TolerantRequestValuesReachModel(t *testing.T) {
 	fraction, err := provider.LanguageModelNumberFromFloat64(1.5)
 	require.NoError(t, err)
 	explicitFalse := false

@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestProviderWireV4Contract_NumericSettings(t *testing.T) {
+func TestRequestContract_NumericSettings(t *testing.T) {
 	optionsType := reflect.TypeOf(provider.CallOptions{})
 	for _, fieldName := range []string{"MaxOutputTokens", "TopK", "Seed"} {
 		t.Run(fieldName, func(t *testing.T) {
@@ -35,14 +35,14 @@ func TestProviderWireV4Contract_NumericSettings(t *testing.T) {
 	assert.False(t, ok)
 }
 
-func TestProviderWireV4Contract_IncludeRawChunksPresence(t *testing.T) {
+func TestRequestContract_IncludeRawChunksPresence(t *testing.T) {
 	explicitFalseValue := false
 	absent := provider.CallOptions{}
 	explicitFalse := provider.CallOptions{IncludeRawChunks: &explicitFalseValue}
 	assert.NotEqual(t, absent, explicitFalse)
 }
 
-func TestProviderWireV4Contract_OptionalStringPresence(t *testing.T) {
+func TestRequestContract_OptionalStringPresence(t *testing.T) {
 	empty := ""
 	approved := false
 	tests := []struct {
@@ -113,7 +113,7 @@ func TestProviderWireV4Contract_OptionalStringPresence(t *testing.T) {
 	}
 }
 
-func TestProviderWireV4Contract_ToolCallProviderExecutedPresence(t *testing.T) {
+func TestRequestContract_ToolCallProviderExecutedPresence(t *testing.T) {
 	absent := provider.ContentPart{
 		Type: provider.ContentPartTypeToolCall, ToolCallID: "call-1", ToolName: "lookup",
 		Input: json.RawMessage(`{}`),
@@ -124,7 +124,7 @@ func TestProviderWireV4Contract_ToolCallProviderExecutedPresence(t *testing.T) {
 	assert.NotEqual(t, absent, explicitFalse)
 }
 
-func TestProviderWireV4Contract_EmptyInlineTextFileData(t *testing.T) {
+func TestRequestContract_EmptyInlineTextFileData(t *testing.T) {
 	data := provider.TextDataContent("")
 	require.NoError(t, data.Validate())
 	dataType, ok := data.DataType()

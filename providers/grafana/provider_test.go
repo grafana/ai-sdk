@@ -663,7 +663,7 @@ func TestDoGenerate_Success(t *testing.T) {
 	assert.Equal(t, testCallOptions(), requests[0].CallOptions)
 }
 
-func TestDoGenerate_RedesignedRequestValuesReachProviderWire(t *testing.T) {
+func TestDoGenerate_ExactPresenceValuesReachProviderWire(t *testing.T) {
 	fraction, err := provider.LanguageModelNumberFromFloat64(1.5)
 	require.NoError(t, err)
 	explicitFalse := false

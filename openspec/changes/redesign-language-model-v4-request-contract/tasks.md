@@ -1,9 +1,9 @@
 ## 1. Evidence and Parent Compatibility Baseline
 
-- [x] 1.1 Confirm `test/conformance/upstream.yaml`, exact source commit `d76eb85a9a7f2dbe44ab2f3dc858ad5cdcb5242e`, and installed package source equivalence still match the Phase 1 delta table.
+- [x] 1.1 Confirm `test/conformance/upstream.yaml`, exact source commit `d76eb85a9a7f2dbe44ab2f3dc858ad5cdcb5242e`, and installed package source equivalence still match the pinned captures and archived Phase 1 loss analysis.
 - [x] 1.2 Before changing provider types, generate the historical request compatibility corpus with parent commit `32e5ab7f1ab9e524477cc0ece04c690a89854a24`; commit metadata, canonical bytes, migration projections, and each parent decode success/projection or exact rejection outcome.
 - [x] 1.3 Cover finite parent-encoder equivalence partitions including mixed tool/content inactive fields and valid non-string-valued reference JSON; define byte stability over every parent-encoder-accepted value and decoder compatibility only over the parent-decodable subset.
-- [x] 1.4 Convert every Phase 1 loss witness into a failing positive target assertion covering its stable delta-row identifier before implementing the corresponding provider model change.
+- [x] 1.4 Convert every Phase 1 loss witness into a failing positive target assertion covering its named provider-model distinction before implementing the corresponding change.
 
 ## 2. Exact Provider Request Domain
 
@@ -56,9 +56,9 @@
 
 - [x] 6.1 Update the Grafana hosted client to pass exact numbers and presence-aware values through `providerwire.EncodeCallOptions` without conversion or duplicate DTOs.
 - [x] 6.2 Extend Grafana client/server tests for redesigned request values, exact parent request bytes, unary transport, ordered streaming, and current decoding of the parent corpus.
-- [x] 6.3 Add stable identifiers and resolved status/test references to every `test/providerwire-v4/phase2-delta.md` row while retaining the original evidence and paths.
-- [x] 6.4 Rename `provider/providerwire_v4_loss_test.go` to `provider/providerwire_v4_contract_test.go` and convert `TestProviderWireV4Loss_*` witnesses into positive `TestProviderWireV4Contract_*` assertions covering every resolved row.
-- [x] 6.5 Add a non-mutating set-equality check between resolved delta-row test names and `go test ./provider -list '^TestProviderWireV4Contract_'`, then run the complete provider package while retaining all existing TypeScript evidence checks.
+- [x] 6.3 Retire `test/providerwire-v4/phase2-delta.md` after preserving its rationale in the archived Phase 1 change, its row-level detail in repository history, and its durable strict-codec responsibilities in canonical specifications.
+- [x] 6.4 Convert `provider/providerwire_v4_loss_test.go` into stable positive external-package assertions in `provider/request_contract_external_test.go` covering every resolved provider-model distinction.
+- [x] 6.5 Remove the transitional markdown-to-test-name coupling and keep `check-providerwire-v4` focused on non-mutating pinned-client evidence validation while normal Go workflows run the provider package.
 - [x] 6.6 Update the ProviderWire V4 README and `test/conformance/PARITY.md` from active-loss language to resolved positive provider-contract coverage, parent-pinned legacy evidence, and unchanged strict-runtime gaps.
 - [x] 6.7 Run the ProviderWire V4 evidence check without regenerating pinned captures or classification; update generated evidence only if exact registered client observations independently changed.
 
@@ -68,6 +68,6 @@
 - [x] 7.2 Run focused root and nested provider tests, including race coverage where repository tasks provide it, and fix all regressions.
 - [x] 7.3 Run `mise run check-providerwire-v4`, `mise run validate-parity-baseline`, `mise run parity-check`, `mise run test-conformance`, `mise run test-integration`, and `mise run test-interop`.
 - [x] 7.4 Run `mise run test`, `mise run vet`, `mise run lint`, `mise run lint-docs`, `openspec validate --all --strict`, and `git diff --check`.
-- [x] 7.5 Verify implementation against the proposal, design, delta specs, resolved Phase 1 table, parent compatibility corpus, and exact pinned upstream sources; document changed artifacts, commands, and residual risks.
+- [x] 7.5 Verify implementation against the proposal, design, delta specs, archived Phase 1 loss analysis, parent compatibility corpus, and exact pinned upstream sources; document changed artifacts, commands, and residual risks.
 - [x] 7.6 Synchronize completed delta specs into canonical specifications.
-- [ ] 7.7 Archive the change only after explicit user approval and confirm zero active OpenSpec changes.
+- [ ] 7.7 After explicit user approval, archive with `openspec archive redesign-language-model-v4-request-contract --skip-specs` because canonical specifications are already synchronized, then confirm zero active OpenSpec changes.

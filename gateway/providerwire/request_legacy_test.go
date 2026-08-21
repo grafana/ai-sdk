@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestLegacyRequestAdapter_RedesignedValues(t *testing.T) {
+func TestLegacyRequestAdapter_ExactPresenceValues(t *testing.T) {
 	fraction, err := provider.LanguageModelNumberFromFloat64(1.5)
 	require.NoError(t, err)
 	empty := ""

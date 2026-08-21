@@ -10,13 +10,13 @@ The provider package is a transport-neutral input contract shared by root orches
 
 **Goals:**
 
-- Represent every semantic distinction in `test/providerwire-v4/phase2-delta.md` in public Go values.
+- Represent every provider-model distinction established by the pinned request evidence and archived loss analysis in public Go values.
 - Preserve every historical Go integer exactly while representing every finite JavaScript-number value emitted by the pinned Gateway client.
 - Keep request types normalized around language-model meaning rather than ProviderWire envelopes, headers, or routes.
 - Make root orchestration and all supported providers consume redesigned values intentionally, without silent truncation, omission, concatenation, or presence loss.
 - Preserve source/response filename APIs, nil versus non-nil empty collections, and opaque provider-option JSON.
 - Preserve legacy ProviderWire request bytes for every value accepted by the parent encoder, and preserve parent-decoder compatibility for the subset that the parent decoder accepted.
-- Resolve the Phase 1 loss-evidence lifecycle into positive provider-contract coverage.
+- Replace temporary loss witnesses with durable positive public request-contract coverage, then retire the completed handoff artifacts.
 - Leave the provider contract ready for an explicit strict V4 mapper.
 
 **Non-Goals:**
@@ -194,11 +194,11 @@ Alternatives rejected:
 - Continuing direct `json.Marshal(opts)`: leaves HTTP transport authority in provider structs.
 - Proving compatibility with only the redesigned decoder: does not establish that the parent decoder accepted the emitted bytes.
 
-### Resolve Phase 1 loss evidence into positive contract evidence
+### Retire the provider-model handoff after establishing positive coverage
 
-`test/providerwire-v4/phase2-delta.md` remains the historical handoff but each row gains a stable identifier and resolved status pointing to its positive provider-contract assertion. `provider/providerwire_v4_loss_test.go` is renamed to `provider/providerwire_v4_contract_test.go`; `TestProviderWireV4Loss_*` tests become positive `TestProviderWireV4Contract_*` tests proving the exact number, optional scalar, and public file-data capabilities.
+The Phase 1 loss witnesses become positive external-package request-contract tests in `provider/request_contract_external_test.go`. The tests prove the exact number, optional scalar, and public file-data capabilities through only the exported provider API and run through normal Go test workflows.
 
-The evidence README and parity map distinguish immutable pinned-client captures from the resolved Go contract delta. Every delta row names exactly one top-level `TestProviderWireV4Contract_*` test. The non-mutating evidence check parses the resolved row IDs/test names, obtains the enumerated tests through `go test ./provider -list`, and requires exact set equality before running the full provider package. Deleting or renaming the contract file or any case therefore fails rather than passing vacuously. The committed pinned-client request captures and classification remain unchanged unless their registered client inputs change.
+The completed `test/providerwire-v4/phase2-delta.md` handoff and its markdown-to-test-name validation are removed after implementation. The archived Phase 1 OpenSpec change retains the loss rationale and handoff, the retired row-level table remains recoverable from repository history, and the evidence README and parity map describe the durable positive Go contract coverage. The ProviderWire V4 check remains focused on immutable pinned-client captures, classification, schema, source equivalence, and response probes; those artifacts remain unchanged unless their registered client inputs change.
 
 ## Risks / Trade-offs
 
@@ -219,7 +219,7 @@ The evidence README and parity map distinguish immutable pinned-client captures 
 4. Update root producers and copy/merge middleware without changing response/source APIs.
 5. Update each direct provider and prove the field-by-field pinned numeric behavior at final request bodies.
 6. Introduce the request-only private legacy adapter and lock parent bytes plus recorded parent-decoder evidence.
-7. Update the Grafana client/server paths and resolve the evidence README, delta, test names, `mise.toml`, and parity map.
+7. Update the Grafana client/server paths, replace the temporary loss witnesses with stable external request-contract tests, retire the completed handoff artifacts, and update the evidence README and parity map.
 8. Run focused module tests followed by ProviderWire, conformance, integration, interop, repository, vet, lint, and strict OpenSpec validation.
 
 Rollback is a normal branch revert before deployment. No data migration or runtime flag is required; the legacy HTTP endpoint remains the deployed transport throughout this phase.
