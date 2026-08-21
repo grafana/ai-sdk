@@ -19,8 +19,8 @@ func bedrockOptionalStringPointer(value string) *string {
 	return &value
 }
 
-func bedrockIntegerPointer(value int) *provider.LanguageModelNumber {
-	number := provider.LanguageModelNumberFromInt(value)
+func bedrockIntegerPointer(value int64) *provider.LanguageModelNumber {
+	number := provider.LanguageModelNumberFromInt64(value)
 	return &number
 }
 
@@ -115,13 +115,19 @@ func TestBuildRequest_EmptyFileDataArms(t *testing.T) {
 	})
 }
 
-func TestBuildRequest_ThinkingDefaultMaxRejectsOverflow(t *testing.T) {
+func TestBuildRequest_ThinkingMaxRejectsOverflow(t *testing.T) {
 	_, _, _, err := buildRequest("anthropic.claude-sonnet-4-5", provider.CallOptions{
+		MaxOutputTokens: bedrockIntegerPointer(math.MaxInt64),
 		ProviderOptions: provider.BuildProviderOptions(BedrockOptions{
-			ReasoningConfig: &ReasoningConfig{Type: "enabled", BudgetTokens: math.MaxInt},
+			ReasoningConfig: &ReasoningConfig{Type: "enabled", BudgetTokens: 1},
 		}),
 	})
-	require.ErrorContains(t, err, "overflow")
+	require.ErrorContains(t, err, "bedrock: max output tokens overflow")
+}
+
+func TestAddBedrockRequestNumber_InvalidPreservesProviderContext(t *testing.T) {
+	_, err := addBedrockRequestNumber(provider.LanguageModelNumber{}, 1)
+	require.ErrorContains(t, err, "bedrock: invalid language model number")
 }
 
 func TestBuildRequest_RejectsInvalidRequestArms(t *testing.T) {

@@ -2,6 +2,7 @@ package anthropic
 
 import (
 	"encoding/json"
+	"math"
 	"strings"
 	"testing"
 
@@ -14,8 +15,8 @@ func requestStringPointer(value string) *string { return &value }
 
 func requestBoolPointer(value bool) *bool { return &value }
 
-func requestIntegerPointer(value int) *provider.LanguageModelNumber {
-	number := provider.LanguageModelNumberFromInt(value)
+func requestIntegerPointer(value int64) *provider.LanguageModelNumber {
+	number := provider.LanguageModelNumberFromInt64(value)
 	return &number
 }
 
@@ -129,6 +130,21 @@ func TestBuildParams_ExactRequestNumbers(t *testing.T) {
 		encoded, err := json.Marshal(params)
 		require.NoError(t, err)
 		assert.Contains(t, string(encoded), `"max_tokens":9007199254740993`)
+	})
+
+	t.Run("thinking overflow preserves provider context", func(t *testing.T) {
+		_, _, _, _, err := buildParams("unknown-model", provider.CallOptions{
+			MaxOutputTokens: requestIntegerPointer(math.MaxInt64),
+			ProviderOptions: provider.ProviderOptions{
+				"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(`{"thinking":{"type":"enabled","budgetTokens":1}}`)},
+			},
+		}, false)
+		require.ErrorContains(t, err, "anthropic: max output tokens overflow")
+	})
+
+	t.Run("invalid number preserves provider context", func(t *testing.T) {
+		_, err := addRequestNumber(provider.LanguageModelNumber{}, 1)
+		require.ErrorContains(t, err, "anthropic: invalid language model number")
 	})
 }
 

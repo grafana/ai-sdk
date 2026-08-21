@@ -77,20 +77,19 @@ func TestResolveLegacyDataContentType(t *testing.T) {
 		name       string
 		precedence legacyDataContentType
 		selected   provider.DataContentType
-		selectedOK bool
 		want       legacyDataContentType
 		wantError  bool
 	}{
 		{name: "no data"},
-		{name: "unique empty text", selected: provider.DataContentTypeText, selectedOK: true, want: legacyDataContentText},
-		{name: "unique URL", precedence: legacyDataContentURL, selected: provider.DataContentTypeURL, selectedOK: true, want: legacyDataContentURL},
-		{name: "parent mixed fields", precedence: legacyDataContentURL, selected: provider.DataContentTypeURL, want: legacyDataContentURL},
+		{name: "unique empty text", selected: provider.DataContentTypeText, want: legacyDataContentText},
+		{name: "unique URL", precedence: legacyDataContentURL, selected: provider.DataContentTypeURL, want: legacyDataContentURL},
+		{name: "precedence without selection", precedence: legacyDataContentURL, want: legacyDataContentURL},
 		{name: "conflicting private selection", precedence: legacyDataContentURL, selected: provider.DataContentTypeText, wantError: true},
-		{name: "unsupported selection", selected: provider.DataContentType("unsupported"), selectedOK: true, wantError: true},
+		{name: "unsupported selection", selected: provider.DataContentType("unsupported"), wantError: true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := resolveLegacyDataContentType(tc.precedence, tc.selected, tc.selectedOK)
+			got, err := resolveLegacyDataContentType(tc.precedence, tc.selected)
 			if tc.wantError {
 				require.Error(t, err)
 				return

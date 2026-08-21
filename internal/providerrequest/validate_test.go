@@ -35,7 +35,17 @@ func TestValidate_RequestArms(t *testing.T) {
 		{Prompt: []provider.Message{provider.NewUserMessage(provider.ContentPart{Type: provider.ContentPartTypeFile, Data: &data, MediaType: "text/plain", Filename: "response.txt"})}},
 		{Prompt: []provider.Message{provider.NewUserMessage(provider.ContentPart{Type: provider.ContentPartTypeText, Text: "value", ToolName: "inactive"})}},
 		{Tools: []provider.Tool{{Type: provider.ToolTypeFunction, Name: "lookup", ID: "inactive"}}},
+		{ToolChoice: &provider.ToolChoice{Type: provider.ToolChoiceAuto, ToolName: "inactive"}},
+		{ToolChoice: &provider.ToolChoice{Type: provider.ToolChoiceType("unsupported")}},
 		{ResponseFormat: &provider.ResponseFormat{Type: provider.ResponseFormatText, Name: &empty}},
+		{Prompt: []provider.Message{provider.NewToolMessage(provider.ToolResultPart("call", "tool", &provider.ToolResultOutput{
+			Type: provider.ToolOutputText, Text: "value", Reason: &empty,
+		}))}},
+		{Prompt: []provider.Message{provider.NewToolMessage(provider.ToolResultPart("call", "tool", &provider.ToolResultOutput{
+			Type: provider.ToolOutputContent, Content: []provider.ToolResultContentValue{{
+				Type: provider.ToolContentText, Text: "value", MediaType: "inactive",
+			}},
+		}))}},
 	}
 	for _, options := range invalid {
 		require.Error(t, Validate(options))
@@ -57,9 +67,24 @@ func TestValidate_DomainStructFieldExhaustiveness(t *testing.T) {
 			},
 		},
 		{
+			name:  "message",
+			value: provider.Message{},
+			want:  []string{"Role", "Content", "ProviderOptions"},
+		},
+		{
 			name:  "tool",
 			value: provider.Tool{},
 			want:  []string{"Type", "Name", "Description", "InputSchema", "InputExamples", "Strict", "ID", "Args", "ProviderOptions"},
+		},
+		{
+			name:  "tool choice",
+			value: provider.ToolChoice{},
+			want:  []string{"Type", "ToolName"},
+		},
+		{
+			name:  "response format",
+			value: provider.ResponseFormat{},
+			want:  []string{"Type", "Schema", "Name", "Description"},
 		},
 		{
 			name:  "tool result output",

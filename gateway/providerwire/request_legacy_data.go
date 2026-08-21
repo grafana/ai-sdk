@@ -43,7 +43,7 @@ func legacyDataContentTypeFromProvider(dataType provider.DataContentType) (legac
 	}
 }
 
-func resolveLegacyDataContentType(precedence legacyDataContentType, selected provider.DataContentType, selectedOK bool) (legacyDataContentType, error) {
+func resolveLegacyDataContentType(precedence legacyDataContentType, selected provider.DataContentType) (legacyDataContentType, error) {
 	if selected == "" {
 		return precedence, nil
 	}
@@ -51,11 +51,8 @@ func resolveLegacyDataContentType(precedence legacyDataContentType, selected pro
 	if err != nil {
 		return "", err
 	}
-	if selectedOK && precedence == "" {
+	if precedence == "" || precedence == mapped {
 		return mapped, nil
-	}
-	if precedence == mapped {
-		return precedence, nil
 	}
 	return "", fmt.Errorf("selected file-data type %q conflicts with legacy field precedence %q", mapped, precedence)
 }
@@ -79,8 +76,8 @@ func legacyDataContentFromProvider(data provider.DataContent) (legacyDataContent
 		legacy.dataType = legacyDataContentText
 	}
 
-	selected, selectedOK := data.DataType()
-	resolved, err := resolveLegacyDataContentType(legacy.dataType, selected, selectedOK)
+	selected, _ := data.DataType()
+	resolved, err := resolveLegacyDataContentType(legacy.dataType, selected)
 	if err != nil {
 		return legacyDataContent{}, err
 	}
