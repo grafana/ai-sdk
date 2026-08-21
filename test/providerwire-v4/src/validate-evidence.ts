@@ -10,7 +10,16 @@ import type { SemanticRequestsArtifact } from "./artifacts.ts";
 import type { SemanticRequest } from "./capture.ts";
 
 const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)));
-const schemaPath = join(packageRoot, "schema", "providerwire-v4-request.schema.json");
+const schemaPath = join(
+  packageRoot,
+  "..",
+  "..",
+  "gateway",
+  "providerwire",
+  "v4",
+  "schema",
+  "providerwire-v4-request.schema.json",
+);
 export function createRequestBodyValidator() {
   const schema = JSON.parse(readFileSync(schemaPath, "utf8"));
   return new Ajv2020({ allErrors: true, strict: true }).compile(schema);

@@ -14,12 +14,19 @@ function dependencies(entries) {
 }
 
 describe("parity package consumers", () => {
-  it("registers the ProviderWire V4 evidence workspace", () => {
-    assert.ok(
-      packagePaths.some((packagePath) =>
-        packagePath.endsWith("/test/providerwire-v4/package.json"),
-      ),
-    );
+  it("registers every parity package consumer", () => {
+    for (const suffix of [
+      "/test/conformance/tools/package.json",
+      "/test/integration/package.json",
+      "/test/interop/package.json",
+      "/test/cli/package.json",
+      "/test/providerwire-v4/package.json",
+    ]) {
+      assert.ok(
+        packagePaths.some((packagePath) => packagePath.endsWith(suffix)),
+        suffix,
+      );
+    }
   });
 });
 

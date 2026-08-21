@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "finishReason": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["unified"],
+      "properties": {
+        "unified": { "enum": ["stop", "length", "content-filter", "tool-calls", "error", "other"] },
+        "raw": { "type": "string" }
+      }
+    },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["inputTokens", "outputTokens"],
+      "properties": {
+        "inputTokens": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "total": { "type": "integer", "minimum": 0 },
+            "noCache": { "type": "integer", "minimum": 0 },
+            "cacheRead": { "type": "integer", "minimum": 0 },
+            "cacheWrite": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "outputTokens": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "total": { "type": "integer", "minimum": 0 },
+            "text": { "type": "integer", "minimum": 0 },
+            "reasoning": { "type": "integer", "minimum": 0 }
+          }
+        }
+      }
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["message", "type", "param", "code", "statusCode", "retryable"],
+      "properties": {
+        "message": { "type": "string", "minLength": 1 },
+        "type": { "type": "string", "minLength": 1 },
+        "param": { "type": "null" },
+        "code": { "type": "string", "minLength": 1 },
+        "statusCode": { "type": "integer" },
+        "retryable": { "type": "boolean" }
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "type": "object", "additionalProperties": false,
+      "required": ["type", "warnings"],
+      "properties": { "type": { "const": "stream-start" }, "warnings": { "type": "array", "maxItems": 0 } }
+    },
+    {
+      "type": "object", "additionalProperties": false,
+      "required": ["type", "modelId"],
+      "properties": {
+        "type": { "const": "response-metadata" },
+        "id": { "type": "string" },
+        "modelId": { "type": "string", "minLength": 1 },
+        "timestamp": { "type": "string", "format": "date-time" }
+      }
+    },
+    {
+      "type": "object", "additionalProperties": false,
+      "required": ["type", "id"],
+      "properties": { "type": { "const": "text-start" }, "id": { "type": "string", "minLength": 1 } }
+    },
+    {
+      "type": "object", "additionalProperties": false,
+      "required": ["type", "id", "delta"],
+      "properties": { "type": { "const": "text-delta" }, "id": { "type": "string", "minLength": 1 }, "delta": { "type": "string" } }
+    },
+    {
+      "type": "object", "additionalProperties": false,
+      "required": ["type", "id"],
+      "properties": { "type": { "const": "text-end" }, "id": { "type": "string", "minLength": 1 } }
+    },
+    {
+      "type": "object", "additionalProperties": false,
+      "required": ["type", "finishReason", "usage"],
+      "properties": { "type": { "const": "finish" }, "finishReason": { "$ref": "#/$defs/finishReason" }, "usage": { "$ref": "#/$defs/usage" } }
+    },
+    {
+      "type": "object", "additionalProperties": false,
+      "required": ["type", "error"],
+      "properties": { "type": { "const": "error" }, "error": { "$ref": "#/$defs/error" } }
+    }
+  ]
+}

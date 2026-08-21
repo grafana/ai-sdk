@@ -17,6 +17,9 @@ func registerScenario(name string, handler http.HandlerFunc) {
 
 func main() {
 	mux := http.NewServeMux()
+	if err := mountProviderWireV4(mux); err != nil {
+		log.Fatalf("failed to mount ProviderWire V4 integration handler: %v", err)
+	}
 
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

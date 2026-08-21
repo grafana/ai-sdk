@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "finishReason": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["unified"],
+      "properties": {
+        "unified": { "enum": ["stop", "length", "content-filter", "tool-calls", "error", "other"] },
+        "raw": { "type": "string" }
+      }
+    },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["inputTokens", "outputTokens"],
+      "properties": {
+        "inputTokens": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "total": { "type": "integer", "minimum": 0 },
+            "noCache": { "type": "integer", "minimum": 0 },
+            "cacheRead": { "type": "integer", "minimum": 0 },
+            "cacheWrite": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "outputTokens": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "total": { "type": "integer", "minimum": 0 },
+            "text": { "type": "integer", "minimum": 0 },
+            "reasoning": { "type": "integer", "minimum": 0 }
+          }
+        }
+      }
+    }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["content", "finishReason", "usage", "warnings", "response"],
+  "properties": {
+    "content": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "text"],
+        "properties": {
+          "type": { "const": "text" },
+          "text": { "type": "string" }
+        }
+      }
+    },
+    "finishReason": { "$ref": "#/$defs/finishReason" },
+    "usage": { "$ref": "#/$defs/usage" },
+    "warnings": { "type": "array", "maxItems": 0 },
+    "response": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["modelId"],
+      "properties": { "modelId": { "type": "string", "minLength": 1 } }
+    }
+  }
+}
