@@ -15,8 +15,8 @@ import (
 type ArrayOutput[T any] struct {
 	elementSchema schema.Schema
 	wrappedSchema schema.Schema
-	name          string
-	desc          string
+	name          *string
+	desc          *string
 }
 
 // Array creates an ArrayOutput that generates an array of typed elements
@@ -77,8 +77,8 @@ func buildArrayWrapperSchema(elementSchema json.RawMessage) (json.RawMessage, er
 	return json.Marshal(wrapper)
 }
 
-func (o *ArrayOutput[T]) setName(name string)        { o.name = name }
-func (o *ArrayOutput[T]) setDescription(desc string) { o.desc = desc }
+func (o *ArrayOutput[T]) setName(name string)        { o.name = &name }
+func (o *ArrayOutput[T]) setDescription(desc string) { o.desc = &desc }
 func (o *ArrayOutput[T]) ResponseFormat() *provider.ResponseFormat {
 	return &provider.ResponseFormat{
 		Type:        provider.ResponseFormatJSON,

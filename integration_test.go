@@ -195,7 +195,7 @@ func TestE2EProviderExecutedToolFlow(t *testing.T) {
 	}
 	require.True(t, hasPromptResult)
 	require.NotNil(t, promptResultPart.Output)
-	assert.False(t, promptResultPart.ProviderExecuted)
+	assert.Nil(t, promptResultPart.ProviderExecuted)
 	promptResultJSON, err := json.Marshal(promptResultPart)
 	require.NoError(t, err)
 	assert.NotContains(t, string(promptResultJSON), "providerExecuted")

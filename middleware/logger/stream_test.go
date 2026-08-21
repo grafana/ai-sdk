@@ -31,7 +31,7 @@ func TestMiddleware_StreamSuccessTeesUnmodifiedParts(t *testing.T) {
 	request := &provider.RequestMetadata{Body: []byte(`{"request":true}`)}
 	response := &provider.ResponseHeaders{Headers: map[string]string{"x-safe": "ok"}}
 	model := &mockModel{streamFunc: func(_ context.Context, opts provider.CallOptions) (*provider.StreamResult, error) {
-		if opts.IncludeRawChunks {
+		if opts.IncludeRawChunks != nil && *opts.IncludeRawChunks {
 			t.Fatal("logger forced raw chunks")
 		}
 		ch := make(chan provider.StreamPart, len(parts))

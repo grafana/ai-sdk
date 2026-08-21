@@ -51,7 +51,7 @@ func (m *model) DoStream(ctx context.Context, opts provider.CallOptions) (*provi
 	}
 
 	ch := make(chan provider.StreamPart, streamBufferSize)
-	go m.readStream(ctx, resp, ch, opts.IncludeRawChunks)
+	go m.readStream(ctx, resp, ch, opts.IncludeRawChunks != nil && *opts.IncludeRawChunks)
 
 	return &provider.StreamResult{
 		Stream:   ch,

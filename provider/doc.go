@@ -31,8 +31,15 @@
 // helpers ([NewSystemMessage], [NewUserMessage], [NewAssistantMessage],
 // [NewToolMessage]) produce well-formed messages for each role.
 //
-// This shape mirrors LanguageModelV4Message / V4Content from upstream;
-// runtime types serialize directly to JSON with no DTO layer.
+// This shape mirrors LanguageModelV4Message / V4Content from upstream. Generic
+// JSON methods are compatibility behavior only; HTTP transports own explicit
+// request mapping and validation.
+//
+// Request numeric settings use [LanguageModelNumber] so historical integers
+// and finite JavaScript-number values remain exact. [DataContent] exposes
+// constructors and [DataContent.DataType] for selecting empty file-data arms.
+// Request files use [ContentPart.FilePartFilename], while generated files and
+// sources retain [ContentPart.Filename].
 //
 // # Streaming
 //

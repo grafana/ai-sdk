@@ -4,6 +4,7 @@ package streamusage
 import (
 	"encoding/json"
 
+	"github.com/grafana/ai-sdk/internal/ptr"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -49,33 +50,24 @@ func maxTokenCount(current, observed *int) *int {
 	if current != nil && *current >= *observed {
 		return current
 	}
-	value := *observed
-	return &value
+	return ptr.Clone(observed)
 }
 
 func cloneUsage(usage provider.Usage) provider.Usage {
 	return provider.Usage{
 		InputTokens: provider.InputTokenUsage{
-			Total:      cloneInt(usage.InputTokens.Total),
-			NoCache:    cloneInt(usage.InputTokens.NoCache),
-			CacheRead:  cloneInt(usage.InputTokens.CacheRead),
-			CacheWrite: cloneInt(usage.InputTokens.CacheWrite),
+			Total:      ptr.Clone(usage.InputTokens.Total),
+			NoCache:    ptr.Clone(usage.InputTokens.NoCache),
+			CacheRead:  ptr.Clone(usage.InputTokens.CacheRead),
+			CacheWrite: ptr.Clone(usage.InputTokens.CacheWrite),
 		},
 		OutputTokens: provider.OutputTokenUsage{
-			Total:     cloneInt(usage.OutputTokens.Total),
-			Text:      cloneInt(usage.OutputTokens.Text),
-			Reasoning: cloneInt(usage.OutputTokens.Reasoning),
+			Total:     ptr.Clone(usage.OutputTokens.Total),
+			Text:      ptr.Clone(usage.OutputTokens.Text),
+			Reasoning: ptr.Clone(usage.OutputTokens.Reasoning),
 		},
 		Raw: cloneRaw(usage.Raw),
 	}
-}
-
-func cloneInt(value *int) *int {
-	if value == nil {
-		return nil
-	}
-	cloned := *value
-	return &cloned
 }
 
 func cloneRaw(value json.RawMessage) json.RawMessage {

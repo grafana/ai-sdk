@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/grafana/ai-sdk/internal/ptr"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -21,6 +22,25 @@ const (
 
 // ErrNoOutputGenerated is returned when a model stream ends before producing output.
 var ErrNoOutputGenerated = errors.New("aisdk: no output generated")
+
+func validateMaxOutputTokens(value *provider.LanguageModelNumber) error {
+	if value == nil {
+		return nil
+	}
+	if integer, ok := value.Int64(); ok {
+		if integer < 1 {
+			return errors.New("aisdk: maxOutputTokens must be >= 1")
+		}
+		return nil
+	}
+	if floating, ok := value.Float64(); ok {
+		if floating < 1 {
+			return errors.New("aisdk: maxOutputTokens must be >= 1")
+		}
+		return nil
+	}
+	return errors.New("aisdk: maxOutputTokens is invalid")
+}
 
 // StreamTextResult holds the result of a StreamText call.
 // It provides both a streaming interface (FullStream) and blocking accessors
@@ -572,8 +592,8 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 			}
 		}
 
-		if maxOutputTokens != nil && *maxOutputTokens < 1 {
-			r.emitError(errors.New("aisdk: maxOutputTokens must be >= 1"), cfg.onError)
+		if err := validateMaxOutputTokens(maxOutputTokens); err != nil {
+			r.emitError(err, cfg.onError)
 			return
 		}
 
@@ -1047,7 +1067,7 @@ loop:
 					ToolCallID:       tc.ToolCallID,
 					ToolName:         tc.ToolName,
 					Input:            input,
-					ProviderExecuted: tc.ProviderExecuted,
+					ProviderExecuted: requestBoolPointerIfTrue(tc.ProviderExecuted),
 					ProviderOptions:  providerMetadataToOptions(tc.ProviderMetadata),
 				})
 			}
@@ -1065,7 +1085,7 @@ loop:
 						ToolCallID:       tr.ToolCallID,
 						ToolName:         tr.ToolName,
 						Output:           toolResultOutput(tr),
-						ProviderExecuted: true,
+						ProviderExecuted: requestBoolPointerIfTrue(true),
 						ProviderOptions:  providerMetadataToOptions(tr.ProviderMetadata),
 					})
 				}
@@ -1105,6 +1125,7 @@ loop:
 				Type:            provider.ContentPartTypeFile,
 				Data:            generatedFileData(gf),
 				MediaType:       part.MediaType,
+				Filename:        part.Filename,
 				ProviderOptions: providerMetadataToOptions(part.ProviderMetadata),
 			})
 			tsp := StreamFile{File: gf, ProviderMetadata: part.ProviderMetadata}
@@ -1613,7 +1634,7 @@ func (r *StreamTextResult) executeTools(
 			// reserved for the resume-from-prior-message flow in
 			// resolveToolApprovals.
 			if !tc.ProviderExecuted {
-				step.ToolResults = append(step.ToolResults, ToolResult{ToolCallID: tc.ToolCallID, ToolName: tc.ToolName, Input: tc.Input, ModelOutput: &provider.ToolResultOutput{Type: provider.ToolOutputExecutionDenied, Reason: decision.Reason}, Dynamic: tc.Dynamic, Title: tc.Title, ProviderMetadata: tc.ProviderMetadata})
+				step.ToolResults = append(step.ToolResults, ToolResult{ToolCallID: tc.ToolCallID, ToolName: tc.ToolName, Input: tc.Input, ModelOutput: &provider.ToolResultOutput{Type: provider.ToolOutputExecutionDenied, Reason: requestStringPointer(decision.Reason)}, Dynamic: tc.Dynamic, Title: tc.Title, ProviderMetadata: tc.ProviderMetadata})
 			}
 			r.emitToolApprovalRequest(cfg, req)
 			r.emitToolApprovalResponse(cfg, resp)
@@ -1956,7 +1977,7 @@ func (r *StreamTextResult) resolveToolApprovals(ctx context.Context, cfg *stream
 	}
 	var executable []executableApproval
 	for _, approval := range approved {
-		if approval.toolCall.ProviderExecuted {
+		if ptr.Deref(approval.toolCall.ProviderExecuted, false) {
 			continue
 		}
 		tool, ok := cfg.tools[approval.toolCall.ToolName]
@@ -1967,7 +1988,7 @@ func (r *StreamTextResult) resolveToolApprovals(ctx context.Context, cfg *stream
 			ToolCallID:       approval.toolCall.ToolCallID,
 			ToolName:         approval.toolCall.ToolName,
 			Input:            approval.toolCall.Input,
-			ProviderExecuted: approval.toolCall.ProviderExecuted,
+			ProviderExecuted: ptr.Deref(approval.toolCall.ProviderExecuted, false),
 			ProviderMetadata: optionsToProviderMetadata(approval.toolCall.ProviderOptions),
 		}
 		executable = append(executable, executableApproval{
@@ -2013,7 +2034,7 @@ func (r *StreamTextResult) resolveToolApprovals(ctx context.Context, cfg *stream
 
 	deniedToolParts := make([]provider.ContentPart, 0, len(denied))
 	for _, approval := range denied {
-		if approval.toolCall.ProviderExecuted || approval.hasExistingToolResult {
+		if ptr.Deref(approval.toolCall.ProviderExecuted, false) || approval.hasExistingToolResult {
 			continue
 		}
 		deniedToolParts = append(deniedToolParts, provider.ContentPart{
@@ -2064,7 +2085,7 @@ func validateApprovedToolApprovals(cfg *streamConfig, msgs []provider.Message, a
 				ToolCallID:       approval.toolCall.ToolCallID,
 				ToolName:         approval.toolCall.ToolName,
 				Input:            approval.toolCall.Input,
-				ProviderExecuted: approval.toolCall.ProviderExecuted,
+				ProviderExecuted: ptr.Deref(approval.toolCall.ProviderExecuted, false),
 				ProviderMetadata: optionsToProviderMetadata(approval.toolCall.ProviderOptions),
 			}, ToolExecutionOptions{
 				ToolCallID: approval.toolCall.ToolCallID,
@@ -2077,7 +2098,7 @@ func validateApprovedToolApprovals(cfg *streamConfig, msgs []provider.Message, a
 				approvedFalse := false
 				approval.response.Approved = &approvedFalse
 				if decision.Reason != "" {
-					approval.response.Reason = decision.Reason
+					approval.response.Reason = requestStringPointer(decision.Reason)
 				}
 				denied = append(denied, approval)
 				continue
@@ -2233,7 +2254,7 @@ func sanitizePromptForProvider(msgs []provider.Message) ([]provider.Message, err
 			if msg.Role == provider.RoleAssistant && part.Type == provider.ContentPartTypeToolApprovalRequest {
 				continue
 			}
-			if msg.Role == provider.RoleTool && part.Type == provider.ContentPartTypeToolApprovalResponse && !part.ProviderExecuted {
+			if msg.Role == provider.RoleTool && part.Type == provider.ContentPartTypeToolApprovalResponse && !ptr.Deref(part.ProviderExecuted, false) {
 				continue
 			}
 			filtered.Content = append(filtered.Content, part)
@@ -2280,7 +2301,7 @@ func sanitizePromptForProvider(msgs []provider.Message) ([]provider.Message, err
 		switch msg.Role {
 		case provider.RoleAssistant:
 			for _, part := range msg.Content {
-				if part.Type == provider.ContentPartTypeToolCall && !part.ProviderExecuted {
+				if part.Type == provider.ContentPartTypeToolCall && !ptr.Deref(part.ProviderExecuted, false) {
 					addUnresolved(part.ToolCallID)
 				}
 			}
@@ -2640,8 +2661,8 @@ func buildResponseContent(step StepResult) []provider.ContentPart {
 				ToolCallID:       ar.ToolCallID,
 				ToolName:         ar.ToolName,
 				Approved:         &approved,
-				Reason:           ar.Reason,
-				ProviderExecuted: ar.ProviderExecuted,
+				Reason:           requestStringPointer(ar.Reason),
+				ProviderExecuted: requestBoolPointerIfTrue(ar.ProviderExecuted),
 				ProviderOptions:  providerMetadataToOptions(ar.ProviderMetadata),
 			})
 		}
@@ -2654,7 +2675,7 @@ func buildResponseContent(step StepResult) []provider.ContentPart {
 				ToolCallID:       tr.ToolCallID,
 				ToolName:         tr.ToolName,
 				Output:           toolResultOutput(tr),
-				ProviderExecuted: false,
+				ProviderExecuted: nil,
 				ProviderOptions:  providerMetadataToOptions(tr.ProviderMetadata),
 			})
 		}
@@ -2722,7 +2743,7 @@ func buildResponseContent(step StepResult) []provider.ContentPart {
 			ToolCallID:       tc.ToolCallID,
 			ToolName:         tc.ToolName,
 			Input:            input,
-			ProviderExecuted: tc.ProviderExecuted,
+			ProviderExecuted: requestBoolPointerIfTrue(tc.ProviderExecuted),
 			ProviderOptions:  providerMetadataToOptions(tc.ProviderMetadata),
 		})
 		for _, ar := range approvalRequests[tc.ToolCallID] {
@@ -2742,7 +2763,7 @@ func buildResponseContent(step StepResult) []provider.ContentPart {
 				ToolCallID:       tr.ToolCallID,
 				ToolName:         tr.ToolName,
 				Output:           toolResultOutput(tr),
-				ProviderExecuted: true,
+				ProviderExecuted: requestBoolPointerIfTrue(true),
 				ProviderOptions:  providerMetadataToOptions(tr.ProviderMetadata),
 			})
 		}
@@ -2761,8 +2782,8 @@ func buildResponseContent(step StepResult) []provider.ContentPart {
 			ToolCallID:       ar.ToolCallID,
 			ToolName:         ar.ToolName,
 			Approved:         &approved,
-			Reason:           ar.Reason,
-			ProviderExecuted: ar.ProviderExecuted,
+			Reason:           requestStringPointer(ar.Reason),
+			ProviderExecuted: requestBoolPointerIfTrue(ar.ProviderExecuted),
 			ProviderOptions:  providerMetadataToOptions(ar.ProviderMetadata),
 		})
 	}
@@ -2775,7 +2796,7 @@ func buildResponseContent(step StepResult) []provider.ContentPart {
 			ToolCallID:       tr.ToolCallID,
 			ToolName:         tr.ToolName,
 			Output:           toolResultOutput(tr),
-			ProviderExecuted: false,
+			ProviderExecuted: nil,
 			ProviderOptions:  providerMetadataToOptions(tr.ProviderMetadata),
 		})
 	}

@@ -62,11 +62,16 @@ func AddToolInputExamples(opts AddToolInputExamplesOptions) Middleware {
 					formatted = append(formatted, opts.Format(example, j))
 				}
 				examples := opts.Prefix + "\n" + strings.Join(formatted, "\n")
-				if tool.Description != "" {
-					tool.Description += "\n\n" + examples
-				} else {
-					tool.Description = examples
+				description := ""
+				if tool.Description != nil {
+					description = *tool.Description
 				}
+				if description != "" {
+					description += "\n\n" + examples
+				} else {
+					description = examples
+				}
+				tool.Description = &description
 				if remove {
 					tool.InputExamples = nil
 				}

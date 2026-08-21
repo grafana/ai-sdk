@@ -15,8 +15,8 @@ import (
 type ChoiceOutput struct {
 	options       []string
 	wrappedSchema schema.Schema
-	name          string
-	desc          string
+	name          *string
+	desc          *string
 }
 
 // Choice creates a ChoiceOutput that constrains the LLM to select from
@@ -72,8 +72,8 @@ func buildChoiceWrapperSchema(options []string) (json.RawMessage, error) {
 	return json.Marshal(wrapper)
 }
 
-func (o *ChoiceOutput) setName(name string)        { o.name = name }
-func (o *ChoiceOutput) setDescription(desc string) { o.desc = desc }
+func (o *ChoiceOutput) setName(name string)        { o.name = &name }
+func (o *ChoiceOutput) setDescription(desc string) { o.desc = &desc }
 func (o *ChoiceOutput) ResponseFormat() *provider.ResponseFormat {
 	return &provider.ResponseFormat{
 		Type:        provider.ResponseFormatJSON,

@@ -1,6 +1,10 @@
 package bedrock
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"github.com/grafana/ai-sdk/provider"
+)
 
 // converseInput is the JSON body sent to /model/{id}/converse and
 // /model/{id}/converse-stream. Mirrors the upstream
@@ -81,7 +85,7 @@ type imageBlock struct {
 }
 
 type imageSource struct {
-	Bytes      string           `json:"bytes,omitempty"`
+	Bytes      *string          `json:"bytes,omitempty"`
 	S3Location *s3LocationBlock `json:"s3Location,omitempty"`
 }
 
@@ -91,7 +95,7 @@ type videoBlock struct {
 }
 
 type videoSource struct {
-	Bytes      string           `json:"bytes,omitempty"`
+	Bytes      *string          `json:"bytes,omitempty"`
 	S3Location *s3LocationBlock `json:"s3Location,omitempty"`
 }
 
@@ -204,11 +208,11 @@ type toolChoiceSpecificTool struct {
 // inferenceConfig groups the scalar sampling/length parameters that Converse
 // accepts natively.
 type inferenceConfig struct {
-	MaxTokens     *int     `json:"maxTokens,omitempty"`
-	Temperature   *float64 `json:"temperature,omitempty"`
-	TopP          *float64 `json:"topP,omitempty"`
-	TopK          *int     `json:"topK,omitempty"`
-	StopSequences []string `json:"stopSequences,omitempty"`
+	MaxTokens     *provider.LanguageModelNumber `json:"maxTokens,omitempty"`
+	Temperature   *float64                      `json:"temperature,omitempty"`
+	TopP          *float64                      `json:"topP,omitempty"`
+	TopK          *provider.LanguageModelNumber `json:"topK,omitempty"`
+	StopSequences []string                      `json:"stopSequences,omitempty"`
 }
 
 // serviceTier optionally pins the Bedrock service tier (priority/standard).

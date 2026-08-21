@@ -121,8 +121,8 @@ func functionToolParam(t provider.Tool, options OpenAIToolOptions) responses.Fun
 	if t.Strict != nil {
 		fn.Strict = param.NewOpt(*t.Strict)
 	}
-	if t.Description != "" {
-		fn.Description = param.NewOpt(t.Description)
+	if t.Description != nil {
+		fn.Description = param.NewOpt(*t.Description)
 	}
 	if options.DeferLoading != nil {
 		fn.DeferLoading = param.NewOpt(*options.DeferLoading)

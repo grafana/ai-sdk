@@ -76,7 +76,7 @@ func TestBuildParams_ProgrammaticToolCalling(t *testing.T) {
 	store := false
 	caller := &OpenAIToolCaller{Type: OpenAIToolCallerProgram, CallerID: "call_program"}
 	programCall := provider.ToolCallPart("call_program", "program", json.RawMessage(`{"code":"await tools.lookup()","fingerprint":"fp"}`))
-	programCall.ProviderExecuted = true
+	programCall.ProviderExecuted = openAIBoolPointer(true)
 	programCall.ProviderOptions = provider.BuildProviderOptions(OpenAIPartOptions{ItemID: "program_item"})
 	functionCall := provider.ToolCallPart("call_lookup", "lookup", json.RawMessage(`{}`))
 	functionCall.ProviderOptions = provider.BuildProviderOptions(OpenAIPartOptions{ItemID: "function_item", Caller: caller})

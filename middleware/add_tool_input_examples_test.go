@@ -25,7 +25,7 @@ func TestAddToolInputExamples(t *testing.T) {
 			{
 				Type:        provider.ToolTypeFunction,
 				Name:        "weather",
-				Description: "Get weather",
+				Description: ptr("Get weather"),
 				InputExamples: []provider.InputExample{
 					{Input: json.RawMessage("{\n  \"city\": \"London\"\n}")},
 					{Input: json.RawMessage(`{"city":"Paris"}`)},
@@ -36,7 +36,8 @@ func TestAddToolInputExamples(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Len(t, received.Tools, 2)
-	assert.Equal(t, "Get weather\n\nInput Examples:\n{\"city\":\"London\"}\n{\"city\":\"Paris\"}", received.Tools[0].Description)
+	require.NotNil(t, received.Tools[0].Description)
+	assert.Equal(t, "Get weather\n\nInput Examples:\n{\"city\":\"London\"}\n{\"city\":\"Paris\"}", *received.Tools[0].Description)
 	assert.Nil(t, received.Tools[0].InputExamples)
 	assert.Equal(t, "provider.web", received.Tools[1].ID)
 }
@@ -67,5 +68,6 @@ func TestAddToolInputExamples_KeepExamples(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Len(t, received.Tools[0].InputExamples, 1)
-	assert.Equal(t, "Examples:\nA: {\"city\":\"London\"}", received.Tools[0].Description)
+	require.NotNil(t, received.Tools[0].Description)
+	assert.Equal(t, "Examples:\nA: {\"city\":\"London\"}", *received.Tools[0].Description)
 }

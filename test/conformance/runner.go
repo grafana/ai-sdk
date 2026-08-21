@@ -247,6 +247,20 @@ func LoadConfig(path string) (*Config, error) {
 	return &cfg, nil
 }
 
+func optionalRequestString(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
+}
+
+func requestBoolTrue(value bool) *bool {
+	if !value {
+		return nil
+	}
+	return &value
+}
+
 func (cfg *Config) BuildResponseFormat() (*provider.ResponseFormat, error) {
 	if cfg.ResponseFormat == nil {
 		return nil, nil
@@ -258,8 +272,8 @@ func (cfg *Config) BuildResponseFormat() (*provider.ResponseFormat, error) {
 	return &provider.ResponseFormat{
 		Type:        provider.ResponseFormatType(cfg.ResponseFormat.Type),
 		Schema:      schema,
-		Name:        cfg.ResponseFormat.Name,
-		Description: cfg.ResponseFormat.Description,
+		Name:        optionalRequestString(cfg.ResponseFormat.Name),
+		Description: optionalRequestString(cfg.ResponseFormat.Description),
 	}, nil
 }
 
@@ -492,7 +506,7 @@ func (tc *ToolConfig) buildTool(name string) (aisdk.Tool, error) {
 				Type:      contentType,
 				Text:      value.Text,
 				MediaType: value.MediaType,
-				Filename:  value.Filename,
+				Filename:  optionalRequestString(value.Filename),
 			}
 			if value.Type == provider.ToolContentFileData {
 				data := provider.Base64DataContent(value.Data)
@@ -617,15 +631,18 @@ func (mc *MessageConfig) buildContentParts() ([]provider.ContentPart, error) {
 				}
 				data = provider.DataContent{Reference: reference}
 			}
-			part = provider.FilePart(partConfig.MediaType, data)
-			part.Filename = partConfig.Filename
+			if partConfig.Filename == "" {
+				part = provider.FilePart(partConfig.MediaType, data)
+			} else {
+				part = provider.FilePartWithFilename(partConfig.MediaType, data, partConfig.Filename)
+			}
 		case provider.ContentPartTypeToolCall:
 			input, err := json.Marshal(partConfig.Input)
 			if err != nil {
 				return nil, fmt.Errorf("marshaling configured tool input: %w", err)
 			}
 			part = provider.ToolCallPart(partConfig.ToolCallID, partConfig.ToolName, input)
-			part.ProviderExecuted = partConfig.ProviderExecuted
+			part.ProviderExecuted = requestBoolTrue(partConfig.ProviderExecuted)
 		case provider.ContentPartTypeToolResult:
 			output, err := json.Marshal(partConfig.Output)
 			if err != nil {
@@ -640,7 +657,7 @@ func (mc *MessageConfig) buildContentParts() ([]provider.ContentPart, error) {
 			part = provider.ToolApprovalRequestPart(partConfig.ApprovalID, partConfig.ToolCallID, partConfig.IsAutomatic)
 		case provider.ContentPartTypeToolApprovalResponse:
 			part = provider.ToolApprovalResponsePart(partConfig.ApprovalID, partConfig.Approved, partConfig.Reason)
-			part.ProviderExecuted = partConfig.ProviderExecuted
+			part.ProviderExecuted = requestBoolTrue(partConfig.ProviderExecuted)
 		default:
 			return nil, fmt.Errorf("unsupported configured message part type %q", partConfig.Type)
 		}

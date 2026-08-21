@@ -270,7 +270,7 @@ func (r failingReadCloser) Read([]byte) (int, error) { return 0, r.err }
 func (r failingReadCloser) Close() error             { return nil }
 
 func TestHandler_BodyValidationAndResolverOrder(t *testing.T) {
-	maxTokens := 12
+	maxTokens := provider.LanguageModelNumberFromInt(12)
 	encoded, err := EncodeCallOptions(provider.CallOptions{MaxOutputTokens: &maxTokens})
 	require.NoError(t, err)
 	ctxKey := handlerContextKey{}
@@ -321,8 +321,38 @@ func TestHandler_BodyValidationAndResolverOrder(t *testing.T) {
 	}
 }
 
+func TestHandler_TolerantRequestValuesReachModel(t *testing.T) {
+	fraction, err := provider.LanguageModelNumberFromFloat64(1.5)
+	require.NoError(t, err)
+	explicitFalse := false
+	empty := ""
+	data := provider.TextDataContent("")
+	options := provider.CallOptions{
+		MaxOutputTokens:  &fraction,
+		IncludeRawChunks: &explicitFalse,
+		Prompt: []provider.Message{provider.NewUserMessage(provider.ContentPart{
+			Type: provider.ContentPartTypeFile, Data: &data, MediaType: "text/plain",
+			FilePartFilename: &empty, ToolName: "parent-permissive-inactive-field",
+		})},
+	}
+	body, err := EncodeCallOptions(options)
+	require.NoError(t, err)
+	var received provider.CallOptions
+	model := &handlerTestModel{generate: func(_ context.Context, actual provider.CallOptions) (*provider.GenerateResult, error) {
+		received = actual
+		return &provider.GenerateResult{}, nil
+	}}
+	resolver := &handlerTestResolver{model: model}
+	handler, err := NewHandler(resolver)
+	require.NoError(t, err)
+	recorder := executeHandler(t, handler, validHandlerRequest(t, false, body))
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	assert.Equal(t, 1, resolver.calls)
+	assert.Equal(t, options, received)
+}
+
 func TestHandler_UnaryDispatch(t *testing.T) {
-	maxTokens := 42
+	maxTokens := provider.LanguageModelNumberFromInt(42)
 	opts := provider.CallOptions{MaxOutputTokens: &maxTokens, Prompt: []provider.Message{provider.UserText("hello")}}
 	body, err := EncodeCallOptions(opts)
 	require.NoError(t, err)

@@ -54,10 +54,9 @@ func TestParity_PlainText(t *testing.T) {
 	require.NoError(t, err)
 
 	// Equivalent ai-sdk form of the same logical request/response.
-	maxTok := 1024
 	aisdkParams := provider.CallOptions{
 		Prompt:          []provider.Message{provider.UserText(userInput)},
-		MaxOutputTokens: &maxTok,
+		MaxOutputTokens: observabilityIntegerPointer(1024),
 	}
 	aisdkResult := &provider.GenerateResult{
 		Content: []provider.GenerateContentPart{
@@ -137,14 +136,13 @@ func TestParity_ToolUse(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	maxTok := 1024
 	aisdkParams := provider.CallOptions{
 		Prompt:          []provider.Message{provider.UserText(userInput)},
-		MaxOutputTokens: &maxTok,
+		MaxOutputTokens: observabilityIntegerPointer(1024),
 		Tools: []provider.Tool{{
 			Type:        provider.ToolTypeFunction,
 			Name:        "get_weather",
-			Description: "Get the weather",
+			Description: observabilityStringPointer("Get the weather"),
 			InputSchema: toolSchema,
 		}},
 	}

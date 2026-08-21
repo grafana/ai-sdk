@@ -1,0 +1,229 @@
+{
+  "schemaVersion": 1,
+  "parentCommit": "32e5ab7f1ab9e524477cc0ece04c690a89854a24",
+  "generator": {
+    "goVersion": "go1.26.6",
+    "command": "test/providerwire-v4/parent-corpus/generate.sh"
+  },
+  "rows": [
+    {
+      "id": "empty",
+      "partition": "top-level/zero",
+      "migrationProjection": null,
+      "canonicalBytesBase64": "e30=",
+      "parentDecode": {
+        "status": "success",
+        "semanticProjectionBase64": "e30="
+      }
+    },
+    {
+      "id": "exact-large-numbers",
+      "partition": "top-level/numeric-boundaries",
+      "migrationProjection": [
+        {
+          "path": "/maxOutputTokens",
+          "operation": "wrap-int",
+          "value": "9007199254740993"
+        },
+        {
+          "path": "/topK",
+          "operation": "wrap-int",
+          "value": "-17"
+        },
+        {
+          "path": "/seed",
+          "operation": "wrap-int",
+          "value": "0"
+        }
+      ],
+      "canonicalBytesBase64": "eyJtYXhPdXRwdXRUb2tlbnMiOjkwMDcxOTkyNTQ3NDA5OTMsInRvcEsiOi0xNywic2VlZCI6MH0=",
+      "parentDecode": {
+        "status": "success",
+        "semanticProjectionBase64": "eyJtYXhPdXRwdXRUb2tlbnMiOjkwMDcxOTkyNTQ3NDA5OTMsInRvcEsiOi0xNywic2VlZCI6MH0="
+      }
+    },
+    {
+      "id": "settings-and-opaque-options",
+      "partition": "top-level/scalars-and-collections",
+      "migrationProjection": [
+        {
+          "path": "/maxOutputTokens",
+          "operation": "wrap-int",
+          "value": "128"
+        },
+        {
+          "path": "/topK",
+          "operation": "wrap-int",
+          "value": "4"
+        },
+        {
+          "path": "/seed",
+          "operation": "wrap-int",
+          "value": "7"
+        },
+        {
+          "path": "/includeRawChunks",
+          "operation": "zero-bool-to-nil"
+        },
+        {
+          "path": "/responseFormat/name",
+          "operation": "non-empty-string-to-pointer"
+        },
+        {
+          "path": "/responseFormat/description",
+          "operation": "non-empty-string-to-pointer"
+        }
+      ],
+      "canonicalBytesBase64": "eyJtYXhPdXRwdXRUb2tlbnMiOjEyOCwidGVtcGVyYXR1cmUiOjAuMjUsInRvcFAiOjAuOSwidG9wSyI6NCwicHJlc2VuY2VQZW5hbHR5IjotMC41LCJmcmVxdWVuY3lQZW5hbHR5IjowLjc1LCJzdG9wU2VxdWVuY2VzIjpbInN0b3AiXSwicmVzcG9uc2VGb3JtYXQiOnsidHlwZSI6Impzb24iLCJzY2hlbWEiOnsidHlwZSI6Im9iamVjdCJ9LCJuYW1lIjoicmVzdWx0IiwiZGVzY3JpcHRpb24iOiJzY2hlbWEifSwic2VlZCI6NywicmVhc29uaW5nIjoiaGlnaCIsImhlYWRlcnMiOnsieC10ZXN0IjoidmFsdWUifSwicHJvdmlkZXJPcHRpb25zIjp7InRlc3QiOnsibmVzdGVkIjpbMSx0cnVlLG51bGxdfX19",
+      "parentDecode": {
+        "status": "success",
+        "semanticProjectionBase64": "eyJtYXhPdXRwdXRUb2tlbnMiOjEyOCwidGVtcGVyYXR1cmUiOjAuMjUsInRvcFAiOjAuOSwidG9wSyI6NCwicHJlc2VuY2VQZW5hbHR5IjotMC41LCJmcmVxdWVuY3lQZW5hbHR5IjowLjc1LCJzdG9wU2VxdWVuY2VzIjpbInN0b3AiXSwicmVzcG9uc2VGb3JtYXQiOnsidHlwZSI6Impzb24iLCJzY2hlbWEiOnsidHlwZSI6Im9iamVjdCJ9LCJuYW1lIjoicmVzdWx0IiwiZGVzY3JpcHRpb24iOiJzY2hlbWEifSwic2VlZCI6NywicmVhc29uaW5nIjoiaGlnaCIsImhlYWRlcnMiOnsieC10ZXN0IjoidmFsdWUifSwicHJvdmlkZXJPcHRpb25zIjp7InRlc3QiOnsibmVzdGVkIjpbMSx0cnVlLG51bGxdfX19"
+      }
+    },
+    {
+      "id": "parent-empty-collection-collapse",
+      "partition": "top-level/non-nil-empty-collections",
+      "migrationProjection": [
+        {
+          "path": "/",
+          "operation": "preserve-memory-but-parent-omitempty-on-encode"
+        }
+      ],
+      "canonicalBytesBase64": "e30=",
+      "parentDecode": {
+        "status": "success",
+        "semanticProjectionBase64": "e30="
+      }
+    },
+    {
+      "id": "system-content-projection",
+      "partition": "messages/system-concatenation",
+      "migrationProjection": null,
+      "canonicalBytesBase64": "eyJwcm9tcHQiOlt7InJvbGUiOiJzeXN0ZW0iLCJjb250ZW50IjoiZmlyc3RzZWNvbmQifV19",
+      "parentDecode": {
+        "status": "success",
+        "semanticProjectionBase64": "eyJwcm9tcHQiOlt7InJvbGUiOiJzeXN0ZW0iLCJjb250ZW50IjoiZmlyc3RzZWNvbmQifV19"
+      }
+    },
+    {
+      "id": "mixed-content-inactive-fields",
+      "partition": "content/mixed-inactive-fields",
+      "migrationProjection": [
+        {
+          "path": "/prompt/0/content/0/filename",
+          "operation": "move-file-filename-to-request-pointer",
+          "value": "mixed.txt"
+        },
+        {
+          "path": "/prompt/0/content/0/providerExecuted",
+          "operation": "false-to-nil"
+        },
+        {
+          "path": "/prompt/0/content/0/reason",
+          "operation": "non-empty-string-to-pointer"
+        }
+      ],
+      "canonicalBytesBase64": "eyJwcm9tcHQiOlt7InJvbGUiOiJ1c2VyIiwiY29udGVudCI6W3sidHlwZSI6ImZpbGUiLCJ0ZXh0IjoiaW5hY3RpdmUiLCJkYXRhIjp7InR5cGUiOiJ0ZXh0IiwidGV4dCI6ImFjdGl2ZSJ9LCJmaWxlbmFtZSI6Im1peGVkLnR4dCIsIm1lZGlhVHlwZSI6InRleHQvcGxhaW4iLCJ0b29sQ2FsbElkIjoiaW5hY3RpdmUtY2FsbCIsInRvb2xOYW1lIjoiaW5hY3RpdmUtdG9vbCIsImlucHV0Ijp7IngiOjF9LCJhcHByb3ZhbElkIjoiaW5hY3RpdmUtYXBwcm92YWwiLCJhcHByb3ZlZCI6ZmFsc2UsInJlYXNvbiI6ImluYWN0aXZlLXJlYXNvbiJ9XX1dfQ==",
+      "parentDecode": {
+        "status": "success",
+        "semanticProjectionBase64": "eyJwcm9tcHQiOlt7InJvbGUiOiJ1c2VyIiwiY29udGVudCI6W3sidHlwZSI6ImZpbGUiLCJ0ZXh0IjoiaW5hY3RpdmUiLCJkYXRhIjp7InR5cGUiOiJ0ZXh0IiwidGV4dCI6ImFjdGl2ZSJ9LCJmaWxlbmFtZSI6Im1peGVkLnR4dCIsIm1lZGlhVHlwZSI6InRleHQvcGxhaW4iLCJ0b29sQ2FsbElkIjoiaW5hY3RpdmUtY2FsbCIsInRvb2xOYW1lIjoiaW5hY3RpdmUtdG9vbCIsImlucHV0Ijp7IngiOjF9LCJhcHByb3ZhbElkIjoiaW5hY3RpdmUtYXBwcm92YWwiLCJhcHByb3ZlZCI6ZmFsc2UsInJlYXNvbiI6ImluYWN0aXZlLXJlYXNvbiJ9XX1dfQ=="
+      }
+    },
+    {
+      "id": "mixed-function-provider-tool",
+      "partition": "tools/mixed-inactive-fields",
+      "migrationProjection": [
+        {
+          "path": "/tools/0/description",
+          "operation": "non-empty-string-to-pointer"
+        }
+      ],
+      "canonicalBytesBase64": "eyJ0b29scyI6W3sidHlwZSI6ImZ1bmN0aW9uIiwibmFtZSI6Imxvb2t1cCIsImRlc2NyaXB0aW9uIjoiZmluZCIsImlucHV0U2NoZW1hIjp7InR5cGUiOiJvYmplY3QifSwiaW5wdXRFeGFtcGxlcyI6W3siaW5wdXQiOnsicSI6IngifX1dLCJzdHJpY3QiOmZhbHNlLCJpZCI6InByb3ZpZGVyLmluYWN0aXZlIiwiYXJncyI6eyJtb2RlIjoiZmFzdCJ9LCJwcm92aWRlck9wdGlvbnMiOnsidGVzdCI6eyJmbGFnIjp0cnVlfX19XSwidG9vbENob2ljZSI6eyJ0eXBlIjoidG9vbCIsInRvb2xOYW1lIjoibG9va3VwIn19",
+      "parentDecode": {
+        "status": "success",
+        "semanticProjectionBase64": "eyJ0b29scyI6W3sidHlwZSI6ImZ1bmN0aW9uIiwibmFtZSI6Imxvb2t1cCIsImRlc2NyaXB0aW9uIjoiZmluZCIsImlucHV0U2NoZW1hIjp7InR5cGUiOiJvYmplY3QifSwiaW5wdXRFeGFtcGxlcyI6W3siaW5wdXQiOnsicSI6IngifX1dLCJzdHJpY3QiOmZhbHNlLCJpZCI6InByb3ZpZGVyLmluYWN0aXZlIiwiYXJncyI6eyJtb2RlIjoiZmFzdCJ9LCJwcm92aWRlck9wdGlvbnMiOnsidGVzdCI6eyJmbGFnIjp0cnVlfX19XSwidG9vbENob2ljZSI6eyJ0eXBlIjoidG9vbCIsInRvb2xOYW1lIjoibG9va3VwIn19"
+      }
+    },
+    {
+      "id": "data-precedence",
+      "partition": "data/mixed-arm-parent-precedence",
+      "migrationProjection": [
+        {
+          "path": "/prompt/0/content/0/filename",
+          "operation": "move-file-filename-to-request-pointer",
+          "value": "data.bin"
+        }
+      ],
+      "canonicalBytesBase64": "eyJwcm9tcHQiOlt7InJvbGUiOiJ1c2VyIiwiY29udGVudCI6W3sidHlwZSI6ImZpbGUiLCJkYXRhIjp7InR5cGUiOiJkYXRhIiwiZGF0YSI6IllubDBaWE09In0sImZpbGVuYW1lIjoiZGF0YS5iaW4iLCJtZWRpYVR5cGUiOiJhcHBsaWNhdGlvbi9vY3RldC1zdHJlYW0ifV19XX0=",
+      "parentDecode": {
+        "status": "success",
+        "semanticProjectionBase64": "eyJwcm9tcHQiOlt7InJvbGUiOiJ1c2VyIiwiY29udGVudCI6W3sidHlwZSI6ImZpbGUiLCJkYXRhIjp7InR5cGUiOiJkYXRhIiwiZGF0YSI6IllubDBaWE09In0sImZpbGVuYW1lIjoiZGF0YS5iaW4iLCJtZWRpYVR5cGUiOiJhcHBsaWNhdGlvbi9vY3RldC1zdHJlYW0ifV19XX0="
+      }
+    },
+    {
+      "id": "reference-string-object",
+      "partition": "data/reference/parent-decodable",
+      "migrationProjection": null,
+      "canonicalBytesBase64": "eyJwcm9tcHQiOlt7InJvbGUiOiJ1c2VyIiwiY29udGVudCI6W3sidHlwZSI6ImZpbGUiLCJkYXRhIjp7InR5cGUiOiJyZWZlcmVuY2UiLCJyZWZlcmVuY2UiOnsib3BlbmFpIjoiZmlsZS0xMjMifX0sIm1lZGlhVHlwZSI6ImFwcGxpY2F0aW9uL3BkZiJ9XX1dfQ==",
+      "parentDecode": {
+        "status": "success",
+        "semanticProjectionBase64": "eyJwcm9tcHQiOlt7InJvbGUiOiJ1c2VyIiwiY29udGVudCI6W3sidHlwZSI6ImZpbGUiLCJkYXRhIjp7InR5cGUiOiJyZWZlcmVuY2UiLCJyZWZlcmVuY2UiOnsib3BlbmFpIjoiZmlsZS0xMjMifX0sIm1lZGlhVHlwZSI6ImFwcGxpY2F0aW9uL3BkZiJ9XX1dfQ=="
+      }
+    },
+    {
+      "id": "reference-non-string-json",
+      "partition": "data/reference/encoder-only",
+      "migrationProjection": null,
+      "canonicalBytesBase64": "eyJwcm9tcHQiOlt7InJvbGUiOiJ1c2VyIiwiY29udGVudCI6W3sidHlwZSI6ImZpbGUiLCJkYXRhIjp7InR5cGUiOiJyZWZlcmVuY2UiLCJyZWZlcmVuY2UiOnsiY291bnQiOjEsImVuYWJsZWQiOnRydWUsIm5lc3RlZCI6eyJ4IjpudWxsfX19LCJtZWRpYVR5cGUiOiJhcHBsaWNhdGlvbi9qc29uIn1dfV19",
+      "parentDecode": {
+        "status": "rejected",
+        "exactError": "wire: decoding CallOptions: provider: decoding file-data reference: json: cannot unmarshal number into Go value of type string"
+      }
+    },
+    {
+      "id": "tool-result-arms",
+      "partition": "tool-results/active-and-inactive-fields",
+      "migrationProjection": [
+        {
+          "path": "/prompt/0/content/0/output/content/1/filename",
+          "operation": "non-empty-string-to-pointer"
+        },
+        {
+          "path": "/prompt/0/content/1/output/reason",
+          "operation": "non-empty-string-to-pointer"
+        }
+      ],
+      "canonicalBytesBase64": "eyJwcm9tcHQiOlt7InJvbGUiOiJ0b29sIiwiY29udGVudCI6W3sidHlwZSI6InRvb2wtcmVzdWx0IiwidG9vbENhbGxJZCI6ImNhbGwtMSIsInRvb2xOYW1lIjoibG9va3VwIiwib3V0cHV0Ijp7InByb3ZpZGVyT3B0aW9ucyI6eyJ0ZXN0Ijp7Im91dHB1dCI6dHJ1ZX19LCJ0eXBlIjoiY29udGVudCIsInZhbHVlIjpbeyJ0eXBlIjoidGV4dCIsInRleHQiOiJvayJ9LHsidHlwZSI6ImZpbGUiLCJkYXRhIjp7InR5cGUiOiJ1cmwiLCJ1cmwiOiJodHRwczovL2V4YW1wbGUuY29tL3JlcG9ydC5wZGYifSwibWVkaWFUeXBlIjoiYXBwbGljYXRpb24vcGRmIiwiZmlsZW5hbWUiOiJyZXBvcnQucGRmIn1dfX0seyJ0eXBlIjoidG9vbC1yZXN1bHQiLCJ0b29sQ2FsbElkIjoiY2FsbC0yIiwidG9vbE5hbWUiOiJkZW5pZWQiLCJvdXRwdXQiOnsicmVhc29uIjoibm90IGFsbG93ZWQiLCJ0eXBlIjoiZXhlY3V0aW9uLWRlbmllZCJ9fV19XX0=",
+      "parentDecode": {
+        "status": "success",
+        "semanticProjectionBase64": "eyJwcm9tcHQiOlt7InJvbGUiOiJ0b29sIiwiY29udGVudCI6W3sidHlwZSI6InRvb2wtcmVzdWx0IiwidG9vbENhbGxJZCI6ImNhbGwtMSIsInRvb2xOYW1lIjoibG9va3VwIiwib3V0cHV0Ijp7InByb3ZpZGVyT3B0aW9ucyI6eyJ0ZXN0Ijp7Im91dHB1dCI6dHJ1ZX19LCJ0eXBlIjoiY29udGVudCIsInZhbHVlIjpbeyJ0eXBlIjoidGV4dCIsInRleHQiOiJvayJ9LHsidHlwZSI6ImZpbGUiLCJkYXRhIjp7InR5cGUiOiJ1cmwiLCJ1cmwiOiJodHRwczovL2V4YW1wbGUuY29tL3JlcG9ydC5wZGYifSwibWVkaWFUeXBlIjoiYXBwbGljYXRpb24vcGRmIiwiZmlsZW5hbWUiOiJyZXBvcnQucGRmIn1dfX0seyJ0eXBlIjoidG9vbC1yZXN1bHQiLCJ0b29sQ2FsbElkIjoiY2FsbC0yIiwidG9vbE5hbWUiOiJkZW5pZWQiLCJvdXRwdXQiOnsicmVhc29uIjoibm90IGFsbG93ZWQiLCJ0eXBlIjoiZXhlY3V0aW9uLWRlbmllZCJ9fV19XX0="
+      }
+    },
+    {
+      "id": "empty-raw-provider-options",
+      "partition": "provider-options/empty-raw-to-null",
+      "migrationProjection": null,
+      "canonicalBytesBase64": "eyJwcm9tcHQiOlt7InJvbGUiOiJ1c2VyIiwiY29udGVudCI6W3sidHlwZSI6InRleHQiLCJ0ZXh0IjoidmFsdWUiLCJwcm92aWRlck9wdGlvbnMiOnsiY29udGVudCI6bnVsbH19XSwicHJvdmlkZXJPcHRpb25zIjp7Im1lc3NhZ2UiOm51bGx9fSx7InJvbGUiOiJ0b29sIiwiY29udGVudCI6W3sidHlwZSI6InRvb2wtcmVzdWx0IiwidG9vbENhbGxJZCI6ImNhbGwiLCJ0b29sTmFtZSI6InRvb2wiLCJvdXRwdXQiOnsicHJvdmlkZXJPcHRpb25zIjp7Im91dHB1dCI6bnVsbH0sInR5cGUiOiJ0ZXh0IiwidmFsdWUiOiJvayJ9fV19XSwidG9vbHMiOlt7InR5cGUiOiJmdW5jdGlvbiIsIm5hbWUiOiJ0b29sIiwicHJvdmlkZXJPcHRpb25zIjp7InRvb2wiOm51bGx9fV0sInByb3ZpZGVyT3B0aW9ucyI6eyJ0b3AiOm51bGx9fQ==",
+      "parentDecode": {
+        "status": "success",
+        "semanticProjectionBase64": "eyJwcm9tcHQiOlt7InJvbGUiOiJ1c2VyIiwiY29udGVudCI6W3sidHlwZSI6InRleHQiLCJ0ZXh0IjoidmFsdWUiLCJwcm92aWRlck9wdGlvbnMiOnsiY29udGVudCI6bnVsbH19XSwicHJvdmlkZXJPcHRpb25zIjp7Im1lc3NhZ2UiOm51bGx9fSx7InJvbGUiOiJ0b29sIiwiY29udGVudCI6W3sidHlwZSI6InRvb2wtcmVzdWx0IiwidG9vbENhbGxJZCI6ImNhbGwiLCJ0b29sTmFtZSI6InRvb2wiLCJvdXRwdXQiOnsicHJvdmlkZXJPcHRpb25zIjp7Im91dHB1dCI6bnVsbH0sInR5cGUiOiJ0ZXh0IiwidmFsdWUiOiJvayJ9fV19XSwidG9vbHMiOlt7InR5cGUiOiJmdW5jdGlvbiIsIm5hbWUiOiJ0b29sIiwicHJvdmlkZXJPcHRpb25zIjp7InRvb2wiOm51bGx9fV0sInByb3ZpZGVyT3B0aW9ucyI6eyJ0b3AiOm51bGx9fQ=="
+      }
+    },
+    {
+      "id": "source-and-generated-filename",
+      "partition": "content/response-source-filename",
+      "migrationProjection": [
+        {
+          "path": "/prompt/0/content/1/filename",
+          "operation": "move-file-filename-to-request-pointer",
+          "value": "generated.pdf"
+        }
+      ],
+      "canonicalBytesBase64": "eyJwcm9tcHQiOlt7InJvbGUiOiJhc3Npc3RhbnQiLCJjb250ZW50IjpbeyJ0eXBlIjoic291cmNlIiwiZmlsZW5hbWUiOiJzb3VyY2UucGRmIiwibWVkaWFUeXBlIjoiYXBwbGljYXRpb24vcGRmIiwic291cmNlVHlwZSI6ImRvY3VtZW50IiwiaWQiOiJzb3VyY2UtMSIsInRpdGxlIjoiUmVwb3J0In0seyJ0eXBlIjoiZmlsZSIsImRhdGEiOnsidHlwZSI6InVybCIsInVybCI6Imh0dHBzOi8vZXhhbXBsZS5jb20vZ2VuZXJhdGVkLnBkZiJ9LCJmaWxlbmFtZSI6ImdlbmVyYXRlZC5wZGYiLCJtZWRpYVR5cGUiOiJhcHBsaWNhdGlvbi9wZGYifV19XX0=",
+      "parentDecode": {
+        "status": "success",
+        "semanticProjectionBase64": "eyJwcm9tcHQiOlt7InJvbGUiOiJhc3Npc3RhbnQiLCJjb250ZW50IjpbeyJ0eXBlIjoic291cmNlIiwiZmlsZW5hbWUiOiJzb3VyY2UucGRmIiwibWVkaWFUeXBlIjoiYXBwbGljYXRpb24vcGRmIiwic291cmNlVHlwZSI6ImRvY3VtZW50IiwiaWQiOiJzb3VyY2UtMSIsInRpdGxlIjoiUmVwb3J0In0seyJ0eXBlIjoiZmlsZSIsImRhdGEiOnsidHlwZSI6InVybCIsInVybCI6Imh0dHBzOi8vZXhhbXBsZS5jb20vZ2VuZXJhdGVkLnBkZiJ9LCJmaWxlbmFtZSI6ImdlbmVyYXRlZC5wZGYiLCJtZWRpYVR5cGUiOiJhcHBsaWNhdGlvbi9wZGYifV19XX0="
+      }
+    }
+  ]
+}

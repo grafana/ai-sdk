@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 
 	"github.com/grafana/agento11y/go/agento11y"
+	"github.com/grafana/ai-sdk/internal/ptr"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -145,11 +146,8 @@ func usageToAgento11y(usage provider.Usage) agento11y.TokenUsage {
 	return out
 }
 
-func intPtrOrZero(v *int) int64 {
-	if v == nil {
-		return 0
-	}
-	return int64(*v)
+func intPtrOrZero(value *int) int64 {
+	return int64(ptr.Deref(value, 0))
 }
 
 // finishReasonToAgento11yStop maps an ai-sdk FinishReason to the canonical stop

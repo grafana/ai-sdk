@@ -8,8 +8,11 @@
 //
 // The protocol emits upstream LanguageModelV4-compatible JSON, routes, headers,
 // and SSE framing, so both the Go Grafana provider and upstream gateway clients
-// can call [Handler]. Decoders also accept legacy Go-to-Go payloads. This is not
-// the UIMessageChunk protocol consumed directly by @ai-sdk/react.
+// can call [Handler]. Requests map through a private tolerant legacy adapter
+// whose historical bytes are parent-pinned; direct providers own strict
+// selected-arm validation. Response decoders also accept legacy Go-to-Go
+// payloads. This is not the UIMessageChunk protocol consumed directly by
+// @ai-sdk/react.
 //
 // Requests use [PathLanguageModel], [HeaderModelID], [HeaderStreaming], and
 // [HeaderSpecVersion]. Unary results are JSON; streaming results are SSE events

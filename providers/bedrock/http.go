@@ -164,7 +164,7 @@ func (m *model) doStream(ctx context.Context, params provider.CallOptions) (*pro
 	go func() {
 		defer close(ch)
 		defer func() { _ = resp.Body.Close() }()
-		m.runStream(ctx, resp.Body, resp.Header, meta, warnings, params.IncludeRawChunks, ch)
+		m.runStream(ctx, resp.Body, resp.Header, meta, warnings, params.IncludeRawChunks != nil && *params.IncludeRawChunks, ch)
 	}()
 
 	return &provider.StreamResult{

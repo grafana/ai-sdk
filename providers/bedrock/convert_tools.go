@@ -119,8 +119,8 @@ func prepareTools(tools []provider.Tool, toolChoice *provider.ToolChoice, modelI
 			Name:        t.Name,
 			InputSchema: toolInputSchema{JSON: jsonOrEmptyObject(t.InputSchema)},
 		}
-		if desc := strings.TrimSpace(t.Description); desc != "" {
-			spec.Description = desc
+		if t.Description != nil && strings.TrimSpace(*t.Description) != "" {
+			spec.Description = *t.Description
 		}
 		if rejectsNewerSchemaFields(modelID) {
 			if t.Strict != nil {

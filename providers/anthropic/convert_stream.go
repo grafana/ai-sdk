@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/grafana/ai-sdk/internal/ptr"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -218,7 +219,7 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 			// server_tool_use blocks as dynamic on tool-input-start so the
 			// tool-validation layer accepts them.
 			if a.markCodeExecutionDynamic && wireName == "code_execution" {
-				startPart.Dynamic = ptrBool(true)
+				startPart.Dynamic = ptr.To(true)
 			}
 			ch <- startPart
 		case "web_search_tool_result":
@@ -276,7 +277,7 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 				ToolName:         mtu.Name,
 				Input:            string(inputJSON),
 				ProviderExecuted: true,
-				Dynamic:          ptrBool(true),
+				Dynamic:          ptr.To(true),
 				ProviderMetadata: meta,
 			}
 		case "mcp_tool_result":
@@ -295,7 +296,7 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 				ToolName:         toolName,
 				Result:           contentJSON,
 				IsError:          mtr.IsError,
-				Dynamic:          ptrBool(true),
+				Dynamic:          ptr.To(true),
 				ProviderMetadata: meta,
 			}
 		}
@@ -450,7 +451,7 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 			// code_execution server_tool_use triggered by a 20260209 web
 			// tool.
 			if a.markCodeExecutionDynamic && bs.providerExecuted && bs.toolName == "code_execution" {
-				callPart.Dynamic = ptrBool(true)
+				callPart.Dynamic = ptr.To(true)
 			}
 			ch <- callPart
 		}

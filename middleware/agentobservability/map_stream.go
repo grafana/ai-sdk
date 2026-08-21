@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/grafana/agento11y/go/agento11y"
+	"github.com/grafana/ai-sdk/internal/ptr"
 	"github.com/grafana/ai-sdk/internal/streamusage"
 	"github.com/grafana/ai-sdk/provider"
 )
@@ -212,8 +213,7 @@ func (r *StreamRecorder) Observe(part provider.StreamPart) {
 
 	case provider.PartFinish:
 		if part.FinishReason != nil {
-			fr := *part.FinishReason
-			r.finishReason = &fr
+			r.finishReason = ptr.Clone(part.FinishReason)
 		}
 
 	case provider.PartResponseMeta:

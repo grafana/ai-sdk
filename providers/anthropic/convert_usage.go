@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/grafana/ai-sdk/internal/ptr"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -144,7 +145,5 @@ func thinkingTokenCount(details anthropic.BetaOutputTokensDetails) *int64 {
 	if !details.JSON.ThinkingTokens.Valid() {
 		return nil
 	}
-	return ptrInt64(details.ThinkingTokens)
+	return ptr.To(details.ThinkingTokens)
 }
-
-func ptrInt64(value int64) *int64 { return &value }

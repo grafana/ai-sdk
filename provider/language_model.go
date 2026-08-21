@@ -27,26 +27,26 @@ type LanguageModel interface {
 
 // CallOptions configures a model call. Passed to DoStream and DoGenerate.
 //
-// Every field carries a JSON tag so [CallOptions] round-trips losslessly
-// through encoding/json. The wire form mirrors LanguageModelV4CallOptions
-// from upstream (Vercel AI SDK).
+// Generic JSON tags provide compatibility for existing consumers. HTTP
+// transports explicitly map this transport-neutral value and do not treat its
+// generic JSON form as protocol authority.
 type CallOptions struct {
-	Prompt           []Message         `json:"prompt,omitempty"`
-	Tools            []Tool            `json:"tools,omitempty"`
-	ToolChoice       *ToolChoice       `json:"toolChoice,omitempty"`
-	MaxOutputTokens  *int              `json:"maxOutputTokens,omitempty"`
-	Temperature      *float64          `json:"temperature,omitempty"`
-	TopP             *float64          `json:"topP,omitempty"`
-	TopK             *int              `json:"topK,omitempty"`
-	PresencePenalty  *float64          `json:"presencePenalty,omitempty"`
-	FrequencyPenalty *float64          `json:"frequencyPenalty,omitempty"`
-	StopSequences    []string          `json:"stopSequences,omitempty"`
-	ResponseFormat   *ResponseFormat   `json:"responseFormat,omitempty"`
-	Seed             *int              `json:"seed,omitempty"`
-	Reasoning        *ReasoningEffort  `json:"reasoning,omitempty"`
-	IncludeRawChunks bool              `json:"includeRawChunks,omitempty"`
-	Headers          map[string]string `json:"headers,omitempty"`
-	ProviderOptions  ProviderOptions   `json:"providerOptions,omitempty"`
+	Prompt           []Message            `json:"prompt,omitempty"`
+	Tools            []Tool               `json:"tools,omitempty"`
+	ToolChoice       *ToolChoice          `json:"toolChoice,omitempty"`
+	MaxOutputTokens  *LanguageModelNumber `json:"maxOutputTokens,omitempty"`
+	Temperature      *float64             `json:"temperature,omitempty"`
+	TopP             *float64             `json:"topP,omitempty"`
+	TopK             *LanguageModelNumber `json:"topK,omitempty"`
+	PresencePenalty  *float64             `json:"presencePenalty,omitempty"`
+	FrequencyPenalty *float64             `json:"frequencyPenalty,omitempty"`
+	StopSequences    []string             `json:"stopSequences,omitempty"`
+	ResponseFormat   *ResponseFormat      `json:"responseFormat,omitempty"`
+	Seed             *LanguageModelNumber `json:"seed,omitempty"`
+	Reasoning        *ReasoningEffort     `json:"reasoning,omitempty"`
+	IncludeRawChunks *bool                `json:"includeRawChunks,omitempty"`
+	Headers          map[string]string    `json:"headers,omitempty"`
+	ProviderOptions  ProviderOptions      `json:"providerOptions,omitempty"`
 }
 
 // ResponseFormatType specifies the desired output format.
@@ -61,8 +61,8 @@ const (
 type ResponseFormat struct {
 	Type        ResponseFormatType `json:"type"`
 	Schema      json.RawMessage    `json:"schema,omitempty"`
-	Name        string             `json:"name,omitempty"`
-	Description string             `json:"description,omitempty"`
+	Name        *string            `json:"name,omitempty"`
+	Description *string            `json:"description,omitempty"`
 }
 
 // ToolType identifies the kind of provider-level tool.
@@ -79,15 +79,15 @@ const (
 // InputExamples, Strict) and provider-tool fields (ID, Args) live on the
 // same struct; populated subset depends on Type.
 //
-// This shape mirrors how LanguageModelV4FunctionTool / V4ProviderTool serialize
-// directly to JSON in upstream (Vercel AI SDK). In Go we keep them in one
-// struct so the runtime type is the wire payload (no DTO layer needed).
+// This shape mirrors the LanguageModelV4FunctionTool / V4ProviderTool domain
+// union. Generic JSON is compatibility behavior; provider request mappers
+// validate the selected arm explicitly.
 type Tool struct {
 	Type ToolType `json:"type"`
 	Name string   `json:"name"`
 
 	// Function-tool fields.
-	Description   string          `json:"description,omitempty"`
+	Description   *string         `json:"description,omitempty"`
 	InputSchema   json.RawMessage `json:"inputSchema,omitempty"`
 	InputExamples []InputExample  `json:"inputExamples,omitempty"`
 	Strict        *bool           `json:"strict,omitempty"`

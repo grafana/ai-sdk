@@ -28,7 +28,7 @@ export async function checkProviderWireV4(
   if (errors.length > 0) {
     throw new Error(errors.join("\n"));
   }
-  console.log("ProviderWire V4 committed evidence matches the pinned client");
+  console.log("ProviderWire V4 committed evidence matches");
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

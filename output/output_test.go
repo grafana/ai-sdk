@@ -35,8 +35,10 @@ func TestObjectOutput_ResponseFormat(t *testing.T) {
 
 	rf := out.ResponseFormat()
 	assert.Equal(t, provider.ResponseFormatJSON, rf.Type)
-	assert.Equal(t, "recipe", rf.Name)
-	assert.Equal(t, "A recipe", rf.Description)
+	require.NotNil(t, rf.Name)
+	assert.Equal(t, "recipe", *rf.Name)
+	require.NotNil(t, rf.Description)
+	assert.Equal(t, "A recipe", *rf.Description)
 	assert.NotNil(t, rf.Schema)
 }
 
@@ -119,8 +121,10 @@ func TestArrayOutput_ResponseFormat(t *testing.T) {
 
 	rf := out.ResponseFormat()
 	assert.Equal(t, provider.ResponseFormatJSON, rf.Type)
-	assert.Equal(t, "cities", rf.Name)
-	assert.Equal(t, "City list", rf.Description)
+	require.NotNil(t, rf.Name)
+	assert.Equal(t, "cities", *rf.Name)
+	require.NotNil(t, rf.Description)
+	assert.Equal(t, "City list", *rf.Description)
 
 	var s map[string]any
 	require.NoError(t, json.Unmarshal(rf.Schema, &s))
@@ -199,8 +203,10 @@ func TestChoiceOutput_ResponseFormat(t *testing.T) {
 
 	rf := out.ResponseFormat()
 	assert.Equal(t, provider.ResponseFormatJSON, rf.Type)
-	assert.Equal(t, "weather", rf.Name)
-	assert.Equal(t, "Weather choice", rf.Description)
+	require.NotNil(t, rf.Name)
+	assert.Equal(t, "weather", *rf.Name)
+	require.NotNil(t, rf.Description)
+	assert.Equal(t, "Weather choice", *rf.Description)
 
 	var s map[string]any
 	require.NoError(t, json.Unmarshal(rf.Schema, &s))
@@ -247,8 +253,22 @@ func TestJSONOutput_ResponseFormat(t *testing.T) {
 	rf := out.ResponseFormat()
 	assert.Equal(t, provider.ResponseFormatJSON, rf.Type)
 	assert.Nil(t, rf.Schema)
-	assert.Equal(t, "payload", rf.Name)
-	assert.Equal(t, "Raw JSON payload", rf.Description)
+	require.NotNil(t, rf.Name)
+	assert.Equal(t, "payload", *rf.Name)
+	require.NotNil(t, rf.Description)
+	assert.Equal(t, "Raw JSON payload", *rf.Description)
+}
+
+func TestOutputResponseFormat_OptionalStringPresence(t *testing.T) {
+	absent := JSON().ResponseFormat()
+	assert.Nil(t, absent.Name)
+	assert.Nil(t, absent.Description)
+
+	explicit := JSON(WithName(""), WithDescription("")).ResponseFormat()
+	require.NotNil(t, explicit.Name)
+	assert.Empty(t, *explicit.Name)
+	require.NotNil(t, explicit.Description)
+	assert.Empty(t, *explicit.Description)
 }
 
 func TestTextOutput_ParseComplete(t *testing.T) {

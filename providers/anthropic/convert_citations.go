@@ -56,13 +56,17 @@ func extractCitationDocuments(prompt []provider.Message) []citationDocument {
 			if fp.Data == nil || !hasFileData(*fp.Data) {
 				continue
 			}
-			title := fp.Filename
+			filename := ""
+			if fp.FilePartFilename != nil {
+				filename = *fp.FilePartFilename
+			}
+			title := filename
 			if title == "" {
 				title = "Untitled Document"
 			}
 			docs = append(docs, citationDocument{
 				title:     title,
-				filename:  fp.Filename,
+				filename:  filename,
 				mediaType: fp.MediaType,
 			})
 		}

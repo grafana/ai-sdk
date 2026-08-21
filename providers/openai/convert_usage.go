@@ -1,6 +1,7 @@
 package openai
 
 import (
+	ptrutil "github.com/grafana/ai-sdk/internal/ptr"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/openai/openai-go/v3/responses"
 )
@@ -23,15 +24,15 @@ func convertUsage(u responses.ResponseUsage, raw []byte) provider.Usage {
 
 	return provider.Usage{
 		InputTokens: provider.InputTokenUsage{
-			Total:      intPtr(inputTotal),
-			NoCache:    intPtr(noCache),
-			CacheRead:  intPtr(cached),
+			Total:      ptrutil.To(inputTotal),
+			NoCache:    ptrutil.To(noCache),
+			CacheRead:  ptrutil.To(cached),
 			CacheWrite: cacheWrite,
 		},
 		OutputTokens: provider.OutputTokenUsage{
-			Total:     intPtr(outputTotal),
-			Text:      intPtr(text),
-			Reasoning: intPtr(reasoning),
+			Total:     ptrutil.To(outputTotal),
+			Text:      ptrutil.To(text),
+			Reasoning: ptrutil.To(reasoning),
 		},
 		Raw: raw,
 	}
@@ -49,7 +50,5 @@ func cacheWriteTokens(u responses.ResponseUsage) *int {
 	if !u.InputTokensDetails.JSON.CacheWriteTokens.Valid() {
 		return nil
 	}
-	return intPtr(int(u.InputTokensDetails.CacheWriteTokens))
+	return ptrutil.To(int(u.InputTokensDetails.CacheWriteTokens))
 }
-
-func intPtr(v int) *int { return &v }

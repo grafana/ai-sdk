@@ -334,14 +334,18 @@ cd test && pnpm --filter @ai-sdk/conformance-tools generate
 [tasks.check-providerwire-v4]
 description = "Verify pinned ProviderWire V4 contract evidence without modifying artifacts"
 run = """
+parent_corpus=$(mktemp)
+trap 'rm -f "$parent_corpus"' EXIT
+test/providerwire-v4/parent-corpus/generate.sh "$parent_corpus"
+cmp gateway/providerwire/testdata/parent_request_compat_v1.json "$parent_corpus"
+rm -f "$parent_corpus"
+trap - EXIT
 mise deps install --only test
 cd test
 pnpm --filter @ai-sdk/conformance-tools validate-baseline
 pnpm --filter @ai-sdk/providerwire-v4-evidence typecheck
 pnpm --filter @ai-sdk/providerwire-v4-evidence test
 pnpm --filter @ai-sdk/providerwire-v4-evidence check
-cd ..
-go test ./provider -run '^TestProviderWireV4Loss_'
 """
 
 [tasks.update-providerwire-v4-artifacts]

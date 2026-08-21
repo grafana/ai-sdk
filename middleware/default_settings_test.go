@@ -22,7 +22,7 @@ func TestDefaultSettings(t *testing.T) {
 
 		mw := DefaultSettings(DefaultSettingsOptions{
 			Temperature:     ptr(0.7),
-			MaxOutputTokens: ptr(1024),
+			MaxOutputTokens: languageNumberIntPtr(1024),
 		})
 
 		wrapped := WrapLanguageModel(model, mw)
@@ -32,7 +32,7 @@ func TestDefaultSettings(t *testing.T) {
 		require.NotNil(t, received.Temperature)
 		assert.Equal(t, 0.7, *received.Temperature)
 		require.NotNil(t, received.MaxOutputTokens)
-		assert.Equal(t, 1024, *received.MaxOutputTokens)
+		assert.Equal(t, int64(1024), exactLanguageModelInteger(t, received.MaxOutputTokens))
 	})
 
 	t.Run("CallerValueTakesPrecedence", func(t *testing.T) {
@@ -68,7 +68,7 @@ func TestDefaultSettings(t *testing.T) {
 
 		mw := DefaultSettings(DefaultSettingsOptions{
 			Temperature:     ptr(0.7),
-			MaxOutputTokens: ptr(1024),
+			MaxOutputTokens: languageNumberIntPtr(1024),
 			StopSequences:   []string{"STOP"},
 		})
 
@@ -79,7 +79,7 @@ func TestDefaultSettings(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.Equal(t, 0.3, *received.Temperature)
-		assert.Equal(t, 1024, *received.MaxOutputTokens)
+		assert.Equal(t, int64(1024), exactLanguageModelInteger(t, received.MaxOutputTokens))
 		assert.Equal(t, []string{"STOP"}, received.StopSequences)
 	})
 
@@ -183,6 +183,23 @@ func TestDefaultSettings(t *testing.T) {
 		assert.Equal(t, 0.0, *received.Temperature)
 	})
 
+	t.Run("ExactFractionDefault", func(t *testing.T) {
+		fraction, err := provider.LanguageModelNumberFromFloat64(1.5)
+		require.NoError(t, err)
+		var received provider.CallOptions
+		model := &mockModel{doGenerate: func(_ context.Context, params provider.CallOptions) (*provider.GenerateResult, error) {
+			received = params
+			return &provider.GenerateResult{}, nil
+		}}
+		wrapped := WrapLanguageModel(model, DefaultSettings(DefaultSettingsOptions{MaxOutputTokens: &fraction}))
+		_, err = wrapped.DoGenerate(context.Background(), provider.CallOptions{})
+		require.NoError(t, err)
+		require.NotNil(t, received.MaxOutputTokens)
+		value, ok := received.MaxOutputTokens.Float64()
+		require.True(t, ok)
+		assert.Equal(t, 1.5, value)
+	})
+
 	t.Run("AllPointerFields", func(t *testing.T) {
 		var received provider.CallOptions
 		model := &mockModel{
@@ -194,10 +211,10 @@ func TestDefaultSettings(t *testing.T) {
 
 		mw := DefaultSettings(DefaultSettingsOptions{
 			TopP:             ptr(0.9),
-			TopK:             ptr(40),
+			TopK:             languageNumberIntPtr(40),
 			PresencePenalty:  ptr(0.1),
 			FrequencyPenalty: ptr(0.2),
-			Seed:             ptr(42),
+			Seed:             languageNumberIntPtr(42),
 			Reasoning:        ptr(provider.ReasoningMedium),
 		})
 
@@ -206,10 +223,23 @@ func TestDefaultSettings(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.Equal(t, 0.9, *received.TopP)
-		assert.Equal(t, 40, *received.TopK)
+		assert.Equal(t, int64(40), exactLanguageModelInteger(t, received.TopK))
 		assert.Equal(t, 0.1, *received.PresencePenalty)
 		assert.Equal(t, 0.2, *received.FrequencyPenalty)
-		assert.Equal(t, 42, *received.Seed)
+		assert.Equal(t, int64(42), exactLanguageModelInteger(t, received.Seed))
 		assert.Equal(t, provider.ReasoningMedium, *received.Reasoning)
 	})
+}
+
+func languageNumberIntPtr(value int) *provider.LanguageModelNumber {
+	number := provider.LanguageModelNumberFromInt(value)
+	return &number
+}
+
+func exactLanguageModelInteger(t *testing.T, number *provider.LanguageModelNumber) int64 {
+	t.Helper()
+	require.NotNil(t, number)
+	value, ok := number.Int64()
+	require.True(t, ok)
+	return value
 }

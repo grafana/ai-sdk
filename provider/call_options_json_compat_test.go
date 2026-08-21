@@ -8,8 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCallOptions_WireRoundTrip(t *testing.T) {
-	intPtr := func(i int) *int { return &i }
+func TestCallOptions_JSONCompatibilityRoundTrip(t *testing.T) {
 	floatPtr := func(f float64) *float64 { return &f }
 	reasoning := ReasoningHigh
 
@@ -35,7 +34,7 @@ func TestCallOptions_WireRoundTrip(t *testing.T) {
 			{
 				Type:        ToolTypeFunction,
 				Name:        "search",
-				Description: "Searches the web",
+				Description: stringPtr("Searches the web"),
 				InputSchema: json.RawMessage(`{"type":"object","properties":{"q":{"type":"string"}}}`),
 				InputExamples: []InputExample{
 					{Input: json.RawMessage(`{"q":"hello"}`)},
@@ -55,17 +54,17 @@ func TestCallOptions_WireRoundTrip(t *testing.T) {
 			},
 		},
 		ToolChoice:       &ToolChoice{Type: ToolChoiceTool, ToolName: "search"},
-		MaxOutputTokens:  intPtr(1024),
+		MaxOutputTokens:  languageModelIntPointer(1024),
 		Temperature:      floatPtr(0.7),
 		TopP:             floatPtr(0.95),
-		TopK:             intPtr(40),
+		TopK:             languageModelIntPointer(40),
 		PresencePenalty:  floatPtr(0.1),
 		FrequencyPenalty: floatPtr(0.2),
 		StopSequences:    []string{"END", "\n\n"},
-		ResponseFormat:   &ResponseFormat{Type: ResponseFormatJSON, Schema: json.RawMessage(`{"type":"object"}`), Name: "result", Description: "the answer"},
-		Seed:             intPtr(42),
+		ResponseFormat:   &ResponseFormat{Type: ResponseFormatJSON, Schema: json.RawMessage(`{"type":"object"}`), Name: stringPtr("result"), Description: stringPtr("the answer")},
+		Seed:             languageModelIntPointer(42),
 		Reasoning:        &reasoning,
-		IncludeRawChunks: true,
+		IncludeRawChunks: boolPtr(true),
 		Headers:          map[string]string{"X-Trace-ID": "abc"},
 		ProviderOptions: ProviderOptions{
 			"anthropic": RawProviderOption{Key: "anthropic", Raw: json.RawMessage(`{"thinking":{"budget":1024}}`)},

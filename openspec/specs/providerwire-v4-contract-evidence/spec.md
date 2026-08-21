@@ -3,9 +3,7 @@
 ## Purpose
 
 Define exact-pinned evidence, validation, maintenance, and handoff requirements for the ProviderWire V4 language-model contract.
-
 ## Requirements
-
 ### Requirement: Dedicated exact-pinned evidence workspace
 The repository SHALL provide a dedicated `test/providerwire-v4` TypeScript workspace whose `ai` and `@ai-sdk/*` dependencies use exact versions from `test/conformance/upstream.yaml`. The workspace SHALL describe its claim boundary and SHALL remain distinct from provider recordings, upstream provider fixtures, legacy ProviderWire interop, and production runtime tests.
 
@@ -152,22 +150,6 @@ Every supported semantic capture SHALL satisfy the ProviderWire V4 HTTP envelope
 - **WHEN** a focused negative case supplies null for a standardized non-null field
 - **THEN** schema validation SHALL reject it
 
-### Requirement: Evidence-backed Phase 2 delta table
-The workspace SHALL compare the complete classified request surface with the current transport-neutral Go provider request model and SHALL commit a Phase 2 delta table. Every row SHALL identify a valid pinned distinction that an explicit V4 mapper cannot recover from the Go values, its supporting scenario and path, current semantic representation behavior, an external-package executable witness, and the required provider-model change. Generic `encoding/json` tags and output SHALL NOT be treated as protocol authority. Items that differ only because of `omitempty`, JSON formatting, invalid inputs, or permissive flat unions while remaining semantically representable SHALL NOT be classified as losses.
-
-#### Scenario: Lost distinction has a witness
-- **WHEN** the current Go model cannot preserve a valid classified request distinction
-- **THEN** the delta table SHALL contain one row and one passing Phase 1 witness that demonstrates the loss
-
-#### Scenario: No unsupported redesign is proposed
-- **WHEN** a Go type could preserve every valid classified value despite permitting invalid inactive-arm combinations, using nil versus non-nil collections, or requiring explicit discriminator-based wire mapping
-- **THEN** the delta table SHALL NOT require a provider-model redesign solely for permissiveness or generic JSON omission
-
-#### Scenario: Delta coherence is evaluated
-- **WHEN** the complete delta table is ready for handoff
-- **THEN** it SHALL state whether the required changes form one coherent Phase 2 provider-contract change
-- **AND** later phase planning SHALL be revised before handoff if they do not
-
 ### Requirement: Focused pinned-client response consumption probes
 The workspace SHALL include the smallest locally authored black-box probes needed to demonstrate that the registered Gateway client consumes unary JSON success, JSON SSE events ending at clean EOF without requiring `[DONE]`, and a represented safe non-2xx response. Expected non-2xx behavior SHALL derive from the source-equivalent installed Gateway failed-response and error-normalization path together with the represented HTTP status, while the assertion SHALL execute through the public installed client.
 
@@ -185,10 +167,11 @@ The workspace SHALL include the smallest locally authored black-box probes neede
 
 #### Scenario: Probe claim remains bounded
 - **WHEN** all response probes pass
-- **THEN** the parity map SHALL still classify exhaustive response arms, strict server errors, privacy, and lifecycle behavior as uncovered by Phase 1
+- **THEN** the parity map SHALL still classify exhaustive response arms, strict server errors, privacy, and lifecycle behavior as uncovered by the pinned request-evidence workspace
 
 ### Requirement: Non-mutating check workflow
-The repository SHALL expose `mise run check-providerwire-v4` as the complete ordinary ProviderWire V4 verification workflow. It SHALL validate exact pins, the committed source-equivalence evidence against installed package inputs, classification exhaustiveness, strict parsing, runtime observations, semantic captures, schemas, Go loss witnesses, and response probes without repeating the upstream source-tree comparison, writing committed artifacts, or changing the worktree.
+
+The repository SHALL expose `mise run check-providerwire-v4` as the complete ordinary ProviderWire V4 evidence verification workflow. It SHALL validate exact pins, committed source-equivalence evidence against installed package inputs, classification exhaustiveness, strict parsing, runtime observations, semantic captures, schemas, and response probes without repeating the upstream source-tree comparison, writing committed artifacts, or changing the worktree. Positive Go provider request-contract assertions SHALL run through normal Go test workflows rather than a completed handoff document or test-name manifest.
 
 #### Scenario: Check succeeds without changes
 - **WHEN** committed artifacts match the registered packages and all validation passes
@@ -219,9 +202,15 @@ The repository SHALL expose `mise run update-providerwire-v4-artifacts` as the o
 - **THEN** contributors SHALL use version control to restore them rather than a custom artifact transaction system
 
 ### Requirement: Truthful parity coverage classification
-`test/conformance/PARITY.md` SHALL classify the new ProviderWire V4 request-contract surface by layer and confidence source. It SHALL distinguish automated pinned-client request/schema evidence, Phase 2 Go-model loss evidence, smoke-level client response consumption, unchanged legacy interop, and absent production strict-runtime coverage.
 
-#### Scenario: Reviewer inspects Phase 1 coverage
-- **WHEN** a reviewer reads the parity map
-- **THEN** the map SHALL state exactly which request and client-consumption behaviors are automated
-- **AND** it SHALL identify the remaining provider-contract and runtime gaps without treating local probes as provider recordings
+`test/conformance/PARITY.md` SHALL classify the ProviderWire V4 request-contract surface by layer and confidence source. It SHALL distinguish automated pinned-client request/schema evidence, positive public Go provider request-contract coverage, smoke-level client response consumption, unchanged tolerant legacy interop, parent-pinned legacy request compatibility, and absent production strict-runtime coverage.
+
+#### Scenario: Reviewer inspects provider request-contract coverage
+- **WHEN** a reviewer reads the parity map after implementation
+- **THEN** the map SHALL identify the preserved numeric, scalar-presence, and file-data distinctions as automated positive coverage
+- **AND** it SHALL not describe the current Go contract as exhibiting the resolved representation losses
+
+#### Scenario: Historical and runtime claims remain bounded
+- **WHEN** the parity map describes pinned evidence and current Go coverage
+- **THEN** it SHALL retain the original evidence boundary
+- **AND** it SHALL identify remaining strict runtime gaps without treating local probes or legacy goldens as provider recordings

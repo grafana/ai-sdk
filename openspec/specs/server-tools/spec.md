@@ -1,9 +1,7 @@
 ## Purpose
 
 Support Anthropic server-executed tools (web search, web fetch, memory, tool search) in both streaming and non-streaming paths, with generic handling for unknown tool types and backward compatibility with existing function tools.
-
 ## Requirements
-
 ### Requirement: Provider-defined tool request building
 
 The Anthropic provider's `convertTools()` function SHALL accept `[]provider.Tool` (interface) and use a type switch to dispatch on `provider.FunctionTool` and `provider.ProviderTool`. `provider.ProviderTool` entries SHALL be converted into the corresponding Anthropic SDK tool union variants, dispatching on the tool's `ID` field. `provider.FunctionTool` entries SHALL continue to use the existing `OfTool` path.
@@ -339,32 +337,48 @@ The Anthropic stream adapter SHALL handle `citations_delta` events in `BetaRawCo
 
 ### Requirement: Citation document tracking
 
-The Anthropic stream adapter and response converter SHALL track citation documents extracted from the prompt's user messages. The extraction SHALL collect file content parts with `MediaType` of `application/pdf` or `text/plain` that have `providerOptions["anthropic"]["citations"]["enabled"]` set to `true`. Each tracked document SHALL record `title` (from filename, defaulting to `"Untitled Document"`), `filename`, and `mediaType`. The documents SHALL be tracked in prompt order to match Anthropic's document indexing.
+The Anthropic stream adapter and response converter SHALL track citation documents extracted from prompt user messages. Extraction SHALL collect file-typed `provider.ContentPart` values with `MediaType` of `application/pdf` or `text/plain` and `providerOptions["anthropic"]["citations"]["enabled"] == true`.
+
+Because these values are provider requests, citation tracking SHALL read filename presence only from `FilePartFilename`; it SHALL NOT read the generated-response/source `Filename` field. A non-nil request filename supplies the tracked filename. Nil or explicit-empty filename uses the existing `"Untitled Document"` title fallback and an empty tracked filename. Mixed request/response filename state SHALL be rejected by the Anthropic request boundary before citation extraction is used.
+
+Each tracked document SHALL record title, filename, and media type in prompt order to match Anthropic document indexing. Citation sources generated in responses SHALL continue to write `SourceInfo.Filename` and response/source `ContentPart.Filename`; this change SHALL NOT move source filenames into `FilePartFilename`.
 
 #### Scenario: PDF file part with citations enabled
 
-- **WHEN** the prompt contains a user message with a `FileContentPart` having `MediaType: "application/pdf"`, `Filename: "report.pdf"`, and provider metadata `{"anthropic": {"citations": {"enabled": true}}}`
-- **THEN** the citation documents list includes `{title: "report.pdf", filename: "report.pdf", mediaType: "application/pdf"}`
+- **WHEN** the prompt contains a file `ContentPart` with `MediaType: "application/pdf"`, `FilePartFilename` pointing to `"report.pdf"`, and provider options `{"anthropic":{"citations":{"enabled":true}}}`
+- **THEN** the citation documents list SHALL include `{title: "report.pdf", filename: "report.pdf", mediaType: "application/pdf"}`
 
 #### Scenario: Text file part with citations enabled
 
-- **WHEN** the prompt contains a user message with a `FileContentPart` having `MediaType: "text/plain"`, `Filename: "notes.txt"`, and provider metadata `{"anthropic": {"citations": {"enabled": true}}}`
-- **THEN** the citation documents list includes `{title: "notes.txt", filename: "notes.txt", mediaType: "text/plain"}`
+- **WHEN** the prompt contains a file `ContentPart` with `MediaType: "text/plain"`, `FilePartFilename` pointing to `"notes.txt"`, and citations enabled
+- **THEN** the citation documents list SHALL include `{title: "notes.txt", filename: "notes.txt", mediaType: "text/plain"}`
 
 #### Scenario: File part without citations enabled is excluded
 
-- **WHEN** the prompt contains a user message with a `FileContentPart` having `MediaType: "application/pdf"` but no `citations.enabled` in provider metadata
-- **THEN** the file is NOT included in the citation documents list
+- **WHEN** a prompt file has `MediaType: "application/pdf"` but no enabled Anthropic citations option
+- **THEN** it SHALL NOT be included in the citation documents list
 
 #### Scenario: File part with non-citation media type is excluded
 
-- **WHEN** the prompt contains a user message with a `FileContentPart` having `MediaType: "image/png"` and `citations.enabled: true`
-- **THEN** the file is NOT included in the citation documents list
+- **WHEN** a prompt file has `MediaType: "image/png"` and citations enabled
+- **THEN** it SHALL NOT be included in the citation documents list
 
 #### Scenario: File part without filename defaults title
 
-- **WHEN** the prompt contains a user message with a `FileContentPart` having `MediaType: "application/pdf"`, no `Filename`, and `citations.enabled: true`
-- **THEN** the citation documents list includes an entry with `title: "Untitled Document"` and empty `filename`
+- **WHEN** a citation-enabled prompt file has nil `FilePartFilename`
+- **THEN** the citation document SHALL use title `"Untitled Document"` and an empty filename
+
+#### Scenario: Explicit empty request filename uses fallback
+
+- **WHEN** a citation-enabled prompt file has `FilePartFilename` pointing to `""`
+- **THEN** the citation document SHALL use title `"Untitled Document"` and an empty filename
+- **AND** request mapping SHALL still preserve the explicit-empty filename member
+
+#### Scenario: Source filenames remain response-owned
+
+- **WHEN** citation conversion emits a document source with a tracked non-empty filename
+- **THEN** the source SHALL populate `SourceInfo.Filename` and response/source `ContentPart.Filename`
+- **AND** it SHALL NOT populate `FilePartFilename`
 
 ### Requirement: Text block citation handling in non-streaming responses
 

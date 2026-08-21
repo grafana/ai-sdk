@@ -659,7 +659,7 @@ func TestBuildParams_Tools(t *testing.T) {
 		Tools: []provider.Tool{
 			provider.Tool{Type: provider.ToolTypeFunction,
 				Name:        "search",
-				Description: "Search the web",
+				Description: requestStringPointer("Search the web"),
 				InputSchema: json.RawMessage(`{"type":"object","properties":{"q":{"type":"string"}},"required":["q"]}`),
 			},
 		},
@@ -696,7 +696,7 @@ func TestBuildParams_ToolChoice(t *testing.T) {
 	functionTool := provider.Tool{
 		Type:        provider.ToolTypeFunction,
 		Name:        "search",
-		Description: "Search the web",
+		Description: requestStringPointer("Search the web"),
 		InputSchema: json.RawMessage(`{"type":"object"}`),
 	}
 	tests := []struct {
@@ -785,7 +785,7 @@ func TestBuildParams_ToolChoiceNoneDropsTools(t *testing.T) {
 			{
 				Type:        provider.ToolTypeFunction,
 				Name:        "search",
-				Description: "Search the web",
+				Description: requestStringPointer("Search the web"),
 				InputSchema: json.RawMessage(`{"type":"object"}`),
 			},
 		},
@@ -820,7 +820,7 @@ func TestBuildParams_StrictFunctionTool(t *testing.T) {
 				Tools: []provider.Tool{{
 					Type:        provider.ToolTypeFunction,
 					Name:        "search",
-					Description: "Search the web",
+					Description: requestStringPointer("Search the web"),
 					InputSchema: json.RawMessage(`{"type":"object"}`),
 					Strict:      tc.strict,
 				}},
@@ -974,14 +974,12 @@ func TestBuildParams_ToolChoiceMapsProviderToolName(t *testing.T) {
 
 func TestBuildParams_ScalarParams(t *testing.T) {
 	temp := 0.7
-	maxTokens := 1000
 	topP := 0.9
-	topK := 40
 	opts := provider.CallOptions{
 		Temperature:     &temp,
-		MaxOutputTokens: &maxTokens,
+		MaxOutputTokens: requestIntegerPointer(1000),
 		TopP:            &topP,
-		TopK:            &topK,
+		TopK:            requestIntegerPointer(40),
 		StopSequences:   []string{"STOP"},
 	}
 
@@ -1018,17 +1016,15 @@ func TestBuildParams_DefaultMaxTokensFromCapabilities(t *testing.T) {
 }
 
 func TestBuildParams_ExplicitMaxOutputTokensOverridesModelDefault(t *testing.T) {
-	maxTok := 2048
-	opts := provider.CallOptions{MaxOutputTokens: &maxTok}
+	opts := provider.CallOptions{MaxOutputTokens: requestIntegerPointer(2048)}
 	p, _, _, _, err := buildParams("claude-sonnet-4-6", opts, false)
 	require.NoError(t, err)
 	assert.Equal(t, int64(2048), p.MaxTokens)
 }
 
 func TestBuildParams_ClampMaxTokens_UserProvidedWithThinkingEmitsWarning(t *testing.T) {
-	maxTok := 60000
 	opts := provider.CallOptions{
-		MaxOutputTokens: &maxTok,
+		MaxOutputTokens: requestIntegerPointer(60000),
 		ProviderOptions: provider.ProviderOptions{
 			"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(`{"thinking":{"type":"enabled","budgetTokens":10000}}`)},
 		},
@@ -1061,8 +1057,7 @@ func TestBuildParams_ClampMaxTokens_DefaultPlusThinkingSilent(t *testing.T) {
 }
 
 func TestBuildParams_NoClampUnknownModel(t *testing.T) {
-	maxTok := 200000
-	opts := provider.CallOptions{MaxOutputTokens: &maxTok}
+	opts := provider.CallOptions{MaxOutputTokens: requestIntegerPointer(200000)}
 	p, _, warnings, _, err := buildParams("some-future-model", opts, false)
 	require.NoError(t, err)
 	assert.Equal(t, int64(200000), p.MaxTokens)
@@ -1072,8 +1067,7 @@ func TestBuildParams_NoClampUnknownModel(t *testing.T) {
 }
 
 func TestBuildParams_NoClampWithinModelLimit(t *testing.T) {
-	maxTok := 50000
-	opts := provider.CallOptions{MaxOutputTokens: &maxTok}
+	opts := provider.CallOptions{MaxOutputTokens: requestIntegerPointer(50000)}
 	p, _, warnings, _, err := buildParams("claude-sonnet-4-6", opts, false)
 	require.NoError(t, err)
 	assert.Equal(t, int64(50000), p.MaxTokens)
@@ -1083,9 +1077,8 @@ func TestBuildParams_NoClampWithinModelLimit(t *testing.T) {
 }
 
 func TestBuildParams_ThinkingBudgetAddedUnderModelCap(t *testing.T) {
-	maxTok := 50000
 	opts := provider.CallOptions{
-		MaxOutputTokens: &maxTok,
+		MaxOutputTokens: requestIntegerPointer(50000),
 		ProviderOptions: provider.ProviderOptions{
 			"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(`{"thinking":{"type":"enabled","budgetTokens":5000}}`)},
 		},
@@ -1117,11 +1110,10 @@ func TestBuildParams_DefaultThinkingBudget(t *testing.T) {
 func TestBuildParams_UnsupportedParams(t *testing.T) {
 	pp := 0.5
 	fp := 0.5
-	seed := 42
 	opts := provider.CallOptions{
 		PresencePenalty:  &pp,
 		FrequencyPenalty: &fp,
-		Seed:             &seed,
+		Seed:             requestIntegerPointer(42),
 	}
 
 	_, _, warnings, _, err := buildParams("claude-sonnet-4-6", opts, false)
@@ -1170,7 +1162,7 @@ func TestBuildParams_ProviderOptions_AdaptiveThinking(t *testing.T) {
 func TestBuildParams_ProviderOptions_DisabledThinking(t *testing.T) {
 	t.Run("forwarded without budget", func(t *testing.T) {
 		opts := provider.CallOptions{
-			MaxOutputTokens: ptrInt(100),
+			MaxOutputTokens: requestIntegerPointer(100),
 			ProviderOptions: provider.ProviderOptions{
 				"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(`{"thinking":{"type":"disabled"}}`)},
 			},
@@ -1185,11 +1177,10 @@ func TestBuildParams_ProviderOptions_DisabledThinking(t *testing.T) {
 	})
 
 	t.Run("keeps sampling params", func(t *testing.T) {
-		topK := 1
 		temperature := 0.5
 		opts := provider.CallOptions{
 			Temperature: &temperature,
-			TopK:        &topK,
+			TopK:        requestIntegerPointer(1),
 			ProviderOptions: provider.ProviderOptions{
 				"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(`{"thinking":{"type":"disabled"}}`)},
 			},
@@ -1533,7 +1524,7 @@ func TestBuildParams_BetaDeduplication(t *testing.T) {
 func TestSerializeToolOutput_ExecutionDenied(t *testing.T) {
 	output := provider.ToolResultOutput{
 		Type:   provider.ToolOutputExecutionDenied,
-		Reason: "user rejected the tool call",
+		Reason: requestStringPointer("user rejected the tool call"),
 	}
 
 	blocks := serializeToolOutput(&output, nil)
@@ -1550,7 +1541,7 @@ func TestSerializeToolOutput_ExecutionDenied_DefaultReason(t *testing.T) {
 
 	blocks := serializeToolOutput(&output, nil)
 
-	assert.Equal(t, "tool execution was denied", blocks[0].OfText.Text)
+	assert.Equal(t, "Tool call execution denied.", blocks[0].OfText.Text)
 }
 
 func TestSerializeToolOutput_Content(t *testing.T) {
@@ -1703,7 +1694,7 @@ func TestBuildParams_ToolDefinitionCacheControl(t *testing.T) {
 		Tools: []provider.Tool{
 			provider.Tool{Type: provider.ToolTypeFunction,
 				Name:            "search",
-				Description:     "Search the web",
+				Description:     requestStringPointer("Search the web"),
 				InputSchema:     json.RawMessage(`{"type":"object","properties":{}}`),
 				ProviderOptions: makeProviderOpts(`{"cacheControl": {"type": "ephemeral"}}`),
 			},
@@ -2123,7 +2114,7 @@ func TestConvertTools_MixedFunctionAndProviderDefined(t *testing.T) {
 	tools := []provider.Tool{
 		provider.Tool{Type: provider.ToolTypeFunction,
 			Name:        "search",
-			Description: "Search the web",
+			Description: requestStringPointer("Search the web"),
 			InputSchema: json.RawMessage(`{"type":"object","properties":{}}`),
 		},
 		provider.Tool{Type: provider.ToolTypeProvider,
@@ -2143,7 +2134,7 @@ func TestConvertTools_FunctionToolProducesOfTool(t *testing.T) {
 	tools := []provider.Tool{
 		provider.Tool{Type: provider.ToolTypeFunction,
 			Name:        "search",
-			Description: "Search the web",
+			Description: requestStringPointer("Search the web"),
 			InputSchema: json.RawMessage(`{"type":"object","properties":{}}`),
 		},
 	}
@@ -2429,7 +2420,7 @@ func TestConvertTools_ToolProviderOptions(t *testing.T) {
 		tools := []provider.Tool{
 			provider.Tool{Type: provider.ToolTypeFunction,
 				Name:            "search",
-				Description:     "Search the web",
+				Description:     requestStringPointer("Search the web"),
 				InputSchema:     json.RawMessage(`{"type":"object","properties":{}}`),
 				ProviderOptions: makeProviderOpts(`{"deferLoading": true}`),
 			},
@@ -2447,7 +2438,7 @@ func TestConvertTools_ToolProviderOptions(t *testing.T) {
 		tools := []provider.Tool{
 			provider.Tool{Type: provider.ToolTypeFunction,
 				Name:            "search",
-				Description:     "Search the web",
+				Description:     requestStringPointer("Search the web"),
 				InputSchema:     json.RawMessage(`{"type":"object","properties":{}}`),
 				ProviderOptions: makeProviderOpts(`{"allowedCallers": ["direct", "code_execution_20250825"]}`),
 			},
@@ -2464,7 +2455,7 @@ func TestConvertTools_ToolProviderOptions(t *testing.T) {
 		tools := []provider.Tool{
 			provider.Tool{Type: provider.ToolTypeFunction,
 				Name:            "search",
-				Description:     "Search the web",
+				Description:     requestStringPointer("Search the web"),
 				InputSchema:     json.RawMessage(`{"type":"object","properties":{}}`),
 				ProviderOptions: makeProviderOpts(`{"eagerInputStreaming": true}`),
 			},
@@ -2482,7 +2473,7 @@ func TestConvertTools_ToolProviderOptions(t *testing.T) {
 		tools := []provider.Tool{{
 			Type:        provider.ToolTypeFunction,
 			Name:        "search",
-			Description: "Search the web",
+			Description: requestStringPointer("Search the web"),
 			InputSchema: json.RawMessage(`{"type":"object","properties":{}}`),
 		}}
 
@@ -2498,7 +2489,7 @@ func TestConvertTools_ToolProviderOptions(t *testing.T) {
 		tools := []provider.Tool{
 			provider.Tool{Type: provider.ToolTypeFunction,
 				Name:            "search",
-				Description:     "Search the web",
+				Description:     requestStringPointer("Search the web"),
 				InputSchema:     json.RawMessage(`{"type":"object","properties":{}}`),
 				ProviderOptions: makeProviderOpts(`{"deferLoading": true, "allowedCallers": ["direct"], "eagerInputStreaming": true}`),
 			},
@@ -2520,7 +2511,7 @@ func TestConvertTools_ToolProviderOptions(t *testing.T) {
 		tools := []provider.Tool{
 			provider.Tool{Type: provider.ToolTypeFunction,
 				Name:        "search",
-				Description: "Search the web",
+				Description: requestStringPointer("Search the web"),
 				InputSchema: json.RawMessage(`{"type":"object","properties":{}}`),
 			},
 		}
@@ -2539,7 +2530,7 @@ func TestConvertTools_ToolProviderOptions(t *testing.T) {
 		tools := []provider.Tool{
 			provider.Tool{Type: provider.ToolTypeFunction,
 				Name:        "search",
-				Description: "Search the web",
+				Description: requestStringPointer("Search the web"),
 				InputSchema: json.RawMessage(`{"type":"object","properties":{}}`),
 				ProviderOptions: provider.ProviderOptions{
 					"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(`{invalid json`)},
@@ -2564,7 +2555,7 @@ func TestConvertTools_ToolProviderOptions(t *testing.T) {
 		tools := []provider.Tool{
 			provider.Tool{Type: provider.ToolTypeFunction,
 				Name:        "search",
-				Description: "Search the web",
+				Description: requestStringPointer("Search the web"),
 				InputSchema: json.RawMessage(`{"type":"object","properties":{}}`),
 				InputExamples: []provider.InputExample{
 					{Input: json.RawMessage(`{"x": 1}`)},
@@ -2587,7 +2578,7 @@ func TestConvertTools_ToolProviderOptions(t *testing.T) {
 		tools := []provider.Tool{
 			provider.Tool{Type: provider.ToolTypeFunction,
 				Name:        "search",
-				Description: "Search the web",
+				Description: requestStringPointer("Search the web"),
 				InputSchema: json.RawMessage(`{"type":"object","properties":{}}`),
 				InputExamples: []provider.InputExample{
 					{Input: json.RawMessage(`{"q": "test"}`)},
@@ -2604,7 +2595,7 @@ func TestConvertTools_ToolProviderOptions(t *testing.T) {
 		tools := []provider.Tool{
 			provider.Tool{Type: provider.ToolTypeFunction,
 				Name:            "search",
-				Description:     "Search the web",
+				Description:     requestStringPointer("Search the web"),
 				InputSchema:     json.RawMessage(`{"type":"object","properties":{}}`),
 				ProviderOptions: makeProviderOpts(`{"allowedCallers": ["direct"]}`),
 			},
@@ -2619,7 +2610,7 @@ func TestConvertTools_ToolProviderOptions(t *testing.T) {
 		tools := []provider.Tool{
 			provider.Tool{Type: provider.ToolTypeFunction,
 				Name:        "search",
-				Description: "Search the web",
+				Description: requestStringPointer("Search the web"),
 				InputSchema: json.RawMessage(`{"type":"object","properties":{}}`),
 				InputExamples: []provider.InputExample{
 					{Input: json.RawMessage(`{"q": "test"}`)},
@@ -2793,7 +2784,7 @@ func TestBuildParams_StructuredOutput(t *testing.T) {
 			},
 			ToolChoice: &tc,
 			Tools: []provider.Tool{
-				provider.Tool{Type: provider.ToolTypeFunction, Name: "search", Description: "Search", InputSchema: json.RawMessage(`{"type":"object","properties":{}}`)},
+				provider.Tool{Type: provider.ToolTypeFunction, Name: "search", Description: requestStringPointer("Search"), InputSchema: json.RawMessage(`{"type":"object","properties":{}}`)},
 			},
 		}
 
@@ -2995,7 +2986,7 @@ func TestBuildParams_StructuredOutput(t *testing.T) {
 				Schema: testSchema,
 			},
 			Tools: []provider.Tool{
-				provider.Tool{Type: provider.ToolTypeFunction, Name: "search", Description: "Search", InputSchema: json.RawMessage(`{"type":"object","properties":{}}`)},
+				provider.Tool{Type: provider.ToolTypeFunction, Name: "search", Description: requestStringPointer("Search"), InputSchema: json.RawMessage(`{"type":"object","properties":{}}`)},
 			},
 			ToolChoice: &provider.ToolChoice{Type: provider.ToolChoiceAuto},
 		}
@@ -3058,19 +3049,13 @@ func TestBuildParams_StructuredOutput(t *testing.T) {
 		assert.Empty(t, p.Tools)
 	})
 
-	t.Run("UnknownFormat_Warning", func(t *testing.T) {
+	t.Run("UnknownFormat_Rejected", func(t *testing.T) {
 		opts := provider.CallOptions{
 			ResponseFormat: &provider.ResponseFormat{Type: provider.ResponseFormatType("future")},
 		}
 
-		_, _, warnings, br, err := buildParams("claude-sonnet-4-6", opts, false)
-		require.NoError(t, err)
-
-		assert.False(t, br.usesJsonResponseTool)
-		require.Len(t, warnings, 1)
-		assert.Equal(t, provider.WarnUnsupported, warnings[0].Type)
-		assert.Equal(t, "responseFormat", warnings[0].Feature)
-		assert.Contains(t, warnings[0].Details, "future")
+		_, _, _, _, err := buildParams("claude-sonnet-4-6", opts, false)
+		require.ErrorContains(t, err, "unsupported response format")
 	})
 
 	t.Run("NilResponseFormat_NoOp", func(t *testing.T) {
@@ -3488,7 +3473,7 @@ func TestBuildParams_DefaultEagerInputStreaming(t *testing.T) {
 	functionTool := provider.Tool{
 		Type:        provider.ToolTypeFunction,
 		Name:        "search",
-		Description: "Search the web",
+		Description: requestStringPointer("Search the web"),
 		InputSchema: json.RawMessage(`{"type":"object","properties":{}}`),
 	}
 
@@ -3837,7 +3822,7 @@ func TestConvertAssistantContent_ProviderExecutedToolCalls(t *testing.T) {
 				ToolCallID:       "srv-1",
 				ToolName:         "web_search",
 				Input:            json.RawMessage(`{"query":"test"}`),
-				ProviderExecuted: true,
+				ProviderExecuted: requestBoolPointer(true),
 			},
 		}
 		warnings = nil
@@ -3855,7 +3840,7 @@ func TestConvertAssistantContent_ProviderExecutedToolCalls(t *testing.T) {
 				ToolCallID:       "srv-2",
 				ToolName:         "code_execution",
 				Input:            json.RawMessage(`{"code":"print('hi')"}`),
-				ProviderExecuted: true,
+				ProviderExecuted: requestBoolPointer(true),
 			},
 		}
 		warnings = nil
@@ -3871,7 +3856,7 @@ func TestConvertAssistantContent_ProviderExecutedToolCalls(t *testing.T) {
 				ToolCallID:       "srv-3",
 				ToolName:         "code_execution",
 				Input:            json.RawMessage(`{"type":"text_editor_code_execution","command":"create","path":"/tmp/example.py","file_text":"print('hi')"}`),
-				ProviderExecuted: true,
+				ProviderExecuted: requestBoolPointer(true),
 			},
 		}
 		warnings = nil
@@ -3893,7 +3878,7 @@ func TestConvertAssistantContent_ProviderExecutedToolCalls(t *testing.T) {
 				ToolCallID:       "srv-4",
 				ToolName:         "code_execution",
 				Input:            json.RawMessage(`{"type":"programmatic-tool-call","code":"print('hi')"}`),
-				ProviderExecuted: true,
+				ProviderExecuted: requestBoolPointer(true),
 			},
 		}
 		warnings = nil
@@ -3914,7 +3899,7 @@ func TestConvertAssistantContent_ProviderExecutedToolCalls(t *testing.T) {
 				ToolCallID:       "srv-5",
 				ToolName:         "tool_search_tool_regex",
 				Input:            json.RawMessage(`{}`),
-				ProviderExecuted: true,
+				ProviderExecuted: requestBoolPointer(true),
 			},
 		}
 		warnings = nil
@@ -3930,7 +3915,7 @@ func TestConvertAssistantContent_ProviderExecutedToolCalls(t *testing.T) {
 				ToolCallID:       "srv-6",
 				ToolName:         "unknown_tool",
 				Input:            json.RawMessage(`{}`),
-				ProviderExecuted: true,
+				ProviderExecuted: requestBoolPointer(true),
 			},
 		}
 		warnings = nil
@@ -3975,7 +3960,7 @@ func TestConvertAssistantContent_ProviderExecutedToolCalls(t *testing.T) {
 				ToolCallID:       "mcp-1",
 				ToolName:         "echo",
 				Input:            json.RawMessage(`{"msg":"hi"}`),
-				ProviderExecuted: true,
+				ProviderExecuted: requestBoolPointer(true),
 				ProviderOptions:  mcpOpts,
 			},
 		}
@@ -4236,10 +4221,10 @@ func TestBuildParams_DocumentMediaTypes(t *testing.T) {
 		opts := provider.CallOptions{
 			Prompt: []provider.Message{
 				provider.NewUserMessage(provider.ContentPart{
-					Type:      provider.ContentPartTypeFile,
-					MediaType: "application/pdf",
-					Filename:  "report.pdf",
-					Data:      &provider.DataContent{Base64: "JVBERi0=" /* %PDF- */},
+					Type:             provider.ContentPartTypeFile,
+					MediaType:        "application/pdf",
+					FilePartFilename: requestStringPointer("report.pdf"),
+					Data:             &provider.DataContent{Base64: "JVBERi0=" /* %PDF- */},
 					ProviderOptions: provider.BuildProviderOptions(provider.RawProviderOption{
 						Key: "anthropic",
 						Raw: json.RawMessage(`{"title":"Q4 Report","context":"finance","citations":{"enabled":true}}`),
@@ -4294,10 +4279,10 @@ func TestBuildParams_DocumentMediaTypes(t *testing.T) {
 		opts := provider.CallOptions{
 			Prompt: []provider.Message{
 				provider.NewUserMessage(provider.ContentPart{
-					Type:      provider.ContentPartTypeFile,
-					MediaType: "text/plain",
-					Filename:  "notes.txt",
-					Data:      &provider.DataContent{Bytes: []byte("hello world")},
+					Type:             provider.ContentPartTypeFile,
+					MediaType:        "text/plain",
+					FilePartFilename: requestStringPointer("notes.txt"),
+					Data:             &provider.DataContent{Bytes: []byte("hello world")},
 					ProviderOptions: provider.BuildProviderOptions(provider.RawProviderOption{
 						Key: "anthropic",
 						Raw: json.RawMessage(`{"citations":{"enabled":true}}`),
@@ -4345,12 +4330,10 @@ func TestBuildParams_DocumentMediaTypes(t *testing.T) {
 func TestBuildParams_ThinkingClearsSamplingParams(t *testing.T) {
 	temp := 0.7
 	topP := 0.9
-	topK := 50
-
 	opts := provider.CallOptions{
 		Temperature: &temp,
 		TopP:        &topP,
-		TopK:        &topK,
+		TopK:        requestIntegerPointer(50),
 		Prompt:      []provider.Message{provider.UserText("hi")},
 		ProviderOptions: provider.BuildProviderOptions(AnthropicOptions{
 			Thinking: &ThinkingConfig{Type: ThinkingEnabled, BudgetTokens: 2048},
@@ -4419,12 +4402,10 @@ func TestBuildParams_SamplingNormalization(t *testing.T) {
 func TestBuildParams_Opus47RejectsSamplingParams(t *testing.T) {
 	temp := 0.7
 	topP := 0.9
-	topK := 50
-
 	opts := provider.CallOptions{
 		Temperature: &temp,
 		TopP:        &topP,
-		TopK:        &topK,
+		TopK:        requestIntegerPointer(50),
 		Prompt:      []provider.Message{provider.UserText("hi")},
 	}
 
@@ -4452,7 +4433,7 @@ func TestBuildParams_ReasoningEffortFallback(t *testing.T) {
 	t.Run("provider thinking only -> top-level reasoning fills effort", func(t *testing.T) {
 		reasoning := provider.ReasoningHigh
 		opts := provider.CallOptions{
-			MaxOutputTokens: ptrInt(8000),
+			MaxOutputTokens: requestIntegerPointer(8000),
 			Prompt:          []provider.Message{provider.UserText("hi")},
 			Reasoning:       &reasoning,
 			ProviderOptions: provider.BuildProviderOptions(AnthropicOptions{
@@ -4468,7 +4449,7 @@ func TestBuildParams_ReasoningEffortFallback(t *testing.T) {
 	t.Run("provider effort wins over top-level reasoning", func(t *testing.T) {
 		reasoning := provider.ReasoningLow
 		opts := provider.CallOptions{
-			MaxOutputTokens: ptrInt(8000),
+			MaxOutputTokens: requestIntegerPointer(8000),
 			Prompt:          []provider.Message{provider.UserText("hi")},
 			Reasoning:       &reasoning,
 			ProviderOptions: provider.BuildProviderOptions(AnthropicOptions{
@@ -4483,7 +4464,7 @@ func TestBuildParams_ReasoningEffortFallback(t *testing.T) {
 	t.Run("provider thinking=disabled blocks effort derivation", func(t *testing.T) {
 		reasoning := provider.ReasoningHigh
 		opts := provider.CallOptions{
-			MaxOutputTokens: ptrInt(8000),
+			MaxOutputTokens: requestIntegerPointer(8000),
 			Prompt:          []provider.Message{provider.UserText("hi")},
 			Reasoning:       &reasoning,
 			ProviderOptions: provider.BuildProviderOptions(AnthropicOptions{
@@ -4498,17 +4479,13 @@ func TestBuildParams_ReasoningEffortFallback(t *testing.T) {
 
 // --- groupIntoBlocks / convertUserContent tool-result parity tests (issue #173) ---
 
-// TestBuildParams_UserMessageWithToolResult covers the basic regression from
-// issue #173: a `RoleUser` provider message that mixes text and tool_result
-// parts must surface BOTH blocks on the wire, in source order. Before the
-// fix, `convertUserContent`'s switch silently dropped tool_result.
-func TestBuildParams_UserMessageWithToolResult(t *testing.T) {
+func TestBuildParams_ToolMessageFollowedByUserText(t *testing.T) {
 	opts := provider.CallOptions{
 		Prompt: []provider.Message{
-			provider.NewUserMessage(
+			provider.NewToolMessage(
 				provider.ToolResultPart("call_1", "search", &provider.ToolResultOutput{Type: provider.ToolOutputText, Text: "out"}),
-				provider.TextPart("then text"),
 			),
+			provider.NewUserMessage(provider.TextPart("then text")),
 		},
 	}
 
@@ -4667,18 +4644,11 @@ func TestBuildParams_ThreeConsecutiveToolMessagesMerge(t *testing.T) {
 	}
 }
 
-// TestBuildParams_ApprovalResponseInUserMessageSilentlySkipped covers the
-// `convertUserContent` no-op skip for tool-approval-response parts (mirrors
-// upstream's `if (part.type === 'tool-approval-response') { continue; }` in
-// the user-block handler). The text part on the same message must still
-// reach the wire, and no warning is emitted for the silent skip.
-func TestBuildParams_ApprovalResponseInUserMessageSilentlySkipped(t *testing.T) {
+func TestBuildParams_ApprovalResponseInToolMessageSilentlySkipped(t *testing.T) {
 	opts := provider.CallOptions{
 		Prompt: []provider.Message{
-			provider.NewUserMessage(
-				provider.ToolApprovalResponsePart("a1", true, ""),
-				provider.TextPart("hello"),
-			),
+			provider.NewToolMessage(provider.ToolApprovalResponsePart("a1", true, "")),
+			provider.NewUserMessage(provider.TextPart("hello")),
 		},
 	}
 
@@ -4764,11 +4734,7 @@ func TestBuildParams_CacheControlSourceMessageScoped(t *testing.T) {
 		"text (last part of second source message, which has no cache_control) must NOT have cache_control")
 }
 
-// TestBuildParams_MCPToolResultInUserMessage confirms the shared
-// appendToolResultBlock helper detects MCP tool-call IDs even when the
-// matching tool_result lands inside a `RoleUser` message rather than a
-// `RoleTool` message.
-func TestBuildParams_MCPToolResultInUserMessage(t *testing.T) {
+func TestBuildParams_MCPToolResultInToolMessage(t *testing.T) {
 	mcpOpts := makeProviderOpts(`{"type": "mcp-tool-use", "serverName": "srv"}`)
 	opts := provider.CallOptions{
 		Prompt: []provider.Message{
@@ -4779,7 +4745,7 @@ func TestBuildParams_MCPToolResultInUserMessage(t *testing.T) {
 				Input:           json.RawMessage(`{}`),
 				ProviderOptions: mcpOpts,
 			}),
-			provider.NewUserMessage(
+			provider.NewToolMessage(
 				provider.ToolResultPart("mcp-1", "echo", &provider.ToolResultOutput{Type: provider.ToolOutputJSON, JSON: json.RawMessage(`"out"`)}),
 			),
 		},
@@ -4898,8 +4864,6 @@ func TestGroupIntoBlocks_GroupingRules(t *testing.T) {
 		})
 	}
 }
-
-func ptrInt(i int) *int { return &i }
 
 func TestHasWebTool20260209WithoutCodeExecution(t *testing.T) {
 	tests := []struct {

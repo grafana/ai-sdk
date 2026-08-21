@@ -157,7 +157,7 @@ func TestToolLoopAgent_GenerateWarnsForPerCallStreamTimeouts(t *testing.T) {
 
 func TestToolLoopAgent_GenerateIgnoresReusableStreamOnlyOptions(t *testing.T) {
 	model := &mockModel{streamFunc: func(_ context.Context, opts provider.CallOptions) (*provider.StreamResult, error) {
-		assert.False(t, opts.IncludeRawChunks)
+		assert.Nil(t, opts.IncludeRawChunks)
 		return &provider.StreamResult{Stream: textStreamParts("hello")}, nil
 	}}
 	chunkCalls := 0

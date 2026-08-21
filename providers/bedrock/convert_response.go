@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/grafana/ai-sdk/internal/ptr"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -147,25 +148,19 @@ func convertUsage(u *converseUsage) provider.Usage {
 		return provider.Usage{}
 	}
 	noCache := u.InputTokens
-	cacheRead := 0
-	cacheWrite := 0
-	if u.CacheReadInputTokens != nil {
-		cacheRead = *u.CacheReadInputTokens
-	}
-	if u.CacheWriteInputTokens != nil {
-		cacheWrite = *u.CacheWriteInputTokens
-	}
+	cacheRead := ptr.Deref(u.CacheReadInputTokens, 0)
+	cacheWrite := ptr.Deref(u.CacheWriteInputTokens, 0)
 	total := noCache + cacheRead + cacheWrite
 	out := provider.Usage{
 		InputTokens: provider.InputTokenUsage{
-			Total:      intPtr(total),
-			NoCache:    intPtr(noCache),
-			CacheRead:  intPtr(cacheRead),
-			CacheWrite: intPtr(cacheWrite),
+			Total:      ptr.To(total),
+			NoCache:    ptr.To(noCache),
+			CacheRead:  ptr.To(cacheRead),
+			CacheWrite: ptr.To(cacheWrite),
 		},
 		OutputTokens: provider.OutputTokenUsage{
-			Total: intPtr(u.OutputTokens),
-			Text:  intPtr(u.OutputTokens),
+			Total: ptr.To(u.OutputTokens),
+			Text:  ptr.To(u.OutputTokens),
 		},
 	}
 	if len(u.Raw) > 0 {
@@ -175,8 +170,6 @@ func convertUsage(u *converseUsage) provider.Usage {
 	}
 	return out
 }
-
-func intPtr(v int) *int { return &v }
 
 type orderedJSONObject []orderedJSONMember
 

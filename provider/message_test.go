@@ -88,7 +88,7 @@ func TestMessageJSONRoundTrip(t *testing.T) {
 			name: "tool with result + approval response",
 			msg: NewToolMessage(
 				ContentPart{Type: ContentPartTypeToolResult, ToolCallID: "tc_1", ToolName: "search", Output: &ToolResultOutput{Type: ToolOutputText, Text: "ok"}},
-				ContentPart{Type: ContentPartTypeToolApprovalResponse, ApprovalID: "apr_1", Approved: boolPtr(true), Reason: ""},
+				ContentPart{Type: ContentPartTypeToolApprovalResponse, ApprovalID: "apr_1", Approved: boolPtr(true)},
 			),
 		},
 	}

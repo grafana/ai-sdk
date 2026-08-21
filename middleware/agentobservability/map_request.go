@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/grafana/agento11y/go/agento11y"
+	"github.com/grafana/ai-sdk/internal/ptr"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -171,7 +172,7 @@ func contentPartToAgento11y(part provider.ContentPart, includeMedia bool) (agent
 // code_execution, …); MCP tools are not currently flagged separately at the
 // ai-sdk content layer, so they fall through to "tool_use".
 func providerTypeForToolCall(part provider.ContentPart) string {
-	if part.ProviderExecuted {
+	if part.ProviderExecuted != nil && *part.ProviderExecuted {
 		return "server_tool_use"
 	}
 	return "tool_use"
@@ -264,9 +265,9 @@ func toolsToAgento11y(tools []provider.Tool) []agento11y.ToolDefinition {
 		if name == "" {
 			continue
 		}
-		def := agento11y.ToolDefinition{
-			Name:        name,
-			Description: t.Description,
+		def := agento11y.ToolDefinition{Name: name}
+		if t.Description != nil {
+			def.Description = *t.Description
 		}
 		if t.Type == provider.ToolTypeProvider {
 			def.Type = t.ID
@@ -320,17 +321,12 @@ type requestControls struct {
 func controlsFromCallOptions(params provider.CallOptions) requestControls {
 	var out requestControls
 	if params.MaxOutputTokens != nil {
-		v := int64(*params.MaxOutputTokens)
-		out.MaxTokens = &v
+		if value, ok := params.MaxOutputTokens.Int64(); ok {
+			out.MaxTokens = ptr.To(value)
+		}
 	}
-	if params.Temperature != nil {
-		v := *params.Temperature
-		out.Temperature = &v
-	}
-	if params.TopP != nil {
-		v := *params.TopP
-		out.TopP = &v
-	}
+	out.Temperature = ptr.Clone(params.Temperature)
+	out.TopP = ptr.Clone(params.TopP)
 	if choice := toolChoiceToAgento11y(params.ToolChoice); choice != "" {
 		out.ToolChoice = &choice
 	}

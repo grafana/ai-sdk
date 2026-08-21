@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/grafana/ai-sdk/internal/ptr"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -871,10 +872,7 @@ func cloneToolApproval(approval *ToolApproval) *ToolApproval {
 		return nil
 	}
 	clone := *approval
-	if approval.Approved != nil {
-		approved := *approval.Approved
-		clone.Approved = &approved
-	}
+	clone.Approved = ptr.Clone(approval.Approved)
 	return &clone
 }
 

@@ -203,17 +203,6 @@ func TestDataReconciliationByID(t *testing.T) {
 	assert.Equal(t, 1, dataParts, "duplicate IDs should be reconciled")
 }
 
-func TestSendOptionDefaults(t *testing.T) {
-	assert.True(t, sendOption(nil, true), "nil should use default true")
-	assert.False(t, sendOption(nil, false), "nil should use default false")
-
-	bTrue := true
-	assert.True(t, sendOption(&bTrue, false), "explicit true should override default")
-
-	bFalse := false
-	assert.False(t, sendOption(&bFalse, true), "explicit false should override default")
-}
-
 func TestFilterChunks(t *testing.T) {
 	makeStream := func() chan UIMessageChunk {
 		in := make(chan UIMessageChunk, 4)
