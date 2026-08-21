@@ -72,6 +72,35 @@ func TestLegacyRequestAdapter_EmptyDataArms(t *testing.T) {
 	}
 }
 
+func TestResolveLegacyDataContentType(t *testing.T) {
+	tests := []struct {
+		name       string
+		precedence legacyDataContentType
+		selected   provider.DataContentType
+		selectedOK bool
+		want       legacyDataContentType
+		wantError  bool
+	}{
+		{name: "no data"},
+		{name: "unique empty text", selected: provider.DataContentTypeText, selectedOK: true, want: legacyDataContentText},
+		{name: "unique URL", precedence: legacyDataContentURL, selected: provider.DataContentTypeURL, selectedOK: true, want: legacyDataContentURL},
+		{name: "parent mixed fields", precedence: legacyDataContentURL, selected: provider.DataContentTypeURL, want: legacyDataContentURL},
+		{name: "conflicting private selection", precedence: legacyDataContentURL, selected: provider.DataContentTypeText, wantError: true},
+		{name: "unsupported selection", selected: provider.DataContentType("unsupported"), selectedOK: true, wantError: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := resolveLegacyDataContentType(tc.precedence, tc.selected, tc.selectedOK)
+			if tc.wantError {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
 func TestLegacyRequestAdapter_RejectsConflictingSelectedData(t *testing.T) {
 	emptyTextWithURL := provider.TextDataContent("")
 	emptyTextWithURL.URL = "https://example.test/file"

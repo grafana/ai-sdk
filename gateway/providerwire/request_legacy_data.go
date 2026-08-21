@@ -28,6 +28,38 @@ type legacyDataContent struct {
 	text      string
 }
 
+func legacyDataContentTypeFromProvider(dataType provider.DataContentType) (legacyDataContentType, error) {
+	switch dataType {
+	case provider.DataContentTypeData:
+		return legacyDataContentData, nil
+	case provider.DataContentTypeURL:
+		return legacyDataContentURL, nil
+	case provider.DataContentTypeReference:
+		return legacyDataContentReference, nil
+	case provider.DataContentTypeText:
+		return legacyDataContentText, nil
+	default:
+		return "", fmt.Errorf("unsupported selected file-data type %q", dataType)
+	}
+}
+
+func resolveLegacyDataContentType(precedence legacyDataContentType, selected provider.DataContentType, selectedOK bool) (legacyDataContentType, error) {
+	if selected == "" {
+		return precedence, nil
+	}
+	mapped, err := legacyDataContentTypeFromProvider(selected)
+	if err != nil {
+		return "", err
+	}
+	if selectedOK && precedence == "" {
+		return mapped, nil
+	}
+	if precedence == mapped {
+		return precedence, nil
+	}
+	return "", fmt.Errorf("selected file-data type %q conflicts with legacy field precedence %q", mapped, precedence)
+}
+
 func legacyDataContentFromProvider(data provider.DataContent) (legacyDataContent, error) {
 	legacy := legacyDataContent{
 		bytes: append([]byte(nil), data.Bytes...), base64: data.Base64, url: data.URL,
@@ -47,29 +79,12 @@ func legacyDataContentFromProvider(data provider.DataContent) (legacyDataContent
 		legacy.dataType = legacyDataContentText
 	}
 
-	selected, ok := data.DataType()
-	if !ok && selected == "" {
-		return legacy, nil
+	selected, selectedOK := data.DataType()
+	resolved, err := resolveLegacyDataContentType(legacy.dataType, selected, selectedOK)
+	if err != nil {
+		return legacyDataContent{}, err
 	}
-	var selectedLegacy legacyDataContentType
-	switch selected {
-	case provider.DataContentTypeData:
-		selectedLegacy = legacyDataContentData
-	case provider.DataContentTypeURL:
-		selectedLegacy = legacyDataContentURL
-	case provider.DataContentTypeReference:
-		selectedLegacy = legacyDataContentReference
-	case provider.DataContentTypeText:
-		selectedLegacy = legacyDataContentText
-	default:
-		return legacyDataContent{}, fmt.Errorf("unsupported selected file-data type %q", selected)
-	}
-	if legacy.dataType != "" && legacy.dataType != selectedLegacy {
-		return legacyDataContent{}, fmt.Errorf("selected file-data type %q conflicts with legacy field precedence %q", selectedLegacy, legacy.dataType)
-	}
-	if legacy.dataType == "" {
-		legacy.dataType = selectedLegacy
-	}
+	legacy.dataType = resolved
 	return legacy, nil
 }
 

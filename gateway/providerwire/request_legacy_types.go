@@ -47,6 +47,28 @@ func (number legacyNumber) toProvider() (provider.LanguageModelNumber, error) {
 	}
 }
 
+func legacyNumberPointerFromProvider(number *provider.LanguageModelNumber) (*legacyNumber, error) {
+	if number == nil {
+		return nil, nil
+	}
+	mapped, err := legacyNumberFromProvider(*number)
+	if err != nil {
+		return nil, err
+	}
+	return &mapped, nil
+}
+
+func providerNumberPointerFromLegacy(number *legacyNumber) (*provider.LanguageModelNumber, error) {
+	if number == nil {
+		return nil, nil
+	}
+	mapped, err := number.toProvider()
+	if err != nil {
+		return nil, err
+	}
+	return &mapped, nil
+}
+
 func (number legacyNumber) MarshalJSON() ([]byte, error) {
 	switch number.kind {
 	case legacyNumberInteger:
@@ -249,26 +271,17 @@ func legacyCallOptionsFromProvider(options provider.CallOptions) (legacyCallOpti
 	if err != nil {
 		return legacyCallOptions{}, err
 	}
-	if options.MaxOutputTokens != nil {
-		value, err := legacyNumberFromProvider(*options.MaxOutputTokens)
-		if err != nil {
-			return legacyCallOptions{}, fmt.Errorf("maxOutputTokens: %w", err)
-		}
-		legacy.MaxOutputTokens = &value
+	legacy.MaxOutputTokens, err = legacyNumberPointerFromProvider(options.MaxOutputTokens)
+	if err != nil {
+		return legacyCallOptions{}, fmt.Errorf("maxOutputTokens: %w", err)
 	}
-	if options.TopK != nil {
-		value, err := legacyNumberFromProvider(*options.TopK)
-		if err != nil {
-			return legacyCallOptions{}, fmt.Errorf("topK: %w", err)
-		}
-		legacy.TopK = &value
+	legacy.TopK, err = legacyNumberPointerFromProvider(options.TopK)
+	if err != nil {
+		return legacyCallOptions{}, fmt.Errorf("topK: %w", err)
 	}
-	if options.Seed != nil {
-		value, err := legacyNumberFromProvider(*options.Seed)
-		if err != nil {
-			return legacyCallOptions{}, fmt.Errorf("seed: %w", err)
-		}
-		legacy.Seed = &value
+	legacy.Seed, err = legacyNumberPointerFromProvider(options.Seed)
+	if err != nil {
+		return legacyCallOptions{}, fmt.Errorf("seed: %w", err)
 	}
 	if options.Prompt != nil {
 		legacy.Prompt = make([]legacyMessage, len(options.Prompt))
@@ -310,26 +323,18 @@ func (legacy legacyCallOptions) toProvider() (provider.CallOptions, error) {
 		IncludeRawChunks: clonePointer(legacy.IncludeRawChunks), Headers: cloneStringMap(legacy.Headers),
 		ProviderOptions: legacyProviderOptionsToProvider(legacy.ProviderOptions),
 	}
-	if legacy.MaxOutputTokens != nil {
-		value, err := legacy.MaxOutputTokens.toProvider()
-		if err != nil {
-			return provider.CallOptions{}, fmt.Errorf("maxOutputTokens: %w", err)
-		}
-		options.MaxOutputTokens = &value
+	var err error
+	options.MaxOutputTokens, err = providerNumberPointerFromLegacy(legacy.MaxOutputTokens)
+	if err != nil {
+		return provider.CallOptions{}, fmt.Errorf("maxOutputTokens: %w", err)
 	}
-	if legacy.TopK != nil {
-		value, err := legacy.TopK.toProvider()
-		if err != nil {
-			return provider.CallOptions{}, fmt.Errorf("topK: %w", err)
-		}
-		options.TopK = &value
+	options.TopK, err = providerNumberPointerFromLegacy(legacy.TopK)
+	if err != nil {
+		return provider.CallOptions{}, fmt.Errorf("topK: %w", err)
 	}
-	if legacy.Seed != nil {
-		value, err := legacy.Seed.toProvider()
-		if err != nil {
-			return provider.CallOptions{}, fmt.Errorf("seed: %w", err)
-		}
-		options.Seed = &value
+	options.Seed, err = providerNumberPointerFromLegacy(legacy.Seed)
+	if err != nil {
+		return provider.CallOptions{}, fmt.Errorf("seed: %w", err)
 	}
 	if legacy.Prompt != nil {
 		options.Prompt = make([]provider.Message, len(legacy.Prompt))
