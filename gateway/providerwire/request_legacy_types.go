@@ -9,6 +9,7 @@ import (
 	"math"
 	"strconv"
 
+	"github.com/grafana/ai-sdk/internal/ptr"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -55,7 +56,7 @@ func legacyNumberPointerFromProvider(number *provider.LanguageModelNumber) (*leg
 	if err != nil {
 		return nil, err
 	}
-	return &mapped, nil
+	return ptr.To(mapped), nil
 }
 
 func providerNumberPointerFromLegacy(number *legacyNumber) (*provider.LanguageModelNumber, error) {
@@ -66,7 +67,7 @@ func providerNumberPointerFromLegacy(number *legacyNumber) (*provider.LanguageMo
 	if err != nil {
 		return nil, err
 	}
-	return &mapped, nil
+	return ptr.To(mapped), nil
 }
 
 func (number legacyNumber) MarshalJSON() ([]byte, error) {
@@ -261,10 +262,10 @@ type legacyContentPart struct {
 
 func legacyCallOptionsFromProvider(options provider.CallOptions) (legacyCallOptions, error) {
 	legacy := legacyCallOptions{
-		Temperature: clonePointer(options.Temperature), TopP: clonePointer(options.TopP),
-		PresencePenalty: clonePointer(options.PresencePenalty), FrequencyPenalty: clonePointer(options.FrequencyPenalty),
-		StopSequences: cloneSlice(options.StopSequences), Reasoning: clonePointer(options.Reasoning),
-		IncludeRawChunks: clonePointer(options.IncludeRawChunks), Headers: cloneStringMap(options.Headers),
+		Temperature: ptr.Clone(options.Temperature), TopP: ptr.Clone(options.TopP),
+		PresencePenalty: ptr.Clone(options.PresencePenalty), FrequencyPenalty: ptr.Clone(options.FrequencyPenalty),
+		StopSequences: cloneSlice(options.StopSequences), Reasoning: ptr.Clone(options.Reasoning),
+		IncludeRawChunks: ptr.Clone(options.IncludeRawChunks), Headers: cloneStringMap(options.Headers),
 	}
 	var err error
 	legacy.ProviderOptions, err = legacyProviderOptionsFromProvider(options.ProviderOptions)
@@ -309,7 +310,7 @@ func legacyCallOptionsFromProvider(options provider.CallOptions) (legacyCallOpti
 	if options.ResponseFormat != nil {
 		legacy.ResponseFormat = &legacyResponseFormat{
 			Type: options.ResponseFormat.Type, Schema: append(json.RawMessage(nil), options.ResponseFormat.Schema...),
-			Name: clonePointer(options.ResponseFormat.Name), Description: clonePointer(options.ResponseFormat.Description),
+			Name: ptr.Clone(options.ResponseFormat.Name), Description: ptr.Clone(options.ResponseFormat.Description),
 		}
 	}
 	return legacy, nil
@@ -317,10 +318,10 @@ func legacyCallOptionsFromProvider(options provider.CallOptions) (legacyCallOpti
 
 func (legacy legacyCallOptions) toProvider() (provider.CallOptions, error) {
 	options := provider.CallOptions{
-		Temperature: clonePointer(legacy.Temperature), TopP: clonePointer(legacy.TopP),
-		PresencePenalty: clonePointer(legacy.PresencePenalty), FrequencyPenalty: clonePointer(legacy.FrequencyPenalty),
-		StopSequences: cloneSlice(legacy.StopSequences), Reasoning: clonePointer(legacy.Reasoning),
-		IncludeRawChunks: clonePointer(legacy.IncludeRawChunks), Headers: cloneStringMap(legacy.Headers),
+		Temperature: ptr.Clone(legacy.Temperature), TopP: ptr.Clone(legacy.TopP),
+		PresencePenalty: ptr.Clone(legacy.PresencePenalty), FrequencyPenalty: ptr.Clone(legacy.FrequencyPenalty),
+		StopSequences: cloneSlice(legacy.StopSequences), Reasoning: ptr.Clone(legacy.Reasoning),
+		IncludeRawChunks: ptr.Clone(legacy.IncludeRawChunks), Headers: cloneStringMap(legacy.Headers),
 		ProviderOptions: legacyProviderOptionsToProvider(legacy.ProviderOptions),
 	}
 	var err error
@@ -358,7 +359,7 @@ func (legacy legacyCallOptions) toProvider() (provider.CallOptions, error) {
 	if legacy.ResponseFormat != nil {
 		options.ResponseFormat = &provider.ResponseFormat{
 			Type: legacy.ResponseFormat.Type, Schema: append(json.RawMessage(nil), legacy.ResponseFormat.Schema...),
-			Name: clonePointer(legacy.ResponseFormat.Name), Description: clonePointer(legacy.ResponseFormat.Description),
+			Name: ptr.Clone(legacy.ResponseFormat.Name), Description: ptr.Clone(legacy.ResponseFormat.Description),
 		}
 	}
 	return options, nil
@@ -404,8 +405,8 @@ func legacyContentPartFromProvider(part provider.ContentPart) (legacyContentPart
 		Type: part.Type, Text: part.Text, MediaType: part.MediaType, Kind: part.Kind,
 		SourceType: part.SourceType, ID: part.ID, URL: part.URL, Title: part.Title,
 		ToolCallID: part.ToolCallID, ToolName: part.ToolName, Input: append(json.RawMessage(nil), part.Input...),
-		ProviderExecuted: clonePointer(part.ProviderExecuted), ApprovalID: part.ApprovalID, Signature: part.Signature,
-		IsAutomatic: part.IsAutomatic, Approved: clonePointer(part.Approved), Reason: clonePointer(part.Reason),
+		ProviderExecuted: ptr.Clone(part.ProviderExecuted), ApprovalID: part.ApprovalID, Signature: part.Signature,
+		IsAutomatic: part.IsAutomatic, Approved: ptr.Clone(part.Approved), Reason: ptr.Clone(part.Reason),
 	}
 	var err error
 	legacy.ProviderOptions, err = legacyProviderOptionsFromProvider(part.ProviderOptions)
@@ -417,16 +418,16 @@ func legacyContentPartFromProvider(part provider.ContentPart) (legacyContentPart
 			return legacyContentPart{}, errors.New("file part has both request and response filenames")
 		}
 		if part.FilePartFilename != nil {
-			legacy.Filename = clonePointer(part.FilePartFilename)
+			legacy.Filename = ptr.Clone(part.FilePartFilename)
 		} else if part.Filename != "" {
-			legacy.Filename = &part.Filename
+			legacy.Filename = ptr.To(part.Filename)
 		}
 	} else {
 		if part.FilePartFilename != nil {
 			return legacyContentPart{}, fmt.Errorf("request file filename is invalid for content type %q", part.Type)
 		}
 		if part.Filename != "" {
-			legacy.Filename = &part.Filename
+			legacy.Filename = ptr.To(part.Filename)
 		}
 	}
 	if part.Data != nil {
@@ -451,13 +452,13 @@ func (legacy legacyContentPart) toProvider() (provider.ContentPart, error) {
 		Type: legacy.Type, Text: legacy.Text, MediaType: legacy.MediaType, Kind: legacy.Kind,
 		SourceType: legacy.SourceType, ID: legacy.ID, URL: legacy.URL, Title: legacy.Title,
 		ToolCallID: legacy.ToolCallID, ToolName: legacy.ToolName, Input: append(json.RawMessage(nil), legacy.Input...),
-		ProviderExecuted: clonePointer(legacy.ProviderExecuted), ApprovalID: legacy.ApprovalID, Signature: legacy.Signature,
-		IsAutomatic: legacy.IsAutomatic, Approved: clonePointer(legacy.Approved), Reason: clonePointer(legacy.Reason),
+		ProviderExecuted: ptr.Clone(legacy.ProviderExecuted), ApprovalID: legacy.ApprovalID, Signature: legacy.Signature,
+		IsAutomatic: legacy.IsAutomatic, Approved: ptr.Clone(legacy.Approved), Reason: ptr.Clone(legacy.Reason),
 		ProviderOptions: legacyProviderOptionsToProvider(legacy.ProviderOptions),
 	}
 	if legacy.Filename != nil {
 		if legacy.Type == provider.ContentPartTypeFile {
-			part.FilePartFilename = clonePointer(legacy.Filename)
+			part.FilePartFilename = ptr.Clone(legacy.Filename)
 		} else {
 			part.Filename = *legacy.Filename
 		}
@@ -485,17 +486,17 @@ func legacyToolFromProvider(tool provider.Tool) (legacyTool, error) {
 		return legacyTool{}, err
 	}
 	return legacyTool{
-		Type: tool.Type, Name: tool.Name, Description: clonePointer(tool.Description),
+		Type: tool.Type, Name: tool.Name, Description: ptr.Clone(tool.Description),
 		InputSchema: append(json.RawMessage(nil), tool.InputSchema...), InputExamples: cloneSlice(tool.InputExamples),
-		Strict: clonePointer(tool.Strict), ID: tool.ID, Args: cloneRawMap(tool.Args), ProviderOptions: options,
+		Strict: ptr.Clone(tool.Strict), ID: tool.ID, Args: cloneRawMap(tool.Args), ProviderOptions: options,
 	}, nil
 }
 
 func (tool legacyTool) toProvider() provider.Tool {
 	return provider.Tool{
-		Type: tool.Type, Name: tool.Name, Description: clonePointer(tool.Description),
+		Type: tool.Type, Name: tool.Name, Description: ptr.Clone(tool.Description),
 		InputSchema: append(json.RawMessage(nil), tool.InputSchema...), InputExamples: cloneSlice(tool.InputExamples),
-		Strict: clonePointer(tool.Strict), ID: tool.ID, Args: cloneRawMap(tool.Args),
+		Strict: ptr.Clone(tool.Strict), ID: tool.ID, Args: cloneRawMap(tool.Args),
 		ProviderOptions: legacyProviderOptionsToProvider(tool.ProviderOptions),
 	}
 }
@@ -548,14 +549,6 @@ func cloneSlice[T any](value []T) []T {
 	cloned := make([]T, len(value))
 	copy(cloned, value)
 	return cloned
-}
-
-func clonePointer[T any](value *T) *T {
-	if value == nil {
-		return nil
-	}
-	copy := *value
-	return &copy
 }
 
 func cloneStringMap(value map[string]string) map[string]string {

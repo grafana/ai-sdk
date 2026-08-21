@@ -3,6 +3,7 @@ package aisdk
 import (
 	"time"
 
+	"github.com/grafana/ai-sdk/internal/ptr"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -219,8 +220,7 @@ func WithTemperature(t float64) Option {
 // WithMaxOutputTokens sets the maximum number of output tokens.
 func WithMaxOutputTokens(n int) Option {
 	return sharedOption{fn: func(c *baseConfig) {
-		value := provider.LanguageModelNumberFromInt(n)
-		c.maxOutputTokens = &value
+		c.maxOutputTokens = ptr.To(provider.LanguageModelNumberFromInt(n))
 	}}
 }
 
@@ -232,16 +232,14 @@ func WithTopP(p float64) Option {
 // WithTopK sets the top-k sampling parameter.
 func WithTopK(k int) Option {
 	return sharedOption{fn: func(c *baseConfig) {
-		value := provider.LanguageModelNumberFromInt(k)
-		c.topK = &value
+		c.topK = ptr.To(provider.LanguageModelNumberFromInt(k))
 	}}
 }
 
 // WithSeed sets the random seed for deterministic sampling.
 func WithSeed(s int) Option {
 	return sharedOption{fn: func(c *baseConfig) {
-		value := provider.LanguageModelNumberFromInt(s)
-		c.seed = &value
+		c.seed = ptr.To(provider.LanguageModelNumberFromInt(s))
 	}}
 }
 

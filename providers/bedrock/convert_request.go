@@ -7,6 +7,7 @@ import (
 
 	"github.com/grafana/ai-sdk/internal/anthropicschema"
 	"github.com/grafana/ai-sdk/internal/providerrequest"
+	"github.com/grafana/ai-sdk/internal/ptr"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -219,8 +220,7 @@ func buildInferenceConfig(opts provider.CallOptions, modelID string, bo BedrockO
 		if !validBedrockRequestNumber(*opts.MaxOutputTokens) {
 			return nil, warnings, fmt.Errorf("bedrock: invalid maxOutputTokens")
 		}
-		v := *opts.MaxOutputTokens
-		inf.MaxTokens = &v
+		inf.MaxTokens = ptr.Clone(opts.MaxOutputTokens)
 	}
 	if opts.Temperature != nil {
 		t := *opts.Temperature
@@ -239,18 +239,14 @@ func buildInferenceConfig(opts provider.CallOptions, modelID string, bo BedrockO
 			})
 			t = 0
 		}
-		inf.Temperature = &t
+		inf.Temperature = ptr.To(t)
 	}
-	if opts.TopP != nil {
-		v := *opts.TopP
-		inf.TopP = &v
-	}
+	inf.TopP = ptr.Clone(opts.TopP)
 	if opts.TopK != nil {
 		if !validBedrockRequestNumber(*opts.TopK) {
 			return nil, warnings, fmt.Errorf("bedrock: invalid topK")
 		}
-		v := *opts.TopK
-		inf.TopK = &v
+		inf.TopK = ptr.Clone(opts.TopK)
 	}
 	if len(opts.StopSequences) > 0 {
 		inf.StopSequences = append([]string{}, opts.StopSequences...)
@@ -371,7 +367,7 @@ func resolveReasoningConfig(modelID string, reasoning *provider.ReasoningEffort,
 		if isAnthropicModel(modelID) {
 			resolved = &ReasoningConfig{Type: "disabled"}
 		} else {
-			resolved = cloneReasoningConfig(explicit)
+			resolved = ptr.Clone(explicit)
 		}
 	} else {
 		resolved = mergeReasoningConfig(deriveReasoningConfig(modelID, reasoning, warnings), explicit)
@@ -383,16 +379,8 @@ func resolveReasoningConfig(modelID string, reasoning *provider.ReasoningEffort,
 	return resolved
 }
 
-func cloneReasoningConfig(config *ReasoningConfig) *ReasoningConfig {
-	if config == nil {
-		return nil
-	}
-	cloned := *config
-	return &cloned
-}
-
 func mergeReasoningConfig(derived, explicit *ReasoningConfig) *ReasoningConfig {
-	merged := cloneReasoningConfig(derived)
+	merged := ptr.Clone(derived)
 	if explicit == nil {
 		return merged
 	}

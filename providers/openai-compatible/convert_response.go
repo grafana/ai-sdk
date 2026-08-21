@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/grafana/ai-sdk/internal/ptr"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -118,15 +119,15 @@ func convertUsage(usage *openAIUsage) provider.Usage {
 		return provider.Usage{}
 	}
 
-	inputTotal := intValue(usage.PromptTokens)
-	outputTotal := intValue(usage.CompletionTokens)
+	inputTotal := ptr.Deref(usage.PromptTokens, 0)
+	outputTotal := ptr.Deref(usage.CompletionTokens, 0)
 	cacheRead := 0
 	if usage.PromptTokensDetails != nil {
-		cacheRead = intValue(usage.PromptTokensDetails.CachedTokens)
+		cacheRead = ptr.Deref(usage.PromptTokensDetails.CachedTokens, 0)
 	}
 	reasoning := 0
 	if usage.CompletionTokensDetails != nil {
-		reasoning = intValue(usage.CompletionTokensDetails.ReasoningTokens)
+		reasoning = ptr.Deref(usage.CompletionTokensDetails.ReasoningTokens, 0)
 	}
 
 	raw := json.RawMessage(append([]byte(nil), usage.Raw...))
@@ -135,14 +136,14 @@ func convertUsage(usage *openAIUsage) provider.Usage {
 	}
 	return provider.Usage{
 		InputTokens: provider.InputTokenUsage{
-			Total:     ptr(inputTotal),
-			NoCache:   ptr(inputTotal - cacheRead),
-			CacheRead: ptr(cacheRead),
+			Total:     ptr.To(inputTotal),
+			NoCache:   ptr.To(inputTotal - cacheRead),
+			CacheRead: ptr.To(cacheRead),
 		},
 		OutputTokens: provider.OutputTokenUsage{
-			Total:     ptr(outputTotal),
-			Text:      ptr(max(0, outputTotal-reasoning)),
-			Reasoning: ptr(reasoning),
+			Total:     ptr.To(outputTotal),
+			Text:      ptr.To(max(0, outputTotal-reasoning)),
+			Reasoning: ptr.To(reasoning),
 		},
 		Raw: raw,
 	}
@@ -183,15 +184,6 @@ func toolCallProviderMetadata(metadataKey string, extra *extraContent) provider.
 	}
 	return provider.ProviderMetadata{metadataKey: raw}
 }
-
-func intValue(v *int) int {
-	if v == nil {
-		return 0
-	}
-	return *v
-}
-
-func ptr(v int) *int { return &v }
 
 func flattenHeaders(h http.Header) map[string]string {
 	if len(h) == 0 {

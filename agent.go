@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/grafana/ai-sdk/internal/ptr"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -361,8 +362,7 @@ func mergeStreamConfig(settings *streamConfig, call *streamConfig) *streamConfig
 		cfg.onAbort = mergeCallbacks1(cfg.onAbort, call.onAbort)
 	}
 	if call.includeRawChunks != nil {
-		value := *call.includeRawChunks
-		cfg.includeRawChunks = &value
+		cfg.includeRawChunks = ptr.Clone(call.includeRawChunks)
 	}
 	return cfg
 }
@@ -393,8 +393,7 @@ func mergeBaseConfig(dst *baseConfig, call *baseConfig) {
 		dst.tools = cloneToolSet(call.tools)
 	}
 	if call.toolChoice != nil {
-		v := *call.toolChoice
-		dst.toolChoice = &v
+		dst.toolChoice = ptr.Clone(call.toolChoice)
 	}
 	if call.activeToolsSet {
 		dst.activeTools = append([]string(nil), call.activeTools...)
@@ -407,8 +406,7 @@ func mergeBaseConfig(dst *baseConfig, call *baseConfig) {
 		dst.toolApproval = cloneToolApprovalConfig(call.toolApproval)
 	}
 	if call.maxRetries != nil {
-		v := *call.maxRetries
-		dst.maxRetries = &v
+		dst.maxRetries = ptr.Clone(call.maxRetries)
 	}
 	if call.timeoutSet {
 		dst.timeout = call.timeout
@@ -421,39 +419,31 @@ func mergeBaseConfig(dst *baseConfig, call *baseConfig) {
 		dst.retryBackoff = call.retryBackoff
 	}
 	if call.maxOutputTokens != nil {
-		v := *call.maxOutputTokens
-		dst.maxOutputTokens = &v
+		dst.maxOutputTokens = ptr.Clone(call.maxOutputTokens)
 	}
 	if call.temperature != nil {
-		v := *call.temperature
-		dst.temperature = &v
+		dst.temperature = ptr.Clone(call.temperature)
 	}
 	if call.topP != nil {
-		v := *call.topP
-		dst.topP = &v
+		dst.topP = ptr.Clone(call.topP)
 	}
 	if call.topK != nil {
-		v := *call.topK
-		dst.topK = &v
+		dst.topK = ptr.Clone(call.topK)
 	}
 	if call.presencePenalty != nil {
-		v := *call.presencePenalty
-		dst.presencePenalty = &v
+		dst.presencePenalty = ptr.Clone(call.presencePenalty)
 	}
 	if call.frequencyPenalty != nil {
-		v := *call.frequencyPenalty
-		dst.frequencyPenalty = &v
+		dst.frequencyPenalty = ptr.Clone(call.frequencyPenalty)
 	}
 	if call.stopSequences != nil {
 		dst.stopSequences = append([]string(nil), call.stopSequences...)
 	}
 	if call.responseFormat != nil {
-		v := *call.responseFormat
-		dst.responseFormat = &v
+		dst.responseFormat = ptr.Clone(call.responseFormat)
 	}
 	if call.seed != nil {
-		v := *call.seed
-		dst.seed = &v
+		dst.seed = ptr.Clone(call.seed)
 	}
 	if call.providerOptions != nil {
 		dst.providerOptions = mergeProviderOptions(dst.providerOptions, call.providerOptions)
@@ -465,8 +455,7 @@ func mergeBaseConfig(dst *baseConfig, call *baseConfig) {
 		dst.generateID = call.generateID
 	}
 	if call.reasoning != nil {
-		v := *call.reasoning
-		dst.reasoning = &v
+		dst.reasoning = ptr.Clone(call.reasoning)
 	}
 	if call.prepareStep != nil {
 		dst.prepareStep = call.prepareStep
@@ -520,50 +509,17 @@ func cloneBaseConfig(src baseConfig) baseConfig {
 	cfg.stopSequences = append([]string(nil), src.stopSequences...)
 	cfg.providerOptions = cloneProviderOptions(src.providerOptions)
 	cfg.headers = cloneStringMap(src.headers)
-	if src.toolChoice != nil {
-		v := *src.toolChoice
-		cfg.toolChoice = &v
-	}
-	if src.maxRetries != nil {
-		v := *src.maxRetries
-		cfg.maxRetries = &v
-	}
-	if src.maxOutputTokens != nil {
-		v := *src.maxOutputTokens
-		cfg.maxOutputTokens = &v
-	}
-	if src.temperature != nil {
-		v := *src.temperature
-		cfg.temperature = &v
-	}
-	if src.topP != nil {
-		v := *src.topP
-		cfg.topP = &v
-	}
-	if src.topK != nil {
-		v := *src.topK
-		cfg.topK = &v
-	}
-	if src.presencePenalty != nil {
-		v := *src.presencePenalty
-		cfg.presencePenalty = &v
-	}
-	if src.frequencyPenalty != nil {
-		v := *src.frequencyPenalty
-		cfg.frequencyPenalty = &v
-	}
-	if src.responseFormat != nil {
-		v := *src.responseFormat
-		cfg.responseFormat = &v
-	}
-	if src.seed != nil {
-		v := *src.seed
-		cfg.seed = &v
-	}
-	if src.reasoning != nil {
-		v := *src.reasoning
-		cfg.reasoning = &v
-	}
+	cfg.toolChoice = ptr.Clone(src.toolChoice)
+	cfg.maxRetries = ptr.Clone(src.maxRetries)
+	cfg.maxOutputTokens = ptr.Clone(src.maxOutputTokens)
+	cfg.temperature = ptr.Clone(src.temperature)
+	cfg.topP = ptr.Clone(src.topP)
+	cfg.topK = ptr.Clone(src.topK)
+	cfg.presencePenalty = ptr.Clone(src.presencePenalty)
+	cfg.frequencyPenalty = ptr.Clone(src.frequencyPenalty)
+	cfg.responseFormat = ptr.Clone(src.responseFormat)
+	cfg.seed = ptr.Clone(src.seed)
+	cfg.reasoning = ptr.Clone(src.reasoning)
 	return cfg
 }
 

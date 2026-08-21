@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/grafana/ai-sdk/internal/ptr"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -1976,7 +1977,7 @@ func (r *StreamTextResult) resolveToolApprovals(ctx context.Context, cfg *stream
 	}
 	var executable []executableApproval
 	for _, approval := range approved {
-		if requestBoolValue(approval.toolCall.ProviderExecuted) {
+		if ptr.Deref(approval.toolCall.ProviderExecuted, false) {
 			continue
 		}
 		tool, ok := cfg.tools[approval.toolCall.ToolName]
@@ -1987,7 +1988,7 @@ func (r *StreamTextResult) resolveToolApprovals(ctx context.Context, cfg *stream
 			ToolCallID:       approval.toolCall.ToolCallID,
 			ToolName:         approval.toolCall.ToolName,
 			Input:            approval.toolCall.Input,
-			ProviderExecuted: requestBoolValue(approval.toolCall.ProviderExecuted),
+			ProviderExecuted: ptr.Deref(approval.toolCall.ProviderExecuted, false),
 			ProviderMetadata: optionsToProviderMetadata(approval.toolCall.ProviderOptions),
 		}
 		executable = append(executable, executableApproval{
@@ -2033,7 +2034,7 @@ func (r *StreamTextResult) resolveToolApprovals(ctx context.Context, cfg *stream
 
 	deniedToolParts := make([]provider.ContentPart, 0, len(denied))
 	for _, approval := range denied {
-		if requestBoolValue(approval.toolCall.ProviderExecuted) || approval.hasExistingToolResult {
+		if ptr.Deref(approval.toolCall.ProviderExecuted, false) || approval.hasExistingToolResult {
 			continue
 		}
 		deniedToolParts = append(deniedToolParts, provider.ContentPart{
@@ -2084,7 +2085,7 @@ func validateApprovedToolApprovals(cfg *streamConfig, msgs []provider.Message, a
 				ToolCallID:       approval.toolCall.ToolCallID,
 				ToolName:         approval.toolCall.ToolName,
 				Input:            approval.toolCall.Input,
-				ProviderExecuted: requestBoolValue(approval.toolCall.ProviderExecuted),
+				ProviderExecuted: ptr.Deref(approval.toolCall.ProviderExecuted, false),
 				ProviderMetadata: optionsToProviderMetadata(approval.toolCall.ProviderOptions),
 			}, ToolExecutionOptions{
 				ToolCallID: approval.toolCall.ToolCallID,
@@ -2253,7 +2254,7 @@ func sanitizePromptForProvider(msgs []provider.Message) ([]provider.Message, err
 			if msg.Role == provider.RoleAssistant && part.Type == provider.ContentPartTypeToolApprovalRequest {
 				continue
 			}
-			if msg.Role == provider.RoleTool && part.Type == provider.ContentPartTypeToolApprovalResponse && !requestBoolValue(part.ProviderExecuted) {
+			if msg.Role == provider.RoleTool && part.Type == provider.ContentPartTypeToolApprovalResponse && !ptr.Deref(part.ProviderExecuted, false) {
 				continue
 			}
 			filtered.Content = append(filtered.Content, part)
@@ -2300,7 +2301,7 @@ func sanitizePromptForProvider(msgs []provider.Message) ([]provider.Message, err
 		switch msg.Role {
 		case provider.RoleAssistant:
 			for _, part := range msg.Content {
-				if part.Type == provider.ContentPartTypeToolCall && !requestBoolValue(part.ProviderExecuted) {
+				if part.Type == provider.ContentPartTypeToolCall && !ptr.Deref(part.ProviderExecuted, false) {
 					addUnresolved(part.ToolCallID)
 				}
 			}

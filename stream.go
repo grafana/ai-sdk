@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/grafana/ai-sdk/internal/ptr"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -286,18 +287,11 @@ func buildUIMessageStreamConfig(opts []UIMessageStreamOption) uiMessageStreamCon
 	return cfg
 }
 
-func sendOption(ptr *bool, defaultVal bool) bool {
-	if ptr == nil {
-		return defaultVal
-	}
-	return *ptr
-}
-
 func shouldSendChunk(chunk UIMessageChunk, cfg uiMessageStreamConfig) bool {
-	sendReasoning := sendOption(cfg.sendReasoning, true)
-	sendSources := sendOption(cfg.sendSources, false)
-	sendFinish := sendOption(cfg.sendFinish, true)
-	sendStart := sendOption(cfg.sendStart, true)
+	sendReasoning := ptr.Deref(cfg.sendReasoning, true)
+	sendSources := ptr.Deref(cfg.sendSources, false)
+	sendFinish := ptr.Deref(cfg.sendFinish, true)
+	sendStart := ptr.Deref(cfg.sendStart, true)
 
 	switch chunk.Type {
 	case ChunkStart:

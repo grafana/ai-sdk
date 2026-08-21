@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/grafana/ai-sdk/internal/ptr"
 	"github.com/grafana/ai-sdk/internal/streamusage"
 	"github.com/grafana/ai-sdk/middleware"
 	"github.com/grafana/ai-sdk/provider"
@@ -212,8 +213,7 @@ func (s *streamSummary) observe(part provider.StreamPart) {
 		}
 	case provider.PartFinish:
 		if part.FinishReason != nil {
-			finish := *part.FinishReason
-			s.finish = &finish
+			s.finish = ptr.Clone(part.FinishReason)
 		}
 		if len(part.ProviderMetadata) > 0 {
 			s.metadata = part.ProviderMetadata

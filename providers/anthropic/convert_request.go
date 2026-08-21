@@ -14,6 +14,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/anthropics/anthropic-sdk-go/packages/param"
 	"github.com/grafana/ai-sdk/internal/providerrequest"
+	"github.com/grafana/ai-sdk/internal/ptr"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -881,10 +882,7 @@ func extractDocumentMetadata(opts provider.ProviderOptions) documentMetadata {
 		return documentMetadata{}
 	}
 	m := documentMetadata{}
-	if data.Title != nil {
-		title := *data.Title
-		m.title = &title
-	}
+	m.title = ptr.Clone(data.Title)
 	if data.Context != nil {
 		m.context = *data.Context
 	}

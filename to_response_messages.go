@@ -3,6 +3,7 @@ package aisdk
 import (
 	"sort"
 
+	"github.com/grafana/ai-sdk/internal/ptr"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -57,10 +58,6 @@ import (
 // time content reaches this helper the conversion is already done. Public
 // callers constructing parts from raw tool output can call
 // [Tool.ToModelOutput] directly.
-func requestBoolValue(value *bool) bool {
-	return value != nil && *value
-}
-
 func ToResponseMessages(parts []provider.ContentPart) []provider.Message {
 	var messages []provider.Message
 	toolCallOrder := make(map[string]int)
@@ -72,7 +69,7 @@ func ToResponseMessages(parts []provider.ContentPart) []provider.Message {
 	// (`(tool-result || tool-error) && !providerExecuted -> continue`).
 	var assistantContent []provider.ContentPart
 	for _, p := range parts {
-		if p.Type == provider.ContentPartTypeToolResult && !requestBoolValue(p.ProviderExecuted) {
+		if p.Type == provider.ContentPartTypeToolResult && !ptr.Deref(p.ProviderExecuted, false) {
 			continue
 		}
 
@@ -103,13 +100,9 @@ func ToResponseMessages(parts []provider.ContentPart) []provider.Message {
 			})
 
 		case provider.ContentPartTypeFile:
-			var filename *string
-			if p.FilePartFilename != nil {
-				value := *p.FilePartFilename
-				filename = &value
-			} else if p.Filename != "" {
-				value := p.Filename
-				filename = &value
+			filename := ptr.Clone(p.FilePartFilename)
+			if filename == nil && p.Filename != "" {
+				filename = ptr.To(p.Filename)
 			}
 			assistantContent = append(assistantContent, provider.ContentPart{
 				Type:             provider.ContentPartTypeFile,
@@ -176,7 +169,7 @@ func ToResponseMessages(parts []provider.ContentPart) []provider.Message {
 	for _, p := range parts {
 		switch p.Type {
 		case provider.ContentPartTypeToolResult:
-			if requestBoolValue(p.ProviderExecuted) {
+			if ptr.Deref(p.ProviderExecuted, false) {
 				continue
 			}
 			toolContent = append(toolContent, provider.ContentPart{

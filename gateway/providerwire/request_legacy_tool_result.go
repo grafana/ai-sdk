@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/grafana/ai-sdk/internal/ptr"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -34,7 +35,7 @@ func legacyToolResultOutputFromProvider(output provider.ToolResultOutput) (legac
 	}
 	legacy := legacyToolResultOutput{
 		Type: output.Type, Text: output.Text, JSON: append(json.RawMessage(nil), output.JSON...),
-		Reason: clonePointer(output.Reason), ProviderOptions: options,
+		Reason: ptr.Clone(output.Reason), ProviderOptions: options,
 	}
 	if output.Content != nil {
 		legacy.Content = make([]legacyToolResultContentValue, len(output.Content))
@@ -52,7 +53,7 @@ func legacyToolResultOutputFromProvider(output provider.ToolResultOutput) (legac
 func (output legacyToolResultOutput) toProvider() (provider.ToolResultOutput, error) {
 	mapped := provider.ToolResultOutput{
 		Type: output.Type, Text: output.Text, JSON: append(json.RawMessage(nil), output.JSON...),
-		Reason: clonePointer(output.Reason), ProviderOptions: legacyProviderOptionsToProvider(output.ProviderOptions),
+		Reason: ptr.Clone(output.Reason), ProviderOptions: legacyProviderOptionsToProvider(output.ProviderOptions),
 	}
 	if output.Content != nil {
 		mapped.Content = make([]provider.ToolResultContentValue, len(output.Content))
@@ -184,7 +185,7 @@ func legacyToolResultContentFromProvider(content provider.ToolResultContentValue
 	}
 	legacy := legacyToolResultContentValue{
 		Type: content.Type, Text: content.Text, MediaType: content.MediaType,
-		Filename: clonePointer(content.Filename), ProviderOptions: options,
+		Filename: ptr.Clone(content.Filename), ProviderOptions: options,
 	}
 	if content.Data != nil {
 		data, err := legacyDataContentFromProvider(*content.Data)
@@ -199,7 +200,7 @@ func legacyToolResultContentFromProvider(content provider.ToolResultContentValue
 func (content legacyToolResultContentValue) toProvider() (provider.ToolResultContentValue, error) {
 	mapped := provider.ToolResultContentValue{
 		Type: content.Type, Text: content.Text, MediaType: content.MediaType,
-		Filename: clonePointer(content.Filename), ProviderOptions: legacyProviderOptionsToProvider(content.ProviderOptions),
+		Filename: ptr.Clone(content.Filename), ProviderOptions: legacyProviderOptionsToProvider(content.ProviderOptions),
 	}
 	if content.Data != nil {
 		data, err := content.Data.toProvider()

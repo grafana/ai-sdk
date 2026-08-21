@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/grafana/agento11y/go/agento11y"
+	"github.com/grafana/ai-sdk/internal/ptr"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -321,17 +322,11 @@ func controlsFromCallOptions(params provider.CallOptions) requestControls {
 	var out requestControls
 	if params.MaxOutputTokens != nil {
 		if value, ok := params.MaxOutputTokens.Int64(); ok {
-			out.MaxTokens = &value
+			out.MaxTokens = ptr.To(value)
 		}
 	}
-	if params.Temperature != nil {
-		v := *params.Temperature
-		out.Temperature = &v
-	}
-	if params.TopP != nil {
-		v := *params.TopP
-		out.TopP = &v
-	}
+	out.Temperature = ptr.Clone(params.Temperature)
+	out.TopP = ptr.Clone(params.TopP)
 	if choice := toolChoiceToAgento11y(params.ToolChoice); choice != "" {
 		out.ToolChoice = &choice
 	}
