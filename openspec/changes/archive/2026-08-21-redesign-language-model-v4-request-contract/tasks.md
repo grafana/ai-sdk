@@ -70,4 +70,4 @@
 - [x] 7.4 Run `mise run test`, `mise run vet`, `mise run lint`, `mise run lint-docs`, `openspec validate --all --strict`, and `git diff --check`.
 - [x] 7.5 Verify implementation against the proposal, design, delta specs, archived Phase 1 loss analysis, parent compatibility corpus, and exact pinned upstream sources; document changed artifacts, commands, and residual risks.
 - [x] 7.6 Synchronize completed delta specs into canonical specifications.
-- [ ] 7.7 After explicit user approval, archive with `openspec archive redesign-language-model-v4-request-contract --skip-specs` because canonical specifications are already synchronized, then confirm zero active OpenSpec changes.
+- [x] 7.7 After explicit user approval, archive with `openspec archive redesign-language-model-v4-request-contract --skip-specs` because canonical specifications are already synchronized, then confirm zero active OpenSpec changes.
