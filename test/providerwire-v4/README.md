@@ -52,8 +52,10 @@ The command validates the observations before writing all of `artifacts/semantic
 
 Semantic outer-header captures retain every emitted header except transport-generated `host`, `connection`, `content-length`, `accept`, `accept-language`, `accept-encoding`, and `sec-fetch-mode`. Authentication and user-agent values are normalized; deterministic protocol, caller, configured, and observability values remain evidence.
 
-`mise run check-providerwire-v4` is non-mutating. It regenerates request evidence in temporary storage, compares it with committed artifacts, validates exact pins and source-equivalence hashes against installed npm inputs, runs schema and observation checks, Go loss witnesses, and smoke probes.
+`mise run check-providerwire-v4` is non-mutating. It regenerates request evidence and the parent-pinned compatibility corpus in temporary storage, compares them with committed artifacts, validates exact pins and source-equivalence hashes against installed npm inputs, runs schema, observation, and smoke checks, requires exact set equality between resolved delta rows and positive Go contract tests, and then runs the complete provider package.
 
-## Go loss witnesses
+## Resolved Go provider contract
 
-[`provider/providerwire_v4_loss_test.go`](../../provider/providerwire_v4_loss_test.go) uses the external `provider_test` package so it can observe only the public Go provider contract. Its passing Phase 1 tests demonstrate distinctions that the current transport-neutral model cannot represent, including fractional numeric settings, optional false or empty scalar presence, and publicly selecting empty inline-text file data. Phase 2 should invert the relevant witness before changing the provider model.
+[`provider/providerwire_v4_contract_test.go`](../../provider/providerwire_v4_contract_test.go) uses the external `provider_test` package so it observes only the public Go provider contract. Its positive tests establish exact numeric settings, optional false and empty scalar presence, and publicly constructible and inspectable empty inline-text file data. Every resolved row in [`phase2-delta.md`](phase2-delta.md) names exactly one top-level contract test.
+
+The deployed tolerant request adapter is independently locked to parent commit `32e5ab7f1ab9e524477cc0ece04c690a89854a24` by [`gateway/providerwire/testdata/parent_request_compat_v1.json`](../../gateway/providerwire/testdata/parent_request_compat_v1.json). The corpus records parent-produced bytes and bounded parent-decoder outcomes; it does not establish a strict ProviderWire V4 runtime. Strict production decoding and serving remain a later-phase gap.

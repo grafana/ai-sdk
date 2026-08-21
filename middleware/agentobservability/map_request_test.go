@@ -156,7 +156,7 @@ func TestMessagesToAgento11y_AssistantToolCall(t *testing.T) {
 func TestMessagesToAgento11y_AssistantServerToolCall(t *testing.T) {
 	input := json.RawMessage(`{"q":"weather"}`)
 	part := provider.ToolCallPart("tc-1", "web_search", input)
-	part.ProviderExecuted = true
+	part.ProviderExecuted = observabilityBoolPointer(true)
 	prompt := []provider.Message{provider.NewAssistantMessage(part)}
 	_, msgs := messagesToAgento11y(prompt)
 	require.Len(t, msgs, 1)
@@ -170,7 +170,7 @@ func TestToolsToAgento11y(t *testing.T) {
 		{
 			Type:        provider.ToolTypeFunction,
 			Name:        "get_weather",
-			Description: "Get weather",
+			Description: observabilityStringPointer("Get weather"),
 			InputSchema: schema,
 		},
 		{
@@ -230,11 +230,10 @@ func TestToolsToAgento11y_DeferLoading(t *testing.T) {
 }
 
 func TestControlsFromCallOptions(t *testing.T) {
-	maxTok := 1024
 	temp := 0.5
 	topP := 0.9
 	params := provider.CallOptions{
-		MaxOutputTokens: &maxTok,
+		MaxOutputTokens: observabilityIntegerPointer(1024),
 		Temperature:     &temp,
 		TopP:            &topP,
 		ToolChoice:      &provider.ToolChoice{Type: provider.ToolChoiceAuto},

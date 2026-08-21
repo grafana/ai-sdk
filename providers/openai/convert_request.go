@@ -3,6 +3,7 @@ package openai
 import (
 	"fmt"
 
+	"github.com/grafana/ai-sdk/internal/providerrequest"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/openai/openai-go/v3/packages/param"
 	"github.com/openai/openai-go/v3/responses"
@@ -34,6 +35,9 @@ type buildResult struct {
 // It returns the request body, accumulated warnings, conversion metadata, and
 // an error.
 func buildParams(modelID string, opts provider.CallOptions) (responses.ResponseNewParams, []provider.Warning, buildResult, error) {
+	if err := providerrequest.Validate(opts); err != nil {
+		return responses.ResponseNewParams{}, nil, buildResult{}, fmt.Errorf("openai: invalid request: %w", err)
+	}
 	var warnings []provider.Warning
 
 	caps := getModelCapabilities(modelID)
@@ -75,7 +79,11 @@ func buildParams(modelID string, opts provider.CallOptions) (responses.ResponseN
 	body.Input = responses.ResponseNewParamsInputUnion{OfInputItemList: input}
 
 	// Scalar params + unsupported-param warnings.
-	warnings = append(warnings, applyScalarParams(&body, opts, caps, isReasoning, popts)...)
+	scalarWarnings, err := applyScalarParams(&body, opts, caps, isReasoning, popts)
+	warnings = append(warnings, scalarWarnings...)
+	if err != nil {
+		return responses.ResponseNewParams{}, warnings, buildResult{}, err
+	}
 
 	// Structured output.
 	applyResponseFormat(&body, opts, popts)
@@ -168,7 +176,7 @@ func resolveSystemMessageMode(popts OpenAIResponsesOptions, caps modelCapabiliti
 
 // applyScalarParams maps temperature/topP/maxOutputTokens and emits warnings for
 // unsupported sampling parameters and capability-gated parameters.
-func applyScalarParams(body *responses.ResponseNewParams, opts provider.CallOptions, caps modelCapabilities, isReasoning bool, popts OpenAIResponsesOptions) []provider.Warning {
+func applyScalarParams(body *responses.ResponseNewParams, opts provider.CallOptions, caps modelCapabilities, isReasoning bool, popts OpenAIResponsesOptions) ([]provider.Warning, error) {
 	var warnings []provider.Warning
 
 	if opts.TopK != nil {
@@ -188,7 +196,9 @@ func applyScalarParams(body *responses.ResponseNewParams, opts provider.CallOpti
 	}
 
 	if opts.MaxOutputTokens != nil {
-		body.MaxOutputTokens = param.NewOpt(int64(*opts.MaxOutputTokens))
+		if err := applyMaxOutputTokens(body, *opts.MaxOutputTokens); err != nil {
+			return warnings, err
+		}
 	}
 
 	// Capability gating for temperature/topP on reasoning models.
@@ -213,5 +223,5 @@ func applyScalarParams(body *responses.ResponseNewParams, opts provider.CallOpti
 		}
 	}
 
-	return warnings
+	return warnings, nil
 }

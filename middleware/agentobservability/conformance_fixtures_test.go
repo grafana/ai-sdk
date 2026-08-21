@@ -64,7 +64,7 @@ func generationInputs() map[string]genFixtureInput {
 
 	plainParams := provider.CallOptions{
 		Prompt:          []provider.Message{provider.UserText("what is the weather?")},
-		MaxOutputTokens: intP(1024),
+		MaxOutputTokens: observabilityIntegerPointer(1024),
 		Temperature:     floatP(0.7),
 	}
 	plainResult := provider.GenerateResult{
@@ -83,11 +83,11 @@ func generationInputs() map[string]genFixtureInput {
 
 	toolParams := provider.CallOptions{
 		Prompt:          []provider.Message{provider.UserText("weather in SF?")},
-		MaxOutputTokens: intP(1024),
+		MaxOutputTokens: observabilityIntegerPointer(1024),
 		Tools: []provider.Tool{{
 			Type:        provider.ToolTypeFunction,
 			Name:        "get_weather",
-			Description: "Get weather",
+			Description: observabilityStringPointer("Get weather"),
 			InputSchema: json.RawMessage(`{"type":"object","properties":{"city":{"type":"string"}}}`),
 		}},
 	}
@@ -113,7 +113,7 @@ func generationInputs() map[string]genFixtureInput {
 
 	reasoningParams := provider.CallOptions{
 		Prompt:          []provider.Message{provider.UserText("think before answering: 2+2?")},
-		MaxOutputTokens: intP(1024),
+		MaxOutputTokens: observabilityIntegerPointer(1024),
 		ProviderOptions: provider.ProviderOptions{
 			"anthropic": provider.RawProviderOption{
 				Key: "anthropic",
@@ -138,7 +138,7 @@ func generationInputs() map[string]genFixtureInput {
 
 	maxTokensParams := provider.CallOptions{
 		Prompt:          []provider.Message{provider.UserText("write a long essay")},
-		MaxOutputTokens: intP(50),
+		MaxOutputTokens: observabilityIntegerPointer(50),
 	}
 	maxTokensResult := provider.GenerateResult{
 		Content: []provider.GenerateContentPart{
@@ -156,7 +156,7 @@ func generationInputs() map[string]genFixtureInput {
 
 	toolUseStopParams := provider.CallOptions{
 		Prompt:          []provider.Message{provider.UserText("look up the temperature")},
-		MaxOutputTokens: intP(1024),
+		MaxOutputTokens: observabilityIntegerPointer(1024),
 		Tools: []provider.Tool{{
 			Type:        provider.ToolTypeFunction,
 			Name:        "get_temperature",

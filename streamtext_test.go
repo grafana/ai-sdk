@@ -26,6 +26,22 @@ func testMustSchema(t *testing.T, raw string) schema.Schema {
 
 func intPtr(v int) *int { return &v }
 
+func languageModelNumberInt64(t *testing.T, value *provider.LanguageModelNumber) int64 {
+	t.Helper()
+	require.NotNil(t, value)
+	integer, ok := value.Int64()
+	require.True(t, ok)
+	return integer
+}
+
+func languageModelNumberFloat64(t *testing.T, value *provider.LanguageModelNumber) float64 {
+	t.Helper()
+	require.NotNil(t, value)
+	floating, ok := value.Float64()
+	require.True(t, ok)
+	return floating
+}
+
 type mockModel struct {
 	streamFunc func(ctx context.Context, opts provider.CallOptions) (*provider.StreamResult, error)
 	callCount  int
@@ -269,13 +285,13 @@ func TestStreamTextPrepareStep_SystemMessages(t *testing.T) {
 
 func TestStreamTextPrepareStep_CallSettings(t *testing.T) {
 	t.Run("overrides apply to the current step", func(t *testing.T) {
-		maxOutputTokens := 1
+		maxOutputTokens := provider.LanguageModelNumberFromInt(1)
 		temperature := 0.0
 		topP := 0.0
-		topK := 0
+		topK := provider.LanguageModelNumberFromInt(0)
 		presencePenalty := 0.0
 		frequencyPenalty := 0.0
-		seed := 0
+		seed := provider.LanguageModelNumberFromInt(0)
 		reasoning := provider.ReasoningNone
 		var call provider.CallOptions
 
@@ -313,22 +329,48 @@ func TestStreamTextPrepareStep_CallSettings(t *testing.T) {
 		}
 
 		require.NotNil(t, call.MaxOutputTokens)
-		assert.Equal(t, 1, *call.MaxOutputTokens)
+		assert.Equal(t, int64(1), languageModelNumberInt64(t, call.MaxOutputTokens))
 		require.NotNil(t, call.Temperature)
 		assert.Equal(t, 0.0, *call.Temperature)
 		require.NotNil(t, call.TopP)
 		assert.Equal(t, 0.0, *call.TopP)
 		require.NotNil(t, call.TopK)
-		assert.Equal(t, 0, *call.TopK)
+		assert.Equal(t, int64(0), languageModelNumberInt64(t, call.TopK))
 		require.NotNil(t, call.PresencePenalty)
 		assert.Equal(t, 0.0, *call.PresencePenalty)
 		require.NotNil(t, call.FrequencyPenalty)
 		assert.Equal(t, 0.0, *call.FrequencyPenalty)
 		assert.Empty(t, call.StopSequences)
 		require.NotNil(t, call.Seed)
-		assert.Equal(t, 0, *call.Seed)
+		assert.Equal(t, int64(0), languageModelNumberInt64(t, call.Seed))
 		require.NotNil(t, call.Reasoning)
 		assert.Equal(t, provider.ReasoningNone, *call.Reasoning)
+	})
+
+	t.Run("fractional overrides reach provider exactly", func(t *testing.T) {
+		maxOutputTokens, err := provider.LanguageModelNumberFromFloat64(1.5)
+		require.NoError(t, err)
+		topK, err := provider.LanguageModelNumberFromFloat64(2.5)
+		require.NoError(t, err)
+		seed, err := provider.LanguageModelNumberFromFloat64(3.5)
+		require.NoError(t, err)
+		var call provider.CallOptions
+		model := &mockModel{streamFunc: func(_ context.Context, options provider.CallOptions) (*provider.StreamResult, error) {
+			call = options
+			return &provider.StreamResult{Stream: textStreamParts("done")}, nil
+		}}
+		result := StreamText(context.Background(), model,
+			WithModelMessages(provider.UserText("hello")),
+			WithPrepareStep(func(PrepareStepState) (*PrepareStepResult, error) {
+				return &PrepareStepResult{MaxOutputTokens: &maxOutputTokens, TopK: &topK, Seed: &seed}, nil
+			}),
+		)
+		for range result.FullStream() {
+		}
+		require.NoError(t, result.Err())
+		assert.Equal(t, 1.5, languageModelNumberFloat64(t, call.MaxOutputTokens))
+		assert.Equal(t, 2.5, languageModelNumberFloat64(t, call.TopK))
+		assert.Equal(t, 3.5, languageModelNumberFloat64(t, call.Seed))
 	})
 
 	t.Run("invalid max output tokens stops before model call", func(t *testing.T) {
@@ -337,7 +379,7 @@ func TestStreamTextPrepareStep_CallSettings(t *testing.T) {
 			calls++
 			return &provider.StreamResult{Stream: textStreamParts("done")}, nil
 		}}
-		maxOutputTokens := 0
+		maxOutputTokens := provider.LanguageModelNumberFromInt(0)
 
 		result := StreamText(context.Background(), model,
 			WithModelMessages(provider.UserText("hello")),
@@ -949,7 +991,8 @@ func TestStreamText_ToolInputSchemaValidation(t *testing.T) {
 		assert.Equal(t, provider.RoleAssistant, messages[0].Role)
 		require.Len(t, messages[0].Content, 2)
 		assert.Equal(t, provider.ContentPartTypeToolCall, messages[0].Content[0].Type)
-		assert.True(t, messages[0].Content[0].ProviderExecuted)
+		require.NotNil(t, messages[0].Content[0].ProviderExecuted)
+		assert.True(t, *messages[0].Content[0].ProviderExecuted)
 		assert.Equal(t, provider.ContentPartTypeToolResult, messages[0].Content[1].Type)
 	})
 
@@ -1377,7 +1420,8 @@ func TestStreamTextToolApproval_ApprovedReplayRechecksPolicy(t *testing.T) {
 			assert.Equal(t, provider.ContentPartTypeToolResult, last.Content[0].Type)
 			require.NotNil(t, last.Content[0].Output)
 			assert.Equal(t, provider.ToolOutputExecutionDenied, last.Content[0].Output.Type)
-			assert.Equal(t, "policy changed", last.Content[0].Output.Reason)
+			require.NotNil(t, last.Content[0].Output.Reason)
+			assert.Equal(t, "policy changed", *last.Content[0].Output.Reason)
 			return &provider.StreamResult{Stream: finishStreamParts()}, nil
 		},
 	}
@@ -1745,7 +1789,8 @@ func TestStreamTextToolApproval_DeniedResponseCreatesExecutionDenied(t *testing.
 	require.Len(t, last.Content, 1)
 	require.NotNil(t, last.Content[0].Output)
 	assert.Equal(t, provider.ToolOutputExecutionDenied, last.Content[0].Output.Type)
-	assert.Equal(t, "too risky", last.Content[0].Output.Reason)
+	require.NotNil(t, last.Content[0].Output.Reason)
+	assert.Equal(t, "too risky", *last.Content[0].Output.Reason)
 }
 
 func TestStreamTextToolApproval_DeniedResponseWithExistingResultEmitsOutputDenied(t *testing.T) {
@@ -1758,7 +1803,7 @@ func TestStreamTextToolApproval_DeniedResponseWithExistingResultEmitsOutputDenie
 		),
 		provider.NewToolMessage(
 			provider.ToolApprovalResponsePart("apr_1", approved, "too risky"),
-			provider.ToolResultPart("c1", "dangerous", &provider.ToolResultOutput{Type: provider.ToolOutputExecutionDenied, Reason: "too risky"}),
+			provider.ToolResultPart("c1", "dangerous", &provider.ToolResultOutput{Type: provider.ToolOutputExecutionDenied, Reason: requestStringPointer("too risky")}),
 		),
 	}
 	var capturedPrompt []provider.Message
@@ -1957,7 +2002,7 @@ func TestStreamTextToolApproval_ProviderExecutedDeniedResponseEmitsDenied(t *tes
 	msgs := []provider.Message{
 		provider.UserText("please run server tool"),
 		provider.NewAssistantMessage(
-			provider.ContentPart{Type: provider.ContentPartTypeToolCall, ToolCallID: "c1", ToolName: "server", Input: json.RawMessage(`{}`), ProviderExecuted: true},
+			provider.ContentPart{Type: provider.ContentPartTypeToolCall, ToolCallID: "c1", ToolName: "server", Input: json.RawMessage(`{}`), ProviderExecuted: requestBoolPointerIfTrue(true)},
 			provider.ToolApprovalRequestPart("apr_1", "c1", false),
 		),
 		provider.NewToolMessage(provider.ProviderExecutedToolApprovalResponsePart("apr_1", approved, "not allowed")),
@@ -1985,7 +2030,8 @@ func TestStreamTextToolApproval_ProviderExecutedDeniedResponseEmitsDenied(t *tes
 	require.Equal(t, provider.RoleTool, last.Role)
 	require.Len(t, last.Content, 1)
 	assert.Equal(t, provider.ContentPartTypeToolApprovalResponse, last.Content[0].Type)
-	assert.True(t, last.Content[0].ProviderExecuted)
+	require.NotNil(t, last.Content[0].ProviderExecuted)
+	assert.True(t, *last.Content[0].ProviderExecuted)
 }
 
 func TestStreamTextToolApproval_ExistingResultNotDuplicated(t *testing.T) {
@@ -2306,7 +2352,8 @@ func TestStreamTextToolApproval_AutomaticDeniedPolicy(t *testing.T) {
 	require.Len(t, steps[0].ToolResults, 1)
 	require.NotNil(t, steps[0].ToolResults[0].ModelOutput)
 	assert.Equal(t, provider.ToolOutputExecutionDenied, steps[0].ToolResults[0].ModelOutput.Type)
-	assert.Equal(t, "policy denied", steps[0].ToolResults[0].ModelOutput.Reason)
+	require.NotNil(t, steps[0].ToolResults[0].ModelOutput.Reason)
+	assert.Equal(t, "policy denied", *steps[0].ToolResults[0].ModelOutput.Reason)
 }
 
 func TestStreamTextDefaultStopCondition(t *testing.T) {
@@ -4244,7 +4291,7 @@ func TestStreamText_UnresolvedToolCalls(t *testing.T) {
 					ToolCallID:       "call-provider",
 					ToolName:         "provider_tool",
 					Input:            json.RawMessage(`{}`),
-					ProviderExecuted: true,
+					ProviderExecuted: requestBoolPointerIfTrue(true),
 				},
 				provider.ToolCallPart("call-second", "second", json.RawMessage(`{}`)),
 			),
@@ -4280,7 +4327,8 @@ func TestSanitizePromptForProvider_ToolApprovalBookkeeping(t *testing.T) {
 	require.Equal(t, provider.RoleTool, sanitized[2].Role)
 	require.Len(t, sanitized[2].Content, 1)
 	assert.Equal(t, provider.ContentPartTypeToolApprovalResponse, sanitized[2].Content[0].Type)
-	assert.True(t, sanitized[2].Content[0].ProviderExecuted)
+	require.NotNil(t, sanitized[2].Content[0].ProviderExecuted)
+	assert.True(t, *sanitized[2].Content[0].ProviderExecuted)
 }
 
 func TestStreamTextContent_TextDeltaMetadata(t *testing.T) {
@@ -4570,7 +4618,7 @@ func TestBuildContent(t *testing.T) {
 				{ApprovalID: "apr_1", ToolCallID: "c1", ToolName: "dangerous", Approved: false, Reason: "unsafe"},
 			},
 			ToolResults: []ToolResult{
-				{ToolCallID: "c1", ToolName: "dangerous", ModelOutput: &provider.ToolResultOutput{Type: provider.ToolOutputExecutionDenied, Reason: "unsafe"}},
+				{ToolCallID: "c1", ToolName: "dangerous", ModelOutput: &provider.ToolResultOutput{Type: provider.ToolOutputExecutionDenied, Reason: requestStringPointer("unsafe")}},
 				{ToolCallID: "c2", ToolName: "safe", Output: json.RawMessage(`{"ok":true}`)},
 			},
 		}

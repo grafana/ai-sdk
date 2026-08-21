@@ -120,7 +120,7 @@ type ToolResultOutput struct {
 	Text            string                   `json:"text,omitempty"`
 	JSON            json.RawMessage          `json:"json,omitempty"`
 	Content         []ToolResultContentValue `json:"content,omitempty"`
-	Reason          string                   `json:"reason,omitempty"`
+	Reason          *string                  `json:"reason,omitempty"`
 	ProviderOptions ProviderOptions          `json:"providerOptions,omitempty"`
 }
 
@@ -158,8 +158,8 @@ func (t ToolResultOutput) MarshalJSON() ([]byte, error) {
 		}
 		out["value"] = b
 	case ToolOutputExecutionDenied:
-		if t.Reason != "" {
-			b, err := json.Marshal(t.Reason)
+		if t.Reason != nil {
+			b, err := json.Marshal(*t.Reason)
 			if err != nil {
 				return nil, err
 			}
@@ -196,7 +196,7 @@ func (t *ToolResultOutput) UnmarshalJSON(data []byte) error {
 		Text            string                   `json:"text"`
 		JSON            json.RawMessage          `json:"json"`
 		Content         []ToolResultContentValue `json:"content"`
-		Reason          string                   `json:"reason"`
+		Reason          *string                  `json:"reason"`
 		Value           json.RawMessage          `json:"value"`
 		ProviderOptions ProviderOptions          `json:"providerOptions"`
 	}
@@ -286,7 +286,7 @@ type ToolResultContentValue struct {
 	Text            string                `json:"text,omitempty"`
 	Data            *DataContent          `json:"data,omitempty"`
 	MediaType       string                `json:"mediaType,omitempty"`
-	Filename        string                `json:"filename,omitempty"`
+	Filename        *string               `json:"filename,omitempty"`
 	ProviderOptions ProviderOptions       `json:"providerOptions,omitempty"`
 }
 
@@ -310,7 +310,7 @@ func (v ToolResultContentValue) MarshalJSON() ([]byte, error) {
 			Type            ToolResultContentType `json:"type"`
 			Data            *DataContent          `json:"data"`
 			MediaType       string                `json:"mediaType"`
-			Filename        string                `json:"filename,omitempty"`
+			Filename        *string               `json:"filename,omitempty"`
 			ProviderOptions ProviderOptions       `json:"providerOptions,omitempty"`
 		}{
 			Type:            ToolContentFile,
@@ -342,7 +342,7 @@ func (v *ToolResultContentValue) UnmarshalJSON(data []byte) error {
 		Text              string                `json:"text"`
 		Data              json.RawMessage       `json:"data"`
 		MediaType         string                `json:"mediaType"`
-		Filename          string                `json:"filename"`
+		Filename          *string               `json:"filename"`
 		URL               string                `json:"url"`
 		ProviderReference map[string]string     `json:"providerReference"`
 		ProviderOptions   ProviderOptions       `json:"providerOptions"`
@@ -411,10 +411,8 @@ func (v *ToolResultContentValue) UnmarshalJSON(data []byte) error {
 			return errors.New("provider: legacy tool-result file URL is required")
 		}
 		v.Type = ToolContentFile
-		v.Data = &DataContent{URL: raw.URL}
-		if raw.URL == "" {
-			v.Data.variant = dataContentVariantURL
-		}
+		fileData := URLDataContent(raw.URL)
+		v.Data = &fileData
 	case ToolContentFileReference:
 		rawReference, ok := fields["providerReference"]
 		if !ok || string(rawReference) == "null" {
@@ -425,7 +423,8 @@ func (v *ToolResultContentValue) UnmarshalJSON(data []byte) error {
 			return fmt.Errorf("provider: encoding legacy tool-result file reference: %w", err)
 		}
 		v.Type = ToolContentFile
-		v.Data = &DataContent{Reference: reference}
+		fileData := ReferenceDataContent(reference)
+		v.Data = &fileData
 	case ToolContentCustom:
 	default:
 		return fmt.Errorf("provider: unsupported tool-result content type %q", raw.Type)

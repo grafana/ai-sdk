@@ -1,200 +1,256 @@
 package provider
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 )
 
-type dataContentVariant string
+// DataContentType identifies the selected [DataContent] arm.
+type DataContentType string
 
 const (
-	dataContentVariantData dataContentVariant = "data"
-	dataContentVariantURL  dataContentVariant = "url"
-	dataContentVariantRef  dataContentVariant = "reference"
-	dataContentVariantText dataContentVariant = "text"
+	DataContentTypeData      DataContentType = "data"
+	DataContentTypeURL       DataContentType = "url"
+	DataContentTypeReference DataContentType = "reference"
+	DataContentTypeText      DataContentType = "text"
 )
 
 // DataContent represents file data as bytes, base64, a URL, a provider reference, or inline text.
-// Exactly one of Bytes, Base64, URL, Reference, or Text should be set.
 type DataContent struct {
-	Bytes  []byte `json:"bytes,omitempty"`
-	Base64 string `json:"base64,omitempty"`
-	URL    string `json:"url,omitempty"`
-	// Reference carries the upstream `{type:"reference",reference}` variant, an
-	// opaque provider reference object (`{ [provider]: id }`).
+	Bytes     []byte          `json:"bytes,omitempty"`
+	Base64    string          `json:"base64,omitempty"`
+	URL       string          `json:"url,omitempty"`
 	Reference json.RawMessage `json:"reference,omitempty"`
-	// Text carries the upstream `{type:"text",text}` variant, an inline text
-	// document.
-	Text    string `json:"text,omitempty"`
-	variant dataContentVariant
+	Text      string          `json:"text,omitempty"`
+	variant   DataContentType
 }
 
-// MarshalJSON emits the upstream Vercel AI SDK LanguageModelV4 tagged file-data
-// union so a stock upstream client can consume file content:
-//
-//   - Bytes / Base64 -> `{"type":"data","data":<base64>}`
-//   - URL            -> `{"type":"url","url":<url>}`
-//   - Reference      -> `{"type":"reference","reference":<obj>}`
-//   - Text           -> `{"type":"text","text":<text>}`
-//
-// This supersedes the legacy Go-to-Go `{"bytes"|"base64"|"url":...}` emitted
-// form. Decoding remains tolerant of both shapes (see [DataContent.UnmarshalJSON]).
-// See openspec change provider-wire-upstream-full-compat.
-// Base64DataContent constructs inline base64 file data, including an empty payload.
+// BytesDataContent constructs inline byte data and copies the input.
+func BytesDataContent(data []byte) DataContent {
+	copied := make([]byte, len(data))
+	copy(copied, data)
+	return DataContent{Bytes: copied}
+}
+
+// Base64DataContent constructs inline base64 data, including an empty payload.
 func Base64DataContent(data string) DataContent {
 	if data == "" {
-		return DataContent{Bytes: []byte{}}
+		return BytesDataContent(nil)
 	}
 	return DataContent{Base64: data}
 }
 
-// IsData reports whether d represents inline bytes or base64 data.
+// URLDataContent constructs URL data, including an empty URL.
+func URLDataContent(url string) DataContent {
+	content := DataContent{URL: url}
+	if url == "" {
+		content.variant = DataContentTypeURL
+	}
+	return content
+}
+
+// ReferenceDataContent constructs provider-reference data and copies the input.
+func ReferenceDataContent(reference json.RawMessage) DataContent {
+	return DataContent{Reference: append(json.RawMessage(nil), reference...)}
+}
+
+// TextDataContent constructs inline text data, including empty text.
+func TextDataContent(text string) DataContent {
+	content := DataContent{Text: text}
+	if text == "" {
+		content.variant = DataContentTypeText
+	}
+	return content
+}
+
+// DataType returns the uniquely selected or inferred data arm.
+func (d DataContent) DataType() (DataContentType, bool) {
+	selected := d.variant
+	valid := true
+	set := func(dataType DataContentType, present bool) {
+		if !present {
+			return
+		}
+		if selected == "" {
+			selected = dataType
+		}
+		if selected != dataType {
+			valid = false
+		}
+	}
+	set(DataContentTypeData, d.Bytes != nil || d.Base64 != "")
+	set(DataContentTypeURL, d.URL != "")
+	set(DataContentTypeReference, len(d.Reference) > 0)
+	set(DataContentTypeText, d.Text != "")
+	return selected, valid && selected != ""
+}
+
+// IsData reports whether d selects inline bytes or base64 data.
 func (d DataContent) IsData() bool {
-	return d.Bytes != nil || d.Base64 != ""
+	dataType, ok := d.DataType()
+	return ok && dataType == DataContentTypeData
 }
 
-// IsURL reports whether d represents a file URL.
+// IsURL reports whether d selects a file URL.
 func (d DataContent) IsURL() bool {
-	return d.variant == dataContentVariantURL || d.URL != ""
+	dataType, ok := d.DataType()
+	return ok && dataType == DataContentTypeURL
 }
 
+// MarshalJSON emits the compatibility tagged file-data union.
 func (d DataContent) MarshalJSON() ([]byte, error) {
-	switch {
-	case d.IsData():
+	if err := d.Validate(); err != nil {
+		return nil, err
+	}
+	dataType, _ := d.DataType()
+	switch dataType {
+	case DataContentTypeData:
 		data := d.Base64
 		if d.Bytes != nil {
 			data = base64.StdEncoding.EncodeToString(d.Bytes)
 		}
 		return json.Marshal(struct {
-			Type string `json:"type"`
-			Data string `json:"data"`
-		}{Type: "data", Data: data})
-	case d.IsURL():
+			Type DataContentType `json:"type"`
+			Data string          `json:"data"`
+		}{Type: dataType, Data: data})
+	case DataContentTypeURL:
 		return json.Marshal(struct {
-			Type string `json:"type"`
-			URL  string `json:"url"`
-		}{Type: "url", URL: d.URL})
-	case d.variant == dataContentVariantRef || len(d.Reference) > 0:
+			Type DataContentType `json:"type"`
+			URL  string          `json:"url"`
+		}{Type: dataType, URL: d.URL})
+	case DataContentTypeReference:
 		return json.Marshal(struct {
-			Type      string          `json:"type"`
+			Type      DataContentType `json:"type"`
 			Reference json.RawMessage `json:"reference"`
-		}{Type: "reference", Reference: d.Reference})
-	case d.variant == dataContentVariantText || d.Text != "":
+		}{Type: dataType, Reference: d.Reference})
+	case DataContentTypeText:
 		return json.Marshal(struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
-		}{Type: "text", Text: d.Text})
+			Type DataContentType `json:"type"`
+			Text string          `json:"text"`
+		}{Type: dataType, Text: d.Text})
 	default:
-		return []byte(`{}`), nil
+		return nil, errors.New("provider: unsupported DataContent type")
 	}
 }
 
-// UnmarshalJSON decodes a [DataContent] from the upstream Vercel AI SDK
-// LanguageModelV4 tagged file-data union (`{"type":"data","data":<base64>}`,
-// `{"type":"url","url":<url>}`, `{"type":"reference","reference":<obj>}`,
-// `{"type":"text","text":<text>}`) and additionally tolerates the legacy
-// Go-to-Go wire form (`{"bytes":...}` / `{"base64":...}` / `{"url":...}`),
-// mapping either onto the canonical fields. Decoding fails closed: an unknown
-// tagged `type` (not one of data, url, reference, text) returns an error rather
-// than silently decoding to an empty DataContent. See openspec change
-// provider-wire-upstream-full-compat.
+// UnmarshalJSON accepts the compatibility tagged union and legacy flat data fields.
 func (d *DataContent) UnmarshalJSON(data []byte) error {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(data, &fields); err != nil {
 		return err
 	}
 	if rawType, ok := fields["type"]; ok {
-		var variant dataContentVariant
-		if err := json.Unmarshal(rawType, &variant); err != nil {
-			return fmt.Errorf("provider: decoding file-data variant: %w", err)
+		var dataType DataContentType
+		if err := json.Unmarshal(rawType, &dataType); err != nil {
+			return fmt.Errorf("provider: decoding file-data type: %w", err)
 		}
-		*d = DataContent{}
-		switch variant {
-		case dataContentVariantData:
+		var activeField string
+		switch dataType {
+		case DataContentTypeData:
+			activeField = "data"
+		case DataContentTypeURL:
+			activeField = "url"
+		case DataContentTypeReference:
+			activeField = "reference"
+		case DataContentTypeText:
+			activeField = "text"
+		default:
+			return fmt.Errorf("provider: unsupported file-data type %q", dataType)
+		}
+		for _, field := range []string{"data", "bytes", "base64", "url", "reference", "text"} {
+			if field != activeField {
+				if _, present := fields[field]; present {
+					return fmt.Errorf("provider: file-data type %q has inactive field %q", dataType, field)
+				}
+			}
+		}
+		var decoded DataContent
+		switch dataType {
+		case DataContentTypeData:
 			raw, ok := fields["data"]
 			if !ok || string(raw) == "null" {
-				return errors.New("provider: file-data variant data is required")
+				return errors.New("provider: file-data type data is required")
 			}
-			if err := json.Unmarshal(raw, &d.Base64); err != nil {
+			var value string
+			if err := json.Unmarshal(raw, &value); err != nil {
 				return fmt.Errorf("provider: decoding file-data data: %w", err)
 			}
-			if d.Base64 == "" {
-				d.Bytes = []byte{}
-			}
-		case dataContentVariantURL:
+			decoded = Base64DataContent(value)
+		case DataContentTypeURL:
 			raw, ok := fields["url"]
 			if !ok || string(raw) == "null" {
-				return errors.New("provider: file-data variant url is required")
+				return errors.New("provider: file-data type url is required")
 			}
-			if err := json.Unmarshal(raw, &d.URL); err != nil {
+			var value string
+			if err := json.Unmarshal(raw, &value); err != nil {
 				return fmt.Errorf("provider: decoding file-data url: %w", err)
 			}
-			if d.URL == "" {
-				d.variant = variant
-			}
-		case dataContentVariantRef:
+			decoded = URLDataContent(value)
+		case DataContentTypeReference:
 			raw, ok := fields["reference"]
 			if !ok || string(raw) == "null" {
-				return errors.New("provider: file-data variant reference is required")
+				return errors.New("provider: file-data type reference is required")
 			}
-			var reference map[string]string
-			if err := json.Unmarshal(raw, &reference); err != nil {
-				return fmt.Errorf("provider: decoding file-data reference: %w", err)
-			}
-			d.Reference = append(json.RawMessage(nil), raw...)
-		case dataContentVariantText:
+			decoded = ReferenceDataContent(raw)
+		case DataContentTypeText:
 			raw, ok := fields["text"]
 			if !ok || string(raw) == "null" {
-				return errors.New("provider: file-data variant text is required")
+				return errors.New("provider: file-data type text is required")
 			}
-			if err := json.Unmarshal(raw, &d.Text); err != nil {
+			var value string
+			if err := json.Unmarshal(raw, &value); err != nil {
 				return fmt.Errorf("provider: decoding file-data text: %w", err)
 			}
-			if d.Text == "" {
-				d.variant = variant
-			}
+			decoded = TextDataContent(value)
 		default:
-			return fmt.Errorf("provider: unsupported file-data variant %q (supported: data, url, reference, text)", variant)
+			return fmt.Errorf("provider: unsupported file-data type %q", dataType)
 		}
+		if err := decoded.Validate(); err != nil {
+			return err
+		}
+		*d = decoded
 		return nil
 	}
-	type alias DataContent
-	var a alias
-	if err := json.Unmarshal(data, &a); err != nil {
+	var decoded struct {
+		Bytes     []byte          `json:"bytes"`
+		Base64    string          `json:"base64"`
+		URL       string          `json:"url"`
+		Reference json.RawMessage `json:"reference"`
+		Text      string          `json:"text"`
+	}
+	if err := json.Unmarshal(data, &decoded); err != nil {
 		return err
 	}
-	*d = DataContent(a)
-	return nil
+	*d = DataContent{Bytes: decoded.Bytes, Base64: decoded.Base64, URL: decoded.URL, Reference: decoded.Reference, Text: decoded.Text}
+	return d.Validate()
 }
 
-// Validate returns an error if DataContent has no data or multiple data sources set.
+// Validate verifies exactly one valid data arm is selected.
 func (d DataContent) Validate() error {
-	n := 0
-	if d.Bytes != nil {
-		n++
+	dataType, ok := d.DataType()
+	if !ok {
+		return errors.New("provider: DataContent must select exactly one data source")
 	}
-	if d.Base64 != "" {
-		n++
+	if dataType == DataContentTypeData && d.Bytes != nil && d.Base64 != "" {
+		return errors.New("provider: DataContent data cannot contain both bytes and base64")
 	}
-	if d.URL != "" {
-		n++
-	}
-	if len(d.Reference) > 0 {
-		n++
-	}
-	if d.Text != "" {
-		n++
-	}
-	if d.variant != "" {
-		n++
-	}
-	if n == 0 {
-		return errors.New("provider: DataContent has no data set")
-	}
-	if n > 1 {
-		return errors.New("provider: DataContent has multiple data sources set (exactly one of Bytes, Base64, URL, Reference, Text should be set)")
+	if dataType == DataContentTypeReference {
+		var values map[string]json.RawMessage
+		if len(d.Reference) == 0 || string(d.Reference) == "null" || json.Unmarshal(d.Reference, &values) != nil || values == nil {
+			return errors.New("provider: DataContent reference must be a non-null JSON object with string values")
+		}
+		for _, raw := range values {
+			if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+				return errors.New("provider: DataContent reference values must be strings")
+			}
+			var value string
+			if err := json.Unmarshal(raw, &value); err != nil {
+				return errors.New("provider: DataContent reference values must be strings")
+			}
+		}
 	}
 	return nil
 }
@@ -246,7 +302,8 @@ const (
 //
 // Populated fields by Type:
 //   - text: Text, ProviderOptions
-//   - file: Data, MediaType, Filename, ProviderOptions
+//   - file request: Data, MediaType, FilePartFilename, ProviderOptions
+//   - file response: Data, MediaType, Filename, ProviderOptions
 //   - reasoning: Text, ProviderOptions
 //   - reasoning-file: Data, MediaType, ProviderOptions
 //   - source: SourceType, ID, URL, Title, MediaType, Filename, ProviderOptions
@@ -266,7 +323,10 @@ type ContentPart struct {
 	// Data is populated for ContentPartTypeFile and ContentPartTypeReasoningFile.
 	Data *DataContent `json:"data,omitempty"`
 
-	// Filename is optional for ContentPartTypeFile.
+	// FilePartFilename is optional for request ContentPartTypeFile values.
+	FilePartFilename *string `json:"-"`
+
+	// Filename belongs to generated response files and source content.
 	Filename string `json:"filename,omitempty"`
 
 	// MediaType is required for ContentPartTypeFile and ContentPartTypeReasoningFile.
@@ -307,7 +367,7 @@ type ContentPart struct {
 
 	// ProviderExecuted is set on ContentPartTypeToolCall when the call was
 	// executed by the provider rather than the consumer.
-	ProviderExecuted bool `json:"providerExecuted,omitempty"`
+	ProviderExecuted *bool `json:"providerExecuted,omitempty"`
 
 	// ApprovalID is populated for tool approval request/response parts.
 	ApprovalID string `json:"approvalId,omitempty"`
@@ -324,10 +384,75 @@ type ContentPart struct {
 	Approved *bool `json:"approved,omitempty"`
 
 	// Reason is populated for ContentPartTypeToolApprovalResponse to explain a denial.
-	Reason string `json:"reason,omitempty"`
+	Reason *string `json:"reason,omitempty"`
 
 	// ProviderOptions carries provider-specific options keyed by provider name.
 	ProviderOptions ProviderOptions `json:"providerOptions,omitempty"`
+}
+
+// MarshalJSON preserves arm-aware filename ownership for compatibility JSON.
+func (p ContentPart) MarshalJSON() ([]byte, error) {
+	if p.FilePartFilename != nil && p.Type != ContentPartTypeFile {
+		return nil, fmt.Errorf("provider: request file filename is invalid for content type %q", p.Type)
+	}
+	if p.FilePartFilename != nil && p.Filename != "" {
+		return nil, errors.New("provider: content part has both request and response/source filenames")
+	}
+
+	type alias ContentPart
+	copy := p
+	copy.Filename = ""
+	base, err := json.Marshal(alias(copy))
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(base, &fields); err != nil {
+		return nil, err
+	}
+	var filename *string
+	if p.Type == ContentPartTypeFile && p.FilePartFilename != nil {
+		filename = p.FilePartFilename
+	} else if p.Filename != "" {
+		filename = &p.Filename
+	}
+	if filename != nil {
+		encoded, err := json.Marshal(*filename)
+		if err != nil {
+			return nil, err
+		}
+		fields["filename"] = encoded
+	}
+	return json.Marshal(fields)
+}
+
+// UnmarshalJSON decodes file filenames into request ownership and source
+// filenames into response/source ownership.
+func (p *ContentPart) UnmarshalJSON(data []byte) error {
+	type alias ContentPart
+	var decoded alias
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	*p = ContentPart(decoded)
+	p.FilePartFilename = nil
+	rawFilename, present := fields["filename"]
+	if !present || string(rawFilename) == "null" {
+		return nil
+	}
+	var filename string
+	if err := json.Unmarshal(rawFilename, &filename); err != nil {
+		return fmt.Errorf("provider: decoding content filename: %w", err)
+	}
+	if p.Type == ContentPartTypeFile {
+		p.Filename = ""
+		p.FilePartFilename = &filename
+	}
+	return nil
 }
 
 // TextPart constructs a [ContentPart] of type [ContentPartTypeText].
@@ -341,6 +466,11 @@ func TextPart(text string) ContentPart {
 // see [DataContent.Validate].
 func FilePart(mediaType string, data DataContent) ContentPart {
 	return ContentPart{Type: ContentPartTypeFile, MediaType: mediaType, Data: &data}
+}
+
+// FilePartWithFilename constructs a request file with a present filename.
+func FilePartWithFilename(mediaType string, data DataContent, filename string) ContentPart {
+	return ContentPart{Type: ContentPartTypeFile, MediaType: mediaType, Data: &data, FilePartFilename: &filename}
 }
 
 // ReasoningPart constructs a [ContentPart] of type [ContentPartTypeReasoning]
@@ -426,18 +556,22 @@ func ToolApprovalRequestPart(approvalID, toolCallID string, isAutomatic bool) Co
 // [ContentPartTypeToolApprovalResponse] carrying a user's approval or denial
 // of a tool call.
 func ToolApprovalResponsePart(approvalID string, approved bool, reason string) ContentPart {
-	return ContentPart{
+	part := ContentPart{
 		Type:       ContentPartTypeToolApprovalResponse,
 		ApprovalID: approvalID,
 		Approved:   &approved,
-		Reason:     reason,
 	}
+	if reason != "" {
+		part.Reason = &reason
+	}
+	return part
 }
 
 // ProviderExecutedToolApprovalResponsePart constructs a provider-executed
 // [ContentPartTypeToolApprovalResponse].
 func ProviderExecutedToolApprovalResponsePart(approvalID string, approved bool, reason string) ContentPart {
 	part := ToolApprovalResponsePart(approvalID, approved, reason)
-	part.ProviderExecuted = true
+	providerExecuted := true
+	part.ProviderExecuted = &providerExecuted
 	return part
 }

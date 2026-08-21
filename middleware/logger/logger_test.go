@@ -99,7 +99,7 @@ func TestMiddleware_GenerateSuccessLogsStartAndFinish(t *testing.T) {
 		}},
 	}
 	model := &mockModel{generateFunc: func(_ context.Context, opts provider.CallOptions) (*provider.GenerateResult, error) {
-		if opts.IncludeRawChunks {
+		if opts.IncludeRawChunks == nil || *opts.IncludeRawChunks {
 			t.Fatal("logger mutated IncludeRawChunks")
 		}
 		return result, nil
@@ -110,10 +110,11 @@ func TestMiddleware_GenerateSuccessLogsStartAndFinish(t *testing.T) {
 		Attrs:        []slog.Attr{slog.String("component", "llm")},
 		DynamicAttrs: func(context.Context) []slog.Attr { return []slog.Attr{slog.String("tenant", "safe")} },
 	})
+	includeRawChunks := false
 	params := provider.CallOptions{
 		Prompt:           []provider.Message{provider.UserText("secret prompt")},
 		Tools:            []provider.Tool{{Type: provider.ToolTypeFunction, Name: "secret-tool"}},
-		IncludeRawChunks: false,
+		IncludeRawChunks: &includeRawChunks,
 	}
 
 	got, err := wrapped.DoGenerate(context.Background(), params)

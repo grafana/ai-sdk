@@ -50,32 +50,37 @@ func convertUserFilePart(part provider.ContentPart, index int, popts OpenAIRespo
 		return nil, nil, fmt.Errorf("openai: file part has no data")
 	}
 
+	dataType, ok := part.Data.DataType()
+	if !ok {
+		return nil, nil, fmt.Errorf("openai: invalid file data")
+	}
+
 	if topLevel == "image" {
 		img := responses.ResponseInputImageParam{}
 		if detail != "" {
 			img.Detail = responses.ResponseInputImageDetail(detail)
 		}
-		switch {
-		case part.Data.Reference != nil:
+		switch dataType {
+		case provider.DataContentTypeReference:
 			fileID, err := resolveFileReference(part.Data.Reference, providerOptionsName)
 			if err != nil {
 				return nil, nil, err
 			}
 			img.FileID = param.NewOpt(fileID)
-		case part.Data.URL != "":
+		case provider.DataContentTypeURL:
 			img.ImageURL = param.NewOpt(part.Data.URL)
-		case part.Data.Base64 != "":
+		case provider.DataContentTypeData:
 			mediaType, err := resolveFullMediaType(part)
 			if err != nil {
 				return nil, nil, err
 			}
-			img.ImageURL = param.NewOpt(dataURI(mediaType, part.Data.Base64))
-		case len(part.Data.Bytes) > 0:
-			mediaType, err := resolveFullMediaType(part)
-			if err != nil {
-				return nil, nil, err
+			data := part.Data.Base64
+			if part.Data.Bytes != nil {
+				data = base64.StdEncoding.EncodeToString(part.Data.Bytes)
 			}
-			img.ImageURL = param.NewOpt(dataURI(mediaType, base64.StdEncoding.EncodeToString(part.Data.Bytes)))
+			img.ImageURL = param.NewOpt(dataURI(mediaType, data))
+		case provider.DataContentTypeText:
+			return nil, nil, fmt.Errorf("openai: text file parts are not supported")
 		}
 		if breakpoint := promptCacheBreakpoint(part.ProviderOptions, providerOptionsName); breakpoint != nil {
 			img.SetExtraFields(map[string]any{"prompt_cache_breakpoint": breakpoint})
@@ -85,16 +90,16 @@ func convertUserFilePart(part provider.ContentPart, index int, popts OpenAIRespo
 
 	// Non-image file.
 	f := responses.ResponseInputFileParam{}
-	switch {
-	case part.Data.Reference != nil:
+	switch dataType {
+	case provider.DataContentTypeReference:
 		fileID, err := resolveFileReference(part.Data.Reference, providerOptionsName)
 		if err != nil {
 			return nil, nil, err
 		}
 		f.FileID = param.NewOpt(fileID)
-	case part.Data.URL != "":
+	case provider.DataContentTypeURL:
 		f.FileURL = param.NewOpt(part.Data.URL)
-	case part.Data.Base64 != "", len(part.Data.Bytes) > 0:
+	case provider.DataContentTypeData:
 		mediaType, err := resolveFullMediaType(part)
 		if err != nil {
 			return nil, nil, err
@@ -103,18 +108,20 @@ func convertUserFilePart(part provider.ContentPart, index int, popts OpenAIRespo
 			return nil, nil, fmt.Errorf("openai: file part media type %q is not supported", mediaType)
 		}
 		b64 := part.Data.Base64
-		if b64 == "" {
+		if part.Data.Bytes != nil {
 			b64 = base64.StdEncoding.EncodeToString(part.Data.Bytes)
 		}
-		filename := part.Filename
-		if filename == "" {
-			filename = fmt.Sprintf("part-%d", index)
-			if mediaType == "application/pdf" {
-				filename += ".pdf"
-			}
+		filename := fmt.Sprintf("part-%d", index)
+		if mediaType == "application/pdf" {
+			filename += ".pdf"
+		}
+		if part.FilePartFilename != nil {
+			filename = *part.FilePartFilename
 		}
 		f.FileData = param.NewOpt(dataURI(mediaType, b64))
 		f.Filename = param.NewOpt(filename)
+	case provider.DataContentTypeText:
+		return nil, nil, fmt.Errorf("openai: text file parts are not supported")
 	}
 	if breakpoint := promptCacheBreakpoint(part.ProviderOptions, providerOptionsName); breakpoint != nil {
 		f.SetExtraFields(map[string]any{"prompt_cache_breakpoint": breakpoint})
@@ -256,9 +263,9 @@ func toolResultOutputString(out *provider.ToolResultOutput, encodeTextAsJSON boo
 		}
 		return out.Text
 	case provider.ToolOutputExecutionDenied:
-		reason := out.Reason
-		if reason == "" {
-			reason = "Tool call execution denied."
+		reason := "Tool call execution denied."
+		if out.Reason != nil {
+			reason = *out.Reason
 		}
 		if encodeTextAsJSON {
 			encoded, _ := json.Marshal(reason)

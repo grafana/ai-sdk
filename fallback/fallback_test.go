@@ -88,6 +88,26 @@ func TestDoGenerate(t *testing.T) {
 		assert.Equal(t, "claude-sonnet-4-8", result.Response.ModelID, "served (fallback) model must be forwarded")
 	})
 
+	t.Run("ExactRequestValuesForwardUnchanged", func(t *testing.T) {
+		fraction, err := provider.LanguageModelNumberFromFloat64(1.5)
+		require.NoError(t, err)
+		explicitFalse := false
+		empty := ""
+		options := provider.CallOptions{
+			MaxOutputTokens:  &fraction,
+			IncludeRawChunks: &explicitFalse,
+			ResponseFormat:   &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Name: &empty},
+			StopSequences:    []string{},
+		}
+		primary := &mockModel{doGenerate: func(_ context.Context, actual provider.CallOptions) (*provider.GenerateResult, error) {
+			assert.Equal(t, options, actual)
+			assert.NotNil(t, actual.StopSequences)
+			return &provider.GenerateResult{}, nil
+		}}
+		_, err = mustNew(t, primary).DoGenerate(context.Background(), options)
+		require.NoError(t, err)
+	})
+
 	t.Run("PrimarySucceeds", func(t *testing.T) {
 		result := &provider.GenerateResult{FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}
 		primary := &mockModel{

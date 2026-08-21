@@ -96,15 +96,18 @@ func TestToolApprovalResponsePart(t *testing.T) {
 	assert.Equal(t, "apr_1", p.ApprovalID)
 	require.NotNil(t, p.Approved)
 	assert.True(t, *p.Approved)
-	assert.Equal(t, "looks good", p.Reason)
+	require.NotNil(t, p.Reason)
+	assert.Equal(t, "looks good", *p.Reason)
 
 	denied := ToolApprovalResponsePart("apr_2", false, "unsafe")
 	require.NotNil(t, denied.Approved)
 	assert.False(t, *denied.Approved)
-	assert.Equal(t, "unsafe", denied.Reason)
+	require.NotNil(t, denied.Reason)
+	assert.Equal(t, "unsafe", *denied.Reason)
 
 	providerExecuted := ProviderExecutedToolApprovalResponsePart("apr_3", true, "ok")
-	assert.True(t, providerExecuted.ProviderExecuted)
+	require.NotNil(t, providerExecuted.ProviderExecuted)
+	assert.True(t, *providerExecuted.ProviderExecuted)
 }
 
 func TestUserText(t *testing.T) {

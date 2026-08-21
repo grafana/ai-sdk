@@ -10,15 +10,15 @@ import (
 // Only non-nil/non-zero fields are applied as defaults; caller-provided
 // values always take precedence.
 type DefaultSettingsOptions struct {
-	MaxOutputTokens  *int
+	MaxOutputTokens  *provider.LanguageModelNumber
 	Temperature      *float64
 	TopP             *float64
-	TopK             *int
+	TopK             *provider.LanguageModelNumber
 	PresencePenalty  *float64
 	FrequencyPenalty *float64
 	StopSequences    []string
 	ResponseFormat   *provider.ResponseFormat
-	Seed             *int
+	Seed             *provider.LanguageModelNumber
 	Reasoning        *provider.ReasoningEffort
 	Tools            []provider.Tool
 	ToolChoice       *provider.ToolChoice

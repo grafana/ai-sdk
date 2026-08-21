@@ -233,10 +233,14 @@ func convertUserContent(parts []provider.ContentPart, documentCounter *int, warn
 			if p.Data == nil {
 				continue
 			}
-			switch {
-			case len(p.Data.Reference) > 0:
+			dataType, ok := p.Data.DataType()
+			if !ok {
+				return nil, fmt.Errorf("bedrock: invalid file data")
+			}
+			switch dataType {
+			case provider.DataContentTypeReference:
 				return nil, fmt.Errorf("bedrock: file parts with provider references are not supported")
-			case p.Data.URL != "":
+			case provider.DataContentTypeURL:
 				if !isS3URL(p.Data.URL) {
 					return nil, fmt.Errorf("bedrock: file URL data is not supported")
 				}
@@ -267,7 +271,7 @@ func convertUserContent(parts []provider.ContentPart, documentCounter *int, warn
 					return nil, fmt.Errorf("bedrock: file URL data is only supported for images and videos")
 				}
 				continue
-			case p.Data.Text != "":
+			case provider.DataContentTypeText:
 				mediaType := p.MediaType
 				if !isFullMediaType(mediaType) {
 					mediaType = "text/plain"
@@ -278,14 +282,12 @@ func convertUserContent(parts []provider.ContentPart, documentCounter *int, warn
 				}
 				out = append(out, block)
 				continue
+			case provider.DataContentTypeData:
 			}
 
 			b64 := p.Data.Base64
-			if b64 == "" && len(p.Data.Bytes) > 0 {
+			if p.Data.Bytes != nil {
 				b64 = base64.StdEncoding.EncodeToString(p.Data.Bytes)
-			}
-			if b64 == "" {
-				continue
 			}
 			mediaType, err := resolveFullMediaType(p)
 			if err != nil {
@@ -298,7 +300,7 @@ func convertUserContent(parts []provider.ContentPart, documentCounter *int, warn
 					return nil, fmt.Errorf("bedrock: image media type %q is not supported", mediaType)
 				}
 				out = append(out, contentBlock{
-					Image: &imageBlock{Format: format, Source: imageSource{Bytes: b64}},
+					Image: &imageBlock{Format: format, Source: imageSource{Bytes: &b64}},
 				})
 				continue
 			case "video":
@@ -307,7 +309,7 @@ func convertUserContent(parts []provider.ContentPart, documentCounter *int, warn
 					return nil, fmt.Errorf("bedrock: video media type %q is not supported", mediaType)
 				}
 				out = append(out, contentBlock{
-					Video: &videoBlock{Format: format, Source: videoSource{Bytes: b64}},
+					Video: &videoBlock{Format: format, Source: videoSource{Bytes: &b64}},
 				})
 				continue
 			}
@@ -334,7 +336,11 @@ func convertUserContent(parts []provider.ContentPart, documentCounter *int, warn
 }
 
 func buildDocumentContentBlock(p provider.ContentPart, mediaType, b64 string, documentCounter *int) (contentBlock, error) {
-	document, err := buildDocumentBlock(mediaType, p.Filename, b64, p.ProviderOptions, documentCounter)
+	filename := ""
+	if p.FilePartFilename != nil {
+		filename = *p.FilePartFilename
+	}
+	document, err := buildDocumentBlock(mediaType, filename, b64, p.ProviderOptions, documentCounter)
 	if err != nil {
 		return contentBlock{}, err
 	}
@@ -620,9 +626,9 @@ func buildToolResult(p provider.ContentPart, documentCounter *int, isMistral boo
 	case provider.ToolOutputJSON, provider.ToolOutputErrorJSON:
 		out.Content = []toolResultContent{{Text: string(p.Output.JSON)}}
 	case provider.ToolOutputExecutionDenied:
-		reason := p.Output.Reason
-		if reason == "" {
-			reason = "Tool call execution denied."
+		reason := "Tool call execution denied."
+		if p.Output.Reason != nil {
+			reason = *p.Output.Reason
 		}
 		out.Content = []toolResultContent{{Text: reason}}
 	case provider.ToolOutputContent:
@@ -680,7 +686,6 @@ func buildToolResult(p provider.ContentPart, documentCounter *int, isMistral boo
 				}
 				filePart := provider.ContentPart{
 					MediaType:       c.MediaType,
-					Filename:        c.Filename,
 					Data:            c.Data,
 					ProviderOptions: c.ProviderOptions,
 				}
@@ -695,7 +700,7 @@ func buildToolResult(p provider.ContentPart, documentCounter *int, isMistral boo
 						return nil, fmt.Errorf("bedrock: image media type %q is not supported", mediaType)
 					}
 					out.Content = append(out.Content, toolResultContent{
-						Image: &imageBlock{Format: format, Source: imageSource{Bytes: base64Data}},
+						Image: &imageBlock{Format: format, Source: imageSource{Bytes: &base64Data}},
 					})
 					continue
 				case "video":
@@ -704,11 +709,15 @@ func buildToolResult(p provider.ContentPart, documentCounter *int, isMistral boo
 						return nil, fmt.Errorf("bedrock: video media type %q is not supported", mediaType)
 					}
 					out.Content = append(out.Content, toolResultContent{
-						Video: &videoBlock{Format: format, Source: videoSource{Bytes: base64Data}},
+						Video: &videoBlock{Format: format, Source: videoSource{Bytes: &base64Data}},
 					})
 					continue
 				}
-				document, err := buildDocumentBlock(mediaType, c.Filename, base64Data, c.ProviderOptions, documentCounter)
+				filename := ""
+				if c.Filename != nil {
+					filename = *c.Filename
+				}
+				document, err := buildDocumentBlock(mediaType, filename, base64Data, c.ProviderOptions, documentCounter)
 				if err != nil {
 					return nil, err
 				}

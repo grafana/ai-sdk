@@ -211,14 +211,29 @@ func newCallID() string {
 	return fmt.Sprintf("%x", time.Now().UnixNano())
 }
 
+func languageModelNumberAttr(key string, number *provider.LanguageModelNumber) (slog.Attr, bool) {
+	if number == nil {
+		return slog.Attr{}, false
+	}
+	if integer, ok := number.Int64(); ok {
+		return slog.Int64(key, integer), true
+	}
+	if floating, ok := number.Float64(); ok {
+		return slog.Float64(key, floating), true
+	}
+	return slog.Attr{}, false
+}
+
 func requestSummaryAttrs(params provider.CallOptions, capture CaptureOptions) []slog.Attr {
 	attrs := make([]slog.Attr, 0, 20)
 	attrs = append(attrs, slog.Int("ai_sdk.request.prompt.messages.count", len(params.Prompt)))
 	attrs = append(attrs, slog.Int("ai_sdk.request.tools.count", len(params.Tools)))
 	attrs = append(attrs, slog.Int("ai_sdk.request.stop_sequences.count", len(params.StopSequences)))
-	attrs = append(attrs, slog.Bool("ai_sdk.request.include_raw_chunks", params.IncludeRawChunks))
-	if params.MaxOutputTokens != nil {
-		attrs = append(attrs, slog.Int("ai_sdk.request.max_output_tokens", *params.MaxOutputTokens))
+	if params.IncludeRawChunks != nil {
+		attrs = append(attrs, slog.Bool("ai_sdk.request.include_raw_chunks", *params.IncludeRawChunks))
+	}
+	if attr, ok := languageModelNumberAttr("ai_sdk.request.max_output_tokens", params.MaxOutputTokens); ok {
+		attrs = append(attrs, attr)
 	}
 	if params.Temperature != nil {
 		attrs = append(attrs, slog.Float64("ai_sdk.request.temperature", *params.Temperature))
@@ -226,8 +241,8 @@ func requestSummaryAttrs(params provider.CallOptions, capture CaptureOptions) []
 	if params.TopP != nil {
 		attrs = append(attrs, slog.Float64("ai_sdk.request.top_p", *params.TopP))
 	}
-	if params.TopK != nil {
-		attrs = append(attrs, slog.Int("ai_sdk.request.top_k", *params.TopK))
+	if attr, ok := languageModelNumberAttr("ai_sdk.request.top_k", params.TopK); ok {
+		attrs = append(attrs, attr)
 	}
 	if params.PresencePenalty != nil {
 		attrs = append(attrs, slog.Float64("ai_sdk.request.presence_penalty", *params.PresencePenalty))
@@ -235,8 +250,8 @@ func requestSummaryAttrs(params provider.CallOptions, capture CaptureOptions) []
 	if params.FrequencyPenalty != nil {
 		attrs = append(attrs, slog.Float64("ai_sdk.request.frequency_penalty", *params.FrequencyPenalty))
 	}
-	if params.Seed != nil {
-		attrs = append(attrs, slog.Int("ai_sdk.request.seed", *params.Seed))
+	if attr, ok := languageModelNumberAttr("ai_sdk.request.seed", params.Seed); ok {
+		attrs = append(attrs, attr)
 	}
 	if params.Reasoning != nil {
 		attrs = append(attrs, slog.String("ai_sdk.request.reasoning_effort", string(*params.Reasoning)))
@@ -593,6 +608,7 @@ func sanitizeContentPart(part provider.ContentPart, capture CaptureOptions) prov
 	case provider.ContentPartTypeFile, provider.ContentPartTypeReasoningFile:
 		if !capture.Files {
 			part.Data = nil
+			part.FilePartFilename = nil
 			part.Filename = ""
 		}
 	case provider.ContentPartTypeToolCall:

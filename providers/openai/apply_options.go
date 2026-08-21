@@ -29,17 +29,17 @@ func applyResponseFormat(body *responses.ResponseNewParams, opts provider.CallOp
 			}
 			var schemaMap map[string]any
 			_ = json.Unmarshal(rf.Schema, &schemaMap)
-			name := rf.Name
-			if name == "" {
-				name = "response"
+			name := "response"
+			if rf.Name != nil {
+				name = *rf.Name
 			}
 			cfg := responses.ResponseFormatTextJSONSchemaConfigParam{
 				Name:   name,
 				Schema: schemaMap,
 				Strict: param.NewOpt(strict),
 			}
-			if rf.Description != "" {
-				cfg.Description = param.NewOpt(rf.Description)
+			if rf.Description != nil {
+				cfg.Description = param.NewOpt(*rf.Description)
 			}
 			text.Format = responses.ResponseFormatTextConfigUnionParam{OfJSONSchema: &cfg}
 		} else {
@@ -105,7 +105,7 @@ func applyProviderOptions(body *responses.ResponseNewParams, popts OpenAIRespons
 		body.PromptCacheRetention = responses.ResponseNewParamsPromptCacheRetention(popts.PromptCacheRetention)
 	}
 	if popts.PromptCacheOptions != nil {
-		body.SetExtraFields(map[string]any{"prompt_cache_options": popts.PromptCacheOptions})
+		setResponseExtraField(body, "prompt_cache_options", popts.PromptCacheOptions)
 	}
 	if popts.Truncation != "" {
 		body.Truncation = responses.ResponseNewParamsTruncation(popts.Truncation)

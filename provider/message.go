@@ -27,14 +27,15 @@ const (
 // preserve ergonomic construction at producer call sites.
 //
 // Producer-side rules (e.g. "user messages contain only text and file parts")
-// are enforced at orchestration boundaries, not at the type-system level.
+// are enforced by orchestration and direct provider request boundaries, not by
+// the flat type itself.
 type Message struct {
 	Role            Role            `json:"role"`
 	Content         []ContentPart   `json:"content"`
 	ProviderOptions ProviderOptions `json:"providerOptions,omitempty"`
 }
 
-// MarshalJSON emits the upstream Vercel AI SDK LanguageModelV4 message shape. A
+// MarshalJSON emits the compatibility Vercel AI SDK LanguageModelV4 message shape. A
 // system message's content is emitted as a plain JSON string (the concatenation
 // of its text parts), matching `LanguageModelV4Message` where system content is
 // a `string`. All other roles emit content as the canonical part array.

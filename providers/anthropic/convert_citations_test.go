@@ -23,10 +23,10 @@ func TestExtractCitationDocuments(t *testing.T) {
 		prompt := []provider.Message{
 			provider.Message{Role: provider.RoleUser, Content: []provider.ContentPart{
 				provider.ContentPart{Type: provider.ContentPartTypeFile,
-					MediaType:       "application/pdf",
-					Filename:        "report.pdf",
-					Data:            &provider.DataContent{Base64: "abc"},
-					ProviderOptions: citationOpts(true),
+					MediaType:        "application/pdf",
+					FilePartFilename: requestStringPointer("report.pdf"),
+					Data:             &provider.DataContent{Base64: "abc"},
+					ProviderOptions:  citationOpts(true),
 				},
 			}},
 		}
@@ -41,10 +41,10 @@ func TestExtractCitationDocuments(t *testing.T) {
 		prompt := []provider.Message{
 			provider.Message{Role: provider.RoleUser, Content: []provider.ContentPart{
 				provider.ContentPart{Type: provider.ContentPartTypeFile,
-					MediaType:       "text/plain",
-					Filename:        "notes.txt",
-					Data:            &provider.DataContent{Base64: "abc"},
-					ProviderOptions: citationOpts(true),
+					MediaType:        "text/plain",
+					FilePartFilename: requestStringPointer("notes.txt"),
+					Data:             &provider.DataContent{Base64: "abc"},
+					ProviderOptions:  citationOpts(true),
 				},
 			}},
 		}
@@ -58,9 +58,9 @@ func TestExtractCitationDocuments(t *testing.T) {
 		prompt := []provider.Message{
 			provider.Message{Role: provider.RoleUser, Content: []provider.ContentPart{
 				provider.ContentPart{Type: provider.ContentPartTypeFile,
-					MediaType: "application/pdf",
-					Filename:  "report.pdf",
-					Data:      &provider.DataContent{Base64: "abc"},
+					MediaType:        "application/pdf",
+					FilePartFilename: requestStringPointer("report.pdf"),
+					Data:             &provider.DataContent{Base64: "abc"},
 				},
 			}},
 		}
@@ -72,10 +72,10 @@ func TestExtractCitationDocuments(t *testing.T) {
 		prompt := []provider.Message{
 			provider.Message{Role: provider.RoleUser, Content: []provider.ContentPart{
 				provider.ContentPart{Type: provider.ContentPartTypeFile,
-					MediaType:       "application/pdf",
-					Filename:        "report.pdf",
-					Data:            &provider.DataContent{Base64: "abc"},
-					ProviderOptions: citationOpts(false),
+					MediaType:        "application/pdf",
+					FilePartFilename: requestStringPointer("report.pdf"),
+					Data:             &provider.DataContent{Base64: "abc"},
+					ProviderOptions:  citationOpts(false),
 				},
 			}},
 		}
@@ -87,10 +87,10 @@ func TestExtractCitationDocuments(t *testing.T) {
 		prompt := []provider.Message{
 			provider.Message{Role: provider.RoleUser, Content: []provider.ContentPart{
 				provider.ContentPart{Type: provider.ContentPartTypeFile,
-					MediaType:       "image/png",
-					Filename:        "photo.png",
-					Data:            &provider.DataContent{Base64: "abc"},
-					ProviderOptions: citationOpts(true),
+					MediaType:        "image/png",
+					FilePartFilename: requestStringPointer("photo.png"),
+					Data:             &provider.DataContent{Base64: "abc"},
+					ProviderOptions:  citationOpts(true),
 				},
 			}},
 		}
@@ -114,28 +114,42 @@ func TestExtractCitationDocuments(t *testing.T) {
 		assert.Equal(t, "", docs[0].filename)
 	})
 
+	t.Run("explicit empty filename uses fallback", func(t *testing.T) {
+		prompt := []provider.Message{provider.NewUserMessage(provider.ContentPart{
+			Type:             provider.ContentPartTypeFile,
+			MediaType:        "application/pdf",
+			FilePartFilename: requestStringPointer(""),
+			Data:             &provider.DataContent{Base64: "abc"},
+			ProviderOptions:  citationOpts(true),
+		})}
+		docs := extractCitationDocuments(prompt)
+		require.Len(t, docs, 1)
+		assert.Equal(t, "Untitled Document", docs[0].title)
+		assert.Empty(t, docs[0].filename)
+	})
+
 	t.Run("multiple documents preserve order", func(t *testing.T) {
 		prompt := []provider.Message{
 			provider.Message{Role: provider.RoleUser, Content: []provider.ContentPart{
 				provider.ContentPart{Type: provider.ContentPartTypeFile,
-					MediaType:       "application/pdf",
-					Filename:        "first.pdf",
-					Data:            &provider.DataContent{Base64: "abc"},
-					ProviderOptions: citationOpts(true),
+					MediaType:        "application/pdf",
+					FilePartFilename: requestStringPointer("first.pdf"),
+					Data:             &provider.DataContent{Base64: "abc"},
+					ProviderOptions:  citationOpts(true),
 				},
 				provider.ContentPart{Type: provider.ContentPartTypeFile,
-					MediaType:       "text/plain",
-					Filename:        "second.txt",
-					Data:            &provider.DataContent{Base64: "abc"},
-					ProviderOptions: citationOpts(true),
+					MediaType:        "text/plain",
+					FilePartFilename: requestStringPointer("second.txt"),
+					Data:             &provider.DataContent{Base64: "abc"},
+					ProviderOptions:  citationOpts(true),
 				},
 			}},
 			provider.Message{Role: provider.RoleUser, Content: []provider.ContentPart{
 				provider.ContentPart{Type: provider.ContentPartTypeFile,
-					MediaType:       "application/pdf",
-					Filename:        "third.pdf",
-					Data:            &provider.DataContent{Base64: "abc"},
-					ProviderOptions: citationOpts(true),
+					MediaType:        "application/pdf",
+					FilePartFilename: requestStringPointer("third.pdf"),
+					Data:             &provider.DataContent{Base64: "abc"},
+					ProviderOptions:  citationOpts(true),
 				},
 			}},
 		}
@@ -161,9 +175,9 @@ func TestExtractCitationDocuments(t *testing.T) {
 		prompt := []provider.Message{
 			provider.Message{Role: provider.RoleUser, Content: []provider.ContentPart{
 				provider.ContentPart{Type: provider.ContentPartTypeFile,
-					MediaType:       "application/pdf",
-					Filename:        "empty.pdf",
-					ProviderOptions: citationOpts(true),
+					MediaType:        "application/pdf",
+					FilePartFilename: requestStringPointer("empty.pdf"),
+					ProviderOptions:  citationOpts(true),
 				},
 			}},
 		}
@@ -175,15 +189,15 @@ func TestExtractCitationDocuments(t *testing.T) {
 		prompt := []provider.Message{
 			provider.Message{Role: provider.RoleUser, Content: []provider.ContentPart{
 				provider.ContentPart{Type: provider.ContentPartTypeFile,
-					MediaType:       "application/pdf",
-					Filename:        "empty.pdf",
-					ProviderOptions: citationOpts(true),
+					MediaType:        "application/pdf",
+					FilePartFilename: requestStringPointer("empty.pdf"),
+					ProviderOptions:  citationOpts(true),
 				},
 				provider.ContentPart{Type: provider.ContentPartTypeFile,
-					MediaType:       "application/pdf",
-					Filename:        "valid.pdf",
-					Data:            &provider.DataContent{Base64: "abc"},
-					ProviderOptions: citationOpts(true),
+					MediaType:        "application/pdf",
+					FilePartFilename: requestStringPointer("valid.pdf"),
+					Data:             &provider.DataContent{Base64: "abc"},
+					ProviderOptions:  citationOpts(true),
 				},
 			}},
 		}

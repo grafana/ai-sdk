@@ -72,7 +72,7 @@ func TestToResponseMessages(t *testing.T) {
 					ToolCallID:       "123",
 					ToolName:         "testTool",
 					Input:            json.RawMessage(`{}`),
-					ProviderExecuted: false,
+					ProviderExecuted: boolPtr(false),
 					ProviderOptions:  opts,
 				},
 			},
@@ -250,6 +250,34 @@ func TestToResponseMessages(t *testing.T) {
 		assert.Equal(t, "iVBORw0KGgo=", got[0].Content[1].Data.Base64)
 	})
 
+	t.Run("generated file filename moves to request ownership", func(t *testing.T) {
+		data := provider.TextDataContent("value")
+		got := ToResponseMessages([]provider.ContentPart{{
+			Type: provider.ContentPartTypeFile, Data: &data, MediaType: "text/plain", Filename: "report.txt",
+		}})
+		require.Len(t, got, 1)
+		require.Len(t, got[0].Content, 1)
+		file := got[0].Content[0]
+		require.NotNil(t, file.FilePartFilename)
+		assert.Equal(t, "report.txt", *file.FilePartFilename)
+		assert.Empty(t, file.Filename)
+	})
+
+	t.Run("request filename presence is copied defensively", func(t *testing.T) {
+		data := provider.TextDataContent("value")
+		empty := ""
+		got := ToResponseMessages([]provider.ContentPart{{
+			Type: provider.ContentPartTypeFile, Data: &data, MediaType: "text/plain",
+			FilePartFilename: &empty, Filename: "invalid-generated.txt",
+		}})
+		require.Len(t, got, 1)
+		file := got[0].Content[0]
+		require.NotNil(t, file.FilePartFilename)
+		assert.Empty(t, *file.FilePartFilename)
+		assert.Empty(t, file.Filename)
+		assert.NotSame(t, &empty, file.FilePartFilename)
+	})
+
 	t.Run("reasoning-file part preserves Data, MediaType, and ProviderOptions", func(t *testing.T) {
 		opts := provider.ProviderOptions{
 			"testProvider": provider.RawProviderOption{Key: "testProvider", Raw: json.RawMessage(`{"signature":"sig"}`)},
@@ -307,14 +335,14 @@ func TestToResponseMessages(t *testing.T) {
 					ToolCallID:       "srvtoolu_1",
 					ToolName:         "web_search",
 					Input:            json.RawMessage(`{"query":"test"}`),
-					ProviderExecuted: true,
+					ProviderExecuted: boolPtr(true),
 				},
 				{
 					Type:             provider.ContentPartTypeToolResult,
 					ToolCallID:       "srvtoolu_1",
 					ToolName:         "web_search",
 					Output:           &provider.ToolResultOutput{Type: provider.ToolOutputJSON, JSON: json.RawMessage(`[{"url":"https://example.com"}]`)},
-					ProviderExecuted: true,
+					ProviderExecuted: boolPtr(true),
 				},
 				provider.TextPart("Done."),
 			},
@@ -360,14 +388,14 @@ func TestToResponseMessages(t *testing.T) {
 					ToolCallID:       "srv-1",
 					ToolName:         "web_search",
 					Input:            json.RawMessage(`{}`),
-					ProviderExecuted: true,
+					ProviderExecuted: boolPtr(true),
 				},
 				{
 					Type:             provider.ContentPartTypeToolResult,
 					ToolCallID:       "srv-1",
 					ToolName:         "web_search",
 					Output:           &provider.ToolResultOutput{Type: provider.ToolOutputJSON, JSON: json.RawMessage(`[]`)},
-					ProviderExecuted: true,
+					ProviderExecuted: boolPtr(true),
 				},
 				provider.ToolCallPart("tc-1", "report", json.RawMessage(`{}`)),
 				{
@@ -404,7 +432,7 @@ func TestToResponseMessages(t *testing.T) {
 					ToolCallID:       "srv-1",
 					ToolName:         "web_search",
 					Input:            json.RawMessage(`{}`),
-					ProviderExecuted: true,
+					ProviderExecuted: boolPtr(true),
 				},
 				provider.TextPart("interleaved note"),
 				{
@@ -412,7 +440,7 @@ func TestToResponseMessages(t *testing.T) {
 					ToolCallID:       "srv-1",
 					ToolName:         "web_search",
 					Output:           &provider.ToolResultOutput{Type: provider.ToolOutputJSON, JSON: json.RawMessage(`[]`)},
-					ProviderExecuted: true,
+					ProviderExecuted: boolPtr(true),
 				},
 			},
 		)
@@ -433,14 +461,14 @@ func TestToResponseMessages(t *testing.T) {
 					ToolCallID:       "srv-1",
 					ToolName:         "ws",
 					Input:            json.RawMessage(`{}`),
-					ProviderExecuted: true,
+					ProviderExecuted: boolPtr(true),
 				},
 				{
 					Type:             provider.ContentPartTypeToolResult,
 					ToolCallID:       "srv-1",
 					ToolName:         "ws",
 					Output:           &provider.ToolResultOutput{Type: provider.ToolOutputJSON, JSON: json.RawMessage(`{}`)},
-					ProviderExecuted: true,
+					ProviderExecuted: boolPtr(true),
 				},
 			},
 		)
@@ -526,7 +554,7 @@ func TestToResponseMessages(t *testing.T) {
 					ToolCallID: "tc-1",
 					ToolName:   "weather",
 					Approved:   &approved,
-					Reason:     "user denied",
+					Reason:     requestStringPointer("user denied"),
 				},
 			},
 		)
@@ -551,7 +579,8 @@ func TestToResponseMessages(t *testing.T) {
 		assert.Equal(t, "weather", denied.ToolName)
 		require.NotNil(t, denied.Output)
 		assert.Equal(t, provider.ToolOutputExecutionDenied, denied.Output.Type)
-		assert.Equal(t, "user denied", denied.Output.Reason)
+		require.NotNil(t, denied.Output.Reason)
+		assert.Equal(t, "user denied", *denied.Output.Reason)
 	})
 
 	t.Run("approved tool-approval-response routes without synthetic result", func(t *testing.T) {
@@ -562,7 +591,7 @@ func TestToResponseMessages(t *testing.T) {
 					Type:             provider.ContentPartTypeToolApprovalResponse,
 					ApprovalID:       "approval-1",
 					Approved:         &approved,
-					ProviderExecuted: true,
+					ProviderExecuted: boolPtr(true),
 				},
 			},
 		)

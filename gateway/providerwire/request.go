@@ -7,28 +7,30 @@ import (
 	"github.com/grafana/ai-sdk/provider"
 )
 
-// EncodeCallOptions serializes [provider.CallOptions] for the wire.
-//
-// All CallOptions fields round-trip losslessly: Prompt (with all message
-// roles and content-part variants), Tools (function and provider), and every
-// scalar/nullable knob. Typed ProviderOption values are serialized via their
-// own JSON encoding; on decode they come back as [provider.RawProviderOption]
-// (see [DecodeCallOptions]).
-func EncodeCallOptions(opts provider.CallOptions) ([]byte, error) {
-	b, err := json.Marshal(opts)
+// EncodeCallOptions maps [provider.CallOptions] to the tolerant legacy request
+// representation and serializes it.
+func EncodeCallOptions(options provider.CallOptions) ([]byte, error) {
+	legacy, err := legacyCallOptionsFromProvider(options)
 	if err != nil {
 		return nil, fmt.Errorf("wire: encoding CallOptions: %w", err)
 	}
-	return b, nil
+	encoded, err := json.Marshal(legacy)
+	if err != nil {
+		return nil, fmt.Errorf("wire: encoding CallOptions: %w", err)
+	}
+	return encoded, nil
 }
 
-// DecodeCallOptions deserializes a [provider.CallOptions] from the wire.
-// ProviderOption values come back as [provider.RawProviderOption]; consumers
-// reach typed views via [provider.ResolveOption].
+// DecodeCallOptions decodes the tolerant legacy request representation and
+// maps it to [provider.CallOptions].
 func DecodeCallOptions(data []byte) (provider.CallOptions, error) {
-	var opts provider.CallOptions
-	if err := json.Unmarshal(data, &opts); err != nil {
+	var legacy legacyCallOptions
+	if err := json.Unmarshal(data, &legacy); err != nil {
 		return provider.CallOptions{}, fmt.Errorf("wire: decoding CallOptions: %w", err)
 	}
-	return opts, nil
+	options, err := legacy.toProvider()
+	if err != nil {
+		return provider.CallOptions{}, fmt.Errorf("wire: decoding CallOptions: %w", err)
+	}
+	return options, nil
 }

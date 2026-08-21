@@ -201,8 +201,8 @@ func newAccessTokenModel(t *testing.T, endpoint *fakeHostedEndpoint) provider.La
 }
 
 func testCallOptions() provider.CallOptions {
-	maxOutputTokens := 128
 	temperature := 0.7
+	maxOutputTokens := provider.LanguageModelNumberFromInt(128)
 	return provider.CallOptions{
 		Prompt:          []provider.Message{provider.UserText("hello")},
 		MaxOutputTokens: &maxOutputTokens,
@@ -663,6 +663,33 @@ func TestDoGenerate_Success(t *testing.T) {
 	assert.Equal(t, testCallOptions(), requests[0].CallOptions)
 }
 
+func TestDoGenerate_RedesignedRequestValuesReachProviderWire(t *testing.T) {
+	fraction, err := provider.LanguageModelNumberFromFloat64(1.5)
+	require.NoError(t, err)
+	explicitFalse := false
+	empty := ""
+	data := provider.TextDataContent("")
+	options := provider.CallOptions{
+		MaxOutputTokens:  &fraction,
+		TopK:             &fraction,
+		Seed:             &fraction,
+		IncludeRawChunks: &explicitFalse,
+		ResponseFormat:   &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Name: &empty, Description: &empty},
+		Prompt:           []provider.Message{provider.NewUserMessage(provider.FilePartWithFilename("text/plain", data, ""))},
+		StopSequences:    []string{""},
+	}
+	endpoint := newFakeHostedEndpoint(t, generateSuccess(&provider.GenerateResult{}))
+	model := newAccessTokenModel(t, endpoint)
+	_, err = model.DoGenerate(context.Background(), options)
+	require.NoError(t, err)
+	requests := endpoint.Requests()
+	require.Len(t, requests, 1)
+	assert.Equal(t, options, requests[0].CallOptions)
+	expectedBody, err := providerwire.EncodeCallOptions(options)
+	require.NoError(t, err)
+	assert.Equal(t, expectedBody, requests[0].Body)
+}
+
 func TestDoGenerate_FillsLocalRequestResponseMetadata(t *testing.T) {
 	expected := &provider.GenerateResult{
 		Content:      []provider.GenerateContentPart{{Type: provider.ContentText, Text: "hello"}},
@@ -707,7 +734,7 @@ func TestDoStream_FiltersRawChunksByDefault(t *testing.T) {
 func TestDoStream_IncludesRawChunksWhenRequested(t *testing.T) {
 	raw := provider.StreamPart{Type: provider.PartRaw, RawValue: json.RawMessage(`{"raw":true}`)}
 	opts := testCallOptions()
-	opts.IncludeRawChunks = true
+	opts.IncludeRawChunks = boolPtr(true)
 	endpoint := newFakeHostedEndpoint(t, streamSuccess(raw, finishPart()))
 	exchanger := &fakeTokenExchanger{token: "access-token"}
 	model := newTestModel(t, endpoint, exchanger)

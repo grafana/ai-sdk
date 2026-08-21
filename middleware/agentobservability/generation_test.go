@@ -73,7 +73,6 @@ func TestBuildGenerationStart_DefensiveCopy(t *testing.T) {
 }
 
 func TestMapGenerateResult_CanonicalRoundTrip(t *testing.T) {
-	maxTok := 512
 	temp := 0.7
 	topP := 0.95
 	params := provider.CallOptions{
@@ -85,11 +84,11 @@ func TestMapGenerateResult_CanonicalRoundTrip(t *testing.T) {
 			{
 				Type:        provider.ToolTypeFunction,
 				Name:        "get_time",
-				Description: "Get the current time",
+				Description: observabilityStringPointer("Get the current time"),
 				InputSchema: json.RawMessage(`{"type":"object"}`),
 			},
 		},
-		MaxOutputTokens: &maxTok,
+		MaxOutputTokens: observabilityIntegerPointer(512),
 		Temperature:     &temp,
 		TopP:            &topP,
 		ToolChoice:      &provider.ToolChoice{Type: provider.ToolChoiceAuto},

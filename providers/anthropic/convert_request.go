@@ -13,6 +13,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/anthropics/anthropic-sdk-go/packages/param"
+	"github.com/grafana/ai-sdk/internal/providerrequest"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -169,6 +170,9 @@ func buildParams(modelID string, opts provider.CallOptions, stream bool) (anthro
 }
 
 func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stream bool, providerCaps providerCapabilities) (anthropic.BetaMessageNewParams, toolNameMapping, []provider.Warning, buildResult, error) {
+	if err := providerrequest.Validate(opts); err != nil {
+		return anthropic.BetaMessageNewParams{}, toolNameMapping{}, nil, buildResult{}, fmt.Errorf("anthropic: invalid request: %w", err)
+	}
 	var warnings []provider.Warning
 	anthropicOpts, hasAnthropicOpts, err := provider.ResolveOption[AnthropicOptions](opts.ProviderOptions, "anthropic")
 	if err != nil {
@@ -187,9 +191,9 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 	supportsNativeStructuredOutput := providerCaps.supportsNativeStructuredOutput && caps.supportsStructuredOutput
 	supportsStrictTools := providerCaps.supportsStrictTools && caps.supportsStructuredOutput
 	userSetMaxOutput := opts.MaxOutputTokens != nil
-	maxTok := int64(caps.maxOutputTokens)
+	maxTokens := provider.LanguageModelNumberFromInt(caps.maxOutputTokens)
 	if userSetMaxOutput {
-		maxTok = int64(*opts.MaxOutputTokens)
+		maxTokens = *opts.MaxOutputTokens
 	} else if !caps.isKnownModel {
 		warnings = append(warnings, provider.Warning{
 			Type:    provider.WarnCompatibility,
@@ -199,8 +203,7 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 	}
 
 	p := anthropic.BetaMessageNewParams{
-		Model:     anthropic.Model(modelID),
-		MaxTokens: maxTok,
+		Model: anthropic.Model(modelID),
 	}
 
 	// Default eager_input_streaming on function tools when the request is
@@ -372,8 +375,11 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 	if opts.TopP != nil {
 		p.TopP = anthropic.Float(*opts.TopP)
 	}
-	if opts.TopK != nil {
-		p.TopK = anthropic.Int(int64(*opts.TopK))
+	topKActive := opts.TopK != nil
+	if topKActive {
+		if err := applyTopK(&p, *opts.TopK); err != nil {
+			return anthropic.BetaMessageNewParams{}, mapping, warnings, buildResult{}, err
+		}
 	}
 	if len(opts.StopSequences) > 0 {
 		p.StopSequences = opts.StopSequences
@@ -468,8 +474,9 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 				Details: fmt.Sprintf("temperature is not supported by %s and will be ignored", modelID),
 			})
 		}
-		if p.TopK.Valid() {
-			p.TopK = param.Opt[int64]{}
+		if topKActive {
+			clearTopK(&p)
+			topKActive = false
 			warnings = append(warnings, provider.Warning{
 				Type:    provider.WarnUnsupported,
 				Feature: "topK",
@@ -499,8 +506,8 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 				Details: "temperature is not supported when thinking is enabled",
 			})
 		}
-		if p.TopK.Valid() {
-			p.TopK = param.Opt[int64]{}
+		if topKActive {
+			clearTopK(&p)
 			warnings = append(warnings, provider.Warning{
 				Type:    provider.WarnUnsupported,
 				Feature: "topK",
@@ -527,22 +534,32 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 	}
 
 	if p.Thinking.OfEnabled != nil {
-		p.MaxTokens += p.Thinking.OfEnabled.BudgetTokens
+		maxTokens, err = addRequestNumber(maxTokens, p.Thinking.OfEnabled.BudgetTokens)
+		if err != nil {
+			return anthropic.BetaMessageNewParams{}, mapping, warnings, buildResult{}, err
+		}
 	}
 
 	modelMax := int64(caps.maxOutputTokens)
-	if caps.isKnownModel && p.MaxTokens > modelMax {
+	exceedsModelMax, err := requestNumberGreaterThan(maxTokens, modelMax)
+	if err != nil {
+		return anthropic.BetaMessageNewParams{}, mapping, warnings, buildResult{}, err
+	}
+	if caps.isKnownModel && exceedsModelMax {
 		if userSetMaxOutput {
 			warnings = append(warnings, provider.Warning{
 				Type:    provider.WarnUnsupported,
 				Feature: "maxOutputTokens",
 				Details: fmt.Sprintf(
-					"%d (maxOutputTokens + thinkingBudget) is greater than %s %d max output tokens. "+
+					"%s (maxOutputTokens + thinkingBudget) is greater than %s %d max output tokens. "+
 						"The max output tokens have been limited to %d.",
-					p.MaxTokens, modelID, caps.maxOutputTokens, caps.maxOutputTokens),
+					requestNumberString(maxTokens), modelID, caps.maxOutputTokens, caps.maxOutputTokens),
 			})
 		}
-		p.MaxTokens = modelMax
+		maxTokens = provider.LanguageModelNumberFromInt64(modelMax)
+	}
+	if err := applyMaxTokens(&p, maxTokens); err != nil {
+		return anthropic.BetaMessageNewParams{}, mapping, warnings, buildResult{}, err
 	}
 
 	return p, mapping, warnings, br, nil
@@ -696,7 +713,14 @@ func convertUserContent(
 			})
 		case provider.ContentPartTypeFile:
 			cc := v.resolveCacheControl(p.ProviderOptions, msgOpts, isLast, true)
-			if p.Data != nil && len(p.Data.Reference) > 0 {
+			if p.Data == nil {
+				continue
+			}
+			dataType, ok := p.Data.DataType()
+			if !ok {
+				return nil, errors.New("anthropic: invalid file data")
+			}
+			if dataType == provider.DataContentTypeReference {
 				fileID, availableProviders, ok := resolveAnthropicFileReference(p.Data.Reference)
 				if !ok {
 					return nil, fmt.Errorf("anthropic: no provider reference found for provider anthropic; available providers: %s", strings.Join(availableProviders, ", "))
@@ -727,19 +751,25 @@ func convertUserContent(
 				}
 				continue
 			}
+			if dataType == provider.DataContentTypeText {
+				if block, ok := convertTextDocumentContentPart(p, cc); ok {
+					blocks = append(blocks, block)
+				}
+				continue
+			}
 			switch {
 			case strings.HasPrefix(p.MediaType, "image/"):
-				if b, ok := convertImageFileContentPart(p, cc); ok {
-					blocks = append(blocks, b)
+				if block, ok := convertImageFileContentPart(p, cc); ok {
+					blocks = append(blocks, block)
 				}
 			case p.MediaType == "application/pdf":
-				if b, ok := convertPDFDocumentContentPart(p, cc); ok {
+				if block, ok := convertPDFDocumentContentPart(p, cc); ok {
 					*betas = appendBetaUnique(*betas, "pdfs-2024-09-25")
-					blocks = append(blocks, b)
+					blocks = append(blocks, block)
 				}
 			case p.MediaType == "text/plain":
-				if b, ok := convertTextDocumentContentPart(p, cc); ok {
-					blocks = append(blocks, b)
+				if block, ok := convertTextDocumentContentPart(p, cc); ok {
+					blocks = append(blocks, block)
 				}
 			}
 		case provider.ContentPartTypeToolResult:
@@ -790,36 +820,39 @@ func convertImageFileContentPart(p provider.ContentPart, cc anthropic.BetaCacheC
 	if mediaType == "image/*" {
 		mediaType = "image/jpeg"
 	}
-	b64 := p.Data.Base64
-	if b64 == "" && len(p.Data.Bytes) > 0 {
-		b64 = base64.StdEncoding.EncodeToString(p.Data.Bytes)
+	dataType, ok := p.Data.DataType()
+	if !ok {
+		return anthropic.BetaContentBlockParamUnion{}, false
 	}
-	if b64 != "" {
+	switch dataType {
+	case provider.DataContentTypeData:
+		data := p.Data.Base64
+		if p.Data.Bytes != nil {
+			data = base64.StdEncoding.EncodeToString(p.Data.Bytes)
+		}
 		return anthropic.BetaContentBlockParamUnion{
 			OfImage: &anthropic.BetaImageBlockParam{
 				Source: anthropic.BetaImageBlockParamSourceUnion{
 					OfBase64: &anthropic.BetaBase64ImageSourceParam{
-						Data:      b64,
+						Data:      data,
 						MediaType: anthropic.BetaBase64ImageSourceMediaType(mediaType),
 					},
 				},
 				CacheControl: cc,
 			},
 		}, true
-	}
-	if p.Data.URL != "" {
+	case provider.DataContentTypeURL:
 		return anthropic.BetaContentBlockParamUnion{
 			OfImage: &anthropic.BetaImageBlockParam{
 				Source: anthropic.BetaImageBlockParamSourceUnion{
-					OfURL: &anthropic.BetaURLImageSourceParam{
-						URL: p.Data.URL,
-					},
+					OfURL: &anthropic.BetaURLImageSourceParam{URL: p.Data.URL},
 				},
 				CacheControl: cc,
 			},
 		}, true
+	default:
+		return anthropic.BetaContentBlockParamUnion{}, false
 	}
-	return anthropic.BetaContentBlockParamUnion{}, false
 }
 
 // documentMetadata pulls Anthropic-specific document metadata
@@ -827,7 +860,7 @@ func convertImageFileContentPart(p provider.ContentPart, cc anthropic.BetaCacheC
 // upstream `getDocumentMetadata` and `shouldEnableCitations` helpers in
 // convert-to-anthropic-prompt.ts.
 type documentMetadata struct {
-	title    string
+	title    *string
 	context  string
 	citation bool
 }
@@ -849,7 +882,8 @@ func extractDocumentMetadata(opts provider.ProviderOptions) documentMetadata {
 	}
 	m := documentMetadata{}
 	if data.Title != nil {
-		m.title = *data.Title
+		title := *data.Title
+		m.title = &title
 	}
 	if data.Context != nil {
 		m.context = *data.Context
@@ -866,11 +900,11 @@ func extractDocumentMetadata(opts provider.ProviderOptions) documentMetadata {
 func applyDocumentMetadata(doc *anthropic.BetaRequestDocumentBlockParam, p provider.ContentPart) {
 	meta := extractDocumentMetadata(p.ProviderOptions)
 	title := meta.title
-	if title == "" {
-		title = p.Filename
+	if title == nil {
+		title = p.FilePartFilename
 	}
-	if title != "" {
-		doc.Title = anthropic.String(title)
+	if title != nil {
+		doc.Title = anthropic.String(*title)
 	}
 	if meta.context != "" {
 		doc.Context = anthropic.String(meta.context)
@@ -891,20 +925,22 @@ func convertPDFDocumentContentPart(p provider.ContentPart, cc anthropic.BetaCach
 		return anthropic.BetaContentBlockParamUnion{}, false
 	}
 	doc := anthropic.BetaRequestDocumentBlockParam{CacheControl: cc}
-	switch {
-	case p.Data.URL != "":
+	dataType, ok := p.Data.DataType()
+	if !ok {
+		return anthropic.BetaContentBlockParamUnion{}, false
+	}
+	switch dataType {
+	case provider.DataContentTypeURL:
 		doc.Source = anthropic.BetaRequestDocumentBlockSourceUnionParam{
 			OfURL: &anthropic.BetaURLPDFSourceParam{URL: p.Data.URL},
 		}
-	case p.Data.Base64 != "":
-		doc.Source = anthropic.BetaRequestDocumentBlockSourceUnionParam{
-			OfBase64: &anthropic.BetaBase64PDFSourceParam{Data: p.Data.Base64},
+	case provider.DataContentTypeData:
+		data := p.Data.Base64
+		if p.Data.Bytes != nil {
+			data = base64.StdEncoding.EncodeToString(p.Data.Bytes)
 		}
-	case len(p.Data.Bytes) > 0:
 		doc.Source = anthropic.BetaRequestDocumentBlockSourceUnionParam{
-			OfBase64: &anthropic.BetaBase64PDFSourceParam{
-				Data: base64.StdEncoding.EncodeToString(p.Data.Bytes),
-			},
+			OfBase64: &anthropic.BetaBase64PDFSourceParam{Data: data},
 		}
 	default:
 		return anthropic.BetaContentBlockParamUnion{}, false
@@ -922,22 +958,30 @@ func convertTextDocumentContentPart(p provider.ContentPart, cc anthropic.BetaCac
 		return anthropic.BetaContentBlockParamUnion{}, false
 	}
 	doc := anthropic.BetaRequestDocumentBlockParam{CacheControl: cc}
-	switch {
-	case p.Data.URL != "":
+	dataType, ok := p.Data.DataType()
+	if !ok {
+		return anthropic.BetaContentBlockParamUnion{}, false
+	}
+	switch dataType {
+	case provider.DataContentTypeURL:
 		doc.Source = anthropic.BetaRequestDocumentBlockSourceUnionParam{
 			OfURL: &anthropic.BetaURLPDFSourceParam{URL: p.Data.URL},
 		}
-	case len(p.Data.Bytes) > 0:
+	case provider.DataContentTypeText:
 		doc.Source = anthropic.BetaRequestDocumentBlockSourceUnionParam{
-			OfText: &anthropic.BetaPlainTextSourceParam{Data: string(p.Data.Bytes)},
+			OfText: &anthropic.BetaPlainTextSourceParam{Data: p.Data.Text},
 		}
-	case p.Data.Base64 != "":
-		decoded, err := base64.StdEncoding.DecodeString(p.Data.Base64)
-		if err != nil {
-			return anthropic.BetaContentBlockParamUnion{}, false
+	case provider.DataContentTypeData:
+		data := p.Data.Bytes
+		if data == nil {
+			decoded, err := base64.StdEncoding.DecodeString(p.Data.Base64)
+			if err != nil {
+				return anthropic.BetaContentBlockParamUnion{}, false
+			}
+			data = decoded
 		}
 		doc.Source = anthropic.BetaRequestDocumentBlockSourceUnionParam{
-			OfText: &anthropic.BetaPlainTextSourceParam{Data: string(decoded)},
+			OfText: &anthropic.BetaPlainTextSourceParam{Data: string(data)},
 		}
 	default:
 		return anthropic.BetaContentBlockParamUnion{}, false
@@ -1031,7 +1075,7 @@ func convertAssistantContent(v *cacheControlValidator, mapping toolNameMapping, 
 						CacheControl: cc,
 					},
 				})
-			} else if p.ProviderExecuted {
+			} else if p.ProviderExecuted != nil && *p.ProviderExecuted {
 				block := convertProviderExecutedToolCall(p, mapping, cc, warnings)
 				if block != nil {
 					blocks = append(blocks, *block)
@@ -1844,9 +1888,9 @@ func serializeToolOutput(output *provider.ToolResultOutput, warnings *[]provider
 			{OfText: &anthropic.BetaTextBlockParam{Text: string(output.JSON)}},
 		}
 	case provider.ToolOutputExecutionDenied:
-		reason := output.Reason
-		if reason == "" {
-			reason = "tool execution was denied"
+		reason := "Tool call execution denied."
+		if output.Reason != nil {
+			reason = *output.Reason
 		}
 		return []anthropic.BetaToolResultBlockParamContentUnion{
 			{OfText: &anthropic.BetaTextBlockParam{Text: reason}},
@@ -2041,8 +2085,8 @@ func convertToolsWithStrictTools(v *cacheControlValidator, tools []provider.Tool
 				InputSchema:  schema,
 				CacheControl: cc,
 			}
-			if t.Description != "" {
-				tp.Description = anthropic.String(t.Description)
+			if t.Description != nil {
+				tp.Description = anthropic.String(*t.Description)
 			}
 			if t.Strict != nil {
 				if supportsStrictTools {

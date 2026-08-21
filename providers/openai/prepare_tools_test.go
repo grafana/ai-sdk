@@ -27,7 +27,7 @@ func TestPrepareTools_FunctionDeclaration(t *testing.T) {
 		Tools: []provider.Tool{{
 			Type:            provider.ToolTypeFunction,
 			Name:            "getWeather",
-			Description:     "get weather",
+			Description:     openAIStringPointer("get weather"),
 			InputSchema:     json.RawMessage(`{"type":"object","properties":{"city":{"type":"string"}}}`),
 			ProviderOptions: provider.BuildProviderOptions(OpenAIToolOptions{DeferLoading: &deferLoading}),
 		}},
@@ -83,7 +83,7 @@ func TestPrepareTools_FunctionNamespace(t *testing.T) {
 			{
 				Type:        provider.ToolTypeFunction,
 				Name:        "lookupCustomer",
-				Description: "lookup customer",
+				Description: openAIStringPointer("lookup customer"),
 				InputSchema: json.RawMessage(`{"type":"object"}`),
 				ProviderOptions: provider.BuildProviderOptions(OpenAIToolOptions{
 					Namespace: &OpenAIToolNamespaceOptions{Name: "crm", Description: "CRM tools"},
@@ -92,7 +92,7 @@ func TestPrepareTools_FunctionNamespace(t *testing.T) {
 			{
 				Type:        provider.ToolTypeFunction,
 				Name:        "updateCustomer",
-				Description: "update customer",
+				Description: openAIStringPointer("update customer"),
 				InputSchema: json.RawMessage(`{"type":"object"}`),
 				ProviderOptions: provider.BuildProviderOptions(OpenAIToolOptions{
 					Namespace: &OpenAIToolNamespaceOptions{Name: "crm", Description: "CRM tools"},

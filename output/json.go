@@ -11,8 +11,8 @@ import (
 // JSONOutput implements aisdk.Output for generating unstructured but valid JSON.
 // No schema constraint is applied; the response is only validated to be valid JSON.
 type JSONOutput struct {
-	name string
-	desc string
+	name *string
+	desc *string
 }
 
 // JSON creates a JSONOutput that requests JSON mode from the provider
@@ -25,8 +25,8 @@ func JSON(opts ...ObjectOption) *JSONOutput {
 	return o
 }
 
-func (o *JSONOutput) setName(name string)        { o.name = name }
-func (o *JSONOutput) setDescription(desc string) { o.desc = desc }
+func (o *JSONOutput) setName(name string)        { o.name = &name }
+func (o *JSONOutput) setDescription(desc string) { o.desc = &desc }
 func (o *JSONOutput) ResponseFormat() *provider.ResponseFormat {
 	return &provider.ResponseFormat{
 		Type:        provider.ResponseFormatJSON,

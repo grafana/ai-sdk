@@ -57,21 +57,19 @@ func TestBuildRequest_SystemMessage(t *testing.T) {
 func TestBuildRequest_InferenceConfig(t *testing.T) {
 	temp := 0.5
 	topP := 0.9
-	topK := 20
-	maxTok := 512
 	req, warnings, _ := mustBuildRequest(t, testAnthropicModel, provider.CallOptions{
 		Prompt:          []provider.Message{provider.UserText("x")},
-		MaxOutputTokens: &maxTok,
+		MaxOutputTokens: bedrockIntegerPointer(512),
 		Temperature:     &temp,
 		TopP:            &topP,
-		TopK:            &topK,
+		TopK:            bedrockIntegerPointer(20),
 		StopSequences:   []string{"END"},
 	})
 	require.NotNil(t, req.InferenceConfig)
-	assert.Equal(t, 512, *req.InferenceConfig.MaxTokens)
+	assert.Equal(t, int64(512), bedrockIntegerValue(t, req.InferenceConfig.MaxTokens))
 	assert.Equal(t, 0.5, *req.InferenceConfig.Temperature)
 	assert.Equal(t, 0.9, *req.InferenceConfig.TopP)
-	assert.Equal(t, 20, *req.InferenceConfig.TopK)
+	assert.Equal(t, int64(20), bedrockIntegerValue(t, req.InferenceConfig.TopK))
 	assert.Equal(t, []string{"END"}, req.InferenceConfig.StopSequences)
 	assert.Empty(t, warnings)
 }
@@ -101,12 +99,11 @@ func TestBuildRequest_TemperatureClamping(t *testing.T) {
 func TestBuildRequest_UnsupportedParams(t *testing.T) {
 	freq := 0.5
 	pres := 0.5
-	seed := 42
 	_, warnings, _ := mustBuildRequest(t, testAnthropicModel, provider.CallOptions{
 		Prompt:           []provider.Message{provider.UserText("x")},
 		FrequencyPenalty: &freq,
 		PresencePenalty:  &pres,
-		Seed:             &seed,
+		Seed:             bedrockIntegerPointer(42),
 	})
 	features := map[string]bool{}
 	for _, w := range warnings {
@@ -156,7 +153,7 @@ func TestBuildRequest_ToolsAndToolChoice(t *testing.T) {
 			req, _, _ := mustBuildRequest(t, testAnthropicModel, provider.CallOptions{
 				Prompt: []provider.Message{provider.UserText("x")},
 				Tools: []provider.Tool{
-					{Type: provider.ToolTypeFunction, Name: "weather", Description: "get weather", InputSchema: json.RawMessage(`{"type":"object"}`)},
+					{Type: provider.ToolTypeFunction, Name: "weather", Description: bedrockStringPointer("get weather"), InputSchema: json.RawMessage(`{"type":"object"}`)},
 				},
 				ToolChoice: &tc.toolChoice,
 			})
@@ -173,7 +170,7 @@ func TestBuildRequest_FunctionToolGuards(t *testing.T) {
 	req, _, _ := mustBuildRequest(t, testAnthropicModel, provider.CallOptions{
 		Prompt: []provider.Message{provider.UserText("x")},
 		Tools: []provider.Tool{
-			{Type: provider.ToolTypeFunction, Name: "weather", Description: "   ", InputSchema: json.RawMessage(`{"type":"object"}`)},
+			{Type: provider.ToolTypeFunction, Name: "weather", Description: bedrockStringPointer("   "), InputSchema: json.RawMessage(`{"type":"object"}`)},
 		},
 	})
 	require.NotNil(t, req.ToolConfig)
@@ -236,11 +233,10 @@ func TestBuildRequest_AnthropicThinkingEnabled(t *testing.T) {
 		ReasoningConfig: &ReasoningConfig{Type: "enabled", BudgetTokens: 2048},
 	}
 	temp := 0.7
-	maxTok := 1024
 	req, warnings, _ := mustBuildRequest(t, testAnthropicModel, provider.CallOptions{
 		Prompt:          []provider.Message{provider.UserText("x")},
 		Temperature:     &temp,
-		MaxOutputTokens: &maxTok,
+		MaxOutputTokens: bedrockIntegerPointer(1024),
 		ProviderOptions: provider.BuildProviderOptions(bo),
 	})
 	require.NotNil(t, req.AdditionalModelRequestFields)
@@ -250,7 +246,7 @@ func TestBuildRequest_AnthropicThinkingEnabled(t *testing.T) {
 	assert.Equal(t, 2048, thinking["budget_tokens"])
 	// MaxTokens increased by the budget.
 	require.NotNil(t, req.InferenceConfig)
-	assert.Equal(t, 1024+2048, *req.InferenceConfig.MaxTokens)
+	assert.Equal(t, int64(1024+2048), bedrockIntegerValue(t, req.InferenceConfig.MaxTokens))
 	// Temperature dropped + warning emitted.
 	assert.Nil(t, req.InferenceConfig.Temperature)
 	hasTempWarn := false
@@ -302,7 +298,7 @@ func TestBuildRequest_TopLevelReasoningAnthropicThinking(t *testing.T) {
 				assert.Equal(t, tc.wantBudget, thinking["budget_tokens"])
 				require.NotNil(t, req.InferenceConfig)
 				require.NotNil(t, req.InferenceConfig.MaxTokens)
-				assert.Equal(t, tc.wantMaxTokens, *req.InferenceConfig.MaxTokens)
+				assert.Equal(t, int64(tc.wantMaxTokens), bedrockIntegerValue(t, req.InferenceConfig.MaxTokens))
 			} else {
 				assert.NotContains(t, thinking, "budget_tokens")
 				assert.Nil(t, req.InferenceConfig)
@@ -367,7 +363,7 @@ func TestBuildRequest_TopLevelReasoningMergesProviderConfig(t *testing.T) {
 		assert.Equal(t, "high", outputConfig["effort"])
 		require.NotNil(t, req.InferenceConfig)
 		require.NotNil(t, req.InferenceConfig.MaxTokens)
-		assert.Equal(t, 7096, *req.InferenceConfig.MaxTokens)
+		assert.Equal(t, int64(7096), bedrockIntegerValue(t, req.InferenceConfig.MaxTokens))
 	})
 
 	t.Run("explicit disabled type clears derived values", func(t *testing.T) {
@@ -817,7 +813,7 @@ func TestBuildRequest_ToolResultDocument(t *testing.T) {
 				Type:            provider.ToolContentFile,
 				Data:            &provider.DataContent{Base64: "base64data"},
 				MediaType:       tt.mediaType,
-				Filename:        tt.filename,
+				Filename:        bedrockOptionalStringPointer(tt.filename),
 				ProviderOptions: tt.providerOptions,
 			}))
 
@@ -856,7 +852,8 @@ func TestBuildRequest_ToolResultImage(t *testing.T) {
 	image := result.Content[0].Image
 	require.NotNil(t, image)
 	assert.Equal(t, "jpeg", image.Format)
-	assert.Equal(t, "base64data", image.Source.Bytes)
+	require.NotNil(t, image.Source.Bytes)
+	assert.Equal(t, "base64data", *image.Source.Bytes)
 	assert.Empty(t, warnings)
 }
 
@@ -973,7 +970,8 @@ func TestBuildRequest_ImageMessage(t *testing.T) {
 	require.Len(t, req.Messages[0].Content, 1)
 	require.NotNil(t, req.Messages[0].Content[0].Image)
 	assert.Equal(t, "png", req.Messages[0].Content[0].Image.Format)
-	assert.Equal(t, "iVBOR...", req.Messages[0].Content[0].Image.Source.Bytes)
+	require.NotNil(t, req.Messages[0].Content[0].Image.Source.Bytes)
+	assert.Equal(t, "iVBOR...", *req.Messages[0].Content[0].Image.Source.Bytes)
 	assert.Empty(t, warnings)
 }
 
@@ -989,7 +987,8 @@ func TestBuildRequest_VideoMessage(t *testing.T) {
 		video := req.Messages[0].Content[0].Video
 		require.NotNil(t, video)
 		assert.Equal(t, "mp4", video.Format)
-		assert.Equal(t, "AAECAw==", video.Source.Bytes)
+		require.NotNil(t, video.Source.Bytes)
+		assert.Equal(t, "AAECAw==", *video.Source.Bytes)
 		assert.Empty(t, warnings)
 	})
 
@@ -1031,7 +1030,8 @@ func TestBuildRequest_ToolResultVideo(t *testing.T) {
 		video := result.Content[0].Video
 		require.NotNil(t, video)
 		assert.Equal(t, "mp4", video.Format)
-		assert.Equal(t, "AAECAw==", video.Source.Bytes)
+		require.NotNil(t, video.Source.Bytes)
+		assert.Equal(t, "AAECAw==", *video.Source.Bytes)
 		assert.Empty(t, warnings)
 	})
 
@@ -1179,12 +1179,7 @@ func TestBuildRequest_NamedDocumentDoesNotAdvanceGeneratedName(t *testing.T) {
 	req, warnings, _ := mustBuildRequest(t, testAnthropicModel, provider.CallOptions{
 		Prompt: []provider.Message{
 			provider.NewUserMessage(
-				provider.ContentPart{
-					Type:      provider.ContentPartTypeFile,
-					MediaType: "application/pdf",
-					Filename:  "named.pdf",
-					Data:      &provider.DataContent{Base64: "AAECAw=="},
-				},
+				provider.FilePartWithFilename("application/pdf", provider.DataContent{Base64: "AAECAw=="}, "named.pdf"),
 				provider.FilePart("application/pdf", provider.DataContent{Base64: "AAECAw=="}),
 			),
 		},
@@ -1200,12 +1195,7 @@ func TestBuildRequest_NamedDocumentDoesNotAdvanceGeneratedName(t *testing.T) {
 func TestBuildRequest_TextDocumentData(t *testing.T) {
 	req, warnings, _ := mustBuildRequest(t, testAnthropicModel, provider.CallOptions{
 		Prompt: []provider.Message{
-			provider.NewUserMessage(provider.ContentPart{
-				Type:      provider.ContentPartTypeFile,
-				MediaType: "text",
-				Filename:  "notes.txt",
-				Data:      &provider.DataContent{Text: "hello"},
-			}),
+			provider.NewUserMessage(provider.FilePartWithFilename("text", provider.DataContent{Text: "hello"}, "notes.txt")),
 		},
 	})
 

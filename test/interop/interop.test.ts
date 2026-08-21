@@ -200,6 +200,7 @@ describe("upstream @ai-sdk/gateway <-> Go provider-wire", () => {
     const text = await result.text;
     expect(text).toContain("decoded 1 file part");
     expect(text).toMatch(/base64Len=[1-9]/);
+    expect(text).toContain('filename="pixel.png"');
   });
 
   it("receives a file part in the response stream", async () => {

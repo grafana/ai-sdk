@@ -1,0 +1,253 @@
+package main
+
+import (
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"os"
+	"runtime"
+
+	"github.com/grafana/ai-sdk/gateway/providerwire"
+	"github.com/grafana/ai-sdk/provider"
+)
+
+const parentCommit = "32e5ab7f1ab9e524477cc0ece04c690a89854a24"
+
+type corpus struct {
+	SchemaVersion int         `json:"schemaVersion"`
+	ParentCommit  string      `json:"parentCommit"`
+	Generator     generator   `json:"generator"`
+	Rows          []corpusRow `json:"rows"`
+}
+
+type generator struct {
+	GoVersion string `json:"goVersion"`
+	Command   string `json:"command"`
+}
+
+type corpusRow struct {
+	ID                  string       `json:"id"`
+	Partition           string       `json:"partition"`
+	MigrationProjection []migration  `json:"migrationProjection"`
+	CanonicalBytes      string       `json:"canonicalBytesBase64"`
+	ParentDecode        decodeResult `json:"parentDecode"`
+}
+
+type migration struct {
+	Path      string `json:"path"`
+	Operation string `json:"operation"`
+	Value     string `json:"value,omitempty"`
+}
+
+type decodeResult struct {
+	Status             string `json:"status"`
+	SemanticProjection string `json:"semanticProjectionBase64,omitempty"`
+	ExactError         string `json:"exactError,omitempty"`
+}
+
+type inputRow struct {
+	id        string
+	partition string
+	migration []migration
+	options   provider.CallOptions
+}
+
+func intPointer(value int) *int { return &value }
+func floatPointer(value float64) *float64 { return &value }
+func boolPointer(value bool) *bool { return &value }
+
+func rawOptions(key, value string) provider.ProviderOptions {
+	return provider.ProviderOptions{key: provider.RawProviderOption{Key: key, Raw: json.RawMessage(value)}}
+}
+
+func main() {
+	if len(os.Args) != 2 {
+		panic("output path is required")
+	}
+
+	approved := false
+	rows := []inputRow{
+		{id: "empty", partition: "top-level/zero", options: provider.CallOptions{}},
+		{
+			id: "exact-large-numbers",
+			partition: "top-level/numeric-boundaries",
+			migration: []migration{
+				{Path: "/maxOutputTokens", Operation: "wrap-int", Value: "9007199254740993"},
+				{Path: "/topK", Operation: "wrap-int", Value: "-17"},
+				{Path: "/seed", Operation: "wrap-int", Value: "0"},
+			},
+			options: provider.CallOptions{MaxOutputTokens: intPointer(9007199254740993), TopK: intPointer(-17), Seed: intPointer(0)},
+		},
+		{
+			id: "settings-and-opaque-options",
+			partition: "top-level/scalars-and-collections",
+			migration: []migration{
+				{Path: "/maxOutputTokens", Operation: "wrap-int", Value: "128"},
+				{Path: "/topK", Operation: "wrap-int", Value: "4"},
+				{Path: "/seed", Operation: "wrap-int", Value: "7"},
+				{Path: "/includeRawChunks", Operation: "zero-bool-to-nil"},
+				{Path: "/responseFormat/name", Operation: "non-empty-string-to-pointer"},
+				{Path: "/responseFormat/description", Operation: "non-empty-string-to-pointer"},
+			},
+			options: provider.CallOptions{
+				MaxOutputTokens: intPointer(128), Temperature: floatPointer(0.25), TopP: floatPointer(0.9), TopK: intPointer(4),
+				PresencePenalty: floatPointer(-0.5), FrequencyPenalty: floatPointer(0.75), StopSequences: []string{"stop"},
+				ResponseFormat: &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Schema: json.RawMessage(`{"type":"object"}`), Name: "result", Description: "schema"},
+				Seed: intPointer(7), Reasoning: reasoningPointer(provider.ReasoningHigh), Headers: map[string]string{"x-test": "value"},
+				ProviderOptions: rawOptions("test", `{"nested":[1,true,null]}`),
+			},
+		},
+		{
+			id: "parent-empty-collection-collapse",
+			partition: "top-level/non-nil-empty-collections",
+			migration: []migration{{Path: "/", Operation: "preserve-memory-but-parent-omitempty-on-encode"}},
+			options: provider.CallOptions{Prompt: []provider.Message{}, Tools: []provider.Tool{}, StopSequences: []string{}, Headers: map[string]string{}, ProviderOptions: provider.ProviderOptions{}},
+		},
+		{
+			id: "system-content-projection",
+			partition: "messages/system-concatenation",
+			options: provider.CallOptions{Prompt: []provider.Message{{
+				Role: provider.RoleSystem,
+				Content: []provider.ContentPart{
+					{Type: provider.ContentPartTypeText, Text: "first"},
+					{Type: provider.ContentPartTypeFile, Filename: "ignored.pdf", MediaType: "application/pdf", Data: &provider.DataContent{Text: "ignored"}},
+					{Type: provider.ContentPartTypeText, Text: "second", ToolName: "inactive"},
+				},
+			}}},
+		},
+		{
+			id: "mixed-content-inactive-fields",
+			partition: "content/mixed-inactive-fields",
+			migration: []migration{
+				{Path: "/prompt/0/content/0/filename", Operation: "move-file-filename-to-request-pointer", Value: "mixed.txt"},
+				{Path: "/prompt/0/content/0/providerExecuted", Operation: "false-to-nil"},
+				{Path: "/prompt/0/content/0/reason", Operation: "non-empty-string-to-pointer"},
+			},
+			options: provider.CallOptions{Prompt: []provider.Message{{Role: provider.RoleUser, Content: []provider.ContentPart{{
+				Type: provider.ContentPartTypeFile, Text: "inactive", Data: &provider.DataContent{Text: "active"}, Filename: "mixed.txt", MediaType: "text/plain",
+				ToolCallID: "inactive-call", ToolName: "inactive-tool", Input: json.RawMessage(`{"x":1}`), ApprovalID: "inactive-approval", Approved: &approved, Reason: "inactive-reason",
+			}}}}},
+		},
+		{
+			id: "mixed-function-provider-tool",
+			partition: "tools/mixed-inactive-fields",
+			migration: []migration{{Path: "/tools/0/description", Operation: "non-empty-string-to-pointer"}},
+			options: provider.CallOptions{
+				Tools: []provider.Tool{{
+					Type: provider.ToolTypeFunction, Name: "lookup", Description: "find", InputSchema: json.RawMessage(`{"type":"object"}`),
+					InputExamples: []provider.InputExample{{Input: json.RawMessage(`{"q":"x"}`)}}, Strict: boolPointer(false),
+					ID: "provider.inactive", Args: map[string]json.RawMessage{"mode": json.RawMessage(`"fast"`)}, ProviderOptions: rawOptions("test", `{"flag":true}`),
+				}},
+				ToolChoice: &provider.ToolChoice{Type: provider.ToolChoiceTool, ToolName: "lookup"},
+			},
+		},
+		{
+			id: "data-precedence",
+			partition: "data/mixed-arm-parent-precedence",
+			migration: []migration{{Path: "/prompt/0/content/0/filename", Operation: "move-file-filename-to-request-pointer", Value: "data.bin"}},
+			options: provider.CallOptions{Prompt: []provider.Message{{Role: provider.RoleUser, Content: []provider.ContentPart{{
+				Type: provider.ContentPartTypeFile, Data: &provider.DataContent{Bytes: []byte("bytes"), Base64: "aWdub3JlZA==", URL: "https://example.com/ignored", Reference: json.RawMessage(`{"ignored":"ref"}`), Text: "ignored"},
+				Filename: "data.bin", MediaType: "application/octet-stream",
+			}}}}},
+		},
+		{
+			id: "reference-string-object",
+			partition: "data/reference/parent-decodable",
+			options: provider.CallOptions{Prompt: []provider.Message{{Role: provider.RoleUser, Content: []provider.ContentPart{{
+				Type: provider.ContentPartTypeFile, Data: &provider.DataContent{Reference: json.RawMessage(`{"openai":"file-123"}`)}, MediaType: "application/pdf",
+			}}}}},
+		},
+		{
+			id: "reference-non-string-json",
+			partition: "data/reference/encoder-only",
+			options: provider.CallOptions{Prompt: []provider.Message{{Role: provider.RoleUser, Content: []provider.ContentPart{{
+				Type: provider.ContentPartTypeFile, Data: &provider.DataContent{Reference: json.RawMessage(`{"count":1,"enabled":true,"nested":{"x":null}}`)}, MediaType: "application/json",
+			}}}}},
+		},
+		{
+			id: "tool-result-arms",
+			partition: "tool-results/active-and-inactive-fields",
+			migration: []migration{
+				{Path: "/prompt/0/content/0/output/content/1/filename", Operation: "non-empty-string-to-pointer"},
+				{Path: "/prompt/0/content/1/output/reason", Operation: "non-empty-string-to-pointer"},
+			},
+			options: provider.CallOptions{Prompt: []provider.Message{{Role: provider.RoleTool, Content: []provider.ContentPart{
+				{Type: provider.ContentPartTypeToolResult, ToolCallID: "call-1", ToolName: "lookup", Output: &provider.ToolResultOutput{
+					Type: provider.ToolOutputContent,
+					Content: []provider.ToolResultContentValue{
+						{Type: provider.ToolContentText, Text: "ok"},
+						{Type: provider.ToolContentFile, Data: &provider.DataContent{URL: "https://example.com/report.pdf"}, MediaType: "application/pdf", Filename: "report.pdf"},
+					},
+					Reason: "inactive", ProviderOptions: rawOptions("test", `{"output":true}`),
+				}},
+				{Type: provider.ContentPartTypeToolResult, ToolCallID: "call-2", ToolName: "denied", Output: &provider.ToolResultOutput{Type: provider.ToolOutputExecutionDenied, Reason: "not allowed"}},
+			}}}},
+		},
+		{
+			id:        "empty-raw-provider-options",
+			partition: "provider-options/empty-raw-to-null",
+			options: provider.CallOptions{
+				ProviderOptions: provider.ProviderOptions{"top": provider.RawProviderOption{Key: "top"}},
+				Prompt: []provider.Message{
+					{Role: provider.RoleUser, ProviderOptions: provider.ProviderOptions{"message": provider.RawProviderOption{Key: "message"}}, Content: []provider.ContentPart{{
+						Type: provider.ContentPartTypeText, Text: "value", ProviderOptions: provider.ProviderOptions{"content": provider.RawProviderOption{Key: "content"}},
+					}}},
+					{Role: provider.RoleTool, Content: []provider.ContentPart{{
+						Type: provider.ContentPartTypeToolResult, ToolCallID: "call", ToolName: "tool", Output: &provider.ToolResultOutput{
+							Type: provider.ToolOutputText, Text: "ok", ProviderOptions: provider.ProviderOptions{"output": provider.RawProviderOption{Key: "output"}},
+						},
+					}}},
+				},
+				Tools: []provider.Tool{{Type: provider.ToolTypeFunction, Name: "tool", ProviderOptions: provider.ProviderOptions{"tool": provider.RawProviderOption{Key: "tool"}}}},
+			},
+		},
+		{
+			id:        "source-and-generated-filename",
+			partition: "content/response-source-filename",
+			migration: []migration{{Path: "/prompt/0/content/1/filename", Operation: "move-file-filename-to-request-pointer", Value: "generated.pdf"}},
+			options: provider.CallOptions{Prompt: []provider.Message{{Role: provider.RoleAssistant, Content: []provider.ContentPart{
+				{Type: provider.ContentPartTypeSource, SourceType: provider.SourceTypeDocument, ID: "source-1", Title: "Report", MediaType: "application/pdf", Filename: "source.pdf"},
+				{Type: provider.ContentPartTypeFile, Data: &provider.DataContent{URL: "https://example.com/generated.pdf"}, MediaType: "application/pdf", Filename: "generated.pdf"},
+			}}}},
+		},
+	}
+
+	result := corpus{
+		SchemaVersion: 1,
+		ParentCommit:  parentCommit,
+		Generator: generator{GoVersion: runtime.Version(), Command: "test/providerwire-v4/parent-corpus/generate.sh"},
+		Rows: make([]corpusRow, 0, len(rows)),
+	}
+	for _, input := range rows {
+		body, err := providerwire.EncodeCallOptions(input.options)
+		if err != nil {
+			panic(fmt.Errorf("encoding %s: %w", input.id, err))
+		}
+		row := corpusRow{
+			ID: input.id, Partition: input.partition, MigrationProjection: input.migration,
+			CanonicalBytes: base64.StdEncoding.EncodeToString(body),
+		}
+		decoded, err := providerwire.DecodeCallOptions(body)
+		if err != nil {
+			row.ParentDecode = decodeResult{Status: "rejected", ExactError: err.Error()}
+		} else {
+			projection, err := providerwire.EncodeCallOptions(decoded)
+			if err != nil {
+				panic(fmt.Errorf("projecting %s: %w", input.id, err))
+			}
+			row.ParentDecode = decodeResult{Status: "success", SemanticProjection: base64.StdEncoding.EncodeToString(projection)}
+		}
+		result.Rows = append(result.Rows, row)
+	}
+
+	data, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		panic(err)
+	}
+	data = append(data, '\n')
+	if err := os.WriteFile(os.Args[1], data, 0o644); err != nil {
+		panic(err)
+	}
+}
+
+func reasoningPointer(value provider.ReasoningEffort) *provider.ReasoningEffort { return &value }

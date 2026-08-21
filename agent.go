@@ -271,7 +271,7 @@ func (a *ToolLoopAgent) Generate(ctx context.Context, opts ...AgentGenerateOptio
 	cfg := mergeStreamConfig(settingsCfg, callCfg)
 	cfg.onChunk = nil
 	cfg.onAbort = nil
-	cfg.includeRawChunks = false
+	cfg.includeRawChunks = nil
 	cfg.parseOutputOnNonStop = false
 	cfg.timeout.FirstChunk = 0
 	cfg.timeout.Chunk = 0
@@ -360,8 +360,9 @@ func mergeStreamConfig(settings *streamConfig, call *streamConfig) *streamConfig
 	if call.onAbort != nil {
 		cfg.onAbort = mergeCallbacks1(cfg.onAbort, call.onAbort)
 	}
-	if call.includeRawChunks {
-		cfg.includeRawChunks = true
+	if call.includeRawChunks != nil {
+		value := *call.includeRawChunks
+		cfg.includeRawChunks = &value
 	}
 	return cfg
 }

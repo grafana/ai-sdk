@@ -126,7 +126,7 @@ func convertAssistantToolCall(part provider.ContentPart, ctx inputConversionCont
 		return &item, err
 	}
 
-	if part.ProviderExecuted {
+	if part.ProviderExecuted != nil && *part.ProviderExecuted {
 		if ctx.store && po.ItemID != "" {
 			item := itemReference(po.ItemID)
 			return &item, nil
@@ -705,9 +705,9 @@ func customToolCallOutputItem(part provider.ContentPart, ctx inputConversionCont
 					}
 					content = append(content, responses.ResponseCustomToolCallOutputOutputOutputContentListItemUnionParam{OfInputImage: &image})
 				} else {
-					filename := value.Filename
-					if filename == "" {
-						filename = "data"
+					filename := "data"
+					if value.Filename != nil {
+						filename = *value.Filename
 					}
 					file := responses.ResponseInputFileParam{FileData: param.NewOpt(uri), Filename: param.NewOpt(filename)}
 					if options.PromptCacheBreakpoint != nil {

@@ -9,7 +9,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func ptrFloat(f float64) *float64 { return &f }
+func ptrFloat(f float64) *float64    { return &f }
+func ptrString(value string) *string { return &value }
+func ptrLanguageInt(value int) *provider.LanguageModelNumber {
+	number := provider.LanguageModelNumberFromInt(value)
+	return &number
+}
 func ptrEffort(e provider.ReasoningEffort) *provider.ReasoningEffort {
 	return &e
 }
@@ -89,7 +94,7 @@ func TestEncodeDecodeCallOptions_FullRoundTrip(t *testing.T) {
 			{
 				Type:        provider.ToolTypeFunction,
 				Name:        "search",
-				Description: "Searches the web",
+				Description: ptrString("Searches the web"),
 				InputSchema: json.RawMessage(`{"type":"object"}`),
 				InputExamples: []provider.InputExample{
 					{Input: json.RawMessage(`{"q":"hello"}`)},
@@ -109,17 +114,17 @@ func TestEncodeDecodeCallOptions_FullRoundTrip(t *testing.T) {
 			},
 		},
 		ToolChoice:       &provider.ToolChoice{Type: provider.ToolChoiceTool, ToolName: "search"},
-		MaxOutputTokens:  ptrInt(1024),
+		MaxOutputTokens:  ptrLanguageInt(1024),
 		Temperature:      ptrFloat(0.7),
 		TopP:             ptrFloat(0.95),
-		TopK:             ptrInt(40),
+		TopK:             ptrLanguageInt(40),
 		PresencePenalty:  ptrFloat(0.1),
 		FrequencyPenalty: ptrFloat(0.2),
 		StopSequences:    []string{"END", "\n\n"},
-		ResponseFormat:   &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Schema: json.RawMessage(`{"type":"object"}`), Name: "result"},
-		Seed:             ptrInt(42),
+		ResponseFormat:   &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Schema: json.RawMessage(`{"type":"object"}`), Name: ptrString("result")},
+		Seed:             ptrLanguageInt(42),
 		Reasoning:        ptrEffort(provider.ReasoningHigh),
-		IncludeRawChunks: true,
+		IncludeRawChunks: ptrBool(true),
 		Headers:          map[string]string{"X-Trace-ID": "abc"},
 		ProviderOptions: provider.ProviderOptions{
 			"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(`{"thinking":{"budget":1024}}`)},
@@ -144,17 +149,17 @@ func TestEncodeDecodeCallOptions_PerField(t *testing.T) {
 		{"Prompt", provider.CallOptions{Prompt: []provider.Message{provider.NewSystemMessage("hi")}}},
 		{"Tools", provider.CallOptions{Tools: []provider.Tool{{Type: provider.ToolTypeFunction, Name: "t"}}}},
 		{"ToolChoice", provider.CallOptions{ToolChoice: &provider.ToolChoice{Type: provider.ToolChoiceAuto}}},
-		{"MaxOutputTokens", provider.CallOptions{MaxOutputTokens: ptrInt(100)}},
+		{"MaxOutputTokens", provider.CallOptions{MaxOutputTokens: ptrLanguageInt(100)}},
 		{"Temperature", provider.CallOptions{Temperature: ptrFloat(0.5)}},
 		{"TopP", provider.CallOptions{TopP: ptrFloat(0.9)}},
-		{"TopK", provider.CallOptions{TopK: ptrInt(50)}},
+		{"TopK", provider.CallOptions{TopK: ptrLanguageInt(50)}},
 		{"PresencePenalty", provider.CallOptions{PresencePenalty: ptrFloat(0.5)}},
 		{"FrequencyPenalty", provider.CallOptions{FrequencyPenalty: ptrFloat(0.5)}},
 		{"StopSequences", provider.CallOptions{StopSequences: []string{"END"}}},
 		{"ResponseFormat", provider.CallOptions{ResponseFormat: &provider.ResponseFormat{Type: provider.ResponseFormatText}}},
-		{"Seed", provider.CallOptions{Seed: ptrInt(7)}},
+		{"Seed", provider.CallOptions{Seed: ptrLanguageInt(7)}},
 		{"Reasoning", provider.CallOptions{Reasoning: ptrEffort(provider.ReasoningMedium)}},
-		{"IncludeRawChunks", provider.CallOptions{IncludeRawChunks: true}},
+		{"IncludeRawChunks", provider.CallOptions{IncludeRawChunks: ptrBool(true)}},
 		{"Headers", provider.CallOptions{Headers: map[string]string{"x": "y"}}},
 		{"ProviderOptions", provider.CallOptions{ProviderOptions: provider.ProviderOptions{
 			"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(`{"k":"v"}`)},

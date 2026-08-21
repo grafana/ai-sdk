@@ -57,6 +57,10 @@ import (
 // time content reaches this helper the conversion is already done. Public
 // callers constructing parts from raw tool output can call
 // [Tool.ToModelOutput] directly.
+func requestBoolValue(value *bool) bool {
+	return value != nil && *value
+}
+
 func ToResponseMessages(parts []provider.ContentPart) []provider.Message {
 	var messages []provider.Message
 	toolCallOrder := make(map[string]int)
@@ -68,7 +72,7 @@ func ToResponseMessages(parts []provider.ContentPart) []provider.Message {
 	// (`(tool-result || tool-error) && !providerExecuted -> continue`).
 	var assistantContent []provider.ContentPart
 	for _, p := range parts {
-		if p.Type == provider.ContentPartTypeToolResult && !p.ProviderExecuted {
+		if p.Type == provider.ContentPartTypeToolResult && !requestBoolValue(p.ProviderExecuted) {
 			continue
 		}
 
@@ -99,12 +103,20 @@ func ToResponseMessages(parts []provider.ContentPart) []provider.Message {
 			})
 
 		case provider.ContentPartTypeFile:
+			var filename *string
+			if p.FilePartFilename != nil {
+				value := *p.FilePartFilename
+				filename = &value
+			} else if p.Filename != "" {
+				value := p.Filename
+				filename = &value
+			}
 			assistantContent = append(assistantContent, provider.ContentPart{
-				Type:            provider.ContentPartTypeFile,
-				Data:            p.Data,
-				MediaType:       p.MediaType,
-				Filename:        p.Filename,
-				ProviderOptions: p.ProviderOptions,
+				Type:             provider.ContentPartTypeFile,
+				Data:             p.Data,
+				MediaType:        p.MediaType,
+				FilePartFilename: filename,
+				ProviderOptions:  p.ProviderOptions,
 			})
 
 		case provider.ContentPartTypeCustom:
@@ -164,7 +176,7 @@ func ToResponseMessages(parts []provider.ContentPart) []provider.Message {
 	for _, p := range parts {
 		switch p.Type {
 		case provider.ContentPartTypeToolResult:
-			if p.ProviderExecuted {
+			if requestBoolValue(p.ProviderExecuted) {
 				continue
 			}
 			toolContent = append(toolContent, provider.ContentPart{

@@ -274,7 +274,9 @@ func TestStreamPart_DecodeLegacyShapes(t *testing.T) {
 			{name: "json", output: `{"type":"json","json":{"a":1}}`, wantResult: `{"a":1}`},
 			{name: "error json", output: `{"type":"error-json","json":{"code":1}}`, wantResult: `{"code":1}`, wantIsError: true},
 			{name: "content", output: `{"type":"content","content":[{"type":"text","text":"ok"}]}`, wantResult: `[{"type":"text","text":"ok"}]`},
-			{name: "execution denied", output: `{"type":"execution-denied","reason":"nope"}`, wantResult: `"nope"`, wantIsError: true},
+			{name: "execution denied absent", output: `{"type":"execution-denied"}`, wantResult: `""`, wantIsError: true},
+			{name: "execution denied empty", output: `{"type":"execution-denied","reason":""}`, wantResult: `""`, wantIsError: true},
+			{name: "execution denied non-empty", output: `{"type":"execution-denied","reason":"nope"}`, wantResult: `"nope"`, wantIsError: true},
 		}
 		for _, tc := range cases {
 			t.Run(tc.name, func(t *testing.T) {
@@ -362,7 +364,7 @@ func TestToolResultOutput_MarshalValueUnion(t *testing.T) {
 		{"error-text", ToolResultOutput{Type: ToolOutputErrorText, Text: "boom"}, `{"type":"error-text","value":"boom"}`},
 		{"json", ToolResultOutput{Type: ToolOutputJSON, JSON: json.RawMessage(`{"a":1}`)}, `{"type":"json","value":{"a":1}}`},
 		{"content", ToolResultOutput{Type: ToolOutputContent, Content: []ToolResultContentValue{{Type: ToolContentText, Text: "hi"}}}, `{"type":"content","value":[{"type":"text","text":"hi"}]}`},
-		{"execution-denied", ToolResultOutput{Type: ToolOutputExecutionDenied, Reason: "nope"}, `{"type":"execution-denied","reason":"nope"}`},
+		{"execution-denied", ToolResultOutput{Type: ToolOutputExecutionDenied, Reason: stringPtr("nope")}, `{"type":"execution-denied","reason":"nope"}`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

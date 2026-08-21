@@ -81,11 +81,11 @@ func ConvertToModelMessages(messages []UIMessage, opts ...ConvertOption) ([]prov
 						return nil, fmt.Errorf("converting user file part: %w", err)
 					}
 					parts = append(parts, provider.ContentPart{
-						Type:            provider.ContentPartTypeFile,
-						Data:            &data,
-						MediaType:       mediaType,
-						Filename:        v.Filename,
-						ProviderOptions: providerMetadataToOptions(v.ProviderMetadata),
+						Type:             provider.ContentPartTypeFile,
+						Data:             &data,
+						MediaType:        mediaType,
+						FilePartFilename: requestStringPointer(v.Filename),
+						ProviderOptions:  providerMetadataToOptions(v.ProviderMetadata),
 					})
 				}
 			}
@@ -130,7 +130,7 @@ func ConvertToModelMessages(messages []UIMessage, opts ...ConvertOption) ([]prov
 					ToolCallID:       tp.ToolCallID,
 					ToolName:         tp.ToolName,
 					Input:            tp.Input,
-					ProviderExecuted: tp.ProviderExecuted,
+					ProviderExecuted: requestBoolPointerIfTrue(tp.ProviderExecuted),
 					ProviderOptions:  callOpts,
 				})
 				if tp.Approval != nil && tp.Approval.ID != "" {
@@ -167,8 +167,8 @@ func ConvertToModelMessages(messages []UIMessage, opts ...ConvertOption) ([]prov
 						Type:             provider.ContentPartTypeToolApprovalResponse,
 						ApprovalID:       tp.Approval.ID,
 						Approved:         &approvedCopy,
-						Reason:           tp.Approval.Reason,
-						ProviderExecuted: tp.ProviderExecuted,
+						Reason:           requestStringPointer(tp.Approval.Reason),
+						ProviderExecuted: requestBoolPointerIfTrue(tp.ProviderExecuted),
 					})
 				}
 				// Synthetic execution-denied tool-result for denied tool
@@ -182,7 +182,7 @@ func ConvertToModelMessages(messages []UIMessage, opts ...ConvertOption) ([]prov
 						ProviderOptions: callOpts,
 						Output: &provider.ToolResultOutput{
 							Type:   provider.ToolOutputExecutionDenied,
-							Reason: tp.Approval.Reason,
+							Reason: requestStringPointer(tp.Approval.Reason),
 						},
 					})
 				}
@@ -224,11 +224,11 @@ func ConvertToModelMessages(messages []UIMessage, opts ...ConvertOption) ([]prov
 						}
 					}
 					assistParts = append(assistParts, provider.ContentPart{
-						Type:            provider.ContentPartTypeFile,
-						Data:            &data,
-						MediaType:       v.MediaType,
-						Filename:        v.Filename,
-						ProviderOptions: providerMetadataToOptions(v.ProviderMetadata),
+						Type:             provider.ContentPartTypeFile,
+						Data:             &data,
+						MediaType:        v.MediaType,
+						FilePartFilename: requestStringPointer(v.Filename),
+						ProviderOptions:  providerMetadataToOptions(v.ProviderMetadata),
 					})
 				case ReasoningFilePart:
 					assistParts = append(assistParts, provider.ContentPart{
@@ -443,6 +443,20 @@ func createToolModelOutput(tp toolPartFields, tools ToolSet) (*provider.ToolResu
 
 // toolSetToProviderTools converts a ToolSet map to a sorted slice of provider.Tool.
 // Tools are sorted by name for deterministic provider calls.
+func requestStringPointer(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
+}
+
+func requestBoolPointerIfTrue(value bool) *bool {
+	if !value {
+		return nil
+	}
+	return &value
+}
+
 func toolSetToProviderTools(tools ToolSet) ([]provider.Tool, []provider.Warning) {
 	if tools == nil {
 		return nil, nil
@@ -470,7 +484,7 @@ func toolSetToProviderTools(tools ToolSet) ([]provider.Tool, []provider.Warning)
 			result = append(result, provider.Tool{
 				Type:            provider.ToolTypeFunction,
 				Name:            name,
-				Description:     t.Description,
+				Description:     requestStringPointer(t.Description),
 				InputSchema:     t.InputSchema.JSON(),
 				InputExamples:   examples,
 				Strict:          t.Strict,

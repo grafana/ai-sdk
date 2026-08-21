@@ -94,7 +94,7 @@ func TestToolResultContentValue_RoundTrip(t *testing.T) {
 		},
 		{
 			name: "file data",
-			val:  ToolResultContentValue{Type: ToolContentFile, Data: &DataContent{Base64: "base64data"}, MediaType: "application/pdf", Filename: "report.pdf"},
+			val:  ToolResultContentValue{Type: ToolContentFile, Data: &DataContent{Base64: "base64data"}, MediaType: "application/pdf", Filename: stringPtr("report.pdf")},
 			want: `{"type":"file","data":{"type":"data","data":"base64data"},"mediaType":"application/pdf","filename":"report.pdf"}`,
 		},
 		{
@@ -154,7 +154,7 @@ func TestToolResultContentValue_MarshalOmitsInactiveVariantFields(t *testing.T) 
 		Text:      "not custom content",
 		Data:      &DataContent{Base64: "ignored"},
 		MediaType: "image/png",
-		Filename:  "ignored.png",
+		Filename:  stringPtr("ignored.png"),
 	})
 	require.NoError(t, err)
 	assert.JSONEq(t, `{"type":"custom"}`, string(data))

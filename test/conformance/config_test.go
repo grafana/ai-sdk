@@ -266,7 +266,9 @@ messages:
 	part := messages[0].Content[0]
 	assert.Equal(t, provider.ContentPartTypeFile, part.Type)
 	assert.Equal(t, "application/pdf", part.MediaType)
-	assert.Equal(t, "doc.pdf", part.Filename)
+	require.NotNil(t, part.FilePartFilename)
+	assert.Equal(t, "doc.pdf", *part.FilePartFilename)
+	assert.Empty(t, part.Filename)
 	require.NotNil(t, part.Data)
 	assert.JSONEq(t, `{"openai":"file-abc123"}`, string(part.Data.Reference))
 }
@@ -307,8 +309,10 @@ messages:
 	assert.Equal(t, "approval-1", response.ApprovalID)
 	require.NotNil(t, response.Approved)
 	assert.False(t, *response.Approved)
-	assert.Equal(t, "denied", response.Reason)
-	assert.True(t, response.ProviderExecuted)
+	require.NotNil(t, response.Reason)
+	assert.Equal(t, "denied", *response.Reason)
+	require.NotNil(t, response.ProviderExecuted)
+	assert.True(t, *response.ProviderExecuted)
 }
 
 func TestConfig_BuildMessagesConfiguredReasoning(t *testing.T) {
@@ -390,7 +394,9 @@ messages:
 	part := messages[0].Content[0]
 	assert.Equal(t, provider.ContentPartTypeFile, part.Type)
 	assert.Equal(t, "application/pdf", part.MediaType)
-	assert.Equal(t, "report.pdf", part.Filename)
+	require.NotNil(t, part.FilePartFilename)
+	assert.Equal(t, "report.pdf", *part.FilePartFilename)
+	assert.Empty(t, part.Filename)
 	require.NotNil(t, part.Data)
 	assert.Equal(t, "AAECAw==", part.Data.Base64)
 

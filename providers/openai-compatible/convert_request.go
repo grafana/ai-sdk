@@ -8,10 +8,14 @@ import (
 	"strings"
 
 	"github.com/grafana/ai-sdk/internal/mediatype"
+	"github.com/grafana/ai-sdk/internal/providerrequest"
 	"github.com/grafana/ai-sdk/provider"
 )
 
 func (m *model) buildRequest(opts provider.CallOptions, streaming bool) (map[string]any, []provider.Warning, error) {
+	if err := providerrequest.Validate(opts); err != nil {
+		return nil, nil, fmt.Errorf("openai: invalid request: %w", err)
+	}
 	warnings := deprecatedProviderOptionWarnings(opts.ProviderOptions, m.providerName)
 
 	openAIOpts, err := readOpenAIOptions(opts.ProviderOptions, m.providerName)
@@ -36,7 +40,11 @@ func (m *model) buildRequest(opts provider.CallOptions, streaming bool) (map[str
 		body["user"] = openAIOpts.User
 	}
 	if opts.MaxOutputTokens != nil {
-		body["max_tokens"] = *opts.MaxOutputTokens
+		value, err := compatibleRequestNumberValue(*opts.MaxOutputTokens)
+		if err != nil {
+			return nil, warnings, fmt.Errorf("openai: invalid maxOutputTokens: %w", err)
+		}
+		body["max_tokens"] = value
 	}
 	if opts.Temperature != nil {
 		body["temperature"] = *opts.Temperature
@@ -61,7 +69,11 @@ func (m *model) buildRequest(opts provider.CallOptions, streaming bool) (map[str
 		body["stop"] = append([]string{}, opts.StopSequences...)
 	}
 	if opts.Seed != nil {
-		body["seed"] = *opts.Seed
+		value, err := compatibleRequestNumberValue(*opts.Seed)
+		if err != nil {
+			return nil, warnings, fmt.Errorf("openai: invalid seed: %w", err)
+		}
+		body["seed"] = value
 	}
 	if rf, rfWarnings := m.convertResponseFormat(opts.ResponseFormat, openAIOpts); rf != nil {
 		body["response_format"] = rf
@@ -499,25 +511,35 @@ func convertFileContent(part provider.ContentPart) (chatContentPart, error) {
 	if err != nil {
 		return chatContentPart{}, err
 	}
+	dataType, ok := part.Data.DataType()
+	if !ok {
+		return chatContentPart{}, fmt.Errorf("openai: invalid file data")
+	}
+	if dataType == provider.DataContentTypeReference {
+		return chatContentPart{}, fmt.Errorf("openai: file parts with provider references are not supported")
+	}
+	if dataType == provider.DataContentTypeText {
+		return chatContentPart{}, fmt.Errorf("openai: text file parts are not supported")
+	}
 
 	topLevel := topLevelMediaType(part.MediaType)
 	switch topLevel {
 	case "image":
-		resolvedMediaType := mediaType(part.MediaType)
-		if part.Data.URL == "" {
-			var err error
-			resolvedMediaType, err = resolveFullMediaType(part)
+		url := part.Data.URL
+		if dataType == provider.DataContentTypeData {
+			resolvedMediaType, err := resolveFullMediaType(part)
 			if err != nil {
 				return chatContentPart{}, err
 			}
-		}
-		url, err := dataURL(resolvedMediaType, part.Data)
-		if err != nil {
-			return chatContentPart{}, err
+			encoded, err := base64Data(part.Data)
+			if err != nil {
+				return chatContentPart{}, err
+			}
+			url = fmt.Sprintf("data:%s;base64,%s", resolvedMediaType, encoded)
 		}
 		return chatContentPart{Type: "image_url", ImageURL: &imageURLPart{URL: url}}, nil
 	case "audio":
-		if part.Data.URL != "" {
+		if dataType == provider.DataContentTypeURL {
 			return chatContentPart{}, fmt.Errorf("openai: audio file URL parts are not supported")
 		}
 		resolvedMediaType, err := resolveFullMediaType(part)
@@ -534,7 +556,7 @@ func convertFileContent(part provider.ContentPart) (chatContentPart, error) {
 		}
 		return chatContentPart{Type: "input_audio", InputAudio: &inputAudioPart{Data: data, Format: format}}, nil
 	case "application":
-		if part.Data.URL != "" {
+		if dataType == provider.DataContentTypeURL {
 			return chatContentPart{}, fmt.Errorf("openai: PDF file URL parts are not supported")
 		}
 		resolvedMediaType, err := resolveFullMediaType(part)
@@ -548,9 +570,9 @@ func convertFileContent(part provider.ContentPart) (chatContentPart, error) {
 		if err != nil {
 			return chatContentPart{}, err
 		}
-		filename := part.Filename
-		if filename == "" {
-			filename = "document.pdf"
+		filename := "document.pdf"
+		if part.FilePartFilename != nil {
+			filename = *part.FilePartFilename
 		}
 		return chatContentPart{
 			Type: "file",
@@ -575,6 +597,10 @@ func topLevelMediaType(value string) string {
 
 func normalizeDataURLFilePart(part provider.ContentPart) (provider.ContentPart, error) {
 	if part.Data == nil {
+		return part, nil
+	}
+	dataType, ok := part.Data.DataType()
+	if !ok || dataType != provider.DataContentTypeURL {
 		return part, nil
 	}
 	rawURL := strings.TrimSpace(part.Data.URL)
@@ -645,43 +671,36 @@ func audioFormat(value string) string {
 	}
 }
 
-func dataURL(mediaType string, data *provider.DataContent) (string, error) {
-	if data.URL != "" {
-		return data.URL, nil
-	}
-	encoded, err := base64Data(data)
-	if err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("data:%s;base64,%s", mediaType, encoded), nil
-}
-
 func base64Data(data *provider.DataContent) (string, error) {
-	switch {
-	case len(data.Bytes) > 0:
-		return base64.StdEncoding.EncodeToString(data.Bytes), nil
-	case data.Base64 != "":
-		return data.Base64, nil
-	default:
+	dataType, ok := data.DataType()
+	if !ok || dataType != provider.DataContentTypeData {
 		return "", fmt.Errorf("openai: expected binary data")
 	}
+	if data.Bytes != nil {
+		return base64.StdEncoding.EncodeToString(data.Bytes), nil
+	}
+	return data.Base64, nil
 }
 
 func textFileContent(data *provider.DataContent) (string, error) {
-	switch {
-	case data.URL != "":
-		return data.URL, nil
-	case len(data.Bytes) > 0:
-		return string(data.Bytes), nil
-	case data.Base64 != "":
-		decoded, err := base64.StdEncoding.DecodeString(data.Base64)
-		if err != nil {
-			return "", fmt.Errorf("openai: decoding text file base64: %w", err)
-		}
-		return string(decoded), nil
-	default:
+	dataType, ok := data.DataType()
+	if !ok {
 		return "", fmt.Errorf("openai: expected text file data")
 	}
+	if dataType == provider.DataContentTypeURL {
+		return data.URL, nil
+	}
+	if dataType != provider.DataContentTypeData {
+		return "", fmt.Errorf("openai: expected text file data")
+	}
+	if data.Bytes != nil {
+		return string(data.Bytes), nil
+	}
+	decoded, err := base64.StdEncoding.DecodeString(data.Base64)
+	if err != nil {
+		return "", fmt.Errorf("openai: decoding text file base64: %w", err)
+	}
+	return string(decoded), nil
 }
 
 func toolResultOutputString(output *provider.ToolResultOutput) (string, error) {
@@ -692,8 +711,8 @@ func toolResultOutputString(output *provider.ToolResultOutput) (string, error) {
 	case provider.ToolOutputText, provider.ToolOutputErrorText:
 		return output.Text, nil
 	case provider.ToolOutputExecutionDenied:
-		if output.Reason != "" {
-			return output.Reason, nil
+		if output.Reason != nil {
+			return *output.Reason, nil
 		}
 		return "Tool call execution denied.", nil
 	case provider.ToolOutputJSON, provider.ToolOutputErrorJSON:
@@ -798,9 +817,9 @@ func (m *model) convertResponseFormat(format *provider.ResponseFormat, opts Open
 	if opts.StrictJSONSchema != nil {
 		strict = *opts.StrictJSONSchema
 	}
-	name := format.Name
-	if name == "" {
-		name = "response"
+	name := "response"
+	if format.Name != nil {
+		name = *format.Name
 	}
 	return &responseFormat{
 		Type: "json_schema",
@@ -811,6 +830,16 @@ func (m *model) convertResponseFormat(format *provider.ResponseFormat, opts Open
 			Strict:      strict,
 		},
 	}, nil
+}
+
+func compatibleRequestNumberValue(number provider.LanguageModelNumber) (any, error) {
+	if integer, ok := number.Int64(); ok {
+		return integer, nil
+	}
+	if floating, ok := number.Float64(); ok {
+		return floating, nil
+	}
+	return nil, fmt.Errorf("invalid language model number")
 }
 
 func reasoningEffort(reasoning *provider.ReasoningEffort, opts OpenAIOptions) string {

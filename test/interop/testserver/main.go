@@ -95,7 +95,11 @@ func promptFileParts(opts provider.CallOptions) []string {
 				continue
 			}
 			data := part.Data
-			files = append(files, fmt.Sprintf("bytes=%dB base64Len=%d url=%q", len(data.Bytes), len(data.Base64), data.URL))
+			filename := "<absent>"
+			if part.FilePartFilename != nil {
+				filename = *part.FilePartFilename
+			}
+			files = append(files, fmt.Sprintf("bytes=%dB base64Len=%d url=%q filename=%q", len(data.Bytes), len(data.Base64), data.URL, filename))
 		}
 	}
 	return files

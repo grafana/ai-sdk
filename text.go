@@ -292,13 +292,13 @@ type PrepareStepResult struct {
 	Messages         []provider.Message
 	ProviderOptions  provider.ProviderOptions
 	Context          any
-	MaxOutputTokens  *int
+	MaxOutputTokens  *provider.LanguageModelNumber
 	Temperature      *float64
 	TopP             *float64
-	TopK             *int
+	TopK             *provider.LanguageModelNumber
 	PresencePenalty  *float64
 	FrequencyPenalty *float64
 	StopSequences    []string
-	Seed             *int
+	Seed             *provider.LanguageModelNumber
 	Reasoning        *provider.ReasoningEffort
 }

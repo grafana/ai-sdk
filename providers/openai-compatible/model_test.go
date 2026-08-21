@@ -57,7 +57,7 @@ func TestDoGenerateSendsCompatibleRequest(t *testing.T) {
 			{
 				Type:        provider.ToolTypeFunction,
 				Name:        "weather",
-				Description: "Get weather",
+				Description: compatibleStringPointer("Get weather"),
 				InputSchema: json.RawMessage(`{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}`),
 				Strict:      &strict,
 			},
@@ -67,10 +67,10 @@ func TestDoGenerateSendsCompatibleRequest(t *testing.T) {
 			},
 		},
 		ToolChoice:      &provider.ToolChoice{Type: provider.ToolChoiceTool, ToolName: "weather"},
-		MaxOutputTokens: &maxTokens,
+		MaxOutputTokens: compatibleIntegerPointer(int64(maxTokens)),
 		Temperature:     &temp,
 		TopP:            &topP,
-		TopK:            &topK,
+		TopK:            compatibleIntegerPointer(int64(topK)),
 		ProviderOptions: provider.ProviderOptions{
 			"openaiCompatible": provider.RawProviderOption{
 				Key: "openaiCompatible",
@@ -717,8 +717,8 @@ func TestDoGenerateStructuredOutputAndToolCallResponse(t *testing.T) {
 		Prompt: []provider.Message{provider.UserText("use a tool")},
 		ResponseFormat: &provider.ResponseFormat{
 			Type:        provider.ResponseFormatJSON,
-			Name:        "weather_response",
-			Description: "Weather response",
+			Name:        compatibleStringPointer("weather_response"),
+			Description: compatibleStringPointer("Weather response"),
 			Schema:      json.RawMessage(`{"type":"object","properties":{"city":{"type":"string"}}}`),
 		},
 		ProviderOptions: provider.BuildProviderOptions(OpenAIOptions{
@@ -826,7 +826,7 @@ func TestDoStreamTextAndUsage(t *testing.T) {
 
 	result, err := New("test-model", WithBaseURL(server.URL), WithIncludeUsage(true)).DoStream(context.Background(), provider.CallOptions{
 		Prompt:           []provider.Message{provider.UserText("hi")},
-		IncludeRawChunks: true,
+		IncludeRawChunks: compatibleBoolPointer(true),
 	})
 	require.NoError(t, err)
 
@@ -867,7 +867,7 @@ func TestDoStreamRecoversAfterMalformedChunk(t *testing.T) {
 
 	result, err := New("test-model", WithBaseURL(server.URL)).DoStream(context.Background(), provider.CallOptions{
 		Prompt:           []provider.Message{provider.UserText("hi")},
-		IncludeRawChunks: true,
+		IncludeRawChunks: compatibleBoolPointer(true),
 	})
 	require.NoError(t, err)
 
@@ -956,7 +956,7 @@ func TestDoStreamRawChunkPreservesStructurallyInvalidJSON(t *testing.T) {
 
 	result, err := New("test-model", WithBaseURL(server.URL)).DoStream(context.Background(), provider.CallOptions{
 		Prompt:           []provider.Message{provider.UserText("hi")},
-		IncludeRawChunks: true,
+		IncludeRawChunks: compatibleBoolPointer(true),
 	})
 	require.NoError(t, err)
 
@@ -1122,7 +1122,7 @@ func TestDoStreamStructuredError(t *testing.T) {
 
 			result, err := New("test-model", WithBaseURL(server.URL)).DoStream(context.Background(), provider.CallOptions{
 				Prompt:           []provider.Message{provider.UserText("hi")},
-				IncludeRawChunks: true,
+				IncludeRawChunks: compatibleBoolPointer(true),
 			})
 			require.NoError(t, err)
 

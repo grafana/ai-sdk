@@ -80,8 +80,8 @@ func TestDataContent_UnmarshalUpstreamUnion(t *testing.T) {
 		{"url", `{"type":"url","url":"https://example.com/x.png"}`, DataContent{URL: "https://example.com/x.png"}},
 		{"data-base64", `{"type":"data","data":"aGVsbG8="}`, DataContent{Base64: "aGVsbG8="}},
 		{"empty data", `{"type":"data","data":""}`, DataContent{Bytes: []byte{}}},
-		{"empty URL", `{"type":"url","url":""}`, DataContent{variant: dataContentVariantURL}},
-		{"empty text", `{"type":"text","text":""}`, DataContent{variant: dataContentVariantText}},
+		{"empty URL", `{"type":"url","url":""}`, DataContent{variant: DataContentTypeURL}},
+		{"empty text", `{"type":"text","text":""}`, DataContent{variant: DataContentTypeText}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -211,7 +211,7 @@ func TestDataContent_UnmarshalUnknownVariantFailsClosed(t *testing.T) {
 	var d DataContent
 	err := json.Unmarshal([]byte(`{"type":"totally-unknown","data":"x"}`), &d)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "unsupported file-data variant")
+	assert.Contains(t, err.Error(), "unsupported file-data type")
 }
 
 func TestDataContent_UnmarshalMalformedTaggedVariantFailsClosed(t *testing.T) {

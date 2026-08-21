@@ -57,15 +57,15 @@ type baseConfig struct {
 	retryInitDelay float64
 	retryBackoff   float64
 
-	maxOutputTokens  *int
+	maxOutputTokens  *provider.LanguageModelNumber
 	temperature      *float64
 	topP             *float64
-	topK             *int
+	topK             *provider.LanguageModelNumber
 	presencePenalty  *float64
 	frequencyPenalty *float64
 	stopSequences    []string
 	responseFormat   *provider.ResponseFormat
-	seed             *int
+	seed             *provider.LanguageModelNumber
 	providerOptions  provider.ProviderOptions
 	headers          map[string]string
 	generateID       func() string
@@ -88,7 +88,7 @@ type streamConfig struct {
 	baseConfig
 	onChunk              func(OnChunkState)
 	onAbort              func(OnAbortState)
-	includeRawChunks     bool
+	includeRawChunks     *bool
 	parseOutputOnNonStop bool
 }
 
@@ -218,7 +218,10 @@ func WithTemperature(t float64) Option {
 
 // WithMaxOutputTokens sets the maximum number of output tokens.
 func WithMaxOutputTokens(n int) Option {
-	return sharedOption{fn: func(c *baseConfig) { c.maxOutputTokens = &n }}
+	return sharedOption{fn: func(c *baseConfig) {
+		value := provider.LanguageModelNumberFromInt(n)
+		c.maxOutputTokens = &value
+	}}
 }
 
 // WithTopP sets the top-p (nucleus) sampling parameter.
@@ -228,12 +231,18 @@ func WithTopP(p float64) Option {
 
 // WithTopK sets the top-k sampling parameter.
 func WithTopK(k int) Option {
-	return sharedOption{fn: func(c *baseConfig) { c.topK = &k }}
+	return sharedOption{fn: func(c *baseConfig) {
+		value := provider.LanguageModelNumberFromInt(k)
+		c.topK = &value
+	}}
 }
 
 // WithSeed sets the random seed for deterministic sampling.
 func WithSeed(s int) Option {
-	return sharedOption{fn: func(c *baseConfig) { c.seed = &s }}
+	return sharedOption{fn: func(c *baseConfig) {
+		value := provider.LanguageModelNumberFromInt(s)
+		c.seed = &value
+	}}
 }
 
 // WithPresencePenalty sets the presence penalty.
@@ -392,7 +401,10 @@ func OnChunk(fn func(OnChunkState)) StreamOption {
 
 // WithIncludeRawChunks enables raw provider chunks in the stream. Only available for StreamText.
 func WithIncludeRawChunks() StreamOption {
-	return streamOnlyOption{fn: func(c *streamConfig) { c.includeRawChunks = true }}
+	return streamOnlyOption{fn: func(c *streamConfig) {
+		value := true
+		c.includeRawChunks = &value
+	}}
 }
 
 // OnAbort sets a callback invoked when the stream is cancelled via context. Only available for StreamText.

@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/grafana/ai-sdk/internal/anthropicschema"
+	"github.com/grafana/ai-sdk/internal/providerrequest"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -26,6 +27,9 @@ type requestMeta struct {
 // body. Returns the request shape, collected warnings, and per-request
 // metadata used during response decoding.
 func buildRequest(modelID string, opts provider.CallOptions) (*converseInput, []provider.Warning, requestMeta, error) {
+	if err := providerrequest.Validate(opts); err != nil {
+		return nil, nil, requestMeta{}, fmt.Errorf("bedrock: invalid request: %w", err)
+	}
 	var warnings []provider.Warning
 	meta := requestMeta{isMistral: isMistralModel(modelID)}
 
@@ -92,15 +96,21 @@ func buildRequest(modelID string, opts provider.CallOptions) (*converseInput, []
 	}
 
 	// Inference config (scalar sampling params).
-	inf, infWarnings := buildInferenceConfig(opts, modelID, bo)
+	inf, infWarnings, err := buildInferenceConfig(opts, modelID, bo)
 	warnings = append(warnings, infWarnings...)
+	if err != nil {
+		return nil, warnings, meta, err
+	}
 
 	// additionalModelRequestFields construction.
 	addRequestFields := map[string]any{}
 
 	// Anthropic-specific thinking/effort/beta pass-throughs.
-	addWarn := applyAnthropicPassThroughs(addRequestFields, &inf, modelID, bo)
+	addWarn, err := applyAnthropicPassThroughs(addRequestFields, &inf, modelID, bo)
 	warnings = append(warnings, addWarn...)
+	if err != nil {
+		return nil, warnings, meta, err
+	}
 
 	// OpenAI / Nova effort routing (non-Anthropic, model-prefix gated).
 	applyNonAnthropicEffort(addRequestFields, modelID, bo)
@@ -201,11 +211,14 @@ func mergeAdditionalModelRequestField(dst map[string]any, key string, value any)
 // buildInferenceConfig maps scalar CallOptions params to Converse
 // inferenceConfig, with clamping and warnings for out-of-range values and
 // unsupported params (frequency/presence penalties, seed).
-func buildInferenceConfig(opts provider.CallOptions, modelID string, bo BedrockOptions) (*inferenceConfig, []provider.Warning) {
+func buildInferenceConfig(opts provider.CallOptions, modelID string, bo BedrockOptions) (*inferenceConfig, []provider.Warning, error) {
 	var warnings []provider.Warning
 	inf := &inferenceConfig{}
 
 	if opts.MaxOutputTokens != nil {
+		if !validBedrockRequestNumber(*opts.MaxOutputTokens) {
+			return nil, warnings, fmt.Errorf("bedrock: invalid maxOutputTokens")
+		}
 		v := *opts.MaxOutputTokens
 		inf.MaxTokens = &v
 	}
@@ -233,6 +246,9 @@ func buildInferenceConfig(opts provider.CallOptions, modelID string, bo BedrockO
 		inf.TopP = &v
 	}
 	if opts.TopK != nil {
+		if !validBedrockRequestNumber(*opts.TopK) {
+			return nil, warnings, fmt.Errorf("bedrock: invalid topK")
+		}
 		v := *opts.TopK
 		inf.TopK = &v
 	}
@@ -278,15 +294,15 @@ func buildInferenceConfig(opts provider.CallOptions, modelID string, bo BedrockO
 
 	// Treat empty inferenceConfig as nil so it doesn't serialize.
 	if inf.MaxTokens == nil && inf.Temperature == nil && inf.TopP == nil && inf.TopK == nil && len(inf.StopSequences) == 0 {
-		return nil, warnings
+		return nil, warnings, nil
 	}
-	return inf, warnings
+	return inf, warnings, nil
 }
 
 // applyAnthropicPassThroughs writes Anthropic-on-Bedrock specific knobs into
 // additionalModelRequestFields. For non-Anthropic models that receive
 // Anthropic-only options, it instead emits warnings.
-func applyAnthropicPassThroughs(addFields map[string]any, inf **inferenceConfig, modelID string, bo BedrockOptions) []provider.Warning {
+func applyAnthropicPassThroughs(addFields map[string]any, inf **inferenceConfig, modelID string, bo BedrockOptions) ([]provider.Warning, error) {
 	var warnings []provider.Warning
 	isAnth := isAnthropicModel(modelID)
 
@@ -316,10 +332,17 @@ func applyAnthropicPassThroughs(addFields map[string]any, inf **inferenceConfig,
 				*inf = &inferenceConfig{}
 			}
 			if (*inf).MaxTokens == nil {
-				def := rc.BudgetTokens + 4096
+				base := provider.LanguageModelNumberFromInt(4096)
+				def, err := addBedrockRequestNumber(base, int64(rc.BudgetTokens))
+				if err != nil {
+					return warnings, err
+				}
 				(*inf).MaxTokens = &def
 			} else {
-				sum := *(*inf).MaxTokens + rc.BudgetTokens
+				sum, err := addBedrockRequestNumber(*(*inf).MaxTokens, int64(rc.BudgetTokens))
+				if err != nil {
+					return warnings, err
+				}
 				(*inf).MaxTokens = &sum
 			}
 		} else if rc.Type == "adaptive" {
@@ -335,7 +358,7 @@ func applyAnthropicPassThroughs(addFields map[string]any, inf **inferenceConfig,
 		}
 	}
 
-	return warnings
+	return warnings, nil
 }
 
 func resolveReasoningConfig(modelID string, reasoning *provider.ReasoningEffort, explicit *ReasoningConfig, warnings *[]provider.Warning) *ReasoningConfig {

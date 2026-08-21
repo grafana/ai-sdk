@@ -23,12 +23,18 @@ func TestContentPart_AllTypes_RoundTrip(t *testing.T) {
 			part: ContentPart{Type: ContentPartTypeText, Text: "hello"},
 		},
 		{
-			name: "file with URL",
+			name: "generated file normalizes to request filename",
 			part: ContentPart{
 				Type:      ContentPartTypeFile,
 				Data:      &DataContent{URL: "https://example.com/image.png"},
 				MediaType: "image/png",
 				Filename:  "image.png",
+			},
+			want: &ContentPart{
+				Type:             ContentPartTypeFile,
+				Data:             &DataContent{URL: "https://example.com/image.png"},
+				MediaType:        "image/png",
+				FilePartFilename: stringPtr("image.png"),
 			},
 		},
 		{
@@ -111,7 +117,7 @@ func TestContentPart_AllTypes_RoundTrip(t *testing.T) {
 				ToolCallID:       "tc_2",
 				ToolName:         "web_search",
 				Input:            json.RawMessage(`{"q":"x"}`),
-				ProviderExecuted: true,
+				ProviderExecuted: boolPtr(true),
 			},
 		},
 		{
@@ -152,7 +158,7 @@ func TestContentPart_AllTypes_RoundTrip(t *testing.T) {
 				Type:       ContentPartTypeToolApprovalResponse,
 				ApprovalID: "apr_2",
 				Approved:   boolPtr(false),
-				Reason:     "unsafe",
+				Reason:     stringPtr("unsafe"),
 			},
 		},
 		{

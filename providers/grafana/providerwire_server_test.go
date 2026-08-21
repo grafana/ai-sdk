@@ -67,7 +67,7 @@ func newPublicServerClient(t *testing.T, model provider.LanguageModel) provider.
 }
 
 func TestPublicProviderWireServer_RealGrafanaClientUnary(t *testing.T) {
-	maxTokens := 128
+	maxTokens := provider.LanguageModelNumberFromInt(128)
 	temperature := 0.25
 	opts := provider.CallOptions{
 		Prompt:          []provider.Message{provider.UserText("hello")},

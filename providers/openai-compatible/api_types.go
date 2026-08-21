@@ -85,7 +85,7 @@ type chatTool struct {
 
 type toolFunction struct {
 	Name        string          `json:"name"`
-	Description string          `json:"description,omitempty"`
+	Description *string         `json:"description,omitempty"`
 	Parameters  json.RawMessage `json:"parameters,omitempty"`
 	Strict      *bool           `json:"strict,omitempty"`
 }
@@ -141,7 +141,7 @@ type responseFormat struct {
 
 type jsonSchemaFormat struct {
 	Name        string          `json:"name"`
-	Description string          `json:"description,omitempty"`
+	Description *string         `json:"description,omitempty"`
 	Schema      json.RawMessage `json:"schema"`
 	Strict      bool            `json:"strict"`
 }

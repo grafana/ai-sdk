@@ -89,7 +89,7 @@ func (m *model) doStream(ctx context.Context, params provider.CallOptions) (*pro
 	go func() {
 		defer close(ch)
 		defer func() { _ = resp.Body.Close() }()
-		m.runStream(ctx, endpoint, bodyBytes, resp.Body, resp.Header, warnings, params.IncludeRawChunks, metadataKey, ch)
+		m.runStream(ctx, endpoint, bodyBytes, resp.Body, resp.Header, warnings, params.IncludeRawChunks != nil && *params.IncludeRawChunks, metadataKey, ch)
 	}()
 
 	return &provider.StreamResult{

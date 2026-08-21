@@ -27,11 +27,10 @@ func TestE2EBedrock_TextGeneration(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	maxTok := 32
 	temp := 0.0
 	result, err := lm.DoGenerate(ctx, provider.CallOptions{
 		Prompt:          []provider.Message{provider.UserText("Reply with the single word 'pong'.")},
-		MaxOutputTokens: &maxTok,
+		MaxOutputTokens: bedrockIntegerPointer(32),
 		Temperature:     &temp,
 	})
 	require.NoError(t, err)
@@ -51,10 +50,9 @@ func TestE2EBedrock_StreamingTextGeneration(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	maxTok := 32
 	result, err := lm.DoStream(ctx, provider.CallOptions{
 		Prompt:          []provider.Message{provider.UserText("Reply with the single word 'pong'.")},
-		MaxOutputTokens: &maxTok,
+		MaxOutputTokens: bedrockIntegerPointer(32),
 	})
 	require.NoError(t, err)
 

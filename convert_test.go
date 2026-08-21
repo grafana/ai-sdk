@@ -525,7 +525,8 @@ func TestConvertToModelMessages_ProviderExecutedTools(t *testing.T) {
 				am := result[0]
 				require.Len(t, am.Content, 2, "expected call + result")
 				assert.Equal(t, provider.ContentPartTypeToolCall, am.Content[0].Type)
-				assert.True(t, am.Content[0].ProviderExecuted)
+				require.NotNil(t, am.Content[0].ProviderExecuted)
+				assert.True(t, *am.Content[0].ProviderExecuted)
 				tr := am.Content[1]
 				assert.Equal(t, provider.ContentPartTypeToolResult, tr.Type)
 				assert.Equal(t, "c1", tr.ToolCallID)
@@ -718,11 +719,13 @@ func TestConvertToModelMessages_ApprovalResponses(t *testing.T) {
 				assert.Equal(t, "apr_2", toolMsg.Content[0].ApprovalID)
 				require.NotNil(t, toolMsg.Content[0].Approved)
 				assert.False(t, *toolMsg.Content[0].Approved)
-				assert.True(t, toolMsg.Content[0].ProviderExecuted)
+				require.NotNil(t, toolMsg.Content[0].ProviderExecuted)
+				assert.True(t, *toolMsg.Content[0].ProviderExecuted)
 				assert.Equal(t, provider.ContentPartTypeToolResult, toolMsg.Content[1].Type)
 				require.NotNil(t, toolMsg.Content[1].Output)
 				assert.Equal(t, provider.ToolOutputExecutionDenied, toolMsg.Content[1].Output.Type)
-				assert.Equal(t, "user denied", toolMsg.Content[1].Output.Reason)
+				require.NotNil(t, toolMsg.Content[1].Output.Reason)
+				assert.Equal(t, "user denied", *toolMsg.Content[1].Output.Reason)
 			},
 		},
 	}
@@ -945,7 +948,8 @@ func TestToolSetToProviderTools(t *testing.T) {
 			check: func(t *testing.T, pt []provider.Tool, warnings []provider.Warning) {
 				require.Len(t, pt, 1)
 				assert.Equal(t, provider.ToolTypeFunction, pt[0].Type)
-				assert.Equal(t, "Get weather", pt[0].Description)
+				require.NotNil(t, pt[0].Description)
+				assert.Equal(t, "Get weather", *pt[0].Description)
 				assert.Empty(t, warnings)
 			},
 		},
@@ -959,7 +963,8 @@ func TestToolSetToProviderTools(t *testing.T) {
 			check: func(t *testing.T, pt []provider.Tool, warnings []provider.Warning) {
 				require.Len(t, pt, 1)
 				assert.Equal(t, provider.ToolTypeFunction, pt[0].Type)
-				assert.Equal(t, "Calculator", pt[0].Description)
+				require.NotNil(t, pt[0].Description)
+				assert.Equal(t, "Calculator", *pt[0].Description)
 				assert.Empty(t, warnings)
 			},
 		},
@@ -995,7 +1000,8 @@ func TestToolSetToProviderTools(t *testing.T) {
 				require.Len(t, pt, 1)
 				assert.Equal(t, provider.ToolTypeFunction, pt[0].Type)
 				assert.Equal(t, "mcp_search", pt[0].Name)
-				assert.Equal(t, "MCP search", pt[0].Description)
+				require.NotNil(t, pt[0].Description)
+				assert.Equal(t, "MCP search", *pt[0].Description)
 				assert.Empty(t, warnings)
 			},
 		},
