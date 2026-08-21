@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["error"],
+  "properties": {
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["message", "type", "param", "code"],
+      "properties": {
+        "message": { "type": "string", "minLength": 1 },
+        "type": { "type": "string", "minLength": 1 },
+        "param": { "type": "null" },
+        "code": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

@@ -3,12 +3,19 @@ import { describe, it } from "node:test";
 import { defaultPackagePaths, validateBaseline } from "./validate-baseline.mts";
 
 describe("validateBaseline", () => {
-  it("registers the ProviderWire V4 evidence workspace", () => {
-    assert.ok(
-      defaultPackagePaths.some((packagePath) =>
-        packagePath.endsWith("/test/providerwire-v4/package.json"),
-      ),
-    );
+  it("registers every parity package consumer", () => {
+    for (const suffix of [
+      "/test/conformance/tools/package.json",
+      "/test/integration/package.json",
+      "/test/interop/package.json",
+      "/test/cli/package.json",
+      "/test/providerwire-v4/package.json",
+    ]) {
+      assert.ok(
+        defaultPackagePaths.some((packagePath) => packagePath.endsWith(suffix)),
+        suffix,
+      );
+    }
   });
 
   it("accepts matching ProviderWire V4 package versions", () => {

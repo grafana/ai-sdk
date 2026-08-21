@@ -11,9 +11,9 @@ The response fixtures are locally authored smoke inputs proving only that the pi
 This workspace is separate from:
 
 - recorded and imported fixtures under `test/conformance`;
-- frontend and legacy ProviderWire interoperability under `test/integration` and `test/interop`;
+- strict-runtime, frontend, and legacy interoperability under `test/integration` and `test/interop`;
 - the tolerant production `gateway/providerwire` package;
-- any future strict ProviderWire V4 server implementation.
+- the strict `gateway/providerwire/v4` runtime package.
 
 No artifact here establishes compatibility with Vercel's private Gateway server, another package version, or real provider output.
 
@@ -22,7 +22,7 @@ No artifact here establishes compatibility with Vercel's private Gateway server,
 The request contract is established from three independent views:
 
 1. The generated captures record requests actually emitted by the registered Gateway client for the maintained scenarios.
-2. The manually curated JSON Schema defines the repository's reviewed strict request-body contract. It is not generated from the upstream TypeScript declarations, captures, or coverage map. Every captured request body must satisfy it, while focused negative tests verify that known-invalid shapes are rejected.
+2. The manually curated production-owned JSON Schema defines the repository's reviewed strict request-body contract. It is not generated from the upstream TypeScript declarations, captures, or coverage map. The evidence validator reads the same committed bytes embedded by the strict runtime. Every captured request body must satisfy it, while focused negative tests verify that known-invalid shapes are rejected.
 3. The canonical typed coverage map inventories the finite request members and discriminators. Every supported item must point to an exact observation in a designated capture; unsupported items require an explicit exclusion.
 
 Keeping these views separate reduces the chance that one implementation mistake defines both the evidence and its validator. Together they demonstrate that the curated schema represents the observed pinned-client requests and that the classified request surface was considered. They do not prove that every possible unobserved request combination is accepted or rejected exactly like an upstream private server; negative cases, installed-source equivalence, and human review constrain that remaining boundary.
@@ -32,7 +32,7 @@ Keeping these views separate reduces the chance that one implementation mistake 
 Maintained inputs:
 
 - `src/request-coverage.ts`: canonical typed request-surface coverage map;
-- `schema/providerwire-v4-request.schema.json`: independent normative draft 2020-12 request-body schema;
+- [`gateway/providerwire/v4/schema/providerwire-v4-request.schema.json`](../../gateway/providerwire/v4/schema/providerwire-v4-request.schema.json): single production-owned normative draft 2020-12 request-body schema;
 - scenario selection, exclusions, focused negative cases, response probes, and the explicit source path closure.
 
 Generated artifacts:
@@ -51,10 +51,18 @@ The command validates the observations before writing all of `artifacts/semantic
 
 Semantic outer-header captures retain every emitted header except transport-generated `host`, `connection`, `content-length`, `accept`, `accept-language`, `accept-encoding`, and `sec-fetch-mode`. Authentication and user-agent values are normalized; deterministic protocol, caller, configured, and observability values remain evidence.
 
-`mise run check-providerwire-v4` is non-mutating. It regenerates request evidence and the parent-pinned compatibility corpus in temporary storage, compares them with committed artifacts, validates exact pins and source-equivalence hashes against installed npm inputs, and runs schema, observation, and smoke checks.
+`mise run check-providerwire-v4` is non-mutating. It regenerates request evidence and the parent-pinned compatibility corpus in temporary storage, compares them with committed artifacts, validates exact pins and source-equivalence hashes against installed npm inputs, runs schema, observation, and smoke checks, then runs focused strict-runtime Go tests and the exact-pinned direct runtime integration scenario.
+
+## Strict Phase 3 runtime evidence
+
+`gateway/providerwire/v4` implements only the strict Phase 3 text/scalar vertical. Focused Go tests, closed response schemas, and golden bytes are the response authority. `test/integration/providerwire-v4-runtime.test.ts` separately proves that `@ai-sdk/gateway@4.0.52` directly consumes unary text, normalized text streams, safe pre-commit errors, and one terminal stream error from the deterministic Go handler.
+
+The pinned client is not a strict successful-response oracle. Its unary path overwrites server warnings and response metadata, and its SSE parser ignores `[DONE]`. Raw HTTP assertions plus the Go schemas and goldens therefore prove unary `warnings: []`, canonical unary `response.modelId`, response headers, authentication messages, and clean EOF without `[DONE]`. Streaming canonical identity remains observable through `response-metadata`.
+
+The deterministic models and locally authored bytes are not provider recordings, imported upstream fixtures, or evidence of compatibility with Vercel's private Gateway server. Phase 4 still owns full prompt adaptation, complete response and stream families, raw disclosure, and broader privacy and lifecycle hardening.
 
 ## Go provider request contract
 
 [`provider/request_contract_external_test.go`](../../provider/request_contract_external_test.go) uses the external `provider_test` package so it observes only the public Go provider contract. Its positive tests establish exact numeric settings, optional false and empty scalar presence, and publicly constructible and inspectable empty inline-text file data. The archived Phase 1 OpenSpec change preserves the loss rationale and handoff, while the retired row-level table remains recoverable from repository history. The evidence workspace retains only durable pinned-client inputs and checks.
 
-The deployed tolerant request adapter is independently locked to parent commit `32e5ab7f1ab9e524477cc0ece04c690a89854a24` by [`gateway/providerwire/testdata/parent_request_compat_v1.json`](../../gateway/providerwire/testdata/parent_request_compat_v1.json). The corpus records parent-produced bytes and bounded parent-decoder outcomes; it does not establish a strict ProviderWire V4 runtime. Strict production decoding and serving remain a later-phase gap.
+The deployed tolerant request adapter is independently locked to parent commit `32e5ab7f1ab9e524477cc0ece04c690a89854a24` by [`gateway/providerwire/testdata/parent_request_compat_v1.json`](../../gateway/providerwire/testdata/parent_request_compat_v1.json). The corpus records parent-produced bytes and bounded parent-decoder outcomes; it remains legacy compatibility evidence rather than evidence for the isolated strict V4 runtime.

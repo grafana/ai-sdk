@@ -340,12 +340,15 @@ test/providerwire-v4/parent-corpus/generate.sh "$parent_corpus"
 cmp gateway/providerwire/testdata/parent_request_compat_v1.json "$parent_corpus"
 rm -f "$parent_corpus"
 trap - EXIT
+go test ./gateway/failure ./gateway/providerwire/v4
+(cd test/integration/testserver && go test ./...)
 mise deps install --only test
 cd test
 pnpm --filter @ai-sdk/conformance-tools validate-baseline
 pnpm --filter @ai-sdk/providerwire-v4-evidence typecheck
 pnpm --filter @ai-sdk/providerwire-v4-evidence test
 pnpm --filter @ai-sdk/providerwire-v4-evidence check
+pnpm --filter @ai-sdk/test-integration exec vitest run providerwire-v4-runtime.test.ts
 """
 
 [tasks.update-providerwire-v4-artifacts]
