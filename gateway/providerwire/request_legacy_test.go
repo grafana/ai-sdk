@@ -72,6 +72,32 @@ func TestLegacyRequestAdapter_EmptyDataArms(t *testing.T) {
 	}
 }
 
+func TestLegacyRequestAdapter_RejectsConflictingSelectedData(t *testing.T) {
+	emptyTextWithURL := provider.TextDataContent("")
+	emptyTextWithURL.URL = "https://example.test/file"
+	emptyURLWithText := provider.URLDataContent("")
+	emptyURLWithText.Text = "value"
+
+	for _, data := range []provider.DataContent{emptyTextWithURL, emptyURLWithText} {
+		_, err := EncodeCallOptions(provider.CallOptions{Prompt: []provider.Message{
+			provider.NewUserMessage(provider.FilePart("text/plain", data)),
+		}})
+		require.ErrorContains(t, err, "selected file-data type")
+	}
+}
+
+func TestLegacyRequestAdapter_ParentDataCompatibility(t *testing.T) {
+	mixed := provider.DataContent{URL: "https://example.test/file", Text: "ignored"}
+	options := provider.CallOptions{Prompt: []provider.Message{provider.NewUserMessage(
+		provider.FilePart("text/plain", mixed),
+		provider.FilePart("application/octet-stream", provider.DataContent{}),
+	)}}
+	encoded, err := EncodeCallOptions(options)
+	require.NoError(t, err)
+	assert.Contains(t, string(encoded), `"data":{"type":"url","url":"https://example.test/file"}`)
+	assert.Contains(t, string(encoded), `"data":{}`)
+}
+
 func TestLegacyRequestAdapter_ExplicitEmptyCollectionDecodeAndParentEncode(t *testing.T) {
 	decoded, err := DecodeCallOptions([]byte(`{"prompt":[],"tools":[],"stopSequences":[],"headers":{},"providerOptions":{}}`))
 	require.NoError(t, err)

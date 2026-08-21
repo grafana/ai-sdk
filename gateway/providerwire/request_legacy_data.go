@@ -45,21 +45,30 @@ func legacyDataContentFromProvider(data provider.DataContent) (legacyDataContent
 		legacy.dataType = legacyDataContentReference
 	case data.Text != "":
 		legacy.dataType = legacyDataContentText
+	}
+
+	selected, ok := data.DataType()
+	if !ok && selected == "" {
+		return legacy, nil
+	}
+	var selectedLegacy legacyDataContentType
+	switch selected {
+	case provider.DataContentTypeData:
+		selectedLegacy = legacyDataContentData
+	case provider.DataContentTypeURL:
+		selectedLegacy = legacyDataContentURL
+	case provider.DataContentTypeReference:
+		selectedLegacy = legacyDataContentReference
+	case provider.DataContentTypeText:
+		selectedLegacy = legacyDataContentText
 	default:
-		dataType, ok := data.DataType()
-		if !ok {
-			return legacy, nil
-		}
-		switch dataType {
-		case provider.DataContentTypeData:
-			legacy.dataType = legacyDataContentData
-		case provider.DataContentTypeURL:
-			legacy.dataType = legacyDataContentURL
-		case provider.DataContentTypeReference:
-			legacy.dataType = legacyDataContentReference
-		case provider.DataContentTypeText:
-			legacy.dataType = legacyDataContentText
-		}
+		return legacyDataContent{}, fmt.Errorf("unsupported selected file-data type %q", selected)
+	}
+	if legacy.dataType != "" && legacy.dataType != selectedLegacy {
+		return legacyDataContent{}, fmt.Errorf("selected file-data type %q conflicts with legacy field precedence %q", selectedLegacy, legacy.dataType)
+	}
+	if legacy.dataType == "" {
+		legacy.dataType = selectedLegacy
 	}
 	return legacy, nil
 }

@@ -2,6 +2,7 @@ package providerrequest
 
 import (
 	"encoding/json"
+	"reflect"
 	"testing"
 
 	"github.com/grafana/ai-sdk/provider"
@@ -38,6 +39,48 @@ func TestValidate_RequestArms(t *testing.T) {
 	}
 	for _, options := range invalid {
 		require.Error(t, Validate(options))
+	}
+}
+
+func TestValidate_DomainStructFieldExhaustiveness(t *testing.T) {
+	tests := []struct {
+		name  string
+		value any
+		want  []string
+	}{
+		{
+			name:  "content part",
+			value: provider.ContentPart{},
+			want: []string{
+				"Type", "Text", "Data", "FilePartFilename", "Filename", "MediaType", "Kind", "SourceType", "ID", "URL", "Title",
+				"ToolCallID", "ToolName", "Input", "Output", "ProviderExecuted", "ApprovalID", "Signature", "IsAutomatic", "Approved", "Reason", "ProviderOptions",
+			},
+		},
+		{
+			name:  "tool",
+			value: provider.Tool{},
+			want:  []string{"Type", "Name", "Description", "InputSchema", "InputExamples", "Strict", "ID", "Args", "ProviderOptions"},
+		},
+		{
+			name:  "tool result output",
+			value: provider.ToolResultOutput{},
+			want:  []string{"Type", "Text", "JSON", "Content", "Reason", "ProviderOptions"},
+		},
+		{
+			name:  "tool result content",
+			value: provider.ToolResultContentValue{},
+			want:  []string{"Type", "Text", "Data", "MediaType", "Filename", "ProviderOptions"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			typeOf := reflect.TypeOf(tc.value)
+			fields := make([]string, typeOf.NumField())
+			for index := range typeOf.NumField() {
+				fields[index] = typeOf.Field(index).Name
+			}
+			require.Equal(t, tc.want, fields, "update providerrequest validation for the changed domain struct")
+		})
 	}
 }
 
