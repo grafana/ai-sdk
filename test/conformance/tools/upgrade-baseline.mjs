@@ -12,6 +12,7 @@ const packagePaths = [
   join(__dirname, "package.json"),
   join(__dirname, "..", "..", "integration", "package.json"),
   join(__dirname, "..", "..", "cli", "package.json"),
+  join(__dirname, "..", "..", "providerwire-v4", "package.json"),
 ];
 const stableVersionPattern = /^(\d+)\.(\d+)\.(\d+)$/;
 

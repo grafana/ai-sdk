@@ -22,6 +22,7 @@ sources = [
   "test/cli/package.json",
   "test/conformance/tools/package.json",
   "test/integration/package.json",
+  "test/providerwire-v4/package.json",
 ]
 outputs = ["test/node_modules/.modules.yaml"]
 run = "cd test && pnpm install --frozen-lockfile"
@@ -266,6 +267,20 @@ mise deps install --only test
 cd test && pnpm --filter @ai-sdk/conformance-tools typecheck
 """
 
+[tasks.test-providerwire-v4]
+description = "Run the non-mutating ProviderWire V4 contract checks"
+run = """
+mise deps install --only test
+cd test && pnpm --filter @ai-sdk/providerwire-v4-contract test
+"""
+
+[tasks.update-providerwire-v4-goldens]
+description = "Explicitly update ProviderWire V4 semantic request goldens"
+run = """
+mise deps install --only test
+cd test && pnpm --filter @ai-sdk/providerwire-v4-contract update-goldens
+"""
+
 [tasks.validate-parity-baseline]
 description = "Validate the registered upstream parity baseline"
 run = """
@@ -293,7 +308,7 @@ cd test && pnpm --filter @ai-sdk/conformance-tools provider-shape
 description = "Run conformance tests"
 run = """
 mise run typecheck-conformance
-cd test/conformance && go test -tags conformance -v ./...
+cd test/conformance && GOWORK=off GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" go test -tags conformance -v ./...
 """
 
 [tasks.parity-check]
@@ -302,6 +317,7 @@ run = """
 mise run validate-parity-baseline
 mise run parity-coverage
 mise run parity-provider-shape
+mise run test-providerwire-v4
 mise run test-conformance
 """
 

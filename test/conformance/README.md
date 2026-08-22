@@ -38,7 +38,8 @@ The upstream target for generated expectations is declared in
 `test/conformance/upstream.yaml`. That manifest records the Vercel AI SDK
 repository, TypeScript package versions, verification commands, and known gaps.
 The package versions in the manifest must match every parity TypeScript
-consumer under `test/`: conformance tools, integration tests, and CLI tooling.
+consumer under `test/`: conformance tools, integration tests, CLI tooling, and
+the ProviderWire V4 contract workspace.
 
 The current parity coverage map lives in `test/conformance/PARITY.md`. It
 classifies each compatibility surface by layer, status, confidence source, and
@@ -64,8 +65,11 @@ the implementation so future baseline upgrades have an executable contract.
 # Validate the registered upstream baseline metadata
 mise run validate-parity-baseline
 
-# Run the standard parity check (baseline validation + conformance)
+# Run the standard parity check (baseline validation + contract + conformance)
 mise run parity-check
+
+# Run the non-mutating registered Gateway ProviderWire V4 contract
+mise run test-providerwire-v4
 
 # Run conformance tests (uses committed expected.jsonl files)
 mise run test-conformance
