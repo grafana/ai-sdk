@@ -2,7 +2,9 @@
 
 The legacy `gateway/providerwire` server and `providers/grafana` client have
 been removed. The repository does not provide a compatibility shim, replacement
-transport, or strict ProviderWire V4 implementation in this release.
+transport, or strict ProviderWire V4 implementation in this release. Versioned
+schema and compatibility evidence under `gateway/providerwire/v4` define a
+future strict contract only; they do not provide an executable server or client.
 
 ## Roll back a server deployment
 

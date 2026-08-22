@@ -1,10 +1,4 @@
-# provider-wire Specification
-
-## Purpose
-
-Record the retirement boundary for the former remote `provider.LanguageModel` transport while preserving provider-domain JSON as local representation behavior only.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Legacy ProviderWire surface is absent
 

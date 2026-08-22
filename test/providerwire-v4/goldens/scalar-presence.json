@@ -1,0 +1,69 @@
+[
+  {
+    "method": "POST",
+    "path": "/language-model",
+    "headers": {
+      "ai-language-model-id": "grafana/scalar",
+      "ai-language-model-specification-version": "4",
+      "ai-language-model-streaming": "false",
+      "content-type": "application/json",
+      "x-contract-body": "",
+      "x-contract-config": "configured"
+    },
+    "streaming": false,
+    "hasSignal": false,
+    "body": {
+      "prompt": [
+        {
+          "role": "system",
+          "content": ""
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": ""
+            }
+          ]
+        }
+      ],
+      "maxOutputTokens": 0,
+      "temperature": 0,
+      "stopSequences": [],
+      "topP": 0,
+      "topK": 0,
+      "presencePenalty": 0,
+      "frequencyPenalty": 0,
+      "responseFormat": {
+        "type": "text"
+      },
+      "seed": 0,
+      "tools": [],
+      "includeRawChunks": false,
+      "headers": {
+        "x-contract-body": ""
+      },
+      "reasoning": "provider-default",
+      "providerOptions": {
+        "empty": {},
+        "opaque": {
+          "nested": {
+            "nullValue": null,
+            "falseValue": false,
+            "zero": 0,
+            "empty": ""
+          },
+          "array": [
+            null,
+            false,
+            0,
+            "",
+            [],
+            {}
+          ]
+        }
+      }
+    }
+  }
+]
