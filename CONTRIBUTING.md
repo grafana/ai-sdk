@@ -117,7 +117,7 @@ aisdk/                  root module — orchestration (StreamText, UIMessage, SS
 providers/<name>/       one Go module per provider (anthropic, bedrock, openai, ...)
 docs/                   concepts, guides, providers, middleware, best practices
 examples/               outcome-oriented programs, one self-contained module each
-test/                   integration, CLI, and conformance harnesses
+test/                   integration, CLI, conformance, and ProviderWire contract harnesses
 openspec/               specs and change proposals
 ```
 
