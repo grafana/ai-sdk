@@ -11,7 +11,6 @@ const workspacePath = join(__dirname, "..", "..", "pnpm-workspace.yaml");
 const packagePaths = [
   join(__dirname, "package.json"),
   join(__dirname, "..", "..", "integration", "package.json"),
-  join(__dirname, "..", "..", "interop", "package.json"),
   join(__dirname, "..", "..", "cli", "package.json"),
 ];
 const stableVersionPattern = /^(\d+)\.(\d+)\.(\d+)$/;

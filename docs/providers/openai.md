@@ -92,4 +92,4 @@ settings are dropped with warnings where the request can proceed. Inspect
 
 ---
 
-← [Amazon Bedrock](bedrock.md) · [Docs index](../README.md) · [Grafana Cloud →](grafana-cloud.md)
+← [Amazon Bedrock](bedrock.md) · [Docs index](../README.md) · [OpenAI-compatible →](openai-compatible.md)

@@ -301,21 +301,6 @@ Provider-specific request value normalization SHALL be narrow and documented. Fo
 - **WHEN** expected and actual Anthropic request bodies contain equivalent `tool_result` JSON content serialized with different JSON object field order or different raw-string versus text-block shape
 - **THEN** the request input assertion passes
 
-### Requirement: Grafana provider-wire conformance boundary
-Grafana provider-wire conformance tests SHALL continue validating provider-wire method, path, headers, auth, streaming mode, and request body decodability at the Grafana transport boundary. Upstream TypeScript request input snapshots SHALL be compared against the downstream provider API request produced after the fake hosted endpoint decodes `provider.CallOptions`, not against the provider-wire request body.
-
-#### Scenario: Grafana downstream request matches upstream
-- **WHEN** the Grafana conformance fake hosted endpoint decodes provider-wire `CallOptions` and forwards them through the Anthropic provider conversion path
-- **THEN** the downstream Anthropic provider API request matches `expected-requests.jsonl`
-
-#### Scenario: Provider-wire transport is invalid
-- **WHEN** the Grafana provider-wire request has invalid method, path, required headers, auth, streaming mode, content type, accept header, or undecodable body
-- **THEN** the Grafana conformance test fails at the provider-wire boundary validation
-
-#### Scenario: Provider-wire body shape differs from upstream provider body
-- **WHEN** the Grafana provider-wire body serializes Go `provider.CallOptions`
-- **THEN** the conformance suite does not compare that body directly to the upstream TypeScript provider API request snapshot
-
 ### Requirement: ID comparison strategy
 The system SHALL use exact comparison for all IDs in the UIMessageChunk stream. Content block IDs (from the provider, e.g. stringified block index) and tool call IDs (from the API response) are deterministic for a given fixture. Message-level IDs SHALL be controlled via deterministic generators configured identically in both the TypeScript tools and Go tests.
 
@@ -386,7 +371,7 @@ The replay server SHALL support a Bedrock framing mode that serves fixture lines
 
 #### Scenario: Anthropic replay unaffected
 
-- **WHEN** the replay server is in SSE mode (Anthropic, Grafana)
+- **WHEN** the replay server is in Anthropic SSE mode
 - **THEN** the SSE wire format and Content-Type are unchanged from the existing behavior
 
 ### Requirement: Bedrock conformance Go test runner
@@ -501,7 +486,7 @@ The repository parity check command SHALL run the conformance test signal requir
 
 ### Requirement: Truncated provider stream coverage
 
-The conformance suite SHALL include deterministic fixtures for provider streams that close without a finish part. Coverage SHALL distinguish an incomplete stream with no model output from an incomplete stream with partial model output and SHALL compare both direct provider and Grafana provider-wire replay against the registered upstream UI chunk sequence.
+The conformance suite SHALL include deterministic fixtures for provider streams that close without a finish part. Coverage SHALL distinguish an incomplete stream with no model output from an incomplete stream with partial model output and SHALL compare direct provider replay against the registered upstream UI chunk sequence.
 
 #### Scenario: Empty truncated provider stream
 
@@ -514,11 +499,6 @@ The conformance suite SHALL include deterministic fixtures for provider streams 
 - **WHEN** a provider response emits model output and closes without a finish part
 - **THEN** upstream expected output retains the partial chunks, emits `finish-step`, and finishes with reason `other`
 - **AND** the Go result does not report a stream error
-
-#### Scenario: Grafana transport preserves truncation behavior
-
-- **WHEN** the same truncated fixtures are replayed through the Grafana provider-wire transport
-- **THEN** the UI chunk sequence and result error state match the direct provider replay
 
 ### Requirement: Conformance as confidence suite
 

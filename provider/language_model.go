@@ -28,8 +28,8 @@ type LanguageModel interface {
 // CallOptions configures a model call. Passed to DoStream and DoGenerate.
 //
 // Every field carries a JSON tag so [CallOptions] round-trips losslessly
-// through encoding/json. The wire form mirrors LanguageModelV4CallOptions
-// from upstream (Vercel AI SDK).
+// through encoding/json. The JSON representation mirrors
+// LanguageModelV4CallOptions from upstream (Vercel AI SDK).
 type CallOptions struct {
 	Prompt           []Message         `json:"prompt,omitempty"`
 	Tools            []Tool            `json:"tools,omitempty"`
@@ -165,7 +165,7 @@ type GenerateContentPart struct {
 // For tool-call parts the `input` field is emitted as a stringified JSON
 // string (matching upstream `LanguageModelV4ToolCall.input: string`), which is
 // what `ai` core's tool-call parser dereferences. All other parts marshal via
-// their struct tags. See openspec change provider-wire-upstream-full-compat.
+// their struct tags.
 func (p GenerateContentPart) MarshalJSON() ([]byte, error) {
 	type alias GenerateContentPart
 	if p.Type != ContentToolCall || len(p.Input) == 0 {
@@ -192,7 +192,7 @@ func (p GenerateContentPart) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON decodes a [GenerateContentPart], tolerating a tool-call `input`
 // encoded either as the canonical raw JSON object or as the upstream
-// stringified JSON string. See openspec change provider-wire-upstream-full-compat.
+// stringified JSON string.
 func (p *GenerateContentPart) UnmarshalJSON(data []byte) error {
 	type alias GenerateContentPart
 	var raw struct {

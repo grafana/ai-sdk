@@ -39,9 +39,8 @@ type DataContent struct {
 //   - Reference      -> `{"type":"reference","reference":<obj>}`
 //   - Text           -> `{"type":"text","text":<text>}`
 //
-// This supersedes the legacy Go-to-Go `{"bytes"|"base64"|"url":...}` emitted
-// form. Decoding remains tolerant of both shapes (see [DataContent.UnmarshalJSON]).
-// See openspec change provider-wire-upstream-full-compat.
+// This supersedes the legacy Go `{"bytes"|"base64"|"url":...}` JSON form.
+// Decoding remains tolerant of both shapes (see [DataContent.UnmarshalJSON]).
 // Base64DataContent constructs inline base64 file data, including an empty payload.
 func Base64DataContent(data string) DataContent {
 	if data == "" {
@@ -94,12 +93,11 @@ func (d DataContent) MarshalJSON() ([]byte, error) {
 // UnmarshalJSON decodes a [DataContent] from the upstream Vercel AI SDK
 // LanguageModelV4 tagged file-data union (`{"type":"data","data":<base64>}`,
 // `{"type":"url","url":<url>}`, `{"type":"reference","reference":<obj>}`,
-// `{"type":"text","text":<text>}`) and additionally tolerates the legacy
-// Go-to-Go wire form (`{"bytes":...}` / `{"base64":...}` / `{"url":...}`),
-// mapping either onto the canonical fields. Decoding fails closed: an unknown
-// tagged `type` (not one of data, url, reference, text) returns an error rather
-// than silently decoding to an empty DataContent. See openspec change
-// provider-wire-upstream-full-compat.
+// `{"type":"text","text":<text>}`) and additionally tolerates the legacy Go
+// JSON form (`{"bytes":...}` / `{"base64":...}` / `{"url":...}`), mapping
+// either onto the canonical fields. Decoding fails closed: an unknown tagged
+// `type` (not one of data, url, reference, text) returns an error rather than
+// silently decoding to an empty DataContent.
 func (d *DataContent) UnmarshalJSON(data []byte) error {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(data, &fields); err != nil {
@@ -201,7 +199,7 @@ func (d DataContent) Validate() error {
 
 // ContentPartType identifies the variant of a [ContentPart] in a [Message].
 //
-// The type is a typed string so the wire form is human-readable and the
+// The type is a typed string so the JSON form is human-readable and the
 // in-process discriminator is type-safe. Constants enumerate every defined
 // variant; producers MUST set [ContentPart.Type] to one of these values.
 type ContentPartType string

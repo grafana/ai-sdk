@@ -117,7 +117,7 @@ aisdk/                  root module — orchestration (StreamText, UIMessage, SS
 providers/<name>/       one Go module per provider (anthropic, bedrock, openai, ...)
 docs/                   concepts, guides, providers, middleware, best practices
 examples/               outcome-oriented programs, one self-contained module each
-test/                   integration, interop, CLI, and conformance harnesses
+test/                   integration, CLI, and conformance harnesses
 openspec/               specs and change proposals
 ```
 
@@ -174,7 +174,7 @@ change needs, because the required evidence differs by layer.
 | Core orchestration (`StreamText`, tools, output) | UI chunk snapshots (`expected.jsonl`) |
 | Provider contract (`provider.LanguageModel`) | Shape report plus source comparison |
 | Provider implementation (Anthropic, Bedrock, ...) | Provider request snapshots (`expected-requests.jsonl`) |
-| Frontend interop | Interop tests against the real upstream client |
+| Frontend interop | Hook-level integration tests against the real upstream client |
 | Conformance harness | Regenerated fixtures |
 
 Work is **parity-sensitive** when it touches stream parts, UI chunks, SSE
@@ -227,10 +227,10 @@ manifest, the conformance dependency pins, the generated snapshots, and the
 lockfiles together. The selected package set must satisfy the
 `minimumReleaseAge` gate in `test/pnpm-workspace.yaml`; do not bypass it.
 
-In CI, every parity job is a required status check: `parity-baseline`,
-`conformance-test`, `interop-test`, and `integration-test` all block the merge,
-as documented in `PARITY.md`. A fixture regeneration therefore has to land in
-the same pull request as the behavior change it covers.
+In CI, every retained parity job is a required status check:
+`parity-baseline`, `conformance-test`, and `integration-test` all block the
+merge, as documented in `PARITY.md`. A fixture regeneration therefore has to
+land in the same pull request as the behavior change it covers.
 
 ## Spec-driven development with OpenSpec
 
@@ -305,7 +305,6 @@ no mocking framework. See [AGENTS.md](AGENTS.md) for the full conventions.
 mise run test              # all Go tests, all modules
 mise run test-short        # skip integration/E2E
 mise run test-integration  # cross-language integration tests (Go server, Vitest client)
-mise run test-interop      # against the real upstream TypeScript client
 mise run test-conformance  # replay upstream-recorded fixtures
 ```
 

@@ -72,8 +72,6 @@ the service your application calls:
 - [Anthropic](providers/anthropic.md) for Claude through Anthropic or Vertex AI.
 - [Amazon Bedrock](providers/bedrock.md) for models through Bedrock Converse.
 - [OpenAI](providers/openai.md) for the Responses API.
-- [Grafana Cloud](providers/grafana-cloud.md) for internal Grafana services with
-  provisioned access to the hosted AI SDK endpoint.
 - [OpenAI-compatible APIs](providers/openai-compatible.md) for local or hosted
   Chat Completions-compatible servers.
 
@@ -83,8 +81,8 @@ These guides are for teams hosting shared model access or extending the SDK:
 
 - [Gateway model catalog](guides/gateway-model-catalog.md) — expose stable public
   model names, aliases, metadata, and discovery.
-- [Serving provider-wire models](guides/provider-wire-server.md) — centralize
-  model execution behind a service-to-service HTTP endpoint.
+- [Legacy ProviderWire retirement](guides/provider-wire-retirement.md) — plan
+  migration from the removed service-to-service transport.
 - [Writing a provider](providers/writing-a-provider.md) — adapt another model
   service to the common SDK behavior.
 

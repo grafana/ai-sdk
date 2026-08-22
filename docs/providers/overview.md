@@ -11,7 +11,6 @@ authentication your application uses.
 | [Anthropic](anthropic.md) | You call Claude through the Anthropic API or Google Vertex AI |
 | [Amazon Bedrock](bedrock.md) | You call models through AWS Bedrock Converse |
 | [OpenAI](openai.md) | You call OpenAI's Responses API |
-| [Grafana Cloud](grafana-cloud.md) | An internal Grafana service calls provisioned models through the hosted AI SDK endpoint |
 | [OpenAI-compatible](openai-compatible.md) | You call a Chat Completions-compatible `/v1/chat/completions` server |
 
 The OpenAI provider targets OpenAI's current Responses API. The OpenAI-compatible
