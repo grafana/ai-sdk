@@ -175,6 +175,24 @@ func safeErrorFromProvider(err error) (result safeError) {
 	return safeError{category: safeInternal}
 }
 
+func safeErrorFromTransport(err error) (safeError, bool) {
+	var urlError *url.Error
+	if errors.As(err, &urlError) {
+		if urlError.Timeout() {
+			return safeError{category: safeTimeout}, true
+		}
+		return safeError{category: safeUpstream}, true
+	}
+	var netError net.Error
+	if errors.As(err, &netError) {
+		if netError.Timeout() {
+			return safeError{category: safeTimeout}, true
+		}
+		return safeError{category: safeUpstream}, true
+	}
+	return safeError{}, false
+}
+
 func (h *handler) writeSafeError(w http.ResponseWriter, value safeError) {
 	document := documentForSafeError(value)
 	w.Header().Set("Content-Type", "application/json")
