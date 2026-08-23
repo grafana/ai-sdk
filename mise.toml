@@ -255,7 +255,7 @@ done
 description = "Run cross-language integration tests"
 run = """
 mise deps install --only test
-(cd test/integration/testserver && go test ./...)
+(cd test/integration/testserver && GOWORK=off GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" go test ./...)
 cd test && pnpm --filter @ai-sdk/test-integration test
 """
 
@@ -283,6 +283,7 @@ cd test && pnpm --filter @ai-sdk/conformance-tools typecheck
 [tasks.test-providerwire-v4]
 description = "Run the non-mutating ProviderWire V4 contract checks"
 run = """
+go test ./gateway/providerwire/v4
 mise deps install --only test
 cd test && pnpm --filter @ai-sdk/providerwire-v4-contract test
 """
