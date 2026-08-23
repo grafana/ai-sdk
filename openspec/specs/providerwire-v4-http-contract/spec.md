@@ -275,7 +275,15 @@ The exact registered public `@ai-sdk/gateway` client SHALL be authoritative for 
 - **AND** raw HTTP, privacy, and bounds tests SHALL define the unobserved server safety requirement
 - **AND** those authorities SHALL NOT contradict observable registered-client behavior
 
-#### Scenario: No executable server is implied
-- **WHEN** this contract change is complete
-- **THEN** the repository SHALL contain no new ProviderWire V4 handler, model resolver, provider invocation path, or Go client
-- **AND** Go replay of committed requests SHALL remain a dependency of the strict unary runtime work package
+#### Scenario: Production unary replay is established
+- **WHEN** the strict unary runtime is complete
+- **THEN** each committed request emitted by the registered client SHALL replay to its expected unary stage
+- **AND** streaming records SHALL fail unary envelope validation without reaching the mapper
+- **AND** unary records SHALL reach schema validation and either supported execution or their deterministic first unsupported capability
+- **AND** dedicated supported scalar and focused one-capability requests SHALL provide evidence that multi-capability goldens cannot provide
+- **AND** a pinned registered client SHALL complete a supported unary text call against the real Go handler
+
+#### Scenario: Streaming remains deferred
+- **WHEN** this unary runtime change is complete
+- **THEN** strict streaming commitment, event state, SSE framing, and clean-EOF behavior SHALL remain unimplemented by the Go handler
+- **AND** the phase 2 streaming client probes SHALL remain consumption evidence only

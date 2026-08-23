@@ -1,0 +1,137 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://grafana.com/ai-sdk/providerwire/v4/error.schema.json",
+  "title": "ProviderWire V4 strict safe error response",
+  "type": "object",
+  "required": ["error"],
+  "properties": {
+    "error": {
+      "type": "object",
+      "required": ["message", "type", "param", "code"],
+      "properties": {
+        "message": { "type": "string" },
+        "type": {
+          "enum": [
+            "invalid_request_error",
+            "authentication_error",
+            "forbidden",
+            "model_not_found",
+            "rate_limit_exceeded",
+            "internal_server_error",
+            "failed_dependency"
+          ]
+        },
+        "param": { "type": "null" },
+        "code": {
+          "enum": [
+            "invalid_request",
+            "authentication_error",
+            "forbidden",
+            "model_not_found",
+            "rate_limit_exceeded",
+            "overloaded",
+            "failed_dependency",
+            "upstream_error",
+            "timeout",
+            "canceled",
+            "internal_error"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "properties": {
+            "message": {
+              "enum": [
+                "invalid request",
+                "unsupported capability: files",
+                "unsupported capability: reasoning-content",
+                "unsupported capability: custom-content",
+                "unsupported capability: tools",
+                "unsupported capability: tool-approvals",
+                "unsupported capability: structured-output",
+                "unsupported capability: provider-options",
+                "unsupported capability: body-headers",
+                "unsupported capability: raw-output"
+              ]
+            },
+            "type": { "const": "invalid_request_error" },
+            "code": { "const": "invalid_request" }
+          }
+        },
+        {
+          "properties": {
+            "message": { "const": "authentication failed" },
+            "type": { "const": "authentication_error" },
+            "code": { "const": "authentication_error" }
+          }
+        },
+        {
+          "properties": {
+            "message": { "const": "forbidden" },
+            "type": { "const": "forbidden" },
+            "code": { "const": "forbidden" }
+          }
+        },
+        {
+          "properties": {
+            "message": { "const": "model not found" },
+            "type": { "const": "model_not_found" },
+            "code": { "const": "model_not_found" }
+          }
+        },
+        {
+          "properties": {
+            "message": { "const": "rate limit exceeded" },
+            "type": { "const": "rate_limit_exceeded" },
+            "code": { "const": "rate_limit_exceeded" }
+          }
+        },
+        {
+          "properties": {
+            "message": { "const": "service overloaded" },
+            "type": { "const": "internal_server_error" },
+            "code": { "const": "overloaded" }
+          }
+        },
+        {
+          "properties": {
+            "message": { "const": "failed dependency" },
+            "type": { "const": "failed_dependency" },
+            "code": { "const": "failed_dependency" }
+          }
+        },
+        {
+          "properties": {
+            "message": { "const": "upstream failure" },
+            "type": { "const": "internal_server_error" },
+            "code": { "const": "upstream_error" }
+          }
+        },
+        {
+          "properties": {
+            "message": { "const": "request timed out" },
+            "type": { "const": "internal_server_error" },
+            "code": { "const": "timeout" }
+          }
+        },
+        {
+          "properties": {
+            "message": { "const": "request canceled" },
+            "type": { "const": "internal_server_error" },
+            "code": { "const": "canceled" }
+          }
+        },
+        {
+          "properties": {
+            "message": { "const": "internal error" },
+            "type": { "const": "internal_server_error" },
+            "code": { "const": "internal_error" }
+          }
+        }
+      ]
+    }
+  },
+  "additionalProperties": false
+}

@@ -106,6 +106,9 @@ jobs:
       - name: Validate parity baseline
         run: mise run validate-parity-baseline
 
+      - name: Test ProviderWire V4 contract
+        run: mise run test-providerwire-v4
+
       - name: Fetch pinned upstream fixtures
         run: |
           commit=$(awk '/^  commit:/ { print $2 }' test/conformance/upstream.yaml)
