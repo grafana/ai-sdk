@@ -28,9 +28,13 @@ func (r *resolverStub) ResolveModel(context.Context, string) (catalog.ResolvedMo
 
 func testLimits() Limits {
 	return Limits{
-		RequestBytes:       1 << 20,
-		UnaryResponseBytes: 1 << 20,
-		ModelDuration:      time.Second,
+		RequestBytes:        1 << 20,
+		UnaryResponseBytes:  1 << 20,
+		StreamParts:         1_000,
+		StreamFrameBytes:    1 << 20,
+		ModelDuration:       time.Second,
+		StreamIdleDuration:  time.Second,
+		StreamDrainDuration: time.Second,
 	}
 }
 
@@ -63,6 +67,29 @@ func TestNew(t *testing.T) {
 		assert.Equal(t, int64(1<<20), h.limits.RequestBytes)
 	})
 
+	t.Run("maximum fixed stream frame boundary", func(t *testing.T) {
+		largest := 0
+		for _, frame := range [][]byte{
+			canonicalEmptyStartFrame,
+			canonicalRateLimitStreamErrorFrame,
+			canonicalOverloadStreamErrorFrame,
+			canonicalDependencyStreamErrorFrame,
+			canonicalUpstreamStreamErrorFrame,
+			canonicalTimeoutStreamErrorFrame,
+			canonicalCancellationStreamErrorFrame,
+			canonicalInternalStreamErrorFrame,
+		} {
+			largest = max(largest, len(frame))
+		}
+		limits := testLimits()
+		limits.StreamFrameBytes = int64(largest)
+		_, err := New(Config{Resolver: &resolverStub{}, Limits: limits})
+		require.NoError(t, err)
+		limits.StreamFrameBytes--
+		_, err = New(Config{Resolver: &resolverStub{}, Limits: limits})
+		require.Error(t, err)
+	})
+
 	t.Run("nil resolver", func(t *testing.T) {
 		_, err := New(Config{Limits: testLimits()})
 		require.Error(t, err)
@@ -81,8 +108,15 @@ func TestNew(t *testing.T) {
 			{name: "request overflow", mutate: func(l *Limits) { l.RequestBytes = math.MaxInt64 }},
 			{name: "response zero", mutate: func(l *Limits) { l.UnaryResponseBytes = 0 }},
 			{name: "response overflow", mutate: func(l *Limits) { l.UnaryResponseBytes = math.MaxInt64 }},
+			{name: "stream parts zero", mutate: func(l *Limits) { l.StreamParts = 0 }},
+			{name: "stream parts overflow", mutate: func(l *Limits) { l.StreamParts = int(^uint(0) >> 1) }},
+			{name: "stream frame zero", mutate: func(l *Limits) { l.StreamFrameBytes = 0 }},
+			{name: "stream frame overflow", mutate: func(l *Limits) { l.StreamFrameBytes = math.MaxInt64 }},
+			{name: "stream frame fallback", mutate: func(l *Limits) { l.StreamFrameBytes = int64(len(canonicalTimeoutStreamErrorFrame) - 1) }},
 			{name: "duration zero", mutate: func(l *Limits) { l.ModelDuration = 0 }},
 			{name: "duration negative", mutate: func(l *Limits) { l.ModelDuration = -time.Second }},
+			{name: "idle zero", mutate: func(l *Limits) { l.StreamIdleDuration = 0 }},
+			{name: "drain zero", mutate: func(l *Limits) { l.StreamDrainDuration = 0 }},
 		}
 		for _, tc := range tests {
 			t.Run(tc.name, func(t *testing.T) {
@@ -115,7 +149,7 @@ func TestHandlerEnvelope(t *testing.T) {
 		{name: "model empty", mutate: func(r *http.Request) { r.Header.Set(HeaderModelID, "") }},
 		{name: "model repeated", mutate: func(r *http.Request) { r.Header[http.CanonicalHeaderKey(HeaderModelID)] = []string{"a", "b"} }},
 		{name: "stream missing", mutate: func(r *http.Request) { r.Header.Del(HeaderStreaming) }},
-		{name: "stream true", mutate: func(r *http.Request) { r.Header.Set(HeaderStreaming, "true") }},
+		{name: "stream invalid", mutate: func(r *http.Request) { r.Header.Set(HeaderStreaming, "TRUE") }},
 		{name: "stream repeated", mutate: func(r *http.Request) { r.Header[http.CanonicalHeaderKey(HeaderStreaming)] = []string{"false", "false"} }},
 	}
 
@@ -135,10 +169,21 @@ func TestHandlerEnvelope(t *testing.T) {
 		})
 	}
 
-	t.Run("valid preserves exact model ID", func(t *testing.T) {
-		validated, failure := h.validateRequest(validRequest(`{"prompt":[]}`))
-		require.Nil(t, failure)
-		assert.Equal(t, " public/model ", validated.modelID)
+	t.Run("valid preserves exact model ID and selects mode", func(t *testing.T) {
+		for _, tc := range []struct {
+			value string
+			mode  executionMode
+		}{
+			{value: "false", mode: executionUnary},
+			{value: "true", mode: executionStreaming},
+		} {
+			req := validRequest(`{"prompt":[]}`)
+			req.Header.Set(HeaderStreaming, tc.value)
+			validated, failure := h.validateRequest(req)
+			require.Nil(t, failure)
+			assert.Equal(t, " public/model ", validated.modelID)
+			assert.Equal(t, tc.mode, validated.mode)
+		}
 	})
 }
 

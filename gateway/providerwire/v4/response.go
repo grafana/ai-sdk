@@ -47,14 +47,7 @@ func mapUnarySuccess(result *provider.GenerateResult, limit int64) (unarySuccess
 		mapped.content = append(mapped.content, part.Text)
 	}
 
-	switch result.FinishReason.Unified {
-	case provider.FinishReasonStop,
-		provider.FinishReasonLength,
-		provider.FinishReasonContentFilter,
-		provider.FinishReasonToolCalls,
-		provider.FinishReasonError,
-		provider.FinishReasonOther:
-	default:
+	if !validUnifiedFinishReason(result.FinishReason.Unified) {
 		return unarySuccess{}, errInvalidUnarySuccess
 	}
 
@@ -68,6 +61,20 @@ func mapUnarySuccess(result *provider.GenerateResult, limit int64) (unarySuccess
 		return unarySuccess{}, err
 	}
 	return mapped, nil
+}
+
+func validUnifiedFinishReason(reason provider.UnifiedFinishReason) bool {
+	switch reason {
+	case provider.FinishReasonStop,
+		provider.FinishReasonLength,
+		provider.FinishReasonContentFilter,
+		provider.FinishReasonToolCalls,
+		provider.FinishReasonError,
+		provider.FinishReasonOther:
+		return true
+	default:
+		return false
+	}
 }
 
 func mapInputUsage(usage provider.InputTokenUsage) (unaryTokenUsage, error) {

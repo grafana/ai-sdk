@@ -58,8 +58,11 @@ func (r *recordingResolver) requestedModelID() string {
 type recordingModel struct {
 	mu                 sync.Mutex
 	calls              int
+	generateCalls      int
+	streamCalls        int
 	options            provider.CallOptions
 	generate           func(context.Context, provider.CallOptions) (*provider.GenerateResult, error)
+	stream             func(context.Context, provider.CallOptions) (*provider.StreamResult, error)
 	specification      string
 	panicSpecification bool
 }
@@ -77,12 +80,25 @@ func (m *recordingModel) SpecificationVersion() string {
 func (*recordingModel) Provider() string                           { return "private-provider" }
 func (*recordingModel) ModelID() string                            { return "private-backend-model" }
 func (*recordingModel) SupportedURLs() map[string][]*regexp.Regexp { return nil }
-func (*recordingModel) DoStream(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
-	return nil, errors.New("unexpected stream call")
+func (m *recordingModel) DoStream(ctx context.Context, options provider.CallOptions) (*provider.StreamResult, error) {
+	m.mu.Lock()
+	m.calls++
+	m.streamCalls++
+	m.options = options
+	stream := m.stream
+	m.mu.Unlock()
+	if stream != nil {
+		return stream(ctx, options)
+	}
+	parts := make(chan provider.StreamPart, 1)
+	parts <- finishPart()
+	close(parts)
+	return &provider.StreamResult{Stream: parts}, nil
 }
 func (m *recordingModel) DoGenerate(ctx context.Context, options provider.CallOptions) (*provider.GenerateResult, error) {
 	m.mu.Lock()
 	m.calls++
+	m.generateCalls++
 	m.options = options
 	generate := m.generate
 	m.mu.Unlock()
@@ -100,6 +116,11 @@ func (m *recordingModel) receivedOptions() provider.CallOptions {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.options
+}
+func (m *recordingModel) invocationCounts() (generate, stream int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.generateCalls, m.streamCalls
 }
 
 type runtimeHarness struct {
@@ -121,6 +142,30 @@ func (h *runtimeHarness) serve(req *http.Request) *httptest.ResponseRecorder {
 	recorder := httptest.NewRecorder()
 	h.handler.ServeHTTP(recorder, req)
 	return recorder
+}
+
+func TestRuntimeModeDispatch(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		streaming     string
+		generateCalls int
+		streamCalls   int
+	}{
+		{name: "unary", streaming: "false", generateCalls: 1},
+		{name: "streaming", streaming: "true", streamCalls: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			harness := newRuntimeHarness(t, testLimits())
+			request := validRequest(`{"prompt":[]}`)
+			request.Header.Set(HeaderStreaming, tc.streaming)
+			response := harness.serve(request)
+			assert.Equal(t, http.StatusOK, response.Code)
+			generateCalls, streamCalls := harness.model.invocationCounts()
+			assert.Equal(t, tc.generateCalls, generateCalls)
+			assert.Equal(t, tc.streamCalls, streamCalls)
+			assert.Equal(t, 1, harness.resolver.callCount())
+		})
+	}
 }
 
 func TestRuntimeRequestValidationStopsDownstream(t *testing.T) {
@@ -311,9 +356,9 @@ func TestRuntimeGoldenReplay(t *testing.T) {
 		capability unsupportedCapability
 		modelCalls int
 	}{
-		{file: "streaming.json", status: http.StatusBadRequest},
+		{file: "streaming.json", status: http.StatusOK, modelCalls: 1},
 		{file: "sequence.json", status: http.StatusOK, modelCalls: 1},
-		{file: "sequence.json", index: 1, status: http.StatusBadRequest},
+		{file: "sequence.json", index: 1, status: http.StatusOK, modelCalls: 1},
 		{file: "scalar-presence.json", status: http.StatusBadRequest, capability: capabilityBodyHeaders},
 		{file: "headers.json", status: http.StatusBadRequest, capability: capabilityBodyHeaders},
 		{file: "headers.json", index: 1, status: http.StatusBadRequest, capability: capabilityBodyHeaders},
@@ -378,6 +423,16 @@ func TestRuntimeResolution(t *testing.T) {
 			response := harness.serve(validRequest(`{"prompt":[]}`))
 			assert.Equal(t, http.StatusInternalServerError, response.Code)
 		}
+	})
+
+	t.Run("invalid canonical id fails before streaming invocation and commitment", func(t *testing.T) {
+		harness := newRuntimeHarness(t, testLimits())
+		harness.resolver.resolved.ID = string([]byte{0xff})
+		response := harness.serve(streamRequest(`{"prompt":[]}`))
+		assert.Equal(t, http.StatusInternalServerError, response.Code)
+		assert.Equal(t, "application/json", response.Header().Get("Content-Type"))
+		assert.Equal(t, string(canonicalInternalError), response.Body.String())
+		assert.Zero(t, harness.model.callCount())
 	})
 }
 
