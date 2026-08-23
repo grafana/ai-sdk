@@ -40,12 +40,34 @@ func TestProviderWireV4Scenario_SuccessUsesProductionRoute(t *testing.T) {
 		"content":[{"type":"text","text":"hello from Go"}],
 		"finishReason":{"unified":"stop","raw":"test-stop"},
 		"usage":{"inputTokens":{"total":2,"noCache":1,"cacheRead":1,"cacheWrite":0},"outputTokens":{"total":1,"text":1,"reasoning":0}},
-		"warnings":[{"type":"other","message":"server warning"}],
+		"warnings":[{"type":"other","message":"the model reported a warning"}],
 		"response":{"id":"response-1","modelId":"success","timestamp":"2026-08-22T00:00:00Z"}
 	}`, response.Body.String())
 	assert.Equal(t, int64(1), scenario.stats.successCalls.Load())
 	assert.Equal(t, []provider.Message{provider.NewSystemMessage("hello")}, scenario.stats.options().Prompt)
 	assert.Nil(t, scenario.stats.options().Headers)
+}
+
+func TestProviderWireV4Scenario_StreamingUsesProductionRoute(t *testing.T) {
+	scenario, err := newProviderWireV4Scenario()
+	require.NoError(t, err)
+	mux := http.NewServeMux()
+	scenario.register(mux)
+
+	response := httptest.NewRecorder()
+	request := providerWireV4Request(t, context.Background(), "success", `{"prompt":[{"role":"user","content":[{"type":"text","text":"stream"}]}]}`)
+	request.Header.Set(providerwirev4.HeaderStreaming, "true")
+	mux.ServeHTTP(response, request)
+
+	require.Equal(t, http.StatusOK, response.Code)
+	assert.Equal(t, "text/event-stream", response.Header().Get("Content-Type"))
+	assert.Contains(t, response.Body.String(), `data: {"type":"stream-start","warnings":[{"type":"other","message":"the model reported a warning"}]}`)
+	assert.Contains(t, response.Body.String(), `data: {"type":"text-delta","id":"text-1","delta":""}`)
+	assert.Contains(t, response.Body.String(), `data: {"type":"text-delta","id":"text-1","delta":"hello from Go stream"}`)
+	assert.True(t, strings.HasSuffix(response.Body.String(), "\n\n"))
+	assert.NotContains(t, response.Body.String(), "[DONE]")
+	assert.Equal(t, int64(1), scenario.stats.streamCalls.Load())
+	assert.Equal(t, []provider.Message{provider.UserText("stream")}, scenario.stats.options().Prompt)
 }
 
 func TestProviderWireV4Scenario_SafeCategories(t *testing.T) {

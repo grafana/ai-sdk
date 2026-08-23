@@ -39,13 +39,15 @@ var (
 	unarySuccessSchemaJSON []byte
 	//go:embed schema/error.json
 	errorSchemaJSON []byte
+	//go:embed schema/stream_event.json
+	streamEventSchemaJSON []byte
 )
 
 var canonicalInternalError = []byte(`{"error":{"message":"internal error","type":"internal_server_error","param":null,"code":"internal_error"}}`)
 var canonicalInvalidRequestError = []byte(`{"error":{"message":"invalid request","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
 
 // Limits bounds every untrusted request, response, and model-duration resource
-// used by the unary handler.
+// used by the unary and streaming handler.
 type Limits struct {
 	// RequestBytes is the maximum raw request body size.
 	RequestBytes int64
@@ -59,8 +61,16 @@ type Limits struct {
 	UnaryResponseBytes int64
 	// ErrorResponseBytes is the maximum encoded error response size.
 	ErrorResponseBytes int64
+	// StreamParts is the maximum number of provider stream values received.
+	StreamParts int
+	// StreamFrameBytes is the maximum complete SSE frame size.
+	StreamFrameBytes int64
 	// ModelDuration is the maximum total duration of one model call.
 	ModelDuration time.Duration
+	// StreamIdleDuration is the maximum time between represented provider parts.
+	StreamIdleDuration time.Duration
+	// StreamDrainDuration bounds asynchronous post-terminal channel draining.
+	StreamDrainDuration time.Duration
 }
 
 // Policy applies host-owned controls after wire mapping and before model
@@ -69,7 +79,7 @@ type Policy interface {
 	Apply(context.Context, provider.CallOptions) (provider.CallOptions, error)
 }
 
-// Config configures an immutable ProviderWire V4 unary handler.
+// Config configures an immutable ProviderWire V4 language-model handler.
 type Config struct {
 	// Resolver resolves the exact public model ID from the protocol header.
 	Resolver catalog.ModelResolver
@@ -92,10 +102,12 @@ type handler struct {
 	requestSchema      *schema.CompiledSchema
 	unarySuccessSchema *schema.CompiledSchema
 	errorSchema        *schema.CompiledSchema
+	streamEventSchema  *schema.CompiledSchema
+	clock              protocolClock
 	mapRequest         func([]byte) (provider.CallOptions, *requestFailure)
 }
 
-// New constructs an immutable strict ProviderWire V4 unary HTTP handler.
+// New constructs an immutable strict ProviderWire V4 HTTP handler.
 func New(config Config) (http.Handler, error) {
 	if isNil(config.Resolver) {
 		return nil, fmt.Errorf("providerwire v4: resolver is nil")
@@ -116,8 +128,21 @@ func New(config Config) (http.Handler, error) {
 	if err != nil {
 		return nil, fmt.Errorf("providerwire v4: compiling error schema: %w", err)
 	}
+	streamEventSchema, err := schema.CompileSchema(streamEventSchemaJSON)
+	if err != nil {
+		return nil, fmt.Errorf("providerwire v4: compiling stream event schema: %w", err)
+	}
 	if err := errorSchema.Validate(json.RawMessage(canonicalInternalError)); err != nil {
 		return nil, fmt.Errorf("providerwire v4: validating canonical internal error: %w", err)
+	}
+	for name, frame := range map[string][]byte{
+		"empty stream start":    canonicalEmptyStartFrame,
+		"internal stream error": canonicalInternalStreamErrorFrame,
+	} {
+		payload, ok := streamFramePayload(frame)
+		if !ok || streamEventSchema.Validate(json.RawMessage(payload)) != nil {
+			return nil, fmt.Errorf("providerwire v4: validating canonical %s", name)
+		}
 	}
 
 	policy := config.Policy
@@ -132,6 +157,8 @@ func New(config Config) (http.Handler, error) {
 		requestSchema:      requestSchema,
 		unarySuccessSchema: unarySuccessSchema,
 		errorSchema:        errorSchema,
+		streamEventSchema:  streamEventSchema,
+		clock:              realProtocolClock{},
 		mapRequest:         mapWireRequest,
 	}, nil
 }
@@ -144,6 +171,7 @@ func validateLimits(limits Limits) error {
 		{name: "request bytes", value: limits.RequestBytes},
 		{name: "unary response bytes", value: limits.UnaryResponseBytes},
 		{name: "error response bytes", value: limits.ErrorResponseBytes},
+		{name: "stream frame bytes", value: limits.StreamFrameBytes},
 	}
 	for _, limit := range byteLimits {
 		if limit.value <= 0 {
@@ -165,11 +193,29 @@ func validateLimits(limits Limits) error {
 	if limits.NumberBytes == int(^uint(0)>>1) {
 		return fmt.Errorf("providerwire v4: number bytes cannot safely use limit+1")
 	}
+	if limits.StreamParts <= 0 {
+		return fmt.Errorf("providerwire v4: stream parts must be positive")
+	}
+	if limits.StreamParts == int(^uint(0)>>1) {
+		return fmt.Errorf("providerwire v4: stream parts cannot safely use limit+1")
+	}
 	if limits.ModelDuration <= 0 {
 		return fmt.Errorf("providerwire v4: model duration must be positive")
 	}
+	if limits.StreamIdleDuration <= 0 {
+		return fmt.Errorf("providerwire v4: stream idle duration must be positive")
+	}
+	if limits.StreamDrainDuration <= 0 {
+		return fmt.Errorf("providerwire v4: stream drain duration must be positive")
+	}
 	if int64(len(canonicalInternalError)) > limits.ErrorResponseBytes {
 		return fmt.Errorf("providerwire v4: error response bytes cannot contain canonical internal error")
+	}
+	if int64(len(canonicalEmptyStartFrame)) > limits.StreamFrameBytes {
+		return fmt.Errorf("providerwire v4: stream frame bytes cannot contain canonical empty start")
+	}
+	if int64(len(canonicalInternalStreamErrorFrame)) > limits.StreamFrameBytes {
+		return fmt.Errorf("providerwire v4: stream frame bytes cannot contain canonical internal error")
 	}
 	return nil
 }
@@ -203,8 +249,16 @@ type requestFailure struct {
 	safe     safeError
 }
 
+type executionMode uint8
+
+const (
+	executionUnary executionMode = iota + 1
+	executionStreaming
+)
+
 type validatedRequest struct {
 	modelID string
+	mode    executionMode
 	body    []byte
 }
 
@@ -233,6 +287,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.writeSafeError(w, safeError{category: safeInternal})
 		return
 	}
+	if validated.mode == executionStreaming {
+		h.serveStream(w, r.Context(), resolved.Model, options, resolved.ID)
+		return
+	}
 	result, err := h.invokeModel(r.Context(), resolved.Model, options)
 	if err != nil {
 		h.writeSafeError(w, safeErrorFromProvider(err))
@@ -244,7 +302,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler) validateRequest(r *http.Request) (validatedRequest, *requestFailure) {
-	modelID, failure := validateEnvelope(r)
+	modelID, mode, failure := validateEnvelope(r)
 	if failure != nil {
 		return validatedRequest{}, failure
 	}
@@ -259,35 +317,42 @@ func (h *handler) validateRequest(r *http.Request) (validatedRequest, *requestFa
 	if err := h.requestSchema.Validate(json.RawMessage(body)); err != nil {
 		return validatedRequest{}, &requestFailure{stage: stageSchema}
 	}
-	return validatedRequest{modelID: modelID, body: body}, nil
+	return validatedRequest{modelID: modelID, mode: mode, body: body}, nil
 }
 
-func validateEnvelope(r *http.Request) (string, *requestFailure) {
+func validateEnvelope(r *http.Request) (string, executionMode, *requestFailure) {
 	if r.Method != http.MethodPost || r.URL == nil || r.URL.Path != LanguageModelPath || r.URL.EscapedPath() != LanguageModelPath {
-		return "", &requestFailure{stage: stageEnvelope}
+		return "", 0, &requestFailure{stage: stageEnvelope}
 	}
 	contentType, ok := singleHeaderValue(r.Header, "Content-Type")
 	if !ok {
-		return "", &requestFailure{stage: stageEnvelope}
+		return "", 0, &requestFailure{stage: stageEnvelope}
 	}
 	mediaType, _, err := mime.ParseMediaType(contentType)
 	if err != nil || !strings.EqualFold(mediaType, "application/json") {
-		return "", &requestFailure{stage: stageEnvelope}
+		return "", 0, &requestFailure{stage: stageEnvelope}
 	}
 
 	specification, ok := singleHeaderValue(r.Header, HeaderSpecificationVersion)
 	if !ok || specification != SpecificationVersion {
-		return "", &requestFailure{stage: stageEnvelope}
+		return "", 0, &requestFailure{stage: stageEnvelope}
 	}
 	modelID, ok := singleHeaderValue(r.Header, HeaderModelID)
 	if !ok || modelID == "" {
-		return "", &requestFailure{stage: stageEnvelope}
+		return "", 0, &requestFailure{stage: stageEnvelope}
 	}
 	streaming, ok := singleHeaderValue(r.Header, HeaderStreaming)
-	if !ok || streaming != "false" {
-		return "", &requestFailure{stage: stageEnvelope}
+	if !ok {
+		return "", 0, &requestFailure{stage: stageEnvelope}
 	}
-	return modelID, nil
+	switch streaming {
+	case "false":
+		return modelID, executionUnary, nil
+	case "true":
+		return modelID, executionStreaming, nil
+	default:
+		return "", 0, &requestFailure{stage: stageEnvelope}
+	}
 }
 
 func singleHeaderValue(headers http.Header, name string) (string, bool) {

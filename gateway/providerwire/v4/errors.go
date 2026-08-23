@@ -177,6 +177,18 @@ func safeErrorFromProvider(err error) (result safeError) {
 
 	var apiError *provider.APICallError
 	if errors.As(err, &apiError) {
+		if isNil(apiError) {
+			return safeError{category: safeInternal}
+		}
+		if apiError.StatusCode == 0 {
+			if transportError, ok := safeErrorFromTransport(err); ok {
+				return transportError
+			}
+			return safeError{category: safeUpstream}
+		}
+		if apiError.StatusCode < 100 || apiError.StatusCode > 599 {
+			return safeError{category: safeInternal}
+		}
 		switch apiError.StatusCode {
 		case http.StatusRequestTimeout, http.StatusGatewayTimeout:
 			return safeError{category: safeTimeout}
@@ -191,21 +203,28 @@ func safeErrorFromProvider(err error) (result safeError) {
 		return safeError{category: safeUpstream}
 	}
 
+	if transportError, ok := safeErrorFromTransport(err); ok {
+		return transportError
+	}
+	return safeError{category: safeInternal}
+}
+
+func safeErrorFromTransport(err error) (safeError, bool) {
 	var urlError *url.Error
 	if errors.As(err, &urlError) {
 		if urlError.Timeout() {
-			return safeError{category: safeTimeout}
+			return safeError{category: safeTimeout}, true
 		}
-		return safeError{category: safeUpstream}
+		return safeError{category: safeUpstream}, true
 	}
 	var netError net.Error
 	if errors.As(err, &netError) {
 		if netError.Timeout() {
-			return safeError{category: safeTimeout}
+			return safeError{category: safeTimeout}, true
 		}
-		return safeError{category: safeUpstream}
+		return safeError{category: safeUpstream}, true
 	}
-	return safeError{category: safeInternal}
+	return safeError{}, false
 }
 
 type boundedDocument struct {

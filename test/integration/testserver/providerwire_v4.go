@@ -23,9 +23,11 @@ const (
 type providerWireV4ControlContextKey struct{}
 
 type providerWireV4Stats struct {
-	successCalls  atomic.Int64
-	blockingCalls atomic.Int64
-	cancellations atomic.Int64
+	successCalls        atomic.Int64
+	streamCalls         atomic.Int64
+	blockingCalls       atomic.Int64
+	streamBlockingCalls atomic.Int64
+	cancellations       atomic.Int64
 
 	mu          sync.Mutex
 	lastOptions provider.CallOptions
@@ -71,8 +73,57 @@ func (*providerWireV4Model) SpecificationVersion() string               { return
 func (*providerWireV4Model) Provider() string                           { return "test" }
 func (m *providerWireV4Model) ModelID() string                          { return "private-" + m.kind }
 func (*providerWireV4Model) SupportedURLs() map[string][]*regexp.Regexp { return nil }
-func (*providerWireV4Model) DoStream(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
-	return nil, errors.New("providerwire test: unexpected stream call")
+func (m *providerWireV4Model) DoStream(ctx context.Context, options provider.CallOptions) (*provider.StreamResult, error) {
+	m.stats.streamCalls.Add(1)
+	zero := 0
+	one := 1
+	two := 2
+	switch m.kind {
+	case "success":
+		m.stats.recordSuccess(options)
+		stream := make(chan provider.StreamPart, 8)
+		stream <- provider.StreamPart{Type: provider.PartStreamStart, Warnings: []provider.Warning{{Type: provider.WarnOther, Message: "private warning"}}}
+		stream <- provider.StreamPart{Type: provider.PartResponseMeta, ResponseID: "stream-response-1", ModelID: "private-backend", Provider: "private-provider", Timestamp: time.Date(2026, 8, 23, 0, 0, 0, 0, time.UTC)}
+		stream <- provider.StreamPart{Type: provider.PartTextStart, ID: "text-1"}
+		stream <- provider.StreamPart{Type: provider.PartTextDelta, ID: "text-1", Delta: ""}
+		stream <- provider.StreamPart{Type: provider.PartTextDelta, ID: "text-1", Delta: "hello from Go stream"}
+		stream <- provider.StreamPart{Type: provider.PartTextEnd, ID: "text-1"}
+		stream <- provider.StreamPart{Type: provider.PartFinish, Usage: &provider.Usage{
+			InputTokens:  provider.InputTokenUsage{Total: &two, NoCache: &one, CacheRead: &one, CacheWrite: &zero},
+			OutputTokens: provider.OutputTokenUsage{Total: &one, Text: &one, Reasoning: &zero},
+		}, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop, Raw: "test-stop"}}
+		close(stream)
+		return &provider.StreamResult{Stream: stream}, nil
+	case "stream-errors":
+		stream := make(chan provider.StreamPart, 8)
+		stream <- provider.StreamPart{Type: provider.PartError, APICallError: provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: http.StatusServiceUnavailable, Message: "private overload"})}
+		stream <- provider.StreamPart{Type: provider.PartTextStart, ID: "text-1"}
+		stream <- provider.StreamPart{Type: provider.PartError, APICallError: provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: http.StatusUnauthorized, Message: "private dependency"})}
+		stream <- provider.StreamPart{Type: provider.PartTextDelta, ID: "text-1", Delta: "after errors"}
+		stream <- provider.StreamPart{Type: provider.PartTextEnd, ID: "text-1"}
+		stream <- provider.StreamPart{Type: provider.PartFinish, Usage: &provider.Usage{}, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}}
+		close(stream)
+		return &provider.StreamResult{Stream: stream}, nil
+	case "stream-timeout":
+		stream := make(chan provider.StreamPart)
+		go func() {
+			<-ctx.Done()
+			m.stats.cancellations.Add(1)
+			close(stream)
+		}()
+		return &provider.StreamResult{Stream: stream}, nil
+	case "stream-blocking":
+		m.stats.streamBlockingCalls.Add(1)
+		stream := make(chan provider.StreamPart)
+		go func() {
+			<-ctx.Done()
+			m.stats.cancellations.Add(1)
+			close(stream)
+		}()
+		return &provider.StreamResult{Stream: stream}, nil
+	default:
+		return nil, errors.New("providerwire test: unexpected stream call")
+	}
 }
 
 func (m *providerWireV4Model) DoGenerate(ctx context.Context, options provider.CallOptions) (*provider.GenerateResult, error) {
@@ -122,8 +173,8 @@ type providerWireV4Scenario struct {
 
 func newProviderWireV4Scenario() (*providerWireV4Scenario, error) {
 	stats := &providerWireV4Stats{}
-	entries := make([]catalog.StaticEntry, 0, 7)
-	for _, id := range []string{"success", "failed-dependency", "upstream", "timeout", "cancellation", "internal", "blocking"} {
+	entries := make([]catalog.StaticEntry, 0, 10)
+	for _, id := range []string{"success", "failed-dependency", "upstream", "timeout", "cancellation", "internal", "blocking", "stream-errors", "stream-timeout", "stream-blocking"} {
 		entries = append(entries, catalog.StaticEntry{
 			Info:  catalog.ModelInfo{ID: id},
 			Model: &providerWireV4Model{kind: id, stats: stats},
@@ -137,13 +188,17 @@ func newProviderWireV4Scenario() (*providerWireV4Scenario, error) {
 		Resolver: resolver,
 		Policy:   providerWireV4Policy{},
 		Limits: providerwirev4.Limits{
-			RequestBytes:       1 << 20,
-			JSONDepth:          64,
-			JSONTokens:         10_000,
-			NumberBytes:        64,
-			UnaryResponseBytes: 1 << 20,
-			ErrorResponseBytes: 1 << 10,
-			ModelDuration:      5 * time.Second,
+			RequestBytes:        1 << 20,
+			JSONDepth:           64,
+			JSONTokens:          10_000,
+			NumberBytes:         64,
+			UnaryResponseBytes:  1 << 20,
+			ErrorResponseBytes:  1 << 10,
+			StreamParts:         1_000,
+			StreamFrameBytes:    1 << 20,
+			ModelDuration:       5 * time.Second,
+			StreamIdleDuration:  200 * time.Millisecond,
+			StreamDrainDuration: 100 * time.Millisecond,
 		},
 	})
 	if err != nil {
@@ -162,9 +217,11 @@ func (s *providerWireV4Scenario) register(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+providerWireV4Prefix+"/stats", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]int64{
-			"successCalls":  s.stats.successCalls.Load(),
-			"blockingCalls": s.stats.blockingCalls.Load(),
-			"cancellations": s.stats.cancellations.Load(),
+			"successCalls":        s.stats.successCalls.Load(),
+			"streamCalls":         s.stats.streamCalls.Load(),
+			"blockingCalls":       s.stats.blockingCalls.Load(),
+			"streamBlockingCalls": s.stats.streamBlockingCalls.Load(),
+			"cancellations":       s.stats.cancellations.Load(),
 		})
 	})
 }

@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -113,10 +114,13 @@ type recordingModel struct {
 	specification      string
 	panicSpecification bool
 	generate           func(context.Context, provider.CallOptions) (*provider.GenerateResult, error)
+	stream             func(context.Context, provider.CallOptions) (*provider.StreamResult, error)
 
-	mu      sync.Mutex
-	calls   int
-	options provider.CallOptions
+	mu            sync.Mutex
+	calls         int
+	generateCalls int
+	streamCalls   int
+	options       provider.CallOptions
 }
 
 func (m *recordingModel) SpecificationVersion() string {
@@ -131,13 +135,30 @@ func (m *recordingModel) SpecificationVersion() string {
 func (m *recordingModel) Provider() string                           { return "private-provider" }
 func (m *recordingModel) ModelID() string                            { return "private-backend-model" }
 func (m *recordingModel) SupportedURLs() map[string][]*regexp.Regexp { return nil }
-func (m *recordingModel) DoStream(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
-	return nil, errors.New("unexpected stream call")
+func (m *recordingModel) DoStream(ctx context.Context, options provider.CallOptions) (*provider.StreamResult, error) {
+	m.recorder.add("model")
+	m.mu.Lock()
+	m.calls++
+	m.streamCalls++
+	m.options = options
+	m.mu.Unlock()
+	if m.stream != nil {
+		return m.stream(ctx, options)
+	}
+	stream := make(chan provider.StreamPart, 1)
+	stream <- provider.StreamPart{
+		Type:         provider.PartFinish,
+		Usage:        &provider.Usage{},
+		FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop},
+	}
+	close(stream)
+	return &provider.StreamResult{Stream: stream}, nil
 }
 func (m *recordingModel) DoGenerate(ctx context.Context, options provider.CallOptions) (*provider.GenerateResult, error) {
 	m.recorder.add("model")
 	m.mu.Lock()
 	m.calls++
+	m.generateCalls++
 	m.options = options
 	m.mu.Unlock()
 	if m.generate != nil {
@@ -156,6 +177,12 @@ func (m *recordingModel) receivedOptions() provider.CallOptions {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.options
+}
+
+func (m *recordingModel) invocationCounts() (generate, stream int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.generateCalls, m.streamCalls
 }
 
 type runtimeHarness struct {
@@ -193,6 +220,36 @@ func (h *runtimeHarness) serve(req *http.Request) *httptest.ResponseRecorder {
 	recorder := httptest.NewRecorder()
 	h.handler.ServeHTTP(recorder, req)
 	return recorder
+}
+
+func TestRuntimeModeDispatchUsesSharedPipeline(t *testing.T) {
+	tests := []struct {
+		name         string
+		streaming    string
+		contentType  string
+		wantGenerate int
+		wantStream   int
+	}{
+		{name: "unary", streaming: "false", contentType: "application/json", wantGenerate: 1},
+		{name: "streaming", streaming: "true", contentType: "text/event-stream", wantStream: 1},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			harness := newRuntimeHarness(t, testLimits())
+			req := validRequest(`{"prompt":[]}`)
+			req.Header.Set(HeaderStreaming, tc.streaming)
+			response := harness.serve(req)
+			assert.Equal(t, http.StatusOK, response.Code)
+			assert.Equal(t, tc.contentType, response.Header().Get("Content-Type"))
+			assert.Equal(t, []string{"map", "policy", "resolve", "model"}, harness.recorder.snapshot())
+			assert.Equal(t, 1, harness.mapCalls)
+			assert.Equal(t, 1, harness.policy.callCount())
+			assert.Equal(t, 1, harness.resolver.callCount())
+			generate, stream := harness.model.invocationCounts()
+			assert.Equal(t, tc.wantGenerate, generate)
+			assert.Equal(t, tc.wantStream, stream)
+		})
+	}
 }
 
 func TestRuntimeRequestBodyBoundaryStopsDownstreamStages(t *testing.T) {
@@ -526,10 +583,11 @@ func TestRuntimeGoldenReplay(t *testing.T) {
 		policyCalls  int
 		resolveCalls int
 		modelCalls   int
+		prompt       string
 	}{
-		{file: "streaming.json", index: 0, status: http.StatusBadRequest, stage: stageEnvelope},
-		{file: "sequence.json", index: 0, status: http.StatusOK, mapCalls: 1, policyCalls: 1, resolveCalls: 1, modelCalls: 1},
-		{file: "sequence.json", index: 1, status: http.StatusBadRequest, stage: stageEnvelope},
+		{file: "streaming.json", index: 0, status: http.StatusOK, mapCalls: 1, policyCalls: 1, resolveCalls: 1, modelCalls: 1, prompt: "stream"},
+		{file: "sequence.json", index: 0, status: http.StatusOK, mapCalls: 1, policyCalls: 1, resolveCalls: 1, modelCalls: 1, prompt: "first"},
+		{file: "sequence.json", index: 1, status: http.StatusOK, mapCalls: 1, policyCalls: 1, resolveCalls: 1, modelCalls: 1, prompt: "second"},
 		{file: "scalar-presence.json", index: 0, status: http.StatusBadRequest, capability: capabilityBodyHeaders, mapCalls: 1},
 		{file: "headers.json", index: 0, status: http.StatusBadRequest, capability: capabilityBodyHeaders, mapCalls: 1},
 		{file: "headers.json", index: 1, status: http.StatusBadRequest, capability: capabilityBodyHeaders, mapCalls: 1},
@@ -555,6 +613,20 @@ func TestRuntimeGoldenReplay(t *testing.T) {
 			assert.Equal(t, tc.policyCalls, harness.policy.callCount())
 			assert.Equal(t, tc.resolveCalls, harness.resolver.callCount())
 			assert.Equal(t, tc.modelCalls, harness.model.callCount())
+			if tc.modelCalls == 1 {
+				options := harness.model.receivedOptions()
+				require.Equal(t, []provider.Message{provider.UserText(tc.prompt)}, options.Prompt)
+				assert.Nil(t, options.Headers)
+				assert.Nil(t, options.ProviderOptions)
+				generate, stream := harness.model.invocationCounts()
+				if records[tc.index].Headers[strings.ToLower(HeaderStreaming)] == "true" {
+					assert.Zero(t, generate)
+					assert.Equal(t, 1, stream)
+				} else {
+					assert.Equal(t, 1, generate)
+					assert.Zero(t, stream)
+				}
+			}
 		})
 	}
 }
@@ -912,8 +984,13 @@ func TestSafeErrorReductionAndWire(t *testing.T) {
 			{status: 404, category: safeFailedDependency},
 			{status: 499, category: safeFailedDependency},
 			{status: 0, category: safeUpstream},
-			{status: 500, category: safeUpstream},
+			{status: 200, category: safeUpstream},
 			{status: 302, category: safeUpstream},
+			{status: 500, category: safeUpstream},
+			{status: -1, category: safeInternal},
+			{status: 99, category: safeInternal},
+			{status: 600, category: safeInternal},
+			{status: 700, category: safeInternal},
 		}
 		for _, tc := range tests {
 			err := provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: tc.status, Message: "private"})
@@ -937,6 +1014,20 @@ func TestSafeErrorReductionAndWire(t *testing.T) {
 		assert.Equal(t, safeFailedDependency, safeErrorFromProvider(provider.NewAPICallError(provider.APICallErrorOptions{
 			StatusCode: http.StatusBadRequest,
 			Cause:      &url.Error{Op: "Post", URL: "https://private", Err: testNetError{timeout: true}},
+		})).category)
+		assert.Equal(t, safeTimeout, safeErrorFromProvider(provider.NewAPICallError(provider.APICallErrorOptions{
+			Cause: &url.Error{Op: "Post", URL: "https://private", Err: testNetError{timeout: true}},
+		})).category)
+		assert.Equal(t, safeUpstream, safeErrorFromProvider(provider.NewAPICallError(provider.APICallErrorOptions{
+			Cause: &net.DNSError{Name: "private.internal", Err: "no such host"},
+		})).category)
+		assert.Equal(t, safeInternal, safeErrorFromProvider(provider.NewAPICallError(provider.APICallErrorOptions{
+			StatusCode: 700,
+			Cause:      testNetError{timeout: true},
+		})).category)
+		assert.Equal(t, safeUpstream, safeErrorFromProvider(provider.NewAPICallError(provider.APICallErrorOptions{
+			StatusCode: http.StatusOK,
+			Cause:      testNetError{timeout: true},
 		})).category)
 		assert.Equal(t, safeTimeout, safeErrorFromProvider(testNetError{timeout: true}).category)
 		assert.Equal(t, safeUpstream, safeErrorFromProvider(testNetError{}).category)

@@ -61,10 +61,10 @@ func TestUnarySuccessMapping(t *testing.T) {
 			"finishReason":{"unified":"other"},
 			"usage":{"inputTokens":{"total":9007199254740991,"noCache":0,"cacheRead":0,"cacheWrite":0},"outputTokens":{"total":0,"text":0,"reasoning":0}},
 			"warnings":[
-				{"type":"unsupported","feature":"","details":"details"},
-				{"type":"compatibility","feature":""},
-				{"type":"deprecated","setting":"","message":""},
-				{"type":"other","message":""}
+				{"type":"unsupported","feature":"model capability","details":"a requested model capability is unsupported"},
+				{"type":"compatibility","feature":"model compatibility","details":"a requested setting was adjusted for model compatibility"},
+				{"type":"deprecated","setting":"model setting","message":"a requested model setting is deprecated"},
+				{"type":"other","message":"the model reported a warning"}
 			],
 			"response":{"id":"response-id","modelId":"canonical/model","timestamp":"2026-08-21T23:02:03.456Z"}
 		}`, string(body))
@@ -89,9 +89,9 @@ func TestUnarySuccessMapping(t *testing.T) {
 			{Type: provider.WarnOther, Message: "ok", Feature: invalidUTF8, Details: strings.Repeat("x", 1<<20)},
 			{Type: provider.WarnUnsupported, Feature: "feature", Setting: invalidUTF8, Message: invalidUTF8},
 		}
-		mapped, err := mapUnarySuccess(result, "canonical", 256)
+		mapped, err := mapUnarySuccess(result, "canonical", 512)
 		require.NoError(t, err)
-		body, ok := encodeUnarySuccess(mapped, 256)
+		body, ok := encodeUnarySuccess(mapped, 512)
 		require.True(t, ok)
 		assert.NotContains(t, string(body), "feature\":\"�")
 		assert.NotContains(t, string(body), strings.Repeat("x", 32))
@@ -146,6 +146,55 @@ func TestUnarySuccessMapping(t *testing.T) {
 	})
 }
 
+func TestUnaryWarningNormalizationIsValueSafe(t *testing.T) {
+	privateValues := []string{
+		"credential=secret", "https://provider.invalid/private", `{"private":"body"}`,
+		"Authorization: secret", "private-provider", "backend-private-model", "arbitrary provider prose",
+	}
+	warnings := []provider.Warning{
+		{Type: provider.WarnUnsupported, Feature: privateValues[0], Details: privateValues[1]},
+		{Type: provider.WarnCompatibility, Feature: privateValues[2], Details: privateValues[3]},
+		{Type: provider.WarnDeprecated, Setting: privateValues[4], Message: privateValues[5]},
+		{Type: provider.WarnOther, Message: privateValues[6]},
+	}
+	mapped, err := mapWarnings(warnings, 1<<20)
+	require.NoError(t, err)
+	result := validGenerateResult()
+	result.Warnings = warnings
+	response, err := mapUnarySuccess(result, "canonical/public", 1<<20)
+	require.NoError(t, err)
+	body, ok := encodeUnarySuccess(response, 1<<20)
+	require.True(t, ok)
+	for _, private := range privateValues {
+		assert.NotContains(t, string(body), private)
+	}
+	assert.Equal(t, []unaryWarning{
+		{typeName: provider.WarnUnsupported, feature: warningUnsupportedFeature, details: warningUnsupportedDetails},
+		{typeName: provider.WarnCompatibility, feature: warningCompatibilityFeature, details: warningCompatibilityDetails},
+		{typeName: provider.WarnDeprecated, setting: warningDeprecatedSetting, message: warningDeprecatedMessage},
+		{typeName: provider.WarnOther, message: warningOtherMessage},
+	}, mapped)
+	assert.Contains(t, string(body), `"modelId":"canonical/public"`)
+
+	empty, err := mapWarnings([]provider.Warning{
+		{Type: provider.WarnUnsupported},
+		{Type: provider.WarnCompatibility},
+		{Type: provider.WarnDeprecated},
+		{Type: provider.WarnOther},
+	}, 1<<20)
+	require.NoError(t, err)
+	assert.Equal(t, mapped, empty)
+
+	_, err = mapWarnings([]provider.Warning{{Type: provider.WarningType("future")}}, 1<<20)
+	assert.Error(t, err)
+	tooMany := make([]provider.Warning, 1_000)
+	for i := range tooMany {
+		tooMany[i].Type = provider.WarnOther
+	}
+	_, err = mapWarnings(tooMany, 128)
+	assert.Error(t, err)
+}
+
 func TestUnarySuccessMappingRejectsInvalidProviderResults(t *testing.T) {
 	negative := -1
 	tooLarge := maxJavaScriptSafeInteger + 1
@@ -163,7 +212,6 @@ func TestUnarySuccessMappingRejectsInvalidProviderResults(t *testing.T) {
 		{name: "negative usage", result: &provider.GenerateResult{FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: provider.Usage{InputTokens: provider.InputTokenUsage{Total: &negative}}}, modelID: "canonical"},
 		{name: "usage above javascript maximum", result: &provider.GenerateResult{FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: provider.Usage{OutputTokens: provider.OutputTokenUsage{Total: &tooLarge}}}, modelID: "canonical"},
 		{name: "invalid content utf8", result: &provider.GenerateResult{Content: []provider.GenerateContentPart{{Type: provider.ContentText, Text: invalidUTF8}}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}, modelID: "canonical"},
-		{name: "invalid warning utf8", result: &provider.GenerateResult{FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}, Warnings: []provider.Warning{{Type: provider.WarnOther, Message: invalidUTF8}}}, modelID: "canonical"},
 		{name: "invalid finish utf8", result: &provider.GenerateResult{FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop, Raw: invalidUTF8}}, modelID: "canonical"},
 		{name: "invalid response id utf8", result: &provider.GenerateResult{FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}, Response: &provider.GenerateResponse{ResponseMetadata: provider.ResponseMetadata{ID: invalidUTF8}}}, modelID: "canonical"},
 		{name: "invalid model id utf8", result: validGenerateResult(), modelID: invalidUTF8},
@@ -219,7 +267,7 @@ func TestUnarySuccessPrivacyAndCanonicalIdentity(t *testing.T) {
 		"content":[{"type":"text","text":""}],
 		"finishReason":{"unified":"stop","raw":"native-stop"},
 		"usage":{"inputTokens":{"total":3},"outputTokens":{}},
-		"warnings":[{"type":"other","message":"public warning"}],
+		"warnings":[{"type":"other","message":"the model reported a warning"}],
 		"response":{"id":"response-public","modelId":"canonical/model","timestamp":"2026-08-22T00:00:00Z"}
 	}`, response.Body.String())
 	for _, private := range []string{

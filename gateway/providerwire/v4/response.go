@@ -12,9 +12,17 @@ import (
 )
 
 const (
-	maxJavaScriptSafeInteger = 9007199254740991
-	minimumTextPartBytes     = int64(len(`{"type":"text","text":""}`))
-	minimumWarningBytes      = int64(len(`{"type":"other","message":""}`))
+	maxJavaScriptSafeInteger    = 9007199254740991
+	minimumTextPartBytes        = int64(len(`{"type":"text","text":""}`))
+	minimumMappedWarningBytes   = int64(len(`{"type":"other","message":"the model reported a warning"}`))
+	minimumUnaryWithoutWarnings = int64(len(`{"content":[],"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}},"warnings":[],"response":{"modelId":""}}`))
+	warningUnsupportedFeature   = "model capability"
+	warningUnsupportedDetails   = "a requested model capability is unsupported"
+	warningCompatibilityFeature = "model compatibility"
+	warningCompatibilityDetails = "a requested setting was adjusted for model compatibility"
+	warningDeprecatedSetting    = "model setting"
+	warningDeprecatedMessage    = "a requested model setting is deprecated"
+	warningOtherMessage         = "the model reported a warning"
 )
 
 var errInvalidUnarySuccess = errors.New("providerwire v4: invalid unary success")
@@ -68,14 +76,13 @@ func mapUnarySuccess(result *provider.GenerateResult, modelID string, limit int6
 	if result == nil || modelID == "" || !budget.take(modelID) {
 		return unarySuccess{}, errInvalidUnarySuccess
 	}
-	if int64(len(result.Content)) > limit/minimumTextPartBytes || int64(len(result.Warnings)) > limit/minimumWarningBytes {
+	if int64(len(result.Content)) > limit/minimumTextPartBytes || !warningCountFits(len(result.Warnings), limit, minimumUnaryWithoutWarnings+int64(len(modelID))) {
 		return unarySuccess{}, errInvalidUnarySuccess
 	}
 
 	mapped := unarySuccess{
 		content:      make([]unaryTextPart, 0, len(result.Content)),
 		finishReason: result.FinishReason,
-		warnings:     make([]unaryWarning, 0, len(result.Warnings)),
 		modelID:      modelID,
 	}
 	for _, part := range result.Content {
@@ -85,14 +92,7 @@ func mapUnarySuccess(result *provider.GenerateResult, modelID string, limit int6
 		mapped.content = append(mapped.content, unaryTextPart{text: part.Text})
 	}
 
-	switch result.FinishReason.Unified {
-	case provider.FinishReasonStop,
-		provider.FinishReasonLength,
-		provider.FinishReasonContentFilter,
-		provider.FinishReasonToolCalls,
-		provider.FinishReasonError,
-		provider.FinishReasonOther:
-	default:
+	if !validUnifiedFinishReason(result.FinishReason.Unified) {
 		return unarySuccess{}, errInvalidUnarySuccess
 	}
 	if !budget.take(result.FinishReason.Raw) {
@@ -109,37 +109,9 @@ func mapUnarySuccess(result *provider.GenerateResult, modelID string, limit int6
 		return unarySuccess{}, err
 	}
 
-	for _, warning := range result.Warnings {
-		switch warning.Type {
-		case provider.WarnUnsupported, provider.WarnCompatibility:
-			if !budget.take(warning.Feature) || !budget.take(warning.Details) {
-				return unarySuccess{}, errInvalidUnarySuccess
-			}
-			mapped.warnings = append(mapped.warnings, unaryWarning{
-				typeName: warning.Type,
-				feature:  warning.Feature,
-				details:  warning.Details,
-			})
-		case provider.WarnDeprecated:
-			if !budget.take(warning.Setting) || !budget.take(warning.Message) {
-				return unarySuccess{}, errInvalidUnarySuccess
-			}
-			mapped.warnings = append(mapped.warnings, unaryWarning{
-				typeName: warning.Type,
-				setting:  warning.Setting,
-				message:  warning.Message,
-			})
-		case provider.WarnOther:
-			if !budget.take(warning.Message) {
-				return unarySuccess{}, errInvalidUnarySuccess
-			}
-			mapped.warnings = append(mapped.warnings, unaryWarning{
-				typeName: warning.Type,
-				message:  warning.Message,
-			})
-		default:
-			return unarySuccess{}, errInvalidUnarySuccess
-		}
+	mapped.warnings, err = mapWarnings(result.Warnings, limit)
+	if err != nil {
+		return unarySuccess{}, err
 	}
 
 	if result.Response != nil {
@@ -150,6 +122,68 @@ func mapUnarySuccess(result *provider.GenerateResult, modelID string, limit int6
 		mapped.timestamp = result.Response.Timestamp.UTC()
 	}
 	return mapped, nil
+}
+
+func warningCountFits(count int, limit, emptyContainerBytes int64) bool {
+	if count == 0 {
+		return emptyContainerBytes <= limit
+	}
+	available := limit - emptyContainerBytes
+	if available < minimumMappedWarningBytes {
+		return false
+	}
+	return int64(count) <= (available+1)/(minimumMappedWarningBytes+1)
+}
+
+func mapWarnings(warnings []provider.Warning, limit int64) ([]unaryWarning, error) {
+	if limit <= 0 || int64(len(warnings)) > limit/minimumMappedWarningBytes {
+		return nil, errInvalidUnarySuccess
+	}
+	mapped := make([]unaryWarning, 0, len(warnings))
+	for _, warning := range warnings {
+		switch warning.Type {
+		case provider.WarnUnsupported:
+			mapped = append(mapped, unaryWarning{
+				typeName: warning.Type,
+				feature:  warningUnsupportedFeature,
+				details:  warningUnsupportedDetails,
+			})
+		case provider.WarnCompatibility:
+			mapped = append(mapped, unaryWarning{
+				typeName: warning.Type,
+				feature:  warningCompatibilityFeature,
+				details:  warningCompatibilityDetails,
+			})
+		case provider.WarnDeprecated:
+			mapped = append(mapped, unaryWarning{
+				typeName: warning.Type,
+				setting:  warningDeprecatedSetting,
+				message:  warningDeprecatedMessage,
+			})
+		case provider.WarnOther:
+			mapped = append(mapped, unaryWarning{
+				typeName: warning.Type,
+				message:  warningOtherMessage,
+			})
+		default:
+			return nil, errInvalidUnarySuccess
+		}
+	}
+	return mapped, nil
+}
+
+func validUnifiedFinishReason(reason provider.UnifiedFinishReason) bool {
+	switch reason {
+	case provider.FinishReasonStop,
+		provider.FinishReasonLength,
+		provider.FinishReasonContentFilter,
+		provider.FinishReasonToolCalls,
+		provider.FinishReasonError,
+		provider.FinishReasonOther:
+		return true
+	default:
+		return false
+	}
 }
 
 func mapInputUsage(usage provider.InputTokenUsage) (unaryTokenUsage, error) {

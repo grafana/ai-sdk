@@ -38,13 +38,17 @@ func (p *policyStub) Apply(_ context.Context, options provider.CallOptions) (pro
 
 func testLimits() Limits {
 	return Limits{
-		RequestBytes:       1 << 20,
-		JSONDepth:          64,
-		JSONTokens:         100_000,
-		NumberBytes:        128,
-		UnaryResponseBytes: 1 << 20,
-		ErrorResponseBytes: 1 << 20,
-		ModelDuration:      time.Second,
+		RequestBytes:        1 << 20,
+		JSONDepth:           64,
+		JSONTokens:          100_000,
+		NumberBytes:         128,
+		UnaryResponseBytes:  1 << 20,
+		ErrorResponseBytes:  1 << 20,
+		StreamParts:         1_000,
+		StreamFrameBytes:    1 << 20,
+		ModelDuration:       time.Second,
+		StreamIdleDuration:  time.Second,
+		StreamDrainDuration: 100 * time.Millisecond,
 	}
 }
 
@@ -76,16 +80,18 @@ func TestNew(t *testing.T) {
 		require.NotNil(t, h.requestSchema)
 		require.NotNil(t, h.unarySuccessSchema)
 		require.NotNil(t, h.errorSchema)
+		require.NotNil(t, h.streamEventSchema)
 		assert.IsType(t, noOpPolicy{}, h.policy)
 
 		limits.RequestBytes = 1
 		assert.Equal(t, int64(1<<20), h.limits.RequestBytes)
 	})
 
-	t.Run("small positive unary response and exact error fallback limits", func(t *testing.T) {
+	t.Run("small positive unary response and exact fallback limits", func(t *testing.T) {
 		limits := testLimits()
 		limits.UnaryResponseBytes = 1
 		limits.ErrorResponseBytes = int64(len(canonicalInternalError))
+		limits.StreamFrameBytes = int64(max(len(canonicalEmptyStartFrame), len(canonicalInternalStreamErrorFrame)))
 		_, err := New(Config{Resolver: &resolverStub{}, Limits: limits})
 		require.NoError(t, err)
 	})
@@ -123,9 +129,20 @@ func TestNew(t *testing.T) {
 			{name: "unary overflow", mutate: func(l *Limits) { l.UnaryResponseBytes = math.MaxInt64 }},
 			{name: "error zero", mutate: func(l *Limits) { l.ErrorResponseBytes = 0 }},
 			{name: "error overflow", mutate: func(l *Limits) { l.ErrorResponseBytes = math.MaxInt64 }},
+			{name: "stream parts zero", mutate: func(l *Limits) { l.StreamParts = 0 }},
+			{name: "stream parts negative", mutate: func(l *Limits) { l.StreamParts = -1 }},
+			{name: "stream parts overflow", mutate: func(l *Limits) { l.StreamParts = int(^uint(0) >> 1) }},
+			{name: "stream frame zero", mutate: func(l *Limits) { l.StreamFrameBytes = 0 }},
+			{name: "stream frame overflow", mutate: func(l *Limits) { l.StreamFrameBytes = math.MaxInt64 }},
 			{name: "duration zero", mutate: func(l *Limits) { l.ModelDuration = 0 }},
 			{name: "duration negative", mutate: func(l *Limits) { l.ModelDuration = -time.Second }},
+			{name: "idle zero", mutate: func(l *Limits) { l.StreamIdleDuration = 0 }},
+			{name: "idle negative", mutate: func(l *Limits) { l.StreamIdleDuration = -time.Second }},
+			{name: "drain zero", mutate: func(l *Limits) { l.StreamDrainDuration = 0 }},
+			{name: "drain negative", mutate: func(l *Limits) { l.StreamDrainDuration = -time.Second }},
 			{name: "error fallback too small", mutate: func(l *Limits) { l.ErrorResponseBytes = int64(len(canonicalInternalError) - 1) }},
+			{name: "start frame fallback too small", mutate: func(l *Limits) { l.StreamFrameBytes = int64(len(canonicalEmptyStartFrame) - 1) }},
+			{name: "error frame fallback too small", mutate: func(l *Limits) { l.StreamFrameBytes = int64(len(canonicalInternalStreamErrorFrame) - 1) }},
 		}
 		for _, tc := range tests {
 			t.Run(tc.name, func(t *testing.T) {
@@ -169,7 +186,6 @@ func TestHandlerEnvelope(t *testing.T) {
 			r.Header[http.CanonicalHeaderKey(HeaderStreaming)] = []string{"false", "false"}
 		}},
 		{name: "stream collision normalized", mutate: func(r *http.Request) { r.Header[HeaderStreaming] = []string{"false"} }},
-		{name: "stream true", mutate: func(r *http.Request) { r.Header.Set(HeaderStreaming, "true") }},
 		{name: "stream invalid", mutate: func(r *http.Request) { r.Header.Set(HeaderStreaming, "False") }},
 	}
 
@@ -197,12 +213,16 @@ func TestHandlerEnvelope(t *testing.T) {
 		})
 	}
 
-	t.Run("valid preserves model and ignores unrelated headers", func(t *testing.T) {
-		req := validRequest(`{"prompt":[]}`)
-		req.Header.Set("X-Host-Only", "private")
-		validated, failure := h.validateRequest(req)
-		require.Nil(t, failure)
-		assert.Equal(t, " public/model ", validated.modelID)
+	t.Run("valid modes preserve model and ignore unrelated headers", func(t *testing.T) {
+		for value, mode := range map[string]executionMode{"false": executionUnary, "true": executionStreaming} {
+			req := validRequest(`{"prompt":[]}`)
+			req.Header.Set(HeaderStreaming, value)
+			req.Header.Set("X-Host-Only", "private")
+			validated, failure := h.validateRequest(req)
+			require.Nil(t, failure)
+			assert.Equal(t, " public/model ", validated.modelID)
+			assert.Equal(t, mode, validated.mode)
+		}
 	})
 }
 

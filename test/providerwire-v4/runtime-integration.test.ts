@@ -16,6 +16,7 @@ import {
   GatewayModelNotFoundError,
   GatewayRateLimitError,
 } from "@ai-sdk/gateway";
+import type { LanguageModelV4StreamPart } from "@ai-sdk/provider";
 
 const TEST_DIR = dirname(fileURLToPath(import.meta.url));
 const SERVER_DIR = resolve(TEST_DIR, "../integration/testserver");
@@ -102,17 +103,88 @@ function model(modelID: string, control?: string) {
   })(modelID);
 }
 
-async function stats(): Promise<{ successCalls: number; blockingCalls: number; cancellations: number }> {
+type RuntimeStats = {
+  successCalls: number;
+  streamCalls: number;
+  blockingCalls: number;
+  streamBlockingCalls: number;
+  cancellations: number;
+};
+
+async function stats(): Promise<RuntimeStats> {
   const response = await fetch(`${baseURL}/providerwire-v4/stats`);
   assert.equal(response.ok, true);
-  return await response.json() as { successCalls: number; blockingCalls: number; cancellations: number };
+  return await response.json() as RuntimeStats;
+}
+
+async function collect(stream: ReadableStream<LanguageModelV4StreamPart>) {
+  const reader = stream.getReader();
+  const parts: LanguageModelV4StreamPart[] = [];
+  for (;;) {
+    const result = await reader.read();
+    if (result.done) return parts;
+    parts.push(result.value);
+  }
 }
 
 before(async () => { baseURL = await startServer(); });
 after(async () => { await stopServer(); });
 
+describe("real ProviderWire V4 streaming runtime", () => {
+  it("consumes normalized text, ordered errors, timeout, finish, and clean EOF", async () => {
+    const normal = await model("success").doStream({ prompt: [] });
+    const normalParts = await collect(normal.stream);
+    assert.deepEqual(normalParts.map((part) => part.type), [
+      "stream-start", "response-metadata", "text-start", "text-delta", "text-delta", "text-end", "finish",
+    ]);
+    assert.deepEqual(normalParts[0], {
+      type: "stream-start",
+      warnings: [{ type: "other", message: "the model reported a warning" }],
+    });
+    assert.deepEqual(normalParts.filter((part) => part.type === "text-delta").map((part) => part.delta), ["", "hello from Go stream"]);
+    const metadata = normalParts.find((part) => part.type === "response-metadata");
+    assert.equal(metadata?.type, "response-metadata");
+    if (metadata?.type === "response-metadata") {
+      assert.equal(metadata.modelId, "success");
+      assert.equal(metadata.timestamp instanceof Date, true);
+    }
+
+    const withErrors = await model("stream-errors").doStream({ prompt: [] });
+    const errorParts = await collect(withErrors.stream);
+    assert.deepEqual(errorParts.map((part) => part.type), [
+      "stream-start", "error", "text-start", "error", "text-delta", "text-end", "finish",
+    ]);
+    const codes = errorParts
+      .filter((part) => part.type === "error")
+      .map((part) => (part.error as { code: string }).code);
+    assert.deepEqual(codes, ["overloaded", "failed_dependency"]);
+
+    const timedOut = await model("stream-timeout").doStream({ prompt: [] });
+    const timeoutParts = await collect(timedOut.stream);
+    assert.deepEqual(timeoutParts.map((part) => part.type), ["stream-start", "error"]);
+    const timeout = timeoutParts[1];
+    assert.equal(timeout.type, "error");
+    if (timeout.type === "error") assert.equal((timeout.error as { code: string }).code, "timeout");
+  });
+
+  it("aborts only after the silent stream is established and cancels provider context", async () => {
+    const initial = await stats();
+    const controller = new AbortController();
+    const result = await model("stream-blocking").doStream({ prompt: [], abortSignal: controller.signal });
+    await waitFor(async () => (await stats()).streamBlockingCalls > initial.streamBlockingCalls ? true : undefined);
+
+    controller.abort();
+    await assert.rejects(async () => await collect(result.stream));
+    await waitFor(
+      async () => (await stats()).cancellations > initial.cancellations ? true : undefined,
+      CANCELLATION_TIMEOUT_MS,
+    );
+  });
+});
+
 describe("real ProviderWire V4 unary runtime", () => {
   it("consumes production-handler text, usage, and finish output", async () => {
+    const initial = await stats();
     const result = await model("success").doGenerate({
       prompt: [{ role: "system", content: "hello" }],
     });
@@ -124,7 +196,7 @@ describe("real ProviderWire V4 unary runtime", () => {
       outputTokens: { total: 1, text: 1, reasoning: 0 },
     });
     assert.deepEqual(result.warnings, []);
-    assert.equal((await stats()).successCalls, 1);
+    assert.equal((await stats()).successCalls, initial.successCalls + 1);
   });
 
   type ErrorCase = {
