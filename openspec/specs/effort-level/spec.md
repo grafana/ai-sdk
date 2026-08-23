@@ -64,7 +64,7 @@ The matching order SHALL be specific-first (e.g., `claude-sonnet-4-6` checked be
 - **THEN** it SHALL return `maxOutputTokens: 4096`, `supportsAdaptiveThinking: false`, `isKnownModel: false`
 
 ### Requirement: Reasoning resolution for adaptive-capable models
-When `CallOptions.Reasoning` is set to a custom level (not nil, not `"provider-default"`) and the model supports adaptive thinking, the Anthropic provider SHALL set `thinking: adaptive` and map the reasoning level to an effort value:
+When `CallOptions.Reasoning` is a non-zero operational level other than `ReasoningNone` and the model supports adaptive thinking, the Anthropic provider SHALL set `thinking: adaptive` and map the reasoning level to an effort value:
 
 | CallOptions.Reasoning | Anthropic effort |
 |---|---|
@@ -97,7 +97,7 @@ The provider SHALL emit a `compatibility` warning when the mapped effort value d
 - **AND** a `compatibility` warning SHALL be emitted
 
 ### Requirement: Reasoning resolution for budget-based models
-When `CallOptions.Reasoning` is set to a custom level (not nil, not `"provider-default"`, not `"none"`) and the model does NOT support adaptive thinking, the Anthropic provider SHALL set `thinking: enabled` with a computed `budgetTokens` value. The budget SHALL be calculated as `clamp(round(maxOutputTokens * percentage), 1024, maxOutputTokens)` where the percentages are:
+When `CallOptions.Reasoning` is a non-zero operational level other than `ReasoningNone` and the model does NOT support adaptive thinking, the Anthropic provider SHALL set `thinking: enabled` with a computed `budgetTokens` value. The budget SHALL be calculated as `clamp(round(maxOutputTokens * percentage), 1024, maxOutputTokens)` where the percentages are:
 
 | CallOptions.Reasoning | Percentage |
 |---|---|
@@ -136,15 +136,19 @@ When `CallOptions.Reasoning` is `"none"`, the Anthropic provider SHALL set `thin
 - **AND** no effort beta header SHALL be added
 
 ### Requirement: Reasoning nil and provider-default are no-ops
-When `CallOptions.Reasoning` is nil or `"provider-default"`, the Anthropic provider SHALL NOT set any thinking or effort configuration from the reasoning field. Existing provider-option-based configuration is unaffected.
+When `CallOptions.Reasoning` is the zero-valued `ReasoningProviderDefault`, the Anthropic provider SHALL NOT set any thinking or effort configuration from the reasoning field. A strict wire adapter receiving explicit `"provider-default"` SHALL normalize it to the same zero value. Existing provider-option-based configuration is unaffected.
 
-#### Scenario: Reasoning nil
-- **WHEN** `CallOptions.Reasoning` is nil
+#### Scenario: Reasoning zero value
+- **WHEN** `CallOptions.Reasoning` is not explicitly set
 - **THEN** the reasoning mapping SHALL be skipped entirely
 
-#### Scenario: Reasoning provider-default
-- **WHEN** `CallOptions.Reasoning` is `"provider-default"`
-- **THEN** the reasoning mapping SHALL be skipped entirely
+#### Scenario: Explicit wire provider-default
+- **WHEN** ProviderWire maps explicit `"provider-default"` into `CallOptions.Reasoning`
+- **THEN** the Anthropic reasoning mapping SHALL be skipped entirely
+
+#### Scenario: Provider options remain authoritative
+- **WHEN** zero-valued reasoning is combined with Anthropic `thinking` or `effort` provider options
+- **THEN** those provider options SHALL retain their existing behavior
 
 ### Requirement: Provider options take precedence over CallOptions.Reasoning
 The provider option `effort` SHALL gate the reasoning mapping entirely: when `ProviderOptions["anthropic"]["effort"]` is set, no part of the reasoning mapping SHALL be applied. The provider option `thinking` SHALL only gate the thinking portion of the mapping: when `ProviderOptions["anthropic"]["thinking"]` is set without `effort`, the provider-supplied thinking config SHALL be preserved AND the effort SHALL still be derived from the top-level `CallOptions.Reasoning`. When `ProviderOptions["anthropic"]["thinking"]` is set to `{"type":"disabled"}`, the derived effort SHALL NOT be applied (mirrors upstream `anthropic-language-model.ts:406-411`). This mirrors upstream's gating logic where `anthropicOptions?.effort == null` is the sole condition for invoking the reasoning resolver, while the derived `thinking` field is only assigned when `anthropicOptions.thinking == null`.

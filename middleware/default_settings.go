@@ -60,8 +60,8 @@ func DefaultSettings(settings DefaultSettingsOptions) Middleware {
 			if p.Seed == nil && settings.Seed != nil {
 				p.Seed = settings.Seed
 			}
-			if p.Reasoning == nil && settings.Reasoning != nil {
-				p.Reasoning = settings.Reasoning
+			if p.Reasoning == provider.ReasoningProviderDefault && settings.Reasoning != nil {
+				p.Reasoning = *settings.Reasoning
 			}
 			if p.Tools == nil && settings.Tools != nil {
 				p.Tools = settings.Tools

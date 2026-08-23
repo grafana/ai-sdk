@@ -210,6 +210,22 @@ func TestDefaultSettings(t *testing.T) {
 		assert.Equal(t, 0.1, *received.PresencePenalty)
 		assert.Equal(t, 0.2, *received.FrequencyPenalty)
 		assert.Equal(t, 42, *received.Seed)
-		assert.Equal(t, provider.ReasoningMedium, *received.Reasoning)
+		assert.Equal(t, provider.ReasoningMedium, received.Reasoning)
+	})
+
+	t.Run("CallerReasoningTakesPrecedence", func(t *testing.T) {
+		var received provider.CallOptions
+		model := &mockModel{
+			doGenerate: func(_ context.Context, params provider.CallOptions) (*provider.GenerateResult, error) {
+				received = params
+				return &provider.GenerateResult{}, nil
+			},
+		}
+
+		mw := DefaultSettings(DefaultSettingsOptions{Reasoning: ptr(provider.ReasoningMedium)})
+		wrapped := WrapLanguageModel(model, mw)
+		_, err := wrapped.DoGenerate(context.Background(), provider.CallOptions{Reasoning: provider.ReasoningHigh})
+		require.NoError(t, err)
+		assert.Equal(t, provider.ReasoningHigh, received.Reasoning)
 	})
 }

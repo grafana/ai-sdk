@@ -33,6 +33,12 @@ func TestConfig_Operation(t *testing.T) {
 			extra:     "uiMessages: []\ntools: {}\nproviderTools: {}\nactiveTools: []\napprovals: []\nreasoning: \"\"\n",
 			want:      OperationGenerate,
 		},
+		{
+			name:      "accepts provider default reasoning as no-op",
+			operation: "generate",
+			extra:     "reasoning: provider-default\n",
+			want:      OperationGenerate,
+		},
 		{name: "rejects unknown", operation: "invalid", wantErr: true},
 		{
 			name:      "rejects unsupported generate fields",
@@ -198,7 +204,7 @@ func TestConfig_BuildToolSetPreservesExplicitFalseStrict(t *testing.T) {
 
 func TestConfig_BuildStreamOptionsActiveTools(t *testing.T) {
 	var receivedTools []provider.Tool
-	var receivedReasoning *provider.ReasoningEffort
+	var receivedReasoning provider.ReasoningEffort
 	model := &configCaptureModel{
 		streamFunc: func(_ context.Context, opts provider.CallOptions) (*provider.StreamResult, error) {
 			receivedTools = opts.Tools
@@ -239,8 +245,33 @@ func TestConfig_BuildStreamOptionsActiveTools(t *testing.T) {
 	}
 	assert.True(t, names["search"])
 	assert.True(t, names["weather"])
-	require.NotNil(t, receivedReasoning)
-	assert.Equal(t, provider.ReasoningHigh, *receivedReasoning)
+	assert.Equal(t, provider.ReasoningHigh, receivedReasoning)
+}
+
+func TestConfig_BuildStreamOptionsProviderDefaultReasoning(t *testing.T) {
+	var receivedReasoning provider.ReasoningEffort
+	model := &configCaptureModel{
+		streamFunc: func(_ context.Context, opts provider.CallOptions) (*provider.StreamResult, error) {
+			receivedReasoning = opts.Reasoning
+			stream := make(chan provider.StreamPart)
+			close(stream)
+			return &provider.StreamResult{Stream: stream}, nil
+		},
+	}
+	cfg := Config{Reasoning: wireReasoningProviderDefault}
+
+	result := aisdk.StreamText(context.Background(), model, cfg.buildStreamOptions(
+		[]provider.Message{provider.UserText("hi")},
+		nil,
+		nil,
+		[]aisdk.StopCondition{aisdk.StepCountIs(1)},
+		nil,
+		nil,
+	)...)
+	for range result.FullStream() {
+	}
+
+	assert.Equal(t, provider.ReasoningProviderDefault, receivedReasoning)
 }
 
 func TestConfig_BuildMessagesConfiguredFileReference(t *testing.T) {
