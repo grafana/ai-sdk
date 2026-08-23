@@ -232,14 +232,22 @@ The repository SHALL provide a focused explicit command that regenerates committ
 
 ### Requirement: Contract evidence boundary
 
-The ProviderWire V4 workspace SHALL describe one strict HTTP dialect compatible with the exact registered public client. It SHALL NOT claim compatibility with every request accepted by Vercel's private Gateway service. Client-consumption probes SHALL NOT serve as unary, stream, or error response authority for the future Go server.
+The ProviderWire V4 workspace SHALL describe one strict HTTP dialect compatible with the exact registered public client. It SHALL NOT claim compatibility with every request accepted by Vercel's private Gateway service. Client-consumption probes SHALL NOT serve as unary, stream, or error response authority for the Go server. The strict unary runtime SHALL instead use private DTOs, local response schemas, raw HTTP assertions, privacy and bounds tests, and semantic replay of the committed client requests.
 
 #### Scenario: Client overwrites or permissively accepts fields
 - **WHEN** the registered client masks a server field or accepts arbitrary response JSON
 - **THEN** the contract documentation and tests SHALL identify the limitation
-- **AND** future server correctness SHALL require independent DTO, schema, raw HTTP, privacy, lifecycle, and bounds evidence
+- **AND** Go server correctness SHALL require independent DTO, schema, raw HTTP, privacy, sequencing, and bounds evidence
 
-#### Scenario: No executable server is implied
-- **WHEN** this contract change is complete
-- **THEN** the repository SHALL contain no new ProviderWire V4 handler, model resolver, provider invocation path, or Go client
-- **AND** Go replay of committed requests SHALL remain a dependency of the strict unary runtime work package
+#### Scenario: Production unary replay is established
+- **WHEN** the strict unary runtime is complete
+- **THEN** each committed request emitted by the registered client SHALL replay to its expected unary stage
+- **AND** streaming records SHALL fail unary envelope validation without reaching the mapper
+- **AND** unary records SHALL reach schema validation and either supported execution or their deterministic first unsupported capability
+- **AND** dedicated supported scalar and focused one-capability requests SHALL provide evidence that multi-capability goldens cannot provide
+- **AND** a pinned registered client SHALL complete a supported unary text call against the real Go handler
+
+#### Scenario: Streaming remains deferred
+- **WHEN** this unary runtime change is complete
+- **THEN** strict streaming commitment, event state, SSE framing, and clean-EOF behavior SHALL remain unimplemented by the Go handler
+- **AND** the phase 2 streaming client probes SHALL remain consumption evidence only

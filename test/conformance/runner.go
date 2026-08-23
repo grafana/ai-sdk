@@ -32,8 +32,9 @@ import (
 type Operation string
 
 const (
-	OperationStream   Operation = "stream"
-	OperationGenerate Operation = "generate"
+	OperationStream              Operation                = "stream"
+	OperationGenerate            Operation                = "generate"
+	wireReasoningProviderDefault provider.ReasoningEffort = "provider-default"
 )
 
 type Config struct {
@@ -213,7 +214,7 @@ func LoadConfig(path string) (*Config, error) {
 		if len(cfg.ActiveTools) > 0 {
 			unsupported = append(unsupported, "activeTools")
 		}
-		if cfg.Reasoning != "" {
+		if cfg.reasoning() != provider.ReasoningProviderDefault {
 			unsupported = append(unsupported, "reasoning")
 		}
 		if cfg.StreamOptions != nil {
@@ -245,6 +246,13 @@ func LoadConfig(path string) (*Config, error) {
 		cfg.StopWhenStepCount = 1
 	}
 	return &cfg, nil
+}
+
+func (cfg *Config) reasoning() provider.ReasoningEffort {
+	if cfg.Reasoning == wireReasoningProviderDefault {
+		return provider.ReasoningProviderDefault
+	}
+	return cfg.Reasoning
 }
 
 func (cfg *Config) BuildResponseFormat() (*provider.ResponseFormat, error) {
@@ -392,8 +400,8 @@ func (cfg *Config) buildStreamOptions(messages []provider.Message, tools aisdk.T
 	if len(cfg.ActiveTools) > 0 {
 		streamOpts = append(streamOpts, aisdk.WithActiveTools(cfg.ActiveTools...))
 	}
-	if cfg.Reasoning != "" {
-		streamOpts = append(streamOpts, aisdk.WithReasoning(cfg.Reasoning))
+	if reasoning := cfg.reasoning(); reasoning != provider.ReasoningProviderDefault {
+		streamOpts = append(streamOpts, aisdk.WithReasoning(reasoning))
 	}
 	if len(cfg.Headers) > 0 {
 		streamOpts = append(streamOpts, aisdk.WithHeaders(cfg.Headers))

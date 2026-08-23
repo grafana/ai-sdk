@@ -35,6 +35,10 @@ func main() {
 		handler(w, r)
 	})
 
+	if err := registerProviderWireV4(mux); err != nil {
+		log.Fatalf("failed to register ProviderWire V4 scenario: %v", err)
+	}
+
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)

@@ -5,7 +5,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test:schema": "tsx --test schema.test.ts schema-definitions.test.ts request-goldens.test.ts update-goldens.test.ts",
-    "test:client": "tsx --test client-consumption.test.ts",
+    "test:client": "tsx --test client-consumption.test.ts runtime-integration.test.ts",
     "test": "pnpm run typecheck && pnpm run test:schema && pnpm run test:client",
     "update-goldens": "tsx update-goldens.ts"
   },
