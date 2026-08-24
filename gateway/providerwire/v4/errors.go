@@ -2,7 +2,6 @@ package v4
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net"
 	"net/http"
@@ -325,14 +324,5 @@ func encodeSafeError(value safeError, limit int64) ([]byte, int, bool) {
 }
 
 func (h *handler) writeSafeError(w http.ResponseWriter, value safeError) {
-	body, status, ok := encodeSafeError(value, h.limits.ErrorResponseBytes)
-	if ok && h.errorSchema.Validate(json.RawMessage(body)) == nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(status)
-		_, _ = w.Write(body)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusInternalServerError)
-	_, _ = w.Write(canonicalInternalError)
+	writeSafeError(w, value, h.limits.ErrorResponseBytes, h.errorSchema)
 }

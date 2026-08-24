@@ -170,7 +170,6 @@ func validateLimits(limits Limits) error {
 	}{
 		{name: "request bytes", value: limits.RequestBytes},
 		{name: "unary response bytes", value: limits.UnaryResponseBytes},
-		{name: "error response bytes", value: limits.ErrorResponseBytes},
 		{name: "stream frame bytes", value: limits.StreamFrameBytes},
 	}
 	for _, limit := range byteLimits {
@@ -208,8 +207,8 @@ func validateLimits(limits Limits) error {
 	if limits.StreamDrainDuration <= 0 {
 		return fmt.Errorf("providerwire v4: stream drain duration must be positive")
 	}
-	if int64(len(canonicalInternalError)) > limits.ErrorResponseBytes {
-		return fmt.Errorf("providerwire v4: error response bytes cannot contain canonical internal error")
+	if err := validateErrorResponseBytes(limits.ErrorResponseBytes); err != nil {
+		return err
 	}
 	if int64(len(canonicalEmptyStartFrame)) > limits.StreamFrameBytes {
 		return fmt.Errorf("providerwire v4: stream frame bytes cannot contain canonical empty start")
