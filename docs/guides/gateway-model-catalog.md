@@ -170,4 +170,4 @@ status codes, response envelopes, or another transport's lifecycle.
 
 ---
 
-← [Writing a provider](../providers/writing-a-provider.md) · [Docs index](../README.md) · [Legacy ProviderWire retirement →](provider-wire-retirement.md)
+← [Writing a provider](../providers/writing-a-provider.md) · [Docs index](../README.md) · [Production checklist →](../best-practices/production.md)

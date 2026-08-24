@@ -81,8 +81,6 @@ These guides are for teams hosting shared model access or extending the SDK:
 
 - [Gateway model catalog](guides/gateway-model-catalog.md) — expose stable public
   model names, aliases, metadata, and discovery.
-- [Legacy ProviderWire retirement](guides/provider-wire-retirement.md) — plan
-  migration from the removed service-to-service transport.
 - [Writing a provider](providers/writing-a-provider.md) — adapt another model
   service to the common SDK behavior.
 

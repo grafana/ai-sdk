@@ -6,7 +6,7 @@ The existing `gateway/providerwire` server and `providers/grafana` client expose
 
 - **BREAKING** Remove the exported `gateway/providerwire` package, including its handler, codecs, routes, errors, and SSE helpers.
 - **BREAKING** Remove the `github.com/grafana/ai-sdk/providers/grafana` module, including its legacy authentication, options, gateway-error normalization, and client implementation.
-- Document root `v0.1.0-alpha.1` as the rollback point for root-module/server deployments only; preserve Grafana-client source at that repository tag and in Git history without claiming an independently fetchable nested-module version.
+- Record root `v0.1.0-alpha.1` as the rollback point for root-module/server deployments only in the archived migration metadata; preserve Grafana-client source at that repository tag and in Git history without claiming an independently fetchable nested-module version.
 - Remove legacy-only `test/interop` coverage and Grafana provider-wire conformance while retaining provider conformance for Anthropic, Bedrock, OpenAI, and OpenAI-compatible implementations.
 - Remove the retired module and test workspace from `go.work`, `mise` tasks, dependency manifests, baseline validation inputs, and CI-facing checks.
 - Preserve provider-domain JSON behavior and tests, reword only comments or godoc that present provider structs as ProviderWire HTTP authority, and remove the two legacy transport rows from parity coverage.
@@ -39,5 +39,5 @@ None.
 
 - Removes public Go import paths `github.com/grafana/ai-sdk/gateway/providerwire` and `github.com/grafana/ai-sdk/providers/grafana`.
 - Removes the legacy `/language-model` handler implementation and its tolerant request, response, error, and SSE formats.
-- Changes the repository workspace, task graph, TypeScript test workspace, conformance module dependencies, active OpenSpec capabilities, documentation navigation, parity coverage map, and rollback notes.
+- Changes the repository workspace, task graph, TypeScript test workspace, conformance module dependencies, active OpenSpec capabilities, documentation navigation, parity coverage map, and archived migration metadata.
 - Leaves `provider`, concrete provider modules, `gateway/catalog`, `fallback`, `registry`, middleware, root UI-message SSE support, retained TypeScript integration tests, and non-Grafana conformance behavior unchanged.

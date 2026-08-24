@@ -67,7 +67,6 @@ against upstream `main` silently. See the
 
 - [`provider` package](https://pkg.go.dev/github.com/grafana/ai-sdk/provider)
 - [How a request runs](../concepts/architecture.md)
-- [Legacy ProviderWire retirement](../guides/provider-wire-retirement.md)
 
 ---
 

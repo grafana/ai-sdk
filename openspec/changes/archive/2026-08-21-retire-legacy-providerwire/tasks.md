@@ -33,8 +33,7 @@
 - [x] 6.1 Delete `docs/guides/provider-wire-server.md` and `docs/providers/grafana-cloud.md`, then remove their index entries, cross-links, and adjacent-page navigation references.
 - [x] 6.2 Revise `docs/guides/gateway-model-catalog.md` to remain transport-independent and remove examples or claims tied to `providerwire.Handler`.
 - [x] 6.3 Remove retired-provider references from installation, provider overview, middleware, and UI wire-protocol documentation without removing supported catalog, middleware, provider, or UI SSE guidance.
-- [x] 6.4 Add an indexed retirement note identifying `github.com/grafana/ai-sdk@v0.1.0-alpha.1` only as root/server rollback, identifying Grafana-client source at that repository tag or in Git history, and explicitly stating that no independently fetchable Grafana version or strict replacement is provided.
-- [x] 6.5 Apply the retirement deltas for `provider-wire`, `gateway-providerwire-server`, `grafana-provider`, `grafana-provider-options`, `gateway-error-normalization`, `conformance-testing`, `upstream-parity-governance`, `api-call-error`, `docs-structure`, `gateway-model-catalog`, `prometheus-middleware`, and `context-enrichment-middleware` so no active specification requires deleted code or tests.
+- [x] 6.4 Apply the retirement deltas for `provider-wire`, `gateway-providerwire-server`, `grafana-provider`, `grafana-provider-options`, `gateway-error-normalization`, `conformance-testing`, `upstream-parity-governance`, `api-call-error`, `docs-structure`, `gateway-model-catalog`, `prometheus-middleware`, and `context-enrichment-middleware` so no active specification requires deleted code or tests.
 
 ## 7. Verify Repository Integrity
 

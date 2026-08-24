@@ -14,7 +14,7 @@ Root tag `v0.1.0-alpha.1` contains both legacy directories, but it versions only
 - Remove tests, conformance claims, tooling, active specifications, and documentation whose only subject is that transport.
 - Keep transport-independent provider-domain, provider implementation, catalog, fallback, registry, middleware, UI SSE, and integration capabilities intact.
 - Leave the repository build, module graph, parity checks, docs navigation, and CI coherent after removal.
-- Give root/server deployments accurate rollback guidance without overstating nested-module availability.
+- Record the available rollback scope without overstating nested-module availability.
 
 **Non-Goals:**
 
@@ -29,7 +29,7 @@ Root tag `v0.1.0-alpha.1` contains both legacy directories, but it versions only
 
 ### Scope rollback guidance to what is actually versioned
 
-The retirement note will identify `github.com/grafana/ai-sdk@v0.1.0-alpha.1` as the rollback point for root-module/server deployments. The note will not claim that `github.com/grafana/ai-sdk/providers/grafana@v0.1.0-alpha.1` is fetchable: Go nested modules require module-prefixed tags, and none exists. Grafana-client implementation source remains inspectable at repository tag `v0.1.0-alpha.1` and in Git history.
+The archived migration record identifies `github.com/grafana/ai-sdk@v0.1.0-alpha.1` as the rollback point for root-module/server deployments. It does not claim that `github.com/grafana/ai-sdk/providers/grafana@v0.1.0-alpha.1` is fetchable: Go nested modules require module-prefixed tags, and none exists. Grafana-client implementation source remains inspectable at repository tag `v0.1.0-alpha.1` and in Git history.
 
 A module-specific Grafana tag is deferred unless a real external consumer requires an independently installable rollback. The implementation check found known consumers pinned to nested-module pseudo-versions, and each discovered revision resolved through the public Go proxy. Those immutable revisions already provide their existing rollback path, so no need for a new tagged release was established. If that need appears later, release preparation and external module validation must be handled explicitly rather than added as an unverified promise to this retirement change.
 
@@ -71,8 +71,6 @@ A repository-wide import/reference check will guard against orphaned registratio
 
 Delete the legacy server guide and Grafana Cloud provider guide. Edit navigation and adjacent pages to remove links to those pages. Keep `gateway/catalog` documentation, but remove handler-specific examples and describe it only as a reusable resolver/catalog. Keep the root UI-message SSE documentation and remove only statements that conflate it with provider wire.
 
-Add a focused retirement note that scopes `v0.1.0-alpha.1` to root/server rollback, identifies the Grafana client only as source available at that repository tag or in Git history, and states that no independently installable Grafana rollback version or strict replacement is introduced here.
-
 Alternative: remove every document mentioning gateways or Grafana. Rejected because catalog, middleware, and UI SSE are independent supported capabilities.
 
 ### Validate removal without inventing replacement parity evidence
@@ -83,7 +81,7 @@ Run formatting, docs lint, retained TypeScript integration tests, module/build/t
 
 - [Root tag is mistaken for a nested Grafana module version] → State the scope explicitly and do not publish a `go get .../providers/grafana@v0.1.0-alpha.1` command.
 - [An unknown external Grafana-client consumer needs an installable rollback] → Confirm consumer need before implementation; if found, stop and design a real nested-module release rather than silently inventing a tag.
-- [Immediate source break for users of either public package] → Publish accurate root/server rollback guidance and retain Grafana source history; do not imply an in-place migration target exists yet.
+- [Immediate source break for users of either public package] → Retain the archived rollback record and Grafana source history; do not imply an in-place migration target exists yet.
 - [Over-deletion removes useful provider or frontend coverage] → Classify files by dependency on the retired transport and explicitly retain `test/integration`, non-Grafana conformance, provider-domain tests, catalog, fallback, registry, and middleware.
 - [Provider comments continue implying HTTP authority] → Reword only those comments or godoc while preserving provider JSON behavior and tests.
 - [Orphaned active specs or module references contradict the diff] → Update every active capability found by repository-wide search and treat only archived OpenSpec changes as historical.
@@ -94,8 +92,7 @@ Run formatting, docs lint, retained TypeScript integration tests, module/build/t
 
 1. Confirm whether any known external consumer imports the nested `providers/grafana` module and needs an independently installable rollback. If one exists, stop and plan a real module-specific release before removal.
 2. Implement and validate the repository retirement, including retained TypeScript integration tests.
-3. Publish the retirement note identifying `github.com/grafana/ai-sdk@v0.1.0-alpha.1` only for root/server rollback and pointing Grafana-client maintainers to source at repository tag `v0.1.0-alpha.1` or Git history.
-4. Root/server deployments roll back to `v0.1.0-alpha.1`; no independently fetchable Grafana client rollback is promised by this change.
+3. Root/server deployments roll back to `v0.1.0-alpha.1`; no independently fetchable Grafana client rollback is promised by this change.
 
 ## Open Questions
 
