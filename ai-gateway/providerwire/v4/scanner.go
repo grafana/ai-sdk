@@ -24,14 +24,13 @@ type jsonFrame struct {
 }
 
 type jsonScanner struct {
-	data        []byte
-	pos         int
-	maxDepth    int
-	maxTokens   int
-	maxNumber   int
-	tokens      int
-	stack       []jsonFrame
-	rootStarted bool
+	data      []byte
+	pos       int
+	maxDepth  int
+	maxTokens int
+	maxNumber int
+	tokens    int
+	stack     []jsonFrame
 }
 
 func scanJSON(data []byte, maxDepth, maxTokens, maxNumber int) bool {
@@ -48,11 +47,9 @@ func scanJSON(data []byte, maxDepth, maxTokens, maxNumber int) bool {
 }
 
 func (s *jsonScanner) scan() bool {
-	s.skipWhitespace()
 	if !s.consumeValue() {
 		return false
 	}
-	s.rootStarted = true
 
 	for len(s.stack) > 0 {
 		s.skipWhitespace()
@@ -122,7 +119,7 @@ func (s *jsonScanner) scan() bool {
 	}
 
 	s.skipWhitespace()
-	return s.rootStarted && s.pos == len(s.data)
+	return s.pos == len(s.data)
 }
 
 func (s *jsonScanner) consumeObjectKey(frame *jsonFrame) bool {

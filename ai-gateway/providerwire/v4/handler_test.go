@@ -247,14 +247,14 @@ func TestHandlerBodyFailures(t *testing.T) {
 	h := created.(*handler)
 
 	tests := []struct {
-		name         string
-		body         io.ReadCloser
-		wantInternal bool
+		name     string
+		body     io.ReadCloser
+		wantSafe safeErrorCategory
 	}{
 		{name: "nil body"},
-		{name: "read error", body: &failingReadCloser{readErr: errors.New("read secret")}, wantInternal: true},
-		{name: "close error", body: &trackingReadCloser{Reader: strings.NewReader(`{"prompt":[]}`), closeErr: errors.New("close secret")}, wantInternal: true},
-		{name: "read and close error", body: &failingReadCloser{readErr: errors.New("read secret"), closeErr: errors.New("close secret")}, wantInternal: true},
+		{name: "read error", body: &failingReadCloser{readErr: errors.New("read secret")}, wantSafe: safeInternal},
+		{name: "close error", body: &trackingReadCloser{Reader: strings.NewReader(`{"prompt":[]}`), closeErr: errors.New("close secret")}, wantSafe: safeInternal},
+		{name: "read and close error", body: &failingReadCloser{readErr: errors.New("read secret"), closeErr: errors.New("close secret")}, wantSafe: safeInternal},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -263,7 +263,7 @@ func TestHandlerBodyFailures(t *testing.T) {
 			_, failure := h.validateRequest(req)
 			require.NotNil(t, failure)
 			assert.Equal(t, stageBody, failure.stage)
-			assert.Equal(t, tc.wantInternal, failure.internal)
+			assert.Equal(t, tc.wantSafe, failure.safe.category)
 			if body, ok := tc.body.(interface{ wasClosed() bool }); ok {
 				assert.True(t, body.wasClosed())
 			}
@@ -276,7 +276,7 @@ func TestHandlerBodyFailures(t *testing.T) {
 				req.Body = &failingReadCloser{readErr: errors.New("private"), closeErr: errors.New("private")}
 			}
 			h.ServeHTTP(recorder, req)
-			if tc.wantInternal {
+			if tc.wantSafe == safeInternal {
 				assert.Equal(t, http.StatusInternalServerError, recorder.Code)
 				assert.Equal(t, string(canonicalInternalError), recorder.Body.String())
 			} else {

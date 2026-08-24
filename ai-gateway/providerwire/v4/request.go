@@ -127,12 +127,8 @@ func mapWireRequest(body []byte) (provider.CallOptions, *requestFailure) {
 		return provider.CallOptions{}, unsupportedMappingFailure(capabilityBodyHeaders)
 	}
 	for _, rawTool := range request.Tools {
-		tool, failure := inspectWireTool(rawTool)
-		if failure != nil {
+		if failure := inspectWireTool(rawTool); failure != nil {
 			return provider.CallOptions{}, failure
-		}
-		if !providerOptionsEmpty(tool.ProviderOptions) {
-			return provider.CallOptions{}, unsupportedMappingFailure(capabilityProviderOptions)
 		}
 	}
 	if len(request.Tools) > 0 {
@@ -193,7 +189,7 @@ func mapWireRequest(body []byte) (provider.CallOptions, *requestFailure) {
 		return provider.CallOptions{}, invalidMappingFailure()
 	}
 	if len(request.StopSequences) > 0 {
-		options.StopSequences = append([]string(nil), request.StopSequences...)
+		options.StopSequences = request.StopSequences
 	}
 	if len(request.Reasoning) > 0 {
 		if options.Reasoning, err = parseWireReasoning(request.Reasoning); err != nil {
@@ -283,17 +279,20 @@ func mapWirePart(raw json.RawMessage) (provider.ContentPart, *requestFailure) {
 	}
 }
 
-func inspectWireTool(raw json.RawMessage) (wireTool, *requestFailure) {
+func inspectWireTool(raw json.RawMessage) *requestFailure {
 	var tool wireTool
 	if err := json.Unmarshal(raw, &tool); err != nil {
-		return wireTool{}, invalidMappingFailure()
+		return invalidMappingFailure()
 	}
 	switch tool.Type {
 	case provider.ToolTypeFunction, provider.ToolTypeProvider:
-		return tool, nil
 	default:
-		return wireTool{}, invalidMappingFailure()
+		return invalidMappingFailure()
 	}
+	if !providerOptionsEmpty(tool.ProviderOptions) {
+		return unsupportedMappingFailure(capabilityProviderOptions)
+	}
+	return nil
 }
 
 func inspectWireToolChoice(raw json.RawMessage) *requestFailure {

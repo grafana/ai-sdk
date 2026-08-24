@@ -198,9 +198,8 @@ const (
 )
 
 type requestFailure struct {
-	stage    requestStage
-	internal bool
-	safe     safeError
+	stage requestStage
+	safe  safeError
 }
 
 type validatedRequest struct {
@@ -310,7 +309,7 @@ func (h *handler) readBody(body io.ReadCloser) ([]byte, *requestFailure) {
 	data, readErr := io.ReadAll(io.LimitReader(body, h.limits.RequestBytes+1))
 	closeErr := body.Close()
 	if readErr != nil || closeErr != nil {
-		return nil, &requestFailure{stage: stageBody, internal: true}
+		return nil, &requestFailure{stage: stageBody, safe: safeError{category: safeInternal}}
 	}
 	if int64(len(data)) > h.limits.RequestBytes {
 		return nil, &requestFailure{stage: stageBody}
@@ -319,15 +318,11 @@ func (h *handler) readBody(body io.ReadCloser) ([]byte, *requestFailure) {
 }
 
 func (h *handler) writeFailure(w http.ResponseWriter, failure *requestFailure) {
-	if failure.safe.category != 0 {
-		h.writeSafeError(w, failure.safe)
-		return
+	value := failure.safe
+	if value.category == 0 {
+		value.category = safeInvalidRequest
 	}
-	if failure.internal {
-		h.writeSafeError(w, safeError{category: safeInternal})
-		return
-	}
-	h.writeSafeError(w, safeError{category: safeInvalidRequest})
+	h.writeSafeError(w, value)
 }
 
 func invalidMappingFailure() *requestFailure {
