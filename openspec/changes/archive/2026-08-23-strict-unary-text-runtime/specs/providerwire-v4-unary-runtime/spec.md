@@ -2,7 +2,7 @@
 
 ### Requirement: Constructed strict unary handler
 
-The `gateway/providerwire/v4` package SHALL provide a production HTTP handler for relative `POST /language-model` unary requests. Construction SHALL require a `catalog.ModelResolver`, SHALL accept an optional host-policy boundary, and SHALL require named positive limits for request bytes, JSON depth, JSON token count, numeric token bytes, unary response bytes, error response bytes, and total model duration. Construction SHALL reject nil dependencies and byte limits that cannot safely use `limit+1`. It SHALL reject an error-response limit too small for the canonical internal-error document. The unary-response limit SHALL have no fallback-fit requirement because oversized success encoding transitions to the separate bounded error path.
+The `gateway/providerwire/v4` package SHALL provide a production HTTP handler for relative `POST /language-model` unary requests. Construction SHALL require a `catalog.ModelResolver`, SHALL accept an optional host-policy boundary, and SHALL require named positive limits for request bytes, unary response bytes, error response bytes, and total model duration. Construction SHALL reject nil dependencies and byte limits that cannot safely use `limit+1`. It SHALL reject an error-response limit too small for the canonical internal-error document. The unary-response limit SHALL have no fallback-fit requirement because oversized success encoding transitions to the separate bounded error path.
 
 #### Scenario: Valid handler construction
 - **WHEN** a caller supplies a non-nil resolver and valid named limits
@@ -36,31 +36,19 @@ The unary handler SHALL accept only `POST /language-model` with JSON content and
 
 ### Requirement: Bounded raw request processing
 
-After envelope validation, the handler SHALL read and close the body through a configured `limit+1` boundary, reject over-limit input without retaining bytes beyond that boundary, and reject invalid UTF-8. It SHALL then use an iterative lexical JSON pass to enforce configured nesting, token-count, and numeric-token-byte limits; reject duplicate object members at every depth; reject malformed escapes and unpaired escaped UTF-16 surrogates; and require exactly one complete JSON value with no trailing non-whitespace data.
+After envelope validation, the handler SHALL read and close the body through a configured `limit+1` boundary, reject over-limit input without retaining bytes beyond that boundary, and reject invalid UTF-8. JSON syntax and structural validation SHALL remain the responsibility of complete request-schema validation rather than a separate protocol-local JSON parser.
 
 #### Scenario: Request body crosses its byte boundary
 - **WHEN** a body is below, exactly at, or one byte above the configured request limit
-- **THEN** the first two requests SHALL continue to syntax processing and the over-limit request SHALL fail before schema validation, policy, resolution, or invocation
+- **THEN** the first two requests SHALL continue to schema validation and the over-limit request SHALL fail before schema validation, policy, resolution, or invocation
 
-#### Scenario: Duplicate and nested members
-- **WHEN** any object contains a duplicate member or nesting exceeds the configured depth
-- **THEN** raw processing SHALL return a safe invalid-request error without recursive stack growth
-
-#### Scenario: Numeric lexical complexity is excessive
-- **WHEN** a JSON number token exceeds the configured numeric-token byte limit, including through a long integer, fraction, or exponent
-- **THEN** raw processing SHALL reject it before numeric conversion or schema validation
-
-#### Scenario: Unicode scalar is invalid
-- **WHEN** a JSON string contains invalid UTF-8, an invalid escape, or an unpaired escaped surrogate
-- **THEN** raw processing SHALL reject it instead of replacing it with a Unicode replacement character
-
-#### Scenario: Trailing JSON is present
-- **WHEN** a valid request object is followed by another JSON value or non-whitespace bytes
-- **THEN** raw processing SHALL reject the request before schema validation
+#### Scenario: Request body contains invalid UTF-8
+- **WHEN** the bounded body is not valid UTF-8
+- **THEN** raw processing SHALL reject it before schema validation instead of allowing replacement-character normalization
 
 ### Requirement: Complete schema validation precedes mapping
 
-The handler SHALL compile the embedded `gateway/providerwire/v4/schema/request.json` draft 2020-12 schema during construction and SHALL validate the complete raw request against it after lexical checks using the existing shared schema-validation behavior. It SHALL NOT pass `json.Number` into the schema library or change shared schema validation, because arbitrary-precision processing is outside the ProviderWire resource contract. Schema-invalid or schema-instance-decoding failures SHALL fail safely before explicit mapping, policy, catalog resolution, or model invocation. The runtime SHALL NOT replace the complete schema with a text-only schema or infer support from schema acceptance.
+The handler SHALL compile the embedded `gateway/providerwire/v4/schema/request.json` draft 2020-12 schema during construction and SHALL validate the complete bounded request using the existing shared schema-validation behavior. It SHALL NOT pass `json.Number` into the schema library or change shared schema validation. Malformed JSON, schema-invalid input, and schema-instance-decoding failures SHALL fail safely before explicit mapping, policy, catalog resolution, or model invocation. The runtime SHALL NOT replace the complete schema with a text-only schema or infer support from schema acceptance.
 
 #### Scenario: Complete registered request is schema-valid
 - **WHEN** a request uses any registered V4 branch with valid shape
@@ -72,7 +60,7 @@ The handler SHALL compile the embedded `gateway/providerwire/v4/schema/request.j
 - **THEN** schema validation SHALL fail before policy, resolution, or invocation
 
 #### Scenario: Numerically unrepresentable schema instance
-- **WHEN** a lexically bounded numeric value cannot be represented by the shared schema-instance decoder
+- **WHEN** a numeric value cannot be represented by the shared schema-instance decoder
 - **THEN** schema validation MAY reject it safely before explicit mapping
 - **AND** the runtime SHALL NOT invoke arbitrary-precision numeric processing to preserve it
 
@@ -130,7 +118,7 @@ After complete schema validation, the explicit mapper SHALL identify every regis
 
 ### Requirement: Policy, resolution, and invocation ordering
 
-For a successfully mapped request, the handler SHALL apply host policy exactly once, resolve the exact requested model ID exactly once, validate that resolution returned a non-empty canonical public ID and a non-nil V4 language model, and invoke `DoGenerate` exactly once with the policy-approved `provider.CallOptions`. It SHALL derive model cancellation from the HTTP request and configured total model duration. `DoGenerate` SHALL run in a child goroutine with panic recovery inside that goroutine; a recovered panic and a `nil, nil` return SHALL become safe internal failures. A buffered result handoff SHALL allow a late return after handler cancellation or timeout without blocking the model goroutine. Envelope, body, lexical, schema, and mapping failures SHALL produce zero policy, resolution, and invocation calls; policy failure SHALL produce zero resolution and invocation calls; resolution failure SHALL produce zero invocation calls.
+For a successfully mapped request, the handler SHALL apply host policy exactly once, resolve the exact requested model ID exactly once, validate that resolution returned a non-empty canonical public ID and a non-nil V4 language model, and invoke `DoGenerate` exactly once with the policy-approved `provider.CallOptions`. It SHALL derive model cancellation from the HTTP request and configured total model duration. `DoGenerate` SHALL run in a child goroutine with panic recovery inside that goroutine; a recovered panic and a `nil, nil` return SHALL become safe internal failures. A buffered result handoff SHALL allow a late return after handler cancellation or timeout without blocking the model goroutine. Envelope, body, schema, and mapping failures SHALL produce zero policy, resolution, and invocation calls; policy failure SHALL produce zero resolution and invocation calls; resolution failure SHALL produce zero invocation calls.
 
 #### Scenario: Supported request executes once
 - **WHEN** a valid supported request passes host policy and resolves successfully

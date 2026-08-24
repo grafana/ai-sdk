@@ -13,6 +13,7 @@ import (
 	"reflect"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/grafana/ai-sdk/gateway/catalog"
 	"github.com/grafana/ai-sdk/provider"
@@ -49,12 +50,6 @@ var canonicalInvalidRequestError = []byte(`{"error":{"message":"invalid request"
 type Limits struct {
 	// RequestBytes is the maximum raw request body size.
 	RequestBytes int64
-	// JSONDepth is the maximum object and array nesting depth.
-	JSONDepth int
-	// JSONTokens is the maximum number of semantic JSON values and object names.
-	JSONTokens int
-	// NumberBytes is the maximum byte length of one JSON number token.
-	NumberBytes int
 	// UnaryResponseBytes is the maximum encoded successful response size.
 	UnaryResponseBytes int64
 	// ErrorResponseBytes is the maximum encoded error response size.
@@ -153,18 +148,6 @@ func validateLimits(limits Limits) error {
 			return fmt.Errorf("providerwire v4: %s cannot safely use limit+1", limit.name)
 		}
 	}
-	if limits.JSONDepth <= 0 {
-		return fmt.Errorf("providerwire v4: json depth must be positive")
-	}
-	if limits.JSONTokens <= 0 {
-		return fmt.Errorf("providerwire v4: json tokens must be positive")
-	}
-	if limits.NumberBytes <= 0 {
-		return fmt.Errorf("providerwire v4: number bytes must be positive")
-	}
-	if limits.NumberBytes == int(^uint(0)>>1) {
-		return fmt.Errorf("providerwire v4: number bytes cannot safely use limit+1")
-	}
 	if limits.ModelDuration <= 0 {
 		return fmt.Errorf("providerwire v4: model duration must be positive")
 	}
@@ -192,7 +175,6 @@ type requestStage string
 const (
 	stageEnvelope requestStage = "envelope"
 	stageBody     requestStage = "body"
-	stageLexical  requestStage = "lexical"
 	stageSchema   requestStage = "schema"
 	stageMapping  requestStage = "mapping"
 )
@@ -252,8 +234,8 @@ func (h *handler) validateRequest(r *http.Request) (validatedRequest, *requestFa
 	if failure != nil {
 		return validatedRequest{}, failure
 	}
-	if !scanJSON(body, h.limits.JSONDepth, h.limits.JSONTokens, h.limits.NumberBytes) {
-		return validatedRequest{}, &requestFailure{stage: stageLexical}
+	if !utf8.Valid(body) {
+		return validatedRequest{}, &requestFailure{stage: stageBody}
 	}
 	if err := h.requestSchema.Validate(json.RawMessage(body)); err != nil {
 		return validatedRequest{}, &requestFailure{stage: stageSchema}

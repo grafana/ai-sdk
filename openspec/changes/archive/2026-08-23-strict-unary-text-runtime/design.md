@@ -42,28 +42,25 @@ Alternative: package-level defaults and a directly constructible handler. Reject
 The handler will run these stages in order:
 
 1. exact method, relative path, JSON media type, and protocol-header validation;
-2. bounded body read and close;
-3. raw UTF-8 and iterative lexical JSON validation;
-4. complete request-schema validation;
-5. explicit supported/unsupported mapping;
-6. host policy;
-7. exact-once catalog resolution and result validation;
-8. exact-once `DoGenerate` under request cancellation and total timeout;
-9. explicit response mapping, bounded encoding, schema validation, and commitment.
+2. bounded body read, close, and UTF-8 validation;
+3. complete request-schema validation;
+4. explicit supported/unsupported mapping;
+5. host policy;
+6. exact-once catalog resolution and result validation;
+7. exact-once `DoGenerate` under request cancellation and total timeout;
+8. explicit response mapping, bounded encoding, schema validation, and commitment.
 
 Each stage returns a private categorized failure. Tests will use recording policy, resolver, and model implementations to prove that later stages are not reached after earlier failures.
 
-Alternative: decode directly into `provider.CallOptions` and validate afterward. Rejected because `encoding/json` tolerates duplicate members, loses field-presence distinctions, accepts invalid UTF-8 through replacement, and cannot distinguish malformed registered unions from valid unsupported branches.
+Alternative: decode directly into `provider.CallOptions` and validate afterward. Rejected because it loses field-presence distinctions and cannot distinguish malformed registered unions from valid unsupported branches.
 
-### Add a bounded iterative lexical scanner before schema validation
+### Use bounded standard JSON processing before explicit mapping
 
-A protocol-local scanner will walk raw bytes without recursion. Object frames will track seen member names; array/object frames will track state and depth. The scanner will count semantic tokens, bound number lexemes before conversion, validate escape syntax and surrogate pairing, and reject trailing values. The body byte limit bounds string/member storage, while the depth and token limits prevent adversarial structural work.
+The handler bounds the complete request body and rejects invalid UTF-8 before passing the raw bytes to the existing complete-schema validator. Supported SDK clients serialize structured values through standard JSON encoders, so a second protocol-local JSON parser would add substantial maintenance and parser-divergence risk without improving compatibility. Malformed syntax and trailing values remain safe schema-instance decoding failures.
 
-Shared `schema.CompiledSchema.Validate` remains unchanged and may reject a numerically unrepresentable value while decoding the schema instance. The ProviderWire runtime does not pass `json.Number` to the schema library because that library can route it through unbounded arbitrary-precision rational parsing, including exponent-sized work from a short lexeme. For requests that pass schema validation, private ProviderWire DTOs retain scalar fields as raw JSON lexemes and the mapper uses checked `strconv.ParseInt` and `strconv.ParseFloat`; it rejects integer range errors and non-finite floating-point results. Numeric-token byte limits still reject long integer, fraction, and exponent lexemes before schema processing. No requirement forces a value such as `1e309` to reach the mapper: it may fail safely during schema-instance decoding.
+Shared `schema.CompiledSchema.Validate` remains unchanged and may reject a numerically unrepresentable value while decoding the schema instance. The ProviderWire runtime does not pass `json.Number` to the schema library. For requests that pass schema validation, private ProviderWire DTOs retain scalar fields as raw JSON lexemes and the mapper uses checked `strconv.ParseInt` and `strconv.ParseFloat`; it rejects non-canonical integer syntax, integer range errors, and non-finite floating-point results. No requirement forces a value such as `1e309` to reach the mapper: it may fail safely during schema-instance decoding.
 
-The scanner will not build a second semantic tree, canonicalize JSON, perform arbitrary-precision arithmetic, or recursively inspect opaque JSON beyond the universal lexical limits.
-
-Alternative: use `json.Decoder.Token` alone. Rejected because it does not preserve raw number complexity or reject escaped lone surrogates before replacement. Alternative: use `json.Decoder.UseNumber` for shared or protocol schema values. Rejected because `santhosh-tekuri/jsonschema` may process `json.Number` with arbitrary-precision rational parsing whose work is not bounded by ProviderWire's token length and is entirely unbounded for shared callers. Alternative: add an arbitrary-precision JSON dependency. Rejected because raw lexemes plus checked standard integer and finite-float conversion are the protocol's intended numeric boundary.
+Alternative: add a custom scanner for duplicate members, surrogate pairing, depth, token count, and number length. Rejected because supported clients do not emit malformed lexical JSON, the request byte limit bounds parser input, and the standard Go/schema decoding path fails safely. Alternative: use `json.Decoder.UseNumber` for shared or protocol schema values. Rejected because shared validation behavior remains unchanged and the protocol mapper already preserves only the scalar lexemes whose exact syntax affects behavior.
 
 ### Decode schema-valid values through private raw DTOs and explicit switches
 
@@ -141,7 +138,7 @@ Alternative: `json.Marshal` followed by a length check. Rejected because it allo
 
 ### Combine Go authority with registered-client compatibility evidence
 
-Focused Go tests will own envelope, lexical scanner, schema, mapper, sequencing, error, DTO, privacy, and boundary assertions. The committed phase 2 goldens will be replayed without modifying them according to an explicit stage matrix:
+Focused Go tests will own envelope, bounded UTF-8 body processing, schema, mapper, sequencing, error, DTO, privacy, and boundary assertions. The committed phase 2 goldens will be replayed without modifying them according to an explicit stage matrix:
 
 | Golden record | Expected stage/result |
 | --- | --- |
@@ -156,26 +153,25 @@ A dedicated supported scalar request, separate from the committed scalar golden,
 
 A deterministic cross-language scenario will run the pinned Gateway client against the real Go handler. It will prove request emission and successful consumption, plus representative non-2xx classification. Because the client overwrites unary response metadata and warnings, raw Go HTTP tests will independently assert server warnings, canonical model identity, response schema, and privacy.
 
-The parity map will move strict Go decoding, raw lexical bounds, unsupported mapping, and unary runtime evidence from deferred to automated/mixed while retaining the client-consumption evidence boundary.
+The parity map will move strict Go envelope/body/schema decoding, unsupported mapping, and unary runtime evidence from deferred to automated/mixed while retaining the client-consumption evidence boundary.
 
 Alternative: rely only on the TypeScript client test. Rejected because its permissive schema and overwrite behavior cannot establish server correctness.
 
 ## Risks / Trade-offs
 
-- [The custom scanner accepts malformed JSON or rejects registered JSON] → Use table-driven lexical cases, differential valid-JSON cases, every phase 2 golden, and below/at/above limit tests before schema mapping.
-- [Schema validation reparses JSON and may reject a short unrepresentable number before mapping] → Keep one bounded body, cap token bytes/depth/count first, leave shared schema decoding unchanged to avoid arbitrary-precision work, preserve raw scalar lexemes in private DTOs, and accept safe schema-stage rejection when ordinary decoding cannot represent a value.
+- [Schema validation rejects malformed JSON or a numerically unrepresentable value before mapping] → Keep one byte-bounded UTF-8 body, leave shared schema decoding unchanged, preserve behavior-relevant scalar lexemes in private DTOs, and accept safe schema-stage rejection when ordinary decoding cannot represent a value.
 - [Unsupported-capability names drift as features land] → Centralize typed capability constants and remove one switch branch and its tests with each implementing work package.
 - [Reasoning value migration changes provider behavior] → Update every provider and middleware call site together, add zero/provider-default equivalence tests, and run provider request snapshots plus full module tests.
 - [Provider-controlled warning strings contain sensitive material] → Emit only registered warning variants/fields, omit all metadata and error material, and keep privacy regression cases with hostile provider structs; later policy may further restrict warning content without widening the DTO.
 - [A provider panics or ignores context forever] → Recover inside the model-call goroutine, validate nil results, and bound HTTP latency with a single buffered result handoff. A forever-blocked provider can still retain that goroutine, so record it as a provider lifecycle defect; do not claim retained-resource bounds, add retries, or wait unboundedly.
 - [A strict response is accepted by raw tests but masked by the client] → Validate closed schemas before commitment and retain raw HTTP assertions as authority.
 - [Error type behavior differs across registered Gateway classes] → Keep public codes/statuses authoritative, use recognized client types where available, and pin non-2xx TypeScript probes to the registered package.
-- [The large phase introduces too many simultaneous invariants] → Implement in testable layers: domain migration, lexical/schema pipeline, mapper sequencing, safe errors, response mapping, then integration.
+- [The large phase introduces too many simultaneous invariants] → Implement in testable layers: domain migration, body/schema pipeline, mapper sequencing, safe errors, response mapping, then integration.
 
 ## Migration Plan
 
 1. Change the reasoning provider-domain field and all root/provider/middleware call sites in one buildable step, preserving request snapshots.
-2. Add embedded response/error schemas, immutable handler configuration, and lexical/schema processing without model invocation.
+2. Add embedded response/error schemas, immutable handler configuration, and bounded body/schema processing without model invocation.
 3. Add explicit text mapping, policy sequencing, catalog resolution, and recording-model tests.
 4. Add safe provider/model failure normalization and bounded unary response commitment.
 5. Replay committed request goldens, add raw boundary/privacy tests, and add pinned-client integration.

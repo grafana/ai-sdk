@@ -39,9 +39,6 @@ func (p *policyStub) Apply(_ context.Context, options provider.CallOptions) (pro
 func testLimits() Limits {
 	return Limits{
 		RequestBytes:       1 << 20,
-		JSONDepth:          64,
-		JSONTokens:         100_000,
-		NumberBytes:        128,
 		UnaryResponseBytes: 1 << 20,
 		ErrorResponseBytes: 1 << 20,
 		ModelDuration:      time.Second,
@@ -112,13 +109,6 @@ func TestNew(t *testing.T) {
 			{name: "request zero", mutate: func(l *Limits) { l.RequestBytes = 0 }},
 			{name: "request negative", mutate: func(l *Limits) { l.RequestBytes = -1 }},
 			{name: "request overflow", mutate: func(l *Limits) { l.RequestBytes = math.MaxInt64 }},
-			{name: "depth zero", mutate: func(l *Limits) { l.JSONDepth = 0 }},
-			{name: "depth negative", mutate: func(l *Limits) { l.JSONDepth = -1 }},
-			{name: "tokens zero", mutate: func(l *Limits) { l.JSONTokens = 0 }},
-			{name: "tokens negative", mutate: func(l *Limits) { l.JSONTokens = -1 }},
-			{name: "number zero", mutate: func(l *Limits) { l.NumberBytes = 0 }},
-			{name: "number negative", mutate: func(l *Limits) { l.NumberBytes = -1 }},
-			{name: "number overflow", mutate: func(l *Limits) { l.NumberBytes = int(^uint(0) >> 1) }},
 			{name: "unary zero", mutate: func(l *Limits) { l.UnaryResponseBytes = 0 }},
 			{name: "unary overflow", mutate: func(l *Limits) { l.UnaryResponseBytes = math.MaxInt64 }},
 			{name: "error zero", mutate: func(l *Limits) { l.ErrorResponseBytes = 0 }},
@@ -239,6 +229,18 @@ func TestHandlerBodyBoundaryAndClose(t *testing.T) {
 	}
 }
 
+func TestHandlerInvalidUTF8(t *testing.T) {
+	h := newTestHandler(t, testLimits())
+	body := append([]byte(`{"prompt":[],"providerOptions":{"example":"`), 0xff)
+	body = append(body, []byte(`"}}`)...)
+	req := validRequest("")
+	req.Body = io.NopCloser(bytes.NewReader(body))
+
+	_, failure := h.validateRequest(req)
+	require.NotNil(t, failure)
+	assert.Equal(t, stageBody, failure.stage)
+}
+
 func TestHandlerBodyFailures(t *testing.T) {
 	resolver := &resolverStub{}
 	policy := &policyStub{}
@@ -302,7 +304,8 @@ func TestHandlerSchemaStage(t *testing.T) {
 		wantStage requestStage
 	}{
 		{name: "valid complete registered branch", body: `{"prompt":[{"role":"user","content":[{"type":"file","data":{"type":"text","text":"data"},"mediaType":"text/plain"}]}]}`},
-		{name: "duplicate member stops before schema", body: `{"prompt":[],"prompt":[]}`, wantStage: stageLexical},
+		{name: "malformed JSON", body: `{"prompt":[}`, wantStage: stageSchema},
+		{name: "trailing JSON", body: `{"prompt":[]} {}`, wantStage: stageSchema},
 		{name: "unknown member", body: `{"prompt":[],"unknown":true}`, wantStage: stageSchema},
 		{name: "typed null", body: `{"prompt":[],"maxOutputTokens":null}`, wantStage: stageSchema},
 		{name: "fractional integer", body: `{"prompt":[],"maxOutputTokens":1.5}`, wantStage: stageSchema},
