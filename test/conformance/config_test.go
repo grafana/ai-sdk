@@ -66,6 +66,7 @@ func TestConfig_Operation(t *testing.T) {
 			}
 			require.NoError(t, err)
 			assert.Equal(t, tc.want, cfg.Operation)
+			assert.Equal(t, provider.ReasoningProviderDefault, cfg.Reasoning)
 		})
 	}
 }
@@ -246,32 +247,6 @@ func TestConfig_BuildStreamOptionsActiveTools(t *testing.T) {
 	assert.True(t, names["search"])
 	assert.True(t, names["weather"])
 	assert.Equal(t, provider.ReasoningHigh, receivedReasoning)
-}
-
-func TestConfig_BuildStreamOptionsProviderDefaultReasoning(t *testing.T) {
-	var receivedReasoning provider.ReasoningEffort
-	model := &configCaptureModel{
-		streamFunc: func(_ context.Context, opts provider.CallOptions) (*provider.StreamResult, error) {
-			receivedReasoning = opts.Reasoning
-			stream := make(chan provider.StreamPart)
-			close(stream)
-			return &provider.StreamResult{Stream: stream}, nil
-		},
-	}
-	cfg := Config{Reasoning: wireReasoningProviderDefault}
-
-	result := aisdk.StreamText(context.Background(), model, cfg.buildStreamOptions(
-		[]provider.Message{provider.UserText("hi")},
-		nil,
-		nil,
-		[]aisdk.StopCondition{aisdk.StepCountIs(1)},
-		nil,
-		nil,
-	)...)
-	for range result.FullStream() {
-	}
-
-	assert.Equal(t, provider.ReasoningProviderDefault, receivedReasoning)
 }
 
 func TestConfig_BuildMessagesConfiguredFileReference(t *testing.T) {

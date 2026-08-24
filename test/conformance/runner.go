@@ -191,6 +191,9 @@ func LoadConfig(path string) (*Config, error) {
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parsing config: %w", err)
 	}
+	if cfg.Reasoning == wireReasoningProviderDefault {
+		cfg.Reasoning = provider.ReasoningProviderDefault
+	}
 	if cfg.Operation == "" {
 		cfg.Operation = OperationStream
 	}
@@ -214,7 +217,7 @@ func LoadConfig(path string) (*Config, error) {
 		if len(cfg.ActiveTools) > 0 {
 			unsupported = append(unsupported, "activeTools")
 		}
-		if cfg.reasoning() != provider.ReasoningProviderDefault {
+		if cfg.Reasoning != provider.ReasoningProviderDefault {
 			unsupported = append(unsupported, "reasoning")
 		}
 		if cfg.StreamOptions != nil {
@@ -246,13 +249,6 @@ func LoadConfig(path string) (*Config, error) {
 		cfg.StopWhenStepCount = 1
 	}
 	return &cfg, nil
-}
-
-func (cfg *Config) reasoning() provider.ReasoningEffort {
-	if cfg.Reasoning == wireReasoningProviderDefault {
-		return provider.ReasoningProviderDefault
-	}
-	return cfg.Reasoning
 }
 
 func (cfg *Config) BuildResponseFormat() (*provider.ResponseFormat, error) {
@@ -400,8 +396,8 @@ func (cfg *Config) buildStreamOptions(messages []provider.Message, tools aisdk.T
 	if len(cfg.ActiveTools) > 0 {
 		streamOpts = append(streamOpts, aisdk.WithActiveTools(cfg.ActiveTools...))
 	}
-	if reasoning := cfg.reasoning(); reasoning != provider.ReasoningProviderDefault {
-		streamOpts = append(streamOpts, aisdk.WithReasoning(reasoning))
+	if cfg.Reasoning != provider.ReasoningProviderDefault {
+		streamOpts = append(streamOpts, aisdk.WithReasoning(cfg.Reasoning))
 	}
 	if len(cfg.Headers) > 0 {
 		streamOpts = append(streamOpts, aisdk.WithHeaders(cfg.Headers))

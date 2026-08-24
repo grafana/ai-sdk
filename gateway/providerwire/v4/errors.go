@@ -292,13 +292,13 @@ func encodeSafeError(value safeError, limit int64) ([]byte, int, bool) {
 		return nil, 0, false
 	}
 	buffer := newBoundedDocument(limit)
-	buffer.append(`{"error":{"message":"`)
-	buffer.append(definition.message)
-	buffer.append(`","type":"`)
-	buffer.append(string(definition.typeName))
-	buffer.append(`","param":null,"code":"`)
-	buffer.append(string(definition.code))
-	buffer.append(`"}}`)
+	buffer.append(`{"error":{"message":`)
+	buffer.appendJSONString(definition.message)
+	buffer.append(`,"type":`)
+	buffer.appendJSONString(string(definition.typeName))
+	buffer.append(`,"param":null,"code":`)
+	buffer.appendJSONString(string(definition.code))
+	buffer.append(`}}`)
 	if buffer.overflow || buffer.invalid {
 		return nil, 0, false
 	}
@@ -307,13 +307,11 @@ func encodeSafeError(value safeError, limit int64) ([]byte, int, bool) {
 
 func (h *handler) writeSafeError(w http.ResponseWriter, value safeError) {
 	body, status, ok := encodeSafeError(value, h.limits.ErrorResponseBytes)
-	if ok && h.errorSchema.Validate(json.RawMessage(body)) == nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(status)
-		_, _ = w.Write(body)
-		return
+	if !ok || h.errorSchema.Validate(json.RawMessage(body)) != nil {
+		body = canonicalInternalError
+		status = http.StatusInternalServerError
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusInternalServerError)
-	_, _ = w.Write(canonicalInternalError)
+	w.WriteHeader(status)
+	_, _ = w.Write(body)
 }
