@@ -5,23 +5,22 @@ Language-model middleware is the model-call customization boundary. It wraps a
 registries, fallback models, and any other consumer of that model.
 
 Write middleware when the built-in and optional integrations do not provide a
-behavior that must be consistent across model calls. Keep behavior explicit in
-application code when it belongs to one workflow or request.
+behavior that must be consistent across model calls.
 
-## Decide whether middleware is the right boundary
+## Common middleware use cases
 
-| You need | Prefer |
-|---|---|
-| Shared request policy, normalization, caching, observation, or result adaptation | Middleware |
-| Settings for one model call | Call options on that call |
-| One lifecycle around all model steps, tools, retries, and fallback attempts | Orchestration callbacks |
-| Application-specific retrieval or actions | Application code or tools |
-| HTTP authentication, routing, or SSE behavior | `net/http` middleware or stream helpers |
-| Support for another model-service protocol | A provider implementation |
+- apply default instructions, model settings, headers, or provider options;
+- enforce token budgets, model allowlists, rate limits, or other call policy;
+- enrich prompts with retrieved context or request-scoped metadata;
+- cache or deduplicate model calls;
+- record logs, metrics, traces, usage, or audit events;
+- normalize provider-specific text, reasoning, JSON, or tool-call behavior;
+- inspect, filter, or transform generated content and stream parts;
+- simulate streaming or adapt between generate and stream calls;
+- expose an intentional provider or model identity for a wrapped model.
 
-Middleware is useful for cross-cutting behavior, but it can also hide important
-work. Keep domain decisions, consequential actions, and workflow-specific
-retrieval visible unless they intentionally form a shared model policy.
+Middleware works best when the behavior is reusable across call sites and does
+not depend on one provider implementation.
 
 ## Understand the call lifecycle
 
