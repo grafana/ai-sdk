@@ -9,16 +9,16 @@
 
 - [x] 2.1 Add closed hand-authored draft 2020-12 unary-success and safe-error schemas under `gateway/providerwire/v4/schema`, with focused positive and negative schema tests for text, warnings including required empty strings, metadata, usage, finish reasons, and the exact nested error members.
 - [x] 2.2 Add protocol constants, named unary limits, policy and handler configuration, embedded schema compilation, dependency validation, overflow-safe `limit+1` validation for byte limits, and canonical internal-error fit validation for only the error-response limit.
-- [x] 2.3 Add constructor tests for nil resolver, invalid durations and numeric limits, unsafe increments, too-small error bounds, small positive unary bounds, schema compilation, immutable configuration, and valid construction.
+- [x] 2.3 Add constructor tests for nil resolver, invalid durations and byte limits, unsafe increments, too-small error bounds, small positive unary bounds, schema compilation, immutable configuration, and valid construction.
 - [x] 2.4 Implement exact method, relative-path, JSON media-type, specification-version, model-ID, and unary-mode envelope validation, with raw HTTP tests for missing, empty, repeated, collision-normalized, and invalid values plus unrelated host headers.
 - [x] 2.5 Implement request body close and bounded `limit+1` reading, with below/at/above request-byte tests and zero downstream-call assertions.
 
-## 3. Implement Bounded Lexical JSON Processing
+## 3. Implement Bounded Standard JSON Processing
 
-- [x] 3.1 Add table-driven failing tests for duplicate members at every depth, excessive depth/tokens/number bytes, invalid UTF-8, malformed escapes, lone surrogates, malformed JSON, and trailing values.
-- [x] 3.2 Implement the iterative protocol-local JSON scanner with stack frames, duplicate-member tracking, token/depth accounting, bounded number lexemes, UTF-8 validation, escape validation, and surrogate-pair validation without building a semantic tree.
-- [x] 3.3 Add below/at/above tests for depth, token, and numeric-token limits plus differential valid-JSON cases covering escaped text, opaque nested JSON, and every phase 2 request golden.
-- [x] 3.4 Apply the unchanged precompiled complete request schema after lexical validation and add sequencing tests proving schema-invalid or schema-instance-decoding failures never reach mapping, policy, resolution, or invocation; include a short huge-exponent case that fails safely without arbitrary-precision processing.
+- [x] 3.1 Reject invalid UTF-8 after the bounded body read so standard decoding cannot normalize malformed input through replacement characters.
+- [x] 3.2 Apply the unchanged precompiled complete request schema directly to the bounded body and retain malformed JSON and structural validation in the standard Go/schema decoding path.
+- [x] 3.3 Add body-boundary, invalid UTF-8, malformed JSON, trailing-value, and complete-schema cases without introducing a second protocol-local JSON parser.
+- [x] 3.4 Add sequencing tests proving schema-invalid or schema-instance-decoding failures never reach mapping, policy, resolution, or invocation; include a short huge-exponent case that fails safely without arbitrary-precision processing.
 
 ## 4. Map the Supported Request Subset Explicitly
 
@@ -62,7 +62,7 @@
 
 ## 9. Update Parity Evidence and Verify the Change
 
-- [x] 9.1 Update `test/conformance/PARITY.md` to classify strict Go envelope/lexical/schema decoding, unsupported mapping, unary DTO/privacy/bounds, golden replay, and pinned-client runtime evidence while retaining streaming as deferred.
+- [x] 9.1 Update `test/conformance/PARITY.md` to classify strict Go envelope/body/schema decoding, unsupported mapping, unary DTO/privacy/bounds, golden replay, and pinned-client runtime evidence while retaining streaming as deferred.
 - [x] 9.2 Run focused package tests throughout implementation, then run `gofmt`, `mise run vet`, `mise run lint`, and `mise run test` across the root and all provider modules.
 - [x] 9.3 Run `mise run test-providerwire-v4`, the new runtime integration, `mise run validate-parity-baseline`, and `mise run parity-check`; verify normal checks do not rewrite schemas, goldens, or tracked files.
 - [x] 9.4 Run `mise run build`, inspect module dependency direction, and search for restored legacy transport imports, provider-domain wire serialization, unbounded request/response/error paths, debug code, and unintended streaming implementation.

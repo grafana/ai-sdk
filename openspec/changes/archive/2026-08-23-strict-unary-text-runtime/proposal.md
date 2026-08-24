@@ -4,7 +4,7 @@ The repository has executable evidence for the registered ProviderWire V4 HTTP c
 
 ## What Changes
 
-- Add a strict ProviderWire V4 unary HTTP handler with exact envelope validation, bounded raw-body processing, lexical JSON checks, complete request-schema validation, explicit capability mapping, host-policy sequencing, catalog resolution, model invocation, and bounded response commitment.
+- Add a strict ProviderWire V4 unary HTTP handler with exact envelope validation, bounded UTF-8 raw-body processing, complete request-schema validation, explicit capability mapping, host-policy sequencing, catalog resolution, model invocation, and bounded response commitment.
 - Support ordered system messages, user and assistant text parts, required empty text, scalar generation controls, stop sequences, text response format, and reasoning effort; reject every other schema-valid request capability deterministically before policy, resolution, or invocation.
 - Add closed safe-error categories and allowlisted error envelopes that do not expose provider or transport internals.
 - Add explicit unary response DTOs and schemas for text content, all registered warning variants, metadata, usage, and finish behavior; normalize successful output to canonical public model identity and remove backend request, response, and metadata material.
@@ -27,5 +27,5 @@ The repository has executable evidence for the registered ProviderWire V4 HTTP c
 
 - Primary code: `gateway/providerwire/v4`, its embedded request and new response schemas, `provider`, `providers/*` reasoning call sites, and `gateway/catalog` integration.
 - Tests: `test/providerwire-v4`, production Go handler/schema/mapping tests, and pinned cross-language unary integration.
-- Dependencies: the existing draft 2020-12 schema validation library in the root module plus bounded JSON/HTTP processing implemented in Go; no baseline package upgrade.
+- Dependencies: the existing draft 2020-12 schema validation library in the root module plus bounded HTTP processing implemented in Go; no baseline package upgrade.
 - Protocol scope: unary `POST /language-model` only; strict streaming, authentication, discovery service routes, Go client support, tools, files, provider options, body-header forwarding, structured output, and raw output execution remain deferred.

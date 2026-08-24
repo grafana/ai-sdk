@@ -138,9 +138,6 @@ func newProviderWireV4Scenario() (*providerWireV4Scenario, error) {
 		Policy:   providerWireV4Policy{},
 		Limits: providerwirev4.Limits{
 			RequestBytes:       1 << 20,
-			JSONDepth:          64,
-			JSONTokens:         10_000,
-			NumberBytes:        64,
 			UnaryResponseBytes: 1 << 20,
 			ErrorResponseBytes: 1 << 10,
 			ModelDuration:      5 * time.Second,
