@@ -222,8 +222,11 @@ func TestRuntimeRequestBodyBoundaryStopsDownstreamStages(t *testing.T) {
 	}
 }
 
-func TestRuntimeSchemaFailureStopsAllDownstreamStages(t *testing.T) {
+func TestRuntimeRequestValidationFailureStopsAllDownstreamStages(t *testing.T) {
 	bodies := []string{
+		"{\"prompt\":[],\"providerOptions\":{\"example\":\"\xff\"}}",
+		`{"prompt":[}`,
+		`{"prompt":[]} {}`,
 		`{"prompt":[],"unknown":true}`,
 		`{"prompt":[],"maxOutputTokens":null}`,
 		`{"prompt":[],"maxOutputTokens":1.5}`,
@@ -288,6 +291,7 @@ func TestRuntimeIntegerControlLexicalSyntax(t *testing.T) {
 				body := fmt.Sprintf(`{"prompt":[],%q:%s}`, field.name, lexeme)
 				response := harness.serve(validRequest(body))
 				assert.Equal(t, http.StatusBadRequest, response.Code)
+				assert.Equal(t, 1, harness.mapCalls)
 				assert.Zero(t, harness.policy.callCount())
 				assert.Zero(t, harness.resolver.callCount())
 				assert.Zero(t, harness.model.callCount())
