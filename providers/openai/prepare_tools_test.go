@@ -463,23 +463,92 @@ func TestPrepareTools_ProviderToolChoiceVariants(t *testing.T) {
 	}
 }
 
-func TestPrepareTools_AllowedToolsMapsProviderToolNames(t *testing.T) {
-	body, _ := buildBody(t, "gpt-4o", provider.CallOptions{
+func TestPrepareTools_AllowedToolsProviderShapes(t *testing.T) {
+	body, warnings := buildBody(t, "gpt-4o", provider.CallOptions{
 		Prompt: []provider.Message{provider.UserText("hi")},
-		Tools: []provider.Tool{{
-			Type: provider.ToolTypeProvider,
-			ID:   toolIDFileSearch,
-			Name: "docs",
-			Args: map[string]json.RawMessage{"vectorStoreIds": json.RawMessage(`["vs_1"]`)},
-		}},
+		Tools: []provider.Tool{
+			{Type: provider.ToolTypeFunction, Name: "weather", InputSchema: json.RawMessage(`{"type":"object"}`)},
+			{Type: provider.ToolTypeProvider, ID: toolIDFileSearch, Name: "docs", Args: map[string]json.RawMessage{"vectorStoreIds": json.RawMessage(`["vs_1"]`)}},
+			{Type: provider.ToolTypeProvider, ID: toolIDMCP, Name: "remote", Args: map[string]json.RawMessage{"serverLabel": json.RawMessage(`"server-a"`), "serverURL": json.RawMessage(`"https://example.com"`)}},
+			{Type: provider.ToolTypeProvider, ID: toolIDCustom, Name: "sql", Args: map[string]json.RawMessage{"description": json.RawMessage(`"query"`)}},
+		},
 		ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{
-			AllowedTools: &AllowedToolsOption{ToolNames: []string{"docs"}},
+			AllowedTools: &AllowedToolsOption{ToolNames: []string{"docs", "weather", "remote", "sql"}},
 		}),
 	})
+	assert.Empty(t, warnings)
+	toolChoice := body["tool_choice"].(map[string]any)
+	tools := toolChoice["tools"].([]any)
+	require.Len(t, tools, 4)
+	assert.Equal(t, map[string]any{"type": "file_search"}, tools[0])
+	assert.Equal(t, map[string]any{"type": "function", "name": "weather"}, tools[1])
+	assert.Equal(t, map[string]any{"type": "mcp", "server_label": "server-a"}, tools[2])
+	assert.Equal(t, map[string]any{"type": "custom", "name": "sql"}, tools[3])
+}
+
+func TestPrepareTools_AllowedToolsDeduplicatesIdenticalProviderResolutions(t *testing.T) {
+	body, warnings := buildBody(t, "gpt-4o", provider.CallOptions{
+		Prompt: []provider.Message{provider.UserText("hi")},
+		Tools: []provider.Tool{
+			{Type: provider.ToolTypeProvider, ID: toolIDWebSearch, Name: "search-a"},
+			{Type: provider.ToolTypeProvider, ID: toolIDWebSearch, Name: "search-b"},
+		},
+		ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{AllowedTools: &AllowedToolsOption{ToolNames: []string{"web_search"}}}),
+	})
+	assert.Empty(t, warnings)
 	toolChoice := body["tool_choice"].(map[string]any)
 	tools := toolChoice["tools"].([]any)
 	require.Len(t, tools, 1)
-	assert.Equal(t, "file_search", tools[0].(map[string]any)["name"])
+	assert.Equal(t, map[string]any{"type": "web_search"}, tools[0])
+}
+
+func TestPrepareTools_AllowedToolsCollisionWarnings(t *testing.T) {
+	t.Run("direct name wins over provider alias", func(t *testing.T) {
+		body, warnings := buildBody(t, "gpt-4o", provider.CallOptions{
+			Prompt: []provider.Message{provider.UserText("hi")},
+			Tools: []provider.Tool{
+				{Type: provider.ToolTypeFunction, Name: "web_search", InputSchema: json.RawMessage(`{"type":"object"}`)},
+				{Type: provider.ToolTypeProvider, ID: toolIDWebSearch, Name: "search"},
+			},
+			ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{AllowedTools: &AllowedToolsOption{ToolNames: []string{"web_search"}}}),
+		})
+		require.Len(t, warnings, 1)
+		assert.Contains(t, warnings[0].Details, "both a tool name and the provider tool name")
+		tools := body["tool_choice"].(map[string]any)["tools"].([]any)
+		require.Len(t, tools, 1)
+		assert.Equal(t, map[string]any{"type": "function", "name": "web_search"}, tools[0])
+	})
+
+	t.Run("different provider resolutions are dropped", func(t *testing.T) {
+		body, warnings := buildBody(t, "gpt-4o", provider.CallOptions{
+			Prompt: []provider.Message{provider.UserText("hi")},
+			Tools: []provider.Tool{
+				{Type: provider.ToolTypeFunction, Name: "weather", InputSchema: json.RawMessage(`{"type":"object"}`)},
+				{Type: provider.ToolTypeProvider, ID: toolIDMCP, Name: "alpha", Args: map[string]json.RawMessage{"serverLabel": json.RawMessage(`"alpha"`), "serverURL": json.RawMessage(`"https://alpha.example"`)}},
+				{Type: provider.ToolTypeProvider, ID: toolIDMCP, Name: "beta", Args: map[string]json.RawMessage{"serverLabel": json.RawMessage(`"beta"`), "serverURL": json.RawMessage(`"https://beta.example"`)}},
+			},
+			ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{AllowedTools: &AllowedToolsOption{ToolNames: []string{"weather", "mcp"}}}),
+		})
+		require.Len(t, warnings, 1)
+		assert.Contains(t, warnings[0].Details, "share this provider tool name")
+		tools := body["tool_choice"].(map[string]any)["tools"].([]any)
+		require.Len(t, tools, 1)
+		assert.Equal(t, map[string]any{"type": "function", "name": "weather"}, tools[0])
+	})
+}
+
+func TestPrepareTools_AllowedToolsRejectsOnlyUnsupportedTools(t *testing.T) {
+	deferLoading := true
+	_, _, _, err := buildParams("gpt-4o", provider.CallOptions{
+		Prompt: []provider.Message{provider.UserText("hi")},
+		Tools: []provider.Tool{
+			{Type: provider.ToolTypeFunction, Name: "deferred", InputSchema: json.RawMessage(`{"type":"object"}`), ProviderOptions: provider.BuildProviderOptions(OpenAIToolOptions{DeferLoading: &deferLoading})},
+			{Type: provider.ToolTypeProvider, ID: toolIDToolSearch, Name: "search"},
+		},
+		ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{AllowedTools: &AllowedToolsOption{ToolNames: []string{"deferred", "search"}}}),
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot be allow-listed")
 }
 
 func TestPrepareTools_UnknownProviderToolWarning(t *testing.T) {

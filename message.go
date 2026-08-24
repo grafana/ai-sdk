@@ -107,6 +107,7 @@ type ToolInvocationPart struct {
 	Output                 json.RawMessage           `json:"output,omitempty"`
 	ErrorText              string                    `json:"errorText,omitempty"`
 	ProviderExecuted       bool                      `json:"providerExecuted,omitempty"`
+	Preliminary            bool                      `json:"preliminary,omitempty"`
 	Approval               *ToolApproval             `json:"approval,omitempty"`
 	CallProviderMetadata   provider.ProviderMetadata `json:"callProviderMetadata,omitempty"`
 	ResultProviderMetadata provider.ProviderMetadata `json:"resultProviderMetadata,omitempty"`
@@ -125,6 +126,7 @@ type DynamicToolUIPart struct {
 	Output                 json.RawMessage           `json:"output,omitempty"`
 	ErrorText              string                    `json:"errorText,omitempty"`
 	ProviderExecuted       bool                      `json:"providerExecuted,omitempty"`
+	Preliminary            bool                      `json:"preliminary,omitempty"`
 	Approval               *ToolApproval             `json:"approval,omitempty"`
 	CallProviderMetadata   provider.ProviderMetadata `json:"callProviderMetadata,omitempty"`
 	ResultProviderMetadata provider.ProviderMetadata `json:"resultProviderMetadata,omitempty"`

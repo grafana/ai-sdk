@@ -31,6 +31,7 @@ openai-mcp-tool-approval.3: mcp-tool-approval-3
 openai-mcp-tool-approval.4: mcp-tool-approval-4
 openai-mcp-tool.1: mcp
 openai-phase.1: phase
+parallel-tool-call-wrapper.1: parallel-tool-call-wrapper
 openai-reasoning-encrypted-content.1: reasoning-encrypted-content
 openai-shell-container-multiturn.1: shell-container-multiturn
 openai-shell-container.1: shell-container
@@ -61,6 +62,7 @@ openai-mcp-tool-approval.3.json: null
 openai-mcp-tool-approval.4.json: null
 openai-mcp-tool.1.json: null
 openai-phase.1.json: null
+parallel-tool-call-wrapper.1.json: null
 openai-reasoning-encrypted-content.1.json: null
 openai-shell-container-multiturn.1.json: null
 openai-shell-container.1.json: null

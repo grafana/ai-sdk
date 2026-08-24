@@ -633,6 +633,25 @@ func TestConvertUsage_TokenSplit(t *testing.T) {
 	})
 }
 
+func TestConvertResponse_ExpandsParallelToolCall(t *testing.T) {
+	resp := decodeResponse(t, `{
+		"id":"resp_parallel","created_at":1787162400,"status":"completed","model":"gpt-5.4",
+		"output":[{"type":"function_call","id":"fc_parallel","call_id":"call_parallel","name":"parallel","arguments":"{\"tool_uses\":[{\"recipient_name\":\"functions.weather\",\"parameters\":{\"location\":\"San Francisco\"}},{\"recipient_name\":\"functions.cityAttractions\",\"parameters\":{\"city\":\"Rome\"}}]}","status":"completed"}],
+		"usage":{"input_tokens":34,"output_tokens":28,"total_tokens":62}
+	}`)
+	tools := []provider.Tool{
+		{Type: provider.ToolTypeFunction, Name: "weather"},
+		{Type: provider.ToolTypeFunction, Name: "cityAttractions"},
+	}
+	result := mustConvertResponse(t, resp, buildResult{providerOptionsName: "openai", tools: tools})
+	require.Len(t, result.Content, 2)
+	assert.Equal(t, "call_parallel_0", result.Content[0].ToolCallID)
+	assert.Equal(t, "weather", result.Content[0].ToolName)
+	assert.JSONEq(t, `{"location":"San Francisco"}`, string(result.Content[0].Input))
+	assert.Equal(t, "call_parallel_1", result.Content[1].ToolCallID)
+	assert.Equal(t, "cityAttractions", result.Content[1].ToolName)
+}
+
 func TestMapFinishReason(t *testing.T) {
 	tests := []struct {
 		reason          string

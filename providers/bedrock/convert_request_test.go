@@ -1467,6 +1467,19 @@ func TestBuildRequest_PreservesSignedReasoningWhitespace(t *testing.T) {
 	assert.Equal(t, "sig-1", req.Messages[0].Content[0].ReasoningContent.ReasoningText.Signature)
 }
 
+func TestBuildRequest_ReplaysRedactedContent(t *testing.T) {
+	reasoning := provider.ReasoningPart("")
+	reasoning.ProviderOptions = provider.BuildProviderOptions(ReasoningMetadata{RedactedContent: "encrypted-reasoning"})
+	req, _, _ := mustBuildRequest(t, testAnthropicModel, provider.CallOptions{
+		Prompt: []provider.Message{provider.NewAssistantMessage(reasoning)},
+	})
+
+	require.Len(t, req.Messages, 1)
+	require.Len(t, req.Messages[0].Content, 1)
+	require.NotNil(t, req.Messages[0].Content[0].ReasoningContent)
+	assert.Equal(t, "encrypted-reasoning", req.Messages[0].Content[0].ReasoningContent.RedactedContent)
+}
+
 func TestBuildRequest_SkipsUnsignedReasoning(t *testing.T) {
 	req, _, _ := mustBuildRequest(t, testAnthropicModel, provider.CallOptions{
 		Prompt: []provider.Message{

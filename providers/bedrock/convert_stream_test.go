@@ -207,6 +207,27 @@ func TestRunStream_ReasoningWithSignature(t *testing.T) {
 	assert.True(t, sigFound, "reasoning signature metadata expected")
 }
 
+func TestRunStream_RedactedContent(t *testing.T) {
+	body := encodeFixtures(t,
+		`{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"redactedContent":"encrypted-"}}}}`,
+		`{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"reasoningContent":{"redactedContent":"reasoning"}}}}`,
+		`{"contentBlockStop":{"contentBlockIndex":0}}`,
+		`{"contentBlockDelta":{"contentBlockIndex":1,"delta":{"reasoningContent":{"redactedContent":"second"}}}}`,
+		`{"contentBlockStop":{"contentBlockIndex":1}}`,
+		`{"messageStop":{"stopReason":"end_turn"}}`,
+	)
+	parts := drainStream(t, body, requestMeta{})
+	ends := findParts(parts, provider.PartReasoningEnd)
+	require.Len(t, ends, 2)
+
+	var first ReasoningMetadata
+	require.NoError(t, json.Unmarshal(parts[ends[0]].ProviderMetadata["amazonBedrock"], &first))
+	assert.Equal(t, "encrypted-reasoning", first.RedactedContent)
+	var second ReasoningMetadata
+	require.NoError(t, json.Unmarshal(parts[ends[1]].ProviderMetadata["amazonBedrock"], &second))
+	assert.Equal(t, "second", second.RedactedContent)
+}
+
 func TestRunStream_JSONResponseToolCollapse(t *testing.T) {
 	body := encodeFixtures(t,
 		`{"messageStart":{"role":"assistant"}}`,
@@ -272,6 +293,19 @@ func TestRunStream_ThrottlingExceptionEvent(t *testing.T) {
 	require.NotNil(t, last.Usage)
 	assert.Nil(t, last.Usage.InputTokens.Total)
 	assert.Nil(t, last.Usage.OutputTokens.Total)
+}
+
+func TestRunStream_ServiceUnavailableExceptionRetryable(t *testing.T) {
+	body := encodeFrame(frameHeader{
+		MessageType:   "exception",
+		ExceptionType: "serviceUnavailableException",
+		ContentType:   "application/json",
+	}, []byte(`{"message":"unavailable"}`))
+	parts := drainStream(t, body, requestMeta{})
+	errors := findParts(parts, provider.PartError)
+	require.Len(t, errors, 1)
+	require.NotNil(t, parts[errors[0]].APICallError)
+	assert.True(t, parts[errors[0]].APICallError.IsRetryable)
 }
 
 func TestRunStream_ValidationExceptionNotRetryable(t *testing.T) {

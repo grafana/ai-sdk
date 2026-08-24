@@ -252,6 +252,7 @@ Fields:
 - `assertOutputValue` (optional): requires `expected-object.json` to match the parsed `OutputValue` instead of reconstructed text
 - `approval` (optional): seeds a prior tool call, approval request, and approval response for replaying approved/denied second-call flows
 - `expectStreamError` (optional): requires the Go replay to end with an error while still comparing emitted UI chunks
+- `skipReason` (optional): explicitly skips Go replay for an exact imported fixture that the current provider transport cannot consume; generated upstream expectations and focused replacement coverage remain required
 - `maxRetries` (optional): core replay retry count; live recording defaults to zero retries unless this is explicitly set
 
 ## Request Input Assertions

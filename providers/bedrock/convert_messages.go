@@ -533,6 +533,8 @@ func convertAssistantContent(parts []provider.ContentPart, warnings *[]provider.
 			switch {
 			case meta.Signature != "":
 				rc.ReasoningText = &reasoningText{Text: p.Text, Signature: meta.Signature}
+			case meta.RedactedContent != "":
+				rc.RedactedContent = meta.RedactedContent
 			case meta.RedactedData != "":
 				rc.RedactedReasoning = &redactedReasoning{Data: meta.RedactedData}
 			default:

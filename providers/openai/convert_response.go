@@ -61,6 +61,19 @@ func convertResponse(resp *responses.Response, br buildResult, generateID func()
 
 		case responses.ResponseFunctionToolCall:
 			hasFunctionCall = true
+			metadataKey := br.providerOptionsName
+			if metadataKey == "" {
+				metadataKey = providerName
+			}
+			if calls, ok := expandParallelToolCall(v.CallID, v.Name, v.Arguments, v.ID, metadataKey, br.tools); ok {
+				for _, call := range calls {
+					content = append(content, provider.GenerateContentPart{
+						Type: provider.ContentToolCall, ToolCallID: call.toolCallID,
+						ToolName: call.toolName, Input: json.RawMessage(call.input), ProviderMetadata: call.providerMetadata,
+					})
+				}
+				break
+			}
 			content = append(content, provider.GenerateContentPart{
 				Type:             provider.ContentToolCall,
 				ToolCallID:       v.CallID,

@@ -24,6 +24,7 @@ type streamState struct {
 	textActive       bool
 	reasoningActive  bool
 	finishReason     provider.FinishReason
+	finishReasonSet  bool
 	usage            *provider.Usage
 	rawUsage         *openAIUsage
 	toolCalls        []*streamToolCall
@@ -31,6 +32,7 @@ type streamState struct {
 	toolCallsByIndex map[int]*streamToolCall
 	latestToolCall   *streamToolCall
 	errorEmitted     bool
+	errorObserved    bool
 }
 
 type streamToolCall struct {
@@ -191,6 +193,7 @@ func streamError(data []byte) (json.RawMessage, string, bool, error) {
 func (s *streamState) handleChoice(choice chatChoice) bool {
 	if choice.FinishReason != nil {
 		s.finishReason = mapFinishReason(choice.FinishReason)
+		s.finishReasonSet = true
 	}
 
 	delta := choice.Delta
@@ -416,6 +419,12 @@ func (s *streamState) flush() {
 		}
 	}
 
+	if !s.finishReasonSet && !s.errorObserved {
+		s.emitError(provider.NewAPICallError(provider.APICallErrorOptions{
+			Message: "Response stream ended without a finish reason.",
+			URL:     s.endpoint,
+		}))
+	}
 	if s.errorEmitted {
 		s.finishReason = provider.FinishReason{Unified: provider.FinishReasonError}
 	}
@@ -458,6 +467,7 @@ func (s *streamState) finishToolCall(tc *streamToolCall) bool {
 }
 
 func (s *streamState) emitProviderError(err *provider.APICallError) {
+	s.errorObserved = true
 	s.finishReason = provider.FinishReason{Unified: provider.FinishReasonError}
 	_ = sendStreamPart(s.ctx, s.out, provider.StreamPart{
 		Type:         provider.PartError,
@@ -471,6 +481,7 @@ func (s *streamState) emitError(err *provider.APICallError) {
 }
 
 func (s *streamState) emitRecoverableError(err *provider.APICallError) {
+	s.errorObserved = true
 	s.finishReason = provider.FinishReason{Unified: provider.FinishReasonError}
 	_ = sendStreamPart(s.ctx, s.out, provider.StreamPart{
 		Type:         provider.PartError,

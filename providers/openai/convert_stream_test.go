@@ -1054,3 +1054,64 @@ func TestStream_ReasoningSummaryStoreOptionControlsTerminalEvent(t *testing.T) {
 		})
 	}
 }
+
+func TestStream_ReplaysMalformedParallelWrapper(t *testing.T) {
+	tools := []provider.Tool{{Type: provider.ToolTypeFunction, Name: "weather"}}
+	parts := collectPartsWithBuildResult(t, buildResult{providerOptionsName: "openai", tools: tools},
+		`{"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_parallel","call_id":"call_parallel","name":"parallel","arguments":"","status":"in_progress"}}`,
+		`{"type":"response.function_call_arguments.delta","item_id":"fc_parallel","output_index":0,"delta":"{\"tool_uses\":["}`,
+		`{"type":"response.output_item.done","output_index":0,"item":{"type":"function_call","id":"fc_parallel","call_id":"call_parallel","name":"parallel","arguments":"{\"tool_uses\":[","status":"completed"}}`,
+	)
+	var toolParts []provider.StreamPart
+	for _, part := range parts {
+		if part.Type == provider.PartToolInputStart || part.Type == provider.PartToolInputDelta || part.Type == provider.PartToolInputEnd || part.Type == provider.PartToolCall {
+			toolParts = append(toolParts, part)
+		}
+	}
+	require.Len(t, toolParts, 4)
+	assert.Equal(t, provider.PartToolInputStart, toolParts[0].Type)
+	assert.Equal(t, `{"tool_uses":[`, toolParts[1].Delta)
+	assert.Equal(t, provider.PartToolInputEnd, toolParts[2].Type)
+	assert.Equal(t, "parallel", toolParts[3].ToolName)
+}
+
+func TestStream_ReplaysMalformedParallelWrapperArgumentsWithoutDeltas(t *testing.T) {
+	tools := []provider.Tool{{Type: provider.ToolTypeFunction, Name: "weather"}}
+	parts := collectPartsWithBuildResult(t, buildResult{providerOptionsName: "openai", tools: tools},
+		`{"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_parallel","call_id":"call_parallel","name":"parallel","arguments":"","status":"in_progress"}}`,
+		`{"type":"response.output_item.done","output_index":0,"item":{"type":"function_call","id":"fc_parallel","call_id":"call_parallel","name":"parallel","arguments":"{\"invalid\":true}","status":"completed"}}`,
+	)
+	var deltas []provider.StreamPart
+	for _, part := range parts {
+		if part.Type == provider.PartToolInputDelta {
+			deltas = append(deltas, part)
+		}
+	}
+	require.Len(t, deltas, 1)
+	assert.Equal(t, `{"invalid":true}`, deltas[0].Delta)
+}
+
+func TestStream_ExpandsParallelToolCall(t *testing.T) {
+	tools := []provider.Tool{
+		{Type: provider.ToolTypeFunction, Name: "weather"},
+		{Type: provider.ToolTypeFunction, Name: "cityAttractions"},
+	}
+	parts := collectPartsWithBuildResult(t, buildResult{providerOptionsName: "openai", tools: tools},
+		`{"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_parallel","call_id":"call_parallel","name":"parallel","arguments":"","status":"in_progress"}}`,
+		`{"type":"response.function_call_arguments.delta","item_id":"fc_parallel","output_index":0,"delta":"{\"tool_uses\":[{\"recipient_name\":\"functions.weather\",\"parameters\":{\"location\":\"San Francisco\"}},{\"recipient_name\":\"functions.cityAttractions\",\"parameters\":{\"city\":\"Rome\"}}]}"}`,
+		`{"type":"response.output_item.done","output_index":0,"item":{"type":"function_call","id":"fc_parallel","call_id":"call_parallel","name":"parallel","arguments":"{\"tool_uses\":[{\"recipient_name\":\"functions.weather\",\"parameters\":{\"location\":\"San Francisco\"}},{\"recipient_name\":\"functions.cityAttractions\",\"parameters\":{\"city\":\"Rome\"}}]}","status":"completed"}}`,
+	)
+	var toolParts []provider.StreamPart
+	for _, part := range parts {
+		if part.Type == provider.PartToolInputStart || part.Type == provider.PartToolInputDelta || part.Type == provider.PartToolInputEnd || part.Type == provider.PartToolCall {
+			toolParts = append(toolParts, part)
+		}
+	}
+	require.Len(t, toolParts, 8)
+	assert.Equal(t, "call_parallel_0", toolParts[0].ID)
+	assert.Equal(t, "weather", toolParts[0].ToolName)
+	assert.Equal(t, "call_parallel_0", toolParts[3].ToolCallID)
+	assert.Equal(t, "call_parallel_1", toolParts[4].ID)
+	assert.Equal(t, "cityAttractions", toolParts[4].ToolName)
+	assert.Equal(t, "call_parallel_1", toolParts[7].ToolCallID)
+}

@@ -709,6 +709,7 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 		// are fully resolved within the same API response and do not require a
 		// follow-up request.
 		hasClientToolCalls := false
+		hasUnresolvedClientToolCalls := false
 		hasUnresolvedExternal := false
 		hasPendingApproval := false
 		toolResultsByID := make(map[string]bool, len(step.ToolResults))
@@ -722,6 +723,9 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 		for _, tc := range step.ToolCalls {
 			if !tc.ProviderExecuted {
 				hasClientToolCalls = true
+				if !toolResultsByID[tc.ToolCallID] {
+					hasUnresolvedClientToolCalls = true
+				}
 				if !tc.Invalid {
 					if tool, ok := cfg.tools[tc.ToolName]; ok {
 						if tool.Execute == nil {
@@ -743,7 +747,7 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 			}
 		}
 
-		if !hasClientToolCalls || stopped || hasUnresolvedExternal || hasPendingApproval {
+		if !hasClientToolCalls || stopped || hasUnresolvedClientToolCalls || hasUnresolvedExternal || hasPendingApproval {
 			if cfg.output != nil && (cfg.parseOutputOnNonStop || step.FinishReason.Unified == provider.FinishReasonStop) {
 				outputVal, outputErr := cfg.output.ParseComplete(step.Text)
 				r.mu.Lock()
@@ -1223,9 +1227,7 @@ loop:
 			tsp := StreamError{Error: partErrAsError}
 			r.emit(tsp)
 			r.callOnChunk(cfg, tsp)
-			if cfg.onError != nil {
-				cfg.onError(partErrAsError)
-			}
+			callOnError(cfg.onError, partErrAsError)
 		}
 	}
 
@@ -1270,8 +1272,10 @@ loop:
 		})
 	}
 	if completed || partialCompleted {
-		if err := r.executeTools(ctx, &step, cfg, stepContext, currentMsgs); err != nil {
-			return step, false, false, hasOutput, err
+		if isToolExecutionAllowedFinishReason(step.FinishReason.Unified) {
+			if err := r.executeTools(ctx, &step, cfg, stepContext, currentMsgs); err != nil {
+				return step, false, false, hasOutput, err
+			}
 		}
 		step.Content = buildContent(step)
 		// Populate Response.Messages with the next-call message tail
@@ -1288,6 +1292,10 @@ loop:
 	}
 
 	return step, completed, terminated, hasOutput, nil
+}
+
+func isToolExecutionAllowedFinishReason(reason provider.UnifiedFinishReason) bool {
+	return reason == provider.FinishReasonStop || reason == provider.FinishReasonToolCalls
 }
 
 func isSemanticOutputStreamPart(part provider.StreamPart) bool {
@@ -1912,9 +1920,15 @@ func (r *StreamTextResult) emitStreamError(err error, onError func(error)) {
 	}
 	r.mu.Unlock()
 	r.emit(StreamError{Error: err})
-	if onError != nil {
-		onError(err)
+	callOnError(onError, err)
+}
+
+func callOnError(onError func(error), err error) {
+	if onError == nil {
+		return
 	}
+	defer func() { _ = recover() }()
+	onError(err)
 }
 
 type collectedToolApproval struct {
@@ -2306,9 +2320,11 @@ func sanitizePromptForProvider(msgs []provider.Message) ([]provider.Message, err
 }
 
 func (r *StreamTextResult) callOnChunk(cfg *streamConfig, tsp TextStreamPart) {
-	if cfg.onChunk != nil {
-		cfg.onChunk(OnChunkState{Chunk: tsp})
+	if cfg.onChunk == nil {
+		return
 	}
+	defer func() { _ = recover() }()
+	cfg.onChunk(OnChunkState{Chunk: tsp})
 }
 
 // Wait blocks until the stream completes.

@@ -17,6 +17,7 @@ const (
 	ChunkAbort           ChunkType = "abort"
 	ChunkStartStep       ChunkType = "start-step"
 	ChunkFinishStep      ChunkType = "finish-step"
+	ChunkResetStep       ChunkType = "reset-step"
 	ChunkMessageMetadata ChunkType = "message-metadata"
 
 	ChunkTextStart ChunkType = "text-start"
@@ -120,7 +121,7 @@ func (c *UIMessageChunk) UnmarshalJSON(data []byte) error {
 
 func isKnownChunkType(chunkType ChunkType) bool {
 	switch chunkType {
-	case ChunkStart, ChunkFinish, ChunkAbort, ChunkStartStep, ChunkFinishStep, ChunkMessageMetadata,
+	case ChunkStart, ChunkFinish, ChunkAbort, ChunkStartStep, ChunkFinishStep, ChunkResetStep, ChunkMessageMetadata,
 		ChunkTextStart, ChunkTextDelta, ChunkTextEnd,
 		ChunkReasoningStart, ChunkReasoningDelta, ChunkReasoningEnd, ChunkReasoningFile,
 		ChunkToolInputStart, ChunkToolInputDelta, ChunkToolInputAvailable, ChunkToolInputError,
@@ -155,7 +156,7 @@ func (c UIMessageChunk) MarshalJSON() ([]byte, error) {
 		m["kind"] = c.Kind
 		setOptMeta(m, c.ProviderMetadata)
 
-	case ChunkStartStep, ChunkFinishStep:
+	case ChunkStartStep, ChunkFinishStep, ChunkResetStep:
 		// no additional fields
 
 	case ChunkMessageMetadata:

@@ -116,6 +116,7 @@ function ChatProbe({ scenario }: { scenario: string }) {
       <div data-testid="chat-abort-count">{abortCount}</div>
       <div data-testid="chat-message-count">{messages.length}</div>
       <div data-testid="chat-text">{text}</div>
+      <div data-testid="chat-state">{JSON.stringify(messages)}</div>
     </div>
   );
 }
@@ -331,6 +332,23 @@ describe("React hook interop", () => {
       },
       { timeout: 3000 },
     );
+  });
+
+  it("useChat removes reset step parts before accepting a retry", async () => {
+    render(<ChatProbe scenario="reset-step" />);
+
+    screen.getByTestId("chat-send").click();
+
+    await waitFor(() => {
+      const messages = JSON.parse(
+        screen.getByTestId("chat-state").textContent ?? "[]",
+      ) as AgentToolMessage[];
+      const parts = messages.flatMap(message => message.parts);
+      expect(parts.some(part => part.toolCallId === "stale-tool")).toBe(false);
+      expect(parts.some(part => part.toolCallId === "retried-tool")).toBe(true);
+      expect(screen.getByTestId("chat-text").textContent).toBe("Completed step");
+      expect(screen.getByTestId("chat-status").textContent).toBe("ready");
+    });
   });
 
   it.each([

@@ -141,10 +141,10 @@ type toolResultContent struct {
 	Document *documentBlock `json:"document,omitempty"`
 }
 
-// reasoningContentBlock is the assistant-side reasoning trace. Either
-// reasoningText (with optional signature) or redactedReasoning.
+// reasoningContentBlock is the assistant-side reasoning trace.
 type reasoningContentBlock struct {
 	ReasoningText     *reasoningText     `json:"reasoningText,omitempty"`
+	RedactedContent   string             `json:"redactedContent,omitempty"`
 	RedactedReasoning *redactedReasoning `json:"redactedReasoning,omitempty"`
 }
 
@@ -326,9 +326,10 @@ type streamToolUseDelta struct {
 }
 
 type streamReasoningContentDelta struct {
-	Text      string `json:"text,omitempty"`
-	Signature string `json:"signature,omitempty"`
-	Data      string `json:"data,omitempty"`
+	Text            string `json:"text,omitempty"`
+	Signature       string `json:"signature,omitempty"`
+	RedactedContent string `json:"redactedContent,omitempty"`
+	Data            string `json:"data,omitempty"`
 }
 
 type streamContentBlockStop struct {

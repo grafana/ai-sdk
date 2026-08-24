@@ -386,6 +386,36 @@ func TestDoGenerateSendsGoogleThoughtSignature(t *testing.T) {
 	require.Equal(t, "<Signature A>", google["thought_signature"])
 }
 
+func TestDoGenerateSendsCustomProviderThoughtSignature(t *testing.T) {
+	t.Parallel()
+
+	var got map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&got))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"chatcmpl_1","model":"test-model","choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`))
+	}))
+	defer server.Close()
+
+	toolCall := provider.ToolCallPart("function-call-1", "check_flight", json.RawMessage(`{"flight":"AA100"}`))
+	toolCall.ProviderOptions = provider.ProviderOptions{
+		"someProvider": provider.RawProviderOption{Key: "someProvider", Raw: json.RawMessage(`{"thoughtSignature":"custom"}`)},
+		"google":       provider.RawProviderOption{Key: "google", Raw: json.RawMessage(`{"thoughtSignature":"fallback"}`)},
+	}
+	_, err := New("test-model", WithBaseURL(server.URL), WithProviderName("some-provider")).DoGenerate(context.Background(), provider.CallOptions{
+		Prompt: []provider.Message{provider.NewAssistantMessage(toolCall)},
+		ProviderOptions: provider.ProviderOptions{
+			"someProvider": provider.RawProviderOption{Key: "someProvider", Raw: json.RawMessage(`{}`)},
+		},
+	})
+	require.NoError(t, err)
+
+	messages := got["messages"].([]any)
+	toolCalls := messages[0].(map[string]any)["tool_calls"].([]any)
+	extra := toolCalls[0].(map[string]any)["extra_content"].(map[string]any)
+	assert.Equal(t, "custom", extra["google"].(map[string]any)["thought_signature"])
+}
+
 func TestDoGenerateSendsOpenAICompatibleMessageMetadata(t *testing.T) {
 	t.Parallel()
 
@@ -1086,6 +1116,40 @@ func TestDoStreamProcessesFinalDataLineAtEOF(t *testing.T) {
 	require.NotNil(t, finish.Usage)
 	require.Equal(t, 2, *finish.Usage.InputTokens.Total)
 	require.Equal(t, 3, *finish.Usage.OutputTokens.Total)
+}
+
+func TestDoStreamMissingFinishReason(t *testing.T) {
+	t.Parallel()
+
+	for _, done := range []bool{false, true} {
+		name := "eof"
+		if done {
+			name = "done"
+		}
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "text/event-stream")
+				_, _ = w.Write([]byte(`data: {"id":"chatcmpl_stream","model":"test-model","choices":[{"delta":{"content":"partial"},"finish_reason":null}]}` + "\n\n"))
+				if done {
+					_, _ = w.Write([]byte("data: [DONE]\n\n"))
+				}
+			}))
+			defer server.Close()
+
+			result, err := New("test-model", WithBaseURL(server.URL)).DoStream(context.Background(), provider.CallOptions{
+				Prompt: []provider.Message{provider.UserText("hi")},
+			})
+			require.NoError(t, err)
+			parts := collectStreamParts(result)
+			text := findPart(parts, provider.PartTextDelta)
+			assert.Equal(t, "partial", text.Delta)
+			errors := findParts(parts, provider.PartError)
+			require.Len(t, errors, 1)
+			assert.Contains(t, errors[0].APICallError.Message, "without a finish reason")
+			assert.Equal(t, provider.FinishReasonError, parts[len(parts)-1].FinishReason.Unified)
+		})
+	}
 }
 
 func TestDoStreamStructuredError(t *testing.T) {

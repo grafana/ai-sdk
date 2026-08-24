@@ -121,7 +121,7 @@ func ConvertToModelMessages(messages []UIMessage, opts ...ConvertOption) ([]prov
 			// optionally a tool-approval-response and either a regular or
 			// synthetic execution-denied tool-result.
 			processToolPart := func(tp toolPartFields) error {
-				if opt.ignoreIncompleteToolCalls && !isCompleteToolCallState(tp.State) {
+				if opt.ignoreIncompleteToolCalls && (!isCompleteToolCallState(tp.State) || (tp.State == ToolStateOutputAvailable && tp.Preliminary)) {
 					return nil
 				}
 				callOpts := providerMetadataToOptions(tp.CallProviderMetadata)
@@ -321,6 +321,7 @@ type toolPartFields struct {
 	Output                 json.RawMessage
 	ErrorText              string
 	ProviderExecuted       bool
+	Preliminary            bool
 	Approval               *ToolApproval
 	CallProviderMetadata   provider.ProviderMetadata
 	ResultProviderMetadata provider.ProviderMetadata

@@ -153,6 +153,18 @@ func convertAssistantMessage(msg provider.Message, ctx inputConversionContext) (
 			items = append(items, assistantOutputMessage(part.Text, po))
 
 		case provider.ContentPartTypeToolCall:
+			if metadata, ok := parallelMetadata(ctx.partOptions(part)); ok {
+				if group := ctx.parallelGroups[metadata.ToolCallID]; group != nil && sameParallelToolCall(group.metadata, metadata) {
+					if !group.callEmitted {
+						group.callEmitted = true
+						if !ctx.hasConversation {
+							item := responses.ResponseInputItemParamOfFunctionCall(metadata.Input, metadata.ToolCallID, metadata.ToolName)
+							items = append(items, item)
+						}
+					}
+					continue
+				}
+			}
 			item, err := convertAssistantToolCall(part, ctx)
 			if err != nil {
 				return nil, nil, err
@@ -221,6 +233,21 @@ func convertToolMessage(msg provider.Message, ctx inputConversionContext) ([]res
 	for _, part := range msg.Content {
 		switch part.Type {
 		case provider.ContentPartTypeToolResult:
+			if metadata, ok := parallelMetadata(ctx.partOptions(part)); ok {
+				if group := ctx.parallelGroups[metadata.ToolCallID]; group != nil && sameParallelToolCall(group.metadata, metadata) {
+					if !group.resultEmitted {
+						group.resultEmitted = true
+						outputs := make([]string, metadata.Count)
+						for index := 0; index < metadata.Count; index++ {
+							result := group.results[index]
+							outputs[index] = toolResultOutputString(result.Output, ctx.hasOutputSchema(result.ToolName))
+						}
+						item := responses.ResponseInputItemParamOfFunctionCallOutput(metadata.ToolCallID, strings.Join(outputs, "\n"))
+						items = append(items, item)
+					}
+					continue
+				}
+			}
 			item, itemWarnings, err := convertProviderToolResult(part, ctx)
 			if err != nil {
 				return nil, nil, err

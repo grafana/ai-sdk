@@ -57,6 +57,7 @@ type Config struct {
 	Approval          *ApprovalConfig               `yaml:"approval,omitempty"`
 	Approvals         []ApprovalConfig              `yaml:"approvals,omitempty"`
 	ExpectStreamError bool                          `yaml:"expectStreamError,omitempty"`
+	SkipReason        string                        `yaml:"skipReason,omitempty"`
 	MaxRetries        *int                          `yaml:"maxRetries,omitempty"`
 }
 
@@ -1111,6 +1112,10 @@ func RunTestCaseWithServer(t *testing.T, tc TestCase, factory ProviderFactory, s
 
 	cfg, err := LoadConfig(filepath.Join(tc.Dir, "config.yaml"))
 	require.NoError(t, err, "loading config")
+	if cfg.SkipReason != "" {
+		require.True(t, strings.HasPrefix(tc.Name, "upstream/"), "skipReason is only valid for imported upstream fixtures")
+		t.Skip(cfg.SkipReason)
+	}
 
 	ts, err := serverFactory(t, tc)
 	require.NoError(t, err, "creating replay server")

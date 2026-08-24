@@ -132,6 +132,22 @@ func (s *uiMessageReaderState) apply(chunk UIMessageChunk) (bool, error) {
 		s.activeReasoningParts = make(map[string]int)
 		return false, nil
 
+	case ChunkResetStep:
+		start := 0
+		for i := len(s.message.Parts) - 1; i >= 0; i-- {
+			if _, ok := s.message.Parts[i].(StepStartPart); ok {
+				start = i + 1
+				break
+			}
+		}
+		changed := start < len(s.message.Parts)
+		s.message.Parts = s.message.Parts[:start]
+		s.activeTextParts = make(map[string]int)
+		s.activeReasoningParts = make(map[string]int)
+		s.partialToolCalls = make(map[string]*partialToolCallState)
+		s.rebuildDataPartIndex()
+		return changed, nil
+
 	case ChunkAbort, ChunkError:
 		return false, nil
 
@@ -324,6 +340,7 @@ func (s *uiMessageReaderState) apply(chunk UIMessageChunk) (bool, error) {
 		s.updateToolAt(idx, func(tp *toolPartFields) {
 			tp.State = ToolStateOutputAvailable
 			tp.Output = cloneRawMessage(chunk.Output)
+			tp.Preliminary = chunk.Preliminary
 			if chunk.ProviderExecuted {
 				tp.ProviderExecuted = true
 			}
@@ -365,6 +382,15 @@ func (s *uiMessageReaderState) apply(chunk UIMessageChunk) (bool, error) {
 		return s.applyDataChunk(chunk)
 	}
 	return false, nil
+}
+
+func (s *uiMessageReaderState) rebuildDataPartIndex() {
+	s.dataPartIndex = make(map[string]int)
+	for i, messagePart := range s.message.Parts {
+		if part, ok := messagePart.(DataPart); ok && part.ID != "" {
+			s.dataPartIndex[part.DataName+"\x00"+part.ID] = i
+		}
+	}
 }
 
 func (s *uiMessageReaderState) applyDataChunk(chunk UIMessageChunk) (bool, error) {

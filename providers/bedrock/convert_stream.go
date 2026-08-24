@@ -28,10 +28,11 @@ const (
 // content. Tool blocks accumulate JSON fragments until contentBlockStop so
 // we can emit a single PartToolCall after streaming all input deltas.
 type blockState struct {
-	kind       blockKind
-	toolCallID string
-	toolName   string
-	jsonText   string
+	kind            blockKind
+	toolCallID      string
+	toolName        string
+	jsonText        string
+	redactedContent string
 	// isJSONResponseTool flips the stream conversion to emit text deltas
 	// (rather than tool input deltas) when the synthetic json tool is in use.
 	isJSONResponseTool bool
@@ -348,6 +349,8 @@ func (c *streamConsumer) handleContentBlockDelta(payload []byte) error {
 					"bedrock":       meta,
 				},
 			})
+		case rc.RedactedContent != "":
+			block.redactedContent += rc.RedactedContent
 		case rc.Data != "":
 			meta := jsonRawOrZero(ReasoningMetadata{RedactedData: rc.Data})
 			_ = sendStreamPart(context.Background(), c.out, provider.StreamPart{
@@ -380,10 +383,18 @@ func (c *streamConsumer) handleContentBlockStop(payload []byte) error {
 			ID:   strconv.Itoa(ev.ContentBlockIndex),
 		})
 	case blockKindReasoning:
-		_ = sendStreamPart(context.Background(), c.out, provider.StreamPart{
+		part := provider.StreamPart{
 			Type: provider.PartReasoningEnd,
 			ID:   strconv.Itoa(ev.ContentBlockIndex),
-		})
+		}
+		if block.redactedContent != "" {
+			meta := jsonRawOrZero(ReasoningMetadata{RedactedContent: block.redactedContent})
+			part.ProviderMetadata = provider.ProviderMetadata{
+				"amazonBedrock": meta,
+				"bedrock":       meta,
+			}
+		}
+		_ = sendStreamPart(context.Background(), c.out, part)
 	case blockKindTool:
 		input := block.jsonText
 		if input == "" {
@@ -547,6 +558,9 @@ func bedrockExceptionToAPIError(exceptionType string, body converseError, raw []
 	case "internalServerException", "modelStreamErrorException":
 		retryable = true
 		statusCode = 500
+	case "serviceUnavailableException":
+		retryable = true
+		statusCode = 503
 	case "validationException":
 		retryable = false
 		statusCode = 400

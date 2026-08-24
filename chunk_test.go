@@ -11,7 +11,7 @@ import (
 
 func TestChunkTypeConstants(t *testing.T) {
 	types := []ChunkType{
-		ChunkStart, ChunkFinish, ChunkAbort, ChunkStartStep, ChunkFinishStep, ChunkMessageMetadata,
+		ChunkStart, ChunkFinish, ChunkAbort, ChunkStartStep, ChunkFinishStep, ChunkResetStep, ChunkMessageMetadata,
 		ChunkTextStart, ChunkTextDelta, ChunkTextEnd,
 		ChunkReasoningStart, ChunkReasoningDelta, ChunkReasoningEnd, ChunkReasoningFile,
 		ChunkToolInputStart, ChunkToolInputDelta, ChunkToolInputAvailable, ChunkToolInputError,

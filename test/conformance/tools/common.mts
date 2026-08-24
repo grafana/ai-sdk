@@ -84,6 +84,7 @@ export interface Config {
   approval?: ApprovalConfig;
   approvals?: ApprovalConfig[];
   expectStreamError?: boolean;
+  skipReason?: string;
   maxRetries?: number;
 }
 
@@ -312,6 +313,7 @@ export function unsupportedGenerateFields(cfg: Config): string[] {
     ["approvals", nonEmptyArray(cfg.approvals)],
     ["assertOutputValue", cfg.assertOutputValue || undefined],
     ["expectStreamError", cfg.expectStreamError || undefined],
+    ["skipReason", cfg.skipReason || undefined],
     ["maxRetries", cfg.maxRetries],
     [
       "stopWhenStepCount",

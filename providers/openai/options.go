@@ -234,6 +234,8 @@ type OpenAIPartOptions struct {
 	Caller *OpenAIToolCaller `json:"caller,omitempty"`
 	// Phase is the message phase ("commentary","final_answer").
 	Phase string `json:"phase,omitempty"`
+	// ParallelToolCall preserves an expanded parallel wrapper for continuation.
+	ParallelToolCall *OpenAIParallelToolCall `json:"parallelToolCall,omitempty"`
 }
 
 // ProviderKey returns the provider namespace key.

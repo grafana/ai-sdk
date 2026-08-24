@@ -28,6 +28,7 @@ type buildResult struct {
 	// hasComputerTool indicates the client-executed computer tool is present.
 	hasComputerTool   bool
 	logprobsRequested bool
+	tools             []provider.Tool
 }
 
 // buildParams converts provider.CallOptions into an OpenAI Responses request.
@@ -59,6 +60,7 @@ func buildParams(modelID string, opts provider.CallOptions) (responses.ResponseN
 		providerOptionsName:        poptsName,
 		toolNameMapping:            newToolNameMapping(opts.Tools),
 		approvalRequestToolCallIDs: approvalRequestToolCallIDMapping(opts.Prompt, poptsName),
+		tools:                      opts.Tools,
 	}
 
 	body := responses.ResponseNewParams{
@@ -66,7 +68,7 @@ func buildParams(modelID string, opts provider.CallOptions) (responses.ResponseN
 	}
 
 	// Input conversion.
-	inputCtx := newInputConversionContext(opts.Tools, br.toolNameMapping, store, poptsName, popts.Conversation != "", popts.PreviousResponseID != "")
+	inputCtx := newInputConversionContext(opts.Prompt, opts.Tools, br.toolNameMapping, store, poptsName, popts.Conversation != "", popts.PreviousResponseID != "")
 	input, inputWarnings, err := convertInput(opts.Prompt, systemMode, popts, inputCtx)
 	if err != nil {
 		return responses.ResponseNewParams{}, nil, buildResult{}, err

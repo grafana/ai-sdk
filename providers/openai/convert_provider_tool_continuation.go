@@ -24,9 +24,10 @@ type inputConversionContext struct {
 	customProviderToolNames map[string]struct{}
 	outputSchemaToolNames   map[string]struct{}
 	processedApprovalIDs    map[string]struct{}
+	parallelGroups          map[string]*parallelToolResultGroup
 }
 
-func newInputConversionContext(tools []provider.Tool, mapping toolNameMapping, store bool, providerOptionsName string, hasConversation, hasPreviousResponseID bool) inputConversionContext {
+func newInputConversionContext(prompt []provider.Message, tools []provider.Tool, mapping toolNameMapping, store bool, providerOptionsName string, hasConversation, hasPreviousResponseID bool) inputConversionContext {
 	ctx := inputConversionContext{
 		store:                   store,
 		providerOptionsName:     providerOptionsName,
@@ -36,6 +37,7 @@ func newInputConversionContext(tools []provider.Tool, mapping toolNameMapping, s
 		customProviderToolNames: make(map[string]struct{}),
 		outputSchemaToolNames:   make(map[string]struct{}),
 		processedApprovalIDs:    make(map[string]struct{}),
+		parallelGroups:          collectParallelToolResultGroups(prompt, providerOptionsName, hasConversation || hasPreviousResponseID),
 	}
 	for _, tool := range tools {
 		if tool.Type == provider.ToolTypeFunction {
