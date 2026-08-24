@@ -461,7 +461,7 @@ func TestRuntimeUnsupportedCapabilities(t *testing.T) {
 	}
 
 	t.Run("unknown mapper discriminators fail closed", func(t *testing.T) {
-		_, failure := inspectWireTool(json.RawMessage(`{"type":"future"}`))
+		failure := inspectWireTool(json.RawMessage(`{"type":"future"}`))
 		require.NotNil(t, failure)
 		assert.Equal(t, stageMapping, failure.stage)
 		require.NotNil(t, inspectWireToolChoice(json.RawMessage(`{"type":"future"}`)))
