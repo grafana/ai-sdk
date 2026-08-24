@@ -1,95 +1,53 @@
 # Writing middleware
 
-Language-model middleware is the model-call customization boundary. It wraps a
-`provider.LanguageModel`, so the same behavior can apply to generation, agents,
-registries, fallback models, and any other consumer of that model.
+Write middleware when you need the same model-call behavior across models or
+call sites. Middleware wraps `provider.LanguageModel`, so your customization
+works anywhere the wrapped model is used.
 
-Write middleware when the built-in and optional integrations do not provide a
-behavior that must be consistent across model calls.
+## Common use cases
 
-## Common middleware use cases
+- apply default instructions, settings, headers, or provider options;
+- enforce token budgets, allowlists, rate limits, or call policy;
+- enrich prompts with retrieved context or request metadata;
+- cache calls or record logs, metrics, traces, usage, or audit events;
+- normalize or transform text, reasoning, JSON, tools, streams, or call modes.
 
-- apply default instructions, model settings, headers, or provider options;
-- enforce token budgets, model allowlists, rate limits, or other call policy;
-- enrich prompts with retrieved context or request-scoped metadata;
-- cache or deduplicate model calls;
-- record logs, metrics, traces, usage, or audit events;
-- normalize provider-specific text, reasoning, JSON, or tool-call behavior;
-- inspect, filter, or transform generated content and stream parts;
-- simulate streaming or adapt between generate and stream calls;
-- expose an intentional provider or model identity for a wrapped model.
+## Choose a hook
 
-Middleware works best when the behavior is reusable across call sites and does
-not depend on one provider implementation.
+Start with the narrowest hook that supports your behavior:
 
-## Understand the call lifecycle
-
-Each middleware layer transforms its input, runs its matching wrapper, and then
-delegates to the next layer:
-
-```text
-caller
-  → first.TransformParams
-  → first.WrapGenerate or first.WrapStream
-    → second.TransformParams
-    → second.WrapGenerate or second.WrapStream
-      → provider
-    ← second result or stream
-  ← first result or stream
-```
-
-The first middleware is outermost. An outer wrapper runs before inner request
-transforms and sees the result after inner result transforms. Place middleware
-according to whether it should observe the caller's request or the request that
-is closer to the provider.
-
-Middleware runs once per model invocation, not once per application request. A
-multi-step agent, retry, or fallback operation can invoke models several times.
-
-## Choose the narrowest hook
-
-A `middleware.Middleware` has optional hooks. Set only the hooks the behavior
-needs:
-
-| Hook | Use it for |
+| Hook | Use it to |
 |---|---|
-| `TransformParams` | Validate or modify prompts, tools, settings, headers, or provider options before a call |
-| `WrapGenerate` | Short-circuit, observe, or transform a non-streaming provider call |
-| `WrapStream` | Short-circuit, observe, replace, or transform a provider stream |
-| Metadata overrides | Intentionally change the wrapper's provider, model ID, or supported URLs |
+| `TransformParams` | Validate or change prompts, tools, settings, headers, or provider options |
+| `WrapGenerate` | Short-circuit, observe, cache, or transform a `DoGenerate` call |
+| `WrapStream` | Short-circuit, observe, cache, or transform a `DoStream` call |
+| Metadata overrides | Change the wrapped model's provider, model ID, or supported URLs |
 
-`TransformParams` receives the call type, current call options, and inner model.
-Its returned options reach the wrapper hook in the same layer. Returning an
-error prevents that layer from calling the inner model.
+All hooks are optional. `TransformParams` runs before the matching wrapper and
+can return an error before the model is called. Wrappers receive delegates for
+both call modes, already bound to the transformed parameters.
 
-Both wrapper hooks receive `DoGenerate` and `DoStream` delegates bound to the
-transformed options. Normally call the matching delegate exactly once. Calling
-neither intentionally short-circuits the provider, while calling more than once
-creates multiple provider calls. Cross-mode delegation is intended for adapters
-such as simulated streaming, not routine middleware.
+Normally call the matching delegate exactly once. Calling neither short-circuits
+the provider; calling it more than once creates multiple model calls. Use the
+other delegate only for an intentional cross-mode adapter.
 
-`aisdk.GenerateText` collects a `StreamText` result and therefore invokes
-`LanguageModel.DoStream`; it does not invoke `DoGenerate`. `WrapGenerate` covers
-consumers that call `LanguageModel.DoGenerate` directly. Reusable middleware
-should support both methods when its behavior must hold for every
-`LanguageModel` consumer.
+`aisdk.GenerateText` collects a streaming result, so it invokes `DoStream`.
+Implement both wrappers if your middleware must also support consumers that call
+`DoGenerate` directly.
 
-## Transform request parameters
+## Write a parameter transform
 
-This middleware enforces a shared output-token ceiling while preserving a lower
-caller-provided limit:
+A middleware is a value with the hooks you need. This example enforces an output
+limit while preserving a lower caller-provided value:
 
 ```go
 func OutputBudget(limit int) middleware.Middleware {
 	return middleware.Middleware{
-		TransformParams: func(
-			_ context.Context,
-			input middleware.TransformParamsInput,
-		) (provider.CallOptions, error) {
+		TransformParams: func(_ context.Context, input middleware.TransformParamsInput) (provider.CallOptions, error) {
 			params := input.Params
 			if params.MaxOutputTokens == nil || *params.MaxOutputTokens > limit {
-				maxOutputTokens := limit
-				params.MaxOutputTokens = &maxOutputTokens
+				value := limit
+				params.MaxOutputTokens = &value
 			}
 			return params, nil
 		},
@@ -97,212 +55,100 @@ func OutputBudget(limit int) middleware.Middleware {
 }
 ```
 
-Apply it like any other middleware:
+`CallOptions` is copied by value, but its slices, maps, pointers, and nested
+message content still share storage. Clone every collection level you modify so
+you do not mutate caller-owned data.
+
+Use `input.Type` when generate and stream calls need different parameters. Use
+`input.Model` when behavior depends on the next model in the chain.
+
+## Wrap results and streams
+
+In `WrapGenerate`, call `params.DoGenerate(ctx)`, handle its error, then inspect
+or transform the result. Preserve every field you do not own, including non-text
+content, usage, warnings, and request, response, and provider metadata.
+
+In `WrapStream`, call `params.DoStream(ctx)` first, then use
+`middleware.TransformStream` to inspect or replace parts:
 
 ```go
-model := middleware.WrapLanguageModel(baseModel, OutputBudget(1_024))
-```
-
-`provider.CallOptions` is passed by value, but its slices, maps, pointers, and
-nested message content still refer to shared data. Clone any collection before
-changing its elements or keys. A middleware should not mutate caller-owned
-prompts, tools, headers, or provider options as a side effect.
-
-Use `input.Type` when generate and stream calls require different parameters.
-Use `input.Model` when policy depends on the identity or capabilities of the
-next model in the chain.
-
-## Wrap a generate call
-
-A generate wrapper can run work before and after the inner call, return a cached
-result without delegating, or transform selected result parts:
-
-```go
-func ObserveGenerate(
-	observe func(time.Duration, error),
-) middleware.Middleware {
-	return middleware.Middleware{
-		WrapGenerate: func(
-			ctx context.Context,
-			params middleware.WrapGenerateParams,
-		) (*provider.GenerateResult, error) {
-			started := time.Now()
-			result, err := params.DoGenerate(ctx)
-			observe(time.Since(started), err)
-			return result, err
-		},
+WrapStream: func(ctx context.Context, params middleware.WrapStreamParams) (*provider.StreamResult, error) {
+	result, err := params.DoStream(ctx)
+	if err != nil {
+		return nil, err
 	}
-}
-```
-
-Preserve every result field that the middleware does not intentionally change,
-including non-text content, usage, warnings, request and response metadata, and
-provider metadata. Return inner errors unless the middleware has a documented
-replacement or recovery policy.
-
-## Wrap a stream safely
-
-A stream wrapper returns after the inner stream opens. Measuring only the call
-to `DoStream` therefore measures stream setup, not completion. Observe the
-returned parts when behavior depends on streamed output.
-
-`middleware.TransformStream` handles the output channel, normal input closure,
-context cancellation, and request/response metadata. This example observes
-every emitted part without changing the stream:
-
-```go
-func ObserveStreamParts(
-	observe func(provider.StreamPart),
-) middleware.Middleware {
-	return middleware.Middleware{
-		WrapStream: func(
-			ctx context.Context,
-			params middleware.WrapStreamParams,
-		) (*provider.StreamResult, error) {
-			result, err := params.DoStream(ctx)
-			if err != nil {
-				return nil, err
-			}
-
-			return middleware.TransformStream(
-				ctx,
-				result,
-				func(
-					part provider.StreamPart,
-					emit func(provider.StreamPart),
-				) {
-					observe(part)
-					emit(part)
-				},
-				nil,
-			), nil
+	return middleware.TransformStream(ctx, result,
+		func(part provider.StreamPart, emit func(provider.StreamPart)) {
+			observe(part)
+			emit(part)
 		},
-	}
-}
+		nil,
+	), nil
+},
 ```
 
-The transform function can emit zero, one, or many parts for each input part.
-Its optional flush function runs when the input stream closes normally, but not
-when the context is cancelled. `TransformStream` has no completion or
-cancellation callback, so use a context-aware stream tee when instrumentation
-must distinguish normal closure, error parts, and cancellation. Do not use flush
-for critical cleanup or persistence.
+A transform may emit zero, one, or many parts. Preserve unrelated parts, IDs,
+ordering, finish reasons, usage, errors, and provider metadata. Buffer when a
+transformation can span chunk boundaries. Keep observation callbacks fast:
+slow I/O blocks upstream reads.
 
-A safe stream transform must:
+`DoStream` errors happen before the stream opens. Later errors normally arrive
+as `provider.PartError` values and should remain in the stream. The optional
+flush callback runs only when the input closes normally, not on cancellation.
 
-- forward every unrelated part;
-- preserve part IDs and start/delta/end ordering;
-- preserve finish reasons, usage, errors, and provider metadata;
-- handle meaningful text that is split across arbitrary chunk boundaries;
-- avoid blocking the stream on slow observation or external I/O;
-- stop when the request context is cancelled.
+Pass the received context to delegates. Callers should drain streams. When they
+abandon one, cancellation only stops context-aware components. Any goroutine you
+create must make sends context-aware or drain upstream on cancellation.
 
-Errors returned by `DoStream` happen before the stream opens. Errors after that
-point normally arrive as `provider.PartError` values and must continue through
-the stream unless the middleware intentionally replaces them.
+## Wrap and compose the model
 
-Callers should drain a returned stream whenever possible. When abandoning a
-stream, cancel its context so context-aware providers and middleware can stop.
-Cancellation cannot release a relay that ignores the context. Any wrapper that
-starts a goroutine must make channel sends context-aware or drain its upstream
-on cancellation so it cannot remain blocked publishing output.
-
-## Preserve context and concurrency
-
-Pass the received context to the inner delegate. A wrapper may derive a timeout
-or add values before delegation, but should not replace the request context with
-`context.Background()`.
-
-A middleware value may be reused by many models and concurrent requests,
-especially when attached to a provider registry. Allocate request and stream
-state inside the wrapper hook. Protect intentionally shared state such as caches
-or counters with concurrency-safe implementations.
-
-The transform and flush callbacks for one `TransformStream` run serially, so
-per-stream state owned by those callbacks does not need its own lock.
-
-## Choose the wrapping boundary
-
-Attach middleware to one model when behavior is model-specific. Attach it to a
-registry when every resolved model should share the same policy:
+Apply your middleware with `WrapLanguageModel`:
 
 ```go
-models := registry.NewProviderRegistry(
-	providers,
-	registry.WithLanguageModelMiddleware(OutputBudget(1_024)),
+model := middleware.WrapLanguageModel(
+	baseModel,
+	OutputBudget(1_024),
+	otherMiddleware,
 )
 ```
 
-Fallback placement changes the scope:
+The first middleware is outermost:
 
 ```text
-middleware(fallback(primary, backup))
-    one middleware invocation around the fallback operation
-
-fallback(middleware(primary), middleware(backup))
-    one middleware invocation for each candidate attempt
+request  → first → second → provider
+response ← first ← second ← provider
 ```
 
-Wrap candidates individually for candidate-level logging, metrics, policy, or
-caching. Wrap the fallback model when the behavior should treat fallback as one
-model operation.
+Order determines whether your middleware sees caller parameters or parameters
+transformed closer to the provider. Keep per-call state inside hooks and protect
+shared caches or counters because middleware may serve concurrent requests.
 
-Use metadata overrides sparingly. Provider and model identity affect logs,
-metrics, cache keys, and model selection diagnostics. Override them only when
-the wrapper intentionally exposes a different public identity.
+Attach middleware to a registry when every resolved model needs it. With
+fallback, wrap each candidate for candidate-level behavior or wrap the fallback
+model to treat fallback as one model operation.
 
-## Package reusable middleware
+## Test before reuse
 
-For an application-local transform, a small function returning
-`middleware.Middleware` is enough. A reusable package should normally expose:
+Treat prompts, reasoning, tools, credentials, and provider payloads as sensitive.
+Make capture opt-in, bounded, and redacted.
 
-```go
-func Middleware(opts Options) middleware.Middleware
-func Wrap(base provider.LanguageModel, opts Options) provider.LanguageModel
-```
+Test the wrapped model with a hand-written `provider.LanguageModel` fake. Cover
+both call modes, transformed and untouched fields, delegate count, errors,
+stream order and cancellation, composition, and concurrent use with
+`go test -race`.
 
-If construction can fail, return the error while building the middleware rather
-than deferring configuration failures until a model call. Construct shared,
-stateful middleware once and reuse it.
-
-Keep reusable middleware model-agnostic where possible. Provider-specific
-behavior should be selected explicitly through provider identity or typed
-provider options, and tested against every supported provider.
-
-## Test the contract
-
-Use a small hand-written `provider.LanguageModel` fake and test the wrapped
-model rather than only invoking hook functions directly. Cover:
-
-- generate and stream behavior independently;
-- transformed options and preservation of unrelated fields;
-- delegation count and intentional short-circuiting;
-- errors before stream creation and error parts during streaming;
-- stream ordering, metadata, closure, and cancellation;
-- middleware ordering and fallback placement;
-- concurrent reuse with `go test -race`;
-- metadata-only defaults for any logging or recording behavior.
+If you publish the middleware, expose a constructor returning
+`middleware.Middleware` and optionally a `Wrap` helper. Validate configuration
+at construction and document ordering, external I/O, short-circuiting,
+sensitive-data handling, and supported providers.
 
 See [Testing model-backed code](../guides/testing.md) for a deterministic model
 example.
-
-## Before shipping
-
-Check that the middleware:
-
-- does not expose prompts, reasoning, tools, credentials, or provider payloads
-  without an explicit data policy;
-- does not silently swallow provider or policy errors;
-- preserves opaque fields and content parts it does not understand;
-- applies consistently to both provider call modes where required;
-- documents external I/O, latency, failure, caching, and short-circuit behavior;
-- has deliberate ordering and wrapping-boundary guidance.
 
 ## Reference
 
 - [`middleware` package](https://pkg.go.dev/github.com/grafana/ai-sdk/middleware)
 - [`provider.LanguageModel`](https://pkg.go.dev/github.com/grafana/ai-sdk/provider#LanguageModel)
-- [`registry.WithLanguageModelMiddleware`](https://pkg.go.dev/github.com/grafana/ai-sdk/registry#WithLanguageModelMiddleware)
 
 ---
 
