@@ -8,7 +8,8 @@ repeating it in each handler, job, or agent.
 
 | You need | Use |
 |---|---|
-| Default settings, reasoning extraction, simulated streaming, or custom transforms | [Core middleware](#built-in-middleware) |
+| Default settings, reasoning extraction, simulated streaming, or other built-in transforms | [Core middleware](#built-in-middleware) |
+| Custom request, result, stream, policy, or caching behavior | [Writing middleware](writing-middleware.md) |
 | Structured provider-call records in `log/slog` | [Structured logging](structured-logging.md) |
 | Locally collected call, latency, stream, and token metrics | [Prometheus metrics](prometheus.md) |
 | Approved request metadata sent to a provider or gateway | [Context enrichment](context-enrichment.md) |
@@ -51,13 +52,16 @@ request, the transformed provider request, or both.
 
 The root middleware package includes lightweight behavior:
 
-- default model settings;
+- default instructions and model settings;
 - simulated streaming for non-streaming models;
 - extraction of tagged reasoning from text;
-- custom stream transformation.
+- extraction of JSON from fenced text;
+- tool input examples for providers that do not support them;
+- custom stream transformation with `TransformStream`.
 
 See the [middleware API reference](https://pkg.go.dev/github.com/grafana/ai-sdk/middleware)
-for constructors and exact options.
+for constructors and exact options. See [Writing middleware](writing-middleware.md)
+when the built-in behavior does not cover your model-call customization.
 
 ## Optional production middleware
 
@@ -83,9 +87,10 @@ Custom middleware must preserve cancellation, stream order, and errors.
 
 ## Reference
 
+- [Writing middleware](writing-middleware.md)
 - [`middleware` package](https://pkg.go.dev/github.com/grafana/ai-sdk/middleware)
 - [`registry.WithLanguageModelMiddleware`](https://pkg.go.dev/github.com/grafana/ai-sdk/registry#WithLanguageModelMiddleware)
 
 ---
 
-← [Fallback and registry](../guides/fallback-and-registry.md) · [Docs index](../README.md) · [Structured logging →](structured-logging.md)
+← [Fallback and registry](../guides/fallback-and-registry.md) · [Docs index](../README.md) · [Writing middleware →](writing-middleware.md)
