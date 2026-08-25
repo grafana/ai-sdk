@@ -128,9 +128,17 @@ A successful unary response SHALL contain only ordered text `content`, `finishRe
 - **WHEN** the model result contains warnings, response metadata, raw usage, backend identity, or provider metadata
 - **THEN** none of those values SHALL appear in the unary response document
 
-### Requirement: Bounded precommit success encoding
+### Requirement: Bounded preflight and standard success encoding
 
-The handler SHALL encode the complete minimal success document into an early-stopping bounded buffer before writing status or headers. Before fully validating or escaping a raw string, it SHALL reject any value whose raw bytes plus JSON quotes cannot fit in the remaining budget. Once overflow or invalid UTF-8 is known, it SHALL stop processing later collection elements and fields. An invalid or oversized success SHALL become the fixed internal-error response before HTTP 200 commitment.
+Before encoding, the handler SHALL reject content cardinality or aggregate content and raw-finish string bytes that cannot fit the configured unary budget using overflow-safe accounting. It SHALL validate UTF-8 only after the size preflight so scanning remains bounded. The complete minimal private DTO SHALL then be encoded with standard Go JSON, rejected when the final bytes exceed the configured limit, and committed only after successful encoding and the final size check. Provider-domain JSON marshalers SHALL NOT control the response. Standard encoding MAY allocate a bounded constant multiple of the configured limit for worst-case escaping.
+
+#### Scenario: Preflight rejects oversized provider values
+- **WHEN** content count or aggregate raw string bytes exceed the unary budget
+- **THEN** the result SHALL fail before UTF-8 scanning or JSON encoding
+
+#### Scenario: Escaping crosses the final boundary
+- **WHEN** raw bytes pass preflight but standard JSON escaping makes the encoded response exceed the limit
+- **THEN** the handler SHALL return the fixed internal error before committing HTTP 200
 
 #### Scenario: Response byte boundary
 - **WHEN** the encoded response is below, exactly at, or above the configured limit
