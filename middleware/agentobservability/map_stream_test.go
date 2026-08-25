@@ -76,6 +76,38 @@ func TestStreamRecorder_UsageAggregatesEveryPart(t *testing.T) {
 	assert.Equal(t, int64(outputReasoning), usage.ReasoningTokens)
 }
 
+func TestStreamRecorder_ServerToolUsageMetadata(t *testing.T) {
+	r := newRecorderForStreamTest()
+	r.Observe(provider.StreamPart{Type: provider.PartFinish, Usage: &provider.Usage{
+		Raw: json.RawMessage(`{"server_tool_use":{"web_search_requests":1,"web_fetch_requests":2}}`),
+	}})
+
+	gen := r.Generation()
+	assert.Equal(t, int64(1), gen.Metadata[MetadataServerToolUseWebSearchRequests])
+	assert.Equal(t, int64(2), gen.Metadata[MetadataServerToolUseWebFetchRequests])
+	assert.Equal(t, int64(3), gen.Metadata[MetadataServerToolUseTotalRequests])
+}
+
+func TestStreamRecorder_ServerToolUsageMetadataOverridesSeed(t *testing.T) {
+	r := NewStreamRecorder(agento11y.GenerationStart{
+		Metadata: map[string]any{
+			MetadataServerToolUseWebSearchRequests: "caller search",
+			MetadataServerToolUseWebFetchRequests:  "caller fetch",
+			MetadataServerToolUseTotalRequests:     "caller total",
+			"caller.key":                           "preserved",
+		},
+	}, provider.CallOptions{})
+	r.Observe(provider.StreamPart{Type: provider.PartFinish, Usage: &provider.Usage{
+		Raw: json.RawMessage(`{"server_tool_use":{"web_search_requests":1,"web_fetch_requests":2}}`),
+	}})
+
+	gen := r.Generation()
+	assert.Equal(t, int64(1), gen.Metadata[MetadataServerToolUseWebSearchRequests])
+	assert.Equal(t, int64(2), gen.Metadata[MetadataServerToolUseWebFetchRequests])
+	assert.Equal(t, int64(3), gen.Metadata[MetadataServerToolUseTotalRequests])
+	assert.Equal(t, "preserved", gen.Metadata["caller.key"])
+}
+
 func TestStreamRecorder_FilePartsPreserveObservedOrder(t *testing.T) {
 	r := newRecorderForStreamTest()
 	r.Observe(provider.StreamPart{
@@ -119,27 +151,11 @@ func TestStreamRecorder_FilePartsPreserveObservedOrder(t *testing.T) {
 	assert.Equal(t, "reasoning_file", gen.Output[0].Parts[4].Metadata.ProviderType)
 }
 
-func TestStreamRecorder_TextReasoningSignature(t *testing.T) {
+func TestStreamRecorder_TextAndReasoning(t *testing.T) {
 	r := newRecorderForStreamTest()
 	r.Observe(provider.StreamPart{Type: provider.PartReasoningStart, ID: "r0"})
 	r.Observe(provider.StreamPart{Type: provider.PartReasoningDelta, ID: "r0", Delta: "let me "})
-	// Signature on later deltas — should be merged into the consolidated reasoning part.
-	r.Observe(provider.StreamPart{
-		Type:  provider.PartReasoningDelta,
-		ID:    "r0",
-		Delta: "think",
-		ProviderMetadata: provider.ProviderMetadata{
-			"anthropic": json.RawMessage(`{"signature":"sig-abc"}`),
-		},
-	})
-	r.Observe(provider.StreamPart{
-		Type: provider.PartReasoningDelta,
-		ID:   "r0",
-		// Same signature again — recorder dedupes to one copy.
-		ProviderMetadata: provider.ProviderMetadata{
-			"anthropic": json.RawMessage(`{"signature":"sig-abc"}`),
-		},
-	})
+	r.Observe(provider.StreamPart{Type: provider.PartReasoningDelta, ID: "r0", Delta: "think"})
 	r.Observe(provider.StreamPart{Type: provider.PartReasoningEnd, ID: "r0"})
 	r.Observe(provider.StreamPart{Type: provider.PartTextStart, ID: "t0"})
 	r.Observe(provider.StreamPart{Type: provider.PartTextDelta, ID: "t0", Delta: "answer"})
@@ -222,6 +238,124 @@ func TestStreamRecorder_ProviderExecutedToolCall(t *testing.T) {
 	assert.Equal(t, "server_tool_use", call.Metadata.ProviderType)
 }
 
+func TestStreamRecorder_ProviderExecutedToolDiscriminators(t *testing.T) {
+	tests := []struct {
+		name string
+		part provider.StreamPart
+		want string
+	}{
+		{
+			name: "tool search",
+			part: provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "tc-1", ToolName: "tool_search_tool_regex", ProviderExecuted: true},
+			want: "tool_search_tool_regex",
+		},
+		{
+			name: "mcp",
+			part: provider.StreamPart{
+				Type:             provider.PartToolCall,
+				ToolCallID:       "tc-1",
+				ToolName:         "remote_lookup",
+				ProviderExecuted: true,
+				ProviderMetadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"type":"mcp-tool-use"}`)},
+			},
+			want: "mcp_tool_use",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newRecorderForStreamTest()
+			r.Observe(tc.part)
+			gen := r.Generation()
+			require.Len(t, gen.Output, 1)
+			require.Len(t, gen.Output[0].Parts, 1)
+			assert.Equal(t, tc.want, gen.Output[0].Parts[0].Metadata.ProviderType)
+		})
+	}
+}
+
+func TestStreamRecorder_ClonesToolProviderMetadata(t *testing.T) {
+	metadata := provider.ProviderMetadata{
+		"anthropic": json.RawMessage(`{"type":"mcp-tool-use"}`),
+	}
+	r := newRecorderForStreamTest()
+	r.Observe(provider.StreamPart{
+		Type: provider.PartToolCall, ToolCallID: "call-1", ToolName: "remote", ProviderExecuted: true,
+		ProviderMetadata: metadata,
+	})
+	metadata["anthropic"] = json.RawMessage(`{"type":"other"}`)
+	r.Observe(provider.StreamPart{
+		Type: provider.PartToolCall, ToolCallID: "call-1", ToolName: "remote", ProviderExecuted: true,
+		ProviderMetadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"serverName":"remote"}`)},
+	})
+
+	gen := r.Generation()
+	require.Len(t, gen.Output, 1)
+	assert.Equal(t, "mcp_tool_use", gen.Output[0].Parts[0].Metadata.ProviderType)
+}
+
+func TestStreamRecorder_ToolMetadataRequiresExactInvocationIdentity(t *testing.T) {
+	r := newRecorderForStreamTest()
+	mcpMetadata := provider.ProviderMetadata{
+		"anthropic": json.RawMessage(`{"type":"mcp-tool-use"}`),
+	}
+	r.Observe(provider.StreamPart{
+		Type: provider.PartToolCall, ToolCallID: "same", ToolName: "remote", Input: `{"step":1}`,
+		ProviderMetadata: mcpMetadata,
+	})
+	r.Observe(provider.StreamPart{
+		Type: provider.PartToolInputStart, ID: "same", ToolName: "lookup",
+	})
+	r.Observe(provider.StreamPart{
+		Type: provider.PartToolInputDelta, ID: "same", Delta: `{"step":2}`,
+	})
+	r.Observe(provider.StreamPart{
+		Type: provider.PartToolCall, ToolCallID: "same", ToolName: "lookup", Input: `{"step":2}`,
+	})
+	r.Observe(provider.StreamPart{
+		Type: provider.PartToolResult, ToolCallID: "same", ToolName: "lookup", Result: json.RawMessage(`{"ok":true}`),
+	})
+
+	gen := r.Generation()
+	require.Len(t, gen.Output, 2)
+	require.Len(t, gen.Output[0].Parts, 2)
+	assert.Equal(t, "remote", gen.Output[0].Parts[0].ToolCall.Name)
+	assert.JSONEq(t, `{"step":1}`, string(gen.Output[0].Parts[0].ToolCall.InputJSON))
+	assert.Equal(t, "mcp_tool_use", gen.Output[0].Parts[0].Metadata.ProviderType)
+	assert.Equal(t, "lookup", gen.Output[0].Parts[1].ToolCall.Name)
+	assert.JSONEq(t, `{"step":2}`, string(gen.Output[0].Parts[1].ToolCall.InputJSON))
+	assert.Equal(t, "tool_use", gen.Output[0].Parts[1].Metadata.ProviderType)
+	assert.Equal(t, "tool_result", gen.Output[1].Parts[0].Metadata.ProviderType)
+}
+
+func TestStreamRecorder_ProviderToolAliasDiscriminators(t *testing.T) {
+	r := NewStreamRecorder(agento11y.GenerationStart{}, provider.CallOptions{Tools: []provider.Tool{
+		{Type: provider.ToolTypeProvider, ID: "anthropic.tool_search_regex_20251119", Name: "find_tools"},
+		{Type: provider.ToolTypeProvider, ID: "anthropic.web_fetch_20250910", Name: "fetch_page"},
+		{Type: provider.ToolTypeProvider, ID: "anthropic.code_execution_20250825", Name: "run_code"},
+	}})
+	r.Observe(provider.StreamPart{
+		Type: provider.PartToolCall, ToolCallID: "call-1", ToolName: "find_tools", ProviderExecuted: true,
+	})
+	r.Observe(provider.StreamPart{
+		Type: provider.PartToolResult, ToolCallID: "call-1", ToolName: "find_tools",
+	})
+	r.Observe(provider.StreamPart{
+		Type: provider.PartToolResult, ToolCallID: "call-2", ToolName: "fetch_page",
+	})
+	r.Observe(provider.StreamPart{
+		Type: provider.PartToolResult, ToolCallID: "call-3", ToolName: "run_code", ProviderExecuted: true,
+		Result: json.RawMessage(`{"type":"text_editor_code_execution_create_result"}`),
+	})
+
+	gen := r.Generation()
+	require.Len(t, gen.Output, 4)
+	assert.Equal(t, "tool_search_tool_regex", gen.Output[0].Parts[0].Metadata.ProviderType)
+	assert.Equal(t, "tool_search_tool_regex_tool_result", gen.Output[1].Parts[0].Metadata.ProviderType)
+	assert.Equal(t, "web_fetch_tool_result", gen.Output[2].Parts[0].Metadata.ProviderType)
+	assert.Equal(t, "text_editor_code_execution_tool_result", gen.Output[3].Parts[0].Metadata.ProviderType)
+}
+
 func TestStreamRecorder_ToolResult(t *testing.T) {
 	r := newRecorderForStreamTest()
 	r.Observe(provider.StreamPart{
@@ -245,6 +379,47 @@ func TestStreamRecorder_ToolResult(t *testing.T) {
 	assert.JSONEq(t, `"sunny"`, string(result.ToolResult.ContentJSON))
 }
 
+func TestStreamRecorder_ToolResult_CoalescesPreliminaryResults(t *testing.T) {
+	r := newRecorderForStreamTest()
+	preliminary := true
+	r.Observe(provider.StreamPart{
+		Type:        provider.PartToolResult,
+		ToolCallID:  "tc-1",
+		ToolName:    "generate_image",
+		Result:      json.RawMessage(`{"url":"preview"}`),
+		Preliminary: &preliminary,
+	})
+	assert.Nil(t, r.Generation().Output)
+
+	r.Observe(provider.StreamPart{
+		Type:       provider.PartToolResult,
+		ToolCallID: "tc-1",
+		ToolName:   "generate_image",
+		Result:     json.RawMessage(`{"url":"final"}`),
+	})
+	gen := r.Generation()
+	require.Len(t, gen.Output, 1)
+	require.Len(t, gen.Output[0].Parts, 1)
+	assert.JSONEq(t, `{"url":"final"}`, string(gen.Output[0].Parts[0].ToolResult.ContentJSON))
+}
+
+func TestStreamRecorder_ToolResult_PreservesRepeatedFinalResults(t *testing.T) {
+	r := newRecorderForStreamTest()
+	for _, result := range []string{`{"step":1}`, `{"step":2}`} {
+		r.Observe(provider.StreamPart{
+			Type:       provider.PartToolResult,
+			ToolCallID: "tc-1",
+			ToolName:   "lookup",
+			Result:     json.RawMessage(result),
+		})
+	}
+
+	gen := r.Generation()
+	require.Len(t, gen.Output, 2)
+	assert.JSONEq(t, `{"step":1}`, string(gen.Output[0].Parts[0].ToolResult.ContentJSON))
+	assert.JSONEq(t, `{"step":2}`, string(gen.Output[1].Parts[0].ToolResult.ContentJSON))
+}
+
 func TestStreamRecorder_ToolCallFinalEvent(t *testing.T) {
 	// Some providers send PartToolCall with the consolidated Input instead of
 	// per-delta accumulation.
@@ -262,14 +437,41 @@ func TestStreamRecorder_ToolCallFinalEvent(t *testing.T) {
 }
 
 func TestStreamRecorder_FirstChunkAt(t *testing.T) {
-	r := newRecorderForStreamTest()
-	assert.True(t, r.FirstChunkAt().IsZero(), "no observations yet")
+	nonPayload := []provider.StreamPart{
+		{Type: provider.PartStreamStart},
+		{Type: provider.PartResponseMeta},
+		{Type: provider.PartTextDelta},
+		{Type: provider.PartToolResult},
+		{Type: provider.PartFile},
+		{Type: provider.PartReasoningFile},
+		{Type: provider.PartFinish},
+		{Type: provider.PartError},
+	}
+	for _, part := range nonPayload {
+		r := newRecorderForStreamTest()
+		r.Observe(part)
+		assert.True(t, r.FirstChunkAt().IsZero(), "%s must not start the clock", part.Type)
+	}
 
-	r.Observe(provider.StreamPart{Type: provider.PartStreamStart})
-	assert.True(t, r.FirstChunkAt().IsZero(), "bookkeeping events do not start the clock")
-
-	r.Observe(provider.StreamPart{Type: provider.PartTextDelta, ID: "t0", Delta: "x"})
-	assert.False(t, r.FirstChunkAt().IsZero(), "payload event starts the clock")
+	payload := []provider.StreamPart{
+		{Type: provider.PartTextDelta, Delta: "x"},
+		{Type: provider.PartReasoningDelta, Delta: "x"},
+		{Type: provider.PartToolInputDelta, Delta: "{"},
+		{Type: provider.PartToolCall},
+		{
+			Type: provider.PartFile, MediaType: "image/png",
+			Data: &provider.StreamFileData{URL: "https://example.com/image.png"},
+		},
+		{
+			Type: provider.PartReasoningFile, MediaType: "image/png",
+			Data: &provider.StreamFileData{URL: "https://example.com/reasoning.png"},
+		},
+	}
+	for _, part := range payload {
+		r := newRecorderForStreamTest()
+		r.Observe(part)
+		assert.False(t, r.FirstChunkAt().IsZero(), "%s must start the clock", part.Type)
+	}
 }
 
 func TestStreamRecorder_ErrorMidStream(t *testing.T) {
@@ -348,6 +550,14 @@ func TestStreamRecorder_ResponseMetadataModelIdentity(t *testing.T) {
 			wantProvider:     "anthropic",
 			wantModel:        "claude-sonnet-4-5-20250929",
 		},
+		{
+			name:             "missing response model uses request model",
+			seedProvider:     "anthropic",
+			seedModel:        "claude-sonnet-4-5-sonnet",
+			responseProvider: "anthropic",
+			wantProvider:     "anthropic",
+			wantModel:        "claude-sonnet-4-5-sonnet",
+		},
 	}
 
 	for _, tc := range tests {
@@ -367,6 +577,11 @@ func TestStreamRecorder_ResponseMetadataModelIdentity(t *testing.T) {
 			assert.Equal(t, tc.wantProvider, gen.Model.Provider)
 			assert.Equal(t, tc.wantModel, gen.Model.Name)
 			assert.Equal(t, "resp-1", gen.ResponseID)
+			wantResponseModel := tc.responseModel
+			if wantResponseModel == "" {
+				wantResponseModel = tc.seedModel
+			}
+			assert.Equal(t, wantResponseModel, gen.ResponseModel)
 			if tc.wantTransportMetadata {
 				require.NotNil(t, gen.Metadata)
 				assert.Equal(t, tc.seedProvider, gen.Metadata[transportProviderMetadataKey])
@@ -379,41 +594,43 @@ func TestStreamRecorder_ResponseMetadataModelIdentity(t *testing.T) {
 	}
 }
 
+func TestStreamRecorder_ResponseTransportMetadataOverridesCallerValues(t *testing.T) {
+	r := NewStreamRecorder(agento11y.GenerationStart{
+		Model: agento11y.ModelRef{Provider: "grafana", Name: "requested-model"},
+		Metadata: map[string]any{
+			transportProviderMetadataKey: "spoofed-provider",
+			transportModelMetadataKey:    "spoofed-model",
+		},
+	}, provider.CallOptions{})
+	r.Observe(provider.StreamPart{
+		Type: provider.PartResponseMeta, Provider: "anthropic", ModelID: "response-model",
+	})
+
+	gen := r.Generation()
+	assert.Equal(t, "grafana", gen.Metadata[transportProviderMetadataKey])
+	assert.Equal(t, "requested-model", gen.Metadata[transportModelMetadataKey])
+}
+
+func TestStreamRecorder_ResponseMetadataAccumulatesWithoutErasing(t *testing.T) {
+	r := NewStreamRecorder(agento11y.GenerationStart{
+		Model: agento11y.ModelRef{Provider: "grafana", Name: "requested-model"},
+	}, provider.CallOptions{})
+	r.Observe(provider.StreamPart{
+		Type: provider.PartResponseMeta, ResponseID: "response-1", Provider: "anthropic", ModelID: "response-model",
+	})
+	r.Observe(provider.StreamPart{Type: provider.PartResponseMeta, Provider: "grafana"})
+
+	gen := r.Generation()
+	assert.Equal(t, "response-1", gen.ResponseID)
+	assert.Equal(t, "response-model", gen.ResponseModel)
+	assert.Equal(t, "anthropic", gen.Model.Provider)
+	assert.Equal(t, "response-model", gen.Model.Name)
+}
+
 func TestStreamRecorder_NilSafe(t *testing.T) {
 	var r *StreamRecorder
 	r.Observe(provider.StreamPart{Type: provider.PartTextDelta})
 	assert.True(t, r.FirstChunkAt().IsZero())
 	assert.Nil(t, r.CallError())
 	assert.Equal(t, agento11y.Generation{}, r.Generation())
-}
-
-func TestAnthropicSignatureFromMetadata(t *testing.T) {
-	tests := []struct {
-		name string
-		meta provider.ProviderMetadata
-		want string
-	}{
-		{"nil", nil, ""},
-		{"no anthropic key", provider.ProviderMetadata{"other": json.RawMessage(`{}`)}, ""},
-		{
-			"signature present",
-			provider.ProviderMetadata{"anthropic": json.RawMessage(`{"signature":"sig-1"}`)},
-			"sig-1",
-		},
-		{
-			"no signature in object",
-			provider.ProviderMetadata{"anthropic": json.RawMessage(`{"other":"x"}`)},
-			"",
-		},
-		{
-			"malformed JSON returns empty",
-			provider.ProviderMetadata{"anthropic": json.RawMessage(`{garbage`)},
-			"",
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			assert.Equal(t, tc.want, anthropicSignatureFromMetadata(tc.meta))
-		})
-	}
 }

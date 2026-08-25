@@ -71,6 +71,19 @@ func TestContentToAgento11yOutput_ToolResultSplit(t *testing.T) {
 	assert.Equal(t, agento11y.RoleTool, msgs[1].Role)
 }
 
+func TestContentToAgento11yOutput_CodeExecutionResultSubtype(t *testing.T) {
+	tools := []provider.Tool{{
+		Type: provider.ToolTypeProvider, ID: "anthropic.code_execution_20250825", Name: "run_code",
+	}}
+	messages := contentToAgento11yOutputWithTools([]provider.GenerateContentPart{{
+		Type: provider.ContentToolResult, ToolCallID: "call-1", ToolName: "run_code",
+		ProviderExecuted: true,
+		Result:           json.RawMessage(`{"type":"bash_code_execution_result"}`),
+	}}, tools)
+	require.Len(t, messages, 1)
+	assert.Equal(t, "bash_code_execution_tool_result", messages[0].Parts[0].Metadata.ProviderType)
+}
+
 func TestContentToAgento11yOutput_FileParts(t *testing.T) {
 	pngData := []byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a}
 	content := []provider.GenerateContentPart{
@@ -249,6 +262,87 @@ func TestUsageToAgento11y(t *testing.T) {
 func TestUsageToAgento11y_Zero(t *testing.T) {
 	got := usageToAgento11y(provider.Usage{})
 	assert.Equal(t, agento11y.TokenUsage{}, got)
+}
+
+func TestMetadataFromUsage_ServerToolUse(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want map[string]any
+	}{
+		{
+			name: "search and fetch",
+			raw:  `{"server_tool_use":{"web_search_requests":2,"web_fetch_requests":1}}`,
+			want: map[string]any{
+				MetadataServerToolUseWebSearchRequests: int64(2),
+				MetadataServerToolUseWebFetchRequests:  int64(1),
+				MetadataServerToolUseTotalRequests:     int64(3),
+			},
+		},
+		{
+			name: "search only",
+			raw:  `{"server_tool_use":{"web_search_requests":1}}`,
+			want: map[string]any{
+				MetadataServerToolUseWebSearchRequests: int64(1),
+				MetadataServerToolUseTotalRequests:     int64(1),
+			},
+		},
+		{name: "zero", raw: `{"server_tool_use":{"web_search_requests":0}}`},
+		{name: "negative", raw: `{"server_tool_use":{"web_search_requests":-1}}`},
+		{name: "malformed", raw: `{`},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := metadataFromUsage(provider.Usage{Raw: json.RawMessage(tc.raw)})
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestProviderTypeForGenerateToolCall(t *testing.T) {
+	tests := []struct {
+		name string
+		part provider.GenerateContentPart
+		want string
+	}{
+		{name: "client tool", part: provider.GenerateContentPart{ToolName: "lookup"}, want: "tool_use"},
+		{name: "server tool", part: provider.GenerateContentPart{ToolName: "web_search", ProviderExecuted: true}, want: "server_tool_use"},
+		{name: "tool search", part: provider.GenerateContentPart{ToolName: "tool_search_tool_bm25", ProviderExecuted: true}, want: "tool_search_tool_bm25"},
+		{
+			name: "mcp",
+			part: provider.GenerateContentPart{
+				ToolName:         "remote_lookup",
+				ProviderExecuted: true,
+				ProviderMetadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"type":"mcp-tool-use"}`)},
+			},
+			want: "mcp_tool_use",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, providerTypeForGenerateToolCall(tc.part, nil))
+		})
+	}
+}
+
+func TestContentToAgento11yOutput_ProviderToolAliases(t *testing.T) {
+	tools := []provider.Tool{
+		{Type: provider.ToolTypeProvider, ID: "anthropic.tool_search_bm25_20251119", Name: "find_tools"},
+		{Type: provider.ToolTypeProvider, ID: "anthropic.web_search_20250305", Name: "search_docs"},
+	}
+	msgs := contentToAgento11yOutputWithTools([]provider.GenerateContentPart{
+		{Type: provider.ContentToolCall, ToolCallID: "call-1", ToolName: "find_tools", ProviderExecuted: true},
+		{Type: provider.ContentToolResult, ToolCallID: "call-1", ToolName: "find_tools"},
+		{Type: provider.ContentToolResult, ToolCallID: "call-2", ToolName: "search_docs"},
+	}, tools)
+
+	require.Len(t, msgs, 2)
+	assert.Equal(t, "tool_search_tool_bm25", msgs[0].Parts[0].Metadata.ProviderType)
+	require.Len(t, msgs[1].Parts, 2)
+	assert.Equal(t, "tool_search_tool_bm25_tool_result", msgs[1].Parts[0].Metadata.ProviderType)
+	assert.Equal(t, "web_search_tool_result", msgs[1].Parts[1].Metadata.ProviderType)
 }
 
 func TestFinishReasonToAgento11yStop(t *testing.T) {

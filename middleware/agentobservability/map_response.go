@@ -19,14 +19,18 @@ const (
 	stopReasonOther        = "other"
 )
 
-// contentToAgento11yOutput converts a generate result's content slice into the
-// single assistant-role agento11y.Message recorded as Generation.Output.
+// contentToAgento11yOutput converts generated content into an assistant message
+// plus tool-role messages for tool results.
 //
 // Mirrors `agento11y/go-providers/anthropic.mapResponseMessages` modulo the
 // tool-result splitting (we do the same split into a separate RoleTool
 // message when the response carries tool-result parts; that path is rare for
 // generate responses but valid for provider-executed multi-turn).
 func contentToAgento11yOutput(content []provider.GenerateContentPart) []agento11y.Message {
+	return contentToAgento11yOutputWithTools(content, nil)
+}
+
+func contentToAgento11yOutputWithTools(content []provider.GenerateContentPart, tools []provider.Tool) []agento11y.Message {
 	if len(content) == 0 {
 		return nil
 	}
@@ -35,7 +39,7 @@ func contentToAgento11yOutput(content []provider.GenerateContentPart) []agento11
 	toolParts := make([]agento11y.Part, 0, 1)
 
 	for i := range content {
-		part, kind, ok := generateContentPartToAgento11y(content[i])
+		part, kind, ok := generateContentPartToAgento11yWithTools(content[i], tools)
 		if !ok {
 			continue
 		}
@@ -65,7 +69,7 @@ func contentToAgento11yOutput(content []provider.GenerateContentPart) []agento11
 	return out
 }
 
-func generateContentPartToAgento11y(part provider.GenerateContentPart) (agento11y.Part, agento11y.PartKind, bool) {
+func generateContentPartToAgento11yWithTools(part provider.GenerateContentPart, tools []provider.Tool) (agento11y.Part, agento11y.PartKind, bool) {
 	switch part.Type {
 	case provider.ContentText:
 		if part.Text == "" {
@@ -88,7 +92,7 @@ func generateContentPartToAgento11y(part provider.GenerateContentPart) (agento11
 			InputJSON: normalizeJSONObject(part.Input),
 		}
 		out := agento11y.ToolCallPart(call)
-		out.Metadata.ProviderType = providerTypeForGenerateToolCall(part)
+		out.Metadata.ProviderType = providerTypeForGenerateToolCall(part, tools)
 		return out, agento11y.PartKindToolCall, true
 
 	case provider.ContentToolResult:
@@ -103,7 +107,13 @@ func generateContentPartToAgento11y(part provider.GenerateContentPart) (agento11
 			IsError:     isErr,
 			ContentJSON: contentJSON,
 		})
-		out.Metadata.ProviderType = "tool_result"
+		out.Metadata.ProviderType = providerTypeForToolResult(
+			part.ProviderExecuted,
+			part.ToolName,
+			anthropicTypeFromMetadata(part.ProviderMetadata),
+			tools,
+			contentJSON,
+		)
 		return out, agento11y.PartKindToolResult, true
 
 	case provider.ContentFile:
@@ -126,11 +136,13 @@ func generateContentPartToAgento11y(part provider.GenerateContentPart) (agento11
 	}
 }
 
-func providerTypeForGenerateToolCall(part provider.GenerateContentPart) string {
-	if part.ProviderExecuted {
-		return "server_tool_use"
-	}
-	return "tool_use"
+func providerTypeForGenerateToolCall(part provider.GenerateContentPart, tools []provider.Tool) string {
+	return providerTypeForToolWithDefinitions(
+		part.ProviderExecuted,
+		part.ToolName,
+		anthropicTypeFromMetadata(part.ProviderMetadata),
+		tools,
+	)
 }
 
 // usageToAgento11y converts provider.Usage into agento11y.TokenUsage. The mapping

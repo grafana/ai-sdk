@@ -62,8 +62,9 @@ Context helpers:
 - `ParentGenerationIDsFromContext(ctx context.Context) []string`.
 - `WithLinkedGenerationID(ctx context.Context, id string) context.Context`.
 
-Sentinel error:
+Sentinel errors:
 - `ErrHookDenied error`.
+- `ErrHookTransformFailed error`.
 
 #### Scenario: HookDenialError unwraps to sentinel
 
@@ -127,7 +128,7 @@ If `opts.ClientResolver` is itself `nil`, the middleware SHALL behave as if ever
 
 `RecordingMiddleware` SHALL call `opts.ContextProvider(ctx)` once per request and use the returned `ContextInfo` to populate:
 - `agento11y.GenerationStart.UserID` (falls back to `agento11y.UserIDFromContext(ctx)` when `ContextInfo.UserID` is empty).
-- `agento11y.GenerationStart.Metadata` (merged on top of metadata derived from `ProviderOptions` and `params`).
+- `agento11y.GenerationStart.Metadata` (used as caller metadata; reserved derivations from `ProviderOptions`, `params`, and usage override conflicting keys in the final generation).
 - `agento11y.GenerationStart.Tags` (merged on top of any tags carried via context).
 - `agento11y.GenerationStart.AgentName` / `AgentVersion` (override `agento11y.AgentNameFromContext` / `agento11y.AgentVersionFromContext` when set).
 
@@ -153,10 +154,11 @@ If `opts.ContextProvider` is `nil`, the middleware SHALL log a warning at most o
 - `Input.Tools` is derived from `params.Tools`. Function tools map directly; provider-defined tools (e.g. Anthropic `web_search`, `code_execution`) MAY map with their type preserved so Agent Observability can annotate them.
 - `Input.MaxTokens`, `Temperature`, `TopP`, `ToolChoice` are derived from the corresponding `provider.CallOptions` fields.
 - Anthropic thinking-budget metadata (`agento11y.gen_ai.request.thinking.budget_tokens`) is derived from `params.ProviderOptions["anthropic"]` via `json.RawMessage` decoding, not by importing `providers/anthropic`.
-- `Output` is a single assistant `agento11y.Message` whose parts mirror supported `result.Content` entries (text, tool-call, reasoning, file, and reasoning-file parts). Empty reasoning parts SHALL be omitted.
+- `Output` contains an assistant `agento11y.Message` for supported model content and additional tool-role messages for tool-result entries. Empty reasoning parts SHALL be omitted.
 - `Usage` maps from `result.Usage` (input tokens, output tokens, cache hits where applicable).
 - `StopReason` is produced by `finishReasonToAgento11yStop(result.FinishReason)` and SHALL match the string values the legacy `internal/llm/claude/` path emitted (e.g. `"end_turn"`, `"max_tokens"`, `"tool_use"`, `"stop_sequence"`).
-- `Metadata` is a merge of `ctxInfo.Metadata` and `map_provider_options.go` derivations.
+- `Metadata` starts with caller metadata, then applies reserved request and usage derivations. Derived Anthropic thinking-budget and positive server-tool request counts SHALL override conflicting caller values, matching the pinned agento11y Anthropic helper.
+- Provider tool calls and results SHALL retain recoverable Anthropic discriminators, including MCP metadata and configured provider-tool aliases for web search, web fetch, code execution, and tool search. Irrecoverable provider subtypes MAY use the generic discriminator.
 - `Tags` is a merge of `ctxInfo.Tags` and any tags from context.
 
 #### Scenario: System message folds into SystemPrompt
@@ -177,6 +179,11 @@ If `opts.ContextProvider` is `nil`, the middleware SHALL log a warning at most o
 
 - **WHEN** `params.ProviderOptions["anthropic"]` carries a JSON object containing a `thinking` field with a positive `budget_tokens` value
 - **THEN** the resulting `Generation.Metadata["agento11y.gen_ai.request.thinking.budget_tokens"]` SHALL equal that integer
+
+#### Scenario: Anthropic server-tool usage is recorded
+
+- **WHEN** `result.Usage.Raw` contains positive `server_tool_use.web_search_requests` or `web_fetch_requests`
+- **THEN** generation metadata SHALL contain the corresponding Agent Observability usage keys and their sum as `total_requests`
 
 #### Scenario: Byte-equal output to agento11y anthropic helper
 
@@ -228,12 +235,13 @@ Hook preflight evaluation SHALL exclude `file` and `reasoning-file` media so rec
 `StreamRecorder` SHALL accumulate `agento11y.Generation.Output` from a sequence of `provider.StreamPart` values observed via `Observe`. It SHALL:
 - Append `PartTextDelta` payloads into the active assistant text part.
 - Append non-empty `PartReasoningDelta` payloads into the active assistant reasoning part. Signature-only reasoning blocks with no visible text SHALL NOT produce an Agent Observability thinking part.
-- Append `PartToolCallDelta` payloads into the active assistant tool-call part.
+- Append `PartToolInputDelta` payloads into the active assistant tool-call part.
 - Map supported `PartFile` and `PartReasoningFile` events to media parts.
-- Record the first observed payload-bearing part's timestamp via `FirstChunkAt()`; supported file events SHALL be payload-bearing.
+- Record the first semantic model-output timestamp via `FirstChunkAt()`. Non-empty text, reasoning, and tool-input deltas, tool calls, and supported file events SHALL be payload-bearing; finish, error, tool-result, metadata, and empty-delta events SHALL NOT establish time to first token.
+- Coalesce preliminary tool-result updates by exact tool-call ID and tool name and include only completed tool results in the final generation output. Distinct completed results SHALL remain distinct even when an ID is reused.
 - Capture `FinishReason` from `PartFinish` and observe `Usage` from every usage-bearing stream part using the shared streaming aggregation behavior.
 
-`Generation()` SHALL return an `agento11y.Generation` whose `Output` is a single assistant message constructed from the accumulated state. Assistant text, reasoning, tool-call, and media parts SHALL retain the order in which their first provider events were observed.
+`Generation()` SHALL return an `agento11y.Generation` whose `Output` contains an assistant message for accumulated model parts plus tool-role messages for completed tool results. Assistant text, reasoning, tool-call, and media parts SHALL retain the order in which their first provider events were observed.
 
 #### Scenario: Stream usage preserves strongest values
 
@@ -263,7 +271,7 @@ Hook preflight evaluation SHALL exclude `file` and `reasoning-file` media so rec
 
 #### Scenario: Tool-call deltas accumulate by tool-call ID
 
-- **GIVEN** a stream emits multiple `PartToolCallDelta` events for the same tool-call ID with incremental JSON argument fragments
+- **GIVEN** a stream emits multiple `PartToolInputDelta` events for the same tool-call ID with incremental JSON argument fragments
 - **WHEN** the recorder is observed
 - **THEN** the resulting tool-call part SHALL have the concatenated argument JSON
 
@@ -276,7 +284,7 @@ Hook preflight evaluation SHALL exclude `file` and `reasoning-file` media so rec
 
 ### Requirement: Recording uses response model identity when available
 
-Agent Observability recording SHALL use backend response metadata as the canonical generation model identity when a successful provider response supplies both provider and model ID. When response metadata omits either provider or model ID, recording SHALL preserve the model identity from `GenerationStart`.
+Agent Observability recording SHALL use backend response metadata as the canonical generation model identity when a successful provider response supplies both provider and model ID. When response metadata omits either provider or model ID, recording SHALL preserve the model identity from `GenerationStart`. Generate and stream `ResponseModel` SHALL default to the requested model and SHALL be overridden by a non-empty response model.
 
 #### Scenario: Generate response overrides transport model identity
 
@@ -339,20 +347,20 @@ When response metadata changes the canonical generation model identity from the 
 3. Call `client.StartGeneration` (for `WrapGenerate`) or `client.StartStreamingGeneration` (for `WrapStream`).
 4. Invoke the inner model.
 5. On success:
-   - For generate: call `recorder.SetResult(MapGenerateResult(params, result, ctxInfo))`.
+   - For generate: map the result with the original `GenerationStart` so requested-model fallback is available, then call `recorder.SetResult`.
    - For stream: tee the result stream channel, feed each part to a `StreamRecorder`, and at end-of-stream call `recorder.SetResult(streamRecorder.Generation())`.
 6. On an error returned before a stream opens: call `recorder.SetCallError(err)`. When a stream emits `PartError`, call `recorder.SetCallError(err)` and also call `recorder.SetResult` with the partial generation, including aggregated usage observed before or on the error part.
 
 `RecordingMiddleware` SHALL NOT modify `params` and SHALL NOT modify the result.
 
-For streams, the recording goroutine SHALL select on `ctx.Done()` to avoid blocking on consumer disconnect, and SHALL drain the upstream channel after consumer abandonment to avoid leaking the producer goroutine.
+For streams, the recording goroutine SHALL select on `ctx.Done()` to avoid blocking on consumer disconnect. Cancellation before observed upstream completion SHALL be recorded as the call error and SHALL take precedence over an earlier `PartError`. The middleware SHALL NOT start an unbounded detached drain when the provider ignores cancellation; provider stream producers are responsible for honoring the call context.
 
 #### Scenario: Generate path records on success
 
 - **GIVEN** a `RecordingMiddleware` with a non-nil `ClientResolver`
 - **WHEN** the inner model's `DoGenerate` returns a non-nil result and `nil` error
 - **THEN** the middleware SHALL call `StartGeneration` once
-- **AND** SHALL call `recorder.SetResult` once with `MapGenerateResult(params, result, ctxInfo)`
+- **AND** SHALL call `recorder.SetResult` once with the generation mapped from `params`, `result`, `ctxInfo`, and the original `GenerationStart`
 - **AND** SHALL NOT call `recorder.SetCallError`
 
 #### Scenario: Generate path records on error
@@ -377,11 +385,12 @@ For streams, the recording goroutine SHALL select on `ctx.Done()` to avoid block
 - **AND** the consumer SHALL receive exactly the same N parts in the same order
 - **AND** `recorder.SetResult` SHALL be called once after the upstream channel closes
 
-#### Scenario: Stream goroutine cleans up on consumer disconnect
+#### Scenario: Stream cancellation records an error and cleans up
 
-- **WHEN** the consumer abandons the result stream by cancelling its context before the upstream completes
+- **WHEN** the consumer cancels its context before the upstream completes
 - **THEN** the recording goroutine SHALL NOT block indefinitely
-- **AND** the upstream channel SHALL be drained so the producer can return
+- **AND** the generation SHALL record the context cancellation as its call error
+- **AND** the middleware SHALL NOT start a detached goroutine that waits indefinitely for the upstream channel to close
 
 ### Requirement: HooksMiddleware enforces preflight policy
 
