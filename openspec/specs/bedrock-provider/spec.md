@@ -44,7 +44,7 @@ The Bedrock provider SHALL implement `provider.LanguageModel` from `github.com/g
 
 ### Requirement: Constructor and options
 
-The provider SHALL expose a single constructor `New(modelID string, opts ...Option) provider.LanguageModel` that accepts functional options for region, credentials, base URL, HTTP client, request headers, and ID generation.
+The provider SHALL expose a single constructor `New(modelID string, opts ...Option) provider.LanguageModel` that accepts functional options for region, credentials, base URL, SigV4 signing service, HTTP client, request headers, and ID generation.
 
 #### Scenario: Basic construction
 
@@ -66,6 +66,11 @@ The provider SHALL expose a single constructor `New(modelID string, opts ...Opti
 - **WHEN** a consumer supplies `WithBaseURL("https://custom.example.com")`
 - **THEN** the provider issues requests against `https://custom.example.com/model/{modelID}/converse[-stream]` instead of the default AWS endpoint
 
+#### Scenario: Custom signing service
+
+- **WHEN** a consumer supplies `WithSigningService("bedrock-mantle")`
+- **THEN** SigV4 signatures use `bedrock-mantle` as the credential-scope service name regardless of the endpoint host
+
 #### Scenario: Application inference-profile ARN
 
 - **WHEN** the model ID is an application inference-profile ARN
@@ -74,6 +79,8 @@ The provider SHALL expose a single constructor `New(modelID string, opts ...Opti
 ### Requirement: AWS authentication
 
 When no bearer token is configured, the provider SHALL sign outbound `POST` requests using AWS Signature Version 4 with credentials obtained from a configured `aws.CredentialsProvider` or, if absent, the AWS SDK v2 default credential chain. Requests without a body or non-`POST` requests MUST be sent without signing.
+
+The provider SHALL resolve the SigV4 credential-scope service name per request as follows: an explicit `WithSigningService` value takes precedence; otherwise, when the endpoint host is a Bedrock Mantle host (`bedrock-mantle.<region>.api.aws`) the service name SHALL be `bedrock-mantle`; otherwise the service name SHALL be `bedrock`. The resolved service name MUST NOT affect bearer-token authentication.
 
 #### Scenario: Default credential chain
 
@@ -92,8 +99,18 @@ When no bearer token is configured, the provider SHALL sign outbound `POST` requ
 
 #### Scenario: SigV4 service and region
 
-- **WHEN** the provider signs a request for region `us-east-1`
+- **WHEN** the provider signs a request for the default Bedrock Runtime endpoint in region `us-east-1` without a signing-service override
 - **THEN** the signature uses service name `bedrock` and the configured region
+
+#### Scenario: Mantle endpoint infers bedrock-mantle service
+
+- **WHEN** `WithBaseURL` targets a Bedrock Mantle host (`bedrock-mantle.<region>.api.aws`) and no signing-service override is configured
+- **THEN** the signature uses service name `bedrock-mantle` and the configured region
+
+#### Scenario: Explicit signing service overrides host inference
+
+- **WHEN** a signing-service override is configured via `WithSigningService`
+- **THEN** the signature uses the overriding service name even when the endpoint host would otherwise infer a different service (for example, a Mantle host forced to `bedrock`, or a non-Mantle proxy host forced to `bedrock-mantle`)
 
 ### Requirement: Request conversion to Converse format
 

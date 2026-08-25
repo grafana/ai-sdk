@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"regexp"
 	"strings"
@@ -19,8 +20,20 @@ import (
 // WithBearerToken is not used. Matches upstream env handling.
 const bearerTokenEnv = "AWS_BEARER_TOKEN_BEDROCK"
 
-// signingService is the AWS service name passed to the SigV4 signer.
-const signingService = "bedrock"
+// defaultSigningService is the AWS service name used in the SigV4 credential
+// scope for standard Bedrock Runtime endpoints.
+const defaultSigningService = "bedrock"
+
+// mantleSigningService is the AWS service name used in the SigV4 credential
+// scope for Bedrock Mantle endpoints. Mantle is a separate AWS service, so its
+// signatures must be scoped to "bedrock-mantle" rather than "bedrock";
+// signing with the wrong service name yields a signature-scope mismatch and
+// authentication failure.
+const mantleSigningService = "bedrock-mantle"
+
+// mantleHostPrefix identifies Bedrock Mantle endpoints
+// (bedrock-mantle.<region>.api.aws) for automatic signing-service selection.
+const mantleHostPrefix = "bedrock-mantle."
 
 // defaultRegion is the region used when none is configured and the env var
 // AWS_REGION is unset. Mirrors the upstream fallback.
@@ -40,6 +53,11 @@ type model struct {
 	headers     map[string]string
 	httpClient  *http.Client
 	generateID  func() string
+
+	// signingService overrides the AWS service name used in the SigV4
+	// credential scope. When empty, the service is inferred from the endpoint
+	// host (see resolveSigningService).
+	signingService string
 
 	// credentials is the AWS credential provider used for SigV4 signing. It is
 	// either supplied via WithCredentials at construction or loaded lazily from
@@ -120,6 +138,32 @@ func (m *model) endpoint() string {
 		return strings.TrimRight(m.baseURL, "/")
 	}
 	return fmt.Sprintf("https://bedrock-runtime.%s.amazonaws.com", m.region)
+}
+
+// resolveSigningService returns the AWS service name used in the SigV4
+// credential scope. An explicit WithSigningService value always wins.
+// Otherwise the service is inferred from the endpoint host: Bedrock Mantle
+// endpoints (bedrock-mantle.<region>.api.aws) sign with "bedrock-mantle",
+// while every other endpoint signs with the standard "bedrock" service.
+func (m *model) resolveSigningService() string {
+	if m.signingService != "" {
+		return m.signingService
+	}
+	if isMantleEndpoint(m.endpoint()) {
+		return mantleSigningService
+	}
+	return defaultSigningService
+}
+
+// isMantleEndpoint reports whether endpoint targets Bedrock Mantle, whose SigV4
+// credential scope uses the "bedrock-mantle" service name. Mantle endpoints are
+// hosted at bedrock-mantle.<region>.api.aws.
+func isMantleEndpoint(endpoint string) bool {
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		return false
+	}
+	return strings.HasPrefix(u.Hostname(), mantleHostPrefix)
 }
 
 // resolveDefaultRegion reads AWS_REGION (or AWS_DEFAULT_REGION) and returns
