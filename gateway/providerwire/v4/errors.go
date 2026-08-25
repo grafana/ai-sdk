@@ -116,7 +116,7 @@ func safeErrorFromResolution(err error) (result safeError) {
 			result = safeError{category: safeInternal}
 		}
 	}()
-	if isNil(err) {
+	if isNilInterface(err) {
 		return result
 	}
 	if errors.Is(err, catalog.ErrUnknownModel) {
@@ -132,7 +132,7 @@ func safeErrorFromProvider(err error) (result safeError) {
 			result = safeError{category: safeInternal}
 		}
 	}()
-	if isNil(err) {
+	if isNilInterface(err) {
 		return result
 	}
 	switch {
