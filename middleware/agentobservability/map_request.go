@@ -280,6 +280,10 @@ func anthropicTypeFromOptions(opts provider.ProviderOptions) string {
 	return anthropicTypeFromRaw(raw)
 }
 
+func anthropicTypeFromMetadata(metadata provider.ProviderMetadata) string {
+	return anthropicTypeFromRaw(metadata["anthropic"])
+}
+
 func anthropicTypeFromRaw(raw json.RawMessage) string {
 	var value struct {
 		Type string `json:"type"`
