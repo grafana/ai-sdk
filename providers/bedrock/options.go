@@ -17,10 +17,28 @@ func WithRegion(region string) Option {
 }
 
 // WithBaseURL overrides the Bedrock endpoint base URL. Use for VPC endpoints,
-// test servers, or alternate AWS partitions. When unset, the provider builds
+// test servers, alternate AWS partitions, or Bedrock Mantle
+// (`https://bedrock-mantle.<region>.api.aws`). When unset, the provider builds
 // the default URL `https://bedrock-runtime.<region>.amazonaws.com`.
+//
+// When the base URL host is a Bedrock Mantle endpoint
+// (`bedrock-mantle.<region>.api.aws`), SigV4 signing automatically scopes the
+// signature to the "bedrock-mantle" service. Use [WithSigningService] to
+// override that inference (for example, behind a proxy base URL).
 func WithBaseURL(baseURL string) Option {
 	return func(m *model) { m.baseURL = baseURL }
+}
+
+// WithSigningService overrides the AWS service name used in the SigV4
+// credential scope. Leave unset to infer the service from the endpoint host:
+// "bedrock-mantle" for Bedrock Mantle endpoints and "bedrock" otherwise.
+//
+// Set this explicitly when the endpoint host does not encode the service --
+// for example, when reaching Bedrock Mantle through a proxy or VPC endpoint
+// whose host is not `bedrock-mantle.<region>.api.aws`. Has no effect when a
+// bearer token is configured.
+func WithSigningService(service string) Option {
+	return func(m *model) { m.signingService = service }
 }
 
 // WithCredentials supplies an aws.CredentialsProvider used to sign requests
