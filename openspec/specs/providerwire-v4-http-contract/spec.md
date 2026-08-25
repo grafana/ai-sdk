@@ -247,11 +247,11 @@ The exact registered public `@ai-sdk/gateway` client SHALL be authoritative for 
 
 #### Scenario: Production unary replay is established
 - **WHEN** the strict unary runtime is complete
-- **THEN** each committed request emitted by the registered client SHALL replay to its expected unary stage
-- **AND** streaming records SHALL fail unary envelope validation without reaching the mapper
-- **AND** unary records SHALL reach schema validation and either supported execution or their deterministic first unsupported capability
-- **AND** dedicated supported scalar and focused one-capability requests SHALL provide evidence that multi-capability goldens cannot provide
-- **AND** a pinned registered client SHALL complete a supported unary text call against the real Go handler
+- **THEN** each committed request emitted by the registered client SHALL replay to its expected unary result
+- **AND** streaming records SHALL fail unary envelope validation without model resolution
+- **AND** unary records SHALL reach complete schema validation and either supported execution or a safe unsupported-family response
+- **AND** dedicated supported scalar and focused one-capability requests SHALL cover behavior that multi-capability goldens cannot isolate
+- **AND** a pinned registered client SHALL complete a supported minimal unary text call against the real Go handler
 
 #### Scenario: Streaming remains deferred
 - **WHEN** this unary runtime change is complete
