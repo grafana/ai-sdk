@@ -55,6 +55,8 @@ application grows.
 Start with the [middleware overview](middleware/overview.md) to choose where a
 cross-cutting behavior belongs.
 
+- [Writing middleware](middleware/writing-middleware.md) — add reusable request,
+  policy, result, stream, or caching behavior around model calls.
 - [Structured logging](middleware/structured-logging.md) — record provider-call
   lifecycle, latency, outcome, and optional bounded content.
 - [Prometheus metrics](middleware/prometheus.md) — collect local call volume,
