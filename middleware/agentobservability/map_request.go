@@ -112,6 +112,9 @@ func contentPartToAgento11y(part provider.ContentPart, includeMedia bool) (agent
 		return agento11y.TextPart(part.Text), agento11y.PartKindText, true
 
 	case provider.ContentPartTypeReasoning:
+		if part.Text == "" {
+			return agento11y.Part{}, "", false
+		}
 		out := agento11y.ThinkingPart(part.Text)
 		out.Metadata.ProviderType = "thinking"
 		return out, agento11y.PartKindThinking, true
