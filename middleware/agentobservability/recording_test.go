@@ -335,9 +335,62 @@ func TestRecordingMiddleware_StreamPartError_RecordsUsageAndCallError(t *testing
 	assert.Equal(t, "170", usage["total_tokens"])
 }
 
-func TestRecordingMiddleware_StreamConsumerAbandons_DrainsAndRecords(t *testing.T) {
+func TestRecordingMiddleware_StreamCancellationTakesPrecedenceOverPartError(t *testing.T) {
 	env := testkit.NewEnv(t)
-	model := &mockLanguageModel{provider_: "anthropic", modelID: "claude"}
+	model := &mockLanguageModel{
+		provider_: "anthropic",
+		modelID:   "claude",
+		doStream: func(ctx context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+			stream := make(chan provider.StreamPart)
+			go func() {
+				defer close(stream)
+				stream <- provider.StreamPart{
+					Type:         provider.PartError,
+					APICallError: provider.NewAPICallError(provider.APICallErrorOptions{Message: "provider error"}),
+				}
+				<-ctx.Done()
+			}()
+			return &provider.StreamResult{Stream: stream}, nil
+		},
+	}
+	wrapped := middleware.Wrap(middleware.WrapOptions{
+		Model: model,
+		Middleware: []middleware.Middleware{RecordingMiddleware(RecordingOptions{
+			ClientResolver: func(context.Context) *agento11y.Client { return env.Client },
+		})},
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	streamResult, err := wrapped.DoStream(ctx, provider.CallOptions{})
+	require.NoError(t, err)
+	_, ok := <-streamResult.Stream
+	require.True(t, ok)
+	cancel()
+	for range streamResult.Stream {
+	}
+	assert.Eventually(t, func() bool { return env.RequestCount() == 1 }, 2*time.Second, 10*time.Millisecond)
+	require.NoError(t, env.Client.Shutdown(context.Background()))
+
+	gen := env.SingleGenerationJSON(t)
+	callErr, _ := gen["call_error"].(string)
+	assert.Contains(t, callErr, "context canceled")
+	assert.NotContains(t, callErr, "provider error")
+}
+
+func TestRecordingMiddleware_StreamConsumerAbandons_RecordsCancellation(t *testing.T) {
+	env := testkit.NewEnv(t)
+	model := &mockLanguageModel{
+		provider_: "anthropic",
+		modelID:   "claude",
+		doStream: func(ctx context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+			stream := make(chan provider.StreamPart)
+			go func() {
+				defer close(stream)
+				stream <- provider.StreamPart{Type: provider.PartTextDelta, ID: "text-1", Delta: "partial"}
+				<-ctx.Done()
+			}()
+			return &provider.StreamResult{Stream: stream}, nil
+		},
+	}
 	wrapped := middleware.Wrap(middleware.WrapOptions{
 		Model: model,
 		Middleware: []middleware.Middleware{RecordingMiddleware(RecordingOptions{
@@ -355,19 +408,28 @@ func TestRecordingMiddleware_StreamConsumerAbandons_DrainsAndRecords(t *testing.
 	require.True(t, ok)
 	cancel()
 
-	// Drain the rest of the tee channel. The recorder finalizes promptly after
-	// consumer disconnect while the provider stream drains in the background.
 	for range streamResult.Stream {
 	}
 
 	assert.Eventually(t, func() bool {
 		return env.RequestCount() >= 1
 	}, 2*time.Second, 10*time.Millisecond, "recording finalized even after consumer abandonment")
+	require.NoError(t, env.Client.Shutdown(context.Background()))
+	gen := env.SingleGenerationJSON(t)
+	callErr, _ := gen["call_error"].(string)
+	assert.Contains(t, callErr, "context canceled")
+	output, ok := gen["output"].([]any)
+	require.True(t, ok)
+	require.Len(t, output, 1)
+	message := output[0].(map[string]any)
+	parts := message["parts"].([]any)
+	require.Len(t, parts, 1)
+	assert.Equal(t, "partial", parts[0].(map[string]any)["text"])
 }
 
 func TestRecordingMiddleware_StreamCancellationFinalizesIdleProvider(t *testing.T) {
 	env := testkit.NewEnv(t)
-	upstream := make(chan provider.StreamPart)
+	upstream := make(chan provider.StreamPart, 1)
 	defer close(upstream)
 	model := &mockLanguageModel{
 		provider_: "anthropic",
@@ -396,7 +458,12 @@ func TestRecordingMiddleware_StreamCancellationFinalizesIdleProvider(t *testing.
 	assert.Eventually(t, func() bool {
 		return env.RequestCount() == 1
 	}, 2*time.Second, 10*time.Millisecond)
+	upstream <- provider.StreamPart{Type: provider.PartTextDelta, Delta: "late"}
+	assert.Never(t, func() bool { return len(upstream) == 0 }, 100*time.Millisecond, 10*time.Millisecond)
 	require.NoError(t, env.Client.Shutdown(context.Background()))
+	gen := env.SingleGenerationJSON(t)
+	callErr, _ := gen["call_error"].(string)
+	assert.Contains(t, callErr, "context canceled")
 }
 
 func TestRecordingMiddleware_NilContextProvider_LogsOnce(t *testing.T) {

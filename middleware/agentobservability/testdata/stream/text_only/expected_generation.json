@@ -3,6 +3,7 @@
     "provider": "anthropic",
     "name": "claude-sonnet-4-5"
   },
+  "response_model": "claude-sonnet-4-5",
   "input": [
     {
       "role": "user",
