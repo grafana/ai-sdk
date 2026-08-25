@@ -36,14 +36,7 @@ const (
 var (
 	//go:embed schema/request.json
 	requestSchemaJSON []byte
-	//go:embed schema/unary_success.json
-	unarySuccessSchemaJSON []byte
-	//go:embed schema/error.json
-	errorSchemaJSON []byte
 )
-
-var canonicalInternalError = []byte(`{"error":{"message":"internal error","type":"internal_server_error","param":null,"code":"internal_error"}}`)
-var canonicalInvalidRequestError = []byte(`{"error":{"message":"invalid request","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
 
 // Limits bounds every untrusted request, response, and model-duration resource
 // used by the unary handler.
@@ -52,42 +45,22 @@ type Limits struct {
 	RequestBytes int64
 	// UnaryResponseBytes is the maximum encoded successful response size.
 	UnaryResponseBytes int64
-	// ErrorResponseBytes is the maximum encoded error response size.
-	ErrorResponseBytes int64
 	// ModelDuration is the maximum total duration of one model call.
 	ModelDuration time.Duration
-}
-
-// Policy applies host-owned controls after wire mapping and before model
-// resolution. The unary handler calls it only after a request is fully mapped.
-type Policy interface {
-	Apply(context.Context, provider.CallOptions) (provider.CallOptions, error)
 }
 
 // Config configures an immutable ProviderWire V4 unary handler.
 type Config struct {
 	// Resolver resolves the exact public model ID from the protocol header.
 	Resolver catalog.ModelResolver
-	// Policy applies optional host controls. Nil selects a no-op policy.
-	Policy Policy
 	// Limits bounds request processing, responses, and model execution.
 	Limits Limits
 }
 
-type noOpPolicy struct{}
-
-func (noOpPolicy) Apply(_ context.Context, options provider.CallOptions) (provider.CallOptions, error) {
-	return options, nil
-}
-
 type handler struct {
-	resolver           catalog.ModelResolver
-	policy             Policy
-	limits             Limits
-	requestSchema      *schema.CompiledSchema
-	unarySuccessSchema *schema.CompiledSchema
-	errorSchema        *schema.CompiledSchema
-	mapRequest         func([]byte) (provider.CallOptions, *requestFailure)
+	resolver      catalog.ModelResolver
+	limits        Limits
+	requestSchema *schema.CompiledSchema
 }
 
 // New constructs an immutable strict ProviderWire V4 unary HTTP handler.
@@ -103,31 +76,10 @@ func New(config Config) (http.Handler, error) {
 	if err != nil {
 		return nil, fmt.Errorf("providerwire v4: compiling request schema: %w", err)
 	}
-	unarySuccessSchema, err := schema.CompileSchema(unarySuccessSchemaJSON)
-	if err != nil {
-		return nil, fmt.Errorf("providerwire v4: compiling unary success schema: %w", err)
-	}
-	errorSchema, err := schema.CompileSchema(errorSchemaJSON)
-	if err != nil {
-		return nil, fmt.Errorf("providerwire v4: compiling error schema: %w", err)
-	}
-	if err := errorSchema.Validate(json.RawMessage(canonicalInternalError)); err != nil {
-		return nil, fmt.Errorf("providerwire v4: validating canonical internal error: %w", err)
-	}
-
-	policy := config.Policy
-	if isNil(policy) {
-		policy = noOpPolicy{}
-	}
-
 	return &handler{
-		resolver:           config.Resolver,
-		policy:             policy,
-		limits:             config.Limits,
-		requestSchema:      requestSchema,
-		unarySuccessSchema: unarySuccessSchema,
-		errorSchema:        errorSchema,
-		mapRequest:         mapWireRequest,
+		resolver:      config.Resolver,
+		limits:        config.Limits,
+		requestSchema: requestSchema,
 	}, nil
 }
 
@@ -138,7 +90,6 @@ func validateLimits(limits Limits) error {
 	}{
 		{name: "request bytes", value: limits.RequestBytes},
 		{name: "unary response bytes", value: limits.UnaryResponseBytes},
-		{name: "error response bytes", value: limits.ErrorResponseBytes},
 	}
 	for _, limit := range byteLimits {
 		if limit.value <= 0 {
@@ -150,9 +101,6 @@ func validateLimits(limits Limits) error {
 	}
 	if limits.ModelDuration <= 0 {
 		return fmt.Errorf("providerwire v4: model duration must be positive")
-	}
-	if int64(len(canonicalInternalError)) > limits.ErrorResponseBytes {
-		return fmt.Errorf("providerwire v4: error response bytes cannot contain canonical internal error")
 	}
 	return nil
 }
@@ -170,18 +118,8 @@ func isNil(value any) bool {
 	}
 }
 
-type requestStage string
-
-const (
-	stageEnvelope requestStage = "envelope"
-	stageBody     requestStage = "body"
-	stageSchema   requestStage = "schema"
-	stageMapping  requestStage = "mapping"
-)
-
 type requestFailure struct {
-	stage requestStage
-	safe  safeError
+	safe safeError
 }
 
 type validatedRequest struct {
@@ -195,14 +133,9 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.writeFailure(w, failure)
 		return
 	}
-	options, failure := h.mapRequest(validated.body)
+	options, failure := mapWireRequest(validated.body)
 	if failure != nil {
 		h.writeFailure(w, failure)
-		return
-	}
-	options, err := h.applyPolicy(r.Context(), options)
-	if err != nil {
-		h.writeSafeError(w, safeErrorFromPolicy(err))
 		return
 	}
 	resolved, err := h.resolveModel(r.Context(), validated.modelID)
@@ -219,7 +152,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.writeSafeError(w, safeErrorFromProvider(err))
 		return
 	}
-	if result == nil || !h.writeUnarySuccess(w, result, resolved.ID) {
+	if result == nil || !h.writeUnarySuccess(w, result) {
 		h.writeSafeError(w, safeError{category: safeInternal})
 	}
 }
@@ -235,38 +168,38 @@ func (h *handler) validateRequest(r *http.Request) (validatedRequest, *requestFa
 		return validatedRequest{}, failure
 	}
 	if !utf8.Valid(body) {
-		return validatedRequest{}, &requestFailure{stage: stageBody}
+		return validatedRequest{}, &requestFailure{}
 	}
 	if err := h.requestSchema.Validate(json.RawMessage(body)); err != nil {
-		return validatedRequest{}, &requestFailure{stage: stageSchema}
+		return validatedRequest{}, &requestFailure{}
 	}
 	return validatedRequest{modelID: modelID, body: body}, nil
 }
 
 func validateEnvelope(r *http.Request) (string, *requestFailure) {
 	if r.Method != http.MethodPost || r.URL == nil || r.URL.Path != LanguageModelPath || r.URL.EscapedPath() != LanguageModelPath {
-		return "", &requestFailure{stage: stageEnvelope}
+		return "", &requestFailure{}
 	}
 	contentType, ok := singleHeaderValue(r.Header, "Content-Type")
 	if !ok {
-		return "", &requestFailure{stage: stageEnvelope}
+		return "", &requestFailure{}
 	}
 	mediaType, _, err := mime.ParseMediaType(contentType)
 	if err != nil || !strings.EqualFold(mediaType, "application/json") {
-		return "", &requestFailure{stage: stageEnvelope}
+		return "", &requestFailure{}
 	}
 
 	specification, ok := singleHeaderValue(r.Header, HeaderSpecificationVersion)
 	if !ok || specification != SpecificationVersion {
-		return "", &requestFailure{stage: stageEnvelope}
+		return "", &requestFailure{}
 	}
 	modelID, ok := singleHeaderValue(r.Header, HeaderModelID)
 	if !ok || modelID == "" {
-		return "", &requestFailure{stage: stageEnvelope}
+		return "", &requestFailure{}
 	}
 	streaming, ok := singleHeaderValue(r.Header, HeaderStreaming)
 	if !ok || streaming != "false" {
-		return "", &requestFailure{stage: stageEnvelope}
+		return "", &requestFailure{}
 	}
 	return modelID, nil
 }
@@ -286,15 +219,15 @@ func singleHeaderValue(headers http.Header, name string) (string, bool) {
 
 func (h *handler) readBody(body io.ReadCloser) ([]byte, *requestFailure) {
 	if body == nil {
-		return nil, &requestFailure{stage: stageBody}
+		return nil, &requestFailure{}
 	}
 	data, readErr := io.ReadAll(io.LimitReader(body, h.limits.RequestBytes+1))
 	closeErr := body.Close()
 	if readErr != nil || closeErr != nil {
-		return nil, &requestFailure{stage: stageBody, safe: safeError{category: safeInternal}}
+		return nil, &requestFailure{safe: safeError{category: safeInternal}}
 	}
 	if int64(len(data)) > h.limits.RequestBytes {
-		return nil, &requestFailure{stage: stageBody}
+		return nil, &requestFailure{}
 	}
 	return data, nil
 }
@@ -308,27 +241,14 @@ func (h *handler) writeFailure(w http.ResponseWriter, failure *requestFailure) {
 }
 
 func invalidMappingFailure() *requestFailure {
-	return &requestFailure{stage: stageMapping, safe: safeError{category: safeInvalidRequest}}
+	return &requestFailure{safe: safeError{category: safeInvalidRequest}}
 }
 
 func unsupportedMappingFailure(capability unsupportedCapability) *requestFailure {
-	return &requestFailure{
-		stage: stageMapping,
-		safe:  safeError{category: safeInvalidRequest, capability: capability},
-	}
+	return &requestFailure{safe: safeError{category: safeInvalidRequest, capability: capability}}
 }
 
 var errRuntimeInternal = errors.New("providerwire v4: runtime internal failure")
-
-func (h *handler) applyPolicy(ctx context.Context, options provider.CallOptions) (result provider.CallOptions, err error) {
-	defer func() {
-		if recover() != nil {
-			result = provider.CallOptions{}
-			err = errRuntimeInternal
-		}
-	}()
-	return h.policy.Apply(ctx, options)
-}
 
 func (h *handler) resolveModel(ctx context.Context, modelID string) (resolved catalog.ResolvedModel, err error) {
 	defer func() {
