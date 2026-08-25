@@ -21,11 +21,11 @@ func TestHostErrorWriter_Write(t *testing.T) {
 		status   int
 		body     []byte
 	}{
-		{name: "authentication", category: HostErrorAuthentication, status: http.StatusUnauthorized, body: canonicalAuthenticationError},
-		{name: "permission", category: HostErrorPermission, status: http.StatusForbidden, body: canonicalPermissionError},
-		{name: "internal", category: HostErrorInternal, status: http.StatusInternalServerError, body: canonicalInternalError},
-		{name: "zero category", category: 0, status: http.StatusInternalServerError, body: canonicalInternalError},
-		{name: "unknown category", category: 255, status: http.StatusInternalServerError, body: canonicalInternalError},
+		{name: "authentication", category: HostErrorAuthentication, status: http.StatusUnauthorized, body: []byte(`{"error":{"message":"authentication failed","type":"authentication_error","param":null,"code":"authentication_error"}}`)},
+		{name: "permission", category: HostErrorPermission, status: http.StatusForbidden, body: []byte(`{"error":{"message":"forbidden","type":"forbidden","param":null,"code":"forbidden"}}`)},
+		{name: "internal", category: HostErrorInternal, status: http.StatusInternalServerError, body: []byte(`{"error":{"message":"internal error","type":"internal_server_error","param":null,"code":"internal_error"}}`)},
+		{name: "zero category", category: 0, status: http.StatusInternalServerError, body: []byte(`{"error":{"message":"internal error","type":"internal_server_error","param":null,"code":"internal_error"}}`)},
+		{name: "unknown category", category: 255, status: http.StatusInternalServerError, body: []byte(`{"error":{"message":"internal error","type":"internal_server_error","param":null,"code":"internal_error"}}`)},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
