@@ -1,11 +1,9 @@
 package v4
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
-	"time"
 	"unicode/utf8"
 
 	"github.com/grafana/ai-sdk/provider"
@@ -14,21 +12,15 @@ import (
 const (
 	maxJavaScriptSafeInteger = 9007199254740991
 	minimumTextPartBytes     = int64(len(`{"type":"text","text":""}`))
-	minimumWarningBytes      = int64(len(`{"type":"other","message":""}`))
 )
 
 var errInvalidUnarySuccess = errors.New("providerwire v4: invalid unary success")
 
-type unaryTextPart struct {
-	text string
-}
-
-type unaryWarning struct {
-	typeName provider.WarningType
-	feature  string
-	setting  string
-	message  string
-	details  string
+type unarySuccess struct {
+	content      []string
+	finishReason provider.FinishReason
+	inputUsage   unaryTokenUsage
+	outputUsage  unaryTokenUsage
 }
 
 type unaryTokenUsage struct {
@@ -40,49 +32,19 @@ type unaryTokenUsage struct {
 	reasoning  *int
 }
 
-type unarySuccess struct {
-	content      []unaryTextPart
-	finishReason provider.FinishReason
-	inputUsage   unaryTokenUsage
-	outputUsage  unaryTokenUsage
-	warnings     []unaryWarning
-	responseID   string
-	modelID      string
-	timestamp    time.Time
-}
-
-type unaryStringBudget struct {
-	remaining int64
-}
-
-func (b *unaryStringBudget) take(value string) bool {
-	if int64(len(value)) > b.remaining || !utf8.ValidString(value) {
-		return false
-	}
-	b.remaining -= int64(len(value))
-	return true
-}
-
-func mapUnarySuccess(result *provider.GenerateResult, modelID string, limit int64) (unarySuccess, error) {
-	budget := unaryStringBudget{remaining: limit}
-	if result == nil || modelID == "" || !budget.take(modelID) {
+func mapUnarySuccess(result *provider.GenerateResult, limit int64) (unarySuccess, error) {
+	if result == nil || int64(len(result.Content)) > limit/minimumTextPartBytes {
 		return unarySuccess{}, errInvalidUnarySuccess
 	}
-	if int64(len(result.Content)) > limit/minimumTextPartBytes || int64(len(result.Warnings)) > limit/minimumWarningBytes {
-		return unarySuccess{}, errInvalidUnarySuccess
-	}
-
 	mapped := unarySuccess{
-		content:      make([]unaryTextPart, 0, len(result.Content)),
+		content:      make([]string, 0, len(result.Content)),
 		finishReason: result.FinishReason,
-		warnings:     make([]unaryWarning, 0, len(result.Warnings)),
-		modelID:      modelID,
 	}
 	for _, part := range result.Content {
-		if part.Type != provider.ContentText || !budget.take(part.Text) {
+		if part.Type != provider.ContentText {
 			return unarySuccess{}, errInvalidUnarySuccess
 		}
-		mapped.content = append(mapped.content, unaryTextPart{text: part.Text})
+		mapped.content = append(mapped.content, part.Text)
 	}
 
 	switch result.FinishReason.Unified {
@@ -95,9 +57,6 @@ func mapUnarySuccess(result *provider.GenerateResult, modelID string, limit int6
 	default:
 		return unarySuccess{}, errInvalidUnarySuccess
 	}
-	if !budget.take(result.FinishReason.Raw) {
-		return unarySuccess{}, errInvalidUnarySuccess
-	}
 
 	var err error
 	mapped.inputUsage, err = mapInputUsage(result.Usage.InputTokens)
@@ -107,47 +66,6 @@ func mapUnarySuccess(result *provider.GenerateResult, modelID string, limit int6
 	mapped.outputUsage, err = mapOutputUsage(result.Usage.OutputTokens)
 	if err != nil {
 		return unarySuccess{}, err
-	}
-
-	for _, warning := range result.Warnings {
-		switch warning.Type {
-		case provider.WarnUnsupported, provider.WarnCompatibility:
-			if !budget.take(warning.Feature) || !budget.take(warning.Details) {
-				return unarySuccess{}, errInvalidUnarySuccess
-			}
-			mapped.warnings = append(mapped.warnings, unaryWarning{
-				typeName: warning.Type,
-				feature:  warning.Feature,
-				details:  warning.Details,
-			})
-		case provider.WarnDeprecated:
-			if !budget.take(warning.Setting) || !budget.take(warning.Message) {
-				return unarySuccess{}, errInvalidUnarySuccess
-			}
-			mapped.warnings = append(mapped.warnings, unaryWarning{
-				typeName: warning.Type,
-				setting:  warning.Setting,
-				message:  warning.Message,
-			})
-		case provider.WarnOther:
-			if !budget.take(warning.Message) {
-				return unarySuccess{}, errInvalidUnarySuccess
-			}
-			mapped.warnings = append(mapped.warnings, unaryWarning{
-				typeName: warning.Type,
-				message:  warning.Message,
-			})
-		default:
-			return unarySuccess{}, errInvalidUnarySuccess
-		}
-	}
-
-	if result.Response != nil {
-		if !budget.take(result.Response.ID) {
-			return unarySuccess{}, errInvalidUnarySuccess
-		}
-		mapped.responseID = result.Response.ID
-		mapped.timestamp = result.Response.Timestamp.UTC()
 	}
 	return mapped, nil
 }
@@ -182,79 +100,195 @@ func validTokenCounts(values ...*int) bool {
 	return true
 }
 
+type boundedDocument struct {
+	data     []byte
+	limit    int64
+	overflow bool
+	invalid  bool
+}
+
+func newBoundedDocument(limit int64) boundedDocument {
+	capacity := 256
+	if limit < int64(capacity) {
+		capacity = int(limit)
+	}
+	return boundedDocument{data: make([]byte, 0, capacity), limit: limit}
+}
+
+func (b *boundedDocument) failed() bool { return b.overflow || b.invalid }
+
+func (b *boundedDocument) append(value string) {
+	if b.failed() {
+		return
+	}
+	remaining := b.limit - int64(len(b.data))
+	if remaining < 0 || int64(len(value)) > remaining {
+		b.overflow = true
+		return
+	}
+	b.data = append(b.data, value...)
+}
+
+func (b *boundedDocument) appendBytes(value []byte) {
+	if b.failed() {
+		return
+	}
+	remaining := b.limit - int64(len(b.data))
+	if remaining < 0 || int64(len(value)) > remaining {
+		b.overflow = true
+		return
+	}
+	b.data = append(b.data, value...)
+}
+
+func (b *boundedDocument) appendJSONString(value string) {
+	if b.failed() {
+		return
+	}
+	remaining := b.limit - int64(len(b.data))
+	if remaining < 2 || int64(len(value)) > remaining-2 {
+		b.overflow = true
+		return
+	}
+	if !utf8.ValidString(value) {
+		b.invalid = true
+		return
+	}
+	b.append(`"`)
+	const hex = "0123456789abcdef"
+	for i := 0; i < len(value) && !b.failed(); {
+		char := value[i]
+		switch char {
+		case '"', '\\':
+			b.appendBytes([]byte{'\\', char})
+			i++
+		case '\b':
+			b.append(`\b`)
+			i++
+		case '\f':
+			b.append(`\f`)
+			i++
+		case '\n':
+			b.append(`\n`)
+			i++
+		case '\r':
+			b.append(`\r`)
+			i++
+		case '\t':
+			b.append(`\t`)
+			i++
+		default:
+			if char < 0x20 {
+				b.appendBytes([]byte{'\\', 'u', '0', '0', hex[char>>4], hex[char&0x0f]})
+				i++
+				continue
+			}
+			_, size := utf8.DecodeRuneInString(value[i:])
+			b.append(value[i : i+size])
+			i += size
+		}
+	}
+	b.append(`"`)
+}
+
 func encodeUnarySuccess(value unarySuccess, limit int64) ([]byte, bool) {
 	buffer := newBoundedDocument(limit)
 	buffer.append(`{"content":[`)
-	for i, part := range value.content {
-		if i > 0 {
+	if buffer.failed() {
+		return nil, false
+	}
+	for index, text := range value.content {
+		if index > 0 {
 			buffer.append(",")
 		}
 		buffer.append(`{"type":"text","text":`)
-		buffer.appendJSONString(part.text)
+		if buffer.failed() {
+			return nil, false
+		}
+		buffer.appendJSONString(text)
 		buffer.append("}")
+		if buffer.failed() {
+			return nil, false
+		}
 	}
 	buffer.append(`],"finishReason":{"unified":`)
+	if buffer.failed() {
+		return nil, false
+	}
 	buffer.appendJSONString(string(value.finishReason.Unified))
+	if buffer.failed() {
+		return nil, false
+	}
 	if value.finishReason.Raw != "" {
 		buffer.append(`,"raw":`)
+		if buffer.failed() {
+			return nil, false
+		}
 		buffer.appendJSONString(value.finishReason.Raw)
+		if buffer.failed() {
+			return nil, false
+		}
 	}
 	buffer.append(`},"usage":{"inputTokens":`)
-	encodeInputUsage(&buffer, value.inputUsage)
+	if buffer.failed() || !encodeInputUsage(&buffer, value.inputUsage) {
+		return nil, false
+	}
 	buffer.append(`,"outputTokens":`)
-	encodeOutputUsage(&buffer, value.outputUsage)
-	buffer.append(`},"warnings":[`)
-	for i, warning := range value.warnings {
-		if i > 0 {
-			buffer.append(",")
-		}
-		encodeWarning(&buffer, warning)
-	}
-	buffer.append(`],"response":{`)
-	first := true
-	if value.responseID != "" {
-		buffer.append(`"id":`)
-		buffer.appendJSONString(value.responseID)
-		first = false
-	}
-	if !first {
-		buffer.append(",")
-	}
-	buffer.append(`"modelId":`)
-	buffer.appendJSONString(value.modelID)
-	if !value.timestamp.IsZero() {
-		buffer.append(`,"timestamp":`)
-		buffer.appendJSONString(value.timestamp.Format(time.RFC3339Nano))
+	if buffer.failed() || !encodeOutputUsage(&buffer, value.outputUsage) {
+		return nil, false
 	}
 	buffer.append("}}")
-	if buffer.overflow || buffer.invalid {
+	if buffer.failed() {
 		return nil, false
 	}
 	return buffer.data, true
 }
 
-func encodeInputUsage(buffer *boundedDocument, usage unaryTokenUsage) {
+func encodeInputUsage(buffer *boundedDocument, usage unaryTokenUsage) bool {
 	buffer.append("{")
 	first := true
-	appendTokenCount(buffer, "total", usage.total, &first)
-	appendTokenCount(buffer, "noCache", usage.noCache, &first)
-	appendTokenCount(buffer, "cacheRead", usage.cacheRead, &first)
-	appendTokenCount(buffer, "cacheWrite", usage.cacheWrite, &first)
+	for _, field := range []struct {
+		name  string
+		value *int
+	}{
+		{name: "total", value: usage.total},
+		{name: "noCache", value: usage.noCache},
+		{name: "cacheRead", value: usage.cacheRead},
+		{name: "cacheWrite", value: usage.cacheWrite},
+	} {
+		if !appendTokenCount(buffer, field.name, field.value, &first) {
+			return false
+		}
+	}
 	buffer.append("}")
+	return !buffer.failed()
 }
 
-func encodeOutputUsage(buffer *boundedDocument, usage unaryTokenUsage) {
+func encodeOutputUsage(buffer *boundedDocument, usage unaryTokenUsage) bool {
 	buffer.append("{")
 	first := true
-	appendTokenCount(buffer, "total", usage.total, &first)
-	appendTokenCount(buffer, "text", usage.text, &first)
-	appendTokenCount(buffer, "reasoning", usage.reasoning, &first)
+	for _, field := range []struct {
+		name  string
+		value *int
+	}{
+		{name: "total", value: usage.total},
+		{name: "text", value: usage.text},
+		{name: "reasoning", value: usage.reasoning},
+	} {
+		if !appendTokenCount(buffer, field.name, field.value, &first) {
+			return false
+		}
+	}
 	buffer.append("}")
+	return !buffer.failed()
 }
 
-func appendTokenCount(buffer *boundedDocument, name string, value *int, first *bool) {
+func appendTokenCount(buffer *boundedDocument, name string, value *int, first *bool) bool {
+	if buffer.failed() {
+		return false
+	}
 	if value == nil {
-		return
+		return true
 	}
 	if !*first {
 		buffer.append(",")
@@ -262,39 +296,20 @@ func appendTokenCount(buffer *boundedDocument, name string, value *int, first *b
 	buffer.appendJSONString(name)
 	buffer.append(":")
 	buffer.append(strconv.Itoa(*value))
-	*first = false
-}
-
-func encodeWarning(buffer *boundedDocument, warning unaryWarning) {
-	buffer.append(`{"type":`)
-	buffer.appendJSONString(string(warning.typeName))
-	switch warning.typeName {
-	case provider.WarnUnsupported, provider.WarnCompatibility:
-		buffer.append(`,"feature":`)
-		buffer.appendJSONString(warning.feature)
-		if warning.details != "" {
-			buffer.append(`,"details":`)
-			buffer.appendJSONString(warning.details)
-		}
-	case provider.WarnDeprecated:
-		buffer.append(`,"setting":`)
-		buffer.appendJSONString(warning.setting)
-		buffer.append(`,"message":`)
-		buffer.appendJSONString(warning.message)
-	case provider.WarnOther:
-		buffer.append(`,"message":`)
-		buffer.appendJSONString(warning.message)
+	if buffer.failed() {
+		return false
 	}
-	buffer.append("}")
+	*first = false
+	return true
 }
 
-func (h *handler) writeUnarySuccess(w http.ResponseWriter, result *provider.GenerateResult, modelID string) bool {
-	mapped, err := mapUnarySuccess(result, modelID, h.limits.UnaryResponseBytes)
+func (h *handler) writeUnarySuccess(w http.ResponseWriter, result *provider.GenerateResult) bool {
+	mapped, err := mapUnarySuccess(result, h.limits.UnaryResponseBytes)
 	if err != nil {
 		return false
 	}
 	body, ok := encodeUnarySuccess(mapped, h.limits.UnaryResponseBytes)
-	if !ok || h.unarySuccessSchema.Validate(json.RawMessage(body)) != nil {
+	if !ok {
 		return false
 	}
 	w.Header().Set("Content-Type", "application/json")

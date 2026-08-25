@@ -2,34 +2,19 @@ package v4
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net"
 	"net/http"
 	"net/url"
-	"unicode/utf8"
 
 	"github.com/grafana/ai-sdk/gateway/catalog"
 	"github.com/grafana/ai-sdk/provider"
-)
-
-var (
-	// ErrPolicyAuthentication reports that host policy could not authenticate the caller.
-	ErrPolicyAuthentication = errors.New("providerwire v4: policy authentication failed")
-	// ErrPolicyPermission reports that host policy denied the caller.
-	ErrPolicyPermission = errors.New("providerwire v4: policy permission denied")
-	// ErrPolicyRateLimit reports that host policy rate-limited the caller.
-	ErrPolicyRateLimit = errors.New("providerwire v4: policy rate limit exceeded")
-	// ErrPolicyOverload reports that host policy is temporarily overloaded.
-	ErrPolicyOverload = errors.New("providerwire v4: policy overloaded")
 )
 
 type safeErrorCategory uint8
 
 const (
 	safeInvalidRequest safeErrorCategory = iota + 1
-	safeAuthentication
-	safePermission
 	safeModelNotFound
 	safeRateLimit
 	safeOverload
@@ -45,100 +30,82 @@ type safeError struct {
 	capability unsupportedCapability
 }
 
-type safeErrorType string
+type safeErrorDocument struct {
+	status int
+	body   []byte
+}
 
-type safeErrorCode string
+var (
+	canonicalInvalidRequestError = []byte(`{"error":{"message":"invalid request","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
+	canonicalModelNotFoundError  = []byte(`{"error":{"message":"model not found","type":"model_not_found","param":null,"code":"model_not_found"}}`)
+	canonicalRateLimitError      = []byte(`{"error":{"message":"rate limit exceeded","type":"rate_limit_exceeded","param":null,"code":"rate_limit_exceeded"}}`)
+	canonicalOverloadError       = []byte(`{"error":{"message":"service overloaded","type":"internal_server_error","param":null,"code":"overloaded"}}`)
+	canonicalDependencyError     = []byte(`{"error":{"message":"failed dependency","type":"failed_dependency","param":null,"code":"failed_dependency"}}`)
+	canonicalUpstreamError       = []byte(`{"error":{"message":"upstream failure","type":"internal_server_error","param":null,"code":"upstream_error"}}`)
+	canonicalTimeoutError        = []byte(`{"error":{"message":"request timed out","type":"internal_server_error","param":null,"code":"timeout"}}`)
+	canonicalCancellationError   = []byte(`{"error":{"message":"request canceled","type":"internal_server_error","param":null,"code":"canceled"}}`)
+	canonicalInternalError       = []byte(`{"error":{"message":"internal error","type":"internal_server_error","param":null,"code":"internal_error"}}`)
 
-const (
-	errorTypeInvalidRequest safeErrorType = "invalid_request_error"
-	errorTypeAuthentication safeErrorType = "authentication_error"
-	errorTypeForbidden      safeErrorType = "forbidden"
-	errorTypeModelNotFound  safeErrorType = "model_not_found"
-	errorTypeRateLimit      safeErrorType = "rate_limit_exceeded"
-	errorTypeInternal       safeErrorType = "internal_server_error"
-	errorTypeDependency     safeErrorType = "failed_dependency"
-
-	errorCodeInvalidRequest safeErrorCode = "invalid_request"
-	errorCodeAuthentication safeErrorCode = "authentication_error"
-	errorCodeForbidden      safeErrorCode = "forbidden"
-	errorCodeModelNotFound  safeErrorCode = "model_not_found"
-	errorCodeRateLimit      safeErrorCode = "rate_limit_exceeded"
-	errorCodeOverloaded     safeErrorCode = "overloaded"
-	errorCodeDependency     safeErrorCode = "failed_dependency"
-	errorCodeUpstream       safeErrorCode = "upstream_error"
-	errorCodeTimeout        safeErrorCode = "timeout"
-	errorCodeCanceled       safeErrorCode = "canceled"
-	errorCodeInternal       safeErrorCode = "internal_error"
+	unsupportedFilesError            = []byte(`{"error":{"message":"unsupported capability: files","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
+	unsupportedReasoningContentError = []byte(`{"error":{"message":"unsupported capability: reasoning-content","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
+	unsupportedCustomContentError    = []byte(`{"error":{"message":"unsupported capability: custom-content","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
+	unsupportedToolsError            = []byte(`{"error":{"message":"unsupported capability: tools","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
+	unsupportedToolApprovalsError    = []byte(`{"error":{"message":"unsupported capability: tool-approvals","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
+	unsupportedStructuredOutputError = []byte(`{"error":{"message":"unsupported capability: structured-output","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
+	unsupportedProviderOptionsError  = []byte(`{"error":{"message":"unsupported capability: provider-options","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
+	unsupportedBodyHeadersError      = []byte(`{"error":{"message":"unsupported capability: body-headers","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
+	unsupportedRawOutputError        = []byte(`{"error":{"message":"unsupported capability: raw-output","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
 )
 
-type safeErrorDefinition struct {
-	status   int
-	message  string
-	typeName safeErrorType
-	code     safeErrorCode
-}
-
-func definitionForSafeError(value safeError) (safeErrorDefinition, bool) {
+func documentForSafeError(value safeError) safeErrorDocument {
 	switch value.category {
 	case safeInvalidRequest:
-		message := "invalid request"
-		if value.capability != "" {
-			if !validUnsupportedCapability(value.capability) {
-				return safeErrorDefinition{}, false
-			}
-			message = "unsupported capability: " + string(value.capability)
+		body := unsupportedCapabilityDocument(value.capability)
+		if body == nil {
+			body = canonicalInvalidRequestError
 		}
-		return safeErrorDefinition{status: http.StatusBadRequest, message: message, typeName: errorTypeInvalidRequest, code: errorCodeInvalidRequest}, true
-	case safeAuthentication:
-		return safeErrorDefinition{status: http.StatusUnauthorized, message: "authentication failed", typeName: errorTypeAuthentication, code: errorCodeAuthentication}, true
-	case safePermission:
-		return safeErrorDefinition{status: http.StatusForbidden, message: "forbidden", typeName: errorTypeForbidden, code: errorCodeForbidden}, true
+		return safeErrorDocument{status: http.StatusBadRequest, body: body}
 	case safeModelNotFound:
-		return safeErrorDefinition{status: http.StatusNotFound, message: "model not found", typeName: errorTypeModelNotFound, code: errorCodeModelNotFound}, true
+		return safeErrorDocument{status: http.StatusNotFound, body: canonicalModelNotFoundError}
 	case safeRateLimit:
-		return safeErrorDefinition{status: http.StatusTooManyRequests, message: "rate limit exceeded", typeName: errorTypeRateLimit, code: errorCodeRateLimit}, true
+		return safeErrorDocument{status: http.StatusTooManyRequests, body: canonicalRateLimitError}
 	case safeOverload:
-		return safeErrorDefinition{status: http.StatusServiceUnavailable, message: "service overloaded", typeName: errorTypeInternal, code: errorCodeOverloaded}, true
+		return safeErrorDocument{status: http.StatusServiceUnavailable, body: canonicalOverloadError}
 	case safeFailedDependency:
-		return safeErrorDefinition{status: http.StatusFailedDependency, message: "failed dependency", typeName: errorTypeDependency, code: errorCodeDependency}, true
+		return safeErrorDocument{status: http.StatusFailedDependency, body: canonicalDependencyError}
 	case safeUpstream:
-		return safeErrorDefinition{status: http.StatusBadGateway, message: "upstream failure", typeName: errorTypeInternal, code: errorCodeUpstream}, true
+		return safeErrorDocument{status: http.StatusBadGateway, body: canonicalUpstreamError}
 	case safeTimeout:
-		return safeErrorDefinition{status: http.StatusGatewayTimeout, message: "request timed out", typeName: errorTypeInternal, code: errorCodeTimeout}, true
+		return safeErrorDocument{status: http.StatusGatewayTimeout, body: canonicalTimeoutError}
 	case safeCancellation:
-		return safeErrorDefinition{status: 499, message: "request canceled", typeName: errorTypeInternal, code: errorCodeCanceled}, true
-	case safeInternal:
-		return safeErrorDefinition{status: http.StatusInternalServerError, message: "internal error", typeName: errorTypeInternal, code: errorCodeInternal}, true
+		return safeErrorDocument{status: 499, body: canonicalCancellationError}
 	default:
-		return safeErrorDefinition{}, false
+		return safeErrorDocument{status: http.StatusInternalServerError, body: canonicalInternalError}
 	}
 }
 
-func safeErrorFromPolicy(err error) (result safeError) {
-	result = safeError{category: safeInternal}
-	defer func() {
-		if recover() != nil {
-			result = safeError{category: safeInternal}
-		}
-	}()
-	if isNil(err) {
-		return safeError{category: safeInternal}
-	}
-	switch {
-	case errors.Is(err, context.Canceled):
-		return safeError{category: safeCancellation}
-	case errors.Is(err, context.DeadlineExceeded):
-		return safeError{category: safeTimeout}
-	case errors.Is(err, ErrPolicyAuthentication):
-		return safeError{category: safeAuthentication}
-	case errors.Is(err, ErrPolicyPermission):
-		return safeError{category: safePermission}
-	case errors.Is(err, ErrPolicyRateLimit):
-		return safeError{category: safeRateLimit}
-	case errors.Is(err, ErrPolicyOverload):
-		return safeError{category: safeOverload}
+func unsupportedCapabilityDocument(capability unsupportedCapability) []byte {
+	switch capability {
+	case capabilityFiles:
+		return unsupportedFilesError
+	case capabilityReasoningContent:
+		return unsupportedReasoningContentError
+	case capabilityCustomContent:
+		return unsupportedCustomContentError
+	case capabilityTools:
+		return unsupportedToolsError
+	case capabilityToolApprovals:
+		return unsupportedToolApprovalsError
+	case capabilityStructuredOutput:
+		return unsupportedStructuredOutputError
+	case capabilityProviderOptions:
+		return unsupportedProviderOptionsError
+	case capabilityBodyHeaders:
+		return unsupportedBodyHeadersError
+	case capabilityRawOutput:
+		return unsupportedRawOutputError
 	default:
-		return safeError{category: safeInternal}
+		return nil
 	}
 }
 
@@ -150,7 +117,7 @@ func safeErrorFromResolution(err error) (result safeError) {
 		}
 	}()
 	if isNil(err) {
-		return safeError{category: safeInternal}
+		return result
 	}
 	if errors.Is(err, catalog.ErrUnknownModel) {
 		return safeError{category: safeModelNotFound}
@@ -166,7 +133,7 @@ func safeErrorFromProvider(err error) (result safeError) {
 		}
 	}()
 	if isNil(err) {
-		return safeError{category: safeInternal}
+		return result
 	}
 	switch {
 	case errors.Is(err, context.Canceled):
@@ -208,110 +175,9 @@ func safeErrorFromProvider(err error) (result safeError) {
 	return safeError{category: safeInternal}
 }
 
-type boundedDocument struct {
-	data     []byte
-	limit    int64
-	overflow bool
-	invalid  bool
-}
-
-func newBoundedDocument(limit int64) boundedDocument {
-	capacity := 256
-	if limit < int64(capacity) {
-		capacity = int(limit)
-	}
-	return boundedDocument{data: make([]byte, 0, capacity), limit: limit}
-}
-
-func (b *boundedDocument) append(value string) {
-	remaining := b.limit - int64(len(b.data))
-	if b.overflow || b.invalid || remaining < 0 || int64(len(value)) > remaining {
-		b.overflow = true
-		return
-	}
-	b.data = append(b.data, value...)
-}
-
-func (b *boundedDocument) appendBytes(value []byte) {
-	remaining := b.limit - int64(len(b.data))
-	if b.overflow || b.invalid || remaining < 0 || int64(len(value)) > remaining {
-		b.overflow = true
-		return
-	}
-	b.data = append(b.data, value...)
-}
-
-func (b *boundedDocument) appendJSONString(value string) {
-	if b.overflow || b.invalid {
-		return
-	}
-	if !utf8.ValidString(value) {
-		b.invalid = true
-		return
-	}
-	b.append(`"`)
-	const hex = "0123456789abcdef"
-	for i := 0; i < len(value) && !b.overflow; {
-		c := value[i]
-		switch c {
-		case '"', '\\':
-			b.appendBytes([]byte{'\\', c})
-			i++
-		case '\b':
-			b.append(`\b`)
-			i++
-		case '\f':
-			b.append(`\f`)
-			i++
-		case '\n':
-			b.append(`\n`)
-			i++
-		case '\r':
-			b.append(`\r`)
-			i++
-		case '\t':
-			b.append(`\t`)
-			i++
-		default:
-			if c < 0x20 {
-				b.appendBytes([]byte{'\\', 'u', '0', '0', hex[c>>4], hex[c&0x0f]})
-				i++
-				continue
-			}
-			_, size := utf8.DecodeRuneInString(value[i:])
-			b.append(value[i : i+size])
-			i += size
-		}
-	}
-	b.append(`"`)
-}
-
-func encodeSafeError(value safeError, limit int64) ([]byte, int, bool) {
-	definition, ok := definitionForSafeError(value)
-	if !ok {
-		return nil, 0, false
-	}
-	buffer := newBoundedDocument(limit)
-	buffer.append(`{"error":{"message":`)
-	buffer.appendJSONString(definition.message)
-	buffer.append(`,"type":`)
-	buffer.appendJSONString(string(definition.typeName))
-	buffer.append(`,"param":null,"code":`)
-	buffer.appendJSONString(string(definition.code))
-	buffer.append(`}}`)
-	if buffer.overflow || buffer.invalid {
-		return nil, 0, false
-	}
-	return buffer.data, definition.status, true
-}
-
 func (h *handler) writeSafeError(w http.ResponseWriter, value safeError) {
-	body, status, ok := encodeSafeError(value, h.limits.ErrorResponseBytes)
-	if !ok || h.errorSchema.Validate(json.RawMessage(body)) != nil {
-		body = canonicalInternalError
-		status = http.StatusInternalServerError
-	}
+	document := documentForSafeError(value)
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_, _ = w.Write(body)
+	w.WriteHeader(document.status)
+	_, _ = w.Write(document.body)
 }

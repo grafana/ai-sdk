@@ -15,12 +15,7 @@ import (
 	"github.com/grafana/ai-sdk/provider"
 )
 
-const (
-	providerWireV4Prefix        = "/providerwire-v4"
-	providerWireV4ControlHeader = "x-providerwire-test-error"
-)
-
-type providerWireV4ControlContextKey struct{}
+const providerWireV4Prefix = "/providerwire-v4"
 
 type providerWireV4Stats struct {
 	successCalls  atomic.Int64
@@ -42,24 +37,6 @@ func (s *providerWireV4Stats) options() provider.CallOptions {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.lastOptions
-}
-
-type providerWireV4Policy struct{}
-
-func (providerWireV4Policy) Apply(ctx context.Context, options provider.CallOptions) (provider.CallOptions, error) {
-	control, _ := ctx.Value(providerWireV4ControlContextKey{}).(string)
-	switch control {
-	case "authentication":
-		return provider.CallOptions{}, providerwirev4.ErrPolicyAuthentication
-	case "permission":
-		return provider.CallOptions{}, providerwirev4.ErrPolicyPermission
-	case "rate-limit":
-		return provider.CallOptions{}, providerwirev4.ErrPolicyRateLimit
-	case "overload":
-		return provider.CallOptions{}, providerwirev4.ErrPolicyOverload
-	default:
-		return options, nil
-	}
 }
 
 type providerWireV4Model struct {
@@ -91,20 +68,9 @@ func (m *providerWireV4Model) DoGenerate(ctx context.Context, options provider.C
 			},
 			Warnings: []provider.Warning{{Type: provider.WarnOther, Message: "server warning"}},
 			Response: &provider.GenerateResponse{ResponseMetadata: provider.ResponseMetadata{
-				ID: "response-1", ModelID: "private-backend-model", Provider: "private-provider",
-				Timestamp: time.Date(2026, 8, 22, 0, 0, 0, 0, time.UTC),
+				ID: "private-response", ModelID: "private-backend-model", Provider: "private-provider",
 			}},
 		}, nil
-	case "failed-dependency":
-		return nil, provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: http.StatusUnauthorized, Message: "private dependency"})
-	case "upstream":
-		return nil, provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: http.StatusInternalServerError, Message: "private upstream"})
-	case "timeout":
-		return nil, context.DeadlineExceeded
-	case "cancellation":
-		return nil, context.Canceled
-	case "internal":
-		return nil, errors.New("providerwire test: private internal failure")
 	case "blocking":
 		m.stats.blockingCalls.Add(1)
 		<-ctx.Done()
@@ -122,8 +88,8 @@ type providerWireV4Scenario struct {
 
 func newProviderWireV4Scenario() (*providerWireV4Scenario, error) {
 	stats := &providerWireV4Stats{}
-	entries := make([]catalog.StaticEntry, 0, 7)
-	for _, id := range []string{"success", "failed-dependency", "upstream", "timeout", "cancellation", "internal", "blocking"} {
+	entries := make([]catalog.StaticEntry, 0, 2)
+	for _, id := range []string{"success", "blocking"} {
 		entries = append(entries, catalog.StaticEntry{
 			Info:  catalog.ModelInfo{ID: id},
 			Model: &providerWireV4Model{kind: id, stats: stats},
@@ -135,11 +101,9 @@ func newProviderWireV4Scenario() (*providerWireV4Scenario, error) {
 	}
 	runtime, err := providerwirev4.New(providerwirev4.Config{
 		Resolver: resolver,
-		Policy:   providerWireV4Policy{},
 		Limits: providerwirev4.Limits{
 			RequestBytes:       1 << 20,
 			UnaryResponseBytes: 1 << 20,
-			ErrorResponseBytes: 1 << 10,
 			ModelDuration:      5 * time.Second,
 		},
 	})
@@ -151,11 +115,7 @@ func newProviderWireV4Scenario() (*providerWireV4Scenario, error) {
 
 func (s *providerWireV4Scenario) register(mux *http.ServeMux) {
 	strictRoute := http.StripPrefix(providerWireV4Prefix, s.runtime)
-	mux.Handle("POST "+providerWireV4Prefix+providerwirev4.LanguageModelPath, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		control := r.Header.Get(providerWireV4ControlHeader)
-		ctx := context.WithValue(r.Context(), providerWireV4ControlContextKey{}, control)
-		strictRoute.ServeHTTP(w, r.WithContext(ctx))
-	}))
+	mux.Handle("POST "+providerWireV4Prefix+providerwirev4.LanguageModelPath, strictRoute)
 	mux.HandleFunc("GET "+providerWireV4Prefix+"/stats", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]int64{

@@ -1,9 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://grafana.com/ai-sdk/providerwire/v4/unary-success.schema.json",
-  "title": "ProviderWire V4 strict unary text response",
+  "title": "ProviderWire V4 unary text response",
   "type": "object",
-  "required": ["content", "finishReason", "usage", "warnings", "response"],
+  "required": ["content", "finishReason", "usage"],
   "properties": {
     "content": {
       "type": "array",
@@ -36,24 +36,6 @@
         "outputTokens": { "$ref": "#/$defs/outputTokenUsage" }
       },
       "additionalProperties": false
-    },
-    "warnings": {
-      "type": "array",
-      "items": { "$ref": "#/$defs/warning" }
-    },
-    "response": {
-      "type": "object",
-      "required": ["modelId"],
-      "properties": {
-        "id": { "type": "string" },
-        "modelId": { "type": "string", "minLength": 1 },
-        "timestamp": {
-          "type": "string",
-          "format": "date-time",
-          "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\\.[0-9]+)?(Z|[+-]([01][0-9]|2[0-3]):[0-5][0-9])$"
-        }
-      },
-      "additionalProperties": false
     }
   },
   "additionalProperties": false,
@@ -79,53 +61,6 @@
         "total": { "$ref": "#/$defs/tokenCount" },
         "text": { "$ref": "#/$defs/tokenCount" },
         "reasoning": { "$ref": "#/$defs/tokenCount" }
-      },
-      "additionalProperties": false
-    },
-    "warning": {
-      "oneOf": [
-        { "$ref": "#/$defs/unsupportedWarning" },
-        { "$ref": "#/$defs/compatibilityWarning" },
-        { "$ref": "#/$defs/deprecatedWarning" },
-        { "$ref": "#/$defs/otherWarning" }
-      ]
-    },
-    "unsupportedWarning": {
-      "type": "object",
-      "required": ["type", "feature"],
-      "properties": {
-        "type": { "const": "unsupported" },
-        "feature": { "type": "string" },
-        "details": { "type": "string" }
-      },
-      "additionalProperties": false
-    },
-    "compatibilityWarning": {
-      "type": "object",
-      "required": ["type", "feature"],
-      "properties": {
-        "type": { "const": "compatibility" },
-        "feature": { "type": "string" },
-        "details": { "type": "string" }
-      },
-      "additionalProperties": false
-    },
-    "deprecatedWarning": {
-      "type": "object",
-      "required": ["type", "setting", "message"],
-      "properties": {
-        "type": { "const": "deprecated" },
-        "setting": { "type": "string" },
-        "message": { "type": "string" }
-      },
-      "additionalProperties": false
-    },
-    "otherWarning": {
-      "type": "object",
-      "required": ["type", "message"],
-      "properties": {
-        "type": { "const": "other" },
-        "message": { "type": "string" }
       },
       "additionalProperties": false
     }

@@ -13,8 +13,6 @@
         "type": {
           "enum": [
             "invalid_request_error",
-            "authentication_error",
-            "forbidden",
             "model_not_found",
             "rate_limit_exceeded",
             "internal_server_error",
@@ -25,8 +23,6 @@
         "code": {
           "enum": [
             "invalid_request",
-            "authentication_error",
-            "forbidden",
             "model_not_found",
             "rate_limit_exceeded",
             "overloaded",
@@ -58,20 +54,6 @@
             },
             "type": { "const": "invalid_request_error" },
             "code": { "const": "invalid_request" }
-          }
-        },
-        {
-          "properties": {
-            "message": { "const": "authentication failed" },
-            "type": { "const": "authentication_error" },
-            "code": { "const": "authentication_error" }
-          }
-        },
-        {
-          "properties": {
-            "message": { "const": "forbidden" },
-            "type": { "const": "forbidden" },
-            "code": { "const": "forbidden" }
           }
         },
         {
