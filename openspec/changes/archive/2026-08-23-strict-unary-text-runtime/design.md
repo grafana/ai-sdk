@@ -50,9 +50,9 @@ The server emits only content, finish reason, and usage. Provider warnings, resp
 
 Streaming differs: future streaming work must preserve observable stream warnings, response-metadata parts, lifecycle parts, usage, finish, and errors.
 
-### Bound success encoding before commitment
+### Bound success preflight and encode with standard JSON before commitment
 
-A private mapped value is encoded into an early-stopping bounded buffer. Before scanning a raw string for UTF-8 or escapes, the encoder rejects it when its raw length plus quotes cannot fit the remaining budget. It returns immediately after overflow or invalid UTF-8 so later parts and fields are not processed. Only a complete in-limit document is committed with HTTP 200. Success schemas remain test-time contract checks rather than per-response runtime validation.
+Before encoding, the mapper uses overflow-safe subtraction to bound content count and aggregate text plus raw-finish bytes. UTF-8 validation runs only after that preflight. A private tagged DTO containing only content, finish reason, and usage is then encoded with `encoding/json`; provider-domain marshalers never control the response. The complete bytes are checked against the unary limit before HTTP 200. Worst-case escaping may allocate a bounded constant multiple of the configured limit, which is acceptable because provider strings are already resident and removes handwritten JSON correctness surface. Success schemas remain test-time contract checks rather than per-response runtime validation.
 
 ### Keep one cross-language runtime layer
 
