@@ -1,7 +1,9 @@
 package agentobservability
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
 	"strconv"
 	"strings"
 
@@ -24,10 +26,14 @@ const systemPromptSeparator = "\n\n"
 // shape on the Anthropic wire (tool_result blocks live inside user messages
 // but the underlying SDK normalizes them to tool-role messages).
 func messagesToAgento11y(prompt []provider.Message) (string, []agento11y.Message) {
-	return messagesToAgento11yWithMedia(prompt, true)
+	return messagesToAgento11yWithMediaAndTools(prompt, true, nil)
 }
 
-func messagesToAgento11yWithMedia(prompt []provider.Message, includeMedia bool) (string, []agento11y.Message) {
+func messagesToAgento11yWithTools(prompt []provider.Message, tools []provider.Tool) (string, []agento11y.Message) {
+	return messagesToAgento11yWithMediaAndTools(prompt, true, tools)
+}
+
+func messagesToAgento11yWithMediaAndTools(prompt []provider.Message, includeMedia bool, tools []provider.Tool) (string, []agento11y.Message) {
 	if len(prompt) == 0 {
 		return "", nil
 	}
@@ -51,7 +57,7 @@ func messagesToAgento11yWithMedia(prompt []provider.Message, includeMedia bool) 
 			continue
 		}
 
-		normalParts, toolParts := convertMessageParts(msg.Content, includeMedia)
+		normalParts, toolParts := convertMessagePartsWithTools(msg.Content, includeMedia, tools)
 		if len(normalParts) > 0 {
 			out = append(out, agento11y.Message{Role: role, Parts: normalParts})
 		}
@@ -83,9 +89,9 @@ func roleToAgento11y(role provider.Role) (agento11y.Role, bool) {
 // convertMessageParts splits message content parts into (non-tool-result parts,
 // tool-result parts). The caller emits the second slice as its own
 // [agento11y.RoleTool] message when non-empty.
-func convertMessageParts(parts []provider.ContentPart, includeMedia bool) (normal, toolResults []agento11y.Part) {
+func convertMessagePartsWithTools(parts []provider.ContentPart, includeMedia bool, tools []provider.Tool) (normal, toolResults []agento11y.Part) {
 	for i := range parts {
-		part, kind, ok := contentPartToAgento11y(parts[i], includeMedia)
+		part, kind, ok := contentPartToAgento11yWithTools(parts[i], includeMedia, tools)
 		if !ok {
 			continue
 		}
@@ -103,7 +109,7 @@ func convertMessageParts(parts []provider.ContentPart, includeMedia bool) (norma
 // The returned PartKind is also returned so callers can route tool-result
 // parts into a separate message (matching the upstream Anthropic helper's
 // splitting behavior).
-func contentPartToAgento11y(part provider.ContentPart, includeMedia bool) (agento11y.Part, agento11y.PartKind, bool) {
+func contentPartToAgento11yWithTools(part provider.ContentPart, includeMedia bool, tools []provider.Tool) (agento11y.Part, agento11y.PartKind, bool) {
 	switch part.Type {
 	case provider.ContentPartTypeText:
 		if part.Text == "" {
@@ -129,7 +135,12 @@ func contentPartToAgento11y(part provider.ContentPart, includeMedia bool) (agent
 			InputJSON: normalizeJSONObject(part.Input),
 		}
 		out := agento11y.ToolCallPart(call)
-		out.Metadata.ProviderType = providerTypeForToolCall(part)
+		out.Metadata.ProviderType = providerTypeForToolWithDefinitions(
+			part.ProviderExecuted,
+			part.ToolName,
+			anthropicTypeFromOptions(part.ProviderOptions),
+			tools,
+		)
 		return out, agento11y.PartKindToolCall, true
 
 	case provider.ContentPartTypeToolResult:
@@ -140,7 +151,13 @@ func contentPartToAgento11y(part provider.ContentPart, includeMedia bool) (agent
 			IsError:     isErr,
 			ContentJSON: content,
 		})
-		out.Metadata.ProviderType = "tool_result"
+		out.Metadata.ProviderType = providerTypeForToolResult(
+			part.ProviderExecuted,
+			part.ToolName,
+			anthropicTypeFromOptions(part.ProviderOptions),
+			tools,
+			content,
+		)
 		return out, agento11y.PartKindToolResult, true
 
 	case provider.ContentPartTypeFile:
@@ -169,15 +186,108 @@ func contentPartToAgento11y(part provider.ContentPart, includeMedia bool) (agent
 	}
 }
 
-// providerTypeForToolCall recovers the Anthropic provider-type discriminator
-// for tool calls. ProviderExecuted indicates a server-side tool (web_search,
-// code_execution, …); MCP tools are not currently flagged separately at the
-// ai-sdk content layer, so they fall through to "tool_use".
+// providerTypeForToolCall recovers provider-specific tool discriminators
+// retained by the provider-neutral content layer.
 func providerTypeForToolCall(part provider.ContentPart) string {
-	if part.ProviderExecuted {
+	return providerTypeForTool(part.ProviderExecuted, part.ToolName, anthropicTypeFromOptions(part.ProviderOptions))
+}
+
+func providerTypeForTool(providerExecuted bool, toolName, anthropicType string) string {
+	return providerTypeForToolWithDefinitions(providerExecuted, toolName, anthropicType, nil)
+}
+
+func providerTypeForToolWithDefinitions(providerExecuted bool, toolName, anthropicType string, tools []provider.Tool) string {
+	if anthropicType == "mcp-tool-use" {
+		return "mcp_tool_use"
+	}
+	if !providerExecuted {
+		return "tool_use"
+	}
+	providerToolName := resolveAnthropicProviderToolName(tools, toolName)
+	if providerToolName == "" {
+		providerToolName = toolName
+	}
+	switch providerToolName {
+	case "tool_search_tool_regex", "tool_search_tool_bm25":
+		return providerToolName
+	default:
 		return "server_tool_use"
 	}
-	return "tool_use"
+}
+
+func providerTypeForToolResult(providerExecuted bool, toolName, anthropicType string, tools []provider.Tool, result json.RawMessage) string {
+	if anthropicType == "mcp-tool-use" {
+		return "mcp_tool_result"
+	}
+	providerToolName := resolveAnthropicProviderToolName(tools, toolName)
+	resolvedProviderTool := providerToolName != ""
+	if providerToolName == "" {
+		if !providerExecuted {
+			return "tool_result"
+		}
+		providerToolName = toolName
+	}
+	if providerToolName == "code_execution" && (providerExecuted || resolvedProviderTool) {
+		switch resultType := anthropicTypeFromRaw(result); {
+		case resultType == "bash_code_execution_result":
+			return "bash_code_execution_tool_result"
+		case strings.HasPrefix(resultType, "text_editor_code_execution_"):
+			return "text_editor_code_execution_tool_result"
+		}
+	}
+	switch providerToolName {
+	case "web_search":
+		return "web_search_tool_result"
+	case "web_fetch":
+		return "web_fetch_tool_result"
+	case "code_execution":
+		return "code_execution_tool_result"
+	case "tool_search_tool_regex":
+		return "tool_search_tool_regex_tool_result"
+	case "tool_search_tool_bm25":
+		return "tool_search_tool_bm25_tool_result"
+	default:
+		return "tool_result"
+	}
+}
+
+func resolveAnthropicProviderToolName(tools []provider.Tool, toolName string) string {
+	for _, tool := range tools {
+		if tool.Type != provider.ToolTypeProvider || tool.Name != toolName {
+			continue
+		}
+		switch tool.ID {
+		case "anthropic.web_search_20250305", "anthropic.web_search_20260209":
+			return "web_search"
+		case "anthropic.web_fetch_20250910", "anthropic.web_fetch_20260209":
+			return "web_fetch"
+		case "anthropic.code_execution_20250522", "anthropic.code_execution_20250825", "anthropic.code_execution_20260120":
+			return "code_execution"
+		case "anthropic.tool_search_bm25_20251119":
+			return "tool_search_tool_bm25"
+		case "anthropic.tool_search_regex_20251119":
+			return "tool_search_tool_regex"
+		}
+	}
+	return ""
+}
+
+func anthropicTypeFromOptions(opts provider.ProviderOptions) string {
+	raw, ok := readAnthropicRaw(opts)
+	if !ok {
+		return ""
+	}
+	return anthropicTypeFromRaw(raw)
+}
+
+func anthropicTypeFromRaw(raw json.RawMessage) string {
+	var value struct {
+		Type string `json:"type"`
+	}
+	if len(raw) == 0 || json.Unmarshal(raw, &value) != nil {
+		return ""
+	}
+	return value.Type
 }
 
 // toolResultContent serializes a provider.ToolResultOutput into the JSON form
@@ -240,8 +350,8 @@ func normalizeJSONObject(in json.RawMessage) json.RawMessage {
 	if len(in) == 0 {
 		return nil
 	}
-	var v any
-	if err := json.Unmarshal(in, &v); err != nil {
+	v, ok := decodeJSONValue(in)
+	if !ok {
 		return cloneRawJSON(in)
 	}
 	out, err := json.Marshal(v)
@@ -249,6 +359,74 @@ func normalizeJSONObject(in json.RawMessage) json.RawMessage {
 		return cloneRawJSON(in)
 	}
 	return out
+}
+
+func decodeJSONValue(in json.RawMessage) (any, bool) {
+	if !json.Valid(in) {
+		return nil, false
+	}
+	decoder := json.NewDecoder(bytes.NewReader(in))
+	decoder.UseNumber()
+	value, ok := decodeJSONToken(decoder)
+	if !ok {
+		return nil, false
+	}
+	if _, err := decoder.Token(); err != io.EOF {
+		return nil, false
+	}
+	return value, true
+}
+
+func decodeJSONToken(decoder *json.Decoder) (any, bool) {
+	token, err := decoder.Token()
+	if err != nil {
+		return nil, false
+	}
+	delimiter, ok := token.(json.Delim)
+	if !ok {
+		return token, true
+	}
+	switch delimiter {
+	case '{':
+		object := map[string]any{}
+		for decoder.More() {
+			key, err := decoder.Token()
+			if err != nil {
+				return nil, false
+			}
+			name, ok := key.(string)
+			if !ok {
+				return nil, false
+			}
+			if _, duplicate := object[name]; duplicate {
+				return nil, false
+			}
+			value, ok := decodeJSONToken(decoder)
+			if !ok {
+				return nil, false
+			}
+			object[name] = value
+		}
+		if end, err := decoder.Token(); err != nil || end != json.Delim('}') {
+			return nil, false
+		}
+		return object, true
+	case '[':
+		array := []any{}
+		for decoder.More() {
+			value, ok := decodeJSONToken(decoder)
+			if !ok {
+				return nil, false
+			}
+			array = append(array, value)
+		}
+		if end, err := decoder.Token(); err != nil || end != json.Delim(']') {
+			return nil, false
+		}
+		return array, true
+	default:
+		return nil, false
+	}
 }
 
 // toolsToAgento11y converts ai-sdk Tool definitions to agento11y.ToolDefinition.
