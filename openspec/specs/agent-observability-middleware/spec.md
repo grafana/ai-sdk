@@ -393,7 +393,7 @@ For streams, the recording goroutine SHALL select on `ctx.Done()` to avoid block
 5. Branch on the response:
    - **Deny**: return `&HookDenialError{Reason, RuleID, Cause: nil}` to the caller. The inner model SHALL NOT be invoked.
    - **Allow**: invoke the inner model with `params` unchanged.
-   - **TransformedInput**: rebuild `params.Prompt` from the transformed messages (preserving reasoning-block signatures — see "Hooks transform preserves reasoning signatures" below), then invoke the inner model with the new params.
+   - **TransformedInput**: treat the transformed input as an authoritative replacement, rebuild `params.Prompt` and the retained subset of `params.Tools`, and invoke the inner model with the new params. If any returned content cannot be reconstructed without loss or reintroducing omitted content, return `ErrHookTransformFailed` without invoking the model.
 
 #### Scenario: Allow path passes through
 
@@ -419,50 +419,57 @@ For streams, the recording goroutine SHALL select on `ctx.Done()` to avoid block
 - **THEN** the hook call SHALL be cancelled via context deadline
 - **AND** the original request context SHALL NOT be cancelled (only the derived hook-bounded context)
 
-### Requirement: Hooks transform preserves reasoning signatures and system context
+### Requirement: Hook transforms are authoritative and lossless
 
-When `EvaluateHook` returns a `TransformedInput`, `HooksMiddleware` SHALL rebuild `params.Prompt` from the transformed messages using the following algorithm:
+When `EvaluateHook` returns a non-nil `TransformedInput`, `HooksMiddleware` SHALL treat it as an authoritative replacement rather than a partial patch:
 
-1. **System messages**: if `transformed.SystemPrompt` is non-empty, the resulting prompt SHALL begin with a single `provider.Message{Role: RoleSystem}` carrying that text and SHALL NOT carry any original system messages forward. If `transformed.SystemPrompt` is empty (the zero value), the resulting prompt SHALL preserve every original system-role message from `params.Prompt` in their original order. The empty case is treated as "the hook did not touch the system context" because `messagesToAgento11y` produces an empty `SystemPrompt` both when the original prompt has no system messages AND when the hook didn't return one — the two cases are indistinguishable on the underlying SDK wire.
-2. **Reasoning preservation**: build a content-matching index over assistant-role messages in the **original** `params.Prompt` that contain reasoning parts.
-3. For each transformed non-system message:
-   - If role is assistant AND the same concatenated text appears in the index AND has not yet been consumed, use the original message verbatim (preserves `ProviderOptions["anthropic"].signature`).
-   - Otherwise, rebuild the message from the transformed `agento11y` parts.
-4. Non-assistant messages (user, tool) are rebuilt from the transformed parts directly.
+1. A non-empty `SystemPrompt` SHALL become one system message. An empty `SystemPrompt` SHALL carry no original system message forward.
+2. Every transformed message SHALL be rebuilt in returned order. Unknown roles, unsupported part kinds, empty payload parts, and malformed tool payloads SHALL fail with `ErrHookTransformFailed`.
+3. Omitted assistant parts SHALL remain omitted. The middleware SHALL NOT restore an entire original assistant message based only on visible text.
+4. An unchanged reasoning part MAY reuse the exact original part to preserve its provider signature. Matching SHALL use an unambiguous unused reasoning part with identical reasoning text; changed or ambiguous signed reasoning SHALL fail closed.
+5. Unchanged provider-executed tool calls and provider-specific tool results SHALL retain their provider fields only after an exact ID, name, and payload match. A provider-specific part that cannot be matched exactly SHALL fail closed.
+6. Because hook evaluation intentionally excludes media, message-level provider options, text-part provider options, empty reasoning metadata, and other unsupported content, a transform of a prompt containing undisclosed content SHALL fail closed rather than silently dropping or restoring it.
+7. Returned tools SHALL be matched exactly to disclosed original tool definitions. Exact retained tools MAY be preserved or reordered and omitted tools SHALL be removed; new or modified tools that cannot be reconstructed losslessly SHALL fail closed. Removing tools SHALL also fail closed when it leaves a required or specifically named `ToolChoice` unsatisfied.
+8. An empty transform SHALL fail closed. A system-only replacement is valid.
 
-The resulting prompt is the concatenation of (system messages from step 1) + (rebuilt non-system messages from steps 2-4) in that order.
+#### Scenario: Empty transform fails closed
 
-This preserves `ProviderOptions["anthropic"].signature` values on reasoning parts, which do not round-trip through Agent Observability's wire schema, **and** preserves the original system context across hook transforms that only touch user / assistant messages.
-
-#### Scenario: Reasoning signature survives transform
-
-- **GIVEN** an assistant message in `params.Prompt` carrying a reasoning part with `ProviderOptions["anthropic"].signature = "sig-xyz"`
-- **AND** `EvaluateHook` returns a `TransformedInput` that modifies only user messages, leaving the assistant message text unchanged
+- **GIVEN** a non-empty original prompt
+- **AND** `EvaluateHook` returns a non-nil but empty `TransformedInput`
 - **WHEN** the transform is applied
-- **THEN** the resulting `params.Prompt` SHALL contain an assistant message whose reasoning part has `ProviderOptions["anthropic"].signature == "sig-xyz"` byte-equal to the original
+- **THEN** `ErrHookTransformFailed` SHALL be returned
+- **AND** the inner model SHALL NOT be invoked with the original prompt
 
-#### Scenario: Modified assistant text triggers rebuild from agento11y parts
+#### Scenario: Removed assistant parts stay removed
 
-- **GIVEN** an assistant message in `params.Prompt` whose text is "abc"
-- **AND** `EvaluateHook` returns a `TransformedInput` whose corresponding assistant message has text "def"
+- **GIVEN** an original assistant message containing signed reasoning, a tool call, and visible text
+- **AND** the transformed assistant message retains the same reasoning and text but omits the tool call
 - **WHEN** the transform is applied
-- **THEN** the resulting `params.Prompt` SHALL contain an assistant message whose text equals "def"
-- **AND** the original signature (if any) SHALL NOT be carried forward (because the content did not match)
+- **THEN** only the unchanged reasoning part and transformed text SHALL be present
+- **AND** the omitted tool call SHALL NOT be restored
+- **AND** the unchanged reasoning part SHALL retain its original signature
 
-#### Scenario: System messages survive a user-only transform
+#### Scenario: Multimodal transform fails closed
 
-- **GIVEN** `params.Prompt` contains a `provider.Message{Role: RoleSystem}` with text "you are helpful" followed by a user message
-- **AND** `EvaluateHook` returns a `TransformedInput` with `SystemPrompt: ""` and a transformed user message
+- **GIVEN** an original prompt containing text and undisclosed media
+- **AND** the hook returns a transformed text message
 - **WHEN** the transform is applied
-- **THEN** the resulting `params.Prompt` SHALL begin with the original system message verbatim
-- **AND** the inner model SHALL receive a non-empty system context
+- **THEN** `ErrHookTransformFailed` SHALL be returned
+- **AND** the model SHALL NOT receive a prompt with the media silently removed
 
-#### Scenario: Hook overrides system prompt
+#### Scenario: Tool removal is applied
+
+- **GIVEN** the original request exposes a tool
+- **AND** `TransformedInput.Tools` omits that tool
+- **WHEN** the transform is applied
+- **THEN** the model SHALL receive transformed call options without that tool
+
+#### Scenario: Hook replaces system prompt
 
 - **GIVEN** `params.Prompt` contains system messages "be helpful" and "be concise"
 - **AND** `EvaluateHook` returns a `TransformedInput` with `SystemPrompt: "internal-only assistant"`
 - **WHEN** the transform is applied
-- **THEN** the resulting `params.Prompt` SHALL begin with a single system message whose text equals "internal-only assistant"
+- **THEN** the resulting prompt SHALL begin with a single system message whose text equals "internal-only assistant"
 - **AND** the original system messages SHALL NOT appear in the prompt
 
 ### Requirement: Generation-ID DAG context helpers

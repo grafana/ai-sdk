@@ -6,9 +6,14 @@ import (
 	"strings"
 )
 
-// ErrHookDenied is the sentinel error wrapped by every *HookDenialError. Use
-// errors.Is(err, agentobservability.ErrHookDenied) for generic deny detection.
-var ErrHookDenied = errors.New("agent observability: hook denied request")
+var (
+	// ErrHookDenied is the sentinel error wrapped by every *HookDenialError. Use
+	// errors.Is(err, agentobservability.ErrHookDenied) for generic deny detection.
+	ErrHookDenied = errors.New("agent observability: hook denied request")
+	// ErrHookTransformFailed indicates that a hook-provided replacement could
+	// not be applied without losing or restoring request content.
+	ErrHookTransformFailed = errors.New("agent observability: hook transform failed")
+)
 
 // HookDenialError is returned by HooksMiddleware when the Agent Observability
 // preflight hook responds with action "deny". Consumers can use errors.As to
