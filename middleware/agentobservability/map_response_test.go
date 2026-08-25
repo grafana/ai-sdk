@@ -44,6 +44,17 @@ func TestContentToAgento11yOutput_Reasoning(t *testing.T) {
 	assert.Equal(t, "thinking", msgs[0].Parts[0].Metadata.ProviderType)
 }
 
+func TestContentToAgento11yOutput_SkipsEmptyReasoning(t *testing.T) {
+	msgs := contentToAgento11yOutput([]provider.GenerateContentPart{
+		{Type: provider.ContentReasoning},
+		{Type: provider.ContentText, Text: "answer"},
+	})
+
+	require.Len(t, msgs, 1)
+	require.Len(t, msgs[0].Parts, 1)
+	assert.Equal(t, agento11y.PartKindText, msgs[0].Parts[0].Kind)
+}
+
 func TestContentToAgento11yOutput_ToolResultSplit(t *testing.T) {
 	content := []provider.GenerateContentPart{
 		{Type: provider.ContentText, Text: "Looking that up…"},

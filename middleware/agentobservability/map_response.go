@@ -74,6 +74,9 @@ func generateContentPartToAgento11y(part provider.GenerateContentPart) (agento11
 		return agento11y.TextPart(part.Text), agento11y.PartKindText, true
 
 	case provider.ContentReasoning:
+		if part.Text == "" {
+			return agento11y.Part{}, "", false
+		}
 		out := agento11y.ThinkingPart(part.Text)
 		out.Metadata.ProviderType = "thinking"
 		return out, agento11y.PartKindThinking, true

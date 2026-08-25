@@ -329,7 +329,7 @@ func (r *StreamRecorder) buildOutput() []agento11y.Message {
 		switch ref.partType {
 		case provider.PartReasoningStart:
 			acc := r.reasonings[ref.id]
-			if acc.text.Len() == 0 && acc.signature == "" {
+			if acc.text.Len() == 0 {
 				continue
 			}
 			part := agento11y.ThinkingPart(acc.text.String())

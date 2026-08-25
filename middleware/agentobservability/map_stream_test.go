@@ -157,6 +157,25 @@ func TestStreamRecorder_TextReasoningSignature(t *testing.T) {
 	assert.Equal(t, "answer", text.Text)
 }
 
+func TestStreamRecorder_SkipsSignatureOnlyReasoning(t *testing.T) {
+	r := newRecorderForStreamTest()
+	r.Observe(provider.StreamPart{Type: provider.PartReasoningStart, ID: "r0"})
+	r.Observe(provider.StreamPart{
+		Type: provider.PartReasoningDelta,
+		ID:   "r0",
+		ProviderMetadata: provider.ProviderMetadata{
+			"anthropic": json.RawMessage(`{"signature":"sig-abc"}`),
+		},
+	})
+	r.Observe(provider.StreamPart{Type: provider.PartReasoningEnd, ID: "r0"})
+	r.Observe(provider.StreamPart{Type: provider.PartTextDelta, ID: "t0", Delta: "answer"})
+
+	gen := r.Generation()
+	require.Len(t, gen.Output, 1)
+	require.Len(t, gen.Output[0].Parts, 1)
+	assert.Equal(t, agento11y.PartKindText, gen.Output[0].Parts[0].Kind)
+}
+
 func TestStreamRecorder_ToolCallDeltas(t *testing.T) {
 	r := newRecorderForStreamTest()
 	r.Observe(provider.StreamPart{

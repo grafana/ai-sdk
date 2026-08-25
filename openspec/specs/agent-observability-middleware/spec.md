@@ -149,11 +149,11 @@ If `opts.ContextProvider` is `nil`, the middleware SHALL log a warning at most o
 ### Requirement: MapGenerateResult produces agento11y.Generation
 
 `MapGenerateResult(params, result, ctxInfo)` SHALL produce an `agento11y.Generation` whose:
-- `Input.Messages` is derived from `params.Prompt`, with `provider.Message{Role: RoleSystem}` entries folded into `Generation.SystemPrompt` (single concatenated string) rather than appearing as an agento11y.Message.
+- `Input.Messages` is derived from `params.Prompt`, with `provider.Message{Role: RoleSystem}` entries folded into `Generation.SystemPrompt` (single concatenated string) rather than appearing as an agento11y.Message. Empty reasoning parts SHALL be omitted.
 - `Input.Tools` is derived from `params.Tools`. Function tools map directly; provider-defined tools (e.g. Anthropic `web_search`, `code_execution`) MAY map with their type preserved so Agent Observability can annotate them.
 - `Input.MaxTokens`, `Temperature`, `TopP`, `ToolChoice` are derived from the corresponding `provider.CallOptions` fields.
 - Anthropic thinking-budget metadata (`agento11y.gen_ai.request.thinking.budget_tokens`) is derived from `params.ProviderOptions["anthropic"]` via `json.RawMessage` decoding, not by importing `providers/anthropic`.
-- `Output` is a single assistant `agento11y.Message` whose parts mirror supported `result.Content` entries (text, tool-call, reasoning, file, and reasoning-file parts).
+- `Output` is a single assistant `agento11y.Message` whose parts mirror supported `result.Content` entries (text, tool-call, reasoning, file, and reasoning-file parts). Empty reasoning parts SHALL be omitted.
 - `Usage` maps from `result.Usage` (input tokens, output tokens, cache hits where applicable).
 - `StopReason` is produced by `finishReasonToAgento11yStop(result.FinishReason)` and SHALL match the string values the legacy `internal/llm/claude/` path emitted (e.g. `"end_turn"`, `"max_tokens"`, `"tool_use"`, `"stop_sequence"`).
 - `Metadata` is a merge of `ctxInfo.Metadata` and `map_provider_options.go` derivations.
@@ -227,7 +227,7 @@ Hook preflight evaluation SHALL exclude `file` and `reasoning-file` media so rec
 
 `StreamRecorder` SHALL accumulate `agento11y.Generation.Output` from a sequence of `provider.StreamPart` values observed via `Observe`. It SHALL:
 - Append `PartTextDelta` payloads into the active assistant text part.
-- Append `PartReasoningDelta` payloads into the active assistant reasoning part. The recorder SHALL internally retain any `ProviderMetadata["anthropic"].signature` value observed on the delta (deduplicating identical values) so consumers that hold a reference to the source `provider.Message` can round-trip the signature on subsequent turns. Because `agento11y.Part` has no field for signatures today, the value is NOT serialized into `Generation.Output`; reasoning signatures live exclusively on the corresponding `provider.Message` in `params.Prompt` (see "Hooks transform preserves reasoning signatures" for the round-trip path).
+- Append non-empty `PartReasoningDelta` payloads into the active assistant reasoning part. Signature-only reasoning blocks with no visible text SHALL NOT produce an Agent Observability thinking part.
 - Append `PartToolCallDelta` payloads into the active assistant tool-call part.
 - Map supported `PartFile` and `PartReasoningFile` events to media parts.
 - Record the first observed payload-bearing part's timestamp via `FirstChunkAt()`; supported file events SHALL be payload-bearing.
@@ -249,13 +249,11 @@ Hook preflight evaluation SHALL exclude `file` and `reasoning-file` media so rec
 - **AND** `StreamRecorder.Generation()` is called at end-of-stream
 - **THEN** the resulting reasoning part in `Generation.Output` SHALL contain the concatenated reasoning text `"I think so"`
 
-#### Scenario: Reasoning signature is preserved off-band
+#### Scenario: Signature-only reasoning is omitted
 
-- **GIVEN** a stream that emits `PartReasoningDelta` events carrying `ProviderMetadata["anthropic"].signature = "sig-abc"`
-- **WHEN** `StreamRecorder.Observe` is called for each
-- **AND** `StreamRecorder.Generation()` is called at end-of-stream
-- **THEN** the resulting reasoning part in `Generation.Output` MAY omit the signature (the current `agento11y.Part` schema has no signature field)
-- **AND** the original signature SHALL remain available on the corresponding `provider.Message` in `params.Prompt`, where `HooksMiddleware.applyTransformedInput` matches by text content to preserve it across hook transforms
+- **GIVEN** a stream emits a reasoning block containing an Anthropic signature but no reasoning text
+- **WHEN** `StreamRecorder.Generation()` is called
+- **THEN** `Generation.Output` SHALL NOT contain an empty thinking part
 
 #### Scenario: Text deltas concatenate
 

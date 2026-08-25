@@ -45,6 +45,18 @@ func TestMessagesToAgento11y_AssistantWithReasoning(t *testing.T) {
 	assert.Equal(t, agento11y.PartKindText, msgs[0].Parts[1].Kind)
 }
 
+func TestMessagesToAgento11y_SkipsEmptyReasoning(t *testing.T) {
+	prompt := []provider.Message{provider.NewAssistantMessage(
+		provider.ReasoningPart(""),
+		provider.TextPart("answer"),
+	)}
+
+	_, msgs := messagesToAgento11y(prompt)
+	require.Len(t, msgs, 1)
+	require.Len(t, msgs[0].Parts, 1)
+	assert.Equal(t, agento11y.PartKindText, msgs[0].Parts[0].Kind)
+}
+
 func TestMessagesToAgento11y_ToolResultSplitting(t *testing.T) {
 	// A user message that mixes a text part and a tool_result part should be
 	// split: the text part lands in a RoleUser agento11y.Message; the tool_result
