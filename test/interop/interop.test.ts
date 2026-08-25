@@ -178,6 +178,43 @@ describe("upstream @ai-sdk/gateway <-> Go provider-wire", () => {
     ]);
   });
 
+  it("decodes the Gateway Tako Search provider tool", async () => {
+    const gateway = newGateway();
+    const result = streamText({
+      model: gateway("tako-search"),
+      maxRetries: 0,
+      tools: {
+        search: gateway.tools.takoSearch({
+          effort: "deep",
+          sources: {
+            data: { count: 2, includeContents: true },
+            web: { count: 3, includeDomains: ["grafana.com"] },
+          },
+          countryCode: "US",
+          includeRelated: 4,
+        }),
+      },
+      prompt: "search",
+    });
+
+    expect(JSON.parse(await result.text)).toEqual([
+      {
+        type: "provider",
+        name: "search",
+        id: "gateway.tako_search",
+        args: {
+          effort: "deep",
+          sources: {
+            data: { count: 2, includeContents: true },
+            web: { count: 3, includeDomains: ["grafana.com"] },
+          },
+          countryCode: "US",
+          includeRelated: 4,
+        },
+      },
+    ]);
+  });
+
   it("decodes an upstream file input part", async () => {
     const gateway = newGateway();
     const pngBase64 =

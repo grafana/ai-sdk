@@ -525,6 +525,20 @@ func convertFileContent(part provider.ContentPart) (chatContentPart, error) {
 			return chatContentPart{}, err
 		}
 		return chatContentPart{Type: "image_url", ImageURL: &imageURLPart{URL: url}}, nil
+	case "video":
+		resolvedMediaType := mediaType(part.MediaType)
+		if part.Data.URL == "" {
+			var err error
+			resolvedMediaType, err = resolveFullMediaType(part)
+			if err != nil {
+				return chatContentPart{}, err
+			}
+		}
+		url, err := dataURL(resolvedMediaType, part.Data)
+		if err != nil {
+			return chatContentPart{}, err
+		}
+		return chatContentPart{Type: "video_url", VideoURL: &videoURLPart{URL: url}}, nil
 	case "audio":
 		if part.Data.URL != "" {
 			return chatContentPart{}, fmt.Errorf("openai: audio file URL parts are not supported")
@@ -591,11 +605,12 @@ func normalizeDataURLFilePart(part provider.ContentPart) (provider.ContentPart, 
 		return part, nil
 	}
 	mediaType, base64Content, ok := splitDataURL(rawURL)
-	if !ok || mediaType == "" || base64Content == "" {
+	if !ok || mediaType == "" {
 		return provider.ContentPart{}, fmt.Errorf("openai: invalid data URL in file part")
 	}
 	part.MediaType = mediaType
-	part.Data = &provider.DataContent{Base64: base64Content}
+	data := provider.Base64DataContent(base64Content)
+	part.Data = &data
 	return part, nil
 }
 
@@ -667,7 +682,7 @@ func dataURL(mediaType string, data *provider.DataContent) (string, error) {
 
 func base64Data(data *provider.DataContent) (string, error) {
 	switch {
-	case len(data.Bytes) > 0:
+	case data.Bytes != nil:
 		return base64.StdEncoding.EncodeToString(data.Bytes), nil
 	case data.Base64 != "":
 		return data.Base64, nil
@@ -680,7 +695,7 @@ func textFileContent(data *provider.DataContent) (string, error) {
 	switch {
 	case data.URL != "":
 		return data.URL, nil
-	case len(data.Bytes) > 0:
+	case data.Bytes != nil:
 		return string(data.Bytes), nil
 	case data.Base64 != "":
 		decoded, err := base64.StdEncoding.DecodeString(data.Base64)

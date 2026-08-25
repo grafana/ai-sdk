@@ -72,6 +72,15 @@ func finishStreamParts() <-chan provider.StreamPart {
 	return ch
 }
 
+func testStreamParts(parts ...provider.StreamPart) <-chan provider.StreamPart {
+	ch := make(chan provider.StreamPart, len(parts))
+	for _, part := range parts {
+		ch <- part
+	}
+	close(ch)
+	return ch
+}
+
 func TestToolApprovalConfig(t *testing.T) {
 	input := json.RawMessage(`{"amount":100}`)
 
@@ -182,6 +191,149 @@ func TestStreamTextSingleStep(t *testing.T) {
 	expected := []string{"start", "start-step", "text-start", "text-delta", "text-end", "finish-step", "finish"}
 	assert.Equal(t, expected, types)
 	assert.Equal(t, "hello world", result.Text())
+}
+
+func TestStreamText_MultiStepPartIDs(t *testing.T) {
+	finish := func(reason provider.UnifiedFinishReason) provider.StreamPart {
+		return provider.StreamPart{
+			Type:         provider.PartFinish,
+			FinishReason: &provider.FinishReason{Unified: reason},
+			Usage:        &provider.Usage{},
+		}
+	}
+	toolCall := provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "call-1", ToolName: "lookup", Input: `{}`}
+
+	for _, tc := range []struct {
+		name      string
+		firstID   string
+		secondID  string
+		parts     func(id, text string) []provider.StreamPart
+		streamIDs func(TextStreamPart) (string, bool)
+		expected  []string
+	}{
+		{
+			name:     "duplicate text IDs",
+			firstID:  "0",
+			secondID: "0",
+			parts: func(id, text string) []provider.StreamPart {
+				return []provider.StreamPart{
+					{Type: provider.PartTextStart, ID: id},
+					{Type: provider.PartTextDelta, ID: id, Delta: text},
+					{Type: provider.PartTextEnd, ID: id},
+				}
+			},
+			streamIDs: func(part TextStreamPart) (string, bool) {
+				switch part := part.(type) {
+				case StreamTextStart:
+					return part.ID, true
+				case StreamTextDelta:
+					return part.ID, true
+				case StreamTextEnd:
+					return part.ID, true
+				default:
+					return "", false
+				}
+			},
+			expected: []string{"0", "0", "0", "id-2", "id-2", "id-2"},
+		},
+		{
+			name:     "duplicate reasoning IDs",
+			firstID:  "0",
+			secondID: "0",
+			parts: func(id, text string) []provider.StreamPart {
+				return []provider.StreamPart{
+					{Type: provider.PartReasoningStart, ID: id},
+					{Type: provider.PartReasoningDelta, ID: id, Delta: text},
+					{Type: provider.PartReasoningEnd, ID: id},
+				}
+			},
+			streamIDs: func(part TextStreamPart) (string, bool) {
+				switch part := part.(type) {
+				case StreamReasoningStart:
+					return part.ID, true
+				case StreamReasoningDelta:
+					return part.ID, true
+				case StreamReasoningEnd:
+					return part.ID, true
+				default:
+					return "", false
+				}
+			},
+			expected: []string{"0", "0", "0", "id-2", "id-2", "id-2"},
+		},
+		{
+			name:     "unique text IDs",
+			firstID:  "0",
+			secondID: "1",
+			parts: func(id, text string) []provider.StreamPart {
+				return []provider.StreamPart{
+					{Type: provider.PartTextStart, ID: id},
+					{Type: provider.PartTextDelta, ID: id, Delta: text},
+					{Type: provider.PartTextEnd, ID: id},
+				}
+			},
+			streamIDs: func(part TextStreamPart) (string, bool) {
+				switch part := part.(type) {
+				case StreamTextStart:
+					return part.ID, true
+				case StreamTextDelta:
+					return part.ID, true
+				case StreamTextEnd:
+					return part.ID, true
+				default:
+					return "", false
+				}
+			},
+			expected: []string{"0", "0", "0", "1", "1", "1"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			callCount := 0
+			model := &mockModel{streamFunc: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+				callCount++
+				if callCount == 1 {
+					parts := append(tc.parts(tc.firstID, "first"), toolCall, finish(provider.FinishReasonToolCalls))
+					return &provider.StreamResult{Stream: testStreamParts(parts...)}, nil
+				}
+				parts := append(tc.parts(tc.secondID, "second"), finish(provider.FinishReasonStop))
+				return &provider.StreamResult{Stream: testStreamParts(parts...)}, nil
+			}}
+			generated := 0
+			result := StreamText(t.Context(), model,
+				WithModelMessages(provider.UserText("test")),
+				WithTools(ToolSet{"lookup": {
+					InputSchema: testMustSchema(t, `{"type":"object"}`),
+					Execute: func(context.Context, json.RawMessage, ToolExecutionOptions) (json.RawMessage, error) {
+						return json.RawMessage(`{"ok":true}`), nil
+					},
+				}}),
+				WithStopWhen(StepCountIs(2)),
+				WithGenerateID(func() string {
+					id := fmt.Sprintf("id-%d", generated)
+					generated++
+					return id
+				}),
+			)
+
+			var ids []string
+			for part := range result.FullStream() {
+				if id, ok := tc.streamIDs(part); ok {
+					ids = append(ids, id)
+				}
+			}
+
+			require.NoError(t, result.Err())
+			assert.Equal(t, tc.expected, ids)
+			require.Len(t, result.Steps(), 2)
+			if tc.name == "duplicate reasoning IDs" {
+				assert.Equal(t, "first", result.Steps()[0].ReasoningText)
+				assert.Equal(t, "second", result.Steps()[1].ReasoningText)
+			} else {
+				assert.Equal(t, "first", result.Steps()[0].Text)
+				assert.Equal(t, "second", result.Steps()[1].Text)
+			}
+		})
+	}
 }
 
 func TestStreamTextPrepareStep_Messages(t *testing.T) {

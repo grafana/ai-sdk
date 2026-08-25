@@ -10,6 +10,7 @@
 //   - "empty-deltas"           -> empty text, reasoning, and tool-input deltas
 //   - "tool-call"              -> client-executed tool-call round trip
 //   - "provider-tool-result"   -> provider-executed tool-result part
+//   - "tako-search"            -> decode the Gateway Tako Search provider tool
 //   - "file-input"             -> decode an upstream file/image input part
 //   - "file-output"            -> emit an inline-data file part in the response stream
 //   - "file-output-url"        -> emit URL-valued file and reasoning-file parts
@@ -185,6 +186,21 @@ func streamProviderToolResult() *provider.StreamResult {
 	)
 }
 
+func streamTakoSearch(opts provider.CallOptions) *provider.StreamResult {
+	tools, err := json.Marshal(opts.Tools)
+	if err != nil {
+		tools = []byte(`null`)
+	}
+	return streamResult(
+		provider.StreamPart{Type: provider.PartStreamStart},
+		provider.StreamPart{Type: provider.PartResponseMeta, ResponseID: "resp_tako", ModelID: "tako-search", Timestamp: time.Now().UTC()},
+		provider.StreamPart{Type: provider.PartTextStart, ID: "t0"},
+		provider.StreamPart{Type: provider.PartTextDelta, ID: "t0", Delta: string(tools)},
+		provider.StreamPart{Type: provider.PartTextEnd, ID: "t0"},
+		finish(provider.FinishReasonStop, "end_turn", 10, 5),
+	)
+}
+
 func streamFileInput(opts provider.CallOptions) *provider.StreamResult {
 	files := promptFileParts(opts)
 	summary := fmt.Sprintf("decoded %d file part(s): %s", len(files), strings.Join(files, " | "))
@@ -249,6 +265,8 @@ func (m *scenarioModel) SupportedURLs() map[string][]*regexp.Regexp { return nil
 
 func (m *scenarioModel) DoStream(_ context.Context, opts provider.CallOptions) (*provider.StreamResult, error) {
 	switch {
+	case strings.Contains(m.modelID, "tako-search"):
+		return streamTakoSearch(opts), nil
 	case strings.Contains(m.modelID, "provider-tool-result"):
 		return streamProviderToolResult(), nil
 	case strings.Contains(m.modelID, "tool-call"):

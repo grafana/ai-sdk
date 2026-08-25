@@ -622,6 +622,53 @@ func TestDoGenerateResolvesInlineWildcardImageMediaType(t *testing.T) {
 	}
 }
 
+func TestDoGenerateConvertsVideoFileParts(t *testing.T) {
+	t.Parallel()
+
+	var got map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&got))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"id":"chatcmpl_1",
+			"model":"test-model",
+			"choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]
+		}`))
+	}))
+	defer server.Close()
+
+	mp4Bytes := []byte{0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70}
+	encodedMP4 := base64.StdEncoding.EncodeToString(mp4Bytes)
+	inline := provider.FilePart("video/*", provider.DataContent{Bytes: mp4Bytes})
+	inline.ProviderOptions = provider.ProviderOptions{
+		"openaiCompatible": provider.RawProviderOption{
+			Key: "openaiCompatible",
+			Raw: json.RawMessage(`{"fps":1}`),
+		},
+	}
+	_, err := New("test-model", WithBaseURL(server.URL)).DoGenerate(context.Background(), provider.CallOptions{
+		Prompt: []provider.Message{
+			provider.NewUserMessage(
+				inline,
+				provider.FilePart("video/*", provider.DataContent{URL: "https://example.com/video.mp4"}),
+			),
+		},
+	})
+	require.NoError(t, err)
+
+	messages := got["messages"].([]any)
+	content := messages[0].(map[string]any)["content"].([]any)
+	assert.Equal(t, map[string]any{
+		"type":      "video_url",
+		"video_url": map[string]any{"url": "data:video/mp4;base64," + encodedMP4},
+		"fps":       float64(1),
+	}, content[0])
+	assert.Equal(t, map[string]any{
+		"type":      "video_url",
+		"video_url": map[string]any{"url": "https://example.com/video.mp4"},
+	}, content[1])
+}
+
 func TestDoGenerateResolvesInlineWildcardAudioAndPDFMediaTypes(t *testing.T) {
 	t.Parallel()
 
@@ -711,6 +758,30 @@ func TestDoGenerateParsesAudioAndPDFDataURLFileParts(t *testing.T) {
 	file := content[1].(map[string]any)["file"].(map[string]any)
 	require.Equal(t, "document.pdf", file["filename"])
 	require.Equal(t, "data:application/pdf;base64,"+encodedPDF, file["file_data"])
+}
+
+func TestConvertFileContent_EmptyInlineData(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		mediaType string
+		data      provider.DataContent
+		expected  string
+	}{
+		{name: "image", mediaType: "image/png", data: provider.Base64DataContent(""), expected: `{"type":"image_url","image_url":{"url":"data:image/png;base64,"}}`},
+		{name: "video", mediaType: "video/mp4", data: provider.Base64DataContent(""), expected: `{"type":"video_url","video_url":{"url":"data:video/mp4;base64,"}}`},
+		{name: "video data URL", mediaType: "video/*", data: provider.DataContent{URL: "data:video/mp4;base64,"}, expected: `{"type":"video_url","video_url":{"url":"data:video/mp4;base64,"}}`},
+		{name: "audio", mediaType: "audio/wav", data: provider.Base64DataContent(""), expected: `{"type":"input_audio","input_audio":{"data":"","format":"wav"}}`},
+		{name: "PDF", mediaType: "application/pdf", data: provider.Base64DataContent(""), expected: `{"type":"file","file":{"filename":"document.pdf","file_data":"data:application/pdf;base64,"}}`},
+		{name: "text", mediaType: "text/plain", data: provider.Base64DataContent(""), expected: `{"type":"text","text":""}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			part, err := convertFileContent(provider.FilePart(tc.mediaType, tc.data))
+			require.NoError(t, err)
+			encoded, err := json.Marshal(part)
+			require.NoError(t, err)
+			assert.JSONEq(t, tc.expected, string(encoded))
+		})
+	}
 }
 
 func TestDoGenerateStructuredOutputAndToolCallResponse(t *testing.T) {

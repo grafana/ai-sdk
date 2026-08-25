@@ -469,6 +469,8 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 	retryCfg := buildRetryConfig(&cfg.baseConfig)
 	stepNum := 0
 	currentRuntimeContext := cfg.runtimeContext
+	usedTextPartIDs := make(map[string]struct{})
+	usedReasoningPartIDs := make(map[string]struct{})
 
 	for {
 		stepNum++
@@ -649,7 +651,7 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 			return
 		}
 
-		step, stepCompleted, stepTerminated, stepHasOutput, err := r.processStep(ctx, stepNum, stepModel, streamResult, cfg, stepContext, currentMsgs, opCancel)
+		step, stepCompleted, stepTerminated, stepHasOutput, err := r.processStep(ctx, stepNum, stepModel, streamResult, cfg, stepContext, currentMsgs, opCancel, usedTextPartIDs, usedReasoningPartIDs)
 		if stepTimer != nil {
 			stepTimer.Stop()
 		}
@@ -791,6 +793,8 @@ func (r *StreamTextResult) processStep(
 	stepContext any,
 	currentMsgs []provider.Message,
 	opCancel context.CancelFunc,
+	usedTextPartIDs map[string]struct{},
+	usedReasoningPartIDs map[string]struct{},
 ) (StepResult, bool, bool, bool, error) {
 	step := StepResult{
 		StepNumber: stepNum,
@@ -819,6 +823,8 @@ func (r *StreamTextResult) processStep(
 	toolTitleByID := make(map[string]string)
 	responseTextIndex := make(map[string]int)
 	responseReasoningIndex := make(map[string]int)
+	textPartIDs := make(map[string]string)
+	reasoningPartIDs := make(map[string]string)
 
 	var outputTextChunkID string
 	var outputTextChunk strings.Builder
@@ -893,11 +899,14 @@ loop:
 				Type:            provider.ContentPartTypeText,
 				ProviderOptions: providerMetadataToOptions(part.ProviderMetadata),
 			})
-			tsp := StreamTextStart{ID: part.ID, ProviderMetadata: part.ProviderMetadata}
+			streamPartID := reserveStreamPartID(usedTextPartIDs, part.ID, cfg)
+			textPartIDs[part.ID] = streamPartID
+			tsp := StreamTextStart{ID: streamPartID, ProviderMetadata: part.ProviderMetadata}
 			r.emit(tsp)
 			r.callOnChunk(cfg, tsp)
 
 		case provider.PartTextDelta:
+			streamPartID := mappedStreamPartID(textPartIDs, part.ID)
 			if idx, ok := responseTextIndex[part.ID]; ok {
 				step.responseContent[idx].Text += part.Delta
 				if part.ProviderMetadata != nil {
@@ -908,9 +917,9 @@ loop:
 
 			if cfg.output != nil {
 				if outputTextChunkID == "" {
-					outputTextChunkID = part.ID
-				} else if part.ID != outputTextChunkID {
-					tsp := StreamTextDelta{ID: part.ID, Text: part.Delta, ProviderMetadata: part.ProviderMetadata}
+					outputTextChunkID = streamPartID
+				} else if streamPartID != outputTextChunkID {
+					tsp := StreamTextDelta{ID: streamPartID, Text: part.Delta, ProviderMetadata: part.ProviderMetadata}
 					r.emit(tsp)
 					r.callOnChunk(cfg, tsp)
 					continue
@@ -920,7 +929,7 @@ loop:
 					outputTextMeta = part.ProviderMetadata
 				}
 				if part.Delta == "" && part.ProviderMetadata != nil {
-					tsp := StreamTextDelta{ID: part.ID, ProviderMetadata: part.ProviderMetadata}
+					tsp := StreamTextDelta{ID: streamPartID, ProviderMetadata: part.ProviderMetadata}
 					r.emit(tsp)
 					r.callOnChunk(cfg, tsp)
 					continue
@@ -934,13 +943,14 @@ loop:
 					outputTextChunk.Reset()
 				}
 			} else {
-				tsp := StreamTextDelta{ID: part.ID, Text: part.Delta, ProviderMetadata: part.ProviderMetadata}
+				tsp := StreamTextDelta{ID: streamPartID, Text: part.Delta, ProviderMetadata: part.ProviderMetadata}
 				r.emit(tsp)
 				r.callOnChunk(cfg, tsp)
 			}
 
 		case provider.PartTextEnd:
-			if cfg.output != nil && part.ID == outputTextChunkID && outputTextChunk.Len() > 0 {
+			streamPartID := mappedStreamPartID(textPartIDs, part.ID)
+			if cfg.output != nil && streamPartID == outputTextChunkID && outputTextChunk.Len() > 0 {
 				tsp := StreamTextDelta{ID: outputTextChunkID, Text: outputTextChunk.String(), ProviderMetadata: outputTextMeta}
 				r.emit(tsp)
 				r.callOnChunk(cfg, tsp)
@@ -949,9 +959,10 @@ loop:
 			if idx, ok := responseTextIndex[part.ID]; ok && part.ProviderMetadata != nil {
 				step.responseContent[idx].ProviderOptions = providerMetadataToOptions(part.ProviderMetadata)
 			}
-			tsp := StreamTextEnd{ID: part.ID, ProviderMetadata: part.ProviderMetadata}
+			tsp := StreamTextEnd{ID: streamPartID, ProviderMetadata: part.ProviderMetadata}
 			r.emit(tsp)
 			r.callOnChunk(cfg, tsp)
+			delete(textPartIDs, part.ID)
 
 		case provider.PartReasoningStart:
 			responseReasoningIndex[part.ID] = len(step.responseContent)
@@ -962,11 +973,14 @@ loop:
 			outputIndex := len(reasoningBlocks)
 			reasoningBlocks = append(reasoningBlocks, ReasoningTextOutput{ProviderMetadata: part.ProviderMetadata})
 			activeReasoning[part.ID] = &activeReasoningBlock{providerMetadata: part.ProviderMetadata, outputIndex: outputIndex}
-			tsp := StreamReasoningStart{ID: part.ID, ProviderMetadata: part.ProviderMetadata}
+			streamPartID := reserveStreamPartID(usedReasoningPartIDs, part.ID, cfg)
+			reasoningPartIDs[part.ID] = streamPartID
+			tsp := StreamReasoningStart{ID: streamPartID, ProviderMetadata: part.ProviderMetadata}
 			r.emit(tsp)
 			r.callOnChunk(cfg, tsp)
 
 		case provider.PartReasoningDelta:
+			streamPartID := mappedStreamPartID(reasoningPartIDs, part.ID)
 			active := activeReasoning[part.ID]
 			if active == nil {
 				active = &activeReasoningBlock{outputIndex: len(reasoningBlocks)}
@@ -983,11 +997,12 @@ loop:
 					step.responseContent[idx].ProviderOptions = providerMetadataToOptions(active.providerMetadata)
 				}
 			}
-			tsp := StreamReasoningDelta{ID: part.ID, Text: part.Delta, ProviderMetadata: part.ProviderMetadata}
+			tsp := StreamReasoningDelta{ID: streamPartID, Text: part.Delta, ProviderMetadata: part.ProviderMetadata}
 			r.emit(tsp)
 			r.callOnChunk(cfg, tsp)
 
 		case provider.PartReasoningEnd:
+			streamPartID := mappedStreamPartID(reasoningPartIDs, part.ID)
 			active := activeReasoning[part.ID]
 			if active == nil {
 				active = &activeReasoningBlock{outputIndex: len(reasoningBlocks)}
@@ -1001,9 +1016,10 @@ loop:
 			}
 			reasoningBlocks[active.outputIndex] = ReasoningTextOutput{Text: active.text.String(), ProviderMetadata: active.providerMetadata}
 			delete(activeReasoning, part.ID)
-			tsp := StreamReasoningEnd{ID: part.ID, ProviderMetadata: part.ProviderMetadata}
+			tsp := StreamReasoningEnd{ID: streamPartID, ProviderMetadata: part.ProviderMetadata}
 			r.emit(tsp)
 			r.callOnChunk(cfg, tsp)
+			delete(reasoningPartIDs, part.ID)
 
 		case provider.PartToolInputStart:
 			toolNameByID[part.ID] = part.ToolName
@@ -2529,6 +2545,30 @@ func generateConfigID(cfg *streamConfig) string {
 		return cfg.generateID()
 	}
 	return GenerateID()
+}
+
+func reserveStreamPartID(used map[string]struct{}, providerID string, cfg *streamConfig) string {
+	if _, exists := used[providerID]; !exists {
+		used[providerID] = struct{}{}
+		return providerID
+	}
+
+	generatedID := generateConfigID(cfg)
+	uniqueID := generatedID
+	for suffix := 1; ; suffix++ {
+		if _, exists := used[uniqueID]; !exists {
+			used[uniqueID] = struct{}{}
+			return uniqueID
+		}
+		uniqueID = fmt.Sprintf("%s-%d", generatedID, suffix)
+	}
+}
+
+func mappedStreamPartID(active map[string]string, providerID string) string {
+	if id, ok := active[providerID]; ok {
+		return id
+	}
+	return providerID
 }
 
 func isApprovalNeeded(tool Tool, input json.RawMessage, opts ToolExecutionOptions) (bool, error) {
