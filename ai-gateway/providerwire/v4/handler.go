@@ -65,7 +65,7 @@ type handler struct {
 
 // New constructs an immutable strict ProviderWire V4 unary HTTP handler.
 func New(config Config) (http.Handler, error) {
-	if isNil(config.Resolver) {
+	if isNilInterface(config.Resolver) {
 		return nil, fmt.Errorf("providerwire v4: resolver is nil")
 	}
 	if err := validateLimits(config.Limits); err != nil {
@@ -105,7 +105,7 @@ func validateLimits(limits Limits) error {
 	return nil
 }
 
-func isNil(value any) bool {
+func isNilInterface(value any) bool {
 	if value == nil {
 		return true
 	}
@@ -266,7 +266,7 @@ func validResolvedModel(resolved catalog.ResolvedModel) (valid bool) {
 			valid = false
 		}
 	}()
-	return resolved.ID != "" && !isNil(resolved.Model) && resolved.Model.SpecificationVersion() == "v4"
+	return resolved.ID != "" && !isNilInterface(resolved.Model) && resolved.Model.SpecificationVersion() == "v4"
 }
 
 type modelOutcome struct {
