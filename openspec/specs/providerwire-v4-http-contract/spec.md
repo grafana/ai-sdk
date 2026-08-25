@@ -232,12 +232,18 @@ The repository SHALL provide a focused explicit command that regenerates committ
 
 ### Requirement: Contract evidence boundary
 
-The ProviderWire V4 workspace SHALL describe one strict HTTP dialect compatible with the exact registered public client. It SHALL NOT claim compatibility with every request accepted by Vercel's private Gateway service. Client-consumption probes SHALL NOT serve as unary, stream, or error response authority for the future Go server.
+The exact registered public `@ai-sdk/gateway` client SHALL be authoritative for its observable request emission and response consumption. The ProviderWire V4 workspace SHALL describe one strict HTTP dialect compatible with that client and SHALL NOT claim compatibility with every request accepted by Vercel's private Gateway service. Private protocol DTOs and test-time schemas SHALL own server-side shapes the client does not observe, while raw HTTP, privacy, and bounds tests SHALL own unobserved server safety properties.
 
-#### Scenario: Client overwrites or permissively accepts fields
-- **WHEN** the registered client masks a server field or accepts arbitrary response JSON
-- **THEN** the contract documentation and tests SHALL identify the limitation
-- **AND** future server correctness SHALL require independent DTO, schema, raw HTTP, privacy, lifecycle, and bounds evidence
+#### Scenario: Observable client behavior is authoritative
+- **WHEN** request emission or response consumption is observable through the registered client
+- **THEN** contract evidence SHALL treat that behavior as authoritative for the strict ProviderWire V4 dialect
+- **AND** it SHALL NOT infer acceptance by Vercel's private Gateway service
+
+#### Scenario: Unobserved server shape and safety remain independent
+- **WHEN** the registered client masks a field, permissively accepts arbitrary response JSON, or cannot observe a server safety property
+- **THEN** private protocol DTOs and test-time schemas SHALL define the unobserved server shape
+- **AND** raw HTTP, privacy, and bounds tests SHALL define the unobserved server safety requirement
+- **AND** those authorities SHALL NOT contradict observable registered-client behavior
 
 #### Scenario: No executable server is implied
 - **WHEN** this contract change is complete
