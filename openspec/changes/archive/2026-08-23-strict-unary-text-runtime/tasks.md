@@ -31,8 +31,8 @@
 - [x] 5.2 Reduce provider, transport, catalog, timeout, cancellation, and internal failures without serializing causes.
 - [x] 5.3 Map only unary text content, finish reason, and JavaScript-safe usage.
 - [x] 5.4 Omit warnings, response metadata, canonical and backend identity, provider metadata, bodies, headers, and raw usage.
-- [x] 5.5 Encode success into an early-stopping bounded buffer that rejects obviously oversized raw strings before UTF-8 scanning and stops later fields after failure.
-- [x] 5.6 Validate success and error schemas exhaustively in tests rather than at runtime.
+- [x] 5.5 Preflight content count and aggregate raw string bytes before UTF-8 validation, encode the private DTO with standard Go JSON, and enforce the final response byte limit before HTTP 200.
+- [x] 5.6 Add hostile escaping, invalid UTF-8, content-count, aggregate-byte, and precommit boundary tests; validate success and error schemas in tests rather than at runtime.
 
 ## 6. Add Compatibility Evidence
 

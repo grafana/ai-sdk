@@ -26,7 +26,7 @@ func TestUnarySuccessMapping(t *testing.T) {
 	result := &provider.GenerateResult{
 		Content: []provider.GenerateContentPart{
 			{Type: provider.ContentText, Text: ""},
-			{Type: provider.ContentText, Text: "quote=\" slash=\\ newline=\n snowman=☃"},
+			{Type: provider.ContentText, Text: "quote=\" slash=\\ newline=\n snowman=☃ html=<>&"},
 		},
 		FinishReason: provider.FinishReason{Unified: provider.FinishReasonOther, Raw: "raw-stop"},
 		Usage: provider.Usage{
@@ -49,10 +49,11 @@ func TestUnarySuccessMapping(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, compiled.Validate(body))
 	assert.JSONEq(t, `{
-		"content":[{"type":"text","text":""},{"type":"text","text":"quote=\" slash=\\ newline=\n snowman=☃"}],
+		"content":[{"type":"text","text":""},{"type":"text","text":"quote=\" slash=\\ newline=\n snowman=☃ html=<>&"}],
 		"finishReason":{"unified":"other","raw":"raw-stop"},
 		"usage":{"inputTokens":{"total":9007199254740991,"noCache":0,"cacheRead":0,"cacheWrite":0},"outputTokens":{"total":0,"text":0,"reasoning":0}}
 	}`, string(body))
+	assert.Contains(t, string(body), `html=\u003c\u003e\u0026`)
 	for _, private := range []string{"private warning", "private-response", "private-model", "private-provider", `"private":true`, "warnings", "response"} {
 		assert.NotContains(t, string(body), private)
 	}
@@ -130,41 +131,59 @@ func TestUnarySuccessBoundaries(t *testing.T) {
 		assert.Empty(t, recorder.Body.String())
 	})
 
-	t.Run("oversized raw string is rejected before UTF-8 scanning", func(t *testing.T) {
-		buffer := newBoundedDocument(64)
-		buffer.appendJSONString(strings.Repeat("x", 1<<20) + string([]byte{0xff}))
-		assert.True(t, buffer.overflow)
-		assert.False(t, buffer.invalid)
-		assert.Empty(t, buffer.data)
+	t.Run("raw-size preflight precedes UTF-8 validation", func(t *testing.T) {
+		result := validGenerateResult()
+		result.Content[0].Text = strings.Repeat("x", 128) + string([]byte{0xff})
+		assert.False(t, unarySuccessPreflight(result, 128))
+		_, err := mapUnarySuccess(result, 128)
+		require.Error(t, err)
 	})
 
-	t.Run("oversized first text stops before later parts and fields", func(t *testing.T) {
-		mapped := unarySuccess{
-			content: []string{
-				strings.Repeat("x", 1<<20),
-				string([]byte{0xff}),
-			},
-			finishReason: provider.FinishReason{
-				Unified: provider.FinishReasonStop,
-				Raw:     string([]byte{0xff}),
-			},
-		}
-		body, ok := encodeUnarySuccess(mapped, 128)
-		assert.False(t, ok)
-		assert.Nil(t, body)
+	t.Run("bounded preflight rejects excessive content count", func(t *testing.T) {
+		limit := minimumTextPartBytes * 2
+		result := validGenerateResult()
+		result.Content = make([]provider.GenerateContentPart, 3)
+		assert.False(t, unarySuccessPreflight(result, limit))
 	})
 
-	t.Run("oversized raw finish stops before usage fields", func(t *testing.T) {
-		one := 1
-		mapped := unarySuccess{
-			finishReason: provider.FinishReason{
-				Unified: provider.FinishReasonStop,
-				Raw:     strings.Repeat("x", 1<<20) + string([]byte{0xff}),
-			},
-			inputUsage: unaryTokenUsage{total: &one},
+	t.Run("aggregate raw-string accounting is overflow safe", func(t *testing.T) {
+		result := validGenerateResult()
+		result.Content = []provider.GenerateContentPart{
+			{Type: provider.ContentText, Text: strings.Repeat("a", 40)},
+			{Type: provider.ContentText, Text: strings.Repeat("b", 40)},
 		}
-		body, ok := encodeUnarySuccess(mapped, 128)
+		result.FinishReason.Raw = strings.Repeat("r", 40)
+		assert.False(t, unarySuccessPreflight(result, 100))
+	})
+
+	t.Run("invalid UTF-8 fails after bounded preflight", func(t *testing.T) {
+		result := validGenerateResult()
+		result.FinishReason.Raw = string([]byte{0xff})
+		assert.True(t, unarySuccessPreflight(result, 128))
+		_, err := mapUnarySuccess(result, 128)
+		require.Error(t, err)
+	})
+
+	t.Run("escaping expansion is checked before commitment", func(t *testing.T) {
+		result := validGenerateResult()
+		result.Content[0].Text = strings.Repeat("\x00", 16)
+		mapped, err := mapUnarySuccess(result, 1<<20)
+		require.NoError(t, err)
+		complete, ok := encodeUnarySuccess(mapped, 1<<20)
+		require.True(t, ok)
+		assert.Contains(t, string(complete), `\u0000`)
+
+		limit := int64(len(complete) - 1)
+		assert.True(t, unarySuccessPreflight(result, limit))
+		body, ok := encodeUnarySuccess(mapped, limit)
 		assert.False(t, ok)
 		assert.Nil(t, body)
+
+		limits := testLimits()
+		limits.UnaryResponseBytes = limit
+		h := newTestHandler(t, limits)
+		recorder := httptest.NewRecorder()
+		assert.False(t, h.writeUnarySuccess(recorder, result))
+		assert.Empty(t, recorder.Body.String())
 	})
 }
