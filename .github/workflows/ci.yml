@@ -40,6 +40,9 @@ jobs:
       - name: Check formatting
         run: mise run fmt-check
 
+      - name: Validate release configuration
+        run: mise run release-check
+
       - name: Vet
         run: mise run vet
 
@@ -89,6 +92,14 @@ jobs:
 
       - name: Verify published module requirements resolve
         run: mise run verify-module-resolution
+
+      # Only on release pull requests. A normal pull request may legitimately
+      # add a core API and its provider caller together, which cannot compile
+      # until the core release is published; a release pull request is the
+      # point where that must already hold.
+      - name: Verify published modules build against their pinned core
+        if: startsWith(github.head_ref, 'release-please--')
+        run: mise run verify-module-build
 
   parity-baseline:
     runs-on: ubuntu-latest
