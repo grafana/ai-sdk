@@ -19,20 +19,26 @@ module inside a repository.
 
 ## Record release intent in normal pull requests
 
-Release intent is the commit message. Nothing else is needed in a feature
-pull request:
+Release intent is the pull request title. Pull requests are squash-merged with
+the title as the commit subject, so that title is the only thing release-please
+reads. Nothing else is needed in a feature pull request:
 
-| Commit subject | Effect on the touched modules |
-| -------------- | ----------------------------- |
+| Pull request title | Effect on the touched modules |
+| ------------------ | ----------------------------- |
 | `fix: ...`, `perf: ...` | patch release |
 | `feat: ...` | minor release |
 | `feat!: ...` or a `BREAKING CHANGE:` footer | major release |
 | `chore: ...`, `ci: ...`, `docs: ...`, `refactor: ...`, `test: ...` | no release |
 
-A commit is attributed to a module by the files it touches, not by its scope.
-A commit under `providers/openai/` releases only that provider; a commit that
+A change is attributed to a module by the files it touches, not by its scope.
+A pull request under `providers/openai/` releases only that provider; one that
 also touches the repository root releases core as well. Scopes are still worth
 writing because they appear in the changelog.
+
+Squash merging is load-bearing. Under merge commits both the branch commit and
+the merge commit reach `main` with the same subject, and release-please only
+collapses the pair when the pull request contains exactly one commit, so every
+larger pull request produces duplicate changelog entries.
 
 While the modules are in the `alpha` channel, every release-worthy commit
 advances the prerelease counter, for example `v0.1.0-alpha.1` to
@@ -65,53 +71,65 @@ configuration change before it merges, push the branch and add
 
 ## Publish a release
 
-Publication is automatic and has two steps:
+Every module gets its own release pull request, on a branch named
+`release-please--branches--main--components--<component>`. Every push to `main`
+refreshes the pull requests for the modules that change. Each one holds the
+calculated version, the generated changelog, and the manifest update for a
+single module, and the full CI suite runs against it.
 
-1. Every push to `main` refreshes the `chore(main): release Go modules` pull
-   request. It contains the calculated versions, the generated changelogs, and
-   the manifest update. Review it like any other pull request; the full CI suite
-   runs against it.
-2. Merging that pull request makes release-please create every tag and GitHub
-   Release for the modules it contains.
+Merging a release pull request makes release-please create that module's tag
+and GitHub Release. Modules with nothing pending have no pull request, so the
+set of open release pull requests is the set of releasable modules.
 
-To release only some modules, merge the release pull request when only those
-modules have pending commits, or temporarily remove entries from the release
-pull request branch. There is no selective release command; batching is
-controlled by what has landed on `main`.
+**Release the root module first.** Nested modules require a published core
+version, and the core tag does not exist until the root release pull request
+merges. The order is:
+
+1. Merge the root release pull request. The core tag publishes.
+2. Renovate opens a `fix(deps)` pull request updating `go.mod` and `go.sum`
+   across every nested module. It auto-merges.
+3. Each nested release pull request refreshes onto that bump and goes green.
+4. Merge the nested release pull requests.
+
+The `module-resolution` check enforces this rather than leaving it to
+discipline. On release branches it runs `mise run verify-module-build`, which
+compiles every published module with `GOWORK=off` — that is, against the core
+version its `go.mod` actually pins rather than the working tree that `go.work`
+would otherwise supply. A provider release pull request that needs an
+unreleased core API stays red until step 2 lands.
 
 Never move or delete a published tag. Correct a bad release with a new version.
 
 ## Keep nested modules on the released core
 
-Nested modules require a published core version. Because the core tag does not
-exist until the release pull request merges, the requirement bump cannot be part
-of that pull request without making it unresolvable.
+The requirement bump cannot live in a release pull request, because the core
+version it would point at is not published until that pull request merges.
 
-Renovate owns that bump. Once the core tag is published, it opens a
-`fix(deps): update core module requirement` pull request that updates `go.mod`
-and `go.sum` for every nested module. Its rule is the last entry in
+Renovate owns the bump instead. Its rule is the last entry in
 [`renovate.json`](../renovate.json) because it has to override the weekly
 schedule and the 14-day `minimumReleaseAge` that the generic Go rules apply.
 
 Two consequences are worth knowing. Renovate commits through the GitHub API, so
-its commits are signed and satisfy the repository's signed-commit rule, which a
-workflow pushing with `git` cannot do. And because Renovate labels the bump
-`fix(deps)`, merging it makes each nested module's next release include the new
-core requirement.
+its commits are signed and satisfy the organization's signed-commit ruleset,
+which a workflow pushing with `git` cannot do. And because Renovate labels the
+bump `fix(deps)`, merging it makes each nested module's next release include
+the new core requirement.
 
 ## Force a release for an unchanged module
 
 release-please only proposes a release for a module with release-worthy
-commits. To release a module that has not changed, land a commit that touches a
-file inside it, for example a changelog note or a documentation comment, with a
-release-worthy type:
+commits. A module that has never had one — `middleware/enrichment` at the time
+of writing — gets no initial tag and resolves to a pseudo-version for
+consumers. To release it, land a pull request that touches a file inside it,
+for example a changelog note or a documentation comment, with a release-worthy
+title:
 
 ```text
-fix(providers/bedrock): refresh released module metadata
+fix(middleware/enrichment): refresh released module metadata
 ```
 
-To pin an exact version instead of the calculated one, add a footer to that
-commit:
+To pin an exact version instead of the calculated one, add a footer to the pull
+request body:
 
 ```text
 Release-As: 0.2.0
@@ -158,13 +176,43 @@ published module contains a local `replace` directive.
 
 ## First-time repository setup
 
-release-please needs a token that can open pull requests which then trigger the
-required CI checks. The default `GITHUB_TOKEN` cannot do this: pull requests it
-creates do not start workflow runs, so a release pull request could never
-satisfy branch protection.
+Three things must be true before the first release.
 
-Create a GitHub App for the repository with `contents: write` and
-`pull_requests: write`, then configure:
+**A release app token.** release-please needs a token that can open pull
+requests which then trigger the required CI checks. The default `GITHUB_TOKEN`
+cannot do this: pull requests it creates do not start workflow runs, so a
+release pull request could never satisfy branch protection.
 
-- repository variable `RELEASE_APP_ID`
-- repository secret `RELEASE_APP_PRIVATE_KEY`
+The workflow mints the token through
+[`grafana/shared-workflows/actions/create-github-app-token`](https://github.com/grafana/shared-workflows/tree/main/actions/create-github-app-token),
+which exchanges the job's OIDC identity for a short-lived installation token via
+Vault's [GitHub App Token Broker](https://enghub.grafana-ops.net/docs/default/component/deployment-tools/platform/vault/github-app-token-broker/),
+so no app private key is stored in this repository.
+
+The app is `grafana-plugins-platform-bot`, the same one `grafana/agento11y` and
+`grafana/plugin-tools` use for their release workflows, and the one the
+organization's required-review policy exempts for automated workflows. Two
+things must be provisioned in `grafana/deployment_tools` before the first run:
+
+1. `grafana/ai-sdk` added to
+   `terraform/repositories/plugin-ci-workflows/plugins-platform-bot-users.txt`,
+   plus the matching app installation granted on the repository. The
+   installation itself is a manual step; the file only tracks it.
+2. `terraform/repositories/ai-sdk/github-app-configs/config.yaml` declaring this
+   workflow, bound to `branch: main` and `event_name: push`, with
+   `contents: write` and `pull_requests: write`.
+
+The broker binds issuance to the workflow's file path, so renaming or moving
+`.github/workflows/release-please.yml` breaks token minting until that config is
+updated.
+
+**Squash merging on `main`.** The `main` ruleset must allow squash merges, and
+the repository's squash defaults must be `PR_TITLE` for the commit title and
+`PR_BODY` for the message. Merge commits duplicate every changelog entry; a
+`COMMIT_OR_PR_TITLE` default makes the release subject depend on how many
+commits a branch happened to have.
+
+**Renovate.** The `core module requirement` rule in
+[`renovate.json`](../renovate.json) must stay the last `packageRules` entry, or
+the generic Go rules will hold nested modules on a stale core for up to two
+weeks.

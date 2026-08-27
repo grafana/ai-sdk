@@ -8,9 +8,8 @@
   "versioning": "prerelease",
   "prerelease": true,
   "bump-minor-pre-major": true,
-  "separate-pull-requests": false,
-  "group-pull-request-title-pattern": "chore(main): release Go modules",
-  "pull-request-header": "Merging this pull request tags every module listed below and publishes its GitHub Release.",
+  "separate-pull-requests": true,
+  "pull-request-header": "Merging this pull request tags this module and publishes its GitHub Release. Release the root module before any module that depends on it.",
   "pull-request-footer": "Versions and changelog entries are derived from Conventional Commits. See [release/README.md](https://github.com/grafana/ai-sdk/blob/main/release/README.md).",
   "changelog-sections": [
     { "type": "feat", "section": "Features" },

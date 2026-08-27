@@ -2,7 +2,7 @@ name: Conventional commits
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, edited, synchronize, reopened]
 
 permissions: {}
 
@@ -14,11 +14,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          fetch-depth: 0
           persist-credentials: false
 
-      - name: Validate commit subjects
+      - name: Validate pull request title
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: bash scripts/check-conventional-commits.sh
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: bash scripts/check-conventional-title.sh

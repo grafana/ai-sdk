@@ -156,6 +156,32 @@ for go_mod in $(git ls-files 'go.mod' '*/go.mod' | sort); do
 done
 """
 
+[tasks.verify-module-build]
+description = "Compile each published module against the core version its go.mod pins"
+run = """
+set -e
+module_cache=$(mktemp -d)
+trap 'chmod -R u+w "$module_cache" 2>/dev/null || true; rm -rf "$module_cache"' EXIT
+export GOMODCACHE="$module_cache"
+export GOPROXY="https://proxy.golang.org"
+# go.work makes every nested module resolve the core module from the working
+# tree, so a nested module can call a core API that its required core version
+# does not contain and still build. Dropping the workspace is the only way to
+# compile what an external consumer of the published tag would get.
+export GOWORK=off
+for go_mod in $(git ls-files 'go.mod' '*/go.mod' | sort); do
+  module_path=$(go mod edit -json "$go_mod" | jq -r '.Module.Path')
+  case "$module_path" in
+    github.com/grafana/ai-sdk/examples/*|github.com/grafana/ai-sdk/test/*)
+      continue
+      ;;
+  esac
+  mod=$(dirname "$go_mod")
+  echo "==> $mod"
+  (cd "$mod" && go build ./...)
+done
+"""
+
 [tasks.release-check]
 description = "Validate the release-please configuration against published modules"
 run = "go test ./internal/releasecheck"
