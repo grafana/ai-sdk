@@ -645,6 +645,39 @@ func TestStreamText_OutputWithLengthFinishReason(t *testing.T) {
 	}
 }
 
+func TestGenerateText_OutputWithMissingFinishReason(t *testing.T) {
+	ch := make(chan provider.StreamPart, 10)
+	go func() {
+		defer close(ch)
+		ch <- provider.StreamPart{Type: provider.PartTextStart, ID: "t1"}
+		ch <- provider.StreamPart{Type: provider.PartTextDelta, ID: "t1", Delta: `{"name":"test"}`}
+		ch <- provider.StreamPart{Type: provider.PartTextEnd, ID: "t1"}
+		ch <- provider.StreamPart{Type: provider.PartFinish, Usage: &provider.Usage{}}
+	}()
+
+	model := &testModel{
+		streamFunc: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+			return &provider.StreamResult{Stream: ch}, nil
+		},
+	}
+
+	type s struct {
+		Name string `json:"name"`
+	}
+
+	sch := mustSchema(t, `{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}`)
+	out, err := output.Object[s](sch)
+	require.NoError(t, err)
+
+	result, err := aisdk.GenerateText(context.Background(), model,
+		aisdk.WithModelMessages(provider.UserText("test")),
+		aisdk.WithOutput(out),
+	)
+	require.NoError(t, err)
+	assert.Equal(t, s{Name: "test"}, result.Output)
+	require.NoError(t, result.OutputError)
+}
+
 func TestGenerateText_OutputWithLengthFinishReason(t *testing.T) {
 	ch := make(chan provider.StreamPart, 10)
 	go func() {

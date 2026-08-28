@@ -343,6 +343,28 @@ func TestStreamUIMessage_ProgressiveToolLifecycle(t *testing.T) {
 	assert.Equal(t, "failed", dyn.ErrorText)
 }
 
+func TestStreamUIMessage_FinishStepPreservesActiveParts(t *testing.T) {
+	messages := collectMessages(StreamUIMessage(chunks(
+		UIMessageChunk{Type: ChunkTextStart, ID: "text-1"},
+		UIMessageChunk{Type: ChunkTextDelta, ID: "text-1", Delta: "first "},
+		UIMessageChunk{Type: ChunkReasoningStart, ID: "reasoning-1"},
+		UIMessageChunk{Type: ChunkReasoningDelta, ID: "reasoning-1", Delta: "thinking "},
+		UIMessageChunk{Type: ChunkStartStep},
+		UIMessageChunk{Type: ChunkFinishStep},
+		UIMessageChunk{Type: ChunkTextDelta, ID: "text-1", Delta: "second"},
+		UIMessageChunk{Type: ChunkReasoningDelta, ID: "reasoning-1", Delta: "continued"},
+		UIMessageChunk{Type: ChunkTextEnd, ID: "text-1"},
+		UIMessageChunk{Type: ChunkReasoningEnd, ID: "reasoning-1"},
+	)))
+
+	require.Len(t, messages, 8)
+	last := messages[len(messages)-1]
+	require.Len(t, last.Parts, 3)
+	assert.Equal(t, TextPart{Text: "first second", State: "done"}, last.Parts[0])
+	assert.Equal(t, ReasoningPart{ID: "reasoning-1", Text: "thinking continued", State: "done"}, last.Parts[1])
+	assert.Equal(t, StepStartPart{}, last.Parts[2])
+}
+
 func TestStreamUIMessage_RepeatedToolCallIDAcrossSteps(t *testing.T) {
 	messages := collectMessages(StreamUIMessage(chunks(
 		UIMessageChunk{Type: ChunkStartStep},

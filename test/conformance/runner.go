@@ -939,6 +939,9 @@ func normalizeJSONValue(key string, value any) any {
 				result["content"] = normalizeToolResultContent(content)
 			}
 		}
+		if toolResult, ok := result["toolResult"].(map[string]any); ok {
+			normalizeBedrockToolResultContent(toolResult)
+		}
 		// OpenAI function_call_output carries the tool result as a JSON string;
 		// parse it so object field ordering is compared insensitively, matching
 		// the upstream serialization which preserves tool-result key order.
@@ -958,7 +961,7 @@ func normalizeJSONValue(key string, value any) any {
 
 func normalizeToolResultContent(content any) any {
 	if text, ok := content.(string); ok {
-		return parseJSONIfPossible(text)
+		return normalizeToolResultText(text)
 	}
 	blocks, ok := content.([]any)
 	if !ok || len(blocks) != 1 {
@@ -972,7 +975,43 @@ func normalizeToolResultContent(content any) any {
 	if !ok {
 		return content
 	}
-	return parseJSONIfPossible(text)
+	return normalizeToolResultText(text)
+}
+
+func normalizeBedrockToolResultContent(toolResult map[string]any) {
+	blocks, ok := toolResult["content"].([]any)
+	if !ok || len(blocks) != 1 {
+		return
+	}
+	block, ok := blocks[0].(map[string]any)
+	if !ok {
+		return
+	}
+	text, ok := block["text"].(string)
+	if !ok {
+		return
+	}
+	block["text"] = normalizeToolResultText(text)
+}
+
+func normalizeToolResultText(text string) any {
+	const upstreamPrefix = "AI_InvalidToolInputError: Invalid input for tool "
+	const goPrefix = "invalid input for tool "
+
+	var detail string
+	switch {
+	case strings.HasPrefix(text, upstreamPrefix):
+		detail = strings.TrimPrefix(text, upstreamPrefix)
+	case strings.HasPrefix(text, goPrefix):
+		detail = strings.TrimPrefix(text, goPrefix)
+	default:
+		return parseJSONIfPossible(text)
+	}
+	toolName, _, ok := strings.Cut(detail, ":")
+	if !ok || toolName == "" {
+		return text
+	}
+	return "invalid input for tool " + toolName + ": <validator-diagnostics>"
 }
 
 func parseJSONIfPossible(text string) any {

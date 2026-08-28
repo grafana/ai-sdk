@@ -15,6 +15,102 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestDoGenerateSendsReasoningNone(t *testing.T) {
+	t.Parallel()
+
+	var got map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&got))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"id":"chatcmpl_1",
+			"model":"test-model",
+			"choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]
+		}`))
+	}))
+	defer server.Close()
+
+	reasoning := provider.ReasoningNone
+	_, err := New("test-model", WithBaseURL(server.URL)).DoGenerate(context.Background(), provider.CallOptions{
+		Prompt:    []provider.Message{provider.UserText("hi")},
+		Reasoning: &reasoning,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "none", got["reasoning_effort"])
+}
+
+func TestDoGenerateReasoningEffortPrecedence(t *testing.T) {
+	t.Parallel()
+
+	var got map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&got))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"id":"chatcmpl_1",
+			"model":"test-model",
+			"choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]
+		}`))
+	}))
+	defer server.Close()
+
+	reasoning := provider.ReasoningNone
+	_, err := New("test-model", WithBaseURL(server.URL)).DoGenerate(context.Background(), provider.CallOptions{
+		Prompt:    []provider.Message{provider.UserText("hi")},
+		Reasoning: &reasoning,
+		ProviderOptions: provider.ProviderOptions{
+			"openaiCompatible": provider.RawProviderOption{
+				Key: "openaiCompatible",
+				Raw: json.RawMessage(`{"reasoningEffort":"high","reasoning_effort":"low"}`),
+			},
+		},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "high", got["reasoning_effort"])
+}
+
+func TestBuildRequestCanonicalFieldsSuppressRawCollisions(t *testing.T) {
+	m := New("test-model").(*model)
+	rawOptions := provider.ProviderOptions{
+		"openaiCompatible": provider.RawProviderOption{
+			Key: "openaiCompatible",
+			Raw: json.RawMessage(`{
+				"reasoning_effort":"low",
+				"verbosity":"high",
+				"messages":[{"role":"user","content":"raw"}],
+				"tools":[{"type":"function"}],
+				"tool_choice":"required",
+				"stream_options":{"include_usage":true},
+				"custom":"kept"
+			}`),
+		},
+	}
+	opts := provider.CallOptions{
+		Prompt:          []provider.Message{provider.UserText("canonical")},
+		ProviderOptions: rawOptions,
+	}
+
+	generateBody, _, err := m.buildRequest(opts, false)
+	require.NoError(t, err)
+	assert.NotContains(t, generateBody, "reasoning_effort")
+	assert.NotContains(t, generateBody, "verbosity")
+	assert.NotContains(t, generateBody, "tools")
+	assert.NotContains(t, generateBody, "tool_choice")
+	assert.Contains(t, generateBody, "stream_options")
+	assert.Equal(t, "kept", generateBody["custom"])
+	assert.Equal(t, []chatMessage{{Role: "user", Content: "canonical"}}, generateBody["messages"])
+
+	streamBody, _, err := m.buildRequest(opts, true)
+	require.NoError(t, err)
+	assert.Equal(t, true, streamBody["stream"])
+	assert.NotContains(t, streamBody, "stream_options")
+
+	m.includeUsage = true
+	streamBody, _, err = m.buildRequest(opts, true)
+	require.NoError(t, err)
+	assert.Equal(t, streamOptions{IncludeUsage: true}, streamBody["stream_options"])
+}
+
 func TestDoGenerateSendsCompatibleRequest(t *testing.T) {
 	t.Parallel()
 

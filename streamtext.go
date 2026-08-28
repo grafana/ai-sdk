@@ -750,7 +750,7 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 		}
 
 		if !hasClientToolCalls || stopped || hasUnresolvedClientToolCalls || hasUnresolvedExternal || hasPendingApproval {
-			if cfg.output != nil && (cfg.parseOutputOnNonStop || step.FinishReason.Unified == provider.FinishReasonStop) {
+			if cfg.output != nil && (cfg.parseOutputOnNonStop || step.FinishReason.Unified == provider.FinishReasonStop || (step.FinishReason.Unified == "" && step.Text != "")) {
 				outputVal, outputErr := cfg.output.ParseComplete(step.Text)
 				r.mu.Lock()
 				r.outputValue = outputVal
@@ -1954,6 +1954,11 @@ type collectedToolApproval struct {
 	hasExistingToolResult bool
 }
 
+type invalidToolApproval struct {
+	collectedToolApproval
+	err error
+}
+
 func (r *StreamTextResult) resolveToolApprovals(ctx context.Context, cfg *streamConfig, msgs []provider.Message) ([]provider.Message, error) {
 	approved, denied, err := collectToolApprovals(msgs)
 	if err != nil {
@@ -1968,7 +1973,13 @@ func (r *StreamTextResult) resolveToolApprovals(ctx context.Context, cfg *stream
 	// mutates existing message Content slices.
 	resultMsgs := cloneMessages(msgs)
 
-	approved, demoted, err := validateApprovedToolApprovals(cfg, msgs, approved)
+	localApproved := make([]collectedToolApproval, 0, len(approved))
+	for _, approval := range approved {
+		if !approval.toolCall.ProviderExecuted {
+			localApproved = append(localApproved, approval)
+		}
+	}
+	approved, demoted, invalid, err := validateApprovedToolApprovals(cfg, msgs, localApproved)
 	if err != nil {
 		return nil, err
 	}
@@ -1977,6 +1988,21 @@ func (r *StreamTextResult) resolveToolApprovals(ctx context.Context, cfg *stream
 		deniedEvent := StreamToolOutputDenied{ToolCallID: approval.toolCall.ToolCallID, ToolName: approval.toolCall.ToolName}
 		r.emit(deniedEvent)
 		r.callOnChunk(cfg, deniedEvent)
+	}
+	for _, approval := range invalid {
+		toolCall := approval.toolCall
+		dynamic := isDynamic(toolCall.ToolName, nil, cfg.tools)
+		event := StreamToolError{
+			ToolCallID:       toolCall.ToolCallID,
+			ToolName:         toolCall.ToolName,
+			Input:            toolCall.Input,
+			Error:            approval.err,
+			Dynamic:          dynamic,
+			Title:            toolCall.Title,
+			ProviderMetadata: optionsToProviderMetadata(toolCall.ProviderOptions),
+		}
+		r.emit(event)
+		r.callOnChunk(cfg, event)
 	}
 
 	type executableApproval struct {
@@ -2041,6 +2067,19 @@ func (r *StreamTextResult) resolveToolApprovals(ctx context.Context, cfg *stream
 		})
 	}
 
+	invalidToolParts := make([]provider.ContentPart, 0, len(invalid))
+	for _, approval := range invalid {
+		invalidToolParts = append(invalidToolParts, provider.ContentPart{
+			Type:       provider.ContentPartTypeToolResult,
+			ToolCallID: approval.toolCall.ToolCallID,
+			ToolName:   approval.toolCall.ToolName,
+			Output: &provider.ToolResultOutput{
+				Type: provider.ToolOutputErrorText,
+				Text: approval.err.Error(),
+			},
+		})
+	}
+
 	deniedToolParts := make([]provider.ContentPart, 0, len(denied))
 	for _, approval := range denied {
 		if approval.toolCall.ProviderExecuted || approval.hasExistingToolResult {
@@ -2057,35 +2096,42 @@ func (r *StreamTextResult) resolveToolApprovals(ctx context.Context, cfg *stream
 		})
 	}
 
-	// Approved tool results go before synthetic execution-denied results so
-	// the next-step prompt order matches upstream stream-text.ts.
-	toolParts := append(approvedToolParts, deniedToolParts...)
+	// Approved tool results go before invalid and synthetic execution-denied
+	// results so the next-step prompt order matches upstream stream-text.ts.
+	toolParts := append(approvedToolParts, invalidToolParts...)
+	toolParts = append(toolParts, deniedToolParts...)
 	if len(toolParts) > 0 {
 		resultMsgs = append(resultMsgs, provider.NewToolMessage(toolParts...))
 	}
 	return resultMsgs, nil
 }
 
-func validateApprovedToolApprovals(cfg *streamConfig, msgs []provider.Message, approvals []collectedToolApproval) ([]collectedToolApproval, []collectedToolApproval, error) {
+func validateApprovedToolApprovals(cfg *streamConfig, msgs []provider.Message, approvals []collectedToolApproval) ([]collectedToolApproval, []collectedToolApproval, []invalidToolApproval, error) {
 	approved := make([]collectedToolApproval, 0, len(approvals))
 	var denied []collectedToolApproval
+	var invalid []invalidToolApproval
 
 	for _, approval := range approvals {
 		if err := validateToolApprovalSignature(cfg.toolApprovalSecret, approval); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 
 		tool, ok := cfg.tools[approval.toolCall.ToolName]
 		if ok && tool.Execute != nil {
-			if tool.InputSchema.Compiled() != nil && isJSONObject(approval.toolCall.Input) {
+			var validationErr error
+			if tool.InputSchema.Compiled() != nil {
 				if err := tool.InputSchema.Validate(approval.toolCall.Input); err != nil {
-					return nil, nil, fmt.Errorf("invalid input for tool %s: %w", approval.toolCall.ToolName, err)
+					validationErr = fmt.Errorf("invalid input for tool %s: %w", approval.toolCall.ToolName, err)
 				}
 			}
-			if tool.ValidateInput != nil {
+			if validationErr == nil && tool.ValidateInput != nil {
 				if err := tool.ValidateInput(approval.toolCall.Input); err != nil {
-					return nil, nil, fmt.Errorf("invalid input for tool %s: %w", approval.toolCall.ToolName, err)
+					validationErr = fmt.Errorf("invalid input for tool %s: %w", approval.toolCall.ToolName, err)
 				}
+			}
+			if validationErr != nil {
+				invalid = append(invalid, invalidToolApproval{collectedToolApproval: approval, err: validationErr})
+				continue
 			}
 		}
 
@@ -2101,7 +2147,7 @@ func validateApprovedToolApprovals(cfg *streamConfig, msgs []provider.Message, a
 				Messages:   msgs,
 			})
 			if err != nil {
-				return nil, nil, err
+				return nil, nil, nil, err
 			}
 			if decision.Status == ToolApprovalDenied {
 				approvedFalse := false
@@ -2117,7 +2163,7 @@ func validateApprovedToolApprovals(cfg *streamConfig, msgs []provider.Message, a
 		approved = append(approved, approval)
 	}
 
-	return approved, denied, nil
+	return approved, denied, invalid, nil
 }
 
 func validateToolApprovalSignature(secret []byte, approval collectedToolApproval) error {

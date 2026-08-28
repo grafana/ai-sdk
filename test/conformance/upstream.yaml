@@ -1,18 +1,18 @@
 upstream:
   repository: https://github.com/vercel/ai
-  commit: ed857f50f112e23930b0c2dd8d532cc8bebbc911
+  commit: 3d3afacf9b587f5df1edd6cfdb91b3771d1c7e4e
   packageSource: npm
-  verifiedAt: "2026-08-25"
+  verifiedAt: "2026-08-28"
 packages:
-  ai: 7.0.77
-  "@ai-sdk/anthropic": 4.0.41
-  "@ai-sdk/amazon-bedrock": 5.0.61
-  "@ai-sdk/gateway": 4.0.62
-  "@ai-sdk/openai": 4.0.46
-  "@ai-sdk/openai-compatible": 3.0.35
-  "@ai-sdk/provider": 4.0.7
-  "@ai-sdk/provider-utils": 5.0.29
-  "@ai-sdk/react": 4.0.80
+  ai: 7.0.79
+  "@ai-sdk/anthropic": 4.0.42
+  "@ai-sdk/amazon-bedrock": 5.0.62
+  "@ai-sdk/gateway": 4.0.64
+  "@ai-sdk/openai": 4.0.47
+  "@ai-sdk/openai-compatible": 3.0.37
+  "@ai-sdk/provider": 4.0.8
+  "@ai-sdk/provider-utils": 5.0.30
+  "@ai-sdk/react": 4.0.82
 verification:
   status: enforced
   conformanceScope: full
@@ -75,11 +75,11 @@ knownGaps:
   - id: batch-language-model-surface
     surface: provider-contract
     status: gap
-    description: Upstream provider v4 exposes optional language-model batch submission,
-      ai exposes batch orchestration, and the registered Gateway client exposes batch
-      start, status, and results routes. The Go LanguageModel contract, providers,
-      gateway/providerwire server, and Gateway interop coverage currently expose only
-      synchronous generate and stream calls, without batch APIs or conformance coverage.
+    description: Upstream provider v4 exposes optional language-model batch submission
+      and webhook callback URLs, ai exposes batch orchestration, and the registered Gateway
+      client exposes batch start, status, and results routes. The Go LanguageModel contract,
+      providers, gateway/providerwire server, and Gateway interop coverage currently expose
+      only synchronous generate and stream calls, without batch APIs or conformance coverage.
   - id: structured-output-repair-text
     surface: core-orchestration
     status: gap

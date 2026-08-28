@@ -28,8 +28,7 @@ func (m *model) buildRequest(opts provider.CallOptions, streaming bool) (map[str
 	warnings = append(warnings, toolWarnings...)
 
 	body := map[string]any{
-		"model":    m.modelID,
-		"messages": messages,
+		"model": m.modelID,
 	}
 
 	if openAIOpts.User != "" {
@@ -70,12 +69,23 @@ func (m *model) buildRequest(opts provider.CallOptions, streaming bool) (map[str
 		warnings = append(warnings, rfWarnings...)
 	}
 
+	for k, v := range openAIOpts.extraFields {
+		body[k] = v
+	}
+	delete(body, "reasoning_effort")
+	delete(body, "verbosity")
+	delete(body, "messages")
+	delete(body, "tools")
+	delete(body, "tool_choice")
+
 	if effort := reasoningEffort(opts.Reasoning, openAIOpts); effort != "" {
 		body["reasoning_effort"] = effort
 	}
 	if openAIOpts.TextVerbosity != "" {
 		body["verbosity"] = openAIOpts.TextVerbosity
 	}
+
+	body["messages"] = messages
 
 	if len(tools) > 0 {
 		body["tools"] = tools
@@ -86,13 +96,10 @@ func (m *model) buildRequest(opts provider.CallOptions, streaming bool) (map[str
 
 	if streaming {
 		body["stream"] = true
+		delete(body, "stream_options")
 		if m.includeUsage {
 			body["stream_options"] = streamOptions{IncludeUsage: true}
 		}
-	}
-
-	for k, v := range openAIOpts.extraFields {
-		body[k] = v
 	}
 
 	if m.transformRequestBody != nil {
@@ -845,7 +852,7 @@ func reasoningEffort(reasoning *provider.ReasoningEffort, opts OpenAIOptions) st
 		return ""
 	}
 	switch *reasoning {
-	case provider.ReasoningProviderDefault, provider.ReasoningNone:
+	case provider.ReasoningProviderDefault:
 		return ""
 	default:
 		return string(*reasoning)

@@ -33,6 +33,16 @@ func TestRequestSnapshot_ArrayOrderEnforced(t *testing.T) {
 	assert.NotEqual(t, expected.Body, actual.Body)
 }
 
+func TestNormalizeToolResultText_InvalidInputDiagnostics(t *testing.T) {
+	upstream := `AI_InvalidToolInputError: Invalid input for tool weather: AI_TypeValidationError: details`
+	goError := `invalid input for tool weather: schema: schema validation failed`
+
+	assert.Equal(t, normalizeToolResultText(upstream), normalizeToolResultText(goError))
+	assert.Equal(t, "invalid input for tool weather: <validator-diagnostics>", normalizeToolResultText(upstream))
+	assert.NotEqual(t, normalizeToolResultText(upstream), normalizeToolResultText(`invalid input for tool search: details`))
+	assert.Equal(t, "ordinary error", normalizeToolResultText("ordinary error"))
+}
+
 func TestRequestSnapshot_HeaderNormalization(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "http://example.test/v1/messages?stream=true", nil)
 	req.Header.Set("Content-Type", " application/json ")

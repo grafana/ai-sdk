@@ -197,9 +197,17 @@ export function buildTools(
       let resultIdx = 0;
       const mockResults = tc.mockResults ?? [];
 
+      const runtimeSchema = z.fromJSONSchema(tc.inputSchema);
       const t: Tool = {
         description: tc.description,
-        inputSchema: jsonSchema(tc.inputSchema),
+        inputSchema: jsonSchema(tc.inputSchema, {
+          validate: async value => {
+            const result = await runtimeSchema.safeParseAsync(value);
+            return result.success
+              ? { success: true, value: result.data }
+              : { success: false, error: result.error };
+          },
+        }),
         ...(tc.providerOptions
           ? { providerOptions: tc.providerOptions as ProviderOptions }
           : {}),

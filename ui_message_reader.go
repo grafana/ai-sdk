@@ -128,8 +128,6 @@ func (s *uiMessageReaderState) apply(chunk UIMessageChunk) (bool, error) {
 		return false, nil
 
 	case ChunkFinishStep:
-		s.activeTextParts = make(map[string]int)
-		s.activeReasoningParts = make(map[string]int)
 		return false, nil
 
 	case ChunkResetStep:
