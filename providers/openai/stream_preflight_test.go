@@ -54,7 +54,8 @@ func TestPreflightResponseStream(t *testing.T) {
 		var apiErr *provider.APICallError
 		require.True(t, errors.As(err, &apiErr))
 		assert.Equal(t, 429, apiErr.StatusCode)
-		assert.True(t, apiErr.IsRetryable)
+		assert.False(t, apiErr.IsRetryable)
+		assert.Equal(t, "insufficient_quota", apiErr.Code)
 		assert.JSONEq(t, `{"type":"error","sequence_number":2,"message":"quota exhausted","code":"insufficient_quota"}`, apiErr.ResponseBody)
 		assert.NotEmpty(t, apiErr.RequestBodyValues)
 	})

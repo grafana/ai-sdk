@@ -581,6 +581,28 @@ func TestBuildParams_ProviderToolContinuationTaxonomy(t *testing.T) {
 		assert.Len(t, input[1].(map[string]any)["tools"], 1)
 	})
 
+	t.Run("function named tool_search remains a function", func(t *testing.T) {
+		call := provider.ToolCallPart("call_1", "tool_search", json.RawMessage(`{"query":"docs"}`))
+		result := provider.ToolResultPart("call_1", "tool_search", &provider.ToolResultOutput{
+			Type: provider.ToolOutputJSON,
+			JSON: json.RawMessage(`{"matches":[]}`),
+		})
+		body, _ := buildBody(t, "gpt-5", provider.CallOptions{
+			Prompt: []provider.Message{
+				provider.NewAssistantMessage(call),
+				provider.NewToolMessage(result),
+			},
+			Tools:           []provider.Tool{{Type: provider.ToolTypeFunction, Name: "tool_search", InputSchema: json.RawMessage(`{"type":"object"}`)}},
+			ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{Store: &noStore}),
+		})
+
+		input := body["input"].([]any)
+		require.Len(t, input, 2)
+		assert.Equal(t, "function_call", input[0].(map[string]any)["type"])
+		assert.Equal(t, "tool_search", input[0].(map[string]any)["name"])
+		assert.Equal(t, "function_call_output", input[1].(map[string]any)["type"])
+	})
+
 	t.Run("local shell call and output retain call id", func(t *testing.T) {
 		body, _ := buildBody(t, "gpt-5-codex", provider.CallOptions{
 			Prompt: []provider.Message{

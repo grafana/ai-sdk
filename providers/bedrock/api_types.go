@@ -71,6 +71,7 @@ type contentBlock struct {
 	ToolUse          *toolUseBlock          `json:"toolUse,omitempty"`
 	ToolResult       *toolResultBlock       `json:"toolResult,omitempty"`
 	ReasoningContent *reasoningContentBlock `json:"reasoningContent,omitempty"`
+	GuardContent     *guardContentBlock     `json:"guardContent,omitempty"`
 	CachePoint       *cachePoint            `json:"cachePoint,omitempty"`
 }
 
@@ -78,6 +79,16 @@ type contentBlock struct {
 type imageBlock struct {
 	Format string      `json:"format"` // "jpeg", "png", "gif", "webp"
 	Source imageSource `json:"source"`
+}
+
+type guardContentBlock struct {
+	Text  *guardrailTextBlock `json:"text,omitempty"`
+	Image *imageBlock         `json:"image,omitempty"`
+}
+
+type guardrailTextBlock struct {
+	Text       string                  `json:"text"`
+	Qualifiers []GuardContentQualifier `json:"qualifiers,omitempty"`
 }
 
 type imageSource struct {

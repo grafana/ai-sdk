@@ -97,6 +97,17 @@ func (a *streamAdapter) handleEvent(event responses.ResponseStreamEventUnion, ch
 		ch <- provider.StreamPart{Type: provider.PartStreamStart, Warnings: a.warnings}
 	}
 
+	if err := validateModeledResponseEvent(event); err != nil {
+		a.encounteredStreamError = true
+		ch <- provider.StreamPart{Type: provider.PartError, APICallError: provider.NewAPICallError(provider.APICallErrorOptions{
+			Message: err.Error(),
+			Type:    "invalid_response_data",
+			Data:    json.RawMessage(event.RawJSON()),
+			Cause:   err,
+		})}
+		return
+	}
+
 	switch e := event.AsAny().(type) {
 	case responses.ResponseCreatedEvent:
 		a.responseID = e.Response.ID
@@ -803,6 +814,9 @@ func (a *streamAdapter) emitFinish(resp responses.Response, ch chan<- provider.S
 	a.flushSuppressedToolInputs(ch)
 	a.finishEmitted = true
 	fr := mapFinishReason(resp.IncompleteDetails.Reason, a.hasFunctionCall)
+	if a.encounteredStreamError {
+		fr = provider.FinishReason{Unified: provider.FinishReasonError, Raw: "error"}
+	}
 	usage := convertResponseUsage(resp.Usage)
 	ch <- provider.StreamPart{
 		Type:             provider.PartFinish,
@@ -829,6 +843,46 @@ func (a *streamAdapter) emitFailedFinish(resp responses.Response, ch chan<- prov
 		Usage:            &usage,
 		ProviderMetadata: responseMeta(a.providerName, &resp, a.logprobs),
 	}
+}
+
+var modeledResponseOutputItemTypes = map[string]struct{}{
+	"apply_patch_call": {}, "code_interpreter_call": {}, "compaction": {},
+	"computer_call": {}, "custom_tool_call": {}, "file_search_call": {},
+	"function_call": {}, "image_generation_call": {}, "local_shell_call": {},
+	"mcp_approval_request": {}, "mcp_call": {}, "mcp_list_tools": {},
+	"message": {}, "program": {}, "program_output": {}, "reasoning": {},
+	"shell_call": {}, "shell_call_output": {}, "tool_search_call": {},
+	"tool_search_output": {}, "web_search_call": {},
+}
+
+func validateModeledResponseEvent(event responses.ResponseStreamEventUnion) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(event.RawJSON()), &raw); err != nil {
+		return fmt.Errorf("openai: decoding response stream event: %w", err)
+	}
+	requireNumber := func(name string) error {
+		var value float64
+		if data, ok := raw[name]; !ok || json.Unmarshal(data, &value) != nil {
+			return fmt.Errorf("openai: %s event is missing required %s", event.Type, name)
+		}
+		return nil
+	}
+
+	switch event.Type {
+	case "response.function_call_arguments.delta", "response.function_call_arguments.done":
+		return requireNumber("output_index")
+	case "response.output_item.added", "response.output_item.done":
+		var item struct {
+			Type string `json:"type"`
+		}
+		if json.Unmarshal(raw["item"], &item) != nil {
+			return fmt.Errorf("openai: %s event has invalid item", event.Type)
+		}
+		if _, modeled := modeledResponseOutputItemTypes[item.Type]; modeled {
+			return requireNumber("output_index")
+		}
+	}
+	return nil
 }
 
 func (a *streamAdapter) emitPendingErrorFinish(ch chan<- provider.StreamPart) {

@@ -176,7 +176,20 @@ func (r *StreamTextResult) ToUIMessageStream(opts ...UIMessageStreamOption) <-ch
 		var assembledChunks []UIMessageChunk
 		var finishReason provider.FinishReason
 		var isAborted bool
+		outcome := UIMessageStreamOutcome{Status: UIMessageStreamOutcomeUnknown}
 		for part := range r.consumeStream() {
+			switch part := part.(type) {
+			case StreamFinish:
+				if outcome.Status != UIMessageStreamOutcomeFailed && outcome.Status != UIMessageStreamOutcomeAborted {
+					outcome = UIMessageStreamOutcome{Status: UIMessageStreamOutcomeCompleted}
+				}
+			case StreamAbort:
+				if outcome.Status != UIMessageStreamOutcomeFailed {
+					outcome = UIMessageStreamOutcome{Status: UIMessageStreamOutcomeAborted}
+				}
+			case StreamError:
+				outcome = UIMessageStreamOutcome{Status: UIMessageStreamOutcomeFailed, Error: part.Error}
+			}
 			metadata := messageMetadataForPart(part, cfg)
 			chunks := translateToChunksWithMetadata(part, cfg, metadata)
 			if metadata != nil && !isStreamMessageMetadataCarrier(part) {
@@ -214,7 +227,8 @@ func (r *StreamTextResult) ToUIMessageStream(opts ...UIMessageStreamOption) <-ch
 			cfg.onFinish(UIMessageStreamOnFinishState{
 				Messages:        messages,
 				IsContinuation:  isContinuation,
-				IsAborted:       isAborted,
+				IsAborted:       isAborted || outcome.Status == UIMessageStreamOutcomeAborted,
+				Outcome:         outcome,
 				ResponseMessage: respMsg,
 				FinishReason:    finishReason,
 			})
@@ -329,7 +343,7 @@ func translateToChunksWithMetadata(part TextStreamPart, cfg uiMessageStreamConfi
 		}
 		return []UIMessageChunk{{Type: ChunkToolInputAvailable, ToolCallID: p.ToolCallID, ToolName: p.ToolName, Input: p.Input, ProviderExecuted: p.ProviderExecuted, Dynamic: p.Dynamic, Title: p.Title, ProviderMetadata: p.ProviderMetadata, ToolMetadata: toolMetadataFromProviderMetadata(p.ProviderMetadata)}}
 	case StreamToolApprovalRequest:
-		return []UIMessageChunk{{Type: ChunkToolApprovalRequest, ApprovalID: p.ApprovalID, ToolCallID: p.ToolCallID, IsAutomatic: p.IsAutomatic, Signature: p.Signature}}
+		return []UIMessageChunk{{Type: ChunkToolApprovalRequest, ApprovalID: p.ApprovalID, ToolCallID: p.ToolCallID, Reason: p.Reason, IsAutomatic: p.IsAutomatic, Signature: p.Signature}}
 	case StreamToolApprovalResponse:
 		approved := p.Approved
 		return []UIMessageChunk{{Type: ChunkToolApprovalResponse, ApprovalID: p.ApprovalID, Approved: approved, Reason: p.Reason, ProviderExecuted: p.ProviderExecuted, ProviderMetadata: p.ProviderMetadata}}
@@ -750,7 +764,7 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 		}
 
 		if !hasClientToolCalls || stopped || hasUnresolvedClientToolCalls || hasUnresolvedExternal || hasPendingApproval {
-			if cfg.output != nil && (cfg.parseOutputOnNonStop || step.FinishReason.Unified == provider.FinishReasonStop || (step.FinishReason.Unified == "" && step.Text != "")) {
+			if cfg.output != nil && (cfg.parseOutputOnNonStop || step.FinishReason.Unified == provider.FinishReasonStop || (step.FinishReason.Unified != provider.FinishReasonToolCalls && step.Text != "")) {
 				outputVal, outputErr := cfg.output.ParseComplete(step.Text)
 				r.mu.Lock()
 				r.outputValue = outputVal
@@ -765,6 +779,7 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 					StepResult: step,
 					Steps:      r.steps,
 					TotalUsage: r.totalUsage,
+					Output:     r.outputValue,
 				})
 			}
 
@@ -1179,6 +1194,7 @@ loop:
 				ToolCallID:       part.ToolCallID,
 				ToolName:         part.ToolName,
 				Signature:        part.Signature,
+				Reason:           part.Reason,
 				ProviderExecuted: true,
 				ProviderMetadata: part.ProviderMetadata,
 			}
@@ -1204,6 +1220,7 @@ loop:
 				ToolCallID:      req.ToolCallID,
 				ToolName:        req.ToolName,
 				Signature:       req.Signature,
+				Reason:          req.Reason,
 				IsAutomatic:     req.IsAutomatic,
 				ProviderOptions: providerMetadataToOptions(req.ProviderMetadata),
 			})
@@ -1601,7 +1618,7 @@ func (r *StreamTextResult) executeTools(
 			// execute normally below
 		case ToolApprovalUserApproval:
 			approvalID := generateConfigID(cfg)
-			req := newToolApprovalRequest(approvalID, tc, false)
+			req := newToolApprovalRequest(approvalID, tc, decision.Reason, false)
 			if err := maybeSignToolApproval(cfg.toolApprovalSecret, &req); err != nil {
 				return err
 			}
@@ -1610,7 +1627,7 @@ func (r *StreamTextResult) executeTools(
 			continue
 		case ToolApprovalApproved:
 			approvalID := generateConfigID(cfg)
-			req := newToolApprovalRequest(approvalID, tc, true)
+			req := newToolApprovalRequest(approvalID, tc, decision.Reason, true)
 			if err := maybeSignToolApproval(cfg.toolApprovalSecret, &req); err != nil {
 				return err
 			}
@@ -1621,7 +1638,7 @@ func (r *StreamTextResult) executeTools(
 			r.emitToolApprovalResponse(cfg, resp)
 		case ToolApprovalDenied:
 			approvalID := generateConfigID(cfg)
-			req := newToolApprovalRequest(approvalID, tc, true)
+			req := newToolApprovalRequest(approvalID, tc, decision.Reason, true)
 			if err := maybeSignToolApproval(cfg.toolApprovalSecret, &req); err != nil {
 				return err
 			}
@@ -1685,12 +1702,13 @@ func (r *StreamTextResult) executeTools(
 	return nil
 }
 
-func newToolApprovalRequest(approvalID string, tc ToolCall, isAutomatic bool) ToolApprovalRequest {
+func newToolApprovalRequest(approvalID string, tc ToolCall, reason string, isAutomatic bool) ToolApprovalRequest {
 	return ToolApprovalRequest{
 		ApprovalID:       approvalID,
 		ToolCallID:       tc.ToolCallID,
 		ToolName:         tc.ToolName,
 		Input:            tc.Input,
+		Reason:           reason,
 		ProviderExecuted: tc.ProviderExecuted,
 		Dynamic:          tc.Dynamic,
 		Title:            tc.Title,
@@ -2717,6 +2735,7 @@ func buildResponseContent(step StepResult) []provider.ContentPart {
 				ToolCallID:      ar.ToolCallID,
 				ToolName:        ar.ToolName,
 				Signature:       ar.Signature,
+				Reason:          ar.Reason,
 				IsAutomatic:     ar.IsAutomatic,
 				ProviderOptions: providerMetadataToOptions(ar.ProviderMetadata),
 			})
@@ -2834,6 +2853,7 @@ func buildResponseContent(step StepResult) []provider.ContentPart {
 				ToolCallID:      ar.ToolCallID,
 				ToolName:        ar.ToolName,
 				Signature:       ar.Signature,
+				Reason:          ar.Reason,
 				IsAutomatic:     ar.IsAutomatic,
 				ProviderOptions: providerMetadataToOptions(ar.ProviderMetadata),
 			})

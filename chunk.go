@@ -225,6 +225,7 @@ func (c UIMessageChunk) MarshalJSON() ([]byte, error) {
 	case ChunkToolApprovalRequest:
 		m["approvalId"] = c.ApprovalID
 		m["toolCallId"] = c.ToolCallID
+		setOpt(m, "reason", c.Reason)
 		setOptBool(m, "isAutomatic", c.IsAutomatic)
 		setOpt(m, "signature", c.Signature)
 

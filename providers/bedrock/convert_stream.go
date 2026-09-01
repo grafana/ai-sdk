@@ -552,16 +552,19 @@ func bedrockExceptionToAPIError(exceptionType string, body converseError, raw []
 	retryable := false
 	statusCode := 500
 	switch exceptionType {
-	case "throttlingException":
+	case "throttlingException", "ThrottlingException":
 		retryable = true
 		statusCode = 429
-	case "internalServerException", "modelStreamErrorException":
+	case "internalServerException", "InternalServerException":
 		retryable = true
 		statusCode = 500
-	case "serviceUnavailableException":
+	case "modelStreamErrorException", "ModelStreamErrorException":
+		retryable = true
+		statusCode = 424
+	case "serviceUnavailableException", "ServiceUnavailableException":
 		retryable = true
 		statusCode = 503
-	case "validationException":
+	case "validationException", "ValidationException":
 		retryable = false
 		statusCode = 400
 	default:
@@ -575,10 +578,17 @@ func bedrockExceptionToAPIError(exceptionType string, body converseError, raw []
 			msg = "bedrock stream exception"
 		}
 	}
+	var payload any
+	if json.Unmarshal(raw, &payload) != nil {
+		payload = body
+	}
+	data, _ := json.Marshal(map[string]any{exceptionType: payload})
 	return provider.NewAPICallError(provider.APICallErrorOptions{
 		Message:      msg,
+		Type:         exceptionType,
 		StatusCode:   statusCode,
 		ResponseBody: string(raw),
 		IsRetryable:  &retryable,
+		Data:         data,
 	})
 }

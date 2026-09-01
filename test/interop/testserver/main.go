@@ -244,8 +244,11 @@ func streamMidStreamError() *provider.StreamResult {
 			Type: provider.PartError,
 			APICallError: provider.NewAPICallError(provider.APICallErrorOptions{
 				Message:     "boom mid-stream",
+				Type:        "upstream_test_error",
+				Code:        "E_INTEROP",
 				StatusCode:  http.StatusInternalServerError,
 				IsRetryable: boolPtr(false),
+				Data:        json.RawMessage(`{"provider":"interop"}`),
 			}),
 		},
 		provider.StreamPart{Type: provider.PartTextDelta, ID: "t0", Delta: "continued after error"},

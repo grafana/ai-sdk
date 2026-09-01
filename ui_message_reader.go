@@ -292,7 +292,7 @@ func (s *uiMessageReaderState) apply(chunk UIMessageChunk) (bool, error) {
 		}
 		s.updateToolAt(idx, func(tp *toolPartFields) {
 			tp.State = ToolStateApprovalRequested
-			tp.Approval = &ToolApproval{ID: chunk.ApprovalID, IsAutomatic: chunk.IsAutomatic, Signature: chunk.Signature}
+			tp.Approval = &ToolApproval{ID: chunk.ApprovalID, RequestReason: chunk.Reason, IsAutomatic: chunk.IsAutomatic, Signature: chunk.Signature}
 		})
 		return true, nil
 
@@ -308,8 +308,10 @@ func (s *uiMessageReaderState) apply(chunk UIMessageChunk) (bool, error) {
 				Approved: &approved,
 				Reason:   chunk.Reason,
 			}
-			if tp.Approval != nil && tp.Approval.IsAutomatic {
-				approval.IsAutomatic = true
+			if tp.Approval != nil {
+				approval.RequestReason = tp.Approval.RequestReason
+				approval.IsAutomatic = tp.Approval.IsAutomatic
+				approval.Signature = tp.Approval.Signature
 			}
 			tp.State = ToolStateApprovalResponded
 			tp.Approval = approval

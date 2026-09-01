@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/grafana/ai-sdk/provider"
@@ -101,11 +102,16 @@ func (m *model) runStream(ctx context.Context, endpoint string, requestBody []by
 			continue
 		}
 		if hasError {
-			retryable := false
+			var details openAIErrorPayload
+			_ = json.Unmarshal(errorData, &details)
+			statusCode, retryable := openAICompatibleStreamErrorMetadata(errorData, details)
 			state.emitProviderError(provider.NewAPICallError(provider.APICallErrorOptions{
 				Message:           errorMessage,
+				Type:              details.Type,
+				Code:              details.Code,
 				URL:               endpoint,
 				RequestBodyValues: json.RawMessage(append([]byte(nil), requestBody...)),
+				StatusCode:        statusCode,
 				ResponseHeaders:   cloneHeaders(headers),
 				ResponseBody:      string(data),
 				IsRetryable:       &retryable,
@@ -170,6 +176,57 @@ func validateStreamChunk(chunk chatCompletionResponse) error {
 		}
 	}
 	return nil
+}
+
+func openAICompatibleStreamErrorMetadata(raw json.RawMessage, details openAIErrorPayload) (int, bool) {
+	var fields map[string]any
+	_ = json.Unmarshal(raw, &fields)
+	statusCode := firstHTTPStatus(fields["statusCode"], fields["status_code"], fields["status"], details.Code)
+	if statusCode == 0 {
+		switch strings.ToLower(strings.TrimSpace(details.Message)) {
+		case "overloaded", "overloaded error", "model overloaded":
+			statusCode = http.StatusServiceUnavailable
+		case "internal server error":
+			statusCode = http.StatusInternalServerError
+		case "service unavailable":
+			statusCode = http.StatusServiceUnavailable
+		}
+	}
+	if value, ok := fields["isRetryable"].(bool); ok {
+		return statusCode, value
+	}
+	if value, ok := fields["is_retryable"].(bool); ok {
+		return statusCode, value
+	}
+	return statusCode, statusCode == 408 || statusCode == 409 || statusCode == 429 || statusCode >= 500
+}
+
+func firstHTTPStatus(values ...any) int {
+	for _, value := range values {
+		var status int
+		switch value := value.(type) {
+		case float64:
+			status = int(value)
+			if float64(status) != value {
+				continue
+			}
+		case string:
+			if len(value) != 3 {
+				continue
+			}
+			parsed, err := strconv.Atoi(value)
+			if err != nil {
+				continue
+			}
+			status = parsed
+		default:
+			continue
+		}
+		if status >= 400 && status <= 599 {
+			return status
+		}
+	}
+	return 0
 }
 
 func streamError(data []byte) (json.RawMessage, string, bool, error) {

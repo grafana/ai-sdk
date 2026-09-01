@@ -207,13 +207,22 @@ func openAIStreamRawError(raw json.RawMessage, eventType string, requestBody res
 
 	requestJSON, _ := json.Marshal(requestBody)
 	url, headers := openAIResponseContext(response)
+	statusCode := openAIStreamErrorStatus(details["code"], details["type"])
+	retryable := statusCode == 408 || statusCode == 409 || statusCode == 429 || statusCode >= 500
+	if details["code"] == "insufficient_quota" || details["type"] == "insufficient_quota" {
+		retryable = false
+	}
+	errorType, _ := details["type"].(string)
 	return provider.NewAPICallError(provider.APICallErrorOptions{
 		Message:           message,
+		Type:              errorType,
+		Code:              details["code"],
 		URL:               url,
 		RequestBodyValues: requestJSON,
-		StatusCode:        openAIStreamErrorStatus(details["code"], details["type"]),
+		StatusCode:        statusCode,
 		ResponseHeaders:   headers,
 		ResponseBody:      string(raw),
+		IsRetryable:       &retryable,
 		Data:              append(json.RawMessage(nil), raw...),
 	})
 }

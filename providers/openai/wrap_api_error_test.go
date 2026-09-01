@@ -3,6 +3,7 @@ package openai
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
@@ -15,6 +16,30 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type openAIFailingBody struct{}
+
+func (openAIFailingBody) Read([]byte) (int, error) { return 0, io.ErrUnexpectedEOF }
+func (openAIFailingBody) Close() error             { return nil }
+
+func TestDoGenerate_ResponseBodyFailureIsRetryable(t *testing.T) {
+	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       openAIFailingBody{},
+			Request:    request,
+		}, nil
+	})}
+	model := NewResponses("test-key", "gpt-4o",
+		WithRequestOptions(option.WithBaseURL("https://api.test/v1"), option.WithHTTPClient(client), option.WithMaxRetries(0)),
+	)
+	_, err := model.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{provider.UserText("hi")}})
+	require.Error(t, err)
+	var apiErr *provider.APICallError
+	require.ErrorAs(t, err, &apiErr)
+	assert.True(t, apiErr.IsRetryable)
+}
 
 func TestDoGenerate_APIError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -81,7 +106,9 @@ func TestDoStream_NestedSSEErrorReturnsStructuredError(t *testing.T) {
 	var apiErr *provider.APICallError
 	require.True(t, errors.As(err, &apiErr))
 	assert.Equal(t, 429, apiErr.StatusCode)
-	assert.True(t, apiErr.IsRetryable)
+	assert.False(t, apiErr.IsRetryable)
+	assert.Equal(t, "insufficient_quota", apiErr.Type)
+	assert.Equal(t, "insufficient_quota", apiErr.Code)
 	assert.Contains(t, apiErr.URL, srv.URL)
 	assert.Equal(t, []string{"present"}, apiErr.ResponseHeaders["X-Test-Response"])
 	assert.JSONEq(t, `{"type":"error","error":{"message":"quota exhausted","type":"insufficient_quota","code":"insufficient_quota"}}`, string(apiErr.Data))
@@ -205,7 +232,7 @@ func (*fallbackSuccessModel) DoStream(context.Context, provider.CallOptions) (*p
 func TestDoStream_NestedSSEErrorAllowsFallback(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
-		_, _ = w.Write([]byte("data: {\"type\":\"error\",\"error\":{\"message\":\"quota exhausted\",\"type\":\"insufficient_quota\",\"code\":\"insufficient_quota\"}}\n\n"))
+		_, _ = w.Write([]byte("data: {\"type\":\"error\",\"error\":{\"message\":\"rate limited\",\"type\":\"rate_limit_error\",\"code\":\"rate_limit_error\"}}\n\n"))
 	}))
 	defer srv.Close()
 

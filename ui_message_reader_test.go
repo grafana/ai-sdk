@@ -392,10 +392,10 @@ func TestStreamUIMessage_RepeatedToolCallIDAcrossSteps(t *testing.T) {
 	assert.JSONEq(t, `{"itemId":"fc-step-2"}`, string(second.CallProviderMetadata["openai"]))
 }
 
-func TestStreamUIMessage_ToolApprovalResponseDropsRequestSignature(t *testing.T) {
+func TestStreamUIMessage_ToolApprovalResponsePreservesRequestMetadata(t *testing.T) {
 	messages := collectMessages(StreamUIMessage(chunks(
 		UIMessageChunk{Type: ChunkToolInputAvailable, ToolCallID: "c1", ToolName: "weather", Input: json.RawMessage(`{}`)},
-		UIMessageChunk{Type: ChunkToolApprovalRequest, ToolCallID: "c1", ApprovalID: "apr", Signature: "sig", IsAutomatic: true},
+		UIMessageChunk{Type: ChunkToolApprovalRequest, ToolCallID: "c1", ApprovalID: "apr", Reason: "policy requires review", Signature: "sig", IsAutomatic: true},
 		UIMessageChunk{Type: ChunkToolApprovalResponse, ApprovalID: "apr", Approved: true, Reason: "ok"},
 	)))
 
@@ -403,8 +403,9 @@ func TestStreamUIMessage_ToolApprovalResponseDropsRequestSignature(t *testing.T)
 	part := requireToolInvocationPart(t, messages[2], 0)
 	require.NotNil(t, part.Approval)
 	assert.Equal(t, "apr", part.Approval.ID)
+	assert.Equal(t, "policy requires review", part.Approval.RequestReason)
 	assert.True(t, part.Approval.IsAutomatic)
-	assert.Empty(t, part.Approval.Signature)
+	assert.Equal(t, "sig", part.Approval.Signature)
 	require.NotNil(t, part.Approval.Approved)
 	assert.True(t, *part.Approval.Approved)
 }

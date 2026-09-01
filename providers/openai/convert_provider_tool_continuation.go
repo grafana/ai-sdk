@@ -21,6 +21,7 @@ type inputConversionContext struct {
 	hasShellTool            bool
 	hasApplyPatchTool       bool
 	hasComputerTool         bool
+	toolSearchToolName      string
 	customProviderToolNames map[string]struct{}
 	outputSchemaToolNames   map[string]struct{}
 	processedApprovalIDs    map[string]struct{}
@@ -59,6 +60,8 @@ func newInputConversionContext(prompt []provider.Message, tools []provider.Tool,
 			ctx.hasApplyPatchTool = true
 		case toolIDComputer:
 			ctx.hasComputerTool = true
+		case toolIDToolSearch:
+			ctx.toolSearchToolName = tool.Name
 		case toolIDCustom:
 			ctx.customProviderToolNames[tool.Name] = struct{}{}
 		}
@@ -98,7 +101,7 @@ func convertAssistantToolCall(part provider.ContentPart, ctx inputConversionCont
 	}
 
 	toolName := ctx.toolNameMapping.toProviderToolName(part.ToolName)
-	if toolName == "tool_search" {
+	if part.ToolName == ctx.toolSearchToolName {
 		if ctx.store && po.ItemID != "" {
 			item := itemReference(po.ItemID)
 			return &item, nil
@@ -179,7 +182,7 @@ func convertAssistantToolResult(part provider.ContentPart, ctx inputConversionCo
 	}
 
 	toolName := ctx.toolNameMapping.toProviderToolName(part.ToolName)
-	if toolName == "tool_search" {
+	if part.ToolName == ctx.toolSearchToolName {
 		itemID := ctx.partOptions(part).ItemID
 		if itemID == "" {
 			itemID = part.ToolCallID
@@ -239,7 +242,7 @@ func convertProviderToolResult(part provider.ContentPart, ctx inputConversionCon
 	toolName := ctx.toolNameMapping.toProviderToolName(part.ToolName)
 
 	switch {
-	case toolName == "tool_search" && part.Output != nil && part.Output.Type == provider.ToolOutputJSON:
+	case part.ToolName == ctx.toolSearchToolName && part.Output != nil && part.Output.Type == provider.ToolOutputJSON:
 		item, err := toolSearchOutputItem(part.Output.JSON, "", "client", part.ToolCallID)
 		return item, nil, err
 	case ctx.hasComputerTool && toolName == "computer":

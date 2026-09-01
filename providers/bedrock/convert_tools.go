@@ -36,7 +36,7 @@ type preparedTools struct {
 // requires routing the `tool_choice` through `additionalModelRequestFields`
 // while still describing the tools in `toolConfig.tools` for validation.
 // Non-Anthropic provider tools are reported as unsupported.
-func prepareTools(tools []provider.Tool, toolChoice *provider.ToolChoice, modelID string) preparedTools {
+func prepareTools(tools []provider.Tool, toolChoice *provider.ToolChoice, modelID string, disableParallelToolUse bool) preparedTools {
 	res := preparedTools{
 		betas: map[string]struct{}{},
 	}
@@ -168,6 +168,24 @@ func prepareTools(tools []provider.Tool, toolChoice *provider.ToolChoice, modelI
 				tc.ToolChoice = &toolChoiceUnion{Tool: &toolChoiceSpecificTool{Name: toolChoice.ToolName}}
 			}
 		}
+	}
+
+	if isAnthropic && len(providerTools) == 0 && disableParallelToolUse && len(tc.Tools) > 0 && (toolChoice == nil || toolChoice.Type != provider.ToolChoiceNone) {
+		choice := map[string]any{"type": "auto", "disable_parallel_tool_use": true}
+		if toolChoice != nil {
+			switch toolChoice.Type {
+			case provider.ToolChoiceRequired:
+				choice["type"] = "any"
+			case provider.ToolChoiceTool:
+				choice["type"] = "tool"
+				choice["name"] = toolChoice.ToolName
+			}
+		}
+		if res.additionalTools == nil {
+			res.additionalTools = map[string]any{}
+		}
+		res.additionalTools["tool_choice"] = choice
+		tc.ToolChoice = nil
 	}
 
 	if len(tc.Tools) > 0 || tc.ToolChoice != nil {

@@ -250,6 +250,22 @@ func TestRunStream_JSONResponseToolCollapse(t *testing.T) {
 	assert.Equal(t, provider.FinishReasonStop, last.FinishReason.Unified)
 }
 
+func TestRunStream_AcceptsCitationDelta(t *testing.T) {
+	body := encodeFixtures(t,
+		`{"messageStart":{"role":"assistant"}}`,
+		`{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"citation":{"location":{"type":"page","start":1,"end":2}}}}}`,
+		`{"messageStop":{"stopReason":"end_turn"}}`,
+	)
+	parts := drainStream(t, body, requestMeta{})
+	assert.Empty(t, findParts(parts, provider.PartError))
+}
+
+func TestConverseUsage_PreservesUnknownRawFields(t *testing.T) {
+	var usage converseUsage
+	require.NoError(t, json.Unmarshal([]byte(`{"inputTokens":3,"outputTokens":2,"totalTokens":5,"cacheDetails":[{"inputTokens":1,"ttl":"5m","scope":"prompt"}],"futureUsage":{"tokens":7}}`), &usage))
+	assert.JSONEq(t, `{"inputTokens":3,"outputTokens":2,"totalTokens":5,"cacheDetails":[{"inputTokens":1,"ttl":"5m","scope":"prompt"}],"futureUsage":{"tokens":7}}`, string(usage.Raw))
+}
+
 func TestRunStream_FinishIncludesUnavailableUsage(t *testing.T) {
 	body := encodeFixtures(t,
 		`{"messageStart":{"role":"assistant"}}`,
@@ -323,6 +339,30 @@ func TestRunStream_ValidationExceptionNotRetryable(t *testing.T) {
 	require.Equal(t, provider.PartFinish, last.Type)
 	require.NotNil(t, last.FinishReason)
 	assert.Equal(t, provider.FinishReasonError, last.FinishReason.Unified)
+}
+
+func TestBedrockExceptionToAPIError_Metadata(t *testing.T) {
+	tests := []struct {
+		errorType string
+		status    int
+		retryable bool
+	}{
+		{"internalServerException", 500, true},
+		{"modelStreamErrorException", 424, true},
+		{"ModelStreamErrorException", 424, true},
+		{"serviceUnavailableException", 503, true},
+		{"throttlingException", 429, true},
+		{"validationException", 400, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.errorType, func(t *testing.T) {
+			err := bedrockExceptionToAPIError(tt.errorType, converseError{Message: "failed"}, []byte(`{"message":"failed","requestId":"req-1"}`))
+			assert.Equal(t, tt.errorType, err.Type)
+			assert.Equal(t, tt.status, err.StatusCode)
+			assert.Equal(t, tt.retryable, err.IsRetryable)
+			assert.JSONEq(t, `{"`+tt.errorType+`":{"message":"failed","requestId":"req-1"}}`, string(err.Data))
+		})
+	}
 }
 
 func TestRunStream_MidStreamTransportFailureEmitsRetryable(t *testing.T) {

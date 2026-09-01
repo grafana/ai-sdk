@@ -35,12 +35,17 @@ func (m *model) doGenerate(ctx context.Context, params provider.CallOptions) (*p
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		retryable := true
 		return nil, provider.NewAPICallError(provider.APICallErrorOptions{
 			Message:           fmt.Sprintf("openai: reading response body: %v", err),
 			URL:               endpoint,
 			RequestBodyValues: json.RawMessage(append([]byte(nil), bodyBytes...)),
 			StatusCode:        resp.StatusCode,
 			ResponseHeaders:   cloneHeaders(resp.Header),
+			IsRetryable:       &retryable,
 			Cause:             err,
 		})
 	}

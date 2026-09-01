@@ -6,7 +6,6 @@ import (
 	"net/http"
 
 	sdk "github.com/anthropics/anthropic-sdk-go"
-	"github.com/anthropics/anthropic-sdk-go/shared"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -31,17 +30,22 @@ func wrapAPIError(err error, url string, body any) error {
 		responseHeaders = apiErr.Response.Header
 	}
 
+	statusCode := apiErr.StatusCode
 	var isRetryable *bool
-	if apiErr.StatusCode == http.StatusOK && isRetryableAnthropicError(apiErr.Type()) {
-		retryable := true
-		isRetryable = &retryable
+	if statusCode == http.StatusOK {
+		inferredStatus, inferredRetryable := anthropicStreamErrorMetadata(string(apiErr.Type()))
+		if inferredStatus != 0 {
+			statusCode = inferredStatus
+			isRetryable = &inferredRetryable
+		}
 	}
 
 	wrapped := provider.NewAPICallError(provider.APICallErrorOptions{
 		Message:           apiErr.Error(),
+		Type:              string(apiErr.Type()),
 		URL:               url,
 		RequestBodyValues: requestBody,
-		StatusCode:        apiErr.StatusCode,
+		StatusCode:        statusCode,
 		ResponseHeaders:   responseHeaders,
 		ResponseBody:      apiErr.RawJSON(),
 		IsRetryable:       isRetryable,
@@ -64,10 +68,9 @@ func wrapInitialStreamError(err error, body any) error {
 		return callErr
 	}
 
-	callErr.StatusCode = 500
-	callErr.IsRetryable = isRetryableAnthropicError(anthropicErr.Type())
-	if anthropicErr.Type() == shared.ErrorTypeOverloadedError {
-		callErr.StatusCode = 529
+	callErr.StatusCode, callErr.IsRetryable = anthropicStreamErrorMetadata(string(anthropicErr.Type()))
+	if callErr.StatusCode == 0 {
+		callErr.StatusCode = http.StatusInternalServerError
 	}
 	if anthropicErr.Request != nil && anthropicErr.Request.URL != nil {
 		callErr.URL = anthropicErr.Request.URL.String()
@@ -88,8 +91,27 @@ func wrapInitialStreamError(err error, body any) error {
 	return callErr
 }
 
-func isRetryableAnthropicError(errorType shared.ErrorType) bool {
-	return errorType == shared.ErrorTypeAPIError || errorType == shared.ErrorTypeOverloadedError
+func anthropicStreamErrorMetadata(errorType string) (int, bool) {
+	switch errorType {
+	case "api_error":
+		return http.StatusInternalServerError, true
+	case "overloaded_error":
+		return 529, true
+	case "rate_limit_error":
+		return http.StatusTooManyRequests, true
+	case "request_too_large":
+		return http.StatusRequestEntityTooLarge, false
+	case "authentication_error":
+		return http.StatusUnauthorized, false
+	case "permission_error":
+		return http.StatusForbidden, false
+	case "not_found_error":
+		return http.StatusNotFound, false
+	case "billing_error", "invalid_request_error":
+		return http.StatusBadRequest, false
+	default:
+		return 0, false
+	}
 }
 
 // structuredErrorData returns the parsed structured error envelope as

@@ -49,6 +49,33 @@ func partTypes(parts []provider.StreamPart) []provider.StreamPartType {
 	return out
 }
 
+func TestStream_SchemaInvalidKnownEventsFinishWithError(t *testing.T) {
+	functionCall := `{"id":"fc_1","type":"function_call","name":"get_weather","call_id":"call_1","arguments":"{\"city\":\"Berlin\"}","status":"completed"}`
+	parts := collectParts(t,
+		`{"type":"response.created","response":{"id":"response_1","created_at":1,"model":"gpt-5.1"}}`,
+		`{"type":"response.output_item.added","item":{"id":"fc_1","type":"function_call","name":"get_weather","call_id":"call_1","arguments":"","status":"in_progress"}}`,
+		`{"type":"response.function_call_arguments.delta","item_id":"fc_1","delta":"{\"city\":\"Berlin\"}"}`,
+		`{"type":"response.function_call_arguments.done","item_id":"fc_1","arguments":"{\"city\":\"Berlin\"}"}`,
+		`{"type":"response.output_item.done","item":`+functionCall+`}`,
+		`{"type":"response.completed","response":{"incomplete_details":null,"output":[`+functionCall+`],"usage":{"input_tokens":1,"output_tokens":2}}}`,
+	)
+
+	var errors, toolCalls int
+	for _, part := range parts {
+		switch part.Type {
+		case provider.PartError:
+			errors++
+		case provider.PartToolCall:
+			toolCalls++
+		}
+	}
+	assert.Equal(t, 4, errors)
+	assert.Zero(t, toolCalls)
+	require.Equal(t, provider.PartFinish, parts[len(parts)-1].Type)
+	require.NotNil(t, parts[len(parts)-1].FinishReason)
+	assert.Equal(t, provider.FinishReasonError, parts[len(parts)-1].FinishReason.Unified)
+}
+
 func TestStream_TextLifecycle(t *testing.T) {
 	parts := collectParts(t,
 		`{"type":"response.created","sequence_number":0,"response":{"id":"resp_1","created_at":1,"model":"gpt-4o","object":"response","status":"in_progress","output":[]}}`,

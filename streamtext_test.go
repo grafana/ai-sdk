@@ -2365,20 +2365,26 @@ func TestStreamTextToolApproval_GenericPolicy(t *testing.T) {
 			assert.Equal(t, "dangerous", opts.ToolCall.ToolName)
 			assert.Contains(t, opts.Tools, "dangerous")
 			assert.NotEmpty(t, opts.Messages)
-			return ToolApprovalDecision{Status: ToolApprovalUserApproval}, nil
+			return ToolApprovalDecision{Status: ToolApprovalUserApproval, Reason: "policy requires review"}, nil
 		})),
 		WithTools(ToolSet{"dangerous": Tool{Execute: func(context.Context, json.RawMessage, ToolExecutionOptions) (json.RawMessage, error) {
 			return json.RawMessage(`{}`), nil
 		}}}),
 	)
-	for range result.FullStream() {
+	var streamedRequest StreamToolApprovalRequest
+	for part := range result.FullStream() {
+		if request, ok := part.(StreamToolApprovalRequest); ok {
+			streamedRequest = request
+		}
 	}
 
 	assert.True(t, called)
+	assert.Equal(t, "policy requires review", streamedRequest.Reason)
 	steps := result.Steps()
 	require.Len(t, steps, 1)
 	require.Len(t, steps[0].ToolApprovalRequests, 1)
 	assert.Equal(t, "apr_1", steps[0].ToolApprovalRequests[0].ApprovalID)
+	assert.Equal(t, "policy requires review", steps[0].ToolApprovalRequests[0].Reason)
 }
 
 func TestStreamTextToolApproval_WithToolApprovalLastCallWins(t *testing.T) {
@@ -2422,15 +2428,20 @@ func TestStreamTextToolApproval_AutomaticApprovedPolicy(t *testing.T) {
 			return json.RawMessage(`{"ok":true}`), nil
 		}}}),
 	)
-	var sawResponse bool
+	var sawRequest, sawResponse bool
 	for part := range result.FullStream() {
-		if p, ok := part.(StreamToolApprovalResponse); ok {
+		switch p := part.(type) {
+		case StreamToolApprovalRequest:
+			sawRequest = true
+			assert.Equal(t, "policy approved", p.Reason)
+		case StreamToolApprovalResponse:
 			sawResponse = true
 			assert.True(t, p.Approved)
 			assert.Equal(t, "policy approved", p.Reason)
 		}
 	}
 
+	assert.True(t, sawRequest)
 	assert.True(t, sawResponse)
 	assert.Equal(t, int32(1), executeCount.Load())
 	steps := result.Steps()
@@ -2438,6 +2449,7 @@ func TestStreamTextToolApproval_AutomaticApprovedPolicy(t *testing.T) {
 	require.Len(t, steps[0].ToolApprovalRequests, 1)
 	require.Len(t, steps[0].ToolApprovalResponses, 1)
 	assert.True(t, steps[0].ToolApprovalRequests[0].IsAutomatic)
+	assert.Equal(t, "policy approved", steps[0].ToolApprovalRequests[0].Reason)
 	assert.Len(t, steps[0].ToolResults, 1)
 }
 

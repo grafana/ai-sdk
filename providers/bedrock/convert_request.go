@@ -36,6 +36,10 @@ func buildRequest(modelID string, opts provider.CallOptions) (*converseInput, []
 		return nil, warnings, meta, err
 	}
 	bo.ReasoningConfig = resolveReasoningConfig(modelID, opts.Reasoning, bo.ReasoningConfig, &warnings)
+	anthropicOptions, err := readAnthropicProviderOptions(opts.ProviderOptions)
+	if err != nil {
+		return nil, warnings, meta, err
+	}
 
 	// Convert the prompt. We must know whether tools are active to decide
 	// whether to strip tool content. Pre-prepare tools first so we know.
@@ -54,7 +58,7 @@ func buildRequest(modelID string, opts provider.CallOptions) (*converseInput, []
 	}
 
 	// Tools.
-	pt := prepareTools(opts.Tools, opts.ToolChoice, modelID)
+	pt := prepareTools(opts.Tools, opts.ToolChoice, modelID, anthropicOptions.DisableParallelToolUse)
 	warnings = append(warnings, pt.warnings...)
 
 	// Whether extended thinking is enabled (Anthropic only). Used both for the
@@ -496,7 +500,11 @@ func applyNonAnthropicEffort(addFields map[string]any, modelID string, bo Bedroc
 	}
 	effort := bo.ReasoningConfig.MaxReasoningEffort
 	if isOpenAIModel(modelID) {
-		addFields["reasoning_effort"] = effort
+		if isOpenAIGPTOSSModel(modelID) {
+			addFields["reasoning_effort"] = effort
+		} else {
+			ensureMap(addFields, "reasoning")["effort"] = effort
+		}
 		return
 	}
 	// Default to Nova-style reasoningConfig nesting for other model families.

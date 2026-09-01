@@ -139,6 +139,7 @@ func ConvertToModelMessages(messages []UIMessage, opts ...ConvertOption) ([]prov
 						ApprovalID:  tp.Approval.ID,
 						ToolCallID:  tp.ToolCallID,
 						Signature:   tp.Approval.Signature,
+						Reason:      tp.Approval.RequestReason,
 						IsAutomatic: tp.Approval.IsAutomatic,
 					})
 				}

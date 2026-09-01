@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -14,6 +15,38 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type testRoundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f testRoundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return f(request)
+}
+
+type failingResponseBody struct{}
+
+func (failingResponseBody) Read([]byte) (int, error) { return 0, io.ErrUnexpectedEOF }
+func (failingResponseBody) Close() error             { return nil }
+
+func TestDoGenerateResponseBodyFailureIsRetryable(t *testing.T) {
+	client := &http.Client{Transport: testRoundTripFunc(func(request *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       failingResponseBody{},
+			Request:    request,
+		}, nil
+	})}
+	_, err := New("test-model", WithBaseURL("https://api.test/v1"), WithHTTPClient(client)).DoGenerate(
+		context.Background(),
+		provider.CallOptions{Prompt: []provider.Message{provider.UserText("hi")}},
+	)
+	require.Error(t, err)
+	var apiErr *provider.APICallError
+	require.ErrorAs(t, err, &apiErr)
+	assert.Equal(t, http.StatusOK, apiErr.StatusCode)
+	assert.True(t, apiErr.IsRetryable)
+	assert.Contains(t, apiErr.URL, "https://api.test/v1/chat/completions")
+}
 
 func TestDoGenerateSendsReasoningNone(t *testing.T) {
 	t.Parallel()
@@ -880,6 +913,26 @@ func TestConvertFileContent_EmptyInlineData(t *testing.T) {
 	}
 }
 
+func TestConvertAssistantMessage_NormalizesMalformedToolInput(t *testing.T) {
+	tests := []struct {
+		input json.RawMessage
+		want  string
+	}{
+		{input: json.RawMessage(`not-json`), want: "{}"},
+		{input: json.RawMessage(`null`), want: "null"},
+		{input: json.RawMessage(`[]`), want: "[]"},
+		{input: json.RawMessage(`"value"`), want: `"value"`},
+	}
+	for _, tt := range tests {
+		message, err := convertAssistantMessage([]provider.ContentPart{
+			provider.ToolCallPart("call-1", "weather", tt.input),
+		}, nil, "openaiCompatible")
+		require.NoError(t, err)
+		require.Len(t, message.ToolCalls, 1)
+		assert.Equal(t, tt.want, message.ToolCalls[0].Function.Arguments)
+	}
+}
+
 func TestDoGenerateStructuredOutputAndToolCallResponse(t *testing.T) {
 	t.Parallel()
 
@@ -1323,9 +1376,11 @@ func TestDoStreamStructuredError(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name        string
-		errorJSON   string
-		wantMessage string
+		name          string
+		errorJSON     string
+		wantMessage   string
+		wantStatus    int
+		wantRetryable bool
 	}{
 		{
 			name:        "custom error without message",
@@ -1336,6 +1391,13 @@ func TestDoStreamStructuredError(t *testing.T) {
 			name:        "OpenAI error preserves unknown fields",
 			errorJSON:   `{"message":"rate limited","type":"rate_limit","code":"slow_down","unknown":{"retryAfter":5}}`,
 			wantMessage: "openai: rate limited",
+		},
+		{
+			name:          "explicit numeric status is retryable",
+			errorJSON:     `{"message":"retry later","type":"provider_error","code":429}`,
+			wantMessage:   "openai: retry later",
+			wantStatus:    429,
+			wantRetryable: true,
 		},
 	}
 
@@ -1365,7 +1427,8 @@ func TestDoStreamStructuredError(t *testing.T) {
 			apiErr := errors[0].APICallError
 			require.Contains(t, apiErr.Message, tc.wantMessage)
 			require.Equal(t, server.URL+"/chat/completions", apiErr.URL)
-			require.False(t, apiErr.IsRetryable)
+			require.Equal(t, tc.wantStatus, apiErr.StatusCode)
+			require.Equal(t, tc.wantRetryable, apiErr.IsRetryable)
 			require.Equal(t, []string{"test"}, apiErr.ResponseHeaders["X-Provider"])
 			require.JSONEq(t, tc.errorJSON, string(apiErr.Data))
 			require.JSONEq(t, frame, apiErr.ResponseBody)

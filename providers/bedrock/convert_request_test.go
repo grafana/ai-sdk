@@ -1774,6 +1774,116 @@ func TestBuildRequest_NativeStructuredOutputWhenThinkingEnabled(t *testing.T) {
 	assert.Equal(t, "json_schema", fmtObj["type"])
 }
 
+func TestBuildRequest_GuardContent(t *testing.T) {
+	text := provider.TextPart("grounding context")
+	text.ProviderOptions = provider.BuildProviderOptions(TextPartOptions{
+		GuardContent:           true,
+		GuardContentQualifiers: []GuardContentQualifier{GuardContentGroundingSource, GuardContentQuery},
+	})
+	image := provider.FilePart("image/png", provider.Base64DataContent("aW1hZ2U="))
+	image.ProviderOptions = provider.BuildProviderOptions(ImagePartOptions{GuardContent: true})
+
+	req, warnings, _ := mustBuildRequest(t, testAnthropicModel, provider.CallOptions{
+		Prompt: []provider.Message{provider.NewUserMessage(text, image)},
+	})
+
+	assert.Empty(t, warnings)
+	require.Len(t, req.Messages, 1)
+	require.Len(t, req.Messages[0].Content, 2)
+	textGuard := req.Messages[0].Content[0].GuardContent
+	require.NotNil(t, textGuard)
+	require.NotNil(t, textGuard.Text)
+	assert.Equal(t, "grounding context", textGuard.Text.Text)
+	assert.Equal(t, []GuardContentQualifier{GuardContentGroundingSource, GuardContentQuery}, textGuard.Text.Qualifiers)
+	imageGuard := req.Messages[0].Content[1].GuardContent
+	require.NotNil(t, imageGuard)
+	require.NotNil(t, imageGuard.Image)
+	assert.Equal(t, "png", imageGuard.Image.Format)
+	assert.Equal(t, "aW1hZ2U=", imageGuard.Image.Source.Bytes)
+}
+
+func TestBuildRequest_OpenAIGPT5Effort(t *testing.T) {
+	reasoning := provider.ReasoningHigh
+	req, warnings, _ := mustBuildRequest(t, "us.openai.gpt-5.2", provider.CallOptions{
+		Prompt:    []provider.Message{provider.UserText("x")},
+		Reasoning: &reasoning,
+	})
+
+	assert.Empty(t, warnings)
+	assert.NotContains(t, req.AdditionalModelRequestFields, "reasoning_effort")
+	reasoningConfig, ok := req.AdditionalModelRequestFields["reasoning"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "high", reasoningConfig["effort"])
+}
+
+func TestBuildRequest_DisableParallelToolUse(t *testing.T) {
+	providerOptions := provider.ProviderOptions{
+		"anthropic": provider.RawProviderOption{Raw: json.RawMessage(`{"disableParallelToolUse":true}`)},
+	}
+	tests := []struct {
+		name       string
+		choice     *provider.ToolChoice
+		wantChoice map[string]any
+	}{
+		{name: "default", wantChoice: map[string]any{"type": "auto", "disable_parallel_tool_use": true}},
+		{name: "auto", choice: &provider.ToolChoice{Type: provider.ToolChoiceAuto}, wantChoice: map[string]any{"type": "auto", "disable_parallel_tool_use": true}},
+		{name: "required", choice: &provider.ToolChoice{Type: provider.ToolChoiceRequired}, wantChoice: map[string]any{"type": "any", "disable_parallel_tool_use": true}},
+		{name: "named", choice: &provider.ToolChoice{Type: provider.ToolChoiceTool, ToolName: "weather"}, wantChoice: map[string]any{"type": "tool", "name": "weather", "disable_parallel_tool_use": true}},
+		{name: "none", choice: &provider.ToolChoice{Type: provider.ToolChoiceNone}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req, warnings, _ := mustBuildRequest(t, testAnthropicModel, provider.CallOptions{
+				Prompt:          []provider.Message{provider.UserText("x")},
+				ProviderOptions: providerOptions,
+				Tools: []provider.Tool{{
+					Type:        provider.ToolTypeFunction,
+					Name:        "weather",
+					InputSchema: json.RawMessage(`{"type":"object"}`),
+				}},
+				ToolChoice: tt.choice,
+			})
+
+			assert.Empty(t, warnings)
+			if tt.wantChoice == nil {
+				assert.NotContains(t, req.AdditionalModelRequestFields, "tool_choice")
+				assert.Nil(t, req.ToolConfig)
+				return
+			}
+			require.NotNil(t, req.ToolConfig)
+			assert.Nil(t, req.ToolConfig.ToolChoice)
+			assert.Equal(t, tt.wantChoice, req.AdditionalModelRequestFields["tool_choice"])
+		})
+	}
+
+	t.Run("provider-defined Anthropic tools keep their own choice", func(t *testing.T) {
+		req, warnings, _ := mustBuildRequest(t, testAnthropicModel, provider.CallOptions{
+			Prompt:          []provider.Message{provider.UserText("x")},
+			ProviderOptions: providerOptions,
+			Tools: []provider.Tool{{
+				Type: provider.ToolTypeProvider,
+				ID:   "anthropic.code_execution_20250825",
+				Name: "code_execution",
+			}},
+			ToolChoice: &provider.ToolChoice{Type: provider.ToolChoiceRequired},
+		})
+		assert.Empty(t, warnings)
+		assert.Equal(t, map[string]any{"type": "any"}, req.AdditionalModelRequestFields["tool_choice"])
+	})
+}
+
+func TestBuildRequest_OmitsCachePointOnlyAssistantMessage(t *testing.T) {
+	message := provider.NewAssistantMessage(provider.ReasoningPart("unsigned reasoning"))
+	message.ProviderOptions = provider.BuildProviderOptions(BedrockOptions{CachePoint: &CachePoint{Type: "default"}})
+	req, warnings, _ := mustBuildRequest(t, testAnthropicModel, provider.CallOptions{
+		Prompt: []provider.Message{provider.UserText("x"), message},
+	})
+
+	assert.Empty(t, warnings)
+	require.Len(t, req.Messages, 1)
+	assert.Equal(t, "user", req.Messages[0].Role)
+}
+
 func TestBuildRequest_MalformedProviderOptionIsError(t *testing.T) {
 	// A RawProviderOption with invalid JSON under the amazonBedrock key must
 	// surface as a hard error rather than being silently ignored.

@@ -180,6 +180,32 @@ type CachePoint struct {
 	TTL string `json:"ttl,omitempty"`
 }
 
+// GuardContentQualifier identifies a Bedrock guardrail text qualifier.
+type GuardContentQualifier string
+
+const (
+	GuardContentGroundingSource GuardContentQualifier = "grounding_source"
+	GuardContentQuery           GuardContentQualifier = "query"
+	GuardContentGuardContent    GuardContentQualifier = "guard_content"
+)
+
+// TextPartOptions carries per-text-part Bedrock guardrail configuration.
+type TextPartOptions struct {
+	GuardContent           bool                    `json:"guardContent,omitempty"`
+	GuardContentQualifiers []GuardContentQualifier `json:"guardContentQualifiers,omitempty"`
+}
+
+// ProviderKey returns the per-part Bedrock option namespace.
+func (TextPartOptions) ProviderKey() string { return "amazonBedrock" }
+
+// ImagePartOptions carries per-image-part Bedrock guardrail configuration.
+type ImagePartOptions struct {
+	GuardContent bool `json:"guardContent,omitempty"`
+}
+
+// ProviderKey returns the per-part Bedrock option namespace.
+func (ImagePartOptions) ProviderKey() string { return "amazonBedrock" }
+
 // FilePartOptions carries per-file-part Bedrock configuration from
 // `ContentPart.ProviderOptions["amazonBedrock"]`. Mirrors upstream
 // amazonBedrockFilePartProviderOptions, which only exposes citations at the

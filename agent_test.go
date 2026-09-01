@@ -484,6 +484,49 @@ func TestAgentUIStreamHelpers(t *testing.T) {
 		assert.Nil(t, stream)
 	})
 
+	t.Run("stale persisted tool input is rejected", func(t *testing.T) {
+		model := &mockModel{streamFunc: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+			t.Fatal("provider should not be called")
+			return nil, nil
+		}}
+		agent := NewToolLoopAgent(model, WithToolLoopAgentOptions(WithTools(ToolSet{"search": {
+			ValidateInput: func(input json.RawMessage) error {
+				if string(input) != `{"query":"current"}` {
+					return fmt.Errorf("stale input")
+				}
+				return nil
+			},
+		}})))
+		messages := []UIMessage{{ID: "m1", Role: RoleAssistant, Parts: []Part{ToolInvocationPart{
+			ToolCallID: "call-1", ToolName: "search", State: ToolStateApprovalRequested,
+			Input: json.RawMessage(`{"query":"old"}`), Approval: &ToolApproval{ID: "approval-1"},
+		}}}}
+
+		stream, err := CreateAgentUIStream(context.Background(), agent, messages, nil)
+		require.Error(t, err)
+		assert.Nil(t, stream)
+		assert.Zero(t, model.callCount)
+	})
+
+	t.Run("missing terminal tool is normalized to dynamic", func(t *testing.T) {
+		messages := []UIMessage{{ID: "m1", Role: RoleAssistant, Parts: []Part{ToolInvocationPart{
+			ToolCallID: "call-1", ToolName: "disconnected", State: ToolStateOutputDenied,
+			Input: json.RawMessage(`{"query":"old"}`),
+		}}}}
+		require.NoError(t, validateAgentUIMessages(messages, nil))
+		require.IsType(t, DynamicToolUIPart{}, messages[0].Parts[0])
+	})
+
+	t.Run("invalid output-error input is normalized to dynamic", func(t *testing.T) {
+		messages := []UIMessage{{ID: "m1", Role: RoleAssistant, Parts: []Part{ToolInvocationPart{
+			ToolCallID: "call-1", ToolName: "search", State: ToolStateOutputError,
+			Input: json.RawMessage(`{"query":"old"}`), ErrorText: "failed",
+		}}}}
+		tools := ToolSet{"search": {ValidateInput: func(json.RawMessage) error { return fmt.Errorf("stale input") }}}
+		require.NoError(t, validateAgentUIMessages(messages, tools))
+		require.IsType(t, DynamicToolUIPart{}, messages[0].Parts[0])
+	})
+
 	t.Run("provider executed static tool invocation is accepted without agent tool", func(t *testing.T) {
 		model := &mockModel{streamFunc: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
 			return &provider.StreamResult{Stream: textStreamParts("ok")}, nil
@@ -493,6 +536,7 @@ func TestAgentUIStreamHelpers(t *testing.T) {
 		stream, err := CreateAgentUIStream(context.Background(), agent, messages, nil)
 		require.NoError(t, err)
 		assert.NotEmpty(t, collectUIChunks(stream))
+		require.IsType(t, DynamicToolUIPart{}, messages[0].Parts[0])
 	})
 
 	t.Run("single persisted final tool invocation is accepted", func(t *testing.T) {

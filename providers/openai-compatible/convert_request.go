@@ -390,11 +390,8 @@ func convertAssistantMessage(parts []provider.ContentPart, messageOptions provid
 			reasoning.WriteString(part.Text)
 		case provider.ContentPartTypeToolCall:
 			input := strings.TrimSpace(string(part.Input))
-			if input == "" {
+			if input == "" || !json.Valid([]byte(input)) {
 				input = "{}"
-			}
-			if !json.Valid([]byte(input)) {
-				return chatMessage{}, fmt.Errorf("openai: tool call %q input is not valid JSON", part.ToolCallID)
 			}
 			toolCall := chatToolCall{
 				ID:   part.ToolCallID,
