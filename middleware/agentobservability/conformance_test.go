@@ -177,7 +177,9 @@ func TestConformance_Hooks(t *testing.T) {
 					// Allow without transform: prompt is unchanged.
 					got = originalPrompt
 				} else {
-					got = applyTransformedInput(originalPrompt, *hookResp.TransformedInput)
+					var err error
+					got, err = applyTransformedInput(originalPrompt, *hookResp.TransformedInput)
+					require.NoError(t, err)
 				}
 				if regenerateConformanceFixtures {
 					writeJSONFile(t, filepath.Join(dir, "expected_prompt.json"), got)

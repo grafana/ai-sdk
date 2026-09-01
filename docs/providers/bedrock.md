@@ -50,6 +50,31 @@ For deployments configured for Bedrock bearer-token authentication, use
 `WithBearerToken`. Do not combine application credentials and user-controlled
 model IDs without an authorization boundary.
 
+### Bedrock Mantle signing
+
+Bedrock Mantle is a separate AWS service reachable at
+`bedrock-mantle.<region>.api.aws`. Its SigV4 signatures must be scoped to the
+`bedrock-mantle` service name rather than `bedrock`; signing with the wrong
+service name fails authentication. When `WithBaseURL` targets a Mantle host,
+the provider infers the `bedrock-mantle` signing service automatically:
+
+```go
+model := bedrock.New(modelID,
+	bedrock.WithRegion("us-east-1"),
+	bedrock.WithBaseURL("https://bedrock-mantle.us-east-1.api.aws"),
+	bedrock.WithCredentials(awsConfig.Credentials),
+)
+```
+
+When the host does not encode the service -- for example, when reaching Mantle
+through a proxy or VPC endpoint -- set the signing service explicitly with
+`WithSigningService("bedrock-mantle")`. Bearer-token authentication is
+unaffected by the signing service.
+
+This package signs requests for Mantle but still emits Converse-shaped request
+bodies. Routing to Mantle's OpenAI-compatible and Anthropic Messages API
+surfaces is not yet implemented.
+
 ## Account for model-family differences
 
 The provider translates common AI SDK messages and tools into Converse requests,

@@ -62,8 +62,9 @@ Context helpers:
 - `ParentGenerationIDsFromContext(ctx context.Context) []string`.
 - `WithLinkedGenerationID(ctx context.Context, id string) context.Context`.
 
-Sentinel error:
+Sentinel errors:
 - `ErrHookDenied error`.
+- `ErrHookTransformFailed error`.
 
 #### Scenario: HookDenialError unwraps to sentinel
 
@@ -127,7 +128,7 @@ If `opts.ClientResolver` is itself `nil`, the middleware SHALL behave as if ever
 
 `RecordingMiddleware` SHALL call `opts.ContextProvider(ctx)` once per request and use the returned `ContextInfo` to populate:
 - `agento11y.GenerationStart.UserID` (falls back to `agento11y.UserIDFromContext(ctx)` when `ContextInfo.UserID` is empty).
-- `agento11y.GenerationStart.Metadata` (merged on top of metadata derived from `ProviderOptions` and `params`).
+- `agento11y.GenerationStart.Metadata` (used as caller metadata; reserved derivations from `ProviderOptions`, `params`, and usage override conflicting keys in the final generation).
 - `agento11y.GenerationStart.Tags` (merged on top of any tags carried via context).
 - `agento11y.GenerationStart.AgentName` / `AgentVersion` (override `agento11y.AgentNameFromContext` / `agento11y.AgentVersionFromContext` when set).
 
@@ -149,14 +150,15 @@ If `opts.ContextProvider` is `nil`, the middleware SHALL log a warning at most o
 ### Requirement: MapGenerateResult produces agento11y.Generation
 
 `MapGenerateResult(params, result, ctxInfo)` SHALL produce an `agento11y.Generation` whose:
-- `Input.Messages` is derived from `params.Prompt`, with `provider.Message{Role: RoleSystem}` entries folded into `Generation.SystemPrompt` (single concatenated string) rather than appearing as an agento11y.Message.
+- `Input.Messages` is derived from `params.Prompt`, with `provider.Message{Role: RoleSystem}` entries folded into `Generation.SystemPrompt` (single concatenated string) rather than appearing as an agento11y.Message. Empty reasoning parts SHALL be omitted.
 - `Input.Tools` is derived from `params.Tools`. Function tools map directly; provider-defined tools (e.g. Anthropic `web_search`, `code_execution`) MAY map with their type preserved so Agent Observability can annotate them.
 - `Input.MaxTokens`, `Temperature`, `TopP`, `ToolChoice` are derived from the corresponding `provider.CallOptions` fields.
 - Anthropic thinking-budget metadata (`agento11y.gen_ai.request.thinking.budget_tokens`) is derived from `params.ProviderOptions["anthropic"]` via `json.RawMessage` decoding, not by importing `providers/anthropic`.
-- `Output` is a single assistant `agento11y.Message` whose parts mirror supported `result.Content` entries (text, tool-call, reasoning, file, and reasoning-file parts).
+- `Output` contains an assistant `agento11y.Message` for supported model content and additional tool-role messages for tool-result entries. Empty reasoning parts SHALL be omitted.
 - `Usage` maps from `result.Usage` (input tokens, output tokens, cache hits where applicable).
 - `StopReason` is produced by `finishReasonToAgento11yStop(result.FinishReason)` and SHALL match the string values the legacy `internal/llm/claude/` path emitted (e.g. `"end_turn"`, `"max_tokens"`, `"tool_use"`, `"stop_sequence"`).
-- `Metadata` is a merge of `ctxInfo.Metadata` and `map_provider_options.go` derivations.
+- `Metadata` starts with caller metadata, then applies reserved request and usage derivations. Derived Anthropic thinking-budget and positive server-tool request counts SHALL override conflicting caller values, matching the pinned agento11y Anthropic helper.
+- Provider tool calls and results SHALL retain recoverable Anthropic discriminators, including MCP metadata and configured provider-tool aliases for web search, web fetch, code execution, and tool search. Irrecoverable provider subtypes MAY use the generic discriminator.
 - `Tags` is a merge of `ctxInfo.Tags` and any tags from context.
 
 #### Scenario: System message folds into SystemPrompt
@@ -177,6 +179,11 @@ If `opts.ContextProvider` is `nil`, the middleware SHALL log a warning at most o
 
 - **WHEN** `params.ProviderOptions["anthropic"]` carries a JSON object containing a `thinking` field with a positive `budget_tokens` value
 - **THEN** the resulting `Generation.Metadata["agento11y.gen_ai.request.thinking.budget_tokens"]` SHALL equal that integer
+
+#### Scenario: Anthropic server-tool usage is recorded
+
+- **WHEN** `result.Usage.Raw` contains positive `server_tool_use.web_search_requests` or `web_fetch_requests`
+- **THEN** generation metadata SHALL contain the corresponding Agent Observability usage keys and their sum as `total_requests`
 
 #### Scenario: Byte-equal output to agento11y anthropic helper
 
@@ -227,13 +234,14 @@ Hook preflight evaluation SHALL exclude `file` and `reasoning-file` media so rec
 
 `StreamRecorder` SHALL accumulate `agento11y.Generation.Output` from a sequence of `provider.StreamPart` values observed via `Observe`. It SHALL:
 - Append `PartTextDelta` payloads into the active assistant text part.
-- Append `PartReasoningDelta` payloads into the active assistant reasoning part. The recorder SHALL internally retain any `ProviderMetadata["anthropic"].signature` value observed on the delta (deduplicating identical values) so consumers that hold a reference to the source `provider.Message` can round-trip the signature on subsequent turns. Because `agento11y.Part` has no field for signatures today, the value is NOT serialized into `Generation.Output`; reasoning signatures live exclusively on the corresponding `provider.Message` in `params.Prompt` (see "Hooks transform preserves reasoning signatures" for the round-trip path).
-- Append `PartToolCallDelta` payloads into the active assistant tool-call part.
+- Append non-empty `PartReasoningDelta` payloads into the active assistant reasoning part. Signature-only reasoning blocks with no visible text SHALL NOT produce an Agent Observability thinking part.
+- Append `PartToolInputDelta` payloads into the active assistant tool-call part.
 - Map supported `PartFile` and `PartReasoningFile` events to media parts.
-- Record the first observed payload-bearing part's timestamp via `FirstChunkAt()`; supported file events SHALL be payload-bearing.
+- Record the first semantic model-output timestamp via `FirstChunkAt()`. Non-empty text, reasoning, and tool-input deltas, tool calls, and supported file events SHALL be payload-bearing; finish, error, tool-result, metadata, and empty-delta events SHALL NOT establish time to first token.
+- Coalesce preliminary tool-result updates by exact tool-call ID and tool name and include only completed tool results in the final generation output. Distinct completed results SHALL remain distinct even when an ID is reused.
 - Capture `FinishReason` from `PartFinish` and observe `Usage` from every usage-bearing stream part using the shared streaming aggregation behavior.
 
-`Generation()` SHALL return an `agento11y.Generation` whose `Output` is a single assistant message constructed from the accumulated state. Assistant text, reasoning, tool-call, and media parts SHALL retain the order in which their first provider events were observed.
+`Generation()` SHALL return an `agento11y.Generation` whose `Output` contains an assistant message for accumulated model parts plus tool-role messages for completed tool results. Assistant text, reasoning, tool-call, and media parts SHALL retain the order in which their first provider events were observed.
 
 #### Scenario: Stream usage preserves strongest values
 
@@ -249,13 +257,11 @@ Hook preflight evaluation SHALL exclude `file` and `reasoning-file` media so rec
 - **AND** `StreamRecorder.Generation()` is called at end-of-stream
 - **THEN** the resulting reasoning part in `Generation.Output` SHALL contain the concatenated reasoning text `"I think so"`
 
-#### Scenario: Reasoning signature is preserved off-band
+#### Scenario: Signature-only reasoning is omitted
 
-- **GIVEN** a stream that emits `PartReasoningDelta` events carrying `ProviderMetadata["anthropic"].signature = "sig-abc"`
-- **WHEN** `StreamRecorder.Observe` is called for each
-- **AND** `StreamRecorder.Generation()` is called at end-of-stream
-- **THEN** the resulting reasoning part in `Generation.Output` MAY omit the signature (the current `agento11y.Part` schema has no signature field)
-- **AND** the original signature SHALL remain available on the corresponding `provider.Message` in `params.Prompt`, where `HooksMiddleware.applyTransformedInput` matches by text content to preserve it across hook transforms
+- **GIVEN** a stream emits a reasoning block containing an Anthropic signature but no reasoning text
+- **WHEN** `StreamRecorder.Generation()` is called
+- **THEN** `Generation.Output` SHALL NOT contain an empty thinking part
 
 #### Scenario: Text deltas concatenate
 
@@ -265,7 +271,7 @@ Hook preflight evaluation SHALL exclude `file` and `reasoning-file` media so rec
 
 #### Scenario: Tool-call deltas accumulate by tool-call ID
 
-- **GIVEN** a stream emits multiple `PartToolCallDelta` events for the same tool-call ID with incremental JSON argument fragments
+- **GIVEN** a stream emits multiple `PartToolInputDelta` events for the same tool-call ID with incremental JSON argument fragments
 - **WHEN** the recorder is observed
 - **THEN** the resulting tool-call part SHALL have the concatenated argument JSON
 
@@ -278,7 +284,7 @@ Hook preflight evaluation SHALL exclude `file` and `reasoning-file` media so rec
 
 ### Requirement: Recording uses response model identity when available
 
-Agent Observability recording SHALL use backend response metadata as the canonical generation model identity when a successful provider response supplies both provider and model ID. When response metadata omits either provider or model ID, recording SHALL preserve the model identity from `GenerationStart`.
+Agent Observability recording SHALL use backend response metadata as the canonical generation model identity when a successful provider response supplies both provider and model ID. When response metadata omits either provider or model ID, recording SHALL preserve the model identity from `GenerationStart`. Generate and stream `ResponseModel` SHALL default to the requested model and SHALL be overridden by a non-empty response model.
 
 #### Scenario: Generate response overrides transport model identity
 
@@ -341,20 +347,20 @@ When response metadata changes the canonical generation model identity from the 
 3. Call `client.StartGeneration` (for `WrapGenerate`) or `client.StartStreamingGeneration` (for `WrapStream`).
 4. Invoke the inner model.
 5. On success:
-   - For generate: call `recorder.SetResult(MapGenerateResult(params, result, ctxInfo))`.
+   - For generate: map the result with the original `GenerationStart` so requested-model fallback is available, then call `recorder.SetResult`.
    - For stream: tee the result stream channel, feed each part to a `StreamRecorder`, and at end-of-stream call `recorder.SetResult(streamRecorder.Generation())`.
 6. On an error returned before a stream opens: call `recorder.SetCallError(err)`. When a stream emits `PartError`, call `recorder.SetCallError(err)` and also call `recorder.SetResult` with the partial generation, including aggregated usage observed before or on the error part.
 
 `RecordingMiddleware` SHALL NOT modify `params` and SHALL NOT modify the result.
 
-For streams, the recording goroutine SHALL select on `ctx.Done()` to avoid blocking on consumer disconnect, and SHALL drain the upstream channel after consumer abandonment to avoid leaking the producer goroutine.
+For streams, the recording goroutine SHALL select on `ctx.Done()` to avoid blocking on consumer disconnect. Cancellation before observed upstream completion SHALL be recorded as the call error and SHALL take precedence over an earlier `PartError`. The middleware SHALL NOT start an unbounded detached drain when the provider ignores cancellation; provider stream producers are responsible for honoring the call context.
 
 #### Scenario: Generate path records on success
 
 - **GIVEN** a `RecordingMiddleware` with a non-nil `ClientResolver`
 - **WHEN** the inner model's `DoGenerate` returns a non-nil result and `nil` error
 - **THEN** the middleware SHALL call `StartGeneration` once
-- **AND** SHALL call `recorder.SetResult` once with `MapGenerateResult(params, result, ctxInfo)`
+- **AND** SHALL call `recorder.SetResult` once with the generation mapped from `params`, `result`, `ctxInfo`, and the original `GenerationStart`
 - **AND** SHALL NOT call `recorder.SetCallError`
 
 #### Scenario: Generate path records on error
@@ -379,11 +385,12 @@ For streams, the recording goroutine SHALL select on `ctx.Done()` to avoid block
 - **AND** the consumer SHALL receive exactly the same N parts in the same order
 - **AND** `recorder.SetResult` SHALL be called once after the upstream channel closes
 
-#### Scenario: Stream goroutine cleans up on consumer disconnect
+#### Scenario: Stream cancellation records an error and cleans up
 
-- **WHEN** the consumer abandons the result stream by cancelling its context before the upstream completes
+- **WHEN** the consumer cancels its context before the upstream completes
 - **THEN** the recording goroutine SHALL NOT block indefinitely
-- **AND** the upstream channel SHALL be drained so the producer can return
+- **AND** the generation SHALL record the context cancellation as its call error
+- **AND** the middleware SHALL NOT start a detached goroutine that waits indefinitely for the upstream channel to close
 
 ### Requirement: HooksMiddleware enforces preflight policy
 
@@ -395,7 +402,7 @@ For streams, the recording goroutine SHALL select on `ctx.Done()` to avoid block
 5. Branch on the response:
    - **Deny**: return `&HookDenialError{Reason, RuleID, Cause: nil}` to the caller. The inner model SHALL NOT be invoked.
    - **Allow**: invoke the inner model with `params` unchanged.
-   - **TransformedInput**: rebuild `params.Prompt` from the transformed messages (preserving reasoning-block signatures — see "Hooks transform preserves reasoning signatures" below), then invoke the inner model with the new params.
+   - **TransformedInput**: treat the transformed input as an authoritative replacement, rebuild `params.Prompt` and the retained subset of `params.Tools`, and invoke the inner model with the new params. If any returned content cannot be reconstructed without loss or reintroducing omitted content, return `ErrHookTransformFailed` without invoking the model.
 
 #### Scenario: Allow path passes through
 
@@ -421,50 +428,57 @@ For streams, the recording goroutine SHALL select on `ctx.Done()` to avoid block
 - **THEN** the hook call SHALL be cancelled via context deadline
 - **AND** the original request context SHALL NOT be cancelled (only the derived hook-bounded context)
 
-### Requirement: Hooks transform preserves reasoning signatures and system context
+### Requirement: Hook transforms are authoritative and lossless
 
-When `EvaluateHook` returns a `TransformedInput`, `HooksMiddleware` SHALL rebuild `params.Prompt` from the transformed messages using the following algorithm:
+When `EvaluateHook` returns a non-nil `TransformedInput`, `HooksMiddleware` SHALL treat it as an authoritative replacement rather than a partial patch:
 
-1. **System messages**: if `transformed.SystemPrompt` is non-empty, the resulting prompt SHALL begin with a single `provider.Message{Role: RoleSystem}` carrying that text and SHALL NOT carry any original system messages forward. If `transformed.SystemPrompt` is empty (the zero value), the resulting prompt SHALL preserve every original system-role message from `params.Prompt` in their original order. The empty case is treated as "the hook did not touch the system context" because `messagesToAgento11y` produces an empty `SystemPrompt` both when the original prompt has no system messages AND when the hook didn't return one — the two cases are indistinguishable on the underlying SDK wire.
-2. **Reasoning preservation**: build a content-matching index over assistant-role messages in the **original** `params.Prompt` that contain reasoning parts.
-3. For each transformed non-system message:
-   - If role is assistant AND the same concatenated text appears in the index AND has not yet been consumed, use the original message verbatim (preserves `ProviderOptions["anthropic"].signature`).
-   - Otherwise, rebuild the message from the transformed `agento11y` parts.
-4. Non-assistant messages (user, tool) are rebuilt from the transformed parts directly.
+1. A non-empty `SystemPrompt` SHALL become one system message. An empty `SystemPrompt` SHALL carry no original system message forward.
+2. Every transformed message SHALL be rebuilt in returned order. Unknown roles, unsupported part kinds, empty payload parts, and malformed tool payloads SHALL fail with `ErrHookTransformFailed`.
+3. Omitted assistant parts SHALL remain omitted. The middleware SHALL NOT restore an entire original assistant message based only on visible text.
+4. An unchanged reasoning part MAY reuse the exact original part to preserve its provider signature. Matching SHALL use an unambiguous unused reasoning part with identical reasoning text; changed or ambiguous signed reasoning SHALL fail closed.
+5. Unchanged provider-executed tool calls and provider-specific tool results SHALL retain their provider fields only after an exact ID, name, and payload match. A provider-specific part that cannot be matched exactly SHALL fail closed.
+6. Because hook evaluation intentionally excludes media, message-level provider options, text-part provider options, empty reasoning metadata, and other unsupported content, a transform of a prompt containing undisclosed content SHALL fail closed rather than silently dropping or restoring it.
+7. Returned tools SHALL be matched exactly to disclosed original tool definitions. Exact retained tools MAY be preserved or reordered and omitted tools SHALL be removed; new or modified tools that cannot be reconstructed losslessly SHALL fail closed. Removing tools SHALL also fail closed when it leaves a required or specifically named `ToolChoice` unsatisfied.
+8. An empty transform SHALL fail closed. A system-only replacement is valid.
 
-The resulting prompt is the concatenation of (system messages from step 1) + (rebuilt non-system messages from steps 2-4) in that order.
+#### Scenario: Empty transform fails closed
 
-This preserves `ProviderOptions["anthropic"].signature` values on reasoning parts, which do not round-trip through Agent Observability's wire schema, **and** preserves the original system context across hook transforms that only touch user / assistant messages.
-
-#### Scenario: Reasoning signature survives transform
-
-- **GIVEN** an assistant message in `params.Prompt` carrying a reasoning part with `ProviderOptions["anthropic"].signature = "sig-xyz"`
-- **AND** `EvaluateHook` returns a `TransformedInput` that modifies only user messages, leaving the assistant message text unchanged
+- **GIVEN** a non-empty original prompt
+- **AND** `EvaluateHook` returns a non-nil but empty `TransformedInput`
 - **WHEN** the transform is applied
-- **THEN** the resulting `params.Prompt` SHALL contain an assistant message whose reasoning part has `ProviderOptions["anthropic"].signature == "sig-xyz"` byte-equal to the original
+- **THEN** `ErrHookTransformFailed` SHALL be returned
+- **AND** the inner model SHALL NOT be invoked with the original prompt
 
-#### Scenario: Modified assistant text triggers rebuild from agento11y parts
+#### Scenario: Removed assistant parts stay removed
 
-- **GIVEN** an assistant message in `params.Prompt` whose text is "abc"
-- **AND** `EvaluateHook` returns a `TransformedInput` whose corresponding assistant message has text "def"
+- **GIVEN** an original assistant message containing signed reasoning, a tool call, and visible text
+- **AND** the transformed assistant message retains the same reasoning and text but omits the tool call
 - **WHEN** the transform is applied
-- **THEN** the resulting `params.Prompt` SHALL contain an assistant message whose text equals "def"
-- **AND** the original signature (if any) SHALL NOT be carried forward (because the content did not match)
+- **THEN** only the unchanged reasoning part and transformed text SHALL be present
+- **AND** the omitted tool call SHALL NOT be restored
+- **AND** the unchanged reasoning part SHALL retain its original signature
 
-#### Scenario: System messages survive a user-only transform
+#### Scenario: Multimodal transform fails closed
 
-- **GIVEN** `params.Prompt` contains a `provider.Message{Role: RoleSystem}` with text "you are helpful" followed by a user message
-- **AND** `EvaluateHook` returns a `TransformedInput` with `SystemPrompt: ""` and a transformed user message
+- **GIVEN** an original prompt containing text and undisclosed media
+- **AND** the hook returns a transformed text message
 - **WHEN** the transform is applied
-- **THEN** the resulting `params.Prompt` SHALL begin with the original system message verbatim
-- **AND** the inner model SHALL receive a non-empty system context
+- **THEN** `ErrHookTransformFailed` SHALL be returned
+- **AND** the model SHALL NOT receive a prompt with the media silently removed
 
-#### Scenario: Hook overrides system prompt
+#### Scenario: Tool removal is applied
+
+- **GIVEN** the original request exposes a tool
+- **AND** `TransformedInput.Tools` omits that tool
+- **WHEN** the transform is applied
+- **THEN** the model SHALL receive transformed call options without that tool
+
+#### Scenario: Hook replaces system prompt
 
 - **GIVEN** `params.Prompt` contains system messages "be helpful" and "be concise"
 - **AND** `EvaluateHook` returns a `TransformedInput` with `SystemPrompt: "internal-only assistant"`
 - **WHEN** the transform is applied
-- **THEN** the resulting `params.Prompt` SHALL begin with a single system message whose text equals "internal-only assistant"
+- **THEN** the resulting prompt SHALL begin with a single system message whose text equals "internal-only assistant"
 - **AND** the original system messages SHALL NOT appear in the prompt
 
 ### Requirement: Generation-ID DAG context helpers

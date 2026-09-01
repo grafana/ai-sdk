@@ -16,6 +16,11 @@
         "role": "assistant",
         "parts": [
           {
+            "kind": "thinking",
+            "thinking": "thinking…",
+            "metadata": {}
+          },
+          {
             "kind": "text",
             "text": "Here is your answer",
             "metadata": {}
