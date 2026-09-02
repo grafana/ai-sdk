@@ -11,8 +11,6 @@ import (
 func TestCallOptions_WireRoundTrip(t *testing.T) {
 	intPtr := func(i int) *int { return &i }
 	floatPtr := func(f float64) *float64 { return &f }
-	reasoning := ReasoningHigh
-
 	full := CallOptions{
 		Prompt: []Message{
 			NewSystemMessage("be helpful"),
@@ -64,7 +62,7 @@ func TestCallOptions_WireRoundTrip(t *testing.T) {
 		StopSequences:    []string{"END", "\n\n"},
 		ResponseFormat:   &ResponseFormat{Type: ResponseFormatJSON, Schema: json.RawMessage(`{"type":"object"}`), Name: "result", Description: "the answer"},
 		Seed:             intPtr(42),
-		Reasoning:        &reasoning,
+		Reasoning:        ReasoningHigh,
 		IncludeRawChunks: true,
 		Headers:          map[string]string{"X-Trace-ID": "abc"},
 		ProviderOptions: ProviderOptions{
@@ -79,6 +77,22 @@ func TestCallOptions_WireRoundTrip(t *testing.T) {
 	require.NoError(t, json.Unmarshal(data, &decoded))
 
 	assert.Equal(t, full, decoded)
+}
+
+func TestCallOptions_ReasoningJSON(t *testing.T) {
+	t.Run("provider default is the omitted zero value", func(t *testing.T) {
+		assert.Equal(t, ReasoningEffort(""), ReasoningProviderDefault)
+
+		data, err := json.Marshal(CallOptions{Reasoning: ReasoningProviderDefault})
+		require.NoError(t, err)
+		assert.JSONEq(t, `{}`, string(data))
+	})
+
+	t.Run("operational value is explicit", func(t *testing.T) {
+		data, err := json.Marshal(CallOptions{Reasoning: ReasoningHigh})
+		require.NoError(t, err)
+		assert.JSONEq(t, `{"reasoning":"high"}`, string(data))
+	})
 }
 
 func TestCallOptions_EmptyJSON(t *testing.T) {
