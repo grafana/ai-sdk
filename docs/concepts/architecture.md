@@ -71,7 +71,6 @@ You need the lower-level event and wire representations when you are:
 
 - filtering or composing UI streams;
 - writing a provider;
-- serving remote models through provider wire;
 - debugging frontend protocol compatibility.
 
 For those cases, continue with [Messages](messages.md),

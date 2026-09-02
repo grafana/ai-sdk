@@ -35,7 +35,6 @@ integrations they use.
 | Claude through Anthropic or Vertex AI | [Anthropic](../providers/anthropic.md) |
 | Models hosted on Amazon Bedrock | [Amazon Bedrock](../providers/bedrock.md) |
 | OpenAI through the Responses API | [OpenAI](../providers/openai.md) |
-| Grafana's hosted models from an internally provisioned service | [Grafana Cloud](../providers/grafana-cloud.md) |
 | A Chat Completions-compatible server | [OpenAI-compatible APIs](../providers/openai-compatible.md) |
 
 Each provider guide covers its module, authentication, and model construction.

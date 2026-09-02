@@ -67,4 +67,4 @@ server, so include the target implementation in integration tests.
 
 ---
 
-← [Grafana Cloud](grafana-cloud.md) · [Docs index](../README.md) · [Writing a provider →](writing-a-provider.md)
+← [OpenAI](openai.md) · [Docs index](../README.md) · [Writing a provider →](writing-a-provider.md)

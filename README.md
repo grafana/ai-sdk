@@ -39,8 +39,8 @@ TypeScript backend with Go without adding a protocol adapter.
 - **Composable tools** — call plain Go functions from a model and require
   approval for consequential actions
 - **Structured output** — generate schema-validated objects, arrays, and choices
-- **Multiple providers** — call Anthropic, Amazon Bedrock, OpenAI,
-  OpenAI-compatible APIs, and Grafana's hosted endpoint from internal services
+- **Multiple providers** — call Anthropic, Amazon Bedrock, OpenAI, and
+  OpenAI-compatible APIs
 - **Production controls** — configure timeouts, fallback, logging, Prometheus
   metrics, and [Agent Observability](docs/middleware/agent-observability.md)
 
@@ -57,7 +57,7 @@ go get github.com/grafana/ai-sdk/providers/anthropic
 ```
 
 See [Choose a provider](docs/providers/overview.md) for Amazon Bedrock, OpenAI,
-OpenAI-compatible APIs, and the internally provisioned Grafana hosted endpoint.
+and OpenAI-compatible APIs.
 
 ## Quick start
 

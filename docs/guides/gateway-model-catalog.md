@@ -45,7 +45,6 @@ A gateway can combine several independent capabilities:
 - A registry constructs models from provider-oriented IDs such as
   `bedrock:model-id`.
 - A fallback model tries ordered candidates after eligible failures.
-- Provider wire executes a resolved model for another service over HTTP.
 - The application host owns authentication, authorization, and model visibility.
 
 Applications that construct one model can pass it directly to the generation
@@ -153,42 +152,16 @@ Catalog constructors validate:
 A registry-backed catalog resolves its configured provider model ID when
 `ResolveModel` is called, so provider lookup errors occur at request time.
 
-## Connect the catalog to provider wire
+## Connect the catalog to a host transport
 
-A provider-wire resolver adapts a public model ID to the catalog:
+A host-owned transport adapter can pass its request context and public model ID
+to `ResolveModel`, execute the returned `ResolvedModel.Model`, and retain
+`ResolvedModel.ID` as the canonical public identity for policy and logging.
 
-```go
-resolver := providerwire.ModelResolverFunc(
-	func(r *http.Request, modelID string) (provider.LanguageModel, error) {
-		resolved, err := models.ResolveModel(r.Context(), modelID)
-		if err != nil {
-			if errors.Is(err, catalog.ErrUnknownModel) {
-				retryable := false
-				return nil, provider.NewAPICallError(
-					provider.APICallErrorOptions{
-						Message:     err.Error(),
-						StatusCode:  http.StatusNotFound,
-						IsRetryable: &retryable,
-						Cause:       err,
-					},
-				)
-			}
-			return nil, err
-		}
-
-		log.Printf("resolved public model %s", resolved.ID)
-		return resolved.Model, nil
-	},
-)
-```
-
-Record the canonical ID or apply route policy inside this adapter.
-`providerwire.Handler` receives the model and does not retain the canonical ID
-automatically.
-
-Pass the resolver to `providerwire.NewHandler`. See
-[Serving provider-wire models](provider-wire-server.md) for handler setup,
-timeouts, cancellation, and transport behavior.
+When resolution returns an error matching `catalog.ErrUnknownModel`, map it to
+the transport's not-found response. Other catalog or registry failures pass
+through to the host's normal error handling. The catalog does not own HTTP
+status codes, response envelopes, or another transport's lifecycle.
 
 ## Reference
 
@@ -197,4 +170,4 @@ timeouts, cancellation, and transport behavior.
 
 ---
 
-← [Writing a provider](../providers/writing-a-provider.md) · [Docs index](../README.md) · [Serving provider-wire models →](provider-wire-server.md)
+← [Writing a provider](../providers/writing-a-provider.md) · [Docs index](../README.md) · [Production checklist →](../best-practices/production.md)

@@ -73,11 +73,12 @@ and avoid exposing secrets or internal errors.
 For server-side consumers, `StreamUIMessage` produces progressive message
 snapshots and `AssembleUIMessage` returns one final message.
 
-## Distinguish UI streams from provider wire
+## Scope the UI stream correctly
 
 The UI message stream connects application endpoints to browser hooks such as
-`useChat` and ends with the `[DONE]` sentinel. `gateway/providerwire` transports
-`provider.LanguageModel` calls between services with provider-level framing.
+`useChat` and ends with the `[DONE]` sentinel. It is not a remote
+`provider.LanguageModel` transport; this repository does not currently provide
+one.
 
 Frontend compatibility follows the upstream
 [UI message stream protocol](https://ai-sdk.dev/docs/ai-sdk-ui/stream-protocol).

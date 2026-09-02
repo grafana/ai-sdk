@@ -98,7 +98,7 @@ The repository SHALL provide repo-local Codex skills for scoped parity review an
 - **THEN** the agent prioritizes missing features, behavioral deviations, possible bugs, uncovered cases, and undocumented intentional deviations instead of listing every parity-preserving difference
 
 ### Requirement: Baseline validation covers all parity TypeScript consumers
-The repository SHALL validate that every test package consuming `ai` or `@ai-sdk/*` packages uses versions compatible with the registered upstream parity baseline.
+The repository SHALL validate that every retained test package consuming `ai` or `@ai-sdk/*` packages uses versions compatible with the registered upstream parity baseline.
 
 #### Scenario: Integration package consumes upstream AI SDK packages
 - **WHEN** `test/integration/package.json` declares `ai` or `@ai-sdk/*` dependencies
@@ -108,13 +108,13 @@ The repository SHALL validate that every test package consuming `ai` or `@ai-sdk
 - **WHEN** `test/cli/package.json` declares `ai` or `@ai-sdk/*` dependencies
 - **THEN** baseline validation verifies those dependency pins match `test/conformance/upstream.yaml`
 
-#### Scenario: Interop package consumes upstream AI SDK packages
-- **WHEN** `test/interop/package.json` declares `ai` or `@ai-sdk/*` dependencies
+#### Scenario: Conformance tools consume upstream AI SDK packages
+- **WHEN** `test/conformance/tools/package.json` declares `ai` or `@ai-sdk/*` dependencies
 - **THEN** baseline validation verifies those dependency pins match `test/conformance/upstream.yaml`
 
-#### Scenario: Parity upgrade updates every consumer
+#### Scenario: Parity upgrade updates every retained consumer
 - **WHEN** the registered package set is upgraded
-- **THEN** conformance, integration, interop, and CLI package manifests that consume a tracked package are updated together
+- **THEN** conformance, integration, and CLI package manifests that consume a tracked package are updated together
 
 ### Requirement: Provider API-shape drift report
 The repository SHALL provide a provider V4 API-shape drift report that compares upstream LanguageModelV4 discriminator values with Go provider constants. By default, the report SHALL resolve the `@ai-sdk/provider` source version declared in the upstream parity baseline. An explicitly supplied source root MAY override that source, but the report SHALL NOT silently fall back to an arbitrary local checkout.
