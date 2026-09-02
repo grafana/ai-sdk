@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["models"],
+  "properties": {
+    "models": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "name", "specification"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$" },
+          "name": { "type": "string", "minLength": 1 },
+          "description": { "type": "string" },
+          "specification": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["specificationVersion", "provider", "modelId"],
+            "properties": {
+              "specificationVersion": { "const": "v4" },
+              "provider": { "const": "grafana" },
+              "modelId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

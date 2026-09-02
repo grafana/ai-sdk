@@ -7,7 +7,9 @@
     "typecheck": "tsc --noEmit",
     "test:schema": "tsx --test schema.test.ts schema-definitions.test.ts request-goldens.test.ts update-goldens.test.ts",
     "test:client": "tsx --test client-consumption.test.ts runtime-integration.test.ts",
-    "test": "pnpm run typecheck && pnpm run test:schema && pnpm run test:client",
+    "test:contract": "pnpm run typecheck && pnpm run test:schema && pnpm run test:client",
+    "test:command": "tsx --test gateway-command.test.ts",
+    "test": "pnpm run test:contract && pnpm run test:command",
     "update-goldens": "tsx update-goldens.ts"
   },
   "dependencies": {
