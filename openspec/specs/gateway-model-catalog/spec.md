@@ -7,7 +7,7 @@ Define a transport-neutral public model catalog for hosted gateways, including c
 ## Requirements
 
 ### Requirement: Request-aware gateway model contracts
-The `gateway/catalog` package SHALL expose a `ModelResolver` contract that resolves a public model ID with `context.Context`, a `ModelLister` contract that lists visible model metadata with `context.Context`, and a `Catalog` contract that combines both capabilities.
+The `ai-gateway/catalog` package SHALL expose a `ModelResolver` contract that resolves a public model ID with `context.Context`, a `ModelLister` contract that lists visible model metadata with `context.Context`, and a `Catalog` contract that combines both capabilities.
 
 #### Scenario: Resolver receives request context
 - **WHEN** a consumer resolves a public model ID through `ModelResolver`
@@ -172,10 +172,10 @@ The gateway catalog SHALL NOT define Assistant model families, profile slots, `c
 - **THEN** it SHALL implement that policy outside ai-sdk by decorating resolution and listing consistently
 
 ### Requirement: Transport composition remains host-owned
-The `gateway/catalog` package SHALL remain independent of `net/http` and any concrete transport adapter. A host-owned adapter MAY pass request context into catalog resolution, execute the returned model, preserve canonical public identity for policy or logging, and translate `catalog.ErrUnknownModel` at its own protocol boundary. The catalog SHALL NOT define HTTP status codes or protocol error envelopes.
+The `ai-gateway/catalog` package SHALL remain independent of `net/http` and any concrete transport adapter. A host-owned adapter MAY pass request context into catalog resolution, execute the returned model, preserve canonical public identity for policy or logging, and translate `catalog.ErrUnknownModel` at its own protocol boundary. The catalog SHALL NOT define HTTP status codes or protocol error envelopes.
 
 #### Scenario: Catalog dependency boundary
-- **WHEN** imports and public types in the `gateway/catalog` package are inspected
+- **WHEN** imports and public types in the `ai-gateway/catalog` package are inspected
 - **THEN** they SHALL NOT import or expose `net/http` or a concrete transport package
 
 #### Scenario: Host adapts successful resolution

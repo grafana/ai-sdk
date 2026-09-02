@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grafana/ai-sdk/gateway/catalog"
+	"github.com/grafana/ai-sdk/ai-gateway/catalog"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -287,7 +287,7 @@ type goldenRecord struct {
 
 func loadGolden(t *testing.T, name string) []goldenRecord {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join("../../../test/providerwire-v4/goldens", name))
+	data, err := os.ReadFile(filepath.Join("../../test/providerwire-v4/goldens", name))
 	require.NoError(t, err)
 	var records []goldenRecord
 	require.NoError(t, json.Unmarshal(data, &records))

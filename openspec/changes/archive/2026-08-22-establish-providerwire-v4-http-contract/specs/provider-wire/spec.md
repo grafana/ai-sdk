@@ -35,4 +35,4 @@ Any strict protocol introduced after retirement SHALL live under an explicit ver
 
 #### Scenario: Transport-independent capabilities remain
 - **WHEN** the repository is built and tested after strict V4 contract artifacts are added
-- **THEN** provider-domain packages, concrete provider implementations, `gateway/catalog`, fallback, registry, middleware, UI-message SSE, retained TypeScript integration tests, and their applicable tests SHALL remain available
+- **THEN** provider-domain packages, concrete provider implementations, `ai-gateway/catalog`, fallback, registry, middleware, UI-message SSE, retained TypeScript integration tests, and their applicable tests SHALL remain available

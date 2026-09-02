@@ -235,7 +235,7 @@ The workspace SHALL exercise streaming success through the registered client usi
 
 ### Requirement: Focused non-success client-consumption evidence
 
-The workspace SHALL exercise representative non-2xx JSON responses through the registered client and assert the public error classification, status, and message observable at the registered package boundary. Any malformed-response coverage SHALL treat registered fallback behavior only as client evidence and SHALL NOT define the future server error envelope.
+The workspace SHALL exercise representative non-2xx JSON responses through the registered client and assert the public error classification, status, and message observable at the registered package boundary. Any malformed-response coverage SHALL treat registered fallback behavior only as client evidence and SHALL NOT define the server error envelope.
 
 #### Scenario: Structured non-2xx response is consumed
 - **WHEN** the injected fetch returns a representative structured non-2xx Gateway response
@@ -244,7 +244,7 @@ The workspace SHALL exercise representative non-2xx JSON responses through the r
 #### Scenario: Error probe remains client evidence
 - **WHEN** a non-2xx response is accepted or normalized by the registered client
 - **THEN** that result SHALL document client consumption only
-- **AND** it SHALL NOT establish which fields a future strict server may emit
+- **AND** it SHALL NOT establish which fields the strict server may emit
 
 ### Requirement: Explicit golden update workflow
 

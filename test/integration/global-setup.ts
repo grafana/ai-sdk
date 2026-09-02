@@ -1,16 +1,14 @@
-import { execFileSync, spawn, type ChildProcess } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync, unlinkSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import nodeProcess from "node:process";
+import { execSync, spawn, type ChildProcess } from "node:child_process";
+import { resolve } from "node:path";
+import { writeFileSync, unlinkSync } from "node:fs";
 
 const SERVER_DIR = resolve(import.meta.dirname, "testserver");
+const BINARY_PATH = resolve(SERVER_DIR, "testserver");
 const URL_FILE = resolve(import.meta.dirname, ".test-server-url");
 const HEALTH_TIMEOUT_MS = 15_000;
 const HEALTH_POLL_MS = 200;
 
 let serverProcess: ChildProcess | undefined;
-let temporaryDirectory: string | undefined;
 
 async function pollHealth(url: string, timeoutMs: number): Promise<void> {
   const deadline = Date.now() + timeoutMs;
@@ -28,20 +26,10 @@ async function pollHealth(url: string, timeoutMs: number): Promise<void> {
 
 export async function setup(): Promise<void> {
   console.log("[global-setup] Building Go test server...");
-  temporaryDirectory = mkdtempSync(join(tmpdir(), "ai-sdk-integration-"));
-  const binaryPath = join(temporaryDirectory, "testserver");
-  execFileSync("go", ["build", "-o", binaryPath, "."], {
-    cwd: SERVER_DIR,
-    stdio: "pipe",
-    env: {
-      ...nodeProcess.env,
-      GOWORK: "off",
-      GOFLAGS: `${nodeProcess.env.GOFLAGS ? `${nodeProcess.env.GOFLAGS} ` : ""}-mod=readonly`,
-    },
-  });
+  execSync("go build -o testserver .", { cwd: SERVER_DIR, stdio: "pipe" });
 
   console.log("[global-setup] Spawning test server...");
-  const proc = spawn(binaryPath, [], {
+  const proc = spawn(BINARY_PATH, [], {
     cwd: SERVER_DIR,
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -99,8 +87,5 @@ export async function teardown(): Promise<void> {
     unlinkSync(URL_FILE);
   } catch {
     // File may not exist
-  }
-  if (temporaryDirectory) {
-    rmSync(temporaryDirectory, { recursive: true, force: true });
   }
 }

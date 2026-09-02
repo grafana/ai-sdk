@@ -22,9 +22,18 @@ verify_hash() {
 verify_hash LICENSE efb4d91baa7cd9559d3452f79deb2b3d9dc819c83d7058a1f90ac70484a1a23e
 verify_hash ai-gateway/LICENSE 0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079abcb0
 
-actual_module=$(GOWORK=off go mod edit -json ai-gateway/go.mod | jq -er '.Module.Path')
+gateway_module_json=$(GOWORK=off go mod edit -json ai-gateway/go.mod)
+actual_module=$(jq -er '.Module.Path' <<<"$gateway_module_json")
 if [[ "$actual_module" != "$gateway_module" ]]; then
   echo "ai-gateway/go.mod declares $actual_module, expected $gateway_module" >&2
+  exit 1
+fi
+if [[ $(jq '(.Replace // []) | length' <<<"$gateway_module_json") -ne 0 ]]; then
+  echo "ai-gateway/go.mod must not contain replace directives" >&2
+  exit 1
+fi
+if [[ -e gateway/catalog || -e gateway/providerwire ]]; then
+  echo "Gateway implementation must live below ai-gateway" >&2
   exit 1
 fi
 
@@ -118,5 +127,10 @@ fi
 
 GOWORK=off GOFLAGS="$readonly_flags" go build ./...
 GOWORK=off GOFLAGS="$readonly_flags" go test ./...
+(
+  cd ai-gateway
+  GOWORK=off GOFLAGS="$readonly_flags" go build ./...
+  GOWORK=off GOFLAGS="$readonly_flags" go test ./...
+)
 
 echo "AI Gateway module and license boundary: OK"

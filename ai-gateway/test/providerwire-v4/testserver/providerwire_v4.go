@@ -10,8 +10,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/grafana/ai-sdk/gateway/catalog"
-	providerwirev4 "github.com/grafana/ai-sdk/gateway/providerwire/v4"
+	"github.com/grafana/ai-sdk/ai-gateway/catalog"
+	providerwirev4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 	"github.com/grafana/ai-sdk/provider"
 )
 

@@ -36,13 +36,7 @@ Use model composition only when the application needs it:
 
 - `fallback` tries another model after eligible failures.
 - `registry` resolves construction-oriented IDs such as `provider:model`.
-- `gateway/catalog` exposes a controlled public model namespace with aliases
-  and listing metadata.
 - `middleware` adds behavior around any model.
-
-A registry and a catalog solve different problems. A registry helps server code
-construct a model. A catalog defines which stable names clients are allowed to
-see and use.
 
 ## Provider-specific behavior
 
@@ -64,7 +58,6 @@ adapt another service, see [Writing a provider](../providers/writing-a-provider.
 - [`provider.LanguageModel`](https://pkg.go.dev/github.com/grafana/ai-sdk/provider#LanguageModel)
 - [Provider overview](../providers/overview.md)
 - [Fallback and registry](../guides/fallback-and-registry.md)
-- [Gateway model catalog](../guides/gateway-model-catalog.md)
 
 ---
 

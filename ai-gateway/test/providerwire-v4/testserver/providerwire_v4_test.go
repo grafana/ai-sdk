@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	providerwirev4 "github.com/grafana/ai-sdk/gateway/providerwire/v4"
+	providerwirev4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

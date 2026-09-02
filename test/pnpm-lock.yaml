@@ -90,9 +90,6 @@ importers:
 
   integration:
     devDependencies:
-      '@ai-sdk/gateway':
-        specifier: 4.0.52
-        version: 4.0.52(zod@4.4.3)
       '@ai-sdk/provider-utils':
         specifier: 5.0.27
         version: 5.0.27(zod@4.4.3)

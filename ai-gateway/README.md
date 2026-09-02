@@ -7,9 +7,10 @@ separate Go module `github.com/grafana/ai-sdk/ai-gateway`.
 
 ## Current status
 
-This directory currently contains the ProviderWire V4 request contract and its
-exact-pinned registered-client evidence. It does not yet provide an executable
-Gateway server or Go client.
+This directory contains the ProviderWire V4 request contract, exact-pinned
+registered-client evidence, public model catalog, and unary text HTTP runtime.
+Streaming, authentication, service composition, deployment assets, and the Go
+Gateway client land in later work packages.
 
 Gateway-owned public API adapters, protocol schemas and DTOs, authentication,
 host policy, catalog, service composition, images, and deployment assets belong
@@ -38,5 +39,6 @@ Apache-derived attribution, and the network corresponding-source offer
 mechanism. Deployment documentation and images must identify the exact source
 revision and satisfy that approved mechanism.
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution rules and
-[NOTICE](NOTICE) for provenance and attribution.
+See the [model catalog guide](docs/model-catalog.md) for public model identity
+and resolution behavior. See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution
+rules and [NOTICE](NOTICE) for provenance and attribution.

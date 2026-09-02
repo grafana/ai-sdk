@@ -3,10 +3,11 @@
 - [x] 1.1 Make `ReasoningProviderDefault` the empty-string zero value and make provider call reasoning value-typed.
 - [x] 1.2 Update orchestration, middleware, conformance, and all providers while retaining pointers only in configuration layers that need presence semantics.
 - [x] 1.3 Verify provider request behavior and reasoning tests across modules.
+- [x] 1.4 Publish a new immutable root prerequisite containing the Apache changes and no Gateway implementation, then pin its public-proxy pseudo-version from the isolated Gateway module.
 
 ## 2. Build the Unary Handler
 
-- [x] 2.1 Add immutable construction with resolver, request/response byte limits, and model duration.
+- [x] 2.1 Add the public catalog and immutable handler construction under `ai-gateway`, with resolver, request/response byte limits, and model duration.
 - [x] 2.2 Validate the exact unary HTTP envelope and bounded UTF-8 request body.
 - [x] 2.3 Compile and apply the complete registered request schema before mapping.
 - [x] 2.4 Add raw HTTP tests for envelope, body boundaries, malformed input, duplicate-member last-value behavior, escaped-lone-surrogate normalization, and downstream-call suppression.
@@ -36,13 +37,14 @@
 
 ## 6. Add Compatibility Evidence
 
-- [x] 6.1 Add the production handler to the integration test server.
+- [x] 6.1 Add a co-located AGPL in-process testserver to the ProviderWire contract workspace.
 - [x] 6.2 Exercise minimal success, representative errors, and cancellation through `@ai-sdk/gateway@4.0.52`.
-- [x] 6.3 Keep synthetic Gateway client-class tests for every runtime status plus supported host errors, including class/type/status/retryability assertions, and remove the duplicate Go-server lifecycle.
+- [x] 6.3 Keep synthetic Gateway client-class tests for every runtime status plus supported host errors, including class/type/status/retryability assertions, and remove Gateway imports from Apache integration tests.
 - [x] 6.4 Update the parity map while retaining strict streaming as deferred.
 
 ## 7. Validate
 
 - [x] 7.1 Run formatting, vet, lint, build, full module tests, and race tests.
 - [x] 7.2 Run ProviderWire, integration, parity-baseline, and parity checks.
-- [x] 7.3 Validate canonical OpenSpec specs strictly and verify no schemas, goldens, conformance inputs, or module files are rewritten by normal checks.
+- [x] 7.3 Validate canonical OpenSpec specs strictly and verify no schemas, goldens, or conformance inputs are rewritten by normal checks.
+- [x] 7.4 Verify the AGPL module builds and tests with `GOWORK=off`, has no replace directives, and no Apache module imports or requires it.

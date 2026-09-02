@@ -32,6 +32,7 @@ description = "Run all Go tests across all modules"
 run = """
 mise run test-examples
 mise run test-root
+mise run test-ai-gateway
 mise run test-anthropic
 mise run test-bedrock
 mise run test-openai
@@ -45,6 +46,10 @@ mise run test-prometheus-middleware
 [tasks.test-root]
 description = "Run root module tests"
 run = "go test ./..."
+
+[tasks.test-ai-gateway]
+description = "Run AI Gateway tests outside the root workspace"
+run = "cd ai-gateway && GOWORK=off GOFLAGS=\"${GOFLAGS:+$GOFLAGS }-mod=readonly\" go test ./..."
 
 [tasks.test-anthropic]
 description = "Run Anthropic provider tests"
@@ -87,6 +92,7 @@ description = "Run short tests across all modules"
 run = """
 mise run test-examples
 go test -short ./...
+(cd ai-gateway && GOWORK=off GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" go test -short ./...)
 (cd providers/anthropic && go test -short ./...)
 (cd providers/bedrock && go test -short ./...)
 (cd providers/openai && go test -short ./...)
@@ -112,6 +118,7 @@ git diff --exit-code || (echo "Code is not formatted. Run 'mise run fmt' and com
 description = "Run go vet across all modules"
 run = """
 go vet ./...
+(cd ai-gateway && GOWORK=off GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" go vet ./...)
 (cd providers/anthropic && go vet ./...)
 (cd providers/bedrock && go vet ./...)
 (cd providers/openai && go vet ./...)
@@ -227,6 +234,7 @@ description = "Build all modules and examples"
 run = """
 mise run build-examples
 go build ./...
+(cd ai-gateway && GOWORK=off GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" go build ./...)
 (cd providers/anthropic && go build ./...)
 (cd providers/bedrock && go build ./...)
 (cd providers/openai && go build ./...)
@@ -292,7 +300,7 @@ cd test && pnpm --filter @ai-sdk/conformance-tools typecheck
 [tasks.test-providerwire-v4]
 description = "Run the non-mutating ProviderWire V4 contract checks"
 run = """
-go test ./gateway/providerwire/v4
+(cd ai-gateway && GOWORK=off GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" go test ./providerwire/v4)
 mise deps install --only test
 cd test && pnpm --filter @ai-sdk/providerwire-v4-contract test
 """
