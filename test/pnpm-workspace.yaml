@@ -2,7 +2,7 @@ packages:
   - integration
   - cli
   - conformance/tools
-  - providerwire-v4
+  - ../ai-gateway/test/providerwire-v4
 
 # Supply-chain hardening
 blockExoticSubdeps: true

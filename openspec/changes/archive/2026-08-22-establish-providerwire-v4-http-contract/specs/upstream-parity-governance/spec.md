@@ -2,14 +2,14 @@
 
 ### Requirement: ProviderWire V4 contract is a registered parity consumer
 
-The repository SHALL register `test/providerwire-v4` as a parity TypeScript consumer governed by `test/conformance/upstream.yaml`. Baseline validation SHALL compare every `ai` and `@ai-sdk/*` dependency in that workspace with the manifest. The standard parity check SHALL run the workspace's non-mutating compile-time surface, production-schema, semantic-golden, and registered-client consumption checks. The parity coverage map SHALL classify this evidence separately from provider conformance, frontend hook state-machine coverage, and future Go ProviderWire runtime coverage.
+The repository SHALL register `ai-gateway/test/providerwire-v4` as a parity TypeScript consumer governed by `test/conformance/upstream.yaml`. Baseline validation SHALL compare every `ai` and `@ai-sdk/*` dependency in that workspace with the manifest. The standard parity check SHALL run the workspace's non-mutating compile-time surface, production-schema, semantic-golden, and registered-client consumption checks. The parity coverage map SHALL classify this evidence separately from provider conformance, frontend hook state-machine coverage, and future Go ProviderWire runtime coverage.
 
 #### Scenario: ProviderWire workspace matches the baseline
-- **WHEN** `test/providerwire-v4/package.json` pins the registered AI SDK package versions
+- **WHEN** `ai-gateway/test/providerwire-v4/package.json` pins the registered AI SDK package versions
 - **THEN** baseline validation SHALL pass for that consumer
 
 #### Scenario: ProviderWire workspace drifts from the baseline
-- **WHEN** an `ai` or `@ai-sdk/*` dependency in `test/providerwire-v4/package.json` differs from or is absent in `test/conformance/upstream.yaml`
+- **WHEN** an `ai` or `@ai-sdk/*` dependency in `ai-gateway/test/providerwire-v4/package.json` differs from or is absent in `test/conformance/upstream.yaml`
 - **THEN** baseline validation SHALL fail and identify the workspace, package, declared version, and baseline version or omission
 
 #### Scenario: Standard parity check includes ProviderWire contract evidence

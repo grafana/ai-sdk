@@ -140,7 +140,7 @@ const specimens: Record<string, Specimen> = {
 };
 
 const schema = JSON.parse(
-  readFileSync(new URL("../../gateway/providerwire/v4/schema/request.json", import.meta.url), "utf8"),
+  readFileSync(new URL("../../providerwire/v4/schema/request.json", import.meta.url), "utf8"),
 ) as {
   $defs: Record<string, { type?: string; required?: string[]; additionalProperties?: unknown }>;
 };

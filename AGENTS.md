@@ -125,6 +125,20 @@ can support a parity claim.
   `minimumReleaseAge` in `test/pnpm-workspace.yaml`; do not bypass that gate.
   Use the `ai-sdk-parity-upgrade` skill for that workflow.
 
+## License and Module Boundary
+
+- `ai-gateway/` is the separate `github.com/grafana/ai-sdk/ai-gateway` Go module
+  and is licensed under AGPL-3.0-only by its nearest `LICENSE`.
+- Reusable SDK code outside `ai-gateway/` remains Apache-2.0; the root `LICENSE`
+  is unchanged.
+- Gateway code may import explicitly pinned SDK modules. No Go source or module
+  outside `ai-gateway/` may import, require, or replace the Gateway module.
+- Keep `ai-gateway/` out of the root `go.work` and root module graph. Run
+  `mise run verify-ai-gateway-boundary` for every boundary-sensitive change.
+- Do not claim prior Apache grants are revoked. Grafana legal confirmation of
+  the transition, provenance, attribution, and corresponding-source offer is a
+  pre-merge and pre-deployment requirement.
+
 ## Build / Lint / Test Commands
 
 ```bash
@@ -162,8 +176,11 @@ cd providers/anthropic && go test -run TestBuildParams_SystemMessage ./...
 # Tidy deps
 mise run tidy
 
-# Full check (fmt + vet + test)
+# Full check (fmt + vet + test + module/license boundary)
 mise run check
+
+# AI Gateway isolation check
+mise run verify-ai-gateway-boundary
 
 # Upstream parity checks
 mise run validate-parity-baseline
@@ -185,6 +202,7 @@ aisdk/              Root package - orchestration (StreamText, UIMessage, SSE, to
     anthropic/      Separate Go module - Anthropic/Vertex provider implementation
     openai/         Separate Go module - OpenAI Responses API provider implementation
     bedrock/        Separate Go module - AWS Bedrock Converse provider implementation
+  ai-gateway/       Separate AGPL-3.0-only Gateway module and owned contract tests
   docs/             Narrative documentation (concepts, guides, providers, best-practices)
   examples/         Runnable example programs - each a self-contained Go module
 ```
@@ -204,6 +222,9 @@ to avoid README bloat and godoc drift. Full rules: [CONTRIBUTING.md](CONTRIBUTIN
 - **`docs/`** owns **concepts and guides** -- the "why" and "how do I X". Plain
   GitHub markdown, no frontmatter; navigation via `docs/README.md` index plus
   per-page `Prev/Up/Next` footers.
+- **`ai-gateway/README.md` and `ai-gateway/CONTRIBUTING.md`** own only the
+  Gateway product, license, module, and contribution boundary; runtime guides
+  still belong in `docs/`.
 
 The drift boundary: "what's the signature / options?" -> godoc; "why/how?" ->
 `docs/`; "convince me + run once" -> README. `docs/` pages link to pkg.go.dev

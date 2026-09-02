@@ -38,8 +38,8 @@ The upstream target for generated expectations is declared in
 `test/conformance/upstream.yaml`. That manifest records the Vercel AI SDK
 repository, TypeScript package versions, verification commands, and known gaps.
 The package versions in the manifest must match every parity TypeScript
-consumer under `test/`: conformance tools, integration tests, CLI tooling, and
-the ProviderWire V4 contract workspace.
+consumer: conformance tools, integration tests, CLI tooling, and the
+Gateway-owned workspace under `ai-gateway/test/providerwire-v4`.
 
 The current parity coverage map lives in `test/conformance/PARITY.md`. It
 classifies each compatibility surface by layer, status, confidence source, and

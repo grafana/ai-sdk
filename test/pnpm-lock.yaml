@@ -8,6 +8,31 @@ importers:
 
   .: {}
 
+  ../ai-gateway/test/providerwire-v4:
+    dependencies:
+      '@ai-sdk/gateway':
+        specifier: 4.0.52
+        version: 4.0.52(zod@4.4.3)
+      '@ai-sdk/provider':
+        specifier: 4.0.7
+        version: 4.0.7
+      '@ai-sdk/provider-utils':
+        specifier: 5.0.27
+        version: 5.0.27(zod@4.4.3)
+      ajv:
+        specifier: 8.17.1
+        version: 8.17.1
+    devDependencies:
+      '@types/node':
+        specifier: 25.9.5
+        version: 25.9.5
+      tsx:
+        specifier: 4.23.12
+        version: 4.23.12
+      typescript:
+        specifier: 7.0.2
+        version: 7.0.2
+
   cli:
     devDependencies:
       '@ai-sdk/provider-utils':
@@ -98,31 +123,6 @@ importers:
       zod:
         specifier: ^4.4.3
         version: 4.4.3
-
-  providerwire-v4:
-    dependencies:
-      '@ai-sdk/gateway':
-        specifier: 4.0.52
-        version: 4.0.52(zod@4.4.3)
-      '@ai-sdk/provider':
-        specifier: 4.0.7
-        version: 4.0.7
-      '@ai-sdk/provider-utils':
-        specifier: 5.0.27
-        version: 5.0.27(zod@4.4.3)
-      ajv:
-        specifier: 8.17.1
-        version: 8.17.1
-    devDependencies:
-      '@types/node':
-        specifier: 25.9.5
-        version: 25.9.5
-      tsx:
-        specifier: 4.23.12
-        version: 4.23.12
-      typescript:
-        specifier: 7.0.2
-        version: 7.0.2
 
 packages:
 

@@ -24,7 +24,13 @@ import sys
 
 # Files outside docs/ that are still part of the doc surface and should have
 # their links/anchors checked.
-ROOT_DOCS = ["README.md", "CONTRIBUTING.md", "AGENTS.md"]
+ROOT_DOCS = [
+    "README.md",
+    "CONTRIBUTING.md",
+    "AGENTS.md",
+    "ai-gateway/README.md",
+    "ai-gateway/CONTRIBUTING.md",
+]
 
 DOCS_DIR = "docs"
 DOCS_INDEX = os.path.join(DOCS_DIR, "README.md")
