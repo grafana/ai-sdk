@@ -73,7 +73,7 @@ model, err := models.LanguageModel("bedrock:" + modelID)
 ```
 
 The `bedrock:` route is a server-side construction detail. Use a
-[gateway model catalog](../guides/gateway-model-catalog.md) when clients should
+[AI Gateway model catalog](../../ai-gateway/docs/model-catalog.md) when clients should
 see a stable provider-neutral name.
 
 ## Scope

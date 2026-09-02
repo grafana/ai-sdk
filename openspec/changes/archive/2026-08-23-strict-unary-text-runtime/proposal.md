@@ -4,6 +4,8 @@ The repository had executable ProviderWire V4 contract evidence but no productio
 
 ## What Changes
 
+- Move the public catalog, ProviderWire runtime, schemas, and in-process integration source under the isolated AGPL `ai-gateway` module while retaining provider-domain and provider changes in the Apache SDK.
+- Publish and pin an immutable proxy-resolvable Apache prerequisite without adding the Gateway module to the root workspace or using committed replacements.
 - Add a production unary `POST /language-model` handler with exact envelope checks, bounded UTF-8 body processing, complete request-schema validation, explicit text/scalar mapping, catalog resolution, and bounded model invocation.
 - Reject schema-valid deferred capability families before resolution without defining precedence for requests that activate several families.
 - Normalize runtime failures into fixed privacy-safe Gateway error documents.
@@ -25,6 +27,6 @@ The repository had executable ProviderWire V4 contract evidence but no productio
 
 ## Impact
 
-- Primary code: `gateway/providerwire/v4`, provider reasoning call sites, and catalog integration.
-- Tests: raw Go runtime tests, committed ProviderWire golden replay, and cross-language integration through `@ai-sdk/gateway@4.0.52`.
+- Primary code: `ai-gateway/providerwire/v4`, `ai-gateway/catalog`, and Apache SDK reasoning call sites.
+- Tests: AGPL-owned raw Go runtime tests, committed ProviderWire golden replay, and co-located cross-language integration through `@ai-sdk/gateway@4.0.52`.
 - Protocol scope: unary text only. Streaming, tools, files, structured output, provider options, body-header forwarding, and raw output execution remain deferred.

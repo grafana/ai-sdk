@@ -6,7 +6,7 @@ Define the production ProviderWire V4 unary text runtime and the observable cont
 
 ### Requirement: Constructed unary handler
 
-The `gateway/providerwire/v4` package SHALL provide an HTTP handler for relative `POST /language-model` unary requests. Construction SHALL require a non-nil `catalog.ModelResolver` and positive limits for request bytes, unary response bytes, and total model duration. Byte limits SHALL support safe `limit+1` arithmetic.
+The `ai-gateway/providerwire/v4` package SHALL provide an HTTP handler for relative `POST /language-model` unary requests. Construction SHALL require a non-nil `catalog.ModelResolver` and positive limits for request bytes, unary response bytes, and total model duration. Byte limits SHALL support safe `limit+1` arithmetic.
 
 #### Scenario: Valid construction
 - **WHEN** a caller supplies a resolver and valid limits

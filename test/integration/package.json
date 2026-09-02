@@ -6,7 +6,6 @@
     "test": "vitest run"
   },
   "devDependencies": {
-    "@ai-sdk/gateway": "4.0.52",
     "@ai-sdk/provider-utils": "5.0.27",
     "@ai-sdk/react": "4.0.68",
     "@testing-library/react": "^16.3.2",

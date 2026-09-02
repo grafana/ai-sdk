@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grafana/ai-sdk/gateway/catalog"
+	"github.com/grafana/ai-sdk/ai-gateway/catalog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

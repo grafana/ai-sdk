@@ -1,10 +1,11 @@
 ## Context
 
-The registered `@ai-sdk/gateway@4.0.52` client sends the complete LanguageModelV4 request object, consumes unary JSON permissively, then replaces unary warnings, request information, and response information with client-owned values. The runtime therefore needs strict ingress, private failure handling, and bounded text output, but does not need a richer server-owned unary result dialect.
+The registered `@ai-sdk/gateway@4.0.52` client sends the complete LanguageModelV4 request object, consumes unary JSON permissively, then replaces unary warnings, request information, and response information with client-owned values. The runtime therefore needs strict ingress, private failure handling, and bounded text output, but does not need a richer server-owned unary result dialect. Gateway protocol, catalog, runtime, and in-process integration source lives in the isolated AGPL module; reusable provider-domain and provider changes remain in the Apache SDK.
 
 ## Goals / Non-Goals
 
 **Goals:**
+- Preserve the one-way `ai-gateway -> SDK` module and license boundary.
 - Execute the supported unary text/scalar subset through one bounded handler.
 - Validate the complete registered request before deciding support.
 - Keep provider and transport details private.
@@ -19,6 +20,10 @@ The registered `@ai-sdk/gateway@4.0.52` client sends the complete LanguageModelV
 - Compatibility claims for Vercel's private Gateway service or an unimplemented Go client.
 
 ## Decisions
+
+### Keep Gateway implementation inside the AGPL module
+
+`ai-gateway/catalog`, `ai-gateway/providerwire/v4`, and the in-process runtime testserver are AGPL-owned. The root SDK keeps only provider-domain, provider implementation, generic middleware, and conformance changes. The Gateway module remains outside `go.work`, has no committed replace, and pins the immutable proxy-resolvable root prerequisite containing the Apache phase-3 changes.
 
 ### Validate complete ingress, then map the supported subset
 
@@ -56,7 +61,7 @@ Before encoding, the mapper uses overflow-safe subtraction to bound content coun
 
 ### Keep one cross-language runtime layer
 
-The general integration test server hosts the production handler. Vitest calls it through the exact pinned Gateway client for minimal success, representative errors, and cancellation. The ProviderWire contract workspace retains schema/golden checks and synthetic client-class tests without building a second Go server.
+The AGPL ProviderWire contract workspace builds its co-located in-process testserver with `GOWORK=off` and calls it through the exact pinned Gateway client for minimal success, representative errors, and cancellation. Apache integration tests do not import the Gateway module. The same workspace retains schema/golden checks and synthetic client-class tests.
 
 ## Risks / Trade-offs
 
@@ -67,8 +72,8 @@ The general integration test server hosts the production handler. Vitest calls i
 
 ## Migration Plan
 
-1. Normalize provider-default reasoning to value semantics.
-2. Add the bounded handler, request schema, typed mapper, resolver, fixed errors, and minimal response encoder.
-3. Replay committed request goldens and add raw tests for privacy, errors, bounds, and cancellation.
-4. Consolidate pinned-client runtime evidence under the integration suite.
+1. Publish an immutable root prerequisite containing Apache phase-3 changes and no Gateway implementation.
+2. Pin the isolated AGPL module to that proxy-resolvable root pseudo-version.
+3. Add the catalog, bounded handler, request schema, typed mapper, resolver, fixed errors, and minimal response encoder under `ai-gateway`.
+4. Replay committed request goldens and add co-located raw and pinned-client tests for privacy, errors, bounds, and cancellation.
 5. Keep streaming deferred and document remaining capability gaps.
