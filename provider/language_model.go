@@ -27,9 +27,10 @@ type LanguageModel interface {
 
 // CallOptions configures a model call. Passed to DoStream and DoGenerate.
 //
-// Every field carries a JSON tag so [CallOptions] round-trips losslessly
-// through encoding/json. The JSON representation mirrors
-// LanguageModelV4CallOptions from upstream (Vercel AI SDK).
+// Every field carries a JSON tag for provider-domain serialization. The JSON
+// representation mirrors LanguageModelV4CallOptions except that zero-valued
+// Reasoning is omitted: strict wire adapters normalize both omission and the
+// explicit wire value "provider-default" to that provider-domain zero value.
 type CallOptions struct {
 	Prompt           []Message         `json:"prompt,omitempty"`
 	Tools            []Tool            `json:"tools,omitempty"`
@@ -43,7 +44,7 @@ type CallOptions struct {
 	StopSequences    []string          `json:"stopSequences,omitempty"`
 	ResponseFormat   *ResponseFormat   `json:"responseFormat,omitempty"`
 	Seed             *int              `json:"seed,omitempty"`
-	Reasoning        *ReasoningEffort  `json:"reasoning,omitempty"`
+	Reasoning        ReasoningEffort   `json:"reasoning,omitempty"`
 	IncludeRawChunks bool              `json:"includeRawChunks,omitempty"`
 	Headers          map[string]string `json:"headers,omitempty"`
 	ProviderOptions  ProviderOptions   `json:"providerOptions,omitempty"`

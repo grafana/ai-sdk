@@ -15,6 +15,30 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestReasoningEffort(t *testing.T) {
+	tests := []struct {
+		name      string
+		reasoning provider.ReasoningEffort
+		opts      OpenAIOptions
+		want      string
+	}{
+		{name: "provider default", reasoning: provider.ReasoningProviderDefault},
+		{name: "none", reasoning: provider.ReasoningNone},
+		{name: "minimal", reasoning: provider.ReasoningMinimal, want: "minimal"},
+		{name: "low", reasoning: provider.ReasoningLow, want: "low"},
+		{name: "medium", reasoning: provider.ReasoningMedium, want: "medium"},
+		{name: "high", reasoning: provider.ReasoningHigh, want: "high"},
+		{name: "xhigh", reasoning: provider.ReasoningXHigh, want: "xhigh"},
+		{name: "provider option precedence", reasoning: provider.ReasoningLow, opts: OpenAIOptions{ReasoningEffort: "high"}, want: "high"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, reasoningEffort(tc.reasoning, tc.opts))
+		})
+	}
+}
+
 func TestDoGenerateSendsCompatibleRequest(t *testing.T) {
 	t.Parallel()
 

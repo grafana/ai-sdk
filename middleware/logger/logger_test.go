@@ -113,6 +113,7 @@ func TestMiddleware_GenerateSuccessLogsStartAndFinish(t *testing.T) {
 	params := provider.CallOptions{
 		Prompt:           []provider.Message{provider.UserText("secret prompt")},
 		Tools:            []provider.Tool{{Type: provider.ToolTypeFunction, Name: "secret-tool"}},
+		Reasoning:        provider.ReasoningHigh,
 		IncludeRawChunks: false,
 	}
 
@@ -147,6 +148,7 @@ func TestMiddleware_GenerateSuccessLogsStartAndFinish(t *testing.T) {
 	if start["ai_sdk.request.tools.count"] != int64(1) {
 		t.Fatalf("missing tools count: %#v", start)
 	}
+	assertAttr(t, start, "ai_sdk.request.reasoning_effort", string(provider.ReasoningHigh))
 
 	finish := records[1].AttrsMap()
 	if records[1].Message != string(EventGenerateFinish) {
@@ -211,6 +213,9 @@ func TestMiddleware_GenerateResponseIdentityUsesBackendAndRecordsTransport(t *te
 	}
 	start := records[0].AttrsMap()
 	finish := records[1].AttrsMap()
+	if _, ok := start["ai_sdk.request.reasoning_effort"]; ok {
+		t.Fatalf("zero-valued reasoning must not be logged: %#v", start)
+	}
 	assertAttr(t, start, "ai_sdk.provider", "grafana")
 	assertAttr(t, finish, "ai_sdk.provider", "anthropic")
 	assertAttr(t, finish, "ai_sdk.transport.provider", "grafana")
