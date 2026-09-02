@@ -291,7 +291,7 @@ func TestBuildRequest_TopLevelReasoningAnthropicThinking(t *testing.T) {
 			reasoning := provider.ReasoningHigh
 			req, warnings, _ := mustBuildRequest(t, tc.modelID, provider.CallOptions{
 				Prompt:    []provider.Message{provider.UserText("x")},
-				Reasoning: &reasoning,
+				Reasoning: reasoning,
 			})
 			assert.Empty(t, warnings)
 			require.NotNil(t, req.AdditionalModelRequestFields)
@@ -321,7 +321,7 @@ func TestBuildRequest_TopLevelReasoningMergesProviderConfig(t *testing.T) {
 		reasoning := provider.ReasoningHigh
 		req, warnings, _ := mustBuildRequest(t, "anthropic.claude-sonnet-4-6-v1:0", provider.CallOptions{
 			Prompt:    []provider.Message{provider.UserText("x")},
-			Reasoning: &reasoning,
+			Reasoning: reasoning,
 			ProviderOptions: provider.BuildProviderOptions(BedrockOptions{
 				ReasoningConfig: &ReasoningConfig{Display: "summarized"},
 			}),
@@ -339,7 +339,7 @@ func TestBuildRequest_TopLevelReasoningMergesProviderConfig(t *testing.T) {
 		reasoning := provider.ReasoningNone
 		req, warnings, _ := mustBuildRequest(t, "anthropic.claude-sonnet-4-6-v1:0", provider.CallOptions{
 			Prompt:    []provider.Message{provider.UserText("x")},
-			Reasoning: &reasoning,
+			Reasoning: reasoning,
 			ProviderOptions: provider.BuildProviderOptions(BedrockOptions{
 				ReasoningConfig: &ReasoningConfig{Display: "summarized"},
 			}),
@@ -353,7 +353,7 @@ func TestBuildRequest_TopLevelReasoningMergesProviderConfig(t *testing.T) {
 		reasoning := provider.ReasoningHigh
 		req, warnings, _ := mustBuildRequest(t, "anthropic.claude-sonnet-4-6-v1:0", provider.CallOptions{
 			Prompt:    []provider.Message{provider.UserText("x")},
-			Reasoning: &reasoning,
+			Reasoning: reasoning,
 			ProviderOptions: provider.BuildProviderOptions(BedrockOptions{
 				ReasoningConfig: &ReasoningConfig{Type: "enabled", BudgetTokens: 3000},
 			}),
@@ -374,7 +374,7 @@ func TestBuildRequest_TopLevelReasoningMergesProviderConfig(t *testing.T) {
 		reasoning := provider.ReasoningHigh
 		req, warnings, _ := mustBuildRequest(t, "anthropic.claude-sonnet-4-6-v1:0", provider.CallOptions{
 			Prompt:    []provider.Message{provider.UserText("x")},
-			Reasoning: &reasoning,
+			Reasoning: reasoning,
 			ProviderOptions: provider.BuildProviderOptions(BedrockOptions{
 				ReasoningConfig: &ReasoningConfig{Type: "disabled", BudgetTokens: 3000},
 			}),
@@ -389,7 +389,7 @@ func TestBuildRequest_TopLevelReasoningMergesProviderConfig(t *testing.T) {
 		reasoning := provider.ReasoningHigh
 		req, warnings, _ := mustBuildRequest(t, testNovaModel, provider.CallOptions{
 			Prompt:    []provider.Message{provider.UserText("x")},
-			Reasoning: &reasoning,
+			Reasoning: reasoning,
 			ProviderOptions: provider.BuildProviderOptions(BedrockOptions{
 				ReasoningConfig: &ReasoningConfig{MaxReasoningEffort: "low"},
 			}),
@@ -404,7 +404,7 @@ func TestBuildRequest_TopLevelReasoningMergesProviderConfig(t *testing.T) {
 		reasoning := provider.ReasoningHigh
 		req, warnings, _ := mustBuildRequest(t, testNovaModel, provider.CallOptions{
 			Prompt:    []provider.Message{provider.UserText("x")},
-			Reasoning: &reasoning,
+			Reasoning: reasoning,
 			ProviderOptions: provider.BuildProviderOptions(BedrockOptions{
 				ReasoningConfig: &ReasoningConfig{Type: "enabled", BudgetTokens: 3000},
 			}),
@@ -425,7 +425,7 @@ func TestBuildRequest_TopLevelReasoningMergesProviderConfig(t *testing.T) {
 		reasoning := provider.ReasoningHigh
 		req, warnings, _ := mustBuildRequest(t, testNovaModel, provider.CallOptions{
 			Prompt:    []provider.Message{provider.UserText("x")},
-			Reasoning: &reasoning,
+			Reasoning: reasoning,
 			ProviderOptions: provider.BuildProviderOptions(BedrockOptions{
 				ReasoningConfig: &ReasoningConfig{Type: "adaptive", BudgetTokens: 3000},
 			}),
@@ -463,13 +463,13 @@ func TestBuildRequest_TopLevelReasoningNonAnthropicEffort(t *testing.T) {
 	reasoning := provider.ReasoningMedium
 	req, _, _ := mustBuildRequest(t, testOpenAIModel, provider.CallOptions{
 		Prompt:    []provider.Message{provider.UserText("x")},
-		Reasoning: &reasoning,
+		Reasoning: reasoning,
 	})
 	assert.Equal(t, "medium", req.AdditionalModelRequestFields["reasoning_effort"])
 
 	req, _, _ = mustBuildRequest(t, testNovaModel, provider.CallOptions{
 		Prompt:    []provider.Message{provider.UserText("x")},
-		Reasoning: &reasoning,
+		Reasoning: reasoning,
 	})
 	rc, ok := req.AdditionalModelRequestFields["reasoningConfig"].(map[string]any)
 	require.True(t, ok)
@@ -518,7 +518,7 @@ func TestBuildRequest_TopLevelReasoningNonAnthropicCompatibilityWarnings(t *test
 		t.Run(tc.name, func(t *testing.T) {
 			req, warnings, _ := mustBuildRequest(t, testOpenAIModel, provider.CallOptions{
 				Prompt:    []provider.Message{provider.UserText("x")},
-				Reasoning: &tc.reasoning,
+				Reasoning: tc.reasoning,
 			})
 			assert.Equal(t, tc.wantEffort, req.AdditionalModelRequestFields["reasoning_effort"])
 			if tc.wantWarning {
@@ -559,6 +559,7 @@ func TestBuildRequest_AnthropicEffortLevel(t *testing.T) {
 	}
 	req, _, _ := mustBuildRequest(t, testAnthropicModel, provider.CallOptions{
 		Prompt:          []provider.Message{provider.UserText("x")},
+		Reasoning:       provider.ReasoningProviderDefault,
 		ProviderOptions: provider.BuildProviderOptions(bo),
 	})
 	oc, ok := req.AdditionalModelRequestFields["output_config"].(map[string]any)
@@ -729,7 +730,7 @@ func TestBuildRequest_Opus47And48StructuredOutputFallback(t *testing.T) {
 		reasoning := provider.ReasoningHigh
 		req, _, meta := mustBuildRequest(t, "anthropic.claude-opus-4-8-v1:0", provider.CallOptions{
 			Prompt:         []provider.Message{provider.UserText("give me JSON")},
-			Reasoning:      &reasoning,
+			Reasoning:      reasoning,
 			ResponseFormat: &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Schema: schema},
 		})
 		require.True(t, meta.usesJSONResponseTool)
