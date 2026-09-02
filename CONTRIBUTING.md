@@ -114,10 +114,11 @@ aisdk/                  root module — orchestration (StreamText, UIMessage, SS
   registry/             provider registry
   gateway/              provider-neutral model catalog
   middleware/           in-tree middleware; integrations are their own modules
+ai-gateway/             separate AGPL-3.0-only Gateway module and owned tests
 providers/<name>/       one Go module per provider (anthropic, bedrock, openai, ...)
 docs/                   concepts, guides, providers, middleware, best practices
 examples/               outcome-oriented programs, one self-contained module each
-test/                   integration, CLI, conformance, and ProviderWire contract harnesses
+test/                   shared integration, CLI, conformance, and TypeScript tooling
 openspec/               specs and change proposals
 ```
 
@@ -131,7 +132,9 @@ mise run lint-docs      # structural + markdown style lint for docs
 mise run build          # build all modules, including examples
 mise run test           # all Go tests across all modules
 mise run test-short     # skip integration/E2E tests
-mise run check          # fmt + vet + lint + lint-docs + test
+mise run check          # fmt + vet + lint + docs + tests + license boundary
+mise run verify-ai-gateway-boundary
+                        # prove the one-way module and license boundary
 ```
 
 To run a single test, invoke `go test` in the right module directory:
@@ -330,6 +333,10 @@ from drifting out of sync with the code.
 | **Root `README.md`** | Landing page | Pitch, install, ONE quick start, a router into `docs/` |
 | **`docs/`** | Concepts, guides, narrative | "Why it works this way", "how do I do X", per-provider setup, best practices |
 
+`ai-gateway/README.md` and `ai-gateway/CONTRIBUTING.md` document the product,
+license, module, and contribution boundary; Gateway user guides still belong in
+`docs/` when those runtime capabilities land.
+
 ### The drift boundary
 
 When you're about to document something, ask which question you're answering:
@@ -443,7 +450,12 @@ maintainer to trigger CI.
 ## Dependency management
 
 The repository uses Go modules across several module roots, plus a pnpm
-workspace under `test/` for the TypeScript-side harnesses.
+workspace under `test/` for TypeScript-side harnesses, including the
+Gateway-owned contract workspace at `ai-gateway/test/providerwire-v4`.
+
+`ai-gateway/` is intentionally absent from the root `go.work`. Gateway code may
+import explicitly pinned SDK modules, but no module outside `ai-gateway/` may
+import or require `github.com/grafana/ai-sdk/ai-gateway`.
 
 ```bash
 mise run tidy        # go mod tidy across all modules
@@ -466,10 +478,24 @@ coordinated disclosure.
 
 ## License
 
-This project is licensed under the [Apache License 2.0](LICENSE). By
-contributing, you agree that your contributions are licensed under the same
-terms.
+Contribution terms follow the repository boundary:
 
-Attribution for the upstream Vercel AI SDK, which is also Apache-2.0 licensed, is
-recorded in [NOTICE](NOTICE). If you add code derived from a third-party source,
-update `NOTICE` in the same pull request.
+- contributions outside [`ai-gateway/`](ai-gateway/) are licensed under the
+  [Apache License 2.0](LICENSE);
+- contributions under `ai-gateway/` are licensed under
+  [AGPL-3.0-only](ai-gateway/LICENSE), unless a nearer license states otherwise.
+
+See [AI Gateway contribution rules](ai-gateway/CONTRIBUTING.md) before changing
+Gateway-owned code, schemas, tests, images, or deployment assets. This boundary
+does not revoke or alter licenses already granted for published revisions.
+
+Before this boundary change merges or any Gateway build is deployed, Grafana
+legal must confirm the effective transition, copyright provenance,
+Apache-derived attribution, and network corresponding-source offer mechanism.
+Do not represent that confirmation as complete until Grafana has recorded it
+through its approved process.
+
+Attribution for the upstream Vercel AI SDK, which is also Apache-2.0 licensed,
+is recorded in [NOTICE](NOTICE) and [ai-gateway/NOTICE](ai-gateway/NOTICE). If
+you add code derived from a third-party source, update the notice applicable to
+that license scope in the same pull request.

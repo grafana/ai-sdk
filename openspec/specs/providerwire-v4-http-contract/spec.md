@@ -8,10 +8,10 @@ Define the complete baseline-pinned strict ProviderWire V4 HTTP contract and its
 
 ### Requirement: Registered ProviderWire V4 contract workspace
 
-The repository SHALL provide a private `test/providerwire-v4` TypeScript workspace that executes against the exact `@ai-sdk/gateway`, `@ai-sdk/provider`, and `@ai-sdk/provider-utils` versions declared in `test/conformance/upstream.yaml`. The workspace SHALL use the public registered Gateway client with injected transport behavior and SHALL NOT import from a mutable upstream checkout or substitute another package version.
+The repository SHALL provide a private `ai-gateway/test/providerwire-v4` TypeScript workspace that executes against the exact `@ai-sdk/gateway`, `@ai-sdk/provider`, and `@ai-sdk/provider-utils` versions declared in `test/conformance/upstream.yaml`. The workspace SHALL use the public registered Gateway client with injected transport behavior and SHALL NOT import from a mutable upstream checkout or substitute another package version.
 
 #### Scenario: Workspace dependencies match the baseline
-- **WHEN** baseline validation inspects `test/providerwire-v4/package.json`
+- **WHEN** baseline validation inspects `ai-gateway/test/providerwire-v4/package.json`
 - **THEN** every declared `ai` or `@ai-sdk/*` dependency SHALL exactly match `test/conformance/upstream.yaml`
 
 #### Scenario: Real registered client is exercised
@@ -19,9 +19,39 @@ The repository SHALL provide a private `test/providerwire-v4` TypeScript workspa
 - **THEN** they SHALL invoke the public client exported by the registered `@ai-sdk/gateway` package
 - **AND** they SHALL NOT invoke a locally copied implementation of its request projection or response parser
 
+### Requirement: AGPL Gateway repository boundary
+
+The ProviderWire V4 production schema and its Gateway-owned contract workspace SHALL live under the top-level `ai-gateway/` directory. That directory SHALL be the separate Go module `github.com/grafana/ai-sdk/ai-gateway` and, unless a nearer license states otherwise, SHALL be licensed under AGPL-3.0-only. The root `LICENSE` and reusable SDK files outside `ai-gateway/` SHALL remain Apache-2.0.
+
+The dependency boundary SHALL be one-way: Gateway code MAY import explicitly pinned SDK modules, but no Go module or production package outside `ai-gateway/` SHALL import, require, or replace the Gateway module. The Gateway module SHALL remain absent from the root `go.work` and root module graph. Root SDK build and test verification SHALL run successfully with `GOWORK=off`.
+
+Root and Gateway documentation SHALL state the applicable license and contribution scope. Gateway notice material SHALL record the registered Vercel AI SDK provenance and preserve applicable Apache attribution when SDK components are incorporated. The repository SHALL NOT claim that licenses already granted for published revisions are revoked or altered. Grafana legal confirmation of the effective transition, copyright provenance, Apache-derived attribution, and network corresponding-source offer mechanism SHALL be a pre-merge and pre-deployment requirement.
+
+#### Scenario: Gateway license and module are scoped by location
+- **WHEN** a file is owned by the Gateway product or its ProviderWire contract
+- **THEN** it SHALL live under `ai-gateway/` and be governed by the nearest AGPL-3.0-only license
+- **AND** `ai-gateway/go.mod` SHALL declare `github.com/grafana/ai-sdk/ai-gateway`
+- **AND** the root Apache-2.0 license SHALL remain unchanged
+
+#### Scenario: Apache modules remain independent
+- **WHEN** module-boundary verification runs
+- **THEN** no Go source or module outside `ai-gateway/` SHALL import, require, or replace the Gateway module
+- **AND** the root `go.work` and root module graph SHALL exclude it
+- **AND** the root SDK SHALL build and test with `GOWORK=off`
+
+#### Scenario: License and provenance are documented
+- **WHEN** contributors inspect the repository or Gateway contribution guidance
+- **THEN** the Apache-2.0 and AGPL-3.0-only scopes SHALL be explicit
+- **AND** applicable Gateway notice material SHALL identify registered-client contract provenance and incorporated Apache components
+
+#### Scenario: Legal readiness remains an external gate
+- **WHEN** this boundary is proposed for merge or a Gateway build is proposed for deployment
+- **THEN** Grafana legal confirmation SHALL be required
+- **AND** repository documentation SHALL NOT invent a confirmation or claim to revoke prior license grants
+
 ### Requirement: Complete production request schema
 
-The repository SHALL provide `gateway/providerwire/v4/schema/request.json` as a hand-authored draft 2020-12 JSON Schema for the complete JSON serialization projection of `Omit<LanguageModelV4CallOptions, "abortSignal">` at the registered baseline. The schema SHALL describe all registered request capabilities whether or not the first Go runtime supports them, SHALL require the root object and `prompt`, and SHALL close finite protocol-owned objects and tagged unions.
+The repository SHALL provide `ai-gateway/providerwire/v4/schema/request.json` as a hand-authored draft 2020-12 JSON Schema for the complete JSON serialization projection of `Omit<LanguageModelV4CallOptions, "abortSignal">` at the registered baseline. The schema SHALL describe all registered request capabilities whether or not the first Go runtime supports them, SHALL require the root object and `prompt`, and SHALL close finite protocol-owned objects and tagged unions.
 
 The schema SHALL model role-specific message content, file-data arms, function and provider tools, tool choice, tool-result output arms, approval responses, response format, provider options, body-carried headers, reasoning, raw-chunk selection, and scalar generation settings. `maxOutputTokens`, `topK`, and `seed` SHALL be integers; continuous sampling and penalty settings SHALL be numbers. Schema-valued payloads SHALL remain opaque JSON Schema objects. Each provider-options namespace SHALL be a JSON object whose nested JSON remains opaque. A provider-reference map SHALL contain provider-name string values and SHALL forbid the reserved `type` property. Provider-tool `id` and custom-part `kind` SHALL match the registered `${string}.${string}` shape by containing at least one period.
 

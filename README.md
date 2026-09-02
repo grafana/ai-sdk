@@ -131,6 +131,13 @@ OpenSpec — and the pull request checklist. All participants follow our
 
 ## License
 
-[Apache License 2.0](LICENSE). This SDK follows the design of
-[Vercel's AI SDK](https://github.com/vercel/ai), also Apache-2.0 licensed;
-attribution is recorded in [NOTICE](NOTICE).
+Reusable SDK code outside [`ai-gateway/`](ai-gateway/) is licensed under the
+[Apache License 2.0](LICENSE). The Grafana AI Gateway product under
+`ai-gateway/` is a separate module licensed under
+[AGPL-3.0-only](ai-gateway/LICENSE); see its
+[license boundary](ai-gateway/README.md#license-boundary) and
+[notice](ai-gateway/NOTICE).
+
+This boundary does not revoke or alter licenses already granted for published
+revisions. Attribution for the Vercel AI SDK and other applicable sources is
+recorded in [NOTICE](NOTICE) and [ai-gateway/NOTICE](ai-gateway/NOTICE).

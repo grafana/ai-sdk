@@ -92,7 +92,7 @@ describe("validateBaseline", () => {
     const paths = defaultPackagePaths("/repo/test/conformance/tools");
 
     assert.equal(
-      paths.some((path) => path.endsWith("/test/providerwire-v4/package.json")),
+      paths.some((path) => path.endsWith("/ai-gateway/test/providerwire-v4/package.json")),
       true,
     );
   });
@@ -101,11 +101,11 @@ describe("validateBaseline", () => {
     const errors = validateBaseline(
       { packages: { "@ai-sdk/gateway": "4.0.52" } },
       { dependencies: { "@ai-sdk/gateway": "4.0.51" } },
-      "test/providerwire-v4/package.json",
+      "ai-gateway/test/providerwire-v4/package.json",
     );
 
     assert.deepEqual(errors, [
-      "test/providerwire-v4/package.json dependency @ai-sdk/gateway pins 4.0.51, but baseline declares 4.0.52",
+      "ai-gateway/test/providerwire-v4/package.json dependency @ai-sdk/gateway pins 4.0.51, but baseline declares 4.0.52",
     ]);
   });
 
@@ -127,12 +127,12 @@ describe("validateBaseline", () => {
       const errors = validateBaseline(
         baseline,
         { dependencies },
-        "test/providerwire-v4/package.json",
+        "ai-gateway/test/providerwire-v4/package.json",
         providerWireRequiredPackages,
       );
 
       assert.deepEqual(errors, [
-        `test/providerwire-v4/package.json must declare dependency ${omitted}@${baseline.packages[omitted]}`,
+        `ai-gateway/test/providerwire-v4/package.json must declare dependency ${omitted}@${baseline.packages[omitted]}`,
       ]);
     }
   });

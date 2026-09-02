@@ -19,6 +19,9 @@
 /NOTICE @grafana/grafana-assistant-loop
 /CODE_OF_CONDUCT.md @grafana/grafana-assistant-loop
 /CONTRIBUTING.md @grafana/grafana-assistant-loop
+/ai-gateway/LICENSE @grafana/grafana-assistant-loop
+/ai-gateway/NOTICE @grafana/grafana-assistant-loop
+/ai-gateway/CONTRIBUTING.md @grafana/grafana-assistant-loop
 
 # CI, release, and repository automation.
 /.github/ @grafana/grafana-assistant-loop

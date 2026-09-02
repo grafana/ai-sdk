@@ -90,6 +90,9 @@ jobs:
       - name: Verify published module requirements resolve
         run: mise run verify-module-resolution
 
+      - name: Verify AI Gateway module and license boundary
+        run: mise run verify-ai-gateway-boundary
+
   parity-baseline:
     runs-on: ubuntu-latest
     permissions:

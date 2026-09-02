@@ -6,12 +6,13 @@ The registered authority is `test/conformance/upstream.yaml`: `@ai-sdk/gateway@4
 
 The TypeScript client is authoritative for what it emits and what it can consume. It is not complete server-response authority: unary handling spreads the server body and then replaces `request`, `response`, and `warnings` with client-owned values, and both success parsers accept arbitrary JSON. Later Go runtimes therefore need explicit response DTOs and schemas independently of these probes.
 
-This change spans a production schema namespace, a private TypeScript workspace, the shared pnpm workspace and lockfile, baseline validation, task registration, and parity documentation. It creates contract evidence only; it does not add an executable HTTP handler.
+This change spans the initial top-level `ai-gateway/` module and license boundary, a production schema namespace, a private TypeScript workspace, the shared pnpm workspace and lockfile, baseline validation, task registration, and parity documentation. It creates contract evidence only; it does not add an executable HTTP handler. The root SDK remains independently Apache-2.0 and buildable without the Gateway module.
 
 ## Goals / Non-Goals
 
 **Goals:**
 
+- Establish `ai-gateway/` as an isolated AGPL-3.0-only Go module with one-way dependency enforcement, clear contribution scope, and provenance notices while preserving the root Apache-2.0 license.
 - Define the complete JSON request projection of the registered `LanguageModelV4CallOptions` contract.
 - Make finite upstream request and response surface drift fail at TypeScript compile time.
 - Record compact, reviewable HTTP request semantics emitted by the real registered `createGateway` client.
@@ -22,7 +23,8 @@ This change spans a production schema namespace, a private TypeScript workspace,
 
 **Non-Goals:**
 
-- Implement HTTP envelope validation, raw JSON tokenization, schema application in Go, provider-domain mapping, catalog resolution, model invocation, errors, unary encoding, or streaming state machines.
+- Revoke or alter licenses already granted for published revisions, claim legal confirmation, or invent a corresponding-source mechanism before Grafana legal approves it.
+- Implement HTTP envelope validation, raw JSON processing, schema application in Go, provider-domain mapping, catalog resolution, model invocation, errors, unary encoding, or streaming state machines.
 - Define unary, stream, or error response schemas for the future server.
 - Generate the production request schema or a runtime feature-classification artifact from TypeScript.
 - Claim compatibility with Vercel's private Gateway server or request variants not emitted by the registered public client.
@@ -31,9 +33,17 @@ This change spans a production schema namespace, a private TypeScript workspace,
 
 ## Decisions
 
+### Establish the AGPL Gateway boundary before runtime code
+
+All Gateway-owned protocol authority and contract evidence lives below `ai-gateway/`, whose nearest license is the canonical AGPLv3 text and whose module path is `github.com/grafana/ai-sdk/ai-gateway`. The root license remains Apache-2.0. Root and Gateway documentation state contribution scope, registered-client provenance, applicable Apache notice obligations, and the required pre-merge and pre-deployment legal confirmation without claiming prior grants are revoked.
+
+The dependency boundary is one-way. The Gateway may later import explicitly pinned SDK modules, but no module or Go source outside `ai-gateway/` may import, require, or replace it. The Gateway module is intentionally absent from `go.work`; a blocking repository check inspects module files and imports and builds/tests the root SDK with `GOWORK=off`.
+
+Alternative: defer the boundary until executable server code lands. Rejected because the production protocol schema and Gateway-owned contract tests are already product artifacts and would otherwise acquire the root Apache license by location. Alternative: add the Gateway module to `go.work`. Rejected because workspace resolution could hide a forbidden SDK-to-Gateway dependency and would weaken independent root builds.
+
 ### Use the installed registered packages as executable authority
 
-`test/providerwire-v4` will invoke the public `createGateway` API from exact AI SDK versions matching `test/conformance/upstream.yaml`. Request capture will use the client's injected `fetch`; tests will not copy the client serializer or construct expected HTTP requests through a second implementation. Baseline validation will include this package manifest, and parity upgrades must update it with every other registered consumer.
+`ai-gateway/test/providerwire-v4` will invoke the public `createGateway` API from exact AI SDK versions matching `test/conformance/upstream.yaml`. Request capture will use the client's injected `fetch`; tests will not copy the client serializer or construct expected HTTP requests through a second implementation. Baseline validation will include this package manifest, and parity upgrades must update it with every other registered consumer.
 
 The matching upstream commit is used to explain behavior and design cases, but tests execute the published package versions because those are the declared consumer contract.
 
@@ -41,11 +51,11 @@ Alternative: import source from a mutable local upstream checkout. Rejected beca
 
 ### Keep the production schema hand-authored and runtime-neutral
 
-`gateway/providerwire/v4/schema/request.json` will be a draft 2020-12 JSON Schema and the sole production request-shape artifact introduced here. It will describe the complete serialized request projection, including capabilities that later runtimes initially reject as unsupported.
+`ai-gateway/providerwire/v4/schema/request.json` will be a draft 2020-12 JSON Schema and the sole production request-shape artifact introduced here. It will describe the complete serialized request projection, including capabilities that later runtimes initially reject as unsupported.
 
 Finite protocol-owned objects will be closed and role/tagged unions will be explicit. The root requires `prompt`; `abortSignal` is absent; integer controls are integers; continuous controls are numbers; required empty strings and arrays remain valid; typed null is accepted only where the registered JSON type permits it; `headers` contains serialized string values; each provider-options namespace is an object with opaque nested JSON; and schema-valued fields remain opaque JSON Schema objects rather than recursively redefining JSON Schema. Provider-reference maps accept provider-name string entries but forbid the reserved `type` property, while provider-tool `id` and custom-part `kind` require the baseline `${string}.${string}` shape.
 
-The schema will be compiled and exercised from TypeScript with a draft 2020-12 validator. Focused positive and negative cases will cover each finite branch and closure rule. Raw lexical concerns such as duplicate keys, invalid UTF-8, excessive nesting, numeric token bytes, and unpaired escaped surrogates remain responsibilities of the later pre-schema tokenizer.
+The schema will be compiled and exercised from TypeScript with a draft 2020-12 validator. Focused positive and negative cases will cover each finite branch and closure rule. Raw runtime handling remains owned by the later unary package: request bytes bound work, invalid raw UTF-8 is rejected, and standard Go JSON plus complete-schema and typed-scalar decoding deliberately use last-value duplicate-member semantics and U+FFFD replacement for escaped lone surrogates.
 
 Alternative: generate JSON Schema from TypeScript. Rejected because generated schemas can silently weaken union closure, presence, or opaque JSON semantics and would couple production authority to a tooling translation. Alternative: initially schema only the text subset. Rejected because unsupported-capability handling in the next work package requires distinguishing schema-invalid input from valid but not-yet-executable input.
 
@@ -109,12 +119,14 @@ Alternative: fold these cases into `test/conformance/tools`. Rejected because pr
 
 ### Preserve the legacy retirement boundary by versioning the new namespace
 
-The existing retired `gateway/providerwire` Go package remains absent. The new schema lives below the explicit `gateway/providerwire/v4` namespace and does not restore an unversioned package, tolerant codec, handler, or Grafana client. Provider-domain JSON remains non-authoritative.
+The existing retired `gateway/providerwire` Go package remains absent. The new schema lives below the explicit `ai-gateway/providerwire/v4` namespace and does not restore an unversioned package, tolerant codec, handler, or Grafana client. Provider-domain JSON remains non-authoritative.
 
 Alternative: place the schema in the retired package root. Rejected because that would blur strict V4 artifacts with the deleted unversioned transport and make later imports ambiguous.
 
 ## Risks / Trade-offs
 
+- [The repository boundary is mistaken for retroactive relicensing] → Keep the root Apache license unchanged, state nearest-license scope explicitly, preserve prior grants, and require Grafana legal confirmation before merge or deployment.
+- [A workspace or module reference creates a reverse dependency] → Keep `ai-gateway/` out of `go.work`, scan every non-Gateway Go module and source import, and build/test the root module with `GOWORK=off` in blocking CI.
 - [The hand-authored schema drifts from TypeScript types] → Combine compile-time finite witnesses, positive/negative branch cases, real-client golden validation, and required baseline review; do not claim mechanical equivalence for open-ended JSON.
 - [A compact golden omits an important presence distinction] → Keep a dedicated scalar/presence family and assert absent, false, zero, empty string, empty array, empty object, nested null, and transformed file values explicitly.
 - [Permissive response probes overstate server compatibility] → Document and test the unary overwrite behavior, classify probes only as client-consumption evidence, and defer strict output schemas and raw HTTP assertions.
@@ -126,11 +138,12 @@ Alternative: place the schema in the retired package root. Rejected because that
 
 ## Migration Plan
 
-1. Add the versioned schema and private workspace without changing any runtime route or exported Go API.
-2. Register exact baseline dependencies, regenerate the shared test lockfile, and add baseline validation coverage.
-3. Land committed request goldens only after they are emitted by the registered client and validate against the production schema.
-4. Add the non-mutating ProviderWire check to parity verification and classify the new evidence in `test/conformance/PARITY.md`.
-5. If rollback is required, remove the new schema/workspace/task registration together; no deployed runtime or consumer migration is involved.
+1. Establish the `ai-gateway/` module, AGPL-3.0-only nearest license, notices, contribution scope, legal-readiness gate, and blocking one-way dependency verification without changing the root license or workspace graph.
+2. Add the versioned schema and private workspace below `ai-gateway/` without changing any runtime route or exported Go API.
+3. Register exact baseline dependencies, regenerate only the shared test lockfile path, and add baseline validation coverage.
+4. Land committed request goldens only after they are emitted by the registered client and validate against the production schema.
+5. Add the non-mutating ProviderWire check to parity verification and classify the new evidence in `test/conformance/PARITY.md`.
+6. If rollback is required, remove the new Gateway module/schema/workspace/task registration together; no deployed runtime or consumer migration is involved.
 
 ## Open Questions
 

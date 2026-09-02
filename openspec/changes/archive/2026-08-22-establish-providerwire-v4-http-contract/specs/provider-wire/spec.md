@@ -4,7 +4,7 @@
 
 The repository SHALL NOT publish, build, test, document as available, or claim compatibility for the tolerant legacy unversioned `gateway/providerwire` server or `providers/grafana` client. It SHALL NOT provide compatibility aliases, forwarding shims, copied codecs, or a legacy transport mode at another import path. Provider-domain JSON marshal and unmarshal behavior SHALL remain unchanged as local representation behavior, but provider structs and marshalers SHALL NOT define ProviderWire HTTP bytes, validation, or compatibility.
 
-Any strict protocol introduced after retirement SHALL live under an explicit versioned namespace such as `gateway/providerwire/v4`. Versioned strict artifacts SHALL use independent protocol DTOs or schemas, SHALL NOT import or restore legacy codecs, and SHALL NOT weaken the retirement of the exact unversioned package and client paths.
+Any strict protocol introduced after retirement SHALL live under an explicit versioned namespace such as `ai-gateway/providerwire/v4`. Versioned strict artifacts SHALL use independent protocol DTOs or schemas, SHALL NOT import or restore legacy codecs, and SHALL NOT weaken the retirement of the exact unversioned package and client paths.
 
 #### Scenario: Legacy production packages remain removed
 - **WHEN** the repository's tracked Go packages and modules are inspected
@@ -13,7 +13,7 @@ Any strict protocol introduced after retirement SHALL live under an explicit ver
 - **AND** no production package SHALL import or re-export either retired path
 
 #### Scenario: Versioned strict contract is independent
-- **WHEN** artifacts are added below `gateway/providerwire/v4`
+- **WHEN** artifacts are added below `ai-gateway/providerwire/v4`
 - **THEN** they SHALL define only the explicit strict V4 contract or later strict V4 implementation
 - **AND** they SHALL NOT expose the deleted tolerant handler, codecs, wire values, or compatibility mode
 

@@ -85,7 +85,16 @@ export function defaultPackagePaths(baseDirectory = __dirname): string[] {
     join(baseDirectory, "package.json"),
     join(baseDirectory, "..", "..", "integration", "package.json"),
     join(baseDirectory, "..", "..", "cli", "package.json"),
-    join(baseDirectory, "..", "..", "providerwire-v4", "package.json"),
+    join(
+      baseDirectory,
+      "..",
+      "..",
+      "..",
+      "ai-gateway",
+      "test",
+      "providerwire-v4",
+      "package.json",
+    ),
   ];
 }
 

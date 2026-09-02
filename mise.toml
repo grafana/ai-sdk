@@ -22,7 +22,7 @@ sources = [
   "test/cli/package.json",
   "test/conformance/tools/package.json",
   "test/integration/package.json",
-  "test/providerwire-v4/package.json",
+  "ai-gateway/test/providerwire-v4/package.json",
 ]
 outputs = ["test/node_modules/.modules.yaml"]
 run = "cd test && pnpm install --frozen-lockfile"
@@ -148,6 +148,10 @@ for go_mod in $(git ls-files 'go.mod' '*/go.mod' | while read -r file; do [ -f "
   (cd "$mod" && go mod download && go mod verify > /dev/null)
 done
 """
+
+[tasks.verify-ai-gateway-boundary]
+description = "Verify the one-way AI Gateway module and license boundary"
+run = "bash scripts/verify-ai-gateway-boundary.sh"
 
 [tasks.lint]
 description = "Run golangci-lint across all modules"
@@ -360,4 +364,5 @@ mise run vet
 mise run lint
 mise run lint-docs
 mise run test
+mise run verify-ai-gateway-boundary
 """
