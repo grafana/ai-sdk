@@ -31,7 +31,10 @@ type model struct {
 // New creates a LanguageModel for the direct Anthropic API.
 func New(apiKey, modelID string, opts ...Option) provider.LanguageModel {
 	m := &model{
-		client:       anthropic.NewClient(option.WithAPIKey(apiKey)),
+		client: anthropic.NewClient(
+			option.WithoutEnvironmentDefaults(),
+			option.WithAPIKey(apiKey),
+		),
 		modelID:      modelID,
 		providerName: "anthropic",
 		resolveModel: func(id string) string { return id },
