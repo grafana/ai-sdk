@@ -233,7 +233,7 @@ func TestBuildRequest_FunctionToolStrict(t *testing.T) {
 
 func TestBuildRequest_AnthropicThinkingEnabled(t *testing.T) {
 	bo := BedrockOptions{
-		ReasoningConfig: &ReasoningConfig{Type: "enabled", BudgetTokens: 2048},
+		ReasoningConfig: &ReasoningConfig{Type: "enabled", BudgetTokens: intPtr(2048)},
 	}
 	temp := 0.7
 	maxTok := 1024
@@ -355,7 +355,7 @@ func TestBuildRequest_TopLevelReasoningMergesProviderConfig(t *testing.T) {
 			Prompt:    []provider.Message{provider.UserText("x")},
 			Reasoning: &reasoning,
 			ProviderOptions: provider.BuildProviderOptions(BedrockOptions{
-				ReasoningConfig: &ReasoningConfig{Type: "enabled", BudgetTokens: 3000},
+				ReasoningConfig: &ReasoningConfig{Type: "enabled", BudgetTokens: intPtr(3000)},
 			}),
 		})
 		assert.Empty(t, warnings)
@@ -376,7 +376,7 @@ func TestBuildRequest_TopLevelReasoningMergesProviderConfig(t *testing.T) {
 			Prompt:    []provider.Message{provider.UserText("x")},
 			Reasoning: &reasoning,
 			ProviderOptions: provider.BuildProviderOptions(BedrockOptions{
-				ReasoningConfig: &ReasoningConfig{Type: "disabled", BudgetTokens: 3000},
+				ReasoningConfig: &ReasoningConfig{Type: "disabled", BudgetTokens: intPtr(3000)},
 			}),
 		})
 		assert.Empty(t, warnings)
@@ -406,7 +406,7 @@ func TestBuildRequest_TopLevelReasoningMergesProviderConfig(t *testing.T) {
 			Prompt:    []provider.Message{provider.UserText("x")},
 			Reasoning: &reasoning,
 			ProviderOptions: provider.BuildProviderOptions(BedrockOptions{
-				ReasoningConfig: &ReasoningConfig{Type: "enabled", BudgetTokens: 3000},
+				ReasoningConfig: &ReasoningConfig{Type: "enabled", BudgetTokens: intPtr(3000)},
 			}),
 		})
 		require.Len(t, warnings, 1)
@@ -427,7 +427,7 @@ func TestBuildRequest_TopLevelReasoningMergesProviderConfig(t *testing.T) {
 			Prompt:    []provider.Message{provider.UserText("x")},
 			Reasoning: &reasoning,
 			ProviderOptions: provider.BuildProviderOptions(BedrockOptions{
-				ReasoningConfig: &ReasoningConfig{Type: "adaptive", BudgetTokens: 3000},
+				ReasoningConfig: &ReasoningConfig{Type: "adaptive", BudgetTokens: intPtr(3000)},
 			}),
 		})
 		require.Len(t, warnings, 2)
@@ -535,7 +535,7 @@ func TestBuildRequest_TopLevelReasoningNonAnthropicCompatibilityWarnings(t *test
 
 func TestBuildRequest_AnthropicOnlyOptionsOnNonAnthropicModel(t *testing.T) {
 	bo := BedrockOptions{
-		ReasoningConfig: &ReasoningConfig{Type: "enabled", BudgetTokens: 2048},
+		ReasoningConfig: &ReasoningConfig{Type: "enabled", BudgetTokens: intPtr(2048)},
 	}
 	req, warnings, _ := mustBuildRequest(t, testMistralModel, provider.CallOptions{
 		Prompt:          []provider.Message{provider.UserText("x")},
@@ -1314,7 +1314,7 @@ func TestBuildRequest_UnsupportedFileDataVariants(t *testing.T) {
 
 func TestBuildRequest_AdditionalModelRequestFieldsPreservesDerived(t *testing.T) {
 	bo := BedrockOptions{
-		ReasoningConfig:              &ReasoningConfig{Type: "enabled", BudgetTokens: 2048},
+		ReasoningConfig:              &ReasoningConfig{Type: "enabled", BudgetTokens: intPtr(2048)},
 		AdditionalModelRequestFields: map[string]any{"thinking": map[string]any{"type": "custom", "display": "visible"}},
 	}
 	req, _, _ := mustBuildRequest(t, testAnthropicModel, provider.CallOptions{
@@ -1752,12 +1752,56 @@ func TestBuildRequest_MultipleSystemMessagesSeparatedWarns(t *testing.T) {
 	assert.True(t, found, "expected a systemMessage warning for separated system messages")
 }
 
+func TestBuildRequest_ApplicationInferenceProfileReasoningBudget(t *testing.T) {
+	modelID := "arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/custom-profile"
+	tests := []struct {
+		name            string
+		budgetTokens    int
+		providerOptions provider.ProviderOptions
+	}{
+		{
+			name:         "positive typed option",
+			budgetTokens: 1024,
+			providerOptions: provider.BuildProviderOptions(BedrockOptions{
+				ReasoningConfig: &ReasoningConfig{Type: "enabled", BudgetTokens: intPtr(1024)},
+			}),
+		},
+		{
+			name:            "zero raw modern option",
+			budgetTokens:    0,
+			providerOptions: provider.ProviderOptions{"amazonBedrock": provider.RawProviderOption{Raw: json.RawMessage(`{"reasoningConfig":{"type":"enabled","budgetTokens":0}}`)}},
+		},
+		{
+			name:            "negative raw legacy option",
+			budgetTokens:    -1,
+			providerOptions: provider.ProviderOptions{"bedrock": provider.RawProviderOption{Raw: json.RawMessage(`{"reasoningConfig":{"type":"enabled","budgetTokens":-1}}`)}},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			maxOutputTokens := 1100
+			req, warnings, _ := mustBuildRequest(t, modelID, provider.CallOptions{
+				Prompt:          []provider.Message{provider.UserText("x")},
+				MaxOutputTokens: &maxOutputTokens,
+				ProviderOptions: tc.providerOptions,
+			})
+
+			assert.Empty(t, warnings)
+			assert.Equal(t, map[string]any{"type": "enabled", "budget_tokens": tc.budgetTokens}, req.AdditionalModelRequestFields["thinking"])
+			require.NotNil(t, req.InferenceConfig)
+			require.NotNil(t, req.InferenceConfig.MaxTokens)
+			assert.Equal(t, maxOutputTokens+tc.budgetTokens, *req.InferenceConfig.MaxTokens)
+			assert.Equal(t, []string{"/delta/stop_sequence"}, req.AdditionalModelResponseFieldPaths)
+		})
+	}
+}
+
 func TestBuildRequest_NativeStructuredOutputWhenThinkingEnabled(t *testing.T) {
 	// An older Anthropic model that does NOT match supportsNativeStructuredOutput
 	// markers, but with thinking enabled, should still use native structured
 	// output (matching upstream's modelSupportsStructuredOutput || isThinkingEnabled).
 	schema := json.RawMessage(`{"type":"object"}`)
-	bo := BedrockOptions{ReasoningConfig: &ReasoningConfig{Type: "enabled", BudgetTokens: 1024}}
+	bo := BedrockOptions{ReasoningConfig: &ReasoningConfig{Type: "enabled", BudgetTokens: intPtr(1024)}}
 	req, _, meta := mustBuildRequest(t, "anthropic.claude-3-haiku-20240307-v1:0", provider.CallOptions{
 		Prompt: []provider.Message{provider.UserText("x")},
 		ResponseFormat: &provider.ResponseFormat{

@@ -461,6 +461,11 @@ func TestBuildParams_OutputSchemaTextResultsAreJSONEncoded(t *testing.T) {
 			provider.ToolResultPart("call_error", "search", &provider.ToolResultOutput{Type: provider.ToolOutputErrorText, Text: "Error: boom"}),
 			provider.ToolResultPart("call_denied", "search", &provider.ToolResultOutput{Type: provider.ToolOutputExecutionDenied, Reason: "User denied the tool execution"}),
 			provider.ToolResultPart("call_without_schema", "lookup", &provider.ToolResultOutput{Type: provider.ToolOutputErrorText, Text: "Error: unchanged"}),
+			provider.ToolResultPart("call_schema_breakpoint", "search", &provider.ToolResultOutput{
+				Type:            provider.ToolOutputText,
+				Text:            "Structured output",
+				ProviderOptions: provider.BuildProviderOptions(OpenAIPartOptions{PromptCacheBreakpoint: &PromptCacheBreakpoint{Mode: "explicit"}}),
+			}),
 		)},
 		Tools: []provider.Tool{
 			{
@@ -475,11 +480,15 @@ func TestBuildParams_OutputSchemaTextResultsAreJSONEncoded(t *testing.T) {
 	})
 
 	input := body["input"].([]any)
-	require.Len(t, input, 4)
+	require.Len(t, input, 5)
 	assert.Equal(t, `"The weather is sunny"`, input[0].(map[string]any)["output"])
 	assert.Equal(t, `"Error: boom"`, input[1].(map[string]any)["output"])
 	assert.Equal(t, `"User denied the tool execution"`, input[2].(map[string]any)["output"])
 	assert.Equal(t, "Error: unchanged", input[3].(map[string]any)["output"])
+	output := input[4].(map[string]any)["output"].([]any)
+	require.Len(t, output, 1)
+	assert.Equal(t, `"Structured output"`, output[0].(map[string]any)["text"])
+	assert.Equal(t, map[string]any{"mode": "explicit"}, output[0].(map[string]any)["prompt_cache_breakpoint"])
 }
 
 func TestBuildParams_ProviderToolContinuationTaxonomy(t *testing.T) {
@@ -1017,6 +1026,49 @@ func TestBuildParams_MCPApprovalContinuation(t *testing.T) {
 			assert.Equal(t, true, response["approve"])
 		})
 	}
+}
+
+func TestBuildParams_ScalarToolResultPromptCacheBreakpoints(t *testing.T) {
+	breakpoint := &PromptCacheBreakpoint{Mode: "explicit"}
+	functionResult := provider.ToolResultPart("call_function", "lookup", &provider.ToolResultOutput{
+		Type:            provider.ToolOutputJSON,
+		JSON:            json.RawMessage(`{"stable":true}`),
+		ProviderOptions: provider.BuildProviderOptions(OpenAIPartOptions{PromptCacheBreakpoint: breakpoint}),
+	})
+	customResult := provider.ToolResultPart("call_custom", "write_sql", &provider.ToolResultOutput{
+		Type: provider.ToolOutputText,
+		Text: "stable tool output",
+	})
+	customResult.ProviderOptions = provider.BuildProviderOptions(OpenAIPartOptions{PromptCacheBreakpoint: breakpoint})
+
+	body, warnings := buildBody(t, "gpt-5", provider.CallOptions{
+		Prompt: []provider.Message{provider.NewToolMessage(functionResult, customResult)},
+		Tools: []provider.Tool{
+			{Type: provider.ToolTypeFunction, Name: "lookup"},
+			{Type: provider.ToolTypeProvider, ID: toolIDCustom, Name: "write_sql"},
+		},
+	})
+
+	assert.Empty(t, warnings)
+	functionOutput := findInput(body, "function_call_output")["output"].([]any)
+	require.Len(t, functionOutput, 1)
+	assert.Equal(t, `{"stable":true}`, functionOutput[0].(map[string]any)["text"])
+	assert.Equal(t, map[string]any{"mode": "explicit"}, functionOutput[0].(map[string]any)["prompt_cache_breakpoint"])
+	customOutput := findInput(body, "custom_tool_call_output")["output"].([]any)
+	require.Len(t, customOutput, 1)
+	assert.Equal(t, "stable tool output", customOutput[0].(map[string]any)["text"])
+	assert.Equal(t, map[string]any{"mode": "explicit"}, customOutput[0].(map[string]any)["prompt_cache_breakpoint"])
+
+	outputBreakpoint := &PromptCacheBreakpoint{Mode: "output"}
+	partBreakpoint := &PromptCacheBreakpoint{Mode: "part"}
+	part := provider.ToolResultPart("call_precedence", "lookup", &provider.ToolResultOutput{
+		Type:            provider.ToolOutputErrorText,
+		Text:            "boom",
+		ProviderOptions: provider.BuildProviderOptions(OpenAIPartOptions{PromptCacheBreakpoint: outputBreakpoint}),
+	})
+	part.ProviderOptions = provider.BuildProviderOptions(OpenAIPartOptions{PromptCacheBreakpoint: partBreakpoint})
+	ctx := inputConversionContext{providerOptionsName: "openai"}
+	assert.Same(t, outputBreakpoint, scalarToolResultPromptCacheBreakpoint(part, ctx))
 }
 
 func TestBuildParams_CustomToolContentOptions(t *testing.T) {

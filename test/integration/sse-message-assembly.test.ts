@@ -137,6 +137,44 @@ describe("SSE message assembly", () => {
     ]);
   });
 
+  it("assembles alternating reasoning and text blocks from one provider chunk", async () => {
+    const { chunks, messages } = await readScenario("alternating-content");
+    const starts = chunks.filter(
+      chunk => chunk.type === "text-start" || chunk.type === "reasoning-start",
+    );
+    expect(starts.map(chunk => ({ type: chunk.type, id: chunk.id }))).toEqual([
+      { type: "reasoning-start", id: "reasoning-0" },
+      { type: "text-start", id: "txt-0" },
+      { type: "reasoning-start", id: "generated-1" },
+    ]);
+
+    const lastMessage = messages[messages.length - 1];
+    expect(lastMessage.parts.filter(part => part.type === "reasoning")).toEqual([
+      {
+        type: "reasoning",
+        id: "reasoning-0",
+        text: "think",
+        state: "done",
+        providerMetadata: undefined,
+      },
+      {
+        type: "reasoning",
+        id: "generated-1",
+        text: "again",
+        state: "done",
+        providerMetadata: undefined,
+      },
+    ]);
+    expect(lastMessage.parts.filter(part => part.type === "text")).toEqual([
+      {
+        type: "text",
+        text: "answer",
+        state: "done",
+        providerMetadata: undefined,
+      },
+    ]);
+  });
+
   it("assembles a message terminated by a length finish reason", async () => {
     const messages = await readScenarioMessages("finish-reason-length");
     const lastMessage = messages[messages.length - 1];

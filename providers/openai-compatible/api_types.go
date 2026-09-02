@@ -174,16 +174,16 @@ type chatChoice struct {
 }
 
 type chatResponseMessage struct {
-	Role             string         `json:"role"`
-	Content          string         `json:"content"`
-	ReasoningContent string         `json:"reasoning_content"`
-	Reasoning        string         `json:"reasoning"`
-	ToolCalls        []chatToolCall `json:"tool_calls"`
+	Role             string          `json:"role"`
+	Content          json.RawMessage `json:"content"`
+	ReasoningContent string          `json:"reasoning_content"`
+	Reasoning        string          `json:"reasoning"`
+	ToolCalls        []chatToolCall  `json:"tool_calls"`
 }
 
 type chatDeltaMessage struct {
 	Role             string              `json:"role"`
-	Content          string              `json:"content"`
+	Content          json.RawMessage     `json:"content"`
 	ReasoningContent string              `json:"reasoning_content"`
 	Reasoning        string              `json:"reasoning"`
 	ToolCalls        []chatToolCallDelta `json:"tool_calls"`

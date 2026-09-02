@@ -160,7 +160,7 @@ type ReasoningConfig struct {
 	Type string `json:"type,omitempty"`
 	// BudgetTokens is the thinking budget for Type="enabled". Required when
 	// Type is "enabled".
-	BudgetTokens int `json:"budgetTokens,omitempty"`
+	BudgetTokens *int `json:"budgetTokens,omitempty"`
 	// Display controls adaptive thinking display ("auto" or "always"). Only
 	// meaningful when Type is "adaptive".
 	Display string `json:"display,omitempty"`

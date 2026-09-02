@@ -13,6 +13,11 @@ func isAnthropicModel(modelID string) bool {
 	return strings.Contains(modelID, "anthropic")
 }
 
+func isAnthropicRequest(modelID string, reasoningConfig *ReasoningConfig) bool {
+	return isAnthropicModel(modelID) ||
+		(strings.Contains(modelID, ":application-inference-profile/") && reasoningConfig != nil && reasoningConfig.BudgetTokens != nil)
+}
+
 var openAIModelPattern = regexp.MustCompile(`^(?:[^.]+\.)?(openai\..+)$`)
 
 // isOpenAIModel returns true when the Bedrock model ID refers to an OpenAI

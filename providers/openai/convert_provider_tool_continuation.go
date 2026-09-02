@@ -94,6 +94,16 @@ func (c inputConversionContext) contentOptions(content provider.ToolResultConten
 	return openAIPartOptionsFor(content.ProviderOptions, c.providerOptionsName)
 }
 
+func scalarToolResultPromptCacheBreakpoint(part provider.ContentPart, ctx inputConversionContext) *PromptCacheBreakpoint {
+	if part.Output == nil || part.Output.Type == provider.ToolOutputContent {
+		return nil
+	}
+	if breakpoint := ctx.outputOptions(part.Output).PromptCacheBreakpoint; breakpoint != nil {
+		return breakpoint
+	}
+	return ctx.partOptions(part).PromptCacheBreakpoint
+}
+
 func convertAssistantToolCall(part provider.ContentPart, ctx inputConversionContext) (*responses.ResponseInputItemUnionParam, error) {
 	po := ctx.partOptions(part)
 	if ctx.hasConversation && po.ItemID != "" {
@@ -261,7 +271,16 @@ func convertProviderToolResult(part provider.ContentPart, ctx inputConversionCon
 		item, warnings := customToolCallOutputItem(part, ctx)
 		return item, warnings, nil
 	default:
-		item := responses.ResponseInputItemParamOfFunctionCallOutput(part.ToolCallID, toolResultOutputString(part.Output, ctx.hasOutputSchema(part.ToolName)))
+		output := toolResultOutputString(part.Output, ctx.hasOutputSchema(part.ToolName))
+		breakpoint := scalarToolResultPromptCacheBreakpoint(part, ctx)
+		var item responses.ResponseInputItemUnionParam
+		if breakpoint == nil {
+			item = responses.ResponseInputItemParamOfFunctionCallOutput(part.ToolCallID, output)
+		} else {
+			item = responses.ResponseInputItemParamOfFunctionCallOutput(part.ToolCallID, responses.ResponseFunctionCallOutputItemListParam{
+				functionCallOutputText(output, breakpoint),
+			})
+		}
 		item.OfFunctionCallOutput.Caller = functionCallOutputCallerParam(ctx.partOptions(part).Caller)
 		return &item, nil, nil
 	}
@@ -653,7 +672,15 @@ func customToolCallOutputItem(part provider.ContentPart, ctx inputConversionCont
 		return &item, nil
 	}
 	if part.Output.Type != provider.ToolOutputContent {
-		item := responses.ResponseInputItemParamOfCustomToolCallOutput(part.ToolCallID, toolResultOutputString(part.Output, false))
+		output := toolResultOutputString(part.Output, false)
+		breakpoint := scalarToolResultPromptCacheBreakpoint(part, ctx)
+		if breakpoint == nil {
+			item := responses.ResponseInputItemParamOfCustomToolCallOutput(part.ToolCallID, output)
+			return &item, nil
+		}
+		item := responses.ResponseInputItemParamOfCustomToolCallOutput(part.ToolCallID, []responses.ResponseCustomToolCallOutputOutputOutputContentListItemUnionParam{
+			customToolOutputText(output, breakpoint),
+		})
 		return &item, nil
 	}
 

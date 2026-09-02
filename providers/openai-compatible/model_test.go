@@ -246,6 +246,110 @@ func TestDoGenerateSendsCompatibleRequest(t *testing.T) {
 	require.Equal(t, time.Unix(1710000000, 0).UTC(), result.Response.Timestamp)
 }
 
+func TestDoGenerateNormalizesArrayContent(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"id":"chatcmpl_parts",
+			"model":"test-model",
+			"choices":[{"message":{"role":"assistant","content":[
+				{"type":"thinking","thinking":[{"type":"text","text":"Let me think"},42,{"type":"future","text":"ignored"},{"type":"text","text":" this through."}]},
+				{"type":"future-part","text":{"nested":true}},
+				{"type":"text","text":"The answer is 391."}
+			]},"finish_reason":"stop"}]
+		}`))
+	}))
+	defer server.Close()
+
+	result, err := New("test-model", WithBaseURL(server.URL)).DoGenerate(context.Background(), provider.CallOptions{
+		Prompt: []provider.Message{provider.UserText("hi")},
+	})
+	require.NoError(t, err)
+	require.Len(t, result.Content, 2)
+	assert.Equal(t, provider.ContentReasoning, result.Content[0].Type)
+	assert.Equal(t, "Let me think this through.", result.Content[0].Text)
+	assert.Equal(t, provider.ContentText, result.Content[1].Type)
+	assert.Equal(t, "The answer is 391.", result.Content[1].Text)
+}
+
+func TestDoStreamNormalizesArrayContent(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(
+			`data: {"id":"chatcmpl_parts","created":1710000000,"model":"test-model","choices":[{"delta":{"content":[{"type":"thinking","thinking":[{"type":"text","text":"think"}]},{"type":"text","text":"answer"},{"type":"future-part"},{"type":"thinking","thinking":[{"type":"text","text":"again"}]}]},"finish_reason":"stop"}]}` + "\n\n" +
+				`data: [DONE]` + "\n\n",
+		))
+	}))
+	defer server.Close()
+
+	result, err := New("test-model", WithBaseURL(server.URL)).DoStream(context.Background(), provider.CallOptions{
+		Prompt: []provider.Message{provider.UserText("hi")},
+	})
+	require.NoError(t, err)
+	parts := collectStreamParts(result)
+
+	var got []string
+	for _, part := range parts {
+		switch part.Type {
+		case provider.PartReasoningStart, provider.PartReasoningEnd, provider.PartTextStart, provider.PartTextEnd:
+			got = append(got, string(part.Type))
+		case provider.PartReasoningDelta, provider.PartTextDelta:
+			got = append(got, string(part.Type)+":"+part.Delta)
+		}
+	}
+	assert.Equal(t, []string{
+		"reasoning-start", "reasoning-delta:think", "reasoning-end",
+		"text-start", "text-delta:answer", "text-end",
+		"reasoning-start", "reasoning-delta:again", "reasoning-end",
+	}, got)
+}
+
+func TestDoStreamRejectsMalformedArrayContentAtomically(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(
+			`data: {"id":"invalid","created":1710000000,"model":"test-model","choices":[{"delta":{"content":[{"text":"missing type"}],"tool_calls":[{"index":0,"id":"call_invalid","type":"function","function":{"name":"weather","arguments":"{}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":99,"completion_tokens":99,"total_tokens":198}}` + "\n\n" +
+				`data: {"id":"valid","created":1710000001,"model":"test-model","choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}` + "\n\n" +
+				`data: [DONE]` + "\n\n",
+		))
+	}))
+	defer server.Close()
+
+	result, err := New("test-model", WithBaseURL(server.URL)).DoStream(context.Background(), provider.CallOptions{
+		Prompt: []provider.Message{provider.UserText("hi")},
+	})
+	require.NoError(t, err)
+	parts := collectStreamParts(result)
+
+	var responseIDs []string
+	var errorCount, toolCallCount int
+	var finish provider.StreamPart
+	for _, part := range parts {
+		switch part.Type {
+		case provider.PartResponseMeta:
+			responseIDs = append(responseIDs, part.ResponseID)
+		case provider.PartError:
+			errorCount++
+		case provider.PartToolCall:
+			toolCallCount++
+		case provider.PartFinish:
+			finish = part
+		}
+	}
+	assert.Equal(t, []string{"valid"}, responseIDs)
+	assert.Equal(t, 1, errorCount)
+	assert.Zero(t, toolCallCount)
+	assert.Equal(t, provider.FinishReasonStop, finish.FinishReason.Unified)
+	assert.Nil(t, finish.Usage.InputTokens.Total)
+	assert.Nil(t, finish.Usage.OutputTokens.Total)
+}
+
 func TestDoGeneratePreservesEpochTimestamp(t *testing.T) {
 	t.Parallel()
 
