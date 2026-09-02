@@ -156,22 +156,40 @@ run = "bash scripts/verify-ai-gateway-boundary.sh"
 [tasks.lint]
 description = "Run golangci-lint across all modules"
 run = """
-for mod in $(find . -name go.mod -not -path './.git/*' -exec dirname {} \\; | sort); do
-  packages=$(cd "$mod" && go list ./... 2>/dev/null || true)
-  if [ -n "$packages" ]; then
-    echo "lint $mod"
-    (cd "$mod" && golangci-lint run ./...)
+set -e
+workspace_file=$(mktemp "$PWD/.lint-go.work.XXXXXX")
+trap 'rm -f "$workspace_file" "$workspace_file.sum"' EXIT
+cp go.work "$workspace_file"
+cp go.work.sum "$workspace_file.sum"
+workspace_modules=$(
+  go work edit -json go.work |
+    jq -r '.Use[].DiskPath' |
+    while read -r module; do
+      (cd "$module" && pwd -P)
+    done
+)
+
+run_in_module() {
+  module=$1
+  shift
+  module_path=$(cd "$module" && pwd -P)
+  if printf '%s\n' "$workspace_modules" | grep -Fxq "$module_path"; then
+    (cd "$module" && GOWORK="$workspace_file" "$@")
+  else
+    (cd "$module" && GOWORK=off "$@")
+  fi
+}
+
+for go_mod in $(git ls-files 'go.mod' '*/go.mod' | sort); do
+  mod=$(dirname "$go_mod")
+  packages=$(run_in_module "$mod" go list -tags conformance ./...)
+  if [ -z "$packages" ]; then
+    echo "lint $mod (skipped: no packages)"
     continue
   fi
 
-  conformance_packages=$(cd "$mod" && go list -tags conformance ./... 2>/dev/null || true)
-  if [ -n "$conformance_packages" ]; then
-    echo "lint $mod -tags conformance"
-    (cd "$mod" && golangci-lint run --build-tags conformance ./...)
-    continue
-  fi
-
-  echo "lint $mod (skipped: no packages)"
+  echo "lint $mod"
+  run_in_module "$mod" golangci-lint run --build-tags conformance ./...
 done
 """
 
