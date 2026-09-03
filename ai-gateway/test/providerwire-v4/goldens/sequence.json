@@ -1,0 +1,52 @@
+[
+  {
+    "method": "POST",
+    "path": "/language-model",
+    "headers": {
+      "ai-language-model-id": "grafana/sequence",
+      "ai-language-model-specification-version": "4",
+      "ai-language-model-streaming": "false",
+      "content-type": "application/json"
+    },
+    "streaming": false,
+    "hasSignal": false,
+    "body": {
+      "prompt": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "first"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/language-model",
+    "headers": {
+      "ai-language-model-id": "grafana/sequence",
+      "ai-language-model-specification-version": "4",
+      "ai-language-model-streaming": "true",
+      "content-type": "application/json"
+    },
+    "streaming": true,
+    "hasSignal": false,
+    "body": {
+      "prompt": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "second"
+            }
+          ]
+        }
+      ]
+    }
+  }
+]

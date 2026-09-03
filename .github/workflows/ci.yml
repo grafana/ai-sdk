@@ -44,11 +44,7 @@ jobs:
         run: mise run vet
 
       - name: Lint
-        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
-        with:
-          install-mode: none
-          experimental: automatic-module-directories
-          args: --build-tags conformance
+        run: mise run lint
 
       - name: Build
         run: mise run build
@@ -90,6 +86,9 @@ jobs:
       - name: Verify published module requirements resolve
         run: mise run verify-module-resolution
 
+      - name: Verify AI Gateway module and license boundary
+        run: mise run verify-ai-gateway-boundary
+
   parity-baseline:
     runs-on: ubuntu-latest
     permissions:
@@ -106,6 +105,9 @@ jobs:
 
       - name: Validate parity baseline
         run: mise run validate-parity-baseline
+
+      - name: Verify ProviderWire V4 contract
+        run: mise run test-providerwire-v4
 
       - name: Fetch pinned upstream fixtures
         run: |

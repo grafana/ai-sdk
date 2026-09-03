@@ -1,0 +1,729 @@
+[
+  {
+    "method": "POST",
+    "path": "/language-model",
+    "headers": {
+      "ai-language-model-id": "grafana/comprehensive",
+      "ai-language-model-specification-version": "4",
+      "ai-language-model-streaming": "false",
+      "content-type": "application/json",
+      "x-contract-comprehensive": "body-and-outer"
+    },
+    "streaming": false,
+    "hasSignal": false,
+    "body": {
+      "prompt": [
+        {
+          "role": "system",
+          "content": "system",
+          "providerOptions": {
+            "provider": {
+              "nested": {
+                "nullValue": null,
+                "falseValue": false,
+                "zero": 0,
+                "empty": ""
+              },
+              "array": [
+                null,
+                false,
+                0,
+                "",
+                [],
+                {}
+              ]
+            }
+          }
+        },
+        {
+          "role": "user",
+          "providerOptions": {
+            "provider": {
+              "nested": {
+                "nullValue": null,
+                "falseValue": false,
+                "zero": 0,
+                "empty": ""
+              },
+              "array": [
+                null,
+                false,
+                0,
+                "",
+                [],
+                {}
+              ]
+            }
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "",
+              "providerOptions": {
+                "provider": {
+                  "nested": {
+                    "nullValue": null,
+                    "falseValue": false,
+                    "zero": 0,
+                    "empty": ""
+                  },
+                  "array": [
+                    null,
+                    false,
+                    0,
+                    "",
+                    [],
+                    {}
+                  ]
+                }
+              }
+            },
+            {
+              "type": "file",
+              "filename": "bytes.bin",
+              "data": {
+                "type": "data",
+                "data": "AAEC"
+              },
+              "mediaType": "application/octet-stream",
+              "providerOptions": {
+                "provider": {
+                  "nested": {
+                    "nullValue": null,
+                    "falseValue": false,
+                    "zero": 0,
+                    "empty": ""
+                  },
+                  "array": [
+                    null,
+                    false,
+                    0,
+                    "",
+                    [],
+                    {}
+                  ]
+                }
+              }
+            },
+            {
+              "type": "file",
+              "data": {
+                "type": "url",
+                "url": "https://example.com/%"
+              },
+              "mediaType": "text/plain"
+            },
+            {
+              "type": "file",
+              "data": {
+                "type": "reference",
+                "reference": {
+                  "provider": "file-1"
+                }
+              },
+              "mediaType": "application/pdf"
+            },
+            {
+              "type": "file",
+              "data": {
+                "type": "text",
+                "text": "inline"
+              },
+              "mediaType": "text/plain"
+            }
+          ]
+        },
+        {
+          "role": "assistant",
+          "providerOptions": {
+            "provider": {
+              "nested": {
+                "nullValue": null,
+                "falseValue": false,
+                "zero": 0,
+                "empty": ""
+              },
+              "array": [
+                null,
+                false,
+                0,
+                "",
+                [],
+                {}
+              ]
+            }
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "assistant",
+              "providerOptions": {
+                "provider": {
+                  "nested": {
+                    "nullValue": null,
+                    "falseValue": false,
+                    "zero": 0,
+                    "empty": ""
+                  },
+                  "array": [
+                    null,
+                    false,
+                    0,
+                    "",
+                    [],
+                    {}
+                  ]
+                }
+              }
+            },
+            {
+              "type": "file",
+              "data": {
+                "type": "data",
+                "data": "YWxyZWFkeS1iYXNlNjQ="
+              },
+              "mediaType": "application/octet-stream"
+            },
+            {
+              "type": "custom",
+              "kind": "provider.kind",
+              "providerOptions": {
+                "provider": {
+                  "nested": {
+                    "nullValue": null,
+                    "falseValue": false,
+                    "zero": 0,
+                    "empty": ""
+                  },
+                  "array": [
+                    null,
+                    false,
+                    0,
+                    "",
+                    [],
+                    {}
+                  ]
+                }
+              }
+            },
+            {
+              "type": "reasoning",
+              "text": "reasoning",
+              "providerOptions": {
+                "provider": {
+                  "nested": {
+                    "nullValue": null,
+                    "falseValue": false,
+                    "zero": 0,
+                    "empty": ""
+                  },
+                  "array": [
+                    null,
+                    false,
+                    0,
+                    "",
+                    [],
+                    {}
+                  ]
+                }
+              }
+            },
+            {
+              "type": "reasoning-file",
+              "data": {
+                "type": "data",
+                "data": "AwQ="
+              },
+              "mediaType": "application/octet-stream",
+              "providerOptions": {
+                "provider": {
+                  "nested": {
+                    "nullValue": null,
+                    "falseValue": false,
+                    "zero": 0,
+                    "empty": ""
+                  },
+                  "array": [
+                    null,
+                    false,
+                    0,
+                    "",
+                    [],
+                    {}
+                  ]
+                }
+              }
+            },
+            {
+              "type": "reasoning-file",
+              "data": {
+                "type": "url",
+                "url": "https://example.test/reasoning"
+              },
+              "mediaType": "application/pdf"
+            },
+            {
+              "type": "tool-call",
+              "toolCallId": "call-1",
+              "toolName": "lookup",
+              "input": {
+                "query": "value",
+                "nested": {
+                  "nullValue": null
+                }
+              },
+              "providerExecuted": false,
+              "providerOptions": {
+                "provider": {
+                  "nested": {
+                    "nullValue": null,
+                    "falseValue": false,
+                    "zero": 0,
+                    "empty": ""
+                  },
+                  "array": [
+                    null,
+                    false,
+                    0,
+                    "",
+                    [],
+                    {}
+                  ]
+                }
+              }
+            },
+            {
+              "type": "tool-result",
+              "toolCallId": "call-text",
+              "toolName": "lookup",
+              "output": {
+                "type": "text",
+                "value": "",
+                "providerOptions": {
+                  "provider": {
+                    "nested": {
+                      "nullValue": null,
+                      "falseValue": false,
+                      "zero": 0,
+                      "empty": ""
+                    },
+                    "array": [
+                      null,
+                      false,
+                      0,
+                      "",
+                      [],
+                      {}
+                    ]
+                  }
+                }
+              }
+            },
+            {
+              "type": "tool-result",
+              "toolCallId": "call-json",
+              "toolName": "lookup",
+              "output": {
+                "type": "json",
+                "value": null,
+                "providerOptions": {
+                  "provider": {
+                    "nested": {
+                      "nullValue": null,
+                      "falseValue": false,
+                      "zero": 0,
+                      "empty": ""
+                    },
+                    "array": [
+                      null,
+                      false,
+                      0,
+                      "",
+                      [],
+                      {}
+                    ]
+                  }
+                }
+              }
+            },
+            {
+              "type": "tool-result",
+              "toolCallId": "call-denied",
+              "toolName": "lookup",
+              "output": {
+                "type": "execution-denied",
+                "reason": "",
+                "providerOptions": {
+                  "provider": {
+                    "nested": {
+                      "nullValue": null,
+                      "falseValue": false,
+                      "zero": 0,
+                      "empty": ""
+                    },
+                    "array": [
+                      null,
+                      false,
+                      0,
+                      "",
+                      [],
+                      {}
+                    ]
+                  }
+                }
+              }
+            },
+            {
+              "type": "tool-result",
+              "toolCallId": "call-error-text",
+              "toolName": "lookup",
+              "output": {
+                "type": "error-text",
+                "value": "",
+                "providerOptions": {
+                  "provider": {
+                    "nested": {
+                      "nullValue": null,
+                      "falseValue": false,
+                      "zero": 0,
+                      "empty": ""
+                    },
+                    "array": [
+                      null,
+                      false,
+                      0,
+                      "",
+                      [],
+                      {}
+                    ]
+                  }
+                }
+              }
+            },
+            {
+              "type": "tool-result",
+              "toolCallId": "call-error-json",
+              "toolName": "lookup",
+              "output": {
+                "type": "error-json",
+                "value": {
+                  "code": 0
+                },
+                "providerOptions": {
+                  "provider": {
+                    "nested": {
+                      "nullValue": null,
+                      "falseValue": false,
+                      "zero": 0,
+                      "empty": ""
+                    },
+                    "array": [
+                      null,
+                      false,
+                      0,
+                      "",
+                      [],
+                      {}
+                    ]
+                  }
+                }
+              }
+            },
+            {
+              "type": "tool-result",
+              "toolCallId": "call-content",
+              "toolName": "lookup",
+              "providerOptions": {
+                "provider": {
+                  "nested": {
+                    "nullValue": null,
+                    "falseValue": false,
+                    "zero": 0,
+                    "empty": ""
+                  },
+                  "array": [
+                    null,
+                    false,
+                    0,
+                    "",
+                    [],
+                    {}
+                  ]
+                }
+              },
+              "output": {
+                "type": "content",
+                "value": [
+                  {
+                    "type": "text",
+                    "text": "",
+                    "providerOptions": {
+                      "provider": {
+                        "nested": {
+                          "nullValue": null,
+                          "falseValue": false,
+                          "zero": 0,
+                          "empty": ""
+                        },
+                        "array": [
+                          null,
+                          false,
+                          0,
+                          "",
+                          [],
+                          {}
+                        ]
+                      }
+                    }
+                  },
+                  {
+                    "type": "file",
+                    "filename": "result.bin",
+                    "data": {
+                      "type": "data",
+                      "data": "BQY="
+                    },
+                    "mediaType": "application/octet-stream",
+                    "providerOptions": {
+                      "provider": {
+                        "nested": {
+                          "nullValue": null,
+                          "falseValue": false,
+                          "zero": 0,
+                          "empty": ""
+                        },
+                        "array": [
+                          null,
+                          false,
+                          0,
+                          "",
+                          [],
+                          {}
+                        ]
+                      }
+                    }
+                  },
+                  {
+                    "type": "file",
+                    "data": {
+                      "type": "url",
+                      "url": "https://example.test/result"
+                    },
+                    "mediaType": "text/plain"
+                  },
+                  {
+                    "type": "file",
+                    "data": {
+                      "type": "reference",
+                      "reference": {
+                        "provider": "file-2"
+                      }
+                    },
+                    "mediaType": "application/pdf"
+                  },
+                  {
+                    "type": "file",
+                    "data": {
+                      "type": "text",
+                      "text": "tool text"
+                    },
+                    "mediaType": "text/plain"
+                  },
+                  {
+                    "type": "custom",
+                    "providerOptions": {
+                      "provider": {
+                        "nested": {
+                          "nullValue": null,
+                          "falseValue": false,
+                          "zero": 0,
+                          "empty": ""
+                        },
+                        "array": [
+                          null,
+                          false,
+                          0,
+                          "",
+                          [],
+                          {}
+                        ]
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "providerOptions": {
+            "provider": {
+              "nested": {
+                "nullValue": null,
+                "falseValue": false,
+                "zero": 0,
+                "empty": ""
+              },
+              "array": [
+                null,
+                false,
+                0,
+                "",
+                [],
+                {}
+              ]
+            }
+          },
+          "content": [
+            {
+              "type": "tool-result",
+              "toolCallId": "call-tool",
+              "toolName": "lookup",
+              "output": {
+                "type": "json",
+                "value": {
+                  "ok": false
+                }
+              }
+            },
+            {
+              "type": "tool-approval-response",
+              "approvalId": "approval-1",
+              "approved": false,
+              "reason": "",
+              "providerOptions": {
+                "provider": {
+                  "nested": {
+                    "nullValue": null,
+                    "falseValue": false,
+                    "zero": 0,
+                    "empty": ""
+                  },
+                  "array": [
+                    null,
+                    false,
+                    0,
+                    "",
+                    [],
+                    {}
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "maxOutputTokens": 42,
+      "temperature": 0.25,
+      "stopSequences": [
+        "stop",
+        ""
+      ],
+      "topP": 0.75,
+      "topK": 4,
+      "presencePenalty": -0.5,
+      "frequencyPenalty": 0.5,
+      "responseFormat": {
+        "type": "json",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "value"
+          ]
+        },
+        "name": "",
+        "description": ""
+      },
+      "seed": 7,
+      "tools": [
+        {
+          "type": "function",
+          "name": "lookup",
+          "description": "",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "query": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "query"
+            ]
+          },
+          "inputExamples": [
+            {
+              "input": {
+                "query": "example"
+              }
+            }
+          ],
+          "strict": false,
+          "providerOptions": {
+            "provider": {
+              "nested": {
+                "nullValue": null,
+                "falseValue": false,
+                "zero": 0,
+                "empty": ""
+              },
+              "array": [
+                null,
+                false,
+                0,
+                "",
+                [],
+                {}
+              ]
+            }
+          }
+        },
+        {
+          "type": "provider",
+          "id": "provider.search",
+          "name": "search",
+          "args": {
+            "limit": 0,
+            "enabled": false,
+            "nested": {
+              "nullValue": null
+            }
+          }
+        }
+      ],
+      "toolChoice": {
+        "type": "tool",
+        "toolName": "lookup"
+      },
+      "includeRawChunks": true,
+      "headers": {
+        "x-contract-comprehensive": "body-and-outer"
+      },
+      "reasoning": "high",
+      "providerOptions": {
+        "provider": {
+          "nested": {
+            "nullValue": null,
+            "falseValue": false,
+            "zero": 0,
+            "empty": ""
+          },
+          "array": [
+            null,
+            false,
+            0,
+            "",
+            [],
+            {}
+          ]
+        }
+      }
+    }
+  }
+]

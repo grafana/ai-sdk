@@ -59,6 +59,14 @@ fixture becomes the executable contract for future upgrades.
 | Warning model and unsupported feature handling | manual | Source review and Go tests are required today. | Add request or stream fixtures when warning behavior affects upstream-visible output. |
 | Stream part taxonomy | mixed | Provider fixture replay covers stream parts present in committed chunks. | New stream parts require upstream fixture import or recording. |
 
+### ProviderWire V4 Contract Layer
+
+| Capability | Status | Confidence Source | Gap / Notes |
+| --- | --- | --- | --- |
+| Registered LanguageModelV4 request surface | automated | `ai-gateway/test/providerwire-v4/surface.ts` typechecks exhaustive finite request/response witnesses, while `ai-gateway/providerwire/v4/schema/request.json` and focused positive/negative cases define the complete serialized request projection. | This proves contract completeness, not current Go runtime support. Runtime evidence must separately prove the approved boundary: byte-bounded requests, invalid raw UTF-8 rejection, standard Go JSON plus complete-schema validation and typed scalar decoding, duplicate-member last-value semantics, escaped lone-surrogate replacement with U+FFFD, and unsupported-capability mapping. |
+| Gateway HTTP request projection | automated | Semantic goldens captured through `@ai-sdk/gateway@4.0.52` verify method, route, final normalized protocol headers, unary/streaming mode, presence, header composition, URL serialization, and byte-to-base64 conversion. | The registered public client is authoritative for observable request emission. This evidence makes no compatibility claim for Vercel's private Gateway service. |
+| Gateway client response consumption | automated | Focused registered-client probes cover unary overwrite behavior, clean-EOF SSE, `[DONE]`, raw filtering, timestamp conversion, and structured non-2xx errors. | The registered public client is authoritative for observable response consumption, including permissive acceptance and overwritten fields. Private protocol DTOs and test-time schemas will own unobserved server shape, while raw HTTP, privacy, and bounds tests will own unobserved server safety; this workspace does not establish that server-side evidence. |
+
 ### Provider Implementation Layer
 
 | Capability | Status | Confidence Source | Gap / Notes |
@@ -87,7 +95,7 @@ fixture becomes the executable contract for future upgrades.
 
 | Capability | Status | Confidence Source | Gap / Notes |
 | --- | --- | --- | --- |
-| Baseline package validation | automated | `mise run validate-parity-baseline` checks `upstream.yaml` against all retained parity TypeScript consumers: conformance tools, integration tests, and CLI tooling. | The canonical baseline is the npm package versions recorded in `upstream.yaml`. |
+| Baseline package validation | automated | `mise run validate-parity-baseline` checks `upstream.yaml` against all retained parity TypeScript consumers: conformance tools, integration tests, CLI tooling, and the ProviderWire V4 contract workspace. | The canonical baseline is the npm package versions recorded in `upstream.yaml`. |
 | Upstream expectation generation | automated | `mise run generate-conformance` produces streaming `expected.jsonl`, unary `expected-generate.json`, request snapshots, structured output expectations, and opt-in per-step usage snapshots. | Generation only covers fields supported by `config.yaml`. |
 | Mature stable baseline upgrade | automated | `mise run parity-upgrade` selects the newest coherent stable package set from the npm `latest` release lines that satisfies pnpm's configured minimum release age, then regenerates expectations. | Divergences still require human classification and fixes. |
 | Fixture config expressiveness | automated | Streaming provider fixtures use YAML for models, prompts, tools, provider tools, approvals, provider options, JSON response format, `toolChoice`, `activeTools`, `streamOptions`, and tool provider options. Unary Bedrock fixtures currently support prompts/configured messages, system text, headers, provider options, and response format; other providers and unsupported unary fields fail during config loading/generation. Provider-independent core UI fixtures replay `LanguageModelV4` stream parts directly. | Expand unary or streaming fields only when an authentic fixture needs a new upstream-visible option. |
