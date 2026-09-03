@@ -157,23 +157,14 @@ run = "bash scripts/verify-ai-gateway-boundary.sh"
 description = "Run golangci-lint across all modules"
 run = """
 set -e
-workspace_file=$(mktemp "$PWD/.lint-go.work.XXXXXX")
-trap 'rm -f "$workspace_file" "$workspace_file.sum"' EXIT
-cp go.work "$workspace_file"
-cp go.work.sum "$workspace_file.sum"
-workspace_modules=$(
-  go work edit -json go.work |
-    jq -r '.Use[].DiskPath' |
-    while read -r module; do
-      (cd "$module" && pwd -P)
-    done
-)
+workspace_file="$PWD/go.work"
+workspace_modules=$(go work edit -json "$workspace_file" | jq -r '.Use[].DiskPath | if startswith("./") then ltrimstr("./") else . end')
 
 run_in_module() {
   module=$1
   shift
-  module_path=$(cd "$module" && pwd -P)
-  if printf '%s\n' "$workspace_modules" | grep -Fxq "$module_path"; then
+  module_name=${module#./}
+  if printf '%s\n' "$workspace_modules" | grep -Fxq "$module_name"; then
     (cd "$module" && GOWORK="$workspace_file" "$@")
   else
     (cd "$module" && GOWORK=off "$@")

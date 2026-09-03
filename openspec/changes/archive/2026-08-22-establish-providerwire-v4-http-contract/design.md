@@ -12,7 +12,7 @@ This change spans the initial top-level `ai-gateway/` module and license boundar
 
 **Goals:**
 
-- Establish `ai-gateway/` as an isolated AGPL-3.0-only Go module with one-way dependency enforcement, clear contribution scope, and provenance notices while preserving the root Apache-2.0 license.
+- Establish `ai-gateway/` as an isolated AGPL-3.0-only Go module with one-way dependency enforcement while preserving the root Apache-2.0 license.
 - Define the complete JSON request projection of the registered `LanguageModelV4CallOptions` contract.
 - Make finite upstream request and response surface drift fail at TypeScript compile time.
 - Record compact, reviewable HTTP request semantics emitted by the real registered `createGateway` client.
@@ -23,7 +23,6 @@ This change spans the initial top-level `ai-gateway/` module and license boundar
 
 **Non-Goals:**
 
-- Revoke or alter licenses already granted for published revisions, claim legal confirmation, or invent a corresponding-source mechanism before Grafana legal approves it.
 - Implement HTTP envelope validation, raw JSON processing, schema application in Go, provider-domain mapping, catalog resolution, model invocation, errors, unary encoding, or streaming state machines.
 - Define unary, stream, or error response schemas for the future server.
 - Generate the production request schema or a runtime feature-classification artifact from TypeScript.
@@ -35,7 +34,7 @@ This change spans the initial top-level `ai-gateway/` module and license boundar
 
 ### Establish the AGPL Gateway boundary before runtime code
 
-All Gateway-owned protocol authority and contract evidence lives below `ai-gateway/`, whose nearest license is the canonical AGPLv3 text and whose module path is `github.com/grafana/ai-sdk/ai-gateway`. The root license remains Apache-2.0. Root and Gateway documentation state contribution scope, registered-client provenance, applicable Apache notice obligations, and the required pre-merge and pre-deployment legal confirmation without claiming prior grants are revoked.
+All Gateway-owned protocol authority and contract evidence lives below `ai-gateway/`, whose nearest license is AGPL-3.0-only and whose module path is `github.com/grafana/ai-sdk/ai-gateway`. The root license remains Apache-2.0.
 
 The dependency boundary is one-way. The Gateway may later import explicitly pinned SDK modules, but no module or Go source outside `ai-gateway/` may import, require, or replace it. The Gateway module is intentionally absent from `go.work`; a blocking repository check inspects module files and imports and builds/tests the root SDK with `GOWORK=off`.
 
@@ -125,7 +124,6 @@ Alternative: place the schema in the retired package root. Rejected because that
 
 ## Risks / Trade-offs
 
-- [The repository boundary is mistaken for retroactive relicensing] → Keep the root Apache license unchanged, state nearest-license scope explicitly, preserve prior grants, and require Grafana legal confirmation before merge or deployment.
 - [A workspace or module reference creates a reverse dependency] → Keep `ai-gateway/` out of `go.work`, scan every non-Gateway Go module and source import, and build/test the root module with `GOWORK=off` in blocking CI.
 - [The hand-authored schema drifts from TypeScript types] → Combine compile-time finite witnesses, positive/negative branch cases, real-client golden validation, and required baseline review; do not claim mechanical equivalence for open-ended JSON.
 - [A compact golden omits an important presence distinction] → Keep a dedicated scalar/presence family and assert absent, false, zero, empty string, empty array, empty object, nested null, and transformed file values explicitly.
@@ -138,7 +136,7 @@ Alternative: place the schema in the retired package root. Rejected because that
 
 ## Migration Plan
 
-1. Establish the `ai-gateway/` module, AGPL-3.0-only nearest license, notices, contribution scope, legal-readiness gate, and blocking one-way dependency verification without changing the root license or workspace graph.
+1. Establish the `ai-gateway/` module, AGPL-3.0-only license, and blocking one-way dependency verification without changing the root license or workspace graph.
 2. Add the versioned schema and private workspace below `ai-gateway/` without changing any runtime route or exported Go API.
 3. Register exact baseline dependencies, regenerate only the shared test lockfile path, and add baseline validation coverage.
 4. Land committed request goldens only after they are emitted by the registered client and validate against the production schema.

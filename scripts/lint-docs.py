@@ -29,7 +29,6 @@ ROOT_DOCS = [
     "CONTRIBUTING.md",
     "AGENTS.md",
     "ai-gateway/README.md",
-    "ai-gateway/CONTRIBUTING.md",
 ]
 
 DOCS_DIR = "docs"

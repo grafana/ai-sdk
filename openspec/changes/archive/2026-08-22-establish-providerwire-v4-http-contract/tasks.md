@@ -4,7 +4,7 @@
 - [x] 1.2 Register `ai-gateway/test/providerwire-v4` in `test/pnpm-workspace.yaml`, install through the shared test workspace, and update `test/pnpm-lock.yaml` without changing the registered AI SDK baseline.
 - [x] 1.3 Add compile-time exhaustive witnesses for call-option keys excluding `abortSignal`, request roles and unions, unary content including nested URL/document `sourceType`, stream parts, warnings, and finish reasons; confirm the workspace typecheck fails for an intentionally incomplete local witness before restoring exhaustive coverage.
 - [x] 1.4 Establish `ai-gateway/` as the isolated `github.com/grafana/ai-sdk/ai-gateway` Go module with canonical AGPLv3 license text while preserving the root Apache-2.0 license and excluding the module from `go.work` and the root graph.
-- [x] 1.5 Add root and Gateway license-scope, contribution, provenance, prior-grant, and legal-readiness documentation without claiming legal confirmation or inventing a source-offer mechanism.
+- [x] 1.5 Add concise root and Gateway license-scope and provenance documentation.
 
 ## 2. Define and Test the Complete Request Schema
 
@@ -46,4 +46,4 @@
 - [x] 6.4 Run `mise run build`, `mise run vet`, `mise run lint`, and `mise run test` to confirm the schema namespace and workspace registration do not regress retained Go modules or tests.
 - [x] 6.5 Search for restored legacy imports/codecs and unintended ProviderWire V4 runtime code; confirm the diff adds no handler, resolver, model invocation path, Go client, provider fixture input, generated runtime classifier, or response schema.
 - [x] 6.6 Run `openspec validate establish-providerwire-v4-http-contract --strict` and review the final diff against the registered upstream commit and phase 2 acceptance criteria.
-- [x] 6.7 Verify the schema and generated goldens moved byte-for-byte, the root license and Go graph remain unchanged, the Gateway package declares AGPL-3.0-only, no Apache production module references the Gateway module, and legal confirmation remains explicitly external.
+- [x] 6.7 Verify the schema and generated goldens moved byte-for-byte, the root license and Go graph remain unchanged, the Gateway package declares AGPL-3.0-only, and no SDK production module references the Gateway module.
