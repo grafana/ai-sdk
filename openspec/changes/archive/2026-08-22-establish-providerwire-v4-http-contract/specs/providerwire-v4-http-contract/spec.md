@@ -15,33 +15,21 @@ The repository SHALL provide a private `ai-gateway/test/providerwire-v4` TypeScr
 
 ### Requirement: AGPL Gateway repository boundary
 
-The ProviderWire V4 production schema and its Gateway-owned contract workspace SHALL live under the top-level `ai-gateway/` directory. That directory SHALL be the separate Go module `github.com/grafana/ai-sdk/ai-gateway` and, unless a nearer license states otherwise, SHALL be licensed under AGPL-3.0-only. The root `LICENSE` and reusable SDK files outside `ai-gateway/` SHALL remain Apache-2.0.
+The ProviderWire V4 production schema and contract workspace SHALL live under `ai-gateway/`. That directory SHALL be the separate Go module `github.com/grafana/ai-sdk/ai-gateway` and SHALL be licensed under AGPL-3.0-only. Reusable SDK files outside `ai-gateway/` SHALL remain under the root Apache-2.0 license.
 
-The dependency boundary SHALL be one-way: Gateway code MAY import explicitly pinned SDK modules, but no Go module or production package outside `ai-gateway/` SHALL import, require, or replace the Gateway module. The Gateway module SHALL remain absent from the root `go.work` and root module graph. Root SDK build and test verification SHALL run successfully with `GOWORK=off`.
+The dependency boundary SHALL be one-way: Gateway code MAY import explicitly pinned SDK modules, but no Go source or module outside `ai-gateway/` SHALL import, require, or replace the Gateway module. The Gateway module SHALL remain absent from the root `go.work` and root module graph, and the root SDK SHALL build and test with `GOWORK=off`.
 
-Root and Gateway documentation SHALL state the applicable license and contribution scope. Gateway notice material SHALL record the registered Vercel AI SDK provenance and preserve applicable Apache attribution when SDK components are incorporated. The repository SHALL NOT claim that licenses already granted for published revisions are revoked or altered. Grafana legal confirmation of the effective transition, copyright provenance, Apache-derived attribution, and network corresponding-source offer mechanism SHALL be a pre-merge and pre-deployment requirement.
-
-#### Scenario: Gateway license and module are scoped by location
-- **WHEN** a file is owned by the Gateway product or its ProviderWire contract
-- **THEN** it SHALL live under `ai-gateway/` and be governed by the nearest AGPL-3.0-only license
+#### Scenario: Gateway artifacts use the Gateway module
+- **WHEN** the ProviderWire V4 schema and contract workspace are inspected
+- **THEN** they SHALL reside under `ai-gateway/`
 - **AND** `ai-gateway/go.mod` SHALL declare `github.com/grafana/ai-sdk/ai-gateway`
-- **AND** the root Apache-2.0 license SHALL remain unchanged
+- **AND** the nearest license SHALL be AGPL-3.0-only
 
-#### Scenario: Apache modules remain independent
+#### Scenario: SDK modules remain independent
 - **WHEN** module-boundary verification runs
 - **THEN** no Go source or module outside `ai-gateway/` SHALL import, require, or replace the Gateway module
 - **AND** the root `go.work` and root module graph SHALL exclude it
 - **AND** the root SDK SHALL build and test with `GOWORK=off`
-
-#### Scenario: License and provenance are documented
-- **WHEN** contributors inspect the repository or Gateway contribution guidance
-- **THEN** the Apache-2.0 and AGPL-3.0-only scopes SHALL be explicit
-- **AND** applicable Gateway notice material SHALL identify registered-client contract provenance and incorporated Apache components
-
-#### Scenario: Legal readiness remains an external gate
-- **WHEN** this boundary is proposed for merge or a Gateway build is proposed for deployment
-- **THEN** Grafana legal confirmation SHALL be required
-- **AND** repository documentation SHALL NOT invent a confirmation or claim to revoke prior license grants
 
 ### Requirement: Complete production request schema
 

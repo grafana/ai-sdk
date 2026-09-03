@@ -68,9 +68,6 @@ mise run validate-parity-baseline
 # Run the standard parity check (baseline validation + contract + conformance)
 mise run parity-check
 
-# Run the non-mutating registered Gateway ProviderWire V4 contract
-mise run test-providerwire-v4
-
 # Run conformance tests (uses committed expected.jsonl files)
 mise run test-conformance
 

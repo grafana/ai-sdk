@@ -5,7 +5,7 @@ The legacy ProviderWire transport has been retired, leaving no executable contra
 ## What Changes
 
 - Establish top-level `ai-gateway/` as the separate `github.com/grafana/ai-sdk/ai-gateway` module under AGPL-3.0-only while the reusable SDK and root license remain Apache-2.0.
-- Add explicit repository/Gateway license, contribution, provenance, and legal-readiness documentation plus blocking one-way module-boundary verification.
+- Add concise license and provenance documentation plus blocking one-way module-boundary verification.
 - Add an exact-pinned private `ai-gateway/test/providerwire-v4` TypeScript workspace registered against `test/conformance/upstream.yaml`.
 - Add exhaustive compile-time coverage for every finite registered LanguageModelV4 request key and request/response discriminator relevant to the Gateway language-model route.
 - Add a complete hand-authored draft 2020-12 request schema at `ai-gateway/providerwire/v4/schema/request.json`, covering the entire registered request projection rather than only the first runtime subset.
@@ -29,7 +29,7 @@ The legacy ProviderWire transport has been retired, leaving no executable contra
 ## Impact
 
 - Adds the isolated AGPL-3.0-only `ai-gateway/` module without registering it in the root `go.work` or root module graph.
-- Keeps the root Apache-2.0 license unchanged and requires Grafana legal confirmation before merge or deployment without altering prior grants.
+- Keeps the root Apache-2.0 license and SDK module graph unchanged.
 - Adds `ai-gateway/providerwire/v4/schema/request.json` as production protocol authority for the registered request projection.
 - Adds a new private TypeScript test workspace, exact AI SDK dependency pins, package-manager lockfile entries, baseline validation inputs, and `mise` tasks.
 - Adds committed semantic HTTP request goldens and registered-client response-consumption tests, but no provider payload fixtures or executable Go server.
