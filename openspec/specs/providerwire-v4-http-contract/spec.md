@@ -263,15 +263,21 @@ The exact registered public `@ai-sdk/gateway` client SHALL be authoritative for 
 - **AND** raw HTTP, privacy, and bounds tests SHALL define the unobserved server safety requirement
 - **AND** those authorities SHALL NOT contradict observable registered-client behavior
 
-#### Scenario: Production unary replay is established
-- **WHEN** the strict unary runtime is complete
-- **THEN** each committed request emitted by the registered client SHALL replay to its expected unary result
-- **AND** streaming records SHALL fail unary envelope validation without model resolution
-- **AND** unary records SHALL reach complete schema validation and either supported execution or a safe unsupported-family response
+#### Scenario: Production unary and streaming replay is established
+- **WHEN** the strict streaming text runtime is complete
+- **THEN** each committed request emitted by the registered client SHALL replay to its expected result
+- **AND** supported unary records SHALL execute through `DoGenerate`
+- **AND** supported streaming records SHALL execute through `DoStream`, bounded SSE framing, terminal finish, and clean EOF
+- **AND** other records SHALL reach complete schema validation and either supported execution or a safe unsupported-family response
 - **AND** dedicated supported scalar and focused one-capability requests SHALL cover behavior that multi-capability goldens cannot isolate
-- **AND** a pinned registered client SHALL complete a supported minimal unary text call against the real Go handler
+- **AND** a pinned registered client SHALL complete supported minimal unary and streaming text calls against the real Go handler
 
-#### Scenario: Streaming remains deferred
-- **WHEN** this unary runtime change is complete
-- **THEN** strict streaming commitment, event state, SSE framing, and clean-EOF behavior SHALL remain unimplemented by the Go handler
-- **AND** the phase 2 streaming client probes SHALL remain consumption evidence only
+#### Scenario: Streaming response authority is local
+- **WHEN** the pinned client consumes normalized start, metadata, text, provider errors, finish, and clean EOF
+- **THEN** that result SHALL prove observable client compatibility
+- **AND** the test-only stream-event schema, explicit encoder fixtures, raw SSE bytes, state-machine tests, privacy tests, and boundary tests SHALL remain authoritative for unobserved server behavior
+
+#### Scenario: Later stream families remain deferred
+- **WHEN** the strict streaming text runtime is complete
+- **THEN** reasoning, tools, approvals, files, sources, custom content, raw output, and every other later stream family SHALL remain explicit unsupported capabilities or safe terminal adapter failures according to their request or response boundary
+- **AND** the repository SHALL NOT claim complete LanguageModelV4 stream execution coverage
