@@ -61,7 +61,7 @@ provider package. Add focused packages when the application needs them:
 
 - `output` and `schema` generate validated Go values;
 - `fallback` tries backup models after eligible failures;
-- `registry` and `gateway/catalog` select models by configured or public IDs;
+- `registry` selects models by configured provider IDs;
 - `middleware` adds defaults, logging, metrics, metadata, or policy to model
   calls.
 

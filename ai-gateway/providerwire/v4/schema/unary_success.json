@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://grafana.com/ai-sdk/providerwire/v4/unary-success.schema.json",
+  "title": "ProviderWire V4 unary text response",
+  "type": "object",
+  "required": ["content", "finishReason", "usage"],
+  "properties": {
+    "content": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type", "text"],
+        "properties": {
+          "type": { "const": "text" },
+          "text": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "finishReason": {
+      "type": "object",
+      "required": ["unified"],
+      "properties": {
+        "unified": {
+          "enum": ["stop", "length", "content-filter", "tool-calls", "error", "other"]
+        },
+        "raw": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "usage": {
+      "type": "object",
+      "required": ["inputTokens", "outputTokens"],
+      "properties": {
+        "inputTokens": { "$ref": "#/$defs/inputTokenUsage" },
+        "outputTokens": { "$ref": "#/$defs/outputTokenUsage" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "tokenCount": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "inputTokenUsage": {
+      "type": "object",
+      "properties": {
+        "total": { "$ref": "#/$defs/tokenCount" },
+        "noCache": { "$ref": "#/$defs/tokenCount" },
+        "cacheRead": { "$ref": "#/$defs/tokenCount" },
+        "cacheWrite": { "$ref": "#/$defs/tokenCount" }
+      },
+      "additionalProperties": false
+    },
+    "outputTokenUsage": {
+      "type": "object",
+      "properties": {
+        "total": { "$ref": "#/$defs/tokenCount" },
+        "text": { "$ref": "#/$defs/tokenCount" },
+        "reasoning": { "$ref": "#/$defs/tokenCount" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

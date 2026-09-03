@@ -486,7 +486,10 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 		frequencyPenalty := cfg.frequencyPenalty
 		stopSequences := cfg.stopSequences
 		seed := cfg.seed
-		reasoning := cfg.reasoning
+		reasoning := provider.ReasoningProviderDefault
+		if cfg.reasoning != nil {
+			reasoning = *cfg.reasoning
+		}
 		stepContext := currentRuntimeContext
 
 		// PrepareStep
@@ -563,7 +566,7 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 					seed = result.Seed
 				}
 				if result.Reasoning != nil {
-					reasoning = result.Reasoning
+					reasoning = *result.Reasoning
 				}
 				if result.Context != nil {
 					currentRuntimeContext = result.Context

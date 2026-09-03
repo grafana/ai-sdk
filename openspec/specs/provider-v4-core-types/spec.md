@@ -78,9 +78,10 @@ The `FinishReason` type SHALL be a struct with two fields: `Unified` (type `Unif
 - **WHEN** reasoning effort constants are defined in `provider/types.go`
 - **THEN** they SHALL be typed as `ReasoningEffort`, not untyped `string`
 
-#### Scenario: CallOptions.Reasoning uses ReasoningEffort pointer
+#### Scenario: CallOptions.Reasoning uses ReasoningEffort value
 - **WHEN** `CallOptions` is defined in `provider/language_model.go`
-- **THEN** its `Reasoning` field SHALL be `*ReasoningEffort`, not `*string`
+- **THEN** its `Reasoning` field SHALL be `ReasoningEffort`, not a pointer or bare string
+- **AND** the zero value SHALL mean provider default
 
 #### Scenario: ResponseFormat field uses ResponseFormatType
 - **WHEN** `ResponseFormat` is defined in `provider/language_model.go`

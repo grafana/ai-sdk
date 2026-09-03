@@ -223,7 +223,7 @@ The workspace SHALL exercise streaming success through the registered client usi
 
 ### Requirement: Focused non-success client-consumption evidence
 
-The workspace SHALL exercise representative non-2xx JSON responses through the registered client and assert the public error classification, status, and message observable at the registered package boundary. Any malformed-response coverage SHALL treat registered fallback behavior only as client evidence and SHALL NOT define the future server error envelope.
+The workspace SHALL exercise representative non-2xx JSON responses through the registered client and assert the public error classification, status, and message observable at the registered package boundary. Any malformed-response coverage SHALL treat registered fallback behavior only as client evidence and SHALL NOT define the server error envelope.
 
 #### Scenario: Structured non-2xx response is consumed
 - **WHEN** the injected fetch returns a representative structured non-2xx Gateway response
@@ -232,7 +232,7 @@ The workspace SHALL exercise representative non-2xx JSON responses through the r
 #### Scenario: Error probe remains client evidence
 - **WHEN** a non-2xx response is accepted or normalized by the registered client
 - **THEN** that result SHALL document client consumption only
-- **AND** it SHALL NOT establish which fields a future strict server may emit
+- **AND** it SHALL NOT establish which fields the strict server may emit
 
 ### Requirement: Explicit golden update workflow
 
@@ -263,7 +263,15 @@ The exact registered public `@ai-sdk/gateway` client SHALL be authoritative for 
 - **AND** raw HTTP, privacy, and bounds tests SHALL define the unobserved server safety requirement
 - **AND** those authorities SHALL NOT contradict observable registered-client behavior
 
-#### Scenario: No executable server is implied
-- **WHEN** this contract change is complete
-- **THEN** the repository SHALL contain no new ProviderWire V4 handler, model resolver, provider invocation path, or Go client
-- **AND** Go replay of committed requests SHALL remain a dependency of the strict unary runtime work package
+#### Scenario: Production unary replay is established
+- **WHEN** the strict unary runtime is complete
+- **THEN** each committed request emitted by the registered client SHALL replay to its expected unary result
+- **AND** streaming records SHALL fail unary envelope validation without model resolution
+- **AND** unary records SHALL reach complete schema validation and either supported execution or a safe unsupported-family response
+- **AND** dedicated supported scalar and focused one-capability requests SHALL cover behavior that multi-capability goldens cannot isolate
+- **AND** a pinned registered client SHALL complete a supported minimal unary text call against the real Go handler
+
+#### Scenario: Streaming remains deferred
+- **WHEN** this unary runtime change is complete
+- **THEN** strict streaming commitment, event state, SSE framing, and clean-EOF behavior SHALL remain unimplemented by the Go handler
+- **AND** the phase 2 streaming client probes SHALL remain consumption evidence only

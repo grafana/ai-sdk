@@ -193,8 +193,8 @@ func applyScalarParams(body *responses.ResponseNewParams, opts provider.CallOpti
 
 	// Capability gating for temperature/topP on reasoning models.
 	resolvedEffort := popts.ReasoningEffort
-	if resolvedEffort == "" && opts.Reasoning != nil && *opts.Reasoning != provider.ReasoningProviderDefault {
-		resolvedEffort = string(*opts.Reasoning)
+	if resolvedEffort == "" && opts.Reasoning != provider.ReasoningProviderDefault {
+		resolvedEffort = string(opts.Reasoning)
 	}
 	allowNonReasoning := resolvedEffort == "none" && caps.supportsNonReasoningParameters
 
