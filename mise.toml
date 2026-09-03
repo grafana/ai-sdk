@@ -137,6 +137,9 @@ module_cache=$(mktemp -d)
 trap 'chmod -R u+w "$module_cache" 2>/dev/null || true; rm -rf "$module_cache"' EXIT
 export GOMODCACHE="$module_cache"
 export GOPROXY="https://proxy.golang.org"
+export GOPRIVATE=
+export GONOPROXY=
+export GONOSUMDB=
 export GOWORK=off
 for go_mod in $(git ls-files 'go.mod' '*/go.mod' | while read -r file; do [ -f "$file" ] && echo "$file"; done | sort); do
   module_path=$(go mod edit -json "$go_mod" | jq -r '.Module.Path')
@@ -210,6 +213,7 @@ run = "bash scripts/update-openspec-skills_test.sh"
 description = "Run go mod tidy across all modules"
 run = """
 go mod tidy
+(cd ai-gateway && GOWORK=off go mod tidy)
 (cd providers/anthropic && go mod tidy)
 (cd providers/bedrock && go mod tidy)
 (cd providers/openai && go mod tidy)
@@ -264,7 +268,8 @@ description = "Run cross-language integration tests"
 run = """
 mise deps install --only test
 (cd test/integration/testserver && go test ./...)
-cd test && pnpm --filter @ai-sdk/test-integration test
+(cd test && pnpm --filter @ai-sdk/test-integration test)
+mise run test-ai-gateway-command
 """
 
 [tasks.test-cli]
@@ -293,7 +298,14 @@ description = "Run the non-mutating ProviderWire V4 contract checks"
 run = """
 (cd ai-gateway && GOWORK=off GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" go test ./providerwire/v4)
 mise deps install --only test
-cd test && pnpm --filter @ai-sdk/providerwire-v4-contract test
+cd test && pnpm --filter @ai-sdk/providerwire-v4-contract test:contract
+"""
+
+[tasks.test-ai-gateway-command]
+description = "Run the authenticated AI Gateway command integration"
+run = """
+mise deps install --only test
+cd test && pnpm --filter @ai-sdk/providerwire-v4-contract test:command
 """
 
 [tasks.update-providerwire-v4-goldens]
