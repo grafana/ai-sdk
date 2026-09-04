@@ -393,21 +393,39 @@ func TestStreamUIMessage_RepeatedToolCallIDAcrossSteps(t *testing.T) {
 }
 
 func TestStreamUIMessage_ToolApprovalResponsePreservesRequestMetadata(t *testing.T) {
+	descriptor := json.RawMessage(`{"action":"deleteAccount","risk":"high"}`)
 	messages := collectMessages(StreamUIMessage(chunks(
 		UIMessageChunk{Type: ChunkToolInputAvailable, ToolCallID: "c1", ToolName: "weather", Input: json.RawMessage(`{}`)},
-		UIMessageChunk{Type: ChunkToolApprovalRequest, ToolCallID: "c1", ApprovalID: "apr", Reason: "policy requires review", Signature: "sig", IsAutomatic: true},
+		UIMessageChunk{Type: ChunkToolApprovalRequest, ToolCallID: "c1", ApprovalID: "apr", ApprovalDescriptor: descriptor, Reason: "policy requires review", Signature: "sig", IsAutomatic: true},
 		UIMessageChunk{Type: ChunkToolApprovalResponse, ApprovalID: "apr", Approved: true, Reason: "ok"},
 	)))
 
 	require.Len(t, messages, 3)
+	requested := requireToolInvocationPart(t, messages[1], 0)
+	require.NotNil(t, requested.Approval)
+	assert.JSONEq(t, string(descriptor), string(requested.Approval.Descriptor))
+
 	part := requireToolInvocationPart(t, messages[2], 0)
 	require.NotNil(t, part.Approval)
 	assert.Equal(t, "apr", part.Approval.ID)
+	assert.JSONEq(t, string(descriptor), string(part.Approval.Descriptor))
 	assert.Equal(t, "policy requires review", part.Approval.RequestReason)
 	assert.True(t, part.Approval.IsAutomatic)
 	assert.Equal(t, "sig", part.Approval.Signature)
 	require.NotNil(t, part.Approval.Approved)
 	assert.True(t, *part.Approval.Approved)
+}
+
+func TestStreamUIMessage_ToolApprovalNullDescriptorIsOmitted(t *testing.T) {
+	messages := collectMessages(StreamUIMessage(chunks(
+		UIMessageChunk{Type: ChunkToolInputAvailable, ToolCallID: "c1", ToolName: "weather", Input: json.RawMessage(`{}`)},
+		UIMessageChunk{Type: ChunkToolApprovalRequest, ToolCallID: "c1", ApprovalID: "apr", ApprovalDescriptor: json.RawMessage(`null`)},
+	)))
+
+	require.Len(t, messages, 2)
+	part := requireToolInvocationPart(t, messages[1], 0)
+	require.NotNil(t, part.Approval)
+	assert.Nil(t, part.Approval.Descriptor)
 }
 
 func TestStreamUIMessage_ToolInputErrorAndOutputDenied(t *testing.T) {

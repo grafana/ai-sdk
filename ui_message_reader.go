@@ -1,6 +1,7 @@
 package aisdk
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 
@@ -291,8 +292,18 @@ func (s *uiMessageReaderState) apply(chunk UIMessageChunk) (bool, error) {
 			return false, fmt.Errorf("aisdk: received tool-approval-request for missing tool call %q", chunk.ToolCallID)
 		}
 		s.updateToolAt(idx, func(tp *toolPartFields) {
+			descriptor := chunk.ApprovalDescriptor
+			if bytes.Equal(bytes.TrimSpace(descriptor), []byte("null")) {
+				descriptor = nil
+			}
 			tp.State = ToolStateApprovalRequested
-			tp.Approval = &ToolApproval{ID: chunk.ApprovalID, RequestReason: chunk.Reason, IsAutomatic: chunk.IsAutomatic, Signature: chunk.Signature}
+			tp.Approval = &ToolApproval{
+				ID:            chunk.ApprovalID,
+				Descriptor:    cloneRawMessage(descriptor),
+				RequestReason: chunk.Reason,
+				IsAutomatic:   chunk.IsAutomatic,
+				Signature:     chunk.Signature,
+			}
 		})
 		return true, nil
 
@@ -309,6 +320,7 @@ func (s *uiMessageReaderState) apply(chunk UIMessageChunk) (bool, error) {
 				Reason:   chunk.Reason,
 			}
 			if tp.Approval != nil {
+				approval.Descriptor = cloneRawMessage(tp.Approval.Descriptor)
 				approval.RequestReason = tp.Approval.RequestReason
 				approval.IsAutomatic = tp.Approval.IsAutomatic
 				approval.Signature = tp.Approval.Signature
@@ -897,6 +909,7 @@ func cloneToolApproval(approval *ToolApproval) *ToolApproval {
 		return nil
 	}
 	clone := *approval
+	clone.Descriptor = cloneRawMessage(approval.Descriptor)
 	if approval.Approved != nil {
 		approved := *approval.Approved
 		clone.Approved = &approved

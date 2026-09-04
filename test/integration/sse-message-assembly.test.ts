@@ -198,6 +198,32 @@ describe("SSE message assembly", () => {
     });
   });
 
+  it("preserves tool approval descriptors through request and response states", async () => {
+    const { chunks, messages } = await readScenario("approval-descriptor");
+    const descriptor = {
+      action: "deleteAccount",
+      permissions: ["account:delete"],
+      risk: "high",
+    };
+
+    expect(
+      chunks.find(chunk => chunk.type === "tool-approval-request"),
+    ).toMatchObject({
+      approvalId: "approval-1",
+      toolCallId: "call-1",
+      approvalDescriptor: descriptor,
+    });
+
+    const approvals = messages
+      .flatMap(message => message.parts)
+      .filter(part => "approval" in part && part.approval != null)
+      .map(part => part.approval);
+    expect(approvals).toEqual([
+      { id: "approval-1", descriptor },
+      { id: "approval-1", approved: true, descriptor },
+    ]);
+  });
+
   it("assembles invalid provider tool errors into output-error state", async () => {
     const messages = await readScenarioMessages("invalid-provider-tool");
     const lastMessage = messages[messages.length - 1];

@@ -71,12 +71,20 @@ func TestChunkJSON(t *testing.T) {
 	})
 
 	t.Run("tool approval request metadata", func(t *testing.T) {
-		c := UIMessageChunk{Type: ChunkToolApprovalRequest, ApprovalID: "apr_1", ToolCallID: "call_1", Reason: "policy review", Signature: "sig_1"}
+		c := UIMessageChunk{
+			Type:               ChunkToolApprovalRequest,
+			ApprovalID:         "apr_1",
+			ToolCallID:         "call_1",
+			ApprovalDescriptor: json.RawMessage(`{"action":"deleteAccount","risk":"high"}`),
+			Reason:             "policy review",
+			Signature:          "sig_1",
+		}
 		b, err := json.Marshal(c)
 		require.NoError(t, err)
 		var m map[string]any
 		require.NoError(t, json.Unmarshal(b, &m))
 		assert.Equal(t, "tool-approval-request", m["type"])
+		assert.Equal(t, map[string]any{"action": "deleteAccount", "risk": "high"}, m["approvalDescriptor"])
 		assert.Equal(t, "policy review", m["reason"])
 		assert.Equal(t, "sig_1", m["signature"])
 	})

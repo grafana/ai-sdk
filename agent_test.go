@@ -445,6 +445,32 @@ func TestAgentUIStreamHelpers(t *testing.T) {
 		assert.Equal(t, provider.RoleUser, captured[0].Role)
 	})
 
+	t.Run("descriptor-bearing persisted approval is accepted", func(t *testing.T) {
+		model := &mockModel{streamFunc: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+			return &provider.StreamResult{Stream: textStreamParts("done")}, nil
+		}}
+		approved := true
+		descriptor := json.RawMessage(`{"action":"deleteAccount","risk":"high"}`)
+		messages := []UIMessage{{ID: "m1", Role: RoleAssistant, Parts: []Part{ToolInvocationPart{
+			ToolCallID: "call-1",
+			ToolName:   "deleteAccount",
+			State:      ToolStateApprovalResponded,
+			Input:      json.RawMessage(`{"userId":"user-123"}`),
+			Approval:   &ToolApproval{ID: "approval-1", Approved: &approved, Descriptor: descriptor},
+		}}}}
+		agent := NewToolLoopAgent(model, WithToolLoopAgentOptions(WithTools(ToolSet{"deleteAccount": {
+			Execute: func(context.Context, json.RawMessage, ToolExecutionOptions) (json.RawMessage, error) {
+				return json.RawMessage(`{"deleted":true}`), nil
+			},
+		}})))
+
+		stream, err := CreateAgentUIStream(context.Background(), agent, messages)
+		require.NoError(t, err)
+		assert.NotEmpty(t, collectUIChunks(stream))
+		toolPart := messages[0].Parts[0].(ToolInvocationPart)
+		assert.JSONEq(t, string(descriptor), string(toolPart.Approval.Descriptor))
+	})
+
 	t.Run("validation errors before provider stream", func(t *testing.T) {
 		model := &mockModel{streamFunc: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
 			t.Fatal("provider should not be called")

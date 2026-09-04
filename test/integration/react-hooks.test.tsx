@@ -74,6 +74,7 @@ type AgentToolPart = {
     id: string;
     approved?: boolean;
     reason?: string;
+    descriptor?: unknown;
   };
 };
 
@@ -470,6 +471,11 @@ describe("React hook interop", () => {
           .flatMap(message => message.parts)
           .find(part => part.type === "tool-confirm_action");
         expect(tool?.state).toBe("approval-requested");
+        expect(tool?.approval?.descriptor).toEqual({
+          action: "deploy",
+          permissions: ["deployment:write"],
+          risk: "high",
+        });
       });
 
       screen.getByTestId(button).click();
@@ -496,7 +502,13 @@ describe("React hook interop", () => {
             part =>
               part.state === "approval-responded" &&
               part.approval?.approved === approved &&
-              part.approval.reason === reason,
+              part.approval.reason === reason &&
+              JSON.stringify(part.approval.descriptor) ===
+                JSON.stringify({
+                  action: "deploy",
+                  permissions: ["deployment:write"],
+                  risk: "high",
+                }),
           ),
         ).toBe(true);
 
@@ -506,9 +518,18 @@ describe("React hook interop", () => {
         const finalTool = state
           .flatMap(message => message.parts)
           .find(part => part.type === "tool-confirm_action");
-        expect({ state: finalTool?.state, output: finalTool?.output }).toEqual({
+        expect({
+          state: finalTool?.state,
+          output: finalTool?.output,
+          descriptor: finalTool?.approval?.descriptor,
+        }).toEqual({
           state: finalState,
           output,
+          descriptor: {
+            action: "deploy",
+            permissions: ["deployment:write"],
+            risk: "high",
+          },
         });
         expect(assistantText(state)).toBe(finalText);
         expect(screen.getByTestId("approval-status").textContent).toBe("ready");

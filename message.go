@@ -78,12 +78,13 @@ func (ReasoningPart) PartType() string { return string(UIPartReasoning) }
 // is unset while a request is pending and set true/false once the user
 // responds.
 type ToolApproval struct {
-	ID            string `json:"id,omitempty"`
-	Approved      *bool  `json:"approved,omitempty"`
-	RequestReason string `json:"requestReason,omitempty"`
-	Reason        string `json:"reason,omitempty"`
-	IsAutomatic   bool   `json:"isAutomatic,omitempty"`
-	Signature     string `json:"signature,omitempty"`
+	ID            string          `json:"id,omitempty"`
+	Approved      *bool           `json:"approved,omitempty"`
+	Descriptor    json.RawMessage `json:"descriptor,omitempty"`
+	RequestReason string          `json:"requestReason,omitempty"`
+	Reason        string          `json:"reason,omitempty"`
+	IsAutomatic   bool            `json:"isAutomatic,omitempty"`
+	Signature     string          `json:"signature,omitempty"`
 }
 
 // ToolInvocationState identifies the lifecycle state of a tool invocation.

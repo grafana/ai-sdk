@@ -67,13 +67,14 @@ type UIMessageChunk struct {
 	InputTextDelta string `json:"inputTextDelta,omitempty"`
 
 	// Tool fields
-	ToolCallID string          `json:"toolCallId,omitempty"`
-	ToolName   string          `json:"toolName,omitempty"`
-	ApprovalID string          `json:"approvalId,omitempty"`
-	Signature  string          `json:"signature,omitempty"`
-	Input      json.RawMessage `json:"input,omitempty"`
-	Output     json.RawMessage `json:"output,omitempty"`
-	ErrorText  string          `json:"errorText,omitempty"`
+	ToolCallID         string          `json:"toolCallId,omitempty"`
+	ToolName           string          `json:"toolName,omitempty"`
+	ApprovalID         string          `json:"approvalId,omitempty"`
+	ApprovalDescriptor json.RawMessage `json:"approvalDescriptor,omitempty"`
+	Signature          string          `json:"signature,omitempty"`
+	Input              json.RawMessage `json:"input,omitempty"`
+	Output             json.RawMessage `json:"output,omitempty"`
+	ErrorText          string          `json:"errorText,omitempty"`
 	// Approved is intentionally not tagged with omitempty: a denial response
 	// (approved=false) MUST appear on the wire. The custom MarshalJSON for
 	// ChunkToolApprovalResponse always writes this field, but exposing the
@@ -225,6 +226,7 @@ func (c UIMessageChunk) MarshalJSON() ([]byte, error) {
 	case ChunkToolApprovalRequest:
 		m["approvalId"] = c.ApprovalID
 		m["toolCallId"] = c.ToolCallID
+		setOptRaw(m, "approvalDescriptor", c.ApprovalDescriptor)
 		setOpt(m, "reason", c.Reason)
 		setOptBool(m, "isAutomatic", c.IsAutomatic)
 		setOpt(m, "signature", c.Signature)
