@@ -404,6 +404,7 @@ func TestStreamUIMessage_ToolApprovalResponsePreservesRequestMetadata(t *testing
 	requested := requireToolInvocationPart(t, messages[1], 0)
 	require.NotNil(t, requested.Approval)
 	assert.JSONEq(t, string(descriptor), string(requested.Approval.Descriptor))
+	requested.Approval.Descriptor[0] = '['
 
 	part := requireToolInvocationPart(t, messages[2], 0)
 	require.NotNil(t, part.Approval)
