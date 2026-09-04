@@ -21,6 +21,7 @@ amazon-bedrock-json-tool-text-then-weather-then-json.1: json-tool-text-then-weat
 amazon-bedrock-json-tool-with-answer.1: json-tool-with-answer/input.response.json
 
 # Non-streaming counterparts to imported streaming fixtures:
+amazon-bedrock-guard-content-intervened: null
 amazon-bedrock-json-other-tool.1.json: null
 amazon-bedrock-json-tool.1.json: null
 amazon-bedrock-json-tool.2.json: null

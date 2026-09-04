@@ -1,6 +1,7 @@
 package aisdk
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 
@@ -128,9 +129,23 @@ func (s *uiMessageReaderState) apply(chunk UIMessageChunk) (bool, error) {
 		return false, nil
 
 	case ChunkFinishStep:
+		return false, nil
+
+	case ChunkResetStep:
+		start := 0
+		for i := len(s.message.Parts) - 1; i >= 0; i-- {
+			if _, ok := s.message.Parts[i].(StepStartPart); ok {
+				start = i + 1
+				break
+			}
+		}
+		changed := start < len(s.message.Parts)
+		s.message.Parts = s.message.Parts[:start]
 		s.activeTextParts = make(map[string]int)
 		s.activeReasoningParts = make(map[string]int)
-		return false, nil
+		s.partialToolCalls = make(map[string]*partialToolCallState)
+		s.rebuildDataPartIndex()
+		return changed, nil
 
 	case ChunkAbort, ChunkError:
 		return false, nil
@@ -277,8 +292,18 @@ func (s *uiMessageReaderState) apply(chunk UIMessageChunk) (bool, error) {
 			return false, fmt.Errorf("aisdk: received tool-approval-request for missing tool call %q", chunk.ToolCallID)
 		}
 		s.updateToolAt(idx, func(tp *toolPartFields) {
+			descriptor := chunk.ApprovalDescriptor
+			if bytes.Equal(bytes.TrimSpace(descriptor), []byte("null")) {
+				descriptor = nil
+			}
 			tp.State = ToolStateApprovalRequested
-			tp.Approval = &ToolApproval{ID: chunk.ApprovalID, IsAutomatic: chunk.IsAutomatic, Signature: chunk.Signature}
+			tp.Approval = &ToolApproval{
+				ID:            chunk.ApprovalID,
+				Descriptor:    cloneRawMessage(descriptor),
+				RequestReason: chunk.Reason,
+				IsAutomatic:   chunk.IsAutomatic,
+				Signature:     chunk.Signature,
+			}
 		})
 		return true, nil
 
@@ -294,8 +319,11 @@ func (s *uiMessageReaderState) apply(chunk UIMessageChunk) (bool, error) {
 				Approved: &approved,
 				Reason:   chunk.Reason,
 			}
-			if tp.Approval != nil && tp.Approval.IsAutomatic {
-				approval.IsAutomatic = true
+			if tp.Approval != nil {
+				approval.Descriptor = cloneRawMessage(tp.Approval.Descriptor)
+				approval.RequestReason = tp.Approval.RequestReason
+				approval.IsAutomatic = tp.Approval.IsAutomatic
+				approval.Signature = tp.Approval.Signature
 			}
 			tp.State = ToolStateApprovalResponded
 			tp.Approval = approval
@@ -324,6 +352,7 @@ func (s *uiMessageReaderState) apply(chunk UIMessageChunk) (bool, error) {
 		s.updateToolAt(idx, func(tp *toolPartFields) {
 			tp.State = ToolStateOutputAvailable
 			tp.Output = cloneRawMessage(chunk.Output)
+			tp.Preliminary = chunk.Preliminary
 			if chunk.ProviderExecuted {
 				tp.ProviderExecuted = true
 			}
@@ -365,6 +394,15 @@ func (s *uiMessageReaderState) apply(chunk UIMessageChunk) (bool, error) {
 		return s.applyDataChunk(chunk)
 	}
 	return false, nil
+}
+
+func (s *uiMessageReaderState) rebuildDataPartIndex() {
+	s.dataPartIndex = make(map[string]int)
+	for i, messagePart := range s.message.Parts {
+		if part, ok := messagePart.(DataPart); ok && part.ID != "" {
+			s.dataPartIndex[part.DataName+"\x00"+part.ID] = i
+		}
+	}
 }
 
 func (s *uiMessageReaderState) applyDataChunk(chunk UIMessageChunk) (bool, error) {
@@ -871,6 +909,7 @@ func cloneToolApproval(approval *ToolApproval) *ToolApproval {
 		return nil
 	}
 	clone := *approval
+	clone.Descriptor = cloneRawMessage(approval.Descriptor)
 	if approval.Approved != nil {
 		approved := *approval.Approved
 		clone.Approved = &approved

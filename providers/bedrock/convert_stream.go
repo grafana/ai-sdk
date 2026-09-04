@@ -28,10 +28,11 @@ const (
 // content. Tool blocks accumulate JSON fragments until contentBlockStop so
 // we can emit a single PartToolCall after streaming all input deltas.
 type blockState struct {
-	kind       blockKind
-	toolCallID string
-	toolName   string
-	jsonText   string
+	kind            blockKind
+	toolCallID      string
+	toolName        string
+	jsonText        string
+	redactedContent string
 	// isJSONResponseTool flips the stream conversion to emit text deltas
 	// (rather than tool input deltas) when the synthetic json tool is in use.
 	isJSONResponseTool bool
@@ -348,6 +349,8 @@ func (c *streamConsumer) handleContentBlockDelta(payload []byte) error {
 					"bedrock":       meta,
 				},
 			})
+		case rc.RedactedContent != "":
+			block.redactedContent += rc.RedactedContent
 		case rc.Data != "":
 			meta := jsonRawOrZero(ReasoningMetadata{RedactedData: rc.Data})
 			_ = sendStreamPart(context.Background(), c.out, provider.StreamPart{
@@ -380,10 +383,18 @@ func (c *streamConsumer) handleContentBlockStop(payload []byte) error {
 			ID:   strconv.Itoa(ev.ContentBlockIndex),
 		})
 	case blockKindReasoning:
-		_ = sendStreamPart(context.Background(), c.out, provider.StreamPart{
+		part := provider.StreamPart{
 			Type: provider.PartReasoningEnd,
 			ID:   strconv.Itoa(ev.ContentBlockIndex),
-		})
+		}
+		if block.redactedContent != "" {
+			meta := jsonRawOrZero(ReasoningMetadata{RedactedContent: block.redactedContent})
+			part.ProviderMetadata = provider.ProviderMetadata{
+				"amazonBedrock": meta,
+				"bedrock":       meta,
+			}
+		}
+		_ = sendStreamPart(context.Background(), c.out, part)
 	case blockKindTool:
 		input := block.jsonText
 		if input == "" {
@@ -541,13 +552,19 @@ func bedrockExceptionToAPIError(exceptionType string, body converseError, raw []
 	retryable := false
 	statusCode := 500
 	switch exceptionType {
-	case "throttlingException":
+	case "throttlingException", "ThrottlingException":
 		retryable = true
 		statusCode = 429
-	case "internalServerException", "modelStreamErrorException":
+	case "internalServerException", "InternalServerException":
 		retryable = true
 		statusCode = 500
-	case "validationException":
+	case "modelStreamErrorException", "ModelStreamErrorException":
+		retryable = true
+		statusCode = 424
+	case "serviceUnavailableException", "ServiceUnavailableException":
+		retryable = true
+		statusCode = 503
+	case "validationException", "ValidationException":
 		retryable = false
 		statusCode = 400
 	default:
@@ -561,10 +578,17 @@ func bedrockExceptionToAPIError(exceptionType string, body converseError, raw []
 			msg = "bedrock stream exception"
 		}
 	}
+	var payload any
+	if json.Unmarshal(raw, &payload) != nil {
+		payload = body
+	}
+	data, _ := json.Marshal(map[string]any{exceptionType: payload})
 	return provider.NewAPICallError(provider.APICallErrorOptions{
 		Message:      msg,
+		Type:         exceptionType,
 		StatusCode:   statusCode,
 		ResponseBody: string(raw),
 		IsRetryable:  &retryable,
+		Data:         data,
 	})
 }

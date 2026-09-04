@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -14,6 +15,134 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type testRoundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f testRoundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return f(request)
+}
+
+type failingResponseBody struct{}
+
+func (failingResponseBody) Read([]byte) (int, error) { return 0, io.ErrUnexpectedEOF }
+func (failingResponseBody) Close() error             { return nil }
+
+func TestDoGenerateResponseBodyFailureIsRetryable(t *testing.T) {
+	client := &http.Client{Transport: testRoundTripFunc(func(request *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       failingResponseBody{},
+			Request:    request,
+		}, nil
+	})}
+	_, err := New("test-model", WithBaseURL("https://api.test/v1"), WithHTTPClient(client)).DoGenerate(
+		context.Background(),
+		provider.CallOptions{Prompt: []provider.Message{provider.UserText("hi")}},
+	)
+	require.Error(t, err)
+	var apiErr *provider.APICallError
+	require.ErrorAs(t, err, &apiErr)
+	assert.Equal(t, http.StatusOK, apiErr.StatusCode)
+	assert.True(t, apiErr.IsRetryable)
+	assert.Contains(t, apiErr.URL, "https://api.test/v1/chat/completions")
+}
+
+func TestDoGenerateSendsReasoningNone(t *testing.T) {
+	t.Parallel()
+
+	var got map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&got))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"id":"chatcmpl_1",
+			"model":"test-model",
+			"choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]
+		}`))
+	}))
+	defer server.Close()
+
+	reasoning := provider.ReasoningNone
+	_, err := New("test-model", WithBaseURL(server.URL)).DoGenerate(context.Background(), provider.CallOptions{
+		Prompt:    []provider.Message{provider.UserText("hi")},
+		Reasoning: &reasoning,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "none", got["reasoning_effort"])
+}
+
+func TestDoGenerateReasoningEffortPrecedence(t *testing.T) {
+	t.Parallel()
+
+	var got map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&got))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"id":"chatcmpl_1",
+			"model":"test-model",
+			"choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]
+		}`))
+	}))
+	defer server.Close()
+
+	reasoning := provider.ReasoningNone
+	_, err := New("test-model", WithBaseURL(server.URL)).DoGenerate(context.Background(), provider.CallOptions{
+		Prompt:    []provider.Message{provider.UserText("hi")},
+		Reasoning: &reasoning,
+		ProviderOptions: provider.ProviderOptions{
+			"openaiCompatible": provider.RawProviderOption{
+				Key: "openaiCompatible",
+				Raw: json.RawMessage(`{"reasoningEffort":"high","reasoning_effort":"low"}`),
+			},
+		},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "high", got["reasoning_effort"])
+}
+
+func TestBuildRequestCanonicalFieldsSuppressRawCollisions(t *testing.T) {
+	m := New("test-model").(*model)
+	rawOptions := provider.ProviderOptions{
+		"openaiCompatible": provider.RawProviderOption{
+			Key: "openaiCompatible",
+			Raw: json.RawMessage(`{
+				"reasoning_effort":"low",
+				"verbosity":"high",
+				"messages":[{"role":"user","content":"raw"}],
+				"tools":[{"type":"function"}],
+				"tool_choice":"required",
+				"stream_options":{"include_usage":true},
+				"custom":"kept"
+			}`),
+		},
+	}
+	opts := provider.CallOptions{
+		Prompt:          []provider.Message{provider.UserText("canonical")},
+		ProviderOptions: rawOptions,
+	}
+
+	generateBody, _, err := m.buildRequest(opts, false)
+	require.NoError(t, err)
+	assert.NotContains(t, generateBody, "reasoning_effort")
+	assert.NotContains(t, generateBody, "verbosity")
+	assert.NotContains(t, generateBody, "tools")
+	assert.NotContains(t, generateBody, "tool_choice")
+	assert.Contains(t, generateBody, "stream_options")
+	assert.Equal(t, "kept", generateBody["custom"])
+	assert.Equal(t, []chatMessage{{Role: "user", Content: "canonical"}}, generateBody["messages"])
+
+	streamBody, _, err := m.buildRequest(opts, true)
+	require.NoError(t, err)
+	assert.Equal(t, true, streamBody["stream"])
+	assert.NotContains(t, streamBody, "stream_options")
+
+	m.includeUsage = true
+	streamBody, _, err = m.buildRequest(opts, true)
+	require.NoError(t, err)
+	assert.Equal(t, streamOptions{IncludeUsage: true}, streamBody["stream_options"])
+}
 
 func TestDoGenerateSendsCompatibleRequest(t *testing.T) {
 	t.Parallel()
@@ -115,6 +244,110 @@ func TestDoGenerateSendsCompatibleRequest(t *testing.T) {
 	require.JSONEq(t, `{"prompt_tokens":7,"completion_tokens":3,"total_tokens":10,"prompt_tokens_details":{"cached_tokens":2},"queue_time":0.061348671}`, string(result.Usage.Raw))
 	require.Equal(t, "chatcmpl_1", result.Response.ID)
 	require.Equal(t, time.Unix(1710000000, 0).UTC(), result.Response.Timestamp)
+}
+
+func TestDoGenerateNormalizesArrayContent(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"id":"chatcmpl_parts",
+			"model":"test-model",
+			"choices":[{"message":{"role":"assistant","content":[
+				{"type":"thinking","thinking":[{"type":"text","text":"Let me think"},42,{"type":"future","text":"ignored"},{"type":"text","text":" this through."}]},
+				{"type":"future-part","text":{"nested":true}},
+				{"type":"text","text":"The answer is 391."}
+			]},"finish_reason":"stop"}]
+		}`))
+	}))
+	defer server.Close()
+
+	result, err := New("test-model", WithBaseURL(server.URL)).DoGenerate(context.Background(), provider.CallOptions{
+		Prompt: []provider.Message{provider.UserText("hi")},
+	})
+	require.NoError(t, err)
+	require.Len(t, result.Content, 2)
+	assert.Equal(t, provider.ContentReasoning, result.Content[0].Type)
+	assert.Equal(t, "Let me think this through.", result.Content[0].Text)
+	assert.Equal(t, provider.ContentText, result.Content[1].Type)
+	assert.Equal(t, "The answer is 391.", result.Content[1].Text)
+}
+
+func TestDoStreamNormalizesArrayContent(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(
+			`data: {"id":"chatcmpl_parts","created":1710000000,"model":"test-model","choices":[{"delta":{"content":[{"type":"thinking","thinking":[{"type":"text","text":"think"}]},{"type":"text","text":"answer"},{"type":"future-part"},{"type":"thinking","thinking":[{"type":"text","text":"again"}]}]},"finish_reason":"stop"}]}` + "\n\n" +
+				`data: [DONE]` + "\n\n",
+		))
+	}))
+	defer server.Close()
+
+	result, err := New("test-model", WithBaseURL(server.URL)).DoStream(context.Background(), provider.CallOptions{
+		Prompt: []provider.Message{provider.UserText("hi")},
+	})
+	require.NoError(t, err)
+	parts := collectStreamParts(result)
+
+	var got []string
+	for _, part := range parts {
+		switch part.Type {
+		case provider.PartReasoningStart, provider.PartReasoningEnd, provider.PartTextStart, provider.PartTextEnd:
+			got = append(got, string(part.Type))
+		case provider.PartReasoningDelta, provider.PartTextDelta:
+			got = append(got, string(part.Type)+":"+part.Delta)
+		}
+	}
+	assert.Equal(t, []string{
+		"reasoning-start", "reasoning-delta:think", "reasoning-end",
+		"text-start", "text-delta:answer", "text-end",
+		"reasoning-start", "reasoning-delta:again", "reasoning-end",
+	}, got)
+}
+
+func TestDoStreamRejectsMalformedArrayContentAtomically(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(
+			`data: {"id":"invalid","created":1710000000,"model":"test-model","choices":[{"delta":{"content":[{"text":"missing type"}],"tool_calls":[{"index":0,"id":"call_invalid","type":"function","function":{"name":"weather","arguments":"{}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":99,"completion_tokens":99,"total_tokens":198}}` + "\n\n" +
+				`data: {"id":"valid","created":1710000001,"model":"test-model","choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}` + "\n\n" +
+				`data: [DONE]` + "\n\n",
+		))
+	}))
+	defer server.Close()
+
+	result, err := New("test-model", WithBaseURL(server.URL)).DoStream(context.Background(), provider.CallOptions{
+		Prompt: []provider.Message{provider.UserText("hi")},
+	})
+	require.NoError(t, err)
+	parts := collectStreamParts(result)
+
+	var responseIDs []string
+	var errorCount, toolCallCount int
+	var finish provider.StreamPart
+	for _, part := range parts {
+		switch part.Type {
+		case provider.PartResponseMeta:
+			responseIDs = append(responseIDs, part.ResponseID)
+		case provider.PartError:
+			errorCount++
+		case provider.PartToolCall:
+			toolCallCount++
+		case provider.PartFinish:
+			finish = part
+		}
+	}
+	assert.Equal(t, []string{"valid"}, responseIDs)
+	assert.Equal(t, 1, errorCount)
+	assert.Zero(t, toolCallCount)
+	assert.Equal(t, provider.FinishReasonStop, finish.FinishReason.Unified)
+	assert.Nil(t, finish.Usage.InputTokens.Total)
+	assert.Nil(t, finish.Usage.OutputTokens.Total)
 }
 
 func TestDoGeneratePreservesEpochTimestamp(t *testing.T) {
@@ -386,6 +619,36 @@ func TestDoGenerateSendsGoogleThoughtSignature(t *testing.T) {
 	require.Equal(t, "<Signature A>", google["thought_signature"])
 }
 
+func TestDoGenerateSendsCustomProviderThoughtSignature(t *testing.T) {
+	t.Parallel()
+
+	var got map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&got))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"chatcmpl_1","model":"test-model","choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`))
+	}))
+	defer server.Close()
+
+	toolCall := provider.ToolCallPart("function-call-1", "check_flight", json.RawMessage(`{"flight":"AA100"}`))
+	toolCall.ProviderOptions = provider.ProviderOptions{
+		"someProvider": provider.RawProviderOption{Key: "someProvider", Raw: json.RawMessage(`{"thoughtSignature":"custom"}`)},
+		"google":       provider.RawProviderOption{Key: "google", Raw: json.RawMessage(`{"thoughtSignature":"fallback"}`)},
+	}
+	_, err := New("test-model", WithBaseURL(server.URL), WithProviderName("some-provider")).DoGenerate(context.Background(), provider.CallOptions{
+		Prompt: []provider.Message{provider.NewAssistantMessage(toolCall)},
+		ProviderOptions: provider.ProviderOptions{
+			"someProvider": provider.RawProviderOption{Key: "someProvider", Raw: json.RawMessage(`{}`)},
+		},
+	})
+	require.NoError(t, err)
+
+	messages := got["messages"].([]any)
+	toolCalls := messages[0].(map[string]any)["tool_calls"].([]any)
+	extra := toolCalls[0].(map[string]any)["extra_content"].(map[string]any)
+	assert.Equal(t, "custom", extra["google"].(map[string]any)["thought_signature"])
+}
+
 func TestDoGenerateSendsOpenAICompatibleMessageMetadata(t *testing.T) {
 	t.Parallel()
 
@@ -592,6 +855,53 @@ func TestDoGenerateResolvesInlineWildcardImageMediaType(t *testing.T) {
 	}
 }
 
+func TestDoGenerateConvertsVideoFileParts(t *testing.T) {
+	t.Parallel()
+
+	var got map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&got))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"id":"chatcmpl_1",
+			"model":"test-model",
+			"choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]
+		}`))
+	}))
+	defer server.Close()
+
+	mp4Bytes := []byte{0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70}
+	encodedMP4 := base64.StdEncoding.EncodeToString(mp4Bytes)
+	inline := provider.FilePart("video/*", provider.DataContent{Bytes: mp4Bytes})
+	inline.ProviderOptions = provider.ProviderOptions{
+		"openaiCompatible": provider.RawProviderOption{
+			Key: "openaiCompatible",
+			Raw: json.RawMessage(`{"fps":1}`),
+		},
+	}
+	_, err := New("test-model", WithBaseURL(server.URL)).DoGenerate(context.Background(), provider.CallOptions{
+		Prompt: []provider.Message{
+			provider.NewUserMessage(
+				inline,
+				provider.FilePart("video/*", provider.DataContent{URL: "https://example.com/video.mp4"}),
+			),
+		},
+	})
+	require.NoError(t, err)
+
+	messages := got["messages"].([]any)
+	content := messages[0].(map[string]any)["content"].([]any)
+	assert.Equal(t, map[string]any{
+		"type":      "video_url",
+		"video_url": map[string]any{"url": "data:video/mp4;base64," + encodedMP4},
+		"fps":       float64(1),
+	}, content[0])
+	assert.Equal(t, map[string]any{
+		"type":      "video_url",
+		"video_url": map[string]any{"url": "https://example.com/video.mp4"},
+	}, content[1])
+}
+
 func TestDoGenerateResolvesInlineWildcardAudioAndPDFMediaTypes(t *testing.T) {
 	t.Parallel()
 
@@ -681,6 +991,50 @@ func TestDoGenerateParsesAudioAndPDFDataURLFileParts(t *testing.T) {
 	file := content[1].(map[string]any)["file"].(map[string]any)
 	require.Equal(t, "document.pdf", file["filename"])
 	require.Equal(t, "data:application/pdf;base64,"+encodedPDF, file["file_data"])
+}
+
+func TestConvertFileContent_EmptyInlineData(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		mediaType string
+		data      provider.DataContent
+		expected  string
+	}{
+		{name: "image", mediaType: "image/png", data: provider.Base64DataContent(""), expected: `{"type":"image_url","image_url":{"url":"data:image/png;base64,"}}`},
+		{name: "video", mediaType: "video/mp4", data: provider.Base64DataContent(""), expected: `{"type":"video_url","video_url":{"url":"data:video/mp4;base64,"}}`},
+		{name: "video data URL", mediaType: "video/*", data: provider.DataContent{URL: "data:video/mp4;base64,"}, expected: `{"type":"video_url","video_url":{"url":"data:video/mp4;base64,"}}`},
+		{name: "audio", mediaType: "audio/wav", data: provider.Base64DataContent(""), expected: `{"type":"input_audio","input_audio":{"data":"","format":"wav"}}`},
+		{name: "PDF", mediaType: "application/pdf", data: provider.Base64DataContent(""), expected: `{"type":"file","file":{"filename":"document.pdf","file_data":"data:application/pdf;base64,"}}`},
+		{name: "text", mediaType: "text/plain", data: provider.Base64DataContent(""), expected: `{"type":"text","text":""}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			part, err := convertFileContent(provider.FilePart(tc.mediaType, tc.data))
+			require.NoError(t, err)
+			encoded, err := json.Marshal(part)
+			require.NoError(t, err)
+			assert.JSONEq(t, tc.expected, string(encoded))
+		})
+	}
+}
+
+func TestConvertAssistantMessage_NormalizesMalformedToolInput(t *testing.T) {
+	tests := []struct {
+		input json.RawMessage
+		want  string
+	}{
+		{input: json.RawMessage(`not-json`), want: "{}"},
+		{input: json.RawMessage(`null`), want: "null"},
+		{input: json.RawMessage(`[]`), want: "[]"},
+		{input: json.RawMessage(`"value"`), want: `"value"`},
+	}
+	for _, tt := range tests {
+		message, err := convertAssistantMessage([]provider.ContentPart{
+			provider.ToolCallPart("call-1", "weather", tt.input),
+		}, nil, "openaiCompatible")
+		require.NoError(t, err)
+		require.Len(t, message.ToolCalls, 1)
+		assert.Equal(t, tt.want, message.ToolCalls[0].Function.Arguments)
+	}
 }
 
 func TestDoGenerateStructuredOutputAndToolCallResponse(t *testing.T) {
@@ -1088,13 +1442,49 @@ func TestDoStreamProcessesFinalDataLineAtEOF(t *testing.T) {
 	require.Equal(t, 3, *finish.Usage.OutputTokens.Total)
 }
 
+func TestDoStreamMissingFinishReason(t *testing.T) {
+	t.Parallel()
+
+	for _, done := range []bool{false, true} {
+		name := "eof"
+		if done {
+			name = "done"
+		}
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "text/event-stream")
+				_, _ = w.Write([]byte(`data: {"id":"chatcmpl_stream","model":"test-model","choices":[{"delta":{"content":"partial"},"finish_reason":null}]}` + "\n\n"))
+				if done {
+					_, _ = w.Write([]byte("data: [DONE]\n\n"))
+				}
+			}))
+			defer server.Close()
+
+			result, err := New("test-model", WithBaseURL(server.URL)).DoStream(context.Background(), provider.CallOptions{
+				Prompt: []provider.Message{provider.UserText("hi")},
+			})
+			require.NoError(t, err)
+			parts := collectStreamParts(result)
+			text := findPart(parts, provider.PartTextDelta)
+			assert.Equal(t, "partial", text.Delta)
+			errors := findParts(parts, provider.PartError)
+			require.Len(t, errors, 1)
+			assert.Contains(t, errors[0].APICallError.Message, "without a finish reason")
+			assert.Equal(t, provider.FinishReasonError, parts[len(parts)-1].FinishReason.Unified)
+		})
+	}
+}
+
 func TestDoStreamStructuredError(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name        string
-		errorJSON   string
-		wantMessage string
+		name          string
+		errorJSON     string
+		wantMessage   string
+		wantStatus    int
+		wantRetryable bool
 	}{
 		{
 			name:        "custom error without message",
@@ -1105,6 +1495,13 @@ func TestDoStreamStructuredError(t *testing.T) {
 			name:        "OpenAI error preserves unknown fields",
 			errorJSON:   `{"message":"rate limited","type":"rate_limit","code":"slow_down","unknown":{"retryAfter":5}}`,
 			wantMessage: "openai: rate limited",
+		},
+		{
+			name:          "explicit numeric status is retryable",
+			errorJSON:     `{"message":"retry later","type":"provider_error","code":429}`,
+			wantMessage:   "openai: retry later",
+			wantStatus:    429,
+			wantRetryable: true,
 		},
 	}
 
@@ -1134,7 +1531,8 @@ func TestDoStreamStructuredError(t *testing.T) {
 			apiErr := errors[0].APICallError
 			require.Contains(t, apiErr.Message, tc.wantMessage)
 			require.Equal(t, server.URL+"/chat/completions", apiErr.URL)
-			require.False(t, apiErr.IsRetryable)
+			require.Equal(t, tc.wantStatus, apiErr.StatusCode)
+			require.Equal(t, tc.wantRetryable, apiErr.IsRetryable)
 			require.Equal(t, []string{"test"}, apiErr.ResponseHeaders["X-Provider"])
 			require.JSONEq(t, tc.errorJSON, string(apiErr.Data))
 			require.JSONEq(t, frame, apiErr.ResponseBody)

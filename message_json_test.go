@@ -93,6 +93,35 @@ func TestPartRoundTrip(t *testing.T) {
 		assert.Empty(t, got.Parts)
 	})
 
+	t.Run("tool approval descriptor survives round-trip", func(t *testing.T) {
+		approved := true
+		msg := UIMessage{
+			ID:   "msg-approval",
+			Role: RoleAssistant,
+			Parts: []Part{ToolInvocationPart{
+				ToolCallID: "call-1",
+				ToolName:   "deleteAccount",
+				State:      ToolStateApprovalResponded,
+				Input:      json.RawMessage(`{"userId":"user-123"}`),
+				Approval: &ToolApproval{
+					ID:         "approval-1",
+					Approved:   &approved,
+					Descriptor: json.RawMessage(`{"action":"deleteAccount","risk":"high"}`),
+				},
+			}},
+		}
+
+		encoded, err := json.Marshal(msg)
+		require.NoError(t, err)
+
+		var got UIMessage
+		require.NoError(t, json.Unmarshal(encoded, &got))
+		toolPart, ok := got.Parts[0].(ToolInvocationPart)
+		require.True(t, ok)
+		require.NotNil(t, toolPart.Approval)
+		assert.JSONEq(t, `{"action":"deleteAccount","risk":"high"}`, string(toolPart.Approval.Descriptor))
+	})
+
 	t.Run("unknown type survives round-trip", func(t *testing.T) {
 		data := `{"id":"msg-1","role":"assistant","parts":[{"type":"future-type","foo":"bar"}]}`
 		var got UIMessage

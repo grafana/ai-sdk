@@ -202,6 +202,7 @@ type ToolApprovalRequest struct {
 	ToolName         string                    `json:"toolName"`
 	Input            json.RawMessage           `json:"input,omitempty"`
 	Signature        string                    `json:"signature,omitempty"`
+	Reason           string                    `json:"reason,omitempty"`
 	ProviderExecuted bool                      `json:"providerExecuted,omitempty"`
 	Dynamic          *bool                     `json:"dynamic,omitempty"`
 	Title            string                    `json:"title,omitempty"`

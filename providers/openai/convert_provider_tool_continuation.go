@@ -21,12 +21,14 @@ type inputConversionContext struct {
 	hasShellTool            bool
 	hasApplyPatchTool       bool
 	hasComputerTool         bool
+	toolSearchToolName      string
 	customProviderToolNames map[string]struct{}
 	outputSchemaToolNames   map[string]struct{}
 	processedApprovalIDs    map[string]struct{}
+	parallelGroups          map[string]*parallelToolResultGroup
 }
 
-func newInputConversionContext(tools []provider.Tool, mapping toolNameMapping, store bool, providerOptionsName string, hasConversation, hasPreviousResponseID bool) inputConversionContext {
+func newInputConversionContext(prompt []provider.Message, tools []provider.Tool, mapping toolNameMapping, store bool, providerOptionsName string, hasConversation, hasPreviousResponseID bool) inputConversionContext {
 	ctx := inputConversionContext{
 		store:                   store,
 		providerOptionsName:     providerOptionsName,
@@ -36,6 +38,7 @@ func newInputConversionContext(tools []provider.Tool, mapping toolNameMapping, s
 		customProviderToolNames: make(map[string]struct{}),
 		outputSchemaToolNames:   make(map[string]struct{}),
 		processedApprovalIDs:    make(map[string]struct{}),
+		parallelGroups:          collectParallelToolResultGroups(prompt, providerOptionsName, hasConversation || hasPreviousResponseID),
 	}
 	for _, tool := range tools {
 		if tool.Type == provider.ToolTypeFunction {
@@ -57,6 +60,8 @@ func newInputConversionContext(tools []provider.Tool, mapping toolNameMapping, s
 			ctx.hasApplyPatchTool = true
 		case toolIDComputer:
 			ctx.hasComputerTool = true
+		case toolIDToolSearch:
+			ctx.toolSearchToolName = tool.Name
 		case toolIDCustom:
 			ctx.customProviderToolNames[tool.Name] = struct{}{}
 		}
@@ -89,6 +94,16 @@ func (c inputConversionContext) contentOptions(content provider.ToolResultConten
 	return openAIPartOptionsFor(content.ProviderOptions, c.providerOptionsName)
 }
 
+func scalarToolResultPromptCacheBreakpoint(part provider.ContentPart, ctx inputConversionContext) *PromptCacheBreakpoint {
+	if part.Output == nil || part.Output.Type == provider.ToolOutputContent {
+		return nil
+	}
+	if breakpoint := ctx.outputOptions(part.Output).PromptCacheBreakpoint; breakpoint != nil {
+		return breakpoint
+	}
+	return ctx.partOptions(part).PromptCacheBreakpoint
+}
+
 func convertAssistantToolCall(part provider.ContentPart, ctx inputConversionContext) (*responses.ResponseInputItemUnionParam, error) {
 	po := ctx.partOptions(part)
 	if ctx.hasConversation && po.ItemID != "" {
@@ -96,7 +111,7 @@ func convertAssistantToolCall(part provider.ContentPart, ctx inputConversionCont
 	}
 
 	toolName := ctx.toolNameMapping.toProviderToolName(part.ToolName)
-	if toolName == "tool_search" {
+	if part.ToolName == ctx.toolSearchToolName {
 		if ctx.store && po.ItemID != "" {
 			item := itemReference(po.ItemID)
 			return &item, nil
@@ -177,7 +192,7 @@ func convertAssistantToolResult(part provider.ContentPart, ctx inputConversionCo
 	}
 
 	toolName := ctx.toolNameMapping.toProviderToolName(part.ToolName)
-	if toolName == "tool_search" {
+	if part.ToolName == ctx.toolSearchToolName {
 		itemID := ctx.partOptions(part).ItemID
 		if itemID == "" {
 			itemID = part.ToolCallID
@@ -237,7 +252,7 @@ func convertProviderToolResult(part provider.ContentPart, ctx inputConversionCon
 	toolName := ctx.toolNameMapping.toProviderToolName(part.ToolName)
 
 	switch {
-	case toolName == "tool_search" && part.Output != nil && part.Output.Type == provider.ToolOutputJSON:
+	case part.ToolName == ctx.toolSearchToolName && part.Output != nil && part.Output.Type == provider.ToolOutputJSON:
 		item, err := toolSearchOutputItem(part.Output.JSON, "", "client", part.ToolCallID)
 		return item, nil, err
 	case ctx.hasComputerTool && toolName == "computer":
@@ -256,7 +271,16 @@ func convertProviderToolResult(part provider.ContentPart, ctx inputConversionCon
 		item, warnings := customToolCallOutputItem(part, ctx)
 		return item, warnings, nil
 	default:
-		item := responses.ResponseInputItemParamOfFunctionCallOutput(part.ToolCallID, toolResultOutputString(part.Output, ctx.hasOutputSchema(part.ToolName)))
+		output := toolResultOutputString(part.Output, ctx.hasOutputSchema(part.ToolName))
+		breakpoint := scalarToolResultPromptCacheBreakpoint(part, ctx)
+		var item responses.ResponseInputItemUnionParam
+		if breakpoint == nil {
+			item = responses.ResponseInputItemParamOfFunctionCallOutput(part.ToolCallID, output)
+		} else {
+			item = responses.ResponseInputItemParamOfFunctionCallOutput(part.ToolCallID, responses.ResponseFunctionCallOutputItemListParam{
+				functionCallOutputText(output, breakpoint),
+			})
+		}
 		item.OfFunctionCallOutput.Caller = functionCallOutputCallerParam(ctx.partOptions(part).Caller)
 		return &item, nil, nil
 	}
@@ -648,7 +672,15 @@ func customToolCallOutputItem(part provider.ContentPart, ctx inputConversionCont
 		return &item, nil
 	}
 	if part.Output.Type != provider.ToolOutputContent {
-		item := responses.ResponseInputItemParamOfCustomToolCallOutput(part.ToolCallID, toolResultOutputString(part.Output, false))
+		output := toolResultOutputString(part.Output, false)
+		breakpoint := scalarToolResultPromptCacheBreakpoint(part, ctx)
+		if breakpoint == nil {
+			item := responses.ResponseInputItemParamOfCustomToolCallOutput(part.ToolCallID, output)
+			return &item, nil
+		}
+		item := responses.ResponseInputItemParamOfCustomToolCallOutput(part.ToolCallID, []responses.ResponseCustomToolCallOutputOutputOutputContentListItemUnionParam{
+			customToolOutputText(output, breakpoint),
+		})
 		return &item, nil
 	}
 

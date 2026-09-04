@@ -89,7 +89,7 @@ func TestConvertResponse_ServerToolUse(t *testing.T) {
 		"role": "assistant",
 		"model": "claude-sonnet-4-6",
 		"content": [
-			{"type": "server_tool_use", "id": "stu_1", "name": "web_search", "input": {"query": "test"}}
+			{"type": "server_tool_use", "id": "stu_1", "name": "web_search", "input": {"query": "test"}, "caller": {"type": "direct"}}
 		],
 		"stop_reason": "end_turn",
 		"usage": {"input_tokens": 10, "output_tokens": 5}
@@ -109,6 +109,7 @@ func TestConvertResponse_ServerToolUse(t *testing.T) {
 	assert.Equal(t, "stu_1", part.ToolCallID)
 	assert.Equal(t, "search_docs", part.ToolName)
 	assert.True(t, part.ProviderExecuted, "expected ProviderExecuted=true")
+	assert.JSONEq(t, `{"caller":{"type":"direct"}}`, string(part.ProviderMetadata["anthropic"]))
 }
 
 func TestConvertResponse_CodeExecutionPreservesInputFieldOrder(t *testing.T) {
@@ -138,6 +139,7 @@ func TestConvertResponse_WebSearchToolResult(t *testing.T) {
 			{
 				"type": "web_search_tool_result",
 				"tool_use_id": "stu_1",
+				"caller": {"type": "code_execution_20260120", "tool_id": "stu_parent"},
 				"content": [
 					{"type": "web_search_result", "title": "Test", "url": "https://example.com", "page_age": "2d", "encrypted_content": "abc"},
 					{"type": "web_search_result", "title": "Other", "url": "https://other.com", "page_age": "", "encrypted_content": "def"}
@@ -164,6 +166,7 @@ func TestConvertResponse_WebSearchToolResult(t *testing.T) {
 	assert.Equal(t, "search_docs", toolResult.ToolName)
 	require.NotNil(t, toolResult.Result, "part[0].Result should be non-nil")
 	assert.Nil(t, toolResult.Input, "part[0].Input should be nil for tool-result (use Result field)")
+	assert.JSONEq(t, `{"caller":{"type":"code_execution_20260120","toolId":"stu_parent"}}`, string(toolResult.ProviderMetadata["anthropic"]))
 
 	source1 := result.Content[1]
 	assert.Equal(t, provider.ContentSource, source1.Type)
@@ -178,6 +181,31 @@ func TestConvertResponse_WebSearchToolResult(t *testing.T) {
 	assert.NotEqual(t, source1.ID, source2.ID, "each web search source should have a unique ID")
 }
 
+func TestConvertResponse_WebSearchToolResultErrorCallerMetadata(t *testing.T) {
+	msg := unmarshalMessage(t, `{
+		"id":"msg_1",
+		"type":"message",
+		"role":"assistant",
+		"model":"claude-sonnet-4-6",
+		"content":[{
+			"type":"web_search_tool_result",
+			"tool_use_id":"stu_1",
+			"caller":{"type":"code_execution_20260120","tool_id":"stu_parent"},
+			"content":{"type":"web_search_tool_result_error","error_code":"max_uses_exceeded"}
+		}],
+		"stop_reason":"end_turn",
+		"usage":{"input_tokens":10,"output_tokens":5}
+	}`)
+
+	result, err := convertResponse(msg, toolNameMapping{}, false, nil, defaultGenerateID, "anthropic", false)
+	require.NoError(t, err)
+	require.Len(t, result.Content, 1)
+	part := result.Content[0]
+	assert.Equal(t, provider.ContentToolResult, part.Type)
+	assert.True(t, part.IsError)
+	assert.JSONEq(t, `{"caller":{"type":"code_execution_20260120","toolId":"stu_parent"}}`, string(part.ProviderMetadata["anthropic"]))
+}
+
 func TestConvertResponse_WebFetchToolResult(t *testing.T) {
 	t.Run("success_with_text_source", func(t *testing.T) {
 		msg := unmarshalMessage(t, `{
@@ -189,6 +217,7 @@ func TestConvertResponse_WebFetchToolResult(t *testing.T) {
 				{
 					"type": "web_fetch_tool_result",
 					"tool_use_id": "stu_1",
+					"caller": {"type": "direct"},
 					"content": {
 						"type": "web_fetch_result",
 						"url": "https://example.com",
@@ -224,6 +253,7 @@ func TestConvertResponse_WebFetchToolResult(t *testing.T) {
 		assert.Equal(t, "stu_1", part.ToolCallID)
 		assert.Equal(t, "fetch_page", part.ToolName)
 		assert.False(t, part.IsError)
+		assert.JSONEq(t, `{"caller":{"type":"direct"}}`, string(part.ProviderMetadata["anthropic"]))
 
 		var res map[string]any
 		require.NoError(t, json.Unmarshal(part.Result, &res))
@@ -249,6 +279,7 @@ func TestConvertResponse_WebFetchToolResult(t *testing.T) {
 				{
 					"type": "web_fetch_tool_result",
 					"tool_use_id": "stu_2",
+					"caller": {"type": "direct"},
 					"content": {
 						"type": "web_fetch_tool_result_error",
 						"error_code": "url_not_accessible"
@@ -273,6 +304,7 @@ func TestConvertResponse_WebFetchToolResult(t *testing.T) {
 		assert.Equal(t, "stu_2", part.ToolCallID)
 		assert.Equal(t, "fetch_page", part.ToolName)
 		assert.True(t, part.IsError)
+		assert.JSONEq(t, `{"caller":{"type":"direct"}}`, string(part.ProviderMetadata["anthropic"]))
 
 		var errRes map[string]string
 		require.NoError(t, json.Unmarshal(part.Result, &errRes))

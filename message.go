@@ -78,11 +78,13 @@ func (ReasoningPart) PartType() string { return string(UIPartReasoning) }
 // is unset while a request is pending and set true/false once the user
 // responds.
 type ToolApproval struct {
-	ID          string `json:"id,omitempty"`
-	Approved    *bool  `json:"approved,omitempty"`
-	Reason      string `json:"reason,omitempty"`
-	IsAutomatic bool   `json:"isAutomatic,omitempty"`
-	Signature   string `json:"signature,omitempty"`
+	ID            string          `json:"id,omitempty"`
+	Approved      *bool           `json:"approved,omitempty"`
+	Descriptor    json.RawMessage `json:"descriptor,omitempty"`
+	RequestReason string          `json:"requestReason,omitempty"`
+	Reason        string          `json:"reason,omitempty"`
+	IsAutomatic   bool            `json:"isAutomatic,omitempty"`
+	Signature     string          `json:"signature,omitempty"`
 }
 
 // ToolInvocationState identifies the lifecycle state of a tool invocation.
@@ -107,6 +109,7 @@ type ToolInvocationPart struct {
 	Output                 json.RawMessage           `json:"output,omitempty"`
 	ErrorText              string                    `json:"errorText,omitempty"`
 	ProviderExecuted       bool                      `json:"providerExecuted,omitempty"`
+	Preliminary            bool                      `json:"preliminary,omitempty"`
 	Approval               *ToolApproval             `json:"approval,omitempty"`
 	CallProviderMetadata   provider.ProviderMetadata `json:"callProviderMetadata,omitempty"`
 	ResultProviderMetadata provider.ProviderMetadata `json:"resultProviderMetadata,omitempty"`
@@ -125,6 +128,7 @@ type DynamicToolUIPart struct {
 	Output                 json.RawMessage           `json:"output,omitempty"`
 	ErrorText              string                    `json:"errorText,omitempty"`
 	ProviderExecuted       bool                      `json:"providerExecuted,omitempty"`
+	Preliminary            bool                      `json:"preliminary,omitempty"`
 	Approval               *ToolApproval             `json:"approval,omitempty"`
 	CallProviderMetadata   provider.ProviderMetadata `json:"callProviderMetadata,omitempty"`
 	ResultProviderMetadata provider.ProviderMetadata `json:"resultProviderMetadata,omitempty"`

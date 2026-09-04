@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/grafana/ai-sdk/provider"
@@ -24,6 +25,7 @@ type streamState struct {
 	textActive       bool
 	reasoningActive  bool
 	finishReason     provider.FinishReason
+	finishReasonSet  bool
 	usage            *provider.Usage
 	rawUsage         *openAIUsage
 	toolCalls        []*streamToolCall
@@ -31,6 +33,7 @@ type streamState struct {
 	toolCallsByIndex map[int]*streamToolCall
 	latestToolCall   *streamToolCall
 	errorEmitted     bool
+	errorObserved    bool
 }
 
 type streamToolCall struct {
@@ -99,11 +102,16 @@ func (m *model) runStream(ctx context.Context, endpoint string, requestBody []by
 			continue
 		}
 		if hasError {
-			retryable := false
+			var details openAIErrorPayload
+			_ = json.Unmarshal(errorData, &details)
+			statusCode, retryable := openAICompatibleStreamErrorMetadata(errorData, details)
 			state.emitProviderError(provider.NewAPICallError(provider.APICallErrorOptions{
 				Message:           errorMessage,
+				Type:              details.Type,
+				Code:              details.Code,
 				URL:               endpoint,
 				RequestBodyValues: json.RawMessage(append([]byte(nil), requestBody...)),
+				StatusCode:        statusCode,
 				ResponseHeaders:   cloneHeaders(headers),
 				ResponseBody:      string(data),
 				IsRetryable:       &retryable,
@@ -161,6 +169,9 @@ func validateStreamChunk(chunk chatCompletionResponse) error {
 		if choice.Delta.Role != "" && choice.Delta.Role != "assistant" {
 			return errors.New("stream choice contained invalid role")
 		}
+		if _, err := convertOpenAICompatibleContent(choice.Delta.Content); err != nil {
+			return err
+		}
 		for _, toolCall := range choice.Delta.ToolCalls {
 			if toolCall.Function == nil {
 				return errors.New("stream tool call missing function")
@@ -168,6 +179,57 @@ func validateStreamChunk(chunk chatCompletionResponse) error {
 		}
 	}
 	return nil
+}
+
+func openAICompatibleStreamErrorMetadata(raw json.RawMessage, details openAIErrorPayload) (int, bool) {
+	var fields map[string]any
+	_ = json.Unmarshal(raw, &fields)
+	statusCode := firstHTTPStatus(fields["statusCode"], fields["status_code"], fields["status"], details.Code)
+	if statusCode == 0 {
+		switch strings.ToLower(strings.TrimSpace(details.Message)) {
+		case "overloaded", "overloaded error", "model overloaded":
+			statusCode = http.StatusServiceUnavailable
+		case "internal server error":
+			statusCode = http.StatusInternalServerError
+		case "service unavailable":
+			statusCode = http.StatusServiceUnavailable
+		}
+	}
+	if value, ok := fields["isRetryable"].(bool); ok {
+		return statusCode, value
+	}
+	if value, ok := fields["is_retryable"].(bool); ok {
+		return statusCode, value
+	}
+	return statusCode, statusCode == 408 || statusCode == 409 || statusCode == 429 || statusCode >= 500
+}
+
+func firstHTTPStatus(values ...any) int {
+	for _, value := range values {
+		var status int
+		switch value := value.(type) {
+		case float64:
+			status = int(value)
+			if float64(status) != value {
+				continue
+			}
+		case string:
+			if len(value) != 3 {
+				continue
+			}
+			parsed, err := strconv.Atoi(value)
+			if err != nil {
+				continue
+			}
+			status = parsed
+		default:
+			continue
+		}
+		if status >= 400 && status <= 599 {
+			return status
+		}
+	}
+	return 0
 }
 
 func streamError(data []byte) (json.RawMessage, string, bool, error) {
@@ -191,6 +253,7 @@ func streamError(data []byte) (json.RawMessage, string, bool, error) {
 func (s *streamState) handleChoice(choice chatChoice) bool {
 	if choice.FinishReason != nil {
 		s.finishReason = mapFinishReason(choice.FinishReason)
+		s.finishReasonSet = true
 	}
 
 	delta := choice.Delta
@@ -198,33 +261,25 @@ func (s *streamState) handleChoice(choice chatChoice) bool {
 	if reasoning == "" {
 		reasoning = delta.Reasoning
 	}
-	if reasoning != "" {
-		if !s.reasoningActive {
-			if !sendStreamPart(s.ctx, s.out, provider.StreamPart{Type: provider.PartReasoningStart, ID: "reasoning-0"}) {
-				return false
-			}
-			s.reasoningActive = true
-		}
-		if !sendStreamPart(s.ctx, s.out, provider.StreamPart{Type: provider.PartReasoningDelta, ID: "reasoning-0", Delta: reasoning}) {
-			return false
-		}
+	if reasoning != "" && !s.enqueueReasoningDelta(reasoning) {
+		return false
 	}
 
-	if delta.Content != "" {
-		if s.reasoningActive {
-			if !sendStreamPart(s.ctx, s.out, provider.StreamPart{Type: provider.PartReasoningEnd, ID: "reasoning-0"}) {
-				return false
+	content, err := convertOpenAICompatibleContent(delta.Content)
+	if err != nil {
+		s.emitRecoverableError(streamDecodeError(s.endpoint, err))
+	} else {
+		for _, part := range content {
+			switch part.Type {
+			case provider.ContentReasoning:
+				if !s.enqueueReasoningDelta(part.Text) {
+					return false
+				}
+			case provider.ContentText:
+				if !s.enqueueTextDelta(part.Text) {
+					return false
+				}
 			}
-			s.reasoningActive = false
-		}
-		if !s.textActive {
-			if !sendStreamPart(s.ctx, s.out, provider.StreamPart{Type: provider.PartTextStart, ID: "txt-0"}) {
-				return false
-			}
-			s.textActive = true
-		}
-		if !sendStreamPart(s.ctx, s.out, provider.StreamPart{Type: provider.PartTextDelta, ID: "txt-0", Delta: delta.Content}) {
-			return false
 		}
 	}
 
@@ -243,6 +298,38 @@ func (s *streamState) handleChoice(choice chatChoice) bool {
 	}
 
 	return true
+}
+
+func (s *streamState) enqueueReasoningDelta(delta string) bool {
+	if s.textActive {
+		if !sendStreamPart(s.ctx, s.out, provider.StreamPart{Type: provider.PartTextEnd, ID: "txt-0"}) {
+			return false
+		}
+		s.textActive = false
+	}
+	if !s.reasoningActive {
+		if !sendStreamPart(s.ctx, s.out, provider.StreamPart{Type: provider.PartReasoningStart, ID: "reasoning-0"}) {
+			return false
+		}
+		s.reasoningActive = true
+	}
+	return sendStreamPart(s.ctx, s.out, provider.StreamPart{Type: provider.PartReasoningDelta, ID: "reasoning-0", Delta: delta})
+}
+
+func (s *streamState) enqueueTextDelta(delta string) bool {
+	if s.reasoningActive {
+		if !sendStreamPart(s.ctx, s.out, provider.StreamPart{Type: provider.PartReasoningEnd, ID: "reasoning-0"}) {
+			return false
+		}
+		s.reasoningActive = false
+	}
+	if !s.textActive {
+		if !sendStreamPart(s.ctx, s.out, provider.StreamPart{Type: provider.PartTextStart, ID: "txt-0"}) {
+			return false
+		}
+		s.textActive = true
+	}
+	return sendStreamPart(s.ctx, s.out, provider.StreamPart{Type: provider.PartTextDelta, ID: "txt-0", Delta: delta})
 }
 
 func (s *streamState) handleToolCallDelta(delta chatToolCallDelta) bool {
@@ -416,6 +503,12 @@ func (s *streamState) flush() {
 		}
 	}
 
+	if !s.finishReasonSet && !s.errorObserved {
+		s.emitError(provider.NewAPICallError(provider.APICallErrorOptions{
+			Message: "Response stream ended without a finish reason.",
+			URL:     s.endpoint,
+		}))
+	}
 	if s.errorEmitted {
 		s.finishReason = provider.FinishReason{Unified: provider.FinishReasonError}
 	}
@@ -458,6 +551,7 @@ func (s *streamState) finishToolCall(tc *streamToolCall) bool {
 }
 
 func (s *streamState) emitProviderError(err *provider.APICallError) {
+	s.errorObserved = true
 	s.finishReason = provider.FinishReason{Unified: provider.FinishReasonError}
 	_ = sendStreamPart(s.ctx, s.out, provider.StreamPart{
 		Type:         provider.PartError,
@@ -471,6 +565,7 @@ func (s *streamState) emitError(err *provider.APICallError) {
 }
 
 func (s *streamState) emitRecoverableError(err *provider.APICallError) {
+	s.errorObserved = true
 	s.finishReason = provider.FinishReason{Unified: provider.FinishReasonError}
 	_ = sendStreamPart(s.ctx, s.out, provider.StreamPart{
 		Type:         provider.PartError,

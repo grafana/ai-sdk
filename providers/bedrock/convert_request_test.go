@@ -233,7 +233,7 @@ func TestBuildRequest_FunctionToolStrict(t *testing.T) {
 
 func TestBuildRequest_AnthropicThinkingEnabled(t *testing.T) {
 	bo := BedrockOptions{
-		ReasoningConfig: &ReasoningConfig{Type: "enabled", BudgetTokens: 2048},
+		ReasoningConfig: &ReasoningConfig{Type: "enabled", BudgetTokens: intPtr(2048)},
 	}
 	temp := 0.7
 	maxTok := 1024
@@ -355,7 +355,7 @@ func TestBuildRequest_TopLevelReasoningMergesProviderConfig(t *testing.T) {
 			Prompt:    []provider.Message{provider.UserText("x")},
 			Reasoning: &reasoning,
 			ProviderOptions: provider.BuildProviderOptions(BedrockOptions{
-				ReasoningConfig: &ReasoningConfig{Type: "enabled", BudgetTokens: 3000},
+				ReasoningConfig: &ReasoningConfig{Type: "enabled", BudgetTokens: intPtr(3000)},
 			}),
 		})
 		assert.Empty(t, warnings)
@@ -376,7 +376,7 @@ func TestBuildRequest_TopLevelReasoningMergesProviderConfig(t *testing.T) {
 			Prompt:    []provider.Message{provider.UserText("x")},
 			Reasoning: &reasoning,
 			ProviderOptions: provider.BuildProviderOptions(BedrockOptions{
-				ReasoningConfig: &ReasoningConfig{Type: "disabled", BudgetTokens: 3000},
+				ReasoningConfig: &ReasoningConfig{Type: "disabled", BudgetTokens: intPtr(3000)},
 			}),
 		})
 		assert.Empty(t, warnings)
@@ -406,7 +406,7 @@ func TestBuildRequest_TopLevelReasoningMergesProviderConfig(t *testing.T) {
 			Prompt:    []provider.Message{provider.UserText("x")},
 			Reasoning: &reasoning,
 			ProviderOptions: provider.BuildProviderOptions(BedrockOptions{
-				ReasoningConfig: &ReasoningConfig{Type: "enabled", BudgetTokens: 3000},
+				ReasoningConfig: &ReasoningConfig{Type: "enabled", BudgetTokens: intPtr(3000)},
 			}),
 		})
 		require.Len(t, warnings, 1)
@@ -427,7 +427,7 @@ func TestBuildRequest_TopLevelReasoningMergesProviderConfig(t *testing.T) {
 			Prompt:    []provider.Message{provider.UserText("x")},
 			Reasoning: &reasoning,
 			ProviderOptions: provider.BuildProviderOptions(BedrockOptions{
-				ReasoningConfig: &ReasoningConfig{Type: "adaptive", BudgetTokens: 3000},
+				ReasoningConfig: &ReasoningConfig{Type: "adaptive", BudgetTokens: intPtr(3000)},
 			}),
 		})
 		require.Len(t, warnings, 2)
@@ -535,7 +535,7 @@ func TestBuildRequest_TopLevelReasoningNonAnthropicCompatibilityWarnings(t *test
 
 func TestBuildRequest_AnthropicOnlyOptionsOnNonAnthropicModel(t *testing.T) {
 	bo := BedrockOptions{
-		ReasoningConfig: &ReasoningConfig{Type: "enabled", BudgetTokens: 2048},
+		ReasoningConfig: &ReasoningConfig{Type: "enabled", BudgetTokens: intPtr(2048)},
 	}
 	req, warnings, _ := mustBuildRequest(t, testMistralModel, provider.CallOptions{
 		Prompt:          []provider.Message{provider.UserText("x")},
@@ -1314,7 +1314,7 @@ func TestBuildRequest_UnsupportedFileDataVariants(t *testing.T) {
 
 func TestBuildRequest_AdditionalModelRequestFieldsPreservesDerived(t *testing.T) {
 	bo := BedrockOptions{
-		ReasoningConfig:              &ReasoningConfig{Type: "enabled", BudgetTokens: 2048},
+		ReasoningConfig:              &ReasoningConfig{Type: "enabled", BudgetTokens: intPtr(2048)},
 		AdditionalModelRequestFields: map[string]any{"thinking": map[string]any{"type": "custom", "display": "visible"}},
 	}
 	req, _, _ := mustBuildRequest(t, testAnthropicModel, provider.CallOptions{
@@ -1465,6 +1465,19 @@ func TestBuildRequest_PreservesSignedReasoningWhitespace(t *testing.T) {
 	require.NotNil(t, req.Messages[0].Content[0].ReasoningContent.ReasoningText)
 	assert.Equal(t, "signed reasoning  \n", req.Messages[0].Content[0].ReasoningContent.ReasoningText.Text)
 	assert.Equal(t, "sig-1", req.Messages[0].Content[0].ReasoningContent.ReasoningText.Signature)
+}
+
+func TestBuildRequest_ReplaysRedactedContent(t *testing.T) {
+	reasoning := provider.ReasoningPart("")
+	reasoning.ProviderOptions = provider.BuildProviderOptions(ReasoningMetadata{RedactedContent: "encrypted-reasoning"})
+	req, _, _ := mustBuildRequest(t, testAnthropicModel, provider.CallOptions{
+		Prompt: []provider.Message{provider.NewAssistantMessage(reasoning)},
+	})
+
+	require.Len(t, req.Messages, 1)
+	require.Len(t, req.Messages[0].Content, 1)
+	require.NotNil(t, req.Messages[0].Content[0].ReasoningContent)
+	assert.Equal(t, "encrypted-reasoning", req.Messages[0].Content[0].ReasoningContent.RedactedContent)
 }
 
 func TestBuildRequest_SkipsUnsignedReasoning(t *testing.T) {
@@ -1739,12 +1752,56 @@ func TestBuildRequest_MultipleSystemMessagesSeparatedWarns(t *testing.T) {
 	assert.True(t, found, "expected a systemMessage warning for separated system messages")
 }
 
+func TestBuildRequest_ApplicationInferenceProfileReasoningBudget(t *testing.T) {
+	modelID := "arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/custom-profile"
+	tests := []struct {
+		name            string
+		budgetTokens    int
+		providerOptions provider.ProviderOptions
+	}{
+		{
+			name:         "positive typed option",
+			budgetTokens: 1024,
+			providerOptions: provider.BuildProviderOptions(BedrockOptions{
+				ReasoningConfig: &ReasoningConfig{Type: "enabled", BudgetTokens: intPtr(1024)},
+			}),
+		},
+		{
+			name:            "zero raw modern option",
+			budgetTokens:    0,
+			providerOptions: provider.ProviderOptions{"amazonBedrock": provider.RawProviderOption{Raw: json.RawMessage(`{"reasoningConfig":{"type":"enabled","budgetTokens":0}}`)}},
+		},
+		{
+			name:            "negative raw legacy option",
+			budgetTokens:    -1,
+			providerOptions: provider.ProviderOptions{"bedrock": provider.RawProviderOption{Raw: json.RawMessage(`{"reasoningConfig":{"type":"enabled","budgetTokens":-1}}`)}},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			maxOutputTokens := 1100
+			req, warnings, _ := mustBuildRequest(t, modelID, provider.CallOptions{
+				Prompt:          []provider.Message{provider.UserText("x")},
+				MaxOutputTokens: &maxOutputTokens,
+				ProviderOptions: tc.providerOptions,
+			})
+
+			assert.Empty(t, warnings)
+			assert.Equal(t, map[string]any{"type": "enabled", "budget_tokens": tc.budgetTokens}, req.AdditionalModelRequestFields["thinking"])
+			require.NotNil(t, req.InferenceConfig)
+			require.NotNil(t, req.InferenceConfig.MaxTokens)
+			assert.Equal(t, maxOutputTokens+tc.budgetTokens, *req.InferenceConfig.MaxTokens)
+			assert.Equal(t, []string{"/delta/stop_sequence"}, req.AdditionalModelResponseFieldPaths)
+		})
+	}
+}
+
 func TestBuildRequest_NativeStructuredOutputWhenThinkingEnabled(t *testing.T) {
 	// An older Anthropic model that does NOT match supportsNativeStructuredOutput
 	// markers, but with thinking enabled, should still use native structured
 	// output (matching upstream's modelSupportsStructuredOutput || isThinkingEnabled).
 	schema := json.RawMessage(`{"type":"object"}`)
-	bo := BedrockOptions{ReasoningConfig: &ReasoningConfig{Type: "enabled", BudgetTokens: 1024}}
+	bo := BedrockOptions{ReasoningConfig: &ReasoningConfig{Type: "enabled", BudgetTokens: intPtr(1024)}}
 	req, _, meta := mustBuildRequest(t, "anthropic.claude-3-haiku-20240307-v1:0", provider.CallOptions{
 		Prompt: []provider.Message{provider.UserText("x")},
 		ResponseFormat: &provider.ResponseFormat{
@@ -1759,6 +1816,116 @@ func TestBuildRequest_NativeStructuredOutputWhenThinkingEnabled(t *testing.T) {
 	fmtObj, _ := oc["format"].(map[string]any)
 	require.NotNil(t, fmtObj)
 	assert.Equal(t, "json_schema", fmtObj["type"])
+}
+
+func TestBuildRequest_GuardContent(t *testing.T) {
+	text := provider.TextPart("grounding context")
+	text.ProviderOptions = provider.BuildProviderOptions(TextPartOptions{
+		GuardContent:           true,
+		GuardContentQualifiers: []GuardContentQualifier{GuardContentGroundingSource, GuardContentQuery},
+	})
+	image := provider.FilePart("image/png", provider.Base64DataContent("aW1hZ2U="))
+	image.ProviderOptions = provider.BuildProviderOptions(ImagePartOptions{GuardContent: true})
+
+	req, warnings, _ := mustBuildRequest(t, testAnthropicModel, provider.CallOptions{
+		Prompt: []provider.Message{provider.NewUserMessage(text, image)},
+	})
+
+	assert.Empty(t, warnings)
+	require.Len(t, req.Messages, 1)
+	require.Len(t, req.Messages[0].Content, 2)
+	textGuard := req.Messages[0].Content[0].GuardContent
+	require.NotNil(t, textGuard)
+	require.NotNil(t, textGuard.Text)
+	assert.Equal(t, "grounding context", textGuard.Text.Text)
+	assert.Equal(t, []GuardContentQualifier{GuardContentGroundingSource, GuardContentQuery}, textGuard.Text.Qualifiers)
+	imageGuard := req.Messages[0].Content[1].GuardContent
+	require.NotNil(t, imageGuard)
+	require.NotNil(t, imageGuard.Image)
+	assert.Equal(t, "png", imageGuard.Image.Format)
+	assert.Equal(t, "aW1hZ2U=", imageGuard.Image.Source.Bytes)
+}
+
+func TestBuildRequest_OpenAIGPT5Effort(t *testing.T) {
+	reasoning := provider.ReasoningHigh
+	req, warnings, _ := mustBuildRequest(t, "us.openai.gpt-5.2", provider.CallOptions{
+		Prompt:    []provider.Message{provider.UserText("x")},
+		Reasoning: &reasoning,
+	})
+
+	assert.Empty(t, warnings)
+	assert.NotContains(t, req.AdditionalModelRequestFields, "reasoning_effort")
+	reasoningConfig, ok := req.AdditionalModelRequestFields["reasoning"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "high", reasoningConfig["effort"])
+}
+
+func TestBuildRequest_DisableParallelToolUse(t *testing.T) {
+	providerOptions := provider.ProviderOptions{
+		"anthropic": provider.RawProviderOption{Raw: json.RawMessage(`{"disableParallelToolUse":true}`)},
+	}
+	tests := []struct {
+		name       string
+		choice     *provider.ToolChoice
+		wantChoice map[string]any
+	}{
+		{name: "default", wantChoice: map[string]any{"type": "auto", "disable_parallel_tool_use": true}},
+		{name: "auto", choice: &provider.ToolChoice{Type: provider.ToolChoiceAuto}, wantChoice: map[string]any{"type": "auto", "disable_parallel_tool_use": true}},
+		{name: "required", choice: &provider.ToolChoice{Type: provider.ToolChoiceRequired}, wantChoice: map[string]any{"type": "any", "disable_parallel_tool_use": true}},
+		{name: "named", choice: &provider.ToolChoice{Type: provider.ToolChoiceTool, ToolName: "weather"}, wantChoice: map[string]any{"type": "tool", "name": "weather", "disable_parallel_tool_use": true}},
+		{name: "none", choice: &provider.ToolChoice{Type: provider.ToolChoiceNone}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req, warnings, _ := mustBuildRequest(t, testAnthropicModel, provider.CallOptions{
+				Prompt:          []provider.Message{provider.UserText("x")},
+				ProviderOptions: providerOptions,
+				Tools: []provider.Tool{{
+					Type:        provider.ToolTypeFunction,
+					Name:        "weather",
+					InputSchema: json.RawMessage(`{"type":"object"}`),
+				}},
+				ToolChoice: tt.choice,
+			})
+
+			assert.Empty(t, warnings)
+			if tt.wantChoice == nil {
+				assert.NotContains(t, req.AdditionalModelRequestFields, "tool_choice")
+				assert.Nil(t, req.ToolConfig)
+				return
+			}
+			require.NotNil(t, req.ToolConfig)
+			assert.Nil(t, req.ToolConfig.ToolChoice)
+			assert.Equal(t, tt.wantChoice, req.AdditionalModelRequestFields["tool_choice"])
+		})
+	}
+
+	t.Run("provider-defined Anthropic tools keep their own choice", func(t *testing.T) {
+		req, warnings, _ := mustBuildRequest(t, testAnthropicModel, provider.CallOptions{
+			Prompt:          []provider.Message{provider.UserText("x")},
+			ProviderOptions: providerOptions,
+			Tools: []provider.Tool{{
+				Type: provider.ToolTypeProvider,
+				ID:   "anthropic.code_execution_20250825",
+				Name: "code_execution",
+			}},
+			ToolChoice: &provider.ToolChoice{Type: provider.ToolChoiceRequired},
+		})
+		assert.Empty(t, warnings)
+		assert.Equal(t, map[string]any{"type": "any"}, req.AdditionalModelRequestFields["tool_choice"])
+	})
+}
+
+func TestBuildRequest_OmitsCachePointOnlyAssistantMessage(t *testing.T) {
+	message := provider.NewAssistantMessage(provider.ReasoningPart("unsigned reasoning"))
+	message.ProviderOptions = provider.BuildProviderOptions(BedrockOptions{CachePoint: &CachePoint{Type: "default"}})
+	req, warnings, _ := mustBuildRequest(t, testAnthropicModel, provider.CallOptions{
+		Prompt: []provider.Message{provider.UserText("x"), message},
+	})
+
+	assert.Empty(t, warnings)
+	require.Len(t, req.Messages, 1)
+	assert.Equal(t, "user", req.Messages[0].Role)
 }
 
 func TestBuildRequest_MalformedProviderOptionIsError(t *testing.T) {

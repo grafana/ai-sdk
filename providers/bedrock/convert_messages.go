@@ -181,7 +181,7 @@ func convertPrompt(prompt []provider.Message, isMistral bool, hasAnyTools bool) 
 					content = append(content, contentBlock{CachePoint: cp})
 				}
 			}
-			if len(content) > 0 {
+			if hasNonCachePointContent(content) {
 				out.Messages = append(out.Messages, converseMessage{Role: "assistant", Content: content})
 			}
 		}
@@ -195,6 +195,15 @@ func convertPrompt(prompt []provider.Message, isMistral bool, hasAnyTools bool) 
 	}
 
 	return out, warnings, nil
+}
+
+func hasNonCachePointContent(content []contentBlock) bool {
+	for _, block := range content {
+		if block.CachePoint == nil {
+			return true
+		}
+	}
+	return false
 }
 
 func convertSystemBlock(messages []provider.Message, warnings *[]provider.Warning) ([]systemContentBlock, error) {
@@ -227,7 +236,18 @@ func convertUserContent(parts []provider.ContentPart, documentCounter *int, warn
 	for _, p := range parts {
 		switch p.Type {
 		case provider.ContentPartTypeText:
-			out = append(out, contentBlock{Text: p.Text})
+			options, err := textGuardContentOptions(p.ProviderOptions)
+			if err != nil {
+				return nil, err
+			}
+			if options.GuardContent {
+				out = append(out, contentBlock{GuardContent: &guardContentBlock{Text: &guardrailTextBlock{
+					Text:       p.Text,
+					Qualifiers: options.GuardContentQualifiers,
+				}}})
+			} else {
+				out = append(out, contentBlock{Text: p.Text})
+			}
 
 		case provider.ContentPartTypeFile:
 			if p.Data == nil {
@@ -250,10 +270,19 @@ func convertUserContent(parts []provider.ContentPart, documentCounter *int, warn
 					if !ok {
 						return nil, fmt.Errorf("bedrock: image media type %q is not supported", mediaType)
 					}
-					out = append(out, contentBlock{Image: &imageBlock{
+					image := &imageBlock{
 						Format: format,
 						Source: imageSource{S3Location: &s3LocationBlock{URI: p.Data.URL}},
-					}})
+					}
+					options, err := imageGuardContentOptions(p.ProviderOptions)
+					if err != nil {
+						return nil, err
+					}
+					if options.GuardContent {
+						out = append(out, contentBlock{GuardContent: &guardContentBlock{Image: image}})
+					} else {
+						out = append(out, contentBlock{Image: image})
+					}
 				case "video":
 					format, ok := videoMediaTypeFormat[mediaType]
 					if !ok {
@@ -297,9 +326,16 @@ func convertUserContent(parts []provider.ContentPart, documentCounter *int, warn
 				if !ok {
 					return nil, fmt.Errorf("bedrock: image media type %q is not supported", mediaType)
 				}
-				out = append(out, contentBlock{
-					Image: &imageBlock{Format: format, Source: imageSource{Bytes: b64}},
-				})
+				image := &imageBlock{Format: format, Source: imageSource{Bytes: b64}}
+				options, err := imageGuardContentOptions(p.ProviderOptions)
+				if err != nil {
+					return nil, err
+				}
+				if options.GuardContent {
+					out = append(out, contentBlock{GuardContent: &guardContentBlock{Image: image}})
+				} else {
+					out = append(out, contentBlock{Image: image})
+				}
 				continue
 			case "video":
 				format, ok := videoMediaTypeFormat[mediaType]
@@ -533,6 +569,8 @@ func convertAssistantContent(parts []provider.ContentPart, warnings *[]provider.
 			switch {
 			case meta.Signature != "":
 				rc.ReasoningText = &reasoningText{Text: p.Text, Signature: meta.Signature}
+			case meta.RedactedContent != "":
+				rc.RedactedContent = meta.RedactedContent
 			case meta.RedactedData != "":
 				rc.RedactedReasoning = &redactedReasoning{Data: meta.RedactedData}
 			default:

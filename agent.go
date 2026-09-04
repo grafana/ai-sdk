@@ -1,7 +1,9 @@
 package aisdk
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -749,11 +751,15 @@ func validateAgentUIMessages(messages []UIMessage, tools ToolSet) error {
 		for partIdx, part := range msg.Parts {
 			switch p := part.(type) {
 			case ToolInvocationPart:
-				if err := validateAgentToolInvocation(toolPartFields(p), false, tools); err != nil {
+				convertToDynamic, err := validateAgentToolInvocation(toolPartFields(p), false, tools)
+				if err != nil {
 					return fmt.Errorf("aisdk: validating UI message %d part %d: %w", msgIdx, partIdx, err)
 				}
+				if convertToDynamic {
+					messages[msgIdx].Parts[partIdx] = dynamicToolInvocationPart(p)
+				}
 			case DynamicToolUIPart:
-				if err := validateAgentToolInvocation(toolPartFields(p), true, tools); err != nil {
+				if _, err := validateAgentToolInvocation(toolPartFields(p), true, tools); err != nil {
 					return fmt.Errorf("aisdk: validating UI message %d part %d: %w", msgIdx, partIdx, err)
 				}
 			}
@@ -762,45 +768,90 @@ func validateAgentUIMessages(messages []UIMessage, tools ToolSet) error {
 	return nil
 }
 
-func validateAgentToolInvocation(part toolPartFields, dynamic bool, tools ToolSet) error {
+func validateAgentToolInvocation(part toolPartFields, dynamic bool, tools ToolSet) (bool, error) {
 	if part.ToolCallID == "" {
-		return fmt.Errorf("tool invocation has empty tool call ID")
+		return false, fmt.Errorf("tool invocation has empty tool call ID")
 	}
 	if part.ToolName == "" {
-		return fmt.Errorf("tool invocation has empty tool name")
-	}
-	if !dynamic && !part.ProviderExecuted {
-		if _, ok := tools[part.ToolName]; !ok {
-			return fmt.Errorf("tool %q is not configured on agent", part.ToolName)
-		}
+		return false, fmt.Errorf("tool invocation has empty tool name")
 	}
 	if !isKnownToolInvocationState(part.State) {
-		return fmt.Errorf("unknown tool invocation state %q", part.State)
+		return false, fmt.Errorf("unknown tool invocation state %q", part.State)
 	}
 	if toolInvocationStateRequiresInput(part.State) && len(part.Input) == 0 {
-		return fmt.Errorf("tool invocation %q in state %q is missing input", part.ToolCallID, part.State)
+		return false, fmt.Errorf("tool invocation %q in state %q is missing input", part.ToolCallID, part.State)
 	}
+
+	tool, hasTool := tools[part.ToolName]
+	terminal := part.State == ToolStateOutputAvailable || part.State == ToolStateOutputError || part.State == ToolStateOutputDenied
+	convertToDynamic := false
+	if !dynamic && !hasTool {
+		if terminal {
+			convertToDynamic = true
+		} else {
+			return false, fmt.Errorf("tool %q is not configured on agent", part.ToolName)
+		}
+	}
+	if !dynamic && hasTool && len(part.Input) > 0 {
+		if err := validateAgentToolInput(tool, part.Input); err != nil {
+			switch part.State {
+			case ToolStateOutputError:
+				convertToDynamic = true
+			case ToolStateOutputAvailable:
+				if isEmptyJSONObject(part.Input) {
+					convertToDynamic = true
+				} else {
+					return false, fmt.Errorf("tool invocation %q has invalid input: %w", part.ToolCallID, err)
+				}
+			case ToolStateInputAvailable, ToolStateApprovalRequested, ToolStateApprovalResponded, ToolStateOutputDenied:
+				return false, fmt.Errorf("tool invocation %q has invalid input: %w", part.ToolCallID, err)
+			}
+		}
+	}
+
 	switch part.State {
 	case ToolStateOutputAvailable:
 		if len(part.Output) == 0 {
-			return fmt.Errorf("tool invocation %q in state %q is missing output", part.ToolCallID, part.State)
+			return false, fmt.Errorf("tool invocation %q in state %q is missing output", part.ToolCallID, part.State)
+		}
+		if !dynamic && hasTool && len(tool.OutputSchema.JSON()) > 0 {
+			if err := tool.OutputSchema.Validate(part.Output); err != nil {
+				return false, fmt.Errorf("tool invocation %q has invalid output: %w", part.ToolCallID, err)
+			}
 		}
 	case ToolStateOutputError:
 		if part.ErrorText == "" {
-			return fmt.Errorf("tool invocation %q in state %q is missing error text", part.ToolCallID, part.State)
+			return false, fmt.Errorf("tool invocation %q in state %q is missing error text", part.ToolCallID, part.State)
 		}
-	case ToolStateOutputDenied:
-		// No extra fields are required by the current Go model.
 	case ToolStateApprovalResponded:
 		if part.Approval == nil || part.Approval.ID == "" || part.Approval.Approved == nil {
-			return fmt.Errorf("tool invocation %q in state %q is missing approval response", part.ToolCallID, part.State)
+			return false, fmt.Errorf("tool invocation %q in state %q is missing approval response", part.ToolCallID, part.State)
 		}
 	case ToolStateApprovalRequested:
 		if part.Approval == nil || part.Approval.ID == "" {
-			return fmt.Errorf("tool invocation %q in state %q is missing approval request", part.ToolCallID, part.State)
+			return false, fmt.Errorf("tool invocation %q in state %q is missing approval request", part.ToolCallID, part.State)
 		}
 	}
-	return nil
+	return convertToDynamic, nil
+}
+
+func validateAgentToolInput(tool Tool, input json.RawMessage) error {
+	if tool.ValidateInput != nil {
+		return tool.ValidateInput(input)
+	}
+	if len(tool.InputSchema.JSON()) == 0 {
+		return nil
+	}
+	return tool.InputSchema.Validate(input)
+}
+
+func isEmptyJSONObject(input json.RawMessage) bool {
+	var value map[string]json.RawMessage
+	return json.Unmarshal(input, &value) == nil && value != nil && len(value) == 0 && bytes.HasPrefix(bytes.TrimSpace(input), []byte("{"))
+}
+
+func dynamicToolInvocationPart(part ToolInvocationPart) DynamicToolUIPart {
+	return DynamicToolUIPart(part)
 }
 
 func toolInvocationStateRequiresInput(state ToolInvocationState) bool {

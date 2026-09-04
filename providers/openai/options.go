@@ -98,6 +98,8 @@ type OpenAIResponsesOptions struct {
 	AllowedTools *AllowedToolsOption `json:"allowedTools,omitempty"`
 	// ContextManagement configures server-side compaction.
 	ContextManagement []ContextManagementEntry `json:"contextManagement,omitempty"`
+	// CompactionTrigger requests explicit server-side compaction after the input.
+	CompactionTrigger bool `json:"compactionTrigger,omitempty"`
 }
 
 // ProviderKey returns the provider namespace key.
@@ -209,8 +211,12 @@ type OpenAIToolCaller struct {
 // OpenAIPartOptions carries per-content-part OpenAI options used for
 // round-tripping item references, reasoning, approvals, image detail, etc.
 type OpenAIPartOptions struct {
+	// Type identifies provider-specific metadata such as compaction items.
+	Type string `json:"type,omitempty"`
 	// ItemID is the OpenAI output item id used to emit item references.
 	ItemID string `json:"itemId,omitempty"`
+	// EncryptedContent is the opaque state for a compaction item.
+	EncryptedContent *string `json:"encryptedContent,omitempty"`
 	// ReasoningEncryptedContent is the encrypted reasoning blob for stateless
 	// continuation.
 	ReasoningEncryptedContent *string `json:"reasoningEncryptedContent,omitempty"`
@@ -228,6 +234,8 @@ type OpenAIPartOptions struct {
 	Caller *OpenAIToolCaller `json:"caller,omitempty"`
 	// Phase is the message phase ("commentary","final_answer").
 	Phase string `json:"phase,omitempty"`
+	// ParallelToolCall preserves an expanded parallel wrapper for continuation.
+	ParallelToolCall *OpenAIParallelToolCall `json:"parallelToolCall,omitempty"`
 }
 
 // ProviderKey returns the provider namespace key.

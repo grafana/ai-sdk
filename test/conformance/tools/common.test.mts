@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { safeValidateTypes } from "@ai-sdk/provider-utils";
+import { asSchema, safeValidateTypes } from "@ai-sdk/provider-utils";
 import {
   buildMessages,
   buildStreamTextOptions,
@@ -87,6 +87,29 @@ describe("conformance common config", () => {
       (await safeValidateTypes({ value: {}, schema: tools!.web_search.inputSchema })).success,
       false,
     );
+  });
+
+  it("builds runtime-validating function tool schemas without changing request schemas", async () => {
+    const inputSchema = {
+      type: "object",
+      properties: { city: { type: "string" } },
+      required: ["city"],
+    };
+    const tools = buildTools(
+      {
+        weather: {
+          description: "weather",
+          inputSchema,
+          mockResults: [{ temperature: 72 }],
+        },
+      },
+      undefined,
+    );
+
+    const schema = asSchema(tools!.weather.inputSchema);
+    assert.deepEqual(await schema.jsonSchema, inputSchema);
+    assert.equal((await safeValidateTypes({ value: { city: "Paris" }, schema })).success, true);
+    assert.equal((await safeValidateTypes({ value: "Paris", schema })).success, false);
   });
 
   it("builds function tool execution errors", async () => {

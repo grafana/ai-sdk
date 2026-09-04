@@ -39,6 +39,7 @@ type chatContentPart struct {
 	Type        string          `json:"type"`
 	Text        string          `json:"text,omitempty"`
 	ImageURL    *imageURLPart   `json:"image_url,omitempty"`
+	VideoURL    *videoURLPart   `json:"video_url,omitempty"`
 	InputAudio  *inputAudioPart `json:"input_audio,omitempty"`
 	File        *filePart       `json:"file,omitempty"`
 	ExtraFields map[string]any  `json:"-"`
@@ -51,6 +52,9 @@ func (p chatContentPart) MarshalJSON() ([]byte, error) {
 	}
 	if p.ImageURL != nil {
 		fields["image_url"] = p.ImageURL
+	}
+	if p.VideoURL != nil {
+		fields["video_url"] = p.VideoURL
 	}
 	if p.InputAudio != nil {
 		fields["input_audio"] = p.InputAudio
@@ -65,6 +69,10 @@ func (p chatContentPart) MarshalJSON() ([]byte, error) {
 }
 
 type imageURLPart struct {
+	URL string `json:"url"`
+}
+
+type videoURLPart struct {
 	URL string `json:"url"`
 }
 
@@ -166,16 +174,16 @@ type chatChoice struct {
 }
 
 type chatResponseMessage struct {
-	Role             string         `json:"role"`
-	Content          string         `json:"content"`
-	ReasoningContent string         `json:"reasoning_content"`
-	Reasoning        string         `json:"reasoning"`
-	ToolCalls        []chatToolCall `json:"tool_calls"`
+	Role             string          `json:"role"`
+	Content          json.RawMessage `json:"content"`
+	ReasoningContent string          `json:"reasoning_content"`
+	Reasoning        string          `json:"reasoning"`
+	ToolCalls        []chatToolCall  `json:"tool_calls"`
 }
 
 type chatDeltaMessage struct {
 	Role             string              `json:"role"`
-	Content          string              `json:"content"`
+	Content          json.RawMessage     `json:"content"`
 	ReasoningContent string              `json:"reasoning_content"`
 	Reasoning        string              `json:"reasoning"`
 	ToolCalls        []chatToolCallDelta `json:"tool_calls"`

@@ -1,0 +1,22 @@
+model: gpt-5.4
+prompt: Hello
+skipReason: openai-go terminates after the malformed lifecycle envelope in the exact upstream fixture; focused provider tests cover valid wrapper expansion and continuation
+tools:
+  weather:
+    inputSchema:
+      type: object
+      properties:
+        location:
+          type: string
+      required:
+        - location
+      additionalProperties: false
+  cityAttractions:
+    inputSchema:
+      type: object
+      properties:
+        city:
+          type: string
+      required:
+        - city
+      additionalProperties: false

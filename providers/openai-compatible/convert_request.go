@@ -19,7 +19,7 @@ func (m *model) buildRequest(opts provider.CallOptions, streaming bool) (map[str
 		return nil, warnings, err
 	}
 
-	messages, err := convertPrompt(opts.Prompt)
+	messages, err := convertPrompt(opts.Prompt, resolveMetadataKey(opts.ProviderOptions, m.providerName))
 	if err != nil {
 		return nil, warnings, err
 	}
@@ -28,8 +28,7 @@ func (m *model) buildRequest(opts provider.CallOptions, streaming bool) (map[str
 	warnings = append(warnings, toolWarnings...)
 
 	body := map[string]any{
-		"model":    m.modelID,
-		"messages": messages,
+		"model": m.modelID,
 	}
 
 	if openAIOpts.User != "" {
@@ -70,12 +69,23 @@ func (m *model) buildRequest(opts provider.CallOptions, streaming bool) (map[str
 		warnings = append(warnings, rfWarnings...)
 	}
 
+	for k, v := range openAIOpts.extraFields {
+		body[k] = v
+	}
+	delete(body, "reasoning_effort")
+	delete(body, "verbosity")
+	delete(body, "messages")
+	delete(body, "tools")
+	delete(body, "tool_choice")
+
 	if effort := reasoningEffort(opts.Reasoning, openAIOpts); effort != "" {
 		body["reasoning_effort"] = effort
 	}
 	if openAIOpts.TextVerbosity != "" {
 		body["verbosity"] = openAIOpts.TextVerbosity
 	}
+
+	body["messages"] = messages
 
 	if len(tools) > 0 {
 		body["tools"] = tools
@@ -86,13 +96,10 @@ func (m *model) buildRequest(opts provider.CallOptions, streaming bool) (map[str
 
 	if streaming {
 		body["stream"] = true
+		delete(body, "stream_options")
 		if m.includeUsage {
 			body["stream_options"] = streamOptions{IncludeUsage: true}
 		}
-	}
-
-	for k, v := range openAIOpts.extraFields {
-		body[k] = v
 	}
 
 	if m.transformRequestBody != nil {
@@ -281,7 +288,7 @@ func mergeOpenAIOptions(dst *OpenAIOptions, src OpenAIOptions) {
 	}
 }
 
-func convertPrompt(prompt []provider.Message) ([]chatMessage, error) {
+func convertPrompt(prompt []provider.Message, providerOptionsKey string) ([]chatMessage, error) {
 	messages := make([]chatMessage, 0, len(prompt))
 	for _, msg := range prompt {
 		switch msg.Role {
@@ -302,7 +309,7 @@ func convertPrompt(prompt []provider.Message) ([]chatMessage, error) {
 			}
 			messages = append(messages, chatMessage{Role: "user", Content: converted, ExtraFields: extra})
 		case provider.RoleAssistant:
-			converted, err := convertAssistantMessage(msg.Content, msg.ProviderOptions)
+			converted, err := convertAssistantMessage(msg.Content, msg.ProviderOptions, providerOptionsKey)
 			if err != nil {
 				return nil, err
 			}
@@ -365,7 +372,7 @@ func convertUserContent(parts []provider.ContentPart, messageOptions provider.Pr
 	return out, messageExtra, nil
 }
 
-func convertAssistantMessage(parts []provider.ContentPart, messageOptions provider.ProviderOptions) (chatMessage, error) {
+func convertAssistantMessage(parts []provider.ContentPart, messageOptions provider.ProviderOptions, providerOptionsKey string) (chatMessage, error) {
 	var text strings.Builder
 	var reasoning strings.Builder
 	var toolCalls []chatToolCall
@@ -383,11 +390,8 @@ func convertAssistantMessage(parts []provider.ContentPart, messageOptions provid
 			reasoning.WriteString(part.Text)
 		case provider.ContentPartTypeToolCall:
 			input := strings.TrimSpace(string(part.Input))
-			if input == "" {
+			if input == "" || !json.Valid([]byte(input)) {
 				input = "{}"
-			}
-			if !json.Valid([]byte(input)) {
-				return chatMessage{}, fmt.Errorf("openai: tool call %q input is not valid JSON", part.ToolCallID)
 			}
 			toolCall := chatToolCall{
 				ID:   part.ToolCallID,
@@ -402,7 +406,7 @@ func convertAssistantMessage(parts []provider.ContentPart, messageOptions provid
 				return chatMessage{}, err
 			}
 			toolCall.ExtraFields = partExtra
-			thoughtSignature, err := googleThoughtSignature(part.ProviderOptions)
+			thoughtSignature, err := googleThoughtSignature(part.ProviderOptions, providerOptionsKey)
 			if err != nil {
 				return chatMessage{}, err
 			}
@@ -449,7 +453,16 @@ type googleOptions struct {
 	ThoughtSignature string `json:"thoughtSignature,omitempty"`
 }
 
-func googleThoughtSignature(opts provider.ProviderOptions) (string, error) {
+func googleThoughtSignature(opts provider.ProviderOptions, providerOptionsKey string) (string, error) {
+	if providerOptionsKey != "" && providerOptionsKey != "google" {
+		custom, ok, err := provider.ResolveOption[googleOptions](opts, providerOptionsKey)
+		if err != nil {
+			return "", fmt.Errorf("openai: reading %s provider options: %w", providerOptionsKey, err)
+		}
+		if ok {
+			return custom.ThoughtSignature, nil
+		}
+	}
 	google, ok, err := provider.ResolveOption[googleOptions](opts, "google")
 	if err != nil {
 		return "", fmt.Errorf("openai: reading google provider options: %w", err)
@@ -516,6 +529,20 @@ func convertFileContent(part provider.ContentPart) (chatContentPart, error) {
 			return chatContentPart{}, err
 		}
 		return chatContentPart{Type: "image_url", ImageURL: &imageURLPart{URL: url}}, nil
+	case "video":
+		resolvedMediaType := mediaType(part.MediaType)
+		if part.Data.URL == "" {
+			var err error
+			resolvedMediaType, err = resolveFullMediaType(part)
+			if err != nil {
+				return chatContentPart{}, err
+			}
+		}
+		url, err := dataURL(resolvedMediaType, part.Data)
+		if err != nil {
+			return chatContentPart{}, err
+		}
+		return chatContentPart{Type: "video_url", VideoURL: &videoURLPart{URL: url}}, nil
 	case "audio":
 		if part.Data.URL != "" {
 			return chatContentPart{}, fmt.Errorf("openai: audio file URL parts are not supported")
@@ -582,11 +609,12 @@ func normalizeDataURLFilePart(part provider.ContentPart) (provider.ContentPart, 
 		return part, nil
 	}
 	mediaType, base64Content, ok := splitDataURL(rawURL)
-	if !ok || mediaType == "" || base64Content == "" {
+	if !ok || mediaType == "" {
 		return provider.ContentPart{}, fmt.Errorf("openai: invalid data URL in file part")
 	}
 	part.MediaType = mediaType
-	part.Data = &provider.DataContent{Base64: base64Content}
+	data := provider.Base64DataContent(base64Content)
+	part.Data = &data
 	return part, nil
 }
 
@@ -658,7 +686,7 @@ func dataURL(mediaType string, data *provider.DataContent) (string, error) {
 
 func base64Data(data *provider.DataContent) (string, error) {
 	switch {
-	case len(data.Bytes) > 0:
+	case data.Bytes != nil:
 		return base64.StdEncoding.EncodeToString(data.Bytes), nil
 	case data.Base64 != "":
 		return data.Base64, nil
@@ -671,7 +699,7 @@ func textFileContent(data *provider.DataContent) (string, error) {
 	switch {
 	case data.URL != "":
 		return data.URL, nil
-	case len(data.Bytes) > 0:
+	case data.Bytes != nil:
 		return string(data.Bytes), nil
 	case data.Base64 != "":
 		decoded, err := base64.StdEncoding.DecodeString(data.Base64)
@@ -821,7 +849,7 @@ func reasoningEffort(reasoning *provider.ReasoningEffort, opts OpenAIOptions) st
 		return ""
 	}
 	switch *reasoning {
-	case provider.ReasoningProviderDefault, provider.ReasoningNone:
+	case provider.ReasoningProviderDefault:
 		return ""
 	default:
 		return string(*reasoning)

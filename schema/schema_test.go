@@ -49,6 +49,10 @@ type withCustomType struct {
 	Date customDate `json:"date"`
 }
 
+type withStringMap struct {
+	Values map[string]string `json:"values"`
+}
+
 func TestSchemaFor(t *testing.T) {
 	t.Run("SimpleStruct", func(t *testing.T) {
 		s, err := SchemaFor[simpleStruct]()
@@ -139,6 +143,19 @@ func TestSchemaFor(t *testing.T) {
 		assert.Equal(t, float64(10), code["maxLength"].(float64))
 	})
 
+	t.Run("MapValueSchema", func(t *testing.T) {
+		s, err := SchemaFor[withStringMap]()
+		require.NoError(t, err)
+
+		var m map[string]any
+		require.NoError(t, json.Unmarshal(s.JSON(), &m))
+		values := m["properties"].(map[string]any)["values"].(map[string]any)
+		additional := values["additionalProperties"].(map[string]any)
+		assert.Equal(t, "string", additional["type"])
+		require.NoError(t, s.Validate(json.RawMessage(`{"values":{"valid":"value"}}`)))
+		assert.Error(t, s.Validate(json.RawMessage(`{"values":{"invalid":1}}`)))
+	})
+
 	t.Run("CustomJSONSchema", func(t *testing.T) {
 		s, err := SchemaFor[withCustomType]()
 		require.NoError(t, err)
@@ -178,6 +195,15 @@ func TestSchemaFromJSON(t *testing.T) {
 
 		require.NoError(t, s.Validate(json.RawMessage(`{"name":"Alice"}`)))
 		assert.Error(t, s.Validate(json.RawMessage(`{"age":30}`)))
+	})
+
+	t.Run("PreservesSchemaValuedAdditionalProperties", func(t *testing.T) {
+		raw := json.RawMessage(`{"type":"object","additionalProperties":{"type":"string"}}`)
+		s, err := SchemaFromJSON(raw)
+		require.NoError(t, err)
+		assert.Equal(t, raw, s.JSON())
+		require.NoError(t, s.Validate(json.RawMessage(`{"valid":"value"}`)))
+		assert.Error(t, s.Validate(json.RawMessage(`{"invalid":1}`)))
 	})
 
 	t.Run("InvalidJSON", func(t *testing.T) {

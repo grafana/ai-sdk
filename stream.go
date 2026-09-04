@@ -23,9 +23,10 @@ const (
 // UIMessageStreamWriter writes UIMessageChunk events to a stream.
 // It is safe for concurrent use.
 type UIMessageStreamWriter struct {
-	ch     chan UIMessageChunk
-	closed bool
-	mu     sync.Mutex
+	ch         chan UIMessageChunk
+	closed     bool
+	setOutcome func(UIMessageStreamOutcome)
+	mu         sync.Mutex
 }
 
 func newUIMessageStreamWriter(bufSize int) *UIMessageStreamWriter {
@@ -51,6 +52,17 @@ func (w *UIMessageStreamWriter) Write(chunk UIMessageChunk) (retErr error) {
 	}()
 	ch <- chunk
 	return nil
+}
+
+// SetOutcome declares the operation-level result of the composed stream.
+// The first non-unknown declaration is retained unless stream processing fails.
+func (w *UIMessageStreamWriter) SetOutcome(outcome UIMessageStreamOutcome) {
+	w.mu.Lock()
+	setOutcome := w.setOutcome
+	w.mu.Unlock()
+	if setOutcome != nil {
+		setOutcome(outcome)
+	}
 }
 
 // Merge reads all chunks from the given channel and writes them to this stream.
@@ -89,11 +101,28 @@ type CreateUIMessageStreamParams struct {
 	GenerateID       func() string
 }
 
+// UIMessageStreamOutcomeStatus identifies the operation-level stream outcome.
+type UIMessageStreamOutcomeStatus string
+
+const (
+	UIMessageStreamOutcomeCompleted UIMessageStreamOutcomeStatus = "completed"
+	UIMessageStreamOutcomeFailed    UIMessageStreamOutcomeStatus = "failed"
+	UIMessageStreamOutcomeAborted   UIMessageStreamOutcomeStatus = "aborted"
+	UIMessageStreamOutcomeUnknown   UIMessageStreamOutcomeStatus = "unknown"
+)
+
+// UIMessageStreamOutcome reports the operation-level result separately from a model finish reason.
+type UIMessageStreamOutcome struct {
+	Status UIMessageStreamOutcomeStatus
+	Error  error
+}
+
 // UIMessageStreamOnFinishState is passed to the OnFinish callback.
 type UIMessageStreamOnFinishState struct {
 	Messages        []UIMessage
 	IsContinuation  bool
 	IsAborted       bool
+	Outcome         UIMessageStreamOutcome
 	ResponseMessage UIMessage
 	FinishReason    provider.FinishReason
 }
@@ -108,6 +137,18 @@ func CreateUIMessageStream(params CreateUIMessageStreamParams) <-chan UIMessageC
 		defer close(out)
 
 		writer := newUIMessageStreamWriter(defaultWriterBuffer)
+		var outcomeMu sync.Mutex
+		outcome := UIMessageStreamOutcome{Status: UIMessageStreamOutcomeUnknown}
+		writer.setOutcome = func(newOutcome UIMessageStreamOutcome) {
+			if newOutcome.Status == "" || newOutcome.Status == UIMessageStreamOutcomeUnknown {
+				return
+			}
+			outcomeMu.Lock()
+			defer outcomeMu.Unlock()
+			if outcome.Status == UIMessageStreamOutcomeUnknown {
+				outcome = newOutcome
+			}
+		}
 
 		genID := params.GenerateID
 		if genID == nil {
@@ -123,6 +164,7 @@ func CreateUIMessageStream(params CreateUIMessageStreamParams) <-chan UIMessageC
 
 		// Collect chunks for message assembly
 		var chunks []UIMessageChunk
+		var isAborted bool
 
 		// Run execute in a goroutine, forward writer output to out
 		done := make(chan error, 1)
@@ -133,11 +175,17 @@ func CreateUIMessageStream(params CreateUIMessageStreamParams) <-chan UIMessageC
 
 		for chunk := range writer.output() {
 			chunks = append(chunks, chunk)
+			if chunk.Type == ChunkAbort {
+				isAborted = true
+			}
 			out <- chunk
 		}
 
 		execErr := <-done
 		if execErr != nil {
+			outcomeMu.Lock()
+			outcome = UIMessageStreamOutcome{Status: UIMessageStreamOutcomeFailed, Error: execErr}
+			outcomeMu.Unlock()
 			errText := "An error occurred"
 			if params.OnError != nil {
 				errText = params.OnError(execErr)
@@ -147,9 +195,17 @@ func CreateUIMessageStream(params CreateUIMessageStreamParams) <-chan UIMessageC
 
 		// Assemble response message for callbacks
 		if params.OnFinish != nil && params.OriginalMessages != nil {
+			outcomeMu.Lock()
+			finalOutcome := outcome
+			if finalOutcome.Status == UIMessageStreamOutcomeUnknown && isAborted {
+				finalOutcome = UIMessageStreamOutcome{Status: UIMessageStreamOutcomeAborted}
+			}
+			outcomeMu.Unlock()
 			respMsg := assembleResponseMessage(messageID, chunks)
 			state := UIMessageStreamOnFinishState{
 				Messages:        append(params.OriginalMessages, respMsg),
+				IsAborted:       isAborted || finalOutcome.Status == UIMessageStreamOutcomeAborted,
+				Outcome:         finalOutcome,
 				ResponseMessage: respMsg,
 			}
 			params.OnFinish(state)

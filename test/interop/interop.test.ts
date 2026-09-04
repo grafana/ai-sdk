@@ -178,6 +178,43 @@ describe("upstream @ai-sdk/gateway <-> Go provider-wire", () => {
     ]);
   });
 
+  it("decodes the Gateway Tako Search provider tool", async () => {
+    const gateway = newGateway();
+    const result = streamText({
+      model: gateway("tako-search"),
+      maxRetries: 0,
+      tools: {
+        search: gateway.tools.takoSearch({
+          effort: "deep",
+          sources: {
+            data: { count: 2, includeContents: true },
+            web: { count: 3, includeDomains: ["grafana.com"] },
+          },
+          countryCode: "US",
+          includeRelated: 4,
+        }),
+      },
+      prompt: "search",
+    });
+
+    expect(JSON.parse(await result.text)).toEqual([
+      {
+        type: "provider",
+        name: "search",
+        id: "gateway.tako_search",
+        args: {
+          effort: "deep",
+          sources: {
+            data: { count: 2, includeContents: true },
+            web: { count: 3, includeDomains: ["grafana.com"] },
+          },
+          countryCode: "US",
+          includeRelated: 4,
+        },
+      },
+    ]);
+  });
+
   it("decodes an upstream file input part", async () => {
     const gateway = newGateway();
     const pngBase64 =
@@ -263,9 +300,41 @@ describe("upstream @ai-sdk/gateway <-> Go provider-wire", () => {
       "text-end",
       "finish",
     ]);
-    expect(JSON.stringify(parts[4].error)).toContain("boom mid-stream");
+    expect(parts[4].error).toMatchObject({
+      message: "boom mid-stream",
+      type: "upstream_test_error",
+      code: "E_INTEROP",
+      statusCode: 500,
+      isRetryable: false,
+      data: { provider: "interop" },
+    });
     expect(parts[5].delta).toBe("continued after error");
     expect(parts[7].finishReason).toEqual({ unified: "error", raw: "error" });
+
+    const coreResult = streamText({
+      model: gateway("error-mid-stream"),
+      maxRetries: 0,
+      prompt: "trigger a mid-stream error",
+    });
+    let normalizedError: unknown;
+    for await (const part of coreResult.fullStream) {
+      if (part.type === "error") normalizedError = part.error;
+    }
+    expect(normalizedError).toMatchObject({
+      message: "boom mid-stream",
+      type: "upstream_test_error",
+      code: "E_INTEROP",
+      statusCode: 500,
+      isRetryable: false,
+      data: {
+        message: "boom mid-stream",
+        type: "upstream_test_error",
+        code: "E_INTEROP",
+        statusCode: 500,
+        isRetryable: false,
+        data: { provider: "interop" },
+      },
+    });
   });
 
   it("surfaces a pre-stream HTTP error with the server message", async () => {

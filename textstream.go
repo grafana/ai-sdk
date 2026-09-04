@@ -202,6 +202,7 @@ type StreamToolApprovalRequest struct {
 	ToolName         string
 	Input            json.RawMessage
 	Signature        string
+	Reason           string
 	ProviderExecuted bool
 	Dynamic          *bool
 	Title            string

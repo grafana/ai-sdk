@@ -676,7 +676,7 @@ func TestConvertToModelMessages_ApprovalResponses(t *testing.T) {
 				State:    ToolStateOutputAvailable,
 				Input:    json.RawMessage(`{"q":"go"}`),
 				Output:   json.RawMessage(`["result"]`),
-				Approval: &ToolApproval{ID: "apr_1", Approved: &approved, Reason: "ok"},
+				Approval: &ToolApproval{ID: "apr_1", Approved: &approved, RequestReason: "policy review", Reason: "ok", Signature: "sig-1"},
 			}},
 			check: func(t *testing.T, result []provider.Message) {
 				require.Len(t, result, 2)
@@ -685,6 +685,8 @@ func TestConvertToModelMessages_ApprovalResponses(t *testing.T) {
 				assert.Equal(t, provider.ContentPartTypeToolApprovalRequest, assistMsg.Content[1].Type)
 				assert.Equal(t, "apr_1", assistMsg.Content[1].ApprovalID)
 				assert.Equal(t, "c1", assistMsg.Content[1].ToolCallID)
+				assert.Equal(t, "policy review", assistMsg.Content[1].Reason)
+				assert.Equal(t, "sig-1", assistMsg.Content[1].Signature)
 				toolMsg := result[1]
 				require.Equal(t, provider.RoleTool, toolMsg.Role)
 				require.Len(t, toolMsg.Content, 2, "tool message must carry both approval-response and tool-result")

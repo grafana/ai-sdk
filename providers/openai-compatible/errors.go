@@ -11,6 +11,8 @@ import (
 func wrapAPIError(status int, endpoint string, requestBody []byte, headers http.Header, responseBody []byte) *provider.APICallError {
 	message := fmt.Sprintf("openai: API request failed with status %d", status)
 	var data json.RawMessage
+	var errorType string
+	var errorCode any
 
 	var parsed openAIErrorResponse
 	if err := json.Unmarshal(responseBody, &parsed); err == nil && parsed.Error.Message != "" {
@@ -18,10 +20,14 @@ func wrapAPIError(status int, endpoint string, requestBody []byte, headers http.
 		if b, err := json.Marshal(parsed.Error); err == nil {
 			data = b
 		}
+		errorType = parsed.Error.Type
+		errorCode = parsed.Error.Code
 	}
 
 	return provider.NewAPICallError(provider.APICallErrorOptions{
 		Message:           message,
+		Type:              errorType,
+		Code:              errorCode,
 		URL:               endpoint,
 		RequestBodyValues: json.RawMessage(append([]byte(nil), requestBody...)),
 		StatusCode:        status,

@@ -160,7 +160,7 @@ type ReasoningConfig struct {
 	Type string `json:"type,omitempty"`
 	// BudgetTokens is the thinking budget for Type="enabled". Required when
 	// Type is "enabled".
-	BudgetTokens int `json:"budgetTokens,omitempty"`
+	BudgetTokens *int `json:"budgetTokens,omitempty"`
 	// Display controls adaptive thinking display ("auto" or "always"). Only
 	// meaningful when Type is "adaptive".
 	Display string `json:"display,omitempty"`
@@ -179,6 +179,32 @@ type CachePoint struct {
 	// (Claude Opus/Haiku/Sonnet 4.5).
 	TTL string `json:"ttl,omitempty"`
 }
+
+// GuardContentQualifier identifies a Bedrock guardrail text qualifier.
+type GuardContentQualifier string
+
+const (
+	GuardContentGroundingSource GuardContentQualifier = "grounding_source"
+	GuardContentQuery           GuardContentQualifier = "query"
+	GuardContentGuardContent    GuardContentQualifier = "guard_content"
+)
+
+// TextPartOptions carries per-text-part Bedrock guardrail configuration.
+type TextPartOptions struct {
+	GuardContent           bool                    `json:"guardContent,omitempty"`
+	GuardContentQualifiers []GuardContentQualifier `json:"guardContentQualifiers,omitempty"`
+}
+
+// ProviderKey returns the per-part Bedrock option namespace.
+func (TextPartOptions) ProviderKey() string { return "amazonBedrock" }
+
+// ImagePartOptions carries per-image-part Bedrock guardrail configuration.
+type ImagePartOptions struct {
+	GuardContent bool `json:"guardContent,omitempty"`
+}
+
+// ProviderKey returns the per-part Bedrock option namespace.
+func (ImagePartOptions) ProviderKey() string { return "amazonBedrock" }
 
 // FilePartOptions carries per-file-part Bedrock configuration from
 // `ContentPart.ProviderOptions["amazonBedrock"]`. Mirrors upstream
@@ -201,8 +227,9 @@ func (FilePartOptions) ProviderKey() string { return "amazonBedrock" }
 // ReasoningMetadata carries Bedrock reasoning provider metadata round-trips.
 // Mirrors upstream amazonBedrockReasoningMetadata.
 type ReasoningMetadata struct {
-	Signature    string `json:"signature,omitempty"`
-	RedactedData string `json:"redactedData,omitempty"`
+	Signature       string `json:"signature,omitempty"`
+	RedactedContent string `json:"redactedContent,omitempty"`
+	RedactedData    string `json:"redactedData,omitempty"`
 }
 
 // ProviderKey returns the reasoning metadata namespace.

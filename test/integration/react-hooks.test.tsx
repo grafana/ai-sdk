@@ -74,6 +74,7 @@ type AgentToolPart = {
     id: string;
     approved?: boolean;
     reason?: string;
+    descriptor?: unknown;
   };
 };
 
@@ -90,7 +91,13 @@ function ChatProbe({ scenario }: { scenario: string }) {
       fetch: trackedFetch,
     }),
   });
+  const text = assistantText(messages as AgentToolMessage[]);
   const statusHistory = useSnapshotHistory<ChatStatus>(status);
+  const snapshotHistory = useSnapshotHistory({
+    status,
+    messageCount: messages.length,
+    text,
+  });
 
   return (
     <div>
@@ -103,11 +110,14 @@ function ChatProbe({ scenario }: { scenario: string }) {
       <button data-testid="chat-stop" onClick={stop} />
       <div data-testid="chat-status">{status}</div>
       <div data-testid="chat-status-history">{JSON.stringify(statusHistory)}</div>
+      <div data-testid="chat-snapshot-history">
+        {JSON.stringify(snapshotHistory)}
+      </div>
       <div data-testid="chat-error">{error?.message}</div>
       <div data-testid="chat-abort-count">{abortCount}</div>
-      <div data-testid="chat-text">
-        {assistantText(messages as AgentToolMessage[])}
-      </div>
+      <div data-testid="chat-message-count">{messages.length}</div>
+      <div data-testid="chat-text">{text}</div>
+      <div data-testid="chat-state">{JSON.stringify(messages)}</div>
     </div>
   );
 }
@@ -294,6 +304,54 @@ describe("React hook interop", () => {
     });
   });
 
+  it("useChat stays submitted after a start ID until content arrives", async () => {
+    render(<ChatProbe scenario="start-id-ui-stream" />);
+
+    screen.getByTestId("chat-send").click();
+
+    await waitFor(
+      () => {
+        expect(screen.getByTestId("chat-text").textContent).toBe(
+          "Hello, world!",
+        );
+        const history = JSON.parse(
+          screen.getByTestId("chat-snapshot-history").textContent ?? "[]",
+        ) as Array<{
+          status: ChatStatus;
+          messageCount: number;
+          text: string;
+        }>;
+        expect(history).toContainEqual({
+          status: "submitted",
+          messageCount: 2,
+          text: "",
+        });
+        expectOrderedSubsequence(
+          history.map(snapshot => snapshot.status),
+          ["submitted", "streaming", "ready"],
+        );
+      },
+      { timeout: 3000 },
+    );
+  });
+
+  it("useChat removes reset step parts before accepting a retry", async () => {
+    render(<ChatProbe scenario="reset-step" />);
+
+    screen.getByTestId("chat-send").click();
+
+    await waitFor(() => {
+      const messages = JSON.parse(
+        screen.getByTestId("chat-state").textContent ?? "[]",
+      ) as AgentToolMessage[];
+      const parts = messages.flatMap(message => message.parts);
+      expect(parts.some(part => part.toolCallId === "stale-tool")).toBe(false);
+      expect(parts.some(part => part.toolCallId === "retried-tool")).toBe(true);
+      expect(screen.getByTestId("chat-text").textContent).toBe("Completed step");
+      expect(screen.getByTestId("chat-status").textContent).toBe("ready");
+    });
+  });
+
   it.each([
     {
       name: "HTTP error",
@@ -413,6 +471,11 @@ describe("React hook interop", () => {
           .flatMap(message => message.parts)
           .find(part => part.type === "tool-confirm_action");
         expect(tool?.state).toBe("approval-requested");
+        expect(tool?.approval?.descriptor).toEqual({
+          action: "deploy",
+          permissions: ["deployment:write"],
+          risk: "high",
+        });
       });
 
       screen.getByTestId(button).click();
@@ -439,7 +502,13 @@ describe("React hook interop", () => {
             part =>
               part.state === "approval-responded" &&
               part.approval?.approved === approved &&
-              part.approval.reason === reason,
+              part.approval.reason === reason &&
+              JSON.stringify(part.approval.descriptor) ===
+                JSON.stringify({
+                  action: "deploy",
+                  permissions: ["deployment:write"],
+                  risk: "high",
+                }),
           ),
         ).toBe(true);
 
@@ -449,9 +518,18 @@ describe("React hook interop", () => {
         const finalTool = state
           .flatMap(message => message.parts)
           .find(part => part.type === "tool-confirm_action");
-        expect({ state: finalTool?.state, output: finalTool?.output }).toEqual({
+        expect({
+          state: finalTool?.state,
+          output: finalTool?.output,
+          descriptor: finalTool?.approval?.descriptor,
+        }).toEqual({
           state: finalState,
           output,
+          descriptor: {
+            action: "deploy",
+            permissions: ["deployment:write"],
+            risk: "high",
+          },
         });
         expect(assistantText(state)).toBe(finalText);
         expect(screen.getByTestId("approval-status").textContent).toBe("ready");

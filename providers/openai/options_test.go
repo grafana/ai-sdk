@@ -139,7 +139,7 @@ func TestResolveProviderOptions_RawRoundTrip(t *testing.T) {
 	raw := provider.ProviderOptions{
 		"openai": provider.RawProviderOption{
 			Key: "openai",
-			Raw: json.RawMessage(`{"previousResponseId":"resp_x","store":false}`),
+			Raw: json.RawMessage(`{"previousResponseId":"resp_x","store":false,"compactionTrigger":true}`),
 		},
 	}
 	got, name, err := resolveProviderOptions(provider.CallOptions{ProviderOptions: raw})
@@ -148,4 +148,17 @@ func TestResolveProviderOptions_RawRoundTrip(t *testing.T) {
 	assert.Equal(t, "resp_x", got.PreviousResponseID)
 	require.NotNil(t, got.Store)
 	assert.False(t, *got.Store)
+	assert.True(t, got.CompactionTrigger)
+}
+
+func TestResolveProviderOptions_RejectsInvalidCompactionTrigger(t *testing.T) {
+	raw := provider.ProviderOptions{
+		"openai": provider.RawProviderOption{
+			Key: "openai",
+			Raw: json.RawMessage(`{"compactionTrigger":"yes"}`),
+		},
+	}
+	_, _, err := resolveProviderOptions(provider.CallOptions{ProviderOptions: raw})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "compactionTrigger")
 }

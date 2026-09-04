@@ -176,7 +176,20 @@ func (r *StreamTextResult) ToUIMessageStream(opts ...UIMessageStreamOption) <-ch
 		var assembledChunks []UIMessageChunk
 		var finishReason provider.FinishReason
 		var isAborted bool
+		outcome := UIMessageStreamOutcome{Status: UIMessageStreamOutcomeUnknown}
 		for part := range r.consumeStream() {
+			switch part := part.(type) {
+			case StreamFinish:
+				if outcome.Status != UIMessageStreamOutcomeFailed && outcome.Status != UIMessageStreamOutcomeAborted {
+					outcome = UIMessageStreamOutcome{Status: UIMessageStreamOutcomeCompleted}
+				}
+			case StreamAbort:
+				if outcome.Status != UIMessageStreamOutcomeFailed {
+					outcome = UIMessageStreamOutcome{Status: UIMessageStreamOutcomeAborted}
+				}
+			case StreamError:
+				outcome = UIMessageStreamOutcome{Status: UIMessageStreamOutcomeFailed, Error: part.Error}
+			}
 			metadata := messageMetadataForPart(part, cfg)
 			chunks := translateToChunksWithMetadata(part, cfg, metadata)
 			if metadata != nil && !isStreamMessageMetadataCarrier(part) {
@@ -214,7 +227,8 @@ func (r *StreamTextResult) ToUIMessageStream(opts ...UIMessageStreamOption) <-ch
 			cfg.onFinish(UIMessageStreamOnFinishState{
 				Messages:        messages,
 				IsContinuation:  isContinuation,
-				IsAborted:       isAborted,
+				IsAborted:       isAborted || outcome.Status == UIMessageStreamOutcomeAborted,
+				Outcome:         outcome,
 				ResponseMessage: respMsg,
 				FinishReason:    finishReason,
 			})
@@ -329,7 +343,7 @@ func translateToChunksWithMetadata(part TextStreamPart, cfg uiMessageStreamConfi
 		}
 		return []UIMessageChunk{{Type: ChunkToolInputAvailable, ToolCallID: p.ToolCallID, ToolName: p.ToolName, Input: p.Input, ProviderExecuted: p.ProviderExecuted, Dynamic: p.Dynamic, Title: p.Title, ProviderMetadata: p.ProviderMetadata, ToolMetadata: toolMetadataFromProviderMetadata(p.ProviderMetadata)}}
 	case StreamToolApprovalRequest:
-		return []UIMessageChunk{{Type: ChunkToolApprovalRequest, ApprovalID: p.ApprovalID, ToolCallID: p.ToolCallID, IsAutomatic: p.IsAutomatic, Signature: p.Signature}}
+		return []UIMessageChunk{{Type: ChunkToolApprovalRequest, ApprovalID: p.ApprovalID, ToolCallID: p.ToolCallID, Reason: p.Reason, IsAutomatic: p.IsAutomatic, Signature: p.Signature}}
 	case StreamToolApprovalResponse:
 		approved := p.Approved
 		return []UIMessageChunk{{Type: ChunkToolApprovalResponse, ApprovalID: p.ApprovalID, Approved: approved, Reason: p.Reason, ProviderExecuted: p.ProviderExecuted, ProviderMetadata: p.ProviderMetadata}}
@@ -469,6 +483,8 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 	retryCfg := buildRetryConfig(&cfg.baseConfig)
 	stepNum := 0
 	currentRuntimeContext := cfg.runtimeContext
+	usedTextPartIDs := make(map[string]struct{})
+	usedReasoningPartIDs := make(map[string]struct{})
 
 	for {
 		stepNum++
@@ -649,7 +665,7 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 			return
 		}
 
-		step, stepCompleted, stepTerminated, stepHasOutput, err := r.processStep(ctx, stepNum, stepModel, streamResult, cfg, stepContext, currentMsgs, opCancel)
+		step, stepCompleted, stepTerminated, stepHasOutput, err := r.processStep(ctx, stepNum, stepModel, streamResult, cfg, stepContext, currentMsgs, opCancel, usedTextPartIDs, usedReasoningPartIDs)
 		if stepTimer != nil {
 			stepTimer.Stop()
 		}
@@ -709,6 +725,7 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 		// are fully resolved within the same API response and do not require a
 		// follow-up request.
 		hasClientToolCalls := false
+		hasUnresolvedClientToolCalls := false
 		hasUnresolvedExternal := false
 		hasPendingApproval := false
 		toolResultsByID := make(map[string]bool, len(step.ToolResults))
@@ -722,6 +739,9 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 		for _, tc := range step.ToolCalls {
 			if !tc.ProviderExecuted {
 				hasClientToolCalls = true
+				if !toolResultsByID[tc.ToolCallID] {
+					hasUnresolvedClientToolCalls = true
+				}
 				if !tc.Invalid {
 					if tool, ok := cfg.tools[tc.ToolName]; ok {
 						if tool.Execute == nil {
@@ -743,8 +763,8 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 			}
 		}
 
-		if !hasClientToolCalls || stopped || hasUnresolvedExternal || hasPendingApproval {
-			if cfg.output != nil && (cfg.parseOutputOnNonStop || step.FinishReason.Unified == provider.FinishReasonStop) {
+		if !hasClientToolCalls || stopped || hasUnresolvedClientToolCalls || hasUnresolvedExternal || hasPendingApproval {
+			if cfg.output != nil && (cfg.parseOutputOnNonStop || step.FinishReason.Unified == provider.FinishReasonStop || (step.FinishReason.Unified != provider.FinishReasonToolCalls && step.Text != "")) {
 				outputVal, outputErr := cfg.output.ParseComplete(step.Text)
 				r.mu.Lock()
 				r.outputValue = outputVal
@@ -759,6 +779,7 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 					StepResult: step,
 					Steps:      r.steps,
 					TotalUsage: r.totalUsage,
+					Output:     r.outputValue,
 				})
 			}
 
@@ -787,6 +808,8 @@ func (r *StreamTextResult) processStep(
 	stepContext any,
 	currentMsgs []provider.Message,
 	opCancel context.CancelFunc,
+	usedTextPartIDs map[string]struct{},
+	usedReasoningPartIDs map[string]struct{},
 ) (StepResult, bool, bool, bool, error) {
 	step := StepResult{
 		StepNumber: stepNum,
@@ -815,6 +838,8 @@ func (r *StreamTextResult) processStep(
 	toolTitleByID := make(map[string]string)
 	responseTextIndex := make(map[string]int)
 	responseReasoningIndex := make(map[string]int)
+	textPartIDs := make(map[string]string)
+	reasoningPartIDs := make(map[string]string)
 
 	var outputTextChunkID string
 	var outputTextChunk strings.Builder
@@ -889,11 +914,14 @@ loop:
 				Type:            provider.ContentPartTypeText,
 				ProviderOptions: providerMetadataToOptions(part.ProviderMetadata),
 			})
-			tsp := StreamTextStart{ID: part.ID, ProviderMetadata: part.ProviderMetadata}
+			streamPartID := reserveStreamPartID(usedTextPartIDs, part.ID, cfg)
+			textPartIDs[part.ID] = streamPartID
+			tsp := StreamTextStart{ID: streamPartID, ProviderMetadata: part.ProviderMetadata}
 			r.emit(tsp)
 			r.callOnChunk(cfg, tsp)
 
 		case provider.PartTextDelta:
+			streamPartID := mappedStreamPartID(textPartIDs, part.ID)
 			if idx, ok := responseTextIndex[part.ID]; ok {
 				step.responseContent[idx].Text += part.Delta
 				if part.ProviderMetadata != nil {
@@ -904,9 +932,9 @@ loop:
 
 			if cfg.output != nil {
 				if outputTextChunkID == "" {
-					outputTextChunkID = part.ID
-				} else if part.ID != outputTextChunkID {
-					tsp := StreamTextDelta{ID: part.ID, Text: part.Delta, ProviderMetadata: part.ProviderMetadata}
+					outputTextChunkID = streamPartID
+				} else if streamPartID != outputTextChunkID {
+					tsp := StreamTextDelta{ID: streamPartID, Text: part.Delta, ProviderMetadata: part.ProviderMetadata}
 					r.emit(tsp)
 					r.callOnChunk(cfg, tsp)
 					continue
@@ -916,7 +944,7 @@ loop:
 					outputTextMeta = part.ProviderMetadata
 				}
 				if part.Delta == "" && part.ProviderMetadata != nil {
-					tsp := StreamTextDelta{ID: part.ID, ProviderMetadata: part.ProviderMetadata}
+					tsp := StreamTextDelta{ID: streamPartID, ProviderMetadata: part.ProviderMetadata}
 					r.emit(tsp)
 					r.callOnChunk(cfg, tsp)
 					continue
@@ -930,13 +958,14 @@ loop:
 					outputTextChunk.Reset()
 				}
 			} else {
-				tsp := StreamTextDelta{ID: part.ID, Text: part.Delta, ProviderMetadata: part.ProviderMetadata}
+				tsp := StreamTextDelta{ID: streamPartID, Text: part.Delta, ProviderMetadata: part.ProviderMetadata}
 				r.emit(tsp)
 				r.callOnChunk(cfg, tsp)
 			}
 
 		case provider.PartTextEnd:
-			if cfg.output != nil && part.ID == outputTextChunkID && outputTextChunk.Len() > 0 {
+			streamPartID := mappedStreamPartID(textPartIDs, part.ID)
+			if cfg.output != nil && streamPartID == outputTextChunkID && outputTextChunk.Len() > 0 {
 				tsp := StreamTextDelta{ID: outputTextChunkID, Text: outputTextChunk.String(), ProviderMetadata: outputTextMeta}
 				r.emit(tsp)
 				r.callOnChunk(cfg, tsp)
@@ -945,9 +974,10 @@ loop:
 			if idx, ok := responseTextIndex[part.ID]; ok && part.ProviderMetadata != nil {
 				step.responseContent[idx].ProviderOptions = providerMetadataToOptions(part.ProviderMetadata)
 			}
-			tsp := StreamTextEnd{ID: part.ID, ProviderMetadata: part.ProviderMetadata}
+			tsp := StreamTextEnd{ID: streamPartID, ProviderMetadata: part.ProviderMetadata}
 			r.emit(tsp)
 			r.callOnChunk(cfg, tsp)
+			delete(textPartIDs, part.ID)
 
 		case provider.PartReasoningStart:
 			responseReasoningIndex[part.ID] = len(step.responseContent)
@@ -958,11 +988,14 @@ loop:
 			outputIndex := len(reasoningBlocks)
 			reasoningBlocks = append(reasoningBlocks, ReasoningTextOutput{ProviderMetadata: part.ProviderMetadata})
 			activeReasoning[part.ID] = &activeReasoningBlock{providerMetadata: part.ProviderMetadata, outputIndex: outputIndex}
-			tsp := StreamReasoningStart{ID: part.ID, ProviderMetadata: part.ProviderMetadata}
+			streamPartID := reserveStreamPartID(usedReasoningPartIDs, part.ID, cfg)
+			reasoningPartIDs[part.ID] = streamPartID
+			tsp := StreamReasoningStart{ID: streamPartID, ProviderMetadata: part.ProviderMetadata}
 			r.emit(tsp)
 			r.callOnChunk(cfg, tsp)
 
 		case provider.PartReasoningDelta:
+			streamPartID := mappedStreamPartID(reasoningPartIDs, part.ID)
 			active := activeReasoning[part.ID]
 			if active == nil {
 				active = &activeReasoningBlock{outputIndex: len(reasoningBlocks)}
@@ -979,11 +1012,12 @@ loop:
 					step.responseContent[idx].ProviderOptions = providerMetadataToOptions(active.providerMetadata)
 				}
 			}
-			tsp := StreamReasoningDelta{ID: part.ID, Text: part.Delta, ProviderMetadata: part.ProviderMetadata}
+			tsp := StreamReasoningDelta{ID: streamPartID, Text: part.Delta, ProviderMetadata: part.ProviderMetadata}
 			r.emit(tsp)
 			r.callOnChunk(cfg, tsp)
 
 		case provider.PartReasoningEnd:
+			streamPartID := mappedStreamPartID(reasoningPartIDs, part.ID)
 			active := activeReasoning[part.ID]
 			if active == nil {
 				active = &activeReasoningBlock{outputIndex: len(reasoningBlocks)}
@@ -997,9 +1031,10 @@ loop:
 			}
 			reasoningBlocks[active.outputIndex] = ReasoningTextOutput{Text: active.text.String(), ProviderMetadata: active.providerMetadata}
 			delete(activeReasoning, part.ID)
-			tsp := StreamReasoningEnd{ID: part.ID, ProviderMetadata: part.ProviderMetadata}
+			tsp := StreamReasoningEnd{ID: streamPartID, ProviderMetadata: part.ProviderMetadata}
 			r.emit(tsp)
 			r.callOnChunk(cfg, tsp)
+			delete(reasoningPartIDs, part.ID)
 
 		case provider.PartToolInputStart:
 			toolNameByID[part.ID] = part.ToolName
@@ -1159,6 +1194,7 @@ loop:
 				ToolCallID:       part.ToolCallID,
 				ToolName:         part.ToolName,
 				Signature:        part.Signature,
+				Reason:           part.Reason,
 				ProviderExecuted: true,
 				ProviderMetadata: part.ProviderMetadata,
 			}
@@ -1184,6 +1220,7 @@ loop:
 				ToolCallID:      req.ToolCallID,
 				ToolName:        req.ToolName,
 				Signature:       req.Signature,
+				Reason:          req.Reason,
 				IsAutomatic:     req.IsAutomatic,
 				ProviderOptions: providerMetadataToOptions(req.ProviderMetadata),
 			})
@@ -1223,9 +1260,7 @@ loop:
 			tsp := StreamError{Error: partErrAsError}
 			r.emit(tsp)
 			r.callOnChunk(cfg, tsp)
-			if cfg.onError != nil {
-				cfg.onError(partErrAsError)
-			}
+			callOnError(cfg.onError, partErrAsError)
 		}
 	}
 
@@ -1270,8 +1305,10 @@ loop:
 		})
 	}
 	if completed || partialCompleted {
-		if err := r.executeTools(ctx, &step, cfg, stepContext, currentMsgs); err != nil {
-			return step, false, false, hasOutput, err
+		if isToolExecutionAllowedFinishReason(step.FinishReason.Unified) {
+			if err := r.executeTools(ctx, &step, cfg, stepContext, currentMsgs); err != nil {
+				return step, false, false, hasOutput, err
+			}
 		}
 		step.Content = buildContent(step)
 		// Populate Response.Messages with the next-call message tail
@@ -1288,6 +1325,10 @@ loop:
 	}
 
 	return step, completed, terminated, hasOutput, nil
+}
+
+func isToolExecutionAllowedFinishReason(reason provider.UnifiedFinishReason) bool {
+	return reason == provider.FinishReasonStop || reason == provider.FinishReasonToolCalls
 }
 
 func isSemanticOutputStreamPart(part provider.StreamPart) bool {
@@ -1577,7 +1618,7 @@ func (r *StreamTextResult) executeTools(
 			// execute normally below
 		case ToolApprovalUserApproval:
 			approvalID := generateConfigID(cfg)
-			req := newToolApprovalRequest(approvalID, tc, false)
+			req := newToolApprovalRequest(approvalID, tc, decision.Reason, false)
 			if err := maybeSignToolApproval(cfg.toolApprovalSecret, &req); err != nil {
 				return err
 			}
@@ -1586,7 +1627,7 @@ func (r *StreamTextResult) executeTools(
 			continue
 		case ToolApprovalApproved:
 			approvalID := generateConfigID(cfg)
-			req := newToolApprovalRequest(approvalID, tc, true)
+			req := newToolApprovalRequest(approvalID, tc, decision.Reason, true)
 			if err := maybeSignToolApproval(cfg.toolApprovalSecret, &req); err != nil {
 				return err
 			}
@@ -1597,7 +1638,7 @@ func (r *StreamTextResult) executeTools(
 			r.emitToolApprovalResponse(cfg, resp)
 		case ToolApprovalDenied:
 			approvalID := generateConfigID(cfg)
-			req := newToolApprovalRequest(approvalID, tc, true)
+			req := newToolApprovalRequest(approvalID, tc, decision.Reason, true)
 			if err := maybeSignToolApproval(cfg.toolApprovalSecret, &req); err != nil {
 				return err
 			}
@@ -1661,12 +1702,13 @@ func (r *StreamTextResult) executeTools(
 	return nil
 }
 
-func newToolApprovalRequest(approvalID string, tc ToolCall, isAutomatic bool) ToolApprovalRequest {
+func newToolApprovalRequest(approvalID string, tc ToolCall, reason string, isAutomatic bool) ToolApprovalRequest {
 	return ToolApprovalRequest{
 		ApprovalID:       approvalID,
 		ToolCallID:       tc.ToolCallID,
 		ToolName:         tc.ToolName,
 		Input:            tc.Input,
+		Reason:           reason,
 		ProviderExecuted: tc.ProviderExecuted,
 		Dynamic:          tc.Dynamic,
 		Title:            tc.Title,
@@ -1912,9 +1954,15 @@ func (r *StreamTextResult) emitStreamError(err error, onError func(error)) {
 	}
 	r.mu.Unlock()
 	r.emit(StreamError{Error: err})
-	if onError != nil {
-		onError(err)
+	callOnError(onError, err)
+}
+
+func callOnError(onError func(error), err error) {
+	if onError == nil {
+		return
 	}
+	defer func() { _ = recover() }()
+	onError(err)
 }
 
 type collectedToolApproval struct {
@@ -1922,6 +1970,11 @@ type collectedToolApproval struct {
 	response              provider.ContentPart
 	toolCall              provider.ContentPart
 	hasExistingToolResult bool
+}
+
+type invalidToolApproval struct {
+	collectedToolApproval
+	err error
 }
 
 func (r *StreamTextResult) resolveToolApprovals(ctx context.Context, cfg *streamConfig, msgs []provider.Message) ([]provider.Message, error) {
@@ -1938,7 +1991,13 @@ func (r *StreamTextResult) resolveToolApprovals(ctx context.Context, cfg *stream
 	// mutates existing message Content slices.
 	resultMsgs := cloneMessages(msgs)
 
-	approved, demoted, err := validateApprovedToolApprovals(cfg, msgs, approved)
+	localApproved := make([]collectedToolApproval, 0, len(approved))
+	for _, approval := range approved {
+		if !approval.toolCall.ProviderExecuted {
+			localApproved = append(localApproved, approval)
+		}
+	}
+	approved, demoted, invalid, err := validateApprovedToolApprovals(cfg, msgs, localApproved)
 	if err != nil {
 		return nil, err
 	}
@@ -1947,6 +2006,21 @@ func (r *StreamTextResult) resolveToolApprovals(ctx context.Context, cfg *stream
 		deniedEvent := StreamToolOutputDenied{ToolCallID: approval.toolCall.ToolCallID, ToolName: approval.toolCall.ToolName}
 		r.emit(deniedEvent)
 		r.callOnChunk(cfg, deniedEvent)
+	}
+	for _, approval := range invalid {
+		toolCall := approval.toolCall
+		dynamic := isDynamic(toolCall.ToolName, nil, cfg.tools)
+		event := StreamToolError{
+			ToolCallID:       toolCall.ToolCallID,
+			ToolName:         toolCall.ToolName,
+			Input:            toolCall.Input,
+			Error:            approval.err,
+			Dynamic:          dynamic,
+			Title:            toolCall.Title,
+			ProviderMetadata: optionsToProviderMetadata(toolCall.ProviderOptions),
+		}
+		r.emit(event)
+		r.callOnChunk(cfg, event)
 	}
 
 	type executableApproval struct {
@@ -2011,6 +2085,19 @@ func (r *StreamTextResult) resolveToolApprovals(ctx context.Context, cfg *stream
 		})
 	}
 
+	invalidToolParts := make([]provider.ContentPart, 0, len(invalid))
+	for _, approval := range invalid {
+		invalidToolParts = append(invalidToolParts, provider.ContentPart{
+			Type:       provider.ContentPartTypeToolResult,
+			ToolCallID: approval.toolCall.ToolCallID,
+			ToolName:   approval.toolCall.ToolName,
+			Output: &provider.ToolResultOutput{
+				Type: provider.ToolOutputErrorText,
+				Text: approval.err.Error(),
+			},
+		})
+	}
+
 	deniedToolParts := make([]provider.ContentPart, 0, len(denied))
 	for _, approval := range denied {
 		if approval.toolCall.ProviderExecuted || approval.hasExistingToolResult {
@@ -2027,35 +2114,42 @@ func (r *StreamTextResult) resolveToolApprovals(ctx context.Context, cfg *stream
 		})
 	}
 
-	// Approved tool results go before synthetic execution-denied results so
-	// the next-step prompt order matches upstream stream-text.ts.
-	toolParts := append(approvedToolParts, deniedToolParts...)
+	// Approved tool results go before invalid and synthetic execution-denied
+	// results so the next-step prompt order matches upstream stream-text.ts.
+	toolParts := append(approvedToolParts, invalidToolParts...)
+	toolParts = append(toolParts, deniedToolParts...)
 	if len(toolParts) > 0 {
 		resultMsgs = append(resultMsgs, provider.NewToolMessage(toolParts...))
 	}
 	return resultMsgs, nil
 }
 
-func validateApprovedToolApprovals(cfg *streamConfig, msgs []provider.Message, approvals []collectedToolApproval) ([]collectedToolApproval, []collectedToolApproval, error) {
+func validateApprovedToolApprovals(cfg *streamConfig, msgs []provider.Message, approvals []collectedToolApproval) ([]collectedToolApproval, []collectedToolApproval, []invalidToolApproval, error) {
 	approved := make([]collectedToolApproval, 0, len(approvals))
 	var denied []collectedToolApproval
+	var invalid []invalidToolApproval
 
 	for _, approval := range approvals {
 		if err := validateToolApprovalSignature(cfg.toolApprovalSecret, approval); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 
 		tool, ok := cfg.tools[approval.toolCall.ToolName]
 		if ok && tool.Execute != nil {
-			if tool.InputSchema.Compiled() != nil && isJSONObject(approval.toolCall.Input) {
+			var validationErr error
+			if tool.InputSchema.Compiled() != nil {
 				if err := tool.InputSchema.Validate(approval.toolCall.Input); err != nil {
-					return nil, nil, fmt.Errorf("invalid input for tool %s: %w", approval.toolCall.ToolName, err)
+					validationErr = fmt.Errorf("invalid input for tool %s: %w", approval.toolCall.ToolName, err)
 				}
 			}
-			if tool.ValidateInput != nil {
+			if validationErr == nil && tool.ValidateInput != nil {
 				if err := tool.ValidateInput(approval.toolCall.Input); err != nil {
-					return nil, nil, fmt.Errorf("invalid input for tool %s: %w", approval.toolCall.ToolName, err)
+					validationErr = fmt.Errorf("invalid input for tool %s: %w", approval.toolCall.ToolName, err)
 				}
+			}
+			if validationErr != nil {
+				invalid = append(invalid, invalidToolApproval{collectedToolApproval: approval, err: validationErr})
+				continue
 			}
 		}
 
@@ -2071,7 +2165,7 @@ func validateApprovedToolApprovals(cfg *streamConfig, msgs []provider.Message, a
 				Messages:   msgs,
 			})
 			if err != nil {
-				return nil, nil, err
+				return nil, nil, nil, err
 			}
 			if decision.Status == ToolApprovalDenied {
 				approvedFalse := false
@@ -2087,7 +2181,7 @@ func validateApprovedToolApprovals(cfg *streamConfig, msgs []provider.Message, a
 		approved = append(approved, approval)
 	}
 
-	return approved, denied, nil
+	return approved, denied, invalid, nil
 }
 
 func validateToolApprovalSignature(secret []byte, approval collectedToolApproval) error {
@@ -2306,9 +2400,11 @@ func sanitizePromptForProvider(msgs []provider.Message) ([]provider.Message, err
 }
 
 func (r *StreamTextResult) callOnChunk(cfg *streamConfig, tsp TextStreamPart) {
-	if cfg.onChunk != nil {
-		cfg.onChunk(OnChunkState{Chunk: tsp})
+	if cfg.onChunk == nil {
+		return
 	}
+	defer func() { _ = recover() }()
+	cfg.onChunk(OnChunkState{Chunk: tsp})
 }
 
 // Wait blocks until the stream completes.
@@ -2515,6 +2611,30 @@ func generateConfigID(cfg *streamConfig) string {
 	return GenerateID()
 }
 
+func reserveStreamPartID(used map[string]struct{}, providerID string, cfg *streamConfig) string {
+	if _, exists := used[providerID]; !exists {
+		used[providerID] = struct{}{}
+		return providerID
+	}
+
+	generatedID := generateConfigID(cfg)
+	uniqueID := generatedID
+	for suffix := 1; ; suffix++ {
+		if _, exists := used[uniqueID]; !exists {
+			used[uniqueID] = struct{}{}
+			return uniqueID
+		}
+		uniqueID = fmt.Sprintf("%s-%d", generatedID, suffix)
+	}
+}
+
+func mappedStreamPartID(active map[string]string, providerID string) string {
+	if id, ok := active[providerID]; ok {
+		return id
+	}
+	return providerID
+}
+
 func isApprovalNeeded(tool Tool, input json.RawMessage, opts ToolExecutionOptions) (bool, error) {
 	if tool.NeedsApproval == nil {
 		return false, nil
@@ -2615,6 +2735,7 @@ func buildResponseContent(step StepResult) []provider.ContentPart {
 				ToolCallID:      ar.ToolCallID,
 				ToolName:        ar.ToolName,
 				Signature:       ar.Signature,
+				Reason:          ar.Reason,
 				IsAutomatic:     ar.IsAutomatic,
 				ProviderOptions: providerMetadataToOptions(ar.ProviderMetadata),
 			})
@@ -2732,6 +2853,7 @@ func buildResponseContent(step StepResult) []provider.ContentPart {
 				ToolCallID:      ar.ToolCallID,
 				ToolName:        ar.ToolName,
 				Signature:       ar.Signature,
+				Reason:          ar.Reason,
 				IsAutomatic:     ar.IsAutomatic,
 				ProviderOptions: providerMetadataToOptions(ar.ProviderMetadata),
 			})

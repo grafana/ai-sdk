@@ -87,11 +87,17 @@ func parseResponse(body []byte, headers map[string][]string, modelID string, met
 						"bedrock":       jsonRawOrZero(ReasoningMetadata{Signature: rc.ReasoningText.Signature}),
 					}
 				}
-			case rc.RedactedReasoning != nil:
-				cp.Text = ""
+			case rc.RedactedContent != "":
+				meta := jsonRawOrZero(ReasoningMetadata{RedactedContent: rc.RedactedContent})
 				cp.ProviderMetadata = provider.ProviderMetadata{
-					"amazonBedrock": jsonRawOrZero(ReasoningMetadata{RedactedData: rc.RedactedReasoning.Data}),
-					"bedrock":       jsonRawOrZero(ReasoningMetadata{RedactedData: rc.RedactedReasoning.Data}),
+					"amazonBedrock": meta,
+					"bedrock":       meta,
+				}
+			case rc.RedactedReasoning != nil:
+				meta := jsonRawOrZero(ReasoningMetadata{RedactedData: rc.RedactedReasoning.Data})
+				cp.ProviderMetadata = provider.ProviderMetadata{
+					"amazonBedrock": meta,
+					"bedrock":       meta,
 				}
 			}
 			content = append(content, cp)

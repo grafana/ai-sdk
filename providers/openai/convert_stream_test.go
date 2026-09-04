@@ -49,6 +49,33 @@ func partTypes(parts []provider.StreamPart) []provider.StreamPartType {
 	return out
 }
 
+func TestStream_SchemaInvalidKnownEventsFinishWithError(t *testing.T) {
+	functionCall := `{"id":"fc_1","type":"function_call","name":"get_weather","call_id":"call_1","arguments":"{\"city\":\"Berlin\"}","status":"completed"}`
+	parts := collectParts(t,
+		`{"type":"response.created","response":{"id":"response_1","created_at":1,"model":"gpt-5.1"}}`,
+		`{"type":"response.output_item.added","item":{"id":"fc_1","type":"function_call","name":"get_weather","call_id":"call_1","arguments":"","status":"in_progress"}}`,
+		`{"type":"response.function_call_arguments.delta","item_id":"fc_1","delta":"{\"city\":\"Berlin\"}"}`,
+		`{"type":"response.function_call_arguments.done","item_id":"fc_1","arguments":"{\"city\":\"Berlin\"}"}`,
+		`{"type":"response.output_item.done","item":`+functionCall+`}`,
+		`{"type":"response.completed","response":{"incomplete_details":null,"output":[`+functionCall+`],"usage":{"input_tokens":1,"output_tokens":2}}}`,
+	)
+
+	var errors, toolCalls int
+	for _, part := range parts {
+		switch part.Type {
+		case provider.PartError:
+			errors++
+		case provider.PartToolCall:
+			toolCalls++
+		}
+	}
+	assert.Equal(t, 4, errors)
+	assert.Zero(t, toolCalls)
+	require.Equal(t, provider.PartFinish, parts[len(parts)-1].Type)
+	require.NotNil(t, parts[len(parts)-1].FinishReason)
+	assert.Equal(t, provider.FinishReasonError, parts[len(parts)-1].FinishReason.Unified)
+}
+
 func TestStream_TextLifecycle(t *testing.T) {
 	parts := collectParts(t,
 		`{"type":"response.created","sequence_number":0,"response":{"id":"resp_1","created_at":1,"model":"gpt-4o","object":"response","status":"in_progress","output":[]}}`,
@@ -1053,4 +1080,65 @@ func TestStream_ReasoningSummaryStoreOptionControlsTerminalEvent(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestStream_ReplaysMalformedParallelWrapper(t *testing.T) {
+	tools := []provider.Tool{{Type: provider.ToolTypeFunction, Name: "weather"}}
+	parts := collectPartsWithBuildResult(t, buildResult{providerOptionsName: "openai", tools: tools},
+		`{"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_parallel","call_id":"call_parallel","name":"parallel","arguments":"","status":"in_progress"}}`,
+		`{"type":"response.function_call_arguments.delta","item_id":"fc_parallel","output_index":0,"delta":"{\"tool_uses\":["}`,
+		`{"type":"response.output_item.done","output_index":0,"item":{"type":"function_call","id":"fc_parallel","call_id":"call_parallel","name":"parallel","arguments":"{\"tool_uses\":[","status":"completed"}}`,
+	)
+	var toolParts []provider.StreamPart
+	for _, part := range parts {
+		if part.Type == provider.PartToolInputStart || part.Type == provider.PartToolInputDelta || part.Type == provider.PartToolInputEnd || part.Type == provider.PartToolCall {
+			toolParts = append(toolParts, part)
+		}
+	}
+	require.Len(t, toolParts, 4)
+	assert.Equal(t, provider.PartToolInputStart, toolParts[0].Type)
+	assert.Equal(t, `{"tool_uses":[`, toolParts[1].Delta)
+	assert.Equal(t, provider.PartToolInputEnd, toolParts[2].Type)
+	assert.Equal(t, "parallel", toolParts[3].ToolName)
+}
+
+func TestStream_ReplaysMalformedParallelWrapperArgumentsWithoutDeltas(t *testing.T) {
+	tools := []provider.Tool{{Type: provider.ToolTypeFunction, Name: "weather"}}
+	parts := collectPartsWithBuildResult(t, buildResult{providerOptionsName: "openai", tools: tools},
+		`{"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_parallel","call_id":"call_parallel","name":"parallel","arguments":"","status":"in_progress"}}`,
+		`{"type":"response.output_item.done","output_index":0,"item":{"type":"function_call","id":"fc_parallel","call_id":"call_parallel","name":"parallel","arguments":"{\"invalid\":true}","status":"completed"}}`,
+	)
+	var deltas []provider.StreamPart
+	for _, part := range parts {
+		if part.Type == provider.PartToolInputDelta {
+			deltas = append(deltas, part)
+		}
+	}
+	require.Len(t, deltas, 1)
+	assert.Equal(t, `{"invalid":true}`, deltas[0].Delta)
+}
+
+func TestStream_ExpandsParallelToolCall(t *testing.T) {
+	tools := []provider.Tool{
+		{Type: provider.ToolTypeFunction, Name: "weather"},
+		{Type: provider.ToolTypeFunction, Name: "cityAttractions"},
+	}
+	parts := collectPartsWithBuildResult(t, buildResult{providerOptionsName: "openai", tools: tools},
+		`{"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_parallel","call_id":"call_parallel","name":"parallel","arguments":"","status":"in_progress"}}`,
+		`{"type":"response.function_call_arguments.delta","item_id":"fc_parallel","output_index":0,"delta":"{\"tool_uses\":[{\"recipient_name\":\"functions.weather\",\"parameters\":{\"location\":\"San Francisco\"}},{\"recipient_name\":\"functions.cityAttractions\",\"parameters\":{\"city\":\"Rome\"}}]}"}`,
+		`{"type":"response.output_item.done","output_index":0,"item":{"type":"function_call","id":"fc_parallel","call_id":"call_parallel","name":"parallel","arguments":"{\"tool_uses\":[{\"recipient_name\":\"functions.weather\",\"parameters\":{\"location\":\"San Francisco\"}},{\"recipient_name\":\"functions.cityAttractions\",\"parameters\":{\"city\":\"Rome\"}}]}","status":"completed"}}`,
+	)
+	var toolParts []provider.StreamPart
+	for _, part := range parts {
+		if part.Type == provider.PartToolInputStart || part.Type == provider.PartToolInputDelta || part.Type == provider.PartToolInputEnd || part.Type == provider.PartToolCall {
+			toolParts = append(toolParts, part)
+		}
+	}
+	require.Len(t, toolParts, 8)
+	assert.Equal(t, "call_parallel_0", toolParts[0].ID)
+	assert.Equal(t, "weather", toolParts[0].ToolName)
+	assert.Equal(t, "call_parallel_0", toolParts[3].ToolCallID)
+	assert.Equal(t, "call_parallel_1", toolParts[4].ID)
+	assert.Equal(t, "cityAttractions", toolParts[4].ToolName)
+	assert.Equal(t, "call_parallel_1", toolParts[7].ToolCallID)
 }

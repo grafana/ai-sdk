@@ -71,6 +71,7 @@ type contentBlock struct {
 	ToolUse          *toolUseBlock          `json:"toolUse,omitempty"`
 	ToolResult       *toolResultBlock       `json:"toolResult,omitempty"`
 	ReasoningContent *reasoningContentBlock `json:"reasoningContent,omitempty"`
+	GuardContent     *guardContentBlock     `json:"guardContent,omitempty"`
 	CachePoint       *cachePoint            `json:"cachePoint,omitempty"`
 }
 
@@ -78,6 +79,16 @@ type contentBlock struct {
 type imageBlock struct {
 	Format string      `json:"format"` // "jpeg", "png", "gif", "webp"
 	Source imageSource `json:"source"`
+}
+
+type guardContentBlock struct {
+	Text  *guardrailTextBlock `json:"text,omitempty"`
+	Image *imageBlock         `json:"image,omitempty"`
+}
+
+type guardrailTextBlock struct {
+	Text       string                  `json:"text"`
+	Qualifiers []GuardContentQualifier `json:"qualifiers,omitempty"`
 }
 
 type imageSource struct {
@@ -141,10 +152,10 @@ type toolResultContent struct {
 	Document *documentBlock `json:"document,omitempty"`
 }
 
-// reasoningContentBlock is the assistant-side reasoning trace. Either
-// reasoningText (with optional signature) or redactedReasoning.
+// reasoningContentBlock is the assistant-side reasoning trace.
 type reasoningContentBlock struct {
 	ReasoningText     *reasoningText     `json:"reasoningText,omitempty"`
+	RedactedContent   string             `json:"redactedContent,omitempty"`
 	RedactedReasoning *redactedReasoning `json:"redactedReasoning,omitempty"`
 }
 
@@ -326,9 +337,10 @@ type streamToolUseDelta struct {
 }
 
 type streamReasoningContentDelta struct {
-	Text      string `json:"text,omitempty"`
-	Signature string `json:"signature,omitempty"`
-	Data      string `json:"data,omitempty"`
+	Text            string `json:"text,omitempty"`
+	Signature       string `json:"signature,omitempty"`
+	RedactedContent string `json:"redactedContent,omitempty"`
+	Data            string `json:"data,omitempty"`
 }
 
 type streamContentBlockStop struct {
