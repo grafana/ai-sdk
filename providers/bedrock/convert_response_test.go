@@ -123,6 +123,23 @@ func TestParseResponse_RedactedReasoning(t *testing.T) {
 	assert.Equal(t, "redacted-blob", meta.RedactedData)
 }
 
+func TestParseResponse_RedactedContent(t *testing.T) {
+	body := []byte(`{
+		"output": {"message": {"role": "assistant", "content": [
+			{"reasoningContent": {"redactedContent": "encrypted-reasoning"}}
+		]}},
+		"stopReason": "end_turn",
+		"usage": {"inputTokens": 5, "outputTokens": 0}
+	}`)
+	result, err := parseResponse(body, nil, testAnthropicModel, requestMeta{}, defaultGenerateID)
+	require.NoError(t, err)
+	require.Len(t, result.Content, 1)
+	assert.Equal(t, provider.ContentReasoning, result.Content[0].Type)
+	var meta ReasoningMetadata
+	require.NoError(t, json.Unmarshal(result.Content[0].ProviderMetadata["amazonBedrock"], &meta))
+	assert.Equal(t, "encrypted-reasoning", meta.RedactedContent)
+}
+
 func TestParseResponse_UsageWithCache(t *testing.T) {
 	body := []byte(`{
 		"output": {"message": {"role": "assistant", "content": [{"text": "hi"}]}},

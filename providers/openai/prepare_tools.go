@@ -3,6 +3,7 @@ package openai
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/openai/openai-go/v3/packages/param"
@@ -100,8 +101,9 @@ func prepareTools(body *responses.ResponseNewParams, opts provider.CallOptions, 
 		body.Tools = tools
 	}
 
-	applyToolChoice(body, opts.ToolChoice, popts, opts.Tools, br.toolNameMapping)
-	return warnings, nil
+	toolChoiceWarnings, err := applyToolChoice(body, opts.ToolChoice, popts, opts.Tools, br.toolNameMapping)
+	warnings = append(warnings, toolChoiceWarnings...)
+	return warnings, err
 }
 
 func functionTool(t provider.Tool, options OpenAIToolOptions) responses.ToolUnionParam {
@@ -418,28 +420,24 @@ func toolSearchTool(t provider.Tool) *responses.ToolSearchToolParam {
 }
 
 // applyToolChoice resolves the tool choice, honoring an allowedTools override.
-func applyToolChoice(body *responses.ResponseNewParams, tc *provider.ToolChoice, popts OpenAIResponsesOptions, tools []provider.Tool, mapping toolNameMapping) {
-	// allowedTools overrides the request tool choice entirely.
+func applyToolChoice(body *responses.ResponseNewParams, tc *provider.ToolChoice, popts OpenAIResponsesOptions, tools []provider.Tool, mapping toolNameMapping) ([]provider.Warning, error) {
 	if popts.AllowedTools != nil && len(popts.AllowedTools.ToolNames) > 0 {
-		var fns []map[string]any
-		for _, name := range popts.AllowedTools.ToolNames {
-			fns = append(fns, map[string]any{"type": "function", "name": mapping.toProviderToolName(name)})
+		entries, warnings, err := resolveAllowedTools(popts.AllowedTools.ToolNames, tools, mapping)
+		if err != nil {
+			return warnings, err
 		}
 		mode := responses.ToolChoiceAllowedMode("auto")
 		if popts.AllowedTools.Mode != "" {
 			mode = responses.ToolChoiceAllowedMode(popts.AllowedTools.Mode)
 		}
 		body.ToolChoice = responses.ResponseNewParamsToolChoiceUnion{
-			OfAllowedTools: &responses.ToolChoiceAllowedParam{
-				Mode:  mode,
-				Tools: fns,
-			},
+			OfAllowedTools: &responses.ToolChoiceAllowedParam{Mode: mode, Tools: entries},
 		}
-		return
+		return warnings, nil
 	}
 
 	if tc == nil {
-		return
+		return nil, nil
 	}
 
 	switch tc.Type {
@@ -454,7 +452,7 @@ func applyToolChoice(body *responses.ResponseNewParams, tc *provider.ToolChoice,
 			body.ToolChoice = responses.ResponseNewParamsToolChoiceUnion{
 				OfCustomTool: &responses.ToolChoiceCustomParam{Name: tc.ToolName},
 			}
-			return
+			return nil, nil
 		}
 		resolvedToolName := mapping.toProviderToolName(tc.ToolName)
 		if hostedToolType := hostedToolChoiceType(resolvedToolName); hostedToolType != "" {
@@ -478,6 +476,116 @@ func applyToolChoice(body *responses.ResponseNewParams, tc *provider.ToolChoice,
 				OfFunctionTool: &responses.ToolChoiceFunctionParam{Name: resolvedToolName},
 			}
 		}
+	}
+	return nil, nil
+}
+
+func resolveAllowedTools(names []string, tools []provider.Tool, mapping toolNameMapping) ([]map[string]any, []provider.Warning, error) {
+	var entries []map[string]any
+	var warnings []provider.Warning
+	for _, name := range names {
+		directMatches := make([]provider.Tool, 0, 1)
+		providerMatches := make([]provider.Tool, 0, 1)
+		for _, tool := range tools {
+			if tool.Name == name {
+				directMatches = append(directMatches, tool)
+				continue
+			}
+			if mapping.toProviderToolName(tool.Name) == name {
+				providerMatches = append(providerMatches, tool)
+			}
+		}
+		matches := directMatches
+		if len(directMatches) > 0 && len(providerMatches) > 0 {
+			warnings = append(warnings, allowedToolWarning(name, "this name is both a tool name and the provider tool name of another tool in this request; the tool with this name is allowed"))
+		} else if len(matches) == 0 {
+			matches = providerMatches
+		}
+		if len(matches) > 1 {
+			firstEntry, firstReason, err := allowedToolEntry(matches[0])
+			if err != nil {
+				return nil, warnings, err
+			}
+			sameResolution := true
+			for _, match := range matches[1:] {
+				entry, reason, err := allowedToolEntry(match)
+				if err != nil {
+					return nil, warnings, err
+				}
+				if reason != firstReason || !reflect.DeepEqual(entry, firstEntry) {
+					sameResolution = false
+					break
+				}
+			}
+			if sameResolution {
+				matches = matches[:1]
+			} else {
+				warnings = append(warnings, allowedToolWarning(name, "several tools in this request share this provider tool name; use the request tool name instead"))
+				continue
+			}
+		}
+		if len(matches) == 0 {
+			warnings = append(warnings, allowedToolWarning(name, "the tool is not part of the tools for this request and is sent as a function tool"))
+			entries = append(entries, map[string]any{"type": "function", "name": mapping.toProviderToolName(name)})
+			continue
+		}
+
+		entry, reason, err := allowedToolEntry(matches[0])
+		if err != nil {
+			return nil, warnings, err
+		}
+		if reason != "" {
+			warnings = append(warnings, allowedToolWarning(name, reason+"; the tool is removed from the allowed tools"))
+			continue
+		}
+		entries = append(entries, entry)
+	}
+	if len(entries) == 0 {
+		return nil, warnings, fmt.Errorf("openai: allowedTools contains only tools that cannot be allow-listed")
+	}
+	return entries, warnings, nil
+}
+
+func allowedToolEntry(tool provider.Tool) (map[string]any, string, error) {
+	if tool.Type == provider.ToolTypeFunction {
+		opts, err := toolOptions(tool)
+		if err != nil {
+			return nil, "", err
+		}
+		if opts.Namespace != nil {
+			return nil, "tools inside an OpenAI tool namespace are not visible to tool_choice.allowed_tools", nil
+		}
+		if opts.DeferLoading != nil && *opts.DeferLoading {
+			return nil, "deferred tools are not visible to tool_choice.allowed_tools", nil
+		}
+		return map[string]any{"type": "function", "name": tool.Name}, "", nil
+	}
+
+	providerName := providerToolNames[tool.ID]
+	switch tool.ID {
+	case toolIDCustom:
+		return map[string]any{"type": "custom", "name": tool.Name}, "", nil
+	case toolIDMCP:
+		serverLabel := stringArg(tool.Args, "serverLabel")
+		if serverLabel == "" {
+			serverLabel = tool.Name
+		}
+		return map[string]any{"type": "mcp", "server_label": serverLabel}, "", nil
+	case toolIDToolSearch:
+		return nil, "OpenAI does not support tool_search tools in tool_choice.allowed_tools", nil
+	default:
+		if providerName == "" {
+			return map[string]any{"type": "function", "name": tool.Name}, "", nil
+		}
+		return map[string]any{"type": providerName}, "", nil
+	}
+}
+
+func allowedToolWarning(name, details string) provider.Warning {
+	return provider.Warning{
+		Type:    provider.WarnUnsupported,
+		Feature: fmt.Sprintf("allowedTools entry %q", name),
+		Details: details,
 	}
 }
 

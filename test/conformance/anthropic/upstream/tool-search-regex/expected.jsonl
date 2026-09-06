@@ -10,7 +10,7 @@
 {"type":"tool-input-delta","toolCallId":"srvtoolu_01TFsKhwiJYqVMitK2XGtH87","inputTextDelta":"|climate"}
 {"type":"tool-input-delta","toolCallId":"srvtoolu_01TFsKhwiJYqVMitK2XGtH87","inputTextDelta":"\", \"limit\": 10"}
 {"type":"tool-input-delta","toolCallId":"srvtoolu_01TFsKhwiJYqVMitK2XGtH87","inputTextDelta":"}"}
-{"type":"tool-input-available","toolCallId":"srvtoolu_01TFsKhwiJYqVMitK2XGtH87","toolName":"tool_search","input":{"pattern":"weather|SF|San Francisco|forecast|temperature|climate","limit":10},"providerExecuted":true}
+{"type":"tool-input-available","toolCallId":"srvtoolu_01TFsKhwiJYqVMitK2XGtH87","toolName":"tool_search","input":{"pattern":"weather|SF|San Francisco|forecast|temperature|climate","limit":10},"providerExecuted":true,"providerMetadata":{"anthropic":{"caller":{"type":"direct"}}}}
 {"type":"tool-output-available","toolCallId":"srvtoolu_01TFsKhwiJYqVMitK2XGtH87","output":[{"type":"tool_reference","toolName":"get_temp_data"}],"providerExecuted":true}
 {"type":"text-start","id":"2"}
 {"type":"text-delta","id":"2","delta":"Great"}

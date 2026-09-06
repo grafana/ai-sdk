@@ -2,6 +2,7 @@ package openaicompatible
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -20,12 +21,9 @@ func parseGenerateResponse(body []byte, headers http.Header, providerName, metad
 	}
 
 	choice := parsed.Choices[0]
-	content := make([]provider.GenerateContentPart, 0, 2+len(choice.Message.ToolCalls))
-	if choice.Message.Content != "" {
-		content = append(content, provider.GenerateContentPart{
-			Type: provider.ContentText,
-			Text: choice.Message.Content,
-		})
+	content, err := convertOpenAICompatibleContent(choice.Message.Content)
+	if err != nil {
+		return nil, fmt.Errorf("openai: decoding response content: %w", err)
 	}
 	if choice.Message.ReasoningContent != "" {
 		content = append(content, provider.GenerateContentPart{
@@ -70,6 +68,59 @@ func parseGenerateResponse(body []byte, headers http.Header, providerName, metad
 			Body:             json.RawMessage(append([]byte(nil), body...)),
 		},
 	}, nil
+}
+
+func convertOpenAICompatibleContent(raw json.RawMessage) ([]provider.GenerateContentPart, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, nil
+	}
+
+	var text string
+	if err := json.Unmarshal(raw, &text); err == nil {
+		if text == "" {
+			return nil, nil
+		}
+		return []provider.GenerateContentPart{{Type: provider.ContentText, Text: text}}, nil
+	}
+
+	var parts []map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &parts); err != nil {
+		return nil, errors.New("content must be a string or an array of content parts")
+	}
+	content := make([]provider.GenerateContentPart, 0, len(parts))
+	for _, part := range parts {
+		var partType string
+		if err := json.Unmarshal(part["type"], &partType); err != nil {
+			return nil, errors.New("content part type must be a string")
+		}
+		switch partType {
+		case "text":
+			var value string
+			if json.Unmarshal(part["text"], &value) == nil && value != "" {
+				content = append(content, provider.GenerateContentPart{Type: provider.ContentText, Text: value})
+			}
+		case "thinking":
+			var chunks []json.RawMessage
+			if json.Unmarshal(part["thinking"], &chunks) != nil {
+				continue
+			}
+			var reasoning strings.Builder
+			for _, rawChunk := range chunks {
+				var chunk map[string]json.RawMessage
+				if json.Unmarshal(rawChunk, &chunk) != nil {
+					continue
+				}
+				var chunkType, value string
+				if json.Unmarshal(chunk["type"], &chunkType) == nil && chunkType == "text" && json.Unmarshal(chunk["text"], &value) == nil {
+					reasoning.WriteString(value)
+				}
+			}
+			if reasoning.Len() > 0 {
+				content = append(content, provider.GenerateContentPart{Type: provider.ContentReasoning, Text: reasoning.String()})
+			}
+		}
+	}
+	return content, nil
 }
 
 func resolveMetadataKey(opts provider.ProviderOptions, providerName string) string {

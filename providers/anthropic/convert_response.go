@@ -161,12 +161,17 @@ func convertResponse(msg *anthropic.BetaMessage, mapping toolNameMapping, usesJs
 				}
 			}
 
+			callerMetadata, err := providerMetadataForCaller(stu.Caller.Type, stu.Caller.ToolID)
+			if err != nil {
+				return nil, err
+			}
 			part := provider.GenerateContentPart{
 				Type:             provider.ContentToolCall,
 				ToolCallID:       stu.ID,
 				ToolName:         mapping.toCustomToolName(resolvedName),
 				Input:            inputJSON,
 				ProviderExecuted: true,
+				ProviderMetadata: callerMetadata,
 			}
 			// Mirrors upstream anthropic-language-model.ts:1043-1047: when
 			// a 20260209 web tool is configured without an explicit
@@ -179,6 +184,10 @@ func convertResponse(msg *anthropic.BetaMessage, mapping toolNameMapping, usesJs
 			content = append(content, part)
 		case "web_search_tool_result":
 			ws := block.AsWebSearchToolResult()
+			callerMetadata, err := providerMetadataForCaller(ws.Caller.Type, ws.Caller.ToolID)
+			if err != nil {
+				return nil, err
+			}
 			wsContent := ws.Content
 			if wsContent.Type == "web_search_tool_result_error" {
 				errData, err := marshalToolResultError("web_search_tool_result_error", string(wsContent.ErrorCode))
@@ -186,11 +195,12 @@ func convertResponse(msg *anthropic.BetaMessage, mapping toolNameMapping, usesJs
 					return nil, fmt.Errorf("marshaling web search error: %w", err)
 				}
 				content = append(content, provider.GenerateContentPart{
-					Type:       provider.ContentToolResult,
-					ToolCallID: ws.ToolUseID,
-					ToolName:   mapping.toCustomToolName("web_search"),
-					IsError:    true,
-					Result:     errData,
+					Type:             provider.ContentToolResult,
+					ToolCallID:       ws.ToolUseID,
+					ToolName:         mapping.toCustomToolName("web_search"),
+					IsError:          true,
+					Result:           errData,
+					ProviderMetadata: callerMetadata,
 				})
 			} else {
 				resultJSON, err := json.Marshal(marshalWebSearchResults(wsContent.OfBetaWebSearchResultBlockArray))
@@ -198,10 +208,11 @@ func convertResponse(msg *anthropic.BetaMessage, mapping toolNameMapping, usesJs
 					return nil, fmt.Errorf("marshaling web search results: %w", err)
 				}
 				content = append(content, provider.GenerateContentPart{
-					Type:       provider.ContentToolResult,
-					ToolCallID: ws.ToolUseID,
-					ToolName:   mapping.toCustomToolName("web_search"),
-					Result:     resultJSON,
+					Type:             provider.ContentToolResult,
+					ToolCallID:       ws.ToolUseID,
+					ToolName:         mapping.toCustomToolName("web_search"),
+					Result:           resultJSON,
+					ProviderMetadata: callerMetadata,
 				})
 				for _, result := range wsContent.OfBetaWebSearchResultBlockArray {
 					pageAgeMeta, err := json.Marshal(map[string]any{"pageAge": nilIfEmpty(result.PageAge)})
@@ -222,6 +233,10 @@ func convertResponse(msg *anthropic.BetaMessage, mapping toolNameMapping, usesJs
 			}
 		case "web_fetch_tool_result":
 			wf := block.AsWebFetchToolResult()
+			callerMetadata, err := providerMetadataForCaller(wf.Caller.Type, wf.Caller.ToolID)
+			if err != nil {
+				return nil, err
+			}
 			wfContent := wf.Content
 			if wfContent.Type == "web_fetch_tool_result_error" {
 				errData, err := json.Marshal(map[string]any{
@@ -232,11 +247,12 @@ func convertResponse(msg *anthropic.BetaMessage, mapping toolNameMapping, usesJs
 					return nil, fmt.Errorf("marshaling web fetch error: %w", err)
 				}
 				content = append(content, provider.GenerateContentPart{
-					Type:       "tool-result",
-					ToolCallID: wf.ToolUseID,
-					ToolName:   mapping.toCustomToolName("web_fetch"),
-					IsError:    true,
-					Result:     errData,
+					Type:             provider.ContentToolResult,
+					ToolCallID:       wf.ToolUseID,
+					ToolName:         mapping.toCustomToolName("web_fetch"),
+					IsError:          true,
+					Result:           errData,
+					ProviderMetadata: callerMetadata,
 				})
 			} else {
 				title := wfContent.Content.Title
@@ -253,10 +269,11 @@ func convertResponse(msg *anthropic.BetaMessage, mapping toolNameMapping, usesJs
 					return nil, fmt.Errorf("marshaling web fetch result: %w", err)
 				}
 				content = append(content, provider.GenerateContentPart{
-					Type:       "tool-result",
-					ToolCallID: wf.ToolUseID,
-					ToolName:   mapping.toCustomToolName("web_fetch"),
-					Result:     resultData,
+					Type:             provider.ContentToolResult,
+					ToolCallID:       wf.ToolUseID,
+					ToolName:         mapping.toCustomToolName("web_fetch"),
+					Result:           resultData,
+					ProviderMetadata: callerMetadata,
 				})
 			}
 		case "tool_search_tool_result":
@@ -474,6 +491,13 @@ func convertResponse(msg *anthropic.BetaMessage, mapping toolNameMapping, usesJs
 			},
 		},
 	}, nil
+}
+
+func providerMetadataForCaller(callerType, callerToolID string) (provider.ProviderMetadata, error) {
+	if callerType == "" {
+		return nil, nil
+	}
+	return marshalCallerMetadata(callerType, callerToolID)
 }
 
 func marshalCallerMetadata(callerType, callerToolID string) (provider.ProviderMetadata, error) {

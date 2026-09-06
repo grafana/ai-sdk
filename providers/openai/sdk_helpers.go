@@ -37,6 +37,15 @@ func itemReference(id string) responses.ResponseInputItemUnionParam {
 	return item
 }
 
+func compactionInputItem(id string, encryptedContent *string) responses.ResponseInputItemUnionParam {
+	value := param.Override[responses.ResponseCompactionItemParam](struct {
+		Type             string  `json:"type"`
+		ID               string  `json:"id"`
+		EncryptedContent *string `json:"encrypted_content,omitempty"`
+	}{Type: "compaction", ID: id, EncryptedContent: encryptedContent})
+	return responses.ResponseInputItemUnionParam{OfCompaction: &value}
+}
+
 // reasoningItem builds a reasoning input item carrying encrypted content and a
 // single summary text part.
 func reasoningItem(id, encrypted, summary string) responses.ResponseInputItemUnionParam {

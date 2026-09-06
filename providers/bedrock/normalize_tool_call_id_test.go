@@ -38,6 +38,7 @@ func TestModelFamilyDetection(t *testing.T) {
 		{"us.anthropic.claude-haiku-4-5-20251001-v1:0", true, false, false},
 		{"openai.gpt-oss-20251101-v1:0", false, true, false},
 		{"us.openai.gpt-oss-20251101-v1:0", false, true, false},
+		{"custom-openai.gpt-5.6-luna", false, false, false},
 		{"mistral.mistral-large-2407-v1:0", false, false, true},
 		{"amazon.nova-lite-v1:0", false, false, false},
 	}

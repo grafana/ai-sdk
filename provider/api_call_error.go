@@ -17,6 +17,8 @@ import (
 // This mirrors the upstream TypeScript APICallError from @ai-sdk/provider.
 type APICallError struct {
 	Message           string              `json:"message"`
+	Type              string              `json:"type,omitempty"`
+	Code              any                 `json:"code,omitempty"`
 	StatusCode        int                 `json:"statusCode"`
 	URL               string              `json:"url,omitempty"`
 	RequestBodyValues json.RawMessage     `json:"requestBodyValues,omitempty"`
@@ -48,6 +50,8 @@ func (e *APICallError) Unwrap() error {
 // is a *bool so that nil means "auto-compute from StatusCode".
 type APICallErrorOptions struct {
 	Message           string
+	Type              string
+	Code              any
 	URL               string
 	RequestBodyValues json.RawMessage
 	StatusCode        int
@@ -74,6 +78,8 @@ func NewAPICallError(opts APICallErrorOptions) *APICallError {
 
 	return &APICallError{
 		Message:           opts.Message,
+		Type:              opts.Type,
+		Code:              opts.Code,
 		StatusCode:        opts.StatusCode,
 		URL:               opts.URL,
 		RequestBodyValues: opts.RequestBodyValues,

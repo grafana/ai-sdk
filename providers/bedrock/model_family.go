@@ -13,11 +13,23 @@ func isAnthropicModel(modelID string) bool {
 	return strings.Contains(modelID, "anthropic")
 }
 
+func isAnthropicRequest(modelID string, reasoningConfig *ReasoningConfig) bool {
+	return isAnthropicModel(modelID) ||
+		(strings.Contains(modelID, ":application-inference-profile/") && reasoningConfig != nil && reasoningConfig.BudgetTokens != nil)
+}
+
+var openAIModelPattern = regexp.MustCompile(`^(?:[^.]+\.)?(openai\..+)$`)
+
 // isOpenAIModel returns true when the Bedrock model ID refers to an OpenAI
 // model on Bedrock (e.g. `openai.gpt-oss-...`). Cross-region prefixes
 // (`us.openai.`) also match.
 func isOpenAIModel(modelID string) bool {
-	return strings.Contains(modelID, "openai.")
+	return openAIModelPattern.MatchString(modelID)
+}
+
+func isOpenAIGPTOSSModel(modelID string) bool {
+	matches := openAIModelPattern.FindStringSubmatch(modelID)
+	return len(matches) == 2 && strings.HasPrefix(matches[1], "openai.gpt-oss-")
 }
 
 // isMistralModel returns true when the Bedrock model ID refers to a Mistral

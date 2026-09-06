@@ -158,6 +158,8 @@ func TestStreamPart_MarshalUpstreamShapes(t *testing.T) {
 			Type: PartError,
 			APICallError: NewAPICallError(APICallErrorOptions{
 				Message:    "boom",
+				Type:       "overloaded_error",
+				Code:       "overloaded",
 				StatusCode: 500,
 			}),
 		}
@@ -171,6 +173,8 @@ func TestStreamPart_MarshalUpstreamShapes(t *testing.T) {
 		require.NoError(t, json.Unmarshal(got, &decoded))
 		require.NotNil(t, decoded.APICallError)
 		assert.Equal(t, "boom", decoded.APICallError.Message)
+		assert.Equal(t, "overloaded_error", decoded.APICallError.Type)
+		assert.Equal(t, "overloaded", decoded.APICallError.Code)
 		assert.Equal(t, 500, decoded.APICallError.StatusCode)
 	})
 

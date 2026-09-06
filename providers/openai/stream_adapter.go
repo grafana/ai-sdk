@@ -15,13 +15,15 @@ import (
 
 // ongoingToolCall tracks per-output-index tool call state during streaming.
 type ongoingToolCall struct {
-	toolName          string
-	toolCallID        string
-	containerID       string
-	codeInputDone     bool
-	toolCallEmitted   bool
-	applyPatchHasDiff bool
-	applyPatchDone    bool
+	toolName            string
+	toolCallID          string
+	containerID         string
+	codeInputDone       bool
+	toolCallEmitted     bool
+	applyPatchHasDiff   bool
+	applyPatchDone      bool
+	suppressInputStream bool
+	bufferedInputDeltas []string
 }
 
 type reasoningSummaryState string
@@ -95,6 +97,17 @@ func (a *streamAdapter) handleEvent(event responses.ResponseStreamEventUnion, ch
 		ch <- provider.StreamPart{Type: provider.PartStreamStart, Warnings: a.warnings}
 	}
 
+	if err := validateModeledResponseEvent(event); err != nil {
+		a.encounteredStreamError = true
+		ch <- provider.StreamPart{Type: provider.PartError, APICallError: provider.NewAPICallError(provider.APICallErrorOptions{
+			Message: err.Error(),
+			Type:    "invalid_response_data",
+			Data:    json.RawMessage(event.RawJSON()),
+			Cause:   err,
+		})}
+		return
+	}
+
 	switch e := event.AsAny().(type) {
 	case responses.ResponseCreatedEvent:
 		a.responseID = e.Response.ID
@@ -132,6 +145,10 @@ func (a *streamAdapter) handleEvent(event responses.ResponseStreamEventUnion, ch
 		id := e.ItemID
 		if tc != nil {
 			id = tc.toolCallID
+			if tc.suppressInputStream {
+				tc.bufferedInputDeltas = append(tc.bufferedInputDeltas, e.Delta)
+				break
+			}
 		}
 		ch <- provider.StreamPart{Type: provider.PartToolInputDelta, ID: id, Delta: e.Delta}
 
@@ -254,8 +271,14 @@ func (a *streamAdapter) handleOutputItemAdded(e responses.ResponseOutputItemAdde
 		ch <- provider.StreamPart{Type: provider.PartTextStart, ID: v.ID, ProviderMetadata: textMeta(a.providerName, v.ID, string(v.Phase), nil)}
 
 	case responses.ResponseFunctionToolCall:
-		a.ongoingToolCalls[e.OutputIndex] = &ongoingToolCall{toolName: v.Name, toolCallID: v.CallID}
-		ch <- provider.StreamPart{Type: provider.PartToolInputStart, ID: v.CallID, ToolName: v.Name}
+		suppress := isUndeclaredParallelToolCall(v.Name, a.br.tools)
+		a.ongoingToolCalls[e.OutputIndex] = &ongoingToolCall{
+			toolName: v.Name, toolCallID: v.CallID,
+			suppressInputStream: suppress,
+		}
+		if !suppress {
+			ch <- provider.StreamPart{Type: provider.PartToolInputStart, ID: v.CallID, ToolName: v.Name}
+		}
 
 	case responses.ResponseReasoningItem:
 		a.activeOutputItemIDs[e.OutputIndex] = v.ID
@@ -354,7 +377,38 @@ func (a *streamAdapter) handleOutputItemDone(e responses.ResponseOutputItemDoneE
 
 	case responses.ResponseFunctionToolCall:
 		a.hasFunctionCall = true
+		tc := a.ongoingToolCalls[e.OutputIndex]
 		delete(a.ongoingToolCalls, e.OutputIndex)
+		suppress := tc != nil && tc.suppressInputStream
+		if tc == nil {
+			suppress = isUndeclaredParallelToolCall(v.Name, a.br.tools)
+		}
+		metadataKey := a.br.providerOptionsName
+		if metadataKey == "" {
+			metadataKey = a.providerName
+		}
+		if suppress {
+			if calls, ok := expandParallelToolCall(v.CallID, v.Name, v.Arguments, v.ID, metadataKey, a.br.tools); ok {
+				for _, call := range calls {
+					ch <- provider.StreamPart{Type: provider.PartToolInputStart, ID: call.toolCallID, ToolName: call.toolName}
+					ch <- provider.StreamPart{Type: provider.PartToolInputDelta, ID: call.toolCallID, Delta: call.input}
+					ch <- provider.StreamPart{Type: provider.PartToolInputEnd, ID: call.toolCallID}
+					ch <- provider.StreamPart{
+						Type: provider.PartToolCall, ToolCallID: call.toolCallID,
+						ToolName: call.toolName, Input: call.input, ProviderMetadata: call.providerMetadata,
+					}
+				}
+				break
+			}
+			ch <- provider.StreamPart{Type: provider.PartToolInputStart, ID: v.CallID, ToolName: v.Name}
+			if tc != nil && len(tc.bufferedInputDeltas) > 0 {
+				for _, delta := range tc.bufferedInputDeltas {
+					ch <- provider.StreamPart{Type: provider.PartToolInputDelta, ID: v.CallID, Delta: delta}
+				}
+			} else if v.Arguments != "" {
+				ch <- provider.StreamPart{Type: provider.PartToolInputDelta, ID: v.CallID, Delta: v.Arguments}
+			}
+		}
 		ch <- provider.StreamPart{Type: provider.PartToolInputEnd, ID: v.CallID, ProviderMetadata: itemIDAndNamespaceMeta(a.providerName, "", v.Namespace)}
 		ch <- provider.StreamPart{
 			Type:             provider.PartToolCall,
@@ -739,13 +793,30 @@ func jsonEscape(s string) string {
 	return s
 }
 
+func (a *streamAdapter) flushSuppressedToolInputs(ch chan<- provider.StreamPart) {
+	for _, tc := range a.ongoingToolCalls {
+		if !tc.suppressInputStream {
+			continue
+		}
+		ch <- provider.StreamPart{Type: provider.PartToolInputStart, ID: tc.toolCallID, ToolName: tc.toolName}
+		for _, delta := range tc.bufferedInputDeltas {
+			ch <- provider.StreamPart{Type: provider.PartToolInputDelta, ID: tc.toolCallID, Delta: delta}
+		}
+		tc.suppressInputStream = false
+	}
+}
+
 // emitFinish emits the finish part with usage and finish reason.
 func (a *streamAdapter) emitFinish(resp responses.Response, ch chan<- provider.StreamPart) {
 	if a.finishEmitted {
 		return
 	}
+	a.flushSuppressedToolInputs(ch)
 	a.finishEmitted = true
 	fr := mapFinishReason(resp.IncompleteDetails.Reason, a.hasFunctionCall)
+	if a.encounteredStreamError {
+		fr = provider.FinishReason{Unified: provider.FinishReasonError, Raw: "error"}
+	}
 	usage := convertResponseUsage(resp.Usage)
 	ch <- provider.StreamPart{
 		Type:             provider.PartFinish,
@@ -759,6 +830,7 @@ func (a *streamAdapter) emitFailedFinish(resp responses.Response, ch chan<- prov
 	if a.finishEmitted {
 		return
 	}
+	a.flushSuppressedToolInputs(ch)
 	a.finishEmitted = true
 	fr := provider.FinishReason{Unified: provider.FinishReasonError, Raw: "error"}
 	if resp.IncompleteDetails.Reason != "" {
@@ -773,10 +845,51 @@ func (a *streamAdapter) emitFailedFinish(resp responses.Response, ch chan<- prov
 	}
 }
 
+var modeledResponseOutputItemTypes = map[string]struct{}{
+	"apply_patch_call": {}, "code_interpreter_call": {}, "compaction": {},
+	"computer_call": {}, "custom_tool_call": {}, "file_search_call": {},
+	"function_call": {}, "image_generation_call": {}, "local_shell_call": {},
+	"mcp_approval_request": {}, "mcp_call": {}, "mcp_list_tools": {},
+	"message": {}, "program": {}, "program_output": {}, "reasoning": {},
+	"shell_call": {}, "shell_call_output": {}, "tool_search_call": {},
+	"tool_search_output": {}, "web_search_call": {},
+}
+
+func validateModeledResponseEvent(event responses.ResponseStreamEventUnion) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(event.RawJSON()), &raw); err != nil {
+		return fmt.Errorf("openai: decoding response stream event: %w", err)
+	}
+	requireNumber := func(name string) error {
+		var value float64
+		if data, ok := raw[name]; !ok || json.Unmarshal(data, &value) != nil {
+			return fmt.Errorf("openai: %s event is missing required %s", event.Type, name)
+		}
+		return nil
+	}
+
+	switch event.Type {
+	case "response.function_call_arguments.delta", "response.function_call_arguments.done":
+		return requireNumber("output_index")
+	case "response.output_item.added", "response.output_item.done":
+		var item struct {
+			Type string `json:"type"`
+		}
+		if json.Unmarshal(raw["item"], &item) != nil {
+			return fmt.Errorf("openai: %s event has invalid item", event.Type)
+		}
+		if _, modeled := modeledResponseOutputItemTypes[item.Type]; modeled {
+			return requireNumber("output_index")
+		}
+	}
+	return nil
+}
+
 func (a *streamAdapter) emitPendingErrorFinish(ch chan<- provider.StreamPart) {
 	if !a.encounteredStreamError || a.finishEmitted {
 		return
 	}
+	a.flushSuppressedToolInputs(ch)
 	a.finishEmitted = true
 	fr := provider.FinishReason{Unified: provider.FinishReasonError, Raw: "error"}
 	usage := provider.Usage{}

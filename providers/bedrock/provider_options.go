@@ -74,6 +74,16 @@ func extractCachePoint(opts provider.ProviderOptions) (*cachePoint, error) {
 	return &cachePoint{Type: typ, TTL: bo.CachePoint.TTL}, nil
 }
 
+func textGuardContentOptions(opts provider.ProviderOptions) (TextPartOptions, error) {
+	value, _, err := resolveBedrockOption[TextPartOptions](opts)
+	return value, err
+}
+
+func imageGuardContentOptions(opts provider.ProviderOptions) (ImagePartOptions, error) {
+	value, _, err := resolveBedrockOption[ImagePartOptions](opts)
+	return value, err
+}
+
 // shouldEnableCitations returns true when a file part's ProviderOptions enable
 // Bedrock document citations. Returns an error when the option is present but
 // malformed.
@@ -88,16 +98,28 @@ func shouldEnableCitations(opts provider.ProviderOptions) (bool, error) {
 	return fpo.Citations.Enabled, nil
 }
 
-// readReasoningMetadata pulls the Bedrock reasoning signature/redacted-data out
-// of a content part's ProviderOptions. Used when forwarding assistant reasoning
-// content back to Bedrock without breaking signed thinking blocks. Returns an
-// error when the option is present but malformed.
+type anthropicProviderOptions struct {
+	DisableParallelToolUse bool `json:"disableParallelToolUse,omitempty"`
+}
+
+func readAnthropicProviderOptions(opts provider.ProviderOptions) (anthropicProviderOptions, error) {
+	value, _, err := provider.ResolveOption[anthropicProviderOptions](opts, "anthropic")
+	if err != nil {
+		return anthropicProviderOptions{}, fmt.Errorf("bedrock: invalid provider options for %q: %w", "anthropic", err)
+	}
+	return value, nil
+}
+
+// readReasoningMetadata pulls Bedrock reasoning metadata from a content part's
+// ProviderOptions. Used when forwarding assistant reasoning content back to
+// Bedrock without breaking signed thinking blocks. Returns an error when the
+// option is present but malformed.
 func readReasoningMetadata(opts provider.ProviderOptions) (ReasoningMetadata, bool, error) {
 	rm, ok, err := resolveBedrockOption[ReasoningMetadata](opts)
 	if err != nil {
 		return ReasoningMetadata{}, false, err
 	}
-	if !ok || (rm.Signature == "" && rm.RedactedData == "") {
+	if !ok || (rm.Signature == "" && rm.RedactedContent == "" && rm.RedactedData == "") {
 		return ReasoningMetadata{}, false, nil
 	}
 	return rm, true, nil

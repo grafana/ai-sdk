@@ -144,6 +144,7 @@ func ToResponseMessages(parts []provider.ContentPart) []provider.Message {
 				ToolCallID:      p.ToolCallID,
 				ToolName:        p.ToolName,
 				Signature:       p.Signature,
+				Reason:          p.Reason,
 				IsAutomatic:     p.IsAutomatic,
 				ProviderOptions: p.ProviderOptions,
 			})

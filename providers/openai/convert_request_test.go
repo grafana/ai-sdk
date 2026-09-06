@@ -461,6 +461,11 @@ func TestBuildParams_OutputSchemaTextResultsAreJSONEncoded(t *testing.T) {
 			provider.ToolResultPart("call_error", "search", &provider.ToolResultOutput{Type: provider.ToolOutputErrorText, Text: "Error: boom"}),
 			provider.ToolResultPart("call_denied", "search", &provider.ToolResultOutput{Type: provider.ToolOutputExecutionDenied, Reason: "User denied the tool execution"}),
 			provider.ToolResultPart("call_without_schema", "lookup", &provider.ToolResultOutput{Type: provider.ToolOutputErrorText, Text: "Error: unchanged"}),
+			provider.ToolResultPart("call_schema_breakpoint", "search", &provider.ToolResultOutput{
+				Type:            provider.ToolOutputText,
+				Text:            "Structured output",
+				ProviderOptions: provider.BuildProviderOptions(OpenAIPartOptions{PromptCacheBreakpoint: &PromptCacheBreakpoint{Mode: "explicit"}}),
+			}),
 		)},
 		Tools: []provider.Tool{
 			{
@@ -475,11 +480,15 @@ func TestBuildParams_OutputSchemaTextResultsAreJSONEncoded(t *testing.T) {
 	})
 
 	input := body["input"].([]any)
-	require.Len(t, input, 4)
+	require.Len(t, input, 5)
 	assert.Equal(t, `"The weather is sunny"`, input[0].(map[string]any)["output"])
 	assert.Equal(t, `"Error: boom"`, input[1].(map[string]any)["output"])
 	assert.Equal(t, `"User denied the tool execution"`, input[2].(map[string]any)["output"])
 	assert.Equal(t, "Error: unchanged", input[3].(map[string]any)["output"])
+	output := input[4].(map[string]any)["output"].([]any)
+	require.Len(t, output, 1)
+	assert.Equal(t, `"Structured output"`, output[0].(map[string]any)["text"])
+	assert.Equal(t, map[string]any{"mode": "explicit"}, output[0].(map[string]any)["prompt_cache_breakpoint"])
 }
 
 func TestBuildParams_ProviderToolContinuationTaxonomy(t *testing.T) {
@@ -579,6 +588,28 @@ func TestBuildParams_ProviderToolContinuationTaxonomy(t *testing.T) {
 		assert.Equal(t, "tool_search_output", input[1].(map[string]any)["type"])
 		assert.Equal(t, "tso_456", input[1].(map[string]any)["id"])
 		assert.Len(t, input[1].(map[string]any)["tools"], 1)
+	})
+
+	t.Run("function named tool_search remains a function", func(t *testing.T) {
+		call := provider.ToolCallPart("call_1", "tool_search", json.RawMessage(`{"query":"docs"}`))
+		result := provider.ToolResultPart("call_1", "tool_search", &provider.ToolResultOutput{
+			Type: provider.ToolOutputJSON,
+			JSON: json.RawMessage(`{"matches":[]}`),
+		})
+		body, _ := buildBody(t, "gpt-5", provider.CallOptions{
+			Prompt: []provider.Message{
+				provider.NewAssistantMessage(call),
+				provider.NewToolMessage(result),
+			},
+			Tools:           []provider.Tool{{Type: provider.ToolTypeFunction, Name: "tool_search", InputSchema: json.RawMessage(`{"type":"object"}`)}},
+			ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{Store: &noStore}),
+		})
+
+		input := body["input"].([]any)
+		require.Len(t, input, 2)
+		assert.Equal(t, "function_call", input[0].(map[string]any)["type"])
+		assert.Equal(t, "tool_search", input[0].(map[string]any)["name"])
+		assert.Equal(t, "function_call_output", input[1].(map[string]any)["type"])
 	})
 
 	t.Run("local shell call and output retain call id", func(t *testing.T) {
@@ -995,6 +1026,49 @@ func TestBuildParams_MCPApprovalContinuation(t *testing.T) {
 			assert.Equal(t, true, response["approve"])
 		})
 	}
+}
+
+func TestBuildParams_ScalarToolResultPromptCacheBreakpoints(t *testing.T) {
+	breakpoint := &PromptCacheBreakpoint{Mode: "explicit"}
+	functionResult := provider.ToolResultPart("call_function", "lookup", &provider.ToolResultOutput{
+		Type:            provider.ToolOutputJSON,
+		JSON:            json.RawMessage(`{"stable":true}`),
+		ProviderOptions: provider.BuildProviderOptions(OpenAIPartOptions{PromptCacheBreakpoint: breakpoint}),
+	})
+	customResult := provider.ToolResultPart("call_custom", "write_sql", &provider.ToolResultOutput{
+		Type: provider.ToolOutputText,
+		Text: "stable tool output",
+	})
+	customResult.ProviderOptions = provider.BuildProviderOptions(OpenAIPartOptions{PromptCacheBreakpoint: breakpoint})
+
+	body, warnings := buildBody(t, "gpt-5", provider.CallOptions{
+		Prompt: []provider.Message{provider.NewToolMessage(functionResult, customResult)},
+		Tools: []provider.Tool{
+			{Type: provider.ToolTypeFunction, Name: "lookup"},
+			{Type: provider.ToolTypeProvider, ID: toolIDCustom, Name: "write_sql"},
+		},
+	})
+
+	assert.Empty(t, warnings)
+	functionOutput := findInput(body, "function_call_output")["output"].([]any)
+	require.Len(t, functionOutput, 1)
+	assert.Equal(t, `{"stable":true}`, functionOutput[0].(map[string]any)["text"])
+	assert.Equal(t, map[string]any{"mode": "explicit"}, functionOutput[0].(map[string]any)["prompt_cache_breakpoint"])
+	customOutput := findInput(body, "custom_tool_call_output")["output"].([]any)
+	require.Len(t, customOutput, 1)
+	assert.Equal(t, "stable tool output", customOutput[0].(map[string]any)["text"])
+	assert.Equal(t, map[string]any{"mode": "explicit"}, customOutput[0].(map[string]any)["prompt_cache_breakpoint"])
+
+	outputBreakpoint := &PromptCacheBreakpoint{Mode: "output"}
+	partBreakpoint := &PromptCacheBreakpoint{Mode: "part"}
+	part := provider.ToolResultPart("call_precedence", "lookup", &provider.ToolResultOutput{
+		Type:            provider.ToolOutputErrorText,
+		Text:            "boom",
+		ProviderOptions: provider.BuildProviderOptions(OpenAIPartOptions{PromptCacheBreakpoint: outputBreakpoint}),
+	})
+	part.ProviderOptions = provider.BuildProviderOptions(OpenAIPartOptions{PromptCacheBreakpoint: partBreakpoint})
+	ctx := inputConversionContext{providerOptionsName: "openai"}
+	assert.Same(t, outputBreakpoint, scalarToolResultPromptCacheBreakpoint(part, ctx))
 }
 
 func TestBuildParams_CustomToolContentOptions(t *testing.T) {
@@ -1429,6 +1503,80 @@ func TestBuildParams_ProviderOptions(t *testing.T) {
 			ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{PreviousResponseID: "resp_prev"}),
 		})
 		assert.Equal(t, "resp_prev", body["previous_response_id"])
+	})
+
+	t.Run("compaction trigger follows replayed compaction history", func(t *testing.T) {
+		encryptedContent := "encrypted_compaction_state"
+		compaction := provider.CustomPart("openai.compaction")
+		compaction.ProviderOptions = provider.BuildProviderOptions(OpenAIPartOptions{
+			Type:             "compaction",
+			ItemID:           "cmp_123",
+			EncryptedContent: &encryptedContent,
+		})
+		store := false
+		body, _ := buildBody(t, "gpt-5.2", provider.CallOptions{
+			Prompt: []provider.Message{
+				provider.NewAssistantMessage(compaction),
+				provider.UserText("Continue from this context."),
+			},
+			ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{Store: &store, CompactionTrigger: true}),
+		})
+		assert.Equal(t, []any{
+			map[string]any{"type": "compaction", "id": "cmp_123", "encrypted_content": "encrypted_compaction_state"},
+			map[string]any{"role": "user", "content": []any{map[string]any{"type": "input_text", "text": "Continue from this context."}}},
+			map[string]any{"type": "compaction_trigger"},
+		}, body["input"])
+	})
+
+	t.Run("stateless compaction history omits absent encrypted content", func(t *testing.T) {
+		compaction := provider.CustomPart("openai.compaction")
+		compaction.ProviderOptions = provider.BuildProviderOptions(OpenAIPartOptions{Type: "compaction", ItemID: "cmp_123"})
+		store := false
+		body, _ := buildBody(t, "gpt-5.2", provider.CallOptions{
+			Prompt:          []provider.Message{provider.NewAssistantMessage(compaction)},
+			ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{Store: &store}),
+		})
+		assert.Equal(t, []any{map[string]any{"type": "compaction", "id": "cmp_123"}}, body["input"])
+	})
+
+	t.Run("stored compaction history uses an item reference", func(t *testing.T) {
+		compaction := provider.CustomPart("openai.compaction")
+		compaction.ProviderOptions = provider.BuildProviderOptions(OpenAIPartOptions{Type: "compaction", ItemID: "cmp_123"})
+		body, _ := buildBody(t, "gpt-5.2", provider.CallOptions{Prompt: []provider.Message{provider.NewAssistantMessage(compaction)}})
+		assert.Equal(t, []any{map[string]any{"type": "item_reference", "id": "cmp_123"}}, body["input"])
+	})
+
+	t.Run("conversation omits stored compaction history", func(t *testing.T) {
+		compaction := provider.CustomPart("openai.compaction")
+		compaction.ProviderOptions = provider.BuildProviderOptions(OpenAIPartOptions{Type: "compaction", ItemID: "cmp_123"})
+		body, _ := buildBody(t, "gpt-5.2", provider.CallOptions{
+			Prompt:          []provider.Message{provider.NewAssistantMessage(compaction)},
+			ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{Conversation: "conv_123"}),
+		})
+		assert.Empty(t, body["input"])
+	})
+
+	t.Run("Azure namespace preserves compaction history and trigger", func(t *testing.T) {
+		encryptedContent := "azure_compaction_state"
+		compaction := provider.CustomPart("openai.compaction")
+		compaction.ProviderOptions = withAzureOptions(t, OpenAIPartOptions{Type: "compaction", ItemID: "cmp_azure", EncryptedContent: &encryptedContent})
+		store := false
+		body, _ := buildBody(t, "gpt-5.2", provider.CallOptions{
+			Prompt:          []provider.Message{provider.NewAssistantMessage(compaction)},
+			ProviderOptions: withAzureOptions(t, OpenAIResponsesOptions{Store: &store, CompactionTrigger: true}),
+		})
+		assert.Equal(t, []any{
+			map[string]any{"type": "compaction", "id": "cmp_azure", "encrypted_content": "azure_compaction_state"},
+			map[string]any{"type": "compaction_trigger"},
+		}, body["input"])
+	})
+
+	t.Run("disabled compaction trigger is omitted", func(t *testing.T) {
+		body, _ := buildBody(t, "gpt-5.2", provider.CallOptions{
+			Prompt:          []provider.Message{provider.UserText("keep this context")},
+			ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{CompactionTrigger: false}),
+		})
+		assert.Len(t, body["input"], 1)
 	})
 
 	t.Run("previousResponseId skips stored reasoning references", func(t *testing.T) {

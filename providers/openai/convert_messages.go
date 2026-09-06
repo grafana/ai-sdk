@@ -153,6 +153,18 @@ func convertAssistantMessage(msg provider.Message, ctx inputConversionContext) (
 			items = append(items, assistantOutputMessage(part.Text, po))
 
 		case provider.ContentPartTypeToolCall:
+			if metadata, ok := parallelMetadata(ctx.partOptions(part)); ok {
+				if group := ctx.parallelGroups[metadata.ToolCallID]; group != nil && sameParallelToolCall(group.metadata, metadata) {
+					if !group.callEmitted {
+						group.callEmitted = true
+						if !ctx.hasConversation {
+							item := responses.ResponseInputItemParamOfFunctionCall(metadata.Input, metadata.ToolCallID, metadata.ToolName)
+							items = append(items, item)
+						}
+					}
+					continue
+				}
+			}
 			item, err := convertAssistantToolCall(part, ctx)
 			if err != nil {
 				return nil, nil, err
@@ -190,6 +202,22 @@ func convertAssistantMessage(msg provider.Message, ctx inputConversionContext) (
 				continue
 			}
 			items = append(items, reasoningItem(po.ItemID, *po.ReasoningEncryptedContent, part.Text))
+
+		case provider.ContentPartTypeCustom:
+			if part.Kind != "openai.compaction" {
+				continue
+			}
+			po := ctx.partOptions(part)
+			if ctx.hasConversation && po.ItemID != "" {
+				continue
+			}
+			if ctx.store && po.ItemID != "" {
+				items = append(items, itemReference(po.ItemID))
+				continue
+			}
+			if po.ItemID != "" {
+				items = append(items, compactionInputItem(po.ItemID, po.EncryptedContent))
+			}
 		}
 	}
 
@@ -205,6 +233,37 @@ func convertToolMessage(msg provider.Message, ctx inputConversionContext) ([]res
 	for _, part := range msg.Content {
 		switch part.Type {
 		case provider.ContentPartTypeToolResult:
+			if metadata, ok := parallelMetadata(ctx.partOptions(part)); ok {
+				if group := ctx.parallelGroups[metadata.ToolCallID]; group != nil && sameParallelToolCall(group.metadata, metadata) {
+					if !group.resultEmitted {
+						group.resultEmitted = true
+						outputs := make([]string, metadata.Count)
+						breakpoints := make([]*PromptCacheBreakpoint, metadata.Count)
+						hasBreakpoint := false
+						for index := 0; index < metadata.Count; index++ {
+							result := group.results[index]
+							outputs[index] = toolResultOutputString(result.Output, ctx.hasOutputSchema(result.ToolName))
+							breakpoints[index] = scalarToolResultPromptCacheBreakpoint(result, ctx)
+							hasBreakpoint = hasBreakpoint || breakpoints[index] != nil
+						}
+						if !hasBreakpoint {
+							item := responses.ResponseInputItemParamOfFunctionCallOutput(metadata.ToolCallID, strings.Join(outputs, "\n"))
+							items = append(items, item)
+							continue
+						}
+						content := make(responses.ResponseFunctionCallOutputItemListParam, metadata.Count)
+						for index, output := range outputs {
+							if index > 0 {
+								output = "\n" + output
+							}
+							content[index] = functionCallOutputText(output, breakpoints[index])
+						}
+						item := responses.ResponseInputItemParamOfFunctionCallOutput(metadata.ToolCallID, content)
+						items = append(items, item)
+					}
+					continue
+				}
+			}
 			item, itemWarnings, err := convertProviderToolResult(part, ctx)
 			if err != nil {
 				return nil, nil, err
@@ -325,6 +384,22 @@ func inputTextContent(text string, breakpoint *PromptCacheBreakpoint) responses.
 		inputText.SetExtraFields(map[string]any{"prompt_cache_breakpoint": breakpoint})
 	}
 	return responses.ResponseInputContentUnionParam{OfInputText: &inputText}
+}
+
+func functionCallOutputText(text string, breakpoint *PromptCacheBreakpoint) responses.ResponseFunctionCallOutputItemUnionParam {
+	content := responses.ResponseFunctionCallOutputItemParamOfInputText(text)
+	if breakpoint != nil {
+		content.OfInputText.SetExtraFields(map[string]any{"prompt_cache_breakpoint": breakpoint})
+	}
+	return content
+}
+
+func customToolOutputText(text string, breakpoint *PromptCacheBreakpoint) responses.ResponseCustomToolCallOutputOutputOutputContentListItemUnionParam {
+	content := responses.ResponseInputTextParam{Text: text}
+	if breakpoint != nil {
+		content.SetExtraFields(map[string]any{"prompt_cache_breakpoint": breakpoint})
+	}
+	return responses.ResponseCustomToolCallOutputOutputOutputContentListItemUnionParam{OfInputText: &content}
 }
 
 func promptCacheBreakpoint(opts provider.ProviderOptions, providerOptionsName string) *PromptCacheBreakpoint {

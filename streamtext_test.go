@@ -72,6 +72,15 @@ func finishStreamParts() <-chan provider.StreamPart {
 	return ch
 }
 
+func testStreamParts(parts ...provider.StreamPart) <-chan provider.StreamPart {
+	ch := make(chan provider.StreamPart, len(parts))
+	for _, part := range parts {
+		ch <- part
+	}
+	close(ch)
+	return ch
+}
+
 func TestToolApprovalConfig(t *testing.T) {
 	input := json.RawMessage(`{"amount":100}`)
 
@@ -170,8 +179,20 @@ func TestStreamTextSingleStep(t *testing.T) {
 		},
 	}
 
+	var callbackTypes, callbackOrder []string
 	result := StreamText(context.Background(), model,
 		WithModelMessages(provider.UserText("hi")),
+		OnStart(func(OnStartState) {
+			callbackOrder = append(callbackOrder, "start")
+		}),
+		OnChunk(func(state OnChunkState) {
+			partType := typeName(state.Chunk)
+			callbackTypes = append(callbackTypes, partType)
+			callbackOrder = append(callbackOrder, "chunk:"+partType)
+		}),
+		OnFinish(func(OnFinishState) {
+			callbackOrder = append(callbackOrder, "finish")
+		}),
 	)
 
 	var types []string
@@ -181,7 +202,112 @@ func TestStreamTextSingleStep(t *testing.T) {
 
 	expected := []string{"start", "start-step", "text-start", "text-delta", "text-end", "finish-step", "finish"}
 	assert.Equal(t, expected, types)
+	assert.Equal(t, expected, callbackTypes)
+	assert.Equal(t, []string{
+		"start", "chunk:start", "chunk:start-step", "chunk:text-start", "chunk:text-delta", "chunk:text-end", "chunk:finish-step", "chunk:finish", "finish",
+	}, callbackOrder)
 	assert.Equal(t, "hello world", result.Text())
+}
+
+func TestStreamText_MultiStepPartIDs(t *testing.T) {
+	type partKind string
+	const (
+		textPart      partKind = "text"
+		reasoningPart partKind = "reasoning"
+	)
+	parts := func(kind partKind, id, text string) []provider.StreamPart {
+		if kind == reasoningPart {
+			return []provider.StreamPart{
+				{Type: provider.PartReasoningStart, ID: id},
+				{Type: provider.PartReasoningDelta, ID: id, Delta: text},
+				{Type: provider.PartReasoningEnd, ID: id},
+			}
+		}
+		return []provider.StreamPart{
+			{Type: provider.PartTextStart, ID: id},
+			{Type: provider.PartTextDelta, ID: id, Delta: text},
+			{Type: provider.PartTextEnd, ID: id},
+		}
+	}
+	streamPartID := func(part TextStreamPart) (partKind, string, bool) {
+		switch part := part.(type) {
+		case StreamTextStart:
+			return textPart, part.ID, true
+		case StreamTextDelta:
+			return textPart, part.ID, true
+		case StreamTextEnd:
+			return textPart, part.ID, true
+		case StreamReasoningStart:
+			return reasoningPart, part.ID, true
+		case StreamReasoningDelta:
+			return reasoningPart, part.ID, true
+		case StreamReasoningEnd:
+			return reasoningPart, part.ID, true
+		default:
+			return "", "", false
+		}
+	}
+	finish := func(reason provider.UnifiedFinishReason) provider.StreamPart {
+		return provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: reason}, Usage: &provider.Usage{}}
+	}
+	toolCall := provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "call-1", ToolName: "lookup", Input: `{}`}
+
+	for _, tc := range []struct {
+		name              string
+		kind              partKind
+		firstID, secondID string
+		expected          []string
+	}{
+		{name: "duplicate text IDs", kind: textPart, firstID: "0", secondID: "0", expected: []string{"0", "0", "0", "id-2", "id-2", "id-2"}},
+		{name: "duplicate reasoning IDs", kind: reasoningPart, firstID: "0", secondID: "0", expected: []string{"0", "0", "0", "id-2", "id-2", "id-2"}},
+		{name: "unique text IDs", kind: textPart, firstID: "0", secondID: "1", expected: []string{"0", "0", "0", "1", "1", "1"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			callCount := 0
+			model := &mockModel{streamFunc: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+				callCount++
+				if callCount == 1 {
+					return &provider.StreamResult{Stream: testStreamParts(append(parts(tc.kind, tc.firstID, "first"), toolCall, finish(provider.FinishReasonToolCalls))...)}, nil
+				}
+				return &provider.StreamResult{Stream: testStreamParts(append(parts(tc.kind, tc.secondID, "second"), finish(provider.FinishReasonStop))...)}, nil
+			}}
+			generated := 0
+			result := StreamText(t.Context(), model,
+				WithModelMessages(provider.UserText("test")),
+				WithTools(ToolSet{"lookup": {
+					InputSchema: testMustSchema(t, `{"type":"object"}`),
+					Execute: func(context.Context, json.RawMessage, ToolExecutionOptions) (json.RawMessage, error) {
+						return json.RawMessage(`{"ok":true}`), nil
+					},
+				}}),
+				WithStopWhen(StepCountIs(2)),
+				WithGenerateID(func() string {
+					id := fmt.Sprintf("id-%d", generated)
+					generated++
+					return id
+				}),
+			)
+
+			var ids []string
+			for part := range result.FullStream() {
+				kind, id, ok := streamPartID(part)
+				if ok && kind == tc.kind {
+					ids = append(ids, id)
+				}
+			}
+
+			require.NoError(t, result.Err())
+			assert.Equal(t, tc.expected, ids)
+			require.Len(t, result.Steps(), 2)
+			if tc.kind == reasoningPart {
+				assert.Equal(t, "first", result.Steps()[0].ReasoningText)
+				assert.Equal(t, "second", result.Steps()[1].ReasoningText)
+			} else {
+				assert.Equal(t, "first", result.Steps()[0].Text)
+				assert.Equal(t, "second", result.Steps()[1].Text)
+			}
+		})
+	}
 }
 
 func TestStreamTextPrepareStep_Messages(t *testing.T) {
@@ -1289,10 +1415,16 @@ func TestStreamTextToolApproval_ApprovedReplayRevalidatesInput(t *testing.T) {
 	approved := true
 	var executed atomic.Int32
 	model := &mockModel{
-		streamFunc: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
-			ch := make(chan provider.StreamPart, 1)
-			close(ch)
-			return &provider.StreamResult{Stream: ch}, nil
+		streamFunc: func(_ context.Context, opts provider.CallOptions) (*provider.StreamResult, error) {
+			last := opts.Prompt[len(opts.Prompt)-1]
+			require.Equal(t, provider.RoleTool, last.Role)
+			require.Len(t, last.Content, 1)
+			result := last.Content[0]
+			assert.Equal(t, provider.ContentPartTypeToolResult, result.Type)
+			require.NotNil(t, result.Output)
+			assert.Equal(t, provider.ToolOutputErrorText, result.Output.Type)
+			assert.Contains(t, result.Output.Text, "invalid input for tool dangerous")
+			return &provider.StreamResult{Stream: finishStreamParts()}, nil
 		},
 	}
 
@@ -1313,23 +1445,35 @@ func TestStreamTextToolApproval_ApprovedReplayRevalidatesInput(t *testing.T) {
 			},
 		}}),
 	)
-	for range result.FullStream() {
+	var toolErr StreamToolError
+	for part := range result.FullStream() {
+		if p, ok := part.(StreamToolError); ok {
+			toolErr = p
+		}
 	}
 
-	require.Error(t, result.Err())
-	assert.Contains(t, result.Err().Error(), "invalid input for tool dangerous")
+	require.NoError(t, result.Err())
 	assert.Equal(t, int32(0), executed.Load())
+	assert.Equal(t, "c1", toolErr.ToolCallID)
+	assert.Equal(t, "dangerous", toolErr.ToolName)
+	assert.JSONEq(t, string(input), string(toolErr.Input))
+	require.Error(t, toolErr.Error)
+	assert.Contains(t, toolErr.Error.Error(), "invalid input for tool dangerous")
 }
 
-func TestStreamTextToolApproval_ApprovedReplayRunsCustomValidationForNonObjectInput(t *testing.T) {
+func TestStreamTextToolApproval_ApprovedReplayRevalidatesNonObjectInput(t *testing.T) {
 	input := json.RawMessage(`"bad"`)
 	approved := true
 	var executed atomic.Int32
 	model := &mockModel{
-		streamFunc: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
-			ch := make(chan provider.StreamPart, 1)
-			close(ch)
-			return &provider.StreamResult{Stream: ch}, nil
+		streamFunc: func(_ context.Context, opts provider.CallOptions) (*provider.StreamResult, error) {
+			last := opts.Prompt[len(opts.Prompt)-1]
+			require.Equal(t, provider.RoleTool, last.Role)
+			require.Len(t, last.Content, 1)
+			require.NotNil(t, last.Content[0].Output)
+			assert.Equal(t, provider.ToolOutputErrorText, last.Content[0].Output.Type)
+			assert.Contains(t, last.Content[0].Output.Text, "invalid input for tool dangerous")
+			return &provider.StreamResult{Stream: finishStreamParts()}, nil
 		},
 	}
 
@@ -1343,12 +1487,6 @@ func TestStreamTextToolApproval_ApprovedReplayRunsCustomValidationForNonObjectIn
 		),
 		WithTools(ToolSet{"dangerous": Tool{
 			InputSchema: testMustSchema(t, `{"type":"object"}`),
-			ValidateInput: func(input json.RawMessage) error {
-				if !isJSONObject(input) {
-					return fmt.Errorf("input must be an object")
-				}
-				return nil
-			},
 			Execute: func(context.Context, json.RawMessage, ToolExecutionOptions) (json.RawMessage, error) {
 				executed.Add(1)
 				return json.RawMessage(`{"ok":true}`), nil
@@ -1358,9 +1496,52 @@ func TestStreamTextToolApproval_ApprovedReplayRunsCustomValidationForNonObjectIn
 	for range result.FullStream() {
 	}
 
-	require.Error(t, result.Err())
-	assert.Contains(t, result.Err().Error(), "input must be an object")
+	require.NoError(t, result.Err())
 	assert.Equal(t, int32(0), executed.Load())
+}
+
+func TestStreamTextToolApproval_ProviderExecutedReplaySkipsLocalValidation(t *testing.T) {
+	input := json.RawMessage(`{"amount":"bad"}`)
+	approved := true
+	model := &mockModel{
+		streamFunc: func(_ context.Context, opts provider.CallOptions) (*provider.StreamResult, error) {
+			require.Len(t, opts.Prompt, 2)
+			assistant := opts.Prompt[0]
+			require.Equal(t, provider.RoleAssistant, assistant.Role)
+			require.Len(t, assistant.Content, 1)
+			assert.Equal(t, provider.ContentPartTypeToolCall, assistant.Content[0].Type)
+			toolMessage := opts.Prompt[1]
+			require.Equal(t, provider.RoleTool, toolMessage.Role)
+			require.Len(t, toolMessage.Content, 1)
+			assert.Equal(t, provider.ContentPartTypeToolApprovalResponse, toolMessage.Content[0].Type)
+			assert.True(t, toolMessage.Content[0].ProviderExecuted)
+			return &provider.StreamResult{Stream: finishStreamParts()}, nil
+		},
+	}
+
+	result := StreamText(context.Background(), model,
+		WithModelMessages(
+			provider.NewAssistantMessage(
+				provider.ContentPart{Type: provider.ContentPartTypeToolCall, ToolCallID: "c1", ToolName: "dangerous", Input: input, ProviderExecuted: true},
+				provider.ContentPart{Type: provider.ContentPartTypeToolApprovalRequest, ApprovalID: "apr_1", ToolCallID: "c1", ToolName: "dangerous", ProviderExecuted: true},
+			),
+			provider.NewToolMessage(provider.ContentPart{Type: provider.ContentPartTypeToolApprovalResponse, ApprovalID: "apr_1", Approved: &approved, ProviderExecuted: true}),
+		),
+		WithToolApprovalSecret("secret"),
+		WithToolApproval(ToolApprovalMap{"dangerous": ApprovalPolicy(ToolApprovalDenied, "policy changed")}),
+		WithTools(ToolSet{"dangerous": Tool{
+			InputSchema: testMustSchema(t, `{"type":"object","properties":{"amount":{"type":"number"}},"required":["amount"]}`),
+		}}),
+	)
+	var denied bool
+	for part := range result.FullStream() {
+		if _, ok := part.(StreamToolOutputDenied); ok {
+			denied = true
+		}
+	}
+
+	require.NoError(t, result.Err())
+	assert.False(t, denied)
 }
 
 func TestStreamTextToolApproval_ApprovedReplayRechecksPolicy(t *testing.T) {
@@ -2158,20 +2339,26 @@ func TestStreamTextToolApproval_GenericPolicy(t *testing.T) {
 			assert.Equal(t, "dangerous", opts.ToolCall.ToolName)
 			assert.Contains(t, opts.Tools, "dangerous")
 			assert.NotEmpty(t, opts.Messages)
-			return ToolApprovalDecision{Status: ToolApprovalUserApproval}, nil
+			return ToolApprovalDecision{Status: ToolApprovalUserApproval, Reason: "policy requires review"}, nil
 		})),
 		WithTools(ToolSet{"dangerous": Tool{Execute: func(context.Context, json.RawMessage, ToolExecutionOptions) (json.RawMessage, error) {
 			return json.RawMessage(`{}`), nil
 		}}}),
 	)
-	for range result.FullStream() {
+	var streamedRequest StreamToolApprovalRequest
+	for part := range result.FullStream() {
+		if request, ok := part.(StreamToolApprovalRequest); ok {
+			streamedRequest = request
+		}
 	}
 
 	assert.True(t, called)
+	assert.Equal(t, "policy requires review", streamedRequest.Reason)
 	steps := result.Steps()
 	require.Len(t, steps, 1)
 	require.Len(t, steps[0].ToolApprovalRequests, 1)
 	assert.Equal(t, "apr_1", steps[0].ToolApprovalRequests[0].ApprovalID)
+	assert.Equal(t, "policy requires review", steps[0].ToolApprovalRequests[0].Reason)
 }
 
 func TestStreamTextToolApproval_WithToolApprovalLastCallWins(t *testing.T) {
@@ -2215,15 +2402,20 @@ func TestStreamTextToolApproval_AutomaticApprovedPolicy(t *testing.T) {
 			return json.RawMessage(`{"ok":true}`), nil
 		}}}),
 	)
-	var sawResponse bool
+	var sawRequest, sawResponse bool
 	for part := range result.FullStream() {
-		if p, ok := part.(StreamToolApprovalResponse); ok {
+		switch p := part.(type) {
+		case StreamToolApprovalRequest:
+			sawRequest = true
+			assert.Equal(t, "policy approved", p.Reason)
+		case StreamToolApprovalResponse:
 			sawResponse = true
 			assert.True(t, p.Approved)
 			assert.Equal(t, "policy approved", p.Reason)
 		}
 	}
 
+	assert.True(t, sawRequest)
 	assert.True(t, sawResponse)
 	assert.Equal(t, int32(1), executeCount.Load())
 	steps := result.Steps()
@@ -2231,6 +2423,7 @@ func TestStreamTextToolApproval_AutomaticApprovedPolicy(t *testing.T) {
 	require.Len(t, steps[0].ToolApprovalRequests, 1)
 	require.Len(t, steps[0].ToolApprovalResponses, 1)
 	assert.True(t, steps[0].ToolApprovalRequests[0].IsAutomatic)
+	assert.Equal(t, "policy approved", steps[0].ToolApprovalRequests[0].Reason)
 	assert.Len(t, steps[0].ToolResults, 1)
 }
 

@@ -252,6 +252,7 @@ Fields:
 - `assertOutputValue` (optional): requires `expected-object.json` to match the parsed `OutputValue` instead of reconstructed text
 - `approval` (optional): seeds a prior tool call, approval request, and approval response for replaying approved/denied second-call flows
 - `expectStreamError` (optional): requires the Go replay to end with an error while still comparing emitted UI chunks
+- `skipReason` (optional): explicitly skips Go replay for an exact imported fixture that the current provider transport cannot consume; generated upstream expectations and focused replacement coverage remain required
 - `maxRetries` (optional): core replay retry count; live recording defaults to zero retries unless this is explicitly set
 
 ## Request Input Assertions
@@ -275,6 +276,7 @@ Comparison rules:
 - Anthropic beta header values are normalized as unordered comma-separated sets.
 - Secret header values are redacted as `<redacted>` before snapshots are written or compared.
 - Anthropic `tool_result` JSON content is compared semantically across SDK serialization shapes.
+- Invalid tool-input validator diagnostics are normalized across TypeScript Zod and Go JSON Schema while preserving the tool name and error-result shape.
 - Anthropic `web_search_result.page_age: null` is treated the same as an omitted `page_age`.
 - Bedrock authenticates via SigV4, so only `content-type` is asserted; `authorization`, `x-amz-*`, `host`, `user-agent`, `content-length`, and `accept` are excluded as volatile or non-behavioral. The request path preserves percent-encoding (model-ID colons become `%3A`) so the captured path matches the upstream `encodeURIComponent` form on the wire.
 

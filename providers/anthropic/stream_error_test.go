@@ -15,18 +15,22 @@ import (
 )
 
 type streamErrorCase struct {
-	name          string
-	errorType     string
-	initialStatus int
-	initialRetry  bool
-	streamRetry   bool
+	name      string
+	errorType string
+	status    int
+	retryable bool
 }
 
 var streamErrorCases = []streamErrorCase{
-	{name: "overloaded", errorType: "overloaded_error", initialStatus: 529, initialRetry: true, streamRetry: true},
-	{name: "api", errorType: "api_error", initialStatus: 500, initialRetry: true, streamRetry: true},
-	{name: "rate limit", errorType: "rate_limit_error", initialStatus: 500},
-	{name: "invalid request", errorType: "invalid_request_error", initialStatus: 500},
+	{name: "overloaded", errorType: "overloaded_error", status: 529, retryable: true},
+	{name: "api", errorType: "api_error", status: 500, retryable: true},
+	{name: "rate limit", errorType: "rate_limit_error", status: 429, retryable: true},
+	{name: "request too large", errorType: "request_too_large", status: 413},
+	{name: "authentication", errorType: "authentication_error", status: 401},
+	{name: "permission", errorType: "permission_error", status: 403},
+	{name: "not found", errorType: "not_found_error", status: 404},
+	{name: "billing", errorType: "billing_error", status: 400},
+	{name: "invalid request", errorType: "invalid_request_error", status: 400},
 }
 
 func TestDoStream_InitialSSEError(t *testing.T) {
@@ -42,8 +46,8 @@ func TestDoStream_InitialSSEError(t *testing.T) {
 			require.Error(t, err)
 			assert.Nil(t, result)
 			apiErr := requireAPICallError(t, err, tc.errorType)
-			assert.Equal(t, tc.initialStatus, apiErr.StatusCode)
-			assert.Equal(t, tc.initialRetry, apiErr.IsRetryable)
+			assert.Equal(t, tc.status, apiErr.StatusCode)
+			assert.Equal(t, tc.retryable, apiErr.IsRetryable)
 			assert.Equal(t, "failed", apiErr.Message)
 			assert.JSONEq(t, fmt.Sprintf(`{"type":%q,"message":"failed"}`, tc.errorType), apiErr.ResponseBody)
 			assert.Contains(t, apiErr.URL, "/v1/messages")
@@ -81,8 +85,8 @@ func TestDoStream_PostOutputSSEError(t *testing.T) {
 			assert.Equal(t, "Hello", text)
 			require.NotNil(t, apiErr)
 			apiErr = requireAPICallError(t, apiErr, tc.errorType)
-			assert.Equal(t, http.StatusOK, apiErr.StatusCode)
-			assert.Equal(t, tc.streamRetry, apiErr.IsRetryable)
+			assert.Equal(t, tc.status, apiErr.StatusCode)
+			assert.Equal(t, tc.retryable, apiErr.IsRetryable)
 		})
 	}
 }
@@ -116,6 +120,7 @@ func requireAPICallError(t *testing.T, err error, errorType string) *provider.AP
 	var apiErr *provider.APICallError
 	require.ErrorAs(t, err, &apiErr)
 	require.NotEmpty(t, apiErr.Data)
+	assert.Equal(t, errorType, apiErr.Type)
 
 	var envelope struct {
 		Error struct {

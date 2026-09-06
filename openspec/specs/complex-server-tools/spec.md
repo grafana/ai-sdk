@@ -310,3 +310,28 @@ When a `message_start` event includes a non-empty `content` array containing `to
 
 - **WHEN** a `message_start` event arrives with a `tool_use` block that has `caller: {type: "code_execution_20250825", tool_id: "toolu_456"}`
 - **THEN** the `PartToolCall` includes `ProviderMetadata` with `{"anthropic": {"caller": {"type": "code_execution_20250825", "toolId": "toolu_456"}}}`
+
+### Requirement: Dynamic-filtering caller round-trip
+
+The Anthropic provider SHALL preserve caller metadata from `server_tool_use`,
+`web_search_tool_result`, and `web_fetch_tool_result` blocks in streaming and
+non-streaming responses. Later request conversion SHALL normalize documented
+caller variants to Anthropic's snake-case wire shape, attach callers to both
+successful and error web results, and preserve provider-authored content order
+and message boundaries.
+
+#### Scenario: Nested dynamic-filtering replay
+
+- **WHEN** a direct code-execution call contains nested web calls and results whose caller references the code-execution tool ID
+- **THEN** response conversion stores each caller in Anthropic provider metadata
+- **AND** later request conversion restores the caller on its originating block without reordering any block
+
+#### Scenario: Web result error replay
+
+- **WHEN** a provider-executed web search or web fetch result is an error and carries caller metadata
+- **THEN** request conversion emits the corresponding Anthropic error result block with the normalized caller
+
+#### Scenario: Deferred server result boundaries
+
+- **WHEN** a server call and its deferred result are separated by a user tool result
+- **THEN** request conversion preserves the original `assistant -> user -> assistant` sequence

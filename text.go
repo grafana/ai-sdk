@@ -198,6 +198,7 @@ type OnFinishState struct {
 	StepResult
 	Steps      []StepResult
 	TotalUsage provider.Usage
+	Output     any
 }
 
 // OnAbortState is passed to the OnAbort callback when the stream is cancelled.

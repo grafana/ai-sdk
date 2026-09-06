@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"reflect"
 	"regexp"
 
 	aisdk "github.com/grafana/ai-sdk"
@@ -12,6 +13,8 @@ import (
 )
 
 const approvalToolName = "confirm_action"
+
+var approvalDescriptor = json.RawMessage(`{"action":"deploy","permissions":["deployment:write"],"risk":"high"}`)
 
 func init() {
 	registerScenario("tool-approval", handleToolApproval)
@@ -81,7 +84,11 @@ func handleToolApproval(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	responded, approved, reason := findApprovalResponse(body.Messages)
+	responded, approved, reason, descriptorValid := findApprovalResponse(body.Messages)
+	if responded && !descriptorValid {
+		http.Error(w, "missing approval descriptor", http.StatusBadRequest)
+		return
+	}
 	tool, err := aisdk.TypedTool(aisdk.TypedToolDef[approvalToolInput, approvalToolOutput]{
 		Name:        approvalToolName,
 		Description: "Execute an action after user approval.",
@@ -101,20 +108,46 @@ func handleToolApproval(w http.ResponseWriter, r *http.Request) {
 			aisdk.WithStopWhen(aisdk.StepCountIs(5)),
 		),
 	)
-	if err := aisdk.WriteAgentUIStream(w, r.Context(), agent, body.Messages); err != nil && r.Context().Err() == nil {
+	stream, err := aisdk.CreateAgentUIStream(r.Context(), agent, body.Messages)
+	if err != nil {
+		http.Error(w, "creating stream", http.StatusInternalServerError)
+		return
+	}
+	if !responded {
+		stream = withApprovalDescriptor(stream)
+	}
+	if err := aisdk.PipeAgentUIStreamToResponse(w, stream); err != nil && r.Context().Err() == nil {
 		http.Error(w, "streaming response", http.StatusInternalServerError)
 	}
 }
 
-func findApprovalResponse(messages []aisdk.UIMessage) (responded bool, approved bool, reason string) {
+func withApprovalDescriptor(stream <-chan aisdk.UIMessageChunk) <-chan aisdk.UIMessageChunk {
+	out := make(chan aisdk.UIMessageChunk)
+	go func() {
+		defer close(out)
+		for chunk := range stream {
+			if chunk.Type == aisdk.ChunkToolApprovalRequest {
+				chunk.ApprovalDescriptor = approvalDescriptor
+			}
+			out <- chunk
+		}
+	}()
+	return out
+}
+
+func findApprovalResponse(messages []aisdk.UIMessage) (responded bool, approved bool, reason string, descriptorValid bool) {
 	for _, message := range messages {
 		for _, part := range message.Parts {
 			toolPart, ok := part.(aisdk.ToolInvocationPart)
 			if !ok || toolPart.ToolName != approvalToolName || toolPart.Approval == nil || toolPart.Approval.ID == "" || toolPart.Approval.Approved == nil {
 				continue
 			}
-			return true, *toolPart.Approval.Approved, toolPart.Approval.Reason
+			var descriptor, expected any
+			if json.Unmarshal(toolPart.Approval.Descriptor, &descriptor) != nil || json.Unmarshal(approvalDescriptor, &expected) != nil {
+				return true, *toolPart.Approval.Approved, toolPart.Approval.Reason, false
+			}
+			return true, *toolPart.Approval.Approved, toolPart.Approval.Reason, reflect.DeepEqual(descriptor, expected)
 		}
 	}
-	return false, false, ""
+	return false, false, "", false
 }

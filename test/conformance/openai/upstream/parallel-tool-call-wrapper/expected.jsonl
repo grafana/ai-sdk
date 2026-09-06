@@ -1,0 +1,12 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"error","errorText":"An error occurred."}
+{"type":"tool-input-start","toolCallId":"call_parallel_0","toolName":"weather"}
+{"type":"tool-input-delta","toolCallId":"call_parallel_0","inputTextDelta":"{\"location\":\"San Francisco\"}"}
+{"type":"tool-input-available","toolCallId":"call_parallel_0","toolName":"weather","input":{"location":"San Francisco"},"providerMetadata":{"openai":{"parallelToolCall":{"itemId":"fc_parallel","toolCallId":"call_parallel","toolName":"parallel","input":"{\"tool_uses\":[{\"recipient_name\":\"functions.weather\",\"parameters\":{\"location\":\"San Francisco\"}},{\"recipient_name\":\"functions.cityAttractions\",\"parameters\":{\"city\":\"Rome\"}}]}","index":0,"count":2}}}}
+{"type":"tool-input-start","toolCallId":"call_parallel_1","toolName":"cityAttractions"}
+{"type":"tool-input-delta","toolCallId":"call_parallel_1","inputTextDelta":"{\"city\":\"Rome\"}"}
+{"type":"tool-input-available","toolCallId":"call_parallel_1","toolName":"cityAttractions","input":{"city":"Rome"},"providerMetadata":{"openai":{"parallelToolCall":{"itemId":"fc_parallel","toolCallId":"call_parallel","toolName":"parallel","input":"{\"tool_uses\":[{\"recipient_name\":\"functions.weather\",\"parameters\":{\"location\":\"San Francisco\"}},{\"recipient_name\":\"functions.cityAttractions\",\"parameters\":{\"city\":\"Rome\"}}]}","index":1,"count":2}}}}
+{"type":"error","errorText":"An error occurred."}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"error"}

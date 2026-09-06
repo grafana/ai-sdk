@@ -149,6 +149,54 @@ func TestCreateUIMessageStream(t *testing.T) {
 
 		assert.Len(t, finishState.Messages, 2)
 		assert.NotEmpty(t, finishState.ResponseMessage.ID)
+		assert.Equal(t, UIMessageStreamOutcomeUnknown, finishState.Outcome.Status)
+	})
+
+	t.Run("declared outcome is reported", func(t *testing.T) {
+		var finishState UIMessageStreamOnFinishState
+		stream := CreateUIMessageStream(CreateUIMessageStreamParams{
+			Execute: func(w *UIMessageStreamWriter) error {
+				w.SetOutcome(UIMessageStreamOutcome{Status: UIMessageStreamOutcomeCompleted})
+				return nil
+			},
+			OriginalMessages: []UIMessage{},
+			OnFinish:         func(state UIMessageStreamOnFinishState) { finishState = state },
+		})
+		for range stream {
+		}
+		assert.Equal(t, UIMessageStreamOutcomeCompleted, finishState.Outcome.Status)
+	})
+
+	t.Run("execution failure overrides declared outcome", func(t *testing.T) {
+		var finishState UIMessageStreamOnFinishState
+		expected := errors.New("failed")
+		stream := CreateUIMessageStream(CreateUIMessageStreamParams{
+			Execute: func(w *UIMessageStreamWriter) error {
+				w.SetOutcome(UIMessageStreamOutcome{Status: UIMessageStreamOutcomeCompleted})
+				return expected
+			},
+			OriginalMessages: []UIMessage{},
+			OnFinish:         func(state UIMessageStreamOnFinishState) { finishState = state },
+		})
+		for range stream {
+		}
+		assert.Equal(t, UIMessageStreamOutcomeFailed, finishState.Outcome.Status)
+		assert.ErrorIs(t, finishState.Outcome.Error, expected)
+	})
+
+	t.Run("abort chunk implies aborted outcome", func(t *testing.T) {
+		var finishState UIMessageStreamOnFinishState
+		stream := CreateUIMessageStream(CreateUIMessageStreamParams{
+			Execute: func(w *UIMessageStreamWriter) error {
+				return w.Write(UIMessageChunk{Type: ChunkAbort})
+			},
+			OriginalMessages: []UIMessage{},
+			OnFinish:         func(state UIMessageStreamOnFinishState) { finishState = state },
+		})
+		for range stream {
+		}
+		assert.Equal(t, UIMessageStreamOutcomeAborted, finishState.Outcome.Status)
+		assert.True(t, finishState.IsAborted)
 	})
 }
 

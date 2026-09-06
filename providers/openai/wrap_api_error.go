@@ -3,6 +3,9 @@ package openai
 import (
 	"encoding/json"
 	"errors"
+	"io"
+	"net"
+	"net/url"
 
 	"github.com/grafana/ai-sdk/provider"
 	openai "github.com/openai/openai-go/v3"
@@ -19,7 +22,23 @@ func wrapAPIError(err error, requestBody responses.ResponseNewParams) error {
 	}
 	var apiErr *openai.Error
 	if !errors.As(err, &apiErr) {
-		return err
+		if !isRetryableNetworkError(err) {
+			return err
+		}
+		requestJSON, _ := json.Marshal(requestBody)
+		retryable := true
+		var requestURL string
+		var urlError *url.Error
+		if errors.As(err, &urlError) {
+			requestURL = urlError.URL
+		}
+		return provider.NewAPICallError(provider.APICallErrorOptions{
+			Message:           err.Error(),
+			URL:               requestURL,
+			RequestBodyValues: requestJSON,
+			IsRetryable:       &retryable,
+			Cause:             err,
+		})
 	}
 	return buildAPICallError(apiErr, requestBody, err)
 }
@@ -56,14 +75,29 @@ func buildAPICallError(apiErr *openai.Error, requestBody responses.ResponseNewPa
 		headers = apiErr.Response.Header
 	}
 
+	data := structuredErrorData(apiErr)
+	var details struct {
+		Type string `json:"type"`
+		Code any    `json:"code"`
+	}
+	_ = json.Unmarshal(data, &details)
+	var retryable *bool
+	if details.Type == "insufficient_quota" || details.Code == "insufficient_quota" {
+		value := false
+		retryable = &value
+	}
+
 	return provider.NewAPICallError(provider.APICallErrorOptions{
 		Message:           apiErr.Message,
+		Type:              details.Type,
+		Code:              details.Code,
 		URL:               url,
 		RequestBodyValues: reqBytes,
 		StatusCode:        apiErr.StatusCode,
 		ResponseHeaders:   headers,
 		ResponseBody:      apiErr.RawJSON(),
-		Data:              structuredErrorData(apiErr),
+		IsRetryable:       retryable,
+		Data:              data,
 		Cause:             cause,
 	})
 }
@@ -73,6 +107,14 @@ func buildAPICallError(apiErr *openai.Error, requestBody responses.ResponseNewPa
 // openai-go error's RawJSON is the inner error object
 // ({"message":...,"type":...,"code":...}); if it is instead wrapped in an
 // {"error":{...}} envelope, the inner object is extracted.
+func isRetryableNetworkError(err error) bool {
+	if errors.Is(err, io.ErrUnexpectedEOF) {
+		return true
+	}
+	var networkError net.Error
+	return errors.As(err, &networkError)
+}
+
 func structuredErrorData(apiErr *openai.Error) json.RawMessage {
 	raw := apiErr.RawJSON()
 	if raw == "" {

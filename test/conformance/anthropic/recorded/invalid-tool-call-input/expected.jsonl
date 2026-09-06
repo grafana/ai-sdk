@@ -1,5 +1,5 @@
 {"type":"start"}
-{"type":"tool-output-available","toolCallId":"call-1","output":{"attractions":["Golden Gate Bridge"]}}
+{"type":"tool-output-error","toolCallId":"call-1","errorText":"An error occurred."}
 {"type":"start-step"}
 {"type":"text-start","id":"0"}
 {"type":"text-delta","id":"0","delta":"Based"}

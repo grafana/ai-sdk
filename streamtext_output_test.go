@@ -104,17 +104,43 @@ func TestStreamText_ObjectOutput(t *testing.T) {
 		out, err := output.Object[recipe](s)
 		require.NoError(t, err)
 
+		callbackOutput := any("not called")
 		result := aisdk.StreamText(context.Background(), model,
 			aisdk.WithModelMessages(provider.UserText("recipe")),
 			aisdk.WithOutput(out),
+			aisdk.OnFinish(func(state aisdk.OnFinishState) { callbackOutput = state.Output }),
 		)
 
 		for range result.FullStream() {
 		}
 
+		assert.Nil(t, callbackOutput)
 		require.Error(t, result.OutputError())
 		assert.True(t, errors.Is(result.OutputError(), aisdk.ErrNoObjectGenerated))
 		assert.Equal(t, `{"wrong":"format"}`, result.Text(), "raw text should still be available")
+	})
+
+	t.Run("parsed output is included in finish callback", func(t *testing.T) {
+		model := &testModel{streamFunc: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+			return &provider.StreamResult{Stream: textStream(`{"name":"Ada"}`)}, nil
+		}}
+		type person struct {
+			Name string `json:"name"`
+		}
+		out, err := output.Object[person](mustSchema(t, `{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}`))
+		require.NoError(t, err)
+
+		var callbackOutput any
+		result := aisdk.StreamText(context.Background(), model,
+			aisdk.WithModelMessages(provider.UserText("person")),
+			aisdk.WithOutput(out),
+			aisdk.OnFinish(func(state aisdk.OnFinishState) { callbackOutput = state.Output }),
+		)
+		for range result.FullStream() {
+		}
+
+		assert.Equal(t, person{Name: "Ada"}, callbackOutput)
+		assert.Equal(t, result.OutputValue(), callbackOutput)
 	})
 }
 
@@ -645,37 +671,77 @@ func TestStreamText_OutputWithLengthFinishReason(t *testing.T) {
 	}
 }
 
-func TestGenerateText_OutputWithLengthFinishReason(t *testing.T) {
-	ch := make(chan provider.StreamPart, 10)
-	go func() {
-		defer close(ch)
-		ch <- provider.StreamPart{Type: provider.PartTextStart, ID: "t1"}
-		ch <- provider.StreamPart{Type: provider.PartTextDelta, ID: "t1", Delta: `{"name":"test"}`}
-		ch <- provider.StreamPart{Type: provider.PartTextEnd, ID: "t1"}
-		ch <- provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonLength}, Usage: &provider.Usage{InputTokens: provider.InputTokenUsage{Total: intP(10)}, OutputTokens: provider.OutputTokenUsage{Total: intP(5)}}}
-	}()
-
-	model := &testModel{
-		streamFunc: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
-			return &provider.StreamResult{Stream: ch}, nil
-		},
-	}
-
-	type s struct {
+func TestGenerateText_OutputFinishReason(t *testing.T) {
+	type resultValue struct {
 		Name string `json:"name"`
 	}
+	for _, tc := range []struct {
+		name         string
+		text         string
+		finishReason *provider.FinishReason
+		toolCall     bool
+		check        func(*testing.T, *aisdk.GenerateTextResult)
+	}{
+		{
+			name: "missing parses valid output",
+			text: `{"name":"test"}`,
+			check: func(t *testing.T, result *aisdk.GenerateTextResult) {
+				assert.Equal(t, resultValue{Name: "test"}, result.Output)
+				require.NoError(t, result.OutputError)
+			},
+		},
+		{
+			name:         "length preserves truncated output diagnostics",
+			text:         `{"name":"test`,
+			finishReason: &provider.FinishReason{Unified: provider.FinishReasonLength},
+			check: func(t *testing.T, result *aisdk.GenerateTextResult) {
+				assert.Nil(t, result.Output)
+				assert.ErrorIs(t, result.OutputError, aisdk.ErrNoObjectGenerated)
+			},
+		},
+		{
+			name:         "tool calls suppresses output",
+			text:         `{"name":"test"}`,
+			finishReason: &provider.FinishReason{Unified: provider.FinishReasonToolCalls},
+			toolCall:     true,
+			check: func(t *testing.T, result *aisdk.GenerateTextResult) {
+				assert.Nil(t, result.Output)
+				assert.NoError(t, result.OutputError)
+			},
+		},
+		{
+			name:         "length parses valid output",
+			text:         `{"name":"test"}`,
+			finishReason: &provider.FinishReason{Unified: provider.FinishReasonLength},
+			check: func(t *testing.T, result *aisdk.GenerateTextResult) {
+				assert.Equal(t, provider.FinishReasonLength, result.FinishReason.Unified)
+				assert.Equal(t, resultValue{Name: "test"}, result.Output)
+				assert.NoError(t, result.OutputError)
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stream := make(chan provider.StreamPart, 5)
+			stream <- provider.StreamPart{Type: provider.PartTextStart, ID: "t1"}
+			stream <- provider.StreamPart{Type: provider.PartTextDelta, ID: "t1", Delta: tc.text}
+			stream <- provider.StreamPart{Type: provider.PartTextEnd, ID: "t1"}
+			if tc.toolCall {
+				stream <- provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "call-1", ToolName: "search", Input: `{}`}
+			}
+			stream <- provider.StreamPart{Type: provider.PartFinish, FinishReason: tc.finishReason, Usage: &provider.Usage{}}
+			close(stream)
 
-	sch := mustSchema(t, `{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}`)
-	out, err := output.Object[s](sch)
-	require.NoError(t, err)
-
-	result, err := aisdk.GenerateText(context.Background(), model,
-		aisdk.WithModelMessages(provider.UserText("test")),
-		aisdk.WithOutput(out),
-	)
-	require.NoError(t, err)
-
-	assert.Equal(t, provider.FinishReasonLength, result.FinishReason.Unified)
-	assert.Nil(t, result.Output)
-	assert.Nil(t, result.OutputError)
+			model := &testModel{streamFunc: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+				return &provider.StreamResult{Stream: stream}, nil
+			}}
+			out, err := output.Object[resultValue](mustSchema(t, `{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}`))
+			require.NoError(t, err)
+			result, err := aisdk.GenerateText(context.Background(), model,
+				aisdk.WithModelMessages(provider.UserText("test")),
+				aisdk.WithOutput(out),
+			)
+			require.NoError(t, err)
+			tc.check(t, result)
+		})
+	}
 }

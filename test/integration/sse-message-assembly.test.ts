@@ -8,7 +8,10 @@ import {
 } from "ai";
 import { fetchScenario } from "./helpers.js";
 
-async function readScenarioMessages(name: string): Promise<UIMessage[]> {
+async function readScenario(name: string): Promise<{
+  chunks: UIMessageChunk[];
+  messages: UIMessage[];
+}> {
   const res = await fetchScenario(name);
   expect(res.status).toBe(200);
 
@@ -16,7 +19,7 @@ async function readScenarioMessages(name: string): Promise<UIMessage[]> {
     stream: res.body!,
     schema: uiMessageChunkSchema,
   });
-
+  const chunks: UIMessageChunk[] = [];
   const chunkStream = new ReadableStream<UIMessageChunk>({
     async start(controller) {
       const reader = parseStream.getReader();
@@ -27,6 +30,7 @@ async function readScenarioMessages(name: string): Promise<UIMessage[]> {
           controller.error(value.error);
           return;
         }
+        chunks.push(value.value);
         controller.enqueue(value.value);
       }
       controller.close();
@@ -40,7 +44,11 @@ async function readScenarioMessages(name: string): Promise<UIMessage[]> {
   })) {
     messages.push(message);
   }
-  return messages;
+  return { chunks, messages };
+}
+
+async function readScenarioMessages(name: string): Promise<UIMessage[]> {
+  return (await readScenario(name)).messages;
 }
 
 describe("SSE message assembly", () => {
@@ -78,6 +86,89 @@ describe("SSE message assembly", () => {
         type: "reasoning",
         id: "reasoning-2",
         text: "Second thought.",
+        state: "done",
+        providerMetadata: undefined,
+      },
+    ]);
+  });
+
+  it("assembles unique text and reasoning parts when providers reuse IDs", async () => {
+    const { chunks, messages } = await readScenario("duplicate-part-ids");
+    const starts = chunks.filter(
+      chunk => chunk.type === "text-start" || chunk.type === "reasoning-start",
+    );
+    expect(starts.map(chunk => ({ type: chunk.type, id: chunk.id }))).toEqual([
+      { type: "text-start", id: "0" },
+      { type: "reasoning-start", id: "0" },
+      { type: "text-start", id: "generated-2" },
+      { type: "reasoning-start", id: "generated-3" },
+    ]);
+
+    const lastMessage = messages[messages.length - 1];
+    expect(lastMessage.parts.filter(part => part.type === "text")).toEqual([
+      {
+        type: "text",
+        text: "First answer.",
+        state: "done",
+        providerMetadata: undefined,
+      },
+      {
+        type: "text",
+        text: "Second answer.",
+        state: "done",
+        providerMetadata: undefined,
+      },
+    ]);
+    expect(lastMessage.parts.filter(part => part.type === "reasoning")).toEqual([
+      {
+        type: "reasoning",
+        id: "0",
+        text: "First thought.",
+        state: "done",
+        providerMetadata: undefined,
+      },
+      {
+        type: "reasoning",
+        id: "generated-3",
+        text: "Second thought.",
+        state: "done",
+        providerMetadata: undefined,
+      },
+    ]);
+  });
+
+  it("assembles alternating reasoning and text blocks from one provider chunk", async () => {
+    const { chunks, messages } = await readScenario("alternating-content");
+    const starts = chunks.filter(
+      chunk => chunk.type === "text-start" || chunk.type === "reasoning-start",
+    );
+    expect(starts.map(chunk => ({ type: chunk.type, id: chunk.id }))).toEqual([
+      { type: "reasoning-start", id: "reasoning-0" },
+      { type: "text-start", id: "txt-0" },
+      { type: "reasoning-start", id: "generated-1" },
+    ]);
+
+    const lastMessage = messages[messages.length - 1];
+    expect(lastMessage.parts.filter(part => part.type === "reasoning")).toEqual([
+      {
+        type: "reasoning",
+        id: "reasoning-0",
+        text: "think",
+        state: "done",
+        providerMetadata: undefined,
+      },
+      {
+        type: "reasoning",
+        id: "generated-1",
+        text: "again",
+        state: "done",
+        providerMetadata: undefined,
+      },
+    ]);
+    expect(lastMessage.parts.filter(part => part.type === "text")).toEqual([
+      {
+        type: "text",
+        text: "answer",
         state: "done",
         providerMetadata: undefined,
       },
