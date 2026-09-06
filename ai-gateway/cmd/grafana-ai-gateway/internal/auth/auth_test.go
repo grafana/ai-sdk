@@ -117,13 +117,12 @@ func TestMiddleware_AuthenticationOrderingAndPrivateContext(t *testing.T) {
 			retained, ok = CallerFromContext(request.Context())
 			require.True(t, ok)
 		})
-		handler, err := Middleware(authenticator, errorWriter, func(_ context.Context, observation Observation) {
+		handler := Middleware(authenticator, errorWriter, func(_ context.Context, observation Observation) {
 			observations++
 			assert.Equal(t, OutcomeAuthenticated, observation.Outcome)
 			require.NotNil(t, observation.Caller)
 			assert.Equal(t, "service", observation.Caller.Service)
 		}, next)
-		require.NoError(t, err)
 		request := httptest.NewRequest(http.MethodGet, "/protected", nil)
 		request.Header.Set("X-Access-Token", "Bearer access")
 		request.Header.Set("X-Grafana-Id", "Bearer id")
@@ -156,12 +155,11 @@ func TestMiddleware_AuthenticationOrderingAndPrivateContext(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			nextCalls := 0
 			observations := 0
-			handler, err := Middleware(tc.authenticator, errorWriter, func(_ context.Context, observation Observation) {
+			handler := Middleware(tc.authenticator, errorWriter, func(_ context.Context, observation Observation) {
 				observations++
 				assert.Equal(t, OutcomeFailed, observation.Outcome)
 				assert.Nil(t, observation.Caller)
 			}, http.HandlerFunc(func(http.ResponseWriter, *http.Request) { nextCalls++ }))
-			require.NoError(t, err)
 			request := httptest.NewRequest(http.MethodGet, "/protected", nil)
 			request.Header = tc.headers
 			response := httptest.NewRecorder()

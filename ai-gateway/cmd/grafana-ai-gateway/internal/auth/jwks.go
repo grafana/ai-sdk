@@ -16,14 +16,11 @@ import (
 
 // JWKSConfig configures a bounded JWKS snapshot retriever.
 type JWKSConfig struct {
-	ServiceContext  context.Context
-	Client          *http.Client
 	URL             string
 	RequestTimeout  time.Duration
 	MaxKeys         int
 	RefreshInterval time.Duration
 	MaxAge          time.Duration
-	Now             func() time.Time
 }
 
 type jwksSnapshot struct {
@@ -56,13 +53,7 @@ type JWKS struct {
 var _ authn.KeyRetriever = (*JWKS)(nil)
 
 // NewJWKS constructs a lazy bounded JWKS retriever.
-func NewJWKS(config JWKSConfig) (*JWKS, error) {
-	if config.ServiceContext == nil {
-		return nil, fmt.Errorf("gateway auth: service context is nil")
-	}
-	if config.Client == nil {
-		return nil, fmt.Errorf("gateway auth: jwks client is nil")
-	}
+func NewJWKS(serviceContext context.Context, client *http.Client, now func() time.Time, config JWKSConfig) (*JWKS, error) {
 	if config.URL == "" {
 		return nil, fmt.Errorf("gateway auth: jwks URL is empty")
 	}
@@ -72,18 +63,15 @@ func NewJWKS(config JWKSConfig) (*JWKS, error) {
 	if config.MaxKeys <= 0 {
 		return nil, fmt.Errorf("gateway auth: jwks maximum keys must be positive")
 	}
-	if config.Now == nil {
-		config.Now = time.Now
-	}
 	return &JWKS{
-		serviceContext:  config.ServiceContext,
-		client:          config.Client,
+		serviceContext:  serviceContext,
+		client:          client,
 		url:             config.URL,
 		requestTimeout:  config.RequestTimeout,
 		maxKeys:         config.MaxKeys,
 		refreshInterval: config.RefreshInterval,
 		maxAge:          config.MaxAge,
-		now:             config.Now,
+		now:             now,
 	}, nil
 }
 

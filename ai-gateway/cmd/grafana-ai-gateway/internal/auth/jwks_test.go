@@ -220,9 +220,7 @@ func TestJWKS_RequestTimeoutBoundsHeaderAndBodyStalls(t *testing.T) {
 				<-request.Context().Done()
 			}))
 			defer server.Close()
-			retriever, err := NewJWKS(JWKSConfig{
-				ServiceContext:  context.Background(),
-				Client:          server.Client(),
+			retriever, err := NewJWKS(context.Background(), server.Client(), time.Now, JWKSConfig{
 				URL:             server.URL,
 				RequestTimeout:  50 * time.Millisecond,
 				MaxKeys:         1,
@@ -399,15 +397,12 @@ func TestJWKS_CanceledWaiterDoesNotCancelSharedRefresh(t *testing.T) {
 
 func newTestJWKS(t *testing.T, client *http.Client, url string, now func() time.Time, maxKeys int) *JWKS {
 	t.Helper()
-	retriever, err := NewJWKS(JWKSConfig{
-		ServiceContext:  context.Background(),
-		Client:          client,
+	retriever, err := NewJWKS(context.Background(), client, now, JWKSConfig{
 		URL:             url,
 		RequestTimeout:  time.Second,
 		MaxKeys:         maxKeys,
 		RefreshInterval: time.Minute,
 		MaxAge:          2 * time.Minute,
-		Now:             now,
 	})
 	require.NoError(t, err)
 	return retriever

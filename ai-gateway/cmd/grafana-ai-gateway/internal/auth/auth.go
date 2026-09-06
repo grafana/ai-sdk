@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"reflect"
 	"strings"
 
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
@@ -13,14 +12,6 @@ import (
 )
 
 const unsafeAuthenticationWarning = "UNSAFE DEVELOPMENT AUTHENTICATION IS ENABLED"
-
-// BuildConfig configures authlib verifier construction.
-type BuildConfig struct {
-	Unsafe    bool
-	Audiences []string
-	Keys      authn.KeyRetriever
-	Warn      func(string)
-}
 
 // Outcome is a closed authentication telemetry outcome.
 type Outcome uint8
@@ -67,84 +58,77 @@ func (provider tokenProvider) IDToken(context.Context) (string, bool) {
 }
 
 // NewAuthenticator constructs access and ID token verification over one key retriever.
-func NewAuthenticator(config BuildConfig) (authn.Authenticator, error) {
-	if len(config.Audiences) == 0 {
-		return nil, fmt.Errorf("gateway auth: at least one audience is required")
-	}
-	seen := make(map[string]struct{}, len(config.Audiences))
-	for _, audience := range config.Audiences {
-		if strings.TrimSpace(audience) == "" {
-			return nil, fmt.Errorf("gateway auth: audiences must not be empty")
-		}
-		if _, exists := seen[audience]; exists {
-			return nil, fmt.Errorf("gateway auth: audiences must be unique")
-		}
-		seen[audience] = struct{}{}
-	}
-	verifierConfig := authn.VerifierConfig{AllowedAudiences: config.Audiences}
-	if config.Unsafe {
-		if config.Warn != nil {
-			config.Warn(unsafeAuthenticationWarning)
-		}
-		return authn.NewDefaultAuthenticator(
-			authn.NewUnsafeAccessTokenVerifier(verifierConfig),
-			authn.NewUnsafeIDTokenVerifier(authn.VerifierConfig{}),
-		), nil
-	}
-	if isNil(config.Keys) {
-		return nil, fmt.Errorf("gateway auth: key retriever is required")
+func NewAuthenticator(keys authn.KeyRetriever, audiences []string) (authn.Authenticator, error) {
+	verifierConfig, err := newVerifierConfig(audiences)
+	if err != nil {
+		return nil, err
 	}
 	return authn.NewDefaultAuthenticator(
-		authn.NewAccessTokenVerifier(verifierConfig, config.Keys),
-		authn.NewIDTokenVerifier(authn.VerifierConfig{}, config.Keys),
+		authn.NewAccessTokenVerifier(verifierConfig, keys),
+		authn.NewIDTokenVerifier(authn.VerifierConfig{}, keys),
 	), nil
 }
 
+// NewUnsafeAuthenticator constructs development-only access and ID token verification.
+func NewUnsafeAuthenticator(audiences []string, warn func(string)) (authn.Authenticator, error) {
+	verifierConfig, err := newVerifierConfig(audiences)
+	if err != nil {
+		return nil, err
+	}
+	warn(unsafeAuthenticationWarning)
+	return authn.NewDefaultAuthenticator(
+		authn.NewUnsafeAccessTokenVerifier(verifierConfig),
+		authn.NewUnsafeIDTokenVerifier(authn.VerifierConfig{}),
+	), nil
+}
+
+func newVerifierConfig(audiences []string) (authn.VerifierConfig, error) {
+	if len(audiences) == 0 {
+		return authn.VerifierConfig{}, fmt.Errorf("gateway auth: at least one audience is required")
+	}
+	seen := make(map[string]struct{}, len(audiences))
+	for _, audience := range audiences {
+		if strings.TrimSpace(audience) == "" {
+			return authn.VerifierConfig{}, fmt.Errorf("gateway auth: audiences must not be empty")
+		}
+		if _, exists := seen[audience]; exists {
+			return authn.VerifierConfig{}, fmt.Errorf("gateway auth: audiences must be unique")
+		}
+		seen[audience] = struct{}{}
+	}
+	return authn.VerifierConfig{AllowedAudiences: audiences}, nil
+}
+
 // Middleware authenticates a protected route before invoking next.
-func Middleware(authenticator authn.Authenticator, errors *providerv4.HostErrorWriter, observe func(context.Context, Observation), next http.Handler) (http.Handler, error) {
-	if isNil(authenticator) {
-		return nil, fmt.Errorf("gateway auth: authenticator is nil")
-	}
-	if errors == nil {
-		return nil, fmt.Errorf("gateway auth: error writer is nil")
-	}
-	if next == nil {
-		return nil, fmt.Errorf("gateway auth: next handler is nil")
-	}
+func Middleware(authenticator authn.Authenticator, errors *providerv4.HostErrorWriter, observe func(context.Context, Observation), next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		provider, err := normalizeHeaders(request.Header)
 		if err != nil {
-			observeAuthentication(request.Context(), observe, Observation{Outcome: OutcomeFailed})
+			observe(request.Context(), Observation{Outcome: OutcomeFailed})
 			errors.Write(w, providerv4.HostErrorAuthentication)
 			return
 		}
 		info, err := authenticator.Authenticate(request.Context(), provider)
 		if err != nil {
-			observeAuthentication(request.Context(), observe, Observation{Outcome: OutcomeFailed})
+			observe(request.Context(), Observation{Outcome: OutcomeFailed})
 			errors.Write(w, providerv4.HostErrorAuthentication)
 			return
 		}
 		caller, err := callerFromAuthInfo(info)
 		if err != nil {
-			observeAuthentication(request.Context(), observe, Observation{Outcome: OutcomeFailed})
+			observe(request.Context(), Observation{Outcome: OutcomeFailed})
 			errors.Write(w, providerv4.HostErrorAuthentication)
 			return
 		}
-		observeAuthentication(request.Context(), observe, Observation{Outcome: OutcomeAuthenticated, Caller: &caller})
+		observe(request.Context(), Observation{Outcome: OutcomeAuthenticated, Caller: &caller})
 		next.ServeHTTP(w, request.WithContext(context.WithValue(request.Context(), callerContextKey{}, caller)))
-	}), nil
+	})
 }
 
 // CallerFromContext returns the normalized caller without retaining authlib state.
 func CallerFromContext(ctx context.Context) (Caller, bool) {
 	caller, ok := ctx.Value(callerContextKey{}).(Caller)
 	return caller, ok
-}
-
-func observeAuthentication(ctx context.Context, observe func(context.Context, Observation), observation Observation) {
-	if observe != nil {
-		observe(ctx, observation)
-	}
 }
 
 func normalizeHeaders(headers http.Header) (tokenProvider, error) {
@@ -185,9 +169,6 @@ func stripBearer(value string) string {
 }
 
 func callerFromAuthInfo(info types.AuthInfo) (Caller, error) {
-	if isNil(info) {
-		return Caller{}, fmt.Errorf("gateway auth: auth info is nil")
-	}
 	identities := info.GetExtra()[authn.ServiceIdentityKey]
 	if len(identities) != 1 || strings.TrimSpace(identities[0]) == "" {
 		return Caller{}, fmt.Errorf("gateway auth: exactly one service identity is required")
@@ -201,17 +182,4 @@ func callerFromAuthInfo(info types.AuthInfo) (Caller, error) {
 		caller.ActingUser = &ActingUser{Subject: info.GetSubject(), Type: identityType}
 	}
 	return caller, nil
-}
-
-func isNil(value any) bool {
-	if value == nil {
-		return true
-	}
-	reflected := reflect.ValueOf(value)
-	switch reflected.Kind() {
-	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
-		return reflected.IsNil()
-	default:
-		return false
-	}
 }

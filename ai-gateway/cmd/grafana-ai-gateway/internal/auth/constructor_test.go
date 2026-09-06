@@ -19,13 +19,9 @@ import (
 
 func TestNewAuthenticator_UnsafeAudiencesAndWarning(t *testing.T) {
 	warnings := 0
-	authenticator, err := NewAuthenticator(BuildConfig{
-		Unsafe:    true,
-		Audiences: []string{"custom-audience"},
-		Warn: func(message string) {
-			warnings++
-			assert.Equal(t, unsafeAuthenticationWarning, message)
-		},
+	authenticator, err := NewUnsafeAuthenticator([]string{"custom-audience"}, func(message string) {
+		warnings++
+		assert.Equal(t, unsafeAuthenticationWarning, message)
 	})
 	require.NoError(t, err)
 	assert.Equal(t, 1, warnings)
@@ -52,7 +48,7 @@ func TestNewAuthenticator_UnsafeAudiencesAndWarning(t *testing.T) {
 func TestNewAuthenticator_SharesOneKeyRetriever(t *testing.T) {
 	private := generateSigningKey(t)
 	keys := &countingKeyRetriever{key: jose.JSONWebKey{Key: &private.PublicKey, KeyID: "shared", Algorithm: string(jose.ES256), Use: "sig"}}
-	authenticator, err := NewAuthenticator(BuildConfig{Audiences: []string{"ai-sdk"}, Keys: keys})
+	authenticator, err := NewAuthenticator(keys, []string{"ai-sdk"})
 	require.NoError(t, err)
 
 	provider := tokenProvider{
@@ -65,16 +61,27 @@ func TestNewAuthenticator_SharesOneKeyRetriever(t *testing.T) {
 	assert.Equal(t, 2, keys.CallCount())
 }
 
-func TestNewAuthenticator_RejectsInvalidConstruction(t *testing.T) {
-	for _, config := range []BuildConfig{
-		{},
-		{Audiences: []string{""}},
-		{Audiences: []string{"one", "one"}},
-		{Audiences: []string{"ai-sdk"}},
-	} {
-		authenticator, err := NewAuthenticator(config)
-		require.Error(t, err)
-		assert.Nil(t, authenticator)
+func TestNewAuthenticator_RejectsInvalidAudiences(t *testing.T) {
+	tests := []struct {
+		name      string
+		audiences []string
+	}{
+		{name: "missing"},
+		{name: "empty", audiences: []string{""}},
+		{name: "duplicate", audiences: []string{"one", "one"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			authenticator, err := NewAuthenticator(&countingKeyRetriever{}, tc.audiences)
+			require.Error(t, err)
+			assert.Nil(t, authenticator)
+
+			warnings := 0
+			authenticator, err = NewUnsafeAuthenticator(tc.audiences, func(string) { warnings++ })
+			require.Error(t, err)
+			assert.Nil(t, authenticator)
+			assert.Zero(t, warnings)
+		})
 	}
 }
 
