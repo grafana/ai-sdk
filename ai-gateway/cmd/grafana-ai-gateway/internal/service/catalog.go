@@ -16,16 +16,10 @@ type modelConstructor func(apiKey, modelID string, options ...anthropicprovider.
 
 // BuildCatalog constructs every configured Anthropic model exactly once.
 func BuildCatalog(file config.File, providers map[string]config.ResolvedProvider, client *http.Client) (catalog.Catalog, error) {
-	if client == nil {
-		return nil, fmt.Errorf("gateway service: anthropic client is nil")
-	}
 	return buildCatalog(file, providers, client, anthropicprovider.New)
 }
 
 func buildCatalog(file config.File, providers map[string]config.ResolvedProvider, client *http.Client, construct modelConstructor) (catalog.Catalog, error) {
-	if construct == nil {
-		return nil, fmt.Errorf("gateway service: model constructor is nil")
-	}
 	ids := make([]string, 0, len(file.Models))
 	for id := range file.Models {
 		ids = append(ids, id)

@@ -41,12 +41,6 @@ func NewTelemetry(logger *slog.Logger) (*Telemetry, error) {
 }
 
 func newTelemetry(logger *slog.Logger, registry *prometheus.Registry) (*Telemetry, error) {
-	if logger == nil {
-		return nil, fmt.Errorf("gateway service: logger is nil")
-	}
-	if registry == nil {
-		return nil, fmt.Errorf("gateway service: prometheus registry is nil")
-	}
 	telemetry := &Telemetry{
 		logger:   logger,
 		registry: registry,

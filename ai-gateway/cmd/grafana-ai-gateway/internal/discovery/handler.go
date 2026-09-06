@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"reflect"
 	"sort"
 	"unicode/utf8"
 
@@ -36,12 +35,6 @@ type handler struct {
 
 // New constructs a closed bounded discovery handler.
 func New(lister catalog.ModelLister, errorWriter *providerv4.HostErrorWriter, limit int64) (http.Handler, error) {
-	if isNil(lister) {
-		return nil, fmt.Errorf("gateway discovery: model lister is nil")
-	}
-	if errorWriter == nil {
-		return nil, fmt.Errorf("gateway discovery: error writer is nil")
-	}
 	if limit <= 0 || limit == int64(^uint64(0)>>1) {
 		return nil, fmt.Errorf("gateway discovery: response limit is unsafe")
 	}
@@ -317,17 +310,4 @@ func (buffer *boundedBuffer) appendJSONString(value string) {
 		}
 	}
 	buffer.append(`"`)
-}
-
-func isNil(value any) bool {
-	if value == nil {
-		return true
-	}
-	reflected := reflect.ValueOf(value)
-	switch reflected.Kind() {
-	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
-		return reflected.IsNil()
-	default:
-		return false
-	}
 }
