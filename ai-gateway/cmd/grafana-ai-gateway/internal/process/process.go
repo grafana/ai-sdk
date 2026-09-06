@@ -15,6 +15,7 @@ import (
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/outbound"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/service"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
+	"github.com/grafana/authlib/authn"
 )
 
 const (
@@ -24,33 +25,11 @@ const (
 	processEventShutdownCompleted = "process_shutdown_completed"
 )
 
-// Dependencies provides process-boundary test seams.
-type Dependencies struct {
-	Args         []string
-	LookupEnv    config.LookupEnv
-	Listen       func(network, address string) (net.Listener, error)
-	Logger       *slog.Logger
-	Now          func() time.Time
-	NewTelemetry func(*slog.Logger) (*service.Telemetry, error)
-}
-
 // Run validates, constructs, binds, and serves the Gateway until context cancellation.
-func Run(ctx context.Context, dependencies Dependencies) error {
-	if ctx == nil {
-		return fmt.Errorf("gateway process: context is nil")
-	}
-	if dependencies.LookupEnv == nil || dependencies.Listen == nil || dependencies.Logger == nil {
-		return fmt.Errorf("gateway process: dependency is nil")
-	}
-	if dependencies.Now == nil {
-		dependencies.Now = time.Now
-	}
-	if dependencies.NewTelemetry == nil {
-		dependencies.NewTelemetry = service.NewTelemetry
-	}
-	logProcessEvent(dependencies.Logger, processEventStarting)
+func Run(ctx context.Context, args []string, lookupEnv config.LookupEnv, listen func(network, address string) (net.Listener, error), logger *slog.Logger) error {
+	logProcessEvent(logger, processEventStarting)
 
-	settings, err := config.ParseSettings(dependencies.Args, dependencies.LookupEnv)
+	settings, err := config.ParseSettings(args, lookupEnv)
 	if err != nil {
 		return err
 	}
@@ -77,7 +56,7 @@ func Run(ctx context.Context, dependencies Dependencies) error {
 		provider.BaseURL = parsed.String()
 		file.Providers[name] = provider
 	}
-	resolvedProviders, err := file.ResolveProviderSecrets(dependencies.LookupEnv)
+	resolvedProviders, err := file.ResolveProviderSecrets(lookupEnv)
 	if err != nil {
 		return err
 	}
@@ -93,30 +72,25 @@ func Run(ctx context.Context, dependencies Dependencies) error {
 
 	processContext, cancelProcess := context.WithCancel(context.WithoutCancel(ctx))
 	defer cancelProcess()
-	var keys *gatewayauth.JWKS
-	if !settings.AuthUnsafe {
-		keys, err = gatewayauth.NewJWKS(gatewayauth.JWKSConfig{
-			ServiceContext:  processContext,
-			Client:          clients.JWKS,
+	var authenticator authn.Authenticator
+	if settings.AuthUnsafe {
+		authenticator, err = gatewayauth.NewUnsafeAuthenticator(settings.Audiences, func(message string) {
+			logger.Warn(message)
+		})
+	} else {
+		var keys *gatewayauth.JWKS
+		keys, err = gatewayauth.NewJWKS(processContext, clients.JWKS, time.Now, gatewayauth.JWKSConfig{
 			URL:             jwksURL,
 			RequestTimeout:  settings.JWKSRequestTimeout,
 			MaxKeys:         settings.JWKSMaxKeys,
 			RefreshInterval: settings.JWKSRefreshInterval,
 			MaxAge:          settings.JWKSMaxAge,
-			Now:             dependencies.Now,
 		})
 		if err != nil {
 			return err
 		}
+		authenticator, err = gatewayauth.NewAuthenticator(keys, settings.Audiences)
 	}
-	authenticator, err := gatewayauth.NewAuthenticator(gatewayauth.BuildConfig{
-		Unsafe:    settings.AuthUnsafe,
-		Audiences: settings.Audiences,
-		Keys:      keys,
-		Warn: func(message string) {
-			dependencies.Logger.Warn(message)
-		},
-	})
 	if err != nil {
 		return err
 	}
@@ -133,12 +107,12 @@ func Run(ctx context.Context, dependencies Dependencies) error {
 	if err != nil {
 		return err
 	}
-	telemetry, err := dependencies.NewTelemetry(dependencies.Logger)
+	telemetry, err := service.NewTelemetry(logger)
 	if err != nil {
 		return err
 	}
 	readiness := &service.Readiness{}
-	router, err := service.NewRouter(service.RouterConfig{
+	router := service.NewRouter(service.RouterDependencies{
 		Readiness:     readiness,
 		Telemetry:     telemetry,
 		Authenticator: authenticator,
@@ -146,10 +120,7 @@ func Run(ctx context.Context, dependencies Dependencies) error {
 		Discovery:     discoveryHandler,
 		LanguageModel: languageHandler,
 	})
-	if err != nil {
-		return err
-	}
-	listener, err := dependencies.Listen("tcp", settings.ListenAddress)
+	listener, err := listen("tcp", settings.ListenAddress)
 	if err != nil {
 		return fmt.Errorf("gateway process: binding listener: %w", err)
 	}
@@ -164,12 +135,12 @@ func Run(ctx context.Context, dependencies Dependencies) error {
 			return processContext
 		},
 	}
-	return Serve(ctx, cancelProcess, server, listener, readiness, telemetry, dependencies.Logger, settings.ShutdownTimeout)
+	return Serve(ctx, cancelProcess, server, listener, readiness, telemetry, logger, settings.ShutdownTimeout)
 }
 
 // Serve owns readiness and cancel-first graceful HTTP shutdown.
 func Serve(ctx context.Context, cancel context.CancelFunc, server *http.Server, listener net.Listener, readiness *service.Readiness, telemetry *service.Telemetry, logger *slog.Logger, shutdownTimeout time.Duration) error {
-	if ctx == nil || cancel == nil || server == nil || listener == nil || readiness == nil || telemetry == nil || logger == nil || shutdownTimeout <= 0 {
+	if shutdownTimeout <= 0 {
 		return fmt.Errorf("gateway process: invalid serve dependency")
 	}
 	serveErrors := make(chan error, 1)

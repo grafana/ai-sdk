@@ -27,9 +27,10 @@ func TestRun_ValidatesScalarsAndEndpointsBeforeSecretsOrListener(t *testing.T) {
 	t.Run("scalar failure", func(t *testing.T) {
 		secretCalls := 0
 		listenCalls := 0
-		err := Run(context.Background(), Dependencies{
-			Args: []string{"--server.write-timeout=1s"},
-			LookupEnv: func(name string) (string, bool) {
+		err := Run(
+			context.Background(),
+			[]string{"--server.write-timeout=1s"},
+			func(name string) (string, bool) {
 				if name == "ANTHROPIC_SECRET" {
 					secretCalls++
 				}
@@ -40,9 +41,9 @@ func TestRun_ValidatesScalarsAndEndpointsBeforeSecretsOrListener(t *testing.T) {
 				value, ok := values[name]
 				return value, ok
 			},
-			Listen: func(string, string) (net.Listener, error) { listenCalls++; return nil, assert.AnError },
-			Logger: testLogger(),
-		})
+			func(string, string) (net.Listener, error) { listenCalls++; return nil, assert.AnError },
+			testLogger(),
+		)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "write timeout")
 		assert.Zero(t, secretCalls)
@@ -52,9 +53,10 @@ func TestRun_ValidatesScalarsAndEndpointsBeforeSecretsOrListener(t *testing.T) {
 	t.Run("invalid production listen address", func(t *testing.T) {
 		secretCalls := 0
 		listenCalls := 0
-		err := Run(context.Background(), Dependencies{
-			Args: []string{"--server.listen-address=not-a-tcp-address"},
-			LookupEnv: func(name string) (string, bool) {
+		err := Run(
+			context.Background(),
+			[]string{"--server.listen-address=not-a-tcp-address"},
+			func(name string) (string, bool) {
 				if name == "ANTHROPIC_SECRET" {
 					secretCalls++
 				}
@@ -65,9 +67,9 @@ func TestRun_ValidatesScalarsAndEndpointsBeforeSecretsOrListener(t *testing.T) {
 				value, ok := values[name]
 				return value, ok
 			},
-			Listen: func(string, string) (net.Listener, error) { listenCalls++; return nil, assert.AnError },
-			Logger: testLogger(),
-		})
+			func(string, string) (net.Listener, error) { listenCalls++; return nil, assert.AnError },
+			testLogger(),
+		)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "TCP host:port")
 		assert.Zero(t, secretCalls)
@@ -77,8 +79,10 @@ func TestRun_ValidatesScalarsAndEndpointsBeforeSecretsOrListener(t *testing.T) {
 	t.Run("invalid production jwks before yaml", func(t *testing.T) {
 		secretCalls := 0
 		listenCalls := 0
-		err := Run(context.Background(), Dependencies{
-			LookupEnv: func(name string) (string, bool) {
+		err := Run(
+			context.Background(),
+			nil,
+			func(name string) (string, bool) {
 				if name == "ANTHROPIC_SECRET" {
 					secretCalls++
 				}
@@ -89,9 +93,9 @@ func TestRun_ValidatesScalarsAndEndpointsBeforeSecretsOrListener(t *testing.T) {
 				value, ok := values[name]
 				return value, ok
 			},
-			Listen: func(string, string) (net.Listener, error) { listenCalls++; return nil, assert.AnError },
-			Logger: testLogger(),
-		})
+			func(string, string) (net.Listener, error) { listenCalls++; return nil, assert.AnError },
+			testLogger(),
+		)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "production endpoint must use https")
 		assert.NotContains(t, err.Error(), "nonexistent/private.yaml")
@@ -103,9 +107,10 @@ func TestRun_ValidatesScalarsAndEndpointsBeforeSecretsOrListener(t *testing.T) {
 		path := writeProcessConfig(t, "https://user:password@provider.example")
 		secretCalls := 0
 		listenCalls := 0
-		err := Run(context.Background(), Dependencies{
-			Args: []string{"--deployment.mode=development", "--auth.unsafe", "--server.listen-address=127.0.0.1:0"},
-			LookupEnv: func(name string) (string, bool) {
+		err := Run(
+			context.Background(),
+			[]string{"--deployment.mode=development", "--auth.unsafe", "--server.listen-address=127.0.0.1:0"},
+			func(name string) (string, bool) {
 				if name == "ANTHROPIC_SECRET" {
 					secretCalls++
 					return "secret-value", true
@@ -115,9 +120,9 @@ func TestRun_ValidatesScalarsAndEndpointsBeforeSecretsOrListener(t *testing.T) {
 				}
 				return "", false
 			},
-			Listen: func(string, string) (net.Listener, error) { listenCalls++; return nil, assert.AnError },
-			Logger: testLogger(),
-		})
+			func(string, string) (net.Listener, error) { listenCalls++; return nil, assert.AnError },
+			testLogger(),
+		)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "userinfo")
 		assert.Zero(t, secretCalls)
@@ -139,9 +144,10 @@ func TestRun_LocalReadinessDoesNotProbeProvider(t *testing.T) {
 	var logs bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&logs, nil))
 	go func() {
-		result <- Run(ctx, Dependencies{
-			Args: []string{"--deployment.mode=development", "--auth.unsafe", "--server.listen-address=127.0.0.1:0"},
-			LookupEnv: func(name string) (string, bool) {
+		result <- Run(
+			ctx,
+			[]string{"--deployment.mode=development", "--auth.unsafe", "--server.listen-address=127.0.0.1:0"},
+			func(name string) (string, bool) {
 				switch name {
 				case "GRAFANA_AI_GATEWAY_CONFIG_FILE":
 					return path, true
@@ -151,15 +157,15 @@ func TestRun_LocalReadinessDoesNotProbeProvider(t *testing.T) {
 					return "", false
 				}
 			},
-			Listen: func(network, address string) (net.Listener, error) {
+			func(network, address string) (net.Listener, error) {
 				listener, err := net.Listen(network, address)
 				if err == nil {
 					addresses <- listener.Addr().String()
 				}
 				return listener, err
 			},
-			Logger: logger,
-		})
+			logger,
+		)
 	}()
 	address := <-addresses
 	require.Eventually(t, func() bool {
@@ -176,6 +182,44 @@ func TestRun_LocalReadinessDoesNotProbeProvider(t *testing.T) {
 	assert.Equal(t, []string{processEventStarting, processEventReady, processEventShutdownStarted, processEventShutdownCompleted}, processLifecycleEvents(t, logs.String()))
 	for _, private := range []string{"secret-value", providerServer.URL, "backend-private", "ANTHROPIC_SECRET"} {
 		assert.NotContains(t, logs.String(), private)
+	}
+}
+
+func TestServe_RejectsInvalidShutdownTimeoutBeforeStarting(t *testing.T) {
+	tests := []struct {
+		name    string
+		timeout time.Duration
+	}{
+		{name: "zero", timeout: 0},
+		{name: "negative", timeout: -time.Second},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			telemetry, err := service.NewTelemetry(testLogger())
+			require.NoError(t, err)
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
+			require.NoError(t, err)
+			defer func() { _ = listener.Close() }()
+			readiness := &service.Readiness{}
+			canceled := false
+			var logs bytes.Buffer
+
+			err = Serve(
+				context.Background(),
+				func() { canceled = true },
+				&http.Server{},
+				listener,
+				readiness,
+				telemetry,
+				slog.New(slog.NewJSONHandler(&logs, nil)),
+				tc.timeout,
+			)
+
+			require.EqualError(t, err, "gateway process: invalid serve dependency")
+			assert.False(t, canceled)
+			assert.False(t, readiness.Ready())
+			assert.Empty(t, logs.String())
+		})
 	}
 }
 
