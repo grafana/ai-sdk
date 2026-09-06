@@ -179,8 +179,20 @@ func TestStreamTextSingleStep(t *testing.T) {
 		},
 	}
 
+	var callbackTypes, callbackOrder []string
 	result := StreamText(context.Background(), model,
 		WithModelMessages(provider.UserText("hi")),
+		OnStart(func(OnStartState) {
+			callbackOrder = append(callbackOrder, "start")
+		}),
+		OnChunk(func(state OnChunkState) {
+			partType := typeName(state.Chunk)
+			callbackTypes = append(callbackTypes, partType)
+			callbackOrder = append(callbackOrder, "chunk:"+partType)
+		}),
+		OnFinish(func(OnFinishState) {
+			callbackOrder = append(callbackOrder, "finish")
+		}),
 	)
 
 	var types []string
@@ -190,113 +202,74 @@ func TestStreamTextSingleStep(t *testing.T) {
 
 	expected := []string{"start", "start-step", "text-start", "text-delta", "text-end", "finish-step", "finish"}
 	assert.Equal(t, expected, types)
+	assert.Equal(t, expected, callbackTypes)
+	assert.Equal(t, []string{
+		"start", "chunk:start", "chunk:start-step", "chunk:text-start", "chunk:text-delta", "chunk:text-end", "chunk:finish-step", "chunk:finish", "finish",
+	}, callbackOrder)
 	assert.Equal(t, "hello world", result.Text())
 }
 
 func TestStreamText_MultiStepPartIDs(t *testing.T) {
-	finish := func(reason provider.UnifiedFinishReason) provider.StreamPart {
-		return provider.StreamPart{
-			Type:         provider.PartFinish,
-			FinishReason: &provider.FinishReason{Unified: reason},
-			Usage:        &provider.Usage{},
+	type partKind string
+	const (
+		textPart      partKind = "text"
+		reasoningPart partKind = "reasoning"
+	)
+	parts := func(kind partKind, id, text string) []provider.StreamPart {
+		if kind == reasoningPart {
+			return []provider.StreamPart{
+				{Type: provider.PartReasoningStart, ID: id},
+				{Type: provider.PartReasoningDelta, ID: id, Delta: text},
+				{Type: provider.PartReasoningEnd, ID: id},
+			}
 		}
+		return []provider.StreamPart{
+			{Type: provider.PartTextStart, ID: id},
+			{Type: provider.PartTextDelta, ID: id, Delta: text},
+			{Type: provider.PartTextEnd, ID: id},
+		}
+	}
+	streamPartID := func(part TextStreamPart) (partKind, string, bool) {
+		switch part := part.(type) {
+		case StreamTextStart:
+			return textPart, part.ID, true
+		case StreamTextDelta:
+			return textPart, part.ID, true
+		case StreamTextEnd:
+			return textPart, part.ID, true
+		case StreamReasoningStart:
+			return reasoningPart, part.ID, true
+		case StreamReasoningDelta:
+			return reasoningPart, part.ID, true
+		case StreamReasoningEnd:
+			return reasoningPart, part.ID, true
+		default:
+			return "", "", false
+		}
+	}
+	finish := func(reason provider.UnifiedFinishReason) provider.StreamPart {
+		return provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: reason}, Usage: &provider.Usage{}}
 	}
 	toolCall := provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "call-1", ToolName: "lookup", Input: `{}`}
 
 	for _, tc := range []struct {
-		name      string
-		firstID   string
-		secondID  string
-		parts     func(id, text string) []provider.StreamPart
-		streamIDs func(TextStreamPart) (string, bool)
-		expected  []string
+		name              string
+		kind              partKind
+		firstID, secondID string
+		expected          []string
 	}{
-		{
-			name:     "duplicate text IDs",
-			firstID:  "0",
-			secondID: "0",
-			parts: func(id, text string) []provider.StreamPart {
-				return []provider.StreamPart{
-					{Type: provider.PartTextStart, ID: id},
-					{Type: provider.PartTextDelta, ID: id, Delta: text},
-					{Type: provider.PartTextEnd, ID: id},
-				}
-			},
-			streamIDs: func(part TextStreamPart) (string, bool) {
-				switch part := part.(type) {
-				case StreamTextStart:
-					return part.ID, true
-				case StreamTextDelta:
-					return part.ID, true
-				case StreamTextEnd:
-					return part.ID, true
-				default:
-					return "", false
-				}
-			},
-			expected: []string{"0", "0", "0", "id-2", "id-2", "id-2"},
-		},
-		{
-			name:     "duplicate reasoning IDs",
-			firstID:  "0",
-			secondID: "0",
-			parts: func(id, text string) []provider.StreamPart {
-				return []provider.StreamPart{
-					{Type: provider.PartReasoningStart, ID: id},
-					{Type: provider.PartReasoningDelta, ID: id, Delta: text},
-					{Type: provider.PartReasoningEnd, ID: id},
-				}
-			},
-			streamIDs: func(part TextStreamPart) (string, bool) {
-				switch part := part.(type) {
-				case StreamReasoningStart:
-					return part.ID, true
-				case StreamReasoningDelta:
-					return part.ID, true
-				case StreamReasoningEnd:
-					return part.ID, true
-				default:
-					return "", false
-				}
-			},
-			expected: []string{"0", "0", "0", "id-2", "id-2", "id-2"},
-		},
-		{
-			name:     "unique text IDs",
-			firstID:  "0",
-			secondID: "1",
-			parts: func(id, text string) []provider.StreamPart {
-				return []provider.StreamPart{
-					{Type: provider.PartTextStart, ID: id},
-					{Type: provider.PartTextDelta, ID: id, Delta: text},
-					{Type: provider.PartTextEnd, ID: id},
-				}
-			},
-			streamIDs: func(part TextStreamPart) (string, bool) {
-				switch part := part.(type) {
-				case StreamTextStart:
-					return part.ID, true
-				case StreamTextDelta:
-					return part.ID, true
-				case StreamTextEnd:
-					return part.ID, true
-				default:
-					return "", false
-				}
-			},
-			expected: []string{"0", "0", "0", "1", "1", "1"},
-		},
+		{name: "duplicate text IDs", kind: textPart, firstID: "0", secondID: "0", expected: []string{"0", "0", "0", "id-2", "id-2", "id-2"}},
+		{name: "duplicate reasoning IDs", kind: reasoningPart, firstID: "0", secondID: "0", expected: []string{"0", "0", "0", "id-2", "id-2", "id-2"}},
+		{name: "unique text IDs", kind: textPart, firstID: "0", secondID: "1", expected: []string{"0", "0", "0", "1", "1", "1"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			callCount := 0
 			model := &mockModel{streamFunc: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
 				callCount++
 				if callCount == 1 {
-					parts := append(tc.parts(tc.firstID, "first"), toolCall, finish(provider.FinishReasonToolCalls))
-					return &provider.StreamResult{Stream: testStreamParts(parts...)}, nil
+					return &provider.StreamResult{Stream: testStreamParts(append(parts(tc.kind, tc.firstID, "first"), toolCall, finish(provider.FinishReasonToolCalls))...)}, nil
 				}
-				parts := append(tc.parts(tc.secondID, "second"), finish(provider.FinishReasonStop))
-				return &provider.StreamResult{Stream: testStreamParts(parts...)}, nil
+				return &provider.StreamResult{Stream: testStreamParts(append(parts(tc.kind, tc.secondID, "second"), finish(provider.FinishReasonStop))...)}, nil
 			}}
 			generated := 0
 			result := StreamText(t.Context(), model,
@@ -317,7 +290,8 @@ func TestStreamText_MultiStepPartIDs(t *testing.T) {
 
 			var ids []string
 			for part := range result.FullStream() {
-				if id, ok := tc.streamIDs(part); ok {
+				kind, id, ok := streamPartID(part)
+				if ok && kind == tc.kind {
 					ids = append(ids, id)
 				}
 			}
@@ -325,7 +299,7 @@ func TestStreamText_MultiStepPartIDs(t *testing.T) {
 			require.NoError(t, result.Err())
 			assert.Equal(t, tc.expected, ids)
 			require.Len(t, result.Steps(), 2)
-			if tc.name == "duplicate reasoning IDs" {
+			if tc.kind == reasoningPart {
 				assert.Equal(t, "first", result.Steps()[0].ReasoningText)
 				assert.Equal(t, "second", result.Steps()[1].ReasoningText)
 			} else {

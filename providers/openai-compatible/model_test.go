@@ -27,6 +27,25 @@ type failingResponseBody struct{}
 func (failingResponseBody) Read([]byte) (int, error) { return 0, io.ErrUnexpectedEOF }
 func (failingResponseBody) Close() error             { return nil }
 
+const successfulGenerateResponse = `{
+	"id":"chatcmpl_1",
+	"model":"test-model",
+	"choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]
+}`
+
+func newResponseServer(t *testing.T, contentType, response string, requestBody any) string {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if requestBody != nil {
+			require.NoError(t, json.NewDecoder(r.Body).Decode(requestBody))
+		}
+		w.Header().Set("Content-Type", contentType)
+		_, _ = io.WriteString(w, response)
+	}))
+	t.Cleanup(server.Close)
+	return server.URL
+}
+
 func TestDoGenerateResponseBodyFailureIsRetryable(t *testing.T) {
 	client := &http.Client{Transport: testRoundTripFunc(func(request *http.Request) (*http.Response, error) {
 		return &http.Response{
@@ -52,19 +71,9 @@ func TestDoGenerateSendsReasoningNone(t *testing.T) {
 	t.Parallel()
 
 	var got map[string]any
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.NoError(t, json.NewDecoder(r.Body).Decode(&got))
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{
-			"id":"chatcmpl_1",
-			"model":"test-model",
-			"choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]
-		}`))
-	}))
-	defer server.Close()
-
+	serverURL := newResponseServer(t, "application/json", successfulGenerateResponse, &got)
 	reasoning := provider.ReasoningNone
-	_, err := New("test-model", WithBaseURL(server.URL)).DoGenerate(context.Background(), provider.CallOptions{
+	_, err := New("test-model", WithBaseURL(serverURL)).DoGenerate(context.Background(), provider.CallOptions{
 		Prompt:    []provider.Message{provider.UserText("hi")},
 		Reasoning: &reasoning,
 	})
@@ -76,19 +85,9 @@ func TestDoGenerateReasoningEffortPrecedence(t *testing.T) {
 	t.Parallel()
 
 	var got map[string]any
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.NoError(t, json.NewDecoder(r.Body).Decode(&got))
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{
-			"id":"chatcmpl_1",
-			"model":"test-model",
-			"choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]
-		}`))
-	}))
-	defer server.Close()
-
+	serverURL := newResponseServer(t, "application/json", successfulGenerateResponse, &got)
 	reasoning := provider.ReasoningNone
-	_, err := New("test-model", WithBaseURL(server.URL)).DoGenerate(context.Background(), provider.CallOptions{
+	_, err := New("test-model", WithBaseURL(serverURL)).DoGenerate(context.Background(), provider.CallOptions{
 		Prompt:    []provider.Message{provider.UserText("hi")},
 		Reasoning: &reasoning,
 		ProviderOptions: provider.ProviderOptions{
@@ -249,21 +248,16 @@ func TestDoGenerateSendsCompatibleRequest(t *testing.T) {
 func TestDoGenerateNormalizesArrayContent(t *testing.T) {
 	t.Parallel()
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{
-			"id":"chatcmpl_parts",
-			"model":"test-model",
-			"choices":[{"message":{"role":"assistant","content":[
-				{"type":"thinking","thinking":[{"type":"text","text":"Let me think"},42,{"type":"future","text":"ignored"},{"type":"text","text":" this through."}]},
-				{"type":"future-part","text":{"nested":true}},
-				{"type":"text","text":"The answer is 391."}
-			]},"finish_reason":"stop"}]
-		}`))
-	}))
-	defer server.Close()
-
-	result, err := New("test-model", WithBaseURL(server.URL)).DoGenerate(context.Background(), provider.CallOptions{
+	serverURL := newResponseServer(t, "application/json", `{
+		"id":"chatcmpl_parts",
+		"model":"test-model",
+		"choices":[{"message":{"role":"assistant","content":[
+			{"type":"thinking","thinking":[{"type":"text","text":"Let me think"},42,{"type":"future","text":"ignored"},{"type":"text","text":" this through."}]},
+			{"type":"future-part","text":{"nested":true}},
+			{"type":"text","text":"The answer is 391."}
+		]},"finish_reason":"stop"}]
+	}`, nil)
+	result, err := New("test-model", WithBaseURL(serverURL)).DoGenerate(context.Background(), provider.CallOptions{
 		Prompt: []provider.Message{provider.UserText("hi")},
 	})
 	require.NoError(t, err)
@@ -277,16 +271,10 @@ func TestDoGenerateNormalizesArrayContent(t *testing.T) {
 func TestDoStreamNormalizesArrayContent(t *testing.T) {
 	t.Parallel()
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
-		_, _ = w.Write([]byte(
-			`data: {"id":"chatcmpl_parts","created":1710000000,"model":"test-model","choices":[{"delta":{"content":[{"type":"thinking","thinking":[{"type":"text","text":"think"}]},{"type":"text","text":"answer"},{"type":"future-part"},{"type":"thinking","thinking":[{"type":"text","text":"again"}]}]},"finish_reason":"stop"}]}` + "\n\n" +
-				`data: [DONE]` + "\n\n",
-		))
-	}))
-	defer server.Close()
-
-	result, err := New("test-model", WithBaseURL(server.URL)).DoStream(context.Background(), provider.CallOptions{
+	serverURL := newResponseServer(t, "text/event-stream",
+		`data: {"id":"chatcmpl_parts","created":1710000000,"model":"test-model","choices":[{"delta":{"content":[{"type":"thinking","thinking":[{"type":"text","text":"think"}]},{"type":"text","text":"answer"},{"type":"future-part"},{"type":"thinking","thinking":[{"type":"text","text":"again"}]}]},"finish_reason":"stop"}]}`+"\n\n"+
+			`data: [DONE]`+"\n\n", nil)
+	result, err := New("test-model", WithBaseURL(serverURL)).DoStream(context.Background(), provider.CallOptions{
 		Prompt: []provider.Message{provider.UserText("hi")},
 	})
 	require.NoError(t, err)
@@ -311,17 +299,11 @@ func TestDoStreamNormalizesArrayContent(t *testing.T) {
 func TestDoStreamRejectsMalformedArrayContentAtomically(t *testing.T) {
 	t.Parallel()
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
-		_, _ = w.Write([]byte(
-			`data: {"id":"invalid","created":1710000000,"model":"test-model","choices":[{"delta":{"content":[{"text":"missing type"}],"tool_calls":[{"index":0,"id":"call_invalid","type":"function","function":{"name":"weather","arguments":"{}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":99,"completion_tokens":99,"total_tokens":198}}` + "\n\n" +
-				`data: {"id":"valid","created":1710000001,"model":"test-model","choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}` + "\n\n" +
-				`data: [DONE]` + "\n\n",
-		))
-	}))
-	defer server.Close()
-
-	result, err := New("test-model", WithBaseURL(server.URL)).DoStream(context.Background(), provider.CallOptions{
+	serverURL := newResponseServer(t, "text/event-stream",
+		`data: {"id":"invalid","created":1710000000,"model":"test-model","choices":[{"delta":{"content":[{"text":"missing type"}],"tool_calls":[{"index":0,"id":"call_invalid","type":"function","function":{"name":"weather","arguments":"{}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":99,"completion_tokens":99,"total_tokens":198}}`+"\n\n"+
+			`data: {"id":"valid","created":1710000001,"model":"test-model","choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}`+"\n\n"+
+			`data: [DONE]`+"\n\n", nil)
+	result, err := New("test-model", WithBaseURL(serverURL)).DoStream(context.Background(), provider.CallOptions{
 		Prompt: []provider.Message{provider.UserText("hi")},
 	})
 	require.NoError(t, err)
@@ -623,19 +605,13 @@ func TestDoGenerateSendsCustomProviderThoughtSignature(t *testing.T) {
 	t.Parallel()
 
 	var got map[string]any
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.NoError(t, json.NewDecoder(r.Body).Decode(&got))
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"id":"chatcmpl_1","model":"test-model","choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`))
-	}))
-	defer server.Close()
-
+	serverURL := newResponseServer(t, "application/json", successfulGenerateResponse, &got)
 	toolCall := provider.ToolCallPart("function-call-1", "check_flight", json.RawMessage(`{"flight":"AA100"}`))
 	toolCall.ProviderOptions = provider.ProviderOptions{
 		"someProvider": provider.RawProviderOption{Key: "someProvider", Raw: json.RawMessage(`{"thoughtSignature":"custom"}`)},
 		"google":       provider.RawProviderOption{Key: "google", Raw: json.RawMessage(`{"thoughtSignature":"fallback"}`)},
 	}
-	_, err := New("test-model", WithBaseURL(server.URL), WithProviderName("some-provider")).DoGenerate(context.Background(), provider.CallOptions{
+	_, err := New("test-model", WithBaseURL(serverURL), WithProviderName("some-provider")).DoGenerate(context.Background(), provider.CallOptions{
 		Prompt: []provider.Message{provider.NewAssistantMessage(toolCall)},
 		ProviderOptions: provider.ProviderOptions{
 			"someProvider": provider.RawProviderOption{Key: "someProvider", Raw: json.RawMessage(`{}`)},
@@ -859,17 +835,7 @@ func TestDoGenerateConvertsVideoFileParts(t *testing.T) {
 	t.Parallel()
 
 	var got map[string]any
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.NoError(t, json.NewDecoder(r.Body).Decode(&got))
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{
-			"id":"chatcmpl_1",
-			"model":"test-model",
-			"choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]
-		}`))
-	}))
-	defer server.Close()
-
+	serverURL := newResponseServer(t, "application/json", successfulGenerateResponse, &got)
 	mp4Bytes := []byte{0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70}
 	encodedMP4 := base64.StdEncoding.EncodeToString(mp4Bytes)
 	inline := provider.FilePart("video/*", provider.DataContent{Bytes: mp4Bytes})
@@ -879,7 +845,7 @@ func TestDoGenerateConvertsVideoFileParts(t *testing.T) {
 			Raw: json.RawMessage(`{"fps":1}`),
 		},
 	}
-	_, err := New("test-model", WithBaseURL(server.URL)).DoGenerate(context.Background(), provider.CallOptions{
+	_, err := New("test-model", WithBaseURL(serverURL)).DoGenerate(context.Background(), provider.CallOptions{
 		Prompt: []provider.Message{
 			provider.NewUserMessage(
 				inline,
@@ -1452,16 +1418,13 @@ func TestDoStreamMissingFinishReason(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set("Content-Type", "text/event-stream")
-				_, _ = w.Write([]byte(`data: {"id":"chatcmpl_stream","model":"test-model","choices":[{"delta":{"content":"partial"},"finish_reason":null}]}` + "\n\n"))
-				if done {
-					_, _ = w.Write([]byte("data: [DONE]\n\n"))
-				}
-			}))
-			defer server.Close()
+			response := `data: {"id":"chatcmpl_stream","model":"test-model","choices":[{"delta":{"content":"partial"},"finish_reason":null}]}` + "\n\n"
+			if done {
+				response += "data: [DONE]\n\n"
+			}
+			serverURL := newResponseServer(t, "text/event-stream", response, nil)
 
-			result, err := New("test-model", WithBaseURL(server.URL)).DoStream(context.Background(), provider.CallOptions{
+			result, err := New("test-model", WithBaseURL(serverURL)).DoStream(context.Background(), provider.CallOptions{
 				Prompt: []provider.Message{provider.UserText("hi")},
 			})
 			require.NoError(t, err)

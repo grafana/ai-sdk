@@ -270,19 +270,10 @@ func convertUserContent(parts []provider.ContentPart, documentCounter *int, warn
 					if !ok {
 						return nil, fmt.Errorf("bedrock: image media type %q is not supported", mediaType)
 					}
-					image := &imageBlock{
+					out = append(out, contentBlock{Image: &imageBlock{
 						Format: format,
 						Source: imageSource{S3Location: &s3LocationBlock{URI: p.Data.URL}},
-					}
-					options, err := imageGuardContentOptions(p.ProviderOptions)
-					if err != nil {
-						return nil, err
-					}
-					if options.GuardContent {
-						out = append(out, contentBlock{GuardContent: &guardContentBlock{Image: image}})
-					} else {
-						out = append(out, contentBlock{Image: image})
-					}
+					}})
 				case "video":
 					format, ok := videoMediaTypeFormat[mediaType]
 					if !ok {

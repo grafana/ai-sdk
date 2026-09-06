@@ -1826,14 +1826,16 @@ func TestBuildRequest_GuardContent(t *testing.T) {
 	})
 	image := provider.FilePart("image/png", provider.Base64DataContent("aW1hZ2U="))
 	image.ProviderOptions = provider.BuildProviderOptions(ImagePartOptions{GuardContent: true})
+	s3Image := provider.FilePart("image/png", provider.DataContent{URL: "s3://bucket/image.png"})
+	s3Image.ProviderOptions = provider.BuildProviderOptions(ImagePartOptions{GuardContent: true})
 
 	req, warnings, _ := mustBuildRequest(t, testAnthropicModel, provider.CallOptions{
-		Prompt: []provider.Message{provider.NewUserMessage(text, image)},
+		Prompt: []provider.Message{provider.NewUserMessage(text, image, s3Image)},
 	})
 
 	assert.Empty(t, warnings)
 	require.Len(t, req.Messages, 1)
-	require.Len(t, req.Messages[0].Content, 2)
+	require.Len(t, req.Messages[0].Content, 3)
 	textGuard := req.Messages[0].Content[0].GuardContent
 	require.NotNil(t, textGuard)
 	require.NotNil(t, textGuard.Text)
@@ -1844,6 +1846,11 @@ func TestBuildRequest_GuardContent(t *testing.T) {
 	require.NotNil(t, imageGuard.Image)
 	assert.Equal(t, "png", imageGuard.Image.Format)
 	assert.Equal(t, "aW1hZ2U=", imageGuard.Image.Source.Bytes)
+	s3Content := req.Messages[0].Content[2]
+	assert.Nil(t, s3Content.GuardContent)
+	require.NotNil(t, s3Content.Image)
+	require.NotNil(t, s3Content.Image.Source.S3Location)
+	assert.Equal(t, "s3://bucket/image.png", s3Content.Image.Source.S3Location.URI)
 }
 
 func TestBuildRequest_OpenAIGPT5Effort(t *testing.T) {

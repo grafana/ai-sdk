@@ -12,7 +12,7 @@ import (
 )
 
 func TestToolExecutionFinishReason(t *testing.T) {
-	tests := []struct {
+	for _, tc := range []struct {
 		name       string
 		reason     provider.UnifiedFinishReason
 		shouldExec bool
@@ -23,70 +23,42 @@ func TestToolExecutionFinishReason(t *testing.T) {
 		{name: "error", reason: provider.FinishReasonError},
 		{name: "content filter", reason: provider.FinishReasonContentFilter},
 		{name: "other", reason: provider.FinishReasonOther},
-	}
-
-	for _, tc := range tests {
+	} {
 		t.Run(tc.name, func(t *testing.T) {
-			for _, generate := range []bool{false, true} {
-				name := "stream"
-				if generate {
-					name = "generate"
+			executions := 0
+			model := &mockModel{}
+			model.streamFunc = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+				stream := make(chan provider.StreamPart, 2)
+				if model.callCount == 1 {
+					stream <- provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "call-1", ToolName: "write", Input: `{}`}
+					stream <- provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: tc.reason}}
+				} else {
+					stream <- provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}}
 				}
-				t.Run(name, func(t *testing.T) {
-					executions := 0
-					model := &mockModel{streamFunc: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
-						stream := make(chan provider.StreamPart, 2)
-						stream <- provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "call-1", ToolName: "write", Input: `{}`}
-						stream <- provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: tc.reason}}
-						close(stream)
-						return &provider.StreamResult{Stream: stream}, nil
-					}}
-					tools := ToolSet{"write": {Execute: func(context.Context, json.RawMessage, ToolExecutionOptions) (json.RawMessage, error) {
-						executions++
-						return json.RawMessage(`{"ok":true}`), nil
-					}}}
-					if generate {
-						_, err := GenerateText(context.Background(), model,
-							WithModelMessages(provider.UserText("write")), WithTools(tools),
-						)
-						require.NoError(t, err)
-					} else {
-						result := StreamText(context.Background(), model,
-							WithModelMessages(provider.UserText("write")), WithTools(tools),
-						)
-						for range result.FullStream() {
-						}
-					}
-					if tc.shouldExec {
-						assert.Equal(t, 1, executions)
-					} else {
-						assert.Zero(t, executions)
-					}
-				})
+				close(stream)
+				return &provider.StreamResult{Stream: stream}, nil
+			}
+			result := StreamText(context.Background(), model,
+				WithModelMessages(provider.UserText("write")),
+				WithTools(ToolSet{"write": {Execute: func(context.Context, json.RawMessage, ToolExecutionOptions) (json.RawMessage, error) {
+					executions++
+					return json.RawMessage(`{"ok":true}`), nil
+				}}}),
+				WithStopWhen(StepCountIs(3)),
+			)
+			for range result.FullStream() {
+			}
+
+			require.NoError(t, result.Err())
+			if tc.shouldExec {
+				assert.Equal(t, 1, executions)
+				assert.Equal(t, 2, model.callCount)
+			} else {
+				assert.Zero(t, executions)
+				assert.Equal(t, 1, model.callCount)
 			}
 		})
 	}
-}
-
-func TestStreamText_UnsafeFinishDoesNotContinue(t *testing.T) {
-	model := &mockModel{streamFunc: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
-		stream := make(chan provider.StreamPart, 2)
-		stream <- provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "call-1", ToolName: "write", Input: `{}`}
-		stream <- provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonLength}}
-		close(stream)
-		return &provider.StreamResult{Stream: stream}, nil
-	}}
-	result := StreamText(context.Background(), model,
-		WithModelMessages(provider.UserText("write")),
-		WithTools(ToolSet{"write": {Execute: func(context.Context, json.RawMessage, ToolExecutionOptions) (json.RawMessage, error) {
-			return json.RawMessage(`{"ok":true}`), nil
-		}}}),
-		WithStopWhen(StepCountIs(3)),
-	)
-	for range result.FullStream() {
-	}
-	assert.NoError(t, result.Err())
-	assert.Equal(t, 1, model.callCount)
 }
 
 func TestConvertToModelMessages_IgnoresPreliminaryOutput(t *testing.T) {

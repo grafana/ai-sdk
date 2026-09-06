@@ -28,6 +28,7 @@ var ErrNoOutputGenerated = errors.New("aisdk: no output generated")
 type StreamTextResult struct {
 	fullStream chan TextStreamPart
 	done       chan struct{}
+	onChunk    func(OnChunkState)
 	consumed   atomic.Bool
 	mu         sync.Mutex
 
@@ -62,6 +63,7 @@ func streamTextWithConfig(ctx context.Context, model provider.LanguageModel, cfg
 	result := &StreamTextResult{
 		fullStream: make(chan TextStreamPart, defaultStreamBuffer),
 		done:       make(chan struct{}),
+		onChunk:    cfg.onChunk,
 	}
 
 	result.partialOutputStream = newLosslessStream[json.RawMessage]()
@@ -438,11 +440,11 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 	ctx, opCancel = context.WithCancel(ctx)
 	defer opCancel()
 
-	r.emit(StreamStart{})
-
 	if cfg.onStart != nil {
 		cfg.onStart(OnStartState{})
 	}
+
+	r.emit(StreamStart{})
 
 	// Convert messages
 	var msgs []provider.Message
@@ -773,6 +775,10 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 			}
 
 			r.totalUsage = aggregateUsage(r.steps)
+			r.emit(StreamFinish{
+				FinishReason: step.FinishReason,
+				TotalUsage:   &r.totalUsage,
+			})
 
 			if cfg.onFinish != nil {
 				cfg.onFinish(OnFinishState{
@@ -782,11 +788,6 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 					Output:     r.outputValue,
 				})
 			}
-
-			r.emit(StreamFinish{
-				FinishReason: step.FinishReason,
-				TotalUsage:   &r.totalUsage,
-			})
 			return
 		}
 
@@ -918,7 +919,6 @@ loop:
 			textPartIDs[part.ID] = streamPartID
 			tsp := StreamTextStart{ID: streamPartID, ProviderMetadata: part.ProviderMetadata}
 			r.emit(tsp)
-			r.callOnChunk(cfg, tsp)
 
 		case provider.PartTextDelta:
 			streamPartID := mappedStreamPartID(textPartIDs, part.ID)
@@ -936,7 +936,6 @@ loop:
 				} else if streamPartID != outputTextChunkID {
 					tsp := StreamTextDelta{ID: streamPartID, Text: part.Delta, ProviderMetadata: part.ProviderMetadata}
 					r.emit(tsp)
-					r.callOnChunk(cfg, tsp)
 					continue
 				}
 				outputTextChunk.WriteString(part.Delta)
@@ -946,7 +945,6 @@ loop:
 				if part.Delta == "" && part.ProviderMetadata != nil {
 					tsp := StreamTextDelta{ID: streamPartID, ProviderMetadata: part.ProviderMetadata}
 					r.emit(tsp)
-					r.callOnChunk(cfg, tsp)
 					continue
 				}
 				parsed := r.emitPartialOutput(cfg.output, textBuilder.String())
@@ -954,13 +952,11 @@ loop:
 					lastPublishedOutput = parsed
 					tsp := StreamTextDelta{ID: outputTextChunkID, Text: outputTextChunk.String(), ProviderMetadata: outputTextMeta}
 					r.emit(tsp)
-					r.callOnChunk(cfg, tsp)
 					outputTextChunk.Reset()
 				}
 			} else {
 				tsp := StreamTextDelta{ID: streamPartID, Text: part.Delta, ProviderMetadata: part.ProviderMetadata}
 				r.emit(tsp)
-				r.callOnChunk(cfg, tsp)
 			}
 
 		case provider.PartTextEnd:
@@ -968,7 +964,6 @@ loop:
 			if cfg.output != nil && streamPartID == outputTextChunkID && outputTextChunk.Len() > 0 {
 				tsp := StreamTextDelta{ID: outputTextChunkID, Text: outputTextChunk.String(), ProviderMetadata: outputTextMeta}
 				r.emit(tsp)
-				r.callOnChunk(cfg, tsp)
 				outputTextChunk.Reset()
 			}
 			if idx, ok := responseTextIndex[part.ID]; ok && part.ProviderMetadata != nil {
@@ -976,7 +971,6 @@ loop:
 			}
 			tsp := StreamTextEnd{ID: streamPartID, ProviderMetadata: part.ProviderMetadata}
 			r.emit(tsp)
-			r.callOnChunk(cfg, tsp)
 			delete(textPartIDs, part.ID)
 
 		case provider.PartReasoningStart:
@@ -992,7 +986,6 @@ loop:
 			reasoningPartIDs[part.ID] = streamPartID
 			tsp := StreamReasoningStart{ID: streamPartID, ProviderMetadata: part.ProviderMetadata}
 			r.emit(tsp)
-			r.callOnChunk(cfg, tsp)
 
 		case provider.PartReasoningDelta:
 			streamPartID := mappedStreamPartID(reasoningPartIDs, part.ID)
@@ -1014,7 +1007,6 @@ loop:
 			}
 			tsp := StreamReasoningDelta{ID: streamPartID, Text: part.Delta, ProviderMetadata: part.ProviderMetadata}
 			r.emit(tsp)
-			r.callOnChunk(cfg, tsp)
 
 		case provider.PartReasoningEnd:
 			streamPartID := mappedStreamPartID(reasoningPartIDs, part.ID)
@@ -1033,7 +1025,6 @@ loop:
 			delete(activeReasoning, part.ID)
 			tsp := StreamReasoningEnd{ID: streamPartID, ProviderMetadata: part.ProviderMetadata}
 			r.emit(tsp)
-			r.callOnChunk(cfg, tsp)
 			delete(reasoningPartIDs, part.ID)
 
 		case provider.PartToolInputStart:
@@ -1047,7 +1038,6 @@ loop:
 				Title: part.Title, ProviderMetadata: part.ProviderMetadata,
 			}
 			r.emit(tsp)
-			r.callOnChunk(cfg, tsp)
 			if t, ok := cfg.tools[part.ToolName]; ok && t.OnInputStart != nil {
 				t.OnInputStart(ToolExecutionOptions{ToolCallID: part.ID, Context: stepContext})
 			}
@@ -1059,7 +1049,6 @@ loop:
 			}
 			tsp := StreamToolInputDelta{ID: part.ID, Delta: part.Delta, ProviderMetadata: part.ProviderMetadata}
 			r.emit(tsp)
-			r.callOnChunk(cfg, tsp)
 			if t, ok := cfg.tools[toolName]; ok && t.OnInputDelta != nil {
 				t.OnInputDelta(part.Delta, ToolExecutionOptions{ToolCallID: part.ID, Context: stepContext})
 			}
@@ -1067,7 +1056,6 @@ loop:
 		case provider.PartToolInputEnd:
 			tsp := StreamToolInputEnd{ID: part.ID, ProviderMetadata: part.ProviderMetadata}
 			r.emit(tsp)
-			r.callOnChunk(cfg, tsp)
 
 		case provider.PartToolCall:
 			r.handleToolCall(part, &step, cfg, toolTitleByID, stepContext)
@@ -1130,7 +1118,6 @@ loop:
 				})
 				tsp := StreamSource{Source: src}
 				r.emit(tsp)
-				r.callOnChunk(cfg, tsp)
 			}
 
 		case provider.PartFile:
@@ -1144,7 +1131,6 @@ loop:
 			})
 			tsp := StreamFile{File: gf, ProviderMetadata: part.ProviderMetadata}
 			r.emit(tsp)
-			r.callOnChunk(cfg, tsp)
 
 		case provider.PartReasoningFile:
 			gf := generatedFileFromStreamData(part.Data, part.MediaType)
@@ -1157,7 +1143,6 @@ loop:
 			})
 			tsp := StreamReasoningFile{File: gf, ProviderMetadata: part.ProviderMetadata}
 			r.emit(tsp)
-			r.callOnChunk(cfg, tsp)
 
 		case provider.PartResponseMeta:
 			responseMeta = provider.ResponseMetadata{
@@ -1182,7 +1167,6 @@ loop:
 		case provider.PartRaw:
 			tsp := StreamRaw{RawValue: part.RawValue}
 			r.emit(tsp)
-			r.callOnChunk(cfg, tsp)
 
 		case provider.PartToolApprovalRequest:
 			// Providers only emit PartToolApprovalRequest for provider-executed
@@ -1226,7 +1210,6 @@ loop:
 			})
 			tsp := StreamToolApprovalRequest(req)
 			r.emit(tsp)
-			r.callOnChunk(cfg, tsp)
 
 		case provider.PartCustom:
 			step.responseContent = append(step.responseContent, provider.ContentPart{
@@ -1236,7 +1219,6 @@ loop:
 			})
 			tsp := StreamCustom{Kind: part.Kind, ProviderMetadata: part.ProviderMetadata}
 			r.emit(tsp)
-			r.callOnChunk(cfg, tsp)
 
 		case provider.PartError:
 			terminated = true
@@ -1259,7 +1241,6 @@ loop:
 			r.mu.Unlock()
 			tsp := StreamError{Error: partErrAsError}
 			r.emit(tsp)
-			r.callOnChunk(cfg, tsp)
 			callOnError(cfg.onError, partErrAsError)
 		}
 	}
@@ -1268,7 +1249,6 @@ loop:
 	if cfg.output != nil && outputTextChunk.Len() > 0 && (completed || partialCompleted) {
 		tsp := StreamTextDelta{ID: outputTextChunkID, Text: outputTextChunk.String(), ProviderMetadata: outputTextMeta}
 		r.emit(tsp)
-		r.callOnChunk(cfg, tsp)
 	}
 
 	step.Text = textBuilder.String()
@@ -1415,7 +1395,6 @@ func (r *StreamTextResult) handleToolCall(
 		Dynamic: dynamic, Title: title, ProviderMetadata: part.ProviderMetadata,
 	}
 	r.emit(tsp)
-	r.callOnChunk(cfg, tsp)
 
 	if t, ok := cfg.tools[part.ToolName]; ok && t.OnInputAvailable != nil {
 		t.OnInputAvailable(parsedInput, ToolExecutionOptions{ToolCallID: part.ToolCallID, Context: stepContext})
@@ -1459,7 +1438,6 @@ func (r *StreamTextResult) handleToolResult(
 			Dynamic: dynamic, ProviderMetadata: part.ProviderMetadata,
 		}
 		r.emit(tsp)
-		r.callOnChunk(cfg, tsp)
 		return nil
 	}
 
@@ -1469,7 +1447,6 @@ func (r *StreamTextResult) handleToolResult(
 		Dynamic: dynamic, ProviderMetadata: part.ProviderMetadata,
 	}
 	r.emit(tsp)
-	r.callOnChunk(cfg, tsp)
 	if preliminary {
 		return nil
 	}
@@ -1539,7 +1516,6 @@ func (r *StreamTextResult) rejectToolCall(
 		useUIDynamic:     true,
 	}
 	r.emit(toolCallPart)
-	r.callOnChunk(cfg, toolCallPart)
 	if part.ProviderExecuted {
 		return
 	}
@@ -1569,7 +1545,6 @@ func (r *StreamTextResult) rejectToolCall(
 		useUIDynamic: true,
 	}
 	r.emit(toolErrorPart)
-	r.callOnChunk(cfg, toolErrorPart)
 }
 
 // executeTools runs after PartFinish and processes every tool call recorded
@@ -1623,7 +1598,7 @@ func (r *StreamTextResult) executeTools(
 				return err
 			}
 			step.ToolApprovalRequests = append(step.ToolApprovalRequests, req)
-			r.emitToolApprovalRequest(cfg, req)
+			r.emitToolApprovalRequest(req)
 			continue
 		case ToolApprovalApproved:
 			approvalID := generateConfigID(cfg)
@@ -1634,8 +1609,8 @@ func (r *StreamTextResult) executeTools(
 			resp := newToolApprovalResponse(approvalID, tc, true, decision.Reason)
 			step.ToolApprovalRequests = append(step.ToolApprovalRequests, req)
 			step.ToolApprovalResponses = append(step.ToolApprovalResponses, resp)
-			r.emitToolApprovalRequest(cfg, req)
-			r.emitToolApprovalResponse(cfg, resp)
+			r.emitToolApprovalRequest(req)
+			r.emitToolApprovalResponse(resp)
 		case ToolApprovalDenied:
 			approvalID := generateConfigID(cfg)
 			req := newToolApprovalRequest(approvalID, tc, decision.Reason, true)
@@ -1656,8 +1631,8 @@ func (r *StreamTextResult) executeTools(
 			if !tc.ProviderExecuted {
 				step.ToolResults = append(step.ToolResults, ToolResult{ToolCallID: tc.ToolCallID, ToolName: tc.ToolName, Input: tc.Input, ModelOutput: &provider.ToolResultOutput{Type: provider.ToolOutputExecutionDenied, Reason: decision.Reason}, Dynamic: tc.Dynamic, Title: tc.Title, ProviderMetadata: tc.ProviderMetadata})
 			}
-			r.emitToolApprovalRequest(cfg, req)
-			r.emitToolApprovalResponse(cfg, resp)
+			r.emitToolApprovalRequest(req)
+			r.emitToolApprovalResponse(resp)
 			continue
 		default:
 			return fmt.Errorf("aisdk: unsupported tool approval status %q", decision.Status)
@@ -1696,7 +1671,6 @@ func (r *StreamTextResult) executeTools(
 		step.ToolResults = append(step.ToolResults, out.result)
 		if out.event != nil {
 			r.emit(out.event)
-			r.callOnChunk(cfg, out.event)
 		}
 	}
 	return nil
@@ -1731,16 +1705,14 @@ func newToolApprovalResponse(approvalID string, tc ToolCall, approved bool, reas
 	}
 }
 
-func (r *StreamTextResult) emitToolApprovalRequest(cfg *streamConfig, req ToolApprovalRequest) {
+func (r *StreamTextResult) emitToolApprovalRequest(req ToolApprovalRequest) {
 	tsp := StreamToolApprovalRequest(req)
 	r.emit(tsp)
-	r.callOnChunk(cfg, tsp)
 }
 
-func (r *StreamTextResult) emitToolApprovalResponse(cfg *streamConfig, resp ToolApprovalResponse) {
+func (r *StreamTextResult) emitToolApprovalResponse(resp ToolApprovalResponse) {
 	tsp := StreamToolApprovalResponse(resp)
 	r.emit(tsp)
-	r.callOnChunk(cfg, tsp)
 }
 
 func (r *StreamTextResult) executeSingleTool(
@@ -1882,6 +1854,13 @@ func (r *StreamTextResult) executeSingleTool(
 
 func (r *StreamTextResult) emit(part TextStreamPart) {
 	r.fullStream <- part
+	if r.onChunk == nil {
+		return
+	}
+	func() {
+		defer func() { _ = recover() }()
+		r.onChunk(OnChunkState{Chunk: part})
+	}()
 }
 
 func (r *StreamTextResult) abort(ctx context.Context, cfg *streamConfig) {
@@ -1896,7 +1875,6 @@ func (r *StreamTextResult) abort(ctx context.Context, cfg *streamConfig) {
 		part.Reason = cause.Error()
 	}
 	r.emit(part)
-	r.callOnChunk(cfg, part)
 }
 
 func (r *StreamTextResult) emitPartialOutput(out Output, text string) string {
@@ -2005,7 +1983,6 @@ func (r *StreamTextResult) resolveToolApprovals(ctx context.Context, cfg *stream
 	for _, approval := range denied {
 		deniedEvent := StreamToolOutputDenied{ToolCallID: approval.toolCall.ToolCallID, ToolName: approval.toolCall.ToolName}
 		r.emit(deniedEvent)
-		r.callOnChunk(cfg, deniedEvent)
 	}
 	for _, approval := range invalid {
 		toolCall := approval.toolCall
@@ -2020,7 +1997,6 @@ func (r *StreamTextResult) resolveToolApprovals(ctx context.Context, cfg *stream
 			ProviderMetadata: optionsToProviderMetadata(toolCall.ProviderOptions),
 		}
 		r.emit(event)
-		r.callOnChunk(cfg, event)
 	}
 
 	type executableApproval struct {
@@ -2075,7 +2051,6 @@ func (r *StreamTextResult) resolveToolApprovals(ctx context.Context, cfg *stream
 	for _, out := range outcomes {
 		if out.event != nil {
 			r.emit(out.event)
-			r.callOnChunk(cfg, out.event)
 		}
 		approvedToolParts = append(approvedToolParts, provider.ContentPart{
 			Type:       provider.ContentPartTypeToolResult,
@@ -2397,14 +2372,6 @@ func sanitizePromptForProvider(msgs []provider.Message) ([]provider.Message, err
 		return nil, err
 	}
 	return result, nil
-}
-
-func (r *StreamTextResult) callOnChunk(cfg *streamConfig, tsp TextStreamPart) {
-	if cfg.onChunk == nil {
-		return
-	}
-	defer func() { _ = recover() }()
-	cfg.onChunk(OnChunkState{Chunk: tsp})
 }
 
 // Wait blocks until the stream completes.

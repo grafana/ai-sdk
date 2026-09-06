@@ -9,28 +9,29 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const parallelToolCallInput = `{"tool_uses":[{"recipient_name":"functions.weather","parameters":{"location":"San Francisco"}},{"recipient_name":"functions.cityAttractions","parameters":{"city":"Rome"}}]}`
+
+func parallelToolCallMetadata(t *testing.T, index int) provider.ProviderOptions {
+	t.Helper()
+	raw, err := json.Marshal(OpenAIPartOptions{ParallelToolCall: &OpenAIParallelToolCall{
+		ItemID: "fc_parallel", ToolCallID: "call_parallel", ToolName: "parallel",
+		Input: parallelToolCallInput, Index: index, Count: 2,
+	}})
+	require.NoError(t, err)
+	return provider.ProviderOptions{"openai": provider.RawProviderOption{Key: "openai", Raw: raw}}
+}
+
 func TestBuildParams_RegroupsParallelToolCallContinuation(t *testing.T) {
-	input := `{"tool_uses":[{"recipient_name":"functions.weather","parameters":{"location":"San Francisco"}},{"recipient_name":"functions.cityAttractions","parameters":{"city":"Rome"}}]}`
-	metadata := func(index int) provider.ProviderOptions {
-		raw, err := json.Marshal(OpenAIPartOptions{ParallelToolCall: &OpenAIParallelToolCall{
-			ItemID: "fc_parallel", ToolCallID: "call_parallel", ToolName: "parallel",
-			Input: input, Index: index, Count: 2,
-		}})
-		require.NoError(t, err)
-		return provider.ProviderOptions{"openai": provider.RawProviderOption{Key: "openai", Raw: raw}}
-	}
-
 	weatherCall := provider.ToolCallPart("call_parallel_0", "weather", json.RawMessage(`{"location":"San Francisco"}`))
-	weatherCall.ProviderOptions = metadata(0)
+	weatherCall.ProviderOptions = parallelToolCallMetadata(t, 0)
 	attractionsCall := provider.ToolCallPart("call_parallel_1", "cityAttractions", json.RawMessage(`{"city":"Rome"}`))
-	attractionsCall.ProviderOptions = metadata(1)
+	attractionsCall.ProviderOptions = parallelToolCallMetadata(t, 1)
 	weatherResult := provider.ToolResultPart("call_parallel_0", "weather", &provider.ToolResultOutput{Type: provider.ToolOutputJSON, JSON: json.RawMessage(`{"temperature":72}`)})
-	weatherResult.ProviderOptions = metadata(0)
+	weatherResult.ProviderOptions = parallelToolCallMetadata(t, 0)
 	attractionsResult := provider.ToolResultPart("call_parallel_1", "cityAttractions", &provider.ToolResultOutput{Type: provider.ToolOutputText, Text: "Colosseum"})
-	attractionsResult.ProviderOptions = metadata(1)
+	attractionsResult.ProviderOptions = parallelToolCallMetadata(t, 1)
 
-	previousResponseID := "resp_previous"
-	params, _, _, err := buildParams("gpt-5.4", provider.CallOptions{
+	body, _ := buildBody(t, "gpt-5.4", provider.CallOptions{
 		Prompt: []provider.Message{
 			provider.NewAssistantMessage(weatherCall, attractionsCall),
 			provider.NewToolMessage(weatherResult, attractionsResult),
@@ -39,14 +40,8 @@ func TestBuildParams_RegroupsParallelToolCallContinuation(t *testing.T) {
 			{Type: provider.ToolTypeFunction, Name: "weather"},
 			{Type: provider.ToolTypeFunction, Name: "cityAttractions"},
 		},
-		ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{PreviousResponseID: previousResponseID}),
+		ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{PreviousResponseID: "resp_previous"}),
 	})
-	require.NoError(t, err)
-
-	raw, err := json.Marshal(params)
-	require.NoError(t, err)
-	var body map[string]any
-	require.NoError(t, json.Unmarshal(raw, &body))
 	items := body["input"].([]any)
 	require.Len(t, items, 2)
 	call := items[0].(map[string]any)
@@ -60,41 +55,24 @@ func TestBuildParams_RegroupsParallelToolCallContinuation(t *testing.T) {
 }
 
 func TestBuildParams_RegroupsParallelToolCallPromptCacheBreakpoints(t *testing.T) {
-	input := `{"tool_uses":[{"recipient_name":"functions.weather","parameters":{"location":"San Francisco"}},{"recipient_name":"functions.cityAttractions","parameters":{"city":"Rome"}}]}`
 	breakpoint := &PromptCacheBreakpoint{Mode: "explicit"}
-	metadata := func(index int) provider.ProviderOptions {
-		raw, err := json.Marshal(OpenAIPartOptions{ParallelToolCall: &OpenAIParallelToolCall{
-			ItemID: "fc_parallel", ToolCallID: "call_parallel", ToolName: "parallel",
-			Input: input, Index: index, Count: 2,
-		}})
-		require.NoError(t, err)
-		return provider.ProviderOptions{"openai": provider.RawProviderOption{Key: "openai", Raw: raw}}
-	}
-
 	weatherResult := provider.ToolResultPart("call_parallel_0", "weather", &provider.ToolResultOutput{
 		Type:            provider.ToolOutputJSON,
 		JSON:            json.RawMessage(`{"temperature":72}`),
 		ProviderOptions: provider.BuildProviderOptions(OpenAIPartOptions{PromptCacheBreakpoint: breakpoint}),
 	})
-	weatherResult.ProviderOptions = metadata(0)
+	weatherResult.ProviderOptions = parallelToolCallMetadata(t, 0)
 	attractionsResult := provider.ToolResultPart("call_parallel_1", "cityAttractions", &provider.ToolResultOutput{Type: provider.ToolOutputText, Text: "Colosseum"})
-	attractionsResult.ProviderOptions = metadata(1)
+	attractionsResult.ProviderOptions = parallelToolCallMetadata(t, 1)
 
-	previousResponseID := "resp_previous"
-	params, _, _, err := buildParams("gpt-5.4", provider.CallOptions{
+	body, _ := buildBody(t, "gpt-5.4", provider.CallOptions{
 		Prompt: []provider.Message{provider.NewToolMessage(weatherResult, attractionsResult)},
 		Tools: []provider.Tool{
 			{Type: provider.ToolTypeFunction, Name: "weather"},
 			{Type: provider.ToolTypeFunction, Name: "cityAttractions"},
 		},
-		ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{PreviousResponseID: previousResponseID}),
+		ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{PreviousResponseID: "resp_previous"}),
 	})
-	require.NoError(t, err)
-
-	raw, err := json.Marshal(params)
-	require.NoError(t, err)
-	var body map[string]any
-	require.NoError(t, json.Unmarshal(raw, &body))
 	items := body["input"].([]any)
 	require.Len(t, items, 1)
 	output := items[0].(map[string]any)
