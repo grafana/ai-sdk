@@ -5,9 +5,10 @@ with authentication, policy, observability, routing, and fallback. Its module
 path is `github.com/grafana/ai-sdk/ai-gateway`.
 
 This directory contains the ProviderWire V4 request contract, exact-pinned
-registered-client evidence, public model catalog, and unary text HTTP runtime.
-Streaming, authentication, service composition, deployment assets, and the Go
-Gateway client land in later work packages.
+registered-client evidence, public model catalog, unary and streaming text HTTP
+runtimes, and the authenticated direct-Anthropic service under
+`cmd/grafana-ai-gateway`. Deployment assets and the Go Gateway client land in
+later work packages.
 
 Gateway code may import explicitly pinned SDK modules. SDK modules must not
 import, require, or replace the Gateway module, which remains outside the root
