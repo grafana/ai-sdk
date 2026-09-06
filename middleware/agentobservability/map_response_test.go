@@ -257,11 +257,30 @@ func TestUsageToAgento11y(t *testing.T) {
 	assert.Equal(t, int64(50), got.CacheReadInputTokens)
 	assert.Equal(t, int64(25), got.CacheWriteInputTokens)
 	assert.Equal(t, int64(15), got.ReasoningTokens)
+	assert.Equal(t, agento11y.TokenInputSemanticsInclusive, got.InputSemantics)
 }
 
 func TestUsageToAgento11y_Zero(t *testing.T) {
-	got := usageToAgento11y(provider.Usage{})
-	assert.Equal(t, agento11y.TokenUsage{}, got)
+	zero := 0
+	tests := []struct {
+		name  string
+		usage provider.Usage
+		want  agento11y.TokenUsage
+	}{
+		{
+			name: "unreported",
+		},
+		{
+			name:  "reported zero input",
+			usage: provider.Usage{InputTokens: provider.InputTokenUsage{Total: &zero}},
+			want:  agento11y.TokenUsage{InputSemantics: agento11y.TokenInputSemanticsInclusive},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, usageToAgento11y(tc.usage))
+		})
+	}
 }
 
 func TestMetadataFromUsage_ServerToolUse(t *testing.T) {

@@ -82,17 +82,20 @@ func wrapRecordingGenerate(ctx context.Context, opts RecordingOptions, p middlew
 	}
 
 	ctxInfo := resolveContextInfo(ctx, opts.ContextProvider)
-	start := BuildGenerationStart(ctx, p.Model.Provider(), p.Model.ModelID(), ctxInfo)
+	start := buildGenerationStartWithParams(ctx, p.Model.Provider(), p.Model.ModelID(), ctxInfo, p.Params)
 	ctx, recorder := client.StartGeneration(ctx, start)
 	defer recorder.End()
 
 	result, err := p.DoGenerate(ctx)
 	if err != nil {
+		recorder.SetResult(mapGenerateResultWithStart(p.Params, nil, ctxInfo, start), nil)
 		recorder.SetCallError(err)
 		return nil, err
 	}
 
-	recorder.SetResult(mapGenerateResultWithStart(p.Params, result, ctxInfo, start), nil)
+	generation := mapGenerateResultWithStart(p.Params, result, ctxInfo, start)
+	preserveRawTransportMetadata(&generation, generationModelIdentity{provider: p.Model.Provider(), model: p.Model.ModelID()})
+	recorder.SetResult(generation, nil)
 	return result, nil
 }
 
@@ -104,11 +107,12 @@ func wrapRecordingStream(ctx context.Context, opts RecordingOptions, p middlewar
 	}
 
 	ctxInfo := resolveContextInfo(ctx, opts.ContextProvider)
-	start := BuildGenerationStart(ctx, p.Model.Provider(), p.Model.ModelID(), ctxInfo)
+	start := buildGenerationStartWithParams(ctx, p.Model.Provider(), p.Model.ModelID(), ctxInfo, p.Params)
 	streamCtx, recorder := client.StartStreamingGeneration(ctx, start)
 
 	upstream, err := p.DoStream(streamCtx)
 	if err != nil {
+		recorder.SetResult(mapGenerateResultWithStart(p.Params, nil, ctxInfo, start), nil)
 		recorder.SetCallError(err)
 		recorder.End()
 		return nil, err
@@ -122,7 +126,8 @@ func wrapRecordingStream(ctx context.Context, opts RecordingOptions, p middlewar
 		Response: upstream.Response,
 	}
 
-	go runStreamTee(streamCtx, upstream.Stream, teeCh, streamRec, recorder, ctxInfo)
+	transport := generationModelIdentity{provider: p.Model.Provider(), model: p.Model.ModelID()}
+	go runStreamTee(streamCtx, upstream.Stream, teeCh, streamRec, recorder, ctxInfo, transport)
 	return teeResult, nil
 }
 
@@ -137,9 +142,10 @@ func runStreamTee(
 	streamRec *StreamRecorder,
 	recorder *agento11y.GenerationRecorder,
 	ctxInfo ContextInfo,
+	transport generationModelIdentity,
 ) {
-	defer recorder.End()
 	defer close(tee)
+	defer recorder.End()
 
 	canceled := false
 streamLoop:
@@ -174,6 +180,7 @@ streamLoop:
 	}
 
 	gen := streamRec.Generation()
+	preserveRawTransportMetadata(&gen, transport)
 	// Carry caller-supplied identity into the final Generation in case the
 	// seed got normalized away by the recorder.
 	if gen.UserID == "" {

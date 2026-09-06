@@ -72,6 +72,63 @@ func TestBuildGenerationStart_DefensiveCopy(t *testing.T) {
 	assert.Equal(t, "y", start.Tags["x"], "tags are defensively cloned")
 }
 
+func TestProviderNameNormalization(t *testing.T) {
+	tests := []struct {
+		name              string
+		providerName      string
+		wantAgento11y     string
+		wantOpenTelemetry string
+	}{
+		{name: "Bedrock", providerName: "amazon-bedrock", wantAgento11y: "bedrock", wantOpenTelemetry: "aws.bedrock"},
+		{name: "Anthropic Vertex", providerName: "anthropic.vertex", wantAgento11y: "vertex", wantOpenTelemetry: "gcp.vertex_ai"},
+		{name: "Anthropic", providerName: "anthropic", wantAgento11y: "anthropic", wantOpenTelemetry: "anthropic"},
+		{name: "custom", providerName: "custom-provider", wantAgento11y: "custom-provider", wantOpenTelemetry: "custom-provider"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.wantAgento11y, agento11yProviderName(tc.providerName))
+			assert.Equal(t, tc.wantOpenTelemetry, otelProviderName(tc.providerName))
+			assert.Equal(t, tc.wantAgento11y, BuildGenerationStart(context.Background(), tc.providerName, "model", ContextInfo{}).Model.Provider)
+			assert.Equal(t, tc.wantAgento11y, modelIdentityFromResponse(tc.providerName, "model").provider)
+			request := buildHookEvaluateRequest(&mockLanguageModel{provider_: tc.providerName, modelID: "model"}, provider.CallOptions{}, ContextInfo{})
+			require.NotNil(t, request.Context.Model)
+			assert.Equal(t, tc.wantAgento11y, request.Context.Model.Provider)
+		})
+	}
+}
+
+func TestPreserveRawTransportMetadata(t *testing.T) {
+	tests := []struct {
+		name      string
+		model     agento11y.ModelRef
+		metadata  map[string]any
+		transport generationModelIdentity
+		want      map[string]any
+	}{
+		{
+			name:      "routed provider keeps raw transport identity",
+			model:     agento11y.ModelRef{Provider: "anthropic", Name: "claude"},
+			metadata:  map[string]any{transportProviderMetadataKey: "bedrock", transportModelMetadataKey: "anthropic.claude"},
+			transport: generationModelIdentity{provider: "amazon-bedrock", model: "anthropic.claude"},
+			want:      map[string]any{transportProviderMetadataKey: "amazon-bedrock", transportModelMetadataKey: "anthropic.claude"},
+		},
+		{
+			name:      "direct provider leaves caller metadata unchanged",
+			model:     agento11y.ModelRef{Provider: "bedrock", Name: "anthropic.claude"},
+			metadata:  map[string]any{transportProviderMetadataKey: "caller", transportModelMetadataKey: "caller"},
+			transport: generationModelIdentity{provider: "amazon-bedrock", model: "anthropic.claude"},
+			want:      map[string]any{transportProviderMetadataKey: "caller", transportModelMetadataKey: "caller"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			generation := agento11y.Generation{Model: tc.model, Metadata: tc.metadata}
+			preserveRawTransportMetadata(&generation, tc.transport)
+			assert.Equal(t, tc.want, generation.Metadata)
+		})
+	}
+}
+
 func TestMapGenerateResult_CanonicalRoundTrip(t *testing.T) {
 	maxTok := 512
 	temp := 0.7
@@ -219,6 +276,7 @@ func TestMapGenerateResult_NilResult(t *testing.T) {
 	}, nil, ContextInfo{})
 	require.Len(t, gen.Input, 1)
 	assert.Empty(t, gen.Output, "nil result -> no output")
+	assert.Empty(t, gen.ResponseModel)
 	assert.Empty(t, gen.StopReason)
 }
 

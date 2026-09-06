@@ -155,7 +155,7 @@ If `opts.ContextProvider` is `nil`, the middleware SHALL log a warning at most o
 - `Input.MaxTokens`, `Temperature`, `TopP`, `ToolChoice` are derived from the corresponding `provider.CallOptions` fields.
 - Anthropic thinking-budget metadata (`agento11y.gen_ai.request.thinking.budget_tokens`) is derived from `params.ProviderOptions["anthropic"]` via `json.RawMessage` decoding, not by importing `providers/anthropic`.
 - `Output` contains an assistant `agento11y.Message` for supported model content and additional tool-role messages for tool-result entries. Empty reasoning parts SHALL be omitted.
-- `Usage` maps from `result.Usage` (input tokens, output tokens, cache hits where applicable).
+- `Usage` maps from `result.Usage` (input tokens, output tokens, cache hits where applicable). When `result.Usage.InputTokens.Total` is present, `Usage.InputSemantics` SHALL be `agento11y.TokenInputSemanticsInclusive`. When no input total is present, input semantics SHALL remain unspecified.
 - `StopReason` is produced by `finishReasonToAgento11yStop(result.FinishReason)` and SHALL match the string values the legacy `internal/llm/claude/` path emitted (e.g. `"end_turn"`, `"max_tokens"`, `"tool_use"`, `"stop_sequence"`).
 - `Metadata` starts with caller metadata, then applies reserved request and usage derivations. Derived Anthropic thinking-budget and positive server-tool request counts SHALL override conflicting caller values, matching the pinned agento11y Anthropic helper.
 - Provider tool calls and results SHALL retain recoverable Anthropic discriminators, including MCP metadata and configured provider-tool aliases for web search, web fetch, code execution, and tool search. Irrecoverable provider subtypes MAY use the generic discriminator.
@@ -184,6 +184,16 @@ If `opts.ContextProvider` is `nil`, the middleware SHALL log a warning at most o
 
 - **WHEN** `result.Usage.Raw` contains positive `server_tool_use.web_search_requests` or `web_fetch_requests`
 - **THEN** generation metadata SHALL contain the corresponding Agent Observability usage keys and their sum as `total_requests`
+
+#### Scenario: Reported input usage is inclusive
+
+- **WHEN** `result.Usage.InputTokens.Total` is present
+- **THEN** `Generation.Usage.InputSemantics` SHALL equal `agento11y.TokenInputSemanticsInclusive`
+
+#### Scenario: Unreported input usage has no semantics
+
+- **WHEN** `result.Usage.InputTokens.Total` is absent
+- **THEN** `Generation.Usage.InputSemantics` SHALL remain unspecified
 
 #### Scenario: Byte-equal output to agento11y anthropic helper
 
@@ -353,7 +363,17 @@ When response metadata changes the canonical generation model identity from the 
 
 `RecordingMiddleware` SHALL NOT modify `params` and SHALL NOT modify the result.
 
-For streams, the recording goroutine SHALL select on `ctx.Done()` to avoid blocking on consumer disconnect. Cancellation before observed upstream completion SHALL be recorded as the call error and SHALL take precedence over an earlier `PartError`. The middleware SHALL NOT start an unbounded detached drain when the provider ignores cancellation; provider stream producers are responsible for honoring the call context.
+For streams, the recording goroutine SHALL select on the context supplied to `DoStream`. If it observes cancellation before upstream closure, the middleware SHALL:
+
+1. Stop forwarding and reading upstream.
+2. Call `recorder.SetCallError(ctx.Err())`.
+3. Call `recorder.SetResult` with the partial generation.
+4. Call `recorder.End`.
+5. Close the downstream channel.
+
+The context error SHALL take precedence over an earlier `PartError`.
+
+After normal upstream closure, the middleware SHALL call `recorder.SetResult` and then `recorder.End`. Both calls SHALL finish before the downstream channel closes. If the consumer stops reading the downstream channel without cancelling the call context, the middleware SHALL NOT treat that as cancellation. The middleware SHALL NOT start a detached upstream-drain goroutine. Provider stream producers are responsible for honoring the call context.
 
 #### Scenario: Generate path records on success
 
@@ -383,14 +403,17 @@ For streams, the recording goroutine SHALL select on `ctx.Done()` to avoid block
 - **WHEN** the inner model's `DoStream` returns a result stream that closes normally after N parts
 - **THEN** the middleware SHALL call `StartStreamingGeneration` once
 - **AND** the consumer SHALL receive exactly the same N parts in the same order
-- **AND** `recorder.SetResult` SHALL be called once after the upstream channel closes
+- **AND** after upstream closure, the middleware SHALL call `recorder.SetResult` and then `recorder.End`
+- **AND** both calls SHALL finish before the downstream channel closes
 
 #### Scenario: Stream cancellation records an error and cleans up
 
-- **WHEN** the consumer cancels its context before the upstream completes
-- **THEN** the recording goroutine SHALL NOT block indefinitely
-- **AND** the generation SHALL record the context cancellation as its call error
-- **AND** the middleware SHALL NOT start a detached goroutine that waits indefinitely for the upstream channel to close
+- **WHEN** the context supplied to `DoStream` is cancelled before the middleware observes upstream closure
+- **THEN** the middleware SHALL stop forwarding and reading upstream
+- **AND** the middleware SHALL call `recorder.SetCallError` with the context error
+- **AND** it SHALL call `recorder.SetResult` with the partial generation and then call `recorder.End`
+- **AND** the middleware SHALL close the downstream channel after both calls finish
+- **AND** the middleware SHALL NOT start a detached upstream drain
 
 ### Requirement: HooksMiddleware enforces preflight policy
 
@@ -439,15 +462,32 @@ When `EvaluateHook` returns a non-nil `TransformedInput`, `HooksMiddleware` SHAL
 5. Unchanged provider-executed tool calls and provider-specific tool results SHALL retain their provider fields only after an exact ID, name, and payload match. A provider-specific part that cannot be matched exactly SHALL fail closed.
 6. Because hook evaluation intentionally excludes media, message-level provider options, text-part provider options, empty reasoning metadata, and other unsupported content, a transform of a prompt containing undisclosed content SHALL fail closed rather than silently dropping or restoring it.
 7. Returned tools SHALL be matched exactly to disclosed original tool definitions. Exact retained tools MAY be preserved or reordered and omitted tools SHALL be removed; new or modified tools that cannot be reconstructed losslessly SHALL fail closed. Removing tools SHALL also fail closed when it leaves a required or specifically named `ToolChoice` unsatisfied.
-8. An empty transform SHALL fail closed. A system-only replacement is valid.
+8. A system-only replacement is valid.
 
-#### Scenario: Empty transform fails closed
+Agento11y v0.18 converts an unsupported hook response role to `user` before `HooksMiddleware` can validate it, whether the role is encoded as a string or a number. Until agento11y preserves unsupported roles, each transformed user message SHALL exactly match a distinct, previously unused original user message. A new, changed, or duplicate user message SHALL fail with `ErrHookTransformFailed`. System-prompt, assistant-message, tool-message, and tool-list transformations MAY proceed only if every transformed user message satisfies this rule.
 
-- **GIVEN** a non-empty original prompt
-- **AND** `EvaluateHook` returns a non-nil but empty `TransformedInput`
-- **WHEN** the transform is applied
-- **THEN** `ErrHookTransformFailed` SHALL be returned
-- **AND** the inner model SHALL NOT be invoked with the original prompt
+Agento11y v0.18 decodes an HTTP response containing an empty `transformed_input` object as no transform. In that case, `HooksMiddleware` SHALL invoke the model with the original prompt and tools.
+
+#### Scenario: Empty server transform is no transform
+
+- **GIVEN** an original prompt and tools
+- **WHEN** the Agent Observability server returns `{"action":"allow","transformed_input":{}}`
+- **THEN** the inner model SHALL be invoked with the original prompt and tools unchanged
+
+#### Scenario: Unsupported response role fails closed
+
+- **GIVEN** an original user message
+- **WHEN** agento11y v0.18 converts a transformed message whose role is `system`, an unknown string, or an unknown number to `user`
+- **AND** the resulting message does not exactly match an unused original user message
+- **THEN** `HooksMiddleware` SHALL return `ErrHookTransformFailed`
+- **AND** the model SHALL NOT be invoked
+
+#### Scenario: Unchanged user message permits other transforms
+
+- **GIVEN** a transformed user message that exactly matches an unused original user message
+- **WHEN** the hook changes one or more of the system prompt, assistant messages, tool messages, or retained tools
+- **AND** the hook changes no other content
+- **THEN** `HooksMiddleware` MAY apply all requested transformations
 
 #### Scenario: Removed assistant parts stay removed
 
@@ -504,24 +544,120 @@ The following context helpers SHALL be exposed from `middleware/agentobservabili
 - **WHEN** `RecordingMiddleware` invokes the inner model on that context
 - **THEN** the resulting `GenerationStart.ParentGenerationIDs` SHALL contain exactly `["p1", "p2"]` in that order
 
-### Requirement: OTel span shape
+### Requirement: Generation spans follow the resolved client protocol
 
-The middleware SHALL emit exactly one OTel span of its own: the hooks preflight span. The canonical generation span (operation = `generateText` / `streamText`, with `gen_ai.*` semantic-convention attributes and `agento11y.generation.id`) is owned by the agento11y client via `StartGeneration` / `StartStreamingGeneration`; the middleware SHALL NOT wrap or duplicate it.
+`RecordingMiddleware` SHALL use `StartGeneration` or `StartStreamingGeneration` on the resolved agento11y client. It SHALL pass the returned context to the inner model so the provider call runs under the client-owned generation span. Other context values SHALL remain available to the provider.
 
-Span name: `aisdk.hooks.preflight`. The span is opened by ai-sdk and its
-`aisdk.hooks.*` attribute keys are ai-sdk's own: the agento11y SDK neither
-produces nor reads them. The span also carries the `gen_ai.provider.name` and
-`gen_ai.request.model` semantic-convention attributes, which the agento11y SDK
-sets on its own generation span too.
+For gRPC and HTTP generation export, `RecordingMiddleware` SHALL finalize the client-owned recorder with the mapped generation. The resolved agento11y client owns validation, queueing, and transport. Recorder completion SHALL NOT acknowledge that the Agent Observability API accepted the generation. Agento11y SHALL also emit one CLIENT metadata span. The span name SHALL be `generateText <model>` for unary calls or `streamText <model>` for streaming calls when the model is known. Its `gen_ai.operation.name` SHALL be `generateText` or `streamText`.
+
+For OTel generation export, agento11y SHALL emit no separate generation payload. It SHALL emit one CLIENT generation span named `chat <model>` with `gen_ai.operation.name="chat"`. The span SHALL carry `agento11y.record="true"`, `agento11y.generation.id`, mapped generation attributes, and content allowed by the resolved capture mode. Streaming spans SHALL carry `gen_ai.request.stream=true`.
+
+The middleware SHALL NOT create a second generation span. It SHALL NOT flush the application's OTel provider after a model call.
+
+Error states on the generation path SHALL reach the trace through `recorder.SetCallError(err)`. Agento11y SHALL put `error.type` and `error.category` on its generation span. The middleware SHALL NOT add generation error attributes itself.
+
+#### Scenario: gRPC and HTTP keep a metadata span
+
+- **WHEN** the resolved client uses gRPC or HTTP generation export
+- **THEN** `RecordingMiddleware` SHALL finalize the client-owned recorder with the mapped generation
+- **AND** the provider call SHALL run under a `generateText <model>` or `streamText <model>` metadata span
+- **AND** the middleware SHALL NOT add another generation span
+- **AND** recorder completion SHALL NOT acknowledge remote receipt
+
+#### Scenario: Unary OTel export hands the active span to the provider
+
+- **GIVEN** a caller context with an active parent span and another context value
+- **AND** the client uses full content capture
+- **WHEN** `RecordingMiddleware` resolves an OTel-configured agento11y client and invokes a unary provider call
+- **THEN** the provider SHALL receive the child `chat <model>` generation span as its active span
+- **AND** the provider SHALL receive the other context value unchanged
+- **AND** the completed generation span SHALL contain the mapped input, output, usage, provider identity, and model identity
+
+#### Scenario: Streaming OTel span ends after normal provider closure
+
+- **WHEN** the wrapped provider returns a stream and its channel later closes normally
+- **THEN** `RecordingMiddleware` SHALL return the consumer stream while the generation span remains open
+- **AND** each provider part SHALL reach the consumer unchanged
+- **AND** the generation span SHALL end after the provider channel closes
+
+#### Scenario: Streaming OTel span ends on cancellation
+
+- **WHEN** the context supplied to `DoStream` is cancelled before upstream closure is observed
+- **THEN** the middleware SHALL stop forwarding provider parts
+- **AND** it SHALL call `recorder.SetCallError` with the context error
+- **AND** it SHALL call `recorder.SetResult` with the partial generation
+- **AND** it SHALL call `recorder.End` before closing the downstream channel
+- **AND** the middleware SHALL NOT start a detached upstream drain
+
+#### Scenario: OTel content follows the capture mode
+
+- **WHEN** the resolved capture mode is `metadata_only`
+- **THEN** the generation span SHALL omit system instructions, input messages, output messages, tool definitions, and media
+
+- **WHEN** the resolved capture mode is `full_with_metadata_spans`
+- **THEN** OTel generation export SHALL apply `full` capture because the generation span is the only generation copy
+
+#### Scenario: Routed OTel generation keeps both identities
+
+- **WHEN** response metadata supplies both a provider and model ID
+- **AND** that provider/model pair differs from the wrapped model identity
+- **THEN** the completed `chat <model>` span SHALL use the response provider and model
+- **AND** `agento11y.generation.metadata` SHALL retain the wrapped provider and model as `ai_sdk.transport.provider` and `ai_sdk.transport.model`
+
+#### Scenario: Built-in provider names use OTel registry values
+
+- **WHEN** the wrapped or routed provider is `amazon-bedrock`
+- **THEN** the mapped generation SHALL use provider `bedrock`
+- **AND** the generation or hooks span SHALL use `gen_ai.provider.name="aws.bedrock"`
+
+- **WHEN** the wrapped or routed provider is `anthropic.vertex`
+- **THEN** the mapped generation SHALL use provider `vertex`
+- **AND** the generation or hooks span SHALL use `gen_ai.provider.name="gcp.vertex_ai"`
+
+#### Scenario: Disabled experimental support does not fall back
+
+- **WHEN** a client selects OTel generation export without enabling agento11y experimental features
+- **THEN** the client SHALL export no marked `chat <model>` generation span
+- **AND** it SHALL NOT send the generation through gRPC or HTTP
+
+### Requirement: OTel generation lifecycle remains application-owned
+
+The middleware SHALL use an application-owned agento11y client and SHALL NOT construct the client, an OTel tracer provider, or an OTel exporter. The application SHALL construct these resources outside the middleware request path and select the sampling policy, export destination, and content capture mode. It MAY set the client's `TracerProvider` to select the OTel tracer provider for generation spans. To make `Client.Flush` and `Client.Shutdown` invoke and wait for `Flusher.ForceFlush`, the application SHALL set `Flusher` to the required flush target. A successful force-flush SHALL NOT acknowledge remote ingestion.
+
+If `TracerProvider` is not configured explicitly, agento11y SHALL use the global OTel tracer provider for generation export. If `MeterProvider` is not configured explicitly, agento11y SHALL use the global OTel meter provider. `Config.Tracer` and `Config.Meter` SHALL NOT select the OTel generation pipeline.
+
+The application SHALL call `Client.Shutdown` before shutting down its tracer provider. Documentation SHALL recommend a dedicated `AlwaysSample` OTel tracer provider when request-trace sampling must not suppress generation storage. For applications that use this dedicated tracer provider for generation spans, documentation SHALL explain that `Config.Tracer` can keep tool and embedding spans on the application's normal trace pipeline.
+
+#### Scenario: Application supplies a flusher
+
+- **WHEN** the application sets the same tracer provider as `TracerProvider` and `Flusher`
+- **THEN** generation recording SHALL NOT flush that provider per request
+- **AND** `Client.Shutdown` SHALL invoke and wait for `Flusher.ForceFlush` before the application shuts down the provider
+- **AND** a successful force-flush SHALL NOT acknowledge remote ingestion
+
+#### Scenario: OTel destination does not ingest generations
+
+- **WHEN** `agento11y.record="true"` spans are sent only to a traces destination that does not ingest Agent Observability generations
+- **THEN** the traces destination MAY store the span
+- **AND** no Agent Observability generation record SHALL be created
+
+#### Scenario: Delivery has no per-generation acknowledgement
+
+- **WHEN** an OTel generation span ends
+- **THEN** the middleware SHALL NOT report direct delivery acknowledgement
+- **AND** sampling MAY drop the generation
+- **AND** span attribute limits MAY remove generation content
+
+### Requirement: HooksMiddleware owns the preflight span
+
+The optional hooks preflight span is the only span that this package SHALL open directly. `HooksMiddleware` SHALL name it `aisdk.hooks.preflight` and set its `gen_ai.provider.name` and `gen_ai.request.model` semantic-convention attributes. The agento11y client SHALL neither produce nor read the preflight span's `aisdk.hooks.*` attributes.
 
 Span attribute keys:
 - `aisdk.hooks.result` (string: `"allow"`, `"deny"`, `"transform"`).
 - `aisdk.hooks.action` (string).
 - `aisdk.hooks.rule_id` (string, present only on deny).
 
-Every attribute the middleware sets on this span, other than `gen_ai.*` semantic-convention attributes, SHALL use the `aisdk.hooks.` prefix. The middleware SHALL NOT emit attributes under the agento11y client's `agento11y.*` namespace or under any former product-named namespace.
-
-Error states on the generation path SHALL reach the trace via `recorder.SetCallError(err)`, which agento11y stamps onto its own generation span as `error.type` and `error.category`. The middleware SHALL NOT emit its own error attributes for generation calls.
+Every attribute that the middleware sets on this span, other than `gen_ai.*` semantic-convention attributes, SHALL use the `aisdk.hooks.` prefix. The middleware SHALL NOT emit attributes under the agento11y client's `agento11y.*` namespace or under any former product-named namespace.
 
 #### Scenario: Allow decision sets aisdk.hooks.result
 

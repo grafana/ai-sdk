@@ -33,6 +33,21 @@ func messagesToAgento11yWithTools(prompt []provider.Message, tools []provider.To
 	return messagesToAgento11yWithMediaAndTools(prompt, true, tools)
 }
 
+func systemPromptToAgento11y(prompt []provider.Message) string {
+	systemParts := make([]string, 0, 1)
+	for _, msg := range prompt {
+		if msg.Role != provider.RoleSystem {
+			continue
+		}
+		for _, part := range msg.Content {
+			if part.Type == provider.ContentPartTypeText && part.Text != "" {
+				systemParts = append(systemParts, part.Text)
+			}
+		}
+	}
+	return strings.Join(systemParts, systemPromptSeparator)
+}
+
 func messagesToAgento11yWithMediaAndTools(prompt []provider.Message, includeMedia bool, tools []provider.Tool) (string, []agento11y.Message) {
 	if len(prompt) == 0 {
 		return "", nil
