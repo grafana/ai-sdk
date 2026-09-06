@@ -33,14 +33,14 @@ func TestRouter_PreservesProviderWireFlushWhileStreamIsOpen(t *testing.T) {
 	readiness := &Readiness{}
 	readiness.Set(true)
 	errorWriter := providerv4.NewHostErrorWriter()
-	router := NewRouter(
-		readiness,
-		telemetry,
-		&serviceAuthenticator{info: serviceAuthInfo()},
-		errorWriter,
-		http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
-		language,
-	)
+	router := NewRouter(RouterDependencies{
+		Readiness:     readiness,
+		Telemetry:     telemetry,
+		Authenticator: &serviceAuthenticator{info: serviceAuthInfo()},
+		ErrorWriter:   errorWriter,
+		Discovery:     http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
+		LanguageModel: language,
+	})
 	server := httptest.NewServer(router)
 	defer server.Close()
 

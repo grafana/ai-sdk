@@ -123,14 +123,14 @@ func TestRouter_AuthenticationFailureTelemetryUsesFixedClassOnce(t *testing.T) {
 	readiness := &Readiness{}
 	readiness.Set(true)
 	errorWriter := providerv4.NewHostErrorWriter()
-	handler := NewRouter(
-		readiness,
-		telemetry,
-		&serviceAuthenticator{err: errors.New("private verifier detail")},
-		errorWriter,
-		http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
-		http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
-	)
+	handler := NewRouter(RouterDependencies{
+		Readiness:     readiness,
+		Telemetry:     telemetry,
+		Authenticator: &serviceAuthenticator{err: errors.New("private verifier detail")},
+		ErrorWriter:   errorWriter,
+		Discovery:     http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
+		LanguageModel: http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
+	})
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/aisdk/config", nil)
 	request.Header.Set("X-Access-Token", "invalid")
 	handler.ServeHTTP(httptest.NewRecorder(), request)
@@ -248,7 +248,14 @@ func newTestRouter(t *testing.T, authenticator authn.Authenticator, discovery, l
 	readiness.Set(true)
 	telemetry.SetReady(true)
 	errorWriter := providerv4.NewHostErrorWriter()
-	return NewRouter(readiness, telemetry, authenticator, errorWriter, discovery, language)
+	return NewRouter(RouterDependencies{
+		Readiness:     readiness,
+		Telemetry:     telemetry,
+		Authenticator: authenticator,
+		ErrorWriter:   errorWriter,
+		Discovery:     discovery,
+		LanguageModel: language,
+	})
 }
 
 type rejectReadBody struct {
