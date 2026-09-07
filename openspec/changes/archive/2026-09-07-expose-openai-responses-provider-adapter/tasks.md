@@ -1,0 +1,11 @@
+## 1. Provider integration seam
+
+- [x] 1.1 Add a preconfigured-client Responses constructor and verify existing direct OpenAI construction remains unchanged
+- [x] 1.2 Add provider identity configuration and verify `Provider()` and generated metadata use the configured namespace
+- [x] 1.3 Verify configured client endpoint, authentication, headers, retries, and transport reach model calls
+
+## 2. Parity and validation
+
+- [x] 2.1 Record the dedicated upstream Bedrock Mantle provider as an explicit parity gap and verify baseline validation passes
+- [x] 2.2 Update godoc and OpenSpec to describe the provider-integration boundary and verify documentation checks pass
+- [x] 2.3 Run focused tests, vet, lint, formatting, and diff checks
