@@ -30,7 +30,8 @@ Provider packages whose APIs implement OpenAI Responses semantics can call
 model preserves the client's endpoint, authentication, headers, retries, and
 transport. Set the integrating provider's model identity with
 `WithProviderName`; this changes `Provider()` without changing the metadata
-namespace used by Responses continuation state.
+namespace used by Responses continuation state. Empty names are ignored so
+optional configuration cannot erase the default `"openai"` identity.
 
 This is a composition seam, not a generic endpoint authentication feature. The
 integrating provider owns its client configuration and policy. OpenAI-specific

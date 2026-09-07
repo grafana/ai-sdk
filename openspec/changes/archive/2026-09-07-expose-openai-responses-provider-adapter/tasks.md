@@ -4,6 +4,7 @@
 - [x] 1.2 Add provider identity configuration and verify `Provider()` changes while response metadata retains the OpenAI/Azure continuation namespace
 - [x] 1.3 Verify configured client endpoint, authentication, headers, retries, and transport reach model calls
 - [x] 1.4 Add a two-call regression test verifying custom provider identity preserves stored item references
+- [x] 1.5 Ignore empty provider-name overrides and verify the default identity is preserved
 
 ## 2. Parity and validation
 

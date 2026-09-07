@@ -24,9 +24,12 @@ func WithRequestOptions(opts ...option.RequestOption) Option {
 // implementation under another provider namespace. OpenAI-specific call
 // options and response metadata continue to use the resolved "openai" or
 // "azure" namespace so multi-step Responses metadata round-trips correctly.
+// Empty names are ignored, preserving the default "openai" identity.
 func WithProviderName(name string) Option {
 	return func(m *model) {
-		m.provider = name
+		if name != "" {
+			m.provider = name
+		}
 	}
 }
 

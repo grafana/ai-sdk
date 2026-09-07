@@ -129,6 +129,11 @@ func TestNewResponses_UsesProductionBaseURLByDefault(t *testing.T) {
 	assert.Equal(t, "https://api.openai.com/v1/responses", capturedURL)
 }
 
+func TestWithProviderName_EmptyPreservesDefault(t *testing.T) {
+	m := NewResponses("test-key", "gpt-4o", WithProviderName(""))
+	assert.Equal(t, "openai", m.Provider())
+}
+
 func TestNewResponsesWithClient_PreservesProviderClientConfigurationAndContinuation(t *testing.T) {
 	var capturedRequests []*http.Request
 	var capturedBodies [][]byte

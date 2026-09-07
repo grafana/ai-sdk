@@ -5,7 +5,8 @@ The pinned Vercel AI SDK baseline lets provider integrations reuse the OpenAI Re
 ## What Changes
 
 - Add an additive constructor for provider integrations to supply a preconfigured official OpenAI Go client.
-- Add an option for integrations to set the provider identity reported by `Provider()`.
+- Add an option for integrations to set a non-empty provider identity reported
+  by `Provider()` while preserving the default for empty configuration.
 - Preserve the existing API-key constructor and the OpenAI/Azure namespace used by call options and continuation metadata.
 - Record the dedicated Bedrock Mantle provider as an explicit, still-open parity gap.
 

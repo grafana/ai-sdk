@@ -17,7 +17,8 @@ including `WithRequestOptions(...)` for model request options and
 reported by `Provider()`. Provider metadata SHALL continue to use the resolved
 `"openai"` or `"azure"` option namespace so continuation state can be consumed
 on later calls. OpenAI-specific call options SHALL continue to use the
-`"openai"` key regardless of provider identity. Construction SHALL NOT panic or
+`"openai"` key regardless of provider identity. An empty provider-name override
+SHALL preserve the default `"openai"` identity. Construction SHALL NOT panic or
 perform network calls.
 
 #### Scenario: Construct a Responses model
@@ -38,6 +39,10 @@ perform network calls.
 - **THEN** `Provider()` returns `"example.responses"`
 - **AND** generated provider metadata continues to use the resolved `"openai"` or `"azure"` namespace
 - **AND** OpenAI-specific call options continue to resolve from the `"openai"` namespace
+
+#### Scenario: Empty provider identity override
+- **WHEN** a model is constructed with `WithProviderName("")`
+- **THEN** `Provider()` remains `"openai"`
 
 #### Scenario: Custom provider identity continues a stored response
 - **WHEN** a model with a custom provider identity emits an assistant item ID and that content is included in a later prompt
