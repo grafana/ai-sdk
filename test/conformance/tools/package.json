@@ -21,7 +21,7 @@
     "@ai-sdk/provider-utils": "5.0.27",
     "ai": "7.0.65",
     "yaml": "^2.7.0",
-    "zod": "4.4.3"
+    "zod": "4.5.4"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",

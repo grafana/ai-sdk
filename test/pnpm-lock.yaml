@@ -27,31 +27,31 @@ importers:
     dependencies:
       '@ai-sdk/amazon-bedrock':
         specifier: 5.0.55
-        version: 5.0.55(zod@4.4.3)
+        version: 5.0.55(zod@4.5.4)
       '@ai-sdk/anthropic':
         specifier: 4.0.38
-        version: 4.0.38(zod@4.4.3)
+        version: 4.0.38(zod@4.5.4)
       '@ai-sdk/openai':
         specifier: 4.0.41
-        version: 4.0.41(zod@4.4.3)
+        version: 4.0.41(zod@4.5.4)
       '@ai-sdk/openai-compatible':
         specifier: 3.0.30
-        version: 3.0.30(zod@4.4.3)
+        version: 3.0.30(zod@4.5.4)
       '@ai-sdk/provider':
         specifier: 4.0.7
         version: 4.0.7
       '@ai-sdk/provider-utils':
         specifier: 5.0.27
-        version: 5.0.27(zod@4.4.3)
+        version: 5.0.27(zod@4.5.4)
       ai:
         specifier: 7.0.65
-        version: 7.0.65(zod@4.4.3)
+        version: 7.0.65(zod@4.5.4)
       yaml:
         specifier: ^2.7.0
         version: 2.9.0
       zod:
-        specifier: 4.4.3
-        version: 4.4.3
+        specifier: 4.5.4
+        version: 4.5.4
     devDependencies:
       '@types/node':
         specifier: ^25.5.0
@@ -1194,24 +1194,27 @@ packages:
   zod@4.4.3:
     resolution: {integrity: sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==}
 
+  zod@4.5.4:
+    resolution: {integrity: sha512-sC95tT5iHHH9gtpj6A81kh+NEaRAUFN+qlUPDUbRfOMvNf5QCBqsb3WgvnpVtK5Y+4UfA6KqufotuTvMGiTlsA==}
+
 snapshots:
 
-  '@ai-sdk/amazon-bedrock@5.0.55(zod@4.4.3)':
+  '@ai-sdk/amazon-bedrock@5.0.55(zod@4.5.4)':
     dependencies:
-      '@ai-sdk/anthropic': 4.0.38(zod@4.4.3)
-      '@ai-sdk/openai': 4.0.41(zod@4.4.3)
+      '@ai-sdk/anthropic': 4.0.38(zod@4.5.4)
+      '@ai-sdk/openai': 4.0.41(zod@4.5.4)
       '@ai-sdk/provider': 4.0.7
-      '@ai-sdk/provider-utils': 5.0.27(zod@4.4.3)
+      '@ai-sdk/provider-utils': 5.0.27(zod@4.5.4)
       '@smithy/eventstream-codec': 4.5.2
       '@smithy/util-utf8': 4.5.2
       aws4fetch: 1.0.20
-      zod: 4.4.3
+      zod: 4.5.4
 
-  '@ai-sdk/anthropic@4.0.38(zod@4.4.3)':
+  '@ai-sdk/anthropic@4.0.38(zod@4.5.4)':
     dependencies:
       '@ai-sdk/provider': 4.0.7
-      '@ai-sdk/provider-utils': 5.0.27(zod@4.4.3)
-      zod: 4.4.3
+      '@ai-sdk/provider-utils': 5.0.27(zod@4.5.4)
+      zod: 4.5.4
 
   '@ai-sdk/gateway@4.0.52(zod@4.4.3)':
     dependencies:
@@ -1220,6 +1223,13 @@ snapshots:
       '@vercel/oidc': 3.2.0
       zod: 4.4.3
 
+  '@ai-sdk/gateway@4.0.52(zod@4.5.4)':
+    dependencies:
+      '@ai-sdk/provider': 4.0.7
+      '@ai-sdk/provider-utils': 5.0.27(zod@4.5.4)
+      '@vercel/oidc': 3.2.0
+      zod: 4.5.4
+
   '@ai-sdk/mcp@2.0.31(zod@4.4.3)':
     dependencies:
       '@ai-sdk/provider': 4.0.7
@@ -1227,17 +1237,17 @@ snapshots:
       pkce-challenge: 5.0.1
       zod: 4.4.3
 
-  '@ai-sdk/openai-compatible@3.0.30(zod@4.4.3)':
+  '@ai-sdk/openai-compatible@3.0.30(zod@4.5.4)':
     dependencies:
       '@ai-sdk/provider': 4.0.7
-      '@ai-sdk/provider-utils': 5.0.27(zod@4.4.3)
-      zod: 4.4.3
+      '@ai-sdk/provider-utils': 5.0.27(zod@4.5.4)
+      zod: 4.5.4
 
-  '@ai-sdk/openai@4.0.41(zod@4.4.3)':
+  '@ai-sdk/openai@4.0.41(zod@4.5.4)':
     dependencies:
       '@ai-sdk/provider': 4.0.7
-      '@ai-sdk/provider-utils': 5.0.27(zod@4.4.3)
-      zod: 4.4.3
+      '@ai-sdk/provider-utils': 5.0.27(zod@4.5.4)
+      zod: 4.5.4
 
   '@ai-sdk/provider-utils@5.0.27(zod@4.4.3)':
     dependencies:
@@ -1247,6 +1257,15 @@ snapshots:
       eventsource-parser: 3.1.1
       undici: 7.29.0
       zod: 4.4.3
+
+  '@ai-sdk/provider-utils@5.0.27(zod@4.5.4)':
+    dependencies:
+      '@ai-sdk/provider': 4.0.7
+      '@standard-schema/spec': 1.1.0
+      '@workflow/serde': 4.1.0
+      eventsource-parser: 3.1.1
+      undici: 7.29.0
+      zod: 4.5.4
 
   '@ai-sdk/provider@4.0.7':
     dependencies:
@@ -1615,6 +1634,13 @@ snapshots:
       '@ai-sdk/provider': 4.0.7
       '@ai-sdk/provider-utils': 5.0.27(zod@4.4.3)
       zod: 4.4.3
+
+  ai@7.0.65(zod@4.5.4):
+    dependencies:
+      '@ai-sdk/gateway': 4.0.52(zod@4.5.4)
+      '@ai-sdk/provider': 4.0.7
+      '@ai-sdk/provider-utils': 5.0.27(zod@4.5.4)
+      zod: 4.5.4
 
   ansi-regex@5.0.1: {}
 
@@ -2030,3 +2056,5 @@ snapshots:
   yaml@2.9.0: {}
 
   zod@4.4.3: {}
+
+  zod@4.5.4: {}
