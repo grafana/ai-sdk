@@ -15,9 +15,9 @@
 
 - [x] 3.1 Document Mantle Responses setup, model-aware `/v1` and `/openai/v1` routing, dual authentication, and the remaining Chat gap; verify documentation lint passes
 - [x] 3.2 Narrow the Mantle parity records to Responses mixed coverage and a Chat/default-provider gap; verify baseline validation passes
-- [ ] 3.3 Archive and strictly validate the OpenSpec change
+- [x] 3.3 Archive and strictly validate the OpenSpec change
 
 ## 4. Validation
 
 - [x] 4.1 Run Bedrock and OpenAI focused tests, vet, lint, module verification, formatting, and diff checks
-- [ ] 4.2 Confirm the branch contains only the follow-up diff from PR #154 and record the temporary stacked dependency pin in the PR description
+- [x] 4.2 Confirm the branch contains only the follow-up diff from PR #154 and record the temporary stacked dependency pin in the PR description
