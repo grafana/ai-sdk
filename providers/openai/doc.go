@@ -15,6 +15,10 @@
 //
 //	model := openai.NewResponses(apiKey, "gpt-4o")
 //
+// Provider integrations that supply their own official SDK client can reuse
+// the Responses implementation with [NewResponsesWithClient] and set their
+// provider identity with [WithProviderName].
+//
 // Per-call OpenAI options are passed via
 // CallOptions.ProviderOptions["openai"] as an [OpenAIResponsesOptions] value.
 package openai

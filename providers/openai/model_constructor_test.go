@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/grafana/ai-sdk/provider"
+	openaisdk "github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -125,6 +126,62 @@ func TestNewResponses_UsesProductionBaseURLByDefault(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, res)
 	assert.Equal(t, "https://api.openai.com/v1/responses", capturedURL)
+}
+
+func TestNewResponsesWithClient_PreservesProviderClientConfiguration(t *testing.T) {
+	var capturedRequest *http.Request
+	var capturedBody []byte
+	httpClient := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		capturedRequest = req.Clone(req.Context())
+		var err error
+		capturedBody, err = io.ReadAll(req.Body)
+		require.NoError(t, err)
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body: io.NopCloser(strings.NewReader(`{
+				"id":"resp_123",
+				"created_at":1700000000,
+				"model":"provider-model",
+				"object":"response",
+				"status":"completed",
+				"output":[],
+				"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}
+			}`)),
+			Request: req,
+		}, nil
+	})}
+	client := openaisdk.NewClient(
+		option.WithAPIKey("provider-key"),
+		option.WithBaseURL("https://provider.example.test/v1"),
+		option.WithHTTPClient(httpClient),
+		option.WithHeader("X-Provider-Header", "provider"),
+		option.WithMaxRetries(0),
+	)
+
+	m := NewResponsesWithClient(
+		client,
+		"provider-model",
+		WithProviderName("example.responses"),
+		WithRequestOptions(option.WithHeader("X-Model-Header", "model")),
+	)
+	assert.Equal(t, "example.responses", m.Provider())
+
+	result, err := m.DoGenerate(t.Context(), provider.CallOptions{
+		Prompt:          []provider.Message{provider.UserText("hi")},
+		ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{Instructions: "provider option"}),
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Contains(t, result.ProviderMetadata, "example.responses")
+	assert.NotContains(t, result.ProviderMetadata, "openai")
+	require.NotNil(t, capturedRequest)
+
+	assert.Equal(t, "https://provider.example.test/v1/responses", capturedRequest.URL.String())
+	assert.Equal(t, "Bearer provider-key", capturedRequest.Header.Get("Authorization"))
+	assert.Equal(t, "provider", capturedRequest.Header.Get("X-Provider-Header"))
+	assert.Equal(t, "model", capturedRequest.Header.Get("X-Model-Header"))
+	assert.Contains(t, string(capturedBody), `"instructions":"provider option"`)
 }
 
 func TestModel_PerCallHeaders(t *testing.T) {

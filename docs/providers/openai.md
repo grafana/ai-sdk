@@ -23,6 +23,19 @@ Continue with [Generate text from Go](../getting-started/backend-only.md) or
 [Full-stack chat](../getting-started/full-stack-chat.md). The same model also
 works with tools, structured output, middleware, and Agents.
 
+## Reuse Responses in a provider integration
+
+Provider packages whose APIs implement OpenAI Responses semantics can call
+`NewResponsesWithClient` with a preconfigured official OpenAI SDK client. The
+model preserves the client's endpoint, authentication, headers, retries, and
+transport. Set the integrating provider's identity with `WithProviderName` so
+`Provider()` and provider metadata use its namespace.
+
+This is a composition seam, not a generic endpoint authentication feature. The
+integrating provider owns its client configuration and policy. OpenAI-specific
+call options remain under the `"openai"` provider-options key because request
+conversion still follows OpenAI Responses semantics.
+
 ## Configure a call
 
 Set request-scoped headers with `aisdk.WithHeaders`. Headers configured through

@@ -19,6 +19,16 @@ func WithRequestOptions(opts ...option.RequestOption) Option {
 	}
 }
 
+// WithProviderName overrides the provider identity reported by the model and
+// used for provider metadata. It is intended for provider integrations that
+// reuse the OpenAI Responses implementation under another provider namespace.
+// OpenAI-specific call options continue to use the "openai" key.
+func WithProviderName(name string) Option {
+	return func(m *model) {
+		m.provider = name
+	}
+}
+
 // WithGenerateID overrides the ID generator used for synthesized identifiers
 // (e.g., source/citation IDs, MCP approval dummy tool-call IDs). Tests inject a
 // deterministic generator so conformance output is byte-stable.
