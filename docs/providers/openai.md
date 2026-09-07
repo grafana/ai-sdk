@@ -23,6 +23,24 @@ Continue with [Generate text from Go](../getting-started/backend-only.md) or
 [Full-stack chat](../getting-started/full-stack-chat.md). The same model also
 works with tools, structured output, middleware, and Agents.
 
+## Use a preconfigured client
+
+Use `NewResponsesWithClient` when authentication or transport must be configured
+on the underlying OpenAI client. For example, the OpenAI Go SDK's
+`github.com/openai/openai-go/v3/bedrock` client, imported as `openaibedrock`,
+uses the standard AWS credential chain and signs requests to the Bedrock Mantle
+Responses endpoint with SigV4:
+
+```go
+client, err := openaibedrock.NewClient(ctx, openaibedrock.Config{
+	AWSRegion: "us-east-1",
+})
+if err != nil {
+	return err
+}
+model := openai.NewResponsesWithClient(client, "gpt-5.6-luna")
+```
+
 ## Configure a call
 
 Set request-scoped headers with `aisdk.WithHeaders`. Headers configured through

@@ -15,6 +15,9 @@
 //
 //	model := openai.NewResponses(apiKey, "gpt-4o")
 //
+// Use [NewResponsesWithClient] when the OpenAI client requires custom
+// authentication or transport configuration, such as Amazon Bedrock SigV4.
+//
 // Per-call OpenAI options are passed via
 // CallOptions.ProviderOptions["openai"] as an [OpenAIResponsesOptions] value.
 package openai

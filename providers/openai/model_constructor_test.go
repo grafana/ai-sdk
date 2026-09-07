@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/grafana/ai-sdk/provider"
+	"github.com/openai/openai-go/v3/bedrock"
 	"github.com/openai/openai-go/v3/option"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -125,6 +126,49 @@ func TestNewResponses_UsesProductionBaseURLByDefault(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, res)
 	assert.Equal(t, "https://api.openai.com/v1/responses", capturedURL)
+}
+
+func TestNewResponsesWithClient_UsesPreconfiguredBedrockClient(t *testing.T) {
+	var capturedRequest *http.Request
+	httpClient := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		capturedRequest = req.Clone(req.Context())
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body: io.NopCloser(strings.NewReader(`{
+				"id":"resp_123",
+				"created_at":1700000000,
+				"model":"gpt-5.6-luna",
+				"object":"response",
+				"status":"completed",
+				"output":[],
+				"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}
+			}`)),
+			Request: req,
+		}, nil
+	})}
+	client, err := bedrock.NewClient(t.Context(), bedrock.Config{
+		AWSAccessKeyID:     "test-access-key",
+		AWSSecretAccessKey: "test-secret-key",
+		AWSSessionToken:    "test-session-token",
+		AWSRegion:          "us-east-1",
+		BaseURL:            "https://bedrock-mantle.us-east-1.api.aws/openai/v1",
+	}, option.WithHTTPClient(httpClient), option.WithMaxRetries(0))
+	require.NoError(t, err)
+
+	m := NewResponsesWithClient(client, "gpt-5.6-luna")
+	result, err := m.DoGenerate(t.Context(), provider.CallOptions{
+		Prompt: []provider.Message{provider.UserText("hi")},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, capturedRequest)
+
+	assert.Equal(t, "https://bedrock-mantle.us-east-1.api.aws/openai/v1/responses", capturedRequest.URL.String())
+	assert.Regexp(t, `^AWS4-HMAC-SHA256 Credential=test-access-key/\d{8}/us-east-1/bedrock-mantle/aws4_request,`, capturedRequest.Header.Get("Authorization"))
+	assert.NotEmpty(t, capturedRequest.Header.Get("X-Amz-Content-Sha256"))
+	assert.NotEmpty(t, capturedRequest.Header.Get("X-Amz-Date"))
+	assert.Equal(t, "test-session-token", capturedRequest.Header.Get("X-Amz-Security-Token"))
 }
 
 func TestModel_PerCallHeaders(t *testing.T) {

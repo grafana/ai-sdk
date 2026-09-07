@@ -29,6 +29,23 @@ type model struct {
 
 // NewResponses creates a [provider.LanguageModel] for the OpenAI Responses API.
 func NewResponses(apiKey, modelID string, opts ...Option) provider.LanguageModel {
+	m := newModel(modelID, opts...)
+	clientOpts := append([]option.RequestOption{option.WithAPIKey(apiKey)}, m.requestOpts...)
+	client := openaisdk.NewClient(clientOpts...)
+	m.client = client.Responses
+	return m
+}
+
+// NewResponsesWithClient creates a [provider.LanguageModel] using a
+// preconfigured OpenAI client. Use it when authentication or transport must be
+// configured at client construction, such as for Amazon Bedrock SigV4 signing.
+func NewResponsesWithClient(client openaisdk.Client, modelID string, opts ...Option) provider.LanguageModel {
+	m := newModel(modelID, opts...)
+	m.client = client.Responses
+	return m
+}
+
+func newModel(modelID string, opts ...Option) *model {
 	m := &model{
 		modelID:    modelID,
 		provider:   providerName,
@@ -37,9 +54,6 @@ func NewResponses(apiKey, modelID string, opts ...Option) provider.LanguageModel
 	for _, o := range opts {
 		o(m)
 	}
-	clientOpts := append([]option.RequestOption{option.WithAPIKey(apiKey)}, m.requestOpts...)
-	client := openaisdk.NewClient(clientOpts...)
-	m.client = client.Responses
 	return m
 }
 
