@@ -19,10 +19,11 @@ func WithRequestOptions(opts ...option.RequestOption) Option {
 	}
 }
 
-// WithProviderName overrides the provider identity reported by the model and
-// used for provider metadata. It is intended for provider integrations that
-// reuse the OpenAI Responses implementation under another provider namespace.
-// OpenAI-specific call options continue to use the "openai" key.
+// WithProviderName overrides the provider identity reported by the model. It
+// is intended for provider integrations that reuse the OpenAI Responses
+// implementation under another provider namespace. OpenAI-specific call
+// options and response metadata continue to use the resolved "openai" or
+// "azure" namespace so multi-step Responses metadata round-trips correctly.
 func WithProviderName(name string) Option {
 	return func(m *model) {
 		m.provider = name

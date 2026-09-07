@@ -1,8 +1,9 @@
 ## 1. Provider integration seam
 
 - [x] 1.1 Add a preconfigured-client Responses constructor and verify existing direct OpenAI construction remains unchanged
-- [x] 1.2 Add provider identity configuration and verify `Provider()` and generated metadata use the configured namespace
+- [x] 1.2 Add provider identity configuration and verify `Provider()` changes while response metadata retains the OpenAI/Azure continuation namespace
 - [x] 1.3 Verify configured client endpoint, authentication, headers, retries, and transport reach model calls
+- [x] 1.4 Add a two-call regression test verifying custom provider identity preserves stored item references
 
 ## 2. Parity and validation
 

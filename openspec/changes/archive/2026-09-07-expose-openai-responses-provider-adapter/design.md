@@ -18,7 +18,7 @@ can reuse Responses behavior without duplication.
 
 - Provide the Go equivalent of upstream's OpenAI-internal model reuse seam.
 - Preserve provider-owned official SDK client configuration.
-- Let integrating providers report their own identity and metadata namespace.
+- Let integrating providers report their own model identity while preserving the OpenAI/Azure metadata namespace required for continuation state.
 - Keep existing direct OpenAI behavior unchanged.
 
 **Non-Goals:**
@@ -44,12 +44,14 @@ Replaying `client.Options` through `WithRequestOptions` was tested and rejected:
 the current model applies those options during client construction and again at
 method invocation, which duplicates provider authentication finalizers.
 
-### Separate provider identity from OpenAI call options
+### Separate provider identity from OpenAI metadata and call options
 
-Add `WithProviderName` to control `Provider()` and output metadata keys. This
-mirrors upstream's distinction between the configured provider identity and the
-OpenAI-specific option schema. Request options remain under the `"openai"`
-namespace because the reused model still implements OpenAI Responses semantics.
+Add `WithProviderName` to control only `Provider()`. This mirrors upstream's
+distinction between the configured provider identity and its
+`providerOptionsName`. Request options and response metadata remain under the
+resolved `"openai"` or `"azure"` namespace because request conversion uses that
+namespace to recover item IDs, encrypted reasoning, tool namespaces, and
+approval correlation on later calls.
 
 ### Keep the seam provider-focused
 

@@ -28,13 +28,17 @@ works with tools, structured output, middleware, and Agents.
 Provider packages whose APIs implement OpenAI Responses semantics can call
 `NewResponsesWithClient` with a preconfigured official OpenAI SDK client. The
 model preserves the client's endpoint, authentication, headers, retries, and
-transport. Set the integrating provider's identity with `WithProviderName` so
-`Provider()` and provider metadata use its namespace.
+transport. Set the integrating provider's model identity with
+`WithProviderName`; this changes `Provider()` without changing the metadata
+namespace used by Responses continuation state.
 
 This is a composition seam, not a generic endpoint authentication feature. The
 integrating provider owns its client configuration and policy. OpenAI-specific
-call options remain under the `"openai"` provider-options key because request
-conversion still follows OpenAI Responses semantics.
+call options and response metadata remain under the resolved `"openai"` or
+`"azure"` provider-options key because request conversion still follows OpenAI
+Responses semantics. Keeping that metadata namespace stable preserves item
+references, encrypted reasoning, tool namespaces, and approval correlation
+across multi-step calls.
 
 ## Configure a call
 

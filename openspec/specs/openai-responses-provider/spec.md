@@ -22,9 +22,11 @@ default. The preconfigured-client constructor SHALL preserve provider-owned
 client configuration. Both constructors SHALL accept functional options,
 including `WithRequestOptions(...)` for model request options and
 `WithProviderName(...)` for provider integrations to override the identity
-reported by `Provider()` and used for provider metadata. OpenAI-specific call
-options SHALL continue to use the `"openai"` key regardless of provider identity.
-Construction SHALL NOT panic or perform network calls.
+reported by `Provider()`. Provider metadata SHALL continue to use the resolved
+`"openai"` or `"azure"` option namespace so continuation state can be consumed
+on later calls. OpenAI-specific call options SHALL continue to use the
+`"openai"` key regardless of provider identity. Construction SHALL NOT panic or
+perform network calls.
 
 #### Scenario: Construct a Responses model
 - **WHEN** `NewResponses("test-key", "gpt-4o")` is called
@@ -42,8 +44,12 @@ Construction SHALL NOT panic or perform network calls.
 #### Scenario: Provider integration overrides identity
 - **WHEN** a provider integration constructs a model with `WithProviderName("example.responses")`
 - **THEN** `Provider()` returns `"example.responses"`
-- **AND** generated provider metadata uses the `"example.responses"` namespace
+- **AND** generated provider metadata continues to use the resolved `"openai"` or `"azure"` namespace
 - **AND** OpenAI-specific call options continue to resolve from the `"openai"` namespace
+
+#### Scenario: Custom provider identity continues a stored response
+- **WHEN** a model with a custom provider identity emits an assistant item ID and that content is included in a later prompt
+- **THEN** request conversion emits an `item_reference` for the stored item instead of resending the assistant content
 
 ### Requirement: System message conversion
 The provider SHALL convert system messages according to the resolved
