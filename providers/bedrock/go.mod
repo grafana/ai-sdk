@@ -6,7 +6,9 @@ require (
 	github.com/aws/aws-sdk-go-v2 v1.43.2
 	github.com/aws/aws-sdk-go-v2/config v1.32.33
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.32
-	github.com/grafana/ai-sdk v0.1.0-alpha.1
+	github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260825181821-1f7f7ef4a4c8
+	github.com/grafana/ai-sdk/providers/openai v0.0.0-20260907203602-7c42322bb9b4
+	github.com/openai/openai-go/v3 v3.48.0
 	github.com/stretchr/testify v1.11.1
 )
 
@@ -24,5 +26,9 @@ require (
 	github.com/aws/smithy-go v1.27.5 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
+	github.com/tidwall/gjson v1.19.0 // indirect
+	github.com/tidwall/match v1.2.0 // indirect
+	github.com/tidwall/pretty v1.2.1 // indirect
+	github.com/tidwall/sjson v1.2.5 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
