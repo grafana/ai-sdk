@@ -7,16 +7,21 @@ and conformance expectations needed to stay aligned with Vercel's upstream AI
 SDK behavior.
 
 ## Requirements
+
 ### Requirement: Provider construction and identity
-The system SHALL provide a `providers/openai` Go module exposing
+The system SHALL provide a `providers/openai` Go module exposing both
 `NewResponses(apiKey, modelID string, opts ...Option) provider.LanguageModel`
-that returns a value implementing `provider.LanguageModel` backed by the OpenAI
-Responses API via `github.com/openai/openai-go`. The model SHALL report
-`SpecificationVersion() == "v4"`, `Provider() == "openai"`, and `ModelID()` equal
-to the constructor `modelID`. The constructor SHALL accept functional options
-including `WithRequestOptions(...)` to set transport-level concerns such as the
-base URL and HTTP client for testing. Construction SHALL NOT panic and SHALL NOT
-perform network calls.
+and
+`NewResponsesWithClient(client openai.Client, modelID string, opts ...Option) provider.LanguageModel`.
+Each constructor SHALL return a value implementing `provider.LanguageModel`
+backed by the OpenAI Responses API via `github.com/openai/openai-go`. The model
+SHALL report `SpecificationVersion() == "v4"`, `Provider() == "openai"`, and
+`ModelID()` equal to the constructor `modelID`. The API-key constructor SHALL
+create a standard OpenAI client configured with the supplied key. The
+preconfigured-client constructor SHALL preserve the client's endpoint,
+authentication, middleware, retries, and transport. Both constructors SHALL
+accept functional options including `WithRequestOptions(...)` for model request
+options. Construction SHALL NOT panic or perform network calls.
 
 #### Scenario: Construct a Responses model
 - **WHEN** `NewResponses("test-key", "gpt-4o")` is called
@@ -26,6 +31,11 @@ perform network calls.
 #### Scenario: Base URL override for testing
 - **WHEN** `NewResponses("test-key", "gpt-4o", WithRequestOptions(option.WithBaseURL(server.URL)))` is constructed
 - **THEN** subsequent `DoGenerate`/`DoStream` calls target the overridden base URL
+
+#### Scenario: Use a preconfigured Bedrock client
+- **WHEN** an OpenAI Go client is configured for the Bedrock Mantle Responses endpoint with AWS SigV4 credentials and passed to `NewResponsesWithClient`
+- **THEN** subsequent model calls use the configured Mantle endpoint
+- **AND** requests retain the client's SigV4 authentication scoped to the `bedrock-mantle` service
 
 ### Requirement: System message conversion
 The provider SHALL convert system messages according to the resolved
