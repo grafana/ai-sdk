@@ -225,6 +225,78 @@ func TestNewResponsesWithClient_PreservesProviderClientConfigurationAndContinuat
 	assert.NotContains(t, string(capturedBodies[1]), "first answer")
 }
 
+func TestNewResponsesWithClient_AzureContinuationUsesStableNamespace(t *testing.T) {
+	var capturedBodies [][]byte
+	httpClient := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		body, err := io.ReadAll(req.Body)
+		require.NoError(t, err)
+		capturedBodies = append(capturedBodies, body)
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body: io.NopCloser(strings.NewReader(`{
+				"id":"resp_123",
+				"created_at":1700000000,
+				"model":"provider-model",
+				"object":"response",
+				"status":"completed",
+				"output":[{
+					"type":"message",
+					"id":"msg_azure",
+					"role":"assistant",
+					"status":"completed",
+					"content":[{"type":"output_text","text":"first answer","annotations":[]}]
+				}],
+				"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}
+			}`)),
+			Request: req,
+		}, nil
+	})}
+	client := openaisdk.NewClient(
+		option.WithAPIKey("provider-key"),
+		option.WithHTTPClient(httpClient),
+		option.WithMaxRetries(0),
+	)
+	model := NewResponsesWithClient(client, "provider-model", WithProviderName("azure.responses"))
+
+	first, err := model.DoGenerate(t.Context(), provider.CallOptions{
+		Prompt:          []provider.Message{provider.UserText("hi")},
+		ProviderOptions: withAzureOptions(t, OpenAIResponsesOptions{Instructions: "azure option"}),
+	})
+	require.NoError(t, err)
+	require.Len(t, first.Content, 1)
+	require.Contains(t, first.ProviderMetadata, "azure")
+	assert.NotContains(t, first.ProviderMetadata, "openai")
+	require.Contains(t, first.Content[0].ProviderMetadata, "azure")
+	assert.NotContains(t, first.Content[0].ProviderMetadata, "openai")
+
+	partOptions := make(provider.ProviderOptions, len(first.Content[0].ProviderMetadata))
+	for name, raw := range first.Content[0].ProviderMetadata {
+		partOptions[name] = provider.RawProviderOption{Key: name, Raw: raw}
+	}
+	_, err = model.DoGenerate(t.Context(), provider.CallOptions{
+		Prompt: []provider.Message{
+			provider.UserText("hi"),
+			provider.NewAssistantMessage(provider.ContentPart{
+				Type:            provider.ContentPartTypeText,
+				Text:            first.Content[0].Text,
+				ProviderOptions: partOptions,
+			}),
+			provider.UserText("continue"),
+		},
+	})
+	require.NoError(t, err)
+	require.Len(t, capturedBodies, 2)
+	assert.Contains(t, string(capturedBodies[0]), `"instructions":"azure option"`)
+
+	var continuationBody map[string]any
+	require.NoError(t, json.Unmarshal(capturedBodies[1], &continuationBody))
+	reference := findInput(continuationBody, "item_reference")
+	require.NotNil(t, reference)
+	assert.Equal(t, "msg_azure", reference["id"])
+	assert.NotContains(t, string(capturedBodies[1]), "first answer")
+}
+
 func TestNewResponsesWithClient_StreamMetadataUsesOpenAIOptionsNamespace(t *testing.T) {
 	httpClient := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		return &http.Response{

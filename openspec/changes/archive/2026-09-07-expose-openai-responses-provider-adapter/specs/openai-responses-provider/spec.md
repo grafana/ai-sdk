@@ -14,12 +14,12 @@ default. The preconfigured-client constructor SHALL preserve provider-owned
 client configuration. Both constructors SHALL accept functional options,
 including `WithRequestOptions(...)` for model request options and
 `WithProviderName(...)` for provider integrations to override the identity
-reported by `Provider()`. Provider metadata SHALL continue to use the resolved
-`"openai"` or `"azure"` option namespace so continuation state can be consumed
-on later calls. OpenAI-specific call options SHALL continue to use the
-`"openai"` key regardless of provider identity. An empty provider-name override
-SHALL preserve the default `"openai"` identity. Construction SHALL NOT panic or
-perform network calls.
+reported by `Provider()`. The provider-options and metadata namespace SHALL be
+resolved once from the configured model identity (`"azure"` when the identity
+contains `"azure"`, otherwise `"openai"`) and SHALL remain stable across calls.
+Azure models SHALL fall back to `"openai"` call options when no Azure options
+are present. An empty provider-name override SHALL preserve the default
+`"openai"` identity. Construction SHALL NOT panic or perform network calls.
 
 #### Scenario: Construct a Responses model
 - **WHEN** `NewResponses("test-key", "gpt-4o")` is called
@@ -47,3 +47,7 @@ perform network calls.
 #### Scenario: Custom provider identity continues a stored response
 - **WHEN** a model with a custom provider identity emits an assistant item ID and that content is included in a later prompt
 - **THEN** request conversion emits an `item_reference` for the stored item instead of resending the assistant content
+
+#### Scenario: Azure continuation omits top-level options
+- **WHEN** a model configured with an Azure identity emits Azure-namespaced assistant metadata and a later continuation includes that metadata without top-level Azure options
+- **THEN** request conversion still reads the Azure item ID and emits an `item_reference`
