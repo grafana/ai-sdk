@@ -2,6 +2,7 @@ package mantle
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -13,10 +14,21 @@ import (
 	"github.com/openai/openai-go/v3/option"
 )
 
-const (
-	responsesProviderName = "bedrock-mantle.responses"
-	gpt56LunaModelID      = "openai.gpt-5.6-luna"
-)
+const responsesProviderName = "bedrock-mantle.responses"
+
+var openAICompatibilityPathModels = map[string]struct{}{
+	"google.gemma-4-31b":               {},
+	"google.gemma-4-e2b":               {},
+	"openai.gpt-5.4":                   {},
+	"openai.gpt-5.5":                   {},
+	"openai.gpt-5.6-cyber":             {},
+	"openai.gpt-5.6-luna":              {},
+	"openai.gpt-5.6-sol":               {},
+	"openai.gpt-5.6-terra":             {},
+	"openai.gpt-daybreak-blue-5.6-sol": {},
+	"xai.grok-4.3":                     {},
+	"xai.grok-4.6":                     {},
+}
 
 // Config configures Bedrock Mantle routing and authentication.
 //
@@ -36,9 +48,12 @@ type TokenProvider = openaibedrock.TokenProvider
 // and option.WithHeader may be supplied in clientOpts. Authentication and the
 // base URL must be configured through Config so the official Bedrock client can
 // validate and finalize every request safely. When Config.BaseURL is empty,
-// generic Mantle models use /v1 and GPT-5.6 Luna uses its model-specific
-// /openai/v1 route.
+// generic Mantle models use /v1 and models with a documented compatibility-path
+// exception use /openai/v1.
 func NewResponses(ctx context.Context, modelID string, cfg Config, clientOpts ...option.RequestOption) (provider.LanguageModel, error) {
+	if ctx == nil {
+		return nil, errors.New("bedrock mantle: nil context")
+	}
 	if err := applyDefaultBaseURL(ctx, modelID, &cfg); err != nil {
 		return nil, err
 	}
@@ -55,6 +70,18 @@ func NewResponses(ctx context.Context, modelID string, cfg Config, clientOpts ..
 }
 
 func applyDefaultBaseURL(ctx context.Context, modelID string, cfg *Config) error {
+	if cfg.AWSRegion != "" {
+		cfg.AWSRegion = strings.TrimSpace(cfg.AWSRegion)
+		if cfg.AWSRegion == "" {
+			return errors.New("bedrock mantle: AWS region must not be empty")
+		}
+	}
+	if cfg.AWSProfile != "" {
+		cfg.AWSProfile = strings.TrimSpace(cfg.AWSProfile)
+		if cfg.AWSProfile == "" {
+			return errors.New("bedrock mantle: AWS profile must not be empty")
+		}
+	}
 	if cfg.BaseURL != "" || strings.TrimSpace(os.Getenv("AWS_BEDROCK_BASE_URL")) != "" {
 		return nil
 	}
@@ -69,10 +96,10 @@ func applyDefaultBaseURL(ctx context.Context, modelID string, cfg *Config) error
 		if err != nil {
 			return fmt.Errorf("bedrock mantle: resolve AWS region: %w", err)
 		}
-		region = awsConfig.Region
+		region = strings.TrimSpace(awsConfig.Region)
 	}
-	if strings.TrimSpace(region) == "" {
-		return fmt.Errorf("bedrock mantle: AWS region is required for endpoint resolution")
+	if region == "" {
+		return errors.New("bedrock mantle: AWS region is required for endpoint resolution")
 	}
 
 	cfg.AWSRegion = region
@@ -82,7 +109,7 @@ func applyDefaultBaseURL(ctx context.Context, modelID string, cfg *Config) error
 
 func defaultBaseURL(region, modelID string) string {
 	path := "/v1"
-	if modelID == gpt56LunaModelID {
+	if _, ok := openAICompatibilityPathModels[modelID]; ok {
 		path = "/openai/v1"
 	}
 	return fmt.Sprintf("https://bedrock-mantle.%s.api.aws%s", region, path)

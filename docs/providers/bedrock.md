@@ -70,9 +70,11 @@ if err != nil {
 }
 ```
 
-Most Mantle models use the regional `/v1/responses` route. GPT-5.6 Luna is a
-documented exception and uses `/openai/v1/responses`; the constructor selects
-that route from the model ID. Requests are signed with SigV4 service
+Most Mantle models use the regional `/v1/responses` route. Some newer models
+use AWS's documented `/openai/v1/responses` compatibility route instead. The
+maintained exception set currently covers GPT-5.4, GPT-5.5, the documented
+GPT-5.6 variants, Grok 4.3 and 4.6, and Gemma 4; the constructor selects the
+route from the exact model ID. Requests are signed with SigV4 service
 `bedrock-mantle`, using the standard AWS credential chain when credentials are
 not supplied explicitly.
 

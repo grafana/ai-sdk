@@ -7,7 +7,7 @@ The registered upstream Bedrock package exposes a dedicated Mantle provider that
 - Add a `providers/bedrock/mantle` package for Bedrock Mantle's OpenAI-compatible Responses API.
 - Delegate bearer and AWS SigV4 authentication to the official `openai-go/v3/bedrock` client.
 - Delegate request, response, streaming, and continuation behavior to `providers/openai` while reporting `bedrock-mantle.responses` for model and response attribution.
-- Route native OpenAI model IDs through AWS-documented Mantle paths: `/v1/responses` by default and the model-specific `/openai/v1/responses` path required by `openai.gpt-5.6-luna`.
+- Route native model IDs through AWS-documented Mantle paths: `/v1/responses` by default and `/openai/v1/responses` for the maintained set of model-specific exceptions.
 - Preserve bearer authentication as an explicit and environment-driven rollback mode while defaulting to the AWS credential chain.
 - Narrow the recorded Mantle parity gap to the still-unimplemented Chat/default provider surface.
 

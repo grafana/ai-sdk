@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 
@@ -103,7 +104,17 @@ func TestNewResponses_DefaultRoutes(t *testing.T) {
 	}{
 		{name: "GPT OSS 20B", modelID: "openai.gpt-oss-20b", wantRoute: "/v1/responses"},
 		{name: "GPT OSS 120B", modelID: "openai.gpt-oss-120b", wantRoute: "/v1/responses"},
+		{name: "GPT-5.4", modelID: "openai.gpt-5.4", wantRoute: "/openai/v1/responses"},
+		{name: "GPT-5.5", modelID: "openai.gpt-5.5", wantRoute: "/openai/v1/responses"},
+		{name: "GPT-5.6 Cyber", modelID: "openai.gpt-5.6-cyber", wantRoute: "/openai/v1/responses"},
 		{name: "GPT-5.6 Luna", modelID: "openai.gpt-5.6-luna", wantRoute: "/openai/v1/responses"},
+		{name: "GPT-5.6 Sol", modelID: "openai.gpt-5.6-sol", wantRoute: "/openai/v1/responses"},
+		{name: "GPT-5.6 Terra", modelID: "openai.gpt-5.6-terra", wantRoute: "/openai/v1/responses"},
+		{name: "Daybreak Blue GPT-5.6 Sol", modelID: "openai.gpt-daybreak-blue-5.6-sol", wantRoute: "/openai/v1/responses"},
+		{name: "Grok 4.3", modelID: "xai.grok-4.3", wantRoute: "/openai/v1/responses"},
+		{name: "Grok 4.6", modelID: "xai.grok-4.6", wantRoute: "/openai/v1/responses"},
+		{name: "Gemma 4 31B", modelID: "google.gemma-4-31b", wantRoute: "/openai/v1/responses"},
+		{name: "Gemma 4 E2B", modelID: "google.gemma-4-e2b", wantRoute: "/openai/v1/responses"},
 	}
 
 	for _, tt := range tests {
@@ -325,6 +336,72 @@ func TestNewResponses_Authentication(t *testing.T) {
 		assert.Contains(t, err.Error(), "provider routing cannot be overridden")
 		assert.Zero(t, transportCalls)
 	})
+}
+
+func TestNewResponses_NormalizesAWSSettings(t *testing.T) {
+	t.Run("region", func(t *testing.T) {
+		var request *http.Request
+		client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			request = req.Clone(req.Context())
+			return jsonHTTPResponse(req, http.StatusOK, responseWithoutOutput), nil
+		})}
+		model, err := NewResponses(
+			t.Context(),
+			"openai.gpt-oss-20b",
+			Config{APIKey: "token", AWSRegion: "  us-east-1\n"},
+			option.WithHTTPClient(client),
+			option.WithMaxRetries(0),
+		)
+		require.NoError(t, err)
+
+		_, err = model.DoGenerate(t.Context(), provider.CallOptions{Prompt: []provider.Message{provider.UserText("hi")}})
+		require.NoError(t, err)
+		require.NotNil(t, request)
+		assert.Equal(t, "bedrock-mantle.us-east-1.api.aws", request.URL.Host)
+	})
+
+	t.Run("profile", func(t *testing.T) {
+		configFile := t.TempDir() + "/config"
+		credentialsFile := t.TempDir() + "/credentials"
+		require.NoError(t, os.WriteFile(configFile, []byte("[profile mantle-test]\nregion = us-east-2\n"), 0o600))
+		require.NoError(t, os.WriteFile(credentialsFile, []byte("[mantle-test]\naws_access_key_id = PROFILEAKID\naws_secret_access_key = profile-secret\n"), 0o600))
+		t.Setenv("AWS_CONFIG_FILE", configFile)
+		t.Setenv("AWS_SHARED_CREDENTIALS_FILE", credentialsFile)
+		t.Setenv("AWS_ACCESS_KEY_ID", "")
+		t.Setenv("AWS_SECRET_ACCESS_KEY", "")
+		t.Setenv("AWS_SESSION_TOKEN", "")
+		t.Setenv("AWS_REGION", "")
+		t.Setenv("AWS_DEFAULT_REGION", "")
+		t.Setenv("AWS_EC2_METADATA_DISABLED", "true")
+		t.Setenv("AWS_BEARER_TOKEN_BEDROCK", "")
+
+		var request *http.Request
+		client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			request = req.Clone(req.Context())
+			return jsonHTTPResponse(req, http.StatusOK, responseWithoutOutput), nil
+		})}
+		model, err := NewResponses(
+			t.Context(),
+			"openai.gpt-oss-120b",
+			Config{AWSProfile: "  mantle-test\n"},
+			option.WithHTTPClient(client),
+			option.WithMaxRetries(0),
+		)
+		require.NoError(t, err)
+
+		_, err = model.DoGenerate(t.Context(), provider.CallOptions{Prompt: []provider.Message{provider.UserText("hi")}})
+		require.NoError(t, err)
+		require.NotNil(t, request)
+		assert.Equal(t, "bedrock-mantle.us-east-2.api.aws", request.URL.Host)
+		assert.Contains(t, request.Header.Get("Authorization"), "Credential=PROFILEAKID/")
+	})
+}
+
+func TestNewResponses_NilContext(t *testing.T) {
+	var ctx context.Context
+	_, err := NewResponses(ctx, "openai.gpt-oss-20b", Config{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "nil context")
 }
 
 func TestNewResponses_ContextCancellationDuringSetup(t *testing.T) {

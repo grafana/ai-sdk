@@ -5,8 +5,9 @@
 // service and the standard AWS credential chain by default. Bearer credentials
 // can be supplied explicitly or through AWS_BEARER_TOKEN_BEDROCK for rollback.
 //
-// Requests use the regional /v1 endpoint by default. GPT-5.6 Luna uses its
-// model-specific /openai/v1 endpoint. The model reports
+// Requests use the regional /v1 endpoint by default. Models with an
+// AWS-documented compatibility-path exception use /openai/v1 instead. The
+// model reports
 // "bedrock-mantle.responses" for attribution while Responses provider options
 // and continuation metadata remain under the "openai" namespace.
 //

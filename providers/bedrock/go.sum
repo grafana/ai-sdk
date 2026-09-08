@@ -30,8 +30,8 @@ github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260825181821-1f7f7ef4a4c8 h1:qTjZWbHkQotquMDOjT3wovrU7SBZgClXkolm2NxOwB8=
 github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260825181821-1f7f7ef4a4c8/go.mod h1:/8lZqngK7ivjXEVnULMc4Tp28mL07t4JwK22tsfseEA=
-github.com/grafana/ai-sdk/providers/openai v0.0.0-20260907203602-7c42322bb9b4 h1:RpEtpbMjL13NaeYkT+Uvqgq9MUntDiyrVS9rt7dG/bE=
-github.com/grafana/ai-sdk/providers/openai v0.0.0-20260907203602-7c42322bb9b4/go.mod h1:2RBSkyv/7Rx+6yoCf5zPTZAJLem5TimTqk053CLhsfo=
+github.com/grafana/ai-sdk/providers/openai v0.0.0-20260908042751-a13baa077020 h1:JjsKAzACFMMTjmDHpW2iObAt8YJs7iIic4VTVq/14Jg=
+github.com/grafana/ai-sdk/providers/openai v0.0.0-20260908042751-a13baa077020/go.mod h1:xR7HBl3zDoJKWMqwazbjn/CgEtmMROq4LXotySwzVxs=
 github.com/openai/openai-go/v3 v3.48.0 h1:HRVBn6UEP4qzGK2c6UWAZ0mdFf6yODNWTJ4ywLIyDpQ=
 github.com/openai/openai-go/v3 v3.48.0/go.mod h1:nCqcbgPr2jYDV8wiCWPA2tRL56mWXdb6QavBmBwzSis=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=

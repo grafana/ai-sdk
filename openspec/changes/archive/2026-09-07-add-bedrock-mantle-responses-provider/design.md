@@ -20,7 +20,7 @@ endpoint validation, environment isolation, and redirect protection.
 - Reuse official authentication and existing Responses conversion.
 - Preserve bearer rollback and AWS credential-chain operation.
 - Keep provider attribution and continuation metadata aligned with upstream.
-- Support the AWS-documented OpenAI endpoint used by GPT-5.6 Luna.
+- Support the model-specific compatibility paths documented by AWS.
 
 **Non-Goals:**
 
@@ -84,11 +84,14 @@ tool namespaces, and approval correlation to round-trip through later prompts.
 
 The generic Mantle Responses surface uses
 `https://bedrock-mantle.<region>.api.aws/v1`, matching the pinned TypeScript
-provider and AWS's service-level documentation. GPT-5.6 Luna is a documented
-exception: `openai.gpt-5.6-luna` is served at `/openai/v1/responses` on Mantle.
-The constructor therefore resolves the region and supplies the appropriate
-fully qualified default base to the official client before the delegated model
-appends `/responses`.
+provider and AWS's service-level documentation. Current AWS model cards specify
+`/openai/v1/responses` for a newer exception set spanning GPT-5.4, GPT-5.5,
+GPT-5.6 variants, Grok 4.3/4.6, and Gemma 4. The constructor therefore resolves
+the region and selects the fully qualified default base from an exact,
+maintained model-ID set before the delegated model appends `/responses`.
+Constructor context is validated before AWS configuration loading, and explicit
+region/profile values are trimmed before this wrapper consumes them, matching
+the normalization performed by the delegated client.
 
 Endpoint selection is the only behavior layered in front of the official
 client; authentication and final request validation remain delegated. An
@@ -116,8 +119,10 @@ recording can be captured.
 
 - **The stacked pseudo-version is temporary** → Keep the PR in draft and update
   the dependency after #154 merges.
-- **Mantle paths vary by model** → Test both generic `/v1` routing and Luna's
-  documented `/openai/v1` exception, and preserve explicit base URL overrides.
+- **Mantle paths vary by model and can evolve after the pinned baseline** →
+  Test every currently documented `/openai/v1` exception alongside generic
+  `/v1` routing, preserve explicit base URL overrides, and classify the current
+  AWS behavior as an intentional post-baseline adaptation.
 - **Chat remains unavailable** → Retain an explicit Mantle Chat/default-provider
   gap and do not add a registry default.
 - **Official client configuration is part of this package's API** → Alias the

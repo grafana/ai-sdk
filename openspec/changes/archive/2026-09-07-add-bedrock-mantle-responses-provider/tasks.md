@@ -2,7 +2,7 @@
 
 - [x] 1.1 Add the official Bedrock client and stacked OpenAI provider dependencies, then verify the Bedrock module resolves with `GOWORK=off`
 - [x] 1.2 Add the Responses constructor, config aliases, and provider identity delegation, then verify construction and model identity tests pass
-- [x] 1.3 Verify generic `/v1/responses`, Luna `/openai/v1/responses`, and custom routing preserve native model IDs and never emit Converse paths
+- [x] 1.3 Verify generic `/v1/responses`, every documented `/openai/v1/responses` exception, and custom routing preserve native model IDs and never emit Converse paths
 
 ## 2. Authentication and behavior
 

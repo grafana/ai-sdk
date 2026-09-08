@@ -23,6 +23,10 @@ routing through generic request options SHALL fail before network transport.
 - **WHEN** bearer and AWS credential modes are configured together
 - **THEN** construction returns an error instead of silently selecting one mode
 
+#### Scenario: Reject nil context
+- **WHEN** a caller constructs a model with a nil context and default configuration
+- **THEN** construction returns an error without panicking
+
 #### Scenario: Reject a protected request-option override
 - **WHEN** a caller supplies a generic request option that overrides the configured Mantle route
 - **THEN** the first model call returns a routing error without reaching network transport
@@ -31,18 +35,25 @@ routing through generic request options SHALL fail before network transport.
 The provider SHALL send Responses requests to the AWS OpenAI-compatible Mantle
 surface. Generic models SHALL use the regional
 `https://bedrock-mantle.<region>.api.aws/v1` base, while models with documented
-route exceptions SHALL use the required model-specific base. Inference requests
+route exceptions SHALL use the required model-specific base. The provider SHALL
+maintain exact exceptions for every currently documented `/openai/v1` model ID
+rather than inferring support from an unrelated model family. Inference requests
 SHALL use `/responses` beneath the selected base. A valid custom base URL SHALL
-be preserved. The request body SHALL carry the caller's model ID verbatim and
-SHALL NOT use Bedrock Converse request paths or shapes.
+be preserved. Explicit AWS region and profile values SHALL be trimmed before
+endpoint resolution. The request body SHALL carry the caller's model ID
+verbatim and SHALL NOT use Bedrock Converse request paths or shapes.
 
 #### Scenario: Default generic regional route
 - **WHEN** `openai.gpt-oss-20b` configured for `us-east-1` sends a Responses request without a custom base URL
 - **THEN** it sends `POST https://bedrock-mantle.us-east-1.api.aws/v1/responses`
 
-#### Scenario: Luna regional route exception
-- **WHEN** `openai.gpt-5.6-luna` configured for `us-east-1` sends a Responses request without a custom base URL
-- **THEN** it sends `POST https://bedrock-mantle.us-east-1.api.aws/openai/v1/responses`
+#### Scenario: Documented regional route exceptions
+- **WHEN** any documented GPT-5.4, GPT-5.5, GPT-5.6 variant, Grok 4.3/4.6, or Gemma 4 model sends a Responses request without a custom base URL
+- **THEN** it sends `POST https://bedrock-mantle.<region>.api.aws/openai/v1/responses`
+
+#### Scenario: Normalize explicit AWS settings
+- **WHEN** an explicit AWS region or profile has surrounding whitespace
+- **THEN** endpoint and credential resolution use the trimmed value
 
 #### Scenario: Custom route
 - **WHEN** a model is constructed with a custom base URL ending in `/openai/v1`
