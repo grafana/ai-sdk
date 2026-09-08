@@ -14,12 +14,14 @@ default. The preconfigured-client constructor SHALL preserve provider-owned
 client configuration. Both constructors SHALL accept functional options,
 including `WithRequestOptions(...)` for model request options and
 `WithProviderName(...)` for provider integrations to override the identity
-reported by `Provider()`. The provider-options and metadata namespace SHALL be
-resolved once from the configured model identity (`"azure"` when the identity
-contains `"azure"`, otherwise `"openai"`) and SHALL remain stable across calls.
-Azure models SHALL fall back to `"openai"` call options when no Azure options
-are present. An empty provider-name override SHALL preserve the default
-`"openai"` identity. Construction SHALL NOT panic or perform network calls.
+reported by `Provider()`. For custom identities, the provider-options and
+metadata namespace SHALL be resolved once (`"azure"` when the identity contains
+`"azure"`, otherwise `"openai"`) and SHALL remain stable across calls. Azure
+models SHALL fall back to `"openai"` call options when no Azure options are
+present. The existing constructor with the default `"openai"` identity SHALL
+retain its per-call OpenAI-first, Azure-fallback option resolution. An empty
+provider-name override SHALL preserve that default identity and behavior.
+Construction SHALL NOT panic or perform network calls.
 
 #### Scenario: Construct a Responses model
 - **WHEN** `NewResponses("test-key", "gpt-4o")` is called
@@ -37,8 +39,12 @@ are present. An empty provider-name override SHALL preserve the default
 #### Scenario: Provider integration overrides identity
 - **WHEN** a provider integration constructs a model with `WithProviderName("example.responses")`
 - **THEN** `Provider()` returns `"example.responses"`
-- **AND** generated provider metadata continues to use the resolved `"openai"` or `"azure"` namespace
+- **AND** generated provider metadata continues to use the stable `"openai"` namespace
 - **AND** OpenAI-specific call options continue to resolve from the `"openai"` namespace
+
+#### Scenario: Default constructor retains Azure-only options
+- **WHEN** an existing `NewResponses` model receives only `ProviderOptions["azure"]`
+- **THEN** generate and stream requests continue to apply those options
 
 #### Scenario: Empty provider identity override
 - **WHEN** a model is constructed with `WithProviderName("")`

@@ -129,6 +129,73 @@ func TestNewResponses_UsesProductionBaseURLByDefault(t *testing.T) {
 	assert.Equal(t, "https://api.openai.com/v1/responses", capturedURL)
 }
 
+func TestNewResponses_AzureOnlyOptionsRemainSupported(t *testing.T) {
+	tests := []struct {
+		name        string
+		contentType string
+		response    string
+		call        func(t *testing.T, model provider.LanguageModel, opts provider.CallOptions)
+	}{
+		{
+			name:        "generate",
+			contentType: "application/json",
+			response: `{
+				"id":"resp_123",
+				"created_at":1700000000,
+				"model":"gpt-4o",
+				"object":"response",
+				"status":"completed",
+				"output":[],
+				"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}
+			}`,
+			call: func(t *testing.T, model provider.LanguageModel, opts provider.CallOptions) {
+				result, err := model.DoGenerate(t.Context(), opts)
+				require.NoError(t, err)
+				require.NotNil(t, result)
+			},
+		},
+		{
+			name:        "stream",
+			contentType: "text/event-stream",
+			response: "event: response.completed\n" +
+				`data: {"type":"response.completed","sequence_number":0,"response":{"id":"resp_123","created_at":1700000000,"model":"gpt-4o","object":"response","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2,"input_tokens_details":{"cached_tokens":0},"output_tokens_details":{"reasoning_tokens":0}}}}` + "\n\n",
+			call: func(t *testing.T, model provider.LanguageModel, opts provider.CallOptions) {
+				result, err := model.DoStream(t.Context(), opts)
+				require.NoError(t, err)
+				for range result.Stream {
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var requestBody []byte
+			client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				var err error
+				requestBody, err = io.ReadAll(req.Body)
+				require.NoError(t, err)
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     http.Header{"Content-Type": []string{tt.contentType}},
+					Body:       io.NopCloser(strings.NewReader(tt.response)),
+					Request:    req,
+				}, nil
+			})}
+			model := NewResponses("test-key", "gpt-4o", WithRequestOptions(
+				option.WithHTTPClient(client),
+				option.WithMaxRetries(0),
+			))
+			tt.call(t, model, provider.CallOptions{
+				Prompt:          []provider.Message{provider.UserText("hi")},
+				ProviderOptions: withAzureOptions(t, OpenAIResponsesOptions{Instructions: "azure-only"}),
+			})
+
+			assert.Contains(t, string(requestBody), `"instructions":"azure-only"`)
+		})
+	}
+}
+
 func TestWithProviderName_EmptyPreservesDefault(t *testing.T) {
 	m := NewResponses("test-key", "gpt-4o", WithProviderName(""))
 	assert.Equal(t, "openai", m.Provider())
