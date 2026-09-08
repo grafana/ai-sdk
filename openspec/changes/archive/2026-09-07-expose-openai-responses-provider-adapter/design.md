@@ -49,10 +49,13 @@ method invocation, which duplicates provider authentication finalizers.
 Add `WithProviderName` to control only `Provider()`, ignoring empty names to
 preserve the valid default identity consistently with
 `providers/openai-compatible`. This mirrors upstream's distinction between the
-configured provider identity and its `providerOptionsName`. Request options and
-response metadata remain under the resolved `"openai"` or `"azure"` namespace
-because request conversion uses that namespace to recover item IDs, encrypted
-reasoning, tool namespaces, and approval correlation on later calls.
+configured provider identity and its `providerOptionsName`. Resolve that
+metadata namespace once when the model is constructed (`"azure"` when the
+identity contains `"azure"`, otherwise `"openai"`) and keep it stable across
+calls. Request options and response metadata use that namespace so request
+conversion can recover item IDs, encrypted reasoning, tool namespaces, and
+approval correlation on later calls even when top-level provider options are
+omitted.
 
 ### Keep the seam provider-focused
 

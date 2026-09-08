@@ -29,17 +29,19 @@ Provider packages whose APIs implement OpenAI Responses semantics can call
 `NewResponsesWithClient` with a preconfigured official OpenAI SDK client. The
 model preserves the client's endpoint, authentication, headers, retries, and
 transport. Set the integrating provider's model identity with
-`WithProviderName`; this changes `Provider()` without changing the metadata
-namespace used by Responses continuation state. Empty names are ignored so
-optional configuration cannot erase the default `"openai"` identity.
+`WithProviderName`; this changes `Provider()` while resolving the Responses
+metadata namespace once when the model is constructed. Identities containing
+`"azure"` use the `"azure"` namespace; other identities use `"openai"`. Empty
+names are ignored so optional configuration cannot erase the default
+`"openai"` identity.
 
 This is a composition seam, not a generic endpoint authentication feature. The
 integrating provider owns its client configuration and policy. OpenAI-specific
-call options and response metadata remain under the resolved `"openai"` or
+call options and response metadata remain under that stable `"openai"` or
 `"azure"` provider-options key because request conversion still follows OpenAI
-Responses semantics. Keeping that metadata namespace stable preserves item
-references, encrypted reasoning, tool namespaces, and approval correlation
-across multi-step calls.
+Responses semantics. Keeping the namespace stable across calls preserves item
+references, encrypted reasoning, tool namespaces, and approval correlation even
+when a continuation call has no top-level provider options.
 
 ## Configure a call
 
