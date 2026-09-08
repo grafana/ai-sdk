@@ -2,6 +2,7 @@ package openai
 
 import (
 	"encoding/json"
+	"strings"
 
 	"github.com/openai/openai-go/v3/option"
 )
@@ -21,15 +22,24 @@ func WithRequestOptions(opts ...option.RequestOption) Option {
 
 // WithProviderName overrides the provider identity reported by the model. It
 // is intended for provider integrations that reuse the OpenAI Responses
-// implementation under another provider namespace. The OpenAI-specific
-// options and metadata namespace is resolved once from this identity ("azure"
+// implementation under another provider namespace. For custom identities, the
+// OpenAI-specific options and metadata namespace is resolved once ("azure"
 // when the name contains "azure", otherwise "openai") and remains stable
 // across calls so multi-step Responses metadata round-trips correctly. Empty
-// names are ignored, preserving the default "openai" identity.
+// names and the default "openai" identity preserve the existing per-call
+// OpenAI-first, Azure-fallback option resolution.
 func WithProviderName(name string) Option {
 	return func(m *model) {
-		if name != "" {
-			m.provider = name
+		if name == "" {
+			return
+		}
+		m.provider = name
+		m.providerOptionsName = ""
+		if name != providerName {
+			m.providerOptionsName = providerName
+			if strings.Contains(name, "azure") {
+				m.providerOptionsName = "azure"
+			}
 		}
 	}
 }

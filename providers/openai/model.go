@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"regexp"
-	"strings"
 
 	"github.com/grafana/ai-sdk/provider"
 	openaisdk "github.com/openai/openai-go/v3"
@@ -57,10 +56,6 @@ func newModel(modelID string, opts ...Option) *model {
 	for _, o := range opts {
 		o(m)
 	}
-	m.providerOptionsName = providerName
-	if strings.Contains(m.provider, "azure") {
-		m.providerOptionsName = "azure"
-	}
 	return m
 }
 
@@ -85,7 +80,7 @@ var _ provider.LanguageModel = (*model)(nil)
 
 // DoGenerate performs a non-streaming Responses call.
 func (m *model) DoGenerate(ctx context.Context, params provider.CallOptions) (*provider.GenerateResult, error) {
-	body, warnings, br, err := buildParamsForProvider(m.modelID, params, m.providerOptionsName)
+	body, warnings, br, err := m.buildParams(params)
 	if err != nil {
 		return nil, err
 	}
@@ -144,7 +139,7 @@ func responseBodyError(resp *responses.Response, rawResponse *http.Response, bod
 
 // DoStream performs a streaming Responses call.
 func (m *model) DoStream(ctx context.Context, params provider.CallOptions) (*provider.StreamResult, error) {
-	body, warnings, br, err := buildParamsForProvider(m.modelID, params, m.providerOptionsName)
+	body, warnings, br, err := m.buildParams(params)
 	if err != nil {
 		return nil, err
 	}
@@ -163,6 +158,13 @@ func (m *model) DoStream(ctx context.Context, params provider.CallOptions) (*pro
 		consumeStream(ctx, items, buffered, ch, warnings, br, body, rawResponse, m.generateID, m.provider)
 	}()
 	return &provider.StreamResult{Stream: ch}, nil
+}
+
+func (m *model) buildParams(params provider.CallOptions) (responses.ResponseNewParams, []provider.Warning, buildResult, error) {
+	if m.providerOptionsName == "" {
+		return buildParams(m.modelID, params)
+	}
+	return buildParamsForProvider(m.modelID, params, m.providerOptionsName)
 }
 
 func (m *model) requestOptions(headers map[string]string) []option.RequestOption {
