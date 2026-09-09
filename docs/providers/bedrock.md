@@ -50,30 +50,54 @@ For deployments configured for Bedrock bearer-token authentication, use
 `WithBearerToken`. Do not combine application credentials and user-controlled
 model IDs without an authorization boundary.
 
-### Bedrock Mantle signing
+### Bedrock Mantle Responses
 
-Bedrock Mantle is a separate AWS service reachable at
-`bedrock-mantle.<region>.api.aws`. Its SigV4 signatures must be scoped to the
-`bedrock-mantle` service name rather than `bedrock`; signing with the wrong
-service name fails authentication. When `WithBaseURL` targets a Mantle host,
-the provider infers the `bedrock-mantle` signing service automatically:
+Bedrock Mantle is a separate AWS service with OpenAI-compatible API surfaces.
+Use the nested `bedrock/mantle` package for the Responses API rather than
+pointing the Converse provider at a Mantle host:
 
 ```go
-model := bedrock.New(modelID,
-	bedrock.WithRegion("us-east-1"),
-	bedrock.WithBaseURL("https://bedrock-mantle.us-east-1.api.aws"),
-	bedrock.WithCredentials(awsConfig.Credentials),
+model, err := mantle.NewResponses(
+	ctx,
+	"openai.gpt-5.6-luna",
+	mantle.Config{
+		AWSRegion:              "us-east-1",
+		AWSCredentialsProvider: awsConfig.Credentials,
+	},
 )
+if err != nil {
+	return err
+}
 ```
 
-When the host does not encode the service -- for example, when reaching Mantle
-through a proxy or VPC endpoint -- set the signing service explicitly with
-`WithSigningService("bedrock-mantle")`. Bearer-token authentication is
-unaffected by the signing service.
+Most Mantle models use the regional `/v1/responses` route. Some newer models
+use AWS's documented `/openai/v1/responses` compatibility route instead. The
+maintained exception set currently covers GPT-5.4, GPT-5.5, the documented
+GPT-5.6 variants, Grok 4.3 and 4.6, and Gemma 4, including 26B-A4B; the
+constructor selects the route from the exact model ID. The allowlist is
+intentionally exact because AWS assigns this route per model rather than by
+family. When AWS adds a model, verify the Programmatic Access endpoint on its
+model card and update both the allowlist and its route test. Requests are signed
+with SigV4 service `bedrock-mantle`, using the standard AWS credential chain
+when credentials are not supplied explicitly.
 
-This package signs requests for Mantle but still emits Converse-shaped request
-bodies. Routing to Mantle's OpenAI-compatible and Anthropic Messages API
-surfaces is not yet implemented.
+For a controlled bearer-authentication rollback, set `Config.APIKey` or
+`AWS_BEARER_TOKEN_BEDROCK`. Explicit bearer and AWS credential modes are
+mutually exclusive and fail closed when combined.
+
+A custom `Config.BaseURL` must include the intended API prefix, such as
+`https://proxy.example.com/v1` or `https://proxy.example.com/openai/v1`. HTTP
+clients, retry settings, and static headers can be passed using `openai-go`
+request options.
+
+The model reports provider identity `bedrock-mantle.responses`; Responses call
+options and continuation metadata remain under the `openai` namespace. Mantle
+Chat Completions, including safeguard models, are not yet implemented.
+
+The root `bedrock` package remains a Converse provider. Although it can infer
+the `bedrock-mantle` signing service for a Mantle host, it still emits
+Converse-shaped requests and must not be used for the Mantle OpenAI-compatible
+surface.
 
 ## Account for model-family differences
 
@@ -103,14 +127,18 @@ see a stable provider-neutral name.
 
 ## Scope
 
-This package covers language-model text generation through Converse and
-ConverseStream. Embeddings, image generation, reranking, and other Bedrock APIs
-are outside its current scope.
+The root package covers language-model text generation through Converse and
+ConverseStream. The nested `mantle` package covers OpenAI-compatible Responses.
+Mantle Chat, embeddings, image generation, reranking, and other Bedrock APIs are
+outside the current scope.
 
 ## Reference
 
 - [`providers/bedrock`](https://pkg.go.dev/github.com/grafana/ai-sdk/providers/bedrock)
+- [`providers/bedrock/mantle`](https://pkg.go.dev/github.com/grafana/ai-sdk/providers/bedrock/mantle)
 - [AWS Bedrock Converse API](https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_Converse.html)
+- [AWS Bedrock Responses API](https://docs.aws.amazon.com/bedrock/latest/userguide/bedrock-mantle.html)
+- [AWS Gemma 4 26B-A4B model card](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-google-gemma-4-26b-a4b.html)
 
 ---
 

@@ -72,7 +72,7 @@ Start with [Choose a provider](providers/overview.md), then follow the setup for
 the service your application calls:
 
 - [Anthropic](providers/anthropic.md) for Claude through Anthropic or Vertex AI.
-- [Amazon Bedrock](providers/bedrock.md) for models through Bedrock Converse.
+- [Amazon Bedrock](providers/bedrock.md) for Bedrock Converse and Mantle Responses.
 - [OpenAI](providers/openai.md) for the Responses API.
 - [Grafana Cloud](providers/grafana-cloud.md) for internal Grafana services with
   provisioned access to the hosted AI SDK endpoint.

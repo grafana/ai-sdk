@@ -42,13 +42,13 @@ knownGaps:
       provider that translates eager_input_streaming into the fine-grained tool
       streaming beta. The Go Bedrock provider currently implements only the Converse
       and ConverseStream APIs, so that provider surface and behavior are not exposed.
-  - id: bedrock-mantle-provider
+  - id: bedrock-mantle-chat-provider
     surface: provider-bedrock
     status: gap
-    description: Upstream @ai-sdk/amazon-bedrock exposes a dedicated mantle subpath
-      provider that owns Bedrock Mantle authentication, routing, and provider identity
-      while reusing OpenAI Chat and Responses model implementations. The Go Bedrock
-      provider does not yet expose the Mantle Chat or Responses provider surface.
+    description: Upstream @ai-sdk/amazon-bedrock/mantle exposes Chat as its callable,
+      languageModel, and chat surface, including Chat-only safeguard models. The Go
+      Mantle package currently exposes Responses only because the Go OpenAI provider
+      has no shared Chat implementation; it does not present Responses as the default.
   - id: transcription-model-surface
     surface: provider-contract
     status: gap
