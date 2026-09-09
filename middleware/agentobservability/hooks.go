@@ -34,8 +34,10 @@ import (
 //  6. On allow (no TransformedInput): the inner model is invoked unchanged.
 //  7. On allow + TransformedInput: params.Prompt is rebuilt via
 //     applyTransformedInput. A transform that cannot be applied without
-//     losing request content fails closed; the inner model is otherwise
-//     invoked with the new params.
+//     losing request content fails closed. Changed, new, or duplicate user
+//     messages also fail closed because agento11y v0.18 does not preserve
+//     unsupported response roles. The inner model is otherwise invoked with
+//     the new params.
 func HooksMiddleware(opts HooksOptions) middleware.Middleware {
 	return middleware.Middleware{
 		WrapGenerate: func(ctx context.Context, p middleware.WrapGenerateParams) (*provider.GenerateResult, error) {
@@ -84,7 +86,7 @@ func evaluateHook(ctx context.Context, opts HooksOptions, model provider.Languag
 	defer span.End()
 	if model != nil {
 		span.SetAttributes(
-			attribute.String("gen_ai.provider.name", model.Provider()),
+			attribute.String("gen_ai.provider.name", otelProviderName(model.Provider())),
 			attribute.String("gen_ai.request.model", model.ModelID()),
 		)
 	}
@@ -162,7 +164,7 @@ func buildHookEvaluateRequest(model provider.LanguageModel, params provider.Call
 	}
 	if model != nil {
 		hookCtx.Model = &agento11y.HookModel{
-			Provider: model.Provider(),
+			Provider: agento11yProviderName(model.Provider()),
 			Name:     model.ModelID(),
 		}
 	}
@@ -212,6 +214,9 @@ func applyTransformedInputWithTools(originalPrompt []provider.Message, tools []p
 	if len(transformed.Messages) == 0 && transformed.SystemPrompt == "" {
 		return nil, fmt.Errorf("%w: transformed input is empty", ErrHookTransformFailed)
 	}
+	if err := validateTransformedUserMessagesUnchanged(originalPrompt, tools, transformed.Messages); err != nil {
+		return nil, err
+	}
 
 	out := make([]provider.Message, 0, len(transformed.Messages)+1)
 	if transformed.SystemPrompt != "" {
@@ -238,6 +243,29 @@ func applyTransformedInputWithTools(originalPrompt []provider.Message, tools []p
 		out = append(out, provider.Message{Role: role, Content: parts})
 	}
 	return out, nil
+}
+
+func validateTransformedUserMessagesUnchanged(originalPrompt []provider.Message, tools []provider.Tool, transformed []agento11y.Message) error {
+	_, original := messagesToAgento11yWithMediaAndTools(originalPrompt, false, tools)
+	used := make([]bool, len(original))
+	for i, transformedMessage := range transformed {
+		if transformedMessage.Role != agento11y.RoleUser {
+			continue
+		}
+		match := -1
+		for j, originalMessage := range original {
+			if used[j] || originalMessage.Role != agento11y.RoleUser || !reflect.DeepEqual(originalMessage, transformedMessage) {
+				continue
+			}
+			match = j
+			break
+		}
+		if match < 0 {
+			return fmt.Errorf("%w: message at transformed input index %d does not exactly match an unused original user message; agento11y v0.18 cannot preserve unsupported response roles", ErrHookTransformFailed, i)
+		}
+		used[match] = true
+	}
+	return nil
 }
 
 func validateTransformablePrompt(prompt []provider.Message) error {

@@ -42,7 +42,8 @@
     "input_tokens": 20,
     "output_tokens": 12,
     "total_tokens": 32,
-    "reasoning_tokens": 8
+    "reasoning_tokens": 8,
+    "input_semantics": 1
   },
   "stop_reason": "end_turn",
   "started_at": "0001-01-01T00:00:00Z",

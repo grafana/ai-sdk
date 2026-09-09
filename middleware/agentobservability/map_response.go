@@ -156,6 +156,9 @@ func usageToAgento11y(usage provider.Usage) agento11y.TokenUsage {
 		CacheWriteInputTokens: intPtrOrZero(usage.InputTokens.CacheWrite),
 		ReasoningTokens:       intPtrOrZero(usage.OutputTokens.Reasoning),
 	}
+	if usage.InputTokens.Total != nil {
+		out.InputSemantics = agento11y.TokenInputSemanticsInclusive
+	}
 	out.TotalTokens = out.InputTokens + out.OutputTokens
 	return out
 }

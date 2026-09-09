@@ -2,8 +2,10 @@ package agentobservability
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -22,14 +24,75 @@ import (
 // agento11y hooks evaluation endpoint. Returning a canned response lets us
 // exercise the allow/deny/transform branches without a real Agent Observability deployment.
 type hooksTestServer struct {
-	srv      *httptest.Server
-	hits     atomic.Int32
-	response agento11y.HookEvaluateResponse
+	srv          *httptest.Server
+	hits         atomic.Int32
+	response     agento11y.HookEvaluateResponse
+	responseBody []byte
 	// delay, when non-zero, sleeps before responding so MaxLatency tests can
 	// observe a timeout cancellation.
 	delay time.Duration
 	// statusCode overrides the response code (defaults to 200).
 	statusCode int
+}
+
+type hookServerResponse struct {
+	Action           agento11y.HookAction       `json:"action"`
+	RuleID           string                     `json:"rule_id,omitempty"`
+	Reason           string                     `json:"reason,omitempty"`
+	TransformedInput *hookServerInput           `json:"transformed_input,omitempty"`
+	Evaluations      []agento11y.HookEvaluation `json:"evaluations"`
+}
+
+type hookServerInput struct {
+	Messages            []hookServerMessage `json:"messages,omitempty"`
+	Tools               []hookServerTool    `json:"tools,omitempty"`
+	SystemPrompt        string              `json:"system_prompt,omitempty"`
+	Output              []hookServerMessage `json:"output,omitempty"`
+	ConversationPreview string              `json:"conversation_preview,omitempty"`
+}
+
+type hookServerRole int32
+
+const (
+	hookServerRoleUser      hookServerRole = 1
+	hookServerRoleAssistant hookServerRole = 2
+	hookServerRoleTool      hookServerRole = 3
+)
+
+type hookServerMessage struct {
+	Role  hookServerRole   `json:"role"`
+	Name  string           `json:"name,omitempty"`
+	Parts []hookServerPart `json:"parts,omitempty"`
+}
+
+type hookServerPart struct {
+	Kind       agento11y.PartKind    `json:"kind"`
+	Text       string                `json:"text,omitempty"`
+	Thinking   string                `json:"thinking,omitempty"`
+	ToolCall   *hookServerToolCall   `json:"tool_call,omitempty"`
+	ToolResult *hookServerToolResult `json:"tool_result,omitempty"`
+}
+
+type hookServerToolCall struct {
+	ID        string `json:"id,omitempty"`
+	Name      string `json:"name"`
+	InputJSON []byte `json:"input_json,omitempty"`
+}
+
+type hookServerToolResult struct {
+	ToolCallID  string `json:"tool_call_id,omitempty"`
+	Name        string `json:"name,omitempty"`
+	IsError     bool   `json:"is_error,omitempty"`
+	Content     string `json:"content,omitempty"`
+	ContentJSON []byte `json:"content_json,omitempty"`
+}
+
+type hookServerTool struct {
+	Name            string `json:"name"`
+	Description     string `json:"description,omitempty"`
+	Type            string `json:"type,omitempty"`
+	InputSchemaJSON []byte `json:"input_schema_json,omitempty"`
+	Deferred        bool   `json:"deferred,omitempty"`
 }
 
 func newHooksTestServer(t *testing.T, resp agento11y.HookEvaluateResponse) *hooksTestServer {
@@ -46,10 +109,164 @@ func newHooksTestServer(t *testing.T, resp agento11y.HookEvaluateResponse) *hook
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(h.statusCode)
-		_ = json.NewEncoder(w).Encode(h.response)
+		if h.responseBody != nil {
+			_, _ = w.Write(h.responseBody)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(hookEvaluateResponseToServerWire(h.response))
 	}))
 	t.Cleanup(h.srv.Close)
 	return h
+}
+
+func hookEvaluateResponseToServerWire(resp agento11y.HookEvaluateResponse) hookServerResponse {
+	wire := hookServerResponse{
+		Action:      resp.Action,
+		RuleID:      resp.RuleID,
+		Reason:      resp.Reason,
+		Evaluations: resp.Evaluations,
+	}
+	if resp.TransformedInput != nil {
+		wire.TransformedInput = &hookServerInput{
+			Messages:            hookMessagesToServerWire(resp.TransformedInput.Messages),
+			Tools:               hookToolsToServerWire(resp.TransformedInput.Tools),
+			SystemPrompt:        resp.TransformedInput.SystemPrompt,
+			Output:              hookMessagesToServerWire(resp.TransformedInput.Output),
+			ConversationPreview: resp.TransformedInput.ConversationPreview,
+		}
+	}
+	return wire
+}
+
+func hookMessagesToServerWire(messages []agento11y.Message) []hookServerMessage {
+	if len(messages) == 0 {
+		return nil
+	}
+	wire := make([]hookServerMessage, 0, len(messages))
+	for _, message := range messages {
+		parts := make([]hookServerPart, 0, len(message.Parts))
+		for _, part := range message.Parts {
+			converted := hookServerPart{
+				Kind:     part.Kind,
+				Text:     part.Text,
+				Thinking: part.Thinking,
+			}
+			if part.ToolCall != nil {
+				converted.ToolCall = &hookServerToolCall{
+					ID:        part.ToolCall.ID,
+					Name:      part.ToolCall.Name,
+					InputJSON: part.ToolCall.InputJSON,
+				}
+			}
+			if part.ToolResult != nil {
+				converted.ToolResult = &hookServerToolResult{
+					ToolCallID:  part.ToolResult.ToolCallID,
+					Name:        part.ToolResult.Name,
+					IsError:     part.ToolResult.IsError,
+					Content:     part.ToolResult.Content,
+					ContentJSON: part.ToolResult.ContentJSON,
+				}
+			}
+			parts = append(parts, converted)
+		}
+		wire = append(wire, hookServerMessage{
+			Role:  hookRoleToServerWire(message.Role),
+			Name:  message.Name,
+			Parts: parts,
+		})
+	}
+	return wire
+}
+
+func hookRoleToServerWire(role agento11y.Role) hookServerRole {
+	switch role {
+	case agento11y.RoleUser:
+		return hookServerRoleUser
+	case agento11y.RoleAssistant:
+		return hookServerRoleAssistant
+	case agento11y.RoleTool:
+		return hookServerRoleTool
+	default:
+		return 0
+	}
+}
+
+func hookToolsToServerWire(tools []agento11y.ToolDefinition) []hookServerTool {
+	if len(tools) == 0 {
+		return nil
+	}
+	wire := make([]hookServerTool, 0, len(tools))
+	for _, tool := range tools {
+		wire = append(wire, hookServerTool{
+			Name:            tool.Name,
+			Description:     tool.Description,
+			Type:            tool.Type,
+			InputSchemaJSON: tool.InputSchema,
+			Deferred:        tool.Deferred,
+		})
+	}
+	return wire
+}
+
+func TestHookEvaluateResponseToServerWire_EncodesProtoByteFields(t *testing.T) {
+	response := agento11y.HookEvaluateResponse{
+		Action: agento11y.HookActionAllow,
+		TransformedInput: &agento11y.HookInput{
+			Messages: []agento11y.Message{
+				{
+					Role: agento11y.RoleAssistant,
+					Parts: []agento11y.Part{agento11y.ToolCallPart(agento11y.ToolCall{
+						ID: "call-1", Name: "lookup", InputJSON: json.RawMessage(`{"query":"x"}`),
+					})},
+				},
+				{
+					Role: agento11y.RoleTool,
+					Parts: []agento11y.Part{agento11y.ToolResultPart(agento11y.ToolResult{
+						ToolCallID: "call-1", Name: "lookup", ContentJSON: json.RawMessage(`{"ok":true}`),
+					})},
+				},
+			},
+			Tools: []agento11y.ToolDefinition{{
+				Name: "lookup", Description: "Look up a value", Type: "function",
+				InputSchema: json.RawMessage(`{"type":"object"}`), Deferred: true,
+			}},
+		},
+	}
+
+	encoded, err := json.Marshal(hookEvaluateResponseToServerWire(response))
+	require.NoError(t, err)
+	var wire struct {
+		TransformedInput struct {
+			Messages []struct {
+				Role  int32 `json:"role"`
+				Parts []struct {
+					ToolCall *struct {
+						InputJSON string `json:"input_json"`
+					} `json:"tool_call"`
+					ToolResult *struct {
+						ContentJSON string `json:"content_json"`
+					} `json:"tool_result"`
+				} `json:"parts"`
+			} `json:"messages"`
+			Tools []struct {
+				InputSchemaJSON string `json:"input_schema_json"`
+				Deferred        bool   `json:"deferred"`
+			} `json:"tools"`
+		} `json:"transformed_input"`
+	}
+	require.NoError(t, json.Unmarshal(encoded, &wire))
+	require.Len(t, wire.TransformedInput.Messages, 2)
+	assert.Equal(t, int32(hookServerRoleAssistant), wire.TransformedInput.Messages[0].Role)
+	assert.Equal(t, int32(hookServerRoleTool), wire.TransformedInput.Messages[1].Role)
+	require.Len(t, wire.TransformedInput.Messages[0].Parts, 1)
+	require.NotNil(t, wire.TransformedInput.Messages[0].Parts[0].ToolCall)
+	assert.Equal(t, base64.StdEncoding.EncodeToString([]byte(`{"query":"x"}`)), wire.TransformedInput.Messages[0].Parts[0].ToolCall.InputJSON)
+	require.Len(t, wire.TransformedInput.Messages[1].Parts, 1)
+	require.NotNil(t, wire.TransformedInput.Messages[1].Parts[0].ToolResult)
+	assert.Equal(t, base64.StdEncoding.EncodeToString([]byte(`{"ok":true}`)), wire.TransformedInput.Messages[1].Parts[0].ToolResult.ContentJSON)
+	require.Len(t, wire.TransformedInput.Tools, 1)
+	assert.Equal(t, base64.StdEncoding.EncodeToString([]byte(`{"type":"object"}`)), wire.TransformedInput.Tools[0].InputSchemaJSON)
+	assert.True(t, wire.TransformedInput.Tools[0].Deferred)
 }
 
 func (h *hooksTestServer) clientWithHooksEnabled() *agento11y.Client {
@@ -124,11 +341,6 @@ func TestHooksMiddleware_TransformFailureDoesNotInvokeModel(t *testing.T) {
 		transformed agento11y.HookInput
 	}{
 		{
-			name:        "empty transform",
-			prompt:      []provider.Message{provider.UserText("secret")},
-			transformed: agento11y.HookInput{},
-		},
-		{
 			name: "multimodal input",
 			prompt: []provider.Message{provider.NewUserMessage(
 				provider.TextPart("describe this"),
@@ -201,34 +413,89 @@ func TestHooksMiddleware_TransformFailureDoesNotInvokeModel(t *testing.T) {
 	}
 }
 
-func TestHooksMiddleware_TransformFailureBlocksStream(t *testing.T) {
-	transformed := agento11y.HookInput{}
-	h := newHooksTestServer(t, agento11y.HookEvaluateResponse{
-		Action:           agento11y.HookActionAllow,
-		TransformedInput: &transformed,
-	})
-	model := &mockLanguageModel{provider_: "anthropic", modelID: "claude"}
-	client := h.clientWithHooksEnabled()
-	wrapped := middleware.Wrap(middleware.WrapOptions{
-		Model: model,
-		Middleware: []middleware.Middleware{HooksMiddleware(HooksOptions{
-			ClientResolver: func(context.Context) *agento11y.Client { return client },
-		})},
-	})
+func TestHooksMiddleware_RejectsUnsupportedTransformedRoleFromHTTP(t *testing.T) {
+	tests := []struct {
+		name string
+		role string
+	}{
+		{name: "system string", role: `"system"`},
+		{name: "unknown string", role: `"unknown"`},
+		{name: "unspecified enum", role: `0`},
+		{name: "unknown enum", role: `99`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHooksTestServer(t, agento11y.HookEvaluateResponse{})
+			h.responseBody = []byte(fmt.Sprintf(`{"action":"allow","transformed_input":{"messages":[{"role":%s,"parts":[{"kind":"text","text":"policy text"}]}]}}`, tc.role))
+			model := &mockLanguageModel{provider_: "anthropic", modelID: "claude"}
+			wrapped := middleware.Wrap(middleware.WrapOptions{
+				Model: model,
+				Middleware: []middleware.Middleware{HooksMiddleware(HooksOptions{
+					ClientResolver: func(context.Context) *agento11y.Client { return h.clientWithHooksEnabled() },
+				})},
+			})
 
-	_, err := wrapped.DoStream(context.Background(), provider.CallOptions{Prompt: []provider.Message{provider.UserText("secret")}})
-	require.ErrorIs(t, err, ErrHookTransformFailed)
-	assert.Equal(t, 0, model.streamHit)
+			_, err := wrapped.DoGenerate(context.Background(), provider.CallOptions{
+				Prompt: []provider.Message{provider.UserText("user input")},
+			})
+			require.ErrorIs(t, err, ErrHookTransformFailed)
+			assert.Zero(t, model.generateHit)
+		})
+	}
 }
 
-func TestHooksMiddleware_TransformAppliesToStream(t *testing.T) {
+func TestHooksMiddleware_EmptyServerTransformPassesThrough(t *testing.T) {
+	for _, stream := range []bool{false, true} {
+		name := "generate"
+		if stream {
+			name = "stream"
+		}
+		t.Run(name, func(t *testing.T) {
+			transformed := agento11y.HookInput{}
+			h := newHooksTestServer(t, agento11y.HookEvaluateResponse{
+				Action:           agento11y.HookActionAllow,
+				TransformedInput: &transformed,
+			})
+			model := &mockLanguageModel{provider_: "anthropic", modelID: "claude"}
+			client := h.clientWithHooksEnabled()
+			wrapped := middleware.Wrap(middleware.WrapOptions{
+				Model: model,
+				Middleware: []middleware.Middleware{HooksMiddleware(HooksOptions{
+					ClientResolver: func(context.Context) *agento11y.Client { return client },
+				})},
+			})
+			params := provider.CallOptions{
+				Prompt: []provider.Message{provider.UserText("secret")},
+				Tools: []provider.Tool{{
+					Type: provider.ToolTypeFunction, Name: "lookup",
+					InputSchema: json.RawMessage(`{"type":"object"}`),
+				}},
+			}
+
+			if stream {
+				result, err := wrapped.DoStream(context.Background(), params)
+				require.NoError(t, err)
+				for range result.Stream {
+				}
+				assert.Equal(t, 1, model.streamHit)
+			} else {
+				_, err := wrapped.DoGenerate(context.Background(), params)
+				require.NoError(t, err)
+				assert.Equal(t, 1, model.generateHit)
+			}
+			assert.Equal(t, params, model.lastParams)
+		})
+	}
+}
+
+func TestHooksMiddleware_TransformToolsApplyToStream(t *testing.T) {
 	originalTools := []provider.Tool{
 		{Type: provider.ToolTypeFunction, Name: "keep", Description: "kept", InputSchema: json.RawMessage(`{"type":"object"}`)},
 		{Type: provider.ToolTypeFunction, Name: "remove", Description: "removed", InputSchema: json.RawMessage(`{"type":"object"}`)},
 	}
 	transformed := agento11y.HookInput{
 		Messages: []agento11y.Message{{
-			Role: agento11y.RoleUser, Parts: []agento11y.Part{agento11y.TextPart("filtered")},
+			Role: agento11y.RoleUser, Parts: []agento11y.Part{agento11y.TextPart("secret")},
 		}},
 		Tools: toolsToAgento11y(originalTools[:1]),
 	}
@@ -251,7 +518,7 @@ func TestHooksMiddleware_TransformAppliesToStream(t *testing.T) {
 	for range result.Stream {
 	}
 	require.Equal(t, 1, model.streamHit)
-	require.Equal(t, []provider.Message{provider.UserText("filtered")}, model.lastParams.Prompt)
+	require.Equal(t, []provider.Message{provider.UserText("secret")}, model.lastParams.Prompt)
 	require.Equal(t, originalTools[:1], model.lastParams.Tools)
 }
 
@@ -348,7 +615,7 @@ func TestHooksMiddleware_TransformedInput_PreservesReasoningSignatureWithoutRest
 	}
 	transformed := agento11y.HookInput{
 		Messages: []agento11y.Message{
-			{Role: agento11y.RoleUser, Parts: []agento11y.Part{agento11y.TextPart("modified question")}},
+			{Role: agento11y.RoleUser, Parts: []agento11y.Part{agento11y.TextPart("question")}},
 			{Role: agento11y.RoleAssistant, Parts: []agento11y.Part{
 				agento11y.ThinkingPart("thinking…"),
 				agento11y.TextPart("Here is your answer"),
@@ -359,7 +626,7 @@ func TestHooksMiddleware_TransformedInput_PreservesReasoningSignatureWithoutRest
 	newPrompt, err := applyTransformedInput(originalPrompt, transformed)
 	require.NoError(t, err)
 	require.Len(t, newPrompt, 2)
-	assert.Equal(t, "modified question", newPrompt[0].Content[0].Text)
+	assert.Equal(t, "question", newPrompt[0].Content[0].Text)
 
 	assistant := newPrompt[1]
 	require.Len(t, assistant.Content, 2, "removed tool call must not be restored")
@@ -457,6 +724,11 @@ func TestApplyTransformedInput_RejectsMalformedContent(t *testing.T) {
 		original    []provider.Message
 		transformed agento11y.HookInput
 	}{
+		{
+			name:        "empty transform",
+			original:    []provider.Message{provider.UserText("input")},
+			transformed: agento11y.HookInput{},
+		},
 		{
 			name:     "unknown role",
 			original: []provider.Message{provider.UserText("input")},
@@ -861,7 +1133,7 @@ func TestHooksMiddleware_TransformedInput_ModifiedTextRebuilds(t *testing.T) {
 	assert.Equal(t, "REDACTED answer", newPrompt[0].Content[0].Text)
 }
 
-func TestHooksMiddleware_TransformedInput_NonAssistantRebuiltFromParts(t *testing.T) {
+func TestHooksMiddleware_TransformedInput_RejectsChangedUserMessage(t *testing.T) {
 	originalPrompt := []provider.Message{
 		provider.UserText("hello"),
 	}
@@ -870,11 +1142,8 @@ func TestHooksMiddleware_TransformedInput_NonAssistantRebuiltFromParts(t *testin
 			{Role: agento11y.RoleUser, Parts: []agento11y.Part{agento11y.TextPart("hello (filtered)")}},
 		},
 	}
-	newPrompt, err := applyTransformedInput(originalPrompt, transformed)
-	require.NoError(t, err)
-	require.Len(t, newPrompt, 1)
-	assert.Equal(t, provider.RoleUser, newPrompt[0].Role)
-	assert.Equal(t, "hello (filtered)", newPrompt[0].Content[0].Text)
+	_, err := applyTransformedInput(originalPrompt, transformed)
+	require.ErrorIs(t, err, ErrHookTransformFailed)
 }
 
 func TestHooksMiddleware_TransformedInput_DropsOmittedSystemMessages(t *testing.T) {
@@ -884,7 +1153,7 @@ func TestHooksMiddleware_TransformedInput_DropsOmittedSystemMessages(t *testing.
 	}
 	transformed := agento11y.HookInput{
 		Messages: []agento11y.Message{
-			{Role: agento11y.RoleUser, Parts: []agento11y.Part{agento11y.TextPart("hello (filtered)")}},
+			{Role: agento11y.RoleUser, Parts: []agento11y.Part{agento11y.TextPart("hello")}},
 		},
 	}
 
@@ -892,7 +1161,7 @@ func TestHooksMiddleware_TransformedInput_DropsOmittedSystemMessages(t *testing.
 	require.NoError(t, err)
 	require.Len(t, newPrompt, 1)
 	assert.Equal(t, provider.RoleUser, newPrompt[0].Role)
-	assert.Equal(t, "hello (filtered)", newPrompt[0].Content[0].Text)
+	assert.Equal(t, "hello", newPrompt[0].Content[0].Text)
 }
 
 func TestHooksMiddleware_TransformedInput_SystemOnlyReplacement(t *testing.T) {
@@ -960,7 +1229,7 @@ func TestHooksMiddleware_TransformedInput_RemovesTools(t *testing.T) {
 		InputSchema: json.RawMessage(`{"type":"object"}`),
 	}
 	transformed := agento11y.HookInput{Messages: []agento11y.Message{{
-		Role: agento11y.RoleUser, Parts: []agento11y.Part{agento11y.TextPart("filtered")},
+		Role: agento11y.RoleUser, Parts: []agento11y.Part{agento11y.TextPart("input")},
 	}}}
 	h := newHooksTestServer(t, agento11y.HookEvaluateResponse{
 		Action:           agento11y.HookActionAllow,
@@ -1000,7 +1269,7 @@ func TestHooksMiddleware_TransformedInput_RejectsUnsatisfiedToolChoice(t *testin
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			transformed := agento11y.HookInput{Messages: []agento11y.Message{{
-				Role: agento11y.RoleUser, Parts: []agento11y.Part{agento11y.TextPart("filtered")},
+				Role: agento11y.RoleUser, Parts: []agento11y.Part{agento11y.TextPart("input")},
 			}}}
 			h := newHooksTestServer(t, agento11y.HookEvaluateResponse{
 				Action: agento11y.HookActionAllow, TransformedInput: &transformed,

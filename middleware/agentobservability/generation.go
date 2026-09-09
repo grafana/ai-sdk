@@ -34,7 +34,7 @@ type generationModelIdentity struct {
 func BuildGenerationStart(ctx context.Context, providerName, modelID string, ctxInfo ContextInfo) agento11y.GenerationStart {
 	start := agento11y.GenerationStart{
 		Model: agento11y.ModelRef{
-			Provider: providerName,
+			Provider: agento11yProviderName(providerName),
 			Name:     modelID,
 		},
 		ID:                  GenerationIDFromContext(ctx),
@@ -67,6 +67,20 @@ func BuildGenerationStart(ctx context.Context, providerName, modelID string, ctx
 	return start
 }
 
+func buildGenerationStartWithParams(ctx context.Context, providerName, modelID string, ctxInfo ContextInfo, params provider.CallOptions) agento11y.GenerationStart {
+	start := BuildGenerationStart(ctx, providerName, modelID, ctxInfo)
+	controls := controlsFromCallOptions(params)
+	start.SystemPrompt = systemPromptToAgento11y(params.Prompt)
+	start.Tools = toolsToAgento11y(params.Tools)
+	start.MaxTokens = controls.MaxTokens
+	start.Temperature = controls.Temperature
+	start.TopP = controls.TopP
+	start.ToolChoice = controls.ToolChoice
+	start.ThinkingEnabled = thinkingEnabledFromAnthropic(params.ProviderOptions)
+	start.Metadata = mergeMetadata(start.Metadata, metadataFromProviderOptions(params))
+	return start
+}
+
 // MapGenerateResult composes the request mapper, response mapper, and
 // metadata derivation into a complete agento11y.Generation. The recorder fills
 // in id / started_at / completed_at / trace_id / span_id; everything else on
@@ -84,7 +98,6 @@ func mapGenerateResultWithStart(params provider.CallOptions, result *provider.Ge
 	}
 
 	generation := agento11y.Generation{
-		ResponseModel:       start.Model.Name,
 		UserID:              ctxInfo.UserID,
 		AgentName:           ctxInfo.AgentName,
 		AgentVersion:        ctxInfo.AgentVersion,
@@ -102,6 +115,7 @@ func mapGenerateResultWithStart(params provider.CallOptions, result *provider.Ge
 	}
 
 	if result != nil {
+		generation.ResponseModel = start.Model.Name
 		generation.Output = contentToAgento11yOutputWithTools(result.Content, params.Tools)
 		generation.Usage = usageToAgento11y(result.Usage)
 		generation.StopReason = finishReasonToAgento11yStop(result.FinishReason)
@@ -121,7 +135,7 @@ func modelIdentityFromStart(start agento11y.GenerationStart) generationModelIden
 }
 
 func modelIdentityFromResponse(providerName, modelID string) generationModelIdentity {
-	return generationModelIdentity{provider: providerName, model: modelID}
+	return generationModelIdentity{provider: agento11yProviderName(providerName), model: modelID}
 }
 
 func (m generationModelIdentity) complete() bool {
@@ -151,6 +165,25 @@ func addTransportMetadata(gen *agento11y.Generation, seed generationModelIdentit
 	}
 	gen.Metadata[transportProviderMetadataKey] = seed.provider
 	gen.Metadata[transportModelMetadataKey] = seed.model
+}
+
+func preserveRawTransportMetadata(gen *agento11y.Generation, transport generationModelIdentity) {
+	if gen == nil || gen.Metadata == nil {
+		return
+	}
+	normalizedTransport := generationModelIdentity{
+		provider: agento11yProviderName(transport.provider),
+		model:    transport.model,
+	}
+	final := generationModelIdentity{provider: gen.Model.Provider, model: gen.Model.Name}
+	if !normalizedTransport.complete() || !final.complete() || normalizedTransport == final {
+		return
+	}
+	if _, ok := gen.Metadata[transportProviderMetadataKey]; !ok {
+		return
+	}
+	gen.Metadata[transportProviderMetadataKey] = transport.provider
+	gen.Metadata[transportModelMetadataKey] = transport.model
 }
 
 // mergeMetadata returns the union of two metadata maps. Override entries win
