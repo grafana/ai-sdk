@@ -88,7 +88,10 @@ provider and AWS's service-level documentation. Current AWS model cards specify
 `/openai/v1/responses` for a newer exception set spanning GPT-5.4, GPT-5.5,
 GPT-5.6 variants, Grok 4.3/4.6, and Gemma 4. The constructor therefore resolves
 the region and selects the fully qualified default base from an exact,
-maintained model-ID set before the delegated model appends `/responses`.
+maintained model-ID set before the delegated model appends `/responses`. AWS
+model cards' Programmatic Access tables are the source of truth for this set;
+the route test enumerates the same IDs and asserts exact allowlist coverage so
+future additions require explicit endpoint validation and test coverage.
 Constructor context is validated before AWS configuration loading, and explicit
 region/profile values are trimmed before this wrapper consumes them, matching
 the normalization performed by the delegated client.

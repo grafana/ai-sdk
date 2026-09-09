@@ -113,11 +113,16 @@ func TestNewResponses_DefaultRoutes(t *testing.T) {
 		{name: "Daybreak Blue GPT-5.6 Sol", modelID: "openai.gpt-daybreak-blue-5.6-sol", wantRoute: "/openai/v1/responses"},
 		{name: "Grok 4.3", modelID: "xai.grok-4.3", wantRoute: "/openai/v1/responses"},
 		{name: "Grok 4.6", modelID: "xai.grok-4.6", wantRoute: "/openai/v1/responses"},
+		{name: "Gemma 4 26B-A4B", modelID: "google.gemma-4-26b-a4b", wantRoute: "/openai/v1/responses"},
 		{name: "Gemma 4 31B", modelID: "google.gemma-4-31b", wantRoute: "/openai/v1/responses"},
 		{name: "Gemma 4 E2B", modelID: "google.gemma-4-e2b", wantRoute: "/openai/v1/responses"},
 	}
 
+	testedCompatibilityModels := make(map[string]struct{})
 	for _, tt := range tests {
+		if tt.wantRoute == "/openai/v1/responses" {
+			testedCompatibilityModels[tt.modelID] = struct{}{}
+		}
 		t.Run(tt.name, func(t *testing.T) {
 			var request *http.Request
 			var body []byte
@@ -145,6 +150,8 @@ func TestNewResponses_DefaultRoutes(t *testing.T) {
 			assert.Contains(t, string(body), `"model":"`+tt.modelID+`"`)
 		})
 	}
+	assert.Equal(t, openAICompatibilityPathModels, testedCompatibilityModels,
+		"every compatibility-path model must have an explicit route test")
 }
 
 func TestNewResponses_Authentication(t *testing.T) {

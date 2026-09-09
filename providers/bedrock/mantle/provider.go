@@ -16,7 +16,11 @@ import (
 
 const responsesProviderName = "bedrock-mantle.responses"
 
+// AWS assigns compatibility routes per exact model ID rather than model
+// family. Before changing this allowlist, verify the model card's Programmatic
+// Access endpoint and update TestNewResponses_DefaultRoutes with the same ID.
 var openAICompatibilityPathModels = map[string]struct{}{
+	"google.gemma-4-26b-a4b":           {},
 	"google.gemma-4-31b":               {},
 	"google.gemma-4-e2b":               {},
 	"openai.gpt-5.4":                   {},

@@ -73,10 +73,13 @@ if err != nil {
 Most Mantle models use the regional `/v1/responses` route. Some newer models
 use AWS's documented `/openai/v1/responses` compatibility route instead. The
 maintained exception set currently covers GPT-5.4, GPT-5.5, the documented
-GPT-5.6 variants, Grok 4.3 and 4.6, and Gemma 4; the constructor selects the
-route from the exact model ID. Requests are signed with SigV4 service
-`bedrock-mantle`, using the standard AWS credential chain when credentials are
-not supplied explicitly.
+GPT-5.6 variants, Grok 4.3 and 4.6, and Gemma 4, including 26B-A4B; the
+constructor selects the route from the exact model ID. The allowlist is
+intentionally exact because AWS assigns this route per model rather than by
+family. When AWS adds a model, verify the Programmatic Access endpoint on its
+model card and update both the allowlist and its route test. Requests are signed
+with SigV4 service `bedrock-mantle`, using the standard AWS credential chain
+when credentials are not supplied explicitly.
 
 For a controlled bearer-authentication rollback, set `Config.APIKey` or
 `AWS_BEARER_TOKEN_BEDROCK`. Explicit bearer and AWS credential modes are
@@ -135,6 +138,7 @@ outside the current scope.
 - [`providers/bedrock/mantle`](https://pkg.go.dev/github.com/grafana/ai-sdk/providers/bedrock/mantle)
 - [AWS Bedrock Converse API](https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_Converse.html)
 - [AWS Bedrock Responses API](https://docs.aws.amazon.com/bedrock/latest/userguide/bedrock-mantle.html)
+- [AWS Gemma 4 26B-A4B model card](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-google-gemma-4-26b-a4b.html)
 
 ---
 
