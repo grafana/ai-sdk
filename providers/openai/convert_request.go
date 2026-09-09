@@ -34,10 +34,18 @@ type buildResult struct {
 // It returns the request body, accumulated warnings, conversion metadata, and
 // an error.
 func buildParams(modelID string, opts provider.CallOptions) (responses.ResponseNewParams, []provider.Warning, buildResult, error) {
+	_, providerOptionsName, err := resolveProviderOptions(opts)
+	if err != nil {
+		return responses.ResponseNewParams{}, nil, buildResult{}, err
+	}
+	return buildParamsForProvider(modelID, opts, providerOptionsName)
+}
+
+func buildParamsForProvider(modelID string, opts provider.CallOptions, providerOptionsName string) (responses.ResponseNewParams, []provider.Warning, buildResult, error) {
 	var warnings []provider.Warning
 
 	caps := getModelCapabilities(modelID)
-	popts, poptsName, err := resolveProviderOptions(opts)
+	popts, poptsName, err := resolveProviderOptionsForName(opts, providerOptionsName)
 	if err != nil {
 		return responses.ResponseNewParams{}, nil, buildResult{}, err
 	}
@@ -122,7 +130,7 @@ func approvalRequestToolCallIDMapping(prompt []provider.Message, providerOptions
 // resolveProviderOptions parses the typed OpenAI provider options. The provider
 // options name is "openai"; an "azure" fallback is parsed for parity.
 func resolveProviderOptions(opts provider.CallOptions) (OpenAIResponsesOptions, string, error) {
-	name := "openai"
+	name := providerName
 	po, ok, err := provider.ResolveOption[OpenAIResponsesOptions](opts.ProviderOptions, name)
 	if err != nil {
 		return OpenAIResponsesOptions{}, name, err
@@ -134,6 +142,26 @@ func resolveProviderOptions(opts provider.CallOptions) (OpenAIResponsesOptions, 
 		}
 		if ok {
 			name = "azure"
+		}
+	}
+	if err := validateOpenAIResponsesOptions(po); err != nil {
+		return OpenAIResponsesOptions{}, name, err
+	}
+	return po, name, nil
+}
+
+func resolveProviderOptionsForName(opts provider.CallOptions, name string) (OpenAIResponsesOptions, string, error) {
+	if name == "" {
+		name = providerName
+	}
+	po, ok, err := provider.ResolveOption[OpenAIResponsesOptions](opts.ProviderOptions, name)
+	if err != nil {
+		return OpenAIResponsesOptions{}, name, err
+	}
+	if !ok && name != providerName {
+		po, _, err = provider.ResolveOption[OpenAIResponsesOptions](opts.ProviderOptions, providerName)
+		if err != nil {
+			return OpenAIResponsesOptions{}, name, err
 		}
 	}
 	if err := validateOpenAIResponsesOptions(po); err != nil {

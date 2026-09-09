@@ -21,7 +21,12 @@ func mcpApprovalRequestID(item responses.ResponseOutputItemMcpApprovalRequest) s
 
 // convertResponse converts a non-streaming Responses response into a
 // provider.GenerateResult, mapping every output item to provider content.
-func convertResponse(resp *responses.Response, br buildResult, generateID func() string, providerName string) (*provider.GenerateResult, error) {
+func convertResponse(resp *responses.Response, br buildResult, generateID func() string, providerIdentity string) (*provider.GenerateResult, error) {
+	providerOptionsName := br.providerOptionsName
+	if providerOptionsName == "" {
+		providerOptionsName = providerIdentity
+	}
+
 	var content []provider.GenerateContentPart
 	var logprobs [][]responseLogprob
 	hasFunctionCall := false
@@ -39,9 +44,9 @@ func convertResponse(resp *responses.Response, br buildResult, generateID func()
 						content = append(content, provider.GenerateContentPart{
 							Type:             provider.ContentText,
 							Text:             ot.Text,
-							ProviderMetadata: textMeta(providerName, v.ID, string(v.Phase), rawList(ot.Annotations)),
+							ProviderMetadata: textMeta(providerOptionsName, v.ID, string(v.Phase), rawList(ot.Annotations)),
 						})
-						content = append(content, convertAnnotations(ot.Annotations, generateID, providerName)...)
+						content = append(content, convertAnnotations(ot.Annotations, generateID, providerOptionsName)...)
 					}
 				}
 			}
@@ -55,7 +60,7 @@ func convertResponse(resp *responses.Response, br buildResult, generateID func()
 				content = append(content, provider.GenerateContentPart{
 					Type:             provider.ContentReasoning,
 					Text:             s.Text,
-					ProviderMetadata: reasoningMeta(providerName, v.ID, v.EncryptedContent),
+					ProviderMetadata: reasoningMeta(providerOptionsName, v.ID, v.EncryptedContent),
 				})
 			}
 
@@ -66,7 +71,7 @@ func convertResponse(resp *responses.Response, br buildResult, generateID func()
 				ToolCallID:       v.CallID,
 				ToolName:         v.Name,
 				Input:            json.RawMessage(v.Arguments),
-				ProviderMetadata: itemIDNamespaceCallerMeta(providerName, v.ID, v.Namespace, v.Caller.Type, v.Caller.CallerID),
+				ProviderMetadata: itemIDNamespaceCallerMeta(providerOptionsName, v.ID, v.Namespace, v.Caller.Type, v.Caller.CallerID),
 			})
 
 		case responses.ResponseOutputItemProgram:
@@ -78,7 +83,7 @@ func convertResponse(resp *responses.Response, br buildResult, generateID func()
 				ToolName:         toolName,
 				Input:            input,
 				ProviderExecuted: true,
-				ProviderMetadata: itemIDMeta(providerName, v.ID),
+				ProviderMetadata: itemIDMeta(providerOptionsName, v.ID),
 			})
 
 		case responses.ResponseOutputItemProgramOutput:
@@ -89,7 +94,7 @@ func convertResponse(resp *responses.Response, br buildResult, generateID func()
 				ToolCallID:       v.CallID,
 				ToolName:         toolName,
 				Result:           result,
-				ProviderMetadata: itemIDMeta(providerName, v.ID),
+				ProviderMetadata: itemIDMeta(providerOptionsName, v.ID),
 			})
 
 		case responses.ResponseFunctionWebSearch:
@@ -149,7 +154,7 @@ func convertResponse(resp *responses.Response, br buildResult, generateID func()
 				ToolCallID:       toolCallID,
 				ToolName:         toolName,
 				Result:           result,
-				ProviderMetadata: itemIDMeta(providerName, v.ID),
+				ProviderMetadata: itemIDMeta(providerOptionsName, v.ID),
 			})
 
 		case responses.ResponseOutputItemMcpApprovalRequest:
@@ -182,7 +187,7 @@ func convertResponse(resp *responses.Response, br buildResult, generateID func()
 				ToolCallID:       v.CallID,
 				ToolName:         v.Name,
 				Input:            input,
-				ProviderMetadata: itemIDMeta(providerName, v.ID),
+				ProviderMetadata: itemIDMeta(providerOptionsName, v.ID),
 			})
 
 		case responses.ResponseOutputItemImageGenerationCall:
@@ -223,7 +228,7 @@ func convertResponse(resp *responses.Response, br buildResult, generateID func()
 				ToolCallID:       v.CallID,
 				ToolName:         br.toolNameMapping.toCustomToolName("computer"),
 				Input:            input,
-				ProviderMetadata: itemIDMeta(providerName, v.ID),
+				ProviderMetadata: itemIDMeta(providerOptionsName, v.ID),
 			})
 
 		case responses.ResponseFunctionShellToolCall:
@@ -234,7 +239,7 @@ func convertResponse(resp *responses.Response, br buildResult, generateID func()
 				ToolCallID:       v.CallID,
 				ToolName:         toolName,
 				Input:            input,
-				ProviderMetadata: itemIDMeta(providerName, v.ID),
+				ProviderMetadata: itemIDMeta(providerOptionsName, v.ID),
 			}
 			if br.isShellProviderExecuted {
 				part.ProviderExecuted = true
@@ -259,7 +264,7 @@ func convertResponse(resp *responses.Response, br buildResult, generateID func()
 				ToolCallID:       v.CallID,
 				ToolName:         toolName,
 				Input:            input,
-				ProviderMetadata: itemIDMeta(providerName, v.ID),
+				ProviderMetadata: itemIDMeta(providerOptionsName, v.ID),
 			})
 
 		case responses.ResponseApplyPatchToolCall:
@@ -270,7 +275,7 @@ func convertResponse(resp *responses.Response, br buildResult, generateID func()
 				ToolCallID:       v.CallID,
 				ToolName:         toolName,
 				Input:            input,
-				ProviderMetadata: itemIDMeta(providerName, v.ID),
+				ProviderMetadata: itemIDMeta(providerOptionsName, v.ID),
 			})
 
 		case responses.ResponseToolSearchCall:
@@ -288,7 +293,7 @@ func convertResponse(resp *responses.Response, br buildResult, generateID func()
 				ToolCallID:       toolCallID,
 				ToolName:         toolName,
 				Input:            input,
-				ProviderMetadata: itemIDMeta(providerName, v.ID),
+				ProviderMetadata: itemIDMeta(providerOptionsName, v.ID),
 			}
 			if v.Execution == "server" {
 				part.ProviderExecuted = true
@@ -312,14 +317,14 @@ func convertResponse(resp *responses.Response, br buildResult, generateID func()
 				ToolCallID:       toolCallID,
 				ToolName:         toolName,
 				Result:           result,
-				ProviderMetadata: itemIDMeta(providerName, v.ID),
+				ProviderMetadata: itemIDMeta(providerOptionsName, v.ID),
 			})
 
 		case responses.ResponseCompactionItem:
 			content = append(content, provider.GenerateContentPart{
 				Type:             provider.ContentCustom,
 				Kind:             "openai.compaction",
-				ProviderMetadata: compactionMetadata(providerName, v.ID, v.EncryptedContent),
+				ProviderMetadata: compactionMetadata(providerOptionsName, v.ID, v.EncryptedContent),
 			})
 		}
 	}
@@ -328,12 +333,12 @@ func convertResponse(resp *responses.Response, br buildResult, generateID func()
 		Content:          content,
 		FinishReason:     mapFinishReason(resp.IncompleteDetails.Reason, hasFunctionCall),
 		Usage:            convertResponseUsage(resp.Usage),
-		ProviderMetadata: responseMeta(providerName, resp, logprobs),
+		ProviderMetadata: responseMeta(providerOptionsName, resp, logprobs),
 		Response: &provider.GenerateResponse{
 			ResponseMetadata: provider.ResponseMetadata{
 				ID:        resp.ID,
 				ModelID:   resp.Model,
-				Provider:  providerName,
+				Provider:  providerIdentity,
 				Timestamp: time.Unix(int64(resp.CreatedAt), 0),
 			},
 			Body: json.RawMessage(resp.RawJSON()),

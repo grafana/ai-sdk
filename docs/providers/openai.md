@@ -23,6 +23,28 @@ Continue with [Generate text from Go](../getting-started/backend-only.md) or
 [Full-stack chat](../getting-started/full-stack-chat.md). The same model also
 works with tools, structured output, middleware, and Agents.
 
+## Reuse Responses in a provider integration
+
+Provider packages whose APIs implement OpenAI Responses semantics can call
+`NewResponsesWithClient` with a preconfigured official OpenAI SDK client. The
+model preserves the client's endpoint, authentication, headers, retries, and
+transport. Set the integrating provider's model identity with
+`WithProviderName`; for a custom identity this changes `Provider()` while
+resolving the Responses metadata namespace once when the model is constructed.
+Identities containing `"azure"` use the `"azure"` namespace; other custom
+identities use `"openai"`. Empty names are ignored so optional configuration
+cannot erase the default `"openai"` identity.
+
+This is a composition seam, not a generic endpoint authentication feature. The
+integrating provider owns its client configuration and policy. OpenAI-specific
+call options and response metadata remain under that stable `"openai"` or
+`"azure"` provider-options key because request conversion still follows OpenAI
+Responses semantics. Keeping the namespace stable across calls preserves item
+references, encrypted reasoning, tool namespaces, and approval correlation even
+when a continuation call has no top-level provider options. For compatibility,
+the existing `NewResponses` path with the default `"openai"` identity retains
+its per-call OpenAI-first, Azure-fallback option resolution.
+
 ## Configure a call
 
 Set request-scoped headers with `aisdk.WithHeaders`. Headers configured through

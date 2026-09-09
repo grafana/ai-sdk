@@ -20,15 +20,34 @@ const (
 )
 
 type model struct {
-	client      responses.ResponseService
-	modelID     string
-	provider    string
-	requestOpts []option.RequestOption
-	generateID  func() string
+	client              responses.ResponseService
+	modelID             string
+	provider            string
+	providerOptionsName string
+	requestOpts         []option.RequestOption
+	generateID          func() string
 }
 
 // NewResponses creates a [provider.LanguageModel] for the OpenAI Responses API.
 func NewResponses(apiKey, modelID string, opts ...Option) provider.LanguageModel {
+	m := newModel(modelID, opts...)
+	clientOpts := append([]option.RequestOption{option.WithAPIKey(apiKey)}, m.requestOpts...)
+	client := openaisdk.NewClient(clientOpts...)
+	m.client = client.Responses
+	return m
+}
+
+// NewResponsesWithClient creates a [provider.LanguageModel] using a
+// preconfigured OpenAI client. It is intended for provider integrations that
+// reuse the Responses model implementation with provider-owned transport and
+// authentication.
+func NewResponsesWithClient(client openaisdk.Client, modelID string, opts ...Option) provider.LanguageModel {
+	m := newModel(modelID, opts...)
+	m.client = client.Responses
+	return m
+}
+
+func newModel(modelID string, opts ...Option) *model {
 	m := &model{
 		modelID:    modelID,
 		provider:   providerName,
@@ -37,9 +56,6 @@ func NewResponses(apiKey, modelID string, opts ...Option) provider.LanguageModel
 	for _, o := range opts {
 		o(m)
 	}
-	clientOpts := append([]option.RequestOption{option.WithAPIKey(apiKey)}, m.requestOpts...)
-	client := openaisdk.NewClient(clientOpts...)
-	m.client = client.Responses
 	return m
 }
 
@@ -64,7 +80,7 @@ var _ provider.LanguageModel = (*model)(nil)
 
 // DoGenerate performs a non-streaming Responses call.
 func (m *model) DoGenerate(ctx context.Context, params provider.CallOptions) (*provider.GenerateResult, error) {
-	body, warnings, br, err := buildParams(m.modelID, params)
+	body, warnings, br, err := m.buildParams(params)
 	if err != nil {
 		return nil, err
 	}
@@ -123,7 +139,7 @@ func responseBodyError(resp *responses.Response, rawResponse *http.Response, bod
 
 // DoStream performs a streaming Responses call.
 func (m *model) DoStream(ctx context.Context, params provider.CallOptions) (*provider.StreamResult, error) {
-	body, warnings, br, err := buildParams(m.modelID, params)
+	body, warnings, br, err := m.buildParams(params)
 	if err != nil {
 		return nil, err
 	}
@@ -142,6 +158,13 @@ func (m *model) DoStream(ctx context.Context, params provider.CallOptions) (*pro
 		consumeStream(ctx, items, buffered, ch, warnings, br, body, rawResponse, m.generateID, m.provider)
 	}()
 	return &provider.StreamResult{Stream: ch}, nil
+}
+
+func (m *model) buildParams(params provider.CallOptions) (responses.ResponseNewParams, []provider.Warning, buildResult, error) {
+	if m.providerOptionsName == "" {
+		return buildParams(m.modelID, params)
+	}
+	return buildParamsForProvider(m.modelID, params, m.providerOptionsName)
 }
 
 func (m *model) requestOptions(headers map[string]string) []option.RequestOption {
