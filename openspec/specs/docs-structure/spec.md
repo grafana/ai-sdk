@@ -144,27 +144,25 @@ that document user-facing setup, usage, or behavior SHALL have their content
 folded into the appropriate `docs/` page and SHALL be removed. All `doc.go`
 files SHALL remain co-located with their code as the godoc API reference and
 SHALL NOT be moved. Contributor/tooling READMEs that are not user-facing (e.g.
-under `test/`) MAY remain co-located.
+under `test/`) MAY remain co-located. Documentation for a removed package SHALL
+be deleted or replaced by an indexed retirement note rather than retained as
+current usage guidance.
 
 #### Scenario: User-facing package READMEs are centralized
 
-- **WHEN** a package has a README documenting user-facing setup or behavior
-  (e.g. a provider or middleware module)
-- **THEN** its content SHALL live in the relevant `docs/` page and the
-  package-local README SHALL be removed
+- **WHEN** a retained package has a README documenting user-facing setup or behavior
+- **THEN** its content SHALL live in the relevant `docs/` page and the package-local README SHALL be removed
 
 #### Scenario: doc.go files are not moved
 
-- **WHEN** the centralization is applied
-- **THEN** all `doc.go` files remain in their original locations as the godoc
-  API reference
+- **WHEN** documentation centralization is applied to retained packages
+- **THEN** their `doc.go` files remain in their original locations as the godoc API reference
 
-#### Scenario: docs hold the detail directly
+#### Scenario: Removed package documentation is not current guidance
 
-- **WHEN** `docs/providers/grafana-cloud.md` covers auth, identity forwarding,
-  or wire details
-- **THEN** it SHALL contain that detail directly (linking to pkg.go.dev for the
-  API reference) rather than deferring to a package-local README
+- **WHEN** a package or module is removed from the repository
+- **THEN** its former provider or guide page SHALL NOT remain indexed as an available capability
+- **AND** any indexed retirement note SHALL distinguish historical source from a currently installable API
 
 ### Requirement: Stub pages are consistent and intentional
 

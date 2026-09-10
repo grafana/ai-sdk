@@ -1,6 +1,5 @@
 packages:
   - integration
-  - interop
   - cli
   - conformance/tools
 

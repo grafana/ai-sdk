@@ -44,21 +44,20 @@
 //		},
 //	})
 //
-// For Grafana hosted provider request context, prefer provider options rather
-// than hosted middleware control headers:
+// For provider-specific request context, prefer provider options rather than
+// transport headers:
 //
 //	model = enrichment.Wrap(model, enrichment.Options{
 //		ContextValues: true,
 //		Filter: enrichment.FilterOptions{Include: []string{"request_id", "tenant"}},
 //		ProviderOptions: enrichment.ProviderOptionsConfig{
-//			ProviderKey: "grafana",
+//			ProviderKey: "example",
 //			ObjectKey:   "enrichment",
 //		},
 //	})
 //
-// This writes a grafana.enrichment sidecar while preserving unrelated Grafana
-// hosted controls such as grafana.agentObservability, grafana.tracing,
-// grafana.metrics, and grafana.usage.
+// This writes an example.enrichment object while preserving unrelated existing
+// fields in the provider namespace.
 //
 // Do not propagate secrets, API tokens, raw auth claims, prompts, tool
 // arguments, raw user input, or values intended for metric labels. Built-in

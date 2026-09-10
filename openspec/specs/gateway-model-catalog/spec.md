@@ -146,7 +146,7 @@ The registry adapter SHALL return `UnknownModelError` only when the requested pu
 - **THEN** the adapter SHALL return an invalid-provider-result error and SHALL NOT classify the public route as unknown
 
 ### Requirement: Catalog remains separate from registry and transport policy
-The gateway catalog SHALL treat public IDs as opaque strings and SHALL NOT require registry separator syntax. This capability SHALL NOT change `registry.Provider`, `ProviderRegistry`, `CustomProvider`, provider-wire routes or payloads, or the behavior of `providers/grafana`.
+The gateway catalog SHALL treat public IDs as opaque strings and SHALL NOT require registry separator syntax. This capability SHALL NOT change `registry.Provider`, `ProviderRegistry`, `CustomProvider`, provider call options, provider behavior, or transport payloads.
 
 #### Scenario: Public ID contains no provider separator
 - **WHEN** a static or registry-backed catalog registers a flat public ID
@@ -158,26 +158,7 @@ The gateway catalog SHALL treat public IDs as opaque strings and SHALL NOT requi
 
 #### Scenario: Catalog resolves a model
 - **WHEN** a catalog returns an existing `provider.LanguageModel`
-- **THEN** it SHALL NOT alter provider call options, provider requests, stream parts, UI chunks, SSE framing, or provider-wire serialization
-
-### Requirement: Provider-wire server composition remains host-owned
-The `gateway/catalog` package SHALL remain independent of `net/http` and `gateway/providerwire`. When a host composes `catalog.ModelResolver` with the separately proposed `providerwire.ModelResolver`, a host-owned adapter SHALL pass `r.Context()` to catalog resolution, return the resolved language model for execution, and preserve canonical public identity for host-owned policy or logging. The adapter SHALL translate only `catalog.ErrUnknownModel` into a non-retryable HTTP 404 `*provider.APICallError` with the catalog error as its cause; other catalog or registry failures SHALL pass through unchanged.
-
-#### Scenario: Catalog dependency boundary
-- **WHEN** imports and public types in the `gateway/catalog` package are inspected
-- **THEN** they SHALL NOT import or expose `net/http` or `gateway/providerwire`
-
-#### Scenario: Successful provider-wire adaptation
-- **WHEN** a valid provider-wire request is adapted to a gateway catalog resolver
-- **THEN** the adapter SHALL resolve with the original request context, return `ResolvedModel.Model` to the HTTP execution boundary, and make `ResolvedModel.ID` available to host-owned policy or logging
-
-#### Scenario: Unknown public model maps to HTTP 404
-- **WHEN** catalog resolution returns an error matching `catalog.ErrUnknownModel`
-- **THEN** the host adapter SHALL return a non-retryable HTTP 404 `*provider.APICallError` whose cause is the original catalog error
-
-#### Scenario: Non-catalog failure retains provider-wire normalization
-- **WHEN** a configured public route returns a registry or provider failure that does not match `catalog.ErrUnknownModel`
-- **THEN** the host adapter SHALL pass that error through unchanged rather than misclassifying it as an unknown public model
+- **THEN** it SHALL NOT alter provider call options, provider requests, stream parts, UI chunks, or SSE framing
 
 ### Requirement: Assistant-specific policy remains external
 The gateway catalog SHALL NOT define Assistant model families, profile slots, `chat-large`/`chat-small` selection, Claude alias tables, entitlement rules, provider credentials, provider ordering, or fallback construction.
@@ -189,3 +170,18 @@ The gateway catalog SHALL NOT define Assistant model families, profile slots, `c
 #### Scenario: Assistant applies entitlements
 - **WHEN** the Assistant service restricts models per request
 - **THEN** it SHALL implement that policy outside ai-sdk by decorating resolution and listing consistently
+
+### Requirement: Transport composition remains host-owned
+The `gateway/catalog` package SHALL remain independent of `net/http` and any concrete transport adapter. A host-owned adapter MAY pass request context into catalog resolution, execute the returned model, preserve canonical public identity for policy or logging, and translate `catalog.ErrUnknownModel` at its own protocol boundary. The catalog SHALL NOT define HTTP status codes or protocol error envelopes.
+
+#### Scenario: Catalog dependency boundary
+- **WHEN** imports and public types in the `gateway/catalog` package are inspected
+- **THEN** they SHALL NOT import or expose `net/http` or a concrete transport package
+
+#### Scenario: Host adapts successful resolution
+- **WHEN** a host resolves a public model through the catalog
+- **THEN** it MAY pass `ResolvedModel.Model` to its execution boundary and retain `ResolvedModel.ID` as canonical public identity
+
+#### Scenario: Host maps unknown models
+- **WHEN** catalog resolution returns an error matching `catalog.ErrUnknownModel`
+- **THEN** the host MAY map that error to its protocol-specific not-found response without the catalog owning that protocol

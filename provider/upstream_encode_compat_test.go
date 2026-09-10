@@ -8,9 +8,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// These tests lock the encoder half of provider-wire-upstream-full-compat: the
-// encoders emit the upstream Vercel AI SDK LanguageModelV4 JSON shapes, and the
-// decoders accept both the upstream and the legacy Go encodings.
+// These tests lock the provider-domain JSON representation: encoders emit the
+// upstream Vercel AI SDK LanguageModelV4 shapes, and decoders accept both the
+// upstream and legacy Go encodings.
 
 func TestDataContent_MarshalUpstreamUnion(t *testing.T) {
 	cases := []struct {

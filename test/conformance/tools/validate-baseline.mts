@@ -74,7 +74,6 @@ function main(): void {
       : [
           join(__dirname, "package.json"),
           join(__dirname, "..", "..", "integration", "package.json"),
-          join(__dirname, "..", "..", "interop", "package.json"),
           join(__dirname, "..", "..", "cli", "package.json"),
         ];
   const errors = validateBaselineFiles(manifestPath, packagePaths);

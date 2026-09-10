@@ -129,8 +129,7 @@ type ToolResultOutput struct {
 // `{"type":"json","value":...}`, `{"type":"content","value":[...]}`,
 // `{"type":"execution-denied","reason":...}`), superseding the split
 // `text`/`json`/`content`/`reason` emitted form. Decoding remains tolerant of
-// both shapes (see [ToolResultOutput.UnmarshalJSON]). See openspec change
-// provider-wire-upstream-full-compat.
+// both shapes (see [ToolResultOutput.UnmarshalJSON]).
 func (t ToolResultOutput) MarshalJSON() ([]byte, error) {
 	out := map[string]json.RawMessage{}
 	typeB, err := json.Marshal(t.Type)

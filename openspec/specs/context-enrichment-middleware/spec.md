@@ -7,7 +7,7 @@ Context enrichment middleware defines the opt-in nested module for projecting ex
 
 The repository SHALL provide `middleware/enrichment/` as a separate Go module with module path `github.com/grafana/ai-sdk/middleware/enrichment` and `replace github.com/grafana/ai-sdk => ../../` for local development.
 
-The production package SHALL depend on the ai-sdk root module and the Go standard library only. It SHALL NOT import `github.com/grafana/ai-sdk/providers/grafana`, `github.com/grafana/ai-sdk/providers/anthropic`, or any other provider module. The root ai-sdk module SHALL NOT import `middleware/enrichment`.
+The production package SHALL depend on the ai-sdk root module and the Go standard library only. It SHALL NOT import any provider module. The root ai-sdk module SHALL NOT import `middleware/enrichment`.
 
 #### Scenario: Root consumers do not import enrichment
 
@@ -174,7 +174,7 @@ For conflicts:
 - `ConflictEnrichmentWins` SHALL overwrite the existing caller header unless the target header is protected.
 - `ConflictError` SHALL return an error.
 
-Protected auth and transport headers SHALL NOT be written or overwritten by enrichment by default, regardless of conflict policy. If enrichment targets a protected header and no caller value exists, the header output SHALL still omit that enrichment header. The protected set SHALL include common auth and provider transport headers such as `Authorization`, `Proxy-Authorization`, `X-Access-Token`, `X-Grafana-Id`, `Content-Type`, provider API-key headers, and Grafana provider wire headers. Callers SHALL be able to add deployment-specific protected header names, but the initial API SHALL NOT provide an opt-in to write built-in protected header names.
+Protected auth and transport headers SHALL NOT be written or overwritten by enrichment by default, regardless of conflict policy. If enrichment targets a protected header and no caller value exists, the header output SHALL still omit that enrichment header. The protected set SHALL include common auth and provider transport headers such as `Authorization`, `Proxy-Authorization`, `X-Access-Token`, `X-Grafana-Id`, `Content-Type`, and provider API-key or protocol headers. Callers SHALL be able to add deployment-specific protected header names, but the initial API SHALL NOT provide an opt-in to write built-in protected header names.
 
 #### Scenario: Caller wins by default
 
@@ -238,24 +238,37 @@ The output SHALL preserve unrelated existing fields. When the provider key exist
 - **AND** `ConflictEnrichmentWins` SHALL replace it with the enrichment object
 - **AND** `ConflictError` SHALL return an error
 
-#### Scenario: Grafana controls are preserved
-
-- **WHEN** provider options contain existing `grafana.agentObservability`, `grafana.tracing`, `grafana.metrics`, or `grafana.usage` fields
-- **AND** enrichment writes to `ProviderKey: "grafana"` and `ObjectKey: "enrichment"`
-- **THEN** those existing Grafana hosted middleware control fields SHALL be preserved unchanged
-
 #### Scenario: ResolveOption remains usable after merge
 
 - **WHEN** a provider option is merged and stored as `provider.RawProviderOption`
 - **THEN** downstream code SHALL be able to recover typed views using `provider.ResolveOption` for compatible option structs
 
-### Requirement: Composition with registry, Agent Observability, and Grafana hosted provider
+### Requirement: Validation and documentation for safe use
+
+The implementation SHALL include unit tests for value collection, context defensive copies, default-deny filtering, per-output selection isolation, sensitive redaction/drop behavior, cardinality filtering, over-limit value dropping, generate and stream transformation, header conflict policies, protected headers including absent protected targets, provider-options creation and merge behavior, unrelated-field preservation, registry composition, and middleware ordering examples.
+
+The package godoc SHALL document that enrichment is opt-in, default-deny, string-only, and provider-agnostic. It SHALL warn against propagating secrets, API tokens, auth claims without explicit filtering, prompts, tool arguments, raw user input, and high-cardinality metric labels. It SHALL state that the module does not emit telemetry and does not change provider/UI representation behavior unless callers explicitly attach it to a model.
+
+#### Scenario: Unit tests cover generate and stream calls
+
+- **WHEN** the enrichment module test suite runs
+- **THEN** it SHALL verify that both `DoGenerate` and `DoStream` receive enriched call options when configured
+
+#### Scenario: Documentation warns about sensitive data
+
+- **WHEN** a consumer reads the package documentation
+- **THEN** it SHALL explain the default-deny model and warn not to propagate secrets, tokens, prompts, tool arguments, or raw user input
+
+#### Scenario: No default conformance fixture changes are required
+
+- **WHEN** this module remains opt-in without wrapping any model by default
+- **THEN** existing provider and UI/SSE conformance fixtures SHALL remain unchanged
+
+### Requirement: Composition with registry and Agent Observability
 
 The enrichment module SHALL require no registry changes. It SHALL be usable with `registry.WithLanguageModelMiddleware` because registry already accepts `middleware.Middleware` values.
 
 The enrichment module SHALL document middleware ordering with Agent Observability. When enrichment appears before `agentobservability.Stack(...)` in the middleware slice, Agent Observability hooks and recording SHALL observe enriched `CallOptions`; when enrichment appears after Agent Observability, enrichment SHALL be transport-only from Agent Observability's perspective.
-
-The enrichment module SHALL document Grafana hosted provider usage through provider options, not hosted middleware control headers. The recommended Grafana sidecar shape SHALL be `Options{ProviderOptions: ProviderOptionsConfig{ProviderKey: "grafana", ObjectKey: "enrichment"}}`. Enrichment SHALL NOT reinterpret or modify `grafana.agentObservability`, `grafana.tracing`, `grafana.metrics`, or `grafana.usage` unless callers explicitly configure provider-options fields to those exact names.
 
 #### Scenario: Registry applies enrichment to resolved model
 
@@ -271,29 +284,3 @@ The enrichment module SHALL document Grafana hosted provider usage through provi
 
 - **WHEN** a model is wrapped with Agent Observability middleware before enrichment middleware
 - **THEN** Agent Observability middleware SHALL observe the original call options and the inner provider SHALL observe enriched call options
-
-#### Scenario: Grafana hosted controls remain separate
-
-- **WHEN** enrichment writes to `grafana.enrichment`
-- **THEN** Grafana hosted middleware controls under `grafana.agentObservability`, `grafana.tracing`, `grafana.metrics`, and `grafana.usage` SHALL remain separate and unchanged
-
-### Requirement: Validation and documentation for safe use
-
-The implementation SHALL include unit tests for value collection, context defensive copies, default-deny filtering, per-output selection isolation, sensitive redaction/drop behavior, cardinality filtering, over-limit value dropping, generate and stream transformation, header conflict policies, protected headers including absent protected targets, provider-options creation and merge behavior, Grafana field preservation, registry composition, and middleware ordering examples.
-
-The package godoc SHALL document that enrichment is opt-in, default-deny, string-only, and provider-agnostic. It SHALL warn against propagating secrets, API tokens, auth claims without explicit filtering, prompts, tool arguments, raw user input, and high-cardinality metric labels. It SHALL state that the module does not emit telemetry and does not change provider/UI wire behavior unless callers explicitly attach it to a model.
-
-#### Scenario: Unit tests cover generate and stream calls
-
-- **WHEN** the enrichment module test suite runs
-- **THEN** it SHALL verify that both `DoGenerate` and `DoStream` receive enriched call options when configured
-
-#### Scenario: Documentation warns about sensitive data
-
-- **WHEN** a consumer reads the package documentation
-- **THEN** it SHALL explain the default-deny model and warn not to propagate secrets, tokens, prompts, tool arguments, or raw user input
-
-#### Scenario: No default conformance fixture changes are required
-
-- **WHEN** this module is added without wrapping any model by default
-- **THEN** existing root provider-wire and UI/SSE conformance fixtures SHALL remain unchanged

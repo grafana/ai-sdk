@@ -733,7 +733,7 @@ type ReplayServer struct {
 }
 
 // NewReplayServer creates a replay server using the default SSE framing used by
-// Anthropic and Grafana provider-wire fixtures.
+// SSE-based provider fixtures.
 func NewReplayServer(fixtureDir string, providerName string) (*ReplayServer, error) {
 	return NewReplayServerWithFraming(fixtureDir, providerName, SSEFraming{})
 }

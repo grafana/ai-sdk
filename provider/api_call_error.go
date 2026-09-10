@@ -10,9 +10,9 @@ import (
 // for in-process error chain traversal (errors.As / errors.Is).
 //
 // All fields except cause are exported with JSON tags so the error round-trips
-// losslessly through any wire (e.g. gateway/providerwire HTTP+SSE). The unexported
-// cause is preserved for in-process Unwrap but is not serialized; cross-process
-// error attribution should use Message, StatusCode, and ResponseBody instead.
+// through encoding/json. The unexported cause is preserved for in-process
+// Unwrap but is not serialized; reconstructed error attribution should use
+// Message, StatusCode, and ResponseBody instead.
 //
 // This mirrors the upstream TypeScript APICallError from @ai-sdk/provider.
 type APICallError struct {
@@ -30,7 +30,7 @@ type APICallError struct {
 
 	// cause is the in-process underlying error. It is not serialized to JSON
 	// because Go errors are not generally serializable. Reconstructed errors
-	// from the wire have a nil cause.
+	// from JSON have a nil cause.
 	cause error
 }
 

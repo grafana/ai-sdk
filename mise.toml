@@ -22,7 +22,6 @@ sources = [
   "test/cli/package.json",
   "test/conformance/tools/package.json",
   "test/integration/package.json",
-  "test/interop/package.json",
 ]
 outputs = ["test/node_modules/.modules.yaml"]
 run = "cd test && pnpm install --frozen-lockfile"
@@ -36,7 +35,6 @@ mise run test-anthropic
 mise run test-bedrock
 mise run test-openai
 mise run test-openai-compatible
-mise run test-grafana
 mise run test-logger-middleware
 mise run test-agent-observability-middleware
 mise run test-enrichment-middleware
@@ -62,10 +60,6 @@ run = "cd providers/openai && go test ./..."
 [tasks.test-openai-compatible]
 description = "Run OpenAI-compatible provider tests"
 run = "cd providers/openai-compatible && go test ./..."
-
-[tasks.test-grafana]
-description = "Run Grafana provider tests"
-run = "cd providers/grafana && go test ./..."
 
 [tasks.test-logger-middleware]
 description = "Run logger middleware tests"
@@ -96,7 +90,6 @@ go test -short ./...
 (cd providers/bedrock && go test -short ./...)
 (cd providers/openai && go test -short ./...)
 (cd providers/openai-compatible && go test -short ./...)
-(cd providers/grafana && go test -short ./...)
 (cd middleware/logger && go test -short ./...)
 (cd middleware/agentobservability && go test -short ./...)
 (cd middleware/enrichment && go test -short ./...)
@@ -122,7 +115,6 @@ go vet ./...
 (cd providers/bedrock && go vet ./...)
 (cd providers/openai && go vet ./...)
 (cd providers/openai-compatible && go vet ./...)
-(cd providers/grafana && go vet ./...)
 (cd middleware/logger && go vet ./...)
 (cd middleware/agentobservability && go vet ./...)
 (cd middleware/enrichment && go vet ./...)
@@ -138,7 +130,7 @@ trap 'chmod -R u+w "$module_cache" 2>/dev/null || true; rm -rf "$module_cache"' 
 export GOMODCACHE="$module_cache"
 export GOPROXY="https://proxy.golang.org"
 export GOWORK=off
-for go_mod in $(git ls-files 'go.mod' '*/go.mod' | sort); do
+for go_mod in $(git ls-files 'go.mod' '*/go.mod' | while read -r file; do [ -f "$file" ] && echo "$file"; done | sort); do
   module_path=$(go mod edit -json "$go_mod" | jq -r '.Module.Path')
   case "$module_path" in
     github.com/grafana/ai-sdk/examples/*|github.com/grafana/ai-sdk/test/*)
@@ -201,7 +193,6 @@ go mod tidy
 (cd providers/bedrock && go mod tidy)
 (cd providers/openai && go mod tidy)
 (cd providers/openai-compatible && go mod tidy)
-(cd providers/grafana && go mod tidy)
 (cd middleware/logger && go mod tidy)
 (cd middleware/agentobservability && go mod tidy)
 (cd middleware/enrichment && go mod tidy)
@@ -217,7 +208,6 @@ go build ./...
 (cd providers/bedrock && go build ./...)
 (cd providers/openai && go build ./...)
 (cd providers/openai-compatible && go build ./...)
-(cd providers/grafana && go build ./...)
 (cd middleware/logger && go build ./...)
 (cd middleware/agentobservability && go build ./...)
 (cd middleware/enrichment && go build ./...)
@@ -253,13 +243,6 @@ run = """
 mise deps install --only test
 (cd test/integration/testserver && go test ./...)
 cd test && pnpm --filter @ai-sdk/test-integration test
-"""
-
-[tasks.test-interop]
-description = "Run bidirectional upstream-client (@ai-sdk/gateway) interop tests"
-run = """
-mise deps install --only test
-cd test && pnpm --filter @ai-sdk/test-interop test
 """
 
 [tasks.test-cli]

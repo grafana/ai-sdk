@@ -12,7 +12,7 @@ Define the dependency-isolated Prometheus middleware module for provider-level a
 
 The module SHALL depend on the root `github.com/grafana/ai-sdk` module and the Prometheus Go client. The root ai-sdk module SHALL NOT import `middleware/prometheus` and SHALL NOT gain a dependency on `github.com/prometheus/client_golang`.
 
-The module documentation SHALL describe that the middleware records local/client-side provider-call metrics and does not configure Grafana hosted server-side metrics controls.
+The module documentation SHALL describe that the middleware records local/client-side provider-call metrics and does not configure remote hosted-service metrics controls.
 
 #### Scenario: Root module dependency isolation
 
@@ -25,11 +25,11 @@ The module documentation SHALL describe that the middleware records local/client
 - **THEN** it SHALL declare module path `github.com/grafana/ai-sdk/middleware/prometheus`
 - **AND** it SHALL replace `github.com/grafana/ai-sdk` with `../../`
 
-#### Scenario: Grafana hosted metrics remain independent
+#### Scenario: Hosted metrics controls remain independent
 
-- **WHEN** documentation describes Prometheus middleware with `providers/grafana.GrafanaOptions.Metrics`
+- **WHEN** documentation describes Prometheus middleware alongside remote hosted-service controls
 - **THEN** it SHALL state that Prometheus middleware measures local client-side provider calls
-- **AND** it SHALL state that Grafana provider options control hosted server-side middleware independently
+- **AND** it SHALL NOT require option types from a removed provider module
 
 ### Requirement: Public API surface
 
@@ -314,7 +314,7 @@ Provider and model labels SHALL be the only potentially user-controlled high-car
 
 ### Requirement: Documentation and validation coverage
 
-The module SHALL include package documentation describing the public API, metric contract, default buckets, provider-call scope, stream finalization behavior, privacy/cardinality guardrails, Agent Observability composition ordering, registry integration, and Grafana hosted metrics independence.
+The module SHALL include package documentation describing the public API, metric contract, default buckets, provider-call scope, stream finalization behavior, privacy/cardinality guardrails, Agent Observability composition ordering, registry integration, and the boundary between local metrics and remote service controls.
 
 The implementation SHALL include tests using `prometheus.NewRegistry()` and `prometheus/testutil` that cover collector registration, duplicate registration, generate success/error/cancellation, stream success/error/cancellation, response identity preference, requested identity mode, normalizers, stream chunk/timing metrics, disabled stream chunk metrics, registry integration, privacy label exclusions, and root dependency isolation.
 

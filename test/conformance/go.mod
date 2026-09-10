@@ -6,7 +6,6 @@ replace (
 	github.com/grafana/ai-sdk => ../../
 	github.com/grafana/ai-sdk/providers/anthropic => ../../providers/anthropic
 	github.com/grafana/ai-sdk/providers/bedrock => ../../providers/bedrock
-	github.com/grafana/ai-sdk/providers/grafana => ../../providers/grafana
 	github.com/grafana/ai-sdk/providers/openai => ../../providers/openai
 	github.com/grafana/ai-sdk/providers/openai-compatible => ../../providers/openai-compatible
 )
@@ -17,7 +16,6 @@ require (
 	github.com/grafana/ai-sdk v0.1.0-alpha.1
 	github.com/grafana/ai-sdk/providers/anthropic v0.0.0-00010101000000-000000000000
 	github.com/grafana/ai-sdk/providers/bedrock v0.0.0-00010101000000-000000000000
-	github.com/grafana/ai-sdk/providers/grafana v0.0.0-00010101000000-000000000000
 	github.com/grafana/ai-sdk/providers/openai v0.0.0-00010101000000-000000000000
 	github.com/grafana/ai-sdk/providers/openai-compatible v0.0.0-00010101000000-000000000000
 	github.com/openai/openai-go/v3 v3.48.0
@@ -47,17 +45,12 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/felixge/httpsnoop v1.1.0 // indirect
-	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.19 // indirect
 	github.com/googleapis/gax-go/v2 v2.23.0 // indirect
-	github.com/grafana/authlib v0.0.0-20260814184937-0d62418c2815 // indirect
-	github.com/grafana/authlib/types v0.0.0-20260814184937-0d62418c2815 // indirect
-	github.com/grafana/dskit v0.0.0-20260814134254-4a836a70f745 // indirect
 	github.com/invopop/jsonschema v0.14.0 // indirect
-	github.com/patrickmn/go-cache v2.1.0+incompatible // indirect
 	github.com/pb33f/ordered-map/v2 v2.3.1 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2 // indirect
@@ -81,7 +74,9 @@ require (
 	golang.org/x/text v0.41.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	google.golang.org/api v0.291.0 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20260810153831-ec0a7760b754 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260810153831-ec0a7760b754 // indirect
 	google.golang.org/grpc v1.83.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
+	gopkg.in/yaml.v2 v2.4.0 // indirect
 )

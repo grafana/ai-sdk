@@ -1,8 +1,7 @@
 # Providers and models
 
 A provider lets your application call models through a service such as
-Anthropic, Amazon Bedrock, OpenAI, or an OpenAI-compatible endpoint. Internally
-provisioned Grafana services can also use Grafana's hosted endpoint. After
+Anthropic, Amazon Bedrock, OpenAI, or an OpenAI-compatible endpoint. After
 construction, every model works with the same generation, streaming, tool,
 retry, and middleware APIs.
 
@@ -28,7 +27,6 @@ Most applications should start with one provider model:
 - Anthropic or Vertex AI
 - Amazon Bedrock
 - OpenAI Responses API
-- Grafana's hosted endpoint for internal services
 - an OpenAI-compatible Chat Completions endpoint
 
 See the [provider overview](../providers/overview.md) for the selection guide and

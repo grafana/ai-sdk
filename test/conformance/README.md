@@ -38,8 +38,7 @@ The upstream target for generated expectations is declared in
 `test/conformance/upstream.yaml`. That manifest records the Vercel AI SDK
 repository, TypeScript package versions, verification commands, and known gaps.
 The package versions in the manifest must match every parity TypeScript
-consumer under `test/`: conformance tools, integration tests, interop tests, and
-CLI tooling.
+consumer under `test/`: conformance tools, integration tests, and CLI tooling.
 
 The current parity coverage map lives in `test/conformance/PARITY.md`. It
 classifies each compatibility surface by layer, status, confidence source, and
@@ -52,20 +51,6 @@ recorded provider chunks or provider request snapshots, add or update the
 fixture first, confirm the Go replay fails, and then fix the implementation.
 For new parity-sensitive features, record or import upstream behavior alongside
 the implementation so future baseline upgrades have an executable contract.
-
-## Grafana Provider-Wire Replay
-
-The Grafana conformance package reuses the Anthropic fixture directories
-instead of duplicating fixture files. Its fake hosted endpoint accepts
-`POST /language-model`, validates provider-wire and auth headers, decodes
-the JSON `provider.CallOptions` body, replays the matching Anthropic
-fixture through the direct Anthropic provider conversion path, and writes
-the resulting `provider.StreamPart` values back as provider-wire SSE with
-`providerwire.WriteSSEStreamPart`.
-
-This proves the Grafana provider is a transparent transport boundary: the
-`UIMessageChunk` sequence must remain byte-identical to the direct
-Anthropic conformance run for the same `expected.jsonl` files.
 
 ## Prerequisites
 

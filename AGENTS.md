@@ -185,7 +185,6 @@ aisdk/              Root package - orchestration (StreamText, UIMessage, SSE, to
     anthropic/      Separate Go module - Anthropic/Vertex provider implementation
     openai/         Separate Go module - OpenAI Responses API provider implementation
     bedrock/        Separate Go module - AWS Bedrock Converse provider implementation
-    grafana/        Separate Go module - Grafana Cloud hosted provider implementation
   docs/             Narrative documentation (concepts, guides, providers, best-practices)
   examples/         Runnable example programs - each a self-contained Go module
 ```
