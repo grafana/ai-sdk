@@ -76,10 +76,15 @@ func MapGenerateResult(params provider.CallOptions, result *provider.GenerateRes
 }
 
 func mapGenerateResultWithStart(params provider.CallOptions, result *provider.GenerateResult, ctxInfo ContextInfo, start agento11y.GenerationStart) agento11y.Generation {
-	system, input := messagesToAgento11y(params.Prompt)
+	system, input := messagesToAgento11yWithTools(params.Prompt, params.Tools)
 	controls := controlsFromCallOptions(params)
+	metadata := mergeMetadata(ctxInfo.Metadata, metadataFromProviderOptions(params))
+	if result != nil {
+		metadata = mergeMetadata(metadata, metadataFromUsage(result.Usage))
+	}
 
 	generation := agento11y.Generation{
+		ResponseModel:       start.Model.Name,
 		UserID:              ctxInfo.UserID,
 		AgentName:           ctxInfo.AgentName,
 		AgentVersion:        ctxInfo.AgentVersion,
@@ -93,11 +98,11 @@ func mapGenerateResultWithStart(params provider.CallOptions, result *provider.Ge
 		ThinkingEnabled:     thinkingEnabledFromAnthropic(params.ProviderOptions),
 		ParentGenerationIDs: nil, // filled by recorder seed
 		Tags:                cloneStringMap(ctxInfo.Tags),
-		Metadata:            mergeMetadata(metadataFromProviderOptions(params), ctxInfo.Metadata),
+		Metadata:            metadata,
 	}
 
 	if result != nil {
-		generation.Output = contentToAgento11yOutput(result.Content)
+		generation.Output = contentToAgento11yOutputWithTools(result.Content, params.Tools)
 		generation.Usage = usageToAgento11y(result.Usage)
 		generation.StopReason = finishReasonToAgento11yStop(result.FinishReason)
 		if result.Response != nil {
@@ -144,12 +149,8 @@ func addTransportMetadata(gen *agento11y.Generation, seed generationModelIdentit
 	if gen.Metadata == nil {
 		gen.Metadata = map[string]any{}
 	}
-	if _, ok := gen.Metadata[transportProviderMetadataKey]; !ok {
-		gen.Metadata[transportProviderMetadataKey] = seed.provider
-	}
-	if _, ok := gen.Metadata[transportModelMetadataKey]; !ok {
-		gen.Metadata[transportModelMetadataKey] = seed.model
-	}
+	gen.Metadata[transportProviderMetadataKey] = seed.provider
+	gen.Metadata[transportModelMetadataKey] = seed.model
 }
 
 // mergeMetadata returns the union of two metadata maps. Override entries win

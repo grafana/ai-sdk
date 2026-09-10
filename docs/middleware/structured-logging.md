@@ -131,4 +131,4 @@ for ordering semantics.
 
 ---
 
-← [Middleware overview](overview.md) · [Docs index](../README.md) · [Context enrichment →](context-enrichment.md)
+← [Writing middleware](writing-middleware.md) · [Docs index](../README.md) · [Context enrichment →](context-enrichment.md)
