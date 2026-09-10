@@ -39,8 +39,8 @@ var nowSigner = func() time.Time { return sigV4Now() }
 //  3. When a bearer token is configured, set Authorization: Bearer ... and
 //     return.
 //  4. Otherwise: read the body fully so the SigV4 signer has a stable payload
-//     hash, then call SignHTTP with credentials, service "bedrock", and the
-//     configured region.
+//     hash, then call SignHTTP with credentials, the resolved signing service
+//     ("bedrock" or "bedrock-mantle"), and the configured region.
 //
 // The function only signs `POST` requests with a body; everything else is
 // passed through unsigned. This matches the upstream `createSigV4FetchFunction`
@@ -110,7 +110,7 @@ func (m *model) signRequest(ctx context.Context, req *http.Request) error {
 	}
 
 	signer := v4.NewSigner()
-	if err := signer.SignHTTP(ctx, creds, req, payloadHash, signingService, m.region, nowSigner()); err != nil {
+	if err := signer.SignHTTP(ctx, creds, req, payloadHash, m.resolveSigningService(), m.region, nowSigner()); err != nil {
 		return fmt.Errorf("bedrock: signing request: %w", err)
 	}
 	return nil

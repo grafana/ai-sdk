@@ -55,6 +55,8 @@ application grows.
 Start with the [middleware overview](middleware/overview.md) to choose where a
 cross-cutting behavior belongs.
 
+- [Writing middleware](middleware/writing-middleware.md) — add reusable request,
+  policy, result, stream, or caching behavior around model calls.
 - [Structured logging](middleware/structured-logging.md) — record provider-call
   lifecycle, latency, outcome, and optional bounded content.
 - [Prometheus metrics](middleware/prometheus.md) — collect local call volume,
@@ -70,7 +72,7 @@ Start with [Choose a provider](providers/overview.md), then follow the setup for
 the service your application calls:
 
 - [Anthropic](providers/anthropic.md) for Claude through Anthropic or Vertex AI.
-- [Amazon Bedrock](providers/bedrock.md) for models through Bedrock Converse.
+- [Amazon Bedrock](providers/bedrock.md) for Bedrock Converse and Mantle Responses.
 - [OpenAI](providers/openai.md) for the Responses API.
 - [OpenAI-compatible APIs](providers/openai-compatible.md) for local or hosted
   Chat Completions-compatible servers.
