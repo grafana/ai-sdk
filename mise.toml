@@ -130,13 +130,16 @@ go vet ./...
 """
 
 [tasks.verify-module-resolution]
-description = "Verify each published module's requirements resolve from the module proxy"
+description = "Verify each published module resolves from the public proxy and tests outside the workspace"
 run = """
 set -e
 module_cache=$(mktemp -d)
 trap 'chmod -R u+w "$module_cache" 2>/dev/null || true; rm -rf "$module_cache"' EXIT
 export GOMODCACHE="$module_cache"
 export GOPROXY="https://proxy.golang.org"
+export GOPRIVATE=
+export GONOPROXY=
+export GONOSUMDB=
 export GOWORK=off
 for go_mod in $(git ls-files 'go.mod' '*/go.mod' | while read -r file; do [ -f "$file" ] && echo "$file"; done | sort); do
   module_path=$(go mod edit -json "$go_mod" | jq -r '.Module.Path')
@@ -152,7 +155,7 @@ for go_mod in $(git ls-files 'go.mod' '*/go.mod' | while read -r file; do [ -f "
   fi
   mod=$(dirname "$go_mod")
   echo "==> $mod"
-  (cd "$mod" && go mod download && go mod verify > /dev/null)
+  (cd "$mod" && go mod download && go mod verify > /dev/null && go test -mod=readonly ./...)
 done
 """
 

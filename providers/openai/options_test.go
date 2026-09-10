@@ -134,6 +134,32 @@ func TestLogprobsOption_Unmarshal(t *testing.T) {
 	})
 }
 
+func TestResolveProviderOptionsForName_AzureNamespaceIsStable(t *testing.T) {
+	t.Run("uses Azure options", func(t *testing.T) {
+		got, name, err := resolveProviderOptionsForName(provider.CallOptions{
+			ProviderOptions: withAzureOptions(t, OpenAIResponsesOptions{Instructions: "azure"}),
+		}, "azure")
+		require.NoError(t, err)
+		assert.Equal(t, "azure", name)
+		assert.Equal(t, "azure", got.Instructions)
+	})
+
+	t.Run("falls back to OpenAI options", func(t *testing.T) {
+		got, name, err := resolveProviderOptionsForName(provider.CallOptions{
+			ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{Instructions: "openai"}),
+		}, "azure")
+		require.NoError(t, err)
+		assert.Equal(t, "azure", name)
+		assert.Equal(t, "openai", got.Instructions)
+	})
+
+	t.Run("remains Azure without call options", func(t *testing.T) {
+		_, name, err := resolveProviderOptionsForName(provider.CallOptions{}, "azure")
+		require.NoError(t, err)
+		assert.Equal(t, "azure", name)
+	})
+}
+
 func TestResolveProviderOptions_RawRoundTrip(t *testing.T) {
 	// Simulate a wire boundary: options arrive as RawProviderOption.
 	raw := provider.ProviderOptions{

@@ -60,6 +60,14 @@ func TestModel_Construction(t *testing.T) {
 			},
 		},
 		{
+			name: "WithSigningService overrides inferred service",
+			opts: []Option{WithSigningService("bedrock-mantle")},
+			check: func(t *testing.T, m *model) {
+				assert.Equal(t, "bedrock-mantle", m.signingService)
+				assert.Equal(t, "bedrock-mantle", m.resolveSigningService())
+			},
+		},
+		{
 			name: "WithBearerToken sets token",
 			opts: []Option{WithBearerToken("test-token")},
 			check: func(t *testing.T, m *model) {
@@ -110,6 +118,73 @@ func TestModel_Construction(t *testing.T) {
 			m, ok := lm.(*model)
 			require.True(t, ok, "New must return *model")
 			tc.check(t, m)
+		})
+	}
+}
+
+func TestModel_ResolveSigningService(t *testing.T) {
+	cases := []struct {
+		name string
+		opts []Option
+		want string
+	}{
+		{
+			name: "default runtime endpoint",
+			opts: []Option{WithRegion("us-east-1")},
+			want: "bedrock",
+		},
+		{
+			name: "mantle endpoint inferred",
+			opts: []Option{WithBaseURL("https://bedrock-mantle.us-east-1.api.aws")},
+			want: "bedrock-mantle",
+		},
+		{
+			name: "custom host defaults to bedrock",
+			opts: []Option{WithBaseURL("https://gateway.internal.example.com")},
+			want: "bedrock",
+		},
+		{
+			name: "explicit service wins over mantle host",
+			opts: []Option{
+				WithBaseURL("https://bedrock-mantle.us-east-1.api.aws"),
+				WithSigningService("bedrock"),
+			},
+			want: "bedrock",
+		},
+		{
+			name: "explicit service wins over non-mantle host",
+			opts: []Option{
+				WithBaseURL("https://gateway.internal.example.com"),
+				WithSigningService("bedrock-mantle"),
+			},
+			want: "bedrock-mantle",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			lm := New("anthropic.claude-sonnet-4-5-20250929-v1:0", tc.opts...)
+			m := lm.(*model)
+			assert.Equal(t, tc.want, m.resolveSigningService())
+		})
+	}
+}
+
+func TestIsMantleEndpoint(t *testing.T) {
+	cases := []struct {
+		endpoint string
+		want     bool
+	}{
+		{"https://bedrock-mantle.us-east-1.api.aws", true},
+		{"https://bedrock-mantle.eu-west-1.api.aws/anthropic/v1/messages", true},
+		{"https://bedrock-runtime.us-east-1.amazonaws.com", false},
+		{"https://gateway.internal.example.com", false},
+		{"https://bedrock-mantle-proxy.example.com", false},
+		{"://bad url", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.endpoint, func(t *testing.T) {
+			assert.Equal(t, tc.want, isMantleEndpoint(tc.endpoint))
 		})
 	}
 }
