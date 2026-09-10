@@ -309,7 +309,10 @@ func hookInputs() map[string]hookFixtureInput {
 			TransformedInput: &agento11y.HookInput{
 				Messages: []agento11y.Message{
 					{Role: agento11y.RoleUser, Parts: []agento11y.Part{agento11y.TextPart("modified question")}},
-					{Role: agento11y.RoleAssistant, Parts: []agento11y.Part{agento11y.TextPart("Here is your answer")}},
+					{Role: agento11y.RoleAssistant, Parts: []agento11y.Part{
+						agento11y.ThinkingPart("thinking…"),
+						agento11y.TextPart("Here is your answer"),
+					}},
 				},
 			},
 		},
