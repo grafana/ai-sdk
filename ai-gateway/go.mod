@@ -3,7 +3,7 @@ module github.com/grafana/ai-sdk/ai-gateway
 go 1.26.3
 
 require (
-	github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260903123248-d01852bbada3
+	github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260910194704-a66f58d8dc13
 	github.com/stretchr/testify v1.11.1
 )
 

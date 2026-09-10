@@ -1,8 +1,11 @@
 package agentobservability
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/grafana/agento11y/go/agento11y"
@@ -30,10 +33,9 @@ import (
 //     model.
 //  6. On allow (no TransformedInput): the inner model is invoked unchanged.
 //  7. On allow + TransformedInput: params.Prompt is rebuilt via
-//     applyTransformedInput, preserving original reasoning-block signatures
-//     where the assistant text matches; the inner model is then invoked
-//     with the new params (bypassing the middleware-level DoGenerate/DoStream
-//     closures, which captured the pre-transform params).
+//     applyTransformedInput. A transform that cannot be applied without
+//     losing request content fails closed; the inner model is otherwise
+//     invoked with the new params.
 func HooksMiddleware(opts HooksOptions) middleware.Middleware {
 	return middleware.Middleware{
 		WrapGenerate: func(ctx context.Context, p middleware.WrapGenerateParams) (*provider.GenerateResult, error) {
@@ -121,14 +123,25 @@ func evaluateHook(ctx context.Context, opts HooksOptions, model provider.Languag
 		return nil, denialErr
 	}
 
-	if resp.TransformedInput != nil && (len(resp.TransformedInput.Messages) > 0 || resp.TransformedInput.SystemPrompt != "") {
-		newPrompt := applyTransformedInput(params.Prompt, *resp.TransformedInput)
-		if len(newPrompt) > 0 {
-			span.SetAttributes(attribute.String(SpanAttrHooksResult, "transform"))
-			newParams := params
-			newParams.Prompt = newPrompt
-			return &newParams, nil
+	if resp.TransformedInput != nil {
+		newPrompt, err := applyTransformedInputWithTools(params.Prompt, params.Tools, *resp.TransformedInput)
+		if err == nil {
+			var tools []provider.Tool
+			tools, err = applyTransformedTools(params.Tools, resp.TransformedInput.Tools)
+			if err == nil {
+				err = validateTransformedToolChoice(params.ToolChoice, tools)
+			}
+			if err == nil {
+				span.SetAttributes(attribute.String(SpanAttrHooksResult, "transform"))
+				newParams := params
+				newParams.Prompt = newPrompt
+				newParams.Tools = tools
+				return &newParams, nil
+			}
 		}
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return nil, err
 	}
 
 	span.SetAttributes(attribute.String(SpanAttrHooksResult, "allow"))
@@ -139,7 +152,7 @@ func evaluateHook(ctx context.Context, opts HooksOptions, model provider.Languag
 // Media is excluded because hooks predate Agent Observability media recording,
 // and sending inline data or signed URLs would widen the preflight disclosure boundary.
 func buildHookEvaluateRequest(model provider.LanguageModel, params provider.CallOptions, ctxInfo ContextInfo) agento11y.HookEvaluateRequest {
-	system, msgs := messagesToAgento11yWithMedia(params.Prompt, false)
+	system, msgs := messagesToAgento11yWithMediaAndTools(params.Prompt, false, params.Tools)
 	tools := toolsToAgento11y(params.Tools)
 
 	hookCtx := agento11y.HookContext{
@@ -185,164 +198,224 @@ func flattenMessagesForPreview(messages []agento11y.Message) string {
 	return strings.Join(parts, "\n")
 }
 
-// applyTransformedInput rebuilds an ai-sdk prompt from an agento11y.HookInput
-// while preserving the cryptographic signatures attached to reasoning blocks
-// in the original prompt's assistant messages and the system prompt that
-// the hook did not explicitly modify.
-//
-// Algorithm (matching the legacy claude path's findMatchingOriginalWithThinking):
-//
-//  1. System messages: if transformed.SystemPrompt is non-empty, replace the
-//     original system context with a single SystemMessage built from it;
-//     otherwise carry the original system messages forward unchanged. This
-//     mirrors how messagesToAgento11y folds system messages into a separate
-//     HookInput.SystemPrompt field — a hook that doesn't touch the system
-//     context returns it as "" (the zero value), and we MUST NOT silently
-//     drop the originals in that case.
-//  2. Non-system messages: index the original assistant-role messages that
-//     carry a reasoning part by their concatenated text content (excluding
-//     reasoning text). For each transformed message:
-//     - If role is assistant AND the same concatenated text appears in the
-//     index AND has not yet been consumed, keep the original message
-//     verbatim (preserves the signature).
-//     - Otherwise, rebuild the message from the transformed SDK parts.
-//
-// Reasoning signatures don't round-trip through the underlying SDK wire schema, so any
-// assistant message whose text the hook changed loses its signature.
-func applyTransformedInput(originalPrompt []provider.Message, transformed agento11y.HookInput) []provider.Message {
-	originalsWithReasoning := indexAssistantReasoningMessages(originalPrompt)
-	used := make(map[int]bool, len(originalsWithReasoning))
+// applyTransformedInput rebuilds a complete replacement prompt from a hook
+// response. It preserves reasoning signatures only on unchanged reasoning
+// parts and rejects transformations that cannot be represented faithfully.
+func applyTransformedInput(originalPrompt []provider.Message, transformed agento11y.HookInput) ([]provider.Message, error) {
+	return applyTransformedInputWithTools(originalPrompt, nil, transformed)
+}
 
-	systemMsgs := systemMessagesForTransform(originalPrompt, transformed)
+func applyTransformedInputWithTools(originalPrompt []provider.Message, tools []provider.Tool, transformed agento11y.HookInput) ([]provider.Message, error) {
+	if err := validateTransformablePrompt(originalPrompt); err != nil {
+		return nil, err
+	}
+	if len(transformed.Messages) == 0 && transformed.SystemPrompt == "" {
+		return nil, fmt.Errorf("%w: transformed input is empty", ErrHookTransformFailed)
+	}
 
-	body := make([]provider.Message, 0, len(transformed.Messages))
-	for _, agento11yMsg := range transformed.Messages {
-		role, ok := agento11yRoleToProvider(agento11yMsg.Role)
+	out := make([]provider.Message, 0, len(transformed.Messages)+1)
+	if transformed.SystemPrompt != "" {
+		out = append(out, provider.NewSystemMessage(transformed.SystemPrompt))
+	}
+
+	matcher := newTransformedPartMatcher(originalPrompt, tools)
+	for i, msg := range transformed.Messages {
+		role, ok := agento11yRoleToProvider(msg.Role)
 		if !ok {
-			continue
+			return nil, fmt.Errorf("%w: message %d has unsupported role %q", ErrHookTransformFailed, i, msg.Role)
+		}
+		if err := validateTransformedMessage(msg); err != nil {
+			return nil, fmt.Errorf("%w: message %d: %v", ErrHookTransformFailed, i, err)
 		}
 
-		if role == provider.RoleAssistant {
-			text := concatAssistantTextFromAgento11y(agento11yMsg)
-			if text != "" {
-				if idx, orig, found := findMatching(originalsWithReasoning, text, used); found {
-					used[idx] = true
-					body = append(body, orig)
-					continue
+		parts, err := rebuildPartsFromAgento11y(msg.Parts, matcher)
+		if err != nil {
+			return nil, fmt.Errorf("%w: message %d: %v", ErrHookTransformFailed, i, err)
+		}
+		if len(parts) == 0 {
+			return nil, fmt.Errorf("%w: message %d has no supported parts", ErrHookTransformFailed, i)
+		}
+		out = append(out, provider.Message{Role: role, Content: parts})
+	}
+	return out, nil
+}
+
+func validateTransformablePrompt(prompt []provider.Message) error {
+	for i, msg := range prompt {
+		if len(msg.ProviderOptions) > 0 {
+			return fmt.Errorf("%w: original message %d has undisclosed provider options", ErrHookTransformFailed, i)
+		}
+		switch msg.Role {
+		case provider.RoleSystem:
+			for _, part := range msg.Content {
+				if len(part.ProviderOptions) > 0 {
+					return fmt.Errorf("%w: original system message %d has undisclosed part provider options", ErrHookTransformFailed, i)
+				}
+				if part.Type != provider.ContentPartTypeText {
+					return fmt.Errorf("%w: original system message %d contains undisclosed %q content", ErrHookTransformFailed, i, part.Type)
+				}
+			}
+			continue
+		case provider.RoleUser, provider.RoleAssistant, provider.RoleTool:
+		default:
+			return fmt.Errorf("%w: original message %d has unsupported role %q", ErrHookTransformFailed, i, msg.Role)
+		}
+		for _, part := range msg.Content {
+			switch part.Type {
+			case provider.ContentPartTypeText:
+				if len(part.ProviderOptions) > 0 {
+					return fmt.Errorf("%w: original message %d has undisclosed text provider options", ErrHookTransformFailed, i)
+				}
+			case provider.ContentPartTypeReasoning:
+				if msg.Role != provider.RoleAssistant {
+					return fmt.Errorf("%w: original message %d has reasoning under role %q", ErrHookTransformFailed, i, msg.Role)
+				}
+				if len(part.ProviderOptions) > 0 && !hasSupportedReasoningSignature(part.ProviderOptions) {
+					return fmt.Errorf("%w: original message %d has unsupported reasoning metadata", ErrHookTransformFailed, i)
+				}
+				if part.Text == "" && len(part.ProviderOptions) > 0 {
+					return fmt.Errorf("%w: original message %d has undisclosed empty reasoning metadata", ErrHookTransformFailed, i)
+				}
+			case provider.ContentPartTypeToolCall, provider.ContentPartTypeToolResult:
+			default:
+				return fmt.Errorf("%w: original message %d contains undisclosed %q content", ErrHookTransformFailed, i, part.Type)
+			}
+		}
+	}
+	return nil
+}
+
+func hasSupportedReasoningSignature(options provider.ProviderOptions) bool {
+	if len(options) != 1 {
+		return false
+	}
+	option, ok := options["anthropic"].(provider.RawProviderOption)
+	if !ok || option.Key != "anthropic" {
+		return false
+	}
+	value, ok := decodeJSONValue(option.Raw)
+	if !ok {
+		return false
+	}
+	object, ok := value.(map[string]any)
+	if !ok || len(object) != 1 {
+		return false
+	}
+	signature, ok := object["signature"].(string)
+	return ok && signature != ""
+}
+
+func applyTransformedTools(original []provider.Tool, transformed []agento11y.ToolDefinition) ([]provider.Tool, error) {
+	if len(transformed) == 0 {
+		return nil, nil
+	}
+	used := make([]bool, len(original))
+	out := make([]provider.Tool, 0, len(transformed))
+	for i, transformedTool := range transformed {
+		if len(transformedTool.InputSchema) > 0 {
+			if _, ok := decodeJSONValue(transformedTool.InputSchema); !ok {
+				return nil, fmt.Errorf("%w: transformed tool %d has invalid input schema", ErrHookTransformFailed, i)
+			}
+		}
+		match := -1
+		for j, tool := range original {
+			mapped := toolsToAgento11y([]provider.Tool{tool})
+			if used[j] || len(mapped) != 1 || !toolDefinitionEqual(mapped[0], transformedTool) {
+				continue
+			}
+			if match >= 0 {
+				return nil, fmt.Errorf("%w: transformed tool %d is ambiguous", ErrHookTransformFailed, i)
+			}
+			match = j
+		}
+		if match < 0 {
+			return nil, fmt.Errorf("%w: transformed tool %d cannot be reconstructed", ErrHookTransformFailed, i)
+		}
+		used[match] = true
+		out = append(out, original[match])
+	}
+	return out, nil
+}
+
+func validateTransformedToolChoice(choice *provider.ToolChoice, tools []provider.Tool) error {
+	if choice == nil {
+		return nil
+	}
+	switch choice.Type {
+	case provider.ToolChoiceAuto, provider.ToolChoiceNone:
+		return nil
+	case provider.ToolChoiceRequired:
+		if len(tools) == 0 {
+			return fmt.Errorf("%w: required tool choice has no transformed tools", ErrHookTransformFailed)
+		}
+		return nil
+	case provider.ToolChoiceTool:
+		for _, tool := range tools {
+			if tool.Name == choice.ToolName {
+				return nil
+			}
+		}
+		return fmt.Errorf("%w: selected tool %q was removed by transform", ErrHookTransformFailed, choice.ToolName)
+	default:
+		return fmt.Errorf("%w: unsupported tool choice %q", ErrHookTransformFailed, choice.Type)
+	}
+}
+
+func toolDefinitionEqual(a, b agento11y.ToolDefinition) bool {
+	return a.Name == b.Name &&
+		a.Description == b.Description &&
+		a.Type == b.Type &&
+		a.Deferred == b.Deferred &&
+		jsonValueEqual(a.InputSchema, b.InputSchema)
+}
+
+func validateTransformedMessage(message agento11y.Message) error {
+	if message.Name != "" {
+		return fmt.Errorf("message name cannot be reconstructed")
+	}
+	generation := agento11y.Generation{
+		Model: agento11y.ModelRef{Provider: "hook", Name: "transform"},
+		Input: []agento11y.Message{message},
+	}
+	if err := generation.Validate(); err != nil {
+		return err
+	}
+	for i, part := range message.Parts {
+		switch part.Kind {
+		case agento11y.PartKindText:
+			if part.Metadata.ProviderType != "" {
+				return fmt.Errorf("part %d has unsupported text provider type %q", i, part.Metadata.ProviderType)
+			}
+		case agento11y.PartKindThinking:
+			if part.Metadata.ProviderType != "" && part.Metadata.ProviderType != "thinking" {
+				return fmt.Errorf("part %d has unsupported thinking provider type %q", i, part.Metadata.ProviderType)
+			}
+		case agento11y.PartKindToolCall:
+			if strings.TrimSpace(part.ToolCall.ID) == "" || strings.TrimSpace(part.ToolCall.Name) == "" {
+				return fmt.Errorf("part %d tool call requires id and name", i)
+			}
+			if len(part.ToolCall.InputJSON) > 0 {
+				if _, ok := decodeJSONValue(part.ToolCall.InputJSON); !ok {
+					return fmt.Errorf("part %d has invalid tool call JSON", i)
+				}
+			}
+		case agento11y.PartKindToolResult:
+			if strings.TrimSpace(part.ToolResult.ToolCallID) == "" || strings.TrimSpace(part.ToolResult.Name) == "" {
+				return fmt.Errorf("part %d tool result requires id and name", i)
+			}
+			hasText := part.ToolResult.Content != ""
+			hasJSON := len(part.ToolResult.ContentJSON) > 0
+			if hasText == hasJSON {
+				return fmt.Errorf("part %d tool result requires exactly one content payload", i)
+			}
+			if hasJSON {
+				if _, ok := decodeJSONValue(part.ToolResult.ContentJSON); !ok {
+					return fmt.Errorf("part %d has invalid tool result JSON", i)
 				}
 			}
 		}
-
-		parts := rebuildPartsFromAgento11y(agento11yMsg.Parts)
-		if len(parts) == 0 {
-			continue
-		}
-		body = append(body, provider.Message{Role: role, Content: parts})
 	}
-
-	if len(systemMsgs) == 0 && len(body) == 0 {
-		return nil
-	}
-
-	out := make([]provider.Message, 0, len(systemMsgs)+len(body))
-	out = append(out, systemMsgs...)
-	out = append(out, body...)
-	return out
-}
-
-// systemMessagesForTransform returns the system-role messages that should
-// precede the rebuilt non-system messages after a hook transform.
-//
-// Behavior:
-//   - transformed.SystemPrompt != "": the hook explicitly set a new system
-//     prompt → emit a single SystemMessage carrying that text. Any original
-//     system messages are replaced.
-//   - transformed.SystemPrompt == "": the hook either didn't touch the
-//     system context or explicitly cleared it. We treat the zero value as
-//     "didn't touch" — preserve the originals — because messagesToAgento11y
-//     also produces "" when the original prompt has no system messages,
-//     so the two cases are indistinguishable on the underlying SDK wire.
-//
-// This mirrors how the legacy internal Agent Observability integration
-// handled the same edge case: hooks transform what they touch and leave the
-// rest alone.
-func systemMessagesForTransform(originalPrompt []provider.Message, transformed agento11y.HookInput) []provider.Message {
-	if text := strings.TrimSpace(transformed.SystemPrompt); text != "" {
-		return []provider.Message{{
-			Role:    provider.RoleSystem,
-			Content: []provider.ContentPart{provider.TextPart(transformed.SystemPrompt)},
-		}}
-	}
-	originals := make([]provider.Message, 0)
-	for _, msg := range originalPrompt {
-		if msg.Role == provider.RoleSystem {
-			originals = append(originals, msg)
-		}
-	}
-	return originals
-}
-
-type indexedMessage struct {
-	idx     int
-	message provider.Message
-	textKey string
-}
-
-func indexAssistantReasoningMessages(prompt []provider.Message) []indexedMessage {
-	var out []indexedMessage
-	for i, msg := range prompt {
-		if msg.Role != provider.RoleAssistant {
-			continue
-		}
-		hasReasoning := false
-		for _, part := range msg.Content {
-			if part.Type == provider.ContentPartTypeReasoning {
-				hasReasoning = true
-				break
-			}
-		}
-		if !hasReasoning {
-			continue
-		}
-		out = append(out, indexedMessage{
-			idx:     i,
-			message: msg,
-			textKey: concatAssistantText(msg),
-		})
-	}
-	return out
-}
-
-func concatAssistantText(msg provider.Message) string {
-	var parts []string
-	for _, p := range msg.Content {
-		if p.Type == provider.ContentPartTypeText && p.Text != "" {
-			parts = append(parts, p.Text)
-		}
-	}
-	return strings.Join(parts, "")
-}
-
-func concatAssistantTextFromAgento11y(msg agento11y.Message) string {
-	var parts []string
-	for _, p := range msg.Parts {
-		if p.Kind == agento11y.PartKindText && p.Text != "" {
-			parts = append(parts, p.Text)
-		}
-	}
-	return strings.Join(parts, "")
-}
-
-func findMatching(originals []indexedMessage, text string, used map[int]bool) (int, provider.Message, bool) {
-	for _, m := range originals {
-		if used[m.idx] {
-			continue
-		}
-		if m.textKey == text {
-			return m.idx, m.message, true
-		}
-	}
-	return 0, provider.Message{}, false
+	return nil
 }
 
 func agento11yRoleToProvider(role agento11y.Role) (provider.Role, bool) {
@@ -358,37 +431,186 @@ func agento11yRoleToProvider(role agento11y.Role) (provider.Role, bool) {
 	}
 }
 
-// rebuildPartsFromAgento11y converts an agento11y message's parts back to ai-sdk
-// ContentParts. Reasoning parts come back WITHOUT signatures (which don't
-// round-trip through the underlying SDK wire); callers that need signature
-// preservation match against the original message via the algorithm in
-// applyTransformedInput rather than rebuilding from these parts.
-func rebuildPartsFromAgento11y(parts []agento11y.Part) []provider.ContentPart {
+type transformedPartCandidate struct {
+	part provider.ContentPart
+	used bool
+}
+
+type transformedPartMatcher struct {
+	tools       []provider.Tool
+	reasonings  []transformedPartCandidate
+	toolCalls   []transformedPartCandidate
+	toolResults []transformedPartCandidate
+}
+
+func newTransformedPartMatcher(prompt []provider.Message, tools []provider.Tool) *transformedPartMatcher {
+	matcher := &transformedPartMatcher{tools: tools}
+	for _, msg := range prompt {
+		for _, part := range msg.Content {
+			candidate := transformedPartCandidate{part: part}
+			switch part.Type {
+			case provider.ContentPartTypeReasoning:
+				matcher.reasonings = append(matcher.reasonings, candidate)
+			case provider.ContentPartTypeToolCall:
+				matcher.toolCalls = append(matcher.toolCalls, candidate)
+			case provider.ContentPartTypeToolResult:
+				matcher.toolResults = append(matcher.toolResults, candidate)
+			}
+		}
+	}
+	return matcher
+}
+
+func rebuildPartsFromAgento11y(parts []agento11y.Part, matcher *transformedPartMatcher) ([]provider.ContentPart, error) {
 	out := make([]provider.ContentPart, 0, len(parts))
-	for _, p := range parts {
+	for i, p := range parts {
+		var part provider.ContentPart
+		var err error
 		switch p.Kind {
 		case agento11y.PartKindText:
 			if p.Text == "" {
-				continue
+				return nil, fmt.Errorf("part %d has empty text", i)
 			}
-			out = append(out, provider.TextPart(p.Text))
+			part = provider.TextPart(p.Text)
 		case agento11y.PartKindThinking:
-			// Drop reasoning parts: signatures can't survive a round-trip, and
-			// callers should match against the original message instead.
-			continue
+			if p.Thinking == "" {
+				return nil, fmt.Errorf("part %d has empty thinking", i)
+			}
+			part, err = matcher.matchReasoning(p.Thinking)
 		case agento11y.PartKindToolCall:
-			if p.ToolCall == nil {
-				continue
-			}
-			out = append(out, provider.ToolCallPart(p.ToolCall.ID, p.ToolCall.Name, p.ToolCall.InputJSON))
+			part, err = matcher.matchToolCall(p.ToolCall, p.Metadata.ProviderType)
 		case agento11y.PartKindToolResult:
-			if p.ToolResult == nil {
-				continue
-			}
-			out = append(out, toolResultPartFromAgento11y(p.ToolResult))
+			part, err = matcher.matchToolResult(p.ToolResult, p.Metadata.ProviderType)
+		default:
+			return nil, fmt.Errorf("part %d has unsupported kind %q", i, p.Kind)
 		}
+		if err != nil {
+			return nil, fmt.Errorf("part %d: %w", i, err)
+		}
+		out = append(out, part)
 	}
-	return out
+	return out, nil
+}
+
+func (m *transformedPartMatcher) matchReasoning(text string) (provider.ContentPart, error) {
+	match := -1
+	for i := range m.reasonings {
+		if m.reasonings[i].used || m.reasonings[i].part.Text != text {
+			continue
+		}
+		if match >= 0 {
+			return provider.ContentPart{}, fmt.Errorf("reasoning signature is ambiguous")
+		}
+		match = i
+	}
+	if match < 0 {
+		for i := range m.reasonings {
+			if len(m.reasonings[i].part.ProviderOptions) > 0 {
+				return provider.ContentPart{}, fmt.Errorf("reasoning signature cannot be preserved")
+			}
+		}
+		return provider.ReasoningPart(text), nil
+	}
+	m.reasonings[match].used = true
+	return m.reasonings[match].part, nil
+}
+
+func (m *transformedPartMatcher) matchToolCall(call *agento11y.ToolCall, providerType string) (provider.ContentPart, error) {
+	rebuilt := provider.ToolCallPart(call.ID, call.Name, call.InputJSON)
+	match := -1
+	providerSpecific := false
+	for i := range m.toolCalls {
+		candidate := m.toolCalls[i].part
+		if candidate.ToolCallID != call.ID {
+			continue
+		}
+		mapped, _, ok := contentPartToAgento11yWithTools(candidate, true, m.tools)
+		candidateProviderType := mapped.Metadata.ProviderType
+		providerSpecific = providerSpecific || candidate.ProviderExecuted || len(candidate.ProviderOptions) > 0 ||
+			(ok && candidateProviderType != "" && candidateProviderType != "tool_use")
+		if m.toolCalls[i].used {
+			continue
+		}
+		if candidate.ToolName != call.Name || !jsonValueEqual(candidate.Input, call.InputJSON) {
+			continue
+		}
+		if !ok || candidateProviderType != providerType {
+			continue
+		}
+		if match >= 0 {
+			return provider.ContentPart{}, fmt.Errorf("tool call %q is ambiguous", call.ID)
+		}
+		match = i
+	}
+	if match >= 0 {
+		candidate := m.toolCalls[match].part
+		m.toolCalls[match].used = true
+		return candidate, nil
+	}
+	if providerSpecific || (providerType != "" && providerType != "tool_use") {
+		return provider.ContentPart{}, fmt.Errorf("provider tool call %q cannot be reconstructed", call.ID)
+	}
+	return rebuilt, nil
+}
+
+func (m *transformedPartMatcher) matchToolResult(result *agento11y.ToolResult, providerType string) (provider.ContentPart, error) {
+	rebuilt := toolResultPartFromAgento11y(result)
+	match := -1
+	providerSpecific := false
+	for i := range m.toolResults {
+		candidate := m.toolResults[i].part
+		if candidate.ToolCallID != result.ToolCallID {
+			continue
+		}
+		mapped, _, ok := contentPartToAgento11yWithTools(candidate, true, m.tools)
+		candidateProviderType := mapped.Metadata.ProviderType
+		providerSpecific = providerSpecific || candidate.ProviderExecuted || len(candidate.ProviderOptions) > 0 ||
+			(ok && candidateProviderType != "" && candidateProviderType != "tool_result")
+		if m.toolResults[i].used {
+			continue
+		}
+		if !ok || !toolResultEqual(mapped.ToolResult, result) || candidateProviderType != providerType {
+			continue
+		}
+		if match >= 0 {
+			return provider.ContentPart{}, fmt.Errorf("tool result %q is ambiguous", result.ToolCallID)
+		}
+		match = i
+	}
+	if match >= 0 {
+		candidate := m.toolResults[match].part
+		m.toolResults[match].used = true
+		return candidate, nil
+	}
+	if providerSpecific || (providerType != "" && providerType != "tool_result") {
+		return provider.ContentPart{}, fmt.Errorf("provider tool result %q cannot be reconstructed", result.ToolCallID)
+	}
+	return rebuilt, nil
+}
+
+func toolResultEqual(a, b *agento11y.ToolResult) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.ToolCallID == b.ToolCallID &&
+		a.Name == b.Name &&
+		a.IsError == b.IsError &&
+		a.Content == b.Content &&
+		jsonValueEqual(a.ContentJSON, b.ContentJSON)
+}
+
+func jsonValueEqual(a, b json.RawMessage) bool {
+	a = bytes.TrimSpace(a)
+	b = bytes.TrimSpace(b)
+	if len(a) == 0 || len(b) == 0 {
+		return len(a) == len(b)
+	}
+	if !json.Valid(a) || !json.Valid(b) {
+		return false
+	}
+	left, leftOK := decodeJSONValue(a)
+	right, rightOK := decodeJSONValue(b)
+	return leftOK && rightOK && reflect.DeepEqual(left, right)
 }
 
 func toolResultPartFromAgento11y(result *agento11y.ToolResult) provider.ContentPart {

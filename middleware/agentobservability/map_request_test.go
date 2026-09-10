@@ -45,6 +45,18 @@ func TestMessagesToAgento11y_AssistantWithReasoning(t *testing.T) {
 	assert.Equal(t, agento11y.PartKindText, msgs[0].Parts[1].Kind)
 }
 
+func TestMessagesToAgento11y_SkipsEmptyReasoning(t *testing.T) {
+	prompt := []provider.Message{provider.NewAssistantMessage(
+		provider.ReasoningPart(""),
+		provider.TextPart("answer"),
+	)}
+
+	_, msgs := messagesToAgento11y(prompt)
+	require.Len(t, msgs, 1)
+	require.Len(t, msgs[0].Parts, 1)
+	assert.Equal(t, agento11y.PartKindText, msgs[0].Parts[0].Kind)
+}
+
 func TestMessagesToAgento11y_ToolResultSplitting(t *testing.T) {
 	// A user message that mixes a text part and a tool_result part should be
 	// split: the text part lands in a RoleUser agento11y.Message; the tool_result
@@ -162,6 +174,122 @@ func TestMessagesToAgento11y_AssistantServerToolCall(t *testing.T) {
 	require.Len(t, msgs, 1)
 	require.Len(t, msgs[0].Parts, 1)
 	assert.Equal(t, "server_tool_use", msgs[0].Parts[0].Metadata.ProviderType)
+}
+
+func TestMessagesToAgento11y_AssistantProviderToolDiscriminators(t *testing.T) {
+	tests := []struct {
+		name string
+		part provider.ContentPart
+		want string
+	}{
+		{
+			name: "tool search",
+			part: provider.ContentPart{Type: provider.ContentPartTypeToolCall, ToolName: "tool_search_tool_bm25", ProviderExecuted: true},
+			want: "tool_search_tool_bm25",
+		},
+		{
+			name: "mcp",
+			part: provider.ContentPart{
+				Type:     provider.ContentPartTypeToolCall,
+				ToolName: "remote_lookup",
+				ProviderOptions: provider.ProviderOptions{
+					"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(`{"type":"mcp-tool-use"}`)},
+				},
+			},
+			want: "mcp_tool_use",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, providerTypeForToolCall(tc.part))
+		})
+	}
+}
+
+func TestResolveAnthropicProviderToolName_RequiresExactSupportedID(t *testing.T) {
+	tests := []struct {
+		id   string
+		want string
+	}{
+		{id: "anthropic.web_search_20250305", want: "web_search"},
+		{id: "anthropic.web_search_20260209", want: "web_search"},
+		{id: "anthropic.web_fetch_20250910", want: "web_fetch"},
+		{id: "anthropic.web_fetch_20260209", want: "web_fetch"},
+		{id: "anthropic.code_execution_20250522", want: "code_execution"},
+		{id: "anthropic.code_execution_20250825", want: "code_execution"},
+		{id: "anthropic.code_execution_20260120", want: "code_execution"},
+		{id: "anthropic.tool_search_bm25_20251119", want: "tool_search_tool_bm25"},
+		{id: "anthropic.tool_search_regex_20251119", want: "tool_search_tool_regex"},
+		{id: "anthropic.web_search_not-real"},
+		{id: "anthropic.web_fetch_"},
+		{id: "anthropic.code_execution_99999999"},
+		{id: "anthropic.tool_search_bm25_20251119_extra"},
+		{id: "anthropic.tool_search_regex_20251118"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.id, func(t *testing.T) {
+			got := resolveAnthropicProviderToolName([]provider.Tool{{
+				Type: provider.ToolTypeProvider, ID: tc.id, Name: "alias",
+			}}, "alias")
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestMessagesToAgento11y_ProviderToolAliases(t *testing.T) {
+	tools := []provider.Tool{{
+		Type: provider.ToolTypeProvider,
+		ID:   "anthropic.tool_search_regex_20251119",
+		Name: "find_tools",
+	}}
+	call := provider.ToolCallPart("call-1", "find_tools", json.RawMessage(`{}`))
+	call.ProviderExecuted = true
+	result := provider.ContentPart{
+		Type:       provider.ContentPartTypeToolResult,
+		ToolCallID: "call-1",
+		ToolName:   "find_tools",
+		Output:     &provider.ToolResultOutput{Type: provider.ToolOutputJSON, JSON: json.RawMessage(`[]`)},
+	}
+
+	_, messages := messagesToAgento11yWithTools(
+		[]provider.Message{provider.NewAssistantMessage(call), provider.NewToolMessage(result)},
+		tools,
+	)
+	require.Len(t, messages, 2)
+	assert.Equal(t, "tool_search_tool_regex", messages[0].Parts[0].Metadata.ProviderType)
+	assert.Equal(t, "tool_search_tool_regex_tool_result", messages[1].Parts[0].Metadata.ProviderType)
+}
+
+func TestMessagesToAgento11y_CodeExecutionResultDiscriminators(t *testing.T) {
+	tools := []provider.Tool{{
+		Type: provider.ToolTypeProvider, ID: "anthropic.code_execution_20250825", Name: "run_code",
+	}}
+	tests := []struct {
+		name             string
+		result           string
+		providerExecuted bool
+		want             string
+	}{
+		{name: "code execution", result: `{"type":"code_execution_result"}`, providerExecuted: true, want: "code_execution_tool_result"},
+		{name: "bash after response-to-prompt conversion", result: `{"type":"bash_code_execution_result"}`, want: "bash_code_execution_tool_result"},
+		{name: "text editor", result: `{"type":"text_editor_code_execution_create_result"}`, providerExecuted: true, want: "text_editor_code_execution_tool_result"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			part := provider.ContentPart{
+				Type: provider.ContentPartTypeToolResult, ToolCallID: "call-1", ToolName: "run_code",
+				ProviderExecuted: tc.providerExecuted,
+				Output:           &provider.ToolResultOutput{Type: provider.ToolOutputJSON, JSON: json.RawMessage(tc.result)},
+			}
+			_, messages := messagesToAgento11yWithTools(
+				[]provider.Message{provider.NewToolMessage(part)}, tools,
+			)
+			require.Len(t, messages, 1)
+			assert.Equal(t, tc.want, messages[0].Parts[0].Metadata.ProviderType)
+		})
+	}
 }
 
 func TestToolsToAgento11y(t *testing.T) {

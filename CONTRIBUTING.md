@@ -76,7 +76,7 @@ the source and cannot drift.
   [docs/providers/](docs/providers) and the
   [parity rules for the provider layers](#the-coverage-map-and-the-layers).
 - **Add or improve middleware.** See [`middleware/`](middleware) and
-  [docs/middleware/](docs/middleware).
+  [Writing middleware](docs/middleware/writing-middleware.md).
 - **Improve the docs.** See
   [Documentation: where things go](#documentation-where-things-go).
 - **Add a runnable example.** Self-contained Go modules under

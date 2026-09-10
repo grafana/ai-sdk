@@ -49,12 +49,13 @@ func sortedReasoningSummaryIndices(summaryParts map[int64]reasoningSummaryState)
 // streamAdapter holds mutable per-stream state and converts Responses SSE
 // events into provider.StreamParts.
 type streamAdapter struct {
-	warnings     []provider.Warning
-	br           buildResult
-	requestBody  responses.ResponseNewParams
-	response     *http.Response
-	generateID   func() string
-	providerName string
+	warnings            []provider.Warning
+	br                  buildResult
+	requestBody         responses.ResponseNewParams
+	response            *http.Response
+	generateID          func() string
+	providerOptionsName string // response-metadata namespace consumed on later calls
+	providerIdentity    string // model identity used for response attribution
 
 	startEmitted           bool
 	encounteredStreamError bool
@@ -73,14 +74,19 @@ type streamAdapter struct {
 }
 
 // newStreamAdapter constructs a streamAdapter with initialized maps.
-func newStreamAdapter(warnings []provider.Warning, br buildResult, requestBody responses.ResponseNewParams, response *http.Response, generateID func() string, providerName string) *streamAdapter {
+func newStreamAdapter(warnings []provider.Warning, br buildResult, requestBody responses.ResponseNewParams, response *http.Response, generateID func() string, providerIdentity string) *streamAdapter {
+	providerOptionsName := br.providerOptionsName
+	if providerOptionsName == "" {
+		providerOptionsName = providerIdentity
+	}
 	return &streamAdapter{
 		warnings:                  warnings,
 		br:                        br,
 		requestBody:               requestBody,
 		response:                  response,
 		generateID:                generateID,
-		providerName:              providerName,
+		providerOptionsName:       providerOptionsName,
+		providerIdentity:          providerIdentity,
 		ongoingToolCalls:          make(map[int64]*ongoingToolCall),
 		activeReasoning:           make(map[string]*activeReasoningState),
 		activeOutputItemIDs:       make(map[int64]string),
@@ -102,7 +108,7 @@ func (a *streamAdapter) handleEvent(event responses.ResponseStreamEventUnion, ch
 			Type:       provider.PartResponseMeta,
 			ResponseID: e.Response.ID,
 			ModelID:    e.Response.Model,
-			Provider:   a.providerName,
+			Provider:   a.providerIdentity,
 			Timestamp:  time.Unix(int64(e.Response.CreatedAt), 0).UTC(),
 		}
 
@@ -141,7 +147,7 @@ func (a *streamAdapter) handleEvent(event responses.ResponseStreamEventUnion, ch
 			Type:             provider.PartReasoningDelta,
 			ID:               fmt.Sprintf("%s:%d", itemID, e.SummaryIndex),
 			Delta:            e.Delta,
-			ProviderMetadata: itemIDMeta(a.providerName, itemID),
+			ProviderMetadata: itemIDMeta(a.providerOptionsName, itemID),
 		}
 
 	case responses.ResponseReasoningSummaryPartAddedEvent:
@@ -154,7 +160,7 @@ func (a *streamAdapter) handleEvent(event responses.ResponseStreamEventUnion, ch
 					ch <- provider.StreamPart{
 						Type:             provider.PartReasoningEnd,
 						ID:               fmt.Sprintf("%s:%d", itemID, index),
-						ProviderMetadata: itemIDMeta(a.providerName, itemID),
+						ProviderMetadata: itemIDMeta(a.providerOptionsName, itemID),
 					}
 					state.summaryParts[index] = reasoningSummaryConcluded
 				}
@@ -162,7 +168,7 @@ func (a *streamAdapter) handleEvent(event responses.ResponseStreamEventUnion, ch
 			ch <- provider.StreamPart{
 				Type:             provider.PartReasoningStart,
 				ID:               fmt.Sprintf("%s:%d", itemID, e.SummaryIndex),
-				ProviderMetadata: reasoningMeta(a.providerName, itemID, state.encryptedContent),
+				ProviderMetadata: reasoningMeta(a.providerOptionsName, itemID, state.encryptedContent),
 			}
 		}
 
@@ -176,7 +182,7 @@ func (a *streamAdapter) handleEvent(event responses.ResponseStreamEventUnion, ch
 			ch <- provider.StreamPart{
 				Type:             provider.PartReasoningEnd,
 				ID:               fmt.Sprintf("%s:%d", itemID, e.SummaryIndex),
-				ProviderMetadata: itemIDMeta(a.providerName, itemID),
+				ProviderMetadata: itemIDMeta(a.providerOptionsName, itemID),
 			}
 			state.summaryParts[e.SummaryIndex] = reasoningSummaryConcluded
 		} else {
@@ -251,7 +257,7 @@ func (a *streamAdapter) handleOutputItemAdded(e responses.ResponseOutputItemAdde
 		a.activeOutputItemIDs[e.OutputIndex] = v.ID
 		a.ongoingAnnotations = nil
 		a.activeMessagePhase = string(v.Phase)
-		ch <- provider.StreamPart{Type: provider.PartTextStart, ID: v.ID, ProviderMetadata: textMeta(a.providerName, v.ID, string(v.Phase), nil)}
+		ch <- provider.StreamPart{Type: provider.PartTextStart, ID: v.ID, ProviderMetadata: textMeta(a.providerOptionsName, v.ID, string(v.Phase), nil)}
 
 	case responses.ResponseFunctionToolCall:
 		a.ongoingToolCalls[e.OutputIndex] = &ongoingToolCall{toolName: v.Name, toolCallID: v.CallID}
@@ -266,7 +272,7 @@ func (a *streamAdapter) handleOutputItemAdded(e responses.ResponseOutputItemAdde
 		ch <- provider.StreamPart{
 			Type:             provider.PartReasoningStart,
 			ID:               fmt.Sprintf("%s:0", v.ID),
-			ProviderMetadata: reasoningMeta(a.providerName, v.ID, v.EncryptedContent),
+			ProviderMetadata: reasoningMeta(a.providerOptionsName, v.ID, v.EncryptedContent),
 		}
 
 	case responses.ResponseFunctionWebSearch:
@@ -348,20 +354,20 @@ func (a *streamAdapter) handleOutputItemDone(e responses.ResponseOutputItemDoneE
 			phase = a.activeMessagePhase
 		}
 		a.activeMessagePhase = ""
-		ch <- provider.StreamPart{Type: provider.PartTextEnd, ID: itemID, ProviderMetadata: textEndMeta(a.providerName, itemID, phase, a.ongoingAnnotations)}
+		ch <- provider.StreamPart{Type: provider.PartTextEnd, ID: itemID, ProviderMetadata: textEndMeta(a.providerOptionsName, itemID, phase, a.ongoingAnnotations)}
 		a.ongoingAnnotations = nil
 		delete(a.activeOutputItemIDs, e.OutputIndex)
 
 	case responses.ResponseFunctionToolCall:
 		a.hasFunctionCall = true
 		delete(a.ongoingToolCalls, e.OutputIndex)
-		ch <- provider.StreamPart{Type: provider.PartToolInputEnd, ID: v.CallID, ProviderMetadata: itemIDAndNamespaceMeta(a.providerName, "", v.Namespace)}
+		ch <- provider.StreamPart{Type: provider.PartToolInputEnd, ID: v.CallID, ProviderMetadata: itemIDAndNamespaceMeta(a.providerOptionsName, "", v.Namespace)}
 		ch <- provider.StreamPart{
 			Type:             provider.PartToolCall,
 			ToolCallID:       v.CallID,
 			ToolName:         v.Name,
 			Input:            orEmptyObject(v.Arguments),
-			ProviderMetadata: itemIDNamespaceCallerMeta(a.providerName, v.ID, v.Namespace, v.Caller.Type, v.Caller.CallerID),
+			ProviderMetadata: itemIDNamespaceCallerMeta(a.providerOptionsName, v.ID, v.Namespace, v.Caller.Type, v.Caller.CallerID),
 		}
 
 	case responses.ResponseOutputItemProgram:
@@ -373,7 +379,7 @@ func (a *streamAdapter) handleOutputItemDone(e responses.ResponseOutputItemDoneE
 			ToolName:         name,
 			Input:            string(input),
 			ProviderExecuted: true,
-			ProviderMetadata: itemIDMeta(a.providerName, v.ID),
+			ProviderMetadata: itemIDMeta(a.providerOptionsName, v.ID),
 		}
 
 	case responses.ResponseOutputItemProgramOutput:
@@ -384,7 +390,7 @@ func (a *streamAdapter) handleOutputItemDone(e responses.ResponseOutputItemDoneE
 			ToolCallID:       v.CallID,
 			ToolName:         name,
 			Result:           result,
-			ProviderMetadata: itemIDMeta(a.providerName, v.ID),
+			ProviderMetadata: itemIDMeta(a.providerOptionsName, v.ID),
 		}
 
 	case responses.ResponseReasoningItem:
@@ -399,7 +405,7 @@ func (a *streamAdapter) handleOutputItemDone(e responses.ResponseOutputItemDoneE
 				ch <- provider.StreamPart{
 					Type:             provider.PartReasoningEnd,
 					ID:               fmt.Sprintf("%s:%d", itemID, index),
-					ProviderMetadata: reasoningMeta(a.providerName, itemID, v.EncryptedContent),
+					ProviderMetadata: reasoningMeta(a.providerOptionsName, itemID, v.EncryptedContent),
 				}
 			}
 			delete(a.activeReasoning, itemID)
@@ -435,7 +441,7 @@ func (a *streamAdapter) handleOutputItemDone(e responses.ResponseOutputItemDoneE
 			ToolCallID:       v.CallID,
 			ToolName:         v.Name,
 			Input:            string(input),
-			ProviderMetadata: itemIDMeta(a.providerName, v.ID),
+			ProviderMetadata: itemIDMeta(a.providerOptionsName, v.ID),
 		}
 
 	case responses.ResponseComputerToolCall:
@@ -463,7 +469,7 @@ func (a *streamAdapter) handleOutputItemDone(e responses.ResponseOutputItemDoneE
 			ToolCallID:       v.CallID,
 			ToolName:         name,
 			Input:            string(input),
-			ProviderMetadata: itemIDMeta(a.providerName, v.ID),
+			ProviderMetadata: itemIDMeta(a.providerOptionsName, v.ID),
 		}
 
 	case responses.ResponseCodeInterpreterToolCall:
@@ -500,7 +506,7 @@ func (a *streamAdapter) handleOutputItemDone(e responses.ResponseOutputItemDoneE
 			ch <- provider.StreamPart{Type: provider.PartToolInputEnd, ID: toolCallID}
 		}
 		input, _ := json.Marshal(toolSearchStreamInput(v.Arguments, v.Execution == "server", toolCallID))
-		part := provider.StreamPart{Type: provider.PartToolCall, ToolCallID: toolCallID, ToolName: name, Input: string(input), ProviderMetadata: itemIDMeta(a.providerName, v.ID)}
+		part := provider.StreamPart{Type: provider.PartToolCall, ToolCallID: toolCallID, ToolName: name, Input: string(input), ProviderMetadata: itemIDMeta(a.providerOptionsName, v.ID)}
 		if v.Execution == "server" {
 			part.ProviderExecuted = true
 		}
@@ -518,7 +524,7 @@ func (a *streamAdapter) handleOutputItemDone(e responses.ResponseOutputItemDoneE
 			}
 		}
 		result := toolSearchOutput(v.RawJSON())
-		ch <- provider.StreamPart{Type: provider.PartToolResult, ToolCallID: toolCallID, ToolName: name, Result: result, ProviderMetadata: itemIDMeta(a.providerName, v.ID)}
+		ch <- provider.StreamPart{Type: provider.PartToolResult, ToolCallID: toolCallID, ToolName: name, Result: result, ProviderMetadata: itemIDMeta(a.providerOptionsName, v.ID)}
 
 	case responses.ResponseApplyPatchToolCall:
 		name := a.br.toolNameMapping.toCustomToolName("apply_patch")
@@ -532,14 +538,14 @@ func (a *streamAdapter) handleOutputItemDone(e responses.ResponseOutputItemDoneE
 			tc.applyPatchDone = true
 		}
 		input := applyPatchInput(v.CallID, v.Operation)
-		ch <- provider.StreamPart{Type: provider.PartToolCall, ToolCallID: v.CallID, ToolName: name, Input: string(input), ProviderMetadata: itemIDMeta(a.providerName, v.ID)}
+		ch <- provider.StreamPart{Type: provider.PartToolCall, ToolCallID: v.CallID, ToolName: name, Input: string(input), ProviderMetadata: itemIDMeta(a.providerOptionsName, v.ID)}
 		delete(a.ongoingToolCalls, e.OutputIndex)
 
 	case responses.ResponseFunctionShellToolCall:
 		name := a.br.toolNameMapping.toCustomToolName("shell")
 		delete(a.ongoingToolCalls, e.OutputIndex)
 		input := shellInput(v.Action.RawJSON(), v.Action.Commands)
-		part := provider.StreamPart{Type: provider.PartToolCall, ToolCallID: v.CallID, ToolName: name, Input: string(input), ProviderMetadata: itemIDMeta(a.providerName, v.ID)}
+		part := provider.StreamPart{Type: provider.PartToolCall, ToolCallID: v.CallID, ToolName: name, Input: string(input), ProviderMetadata: itemIDMeta(a.providerOptionsName, v.ID)}
 		if a.br.isShellProviderExecuted {
 			part.ProviderExecuted = true
 		}
@@ -554,7 +560,7 @@ func (a *streamAdapter) handleOutputItemDone(e responses.ResponseOutputItemDoneE
 		ch <- provider.StreamPart{
 			Type:             provider.PartCustom,
 			Kind:             "openai.compaction",
-			ProviderMetadata: compactionMetadata(a.providerName, v.ID, v.EncryptedContent),
+			ProviderMetadata: compactionMetadata(a.providerOptionsName, v.ID, v.EncryptedContent),
 		}
 
 	case responses.ResponseOutputItemLocalShellCall:
@@ -565,7 +571,7 @@ func (a *streamAdapter) handleOutputItemDone(e responses.ResponseOutputItemDoneE
 			ToolCallID:       v.CallID,
 			ToolName:         name,
 			Input:            string(input),
-			ProviderMetadata: itemIDMeta(a.providerName, v.ID),
+			ProviderMetadata: itemIDMeta(a.providerOptionsName, v.ID),
 		}
 
 	case responses.ResponseOutputItemMcpCall:
@@ -585,7 +591,7 @@ func (a *streamAdapter) handleOutputItemDone(e responses.ResponseOutputItemDoneE
 		}
 		dyn := true
 		ch <- provider.StreamPart{Type: provider.PartToolCall, ToolCallID: toolCallID, ToolName: toolName, Input: orEmptyObject(v.Arguments), ProviderExecuted: true, Dynamic: &dyn}
-		ch <- provider.StreamPart{Type: provider.PartToolResult, ToolCallID: toolCallID, ToolName: toolName, Result: result, ProviderMetadata: itemIDMeta(a.providerName, v.ID)}
+		ch <- provider.StreamPart{Type: provider.PartToolResult, ToolCallID: toolCallID, ToolName: toolName, Result: result, ProviderMetadata: itemIDMeta(a.providerOptionsName, v.ID)}
 
 	case responses.ResponseOutputItemMcpApprovalRequest:
 		toolName := "mcp." + v.Name
@@ -662,7 +668,7 @@ func (a *streamAdapter) emitAnnotationSource(raw string, annotation any, ch chan
 				MediaType:        "text/plain",
 				Title:            ann.Filename,
 				Filename:         ann.Filename,
-				ProviderMetadata: sourceMeta(a.providerName, "file_citation", ann.FileID, ann.Index),
+				ProviderMetadata: sourceMeta(a.providerOptionsName, "file_citation", ann.FileID, ann.Index),
 			},
 		}
 	case responses.ResponseOutputTextAnnotationContainerFileCitation:
@@ -674,7 +680,7 @@ func (a *streamAdapter) emitAnnotationSource(raw string, annotation any, ch chan
 				MediaType:        "text/plain",
 				Title:            ann.Filename,
 				Filename:         ann.Filename,
-				ProviderMetadata: containerSourceMeta(a.providerName, ann.FileID, ann.ContainerID),
+				ProviderMetadata: containerSourceMeta(a.providerOptionsName, ann.FileID, ann.ContainerID),
 			},
 		}
 	case responses.ResponseOutputTextAnnotationFilePath:
@@ -686,7 +692,7 @@ func (a *streamAdapter) emitAnnotationSource(raw string, annotation any, ch chan
 				MediaType:        "application/octet-stream",
 				Title:            ann.FileID,
 				Filename:         ann.FileID,
-				ProviderMetadata: sourceMeta(a.providerName, "file_path", ann.FileID, ann.Index),
+				ProviderMetadata: sourceMeta(a.providerOptionsName, "file_path", ann.FileID, ann.Index),
 			},
 		}
 	}
@@ -751,7 +757,7 @@ func (a *streamAdapter) emitFinish(resp responses.Response, ch chan<- provider.S
 		Type:             provider.PartFinish,
 		FinishReason:     &fr,
 		Usage:            &usage,
-		ProviderMetadata: responseMeta(a.providerName, &resp, a.logprobs),
+		ProviderMetadata: responseMeta(a.providerOptionsName, &resp, a.logprobs),
 	}
 }
 
@@ -769,7 +775,7 @@ func (a *streamAdapter) emitFailedFinish(resp responses.Response, ch chan<- prov
 		Type:             provider.PartFinish,
 		FinishReason:     &fr,
 		Usage:            &usage,
-		ProviderMetadata: responseMeta(a.providerName, &resp, a.logprobs),
+		ProviderMetadata: responseMeta(a.providerOptionsName, &resp, a.logprobs),
 	}
 }
 
@@ -785,6 +791,6 @@ func (a *streamAdapter) emitPendingErrorFinish(ch chan<- provider.StreamPart) {
 		Type:             provider.PartFinish,
 		FinishReason:     &fr,
 		Usage:            &usage,
-		ProviderMetadata: responseMeta(a.providerName, &resp, a.logprobs),
+		ProviderMetadata: responseMeta(a.providerOptionsName, &resp, a.logprobs),
 	}
 }
