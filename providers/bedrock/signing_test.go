@@ -58,6 +58,77 @@ func TestSignRequest_SigV4HeadersOnPOST(t *testing.T) {
 	assert.Equal(t, `{"foo":"bar"}`, string(body))
 }
 
+func TestSignRequest_SigningService(t *testing.T) {
+	cases := []struct {
+		name         string
+		opts         []Option
+		reqURL       string
+		wantScope    string
+		notWantScope string
+	}{
+		{
+			name:      "default endpoint signs with bedrock",
+			opts:      []Option{WithRegion("us-east-1")},
+			reqURL:    "https://bedrock-runtime.us-east-1.amazonaws.com/model/test/converse",
+			wantScope: "/bedrock/aws4_request",
+		},
+		{
+			name: "mantle base URL auto-signs with bedrock-mantle",
+			opts: []Option{
+				WithRegion("us-east-1"),
+				WithBaseURL("https://bedrock-mantle.us-east-1.api.aws"),
+			},
+			reqURL:       "https://bedrock-mantle.us-east-1.api.aws/anthropic/v1/messages",
+			wantScope:    "/bedrock-mantle/aws4_request",
+			notWantScope: "/bedrock/aws4_request",
+		},
+		{
+			name: "explicit signing service overrides host inference",
+			opts: []Option{
+				WithRegion("us-east-1"),
+				WithBaseURL("https://gateway.internal.example.com"),
+				WithSigningService("bedrock-mantle"),
+			},
+			reqURL:    "https://gateway.internal.example.com/anthropic/v1/messages",
+			wantScope: "/bedrock-mantle/aws4_request",
+		},
+		{
+			name: "explicit signing service overrides mantle host",
+			opts: []Option{
+				WithRegion("us-east-1"),
+				WithBaseURL("https://bedrock-mantle.us-east-1.api.aws"),
+				WithSigningService("bedrock"),
+			},
+			reqURL:    "https://bedrock-mantle.us-east-1.api.aws/anthropic/v1/messages",
+			wantScope: "/bedrock/aws4_request",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			defer fixedNowOption(time.Date(2026, 5, 14, 12, 0, 0, 0, time.UTC))()
+
+			opts := append([]Option{
+				WithCredentials(credentials.NewStaticCredentialsProvider("AKID", "SECRET", "")),
+			}, tc.opts...)
+			m := newSigningTestModel(opts...)
+
+			req, err := http.NewRequestWithContext(context.Background(), http.MethodPost,
+				tc.reqURL, bytes.NewReader([]byte(`{"foo":"bar"}`)))
+			require.NoError(t, err)
+
+			require.NoError(t, m.signRequest(context.Background(), req))
+
+			auth := req.Header.Get("Authorization")
+			require.True(t, strings.HasPrefix(auth, "AWS4-HMAC-SHA256 "), "got: %s", auth)
+			assert.Contains(t, auth, tc.wantScope)
+			if tc.notWantScope != "" {
+				assert.NotContains(t, auth, tc.notWantScope)
+			}
+		})
+	}
+}
+
 func TestSignRequest_BearerTokenSkipsSigV4(t *testing.T) {
 	m := newSigningTestModel(
 		WithBearerToken("test-token"),

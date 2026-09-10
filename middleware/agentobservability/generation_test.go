@@ -173,6 +173,46 @@ func TestMapGenerateResult_CanonicalRoundTrip(t *testing.T) {
 	assert.Empty(t, gen.SpanID, "SpanID is set by recorder")
 }
 
+func TestMapGenerateResult_ServerToolUsageMetadata(t *testing.T) {
+	result := &provider.GenerateResult{Usage: provider.Usage{
+		Raw: json.RawMessage(`{"server_tool_use":{"web_search_requests":2,"web_fetch_requests":1}}`),
+	}}
+	gen := MapGenerateResult(provider.CallOptions{}, result, ContextInfo{Metadata: map[string]any{
+		MetadataServerToolUseTotalRequests: "caller override",
+	}})
+
+	assert.Equal(t, int64(2), gen.Metadata[MetadataServerToolUseWebSearchRequests])
+	assert.Equal(t, int64(1), gen.Metadata[MetadataServerToolUseWebFetchRequests])
+	assert.Equal(t, int64(3), gen.Metadata[MetadataServerToolUseTotalRequests])
+}
+
+func TestMapGenerateResult_ResponseTransportMetadataOverridesCallerValues(t *testing.T) {
+	gen := mapGenerateResultWithStart(
+		provider.CallOptions{},
+		&provider.GenerateResult{Response: &provider.GenerateResponse{ResponseMetadata: provider.ResponseMetadata{
+			Provider: "anthropic", ModelID: "response-model",
+		}}},
+		ContextInfo{Metadata: map[string]any{
+			transportProviderMetadataKey: "spoofed-provider",
+			transportModelMetadataKey:    "spoofed-model",
+		}},
+		agento11y.GenerationStart{Model: agento11y.ModelRef{Provider: "grafana", Name: "requested-model"}},
+	)
+
+	assert.Equal(t, "grafana", gen.Metadata[transportProviderMetadataKey])
+	assert.Equal(t, "requested-model", gen.Metadata[transportModelMetadataKey])
+}
+
+func TestMapGenerateResult_ResponseModelFallsBackToRequestModel(t *testing.T) {
+	gen := mapGenerateResultWithStart(
+		provider.CallOptions{},
+		&provider.GenerateResult{},
+		ContextInfo{},
+		agento11y.GenerationStart{Model: agento11y.ModelRef{Name: "request-model"}},
+	)
+	assert.Equal(t, "request-model", gen.ResponseModel)
+}
+
 func TestMapGenerateResult_NilResult(t *testing.T) {
 	gen := MapGenerateResult(provider.CallOptions{
 		Prompt: []provider.Message{provider.UserText("hi")},

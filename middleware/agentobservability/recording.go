@@ -128,9 +128,8 @@ func wrapRecordingStream(ctx context.Context, opts RecordingOptions, p middlewar
 
 // runStreamTee shuttles parts from the inner-model stream to the consumer
 // while observing each event through the StreamRecorder. It finalizes the
-// recorder (SetResult and, for stream errors, SetCallError) once the upstream
-// channel closes or the request context cancels. After cancellation, upstream
-// is drained on a best-effort basis to release the producer goroutine.
+// recorder (SetResult and, for stream errors or cancellation, SetCallError)
+// once the upstream channel closes or the request context cancels.
 func runStreamTee(
 	ctx context.Context,
 	upstream <-chan provider.StreamPart,
@@ -142,13 +141,13 @@ func runStreamTee(
 	defer recorder.End()
 	defer close(tee)
 
-	consumerDisconnected := false
-
+	canceled := false
 streamLoop:
 	for {
 		select {
 		case part, ok := <-upstream:
 			if !ok {
+				canceled = ctx.Err() != nil
 				break streamLoop
 			}
 			streamRec.Observe(part)
@@ -156,22 +155,21 @@ streamLoop:
 			select {
 			case tee <- part:
 			case <-ctx.Done():
-				consumerDisconnected = true
+				canceled = true
 				break streamLoop
 			}
 		case <-ctx.Done():
-			consumerDisconnected = true
+			canceled = true
 			break streamLoop
 		}
 	}
 
-	if consumerDisconnected {
-		go drainProviderStream(upstream)
-	}
 	if first := streamRec.FirstChunkAt(); !first.IsZero() {
 		recorder.SetFirstTokenAt(first)
 	}
-	if callErr := streamRec.CallError(); callErr != nil {
+	if canceled {
+		recorder.SetCallError(ctx.Err())
+	} else if callErr := streamRec.CallError(); callErr != nil {
 		recorder.SetCallError(callErr)
 	}
 
@@ -188,11 +186,6 @@ streamLoop:
 		gen.AgentVersion = ctxInfo.AgentVersion
 	}
 	recorder.SetResult(gen, nil)
-}
-
-func drainProviderStream(upstream <-chan provider.StreamPart) {
-	for range upstream {
-	}
 }
 
 // resolveClient returns the *agento11y.Client for the request, treating a
