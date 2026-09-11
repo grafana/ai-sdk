@@ -1,0 +1,44 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions: {}
+
+# Two runs grooming the same release branches race each other into a
+# non-fast-forward push. Never cancel: a cancelled run can leave a release
+# branch updated without its pull request refreshed.
+concurrency:
+  group: release-please-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # mint the release app token through Vault
+    steps:
+      # The default GITHUB_TOKEN cannot trigger the required checks on the pull
+      # requests release-please opens, so a release pull request could never
+      # satisfy branch protection. A GitHub App token can.
+      #
+      # The token is brokered by Vault against this workflow's OIDC identity, so
+      # no app private key lives in this repository. The broker binds issuance to
+      # this file's path, the main branch, and the push event; moving or renaming
+      # this workflow requires updating the config in deployment_tools at
+      # terraform/repositories/ai-sdk/github-app-configs/config.yaml.
+      - name: Mint release app token
+        id: app-token
+        uses: grafana/shared-workflows/actions/create-github-app-token@46f48da11e78ebdba7a8747ae456b11062fac83e # create-github-app-token/v0.3.1
+        with:
+          github_app: grafana-plugins-platform-bot
+
+      - name: Groom release pull requests and publish tagged releases
+        id: release
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          target-branch: main
