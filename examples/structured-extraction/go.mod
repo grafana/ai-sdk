@@ -3,7 +3,7 @@ module github.com/grafana/ai-sdk/examples/structured-extraction
 go 1.26.3
 
 require (
-	github.com/grafana/ai-sdk v0.1.0-alpha.1
+	github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260910193046-bcca929c67e5
 	github.com/grafana/ai-sdk/providers/anthropic v0.0.0
 	github.com/stretchr/testify v1.11.1
 )
@@ -47,9 +47,9 @@ require (
 	golang.org/x/text v0.40.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	google.golang.org/api v0.291.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260729162451-8efbd57d26e0 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260908043556-f8649ddbbfe6 // indirect
 	google.golang.org/grpc v1.83.0 // indirect
-	google.golang.org/protobuf v1.36.11 // indirect
+	google.golang.org/protobuf v1.36.12 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
