@@ -21,6 +21,17 @@ verification:
     conformance: mise run test-conformance
     regenerate: mise run generate-conformance
 knownGaps:
+  - id: concurrent-tool-emission-nondeterminism
+    surface: core-streamtext
+    status: documented-deviation
+    description: Upstream enqueues each tool result as its own tool resolves. Being
+      single-threaded with uniform microtask depth per tool, it resolves ties in tool
+      call order, so its emitted chunk sequence is deterministic. Go emits from one
+      goroutine per tool, matching upstream on completion order but not on tie-breaking,
+      so the relative order of sibling tool outputs within a step is scheduler-dependent.
+      The conformance comparator therefore treats a run of adjacent locally-executed
+      tool-output-available and tool-output-error chunks as unordered. Provider-executed
+      outputs come off the recorded wire and stay exactly ordered.
   - id: anthropic-base-url-normalization
     surface: provider-anthropic
     status: gap

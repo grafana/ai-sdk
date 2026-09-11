@@ -374,11 +374,18 @@ func OnError(fn func(error)) Option {
 }
 
 // OnToolCallStart sets a callback invoked before a tool is executed.
+//
+// Tools in a step run concurrently, one goroutine each, so this callback may be
+// invoked from several goroutines at once. Callers are responsible for their own
+// goroutine safety. See openspec/specs/concurrent-tool-execution/spec.md.
 func OnToolCallStart(fn func(OnToolCallStartState)) Option {
 	return sharedOption{fn: func(c *baseConfig) { c.onToolCallStart = fn }}
 }
 
 // OnToolCallFinish sets a callback invoked after a tool finishes execution.
+//
+// Like [OnToolCallStart], this may be invoked concurrently from several tool
+// goroutines, and callers are responsible for their own goroutine safety.
 func OnToolCallFinish(fn func(OnToolCallFinishState)) Option {
 	return sharedOption{fn: func(c *baseConfig) { c.onToolCallFinish = fn }}
 }
@@ -386,6 +393,16 @@ func OnToolCallFinish(fn func(OnToolCallFinishState)) Option {
 // --- Stream-only options ---
 
 // OnChunk sets a callback invoked for each streaming chunk. Only available for StreamText.
+//
+// Unlike [OnToolCallStart] and [OnToolCallFinish], this callback is serialized:
+// it observes chunks one at a time, in the order [StreamTextResult.FullStream]
+// delivers them, even though a step's tool results are produced concurrently.
+//
+// It runs on the goroutine publishing the chunk and blocks that chunk's
+// delivery, so it must not block for long. It must not call any method that
+// waits for the stream to finish, such as [StreamTextResult.Wait], [StreamTextResult.Text]
+// or [StreamTextResult.Steps]; the stream cannot finish while the callback is running,
+// so those deadlock.
 func OnChunk(fn func(OnChunkState)) StreamOption {
 	return streamOnlyOption{fn: func(c *streamConfig) { c.onChunk = fn }}
 }
