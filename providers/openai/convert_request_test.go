@@ -1425,6 +1425,28 @@ func TestBuildParams_TopLevelReasoning(t *testing.T) {
 		reasoning := body["reasoning"].(map[string]any)
 		assert.Equal(t, "high", reasoning["effort"])
 	})
+
+	for _, tc := range []struct {
+		name    string
+		summary string
+	}{
+		{name: "reasoning summary default can be disabled"},
+		{name: "disable takes precedence over explicit summary", summary: "auto"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body, _ := buildBody(t, "openai.gpt-5.6-luna", provider.CallOptions{
+				Prompt:    []provider.Message{provider.UserText("hi")},
+				Reasoning: provider.ReasoningMedium,
+				ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{
+					ReasoningSummary:        tc.summary,
+					DisableReasoningSummary: true,
+				}),
+			})
+			reasoning := body["reasoning"].(map[string]any)
+			assert.Equal(t, "medium", reasoning["effort"])
+			assert.NotContains(t, reasoning, "summary")
+		})
+	}
 }
 
 func TestBuildParams_ReasoningSummaryDefault(t *testing.T) {
