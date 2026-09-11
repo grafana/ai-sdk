@@ -65,7 +65,9 @@ func TestDoStream_PostOutputSSEError(t *testing.T) {
 			var text string
 			var responseID string
 			var apiErr *provider.APICallError
+			var parts []provider.StreamPart
 			for part := range result.Stream {
+				parts = append(parts, part)
 				if part.Type == provider.PartResponseMeta {
 					responseID = part.ResponseID
 				}
@@ -77,6 +79,8 @@ func TestDoStream_PostOutputSSEError(t *testing.T) {
 				}
 			}
 
+			require.NotEmpty(t, parts)
+			assert.Equal(t, provider.PartStreamStart, parts[0].Type)
 			assert.Equal(t, "msg_test", responseID)
 			assert.Equal(t, "Hello", text)
 			require.NotNil(t, apiErr)
@@ -85,6 +89,43 @@ func TestDoStream_PostOutputSSEError(t *testing.T) {
 			assert.Equal(t, tc.streamRetry, apiErr.IsRetryable)
 		})
 	}
+}
+
+func TestDoStream_WarningsFollowSuccessfulPreflight(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = fmt.Fprint(w, "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_test\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"unknown-model\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":1,\"output_tokens\":0}}}\n\n")
+		_, _ = fmt.Fprint(w, "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}\n\n")
+		_, _ = fmt.Fprint(w, "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n")
+	}))
+	defer server.Close()
+
+	model := New("test-key", "unknown-model",
+		WithRequestOptions(
+			option.WithBaseURL(server.URL),
+			option.WithHTTPClient(server.Client()),
+			option.WithMaxRetries(0),
+		),
+	)
+	result, err := model.DoStream(context.Background(), provider.CallOptions{
+		Prompt: []provider.Message{provider.UserText("hello")},
+	})
+	require.NoError(t, err)
+
+	var parts []provider.StreamPart
+	for part := range result.Stream {
+		parts = append(parts, part)
+	}
+	require.NotEmpty(t, parts)
+	assert.Equal(t, provider.PartStreamStart, parts[0].Type)
+	require.NotEmpty(t, parts[0].Warnings)
+	for _, part := range parts {
+		if part.Type == provider.PartFinish {
+			assert.Empty(t, part.Warnings)
+			return
+		}
+	}
+	t.Fatal("missing finish part")
 }
 
 func newSSEErrorModel(t *testing.T, errorType string, afterOutput bool) (provider.LanguageModel, func()) {

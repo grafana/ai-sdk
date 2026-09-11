@@ -149,9 +149,10 @@ func (m *model) DoGenerate(ctx context.Context, params provider.CallOptions) (*p
 func consumeStream(stream *ssestream.Stream[anthropic.BetaRawMessageStreamEventUnion], firstEvent *anthropic.BetaRawMessageStreamEventUnion, ch chan<- provider.StreamPart, mapping toolNameMapping, warnings []provider.Warning, usesJsonResponseTool bool, citDocs []citationDocument, generateID func() string, providerName string, markCodeExecutionDynamic bool) {
 	defer func() { _ = stream.Close() }()
 
+	ch <- provider.StreamPart{Type: provider.PartStreamStart, Warnings: warnings}
+
 	adapter := &streamAdapter{
 		blocks:                   make(map[int64]*blockState),
-		warnings:                 warnings,
 		mapping:                  mapping,
 		serverToolCalls:          make(map[string]string),
 		mcpToolCalls:             make(map[string]mcpToolCallInfo),

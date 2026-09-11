@@ -1,5 +1,6 @@
-// Package v4 implements the strict ProviderWire V4 unary language-model HTTP
+// Package v4 implements the strict ProviderWire V4 language-model HTTP
 // runtime. It validates the complete registered request shape while executing
-// only the bounded text-generation subset; streaming and other deferred
-// capabilities are rejected before provider invocation.
+// the bounded unary and streaming text-generation subset; deferred request
+// capabilities are rejected before provider invocation, and unsupported stream
+// part families terminate through the closed safe-error dialect.
 package v4
