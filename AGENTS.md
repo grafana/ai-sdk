@@ -185,6 +185,7 @@ aisdk/              Root package - orchestration (StreamText, UIMessage, SSE, to
     anthropic/      Separate Go module - Anthropic/Vertex provider implementation
     openai/         Separate Go module - OpenAI Responses API provider implementation
     bedrock/        Separate Go module - AWS Bedrock Converse provider implementation
+  ai-gateway/       Separate Gateway service module
   docs/             Narrative documentation (concepts, guides, providers, best-practices)
   examples/         Runnable example programs - each a self-contained Go module
 ```
@@ -204,7 +205,6 @@ to avoid README bloat and godoc drift. Full rules: [CONTRIBUTING.md](CONTRIBUTIN
 - **`docs/`** owns **concepts and guides** -- the "why" and "how do I X". Plain
   GitHub markdown, no frontmatter; navigation via `docs/README.md` index plus
   per-page `Prev/Up/Next` footers.
-
 The drift boundary: "what's the signature / options?" -> godoc; "why/how?" ->
 `docs/`; "convince me + run once" -> README. `docs/` pages link to pkg.go.dev
 rather than reproducing signatures or option tables.

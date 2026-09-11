@@ -131,6 +131,7 @@ OpenSpec — and the pull request checklist. All participants follow our
 
 ## License
 
-[Apache License 2.0](LICENSE). This SDK follows the design of
-[Vercel's AI SDK](https://github.com/vercel/ai), also Apache-2.0 licensed;
-attribution is recorded in [NOTICE](NOTICE).
+The reusable SDK is licensed under [Apache-2.0](LICENSE). The separate
+[`ai-gateway/`](ai-gateway/) module is licensed under
+[AGPL-3.0-only](ai-gateway/LICENSE). See the SDK [NOTICE](NOTICE) and Gateway
+[NOTICE](ai-gateway/NOTICE) for attribution.

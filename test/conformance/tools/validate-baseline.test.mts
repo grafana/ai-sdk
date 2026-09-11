@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { validateBaseline } from "./validate-baseline.mts";
+import {
+  defaultPackagePaths,
+  providerWireRequiredPackages,
+  validateBaseline,
+} from "./validate-baseline.mts";
 
 describe("validateBaseline", () => {
   it("accepts matching AI SDK package versions", () => {
@@ -82,5 +86,54 @@ describe("validateBaseline", () => {
     assert.deepEqual(errors, [
       "test/integration/package.json dependency @ai-sdk/react pins 4.0.0-beta.115, but baseline declares 4.0.0-beta.116",
     ]);
+  });
+
+  it("includes the ProviderWire V4 contract workspace by default", () => {
+    const paths = defaultPackagePaths("/repo/test/conformance/tools");
+
+    assert.equal(
+      paths.some((path) => path.endsWith("/ai-gateway/test/providerwire-v4/package.json")),
+      true,
+    );
+  });
+
+  it("labels ProviderWire dependency drift", () => {
+    const errors = validateBaseline(
+      { packages: { "@ai-sdk/gateway": "4.0.52" } },
+      { dependencies: { "@ai-sdk/gateway": "4.0.51" } },
+      "ai-gateway/test/providerwire-v4/package.json",
+    );
+
+    assert.deepEqual(errors, [
+      "ai-gateway/test/providerwire-v4/package.json dependency @ai-sdk/gateway pins 4.0.51, but baseline declares 4.0.52",
+    ]);
+  });
+
+  it("rejects omitted required ProviderWire dependencies", () => {
+    const baseline = {
+      packages: {
+        "@ai-sdk/gateway": "4.0.52",
+        "@ai-sdk/provider": "4.0.7",
+        "@ai-sdk/provider-utils": "5.0.27",
+      },
+    };
+
+    for (const omitted of providerWireRequiredPackages) {
+      const dependencies = Object.fromEntries(
+        providerWireRequiredPackages
+          .filter((name) => name !== omitted)
+          .map((name) => [name, baseline.packages[name]]),
+      );
+      const errors = validateBaseline(
+        baseline,
+        { dependencies },
+        "ai-gateway/test/providerwire-v4/package.json",
+        providerWireRequiredPackages,
+      );
+
+      assert.deepEqual(errors, [
+        `ai-gateway/test/providerwire-v4/package.json must declare dependency ${omitted}@${baseline.packages[omitted]}`,
+      ]);
+    }
   });
 });

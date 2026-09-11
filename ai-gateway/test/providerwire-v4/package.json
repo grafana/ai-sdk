@@ -1,0 +1,24 @@
+{
+  "name": "@ai-sdk/providerwire-v4-contract",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test:schema": "tsx --test schema.test.ts schema-definitions.test.ts request-goldens.test.ts update-goldens.test.ts",
+    "test:client": "tsx --test client-consumption.test.ts",
+    "test": "pnpm run typecheck && pnpm run test:schema && pnpm run test:client",
+    "update-goldens": "tsx update-goldens.ts"
+  },
+  "dependencies": {
+    "@ai-sdk/gateway": "4.0.52",
+    "@ai-sdk/provider": "4.0.7",
+    "@ai-sdk/provider-utils": "5.0.27",
+    "ajv": "8.17.1"
+  },
+  "devDependencies": {
+    "@types/node": "25.9.5",
+    "tsx": "4.23.12",
+    "typescript": "7.0.2"
+  }
+}
