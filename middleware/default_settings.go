@@ -19,7 +19,7 @@ type DefaultSettingsOptions struct {
 	StopSequences    []string
 	ResponseFormat   *provider.ResponseFormat
 	Seed             *int
-	Reasoning        *provider.ReasoningEffort
+	Reasoning        provider.ReasoningEffort
 	Tools            []provider.Tool
 	ToolChoice       *provider.ToolChoice
 	Headers          map[string]string
@@ -60,7 +60,7 @@ func DefaultSettings(settings DefaultSettingsOptions) Middleware {
 			if p.Seed == nil && settings.Seed != nil {
 				p.Seed = settings.Seed
 			}
-			if p.Reasoning == nil && settings.Reasoning != nil {
+			if p.Reasoning == provider.ReasoningProviderDefault && settings.Reasoning != provider.ReasoningProviderDefault {
 				p.Reasoning = settings.Reasoning
 			}
 			if p.Tools == nil && settings.Tools != nil {

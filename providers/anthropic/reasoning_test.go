@@ -130,7 +130,7 @@ func TestBuildParams_ReasoningPrecedence(t *testing.T) {
 	t.Run("provider thinking set skips reasoning", func(t *testing.T) {
 		reasoning := provider.ReasoningHigh
 		opts := provider.CallOptions{
-			Reasoning: &reasoning,
+			Reasoning: reasoning,
 			ProviderOptions: provider.ProviderOptions{
 				"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(`{"thinking":{"type":"enabled","budgetTokens":5000}}`)},
 			},
@@ -146,7 +146,7 @@ func TestBuildParams_ReasoningPrecedence(t *testing.T) {
 	t.Run("provider effort set skips reasoning", func(t *testing.T) {
 		reasoning := provider.ReasoningLow
 		opts := provider.CallOptions{
-			Reasoning: &reasoning,
+			Reasoning: reasoning,
 			ProviderOptions: provider.ProviderOptions{
 				"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(`{"effort":"max"}`)},
 			},
@@ -162,7 +162,7 @@ func TestBuildParams_ReasoningPrecedence(t *testing.T) {
 	t.Run("neither set allows reasoning mapping", func(t *testing.T) {
 		reasoning := provider.ReasoningMedium
 		opts := provider.CallOptions{
-			Reasoning: &reasoning,
+			Reasoning: reasoning,
 		}
 
 		p, _, warnings, _, err := buildParams("claude-sonnet-4-6", opts, false)
@@ -178,7 +178,7 @@ func TestBuildParams_ReasoningPrecedence(t *testing.T) {
 func TestBuildParams_Opus47SupportsXHighEffort(t *testing.T) {
 	reasoning := provider.ReasoningXHigh
 	opts := provider.CallOptions{
-		Reasoning: &reasoning,
+		Reasoning: reasoning,
 	}
 
 	p, _, warnings, _, err := buildParams("claude-opus-4-7", opts, false)
@@ -234,8 +234,8 @@ func TestBuildParams_ThinkingDisabledEffortConstraint(t *testing.T) {
 	}
 }
 
-func TestBuildParams_ReasoningNilAndProviderDefault(t *testing.T) {
-	t.Run("nil reasoning is no-op", func(t *testing.T) {
+func TestBuildParams_ReasoningProviderDefault(t *testing.T) {
+	t.Run("zero-valued reasoning is no-op", func(t *testing.T) {
 		opts := provider.CallOptions{}
 
 		p, _, _, _, err := buildParams("claude-sonnet-4-6", opts, false)
@@ -250,7 +250,7 @@ func TestBuildParams_ReasoningNilAndProviderDefault(t *testing.T) {
 	t.Run("provider-default reasoning is no-op", func(t *testing.T) {
 		reasoning := provider.ReasoningProviderDefault
 		opts := provider.CallOptions{
-			Reasoning: &reasoning,
+			Reasoning: reasoning,
 		}
 
 		p, _, _, _, err := buildParams("claude-sonnet-4-6", opts, false)
@@ -267,7 +267,7 @@ func TestBuildParams_ReasoningBetaHeaders(t *testing.T) {
 	t.Run("adaptive path gets no beta headers", func(t *testing.T) {
 		reasoning := provider.ReasoningHigh
 		opts := provider.CallOptions{
-			Reasoning: &reasoning,
+			Reasoning: reasoning,
 		}
 
 		p, _, _, _, err := buildParams("claude-sonnet-4-6", opts, false)
@@ -282,7 +282,7 @@ func TestBuildParams_ReasoningBetaHeaders(t *testing.T) {
 	t.Run("budget path gets no beta headers", func(t *testing.T) {
 		reasoning := provider.ReasoningHigh
 		opts := provider.CallOptions{
-			Reasoning: &reasoning,
+			Reasoning: reasoning,
 		}
 
 		p, _, _, _, err := buildParams("claude-sonnet-4-5-20250514", opts, false)
@@ -297,7 +297,7 @@ func TestBuildParams_ReasoningBetaHeaders(t *testing.T) {
 	t.Run("none gets no thinking or effort betas", func(t *testing.T) {
 		reasoning := provider.ReasoningNone
 		opts := provider.CallOptions{
-			Reasoning: &reasoning,
+			Reasoning: reasoning,
 		}
 
 		p, _, _, _, err := buildParams("claude-sonnet-4-6", opts, false)

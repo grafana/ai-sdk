@@ -77,12 +77,8 @@ the service your application calls:
 - [OpenAI-compatible APIs](providers/openai-compatible.md) for local or hosted
   Chat Completions-compatible servers.
 
-## Build model infrastructure
+## Extend model infrastructure
 
-These guides are for teams hosting shared model access or extending the SDK:
-
-- [Gateway model catalog](guides/gateway-model-catalog.md) — expose stable public
-  model names, aliases, metadata, and discovery.
 - [Writing a provider](providers/writing-a-provider.md) — adapt another model
   service to the common SDK behavior.
 

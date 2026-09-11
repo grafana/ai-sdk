@@ -1382,6 +1382,51 @@ func TestBuildParams_BedrockMantleReasoningNoneStripsSamplingParameters(t *testi
 	}
 }
 
+func TestBuildParams_TopLevelReasoning(t *testing.T) {
+	t.Run("provider default is omitted", func(t *testing.T) {
+		body, _ := buildBody(t, "gpt-5.5", provider.CallOptions{
+			Prompt:    []provider.Message{provider.UserText("hi")},
+			Reasoning: provider.ReasoningProviderDefault,
+		})
+		assert.NotContains(t, body, "reasoning")
+	})
+
+	for _, effort := range []provider.ReasoningEffort{
+		provider.ReasoningNone,
+		provider.ReasoningMinimal,
+		provider.ReasoningLow,
+		provider.ReasoningMedium,
+		provider.ReasoningHigh,
+		provider.ReasoningXHigh,
+	} {
+		t.Run("maps "+string(effort), func(t *testing.T) {
+			body, _ := buildBody(t, "gpt-5.5", provider.CallOptions{
+				Prompt:    []provider.Message{provider.UserText("hi")},
+				Reasoning: effort,
+			})
+			reasoning := body["reasoning"].(map[string]any)
+			assert.Equal(t, string(effort), reasoning["effort"])
+			if effort == provider.ReasoningNone {
+				assert.NotContains(t, reasoning, "summary")
+			} else {
+				assert.Equal(t, "detailed", reasoning["summary"])
+			}
+		})
+	}
+
+	t.Run("provider option takes precedence", func(t *testing.T) {
+		body, _ := buildBody(t, "gpt-5.5", provider.CallOptions{
+			Prompt:    []provider.Message{provider.UserText("hi")},
+			Reasoning: provider.ReasoningLow,
+			ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{
+				ReasoningEffort: "high",
+			}),
+		})
+		reasoning := body["reasoning"].(map[string]any)
+		assert.Equal(t, "high", reasoning["effort"])
+	})
+}
+
 func TestBuildParams_ReasoningSummaryDefault(t *testing.T) {
 	tests := []struct {
 		name            string

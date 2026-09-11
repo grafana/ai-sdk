@@ -90,7 +90,7 @@ type Warning struct {
 type ReasoningEffort string
 
 const (
-	ReasoningProviderDefault ReasoningEffort = "provider-default"
+	ReasoningProviderDefault ReasoningEffort = ""
 	ReasoningNone            ReasoningEffort = "none"
 	ReasoningMinimal         ReasoningEffort = "minimal"
 	ReasoningLow             ReasoningEffort = "low"

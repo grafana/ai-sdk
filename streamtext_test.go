@@ -327,8 +327,28 @@ func TestStreamTextPrepareStep_CallSettings(t *testing.T) {
 		assert.Empty(t, call.StopSequences)
 		require.NotNil(t, call.Seed)
 		assert.Equal(t, 0, *call.Seed)
-		require.NotNil(t, call.Reasoning)
-		assert.Equal(t, provider.ReasoningNone, *call.Reasoning)
+		assert.Equal(t, provider.ReasoningNone, call.Reasoning)
+	})
+
+	t.Run("provider default override clears outer reasoning", func(t *testing.T) {
+		reasoning := provider.ReasoningProviderDefault
+		var call provider.CallOptions
+		model := &mockModel{streamFunc: func(_ context.Context, opts provider.CallOptions) (*provider.StreamResult, error) {
+			call = opts
+			return &provider.StreamResult{Stream: textStreamParts("done")}, nil
+		}}
+
+		result := StreamText(context.Background(), model,
+			WithModelMessages(provider.UserText("hello")),
+			WithReasoning(provider.ReasoningHigh),
+			WithPrepareStep(func(PrepareStepState) (*PrepareStepResult, error) {
+				return &PrepareStepResult{Reasoning: &reasoning}, nil
+			}),
+		)
+		for range result.FullStream() {
+		}
+
+		assert.Equal(t, provider.ReasoningProviderDefault, call.Reasoning)
 	})
 
 	t.Run("invalid max output tokens stops before model call", func(t *testing.T) {

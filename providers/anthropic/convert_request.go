@@ -416,14 +416,11 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 	// AnthropicOptions but effort is not, we still derive effort from the
 	// top-level reasoning hint. Mirrors upstream
 	// anthropic-language-model.ts:390-413.
-	if opts.Reasoning != nil && !hasProviderEffort(opts.ProviderOptions) {
-		reasoning := *opts.Reasoning
-		if reasoning != provider.ReasoningProviderDefault {
-			rc := resolveReasoningConfig(reasoning, caps, &warnings)
-			if rc != nil {
-				providerThinking := providerThinkingType(opts.ProviderOptions)
-				applyReasoningConfigWithProviderHints(&p, rc, providerThinking)
-			}
+	if opts.Reasoning != provider.ReasoningProviderDefault && !hasProviderEffort(opts.ProviderOptions) {
+		rc := resolveReasoningConfig(opts.Reasoning, caps, &warnings)
+		if rc != nil {
+			providerThinking := providerThinkingType(opts.ProviderOptions)
+			applyReasoningConfigWithProviderHints(&p, rc, providerThinking)
 		}
 	}
 

@@ -58,7 +58,7 @@ Start with one model. Add composition only for a concrete requirement:
 
 - improve availability with [fallback](../guides/fallback-and-registry.md);
 - resolve server-side IDs with a [registry](../guides/fallback-and-registry.md);
-- expose stable public IDs with a [gateway catalog](../guides/gateway-model-catalog.md);
+- expose stable public IDs with the [AI Gateway model catalog](../../ai-gateway/docs/model-catalog.md);
 - apply common behavior with [middleware](../middleware/overview.md).
 
 If the service is not supported, see [Writing a provider](writing-a-provider.md).

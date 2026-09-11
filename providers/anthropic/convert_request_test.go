@@ -4454,7 +4454,7 @@ func TestBuildParams_ReasoningEffortFallback(t *testing.T) {
 		opts := provider.CallOptions{
 			MaxOutputTokens: ptrInt(8000),
 			Prompt:          []provider.Message{provider.UserText("hi")},
-			Reasoning:       &reasoning,
+			Reasoning:       reasoning,
 			ProviderOptions: provider.BuildProviderOptions(AnthropicOptions{
 				Thinking: &ThinkingConfig{Type: ThinkingEnabled, BudgetTokens: 2048},
 			}),
@@ -4470,7 +4470,7 @@ func TestBuildParams_ReasoningEffortFallback(t *testing.T) {
 		opts := provider.CallOptions{
 			MaxOutputTokens: ptrInt(8000),
 			Prompt:          []provider.Message{provider.UserText("hi")},
-			Reasoning:       &reasoning,
+			Reasoning:       reasoning,
 			ProviderOptions: provider.BuildProviderOptions(AnthropicOptions{
 				Effort: "high",
 			}),
@@ -4485,7 +4485,7 @@ func TestBuildParams_ReasoningEffortFallback(t *testing.T) {
 		opts := provider.CallOptions{
 			MaxOutputTokens: ptrInt(8000),
 			Prompt:          []provider.Message{provider.UserText("hi")},
-			Reasoning:       &reasoning,
+			Reasoning:       reasoning,
 			ProviderOptions: provider.BuildProviderOptions(AnthropicOptions{
 				Thinking: &ThinkingConfig{Type: ThinkingDisabled},
 			}),

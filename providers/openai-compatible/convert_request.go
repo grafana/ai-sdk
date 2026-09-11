@@ -813,17 +813,14 @@ func (m *model) convertResponseFormat(format *provider.ResponseFormat, opts Open
 	}, nil
 }
 
-func reasoningEffort(reasoning *provider.ReasoningEffort, opts OpenAIOptions) string {
+func reasoningEffort(reasoning provider.ReasoningEffort, opts OpenAIOptions) string {
 	if opts.ReasoningEffort != "" {
 		return opts.ReasoningEffort
 	}
-	if reasoning == nil {
-		return ""
-	}
-	switch *reasoning {
+	switch reasoning {
 	case provider.ReasoningProviderDefault, provider.ReasoningNone:
 		return ""
 	default:
-		return string(*reasoning)
+		return string(reasoning)
 	}
 }

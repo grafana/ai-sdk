@@ -12,8 +12,6 @@ These capabilities solve independent problems:
   selected by a provider-oriented ID.
 - [Custom providers](#expose-a-restricted-model-namespace) expose a small
   application-controlled set of model names.
-- [Gateway catalogs](#add-a-gateway-catalog-for-discovery) add public aliases,
-  metadata, listing, and request-aware visibility.
 
 A dynamically selected model can itself be a fallback when the application
 needs both runtime selection and failover.
@@ -197,14 +195,6 @@ resolution.
 `registry.WithFallbackProvider` delegates unresolved model IDs to another
 provider. `fallback.Model` handles failures that occur while calling an already
 resolved model.
-
-## Add a gateway catalog for discovery
-
-Use `gateway/catalog` when clients need canonical public IDs, aliases, discovery
-metadata, listing, or request-aware visibility. A registry constructs models. A
-catalog controls which model names clients can discover and use.
-
-See [Gateway model catalog](gateway-model-catalog.md).
 
 ## Reference
 

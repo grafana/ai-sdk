@@ -238,8 +238,8 @@ func requestSummaryAttrs(params provider.CallOptions, capture CaptureOptions) []
 	if params.Seed != nil {
 		attrs = append(attrs, slog.Int("ai_sdk.request.seed", *params.Seed))
 	}
-	if params.Reasoning != nil {
-		attrs = append(attrs, slog.String("ai_sdk.request.reasoning_effort", string(*params.Reasoning)))
+	if params.Reasoning != provider.ReasoningProviderDefault {
+		attrs = append(attrs, slog.String("ai_sdk.request.reasoning_effort", string(params.Reasoning)))
 	}
 	if params.ToolChoice != nil {
 		attrs = append(attrs, slog.String("ai_sdk.request.tool_choice.type", string(params.ToolChoice.Type)))

@@ -1,7 +1,7 @@
 # Gateway model catalog
 
-Use `gateway/catalog` when an API lets clients discover or select models through
-stable public names. A catalog can expose names such as `default`, `fast`, or
+Use `ai-gateway/catalog` when an API lets clients discover or select models
+through stable public names. A catalog can expose names such as `default`, `fast`, or
 `balanced` while the service changes provider IDs, deployments, or fallback
 order behind them.
 
@@ -49,7 +49,7 @@ A gateway can combine several independent capabilities:
 
 Applications that construct one model can pass it directly to the generation
 APIs. Services that only resolve provider-oriented IDs can use a
-[registry](fallback-and-registry.md).
+[registry](../../docs/guides/fallback-and-registry.md).
 
 ## Create a static catalog
 
@@ -119,7 +119,7 @@ in the returned error chain.
 
 A public route can also hold a `fallback.Model`. Construct the fallback first,
 then add it to a static catalog entry. See
-[Fallback and registry](fallback-and-registry.md) for candidate selection, usage,
+[Fallback and registry](../../docs/guides/fallback-and-registry.md) for candidate selection, usage,
 and provider attribution.
 
 ## Apply host policy and catalog guarantees
@@ -165,9 +165,9 @@ status codes, response envelopes, or another transport's lifecycle.
 
 ## Reference
 
-- [`gateway/catalog` package](https://pkg.go.dev/github.com/grafana/ai-sdk/gateway/catalog)
+- [`ai-gateway/catalog` package](https://pkg.go.dev/github.com/grafana/ai-sdk/ai-gateway/catalog)
 - [`registry` package](https://pkg.go.dev/github.com/grafana/ai-sdk/registry)
 
 ---
 
-← [Writing a provider](../providers/writing-a-provider.md) · [Docs index](../README.md) · [Production checklist →](../best-practices/production.md)
+← [AI Gateway](../README.md) · [SDK documentation](../../docs/README.md)

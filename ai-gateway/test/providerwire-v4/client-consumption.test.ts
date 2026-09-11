@@ -2,7 +2,13 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   createGateway,
+  GatewayAuthenticationError,
+  GatewayFailedDependencyError,
+  GatewayForbiddenError,
+  GatewayInternalServerError,
   GatewayInvalidRequestError,
+  GatewayModelNotFoundError,
+  GatewayRateLimitError,
   type GatewayProviderSettings,
 } from "@ai-sdk/gateway";
 import type { LanguageModelV4StreamPart } from "@ai-sdk/provider";
@@ -195,5 +201,38 @@ describe("registered Gateway client consumption", () => {
 
     await assert.rejects(async () => await model.doGenerate({ prompt: [] }), assertInvalidRequest);
     await assert.rejects(async () => await model.doStream({ prompt: [] }), assertInvalidRequest);
+  });
+
+  it("maps every runtime status and supported host error to its client behavior", async () => {
+    const cases = [
+      { name: "invalid request", status: 400, type: "invalid_request_error", code: "invalid_request", retryable: false, isInstance: GatewayInvalidRequestError.isInstance },
+      { name: "authentication", status: 401, type: "authentication_error", code: "authentication_error", retryable: false, isInstance: GatewayAuthenticationError.isInstance },
+      { name: "permission", status: 403, type: "forbidden", code: "forbidden", retryable: false, isInstance: GatewayForbiddenError.isInstance },
+      { name: "model not found", status: 404, type: "model_not_found", code: "model_not_found", retryable: false, isInstance: GatewayModelNotFoundError.isInstance },
+      { name: "rate limit", status: 429, type: "rate_limit_exceeded", code: "rate_limit_exceeded", retryable: true, isInstance: GatewayRateLimitError.isInstance },
+      { name: "overload", status: 503, type: "internal_server_error", code: "overloaded", retryable: true, isInstance: GatewayInternalServerError.isInstance },
+      { name: "failed dependency", status: 424, type: "failed_dependency", code: "failed_dependency", retryable: false, isInstance: GatewayFailedDependencyError.isInstance },
+      { name: "upstream", status: 502, type: "internal_server_error", code: "upstream_error", retryable: true, isInstance: GatewayInternalServerError.isInstance },
+      { name: "timeout", status: 504, type: "internal_server_error", code: "timeout", retryable: true, isInstance: GatewayInternalServerError.isInstance },
+      { name: "cancellation", status: 499, type: "internal_server_error", code: "canceled", retryable: false, isInstance: GatewayInternalServerError.isInstance },
+      { name: "internal", status: 500, type: "internal_server_error", code: "internal_error", retryable: true, isInstance: GatewayInternalServerError.isInstance },
+    ] as const;
+
+    for (const testCase of cases) {
+      const model = modelWithFetch(async () => Response.json({
+        error: { message: "safe message", type: testCase.type, param: null, code: testCase.code },
+      }, { status: testCase.status }));
+      await assert.rejects(
+        async () => await model.doGenerate({ prompt: [] }),
+        (error: unknown) => {
+          assert.equal(testCase.isInstance(error), true, testCase.name);
+          const gatewayError = error as { statusCode: number; type: string; isRetryable: boolean };
+          assert.equal(gatewayError.statusCode, testCase.status, testCase.name);
+          assert.equal(gatewayError.type, testCase.type, testCase.name);
+          assert.equal(gatewayError.isRetryable, testCase.retryable, testCase.name);
+          return true;
+        },
+      );
+    }
   });
 });
