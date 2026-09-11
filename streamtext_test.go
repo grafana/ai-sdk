@@ -3932,7 +3932,67 @@ func TestStreamTextConcurrentToolExecution(t *testing.T) {
 		assert.Equal(t, "conversion failed", trBad.ModelOutput.Text)
 	})
 
-	t.Run("stream_events_arrive_in_declaration_order", func(t *testing.T) {
+	t.Run("onchunk_stays_serial_and_matches_stream_order", func(t *testing.T) {
+		// Tool events are emitted from each tool's own goroutine. The emit and
+		// the OnChunk callback are held together under emitMu so the callback
+		// keeps the contract it has upstream, where onChunk is awaited inside
+		// the stream transform: serial, and in stream order. Without the lock
+		// this both races on the unsynchronized slice below and reorders.
+		const toolCount = 6
+		calls := make([]struct{ name, input string }, toolCount)
+		tools := ToolSet{}
+		for i := range calls {
+			name := fmt.Sprintf("tool%d", i)
+			calls[i] = struct{ name, input string }{name, `{}`}
+			delay := time.Duration(toolCount-i) * 3 * time.Millisecond
+			tools[name] = Tool{
+				Description: name,
+				InputSchema: testMustSchema(t, `{"type":"object"}`),
+				Execute: func(_ context.Context, _ json.RawMessage, _ ToolExecutionOptions) (json.RawMessage, error) {
+					time.Sleep(delay)
+					return json.RawMessage(`"` + name + `"`), nil
+				},
+			}
+		}
+
+		callNum := 0
+		model := &mockModel{
+			streamFunc: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+				callNum++
+				if callNum == 1 {
+					return &provider.StreamResult{Stream: multiToolCallStreamParts(calls...)}, nil
+				}
+				return &provider.StreamResult{Stream: textStreamParts("done")}, nil
+			},
+		}
+
+		// Deliberately unsynchronized: the point is that emitMu is what makes
+		// this safe. Under -race this fails if the callback goes concurrent.
+		var callbackOrder []string
+		result := StreamText(context.Background(), model,
+			WithModelMessages(provider.UserText("go")),
+			WithTools(tools),
+			OnChunk(func(state OnChunkState) {
+				if tr, ok := state.Chunk.(StreamToolResult); ok {
+					callbackOrder = append(callbackOrder, tr.ToolName)
+				}
+			}),
+			WithStopWhen(StepCountIs(5)),
+		)
+
+		var streamOrder []string
+		for part := range result.FullStream() {
+			if tr, ok := part.(StreamToolResult); ok {
+				streamOrder = append(streamOrder, tr.ToolName)
+			}
+		}
+
+		require.Len(t, streamOrder, toolCount)
+		assert.Equal(t, streamOrder, callbackOrder,
+			"OnChunk must observe tool results in the same order FullStream delivers them")
+	})
+
+	t.Run("stream_events_arrive_in_completion_order", func(t *testing.T) {
 		callNum := 0
 		model := &mockModel{
 			streamFunc: func(_ context.Context, opts provider.CallOptions) (*provider.StreamResult, error) {
@@ -3978,8 +4038,8 @@ func TestStreamTextConcurrentToolExecution(t *testing.T) {
 		}
 
 		require.Len(t, resultOrder, 2)
-		assert.Equal(t, "slow", resultOrder[0], "events follow tool call declaration order, not completion order")
-		assert.Equal(t, "fast", resultOrder[1], "events follow tool call declaration order, not completion order")
+		assert.Equal(t, "fast", resultOrder[0], "events follow tool completion order, not declaration order")
+		assert.Equal(t, "slow", resultOrder[1], "events follow tool completion order, not declaration order")
 	})
 
 	t.Run("callbacks_invoked_for_each_concurrent_tool", func(t *testing.T) {

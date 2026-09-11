@@ -1392,8 +1392,64 @@ func LoadExpectedRequests(path string) ([]RequestSnapshot, error) {
 
 // --- Comparison ---
 
+// normalizeConcurrentToolOutputs sorts each maximal run of adjacent
+// locally-executed tool-output-available and tool-output-error chunks by
+// toolCallId. Both are emitted from the tool's own goroutine, so a step mixing
+// successes and failures is normalized as one run. Tools within a step run
+// concurrently, so their outputs reach the stream in completion order, which is
+// not stable across runs.
+//
+// Provider-executed outputs are excluded. Their order comes off the recorded
+// provider wire rather than from a goroutine, so it is deterministic and stays
+// exactly compared. The flag is a proxy for "not emitted from a tool goroutine"
+// rather than a precise one: rejectToolCall also publishes tool-output-error
+// from the run goroutine, deterministically and without the flag. No fixture
+// currently places such a chunk adjacent to a tool goroutine's output, so none
+// is relaxed today; see the design note for why a wire-level marker would be
+// needed to key on this exactly. The excluded case is: anthropic/upstream/web-fetch-tool-20260209 encodes an inner
+// web_fetch result inside an outer code_execution result, and that order is
+// load-bearing. Such a chunk ends a run, as any other chunk type does, so
+// ordering across it and between steps stays strict.
+func normalizeConcurrentToolOutputs(chunks []map[string]any) []map[string]any {
+	sortable := func(c map[string]any) bool {
+		switch c["type"] {
+		case "tool-output-available", "tool-output-error":
+		default:
+			return false
+		}
+		providerExecuted, _ := c["providerExecuted"].(bool)
+		return !providerExecuted
+	}
+
+	out := make([]map[string]any, len(chunks))
+	copy(out, chunks)
+	for i := 0; i < len(out); {
+		if !sortable(out[i]) {
+			i++
+			continue
+		}
+		j := i
+		for j < len(out) && sortable(out[j]) {
+			j++
+		}
+		if j-i > 1 {
+			run := out[i:j]
+			sort.SliceStable(run, func(a, b int) bool {
+				ida, _ := run[a]["toolCallId"].(string)
+				idb, _ := run[b]["toolCallId"].(string)
+				return ida < idb
+			})
+		}
+		i = j
+	}
+	return out
+}
+
 func CompareChunks(t *testing.T, expected, actual []map[string]any) {
 	t.Helper()
+
+	expected = normalizeConcurrentToolOutputs(expected)
+	actual = normalizeConcurrentToolOutputs(actual)
 
 	minLen := len(expected)
 	if len(actual) < minLen {

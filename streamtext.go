@@ -31,6 +31,11 @@ type StreamTextResult struct {
 	consumed   atomic.Bool
 	mu         sync.Mutex
 
+	// emitMu serializes publish, so a part reaching the stream and the OnChunk
+	// callback for it are one step even when tool goroutines publish
+	// concurrently.
+	emitMu sync.Mutex
+
 	steps        []StepResult
 	totalUsage   provider.Usage
 	lastStep     *StepResult
@@ -890,8 +895,7 @@ loop:
 				ProviderOptions: providerMetadataToOptions(part.ProviderMetadata),
 			})
 			tsp := StreamTextStart{ID: part.ID, ProviderMetadata: part.ProviderMetadata}
-			r.emit(tsp)
-			r.callOnChunk(cfg, tsp)
+			r.publish(cfg, tsp)
 
 		case provider.PartTextDelta:
 			if idx, ok := responseTextIndex[part.ID]; ok {
@@ -907,8 +911,7 @@ loop:
 					outputTextChunkID = part.ID
 				} else if part.ID != outputTextChunkID {
 					tsp := StreamTextDelta{ID: part.ID, Text: part.Delta, ProviderMetadata: part.ProviderMetadata}
-					r.emit(tsp)
-					r.callOnChunk(cfg, tsp)
+					r.publish(cfg, tsp)
 					continue
 				}
 				outputTextChunk.WriteString(part.Delta)
@@ -917,37 +920,32 @@ loop:
 				}
 				if part.Delta == "" && part.ProviderMetadata != nil {
 					tsp := StreamTextDelta{ID: part.ID, ProviderMetadata: part.ProviderMetadata}
-					r.emit(tsp)
-					r.callOnChunk(cfg, tsp)
+					r.publish(cfg, tsp)
 					continue
 				}
 				parsed := r.emitPartialOutput(cfg.output, textBuilder.String())
 				if parsed != lastPublishedOutput && parsed != "" {
 					lastPublishedOutput = parsed
 					tsp := StreamTextDelta{ID: outputTextChunkID, Text: outputTextChunk.String(), ProviderMetadata: outputTextMeta}
-					r.emit(tsp)
-					r.callOnChunk(cfg, tsp)
+					r.publish(cfg, tsp)
 					outputTextChunk.Reset()
 				}
 			} else {
 				tsp := StreamTextDelta{ID: part.ID, Text: part.Delta, ProviderMetadata: part.ProviderMetadata}
-				r.emit(tsp)
-				r.callOnChunk(cfg, tsp)
+				r.publish(cfg, tsp)
 			}
 
 		case provider.PartTextEnd:
 			if cfg.output != nil && part.ID == outputTextChunkID && outputTextChunk.Len() > 0 {
 				tsp := StreamTextDelta{ID: outputTextChunkID, Text: outputTextChunk.String(), ProviderMetadata: outputTextMeta}
-				r.emit(tsp)
-				r.callOnChunk(cfg, tsp)
+				r.publish(cfg, tsp)
 				outputTextChunk.Reset()
 			}
 			if idx, ok := responseTextIndex[part.ID]; ok && part.ProviderMetadata != nil {
 				step.responseContent[idx].ProviderOptions = providerMetadataToOptions(part.ProviderMetadata)
 			}
 			tsp := StreamTextEnd{ID: part.ID, ProviderMetadata: part.ProviderMetadata}
-			r.emit(tsp)
-			r.callOnChunk(cfg, tsp)
+			r.publish(cfg, tsp)
 
 		case provider.PartReasoningStart:
 			responseReasoningIndex[part.ID] = len(step.responseContent)
@@ -959,8 +957,7 @@ loop:
 			reasoningBlocks = append(reasoningBlocks, ReasoningTextOutput{ProviderMetadata: part.ProviderMetadata})
 			activeReasoning[part.ID] = &activeReasoningBlock{providerMetadata: part.ProviderMetadata, outputIndex: outputIndex}
 			tsp := StreamReasoningStart{ID: part.ID, ProviderMetadata: part.ProviderMetadata}
-			r.emit(tsp)
-			r.callOnChunk(cfg, tsp)
+			r.publish(cfg, tsp)
 
 		case provider.PartReasoningDelta:
 			active := activeReasoning[part.ID]
@@ -980,8 +977,7 @@ loop:
 				}
 			}
 			tsp := StreamReasoningDelta{ID: part.ID, Text: part.Delta, ProviderMetadata: part.ProviderMetadata}
-			r.emit(tsp)
-			r.callOnChunk(cfg, tsp)
+			r.publish(cfg, tsp)
 
 		case provider.PartReasoningEnd:
 			active := activeReasoning[part.ID]
@@ -998,8 +994,7 @@ loop:
 			reasoningBlocks[active.outputIndex] = ReasoningTextOutput{Text: active.text.String(), ProviderMetadata: active.providerMetadata}
 			delete(activeReasoning, part.ID)
 			tsp := StreamReasoningEnd{ID: part.ID, ProviderMetadata: part.ProviderMetadata}
-			r.emit(tsp)
-			r.callOnChunk(cfg, tsp)
+			r.publish(cfg, tsp)
 
 		case provider.PartToolInputStart:
 			toolNameByID[part.ID] = part.ToolName
@@ -1011,8 +1006,7 @@ loop:
 				ProviderExecuted: part.ProviderExecuted, Dynamic: isDynamic(part.ToolName, part.Dynamic, cfg.tools),
 				Title: part.Title, ProviderMetadata: part.ProviderMetadata,
 			}
-			r.emit(tsp)
-			r.callOnChunk(cfg, tsp)
+			r.publish(cfg, tsp)
 			if t, ok := cfg.tools[part.ToolName]; ok && t.OnInputStart != nil {
 				t.OnInputStart(ToolExecutionOptions{ToolCallID: part.ID, Context: stepContext})
 			}
@@ -1023,16 +1017,14 @@ loop:
 				toolName = toolNameByID[part.ID]
 			}
 			tsp := StreamToolInputDelta{ID: part.ID, Delta: part.Delta, ProviderMetadata: part.ProviderMetadata}
-			r.emit(tsp)
-			r.callOnChunk(cfg, tsp)
+			r.publish(cfg, tsp)
 			if t, ok := cfg.tools[toolName]; ok && t.OnInputDelta != nil {
 				t.OnInputDelta(part.Delta, ToolExecutionOptions{ToolCallID: part.ID, Context: stepContext})
 			}
 
 		case provider.PartToolInputEnd:
 			tsp := StreamToolInputEnd{ID: part.ID, ProviderMetadata: part.ProviderMetadata}
-			r.emit(tsp)
-			r.callOnChunk(cfg, tsp)
+			r.publish(cfg, tsp)
 
 		case provider.PartToolCall:
 			r.handleToolCall(part, &step, cfg, toolTitleByID, stepContext)
@@ -1094,8 +1086,7 @@ loop:
 					ProviderOptions: providerMetadataToOptions(src.ProviderMetadata),
 				})
 				tsp := StreamSource{Source: src}
-				r.emit(tsp)
-				r.callOnChunk(cfg, tsp)
+				r.publish(cfg, tsp)
 			}
 
 		case provider.PartFile:
@@ -1108,8 +1099,7 @@ loop:
 				ProviderOptions: providerMetadataToOptions(part.ProviderMetadata),
 			})
 			tsp := StreamFile{File: gf, ProviderMetadata: part.ProviderMetadata}
-			r.emit(tsp)
-			r.callOnChunk(cfg, tsp)
+			r.publish(cfg, tsp)
 
 		case provider.PartReasoningFile:
 			gf := generatedFileFromStreamData(part.Data, part.MediaType)
@@ -1121,8 +1111,7 @@ loop:
 				ProviderOptions: providerMetadataToOptions(part.ProviderMetadata),
 			})
 			tsp := StreamReasoningFile{File: gf, ProviderMetadata: part.ProviderMetadata}
-			r.emit(tsp)
-			r.callOnChunk(cfg, tsp)
+			r.publish(cfg, tsp)
 
 		case provider.PartResponseMeta:
 			responseMeta = provider.ResponseMetadata{
@@ -1146,8 +1135,7 @@ loop:
 
 		case provider.PartRaw:
 			tsp := StreamRaw{RawValue: part.RawValue}
-			r.emit(tsp)
-			r.callOnChunk(cfg, tsp)
+			r.publish(cfg, tsp)
 
 		case provider.PartToolApprovalRequest:
 			// Providers only emit PartToolApprovalRequest for provider-executed
@@ -1188,8 +1176,7 @@ loop:
 				ProviderOptions: providerMetadataToOptions(req.ProviderMetadata),
 			})
 			tsp := StreamToolApprovalRequest(req)
-			r.emit(tsp)
-			r.callOnChunk(cfg, tsp)
+			r.publish(cfg, tsp)
 
 		case provider.PartCustom:
 			step.responseContent = append(step.responseContent, provider.ContentPart{
@@ -1198,8 +1185,7 @@ loop:
 				ProviderOptions: providerMetadataToOptions(part.ProviderMetadata),
 			})
 			tsp := StreamCustom{Kind: part.Kind, ProviderMetadata: part.ProviderMetadata}
-			r.emit(tsp)
-			r.callOnChunk(cfg, tsp)
+			r.publish(cfg, tsp)
 
 		case provider.PartError:
 			terminated = true
@@ -1221,8 +1207,7 @@ loop:
 			}
 			r.mu.Unlock()
 			tsp := StreamError{Error: partErrAsError}
-			r.emit(tsp)
-			r.callOnChunk(cfg, tsp)
+			r.publish(cfg, tsp)
 			if cfg.onError != nil {
 				cfg.onError(partErrAsError)
 			}
@@ -1232,8 +1217,7 @@ loop:
 	partialCompleted := !terminated && ctx.Err() == nil && hasOutput
 	if cfg.output != nil && outputTextChunk.Len() > 0 && (completed || partialCompleted) {
 		tsp := StreamTextDelta{ID: outputTextChunkID, Text: outputTextChunk.String(), ProviderMetadata: outputTextMeta}
-		r.emit(tsp)
-		r.callOnChunk(cfg, tsp)
+		r.publish(cfg, tsp)
 	}
 
 	step.Text = textBuilder.String()
@@ -1373,8 +1357,7 @@ func (r *StreamTextResult) handleToolCall(
 		Input: parsedInput, ProviderExecuted: part.ProviderExecuted,
 		Dynamic: dynamic, Title: title, ProviderMetadata: part.ProviderMetadata,
 	}
-	r.emit(tsp)
-	r.callOnChunk(cfg, tsp)
+	r.publish(cfg, tsp)
 
 	if t, ok := cfg.tools[part.ToolName]; ok && t.OnInputAvailable != nil {
 		t.OnInputAvailable(parsedInput, ToolExecutionOptions{ToolCallID: part.ToolCallID, Context: stepContext})
@@ -1417,8 +1400,7 @@ func (r *StreamTextResult) handleToolResult(
 			Input: input, Error: tr.Error, ProviderExecuted: true,
 			Dynamic: dynamic, ProviderMetadata: part.ProviderMetadata,
 		}
-		r.emit(tsp)
-		r.callOnChunk(cfg, tsp)
+		r.publish(cfg, tsp)
 		return nil
 	}
 
@@ -1427,8 +1409,7 @@ func (r *StreamTextResult) handleToolResult(
 		Input: input, Output: part.Result, ProviderExecuted: true,
 		Dynamic: dynamic, ProviderMetadata: part.ProviderMetadata,
 	}
-	r.emit(tsp)
-	r.callOnChunk(cfg, tsp)
+	r.publish(cfg, tsp)
 	if preliminary {
 		return nil
 	}
@@ -1449,8 +1430,9 @@ func (r *StreamTextResult) handleToolResult(
 }
 
 // toolExecOutcome holds the result of a single tool execution, including
-// the stream event to emit. Events are collected during concurrent execution
-// and emitted in declaration order afterwards to match the upstream TS SDK.
+// the stream event to emit. Each goroutine emits its own event as the tool
+// completes, matching upstream's per-tool controller.enqueue in
+// execute-tools-from-stream.ts.
 type toolExecOutcome struct {
 	result ToolResult
 	event  TextStreamPart // StreamToolResult or StreamToolError
@@ -1497,8 +1479,7 @@ func (r *StreamTextResult) rejectToolCall(
 		uiDynamic:        uiDynamic,
 		useUIDynamic:     true,
 	}
-	r.emit(toolCallPart)
-	r.callOnChunk(cfg, toolCallPart)
+	r.publish(cfg, toolCallPart)
 	if part.ProviderExecuted {
 		return
 	}
@@ -1527,8 +1508,7 @@ func (r *StreamTextResult) rejectToolCall(
 		uiDynamic:    uiDynamic,
 		useUIDynamic: true,
 	}
-	r.emit(toolErrorPart)
-	r.callOnChunk(cfg, toolErrorPart)
+	r.publish(cfg, toolErrorPart)
 }
 
 // executeTools runs after PartFinish and processes every tool call recorded
@@ -1649,14 +1629,10 @@ func (r *StreamTextResult) executeTools(
 
 	wg.Wait()
 
-	// Emit events and collect results in declaration order so that the
-	// stream output is deterministic regardless of goroutine scheduling.
+	// step.ToolResults stays in call order regardless of completion order,
+	// per spec.md:84. Events were already emitted by each goroutine.
 	for _, out := range outcomes {
 		step.ToolResults = append(step.ToolResults, out.result)
-		if out.event != nil {
-			r.emit(out.event)
-			r.callOnChunk(cfg, out.event)
-		}
 	}
 	return nil
 }
@@ -1691,14 +1667,12 @@ func newToolApprovalResponse(approvalID string, tc ToolCall, approved bool, reas
 
 func (r *StreamTextResult) emitToolApprovalRequest(cfg *streamConfig, req ToolApprovalRequest) {
 	tsp := StreamToolApprovalRequest(req)
-	r.emit(tsp)
-	r.callOnChunk(cfg, tsp)
+	r.publish(cfg, tsp)
 }
 
 func (r *StreamTextResult) emitToolApprovalResponse(cfg *streamConfig, resp ToolApprovalResponse) {
 	tsp := StreamToolApprovalResponse(resp)
-	r.emit(tsp)
-	r.callOnChunk(cfg, tsp)
+	r.publish(cfg, tsp)
 }
 
 func (r *StreamTextResult) executeSingleTool(
@@ -1712,6 +1686,15 @@ func (r *StreamTextResult) executeSingleTool(
 	outcomes []toolExecOutcome,
 	index int,
 ) {
+	// Emit this tool's event as it completes, per concurrent-tool-execution
+	// spec.md:70. Deferred so every return path is covered; the callers still
+	// assemble step.ToolResults in call order after Wait, per spec.md:84.
+	defer func() {
+		if ev := outcomes[index].event; ev != nil {
+			r.publish(cfg, ev)
+		}
+	}()
+
 	if cfg.onToolCallStart != nil {
 		cfg.onToolCallStart(OnToolCallStartState{
 			StepNumber: step.StepNumber,
@@ -1842,6 +1825,23 @@ func (r *StreamTextResult) emit(part TextStreamPart) {
 	r.fullStream <- part
 }
 
+// publish sends a part to the full stream and invokes the OnChunk callback as
+// one indivisible step.
+//
+// Most parts are published by the run goroutine, but each tool's result is
+// published by that tool's own goroutine, so publishes can be concurrent. The
+// lock keeps OnChunk serial and in stream order, which is the contract upstream
+// gets for free by awaiting onChunk inside the stream transform.
+//
+// Callers must not hold r.mu here: the send blocks until the consumer reads,
+// and OnChunk runs user code.
+func (r *StreamTextResult) publish(cfg *streamConfig, part TextStreamPart) {
+	r.emitMu.Lock()
+	defer r.emitMu.Unlock()
+	r.emit(part)
+	r.callOnChunk(cfg, part)
+}
+
 func (r *StreamTextResult) abort(ctx context.Context, cfg *streamConfig) {
 	if cfg.onAbort != nil {
 		cfg.onAbort(OnAbortState{Steps: r.steps})
@@ -1853,8 +1853,7 @@ func (r *StreamTextResult) abort(ctx context.Context, cfg *streamConfig) {
 		r.mu.Unlock()
 		part.Reason = cause.Error()
 	}
-	r.emit(part)
-	r.callOnChunk(cfg, part)
+	r.publish(cfg, part)
 }
 
 func (r *StreamTextResult) emitPartialOutput(out Output, text string) string {
@@ -1945,8 +1944,7 @@ func (r *StreamTextResult) resolveToolApprovals(ctx context.Context, cfg *stream
 	denied = append(denied, demoted...)
 	for _, approval := range denied {
 		deniedEvent := StreamToolOutputDenied{ToolCallID: approval.toolCall.ToolCallID, ToolName: approval.toolCall.ToolName}
-		r.emit(deniedEvent)
-		r.callOnChunk(cfg, deniedEvent)
+		r.publish(cfg, deniedEvent)
 	}
 
 	type executableApproval struct {
@@ -1977,9 +1975,11 @@ func (r *StreamTextResult) resolveToolApprovals(ctx context.Context, cfg *stream
 		})
 	}
 
-	// Resume tool execution mirrors upstream's Promise.all fan-out:
-	// approved tools run concurrently, then events are emitted in declaration
-	// order so the wire stream is deterministic. The synthetic StepResult uses
+	// Resume tool execution mirrors upstream's Promise.all fan-out: approved
+	// tools run concurrently and each emits its own event as it completes, per
+	// concurrent-tool-execution spec.md:70. The loop after Wait keeps
+	// approvedToolParts in tool call order for the provider message. The
+	// synthetic StepResult uses
 	// StepNumber 0 to signal "pre-step resume execution"; consumers that bucket
 	// telemetry by step should treat it as a resume bucket, not as the first
 	// model step (which uses StepNumber 1).
@@ -1999,10 +1999,6 @@ func (r *StreamTextResult) resolveToolApprovals(ctx context.Context, cfg *stream
 
 	approvedToolParts := make([]provider.ContentPart, 0, len(executable))
 	for _, out := range outcomes {
-		if out.event != nil {
-			r.emit(out.event)
-			r.callOnChunk(cfg, out.event)
-		}
 		approvedToolParts = append(approvedToolParts, provider.ContentPart{
 			Type:       provider.ContentPartTypeToolResult,
 			ToolCallID: out.result.ToolCallID,
