@@ -342,3 +342,4 @@ var (
   `santhosh-tekuri/jsonschema` (schema validation)
 - Anthropic provider module: `anthropic-sdk-go`, GCP auth libraries
 - Both modules: `stretchr/testify` (test assertions)
+- Security issues should be reported via [Grafana's security issue reporting page](https://grafana.com/legal/report-a-security-issue/) and not directly in this repository.
