@@ -46,6 +46,18 @@ knownGaps:
       capability contracts are not implemented by this change; reasoning-effort
       validation and the configuration-update and async-tool-calling behavior
       remain follow-up work against a newer upstream baseline.
+  - id: concurrent-tool-emission-nondeterminism
+    surface: core-streamtext
+    status: documented-deviation
+    description: Upstream enqueues each tool result as its own tool resolves. Being
+      single-threaded, it always resolves ties the same way, in tool call order, so
+      its emitted chunk sequence is deterministic. Go emits each result as its tool
+      completes, matching upstream on completion order but not on tie-breaking, so
+      the relative order of sibling tool outputs within a step is scheduler-dependent.
+      The conformance comparator therefore treats a run of adjacent locally-executed
+      tool-output-available and tool-output-error chunks as unordered. Provider-executed
+      outputs come off the recorded wire, and outputs of calls rejected with
+      tool-input-error are emitted during the model stream, so both stay exactly ordered.
   - id: anthropic-base-url-normalization
     surface: provider-anthropic
     status: gap
