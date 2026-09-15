@@ -24,6 +24,8 @@ type Provider struct {
 	Type      string `yaml:"type"`
 	APIKeyEnv string `yaml:"apiKeyEnv"`
 	BaseURL   string `yaml:"baseURL,omitempty"`
+	// ProviderName overrides the openai-compatible provider identifier.
+	ProviderName string `yaml:"providerName,omitempty"`
 }
 
 // Model configures one canonical public model and its aliases.
@@ -42,9 +44,10 @@ type Primary struct {
 
 // ResolvedProvider contains one startup-resolved provider secret.
 type ResolvedProvider struct {
-	Type    string
-	APIKey  string
-	BaseURL string
+	Type         string
+	APIKey       string
+	BaseURL      string
+	ProviderName string
 }
 
 // LoadFile reads and validates exactly one bounded strict YAML document.
@@ -100,8 +103,17 @@ func (file File) Validate() error {
 		if strings.TrimSpace(name) == "" {
 			return fmt.Errorf("config: provider name must not be empty")
 		}
-		if provider.Type != "anthropic" {
-			return fmt.Errorf("config: provider %q has unsupported type", name)
+		switch provider.Type {
+		case "anthropic":
+			if provider.ProviderName != "" {
+				return fmt.Errorf("config: providers.%s.providerName is only supported for openai-compatible providers", name)
+			}
+		case "openai-compatible":
+			if strings.TrimSpace(provider.BaseURL) == "" {
+				return fmt.Errorf("config: providers.%s.baseURL is required for openai-compatible providers", name)
+			}
+		default:
+			return fmt.Errorf("config: providers.%s.type %q is unsupported (want anthropic or openai-compatible)", name, provider.Type)
 		}
 		if strings.TrimSpace(provider.APIKeyEnv) == "" {
 			return fmt.Errorf("config: providers.%s.apiKeyEnv is required", name)
@@ -168,7 +180,7 @@ func (file File) ResolveProviderSecrets(lookupEnv LookupEnv) (map[string]Resolve
 			}
 			values[provider.APIKeyEnv] = value
 		}
-		resolved[name] = ResolvedProvider{Type: provider.Type, APIKey: value, BaseURL: provider.BaseURL}
+		resolved[name] = ResolvedProvider{Type: provider.Type, APIKey: value, BaseURL: provider.BaseURL, ProviderName: provider.ProviderName}
 	}
 	return resolved, nil
 }
