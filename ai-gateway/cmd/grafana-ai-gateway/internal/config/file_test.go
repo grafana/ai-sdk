@@ -58,7 +58,7 @@ func TestLoadFile_StrictBoundedDocument(t *testing.T) {
 		{name: "empty trailing document", yaml: minimalConfigYAML + "---\n"},
 		{name: "empty providers", yaml: "providers: {}\nmodels: {}\n"},
 		{name: "empty models", yaml: "providers:\n  p:\n    type: anthropic\n    apiKeyEnv: KEY\nmodels: {}\n"},
-		{name: "unknown provider type", yaml: strings.Replace(minimalConfigYAML, "type: anthropic", "type: openai", 1)},
+		{name: "unknown provider type", yaml: strings.Replace(minimalConfigYAML, "type: anthropic", "type: unsupported", 1)},
 		{name: "missing api key reference", yaml: strings.Replace(minimalConfigYAML, "    apiKeyEnv: ANTHROPIC_API_KEY\n", "", 1)},
 		{name: "missing model name", yaml: strings.Replace(minimalConfigYAML, "    name: Grafana Assistant\n", "", 1)},
 		{name: "unknown provider reference", yaml: strings.Replace(minimalConfigYAML, "provider: anthropic-primary", "provider: missing", 1)},
@@ -174,6 +174,11 @@ func TestResolveProviderSecrets(t *testing.T) {
 			assert.NotContains(t, err.Error(), "secret-value")
 		})
 	}
+}
+
+func TestLoadFile_OpenAIProviderBaseURLOptional(t *testing.T) {
+	_, err := LoadFile(writeConfigFile(t, strings.Replace(minimalConfigYAML, "    type: anthropic\n", "    type: openai\n", 1)), 1<<20)
+	require.NoError(t, err)
 }
 
 func writeConfigFile(t *testing.T, contents string) string {

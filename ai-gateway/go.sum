@@ -58,6 +58,8 @@ github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260910195200-1d07c18be0ac h1:OjQA+l
 github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260910195200-1d07c18be0ac/go.mod h1:/8lZqngK7ivjXEVnULMc4Tp28mL07t4JwK22tsfseEA=
 github.com/grafana/ai-sdk/providers/anthropic v0.0.0-20260911144556-21bc49445c2b h1:9Z0xPygdiZC0HRum1vmWxz2asr/mKsZqzJwY2P/XUIg=
 github.com/grafana/ai-sdk/providers/anthropic v0.0.0-20260911144556-21bc49445c2b/go.mod h1:T85t5VH7rJso/DdC4BhK9cxKEbdd6Bzgh/32FHRika0=
+github.com/grafana/ai-sdk/providers/openai v0.0.0-20260914170650-fd08a3a81a11 h1:fK4T4irE9VbtjDWOcF4nNJVo5NVDPj62EDQLmkteQog=
+github.com/grafana/ai-sdk/providers/openai v0.0.0-20260914170650-fd08a3a81a11/go.mod h1:6o8lhiAmBLuKF7TH9Cmh4P1v8u7wmUZB+KuX8quduHc=
 github.com/grafana/authlib v0.0.0-20260814184937-0d62418c2815 h1:kdWTzTnExdZbbngXmCuA4UPrZpdYiwC/Mf5ujcg+e6Q=
 github.com/grafana/authlib v0.0.0-20260814184937-0d62418c2815/go.mod h1:DKf93Uhnfwl8dkOoFdsiUVMaO08mcpvyRXhGUkT5v38=
 github.com/grafana/authlib/types v0.0.0-20260814184937-0d62418c2815 h1:jKXYY/6zwxZdchw2jojaaZ7CPSa+RLZqP3snmG0Ls0Q=
@@ -76,6 +78,8 @@ github.com/kylelemons/godebug v1.1.0 h1:RPNrshWIDI6G2gRW9EHilWtl7Z6Sb1BR0xunSBf0
 github.com/kylelemons/godebug v1.1.0/go.mod h1:9/0rRGxNHcop5bhtWyNeEfOS8JIWk580+fNqagV/RAw=
 github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 h1:C3w9PqII01/Oq1c1nUAm88MOHcQC9l5mIlSMApZMrHA=
 github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822/go.mod h1:+n7T8mK8HuQTcFwEeznm/DIxMOiR9yIdICNftLE1DvQ=
+github.com/openai/openai-go/v3 v3.48.0 h1:HRVBn6UEP4qzGK2c6UWAZ0mdFf6yODNWTJ4ywLIyDpQ=
+github.com/openai/openai-go/v3 v3.48.0/go.mod h1:nCqcbgPr2jYDV8wiCWPA2tRL56mWXdb6QavBmBwzSis=
 github.com/patrickmn/go-cache v2.1.0+incompatible h1:HRMgzkcYKYpi3C8ajMPV8OFXaaRUnok+kx1WdO15EQc=
 github.com/patrickmn/go-cache v2.1.0+incompatible/go.mod h1:3Qf8kWWT7OJRJbdiICTKqZju1ZixQ/KpMGzzAfe6+WQ=
 github.com/pb33f/ordered-map/v2 v2.3.1 h1:5319HDO0aw4DA4gzi+zv4FXU9UlSs3xGZ40wcP1nBjY=

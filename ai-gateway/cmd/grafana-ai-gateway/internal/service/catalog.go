@@ -10,11 +10,17 @@ import (
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/config"
 	"github.com/grafana/ai-sdk/provider"
 	anthropicprovider "github.com/grafana/ai-sdk/providers/anthropic"
+	openaiprovider "github.com/grafana/ai-sdk/providers/openai"
+	openaisdk "github.com/openai/openai-go/v3"
+	openaioption "github.com/openai/openai-go/v3/option"
+	"github.com/openai/openai-go/v3/responses"
 )
+
+const defaultOpenAIBaseURL = "https://api.openai.com/v1"
 
 type modelConstructor func(apiKey, modelID string, options ...anthropicprovider.Option) provider.LanguageModel
 
-// BuildCatalog constructs every configured Anthropic model exactly once.
+// BuildCatalog constructs every configured model exactly once.
 func BuildCatalog(file config.File, providers map[string]config.ResolvedProvider, client *http.Client) (catalog.Catalog, error) {
 	return buildCatalog(file, providers, client, anthropicprovider.New)
 }
@@ -32,17 +38,36 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 		if !ok {
 			return nil, fmt.Errorf("gateway service: model %q references unresolved provider", id)
 		}
-		if providerConfig.Type != "anthropic" || providerConfig.APIKey == "" {
+		if providerConfig.APIKey == "" {
 			return nil, fmt.Errorf("gateway service: provider %q is invalid", configured.Primary.Provider)
 		}
-		requestOptions := []option.RequestOption{
-			option.WithHTTPClient(client),
-			option.WithMaxRetries(0),
+		var model provider.LanguageModel
+		switch providerConfig.Type {
+		case "anthropic":
+			requestOptions := []option.RequestOption{
+				option.WithHTTPClient(client),
+				option.WithMaxRetries(0),
+			}
+			if providerConfig.BaseURL != "" {
+				requestOptions = append(requestOptions, option.WithBaseURL(providerConfig.BaseURL))
+			}
+			model = construct(providerConfig.APIKey, configured.Primary.Model, anthropicprovider.WithRequestOptions(requestOptions...))
+		case "openai":
+			baseURL := providerConfig.BaseURL
+			if baseURL == "" {
+				baseURL = defaultOpenAIBaseURL
+			}
+			// Assembling the client directly keeps ambient OPENAI_* environment defaults out of the request.
+			responsesService := responses.NewResponseService(
+				openaioption.WithAPIKey(providerConfig.APIKey),
+				openaioption.WithBaseURL(baseURL),
+				openaioption.WithHTTPClient(client),
+				openaioption.WithMaxRetries(0),
+			)
+			model = openaiprovider.NewResponsesWithClient(openaisdk.Client{Responses: responsesService}, configured.Primary.Model)
+		default:
+			return nil, fmt.Errorf("gateway service: provider %q is invalid", configured.Primary.Provider)
 		}
-		if providerConfig.BaseURL != "" {
-			requestOptions = append(requestOptions, option.WithBaseURL(providerConfig.BaseURL))
-		}
-		model := construct(providerConfig.APIKey, configured.Primary.Model, anthropicprovider.WithRequestOptions(requestOptions...))
 		entries = append(entries, catalog.StaticEntry{
 			Info: catalog.ModelInfo{
 				ID:          id,
