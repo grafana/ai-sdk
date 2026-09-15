@@ -144,6 +144,7 @@ func TestBuildCatalog_RejectsMissingOrInvalidReferences(t *testing.T) {
 		{},
 		{"anthropic-primary": {Type: "openai", APIKey: "secret"}},
 		{"anthropic-primary": {Type: "anthropic"}},
+		{"anthropic-primary": {Type: "openai-compatible", APIKey: "secret"}},
 	} {
 		created, err := BuildCatalog(file, providers, http.DefaultClient, identityModelFactory)
 		require.Error(t, err)
@@ -176,4 +177,48 @@ func (model *catalogTestModel) DoStream(context.Context, provider.CallOptions) (
 }
 func (model *catalogTestModel) DoGenerate(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
 	return nil, nil
+}
+
+func TestBuildCatalog_InjectsOpenAICompatibleClientBaseURLAndBackendModel(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		requests++
+		assert.Equal(t, "/v1/chat/completions", request.URL.Path)
+		assert.Equal(t, "Bearer explicit-key", request.Header.Get("Authorization"))
+		body, err := io.ReadAll(request.Body)
+		require.NoError(t, err)
+		assert.Contains(t, string(body), `"model":"backend-private"`)
+		assert.Contains(t, string(body), `"stream_options":{"include_usage":true}`)
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+	file := config.File{
+		Models: map[string]config.Model{"public": {Name: "Public", Primary: config.Primary{Provider: "local", Model: "backend-private"}}},
+	}
+	var lower provider.LanguageModel
+	created, err := buildCatalog(file, map[string]config.ResolvedProvider{
+		"local": {Type: "openai-compatible", APIKey: "explicit-key", BaseURL: server.URL + "/v1", ProviderName: "ollama"},
+	}, server.Client(), anthropicprovider.New, func(canonicalID string, model provider.LanguageModel) (provider.LanguageModel, error) {
+		lower = model
+		return identityModelFactory(canonicalID, model)
+	})
+	require.NoError(t, err)
+	resolved, err := created.ResolveModel(context.Background(), "public")
+	require.NoError(t, err)
+	// The configured provider name reaches the constructed model; the logical
+	// wrapper publishes "grafana" so the backend identity stays private.
+	require.NotNil(t, lower)
+	assert.Equal(t, "ollama", lower.Provider())
+	assert.Equal(t, "grafana", resolved.Model.Provider())
+	result, err := resolved.Model.DoStream(context.Background(), provider.CallOptions{Prompt: []provider.Message{provider.UserText("hello")}})
+	require.NoError(t, err)
+	finished := false
+	for part := range result.Stream {
+		if part.Type == provider.PartFinish {
+			finished = true
+		}
+	}
+	assert.True(t, finished, "a stream without a usage chunk still finishes")
+	assert.Equal(t, 1, requests)
 }

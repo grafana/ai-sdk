@@ -26,7 +26,7 @@ func TestAnthropicModel_HardenedResponseBoundaries(t *testing.T) {
 			_, _ = fmt.Fprint(w, validUnary)
 		}))
 		defer server.Close()
-		model := hardenedTestModel(t, server, int64(len(validUnary)), time.Second)
+		model := hardenedTestModel(t, server, int64(len(validUnary)), time.Second, "anthropic")
 		result, err := model.DoGenerate(context.Background(), modelTestOptions())
 		require.NoError(t, err)
 		require.NotNil(t, result)
@@ -51,7 +51,7 @@ func TestAnthropicModel_HardenedResponseBoundaries(t *testing.T) {
 				_, _ = fmt.Fprint(w, tc.body)
 			}))
 			defer server.Close()
-			model := hardenedTestModel(t, server, 128, time.Second)
+			model := hardenedTestModel(t, server, 128, time.Second, "anthropic")
 			var err error
 			if tc.stream {
 				_, err = model.DoStream(context.Background(), modelTestOptions())
@@ -73,7 +73,7 @@ func TestAnthropicModel_HardenedTimeoutAndCumulativeStreamBound(t *testing.T) {
 			case <-release:
 			}
 		}))
-		model := hardenedTestModel(t, server, 1024, 50*time.Millisecond)
+		model := hardenedTestModel(t, server, 1024, 50*time.Millisecond, "anthropic")
 		_, err := model.DoGenerate(context.Background(), modelTestOptions())
 		require.Error(t, err)
 		close(release)
@@ -89,7 +89,7 @@ func TestAnthropicModel_HardenedTimeoutAndCumulativeStreamBound(t *testing.T) {
 			_, _ = fmt.Fprint(w, delta)
 		}))
 		defer server.Close()
-		model := hardenedTestModel(t, server, int64(len(initial)+32), time.Second)
+		model := hardenedTestModel(t, server, int64(len(initial)+32), time.Second, "anthropic")
 		result, err := model.DoStream(context.Background(), modelTestOptions())
 		require.NoError(t, err)
 		found := false
@@ -102,16 +102,15 @@ func TestAnthropicModel_HardenedTimeoutAndCumulativeStreamBound(t *testing.T) {
 	})
 }
 
-func hardenedTestModel(t *testing.T, server *httptest.Server, limit int64, headerTimeout time.Duration) provider.LanguageModel {
+func hardenedTestModel(t *testing.T, server *httptest.Server, limit int64, headerTimeout time.Duration, providerType string) provider.LanguageModel {
 	t.Helper()
 	client, err := outbound.NewAnthropicClient(headerTimeout, limit)
 	require.NoError(t, err)
 	file := config.File{
-		Providers: map[string]config.Provider{"provider": {Type: "anthropic", APIKeyEnv: "KEY", BaseURL: server.URL}},
-		Models:    map[string]config.Model{"public": {Name: "Public", Primary: config.Primary{Provider: "provider", Model: "backend-private"}}},
+		Models: map[string]config.Model{"public": {Name: "Public", Primary: config.Primary{Provider: "provider", Model: "backend-private"}}},
 	}
 	modelCatalog, err := BuildCatalog(file, map[string]config.ResolvedProvider{
-		"provider": {Type: "anthropic", APIKey: "explicit-key", BaseURL: server.URL},
+		"provider": {Type: providerType, APIKey: "explicit-key", BaseURL: server.URL},
 	}, client, identityModelFactory)
 	require.NoError(t, err)
 	resolved, err := modelCatalog.ResolveModel(context.Background(), "public")
@@ -122,4 +121,16 @@ func hardenedTestModel(t *testing.T, server *httptest.Server, limit int64, heade
 func modelTestOptions() provider.CallOptions {
 	maxTokens := 64
 	return provider.CallOptions{Prompt: []provider.Message{provider.UserText("hello")}, MaxOutputTokens: &maxTokens}
+}
+
+func TestOpenAICompatibleModel_UsesHardenedClient(t *testing.T) {
+	body := `{"id":"chatcmpl-test","object":"chat.completion","created":1,"model":"backend-private","choices":[{"index":0,"message":{"role":"assistant","content":"` + strings.Repeat("x", 512) + `"},"finish_reason":"stop"}]}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, body)
+	}))
+	defer server.Close()
+	_, err := hardenedTestModel(t, server, 128, time.Second, "openai-compatible").DoGenerate(context.Background(), modelTestOptions())
+	require.Error(t, err)
+	assert.ErrorIs(t, err, outbound.ErrResponseTooLarge)
 }

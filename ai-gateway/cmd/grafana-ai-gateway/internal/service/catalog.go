@@ -11,6 +11,7 @@ import (
 	"github.com/grafana/ai-sdk/middleware"
 	"github.com/grafana/ai-sdk/provider"
 	anthropicprovider "github.com/grafana/ai-sdk/providers/anthropic"
+	openaicompatible "github.com/grafana/ai-sdk/providers/openai-compatible"
 )
 
 type modelConstructor func(apiKey, modelID string, options ...anthropicprovider.Option) provider.LanguageModel
@@ -20,7 +21,7 @@ type modelConstructor func(apiKey, modelID string, options ...anthropicprovider.
 // fallback without changing the logical wrapper.
 type ModelFactory func(canonicalID string, lower provider.LanguageModel) (provider.LanguageModel, error)
 
-// BuildCatalog constructs every configured Anthropic model exactly once.
+// BuildCatalog constructs every configured model exactly once.
 func BuildCatalog(file config.File, providers map[string]config.ResolvedProvider, client *http.Client, factory ModelFactory) (catalog.Catalog, error) {
 	return buildCatalog(file, providers, client, anthropicprovider.New, factory)
 }
@@ -41,17 +42,35 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 		if !ok {
 			return nil, fmt.Errorf("gateway service: model %q references unresolved provider", id)
 		}
-		if providerConfig.Type != "anthropic" || providerConfig.APIKey == "" {
+		if providerConfig.APIKey == "" {
 			return nil, fmt.Errorf("gateway service: provider %q is invalid", configured.Primary.Provider)
 		}
-		requestOptions := []option.RequestOption{
-			option.WithHTTPClient(client),
-			option.WithMaxRetries(0),
+		var lower provider.LanguageModel
+		switch providerConfig.Type {
+		case "anthropic":
+			requestOptions := []option.RequestOption{
+				option.WithHTTPClient(client),
+				option.WithMaxRetries(0),
+			}
+			if providerConfig.BaseURL != "" {
+				requestOptions = append(requestOptions, option.WithBaseURL(providerConfig.BaseURL))
+			}
+			lower = construct(providerConfig.APIKey, configured.Primary.Model, anthropicprovider.WithRequestOptions(requestOptions...))
+		case "openai-compatible":
+			if providerConfig.BaseURL == "" {
+				return nil, fmt.Errorf("gateway service: provider %q is invalid", configured.Primary.Provider)
+			}
+			lower = openaicompatible.New(configured.Primary.Model,
+				openaicompatible.WithAPIKey(providerConfig.APIKey),
+				openaicompatible.WithBaseURL(providerConfig.BaseURL),
+				openaicompatible.WithHTTPClient(client),
+				openaicompatible.WithProviderName(providerConfig.ProviderName),
+				// ProviderWire finish parts carry usage, so streams must request it.
+				openaicompatible.WithIncludeUsage(true),
+			)
+		default:
+			return nil, fmt.Errorf("gateway service: provider %q is invalid", configured.Primary.Provider)
 		}
-		if providerConfig.BaseURL != "" {
-			requestOptions = append(requestOptions, option.WithBaseURL(providerConfig.BaseURL))
-		}
-		lower := construct(providerConfig.APIKey, configured.Primary.Model, anthropicprovider.WithRequestOptions(requestOptions...))
 		model, err := factory(id, lower)
 		if err != nil {
 			return nil, fmt.Errorf("gateway service: composing model %q: %w", id, err)
