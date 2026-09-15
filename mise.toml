@@ -51,6 +51,14 @@ run = "go test ./..."
 description = "Run AI Gateway tests outside the root workspace"
 run = "cd ai-gateway && GOWORK=off GOFLAGS=\"${GOFLAGS:+$GOFLAGS }-mod=readonly\" go test ./..."
 
+[tasks.build-ai-gateway-image]
+description = "Build and load the AI Gateway image for the local architecture"
+run = """
+image=${AI_GATEWAY_IMAGE:-ai-gateway:local}
+revision=${AI_GATEWAY_VCS_REF:-$(git rev-parse HEAD)}
+docker build --build-arg "VCS_REF=$revision" --tag "$image" ai-gateway
+"""
+
 [tasks.test-anthropic]
 description = "Run Anthropic provider tests"
 run = "cd providers/anthropic && go test ./..."

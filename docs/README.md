@@ -84,6 +84,9 @@ the service your application calls:
 
 ## Operate in production
 
+- [Run AI Gateway in a container](guides/ai-gateway-container.md) — build and
+  test the standalone Gateway image and configure models, secrets,
+  authentication, and network access.
 - [Production checklist](best-practices/production.md) — bound work, secure the
   request boundary, and verify the deployed streaming path.
 - [Error handling](best-practices/error-handling.md) — handle failures before,

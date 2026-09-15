@@ -3,6 +3,7 @@ name: Build & Test
 on:
   push:
     branches: [main]
+    tags: ['ai-gateway/v*']
   pull_request:
 
 permissions: {}
@@ -19,6 +20,7 @@ jobs:
 
       - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
         with:
+          cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           version: "2026.5.4"
           experimental: true
 
@@ -30,6 +32,7 @@ jobs:
 
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
+          lookup-only: ${{ startsWith(github.ref, 'refs/tags/') }}
           path: |
             ${{ steps.go-cache.outputs.gocache }}
             ${{ steps.go-cache.outputs.gomodcache }}
@@ -63,6 +66,7 @@ jobs:
 
       - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
         with:
+          cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           version: "2026.5.4"
           experimental: true
 
@@ -80,6 +84,7 @@ jobs:
 
       - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
         with:
+          cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           version: "2026.5.4"
           experimental: true
 
@@ -100,6 +105,7 @@ jobs:
 
       - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
         with:
+          cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           version: "2026.5.4"
           experimental: true
 
@@ -135,6 +141,7 @@ jobs:
 
       - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
         with:
+          cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           version: "2026.5.4"
           experimental: true
 
@@ -146,6 +153,7 @@ jobs:
 
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
+          lookup-only: ${{ startsWith(github.ref, 'refs/tags/') }}
           path: |
             ${{ steps.go-cache.outputs.gocache }}
             ${{ steps.go-cache.outputs.gomodcache }}
@@ -159,6 +167,7 @@ jobs:
 
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
+          lookup-only: ${{ startsWith(github.ref, 'refs/tags/') }}
           path: ${{ steps.pnpm-store.outputs.path }}
           key: ${{ runner.os }}-pnpm-${{ hashFiles('test/pnpm-lock.yaml') }}
           restore-keys: |
@@ -166,6 +175,42 @@ jobs:
 
       - name: Integration tests
         run: mise run test-integration
+
+  image-validation:
+    name: Validate AI Gateway image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+        with:
+          cache: false
+          version: "2026.5.4"
+          experimental: true
+
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
+        with:
+          platforms: arm64
+
+      - uses: docker/setup-buildx-action@f7ce87c1d6bead3e36075b2ce75da1f6cc28aaca # v3.9.0
+
+      - name: Build target platforms
+        run: >-
+          docker buildx build
+          --platform linux/amd64,linux/arm64
+          --build-arg VCS_REF="$GITHUB_SHA"
+          --output "type=oci,dest=$RUNNER_TEMP/ai-gateway.oci"
+          ai-gateway
+
+      - name: Build native image
+        env:
+          AI_GATEWAY_IMAGE: ai-gateway:ci
+          AI_GATEWAY_VCS_REF: ${{ github.sha }}
+        run: mise run build-ai-gateway-image
 
   conformance-test:
     runs-on: ubuntu-latest
@@ -178,6 +223,7 @@ jobs:
 
       - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
         with:
+          cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           version: "2026.5.4"
           experimental: true
 
@@ -189,6 +235,7 @@ jobs:
 
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
+          lookup-only: ${{ startsWith(github.ref, 'refs/tags/') }}
           path: |
             ${{ steps.go-cache.outputs.gocache }}
             ${{ steps.go-cache.outputs.gomodcache }}
@@ -202,6 +249,7 @@ jobs:
 
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
+          lookup-only: ${{ startsWith(github.ref, 'refs/tags/') }}
           path: ${{ steps.pnpm-store.outputs.path }}
           key: ${{ runner.os }}-pnpm-${{ hashFiles('test/pnpm-lock.yaml') }}
           restore-keys: |
@@ -231,3 +279,57 @@ jobs:
             echo '```' >> "$GITHUB_STEP_SUMMARY"
           fi
           exit "${{ steps.conformance.outputs.exit_code }}"
+
+  publish-ai-gateway-image:
+    name: Publish AI Gateway image
+    if: >-
+      ${{ github.event_name == 'push' &&
+          startsWith(github.ref, 'refs/tags/ai-gateway/v') &&
+          github.repository == 'grafana/ai-sdk' }}
+    needs:
+      - ci
+      - docs-lint
+      - module-resolution
+      - parity-baseline
+      - integration-test
+      - conformance-test
+      - image-validation
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Validate image tag
+        id: image
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME#ai-gateway/}"
+          if [[ ! "$tag" =~ ^v[0-9][A-Za-z0-9_.-]*$ || ${#tag} -gt 128 ]]; then
+            echo "Invalid image tag: $tag" >&2
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
+        with:
+          platforms: arm64
+
+      - uses: docker/setup-buildx-action@f7ce87c1d6bead3e36075b2ce75da1f6cc28aaca # v3.9.0
+
+      - name: Log in to GHCR
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+
+      - name: Build and publish image
+        env:
+          IMAGE_TAG: ${{ steps.image.outputs.tag }}
+        run: docker buildx build --platform linux/amd64,linux/arm64 --build-arg "VCS_REF=$GITHUB_SHA" --tag "ghcr.io/grafana/ai-gateway:$IMAGE_TAG" --push ai-gateway
+
+      - name: Log out of GHCR
+        if: always()
+        run: docker logout ghcr.io

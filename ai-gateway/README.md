@@ -6,9 +6,9 @@ path is `github.com/grafana/ai-sdk/ai-gateway`.
 
 This directory contains the ProviderWire V4 request contract, exact-pinned
 registered-client evidence, public model catalog, unary and streaming text HTTP
-runtimes, and the authenticated direct-Anthropic service under
-`cmd/grafana-ai-gateway`. Deployment assets and the Go Gateway client land in
-later work packages.
+runtimes, the authenticated direct-Anthropic service under
+`cmd/grafana-ai-gateway`, and its container packaging. A reusable Go Gateway
+client remains future work.
 
 Gateway code may import explicitly pinned SDK modules. SDK modules must not
 import, require, or replace the Gateway module, which remains outside the root
@@ -19,7 +19,8 @@ Run `mise run test-providerwire-v4` for the contract and
 development guidance is in [`../CONTRIBUTING.md`](../CONTRIBUTING.md).
 
 See the [model catalog guide](docs/model-catalog.md) for public model identity
-and resolution behavior.
+and resolution behavior. See the [container guide](../docs/guides/ai-gateway-container.md)
+for image builds, runtime configuration, and publication status.
 
 Files under this directory are licensed under [AGPL-3.0-only](LICENSE). The
 reusable SDK remains [Apache-2.0](../LICENSE).
