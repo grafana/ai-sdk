@@ -100,7 +100,7 @@ func (file File) Validate() error {
 		if strings.TrimSpace(name) == "" {
 			return fmt.Errorf("config: provider name must not be empty")
 		}
-		if provider.Type != "anthropic" {
+		if provider.Type != "anthropic" && provider.Type != "openai" {
 			return fmt.Errorf("config: provider %q has unsupported type", name)
 		}
 		if strings.TrimSpace(provider.APIKeyEnv) == "" {

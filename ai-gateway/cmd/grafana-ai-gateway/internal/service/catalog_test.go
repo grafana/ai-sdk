@@ -84,13 +84,50 @@ func TestBuildCatalog_RejectsMissingOrInvalidReferences(t *testing.T) {
 	file := testCatalogFile()
 	for _, providers := range []map[string]config.ResolvedProvider{
 		{},
-		{"anthropic-primary": {Type: "openai", APIKey: "secret"}},
+		{"anthropic-primary": {Type: "unsupported", APIKey: "secret"}},
 		{"anthropic-primary": {Type: "anthropic"}},
 	} {
 		created, err := BuildCatalog(file, providers, http.DefaultClient)
 		require.Error(t, err)
 		assert.Nil(t, created)
 	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) { return fn(request) }
+
+func TestBuildCatalog_OpenAIUsesExplicitTransportAndIgnoresEnvironment(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "hostile-key")
+	t.Setenv("OPENAI_BASE_URL", "https://hostile.example.test/v1")
+	t.Setenv("OPENAI_ORG_ID", "hostile-org")
+	t.Setenv("OPENAI_PROJECT_ID", "hostile-project")
+	t.Setenv("OPENAI_CUSTOM_HEADERS", "X-Hostile: 1")
+	var sent *http.Request
+	var body []byte
+	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		sent = request
+		body, _ = io.ReadAll(request.Body)
+		return nil, fmt.Errorf("request not sent")
+	})}
+	file := config.File{
+		Models: map[string]config.Model{"public": {Name: "Public", Primary: config.Primary{Provider: "openai-primary", Model: "backend-private"}}},
+	}
+	created, err := BuildCatalog(file, map[string]config.ResolvedProvider{
+		"openai-primary": {Type: "openai", APIKey: "explicit-key"},
+	}, client)
+	require.NoError(t, err)
+	resolved, err := created.ResolveModel(context.Background(), "public")
+	require.NoError(t, err)
+	_, err = resolved.Model.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{provider.UserText("hello")}})
+	require.Error(t, err)
+	require.NotNil(t, sent)
+	assert.Equal(t, "https://api.openai.com/v1/responses", sent.URL.String())
+	assert.Equal(t, "Bearer explicit-key", sent.Header.Get("Authorization"))
+	for _, header := range []string{"OpenAI-Organization", "OpenAI-Project", "X-Hostile"} {
+		assert.Empty(t, sent.Header.Get(header), header)
+	}
+	assert.Contains(t, string(body), `"model":"backend-private"`)
 }
 
 func testCatalogFile() config.File {
