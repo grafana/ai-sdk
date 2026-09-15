@@ -16,9 +16,13 @@ const (
 
 var errInvalidUnarySuccess = errors.New("providerwire v4: invalid unary success")
 
-type unaryTextPart struct {
-	Type provider.GenerateContentType `json:"type"`
-	Text string                       `json:"text"`
+type unaryContentPart struct {
+	Type       provider.GenerateContentType `json:"type"`
+	Text       *string                      `json:"text,omitempty"`
+	ToolCallID string                       `json:"toolCallId,omitempty"`
+	ToolName   string                       `json:"toolName,omitempty"`
+	Input      *string                      `json:"input,omitempty"`
+	Dynamic    *bool                        `json:"dynamic,omitempty"`
 }
 
 type unaryFinishReason struct {
@@ -45,9 +49,9 @@ type unaryUsage struct {
 }
 
 type unarySuccess struct {
-	Content      []unaryTextPart   `json:"content"`
-	FinishReason unaryFinishReason `json:"finishReason"`
-	Usage        unaryUsage        `json:"usage"`
+	Content      []unaryContentPart `json:"content"`
+	FinishReason unaryFinishReason  `json:"finishReason"`
+	Usage        unaryUsage         `json:"usage"`
 }
 
 func mapUnarySuccess(result *provider.GenerateResult, limit int64) (unarySuccess, error) {
@@ -56,17 +60,28 @@ func mapUnarySuccess(result *provider.GenerateResult, limit int64) (unarySuccess
 	}
 
 	mapped := unarySuccess{
-		Content: make([]unaryTextPart, 0, len(result.Content)),
+		Content: make([]unaryContentPart, 0, len(result.Content)),
 		FinishReason: unaryFinishReason{
 			Unified: result.FinishReason.Unified,
 			Raw:     result.FinishReason.Raw,
 		},
 	}
 	for _, part := range result.Content {
-		if part.Type != provider.ContentText || !utf8.ValidString(part.Text) {
+		switch part.Type {
+		case provider.ContentText:
+			if !utf8.ValidString(part.Text) {
+				return unarySuccess{}, errInvalidUnarySuccess
+			}
+			mapped.Content = append(mapped.Content, unaryContentPart{Type: provider.ContentText, Text: &part.Text})
+		case provider.ContentToolCall:
+			if part.ProviderExecuted || part.ToolCallID == "" || part.ToolName == "" || !utf8.ValidString(part.ToolCallID) || !utf8.ValidString(part.ToolName) || !utf8.Valid(part.Input) {
+				return unarySuccess{}, errInvalidUnarySuccess
+			}
+			input := string(part.Input)
+			mapped.Content = append(mapped.Content, unaryContentPart{Type: provider.ContentToolCall, ToolCallID: part.ToolCallID, ToolName: part.ToolName, Input: &input, Dynamic: part.Dynamic})
+		default:
 			return unarySuccess{}, errInvalidUnarySuccess
 		}
-		mapped.Content = append(mapped.Content, unaryTextPart{Type: provider.ContentText, Text: part.Text})
 	}
 	if !utf8.ValidString(result.FinishReason.Raw) {
 		return unarySuccess{}, errInvalidUnarySuccess
@@ -101,11 +116,13 @@ func unarySuccessPreflight(result *provider.GenerateResult, limit int64) bool {
 	}
 	remaining := limit
 	for _, part := range result.Content {
-		length := int64(len(part.Text))
-		if length > remaining {
-			return false
+		for _, size := range []int{len(part.Text), len(part.ToolCallID), len(part.ToolName), len(part.Input)} {
+			length := int64(size)
+			if length > remaining {
+				return false
+			}
+			remaining -= length
 		}
-		remaining -= length
 	}
 	return int64(len(result.FinishReason.Raw)) <= remaining
 }

@@ -8,7 +8,7 @@ Define the complete baseline-pinned strict ProviderWire V4 HTTP contract and its
 
 ### Requirement: Registered ProviderWire V4 contract workspace
 
-The repository SHALL provide a private `ai-gateway/test/providerwire-v4` TypeScript workspace that executes against the exact `@ai-sdk/gateway`, `@ai-sdk/provider`, and `@ai-sdk/provider-utils` versions declared in `test/conformance/upstream.yaml`. The workspace SHALL use the public registered Gateway client with injected transport behavior and SHALL NOT import from a mutable upstream checkout or substitute another package version.
+The repository SHALL provide a private `ai-gateway/test/providerwire-v4` TypeScript workspace that executes against the exact `ai`, `@ai-sdk/gateway`, `@ai-sdk/provider`, and `@ai-sdk/provider-utils` versions declared in `test/conformance/upstream.yaml`. The workspace SHALL use the public registered Gateway client with injected transport behavior and SHALL NOT import from a mutable upstream checkout or substitute another package version.
 
 #### Scenario: Workspace dependencies match the baseline
 - **WHEN** baseline validation inspects `ai-gateway/test/providerwire-v4/package.json`
@@ -149,7 +149,7 @@ The workspace SHALL capture semantic HTTP requests by invoking the registered `c
 
 ### Requirement: Compact semantic request goldens
 
-The repository SHALL commit compact semantic request goldens emitted by the real registered client. The golden families SHALL cover unary scalar and presence semantics; comprehensive roles, content, files, tools, results, approvals, response format, and provider-option unions; streaming envelope and mode; body-header duplication, ordinary outer-header precedence, and a case-variant protocol-header collision; and an ordered multi-call sequence only when it proves behavior not represented by individual calls. Every committed golden request body SHALL validate against the production request schema.
+The repository SHALL commit compact semantic request goldens emitted by the real registered client. The golden families SHALL cover unary scalar and presence semantics; comprehensive roles, content, files, tools, results, approvals, response format, and provider-option unions; supported function definitions, choices, and client result history; streaming envelope and mode; body-header duplication, ordinary outer-header precedence, and a case-variant protocol-header collision; and an ordered multi-call sequence only when it proves behavior not represented by individual calls. Every committed golden request body SHALL validate against the production request schema.
 
 #### Scenario: Scalar and presence golden is checked
 - **WHEN** the unary scalar golden is regenerated in memory
@@ -167,6 +167,12 @@ The repository SHALL commit compact semantic request goldens emitted by the real
 #### Scenario: Request sequence order is checked
 - **WHEN** a committed case contains multiple client calls
 - **THEN** regenerated captures SHALL match the committed request count and order exactly
+
+#### Scenario: Supported function tools are captured
+
+- **WHEN** the registered client sends function definitions, a registered tool choice, or assistant tool calls with supported tool-result history
+- **THEN** committed captures SHALL preserve those fields, JSON argument values, and the `text`, `json`, `error-text`, `error-json`, and `execution-denied` output variants
+- **AND** production replay SHALL execute those supported requests
 
 ### Requirement: Schema and golden drift verification
 
@@ -264,20 +270,33 @@ The exact registered public `@ai-sdk/gateway` client SHALL be authoritative for 
 - **AND** those authorities SHALL NOT contradict observable registered-client behavior
 
 #### Scenario: Production unary and streaming replay is established
-- **WHEN** the strict streaming text runtime is complete
+- **WHEN** the text and function-tool runtime is verified
 - **THEN** each committed request emitted by the registered client SHALL replay to its expected result
 - **AND** supported unary records SHALL execute through `DoGenerate`
 - **AND** supported streaming records SHALL execute through `DoStream`, bounded SSE framing, terminal finish, and clean EOF
 - **AND** other records SHALL reach complete schema validation and either supported execution or a safe unsupported-family response
 - **AND** dedicated supported scalar and focused one-capability requests SHALL cover behavior that multi-capability goldens cannot isolate
-- **AND** a pinned registered client SHALL complete supported minimal unary and streaming text calls against the real Go handler
+- **AND** a pinned registered client SHALL complete supported unary and streaming text and function-tool calls against the real Go handler
+
+#### Scenario: Registered client preserves tool arguments
+
+- **WHEN** the real Go handler returns a function call through the registered client
+- **THEN** the client SHALL receive its ID, name, and argument string, including empty or malformed strings
+- **AND** `runtime-integration.test.ts` SHALL verify those argument strings in unary and streaming responses
+
+#### Scenario: SDK executes a tool and replays its result
+
+- **WHEN** the registered `ai` SDK consumes a valid function call through the built Gateway command and registered Gateway client
+- **THEN** its tool loop SHALL execute the tool and automatically send the call and result in the next request
+- **AND** `gateway-command.test.ts` SHALL verify successful execution and tool-execution error replay through the provider HTTP boundary
+- **AND** the Gateway SHALL handle each model step independently without executing client tools
 
 #### Scenario: Streaming response authority is local
-- **WHEN** the pinned client consumes normalized start, metadata, text, provider errors, finish, and clean EOF
+- **WHEN** the pinned client consumes normalized start, metadata, text, the four function-tool event types, provider errors, finish, and clean EOF
 - **THEN** that result SHALL prove observable client compatibility
 - **AND** the test-only stream-event schema, explicit encoder fixtures, raw SSE bytes, state-machine tests, privacy tests, and boundary tests SHALL remain authoritative for unobserved server behavior
 
 #### Scenario: Later stream families remain deferred
-- **WHEN** the strict streaming text runtime is complete
-- **THEN** reasoning, tools, approvals, files, sources, custom content, raw output, and every other later stream family SHALL remain explicit unsupported capabilities or safe terminal adapter failures according to their request or response boundary
+- **WHEN** the text and function-tool runtime is verified
+- **THEN** reasoning, provider-hosted tools, provider-executed tool calls and results, approvals, files, sources, custom content, raw output, and every other later stream family SHALL remain explicit unsupported capabilities or safe terminal adapter failures according to their request or response boundary
 - **AND** the repository SHALL NOT claim complete LanguageModelV4 stream execution coverage

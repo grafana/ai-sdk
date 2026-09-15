@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Define the production strict, bounded ProviderWire V4 streaming text runtime and its compatibility evidence.
+Define the production strict, bounded ProviderWire V4 streaming text and function-tool runtime and its compatibility evidence.
 
 ## Requirements
 
@@ -18,10 +18,10 @@ The strict ProviderWire V4 handler SHALL require positive limits for provider st
 - **THEN** construction SHALL fail before the handler serves a request
 
 ### Requirement: Shared strict streaming request pipeline
-The handler SHALL accept `ai-language-model-streaming` only when its single exact value is `true` or `false`. It SHALL route `false` to the existing unary path and `true` to the streaming path only after the same bounded body read, standard Go JSON and complete request-schema validation, explicit text-subset mapping, exact-once catalog resolution, and validation of a non-empty valid-UTF-8 canonical ID with a non-nil V4 model. A supported streaming request SHALL invoke `DoStream` exactly once and SHALL NOT invoke `DoGenerate`. Any failure before stream invocation SHALL select a fixed non-2xx JSON document and SHALL produce no SSE commitment.
+The handler SHALL accept `ai-language-model-streaming` only when its single exact value is `true` or `false`. It SHALL route `false` to the existing unary path and `true` to the streaming path only after the same bounded body read, standard Go JSON and complete request-schema validation, explicit text and function-tool mapping, exact-once catalog resolution, and validation of a non-empty valid-UTF-8 canonical ID with a non-nil V4 model. A supported streaming request SHALL invoke `DoStream` exactly once and SHALL NOT invoke `DoGenerate`. Any failure before stream invocation SHALL select a fixed non-2xx JSON document and SHALL produce no SSE commitment.
 
 #### Scenario: Supported streaming envelope executes once
-- **WHEN** a valid text request uses streaming value `true` and passes mapping and resolution
+- **WHEN** a valid text or function-tool request uses streaming value `true` and passes mapping and resolution
 - **THEN** resolution and `DoStream` SHALL each run once, and `DoGenerate` SHALL not run
 
 #### Scenario: Streaming request fails before invocation
@@ -56,7 +56,7 @@ The total model duration SHALL cover `DoStream` setup and all later stream consu
 - **THEN** the handler SHALL remain committed to SSE and SHALL attempt one empty start followed by one corresponding terminal error frame when the writer remains usable
 
 ### Requirement: Bounded provider-part cardinality
-The runtime SHALL use one request-scoped counter for every value received from the provider stream before interpreting it, including provider start, metadata, text, errors, finish, and values consumed during terminal drain. It SHALL accept at most the configured `StreamParts` count. The first excess part SHALL not mutate lifecycle state, grow the retained text-ID set, or produce its provider-derived output; before finish it SHALL cause at most one synthetic terminal internal error, and after an authoritative terminal event it SHALL end drain without another public event. Warning cardinality SHALL be checked against the maximum warnings that can fit the complete start-frame budget before allocating the mapped warning slice.
+The runtime SHALL use one request-scoped counter for every value received from the provider stream before interpreting it, including provider start, metadata, text, tool inputs and calls, errors, finish, and values consumed during terminal drain. It SHALL accept at most the configured `StreamParts` count. The first excess part SHALL not mutate lifecycle state, grow retained text or tool state, or produce its provider-derived output; before finish it SHALL cause at most one synthetic terminal internal error, and after an authoritative terminal event it SHALL end drain without another public event. Warning cardinality SHALL be checked against the maximum warnings that can fit the complete start-frame budget before allocating the mapped warning slice.
 
 #### Scenario: Provider parts are below or at the limit
 - **WHEN** a valid stream contains fewer than or exactly `StreamParts` provider values including finish
@@ -67,8 +67,8 @@ The runtime SHALL use one request-scoped counter for every value received from t
 - **THEN** the first excess value SHALL be consumed only for counting, SHALL not affect state or output, and SHALL cause one terminal internal error when writable
 
 #### Scenario: Continuously ready provider floods parts
-- **WHEN** a provider channel remains continuously ready with small sequential text blocks
-- **THEN** processing and retained text-ID cardinality SHALL stop at `StreamParts` without depending on total-timeout scheduling
+- **WHEN** a provider channel remains continuously ready with small text blocks or tool calls
+- **THEN** processing and retained text or tool cardinality SHALL stop at `StreamParts` without depending on total-timeout scheduling
 
 #### Scenario: Warning count cannot fit the start budget
 - **WHEN** a provider start carries more warnings than the complete frame can minimally represent
@@ -86,7 +86,7 @@ Every committed writable stream SHALL emit exactly one public `stream-start` as 
 - **THEN** none of those values SHALL appear publicly and the warning SHALL be generically normalized or fail safely
 
 #### Scenario: Provider omits start
-- **WHEN** the first provider part is metadata, text, provider error, or finish
+- **WHEN** the first provider part is metadata, text, tool input, tool call, provider error, or finish
 - **THEN** the client SHALL first receive exactly one start with a non-nil empty warnings array and the first provider part SHALL then be processed in order
 
 #### Scenario: Provider start is late or duplicated
@@ -102,10 +102,10 @@ Every committed writable stream SHALL emit exactly one public `stream-start` as 
 - **THEN** `DoStream` SHALL return that error before any `StreamResult` or provider start is exposed
 
 ### Requirement: Canonical metadata and text block state
-After the public start and within the configured provider-part count, the text-only state machine SHALL accept at most one response-metadata part before the first text block, zero or more sequential text blocks, non-terminal provider error parts at any pre-finish point, and exactly one finish. Response metadata SHALL preserve an optional valid response ID and timestamp, SHALL always set `modelId` to the resolver's canonical public ID, and SHALL omit provider identity, backend model ID, response headers, and provider metadata. Each text start ID SHALL be valid UTF-8, non-empty, globally unique within the stream, and SHALL open the only active block. Text deltas and ends SHALL use the active ID; an end SHALL close it. Required empty deltas SHALL be preserved. Provider errors SHALL not open, close, or otherwise change text or metadata state.
+After the public start and within the configured provider-part count, the state machine SHALL accept at most one response-metadata part before the first text or tool event, zero or more sequential text blocks, function-tool events, non-terminal provider error parts at any pre-finish point, and exactly one finish. Response metadata SHALL preserve an optional valid response ID and timestamp, SHALL always set `modelId` to the resolver's canonical public ID, and SHALL omit provider identity, backend model ID, response headers, and provider metadata. Each text start ID SHALL be valid UTF-8, non-empty, unique among text blocks within the stream, and SHALL open the only active text block. Text deltas and ends SHALL use the active ID; an end SHALL close it. Required empty deltas SHALL be preserved. Provider errors SHALL not change text, tool, or metadata state.
 
-#### Scenario: Canonical metadata precedes text
-- **WHEN** a provider emits one valid response-metadata part before text
+#### Scenario: Canonical metadata precedes content
+- **WHEN** a provider emits one valid response-metadata part before text or tool events
 - **THEN** the public metadata SHALL preserve only allowlisted ID and timestamp values and SHALL use the canonical public model ID
 
 #### Scenario: Sequential text blocks are valid
@@ -117,18 +117,42 @@ After the public start and within the configured provider-part count, the text-o
 - **THEN** the handler SHALL cancel provider work and attempt at most one synthetic terminal internal error
 
 #### Scenario: Metadata placement is invalid
-- **WHEN** response metadata is duplicated or appears after a text block has started
+- **WHEN** response metadata is duplicated or appears after a text block, tool input, or standalone tool call has started
 - **THEN** the handler SHALL terminate with at most one synthetic safe error rather than forwarding the invalid metadata
 
+### Requirement: Function-tool stream lifecycle
+
+The handler SHALL emit `tool-input-start`, `tool-input-delta`, `tool-input-end`, and client-executed `tool-call` events. A start SHALL open a new tool ID and carry a tool name. Both SHALL be non-empty valid UTF-8. Zero or more deltas and one end SHALL use that ID. The completed call SHALL follow the end with the same ID and name. A standalone completed call SHALL also be valid with a fresh non-empty tool-call ID and non-empty tool name. Tool IDs SHALL be unique across tool calls and independent of text IDs. Multiple tool inputs MAY interleave with one another and text blocks.
+
+Required delta and argument strings SHALL preserve empty values and malformed JSON without parsing or repair. Starts SHALL preserve optional `dynamic` and `title`; completed calls SHALL preserve optional `dynamic`. Only those fields and the registered event type, IDs, and tool names SHALL be emitted. Every emitted string SHALL be valid UTF-8 and every event SHALL fit the complete-frame limit. Provider-executed calls and tool results emitted by the provider SHALL remain unsupported.
+
+The completed `tool-call` frame contains the entire argument string and SHALL fit `StreamFrameBytes`, including JSON escaping and SSE framing, even when every preceding delta fits. The unary response limit is independent, so the same arguments MAY fit a unary response and exceed the streaming frame limit.
+
+#### Scenario: Interleaved tool calls complete
+
+- **WHEN** multiple tool inputs interleave with text and each input ends before its matching completed call
+- **THEN** every event SHALL be emitted in provider order without accumulating argument deltas
+- **AND** a text block and a tool call MAY use the same ID
+
+#### Scenario: Empty or malformed arguments are preserved
+
+- **WHEN** a valid tool lifecycle supplies an empty delta or an empty or malformed argument string
+- **THEN** the required `delta` and `input` members SHALL retain their exact string values for client processing
+
+#### Scenario: Tool lifecycle is invalid
+
+- **WHEN** a tool ID is reused, a delta or end has no active input, an end is duplicated, or a completed call precedes its end or changes the tool name
+- **THEN** the handler SHALL cancel provider work and attempt at most one synthetic terminal internal error
+
 ### Requirement: Finish validation and terminal authority
-A finish part SHALL be valid only when no text block is active, its warnings are empty, and it contains a non-nil registered finish reason and non-nil usage. Known usage counts SHALL be non-negative JavaScript-safe integers and SHALL use the registered input/output groups; raw usage and provider metadata SHALL be omitted. A valid finish SHALL be written once as the final public event and SHALL be authoritative. The handler SHALL then cancel provider work, begin bounded asynchronous drain, and return clean EOF immediately without waiting for provider channel closure or emitting `[DONE]`. Provider parts observed after a written finish SHALL be suppressed during drain, treated as provider lifecycle defects for later operational reporting, and SHALL never produce a second public terminal event.
+A finish part SHALL be valid only when no text block is active, every started tool input has ended and produced a completed call, its warnings are empty, and it contains a non-nil registered finish reason and non-nil usage. Known usage counts SHALL be non-negative JavaScript-safe integers and SHALL use the registered input/output groups; raw usage and provider metadata SHALL be omitted. A valid finish SHALL be written once as the final public event and SHALL be authoritative. The handler SHALL then cancel provider work, begin bounded asynchronous drain, and return clean EOF immediately without waiting for provider channel closure or emitting `[DONE]`. Provider parts observed after a written finish SHALL be suppressed during drain, treated as provider lifecycle defects for later operational reporting, and SHALL never produce a second public terminal event.
 
 #### Scenario: Finish closes a valid stream
-- **WHEN** a valid finish is emitted with no active text block
+- **WHEN** a valid finish is emitted with no active text block or pending tool call
 - **THEN** the finish SHALL preserve normalized usage and finish reason, provider-private fields SHALL be omitted, and the response SHALL end at clean EOF without `[DONE]`
 
 #### Scenario: Finish is invalid
-- **WHEN** finish arrives with an active block, warnings, nil or invalid usage, nil or invalid finish reason, or unsafe token counts
+- **WHEN** finish arrives with an active text block, pending tool call, warnings, nil or invalid usage, nil or invalid finish reason, or unsafe token counts
 - **THEN** finish SHALL not be written and the handler SHALL attempt at most one synthetic terminal internal error
 
 #### Scenario: Provider emits after finish
@@ -168,7 +192,7 @@ Before a valid finish is written, an unsupported stream family, lifecycle violat
 - **THEN** the handler SHALL attempt one terminal internal error and SHALL not emit a finish or `[DONE]`
 
 #### Scenario: Unsupported stream family appears
-- **WHEN** the text runtime receives reasoning, tool, file, source, custom, raw, approval, or another unsupported part
+- **WHEN** the runtime receives reasoning, provider-executed tools, provider tool results, files, sources, custom content, raw output, approvals, or another unsupported part
 - **THEN** it SHALL emit at most one terminal internal error rather than serializing the provider-domain part
 
 #### Scenario: Provider errors precede an adapter failure
@@ -193,6 +217,12 @@ Committed responses SHALL use HTTP 200, `Content-Type: text/event-stream`, and `
 #### Scenario: Event exceeds its complete-frame limit
 - **WHEN** an encoded event is one byte larger than the configured complete-frame limit
 - **THEN** no bytes from that oversized event SHALL be written and one bounded terminal internal-error frame SHALL be attempted
+
+#### Scenario: Completed arguments exceed the frame limit
+
+- **WHEN** every tool-input delta fits but the completed `tool-call` frame exceeds the complete-frame limit
+- **THEN** the preceding input events SHALL remain visible and the completed call SHALL not be written
+- **AND** one bounded terminal internal-error frame SHALL be attempted without a finish event
 
 #### Scenario: Writer fails
 - **WHEN** writing or flushing an event fails, writes short, or panics
@@ -241,11 +271,11 @@ Every returned stream SHALL have one receiver responsible for cleanup. A stream 
 - **THEN** the late setup owner SHALL cancel and bounded-drain that channel exactly once instead of abandoning it unread
 
 ### Requirement: Streaming contract and cross-language evidence
-Automated evidence SHALL prove that committed streaming requests execute through the production handler, raw HTTP output satisfies the strict lifecycle, privacy, and resource bounds, and the registered Gateway client consumes normal, provider-error, timeout, cancellation, finish, and clean-EOF outcomes. Provider lifecycle and transport-failure evidence SHALL not rely on invented provider conformance input. The parity map SHALL identify the achieved strict streaming text scope and retain explicit gaps for every deferred stream family.
+Automated evidence SHALL prove that committed streaming requests execute through the production handler, raw HTTP output satisfies the strict lifecycle, privacy, and resource bounds, and the registered Gateway client consumes text, function tools, provider-error, timeout, cancellation, finish, and clean-EOF outcomes. Provider lifecycle and transport-failure evidence SHALL not rely on invented provider conformance input. The parity map SHALL identify the achieved text and function-tool scope and retain explicit gaps for every deferred stream family.
 
 #### Scenario: Committed streaming requests execute
-- **WHEN** the phase 2 streaming golden records are replayed through the phase 4 handler
-- **THEN** each supported text record SHALL reach `DoStream` once with exact mapped options and canonical resolution
+- **WHEN** committed streaming golden records are replayed through the production handler
+- **THEN** each supported text or function-tool record SHALL reach `DoStream` once with exact mapped options and canonical resolution
 
 #### Scenario: Registered client consumes production SSE without abort
 - **WHEN** the pinned Gateway client remains connected to a normal, provider-error, or adapter-timeout stream from the real Go handler

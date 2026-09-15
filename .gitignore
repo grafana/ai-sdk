@@ -56,5 +56,6 @@ Desktop.ini
 *.swo
 
 # Editor/IDE
-# .idea/
+.idea
+*.iml
 # .vscode/

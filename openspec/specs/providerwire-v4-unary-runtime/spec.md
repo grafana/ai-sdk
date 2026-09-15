@@ -1,6 +1,6 @@
 ## Purpose
 
-Define the production ProviderWire V4 unary text runtime and the observable contract proven against the registered Gateway client.
+Define the production ProviderWire V4 unary text and function-tool runtime and the observable contract proven against the registered Gateway client.
 
 ## Requirements
 
@@ -32,6 +32,8 @@ The handler SHALL accept only `POST /language-model` with JSON content and exact
 
 After envelope validation, the handler SHALL read and close the request body through the configured `limit+1` boundary and reject oversized or invalid UTF-8 input. It SHALL validate the complete bounded document against the embedded draft 2020-12 ProviderWire request schema before supported-subset mapping. Malformed JSON and schema-invalid input SHALL fail before resolution or model invocation. Standard Go/schema JSON semantics SHALL apply: duplicate object members use the last decoded value, and escaped lone UTF-16 surrogates normalize to U+FFFD.
 
+The request-byte limit SHALL apply to the entire serialized request, including every replayed tool call and result. Each continuation request SHALL fit that limit independently.
+
 #### Scenario: Request byte boundary
 - **WHEN** a request is below, exactly at, or one byte above the configured body limit
 - **THEN** the first two SHALL continue and the last SHALL fail without retaining bytes beyond `limit+1`
@@ -47,7 +49,7 @@ After envelope validation, the handler SHALL read and close the request body thr
 - **THEN** it SHALL normalize to U+FFFD
 
 #### Scenario: Registered unsupported branch
-- **WHEN** a request uses a schema-valid registered branch that the unary text runtime does not execute
+- **WHEN** a request uses a schema-valid registered branch that the unary runtime does not execute
 - **THEN** schema validation SHALL succeed and supported-subset mapping SHALL make the support decision
 
 ### Requirement: Unary text and scalar mapping
@@ -68,9 +70,24 @@ The handler SHALL preserve ordered system messages and user or assistant text pa
 - **WHEN** tools, headers, and provider-options namespaces are empty, raw chunks are false, and response format is text
 - **THEN** those values SHALL normalize to the supported ordinary text behavior
 
+### Requirement: Function tools and client result history
+
+The handler SHALL map function definitions and the registered `auto`, `none`, `required`, and named `tool` choices into provider call options. It SHALL preserve ordered assistant tool calls and tool-role result history, including tool-call IDs, tool names, JSON argument values, and `text`, `json`, `error-text`, `error-json`, or `execution-denied` outputs. Empty provider-options namespaces SHALL normalize away. Tool execution and multi-step orchestration SHALL remain the client's responsibility; each Gateway request SHALL invoke only one model step.
+
+#### Scenario: Function definition and choice reach the model
+
+- **WHEN** a schema-valid request supplies function definitions and a registered tool choice without unsupported options
+- **THEN** the model SHALL receive the definition fields and exact choice, including explicit `strict: false` and input examples when present
+
+#### Scenario: Client replays a call and its result
+
+- **WHEN** a request includes an assistant tool call and a matching tool-result message using one of the five supported output variants
+- **THEN** the model SHALL receive their original order, IDs, names, JSON argument values, and result values
+- **AND** the Gateway SHALL not execute the tool or start another model step itself
+
 ### Requirement: Unsupported capability families
 
-Schema-valid files, reasoning content, custom content, tools, tool approvals, structured output, non-empty provider options, body headers, and raw output SHALL return a stable invalid-request document naming the unsupported family before resolution or model invocation. The runtime SHALL not define client-visible precedence among multiple simultaneously activated unsupported families.
+Schema-valid files, reasoning content, custom content, provider-defined tools, provider-executed tool-call and result history, multipart tool results, tool approvals, structured output, non-empty provider options, body headers, and raw output SHALL return a stable invalid-request document naming the unsupported family before resolution or model invocation. Tool-family diagnostics SHALL use `provider-defined-tools`, `provider-executed-tools`, or `multipart-tool-results` as applicable. This provider-options restriction SHALL also apply to function definitions, message parts, and tool-result outputs. The runtime SHALL not define client-visible precedence among multiple simultaneously activated unsupported families.
 
 #### Scenario: One unsupported family
 - **WHEN** a request activates one unsupported family
@@ -79,6 +96,11 @@ Schema-valid files, reasoning content, custom content, tools, tool approvals, st
 #### Scenario: Malformed unsupported branch
 - **WHEN** an unsupported branch violates the complete request schema
 - **THEN** it SHALL fail as schema-invalid rather than as a valid unsupported capability
+
+#### Scenario: Assistant message contains a tool result
+
+- **WHEN** a schema-valid assistant message contains a `tool-result` part
+- **THEN** the handler SHALL reject it as `provider-executed-tools` before resolution or model invocation
 
 ### Requirement: Resolution and bounded model invocation
 
@@ -114,15 +136,23 @@ Every runtime error response SHALL be selected from precomputed documents with f
 
 ### Requirement: Minimal unary success response
 
-A successful unary response SHALL contain only ordered text `content`, `finishReason`, and `usage`. The handler SHALL accept only registered finish reasons and non-negative usage counts no greater than JavaScript's maximum safe integer. Provider warnings, request data, response IDs, timestamps, model IDs, provider identity, headers, bodies, raw usage, provider metadata, and content metadata SHALL be omitted. The registered Gateway client owns unary `warnings`, `request`, and `response`; raw response-body details outside this minimal contract are not guaranteed.
+A successful unary response SHALL contain only `content`, `finishReason`, and `usage`. Content SHALL preserve the order of text parts and client-executed tool calls. Tool calls SHALL contain a non-empty valid-UTF-8 `toolCallId` and `toolName`, a required string `input`, and optional `dynamic`. The argument string SHALL be preserved even when empty or malformed JSON so the client can parse or repair it.
+
+The handler SHALL accept only registered finish reasons and non-negative usage counts no greater than JavaScript's maximum safe integer. Provider warnings, request data, response IDs, timestamps, model IDs, provider identity, headers, bodies, raw usage, provider metadata, and content metadata SHALL be omitted. The registered Gateway client owns unary `warnings`, `request`, and `response`; raw response-body details outside this minimal contract are not guaranteed.
 
 #### Scenario: Valid text result
 - **WHEN** the model returns text, a registered finish reason, and valid usage
 - **THEN** the handler SHALL preserve those values and emit no other top-level members
 
 #### Scenario: Unsupported provider result
-- **WHEN** the model returns non-text content, an unknown finish reason, invalid usage, `nil, nil`, or panics
+- **WHEN** the model returns content other than text or client-executed tool calls, invalid tool-call fields, an unknown finish reason, invalid usage, `nil, nil`, or panics
 - **THEN** the handler SHALL return the fixed internal-error document before committing HTTP 200
+
+#### Scenario: Tool-call arguments remain strings
+
+- **WHEN** the model returns a client-executed tool call with valid UTF-8 arguments, including an empty string or malformed JSON
+- **THEN** the unary response SHALL preserve `input` as a required JSON string without parsing or repairing it
+- **AND** an explicit `dynamic: false` SHALL remain present
 
 #### Scenario: Provider-private fields
 - **WHEN** the model result contains warnings, response metadata, raw usage, backend identity, or provider metadata
@@ -130,7 +160,7 @@ A successful unary response SHALL contain only ordered text `content`, `finishRe
 
 ### Requirement: Bounded preflight and standard success encoding
 
-Before encoding, the handler SHALL reject content cardinality or aggregate content and raw-finish string bytes that cannot fit the configured unary budget using overflow-safe accounting. It SHALL validate UTF-8 only after the size preflight so scanning remains bounded. The complete minimal private DTO SHALL then be encoded with standard Go JSON, rejected when the final bytes exceed the configured limit, and committed only after successful encoding and the final size check. Provider-domain JSON marshalers SHALL NOT control the response. Standard encoding MAY allocate a bounded constant multiple of the configured limit for worst-case escaping.
+Before encoding, the handler SHALL reject content cardinality or aggregate content and raw-finish string bytes that cannot fit the configured unary budget using overflow-safe accounting. Content accounting SHALL include tool-call IDs, names, and argument strings. It SHALL validate UTF-8 only after the size preflight so scanning remains bounded. The complete minimal private DTO SHALL then be encoded with standard Go JSON, rejected when the final bytes exceed the configured limit, and committed only after successful encoding and the final size check. Provider-domain JSON marshalers SHALL NOT control the response. Standard encoding MAY allocate a bounded constant multiple of the configured limit for worst-case escaping.
 
 #### Scenario: Preflight rejects oversized provider values
 - **WHEN** content count or aggregate raw string bytes exceed the unary budget
@@ -146,14 +176,14 @@ Before encoding, the handler SHALL reject content cardinality or aggregate conte
 
 ### Requirement: Compatibility evidence
 
-The runtime SHALL replay every committed ProviderWire request golden without modifying it. Cross-language integration tests SHALL call the production handler through the exact registered `@ai-sdk/gateway` version and verify minimal unary success, streaming text through clean EOF, representative errors, and cancellation. Raw Go tests SHALL remain authoritative for exact documents, privacy, sequencing, lifecycle, and byte bounds.
+The runtime SHALL replay every committed ProviderWire request golden without modifying it. Cross-language integration tests SHALL call the production handler through the exact registered `@ai-sdk/gateway` version and verify unary text and tool calls, streaming text and tool calls through clean EOF, client result replay, representative errors, and cancellation. Raw Go tests SHALL remain authoritative for exact documents, privacy, sequencing, lifecycle, and byte bounds.
 
 #### Scenario: Registered client success
 - **WHEN** the pinned Gateway client sends a supported unary request
 - **THEN** it SHALL consume content, finish reason, and usage from the production handler and supply its own warnings/request/response fields
 
 #### Scenario: Streaming request
-- **WHEN** the registered client sends a supported streaming text request
+- **WHEN** the registered client sends a supported streaming text or function-tool request
 - **THEN** the handler SHALL invoke `DoStream` once and the client SHALL consume the strict stream through clean EOF
 
 ### Requirement: Host-safe ProviderWire error writer

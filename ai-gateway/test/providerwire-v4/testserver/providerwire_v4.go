@@ -56,6 +56,18 @@ func (m *providerWireV4Model) DoStream(ctx context.Context, options provider.Cal
 	one := 1
 	two := 2
 	switch m.kind {
+	case "tool-arguments":
+		calls := providerWireV4ToolArguments()
+		stream := make(chan provider.StreamPart, len(calls)*4+1)
+		for _, call := range calls {
+			stream <- provider.StreamPart{Type: provider.PartToolInputStart, ID: call.ToolCallID, ToolName: call.ToolName}
+			stream <- provider.StreamPart{Type: provider.PartToolInputDelta, ID: call.ToolCallID, Delta: string(call.Input)}
+			stream <- provider.StreamPart{Type: provider.PartToolInputEnd, ID: call.ToolCallID}
+			stream <- provider.StreamPart{Type: provider.PartToolCall, ToolCallID: call.ToolCallID, ToolName: call.ToolName, Input: string(call.Input)}
+		}
+		stream <- provider.StreamPart{Type: provider.PartFinish, Usage: &provider.Usage{}, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonToolCalls}}
+		close(stream)
+		return &provider.StreamResult{Stream: stream}, nil
 	case "success":
 		m.stats.recordSuccess(options)
 		stream := make(chan provider.StreamPart, 8)
@@ -99,6 +111,11 @@ func (m *providerWireV4Model) DoStream(ctx context.Context, options provider.Cal
 
 func (m *providerWireV4Model) DoGenerate(ctx context.Context, options provider.CallOptions) (*provider.GenerateResult, error) {
 	switch m.kind {
+	case "tool-arguments":
+		return &provider.GenerateResult{
+			Content:      providerWireV4ToolArguments(),
+			FinishReason: provider.FinishReason{Unified: provider.FinishReasonToolCalls},
+		}, nil
 	case "success":
 		m.stats.recordSuccess(options)
 		zero := 0
@@ -126,6 +143,13 @@ func (m *providerWireV4Model) DoGenerate(ctx context.Context, options provider.C
 	}
 }
 
+func providerWireV4ToolArguments() []provider.GenerateContentPart {
+	return []provider.GenerateContentPart{
+		{Type: provider.ContentToolCall, ToolCallID: "call-empty", ToolName: "lookup", Input: json.RawMessage("")},
+		{Type: provider.ContentToolCall, ToolCallID: "call-malformed", ToolName: "lookup", Input: json.RawMessage(`{"service":`)},
+	}
+}
+
 type providerWireV4Scenario struct {
 	runtime http.Handler
 	stats   *providerWireV4Stats
@@ -133,8 +157,8 @@ type providerWireV4Scenario struct {
 
 func newProviderWireV4Scenario() (*providerWireV4Scenario, error) {
 	stats := &providerWireV4Stats{}
-	entries := make([]catalog.StaticEntry, 0, 5)
-	for _, id := range []string{"success", "blocking", "stream-errors", "stream-timeout", "stream-blocking"} {
+	entries := make([]catalog.StaticEntry, 0, 6)
+	for _, id := range []string{"success", "blocking", "stream-errors", "stream-timeout", "stream-blocking", "tool-arguments"} {
 		entries = append(entries, catalog.StaticEntry{
 			Info:  catalog.ModelInfo{ID: id},
 			Model: &providerWireV4Model{kind: id, stats: stats},

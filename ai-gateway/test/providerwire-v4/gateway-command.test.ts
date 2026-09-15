@@ -8,6 +8,7 @@ import { join, resolve } from "node:path";
 import nodeProcess from "node:process";
 import { after, before, describe, it } from "node:test";
 import { createGateway } from "@ai-sdk/gateway";
+import { isStepCount, jsonSchema, streamText, tool } from "ai";
 
 const AI_GATEWAY_ROOT = resolve(import.meta.dirname, "../..");
 const COMMAND_DIR = resolve(AI_GATEWAY_ROOT, "cmd/grafana-ai-gateway");
@@ -82,6 +83,122 @@ describe("authenticated Anthropic Gateway command", () => {
       await settleCleanup(() => gateway.stop(), () => fake.stop());
     }
   });
+
+  it("returns unary and streamed function calls through the registered client", async () => {
+    const [fake, gateway] = await startGateway();
+    try {
+      const client = gateway.client();
+      const models = (await client.getAvailableModels()).models;
+      const model = client(models[0]!.id);
+      const options = {
+        prompt: [{ role: "user" as const, content: [{ type: "text" as const, text: "Read release evidence" }] }],
+        tools: [{ type: "function" as const, name: "read_evidence", inputSchema: { type: "object" as const, properties: { service: { type: "string" as const } }, required: ["service"] } }],
+        toolChoice: { type: "required" as const },
+        maxOutputTokens: 128,
+      };
+      const unary = await model.doGenerate(options);
+      assert.deepEqual(unary.content, [{ type: "tool-call", toolCallId: "call-1", toolName: "read_evidence", input: '{"service":"checkout"}' }]);
+      assert.equal(unary.finishReason.unified, "tool-calls");
+      const streamed = await model.doStream(options);
+      const parts = [];
+      for await (const part of streamed.stream) parts.push(part);
+      assert.deepEqual(parts.filter((part) => part.type === "tool-call"), unary.content);
+      assert.deepEqual(parts.filter((part) => part.type.startsWith("tool-input")), [
+        { type: "tool-input-start", id: "call-1", toolName: "read_evidence" },
+        { type: "tool-input-delta", id: "call-1", delta: '{"service":"checkout"}' },
+        { type: "tool-input-end", id: "call-1" },
+      ]);
+      assert.equal(parts.find((part) => part.type === "finish")?.finishReason.unified, "tool-calls");
+      assert.equal(fake.requests.length, 2);
+      for (const request of fake.requests) {
+        assert.deepEqual(request.body.tool_choice, { type: "any" });
+        const tools = request.body.tools as Array<Record<string, unknown>>;
+        assert.equal(tools[0]?.name, "read_evidence");
+        assert.deepEqual(tools[0]?.input_schema, options.tools[0]!.inputSchema);
+      }
+      assert.deepEqual(fake.violations, []);
+    } finally {
+      await settleCleanup(() => gateway.stop(), () => fake.stop());
+    }
+  });
+
+  for (const tc of [
+    { name: "successful tool result", error: undefined },
+    { name: "tool execution error", error: new Error("evidence service unavailable") },
+  ]) {
+    it(`runs the registered SDK tool loop with a ${tc.name}`, async () => {
+      const [fake, gateway] = await startGateway();
+      try {
+        const executions: Array<{ service: string; toolCallId: string }> = [];
+        const errors: unknown[] = [];
+        const result = streamText({
+          model: gateway.client()("assistant"),
+          prompt: "Read release evidence",
+          tools: {
+            read_evidence: tool({
+              inputSchema: jsonSchema<{ service: string }>({
+                type: "object",
+                properties: { service: { type: "string" } },
+                required: ["service"],
+              }),
+              execute: async ({ service }, { toolCallId }) => {
+                executions.push({ service, toolCallId });
+                if (tc.error != null) throw tc.error;
+                return { errorRate: 4.2 };
+              },
+            }),
+          },
+          prepareStep: ({ stepNumber }) => ({ toolChoice: stepNumber === 0 ? "required" : "none" }),
+          stopWhen: isStepCount(2),
+          maxOutputTokens: 128,
+          maxRetries: 0,
+          abortSignal: AbortSignal.timeout(10_000),
+          onError: ({ error }) => { errors.push(error); },
+        });
+        const parts = [];
+        for await (const part of result.fullStream) parts.push(part);
+        assert.deepEqual(errors, []);
+        assert.deepEqual(executions, [{ service: "checkout", toolCallId: "call-1" }]);
+        assert.equal(await result.text, "hello from fake Anthropic stream");
+        assert.equal(await result.finishReason, "stop");
+        const steps = await result.steps;
+        assert.equal(steps.length, 2);
+        assert.deepEqual(steps.map((step) => step.finishReason), ["tool-calls", "stop"]);
+        assert.deepEqual(parts.filter((part) => part.type === "tool-call").map((part) => ({
+          toolCallId: part.toolCallId,
+          toolName: part.toolName,
+          input: part.input,
+        })), [{ toolCallId: "call-1", toolName: "read_evidence", input: { service: "checkout" } }]);
+        if (tc.error == null) {
+          assert.deepEqual(steps[0]?.toolResults.map((part) => part.output), [{ errorRate: 4.2 }]);
+          assert.ok(parts.some((part) => part.type === "tool-result" && part.toolCallId === "call-1"));
+        } else {
+          const toolError = parts.find((part) => part.type === "tool-error");
+          assert.equal(toolError?.toolCallId, "call-1");
+          assert.equal(toolError?.error, tc.error);
+        }
+        assert.equal(fake.requests.length, 2);
+        assert.ok(fake.requests.every((request) => request.body.stream === true));
+        assert.deepEqual(fake.requests[0]?.body.tool_choice, { type: "any" });
+        assert.equal(fake.requests[1]?.body.tool_choice, undefined);
+        assert.equal(fake.requests[1]?.body.tools, undefined);
+        const messages = fake.requests[1]!.body.messages as Array<{ role: string; content: Array<Record<string, unknown>> }>;
+        assert.deepEqual(messages[0], { role: "user", content: [{ type: "text", text: "Read release evidence" }] });
+        assert.equal(messages[1]?.role, "assistant");
+        assert.deepEqual(messages[1]?.content, [{ type: "tool_use", id: "call-1", name: "read_evidence", input: { service: "checkout" } }]);
+        assert.equal(messages[2]?.role, "user");
+        assert.deepEqual(messages[2]?.content, [{
+          type: "tool_result",
+          tool_use_id: "call-1",
+          ...(tc.error == null ? {} : { is_error: true }),
+          content: [{ type: "text", text: tc.error == null ? '{"errorRate":4.2}' : String(tc.error) }],
+        }]);
+        assert.deepEqual(fake.violations, []);
+      } finally {
+        await settleCleanup(() => gateway.stop(), () => fake.stop());
+      }
+    });
+  }
 
   it("streams normal finish and clean EOF while the command remains ready", async () => {
     const [fake, gateway] = await startGateway();
@@ -473,6 +590,28 @@ class FakeAnthropic {
       response.end(JSON.stringify({ error: { type: "api_error", message: `provider-secret-response-${"x".repeat(512)}` } }));
       return;
     }
+    if ((body.tool_choice as { type?: string } | undefined)?.type === "any") {
+      if (body.stream !== true) {
+        response.writeHead(200, { "Content-Type": "application/json" });
+        response.end(JSON.stringify({
+          id: "msg_tools", type: "message", role: "assistant", model: "backend-private",
+          content: [{ type: "tool_use", id: "call-1", name: "read_evidence", input: { service: "checkout" } }],
+          stop_reason: "tool_use", stop_sequence: null, usage: { input_tokens: 2, output_tokens: 3 },
+        }));
+        return;
+      }
+      const events = [
+        { type: "message_start", message: { id: "msg_tools", type: "message", role: "assistant", model: "backend-private", content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 2, output_tokens: 0 } } },
+        { type: "content_block_start", index: 0, content_block: { type: "tool_use", id: "call-1", name: "read_evidence", input: {} } },
+        { type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: '{"service":"checkout"}' } },
+        { type: "content_block_stop", index: 0 },
+        { type: "message_delta", delta: { stop_reason: "tool_use", stop_sequence: null }, usage: { input_tokens: 2, output_tokens: 3 } },
+        { type: "message_stop" },
+      ];
+      response.writeHead(200, { "Content-Type": "text/event-stream" });
+      response.end(events.map((event) => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join(""));
+      return;
+    }
     if (body.stream !== true) {
       response.writeHead(200, { "Content-Type": "application/json" });
       response.end(JSON.stringify({
@@ -486,7 +625,9 @@ class FakeAnthropic {
 
     response.writeHead(200, { "Content-Type": "text/event-stream" });
     response.write(`event: message_start\ndata: ${JSON.stringify({ type: "message_start", message: { id: "msg_test", type: "message", role: "assistant", model: "backend-private", content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 2, output_tokens: 0 } } })}\n\n`);
-    if (marker === "normal-stream") {
+    const hasToolResult = (body.messages as Array<{ content?: Array<{ type?: string }> }> | undefined)
+      ?.some((message) => message.content?.some((part) => part.type === "tool_result"));
+    if (marker === "normal-stream" || hasToolResult) {
       response.write(`event: content_block_start\ndata: ${JSON.stringify({ type: "content_block_start", index: 0, content_block: { type: "text", text: "" } })}\n\n`);
       response.write(`event: content_block_delta\ndata: ${JSON.stringify({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "hello from fake Anthropic stream" } })}\n\n`);
       response.write(`event: content_block_stop\ndata: ${JSON.stringify({ type: "content_block_stop", index: 0 })}\n\n`);

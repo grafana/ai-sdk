@@ -1,0 +1,223 @@
+[
+  {
+    "method": "POST",
+    "path": "/language-model",
+    "headers": {
+      "ai-language-model-id": "grafana/function-tools",
+      "ai-language-model-specification-version": "4",
+      "ai-language-model-streaming": "false",
+      "content-type": "application/json"
+    },
+    "streaming": false,
+    "hasSignal": false,
+    "body": {
+      "prompt": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Read checkout evidence"
+            }
+          ]
+        }
+      ],
+      "tools": [
+        {
+          "type": "function",
+          "name": "lookup",
+          "description": "Read service evidence",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "service": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "service"
+            ],
+            "additionalProperties": false
+          },
+          "inputExamples": [
+            {
+              "input": {
+                "service": "checkout"
+              }
+            }
+          ],
+          "strict": false,
+          "providerOptions": {
+            "empty": {}
+          }
+        }
+      ],
+      "toolChoice": {
+        "type": "required"
+      }
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/language-model",
+    "headers": {
+      "ai-language-model-id": "grafana/function-tools",
+      "ai-language-model-specification-version": "4",
+      "ai-language-model-streaming": "true",
+      "content-type": "application/json"
+    },
+    "streaming": true,
+    "hasSignal": false,
+    "body": {
+      "prompt": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Read checkout evidence"
+            }
+          ]
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "tool-call",
+              "toolCallId": "call-text",
+              "toolName": "lookup",
+              "input": {
+                "service": "checkout"
+              },
+              "providerExecuted": false
+            },
+            {
+              "type": "tool-call",
+              "toolCallId": "call-json",
+              "toolName": "lookup",
+              "input": {
+                "service": "checkout"
+              },
+              "providerExecuted": false
+            },
+            {
+              "type": "tool-call",
+              "toolCallId": "call-error-text",
+              "toolName": "lookup",
+              "input": {
+                "service": "checkout"
+              },
+              "providerExecuted": false
+            },
+            {
+              "type": "tool-call",
+              "toolCallId": "call-error-json",
+              "toolName": "lookup",
+              "input": {
+                "service": "checkout"
+              },
+              "providerExecuted": false
+            },
+            {
+              "type": "tool-call",
+              "toolCallId": "call-denied",
+              "toolName": "lookup",
+              "input": {
+                "service": "checkout"
+              },
+              "providerExecuted": false
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "content": [
+            {
+              "type": "tool-result",
+              "toolCallId": "call-text",
+              "toolName": "lookup",
+              "output": {
+                "type": "text",
+                "value": ""
+              }
+            },
+            {
+              "type": "tool-result",
+              "toolCallId": "call-json",
+              "toolName": "lookup",
+              "output": {
+                "type": "json",
+                "value": {
+                  "errorRate": 4.2,
+                  "missing": null
+                }
+              }
+            },
+            {
+              "type": "tool-result",
+              "toolCallId": "call-error-text",
+              "toolName": "lookup",
+              "output": {
+                "type": "error-text",
+                "value": "query failed"
+              }
+            },
+            {
+              "type": "tool-result",
+              "toolCallId": "call-error-json",
+              "toolName": "lookup",
+              "output": {
+                "type": "error-json",
+                "value": {
+                  "retryable": false
+                }
+              }
+            },
+            {
+              "type": "tool-result",
+              "toolCallId": "call-denied",
+              "toolName": "lookup",
+              "output": {
+                "type": "execution-denied",
+                "reason": "permission denied"
+              }
+            }
+          ]
+        }
+      ],
+      "tools": [
+        {
+          "type": "function",
+          "name": "lookup",
+          "description": "Read service evidence",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "service": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "service"
+            ],
+            "additionalProperties": false
+          },
+          "inputExamples": [
+            {
+              "input": {
+                "service": "checkout"
+              }
+            }
+          ],
+          "strict": false,
+          "providerOptions": {
+            "empty": {}
+          }
+        }
+      ],
+      "toolChoice": {
+        "type": "none"
+      }
+    }
+  }
+]

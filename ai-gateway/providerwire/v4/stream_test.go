@@ -320,7 +320,7 @@ func TestStreamingRuntimeTextStateAndUnsupportedParts(t *testing.T) {
 		{name: "end without start", parts: []provider.StreamPart{{Type: provider.PartTextEnd, ID: "a"}}},
 		{name: "reused id", parts: []provider.StreamPart{{Type: provider.PartTextStart, ID: "a"}, {Type: provider.PartTextEnd, ID: "a"}, {Type: provider.PartTextStart, ID: "a"}}},
 		{name: "reasoning", parts: []provider.StreamPart{{Type: provider.PartReasoningStart, ID: "private"}}},
-		{name: "tool", parts: []provider.StreamPart{{Type: provider.PartToolCall, ToolName: "private"}}},
+		{name: "provider tool result", parts: []provider.StreamPart{{Type: provider.PartToolResult, ToolCallID: "private-id", ToolName: "private-tool"}}},
 		{name: "file", parts: []provider.StreamPart{{Type: provider.PartFile, Filename: "private"}}},
 		{name: "source", parts: []provider.StreamPart{{Type: provider.PartSource, Title: "private"}}},
 		{name: "custom", parts: []provider.StreamPart{{Type: provider.PartCustom, Kind: "private"}}},
@@ -411,6 +411,10 @@ func TestStreamingRuntimePartLimitAndTerminalAuthority(t *testing.T) {
 			{Type: provider.PartTextStart, ID: "a"},
 			{Type: provider.PartTextDelta, ID: "a", Delta: ""},
 			{Type: provider.PartTextEnd, ID: "a"},
+			{Type: provider.PartToolInputStart, ID: "call-1", ToolName: "read_evidence"},
+			{Type: provider.PartToolInputDelta, ID: "call-1", Delta: ""},
+			{Type: provider.PartToolInputEnd, ID: "call-1"},
+			{Type: provider.PartToolCall, ToolCallID: "call-1", ToolName: "read_evidence", Input: `{}`},
 			finishPart(),
 		}
 		for _, limit := range []int{len(parts), len(parts) - 1} {
@@ -446,21 +450,44 @@ func TestStreamingRuntimePartLimitAndTerminalAuthority(t *testing.T) {
 	})
 
 	t.Run("continuously ready flood stops at cardinality", func(t *testing.T) {
-		limits := testLimits()
-		limits.StreamParts = 8
-		stream := make(chan provider.StreamPart, 128)
-		for i := 0; i < 64; i++ {
-			id := fmt.Sprintf("id-%d", i)
-			stream <- provider.StreamPart{Type: provider.PartTextStart, ID: id}
-			stream <- provider.StreamPart{Type: provider.PartTextEnd, ID: id}
+		for _, tc := range []struct {
+			name          string
+			parts         func(string) []provider.StreamPart
+			firstExcluded string
+		}{
+			{
+				name: "text blocks",
+				parts: func(id string) []provider.StreamPart {
+					return []provider.StreamPart{{Type: provider.PartTextStart, ID: id}, {Type: provider.PartTextEnd, ID: id}}
+				},
+				firstExcluded: "id-4",
+			},
+			{
+				name: "tool calls",
+				parts: func(id string) []provider.StreamPart {
+					return []provider.StreamPart{{Type: provider.PartToolCall, ToolCallID: id, ToolName: "read_evidence", Input: `{}`}}
+				},
+				firstExcluded: "id-8",
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				limits := testLimits()
+				limits.StreamParts = 8
+				stream := make(chan provider.StreamPart, 128)
+				for i := 0; i < 64; i++ {
+					for _, part := range tc.parts(fmt.Sprintf("id-%d", i)) {
+						stream <- part
+					}
+				}
+				harness := newRuntimeHarness(t, limits)
+				harness.model.stream = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+					return &provider.StreamResult{Stream: stream}, nil
+				}
+				response := harness.serve(streamRequest(`{"prompt":[]}`))
+				assert.Equal(t, 1, strings.Count(response.Body.String(), `"code":"internal_error"`))
+				assert.NotContains(t, response.Body.String(), tc.firstExcluded)
+			})
 		}
-		harness := newRuntimeHarness(t, limits)
-		harness.model.stream = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
-			return &provider.StreamResult{Stream: stream}, nil
-		}
-		response := harness.serve(streamRequest(`{"prompt":[]}`))
-		assert.Equal(t, 1, strings.Count(response.Body.String(), `"code":"internal_error"`))
-		assert.NotContains(t, response.Body.String(), "id-4")
 	})
 }
 

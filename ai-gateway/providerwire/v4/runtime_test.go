@@ -304,7 +304,7 @@ func TestRuntimeUnsupportedCapabilities(t *testing.T) {
 		{name: "files", body: `{"prompt":[{"role":"user","content":[{"type":"file","data":{"type":"text","text":"x"},"mediaType":"text/plain"}]}]}`, capability: capabilityFiles},
 		{name: "reasoning", body: `{"prompt":[{"role":"assistant","content":[{"type":"reasoning","text":"x"}]}]}`, capability: capabilityReasoningContent},
 		{name: "custom", body: `{"prompt":[{"role":"assistant","content":[{"type":"custom","kind":"p.x"}]}]}`, capability: capabilityCustomContent},
-		{name: "tools", body: `{"prompt":[],"tools":[{"type":"function","name":"f","inputSchema":{}}]}`, capability: capabilityTools},
+		{name: "provider tools", body: `{"prompt":[],"tools":[{"type":"provider","name":"f","id":"provider.f","args":{}}]}`, capability: capabilityProviderDefinedTools},
 		{name: "tool approvals", body: `{"prompt":[{"role":"tool","content":[{"type":"tool-approval-response","approvalId":"a","approved":false}]}]}`, capability: capabilityToolApprovals},
 		{name: "structured output", body: `{"prompt":[],"responseFormat":{"type":"json"}}`, capability: capabilityStructuredOutput},
 		{name: "provider options", body: `{"prompt":[],"providerOptions":{"p":{"enabled":true}}}`, capability: capabilityProviderOptions},

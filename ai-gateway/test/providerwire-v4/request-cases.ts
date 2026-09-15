@@ -288,6 +288,64 @@ async function comprehensiveCapture(): Promise<SemanticRequest[]> {
   });
 }
 
+async function functionToolsCapture(): Promise<SemanticRequest[]> {
+  const tools: LanguageModelV4CallOptions["tools"] = [{
+    type: "function",
+    name: "lookup",
+    description: "Read service evidence",
+    inputSchema: {
+      type: "object",
+      properties: { service: { type: "string" } },
+      required: ["service"],
+      additionalProperties: false,
+    },
+    inputExamples: [{ input: { service: "checkout" } }],
+    strict: false,
+    providerOptions: { empty: {} },
+  }];
+  const user: LanguageModelV4CallOptions["prompt"][number] = {
+    role: "user",
+    content: [{ type: "text", text: "Read checkout evidence" }],
+  };
+  return captureCalls({
+    modelId: "grafana/function-tools",
+    calls: async (model) => {
+      await generate(model, {
+        prompt: [user],
+        tools,
+        toolChoice: { type: "required" },
+      });
+      await stream(model, {
+        prompt: [
+          user,
+          {
+            role: "assistant",
+            content: ["text", "json", "error-text", "error-json", "denied"].map((kind) => ({
+              type: "tool-call" as const,
+              toolCallId: `call-${kind}`,
+              toolName: "lookup",
+              input: { service: "checkout" },
+              providerExecuted: false,
+            })),
+          },
+          {
+            role: "tool",
+            content: [
+              { type: "tool-result", toolCallId: "call-text", toolName: "lookup", output: { type: "text", value: "" } },
+              { type: "tool-result", toolCallId: "call-json", toolName: "lookup", output: { type: "json", value: { errorRate: 4.2, missing: null } } },
+              { type: "tool-result", toolCallId: "call-error-text", toolName: "lookup", output: { type: "error-text", value: "query failed" } },
+              { type: "tool-result", toolCallId: "call-error-json", toolName: "lookup", output: { type: "error-json", value: { retryable: false } } },
+              { type: "tool-result", toolCallId: "call-denied", toolName: "lookup", output: { type: "execution-denied", reason: "permission denied" } },
+            ],
+          },
+        ],
+        tools,
+        toolChoice: { type: "none" },
+      });
+    },
+  });
+}
+
 async function streamingCapture(): Promise<SemanticRequest[]> {
   const controller = new AbortController();
   return captureCalls({
@@ -363,6 +421,11 @@ export const comprehensiveGoldenCase: RequestGoldenCase = {
   fileName: "comprehensive-unions.json",
   capture: comprehensiveCapture,
 };
+export const functionToolsGoldenCase: RequestGoldenCase = {
+  name: "function tools and result replay",
+  fileName: "function-tools.json",
+  capture: functionToolsCapture,
+};
 export const streamingGoldenCase: RequestGoldenCase = {
   name: "streaming",
   fileName: "streaming.json",
@@ -382,6 +445,7 @@ export const sequenceGoldenCase: RequestGoldenCase = {
 export const requestGoldenCases: RequestGoldenCase[] = [
   scalarGoldenCase,
   comprehensiveGoldenCase,
+  functionToolsGoldenCase,
   streamingGoldenCase,
   headersGoldenCase,
   sequenceGoldenCase,

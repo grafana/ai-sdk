@@ -1,20 +1,17 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://grafana.com/ai-sdk/providerwire/v4/unary-success.schema.json",
-  "title": "ProviderWire V4 unary text response",
+  "title": "ProviderWire V4 unary text and function tool response",
   "type": "object",
   "required": ["content", "finishReason", "usage"],
   "properties": {
     "content": {
       "type": "array",
       "items": {
-        "type": "object",
-        "required": ["type", "text"],
-        "properties": {
-          "type": { "const": "text" },
-          "text": { "type": "string" }
-        },
-        "additionalProperties": false
+        "oneOf": [
+          { "$ref": "#/$defs/textPart" },
+          { "$ref": "#/$defs/toolCallPart" }
+        ]
       }
     },
     "finishReason": {
@@ -40,6 +37,27 @@
   },
   "additionalProperties": false,
   "$defs": {
+    "textPart": {
+      "type": "object",
+      "required": ["type", "text"],
+      "properties": {
+        "type": { "const": "text" },
+        "text": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "toolCallPart": {
+      "type": "object",
+      "required": ["type", "toolCallId", "toolName", "input"],
+      "properties": {
+        "type": { "const": "tool-call" },
+        "toolCallId": { "type": "string", "minLength": 1 },
+        "toolName": { "type": "string", "minLength": 1 },
+        "input": { "type": "string" },
+        "dynamic": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
     "tokenCount": {
       "type": "integer",
       "minimum": 0,

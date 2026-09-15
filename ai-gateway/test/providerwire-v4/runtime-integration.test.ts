@@ -11,12 +11,21 @@ import {
   GatewayInvalidRequestError,
   GatewayModelNotFoundError,
 } from "@ai-sdk/gateway";
-import type { LanguageModelV4StreamPart } from "@ai-sdk/provider";
+import type { LanguageModelV4CallOptions, LanguageModelV4StreamPart } from "@ai-sdk/provider";
 
 const TEST_DIR = dirname(fileURLToPath(import.meta.url));
 const SERVER_DIR = resolve(TEST_DIR, "testserver");
 const POLL_INTERVAL_MS = 10;
 const POLL_TIMEOUT_MS = 15_000;
+
+const toolArgumentOptions: LanguageModelV4CallOptions = {
+  prompt: [],
+  tools: [{ type: "function", name: "lookup", inputSchema: { type: "object" } }],
+};
+const toolArgumentCalls = [
+  { type: "tool-call", toolCallId: "call-empty", toolName: "lookup", input: "" },
+  { type: "tool-call", toolCallId: "call-malformed", toolName: "lookup", input: '{"service":' },
+];
 
 let serverProcess: ChildProcess | undefined;
 let temporaryDirectory: string;
@@ -123,6 +132,24 @@ before(async () => { baseURL = await startServer(); });
 after(async () => { await stopServer(); });
 
 describe("real ProviderWire V4 streaming runtime", () => {
+  it("preserves empty and malformed tool argument strings through clean EOF", async () => {
+    const result = await model("tool-arguments").doStream(toolArgumentOptions);
+    const parts = await collect(result.stream);
+
+    assert.deepEqual(parts[0], { type: "stream-start", warnings: [] });
+    assert.deepEqual(parts.slice(1, -1), toolArgumentCalls.flatMap((call) => [
+      { type: "tool-input-start", id: call.toolCallId, toolName: call.toolName },
+      { type: "tool-input-delta", id: call.toolCallId, delta: call.input },
+      { type: "tool-input-end", id: call.toolCallId },
+      call,
+    ]));
+    const finish = parts.at(-1);
+    assert.equal(finish?.type, "finish");
+    if (finish?.type === "finish") {
+      assert.equal(finish.finishReason.unified, "tool-calls");
+    }
+  });
+
   it("consumes normalized text, metadata, warnings, finish, and clean EOF", async () => {
     const result = await model("success").doStream({ prompt: [] });
     const parts = await collect(result.stream);
@@ -198,6 +225,13 @@ describe("real ProviderWire V4 streaming runtime", () => {
 });
 
 describe("real ProviderWire V4 unary runtime", () => {
+  it("preserves empty and malformed tool argument strings", async () => {
+    const result = await model("tool-arguments").doGenerate(toolArgumentOptions);
+
+    assert.deepEqual(result.content, toolArgumentCalls);
+    assert.equal(result.finishReason.unified, "tool-calls");
+  });
+
   it("consumes the minimal production response", async () => {
     const result = await model("success").doGenerate({
       prompt: [{ role: "system", content: "hello" }],

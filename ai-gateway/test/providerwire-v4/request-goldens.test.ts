@@ -5,6 +5,7 @@ import { createGateway } from "@ai-sdk/gateway";
 import { createCaptureFetch, drainStream } from "./capture.ts";
 import {
   comprehensiveGoldenCase,
+  functionToolsGoldenCase,
   headersGoldenCase,
   requestGoldenCases,
   scalarGoldenCase,
@@ -125,6 +126,26 @@ describe("registered Gateway semantic request goldens", () => {
     assert.equal(reasoningURL.data.url, "https://example.test/reasoning");
     assert.equal(resultBytes.data.data, "BQY=");
     assert.equal(resultURL.data.url, "https://example.test/result");
+  });
+
+  it("preserves function definitions and JSON-valued result replay", async () => {
+    const requests = await functionToolsGoldenCase.capture();
+    assert.deepEqual(requests.map((request) => request.streaming), [false, true]);
+    const initial = requests[0].body as JsonObject;
+    assert.deepEqual(initial.toolChoice, { type: "required" });
+    assert.equal(initial.tools[0].strict, false);
+    assert.deepEqual(initial.tools[0].inputExamples, [{ input: { service: "checkout" } }]);
+    const replay = requests[1].body as JsonObject;
+    assert.deepEqual(replay.toolChoice, { type: "none" });
+    assert.deepEqual(message(replay, "assistant").content[0].input, { service: "checkout" });
+    assert.equal(message(replay, "assistant").content[0].providerExecuted, false);
+    assert.deepEqual(message(replay, "tool").content.map((part: JsonObject) => part.output), [
+      { type: "text", value: "" },
+      { type: "json", value: { errorRate: 4.2, missing: null } },
+      { type: "error-text", value: "query failed" },
+      { type: "error-json", value: { retryable: false } },
+      { type: "execution-denied", reason: "permission denied" },
+    ]);
   });
 
   it("omits abortSignal from the streaming body", async () => {

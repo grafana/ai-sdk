@@ -48,15 +48,17 @@ var (
 	canonicalCancellationError   = []byte(`{"error":{"message":"request canceled","type":"internal_server_error","param":null,"code":"canceled"}}`)
 	canonicalInternalError       = []byte(`{"error":{"message":"internal error","type":"internal_server_error","param":null,"code":"internal_error"}}`)
 
-	unsupportedFilesError            = []byte(`{"error":{"message":"unsupported capability: files","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
-	unsupportedReasoningContentError = []byte(`{"error":{"message":"unsupported capability: reasoning-content","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
-	unsupportedCustomContentError    = []byte(`{"error":{"message":"unsupported capability: custom-content","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
-	unsupportedToolsError            = []byte(`{"error":{"message":"unsupported capability: tools","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
-	unsupportedToolApprovalsError    = []byte(`{"error":{"message":"unsupported capability: tool-approvals","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
-	unsupportedStructuredOutputError = []byte(`{"error":{"message":"unsupported capability: structured-output","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
-	unsupportedProviderOptionsError  = []byte(`{"error":{"message":"unsupported capability: provider-options","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
-	unsupportedBodyHeadersError      = []byte(`{"error":{"message":"unsupported capability: body-headers","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
-	unsupportedRawOutputError        = []byte(`{"error":{"message":"unsupported capability: raw-output","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
+	unsupportedFilesError                 = []byte(`{"error":{"message":"unsupported capability: files","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
+	unsupportedReasoningContentError      = []byte(`{"error":{"message":"unsupported capability: reasoning-content","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
+	unsupportedCustomContentError         = []byte(`{"error":{"message":"unsupported capability: custom-content","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
+	unsupportedProviderDefinedToolsError  = []byte(`{"error":{"message":"unsupported capability: provider-defined-tools","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
+	unsupportedProviderExecutedToolsError = []byte(`{"error":{"message":"unsupported capability: provider-executed-tools","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
+	unsupportedMultipartToolResultsError  = []byte(`{"error":{"message":"unsupported capability: multipart-tool-results","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
+	unsupportedToolApprovalsError         = []byte(`{"error":{"message":"unsupported capability: tool-approvals","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
+	unsupportedStructuredOutputError      = []byte(`{"error":{"message":"unsupported capability: structured-output","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
+	unsupportedProviderOptionsError       = []byte(`{"error":{"message":"unsupported capability: provider-options","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
+	unsupportedBodyHeadersError           = []byte(`{"error":{"message":"unsupported capability: body-headers","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
+	unsupportedRawOutputError             = []byte(`{"error":{"message":"unsupported capability: raw-output","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
 )
 
 func documentForSafeError(value safeError) safeErrorDocument {
@@ -94,8 +96,12 @@ func unsupportedCapabilityDocument(capability unsupportedCapability) []byte {
 		return unsupportedReasoningContentError
 	case capabilityCustomContent:
 		return unsupportedCustomContentError
-	case capabilityTools:
-		return unsupportedToolsError
+	case capabilityProviderDefinedTools:
+		return unsupportedProviderDefinedToolsError
+	case capabilityProviderExecutedTools:
+		return unsupportedProviderExecutedToolsError
+	case capabilityMultipartToolResults:
+		return unsupportedMultipartToolResultsError
 	case capabilityToolApprovals:
 		return unsupportedToolApprovalsError
 	case capabilityStructuredOutput:

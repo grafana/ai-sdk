@@ -19,6 +19,9 @@ importers:
       '@ai-sdk/provider-utils':
         specifier: 5.0.27
         version: 5.0.27(zod@4.4.3)
+      ai:
+        specifier: 7.0.65
+        version: 7.0.65(zod@4.4.3)
       ajv:
         specifier: 8.17.1
         version: 8.17.1
