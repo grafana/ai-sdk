@@ -1,0 +1,150 @@
+{
+  "upstreamCommit": "d76eb85a9a7f2dbe44ab2f3dc858ad5cdcb5242e",
+  "packages": {
+    "@ai-sdk/gateway": "4.0.52",
+    "@ai-sdk/provider": "4.0.7",
+    "@ai-sdk/provider-utils": "5.0.27"
+  },
+  "types": {
+    "CallOptions": "struct {\n\tPrompt           []Message         `json:\"prompt,omitempty\"`\n\tTools            []Tool            `json:\"tools,omitempty\"`\n\tToolChoice       *ToolChoice       `json:\"toolChoice,omitempty\"`\n\tMaxOutputTokens  *int              `json:\"maxOutputTokens,omitempty\"`\n\tTemperature      *float64          `json:\"temperature,omitempty\"`\n\tTopP             *float64          `json:\"topP,omitempty\"`\n\tTopK             *int              `json:\"topK,omitempty\"`\n\tPresencePenalty  *float64          `json:\"presencePenalty,omitempty\"`\n\tFrequencyPenalty *float64          `json:\"frequencyPenalty,omitempty\"`\n\tStopSequences    []string          `json:\"stopSequences,omitempty\"`\n\tResponseFormat   *ResponseFormat   `json:\"responseFormat,omitempty\"`\n\tSeed             *int              `json:\"seed,omitempty\"`\n\tReasoning        ReasoningEffort   `json:\"reasoning,omitempty\"`\n\tIncludeRawChunks bool              `json:\"includeRawChunks,omitempty\"`\n\tHeaders          map[string]string `json:\"headers,omitempty\"`\n\tProviderOptions  ProviderOptions   `json:\"providerOptions,omitempty\"`\n}",
+    "ContentPart": "struct {\n\tType ContentPartType `json:\"type\"`\n\n\tText string `json:\"text,omitempty\"`\n\n\tData *DataContent `json:\"data,omitempty\"`\n\n\tFilename string `json:\"filename,omitempty\"`\n\n\tMediaType string `json:\"mediaType,omitempty\"`\n\n\tKind string `json:\"kind,omitempty\"`\n\n\tSourceType SourceType `json:\"sourceType,omitempty\"`\n\n\tID string `json:\"id,omitempty\"`\n\n\tURL string `json:\"url,omitempty\"`\n\n\tTitle string `json:\"title,omitempty\"`\n\n\tToolCallID string `json:\"toolCallId,omitempty\"`\n\n\tToolName string `json:\"toolName,omitempty\"`\n\n\tInput json.RawMessage `json:\"input,omitempty\"`\n\n\tOutput *ToolResultOutput `json:\"output,omitempty\"`\n\n\tProviderExecuted bool `json:\"providerExecuted,omitempty\"`\n\n\tApprovalID string `json:\"approvalId,omitempty\"`\n\n\tSignature string `json:\"signature,omitempty\"`\n\n\tIsAutomatic bool `json:\"isAutomatic,omitempty\"`\n\n\tApproved *bool `json:\"approved,omitempty\"`\n\n\tReason string `json:\"reason,omitempty\"`\n\n\tProviderOptions ProviderOptions `json:\"providerOptions,omitempty\"`\n}",
+    "ContentPartType": "string",
+    "DataContent": "struct {\n\tBytes  []byte `json:\"bytes,omitempty\"`\n\tBase64 string `json:\"base64,omitempty\"`\n\tURL    string `json:\"url,omitempty\"`\n\n\tReference json.RawMessage `json:\"reference,omitempty\"`\n\n\tText    string `json:\"text,omitempty\"`\n\tvariant dataContentVariant\n}",
+    "InputExample": "struct {\n\tInput json.RawMessage `json:\"input\"`\n}",
+    "Message": "struct {\n\tRole            Role            `json:\"role\"`\n\tContent         []ContentPart   `json:\"content\"`\n\tProviderOptions ProviderOptions `json:\"providerOptions,omitempty\"`\n}",
+    "ProviderOption": "interface {\n\tProviderKey() string\n}",
+    "ProviderOptions": "map[string]ProviderOption",
+    "ReasoningEffort": "string",
+    "ResponseFormat": "struct {\n\tType        ResponseFormatType `json:\"type\"`\n\tSchema      json.RawMessage    `json:\"schema,omitempty\"`\n\tName        string             `json:\"name,omitempty\"`\n\tDescription string             `json:\"description,omitempty\"`\n}",
+    "ResponseFormatType": "string",
+    "Role": "string",
+    "SourceType": "string",
+    "Tool": "struct {\n\tType ToolType `json:\"type\"`\n\tName string   `json:\"name\"`\n\n\tDescription   string          `json:\"description,omitempty\"`\n\tInputSchema   json.RawMessage `json:\"inputSchema,omitempty\"`\n\tInputExamples []InputExample  `json:\"inputExamples,omitempty\"`\n\tStrict        *bool           `json:\"strict,omitempty\"`\n\n\tID   string                     `json:\"id,omitempty\"`\n\tArgs map[string]json.RawMessage `json:\"args,omitempty\"`\n\n\tProviderOptions ProviderOptions `json:\"providerOptions,omitempty\"`\n}",
+    "ToolChoice": "struct {\n\tType     ToolChoiceType `json:\"type\"`\n\tToolName string         `json:\"toolName,omitempty\"`\n}",
+    "ToolChoiceType": "string",
+    "ToolResultContentType": "string",
+    "ToolResultContentValue": "struct {\n\tType            ToolResultContentType `json:\"type\"`\n\tText            string                `json:\"text,omitempty\"`\n\tData            *DataContent          `json:\"data,omitempty\"`\n\tMediaType       string                `json:\"mediaType,omitempty\"`\n\tFilename        string                `json:\"filename,omitempty\"`\n\tProviderOptions ProviderOptions       `json:\"providerOptions,omitempty\"`\n}",
+    "ToolResultOutput": "struct {\n\tType            ToolResultOutputType     `json:\"type\"`\n\tText            string                   `json:\"text,omitempty\"`\n\tJSON            json.RawMessage          `json:\"json,omitempty\"`\n\tContent         []ToolResultContentValue `json:\"content,omitempty\"`\n\tReason          string                   `json:\"reason,omitempty\"`\n\tProviderOptions ProviderOptions          `json:\"providerOptions,omitempty\"`\n}",
+    "ToolResultOutputType": "string",
+    "ToolType": "string",
+    "dataContentVariant": "string"
+  },
+  "constants": {
+    "ContentPartType": {
+      "ContentPartTypeCustom": "\"custom\"",
+      "ContentPartTypeFile": "\"file\"",
+      "ContentPartTypeReasoning": "\"reasoning\"",
+      "ContentPartTypeReasoningFile": "\"reasoning-file\"",
+      "ContentPartTypeSource": "\"source\"",
+      "ContentPartTypeText": "\"text\"",
+      "ContentPartTypeToolApprovalRequest": "\"tool-approval-request\"",
+      "ContentPartTypeToolApprovalResponse": "\"tool-approval-response\"",
+      "ContentPartTypeToolCall": "\"tool-call\"",
+      "ContentPartTypeToolResult": "\"tool-result\""
+    },
+    "ReasoningEffort": {
+      "ReasoningHigh": "\"high\"",
+      "ReasoningLow": "\"low\"",
+      "ReasoningMedium": "\"medium\"",
+      "ReasoningMinimal": "\"minimal\"",
+      "ReasoningNone": "\"none\"",
+      "ReasoningProviderDefault": "\"\"",
+      "ReasoningXHigh": "\"xhigh\""
+    },
+    "ResponseFormatType": {
+      "ResponseFormatJSON": "\"json\"",
+      "ResponseFormatText": "\"text\""
+    },
+    "Role": {
+      "RoleAssistant": "\"assistant\"",
+      "RoleSystem": "\"system\"",
+      "RoleTool": "\"tool\"",
+      "RoleUser": "\"user\""
+    },
+    "SourceType": {
+      "SourceTypeDocument": "\"document\"",
+      "SourceTypeURL": "\"url\""
+    },
+    "ToolChoiceType": {
+      "ToolChoiceAuto": "\"auto\"",
+      "ToolChoiceNone": "\"none\"",
+      "ToolChoiceRequired": "\"required\"",
+      "ToolChoiceTool": "\"tool\""
+    },
+    "ToolResultContentType": {
+      "ToolContentCustom": "\"custom\"",
+      "ToolContentFile": "\"file\"",
+      "ToolContentFileData": "\"file-data\"",
+      "ToolContentFileReference": "\"file-reference\"",
+      "ToolContentFileURL": "\"file-url\"",
+      "ToolContentText": "\"text\""
+    },
+    "ToolResultOutputType": {
+      "ToolOutputContent": "\"content\"",
+      "ToolOutputErrorJSON": "\"error-json\"",
+      "ToolOutputErrorText": "\"error-text\"",
+      "ToolOutputExecutionDenied": "\"execution-denied\"",
+      "ToolOutputJSON": "\"json\"",
+      "ToolOutputText": "\"text\""
+    },
+    "ToolType": {
+      "ToolTypeFunction": "\"function\"",
+      "ToolTypeProvider": "\"provider\""
+    },
+    "dataContentVariant": {
+      "dataContentVariantData": "\"data\"",
+      "dataContentVariantRef": "\"reference\"",
+      "dataContentVariantText": "\"text\"",
+      "dataContentVariantURL": "\"url\""
+    }
+  },
+  "classifications": {
+    "ContentPartTypeCustom": "mapped",
+    "ContentPartTypeFile": "mapped",
+    "ContentPartTypeReasoning": "mapped",
+    "ContentPartTypeReasoningFile": "mapped",
+    "ContentPartTypeSource": "rejected",
+    "ContentPartTypeText": "mapped",
+    "ContentPartTypeToolApprovalRequest": "rejected",
+    "ContentPartTypeToolApprovalResponse": "mapped",
+    "ContentPartTypeToolCall": "mapped",
+    "ContentPartTypeToolResult": "mapped",
+    "ReasoningHigh": "mapped",
+    "ReasoningLow": "mapped",
+    "ReasoningMedium": "mapped",
+    "ReasoningMinimal": "mapped",
+    "ReasoningNone": "mapped",
+    "ReasoningProviderDefault": "omitted",
+    "ReasoningXHigh": "mapped",
+    "ResponseFormatJSON": "mapped",
+    "ResponseFormatText": "mapped",
+    "RoleAssistant": "mapped",
+    "RoleSystem": "mapped",
+    "RoleTool": "mapped",
+    "RoleUser": "mapped",
+    "SourceTypeDocument": "rejected",
+    "SourceTypeURL": "rejected",
+    "ToolChoiceAuto": "mapped",
+    "ToolChoiceNone": "mapped",
+    "ToolChoiceRequired": "mapped",
+    "ToolChoiceTool": "mapped",
+    "ToolContentCustom": "mapped",
+    "ToolContentFile": "mapped",
+    "ToolContentFileData": "rejected",
+    "ToolContentFileReference": "rejected",
+    "ToolContentFileURL": "rejected",
+    "ToolContentText": "mapped",
+    "ToolOutputContent": "mapped",
+    "ToolOutputErrorJSON": "mapped",
+    "ToolOutputErrorText": "mapped",
+    "ToolOutputExecutionDenied": "mapped",
+    "ToolOutputJSON": "mapped",
+    "ToolOutputText": "mapped",
+    "ToolTypeFunction": "mapped",
+    "ToolTypeProvider": "mapped",
+    "dataContentVariantData": "mapped",
+    "dataContentVariantRef": "mapped",
+    "dataContentVariantText": "mapped",
+    "dataContentVariantURL": "mapped"
+  }
+}

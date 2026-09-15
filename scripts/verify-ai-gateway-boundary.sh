@@ -118,6 +118,21 @@ done < <(GOWORK=off GOFLAGS="$readonly_flags" go list -m all)
 GOWORK=off GOFLAGS="$readonly_flags" go build ./...
 GOWORK=off GOFLAGS="$readonly_flags" go test ./...
 (
+  cd providers/grafana
+  if [[ $(GOWORK=off go mod edit -json | jq '(.Replace // []) | length') -ne 0 ]]; then
+    echo "Grafana client must not contain replace directives" >&2
+    exit 1
+  fi
+  while read -r module _; do
+    if [[ "$module" == "$gateway_module" || "$module" == "$gateway_module/"* ]]; then
+      echo "the Grafana client module graph contains the AI Gateway module" >&2
+      exit 1
+    fi
+  done < <(GOWORK=off GOFLAGS="$readonly_flags" go list -m all)
+  GOWORK=off GOFLAGS="$readonly_flags" go build ./...
+  GOWORK=off GOFLAGS="$readonly_flags" go test ./...
+)
+(
   cd ai-gateway
   GOWORK=off GOFLAGS="$readonly_flags" go build ./...
   GOWORK=off GOFLAGS="$readonly_flags" go test ./...

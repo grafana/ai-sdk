@@ -35,6 +35,7 @@ mise run test-root
 mise run test-ai-gateway
 mise run test-anthropic
 mise run test-bedrock
+mise run test-grafana
 mise run test-openai
 mise run test-openai-compatible
 mise run test-logger-middleware
@@ -62,6 +63,10 @@ run = "cd providers/bedrock && go test ./..."
 [tasks.test-openai]
 description = "Run OpenAI provider tests"
 run = "cd providers/openai && go test ./..."
+
+[tasks.test-grafana]
+description = "Run Grafana Gateway client tests"
+run = "cd providers/grafana && go test ./..."
 
 [tasks.test-openai-compatible]
 description = "Run OpenAI-compatible provider tests"
@@ -95,6 +100,7 @@ go test -short ./...
 (cd ai-gateway && GOWORK=off GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" go test -short ./...)
 (cd providers/anthropic && go test -short ./...)
 (cd providers/bedrock && go test -short ./...)
+(cd providers/grafana && go test -short ./...)
 (cd providers/openai && go test -short ./...)
 (cd providers/openai-compatible && go test -short ./...)
 (cd middleware/logger && go test -short ./...)
@@ -121,6 +127,7 @@ go vet ./...
 (cd ai-gateway && GOWORK=off GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" go vet ./...)
 (cd providers/anthropic && go vet ./...)
 (cd providers/bedrock && go vet ./...)
+(cd providers/grafana && go vet ./...)
 (cd providers/openai && go vet ./...)
 (cd providers/openai-compatible && go vet ./...)
 (cd middleware/logger && go vet ./...)
@@ -216,6 +223,7 @@ go mod tidy
 (cd ai-gateway && GOWORK=off go mod tidy)
 (cd providers/anthropic && go mod tidy)
 (cd providers/bedrock && go mod tidy)
+(cd providers/grafana && go mod tidy)
 (cd providers/openai && go mod tidy)
 (cd providers/openai-compatible && go mod tidy)
 (cd middleware/logger && go mod tidy)
@@ -232,6 +240,7 @@ go build ./...
 (cd ai-gateway && GOWORK=off GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" go build ./...)
 (cd providers/anthropic && go build ./...)
 (cd providers/bedrock && go build ./...)
+(cd providers/grafana && go build ./...)
 (cd providers/openai && go build ./...)
 (cd providers/openai-compatible && go build ./...)
 (cd middleware/logger && go build ./...)

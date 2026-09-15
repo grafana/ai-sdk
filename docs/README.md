@@ -76,6 +76,7 @@ the service your application calls:
 - [OpenAI](providers/openai.md) for the Responses API.
 - [OpenAI-compatible APIs](providers/openai-compatible.md) for local or hosted
   Chat Completions-compatible servers.
+- [Grafana AI Gateway](providers/grafana-gateway.md) for authenticated public-model discovery and text calls.
 
 ## Extend model infrastructure
 

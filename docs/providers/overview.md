@@ -12,6 +12,7 @@ authentication your application uses.
 | [Amazon Bedrock](bedrock.md) | You call models through AWS Bedrock Converse |
 | [OpenAI](openai.md) | You call OpenAI's Responses API |
 | [OpenAI-compatible](openai-compatible.md) | You call a Chat Completions-compatible `/v1/chat/completions` server |
+| [Grafana AI Gateway](grafana-gateway.md) | You call an internally provisioned Gateway with Grafana access-token or CAP authentication |
 
 The OpenAI provider targets OpenAI's current Responses API. The OpenAI-compatible
 provider targets vLLM, LM Studio, Kimi/Moonshot, and other servers implementing

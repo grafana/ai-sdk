@@ -4,10 +4,12 @@ import { readFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
+import { collectGatewayContract, readGatewayContractEvidence, validateGatewayContract } from "./gateway-client-contract.mts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export interface BaselineManifest {
+  upstream?: { commit?: string };
   packages?: Record<string, unknown>;
 }
 
@@ -77,6 +79,12 @@ export function validateBaselineFiles(manifestPath: string, packagePaths: string
     errors.push(...validateBaseline(baseline, packageManifest, packageLabel, requiredPackages));
   }
 
+  try {
+    errors.push(...validateGatewayContract(baseline, readGatewayContractEvidence(), collectGatewayContract()));
+  } catch (error) {
+    errors.push(`Gateway client contract witness failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
   return errors;
 }
 
@@ -118,7 +126,7 @@ function main(): void {
     process.exitCode = 1;
     return;
   }
-  console.log("parity baseline: package versions match all parity TypeScript consumers");
+  console.log("parity baseline: package versions and reviewed Gateway client contract match");
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

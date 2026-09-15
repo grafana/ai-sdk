@@ -10,6 +10,7 @@ use (
 	./middleware/prometheus
 	./providers/anthropic
 	./providers/bedrock
+	./providers/grafana
 	./providers/openai
 	./providers/openai-compatible
 	./test/conformance
