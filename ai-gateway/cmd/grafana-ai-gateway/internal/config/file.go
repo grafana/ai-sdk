@@ -104,7 +104,7 @@ func (file File) Validate() error {
 			return fmt.Errorf("config: provider name must not be empty")
 		}
 		switch provider.Type {
-		case "anthropic":
+		case "anthropic", "openai":
 			if provider.ProviderName != "" {
 				return fmt.Errorf("config: providers.%s.providerName is only supported for openai-compatible providers", name)
 			}
@@ -113,7 +113,7 @@ func (file File) Validate() error {
 				return fmt.Errorf("config: providers.%s.baseURL is required for openai-compatible providers", name)
 			}
 		default:
-			return fmt.Errorf("config: providers.%s.type %q is unsupported (want anthropic or openai-compatible)", name, provider.Type)
+			return fmt.Errorf("config: providers.%s.type %q is unsupported (want anthropic, openai or openai-compatible)", name, provider.Type)
 		}
 		if strings.TrimSpace(provider.APIKeyEnv) == "" {
 			return fmt.Errorf("config: providers.%s.apiKeyEnv is required", name)

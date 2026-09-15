@@ -12,9 +12,11 @@ require (
 	github.com/grafana/ai-sdk/middleware/logger v0.0.0-20260915200037-0b83f45375ca
 	github.com/grafana/ai-sdk/middleware/prometheus v0.0.0-20260915200037-0b83f45375ca
 	github.com/grafana/ai-sdk/providers/anthropic v0.0.0-20260911144556-21bc49445c2b
+	github.com/grafana/ai-sdk/providers/openai v0.0.0-20260914170650-fd08a3a81a11
 	github.com/grafana/ai-sdk/providers/openai-compatible v0.0.0-20260914170650-fd08a3a81a11
 	github.com/grafana/authlib v0.0.0-20260814184937-0d62418c2815
 	github.com/grafana/authlib/types v0.0.0-20260814184937-0d62418c2815
+	github.com/openai/openai-go/v3 v3.48.0
 	github.com/prometheus/client_golang v1.24.1
 	github.com/stretchr/testify v1.11.1
 	go.yaml.in/yaml/v4 v4.0.0-rc.6
