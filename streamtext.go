@@ -1452,8 +1452,7 @@ func (r *StreamTextResult) handleToolResult(
 }
 
 // toolExecOutcome holds the result of a single tool execution, including
-// the stream event to emit. Events are collected during concurrent execution
-// and emitted in declaration order afterwards to match the upstream TS SDK.
+// the stream event to emit when that tool completes.
 type toolExecOutcome struct {
 	result ToolResult
 	event  TextStreamPart // StreamToolResult or StreamToolError
@@ -1639,29 +1638,35 @@ func (r *StreamTextResult) executeTools(
 	}
 
 	outcomes := make([]toolExecOutcome, len(executable))
+	r.runToolsEmitOnCompletion(cfg, outcomes, func(i int) {
+		et := executable[i]
+		r.executeSingleTool(ctx, step, cfg, et.tc, et.tool, stepContext, currentMsgs, outcomes, et.index)
+	})
 
-	var wg sync.WaitGroup
-	wg.Add(len(executable))
-
-	for _, et := range executable {
-		go func(et executableTool) {
-			defer wg.Done()
-			r.executeSingleTool(ctx, step, cfg, et.tc, et.tool, stepContext, currentMsgs, outcomes, et.index)
-		}(et)
-	}
-
-	wg.Wait()
-
-	// Emit events and collect results in declaration order so that the
-	// stream output is deterministic regardless of goroutine scheduling.
+	// Events went out as each tool completed; results stay in call order.
 	for _, out := range outcomes {
 		step.ToolResults = append(step.ToolResults, out.result)
-		if out.event != nil {
-			r.emit(out.event)
-			r.callOnChunk(cfg, out.event)
-		}
 	}
 	return nil
+}
+
+// runToolsEmitOnCompletion runs exec for every outcome index in its own
+// goroutine and emits each outcome's event as that tool completes. Only the
+// calling goroutine emits, so OnChunk is never invoked concurrently.
+func (r *StreamTextResult) runToolsEmitOnCompletion(cfg *streamConfig, outcomes []toolExecOutcome, exec func(i int)) {
+	done := make(chan int, len(outcomes))
+	for i := range outcomes {
+		go func(i int) {
+			exec(i)
+			done <- i
+		}(i)
+	}
+	for range outcomes {
+		if ev := outcomes[<-done].event; ev != nil {
+			r.emit(ev)
+			r.callOnChunk(cfg, ev)
+		}
+	}
 }
 
 func newToolApprovalRequest(approvalID string, tc ToolCall, isAutomatic bool) ToolApprovalRequest {
@@ -1981,31 +1986,20 @@ func (r *StreamTextResult) resolveToolApprovals(ctx context.Context, cfg *stream
 	}
 
 	// Resume tool execution mirrors upstream's Promise.all fan-out:
-	// approved tools run concurrently, then events are emitted in declaration
-	// order so the wire stream is deterministic. The synthetic StepResult uses
+	// approved tools run concurrently and each event is emitted as its tool
+	// completes. The synthetic StepResult uses
 	// StepNumber 0 to signal "pre-step resume execution"; consumers that bucket
 	// telemetry by step should treat it as a resume bucket, not as the first
 	// model step (which uses StepNumber 1).
 	outcomes := make([]toolExecOutcome, len(executable))
-	if len(executable) > 0 {
-		var wg sync.WaitGroup
-		wg.Add(len(executable))
-		resumeStep := &StepResult{StepNumber: 0, Model: StepModel{}}
-		for _, et := range executable {
-			go func(et executableApproval) {
-				defer wg.Done()
-				r.executeSingleTool(ctx, resumeStep, cfg, et.tc, et.tool, nil, msgs, outcomes, et.index)
-			}(et)
-		}
-		wg.Wait()
-	}
+	resumeStep := &StepResult{StepNumber: 0, Model: StepModel{}}
+	r.runToolsEmitOnCompletion(cfg, outcomes, func(i int) {
+		et := executable[i]
+		r.executeSingleTool(ctx, resumeStep, cfg, et.tc, et.tool, nil, msgs, outcomes, et.index)
+	})
 
 	approvedToolParts := make([]provider.ContentPart, 0, len(executable))
 	for _, out := range outcomes {
-		if out.event != nil {
-			r.emit(out.event)
-			r.callOnChunk(cfg, out.event)
-		}
 		approvedToolParts = append(approvedToolParts, provider.ContentPart{
 			Type:       provider.ContentPartTypeToolResult,
 			ToolCallID: out.result.ToolCallID,

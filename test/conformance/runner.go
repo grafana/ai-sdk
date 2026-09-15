@@ -1396,8 +1396,65 @@ func LoadExpectedRequests(path string) ([]RequestSnapshot, error) {
 
 // --- Comparison ---
 
+// normalizeConcurrentToolOutputs sorts each maximal run of adjacent
+// tool-output-available and tool-output-error chunks by toolCallId, on a copy.
+// Tools in a step run concurrently and their outputs are emitted as each one
+// completes, so sibling order is not stable across runs. Chunks with
+// providerExecuted: true keep their recorded position and end a run.
+func normalizeConcurrentToolOutputs(chunks []map[string]any) []map[string]any {
+	// Rejected calls get their output while the model stream is read, so their
+	// position is deterministic and must stay exact.
+	rejected := map[string]bool{}
+	for _, c := range chunks {
+		if c["type"] == "tool-input-error" {
+			id, _ := c["toolCallId"].(string)
+			rejected[id] = true
+		}
+	}
+	sortable := func(c map[string]any) bool {
+		switch c["type"] {
+		case "tool-output-available", "tool-output-error":
+		default:
+			return false
+		}
+		providerExecuted, _ := c["providerExecuted"].(bool)
+		id, _ := c["toolCallId"].(string)
+		return !providerExecuted && !rejected[id]
+	}
+
+	out := make([]map[string]any, len(chunks))
+	copy(out, chunks)
+	for i := 0; i < len(out); {
+		if !sortable(out[i]) {
+			i++
+			continue
+		}
+		j := i
+		for j < len(out) && sortable(out[j]) {
+			j++
+		}
+		if j-i > 1 {
+			run := out[i:j]
+			sort.SliceStable(run, func(a, b int) bool {
+				ida, _ := run[a]["toolCallId"].(string)
+				idb, _ := run[b]["toolCallId"].(string)
+				return ida < idb
+			})
+		}
+		i = j
+	}
+	return out
+}
+
+// CompareChunks compares expected and actual UI message chunks position by
+// position, after sorting each run of adjacent locally executed tool outputs
+// in both slices (see normalizeConcurrentToolOutputs). Chunk indexes in failure
+// messages refer to the sorted order.
 func CompareChunks(t *testing.T, expected, actual []map[string]any) {
 	t.Helper()
+
+	expected = normalizeConcurrentToolOutputs(expected)
+	actual = normalizeConcurrentToolOutputs(actual)
 
 	minLen := len(expected)
 	if len(actual) < minLen {
