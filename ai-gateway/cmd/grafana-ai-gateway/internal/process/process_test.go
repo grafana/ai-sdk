@@ -35,8 +35,11 @@ func TestRun_ValidatesScalarsAndEndpointsBeforeSecretsOrListener(t *testing.T) {
 					secretCalls++
 				}
 				values := map[string]string{
-					"GRAFANA_AI_GATEWAY_CONFIG_FILE":   "/nonexistent/private.yaml",
-					"GRAFANA_AI_GATEWAY_AUTH_JWKS_URL": "https://auth.example/jwks",
+					"GRAFANA_AI_GATEWAY_CONFIG_FILE":               "/nonexistent/private.yaml",
+					"GRAFANA_AI_GATEWAY_AUTH_JWKS_URL":             "https://auth.example/jwks",
+					"GRAFANA_AI_GATEWAY_AGENTO11Y_ENABLED":         "true",
+					"GRAFANA_AI_GATEWAY_AGENTO11Y_ENDPOINT":        "collector.example:4317",
+					"GRAFANA_AI_GATEWAY_AGENTO11Y_AUTH_SECRET_ENV": "AGENTO11Y_SECRET",
 				}
 				value, ok := values[name]
 				return value, ok
@@ -46,6 +49,39 @@ func TestRun_ValidatesScalarsAndEndpointsBeforeSecretsOrListener(t *testing.T) {
 		)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "write timeout")
+		assert.Zero(t, secretCalls)
+		assert.Zero(t, listenCalls)
+	})
+
+	t.Run("ambient agent observability environment before yaml", func(t *testing.T) {
+		secretCalls := 0
+		listenCalls := 0
+		err := Run(
+			context.Background(),
+			nil,
+			func(name string) (string, bool) {
+				if name == "ANTHROPIC_SECRET" {
+					secretCalls++
+				}
+				values := map[string]string{
+					"GRAFANA_AI_GATEWAY_CONFIG_FILE":               "/nonexistent/private.yaml",
+					"GRAFANA_AI_GATEWAY_AUTH_JWKS_URL":             "https://auth.example/jwks",
+					"GRAFANA_AI_GATEWAY_AGENTO11Y_ENABLED":         "true",
+					"GRAFANA_AI_GATEWAY_AGENTO11Y_ENDPOINT":        "collector.example:4317",
+					"GRAFANA_AI_GATEWAY_AGENTO11Y_AUTH_SECRET_ENV": "AGENTO11Y_SECRET",
+					"SIGIL_TAGS": "private=ambient",
+				}
+				value, ok := values[name]
+				return value, ok
+			},
+			func(string, string) (net.Listener, error) { listenCalls++; return nil, assert.AnError },
+			testLogger(),
+		)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "ambient agent observability SDK environment")
+		assert.NotContains(t, err.Error(), "SIGIL_TAGS")
+		assert.NotContains(t, err.Error(), "private=ambient")
+		assert.NotContains(t, err.Error(), "nonexistent/private.yaml")
 		assert.Zero(t, secretCalls)
 		assert.Zero(t, listenCalls)
 	})
@@ -61,8 +97,11 @@ func TestRun_ValidatesScalarsAndEndpointsBeforeSecretsOrListener(t *testing.T) {
 					secretCalls++
 				}
 				values := map[string]string{
-					"GRAFANA_AI_GATEWAY_CONFIG_FILE":   "/nonexistent/private.yaml",
-					"GRAFANA_AI_GATEWAY_AUTH_JWKS_URL": "https://auth.example/jwks",
+					"GRAFANA_AI_GATEWAY_CONFIG_FILE":               "/nonexistent/private.yaml",
+					"GRAFANA_AI_GATEWAY_AUTH_JWKS_URL":             "https://auth.example/jwks",
+					"GRAFANA_AI_GATEWAY_AGENTO11Y_ENABLED":         "true",
+					"GRAFANA_AI_GATEWAY_AGENTO11Y_ENDPOINT":        "collector.example:4317",
+					"GRAFANA_AI_GATEWAY_AGENTO11Y_AUTH_SECRET_ENV": "AGENTO11Y_SECRET",
 				}
 				value, ok := values[name]
 				return value, ok
@@ -87,8 +126,11 @@ func TestRun_ValidatesScalarsAndEndpointsBeforeSecretsOrListener(t *testing.T) {
 					secretCalls++
 				}
 				values := map[string]string{
-					"GRAFANA_AI_GATEWAY_CONFIG_FILE":   "/nonexistent/private.yaml",
-					"GRAFANA_AI_GATEWAY_AUTH_JWKS_URL": "http://auth.example/jwks",
+					"GRAFANA_AI_GATEWAY_CONFIG_FILE":               "/nonexistent/private.yaml",
+					"GRAFANA_AI_GATEWAY_AUTH_JWKS_URL":             "http://auth.example/jwks",
+					"GRAFANA_AI_GATEWAY_AGENTO11Y_ENABLED":         "true",
+					"GRAFANA_AI_GATEWAY_AGENTO11Y_ENDPOINT":        "collector.example:4317",
+					"GRAFANA_AI_GATEWAY_AGENTO11Y_AUTH_SECRET_ENV": "AGENTO11Y_SECRET",
 				}
 				value, ok := values[name]
 				return value, ok
@@ -128,6 +170,106 @@ func TestRun_ValidatesScalarsAndEndpointsBeforeSecretsOrListener(t *testing.T) {
 		assert.Zero(t, secretCalls)
 		assert.Zero(t, listenCalls)
 	})
+}
+
+func TestRun_ResolvesAgentCredentialOnceBeforeListener(t *testing.T) {
+	path := writeProcessConfig(t, "https://provider.example")
+	agentSecretCalls := 0
+	listenCalls := 0
+	var logs bytes.Buffer
+	err := Run(
+		context.Background(),
+		[]string{
+			"--deployment.mode=development",
+			"--auth.unsafe",
+			"--server.listen-address=127.0.0.1:0",
+			"--agento11y.enabled",
+			"--agento11y.protocol=grpc",
+			"--agento11y.endpoint=127.0.0.1:1",
+			"--agento11y.auth-secret-env=AO_SECRET",
+			"--agento11y.max-retries=1",
+			"--agento11y.initial-backoff=1ms",
+			"--agento11y.max-backoff=1ms",
+			"--agento11y.flush-timeout=10ms",
+			"--agento11y.shutdown-timeout=10ms",
+		},
+		func(name string) (string, bool) {
+			switch name {
+			case "GRAFANA_AI_GATEWAY_CONFIG_FILE":
+				return path, true
+			case "ANTHROPIC_SECRET":
+				return "provider-secret", true
+			case "GRAFANA_AI_GATEWAY_AGENTO11Y_TLS":
+				return "false", true
+			case "AO_SECRET":
+				agentSecretCalls++
+				return "agent-secret", true
+			default:
+				return "", false
+			}
+		},
+		func(string, string) (net.Listener, error) {
+			listenCalls++
+			return nil, assert.AnError
+		},
+		slog.New(slog.NewJSONHandler(&logs, nil)),
+	)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "binding listener")
+	assert.Equal(t, 1, agentSecretCalls)
+	assert.Equal(t, 1, listenCalls)
+	for _, private := range []string{"provider-secret", "agent-secret", "AO_SECRET", "127.0.0.1:1"} {
+		assert.NotContains(t, err.Error(), private)
+		assert.NotContains(t, logs.String(), private)
+	}
+}
+
+func TestRun_HTTPAgentObservabilityConfigurationReachesListener(t *testing.T) {
+	collector := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	defer collector.Close()
+	path := writeProcessConfig(t, "http://provider.example")
+	listenCalls := 0
+	err := Run(
+		context.Background(),
+		[]string{
+			"--deployment.mode=development",
+			"--auth.unsafe",
+			"--server.listen-address=127.0.0.1:0",
+			"--agento11y.enabled",
+			"--agento11y.protocol=http",
+			"--agento11y.endpoint=" + collector.URL,
+			"--no-agento11y.tls",
+			"--agento11y.auth-secret-env=AO_SECRET",
+			"--agento11y.queue-size=16",
+			"--agento11y.batch-size=1",
+			"--agento11y.payload-max-bytes=1048576",
+			"--agento11y.max-retries=1",
+			"--agento11y.initial-backoff=1ms",
+			"--agento11y.max-backoff=1ms",
+			"--agento11y.flush-interval=1ms",
+			"--agento11y.flush-timeout=2s",
+			"--agento11y.shutdown-timeout=2s",
+		},
+		func(name string) (string, bool) {
+			switch name {
+			case "GRAFANA_AI_GATEWAY_CONFIG_FILE":
+				return path, true
+			case "ANTHROPIC_SECRET":
+				return "provider-secret", true
+			case "AO_SECRET":
+				return "agent-secret", true
+			default:
+				return "", false
+			}
+		},
+		func(string, string) (net.Listener, error) {
+			listenCalls++
+			return nil, assert.AnError
+		},
+		testLogger(),
+	)
+	require.EqualError(t, err, "gateway process: binding listener: assert.AnError general error for testing")
+	assert.Equal(t, 1, listenCalls)
 }
 
 func TestRun_LocalReadinessDoesNotProbeProvider(t *testing.T) {
@@ -185,6 +327,28 @@ func TestRun_LocalReadinessDoesNotProbeProvider(t *testing.T) {
 	}
 }
 
+func TestServe_FinalizesObservabilityBeforeProcessCompletionEvent(t *testing.T) {
+	ctx, stop := context.WithCancel(context.Background())
+	stop()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	readiness := &service.Readiness{}
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logs, nil))
+	telemetry, err := service.NewTelemetry(testLogger())
+	require.NoError(t, err)
+	err = Serve(ctx, func() {}, &http.Server{}, listener, readiness, telemetry, logger, time.Second, func() {
+		logProcessEvent(logger, "observability_finalized")
+	})
+	require.NoError(t, err)
+	assert.Equal(t, []string{
+		processEventReady,
+		processEventShutdownStarted,
+		"observability_finalized",
+		processEventShutdownCompleted,
+	}, processLifecycleEvents(t, logs.String()))
+}
+
 func TestServe_RejectsInvalidShutdownTimeoutBeforeStarting(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -213,6 +377,7 @@ func TestServe_RejectsInvalidShutdownTimeoutBeforeStarting(t *testing.T) {
 				telemetry,
 				slog.New(slog.NewJSONHandler(&logs, nil)),
 				tc.timeout,
+				nil,
 			)
 
 			require.EqualError(t, err, "gateway process: invalid serve dependency")
@@ -245,7 +410,7 @@ func TestServe_CancelFirstGracefulAndForcedShutdown(t *testing.T) {
 		require.NoError(t, err)
 		result := make(chan error, 1)
 		go func() {
-			result <- Serve(signalContext, cancelRequests, server, listener, readiness, telemetry, testLogger(), time.Second)
+			result <- Serve(signalContext, cancelRequests, server, listener, readiness, telemetry, testLogger(), time.Second, nil)
 		}()
 		go func() { _, _ = http.Get("http://" + listener.Addr().String()) }()
 		<-started
@@ -275,7 +440,7 @@ func TestServe_CancelFirstGracefulAndForcedShutdown(t *testing.T) {
 		require.NoError(t, err)
 		result := make(chan error, 1)
 		go func() {
-			result <- Serve(signalContext, cancelRequests, server, listener, readiness, telemetry, testLogger(), 50*time.Millisecond)
+			result <- Serve(signalContext, cancelRequests, server, listener, readiness, telemetry, testLogger(), 50*time.Millisecond, nil)
 		}()
 		clientResult := make(chan error, 1)
 		go func() {

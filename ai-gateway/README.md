@@ -19,7 +19,9 @@ Run `mise run test-providerwire-v4` for the contract and
 development guidance is in [`../CONTRIBUTING.md`](../CONTRIBUTING.md).
 
 See the [model catalog guide](docs/model-catalog.md) for public model identity
-and resolution behavior.
+and resolution behavior. See the [text observability guide](docs/text-observability.md)
+for the logical telemetry contract, privacy boundary, metrics, and exporter
+configuration.
 
 Files under this directory are licensed under [AGPL-3.0-only](LICENSE). The
 reusable SDK remains [Apache-2.0](../LICENSE).

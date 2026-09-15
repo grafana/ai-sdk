@@ -225,10 +225,9 @@ func TestTelemetry_ObserveAuthenticationRetainsNormalizedCallerPrivately(t *test
 	telemetry.ObserveAuthentication(ctx, gatewayauth.Observation{Outcome: gatewayauth.OutcomeAuthenticated, Caller: &caller})
 
 	assert.Equal(t, uint32(gatewayauth.OutcomeAuthenticated), state.authOutcome.Load())
-	state.callerMu.Lock()
-	assert.Equal(t, "caller-private", state.service)
-	assert.Equal(t, "stack-private", state.namespace)
-	state.callerMu.Unlock()
+	retained := observationFromContext(ctx)
+	assert.Equal(t, "caller-private", retained.callerService)
+	assert.Equal(t, "stack-private", retained.namespace)
 }
 
 func TestTelemetry_DuplicateRegistrationFails(t *testing.T) {
@@ -238,6 +237,49 @@ func TestTelemetry_DuplicateRegistrationFails(t *testing.T) {
 	require.NoError(t, err)
 	_, err = newTelemetry(logger, registry)
 	require.Error(t, err)
+}
+
+func TestTelemetry_RegistererSharesExistingMetricsRouteAndRejectsDuplicates(t *testing.T) {
+	telemetry, err := NewTelemetry(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	require.NoError(t, err)
+	collector := prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: "grafana_ai_gateway",
+		Name:      "model_test_total",
+		Help:      "Test logical model collector.",
+	})
+	require.NoError(t, telemetry.Registerer().Register(collector))
+	require.Error(t, telemetry.Registerer().Register(collector))
+	collector.Inc()
+
+	response := httptest.NewRecorder()
+	telemetry.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	assert.Contains(t, response.Body.String(), "grafana_ai_gateway_model_test_total 1")
+}
+
+func TestTelemetry_AgentExportFailuresUseOnlyFixedDiagnosticsAndBoundedLabels(t *testing.T) {
+	var logs bytes.Buffer
+	telemetry, err := NewTelemetry(slog.New(slog.NewJSONHandler(&logs, nil)))
+	require.NoError(t, err)
+
+	for _, class := range []agentExportFailureClass{
+		agentExportFailureQueue,
+		agentExportFailureSerialization,
+		agentExportFailureTransport,
+		agentExportFailureRejected,
+		agentExportFailureShutdown,
+		agentExportFailureClass("https://private.invalid bearer-secret"),
+	} {
+		telemetry.observeAgentExportFailure(class)
+	}
+
+	response := httptest.NewRecorder()
+	telemetry.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	serialized := logs.String() + response.Body.String()
+	for _, class := range []string{"queue_full", "serialization", "transport", "rejected", "shutdown", "unknown"} {
+		assert.Contains(t, serialized, class)
+	}
+	assert.NotContains(t, serialized, "https://private.invalid")
+	assert.NotContains(t, serialized, "bearer-secret")
 }
 
 func newTestRouter(t *testing.T, authenticator authn.Authenticator, discovery, language http.Handler) http.Handler {

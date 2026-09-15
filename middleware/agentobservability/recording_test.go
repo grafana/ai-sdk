@@ -53,13 +53,31 @@ func TestRecordingMiddleware_NilResolver_PassesThrough(t *testing.T) {
 
 func TestRecordingMiddleware_NilClientFromResolver_PassesThrough(t *testing.T) {
 	model := &mockLanguageModel{provider_: "anthropic", modelID: "claude"}
+	completeCalls := 0
 	opts := RecordingOptions{
-		ClientResolver: func(ctx context.Context) *agento11y.Client { return nil },
+		ClientResolver:   func(ctx context.Context) *agento11y.Client { return nil },
+		OnRecordComplete: func() { completeCalls++ },
 	}
 	result, err := generateWith(t, model, opts)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	assert.Equal(t, 1, model.generateHit)
+	assert.Zero(t, completeCalls)
+}
+
+func TestRecordingMiddleware_NilClientStreamPassesThroughWithoutCompletion(t *testing.T) {
+	model := &mockLanguageModel{provider_: "anthropic", modelID: "claude"}
+	completeCalls := 0
+	result, err := streamWith(t, model, RecordingOptions{
+		ClientResolver:   func(context.Context) *agento11y.Client { return nil },
+		OnRecordComplete: func() { completeCalls++ },
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	for range result.Stream {
+	}
+	assert.Equal(t, 1, model.streamHit)
+	assert.Zero(t, completeCalls)
 }
 
 func TestRecordingMiddleware_GenerateSuccess_RecordsResult(t *testing.T) {

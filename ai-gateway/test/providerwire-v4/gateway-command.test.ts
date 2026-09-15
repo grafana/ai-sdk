@@ -25,7 +25,9 @@ before(() => {
     stdio: "pipe",
     env: {
       ...nodeProcess.env,
-      GOWORK: "off",
+      // CI and release verification always use immutable module pins. A local
+      // unpublished-middleware checkout may opt into an explicit go.work path.
+      GOWORK: nodeProcess.env.GATEWAY_TEST_GOWORK ?? "off",
       GOFLAGS: `${nodeProcess.env.GOFLAGS ? `${nodeProcess.env.GOFLAGS} ` : ""}-mod=readonly`,
     },
   });
@@ -143,6 +145,167 @@ describe("authenticated Anthropic Gateway command", () => {
       assert.equal(await gateway.ready(), false);
       await stopped;
       assert.deepEqual(fake.violations, []);
+    } finally {
+      await settleCleanup(() => gateway.stop(), () => fake.stop());
+    }
+  });
+
+  it("records one private-safe logical observation across traffic and shutdown", async () => {
+    const observer = await FakeAgentObservability.start();
+    let resources: [FakeAnthropic, GatewayProcess] | undefined;
+    try {
+      resources = await startGateway([
+        "--observation.region=test-region",
+        "--observation.application=test-application",
+        "--agento11y.enabled",
+        "--agento11y.protocol=http",
+        `--agento11y.endpoint=${observer.url}`,
+        "--no-agento11y.tls",
+        "--agento11y.auth-secret-env=GATEWAY_TEST_AGENTO11Y_KEY",
+        "--agento11y.queue-size=16",
+        "--agento11y.batch-size=1",
+        "--agento11y.payload-max-bytes=1048576",
+        "--agento11y.max-retries=1",
+        "--agento11y.initial-backoff=1ms",
+        "--agento11y.max-backoff=1ms",
+        "--agento11y.flush-interval=1ms",
+        "--agento11y.flush-timeout=2s",
+        "--agento11y.shutdown-timeout=2s",
+      ], { GATEWAY_TEST_AGENTO11Y_KEY: "integration-agento11y-key" });
+      const [fake, gateway] = resources;
+
+      const unary = await gateway.client()("assistant").doGenerate({
+        prompt: [{ role: "user", content: [{ type: "text", text: "private-unary-input" }] }],
+        maxOutputTokens: 32,
+      });
+      assert.deepEqual(unary.content, [{ type: "text", text: "hello from fake Anthropic" }]);
+
+      const streamed = await gateway.client()("assistant").doStream({
+        prompt: [{ role: "user", content: [{ type: "text", text: "normal-stream" }] }],
+        maxOutputTokens: 32,
+      });
+      const streamParts = await collectGatewayStream(streamed.stream);
+      assert.equal(streamParts[0]?.type, "stream-start");
+      assert.deepEqual(streamParts.map((part) => part.type), [
+        "stream-start", "response-metadata", "text-start", "text-delta", "text-end", "finish",
+      ]);
+      assert.equal(streamParts.filter((part) => part.type === "text-delta").map((part) => part.delta).join(""), "hello from fake Anthropic stream");
+
+      const providerFailure = await rawProviderWireRequest(gateway.url, "provider-error");
+      assert.equal(providerFailure.status, 502);
+      assert.deepEqual(await providerFailure.json(), {
+        error: { message: "upstream failure", type: "internal_server_error", param: null, code: "upstream_error" },
+      });
+
+      const aborted = await gateway.client()("assistant").doStream({
+        prompt: [{ role: "user", content: [{ type: "text", text: "silent-abort" }] }],
+        maxOutputTokens: 32,
+      });
+      const abortReader = aborted.stream.getReader();
+      const abortStart = await abortReader.read();
+      assert.equal(abortStart.done, false);
+      assert.equal(abortStart.value?.type, "stream-start");
+      await abortReader.cancel("integration abort");
+      await fake.waitForCancellation("silent-abort");
+
+      const shuttingDown = await gateway.client()("assistant").doStream({
+        prompt: [{ role: "user", content: [{ type: "text", text: "silent-shutdown" }] }],
+        maxOutputTokens: 32,
+      });
+      const shutdownStart = await shuttingDown.stream.getReader().read();
+      assert.equal(shutdownStart.done, false);
+      assert.equal(shutdownStart.value?.type, "stream-start");
+
+      await observer.waitForGenerations(4);
+      const metrics = await (await fetch(`${gateway.url}/metrics`)).text();
+      const canonicalLabels = ['provider="grafana"', 'model="grafana/assistant"'];
+      assert.equal(sumPrometheusSamples(metrics, "aisdk_model_requests_total", canonicalLabels), 4);
+      assert.equal(sumPrometheusSamples(metrics, "aisdk_model_inflight_requests", canonicalLabels), 1);
+      assert.ok(metrics.includes('operation="generate"'));
+      assert.ok(metrics.includes('operation="stream"'));
+      assert.ok(metrics.includes('status="success"'));
+      assert.ok(metrics.includes('status="error"'));
+      assert.ok(metrics.includes('status="canceled"'));
+      assert.ok(!metrics.includes("grafana_ai_gateway_agento11y_export_failures_total{"));
+
+      await gateway.stop("SIGTERM");
+      await fake.waitForCancellation("silent-shutdown");
+      await observer.waitForGenerations(5);
+      assert.ok(!gateway.stderr.includes('"msg":"agent observability export failed"'));
+      assert.equal(fake.requests.length, 5);
+      assert.deepEqual(fake.violations, []);
+      assert.deepEqual(observer.violations, []);
+      assert.equal(observer.generations.length, 5);
+      const allowedMetadata = new Set([
+        "gateway.application", "gateway.caller_service", "gateway.correlation_id", "gateway.namespace", "gateway.region",
+        "agento11y.sdk.content_capture_mode", "agento11y.sdk.name", "call_error",
+      ]);
+      for (const generation of observer.generations) {
+        assert.deepEqual(generation.model, { provider: "grafana", name: "grafana/assistant" });
+        assert.equal(generation.agent_name ?? "", "");
+        assert.equal(generation.user_id ?? "", "");
+        const metadata = generation.metadata as Record<string, unknown>;
+        assert.equal(metadata["gateway.application"], "test-application");
+        assert.equal(metadata["gateway.caller_service"], "integration-service");
+        assert.equal(metadata["gateway.namespace"], "stack-integration");
+        assert.equal(metadata["gateway.region"], "test-region");
+        assert.equal(typeof metadata["gateway.correlation_id"], "string");
+        assert.ok(Object.keys(metadata).every((key) => allowedMetadata.has(key)));
+        assert.ok([undefined, "server_error", "canceled"].includes(metadata.call_error as string | undefined));
+      }
+      const surfaces = JSON.stringify({ metrics, logs: gateway.stderr, generations: observer.generations });
+      for (const privateValue of [
+        "integration-anthropic-key", "integration-agento11y-key", "GATEWAY_TEST_AGENTO11Y_KEY",
+        "backend-private", fake.url, observer.url, TEST_TOKEN, "private-unary-input",
+        "hello from fake Anthropic", "provider-secret-response",
+      ]) {
+        assert.ok(!surfaces.includes(privateValue), `private value leaked: ${privateValue}`);
+      }
+    } finally {
+      await settleCleanup(
+        ...(resources == null ? [] : [() => resources![1].stop(), () => resources![0].stop()]),
+        () => observer.stop(),
+      );
+    }
+  });
+
+  it("keeps real command traffic fail-open when Agent Observability is unavailable", async () => {
+    const unavailablePort = await availablePort();
+    const [fake, gateway] = await startGateway([
+      "--agento11y.enabled",
+      "--agento11y.protocol=http",
+      `--agento11y.endpoint=http://127.0.0.1:${unavailablePort}`,
+      "--no-agento11y.tls",
+      "--agento11y.auth-secret-env=GATEWAY_TEST_AGENTO11Y_KEY",
+      "--agento11y.queue-size=4",
+      "--agento11y.batch-size=1",
+      "--agento11y.payload-max-bytes=1048576",
+      "--agento11y.max-retries=1",
+      "--agento11y.initial-backoff=1ms",
+      "--agento11y.max-backoff=1ms",
+      "--agento11y.flush-interval=1ms",
+      "--agento11y.flush-timeout=100ms",
+      "--agento11y.shutdown-timeout=100ms",
+    ], { GATEWAY_TEST_AGENTO11Y_KEY: "outage-agento11y-key" });
+    try {
+      const response = await rawProviderWireRequest(gateway.url, "outage-private-input");
+      assert.equal(response.status, 200);
+      const body = await response.json() as Record<string, unknown>;
+      assert.deepEqual(Object.keys(body).sort(), ["content", "finishReason", "usage"]);
+      let metrics = "";
+      await poll(async () => {
+        metrics = await (await fetch(`${gateway.url}/metrics`)).text();
+        return metrics.includes('grafana_ai_gateway_agento11y_export_failures_total{class="transport"} 1');
+      }, 5_000, "Agent Observability transport failure metric");
+      assert.equal(await gateway.ready(), true);
+      assert.equal(fake.requests.length, 1);
+      for (const privateValue of [
+        "outage-agento11y-key", "outage-private-input", "integration-anthropic-key",
+        "backend-private", fake.url, TEST_TOKEN,
+      ]) {
+        assert.ok(!metrics.includes(privateValue));
+        assert.ok(!gateway.stderr.includes(privateValue));
+      }
     } finally {
       await settleCleanup(() => gateway.stop(), () => fake.stop());
     }
@@ -267,10 +430,10 @@ describe("authenticated Anthropic Gateway command", () => {
   });
 });
 
-async function startGateway(extraArgs: string[] = []): Promise<[FakeAnthropic, GatewayProcess]> {
+async function startGateway(extraArgs: string[] = [], extraEnv: Record<string, string> = {}): Promise<[FakeAnthropic, GatewayProcess]> {
   const fake = await FakeAnthropic.start();
   try {
-    return [fake, await GatewayProcess.start(binaryPath, fake.url, extraArgs)];
+    return [fake, await GatewayProcess.start(binaryPath, fake.url, extraArgs, extraEnv)];
   } catch (error) {
     await settleCleanup(() => fake.stop());
     throw error;
@@ -317,7 +480,7 @@ class GatewayProcess {
     });
   }
 
-  static async start(binary: string, anthropicURL: string, extraArgs: string[] = []): Promise<GatewayProcess> {
+  static async start(binary: string, anthropicURL: string, extraArgs: string[] = [], extraEnv: Record<string, string> = {}): Promise<GatewayProcess> {
     const directory = mkdtempSync(join(tmpdir(), "grafana-ai-gateway-process-"));
     this.lastFailedDirectory = undefined;
     let gateway: GatewayProcess | undefined;
@@ -337,7 +500,7 @@ class GatewayProcess {
       const proc = spawn(binary, args, {
         cwd: directory,
         stdio: ["ignore", "ignore", "pipe"],
-        env: { ...nodeProcess.env, GATEWAY_TEST_ANTHROPIC_KEY: "integration-anthropic-key" },
+        env: { ...nodeProcess.env, GATEWAY_TEST_ANTHROPIC_KEY: "integration-anthropic-key", ...extraEnv },
       });
       gateway = new GatewayProcess(proc, url, directory);
       const deadline = Date.now() + READY_TIMEOUT_MS;
@@ -456,7 +619,7 @@ class FakeAnthropic {
     for await (const chunk of request) chunks.push(Buffer.from(chunk));
     const body = JSON.parse(Buffer.concat(chunks).toString()) as Record<string, unknown>;
     const serialized = JSON.stringify(body);
-    const marker = ["silent-abort", "silent-shutdown", "normal-stream", "redirect", "oversized"]
+    const marker = ["silent-abort", "silent-shutdown", "normal-stream", "provider-error", "redirect", "oversized"]
       .find((value) => serialized.includes(value));
     this.requests.push({ path: request.url ?? "", apiKey: singleHeader(request.headers["x-api-key"]), body });
     if (request.url !== "/v1/messages?beta=true") this.violations.push(`path=${request.url}`);
@@ -471,6 +634,11 @@ class FakeAnthropic {
     if (this.oversizedErrors) {
       response.writeHead(502, { "Content-Type": "application/json" });
       response.end(JSON.stringify({ error: { type: "api_error", message: `provider-secret-response-${"x".repeat(512)}` } }));
+      return;
+    }
+    if (marker === "provider-error") {
+      response.writeHead(502, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ error: { type: "api_error", message: "provider-secret-response" } }));
       return;
     }
     if (body.stream !== true) {
@@ -497,6 +665,74 @@ class FakeAnthropic {
     request.once("close", () => { if (marker != null) this.canceled.add(marker); });
     response.once("close", () => { if (marker != null) this.canceled.add(marker); });
   }
+}
+
+class FakeAgentObservability {
+  readonly url: string;
+  readonly generations: Array<Record<string, unknown>> = [];
+  readonly violations: string[] = [];
+  private readonly server: ReturnType<typeof createServer>;
+
+  private constructor(server: ReturnType<typeof createServer>, url: string) {
+    this.server = server;
+    this.url = url;
+  }
+
+  static async start(): Promise<FakeAgentObservability> {
+    let fake: FakeAgentObservability;
+    const server = createServer((request, response) => void fake.handle(request, response));
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (address == null || typeof address === "string") throw new Error("fake Agent Observability server did not bind TCP");
+    fake = new FakeAgentObservability(server, `http://127.0.0.1:${address.port}`);
+    return fake;
+  }
+
+  async stop(): Promise<void> {
+    this.server.closeAllConnections();
+    await new Promise<void>((resolve) => this.server.close(() => resolve()));
+  }
+
+  async waitForGenerations(count: number): Promise<void> {
+    await poll(async () => this.generations.length >= count, 5_000, `${count} Agent Observability generations`);
+  }
+
+  private async handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
+    const chunks: Buffer[] = [];
+    for await (const chunk of request) chunks.push(Buffer.from(chunk));
+    if (request.url !== "/api/v1/generations:export") this.violations.push(`path=${request.url}`);
+    if (singleHeader(request.headers.authorization) !== "Bearer integration-agento11y-key") this.violations.push("authorization");
+    if (singleHeader(request.headers["content-type"]) !== "application/json") this.violations.push("content-type");
+    const payload = JSON.parse(Buffer.concat(chunks).toString()) as { generations?: Array<Record<string, unknown>> };
+    const generations = payload.generations ?? [];
+    if (generations.length === 0) this.violations.push("empty-generations");
+    this.generations.push(...generations);
+    response.writeHead(202, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({
+      results: generations.map((generation) => ({ generation_id: generation.id, accepted: true })),
+    }));
+  }
+}
+
+async function collectGatewayStream(stream: ReadableStream<{ type: string; delta?: string }>): Promise<Array<{ type: string; delta?: string }>> {
+  const reader = stream.getReader();
+  const parts: Array<{ type: string; delta?: string }> = [];
+  for (;;) {
+    const next = await reader.read();
+    if (next.done) return parts;
+    parts.push(next.value);
+  }
+}
+
+function sumPrometheusSamples(metrics: string, family: string, requiredLabels: string[]): number {
+  let total = 0;
+  for (const line of metrics.split("\n")) {
+    if (!line.startsWith(`${family}{`) || !requiredLabels.every((label) => line.includes(label))) continue;
+    const value = Number.parseFloat(line.slice(line.lastIndexOf(" ") + 1));
+    assert.equal(Number.isFinite(value), true);
+    total += value;
+  }
+  return total;
 }
 
 function rawProviderWireRequest(baseURL: string, text: string): Promise<Response> {

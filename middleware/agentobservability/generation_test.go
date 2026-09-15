@@ -59,6 +59,24 @@ func TestBuildGenerationStart_ContextInfoWinsOverAgento11yContext(t *testing.T) 
 	assert.Equal(t, "explicit-user", start.UserID)
 }
 
+func TestBuildGenerationStart_ProvidedOnlyDropsEveryContextFallback(t *testing.T) {
+	ctx := agento11y.WithUserID(context.Background(), "ambient-user")
+	ctx = agento11y.WithAgentName(ctx, "ambient-agent")
+	ctx = agento11y.WithAgentVersion(ctx, "ambient-version")
+	ctx = WithGenerationID(ctx, "ambient-generation")
+	ctx = WithParentGenerationIDs(ctx, "ambient-parent")
+	start := buildGenerationStart(ctx, "grafana", "grafana/assistant", ContextInfo{
+		Metadata: map[string]any{"approved": "value"},
+	}, ContextProvidedOnly)
+
+	assert.Empty(t, start.ID)
+	assert.Empty(t, start.ParentGenerationIDs)
+	assert.Empty(t, start.UserID)
+	assert.Empty(t, start.AgentName)
+	assert.Empty(t, start.AgentVersion)
+	assert.Equal(t, map[string]any{"approved": "value"}, start.Metadata)
+}
+
 func TestBuildGenerationStart_DefensiveCopy(t *testing.T) {
 	meta := map[string]any{"a": 1}
 	tags := map[string]string{"x": "y"}

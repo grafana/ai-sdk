@@ -8,18 +8,27 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/config"
+	"github.com/grafana/ai-sdk/middleware"
 	"github.com/grafana/ai-sdk/provider"
 	anthropicprovider "github.com/grafana/ai-sdk/providers/anthropic"
 )
 
 type modelConstructor func(apiKey, modelID string, options ...anthropicprovider.Option) provider.LanguageModel
 
+// ModelFactory composes one canonical logical model around its unchanged lower
+// model. WP8 observers use this seam; WP9 may replace the lower model with a
+// fallback without changing the logical wrapper.
+type ModelFactory func(canonicalID string, lower provider.LanguageModel) (provider.LanguageModel, error)
+
 // BuildCatalog constructs every configured Anthropic model exactly once.
-func BuildCatalog(file config.File, providers map[string]config.ResolvedProvider, client *http.Client) (catalog.Catalog, error) {
-	return buildCatalog(file, providers, client, anthropicprovider.New)
+func BuildCatalog(file config.File, providers map[string]config.ResolvedProvider, client *http.Client, factory ModelFactory) (catalog.Catalog, error) {
+	return buildCatalog(file, providers, client, anthropicprovider.New, factory)
 }
 
-func buildCatalog(file config.File, providers map[string]config.ResolvedProvider, client *http.Client, construct modelConstructor) (catalog.Catalog, error) {
+func buildCatalog(file config.File, providers map[string]config.ResolvedProvider, client *http.Client, construct modelConstructor, factory ModelFactory) (catalog.Catalog, error) {
+	if factory == nil {
+		return nil, fmt.Errorf("gateway service: model factory is required")
+	}
 	ids := make([]string, 0, len(file.Models))
 	for id := range file.Models {
 		ids = append(ids, id)
@@ -42,7 +51,14 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 		if providerConfig.BaseURL != "" {
 			requestOptions = append(requestOptions, option.WithBaseURL(providerConfig.BaseURL))
 		}
-		model := construct(providerConfig.APIKey, configured.Primary.Model, anthropicprovider.WithRequestOptions(requestOptions...))
+		lower := construct(providerConfig.APIKey, configured.Primary.Model, anthropicprovider.WithRequestOptions(requestOptions...))
+		model, err := factory(id, lower)
+		if err != nil {
+			return nil, fmt.Errorf("gateway service: composing model %q: %w", id, err)
+		}
+		if model == nil {
+			return nil, fmt.Errorf("gateway service: composing model %q returned nil", id)
+		}
 		entries = append(entries, catalog.StaticEntry{
 			Info: catalog.ModelInfo{
 				ID:          id,
@@ -54,4 +70,15 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 		})
 	}
 	return catalog.NewStatic(entries)
+}
+
+func identityModelFactory(canonicalID string, lower provider.LanguageModel) (provider.LanguageModel, error) {
+	if lower == nil {
+		return nil, fmt.Errorf("lower model is nil")
+	}
+	return middleware.Wrap(middleware.WrapOptions{
+		Model:      lower,
+		ProviderID: "grafana",
+		ModelID:    canonicalID,
+	}), nil
 }

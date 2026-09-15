@@ -3,9 +3,7 @@
 ## Purpose
 
 Define the dependency-isolated Prometheus middleware module for provider-level ai-sdk model metrics.
-
 ## Requirements
-
 ### Requirement: Nested Go module for Prometheus middleware
 
 `middleware/prometheus/` SHALL be a separate Go module under the ai-sdk repository, declared with `module github.com/grafana/ai-sdk/middleware/prometheus` and `replace github.com/grafana/ai-sdk => ../../`, following the existing nested middleware module convention.
@@ -266,7 +264,7 @@ The middleware SHALL NOT expose `Usage.Raw` as a metric label.
 
 ### Requirement: Stream chunk and timing metrics
 
-For streams, the middleware SHALL increment `aisdk_model_stream_chunks_total` for every upstream `provider.StreamPart` observed and forwarded, with `chunk_type` equal to the exact `provider.StreamPartType` string. This metric SHALL be disabled when `Options.DisableStreamChunkMetrics` is true.
+For streams, the middleware SHALL increment `aisdk_model_stream_chunks_total` for every upstream `provider.StreamPart` observed and forwarded. The `chunk_type` label SHALL equal a registered `provider.StreamPartType` string for known values and `other` for every unknown value. This metric SHALL be disabled when `Options.DisableStreamChunkMetrics` is true.
 
 The middleware SHALL observe `aisdk_model_time_to_first_output_seconds` once per stream when at least one payload-bearing stream part is observed. The observation SHALL use the elapsed seconds between starting the provider call and observing the first payload-bearing part, and SHALL be emitted at stream finalization with the final stream status label. Streams that finish, error, or cancel before any payload-bearing part SHALL NOT observe TTFT.
 
@@ -277,7 +275,13 @@ Payload-bearing stream part types SHALL be `text-delta`, `reasoning-delta`, `too
 #### Scenario: Chunk counter records all parts
 
 - **WHEN** a stream emits `text-delta`, `response-metadata`, `finish`, and `error` parts
-- **THEN** `aisdk_model_stream_chunks_total` SHALL increment once for each exact chunk type observed
+- **THEN** `aisdk_model_stream_chunks_total` SHALL increment once for each known chunk type observed
+
+#### Scenario: Unknown chunk types use one closed label
+
+- **WHEN** a stream emits one or more unregistered `provider.StreamPartType` values
+- **THEN** `aisdk_model_stream_chunks_total` SHALL bucket every such part under `chunk_type="other"`
+- **AND** no unregistered value SHALL become a metric label
 
 #### Scenario: TTFT records first payload only
 
@@ -335,3 +339,11 @@ The repository task configuration SHALL include a targeted Prometheus middleware
 
 - **WHEN** contributors run aggregate test, short-test, vet, tidy, or build tasks after implementation
 - **THEN** those tasks SHALL include `middleware/prometheus` alongside existing nested modules
+
+### Requirement: Configurable bounded stream drain
+Prometheus middleware options SHALL provide an optional positive stream-drain duration. When configured, cancellation cleanup SHALL drain the immediate upstream only until channel close or the absolute deadline, including for a continuously ready channel. Zero SHALL preserve the existing direct-consumer drain behavior.
+
+#### Scenario: Configured drain expires
+- **WHEN** downstream cancellation occurs and the immediate upstream never closes or remains continuously ready
+- **THEN** the Prometheus-owned drain goroutine SHALL exit no later than the configured absolute deadline
+- **AND** terminal metrics, in-flight decrement, and downstream channel closure SHALL each occur exactly once without waiting for the drain

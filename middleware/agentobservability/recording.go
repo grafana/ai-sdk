@@ -4,10 +4,12 @@ import (
 	"context"
 	"log"
 	"sync"
+	"time"
 
 	"github.com/grafana/agento11y/go/agento11y"
 	"github.com/grafana/ai-sdk/middleware"
 	"github.com/grafana/ai-sdk/provider"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // SpanNameHooksPreflight is the OTel span name HooksMiddleware emits for each
@@ -80,11 +82,15 @@ func wrapRecordingGenerate(ctx context.Context, opts RecordingOptions, p middlew
 	if client == nil {
 		return p.DoGenerate(ctx)
 	}
+	complete := sync.OnceFunc(func() { reportRecordComplete(opts.OnRecordComplete) })
+	defer complete()
 
 	ctxInfo := resolveContextInfo(ctx, opts.ContextProvider)
-	start := BuildGenerationStart(ctx, p.Model.Provider(), p.Model.ModelID(), ctxInfo)
-	ctx, recorder := client.StartGeneration(ctx, start)
-	defer recorder.End()
+	start := buildGenerationStart(ctx, p.Model.Provider(), p.Model.ModelID(), ctxInfo, opts.ContextSource)
+	recordingCtx := recordingContext(ctx, opts.ContextSource)
+	startedCtx, recorder := client.StartGeneration(recordingCtx, start)
+	ctx = trace.ContextWithSpan(ctx, trace.SpanFromContext(startedCtx))
+	defer finishRecordingAndComplete(recorder, opts.OnRecordError, complete)
 
 	result, err := p.DoGenerate(ctx)
 	if err != nil {
@@ -92,7 +98,12 @@ func wrapRecordingGenerate(ctx context.Context, opts RecordingOptions, p middlew
 		return nil, err
 	}
 
-	recorder.SetResult(mapGenerateResultWithStart(p.Params, result, ctxInfo, start), nil)
+	generation := mapGenerateResultWithIdentity(p.Params, result, ctxInfo, start, opts.IdentitySource)
+	finishReason := provider.FinishReason{}
+	if result != nil {
+		finishReason = result.FinishReason
+	}
+	recorder.SetResult(filterGeneration(generation, start, finishReason, opts.GenerationFilter), nil)
 	return result, nil
 }
 
@@ -102,19 +113,34 @@ func wrapRecordingStream(ctx context.Context, opts RecordingOptions, p middlewar
 	if client == nil {
 		return p.DoStream(ctx)
 	}
+	complete := sync.OnceFunc(func() { reportRecordComplete(opts.OnRecordComplete) })
+	completionTransferred := false
+	defer func() {
+		if !completionTransferred {
+			complete()
+		}
+	}()
 
 	ctxInfo := resolveContextInfo(ctx, opts.ContextProvider)
-	start := BuildGenerationStart(ctx, p.Model.Provider(), p.Model.ModelID(), ctxInfo)
-	streamCtx, recorder := client.StartStreamingGeneration(ctx, start)
+	start := buildGenerationStart(ctx, p.Model.Provider(), p.Model.ModelID(), ctxInfo, opts.ContextSource)
+	recordingCtx := recordingContext(ctx, opts.ContextSource)
+	startedCtx, recorder := client.StartStreamingGeneration(recordingCtx, start)
+	streamCtx := trace.ContextWithSpan(ctx, trace.SpanFromContext(startedCtx))
 
 	upstream, err := p.DoStream(streamCtx)
 	if err != nil {
 		recorder.SetCallError(err)
-		recorder.End()
+		finishRecordingAndComplete(recorder, opts.OnRecordError, complete)
 		return nil, err
 	}
 
 	streamRec := NewStreamRecorder(start, p.Params)
+	streamRec.identitySource = opts.IdentitySource
+	if upstream == nil {
+		recorder.SetResult(filterGeneration(streamRec.Generation(), start, streamRec.finishReasonForFilter(), opts.GenerationFilter), nil)
+		finishRecordingAndComplete(recorder, opts.OnRecordError, complete)
+		return nil, nil
+	}
 	teeCh := make(chan provider.StreamPart, streamRecordingBuffer)
 	teeResult := &provider.StreamResult{
 		Stream:   teeCh,
@@ -122,8 +148,26 @@ func wrapRecordingStream(ctx context.Context, opts RecordingOptions, p middlewar
 		Response: upstream.Response,
 	}
 
-	go runStreamTee(streamCtx, upstream.Stream, teeCh, streamRec, recorder, ctxInfo)
+	completionTransferred = true
+	go runStreamTee(streamCtx, upstream.Stream, teeCh, streamRec, recorder, ctxInfo, opts.StreamDrainTimeout, opts.GenerationFilter, opts.OnRecordError, complete)
 	return teeResult, nil
+}
+
+type contextWithoutValues struct {
+	context.Context
+}
+
+func (contextWithoutValues) Value(any) any { return nil }
+
+func recordingContext(ctx context.Context, source ContextSource) context.Context {
+	if source != ContextProvidedOnly || ctx == nil {
+		return ctx
+	}
+	isolated := context.Context(contextWithoutValues{Context: ctx})
+	if spanContext := trace.SpanContextFromContext(ctx); spanContext.IsValid() {
+		isolated = trace.ContextWithSpanContext(isolated, spanContext)
+	}
+	return isolated
 }
 
 // runStreamTee shuttles parts from the inner-model stream to the consumer
@@ -137,13 +181,30 @@ func runStreamTee(
 	streamRec *StreamRecorder,
 	recorder *agento11y.GenerationRecorder,
 	ctxInfo ContextInfo,
+	drainTimeout time.Duration,
+	generationFilter GenerationFilter,
+	onRecordError RecordErrorHandler,
+	onRecordComplete RecordCompleteHandler,
 ) {
-	defer recorder.End()
-	defer close(tee)
+	defer func() {
+		// Finalize and enqueue before downstream observes EOF. Process owners may
+		// close the shared client once request serving completes, so closing first
+		// would race the final generation against client shutdown. Report the
+		// lifecycle callbacks only after close so consumer callbacks cannot delay
+		// downstream completion.
+		recordErr := endRecording(recorder)
+		close(tee)
+		reportRecordComplete(onRecordComplete)
+		reportRecordError(recordErr, onRecordError)
+	}()
 
 	canceled := false
 streamLoop:
 	for {
+		if drainTimeout > 0 && ctx.Err() != nil {
+			canceled = true
+			break streamLoop
+		}
 		select {
 		case part, ok := <-upstream:
 			if !ok {
@@ -151,6 +212,10 @@ streamLoop:
 				break streamLoop
 			}
 			streamRec.Observe(part)
+			if drainTimeout > 0 && ctx.Err() != nil {
+				canceled = true
+				break streamLoop
+			}
 
 			select {
 			case tee <- part:
@@ -168,6 +233,10 @@ streamLoop:
 		recorder.SetFirstTokenAt(first)
 	}
 	if canceled {
+		if drainTimeout > 0 {
+			deadline := time.Now().Add(drainTimeout)
+			go drainStreamUntil(upstream, deadline)
+		}
 		recorder.SetCallError(ctx.Err())
 	} else if callErr := streamRec.CallError(); callErr != nil {
 		recorder.SetCallError(callErr)
@@ -185,7 +254,66 @@ streamLoop:
 	if gen.AgentVersion == "" {
 		gen.AgentVersion = ctxInfo.AgentVersion
 	}
-	recorder.SetResult(gen, nil)
+	recorder.SetResult(filterGeneration(gen, streamRec.seed, streamRec.finishReasonForFilter(), generationFilter), nil)
+}
+
+func filterGeneration(generation agento11y.Generation, start agento11y.GenerationStart, finishReason provider.FinishReason, filter GenerationFilter) (filtered agento11y.Generation) {
+	if filter == nil {
+		return generation
+	}
+	filtered = agento11y.Generation{Model: start.Model}
+	defer func() {
+		if recover() != nil {
+			filtered = agento11y.Generation{Model: start.Model}
+		}
+	}()
+	return filter(GenerationFilterInput{Generation: generation, FinishReason: finishReason})
+}
+
+func finishRecording(recorder *agento11y.GenerationRecorder, onError RecordErrorHandler) {
+	reportRecordError(endRecording(recorder), onError)
+}
+
+func finishRecordingAndComplete(recorder *agento11y.GenerationRecorder, onError RecordErrorHandler, onComplete RecordCompleteHandler) {
+	recordErr := endRecording(recorder)
+	reportRecordComplete(onComplete)
+	reportRecordError(recordErr, onError)
+}
+
+func endRecording(recorder *agento11y.GenerationRecorder) error {
+	recorder.End()
+	return recorder.Err()
+}
+
+func reportRecordError(err error, onError RecordErrorHandler) {
+	if onError == nil || err == nil {
+		return
+	}
+	defer func() { _ = recover() }()
+	onError(err)
+}
+
+func reportRecordComplete(onComplete RecordCompleteHandler) {
+	if onComplete == nil {
+		return
+	}
+	defer func() { _ = recover() }()
+	onComplete()
+}
+
+func drainStreamUntil(upstream <-chan provider.StreamPart, deadline time.Time) {
+	timer := time.NewTimer(time.Until(deadline))
+	defer timer.Stop()
+	for time.Now().Before(deadline) {
+		select {
+		case _, ok := <-upstream:
+			if !ok {
+				return
+			}
+		case <-timer.C:
+			return
+		}
+	}
 }
 
 // resolveClient returns the *agento11y.Client for the request, treating a

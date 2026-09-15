@@ -21,8 +21,9 @@ import (
 // safe for concurrent invocation; Generation() / FirstChunkAt() are safe to
 // call once the recording goroutine has stopped feeding observations.
 type StreamRecorder struct {
-	seed   agento11y.GenerationStart
-	params provider.CallOptions
+	seed           agento11y.GenerationStart
+	params         provider.CallOptions
+	identitySource IdentitySource
 
 	mu sync.Mutex
 
@@ -212,6 +213,9 @@ func (r *StreamRecorder) Observe(part provider.StreamPart) {
 		}
 
 	case provider.PartResponseMeta:
+		if r.identitySource == IdentityRequested {
+			break
+		}
 		if part.ResponseID != "" {
 			r.responseID = part.ResponseID
 		}
@@ -391,6 +395,9 @@ func (r *StreamRecorder) Generation() agento11y.Generation {
 		gen.ResponseModel = r.responseModel
 	}
 	applyModelIdentity(&gen, modelIdentityFromStart(r.seed), r.response)
+	if r.identitySource == IdentityRequested {
+		gen.ResponseModel = ""
+	}
 
 	if hasUsage {
 		gen.Usage = usageToAgento11y(usage)
@@ -399,6 +406,18 @@ func (r *StreamRecorder) Generation() agento11y.Generation {
 		gen.StopReason = finishReasonToAgento11yStop(*r.finishReason)
 	}
 	return gen
+}
+
+func (r *StreamRecorder) finishReasonForFilter() provider.FinishReason {
+	if r == nil {
+		return provider.FinishReason{}
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.finishReason == nil {
+		return provider.FinishReason{}
+	}
+	return *r.finishReason
 }
 
 // buildOutput assembles a single assistant message plus optional tool messages

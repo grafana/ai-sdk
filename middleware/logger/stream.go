@@ -73,9 +73,15 @@ func (l *modelLogger) runStreamTee(ctx context.Context, input streamTeeInput) {
 
 streamLoop:
 	for {
+		if l.opts.streamDrainTimeout > 0 && ctx.Err() != nil {
+			cancelled = true
+			l.drainCanceledStream(input.upstream, &summary)
+			break streamLoop
+		}
 		select {
 		case part, ok := <-input.upstream:
 			if !ok {
+				cancelled = ctx.Err() != nil
 				break streamLoop
 			}
 			observedAt := l.opts.clock()
@@ -88,12 +94,12 @@ streamLoop:
 			case input.tee <- part:
 			case <-ctx.Done():
 				cancelled = true
-				drainAvailableStreamParts(input.upstream, &summary)
+				l.drainCanceledStream(input.upstream, &summary)
 				break streamLoop
 			}
 		case <-ctx.Done():
 			cancelled = true
-			drainAvailableStreamParts(input.upstream, &summary)
+			l.drainCanceledStream(input.upstream, &summary)
 			break streamLoop
 		}
 	}
@@ -105,7 +111,7 @@ streamLoop:
 	} else if cancelled {
 		outcome = outcomeForContextErr(ctx.Err())
 	}
-	attrs := append(terminalCommonAttrs(input.callID, "stream", input.model, summary.response), terminalAttrs(duration, outcome)...)
+	attrs := append(l.terminalCommonAttrs(input.callID, "stream", input.model, summary.response), terminalAttrs(duration, outcome)...)
 	attrs = append(attrs, summary.Attrs(l.opts.capture)...)
 	if input.request != nil && l.opts.capture.RequestBody && len(input.request.Body) > 0 {
 		attrs = appendJSONAttr(attrs, "ai_sdk.request.body", input.request.Body, l.opts.capture)
@@ -155,13 +161,44 @@ func drainAvailableStreamParts(upstream <-chan provider.StreamPart, summary *str
 	}
 }
 
+func (l *modelLogger) drainCanceledStream(upstream <-chan provider.StreamPart, summary *streamSummary) {
+	if l.opts.streamDrainTimeout <= 0 {
+		drainAvailableStreamParts(upstream, summary)
+		return
+	}
+	deadline := time.Now().Add(l.opts.streamDrainTimeout)
+	go drainStreamUntil(upstream, deadline)
+}
+
+func drainStreamUntil(upstream <-chan provider.StreamPart, deadline time.Time) {
+	timer := time.NewTimer(time.Until(deadline))
+	defer timer.Stop()
+	for time.Now().Before(deadline) {
+		select {
+		case _, ok := <-upstream:
+			if !ok {
+				return
+			}
+		case <-timer.C:
+			return
+		}
+	}
+}
+
 func (l *modelLogger) logStreamPart(ctx context.Context, callID string, model provider.LanguageModel, part provider.StreamPart, index int) {
 	attrs := commonAttrs(callID, "stream", model)
 	attrs = append(attrs,
 		slog.Int("ai_sdk.stream.part.index", index),
 		slog.String("ai_sdk.stream.part.type", string(part.Type)),
 	)
-	attrs = append(attrs, streamPartCaptureAttrs(part, l.opts.capture)...)
+	capturedPart := part
+	if l.opts.identitySource == IdentityRequested {
+		capturedPart.ResponseID = ""
+		capturedPart.Provider = ""
+		capturedPart.ModelID = ""
+		capturedPart.Timestamp = time.Time{}
+	}
+	attrs = append(attrs, streamPartCaptureAttrs(capturedPart, l.opts.capture)...)
 	level := l.opts.partLevel
 	if part.Type == provider.PartError {
 		level = l.opts.errorLevel

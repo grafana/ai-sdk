@@ -29,7 +29,7 @@ func TestBuildCatalog_ConstructsImmutableCanonicalAndAliasModelsOnce(t *testing.
 		model := &catalogTestModel{id: modelID}
 		models[modelID] = model
 		return model
-	})
+	}, identityModelFactory)
 	require.NoError(t, err)
 	assert.Equal(t, 2, calls)
 
@@ -43,7 +43,65 @@ func TestBuildCatalog_ConstructsImmutableCanonicalAndAliasModelsOnce(t *testing.
 	assert.Equal(t, "grafana/assistant", alias.ID)
 	assert.Same(t, canonical.Model, alias.Model)
 	assert.Same(t, canonical.Model, again.Model)
-	assert.Same(t, models["claude-assistant"], canonical.Model)
+	assert.NotSame(t, models["claude-assistant"], canonical.Model)
+	assert.Equal(t, "grafana", canonical.Model.Provider())
+	assert.Equal(t, "grafana/assistant", canonical.Model.ModelID())
+}
+
+func TestBuildCatalog_ModelFactoryReceivesCanonicalAndUnchangedLowerOnce(t *testing.T) {
+	file := testCatalogFile()
+	resolved := map[string]config.ResolvedProvider{
+		"anthropic-primary": {Type: "anthropic", APIKey: "secret"},
+	}
+	direct := make(map[string]provider.LanguageModel)
+	constructed := 0
+	factoryCalls := 0
+	created, err := buildCatalog(file, resolved, http.DefaultClient, func(_ string, modelID string, _ ...anthropicprovider.Option) provider.LanguageModel {
+		constructed++
+		model := &catalogTestModel{id: modelID}
+		direct[modelID] = model
+		return model
+	}, func(canonicalID string, lower provider.LanguageModel) (provider.LanguageModel, error) {
+		factoryCalls++
+		switch canonicalID {
+		case "grafana/assistant":
+			assert.Same(t, direct["claude-assistant"], lower)
+		case "grafana/other":
+			assert.Same(t, direct["claude-other"], lower)
+		default:
+			t.Fatalf("unexpected canonical ID %q", canonicalID)
+		}
+		return identityModelFactory(canonicalID, lower)
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 2, constructed)
+	assert.Equal(t, 2, factoryCalls)
+
+	canonical, err := created.ResolveModel(context.Background(), "grafana/assistant")
+	require.NoError(t, err)
+	alias, err := created.ResolveModel(context.Background(), "assistant")
+	require.NoError(t, err)
+	assert.Same(t, canonical.Model, alias.Model)
+	assert.Equal(t, "grafana", canonical.Model.Provider())
+	assert.Equal(t, "grafana/assistant", canonical.Model.ModelID())
+}
+
+func TestBuildCatalog_ModelFactoryFailureIsFailFast(t *testing.T) {
+	file := testCatalogFile()
+	resolved := map[string]config.ResolvedProvider{
+		"anthropic-primary": {Type: "anthropic", APIKey: "secret"},
+	}
+	for _, factory := range []ModelFactory{
+		nil,
+		func(string, provider.LanguageModel) (provider.LanguageModel, error) { return nil, assert.AnError },
+		func(string, provider.LanguageModel) (provider.LanguageModel, error) { return nil, nil },
+	} {
+		created, err := buildCatalog(file, resolved, http.DefaultClient, func(_ string, modelID string, _ ...anthropicprovider.Option) provider.LanguageModel {
+			return &catalogTestModel{id: modelID}
+		}, factory)
+		require.Error(t, err)
+		assert.Nil(t, created)
+	}
 }
 
 func TestBuildCatalog_InjectsExplicitClientBaseURLAndBackendModel(t *testing.T) {
@@ -65,7 +123,7 @@ func TestBuildCatalog_InjectsExplicitClientBaseURLAndBackendModel(t *testing.T) 
 	}
 	created, err := BuildCatalog(file, map[string]config.ResolvedProvider{
 		"anthropic-primary": {Type: "anthropic", APIKey: "explicit-key", BaseURL: server.URL},
-	}, server.Client())
+	}, server.Client(), identityModelFactory)
 	require.NoError(t, err)
 	resolved, err := created.ResolveModel(context.Background(), "public")
 	require.NoError(t, err)
@@ -87,7 +145,7 @@ func TestBuildCatalog_RejectsMissingOrInvalidReferences(t *testing.T) {
 		{"anthropic-primary": {Type: "openai", APIKey: "secret"}},
 		{"anthropic-primary": {Type: "anthropic"}},
 	} {
-		created, err := BuildCatalog(file, providers, http.DefaultClient)
+		created, err := BuildCatalog(file, providers, http.DefaultClient, identityModelFactory)
 		require.Error(t, err)
 		assert.Nil(t, created)
 	}

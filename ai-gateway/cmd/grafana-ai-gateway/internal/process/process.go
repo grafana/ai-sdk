@@ -33,6 +33,9 @@ func Run(ctx context.Context, args []string, lookupEnv config.LookupEnv, listen 
 	if err != nil {
 		return err
 	}
+	if err := settings.AgentObservability.ValidateAmbientEnvironment(lookupEnv); err != nil {
+		return err
+	}
 	jwksURL := ""
 	if !settings.AuthUnsafe {
 		parsed, err := outbound.ValidateEndpoint(settings.JWKSURL, settings.DeploymentMode)
@@ -94,21 +97,36 @@ func Run(ctx context.Context, args []string, lookupEnv config.LookupEnv, listen 
 	if err != nil {
 		return err
 	}
-	modelCatalog, err := service.BuildCatalog(file, resolvedProviders, clients.Anthropic)
+	telemetry, err := service.NewTelemetry(logger, service.TelemetryOptions{
+		Region:      settings.ObservationRegion,
+		Application: settings.ObservationApplication,
+	})
 	if err != nil {
+		return err
+	}
+	agentRuntime, err := service.NewAgentObservabilityRuntime(settings.AgentObservability, lookupEnv, telemetry)
+	if err != nil {
+		return err
+	}
+	modelFactory, err := service.NewModelObservabilityFactory(telemetry, logger, agentRuntime, settings.ProviderWire.StreamDrainDuration)
+	if err != nil {
+		agentRuntime.Close()
+		return err
+	}
+	modelCatalog, err := service.BuildCatalog(file, resolvedProviders, clients.Anthropic, modelFactory)
+	if err != nil {
+		agentRuntime.Close()
 		return err
 	}
 	errorWriter := providerv4.NewHostErrorWriter()
 	discoveryHandler, err := discovery.New(modelCatalog, errorWriter, settings.DiscoveryResponseBytes)
 	if err != nil {
+		agentRuntime.Close()
 		return err
 	}
 	languageHandler, err := providerv4.New(providerv4.Config{Resolver: modelCatalog, Limits: settings.ProviderWire})
 	if err != nil {
-		return err
-	}
-	telemetry, err := service.NewTelemetry(logger)
-	if err != nil {
+		agentRuntime.Close()
 		return err
 	}
 	readiness := &service.Readiness{}
@@ -122,6 +140,7 @@ func Run(ctx context.Context, args []string, lookupEnv config.LookupEnv, listen 
 	})
 	listener, err := listen("tcp", settings.ListenAddress)
 	if err != nil {
+		agentRuntime.Close()
 		return fmt.Errorf("gateway process: binding listener: %w", err)
 	}
 	server := &http.Server{
@@ -135,11 +154,12 @@ func Run(ctx context.Context, args []string, lookupEnv config.LookupEnv, listen 
 			return processContext
 		},
 	}
-	return Serve(ctx, cancelProcess, server, listener, readiness, telemetry, logger, settings.ShutdownTimeout)
+	return Serve(ctx, cancelProcess, server, listener, readiness, telemetry, logger, settings.ShutdownTimeout, agentRuntime.Close)
 }
 
-// Serve owns readiness and cancel-first graceful HTTP shutdown.
-func Serve(ctx context.Context, cancel context.CancelFunc, server *http.Server, listener net.Listener, readiness *service.Readiness, telemetry *service.Telemetry, logger *slog.Logger, shutdownTimeout time.Duration) error {
+// Serve owns readiness and cancel-first graceful HTTP shutdown, then runs the
+// optional caller-bounded process finalizer before reporting shutdown completion.
+func Serve(ctx context.Context, cancel context.CancelFunc, server *http.Server, listener net.Listener, readiness *service.Readiness, telemetry *service.Telemetry, logger *slog.Logger, shutdownTimeout time.Duration, finalize func()) error {
 	if shutdownTimeout <= 0 {
 		return fmt.Errorf("gateway process: invalid serve dependency")
 	}
@@ -163,6 +183,9 @@ func Serve(ctx context.Context, cancel context.CancelFunc, server *http.Server, 
 	telemetry.SetReady(false)
 	logProcessEvent(logger, processEventShutdownStarted)
 	defer logProcessEvent(logger, processEventShutdownCompleted)
+	if finalize != nil {
+		defer finalize()
+	}
 	cancel()
 	if serverStopped {
 		if serveErr == nil || errors.Is(serveErr, http.ErrServerClosed) {
