@@ -68,7 +68,9 @@ those values are appropriate for the user and application.
 `CreateUIMessageStream` and `UIMessageStreamWriter` let a server merge model
 output with custom data chunks. Use them for application progress, status, or
 other typed UI state that belongs in the same stream. Keep business data typed
-and avoid exposing secrets or internal errors.
+and avoid exposing secrets or internal errors. The composed stream carries only
+the chunks written to it, so the caller writes its own `start` and `finish`
+chunks or merges a stream that already carries them.
 
 For server-side consumers, `StreamUIMessage` produces progressive message
 snapshots and `AssembleUIMessage` returns one final message.

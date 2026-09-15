@@ -82,11 +82,19 @@ func (w *UIMessageStreamWriter) output() <-chan UIMessageChunk {
 
 // CreateUIMessageStreamParams configures CreateUIMessageStream.
 type CreateUIMessageStreamParams struct {
-	Execute          func(writer *UIMessageStreamWriter) error
-	OnError          func(error) string
+	// Execute writes the whole stream through the supplied writer. It is required.
+	Execute func(writer *UIMessageStreamWriter) error
+	// OnError maps an Execute failure to the text of the emitted error chunk.
+	OnError func(error) string
+	// OriginalMessages is the prior conversation. It supplies the continuation
+	// message ID and the OnFinish history; it is not a persistence mode switch.
 	OriginalMessages []UIMessage
-	OnFinish         func(UIMessageStreamOnFinishState)
-	GenerateID       func() string
+	// OnFinish runs once the stream ends, whether or not OriginalMessages is set.
+	OnFinish func(UIMessageStreamOnFinishState)
+	// GenerateID mints the response message ID. It defaults to the package-level
+	// GenerateID and is called at most once per stream: a continued assistant
+	// message supplies its own ID instead, and GenerateID is not called.
+	GenerateID func() string
 }
 
 // UIMessageStreamOnFinishState is passed to the OnFinish callback.
@@ -99,8 +107,17 @@ type UIMessageStreamOnFinishState struct {
 }
 
 // CreateUIMessageStream creates a standalone UIMessageChunk stream.
-// The Execute callback receives a writer; chunks written to it appear
-// on the returned channel. The stream is framed with start/finish chunks.
+// The Execute callback owns the whole stream: nothing is added to it, so
+// Execute writes its own StartChunk and FinishChunk, or merges a stream that
+// already carries them, such as StreamTextResult.ToUIMessageStream.
+//
+// A start chunk written without a message ID receives the response message ID:
+// the last OriginalMessages entry's ID when that entry is an assistant message,
+// which continues it, and otherwise a generated ID. A start chunk that carries
+// its own ID keeps it, which lets a caller supply a request-scoped ID. Without
+// a start chunk, GenerateID and OriginalMessages reach only OnFinish, and the
+// same holds when Execute merges a stream that stamps its own start chunk,
+// since that ID wins.
 func CreateUIMessageStream(params CreateUIMessageStreamParams) <-chan UIMessageChunk {
 	out := make(chan UIMessageChunk, defaultWriterBuffer)
 
@@ -109,20 +126,19 @@ func CreateUIMessageStream(params CreateUIMessageStreamParams) <-chan UIMessageC
 
 		writer := newUIMessageStreamWriter(defaultWriterBuffer)
 
-		genID := params.GenerateID
-		if genID == nil {
-			genID = GenerateID
+		// Like upstream createUIMessageStream, emit no start or finish chunk of
+		// our own. Start chunks without a message ID get the response ID, which
+		// continues the last original message when it is an assistant message.
+		cfg := uiMessageStreamConfig{
+			originalMessages:    params.OriginalMessages,
+			hasOriginalMessages: true,
+			generateMessageID:   params.GenerateID,
 		}
+		messageID := responseUIMessageID(cfg)
 
-		// Emit start chunk
-		var messageID string
-		if params.OriginalMessages != nil {
-			messageID = genID()
-		}
-		out <- UIMessageChunk{Type: ChunkStart, MessageID: messageID}
-
-		// Collect chunks for message assembly
 		var chunks []UIMessageChunk
+		var finishReason provider.FinishReason
+		var isAborted bool
 
 		// Run execute in a goroutine, forward writer output to out
 		done := make(chan error, 1)
@@ -132,12 +148,23 @@ func CreateUIMessageStream(params CreateUIMessageStreamParams) <-chan UIMessageC
 		}()
 
 		for chunk := range writer.output() {
+			switch chunk.Type {
+			case ChunkStart:
+				if chunk.MessageID == "" {
+					chunk.MessageID = messageID
+				}
+			case ChunkFinish:
+				if chunk.FinishReason != "" {
+					finishReason = provider.FinishReason{Unified: provider.UnifiedFinishReason(chunk.FinishReason)}
+				}
+			case ChunkAbort:
+				isAborted = true
+			}
 			chunks = append(chunks, chunk)
 			out <- chunk
 		}
 
-		execErr := <-done
-		if execErr != nil {
+		if execErr := <-done; execErr != nil {
 			errText := "An error occurred"
 			if params.OnError != nil {
 				errText = params.OnError(execErr)
@@ -145,18 +172,9 @@ func CreateUIMessageStream(params CreateUIMessageStreamParams) <-chan UIMessageC
 			out <- UIMessageChunk{Type: ChunkError, ErrorText: errText}
 		}
 
-		// Assemble response message for callbacks
-		if params.OnFinish != nil && params.OriginalMessages != nil {
-			respMsg := assembleResponseMessage(messageID, chunks)
-			state := UIMessageStreamOnFinishState{
-				Messages:        append(params.OriginalMessages, respMsg),
-				ResponseMessage: respMsg,
-			}
-			params.OnFinish(state)
+		if params.OnFinish != nil {
+			params.OnFinish(buildUIMessageStreamFinishState(messageID, chunks, cfg, finishReason, isAborted))
 		}
-
-		// Emit finish chunk
-		out <- UIMessageChunk{Type: ChunkFinish}
 	}()
 
 	return out
