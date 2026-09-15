@@ -59,6 +59,8 @@ func TestLoadFile_StrictBoundedDocument(t *testing.T) {
 		{name: "empty providers", yaml: "providers: {}\nmodels: {}\n"},
 		{name: "empty models", yaml: "providers:\n  p:\n    type: anthropic\n    apiKeyEnv: KEY\nmodels: {}\n"},
 		{name: "unknown provider type", yaml: strings.Replace(minimalConfigYAML, "type: anthropic", "type: openai", 1)},
+		{name: "openai-compatible without base URL", yaml: strings.Replace(minimalConfigYAML, "type: anthropic", "type: openai-compatible", 1)},
+		{name: "provider name on anthropic", yaml: strings.Replace(minimalConfigYAML, "    apiKeyEnv: ANTHROPIC_API_KEY\n", "    apiKeyEnv: ANTHROPIC_API_KEY\n    providerName: other\n", 1)},
 		{name: "missing api key reference", yaml: strings.Replace(minimalConfigYAML, "    apiKeyEnv: ANTHROPIC_API_KEY\n", "", 1)},
 		{name: "missing model name", yaml: strings.Replace(minimalConfigYAML, "    name: Grafana Assistant\n", "", 1)},
 		{name: "unknown provider reference", yaml: strings.Replace(minimalConfigYAML, "provider: anthropic-primary", "provider: missing", 1)},
@@ -193,4 +195,30 @@ func cloneFile(file File) File {
 		result.Models[key] = value
 	}
 	return result
+}
+
+func TestLoadFile_OpenAICompatibleProvider(t *testing.T) {
+	yaml := strings.Replace(minimalConfigYAML, "    type: anthropic\n", "    type: openai-compatible\n    baseURL: http://127.0.0.1:11434/v1\n    providerName: ollama\n", 1)
+	file, err := LoadFile(writeConfigFile(t, yaml), 1<<20)
+	require.NoError(t, err)
+	resolved, err := file.ResolveProviderSecrets(func(string) (string, bool) { return "key", true })
+	require.NoError(t, err)
+	assert.Equal(t, ResolvedProvider{Type: "openai-compatible", APIKey: "key", BaseURL: "http://127.0.0.1:11434/v1", ProviderName: "ollama"}, resolved["anthropic-primary"])
+}
+
+func TestLoadFile_ProviderErrorsNameTheField(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		yaml string
+		want string
+	}{
+		{name: "missing base URL", yaml: strings.Replace(minimalConfigYAML, "type: anthropic", "type: openai-compatible", 1), want: "providers.anthropic-primary.baseURL"},
+		{name: "provider name on anthropic", yaml: strings.Replace(minimalConfigYAML, "    apiKeyEnv: ANTHROPIC_API_KEY\n", "    apiKeyEnv: ANTHROPIC_API_KEY\n    providerName: other\n", 1), want: "providers.anthropic-primary.providerName"},
+		{name: "unsupported type", yaml: strings.Replace(minimalConfigYAML, "type: anthropic", "type: openai", 1), want: `providers.anthropic-primary.type "openai" is unsupported (want anthropic or openai-compatible)`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := LoadFile(writeConfigFile(t, tc.yaml), 1<<20)
+			require.ErrorContains(t, err, tc.want)
+		})
+	}
 }

@@ -267,6 +267,127 @@ describe("authenticated Anthropic Gateway command", () => {
   });
 });
 
+describe("authenticated OpenAI-compatible Gateway command", () => {
+  it("discovers, invokes, and streams usage without exposing private configuration", async () => {
+    const [fake, gateway] = await startCompatibleGateway();
+    try {
+      const rawDiscoveryResponse = await fetch(`${gateway.url}/api/v1/aisdk/config`, {
+        headers: { "X-Access-Token": TEST_TOKEN },
+      });
+      assert.equal(rawDiscoveryResponse.status, 200);
+      const rawDiscovery = await rawDiscoveryResponse.text();
+      for (const privateValue of ["compatible-primary", "compatible-backend", "backend-private", "GATEWAY_TEST_COMPATIBLE_KEY", "integration-compatible-key", fake.url]) {
+        assert.ok(!rawDiscovery.includes(privateValue));
+      }
+      const client = gateway.client();
+      const metadata = await client.getAvailableModels();
+      assert.deepEqual(metadata.models.map((model) => model.id), ["compatible", "grafana/compatible"]);
+      const result = await client("grafana/compatible").doGenerate({
+        prompt: [{ role: "user", content: [{ type: "text", text: "unary" }] }],
+        maxOutputTokens: 32,
+      });
+      assert.deepEqual(result.content, [{ type: "text", text: "hello from fake compatible" }]);
+
+      const stream = await client("compatible").doStream({
+        prompt: [{ role: "user", content: [{ type: "text", text: "normal-stream" }] }],
+        maxOutputTokens: 32,
+      });
+      const reader = stream.stream.getReader();
+      const parts: Array<{ type: string; delta?: string; usage?: { outputTokens?: { total?: number } } }> = [];
+      for (;;) {
+        const next = await reader.read();
+        if (next.done) break;
+        parts.push(next.value);
+      }
+      assert.equal(parts[0]?.type, "stream-start");
+      assert.equal(parts.filter((part) => part.type === "text-delta").map((part) => part.delta).join(""), "hello from fake compatible stream");
+      assert.equal(parts.find((part) => part.type === "finish")?.usage?.outputTokens?.total, 6);
+      assert.equal(await gateway.ready(), true);
+
+      assert.equal(fake.requests.length, 2);
+      for (const request of fake.requests) {
+        assert.equal(request.body.max_tokens, 32);
+        assert.deepEqual(request.body.messages, [{ role: "user", content: request.body.stream === true ? "normal-stream" : "unary" }]);
+      }
+      assert.deepEqual(fake.requests.at(-1)?.body.stream_options, { include_usage: true });
+      assert.deepEqual(fake.violations, []);
+    } finally {
+      await settleCleanup(() => gateway.stop(), () => fake.stop());
+    }
+  });
+
+  it("rejects redirects and hides upstream failures without exposing private configuration", async () => {
+    const [fake, gateway] = await startCompatibleGateway();
+    const redirectTarget = await FakeCompatible.start();
+    try {
+      fake.failWithSecret = true;
+      const failed = await rawProviderWireRequest(gateway.url, "unary", "compatible");
+      assert.ok(failed.status >= 400);
+      const publicError = await failed.text();
+      assert.equal(fake.requests.length, 1);
+
+      fake.failWithSecret = false;
+      fake.redirectTo = redirectTarget.url;
+      const redirected = await rawProviderWireRequest(gateway.url, "unary", "compatible");
+      assert.ok(redirected.status >= 400);
+      const redirectError = await redirected.text();
+      assert.equal(redirectTarget.requests.length, 0);
+      assert.deepEqual(fake.violations, []);
+
+      const metrics = await (await fetch(`${gateway.url}/metrics`)).text();
+      assert.equal(await gateway.ready(), true);
+      await gateway.stop();
+      const logs = gateway.stderr;
+      for (const privateValue of ["provider-secret-response", "compatible-primary", "compatible-backend", "backend-private", "integration-compatible-key", fake.url, redirectTarget.url, TEST_TOKEN]) {
+        assert.ok(!publicError.includes(privateValue));
+        assert.ok(!redirectError.includes(privateValue));
+        assert.ok(!metrics.includes(privateValue));
+        assert.ok(!logs.includes(privateValue));
+      }
+    } finally {
+      await settleCleanup(() => gateway.stop(), () => fake.stop(), () => redirectTarget.stop());
+    }
+  });
+
+  it("cancels an established compatible stream when the client aborts", async () => {
+    const [fake, gateway] = await startCompatibleGateway();
+    try {
+      const result = await gateway.client()("compatible").doStream({
+        prompt: [{ role: "user", content: [{ type: "text", text: "silent-abort" }] }],
+        maxOutputTokens: 32,
+      });
+      const reader = result.stream.getReader();
+      const first = await reader.read();
+      assert.equal(first.done, false);
+      assert.equal(first.value?.type, "stream-start");
+      await reader.cancel("test abort");
+      await fake.waitForCancellation("silent-abort");
+      assert.equal(await gateway.ready(), true);
+      assert.deepEqual(fake.violations, []);
+    } finally {
+      await settleCleanup(() => gateway.stop(), () => fake.stop());
+    }
+  });
+});
+
+async function startCompatibleGateway(): Promise<[FakeCompatible, GatewayProcess]> {
+  const fake = await FakeCompatible.start();
+  try {
+    return [fake, await GatewayProcess.start(binaryPath, "", [], compatibleConfig(fake.url))];
+  } catch (error) {
+    await settleCleanup(() => fake.stop());
+    throw error;
+  }
+}
+
+function anthropicConfig(url: string): string {
+  return `providers:\n  anthropic-primary:\n    type: anthropic\n    apiKeyEnv: GATEWAY_TEST_ANTHROPIC_KEY\n    baseURL: ${url}\nmodels:\n  grafana/assistant:\n    name: Grafana Assistant\n    description: Integration model\n    primary:\n      provider: anthropic-primary\n      model: backend-private\n    aliases:\n      - assistant\n`;
+}
+
+function compatibleConfig(url: string): string {
+  return `providers:\n  compatible-primary:\n    type: openai-compatible\n    apiKeyEnv: GATEWAY_TEST_COMPATIBLE_KEY\n    baseURL: ${url}/v1\n    providerName: compatible-backend\nmodels:\n  grafana/compatible:\n    name: Grafana Compatible\n    description: Integration model\n    primary:\n      provider: compatible-primary\n      model: backend-private\n    aliases:\n      - compatible\n`;
+}
+
 async function startGateway(extraArgs: string[] = []): Promise<[FakeAnthropic, GatewayProcess]> {
   const fake = await FakeAnthropic.start();
   try {
@@ -317,13 +438,13 @@ class GatewayProcess {
     });
   }
 
-  static async start(binary: string, anthropicURL: string, extraArgs: string[] = []): Promise<GatewayProcess> {
+  static async start(binary: string, anthropicURL: string, extraArgs: string[] = [], configYAML = anthropicConfig(anthropicURL)): Promise<GatewayProcess> {
     const directory = mkdtempSync(join(tmpdir(), "grafana-ai-gateway-process-"));
     this.lastFailedDirectory = undefined;
     let gateway: GatewayProcess | undefined;
     try {
       const configPath = join(directory, "models.yaml");
-      writeFileSync(configPath, `providers:\n  anthropic-primary:\n    type: anthropic\n    apiKeyEnv: GATEWAY_TEST_ANTHROPIC_KEY\n    baseURL: ${anthropicURL}\nmodels:\n  grafana/assistant:\n    name: Grafana Assistant\n    description: Integration model\n    primary:\n      provider: anthropic-primary\n      model: backend-private\n    aliases:\n      - assistant\n`);
+      writeFileSync(configPath, configYAML);
       const port = await availablePort();
       const url = `http://127.0.0.1:${port}`;
       const args = [
@@ -337,7 +458,11 @@ class GatewayProcess {
       const proc = spawn(binary, args, {
         cwd: directory,
         stdio: ["ignore", "ignore", "pipe"],
-        env: { ...nodeProcess.env, GATEWAY_TEST_ANTHROPIC_KEY: "integration-anthropic-key" },
+        env: {
+          ...nodeProcess.env,
+          GATEWAY_TEST_ANTHROPIC_KEY: "integration-anthropic-key",
+          GATEWAY_TEST_COMPATIBLE_KEY: "integration-compatible-key",
+        },
       });
       gateway = new GatewayProcess(proc, url, directory);
       const deadline = Date.now() + READY_TIMEOUT_MS;
@@ -499,14 +624,93 @@ class FakeAnthropic {
   }
 }
 
-function rawProviderWireRequest(baseURL: string, text: string): Promise<Response> {
+class FakeCompatible {
+  readonly url: string;
+  readonly requests: FakeRequest[] = [];
+  readonly violations: string[] = [];
+  readonly canceled = new Set<string>();
+  redirectTo?: string;
+  failWithSecret = false;
+  private readonly server: ReturnType<typeof createServer>;
+
+  private constructor(server: ReturnType<typeof createServer>, url: string) {
+    this.server = server;
+    this.url = url;
+  }
+
+  static async start(): Promise<FakeCompatible> {
+    let fake: FakeCompatible;
+    const server = createServer((request, response) => void fake.handle(request, response));
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (address == null || typeof address === "string") throw new Error("fake server did not bind TCP");
+    fake = new FakeCompatible(server, `http://127.0.0.1:${address.port}`);
+    return fake;
+  }
+
+  async stop(): Promise<void> {
+    this.server.closeAllConnections();
+    await new Promise<void>((resolve) => this.server.close(() => resolve()));
+  }
+
+  async waitForCancellation(marker: string): Promise<void> {
+    await poll(async () => this.canceled.has(marker), 5_000, `compatible cancellation for ${marker}`);
+  }
+
+  private async handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
+    const chunks: Buffer[] = [];
+    for await (const chunk of request) chunks.push(Buffer.from(chunk));
+    const body = JSON.parse(Buffer.concat(chunks).toString()) as Record<string, unknown>;
+    const marker = ["silent-abort", "normal-stream"].find((value) => JSON.stringify(body).includes(value));
+    const authorization = singleHeader(request.headers.authorization);
+    this.requests.push({ path: request.url ?? "", apiKey: authorization, body });
+    if (request.url !== "/v1/chat/completions") this.violations.push(`path=${request.url}`);
+    if (authorization !== "Bearer integration-compatible-key") this.violations.push("authorization");
+    if (body.model !== "backend-private") this.violations.push(`model=${String(body.model)}`);
+
+    if (this.redirectTo != null) {
+      response.writeHead(307, { Location: this.redirectTo });
+      response.end();
+      return;
+    }
+    if (this.failWithSecret) {
+      response.writeHead(502, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ error: { type: "server_error", message: "provider-secret-response" } }));
+      return;
+    }
+    if (body.stream !== true) {
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({
+        id: "chatcmpl-test", object: "chat.completion", created: 1, model: "backend-private",
+        choices: [{ index: 0, message: { role: "assistant", content: "hello from fake compatible" }, finish_reason: "stop" }],
+        usage: { prompt_tokens: 2, completion_tokens: 3, total_tokens: 5 },
+      }));
+      return;
+    }
+
+    response.writeHead(200, { "Content-Type": "text/event-stream" });
+    response.flushHeaders();
+    if (marker === "normal-stream") {
+      const chunk = (fields: Record<string, unknown>) => `data: ${JSON.stringify({ id: "chatcmpl-test", object: "chat.completion.chunk", created: 1, model: "backend-private", ...fields })}\n\n`;
+      response.write(chunk({ choices: [{ index: 0, delta: { role: "assistant", content: "hello from fake compatible stream" }, finish_reason: null }] }));
+      response.write(chunk({ choices: [{ index: 0, delta: {}, finish_reason: "stop" }] }));
+      response.write(chunk({ choices: [], usage: { prompt_tokens: 2, completion_tokens: 6, total_tokens: 8 } }));
+      response.end("data: [DONE]\n\n");
+      return;
+    }
+    request.once("close", () => { if (marker != null) this.canceled.add(marker); });
+    response.once("close", () => { if (marker != null) this.canceled.add(marker); });
+  }
+}
+
+function rawProviderWireRequest(baseURL: string, text: string, modelID = "assistant"): Promise<Response> {
   return fetch(`${baseURL}/api/v1/aisdk/language-model`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       "X-Access-Token": TEST_TOKEN,
       "ai-language-model-specification-version": "4",
-      "ai-language-model-id": "assistant",
+      "ai-language-model-id": modelID,
       "ai-language-model-streaming": "false",
     },
     body: JSON.stringify({
