@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -20,30 +19,46 @@ type telemetryStateKey struct{}
 
 type telemetryState struct {
 	authOutcome atomic.Uint32
-	callerMu    sync.Mutex
-	service     string
-	namespace   string
+	observation atomic.Pointer[requestObservation]
+}
+
+// TelemetryOptions contains trusted static observation values.
+type TelemetryOptions struct {
+	Region      string
+	Application string
 }
 
 // Telemetry owns bounded HTTP lifecycle metrics and completion logging.
 type Telemetry struct {
-	logger   *slog.Logger
-	registry *prometheus.Registry
-	ready    prometheus.Gauge
-	inFlight *prometheus.GaugeVec
-	requests *prometheus.CounterVec
-	duration *prometheus.HistogramVec
+	logger                *slog.Logger
+	registry              *prometheus.Registry
+	ready                 prometheus.Gauge
+	inFlight              *prometheus.GaugeVec
+	requests              *prometheus.CounterVec
+	duration              *prometheus.HistogramVec
+	agentExportFailures   *prometheus.CounterVec
+	staticObservation     requestObservation
+	generateCorrelationID func() string
 }
 
 // NewTelemetry constructs one service-owned Prometheus registry.
-func NewTelemetry(logger *slog.Logger) (*Telemetry, error) {
-	return newTelemetry(logger, prometheus.NewRegistry())
+func NewTelemetry(logger *slog.Logger, options ...TelemetryOptions) (*Telemetry, error) {
+	return newTelemetry(logger, prometheus.NewRegistry(), options...)
 }
 
-func newTelemetry(logger *slog.Logger, registry *prometheus.Registry) (*Telemetry, error) {
+func newTelemetry(logger *slog.Logger, registry *prometheus.Registry, options ...TelemetryOptions) (*Telemetry, error) {
+	var configured TelemetryOptions
+	if len(options) != 0 {
+		configured = options[0]
+	}
 	telemetry := &Telemetry{
 		logger:   logger,
 		registry: registry,
+		staticObservation: requestObservation{
+			region:      boundedObservationValue(configured.Region),
+			application: boundedObservationValue(configured.Application),
+		},
+		generateCorrelationID: newRequestCorrelationID,
 		ready: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: "grafana_ai_gateway",
 			Name:      "ready",
@@ -64,6 +79,11 @@ func newTelemetry(logger *slog.Logger, registry *prometheus.Registry) (*Telemetr
 			Name:      "http_request_duration_seconds",
 			Help:      "HTTP request duration in seconds.",
 		}, []string{"route", "method", "status"}),
+		agentExportFailures: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "grafana_ai_gateway",
+			Name:      "agento11y_export_failures_total",
+			Help:      "Agent Observability export failures by fixed class.",
+		}, []string{"class"}),
 	}
 	for _, collector := range []prometheus.Collector{
 		collectors.NewGoCollector(),
@@ -72,6 +92,7 @@ func newTelemetry(logger *slog.Logger, registry *prometheus.Registry) (*Telemetr
 		telemetry.inFlight,
 		telemetry.requests,
 		telemetry.duration,
+		telemetry.agentExportFailures,
 	} {
 		if err := registry.Register(collector); err != nil {
 			return nil, fmt.Errorf("gateway service: registering metrics: %w", err)
@@ -80,9 +101,37 @@ func newTelemetry(logger *slog.Logger, registry *prometheus.Registry) (*Telemetr
 	return telemetry, nil
 }
 
+type agentExportFailureClass string
+
+const (
+	agentExportFailureQueue         agentExportFailureClass = "queue_full"
+	agentExportFailureSerialization agentExportFailureClass = "serialization"
+	agentExportFailureTransport     agentExportFailureClass = "transport"
+	agentExportFailureRejected      agentExportFailureClass = "rejected"
+	agentExportFailureShutdown      agentExportFailureClass = "shutdown"
+	agentExportFailureUnknown       agentExportFailureClass = "unknown"
+)
+
+// observeAgentExportFailure records only a fixed class; raw exporter errors,
+// endpoints, credentials, and payloads never enter the metric or diagnostic.
+func (telemetry *Telemetry) observeAgentExportFailure(class agentExportFailureClass) {
+	switch class {
+	case agentExportFailureQueue, agentExportFailureSerialization, agentExportFailureTransport, agentExportFailureRejected, agentExportFailureShutdown:
+	default:
+		class = agentExportFailureUnknown
+	}
+	telemetry.agentExportFailures.WithLabelValues(string(class)).Inc()
+	telemetry.logger.Warn("agent observability export failed", "class", string(class))
+}
+
 // Handler exposes the service-owned registry.
 func (telemetry *Telemetry) Handler() http.Handler {
 	return promhttp.HandlerFor(telemetry.registry, promhttp.HandlerOpts{})
+}
+
+// Registerer exposes only collector registration on the service-owned registry.
+func (telemetry *Telemetry) Registerer() prometheus.Registerer {
+	return telemetry.registry
 }
 
 // SetReady updates the readiness collector.
@@ -98,11 +147,11 @@ func (telemetry *Telemetry) SetReady(ready bool) {
 func (telemetry *Telemetry) ObserveAuthentication(ctx context.Context, observation gatewayauth.Observation) {
 	if state, ok := ctx.Value(telemetryStateKey{}).(*telemetryState); ok {
 		state.authOutcome.Store(uint32(observation.Outcome))
-		if observation.Caller != nil {
-			state.callerMu.Lock()
-			state.service = observation.Caller.Service
-			state.namespace = observation.Caller.Namespace
-			state.callerMu.Unlock()
+		if observation.Outcome == gatewayauth.OutcomeAuthenticated && observation.Caller != nil {
+			current := observationFromContext(ctx)
+			current.callerService = boundedObservationValue(observation.Caller.Service)
+			current.namespace = boundedObservationValue(observation.Caller.Namespace)
+			state.observation.Store(&current)
 		}
 	}
 }
@@ -112,7 +161,10 @@ func (telemetry *Telemetry) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		route := normalizeRequestRoute(request)
 		method := normalizeMethod(request.Method)
+		observation := telemetry.staticObservation
+		observation.correlationID = boundedObservationValue(telemetry.generateCorrelationID())
 		state := &telemetryState{}
+		state.observation.Store(&observation)
 		request = request.WithContext(context.WithValue(request.Context(), telemetryStateKey{}, state))
 		wrapped := &responseWriter{ResponseWriter: w}
 		started := time.Now()
@@ -127,12 +179,16 @@ func (telemetry *Telemetry) Middleware(next http.Handler) http.Handler {
 			duration := time.Since(started).Seconds()
 			telemetry.requests.WithLabelValues(route, method, statusClass).Inc()
 			telemetry.duration.WithLabelValues(route, method, statusClass).Observe(duration)
-			telemetry.logger.InfoContext(request.Context(), "http request completed",
+			attrs := []any{
 				"route", route,
 				"method", method,
 				"status", statusClass,
 				"authentication", authenticationClass(gatewayauth.Outcome(state.authOutcome.Load())),
-			)
+			}
+			for _, attr := range observationLogAttrs(request.Context()) {
+				attrs = append(attrs, attr)
+			}
+			telemetry.logger.InfoContext(request.Context(), "http request completed", attrs...)
 		}()
 		next.ServeHTTP(wrapped, request)
 	})

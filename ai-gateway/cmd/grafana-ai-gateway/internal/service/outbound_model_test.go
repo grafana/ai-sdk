@@ -112,7 +112,7 @@ func hardenedTestModel(t *testing.T, server *httptest.Server, limit int64, heade
 	}
 	modelCatalog, err := BuildCatalog(file, map[string]config.ResolvedProvider{
 		"provider": {Type: "anthropic", APIKey: "explicit-key", BaseURL: server.URL},
-	}, clients.Anthropic)
+	}, clients.Anthropic, identityModelFactory)
 	require.NoError(t, err)
 	resolved, err := modelCatalog.ResolveModel(context.Background(), "public")
 	require.NoError(t, err)
