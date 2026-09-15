@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/grafana/agento11y/go/agento11y"
+	"github.com/grafana/ai-sdk/provider"
 )
 
 // ClientResolver resolves the *agento11y.Client to use for a given request
@@ -20,6 +21,41 @@ type ClientResolver = func(ctx context.Context) *agento11y.Client
 // tolerates a zero return value; every field falls back to the corresponding
 // agento11y context helper or remains unset.
 type ContextProvider = func(ctx context.Context) ContextInfo
+
+// RecordErrorHandler receives a local validation or enqueue failure after a
+// generation recorder is finalized. It must not return an error because
+// observation failures never change the model call result.
+type RecordErrorHandler = func(err error)
+
+// RecordCompleteHandler is called once after a generation recorder has ended,
+// including local validation or enqueue failure. Handler panics are recovered.
+type RecordCompleteHandler = func()
+
+// GenerationFilterInput carries the mapped generation plus the normalized
+// provider finish reason observed for the call.
+type GenerationFilterInput struct {
+	Generation   agento11y.Generation
+	FinishReason provider.FinishReason
+}
+
+// GenerationFilter applies a consumer-owned allowlist immediately before a
+// mapped generation is handed to the Agent Observability client. It must not
+// mutate values retained by the provider result.
+type GenerationFilter = func(GenerationFilterInput) agento11y.Generation
+
+// ContextSource selects whether recording may inherit Agent Observability
+// values from the request context.
+type ContextSource string
+
+const (
+	// ContextAmbientFallback preserves direct-consumer compatibility by using
+	// explicit ContextInfo first and Agent Observability context values second.
+	ContextAmbientFallback ContextSource = "ambient_fallback"
+	// ContextProvidedOnly allows only ContextInfo plus the active OpenTelemetry
+	// parent span into recording. The original context values and cancellation
+	// still reach the wrapped model.
+	ContextProvidedOnly ContextSource = "provided_only"
+)
 
 // ContextInfo carries consumer-derived fields that get attached to every
 // Generation. None are required.
@@ -63,14 +99,41 @@ type WrapOptions struct {
 	Hooks HooksOptions
 }
 
+// IdentitySource selects the model identity recorded for a generation.
+type IdentitySource string
+
+const (
+	// IdentityPreferResponse prefers complete response identity over requested identity.
+	IdentityPreferResponse IdentitySource = "prefer_response"
+	// IdentityRequested keeps requested identity and omits mapped response and transport
+	// identity. Caller-supplied metadata and tags are not filtered.
+	IdentityRequested IdentitySource = "requested"
+)
+
 // RecordingOptions configures RecordingMiddleware.
 type RecordingOptions struct {
+	// IdentitySource defaults to IdentityPreferResponse.
+	IdentitySource IdentitySource
+	// StreamDrainTimeout enables bounded asynchronous cancellation cleanup when
+	// positive. Zero preserves the default behavior of not draining after cancellation.
+	StreamDrainTimeout time.Duration
 	// ClientResolver, when set, overrides WrapOptions.ClientResolver for the
 	// Recording middleware only.
 	ClientResolver ClientResolver
 	// ContextProvider, when set, overrides WrapOptions.ContextProvider for
 	// the Recording middleware only.
 	ContextProvider ContextProvider
+	// OnRecordError receives recorder-local validation and queue failures after
+	// End. Handler panics are recovered so telemetry remains fail-open.
+	OnRecordError RecordErrorHandler
+	// OnRecordComplete runs once after End, regardless of recorder outcome. It
+	// can be used by process owners to bound shutdown around active recordings.
+	OnRecordComplete RecordCompleteHandler
+	// GenerationFilter applies a final consumer-owned observation policy to
+	// mapped unary and stream generations. Nil preserves existing behavior.
+	GenerationFilter GenerationFilter
+	// ContextSource defaults to ContextAmbientFallback.
+	ContextSource ContextSource
 }
 
 // HooksOptions configures HooksMiddleware.

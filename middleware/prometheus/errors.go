@@ -20,7 +20,8 @@ const (
 	errorTypeProviderStreamError     = "provider_stream_error"
 	errorTypeOther                   = "other"
 
-	statusCodeNone = "none"
+	statusCodeNone  = "none"
+	statusCodeOther = "other"
 
 	finishReasonNone = "none"
 )
@@ -74,8 +75,10 @@ func classifyContext(ctx context.Context) (outcome, bool) {
 
 func apiCallErrorOutcome(err *provider.APICallError) outcome {
 	statusCode := statusCodeNone
-	if err.StatusCode > 0 {
+	if err.StatusCode >= 100 && err.StatusCode <= 599 {
 		statusCode = strconv.Itoa(err.StatusCode)
+	} else if err.StatusCode != 0 {
+		statusCode = statusCodeOther
 	}
 	return outcome{status: statusError, errorType: errorTypeAPICallError, statusCode: statusCode, finishReason: finishReasonNone}
 }

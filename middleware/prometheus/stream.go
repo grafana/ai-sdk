@@ -15,7 +15,7 @@ type streamObservation struct {
 	finishReason      string
 	usage             streamusage.Aggregator
 	streamError       *outcome
-	chunkCounts       map[provider.StreamPartType]int
+	chunkCounts       map[string]int
 	firstPayloadAfter *float64
 	lastPayloadAt     time.Time
 	recordPayloadGaps bool
@@ -30,7 +30,7 @@ type payloadGap struct {
 func newStreamObservation(recordPayloadGaps bool) *streamObservation {
 	return &streamObservation{
 		finishReason:      finishReasonNone,
-		chunkCounts:       map[provider.StreamPartType]int{},
+		chunkCounts:       map[string]int{},
 		recordPayloadGaps: recordPayloadGaps,
 	}
 }
@@ -47,15 +47,20 @@ func (i *instrumentation) runStreamTee(
 
 	obs := newStreamObservation(!i.config.disableStreamChunkMetrics)
 	for {
+		if i.config.streamDrainTimeout > 0 && ctx.Err() != nil {
+			i.drainCanceledStream(upstream)
+			i.finalizeStream(ctx, requested, obs, start, true)
+			return
+		}
 		select {
 		case <-ctx.Done():
-			go drainUntilClosed(upstream)
+			i.drainCanceledStream(upstream)
 			i.finalizeStream(ctx, requested, obs, start, true)
 			return
 		case part, ok := <-upstream:
 			receivedAt := time.Now()
 			if !ok {
-				i.finalizeStream(ctx, requested, obs, start, false)
+				i.finalizeStream(ctx, requested, obs, start, ctx.Err() != nil)
 				return
 			}
 			obs.observe(part, start, receivedAt)
@@ -63,7 +68,7 @@ func (i *instrumentation) runStreamTee(
 			select {
 			case tee <- part:
 			case <-ctx.Done():
-				go drainUntilClosed(upstream)
+				i.drainCanceledStream(upstream)
 				i.finalizeStream(ctx, requested, obs, start, true)
 				return
 			}
@@ -73,6 +78,30 @@ func (i *instrumentation) runStreamTee(
 
 func drainUntilClosed(upstream <-chan provider.StreamPart) {
 	for range upstream {
+	}
+}
+
+func (i *instrumentation) drainCanceledStream(upstream <-chan provider.StreamPart) {
+	if i.config.streamDrainTimeout <= 0 {
+		go drainUntilClosed(upstream)
+		return
+	}
+	deadline := time.Now().Add(i.config.streamDrainTimeout)
+	go drainStreamUntil(upstream, deadline)
+}
+
+func drainStreamUntil(upstream <-chan provider.StreamPart, deadline time.Time) {
+	timer := time.NewTimer(time.Until(deadline))
+	defer timer.Stop()
+	for time.Now().Before(deadline) {
+		select {
+		case _, ok := <-upstream:
+			if !ok {
+				return
+			}
+		case <-timer.C:
+			return
+		}
 	}
 }
 
@@ -110,7 +139,8 @@ func (i *instrumentation) finalizeStream(ctx context.Context, requested identity
 }
 
 func (o *streamObservation) observe(part provider.StreamPart, start, receivedAt time.Time) {
-	o.chunkCounts[part.Type]++
+	chunkType := streamChunkTypeLabel(part.Type)
+	o.chunkCounts[chunkType]++
 	o.usage.Observe(part)
 
 	switch part.Type {
@@ -134,9 +164,38 @@ func (o *streamObservation) observe(part provider.StreamPart, start, receivedAt 
 	if o.firstPayloadAfter == nil {
 		o.firstPayloadAfter = &elapsed
 	} else if o.recordPayloadGaps && !o.lastPayloadAt.IsZero() {
-		o.payloadGaps = append(o.payloadGaps, payloadGap{chunkType: string(part.Type), seconds: receivedAt.Sub(o.lastPayloadAt).Seconds()})
+		o.payloadGaps = append(o.payloadGaps, payloadGap{chunkType: chunkType, seconds: receivedAt.Sub(o.lastPayloadAt).Seconds()})
 	}
 	o.lastPayloadAt = receivedAt
+}
+
+func streamChunkTypeLabel(partType provider.StreamPartType) string {
+	switch partType {
+	case provider.PartTextStart,
+		provider.PartTextDelta,
+		provider.PartTextEnd,
+		provider.PartReasoningStart,
+		provider.PartReasoningDelta,
+		provider.PartReasoningEnd,
+		provider.PartToolInputStart,
+		provider.PartToolInputDelta,
+		provider.PartToolInputEnd,
+		provider.PartToolCall,
+		provider.PartToolResult,
+		provider.PartSource,
+		provider.PartFile,
+		provider.PartStreamStart,
+		provider.PartResponseMeta,
+		provider.PartFinish,
+		provider.PartRaw,
+		provider.PartError,
+		provider.PartToolApprovalRequest,
+		provider.PartCustom,
+		provider.PartReasoningFile:
+		return string(partType)
+	default:
+		return "other"
+	}
 }
 
 func isPayloadBearing(partType provider.StreamPartType) bool {

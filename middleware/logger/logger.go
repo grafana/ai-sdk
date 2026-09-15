@@ -64,13 +64,24 @@ func (l *modelLogger) wrapGenerate(ctx context.Context, p middleware.WrapGenerat
 		return nil, err
 	}
 
-	attrs := append(terminalCommonAttrs(callID, "generate", p.Model, responseMetadataFromGenerate(result)), terminalAttrs(duration, outcomeSuccess)...)
+	attrs := append(l.terminalCommonAttrs(callID, "generate", p.Model, responseMetadataFromGenerate(result)), terminalAttrs(duration, outcomeSuccess)...)
 	attrs = append(attrs, generateResultAttrs(result, l.opts.capture)...)
 	l.log(ctx, EventGenerateFinish, l.opts.level, attrs...)
 	return result, nil
 }
 
 func (l *modelLogger) log(ctx context.Context, event EventKind, level slog.Level, attrs ...slog.Attr) {
+	if l.opts.identitySource == IdentityRequested {
+		filtered := make([]slog.Attr, 0, len(attrs))
+		for _, attr := range attrs {
+			switch attr.Key {
+			case "ai_sdk.response.id", "ai_sdk.response.provider", "ai_sdk.response.model", "gen_ai.response.model", "ai_sdk.response.timestamp", "ai_sdk.transport.provider", "ai_sdk.transport.model":
+				continue
+			}
+			filtered = append(filtered, attr)
+		}
+		attrs = filtered
+	}
 	all := make([]slog.Attr, 0, 2+len(attrs)+len(l.opts.attrs)+4)
 	all = append(all,
 		slog.String("ai_sdk.event", string(event)),
@@ -133,7 +144,10 @@ func commonAttrs(callID, callType string, model provider.LanguageModel) []slog.A
 	return modelIdentityAttrs(callID, callType, modelIdentityFromModel(model), modelIdentity{})
 }
 
-func terminalCommonAttrs(callID, callType string, model provider.LanguageModel, response provider.ResponseMetadata) []slog.Attr {
+func (l *modelLogger) terminalCommonAttrs(callID, callType string, model provider.LanguageModel, response provider.ResponseMetadata) []slog.Attr {
+	if l.opts.identitySource == IdentityRequested {
+		return commonAttrs(callID, callType, model)
+	}
 	return modelIdentityAttrs(callID, callType, resolvedModelIdentity(modelIdentityFromModel(model), modelIdentityFromResponse(response)), modelIdentityFromModel(model))
 }
 

@@ -32,6 +32,10 @@ type generationModelIdentity struct {
 // The Agent Observability client itself fills in any remaining defaults (StartedAt,
 // OperationName for stream vs sync, etc.) when it processes the start.
 func BuildGenerationStart(ctx context.Context, providerName, modelID string, ctxInfo ContextInfo) agento11y.GenerationStart {
+	return buildGenerationStart(ctx, providerName, modelID, ctxInfo, ContextAmbientFallback)
+}
+
+func buildGenerationStart(ctx context.Context, providerName, modelID string, ctxInfo ContextInfo, source ContextSource) agento11y.GenerationStart {
 	start := agento11y.GenerationStart{
 		Model: agento11y.ModelRef{
 			Provider: providerName,
@@ -44,6 +48,11 @@ func BuildGenerationStart(ctx context.Context, providerName, modelID string, ctx
 		AgentVersion:        ctxInfo.AgentVersion,
 		Metadata:            cloneMetadataMap(ctxInfo.Metadata),
 		Tags:                cloneStringMap(ctxInfo.Tags),
+	}
+	if source == ContextProvidedOnly {
+		start.ID = ""
+		start.ParentGenerationIDs = nil
+		return start
 	}
 
 	// Falling back to the agento11y.*FromContext helpers when the consumer
@@ -76,6 +85,10 @@ func MapGenerateResult(params provider.CallOptions, result *provider.GenerateRes
 }
 
 func mapGenerateResultWithStart(params provider.CallOptions, result *provider.GenerateResult, ctxInfo ContextInfo, start agento11y.GenerationStart) agento11y.Generation {
+	return mapGenerateResultWithIdentity(params, result, ctxInfo, start, IdentityPreferResponse)
+}
+
+func mapGenerateResultWithIdentity(params provider.CallOptions, result *provider.GenerateResult, ctxInfo ContextInfo, start agento11y.GenerationStart, identity IdentitySource) agento11y.Generation {
 	system, input := messagesToAgento11yWithTools(params.Prompt, params.Tools)
 	controls := controlsFromCallOptions(params)
 	metadata := mergeMetadata(ctxInfo.Metadata, metadataFromProviderOptions(params))
@@ -105,13 +118,17 @@ func mapGenerateResultWithStart(params provider.CallOptions, result *provider.Ge
 		generation.Output = contentToAgento11yOutputWithTools(result.Content, params.Tools)
 		generation.Usage = usageToAgento11y(result.Usage)
 		generation.StopReason = finishReasonToAgento11yStop(result.FinishReason)
-		if result.Response != nil {
+		if result.Response != nil && identity != IdentityRequested {
 			generation.ResponseID = result.Response.ID
 			if result.Response.ModelID != "" {
 				generation.ResponseModel = result.Response.ModelID
 			}
 			applyModelIdentity(&generation, modelIdentityFromStart(start), modelIdentityFromResponse(result.Response.Provider, result.Response.ModelID))
 		}
+	}
+	if identity == IdentityRequested {
+		generation.ResponseModel = ""
+		applyModelIdentity(&generation, modelIdentityFromStart(start), generationModelIdentity{})
 	}
 	return generation
 }
