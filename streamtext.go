@@ -234,7 +234,7 @@ func lastOriginalAssistantMessage(cfg uiMessageStreamConfig) *UIMessage {
 	return &last
 }
 
-func assembleResponseMessageForFinish(messageID string, chunks []UIMessageChunk, cfg uiMessageStreamConfig) UIMessage {
+func assembleResponseMessageForFinish(messageID string, chunks []UIMessageChunk, cfg uiMessageStreamConfig) (UIMessage, error) {
 	if last := lastOriginalAssistantMessage(cfg); last != nil {
 		return assembleResponseMessageWithInitial(messageID, chunks, last)
 	}
@@ -244,7 +244,7 @@ func assembleResponseMessageForFinish(messageID string, chunks []UIMessageChunk,
 // buildUIMessageStreamFinishState assembles the OnFinish state for a UI message
 // stream, replacing the last original message when the response continues it.
 func buildUIMessageStreamFinishState(messageID string, chunks []UIMessageChunk, cfg uiMessageStreamConfig, finishReason provider.FinishReason, isAborted bool) UIMessageStreamOnFinishState {
-	respMsg := assembleResponseMessageForFinish(messageID, chunks, cfg)
+	respMsg, assembleErr := assembleResponseMessageForFinish(messageID, chunks, cfg)
 	isContinuation := false
 	if last := lastOriginalAssistantMessage(cfg); last != nil {
 		isContinuation = respMsg.ID == last.ID
@@ -263,6 +263,7 @@ func buildUIMessageStreamFinishState(messageID string, chunks []UIMessageChunk, 
 		IsAborted:       isAborted,
 		ResponseMessage: respMsg,
 		FinishReason:    finishReason,
+		AssemblyError:   assembleErr,
 	}
 }
 

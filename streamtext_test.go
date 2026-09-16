@@ -2616,6 +2616,30 @@ func TestStreamTextTotalUsage(t *testing.T) {
 	assert.Equal(t, result.TotalUsage(), result.AggregateUsage())
 }
 
+func TestStreamTextToUIMessageStreamReportsAssemblyError(t *testing.T) {
+	model := &mockModel{
+		streamFunc: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+			ch := make(chan provider.StreamPart, 2)
+			// A delta whose text part was never opened.
+			ch <- provider.StreamPart{Type: provider.PartTextDelta, ID: "orphan", Delta: "x"}
+			ch <- provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}}
+			close(ch)
+			return &provider.StreamResult{Stream: ch}, nil
+		},
+	}
+
+	result := StreamText(context.Background(), model, WithModelMessages(provider.UserText("hi")))
+
+	var finishState UIMessageStreamOnFinishState
+	for range result.ToUIMessageStream(OnUIMessageStreamFinish(func(state UIMessageStreamOnFinishState) {
+		finishState = state
+	})) {
+	}
+
+	require.Error(t, finishState.AssemblyError)
+	assert.Contains(t, finishState.AssemblyError.Error(), "orphan")
+}
+
 func TestStreamTextToUIMessageStream(t *testing.T) {
 	model := &mockModel{
 		streamFunc: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {

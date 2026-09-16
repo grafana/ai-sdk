@@ -13,6 +13,8 @@ import (
 var (
 	ErrWriterClosed  = errors.New("aisdk: write on closed stream writer")
 	ErrAlreadyClosed = errors.New("aisdk: stream writer already closed")
+	// ErrExecuteRequired reaches OnError when CreateUIMessageStreamParams.Execute is nil.
+	ErrExecuteRequired = errors.New("aisdk: CreateUIMessageStreamParams.Execute is required")
 )
 
 const (
@@ -80,11 +82,35 @@ func (w *UIMessageStreamWriter) output() <-chan UIMessageChunk {
 	return w.ch
 }
 
+// runExecute runs Execute, turning a missing callback or a panic into an error
+// so it reaches OnError as an error chunk instead of killing the process. A
+// panicked error keeps its chain so errors.As still works in OnError.
+func runExecute(execute func(*UIMessageStreamWriter) error, writer *UIMessageStreamWriter) (err error) {
+	defer func() {
+		switch r := recover().(type) {
+		case nil:
+		case error:
+			err = fmt.Errorf("aisdk: panic in Execute: %w", r)
+		default:
+			err = fmt.Errorf("aisdk: panic in Execute: %v", r)
+		}
+	}()
+	if execute == nil {
+		return ErrExecuteRequired
+	}
+	return execute(writer)
+}
+
 // CreateUIMessageStreamParams configures CreateUIMessageStream.
 type CreateUIMessageStreamParams struct {
 	// Execute writes the whole stream through the supplied writer. It is required.
 	Execute func(writer *UIMessageStreamWriter) error
-	// OnError maps an Execute failure to the text of the emitted error chunk.
+	// OnError maps a stream failure to the text of the emitted error chunk. It
+	// receives the error Execute returns, ErrExecuteRequired when Execute is nil,
+	// and a panic recovered from Execute. That text reaches the client, so return
+	// err.Error() only when every one of those sources is safe to disclose. The
+	// default masks them all as "An error occurred." and discards the detail, so
+	// log it here when an operator needs it.
 	OnError func(error) string
 	// OriginalMessages is the prior conversation. It supplies the continuation
 	// message ID and the OnFinish history; it is not a persistence mode switch.
@@ -104,6 +130,10 @@ type UIMessageStreamOnFinishState struct {
 	IsAborted       bool
 	ResponseMessage UIMessage
 	FinishReason    provider.FinishReason
+	// AssemblyError reports chunks that could not be applied while building
+	// ResponseMessage, which is otherwise complete. Check it before persisting:
+	// a non-nil value means the stored message is missing content the client saw.
+	AssemblyError error
 }
 
 // CreateUIMessageStream creates a standalone UIMessageChunk stream.
@@ -118,6 +148,11 @@ type UIMessageStreamOnFinishState struct {
 // a start chunk, GenerateID and OriginalMessages reach only OnFinish, and the
 // same holds when Execute merges a stream that stamps its own start chunk,
 // since that ID wins.
+//
+// A nil Execute, or a panic inside it, ends the stream with an error chunk
+// rather than a crash. A chunk that cannot be applied while assembling the
+// OnFinish message leaves the wire untouched and is reported through
+// UIMessageStreamOnFinishState.AssemblyError.
 func CreateUIMessageStream(params CreateUIMessageStreamParams) <-chan UIMessageChunk {
 	out := make(chan UIMessageChunk, defaultWriterBuffer)
 
@@ -133,6 +168,7 @@ func CreateUIMessageStream(params CreateUIMessageStreamParams) <-chan UIMessageC
 			originalMessages:    params.OriginalMessages,
 			hasOriginalMessages: true,
 			generateMessageID:   params.GenerateID,
+			onError:             params.OnError,
 		}
 		messageID := responseUIMessageID(cfg)
 
@@ -144,7 +180,7 @@ func CreateUIMessageStream(params CreateUIMessageStreamParams) <-chan UIMessageC
 		done := make(chan error, 1)
 		go func() {
 			defer func() { _ = writer.Close() }()
-			done <- params.Execute(writer)
+			done <- runExecute(params.Execute, writer)
 		}()
 
 		for chunk := range writer.output() {
@@ -165,11 +201,7 @@ func CreateUIMessageStream(params CreateUIMessageStreamParams) <-chan UIMessageC
 		}
 
 		if execErr := <-done; execErr != nil {
-			errText := "An error occurred"
-			if params.OnError != nil {
-				errText = params.OnError(execErr)
-			}
-			out <- UIMessageChunk{Type: ChunkError, ErrorText: errText}
+			out <- UIMessageChunk{Type: ChunkError, ErrorText: errorText(execErr, cfg)}
 		}
 
 		if params.OnFinish != nil {
@@ -180,11 +212,11 @@ func CreateUIMessageStream(params CreateUIMessageStreamParams) <-chan UIMessageC
 	return out
 }
 
-func assembleResponseMessage(messageID string, chunks []UIMessageChunk) UIMessage {
+func assembleResponseMessage(messageID string, chunks []UIMessageChunk) (UIMessage, error) {
 	return assembleResponseMessageWithInitial(messageID, chunks, nil)
 }
 
-func assembleResponseMessageWithInitial(messageID string, chunks []UIMessageChunk, initial *UIMessage) UIMessage {
+func assembleResponseMessageWithInitial(messageID string, chunks []UIMessageChunk, initial *UIMessage) (UIMessage, error) {
 	cfg := uiMessageReaderConfig{generateID: func() string { return messageID }}
 	state := newUIMessageReaderState(cfg)
 	if initial != nil && initial.Role == RoleAssistant {
@@ -195,13 +227,16 @@ func assembleResponseMessageWithInitial(messageID string, chunks []UIMessageChun
 	if state.message.ID == "" {
 		state.message.ID = messageID
 	}
+	var applyErrs []error
 	for _, chunk := range chunks {
 		if chunk.Type == ChunkError {
 			continue
 		}
-		_, _ = state.apply(chunk)
+		if _, err := state.apply(chunk); err != nil {
+			applyErrs = append(applyErrs, err)
+		}
 	}
-	return state.finalMessage()
+	return state.finalMessage(), errors.Join(applyErrs...)
 }
 
 type uiMessageStreamConfig struct {

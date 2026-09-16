@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/stretchr/testify/assert"
@@ -103,6 +104,32 @@ func TestPipeUIMessageStreamToResponse(t *testing.T) {
 	assert.Contains(t, body, "data: ")
 	assert.True(t, strings.HasSuffix(body, "data: [DONE]\n\n"))
 }
+
+func TestPipeUIMessageStreamToResponse_UnblocksProducerAfterWriteError(t *testing.T) {
+	stream := make(chan UIMessageChunk)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		defer close(stream)
+		for i := 0; i < 3; i++ {
+			stream <- TextDeltaChunk("b1", "chunk")
+		}
+	}()
+
+	err := PipeUIMessageStreamToResponse(failingWriter{httptest.NewRecorder()}, stream)
+	require.Error(t, err)
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("producer still blocked after a failed write")
+	}
+}
+
+// failingWriter fails every write, like a client that disconnected.
+type failingWriter struct{ *httptest.ResponseRecorder }
+
+func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("connection reset") }
 
 func TestWriteUIMessageStream(t *testing.T) {
 	model := &mockModel{

@@ -88,7 +88,7 @@ func TestCreateUIMessageStream(t *testing.T) {
 			}
 		}
 		require.NotNil(t, errChunk)
-		assert.Equal(t, "An error occurred", errChunk.ErrorText)
+		assert.Equal(t, "An error occurred.", errChunk.ErrorText)
 	})
 
 	t.Run("OnError callback customizes error message", func(t *testing.T) {
@@ -109,7 +109,7 @@ func TestCreateUIMessageStream(t *testing.T) {
 			}
 		}
 		require.NotNil(t, errChunk)
-		assert.NotEqual(t, "An error occurred", errChunk.ErrorText)
+		assert.NotEqual(t, "An error occurred.", errChunk.ErrorText)
 	})
 
 	t.Run("injects messageId into start chunk without one", func(t *testing.T) {
@@ -286,6 +286,60 @@ func TestCreateUIMessageStream(t *testing.T) {
 		assert.Equal(t, "stop", string(finishState.FinishReason.Unified))
 	})
 
+	t.Run("missing Execute produces an error chunk", func(t *testing.T) {
+		var chunks []UIMessageChunk
+		for c := range CreateUIMessageStream(CreateUIMessageStreamParams{
+			OnError: func(err error) string { return err.Error() },
+		}) {
+			chunks = append(chunks, c)
+		}
+
+		require.Len(t, chunks, 1)
+		assert.Equal(t, ChunkError, chunks[0].Type)
+		assert.Contains(t, chunks[0].ErrorText, "Execute is required")
+	})
+
+	t.Run("panic in Execute produces an error chunk", func(t *testing.T) {
+		var chunks []UIMessageChunk
+		for c := range CreateUIMessageStream(CreateUIMessageStreamParams{
+			Execute: func(w *UIMessageStreamWriter) error {
+				panic("boom")
+			},
+			OnError: func(err error) string { return err.Error() },
+		}) {
+			chunks = append(chunks, c)
+		}
+
+		require.Len(t, chunks, 1)
+		assert.Equal(t, ChunkError, chunks[0].Type)
+		assert.Contains(t, chunks[0].ErrorText, "boom")
+	})
+
+	t.Run("assembly failure reports AssemblyError without touching the wire", func(t *testing.T) {
+		var finishState UIMessageStreamOnFinishState
+		var chunks []UIMessageChunk
+		for c := range CreateUIMessageStream(CreateUIMessageStreamParams{
+			Execute: func(w *UIMessageStreamWriter) error {
+				_ = w.Write(TextStartChunk("ok"))
+				_ = w.Write(TextDeltaChunk("ok", "kept"))
+				_ = w.Write(TextEndChunk("ok"))
+				return w.Write(TextDeltaChunk("missing", "orphan"))
+			},
+			OnError:  func(err error) string { return err.Error() },
+			OnFinish: func(state UIMessageStreamOnFinishState) { finishState = state },
+		}) {
+			chunks = append(chunks, c)
+		}
+
+		// Upstream emits no error chunk for an assembly failure, so neither do we.
+		for _, c := range chunks {
+			assert.NotEqual(t, ChunkError, c.Type)
+		}
+		require.Error(t, finishState.AssemblyError)
+		assert.Contains(t, finishState.AssemblyError.Error(), "missing text part")
+		assert.Len(t, finishState.ResponseMessage.Parts, 1, "the parts that applied are still delivered")
+	})
+
 	t.Run("generates a response messageId without original messages", func(t *testing.T) {
 		var finishState UIMessageStreamOnFinishState
 		stream := CreateUIMessageStream(CreateUIMessageStreamParams{
@@ -304,6 +358,21 @@ func TestCreateUIMessageStream(t *testing.T) {
 		assert.NotEmpty(t, chunks[0].MessageID)
 		assert.Equal(t, chunks[0].MessageID, finishState.ResponseMessage.ID)
 	})
+}
+
+func TestAssembleResponseMessageReportsEveryApplyFailure(t *testing.T) {
+	msg, err := assembleResponseMessage("msg-1", []UIMessageChunk{
+		TextStartChunk("ok"),
+		TextDeltaChunk("ok", "kept"),
+		TextDeltaChunk("first-missing", "a"),
+		TextDeltaChunk("second-missing", "b"),
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "first-missing")
+	assert.Contains(t, err.Error(), "second-missing")
+	require.Len(t, msg.Parts, 1, "chunks that applied are still returned")
+	assert.Equal(t, "kept", msg.Parts[0].(TextPart).Text)
 }
 
 func TestTransientDataExcludedFromAssembly(t *testing.T) {
@@ -439,7 +508,8 @@ func TestAssembleResponseMessage(t *testing.T) {
 			{Type: ChunkTextEnd, ID: "t2"},
 		}
 
-		msg := assembleResponseMessage("msg-1", chunks)
+		msg, err := assembleResponseMessage("msg-1", chunks)
+		require.NoError(t, err)
 		require.Len(t, msg.Parts, 2)
 
 		tp1, ok := msg.Parts[0].(TextPart)
@@ -464,7 +534,8 @@ func TestAssembleResponseMessage(t *testing.T) {
 			{Type: ChunkTextEnd, ID: "t1"},
 		}
 
-		msg := assembleResponseMessage("msg-1", chunks)
+		msg, err := assembleResponseMessage("msg-1", chunks)
+		require.NoError(t, err)
 		require.Len(t, msg.Parts, 3)
 
 		rp1, ok := msg.Parts[0].(ReasoningPart)
@@ -484,7 +555,8 @@ func TestAssembleResponseMessage(t *testing.T) {
 		chunks := []UIMessageChunk{
 			{Type: ChunkToolInputError, ToolCallID: "c1", ToolName: "calc", Input: json.RawMessage(`{"x":1}`), ErrorText: "invalid input"},
 		}
-		msg := assembleResponseMessage("msg-1", chunks)
+		msg, err := assembleResponseMessage("msg-1", chunks)
+		require.NoError(t, err)
 		require.Len(t, msg.Parts, 1)
 
 		tip, ok := msg.Parts[0].(ToolInvocationPart)
