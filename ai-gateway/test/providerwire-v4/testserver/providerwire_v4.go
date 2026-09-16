@@ -72,7 +72,8 @@ func (m *providerWireV4Model) DoStream(ctx context.Context, options provider.Cal
 		for _, message := range options.Prompt {
 			for _, part := range message.Content {
 				if part.Type == provider.ContentPartTypeToolResult {
-					if part.ToolCallID != "call-weather" || part.ToolName != "weather" || part.Output == nil || !(part.Output.Type == provider.ToolOutputText && part.Output.Text == "sunny" || part.Output.Type == provider.ToolOutputJSON && string(part.Output.JSON) == `"sunny"`) {
+					validOutput := part.Output != nil && (part.Output.Type == provider.ToolOutputText && part.Output.Text == "sunny" || part.Output.Type == provider.ToolOutputJSON && string(part.Output.JSON) == `"sunny"`)
+					if part.ToolCallID != "call-weather" || part.ToolName != "weather" || !validOutput {
 						return nil, errors.New("invalid streaming continuation")
 					}
 					return &provider.StreamResult{Stream: scenarioStream(
