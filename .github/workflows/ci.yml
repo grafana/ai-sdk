@@ -349,6 +349,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      tag: ${{ steps.image.outputs.tag }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -388,3 +390,27 @@ jobs:
       - name: Log out of GHCR
         if: always()
         run: docker logout ghcr.io
+
+  deploy-ai-gateway:
+    name: Deploy AI Gateway
+    if: >-
+      ${{ github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' &&
+          github.repository == 'grafana/ai-sdk' }}
+    needs: publish-ai-gateway-image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Trigger Argo workflow
+        uses: grafana/shared-workflows/actions/trigger-argo-workflow@5a212d56e9d224851dc4b3c2643bbc5bac484d5d # trigger-argo-workflow/v2.0.0
+        with:
+          instance: ops
+          namespace: ai-gateway-cd
+          workflow_template: ai-gateway
+          parameters: |
+            commit=${{ github.sha }}
+            commit_author=${{ github.event.head_commit.author.username || github.event.head_commit.author.name }}
+            commit_link=${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}
+            dockertag=${{ needs.publish-ai-gateway-image.outputs.tag }}
