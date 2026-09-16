@@ -101,6 +101,29 @@ describe("authenticated Anthropic Gateway command", () => {
         assert.deepEqual([primary.requests.length, secondary.requests.length], counts, "unary effects must not invoke either fallback candidate");
         assertPrivateValuesAbsent([go.error, { message: failure.message, type: failure.type, responseBody: failure.responseBody }], primary, [secondary.url, "private-call", "private-tool", "private-input", "private-result", token]);
       }
+      const streamCall = { type: "tool-call" as const, toolCallId: "private-call", toolName: "private-tool", input: {} };
+      const history = [{ role: "assistant" as const, content: [streamCall] }];
+      for (const options of [
+        { prompt: [], tools: [{ type: "function" as const, name: "private-tool", inputSchema: {} }] },
+        { prompt: [], toolChoice: { type: "none" as const } },
+        { prompt: history },
+        { prompt: [...history, { role: "tool" as const, content: [{ type: "tool-result" as const, toolCallId: streamCall.toolCallId, toolName: streamCall.toolName, output: { type: "text" as const, value: "private-result" } }] }] },
+      ]) {
+        const go = await captureGoClient(goClientBinaryPath, { ...base, mode: "stream", options });
+        assert.equal(go.error?.statusCode, 400);
+        assert.equal(go.error?.code, "invalid_request");
+        assert.equal(go.error?.message, "invalid request");
+        assert.equal(go.error?.isRetryable, false);
+        assert.equal(go.parts, undefined, "fallback rejection must precede SSE commitment");
+        await assert.rejects(async () => await client("assistant").doStream(options), (error: any) => {
+          assert.equal(error.statusCode, 400);
+          assert.equal(error.message, "invalid request");
+          assert.equal(error.isRetryable, false);
+          return true;
+        });
+        assert.equal(primary.requests.length, 0, "streaming tools/history must not invoke primary");
+        assert.equal(secondary.requests.length, 0, "streaming tools/history must not invoke fallback");
+      }
       for (const row of [
         { primary: undefined, secondary: undefined, count: 0, status: undefined },
         { primary: 503, secondary: undefined, count: 1, status: undefined },

@@ -18,7 +18,7 @@
 - [x] 3.3 Add allowlisted private event DTOs and schema fixtures for input events, calls and basic results; preserve empty deltas and non-null JSON result semantics.
 - [x] 3.4 Add invalid order/duplicate/unmatched/deferred marker tables, complete-frame boundary and part-budget tests.
 - [x] 3.5 Verify non-terminal errors during open input, cancellation/timeout, finish/EOF, write failure and bounded cleanup under hostile channel behavior.
-- [ ] 3.6 Retain WP9 effect guard and test zero physical invocation for streaming definitions/choice/history.
+- [x] 3.6 Retain WP9 effect guard and test zero physical invocation for streaming definitions/choice/history.
 
 ## 4. Complete milestone evidence
 
@@ -30,5 +30,8 @@
 
 Apply handoff: exact-client loops, safe-JWKS command/native streaming continuation,
 basic-result transport, and focused hostile open-input/between-step cancellation
-now pass. WP9 guard, immutable pins, and production activation remain open.
+now pass. The authenticated real-command matrix verifies streaming definitions,
+choice, assistant call history, and complete continuation are rejected before
+either physical candidate runs for both clients; direct tool loops still pass.
+Immutable-pin acceptance and production activation remain open.
 No root UI chunk behavior was changed; no reusable observation extension was needed.
