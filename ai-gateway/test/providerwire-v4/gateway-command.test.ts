@@ -117,6 +117,82 @@ describe("authenticated Anthropic Gateway command", () => {
     }
   });
 
+  it("verifies JWKS auth and native function continuation for both unary clients", async () => {
+    const keys = generateKeyPairSync("ec", { namedCurve: "P-256" });
+    const jwk = { ...keys.publicKey.export({ format: "jwk" }), kid: "tool-test", alg: "ES256", use: "sig" };
+    let keyRequests = 0;
+    const jwks = createServer((_request, response) => {
+      keyRequests++;
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ keys: [jwk] }));
+    });
+    await new Promise<void>(resolve => jwks.listen(0, "127.0.0.1", resolve));
+    const address = jwks.address();
+    assert.ok(address && typeof address !== "string");
+    const header = Buffer.from(JSON.stringify({ alg: "ES256", typ: "at+jwt", kid: "tool-test" })).toString("base64url");
+    const payload = TEST_TOKEN.split(".")[1];
+    const unsigned = `${header}.${payload}`;
+    const token = `${unsigned}.${sign("sha256", Buffer.from(unsigned), { key: keys.privateKey, dsaEncoding: "ieee-p1363" }).toString("base64url")}`;
+    const corruptedSignature = Buffer.from(token.split(".")[2], "base64url");
+    corruptedSignature[0] ^= 1;
+    const invalidToken = `${unsigned}.${corruptedSignature.toString("base64url")}`;
+    let resources: [FakeAnthropic, GatewayProcess] | undefined;
+    try {
+      resources = await startGateway([`--auth.jwks-url=http://127.0.0.1:${address.port}/jwks`], {}, "claude-sonnet-4-6");
+      const [fake, gateway] = resources;
+      fake.functionTools = true;
+      const client = gateway.client(token);
+      const tools = [{ type: "function" as const, name: "weather", inputSchema: { type: "object" as const, properties: { city: { type: "string" } }, required: ["city"] }, strict: false, inputExamples: [{ input: { city: "Rio" } }] }];
+      const prompt = [{ role: "user" as const, content: [{ type: "text" as const, text: "Weather in Rio?" }] }];
+      const toolChoice = { type: "tool" as const, toolName: "weather" };
+      const options = { prompt, tools, toolChoice, maxOutputTokens: 64 };
+      await assert.rejects(async () => gateway.client(invalidToken)("assistant").doGenerate(options), (error: any) => {
+        assert.equal(error.statusCode, 401);
+        assert.equal(error.type, "authentication_error");
+        return true;
+      });
+      assert.ok(keyRequests > 0, "signature rejection must resolve the retained key ID through JWKS");
+      assert.equal(fake.requests.length, 0, "invalid signature must not reach provider");
+      let executions = 0;
+      for (const mode of ["generate"] as const) {
+        for (const implementation of ["vercel", "go"] as const) {
+          const invoke = async (requestOptions: any): Promise<any[]> => {
+            if (implementation === "go") {
+              const result = await captureGoClient(goClientBinaryPath, { baseURL: `${gateway.url}/api/v1/aisdk`, accessToken: token, modelID: "assistant", mode, options: requestOptions });
+              assert.equal(result.error, undefined);
+              return result.result.content;
+            }
+            return (await client("assistant").doGenerate(requestOptions)).content;
+          };
+          const first = await invoke(options);
+          const call = first.find(part => part.type === "tool-call");
+          assert.ok(call, `${implementation} ${mode}: ${JSON.stringify(first)}`);
+          assert.equal(call.toolCallId, "call-weather");
+          assert.equal(call.toolName, "weather");
+          assert.deepEqual(JSON.parse(call.input), { city: "Rio" });
+          executions++;
+          const final = await invoke({ ...options, prompt: [...prompt,
+            { role: "assistant", content: [{ type: "tool-call", toolCallId: call.toolCallId, toolName: call.toolName, input: JSON.parse(call.input) }] },
+            { role: "tool", content: [{ type: "tool-result", toolCallId: call.toolCallId, toolName: call.toolName, output: { type: "text", value: "sunny" } }] }], toolChoice: { type: "auto" } });
+          assert.equal(final.filter(part => part.type === "text").map(part => part.text ?? part.delta).join(""), "It is sunny.");
+          const native = fake.requests.at(-2)!.body as any;
+          assert.deepEqual(native.tools[0], { name: "weather", input_schema: tools[0].inputSchema, strict: false, input_examples: [{ city: "Rio" }] });
+          assert.equal(native.tool_choice.name, "weather");
+          assert.equal(native.stream === true, false);
+          const continuation = fake.requests.at(-1)!.body as any;
+          assert.deepEqual(continuation.messages[1].content, [{ type: "tool_use", id: "call-weather", name: "weather", input: { city: "Rio" } }]);
+          assert.deepEqual(continuation.messages[2].content, [{ type: "tool_result", tool_use_id: "call-weather", content: [{ type: "text", text: "sunny" }] }]);
+        }
+      }
+      assert.equal(executions, 2);
+      assert.equal(fake.requests.length, 4);
+      assert.ok(keyRequests > 0);
+      assert.deepEqual(fake.violations, []);
+    } finally {
+      await settleCleanup(...(resources ? [() => resources![1].stop(), () => resources![0].stop()] : []), async () => { jwks.closeAllConnections(); await new Promise<void>(resolve => jwks.close(() => resolve())); });
+    }
+  });
+
   it("maps the reachable Go public error matrix for unary and stream setup", async () => {
     const [fake, gateway] = await startGateway();
     const rows = [
@@ -1155,10 +1231,11 @@ class DummyCloudEdge {
   }
 }
 
-async function startGateway(extraArgs: string[] = [], extraEnv: Record<string, string> = {}): Promise<[FakeAnthropic, GatewayProcess]> {
+async function startGateway(extraArgs: string[] = [], extraEnv: Record<string, string> = {}, backendModel = "backend-private"): Promise<[FakeAnthropic, GatewayProcess]> {
   const fake = await FakeAnthropic.start();
+  fake.backendModel = backendModel;
   try {
-    return [fake, await GatewayProcess.start(binaryPath, fake.url, extraArgs, extraEnv)];
+    return [fake, await GatewayProcess.start(binaryPath, fake.url, extraArgs, extraEnv, "access-token", undefined, undefined, backendModel)];
   } catch (error) {
     await settleCleanup(() => fake.stop());
     throw error;
@@ -1179,12 +1256,12 @@ function compatibleConfig(url: string): string {
   return `providers:\n  compatible-primary:\n    type: openai-compatible\n    apiKeyEnv: GATEWAY_TEST_COMPATIBLE_KEY\n    baseURL: ${url}/v1\n    providerName: compatible-backend\nmodels:\n  grafana/compatible:\n    name: Grafana Compatible\n    description: Integration model\n    primary:\n      provider: compatible-primary\n      model: backend-private\n    aliases:\n      - compatible\n`;
 }
 
-function anthropicConfig(url: string): string {
-  return `providers:\n  anthropic-primary:\n    type: anthropic\n    apiKeyEnv: GATEWAY_TEST_ANTHROPIC_KEY\n    baseURL: ${url}\nmodels:\n  grafana/assistant:\n    name: Grafana Assistant\n    description: Integration model\n    primary:\n      provider: anthropic-primary\n      model: backend-private\n    aliases:\n      - assistant\n`;
+function anthropicConfig(url: string, backendModel = "backend-private"): string {
+  return `providers:\n  anthropic-primary:\n    type: anthropic\n    apiKeyEnv: GATEWAY_TEST_ANTHROPIC_KEY\n    baseURL: ${url}\nmodels:\n  grafana/assistant:\n    name: Grafana Assistant\n    description: Integration model\n    primary:\n      provider: anthropic-primary\n      model: ${backendModel}\n    aliases:\n      - assistant\n`;
 }
 
-function anthropicFallbackConfig(primaryURL: string, fallbackURL: string): string {
-  return `providers:\n  anthropic-primary:\n    type: anthropic\n    apiKeyEnv: GATEWAY_TEST_ANTHROPIC_KEY\n    baseURL: ${primaryURL}\n  anthropic-secondary:\n    type: anthropic\n    apiKeyEnv: GATEWAY_TEST_ANTHROPIC_KEY\n    baseURL: ${fallbackURL}\nmodels:\n  grafana/assistant:\n    name: Grafana Assistant\n    description: Integration model\n    primary:\n      provider: anthropic-primary\n      model: backend-private\n    fallback:\n      - provider: anthropic-secondary\n        model: backend-private\n    aliases:\n      - assistant\n`;
+function anthropicFallbackConfig(primaryURL: string, fallbackURL: string, backendModel = "backend-private"): string {
+  return `providers:\n  anthropic-primary:\n    type: anthropic\n    apiKeyEnv: GATEWAY_TEST_ANTHROPIC_KEY\n    baseURL: ${primaryURL}\n  anthropic-secondary:\n    type: anthropic\n    apiKeyEnv: GATEWAY_TEST_ANTHROPIC_KEY\n    baseURL: ${fallbackURL}\nmodels:\n  grafana/assistant:\n    name: Grafana Assistant\n    description: Integration model\n    primary:\n      provider: anthropic-primary\n      model: ${backendModel}\n    fallback:\n      - provider: anthropic-secondary\n        model: ${backendModel}\n    aliases:\n      - assistant\n`;
 }
 
 function assertPrivateValuesAbsent(value: unknown, fake: FakeAnthropic, extra: string[] = []): void {
@@ -1236,13 +1313,15 @@ class GatewayProcess {
     });
   }
 
-  static async start(binary: string, anthropicURL: string, extraArgs: string[] = [], extraEnv: Record<string, string> = {}, mode: "access-token" | "cloud-gateway" = "access-token", configYAML = anthropicConfig(anthropicURL), fallbackURL?: string): Promise<GatewayProcess> {
+  static async start(binary: string, anthropicURL: string, extraArgs: string[] = [], extraEnv: Record<string, string> = {}, mode: "access-token" | "cloud-gateway" = "access-token", configYAML?: string, fallbackURL?: string, backendModel = "backend-private"): Promise<GatewayProcess> {
     const directory = mkdtempSync(join(tmpdir(), "grafana-ai-gateway-process-"));
     this.lastFailedDirectory = undefined;
     let gateway: GatewayProcess | undefined;
     try {
       const configPath = join(directory, "models.yaml");
-      writeFileSync(configPath, fallbackURL ? anthropicFallbackConfig(anthropicURL, fallbackURL) : configYAML);
+      writeFileSync(configPath, fallbackURL
+        ? anthropicFallbackConfig(anthropicURL, fallbackURL, backendModel)
+        : configYAML ?? anthropicConfig(anthropicURL, backendModel));
       const port = await availablePort();
       const url = `http://127.0.0.1:${port}`;
       let operationalPort = port;
@@ -1296,11 +1375,11 @@ class GatewayProcess {
     }
   }
 
-  client(accessToken = TEST_TOKEN) {
+  client(token = TEST_TOKEN) {
     return createGateway({
       apiKey: "authorization-is-ignored",
       baseURL: `${this.url}/api/v1/aisdk`,
-      headers: { "X-Access-Token": accessToken },
+      headers: { "X-Access-Token": token },
     });
   }
 
@@ -1364,6 +1443,8 @@ class FakeAnthropic {
   redirectTo?: string;
   oversizedErrors = false;
   failureStatus?: number;
+  functionTools = false;
+  backendModel = "backend-private";
   private readonly server: ReturnType<typeof createServer>;
 
   private constructor(server: ReturnType<typeof createServer>, url: string) {
@@ -1400,7 +1481,7 @@ class FakeAnthropic {
     this.requests.push({ path: request.url ?? "", apiKey: singleHeader(request.headers["x-api-key"]), headers: { ...request.headers }, body });
     if (request.url !== "/v1/messages?beta=true") this.violations.push(`path=${request.url}`);
     if (singleHeader(request.headers["x-api-key"]) !== "integration-anthropic-key") this.violations.push("api-key");
-    if (body.model !== "backend-private") this.violations.push(`model=${String(body.model)}`);
+    if (body.model !== this.backendModel) this.violations.push(`model=${String(body.model)}`);
     if (request.headers["x-access-token"] != null || request.headers["x-grafana-id"] != null) this.violations.push("forwarded-caller-credential");
 
     if (this.failureStatus != null) {
@@ -1427,6 +1508,13 @@ class FakeAnthropic {
       response.writeHead(502, { "Content-Type": "application/json" });
       response.end(JSON.stringify({ error: { type: "api_error", message: "provider-secret-response" } }));
       return;
+    }
+    if (this.functionTools) {
+      const messages = body.messages as Array<{ content: Array<{ type: string }> }>;
+      const continued = messages.some(message => message.content.some(part => part.type === "tool_result"));
+      response.writeHead(200, { "Content-Type": "application/json" });
+        response.end(JSON.stringify({ id: "msg_tools", type: "message", role: "assistant", model: "backend-private", content: continued ? [{ type: "text", text: "It is sunny." }] : [{ type: "tool_use", id: "call-weather", name: "weather", input: { city: "Rio" } }], stop_reason: continued ? "end_turn" : "tool_use", stop_sequence: null, usage: { input_tokens: 2, output_tokens: 3 } }));
+        return;
     }
     if (body.stream !== true) {
       response.writeHead(200, { "Content-Type": "application/json" });

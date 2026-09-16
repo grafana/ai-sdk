@@ -315,6 +315,9 @@ func filterAgentGeneration(input agentmiddleware.GenerationFilterInput) agento11
 	generation.Temperature = nil
 	generation.TopP = nil
 	generation.ToolChoice = nil
+	generation.Tools = nil
+	generation.Input = nil
+	generation.Output = nil
 	generation.ThinkingEnabled = nil
 	generation.EffectiveVersion = ""
 	generation.CallError = ""

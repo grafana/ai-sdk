@@ -12,6 +12,7 @@ import {
   GatewayModelNotFoundError,
 } from "@ai-sdk/gateway";
 import type { LanguageModelV4StreamPart } from "@ai-sdk/provider";
+import { buildGoClientCapture, captureGoClient } from "./go-client-capture";
 
 const TEST_DIR = dirname(fileURLToPath(import.meta.url));
 const SERVER_DIR = resolve(TEST_DIR, "testserver");
@@ -21,6 +22,7 @@ const POLL_TIMEOUT_MS = 15_000;
 let serverProcess: ChildProcess | undefined;
 let temporaryDirectory: string;
 let baseURL: string;
+let goClientBinary: string;
 
 async function waitFor<T>(load: () => Promise<T | undefined>, timeoutMs = POLL_TIMEOUT_MS): Promise<T> {
   const deadline = Date.now() + timeoutMs;
@@ -119,8 +121,57 @@ async function collect(stream: ReadableStream<LanguageModelV4StreamPart>): Promi
   }
 }
 
-before(async () => { baseURL = await startServer(); });
+before(async () => { baseURL = await startServer(); goClientBinary = buildGoClientCapture(temporaryDirectory); });
 after(async () => { await stopServer(); });
+
+describe("unary function tools through the authenticated real handler", () => {
+  const tools = [{ type: "function" as const, name: "weather", inputSchema: { type: "object" as const }, strict: false }];
+  const prompt = [{ role: "user" as const, content: [{ type: "text" as const, text: "Weather in Rio?" }] }];
+
+  it("completes two requests with one local execution in both clients", async () => {
+    const gateway = createGateway({ apiKey: "test", baseURL: `${baseURL}/function-tools`, headers: { "x-access-token": "function-test-token" } });
+    let executions = 0;
+    const execute = (input: unknown) => { assert.deepEqual(input, { city: "Rio" }); executions++; return "sunny"; };
+    const first = await gateway("unary-tools").doGenerate({ prompt, tools });
+    const call = first.content.find(part => part.type === "tool-call");
+    assert.ok(call && call.type === "tool-call");
+    const value = execute(JSON.parse(call.input));
+    const continuation = [...prompt,
+      { role: "assistant" as const, content: [{ type: "tool-call" as const, toolCallId: call.toolCallId, toolName: call.toolName, input: JSON.parse(call.input) }] },
+      { role: "tool" as const, content: [{ type: "tool-result" as const, toolCallId: call.toolCallId, toolName: call.toolName, output: { type: "text" as const, value } }] }];
+    const final = await gateway("unary-tools").doGenerate({ prompt: continuation, tools });
+    assert.deepEqual(final.content, [{ type: "text", text: "It is sunny." }]);
+    assert.equal(executions, 1);
+
+    const config = { baseURL: `${baseURL}/function-tools`, accessToken: "function-test-token", modelID: "unary-tools", mode: "generate" };
+    const goFirst = await captureGoClient(goClientBinary, { ...config, options: { prompt, tools } });
+    assert.equal(goFirst.error, undefined);
+    const goCall = goFirst.result.content.find((part: any) => part.type === "tool-call");
+    assert.deepEqual(goCall, { type: "tool-call", toolCallId: call.toolCallId, toolName: call.toolName, input: call.input });
+    const goValue = execute(JSON.parse(goCall.input));
+    const goFinal = await captureGoClient(goClientBinary, { ...config, options: { prompt: [...prompt,
+      { role: "assistant", content: [{ type: "tool-call", toolCallId: goCall.toolCallId, toolName: goCall.toolName, input: JSON.parse(goCall.input) }] },
+      { role: "tool", content: [{ type: "tool-result", toolCallId: goCall.toolCallId, toolName: goCall.toolName, output: { type: "text", value: goValue } }] }], tools } });
+    assert.equal(goFinal.error, undefined);
+    assert.deepEqual(goFinal.result.content, final.content);
+    assert.equal(executions, 2);
+  });
+
+  it("rejects enabled execution markers before either client can execute", async () => {
+    for (const modelID of ["unary-tools-provider-executed", "unary-tools-dynamic"]) {
+      let executions = 0;
+      const gateway = createGateway({ apiKey: "test", baseURL: `${baseURL}/function-tools`, headers: { "x-access-token": "function-test-token" } });
+      await assert.rejects(async () => {
+        const result = await gateway(modelID).doGenerate({ prompt, tools });
+        for (const part of result.content) if (part.type === "tool-call") executions++;
+      });
+      const go = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/function-tools`, accessToken: "function-test-token", modelID, mode: "generate", options: { prompt, tools } });
+      assert.ok(go.error);
+      assert.equal(go.result, undefined);
+      assert.equal(executions, 0);
+    }
+  });
+});
 
 describe("real ProviderWire V4 streaming runtime", () => {
   it("consumes normalized text, metadata, warnings, finish, and clean EOF", async () => {

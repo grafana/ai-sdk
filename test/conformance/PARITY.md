@@ -94,8 +94,17 @@ physical winner records. These are deterministic service tests, not recorded
 provider fixtures. Production activation remains WP10 work; the local macOS run
 does not verify Linux FIFO runtime behavior.
 
+WP11 direct-route unary tools are covered by strict handler tests, both actual
+clients, safe-JWKS command/native continuation, and metadata-only collector
+privacy assertions. Apache provider regressions preserve selected empty schemas
+and content arrays against the registered Anthropic 4.0.38 baseline. These are
+deterministic transport tests, not recorded provider fixtures. Immutable Apache
+publication and Gateway repinning remain required to establish corrected native
+values through published dependencies; production activation remains separate.
+
+
 `providers/grafana` is an Apache-licensed, independently buildable client for
-the text-only WP5 service, not a second Gateway implementation. Its focused Go
+the Gateway service, not a second Gateway implementation. Its focused Go
 tests cover explicit request projection, atomic discovery, authentication,
 closed public errors, bounded unary/SSE parsing, and cancellation ownership.
 The existing exact-pinned ProviderWire workspace runs a test-only Go capture
@@ -115,7 +124,8 @@ The following differences are explicit rather than claims of complete parity:
   descriptions, and reasons. Required selected empty values are retained.
 - Intentional security boundaries: client-owned authentication/protocol headers
   cannot be overridden through case variants; URL prefixes are retained;
-  discovery is atomic and bounded; response families are closed to WP5 text.
+  discovery is atomic and bounded; response families are closed to text and the
+  supported unary client-executed function-tool subset.
   Upstream's permissive output schema and wildcard supported URLs are not
   adopted. Raw unary response text is retained only within its configured bound.
   Token-exchange errors discard arbitrary token-service response prose, including
