@@ -146,7 +146,7 @@ func rawToolInputSchema(schema map[string]any) anthropic.BetaToolInputSchemaPara
 	if schema == nil {
 		return anthropic.BetaToolInputSchemaParam{}
 	}
-	return anthropic.BetaToolInputSchemaParam{ExtraFields: schema}
+	return param.Override[anthropic.BetaToolInputSchemaParam](schema)
 }
 
 type providerCapabilities struct {
@@ -1855,6 +1855,9 @@ func serializeToolOutput(output *provider.ToolResultOutput, warnings *[]provider
 			{OfText: &anthropic.BetaTextBlockParam{Text: reason}},
 		}
 	case provider.ToolOutputContent:
+		if output.Content != nil && len(output.Content) == 0 {
+			return []anthropic.BetaToolResultBlockParamContentUnion{}
+		}
 		var blocks []anthropic.BetaToolResultBlockParamContentUnion
 		for _, v := range output.Content {
 			switch v.Type {
