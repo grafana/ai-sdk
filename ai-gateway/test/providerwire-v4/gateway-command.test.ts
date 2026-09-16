@@ -8,8 +8,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import nodeProcess from "node:process";
 import { after, before, describe, it } from "node:test";
-import { createGateway } from "@ai-sdk/gateway";
-import type { LanguageModelV4CallOptions } from "@ai-sdk/provider";
+import { createGateway, GatewayInvalidRequestError } from "@ai-sdk/gateway";
+import type { JSONValue, LanguageModelV4CallOptions } from "@ai-sdk/provider";
 import { isStepCount, jsonSchema, streamText, tool } from "ai";
 import { buildGoClientCapture, buildGoStreamTextCapture, captureGoClient } from "./go-client-capture";
 
@@ -432,7 +432,7 @@ describe("authenticated Anthropic Gateway command", () => {
       await fake.waitForCancellation("silent-abort");
       const missing = await captureGoClient(goClientBinaryPath, { ...base, mode: "generate", modelID: "missing", options: { prompt: [] } });
       assert.equal(missing.error.category, "model_not_found"); assert.equal(missing.error.statusCode, 404);
-      const invalid = await captureGoClient(goClientBinaryPath, { ...base, mode: "generate", modelID: "assistant", options: { prompt: [], headers: { "x-call": "unsupported" } } });
+      const invalid = await captureGoClient(goClientBinaryPath, { ...base, mode: "generate", modelID: "assistant", options: { prompt: [], headers: { authorization: "Bearer caller-controlled" } } });
       assert.equal(invalid.error.category, "invalid_request_error"); assert.equal(invalid.error.statusCode, 400);
       const unauthorized = await captureGoClient(goClientBinaryPath, { ...base, accessToken: "invalid-token", mode: "discovery" });
       assert.equal(unauthorized.error.category, "authentication_error"); assert.equal(unauthorized.error.statusCode, 401);
@@ -1146,6 +1146,137 @@ describe("Trusted-proxy composition (dummy credentials, not production authentic
 });
 
 describe("authenticated OpenAI-compatible Gateway command", () => {
+  it("forwards the selected backend's provider options and refuses host and credential values", async () => {
+    const [fake, gateway] = await startCompatibleGateway();
+    try {
+      const client = gateway.client();
+      await client("compatible").doGenerate({
+        prompt: [{ role: "user", content: [{ type: "text", text: "unary" }] }],
+        maxOutputTokens: 32,
+        providerOptions: {
+          openaiCompatible: { reasoningEffort: "low", user: "caller-supplied-user" },
+        },
+        headers: { "X-Contract-Body": "carried" },
+      });
+
+      const forwarded = fake.requests.at(-1);
+      assert.ok(forwarded, "the backend received the request");
+      assert.equal(forwarded.body.reasoning_effort, "low");
+      assert.equal(forwarded.body.user, "caller-supplied-user");
+      assert.equal(singleHeader(forwarded.headers["x-contract-body"]), "carried");
+      assert.equal(singleHeader(forwarded.headers.authorization), "Bearer integration-compatible-key",
+        "the gateway's backend credential is the one presented upstream");
+
+      for (const [rejected, message] of [
+        [{ providerOptions: { grafana: { tenant: "other" } } }, "reserved provider option namespace"],
+        [{ headers: { authorization: "Bearer caller-controlled" } }, "protected call header"],
+        [{ providerOptions: { openaiCompatible: { Model: "someone-elses-model" } } }, "protected provider option"],
+      ] as const) {
+        await assert.rejects(
+          async () => await client("compatible").doGenerate({
+            prompt: [{ role: "user", content: [{ type: "text", text: "unary" }] }],
+            maxOutputTokens: 32,
+            ...rejected,
+          }),
+          (error: unknown) => GatewayInvalidRequestError.isInstance(error) && error.message === message,
+          `refused as ${message}, not by an unrelated failure`,
+        );
+      }
+      const refusedBodies = JSON.stringify(fake.requests.map((request: { body: unknown }) => request.body));
+      for (const refused of ["caller-controlled", "tenant", "someone-elses-model"]) {
+        assert.ok(!refusedBodies.includes(refused), "a refused value never reaches the backend");
+      }
+      assert.deepEqual(fake.violations, []);
+    } finally { await settleCleanup(() => gateway.stop(), () => fake.stop()); }
+  });
+
+  it("refuses provider options that restructure a validated message, in both modes", async () => {
+    // A namespace field that reaches the provider's message or part metadata is
+    // spread over the entry it builds, so it can reinstate content the runtime
+    // refused to map. Every one of these must be refused before the call.
+    const [fake, gateway] = await startCompatibleGateway();
+    try {
+      const client = gateway.client();
+      const structural: Record<string, JSONValue> = {
+        content: [{ type: "image_url", image_url: { url: "https://caller.example/x.png" } }],
+        role: "tool",
+        type: "image_url",
+        image_url: { url: "https://caller.example/x.png" },
+        tool_calls: [{ id: "call_1", type: "function", function: { name: "f", arguments: "{}" } }],
+      };
+      for (const [field, value] of Object.entries(structural)) {
+        for (const mode of ["generate", "stream"] as const) {
+          const options = {
+            prompt: [{
+              role: "user" as const,
+              content: [{ type: "text" as const, text: "unary" }],
+              providerOptions: { openaiCompatible: { [field]: value } },
+            }],
+            maxOutputTokens: 32,
+          };
+          await assert.rejects(
+            async () => mode === "generate"
+              ? await client("compatible").doGenerate(options)
+              : await collectGatewayStream((await client("compatible").doStream(options)).stream),
+            (error: unknown) => GatewayInvalidRequestError.isInstance(error) && error.message === "protected provider option",
+            `${field} in ${mode} mode is refused as a protected provider option`,
+          );
+        }
+      }
+      assert.equal(fake.requests.length, 0, "a refused request never reaches the backend");
+      assert.deepEqual(fake.violations, []);
+    } finally { await settleCleanup(() => gateway.stop(), () => fake.stop()); }
+  });
+
+  it("forwards nested provider options and call headers to the backend, in both modes", async () => {
+    const [fake, gateway] = await startCompatibleGateway();
+    try {
+      const client = gateway.client();
+      for (const mode of ["generate", "stream"] as const) {
+        const options = {
+          prompt: [
+            {
+              role: "system" as const,
+              content: "be brief",
+              providerOptions: { openaiCompatible: { system_marker: `system-${mode}` } },
+            },
+            {
+              // Two parts, because upstream collapses a lone text part into the
+              // message and uses the part's metadata for it.
+              role: "user" as const,
+              content: [
+                { type: "text" as const, text: "unary", providerOptions: { openaiCompatible: { part_marker: `part-${mode}` } } },
+                { type: "text" as const, text: "tail" },
+              ],
+              providerOptions: { openaiCompatible: { message_marker: `message-${mode}` } },
+            },
+          ],
+          maxOutputTokens: 32,
+          providerOptions: { openaiCompatible: { user: `root-${mode}` } },
+          headers: { "X-Contract-Body": `header-${mode}` },
+        };
+        if (mode === "generate") {
+          await client("compatible").doGenerate(options);
+        } else {
+          await collectGatewayStream((await client("compatible").doStream(options)).stream);
+        }
+
+        const forwarded = fake.requests.at(-1);
+        assert.ok(forwarded, `the backend received the ${mode} request`);
+        const body = forwarded.body as { user?: string; stream?: boolean; messages: Array<Record<string, unknown>> };
+        assert.equal(body.user, `root-${mode}`, "root options reach the backend");
+        assert.equal(singleHeader(forwarded.headers["x-contract-body"]), `header-${mode}`, "call headers reach the backend");
+        assert.equal(body.stream ?? false, mode === "stream", "the mode the caller asked for is the mode sent upstream");
+        const [system, user] = body.messages;
+        assert.equal(system!.system_marker, `system-${mode}`, "system-message options reach the backend");
+        assert.equal(user!.message_marker, `message-${mode}`, "message options reach the backend");
+        const parts = user!.content as Array<Record<string, unknown>>;
+        assert.equal(parts[0]!.part_marker, `part-${mode}`, "text-part options reach the backend");
+      }
+      assert.deepEqual(fake.violations, []);
+    } finally { await settleCleanup(() => gateway.stop(), () => fake.stop()); }
+  });
+
   it("discovers, invokes, and streams usage without exposing private configuration", async () => {
     const [fake, gateway] = await startCompatibleGateway();
     try {
