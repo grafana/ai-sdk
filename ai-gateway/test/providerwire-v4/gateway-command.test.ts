@@ -145,7 +145,7 @@ describe("authenticated Anthropic Gateway command", () => {
     }
   });
 
-  it("verifies JWKS auth and native function continuation for both unary clients", async () => {
+  it("verifies JWKS auth and native function continuation for both clients and modes", async () => {
     const observer = await FakeAgentObservability.start();
     const keys = generateKeyPairSync("ec", { namedCurve: "P-256" });
     const jwk = { ...keys.publicKey.export({ format: "jwk" }), kid: "tool-test", alg: "ES256", use: "sig" };
@@ -189,15 +189,15 @@ describe("authenticated Anthropic Gateway command", () => {
       assert.ok(keyRequests > 0, "signature rejection must resolve the retained key ID through JWKS");
       assert.equal(fake.requests.length, 0, "invalid signature must not reach provider");
       let executions = 0;
-      for (const mode of ["generate"] as const) {
+      for (const mode of ["generate", "stream"] as const) {
         for (const implementation of ["vercel", "go"] as const) {
           const invoke = async (requestOptions: any): Promise<any[]> => {
             if (implementation === "go") {
               const result = await captureGoClient(goClientBinaryPath, { baseURL: `${gateway.url}/api/v1/aisdk`, accessToken: token, modelID: "assistant", mode, options: requestOptions });
               assert.equal(result.error, undefined);
-              return result.result.content;
+              return mode === "generate" ? result.result.content : result.parts;
             }
-            return (await client("assistant").doGenerate(requestOptions)).content;
+            return mode === "generate" ? (await client("assistant").doGenerate(requestOptions)).content : await collectGatewayStream((await client("assistant").doStream(requestOptions)).stream);
           };
           const first = await invoke(options);
           const call = first.find(part => part.type === "tool-call");
@@ -205,22 +205,26 @@ describe("authenticated Anthropic Gateway command", () => {
           assert.equal(call.toolCallId, "call-weather");
           assert.equal(call.toolName, "weather");
           assert.deepEqual(JSON.parse(call.input), { city: "Rio" });
+          if (mode === "stream") {
+            assert.deepEqual(first.filter(part => part.type.startsWith("tool-")).map(part => part.type), ["tool-input-start", "tool-input-delta", "tool-input-delta", "tool-input-end", "tool-call"]);
+            assert.deepEqual(first.filter(part => part.type === "tool-input-delta").map(part => part.delta), ['{"city":', '"Rio"}']);
+          }
           executions++;
           const final = await invoke({ ...options, prompt: [...prompt,
             { role: "assistant", content: [{ type: "tool-call", toolCallId: call.toolCallId, toolName: call.toolName, input: JSON.parse(call.input) }] },
             { role: "tool", content: [{ type: "tool-result", toolCallId: call.toolCallId, toolName: call.toolName, output: { type: "text", value: "sunny" } }] }], toolChoice: { type: "auto" } });
-          assert.equal(final.filter(part => part.type === "text").map(part => part.text ?? part.delta).join(""), "It is sunny.");
+          assert.equal(final.filter(part => part.type === (mode === "generate" ? "text" : "text-delta")).map(part => part.text ?? part.delta).join(""), "It is sunny.");
           const native = fake.requests.at(-2)!.body as any;
-          assert.deepEqual(native.tools[0], { name: "weather", input_schema: tools[0].inputSchema, strict: false, input_examples: [{ city: "Rio" }] });
+          assert.deepEqual(native.tools[0], { name: "weather", input_schema: tools[0].inputSchema, strict: false, input_examples: [{ city: "Rio" }], ...(mode === "stream" ? { eager_input_streaming: true } : {}) });
           assert.equal(native.tool_choice.name, "weather");
-          assert.equal(native.stream === true, false);
+          assert.equal(native.stream === true, mode === "stream");
           const continuation = fake.requests.at(-1)!.body as any;
           assert.deepEqual(continuation.messages[1].content, [{ type: "tool_use", id: "call-weather", name: "weather", input: { city: "Rio" } }]);
           assert.deepEqual(continuation.messages[2].content, [{ type: "tool_result", tool_use_id: "call-weather", content: [{ type: "text", text: "sunny" }] }]);
         }
       }
-      assert.equal(executions, 2);
-      assert.equal(fake.requests.length, 4);
+      assert.equal(executions, 4);
+      assert.equal(fake.requests.length, 8);
       assert.ok(keyRequests > 0);
       assert.deepEqual(fake.violations, []);
       fake.failureStatus = 500;
@@ -1570,9 +1574,26 @@ class FakeAnthropic {
     if (this.functionTools) {
       const messages = body.messages as Array<{ content: Array<{ type: string }> }>;
       const continued = messages.some(message => message.content.some(part => part.type === "tool_result"));
-      response.writeHead(200, { "Content-Type": "application/json" });
+      if (body.stream !== true) {
+        response.writeHead(200, { "Content-Type": "application/json" });
         response.end(JSON.stringify({ id: "msg_tools", type: "message", role: "assistant", model: "backend-private", content: continued ? [{ type: "text", text: "It is sunny." }] : [{ type: "tool_use", id: "call-weather", name: "weather", input: { city: "Rio" } }], stop_reason: continued ? "end_turn" : "tool_use", stop_sequence: null, usage: { input_tokens: 2, output_tokens: 3 } }));
         return;
+      }
+      response.writeHead(200, { "Content-Type": "text/event-stream" });
+      const event = (value: { type: string; [key: string]: unknown }) => response.write(`event: ${value.type}\ndata: ${JSON.stringify(value)}\n\n`);
+      event({ type: "message_start", message: { id: "msg_tools", type: "message", role: "assistant", model: "backend-private", content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 2, output_tokens: 0 } } });
+      if (continued) {
+        event({ type: "content_block_start", index: 0, content_block: { type: "text", text: "" } });
+        event({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "It is sunny." } });
+      } else {
+        event({ type: "content_block_start", index: 0, content_block: { type: "tool_use", id: "call-weather", name: "weather", input: {} } });
+        for (const partial_json of ["", '{"city":', '"Rio"}']) event({ type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json } });
+      }
+      event({ type: "content_block_stop", index: 0 });
+      event({ type: "message_delta", delta: { stop_reason: continued ? "end_turn" : "tool_use", stop_sequence: null }, usage: { output_tokens: 3 } });
+      event({ type: "message_stop" });
+      response.end();
+      return;
     }
     if (body.stream !== true) {
       response.writeHead(200, { "Content-Type": "application/json" });

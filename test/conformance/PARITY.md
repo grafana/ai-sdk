@@ -109,6 +109,12 @@ standalone Apache and isolated Gateway tests verify those dependencies. The
 registered upstream baseline remains unchanged; production activation remains
 separate.
 
+WP12 extends this evidence to input/call/basic-result streaming, required empty
+deltas, ID/order validation, hostile termination/cancellation, and automatic
+two-step Vercel/Go orchestration through the real handler with one local execution.
+Safe-JWKS command/native tests separately cover two transport calls per client.
+No tool runner or session state is introduced in the Gateway.
+
 
 `providers/grafana` is an Apache-licensed, independently buildable client for
 the Gateway service, not a second Gateway implementation. Its focused Go
@@ -132,7 +138,7 @@ The following differences are explicit rather than claims of complete parity:
 - Intentional security boundaries: client-owned authentication/protocol headers
   cannot be overridden through case variants; URL prefixes are retained;
   discovery is atomic and bounded; response families are closed to text and the
-  supported unary client-executed function-tool subset.
+  supported unary/streaming client-executed function-tool subset.
   Upstream's permissive output schema and wildcard supported URLs are not
   adopted. Raw unary response text is retained only within its configured bound.
   Token-exchange errors discard arbitrary token-service response prose, including

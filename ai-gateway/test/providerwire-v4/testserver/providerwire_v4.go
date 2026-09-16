@@ -56,6 +56,42 @@ func (m *providerWireV4Model) DoStream(ctx context.Context, options provider.Cal
 	one := 1
 	two := 2
 	switch m.kind {
+	case "stream-tool-results":
+		var parts []provider.StreamPart
+		for i, value := range []string{"false", "0", `""`, "[]", "{}"} {
+			id := string(rune('a' + i))
+			parts = append(parts,
+				provider.StreamPart{Type: provider.PartToolCall, ToolCallID: id, ToolName: "weather", Input: "{}"},
+				provider.StreamPart{Type: provider.PartToolResult, ToolCallID: id, ToolName: "weather", Result: json.RawMessage(value), IsError: i == 4},
+			)
+		}
+		parts = append(parts, provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: &provider.Usage{}})
+		return &provider.StreamResult{Stream: scenarioStream(parts...)}, nil
+	case "stream-tools":
+		m.stats.recordSuccess(options)
+		for _, message := range options.Prompt {
+			for _, part := range message.Content {
+				if part.Type == provider.ContentPartTypeToolResult {
+					if part.ToolCallID != "call-weather" || part.ToolName != "weather" || part.Output == nil || !(part.Output.Type == provider.ToolOutputText && part.Output.Text == "sunny" || part.Output.Type == provider.ToolOutputJSON && string(part.Output.JSON) == `"sunny"`) {
+						return nil, errors.New("invalid streaming continuation")
+					}
+					return &provider.StreamResult{Stream: scenarioStream(
+						provider.StreamPart{Type: provider.PartTextStart, ID: "final"},
+						provider.StreamPart{Type: provider.PartTextDelta, ID: "final", Delta: "It is sunny."},
+						provider.StreamPart{Type: provider.PartTextEnd, ID: "final"},
+						provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: &provider.Usage{}},
+					)}, nil
+				}
+			}
+		}
+		return &provider.StreamResult{Stream: scenarioStream(
+			provider.StreamPart{Type: provider.PartToolInputStart, ID: "call-weather", ToolName: "weather"},
+			provider.StreamPart{Type: provider.PartToolInputDelta, ID: "call-weather", Delta: ""},
+			provider.StreamPart{Type: provider.PartToolInputDelta, ID: "call-weather", Delta: `{"city":"Rio"}`},
+			provider.StreamPart{Type: provider.PartToolInputEnd, ID: "call-weather"},
+			provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "call-weather", ToolName: "weather", Input: `{"city":"Rio"}`},
+			provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonToolCalls}, Usage: &provider.Usage{}},
+		)}, nil
 	case "success":
 		m.stats.recordSuccess(options)
 		stream := make(chan provider.StreamPart, 8)
@@ -153,7 +189,7 @@ type providerWireV4Scenario struct {
 func newProviderWireV4Scenario() (*providerWireV4Scenario, error) {
 	stats := &providerWireV4Stats{}
 	entries := make([]catalog.StaticEntry, 0, 5)
-	for _, id := range []string{"success", "blocking", "stream-errors", "stream-timeout", "stream-blocking", "unary-tools", "unary-tools-provider-executed", "unary-tools-dynamic"} {
+	for _, id := range []string{"success", "blocking", "stream-errors", "stream-timeout", "stream-blocking", "unary-tools", "unary-tools-provider-executed", "unary-tools-dynamic", "stream-tools", "stream-tool-results"} {
 		entries = append(entries, catalog.StaticEntry{
 			Info:  catalog.ModelInfo{ID: id},
 			Model: &providerWireV4Model{kind: id, stats: stats},
@@ -179,6 +215,15 @@ func newProviderWireV4Scenario() (*providerWireV4Scenario, error) {
 		return nil, err
 	}
 	return &providerWireV4Scenario{runtime: runtime, stats: stats}, nil
+}
+
+func scenarioStream(parts ...provider.StreamPart) <-chan provider.StreamPart {
+	stream := make(chan provider.StreamPart, len(parts))
+	for _, part := range parts {
+		stream <- part
+	}
+	close(stream)
+	return stream
 }
 
 func (s *providerWireV4Scenario) register(mux *http.ServeMux) {

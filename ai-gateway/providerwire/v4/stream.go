@@ -52,6 +52,10 @@ type streamEvent struct {
 	finishReason provider.FinishReason
 	inputUsage   unaryInputTokenUsage
 	outputUsage  unaryOutputTokenUsage
+	toolName     string
+	input        string
+	result       json.RawMessage
+	isError      bool
 }
 
 type streamStartEvent struct {
@@ -102,6 +106,16 @@ func encodeStreamFrame(value streamEvent, limit int64) ([]byte, bool) {
 		payload, err = json.Marshal(streamTextEvent{Type: value.typeName, ID: value.id})
 	case provider.PartTextDelta:
 		payload, err = json.Marshal(streamTextEvent{Type: value.typeName, ID: value.id, Delta: &value.delta})
+	case provider.PartToolInputStart:
+		payload, err = json.Marshal(streamToolStartEvent{Type: value.typeName, ID: value.id, ToolName: value.toolName})
+	case provider.PartToolInputDelta:
+		payload, err = json.Marshal(streamTextEvent{Type: value.typeName, ID: value.id, Delta: &value.delta})
+	case provider.PartToolInputEnd:
+		payload, err = json.Marshal(streamTextEvent{Type: value.typeName, ID: value.id})
+	case provider.PartToolCall:
+		payload, err = json.Marshal(streamToolCallEvent{Type: value.typeName, ToolCallID: value.id, ToolName: value.toolName, Input: value.input})
+	case provider.PartToolResult:
+		payload, err = json.Marshal(streamToolResultEvent{Type: value.typeName, ToolCallID: value.id, ToolName: value.toolName, Result: value.result, IsError: value.isError})
 	case provider.PartFinish:
 		payload, err = json.Marshal(streamFinishEvent{
 			Type:         value.typeName,
@@ -157,6 +171,16 @@ func streamEventPreflight(value streamEvent, limit int64) bool {
 		return check(value.id)
 	case provider.PartTextDelta:
 		return check(value.id, value.delta)
+	case provider.PartToolInputStart:
+		return check(value.id, value.toolName)
+	case provider.PartToolInputDelta:
+		return check(value.id, value.delta)
+	case provider.PartToolInputEnd:
+		return check(value.id)
+	case provider.PartToolCall:
+		return check(value.id, value.toolName, value.input)
+	case provider.PartToolResult:
+		return check(value.id, value.toolName, string(value.result))
 	case provider.PartFinish:
 		return check(string(value.finishReason.Unified), value.finishReason.Raw)
 	default:
@@ -385,6 +409,7 @@ type streamState struct {
 	textStarted  bool
 	activeID     string
 	usedIDs      map[string]struct{}
+	tools        map[string]toolStreamState
 }
 
 func newStreamState(limit int) *streamState {
@@ -392,7 +417,7 @@ func newStreamState(limit int) *streamState {
 	if capacity > 64 {
 		capacity = 64
 	}
-	return &streamState{usedIDs: make(map[string]struct{}, capacity)}
+	return &streamState{usedIDs: make(map[string]struct{}, capacity), tools: make(map[string]toolStreamState, capacity)}
 }
 
 func (h *handler) runStream(w http.ResponseWriter, requestContext, modelContext context.Context, cancel context.CancelFunc, stream <-chan provider.StreamPart, counter *streamPartCounter, idleTimer *time.Timer, modelID string) {
@@ -536,6 +561,8 @@ func validStreamTimestamp(value time.Time) bool {
 
 func (h *handler) processStreamPart(w http.ResponseWriter, state *streamState, part provider.StreamPart, modelID string) streamPartResult {
 	switch part.Type {
+	case provider.PartToolInputStart, provider.PartToolInputDelta, provider.PartToolInputEnd, provider.PartToolCall, provider.PartToolResult:
+		return h.processToolStreamPart(w, state, part)
 	case provider.PartResponseMeta:
 		if state.metadataSeen || state.textStarted || !utf8.ValidString(part.ResponseID) || !validStreamTimestamp(part.Timestamp) {
 			return streamPartAdapterFailure
@@ -598,6 +625,11 @@ func (h *handler) processStreamPart(w http.ResponseWriter, state *streamState, p
 		}
 		return streamPartContinue
 	case provider.PartFinish:
+		for _, tool := range state.tools {
+			if tool.phase == toolInputOpen {
+				return streamPartAdapterFailure
+			}
+		}
 		if state.activeID != "" || len(part.Warnings) != 0 || part.FinishReason == nil || part.Usage == nil {
 			return streamPartAdapterFailure
 		}
