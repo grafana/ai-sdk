@@ -156,28 +156,69 @@ func (w *wireWarning) UnmarshalJSON(data []byte) error {
 
 func decodeStreamPart(data []byte) (provider.StreamPart, error) {
 	invalid := func() (provider.StreamPart, error) {
-		return provider.StreamPart{}, errors.New("grafana: invalid text stream part")
+		return provider.StreamPart{}, errors.New("grafana: invalid stream part")
 	}
 	if !validJSON(data) {
 		return invalid()
 	}
 	var value struct {
-		Type         provider.StreamPartType `json:"type"`
-		ID           *string                 `json:"id"`
-		Delta        *string                 `json:"delta"`
-		ModelID      *string                 `json:"modelId"`
-		Timestamp    *string                 `json:"timestamp"`
-		Warnings     *[]wireWarning          `json:"warnings"`
-		FinishReason *wireFinish             `json:"finishReason"`
-		Usage        *wireUsage              `json:"usage"`
-		RawValue     json.RawMessage         `json:"rawValue"`
-		Error        json.RawMessage         `json:"error"`
+		Type             provider.StreamPartType `json:"type"`
+		ID               *string                 `json:"id"`
+		Delta            *string                 `json:"delta"`
+		ModelID          *string                 `json:"modelId"`
+		Timestamp        *string                 `json:"timestamp"`
+		Warnings         *[]wireWarning          `json:"warnings"`
+		FinishReason     *wireFinish             `json:"finishReason"`
+		Usage            *wireUsage              `json:"usage"`
+		RawValue         json.RawMessage         `json:"rawValue"`
+		Error            json.RawMessage         `json:"error"`
+		ToolCallID       *string                 `json:"toolCallId"`
+		ToolName         *string                 `json:"toolName"`
+		Input            *string                 `json:"input"`
+		Result           json.RawMessage         `json:"result"`
+		IsError          bool                    `json:"isError"`
+		ProviderExecuted bool                    `json:"providerExecuted"`
+		Dynamic          bool                    `json:"dynamic"`
+		Preliminary      bool                    `json:"preliminary"`
 	}
-	if decodeFields(data, &value, "type", "id", "delta", "modelId", "timestamp", "warnings", "finishReason", "usage", "rawValue", "error") != nil {
+	if decodeFields(data, &value, "type", "id", "delta", "modelId", "timestamp", "warnings", "finishReason", "usage", "rawValue", "error", "toolCallId", "toolName", "input", "result", "isError", "providerExecuted", "dynamic", "preliminary") != nil {
 		return invalid()
 	}
 	part := provider.StreamPart{Type: value.Type}
 	switch value.Type {
+	case provider.PartToolInputStart, provider.PartToolInputDelta, provider.PartToolInputEnd:
+		if value.ID == nil || *value.ID == "" || value.ProviderExecuted || value.Dynamic || value.Preliminary {
+			return invalid()
+		}
+		part.ID = *value.ID
+		if value.Type == provider.PartToolInputStart {
+			if value.ToolName == nil || *value.ToolName == "" {
+				return invalid()
+			}
+			part.ToolName = *value.ToolName
+		}
+		if value.Type == provider.PartToolInputDelta {
+			if value.Delta == nil {
+				return invalid()
+			}
+			part.Delta = *value.Delta
+		}
+	case provider.PartToolCall, provider.PartToolResult:
+		if value.ToolCallID == nil || *value.ToolCallID == "" || value.ToolName == nil || *value.ToolName == "" || value.ProviderExecuted || value.Dynamic || value.Preliminary {
+			return invalid()
+		}
+		part.ToolCallID, part.ToolName = *value.ToolCallID, *value.ToolName
+		if value.Type == provider.PartToolCall {
+			if value.Input == nil {
+				return invalid()
+			}
+			part.Input = *value.Input
+		} else {
+			if len(value.Result) == 0 || string(value.Result) == "null" {
+				return invalid()
+			}
+			part.Result, part.IsError = value.Result, value.IsError
+		}
 	case provider.PartStreamStart:
 		if value.Warnings == nil {
 			return invalid()

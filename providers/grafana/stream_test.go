@@ -315,3 +315,25 @@ func TestModel_StreamSetupFailure(t *testing.T) {
 		})
 	}
 }
+func TestDecodeStreamPart_FunctionTools(t *testing.T) {
+	for _, raw := range []string{
+		`{"type":"tool-input-start","id":"a","toolName":"f"}`,
+		`{"type":"tool-input-delta","id":"a","delta":""}`,
+		`{"type":"tool-input-end","id":"a"}`,
+		`{"type":"tool-call","toolCallId":"a","toolName":"f","input":"{}"}`,
+		`{"type":"tool-result","toolCallId":"a","toolName":"f","result":false,"isError":true}`,
+	} {
+		part, err := decodeStreamPart([]byte(raw))
+		require.NoError(t, err)
+		assert.NotEmpty(t, part.Type)
+	}
+	for _, raw := range []string{
+		`{"type":"tool-input-start","id":"a","toolName":"f","providerExecuted":true}`,
+		`{"type":"tool-call","toolCallId":"a","toolName":"f","input":"{}","dynamic":true}`,
+		`{"type":"tool-result","toolCallId":"a","toolName":"f","result":null}`,
+		`{"type":"tool-input-delta","id":"a"}`,
+	} {
+		_, err := decodeStreamPart([]byte(raw))
+		require.Error(t, err)
+	}
+}
