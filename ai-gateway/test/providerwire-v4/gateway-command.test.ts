@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import nodeProcess from "node:process";
 import { after, before, describe, it } from "node:test";
-import { createGateway } from "@ai-sdk/gateway";
+import { createGateway, GatewayInvalidRequestError } from "@ai-sdk/gateway";
 import { buildGoClientCapture, captureGoClient } from "./go-client-capture";
 
 const AI_GATEWAY_ROOT = resolve(import.meta.dirname, "../..");
@@ -124,7 +124,7 @@ describe("authenticated Anthropic Gateway command", () => {
       await fake.waitForCancellation("silent-abort");
       const missing = await captureGoClient(goClientBinaryPath, { ...base, mode: "generate", modelID: "missing", options: { prompt: [] } });
       assert.equal(missing.error.category, "model_not_found"); assert.equal(missing.error.statusCode, 404);
-      const invalid = await captureGoClient(goClientBinaryPath, { ...base, mode: "generate", modelID: "assistant", options: { prompt: [], headers: { "x-call": "unsupported" } } });
+      const invalid = await captureGoClient(goClientBinaryPath, { ...base, mode: "generate", modelID: "assistant", options: { prompt: [], headers: { authorization: "Bearer caller-controlled" } } });
       assert.equal(invalid.error.category, "invalid_request_error"); assert.equal(invalid.error.statusCode, 400);
       const unauthorized = await captureGoClient(goClientBinaryPath, { ...base, accessToken: "invalid-token", mode: "discovery" });
       assert.equal(unauthorized.error.category, "authentication_error"); assert.equal(unauthorized.error.statusCode, 401);
@@ -796,6 +796,50 @@ describe("Trusted-proxy composition (dummy credentials, not production authentic
 });
 
 describe("authenticated OpenAI-compatible Gateway command", () => {
+  it("forwards the selected backend's provider options and refuses host and credential values", async () => {
+    const [fake, gateway] = await startCompatibleGateway();
+    try {
+      const client = gateway.client();
+      await client("compatible").doGenerate({
+        prompt: [{ role: "user", content: [{ type: "text", text: "unary" }] }],
+        maxOutputTokens: 32,
+        providerOptions: {
+          openaiCompatible: { reasoningEffort: "low", user: "caller-supplied-user" },
+        },
+        headers: { "X-Contract-Body": "carried" },
+      });
+
+      const forwarded = fake.requests.at(-1);
+      assert.ok(forwarded, "the backend received the request");
+      assert.equal(forwarded.body.reasoning_effort, "low");
+      assert.equal(forwarded.body.user, "caller-supplied-user");
+      assert.equal(singleHeader(forwarded.headers["x-contract-body"]), "carried");
+      assert.equal(singleHeader(forwarded.headers.authorization), "Bearer integration-compatible-key",
+        "the gateway's backend credential is the one presented upstream");
+
+      for (const [rejected, message] of [
+        [{ providerOptions: { grafana: { tenant: "other" } } }, "reserved provider option namespace"],
+        [{ headers: { authorization: "Bearer caller-controlled" } }, "protected call header"],
+        [{ providerOptions: { openaiCompatible: { Model: "someone-elses-model" } } }, "protected provider option"],
+      ] as const) {
+        await assert.rejects(
+          async () => await client("compatible").doGenerate({
+            prompt: [{ role: "user", content: [{ type: "text", text: "unary" }] }],
+            maxOutputTokens: 32,
+            ...rejected,
+          }),
+          (error: unknown) => GatewayInvalidRequestError.isInstance(error) && error.message === message,
+          `refused as ${message}, not by an unrelated failure`,
+        );
+      }
+      const refusedBodies = JSON.stringify(fake.requests.map((request: { body: unknown }) => request.body));
+      for (const refused of ["caller-controlled", "tenant", "someone-elses-model"]) {
+        assert.ok(!refusedBodies.includes(refused), "a refused value never reaches the backend");
+      }
+      assert.deepEqual(fake.violations, []);
+    } finally { await settleCleanup(() => gateway.stop(), () => fake.stop()); }
+  });
+
   it("discovers, invokes, and streams usage without exposing private configuration", async () => {
     const [fake, gateway] = await startCompatibleGateway();
     try {
