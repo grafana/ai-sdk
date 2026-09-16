@@ -10,7 +10,7 @@
 - [x] 2.2 Add deterministic Anthropic native-request cases for schema/examples/strict false/choice/result continuation; update affected converters only, and inspect Bedrock/OpenAI regressions if shared domain changes.
 - [x] 2.3 Extend existing Go unary response and request mapping where differential cases fail; retain bounded reads and Vercel-owned warnings/request/response normalization.
 - [ ] 2.4 Extend reusable normalized tool observation only where required and verify standalone Apache tests.
-- [ ] 2.5 Commit Apache prerequisites separately and obtain an approved immutable proxy-resolvable pin before dependent Gateway release validation; use no committed replacement.
+- [x] 2.5 Commit Apache prerequisites separately and obtain an approved immutable proxy-resolvable pin before dependent Gateway release validation; use no committed replacement.
 
 ## 3. Gateway unary support
 
@@ -29,6 +29,13 @@
 - [x] 4.5 Validate this OpenSpec change strictly, run git diff --check and report evidence without marking WP12 complete.
 
 Apply handoff: direct-route loops and full command/safe-JWKS deterministic native
-unary continuation now pass in both clients. Immutable publication pins and WP9
-effect guard remain incomplete; production activation is deferred. See the dated apply report; unchecked
-compound tasks may have partial evidence and are not whole-package completion.
+unary continuation pass in both clients. Published root prerequisite `07aacebe97a2`
+and Anthropic/client prerequisite `e9128cc3b35a` are available; Gateway consumes
+the immutable root and Anthropic pins, and both Apache provider modules consume
+the immutable root pin. Native request tests prove selected empty schema `{}` and
+selected empty tool-result content `[]` remain present while absent values keep
+their established behavior. Hosted module-resolution validation passed at
+`4df4ed4`. WP9's effect guard is implemented; the composed unary-tool fallback
+integration evidence in task 3.5 remains open. Production activation is deferred.
+Unchecked compound tasks may have partial evidence and are not whole-package
+completion; active OpenSpec changes remain a merge gate until correctly archived.

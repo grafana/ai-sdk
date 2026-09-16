@@ -150,16 +150,6 @@ func (w *wireUsage) UnmarshalJSON(data []byte) error {
 	return json.Unmarshal(encoded, (*plain)(w))
 }
 
-type wireText struct {
-	Type provider.GenerateContentType `json:"type"`
-	Text *string                      `json:"text"`
-}
-
-func (w *wireText) UnmarshalJSON(data []byte) error {
-	type plain wireText
-	return decodeFields(data, (*plain)(w), "type", "text")
-}
-
 func decodeFinish(value *wireFinish) (provider.FinishReason, error) {
 	if value == nil {
 		return provider.FinishReason{}, errors.New("grafana: missing finish reason")
