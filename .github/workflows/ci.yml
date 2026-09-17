@@ -212,7 +212,7 @@ jobs:
           AI_GATEWAY_VCS_REF: ${{ github.sha }}
         run: mise run build-ai-gateway-image
 
-      - name: Smoke test native image
+      - name: Smoke test native image with IPv6 disabled
         timeout-minutes: 2
         run: |
           test "$(docker image inspect --format '{{.Config.User}}' ai-gateway:ci)" = '10001:10001'
@@ -239,15 +239,18 @@ jobs:
             rm -f "$config"
           ' EXIT
           container=$(docker run --detach \
+            --network none \
+            --sysctl net.ipv6.conf.all.disable_ipv6=1 \
+            --sysctl net.ipv6.conf.lo.disable_ipv6=1 \
             --read-only --cap-drop ALL --security-opt no-new-privileges \
             --mount "type=bind,source=$config,target=/etc/gateway/models.yaml,readonly" \
             --env GRAFANA_AI_GATEWAY_CONFIG_FILE=/etc/gateway/models.yaml \
             --env ANTHROPIC_API_KEY=smoke-test-not-a-secret \
-            ai-gateway:ci --deployment.mode=development --auth.unsafe \
-            --server.listen-address=127.0.0.1:8080)
+            ai-gateway:ci --deployment.mode=development --auth.mode=cloud-gateway \
+            --server.listen-address=:8080 --server.operational-listen-address=:8081)
           for ((attempt = 0; attempt < 30; attempt++)); do
             if docker exec "$container" timeout 2 bash -c '
-              exec 3<>/dev/tcp/127.0.0.1/8080
+              exec 3<>/dev/tcp/127.0.0.1/8081
               printf "GET /ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n" >&3
               read -r status <&3
               [[ "$status" == *" 200 "* ]]

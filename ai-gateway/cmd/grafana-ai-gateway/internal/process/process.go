@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"syscall"
 	"time"
 
 	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/auth"
@@ -163,6 +164,7 @@ func Run(ctx context.Context, args []string, lookupEnv config.LookupEnv, listen 
 				_ = binding.listener.Close()
 			}
 			agentRuntime.Close()
+			logListenerFailure(logger, "bind", err)
 			return fmt.Errorf("gateway process: binding listener: %w", err)
 		}
 		servers = append(servers, boundServer{
@@ -216,16 +218,19 @@ startup:
 			pendingProbes--
 			if err != nil {
 				if ctx.Err() == nil {
+					logListenerFailure(logger, "probe", err)
 					result = fmt.Errorf("gateway process: probing listener: %w", err)
 				}
 				break startup
 			}
 		case err := <-serveErrors:
 			remaining--
+			logListenerFailure(logger, "serve", err)
 			result = fmt.Errorf("gateway process: serving HTTP: %w", err)
 			break startup
 		case <-startupContext.Done():
 			if ctx.Err() == nil {
+				logListenerFailure(logger, "startup", startupContext.Err())
 				result = fmt.Errorf("gateway process: starting listeners: %w", startupContext.Err())
 			}
 			break startup
@@ -245,6 +250,7 @@ startup:
 		select {
 		case err := <-serveErrors:
 			remaining--
+			logListenerFailure(logger, "serve", err)
 			result = fmt.Errorf("gateway process: serving HTTP: %w", err)
 		case <-ctx.Done():
 		}
@@ -300,24 +306,28 @@ func (listener *startupListener) Accept() (net.Conn, error) {
 }
 
 func probeListener(ctx context.Context, address net.Addr) error {
-	target := address.String()
-	switch address := address.(type) {
-	case *net.TCPAddr:
-		if address.IP.IsUnspecified() {
-			probeAddress := *address
-			probeAddress.IP = net.IPv6loopback
-			if address.IP.To4() != nil {
-				probeAddress.IP = net.IPv4(127, 0, 0, 1)
-			}
-			target = probeAddress.String()
-		}
-	}
 	var dialer net.Dialer
-	connection, err := dialer.DialContext(ctx, address.Network(), target)
+	connection, err := dialer.DialContext(ctx, address.Network(), address.String())
 	if err != nil {
 		return err
 	}
 	return connection.Close()
+}
+
+func logListenerFailure(logger *slog.Logger, stage string, err error) {
+	reason := "unknown"
+	var errno syscall.Errno
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		reason = "timeout"
+	case errors.Is(err, context.Canceled):
+		reason = "canceled"
+	case errors.Is(err, net.ErrClosed):
+		reason = "closed"
+	case errors.As(err, &errno):
+		reason = errno.Error()
+	}
+	logger.Error("gateway listener failed", "stage", stage, "reason", reason)
 }
 
 func logProcessEvent(logger *slog.Logger, event string) {

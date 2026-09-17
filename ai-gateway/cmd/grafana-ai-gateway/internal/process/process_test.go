@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -650,6 +651,8 @@ func TestRun_BindFailures(t *testing.T) {
 			require.ErrorIs(t, err, assert.AnError)
 			assert.Equal(t, failAt, calls)
 			assert.NotContains(t, processLifecycleEvents(t, logs.String()), processEventReady)
+			assert.Contains(t, logs.String(), `"stage":"bind"`)
+			assert.NotContains(t, logs.String(), assert.AnError.Error())
 			for _, listener := range listeners {
 				defer func() { _ = listener.Close() }()
 				connection, err := net.DialTimeout("tcp", listener.Addr().String(), time.Second)
@@ -767,6 +770,10 @@ func TestServe_DualLifecycle(t *testing.T) {
 			if tc.ignoreCancel {
 				assert.Less(t, time.Since(shutdownStarted), 350*time.Millisecond, "both servers share one deadline")
 			}
+			if tc.failAfterStartup {
+				assert.Contains(t, logs.String(), `"stage":"serve"`)
+				assert.NotContains(t, logs.String(), assert.AnError.Error())
+			}
 			assert.False(t, readiness.Ready())
 			events := processLifecycleEvents(t, logs.String())
 			if (tc.failAt > 0 && !tc.failAfterStartup) || tc.cancelBeforeStart {
@@ -800,7 +807,9 @@ func TestServe_ListenerStartup(t *testing.T) {
 		name         string
 		count        int
 		pauseAt      int
+		network      string
 		address      string
+		ipv4Fallback bool
 		cancel       bool
 		timeout      bool
 		probeFailure bool
@@ -810,6 +819,9 @@ func TestServe_ListenerStartup(t *testing.T) {
 		{name: "operational pending", count: 2, pauseAt: 2, address: "127.0.0.1:0"},
 		{name: "IPv4 wildcard", count: 1, pauseAt: 1, address: "0.0.0.0:0"},
 		{name: "IPv6 wildcard", count: 1, pauseAt: 1, address: "[::]:0"},
+		{name: "IPv4-only wildcard", count: 2, pauseAt: 1, network: "tcp4", address: "0.0.0.0:0"},
+		{name: "IPv6-only wildcard", count: 2, pauseAt: 2, network: "tcp6", address: "[::]:0"},
+		{name: "wildcard with IPv4 fallback", count: 2, pauseAt: 2, network: "tcp4", address: "0.0.0.0:0", ipv4Fallback: true},
 		{name: "cancel pending startup", count: 2, pauseAt: 2, address: "127.0.0.1:0", cancel: true},
 		{name: "startup timeout", count: 2, pauseAt: 1, address: "127.0.0.1:0", timeout: true},
 		{name: "probe failure", count: 2, pauseAt: 2, address: "127.0.0.1:0", probeFailure: true},
@@ -824,11 +836,33 @@ func TestServe_ListenerStartup(t *testing.T) {
 			require.NoError(t, err)
 			var servers []boundServer
 			var paused *pausedListener
+			network := tc.network
+			if network == "" {
+				network = "tcp"
+			}
+			if network == "tcp6" {
+				probe, err := net.Listen("tcp6", "[::1]:0")
+				if err != nil {
+					t.Skipf("IPv6 loopback unavailable: %v", err)
+				}
+				connection, err := net.DialTimeout("tcp6", probe.Addr().String(), time.Second)
+				_ = probe.Close()
+				if err != nil {
+					t.Skipf("IPv6 loopback unavailable: %v", err)
+				}
+				_ = connection.Close()
+			}
 			for i := range tc.count {
-				listener, err := net.Listen("tcp", tc.address)
+				listener, err := net.Listen(network, tc.address)
 				require.NoError(t, err)
 				if i+1 == tc.pauseAt {
 					paused = &pausedListener{Listener: listener, entered: make(chan struct{}), resume: make(chan struct{}), closed: make(chan struct{})}
+					if tc.ipv4Fallback {
+						address, err := net.ResolveTCPAddr("tcp", listener.Addr().String())
+						require.NoError(t, err)
+						address.IP = net.IPv6unspecified
+						paused.address = address
+					}
 					if tc.probeFailure {
 						paused.address = &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: -1}
 					}
@@ -888,6 +922,43 @@ func TestServe_ListenerStartup(t *testing.T) {
 			} else {
 				assert.Equal(t, []string{processEventReady, processEventShutdownStarted, processEventShutdownCompleted}, events)
 			}
+			if tc.probeFailure {
+				assert.Contains(t, logs.String(), `"stage":"probe"`)
+				assert.NotContains(t, logs.String(), "127.0.0.1:-1")
+			} else if tc.timeout {
+				assert.Contains(t, logs.String(), `"reason":"timeout"`)
+			} else {
+				assert.NotContains(t, logs.String(), "gateway listener failed")
+			}
+		})
+	}
+}
+
+func TestLogListenerFailure_Privacy(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		err    error
+		reason string
+	}{
+		{name: "unavailable address", err: &net.OpError{Op: "dial", Net: "tcp", Addr: &net.TCPAddr{IP: net.IPv6loopback, Port: 8080}, Err: &os.SyscallError{Syscall: "connect", Err: syscall.EADDRNOTAVAIL}}, reason: syscall.EADDRNOTAVAIL.Error()},
+		{name: "refused connection", err: syscall.ECONNREFUSED, reason: syscall.ECONNREFUSED.Error()},
+		{name: "timeout", err: context.DeadlineExceeded, reason: "timeout"},
+		{name: "canceled", err: context.Canceled, reason: "canceled"},
+		{name: "closed", err: net.ErrClosed, reason: "closed"},
+		{name: "unknown", err: assert.AnError, reason: "unknown"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var logs bytes.Buffer
+			logListenerFailure(slog.New(slog.NewJSONHandler(&logs, nil)), "probe", fmt.Errorf("private credential and endpoint: %w", tc.err))
+			var record map[string]any
+			require.NoError(t, json.Unmarshal(logs.Bytes(), &record))
+			delete(record, "time")
+			assert.Equal(t, map[string]any{
+				"level":  "ERROR",
+				"msg":    "gateway listener failed",
+				"stage":  "probe",
+				"reason": tc.reason,
+			}, record)
 		})
 	}
 }
