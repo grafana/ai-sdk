@@ -154,3 +154,57 @@ func TestUnaryFunctionOutput_CompleteBounds(t *testing.T) {
 		assert.Error(t, err)
 	}
 }
+
+func TestRuntimeUnaryFunctionOutput_InvalidIdentifiersAndUTF8(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		mutate func(*provider.GenerateContentPart)
+	}{
+		{name: "missing id", mutate: func(part *provider.GenerateContentPart) { part.ToolCallID = "" }},
+		{name: "missing name", mutate: func(part *provider.GenerateContentPart) { part.ToolName = "" }},
+		{name: "invalid id UTF-8", mutate: func(part *provider.GenerateContentPart) { part.ToolCallID = string([]byte{0xff}) }},
+		{name: "invalid name UTF-8", mutate: func(part *provider.GenerateContentPart) { part.ToolName = string([]byte{0xff}) }},
+		{name: "invalid input UTF-8", mutate: func(part *provider.GenerateContentPart) { part.Input = json.RawMessage{0xff} }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			harness := newRuntimeHarness(t, testLimits())
+			harness.model.generate = func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
+				result := validGenerateResult()
+				part := provider.GenerateContentPart{Type: provider.ContentToolCall, ToolCallID: "call", ToolName: "weather", Input: json.RawMessage(`{}`)}
+				tc.mutate(&part)
+				result.Content = append(result.Content, part)
+				return result, nil
+			}
+			response := harness.serve(validRequest(`{"prompt":[]}`))
+			assert.Equal(t, http.StatusInternalServerError, response.Code)
+			assert.Equal(t, string(canonicalInternalError), response.Body.String())
+		})
+	}
+}
+
+func TestRuntimeUnaryFunctionOutput_OpaqueArguments(t *testing.T) {
+	for _, input := range []string{"", `{`, `{"city":"Rio"}`, "\"\\\n☃<>&"} {
+		t.Run(input, func(t *testing.T) {
+			for _, disabled := range []*bool{nil, new(false)} {
+				harness := newRuntimeHarness(t, testLimits())
+				harness.model.generate = func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
+					result := validGenerateResult()
+					result.Content = []provider.GenerateContentPart{{Type: provider.ContentToolCall, ToolCallID: "call", ToolName: "weather", Input: json.RawMessage(input), Dynamic: disabled, ProviderMetadata: provider.ProviderMetadata{"private": json.RawMessage(`{"secret":"private-sentinel"}`)}}}
+					return result, nil
+				}
+				response := harness.serve(validRequest(`{"prompt":[]}`))
+				require.Equal(t, http.StatusOK, response.Code)
+				var decoded struct {
+					Content []struct {
+						Input string `json:"input"`
+					} `json:"content"`
+				}
+				require.NoError(t, json.Unmarshal(response.Body.Bytes(), &decoded))
+				require.Len(t, decoded.Content, 1)
+				assert.Equal(t, input, decoded.Content[0].Input)
+				assert.NotContains(t, response.Body.String(), "private-sentinel")
+				assert.NotContains(t, response.Body.String(), "dynamic")
+			}
+		})
+	}
+}

@@ -9,6 +9,7 @@ import { join, resolve } from "node:path";
 import nodeProcess from "node:process";
 import { after, before, describe, it } from "node:test";
 import { createGateway } from "@ai-sdk/gateway";
+import type { LanguageModelV4CallOptions } from "@ai-sdk/provider";
 import { buildGoClientCapture, captureGoClient } from "./go-client-capture";
 
 const AI_GATEWAY_ROOT = resolve(import.meta.dirname, "../..");
@@ -73,6 +74,33 @@ describe("authenticated Anthropic Gateway command", () => {
       assert.equal(denied.error?.statusCode, 401);
       assert.equal(primary.requests.length, 0);
       assert.equal(secondary.requests.length, 0);
+      const call = { role: "assistant" as const, content: [{ type: "tool-call" as const, toolCallId: "private-call", toolName: "private-tool", input: { secret: "private-input" } }] };
+      const result = { role: "tool" as const, content: [{ type: "tool-result" as const, toolCallId: "private-call", toolName: "private-tool", output: { type: "text" as const, value: "private-result" } }] };
+      const effectRequests: LanguageModelV4CallOptions[] = [
+        { prompt: [], tools: [{ type: "function", name: "private-tool", inputSchema: { type: "object" } }] },
+        ...(["auto", "none", "required"] as const).map(type => ({ prompt: [], toolChoice: { type } })),
+        { prompt: [], toolChoice: { type: "tool", toolName: "private-tool" } },
+        { prompt: [call] },
+        { prompt: [call, result] },
+      ];
+      for (const options of effectRequests) {
+        const counts: [number, number] = [primary.requests.length, secondary.requests.length];
+        const go = await captureGoClient(goClientBinaryPath, { ...base, mode: "generate", options });
+        assert.deepEqual({ status: go.error?.statusCode, category: go.error?.category, code: go.error?.code, retryable: go.error?.isRetryable }, { status: 400, category: "invalid_request_error", code: "invalid_request", retryable: false });
+        assert.equal(go.result, undefined);
+        let failure: any;
+        try { await client("assistant").doGenerate(options); } catch (error) { failure = error; }
+        assert.deepEqual({ status: failure?.statusCode, category: failure?.type, retryable: failure?.isRetryable, message: failure?.message }, { status: 400, category: "invalid_request_error", retryable: false, message: "invalid request" });
+        const raw: Response = await fetch(`${gateway.url}/api/v1/aisdk/language-model`, {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-access-token": token, "ai-language-model-specification-version": "4", "ai-language-model-id": "assistant", "ai-language-model-streaming": "false" },
+          body: JSON.stringify(options),
+        });
+        assert.equal(raw.status, 400);
+        assert.equal(await raw.text(), '{"error":{"message":"invalid request","type":"invalid_request_error","param":null,"code":"invalid_request"}}');
+        assert.deepEqual([primary.requests.length, secondary.requests.length], counts, "unary effects must not invoke either fallback candidate");
+        assertPrivateValuesAbsent([go.error, { message: failure.message, type: failure.type, responseBody: failure.responseBody }], primary, [secondary.url, "private-call", "private-tool", "private-input", "private-result", token]);
+      }
       for (const row of [
         { primary: undefined, secondary: undefined, count: 0, status: undefined },
         { primary: 503, secondary: undefined, count: 1, status: undefined },
@@ -118,6 +146,7 @@ describe("authenticated Anthropic Gateway command", () => {
   });
 
   it("verifies JWKS auth and native function continuation for both unary clients", async () => {
+    const observer = await FakeAgentObservability.start();
     const keys = generateKeyPairSync("ec", { namedCurve: "P-256" });
     const jwk = { ...keys.publicKey.export({ format: "jwk" }), kid: "tool-test", alg: "ES256", use: "sig" };
     let keyRequests = 0;
@@ -138,7 +167,13 @@ describe("authenticated Anthropic Gateway command", () => {
     const invalidToken = `${unsigned}.${corruptedSignature.toString("base64url")}`;
     let resources: [FakeAnthropic, GatewayProcess] | undefined;
     try {
-      resources = await startGateway([`--auth.jwks-url=http://127.0.0.1:${address.port}/jwks`], {}, "claude-sonnet-4-6");
+      resources = await startGateway([
+        `--auth.jwks-url=http://127.0.0.1:${address.port}/jwks`,
+        "--agento11y.enabled", "--agento11y.protocol=http", `--agento11y.endpoint=${observer.url}`,
+        "--no-agento11y.tls", "--agento11y.auth-secret-env=GATEWAY_TEST_AGENTO11Y_KEY",
+        "--agento11y.batch-size=1", "--agento11y.flush-interval=1ms",
+        "--agento11y.flush-timeout=2s", "--agento11y.shutdown-timeout=2s",
+      ], { GATEWAY_TEST_AGENTO11Y_KEY: "integration-agento11y-key" }, "claude-sonnet-4-6");
       const [fake, gateway] = resources;
       fake.functionTools = true;
       const client = gateway.client(token);
@@ -188,8 +223,31 @@ describe("authenticated Anthropic Gateway command", () => {
       assert.equal(fake.requests.length, 4);
       assert.ok(keyRequests > 0);
       assert.deepEqual(fake.violations, []);
+      fake.failureStatus = 500;
+      await assert.rejects(async () => client("assistant").doGenerate(options), (error: any) => error.statusCode === 502);
+      await observer.waitForGenerations(5);
+      const metrics = await (await fetch(`${gateway.url}/metrics`)).text();
+      await gateway.stop();
+      assert.equal(observer.generations.length, 5, "each unary invocation finalizes one independent generation");
+      assert.deepEqual(observer.violations, []);
+      const successes = observer.generations.filter(generation => !generation.call_error);
+      assert.equal(successes.length, 4);
+      assert.deepEqual(successes.map(generation => generation.stop_reason).sort(), ["stop", "stop", "tool-calls", "tool-calls"]);
+      assert.equal(new Set(observer.generations.map(generation => generation.id)).size, 5);
+      for (const generation of observer.generations) {
+        assert.deepEqual(generation.model, { provider: "grafana", name: "grafana/assistant" });
+        assert.equal(typeof (generation.metadata as Record<string, unknown>)["gateway.correlation_id"], "string");
+      }
+      for (const generation of successes) {
+        assert.equal((generation.usage as Record<string, unknown>).input_tokens, "2");
+        assert.equal((generation.usage as Record<string, unknown>).output_tokens, "3");
+      }
+      assert.equal(observer.generations.filter(generation => generation.call_error === "server_error").length, 1);
+      assertPrivateValuesAbsent([observer.generations, gateway.stderr, metrics], fake, [
+        observer.url, token, "integration-agento11y-key", "call-weather", "weather", "Rio", "sunny", "claude-sonnet-4-6",
+      ]);
     } finally {
-      await settleCleanup(...(resources ? [() => resources![1].stop(), () => resources![0].stop()] : []), async () => { jwks.closeAllConnections(); await new Promise<void>(resolve => jwks.close(() => resolve())); });
+      await settleCleanup(...(resources ? [() => resources![1].stop(), () => resources![0].stop()] : []), () => observer.stop(), async () => { jwks.closeAllConnections(); await new Promise<void>(resolve => jwks.close(() => resolve())); });
     }
   });
 

@@ -148,12 +148,18 @@ describe("unary function tools through the authenticated real handler", () => {
     assert.equal(goFirst.error, undefined);
     const goCall = goFirst.result.content.find((part: any) => part.type === "tool-call");
     assert.deepEqual(goCall, { type: "tool-call", toolCallId: call.toolCallId, toolName: call.toolName, input: call.input });
+    assert.deepEqual(goFirst.result.finishReason, first.finishReason);
+    assert.deepEqual(goFirst.result.usage, first.usage);
+    assert.equal(first.finishReason.unified, "tool-calls");
     const goValue = execute(JSON.parse(goCall.input));
     const goFinal = await captureGoClient(goClientBinary, { ...config, options: { prompt: [...prompt,
       { role: "assistant", content: [{ type: "tool-call", toolCallId: goCall.toolCallId, toolName: goCall.toolName, input: JSON.parse(goCall.input) }] },
       { role: "tool", content: [{ type: "tool-result", toolCallId: goCall.toolCallId, toolName: goCall.toolName, output: { type: "text", value: goValue } }] }], tools } });
     assert.equal(goFinal.error, undefined);
     assert.deepEqual(goFinal.result.content, final.content);
+    assert.deepEqual(goFinal.result.finishReason, final.finishReason);
+    assert.deepEqual(goFinal.result.usage, final.usage);
+    assert.equal(final.finishReason.unified, "stop");
     assert.equal(executions, 2);
   });
 
@@ -164,9 +170,16 @@ describe("unary function tools through the authenticated real handler", () => {
       await assert.rejects(async () => {
         const result = await gateway(modelID).doGenerate({ prompt, tools });
         for (const part of result.content) if (part.type === "tool-call") executions++;
+      }, (error: any) => {
+        assert.equal(error.statusCode, 500);
+        assert.equal(error.type, "internal_server_error");
+        assert.equal(error.message, "internal error");
+        assert.equal(error.isRetryable, true);
+        return true;
       });
       const go = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/function-tools`, accessToken: "function-test-token", modelID, mode: "generate", options: { prompt, tools } });
       assert.ok(go.error);
+      assert.deepEqual({ status: go.error.statusCode, category: go.error.category, code: go.error.code, retryable: go.error.isRetryable }, { status: 500, category: "internal_server_error", code: "internal_error", retryable: true });
       assert.equal(go.result, undefined);
       assert.equal(executions, 0);
     }
