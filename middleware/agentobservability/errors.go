@@ -10,8 +10,8 @@ var (
 	// ErrHookDenied is the sentinel error wrapped by every *HookDenialError. Use
 	// errors.Is(err, agentobservability.ErrHookDenied) for generic deny detection.
 	ErrHookDenied = errors.New("agent observability: hook denied request")
-	// ErrHookTransformFailed indicates that a hook-provided replacement could
-	// not be applied without losing or restoring request content.
+	// ErrHookTransformFailed indicates that HooksMiddleware rejected a
+	// hook-provided replacement. It currently rejects every decoded replacement.
 	ErrHookTransformFailed = errors.New("agent observability: hook transform failed")
 )
 

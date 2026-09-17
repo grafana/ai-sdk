@@ -97,6 +97,7 @@ func wrapRecordingGenerate(ctx context.Context, opts RecordingOptions, p middlew
 
 	ctxInfo := resolveContextInfo(ctx, opts.ContextProvider)
 	start := buildGenerationStart(ctx, p.Model.Provider(), p.Model.ModelID(), ctxInfo, opts.ContextSource)
+	transport := wrappedModelIdentity(p.Model)
 	recordingCtx := recordingContext(ctx, opts.ContextSource)
 	startedCtx, recorder := client.StartGeneration(recordingCtx, start)
 	ctx = trace.ContextWithSpan(ctx, trace.SpanFromContext(startedCtx))
@@ -104,11 +105,13 @@ func wrapRecordingGenerate(ctx context.Context, opts RecordingOptions, p middlew
 
 	result, err := p.DoGenerate(ctx)
 	if err != nil {
+		generation := mapGenerateResultWithIdentity(p.Params, nil, ctxInfo, start, opts.IdentitySource, transport)
+		recorder.SetResult(filterGeneration(generation, start, provider.FinishReason{}, opts.GenerationFilter), nil)
 		recorder.SetCallError(err)
 		return nil, err
 	}
 
-	generation := mapGenerateResultWithIdentity(p.Params, result, ctxInfo, start, opts.IdentitySource)
+	generation := mapGenerateResultWithIdentity(p.Params, result, ctxInfo, start, opts.IdentitySource, transport)
 	finishReason := provider.FinishReason{}
 	if result != nil {
 		finishReason = result.FinishReason
@@ -133,12 +136,15 @@ func wrapRecordingStream(ctx context.Context, opts RecordingOptions, p middlewar
 
 	ctxInfo := resolveContextInfo(ctx, opts.ContextProvider)
 	start := buildGenerationStart(ctx, p.Model.Provider(), p.Model.ModelID(), ctxInfo, opts.ContextSource)
+	transport := wrappedModelIdentity(p.Model)
 	recordingCtx := recordingContext(ctx, opts.ContextSource)
 	startedCtx, recorder := client.StartStreamingGeneration(recordingCtx, start)
 	streamCtx := trace.ContextWithSpan(ctx, trace.SpanFromContext(startedCtx))
 
 	upstream, err := p.DoStream(streamCtx)
 	if err != nil {
+		generation := mapGenerateResultWithIdentity(p.Params, nil, ctxInfo, start, opts.IdentitySource, transport)
+		recorder.SetResult(filterGeneration(generation, start, provider.FinishReason{}, opts.GenerationFilter), nil)
 		recorder.SetCallError(err)
 		finishRecordingAndComplete(recorder, opts.OnRecordError, complete)
 		return nil, err
@@ -146,6 +152,7 @@ func wrapRecordingStream(ctx context.Context, opts RecordingOptions, p middlewar
 
 	streamRec := NewStreamRecorder(start, p.Params)
 	streamRec.identitySource = opts.IdentitySource
+	streamRec.transport = transport
 	if upstream == nil {
 		recorder.SetResult(filterGeneration(streamRec.Generation(), start, provider.FinishReason{}, opts.GenerationFilter), nil)
 		finishRecordingAndComplete(recorder, opts.OnRecordError, complete)
