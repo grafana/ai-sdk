@@ -1,6 +1,6 @@
 ## 1. WP11 and exact-client evidence
 
-- [ ] 1.1 Apply and validate WP11 first; verify accepted prerequisites and exact registered upstream stream types, Gateway transport and ai tool-loop tests.
+- [x] 1.1 Apply and validate WP11 first; verify accepted prerequisites and exact registered upstream stream types, Gateway transport and ai tool-loop tests.
 - [x] 1.2 Add failing pinned Vercel streaming call/input and two-step real-handler cases; pair with Go providers/grafana plus existing root orchestration.
 - [x] 1.3 Capture expected next-request call/result history and deterministic local execution count; disable incidental retries in acceptance fixtures.
 
@@ -9,7 +9,7 @@
 - [x] 2.1 Audit current Go stream decoder and provider StreamPart tool fields; add/fix only gaps proven by exact-client event cases.
 - [x] 2.2 Verify affected native provider tool-input/call conversion against registered fixtures/tests and extend reusable normalized observation where needed.
 - [x] 2.3 Verify root Go client orchestration completes the loop; add parseJsonEventStream/uiMessageChunkSchema integration coverage if UI chunk behavior changes.
-- [ ] 2.4 Commit Apache prerequisites separately and pin the resulting approved immutable versions before isolated Gateway release validation.
+- [x] 2.4 Commit Apache prerequisites separately and pin the resulting approved immutable versions before isolated Gateway release validation.
 
 ## 3. Gateway state machine
 
@@ -42,11 +42,12 @@ full native continuation history and required-to-none tool choice. Both clients
 preserve empty, malformed and escaped input strings; focused decoder assertions
 distinguish an empty input string from an absent required input field.
 
-The existing immutable root SDK pin is
+After dependency-order restacking, WP12 is based on the completed WP11 head
+`6f3af90`; the exact-client and committed-pin suites below validate that
+integrated prerequisite. The existing immutable root SDK pin is
 `v0.1.0-alpha.1.0.20260916154023-07aacebe97a2`; the native Anthropic pin is
 `v0.0.0-20260916162302-e9128cc3b35a`. Isolated tests verify these versions resolve
-and execute, but do not establish prerequisite acceptance. Tasks 1.1 and 2.4
-remain pending until the accepted WP11 stack and approved Apache prerequisite
-versions are recorded and WP12 is restacked and validated against them. Archive
-WP12 only after that reconciliation; production activation is a separate gate.
+and execute, and the Apache prerequisite remains committed separately in
+`69000b2`. The dependency and pin reconciliation is complete; production
+activation remains a separate gate.
 No root UI chunk behavior was changed; no reusable observation extension was needed.
