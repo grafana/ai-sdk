@@ -10,6 +10,7 @@ import nodeProcess from "node:process";
 import { after, before, describe, it } from "node:test";
 import { createGateway } from "@ai-sdk/gateway";
 import type { LanguageModelV4CallOptions } from "@ai-sdk/provider";
+import { isStepCount, jsonSchema, streamText, tool } from "ai";
 import { buildGoClientCapture, captureGoClient } from "./go-client-capture";
 
 const AI_GATEWAY_ROOT = resolve(import.meta.dirname, "../..");
@@ -277,6 +278,65 @@ describe("authenticated Anthropic Gateway command", () => {
       await settleCleanup(...(resources ? [() => resources![1].stop(), () => resources![0].stop()] : []), () => observer.stop(), async () => { jwks.closeAllConnections(); await new Promise<void>(resolve => jwks.close(() => resolve())); });
     }
   });
+
+  for (const failExecution of [false, true]) {
+    it(`preserves automatic streaming native history after ${failExecution ? "failed" : "successful"} local execution`, async () => {
+      const [fake, gateway] = await startGateway([], {}, "claude-sonnet-4-6");
+      fake.functionTools = true;
+      try {
+        const executions: Array<{ city: string; toolCallId: string }> = [];
+        const executionError = new Error("weather unavailable");
+        const errors: unknown[] = [];
+        const result = streamText({
+          model: gateway.client()("assistant"),
+          prompt: "Weather in Rio?",
+          tools: {
+            weather: tool({
+              inputSchema: jsonSchema<{ city: string }>({ type: "object", properties: { city: { type: "string" } }, required: ["city"] }),
+              execute: async ({ city }, { toolCallId }) => {
+                executions.push({ city, toolCallId });
+                if (failExecution) throw executionError;
+                return "sunny";
+              },
+            }),
+          },
+          prepareStep: ({ stepNumber }) => ({ toolChoice: stepNumber === 0 ? "required" : "none" }),
+          stopWhen: isStepCount(2),
+          maxRetries: 0,
+          abortSignal: AbortSignal.timeout(10_000),
+          onError: ({ error }) => { errors.push(error); },
+        });
+        const parts = [];
+        for await (const part of result.fullStream) parts.push(part);
+        assert.deepEqual(errors, []);
+        assert.deepEqual(executions, [{ city: "Rio", toolCallId: "call-weather" }]);
+        assert.equal(await result.text, "It is sunny.");
+        assert.equal(await result.finishReason, "stop");
+        assert.deepEqual((await result.steps).map(step => step.finishReason), ["tool-calls", "stop"]);
+        if (failExecution) {
+          const error = parts.find(part => part.type === "tool-error");
+          assert.equal(error?.toolCallId, "call-weather");
+          assert.equal(error?.error, executionError);
+        } else {
+          assert.ok(parts.some(part => part.type === "tool-result" && part.toolCallId === "call-weather" && part.output === "sunny"));
+        }
+        assert.equal(fake.requests.length, 2);
+        assert.ok(fake.requests.every(request => request.body.stream === true));
+        assert.deepEqual(fake.requests[0]!.body.tool_choice, { type: "any" });
+        const continuation = fake.requests[1]!.body;
+        assert.equal(continuation.tools, undefined);
+        assert.equal(continuation.tool_choice, undefined);
+        assert.deepEqual(continuation.messages, [
+          { role: "user", content: [{ type: "text", text: "Weather in Rio?" }] },
+          { role: "assistant", content: [{ type: "tool_use", id: "call-weather", name: "weather", input: { city: "Rio" } }] },
+          { role: "user", content: [{ type: "tool_result", tool_use_id: "call-weather", ...(failExecution ? { is_error: true } : {}), content: [{ type: "text", text: failExecution ? String(executionError) : "sunny" }] }] },
+        ]);
+        assert.deepEqual(fake.violations, []);
+      } finally {
+        await settleCleanup(() => gateway.stop(), () => fake.stop());
+      }
+    });
+  }
 
   it("maps the reachable Go public error matrix for unary and stream setup", async () => {
     const [fake, gateway] = await startGateway();

@@ -56,6 +56,19 @@ func (m *providerWireV4Model) DoStream(ctx context.Context, options provider.Cal
 	one := 1
 	two := 2
 	switch m.kind {
+	case "stream-tool-arguments":
+		var parts []provider.StreamPart
+		for i, input := range []string{"", `{"service":`, "\"\\\n\t<>&\u2028\u2029"} {
+			id := string(rune('a' + i))
+			parts = append(parts,
+				provider.StreamPart{Type: provider.PartToolInputStart, ID: id, ToolName: "weather"},
+				provider.StreamPart{Type: provider.PartToolInputDelta, ID: id, Delta: input},
+				provider.StreamPart{Type: provider.PartToolInputEnd, ID: id},
+				provider.StreamPart{Type: provider.PartToolCall, ToolCallID: id, ToolName: "weather", Input: input},
+			)
+		}
+		parts = append(parts, provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonToolCalls}, Usage: &provider.Usage{}})
+		return &provider.StreamResult{Stream: scenarioStream(parts...)}, nil
 	case "stream-tool-results":
 		var parts []provider.StreamPart
 		for i, value := range []string{"false", "0", `""`, "[]", "{}"} {
@@ -190,7 +203,7 @@ type providerWireV4Scenario struct {
 func newProviderWireV4Scenario() (*providerWireV4Scenario, error) {
 	stats := &providerWireV4Stats{}
 	entries := make([]catalog.StaticEntry, 0, 5)
-	for _, id := range []string{"success", "blocking", "stream-errors", "stream-timeout", "stream-blocking", "unary-tools", "unary-tools-provider-executed", "unary-tools-dynamic", "stream-tools", "stream-tool-results"} {
+	for _, id := range []string{"success", "blocking", "stream-errors", "stream-timeout", "stream-blocking", "unary-tools", "unary-tools-provider-executed", "unary-tools-dynamic", "stream-tools", "stream-tool-results", "stream-tool-arguments"} {
 		entries = append(entries, catalog.StaticEntry{
 			Info:  catalog.ModelInfo{ID: id},
 			Model: &providerWireV4Model{kind: id, stats: stats},

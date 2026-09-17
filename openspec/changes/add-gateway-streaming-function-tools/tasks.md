@@ -24,7 +24,7 @@
 
 - [x] 4.1 Run both authenticated clients through at least two real-handler HTTP generations with local function execution and native continuation assertions; separately test basic result transport.
 - [x] 4.2 Inspect actual metadata-only exports, logs and metrics for one canonical generation per request and no tool-content/private markers.
-- [ ] 4.3 Run affected Go module tests, focused race tests, committed-pin Gateway GOWORK=off tests, ProviderWire contract checks and mise run parity-check; run test-integration when UI behavior changes.
+- [x] 4.3 Run affected Go module tests, focused race tests, committed-pin Gateway GOWORK=off tests, ProviderWire contract checks and mise run parity-check; run test-integration when UI behavior changes.
 - [x] 4.4 Update narrative scope, PARITY and existing activation smoke when applicable; record provider execution/approval/media and effectful fallback deferrals.
 - [x] 4.5 Strictly validate this OpenSpec change, run git diff --check and report WP12 separately from WP11.
 
@@ -33,5 +33,20 @@ basic-result transport, and focused hostile open-input/between-step cancellation
 now pass. The authenticated real-command matrix verifies streaming definitions,
 choice, assistant call history, and complete continuation are rejected before
 either physical candidate runs for both clients; direct tool loops still pass.
-Immutable-pin acceptance and production activation remain open.
+On 2026-09-17, the committed-pin Gateway module tests, focused Gateway/service
+race tests, Go Gateway client tests, complete ProviderWire contract checks, and
+`AI_SDK_UPSTREAM_ROOT=/Users/luccas/code/ai mise run parity-check` passed. The
+upstream checkout supplies the registered commit, not its current HEAD. Real
+command tests additionally cover automatic streaming success/error execution,
+full native continuation history and required-to-none tool choice. Both clients
+preserve empty, malformed and escaped input strings; focused decoder assertions
+distinguish an empty input string from an absent required input field.
+
+The existing immutable root SDK pin is
+`v0.1.0-alpha.1.0.20260916154023-07aacebe97a2`; the native Anthropic pin is
+`v0.0.0-20260916162302-e9128cc3b35a`. Isolated tests verify these versions resolve
+and execute, but do not establish prerequisite acceptance. Tasks 1.1 and 2.4
+remain pending until the accepted WP11 stack and approved Apache prerequisite
+versions are recorded and WP12 is restacked and validated against them. Archive
+WP12 only after that reconciliation; production activation is a separate gate.
 No root UI chunk behavior was changed; no reusable observation extension was needed.

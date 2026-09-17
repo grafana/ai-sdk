@@ -220,6 +220,24 @@ describe("streaming function tools through the authenticated real handler", () =
     assert.equal((tools.at(-1) as any).isError, true);
   });
 
+  it("preserves empty, malformed and escaped tool arguments through clean EOF for both clients", async () => {
+    const gateway = createGateway({ apiKey: "test", baseURL: `${baseURL}/function-tools`, headers: { "x-access-token": "function-test-token" } });
+    const parts = await collect((await gateway("stream-tool-arguments").doStream({ prompt: [] })).stream);
+    const go = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/function-tools`, accessToken: "function-test-token", modelID: "stream-tool-arguments", mode: "stream", options: { prompt: [] } });
+    assert.equal(go.error, undefined);
+    const expectedInputs = ["", '{"service":', '"\\\n\t<>&\u2028\u2029'];
+    const capturedGoParts = go.parts.map((part: any) => part.type === "tool-call" ? { ...part, input: part.input ?? "" } : part);
+    for (const events of [parts, capturedGoParts] as LanguageModelV4StreamPart[][]) {
+      assert.deepEqual(events.map(part => part.type), ["stream-start", ...expectedInputs.flatMap(() => ["tool-input-start", "tool-input-delta", "tool-input-end", "tool-call"]), "finish"]);
+      assert.deepEqual(events.filter(part => part.type === "tool-input-delta").map(part => part.delta), expectedInputs);
+      assert.deepEqual(events.filter(part => part.type === "tool-call").map(part => part.input), expectedInputs);
+      assert.deepEqual(events.filter(part => part.type === "tool-call").map(part => part.toolCallId), ["a", "b", "c"]);
+      const finish = events.at(-1);
+      assert.ok(finish?.type === "finish");
+      assert.equal(finish.finishReason.unified, "tool-calls");
+    }
+  });
+
   it("preserves exact provider input IDs, order, and empty deltas for both clients", async () => {
     const gateway = createGateway({ apiKey: "test", baseURL: `${baseURL}/function-tools`, headers: { "x-access-token": "function-test-token" } });
     const result = await gateway("stream-tools").doStream({ prompt: [] });

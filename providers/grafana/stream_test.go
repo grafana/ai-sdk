@@ -329,11 +329,19 @@ func TestDecodeStreamPart_FunctionTools(t *testing.T) {
 	}
 	for _, raw := range []string{
 		`{"type":"tool-input-start","id":"a","toolName":"f","providerExecuted":true}`,
+		`{"type":"tool-call","toolCallId":"a","toolName":"f"}`,
 		`{"type":"tool-call","toolCallId":"a","toolName":"f","input":"{}","dynamic":true}`,
 		`{"type":"tool-result","toolCallId":"a","toolName":"f","result":null}`,
 		`{"type":"tool-input-delta","id":"a"}`,
 	} {
 		_, err := decodeStreamPart([]byte(raw))
 		require.Error(t, err)
+	}
+	for _, input := range []string{"", `{"service":`, "\"\\\n\t<>&\u2028\u2029"} {
+		raw, err := json.Marshal(map[string]string{"type": "tool-call", "toolCallId": "a", "toolName": "f", "input": input})
+		require.NoError(t, err)
+		part, err := decodeStreamPart(raw)
+		require.NoError(t, err)
+		assert.Equal(t, input, part.Input)
 	}
 }

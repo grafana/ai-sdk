@@ -204,6 +204,9 @@ func TestStreamingTools_InvalidTransitions(t *testing.T) {
 		{"delta without start", []provider.StreamPart{{Type: provider.PartToolInputDelta, ID: "a"}}},
 		{"end without start", []provider.StreamPart{end}},
 		{"duplicate start", []provider.StreamPart{start, start}},
+		{"duplicate end", []provider.StreamPart{start, end, end}},
+		{"reopen after call", []provider.StreamPart{call, start}},
+		{"delta after end", []provider.StreamPart{start, end, {Type: provider.PartToolInputDelta, ID: "a", Delta: "{}"}}},
 		{"call before end", []provider.StreamPart{start, call}},
 		{"duplicate call", []provider.StreamPart{call, call}},
 		{"unmatched result", []provider.StreamPart{result}},
@@ -211,6 +214,11 @@ func TestStreamingTools_InvalidTransitions(t *testing.T) {
 		{"mismatched name", []provider.StreamPart{start, end, {Type: provider.PartToolCall, ToolCallID: "a", ToolName: "other", Input: "{}"}}},
 		{"open at finish", []provider.StreamPart{start, finishPart()}},
 		{"late metadata", []provider.StreamPart{call, {Type: provider.PartResponseMeta}}},
+		{"metadata after input start", []provider.StreamPart{start, {Type: provider.PartResponseMeta}, end, call}},
+		{"empty input id", []provider.StreamPart{{Type: provider.PartToolInputStart, ToolName: "f"}}},
+		{"empty input name", []provider.StreamPart{{Type: provider.PartToolInputStart, ID: "a"}}},
+		{"empty call id", []provider.StreamPart{{Type: provider.PartToolCall, ToolName: "f", Input: "{}"}}},
+		{"empty call name", []provider.StreamPart{{Type: provider.PartToolCall, ToolCallID: "a", Input: "{}"}}},
 		{"enabled execution", []provider.StreamPart{{Type: provider.PartToolCall, ToolCallID: "a", ToolName: "f", Input: "{}", ProviderExecuted: true}}},
 		{"enabled dynamic", []provider.StreamPart{{Type: provider.PartToolInputStart, ID: "a", ToolName: "f", Dynamic: &yes}}},
 		{"preliminary result", []provider.StreamPart{call, {Type: provider.PartToolResult, ToolCallID: "a", ToolName: "f", Result: json.RawMessage("{}"), Preliminary: &yes}}},
@@ -224,6 +232,79 @@ func TestStreamingTools_InvalidTransitions(t *testing.T) {
 			body := harness.serve(streamRequest(`{"prompt":[]}`)).Body.String()
 			assert.Equal(t, 1, strings.Count(body, `"type":"error"`))
 			assert.Contains(t, body, `"message":"internal error"`)
+			assert.NotContains(t, body, `"type":"finish"`)
+		})
+	}
+}
+
+func TestStreamingTools_IndependentTextAndToolIDs(t *testing.T) {
+	start := provider.StreamPart{Type: provider.PartToolInputStart, ID: "a", ToolName: "f"}
+	end := provider.StreamPart{Type: provider.PartToolInputEnd, ID: "a"}
+	call := provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "a", ToolName: "f", Input: "{}"}
+	for _, tc := range []struct {
+		name  string
+		parts []provider.StreamPart
+	}{
+		{"no deltas", []provider.StreamPart{start, end, call}},
+		{"ended input without call", []provider.StreamPart{start, end}},
+		{"equal text and tool ids", []provider.StreamPart{{Type: provider.PartTextStart, ID: "a"}, start, end, call, {Type: provider.PartTextEnd, ID: "a"}}},
+		{"text after standalone call", []provider.StreamPart{call, {Type: provider.PartTextStart, ID: "a"}, {Type: provider.PartTextEnd, ID: "a"}}},
+		{"text and parallel input", []provider.StreamPart{
+			start, {Type: provider.PartTextStart, ID: "text"}, {Type: provider.PartToolInputStart, ID: "b", ToolName: "g"},
+			{Type: provider.PartToolInputDelta, ID: "a", Delta: ""}, {Type: provider.PartToolInputEnd, ID: "b"},
+			{Type: provider.PartToolCall, ToolCallID: "b", ToolName: "g", Input: "{}"},
+			{Type: provider.PartTextDelta, ID: "text", Delta: "checking"}, end, call, {Type: provider.PartTextEnd, ID: "text"},
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			harness := newRuntimeHarness(t, testLimits())
+			harness.model.stream = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+				return &provider.StreamResult{Stream: makeStream(append(tc.parts, finishPart())...)}, nil
+			}
+			body := harness.serve(streamRequest(`{"prompt":[]}`)).Body.String()
+			assert.NotContains(t, body, `"type":"error"`)
+			assert.Equal(t, 1, strings.Count(body, `"type":"finish"`))
+			requireStreamBodyMatchesSchema(t, body)
+			frames := strings.Split(strings.TrimSuffix(body, "\n\n"), "\n\n")
+			require.Len(t, frames, len(tc.parts)+2)
+			for i, part := range tc.parts {
+				var event struct {
+					Type provider.StreamPartType `json:"type"`
+				}
+				require.NoError(t, json.Unmarshal([]byte(strings.TrimPrefix(frames[i+1], "data: ")), &event))
+				assert.Equal(t, part.Type, event.Type)
+			}
+		})
+	}
+}
+
+func TestStreamingTools_InvalidUTF8(t *testing.T) {
+	invalid := string([]byte{0xff})
+	start := provider.StreamPart{Type: provider.PartToolInputStart, ID: "a", ToolName: "f"}
+	for _, tc := range []struct {
+		name  string
+		parts []provider.StreamPart
+	}{
+		{"input id", []provider.StreamPart{{Type: provider.PartToolInputStart, ID: invalid, ToolName: "f"}}},
+		{"input name", []provider.StreamPart{{Type: provider.PartToolInputStart, ID: "a", ToolName: invalid}}},
+		{"call id", []provider.StreamPart{{Type: provider.PartToolCall, ToolCallID: invalid, ToolName: "f", Input: "{}"}}},
+		{"call name", []provider.StreamPart{{Type: provider.PartToolCall, ToolCallID: "a", ToolName: invalid, Input: "{}"}}},
+		{"call input", []provider.StreamPart{{Type: provider.PartToolCall, ToolCallID: "a", ToolName: "f", Input: invalid}}},
+		{"delta", []provider.StreamPart{start, {Type: provider.PartToolInputDelta, ID: "a", Delta: invalid}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			harness := newRuntimeHarness(t, testLimits())
+			harness.model.stream = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+				return &provider.StreamResult{Stream: makeStream(append(tc.parts, finishPart())...)}, nil
+			}
+			body := harness.serve(streamRequest(`{"prompt":[]}`)).Body.String()
+			want := string(canonicalEmptyStartFrame)
+			if len(tc.parts) == 2 {
+				frame, ok := encodeStreamFrame(streamEvent{typeName: provider.PartToolInputStart, id: "a", toolName: "f"}, testLimits().StreamFrameBytes)
+				require.True(t, ok)
+				want += string(frame)
+			}
+			assert.Equal(t, want+string(canonicalInternalStreamErrorFrame), body)
 		})
 	}
 }
