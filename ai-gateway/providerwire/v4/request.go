@@ -89,7 +89,7 @@ func mapWireRequest(body []byte, modes ...executionMode) (provider.CallOptions, 
 		StopSequences:    request.StopSequences,
 		Seed:             request.Seed,
 	}
-	toolsEnabled := len(modes) == 0 || modes[0] == executionUnary
+	toolsEnabled := len(modes) == 0 || modes[0] == executionUnary || modes[0] == executionStreaming
 	for _, wireMessage := range request.Prompt {
 		message, failure := mapWireMessage(wireMessage, toolsEnabled)
 		if failure != nil {

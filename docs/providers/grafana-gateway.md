@@ -9,7 +9,7 @@ go get github.com/grafana/ai-sdk/providers/grafana
 ```
 
 The client module is Apache-2.0 and does not depend on the Gateway service
-module. Its executable response family includes text and unary function calls. Requests preserve
+module. Its executable response family includes text and unary/streaming function calls. Requests preserve
 representable provider options, files, tools, and structured-output settings;
 the deployed Gateway decides which capabilities it can execute and returns a
 public invalid-request error for unsupported calls.
@@ -26,8 +26,11 @@ The Gateway never executes a tool. Provider-executed/dynamic tools, approvals,
 preliminary results and media results remain unsupported. Logical telemetry
 removes tool-bearing definitions, choices, inputs and outputs before export.
 
-Streaming function tools remain deferred to WP12. Ordered fallback routes
-reject tool definitions, choice and history before any physical invocation.
+Streaming direct routes additionally support input start/delta/end, calls and
+matching non-null JSON results. IDs, ordering and empty deltas are preserved.
+Vercel and Go clients own the multi-step orchestration; each HTTP generation
+remains stateless. Ordered fallback routes continue rejecting tool definitions,
+choice and history before any physical invocation.
 
 ## Connect with an access token
 

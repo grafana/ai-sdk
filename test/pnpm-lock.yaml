@@ -10,6 +10,9 @@ importers:
 
   ../ai-gateway/test/providerwire-v4:
     dependencies:
+      ai:
+        specifier: 7.0.65
+        version: 7.0.65(zod@4.4.3)
       '@ai-sdk/gateway':
         specifier: 4.0.52
         version: 4.0.52(zod@4.4.3)

@@ -83,8 +83,8 @@ func TestRuntimeFunctionTools_Boundaries(t *testing.T) {
 		request := validRequest(body)
 		request.Header.Set(HeaderStreaming, "true")
 		response := harness.serve(request)
-		require.Equal(t, http.StatusBadRequest, response.Code)
-		assert.Zero(t, harness.model.callCount())
+		require.Equal(t, http.StatusOK, response.Code)
+		assert.Equal(t, 1, harness.model.callCount())
 	}
 }
 
