@@ -189,7 +189,7 @@ The process SHALL construct dependencies and bind every configured listener befo
 
 The registered low-level Gateway client MUST work through a test-only edge shim with the real command. The shim MUST use fixed dummy credentials and scope outcomes, not production CAP verification or policy evaluation. It SHALL strip Cloud and internal credentials, replace `X-Scope-OrgID` with its stack assertion, and strip other client identity headers. It SHALL forward the unchanged path.
 
-Model-call evidence SHALL use `doGenerate` and `doStream` with explicit `maxOutputTokens`. High-level `generateText` and `streamText` SHALL remain documented as unsupported. Tests SHALL NOT rewrite client requests to conceal rejected body headers or tool-choice defaults.
+Model-call evidence SHALL use `doGenerate` and `doStream` with explicit `maxOutputTokens`. High-level `generateText` and `streamText` SHALL remain documented as unsupported. Tests SHALL NOT rewrite client requests to conceal body headers or tool-choice defaults.
 
 Inbound credentials and assertions MUST NOT become provider credentials or appear in public application diagnostics. Application authentication failures SHALL use the fixed ProviderWire authentication document. Telemetry SHALL retain one registry, existing HTTP metrics, and fixed authentication source/outcome values without credential or customer-ID labels. Middleware SHALL preserve `responseWriter.Unwrap` for streaming flush support.
 

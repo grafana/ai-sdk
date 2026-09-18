@@ -46,6 +46,7 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 			return nil, fmt.Errorf("gateway service: provider %q is invalid", configured.Primary.Provider)
 		}
 		var lower provider.LanguageModel
+		var optionPolicy catalog.ProviderOptionPolicy
 		switch providerConfig.Type {
 		case "anthropic":
 			requestOptions := []option.RequestOption{
@@ -56,6 +57,7 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 				requestOptions = append(requestOptions, option.WithBaseURL(providerConfig.BaseURL))
 			}
 			lower = construct(providerConfig.APIKey, configured.Primary.Model, anthropicprovider.WithRequestOptions(requestOptions...))
+			optionPolicy = anthropicOptionPolicy
 		case "openai-compatible":
 			if providerConfig.BaseURL == "" {
 				return nil, fmt.Errorf("gateway service: provider %q is invalid", configured.Primary.Provider)
@@ -68,6 +70,7 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 				// ProviderWire finish parts carry usage, so streams must request it.
 				openaicompatible.WithIncludeUsage(true),
 			)
+			optionPolicy = openAICompatibleOptionPolicy(providerConfig.ProviderName)
 		default:
 			return nil, fmt.Errorf("gateway service: provider %q is invalid", configured.Primary.Provider)
 		}
@@ -85,7 +88,8 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 				Description: configured.Description,
 				Aliases:     append([]string(nil), configured.Aliases...),
 			},
-			Model: model,
+			Model:           model,
+			ProviderOptions: optionPolicy,
 		})
 	}
 	return catalog.NewStatic(entries)
