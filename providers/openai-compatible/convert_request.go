@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"mime"
+	"sort"
 	"strings"
 
 	"github.com/grafana/ai-sdk/internal/mediatype"
@@ -91,8 +92,27 @@ func (m *model) buildRequest(opts provider.CallOptions, streaming bool) (map[str
 		}
 	}
 
+	// Unknown option fields extend the request, but never set a field upstream
+	// writes after its spread (see protectedRequestFields). Upstream's later
+	// keys win even when their value is undefined, so the field is dropped
+	// whether or not this builder sets it. A dropped field is reported, because
+	// a dropped tools or tool_choice field changes the answer rather than
+	// degrading it, and the body is the only other place a caller could see it.
+	skipped := make([]string, 0, len(openAIOpts.extraFields))
 	for k, v := range openAIOpts.extraFields {
+		if _, protected := protectedRequestFields[k]; protected {
+			skipped = append(skipped, k)
+			continue
+		}
 		body[k] = v
+	}
+	sort.Strings(skipped)
+	for _, k := range skipped {
+		warnings = append(warnings, provider.Warning{
+			Type:    provider.WarnUnsupported,
+			Feature: "providerOptions." + k,
+			Details: "This request field cannot be set through provider options. Use WithRequestTransform to rewrite the request body.",
+		})
 	}
 
 	if m.transformRequestBody != nil {
@@ -107,6 +127,24 @@ func (m *model) buildRequest(opts provider.CallOptions, streaming bool) (map[str
 	}
 
 	return body, warnings, nil
+}
+
+// protectedRequestFields are the body fields a provider option cannot set.
+// Pinned against @ai-sdk/openai-compatible 3.0.30, the version
+// test/conformance pins: its getArgs spreads unknown option fields before
+// reasoning_effort, verbosity, messages, tools and tool_choice, and its
+// doStream writes stream and stream_options after that. Upstream's doGenerate
+// writes neither stream key, so there a caller's stream and stream_options
+// survive; this package drops them on both paths, so an option can never flip
+// the transport under a reader expecting the other one.
+var protectedRequestFields = map[string]struct{}{
+	"reasoning_effort": {},
+	"verbosity":        {},
+	"messages":         {},
+	"tools":            {},
+	"tool_choice":      {},
+	"stream":           {},
+	"stream_options":   {},
 }
 
 func readOpenAIOptions(opts provider.ProviderOptions, providerName string) (OpenAIOptions, error) {

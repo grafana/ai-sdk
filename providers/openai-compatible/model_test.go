@@ -1618,3 +1618,118 @@ func findParts(parts []provider.StreamPart, partType provider.StreamPartType) []
 	}
 	return matches
 }
+
+func TestDoGenerateProviderOptionsCannotReplaceBuilderFields(t *testing.T) {
+	t.Parallel()
+
+	var got map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&got))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"id":"chatcmpl_1",
+			"model":"configured-model",
+			"choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]
+		}`))
+	}))
+	defer server.Close()
+
+	result, err := New("configured-model", WithBaseURL(server.URL)).DoGenerate(context.Background(), provider.CallOptions{
+		Prompt: []provider.Message{provider.UserText("hi")},
+		ProviderOptions: provider.ProviderOptions{
+			"openaiCompatible": provider.RawProviderOption{
+				Key: "openaiCompatible",
+				Raw: json.RawMessage(`{"messages":[{"role":"user","content":"rewritten"}],"tool_choice":"required","logit_bias":{"1":100}}`),
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	require.Equal(t, []any{map[string]any{"role": "user", "content": "hi"}}, got["messages"], "an option must not rewrite the prompt")
+	require.NotContains(t, got, "tool_choice", "an option must not add a tool choice")
+	require.Equal(t, map[string]any{"1": float64(100)}, got["logit_bias"], "other fields still extend the request")
+	require.Equal(t, []provider.Warning{
+		protectedFieldWarning("messages"),
+		protectedFieldWarning("tool_choice"),
+	}, result.Warnings, "one warning per dropped field, in sorted order")
+}
+
+func protectedFieldWarning(field string) provider.Warning {
+	return provider.Warning{
+		Type:    provider.WarnUnsupported,
+		Feature: "providerOptions." + field,
+		Details: "This request field cannot be set through provider options. Use WithRequestTransform to rewrite the request body.",
+	}
+}
+
+func TestDoGenerateProviderOptionsStillOverrideUpstreamFields(t *testing.T) {
+	t.Parallel()
+
+	// Upstream writes these before spreading unknown provider-option fields, so
+	// an option replaces them. Adding one to protectedRequestFields would remove
+	// an escape hatch callers have upstream, so pin them here.
+	var got map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&got))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"id":"chatcmpl_1",
+			"model":"configured-model",
+			"choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]
+		}`))
+	}))
+	defer server.Close()
+
+	temperature := 0.7
+	result, err := New("configured-model", WithBaseURL(server.URL)).DoGenerate(context.Background(), provider.CallOptions{
+		Prompt:      []provider.Message{provider.UserText("hi")},
+		Temperature: &temperature,
+		ProviderOptions: provider.ProviderOptions{
+			"openaiCompatible": provider.RawProviderOption{
+				Key: "openaiCompatible",
+				Raw: json.RawMessage(`{"model":"other-model","temperature":0,"response_format":{"type":"json_object"},"seed":7}`),
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	require.Equal(t, "other-model", got["model"])
+	require.Equal(t, float64(0), got["temperature"])
+	require.Equal(t, map[string]any{"type": "json_object"}, got["response_format"])
+	require.Equal(t, float64(7), got["seed"])
+	require.Empty(t, result.Warnings, "an overridable field is not reported as ignored")
+}
+
+func TestDoStreamProviderOptionsCannotReplaceStreamFields(t *testing.T) {
+	t.Parallel()
+
+	var got map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&got))
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"id\":\"1\",\"choices\":[{\"delta\":{\"content\":\"ok\"},\"index\":0}]}\n\n"))
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer server.Close()
+
+	result, err := New("configured-model", WithBaseURL(server.URL), WithIncludeUsage(true)).DoStream(context.Background(), provider.CallOptions{
+		Prompt: []provider.Message{provider.UserText("hi")},
+		ProviderOptions: provider.ProviderOptions{
+			"openaiCompatible": provider.RawProviderOption{
+				Key: "openaiCompatible",
+				Raw: json.RawMessage(`{"stream":false,"stream_options":{"include_usage":false},"logit_bias":{"1":100}}`),
+			},
+		},
+	})
+	require.NoError(t, err)
+	parts := collectStreamParts(result)
+	require.Equal(t, provider.PartStreamStart, parts[0].Type)
+	require.Equal(t, []provider.Warning{
+		protectedFieldWarning("stream"),
+		protectedFieldWarning("stream_options"),
+	}, parts[0].Warnings, "the streaming path reports dropped fields too")
+
+	require.Equal(t, true, got["stream"], "an option must not turn streaming off")
+	require.Equal(t, map[string]any{"include_usage": true}, got["stream_options"], "an option must not drop usage reporting")
+	require.Equal(t, map[string]any{"1": float64(100)}, got["logit_bias"], "other fields still extend the request")
+}
