@@ -56,8 +56,9 @@ func WithGenerateID(fn func() string) Option {
 }
 
 // OpenAIResponsesOptions carries OpenAI Responses-specific configuration from
-// CallOptions.ProviderOptions["openai"]. Field names and semantics mirror
-// upstream Vercel AI SDK's openaiLanguageModelResponsesOptionsSchema.
+// CallOptions.ProviderOptions["openai"]. Unless noted otherwise, field names
+// and semantics mirror upstream Vercel AI SDK's
+// openaiLanguageModelResponsesOptionsSchema.
 type OpenAIResponsesOptions struct {
 	// Conversation is an OpenAI Conversation id. Mutually exclusive with
 	// PreviousResponseID.
@@ -96,6 +97,10 @@ type OpenAIResponsesOptions struct {
 	// ReasoningSummary controls reasoning summary output ("auto","concise",
 	// "detailed").
 	ReasoningSummary string `json:"reasoningSummary,omitempty"`
+	// DisableReasoningSummary suppresses reasoning summary output, including the
+	// default detailed summary added when reasoning effort is enabled. It takes
+	// precedence over ReasoningSummary.
+	DisableReasoningSummary bool `json:"disableReasoningSummary,omitempty"`
 	// SafetyIdentifier is a stable identifier for end users.
 	SafetyIdentifier string `json:"safetyIdentifier,omitempty"`
 	// ServiceTier is "auto","flex","priority","fast","default".
