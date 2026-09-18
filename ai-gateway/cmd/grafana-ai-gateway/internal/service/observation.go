@@ -70,6 +70,10 @@ func observationFromContext(ctx context.Context) requestObservation {
 	return *observation
 }
 
+func observationCorrelationID(ctx context.Context) string {
+	return observationFromContext(ctx).correlationID
+}
+
 // observationBridgeMiddleware snapshots the approved request observation at
 // the logical model boundary. Gateway observers read this value copy instead
 // of the authentication state; the provider's original context propagation is

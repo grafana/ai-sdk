@@ -152,6 +152,20 @@ func TestBuildCatalog_RejectsMissingOrInvalidReferences(t *testing.T) {
 	}
 }
 
+func TestBuildCatalog_FallbackConstructionFailsOpenWithoutPrivateSink(t *testing.T) {
+	file := testCatalogFile()
+	model := file.Models["grafana/assistant"]
+	model.Fallback = []config.Primary{{Provider: "anthropic-primary", Model: "backup"}}
+	file.Models["grafana/assistant"] = model
+	calls := 0
+	_, err := buildCatalog(file, map[string]config.ResolvedProvider{"anthropic-primary": {Type: "anthropic", APIKey: "secret"}}, http.DefaultClient, func(string, string, ...anthropicprovider.Option) provider.LanguageModel {
+		calls++
+		return &catalogTestModel{}
+	}, identityModelFactory)
+	require.NoError(t, err)
+	assert.Equal(t, 3, calls)
+}
+
 func testCatalogFile() config.File {
 	return config.File{
 		Providers: map[string]config.Provider{"anthropic-primary": {Type: "anthropic", APIKeyEnv: "KEY"}},

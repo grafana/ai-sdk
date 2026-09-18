@@ -7,7 +7,7 @@ require (
 	github.com/anthropics/anthropic-sdk-go v1.61.0
 	github.com/go-jose/go-jose/v4 v4.1.5
 	github.com/grafana/agento11y/go v0.15.0
-	github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260910195200-1d07c18be0ac
+	github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260916151728-9dd11902673f
 	github.com/grafana/ai-sdk/middleware/agentobservability v0.0.0-20260915200037-0b83f45375ca
 	github.com/grafana/ai-sdk/middleware/logger v0.0.0-20260915200037-0b83f45375ca
 	github.com/grafana/ai-sdk/middleware/prometheus v0.0.0-20260915200037-0b83f45375ca
@@ -18,6 +18,7 @@ require (
 	github.com/prometheus/client_golang v1.24.1
 	github.com/stretchr/testify v1.11.1
 	go.yaml.in/yaml/v4 v4.0.0-rc.6
+	golang.org/x/sys v0.47.0
 )
 
 require (

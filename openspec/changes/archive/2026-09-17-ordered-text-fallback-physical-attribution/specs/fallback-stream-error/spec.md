@@ -1,8 +1,4 @@
-## Purpose
-
-Define fallback behavior when a candidate stream's first chunk is an error, including candidate selection, replay, cleanup, decider handling, and cancellation.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: First-chunk error detection in DoStream
 `fallback.Model.DoStream` SHALL wait for each candidate's first stream result before returning. A synchronous setup error, invalid nil result/channel, or channel close before any part SHALL remain a pre-commit candidate failure and SHALL be evaluated by the fallback decider. Receipt of any `provider.StreamPart`, including `PartError`, SHALL irrevocably select that candidate and SHALL NOT be evaluated by the decider.
@@ -106,6 +102,8 @@ If the request context ends while fallback waits for a first part, fallback SHAL
 #### Scenario: Deadline and candidate result become ready together
 - **WHEN** request expiry and a candidate result or first part are concurrently observable
 - **THEN** one synchronization decision SHALL give the outcome a single owner and SHALL not duplicate observation, candidate invocation, relay, or cleanup
+
+## ADDED Requirements
 
 ### Requirement: Closed physical attempt decisions
 The reusable fallback hook SHALL emit exactly one decision event for every candidate invocation. The event SHALL preserve one-based candidate index, provider and backend model identity, start and decision timestamps, optional error, an outcome from the closed set selected/failed/canceled, and `WillFallback` as the live decision-time intent to advance. This field SHALL be true only when the failed attempt is eligible, another candidate exists, and the request context is live in the snapshot immediately after the decider returns. Later cancellation MAY prevent that invocation without rewriting the event; subsequent attempt records SHALL establish which candidates were actually invoked. Retry SHALL NOT be a separate outcome. A streamed candidate SHALL be selected at its first received part rather than at stream completion.

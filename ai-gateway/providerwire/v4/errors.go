@@ -138,6 +138,8 @@ func safeErrorFromProvider(err error) (result safeError) {
 		return result
 	}
 	switch {
+	case errors.Is(err, catalog.ErrUnsupportedRequest):
+		return safeError{category: safeInvalidRequest}
 	case errors.Is(err, context.Canceled):
 		return safeError{category: safeCancellation}
 	case errors.Is(err, context.DeadlineExceeded):
