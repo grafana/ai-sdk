@@ -1,20 +1,35 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://grafana.com/ai-sdk/providerwire/v4/unary-success.schema.json",
-  "title": "ProviderWire V4 unary text response",
+  "title": "ProviderWire V4 unary text and function-call response",
   "type": "object",
   "required": ["content", "finishReason", "usage"],
   "properties": {
     "content": {
       "type": "array",
       "items": {
-        "type": "object",
-        "required": ["type", "text"],
-        "properties": {
-          "type": { "const": "text" },
-          "text": { "type": "string" }
-        },
-        "additionalProperties": false
+        "oneOf": [
+          {
+            "type": "object",
+            "required": ["type", "text"],
+            "properties": {
+              "type": { "const": "text" },
+              "text": { "type": "string" }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": ["type", "toolCallId", "toolName", "input"],
+            "properties": {
+              "type": { "const": "tool-call" },
+              "toolCallId": { "type": "string", "minLength": 1 },
+              "toolName": { "type": "string", "minLength": 1 },
+              "input": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        ]
       }
     },
     "finishReason": {

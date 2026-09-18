@@ -169,7 +169,7 @@ type GenerateContentPart struct {
 // their struct tags.
 func (p GenerateContentPart) MarshalJSON() ([]byte, error) {
 	type alias GenerateContentPart
-	if p.Type != ContentToolCall || len(p.Input) == 0 {
+	if p.Type != ContentToolCall {
 		return json.Marshal(alias(p))
 	}
 	// Encode the raw JSON input object as a stringified JSON string.
