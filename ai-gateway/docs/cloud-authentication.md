@@ -84,9 +84,10 @@ With the registered client versions above, the supported calls are
 `getAvailableModels`, `doGenerate`, and `doStream`. Calls to `doGenerate` and
 `doStream` must set `maxOutputTokens` explicitly.
 
-`generateText` and `streamText` are unsupported because both set `toolChoice` to
-`auto`, which the mapper rejects. `generateText` also adds unsupported body
-headers. Setting `maxOutputTokens` does not make either high-level call compatible.
+`generateText` and `streamText` both set `toolChoice` to `auto`. The unary mapper
+accepts that choice, while streaming and fallback routes reject it. `generateText`
+also adds unsupported body headers, and `streamText` only forwards supplied headers.
+Setting `maxOutputTokens` does not make either high-level call compatible.
 
 Bring-your-own-key (BYOK) requests and native OpenAI/Anthropic API adapters
 are not supported.

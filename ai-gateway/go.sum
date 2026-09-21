@@ -68,6 +68,8 @@ github.com/grafana/ai-sdk/middleware/prometheus v0.0.0-20260915200037-0b83f45375
 github.com/grafana/ai-sdk/middleware/prometheus v0.0.0-20260915200037-0b83f45375ca/go.mod h1:d0tA6I0Uy2zLoxPR6S+1wVZE2aY5toQ8zZaWyJKazzo=
 github.com/grafana/ai-sdk/providers/anthropic v0.0.0-20260916162302-e9128cc3b35a h1:UO5RbezXIWAZOcHN7MmqgAMWee/bgPWl75YR3Xdecow=
 github.com/grafana/ai-sdk/providers/anthropic v0.0.0-20260916162302-e9128cc3b35a/go.mod h1:XierKg2X4pq+yIDsXzjC9ODVcEBVPUpnYBsBJqMXkAw=
+github.com/grafana/ai-sdk/providers/anthropic v0.0.0-20260921184459-96181a8888ab h1:DeQrqsyrbjSdN/OJODQW3X3JDPDou6nKKGU3RLb6zm4=
+github.com/grafana/ai-sdk/providers/anthropic v0.0.0-20260921184459-96181a8888ab/go.mod h1:DYFE5/udopZd6A9NAJQCZ3kuMt1EaEs4vp8lu9Smgdc=
 github.com/grafana/ai-sdk/providers/openai-compatible v0.0.0-20260914170650-fd08a3a81a11 h1:VQ3KSv92M/S7T7PvOAiyrxFF/HnnfLQ06DjeE3felUc=
 github.com/grafana/ai-sdk/providers/openai-compatible v0.0.0-20260914170650-fd08a3a81a11/go.mod h1:ua2ViPMCLV0YpqlxZtdnpE6DM3Qj2T/9h1dMaYxFjlc=
 github.com/grafana/authlib v0.0.0-20260814184937-0d62418c2815 h1:kdWTzTnExdZbbngXmCuA4UPrZpdYiwC/Mf5ujcg+e6Q=

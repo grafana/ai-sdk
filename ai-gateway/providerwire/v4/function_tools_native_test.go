@@ -16,7 +16,7 @@ import (
 )
 
 func TestRuntimeFunctionTools_NativeAnthropicRequests(t *testing.T) {
-	requests := make(chan map[string]any, 2)
+	requests := make(chan map[string]any, 3)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		require.NoError(t, err)
@@ -58,4 +58,11 @@ func TestRuntimeFunctionTools_NativeAnthropicRequests(t *testing.T) {
 	assert.Equal(t, "tool_result", result["type"])
 	assert.Equal(t, "call", result["tool_use_id"])
 	assert.Equal(t, []any{map[string]any{"type": "text", "text": ""}}, result["content"])
+	emptyDefinitions := `"maxOutputTokens":64,"tools":[{"type":"function","name":"weather","inputSchema":{"type":"object"},"inputExamples":[],"providerOptions":{"anthropic":{"allowedCallers":[]}}}],"toolChoice":{"type":"tool","toolName":"weather"}`
+	third := harness.serve(validRequest(`{"prompt":[{"role":"user","content":[{"type":"text","text":"weather"}]}],` + emptyDefinitions + `}`))
+	require.Equal(t, http.StatusOK, third.Code, third.Body.String())
+	native = <-requests
+	tool = native["tools"].([]any)[0].(map[string]any)
+	assert.Equal(t, []any{}, tool["input_examples"])
+	assert.Equal(t, []any{}, tool["allowed_callers"])
 }
