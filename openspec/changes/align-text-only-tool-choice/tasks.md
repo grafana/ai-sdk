@@ -1,10 +1,9 @@
-## 1. Confirm baseline and integration prerequisites
+## 1. Confirm baseline and follow-up scope
 
 - [x] 1.1 Reconfirm `test/conformance/upstream.yaml` and `PARITY.md`; compare the pinned `prepare-tool-choice` implementation/tests and stream/generate preparation paths. Record the same baseline commit and classify the core default, Gateway admission, and request-coverage gaps without upgrading packages.
-- [x] 1.2 Identify an implementation integration branch containing #201's existing Gateway conformance task/executors. Record its revision and Linux/local-Docker availability; if unavailable, mark the paired-fixture gate blocked while allowing focused work to proceed. Do not create a replacement matrix.
-- [ ] 1.3 On that integration branch, run the existing `anthropic/upstream/text-generation` Go and TypeScript Gateway cases before behavioral edits; retain actual inbound request/backend-count and expectation-failure evidence. Use unchanged fixture inputs and UI/backend goldens.
+- [x] 1.2 Identify #201's existing Gateway conformance task/executors and record their revision and Linux/local-Docker availability. Track their matrix checks as integration follow-up, not a shipping dependency. Do not create a replacement matrix.
 
-Prerequisite evidence: registered baseline remains `d76eb85a9a7f2dbe44ab2f3dc858ad5cdcb5242e`; pinned helper/tests confirm tools-independent defaulting. Core defaulting and Gateway rejection are bugs; high-level HTTP evidence is a coverage gap. #201 is open on `nrbrd/ai-gateway-conformance` at `e6e690d857962b1d8325806496b5547e7d0622a7` and is not integrated here. Linux Docker server `29.6.1` is available. Tasks 1.3, 5.3, and 5.5 remain blocked on harness integration; focused work proceeds without a replacement matrix.
+Baseline evidence: registered baseline remains `d76eb85a9a7f2dbe44ab2f3dc858ad5cdcb5242e`; pinned helper/tests confirm tools-independent defaulting. Core defaulting and Gateway rejection are bugs; high-level HTTP evidence is a coverage gap. #201 is open on `nrbrd/ai-gateway-conformance` at `e6e690d857962b1d8325806496b5547e7d0622a7` and is not integrated here. Linux Docker server `29.6.1` is available. The owner approved shipping this fix before #201; former tasks 1.3, 5.3, and 5.5 are deferred below, not marked as executed.
 
 ## 2. Add failing focused regressions before production fixes
 
@@ -31,16 +30,14 @@ Prerequisite evidence: registered baseline remains `d76eb85a9a7f2dbe44ab2f3dc858
 
 - [x] 5.1 Run `go test ./...` from the root and `(cd ai-gateway && GOWORK=off go test ./providerwire/v4 ./cmd/grafana-ai-gateway/internal/service)`. Also run focused Gateway service fallback tests with `-race`; record results.
 - [x] 5.2 Run `mise run test-providerwire-v4` and `mise run test-ai-gateway-command`, including unchanged low-level semantic goldens, strict schema/runtime negatives, the new high-level defaults, authenticated command behavior, and independent-module checks.
-- [ ] 5.3 With #201 integrated, run `SCENARIO=anthropic/upstream/text-generation CLIENT=typescript mise run test-conformance-gateway` and the same with `CLIENT=go`. Require both to reach the backend and pass existing `expected.jsonl` and `expected-requests.jsonl`; retain harness evidence. Keep this task incomplete if the harness/environment is unavailable or either case fails.
 - [x] 5.4 Run `mise run test-conformance` and `mise run parity-check`. Investigate unexpected provider/UI/object snapshot differences against the registered baseline rather than regenerating goldens to force success. Add no fabricated recorded/upstream provider inputs and do not rewrite existing ones.
-- [ ] 5.5 Re-run the broader Gateway matrix when the integrated harness/environment permits and report remaining unsupported-capability failures separately from the paired text acceptance gate. Do not expand scope to achieve arbitrary pass-count equality.
 - [x] 5.6 Confirm no frontend wire behavior changed. If UI chunks, SSE framing, headers, or response formats did change, add the required deterministic cross-language scenario in `test/integration/` and run `mise run test-integration` before completion.
 
 ## 6. Update durable coverage and completion evidence
 
 - [x] 6.1 Update `test/conformance/PARITY.md` with core defaulting, Gateway HTTP/high-level streaming, and fallback-guard evidence. Correct the trusted-cloud blanket high-level rejection while retaining TypeScript generateText body-header, default unary-token-limit, actual-tool, and existing provider-specific gaps. Record any remaining validation gap accurately.
 - [x] 6.2 Review implementation against all five spec deltas, record the compatibility impact on custom models/middleware, and document Gateway-first rollout if server/SDK releases are separate. Confirm no public API, auth policy, client stripping workaround, or fallback effect boundary changed.
-- [x] 6.3 Verify only intended implementation/tests/coverage/dependency-lock changes are present, run OpenSpec validation for this change, and record successful commands plus residual environment blockers. Do not declare #202 complete until the required paired fixture and direct conformance gates pass.
+- [x] 6.3 Verify only intended implementation/tests/coverage/dependency-lock changes are present, run OpenSpec validation for this change, and record successful commands plus residual coverage gaps. Completion requires focused core/HTTP/fallback regressions, actual high-level cross-client command evidence, and direct conformance; #201 matrix replay remains explicit follow-up.
 
 ## Implementation evidence
 
@@ -48,4 +45,12 @@ Prerequisite evidence: registered baseline remains `d76eb85a9a7f2dbe44ab2f3dc858
 - Both HTTP modes share the table-driven production-handler tests in `runtime_test.go`. Cross-language high-level evidence uses the existing authenticated edge/real-command composition; the narrow Go executable lives at `providers/grafana/internal/capture/testdata/streamtext/main.go` so isolated production-module builds do not acquire test-only root dependencies. The build asserts local core/client source selection via the explicit repository workspace.
 - Passed: `go test ./...`; isolated Gateway runtime/service tests; focused root and Gateway fallback race tests; root and focused Gateway `go vet` and `golangci-lint` (zero issues); `mise run test-ai-gateway-command` (25 tests); `mise run parity-check` (including ProviderWire contract checks, baseline validation, provider shape/inventory, and direct conformance); strict OpenSpec validation; `git diff --check`.
 - No UI/SSE protocol changes, production dependency-pin changes, fixture expectation changes, provider input changes, or client-side request rewriting. Coverage documentation records observable nonnil automatic choice for custom models/middleware and coordinated Gateway-first deployment/rollback.
-- Tasks 1.3, 5.3, and 5.5 are still incomplete: #201's harness is not integrated in this worktree. Focused and direct conformance results do not establish the required paired Gateway fixture proof; do not archive this change or close #202 yet.
+- All in-scope implementation tasks are complete. The owner approved moving the unexecuted #201 matrix checks out of this change's completion gates; no paired Gateway fixture or aggregate matrix result is claimed.
+
+## Deferred validation for #201 integration
+
+These checks remain pending follow-up for #201, not completed tasks or prerequisites to shipping this PR:
+
+- Former 1.3: reproduce the paired pre-fix failure on a pre-fix revision (for example `ba4e6d47`) with #201's harness, retaining inbound request/backend-count evidence against unchanged fixture inputs and goldens.
+- Former 5.3: after integrating this fix into #201, run `SCENARIO=anthropic/upstream/text-generation CLIENT=typescript mise run test-conformance-gateway` and the same with `CLIENT=go`. Require both to reach the backend and pass existing `expected.jsonl` and `expected-requests.jsonl`; retain harness evidence without rewriting requests or goldens.
+- Former 5.5: rerun the broader Gateway matrix and report remaining unsupported-capability failures separately. Do not expand this fix to achieve arbitrary pass-count equality.

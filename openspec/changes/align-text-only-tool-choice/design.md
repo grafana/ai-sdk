@@ -28,7 +28,7 @@ Per `test/conformance/PARITY.md`, this spans core orchestration, provider call o
 
 - Match upstream automatic-choice preparation at the core provider-call boundary on every step and shared entry point.
 - Admit exactly the no-tools automatic choice through direct and fallback Gateway text routes, in both wire execution modes, without dropping it.
-- Demonstrate equivalence using actual high-level Go and pinned TypeScript streaming calls, and preserve direct/paired conformance expectations.
+- Demonstrate equivalence using actual high-level Go and pinned TypeScript streaming calls and passing direct conformance. Preserve paired expectations for later #201 integration validation.
 - Keep strict schema validation, fixed errors, pre-invocation rejection, fallback safety, and authentication/credential privacy intact.
 
 **Non-Goals:**
@@ -96,10 +96,10 @@ Keep unary mapper auto coverage separate from high-level streaming equivalence: 
 | Gateway HTTP | Use production-handler harnesses in `runtime_test.go` and `stream_test.go` in both modes. Cover the mapping table, exact forwarded choice/presence, one correct model-method invocation, stable unsupported/schema errors, zero resolution/invocations on rejected requests, and no streaming commitment on failure. |
 | Fallback service | Extend `fallback_route_test.go` with both entry points, auto pass-through, all non-auto choices and tools/history rejection, and pre-commit failover option preservation. |
 | Cross-language request | Actual Go StreamText and pinned TS streamText with omitted tools/choice, captured unmodified inbound request, successful handler/command execution, and expected text. Existing low-level differential tests alone are insufficient. |
-| Paired conformance | Run #201's Go and TypeScript executors for existing `anthropic/upstream/text-generation` with unchanged `expected.jsonl` and `expected-requests.jsonl`. Both must reach the backend and pass their existing expectations. |
+| Paired conformance (deferred to #201) | After #201 integrates this fix, run its Go and TypeScript executors for existing `anthropic/upstream/text-generation` with unchanged `expected.jsonl` and `expected-requests.jsonl`. Both must reach the backend and pass their existing expectations. This is follow-up evidence, not a completion or shipping gate here. |
 | Direct conformance | Existing provider request/UI/object snapshots remain the no-regression contract for Anthropic and all other affected providers. |
 
-Add request-focused failing tests/captures before behavioral edits. On the #201 integration branch, capture the paired pre-fix failure before applying fixes, then replay after both sides are fixed. Existing provenance-valid fixture inputs are sufficient; synthetic handler/service responses stay focused test doubles, never new `recorded/` or `upstream/` inputs. If unexpected direct snapshots differ, investigate the provider behavior against the same baseline instead of mechanically regenerating expectations. No existing fixture goldens are expected to change.
+Add request-focused failing tests/captures before behavioral edits. As #201 integration follow-up, reproduce the paired failure against a pre-fix revision with that harness, then replay against this fix. These matrix checks have not run and are not required before shipping this PR. Existing provenance-valid fixture inputs are sufficient; synthetic handler/service responses stay focused test doubles, never new `recorded/` or `upstream/` inputs. If unexpected direct snapshots differ, investigate the provider behavior against the same baseline instead of mechanically regenerating expectations. No existing fixture goldens are expected to change.
 
 Implementation validation commands:
 
@@ -107,7 +107,9 @@ Implementation validation commands:
 - `(cd ai-gateway && GOWORK=off go test ./providerwire/v4 ./cmd/grafana-ai-gateway/internal/service)`; run focused service fallback tests with `-race` as well.
 - `mise run test-providerwire-v4` and `mise run test-ai-gateway-command` for pinned-client and real-command evidence.
 - `mise run test-conformance` and `mise run parity-check` for direct fixtures, pin validation, provider shape, and contract replay.
-- On Linux/local Docker after #201 is integrated: `SCENARIO=anthropic/upstream/text-generation CLIENT=typescript mise run test-conformance-gateway` and the same with `CLIENT=go`. Preserve generated evidence under that harness's `gateway-results/`; report residual matrix failures separately. A broader matrix rerun is diagnostic, not a demand to implement unrelated capabilities.
+Deferred validation for #201 integration (not a completion gate here):
+
+- On Linux/local Docker after #201 integrates this fix: `SCENARIO=anthropic/upstream/text-generation CLIENT=typescript mise run test-conformance-gateway` and the same with `CLIENT=go`. Preserve generated evidence under that harness's `gateway-results/`; report residual matrix failures separately. A broader matrix rerun is diagnostic, not a demand to implement unrelated capabilities.
 
 No UI/SSE shape changes are intended. If implementation changes frontend wire behavior, add the required deterministic `test/integration/` Go/Vitest scenario and run `mise run test-integration`; do not silently widen this request-defaulting fix.
 
@@ -120,7 +122,7 @@ Update `PARITY.md`'s core/provider-wire and trusted-cloud compatibility coverage
 - **An auto exception could admit effectful requests** → Require empty tools and unchanged full-subset checks; exercise tools/history/approvals and other unsupported families with auto in both modes and at the fallback guard.
 - **Correcting core alone reduces current Gateway Go passes** → Deliver/deploy Gateway admission with the core change; do not treat matching failures as success.
 - **Custom providers/middleware observe a new nonnil default** → Document the upstream-alignment behavior change and preserve every explicit choice; no API migration is required.
-- **Missing #201 infrastructure or Docker prevents paired proof** → Mark that acceptance gate blocked, not passed. Integrate the existing harness before claiming #202 complete; focused tests do not replace the required paired replay.
+- **#201's harness is not integrated here** → Record paired/matrix replay as pending #201 follow-up, not passed. The owner approved shipping first based on focused regressions, real high-level cross-client HTTP evidence, and direct conformance; those checks do not establish an unexecuted matrix result.
 - **Broader compatibility claims exceed evidence** → Limit claims to no-tools supported-subset streaming and the independently tested wire-unary mapping, with unchanged documented residual gaps.
 
 ## Migration Plan
@@ -131,4 +133,4 @@ A server rollback after clients start sending auto restores the old text-only re
 
 ## Open Questions
 
-There is no unresolved behavior/API decision. #201's harness is not in this checkout; its merge/integration revision and Linux/local-Docker execution are prerequisites to the final paired-fixture gate. Implementation may proceed with focused regressions, but the issue cannot be declared closed until that gate passes against the existing expectations. Report any environment or integration blocker explicitly.
+There is no unresolved behavior/API decision. The owner approved shipping this PR before #201. Completion requires the focused core/HTTP/fallback regressions, actual high-level Go/TypeScript command evidence, and direct conformance described above. Historical paired reproduction, paired text replay, and the broader matrix are pending #201 integration follow-up, not prerequisites here. Preserve their unchanged expectations and report their results when executed; do not claim this PR has run them.

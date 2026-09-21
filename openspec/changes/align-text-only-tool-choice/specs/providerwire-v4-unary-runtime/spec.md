@@ -62,7 +62,7 @@ Schema-valid files, reasoning content, custom content, tools, tool approvals, st
 
 The runtime SHALL replay every committed ProviderWire request golden without modifying it. Cross-language integration tests SHALL call the production handler through the exact registered `@ai-sdk/gateway` version and verify minimal unary success, streaming text through clean EOF, representative errors, and cancellation. Raw Go tests SHALL remain authoritative for exact documents, privacy, sequencing, lifecycle, and byte bounds.
 
-Equivalent high-level Go `StreamText` and registered TypeScript `streamText` calls with no tools or explicit choice SHALL additionally exercise actual Gateway HTTP requests. Tests SHALL observe each unmodified request's automatic choice and successful provider execution rather than reconstructing low-level options. The Go probe SHALL use the changed local core. The existing paired `anthropic/upstream/text-generation` fixture SHALL pass through both conformance executors against unchanged UI and backend-request expectations before this gap is considered closed. Provider inputs SHALL retain their recorded or pinned-upstream provenance.
+Equivalent high-level Go `StreamText` and registered TypeScript `streamText` calls with no tools or explicit choice SHALL additionally exercise actual Gateway HTTP requests. Tests SHALL observe each unmodified request's automatic choice and successful provider execution rather than reconstructing low-level options. The Go probe SHALL use the changed local core. Completion of this fix SHALL require focused core, HTTP, and fallback regressions, actual high-level cross-client command evidence, and passing direct conformance. The paired `anthropic/upstream/text-generation` replay SHALL be tracked as pending #201 integration follow-up rather than a prerequisite to shipping this fix. Provider inputs SHALL retain their recorded or pinned-upstream provenance.
 
 #### Scenario: Registered client success
 - **WHEN** the pinned Gateway client sends a supported unary request
@@ -78,12 +78,13 @@ Equivalent high-level Go `StreamText` and registered TypeScript `streamText` cal
 - **AND** each call SHALL reach the provider and complete with the expected text
 - **AND** harmless existing presence differences SHALL not be hidden by rewriting requests
 
-#### Scenario: Existing paired fixture proves the fix
-- **WHEN** both Gateway conformance executors replay `anthropic/upstream/text-generation` after the core and Gateway fixes
+#### Scenario: Deferred paired fixture verifies integration
+- **WHEN** #201 integrates this fix and both Gateway conformance executors replay `anthropic/upstream/text-generation`
 - **THEN** both SHALL reach the backend and pass the existing UI and backend-request expectations
 - **AND** neither the harness nor fixture goldens SHALL strip automatic choice or be changed to force matching counts
 - **AND** direct conformance SHALL remain passing without fabricated provider recordings
 
-#### Scenario: Paired harness is unavailable
-- **WHEN** the #201 executors or required execution environment are unavailable
-- **THEN** validation SHALL report the paired-fixture gate as blocked rather than treating focused tests or aggregate pass counts as substitute proof
+#### Scenario: Fix ships before the paired harness
+- **WHEN** the core/HTTP/fallback regressions, actual high-level cross-client command tests, and direct conformance pass before #201 is integrated
+- **THEN** this fix MAY ship without waiting for that harness
+- **AND** validation SHALL explicitly report paired and broader matrix replay as pending #201 follow-up, not executed or passed
