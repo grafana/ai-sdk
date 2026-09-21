@@ -13,6 +13,8 @@ test("gateway CI remains an independent failing check, not a publish prerequisit
   assert.equal(job.name, "Gateway conformance (advisory)");
   assert.equal(job["continue-on-error"], undefined);
   assert.equal(job.needs, undefined);
+  const mise = job.steps.find((step: { uses?: string }) => step.uses?.startsWith("jdx/mise-action@"));
+  assert.equal(mise?.with?.cache, false, "gateway CI must not restore or save runtime caches");
   assert.ok(job.steps.some((step: { run?: string }) => step.run === "mise run test-conformance-gateway"));
   assert.ok(job.steps.some((step: { uses?: string; if?: string }) => step.uses?.startsWith("actions/upload-artifact@") && step.if === "always()"));
   for (const step of job.steps) assert.equal(step["continue-on-error"], undefined);

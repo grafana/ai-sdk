@@ -349,6 +349,7 @@ jobs:
         with:
           version: "2026.5.4"
           experimental: true
+          cache: false
 
       - name: Gateway conformance harness tests
         run: mise run test-conformance-gateway-harness
