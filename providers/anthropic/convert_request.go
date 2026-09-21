@@ -2075,7 +2075,7 @@ func convertToolsWithStrictTools(v *cacheControlValidator, tools []provider.Tool
 			if toolOpts.DeferLoading != nil {
 				tp.DeferLoading = anthropic.Bool(*toolOpts.DeferLoading)
 			}
-			if len(toolOpts.AllowedCallers) > 0 {
+			if toolOpts.AllowedCallers != nil {
 				tp.AllowedCallers = toolOpts.AllowedCallers
 				betaSet["advanced-tool-use-2025-11-20"] = struct{}{}
 			}
@@ -2094,15 +2094,15 @@ func convertToolsWithStrictTools(v *cacheControlValidator, tools []provider.Tool
 				tp.EagerInputStreaming = anthropic.Bool(true)
 			}
 
-			if len(t.InputExamples) > 0 {
-				var examples []map[string]any
+			if t.InputExamples != nil {
+				examples := make([]map[string]any, 0, len(t.InputExamples))
 				for _, ex := range t.InputExamples {
 					var m map[string]any
 					if json.Unmarshal(ex.Input, &m) == nil {
 						examples = append(examples, m)
 					}
 				}
-				if len(examples) > 0 {
+				if len(t.InputExamples) == 0 || len(examples) > 0 {
 					tp.InputExamples = examples
 					betaSet["advanced-tool-use-2025-11-20"] = struct{}{}
 				}
