@@ -194,11 +194,11 @@ The following differences are explicit rather than claims of complete parity:
 
 No provider recordings or provenance fixtures were fabricated or regenerated.
 
-For separately deployed Gateway/SDK releases, deploy the Gateway's no-tools
-`auto` admission before the aligned Go core. The server accepts both old omitted
-choices and new automatic choices; rolling it back while retaining newer clients
-restores text-only rejection. Coordinate rollback rather than stripping defaults
-from client requests.
+For separately deployed Gateway/SDK releases using fallback routes, deploy the
+fallback guard's no-tools `auto` exception before the aligned Go core. Rolling
+back that guard fix restores rejection only on fallback routes; direct routes
+already accept automatic choice. Coordinate fallback rollout/rollback rather
+than stripping defaults from client requests.
 
 ### Trusted Cloud Gateway Host Coverage
 

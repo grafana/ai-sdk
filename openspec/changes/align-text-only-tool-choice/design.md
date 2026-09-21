@@ -1,141 +1,63 @@
 ## Context
 
-Issue #202 reports a 0/59 TypeScript versus 7/59 Go Anthropic Gateway matrix result. Those counts are reported evidence, not a reproduction performed for this proposal. The planning checkout (`f6b6033c`) lacks #201's `test-conformance-gateway` task and executors.
+On current main, `streamtext.go` resolves configured and per-step tool choice before provider invocation, but only supplies the automatic default when effective tools are nonempty. `GenerateText` and both Agent entry points use this engine. The Grafana client preserves explicit choice, and the Gateway's shared function-tool mapper already accepts it in both wire modes. The remaining service incompatibility is `fallbackTextRequest`, which rejects every nonnil choice.
 
-The original execution path (before stacking this change onto #186/#187) was:
+The registered baseline is `d76eb85a9a7f2dbe44ab2f3dc858ad5cdcb5242e`: `ai@7.0.65`, `@ai-sdk/gateway@4.0.52`, provider `4.0.7`, and Anthropic `4.0.38`. Pinned source and tests establish:
 
-1. `streamtext.go:475-638` resolves configured and `PrepareStep` options, filters active tools, then creates `provider.CallOptions`. At line 607 its automatic-choice default incorrectly requires nonempty tools.
-2. `generatetext.go:29-35` and `agent.go:251-280` use the same streaming engine. Go `GenerateText` does not call the provider's `DoGenerate` directly.
-3. `providers/grafana/request.go:68-80` preserves an explicitly supplied choice. Neither client serialization nor fixture selection causes the omission.
-4. `ai-gateway/providerwire/v4/handler.go:175-224` validates the complete schema before `mapWireRequest`; `request.go:98-100` currently rejects any choice. Unary and streaming share this mapping.
-5. `ai-gateway/cmd/grafana-ai-gateway/internal/service/fallback_route.go:26-28` independently rejects any nonnil choice on fallback routes. Passing auto through the mapper without updating this guard would leave these text routes broken.
-6. `providers/anthropic/convert_request.go:344-351` omits automatic choice when tools are empty, so unchanged direct Anthropic backend snapshots cannot expose the upstream/core mismatch.
+- `packages/ai/src/prompt/prepare-tool-choice.ts` defaults omitted choice independently of tools and preserves explicit choices.
+- `packages/ai/src/generate-text/stream-text.ts` uses non-nullish step choice before configured choice. The generate path uses the same preparation helper.
+- `packages/gateway/src/gateway-language-model.ts` preserves call options in both request modes.
+- `packages/anthropic/src/anthropic-prepare-tools.ts` omits choice without tools, so direct Anthropic request snapshots cannot alone expose the core omission.
 
-### Integration onto #186/#187
-
-This change is now based on #187 at `7051714218395fe54a0ae561f8def9c9ceaebb24`, including #186. Their shared typed mapper already accepts and preserves all supported function-tool choices in unary and streaming requests. Retain that implementation and its function definitions/history support; the original narrow mapper patch is redundant and removed. The remaining production changes are core defaulting and the pure-auto fallback guard exception. Preserve the stack's exact `ai@7.0.65` dependency and lockfile without additional changes.
-
-### Registered upstream and coverage classification
-
-All upstream references are from read-only `git show` at `d76eb85a9a7f2dbe44ab2f3dc858ad5cdcb5242e`, matching `test/conformance/upstream.yaml`: `ai@7.0.65`, `@ai-sdk/gateway@4.0.52`, `@ai-sdk/provider@4.0.7`, and `@ai-sdk/anthropic@4.0.38`. No latest/main source or version upgrade is used.
-
-- `packages/ai/src/prompt/prepare-tool-choice.ts` and its adjacent tests define omitted choice as auto without a tools argument, and preserve explicit none/auto/required/named choices.
-- `packages/ai/src/generate-text/stream-text.ts:1962-1985` prepares tools and choice independently, with a non-nullish `prepareStep` choice taking precedence. The matching `generate-text.ts` uses the same helper.
-- `packages/gateway/src/gateway-language-model.ts:60-140` preserves call options in HTTP bodies for both execution modes.
-- `packages/anthropic/src/anthropic-prepare-tools.ts:60-67` drops choice when no tools exist, explaining the lower-boundary blind spot.
-
-Per `test/conformance/PARITY.md`, this spans core orchestration, provider call options, ProviderWire runtime/client composition, and conformance-harness evidence. Core tools-dependent defaulting is an implementation bug. Treating harmless text-only auto as an unsupported tool capability is a Gateway compatibility bug against the public client's emission, not a claim about Vercel's private Gateway service. Missing high-level cross-client HTTP assertions are a coverage gap. Go's shared streaming implementation of GenerateText is a parity-preserving adaptation. The existing Anthropic required/named-without-tools deviation and high-level TypeScript generateText body-header gap remain outside scope.
+Per `test/conformance/PARITY.md`, this work spans core orchestration, provider call options, and Gateway host compatibility. Core tools-dependent defaulting is an implementation bug. Rejecting harmless auto on fallback routes is a Gateway compatibility bug against the public client's emission; no parity claim is made about Vercel's private service. Missing high-level request assertions are a coverage gap. Go's shared streaming engine for GenerateText is a parity-preserving adaptation.
 
 ## Goals / Non-Goals
 
-**Goals:**
+**Goals:** align automatic choice preparation across shared callers; admit and preserve text-only auto on fallback routes; prove actual high-level client requests and retain existing safety boundaries.
 
-- Match upstream automatic-choice preparation at the core provider-call boundary on every step and shared entry point.
-- Preserve the stack's direct-route function-tool support and admit no-tools automatic choice through fallback Gateway text routes, in both wire execution modes, without dropping it.
-- Demonstrate equivalence using actual high-level Go and pinned TypeScript streaming calls and passing direct conformance. Preserve paired expectations for later #201 integration validation.
-- Keep strict schema validation, fixed errors, pre-invocation rejection, fallback safety, and authentication/credential privacy intact.
-
-**Non-Goals:**
-
-- Extending or restricting the direct-route function definitions, explicit choices, history, and multi-step client orchestration already supported by #186/#187.
-- Effectful fallback, approvals, body headers, structured output, raw output, or other unsupported families.
-- End-to-end high-level TypeScript generateText compatibility or default unary-token-limit support.
-- Changing public APIs, provider serializers, request schemas, UI chunks, SSE framing, upstream pins, or provider recording provenance.
-- Building #201's matrix again or equating compatibility with a particular aggregate pass count.
+**Non-goals:** change existing direct-route function-tool mapping, enable effectful fallback, modify serializers or schemas, upgrade dependencies, change authentication or UI/SSE behavior, or resolve high-level TypeScript `generateText` body headers and default unary token limits.
 
 ## Decisions
 
-### 1. Default only after effective per-step choice resolution
+### 1. Default only after effective choice resolution
 
-Change the existing default branch in `streamtext.go` to depend only on nil choice, not `len(provTools)`. Do not mutate configuration or retain a prior step's override. The precedence remains nonnil `PrepareStepResult.ToolChoice`, then configured choice, then a newly prepared `provider.ToolChoiceAuto`. Keep tool filtering independent.
+Remove the tool-count condition from the existing nil-choice default branch in `streamtext.go`. Keep precedence as nonnil `PrepareStepResult.ToolChoice`, configured choice, then auto. Tool filtering remains independent. Do not mutate configuration or carry a step override into later steps; explicit choices continue unchanged even with empty tools.
 
-Explicit auto, none, required, and named choices must reach the model unchanged even with absent, empty, or filtered-out tools. This does not promise that every provider or the Gateway accepts every explicit choice.
+Defaulting in the Grafana client would leave other providers inconsistent. Defaulting in provider adapters would conflate core intent with provider-specific serialization. No new preparation API is needed.
 
-Place normative core behavior under the existing `functional-options` capability's Tool options requirement, rather than creating a second orchestration capability. Test shared callers at the provider's `DoStream` boundary in `streamtext_test.go`, `generatetext_test.go`, and `agent_test.go`. A common test helper/table may reduce duplication; no public preparation API or generalized tool refactor is needed.
+### 2. Narrow the fallback guard, not the mapper
 
-**Rejected alternatives:** Defaulting in `WithTools` misses absent tools; defaulting in the Grafana client leaves other providers inconsistent; moving defaulting into provider adapters conflates core intent with provider-specific serialization.
+In `fallbackTextRequest`, accept nil or pure auto (automatic type with no tool name) while retaining the empty-tools requirement and every existing prompt, history, provider-option, header, raw-output, and response-format check. Pass original options through unchanged. Non-auto choices and effectful requests still fail before any physical candidate executes.
 
-### 2. Retain the stack's typed request mapping after schema validation
+The shared HTTP mapper and direct function-tool behavior are existing dependencies, not changes. Regression tests cover their choice preservation and unsupported-family boundaries because the core now sends auto on every otherwise unconfigured text call. No request stripping or normalization workaround is introduced.
 
-Retain `handler.go`'s complete-schema-before-mapping order and #186/#187's shared typed choice/function mapping. No production mapper change remains in this PR. Extend HTTP tests to lock down text-only choice preservation while keeping supported direct tools and unsupported-family boundaries intact.
+### 3. Prove the high-level request boundary
 
-| Request choice | Tools | Mapping result |
-| --- | --- | --- |
-| Absent | Absent or empty | Accept ordinary text; `CallOptions.ToolChoice` remains nil |
-| Schema-valid `{ "type": "auto" }` | Absent or empty | Accept; forward `ToolChoiceAuto` |
-| None, required, named | Absent or empty | Accept on direct routes; preserve the explicit choice |
-| Supported choice or absent | Supported function tools/history | Preserve #186/#187 direct-route mapping |
-| Any or absent | Provider tools or other deferred families | Fixed unsupported-family response |
-| Null, unknown type, wrong shape, extra fields | Any | Existing schema-invalid response before mapping/resolution |
+Use the existing authenticated edge/real-command test composition with actual Go `StreamText` and pinned TypeScript `streamText`, equivalent prompts/options, and no tools or explicit choice. Passive inbound capture must show auto, backend execution, and expected text for each client without rewriting requests. Existing privacy assertions remain in force.
 
-The accepted choice does not bypass prompt/content or other capability checks. Text-only means the entire request is within the current supported subset, not merely that its tools list is empty. Rejections happen before catalog resolution or provider invocation; invalid streaming requests remain non-2xx JSON with no SSE commitment.
+Build the narrow Go probe under `providers/grafana/internal/capture/testdata/streamtext/` with the repository `go.work`, and assert local core/client module selection. Ordinary client and Gateway builds remain isolated against their published dependencies. Reuse the existing exact TypeScript dependency and lockfile.
 
-**Rejected alternatives:** Erasing auto at the Gateway hides provider-boundary intent; retaining the original narrow mapper would regress #186/#187; broadening the schema is unnecessary because valid auto is already modeled.
+The cloud-authentication delta updates the stale high-level-streaming claim and adds this new evidence. Full unchanged context in retained `MODIFIED Requirements` is required for safe OpenSpec replacement; it does not claim implementation of those existing capabilities.
 
-### 3. Apply the same exception to the fallback text guard
+## Validation
 
-In `fallbackTextRequest`, accept nil or a pure auto choice (auto type with no tool name) when tools are empty, while retaining all existing text/history/provider-options/headers/raw-output/response-format checks. Forward the original options unchanged to the logical fallback model. Nonempty tools, other choices, tool-call/result history, and other unsupported controls still fail before any physical candidate executes.
-
-Test `fallbackTextModel.DoGenerate` and `DoStream` independently, plus a real configured fallback chain where the primary fails before commitment and the secondary receives identical auto-bearing options. Preserve retry eligibility, commitment, privacy, candidate ordering, and restart-at-primary semantics. No root fallback algorithm changes are required.
-
-This narrowly updates the existing `gateway-ordered-text-fallback` requirement that currently treats every choice as effectful. It is required because the stack's mapper preserves auto; leaving the guard unchanged would make support depend on route topology.
-
-### 4. Prove the request boundary with real high-level clients
-
-Extend the existing AGPL ProviderWire contract/command workspace, not the public client codec, with a focused high-level streaming case:
-
-- Retain the stack's existing exact `ai@7.0.65` dependency and lockfile. No dependency update remains necessary; preserve registered versions and minimum-release-age policy.
-- Add a high-level mode to the Go test capture executable in `providers/grafana/internal/capture/main.go`, or an equivalently narrow adjacent test executable, that calls actual root `StreamText` over the Grafana model. It must not construct a replacement `provider.CallOptions` with auto. Keep existing low-level modes/tests intact.
-- The current `go-client-capture.ts` builds with `GOWORK=off`, and `providers/grafana/go.mod` pins an older published root. Build this high-level probe with an explicitly selected repository `go.work` so it exercises the changed local core and client; keep ordinary independent client and Gateway builds on their existing `GOWORK=off` path. Do not update production module pins merely to run a local regression. Assert/document source selection in the test setup so an old dependency cannot produce false evidence.
-- Use the existing `runtime-integration.test.ts`/test server and `gateway-command.test.ts`/edge-shim composition for actual HTTP execution. Observe incoming JSON without modifying it. Both high-level clients receive equivalent prompt and model settings, with no tools or choice supplied. Constructor/outer authentication headers are allowed; do not add unsupported call-level body headers.
-- Assert independently that each inbound request contains `{type: "auto"}`, each reaches the provider, and each completes with the expected text. Accept harmless existing differences such as absent versus false `includeRawChunks` and empty `providerOptions`; do not require unrelated byte identity or strip fields.
-- Exercise high-level streaming through the authenticated edge/real-command path so the cloud-authentication spec's revised support claim has evidence. Retain existing cancellation/flush and credential-privacy tests.
-
-Keep unary mapper auto coverage separate from high-level streaming equivalence: TypeScript generateText still adds unsupported body headers. Go GenerateText and Agent defaulting is covered at the shared core call boundary, not misrepresented as cross-language unary HTTP parity.
-
-### 5. Red-first layered validation; no golden manipulation
-
-| Layer | Red-first evidence and regression contract |
+| Boundary | Regression evidence added by this PR |
 | --- | --- |
-| Core | Capture full provider call options for absent/empty tools, nonempty tools, global and per-step empty active-tool filtering; explicit auto/none/required/named without tools; per-step precedence and nil fallback; later-step reset. Assert default and override behavior for StreamText, GenerateText, Agent.Stream, and Agent.Generate. |
-| Gateway HTTP | Use production-handler harnesses in `runtime_test.go` and `stream_test.go` in both modes. Cover the mapping table, exact forwarded choice/presence, one correct model-method invocation, stable unsupported/schema errors, zero resolution/invocations on rejected requests, and no streaming commitment on failure. |
-| Fallback service | Extend `fallback_route_test.go` with both entry points, auto pass-through, all non-auto choices and tools/history rejection, and pre-commit failover option preservation. |
-| Cross-language request | Actual Go StreamText and pinned TS streamText with omitted tools/choice, captured unmodified inbound request, successful handler/command execution, and expected text. Existing low-level differential tests alone are insufficient. |
-| Paired conformance (deferred to #201) | After #201 integrates this fix, run its Go and TypeScript executors for existing `anthropic/upstream/text-generation` with unchanged `expected.jsonl` and `expected-requests.jsonl`. Both must reach the backend and pass their existing expectations. This is follow-up evidence, not a completion or shipping gate here. |
-| Direct conformance | Existing provider request/UI/object snapshots remain the no-regression contract for Anthropic and all other affected providers. |
+| Core | `streamtext_test.go`: absent/empty/filtered tools, explicit choices, per-step precedence/reset. `generatetext_test.go` and `agent_test.go`: shared defaults and overrides. |
+| Gateway HTTP | `runtime_test.go`: both modes, absent versus explicit choices, absent/empty tools, exact forwarded values, correct invocation counts, and unchanged schema/unsupported-family failures. |
+| Fallback | `fallback_route_test.go`: pure-auto acceptance, pre-commit failover preserving options, restart at primary, and zero physical calls for effectful variants. |
+| Actual clients | `gateway-command.test.ts`: both high-level streaming defaults through the authenticated edge, plus omitted/auto choices across the existing low-level fallback matrix. |
+| Existing contracts | Direct function-tool command round trips, pinned ProviderWire contracts, and provider/UI/object conformance snapshots remain passing. |
 
-Add request-focused failing tests/captures before behavioral edits. As #201 integration follow-up, reproduce the paired failure against a pre-fix revision with that harness, then replay against this fix. These matrix checks have not run and are not required before shipping this PR. Existing provenance-valid fixture inputs are sufficient; synthetic handler/service responses stay focused test doubles, never new `recorded/` or `upstream/` inputs. If unexpected direct snapshots differ, investigate the provider behavior against the same baseline instead of mechanically regenerating expectations. No existing fixture goldens are expected to change.
+Run root and isolated Gateway tests, focused core/service race tests, command integration, `mise run parity-check`, vet/lint, strict OpenSpec validation, and whitespace checks. Existing provider inputs and expectations remain unchanged; focused test doubles are not provider recordings. No frontend wire behavior changes, so no new UI/SSE integration scenario is needed.
 
-Implementation validation commands:
+## Risks / Rollout
 
-- `go test ./...` for the root, with focused ToolChoice/shared-caller tests during iteration.
-- `(cd ai-gateway && GOWORK=off go test ./providerwire/v4 ./cmd/grafana-ai-gateway/internal/service)`; run focused service fallback tests with `-race` as well.
-- `mise run test-providerwire-v4` and `mise run test-ai-gateway-command` for pinned-client and real-command evidence.
-- `mise run test-conformance` and `mise run parity-check` for direct fixtures, pin validation, provider shape, and contract replay.
-Deferred validation for #201 integration (not a completion gate here):
-
-- On Linux/local Docker after #201 integrates this fix: `SCENARIO=anthropic/upstream/text-generation CLIENT=typescript mise run test-conformance-gateway` and the same with `CLIENT=go`. Preserve generated evidence under that harness's `gateway-results/`; report residual matrix failures separately. A broader matrix rerun is diagnostic, not a demand to implement unrelated capabilities.
-
-No UI/SSE shape changes are intended. If implementation changes frontend wire behavior, add the required deterministic `test/integration/` Go/Vitest scenario and run `mise run test-integration`; do not silently widen this request-defaulting fix.
-
-Update `PARITY.md`'s core/provider-wire and trusted-cloud compatibility coverage with the new assertions. Remove the auto-rejection gap only after evidence passes, preserving high-level TS generateText body-header, default unary-token-limit, effectful-fallback, and provider-specific gaps. Spec deltas must remove the cloud-authentication blanket high-level streaming rejection without changing authentication rules.
-
-## Risks / Trade-offs
-
-- **Independent module pins can test old core code** → Explicitly select local root/client sources for the new high-level probe; preserve separately isolated production module checks.
-- **Fallback routes reject the newly preserved default** → Include the narrow service guard and its direct/failover regression tests in the same change; no request normalization workaround.
-- **An auto exception could admit effectful fallback** → Require empty tools and unchanged full-subset checks in the fallback guard; exercise tools/history and all non-auto choices there. Preserve direct function-tool support and pre-resolution rejection of deferred families.
-- **Correcting core alone reduces current Gateway Go passes** → Deliver/deploy Gateway admission with the core change; do not treat matching failures as success.
-- **Custom providers/middleware observe a new nonnil default** → Document the upstream-alignment behavior change and preserve every explicit choice; no API migration is required.
-- **#201's harness is not integrated here** → Record paired/matrix replay as pending #201 follow-up, not passed. The owner approved shipping first based on focused regressions, real high-level cross-client HTTP evidence, and direct conformance; those checks do not establish an unexecuted matrix result.
-- **Broader compatibility claims exceed evidence** → Limit claims to no-tools supported-subset streaming and the independently tested wire-unary mapping, with unchanged documented residual gaps.
-
-## Migration Plan
-
-No data, configuration, or wire-schema migration is needed. Merge #186/#187 first, then land core default preparation, fallback guard consistency, and their regression tests together. Where SDK and Gateway releases deploy independently, deploy the Gateway-compatible change first: it accepts both old absent-choice requests and the new auto default. Then release the aligned Go core.
-
-A server rollback after clients start sending auto restores the old text-only rejection, so retain or restore the Gateway fix when rolling back unrelated changes; coordinate any full rollback across server and client. Do not ship a client-side auto-stripping compatibility mode. Update the coverage map only to the level actually verified.
+- Custom providers and middleware observe nonnil auto instead of nil on previously unconfigured text calls; explicit choices and public APIs do not change.
+- The fallback exception must not admit effectful requests. Both direct guard tests and the command matrix retain their zero-candidate rejection evidence.
+- For separately deployed SDK/Gateway releases using fallback routes, deploy the fallback guard fix first. Rolling back this PR's Gateway change restores no-tools-auto rejection only on fallback routes; current-main direct routes already accept it. Do not strip defaults in clients to compensate.
+- The pinned Anthropic required/named-without-tools deviation and unrelated high-level unary gaps remain outside scope. Deferred matrix validation is recorded in `tasks.md`; focused evidence is not a claim about that unexecuted matrix.
 
 ## Open Questions
 
-There is no unresolved behavior/API decision. The owner approved shipping this PR before #201. Completion requires the focused core/HTTP/fallback regressions, actual high-level Go/TypeScript command evidence, and direct conformance described above. Historical paired reproduction, paired text replay, and the broader matrix are pending #201 integration follow-up, not prerequisites here. Preserve their unchanged expectations and report their results when executed; do not claim this PR has run them.
+None for this PR's behavior or API.
