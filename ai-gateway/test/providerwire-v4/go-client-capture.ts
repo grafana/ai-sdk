@@ -25,7 +25,7 @@ export function buildGoStreamTextCapture(directory: string): string {
     assert.equal(selected.Main, true);
   }
   const binary = join(directory, "go-stream-text-capture");
-  execFileSync("go", ["build", "-o", binary, "./providers/grafana/internal/capture/testdata/streamtext/main.go"], {
+  execFileSync("go", ["build", "-o", binary, "./providers/grafana/internal/capture"], {
     cwd: root, env, stdio: "pipe",
   });
   return binary;

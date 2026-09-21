@@ -871,7 +871,8 @@ describe("Trusted-proxy composition (dummy credentials, not production authentic
           const result = await captureGoClient(goStreamTextBinaryPath, {
             baseURL: `${edge.url}/api/v1/aisdk`, accessToken: TEST_TOKEN,
             headers: { Authorization: [`Bearer ${EDGE_WRITE_KEY}`] },
-            modelID: "assistant", prompt, maxOutputTokens: 32,
+            mode: "stream-text", modelID: "assistant",
+            options: { prompt: [{ role: "user", content: [{ type: "text", text: prompt }] }], maxOutputTokens: 32 },
           });
           assert.equal(result.error, undefined);
           text = result.text;

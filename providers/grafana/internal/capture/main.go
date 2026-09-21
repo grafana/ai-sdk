@@ -102,6 +102,21 @@ func main() {
 		emit(map[string]any{"parts": parts, "request": result.Request, "response": result.Response, "canceled": ctx.Err() != nil})
 		return
 	}
+	if input.Mode == "stream-text" {
+		opts := []aisdk.StreamOption{aisdk.WithModelMessages(input.Options.Prompt...), aisdk.WithMaxRetries(0)}
+		if input.Options.MaxOutputTokens != nil {
+			opts = append(opts, aisdk.WithMaxOutputTokens(*input.Options.MaxOutputTokens))
+		}
+		result := aisdk.StreamText(ctx, model, opts...)
+		for range result.FullStream() {
+		}
+		if err := result.Err(); err != nil {
+			emitError(err)
+			return
+		}
+		emit(map[string]any{"text": result.Text()})
+		return
+	}
 	if input.Mode == "stream-loop" {
 		executions := 0
 		type weatherInput struct {

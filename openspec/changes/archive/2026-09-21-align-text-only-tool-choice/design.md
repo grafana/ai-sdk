@@ -35,7 +35,7 @@ The shared HTTP mapper and direct function-tool behavior are existing dependenci
 
 Use the existing authenticated edge/real-command test composition with actual Go `StreamText` and pinned TypeScript `streamText`, equivalent prompts/options, and no tools or explicit choice. Passive inbound capture must show auto, backend execution, and expected text for each client without rewriting requests. Existing privacy assertions remain in force.
 
-Build the narrow Go probe under `providers/grafana/internal/capture/testdata/streamtext/` with the repository `go.work`, and assert local core/client module selection. Ordinary client and Gateway builds remain isolated against their published dependencies. Reuse the existing exact TypeScript dependency and lockfile.
+Use the text-only `stream-text` mode in `providers/grafana/internal/capture/main.go`, built with the repository `go.work`, and assert local core/client module selection. Ordinary client and Gateway builds remain isolated against their published dependencies. Reuse the existing exact TypeScript dependency and lockfile.
 
 The cloud-authentication delta updates the stale high-level-streaming claim and adds this new evidence. Full unchanged context in retained `MODIFIED Requirements` is required for safe OpenSpec replacement; it does not claim implementation of those existing capabilities.
 
