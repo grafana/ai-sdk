@@ -40,8 +40,9 @@ No authentic inputs cover the new request edges. Focused tests and synthetic
 request probes are bounded evidence, not recordings, live Mantle/Vertex-auth
 verification, complete provider-tool schemas, or full response-stream parity.
 Raw probes, logs, candidate metadata and diffs are preserved externally and are
-not part of the PR. In-session spec/source verification found no remaining
-blocking issue within the nine; archival remains before merge.
+not part of the PR. Two review rounds and parent verification found no remaining
+actionable issue within the nine. Main specs were synced and the change archived
+on 2026-09-21; this does not certify the complete target upgrade.
 
 Private raw budget presence preserves explicit zero while typed zero remains
 omitted; caller schemas stay unchanged. PR 2H/2S retain history/stream ownership,
