@@ -73,6 +73,45 @@ func TestToolLoopAgent_StreamAndGenerateDelegateToExistingResults(t *testing.T) 
 	assert.Len(t, generateResult.Steps, 1)
 }
 
+func TestToolLoopAgent_ToolChoice(t *testing.T) {
+	for _, mode := range []string{"stream", "generate"} {
+		for _, tc := range []struct {
+			name     string
+			settings []StreamOption
+			call     []Option
+			want     provider.ToolChoice
+		}{
+			{name: "default", want: provider.ToolChoice{Type: provider.ToolChoiceAuto}},
+			{name: "configured", settings: []StreamOption{WithToolChoice(provider.ToolChoice{Type: provider.ToolChoiceNone})}, want: provider.ToolChoice{Type: provider.ToolChoiceNone}},
+			{name: "per call", settings: []StreamOption{WithToolChoice(provider.ToolChoice{Type: provider.ToolChoiceNone})}, call: []Option{WithToolChoice(provider.ToolChoice{Type: provider.ToolChoiceRequired})}, want: provider.ToolChoice{Type: provider.ToolChoiceRequired}},
+			{name: "step", settings: []StreamOption{WithToolChoice(provider.ToolChoice{Type: provider.ToolChoiceNone})}, call: []Option{WithToolChoice(provider.ToolChoice{Type: provider.ToolChoiceRequired}), WithPrepareStep(func(PrepareStepState) (*PrepareStepResult, error) {
+				return &PrepareStepResult{ToolChoice: &provider.ToolChoice{Type: provider.ToolChoiceTool, ToolName: "lookup"}}, nil
+			})}, want: provider.ToolChoice{Type: provider.ToolChoiceTool, ToolName: "lookup"}},
+		} {
+			t.Run(mode+"/"+tc.name, func(t *testing.T) {
+				var got provider.CallOptions
+				model := &mockModel{streamFunc: func(_ context.Context, opts provider.CallOptions) (*provider.StreamResult, error) {
+					got = opts
+					return &provider.StreamResult{Stream: textStreamParts("done")}, nil
+				}}
+				agent := NewToolLoopAgent(model, WithToolLoopAgentOptions(tc.settings...))
+				if mode == "stream" {
+					result := agent.Stream(t.Context(), WithAgentPrompt("hello"), WithAgentOptions(tc.call...))
+					for range result.FullStream() {
+					}
+					require.NoError(t, result.Err())
+				} else {
+					_, err := agent.Generate(t.Context(), WithAgentPrompt("hello"), WithAgentOptions(tc.call...))
+					require.NoError(t, err)
+				}
+				assert.Empty(t, got.Tools)
+				assert.Equal(t, &tc.want, got.ToolChoice)
+				assert.Equal(t, 1, model.callCount)
+			})
+		}
+	}
+}
+
 func TestToolLoopAgent_PerCallZeroTimeoutClearsReusableTimeout(t *testing.T) {
 	model := &mockModel{streamFunc: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
 		return &provider.StreamResult{Stream: stallingStreamParts(100 * time.Millisecond)}, nil

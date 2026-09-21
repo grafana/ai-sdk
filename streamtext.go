@@ -604,7 +604,7 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 		if activeToolsSet {
 			provTools = filterProviderTools(provTools, activeTools)
 		}
-		if toolChoice == nil && len(provTools) > 0 {
+		if toolChoice == nil {
 			auto := provider.ToolChoice{Type: provider.ToolChoiceAuto}
 			toolChoice = &auto
 		}

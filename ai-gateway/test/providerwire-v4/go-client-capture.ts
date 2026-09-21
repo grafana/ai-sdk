@@ -1,3 +1,4 @@
+import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
 import { join, resolve } from "node:path";
 import nodeProcess from "node:process";
@@ -8,6 +9,24 @@ export function buildGoClientCapture(directory: string, sourceDirectory = resolv
     cwd: sourceDirectory,
     env: { ...nodeProcess.env, GOWORK: "off", GOFLAGS: "-mod=readonly" },
     stdio: "pipe",
+  });
+  return binary;
+}
+
+export function buildGoStreamTextCapture(directory: string): string {
+  const root = resolve(import.meta.dirname, "../../..");
+  const env = { ...nodeProcess.env, GOWORK: join(root, "go.work"), GOFLAGS: "-mod=readonly" };
+  for (const [module, path] of [
+    ["github.com/grafana/ai-sdk", root],
+    ["github.com/grafana/ai-sdk/providers/grafana", join(root, "providers/grafana")],
+  ] as const) {
+    const selected = JSON.parse(execFileSync("go", ["list", "-m", "-json", module], { cwd: root, env, encoding: "utf8" }));
+    assert.equal(selected.Dir, path, "high-level probe must use the changed local source");
+    assert.equal(selected.Main, true);
+  }
+  const binary = join(directory, "go-stream-text-capture");
+  execFileSync("go", ["build", "-o", binary, "./providers/grafana/internal/capture/testdata/streamtext/main.go"], {
+    cwd: root, env, stdio: "pipe",
   });
   return binary;
 }
