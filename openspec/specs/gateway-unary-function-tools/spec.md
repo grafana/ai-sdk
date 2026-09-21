@@ -54,7 +54,7 @@ Unary output SHALL preserve ordered text and client-executed function tool calls
 - **THEN** no partial HTTP 200 SHALL be committed and the fixed safe error SHALL be returned
 
 ### Requirement: Unary function tools remain direct and stateless
-The Gateway SHALL not execute application functions or persist tool-loop state. A direct route SHALL accept supported unary tool requests. Streaming tool requests SHALL remain unsupported until WP12. If WP9 is present, fallback-configured routes SHALL reject definitions, choices or tool history before physical invocation.
+The Gateway SHALL not execute application functions or persist tool-loop state. A direct route SHALL accept supported unary tool requests. Streaming tool requests SHALL remain unsupported until WP12. If WP9 is present, fallback-configured routes SHALL reject nonempty definitions, non-automatic choices, and tool history before physical invocation. An otherwise supported text request with absent or empty tools and omitted or pure automatic choice SHALL remain eligible for fallback under gateway-ordered-text-fallback.
 
 #### Scenario: Two-call unary continuation
 - **WHEN** an application executes a returned tool locally and sends the call plus result in a second unary request
@@ -63,6 +63,10 @@ The Gateway SHALL not execute application functions or persist tool-loop state. 
 #### Scenario: Fallback route receives tool history
 - **WHEN** a supported unary tool continuation targets a fallback-configured route
 - **THEN** no candidate SHALL execute and the response SHALL be a fixed safe unsupported-request error
+
+#### Scenario: Fallback route receives text-only automatic choice
+- **WHEN** an otherwise supported text request contains automatic choice with no tool name and absent or empty tools
+- **THEN** the original automatic choice SHALL reach each attempted physical candidate unchanged
 
 ### Requirement: Unary tools extend logical observation without content capture
 Supported unary tool calls SHALL use the single WP8 logical chain and finalize one generation per HTTP invocation with canonical identity, approved context, usage, normalized finish, timing and safe error state. Gateway metadata-only exports, logs and metrics SHALL omit tool definitions, names, IDs, schemas, inputs/results, options, private backend identity and raw errors. Reusable observation mapping SHALL remain provider-domain based.
