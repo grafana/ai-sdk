@@ -49,12 +49,15 @@ func TypedTool[I, O any](def TypedToolDef[I, O]) (tool Tool, err error) {
 	}
 
 	var examples []json.RawMessage
-	for i, ex := range def.InputExamples {
-		data, err := json.Marshal(ex)
-		if err != nil {
-			return Tool{}, fmt.Errorf("aisdk: marshaling input example %d: %w", i, err)
+	if def.InputExamples != nil {
+		examples = make([]json.RawMessage, 0, len(def.InputExamples))
+		for i, ex := range def.InputExamples {
+			data, err := json.Marshal(ex)
+			if err != nil {
+				return Tool{}, fmt.Errorf("aisdk: marshaling input example %d: %w", i, err)
+			}
+			examples = append(examples, data)
 		}
-		examples = append(examples, data)
 	}
 
 	tool = Tool{

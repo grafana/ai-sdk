@@ -19,7 +19,7 @@
     "ResponseFormatType": "string",
     "Role": "string",
     "SourceType": "string",
-    "Tool": "struct {\n\tType ToolType `json:\"type\"`\n\tName string   `json:\"name\"`\n\n\tDescription   string          `json:\"description,omitempty\"`\n\tInputSchema   json.RawMessage `json:\"inputSchema,omitempty\"`\n\tInputExamples []InputExample  `json:\"inputExamples,omitempty\"`\n\tStrict        *bool           `json:\"strict,omitempty\"`\n\n\tID   string                     `json:\"id,omitempty\"`\n\tArgs map[string]json.RawMessage `json:\"args,omitempty\"`\n\n\tProviderOptions ProviderOptions `json:\"providerOptions,omitempty\"`\n}",
+    "Tool": "struct {\n\tType ToolType `json:\"type\"`\n\tName string   `json:\"name\"`\n\n\tDescription   string          `json:\"description,omitempty\"`\n\tInputSchema   json.RawMessage `json:\"inputSchema,omitempty\"`\n\tInputExamples []InputExample  `json:\"inputExamples,omitzero\"`\n\tStrict        *bool           `json:\"strict,omitempty\"`\n\n\tID   string                     `json:\"id,omitempty\"`\n\tArgs map[string]json.RawMessage `json:\"args,omitempty\"`\n\n\tProviderOptions ProviderOptions `json:\"providerOptions,omitempty\"`\n}",
     "ToolChoice": "struct {\n\tType     ToolChoiceType `json:\"type\"`\n\tToolName string         `json:\"toolName,omitempty\"`\n}",
     "ToolChoiceType": "string",
     "ToolResultContentType": "string",

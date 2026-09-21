@@ -17,6 +17,38 @@ import (
 
 const unaryFixture = `{"content":[{"type":"text","text":"hello"},{"type":"text","text":""}],"finishReason":{"unified":"stop","raw":"end_turn"},"usage":{"inputTokens":{"total":2,"noCache":2,"cacheRead":0,"cacheWrite":0},"outputTokens":{"total":1,"text":1,"reasoning":0}}}`
 
+func TestDecodeGenerate_FunctionCalls(t *testing.T) {
+	for _, input := range []string{"", "{}", "{\"city\":\"Rio\"}"} {
+		encoded, err := json.Marshal(input)
+		require.NoError(t, err)
+		body := `{"content":[{"type":"text","text":""},{"type":"tool-call","toolCallId":"call","toolName":"weather","input":` + string(encoded) + `}],"finishReason":{"unified":"tool-calls"},"usage":{"inputTokens":{},"outputTokens":{}}}`
+		result, err := decodeGenerate([]byte(body))
+		require.NoError(t, err)
+		require.Len(t, result.Content, 2)
+		assert.Equal(t, input, string(result.Content[1].Input))
+		assert.Equal(t, "call", result.Content[1].ToolCallID)
+		for _, marker := range []string{"providerExecuted", "dynamic"} {
+			marked := strings.Replace(body, `"toolName":"weather"`, `"toolName":"weather","`+marker+`":true`, 1)
+			_, err := decodeGenerate([]byte(marked))
+			require.Error(t, err)
+		}
+	}
+}
+
+func TestDecodeGenerate_FunctionCallRequiredFields(t *testing.T) {
+	for _, content := range []string{
+		`{"type":"tool-call","toolName":"f","input":""}`,
+		`{"type":"tool-call","toolCallId":"a","input":""}`,
+		`{"type":"tool-call","toolCallId":"a","toolName":"f"}`,
+		`{"type":"tool-call","toolCallId":"a","toolName":"f","input":null}`,
+		`{"type":"tool-call","toolCallId":"a","toolName":"f","input":{}}`,
+	} {
+		body := `{"content":[` + content + `],"finishReason":{"unified":"tool-calls"},"usage":{"inputTokens":{},"outputTokens":{}}}`
+		_, err := decodeGenerate([]byte(body))
+		require.Error(t, err)
+	}
+}
+
 func TestModel_GenerateRequestAndNormalization(t *testing.T) {
 	var calls atomic.Int32
 	p := testProvider(t, func(w http.ResponseWriter, r *http.Request) {

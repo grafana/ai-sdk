@@ -47,9 +47,14 @@ type wireMessage struct {
 }
 
 type wirePart struct {
-	Type            provider.ContentPartType   `json:"type"`
-	Text            string                     `json:"text"`
-	ProviderOptions map[string]json.RawMessage `json:"providerOptions"`
+	Type             provider.ContentPartType   `json:"type"`
+	Text             string                     `json:"text"`
+	ProviderOptions  map[string]json.RawMessage `json:"providerOptions"`
+	ToolCallID       string                     `json:"toolCallId"`
+	ToolName         string                     `json:"toolName"`
+	Input            json.RawMessage            `json:"input"`
+	Output           *wireToolOutput            `json:"output"`
+	ProviderExecuted bool                       `json:"providerExecuted"`
 }
 
 type wireResponseFormat struct {
@@ -68,7 +73,7 @@ const (
 	wireReasoningXHigh           wireReasoning = "xhigh"
 )
 
-func mapWireRequest(body []byte) (provider.CallOptions, *requestFailure) {
+func mapWireRequest(body []byte, modes ...executionMode) (provider.CallOptions, *requestFailure) {
 	var request wireRequest
 	if err := json.Unmarshal(body, &request); err != nil {
 		return provider.CallOptions{}, invalidMappingFailure()
@@ -84,8 +89,9 @@ func mapWireRequest(body []byte) (provider.CallOptions, *requestFailure) {
 		StopSequences:    request.StopSequences,
 		Seed:             request.Seed,
 	}
+	toolsEnabled := len(modes) == 0 || modes[0] == executionUnary
 	for _, wireMessage := range request.Prompt {
-		message, failure := mapWireMessage(wireMessage)
+		message, failure := mapWireMessage(wireMessage, toolsEnabled)
 		if failure != nil {
 			return provider.CallOptions{}, failure
 		}
@@ -96,7 +102,14 @@ func mapWireRequest(body []byte) (provider.CallOptions, *requestFailure) {
 		return provider.CallOptions{}, unsupportedMappingFailure(capabilityBodyHeaders)
 	}
 	if len(request.Tools) > 0 || len(request.ToolChoice) > 0 {
-		return provider.CallOptions{}, unsupportedMappingFailure(capabilityTools)
+		if !toolsEnabled {
+			return provider.CallOptions{}, unsupportedMappingFailure(capabilityTools)
+		}
+		tools, choice, failure := mapFunctionTools(request.Tools, request.ToolChoice)
+		if failure != nil {
+			return provider.CallOptions{}, failure
+		}
+		options.Tools, options.ToolChoice = tools, choice
 	}
 	if request.ResponseFormat != nil {
 		switch request.ResponseFormat.Type {
@@ -123,7 +136,7 @@ func mapWireRequest(body []byte) (provider.CallOptions, *requestFailure) {
 	return options, nil
 }
 
-func mapWireMessage(message wireMessage) (provider.Message, *requestFailure) {
+func mapWireMessage(message wireMessage, toolsEnabled bool) (provider.Message, *requestFailure) {
 	if !providerOptionsEmpty(message.ProviderOptions) {
 		return provider.Message{}, unsupportedMappingFailure(capabilityProviderOptions)
 	}
@@ -135,14 +148,14 @@ func mapWireMessage(message wireMessage) (provider.Message, *requestFailure) {
 			return provider.Message{}, invalidMappingFailure()
 		}
 		return provider.NewSystemMessage(text), nil
-	case provider.RoleUser, provider.RoleAssistant:
+	case provider.RoleUser, provider.RoleAssistant, provider.RoleTool:
 		var wireParts []wirePart
 		if err := json.Unmarshal(message.Content, &wireParts); err != nil {
 			return provider.Message{}, invalidMappingFailure()
 		}
 		parts := make([]provider.ContentPart, 0, len(wireParts))
 		for _, wirePart := range wireParts {
-			part, failure := mapWirePart(wirePart)
+			part, failure := mapWirePart(wirePart, message.Role, toolsEnabled)
 			if failure != nil {
 				return provider.Message{}, failure
 			}
@@ -151,24 +164,16 @@ func mapWireMessage(message wireMessage) (provider.Message, *requestFailure) {
 		if message.Role == provider.RoleUser {
 			return provider.NewUserMessage(parts...), nil
 		}
+		if message.Role == provider.RoleTool {
+			return provider.NewToolMessage(parts...), nil
+		}
 		return provider.NewAssistantMessage(parts...), nil
-	case provider.RoleTool:
-		var wireParts []wirePart
-		if err := json.Unmarshal(message.Content, &wireParts); err != nil {
-			return provider.Message{}, invalidMappingFailure()
-		}
-		for _, part := range wireParts {
-			if part.Type == provider.ContentPartTypeToolApprovalResponse {
-				return provider.Message{}, unsupportedMappingFailure(capabilityToolApprovals)
-			}
-		}
-		return provider.Message{}, unsupportedMappingFailure(capabilityTools)
 	default:
 		return provider.Message{}, invalidMappingFailure()
 	}
 }
 
-func mapWirePart(part wirePart) (provider.ContentPart, *requestFailure) {
+func mapWirePart(part wirePart, role provider.Role, toolsEnabled bool) (provider.ContentPart, *requestFailure) {
 	if !providerOptionsEmpty(part.ProviderOptions) {
 		return provider.ContentPart{}, unsupportedMappingFailure(capabilityProviderOptions)
 	}
@@ -181,8 +186,23 @@ func mapWirePart(part wirePart) (provider.ContentPart, *requestFailure) {
 		return provider.ContentPart{}, unsupportedMappingFailure(capabilityReasoningContent)
 	case provider.ContentPartTypeCustom:
 		return provider.ContentPart{}, unsupportedMappingFailure(capabilityCustomContent)
-	case provider.ContentPartTypeToolCall, provider.ContentPartTypeToolResult:
-		return provider.ContentPart{}, unsupportedMappingFailure(capabilityTools)
+	case provider.ContentPartTypeToolCall:
+		if !toolsEnabled || part.ProviderExecuted {
+			return provider.ContentPart{}, unsupportedMappingFailure(capabilityTools)
+		}
+		if role != provider.RoleAssistant {
+			return provider.ContentPart{}, invalidMappingFailure()
+		}
+		return provider.ToolCallPart(part.ToolCallID, part.ToolName, part.Input), nil
+	case provider.ContentPartTypeToolResult:
+		if !toolsEnabled || role != provider.RoleTool {
+			return provider.ContentPart{}, unsupportedMappingFailure(capabilityTools)
+		}
+		output, failure := mapToolOutput(part.Output)
+		if failure != nil {
+			return provider.ContentPart{}, failure
+		}
+		return provider.ToolResultPart(part.ToolCallID, part.ToolName, output), nil
 	case provider.ContentPartTypeToolApprovalResponse, provider.ContentPartTypeToolApprovalRequest:
 		return provider.ContentPart{}, unsupportedMappingFailure(capabilityToolApprovals)
 	default:

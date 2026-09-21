@@ -435,12 +435,22 @@ func TestTypedTool_InputExamples(t *testing.T) {
 		assert.Equal(t, "Tokyo", ex1.City)
 	})
 
-	t.Run("EmptyExamples", func(t *testing.T) {
+	t.Run("OmittedExamples", func(t *testing.T) {
 		tool, err := TypedTool(TypedToolDef[weatherInput, weatherOutput]{
 			Description: "weather",
 		})
 		require.NoError(t, err)
 		assert.Nil(t, tool.InputExamples)
+	})
+
+	t.Run("ExplicitEmptyExamples", func(t *testing.T) {
+		tool, err := TypedTool(TypedToolDef[weatherInput, weatherOutput]{
+			Description:   "weather",
+			InputExamples: []weatherInput{},
+		})
+		require.NoError(t, err)
+		assert.NotNil(t, tool.InputExamples)
+		assert.Empty(t, tool.InputExamples)
 	})
 
 	t.Run("MarshalFailure", func(t *testing.T) {
@@ -459,8 +469,9 @@ func TestTypedTool_InputExamples(t *testing.T) {
 
 func TestTypedTool_ToolSetIntegration(t *testing.T) {
 	def := TypedToolDef[weatherInput, weatherOutput]{
-		Name:        "weather",
-		Description: "Get current weather",
+		Name:          "weather",
+		Description:   "Get current weather",
+		InputExamples: []weatherInput{},
 		Execute: func(_ context.Context, input weatherInput, _ ToolExecutionOptions) (weatherOutput, error) {
 			return weatherOutput{Temp: 72, Unit: "F"}, nil
 		},
@@ -475,4 +486,9 @@ func TestTypedTool_ToolSetIntegration(t *testing.T) {
 
 	assert.Contains(t, tools, "weather")
 	assert.Equal(t, "Get current weather", tools["weather"].Description)
+	providerTools, warnings := toolSetToProviderTools(tools)
+	assert.Empty(t, warnings)
+	require.Len(t, providerTools, 1)
+	assert.NotNil(t, providerTools[0].InputExamples)
+	assert.Empty(t, providerTools[0].InputExamples)
 }

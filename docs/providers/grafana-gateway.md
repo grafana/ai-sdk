@@ -9,10 +9,25 @@ go get github.com/grafana/ai-sdk/providers/grafana
 ```
 
 The client module is Apache-2.0 and does not depend on the Gateway service
-module. Its current executable response family is text. Requests preserve
+module. Its executable response family includes text and unary function calls. Requests preserve
 representable provider options, files, tools, and structured-output settings;
 the deployed Gateway decides which capabilities it can execute and returns a
 public invalid-request error for unsupported calls.
+
+## Function tools
+
+Direct routes support unary client-executed function tools. Definitions preserve
+`strict: false`, examples, object schemas, and ordinary provider options;
+Gateway-reserved option namespaces remain rejected. History accepts assistant
+calls and text, JSON (including null), error-text, error-JSON, and text-only
+content results, preserving required selected empty values. The application
+executes tools and supplies call/result history on a later independent request.
+The Gateway never executes a tool. Provider-executed/dynamic tools, approvals,
+preliminary results and media results remain unsupported. Logical telemetry
+removes tool-bearing definitions, choices, inputs and outputs before export.
+
+Streaming function tools remain deferred to WP12. Ordered fallback routes
+reject tool definitions, choice and history before any physical invocation.
 
 ## Connect with an access token
 

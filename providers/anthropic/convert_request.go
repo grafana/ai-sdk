@@ -146,7 +146,7 @@ func rawToolInputSchema(schema map[string]any) anthropic.BetaToolInputSchemaPara
 	if schema == nil {
 		return anthropic.BetaToolInputSchemaParam{}
 	}
-	return anthropic.BetaToolInputSchemaParam{ExtraFields: schema}
+	return param.Override[anthropic.BetaToolInputSchemaParam](schema)
 }
 
 type providerCapabilities struct {
@@ -1855,6 +1855,9 @@ func serializeToolOutput(output *provider.ToolResultOutput, warnings *[]provider
 			{OfText: &anthropic.BetaTextBlockParam{Text: reason}},
 		}
 	case provider.ToolOutputContent:
+		if output.Content != nil && len(output.Content) == 0 {
+			return []anthropic.BetaToolResultBlockParamContentUnion{}
+		}
 		var blocks []anthropic.BetaToolResultBlockParamContentUnion
 		for _, v := range output.Content {
 			switch v.Type {
@@ -2072,7 +2075,7 @@ func convertToolsWithStrictTools(v *cacheControlValidator, tools []provider.Tool
 			if toolOpts.DeferLoading != nil {
 				tp.DeferLoading = anthropic.Bool(*toolOpts.DeferLoading)
 			}
-			if len(toolOpts.AllowedCallers) > 0 {
+			if toolOpts.AllowedCallers != nil {
 				tp.AllowedCallers = toolOpts.AllowedCallers
 				betaSet["advanced-tool-use-2025-11-20"] = struct{}{}
 			}
@@ -2091,15 +2094,15 @@ func convertToolsWithStrictTools(v *cacheControlValidator, tools []provider.Tool
 				tp.EagerInputStreaming = anthropic.Bool(true)
 			}
 
-			if len(t.InputExamples) > 0 {
-				var examples []map[string]any
+			if t.InputExamples != nil {
+				examples := make([]map[string]any, 0, len(t.InputExamples))
 				for _, ex := range t.InputExamples {
 					var m map[string]any
 					if json.Unmarshal(ex.Input, &m) == nil {
 						examples = append(examples, m)
 					}
 				}
-				if len(examples) > 0 {
+				if len(t.InputExamples) == 0 || len(examples) > 0 {
 					tp.InputExamples = examples
 					betaSet["advanced-tool-use-2025-11-20"] = struct{}{}
 				}
