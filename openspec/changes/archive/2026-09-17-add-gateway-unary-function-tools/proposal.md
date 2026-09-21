@@ -5,7 +5,7 @@ WP11 (#105) lets authenticated clients define function tools, receive unary tool
 ## What Changes
 
 - Enable unary function definitions, choices, assistant tool-call history and tool-role selected results through explicit strict mapping.
-- Preserve required empty values, opaque JSON, and presence-aware Strict; normalize absent/empty descriptions.
+- Preserve required empty values, opaque JSON, presence-aware Strict, and absent-versus-explicit-empty tool arrays; normalize absent/empty descriptions.
 - Extend the existing private unary encoder, independent Go client, direct provider validation/conversion, and metadata-only logical observation.
 - Keep streaming tools unsupported until WP12 and tools on fallback-configured routes unsupported until replay/idempotency is specified.
 - Prove equivalent unary round trips with the exact registered Vercel and Go clients.

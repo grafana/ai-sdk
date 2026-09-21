@@ -13,6 +13,8 @@ The Anthropic provider's `convertTools()` function SHALL extract Anthropic-speci
 
 If the `"anthropic"` key is absent, the options SHALL be treated as empty. If the value is a `RawProviderOption` with malformed JSON, the options SHALL be treated as empty (no error produced).
 
+`AnthropicToolOptions.AllowedCallers` SHALL use presence-preserving JSON semantics: nil SHALL be omitted, while an explicitly empty non-nil slice SHALL serialize as `"allowedCallers": []`. This distinction SHALL survive a `ProviderOptions` JSON round trip and `ResolveOption[AnthropicToolOptions]`.
+
 #### Scenario: Tool with deferLoading enabled
 
 - **WHEN** `convertTools()` receives a function tool with `ProviderOptions["anthropic"]` set to an `AnthropicToolOptions{DeferLoading: true}`
@@ -22,6 +24,11 @@ If the `"anthropic"` key is absent, the options SHALL be treated as empty. If th
 
 - **WHEN** `convertTools()` receives a function tool with `ProviderOptions["anthropic"]` set to an `AnthropicToolOptions{AllowedCallers: ["direct", "code_execution_20250825"]}`
 - **THEN** the resulting `BetaToolParam` SHALL have `AllowedCallers` set to `["direct", "code_execution_20250825"]`
+
+#### Scenario: Tool with explicitly empty allowedCallers
+
+- **WHEN** typed `AnthropicToolOptions{AllowedCallers: []string{}}` is serialized through `ProviderOptions` and resolved again
+- **THEN** `AllowedCallers` SHALL remain a non-nil empty slice and the resulting native tool SHALL contain an empty `allowed_callers` array
 
 #### Scenario: Tool with eagerInputStreaming enabled
 
@@ -154,15 +161,20 @@ The `convertTools()` function SHALL NOT extract `AnthropicToolOptions` or `Input
 ### Requirement: Beta header auto-detection
 
 The `convertTools()` function SHALL return a list of required beta header strings alongside the converted tools and warnings. The following auto-detection rules SHALL apply:
-- When any function tool has non-nil `InputExamples`, add `"advanced-tool-use-2025-11-20"`
+- When any function tool has an explicitly empty `InputExamples` slice or at least one input example that converts successfully, add `"advanced-tool-use-2025-11-20"`
 - When any function tool has non-nil `AllowedCallers` (from `AnthropicToolOptions`), add `"advanced-tool-use-2025-11-20"`
 
 The caller SHALL merge auto-detected betas with any explicit betas from `AnthropicOptions.Betas` and apply them as the `anthropic-beta` request header, deduplicating entries.
 
 #### Scenario: Beta auto-detection for inputExamples
 
-- **WHEN** `convertTools()` receives a function tool with non-nil `InputExamples`
+- **WHEN** `convertTools()` receives a function tool with an explicitly empty `InputExamples` slice or at least one input example that converts successfully
 - **THEN** the returned betas list SHALL include `"advanced-tool-use-2025-11-20"`
+
+#### Scenario: All input examples are malformed
+
+- **WHEN** `convertTools()` receives a non-empty `InputExamples` slice whose entries all fail conversion
+- **THEN** those entries SHALL be omitted and the input-examples field SHALL NOT itself select `"advanced-tool-use-2025-11-20"`
 
 #### Scenario: Beta auto-detection for allowedCallers
 

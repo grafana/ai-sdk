@@ -5,7 +5,12 @@ Unary mapping SHALL support function names, object schemas, examples, optional d
 
 #### Scenario: Strict false and empty description
 - **WHEN** a unary definition contains strict false, empty description, empty schema and empty examples
-- **THEN** strict false and selected empty schema SHALL survive and description SHALL normalize consistently in both clients and provider mapping
+- **THEN** strict false, selected empty schema and the explicitly empty examples array SHALL survive while description normalizes consistently in both clients and provider mapping
+
+#### Scenario: Independent explicit-empty Anthropic options
+- **WHEN** a unary function definition supplies either `inputExamples: []` or Anthropic `allowedCallers: []` without the other field
+- **THEN** the selected empty array SHALL reach the native Anthropic request and independently select the `advanced-tool-use-2025-11-20` beta
+- **AND** in the absence of another beta source, omitting both fields SHALL omit both native arrays and SHALL NOT select that beta
 
 #### Scenario: Mixed function and provider fields
 - **WHEN** a function definition also contains provider-tool id or args

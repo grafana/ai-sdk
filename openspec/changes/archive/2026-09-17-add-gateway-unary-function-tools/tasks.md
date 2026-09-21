@@ -66,3 +66,18 @@ WP11's local capability acceptance is complete. Its archive does not assert
 that WP9 has landed, that the resulting restacked head has passed hosted checks,
 or that production activation is authorized. Those handoff conditions remain
 separate; production activation is deferred to WP10.
+
+Review reconciliation, 2026-09-21:
+
+- Nara's review established that upstream preserves present empty
+  `inputExamples` and `allowedCallers` arrays and selects the advanced-tool-use
+  beta for either field independently.
+- Root and typed-tool conversion now preserve slice nilness instead of
+  allocating or collapsing empty slices. JSON boundaries use `omitzero`; no
+  shadow presence flag or wrapper is retained.
+- Native Gateway tests cover omitted, empty-input-examples-only and
+  empty-allowed-callers-only requests, including exact array presence and beta
+  selection. Root, isolated provider/Gateway, parity, conformance and fresh-cache
+  module-resolution checks passed locally for the behavior commits; their
+  published stack also passed hosted checks before this documentation
+  reconciliation.

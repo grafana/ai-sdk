@@ -16,7 +16,7 @@ type Tool struct {
     Name            string                     `json:"name"`
     Description     string                     `json:"description,omitempty"`
     InputSchema     json.RawMessage            `json:"inputSchema,omitempty"`
-    InputExamples   []InputExample             `json:"inputExamples,omitempty"`
+    InputExamples   []InputExample             `json:"inputExamples,omitzero"`
     Strict          *bool                      `json:"strict,omitempty"`
     ID              string                     `json:"id,omitempty"`
     Args            map[string]json.RawMessage `json:"args,omitempty"`
@@ -41,6 +41,10 @@ The `Type` field SHALL be either `ToolTypeFunction` or `ToolTypeProvider`. The p
 #### Scenario: Strict preserves all optional states
 - **WHEN** function-typed tools set `Strict` to nil, a pointer to true, and a pointer to false
 - **THEN** JSON encoding and decoding SHALL preserve absent, true, and false as distinct states
+
+#### Scenario: Input examples preserve presence through JSON
+- **WHEN** function-typed tools set `InputExamples` to nil, an explicitly empty non-nil slice, and a populated slice
+- **THEN** JSON encoding and decoding SHALL preserve omitted, empty-array, and populated-array states respectively
 
 #### Scenario: Provider tool round-trips
 - **WHEN** a provider-typed `Tool` with `ID` and `Args` is marshaled and unmarshaled
@@ -121,3 +125,7 @@ The `toolSetToProviderTools` function SHALL convert `aisdk.Tool` entries into th
 #### Scenario: InputExamples wrapping during conversion
 - **WHEN** `toolSetToProviderTools` converts a function tool with `InputExamples` containing raw JSON values
 - **THEN** each raw JSON value SHALL be wrapped in an `InputExample{Input: <raw>}` in the resulting `Tool.InputExamples`
+
+#### Scenario: InputExamples presence during conversion
+- **WHEN** `toolSetToProviderTools` converts function tools whose `InputExamples` are nil and explicitly empty
+- **THEN** the resulting `provider.Tool.InputExamples` SHALL remain nil and non-nil empty respectively
