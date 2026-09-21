@@ -16,11 +16,12 @@ func TestModel_DefaultJSONToolRoute(t *testing.T) {
 	for _, tc := range []struct {
 		modelID  string
 		fallback bool
+		adaptive bool
 	}{
-		{"anthropic.claude-sonnet-4-6", true},
-		{"us.anthropic.claude-haiku-4-5-20251001-v1:0", true},
-		{testAnthropicModel, false},
-		{"anthropic.claude-opus-4-6-v1", false},
+		{"anthropic.claude-sonnet-4-6", true, true},
+		{"us.anthropic.claude-haiku-4-5-20251001-v1:0", true, false},
+		{testAnthropicModel, false, false},
+		{"anthropic.claude-opus-4-6-v1", false, true},
 	} {
 		for _, thinking := range []bool{false, true} {
 			for _, streaming := range []bool{false, true} {
@@ -98,6 +99,19 @@ func TestModel_DefaultJSONToolRoute(t *testing.T) {
 					if tc.fallback || len(metadata["amazonBedrock"]) > 0 {
 						require.NoError(t, json.Unmarshal(metadata["amazonBedrock"], &extras))
 					}
+					fields, _ := request["additionalModelRequestFields"].(map[string]any)
+					if thinking {
+						require.NotNil(t, fields)
+						if tc.adaptive {
+							assert.Equal(t, map[string]any{"type": "adaptive"}, fields["thinking"])
+							output, _ := fields["output_config"].(map[string]any)
+							assert.Equal(t, "high", output["effort"])
+						} else {
+							assert.Equal(t, map[string]any{"type": "enabled", "budget_tokens": float64(38400)}, fields["thinking"])
+						}
+					} else {
+						assert.NotContains(t, fields, "thinking")
+					}
 					toolConfig := request["toolConfig"].(map[string]any)
 					tools := toolConfig["tools"].([]any)
 					assert.Equal(t, true, tools[0].(map[string]any)["toolSpec"].(map[string]any)["strict"])
@@ -106,15 +120,12 @@ func TestModel_DefaultJSONToolRoute(t *testing.T) {
 						require.Len(t, tools, 2)
 						assert.Equal(t, "json", tools[1].(map[string]any)["toolSpec"].(map[string]any)["name"])
 						assert.Equal(t, map[string]any{"any": map[string]any{}}, toolConfig["toolChoice"])
-						if fields, ok := request["additionalModelRequestFields"].(map[string]any); ok {
-							if output, ok := fields["output_config"].(map[string]any); ok {
-								assert.NotContains(t, output, "format")
-							}
+						if output, ok := fields["output_config"].(map[string]any); ok {
+							assert.NotContains(t, output, "format")
 						}
 					} else {
 						assert.NotEqual(t, true, extras["isJsonResponseFromTool"])
 						require.Len(t, tools, 1)
-						fields := request["additionalModelRequestFields"].(map[string]any)
 						assert.Contains(t, fields["output_config"], "format")
 					}
 				})

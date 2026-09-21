@@ -97,7 +97,7 @@ Prefer authentic existing or exact-version upstream inputs when a request scenar
 
 Run candidate generation/replay early in a disposable integration worktree using the fixed coherent target set. Preserve temporary probes, raw results and snapshot diffs outside the repository; keep only concise validation/provenance and scenario ownership in the change and PR description. Do not write target expectations beneath old-baseline provenance. PR 1 owns scenario design, generators/configuration where applicable, focused tests, and executed comparisons; PR 7 owns canonical target snapshots and pins.
 
-Inventory affected `expected-requests.jsonl` and any warning/output snapshots, identifying unchanged goldens as well as deltas and missing authentic fixtures. Run current-baseline `mise run parity-check` too. Explain expected version-related failures by scenario, cause, and PR 7 resolution; unexplained failures block review. No check weakening or compatibility switches. No frontend integration addition is expected for request-only changes; if observable UI wire behavior changes, stop and reassess the boundary and cross-language coverage.
+Inventory affected `expected-requests.jsonl` and any warning/output snapshots, identifying unchanged goldens as well as deltas and missing authentic fixtures. Run current-baseline `mise run parity-check` too. Explain expected version-related failures by scenario, cause, capability fix owner, and PR 7 certification handoff; unexplained failures block review. No check weakening or compatibility switches. No frontend integration addition is expected for request-only changes; if observable UI wire behavior changes, stop and reassess the boundary and cross-language coverage.
 
 ## Risks / Trade-offs
 
@@ -110,7 +110,7 @@ Inventory affected `expected-requests.jsonl` and any warning/output snapshots, i
 
 ## Migration Plan
 
-No data migration or public API migration is planned. Implement incrementally with tests, then review this scoped PR against its predecessor. Reconcile durable ahead-of-baseline deviations/coverage gaps in `PARITY.md` or `upstream.yaml` without changing the registered package set. Keep the detailed delta ledger and candidate artifact links in the PR description.
+No data migration or public API migration is planned. Implement incrementally with tests, then review this scoped PR against its predecessor. Reconcile durable ahead-of-baseline deviations/coverage gaps in `PARITY.md` or `upstream.yaml` without changing the registered package set. Keep concise validation/provenance and residual-owner summaries in the PR description; preserve detailed temporary evidence outside the repository.
 
 Hand off request helper contracts to PR 2 without changing its response/history ownership, and request selection representation to PR 3 without taking execution-policy ownership. Hand PR 7 scenario IDs, target source versions, candidate request deltas, coverage gaps, and current-baseline failure explanations. Archive the single active OpenSpec change before merge. If old-baseline checks cannot pass honestly, preserve scoped review and land the validated cumulative stack atomically under the plan. Rollback reverts behavior and its associated tests/evidence together; never leave stale enforced snapshots.
 

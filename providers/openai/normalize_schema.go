@@ -54,6 +54,7 @@ func normalizeSchemaNode(value any) (bool, error) {
 	}
 	for _, keyword := range []string{"additionalProperties", "additionalItems", "items", "contains", "not", "allOf", "anyOf", "oneOf", "if", "then", "else"} {
 		switch definition := schema[keyword].(type) {
+		case nil:
 		case []any:
 			nested = append(nested, definition...)
 		default:
