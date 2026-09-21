@@ -122,7 +122,9 @@ func Run(ctx context.Context, args []string, lookupEnv config.LookupEnv, listen 
 		agentRuntime.Close()
 		return err
 	}
-	modelCatalog, err := service.BuildCatalog(file, resolvedProviders, anthropicClient, modelFactory)
+	physicalSink := service.NewPhysicalAttemptSink(telemetry)
+	defer physicalSink.Close()
+	modelCatalog, err := service.BuildCatalog(file, resolvedProviders, anthropicClient, modelFactory, physicalSink)
 	if err != nil {
 		agentRuntime.Close()
 		return err
@@ -180,7 +182,10 @@ func Run(ctx context.Context, args []string, lookupEnv config.LookupEnv, listen 
 			},
 		})
 	}
-	return Serve(ctx, cancelProcess, servers, readiness, telemetry, logger, settings.ShutdownTimeout, agentRuntime.Close)
+	return Serve(ctx, cancelProcess, servers, readiness, telemetry, logger, settings.ShutdownTimeout, func() {
+		physicalSink.Close()
+		agentRuntime.Close()
+	})
 }
 
 type boundServer struct {

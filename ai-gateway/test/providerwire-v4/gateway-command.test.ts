@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
+import { generateKeyPairSync, sign } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, request as httpRequest, type IncomingMessage, type ServerResponse } from "node:http";
 import { createServer as createNetServer } from "node:net";
@@ -42,6 +43,80 @@ after(() => {
 });
 
 describe("authenticated Anthropic Gateway command", () => {
+  it("preserves authenticated Vercel and Go text behavior across ordered fallback", async () => {
+    const keys = generateKeyPairSync("ec", { namedCurve: "P-256" });
+    const jwk = { ...keys.publicKey.export({ format: "jwk" }), kid: "fallback-test", alg: "ES256", use: "sig" };
+    let keyRequests = 0;
+    const jwks = createServer((_request, response) => {
+      keyRequests++;
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ keys: [jwk] }));
+    });
+    await new Promise<void>(resolve => jwks.listen(0, "127.0.0.1", resolve));
+    const address = jwks.address();
+    assert.ok(address && typeof address !== "string");
+    const header = Buffer.from(JSON.stringify({ alg: "ES256", typ: "at+jwt", kid: "fallback-test" })).toString("base64url");
+    const unsigned = `${header}.${TEST_TOKEN.split(".")[1]}`;
+    const token = `${unsigned}.${sign("sha256", Buffer.from(unsigned), { key: keys.privateKey, dsaEncoding: "ieee-p1363" }).toString("base64url")}`;
+    const primary = await FakeAnthropic.start();
+    const secondary = await FakeAnthropic.start();
+    let gateway: GatewayProcess | undefined;
+    try {
+      gateway = await GatewayProcess.start(binaryPath, primary.url, [`--auth.jwks-url=http://127.0.0.1:${address.port}/jwks`], {}, "access-token", undefined, secondary.url);
+      const base = { baseURL: `${gateway.url}/api/v1/aisdk`, accessToken: token, modelID: "assistant" };
+      const discovery = await captureGoClient(goClientBinaryPath, { ...base, mode: "discovery" });
+      assert.equal(discovery.error, undefined);
+      const client = gateway.client(token);
+      const models = await client.getAvailableModels();
+      assert.deepEqual(models.models.map(model => model.id).sort(), discovery.models.map((model: { id: string }) => model.id).sort());
+      const denied = await captureGoClient(goClientBinaryPath, { ...base, accessToken: "invalid", mode: "generate", options: { prompt: [] } });
+      assert.equal(denied.error?.statusCode, 401);
+      assert.equal(primary.requests.length, 0);
+      assert.equal(secondary.requests.length, 0);
+      for (const row of [
+        { primary: undefined, secondary: undefined, count: 0, status: undefined },
+        { primary: 503, secondary: undefined, count: 1, status: undefined },
+        { primary: 400, secondary: undefined, count: 0, status: 424 },
+        { primary: 503, secondary: 503, count: 1, status: 503 },
+      ]) {
+        primary.failureStatus = row.primary;
+        secondary.failureStatus = row.secondary;
+        for (const mode of ["generate", "stream"] as const) {
+          const options = { prompt: [{ role: "user" as const, content: [{ type: "text" as const, text: "normal-stream" }] }], maxOutputTokens: 32 };
+          const requestCounts: [number, number] = [primary.requests.length, secondary.requests.length];
+          const go = await captureGoClient(goClientBinaryPath, { ...base, mode, options });
+          let result: unknown;
+          let failure: any;
+          try {
+            const model = client("assistant");
+            result = mode === "generate" ? await model.doGenerate(options) : await collectGatewayStream((await model.doStream(options)).stream);
+          } catch (error) { failure = error; }
+          assert.equal(go.error?.statusCode, row.status);
+          assert.equal(failure?.statusCode, row.status);
+          if (row.status === undefined) {
+            assert.ok(JSON.stringify(result).includes("hello from fake Anthropic"));
+            assert.ok(JSON.stringify(go).includes("hello from fake Anthropic"));
+          } else { assert.equal(go.error.isRetryable, failure.isRetryable); }
+          assert.equal(primary.requests.length - requestCounts[0], 2, "every client invocation restarts at primary");
+          assert.equal(secondary.requests.length - requestCounts[1], row.count * 2);
+          if (row.count) {
+            assert.deepEqual(primary.requests.at(-1)?.body, secondary.requests.at(-1)?.body);
+          }
+          assertPrivateValuesAbsent([result, failure, go, discovery, models], primary, [secondary.url, "anthropic-secondary", token]);
+        }
+      }
+      assert.ok(keyRequests > 0);
+      assert.deepEqual(primary.violations, []);
+      assert.deepEqual(secondary.violations, []);
+      const metrics = await (await fetch(`${gateway.url}/metrics`)).text();
+      await gateway.stop();
+      const logicalLogs = gateway.stderr.split("\n").filter(line => !line.includes('"event":"gateway_physical_attempt"')).join("\n");
+      assertPrivateValuesAbsent([logicalLogs, metrics], primary, [secondary.url, "anthropic-secondary", token]);
+    } finally {
+      await settleCleanup(...(gateway ? [() => gateway!.stop()] : []), () => primary.stop(), () => secondary.stop(), () => new Promise<void>(resolve => jwks.close(() => resolve())));
+    }
+  });
+
   it("maps the reachable Go public error matrix for unary and stream setup", async () => {
     const [fake, gateway] = await startGateway();
     const rows = [
@@ -1108,6 +1183,10 @@ function anthropicConfig(url: string): string {
   return `providers:\n  anthropic-primary:\n    type: anthropic\n    apiKeyEnv: GATEWAY_TEST_ANTHROPIC_KEY\n    baseURL: ${url}\nmodels:\n  grafana/assistant:\n    name: Grafana Assistant\n    description: Integration model\n    primary:\n      provider: anthropic-primary\n      model: backend-private\n    aliases:\n      - assistant\n`;
 }
 
+function anthropicFallbackConfig(primaryURL: string, fallbackURL: string): string {
+  return `providers:\n  anthropic-primary:\n    type: anthropic\n    apiKeyEnv: GATEWAY_TEST_ANTHROPIC_KEY\n    baseURL: ${primaryURL}\n  anthropic-secondary:\n    type: anthropic\n    apiKeyEnv: GATEWAY_TEST_ANTHROPIC_KEY\n    baseURL: ${fallbackURL}\nmodels:\n  grafana/assistant:\n    name: Grafana Assistant\n    description: Integration model\n    primary:\n      provider: anthropic-primary\n      model: backend-private\n    fallback:\n      - provider: anthropic-secondary\n        model: backend-private\n    aliases:\n      - assistant\n`;
+}
+
 function assertPrivateValuesAbsent(value: unknown, fake: FakeAnthropic, extra: string[] = []): void {
   const serialized = JSON.stringify(value);
   for (const secret of [TEST_TOKEN, TEST_USER_TOKEN, "integration-cap", "integration-anthropic-key", "GATEWAY_TEST_ANTHROPIC_KEY", "anthropic-primary", "backend-private", "provider-secret-response", fake.url, ...extra]) {
@@ -1157,13 +1236,13 @@ class GatewayProcess {
     });
   }
 
-  static async start(binary: string, anthropicURL: string, extraArgs: string[] = [], extraEnv: Record<string, string> = {}, mode: "access-token" | "cloud-gateway" = "access-token", configYAML = anthropicConfig(anthropicURL)): Promise<GatewayProcess> {
+  static async start(binary: string, anthropicURL: string, extraArgs: string[] = [], extraEnv: Record<string, string> = {}, mode: "access-token" | "cloud-gateway" = "access-token", configYAML = anthropicConfig(anthropicURL), fallbackURL?: string): Promise<GatewayProcess> {
     const directory = mkdtempSync(join(tmpdir(), "grafana-ai-gateway-process-"));
     this.lastFailedDirectory = undefined;
     let gateway: GatewayProcess | undefined;
     try {
       const configPath = join(directory, "models.yaml");
-      writeFileSync(configPath, configYAML);
+      writeFileSync(configPath, fallbackURL ? anthropicFallbackConfig(anthropicURL, fallbackURL) : configYAML);
       const port = await availablePort();
       const url = `http://127.0.0.1:${port}`;
       let operationalPort = port;
@@ -1177,7 +1256,7 @@ class GatewayProcess {
         ...(mode === "cloud-gateway" ? [
           "--auth.mode=cloud-gateway",
           `--server.operational-listen-address=127.0.0.1:${operationalPort}`,
-        ] : ["--auth.unsafe"]),
+        ] : extraArgs.some(arg => arg.startsWith("--auth.jwks-url=")) ? [] : ["--auth.unsafe"]),
         `--server.listen-address=127.0.0.1:${port}`,
         "--server.shutdown-timeout=2s",
         ...extraArgs,
@@ -1217,11 +1296,11 @@ class GatewayProcess {
     }
   }
 
-  client() {
+  client(accessToken = TEST_TOKEN) {
     return createGateway({
       apiKey: "authorization-is-ignored",
       baseURL: `${this.url}/api/v1/aisdk`,
-      headers: { "X-Access-Token": TEST_TOKEN },
+      headers: { "X-Access-Token": accessToken },
     });
   }
 
