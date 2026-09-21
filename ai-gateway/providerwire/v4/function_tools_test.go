@@ -23,10 +23,19 @@ func TestRuntimeUnaryFunctionTools(t *testing.T) {
 	assert.False(t, *options.Tools[0].Strict)
 	assert.JSONEq(t, `{"type":"object"}`, string(options.Tools[0].InputSchema))
 	require.Len(t, options.Tools[0].InputExamples, 1)
+	assert.True(t, options.Tools[0].HasInputExamples())
 	assert.JSONEq(t, `{"city":"Rio"}`, string(options.Tools[0].InputExamples[0].Input))
 	assert.Equal(t, provider.ToolChoiceTool, options.ToolChoice.Type)
 	assert.JSONEq(t, `{"city":"Rio"}`, string(options.Prompt[0].Content[0].Input))
 	assert.Equal(t, "null", string(options.Prompt[1].Content[0].Output.JSON))
+}
+
+func TestMapFunctionTools_PreservesExplicitEmptyInputExamples(t *testing.T) {
+	tools, _, failure := mapFunctionTools([]json.RawMessage{json.RawMessage(`{"type":"function","name":"weather","inputSchema":{"type":"object"},"inputExamples":[]}`)}, nil)
+	require.Nil(t, failure)
+	require.Len(t, tools, 1)
+	assert.Empty(t, tools[0].InputExamples)
+	assert.True(t, tools[0].HasInputExamples())
 }
 
 func TestUnaryFunctionOutput(t *testing.T) {

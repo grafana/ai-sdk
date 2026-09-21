@@ -45,10 +45,11 @@ func mapFunctionTools(rawTools []json.RawMessage, rawChoice json.RawMessage) ([]
 		}
 		tool := provider.Tool{Type: wire.Type, Name: wire.Name, Description: wire.Description, InputSchema: wire.InputSchema, Strict: wire.Strict}
 		if wire.InputExamples != nil {
-			tool.InputExamples = make([]provider.InputExample, 0, len(wire.InputExamples))
+			examples := make([]provider.InputExample, 0, len(wire.InputExamples))
 			for _, example := range wire.InputExamples {
-				tool.InputExamples = append(tool.InputExamples, provider.InputExample{Input: example.Input})
+				examples = append(examples, provider.InputExample{Input: example.Input})
 			}
+			tool.SetInputExamples(examples)
 		}
 		if wire.ProviderOptions != nil {
 			tool.ProviderOptions = make(provider.ProviderOptions, len(wire.ProviderOptions))
