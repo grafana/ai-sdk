@@ -36,7 +36,7 @@ type preparedTools struct {
 // requires routing the `tool_choice` through `additionalModelRequestFields`
 // while still describing the tools in `toolConfig.tools` for validation.
 // Non-Anthropic provider tools are reported as unsupported.
-func prepareTools(tools []provider.Tool, toolChoice *provider.ToolChoice, modelID string) preparedTools {
+func prepareTools(tools []provider.Tool, toolChoice *provider.ToolChoice, modelID string, isAnthropic bool, disableParallelToolUse *bool) preparedTools {
 	res := preparedTools{
 		betas: map[string]struct{}{},
 	}
@@ -60,8 +60,6 @@ func prepareTools(tools []provider.Tool, toolChoice *provider.ToolChoice, modelI
 	if len(supported) == 0 {
 		return res
 	}
-
-	isAnthropic := isAnthropicModel(modelID)
 
 	providerTools := make([]provider.Tool, 0)
 	functionTools := make([]provider.Tool, 0)
@@ -130,43 +128,50 @@ func prepareTools(tools []provider.Tool, toolChoice *provider.ToolChoice, modelI
 					Details: fmt.Sprintf("Tool '%s' has strict: %t, but strict mode is not supported by this model on Amazon Bedrock. The strict property will be ignored.", t.Name, *t.Strict),
 				})
 			}
+		} else if t.Strict != nil && *t.Strict && !strictToolSchemaCompatible(spec.InputSchema.JSON) {
+			res.warnings = append(res.warnings, provider.Warning{
+				Type:    provider.WarnUnsupported,
+				Feature: "strict",
+				Details: fmt.Sprintf("Tool '%s' has strict: true, but Amazon Bedrock requires every object in a strict tool schema to set additionalProperties: false. The strict property will be ignored.", t.Name),
+			})
 		} else {
 			spec.Strict = t.Strict
 		}
 		tc.Tools = append(tc.Tools, toolDefinition{ToolSpec: spec})
 	}
 
-	// Tool choice translation. For Anthropic-on-Bedrock provider tools the
-	// choice rides on additionalModelRequestFields; otherwise it goes into
-	// toolConfig.toolChoice.
+	choiceType := provider.ToolChoiceAuto
 	if toolChoice != nil {
-		if isAnthropic && len(providerTools) > 0 {
-			res.additionalTools = map[string]any{}
-			switch toolChoice.Type {
-			case provider.ToolChoiceAuto:
-				res.additionalTools["tool_choice"] = map[string]any{"type": "auto"}
+		choiceType = toolChoice.Type
+	}
+	usingAnthropicTools := isAnthropic && len(providerTools) > 0
+	useAnthropicChoice := usingAnthropicTools ||
+		(isAnthropic && disableParallelToolUse != nil && *disableParallelToolUse && len(tc.Tools) > 0 && choiceType != provider.ToolChoiceNone)
+	if useAnthropicChoice {
+		if choiceType != provider.ToolChoiceNone && (toolChoice != nil || (disableParallelToolUse != nil && *disableParallelToolUse)) {
+			choice := map[string]any{"type": "auto"}
+			switch choiceType {
 			case provider.ToolChoiceRequired:
-				res.additionalTools["tool_choice"] = map[string]any{"type": "any"}
-			case provider.ToolChoiceNone:
-				// "none" maps to no tool choice in Anthropic's model.
-				// Drop tools entirely to match upstream behavior.
-				tc.Tools = nil
+				choice["type"] = "any"
 			case provider.ToolChoiceTool:
-				res.additionalTools["tool_choice"] = map[string]any{"type": "tool", "name": toolChoice.ToolName}
+				choice["type"] = "tool"
+				choice["name"] = toolChoice.ToolName
 			}
-		} else if len(tc.Tools) > 0 {
-			switch toolChoice.Type {
-			case provider.ToolChoiceAuto:
-				tc.ToolChoice = &toolChoiceUnion{Auto: &struct{}{}}
-			case provider.ToolChoiceRequired:
-				tc.ToolChoice = &toolChoiceUnion{Any: &struct{}{}}
-			case provider.ToolChoiceNone:
-				// Drop tools; Bedrock has no explicit "none" choice marker.
-				tc.Tools = nil
-				tc.ToolChoice = nil
-			case provider.ToolChoiceTool:
-				tc.ToolChoice = &toolChoiceUnion{Tool: &toolChoiceSpecificTool{Name: toolChoice.ToolName}}
+			if disableParallelToolUse != nil {
+				choice["disable_parallel_tool_use"] = *disableParallelToolUse
 			}
+			res.additionalTools = map[string]any{"tool_choice": choice}
+		}
+	} else if toolChoice != nil && len(tc.Tools) > 0 {
+		switch choiceType {
+		case provider.ToolChoiceAuto:
+			tc.ToolChoice = &toolChoiceUnion{Auto: &struct{}{}}
+		case provider.ToolChoiceRequired:
+			tc.ToolChoice = &toolChoiceUnion{Any: &struct{}{}}
+		case provider.ToolChoiceNone:
+			tc.Tools = nil
+		case provider.ToolChoiceTool:
+			tc.ToolChoice = &toolChoiceUnion{Tool: &toolChoiceSpecificTool{Name: toolChoice.ToolName}}
 		}
 	}
 
@@ -183,22 +188,11 @@ func jsonOrEmptyObject(raw json.RawMessage) json.RawMessage {
 	return raw
 }
 
-// injectJSONResponseTool appends the synthetic `json` tool to the configured
-// tool set and forces `toolChoice = required` (any). Returns the updated
-// preparedTools so callers can chain it with [prepareTools] when a JSON
-// response format is requested and the model doesn't support native
-// structured output.
-func injectJSONResponseTool(pt preparedTools, schema json.RawMessage) preparedTools {
-	if pt.toolConfig == nil {
-		pt.toolConfig = &toolConfig{}
-	}
-	pt.toolConfig.Tools = append(pt.toolConfig.Tools, toolDefinition{
-		ToolSpec: &toolSpec{
-			Name:        jsonResponseToolName,
-			Description: "Respond with a JSON object.",
-			InputSchema: toolInputSchema{JSON: jsonOrEmptyObject(schema)},
-		},
+func withJSONResponseTool(tools []provider.Tool, schema json.RawMessage) []provider.Tool {
+	return append(append([]provider.Tool{}, tools...), provider.Tool{
+		Type:        provider.ToolTypeFunction,
+		Name:        jsonResponseToolName,
+		Description: "Respond with a JSON object.",
+		InputSchema: schema,
 	})
-	pt.toolConfig.ToolChoice = &toolChoiceUnion{Any: &struct{}{}}
-	return pt
 }

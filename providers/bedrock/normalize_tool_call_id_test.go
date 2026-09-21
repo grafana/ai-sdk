@@ -44,7 +44,7 @@ func TestModelFamilyDetection(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.modelID, func(t *testing.T) {
 			assert.Equal(t, tc.isAnth, isAnthropicModel(tc.modelID), "isAnthropicModel")
-			assert.Equal(t, tc.isOpenAI, isOpenAIModel(tc.modelID), "isOpenAIModel")
+			assert.Equal(t, tc.isOpenAI, openAIModelID(tc.modelID) != "", "openAIModelID")
 			assert.Equal(t, tc.isMistr, isMistralModel(tc.modelID), "isMistralModel")
 		})
 	}
@@ -56,7 +56,8 @@ func TestSupportsNativeStructuredOutput(t *testing.T) {
 		expected bool
 	}{
 		{"anthropic.claude-sonnet-4-5-20250929-v1:0", true},
-		{"anthropic.claude-haiku-4-5-20251001-v1:0", true},
+		{"anthropic.claude-haiku-4-5-20251001-v1:0", false},
+		{"anthropic.claude-sonnet-4-6", false},
 		{"anthropic.claude-opus-4-1-20250805-v1:0", true},
 		{"us.anthropic.claude-future-9-20990101-v1:0", true},
 		{"anthropic.claude-3-haiku-20240307-v1:0", false},

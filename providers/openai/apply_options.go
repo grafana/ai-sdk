@@ -1,8 +1,6 @@
 package openai
 
 import (
-	"encoding/json"
-
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/openai/openai-go/v3/packages/param"
 	"github.com/openai/openai-go/v3/responses"
@@ -14,8 +12,9 @@ const topLogprobsMax = 20
 // applyResponseFormat maps a JSON response format to the Responses text.format.
 // A schema produces a json_schema format honoring strict/name/description; an
 // absent schema produces a json_object format. textVerbosity is also applied.
-func applyResponseFormat(body *responses.ResponseNewParams, opts provider.CallOptions, popts OpenAIResponsesOptions) {
+func applyResponseFormat(body *responses.ResponseNewParams, opts provider.CallOptions, popts OpenAIResponsesOptions) ([]provider.Warning, error) {
 	rf := opts.ResponseFormat
+	var warnings []provider.Warning
 
 	var hasText bool
 	text := responses.ResponseTextConfigParam{}
@@ -27,8 +26,11 @@ func applyResponseFormat(body *responses.ResponseNewParams, opts provider.CallOp
 			if popts.StrictJSONSchema != nil {
 				strict = *popts.StrictJSONSchema
 			}
-			var schemaMap map[string]any
-			_ = json.Unmarshal(rf.Schema, &schemaMap)
+			schemaMap, schemaWarnings, err := normalizeOpenAIJSONSchema(rf.Schema)
+			if err != nil {
+				return nil, err
+			}
+			warnings = append(warnings, schemaWarnings...)
 			name := rf.Name
 			if name == "" {
 				name = "response"
@@ -57,6 +59,7 @@ func applyResponseFormat(body *responses.ResponseNewParams, opts provider.CallOp
 	if hasText {
 		body.Text = text
 	}
+	return warnings, nil
 }
 
 // applyProviderOptions maps typed provider options onto the request body and

@@ -13,11 +13,18 @@ func isAnthropicModel(modelID string) bool {
 	return strings.Contains(modelID, "anthropic")
 }
 
-// isOpenAIModel returns true when the Bedrock model ID refers to an OpenAI
-// model on Bedrock (e.g. `openai.gpt-oss-...`). Cross-region prefixes
-// (`us.openai.`) also match.
-func isOpenAIModel(modelID string) bool {
-	return strings.Contains(modelID, "openai.")
+func isAnthropicRequest(modelID string, reasoning *ReasoningConfig) bool {
+	return isAnthropicModel(modelID) || (strings.Contains(modelID, ":application-inference-profile/") && reasoning.hasBudgetTokens())
+}
+
+var openAIModelPattern = regexp.MustCompile(`^(?:[^.]+\.)?(openai\..+)$`)
+
+func openAIModelID(modelID string) string {
+	matches := openAIModelPattern.FindStringSubmatch(modelID)
+	if len(matches) == 0 {
+		return ""
+	}
+	return matches[1]
 }
 
 // isMistralModel returns true when the Bedrock model ID refers to a Mistral
@@ -72,7 +79,9 @@ func rejectsNewerSchemaFields(modelID string) bool {
 }
 
 func rejectsNativeStructuredOutput(modelID string) bool {
-	return rejectsNewerSchemaFields(modelID)
+	return rejectsNewerSchemaFields(modelID) ||
+		strings.Contains(modelID, "claude-sonnet-4-6") ||
+		strings.Contains(modelID, "claude-haiku-4-5")
 }
 
 func usesJSONInstructionForStructuredOutput(modelID string) bool {

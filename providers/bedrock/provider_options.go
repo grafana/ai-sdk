@@ -2,6 +2,7 @@ package bedrock
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 
 	"github.com/grafana/ai-sdk/provider"
@@ -11,6 +12,40 @@ import (
 // options. Upstream historically used `bedrock`; current docs use
 // `amazonBedrock`. Both are honored at read time so callers can pick either.
 var providerOptionKeys = []string{"amazonBedrock", "bedrock"}
+
+type anthropicToolOptions struct {
+	DisableParallelToolUse *bool `json:"disableParallelToolUse,omitempty"`
+}
+
+func readAnthropicToolOptions(opts provider.ProviderOptions) (anthropicToolOptions, error) {
+	if opts["anthropic"] == nil {
+		return anthropicToolOptions{}, nil
+	}
+	raw, err := json.Marshal(provider.ProviderOptions{"anthropic": opts["anthropic"]})
+	if err != nil {
+		return anthropicToolOptions{}, fmt.Errorf("bedrock: encoding anthropic provider options: %w", err)
+	}
+	var options struct {
+		Anthropic struct {
+			DisableParallelToolUse json.RawMessage `json:"disableParallelToolUse"`
+		} `json:"anthropic"`
+	}
+	if err := json.Unmarshal(raw, &options); err != nil {
+		return anthropicToolOptions{}, fmt.Errorf("bedrock: invalid anthropic provider options: %w", err)
+	}
+	flag := options.Anthropic.DisableParallelToolUse
+	if len(flag) == 0 {
+		return anthropicToolOptions{}, nil
+	}
+	if bytes.Equal(bytes.TrimSpace(flag), []byte("null")) {
+		return anthropicToolOptions{}, fmt.Errorf("bedrock: invalid anthropic provider options: disableParallelToolUse must be a boolean")
+	}
+	var value bool
+	if err := json.Unmarshal(flag, &value); err != nil {
+		return anthropicToolOptions{}, fmt.Errorf("bedrock: invalid anthropic provider options: %w", err)
+	}
+	return anthropicToolOptions{DisableParallelToolUse: &value}, nil
+}
 
 // resolveBedrockOption resolves a typed Bedrock provider option from a
 // ProviderOptions map, checking both the modern (`amazonBedrock`) and legacy

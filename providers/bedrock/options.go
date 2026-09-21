@@ -1,7 +1,9 @@
 package bedrock
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -133,6 +135,18 @@ func (o *BedrockOptions) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &fields); err != nil {
 		return err
 	}
+	if decoded.ReasoningConfig != nil {
+		var reasoning struct {
+			BudgetTokens json.RawMessage `json:"budgetTokens"`
+		}
+		if err := json.Unmarshal(fields["reasoningConfig"], &reasoning); err != nil {
+			return err
+		}
+		if bytes.Equal(bytes.TrimSpace(reasoning.BudgetTokens), []byte("null")) {
+			return fmt.Errorf("bedrock: reasoningConfig.budgetTokens must be a number")
+		}
+		decoded.ReasoningConfig.budgetTokensSet = len(reasoning.BudgetTokens) > 0
+	}
 	for _, key := range []string{
 		"reasoningConfig",
 		"additionalModelRequestFields",
@@ -155,6 +169,8 @@ func (BedrockOptions) ProviderKey() string { return "amazonBedrock" }
 // ReasoningConfig configures Anthropic-on-Bedrock extended thinking and
 // reasoning effort. Mirrors upstream amazonBedrock reasoningConfig.
 type ReasoningConfig struct {
+	budgetTokensSet bool
+
 	// Type is one of "enabled", "adaptive", or empty when only
 	// MaxReasoningEffort is set.
 	Type string `json:"type,omitempty"`
@@ -168,6 +184,10 @@ type ReasoningConfig struct {
 	// `reasoning_effort`, or Nova `reasoningConfig.maxReasoningEffort`
 	// depending on the model.
 	MaxReasoningEffort string `json:"maxReasoningEffort,omitempty"`
+}
+
+func (c *ReasoningConfig) hasBudgetTokens() bool {
+	return c != nil && (c.budgetTokensSet || c.BudgetTokens != 0)
 }
 
 // CachePoint configures Bedrock prompt caching.

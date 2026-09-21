@@ -50,6 +50,15 @@ func buildParamsForProvider(modelID string, opts provider.CallOptions, providerO
 		return responses.ResponseNewParams{}, nil, buildResult{}, err
 	}
 
+	if popts.AllowedTools != nil {
+		if len(popts.AllowedTools.ToolNames) == 0 {
+			return responses.ResponseNewParams{}, nil, buildResult{}, fmt.Errorf("openai: invalid allowedTools: toolNames must not be empty")
+		}
+		if mode := popts.AllowedTools.Mode; mode != "" && mode != "auto" && mode != "required" {
+			return responses.ResponseNewParams{}, nil, buildResult{}, fmt.Errorf("openai: invalid allowedTools mode %q", mode)
+		}
+	}
+
 	store := true
 	if popts.Store != nil {
 		store = *popts.Store
@@ -86,7 +95,11 @@ func buildParamsForProvider(modelID string, opts provider.CallOptions, providerO
 	warnings = append(warnings, applyScalarParams(&body, opts, caps, isReasoning, popts)...)
 
 	// Structured output.
-	applyResponseFormat(&body, opts, popts)
+	schemaWarnings, err := applyResponseFormat(&body, opts, popts)
+	if err != nil {
+		return responses.ResponseNewParams{}, nil, buildResult{}, err
+	}
+	warnings = append(warnings, schemaWarnings...)
 
 	// Tools + tool choice.
 	toolWarnings, err := prepareTools(&body, opts, popts, &br)

@@ -175,6 +175,25 @@ No provider recordings or provenance fixtures were fabricated or regenerated.
 
 ### Provider Implementation Layer
 
+#### Staged provider-request upgrade
+
+Nine request corrections intentionally precede the registered package upgrade,
+using fixed target sources Anthropic 4.0.57, OpenAI 4.0.70 and Bedrock 5.0.87
+(commit `b3033f77f0459bcc68df182c8052f52305467bcc`): dated Vertex Claude 4
+capabilities; declaration-aware OpenAI allowedTools and propertyNames
+normalization; Bedrock document names, strict-schema compatibility, OpenAI
+effort routing, budget-inferred profiles, Sonnet 4.6/Haiku 4.5 JSON-tool defaults,
+and forwarding anthropic.disableParallelToolUse.
+
+Focused request/HTTP tests and exact-target mock-transport probes cover these
+edges, including Mantle's shared adapter. Authentic provider inputs do not yet
+cover these edge cases; existing conformance fixtures remain unchanged controls.
+The probes are not provider recordings, live Mantle evidence, or Vertex
+authentication tests. Typed Go budget zero remains omitted; raw explicit zero
+is preserved internally. Contextual Go errors replace upstream error classes.
+Canonical pins and target snapshot certification remain a separate upgrade.
+This does not accept or allocate unrelated new provider APIs.
+
 | Capability | Status | Confidence Source | Gap / Notes |
 | --- | --- | --- | --- |
 | Anthropic request conversion | automated | `test/conformance/anthropic/**/expected-requests.jsonl` compares behavior-affecting requests; focused provider tests cover prompt-cache-preserving replay of code-execution subtool inputs, result field order, and serialized `tool_references` for successful searches with zero and one match. | Add fixtures for new Anthropic options, content parts, and beta headers. Intentional compatibility deviation from `@ai-sdk/anthropic@4.0.38`: with an empty input tool list, Go omits `auto` and `none` choices but preserves explicit `required` and named-tool choices; upstream omits every tool choice. No provenance-valid provider fixture exercises a zero-match tool search, so the empty `tool_references` array on a successful `tool_search_tool_result` is unit-test covered; every recorded tool-search input has at least one reference. |
