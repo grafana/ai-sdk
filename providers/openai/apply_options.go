@@ -244,7 +244,9 @@ func applyIncludeAndReasoning(body *responses.ResponseNewParams, opts provider.C
 			effort = string(opts.Reasoning)
 		}
 		summary := popts.ReasoningSummary
-		if summary == "" && effort != "" && effort != "none" {
+		if popts.DisableReasoningSummary {
+			summary = ""
+		} else if summary == "" && effort != "" && effort != "none" {
 			summary = "detailed"
 		}
 		if effort != "" || summary != "" || popts.ReasoningMode != "" || popts.ReasoningContext != "" {
