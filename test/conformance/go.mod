@@ -6,6 +6,7 @@ replace (
 	github.com/grafana/ai-sdk => ../../
 	github.com/grafana/ai-sdk/providers/anthropic => ../../providers/anthropic
 	github.com/grafana/ai-sdk/providers/bedrock => ../../providers/bedrock
+	github.com/grafana/ai-sdk/providers/grafana => ../../providers/grafana
 	github.com/grafana/ai-sdk/providers/openai => ../../providers/openai
 	github.com/grafana/ai-sdk/providers/openai-compatible => ../../providers/openai-compatible
 )
@@ -16,6 +17,7 @@ require (
 	github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260921202550-3dff0f7087dc
 	github.com/grafana/ai-sdk/providers/anthropic v0.0.0-00010101000000-000000000000
 	github.com/grafana/ai-sdk/providers/bedrock v0.0.0-00010101000000-000000000000
+	github.com/grafana/ai-sdk/providers/grafana v0.0.0-00010101000000-000000000000
 	github.com/grafana/ai-sdk/providers/openai v0.0.0-20260923145714-9fb535a02817
 	github.com/grafana/ai-sdk/providers/openai-compatible v0.0.0-00010101000000-000000000000
 	github.com/openai/openai-go/v3 v3.66.0
@@ -45,13 +47,18 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/coder/websocket v1.8.15 // indirect
 	github.com/felixge/httpsnoop v1.1.0 // indirect
+	github.com/go-jose/go-jose/v4 v4.1.5 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/google/s2a-go v0.1.10 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.22 // indirect
 	github.com/googleapis/gax-go/v2 v2.26.0 // indirect
+	github.com/grafana/authlib v0.0.0-20260814184937-0d62418c2815 // indirect
+	github.com/grafana/authlib/types v0.0.0-20260814184937-0d62418c2815 // indirect
+	github.com/grafana/dskit v0.0.0-20260108123158-1a1acfb6ef2e // indirect
 	github.com/invopop/jsonschema v0.14.0 // indirect
 	github.com/kr/text v0.2.0 // indirect
+	github.com/patrickmn/go-cache v2.1.0+incompatible // indirect
 	github.com/pb33f/ordered-map/v2 v2.3.1 // indirect
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3 // indirect
 	github.com/standard-webhooks/standard-webhooks/libraries v0.0.1 // indirect

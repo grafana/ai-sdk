@@ -91,6 +91,76 @@ pnpm exec tsx ../ui/generated-files/data-and-url/generate.mts
 cd .. && go test -run TestUIConformance_ReasoningFiles ./...
 ```
 
+## Gateway compatibility matrix (advisory)
+
+The same provider fixtures also run through two clients against the production
+AI Gateway image:
+
+```text
+TypeScript ai + @ai-sdk/gateway -> gateway image -> provider replay
+Go aisdk + providers/grafana    -> gateway image -> provider replay
+```
+
+Both paths compare against the existing direct upstream goldens, including
+backend requests and applicable usage, object, and unary expectations. Tools and
+multi-step orchestration run in the calling SDK. Gateway runs never record inputs
+or update expectations. Provider-independent `ui/` mock-model cases remain in the
+direct suite, not the gateway matrix.
+
+Run on Linux with a local Docker daemon, Go, and the workspace Node dependencies:
+
+```bash
+mise run test-conformance-gateway-harness # deterministic harness tests, no Docker
+mise run test-conformance-gateway         # build current production image; all cases, both clients
+
+# Reuse an explicitly selected image and reproduce a subset:
+AI_GATEWAY_IMAGE=ai-gateway:local SCENARIO=anthropic/recorded/simple-text \
+  CLIENT=typescript mise run test-conformance-gateway
+```
+
+`CLIENT` accepts `typescript` or `go`; omit selectors for the full matrix.
+The runner uses a dedicated Docker internal network without published ports,
+local replay/JWKS listeners on the bridge, ephemeral signed test tokens, and dummy
+backend credentials. It does not contact live model APIs. Image builds and
+dependency installation still require registry access unless cached. Remote
+Docker daemons and Docker Desktop networking are not supported by this harness.
+
+Results are written to the ignored `test/conformance/gateway-results/` directory:
+
+- `summary.md`: per-provider/client totals, invocation counts, and evidence filenames.
+- `report.json`: every fixture/client row, scope, image/dependency identity, stages,
+  outcomes, and infrastructure errors.
+- `row-*.json`: configuration, client capture, backend requests, comparison diffs,
+  and bounded, credential-redacted gateway logs for an attempted row.
+
+A complete default run has two rows per discovered provider fixture. It does not
+skip unsupported capabilities, treat known failures as passes, or stop after the
+first incompatibility. An early rejection also reports missing expected backend
+requests. Rows blocked by startup are explicitly not client executions. Explicit
+provider-configuration rejections are `provider-setup` failures; opaque exits,
+OOMs, missing replay adapters, and infrastructure problems are `harness` failures.
+The current gateway sanitizes startup errors, so unsupported provider attempts
+can only be reported as unclassified startup failures with their configuration
+and Docker evidence—not verified provider rejection messages.
+
+The initial image supports Anthropic and OpenAI-compatible backends and text-only
+responses. Many cases fail, including ordinary high-level requests rejected for
+tool-choice defaults. The matrix is the executable compatibility backlog; a red
+matrix is expected during gateway development. Intentional security/metadata
+policy differences remain visible and require a separate reviewed contract
+decision rather than broad normalization or new gateway-specific goldens.
+
+The image uses the versions pinned in `ai-gateway/go.mod`, not local provider
+replacements. Reports include the image's actual module inventory so dependency
+lag is distinguishable from checkout behavior.
+
+CI keeps `conformance-test` required and adds **Gateway conformance (advisory)**
+as an independent failing check, without `continue-on-error`. It is not a
+publication/deployment prerequisite. Repository maintainers must verify that
+branch protection/rulesets leave the new check non-required; workflow YAML alone
+does not control merge policy. A later explicit policy change can require it once
+the full matrix passes. Existing direct parity commands remain unchanged.
+
 ## Structure
 
 ```text
