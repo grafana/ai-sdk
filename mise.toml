@@ -362,6 +362,25 @@ mise run typecheck-conformance
 cd test/conformance && GOWORK=off GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" go test -tags conformance -v ./...
 """
 
+[tasks.test-conformance-gateway-harness]
+description = "Test gateway conformance infrastructure without Docker"
+run = """
+mise run typecheck-conformance
+(cd test/conformance && GOWORK=off GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" go test -tags conformance ./...)
+cd test && pnpm --filter @ai-sdk/conformance-tools test:gateway
+"""
+
+[tasks.test-conformance-gateway]
+description = "Run the full advisory conformance matrix against the AI Gateway image"
+run = """
+mise deps install --only test
+set --
+if [ -n "${AI_GATEWAY_IMAGE:-}" ]; then set -- "$@" --image "$AI_GATEWAY_IMAGE"; fi
+if [ -n "${SCENARIO:-}" ]; then set -- "$@" --scenario "$SCENARIO"; fi
+if [ -n "${CLIENT:-}" ]; then set -- "$@" --client "$CLIENT"; fi
+cd test && pnpm --filter @ai-sdk/conformance-tools gateway "$@"
+"""
+
 [tasks.parity-check]
 description = "Run upstream parity baseline validation and conformance"
 run = """
