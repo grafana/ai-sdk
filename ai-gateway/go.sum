@@ -62,6 +62,8 @@ github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260916154023-07aacebe97a2 h1:xQNfj/
 github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260916154023-07aacebe97a2/go.mod h1:/8lZqngK7ivjXEVnULMc4Tp28mL07t4JwK22tsfseEA=
 github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260921190651-72c620c2204b h1:u0u7DD+13UdiC+Mc8CZRN2vHZNr7gfgDFShJqeD1Lyo=
 github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260921190651-72c620c2204b/go.mod h1:dq9czuEHdMxenlmMFrR9bfrdhBitZltt6VtZPfr2vsE=
+github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260921194944-e7732b7aa62b h1:VkVKhDrkCEtgkUdZiJ24UBf5bTTAyfdU0GEIgNa5fKw=
+github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260921194944-e7732b7aa62b/go.mod h1:dq9czuEHdMxenlmMFrR9bfrdhBitZltt6VtZPfr2vsE=
 github.com/grafana/ai-sdk/middleware/agentobservability v0.0.0-20260915200037-0b83f45375ca h1:hVbJ+Zh7Q2PvzYS7PQZTvc+DHBZwwCx83+A+yPpjkGc=
 github.com/grafana/ai-sdk/middleware/agentobservability v0.0.0-20260915200037-0b83f45375ca/go.mod h1:apA0hv8gJpPV5ihiPiBjqaZSQhuUn87xQXKQJhH8RoY=
 github.com/grafana/ai-sdk/middleware/logger v0.0.0-20260915200037-0b83f45375ca h1:uUJDyT17xVDsewgdp4vgh6SgDd5oAAGJFuxOd1smVbs=
@@ -76,6 +78,8 @@ github.com/grafana/ai-sdk/providers/anthropic v0.0.0-20260921185106-d82aebbcc447
 github.com/grafana/ai-sdk/providers/anthropic v0.0.0-20260921185106-d82aebbcc447/go.mod h1:DYFE5/udopZd6A9NAJQCZ3kuMt1EaEs4vp8lu9Smgdc=
 github.com/grafana/ai-sdk/providers/anthropic v0.0.0-20260921190651-72c620c2204b h1:jOAGafJihUoN6FPYOanwfGiIK4/kD1PPP/0e+pkQEYM=
 github.com/grafana/ai-sdk/providers/anthropic v0.0.0-20260921190651-72c620c2204b/go.mod h1:DYFE5/udopZd6A9NAJQCZ3kuMt1EaEs4vp8lu9Smgdc=
+github.com/grafana/ai-sdk/providers/anthropic v0.0.0-20260921194944-e7732b7aa62b h1:gVKAgXMeKDEP/ob+QZzeAfryZ+0B/5AXe/b/2mVoO3c=
+github.com/grafana/ai-sdk/providers/anthropic v0.0.0-20260921194944-e7732b7aa62b/go.mod h1:DYFE5/udopZd6A9NAJQCZ3kuMt1EaEs4vp8lu9Smgdc=
 github.com/grafana/ai-sdk/providers/openai-compatible v0.0.0-20260914170650-fd08a3a81a11 h1:VQ3KSv92M/S7T7PvOAiyrxFF/HnnfLQ06DjeE3felUc=
 github.com/grafana/ai-sdk/providers/openai-compatible v0.0.0-20260914170650-fd08a3a81a11/go.mod h1:ua2ViPMCLV0YpqlxZtdnpE6DM3Qj2T/9h1dMaYxFjlc=
 github.com/grafana/authlib v0.0.0-20260814184937-0d62418c2815 h1:kdWTzTnExdZbbngXmCuA4UPrZpdYiwC/Mf5ujcg+e6Q=
