@@ -32,7 +32,7 @@ For an otherwise supported text request with absent or empty tools, the handler 
 
 ### Requirement: Unsupported capability families
 
-Schema-valid files, reasoning content, custom content, tools, tool approvals, structured output, non-empty provider options, body headers, and raw output SHALL return a stable invalid-request document naming the unsupported family before resolution or model invocation. The tools family SHALL include nonempty tool declarations, tool-call/result content, and explicit none, required, or named choices even when tools are absent. A schema-valid automatic choice with no tools SHALL NOT by itself activate the tools family. The runtime SHALL not define client-visible precedence among multiple simultaneously activated unsupported families.
+Schema-valid files, reasoning content, custom content, provider tools and tool approvals, structured output, non-empty root provider options, body headers, and raw output SHALL return a stable invalid-request document naming the unsupported family before resolution or model invocation. Function definitions/choices and assistant-call/tool-result history SHALL retain the gateway-unary-function-tools and gateway-streaming-function-tools supported subsets. Function-tool provider options SHALL remain supported within those subsets; deferred nested result options SHALL remain unsupported. A schema-valid automatic choice with no tools SHALL NOT by itself activate the tools family. The runtime SHALL not define client-visible precedence among multiple simultaneously activated unsupported families.
 
 #### Scenario: One unsupported family
 - **WHEN** a request activates one unsupported family
@@ -43,11 +43,12 @@ Schema-valid files, reasoning content, custom content, tools, tool approvals, st
 - **THEN** it SHALL fail as schema-invalid rather than as a valid unsupported capability
 
 #### Scenario: Explicit non-automatic choice without tools
-- **WHEN** a request supplies none, required, or a named-tool choice with tools absent or empty
-- **THEN** the handler SHALL return the fixed unsupported-tools response before resolution or model invocation
+- **WHEN** an otherwise supported direct-route request supplies none, required, or a named-tool choice with tools absent or empty
+- **THEN** the handler SHALL preserve the explicit choice for the resolved model
+- **AND** fallback-configured routes SHALL retain their stricter effect guard before physical invocation
 
-#### Scenario: Automatic choice does not enable tools
-- **WHEN** a request supplies automatic choice and nonempty function or provider-tool declarations, or tool-call/result prompt content
+#### Scenario: Automatic choice does not enable deferred tools
+- **WHEN** a request supplies automatic choice and provider-tool declarations or provider-executed tool history
 - **THEN** the handler SHALL return the fixed unsupported-tools response before resolution or model invocation
 
 #### Scenario: Automatic choice does not enable other unsupported families

@@ -1,9 +1,9 @@
 ## MODIFIED Requirements
 
 ### Requirement: Shared strict streaming request pipeline
-The handler SHALL accept `ai-language-model-streaming` only when its single exact value is `true` or `false`. It SHALL route `false` to the existing unary path and `true` to the streaming path only after the same bounded body read, standard Go JSON and complete request-schema validation, explicit text-subset mapping, exact-once catalog resolution, and validation of a non-empty valid-UTF-8 canonical ID with a non-nil V4 model. A supported streaming request SHALL invoke `DoStream` exactly once and SHALL NOT invoke `DoGenerate`. Any failure before stream invocation SHALL select a fixed non-2xx JSON document and SHALL produce no SSE commitment.
+The handler SHALL accept `ai-language-model-streaming` only when its single exact value is `true` or `false`. It SHALL route `false` to the existing unary path and `true` to the streaming path only after the same bounded body read, standard Go JSON and complete request-schema validation, explicit supported text/function-tool subset mapping, exact-once catalog resolution, and validation of a non-empty valid-UTF-8 canonical ID with a non-nil V4 model. A supported streaming request SHALL invoke `DoStream` exactly once and SHALL NOT invoke `DoGenerate`. Any failure before stream invocation SHALL select a fixed non-2xx JSON document and SHALL produce no SSE commitment.
 
-The shared text-subset mapping SHALL admit schema-valid automatic tool choice with absent or empty tools for otherwise supported streaming requests, preserving it in `provider.CallOptions.ToolChoice`. Omitted choice SHALL remain nil. Nonempty tools, non-automatic choices, tool history, approvals, and other unsupported families SHALL retain their pre-resolution rejection behavior.
+The shared mapping SHALL admit schema-valid automatic tool choice with absent or empty tools for otherwise supported streaming requests, preserving it in `provider.CallOptions.ToolChoice`. Omitted choice SHALL remain nil. Function definitions, explicit choices, and tool history SHALL retain the gateway-streaming-function-tools supported subset on direct routes. Provider tools, provider-executed history, approvals, and other deferred families SHALL retain their pre-resolution rejection behavior. Fallback-configured routes SHALL retain their stricter effect guard.
 
 #### Scenario: Supported streaming envelope executes once
 - **WHEN** a valid text request uses streaming value `true` and passes mapping and resolution
@@ -27,8 +27,8 @@ The shared text-subset mapping SHALL admit schema-valid automatic tool choice wi
 - **WHEN** an otherwise supported streaming request omits tool choice and has absent or empty tools
 - **THEN** `DoStream` SHALL receive nil `ToolChoice`
 
-#### Scenario: Unsupported choice does not commit streaming
-- **WHEN** a streaming request supplies none, required, or named choice, or combines auto with actual tools or tool-call/result history
+#### Scenario: Unsupported tools do not commit streaming
+- **WHEN** a streaming request combines auto with provider tools or provider-executed tool history
 - **THEN** the handler SHALL return the fixed unsupported-tools JSON response with zero catalog and model calls and no SSE commitment
 
 #### Scenario: Automatic choice does not bypass schema or other unsupported families

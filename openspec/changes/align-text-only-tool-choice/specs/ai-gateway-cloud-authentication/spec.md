@@ -51,7 +51,7 @@ Inbound credentials and assertions MUST NOT become provider credentials or appea
 
 - **WHEN** command coverage is recorded after implementation
 - **THEN** the parity map identifies the registered baseline, low-level calls with explicit output-token limits, and the proven high-level text-only streaming cases
-- **AND** it records high-level TypeScript `generateText` body headers, default unary token limits, and actual tools as remaining compatibility work
+- **AND** it records high-level TypeScript `generateText` body headers, default unary token limits, and effectful fallback as remaining compatibility work
 - **AND** fake-provider fixtures are not presented as recorded provider conformance evidence
 
 #### Scenario: High-level text-only streaming through the edge

@@ -171,10 +171,20 @@ func TestRuntimeModeDispatch(t *testing.T) {
 func TestRuntimeToolChoice(t *testing.T) {
 	for _, streaming := range []string{"false", "true"} {
 		for _, tools := range []string{"", `,"tools":[]`} {
-			for _, choice := range []string{"", `,"toolChoice":{"type":"auto"}`, `,"toolChoice":{"type":"none"}`, `,"toolChoice":{"type":"required"}`, `,"toolChoice":{"type":"tool","toolName":"f"}`} {
-				t.Run(streaming+"/"+tools+"/"+choice, func(t *testing.T) {
+			for _, tc := range []struct {
+				name     string
+				field    string
+				expected *provider.ToolChoice
+			}{
+				{name: "omitted"},
+				{name: "auto", field: `,"toolChoice":{"type":"auto"}`, expected: &provider.ToolChoice{Type: provider.ToolChoiceAuto}},
+				{name: "none", field: `,"toolChoice":{"type":"none"}`, expected: &provider.ToolChoice{Type: provider.ToolChoiceNone}},
+				{name: "required", field: `,"toolChoice":{"type":"required"}`, expected: &provider.ToolChoice{Type: provider.ToolChoiceRequired}},
+				{name: "named", field: `,"toolChoice":{"type":"tool","toolName":"f"}`, expected: &provider.ToolChoice{Type: provider.ToolChoiceTool, ToolName: "f"}},
+			} {
+				t.Run(streaming+"/"+tools+"/"+tc.name, func(t *testing.T) {
 					harness := newRuntimeHarness(t, testLimits())
-					request := validRequest(`{"prompt":[]` + tools + choice + `}`)
+					request := validRequest(`{"prompt":[]` + tools + tc.field + `}`)
 					request.Header.Set(HeaderStreaming, streaming)
 					response := harness.serve(request)
 					require.Equal(t, http.StatusOK, response.Code, response.Body.String())
@@ -189,15 +199,7 @@ func TestRuntimeToolChoice(t *testing.T) {
 					}
 					opts := harness.model.receivedOptions()
 					assert.Empty(t, opts.Tools)
-					if choice == "" {
-						assert.Nil(t, opts.ToolChoice)
-					} else {
-						var expected struct {
-							ToolChoice *provider.ToolChoice `json:"toolChoice"`
-						}
-						require.NoError(t, json.Unmarshal([]byte("{"+choice[1:]+"}"), &expected))
-						assert.Equal(t, expected.ToolChoice, opts.ToolChoice)
-					}
+					assert.Equal(t, tc.expected, opts.ToolChoice)
 				})
 			}
 		}
