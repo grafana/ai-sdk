@@ -9,24 +9,26 @@ import (
 	"os"
 	"time"
 
+	aisdk "github.com/grafana/ai-sdk"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/grafana/ai-sdk/providers/grafana"
 )
 
 func main() {
 	var input struct {
-		BaseURL         string                   `json:"baseURL"`
-		AccessToken     string                   `json:"accessToken"`
-		UserIDToken     string                   `json:"userIDToken"`
-		Cloud           *grafana.CloudAuthConfig `json:"cloud"`
-		Mode            string                   `json:"mode"`
-		ModelID         string                   `json:"modelID"`
-		Options         provider.CallOptions     `json:"options"`
-		Headers         map[string][]string      `json:"headers"`
-		AbortAfterParts int                      `json:"abortAfterParts"`
-		AbortBefore     bool                     `json:"abortBefore"`
-		CancelAfterMS   int                      `json:"cancelAfterMs"`
-		PreferBytes     bool                     `json:"preferBytes"`
+		BaseURL           string                   `json:"baseURL"`
+		AccessToken       string                   `json:"accessToken"`
+		UserIDToken       string                   `json:"userIDToken"`
+		Cloud             *grafana.CloudAuthConfig `json:"cloud"`
+		Mode              string                   `json:"mode"`
+		ModelID           string                   `json:"modelID"`
+		Options           provider.CallOptions     `json:"options"`
+		Headers           map[string][]string      `json:"headers"`
+		AbortAfterParts   int                      `json:"abortAfterParts"`
+		AbortBefore       bool                     `json:"abortBefore"`
+		AbortBetweenSteps bool                     `json:"abortBetweenSteps"`
+		CancelAfterMS     int                      `json:"cancelAfterMs"`
+		PreferBytes       bool                     `json:"preferBytes"`
 	}
 	if err := json.NewDecoder(io.LimitReader(os.Stdin, 1<<20)).Decode(&input); err != nil {
 		emit(map[string]any{"error": map[string]any{"message": "invalid capture input"}})
@@ -98,6 +100,49 @@ func main() {
 			}
 		}
 		emit(map[string]any{"parts": parts, "request": result.Request, "response": result.Response, "canceled": ctx.Err() != nil})
+		return
+	}
+	if input.Mode == "stream-loop" {
+		executions := 0
+		type weatherInput struct {
+			City string `json:"city"`
+		}
+		tool, err := aisdk.TypedTool(aisdk.TypedToolDef[weatherInput, string]{
+			Name: "weather",
+			Execute: func(_ context.Context, weather weatherInput, _ aisdk.ToolExecutionOptions) (string, error) {
+				if weather.City != "Rio" {
+					return "", errors.New("unexpected city")
+				}
+				executions++
+				if input.AbortBetweenSteps {
+					cancel()
+				}
+				return "sunny", nil
+			},
+			ToModelOutput: func(_ string, _ weatherInput, value string) (*provider.ToolResultOutput, error) {
+				return &provider.ToolResultOutput{Type: provider.ToolOutputText, Text: value}, nil
+			},
+		})
+		if err != nil {
+			emitError(err)
+			return
+		}
+		result := aisdk.StreamText(ctx, model, aisdk.WithModelMessages(provider.UserText("Weather in Rio?")), aisdk.WithTools(aisdk.ToolSet{"weather": tool}), aisdk.WithStopWhen(aisdk.StepCountIs(2)), aisdk.WithMaxRetries(0))
+		aborted := false
+		for part := range result.FullStream() {
+			if _, ok := part.(aisdk.StreamAbort); ok {
+				aborted = true
+			}
+		}
+		if input.AbortBetweenSteps {
+			emit(map[string]any{"canceled": aborted && errors.Is(ctx.Err(), context.Canceled), "executions": executions})
+			return
+		}
+		if err := result.Err(); err != nil {
+			emitError(err)
+			return
+		}
+		emit(map[string]any{"text": result.Text(), "steps": len(result.Steps()), "executions": executions})
 		return
 	}
 	result, err := model.DoGenerate(ctx, input.Options)
