@@ -101,3 +101,31 @@ func TestCallOptions_EmptyJSON(t *testing.T) {
 	require.NoError(t, err)
 	assert.JSONEq(t, `{}`, string(data))
 }
+
+func TestTool_InputExamplesJSONPresence(t *testing.T) {
+	tests := []struct {
+		name     string
+		examples []InputExample
+		expected string
+	}{
+		{name: "omitted", expected: `{"type":"function","name":"weather"}`},
+		{name: "explicit empty", examples: []InputExample{}, expected: `{"type":"function","name":"weather","inputExamples":[]}`},
+		{name: "populated", examples: []InputExample{{Input: json.RawMessage(`{"city":"Rio"}`)}}, expected: `{"type":"function","name":"weather","inputExamples":[{"input":{"city":"Rio"}}]}`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			data, err := json.Marshal(Tool{Type: ToolTypeFunction, Name: "weather", InputExamples: tc.examples})
+			require.NoError(t, err)
+			assert.JSONEq(t, tc.expected, string(data))
+
+			var decoded Tool
+			require.NoError(t, json.Unmarshal(data, &decoded))
+			if tc.examples == nil {
+				assert.Nil(t, decoded.InputExamples)
+			} else {
+				assert.NotNil(t, decoded.InputExamples)
+				assert.Len(t, decoded.InputExamples, len(tc.examples))
+			}
+		})
+	}
+}

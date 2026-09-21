@@ -90,7 +90,7 @@ type Tool struct {
 	// Function-tool fields.
 	Description   string          `json:"description,omitempty"`
 	InputSchema   json.RawMessage `json:"inputSchema,omitempty"`
-	InputExamples []InputExample  `json:"inputExamples,omitempty"`
+	InputExamples []InputExample  `json:"inputExamples,omitzero"`
 	Strict        *bool           `json:"strict,omitempty"`
 
 	// Provider-tool fields.
@@ -101,23 +101,6 @@ type Tool struct {
 	// Both function tools and provider tools may carry options; producers MAY
 	// leave this nil for provider tools.
 	ProviderOptions ProviderOptions `json:"providerOptions,omitempty"`
-
-	inputExamplesSet bool
-}
-
-// SetInputExamples records input examples while preserving whether the caller
-// explicitly supplied an empty list. Assigning a non-empty InputExamples slice
-// directly remains supported; callers that need empty-list presence must use
-// this method.
-func (t *Tool) SetInputExamples(examples []InputExample) {
-	t.InputExamples = examples
-	t.inputExamplesSet = true
-}
-
-// HasInputExamples reports whether input examples were explicitly supplied or
-// contain at least one entry.
-func (t Tool) HasInputExamples() bool {
-	return t.inputExamplesSet || len(t.InputExamples) > 0
 }
 
 // InputExample wraps a tool input example.

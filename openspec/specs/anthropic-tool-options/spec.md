@@ -129,8 +129,13 @@ The Anthropic provider's `convertTools()` function SHALL pass `tool.InputExample
 
 #### Scenario: Tool with no input examples
 
-- **WHEN** `convertTools()` receives a function tool with nil or empty `InputExamples`
+- **WHEN** `convertTools()` receives a function tool with nil `InputExamples`
 - **THEN** the resulting `BetaToolParam` SHALL have `InputExamples` unset
+
+#### Scenario: Tool with explicitly empty input examples
+
+- **WHEN** `convertTools()` receives a function tool with a non-nil, empty `InputExamples`
+- **THEN** the resulting `BetaToolParam` SHALL contain an empty `InputExamples` array
 
 #### Scenario: Tool with malformed input example entry
 
@@ -150,7 +155,7 @@ The `convertTools()` function SHALL NOT extract `AnthropicToolOptions` or `Input
 
 The `convertTools()` function SHALL return a list of required beta header strings alongside the converted tools and warnings. The following auto-detection rules SHALL apply:
 - When any function tool has non-nil `InputExamples`, add `"advanced-tool-use-2025-11-20"`
-- When any function tool has non-empty `AllowedCallers` (from `AnthropicToolOptions`), add `"advanced-tool-use-2025-11-20"`
+- When any function tool has non-nil `AllowedCallers` (from `AnthropicToolOptions`), add `"advanced-tool-use-2025-11-20"`
 
 The caller SHALL merge auto-detected betas with any explicit betas from `AnthropicOptions.Betas` and apply them as the `anthropic-beta` request header, deduplicating entries.
 
@@ -161,7 +166,7 @@ The caller SHALL merge auto-detected betas with any explicit betas from `Anthrop
 
 #### Scenario: Beta auto-detection for allowedCallers
 
-- **WHEN** `convertTools()` receives a function tool with `ProviderOptions["anthropic"]` containing `{"allowedCallers": ["direct"]}`
+- **WHEN** `convertTools()` receives a function tool with `ProviderOptions["anthropic"]` containing a present `allowedCallers` array, including an explicitly empty array
 - **THEN** the returned betas list SHALL include `"advanced-tool-use-2025-11-20"`
 
 #### Scenario: Beta deduplication

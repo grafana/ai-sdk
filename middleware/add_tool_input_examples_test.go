@@ -38,6 +38,9 @@ func TestAddToolInputExamples(t *testing.T) {
 	require.Len(t, received.Tools, 2)
 	assert.Equal(t, "Get weather\n\nInput Examples:\n{\"city\":\"London\"}\n{\"city\":\"Paris\"}", received.Tools[0].Description)
 	assert.Nil(t, received.Tools[0].InputExamples)
+	encoded, err := json.Marshal(received.Tools[0])
+	require.NoError(t, err)
+	assert.NotContains(t, string(encoded), "inputExamples")
 	assert.Equal(t, "provider.web", received.Tools[1].ID)
 }
 

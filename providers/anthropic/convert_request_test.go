@@ -2604,13 +2604,12 @@ func TestConvertTools_ToolProviderOptions(t *testing.T) {
 	})
 
 	t.Run("ExplicitEmptyInputExamples", func(t *testing.T) {
-		tool := provider.Tool{
-			Type:        provider.ToolTypeFunction,
-			Name:        "search",
-			InputSchema: json.RawMessage(`{"type":"object","properties":{}}`),
-		}
-		tool.SetInputExamples([]provider.InputExample{})
-		tools := []provider.Tool{tool}
+		tools := []provider.Tool{{
+			Type:          provider.ToolTypeFunction,
+			Name:          "search",
+			InputSchema:   json.RawMessage(`{"type":"object","properties":{}}`),
+			InputExamples: []provider.InputExample{},
+		}}
 
 		result, _, betas := convertTools(&cacheControlValidator{}, tools, false)
 		require.Len(t, result, 1)

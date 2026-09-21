@@ -463,9 +463,12 @@ func toolSetToProviderTools(tools ToolSet) ([]provider.Tool, []provider.Warning)
 				ProviderOptions: t.ProviderOptions,
 			})
 		case "", UserToolFunction, UserToolDynamic:
-			examples := make([]provider.InputExample, len(t.InputExamples))
-			for i, raw := range t.InputExamples {
-				examples[i] = provider.InputExample{Input: raw}
+			var examples []provider.InputExample
+			if t.InputExamples != nil {
+				examples = make([]provider.InputExample, len(t.InputExamples))
+				for i, raw := range t.InputExamples {
+					examples[i] = provider.InputExample{Input: raw}
+				}
 			}
 			result = append(result, provider.Tool{
 				Type:            provider.ToolTypeFunction,

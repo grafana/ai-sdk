@@ -136,6 +136,38 @@ func TestExtractCacheControl_TypedOptions(t *testing.T) {
 	})
 }
 
+func TestAnthropicToolOptions_AllowedCallersPresenceRoundTrip(t *testing.T) {
+	tests := []struct {
+		name     string
+		callers  []string
+		expected string
+	}{
+		{name: "omitted", expected: `{"anthropic":{}}`},
+		{name: "explicit empty", callers: []string{}, expected: `{"anthropic":{"allowedCallers":[]}}`},
+		{name: "populated", callers: []string{"direct"}, expected: `{"anthropic":{"allowedCallers":["direct"]}}`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := provider.BuildProviderOptions(AnthropicToolOptions{AllowedCallers: tc.callers})
+			data, err := json.Marshal(opts)
+			require.NoError(t, err)
+			assert.JSONEq(t, tc.expected, string(data))
+
+			var decoded provider.ProviderOptions
+			require.NoError(t, json.Unmarshal(data, &decoded))
+			resolved, ok, err := provider.ResolveOption[AnthropicToolOptions](decoded, "anthropic")
+			require.NoError(t, err)
+			require.True(t, ok)
+			if tc.callers == nil {
+				assert.Nil(t, resolved.AllowedCallers)
+			} else {
+				assert.NotNil(t, resolved.AllowedCallers)
+				assert.Equal(t, tc.callers, resolved.AllowedCallers)
+			}
+		})
+	}
+}
+
 func boolPtr(b bool) *bool { return &b }
 
 func TestValidator_ExactlyFourBreakpoints(t *testing.T) {

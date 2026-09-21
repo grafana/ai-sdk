@@ -867,6 +867,20 @@ func TestToolSetToProviderTools(t *testing.T) {
 				require.Len(t, pt, 1)
 				assert.Equal(t, "weather", pt[0].Name)
 				assert.Equal(t, provider.ToolTypeFunction, pt[0].Type)
+				assert.Nil(t, pt[0].InputExamples)
+				assert.Empty(t, warnings)
+			},
+		},
+		{
+			name: "preserves explicitly empty input examples",
+			tools: ToolSet{"weather": Tool{
+				InputSchema:   testMustSchema(t, `{"type":"object"}`),
+				InputExamples: []json.RawMessage{},
+			}},
+			check: func(t *testing.T, pt []provider.Tool, warnings []provider.Warning) {
+				require.Len(t, pt, 1)
+				assert.NotNil(t, pt[0].InputExamples)
+				assert.Empty(t, pt[0].InputExamples)
 				assert.Empty(t, warnings)
 			},
 		},

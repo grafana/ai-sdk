@@ -2094,7 +2094,7 @@ func convertToolsWithStrictTools(v *cacheControlValidator, tools []provider.Tool
 				tp.EagerInputStreaming = anthropic.Bool(true)
 			}
 
-			if t.HasInputExamples() {
+			if t.InputExamples != nil {
 				examples := make([]map[string]any, 0, len(t.InputExamples))
 				for _, ex := range t.InputExamples {
 					var m map[string]any
