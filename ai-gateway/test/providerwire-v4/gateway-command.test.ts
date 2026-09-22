@@ -11,7 +11,7 @@ import { after, before, describe, it } from "node:test";
 import { createGateway } from "@ai-sdk/gateway";
 import type { LanguageModelV4CallOptions } from "@ai-sdk/provider";
 import { isStepCount, jsonSchema, streamText, tool } from "ai";
-import { buildGoClientCapture, captureGoClient } from "./go-client-capture";
+import { buildGoClientCapture, buildGoStreamTextCapture, captureGoClient } from "./go-client-capture";
 
 const AI_GATEWAY_ROOT = resolve(import.meta.dirname, "../..");
 const COMMAND_DIR = resolve(AI_GATEWAY_ROOT, "cmd/grafana-ai-gateway");
@@ -22,6 +22,7 @@ const TEST_USER_TOKEN = unsafeUserIDToken();
 let buildDirectory: string;
 let binaryPath: string;
 let goClientBinaryPath: string;
+let goStreamTextBinaryPath: string;
 
 before(() => {
   buildDirectory = mkdtempSync(join(tmpdir(), "grafana-ai-gateway-build-"));
@@ -38,6 +39,7 @@ before(() => {
     },
   });
   goClientBinaryPath = buildGoClientCapture(buildDirectory);
+  goStreamTextBinaryPath = buildGoStreamTextCapture(buildDirectory);
 });
 
 after(() => {
@@ -79,7 +81,7 @@ describe("authenticated Anthropic Gateway command", () => {
       const result = { role: "tool" as const, content: [{ type: "tool-result" as const, toolCallId: "private-call", toolName: "private-tool", output: { type: "text" as const, value: "private-result" } }] };
       const effectRequests: LanguageModelV4CallOptions[] = [
         { prompt: [], tools: [{ type: "function", name: "private-tool", inputSchema: { type: "object" } }] },
-        ...(["auto", "none", "required"] as const).map(type => ({ prompt: [], toolChoice: { type } })),
+        ...(["none", "required"] as const).map(type => ({ prompt: [], toolChoice: { type } })),
         { prompt: [], toolChoice: { type: "tool", toolName: "private-tool" } },
         { prompt: [call] },
         { prompt: [call, result] },
@@ -133,8 +135,11 @@ describe("authenticated Anthropic Gateway command", () => {
       ]) {
         primary.failureStatus = row.primary;
         secondary.failureStatus = row.secondary;
-        for (const mode of ["generate", "stream"] as const) {
-          const options = { prompt: [{ role: "user" as const, content: [{ type: "text" as const, text: "normal-stream" }] }], maxOutputTokens: 32 };
+        for (const [mode, toolChoice] of [
+          ["generate", undefined], ["stream", undefined],
+          ["generate", { type: "auto" }], ["stream", { type: "auto" }],
+        ] as const) {
+          const options = { prompt: [{ role: "user" as const, content: [{ type: "text" as const, text: "normal-stream" }] }], maxOutputTokens: 32, toolChoice };
           const requestCounts: [number, number] = [primary.requests.length, secondary.requests.length];
           const go = await captureGoClient(goClientBinaryPath, { ...base, mode, options });
           let result: unknown;
@@ -856,6 +861,48 @@ describe("authenticated Anthropic Gateway command", () => {
 });
 
 describe("Trusted-proxy composition (dummy credentials, not production authentication)", () => {
+  for (const client of ["go", "typescript"] as const) {
+    it(`preserves ${client} high-level text-only automatic choice through the edge`, async () => {
+      const [fake, gateway, edge] = await startCloudGateway();
+      try {
+        const prompt = "normal-stream";
+        let text: string;
+        if (client === "go") {
+          const result = await captureGoClient(goStreamTextBinaryPath, {
+            baseURL: `${edge.url}/api/v1/aisdk`, accessToken: TEST_TOKEN,
+            headers: { Authorization: [`Bearer ${EDGE_WRITE_KEY}`] },
+            mode: "stream-text", modelID: "assistant",
+            options: { prompt: [{ role: "user", content: [{ type: "text", text: prompt }] }], maxOutputTokens: 32 },
+          });
+          assert.equal(result.error, undefined);
+          text = result.text;
+        } else {
+          text = await streamText({ model: edge.client(EDGE_WRITE_KEY)("assistant"), prompt, maxOutputTokens: 32, maxRetries: 0 }).text;
+        }
+        assert.equal(edge.received.length, 1);
+        const request = edge.received[0]!;
+        const body = JSON.parse(request.body);
+        assert.deepEqual(body.toolChoice, { type: "auto" });
+        assert.deepEqual(body.prompt, [{ role: "user", content: [{ type: "text", text: prompt }] }]);
+        assert.ok(body.tools === undefined || body.tools.length === 0);
+        assert.equal(request.headers["ai-language-model-streaming"], "true");
+        assert.equal(edge.forwarded.length, 1);
+        assert.equal(fake.requests.length, 1);
+        assert.equal(text, "hello from fake Anthropic stream");
+        assert.equal(fake.requests[0]!.body.tool_choice, undefined);
+        assert.equal(fake.requests[0]!.apiKey, "integration-anthropic-key");
+        assert.deepEqual(fake.violations, []);
+        const metrics = await gateway.metrics();
+        await gateway.stop();
+        assertCloudPrivateValuesAbsent(JSON.stringify([text, metrics, gateway.stderr, fake.requests]), [
+          ...CLOUD_PRIVATE_VALUES,
+        ]);
+      } finally {
+        await settleCleanup(() => edge.stop(), () => gateway.stop(), () => fake.stop());
+      }
+    });
+  }
+
   it("uses only the edge stack assertion for read discovery and write unary/stream, never forwarding customer credentials to Anthropic", async () => {
     const [fake, gateway, edge] = await startCloudGateway();
     const spoofed = {
@@ -1303,7 +1350,7 @@ async function startCloudGateway(extraArgs: string[] = []): Promise<[FakeAnthrop
 }
 
 class DummyCloudEdge {
-  readonly received: Array<{ path: string; headers: IncomingMessage["headers"] }> = [];
+  readonly received: Array<{ path: string; headers: IncomingMessage["headers"]; body: string }> = [];
   readonly forwarded: Array<{ path: string; headers: HeaderPairs }> = [];
   readonly appErrors: string[] = [];
   denied = 0;
@@ -1338,7 +1385,9 @@ class DummyCloudEdge {
 
   private handle(request: IncomingMessage, response: ServerResponse): void {
     const path = request.url ?? "/";
-    this.received.push({ path, headers: { ...request.headers } });
+    const captured = { path, headers: { ...request.headers }, body: "" };
+    this.received.push(captured);
+    request.on("data", (chunk: Buffer) => { captured.body += chunk.toString(); });
     const authorization = request.headers.authorization;
     const known = authorization === `Bearer ${EDGE_READ_KEY}` || authorization === `Bearer ${EDGE_WRITE_KEY}`;
     const allowed = (authorization === `Bearer ${EDGE_READ_KEY}` && request.method === "GET" && path === "/api/v1/aisdk/config") ||
