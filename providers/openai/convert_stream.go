@@ -8,7 +8,7 @@ import (
 	"github.com/openai/openai-go/v3/responses"
 )
 
-func consumeStream(ctx context.Context, items <-chan responseStreamItem, buffered []responses.ResponseStreamEventUnion, ch chan<- provider.StreamPart, warnings []provider.Warning, br buildResult, requestBody responses.ResponseNewParams, response *http.Response, generateID func() string, providerName string) {
+func consumeStream(ctx context.Context, items <-chan responseStreamItem, buffered []responseStreamItem, ch chan<- provider.StreamPart, warnings []provider.Warning, br buildResult, requestBody responses.ResponseNewParams, response *http.Response, generateID func() string, providerName string) {
 	parts := make(chan provider.StreamPart, 64)
 	go func() {
 		defer close(parts)
@@ -34,16 +34,19 @@ func consumeStream(ctx context.Context, items <-chan responseStreamItem, buffere
 	}
 }
 
-func consumeStreamParts(items <-chan responseStreamItem, buffered []responses.ResponseStreamEventUnion, ch chan<- provider.StreamPart, warnings []provider.Warning, br buildResult, requestBody responses.ResponseNewParams, response *http.Response, generateID func() string, providerName string) {
+func consumeStreamParts(items <-chan responseStreamItem, buffered []responseStreamItem, ch chan<- provider.StreamPart, warnings []provider.Warning, br buildResult, requestBody responses.ResponseNewParams, response *http.Response, generateID func() string, providerName string) {
 	adapter := newStreamAdapter(warnings, br, requestBody, response, generateID, providerName)
 
 	adapter.startEmitted = true
 	ch <- provider.StreamPart{Type: provider.PartStreamStart, Warnings: warnings}
 
-	for _, event := range buffered {
-		adapter.handleEvent(event, ch)
-	}
-	for item := range items {
+	handle := func(item responseStreamItem) {
+		if item.recoverable {
+			retryable := false
+			adapter.encounteredStreamError = true
+			ch <- provider.StreamPart{Type: provider.PartError, APICallError: provider.NewAPICallError(provider.APICallErrorOptions{Message: item.err.Error(), Cause: item.err, IsRetryable: &retryable})}
+			return
+		}
 		if item.err != nil {
 			wrapped := wrapStreamTransportError(item.err, requestBody, response)
 			apiErr, ok := wrapped.(*provider.APICallError)
@@ -52,11 +55,17 @@ func consumeStreamParts(items <-chan responseStreamItem, buffered []responses.Re
 			}
 			adapter.encounteredStreamError = true
 			ch <- provider.StreamPart{Type: provider.PartError, APICallError: apiErr}
-			continue
+			return
 		}
 		if item.event != nil {
 			adapter.handleEvent(*item.event, ch)
 		}
+	}
+	for _, item := range buffered {
+		handle(item)
+	}
+	for item := range items {
+		handle(item)
 	}
 	adapter.emitPendingErrorFinish(ch)
 }

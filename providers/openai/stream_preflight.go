@@ -1,6 +1,7 @@
 package openai
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -19,11 +20,12 @@ import (
 const acceptedStreamErrorGrace = 50 * time.Millisecond
 
 type responseStreamItem struct {
-	event *responses.ResponseStreamEventUnion
-	err   error
+	event       *responses.ResponseStreamEventUnion
+	err         error
+	recoverable bool
 }
 
-func pumpResponseStream(ctx context.Context, stream *ssestream.Stream[responses.ResponseStreamEventUnion]) <-chan responseStreamItem {
+func pumpResponseStream(ctx context.Context, stream *ssestream.Stream[responses.ResponseStreamEventUnion], response *http.Response) <-chan responseStreamItem {
 	items := make(chan responseStreamItem, 64)
 	go func() {
 		defer close(items)
@@ -36,21 +38,47 @@ func pumpResponseStream(ctx context.Context, stream *ssestream.Stream[responses.
 				return false
 			}
 		}
-		for stream.Next() {
-			event := stream.Current()
+		if err := stream.Err(); err != nil {
+			send(responseStreamItem{err: err})
+			return
+		}
+		decoder := ssestream.NewDecoder(response)
+		if decoder == nil {
+			send(responseStreamItem{err: errors.New("openai: missing stream response")})
+			return
+		}
+		for decoder.Next() {
+			frame := decoder.Event()
+			if bytes.Equal(bytes.TrimSpace(frame.Data), []byte("[DONE]")) {
+				return
+			}
+			var event responses.ResponseStreamEventUnion
+			if err := json.Unmarshal(frame.Data, &event); err != nil {
+				if !send(responseStreamItem{err: fmt.Errorf("openai: decoding stream event: %w", err), recoverable: true}) {
+					return
+				}
+				continue
+			}
+			var envelope struct {
+				Error json.RawMessage `json:"error"`
+			}
+			if json.Unmarshal(frame.Data, &envelope) == nil && len(envelope.Error) > 0 && string(envelope.Error) != "null" {
+				send(responseStreamItem{err: &ssestream.StreamError{Message: "received error while streaming: " + string(envelope.Error), Event: frame}})
+				return
+			}
 			if !send(responseStreamItem{event: &event}) {
 				return
 			}
 		}
-		if err := stream.Err(); err != nil {
+		if err := decoder.Err(); err != nil {
 			send(responseStreamItem{err: err})
 		}
 	}()
 	return items
 }
 
-func preflightResponseStream(ctx context.Context, items <-chan responseStreamItem, requestBody responses.ResponseNewParams, response *http.Response) ([]responses.ResponseStreamEventUnion, error) {
-	var buffered []responses.ResponseStreamEventUnion
+func preflightResponseStream(ctx context.Context, items <-chan responseStreamItem, requestBody responses.ResponseNewParams, response *http.Response) ([]responseStreamItem, error) {
+	var buffered []responseStreamItem
 	accepted := false
 	if err := ctx.Err(); err != nil {
 		drainResponseStream(items)
@@ -108,6 +136,9 @@ func preflightResponseStream(ctx context.Context, items <-chan responseStreamIte
 		if !ok {
 			return buffered, nil
 		}
+		if item.recoverable {
+			return append(buffered, item), nil
+		}
 		if item.err != nil {
 			if errors.Is(item.err, context.Canceled) || errors.Is(item.err, context.DeadlineExceeded) {
 				return nil, item.err
@@ -122,7 +153,7 @@ func preflightResponseStream(ctx context.Context, items <-chan responseStreamIte
 			drainResponseStream(items)
 			return nil, apiErr
 		}
-		buffered = append(buffered, event)
+		buffered = append(buffered, item)
 
 		switch event.Type {
 		case "response.created":

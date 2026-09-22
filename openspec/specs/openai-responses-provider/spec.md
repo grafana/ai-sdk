@@ -5,9 +5,7 @@ Define the OpenAI Responses API provider module, including request conversion,
 tool preparation, response and stream mapping, provider options, error handling,
 and conformance expectations needed to stay aligned with Vercel's upstream AI
 SDK behavior.
-
 ## Requirements
-
 ### Requirement: Provider construction and identity
 The system SHALL provide a `providers/openai` Go module exposing both
 `NewResponses(apiKey, modelID string, opts ...Option) provider.LanguageModel`
@@ -92,8 +90,9 @@ The provider SHALL convert user messages to `{ role: "user", content: [...] }`
 input items mapping text parts to `input_text`, image parts to `input_image`
 (via `image_url`, `file_id`, or data URI; honoring `imageDetail`), and file
 parts to `input_file` (via `file_id`, `file_url`, or `filename` + `file_data`).
-Assistant text parts SHALL be emitted as `output_text` content (or as an
-`item_reference` when `store` is true and an item id is present). Unsupported
+Reconstructed assistant text SHALL use string content in an easy-input message,
+retaining phase but omitting stale item IDs. Stored assistant text SHALL use an
+`item_reference` when store is true and an item ID is present. Unsupported
 file media types SHALL emit a warning or error matching upstream behavior.
 
 #### Scenario: User text and image
@@ -117,8 +116,13 @@ file media types SHALL emit a warning or error matching upstream behavior.
 - **THEN** request conversion SHALL return an error rather than emitting an empty file input or falling back to another data source
 
 #### Scenario: Stored assistant text becomes an item reference
-- **WHEN** `store` is true and an assistant text part carries an item id
-- **THEN** the request emits an `item_reference` item for that id rather than inline `output_text`
+- **WHEN** store is true and an assistant text part carries an item ID
+- **THEN** the request emits an item_reference item for that ID rather than inline text
+
+#### Scenario: Reconstructed assistant text retains phase
+- **WHEN** store is false or an assistant text part has no stored item ID
+- **THEN** the request emits string content, including an explicitly empty string
+- **AND** phase is preserved when present without emitting an incomplete output message
 
 ### Requirement: Tool call and tool result conversion
 The provider SHALL convert assistant tool-call parts to `function_call` items
@@ -426,3 +430,45 @@ API boundary.
 #### Scenario: API error during streaming
 - **WHEN** the API returns an error status while opening or reading a stream
 - **THEN** the stream emits a `PartError` carrying an `APICallError`
+
+### Requirement: Internal parallel function wrappers
+The provider SHALL expand an undeclared function named parallel only when its
+nonempty tool_uses array contains object parameters and functions-prefixed
+recipients that are all declared function tools. Expansion SHALL be atomic and
+preserve original wrapper identity and child index/count in provider metadata.
+Streaming SHALL buffer wrapper input until it can emit child input lifecycles;
+unexpandable wrappers SHALL retain their original input deltas and call identity.
+
+#### Scenario: Valid wrapper expands
+- **WHEN** a wrapper references two declared function tools
+- **THEN** generate returns two tool calls and stream emits each child's start/delta/end/call sequence
+- **AND** IDs are the wrapper call ID suffixed with the zero-based child index
+
+#### Scenario: Declared or invalid wrapper stays a normal call
+- **WHEN** parallel is itself a declared function or any nested recipient/parameters are invalid
+- **THEN** the original function call is retained without partial child execution
+
+#### Scenario: Stateful scalar results are grouped
+- **WHEN** every child result has matching wrapper metadata and unique indexes in a conversation or previous-response continuation
+- **THEN** one wrapper output contains child outputs in index order
+- **AND** conversations omit the existing wrapper call while previous-response chains reconstruct it
+- **AND** incomplete or conflicting groups remain ordinary child results
+
+### Requirement: Recoverable malformed Responses stream events
+Malformed JSON SSE data SHALL emit a nonretryable stream error without discarding
+subsequent decodable events. Transport/setup failures SHALL retain their existing
+preflight retry/error contract. An authoritative finish SHALL not be replaced by
+a synthetic second finish; error-only termination SHALL finish as an error.
+
+#### Scenario: Malformed events surround valid output
+- **WHEN** malformed JSON occurs before and after valid tool or text events
+- **THEN** errors and valid output retain their order through one HTTP request
+- **AND** subsequent valid events remain visible
+
+### Requirement: Apply-patch calls contribute tool finish reasons
+Client-executed apply-patch calls SHALL contribute to tool-calls finish mapping in
+both generate and completed stream calls.
+
+#### Scenario: Completed patch call finishes
+- **WHEN** a response contains a completed local apply-patch call
+- **THEN** its unified finish reason is tool-calls rather than stop

@@ -47,6 +47,8 @@ type StreamTextResult struct {
 	elementStream       *losslessStream[json.RawMessage]
 	lastPartialJSON     string
 	emittedElementCount int
+	usedTextIDs         map[string]struct{}
+	usedReasoningIDs    map[string]struct{}
 }
 
 // StreamText starts an LLM streaming call with multi-step tool execution.
@@ -433,6 +435,8 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 	ctx, opCancel = context.WithCancel(ctx)
 	defer opCancel()
 
+	r.usedTextIDs = make(map[string]struct{})
+	r.usedReasoningIDs = make(map[string]struct{})
 	r.emit(StreamStart{})
 
 	if cfg.onStart != nil {
@@ -790,6 +794,33 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 	}
 }
 
+func remapStreamPartID(part provider.StreamPart, active map[string]string, used map[string]struct{}, cfg *streamConfig) string {
+	id := part.ID
+	switch part.Type {
+	case provider.PartTextStart, provider.PartReasoningStart:
+		if _, exists := used[id]; exists {
+			generated := generateConfigID(cfg)
+			id = generated
+			for suffix := 1; ; suffix++ {
+				if _, exists := used[id]; !exists {
+					break
+				}
+				id = fmt.Sprintf("%s-%d", generated, suffix)
+			}
+		}
+		used[id] = struct{}{}
+		active[part.ID] = id
+	default:
+		if mapped, exists := active[part.ID]; exists {
+			id = mapped
+		}
+		if part.Type == provider.PartTextEnd || part.Type == provider.PartReasoningEnd {
+			delete(active, part.ID)
+		}
+	}
+	return id
+}
+
 func (r *StreamTextResult) processStep(
 	ctx context.Context,
 	stepNum int,
@@ -827,6 +858,8 @@ func (r *StreamTextResult) processStep(
 	toolTitleByID := make(map[string]string)
 	responseTextIndex := make(map[string]int)
 	responseReasoningIndex := make(map[string]int)
+	textPartIDs := make(map[string]string)
+	reasoningPartIDs := make(map[string]string)
 
 	var outputTextChunkID string
 	var outputTextChunk strings.Builder
@@ -888,6 +921,13 @@ loop:
 
 		if isSemanticOutputStreamPart(part) {
 			hasOutput = true
+		}
+
+		switch part.Type {
+		case provider.PartTextStart, provider.PartTextDelta, provider.PartTextEnd:
+			part.ID = remapStreamPartID(part, textPartIDs, r.usedTextIDs, cfg)
+		case provider.PartReasoningStart, provider.PartReasoningDelta, provider.PartReasoningEnd:
+			part.ID = remapStreamPartID(part, reasoningPartIDs, r.usedReasoningIDs, cfg)
 		}
 
 		switch part.Type {

@@ -146,7 +146,7 @@ func (m *model) DoStream(ctx context.Context, params provider.CallOptions) (*pro
 	var rawResponse *http.Response
 	requestOptions := append(m.requestOptions(params.Headers), option.WithResponseInto(&rawResponse))
 	stream := m.client.NewStreaming(ctx, body, requestOptions...)
-	items := pumpResponseStream(ctx, stream)
+	items := pumpResponseStream(ctx, stream, rawResponse)
 	buffered, err := preflightResponseStream(ctx, items, body, rawResponse)
 	if err != nil {
 		return nil, err

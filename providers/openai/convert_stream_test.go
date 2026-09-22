@@ -185,9 +185,10 @@ func TestStream_LogprobsTerminalFinishPaths(t *testing.T) {
 		items <- responseStreamItem{err: errors.New("stream failed")}
 		close(items)
 		ch := make(chan provider.StreamPart, 16)
+		event := unmarshalEvent(t, delta)
 		consumeStreamParts(
 			items,
-			[]responses.ResponseStreamEventUnion{unmarshalEvent(t, delta)},
+			[]responseStreamItem{{event: &event}},
 			ch,
 			nil,
 			buildResult{logprobsRequested: true},

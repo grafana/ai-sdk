@@ -24,6 +24,9 @@ type inputConversionContext struct {
 	customProviderToolNames map[string]struct{}
 	outputSchemaToolNames   map[string]struct{}
 	processedApprovalIDs    map[string]struct{}
+	parallelResults         map[string]*parallelToolResultGroup
+	emittedParallelCalls    map[string]bool
+	emittedParallelResults  map[string]bool
 }
 
 func newInputConversionContext(tools []provider.Tool, mapping toolNameMapping, store bool, providerOptionsName string, hasConversation, hasPreviousResponseID bool) inputConversionContext {
@@ -90,6 +93,15 @@ func (c inputConversionContext) contentOptions(content provider.ToolResultConten
 }
 
 func convertAssistantToolCall(part provider.ContentPart, ctx inputConversionContext) (*responses.ResponseInputItemUnionParam, error) {
+	if group := ctx.parallelGroup(part); group != nil {
+		id := group.metadata.ToolCallID
+		if ctx.emittedParallelCalls[id] || ctx.hasConversation {
+			return nil, nil
+		}
+		ctx.emittedParallelCalls[id] = true
+		item := responses.ResponseInputItemParamOfFunctionCall(group.metadata.Input, id, group.metadata.ToolName)
+		return &item, nil
+	}
 	po := ctx.partOptions(part)
 	if ctx.hasConversation && po.ItemID != "" {
 		return nil, nil
@@ -230,6 +242,14 @@ func convertAssistantToolResult(part provider.ContentPart, ctx inputConversionCo
 }
 
 func convertProviderToolResult(part provider.ContentPart, ctx inputConversionContext) (*responses.ResponseInputItemUnionParam, []provider.Warning, error) {
+	if group := ctx.parallelGroup(part); group != nil {
+		id := group.metadata.ToolCallID
+		if ctx.emittedParallelResults[id] {
+			return nil, nil, nil
+		}
+		ctx.emittedParallelResults[id] = true
+		return group.output(ctx)
+	}
 	if part.Output != nil && part.Output.Type == provider.ToolOutputExecutionDenied && ctx.outputOptions(part.Output).ApprovalID != "" {
 		return nil, nil, nil
 	}

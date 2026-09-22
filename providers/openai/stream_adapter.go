@@ -22,6 +22,8 @@ type ongoingToolCall struct {
 	toolCallEmitted   bool
 	applyPatchHasDiff bool
 	applyPatchDone    bool
+	suppressInput     bool
+	bufferedDeltas    []string
 }
 
 type reasoningSummaryState string
@@ -135,6 +137,10 @@ func (a *streamAdapter) handleEvent(event responses.ResponseStreamEventUnion, ch
 
 	case responses.ResponseFunctionCallArgumentsDeltaEvent:
 		tc := a.ongoingToolCalls[e.OutputIndex]
+		if tc != nil && tc.suppressInput {
+			tc.bufferedDeltas = append(tc.bufferedDeltas, e.Delta)
+			return
+		}
 		id := e.ItemID
 		if tc != nil {
 			id = tc.toolCallID
@@ -260,8 +266,11 @@ func (a *streamAdapter) handleOutputItemAdded(e responses.ResponseOutputItemAdde
 		ch <- provider.StreamPart{Type: provider.PartTextStart, ID: v.ID, ProviderMetadata: textMeta(a.providerOptionsName, v.ID, string(v.Phase), nil)}
 
 	case responses.ResponseFunctionToolCall:
-		a.ongoingToolCalls[e.OutputIndex] = &ongoingToolCall{toolName: v.Name, toolCallID: v.CallID}
-		ch <- provider.StreamPart{Type: provider.PartToolInputStart, ID: v.CallID, ToolName: v.Name}
+		suppress := a.br.isUndeclaredParallelTool(v.Name)
+		a.ongoingToolCalls[e.OutputIndex] = &ongoingToolCall{toolName: v.Name, toolCallID: v.CallID, suppressInput: suppress}
+		if !suppress {
+			ch <- provider.StreamPart{Type: provider.PartToolInputStart, ID: v.CallID, ToolName: v.Name}
+		}
 
 	case responses.ResponseReasoningItem:
 		a.activeOutputItemIDs[e.OutputIndex] = v.ID
@@ -360,7 +369,27 @@ func (a *streamAdapter) handleOutputItemDone(e responses.ResponseOutputItemDoneE
 
 	case responses.ResponseFunctionToolCall:
 		a.hasFunctionCall = true
+		ongoing := a.ongoingToolCalls[e.OutputIndex]
 		delete(a.ongoingToolCalls, e.OutputIndex)
+		if a.br.isUndeclaredParallelTool(v.Name) {
+			if expanded := a.br.expandParallelToolCall(v, a.providerOptionsName); expanded != nil {
+				for _, call := range expanded {
+					ch <- provider.StreamPart{Type: provider.PartToolInputStart, ID: call.ToolCallID, ToolName: call.ToolName}
+					ch <- provider.StreamPart{Type: provider.PartToolInputDelta, ID: call.ToolCallID, Delta: string(call.Input)}
+					ch <- provider.StreamPart{Type: provider.PartToolInputEnd, ID: call.ToolCallID}
+					ch <- provider.StreamPart{Type: provider.PartToolCall, ToolCallID: call.ToolCallID, ToolName: call.ToolName, Input: string(call.Input), ProviderMetadata: call.ProviderMetadata}
+				}
+				return
+			}
+			ch <- provider.StreamPart{Type: provider.PartToolInputStart, ID: v.CallID, ToolName: v.Name}
+			if ongoing != nil && len(ongoing.bufferedDeltas) > 0 {
+				for _, delta := range ongoing.bufferedDeltas {
+					ch <- provider.StreamPart{Type: provider.PartToolInputDelta, ID: v.CallID, Delta: delta}
+				}
+			} else if v.Arguments != "" {
+				ch <- provider.StreamPart{Type: provider.PartToolInputDelta, ID: v.CallID, Delta: v.Arguments}
+			}
+		}
 		ch <- provider.StreamPart{Type: provider.PartToolInputEnd, ID: v.CallID, ProviderMetadata: itemIDAndNamespaceMeta(a.providerOptionsName, "", v.Namespace)}
 		ch <- provider.StreamPart{
 			Type:             provider.PartToolCall,
@@ -537,8 +566,11 @@ func (a *streamAdapter) handleOutputItemDone(e responses.ResponseOutputItemDoneE
 			ch <- provider.StreamPart{Type: provider.PartToolInputEnd, ID: tc.toolCallID}
 			tc.applyPatchDone = true
 		}
-		input := applyPatchInput(v.CallID, v.Operation)
-		ch <- provider.StreamPart{Type: provider.PartToolCall, ToolCallID: v.CallID, ToolName: name, Input: string(input), ProviderMetadata: itemIDMeta(a.providerOptionsName, v.ID)}
+		if tc != nil && v.Status == responses.ResponseApplyPatchToolCallStatusCompleted {
+			a.hasFunctionCall = true
+			input := applyPatchInput(v.CallID, v.Operation)
+			ch <- provider.StreamPart{Type: provider.PartToolCall, ToolCallID: v.CallID, ToolName: name, Input: string(input), ProviderMetadata: itemIDMeta(a.providerOptionsName, v.ID)}
+		}
 		delete(a.ongoingToolCalls, e.OutputIndex)
 
 	case responses.ResponseFunctionShellToolCall:
