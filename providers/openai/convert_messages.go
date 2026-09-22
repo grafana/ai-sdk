@@ -14,8 +14,7 @@ import (
 )
 
 // convertUserMessage converts a user message to a single input message item.
-func convertUserMessage(msg provider.Message, popts OpenAIResponsesOptions, providerOptionsName string) (responses.ResponseInputItemUnionParam, []provider.Warning, error) {
-	var warnings []provider.Warning
+func convertUserMessage(msg provider.Message, popts OpenAIResponsesOptions, providerOptionsName string) (responses.ResponseInputItemUnionParam, error) {
 	var content responses.ResponseInputMessageContentListParam
 
 	for i, part := range msg.Content {
@@ -24,11 +23,10 @@ func convertUserMessage(msg provider.Message, popts OpenAIResponsesOptions, prov
 			content = append(content, inputTextContent(part.Text, promptCacheBreakpoint(part.ProviderOptions, providerOptionsName)))
 
 		case provider.ContentPartTypeFile:
-			c, w, err := convertUserFilePart(part, i, popts, providerOptionsName)
+			c, err := convertUserFilePart(part, i, popts, providerOptionsName)
 			if err != nil {
-				return responses.ResponseInputItemUnionParam{}, nil, err
+				return responses.ResponseInputItemUnionParam{}, err
 			}
-			warnings = append(warnings, w...)
 			if c != nil {
 				content = append(content, *c)
 			}
@@ -36,18 +34,17 @@ func convertUserMessage(msg provider.Message, popts OpenAIResponsesOptions, prov
 	}
 
 	item := responses.ResponseInputItemParamOfInputMessage(content, "user")
-	return item, warnings, nil
+	return item, nil
 }
 
 // convertUserFilePart converts a file content part to an input_image or
 // input_file content param.
-func convertUserFilePart(part provider.ContentPart, index int, popts OpenAIResponsesOptions, providerOptionsName string) (*responses.ResponseInputContentUnionParam, []provider.Warning, error) {
-	var warnings []provider.Warning
+func convertUserFilePart(part provider.ContentPart, index int, popts OpenAIResponsesOptions, providerOptionsName string) (*responses.ResponseInputContentUnionParam, error) {
 	topLevel := topLevelMediaType(part.MediaType)
 	detail := partImageDetail(part, providerOptionsName)
 
 	if part.Data == nil {
-		return nil, nil, fmt.Errorf("openai: file part has no data")
+		return nil, fmt.Errorf("openai: file part has no data")
 	}
 
 	if topLevel == "image" {
@@ -59,7 +56,7 @@ func convertUserFilePart(part provider.ContentPart, index int, popts OpenAIRespo
 		case part.Data.Reference != nil:
 			fileID, err := resolveFileReference(part.Data.Reference, providerOptionsName)
 			if err != nil {
-				return nil, nil, err
+				return nil, err
 			}
 			img.FileID = param.NewOpt(fileID)
 		case part.Data.URL != "":
@@ -67,20 +64,20 @@ func convertUserFilePart(part provider.ContentPart, index int, popts OpenAIRespo
 		case part.Data.Base64 != "":
 			mediaType, err := resolveFullMediaType(part)
 			if err != nil {
-				return nil, nil, err
+				return nil, err
 			}
 			img.ImageURL = param.NewOpt(dataURI(mediaType, part.Data.Base64))
 		case len(part.Data.Bytes) > 0:
 			mediaType, err := resolveFullMediaType(part)
 			if err != nil {
-				return nil, nil, err
+				return nil, err
 			}
 			img.ImageURL = param.NewOpt(dataURI(mediaType, base64.StdEncoding.EncodeToString(part.Data.Bytes)))
 		}
 		if breakpoint := promptCacheBreakpoint(part.ProviderOptions, providerOptionsName); breakpoint != nil {
 			img.SetExtraFields(map[string]any{"prompt_cache_breakpoint": breakpoint})
 		}
-		return &responses.ResponseInputContentUnionParam{OfInputImage: &img}, warnings, nil
+		return &responses.ResponseInputContentUnionParam{OfInputImage: &img}, nil
 	}
 
 	// Non-image file.
@@ -89,7 +86,7 @@ func convertUserFilePart(part provider.ContentPart, index int, popts OpenAIRespo
 	case part.Data.Reference != nil:
 		fileID, err := resolveFileReference(part.Data.Reference, providerOptionsName)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		f.FileID = param.NewOpt(fileID)
 	case part.Data.URL != "":
@@ -97,10 +94,10 @@ func convertUserFilePart(part provider.ContentPart, index int, popts OpenAIRespo
 	case part.Data.Base64 != "", len(part.Data.Bytes) > 0:
 		mediaType, err := resolveFullMediaType(part)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		if mediaType != "application/pdf" && (popts.PassThroughUnsupportedFiles == nil || !*popts.PassThroughUnsupportedFiles) {
-			return nil, nil, fmt.Errorf("openai: file part media type %q is not supported", mediaType)
+			return nil, fmt.Errorf("openai: file part media type %q is not supported", mediaType)
 		}
 		b64 := part.Data.Base64
 		if b64 == "" {
@@ -119,7 +116,7 @@ func convertUserFilePart(part provider.ContentPart, index int, popts OpenAIRespo
 	if breakpoint := promptCacheBreakpoint(part.ProviderOptions, providerOptionsName); breakpoint != nil {
 		f.SetExtraFields(map[string]any{"prompt_cache_breakpoint": breakpoint})
 	}
-	return &responses.ResponseInputContentUnionParam{OfInputFile: &f}, warnings, nil
+	return &responses.ResponseInputContentUnionParam{OfInputFile: &f}, nil
 }
 
 func resolveFileReference(reference json.RawMessage, providerOptionsName string) (string, error) {
