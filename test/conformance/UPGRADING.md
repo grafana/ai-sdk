@@ -1,9 +1,14 @@
 # Parity upgrade tooling and evidence
 
 Use the [parity-upgrade skill](../../.agents/skills/ai-sdk-parity-upgrade/SKILL.md)
-for analysis, classification, implementation planning and review. This reference
-explains how the repository's tools support those decisions. It is not a sequence
-of commands that automatically establishes full parity.
+for two separate activities: a pinned-version upgrade with a comprehensive parity
+assessment, and subsequent implementation of registered parity work packages.
+This reference explains commands and evidence, not a shortcut to full parity.
+
+The pinned-version upgrade produces one green PR containing consistent versions,
+expectations, verification, necessary compatibility corrections and an accounted-for
+assessment of the current Go implementation. Remaining parity work is delivered
+separately. The pinned reference is the comparison contract, not a completeness claim.
 
 ## Establish a fixed comparison
 
@@ -59,7 +64,8 @@ paths before making a parity claim.
 
 ## Apply a target
 
-After the assessment establishes the implementation scope:
+For the pinned-version upgrade, apply the fixed target to run candidate checks
+and assess the current Go implementation against it:
 
 ```bash
 TARGET=/absolute/path/to/approved-target.json mise run parity-apply
@@ -96,11 +102,12 @@ changes rather than equating a merged PR with a completed capability.
 
 Keep two dependency decisions separate:
 
-- **Upstream references:** a baseline upgrade moves the selected coherent package
-  set, canonical expectations and verification together. The assessment determines
-  which behavior corrections are required at that boundary and which optional
-  capabilities can follow. Known supported-contract regressions cannot be silently
-  deferred just because existing fixtures miss them.
+- **Upstream references:** the pinned-version upgrade moves the coherent package
+  set, canonical expectations and verification together. Required-check failures
+  and target-induced incompatibilities that prevent supported integrations from
+  working block that PR, even without existing fixtures. Other assessed differences,
+  including older implementation gaps and new capabilities, can become registered
+  work packages with explicit dispositions; complete feature parity is not required.
 - **Go module requirements:** bump a consumer when it needs an already published
   producer API or behavior. Do not mechanically bump Go modules merely because the
   upstream reference versions changed. A parity correction within the registered
@@ -135,19 +142,28 @@ These supplement, rather than replace, normal build/test/lint and other required
 CI checks. Recheck evidence affected by code or dependency changes. In particular,
 a test against an older published adapter cannot prove a new adapter is deployed.
 
-## Report the result
+## Register findings and report completion
 
-Keep the assessment, decisions and concise proof with the change. Raw logs, probes,
-full investigation diffs and candidate manifest dumps belong outside the repository;
-the small selected-target record is a useful reproducible input.
+The upgrade assessment compares current Go behavior with the new reference across
+declared supported surfaces, not only the release delta or existing fixtures.
+Account for older gaps, unsupported families and inconclusive areas as well as
+newly changed behavior. Keep the decisions and concise proof with the upgrade.
 
-Report baseline verification separately from completion of the capabilities selected
-for implementation. Missing implementation and missing evidence remain distinct.
-An accepted follow-up needs explicit scope and an owner; an unresolved decision is
-not an accepted gap. Existing failing assertions cannot be converted to gaps to
-make a transition green.
+Use `PARITY.md` and existing baseline gap metadata for the support/coverage summary.
+Link actionable findings to issues representing behavioral work packages. Reuse an
+existing identifier rather than creating duplicate queues. Issue details should
+include the assessed upstream version/source, Go difference and impact, intended
+outcome, design decisions, dependencies, owner and acceptance tests. Do not duplicate
+the entire investigation in the issue, coverage map and manifest.
 
-A new baseline can be assessed while earlier feature work remains, but affected
-work must be re-evaluated against the new comparison. Automation scheduling,
-permissions and execution setup belong to automation configuration, not this
-parity-analysis workflow.
+The pinned-version PR is complete when its checks pass and the comprehensive
+assessment is accounted for, including registered remaining work. A parity package
+is complete only when its behavior and proof are delivered; update the coverage
+summary and issue then. A tracked correction is not a permanent accepted deviation,
+and a proposed API is not approved merely because it has an issue. Unresolved
+upgrade-blocking risks or existing failures cannot be relabeled as follow-ups.
+
+When pins advance again, reassess open packages against the new reference. Raw
+logs, probes, full investigation diffs and candidate manifest dumps stay outside
+Git; the small selected-target record remains a reproducible input. Automation
+scheduling, permissions and execution setup belong to automation configuration.

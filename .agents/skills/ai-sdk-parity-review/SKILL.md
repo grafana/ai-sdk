@@ -41,12 +41,20 @@ be a mandatory reading list.
 - Does the regression test fail for the actual bug and exercise the complete path?
 - Are snapshot changes explained by behavior, with intact input provenance?
 
-## Evaluate package completion and delivery
+## Distinguish upgrade review from parity-work review
 
-Review parity work packages as behavioral contracts, not as a list of PRs. Check
-which corrections are required for the baseline transition and which capabilities
-have explicit follow-up decisions. One merged PR may deliver only a producer
-prerequisite; package completion still requires the consumer behavior and evidence.
+For a pinned-version upgrade, check consistent references/evidence, required green
+checks and a comprehensive assessment of the current Go implementation against the
+target. The release delta is a guide, not the assessment boundary: older gaps and
+uncovered surfaces also need dispositions. Remaining differences must be linked to
+registered work or an explicit adaptation/exclusion. Do not demand completion of
+all parity work, but do not accept broken checks or a target-induced incompatibility
+that prevents a supported integration from working as a mere follow-up.
+
+For a parity work package, review its behavioral acceptance contract against the
+current pinned reference. Check design, implementation and proof; update the
+coverage record when complete. One merged PR may deliver only a producer
+prerequisite, so package completion still requires the consumer behavior and evidence.
 
 Choose evidence appropriate to the affected layer: provider request snapshots,
 core UI/output snapshots, frontend hook scenarios, focused provider tests or
@@ -70,7 +78,7 @@ upstream behavior change, intentional deviation, coverage gap or unresolved desi
 question. Same-behavior Go adaptations are not findings unless they explain a concern.
 
 Do not list every matching behavior. For broad scope, use a compact area/evidence/
-finding/action matrix. State commands actually run and distinguish baseline
-verification from completion of the selected feature scope. Do not accept a gap
+finding/action matrix. State commands actually run and distinguish completion of the pinned-version
+upgrade/assessment from completion of an individual parity work package. Do not accept a gap
 by omission or suggest weakening comparisons. Durable coverage decisions belong
 in `upstream.yaml` or `PARITY.md`; review-specific observations belong in the report.

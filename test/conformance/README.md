@@ -47,8 +47,10 @@ known gaps. Use it when deciding whether a change needs new fixtures, upstream
 source review, or a documented deviation.
 
 For upgrades, use the [parity-upgrade skill](../../.agents/skills/ai-sdk-parity-upgrade/SKILL.md)
-to assess behavior and decide scope. The [tooling and evidence reference](UPGRADING.md)
-explains target selection/application and what the checks prove. In particular,
+to update the pinned reference, assess current Go behavior comprehensively and
+register remaining parity work for independent implementation. The
+[tooling and evidence reference](UPGRADING.md) explains selection/application,
+recording findings and what the checks prove. In particular,
 fixture inventory is not behavioral coverage, generation is not successful Go
 replay, and passing replay is not proof that all upstream capabilities exist.
 

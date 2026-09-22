@@ -1,7 +1,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Parity upgrade workflow
-The repository SHALL provide one documented workflow for routine and catch-up upgrades. It SHALL distinguish the registered baseline, a frozen active target and an approved capability backlog. Selection SHALL default to the newest coherent stable package set on npm latest lines satisfying the repository minimum release age at selection time. New releases SHALL NOT automatically change an active target. A target change or intermediate checkpoint SHALL require an explicit decision and incremental reassessment. Each implementation PR SHALL be independently mergeable with all enforced checks passing; implementation, pins, generated expectations, lockfile and attestation needed by a baseline transition SHALL land together.
+The repository SHALL distinguish pinned-version upgrades from parity matching. A pinned-version upgrade SHALL update a fixed coherent reference, run verification, comprehensively assess the current Go implementation against the target and register remaining differences. It SHALL produce an independently green PR containing pins, lockfile, expectations, reviewed evidence and necessary compatibility corrections. Subsequent parity matching SHALL process registered behavioral work packages independently. The pinned reference SHALL NOT be presented as exhaustive feature parity. Selection SHALL default to the newest coherent stable package set on npm latest lines satisfying the repository minimum release age at selection time. New releases SHALL NOT automatically change the selected target; changing it or choosing an intermediate checkpoint SHALL require an explicit decision and reassessment.
 
 #### Scenario: Upstream baseline is upgraded
 - **WHEN** an assessed and approved baseline transition is implemented
@@ -20,10 +20,11 @@ The repository SHALL provide one documented workflow for routine and catch-up up
 
 #### Scenario: Team resumes after an absence
 - **WHEN** the upstream delta accumulated over an extended absence
-- **THEN** the workflow SHALL assess the complete selected range and define behavioral work packages before grouping delivery into independently mergeable PRs
+- **THEN** the workflow SHALL assess current Go behavior against the selected target across declared supported surfaces, including older gaps beyond the release delta
+- **AND** it SHALL register remaining parity work separately from completion of the pinned-version upgrade
 
 ### Requirement: Parity workflow skills
-The repository SHALL provide decision-led skills for parity assessment and review, supported by a tooling/evidence reference. Upgrade assessment SHALL compare exact upstream implementation/tests with Go behavior and classify each relevant finding using a decision matrix. It SHALL distinguish changed supported behavior, already-matching implementation, new capabilities, behavior-preserving adaptations, intentional deviations, unsupported families and unresolved questions. Implementation status and evidence coverage SHALL be recorded separately. The assessment SHALL define parity work packages by upstream contract, Go difference, outcome, exclusions, dependencies and acceptance evidence before determining PR boundaries. It SHALL classify their relationship to the baseline transition without requiring a prewritten upgrade plan or persistent active change. Review SHALL check upstream-to-Go completeness and Go-to-assessment scope and justification. Generic agent setup, scheduling and permissions SHALL remain outside the parity skills.
+The repository SHALL provide decision-led skills for pinned-version upgrade assessment and independent parity-work review, supported by a tooling/evidence reference. Assessment SHALL compare exact target implementation/tests with the current Go implementation across declared supported surfaces; changelogs, the release delta and existing fixtures SHALL guide but not bound it. It SHALL distinguish upgrade blockers, nonblocking implementation differences, matching behavior, new capabilities, adaptations, intentional deviations, unsupported families and unresolved questions. Implementation status and evidence coverage SHALL be recorded separately. Remaining work SHALL be defined by upstream contract, Go difference, outcome, dependencies and acceptance evidence without requiring a prewritten plan or persistent active change. Review SHALL check assessment completeness for a pinned-version upgrade and full behavioral acceptance for a parity package. Generic agent setup, scheduling and permissions SHALL remain outside the parity skills.
 
 #### Scenario: Agent performs scoped parity review
 - **WHEN** reviewing normal development
@@ -32,8 +33,8 @@ The repository SHALL provide decision-led skills for parity assessment and revie
 
 #### Scenario: Agent performs parity upgrade
 - **WHEN** starting an upgrade without a prior plan
-- **THEN** the skill SHALL assess scope and dependency order before mutating canonical pins
-- **AND** baseline promotion SHALL be distinct from completion of the approved capability rollout
+- **THEN** the skill SHALL update and validate a fixed target, assess current Go behavior comprehensively and register remaining parity differences
+- **AND** completion of that pinned-version upgrade SHALL be distinct from completion of the registered parity packages
 
 #### Scenario: Agent reviews a broad scope
 - **WHEN** review covers a provider or directory rather than only a diff
@@ -51,18 +52,18 @@ The repository SHALL provide decision-led skills for parity assessment and revie
 
 ## ADDED Requirements
 
-### Requirement: Work-package planning precedes delivery grouping
-Parity work packages SHALL represent behavioral outcomes rather than PRs. Assessment SHALL identify transition requirements, prerequisites and approved follow-ups before grouping changes for delivery. Known supported-contract regressions and existing failures against the target SHALL be resolved before the transition lands; absence of a failing fixture SHALL NOT silently justify deferral. New optional capabilities SHALL have explicit inclusion or follow-up decisions, and existing gaps/deviations SHALL be reassessed against the target. Unknown impact SHALL remain unresolved until investigated.
+### Requirement: Independent parity work packages
+Parity work packages SHALL represent behavioral outcomes rather than PRs and SHALL be processed independently from the pinned-version upgrade that registered them. Required-check failures and target-induced incompatibilities that prevent supported integrations from working SHALL be resolved before the upgrade lands or SHALL block it, even when existing fixtures miss them. Other differences, including existing implementation gaps and new capabilities, SHALL receive explicit registered work or adaptation/exclusion dispositions without requiring full parity before updating the reference. Unresolved upgrade-blocking risks SHALL NOT be silently deferred.
 
-#### Scenario: Baseline transition has required behavior corrections
-- **WHEN** the target changes an existing supported contract incompatibly
-- **THEN** its full correction and proof SHALL accompany or precede the baseline transition
-- **AND** it SHALL NOT be replaced by a follow-up entry merely to advance dependency versions
+#### Scenario: Pinned-version upgrade has a compatibility blocker
+- **WHEN** the target fails required checks or introduces an incompatibility that prevents a supported integration from working
+- **THEN** the correction and proof SHALL accompany or precede the upgrade, or the upgrade SHALL wait
+- **AND** recording a parity work package SHALL NOT replace satisfying that gate
 
-#### Scenario: Optional capability can follow the transition
-- **WHEN** a new capability is independent of existing supported behavior
-- **THEN** assessment SHALL recommend inclusion or an explicit follow-up scope and coverage decision
-- **AND** baseline verification SHALL NOT claim that the follow-up capability is implemented
+#### Scenario: Nonblocking parity differences remain
+- **WHEN** assessment identifies an older implementation gap or new capability that does not block the reference upgrade
+- **THEN** the upgrade MAY complete with an explicit registered work package or adaptation/exclusion disposition
+- **AND** upgrade completion SHALL NOT claim that remaining behavior has been implemented
 
 #### Scenario: Delivery spans multiple PRs
 - **WHEN** a work package needs a separately published producer before consumer adoption
@@ -73,6 +74,21 @@ Parity work packages SHALL represent behavioral outcomes rather than PRs. Assess
 - **WHEN** planning an upstream baseline upgrade or a Go consumer update
 - **THEN** upstream references SHALL move as the selected coherent set with canonical expectations and verification
 - **AND** Go consumer requirements SHALL change according to required published APIs/behavior, not automatically because the upstream baseline changed
+
+### Requirement: Parity difference registration
+The pinned-version upgrade SHALL account for all assessed differences using existing coverage records and linked actionable issues, not a separate tracking system. PARITY.md and baseline gap metadata SHALL summarize current support, evidence and dispositions without duplicating full investigations. Issues SHALL identify parity work packages by durable identifier, exact upstream reference, Go difference and impact, intended outcome, design decisions, dependencies, owner and acceptance tests. Registration SHALL NOT imply approval of a new API or acceptance of a permanent deviation.
+
+#### Scenario: Upgrade assessment records older gaps
+- **WHEN** current Go behavior differs from the target even though the relevant upstream code did not change during the selected release range
+- **THEN** the difference SHALL be included in the assessment and linked work or disposition
+
+#### Scenario: Parity package is delivered
+- **WHEN** the full behavioral outcome and regression proof are implemented
+- **THEN** the coverage record and linked issue SHALL reflect completion independently of the earlier pinned-version upgrade
+
+#### Scenario: A later upgrade reassesses outstanding work
+- **WHEN** the pinned reference advances again
+- **THEN** open parity packages SHALL be checked against that reference rather than retaining stale assumptions without review
 
 ### Requirement: Frozen target selection and application
 Selection SHALL write a new versioned target record without modifying the registered baseline or parity consumers. The record SHALL identify its source baseline, selection time, maturity policy, exact package versions, publication times and upstream source commits. Application SHALL require an explicit target, validate exact-version evidence and every affected manifest before writing, and SHALL NOT reselect latest. Selection SHALL refuse to overwrite an existing record.

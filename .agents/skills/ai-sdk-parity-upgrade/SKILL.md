@@ -1,110 +1,110 @@
 ---
 name: ai-sdk-parity-upgrade
-description: Analyze upstream AI SDK changes, decide their impact on the Go port, plan independently mergeable updates, and review the resulting parity. Use for routine upgrades or catch-up after a longer gap.
+description: Upgrade the pinned upstream AI SDK reference, assess the current Go implementation against it, and register parity work for independent implementation afterward.
 ---
 
-# AI SDK Parity Upgrade
+# Pinned-Version Upgrade and Parity Assessment
 
-Turn an upstream version delta into justified implementation decisions and
-regression evidence. A version bump or green replay alone does not establish parity.
+Separate updating the upstream reference from matching all of its behavior:
 
-## 1. Establish the comparison
+1. **Pinned-version upgrade:** update the reference, validate it, assess parity and
+   register remaining differences. This produces one independently mergeable PR.
+2. **Parity work:** implement the registered behavioral work packages independently.
+   This may produce several subsequent PRs without another upstream version bump.
 
-Use `test/conformance/upstream.yaml` for the registered versions and the supplied
-or selected target for the destination. Keep that target fixed during the work.
-Consult relevant `PARITY.md` entries for existing support, deviations and evidence.
+The pinned version defines what we compare against; it does not claim exhaustive
+parity. A successful upgrade must leave a valid reference and an accountable
+assessment, not an empty parity backlog.
 
-Compare exact package source and tests between those versions, then inspect the
-corresponding Go behavior. Use changelogs to locate changes, not as a complete
-specification. Follow adjacent execution paths when a change affects requests,
-stream state, continuation, errors or frontend behavior.
+## 1. Upgrade the pinned reference
 
-Start with this context; read other documentation when a finding requires it.
-[Tooling and evidence reference](../../../test/conformance/UPGRADING.md) explains
-selection, replay, source checks and their limitations.
+Use `test/conformance/upstream.yaml` for the starting versions and a fixed, coherent,
+mature target for the destination. Update all consumer pins, the lockfile, generated
+expectations and reviewed evidence together. Keep the starting references available
+for explaining changed behavior. See the [tooling reference](../../../test/conformance/UPGRADING.md)
+for selection, application and validation commands.
 
-## 2. Decide what each change means
+Run the tests and tooling against the target. Explain snapshot changes and resolve
+required-check failures. If the new reference introduces an incompatibility that
+prevents a supported integration from working, correct it here or wait to upgrade;
+registering a follow-up is not a substitute. This applies even when existing tests
+miss the incompatibility. Do not weaken comparisons to make the upgrade green.
 
-Classify observable behavior, not commits or changed files. Several upstream
-commits may form one capability; one commit may affect several supported surfaces.
+These are upgrade blockers, not a requirement to implement every upstream feature
+before moving the pins. Other assessed differences can be registered for later work.
+
+## 2. Assess the current Go implementation against the target
+
+Perform a comprehensive comparison across the declared supported surfaces: core
+orchestration, provider contracts/adapters, frontend behavior and Gateway. Include
+harness limitations when evaluating the evidence. Use relevant `PARITY.md` entries
+to identify current support, deviations and coverage.
+
+Inspect exact upstream implementation and tests alongside the current Go paths.
+The release delta and changelogs guide investigation, but do not bound it: look for
+older gaps too. Trace requests, stream state, continuation, errors and interactions.
+Do not infer matching behavior from unchanged files or passing fixtures alone.
+Identify unsupported upstream product families separately, and state any area the
+assessment could not resolve rather than claiming it was covered.
 
 | Finding | Decision | Evidence needed |
 | --- | --- | --- |
-| Supported upstream behavior changed and Go differs | Correct the implementation; determine whether it must accompany the baseline transition | Exact source/tests and a regression exercising the affected behavior |
-| Go already matches | Retain the implementation; strengthen missing coverage rather than re-port it | Existing regression or a focused new comparison |
-| New capability within a supported area | Evaluate the Go API and end-to-end behavior; recommend inclusion or explicit deferral | Upstream semantics, dependencies, design implications and a testable scope |
-| Different language mechanism, same observable behavior | Keep the Go adaptation | Proof that relevant behavior and wire semantics remain equivalent |
-| Deliberately different observable behavior | Seek an explicit deviation decision, not an equivalence claim | Rationale, user impact and regression/coverage boundary |
-| Change belongs to an unsupported product family | Confirm the scope exclusion | Evidence that it is separate from supported paths |
-| Behavior or evidence is inconclusive | Investigate further; leave the decision unresolved | The missing source, reproduction or design decision |
+| Target breaks required checks or a supported integration | Resolve in the pinned-version upgrade or block it | Reproduction, source/test contract and regression proof |
+| Go behavior differs without blocking the reference upgrade | Register a parity correction | Exact difference, impact and proposed acceptance tests |
+| Go already matches | Retain it; register missing coverage if needed | Existing proof or a focused comparison |
+| New capability within a supported area | Recommend a parity work package or explicit exclusion | Semantics, Go design implications and dependencies |
+| Different mechanism, same observable behavior | Retain the Go adaptation | Behavioral and wire equivalence |
+| Intentional observable difference or unsupported family | Confirm and document the disposition | Rationale and precise scope boundary |
+| Behavior or impact is inconclusive | Investigate; keep the question visible | Missing source, reproduction or design decision |
 
-Track implementation and evidence separately: an implemented capability may lack
-proof, and a passing fixture may cover only part of a capability. Review source
-changes not exercised by existing fixtures. An untested supported-contract bug
-still needs a decision; it cannot disappear behind green replay.
+Implementation and evidence are separate: a capability may work without sufficient
+proof, and a passing scenario may cover only part of it. Give new and existing gaps
+the same scrutiny. A known bug cannot disappear behind a coverage label, and an
+unresolved upgrade-blocking risk cannot be silently assigned to later work.
 
-Summarize the assessment in one compact matrix:
+## 3. Register the parity differences
 
-| Behavior / surface | Upstream reference | Go behavior | Existing / missing proof | Decision and rationale |
+Keep the assessment compact:
+
+| Behavior / surface | Upstream reference | Current Go behavior | Existing / missing proof | Disposition / work package |
 | --- | --- | --- | --- | --- |
-| Concrete observable change | Exact source/test reference | Matches, missing or differs | What is actually exercised | Implement, retain, adapt, defer, exclude or investigate |
+| Observable contract | Exact version and source/test | Matches, missing or differs | What is exercised | Fixed in upgrade, tracked work, adaptation, exclusion or unresolved |
 
-Obtain approval for new API designs, scope exclusions and intentional deviations.
-A proposed deferral is not an accepted gap. Record accepted durable differences in
-`upstream.yaml` or `PARITY.md` without weakening existing comparisons.
+Use the existing records rather than a new planning system:
 
-## 3. Define parity work packages and the baseline transition
+- `PARITY.md` and baseline gap metadata summarize current support, evidence and
+  accepted differences. Do not duplicate the same detailed finding in both.
+- Linked issues describe actionable parity work packages. Reuse existing issues,
+  maintain a durable identifier and link them from the relevant coverage entry.
+- Each package states the behavior and impact, exact upstream reference, current
+  Go difference, intended outcome, API decisions, dependencies, owner and acceptance
+  evidence. Missing implementation and missing proof remain distinguishable.
 
-Group accepted findings into work packages defined by complete behavior, not PRs.
-Each package identifies the upstream contract, Go difference, intended outcome,
-exclusions, dependencies and acceptance evidence. Include continuation and frontend
-behavior where they are part of that contract.
+Registering work does not mean accepting a permanent deviation or approving a new
+API design. Obtain explicit scope/deviation decisions where needed. Reassess open
+packages against a later pinned reference instead of blindly carrying stale claims.
 
-For a baseline upgrade, advancing the coherent upstream package set is the objective;
-whether it can precede particular implementation work is an assessment result.
-Do not automatically bump first and defer failures, or require every optional
-upstream capability before advancing.
+The upgrade PR is complete when the pins/evidence are consistent, required checks
+pass, the supported-surface assessment is accounted for and remaining differences
+are linked to work or an explicit disposition. A version bump alone is incomplete;
+a nonempty, honest parity inventory is not itself a failed upgrade.
 
-| Finding | Relationship to the baseline transition |
-| --- | --- |
-| Changed behavior breaks an existing supported contract | Required for the transition, even without an existing failing fixture |
-| Existing checks fail against the target | Resolve before the transition lands; recording a follow-up does not satisfy the gate |
-| New optional capability independent of existing behavior | Candidate follow-up package, with an explicit scope and coverage decision |
-| Existing documented gap or intentional deviation | Reassess against the target; retain only with a valid disposition |
-| Impact or evidence is inconclusive | Investigate before assigning it to the transition or a follow-up |
-| A separately published producer is needed | Establish producer/consumer ordering; this is a delivery dependency, not an automatic upstream version bump |
+## 4. Implement parity work independently
 
-The baseline-transition package includes the upstream pins, canonical expectations,
-verification and behavior corrections needed to make that transition valid.
-Follow-up packages use the new registered baseline and remain visible until their
-approved outcomes are delivered. Parity improvements within the existing baseline
-do not require an upstream version bump merely to show progress.
+Select a registered package and confirm its contract against the current pinned
+reference. Refine the Go design and acceptance tests, then implement the complete
+behavior with regression proof. Prefer failing conformance cases with authentic
+inputs; otherwise use focused tests and state the remaining boundary coverage gap.
+Preserve fixture provenance and update the coverage record when work is completed.
 
-Only after defining these packages, derive the delivery plan. Related packages may
-share a PR; a package spanning published modules may need a producer PR and later
-consumer adoption. The package is complete only when its full acceptance contract
-is met. Preserve tests at each delivered boundary. Every PR must independently pass
-required checks; a later PR cannot repair its merge readiness. Detailed publication
-and merge checks belong in the tooling reference.
+Work packages are behavioral units, not PRs. Related packages may share a PR; a
+package spanning published modules may require producer and consumer changes in
+separate PRs. Each PR must independently pass required checks, and the package is
+complete only when its full outcome and evidence are delivered. Go consumer pins
+change when they need published producer behavior, not automatically because the
+upstream reference changed.
 
-Implement each agreed package with its regression proof. Prefer a failing
-conformance case when authentic inputs cover it; otherwise use focused tests and
-state the provider-boundary coverage gap. Preserve fixture provenance.
-
-## 4. Review in both directions
-
-**Upstream → Go:** does every relevant upstream change have a supported decision?
-Check missing capabilities, edge cases and interactions, not just replay failures.
-
-**Go → assessment:** does every implementation change serve an assessed need?
-Check scope growth, unnecessary abstractions, incorrect adaptations and missing
-regressions. Trace snapshot changes back to behavior rather than accepting churn.
-
-Then verify the appropriate evidence: requests, stream/UI output, hooks, errors,
-provider contracts and published consumer behavior. A check's name is not proof
-of its breadth; inspect what ran and distinguish omissions from successful checks.
-
-Conclude with implemented behavior, verified evidence and unresolved or accepted
-gaps. Distinguish **baseline updated** from **approved capabilities completed**:
-changing versions does not finish the rollout, and a deferred capability must
-remain visible. Use the parity-review skill for focused implementation review.
+Review in both directions: **upstream → Go** for missing semantics and edge cases,
+and **Go → package** for scope, design justification and regression proof. Use the
+parity-review skill for that review. Report package completion separately from
+completion of the earlier pinned-version upgrade.

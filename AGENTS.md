@@ -119,19 +119,21 @@ can support a parity claim.
   implementation bug, or coverage gap.
 - **Documented gaps**: Intentional deviations and accepted coverage gaps must be
   recorded in `test/conformance/upstream.yaml` or `test/conformance/PARITY.md`.
-- **Upstream upgrades**: Use the `ai-sdk-parity-upgrade` skill to assess the exact
-  version delta, classify its impact on Go behavior and define parity work packages
-  by outcome, dependencies and proof. Determine the baseline-transition requirements
-  before grouping packages into PRs. Keep the selected target fixed. The [tooling reference](test/conformance/UPGRADING.md)
-  describes selection, application and evidence limits. Implementation status and
-  test coverage are separate; green replay alone does not establish complete parity.
+- **Pinned-version upgrades**: Use the `ai-sdk-parity-upgrade` skill to update a
+  fixed coherent reference, validate it and comprehensively assess current Go
+  behavior against that target, not only the release delta. The upgrade PR must
+  pass required checks and account for remaining differences in the coverage
+  records and linked parity work packages. The [tooling reference](test/conformance/UPGRADING.md)
+  describes commands and evidence limits. Pins identify a reference, not full parity.
 - **Independent mergeability**: Every PR must pass required checks without a later
   unmerged change. Account for published Go module dependencies, not just workspace
   behavior. Changes incompatible with the old baseline must land with the pins,
   lockfile, expectations and reviewed evidence that validate them.
-- **Upgrade completion**: Report baseline verification separately from completion
-  of the selected capabilities. New APIs, exclusions and intentional deviations
-  need explicit decisions; unresolved findings are not accepted gaps.
+- **Parity matching**: Process registered behavioral work packages independently
+  after the pinned-version upgrade, with their own acceptance tests and coverage
+  updates. Separate missing implementation from missing proof. Registration is not
+  API approval or acceptance of a permanent deviation, and an upgrade-blocking
+  incompatibility cannot be silently deferred.
 
 ## Build / Lint / Test Commands
 

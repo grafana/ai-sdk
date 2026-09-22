@@ -41,4 +41,12 @@ Docs lint, explicit Markdown lint, relative links, strict OpenSpec validation an
 
 The skill now defines behavioral work packages before classifying baseline-transition requirements and follow-ups, then derives PR delivery. Related guidance distinguishes coherent upstream reference bumps from published Go consumer adoption and does not assume packages and PRs map one-to-one. Supported-contract regressions cannot become follow-ups merely because fixtures miss them.
 
-Docs lint, explicit skill/reference Markdown lint, links, strict OpenSpec validation and whitespace checks passed. Only Markdown changed; no runtime/tooling or baseline assets changed. Commit and push of this revision were explicitly requested.
+Docs lint, explicit skill/reference Markdown lint, links, strict OpenSpec validation and whitespace checks passed. Only Markdown changed; no runtime/tooling or baseline assets changed. Commit and push of that revision were explicitly requested.
+
+## Pinned-version upgrade and independent parity matching
+
+The next documentation revision separates one pinned-version upgrade/assessment PR from subsequent implementation of registered parity work packages. Assessment compares current Go against the target across supported surfaces, including older gaps; coverage records summarize findings and link actionable issues. Required-check failures or incompatibilities preventing supported integrations from working cannot be hidden as follow-ups. Remaining tracked work is not a claim of full parity, permanent deviation acceptance or API approval.
+
+Repo docs/skills and change artifacts are aligned. Four local prompts were updated to remove the earlier assessment-before-any-pin-mutation wording and distinguish upgrade assessment from parity-package completion. Backups are outside Git at `/home/nara/.local/share/ai-sdk-artifacts/parity-two-step-prompts-3owDBd`; scheduler configuration and discovery-only permissions are unchanged. No automation or GitHub issue creation ran.
+
+Docs/Markdown lint, relative links, strict OpenSpec validation, whitespace checks and Herdr configuration validation passed. This revision is documentation-only; target tooling, canonical pins and fixtures are unchanged.

@@ -225,22 +225,25 @@ alters wire-format or provider-boundary behavior, consider whether
 `expected.jsonl`, `expected-requests.jsonl`, or `expected-object.json` need to be
 regenerated.
 
-For baseline upgrades, the [parity-upgrade skill](.agents/skills/ai-sdk-parity-upgrade/SKILL.md)
-provides the analysis and decision matrix; the [tooling reference](test/conformance/UPGRADING.md)
-explains commands and evidence. Compare a fixed mature target against upstream
-source/tests and Go behavior, including changes absent from current fixtures.
-Decide which differences require corrections, new capabilities, adaptations or
-explicit exclusions, then define parity work packages with behavioral outcomes,
-dependencies and acceptance evidence. Identify the packages required for the
-baseline transition and approved follow-ups before choosing PR boundaries. Packages
-and PRs need not map one-to-one: delivery grouping follows the behavior and actual
-publication dependencies, not the reverse.
+Treat pinned-version upgrades and parity matching as separate activities. The
+[parity-upgrade skill](.agents/skills/ai-sdk-parity-upgrade/SKILL.md) provides the
+decision matrix; the [tooling reference](test/conformance/UPGRADING.md) explains
+commands, evidence and recording findings.
 
-Each PR must pass required checks independently. Account for published Go module
-dependencies; workspace success can hide an older consumer dependency. Behavior
-incompatible with the old baseline must land with the target pins, lockfile,
-expectations and reviewed evidence that validate it. Report baseline verification
-separately from completion of the selected capabilities.
+The pinned-version upgrade produces one PR: update a fixed coherent target, run
+the tests/tooling, and comprehensively compare current Go behavior against that
+reference. Include older gaps, not just the release delta. Resolve compatibility
+blockers and register remaining differences in the coverage records and linked
+issues. The PR can finish with outstanding parity work; the pins are not a claim
+of exhaustive implementation.
+
+Process each registered parity work package independently afterward, with its own
+behavioral outcome, design and regression proof. Update the coverage record when
+it is delivered. Packages and PRs need not map one-to-one, but every PR must pass
+required checks independently. Account for published Go module dependencies;
+workspace success can hide an older consumer dependency. A failing upgrade check
+or an incompatibility that prevents a supported integration from working cannot
+be made acceptable merely by registering a follow-up.
 
 In CI, every retained parity job is a required status check:
 `parity-baseline`, `conformance-test`, and `integration-test` all block the

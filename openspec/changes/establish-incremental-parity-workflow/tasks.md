@@ -26,3 +26,9 @@
 
 - [x] 5.1 Define behavioral work packages before baseline-transition classification and PR grouping; distinguish upstream references from Go consumer dependency bumps.
 - [x] 5.2 Align review/reference/spec guidance and validate documentation-only changes; publish under the operator's commit/push authorization.
+
+## 6. Separate pinned upgrades from parity matching
+
+- [x] 6.1 Define one pinned-version upgrade/assessment PR and independent parity-package implementation; include older gaps in current-Go-versus-target analysis.
+- [x] 6.2 Specify registration through existing coverage records and linked issues, distinguish upgrade blockers from remaining work, and align repo/local guidance.
+- [x] 6.3 Validate docs, links, OpenSpec and local prompt configuration without changing tooling, pins or automation permissions.

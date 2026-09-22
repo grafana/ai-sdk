@@ -4,8 +4,8 @@ Upstream releases continue during implementation and team absences. The current 
 
 ## What Changes
 
-- Separate the registered baseline, frozen candidate target and approved capability backlog.
-- Define parity work packages from source-backed behavioral assessment, then determine transition requirements, follow-ups and PR grouping. Distinguish upstream baseline bumps from published Go consumer adoption, and baseline verification from completion of the approved rollout.
+- Separate pinned-version upgrades from parity matching: one green reference-update PR includes validation, a comprehensive current-Go-versus-target assessment and registration of remaining work; later PRs implement parity packages independently.
+- Include older gaps as well as the release delta. Summarize support/coverage in existing records and link actionable issues, without conflating tracked work with accepted deviations or approved APIs. Distinguish upstream reference bumps from Go consumer dependency adoption.
 - **BREAKING**: replace implicit latest selection in the upgrade command with explicit non-mutating selection and application of a saved target. Preserve maturity, coherence, source provenance and all consumer pins.
 - Make parity skills decision-led: classify behavior and evidence, derive implementation scope and review upstream-to-Go completeness and Go-to-requirement justification. Keep command details and evidence limits in a tooling reference, and execution mechanics in local automation guidance.
 - Test immutable selection, deterministic application, stale-source rejection, resume and verification-date semantics without network-dependent unit tests.
