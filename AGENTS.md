@@ -119,11 +119,20 @@ can support a parity claim.
   implementation bug, or coverage gap.
 - **Documented gaps**: Intentional deviations and accepted coverage gaps must be
   recorded in `test/conformance/upstream.yaml` or `test/conformance/PARITY.md`.
-- **Upstream upgrades**: Package/version bumps must update the baseline
-  manifest, conformance dependency pins, generated snapshots, and lockfiles
-  together. The selected stable package set must satisfy the
-  `minimumReleaseAge` in `test/pnpm-workspace.yaml`; do not bypass that gate.
-  Use the `ai-sdk-parity-upgrade` skill for that workflow.
+- **Upstream upgrades**: Follow [the upgrade runbook](test/conformance/UPGRADING.md)
+  and the `ai-sdk-parity-upgrade` skill. Select a coherent mature target once,
+  assess source/tests before mutation, and obtain approval for scope and gaps.
+  Resume the frozen record; new releases do not silently change it. The baseline
+  manifest, all consumer pins, lockfile, expectations and attestation move together.
+- **Independent mergeability**: Every PR must pass all enforced checks without
+  a later unmerged PR. Plan public Go module publication before consumers; run
+  `mise run verify-module-resolution` early, not just workspace tests. Do not use
+  a red intermediate merge, final cumulative merge, replacement directive or
+  weakened comparison to bypass a dependency.
+- **Upgrade completion**: Baseline promotion and the approved capability rollout
+  are separate outcomes. Green replay is not complete feature coverage. Record
+  missing implementation separately from missing proof; unresolved decisions are
+  not accepted gaps. Scheduled discovery is read-only and uses repository policy.
 
 ## Build / Lint / Test Commands
 
@@ -168,6 +177,12 @@ mise run check
 # Upstream parity checks
 mise run validate-parity-baseline
 mise run parity-check
+mise run verify-module-resolution
+
+# Frozen upgrade workflow (see test/conformance/UPGRADING.md)
+TARGET=/absolute/path/to/new-target.json mise run parity-select
+# Assess and approve before applying that exact record
+TARGET=/absolute/path/to/approved-target.json mise run parity-upgrade
 ```
 
 The Anthropic provider module is a separate `go.mod`. Run its tests from the

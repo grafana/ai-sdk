@@ -225,10 +225,18 @@ alters wire-format or provider-boundary behavior, consider whether
 `expected.jsonl`, `expected-requests.jsonl`, or `expected-object.json` need to be
 regenerated.
 
-Baseline upgrades — bumping upstream `ai` or `@ai-sdk/*` versions — must move the
-manifest, the conformance dependency pins, the generated snapshots, and the
-lockfiles together. The selected package set must satisfy the
-`minimumReleaseAge` gate in `test/pnpm-workspace.yaml`; do not bypass it.
+For baseline upgrades, follow the
+[incremental upgrade runbook](test/conformance/UPGRADING.md). Select and freeze a
+mature coherent target, assess source/tests and approve scope before implementation.
+New releases do not change an active target. The manifest, every consumer pin,
+lockfile, expectations and attestation move together in an independently green PR.
+
+Plan public Go module dependencies before splitting work: a workspace test can
+pass while consumers still resolve an older published module. Run
+`mise run verify-module-resolution` early. Every PR must pass required checks on
+its own; no red intermediate merge or final cumulative merge is an escape hatch.
+Baseline promotion and completion of the approved capability rollout are distinct.
+Scheduled discovery reports drift but does not authorize upgrades or accept gaps.
 
 In CI, every retained parity job is a required status check:
 `parity-baseline`, `conformance-test`, and `integration-test` all block the

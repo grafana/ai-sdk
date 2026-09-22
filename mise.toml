@@ -379,12 +379,28 @@ mise deps install --only test
 cd test && pnpm --filter @ai-sdk/conformance-tools generate
 """
 
-[tasks.parity-upgrade]
-description = "Upgrade to mature stable upstream packages and regenerate conformance expectations"
+[tasks.parity-select]
+description = "Select a frozen mature coherent target without changing the baseline (TARGET=/absolute/path.json)"
 run = """
-cd test/conformance/tools
-pnpm run upgrade-baseline
-cd ../..
+: "${TARGET:?set TARGET to a new absolute target-record path}"
+case "$TARGET" in /*) ;; *) echo 'TARGET must be absolute' >&2; exit 1 ;; esac
+node test/conformance/tools/upgrade-baseline.mjs select --output="$TARGET"
+"""
+
+[tasks.parity-apply]
+description = "Apply an approved frozen target's pins without selecting new versions (TARGET=/absolute/path.json)"
+run = """
+: "${TARGET:?set TARGET to the approved absolute target-record path}"
+case "$TARGET" in /*) ;; *) echo 'TARGET must be absolute' >&2; exit 1 ;; esac
+node test/conformance/tools/upgrade-baseline.mjs apply --target="$TARGET"
+"""
+
+[tasks.parity-upgrade]
+description = "Apply a frozen target and regenerate expectations; verification remains a separate reviewed gate"
+run = """
+set -e
+mise run parity-apply
+cd test
 pnpm install --lockfile-only --no-frozen-lockfile
 cd ..
 mise deps install --only test

@@ -15,6 +15,9 @@ area. If the user does not specify a scope, review the current git diff.
 ## Workflow
 
 1. Read `test/conformance/upstream.yaml` and `test/conformance/PARITY.md`.
+   For upgrade work, also read the [runbook](../../../test/conformance/UPGRADING.md),
+   saved target and approved assessment. Distinguish the starting baseline from
+   the target; never silently review against today's latest or a shared checkout.
 2. Resolve the review scope:
    - PR: inspect the PR diff and relevant changed files.
    - Current git diff: inspect staged and unstaged changes.
@@ -52,7 +55,17 @@ area. If the user does not specify a scope, review the current git diff.
    `test/conformance/upstream.yaml` unless the user explicitly asks or the
    finding changes a long-lived project policy, coverage map, or baseline
    contract.
-11. Include commands run and residual parity risk in the review summary.
+11. Check independent mergeability and public module ordering. Run or inspect
+    `mise run verify-module-resolution` evidence against the actual merge candidate;
+    workspace tests cannot prove consumer adoption. A required failure cannot be
+    assigned to a later PR or a final cumulative merge.
+12. For transitions, inspect frozen-target provenance, all consumer pins, lockfile,
+    snapshot changes, Gateway attestation and the actual verification date. Newer
+    releases alone do not invalidate an approved target. Missing implementation and
+    missing coverage must be separate findings, including source changes absent
+    from fixtures. Do not approve hidden gaps or weakened comparisons.
+13. Include commands run, exact module/source versions, residual risk and which
+    completion claim is supported: baseline promotion or approved rollout completion.
 
 ## Divergence Handling
 
