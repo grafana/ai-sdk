@@ -47,7 +47,9 @@ For a pinned-version upgrade, check consistent references/evidence, required gre
 checks and a comprehensive assessment of the current Go implementation against the
 target. The release delta is a guide, not the assessment boundary: older gaps and
 uncovered surfaces also need dispositions. Remaining differences must be linked to
-registered work or an explicit adaptation/exclusion. Do not demand completion of
+registered work or an explicit adaptation/exclusion. Check that issue scopes and
+acceptance criteria actually cover the findings, duplicate candidates were considered,
+and every registered parity issue has `upstream-sync`. Do not demand completion of
 all parity work, but do not accept broken checks or a target-induced incompatibility
 that prevents a supported integration from working as a mere follow-up.
 

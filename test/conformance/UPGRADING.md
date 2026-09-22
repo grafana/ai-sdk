@@ -156,6 +156,77 @@ include the assessed upstream version/source, Go difference and impact, intended
 outcome, design decisions, dependencies, owner and acceptance tests. Do not duplicate
 the entire investigation in the issue, coverage map and manifest.
 
+### Issue creation and duplicate checks
+
+Create one issue per coherent, actionable remaining work package, not per upstream
+commit, changed file or failing assertion. Do not create issues for already fixed
+upgrade work, verified matches or documented adaptations/exclusions with no action.
+An investigation issue needs a concrete question, impact and completion criteria.
+
+Before creating an issue:
+
+1. Search open `upstream-sync` issues, then search the whole repository without that
+   label restriction by provider, capability, behavior and relevant synonyms. Version
+   or commit searches are useful supplements, not sufficient duplicate checks.
+2. Read candidate titles and bodies, relevant discussion and linked PRs. Compare
+   scope and acceptance criteria, not just wording. Account for truncated search
+   results rather than treating the first page as exhaustive.
+3. Inspect closed matches: verify whether they were implemented, rejected, marked
+   duplicate or superseded. A completed issue is not a live owner for unfinished
+   work. Do not reopen or recreate rejected work automatically. A demonstrated new
+   regression may warrant a distinct issue explaining and linking the prior fix.
+4. Reuse an open issue when its scope and acceptance criteria cover the finding.
+   For partial or ambiguous overlap, flag the scope decision rather than creating
+   a likely duplicate or rewriting someone else's issue. A clearly separate package
+   may have its own issue with an explicit relationship to the existing one.
+5. Recheck relevant open results immediately before creation, then link the resulting
+   issue identifier from the coverage record. Do not overwrite unrelated content,
+   post comments or close/reopen issues as part of registration.
+
+Use `gh issue list --repo grafana/ai-sdk --state all --search '<query>'` for searches
+and `gh issue view <number> --repo grafana/ai-sdk --comments` to inspect candidates.
+Use `gh issue create --body-file <path>` to preserve the structured body. Titles
+should identify the area and observable behavior, not just a version bump or vague
+“parity fixes.” Use this compact body structure:
+
+- **Behavior and impact:** current Go behavior versus intended outcome; distinguish
+  missing implementation from missing evidence.
+- **Upstream evidence:** assessed package/version, exact source/test links and any
+  reproduction or existing regression evidence.
+- **Scope and decisions:** included/excluded behavior, API questions, dependencies
+  and related issues/PRs. State why any apparent overlap is separate.
+- **Acceptance:** concrete behavior/tests that establish completion, plus owner if
+  known. Leave assignment pending rather than inventing an assignee.
+
+### Issue labels
+
+**Every new or reused parity work-package issue must carry `upstream-sync`.** For a
+reused issue missing it, use
+`gh issue edit <number> -R grafana/ai-sdk --add-label upstream-sync`;
+preserve existing labels and other metadata. Verify labels after
+creation or reuse. Registration is incomplete if the required label cannot be added.
+
+Inspect current labels with `gh label list --repo grafana/ai-sdk` before using
+optional labels; do not invent provider/area labels or create labels automatically.
+The repository currently provides these relevant choices:
+
+| Label | Use |
+| --- | --- |
+| `upstream-sync` | Required on every parity work-package issue |
+| `bug` | Incorrect existing behavior or a regression |
+| `enhancement` | A missing capability or a standalone improvement in coverage |
+| `documentation` | A documentation-only work package |
+| `question` | A concrete investigation or unresolved design question, not a known defect disguised as uncertainty |
+
+Choose applicable labels based on the work, not the upstream commit type. Do not
+infer `good first issue`, `help wanted`, `duplicate`, `invalid`, `wontfix` or
+`pir-action-item` automatically. Release, dependency-update, automerge, severity and
+other workflow-specific labels are not implied by parity work. Security findings
+must follow the repository's private reporting policy rather than being published
+as ordinary parity issues merely with a `security` label.
+
+### Completion
+
 The pinned-version PR is complete when its checks pass and the comprehensive
 assessment is accounted for, including registered remaining work. A parity package
 is complete only when its behavior and proof are delivered; update the coverage

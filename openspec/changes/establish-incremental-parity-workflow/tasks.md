@@ -37,3 +37,9 @@
 
 - [x] 7.1 Replace discovery-only authorization with pinned-version upgrade, comprehensive assessment, issue registration and draft PR publishing; preserve fixed targets and independent parity-package scope.
 - [x] 7.2 Align repo specifications and validate/dry-run local configuration without launch; publish under the operator's standing iteration authorization.
+
+## 8. Issue registration rules
+
+- [x] 8.1 Inspect actual GitHub labels and existing parity issues; define issue eligibility, semantic duplicate checks and a consistent evidence/acceptance body.
+- [x] 8.2 Require upstream-sync on all created/reused parity issues, map appropriate existing optional labels and align the local daily prompt.
+- [x] 8.3 Validate repo/local guidance without creating or relabeling live issues; publish under the operator's standing iteration authorization.

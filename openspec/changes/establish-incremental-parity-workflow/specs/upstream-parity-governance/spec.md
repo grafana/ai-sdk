@@ -76,7 +76,7 @@ Parity work packages SHALL represent behavioral outcomes rather than PRs and SHA
 - **AND** Go consumer requirements SHALL change according to required published APIs/behavior, not automatically because the upstream baseline changed
 
 ### Requirement: Parity difference registration
-The pinned-version upgrade SHALL account for all assessed differences using existing coverage records and linked actionable issues, not a separate tracking system. PARITY.md and baseline gap metadata SHALL summarize current support, evidence and dispositions without duplicating full investigations. Issues SHALL identify parity work packages by durable identifier, exact upstream reference, Go difference and impact, intended outcome, design decisions, dependencies, owner and acceptance tests. Registration SHALL NOT imply approval of a new API or acceptance of a permanent deviation.
+The pinned-version upgrade SHALL account for all assessed differences using existing coverage records and linked actionable issues, not a separate tracking system. PARITY.md and baseline gap metadata SHALL summarize current support, evidence and dispositions without duplicating full investigations. One issue SHALL represent a coherent actionable remaining work package, not each upstream commit or assertion. Registration SHALL search by provider/capability/behavior across labeled and unlabeled issues and inspect open and closed candidate matches, including scope, acceptance criteria and resolution. Covered open work SHALL be reused; ambiguous overlap or rejected work SHALL NOT automatically produce a duplicate or reopened issue. Issues SHALL identify the exact upstream reference, Go difference and impact, outcome, design decisions, dependencies and acceptance tests; unknown ownership SHALL remain pending. Registration SHALL NOT imply approval of a new API or acceptance of a permanent deviation.
 
 #### Scenario: Upgrade assessment records older gaps
 - **WHEN** current Go behavior differs from the target even though the relevant upstream code did not change during the selected release range
@@ -89,6 +89,29 @@ The pinned-version upgrade SHALL account for all assessed differences using exis
 #### Scenario: A later upgrade reassesses outstanding work
 - **WHEN** the pinned reference advances again
 - **THEN** open parity packages SHALL be checked against that reference rather than retaining stale assumptions without review
+
+#### Scenario: Existing work covers a finding
+- **WHEN** an open issue's scope and acceptance criteria cover the assessed finding, even without an upstream-sync label
+- **THEN** registration SHALL reuse and link that issue rather than create a duplicate
+- **AND** it SHALL add the required upstream-sync label if missing while preserving existing metadata
+
+#### Scenario: Closed or partial matches exist
+- **WHEN** similar work was closed or only partially covers the new finding
+- **THEN** registration SHALL inspect its resolution and scope before deciding
+- **AND** it SHALL flag ambiguous overlaps rather than automatically recreate, reopen or rewrite the issue
+- **AND** a distinct proven regression SHALL explain and link its relationship to prior work
+
+### Requirement: Parity issue labels
+Every newly created or reused parity work-package issue SHALL carry `upstream-sync`, verified after creation or reuse. Missing required labeling SHALL leave registration incomplete. Optional labels SHALL come from the existing repository inventory and describe the actual work: bug for incorrect existing behavior, enhancement for capabilities/coverage improvements, documentation for documentation-only work, and question for concrete unresolved investigations. Registration SHALL preserve existing labels and SHALL NOT invent labels, infer assignees or automatically apply triage, release, automerge, severity or unrelated workflow labels. Security findings SHALL follow the repository's private reporting policy rather than ordinary public issue registration.
+
+#### Scenario: New parity work is registered
+- **WHEN** an actionable work package has no covering issue after duplicate checks
+- **THEN** its new issue SHALL include upstream-sync and appropriate existing optional labels
+- **AND** its title SHALL identify the area/observable behavior and its body SHALL contain evidence, scope, dependencies and acceptance tests
+
+#### Scenario: Required label cannot be applied
+- **WHEN** upstream-sync is unavailable or the label operation fails
+- **THEN** registration SHALL report the blocker rather than silently publish the work as fully registered
 
 ### Requirement: Frozen target selection and application
 Selection SHALL write a new versioned target record without modifying the registered baseline or parity consumers. The record SHALL identify its source baseline, selection time, maturity policy, exact package versions, publication times and upstream source commits. Application SHALL require an explicit target, validate exact-version evidence and every affected manifest before writing, and SHALL NOT reselect latest. Selection SHALL refuse to overwrite an existing record.

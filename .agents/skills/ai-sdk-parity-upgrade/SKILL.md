@@ -74,8 +74,14 @@ Use the existing records rather than a new planning system:
 
 - `PARITY.md` and baseline gap metadata summarize current support, evidence and
   accepted differences. Do not duplicate the same detailed finding in both.
-- Linked issues describe actionable parity work packages. Reuse existing issues,
-  maintain a durable identifier and link them from the relevant coverage entry.
+- Linked issues describe actionable parity work packages, not individual commits
+  or assertions. Search by behavior/provider across both labeled and unlabeled
+  issues; inspect open and closed matches before creating anything. Reuse covered
+  open work and flag ambiguous overlaps rather than automatically duplicating it.
+- Apply **`upstream-sync` to every new or reused parity issue**, adding it when
+  missing without replacing other labels. Use existing optional labels according
+  to the work. Follow the [issue registration rules](../../../test/conformance/UPGRADING.md#issue-creation-and-duplicate-checks)
+  for search, issue contents and label selection, then link the issue from coverage.
 - Each package states the behavior and impact, exact upstream reference, current
   Go difference, intended outcome, API decisions, dependencies, owner and acceptance
   evidence. Missing implementation and missing proof remain distinguishable.
