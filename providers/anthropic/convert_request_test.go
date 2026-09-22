@@ -2460,6 +2460,26 @@ func TestConvertTools_ToolProviderOptions(t *testing.T) {
 		assert.Equal(t, []string{"direct", "code_execution_20250825"}, result[0].OfTool.AllowedCallers)
 	})
 
+	t.Run("ExplicitEmptyAllowedCallers", func(t *testing.T) {
+		tools := []provider.Tool{{
+			Type:            provider.ToolTypeFunction,
+			Name:            "search",
+			InputSchema:     json.RawMessage(`{"type":"object","properties":{}}`),
+			ProviderOptions: makeProviderOpts(`{"allowedCallers": []}`),
+		}}
+
+		result, _, betas := convertTools(&cacheControlValidator{}, tools, false)
+		require.Len(t, result, 1)
+		require.NotNil(t, result[0].OfTool)
+		assert.NotNil(t, result[0].OfTool.AllowedCallers)
+		assert.Empty(t, result[0].OfTool.AllowedCallers)
+		assert.Contains(t, betas, "advanced-tool-use-2025-11-20")
+
+		encoded, err := json.Marshal(result[0].OfTool)
+		require.NoError(t, err)
+		assert.JSONEq(t, `{"name":"search","input_schema":{"type":"object","properties":{}},"allowed_callers":[]}`, string(encoded))
+	})
+
 	t.Run("EagerInputStreaming", func(t *testing.T) {
 		tools := []provider.Tool{
 			provider.Tool{Type: provider.ToolTypeFunction,
@@ -2581,6 +2601,26 @@ func TestConvertTools_ToolProviderOptions(t *testing.T) {
 		require.Len(t, tp.InputExamples, 2)
 		assert.Equal(t, float64(1), tp.InputExamples[0]["x"])
 		assert.Equal(t, float64(2), tp.InputExamples[1]["x"])
+	})
+
+	t.Run("ExplicitEmptyInputExamples", func(t *testing.T) {
+		tools := []provider.Tool{{
+			Type:          provider.ToolTypeFunction,
+			Name:          "search",
+			InputSchema:   json.RawMessage(`{"type":"object","properties":{}}`),
+			InputExamples: []provider.InputExample{},
+		}}
+
+		result, _, betas := convertTools(&cacheControlValidator{}, tools, false)
+		require.Len(t, result, 1)
+		require.NotNil(t, result[0].OfTool)
+		assert.NotNil(t, result[0].OfTool.InputExamples)
+		assert.Empty(t, result[0].OfTool.InputExamples)
+		assert.Contains(t, betas, "advanced-tool-use-2025-11-20")
+
+		encoded, err := json.Marshal(result[0].OfTool)
+		require.NoError(t, err)
+		assert.JSONEq(t, `{"name":"search","input_schema":{"type":"object","properties":{}},"input_examples":[]}`, string(encoded))
 	})
 
 	t.Run("BetaAutoDetection_InputExamples", func(t *testing.T) {

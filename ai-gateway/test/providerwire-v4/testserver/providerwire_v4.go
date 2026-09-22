@@ -56,6 +56,56 @@ func (m *providerWireV4Model) DoStream(ctx context.Context, options provider.Cal
 	one := 1
 	two := 2
 	switch m.kind {
+	case "stream-tool-arguments":
+		var parts []provider.StreamPart
+		for i, input := range []string{"", `{"service":`, "\"\\\n\t<>&\u2028\u2029"} {
+			id := string(rune('a' + i))
+			parts = append(parts,
+				provider.StreamPart{Type: provider.PartToolInputStart, ID: id, ToolName: "weather"},
+				provider.StreamPart{Type: provider.PartToolInputDelta, ID: id, Delta: input},
+				provider.StreamPart{Type: provider.PartToolInputEnd, ID: id},
+				provider.StreamPart{Type: provider.PartToolCall, ToolCallID: id, ToolName: "weather", Input: input},
+			)
+		}
+		parts = append(parts, provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonToolCalls}, Usage: &provider.Usage{}})
+		return &provider.StreamResult{Stream: scenarioStream(parts...)}, nil
+	case "stream-tool-results":
+		var parts []provider.StreamPart
+		for i, value := range []string{"false", "0", `""`, "[]", "{}"} {
+			id := string(rune('a' + i))
+			parts = append(parts,
+				provider.StreamPart{Type: provider.PartToolCall, ToolCallID: id, ToolName: "weather", Input: "{}"},
+				provider.StreamPart{Type: provider.PartToolResult, ToolCallID: id, ToolName: "weather", Result: json.RawMessage(value), IsError: i == 4},
+			)
+		}
+		parts = append(parts, provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: &provider.Usage{}})
+		return &provider.StreamResult{Stream: scenarioStream(parts...)}, nil
+	case "stream-tools":
+		m.stats.recordSuccess(options)
+		for _, message := range options.Prompt {
+			for _, part := range message.Content {
+				if part.Type == provider.ContentPartTypeToolResult {
+					validOutput := part.Output != nil && (part.Output.Type == provider.ToolOutputText && part.Output.Text == "sunny" || part.Output.Type == provider.ToolOutputJSON && string(part.Output.JSON) == `"sunny"`)
+					if part.ToolCallID != "call-weather" || part.ToolName != "weather" || !validOutput {
+						return nil, errors.New("invalid streaming continuation")
+					}
+					return &provider.StreamResult{Stream: scenarioStream(
+						provider.StreamPart{Type: provider.PartTextStart, ID: "final"},
+						provider.StreamPart{Type: provider.PartTextDelta, ID: "final", Delta: "It is sunny."},
+						provider.StreamPart{Type: provider.PartTextEnd, ID: "final"},
+						provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: &provider.Usage{}},
+					)}, nil
+				}
+			}
+		}
+		return &provider.StreamResult{Stream: scenarioStream(
+			provider.StreamPart{Type: provider.PartToolInputStart, ID: "call-weather", ToolName: "weather"},
+			provider.StreamPart{Type: provider.PartToolInputDelta, ID: "call-weather", Delta: ""},
+			provider.StreamPart{Type: provider.PartToolInputDelta, ID: "call-weather", Delta: `{"city":"Rio"}`},
+			provider.StreamPart{Type: provider.PartToolInputEnd, ID: "call-weather"},
+			provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "call-weather", ToolName: "weather", Input: `{"city":"Rio"}`},
+			provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonToolCalls}, Usage: &provider.Usage{}},
+		)}, nil
 	case "success":
 		m.stats.recordSuccess(options)
 		stream := make(chan provider.StreamPart, 8)
@@ -99,6 +149,25 @@ func (m *providerWireV4Model) DoStream(ctx context.Context, options provider.Cal
 
 func (m *providerWireV4Model) DoGenerate(ctx context.Context, options provider.CallOptions) (*provider.GenerateResult, error) {
 	switch m.kind {
+	case "unary-tools", "unary-tools-provider-executed", "unary-tools-dynamic":
+		m.stats.recordSuccess(options)
+		for _, message := range options.Prompt {
+			for _, part := range message.Content {
+				if part.Type == provider.ContentPartTypeToolResult {
+					if part.ToolCallID != "call-weather" || part.ToolName != "weather" || part.Output == nil || part.Output.Type != provider.ToolOutputText || part.Output.Text != "sunny" {
+						return nil, errors.New("invalid function continuation")
+					}
+					return &provider.GenerateResult{Content: []provider.GenerateContentPart{{Type: provider.ContentText, Text: "It is sunny."}}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}, nil
+				}
+			}
+		}
+		call := provider.GenerateContentPart{Type: provider.ContentToolCall, ToolCallID: "call-weather", ToolName: "weather", Input: json.RawMessage(`{"city":"Rio"}`), ProviderMetadata: provider.ProviderMetadata{"private": json.RawMessage(`{"secret":"hidden"}`)}}
+		call.ProviderExecuted = m.kind == "unary-tools-provider-executed"
+		if m.kind == "unary-tools-dynamic" {
+			yes := true
+			call.Dynamic = &yes
+		}
+		return &provider.GenerateResult{Content: []provider.GenerateContentPart{{Type: provider.ContentText, Text: ""}, call}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonToolCalls}}, nil
 	case "success":
 		m.stats.recordSuccess(options)
 		zero := 0
@@ -134,7 +203,7 @@ type providerWireV4Scenario struct {
 func newProviderWireV4Scenario() (*providerWireV4Scenario, error) {
 	stats := &providerWireV4Stats{}
 	entries := make([]catalog.StaticEntry, 0, 5)
-	for _, id := range []string{"success", "blocking", "stream-errors", "stream-timeout", "stream-blocking"} {
+	for _, id := range []string{"success", "blocking", "stream-errors", "stream-timeout", "stream-blocking", "unary-tools", "unary-tools-provider-executed", "unary-tools-dynamic", "stream-tools", "stream-tool-results", "stream-tool-arguments"} {
 		entries = append(entries, catalog.StaticEntry{
 			Info:  catalog.ModelInfo{ID: id},
 			Model: &providerWireV4Model{kind: id, stats: stats},
@@ -162,9 +231,25 @@ func newProviderWireV4Scenario() (*providerWireV4Scenario, error) {
 	return &providerWireV4Scenario{runtime: runtime, stats: stats}, nil
 }
 
+func scenarioStream(parts ...provider.StreamPart) <-chan provider.StreamPart {
+	stream := make(chan provider.StreamPart, len(parts))
+	for _, part := range parts {
+		stream <- part
+	}
+	close(stream)
+	return stream
+}
+
 func (s *providerWireV4Scenario) register(mux *http.ServeMux) {
 	strictRoute := http.StripPrefix(providerWireV4Prefix, s.runtime)
 	mux.Handle("POST "+providerWireV4Prefix+providerwirev4.LanguageModelPath, strictRoute)
+	mux.Handle("POST /function-tools"+providerwirev4.LanguageModelPath, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Access-Token") != "function-test-token" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		http.StripPrefix("/function-tools", s.runtime).ServeHTTP(w, r)
+	}))
 	mux.HandleFunc("GET "+providerWireV4Prefix+"/stats", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]int64{

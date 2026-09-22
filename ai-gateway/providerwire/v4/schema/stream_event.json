@@ -1,17 +1,47 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://grafana.com/ai-sdk/providerwire/v4/stream-event.schema.json",
-  "title": "ProviderWire V4 strict streaming text event",
+  "title": "ProviderWire V4 strict streaming text and function-tool event",
   "oneOf": [
     { "$ref": "#/$defs/streamStart" },
     { "$ref": "#/$defs/responseMetadata" },
     { "$ref": "#/$defs/textStart" },
     { "$ref": "#/$defs/textDelta" },
     { "$ref": "#/$defs/textEnd" },
+    { "$ref": "#/$defs/toolInputStart" },
+    { "$ref": "#/$defs/toolInputDelta" },
+    { "$ref": "#/$defs/toolInputEnd" },
+    { "$ref": "#/$defs/toolCall" },
+    { "$ref": "#/$defs/toolResult" },
     { "$ref": "#/$defs/finish" },
     { "$ref": "#/$defs/error" }
   ],
   "$defs": {
+    "toolInputStart": {
+      "type": "object", "required": ["type", "id", "toolName"],
+      "properties": {"type": {"const": "tool-input-start"}, "id": {"type": "string", "minLength": 1}, "toolName": {"type": "string", "minLength": 1}},
+      "additionalProperties": false
+    },
+    "toolInputDelta": {
+      "type": "object", "required": ["type", "id", "delta"],
+      "properties": {"type": {"const": "tool-input-delta"}, "id": {"type": "string", "minLength": 1}, "delta": {"type": "string"}},
+      "additionalProperties": false
+    },
+    "toolInputEnd": {
+      "type": "object", "required": ["type", "id"],
+      "properties": {"type": {"const": "tool-input-end"}, "id": {"type": "string", "minLength": 1}},
+      "additionalProperties": false
+    },
+    "toolCall": {
+      "type": "object", "required": ["type", "toolCallId", "toolName", "input"],
+      "properties": {"type": {"const": "tool-call"}, "toolCallId": {"type": "string", "minLength": 1}, "toolName": {"type": "string", "minLength": 1}, "input": {"type": "string"}},
+      "additionalProperties": false
+    },
+    "toolResult": {
+      "type": "object", "required": ["type", "toolCallId", "toolName", "result"],
+      "properties": {"type": {"const": "tool-result"}, "toolCallId": {"type": "string", "minLength": 1}, "toolName": {"type": "string", "minLength": 1}, "result": {"not": {"type": "null"}}, "isError": {"type": "boolean"}},
+      "additionalProperties": false
+    },
     "streamStart": {
       "type": "object",
       "required": ["type", "warnings"],

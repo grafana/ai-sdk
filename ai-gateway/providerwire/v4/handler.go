@@ -177,7 +177,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.writeFailure(w, failure)
 		return
 	}
-	options, failure := mapWireRequest(validated.body)
+	options, failure := mapWireRequest(validated.body, validated.mode)
 	if failure != nil {
 		h.writeFailure(w, failure)
 		return

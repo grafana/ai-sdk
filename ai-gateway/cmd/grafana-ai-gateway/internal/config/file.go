@@ -30,10 +30,11 @@ type Provider struct {
 
 // Model configures one canonical public model and its aliases.
 type Model struct {
-	Name        string   `yaml:"name"`
-	Description string   `yaml:"description,omitempty"`
-	Primary     Primary  `yaml:"primary"`
-	Aliases     []string `yaml:"aliases,omitempty"`
+	Name        string    `yaml:"name"`
+	Description string    `yaml:"description,omitempty"`
+	Primary     Primary   `yaml:"primary"`
+	Fallback    []Primary `yaml:"fallback,omitempty"`
+	Aliases     []string  `yaml:"aliases,omitempty"`
 }
 
 // Primary maps one public model to a named provider and backend model ID.
@@ -138,6 +139,19 @@ func (file File) Validate() error {
 		}
 		if strings.TrimSpace(model.Primary.Model) == "" {
 			return fmt.Errorf("config: models.%s.primary.model is required", id)
+		}
+		seenCandidates := map[Primary]struct{}{model.Primary: {}}
+		for index, candidate := range model.Fallback {
+			if strings.TrimSpace(candidate.Provider) == "" || strings.TrimSpace(candidate.Model) == "" {
+				return fmt.Errorf("config: models.%s.fallback[%d] requires provider and model", id, index)
+			}
+			if _, ok := file.Providers[candidate.Provider]; !ok {
+				return fmt.Errorf("config: models.%s.fallback[%d] references unknown provider", id, index)
+			}
+			if _, exists := seenCandidates[candidate]; exists {
+				return fmt.Errorf("config: models.%s.fallback[%d] repeats a candidate", id, index)
+			}
+			seenCandidates[candidate] = struct{}{}
 		}
 		if existing, ok := publicIDs[id]; ok {
 			return fmt.Errorf("config: public model ID %q collides with %s", id, existing)

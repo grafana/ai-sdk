@@ -9,10 +9,28 @@ go get github.com/grafana/ai-sdk/providers/grafana
 ```
 
 The client module is Apache-2.0 and does not depend on the Gateway service
-module. Its current executable response family is text. Requests preserve
+module. Its executable response family includes text and unary/streaming function calls. Requests preserve
 representable provider options, files, tools, and structured-output settings;
 the deployed Gateway decides which capabilities it can execute and returns a
 public invalid-request error for unsupported calls.
+
+## Function tools
+
+Direct routes support unary client-executed function tools. Definitions preserve
+`strict: false`, examples, object schemas, and ordinary provider options;
+Gateway-reserved option namespaces remain rejected. History accepts assistant
+calls and text, JSON (including null), error-text, error-JSON, and text-only
+content results, preserving required selected empty values. The application
+executes tools and supplies call/result history on a later independent request.
+The Gateway never executes a tool. Provider-executed/dynamic tools, approvals,
+preliminary results and media results remain unsupported. Logical telemetry
+removes tool-bearing definitions, choices, inputs and outputs before export.
+
+Streaming direct routes additionally support input start/delta/end, calls and
+matching non-null JSON results. IDs, ordering and empty deltas are preserved.
+Vercel and Go clients own the multi-step orchestration; each HTTP generation
+remains stateless. Ordered fallback routes continue rejecting tool definitions,
+choice and history before any physical invocation.
 
 ## Connect with an access token
 
@@ -80,6 +98,53 @@ Use the returned ID with `client.LanguageModel(id)`, or register the client as a
 `registry.Provider`; see [Fallback and registry](../guides/fallback-and-registry.md).
 
 ## Bound work and handle errors
+
+Operators can configure ordered text fallback using direct provider references:
+
+```yaml
+models:
+  grafana/assistant:
+    name: Assistant
+    primary:
+      provider: anthropic-primary
+      model: claude-sonnet-4-6
+    fallback:
+      - provider: anthropic-secondary
+        model: claude-sonnet-4-6
+```
+
+Both provider instances must be declared in `providers` using the existing
+environment-variable credential references. Omitting `fallback` creates a direct
+route; removing it restores direct routing without changing the public model ID.
+Candidates retain configuration order and each new call starts at primary.
+Fallback routes accept text only: tools, tool choice, tool-call/result history,
+and other effectful content are rejected before any candidate runs. A stream's
+first part commits its candidate, including an error part. No later failure
+restarts on another provider. Client retries can multiply physical attempts;
+the Gateway disables native-provider retries.
+
+Private physical attribution writes newline-delimited `gateway_physical_attempt`
+records to the existing operator stderr destination through a separate bounded
+worker. Records contain the logical correlation ID when available, candidate
+index, configured provider instance/backend model, start/decision timestamps,
+selected/failed/canceled outcome, decision-time fallback intent, and winner.
+They exclude payloads, credentials, headers, endpoint URLs, and raw errors.
+These private records are separate from the canonical logical generation export.
+
+The worker has a 256-record queue, 100 ms write deadline, 4096-byte record limit,
+and one-second shutdown budget. It supports Linux stderr sockets and pipes,
+plus sockets already configured nonblocking on other Unix platforms. A blocking
+macOS socket is rejected because its send operation can ignore the per-call
+nonblocking flag. The sink never changes the shared stderr descriptor flags;
+unsupported destinations (including ordinary files or terminals) disable this
+output while calls continue. Queue saturation and output failures drop records
+and increment `grafana_ai_gateway_physical_attempt_dropped_total` with a closed
+class label. Operators must verify their runtime stderr transport and private
+log access policy before activation. Production enablement and rollback smoke
+remain WP10 work; local fallback tests do not establish deployment acceptance.
+FIFO deadline tests run only on Linux, matching the production output policy;
+macOS tests verify nonblocking sockets, rejection of blocking sockets without
+descriptor mutation, and portable queue/worker bounds.
 
 Use a cancelable context for each generation or stream. Cancel it when a
 consumer stops reading. The client closes its response body and stream channel

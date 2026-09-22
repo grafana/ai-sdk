@@ -64,7 +64,7 @@ fixture becomes the executable contract for future upgrades.
 | Capability | Status | Confidence Source | Gap / Notes |
 | --- | --- | --- | --- |
 | Registered LanguageModelV4 request surface | automated | `ai-gateway/test/providerwire-v4/surface.ts` typechecks exhaustive finite request/response witnesses, while `ai-gateway/providerwire/v4/schema/request.json` and focused positive/negative cases define the complete serialized request projection. Production Go golden replay proves the expected runtime outcome reached by every committed request. | The registered public client is authoritative for observable request emission. This evidence makes no compatibility claim for Vercel's private Gateway service. |
-| Unary Go runtime | automated | `ai-gateway/providerwire/v4` tests cover envelope validation, bounded UTF-8 body reads, complete-schema-before-mapping order, one case per unsupported family, catalog/model sequencing, fixed safe errors, fixed host-composition documents, minimal unary output, privacy, and response bounds. The committed request goldens replay through the production handler. | Runtime support is narrower than schema acceptance: text generation and scalar controls execute; files, tools/approvals, structured output, provider options, body headers, reasoning/custom content, and raw output fail safely. Requests are expected to be serialized by SDK clients, so malformed JSON and structural limits use the bounded standard Go/schema path; duplicate members use the last value and escaped lone surrogates normalize to U+FFFD. Multi-capability unsupported precedence and raw unary response-body details outside content/finish/usage are not contracts. Host HTTP server timeouts remain responsible for slow body availability. |
+| Unary Go runtime | automated | `ai-gateway/providerwire/v4` tests cover envelope validation, bounded UTF-8 body reads, complete-schema-before-mapping order, one case per unsupported family, catalog/model sequencing, fixed safe errors, fixed host-composition documents, minimal unary output, privacy, and response bounds. The committed request goldens replay through the production handler. | Runtime support is narrower than schema acceptance: text generation, scalar controls and the WP11 client-executed unary function subset execute; files, provider tools/approvals, structured output, root provider options, body headers, reasoning/custom content, and raw output fail safely. Namespaced function-tool options belong to the supported unary subset. Requests are expected to be serialized by SDK clients, so malformed JSON and structural limits use the bounded standard Go/schema path; duplicate members use the last value and escaped lone surrogates normalize to U+FFFD. Multi-capability unsupported precedence and raw unary response-body details outside content/finish/usage are not contracts. Host HTTP server timeouts remain responsible for slow body availability. |
 | Gateway HTTP request projection | automated | Semantic goldens captured through `@ai-sdk/gateway@4.0.52` verify method, route, final normalized protocol headers, unary/streaming mode, presence, header composition, URL serialization, and byte-to-base64 conversion. Production replay verifies the same records against Go without rewriting them. | The registered public client is authoritative for observable request emission. This evidence makes no compatibility claim for Vercel's private Gateway service. |
 | Gateway client response consumption | automated | Focused registered-client probes cover unary overwrite behavior, all seven recognized error classes, clean-EOF SSE, `[DONE]`, raw filtering, and timestamp conversion. The AGPL ProviderWire contract workspace calls the real Go handler through the pinned client for minimal unary success, strict streaming text, ordered stream errors, timeout, established-stream abort, representative unary errors, and cancellation. | The registered public client is authoritative for observable response consumption, including permissive acceptance and overwritten fields. Private protocol DTOs and test-time schemas own unobserved server shape; raw HTTP, privacy, state, and bounds tests own standard JSON normalization, the minimal unary document, fixed errors, overflow-safe unary preflight and final encoded-byte bounds, plus strict stream bytes and early-stopping stream frame bounds. Standard unary JSON encoding may allocate a bounded constant multiple of the configured limit for escaping. |
 | ProviderWire streaming runtime | automated | `ai-gateway/providerwire/v4` tests cover single-owner setup transfer and cleanup, standard cancellation and timeout behavior, request-scoped part counting, warning privacy/cardinality, canonical metadata, text lifecycle, ordered non-terminal provider errors, authoritative finish, standard JSON complete-frame bounds, writer/flush failures, bounded drain, and clean EOF. Golden replay exercises production `DoStream` directly, while the AGPL registered-client integration exercises it through the pinned client. | Runtime support is intentionally text-only; reasoning, tools, approvals, files, sources, custom content, raw output, and later stream families remain gaps. Fixed-prose streaming warning normalization is an intentional privacy deviation from upstream warning-string passthrough. The stream-event schema is test-only; the production encoder, fixed terminal frames, and raw HTTP assertions are server authority. |
@@ -72,8 +72,52 @@ fixture becomes the executable contract for future upgrades.
 
 ### Grafana Go Gateway Client
 
+WP9 ordered fallback is a Grafana extension; the registered upstream baseline
+has no generic equivalent. Root regression tests cover first-part commitment
+(including provider errors), pre-commit failures, exact-once decisions,
+cancellation, and bounded cleanup. Gateway tests cover strict ordered route
+configuration, single logical composition, restart-at-primary semantics,
+zero-invocation effect rejection, private allowlisted records, bounded queue
+saturation/shutdown, supported socket deadlines, and logical-to-physical
+correlation. Real FIFO deadline tests are Linux-only; macOS verifies nonblocking
+sockets and fail-open rejection of blocking sockets without descriptor mutation.
+The real command matrix verifies JWKS-authenticated Go and registered Vercel
+discovery, unary/streaming primary success, secondary selection, non-retryable
+stop, exhaustion, preserved requests, and public/logical privacy. Gateway tests
+run with `GOWORK=off` against published root prerequisite `9dd11902673f`.
+`fallback_acceptance_test.go` additionally exercises the configured fallback
+under the real logical chain and ProviderWire unary/SSE mapping: invalid/empty
+stream setup, error-part commitment/order, cancellation with a ready result,
+silent/continuously ready blocked-consumer cleanup, aggregate error privacy,
+hostile headers/bodies/provider metadata, one logical generation and closed
+physical winner records. These are deterministic service tests, not recorded
+provider fixtures. Production activation remains WP10 work; the local macOS run
+does not verify Linux FIFO runtime behavior.
+
+WP11 direct-route unary tools are covered by strict handler tests, both actual
+clients, safe-JWKS command/native continuation, and metadata-only collector
+privacy assertions. The authenticated command matrix rejects unary definitions,
+all tool choices, call-only history and complete tool continuation on fallback
+routes through both clients with zero primary or secondary requests. Its direct
+tool round trips also verify distinct canonical logical generations, nonzero
+usage, normalized finish, safe errors and private-safe exported payloads, logs
+and metrics. Apache provider regressions preserve selected empty schemas
+and content arrays against the registered Anthropic 4.0.38 baseline. These are
+deterministic transport tests, not recorded provider fixtures. Gateway consumes
+published immutable root `07aacebe97a2` and Anthropic `e9128cc3b35a` prerequisites;
+standalone Apache and isolated Gateway tests verify those dependencies. The
+registered upstream baseline remains unchanged; production activation remains
+separate.
+
+WP12 extends this evidence to input/call/basic-result streaming, required empty
+deltas, ID/order validation, hostile termination/cancellation, and automatic
+two-step Vercel/Go orchestration through the real handler with one local execution.
+Safe-JWKS command/native tests separately cover two transport calls per client.
+No tool runner or session state is introduced in the Gateway.
+
+
 `providers/grafana` is an Apache-licensed, independently buildable client for
-the text-only WP5 service, not a second Gateway implementation. Its focused Go
+the Gateway service, not a second Gateway implementation. Its focused Go
 tests cover explicit request projection, atomic discovery, authentication,
 closed public errors, bounded unary/SSE parsing, and cancellation ownership.
 The existing exact-pinned ProviderWire workspace runs a test-only Go capture
@@ -93,7 +137,8 @@ The following differences are explicit rather than claims of complete parity:
   descriptions, and reasons. Required selected empty values are retained.
 - Intentional security boundaries: client-owned authentication/protocol headers
   cannot be overridden through case variants; URL prefixes are retained;
-  discovery is atomic and bounded; response families are closed to WP5 text.
+  discovery is atomic and bounded; response families are closed to text and the
+  supported unary/streaming client-executed function-tool subset.
   Upstream's permissive output schema and wildcard supported URLs are not
   adopted. Raw unary response text is retained only within its configured bound.
   Token-exchange errors discard arbitrary token-service response prose, including
@@ -149,7 +194,7 @@ No provider recordings or provenance fixtures were fabricated or regenerated.
 
 | Capability | Status | Confidence Source | Gap / Notes |
 | --- | --- | --- | --- |
-| Trusted reverse-proxy application composition | automated | Gateway Go tests cover distinct trusted identities, malformed assertions, authentication before body reads, internal JWT isolation, mode-specific dependencies, separate listeners, shared shutdown deadlines, flushing, and fixed-value authentication telemetry. `ai-gateway/test/providerwire-v4/gateway-command.test.ts` exercises the real command through a local edge shim with `@ai-sdk/gateway@4.0.52`. It separates fixed edge denials, overwritten client assertions, and malformed post-edge assertions, and checks credential privacy. | Grafana host extension with no upstream service equivalent. The shim uses dummy credentials and fixed authorization outcomes; it does not prove deployed proxy authentication, access-policy enforcement, or proxy-only ingress. Deployment owners must verify ingress before activation. Client evidence is limited to discovery and low-level `doGenerate`/`doStream` with explicit `maxOutputTokens`. In `ai@7.0.65`, both high-level calls default `toolChoice` to `{ type: "auto" }`, which the mapper rejects. `generateText` also adds body headers; `streamText` only forwards supplied headers. Explicit `maxOutputTokens` does not resolve these incompatibilities. Default unary token limits remain a separate gap. No client requests or provider fixture inputs are rewritten. |
+| Trusted reverse-proxy application composition | automated | Gateway Go tests cover distinct trusted identities, malformed assertions, authentication before body reads, internal JWT isolation, mode-specific dependencies, separate listeners, shared shutdown deadlines, flushing, and fixed-value authentication telemetry. `ai-gateway/test/providerwire-v4/gateway-command.test.ts` exercises the real command through a local edge shim with `@ai-sdk/gateway@4.0.52`. It separates fixed edge denials, overwritten client assertions, and malformed post-edge assertions, and checks credential privacy. | Grafana host extension with no upstream service equivalent. The shim uses dummy credentials and fixed authorization outcomes; it does not prove deployed proxy authentication, access-policy enforcement, or proxy-only ingress. Deployment owners must verify ingress before activation. Client evidence is limited to discovery and low-level `doGenerate`/`doStream` with explicit `maxOutputTokens`. In `ai@7.0.65`, both high-level calls default `toolChoice` to `{ type: "auto" }`. The unary mapper accepts that choice; streaming and fallback routes reject it. `generateText` also adds body headers; `streamText` only forwards supplied headers. Explicit `maxOutputTokens` does not resolve these high-level-client incompatibilities. Default unary token limits remain a separate gap. No client requests or provider fixture inputs are rewritten. |
 
 ### Provider Implementation Layer
 

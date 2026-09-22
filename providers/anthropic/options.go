@@ -266,7 +266,7 @@ type TaskBudgetConfig struct {
 // tool.ProviderOptions["anthropic"] on individual function tool definitions.
 type AnthropicToolOptions struct {
 	DeferLoading        *bool             `json:"deferLoading,omitempty"`
-	AllowedCallers      []string          `json:"allowedCallers,omitempty"`
+	AllowedCallers      []string          `json:"allowedCallers,omitzero"`
 	EagerInputStreaming *bool             `json:"eagerInputStreaming,omitempty"`
 	CacheControl        *CacheControlType `json:"cacheControl,omitempty"`
 }

@@ -1,6 +1,6 @@
 ## Purpose
 
-Define the production ProviderWire V4 unary text runtime and the observable contract proven against the registered Gateway client.
+Define the production ProviderWire V4 unary text and client-executed function-tool runtime and the observable contract proven against the registered Gateway client.
 
 ## Requirements
 
@@ -70,7 +70,7 @@ The handler SHALL preserve ordered system messages and user or assistant text pa
 
 ### Requirement: Unsupported capability families
 
-Schema-valid files, reasoning content, custom content, tools, tool approvals, structured output, non-empty provider options, body headers, and raw output SHALL return a stable invalid-request document naming the unsupported family before resolution or model invocation. The runtime SHALL not define client-visible precedence among multiple simultaneously activated unsupported families.
+Schema-valid files, reasoning content, custom content, provider tools and tool approvals, structured output, non-empty provider options, body headers, and raw output SHALL return a stable invalid-request document naming the unsupported family before resolution or model invocation. Unary function definitions/choices and assistant-call/tool-result history SHALL execute only within the gateway-unary-function-tools subset. Function-tool provider options SHALL be supported within that subset; deferred nested result options SHALL remain unsupported. Streaming function requests SHALL remain unsupported until WP12. The runtime SHALL not define client-visible precedence among multiple simultaneously activated unsupported families.
 
 #### Scenario: One unsupported family
 - **WHEN** a request activates one unsupported family
@@ -114,14 +114,14 @@ Every runtime error response SHALL be selected from precomputed documents with f
 
 ### Requirement: Minimal unary success response
 
-A successful unary response SHALL contain only ordered text `content`, `finishReason`, and `usage`. The handler SHALL accept only registered finish reasons and non-negative usage counts no greater than JavaScript's maximum safe integer. Provider warnings, request data, response IDs, timestamps, model IDs, provider identity, headers, bodies, raw usage, provider metadata, and content metadata SHALL be omitted. The registered Gateway client owns unary `warnings`, `request`, and `response`; raw response-body details outside this minimal contract are not guaranteed.
+A successful unary response SHALL contain only ordered supported text and function-tool-call `content`, `finishReason`, and `usage`. The handler SHALL accept only registered finish reasons and non-negative usage counts no greater than JavaScript's maximum safe integer. Provider warnings, request data, response IDs, timestamps, model IDs, provider identity, headers, bodies, raw usage, provider metadata, and content metadata SHALL be omitted. The registered Gateway client owns unary `warnings`, `request`, and `response`; raw response-body details outside this minimal contract are not guaranteed.
 
 #### Scenario: Valid text result
 - **WHEN** the model returns text, a registered finish reason, and valid usage
 - **THEN** the handler SHALL preserve those values and emit no other top-level members
 
 #### Scenario: Unsupported provider result
-- **WHEN** the model returns non-text content, an unknown finish reason, invalid usage, `nil, nil`, or panics
+- **WHEN** the model returns content outside the supported text/function-tool-call subset, an unknown finish reason, invalid usage, `nil, nil`, or panics
 - **THEN** the handler SHALL return the fixed internal-error document before committing HTTP 200
 
 #### Scenario: Provider-private fields

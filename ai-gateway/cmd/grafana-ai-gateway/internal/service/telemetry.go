@@ -41,6 +41,7 @@ type Telemetry struct {
 	duration              *prometheus.HistogramVec
 	authentication        *prometheus.CounterVec
 	agentExportFailures   *prometheus.CounterVec
+	physicalDrops         *prometheus.CounterVec
 	staticObservation     requestObservation
 	generateCorrelationID func() string
 }
@@ -93,6 +94,10 @@ func newTelemetry(logger *slog.Logger, registry *prometheus.Registry, options ..
 			Name:      "agento11y_export_failures_total",
 			Help:      "Agent Observability export failures by fixed class.",
 		}, []string{"class"}),
+		physicalDrops: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "grafana_ai_gateway", Name: "physical_attempt_dropped_total",
+			Help: "Dropped private physical attempt records by fixed class.",
+		}, []string{"class"}),
 	}
 	for _, collector := range []prometheus.Collector{
 		collectors.NewGoCollector(),
@@ -103,12 +108,22 @@ func newTelemetry(logger *slog.Logger, registry *prometheus.Registry, options ..
 		telemetry.duration,
 		telemetry.authentication,
 		telemetry.agentExportFailures,
+		telemetry.physicalDrops,
 	} {
 		if err := registry.Register(collector); err != nil {
 			return nil, fmt.Errorf("gateway service: registering metrics: %w", err)
 		}
 	}
 	return telemetry, nil
+}
+
+func (telemetry *Telemetry) observePhysicalDrop(class physicalDropClass) {
+	switch class {
+	case physicalDropQueue, physicalDropProjection, physicalDropTransport, physicalDropShutdown, physicalDropWorker:
+	default:
+		class = physicalDropWorker
+	}
+	telemetry.physicalDrops.WithLabelValues(string(class)).Inc()
 }
 
 type agentExportFailureClass string

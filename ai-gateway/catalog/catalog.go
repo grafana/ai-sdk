@@ -2,9 +2,13 @@ package catalog
 
 import (
 	"context"
+	"errors"
 
 	"github.com/grafana/ai-sdk/provider"
 )
+
+// ErrUnsupportedRequest identifies a request rejected by a route's execution policy.
+var ErrUnsupportedRequest = errors.New("gateway: unsupported request")
 
 // ModelResolver resolves public gateway model IDs.
 type ModelResolver interface {

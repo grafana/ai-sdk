@@ -90,7 +90,7 @@ type Tool struct {
 	// Function-tool fields.
 	Description   string          `json:"description,omitempty"`
 	InputSchema   json.RawMessage `json:"inputSchema,omitempty"`
-	InputExamples []InputExample  `json:"inputExamples,omitempty"`
+	InputExamples []InputExample  `json:"inputExamples,omitzero"`
 	Strict        *bool           `json:"strict,omitempty"`
 
 	// Provider-tool fields.
@@ -169,7 +169,7 @@ type GenerateContentPart struct {
 // their struct tags.
 func (p GenerateContentPart) MarshalJSON() ([]byte, error) {
 	type alias GenerateContentPart
-	if p.Type != ContentToolCall || len(p.Input) == 0 {
+	if p.Type != ContentToolCall {
 		return json.Marshal(alias(p))
 	}
 	// Encode the raw JSON input object as a stringified JSON string.
