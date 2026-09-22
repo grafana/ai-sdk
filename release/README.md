@@ -13,6 +13,14 @@ Configuration lives in two files:
 - [`.release-please-manifest.json`](../.release-please-manifest.json) records
   the last released version of each module. release-please owns this file.
 
+The initial adoption deliberately starts after commit `1ac1e91`. Before that
+boundary the repository used merge commits, so scanning the old history would
+attribute both branch commits and their merge commits to the first generated
+changelogs. `bootstrap-sha` applies that boundary to modules without a release;
+the temporary `last-release-sha` applies it to the already-tagged root module.
+Remove `last-release-sha` after the first release pull requests have merged and
+the manifest and tags provide a clean release boundary for every module.
+
 Root releases are tagged `vX.Y.Z`; nested releases are tagged
 `<module-directory>/vX.Y.Z`, which is what the Go tool requires to resolve a
 module inside a repository.
@@ -185,6 +193,14 @@ published module contains a local `replace` directive.
 ## First-time repository setup
 
 Three things must be true before the first release.
+
+**A clean history boundary.** The adoption configuration intentionally ignores
+pre-adoption release history. After this pull request merges, create
+release-worthy changes in dependency order rather than trying to reconstruct
+historical changelogs: core first, then the directly dependent modules, then
+Bedrock and AI Gateway after Renovate has published their prerequisite bumps.
+Once every module has its first release tag, remove the temporary
+`last-release-sha` setting in a normal reviewed pull request.
 
 **A release app token.** release-please needs a token that can open pull
 requests which then trigger the required CI checks. The default `GITHUB_TOKEN`
