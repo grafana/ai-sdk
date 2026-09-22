@@ -213,20 +213,14 @@ which exchanges the job's OIDC identity for a short-lived installation token via
 Vault's [GitHub App Token Broker](https://enghub.grafana-ops.net/docs/default/component/deployment-tools/platform/vault/github-app-token-broker/),
 so no app private key is stored in this repository.
 
-The proposed app is `grafana-plugins-platform-bot`, the same one
-`grafana/agento11y` and `grafana/plugin-tools` use for their release workflows.
-Platform Productivity must confirm that it is appropriate for this repository.
-If approved, two things must be provisioned in `grafana/deployment_tools`
-before the first run:
-
-1. `grafana/ai-sdk` added to
-   `terraform/repositories/plugin-ci-workflows/plugins-platform-bot-users.txt`,
-   plus the matching app installation granted on the repository. The
-   installation itself is a manual step; the file only tracks it.
-2. `terraform/repositories/ai-sdk/github-app-configs/config.yaml` declaring this
-   workflow, bound to `branch: main` and `event_name: push`, with
-   `contents: write`, `pull_requests: write`, and `issues: write` (release-please
-   manages lifecycle labels through the issues API).
+The dedicated app is `grafana-ai-sdk-release`, owned by the AI SDK maintainers
+and installed only on `grafana/ai-sdk`. Platform Productivity accepts its
+transfer to the `grafana` organization and installs it on the repository.
+`terraform/repositories/ai-sdk/github-app-configs/config.yaml` declares this
+workflow, bound to `branch: main` and `event_name: push`, with
+`contents: write`, `pull_requests: write`, and `issues: write` (release-please
+manages lifecycle labels through the issues API). Its App private key is held
+by the broker's Vault mount and never enters this repository.
 
 The broker binds issuance to the workflow's file path, so renaming or moving
 `.github/workflows/release-please.yml` breaks token minting until that config is
