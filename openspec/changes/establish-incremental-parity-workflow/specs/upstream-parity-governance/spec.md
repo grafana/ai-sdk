@@ -129,13 +129,26 @@ Upgrade plans SHALL account for published Go module dependencies before implemen
 - **THEN** planning SHALL allocate a green producer prerequisite and subsequent consumer adoption
 - **AND** it SHALL NOT weaken checks, add production replacements or remove regression tests to permit a red merge
 
-### Requirement: Read-only upstream discovery automation
-Scheduled discovery SHALL use repository-owned policy and SHALL NOT implement upgrades, replace active targets, mutate a shared upstream checkout, approve gaps, commit, push or create/update PRs. Missing workflow tooling or an active transition SHALL be reported without falling back to an independent selector or autonomous upgrade. Local memory SHALL be advisory rather than target authority.
+### Requirement: Scheduled pinned-version upgrade and assessment
+The configured daily parity automation SHALL execute the repository's pinned-version upgrade and comprehensive assessment workflow, not only discover releases. Its authorization SHALL include necessary compatibility corrections, registration of actionable follow-up issues, signed commits, branch push and creation of a draft upgrade PR. It SHALL NOT automatically implement nonblocking parity packages, approve unresolved material API/scope decisions, merge a PR, mutate a shared upstream checkout or replace another upgrade's fixed target. Local memory SHALL be advisory rather than source or approval authority.
 
-#### Scenario: Automation sees a newer release during active work
-- **WHEN** discovery finds newer eligible versions
-- **THEN** it SHALL report them separately without altering the active cycle
+#### Scenario: A newer target is available
+- **WHEN** no existing pinned-version upgrade PR is active and tooling selects a newer eligible coherent set
+- **THEN** the automation SHALL update and validate the reference, comprehensively assess current Go behavior, register remaining parity work and publish a draft PR when its completion conditions are met
 
-#### Scenario: Workflow tooling is not deployed
-- **WHEN** the checked-out repository lacks the required workflow entry points
-- **THEN** discovery SHALL stop safely and report the deployment prerequisite
+#### Scenario: Related upgrade work already exists
+- **WHEN** an open PR already advances the pinned reference, even to an older target
+- **THEN** the automation SHALL report it and stop rather than create competing work or replace its target
+
+#### Scenario: Nonblocking parity work is registered
+- **WHEN** the assessment identifies a remaining actionable difference
+- **THEN** the automation SHALL reuse a matching issue or create a work-package issue and link the relevant coverage record
+- **AND** registration SHALL NOT authorize implementation of that package or silently accept a permanent deviation
+
+#### Scenario: No version update is needed
+- **WHEN** the selected package set matches the registered baseline
+- **THEN** the automation SHALL report no upgrade needed without creating an upgrade PR
+
+#### Scenario: Workflow or upgrade is blocked
+- **WHEN** tooling is unavailable or completion requires an unavailable published dependency or unresolved material decision
+- **THEN** the automation SHALL preserve and report the blocker without weakening checks or claiming success

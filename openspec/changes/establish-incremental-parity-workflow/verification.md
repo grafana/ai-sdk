@@ -21,12 +21,12 @@ This proves the mechanical target lifecycle, not semantic completeness of an AI-
 
 ## Local operator configuration
 
-The parity automation now invokes repository-owned discovery only. Its hook no longer selects an ai-only version, resets work or switches the shared upstream checkout. Command/plan/review prompts route parity work to repo skills/runbook. Generic global agent instructions were inspected and needed no project-specific duplication.
+The initial configuration restricted the parity automation to repository-owned discovery; this was superseded by the daily-upgrade correction below. Its hook no longer selects an ai-only version, resets work or switches the shared upstream checkout. Command/plan/review prompts route parity work to repo skills/runbook. Generic global agent instructions were inspected and needed no project-specific duplication.
 
 - Original local files backed up outside Git under `/home/nara/.local/share/ai-sdk-artifacts/parity-workflow-local-oAKhy2`.
 - Herdr configuration validation passed.
 - The initial dry-run lacked `GITHUB_TOKEN`; a second dry-run with explicit placeholder credentials passed. This validates configuration/launch planning only, not authentication or execution. No hooks or agents were launched.
-- Scheduled discovery deliberately stops until the new workflow exists on its checked-out main. The old autonomous upgrade is not used as fallback.
+- Both the initial configuration and the corrected daily-upgrade configuration stop until the new workflow exists on the checked-out main; neither uses the old independent selector as fallback.
 - The live local config/prompt changes are outside the branch and will need separate operator rollback if desired; the repository diff does not deploy them on other machines.
 
 Raw test and dry-run logs are outside the repository. The initial implementation checks did not perform an upstream upgrade, spec sync/archive, upstream checkout change or automation run. The implementation was subsequently committed and opened as draft PR #205 under separate authorization.
@@ -50,3 +50,9 @@ The next documentation revision separates one pinned-version upgrade/assessment 
 Repo docs/skills and change artifacts are aligned. Four local prompts were updated to remove the earlier assessment-before-any-pin-mutation wording and distinguish upgrade assessment from parity-package completion. Backups are outside Git at `/home/nara/.local/share/ai-sdk-artifacts/parity-two-step-prompts-3owDBd`; scheduler configuration and discovery-only permissions are unchanged. No automation or GitHub issue creation ran.
 
 Docs/Markdown lint, relative links, strict OpenSpec validation, whitespace checks and Herdr configuration validation passed. This revision is documentation-only; target tooling, canonical pins and fixtures are unchanged.
+
+## Daily automation scope correction
+
+The operator clarified that the daily task must execute the pinned-version upgrade and comprehensive assessment, register follow-up issues and publish a draft PR, not merely discover releases. The local prompt now explicitly authorizes those actions while excluding nonblocking parity-package implementation, PR merging, competing upgrade work and silent material scope decisions. The configuration label and setup messages now describe an upgrade task. The earlier discovery-only spec/design requirements are superseded.
+
+Local config/prompt backups are at `/home/nara/.local/share/ai-sdk-artifacts/parity-daily-upgrade-VsQD2C`. Configuration validation and a placeholder-credential dry-run passed without executing hooks or launching an agent. Repo docs/Markdown lint, links, strict OpenSpec and whitespace checks passed. The actual upgrade was not run; canonical pins, fixtures and runtime tooling remain unchanged. Repository documentation updates are published separately from the machine-local prompt/config.

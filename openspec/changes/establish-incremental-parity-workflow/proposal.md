@@ -9,7 +9,7 @@ Upstream releases continue during implementation and team absences. The current 
 - **BREAKING**: replace implicit latest selection in the upgrade command with explicit non-mutating selection and application of a saved target. Preserve maturity, coherence, source provenance and all consumer pins.
 - Make parity skills decision-led: classify behavior and evidence, derive implementation scope and review upstream-to-Go completeness and Go-to-requirement justification. Keep command details and evidence limits in a tooling reference, and execution mechanics in local automation guidance.
 - Test immutable selection, deterministic application, stale-source rejection, resume and verification-date semantics without network-dependent unit tests.
-- Align local automation with read-only discovery and repo-owned policy; remove autonomous upgrades and shared upstream checkout mutation.
+- Align the daily automation with the full pinned-version upgrade/assessment workflow: required compatibility fixes, registered issue follow-ups and one draft PR, without implementing the parity backlog, merging, duplicating upgrade work or changing shared upstream checkouts.
 
 ## Capabilities
 
