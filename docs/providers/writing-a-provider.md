@@ -67,8 +67,7 @@ against upstream `main` silently. See the
 
 - [`provider` package](https://pkg.go.dev/github.com/grafana/ai-sdk/provider)
 - [How a request runs](../concepts/architecture.md)
-- [Serving provider-wire models](../guides/provider-wire-server.md)
 
 ---
 
-← [OpenAI-compatible](openai-compatible.md) · [Docs index](../README.md) · [Gateway model catalog →](../guides/gateway-model-catalog.md)
+← [OpenAI-compatible](openai-compatible.md) · [Docs index](../README.md) · [Production checklist →](../best-practices/production.md)

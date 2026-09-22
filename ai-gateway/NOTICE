@@ -1,0 +1,10 @@
+Grafana AI Gateway
+Copyright Grafana Labs
+
+This product includes software developed at Grafana Labs (https://grafana.com/).
+
+The ProviderWire V4 contract is informed by the public types and observable
+client behavior of the Vercel AI SDK (https://github.com/vercel/ai), Copyright
+Vercel, Inc., licensed under the Apache License 2.0. The exact package versions
+and source revision used as compatibility authority are registered in
+../test/conformance/upstream.yaml.

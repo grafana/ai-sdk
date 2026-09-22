@@ -100,7 +100,6 @@ generation relationships.
 
 - [`middleware/enrichment`](https://pkg.go.dev/github.com/grafana/ai-sdk/middleware/enrichment)
 - [Middleware overview](overview.md)
-- [Grafana Cloud provider](../providers/grafana-cloud.md)
 
 ---
 

@@ -327,8 +327,28 @@ func TestStreamTextPrepareStep_CallSettings(t *testing.T) {
 		assert.Empty(t, call.StopSequences)
 		require.NotNil(t, call.Seed)
 		assert.Equal(t, 0, *call.Seed)
-		require.NotNil(t, call.Reasoning)
-		assert.Equal(t, provider.ReasoningNone, *call.Reasoning)
+		assert.Equal(t, provider.ReasoningNone, call.Reasoning)
+	})
+
+	t.Run("provider default override clears outer reasoning", func(t *testing.T) {
+		reasoning := provider.ReasoningProviderDefault
+		var call provider.CallOptions
+		model := &mockModel{streamFunc: func(_ context.Context, opts provider.CallOptions) (*provider.StreamResult, error) {
+			call = opts
+			return &provider.StreamResult{Stream: textStreamParts("done")}, nil
+		}}
+
+		result := StreamText(context.Background(), model,
+			WithModelMessages(provider.UserText("hello")),
+			WithReasoning(provider.ReasoningHigh),
+			WithPrepareStep(func(PrepareStepState) (*PrepareStepResult, error) {
+				return &PrepareStepResult{Reasoning: &reasoning}, nil
+			}),
+		)
+		for range result.FullStream() {
+		}
+
+		assert.Equal(t, provider.ReasoningProviderDefault, call.Reasoning)
 	})
 
 	t.Run("invalid max output tokens stops before model call", func(t *testing.T) {
@@ -1898,14 +1918,16 @@ func TestStreamTextToolApproval_ResumeApprovedToolsRunInParallel(t *testing.T) {
 		),
 	}
 
-	model := &mockModel{streamFunc: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+	var followUp []provider.Message
+	model := &mockModel{streamFunc: func(_ context.Context, opts provider.CallOptions) (*provider.StreamResult, error) {
+		followUp = cloneMessages(opts.Prompt)
 		return &provider.StreamResult{Stream: textStreamParts("done")}, nil
 	}}
 
 	const sleepDur = 100 * time.Millisecond
 	var inFlight atomic.Int32
 	var maxConcurrent atomic.Int32
-	execute := func(ctx context.Context, _ json.RawMessage, _ ToolExecutionOptions) (json.RawMessage, error) {
+	execute := func(ctx context.Context, _ json.RawMessage, opts ToolExecutionOptions) (json.RawMessage, error) {
 		current := inFlight.Add(1)
 		for {
 			prev := maxConcurrent.Load()
@@ -1913,7 +1935,11 @@ func TestStreamTextToolApproval_ResumeApprovedToolsRunInParallel(t *testing.T) {
 				break
 			}
 		}
-		time.Sleep(sleepDur)
+		if opts.ToolCallID == "c1" { // c1 finishes last, so completion order differs from call order
+			time.Sleep(sleepDur)
+		} else {
+			time.Sleep(sleepDur / 4)
+		}
 		inFlight.Add(-1)
 		return json.RawMessage(`{"ok":true}`), nil
 	}
@@ -1923,9 +1949,25 @@ func TestStreamTextToolApproval_ResumeApprovedToolsRunInParallel(t *testing.T) {
 		WithModelMessages(msgs...),
 		WithTools(ToolSet{"slow": Tool{Execute: execute}}),
 	)
-	for range result.FullStream() {
+	var resultOrder []string
+	for part := range result.FullStream() {
+		if tr, ok := part.(StreamToolResult); ok {
+			resultOrder = append(resultOrder, tr.ToolCallID)
+		}
 	}
 	elapsed := time.Since(start)
+
+	assert.Equal(t, []string{"c2", "c1"}, resultOrder, "resume should emit each result as its tool completes")
+
+	var requestOrder []string
+	for _, msg := range followUp {
+		for _, part := range msg.Content {
+			if part.Type == provider.ContentPartTypeToolResult {
+				requestOrder = append(requestOrder, part.ToolCallID)
+			}
+		}
+	}
+	assert.Equal(t, []string{"c1", "c2"}, requestOrder, "the follow-up request should keep call order")
 
 	assert.Equal(t, int32(2), maxConcurrent.Load(), "resume should run approved tools concurrently")
 	assert.Less(t, elapsed, sleepDur*2, "resume execution should overlap; got %s", elapsed)
@@ -2572,6 +2614,30 @@ func TestStreamTextTotalUsage(t *testing.T) {
 	assert.Equal(t, 8, *tu.OutputTokens.Total)
 
 	assert.Equal(t, result.TotalUsage(), result.AggregateUsage())
+}
+
+func TestStreamTextToUIMessageStreamReportsAssemblyError(t *testing.T) {
+	model := &mockModel{
+		streamFunc: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+			ch := make(chan provider.StreamPart, 2)
+			// A delta whose text part was never opened.
+			ch <- provider.StreamPart{Type: provider.PartTextDelta, ID: "orphan", Delta: "x"}
+			ch <- provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}}
+			close(ch)
+			return &provider.StreamResult{Stream: ch}, nil
+		},
+	}
+
+	result := StreamText(context.Background(), model, WithModelMessages(provider.UserText("hi")))
+
+	var finishState UIMessageStreamOnFinishState
+	for range result.ToUIMessageStream(OnUIMessageStreamFinish(func(state UIMessageStreamOnFinishState) {
+		finishState = state
+	})) {
+	}
+
+	require.Error(t, finishState.AssemblyError)
+	assert.Contains(t, finishState.AssemblyError.Error(), "orphan")
 }
 
 func TestStreamTextToUIMessageStream(t *testing.T) {
@@ -3932,7 +3998,7 @@ func TestStreamTextConcurrentToolExecution(t *testing.T) {
 		assert.Equal(t, "conversion failed", trBad.ModelOutput.Text)
 	})
 
-	t.Run("stream_events_arrive_in_declaration_order", func(t *testing.T) {
+	t.Run("stream_events_arrive_in_completion_order", func(t *testing.T) {
 		callNum := 0
 		model := &mockModel{
 			streamFunc: func(_ context.Context, opts provider.CallOptions) (*provider.StreamResult, error) {
@@ -3978,8 +4044,8 @@ func TestStreamTextConcurrentToolExecution(t *testing.T) {
 		}
 
 		require.Len(t, resultOrder, 2)
-		assert.Equal(t, "slow", resultOrder[0], "events follow tool call declaration order, not completion order")
-		assert.Equal(t, "fast", resultOrder[1], "events follow tool call declaration order, not completion order")
+		assert.Equal(t, "fast", resultOrder[0], "events follow tool completion order, not declaration order")
+		assert.Equal(t, "slow", resultOrder[1], "events follow tool completion order, not declaration order")
 	})
 
 	t.Run("callbacks_invoked_for_each_concurrent_tool", func(t *testing.T) {

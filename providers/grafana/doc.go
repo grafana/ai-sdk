@@ -1,6 +1,12 @@
-// Package grafana provides access to Grafana's hosted provider-wire endpoint
-// for internally provisioned Grafana services. NewWithCloudAuth exchanges an
-// internally provisioned Cloud Access Policy token; NewWithAccessToken forwards
-// a short-lived access token supplied by an internal control plane. Public
-// authentication for external Grafana Cloud users is not yet supported.
+// Package grafana provides authenticated public model discovery for Grafana AI
+// Gateway. Base URLs identify the ProviderWire API prefix, for example
+// https://gateway.example/api/v1/aisdk. Cloud authentication delegates token
+// exchange and caching to Grafana authlib; access-token authentication forwards
+// a caller-managed token. Caller contexts control cancellation.
+//
+// Models support text generation and bounded incremental text streaming through
+// the provider.LanguageModel contract. The client has no dependency on the
+// Gateway service module and never retries Gateway requests itself.
+//
+// SPDX-License-Identifier: Apache-2.0
 package grafana

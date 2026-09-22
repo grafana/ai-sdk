@@ -1,6 +1,6 @@
 ## Why
 
-The repository contains ten independently versioned public Go modules but has
+The repository contains eleven independently versioned public Go modules but has
 no process for turning merged work into versions, changelogs, path-prefixed
 tags, and GitHub Releases. Contributors already write Conventional Commits and
 CI already merges through pull requests, so the release contract can be derived
@@ -10,21 +10,22 @@ hand-maintained intent format.
 ## What Changes
 
 - Adopt release-please in manifest mode as the release system for the root
-  module, the five providers, and the four middleware modules.
+  module, the AI Gateway, the five providers, and the four middleware modules.
 - Register every published module with a Go-compatible tag shape: `vX.Y.Z` for
   the root module and `<module-directory>/vX.Y.Z` for nested modules.
-- Derive each module's release from the Conventional Commits that touch its
-  files, and keep unrelated modules out of a release by excluding nested paths
-  from the root module.
-- Publish through a continuously groomed release pull request: pushes to `main`
-  refresh it, and merging it creates every tag and GitHub Release.
-- Let Renovate repoint nested modules at a released core version once the core
-  tag exists, so `go.mod` and `go.sum` are updated together and module
-  resolution stays verifiable in CI.
+- Derive each module's release from the Conventional Commit subject produced by
+  squash-merging the pull request title, and keep unrelated modules out of a
+  release by excluding nested paths from the root module.
+- Publish through continuously groomed per-module release pull requests: pushes
+  to `main` refresh them, and merging one creates that module's tag and GitHub
+  Release.
+- Let Renovate promptly repoint dependent modules after any first-party module
+  release, so `go.mod` and `go.sum` are updated together and the multi-level
+  dependency DAG stays verifiable in CI.
 - Add CI validation that every published module is registered, that its tag
   shape resolves for the Go tool, and that it has no local `replace` directive.
-- Add a CI gate that every commit in a pull request is a Conventional Commit,
-  because an unparsable subject silently drops a change from its release.
+- Add a CI gate that every pull request title is a Conventional Commit subject,
+  because an unparsable squash subject silently drops a change from its release.
 - Add a maintainer runbook and a repository-local agent skill for release
   intent.
 

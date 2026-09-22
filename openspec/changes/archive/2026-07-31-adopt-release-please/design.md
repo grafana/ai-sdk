@@ -1,14 +1,15 @@
 ## Context
 
-The repository publishes one root Go module and nine provider or middleware
-modules from subdirectories. Go requires the root tag to be `vX.Y.Z` and each
+The repository publishes one root Go module and ten nested modules: the AI
+Gateway, five providers, and four middleware integrations. Go requires the
+root tag to be `vX.Y.Z` and each
 nested tag to be `<directory>/vX.Y.Z`. Nested modules require the root module,
 local development resolves through `go.work`, and the `module-resolution` CI job
 verifies every published module with `GOWORK=off` against the public module
 proxy.
 
-Contributors already write Conventional Commits, pull requests are merged with
-merge commits, and the repository already relies on hosted automation
+Contributors already use Conventional Commit pull request titles, pull requests
+are squash-merged with the title as the commit subject, and the repository relies on hosted automation
 (Renovate, mise-based CI). The open question is whether release intent should be
 a second hand-written artifact or a derivative of the commit history.
 
@@ -34,20 +35,20 @@ a second hand-written artifact or a derivative of the commit history.
 
 ## Decisions
 
-### Derive release intent from Conventional Commits
+### Derive release intent from squash-merged pull request titles
 
 release-please attributes a commit to a module by the files it touches and picks
 the bump from the commit type. This removes the class of failure where intent
 metadata and the actual diff disagree, and it removes a required extra file from
 every release-worthy pull request.
 
-The cost is that an unparsable or mistyped subject silently produces no release.
-That cost is mitigated by a required CI gate: every non-merge commit in a pull
-request must be a Conventional Commit.
+The cost is that an unparsable or mistyped title silently produces no release.
+That cost is mitigated by a required CI gate: every pull request title must be a
+Conventional Commit subject.
 
 ### Register modules explicitly rather than by discovery
 
-`release-please-config.json` names all ten published modules. Discovery is not
+`release-please-config.json` names all eleven published modules. Discovery is not
 used because `examples/` and `test/` contain modules that must never be
 published, and because the tag shape differs between the root module and nested
 modules.
@@ -64,14 +65,15 @@ in its `exclude-paths`. A commit that only touches `providers/openai/` therefore
 releases only that provider, while a commit spanning core and a provider
 releases both.
 
-### Bump nested core requirements after the core tag exists
+### Bump first-party requirements after their tags exist
 
-A release pull request cannot contain the nested `go.mod` bump to the new core
-version: that version is not published until the pull request merges, so
+A release pull request cannot contain a dependent module's `go.mod` bump to a
+new first-party version: that version is not published until its own pull
+request merges, so
 `module-resolution` and any `GOWORK=off` build would fail on the release pull
 request itself, and `go.sum` could not be updated at all.
 
-Renovate therefore owns the bump, in a dedicated `renovate.json` rule that
+Renovate therefore owns every first-party bump, in a dedicated `renovate.json` rule that
 clears the weekly schedule and the 14-day `minimumReleaseAge` the generic Go
 rules apply and allows unstable versions so the alpha channel is followed. It
 opens a normal pull request that moves `go.mod` and `go.sum` together and is
@@ -82,9 +84,10 @@ work: the repository's `Signed Commits` ruleset requires verified signatures on
 `~ALL` refs with no bypass actors, so a runner-created commit is rejected at
 push time. Renovate commits through the GitHub API, so GitHub signs its commits.
 
-Nested modules pick up the requirement in their own next release. This is
-accepted: a nested release always names a core version that is already
-published.
+Dependent modules pick up the requirement in their own next release. Releases
+follow the dependency DAG: root first; all modules whose first-party
+requirements are then published next; Bedrock after OpenAI; and AI Gateway
+after Anthropic, OpenAI-compatible, Agent Observability, Logger, and Prometheus.
 
 ### Model the alpha channel as configuration
 

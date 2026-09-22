@@ -89,8 +89,8 @@ including policy denials and middleware overhead. Place it inside to measure onl
 provider calls that passed policy. Document the choice so dashboards are
 interpreted correctly.
 
-Local Prometheus metrics do not configure Grafana Cloud's hosted metrics
-controls. Both can be enabled independently.
+This middleware records local client-side provider-call metrics. Remote service
+metrics and controls are outside its scope.
 
 ## Reference
 

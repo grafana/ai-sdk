@@ -13,6 +13,8 @@ import (
 var (
 	ErrWriterClosed  = errors.New("aisdk: write on closed stream writer")
 	ErrAlreadyClosed = errors.New("aisdk: stream writer already closed")
+	// ErrExecuteRequired reaches OnError when CreateUIMessageStreamParams.Execute is nil.
+	ErrExecuteRequired = errors.New("aisdk: CreateUIMessageStreamParams.Execute is required")
 )
 
 const (
@@ -80,13 +82,45 @@ func (w *UIMessageStreamWriter) output() <-chan UIMessageChunk {
 	return w.ch
 }
 
+// runExecute runs Execute, turning a missing callback or a panic into an error
+// so it reaches OnError as an error chunk instead of killing the process. A
+// panicked error keeps its chain so errors.As still works in OnError.
+func runExecute(execute func(*UIMessageStreamWriter) error, writer *UIMessageStreamWriter) (err error) {
+	defer func() {
+		switch r := recover().(type) {
+		case nil:
+		case error:
+			err = fmt.Errorf("aisdk: panic in Execute: %w", r)
+		default:
+			err = fmt.Errorf("aisdk: panic in Execute: %v", r)
+		}
+	}()
+	if execute == nil {
+		return ErrExecuteRequired
+	}
+	return execute(writer)
+}
+
 // CreateUIMessageStreamParams configures CreateUIMessageStream.
 type CreateUIMessageStreamParams struct {
-	Execute          func(writer *UIMessageStreamWriter) error
-	OnError          func(error) string
+	// Execute writes the whole stream through the supplied writer. It is required.
+	Execute func(writer *UIMessageStreamWriter) error
+	// OnError maps a stream failure to the text of the emitted error chunk. It
+	// receives the error Execute returns, ErrExecuteRequired when Execute is nil,
+	// and a panic recovered from Execute. That text reaches the client, so return
+	// err.Error() only when every one of those sources is safe to disclose. The
+	// default masks them all as "An error occurred." and discards the detail, so
+	// log it here when an operator needs it.
+	OnError func(error) string
+	// OriginalMessages is the prior conversation. It supplies the continuation
+	// message ID and the OnFinish history; it is not a persistence mode switch.
 	OriginalMessages []UIMessage
-	OnFinish         func(UIMessageStreamOnFinishState)
-	GenerateID       func() string
+	// OnFinish runs once the stream ends, whether or not OriginalMessages is set.
+	OnFinish func(UIMessageStreamOnFinishState)
+	// GenerateID mints the response message ID. It defaults to the package-level
+	// GenerateID and is called at most once per stream: a continued assistant
+	// message supplies its own ID instead, and GenerateID is not called.
+	GenerateID func() string
 }
 
 // UIMessageStreamOnFinishState is passed to the OnFinish callback.
@@ -96,11 +130,29 @@ type UIMessageStreamOnFinishState struct {
 	IsAborted       bool
 	ResponseMessage UIMessage
 	FinishReason    provider.FinishReason
+	// AssemblyError reports chunks that could not be applied while building
+	// ResponseMessage, which is otherwise complete. Check it before persisting:
+	// a non-nil value means the stored message is missing content the client saw.
+	AssemblyError error
 }
 
 // CreateUIMessageStream creates a standalone UIMessageChunk stream.
-// The Execute callback receives a writer; chunks written to it appear
-// on the returned channel. The stream is framed with start/finish chunks.
+// The Execute callback owns the whole stream: nothing is added to it, so
+// Execute writes its own StartChunk and FinishChunk, or merges a stream that
+// already carries them, such as StreamTextResult.ToUIMessageStream.
+//
+// A start chunk written without a message ID receives the response message ID:
+// the last OriginalMessages entry's ID when that entry is an assistant message,
+// which continues it, and otherwise a generated ID. A start chunk that carries
+// its own ID keeps it, which lets a caller supply a request-scoped ID. Without
+// a start chunk, GenerateID and OriginalMessages reach only OnFinish, and the
+// same holds when Execute merges a stream that stamps its own start chunk,
+// since that ID wins.
+//
+// A nil Execute, or a panic inside it, ends the stream with an error chunk
+// rather than a crash. A chunk that cannot be applied while assembling the
+// OnFinish message leaves the wire untouched and is reported through
+// UIMessageStreamOnFinishState.AssemblyError.
 func CreateUIMessageStream(params CreateUIMessageStreamParams) <-chan UIMessageChunk {
 	out := make(chan UIMessageChunk, defaultWriterBuffer)
 
@@ -109,64 +161,62 @@ func CreateUIMessageStream(params CreateUIMessageStreamParams) <-chan UIMessageC
 
 		writer := newUIMessageStreamWriter(defaultWriterBuffer)
 
-		genID := params.GenerateID
-		if genID == nil {
-			genID = GenerateID
+		// Like upstream createUIMessageStream, emit no start or finish chunk of
+		// our own. Start chunks without a message ID get the response ID, which
+		// continues the last original message when it is an assistant message.
+		cfg := uiMessageStreamConfig{
+			originalMessages:    params.OriginalMessages,
+			hasOriginalMessages: true,
+			generateMessageID:   params.GenerateID,
+			onError:             params.OnError,
 		}
+		messageID := responseUIMessageID(cfg)
 
-		// Emit start chunk
-		var messageID string
-		if params.OriginalMessages != nil {
-			messageID = genID()
-		}
-		out <- UIMessageChunk{Type: ChunkStart, MessageID: messageID}
-
-		// Collect chunks for message assembly
 		var chunks []UIMessageChunk
+		var finishReason provider.FinishReason
+		var isAborted bool
 
 		// Run execute in a goroutine, forward writer output to out
 		done := make(chan error, 1)
 		go func() {
 			defer func() { _ = writer.Close() }()
-			done <- params.Execute(writer)
+			done <- runExecute(params.Execute, writer)
 		}()
 
 		for chunk := range writer.output() {
+			switch chunk.Type {
+			case ChunkStart:
+				if chunk.MessageID == "" {
+					chunk.MessageID = messageID
+				}
+			case ChunkFinish:
+				if chunk.FinishReason != "" {
+					finishReason = provider.FinishReason{Unified: provider.UnifiedFinishReason(chunk.FinishReason)}
+				}
+			case ChunkAbort:
+				isAborted = true
+			}
 			chunks = append(chunks, chunk)
 			out <- chunk
 		}
 
-		execErr := <-done
-		if execErr != nil {
-			errText := "An error occurred"
-			if params.OnError != nil {
-				errText = params.OnError(execErr)
-			}
-			out <- UIMessageChunk{Type: ChunkError, ErrorText: errText}
+		if execErr := <-done; execErr != nil {
+			out <- UIMessageChunk{Type: ChunkError, ErrorText: errorText(execErr, cfg)}
 		}
 
-		// Assemble response message for callbacks
-		if params.OnFinish != nil && params.OriginalMessages != nil {
-			respMsg := assembleResponseMessage(messageID, chunks)
-			state := UIMessageStreamOnFinishState{
-				Messages:        append(params.OriginalMessages, respMsg),
-				ResponseMessage: respMsg,
-			}
-			params.OnFinish(state)
+		if params.OnFinish != nil {
+			params.OnFinish(buildUIMessageStreamFinishState(messageID, chunks, cfg, finishReason, isAborted))
 		}
-
-		// Emit finish chunk
-		out <- UIMessageChunk{Type: ChunkFinish}
 	}()
 
 	return out
 }
 
-func assembleResponseMessage(messageID string, chunks []UIMessageChunk) UIMessage {
+func assembleResponseMessage(messageID string, chunks []UIMessageChunk) (UIMessage, error) {
 	return assembleResponseMessageWithInitial(messageID, chunks, nil)
 }
 
-func assembleResponseMessageWithInitial(messageID string, chunks []UIMessageChunk, initial *UIMessage) UIMessage {
+func assembleResponseMessageWithInitial(messageID string, chunks []UIMessageChunk, initial *UIMessage) (UIMessage, error) {
 	cfg := uiMessageReaderConfig{generateID: func() string { return messageID }}
 	state := newUIMessageReaderState(cfg)
 	if initial != nil && initial.Role == RoleAssistant {
@@ -177,13 +227,16 @@ func assembleResponseMessageWithInitial(messageID string, chunks []UIMessageChun
 	if state.message.ID == "" {
 		state.message.ID = messageID
 	}
+	var applyErrs []error
 	for _, chunk := range chunks {
 		if chunk.Type == ChunkError {
 			continue
 		}
-		_, _ = state.apply(chunk)
+		if _, err := state.apply(chunk); err != nil {
+			applyErrs = append(applyErrs, err)
+		}
 	}
-	return state.finalMessage()
+	return state.finalMessage(), errors.Join(applyErrs...)
 }
 
 type uiMessageStreamConfig struct {

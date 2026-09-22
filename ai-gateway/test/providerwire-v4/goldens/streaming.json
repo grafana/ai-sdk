@@ -1,0 +1,27 @@
+[
+  {
+    "method": "POST",
+    "path": "/language-model",
+    "headers": {
+      "ai-language-model-id": "grafana/stream",
+      "ai-language-model-specification-version": "4",
+      "ai-language-model-streaming": "true",
+      "content-type": "application/json"
+    },
+    "streaming": true,
+    "hasSignal": true,
+    "body": {
+      "prompt": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "stream"
+            }
+          ]
+        }
+      ]
+    }
+  }
+]

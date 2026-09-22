@@ -3,16 +3,14 @@
 ## Purpose
 
 Define the dependency-isolated Prometheus middleware module for provider-level ai-sdk model metrics.
-
 ## Requirements
-
 ### Requirement: Nested Go module for Prometheus middleware
 
 `middleware/prometheus/` SHALL be a separate Go module under the ai-sdk repository, declared with `module github.com/grafana/ai-sdk/middleware/prometheus` and `replace github.com/grafana/ai-sdk => ../../`, following the existing nested middleware module convention.
 
 The module SHALL depend on the root `github.com/grafana/ai-sdk` module and the Prometheus Go client. The root ai-sdk module SHALL NOT import `middleware/prometheus` and SHALL NOT gain a dependency on `github.com/prometheus/client_golang`.
 
-The module documentation SHALL describe that the middleware records local/client-side provider-call metrics and does not configure Grafana hosted server-side metrics controls.
+The module documentation SHALL describe that the middleware records local/client-side provider-call metrics and does not configure remote hosted-service metrics controls.
 
 #### Scenario: Root module dependency isolation
 
@@ -25,11 +23,11 @@ The module documentation SHALL describe that the middleware records local/client
 - **THEN** it SHALL declare module path `github.com/grafana/ai-sdk/middleware/prometheus`
 - **AND** it SHALL replace `github.com/grafana/ai-sdk` with `../../`
 
-#### Scenario: Grafana hosted metrics remain independent
+#### Scenario: Hosted metrics controls remain independent
 
-- **WHEN** documentation describes Prometheus middleware with `providers/grafana.GrafanaOptions.Metrics`
+- **WHEN** documentation describes Prometheus middleware alongside remote hosted-service controls
 - **THEN** it SHALL state that Prometheus middleware measures local client-side provider calls
-- **AND** it SHALL state that Grafana provider options control hosted server-side middleware independently
+- **AND** it SHALL NOT require option types from a removed provider module
 
 ### Requirement: Public API surface
 
@@ -266,7 +264,7 @@ The middleware SHALL NOT expose `Usage.Raw` as a metric label.
 
 ### Requirement: Stream chunk and timing metrics
 
-For streams, the middleware SHALL increment `aisdk_model_stream_chunks_total` for every upstream `provider.StreamPart` observed and forwarded, with `chunk_type` equal to the exact `provider.StreamPartType` string. This metric SHALL be disabled when `Options.DisableStreamChunkMetrics` is true.
+For streams, the middleware SHALL increment `aisdk_model_stream_chunks_total` for every upstream `provider.StreamPart` observed and forwarded. The `chunk_type` label SHALL equal a registered `provider.StreamPartType` string for known values and `other` for every unknown value. This metric SHALL be disabled when `Options.DisableStreamChunkMetrics` is true.
 
 The middleware SHALL observe `aisdk_model_time_to_first_output_seconds` once per stream when at least one payload-bearing stream part is observed. The observation SHALL use the elapsed seconds between starting the provider call and observing the first payload-bearing part, and SHALL be emitted at stream finalization with the final stream status label. Streams that finish, error, or cancel before any payload-bearing part SHALL NOT observe TTFT.
 
@@ -277,7 +275,13 @@ Payload-bearing stream part types SHALL be `text-delta`, `reasoning-delta`, `too
 #### Scenario: Chunk counter records all parts
 
 - **WHEN** a stream emits `text-delta`, `response-metadata`, `finish`, and `error` parts
-- **THEN** `aisdk_model_stream_chunks_total` SHALL increment once for each exact chunk type observed
+- **THEN** `aisdk_model_stream_chunks_total` SHALL increment once for each known chunk type observed
+
+#### Scenario: Unknown chunk types use one closed label
+
+- **WHEN** a stream emits one or more unregistered `provider.StreamPartType` values
+- **THEN** `aisdk_model_stream_chunks_total` SHALL bucket every such part under `chunk_type="other"`
+- **AND** no unregistered value SHALL become a metric label
 
 #### Scenario: TTFT records first payload only
 
@@ -314,7 +318,7 @@ Provider and model labels SHALL be the only potentially user-controlled high-car
 
 ### Requirement: Documentation and validation coverage
 
-The module SHALL include package documentation describing the public API, metric contract, default buckets, provider-call scope, stream finalization behavior, privacy/cardinality guardrails, Agent Observability composition ordering, registry integration, and Grafana hosted metrics independence.
+The module SHALL include package documentation describing the public API, metric contract, default buckets, provider-call scope, stream finalization behavior, privacy/cardinality guardrails, Agent Observability composition ordering, registry integration, and the boundary between local metrics and remote service controls.
 
 The implementation SHALL include tests using `prometheus.NewRegistry()` and `prometheus/testutil` that cover collector registration, duplicate registration, generate success/error/cancellation, stream success/error/cancellation, response identity preference, requested identity mode, normalizers, stream chunk/timing metrics, disabled stream chunk metrics, registry integration, privacy label exclusions, and root dependency isolation.
 
@@ -335,3 +339,11 @@ The repository task configuration SHALL include a targeted Prometheus middleware
 
 - **WHEN** contributors run aggregate test, short-test, vet, tidy, or build tasks after implementation
 - **THEN** those tasks SHALL include `middleware/prometheus` alongside existing nested modules
+
+### Requirement: Configurable bounded stream drain
+Prometheus middleware options SHALL provide an optional positive stream-drain duration. When configured, cancellation cleanup SHALL drain the immediate upstream only until channel close or the absolute deadline, including for a continuously ready channel. Zero SHALL preserve the existing direct-consumer drain behavior.
+
+#### Scenario: Configured drain expires
+- **WHEN** downstream cancellation occurs and the immediate upstream never closes or remains continuously ready
+- **THEN** the Prometheus-owned drain goroutine SHALL exit no later than the configured absolute deadline
+- **AND** terminal metrics, in-flight decrement, and downstream channel closure SHALL each occur exactly once without waiting for the drain

@@ -62,7 +62,9 @@ stream := result.ToUIMessageStream(
 ```
 
 Never expose provider response bodies, credentials, internal URLs, or policy
-details to an untrusted client.
+details to an untrusted client. The same callback on `CreateUIMessageStream`
+also receives panics recovered from `Execute`, whose text can carry internal
+values, so map them to a fixed message and log the detail server-side.
 
 ## Classify provider failures
 

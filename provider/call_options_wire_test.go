@@ -11,8 +11,6 @@ import (
 func TestCallOptions_WireRoundTrip(t *testing.T) {
 	intPtr := func(i int) *int { return &i }
 	floatPtr := func(f float64) *float64 { return &f }
-	reasoning := ReasoningHigh
-
 	full := CallOptions{
 		Prompt: []Message{
 			NewSystemMessage("be helpful"),
@@ -64,7 +62,7 @@ func TestCallOptions_WireRoundTrip(t *testing.T) {
 		StopSequences:    []string{"END", "\n\n"},
 		ResponseFormat:   &ResponseFormat{Type: ResponseFormatJSON, Schema: json.RawMessage(`{"type":"object"}`), Name: "result", Description: "the answer"},
 		Seed:             intPtr(42),
-		Reasoning:        &reasoning,
+		Reasoning:        ReasoningHigh,
 		IncludeRawChunks: true,
 		Headers:          map[string]string{"X-Trace-ID": "abc"},
 		ProviderOptions: ProviderOptions{
@@ -81,9 +79,53 @@ func TestCallOptions_WireRoundTrip(t *testing.T) {
 	assert.Equal(t, full, decoded)
 }
 
+func TestCallOptions_ReasoningJSON(t *testing.T) {
+	t.Run("provider default is the omitted zero value", func(t *testing.T) {
+		assert.Equal(t, ReasoningEffort(""), ReasoningProviderDefault)
+
+		data, err := json.Marshal(CallOptions{Reasoning: ReasoningProviderDefault})
+		require.NoError(t, err)
+		assert.JSONEq(t, `{}`, string(data))
+	})
+
+	t.Run("operational value is explicit", func(t *testing.T) {
+		data, err := json.Marshal(CallOptions{Reasoning: ReasoningHigh})
+		require.NoError(t, err)
+		assert.JSONEq(t, `{"reasoning":"high"}`, string(data))
+	})
+}
+
 func TestCallOptions_EmptyJSON(t *testing.T) {
 	var opts CallOptions
 	data, err := json.Marshal(opts)
 	require.NoError(t, err)
 	assert.JSONEq(t, `{}`, string(data))
+}
+
+func TestTool_InputExamplesJSONPresence(t *testing.T) {
+	tests := []struct {
+		name     string
+		examples []InputExample
+		expected string
+	}{
+		{name: "omitted", expected: `{"type":"function","name":"weather"}`},
+		{name: "explicit empty", examples: []InputExample{}, expected: `{"type":"function","name":"weather","inputExamples":[]}`},
+		{name: "populated", examples: []InputExample{{Input: json.RawMessage(`{"city":"Rio"}`)}}, expected: `{"type":"function","name":"weather","inputExamples":[{"input":{"city":"Rio"}}]}`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			data, err := json.Marshal(Tool{Type: ToolTypeFunction, Name: "weather", InputExamples: tc.examples})
+			require.NoError(t, err)
+			assert.JSONEq(t, tc.expected, string(data))
+
+			var decoded Tool
+			require.NoError(t, json.Unmarshal(data, &decoded))
+			if tc.examples == nil {
+				assert.Nil(t, decoded.InputExamples)
+			} else {
+				assert.NotNil(t, decoded.InputExamples)
+				assert.Len(t, decoded.InputExamples, len(tc.examples))
+			}
+		})
+	}
 }

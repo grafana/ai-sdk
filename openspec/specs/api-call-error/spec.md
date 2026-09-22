@@ -2,13 +2,13 @@
 
 ## Purpose
 
-Define structured API-call errors that support retry decisions, in-process cause inspection, and lossless JSON reconstruction across provider wire boundaries.
+Define structured API-call errors that support retry decisions, in-process cause inspection, and lossless JSON serialization and reconstruction.
 
 ## Requirements
 
 ### Requirement: APICallError is JSON-serializable losslessly
 
-`APICallError` SHALL declare every wire-relevant field as exported with a JSON tag. The unexported `cause error` field MAY remain for in-process `Unwrap()` support but MUST NOT participate in JSON serialization. The set of exported fields SHALL be:
+`APICallError` SHALL declare every JSON-serialized field as exported with a JSON tag. The unexported `cause error` field MAY remain for in-process `Unwrap()` support but MUST NOT participate in JSON serialization. The set of exported fields SHALL be:
 
 - `Message string` -- `json:"message"`
 - `StatusCode int` -- `json:"statusCode"`
@@ -31,7 +31,7 @@ Define structured API-call errors that support retry decisions, in-process cause
 - **WHEN** an `APICallError{StatusCode: 429, Message: "rate limit exceeded"}` is marshaled and unmarshaled
 - **THEN** the decoded value SHALL have `StatusCode == 429` and `Message == "rate limit exceeded"`
 
-#### Scenario: cause not on the wire
+#### Scenario: Cause is not serialized
 - **WHEN** an `APICallError` carrying a non-nil `cause` is marshaled to JSON and unmarshaled back
 - **THEN** the decoded value's `Unwrap()` SHALL return `nil` while every exported field SHALL be preserved
 
@@ -49,7 +49,7 @@ The `provider` package SHALL export an `APICallError` struct that implements the
 
 #### Scenario: Unwrap returns the cause in process
 - **WHEN** `Unwrap()` is called on an `APICallError` constructed with a non-nil cause
-- **THEN** the returned error SHALL be the original cause error (only valid in the originating process -- not preserved across the wire)
+- **THEN** the returned error SHALL be the original cause error (only valid in the originating process and not preserved by JSON serialization)
 
 ### Requirement: NewAPICallError accepts json.RawMessage RequestBodyValues
 
@@ -61,7 +61,7 @@ The `provider` package SHALL export an `APICallError` struct that implements the
 
 ### Requirement: Default retryability from status code
 
-The `NewAPICallError` constructor SHALL auto-compute `IsRetryable` from the status code when the caller does not explicitly set it. Status codes 408, 409, 429, and >= 500 SHALL default to retryable. All other status codes SHALL default to non-retryable. With this change, an `APICallError` reconstructed from the wire (which always carries an explicit `IsRetryable` field) bypasses the default-from-status logic.
+The `NewAPICallError` constructor SHALL auto-compute `IsRetryable` from the status code when the caller does not explicitly set it. Status codes 408, 409, 429, and >= 500 SHALL default to retryable. All other status codes SHALL default to non-retryable. An `APICallError` reconstructed from JSON carries its serialized `IsRetryable` field and does not invoke constructor defaulting.
 
 #### Scenario: 429 defaults to retryable
 - **WHEN** `NewAPICallError` is called with `StatusCode` 429 and no explicit `IsRetryable`
@@ -205,9 +205,10 @@ remain `PartError` stream parts.
 The fallback decider SHALL use `errors.As` to extract `*provider.APICallError`
 and inspect `IsRetryable` to determine whether to try the next candidate model.
 Unknown errors (not `APICallError`) SHALL default to trying the next candidate.
-An `APICallError` reconstructed from the wire (with `cause == nil`) MUST be
-fully usable by the decider because `IsRetryable` is preserved as a first-class
-JSON field.
+An `APICallError` reconstructed through provider-domain JSON serialization (with
+`cause == nil`) MUST be fully usable by the decider because `IsRetryable` is
+preserved as a first-class JSON field. This provider-domain JSON invariant SHALL
+NOT define an HTTP transport contract.
 
 Additionally, the decider SHALL NOT fail over when the error represents a
 context-window/context-length failure, because the next candidate would fail
@@ -217,7 +218,7 @@ read from `Data`/`Message`. This heuristic SHALL be confined to the decider and
 SHALL NOT introduce a public context-window error category (upstream has none).
 
 #### Scenario: Retryable API error triggers fallback
-- **WHEN** the current model returns a `*provider.APICallError` with `IsRetryable` true (whether constructed locally or reconstructed from the wire)
+- **WHEN** the current model returns a `*provider.APICallError` with `IsRetryable` true, whether constructed directly or reconstructed through provider-domain JSON
 - **THEN** the decider SHALL return `true`
 
 #### Scenario: Non-retryable API error stops fallback
@@ -228,9 +229,10 @@ SHALL NOT introduce a public context-window error category (upstream has none).
 - **WHEN** the current model returns an error that is not a `*provider.APICallError`
 - **THEN** the decider SHALL return `true`
 
-#### Scenario: Wire-reconstructed APICallError works in decider
-- **WHEN** an `APICallError` is reconstructed from JSON via `gateway/providerwire` and returned by a remote provider
+#### Scenario: JSON-reconstructed APICallError works in decider
+- **WHEN** an `APICallError` is marshaled and unmarshaled with `encoding/json`
 - **THEN** the fallback decider SHALL successfully extract it via `errors.As` and inspect `IsRetryable`
+- **AND** this SHALL establish only a provider-domain representation invariant, not an HTTP transport contract
 
 #### Scenario: Context-window error stops fallback
 - **WHEN** the current model returns a `*provider.APICallError` with `StatusCode` 400 whose `Data`/`Message` indicates a context-length/context-window failure

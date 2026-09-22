@@ -30,11 +30,10 @@ func convertInput(prompt []provider.Message, systemMode string, popts OpenAIResp
 			}
 
 		case provider.RoleUser:
-			item, itemWarnings, err := convertUserMessage(msg, popts, ctx.providerOptionsName)
+			item, err := convertUserMessage(msg, popts, ctx.providerOptionsName)
 			if err != nil {
 				return nil, nil, err
 			}
-			warnings = append(warnings, itemWarnings...)
 			input = append(input, item)
 
 		case provider.RoleAssistant:

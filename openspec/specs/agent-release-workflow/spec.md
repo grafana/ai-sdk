@@ -3,7 +3,7 @@
 ## Purpose
 
 Define how coding agents express release intent for the repository's
-commit-derived release system and how they are kept out of publication.
+pull-request-title-derived release system and how they are kept out of publication.
 
 ## Requirements
 
@@ -57,4 +57,4 @@ in the current task.
 #### Scenario: Manual version edit
 
 - **WHEN** an agent is tempted to edit the version manifest or a generated changelog section
-- **THEN** the skill directs it to change the commit history or configuration instead
+- **THEN** the skill directs it to change the pull request title or configuration instead

@@ -2460,6 +2460,26 @@ func TestConvertTools_ToolProviderOptions(t *testing.T) {
 		assert.Equal(t, []string{"direct", "code_execution_20250825"}, result[0].OfTool.AllowedCallers)
 	})
 
+	t.Run("ExplicitEmptyAllowedCallers", func(t *testing.T) {
+		tools := []provider.Tool{{
+			Type:            provider.ToolTypeFunction,
+			Name:            "search",
+			InputSchema:     json.RawMessage(`{"type":"object","properties":{}}`),
+			ProviderOptions: makeProviderOpts(`{"allowedCallers": []}`),
+		}}
+
+		result, _, betas := convertTools(&cacheControlValidator{}, tools, false)
+		require.Len(t, result, 1)
+		require.NotNil(t, result[0].OfTool)
+		assert.NotNil(t, result[0].OfTool.AllowedCallers)
+		assert.Empty(t, result[0].OfTool.AllowedCallers)
+		assert.Contains(t, betas, "advanced-tool-use-2025-11-20")
+
+		encoded, err := json.Marshal(result[0].OfTool)
+		require.NoError(t, err)
+		assert.JSONEq(t, `{"name":"search","input_schema":{"type":"object","properties":{}},"allowed_callers":[]}`, string(encoded))
+	})
+
 	t.Run("EagerInputStreaming", func(t *testing.T) {
 		tools := []provider.Tool{
 			provider.Tool{Type: provider.ToolTypeFunction,
@@ -2581,6 +2601,26 @@ func TestConvertTools_ToolProviderOptions(t *testing.T) {
 		require.Len(t, tp.InputExamples, 2)
 		assert.Equal(t, float64(1), tp.InputExamples[0]["x"])
 		assert.Equal(t, float64(2), tp.InputExamples[1]["x"])
+	})
+
+	t.Run("ExplicitEmptyInputExamples", func(t *testing.T) {
+		tools := []provider.Tool{{
+			Type:          provider.ToolTypeFunction,
+			Name:          "search",
+			InputSchema:   json.RawMessage(`{"type":"object","properties":{}}`),
+			InputExamples: []provider.InputExample{},
+		}}
+
+		result, _, betas := convertTools(&cacheControlValidator{}, tools, false)
+		require.Len(t, result, 1)
+		require.NotNil(t, result[0].OfTool)
+		assert.NotNil(t, result[0].OfTool.InputExamples)
+		assert.Empty(t, result[0].OfTool.InputExamples)
+		assert.Contains(t, betas, "advanced-tool-use-2025-11-20")
+
+		encoded, err := json.Marshal(result[0].OfTool)
+		require.NoError(t, err)
+		assert.JSONEq(t, `{"name":"search","input_schema":{"type":"object","properties":{}},"input_examples":[]}`, string(encoded))
 	})
 
 	t.Run("BetaAutoDetection_InputExamples", func(t *testing.T) {
@@ -4164,6 +4204,50 @@ func TestConvertAssistantContent_InlineToolResults(t *testing.T) {
 		assert.Equal(t, "srv-3", blocks[0].OfToolSearchToolResult.ToolUseID)
 	})
 
+	t.Run("tool_search result serializes tool_references", func(t *testing.T) {
+		for _, tc := range []struct {
+			name     string
+			output   string
+			expected string
+		}{
+			{
+				name:     "zero matches",
+				output:   `[]`,
+				expected: `{"type":"tool_search_tool_search_result","tool_references":[]}`,
+			},
+			{
+				name:     "one match",
+				output:   `[{"toolName":"my_func"}]`,
+				expected: `{"type":"tool_search_tool_search_result","tool_references":[{"type":"tool_reference","tool_name":"my_func"}]}`,
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				parts := []provider.ContentPart{
+					provider.ContentPart{Type: provider.ContentPartTypeToolResult,
+						ToolCallID: "srv-4",
+						ToolName:   "tool_search_tool_bm25",
+						Output: &provider.ToolResultOutput{
+							Type: provider.ToolOutputJSON,
+							JSON: json.RawMessage(tc.output),
+						},
+					},
+				}
+				warnings = nil
+				blocks := convertAssistantContent(v, mapping, parts, nil, mcpIDs, &warnings)
+				require.Len(t, blocks, 1)
+				require.NotNil(t, blocks[0].OfToolSearchToolResult)
+				assert.Empty(t, warnings)
+
+				// Assert the serialized content, not just the Go slice: a
+				// successful result must carry tool_references on the wire, and
+				// the API rejects the block when the field is absent.
+				serialized, err := json.Marshal(blocks[0].OfToolSearchToolResult.Content)
+				require.NoError(t, err)
+				assert.JSONEq(t, tc.expected, string(serialized))
+			})
+		}
+	})
+
 	t.Run("web_fetch result emits web_fetch_tool_result", func(t *testing.T) {
 		parts := []provider.ContentPart{
 			provider.ContentPart{Type: provider.ContentPartTypeToolResult,
@@ -4454,7 +4538,7 @@ func TestBuildParams_ReasoningEffortFallback(t *testing.T) {
 		opts := provider.CallOptions{
 			MaxOutputTokens: ptrInt(8000),
 			Prompt:          []provider.Message{provider.UserText("hi")},
-			Reasoning:       &reasoning,
+			Reasoning:       reasoning,
 			ProviderOptions: provider.BuildProviderOptions(AnthropicOptions{
 				Thinking: &ThinkingConfig{Type: ThinkingEnabled, BudgetTokens: 2048},
 			}),
@@ -4470,7 +4554,7 @@ func TestBuildParams_ReasoningEffortFallback(t *testing.T) {
 		opts := provider.CallOptions{
 			MaxOutputTokens: ptrInt(8000),
 			Prompt:          []provider.Message{provider.UserText("hi")},
-			Reasoning:       &reasoning,
+			Reasoning:       reasoning,
 			ProviderOptions: provider.BuildProviderOptions(AnthropicOptions{
 				Effort: "high",
 			}),
@@ -4485,7 +4569,7 @@ func TestBuildParams_ReasoningEffortFallback(t *testing.T) {
 		opts := provider.CallOptions{
 			MaxOutputTokens: ptrInt(8000),
 			Prompt:          []provider.Message{provider.UserText("hi")},
-			Reasoning:       &reasoning,
+			Reasoning:       reasoning,
 			ProviderOptions: provider.BuildProviderOptions(AnthropicOptions{
 				Thinking: &ThinkingConfig{Type: ThinkingDisabled},
 			}),

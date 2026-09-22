@@ -39,7 +39,6 @@ type Message struct {
 // of its text parts), matching `LanguageModelV4Message` where system content is
 // a `string`. All other roles emit content as the canonical part array.
 // Decoding remains tolerant of both shapes (see [Message.UnmarshalJSON]).
-// See openspec change provider-wire-upstream-full-compat.
 func (m Message) MarshalJSON() ([]byte, error) {
 	type alias Message
 	if m.Role != RoleSystem {
@@ -58,14 +57,12 @@ func (m Message) MarshalJSON() ([]byte, error) {
 	}{Role: m.Role, Content: sb.String(), ProviderOptions: m.ProviderOptions})
 }
 
-// UnmarshalJSON decodes a [Message] from the canonical Go-to-Go wire form and
-// additionally tolerates the upstream Vercel AI SDK LanguageModelV4 shape where
-// a system message's content is a bare JSON string
-// (`{"role":"system","content":"..."}`). A string content is wrapped into a
-// single [ContentPartTypeText] part so the in-memory representation is uniform.
-//
-// This is decode-only tolerance; marshaling continues to emit the canonical
-// array form. See openspec change provider-wire-upstream-decode-compat.
+// UnmarshalJSON decodes a [Message] from either the legacy Go JSON form or the
+// upstream Vercel AI SDK LanguageModelV4 shape where a system message's content
+// is a bare JSON string (`{"role":"system","content":"..."}`). A string
+// content is wrapped into a single [ContentPartTypeText] part so the in-memory
+// representation is uniform. Marshaling emits the upstream string form for
+// system messages.
 //
 // String content is accepted only for the system role, matching the upstream
 // dialect (`LanguageModelV4Message` types system content as `string` and all

@@ -115,10 +115,11 @@ aisdk/                  root module — orchestration (StreamText, UIMessage, SS
   registry/             provider registry
   gateway/              provider-neutral model catalog
   middleware/           in-tree middleware; integrations are their own modules
+ai-gateway/             separate Gateway service module
 providers/<name>/       one Go module per provider (anthropic, bedrock, openai, ...)
 docs/                   concepts, guides, providers, middleware, best practices
 examples/               outcome-oriented programs, one self-contained module each
-test/                   integration, interop, CLI, and conformance harnesses
+test/                   shared integration, CLI, conformance, and TypeScript tooling
 openspec/               specs and change proposals
 ```
 
@@ -132,7 +133,9 @@ mise run lint-docs      # structural + markdown style lint for docs
 mise run build          # build all modules, including examples
 mise run test           # all Go tests across all modules
 mise run test-short     # skip integration/E2E tests
-mise run check          # fmt + vet + lint + lint-docs + test
+mise run check          # fmt + vet + lint + docs + tests
+mise run verify-ai-gateway-boundary
+                        # verify the one-way Gateway dependency boundary
 ```
 
 To run a single test, invoke `go test` in the right module directory:
@@ -175,7 +178,7 @@ change needs, because the required evidence differs by layer.
 | Core orchestration (`StreamText`, tools, output) | UI chunk snapshots (`expected.jsonl`) |
 | Provider contract (`provider.LanguageModel`) | Shape report plus source comparison |
 | Provider implementation (Anthropic, Bedrock, ...) | Provider request snapshots (`expected-requests.jsonl`) |
-| Frontend interop | Interop tests against the real upstream client |
+| Frontend interop | Hook-level integration tests against the real upstream client |
 | Conformance harness | Regenerated fixtures |
 
 Work is **parity-sensitive** when it touches stream parts, UI chunks, SSE
@@ -228,10 +231,10 @@ manifest, the conformance dependency pins, the generated snapshots, and the
 lockfiles together. The selected package set must satisfy the
 `minimumReleaseAge` gate in `test/pnpm-workspace.yaml`; do not bypass it.
 
-In CI, every parity job is a required status check: `parity-baseline`,
-`conformance-test`, `interop-test`, and `integration-test` all block the merge,
-as documented in `PARITY.md`. A fixture regeneration therefore has to land in
-the same pull request as the behavior change it covers.
+In CI, every retained parity job is a required status check:
+`parity-baseline`, `conformance-test`, and `integration-test` all block the
+merge, as documented in `PARITY.md`. A fixture regeneration therefore has to
+land in the same pull request as the behavior change it covers.
 
 ## Spec-driven development with OpenSpec
 
@@ -306,7 +309,6 @@ no mocking framework. See [AGENTS.md](AGENTS.md) for the full conventions.
 mise run test              # all Go tests, all modules
 mise run test-short        # skip integration/E2E
 mise run test-integration  # cross-language integration tests (Go server, Vitest client)
-mise run test-interop      # against the real upstream TypeScript client
 mise run test-conformance  # replay upstream-recorded fixtures
 ```
 
@@ -481,7 +483,11 @@ then merge the rest. The complete workflow is in the
 ## Dependency management
 
 The repository uses Go modules across several module roots, plus a pnpm
-workspace under `test/` for the TypeScript-side harnesses.
+workspace under `test/` for TypeScript-side harnesses.
+
+`ai-gateway/` is intentionally absent from the root `go.work`. Gateway code may
+import explicitly pinned SDK modules, but no module outside `ai-gateway/` may
+import or require `github.com/grafana/ai-sdk/ai-gateway`.
 
 ```bash
 mise run tidy        # go mod tidy across all modules
@@ -504,10 +510,6 @@ coordinated disclosure.
 
 ## License
 
-This project is licensed under the [Apache License 2.0](LICENSE). By
-contributing, you agree that your contributions are licensed under the same
-terms.
-
-Attribution for the upstream Vercel AI SDK, which is also Apache-2.0 licensed, is
-recorded in [NOTICE](NOTICE). If you add code derived from a third-party source,
-update `NOTICE` in the same pull request.
+Contributions outside [`ai-gateway/`](ai-gateway/) are licensed under
+[Apache-2.0](LICENSE). Contributions under `ai-gateway/` are licensed under
+[AGPL-3.0-only](ai-gateway/LICENSE).

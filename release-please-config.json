@@ -9,7 +9,7 @@
   "prerelease": true,
   "bump-minor-pre-major": true,
   "separate-pull-requests": true,
-  "pull-request-header": "Merging this pull request tags this module and publishes its GitHub Release. Release the root module before any module that depends on it.",
+  "pull-request-header": "Merging this pull request tags this module and publishes its GitHub Release. Release every first-party prerequisite before a module that depends on it; see release/README.md for the dependency order.",
   "pull-request-footer": "Versions and changelog entries are derived from Conventional Commits. See [release/README.md](https://github.com/grafana/ai-sdk/blob/main/release/README.md).",
   "changelog-sections": [
     { "type": "feat", "section": "Features" },
@@ -30,6 +30,7 @@
       "include-component-in-tag": false,
       "prerelease-type": "alpha",
       "exclude-paths": [
+        "ai-gateway",
         "providers",
         "middleware",
         "examples",
@@ -42,6 +43,11 @@
         ".claude",
         ".github"
       ]
+    },
+    "ai-gateway": {
+      "component": "ai-gateway",
+      "prerelease-type": "alpha",
+      "initial-version": "0.1.0-alpha.1"
     },
     "providers/anthropic": {
       "component": "providers/anthropic",

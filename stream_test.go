@@ -54,7 +54,7 @@ func TestUIMessageStreamWriter(t *testing.T) {
 }
 
 func TestCreateUIMessageStream(t *testing.T) {
-	t.Run("basic execute produces start and finish", func(t *testing.T) {
+	t.Run("written chunks pass through without added start or finish", func(t *testing.T) {
 		stream := CreateUIMessageStream(CreateUIMessageStreamParams{
 			Execute: func(w *UIMessageStreamWriter) error {
 				_ = w.Write(TextDeltaChunk("b1", "hello"))
@@ -68,9 +68,9 @@ func TestCreateUIMessageStream(t *testing.T) {
 			chunks = append(chunks, c)
 		}
 
-		require.Len(t, chunks, 4) // start + 2 deltas + finish
-		assert.Equal(t, ChunkStart, chunks[0].Type)
-		assert.Equal(t, ChunkFinish, chunks[3].Type)
+		require.Len(t, chunks, 2)
+		assert.Equal(t, ChunkTextDelta, chunks[0].Type)
+		assert.Equal(t, ChunkTextDelta, chunks[1].Type)
 	})
 
 	t.Run("error is masked by default", func(t *testing.T) {
@@ -88,7 +88,7 @@ func TestCreateUIMessageStream(t *testing.T) {
 			}
 		}
 		require.NotNil(t, errChunk)
-		assert.Equal(t, "An error occurred", errChunk.ErrorText)
+		assert.Equal(t, "An error occurred.", errChunk.ErrorText)
 	})
 
 	t.Run("OnError callback customizes error message", func(t *testing.T) {
@@ -109,25 +109,124 @@ func TestCreateUIMessageStream(t *testing.T) {
 			}
 		}
 		require.NotNil(t, errChunk)
-		assert.NotEqual(t, "An error occurred", errChunk.ErrorText)
+		assert.NotEqual(t, "An error occurred.", errChunk.ErrorText)
 	})
 
-	t.Run("persistence mode sets messageId on start", func(t *testing.T) {
+	t.Run("injects messageId into start chunk without one", func(t *testing.T) {
+		var finishState UIMessageStreamOnFinishState
 		stream := CreateUIMessageStream(CreateUIMessageStreamParams{
 			Execute: func(w *UIMessageStreamWriter) error {
-				_ = w.Write(TextDeltaChunk("b1", "hi"))
-				return nil
+				return w.Write(UIMessageChunk{Type: ChunkStart})
 			},
-			OriginalMessages: []UIMessage{{ID: "msg-0", Role: RoleUser}},
+			OriginalMessages: []UIMessage{{ID: "0", Role: RoleUser}},
+			GenerateID:       func() string { return "response-message-id" },
+			OnFinish:         func(state UIMessageStreamOnFinishState) { finishState = state },
 		})
 
-		var startChunk UIMessageChunk
+		var chunks []UIMessageChunk
 		for c := range stream {
-			if c.Type == ChunkStart {
-				startChunk = c
-			}
+			chunks = append(chunks, c)
 		}
-		assert.NotEmpty(t, startChunk.MessageID)
+
+		require.Len(t, chunks, 1)
+		assert.Equal(t, "response-message-id", chunks[0].MessageID)
+		assert.False(t, finishState.IsContinuation)
+		assert.Equal(t, "response-message-id", finishState.ResponseMessage.ID)
+		assert.Len(t, finishState.Messages, 2)
+	})
+
+	t.Run("keeps existing messageId from start chunk", func(t *testing.T) {
+		var finishState UIMessageStreamOnFinishState
+		stream := CreateUIMessageStream(CreateUIMessageStreamParams{
+			Execute: func(w *UIMessageStreamWriter) error {
+				return w.Write(UIMessageChunk{Type: ChunkStart, MessageID: "existing-message-id"})
+			},
+			OriginalMessages: []UIMessage{{ID: "0", Role: RoleUser}},
+			GenerateID:       func() string { return "response-message-id" },
+			OnFinish:         func(state UIMessageStreamOnFinishState) { finishState = state },
+		})
+
+		var chunks []UIMessageChunk
+		for c := range stream {
+			chunks = append(chunks, c)
+		}
+
+		require.Len(t, chunks, 1)
+		assert.Equal(t, "existing-message-id", chunks[0].MessageID)
+		assert.Equal(t, "existing-message-id", finishState.ResponseMessage.ID)
+	})
+
+	t.Run("continues the last assistant message", func(t *testing.T) {
+		var finishState UIMessageStreamOnFinishState
+		stream := CreateUIMessageStream(CreateUIMessageStreamParams{
+			Execute: func(w *UIMessageStreamWriter) error {
+				_ = w.Write(UIMessageChunk{Type: ChunkStart})
+				_ = w.Write(TextStartChunk("1"))
+				_ = w.Write(TextDeltaChunk("1", "1b"))
+				return w.Write(TextEndChunk("1"))
+			},
+			OriginalMessages: []UIMessage{
+				{ID: "0", Role: RoleUser, Parts: []Part{TextPart{Text: "0a"}}},
+				{ID: "1", Role: RoleAssistant, Parts: []Part{TextPart{Text: "1a", State: "done"}}},
+			},
+			GenerateID: func() string { return "unused" },
+			OnFinish:   func(state UIMessageStreamOnFinishState) { finishState = state },
+		})
+
+		var chunks []UIMessageChunk
+		for c := range stream {
+			chunks = append(chunks, c)
+		}
+
+		require.NotEmpty(t, chunks)
+		assert.Equal(t, ChunkStart, chunks[0].Type)
+		assert.Equal(t, "1", chunks[0].MessageID)
+		for _, c := range chunks[1:] {
+			assert.NotEqual(t, ChunkStart, c.Type)
+			assert.NotEqual(t, ChunkFinish, c.Type)
+		}
+		assert.True(t, finishState.IsContinuation)
+		require.Len(t, finishState.Messages, 2)
+		assert.Equal(t, "1", finishState.ResponseMessage.ID)
+		assert.Len(t, finishState.ResponseMessage.Parts, 2)
+	})
+
+	t.Run("differing start ID does not continue the last assistant message", func(t *testing.T) {
+		var finishState UIMessageStreamOnFinishState
+		stream := CreateUIMessageStream(CreateUIMessageStreamParams{
+			Execute: func(w *UIMessageStreamWriter) error {
+				_ = w.Write(UIMessageChunk{Type: ChunkStart, MessageID: "2"})
+				_ = w.Write(TextStartChunk("1"))
+				_ = w.Write(TextDeltaChunk("1", "1b"))
+				return w.Write(TextEndChunk("1"))
+			},
+			OriginalMessages: []UIMessage{
+				{ID: "0", Role: RoleUser, Parts: []Part{TextPart{Text: "0a"}}},
+				{ID: "1", Role: RoleAssistant, Parts: []Part{TextPart{Text: "1a", State: "done"}}},
+			},
+			GenerateID: func() string { return "unused" },
+			OnFinish:   func(state UIMessageStreamOnFinishState) { finishState = state },
+		})
+
+		var chunks []UIMessageChunk
+		for c := range stream {
+			chunks = append(chunks, c)
+		}
+
+		// The written ID wins over the resolved response ID, so this is not a
+		// continuation: OnFinish appends instead of replacing, while the response
+		// was already seeded from message "1", so "1a" is carried into it.
+		require.NotEmpty(t, chunks)
+		assert.Equal(t, "2", chunks[0].MessageID)
+
+		assert.False(t, finishState.IsContinuation)
+		assert.Equal(t, "2", finishState.ResponseMessage.ID)
+		require.Len(t, finishState.Messages, 3)
+		assert.Equal(t, "1", finishState.Messages[1].ID)
+
+		require.Len(t, finishState.ResponseMessage.Parts, 2)
+		assert.Equal(t, "1a", finishState.ResponseMessage.Parts[0].(TextPart).Text)
+		assert.Equal(t, "1b", finishState.ResponseMessage.Parts[1].(TextPart).Text)
 	})
 
 	t.Run("OnFinish receives assembled messages", func(t *testing.T) {
@@ -150,6 +249,130 @@ func TestCreateUIMessageStream(t *testing.T) {
 		assert.Len(t, finishState.Messages, 2)
 		assert.NotEmpty(t, finishState.ResponseMessage.ID)
 	})
+
+	t.Run("OnFinish runs without original messages", func(t *testing.T) {
+		var finishState UIMessageStreamOnFinishState
+		stream := CreateUIMessageStream(CreateUIMessageStreamParams{
+			Execute: func(w *UIMessageStreamWriter) error {
+				_ = w.Write(TextStartChunk("1"))
+				_ = w.Write(TextDeltaChunk("1", "1b"))
+				return w.Write(TextEndChunk("1"))
+			},
+			GenerateID: func() string { return "response-message-id" },
+			OnFinish:   func(state UIMessageStreamOnFinishState) { finishState = state },
+		})
+		for range stream {
+		}
+
+		assert.False(t, finishState.IsContinuation)
+		require.Len(t, finishState.Messages, 1)
+		assert.Equal(t, "response-message-id", finishState.ResponseMessage.ID)
+		assert.Len(t, finishState.ResponseMessage.Parts, 1)
+	})
+
+	t.Run("OnFinish reports abort and finish reason", func(t *testing.T) {
+		var finishState UIMessageStreamOnFinishState
+		stream := CreateUIMessageStream(CreateUIMessageStreamParams{
+			Execute: func(w *UIMessageStreamWriter) error {
+				_ = w.Write(UIMessageChunk{Type: ChunkAbort})
+				return w.Write(UIMessageChunk{Type: ChunkFinish, FinishReason: "stop"})
+			},
+			OnFinish: func(state UIMessageStreamOnFinishState) { finishState = state },
+		})
+		for range stream {
+		}
+
+		assert.True(t, finishState.IsAborted)
+		assert.Equal(t, "stop", string(finishState.FinishReason.Unified))
+	})
+
+	t.Run("missing Execute produces an error chunk", func(t *testing.T) {
+		var chunks []UIMessageChunk
+		for c := range CreateUIMessageStream(CreateUIMessageStreamParams{
+			OnError: func(err error) string { return err.Error() },
+		}) {
+			chunks = append(chunks, c)
+		}
+
+		require.Len(t, chunks, 1)
+		assert.Equal(t, ChunkError, chunks[0].Type)
+		assert.Contains(t, chunks[0].ErrorText, "Execute is required")
+	})
+
+	t.Run("panic in Execute produces an error chunk", func(t *testing.T) {
+		var chunks []UIMessageChunk
+		for c := range CreateUIMessageStream(CreateUIMessageStreamParams{
+			Execute: func(w *UIMessageStreamWriter) error {
+				panic("boom")
+			},
+			OnError: func(err error) string { return err.Error() },
+		}) {
+			chunks = append(chunks, c)
+		}
+
+		require.Len(t, chunks, 1)
+		assert.Equal(t, ChunkError, chunks[0].Type)
+		assert.Contains(t, chunks[0].ErrorText, "boom")
+	})
+
+	t.Run("assembly failure reports AssemblyError without touching the wire", func(t *testing.T) {
+		var finishState UIMessageStreamOnFinishState
+		var chunks []UIMessageChunk
+		for c := range CreateUIMessageStream(CreateUIMessageStreamParams{
+			Execute: func(w *UIMessageStreamWriter) error {
+				_ = w.Write(TextStartChunk("ok"))
+				_ = w.Write(TextDeltaChunk("ok", "kept"))
+				_ = w.Write(TextEndChunk("ok"))
+				return w.Write(TextDeltaChunk("missing", "orphan"))
+			},
+			OnError:  func(err error) string { return err.Error() },
+			OnFinish: func(state UIMessageStreamOnFinishState) { finishState = state },
+		}) {
+			chunks = append(chunks, c)
+		}
+
+		// Upstream emits no error chunk for an assembly failure, so neither do we.
+		for _, c := range chunks {
+			assert.NotEqual(t, ChunkError, c.Type)
+		}
+		require.Error(t, finishState.AssemblyError)
+		assert.Contains(t, finishState.AssemblyError.Error(), "missing text part")
+		assert.Len(t, finishState.ResponseMessage.Parts, 1, "the parts that applied are still delivered")
+	})
+
+	t.Run("generates a response messageId without original messages", func(t *testing.T) {
+		var finishState UIMessageStreamOnFinishState
+		stream := CreateUIMessageStream(CreateUIMessageStreamParams{
+			Execute: func(w *UIMessageStreamWriter) error {
+				return w.Write(UIMessageChunk{Type: ChunkStart})
+			},
+			OnFinish: func(state UIMessageStreamOnFinishState) { finishState = state },
+		})
+
+		var chunks []UIMessageChunk
+		for c := range stream {
+			chunks = append(chunks, c)
+		}
+
+		require.Len(t, chunks, 1)
+		assert.NotEmpty(t, chunks[0].MessageID)
+		assert.Equal(t, chunks[0].MessageID, finishState.ResponseMessage.ID)
+	})
+}
+
+func TestAssembleResponseMessageReportsEveryApplyFailure(t *testing.T) {
+	msg, err := assembleResponseMessage("msg-1", []UIMessageChunk{
+		TextStartChunk("ok"),
+		TextDeltaChunk("ok", "kept"),
+		TextDeltaChunk("first-missing", "a"),
+		TextDeltaChunk("second-missing", "b"),
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "first-missing")
+	assert.Contains(t, err.Error(), "second-missing")
+	require.Len(t, msg.Parts, 1, "chunks that applied are still returned")
+	assert.Equal(t, "kept", msg.Parts[0].(TextPart).Text)
 }
 
 func TestTransientDataExcludedFromAssembly(t *testing.T) {
@@ -285,7 +508,8 @@ func TestAssembleResponseMessage(t *testing.T) {
 			{Type: ChunkTextEnd, ID: "t2"},
 		}
 
-		msg := assembleResponseMessage("msg-1", chunks)
+		msg, err := assembleResponseMessage("msg-1", chunks)
+		require.NoError(t, err)
 		require.Len(t, msg.Parts, 2)
 
 		tp1, ok := msg.Parts[0].(TextPart)
@@ -310,7 +534,8 @@ func TestAssembleResponseMessage(t *testing.T) {
 			{Type: ChunkTextEnd, ID: "t1"},
 		}
 
-		msg := assembleResponseMessage("msg-1", chunks)
+		msg, err := assembleResponseMessage("msg-1", chunks)
+		require.NoError(t, err)
 		require.Len(t, msg.Parts, 3)
 
 		rp1, ok := msg.Parts[0].(ReasoningPart)
@@ -330,7 +555,8 @@ func TestAssembleResponseMessage(t *testing.T) {
 		chunks := []UIMessageChunk{
 			{Type: ChunkToolInputError, ToolCallID: "c1", ToolName: "calc", Input: json.RawMessage(`{"x":1}`), ErrorText: "invalid input"},
 		}
-		msg := assembleResponseMessage("msg-1", chunks)
+		msg, err := assembleResponseMessage("msg-1", chunks)
+		require.NoError(t, err)
 		require.Len(t, msg.Parts, 1)
 
 		tip, ok := msg.Parts[0].(ToolInvocationPart)

@@ -4,10 +4,12 @@ import { readFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
+import { collectGatewayContract, readGatewayContractEvidence, validateGatewayContract } from "./gateway-client-contract.mts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export interface BaselineManifest {
+  upstream?: { commit?: string };
   packages?: Record<string, unknown>;
 }
 
@@ -16,10 +18,17 @@ export interface PackageManifest {
   devDependencies?: Record<string, string>;
 }
 
+export const providerWireRequiredPackages = [
+  "@ai-sdk/gateway",
+  "@ai-sdk/provider",
+  "@ai-sdk/provider-utils",
+] as const;
+
 export function validateBaseline(
   baseline: BaselineManifest,
   packageManifest: PackageManifest,
   packageLabel = "package.json",
+  requiredPackages: readonly string[] = [],
 ): string[] {
   const errors: string[] = [];
   const baselinePackages = baseline.packages ?? {};
@@ -42,6 +51,18 @@ export function validateBaseline(
     }
   }
 
+  for (const name of requiredPackages) {
+    if (packageVersions[name] !== undefined) {
+      continue;
+    }
+    const baselineVersion = baselinePackages[name];
+    errors.push(
+      typeof baselineVersion === "string"
+        ? `${packageLabel} must declare dependency ${name}@${baselineVersion}`
+        : `${packageLabel} required dependency ${name} is missing from baseline manifest`,
+    );
+  }
+
   return errors;
 }
 
@@ -51,10 +72,38 @@ export function validateBaselineFiles(manifestPath: string, packagePaths: string
 
   for (const packagePath of packagePaths) {
     const packageManifest = JSON.parse(readFileSync(packagePath, "utf8")) as PackageManifest;
-    errors.push(...validateBaseline(baseline, packageManifest, relative(process.cwd(), packagePath)));
+    const packageLabel = relative(process.cwd(), packagePath);
+    const requiredPackages = packagePath.replaceAll("\\", "/").endsWith("/providerwire-v4/package.json")
+      ? providerWireRequiredPackages
+      : [];
+    errors.push(...validateBaseline(baseline, packageManifest, packageLabel, requiredPackages));
+  }
+
+  try {
+    errors.push(...validateGatewayContract(baseline, readGatewayContractEvidence(), collectGatewayContract()));
+  } catch (error) {
+    errors.push(`Gateway client contract witness failed: ${error instanceof Error ? error.message : String(error)}`);
   }
 
   return errors;
+}
+
+export function defaultPackagePaths(baseDirectory = __dirname): string[] {
+  return [
+    join(baseDirectory, "package.json"),
+    join(baseDirectory, "..", "..", "integration", "package.json"),
+    join(baseDirectory, "..", "..", "cli", "package.json"),
+    join(
+      baseDirectory,
+      "..",
+      "..",
+      "..",
+      "ai-gateway",
+      "test",
+      "providerwire-v4",
+      "package.json",
+    ),
+  ];
 }
 
 function argValue(name: string): string | undefined {
@@ -68,15 +117,7 @@ function main(): void {
   const packageArgs = process.argv
     .filter((arg) => arg.startsWith("--package="))
     .map((arg) => arg.slice("--package=".length));
-  const packagePaths =
-    packageArgs.length > 0
-      ? packageArgs
-      : [
-          join(__dirname, "package.json"),
-          join(__dirname, "..", "..", "integration", "package.json"),
-          join(__dirname, "..", "..", "interop", "package.json"),
-          join(__dirname, "..", "..", "cli", "package.json"),
-        ];
+  const packagePaths = packageArgs.length > 0 ? packageArgs : defaultPackagePaths();
   const errors = validateBaselineFiles(manifestPath, packagePaths);
   if (errors.length > 0) {
     for (const error of errors) {
@@ -85,7 +126,7 @@ function main(): void {
     process.exitCode = 1;
     return;
   }
-  console.log("parity baseline: package versions match all parity TypeScript consumers");
+  console.log("parity baseline: package versions and reviewed Gateway client contract match");
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

@@ -338,13 +338,13 @@ func applyAnthropicPassThroughs(addFields map[string]any, inf **inferenceConfig,
 	return warnings
 }
 
-func resolveReasoningConfig(modelID string, reasoning *provider.ReasoningEffort, explicit *ReasoningConfig, warnings *[]provider.Warning) *ReasoningConfig {
-	if reasoning == nil || *reasoning == provider.ReasoningProviderDefault {
+func resolveReasoningConfig(modelID string, reasoning provider.ReasoningEffort, explicit *ReasoningConfig, warnings *[]provider.Warning) *ReasoningConfig {
+	if reasoning == provider.ReasoningProviderDefault {
 		return explicit
 	}
 
 	var resolved *ReasoningConfig
-	if *reasoning == provider.ReasoningNone {
+	if reasoning == provider.ReasoningNone {
 		if isAnthropicModel(modelID) {
 			resolved = &ReasoningConfig{Type: "disabled"}
 		} else {
@@ -391,11 +391,11 @@ func mergeReasoningConfig(derived, explicit *ReasoningConfig) *ReasoningConfig {
 	return merged
 }
 
-func deriveReasoningConfig(modelID string, reasoning *provider.ReasoningEffort, warnings *[]provider.Warning) *ReasoningConfig {
-	if reasoning == nil || *reasoning == provider.ReasoningProviderDefault {
+func deriveReasoningConfig(modelID string, reasoning provider.ReasoningEffort, warnings *[]provider.Warning) *ReasoningConfig {
+	if reasoning == provider.ReasoningProviderDefault {
 		return nil
 	}
-	if *reasoning == provider.ReasoningNone {
+	if reasoning == provider.ReasoningNone {
 		if isAnthropicModel(modelID) {
 			return &ReasoningConfig{Type: "disabled"}
 		}
@@ -403,34 +403,34 @@ func deriveReasoningConfig(modelID string, reasoning *provider.ReasoningEffort, 
 	}
 	if isAnthropicModel(modelID) {
 		if supportsAdaptiveThinking(modelID) {
-			effort, ok := reasoningEffort(*reasoning, warnings)
+			effort, ok := reasoningEffort(reasoning, warnings)
 			if !ok {
 				*warnings = append(*warnings, provider.Warning{
 					Type:    provider.WarnUnsupported,
 					Feature: "reasoning",
-					Details: fmt.Sprintf("reasoning %q is not supported by this model.", *reasoning),
+					Details: fmt.Sprintf("reasoning %q is not supported by this model.", reasoning),
 				})
 				return nil
 			}
 			return &ReasoningConfig{Type: "adaptive", MaxReasoningEffort: effort}
 		}
-		budget, ok := reasoningBudget(modelID, *reasoning)
+		budget, ok := reasoningBudget(modelID, reasoning)
 		if !ok {
 			*warnings = append(*warnings, provider.Warning{
 				Type:    provider.WarnUnsupported,
 				Feature: "reasoning",
-				Details: fmt.Sprintf("reasoning %q is not supported by this model.", *reasoning),
+				Details: fmt.Sprintf("reasoning %q is not supported by this model.", reasoning),
 			})
 			return nil
 		}
 		return &ReasoningConfig{Type: "enabled", BudgetTokens: budget}
 	}
-	effort, ok := reasoningEffort(*reasoning, warnings)
+	effort, ok := reasoningEffort(reasoning, warnings)
 	if !ok {
 		*warnings = append(*warnings, provider.Warning{
 			Type:    provider.WarnUnsupported,
 			Feature: "reasoning",
-			Details: fmt.Sprintf("reasoning %q is not supported by this model.", *reasoning),
+			Details: fmt.Sprintf("reasoning %q is not supported by this model.", reasoning),
 		})
 		return nil
 	}

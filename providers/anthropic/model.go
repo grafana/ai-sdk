@@ -31,7 +31,10 @@ type model struct {
 // New creates a LanguageModel for the direct Anthropic API.
 func New(apiKey, modelID string, opts ...Option) provider.LanguageModel {
 	m := &model{
-		client:       anthropic.NewClient(option.WithAPIKey(apiKey)),
+		client: anthropic.NewClient(
+			option.WithoutEnvironmentDefaults(),
+			option.WithAPIKey(apiKey),
+		),
 		modelID:      modelID,
 		providerName: "anthropic",
 		resolveModel: func(id string) string { return id },
@@ -149,9 +152,10 @@ func (m *model) DoGenerate(ctx context.Context, params provider.CallOptions) (*p
 func consumeStream(stream *ssestream.Stream[anthropic.BetaRawMessageStreamEventUnion], firstEvent *anthropic.BetaRawMessageStreamEventUnion, ch chan<- provider.StreamPart, mapping toolNameMapping, warnings []provider.Warning, usesJsonResponseTool bool, citDocs []citationDocument, generateID func() string, providerName string, markCodeExecutionDynamic bool) {
 	defer func() { _ = stream.Close() }()
 
+	ch <- provider.StreamPart{Type: provider.PartStreamStart, Warnings: warnings}
+
 	adapter := &streamAdapter{
 		blocks:                   make(map[int64]*blockState),
-		warnings:                 warnings,
 		mapping:                  mapping,
 		serverToolCalls:          make(map[string]string),
 		mcpToolCalls:             make(map[string]mcpToolCallInfo),

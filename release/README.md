@@ -1,8 +1,8 @@
 # Release runbook
 
-The repository publishes the core SDK, each provider, and each middleware
-integration as independently versioned Go modules. Releases are driven by
-[release-please](https://github.com/googleapis/release-please): merged
+The repository publishes the core SDK, AI Gateway, each provider, and each
+middleware integration as independently versioned Go modules. Releases are
+driven by [release-please](https://github.com/googleapis/release-please): merged
 Conventional Commits become versions, changelogs, tags, and GitHub Releases
 without a maintainer calculating anything.
 
@@ -81,29 +81,37 @@ Merging a release pull request makes release-please create that module's tag
 and GitHub Release. Modules with nothing pending have no pull request, so the
 set of open release pull requests is the set of releasable modules.
 
-**Release the root module first.** Nested modules require a published core
-version, and the core tag does not exist until the root release pull request
-merges. The order is:
+**Release prerequisites before their dependents.** Every nested module requires
+a published core version. Bedrock also requires the OpenAI provider, while the
+AI Gateway requires the Anthropic and OpenAI-compatible providers plus the
+Agent Observability, Logger, and Prometheus middleware modules. The order is:
 
 1. Merge the root release pull request. The core tag publishes.
-2. Renovate opens a `fix(deps)` pull request updating `go.mod` and `go.sum`
-   across every nested module. It auto-merges.
-3. Each nested release pull request refreshes onto that bump and goes green.
-4. Merge the nested release pull requests.
+2. Renovate opens a `fix(deps)` pull request updating the root requirement in
+   every nested module. It auto-merges.
+3. Merge release pull requests for every module whose first-party requirements
+   are now published. On the initial bootstrap this wave includes Anthropic,
+   Grafana, OpenAI, OpenAI-compatible, Agent Observability, Enrichment, Logger,
+   and Prometheus; Bedrock and AI Gateway still wait for their additional
+   prerequisites.
+4. Renovate updates those first-party requirements in Bedrock and AI Gateway.
+5. Merge the Bedrock and AI Gateway release pull requests after their complete
+   published dependency sets resolve.
 
-The `module-resolution` check enforces this rather than leaving it to
-discipline. On release branches it runs `mise run verify-module-build`, which
-compiles every published module with `GOWORK=off` — that is, against the core
-version its `go.mod` actually pins rather than the working tree that `go.work`
-would otherwise supply. A provider release pull request that needs an
-unreleased core API stays red until step 2 lands.
+The `module-resolution` check enforces this on every pull request rather than
+leaving it to discipline. It tests every published module with `GOWORK=off`,
+`-mod=readonly`, and the public Go proxy — that is, against the versions its
+`go.mod` actually pins rather than the working tree that `go.work` would
+otherwise supply. A release pull request that needs an unpublished first-party
+API stays red until the corresponding Renovate update lands.
 
 Never move or delete a published tag. Correct a bad release with a new version.
 
-## Keep nested modules on the released core
+## Keep dependent modules on released first-party requirements
 
-The requirement bump cannot live in a release pull request, because the core
-version it would point at is not published until that pull request merges.
+The requirement bump cannot live in a release pull request, because the
+first-party version it would point at is not published until its own release
+pull request merges.
 
 Renovate owns the bump instead. Its rule is the last entry in
 [`renovate.json`](../renovate.json) because it has to override the weekly
@@ -112,8 +120,8 @@ schedule and the 14-day `minimumReleaseAge` that the generic Go rules apply.
 Two consequences are worth knowing. Renovate commits through the GitHub API, so
 its commits are signed and satisfy the organization's signed-commit ruleset,
 which a workflow pushing with `git` cannot do. And because Renovate labels the
-bump `fix(deps)`, merging it makes each nested module's next release include
-the new core requirement.
+bump `fix(deps)`, merging it makes each dependent module's next release include
+the new first-party requirements.
 
 ## Force a release for an unchanged module
 
@@ -189,10 +197,11 @@ which exchanges the job's OIDC identity for a short-lived installation token via
 Vault's [GitHub App Token Broker](https://enghub.grafana-ops.net/docs/default/component/deployment-tools/platform/vault/github-app-token-broker/),
 so no app private key is stored in this repository.
 
-The app is `grafana-plugins-platform-bot`, the same one `grafana/agento11y` and
-`grafana/plugin-tools` use for their release workflows, and the one the
-organization's required-review policy exempts for automated workflows. Two
-things must be provisioned in `grafana/deployment_tools` before the first run:
+The proposed app is `grafana-plugins-platform-bot`, the same one
+`grafana/agento11y` and `grafana/plugin-tools` use for their release workflows.
+Platform Productivity must confirm that it is appropriate for this repository.
+If approved, two things must be provisioned in `grafana/deployment_tools`
+before the first run:
 
 1. `grafana/ai-sdk` added to
    `terraform/repositories/plugin-ci-workflows/plugins-platform-bot-users.txt`,
@@ -200,7 +209,8 @@ things must be provisioned in `grafana/deployment_tools` before the first run:
    installation itself is a manual step; the file only tracks it.
 2. `terraform/repositories/ai-sdk/github-app-configs/config.yaml` declaring this
    workflow, bound to `branch: main` and `event_name: push`, with
-   `contents: write` and `pull_requests: write`.
+   `contents: write`, `pull_requests: write`, and `issues: write` (release-please
+   manages lifecycle labels through the issues API).
 
 The broker binds issuance to the workflow's file path, so renaming or moving
 `.github/workflows/release-please.yml` breaks token minting until that config is
@@ -212,7 +222,7 @@ the repository's squash defaults must be `PR_TITLE` for the commit title and
 `COMMIT_OR_PR_TITLE` default makes the release subject depend on how many
 commits a branch happened to have.
 
-**Renovate.** The `core module requirement` rule in
+**Renovate.** The `first-party module requirements` rule in
 [`renovate.json`](../renovate.json) must stay the last `packageRules` entry, or
-the generic Go rules will hold nested modules on a stale core for up to two
-weeks.
+the generic Go rules will hold dependent modules on stale prerequisites for up
+to two weeks.

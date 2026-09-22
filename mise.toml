@@ -4,12 +4,12 @@ min_version = "2026.5.4"
 experimental = true
 
 [tools]
-go = "1.26.6"
+go = "1.27.1"
 jq = "1.8.2"
 node = "24"
-pnpm = "11.22.0"
+pnpm = "12.4.2"
 python = "3.14.7"
-golangci-lint = "2.12.2"
+golangci-lint = "2.13.2"
 "npm:@fission-ai/openspec" = "1"
 "npm:markdownlint-cli2" = "0.23.2"
 
@@ -22,7 +22,7 @@ sources = [
   "test/cli/package.json",
   "test/conformance/tools/package.json",
   "test/integration/package.json",
-  "test/interop/package.json",
+  "ai-gateway/test/providerwire-v4/package.json",
 ]
 outputs = ["test/node_modules/.modules.yaml"]
 run = "cd test && pnpm install --frozen-lockfile"
@@ -32,11 +32,12 @@ description = "Run all Go tests across all modules"
 run = """
 mise run test-examples
 mise run test-root
+mise run test-ai-gateway
 mise run test-anthropic
 mise run test-bedrock
+mise run test-grafana
 mise run test-openai
 mise run test-openai-compatible
-mise run test-grafana
 mise run test-logger-middleware
 mise run test-agent-observability-middleware
 mise run test-enrichment-middleware
@@ -46,6 +47,18 @@ mise run test-prometheus-middleware
 [tasks.test-root]
 description = "Run root module tests"
 run = "go test ./..."
+
+[tasks.test-ai-gateway]
+description = "Run AI Gateway tests outside the root workspace"
+run = "cd ai-gateway && GOWORK=off GOFLAGS=\"${GOFLAGS:+$GOFLAGS }-mod=readonly\" go test ./..."
+
+[tasks.build-ai-gateway-image]
+description = "Build and load the AI Gateway image for the local architecture"
+run = """
+image=${AI_GATEWAY_IMAGE:-ai-gateway:local}
+revision=${AI_GATEWAY_VCS_REF:-$(git rev-parse HEAD)}
+docker build --build-arg "VCS_REF=$revision" --tag "$image" ai-gateway
+"""
 
 [tasks.test-anthropic]
 description = "Run Anthropic provider tests"
@@ -59,13 +72,13 @@ run = "cd providers/bedrock && go test ./..."
 description = "Run OpenAI provider tests"
 run = "cd providers/openai && go test ./..."
 
+[tasks.test-grafana]
+description = "Run Grafana Gateway client tests"
+run = "cd providers/grafana && go test ./..."
+
 [tasks.test-openai-compatible]
 description = "Run OpenAI-compatible provider tests"
 run = "cd providers/openai-compatible && go test ./..."
-
-[tasks.test-grafana]
-description = "Run Grafana provider tests"
-run = "cd providers/grafana && go test ./..."
 
 [tasks.test-logger-middleware]
 description = "Run logger middleware tests"
@@ -92,11 +105,12 @@ description = "Run short tests across all modules"
 run = """
 mise run test-examples
 go test -short ./...
+(cd ai-gateway && GOWORK=off GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" go test -short ./...)
 (cd providers/anthropic && go test -short ./...)
 (cd providers/bedrock && go test -short ./...)
+(cd providers/grafana && go test -short ./...)
 (cd providers/openai && go test -short ./...)
 (cd providers/openai-compatible && go test -short ./...)
-(cd providers/grafana && go test -short ./...)
 (cd middleware/logger && go test -short ./...)
 (cd middleware/agentobservability && go test -short ./...)
 (cd middleware/enrichment && go test -short ./...)
@@ -118,11 +132,12 @@ git diff --exit-code || (echo "Code is not formatted. Run 'mise run fmt' and com
 description = "Run go vet across all modules"
 run = """
 go vet ./...
+(cd ai-gateway && GOWORK=off GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" go vet ./...)
 (cd providers/anthropic && go vet ./...)
 (cd providers/bedrock && go vet ./...)
+(cd providers/grafana && go vet ./...)
 (cd providers/openai && go vet ./...)
 (cd providers/openai-compatible && go vet ./...)
-(cd providers/grafana && go vet ./...)
 (cd middleware/logger && go vet ./...)
 (cd middleware/agentobservability && go vet ./...)
 (cd middleware/enrichment && go vet ./...)
@@ -130,15 +145,18 @@ go vet ./...
 """
 
 [tasks.verify-module-resolution]
-description = "Verify each published module's requirements resolve from the module proxy"
+description = "Verify each published module resolves from the public proxy and tests outside the workspace"
 run = """
 set -e
 module_cache=$(mktemp -d)
 trap 'chmod -R u+w "$module_cache" 2>/dev/null || true; rm -rf "$module_cache"' EXIT
 export GOMODCACHE="$module_cache"
 export GOPROXY="https://proxy.golang.org"
+export GOPRIVATE=
+export GONOPROXY=
+export GONOSUMDB=
 export GOWORK=off
-for go_mod in $(git ls-files 'go.mod' '*/go.mod' | sort); do
+for go_mod in $(git ls-files 'go.mod' '*/go.mod' | while read -r file; do [ -f "$file" ] && echo "$file"; done | sort); do
   module_path=$(go mod edit -json "$go_mod" | jq -r '.Module.Path')
   case "$module_path" in
     github.com/grafana/ai-sdk/examples/*|github.com/grafana/ai-sdk/test/*)
@@ -152,33 +170,7 @@ for go_mod in $(git ls-files 'go.mod' '*/go.mod' | sort); do
   fi
   mod=$(dirname "$go_mod")
   echo "==> $mod"
-  (cd "$mod" && go mod download && go mod verify > /dev/null)
-done
-"""
-
-[tasks.verify-module-build]
-description = "Compile each published module against the core version its go.mod pins"
-run = """
-set -e
-module_cache=$(mktemp -d)
-trap 'chmod -R u+w "$module_cache" 2>/dev/null || true; rm -rf "$module_cache"' EXIT
-export GOMODCACHE="$module_cache"
-export GOPROXY="https://proxy.golang.org"
-# go.work makes every nested module resolve the core module from the working
-# tree, so a nested module can call a core API that its required core version
-# does not contain and still build. Dropping the workspace is the only way to
-# compile what an external consumer of the published tag would get.
-export GOWORK=off
-for go_mod in $(git ls-files 'go.mod' '*/go.mod' | sort); do
-  module_path=$(go mod edit -json "$go_mod" | jq -r '.Module.Path')
-  case "$module_path" in
-    github.com/grafana/ai-sdk/examples/*|github.com/grafana/ai-sdk/test/*)
-      continue
-      ;;
-  esac
-  mod=$(dirname "$go_mod")
-  echo "==> $mod"
-  (cd "$mod" && go build ./...)
+  (cd "$mod" && go mod download && go mod verify > /dev/null && go test -mod=readonly ./...)
 done
 """
 
@@ -199,25 +191,38 @@ npx --yes --ignore-scripts release-please@17.10.4 release-pr \
   --debug
 """
 
+[tasks.verify-ai-gateway-boundary]
+description = "Verify the one-way AI Gateway module and license boundary"
+run = "bash scripts/verify-ai-gateway-boundary.sh"
+
 [tasks.lint]
 description = "Run golangci-lint across all modules"
 run = """
-for mod in $(find . -name go.mod -not -path './.git/*' -exec dirname {} \\; | sort); do
-  packages=$(cd "$mod" && go list ./... 2>/dev/null || true)
-  if [ -n "$packages" ]; then
-    echo "lint $mod"
-    (cd "$mod" && golangci-lint run ./...)
+set -e
+workspace_file="$PWD/go.work"
+workspace_modules=$(go work edit -json "$workspace_file" | jq -r '.Use[].DiskPath | if startswith("./") then ltrimstr("./") else . end')
+
+run_in_module() {
+  module=$1
+  shift
+  module_name=${module#./}
+  if printf '%s\n' "$workspace_modules" | grep -Fxq "$module_name"; then
+    (cd "$module" && GOWORK="$workspace_file" "$@")
+  else
+    (cd "$module" && GOWORK=off "$@")
+  fi
+}
+
+for go_mod in $(git ls-files 'go.mod' '*/go.mod' | sort); do
+  mod=$(dirname "$go_mod")
+  packages=$(run_in_module "$mod" go list -tags conformance ./...)
+  if [ -z "$packages" ]; then
+    echo "lint $mod (skipped: no packages)"
     continue
   fi
 
-  conformance_packages=$(cd "$mod" && go list -tags conformance ./... 2>/dev/null || true)
-  if [ -n "$conformance_packages" ]; then
-    echo "lint $mod -tags conformance"
-    (cd "$mod" && golangci-lint run --build-tags conformance ./...)
-    continue
-  fi
-
-  echo "lint $mod (skipped: no packages)"
+  echo "lint $mod"
+  run_in_module "$mod" golangci-lint run --build-tags conformance ./...
 done
 """
 
@@ -240,11 +245,12 @@ run = "bash scripts/update-openspec-skills_test.sh"
 description = "Run go mod tidy across all modules"
 run = """
 go mod tidy
+(cd ai-gateway && GOWORK=off go mod tidy)
 (cd providers/anthropic && go mod tidy)
 (cd providers/bedrock && go mod tidy)
+(cd providers/grafana && go mod tidy)
 (cd providers/openai && go mod tidy)
 (cd providers/openai-compatible && go mod tidy)
-(cd providers/grafana && go mod tidy)
 (cd middleware/logger && go mod tidy)
 (cd middleware/agentobservability && go mod tidy)
 (cd middleware/enrichment && go mod tidy)
@@ -256,11 +262,12 @@ description = "Build all modules and examples"
 run = """
 mise run build-examples
 go build ./...
+(cd ai-gateway && GOWORK=off GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" go build ./...)
 (cd providers/anthropic && go build ./...)
 (cd providers/bedrock && go build ./...)
+(cd providers/grafana && go build ./...)
 (cd providers/openai && go build ./...)
 (cd providers/openai-compatible && go build ./...)
-(cd providers/grafana && go build ./...)
 (cd middleware/logger && go build ./...)
 (cd middleware/agentobservability && go build ./...)
 (cd middleware/enrichment && go build ./...)
@@ -295,14 +302,8 @@ description = "Run cross-language integration tests"
 run = """
 mise deps install --only test
 (cd test/integration/testserver && go test ./...)
-cd test && pnpm --filter @ai-sdk/test-integration test
-"""
-
-[tasks.test-interop]
-description = "Run bidirectional upstream-client (@ai-sdk/gateway) interop tests"
-run = """
-mise deps install --only test
-cd test && pnpm --filter @ai-sdk/test-interop test
+(cd test && pnpm --filter @ai-sdk/test-integration test)
+mise run test-ai-gateway-command
 """
 
 [tasks.test-cli]
@@ -324,6 +325,28 @@ description = "Typecheck conformance TypeScript tools"
 run = """
 mise deps install --only test
 cd test && pnpm --filter @ai-sdk/conformance-tools typecheck
+"""
+
+[tasks.test-providerwire-v4]
+description = "Run the non-mutating ProviderWire V4 contract checks"
+run = """
+(cd ai-gateway && GOWORK=off GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" go test ./providerwire/v4)
+mise deps install --only test
+cd test && pnpm --filter @ai-sdk/providerwire-v4-contract test:contract
+"""
+
+[tasks.test-ai-gateway-command]
+description = "Run the authenticated AI Gateway command integration"
+run = """
+mise deps install --only test
+cd test && pnpm --filter @ai-sdk/providerwire-v4-contract test:command
+"""
+
+[tasks.update-providerwire-v4-goldens]
+description = "Explicitly update ProviderWire V4 semantic request goldens"
+run = """
+mise deps install --only test
+cd test && pnpm --filter @ai-sdk/providerwire-v4-contract update-goldens
 """
 
 [tasks.validate-parity-baseline]
@@ -353,7 +376,7 @@ cd test && pnpm --filter @ai-sdk/conformance-tools provider-shape
 description = "Run conformance tests"
 run = """
 mise run typecheck-conformance
-cd test/conformance && go test -tags conformance -v ./...
+cd test/conformance && GOWORK=off GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" go test -tags conformance -v ./...
 """
 
 [tasks.parity-check]
@@ -362,6 +385,7 @@ run = """
 mise run validate-parity-baseline
 mise run parity-coverage
 mise run parity-provider-shape
+mise run test-providerwire-v4
 mise run test-conformance
 """
 
@@ -404,4 +428,5 @@ mise run vet
 mise run lint
 mise run lint-docs
 mise run test
+mise run verify-ai-gateway-boundary
 """

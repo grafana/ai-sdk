@@ -1,8 +1,8 @@
 packages:
   - integration
-  - interop
   - cli
   - conformance/tools
+  - ../ai-gateway/test/providerwire-v4
 
 # Supply-chain hardening
 blockExoticSubdeps: true
@@ -13,3 +13,6 @@ minimumReleaseAge: 4320
 # strictDepBuilds; everything not listed has its build scripts blocked).
 allowBuilds:
   esbuild: true
+minimumReleaseAgeExclude:
+  # Renovate security update: vitest@4.1.11
+  - vitest@4.1.11

@@ -1,0 +1,43 @@
+[
+  {
+    "method": "POST",
+    "path": "/language-model",
+    "headers": {
+      "ai-language-model-id": "actual",
+      "ai-language-model-specification-version": "4",
+      "ai-language-model-streaming": "false",
+      "ai-o11y-deployment-id": "deployment-1",
+      "content-type": "application/json",
+      "x-contract-call": "call",
+      "x-contract-config": "configured",
+      "x-contract-precedence": "call"
+    },
+    "streaming": false,
+    "hasSignal": false,
+    "body": {
+      "prompt": [],
+      "headers": {
+        "x-contract-call": "call",
+        "x-contract-precedence": "call"
+      }
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/language-model",
+    "headers": {
+      "ai-language-model-id": "call",
+      "ai-language-model-specification-version": "4",
+      "ai-language-model-streaming": "false",
+      "content-type": "application/json"
+    },
+    "streaming": false,
+    "hasSignal": false,
+    "body": {
+      "prompt": [],
+      "headers": {
+        "AI-Language-Model-Id": "call"
+      }
+    }
+  }
+]

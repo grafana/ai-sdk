@@ -1,6 +1,10 @@
 package prometheus
 
-import promclient "github.com/prometheus/client_golang/prometheus"
+import (
+	"time"
+
+	promclient "github.com/prometheus/client_golang/prometheus"
+)
 
 // IdentitySource controls which provider/model identity is used for final metrics.
 type IdentitySource string
@@ -36,6 +40,9 @@ type Options struct {
 	InterChunkDelayBuckets []float64
 	// DisableStreamChunkMetrics disables per-part counters and inter-chunk histograms.
 	DisableStreamChunkMetrics bool
+	// StreamDrainTimeout bounds cancellation cleanup when positive. Zero preserves
+	// the existing asynchronous drain until the upstream channel closes.
+	StreamDrainTimeout time.Duration
 }
 
 var defaultDurationBuckets = []float64{0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120, 300}
@@ -52,6 +59,7 @@ type config struct {
 	timeToFirstOutputBuckets  []float64
 	interChunkDelayBuckets    []float64
 	disableStreamChunkMetrics bool
+	streamDrainTimeout        time.Duration
 }
 
 func normalizeOptions(opts Options) config {
@@ -75,6 +83,7 @@ func normalizeOptions(opts Options) config {
 		timeToFirstOutputBuckets:  bucketsOrDefault(opts.TimeToFirstOutputBuckets, defaultTimeToFirstOutputBuckets),
 		interChunkDelayBuckets:    bucketsOrDefault(opts.InterChunkDelayBuckets, defaultInterChunkDelayBuckets),
 		disableStreamChunkMetrics: opts.DisableStreamChunkMetrics,
+		streamDrainTimeout:        opts.StreamDrainTimeout,
 	}
 }
 

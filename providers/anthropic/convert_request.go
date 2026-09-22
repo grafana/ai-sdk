@@ -146,7 +146,7 @@ func rawToolInputSchema(schema map[string]any) anthropic.BetaToolInputSchemaPara
 	if schema == nil {
 		return anthropic.BetaToolInputSchemaParam{}
 	}
-	return anthropic.BetaToolInputSchemaParam{ExtraFields: schema}
+	return param.Override[anthropic.BetaToolInputSchemaParam](schema)
 }
 
 type providerCapabilities struct {
@@ -416,14 +416,11 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 	// AnthropicOptions but effort is not, we still derive effort from the
 	// top-level reasoning hint. Mirrors upstream
 	// anthropic-language-model.ts:390-413.
-	if opts.Reasoning != nil && !hasProviderEffort(opts.ProviderOptions) {
-		reasoning := *opts.Reasoning
-		if reasoning != provider.ReasoningProviderDefault {
-			rc := resolveReasoningConfig(reasoning, caps, &warnings)
-			if rc != nil {
-				providerThinking := providerThinkingType(opts.ProviderOptions)
-				applyReasoningConfigWithProviderHints(&p, rc, providerThinking)
-			}
+	if opts.Reasoning != provider.ReasoningProviderDefault && !hasProviderEffort(opts.ProviderOptions) {
+		rc := resolveReasoningConfig(opts.Reasoning, caps, &warnings)
+		if rc != nil {
+			providerThinking := providerThinkingType(opts.ProviderOptions)
+			applyReasoningConfigWithProviderHints(&p, rc, providerThinking)
 		}
 	}
 
@@ -1723,11 +1720,17 @@ func convertInlineToolSearchResult(p provider.ContentPart, cc anthropic.BetaCach
 		return nil
 	}
 
-	var toolRefs []anthropic.BetaToolReferenceBlockParam
-	for _, ref := range refs {
-		toolRefs = append(toolRefs, anthropic.BetaToolReferenceBlockParam{
+	// Allocate eagerly so a successful zero-match search serializes
+	// "tool_references": [] instead of omitting the field. The param is tagged
+	// omitzero, which drops a nil slice but keeps an empty non-nil one, and the
+	// API requires the array on a successful result. Upstream
+	// convert-to-anthropic-prompt.ts maps unconditionally, so an empty result
+	// always carries the array there too.
+	toolRefs := make([]anthropic.BetaToolReferenceBlockParam, len(refs))
+	for i, ref := range refs {
+		toolRefs[i] = anthropic.BetaToolReferenceBlockParam{
 			ToolName: ref.ToolName,
-		})
+		}
 	}
 
 	block := anthropic.BetaContentBlockParamUnion{
@@ -1852,6 +1855,9 @@ func serializeToolOutput(output *provider.ToolResultOutput, warnings *[]provider
 			{OfText: &anthropic.BetaTextBlockParam{Text: reason}},
 		}
 	case provider.ToolOutputContent:
+		if output.Content != nil && len(output.Content) == 0 {
+			return []anthropic.BetaToolResultBlockParamContentUnion{}
+		}
 		var blocks []anthropic.BetaToolResultBlockParamContentUnion
 		for _, v := range output.Content {
 			switch v.Type {
@@ -2069,7 +2075,7 @@ func convertToolsWithStrictTools(v *cacheControlValidator, tools []provider.Tool
 			if toolOpts.DeferLoading != nil {
 				tp.DeferLoading = anthropic.Bool(*toolOpts.DeferLoading)
 			}
-			if len(toolOpts.AllowedCallers) > 0 {
+			if toolOpts.AllowedCallers != nil {
 				tp.AllowedCallers = toolOpts.AllowedCallers
 				betaSet["advanced-tool-use-2025-11-20"] = struct{}{}
 			}
@@ -2088,15 +2094,15 @@ func convertToolsWithStrictTools(v *cacheControlValidator, tools []provider.Tool
 				tp.EagerInputStreaming = anthropic.Bool(true)
 			}
 
-			if len(t.InputExamples) > 0 {
-				var examples []map[string]any
+			if t.InputExamples != nil {
+				examples := make([]map[string]any, 0, len(t.InputExamples))
 				for _, ex := range t.InputExamples {
 					var m map[string]any
 					if json.Unmarshal(ex.Input, &m) == nil {
 						examples = append(examples, m)
 					}
 				}
-				if len(examples) > 0 {
+				if len(t.InputExamples) == 0 || len(examples) > 0 {
 					tp.InputExamples = examples
 					betaSet["advanced-tool-use-2025-11-20"] = struct{}{}
 				}

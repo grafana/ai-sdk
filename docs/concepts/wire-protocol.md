@@ -68,16 +68,19 @@ those values are appropriate for the user and application.
 `CreateUIMessageStream` and `UIMessageStreamWriter` let a server merge model
 output with custom data chunks. Use them for application progress, status, or
 other typed UI state that belongs in the same stream. Keep business data typed
-and avoid exposing secrets or internal errors.
+and avoid exposing secrets or internal errors. The composed stream carries only
+the chunks written to it, so the caller writes its own `start` and `finish`
+chunks or merges a stream that already carries them.
 
 For server-side consumers, `StreamUIMessage` produces progressive message
 snapshots and `AssembleUIMessage` returns one final message.
 
-## Distinguish UI streams from provider wire
+## Scope the UI stream correctly
 
 The UI message stream connects application endpoints to browser hooks such as
-`useChat` and ends with the `[DONE]` sentinel. `gateway/providerwire` transports
-`provider.LanguageModel` calls between services with provider-level framing.
+`useChat` and ends with the `[DONE]` sentinel. It is not a remote
+`provider.LanguageModel` transport; this repository does not currently provide
+one.
 
 Frontend compatibility follows the upstream
 [UI message stream protocol](https://ai-sdk.dev/docs/ai-sdk-ui/stream-protocol).

@@ -12,8 +12,6 @@ These capabilities solve independent problems:
   selected by a provider-oriented ID.
 - [Custom providers](#expose-a-restricted-model-namespace) expose a small
   application-controlled set of model names.
-- [Gateway catalogs](#add-a-gateway-catalog-for-discovery) add public aliases,
-  metadata, listing, and request-aware visibility.
 
 A dynamically selected model can itself be a fallback when the application
 needs both runtime selection and failover.
@@ -64,8 +62,8 @@ A candidate-returned `context.DeadlineExceeded` can advance to the next candidat
 when the request context remains active because the default policy treats it as
 a non-API error.
 
-At the fallback model boundary, an exhausted chain returns the last candidate
-error. `StreamText` and `GenerateText` can retry the complete chain and return a
+At the fallback model boundary, an exhausted chain preserves all candidate
+errors, with the last failure first. `StreamText` and `GenerateText` can retry the complete chain and return a
 `RetryError` after retry exhaustion.
 
 A custom decider can apply application-specific eligibility rules:
@@ -81,16 +79,49 @@ that serves one step does not become the first candidate for later steps.
 
 ## Know the streaming commitment point
 
-A streaming call can move to the next candidate when `DoStream` returns an error
-or its first stream part is an error. The fallback commits to a candidate after
-its first non-error provider part, including bookkeeping events such as
+A streaming call can move to the next candidate when `DoStream` returns an error,
+returns an invalid result, or closes before yielding any part. A premature close
+returns `ErrPrematureStreamEnd` to the decider. The fallback commits after its
+first provider part, including an error or a bookkeeping event such as
 `stream-start`. Commitment can therefore happen before client-visible content.
+
+This changes the previous leading-error behavior: an initial `PartError` now
+selects that candidate and is replayed exactly once with subsequent parts in
+their original order. Its retryable flag does not select another candidate.
 
 Errors that arrive after commitment are returned through that stream. The
 fallback does not start another candidate for that call.
 
 This boundary prevents one response from combining output produced by different
 models.
+
+Each stream candidate receives a cancelable child context. Cancel the request
+when abandoning a stream: the bridge stops even if the consumer is blocked.
+Abandoned streams receive cleanup bounded by both duration and part count.
+Fallback never closes provider-owned channels. A provider that ignores context
+cancellation may still retain its own producer or a synchronous setup call;
+fallback cannot force provider code to stop.
+
+## Observe candidate decisions
+
+`WithAttemptObserver` reports one decision per invoked candidate. Outcomes are
+`selected`, `failed`, and `canceled`; `WillFallback` is true only when a failed
+attempt is eligible to advance, another candidate exists, and the request is
+live at decision time. Later cancellation, including during the observer, may
+prevent that next invocation. Subsequent attempt records establish which
+candidates were actually invoked. The one-based index distinguishes candidates
+with identical provider/model identities.
+
+Cancellation observable immediately after the decider returns takes precedence
+over its answer: the event is `canceled`, its error preserves the context cause,
+and `WillFallback` is false. After a failed decision to advance, later cancellation
+does not rewrite the event already delivered, but stops the next invocation and
+remains in the returned error chain.
+
+For streaming, the finish timestamp is the selection decision time, not the
+end of the selected stream. Post-selection error events remain stream data.
+Observers run synchronously and must return promptly; enqueue into a bounded
+queue when exporting records. Observer panics are isolated from model calls.
 
 ## Combine retries and fallback deliberately
 
@@ -104,7 +135,10 @@ attempts:
 
 Set retry and fallback limits from the request's latency and cost budget. Make
 side-effecting tools idempotent and monitor provider attempts per application
-request. See [Retry and timeout](retry-and-timeout.md).
+request. Provider retries × candidate count × SDK attempts can multiply physical
+calls. Gateway ordered fallback is restricted to effect-disabled text requests;
+function tools on direct Gateway routes do not enable tool fallback.
+See [Retry and timeout](retry-and-timeout.md).
 
 ## Account for usage
 
@@ -197,14 +231,6 @@ resolution.
 `registry.WithFallbackProvider` delegates unresolved model IDs to another
 provider. `fallback.Model` handles failures that occur while calling an already
 resolved model.
-
-## Add a gateway catalog for discovery
-
-Use `gateway/catalog` when clients need canonical public IDs, aliases, discovery
-metadata, listing, or request-aware visibility. A registry constructs models. A
-catalog controls which model names clients can discover and use.
-
-See [Gateway model catalog](gateway-model-catalog.md).
 
 ## Reference
 

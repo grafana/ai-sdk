@@ -1,8 +1,7 @@
 # Providers and models
 
 A provider lets your application call models through a service such as
-Anthropic, Amazon Bedrock, OpenAI, or an OpenAI-compatible endpoint. Internally
-provisioned Grafana services can also use Grafana's hosted endpoint. After
+Anthropic, Amazon Bedrock, OpenAI, or an OpenAI-compatible endpoint. After
 construction, every model works with the same generation, streaming, tool,
 retry, and middleware APIs.
 
@@ -28,7 +27,6 @@ Most applications should start with one provider model:
 - Anthropic or Vertex AI
 - Amazon Bedrock
 - OpenAI Responses API
-- Grafana's hosted endpoint for internal services
 - an OpenAI-compatible Chat Completions endpoint
 
 See the [provider overview](../providers/overview.md) for the selection guide and
@@ -38,13 +36,7 @@ Use model composition only when the application needs it:
 
 - `fallback` tries another model after eligible failures.
 - `registry` resolves construction-oriented IDs such as `provider:model`.
-- `gateway/catalog` exposes a controlled public model namespace with aliases
-  and listing metadata.
 - `middleware` adds behavior around any model.
-
-A registry and a catalog solve different problems. A registry helps server code
-construct a model. A catalog defines which stable names clients are allowed to
-see and use.
 
 ## Provider-specific behavior
 
@@ -66,7 +58,6 @@ adapt another service, see [Writing a provider](../providers/writing-a-provider.
 - [`provider.LanguageModel`](https://pkg.go.dev/github.com/grafana/ai-sdk/provider#LanguageModel)
 - [Provider overview](../providers/overview.md)
 - [Fallback and registry](../guides/fallback-and-registry.md)
-- [Gateway model catalog](../guides/gateway-model-catalog.md)
 
 ---
 

@@ -72,26 +72,22 @@ Start with [Choose a provider](providers/overview.md), then follow the setup for
 the service your application calls:
 
 - [Anthropic](providers/anthropic.md) for Claude through Anthropic or Vertex AI.
-- [Amazon Bedrock](providers/bedrock.md) for models through Bedrock Converse.
+- [Amazon Bedrock](providers/bedrock.md) for Bedrock Converse and Mantle Responses.
 - [OpenAI](providers/openai.md) for the Responses API.
-- [Grafana Cloud](providers/grafana-cloud.md) for internal Grafana services with
-  provisioned access to the hosted AI SDK endpoint.
 - [OpenAI-compatible APIs](providers/openai-compatible.md) for local or hosted
   Chat Completions-compatible servers.
+- [Grafana AI Gateway](providers/grafana-gateway.md) for authenticated public-model discovery and text calls.
 
-## Build model infrastructure
+## Extend model infrastructure
 
-These guides are for teams hosting shared model access or extending the SDK:
-
-- [Gateway model catalog](guides/gateway-model-catalog.md) — expose stable public
-  model names, aliases, metadata, and discovery.
-- [Serving provider-wire models](guides/provider-wire-server.md) — centralize
-  model execution behind a service-to-service HTTP endpoint.
 - [Writing a provider](providers/writing-a-provider.md) — adapt another model
   service to the common SDK behavior.
 
 ## Operate in production
 
+- [Run AI Gateway in a container](guides/ai-gateway-container.md) — build and
+  test the standalone Gateway image and configure models, secrets,
+  authentication, and network access.
 - [Production checklist](best-practices/production.md) — bound work, secure the
   request boundary, and verify the deployed streaming path.
 - [Error handling](best-practices/error-handling.md) — handle failures before,

@@ -61,7 +61,7 @@ provider package. Add focused packages when the application needs them:
 
 - `output` and `schema` generate validated Go values;
 - `fallback` tries backup models after eligible failures;
-- `registry` and `gateway/catalog` select models by configured or public IDs;
+- `registry` selects models by configured provider IDs;
 - `middleware` adds defaults, logging, metrics, metadata, or policy to model
   calls.
 
@@ -71,7 +71,6 @@ You need the lower-level event and wire representations when you are:
 
 - filtering or composing UI streams;
 - writing a provider;
-- serving remote models through provider wire;
 - debugging frontend protocol compatibility.
 
 For those cases, continue with [Messages](messages.md),

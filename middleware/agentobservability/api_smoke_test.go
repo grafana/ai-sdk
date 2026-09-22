@@ -41,6 +41,10 @@ func TestPublicAPISurface_Smoke(t *testing.T) {
 	// ---- Type aliases ----
 	_ = ClientResolver(func(context.Context) *agento11y.Client { return nil })
 	_ = ContextProvider(func(context.Context) ContextInfo { return ContextInfo{} })
+	_ = RecordErrorHandler(func(error) {})
+	_ = RecordCompleteHandler(func() {})
+	_ = GenerationFilter(func(input GenerationFilterInput) agento11y.Generation { return input.Generation })
+	_ = ContextSource(ContextProvidedOnly)
 
 	// ---- Functions: full-signature compile-time conversions ----
 	_ = (func(RecordingOptions) middleware.Middleware)(RecordingMiddleware)

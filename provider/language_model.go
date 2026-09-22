@@ -27,9 +27,10 @@ type LanguageModel interface {
 
 // CallOptions configures a model call. Passed to DoStream and DoGenerate.
 //
-// Every field carries a JSON tag so [CallOptions] round-trips losslessly
-// through encoding/json. The wire form mirrors LanguageModelV4CallOptions
-// from upstream (Vercel AI SDK).
+// Every field carries a JSON tag for provider-domain serialization. The JSON
+// representation mirrors LanguageModelV4CallOptions except that zero-valued
+// Reasoning is omitted: strict wire adapters normalize both omission and the
+// explicit wire value "provider-default" to that provider-domain zero value.
 type CallOptions struct {
 	Prompt           []Message         `json:"prompt,omitempty"`
 	Tools            []Tool            `json:"tools,omitempty"`
@@ -43,7 +44,7 @@ type CallOptions struct {
 	StopSequences    []string          `json:"stopSequences,omitempty"`
 	ResponseFormat   *ResponseFormat   `json:"responseFormat,omitempty"`
 	Seed             *int              `json:"seed,omitempty"`
-	Reasoning        *ReasoningEffort  `json:"reasoning,omitempty"`
+	Reasoning        ReasoningEffort   `json:"reasoning,omitempty"`
 	IncludeRawChunks bool              `json:"includeRawChunks,omitempty"`
 	Headers          map[string]string `json:"headers,omitempty"`
 	ProviderOptions  ProviderOptions   `json:"providerOptions,omitempty"`
@@ -89,7 +90,7 @@ type Tool struct {
 	// Function-tool fields.
 	Description   string          `json:"description,omitempty"`
 	InputSchema   json.RawMessage `json:"inputSchema,omitempty"`
-	InputExamples []InputExample  `json:"inputExamples,omitempty"`
+	InputExamples []InputExample  `json:"inputExamples,omitzero"`
 	Strict        *bool           `json:"strict,omitempty"`
 
 	// Provider-tool fields.
@@ -165,10 +166,10 @@ type GenerateContentPart struct {
 // For tool-call parts the `input` field is emitted as a stringified JSON
 // string (matching upstream `LanguageModelV4ToolCall.input: string`), which is
 // what `ai` core's tool-call parser dereferences. All other parts marshal via
-// their struct tags. See openspec change provider-wire-upstream-full-compat.
+// their struct tags.
 func (p GenerateContentPart) MarshalJSON() ([]byte, error) {
 	type alias GenerateContentPart
-	if p.Type != ContentToolCall || len(p.Input) == 0 {
+	if p.Type != ContentToolCall {
 		return json.Marshal(alias(p))
 	}
 	// Encode the raw JSON input object as a stringified JSON string.
@@ -192,7 +193,7 @@ func (p GenerateContentPart) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON decodes a [GenerateContentPart], tolerating a tool-call `input`
 // encoded either as the canonical raw JSON object or as the upstream
-// stringified JSON string. See openspec change provider-wire-upstream-full-compat.
+// stringified JSON string.
 func (p *GenerateContentPart) UnmarshalJSON(data []byte) error {
 	type alias GenerateContentPart
 	var raw struct {

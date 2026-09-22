@@ -23,6 +23,12 @@
 // makes both middleware paths no-ops. [ContextProvider] supplies approved user,
 // metadata, tag, and agent fields.
 //
+// [RecordingOptions] can preserve requested model identity and opt into finite
+// cancellation cleanup. Requested identity does not filter caller metadata or
+// tags. Metadata-only client capture still retains non-content fields such as
+// raw stop reasons and ambient Agent Observability identity/context; consumers
+// that require an allowlist must establish their own observation boundary.
+//
 // Context helpers express generation relationships:
 //
 //   - [WithGenerationID], [GenerationIDFromContext], [NewGenerationID]

@@ -5,59 +5,50 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"mime"
 	"net/http"
-	"net/url"
-	"path"
-	"regexp"
+	"strconv"
 	"strings"
 
-	"github.com/grafana/ai-sdk/gateway/providerwire"
 	"github.com/grafana/ai-sdk/provider"
-	"github.com/grafana/authlib/authn"
 )
 
-const (
-	specVersion      = "v4"
-	streamBufferSize = 64
-)
-
-type model struct {
-	provider *Provider
-	modelID  string
-}
-
-var _ provider.LanguageModel = (*model)(nil)
-
-func (m *model) SpecificationVersion() string               { return specVersion }
-func (m *model) Provider() string                           { return providerName }
-func (m *model) ModelID() string                            { return m.modelID }
-func (m *model) SupportedURLs() map[string][]*regexp.Regexp { return nil }
-
-func (m *model) DoStream(ctx context.Context, opts provider.CallOptions) (*provider.StreamResult, error) {
-	resp, body, err := m.doRequest(ctx, opts, true)
+func (m *model) doRequest(ctx context.Context, opts provider.CallOptions, streaming bool) (*http.Response, []byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
+	body, err := encodeRequest(opts)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+	req, err := m.provider.request(ctx, http.MethodPost, "/language-model", opts.Headers)
+	if err != nil {
+		return nil, nil, err
+	}
+	req.Body = io.NopCloser(bytes.NewReader(body))
+	req.ContentLength = int64(len(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	if streaming {
+		req.Header.Set("Accept", "text/event-stream")
+	}
+	req.Header.Set("ai-language-model-id", m.id)
+	req.Header.Set("ai-language-model-specification-version", "4")
+	req.Header.Set("ai-language-model-streaming", strconv.FormatBool(streaming))
+	resp, err := m.provider.client.Do(req)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, nil, ctx.Err()
+		}
+		retryable := true
+		return nil, nil, provider.NewAPICallError(provider.APICallErrorOptions{Message: "grafana: model transport failed", Cause: err, IsRetryable: &retryable})
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		defer func() { _ = resp.Body.Close() }()
-		return nil, surfaceHTTPError(resp)
+		return nil, nil, readGatewayError(ctx, resp, m.provider.limits.ErrorBytes)
 	}
-	if !isEventStreamContentType(resp.Header.Get("Content-Type")) {
-		defer func() { _ = resp.Body.Close() }()
-		return nil, newInvalidStreamContentTypeError(resp)
-	}
-
-	ch := make(chan provider.StreamPart, streamBufferSize)
-	go m.readStream(ctx, resp, ch, opts.IncludeRawChunks)
-
-	return &provider.StreamResult{
-		Stream:   ch,
-		Request:  &provider.RequestMetadata{Body: body},
-		Response: &provider.ResponseHeaders{Headers: singleValueHeaders(resp.Header)},
-	}, nil
+	return resp, body, nil
 }
 
 func (m *model) DoGenerate(ctx context.Context, opts provider.CallOptions) (*provider.GenerateResult, error) {
@@ -66,307 +57,176 @@ func (m *model) DoGenerate(ctx context.Context, opts provider.CallOptions) (*pro
 		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return nil, surfaceHTTPError(resp)
-	}
-
-	body, err := io.ReadAll(resp.Body)
+	body, err := readJSON(ctx, resp, m.provider.limits.UnaryBytes)
 	if err != nil {
-		return nil, newGenerateAPICallError(resp, nil, err)
+		return nil, protocolError("grafana: invalid unary response", resp.StatusCode, err)
 	}
-	result, err := providerwire.DecodeGenerateResult(body)
+	result, err := decodeGenerate(body)
 	if err != nil {
-		return nil, newGenerateAPICallError(resp, body, err)
+		return nil, protocolError("grafana: invalid unary result", resp.StatusCode, err)
 	}
-	if result.Request == nil {
-		result.Request = &provider.RequestMetadata{Body: json.RawMessage(requestBody)}
+	result.Request = &provider.RequestMetadata{Body: requestBody}
+	result.Response = &provider.GenerateResponse{Headers: responseHeaders(resp.Header), Body: body}
+	result.Warnings = []provider.Warning{}
+	return result, nil
+}
+
+func (m *model) DoStream(ctx context.Context, opts provider.CallOptions) (*provider.StreamResult, error) {
+	resp, requestBody, err := m.doRequest(ctx, opts, true)
+	if err != nil {
+		return nil, err
 	}
-	if result.Response == nil {
-		result.Response = &provider.GenerateResponse{
-			Headers: singleValueHeaders(resp.Header),
-			Body:    json.RawMessage(body),
+	media, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
+	if err != nil || media != "text/event-stream" {
+		_ = resp.Body.Close()
+		return nil, protocolError("grafana: expected SSE media type", resp.StatusCode, nil)
+	}
+	parts := make(chan provider.StreamPart, 64)
+	go consumeStream(ctx, resp.Body, parts, m.provider.limits, opts.IncludeRawChunks)
+	return &provider.StreamResult{Stream: parts, Request: &provider.RequestMetadata{Body: requestBody}, Response: &provider.ResponseHeaders{Headers: responseHeaders(resp.Header)}}, nil
+}
+
+func responseHeaders(headers http.Header) map[string]string {
+	result := make(map[string]string, len(headers))
+	for name, values := range headers {
+		if len(values) > 0 {
+			result[name] = strings.Join(values, ", ")
 		}
-	} else {
-		if result.Response.Headers == nil {
-			result.Response.Headers = singleValueHeaders(resp.Header)
+	}
+	return result
+}
+
+type wireFinish struct {
+	Unified provider.UnifiedFinishReason `json:"unified"`
+	Raw     *string                      `json:"raw"`
+}
+
+func (w *wireFinish) UnmarshalJSON(data []byte) error {
+	type plain wireFinish
+	return decodeFields(data, (*plain)(w), "unified", "raw")
+}
+
+type wireUsage struct {
+	InputTokens *struct {
+		Total      *int `json:"total"`
+		NoCache    *int `json:"noCache"`
+		CacheRead  *int `json:"cacheRead"`
+		CacheWrite *int `json:"cacheWrite"`
+	} `json:"inputTokens"`
+	OutputTokens *struct {
+		Total     *int `json:"total"`
+		Text      *int `json:"text"`
+		Reasoning *int `json:"reasoning"`
+	} `json:"outputTokens"`
+}
+
+func (w *wireUsage) UnmarshalJSON(data []byte) error {
+	type plain wireUsage
+	var groups map[string]json.RawMessage
+	if json.Unmarshal(data, &groups) != nil || groups == nil {
+		return errors.New("grafana: invalid usage object")
+	}
+	filtered := make(map[string]map[string]json.RawMessage, 2)
+	for name, keys := range map[string][]string{"inputTokens": {"total", "noCache", "cacheRead", "cacheWrite"}, "outputTokens": {"total", "text", "reasoning"}} {
+		var counts map[string]json.RawMessage
+		if json.Unmarshal(groups[name], &counts) != nil || counts == nil {
+			return errors.New("grafana: invalid token usage object")
 		}
-		if result.Response.Body == nil {
-			result.Response.Body = json.RawMessage(body)
+		filtered[name] = make(map[string]json.RawMessage, len(keys))
+		for _, key := range keys {
+			if raw, ok := counts[key]; ok {
+				var count *int
+				if json.Unmarshal(raw, &count) != nil || count == nil {
+					return errors.New("grafana: invalid token count")
+				}
+				filtered[name][key] = raw
+			}
 		}
+	}
+	encoded, err := json.Marshal(filtered)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(encoded, (*plain)(w))
+}
+
+func decodeFinish(value *wireFinish) (provider.FinishReason, error) {
+	if value == nil {
+		return provider.FinishReason{}, errors.New("grafana: missing finish reason")
+	}
+	switch value.Unified {
+	case provider.FinishReasonStop, provider.FinishReasonLength, provider.FinishReasonContentFilter, provider.FinishReasonToolCalls, provider.FinishReasonError, provider.FinishReasonOther:
+	default:
+		return provider.FinishReason{}, errors.New("grafana: invalid finish reason")
+	}
+	result := provider.FinishReason{Unified: value.Unified}
+	if value.Raw != nil {
+		result.Raw = *value.Raw
 	}
 	return result, nil
 }
 
-func isEventStreamContentType(value string) bool {
-	mediaType, _, err := mime.ParseMediaType(value)
-	return err == nil && mediaType == providerwire.MIMESSE
-}
-
-func (m *model) doRequest(ctx context.Context, opts provider.CallOptions, streaming bool) (*http.Response, []byte, error) {
-	body, err := providerwire.EncodeCallOptions(opts)
-	if err != nil {
-		return nil, nil, fmt.Errorf("grafana: encoding call options: %w", err)
+func decodeUsage(value *wireUsage) (provider.Usage, error) {
+	if value == nil || value.InputTokens == nil || value.OutputTokens == nil {
+		return provider.Usage{}, errors.New("grafana: missing usage")
 	}
-
-	accessToken, err := m.accessToken(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	endpoint := languageModelEndpoint(m.provider.baseURL)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
-	if err != nil {
-		return nil, nil, fmt.Errorf("grafana: creating model call request: %w", err)
-	}
-	m.setHeaders(req, accessToken, streaming, opts.Headers)
-
-	resp, err := m.provider.httpClient.Do(req)
-	if err != nil {
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return nil, nil, ctxErr
+	i, o := value.InputTokens, value.OutputTokens
+	for _, count := range []*int{i.Total, i.NoCache, i.CacheRead, i.CacheWrite, o.Total, o.Text, o.Reasoning} {
+		if count != nil && (*count < 0 || int64(*count) > 9007199254740991) {
+			return provider.Usage{}, errors.New("grafana: invalid token count")
 		}
-		return nil, nil, newTransportAPICallError(endpoint, err)
 	}
-	return resp, body, nil
+	return provider.Usage{InputTokens: provider.InputTokenUsage{Total: i.Total, NoCache: i.NoCache, CacheRead: i.CacheRead, CacheWrite: i.CacheWrite}, OutputTokens: provider.OutputTokenUsage{Total: o.Total, Text: o.Text, Reasoning: o.Reasoning}}, nil
 }
 
-func languageModelEndpoint(baseURL string) string {
-	u, err := url.Parse(baseURL)
+func decodeGenerate(body []byte) (*provider.GenerateResult, error) {
+	var value struct {
+		Content      *[]json.RawMessage `json:"content"`
+		FinishReason *wireFinish        `json:"finishReason"`
+		Usage        *wireUsage         `json:"usage"`
+	}
+	if err := decodeFields(body, &value, "content", "finishReason", "usage"); err != nil {
+		return nil, errors.New("grafana: malformed unary result")
+	}
+	if value.Content == nil {
+		return nil, errors.New("grafana: missing content")
+	}
+	finish, err := decodeFinish(value.FinishReason)
 	if err != nil {
-		return baseURL + providerwire.PathLanguageModel
+		return nil, err
 	}
-	u.Path = path.Join(u.Path, providerwire.PathLanguageModel)
-	return u.String()
-}
-
-func (m *model) accessToken(ctx context.Context) (string, error) {
-	resp, err := m.provider.tokenExchanger.Exchange(ctx, authn.TokenExchangeRequest{
-		Namespace: m.provider.namespace,
-		Audiences: []string{m.provider.audience},
-	})
+	usage, err := decodeUsage(value.Usage)
 	if err != nil {
-		return "", fmt.Errorf("grafana: exchanging access token: %w", err)
+		return nil, err
 	}
-	if resp == nil || resp.Token == "" {
-		return "", fmt.Errorf("grafana: token exchange returned empty access token")
-	}
-	return resp.Token, nil
-}
-
-func (m *model) setHeaders(req *http.Request, accessToken string, streaming bool, headers map[string]string) {
-	for name, value := range headers {
-		req.Header.Set(name, value)
-	}
-	req.Header.Set("Content-Type", providerwire.MIMEJSON)
-	req.Header.Set(accessTokenHeader, accessToken)
-	req.Header.Set(providerwire.HeaderModelID, m.modelID)
-	req.Header.Set(providerwire.HeaderSpecVersion, providerwire.SpecVersionV4)
-	if streaming {
-		req.Header.Set(providerwire.HeaderStreaming, "true")
-		req.Header.Set("Accept", providerwire.MIMESSE)
-	} else {
-		req.Header.Set(providerwire.HeaderStreaming, "false")
-		req.Header.Set("Accept", providerwire.MIMEJSON)
-	}
-	if userToken := userIDTokenFromContext(req.Context()); userToken != "" {
-		req.Header.Set(userIDHeader, userToken)
-	}
-}
-
-func (m *model) readStream(ctx context.Context, resp *http.Response, ch chan<- provider.StreamPart, includeRawChunks bool) {
-	defer close(ch)
-	defer func() { _ = resp.Body.Close() }()
-
-	reader := providerwire.NewSSEReader(resp.Body)
-	for {
-		select {
-		case <-ctx.Done():
-			return
+	content := make([]provider.GenerateContentPart, 0, len(*value.Content))
+	for _, raw := range *value.Content {
+		var part struct {
+			Type             provider.GenerateContentType `json:"type"`
+			Text             *string                      `json:"text"`
+			ToolCallID       *string                      `json:"toolCallId"`
+			ToolName         *string                      `json:"toolName"`
+			Input            *string                      `json:"input"`
+			ProviderExecuted bool                         `json:"providerExecuted"`
+			Dynamic          bool                         `json:"dynamic"`
+		}
+		if decodeFields(raw, &part, "type", "text", "toolCallId", "toolName", "input", "providerExecuted", "dynamic") != nil || part.ProviderExecuted || part.Dynamic {
+			return nil, errors.New("grafana: invalid unary content")
+		}
+		switch part.Type {
+		case provider.ContentText:
+			if part.Text == nil {
+				return nil, errors.New("grafana: missing unary text")
+			}
+			content = append(content, provider.GenerateContentPart{Type: provider.ContentText, Text: *part.Text})
+		case provider.ContentToolCall:
+			if part.ToolCallID == nil || *part.ToolCallID == "" || part.ToolName == nil || *part.ToolName == "" || part.Input == nil {
+				return nil, errors.New("grafana: invalid unary tool call")
+			}
+			content = append(content, provider.GenerateContentPart{Type: provider.ContentToolCall, ToolCallID: *part.ToolCallID, ToolName: *part.ToolName, Input: json.RawMessage(*part.Input)})
 		default:
-		}
-
-		part, err := reader.Next()
-		if errors.Is(err, io.EOF) {
-			return
-		}
-		if err != nil {
-			if ctx.Err() != nil {
-				return
-			}
-			if !sendStreamPart(ctx, ch, provider.StreamPart{
-				Type:         provider.PartError,
-				APICallError: newStreamAPICallError(resp, err),
-			}) {
-				return
-			}
-			return
-		}
-		if part.Type == provider.PartRaw && !includeRawChunks {
-			continue
-		}
-		if !sendStreamPart(ctx, ch, part) {
-			return
+			return nil, errors.New("grafana: unsupported unary content")
 		}
 	}
-}
-
-func sendStreamPart(ctx context.Context, ch chan<- provider.StreamPart, part provider.StreamPart) bool {
-	select {
-	case <-ctx.Done():
-		return false
-	default:
-	}
-
-	select {
-	case ch <- part:
-		return true
-	case <-ctx.Done():
-		return false
-	}
-}
-
-// surfaceHTTPError decodes a non-2xx HTTP response into an *provider.APICallError
-// and, as the gateway analog of the Vercel AI SDK gateway, runs the provider
-// normalizer to surface a *provider.GatewayError when a normalized category is
-// identified. When no category is identified the plain *provider.APICallError is
-// surfaced. Either way the decoded APICallError (with its Data, status, headers,
-// body, and retryability) remains reachable via errors.As.
-func surfaceHTTPError(resp *http.Response) error {
-	apiErr := decodeOrSynthesizeHTTPError(resp)
-	if gw := NormalizeAPICallError(apiErr); gw != nil && gw.Type != GatewayErrorInternalServer {
-		return gw
-	}
-	return apiErr
-}
-
-func decodeOrSynthesizeHTTPError(resp *http.Response) *provider.APICallError {
-	body, readErr := io.ReadAll(resp.Body)
-	if readErr != nil {
-		return provider.NewAPICallError(provider.APICallErrorOptions{
-			Message:         fmt.Sprintf("grafana: reading error response body: %v", readErr),
-			URL:             responseURL(resp),
-			StatusCode:      resp.StatusCode,
-			ResponseHeaders: cloneHeader(resp.Header),
-			Cause:           readErr,
-		})
-	}
-
-	clone := *resp
-	clone.Body = io.NopCloser(bytes.NewReader(body))
-	apiErr, err := providerwire.DecodeErrorResponse(&clone)
-	if err == nil {
-		return apiErr
-	}
-
-	return provider.NewAPICallError(provider.APICallErrorOptions{
-		Message:         fmt.Sprintf("grafana: decoding error response: %v", err),
-		URL:             responseURL(resp),
-		StatusCode:      resp.StatusCode,
-		ResponseHeaders: cloneHeader(resp.Header),
-		ResponseBody:    string(body),
-		Cause:           err,
-	})
-}
-
-func newTransportAPICallError(endpoint string, err error) *provider.APICallError {
-	retryable := true
-	return provider.NewAPICallError(provider.APICallErrorOptions{
-		Message:     fmt.Sprintf("grafana: model call request failed: %v", err),
-		URL:         endpoint,
-		IsRetryable: &retryable,
-		Cause:       err,
-	})
-}
-
-func newInvalidStreamContentTypeError(resp *http.Response) *provider.APICallError {
-	body, _ := io.ReadAll(resp.Body)
-	retryable := false
-	contentType := resp.Header.Get("Content-Type")
-	return provider.NewAPICallError(provider.APICallErrorOptions{
-		Message:         fmt.Sprintf("grafana: expected stream response content type %q, got %q", providerwire.MIMESSE, contentType),
-		URL:             responseURL(resp),
-		StatusCode:      resp.StatusCode,
-		ResponseHeaders: cloneHeader(resp.Header),
-		ResponseBody:    string(body),
-		IsRetryable:     &retryable,
-		Cause:           fmt.Errorf("grafana: invalid stream response content type %q", contentType),
-	})
-}
-
-func newStreamAPICallError(resp *http.Response, err error) *provider.APICallError {
-	retryable := !isProtocolStreamError(err)
-	return provider.NewAPICallError(provider.APICallErrorOptions{
-		Message:         fmt.Sprintf("grafana: reading stream response: %v", err),
-		URL:             responseURL(resp),
-		StatusCode:      resp.StatusCode,
-		ResponseHeaders: cloneHeader(resp.Header),
-		IsRetryable:     &retryable,
-		Cause:           err,
-	})
-}
-
-func newGenerateAPICallError(resp *http.Response, body []byte, err error) *provider.APICallError {
-	retryable := !isProtocolGenerateError(err)
-	return provider.NewAPICallError(provider.APICallErrorOptions{
-		Message:         fmt.Sprintf("grafana: processing generate response: %v", err),
-		URL:             responseURL(resp),
-		StatusCode:      resp.StatusCode,
-		ResponseHeaders: cloneHeader(resp.Header),
-		ResponseBody:    string(body),
-		IsRetryable:     &retryable,
-		Cause:           err,
-	})
-}
-
-func isProtocolGenerateError(err error) bool {
-	var syntaxErr *json.SyntaxError
-	if errors.As(err, &syntaxErr) {
-		return true
-	}
-	var typeErr *json.UnmarshalTypeError
-	return errors.As(err, &typeErr)
-}
-
-func isProtocolStreamError(err error) bool {
-	var syntaxErr *json.SyntaxError
-	if errors.As(err, &syntaxErr) {
-		return true
-	}
-	var typeErr *json.UnmarshalTypeError
-	if errors.As(err, &typeErr) {
-		return true
-	}
-	return strings.HasPrefix(err.Error(), "wire: empty SSE event")
-}
-
-func responseURL(resp *http.Response) string {
-	if resp != nil && resp.Request != nil && resp.Request.URL != nil {
-		return resp.Request.URL.String()
-	}
-	return ""
-}
-
-func cloneHeader(header http.Header) map[string][]string {
-	if len(header) == 0 {
-		return nil
-	}
-	clone := make(map[string][]string, len(header))
-	for key, values := range header {
-		clone[key] = append([]string(nil), values...)
-	}
-	return clone
-}
-
-func singleValueHeaders(header http.Header) map[string]string {
-	if len(header) == 0 {
-		return nil
-	}
-	clone := make(map[string]string, len(header))
-	for key, values := range header {
-		if len(values) > 0 {
-			clone[key] = values[0]
-		}
-	}
-	return clone
+	return &provider.GenerateResult{Content: content, FinishReason: finish, Usage: usage}, nil
 }

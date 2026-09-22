@@ -240,8 +240,8 @@ func applyIncludeAndReasoning(body *responses.ResponseNewParams, opts provider.C
 	// Reasoning effort + summary block.
 	if isReasoning {
 		effort := popts.ReasoningEffort
-		if effort == "" && opts.Reasoning != nil && *opts.Reasoning != provider.ReasoningProviderDefault {
-			effort = string(*opts.Reasoning)
+		if effort == "" && opts.Reasoning != provider.ReasoningProviderDefault {
+			effort = string(opts.Reasoning)
 		}
 		summary := popts.ReasoningSummary
 		if summary == "" && effort != "" && effort != "none" {

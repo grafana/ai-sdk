@@ -13,6 +13,18 @@ const (
 	DefaultMaxJSONBytes = 16 * 1024
 )
 
+// IdentitySource selects the model identity used in lifecycle records.
+type IdentitySource string
+
+const (
+	// IdentityPreferResponse prefers complete response identity over requested identity.
+	IdentityPreferResponse IdentitySource = "prefer_response"
+	// IdentityRequested uses requested identity and omits built-in response and
+	// transport identity attributes. It does not sanitize caller Attrs, DynamicAttrs,
+	// or captured payloads, headers, and arbitrary provider metadata.
+	IdentityRequested IdentitySource = "requested"
+)
+
 // Options configures structured provider-call logging.
 type Options struct {
 	// Logger receives structured records. A nil logger defaults to slog.Default().
@@ -33,6 +45,11 @@ type Options struct {
 	Redactor Redactor
 	// LogStreamParts enables one EventStreamPart record per observed provider stream part.
 	LogStreamParts bool
+	// IdentitySource defaults to IdentityPreferResponse.
+	IdentitySource IdentitySource
+	// StreamDrainTimeout bounds cancellation cleanup when positive. Zero preserves
+	// the existing synchronous drain of immediately available parts.
+	StreamDrainTimeout time.Duration
 	// Clock returns the current time for durations. A nil clock defaults to time.Now.
 	Clock func() time.Time
 }
@@ -72,16 +89,18 @@ type CaptureOptions struct {
 }
 
 type normalizedOptions struct {
-	logger         *slog.Logger
-	level          slog.Level
-	errorLevel     slog.Level
-	partLevel      slog.Level
-	attrs          []slog.Attr
-	dynamicAttrs   func(context.Context) []slog.Attr
-	capture        CaptureOptions
-	redactor       Redactor
-	logStreamParts bool
-	clock          func() time.Time
+	logger             *slog.Logger
+	level              slog.Level
+	errorLevel         slog.Level
+	partLevel          slog.Level
+	attrs              []slog.Attr
+	dynamicAttrs       func(context.Context) []slog.Attr
+	capture            CaptureOptions
+	redactor           Redactor
+	logStreamParts     bool
+	identitySource     IdentitySource
+	streamDrainTimeout time.Duration
+	clock              func() time.Time
 }
 
 func normalizeOptions(opts Options) normalizedOptions {
@@ -127,15 +146,17 @@ func normalizeOptions(opts Options) normalizedOptions {
 	copy(attrs, opts.Attrs)
 
 	return normalizedOptions{
-		logger:         logger,
-		level:          level,
-		errorLevel:     errorLevel,
-		partLevel:      partLevel,
-		attrs:          attrs,
-		dynamicAttrs:   opts.DynamicAttrs,
-		capture:        capture,
-		redactor:       redactor,
-		logStreamParts: opts.LogStreamParts,
-		clock:          clock,
+		logger:             logger,
+		level:              level,
+		errorLevel:         errorLevel,
+		partLevel:          partLevel,
+		attrs:              attrs,
+		dynamicAttrs:       opts.DynamicAttrs,
+		capture:            capture,
+		redactor:           redactor,
+		logStreamParts:     opts.LogStreamParts,
+		identitySource:     opts.IdentitySource,
+		streamDrainTimeout: opts.StreamDrainTimeout,
+		clock:              clock,
 	}
 }

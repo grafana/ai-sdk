@@ -30,7 +30,6 @@ type mcpToolCallInfo struct {
 
 type streamAdapter struct {
 	blocks                 map[int64]*blockState
-	warnings               []provider.Warning
 	mapping                toolNameMapping
 	serverToolCalls        map[string]string
 	mcpToolCalls           map[string]mcpToolCallInfo
@@ -474,7 +473,6 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 			Type:             provider.PartFinish,
 			FinishReason:     &fr,
 			Usage:            &usage,
-			Warnings:         a.warnings,
 			ProviderMetadata: providerMetadata,
 		}
 

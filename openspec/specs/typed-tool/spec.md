@@ -134,6 +134,14 @@ When `TypedToolDef.InputExamples` is provided, each typed example SHALL be marsh
 - **WHEN** `TypedToolDef.InputExamples` contains valid values of type `I`
 - **THEN** each is marshaled to JSON and stored in `Tool.InputExamples`
 
+#### Scenario: Explicitly empty examples preserve presence
+- **WHEN** `TypedToolDef.InputExamples` is an explicitly empty non-nil slice
+- **THEN** `TypedTool` SHALL set `Tool.InputExamples` to an explicitly empty non-nil slice rather than normalizing it to nil
+
+#### Scenario: Omitted examples remain absent
+- **WHEN** `TypedToolDef.InputExamples` is nil
+- **THEN** `TypedTool` SHALL leave `Tool.InputExamples` nil
+
 #### Scenario: Example marshal failure
 - **WHEN** an input example cannot be marshaled to JSON
 - **THEN** `TypedTool` returns a zero `Tool` and a wrapped error

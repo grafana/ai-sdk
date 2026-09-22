@@ -159,6 +159,7 @@ func TestDefaultSettings(t *testing.T) {
 
 		assert.Nil(t, received.Headers)
 		assert.Nil(t, received.ProviderOptions)
+		assert.Equal(t, provider.ReasoningProviderDefault, received.Reasoning)
 	})
 
 	t.Run("ExplicitZeroTemperature_TakesPrecedence", func(t *testing.T) {
@@ -183,7 +184,7 @@ func TestDefaultSettings(t *testing.T) {
 		assert.Equal(t, 0.0, *received.Temperature)
 	})
 
-	t.Run("AllPointerFields", func(t *testing.T) {
+	t.Run("AllOptionalDefaults", func(t *testing.T) {
 		var received provider.CallOptions
 		model := &mockModel{
 			doGenerate: func(_ context.Context, params provider.CallOptions) (*provider.GenerateResult, error) {
@@ -198,7 +199,7 @@ func TestDefaultSettings(t *testing.T) {
 			PresencePenalty:  ptr(0.1),
 			FrequencyPenalty: ptr(0.2),
 			Seed:             ptr(42),
-			Reasoning:        ptr(provider.ReasoningMedium),
+			Reasoning:        provider.ReasoningMedium,
 		})
 
 		wrapped := WrapLanguageModel(model, mw)
@@ -210,6 +211,22 @@ func TestDefaultSettings(t *testing.T) {
 		assert.Equal(t, 0.1, *received.PresencePenalty)
 		assert.Equal(t, 0.2, *received.FrequencyPenalty)
 		assert.Equal(t, 42, *received.Seed)
-		assert.Equal(t, provider.ReasoningMedium, *received.Reasoning)
+		assert.Equal(t, provider.ReasoningMedium, received.Reasoning)
+	})
+
+	t.Run("CallerReasoningTakesPrecedence", func(t *testing.T) {
+		var received provider.CallOptions
+		model := &mockModel{
+			doGenerate: func(_ context.Context, params provider.CallOptions) (*provider.GenerateResult, error) {
+				received = params
+				return &provider.GenerateResult{}, nil
+			},
+		}
+
+		mw := DefaultSettings(DefaultSettingsOptions{Reasoning: provider.ReasoningMedium})
+		wrapped := WrapLanguageModel(model, mw)
+		_, err := wrapped.DoGenerate(context.Background(), provider.CallOptions{Reasoning: provider.ReasoningHigh})
+		require.NoError(t, err)
+		assert.Equal(t, provider.ReasoningHigh, received.Reasoning)
 	})
 }

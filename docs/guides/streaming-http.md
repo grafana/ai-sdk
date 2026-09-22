@@ -93,6 +93,29 @@ application-generated chunks such as progress or typed data. The supplied
 `UIMessageStreamWriter` can write chunks or merge another UI stream. Keep one
 owner responsible for closing and error mapping.
 
+That owner also frames the stream. `CreateUIMessageStream` adds no chunks of its
+own, so write `StartChunk` and `FinishChunk`, or merge a
+`StreamTextResult.ToUIMessageStream` that already carries them. A start chunk
+written without a message ID receives the response message ID, which continues
+the last `OriginalMessages` entry when that entry came from the assistant:
+
+```go
+stream := aisdk.CreateUIMessageStream(aisdk.CreateUIMessageStreamParams{
+	OriginalMessages: history,
+	Execute: func(writer *aisdk.UIMessageStreamWriter) error {
+		result := aisdk.StreamText(r.Context(), model, aisdk.WithMessages(history...))
+		return writer.Merge(result.ToUIMessageStream(
+			aisdk.WithUIMessageStreamOriginalMessages(history...),
+		))
+	},
+})
+err := aisdk.PipeUIMessageStreamToResponse(w, stream)
+```
+
+The merged model stream writes the start and finish chunks here. An endpoint that
+writes only its own chunks calls `aisdk.StartChunk("")` and `aisdk.FinishChunk`
+itself.
+
 ## Consume streams safely
 
 A `StreamTextResult` has one underlying stream consumer. Do not call

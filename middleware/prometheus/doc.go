@@ -92,9 +92,13 @@
 //
 // Metric labels are intentionally bounded and content-free. Duration histograms
 // use a lean label set; use aisdk_model_requests_total for detailed error type,
-// status code, and finish reason breakdowns. Labels never include prompts,
-// outputs, reasoning text, tool arguments/results, user IDs, tenant IDs, request
-// or response IDs, headers, URLs, bodies, raw provider metadata, error messages,
+// status code, and finish reason breakdowns. Status code is `100`–`599`, `none`
+// when absent, or `other` when a provider supplies an out-of-range value. Labels
+// for stream chunk types use the closed provider.StreamPartType constants and
+// bucket every unknown value as `other`.
+// never include prompts, outputs, reasoning text, tool arguments/results, user
+// IDs, tenant IDs, request or response IDs, headers, URLs, bodies, raw provider
+// metadata, error messages,
 // tool names, source URLs, filenames, or arbitrary per-request labels.
 // ConstLabels should be restricted to process-level labels such as service,
 // component, or environment.
@@ -109,10 +113,8 @@
 // denials and observability overhead. This package does not import
 // middleware/agentobservability.
 //
-// # Grafana hosted metrics
+// # Hosted metrics
 //
 // This package records local client-side provider-call metrics. It does not
-// enable, disable, or configure Grafana hosted server-side metrics middleware.
-// providers/grafana.GrafanaOptions.Metrics remains the separate provider-option
-// control surface for hosted Grafana Cloud middleware.
+// enable, disable, or configure remote hosted-service metrics controls.
 package prometheus

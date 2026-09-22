@@ -1,25 +1,25 @@
 ## ADDED Requirements
 
-### Requirement: Commit-derived release intent
+### Requirement: Pull-request-title-derived release intent
 The release system SHALL derive each module's release from the Conventional
-Commits that touch that module's files, without a separate hand-written intent
-artifact.
+Commit subject produced by squash-merging the pull request title, without a
+separate hand-written intent artifact.
 
 #### Scenario: Fix commit in one module
-- **WHEN** a `fix` commit touches only `providers/openai`
+- **WHEN** a pull request titled `fix: ...` touches only `providers/openai` and is squash-merged
 - **THEN** only the OpenAI provider is released, with a patch-level bump
 
 #### Scenario: Cross-module change
-- **WHEN** a commit touches both the root module and a provider
+- **WHEN** a squash-merged pull request touches both the root module and a provider
 - **THEN** both modules are released from that commit
 
 #### Scenario: Non-releasing change
-- **WHEN** every commit uses a non-releasing type such as `chore`, `ci`, or `test`
+- **WHEN** the squash-merged pull request title uses a non-releasing type such as `chore`, `ci`, or `test`
 - **THEN** no module is released
 
-#### Scenario: Unparsable commit subject
-- **WHEN** a pull request contains a non-merge commit that is not a Conventional Commit
-- **THEN** a required check fails before the commit can reach the release history
+#### Scenario: Unparsable pull request title
+- **WHEN** a pull request title is not a Conventional Commit
+- **THEN** a required check fails before the pull request can reach the release history
 
 ### Requirement: Independent Go module versions
 The release system SHALL track each published module's version independently and
@@ -39,18 +39,18 @@ repository directory.
 - **THEN** its first release uses the registered initial version
 
 ### Requirement: Reviewable release pull request
-The release system SHALL propose every pending release as a single pull request
-that contains the calculated versions, the generated changelog entries, and the
-updated version manifest, and SHALL create tags and GitHub Releases only when
-that pull request is merged.
+The release system SHALL propose every pending module release as a separate pull
+request that contains the calculated version, generated changelog entries, and
+updated version manifest, and SHALL create that module's tag and GitHub Release
+only when its pull request is merged.
 
 #### Scenario: Pending release
 - **WHEN** release-worthy commits land on the default branch
-- **THEN** the release pull request is created or refreshed with their modules and versions
+- **THEN** one release pull request per pending module is created or refreshed with that module's version
 
 #### Scenario: Publication
 - **WHEN** the release pull request is merged
-- **THEN** each module in it is tagged and its GitHub Release is created
+- **THEN** that module is tagged and its GitHub Release is created
 
 #### Scenario: No pending release
 - **WHEN** no release-worthy commit has landed since the last release
@@ -64,6 +64,14 @@ published module requires an unpublished version of another module.
 - **WHEN** a core release is published
 - **THEN** nested modules are repointed at the published core version in a follow-up pull request that updates `go.mod` and `go.sum` together
 
+#### Scenario: Nested first-party requirement update
+- **WHEN** OpenAI, Anthropic, OpenAI-compatible, Agent Observability, Logger, or Prometheus is published
+- **THEN** dependent modules are promptly repointed at the published version in a follow-up pull request that updates `go.mod` and `go.sum` together
+
+#### Scenario: Multi-level release order
+- **WHEN** releases are pending for modules across multiple dependency levels
+- **THEN** root is published before every nested module, OpenAI before Bedrock, and Anthropic, OpenAI-compatible, Agent Observability, Logger, and Prometheus before AI Gateway
+
 #### Scenario: Release pull request resolution
 - **WHEN** the release pull request is validated by CI
 - **THEN** every published module still resolves against the module proxy
@@ -74,7 +82,7 @@ for release, that its configured tag resolves for the Go tool, and that it
 contains no local filesystem replacement.
 
 #### Scenario: Unregistered public module
-- **WHEN** a provider or middleware `go.mod` exists without a release configuration entry
+- **WHEN** a public nested-module `go.mod` exists without a release configuration entry
 - **THEN** release validation fails and identifies the missing module
 
 #### Scenario: Unresolvable tag shape

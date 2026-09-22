@@ -13,10 +13,9 @@ type ProviderOption interface {
 	ProviderKey() string
 }
 
-// RawProviderOption wraps opaque JSON data as a ProviderOption.
-// Used when genuine JSON arrives from a wire boundary (e.g., ProviderMetadata
-// from a previous SSE response converted back to ProviderOptions, or any
-// ProviderOptions value decoded from the gateway/providerwire JSON+SSE transport).
+// RawProviderOption wraps opaque JSON data as a ProviderOption. It is used when
+// genuine JSON is converted back to ProviderOptions, such as ProviderMetadata
+// from a previous response.
 type RawProviderOption struct {
 	Key string
 	Raw json.RawMessage
@@ -31,7 +30,7 @@ func (r RawProviderOption) ProviderKey() string { return r.Key }
 // On Marshal, each value is serialized via [json.Marshal] of its concrete
 // ProviderOption implementation: typed providers (e.g. AnthropicOptions)
 // emit their own JSON shape; [RawProviderOption] writes its Raw bytes
-// directly. The wire JSON is `{"<key>": <option JSON>, ...}`.
+// directly. The serialized JSON is `{"<key>": <option JSON>, ...}`.
 //
 // On Unmarshal, the input JSON is decoded as a `map[string]json.RawMessage`
 // and every entry is wrapped as `RawProviderOption{Key: k, Raw: v}`. This
@@ -41,7 +40,7 @@ func (r RawProviderOption) ProviderKey() string { return r.Key }
 type ProviderOptions map[string]ProviderOption
 
 // MarshalJSON implements [json.Marshaler]. See the [ProviderOptions] doc
-// comment for the wire shape.
+// comment for the JSON shape.
 func (p ProviderOptions) MarshalJSON() ([]byte, error) {
 	if p == nil {
 		return []byte("null"), nil
@@ -109,7 +108,7 @@ func BuildProviderOptions(opts ...ProviderOption) ProviderOptions {
 //
 // Resolution prefers the typed in-memory value over raw JSON when the map entry
 // already has type T. RawProviderOption is only decoded when it is the stored
-// value, which is the normal shape after crossing a JSON wire boundary.
+// value, which is the normal shape after JSON serialization.
 func ResolveOption[T any](opts ProviderOptions, key string) (T, bool, error) {
 	var zero T
 	opt, ok := opts[key]

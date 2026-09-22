@@ -325,6 +325,33 @@ func TestStreamMetrics(t *testing.T) {
 	assertNoLabelContains(t, reg, "secret")
 }
 
+func TestStreamMetrics_UnknownChunkTypesUseClosedOtherLabel(t *testing.T) {
+	reg := promclient.NewRegistry()
+	mw, err := Middleware(Options{Registerer: reg})
+	require.NoError(t, err)
+
+	parts := []provider.StreamPart{
+		{Type: provider.StreamPartType("secret-novel-type-a")},
+		{Type: provider.StreamPartType("secret-novel-type-b")},
+	}
+	model := &mockModel{providerName: "grafana", modelID: "assistant"}
+	model.streamFunc = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+		return streamResult(parts...), nil
+	}
+	wrapped := aimiddleware.Wrap(aimiddleware.WrapOptions{Model: model, Middleware: []aimiddleware.Middleware{mw}})
+
+	result, err := wrapped.DoStream(context.Background(), provider.CallOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, parts, drain(result.Stream))
+	assertCounter(t, reg, metricStreamChunksTotal, map[string]string{
+		"operation":  operationStream,
+		"provider":   "grafana",
+		"model":      "assistant",
+		"chunk_type": "other",
+	}, 2)
+	assertNoLabelContains(t, reg, "secret-novel-type")
+}
+
 func TestStreamUsageAggregatesEveryPart(t *testing.T) {
 	reg := promclient.NewRegistry()
 	mw, err := Middleware(Options{Registerer: reg})
@@ -391,6 +418,7 @@ func TestStreamErrorPaths(t *testing.T) {
 		result, err := wrapped.DoStream(ctx, provider.CallOptions{})
 		require.NoError(t, err)
 		cancel()
+		drain(result.Stream)
 
 		producerDone := make(chan struct{})
 		go func() {
@@ -399,7 +427,6 @@ func TestStreamErrorPaths(t *testing.T) {
 			close(upstream)
 		}()
 
-		drain(result.Stream)
 		select {
 		case <-producerDone:
 		case <-time.After(time.Second):

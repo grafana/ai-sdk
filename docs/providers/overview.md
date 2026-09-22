@@ -11,8 +11,8 @@ authentication your application uses.
 | [Anthropic](anthropic.md) | You call Claude through the Anthropic API or Google Vertex AI |
 | [Amazon Bedrock](bedrock.md) | You call models through AWS Bedrock Converse |
 | [OpenAI](openai.md) | You call OpenAI's Responses API |
-| [Grafana Cloud](grafana-cloud.md) | An internal Grafana service calls provisioned models through the hosted AI SDK endpoint |
 | [OpenAI-compatible](openai-compatible.md) | You call a Chat Completions-compatible `/v1/chat/completions` server |
+| [Grafana AI Gateway](grafana-gateway.md) | You call an internally provisioned Gateway with Grafana access-token or CAP authentication |
 
 The OpenAI provider targets OpenAI's current Responses API. The OpenAI-compatible
 provider targets vLLM, LM Studio, Kimi/Moonshot, and other servers implementing
@@ -59,7 +59,7 @@ Start with one model. Add composition only for a concrete requirement:
 
 - improve availability with [fallback](../guides/fallback-and-registry.md);
 - resolve server-side IDs with a [registry](../guides/fallback-and-registry.md);
-- expose stable public IDs with a [gateway catalog](../guides/gateway-model-catalog.md);
+- expose stable public IDs with the [AI Gateway model catalog](../../ai-gateway/docs/model-catalog.md);
 - apply common behavior with [middleware](../middleware/overview.md).
 
 If the service is not supported, see [Writing a provider](writing-a-provider.md).

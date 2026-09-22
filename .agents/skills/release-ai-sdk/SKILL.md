@@ -67,8 +67,9 @@ Publication is automatic and belongs to maintainers:
   branches.
 - Merging one of those pull requests creates that module's tag and GitHub
   Release.
-- The root module must be released before any nested module that depends on the
-  core APIs in that release.
+- Release prerequisites before their dependents: root before every nested
+  module, OpenAI before Bedrock, and Anthropic, OpenAI-compatible, Agent
+  Observability, Logger, and Prometheus before AI Gateway.
 
 Never create or push a tag, never create a GitHub Release, and never merge a
 release pull request on a user's behalf unless they explicitly ask for that

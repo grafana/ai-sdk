@@ -410,7 +410,9 @@ func DataChunk(name string, data json.RawMessage, transient bool) UIMessageChunk
 	return UIMessageChunk{Type: ChunkData, DataName: name, Data: data, Transient: transient}
 }
 
-// StartChunk creates a start chunk.
+// StartChunk creates a start chunk. An empty messageID lets
+// CreateUIMessageStream assign the response message ID; pass a value to keep a
+// request-scoped ID.
 func StartChunk(messageID string) UIMessageChunk {
 	return UIMessageChunk{Type: ChunkStart, MessageID: messageID}
 }

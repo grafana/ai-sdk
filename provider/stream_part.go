@@ -188,16 +188,15 @@ type StreamPart struct {
 
 	// APICallError is populated when Type is PartError. Producers MUST wrap
 	// any error into an *APICallError before emitting a PartError event so the
-	// retryability bit and HTTP status reach consumers across the wire.
+	// retryability bit and HTTP status survive JSON serialization.
 	APICallError *APICallError `json:"apiCallError,omitempty"`
 
 	ProviderMetadata ProviderMetadata `json:"providerMetadata,omitempty"`
 }
 
 // MarshalJSON emits the upstream Vercel AI SDK LanguageModelV4 stream-part
-// shape so a stock upstream client can consume the response stream. In addition
-// to mapping the provider-wire "id" field (ResponseID for response-metadata
-// parts, ID for all others), it reconciles the divergent parts.
+// JSON shape. In addition to mapping the "id" field (ResponseID for
+// response-metadata parts, ID for all others), it reconciles divergent parts.
 //
 // It works by marshaling the flat struct once (via the "alias" type to avoid
 // recursion), unmarshaling that into a map, mutating only the keys that differ
@@ -214,7 +213,6 @@ type StreamPart struct {
 // new field on one of the transformed types above may need explicit handling in
 // the corresponding switch case. Decoding stays tolerant of both the upstream
 // and legacy Go shapes (see [StreamPart.UnmarshalJSON]).
-// See openspec change provider-wire-upstream-full-compat.
 func (p StreamPart) MarshalJSON() ([]byte, error) {
 	type alias StreamPart
 	id := p.ID
@@ -299,7 +297,7 @@ func setJSONString(m map[string]json.RawMessage, key, v string) {
 
 // legacyToolResult converts the old prompt-oriented stream output into the
 // upstream flat result and error fields. It is used only when decoding legacy
-// Go provider-wire events.
+// Go JSON events.
 func legacyToolResult(o *ToolResultOutput) (json.RawMessage, bool) {
 	if o == nil {
 		return json.RawMessage("null"), false
@@ -336,10 +334,10 @@ func legacyToolResult(o *ToolResultOutput) (json.RawMessage, bool) {
 }
 
 // UnmarshalJSON decodes a [StreamPart], tolerating both the upstream Vercel AI
-// SDK LanguageModelV4 stream-part shapes and the legacy Go-to-Go encodings. It
-// maps the provider-wire "id" field (ResponseID for response-metadata parts, ID
-// for all others) and accepts the upstream file `data` union, tool-result
-// `result`/`isError`, flat `source`, and `error` shapes.
+// SDK LanguageModelV4 stream-part shapes and legacy Go encodings. It maps the
+// "id" field (ResponseID for response-metadata parts, ID for all others) and
+// accepts the upstream file `data` union, tool-result `result`/`isError`, flat
+// `source`, and `error` shapes.
 //
 // Unlike the request-path decoders (which fail closed), the response-path
 // stream decoders are lenient: they never return an error for an
@@ -347,7 +345,6 @@ func legacyToolResult(o *ToolResultOutput) (json.RawMessage, bool) {
 // whole stream over a single bad event. Instead they degrade gracefully and
 // preserve as much detail as the struct allows — e.g. an `error` payload that
 // is not an APICallError object is preserved as the message.
-// See openspec change provider-wire-upstream-full-compat.
 func (p *StreamPart) UnmarshalJSON(data []byte) error {
 	type alias StreamPart
 	var decoded alias

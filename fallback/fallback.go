@@ -13,6 +13,32 @@ import (
 // ErrNoCandidates is returned by New when no candidates are provided.
 var ErrNoCandidates = errors.New("fallback: at least one candidate is required")
 
+// ErrInvalidResult indicates a candidate returned no usable result without an error.
+var ErrInvalidResult = errors.New("fallback: invalid candidate result")
+
+// ErrPrematureStreamEnd indicates a candidate closed before producing any part.
+var ErrPrematureStreamEnd = errors.New("fallback: stream ended before first part")
+
+// Never retain or format the recovered value: provider panics may contain secrets.
+var errStreamSetupPanic = errors.New("fallback: candidate stream setup panicked")
+
+const (
+	cleanupTimeout    = 100 * time.Millisecond
+	cleanupPartBudget = 256
+)
+
+// AttemptOutcome describes the selection decision for a physical invocation.
+type AttemptOutcome string
+
+const (
+	// AttemptSelected means a unary result or the first stream part was accepted.
+	AttemptSelected AttemptOutcome = "selected"
+	// AttemptFailed means the invocation failed before selection.
+	AttemptFailed AttemptOutcome = "failed"
+	// AttemptCanceled means the request ended before selection.
+	AttemptCanceled AttemptOutcome = "canceled"
+)
+
 // Model wraps an ordered list of LanguageModel candidates and itself
 // implements LanguageModel. It tries candidates in order, falling back
 // on errors according to the configured decider.
@@ -30,9 +56,15 @@ type Attempt struct {
 	StartedAt  time.Time
 	FinishedAt time.Time
 	Err        error
+	Outcome    AttemptOutcome
+	// WillFallback records eligibility and a remaining candidate while the context
+	// is live at decision time. Later cancellation may prevent that invocation;
+	// subsequent attempt records establish which candidates were actually invoked.
+	WillFallback bool
 }
 
-// AttemptObserver observes a completed fallback candidate attempt.
+// AttemptObserver observes a candidate's selection decision synchronously.
+// It must return promptly. Observer panics are recovered.
 type AttemptObserver func(context.Context, Attempt)
 
 // New creates a FallbackModel from the given candidates.
@@ -42,7 +74,7 @@ func New(candidates ...provider.LanguageModel) (*Model, error) {
 		return nil, ErrNoCandidates
 	}
 	return &Model{
-		candidates: candidates,
+		candidates: append([]provider.LanguageModel(nil), candidates...),
 		decider:    defaultDecider,
 	}, nil
 }
@@ -56,7 +88,8 @@ func (m *Model) WithDecider(fn func(error) bool) *Model {
 
 // WithAttemptObserver registers a callback invoked after each candidate
 // attempt. Index is one-based. For streams, an attempt finishes when the first
-// part arrives, the stream closes, or the provider returns an error.
+// part arrives, the stream closes, or the provider returns an error. FinishedAt
+// is decision time, not stream completion. The callback must return promptly.
 func (m *Model) WithAttemptObserver(fn AttemptObserver) *Model {
 	m.observer = fn
 	return m
@@ -70,20 +103,24 @@ func (m *Model) SupportedURLs() map[string][]*regexp.Regexp { return m.candidate
 func (m *Model) DoGenerate(ctx context.Context, params provider.CallOptions) (*provider.GenerateResult, error) {
 	var failures []failedAttempt
 	for i, c := range m.candidates {
-		if ctx.Err() != nil {
-			if len(failures) > 0 {
-				return nil, failedAttemptsError(failures)
+		if contextErr := ctx.Err(); contextErr != nil {
+			if len(failures) == 0 {
+				return nil, contextErr
 			}
-			return nil, ctx.Err()
+			return nil, errors.Join(failedAttemptsError(failures), contextErr)
 		}
 		startedAt := time.Now()
 		result, err := c.DoGenerate(ctx, params)
-		m.observeAttempt(ctx, i, c, startedAt, err)
+		if err == nil && result == nil {
+			err = ErrInvalidResult
+		}
+		outcome, next, err := m.decision(ctx, i, err)
+		m.observeAttempt(ctx, i, c, startedAt, err, outcome, next)
 		if err == nil {
 			return result, nil
 		}
 		failures = append(failures, failedAttempt{candidate: c, err: err})
-		if !m.decider(err) {
+		if !next {
 			return nil, failedAttemptsError(failures)
 		}
 	}
@@ -94,76 +131,67 @@ func (m *Model) DoStream(ctx context.Context, params provider.CallOptions) (*pro
 	var failures []failedAttempt
 	for i, c := range m.candidates {
 		if ctx.Err() != nil {
-			if len(failures) > 0 {
-				return nil, failedAttemptsError(failures)
-			}
-			return nil, ctx.Err()
+			return nil, errors.Join(failedAttemptsError(failures), ctx.Err())
 		}
-
 		startedAt := time.Now()
-		result, err := c.DoStream(ctx, params)
-		if err != nil {
-			m.observeAttempt(ctx, i, c, startedAt, err)
-			failures = append(failures, failedAttempt{candidate: c, err: err})
-			if !m.decider(err) {
-				return nil, failedAttemptsError(failures)
-			}
-			continue
-		}
-
+		candidateCtx, cancel := context.WithCancel(ctx)
+		result, err := startStream(candidateCtx, c, params)
 		var first provider.StreamPart
-		var ok bool
-		select {
-		case first, ok = <-result.Stream:
-		case <-ctx.Done():
-			go func() {
-				for range result.Stream {
-				}
-			}()
-			m.observeAttempt(ctx, i, c, startedAt, ctx.Err())
-			if len(failures) > 0 {
-				return nil, failedAttemptsError(failures)
-			}
-			return nil, ctx.Err()
+		if err == nil && (result == nil || result.Stream == nil) {
+			err = ErrInvalidResult
 		}
-
-		if !ok {
-			m.observeAttempt(ctx, i, c, startedAt, nil)
-			return result, nil
-		}
-
-		if first.Type == provider.PartError {
-			go func() {
-				for range result.Stream {
+		if err == nil {
+			select {
+			case part, ok := <-result.Stream:
+				if !ok {
+					err = ErrPrematureStreamEnd
+				} else {
+					first = part
 				}
-			}()
-			// Synthesize a non-retryable APICallError when a producer emits
-			// a PartError without a populated APICallError. Without this
-			// the fallback would lastErr=nil and could ultimately return
-			// (nil, nil) on the final attempt, which violates the
-			// (value, error) contract.
-			apiErr := first.APICallError
-			if apiErr == nil {
-				apiErr = provider.NewAPICallError(provider.APICallErrorOptions{
-					Message: "PartError received without APICallError details (provider bug or wire decoding issue)",
-				})
+			case <-ctx.Done():
+				err = ctx.Err()
 			}
-			var partErr error = apiErr
-			m.observeAttempt(ctx, i, c, startedAt, partErr)
-			failures = append(failures, failedAttempt{candidate: c, err: partErr})
-			if !m.decider(partErr) {
+		}
+		outcome, next, err := m.decision(ctx, i, err)
+		if err != nil {
+			cancel()
+			if result != nil && result.Stream != nil {
+				go drainStream(result.Stream)
+			}
+			m.observeAttempt(ctx, i, c, startedAt, err, outcome, next)
+			failures = append(failures, failedAttempt{candidate: c, err: err})
+			if !next {
 				return nil, failedAttemptsError(failures)
 			}
 			continue
 		}
-
-		m.observeAttempt(ctx, i, c, startedAt, nil)
+		m.observeAttempt(ctx, i, c, startedAt, nil, outcome, false)
 		ch := make(chan provider.StreamPart, 64)
 		go func() {
 			defer close(ch)
-			ch <- first
-			for part := range result.Stream {
-				ch <- part
+			defer cancel()
+			part := first
+			for {
+				if candidateCtx.Err() != nil {
+					drainStream(result.Stream)
+					return
+				}
+				select {
+				case ch <- part:
+				case <-candidateCtx.Done():
+					drainStream(result.Stream)
+					return
+				}
+				select {
+				case nextPart, ok := <-result.Stream:
+					if !ok {
+						return
+					}
+					part = nextPart
+				case <-candidateCtx.Done():
+					drainStream(result.Stream)
+					return
+				}
 			}
 		}()
 		return &provider.StreamResult{
@@ -175,22 +203,87 @@ func (m *Model) DoStream(ctx context.Context, params provider.CallOptions) (*pro
 	return nil, failedAttemptsError(failures)
 }
 
+func startStream(ctx context.Context, candidate provider.LanguageModel, params provider.CallOptions) (*provider.StreamResult, error) {
+	type setup struct {
+		result *provider.StreamResult
+		err    error
+	}
+	ready := make(chan setup)
+	go func() {
+		// Recovery must belong to this worker, not its caller's goroutine. Feed
+		// failures through the same ownership transfer and cancellation path.
+		result, err := func() (result *provider.StreamResult, err error) {
+			defer func() {
+				if recover() != nil {
+					result, err = nil, errStreamSetupPanic
+				}
+			}()
+			return candidate.DoStream(ctx, params)
+		}()
+		select {
+		case ready <- setup{result, err}:
+		case <-ctx.Done():
+			if result != nil && result.Stream != nil {
+				drainStream(result.Stream)
+			}
+		}
+	}()
+	select {
+	case value := <-ready:
+		return value.result, value.err
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+func drainStream(stream <-chan provider.StreamPart) {
+	timer := time.NewTimer(cleanupTimeout)
+	defer timer.Stop()
+	for range cleanupPartBudget {
+		select {
+		case _, ok := <-stream:
+			if !ok {
+				return
+			}
+		case <-timer.C:
+			return
+		}
+	}
+}
+
+func (m *Model) decision(ctx context.Context, index int, err error) (AttemptOutcome, bool, error) {
+	if contextErr := ctx.Err(); contextErr != nil {
+		return AttemptCanceled, false, contextErr
+	}
+	if err == nil {
+		return AttemptSelected, false, nil
+	}
+	eligible := m.decider(err)
+	if contextErr := ctx.Err(); contextErr != nil {
+		return AttemptCanceled, false, contextErr
+	}
+	return AttemptFailed, eligible && index+1 < len(m.candidates), err
+}
+
 type failedAttempt struct {
 	candidate provider.LanguageModel
 	err       error
 }
 
-func (m *Model) observeAttempt(ctx context.Context, index int, candidate provider.LanguageModel, startedAt time.Time, err error) {
+func (m *Model) observeAttempt(ctx context.Context, index int, candidate provider.LanguageModel, startedAt time.Time, err error, outcome AttemptOutcome, next bool) {
 	if m.observer == nil {
 		return
 	}
+	defer func() { _ = recover() }()
 	m.observer(ctx, Attempt{
-		Index:      index + 1,
-		Provider:   candidate.Provider(),
-		ModelID:    candidate.ModelID(),
-		StartedAt:  startedAt,
-		FinishedAt: time.Now(),
-		Err:        err,
+		Index:        index + 1,
+		Provider:     candidate.Provider(),
+		ModelID:      candidate.ModelID(),
+		StartedAt:    startedAt,
+		FinishedAt:   time.Now(),
+		Err:          err,
+		Outcome:      outcome,
+		WillFallback: next,
 	})
 }
 

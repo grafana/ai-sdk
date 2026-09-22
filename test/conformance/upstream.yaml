@@ -21,6 +21,43 @@ verification:
     conformance: mise run test-conformance
     regenerate: mise run generate-conformance
 knownGaps:
+  - id: astra-model-catalog
+    surface: provider-openai
+    status: intentional-deviation
+    description: GPT-6 Astra is added to the advisory Responses model list and
+      Bedrock Mantle compatibility-path table ahead of the registered upstream
+      baseline. AWS documents
+      openai.gpt-6-astra at /openai/v1 in us-west-2. Routing and capabilities are
+      covered by synthetic unit tests; no live Astra conformance recording exists.
+  - id: gpt6-non-reasoning-parameters
+    surface: provider-openai
+    status: intentional-deviation
+    description: GPT-6 and later disable non-reasoning sampling parameters, matching
+      newer upstream commit 6c6c2210b9532a4c369615c044a16d595f3db117 rather than the
+      registered @ai-sdk/openai 4.0.41 baseline. Synthetic request tests verify
+      temperature and topP are stripped even for reasoning effort none, while
+      GPT-5.1+ behavior is preserved.
+  - id: gpt6-newer-upstream-capabilities
+    surface: provider-openai
+    status: gap
+    description: Newer upstream commit 6c6c2210b9532a4c369615c044a16d595f3db117
+      advertises GPT-6 supportedReasoningEfforts (low, medium, high, xhigh, max),
+      supportsConfigurationUpdate, and supportsAsyncToolCalling. These newer
+      capability contracts are not implemented by this change; reasoning-effort
+      validation and the configuration-update and async-tool-calling behavior
+      remain follow-up work against a newer upstream baseline.
+  - id: concurrent-tool-emission-nondeterminism
+    surface: core-streamtext
+    status: documented-deviation
+    description: Upstream enqueues each tool result as its own tool resolves. Being
+      single-threaded, it always resolves ties the same way, in tool call order, so
+      its emitted chunk sequence is deterministic. Go emits each result as its tool
+      completes, matching upstream on completion order but not on tie-breaking, so
+      the relative order of sibling tool outputs within a step is scheduler-dependent.
+      The conformance comparator therefore treats a run of adjacent locally-executed
+      tool-output-available and tool-output-error chunks as unordered. Provider-executed
+      outputs come off the recorded wire, and outputs of calls rejected with
+      tool-input-error are emitted during the model stream, so both stay exactly ordered.
   - id: anthropic-base-url-normalization
     surface: provider-anthropic
     status: gap
@@ -42,6 +79,13 @@ knownGaps:
       provider that translates eager_input_streaming into the fine-grained tool
       streaming beta. The Go Bedrock provider currently implements only the Converse
       and ConverseStream APIs, so that provider surface and behavior are not exposed.
+  - id: bedrock-mantle-chat-provider
+    surface: provider-bedrock
+    status: gap
+    description: Upstream @ai-sdk/amazon-bedrock/mantle exposes Chat as its callable,
+      languageModel, and chat surface, including Chat-only safeguard models. The Go
+      Mantle package currently exposes Responses only because the Go OpenAI provider
+      has no shared Chat implementation; it does not present Responses as the default.
   - id: transcription-model-surface
     surface: provider-contract
     status: gap

@@ -8,12 +8,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// These tests lock the decoder tolerance introduced by
-// provider-wire-upstream-decode-compat: the decoders accept the upstream Vercel
-// AI SDK LanguageModelV4 JSON shapes. The emitted form is now the upstream
-// shape as well (see provider-wire-upstream-full-compat and
-// TestUpstreamEmittedForm); these decode tests remain valid because decoding
-// stays tolerant of both the upstream and legacy Go encodings.
+// These tests lock provider-domain decoder tolerance for upstream Vercel AI
+// SDK LanguageModelV4 JSON shapes. The emitted form is also the upstream shape;
+// these decode tests remain valid because decoding stays tolerant of both the
+// upstream and legacy Go encodings.
 
 func TestMessage_UnmarshalUpstreamSystemString(t *testing.T) {
 	var m Message
@@ -311,8 +309,8 @@ func TestMessage_UnmarshalNonSystemStringContentFailsClosed(t *testing.T) {
 // TestUpstreamEmittedForm asserts the encoders now emit the upstream Vercel AI
 // SDK LanguageModelV4 JSON (system content as a string, tool-result single
 // `value` union, DataContent tagged union). This supersedes decisions D6
-// (system as array) and D4 (see stream-part error tests) from
-// 2026-04-30-lossless-provider-wire.
+// (system as array) and D4 (see stream-part error tests) from the historical
+// provider JSON design.
 func TestUpstreamEmittedForm(t *testing.T) {
 	system := NewSystemMessage("be helpful")
 	sysJSON, err := json.Marshal(system)

@@ -35,6 +35,7 @@
     "CONTRIBUTING.md",
     "AGENTS.md",
     "release/README.md",
+    "ai-gateway/**/*.md",
     "docs/**/*.md",
     "examples/**/*.md"
   ],
