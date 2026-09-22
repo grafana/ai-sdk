@@ -87,14 +87,31 @@ and the actual verification date is recorded. The Gateway witness can likewise f
 until its mapping/differential evidence has been reviewed and refreshed. Neither
 failure is an exemption from testing or permission to merge.
 
-## Establish merge readiness
+## Turn work packages into mergeable changes
+
+A parity work package defines behavior, dependencies and acceptance evidence. A PR
+is a delivery unit. Several related packages can share a PR; one package may require
+separate producer and consumer PRs. Track the complete package outcome across those
+changes rather than equating a merged PR with a completed capability.
+
+Keep two dependency decisions separate:
+
+- **Upstream references:** a baseline upgrade moves the selected coherent package
+  set, canonical expectations and verification together. The assessment determines
+  which behavior corrections are required at that boundary and which optional
+  capabilities can follow. Known supported-contract regressions cannot be silently
+  deferred just because existing fixtures miss them.
+- **Go module requirements:** bump a consumer when it needs an already published
+  producer API or behavior. Do not mechanically bump Go modules merely because the
+  upstream reference versions changed. A parity correction within the registered
+  baseline may need no upstream dependency bump at all.
 
 Every PR must pass its required checks independently. If new behavior conflicts
 with old expectations, the necessary implementation, target pins, lockfile,
 expectations and attestation belong in the same baseline transition. Do not weaken
 comparisons or defer that PR's failing checks to a later PR.
 
-Check public-module dependencies before deciding boundaries. A provider may require
+Check public-module dependencies before deciding delivery boundaries. A provider may require
 new root fields, or Mantle may require a newer OpenAI adapter. Merge and verify the
 producer's published revision before the consumer adopts it. Workspace success can
 otherwise hide a dependency failure. Module checks use a fresh public cache,

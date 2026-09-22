@@ -21,3 +21,8 @@
 - [x] 4.1 Rewrite upgrade/review skills around behavioral classification, implementation decisions and bidirectional review, removing generic execution mechanics.
 - [x] 4.2 Replace the operational runbook with a concise command/evidence reference; align contributor/agent guidance and the change's design/specification.
 - [x] 4.3 Validate documentation consistency, links, lint and OpenSpec; confirm target tooling and baseline assets are unchanged by this revision.
+
+## 5. Work-package and delivery distinction
+
+- [x] 5.1 Define behavioral work packages before baseline-transition classification and PR grouping; distinguish upstream references from Go consumer dependency bumps.
+- [x] 5.2 Align review/reference/spec guidance and validate documentation-only changes; publish under the operator's commit/push authorization.

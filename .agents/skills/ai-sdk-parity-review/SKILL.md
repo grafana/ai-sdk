@@ -41,7 +41,12 @@ be a mandatory reading list.
 - Does the regression test fail for the actual bug and exercise the complete path?
 - Are snapshot changes explained by behavior, with intact input provenance?
 
-## Evaluate proof and mergeability
+## Evaluate package completion and delivery
+
+Review parity work packages as behavioral contracts, not as a list of PRs. Check
+which corrections are required for the baseline transition and which capabilities
+have explicit follow-up decisions. One merged PR may deliver only a producer
+prerequisite; package completion still requires the consumer behavior and evidence.
 
 Choose evidence appropriate to the affected layer: provider request snapshots,
 core UI/output snapshots, frontend hook scenarios, focused provider tests or
@@ -51,7 +56,7 @@ for what each check establishes and its limitations.
 Inspect actual results, including skips and warning-only reports. Separate missing
 implementation from missing evidence. Verify published dependencies when a consumer
 uses another Go module; workspace tests alone do not prove adoption. Required checks
-must pass for this PR without relying on a later unmerged change.
+must pass for each delivered PR without relying on a later unmerged change.
 
 For a baseline transition, check coherent pins, lockfile, generated expectations,
 reviewed attestation and verification evidence together. A newer upstream release

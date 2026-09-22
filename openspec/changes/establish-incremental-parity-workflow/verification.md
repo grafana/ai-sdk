@@ -36,3 +36,9 @@ Raw test and dry-run logs are outside the repository. The initial implementation
 Following review, the upgrade skill now uses a behavioral decision matrix, scope/dependency questions and upstream-to-Go / Go-to-assessment review. The review skill challenges those conclusions, and UPGRADING.md is a command/evidence reference rather than an agent setup workflow. Related repo guidance and change artifacts are aligned; no persistent active OpenSpec change is assumed by the skills.
 
 Docs lint, explicit Markdown lint, relative links, strict OpenSpec validation and whitespace checks passed. This revision changes only Markdown: target tooling, local automation configuration and canonical baseline assets are unchanged. No new assessment-report tool or additional lifecycle modes were introduced.
+
+## Work-package planning revision
+
+The skill now defines behavioral work packages before classifying baseline-transition requirements and follow-ups, then derives PR delivery. Related guidance distinguishes coherent upstream reference bumps from published Go consumer adoption and does not assume packages and PRs map one-to-one. Supported-contract regressions cannot become follow-ups merely because fixtures miss them.
+
+Docs lint, explicit skill/reference Markdown lint, links, strict OpenSpec validation and whitespace checks passed. Only Markdown changed; no runtime/tooling or baseline assets changed. Commit and push of this revision were explicitly requested.

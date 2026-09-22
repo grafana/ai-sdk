@@ -230,7 +230,11 @@ provides the analysis and decision matrix; the [tooling reference](test/conforma
 explains commands and evidence. Compare a fixed mature target against upstream
 source/tests and Go behavior, including changes absent from current fixtures.
 Decide which differences require corrections, new capabilities, adaptations or
-explicit exclusions before deriving PR boundaries.
+explicit exclusions, then define parity work packages with behavioral outcomes,
+dependencies and acceptance evidence. Identify the packages required for the
+baseline transition and approved follow-ups before choosing PR boundaries. Packages
+and PRs need not map one-to-one: delivery grouping follows the behavior and actual
+publication dependencies, not the reverse.
 
 Each PR must pass required checks independently. Account for published Go module
 dependencies; workspace success can hide an older consumer dependency. Behavior

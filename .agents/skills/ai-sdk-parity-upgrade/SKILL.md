@@ -53,25 +53,41 @@ Obtain approval for new API designs, scope exclusions and intentional deviations
 A proposed deferral is not an accepted gap. Record accepted durable differences in
 `upstream.yaml` or `PARITY.md` without weakening existing comparisons.
 
-## 3. Derive the implementation sequence
+## 3. Define parity work packages and the baseline transition
 
-Group the accepted work by complete behavior and real dependencies. Do not assign
-one PR per release, commit or option, or impose a fixed PR count.
+Group accepted findings into work packages defined by complete behavior, not PRs.
+Each package identifies the upstream contract, Go difference, intended outcome,
+exclusions, dependencies and acceptance evidence. Include continuation and frontend
+behavior where they are part of that contract.
 
-For each proposed PR, answer:
+For a baseline upgrade, advancing the coherent upstream package set is the objective;
+whether it can precede particular implementation work is an assessment result.
+Do not automatically bump first and defer failures, or require every optional
+upstream capability before advancing.
 
-- What observable capability does it deliver, and what is excluded?
-- Can it pass the registered baseline, or must it include the target baseline's
-  pins, lockfile, expectations and reviewed evidence?
-- Does a consumer require an API or behavior from a separately published Go module?
-- Which tests prove the complete behavior, including continuation and frontend
-  effects where relevant?
+| Finding | Relationship to the baseline transition |
+| --- | --- |
+| Changed behavior breaks an existing supported contract | Required for the transition, even without an existing failing fixture |
+| Existing checks fail against the target | Resolve before the transition lands; recording a follow-up does not satisfy the gate |
+| New optional capability independent of existing behavior | Candidate follow-up package, with an explicit scope and coverage decision |
+| Existing documented gap or intentional deviation | Reassess against the target; retain only with a valid disposition |
+| Impact or evidence is inconclusive | Investigate before assigning it to the transition or a follow-up |
+| A separately published producer is needed | Establish producer/consumer ordering; this is a delivery dependency, not an automatic upstream version bump |
 
-Land baseline-preserving prerequisites separately when useful. Keep incompatible
-behavior changes and the baseline that validates them together. Each PR must pass
-required checks independently; a later PR cannot repair its merge readiness.
+The baseline-transition package includes the upstream pins, canonical expectations,
+verification and behavior corrections needed to make that transition valid.
+Follow-up packages use the new registered baseline and remain visible until their
+approved outcomes are delivered. Parity improvements within the existing baseline
+do not require an upstream version bump merely to show progress.
 
-Implement the agreed behavior with its regression proof. Prefer a failing
+Only after defining these packages, derive the delivery plan. Related packages may
+share a PR; a package spanning published modules may need a producer PR and later
+consumer adoption. The package is complete only when its full acceptance contract
+is met. Preserve tests at each delivered boundary. Every PR must independently pass
+required checks; a later PR cannot repair its merge readiness. Detailed publication
+and merge checks belong in the tooling reference.
+
+Implement each agreed package with its regression proof. Prefer a failing
 conformance case when authentic inputs cover it; otherwise use focused tests and
 state the provider-boundary coverage gap. Preserve fixture provenance.
 

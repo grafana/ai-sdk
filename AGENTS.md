@@ -120,8 +120,9 @@ can support a parity claim.
 - **Documented gaps**: Intentional deviations and accepted coverage gaps must be
   recorded in `test/conformance/upstream.yaml` or `test/conformance/PARITY.md`.
 - **Upstream upgrades**: Use the `ai-sdk-parity-upgrade` skill to assess the exact
-  version delta, classify its impact on Go behavior and derive the implementation
-  scope. Keep the selected target fixed. The [tooling reference](test/conformance/UPGRADING.md)
+  version delta, classify its impact on Go behavior and define parity work packages
+  by outcome, dependencies and proof. Determine the baseline-transition requirements
+  before grouping packages into PRs. Keep the selected target fixed. The [tooling reference](test/conformance/UPGRADING.md)
   describes selection, application and evidence limits. Implementation status and
   test coverage are separate; green replay alone does not establish complete parity.
 - **Independent mergeability**: Every PR must pass required checks without a later
