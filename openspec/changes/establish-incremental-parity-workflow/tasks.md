@@ -15,3 +15,9 @@
 - [x] 3.1 Back up and update relevant local automation configuration/prompts to repository-owned read-only discovery; validate and dry-run without launch.
 - [x] 3.2 Run tooling/type/metadata/doc/OpenSpec checks and inspect all changes for scope, provenance and unchanged canonical pins/fixtures.
 - [x] 3.3 Record concise results and local deployment prerequisites; leave spec sync/archive and commit/push for explicit approval.
+
+## 4. Decision-led documentation revision
+
+- [x] 4.1 Rewrite upgrade/review skills around behavioral classification, implementation decisions and bidirectional review, removing generic execution mechanics.
+- [x] 4.2 Replace the operational runbook with a concise command/evidence reference; align contributor/agent guidance and the change's design/specification.
+- [x] 4.3 Validate documentation consistency, links, lint and OpenSpec; confirm target tooling and baseline assets are unchanged by this revision.

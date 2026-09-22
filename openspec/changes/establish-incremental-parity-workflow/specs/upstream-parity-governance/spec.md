@@ -23,7 +23,7 @@ The repository SHALL provide one documented workflow for routine and catch-up up
 - **THEN** the workflow SHALL assess the complete selected range and propose bounded mergeable work packages rather than one PR per release or a final cumulative merge
 
 ### Requirement: Parity workflow skills
-The repository SHALL provide repo-local skills for scoped parity review and upgrade workflows, referring to one operational runbook. Upgrade assessment SHALL inspect relevant upstream implementation/tests and existing Go behavior, not only failing fixtures. It SHALL produce a frozen target, classified delta inventory, explicit decisions, independently green work packages, publication dependencies and acceptance criteria without requiring a prewritten upgrade plan. Review SHALL distinguish the starting baseline from the approved target and check exact source provenance and actual module resolution.
+The repository SHALL provide decision-led skills for parity assessment and review, supported by a tooling/evidence reference. Upgrade assessment SHALL compare exact upstream implementation/tests with Go behavior and classify each relevant finding using a decision matrix. It SHALL distinguish changed supported behavior, already-matching implementation, new capabilities, behavior-preserving adaptations, intentional deviations, unsupported families and unresolved questions. Implementation status and evidence coverage SHALL be recorded separately. The assessment SHALL derive scope, independently mergeable work packages, publication dependencies and acceptance criteria without requiring a prewritten upgrade plan or persistent active change. Review SHALL check upstream-to-Go completeness and Go-to-assessment scope and justification. Generic agent setup, scheduling and permissions SHALL remain outside the parity skills.
 
 #### Scenario: Agent performs scoped parity review
 - **WHEN** reviewing normal development
@@ -38,6 +38,16 @@ The repository SHALL provide repo-local skills for scoped parity review and upgr
 #### Scenario: Agent reviews a broad scope
 - **WHEN** review covers a provider or directory rather than only a diff
 - **THEN** it SHALL identify missing behavior and missing evidence separately, including changes not exercised by current fixtures
+
+#### Scenario: Implementation is reviewed against the assessment
+- **WHEN** the proposed implementation is reviewed
+- **THEN** every relevant upstream behavior SHALL have a justified disposition
+- **AND** every Go implementation change SHALL serve an assessed requirement with appropriate regression proof
+
+#### Scenario: Evidence has limited breadth
+- **WHEN** a check covers fixture provenance, selected discriminators or only specific scenarios
+- **THEN** the reference SHALL state that limitation
+- **AND** passing the check SHALL NOT be presented as exhaustive behavioral parity
 
 ## ADDED Requirements
 

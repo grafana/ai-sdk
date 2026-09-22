@@ -1,85 +1,94 @@
 ---
 name: ai-sdk-parity-upgrade
-description: Discover, assess, resume or implement an incremental Vercel AI SDK parity upgrade. Use for upstream drift, routine or catch-up upgrades, frozen-target selection, baseline transitions and capability rollout planning. No existing upgrade plan is required.
+description: Analyze upstream AI SDK changes, decide their impact on the Go port, plan independently mergeable updates, and review the resulting parity. Use for routine upgrades or catch-up after a longer gap.
 ---
 
 # AI SDK Parity Upgrade
 
-Follow [the operational runbook](../../../test/conformance/UPGRADING.md). It owns
-policy; do not invent a separate latest-version rule or merge strategy here.
+Turn an upstream version delta into justified implementation decisions and
+regression evidence. A version bump or green replay alone does not establish parity.
 
-## Entry and authority
+## 1. Establish the comparison
 
-Determine whether the request is **discover**, **assess/plan**, **resume**, or
-**implement an approved package**. Default to assessment, not mutation, when unclear.
-Scheduled discovery never implements, accepts gaps or writes to GitHub. Delegation
-and GitHub actions require the applicable operator authorization.
+Use `test/conformance/upstream.yaml` for the registered versions and the supplied
+or selected target for the destination. Keep that target fixed during the work.
+Consult relevant `PARITY.md` entries for existing support, deviations and evidence.
 
-Read `AGENTS.md`, `test/conformance/upstream.yaml`, `PARITY.md`, the conformance
-README/runbook, active OpenSpec changes, relevant open PRs and current `main`.
-Find an active transition even if its target is older than today's latest. Memory
-and local checkout HEAD are not source or approval authority.
+Compare exact package source and tests between those versions, then inspect the
+corresponding Go behavior. Use changelogs to locate changes, not as a complete
+specification. Follow adjacent execution paths when a change affects requests,
+stream state, continuation, errors or frontend behavior.
 
-## Discover and freeze
+Start with this context; read other documentation when a finding requires it.
+[Tooling and evidence reference](../../../test/conformance/UPGRADING.md) explains
+selection, replay, source checks and their limitations.
 
-1. Resume an existing target when applicable. Do not replace it on a daily run.
-2. For a new cycle, use `TARGET=/absolute/new-target.json mise run parity-select`.
-   The command saves an immutable-path record and leaves canonical pins unchanged.
-3. Compare the complete coherent set, not just the `ai` version. If unchanged,
-   report no baseline update; existing capability gaps remain a separate concern.
-4. Inspect exact per-package tags/commits, installed sources or matching raw GitHub
-   sources. Verify package manifests. Never switch a shared upstream checkout.
-5. New releases become discovery information for a later cycle. Changing this
-   target requires approval, a new record and incremental reassessment.
+## 2. Decide what each change means
 
-## Assess and propose without a prewritten plan
+Classify observable behavior, not commits or changed files. Several upstream
+commits may form one capability; one commit may affect several supported surfaces.
 
-Read upstream implementation and tests across the selected range, including changes
-not represented by current fixtures. Cover supported core/provider/frontend/Gateway
-surfaces and the harness. Do not interpret every upstream product as in scope.
+| Finding | Decision | Evidence needed |
+| --- | --- | --- |
+| Supported upstream behavior changed and Go differs | Correct the implementation; determine whether it must accompany the baseline transition | Exact source/tests and a regression exercising the affected behavior |
+| Go already matches | Retain the implementation; strengthen missing coverage rather than re-port it | Existing regression or a focused new comparison |
+| New capability within a supported area | Evaluate the Go API and end-to-end behavior; recommend inclusion or explicit deferral | Upstream semantics, dependencies, design implications and a testable scope |
+| Different language mechanism, same observable behavior | Keep the Go adaptation | Proof that relevant behavior and wire semantics remain equivalent |
+| Deliberately different observable behavior | Seek an explicit deviation decision, not an equivalence claim | Rationale, user impact and regression/coverage boundary |
+| Change belongs to an unsupported product family | Confirm the scope exclusion | Evidence that it is separate from supported paths |
+| Behavior or evidence is inconclusive | Investigate further; leave the decision unresolved | The missing source, reproduction or design decision |
 
-Produce the runbook's compact delta inventory: observable change, exact references,
-Go implementation status, evidence/coverage, disposition and owner. Distinguish
-missing behavior from missing proof. Do not call unresolved decisions accepted gaps.
+Track implementation and evidence separately: an implemented capability may lack
+proof, and a passing fixture may cover only part of a capability. Review source
+changes not exercised by existing fixtures. An untested supported-contract bug
+still needs a decision; it cannot disappear behind green replay.
 
-Propose coherent packages with explicit outcome, exclusions, dependencies and tests.
-Run the publication assessment early: root/provider/module changes may require a
-merged publicly resolvable producer before its consumer. Workspace green is not
-enough. Every PR must be independently green; no final cumulative merge.
+Summarize the assessment in one compact matrix:
 
-Use existing OpenSpec artifacts for target, assessment, decisions and tasks. Do not
-create an elaborate parallel tracking system or commit raw research. Obtain scope,
-API and gap approval before implementation. Headless runs report blockers instead
-of guessing approval. An old plan is a later completeness cross-check, not input
-that replaces discovery.
+| Behavior / surface | Upstream reference | Go behavior | Existing / missing proof | Decision and rationale |
+| --- | --- | --- | --- | --- |
+| Concrete observable change | Exact source/test reference | Matches, missing or differs | What is actually exercised | Implement, retain, adapt, defer, exclude or investigate |
 
-## Implement the approved package
+Obtain approval for new API designs, scope exclusions and intentional deviations.
+A proposed deferral is not an accepted gap. Record accepted durable differences in
+`upstream.yaml` or `PARITY.md` without weakening existing comparisons.
 
-- Use a current-main worktree and one writer. Reuse prior work only after matching
-  its scope and source version; do not wholesale-copy completed spec claims.
-- For the baseline transition, use the approved record with `mise run parity-apply`
-  or `mise run parity-upgrade`. No bare implicit latest upgrade is supported.
-- Implement behavior and regression assets together. Follow conformance-first TDD
-  and immutable-recording/exact-upstream provenance rules.
-- Include canonical pins, lockfile, expectations and reviewed Gateway attestation
-  in the same green transition. Additive predecessors must pass the old baseline.
-- Record accepted durable gaps in the coverage contract without weakening tests.
-  Unsupported or untested behavior cannot become parity by changing a label.
+## 3. Derive the implementation sequence
 
-## Verify, resume and finish
+Group the accepted work by complete behavior and real dependencies. Do not assign
+one PR per release, commit or option, or impose a fixed PR count.
 
-Apply clears the old verification date; it does not certify the new target. Run
-underlying checks and review evidence, record the actual verification date only
-then, and rerun complete required gates. Include fresh-cache module resolution,
-Gateway boundary/runtime/privacy, frontend, conformance and source inspection.
-Check exact deployed/module versions before claiming consumer adoption.
+For each proposed PR, answer:
 
-On pause/resume, read the frozen record, decisions and package status. Reassess
-changed baselines, module graphs or scope; do not reselect because time passed.
-Keep raw logs/probes externally and concise evidence with the change.
+- What observable capability does it deliver, and what is excluded?
+- Can it pass the registered baseline, or must it include the target baseline's
+  pins, lockfile, expectations and reviewed evidence?
+- Does a consumer require an API or behavior from a separately published Go module?
+- Which tests prove the complete behavior, including continuation and frontend
+  effects where relevant?
 
-Report separately: **baseline promoted** and **approved rollout complete**. Every
-approved capability needs verified implementation or an explicitly revised scope.
-A later cycle may start before feature backlog is exhausted only after affected
-work is reassessed. Commit/push/PR creation and automation execution are separate
-permissions, not automatic consequences of this skill.
+Land baseline-preserving prerequisites separately when useful. Keep incompatible
+behavior changes and the baseline that validates them together. Each PR must pass
+required checks independently; a later PR cannot repair its merge readiness.
+
+Implement the agreed behavior with its regression proof. Prefer a failing
+conformance case when authentic inputs cover it; otherwise use focused tests and
+state the provider-boundary coverage gap. Preserve fixture provenance.
+
+## 4. Review in both directions
+
+**Upstream → Go:** does every relevant upstream change have a supported decision?
+Check missing capabilities, edge cases and interactions, not just replay failures.
+
+**Go → assessment:** does every implementation change serve an assessed need?
+Check scope growth, unnecessary abstractions, incorrect adaptations and missing
+regressions. Trace snapshot changes back to behavior rather than accepting churn.
+
+Then verify the appropriate evidence: requests, stream/UI output, hooks, errors,
+provider contracts and published consumer behavior. A check's name is not proof
+of its breadth; inspect what ran and distinguish omissions from successful checks.
+
+Conclude with implemented behavior, verified evidence and unresolved or accepted
+gaps. Distinguish **baseline updated** from **approved capabilities completed**:
+changing versions does not finish the rollout, and a deferred capability must
+remain visible. Use the parity-review skill for focused implementation review.

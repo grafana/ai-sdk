@@ -119,20 +119,18 @@ can support a parity claim.
   implementation bug, or coverage gap.
 - **Documented gaps**: Intentional deviations and accepted coverage gaps must be
   recorded in `test/conformance/upstream.yaml` or `test/conformance/PARITY.md`.
-- **Upstream upgrades**: Follow [the upgrade runbook](test/conformance/UPGRADING.md)
-  and the `ai-sdk-parity-upgrade` skill. Select a coherent mature target once,
-  assess source/tests before mutation, and obtain approval for scope and gaps.
-  Resume the frozen record; new releases do not silently change it. The baseline
-  manifest, all consumer pins, lockfile, expectations and attestation move together.
-- **Independent mergeability**: Every PR must pass all enforced checks without
-  a later unmerged PR. Plan public Go module publication before consumers; run
-  `mise run verify-module-resolution` early, not just workspace tests. Do not use
-  a red intermediate merge, final cumulative merge, replacement directive or
-  weakened comparison to bypass a dependency.
-- **Upgrade completion**: Baseline promotion and the approved capability rollout
-  are separate outcomes. Green replay is not complete feature coverage. Record
-  missing implementation separately from missing proof; unresolved decisions are
-  not accepted gaps. Scheduled discovery is read-only and uses repository policy.
+- **Upstream upgrades**: Use the `ai-sdk-parity-upgrade` skill to assess the exact
+  version delta, classify its impact on Go behavior and derive the implementation
+  scope. Keep the selected target fixed. The [tooling reference](test/conformance/UPGRADING.md)
+  describes selection, application and evidence limits. Implementation status and
+  test coverage are separate; green replay alone does not establish complete parity.
+- **Independent mergeability**: Every PR must pass required checks without a later
+  unmerged change. Account for published Go module dependencies, not just workspace
+  behavior. Changes incompatible with the old baseline must land with the pins,
+  lockfile, expectations and reviewed evidence that validate them.
+- **Upgrade completion**: Report baseline verification separately from completion
+  of the selected capabilities. New APIs, exclusions and intentional deviations
+  need explicit decisions; unresolved findings are not accepted gaps.
 
 ## Build / Lint / Test Commands
 

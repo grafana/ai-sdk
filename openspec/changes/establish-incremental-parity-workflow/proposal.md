@@ -7,7 +7,7 @@ Upstream releases continue during implementation and team absences. The current 
 - Separate the registered baseline, frozen candidate target and approved capability backlog.
 - Require source-backed assessment and published-module dependency planning before implementation; distinguish baseline verification from completion of the approved rollout.
 - **BREAKING**: replace implicit latest selection in the upgrade command with explicit non-mutating selection and application of a saved target. Preserve maturity, coherence, source provenance and all consumer pins.
-- Introduce one operational runbook and align repository guidance and parity skills with it.
+- Make parity skills decision-led: classify behavior and evidence, derive implementation scope and review upstream-to-Go completeness and Go-to-requirement justification. Keep command details and evidence limits in a tooling reference, and execution mechanics in local automation guidance.
 - Test immutable selection, deterministic application, stale-source rejection, resume and verification-date semantics without network-dependent unit tests.
 - Align local automation with read-only discovery and repo-owned policy; remove autonomous upgrades and shared upstream checkout mutation.
 

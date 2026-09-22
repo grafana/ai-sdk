@@ -225,18 +225,18 @@ alters wire-format or provider-boundary behavior, consider whether
 `expected.jsonl`, `expected-requests.jsonl`, or `expected-object.json` need to be
 regenerated.
 
-For baseline upgrades, follow the
-[incremental upgrade runbook](test/conformance/UPGRADING.md). Select and freeze a
-mature coherent target, assess source/tests and approve scope before implementation.
-New releases do not change an active target. The manifest, every consumer pin,
-lockfile, expectations and attestation move together in an independently green PR.
+For baseline upgrades, the [parity-upgrade skill](.agents/skills/ai-sdk-parity-upgrade/SKILL.md)
+provides the analysis and decision matrix; the [tooling reference](test/conformance/UPGRADING.md)
+explains commands and evidence. Compare a fixed mature target against upstream
+source/tests and Go behavior, including changes absent from current fixtures.
+Decide which differences require corrections, new capabilities, adaptations or
+explicit exclusions before deriving PR boundaries.
 
-Plan public Go module dependencies before splitting work: a workspace test can
-pass while consumers still resolve an older published module. Run
-`mise run verify-module-resolution` early. Every PR must pass required checks on
-its own; no red intermediate merge or final cumulative merge is an escape hatch.
-Baseline promotion and completion of the approved capability rollout are distinct.
-Scheduled discovery reports drift but does not authorize upgrades or accept gaps.
+Each PR must pass required checks independently. Account for published Go module
+dependencies; workspace success can hide an older consumer dependency. Behavior
+incompatible with the old baseline must land with the target pins, lockfile,
+expectations and reviewed evidence that validate it. Report baseline verification
+separately from completion of the selected capabilities.
 
 In CI, every retained parity job is a required status check:
 `parity-baseline`, `conformance-test`, and `integration-test` all block the

@@ -29,4 +29,10 @@ The parity automation now invokes repository-owned discovery only. Its hook no l
 - Scheduled discovery deliberately stops until the new workflow exists on its checked-out main. The old autonomous upgrade is not used as fallback.
 - The live local config/prompt changes are outside the branch and will need separate operator rollback if desired; the repository diff does not deploy them on other machines.
 
-Raw test and dry-run logs are outside the repository. No commit, push, PR mutation, spec sync/archive, upstream checkout change or automation run was performed.
+Raw test and dry-run logs are outside the repository. The initial implementation checks did not perform an upstream upgrade, spec sync/archive, upstream checkout change or automation run. The implementation was subsequently committed and opened as draft PR #205 under separate authorization.
+
+## Decision-led documentation revision
+
+Following review, the upgrade skill now uses a behavioral decision matrix, scope/dependency questions and upstream-to-Go / Go-to-assessment review. The review skill challenges those conclusions, and UPGRADING.md is a command/evidence reference rather than an agent setup workflow. Related repo guidance and change artifacts are aligned; no persistent active OpenSpec change is assumed by the skills.
+
+Docs lint, explicit Markdown lint, relative links, strict OpenSpec validation and whitespace checks passed. This revision changes only Markdown: target tooling, local automation configuration and canonical baseline assets are unchanged. No new assessment-report tool or additional lifecycle modes were introduced.

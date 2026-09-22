@@ -46,13 +46,11 @@ classifies each compatibility surface by layer, status, confidence source, and
 known gaps. Use it when deciding whether a change needs new fixtures, upstream
 source review, or a documented deviation.
 
-For routine updates and catch-up after an absence, use the
-[incremental upgrade runbook](UPGRADING.md). `parity-select` saves a frozen target
-without changing pins; `parity-apply` and `parity-upgrade` require that explicit
-record through `TARGET=/absolute/path.json`. Application clears the verification
-date until successful review; it never silently selects newer versions. Every
-upgrade PR must independently pass required checks, including public Go module
-resolution. The target record is not proof that all upstream capabilities exist.
+For upgrades, use the [parity-upgrade skill](../../.agents/skills/ai-sdk-parity-upgrade/SKILL.md)
+to assess behavior and decide scope. The [tooling and evidence reference](UPGRADING.md)
+explains target selection/application and what the checks prove. In particular,
+fixture inventory is not behavioral coverage, generation is not successful Go
+replay, and passing replay is not proof that all upstream capabilities exist.
 
 Conformance tests are also the preferred regression suite for bugs and features
 that cross the provider or UI wire boundary. When a bug can be represented as
