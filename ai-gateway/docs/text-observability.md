@@ -107,21 +107,3 @@ already-started recorders and refuses new recorder acquisition. Flush and
 shutdown then each receive a fresh independent timeout. The
 `process_shutdown_completed` lifecycle event is logged only after this bounded
 finalizer returns.
-
-## Work-package boundaries
-
-- WP6 image capacity/distribution does not use this text-model chain.
-- WP7's Go client and ProviderWire contract are unchanged; correlation is
-  server-internal and is neither accepted from nor returned to clients.
-- WP9 owns physical fallback attempts, candidate identity, and retry topology
-  below the unchanged logical wrapper.
-- WP10 owns production endpoint, credential, region/application values,
-  rollout, and environment smoke verification.
-- WP27 owns any later per-request Agent Observability control or richer content
-  capture decision.
-- WP15 admits ordinary file inputs on direct routes without changing the WP8
-  metadata-only logical observation policy. File payloads, names, URLs,
-  references, and scoped options are not exported to Gateway logs, metrics,
-  or Agent Observability; see [File-input operations](file-inputs.md).
-  Generated media output, reasoning files, raw output, hooks, and later event
-  families remain with their owning work packages.

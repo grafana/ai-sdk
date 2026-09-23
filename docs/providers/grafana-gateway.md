@@ -11,25 +11,16 @@ The client module is Apache-2.0 and does not depend on the Gateway service
 module. Its executable response family includes text and unary/streaming function calls. Requests preserve
 representable provider options, files, tools, and structured-output settings;
 the deployed Gateway decides which capabilities it can execute and returns a
-public invalid-request error for unsupported calls. Direct routes accept ordinary
-file inputs in user/assistant messages and file entries in supported tool-result
-content, in unary and streaming modes. Data, URL, provider-reference, and text
-arms (including selected empty text/data) map to the chosen backend. The Gateway
-preserves absent versus explicit-empty filenames and message/file-part provider
-options; it does not fetch file URLs. The backend applies its own media and
-reference rules. See [Messages and conversation history](../concepts/messages.md)
-for the Go constructors and UI filename semantics. Gateway operators can use
-[File-input operations](../../ai-gateway/docs/file-inputs.md) for rollout and
-privacy checks.
+public invalid-request error for unsupported calls.
 
 ## Function tools
 
 Direct routes support unary client-executed function tools. Definitions preserve
 `strict: false`, examples, object schemas, and ordinary provider options;
 Gateway-reserved option namespaces remain rejected. History accepts assistant
-calls and text, JSON (including null), error-text, error-JSON, and text-only
-content results, preserving required selected empty values. The application
-executes tools and supplies call/result history on a later independent request.
+calls and text, JSON (including null), error-text, error-JSON, and content
+results with text or supported file entries, preserving selected empty values.
+The application executes tools and supplies call/result history on a later independent request.
 The Gateway never executes a tool. Provider-executed/dynamic tools, approvals,
 preliminary results, custom tool-result content, generated media responses, and
 reasoning-file input remain unsupported. Logical telemetry
@@ -83,10 +74,12 @@ Both provider instances must be declared in `providers` using the existing
 environment-variable credential references. Omitting `fallback` creates a direct
 route; removing it restores direct routing without changing the public model ID.
 Candidates retain configuration order and each new call starts at primary.
-Fallback routes accept text only: files, tools, tool choice, tool-call/result
-history, and active provider options are rejected before any candidate runs.
-Message-level namespaces containing only empty objects retain text fallback
-eligibility without losing their original representation. A stream's
+Models without fallback accept supported file inputs. Models configured with
+fallback are text-only: files, nonempty tools, tool-call/result history, active
+provider options, and tool choices other than plain auto are rejected before any
+candidate, including primary, runs. Message-level namespaces containing only
+empty objects retain text fallback eligibility without losing their original
+representation. A stream's
 first part commits its candidate, including an error part. No later failure
 restarts on another provider. Client retries can multiply physical attempts;
 the Gateway disables native-provider retries.
