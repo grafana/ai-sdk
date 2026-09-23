@@ -177,6 +177,9 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 	if err := provider.ValidateFileInputs(opts.Prompt); err != nil {
 		return anthropic.BetaMessageNewParams{}, toolNameMapping{}, nil, buildResult{}, fmt.Errorf("anthropic: invalid file input: %w", err)
 	}
+	if err := provider.ValidateTools(opts.Tools); err != nil {
+		return anthropic.BetaMessageNewParams{}, toolNameMapping{}, nil, buildResult{}, err
+	}
 	var warnings []provider.Warning
 	if err := rejectRawSafeguardNulls(opts.ProviderOptions); err != nil {
 		return anthropic.BetaMessageNewParams{}, toolNameMapping{}, nil, buildResult{}, fmt.Errorf("anthropic: invalid provider options: %w", err)
