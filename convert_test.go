@@ -3,7 +3,6 @@ package aisdk
 import (
 	"encoding/json"
 	"fmt"
-	"reflect"
 	"testing"
 
 	"github.com/grafana/ai-sdk/provider"
@@ -61,11 +60,12 @@ func TestConvertToModelMessages_FileFilenamePresence(t *testing.T) {
 				mapped := convert(t, []UIMessage{message})
 				require.Len(t, mapped, 1)
 				require.Len(t, mapped[0].Content, 1)
-				selected := reflect.ValueOf(mapped[0].Content[0].Filename)
-				require.Equal(t, reflect.Ptr, selected.Kind(), "input filename must retain presence")
-				assert.Equal(t, !tc.present, selected.IsNil())
-				if tc.present && !selected.IsNil() {
-					assert.Equal(t, tc.want, selected.Elem().String())
+				selected := mapped[0].Content[0].Filename
+				if tc.present {
+					require.NotNil(t, selected)
+					assert.Equal(t, tc.want, *selected)
+				} else {
+					assert.Nil(t, selected)
 				}
 			})
 		}
