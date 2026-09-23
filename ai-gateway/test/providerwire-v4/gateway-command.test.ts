@@ -471,6 +471,7 @@ describe("authenticated Anthropic Gateway command", () => {
           { type: "file", data: { type: "text", text: "" }, mediaType: "text/plain", filename: "" },
           { type: "file", data: { type: "url", url: new URL("https://example.test/doc.pdf") }, mediaType: "application/pdf" },
           { type: "file", data: { type: "reference", reference: { anthropic: "file-1" } }, mediaType: "application/pdf" },
+          { type: "file", data: { type: "text", text: "inline document" }, mediaType: "application/pdf", filename: "notes.txt" },
         ],
       }];
       for (const mode of ["generate", "stream"] as const) {
@@ -491,6 +492,8 @@ describe("authenticated Anthropic Gateway command", () => {
         assert.equal(content[2].title, "");
         assert.deepEqual(content[3].source, { type: "url", url: "https://example.test/doc.pdf" });
         assert.deepEqual(content[4].source, { type: "file", file_id: "file-1" });
+        assert.deepEqual(content[5].source, { type: "text", media_type: "text/plain", data: "inline document" });
+        assert.equal(content[5].title, "notes.txt");
       }
 
       fake.functionTools = true;
@@ -500,6 +503,9 @@ describe("authenticated Anthropic Gateway command", () => {
           { role: "tool", content: [{ type: "tool-result", toolCallId: "call-weather", toolName: "weather", output: { type: "content", value: [
             { type: "text", text: "weather result" },
             { type: "file", filename: "", data: { type: "data", data: "BQY=" }, mediaType: "image/png" },
+            { type: "file", data: { type: "url", url: new URL("https://example.test/result.png") }, mediaType: "image/png" },
+            { type: "file", data: { type: "url", url: new URL("https://example.test/result.pdf") }, mediaType: "application/pdf" },
+            { type: "file", data: { type: "data", data: "JVBERi0=" }, mediaType: "application/pdf" },
           ] } }] },
         ],
       };
@@ -517,6 +523,9 @@ describe("authenticated Anthropic Gateway command", () => {
         const result = first.messages.at(-1).content[0];
         assert.equal(result.type, "tool_result");
         assert.deepEqual(result.content[1].source, { type: "base64", media_type: "image/png", data: "BQY=" });
+        assert.deepEqual(result.content[2].source, { type: "url", url: "https://example.test/result.png" });
+        assert.deepEqual(result.content[3].source, { type: "url", url: "https://example.test/result.pdf" });
+        assert.deepEqual(result.content[4].source, { type: "base64", media_type: "application/pdf", data: "JVBERi0=" });
       }
       assert.deepEqual(fake.violations, []);
     } finally { await settleCleanup(() => gateway.stop(), () => fake.stop()); }
