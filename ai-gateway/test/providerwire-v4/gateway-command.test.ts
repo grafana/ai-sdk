@@ -85,6 +85,8 @@ describe("authenticated Anthropic Gateway command", () => {
         { prompt: [], toolChoice: { type: "tool", toolName: "private-tool" } },
         { prompt: [call] },
         { prompt: [call, result] },
+        { prompt: [{ role: "user", content: [{ type: "file", data: { type: "text", text: "private-file" }, mediaType: "text/plain" }] }] },
+        { prompt: [{ role: "user", content: [{ type: "text", text: "hello" }], providerOptions: { vendor: { flag: false } } }] },
       ];
       for (const options of effectRequests) {
         const counts: [number, number] = [primary.requests.length, secondary.requests.length];
@@ -126,6 +128,21 @@ describe("authenticated Anthropic Gateway command", () => {
         });
         assert.equal(primary.requests.length, 0, "streaming tools/history must not invoke primary");
         assert.equal(secondary.requests.length, 0, "streaming tools/history must not invoke fallback");
+      }
+      primary.failureStatus = 503;
+      secondary.failureStatus = undefined;
+      for (const mode of ["generate", "stream"] as const) {
+        const options = {
+          prompt: [{ role: "user" as const, content: [{ type: "text" as const, text: "normal-stream" }], providerOptions: { vendor: {} } }],
+        };
+        const counts: [number, number] = [primary.requests.length, secondary.requests.length];
+        const go = await captureGoClient(goClientBinaryPath, { ...base, mode, options });
+        assert.equal(go.error, undefined);
+        const model = client("assistant");
+        const result = mode === "generate" ? await model.doGenerate(options) : await collectGatewayStream((await model.doStream(options)).stream);
+        assert.ok(JSON.stringify(result).includes("hello from fake Anthropic"));
+        assert.deepEqual([primary.requests.length - counts[0], secondary.requests.length - counts[1]], [2, 2]);
+        assert.deepEqual(primary.requests.at(-1)?.body, secondary.requests.at(-1)?.body);
       }
       for (const row of [
         { primary: undefined, secondary: undefined, count: 0, status: undefined },
@@ -443,6 +460,70 @@ describe("authenticated Anthropic Gateway command", () => {
     } finally { await settleCleanup(() => gateway.stop(), () => fake.stop()); }
   });
 
+  it("maps file inputs and file-result continuation through authenticated native calls", async () => {
+    const [fake, gateway] = await startGateway();
+    const client = gateway.client();
+    const base = { baseURL: `${gateway.url}/api/v1/aisdk`, accessToken: TEST_TOKEN, modelID: "assistant" };
+    try {
+      const prompt: LanguageModelV4CallOptions["prompt"] = [{
+        role: "user",
+        content: [
+          { type: "text", text: "normal-stream" },
+          { type: "file", data: { type: "data", data: "AQID" }, mediaType: "image/png", filename: "" },
+          { type: "file", data: { type: "text", text: "" }, mediaType: "text/plain", filename: "" },
+          { type: "file", data: { type: "url", url: new URL("https://example.test/doc.pdf") }, mediaType: "application/pdf" },
+          { type: "file", data: { type: "reference", reference: { anthropic: "file-1" } }, mediaType: "application/pdf" },
+        ],
+      }];
+      for (const mode of ["generate", "stream"] as const) {
+        const options = { prompt };
+        const ts = mode === "generate"
+          ? (await client("assistant").doGenerate(options)).content
+          : await collectGatewayStream((await client("assistant").doStream(options)).stream);
+        const go = await captureGoClient(goClientBinaryPath, { ...base, mode, options: JSON.parse(JSON.stringify(options)) });
+        assert.equal(go.error, undefined);
+        assert.ok(JSON.stringify(ts).includes("hello from fake Anthropic"));
+        assert.ok(JSON.stringify(mode === "generate" ? go.result.content : go.parts).includes("hello from fake Anthropic"));
+        const first = fake.requests.at(-2)!.body as any;
+        const second = fake.requests.at(-1)!.body as any;
+        assert.deepEqual(second, first);
+        const content = first.messages[0].content;
+        assert.deepEqual(content[1].source, { type: "base64", media_type: "image/png", data: "AQID" });
+        assert.deepEqual(content[2].source, { type: "text", media_type: "text/plain", data: "" });
+        assert.equal(content[2].title, "");
+        assert.deepEqual(content[3].source, { type: "url", url: "https://example.test/doc.pdf" });
+        assert.deepEqual(content[4].source, { type: "file", file_id: "file-1" });
+      }
+
+      fake.functionTools = true;
+      const fileResult: LanguageModelV4CallOptions = {
+        prompt: [...prompt,
+          { role: "assistant", content: [{ type: "tool-call", toolCallId: "call-weather", toolName: "weather", input: { city: "Rio" } }] },
+          { role: "tool", content: [{ type: "tool-result", toolCallId: "call-weather", toolName: "weather", output: { type: "content", value: [
+            { type: "text", text: "weather result" },
+            { type: "file", filename: "", data: { type: "data", data: "BQY=" }, mediaType: "image/png" },
+          ] } }] },
+        ],
+      };
+      for (const mode of ["generate", "stream"] as const) {
+        const ts = mode === "generate"
+          ? (await client("assistant").doGenerate(fileResult)).content
+          : await collectGatewayStream((await client("assistant").doStream(fileResult)).stream);
+        const go = await captureGoClient(goClientBinaryPath, { ...base, mode, options: JSON.parse(JSON.stringify(fileResult)) });
+        assert.equal(go.error, undefined);
+        assert.ok(JSON.stringify(ts).includes("It is sunny."));
+        assert.ok(JSON.stringify(mode === "generate" ? go.result.content : go.parts).includes("It is sunny."));
+        const first = fake.requests.at(-2)!.body as any;
+        const second = fake.requests.at(-1)!.body as any;
+        assert.deepEqual(second, first);
+        const result = first.messages.at(-1).content[0];
+        assert.equal(result.type, "tool_result");
+        assert.deepEqual(result.content[1].source, { type: "base64", media_type: "image/png", data: "BQY=" });
+      }
+      assert.deepEqual(fake.violations, []);
+    } finally { await settleCleanup(() => gateway.stop(), () => fake.stop()); }
+  });
+
   it("exchanges a CAP token through the Go client before authenticated discovery", async () => {
     const [fake, gateway] = await startGateway();
     let exchanges = 0;
@@ -603,15 +684,21 @@ describe("authenticated Anthropic Gateway command", () => {
         "--agento11y.shutdown-timeout=2s",
       ], { GATEWAY_TEST_AGENTO11Y_KEY: "integration-agento11y-key" });
       const [fake, gateway] = resources;
+      const fileParts = [
+        { type: "file", filename: "private-filename", data: { type: "data", data: "cHJpdmF0ZS1ieXRlcw==" }, mediaType: "image/png" },
+        { type: "file", data: { type: "url", url: new URL("https://cdn.example.test/private-url?token=private-query") }, mediaType: "application/pdf" },
+        { type: "file", data: { type: "reference", reference: { anthropic: "private-reference" } }, mediaType: "application/pdf" },
+        { type: "file", filename: "", data: { type: "text", text: "private-document-text" }, mediaType: "text/plain", providerOptions: { anthropic: { title: "private-file-title" } } },
+      ] as const;
 
       const unary = await gateway.client()("assistant").doGenerate({
-        prompt: [{ role: "user", content: [{ type: "text", text: "private-unary-input" }] }],
+        prompt: [{ role: "user", content: [{ type: "text", text: "private-unary-input" }, ...fileParts] }],
         maxOutputTokens: 32,
       });
       assert.deepEqual(unary.content, [{ type: "text", text: "hello from fake Anthropic" }]);
 
       const streamed = await gateway.client()("assistant").doStream({
-        prompt: [{ role: "user", content: [{ type: "text", text: "normal-stream" }] }],
+        prompt: [{ role: "user", content: [{ type: "text", text: "normal-stream" }, ...fileParts] }],
         maxOutputTokens: 32,
       });
       const streamParts = await collectGatewayStream(streamed.stream);
@@ -621,14 +708,14 @@ describe("authenticated Anthropic Gateway command", () => {
       ]);
       assert.equal(streamParts.filter((part) => part.type === "text-delta").map((part) => part.delta).join(""), "hello from fake Anthropic stream");
 
-      const providerFailure = await rawProviderWireRequest(gateway.url, "provider-error");
+      const providerFailure = await rawProviderWireRequest(gateway.url, "provider-error", "assistant", fileParts);
       assert.equal(providerFailure.status, 502);
       assert.deepEqual(await providerFailure.json(), {
         error: { message: "upstream failure", type: "internal_server_error", param: null, code: "upstream_error" },
       });
 
       const aborted = await gateway.client()("assistant").doStream({
-        prompt: [{ role: "user", content: [{ type: "text", text: "silent-abort" }] }],
+        prompt: [{ role: "user", content: [{ type: "text", text: "silent-abort" }, ...fileParts] }],
         maxOutputTokens: 32,
       });
       const abortReader = aborted.stream.getReader();
@@ -639,7 +726,7 @@ describe("authenticated Anthropic Gateway command", () => {
       await fake.waitForCancellation("silent-abort");
 
       const shuttingDown = await gateway.client()("assistant").doStream({
-        prompt: [{ role: "user", content: [{ type: "text", text: "silent-shutdown" }] }],
+        prompt: [{ role: "user", content: [{ type: "text", text: "silent-shutdown" }, ...fileParts] }],
         maxOutputTokens: 32,
       });
       const shutdownStart = await shuttingDown.stream.getReader().read();
@@ -687,7 +774,7 @@ describe("authenticated Anthropic Gateway command", () => {
       for (const privateValue of [
         "integration-anthropic-key", "integration-agento11y-key", "GATEWAY_TEST_AGENTO11Y_KEY",
         "backend-private", fake.url, observer.url, TEST_TOKEN, "private-unary-input",
-        "hello from fake Anthropic", "provider-secret-response",
+        "hello from fake Anthropic", "provider-secret-response", "private-filename", "cHJpdmF0ZS1ieXRlcw==", "private-url", "private-query", "private-reference", "private-document-text", "private-file-title",
       ]) {
         assert.ok(!surfaces.includes(privateValue), `private value leaked: ${privateValue}`);
       }
@@ -2148,7 +2235,7 @@ function sumPrometheusSamples(metrics: string, family: string, requiredLabels: s
   return total;
 }
 
-function rawProviderWireRequest(baseURL: string, text: string, modelID = "assistant"): Promise<Response> {
+function rawProviderWireRequest(baseURL: string, text: string, modelID = "assistant", extraParts: readonly unknown[] = []): Promise<Response> {
   return fetch(`${baseURL}/api/v1/aisdk/language-model`, {
     method: "POST",
     headers: {
@@ -2159,7 +2246,7 @@ function rawProviderWireRequest(baseURL: string, text: string, modelID = "assist
       "ai-language-model-streaming": "false",
     },
     body: JSON.stringify({
-      prompt: [{ role: "user", content: [{ type: "text", text }] }],
+      prompt: [{ role: "user", content: [{ type: "text", text }, ...extraParts] }],
       maxOutputTokens: 32,
       temperature: 0.2,
     }),

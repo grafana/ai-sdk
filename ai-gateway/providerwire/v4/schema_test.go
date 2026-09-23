@@ -95,7 +95,6 @@ func TestErrorSchema(t *testing.T) {
 		canonicalTimeoutError,
 		canonicalCancellationError,
 		canonicalInternalError,
-		unsupportedFilesError,
 		unsupportedReasoningContentError,
 		unsupportedCustomContentError,
 		unsupportedToolsError,

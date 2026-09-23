@@ -50,15 +50,11 @@ func mapFunctionTools(rawTools []json.RawMessage, rawChoice json.RawMessage) ([]
 				tool.InputExamples = append(tool.InputExamples, provider.InputExample{Input: example.Input})
 			}
 		}
-		if wire.ProviderOptions != nil {
-			tool.ProviderOptions = make(provider.ProviderOptions, len(wire.ProviderOptions))
-			for namespace, raw := range wire.ProviderOptions {
-				if namespace == "gateway" || namespace == "grafana" || namespace == "grafana-ai-sdk" {
-					return nil, nil, unsupportedMappingFailure(capabilityProviderOptions)
-				}
-				tool.ProviderOptions[namespace] = provider.RawProviderOption{Key: namespace, Raw: raw}
-			}
+		options, failure := mapScopedProviderOptions(wire.ProviderOptions)
+		if failure != nil {
+			return nil, nil, failure
 		}
+		tool.ProviderOptions = options
 		tools = append(tools, tool)
 	}
 	var choice *provider.ToolChoice
@@ -99,13 +95,28 @@ func mapToolOutput(wire *wireToolOutput) (*provider.ToolResultOutput, *requestFa
 		}
 		output.Content = make([]provider.ToolResultContentValue, 0, len(parts))
 		for _, part := range parts {
-			if part.Type != provider.ContentPartTypeText {
+			switch part.Type {
+			case provider.ContentPartTypeText:
+				if !providerOptionsEmpty(part.ProviderOptions) {
+					return nil, unsupportedMappingFailure(capabilityProviderOptions)
+				}
+				output.Content = append(output.Content, provider.ToolResultContentValue{Type: provider.ToolContentText, Text: part.Text})
+			case provider.ContentPartTypeFile:
+				options, failure := mapScopedProviderOptions(part.ProviderOptions)
+				if failure != nil {
+					return nil, failure
+				}
+				data, failure := mapWireFileData(part.Data)
+				if failure != nil {
+					return nil, failure
+				}
+				output.Content = append(output.Content, provider.ToolResultContentValue{
+					Type: provider.ToolContentFile, Data: &data, MediaType: part.MediaType,
+					Filename: part.Filename, ProviderOptions: options,
+				})
+			default:
 				return nil, unsupportedMappingFailure(capabilityTools)
 			}
-			if !providerOptionsEmpty(part.ProviderOptions) {
-				return nil, unsupportedMappingFailure(capabilityProviderOptions)
-			}
-			output.Content = append(output.Content, provider.ToolResultContentValue{Type: provider.ToolContentText, Text: part.Text})
 		}
 	default:
 		return nil, unsupportedMappingFailure(capabilityTools)

@@ -10,7 +10,6 @@ import (
 type unsupportedCapability string
 
 const (
-	capabilityFiles            unsupportedCapability = "files"
 	capabilityReasoningContent unsupportedCapability = "reasoning-content"
 	capabilityCustomContent    unsupportedCapability = "custom-content"
 	capabilityTools            unsupportedCapability = "tools"
@@ -49,6 +48,9 @@ type wireMessage struct {
 type wirePart struct {
 	Type             provider.ContentPartType   `json:"type"`
 	Text             string                     `json:"text"`
+	Data             json.RawMessage            `json:"data"`
+	MediaType        string                     `json:"mediaType"`
+	Filename         *string                    `json:"filename"`
 	ProviderOptions  map[string]json.RawMessage `json:"providerOptions"`
 	ToolCallID       string                     `json:"toolCallId"`
 	ToolName         string                     `json:"toolName"`
@@ -137,8 +139,9 @@ func mapWireRequest(body []byte, modes ...executionMode) (provider.CallOptions, 
 }
 
 func mapWireMessage(message wireMessage, toolsEnabled bool) (provider.Message, *requestFailure) {
-	if !providerOptionsEmpty(message.ProviderOptions) {
-		return provider.Message{}, unsupportedMappingFailure(capabilityProviderOptions)
+	messageOptions, failure := mapScopedProviderOptions(message.ProviderOptions)
+	if failure != nil {
+		return provider.Message{}, failure
 	}
 
 	switch message.Role {
@@ -147,7 +150,9 @@ func mapWireMessage(message wireMessage, toolsEnabled bool) (provider.Message, *
 		if err := json.Unmarshal(message.Content, &text); err != nil {
 			return provider.Message{}, invalidMappingFailure()
 		}
-		return provider.NewSystemMessage(text), nil
+		mapped := provider.NewSystemMessage(text)
+		mapped.ProviderOptions = messageOptions
+		return mapped, nil
 	case provider.RoleUser, provider.RoleAssistant, provider.RoleTool:
 		var wireParts []wirePart
 		if err := json.Unmarshal(message.Content, &wireParts); err != nil {
@@ -161,28 +166,34 @@ func mapWireMessage(message wireMessage, toolsEnabled bool) (provider.Message, *
 			}
 			parts = append(parts, part)
 		}
-		if message.Role == provider.RoleUser {
-			return provider.NewUserMessage(parts...), nil
-		}
-		if message.Role == provider.RoleTool {
-			return provider.NewToolMessage(parts...), nil
-		}
-		return provider.NewAssistantMessage(parts...), nil
+		return provider.Message{Role: message.Role, Content: parts, ProviderOptions: messageOptions}, nil
 	default:
 		return provider.Message{}, invalidMappingFailure()
 	}
 }
 
 func mapWirePart(part wirePart, role provider.Role, toolsEnabled bool) (provider.ContentPart, *requestFailure) {
+	if part.Type == provider.ContentPartTypeFile {
+		options, failure := mapScopedProviderOptions(part.ProviderOptions)
+		if failure != nil {
+			return provider.ContentPart{}, failure
+		}
+		data, failure := mapWireFileData(part.Data)
+		if failure != nil {
+			return provider.ContentPart{}, failure
+		}
+		file := provider.FilePart(part.MediaType, data)
+		file.Filename = part.Filename
+		file.ProviderOptions = options
+		return file, nil
+	}
 	if !providerOptionsEmpty(part.ProviderOptions) {
 		return provider.ContentPart{}, unsupportedMappingFailure(capabilityProviderOptions)
 	}
 	switch part.Type {
 	case provider.ContentPartTypeText:
 		return provider.TextPart(part.Text), nil
-	case provider.ContentPartTypeFile, provider.ContentPartTypeReasoningFile:
-		return provider.ContentPart{}, unsupportedMappingFailure(capabilityFiles)
-	case provider.ContentPartTypeReasoning:
+	case provider.ContentPartTypeReasoningFile, provider.ContentPartTypeReasoning:
 		return provider.ContentPart{}, unsupportedMappingFailure(capabilityReasoningContent)
 	case provider.ContentPartTypeCustom:
 		return provider.ContentPart{}, unsupportedMappingFailure(capabilityCustomContent)
