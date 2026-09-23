@@ -33,17 +33,13 @@ choice and history before any physical invocation.
 
 ## Authenticate the client
 
-Choose the constructor based on your endpoint. For the public Cloud route,
-`NewWithCloudCredentials` sends a stack ID and CAP token directly to the
-authenticating proxy. An explicitly JWT-verifying endpoint instead accepts
-`NewWithTokenExchange` (CAP exchanged via authlib) or `NewWithAccessToken`
-(caller-managed JWT). The JWT constructors send `X-Access-Token`; they do not
-authenticate the public Cloud route. `NewWithTokenExchange` replaces the old
-`NewWithCloudAuth` name without changing its behavior.
+Choose the constructor for your Gateway URL. Use `NewWithCloudCredentials`
+with your stack ID and CAP token for the public Grafana Cloud URL. If your
+deployment provides a separate JWT-enabled Gateway URL, use
+`NewWithTokenExchange` or `NewWithAccessToken` instead.
 
 See [Authenticate to Grafana AI Gateway](../guides/gateway-authentication.md)
-for Go and Vercel examples, required policy scopes, endpoint selection,
-acting-user restrictions, migration and troubleshooting. All constructors
+for Go and Vercel examples, policy scopes, and URL selection. All constructors
 reject redirects and do not discover credentials or endpoints from the
 environment.
 

@@ -73,19 +73,15 @@ keep active streams from being canceled at that point.
 
 ## Client compatibility
 
-The registered client baseline is `@ai-sdk/gateway@4.0.87` and `ai@7.0.107`.
-See the [baseline manifest](../../test/conformance/upstream.yaml) and
-[coverage map](../../test/conformance/PARITY.md).
-
 Configure clients with the endpoint and credentials required by the authenticating
 proxy, as described in the [shared authentication guide](../../docs/guides/gateway-authentication.md).
 Clients must not bypass the proxy and send those credentials directly to
 the application's `cloud-gateway` listener. Keep provider credentials in server-side
 configuration; never place them in browser code or logs.
 
-With the registered client versions above, the supported calls are
-`getAvailableModels`, `doGenerate`, and `doStream`. Calls to `doGenerate` and
-`doStream` must set `maxOutputTokens` explicitly.
+Supported client calls include `getAvailableModels`, `doGenerate`, and
+`doStream`. Calls to `doGenerate` and `doStream` must set
+`maxOutputTokens` explicitly.
 
 `generateText` and `streamText` both set `toolChoice` to `auto`. The unary mapper
 accepts that choice, while streaming and fallback routes reject it. `generateText`

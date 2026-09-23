@@ -141,33 +141,32 @@ Automated tests SHALL compare the Go Cloud-credential flow with the exact regist
 - **THEN** local edge-shim evidence SHALL be distinguished from live CAP validation, policy revocation/expiry and deployment network-isolation evidence
 
 ### Requirement: Shared Go and Vercel authentication guidance
-User-facing authentication guidance SHALL explain how Go and server-side Vercel clients authenticate to Grafana AI Gateway, using one shared guide under `docs/` linked from the documentation index and existing client/server entry points. The guide SHALL distinguish application-user login, gateway credentials and server-owned model-provider credentials. It SHALL describe credential/endpoint compatibility, CAP scopes and realms, stack identity, secure storage and transport, rotation, troubleshooting, and migration from the old exchange API. Exhaustive Go API reference SHALL remain in godoc.
+User-facing guidance SHALL explain how Go and server-side Vercel clients authenticate to Grafana AI Gateway, using one shared guide under `docs/` linked from the documentation index and existing client/server entry points. The guide SHALL distinguish application-user login, Gateway credentials and server-owned model-provider credentials. It SHALL cover URL and credential selection, least-privilege CAP scopes and stack access, HTTPS, secure storage and rotation without exposing internal proxy names, backend listener configuration or test-harness details. Exhaustive Go API reference SHALL remain in godoc.
 
 #### Scenario: User chooses a Cloud client
 - **WHEN** a Go or Vercel user follows the public Cloud setup
-- **THEN** the guide SHALL show the public API-prefix URL and direct stack/CAP configuration for that client, with no token-exchange prerequisite
+- **THEN** the guide SHALL show the public Gateway URL and direct stack/CAP configuration for that client, with no token-exchange prerequisite
 - **AND** examples SHALL stay server-side and use placeholder credentials and tested request options
 
-#### Scenario: User chooses an internal JWT client
-- **WHEN** a user reads about pre-minted JWTs or token exchange
-- **THEN** the guide SHALL identify the required access-token-enabled endpoint and distinguish `X-Access-Token` from Cloud Authorization
-- **AND** it SHALL explain that Vercel `apiKey` does not exchange CAP tokens or automatically send Grafana access-token headers
-- **AND** it SHALL show the Go constructor/type rename and token refresh ownership
+#### Scenario: User chooses a separately provided JWT-enabled URL
+- **WHEN** a Go user has a JWT-enabled Gateway URL and either token-exchange credentials or a short-lived access token
+- **THEN** the guide SHALL identify the separate URL, appropriate Go constructor and caller-owned refresh when supplying an access token
+- **AND** it SHALL not suggest using a JWT for the public Cloud URL or a built-in Grafana JWT configuration for the Vercel client
 
 #### Scenario: User provisions least privilege
 - **WHEN** a user follows credential provisioning guidance
-- **THEN** it SHALL explain `ai-gateway:read` for discovery, `ai-gateway:write` for inference, and a realm authorizing the target stack
-- **AND** it SHALL distinguish stack IDs from organization IDs and prohibit examples that distribute system CAP credentials to browsers or customer-controlled workers
+- **THEN** it SHALL explain `ai-gateway:read` for discovery, `ai-gateway:write` for inference, and limiting policy access to the needed stacks
+- **AND** it SHALL keep CAP credentials on trusted servers rather than in browsers or untrusted workers
 
-#### Scenario: User encounters authentication failure
-- **WHEN** a request fails
-- **THEN** the guide SHALL help distinguish endpoint/header mismatch, local configuration errors, invalid credentials, insufficient scope/realm access and protocol capability rejection without suggesting auth bypass or fallback
+#### Scenario: Guide remains external-facing
+- **WHEN** authentication guidance is updated
+- **THEN** the shared guide SHALL focus on URL choice and client configuration, without private proxy names, internal credential-forwarding headers, migration notes, troubleshooting steps or local test-evidence caveats
+- **AND** server trust-boundary and conformance evidence SHALL remain in their separate operator and parity documents
 
 #### Scenario: Documentation examples are verified
 - **WHEN** the guide's Go and Vercel examples are accepted
 - **THEN** their configurations and demonstrated operations SHALL be compiled or typechecked and exercised by deterministic tests using the registered package versions
 - **AND** documentation links/navigation SHALL pass the repository docs checks
-- **AND** the guide SHALL explicitly leave acting-user Cloud delegation, k6 session migration and live deployment verification outside the delivered feature
 
 ### Requirement: Explicit request projection and presence
 The client SHALL explicitly map the complete current `provider.CallOptions` shape into the registered LanguageModelV4 Gateway request projection without importing server DTOs or calling server validators. It SHALL preserve every representable absent, explicit zero, explicit false, empty string, empty array, empty object, nested null, selected empty union arm, URL string, and supported binary-to-base64 distinction. It SHALL omit the Go zero value `ReasoningProviderDefault` and encode every non-zero registered reasoning value. It SHALL reject invalid UTF-8, non-finite numeric values, invalid raw JSON, unknown discriminators, conflicting selected arms, and any other value without an unambiguous registered representation before authentication or network I/O.

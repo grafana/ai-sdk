@@ -1,39 +1,30 @@
 # Authenticate to Grafana AI Gateway
 
-Choose credentials for the **endpoint you call**, not for the SDK you use.
-Application login authenticates a person to your app; Gateway authentication
-allows your backend to use a model; provider API keys are configured on the
-Gateway server. Keep Gateway CAPs and model-provider API keys out of browser code; app login has its own browser-facing session flow.
+Choose credentials for the **URL you call**, not for the SDK you use.
+Application login identifies a person to your app. Gateway credentials let
+that app call a model; model-provider API keys stay on the Gateway server.
+Keep Gateway credentials and provider API keys out of browser code.
 
-## Choose the endpoint and credential
+## Choose the URL and credential
 
-| Endpoint | Go client | Server-side Vercel client | Header received at the endpoint |
+| Gateway URL | Go client | Server-side Vercel client | What you need |
 | --- | --- | --- | --- |
-| Public Cloud URL through cortex-gw | `NewWithCloudCredentials` | `createGateway({ apiKey })` | `Authorization: Bearer <stack-id>:<CAP-token>` |
-| Explicitly configured `access-token` Gateway endpoint | `NewWithTokenExchange` or `NewWithAccessToken` | No built-in Grafana JWT flow | `X-Access-Token: <signed-JWT>` |
+| Public Grafana Cloud URL | `NewWithCloudCredentials` | `createGateway({ apiKey })` | Stack ID and Cloud Access Policy (CAP) token |
+| Separately provided JWT-enabled URL | `NewWithTokenExchange` or `NewWithAccessToken` | No built-in Grafana JWT configuration | Short-lived access token or credentials to obtain one |
 
-The public URL is authenticated by cortex-gw. It checks the Cloud Access Policy
-(CAP) and stack access, strips credentials, and replaces `X-Scope-OrgID` before
-forwarding to the backend's `cloud-gateway` listener. **Do not call that listener
-directly:** it trusts the proxy's assertion, not the client. Its operational
-listener is separate and unauthenticated; see the [server trust
-contract](../../ai-gateway/docs/cloud-authentication.md).
-
-An access-token JWT can be used only with an endpoint deliberately configured
-to verify it. The deployed Cloud route does not accept the JWT from Go token
-exchange. The two flows do not fall back to each other.
+Use the public Grafana Cloud URL provided for your stack. It requires a CAP
+with access to that stack. If your deployment provides a separate JWT-enabled
+Gateway URL, use that URL for JWT-based Go clients; a JWT is not a credential
+for the public Cloud URL.
 
 ## Use a Cloud policy from Go
 
-Provision a CAP for the target stack with `ai-gateway:read` to discover models
-and `ai-gateway:write` to invoke them. Use an explicit stack realm when the
-caller serves one stack. The decimal **stack ID** is not a Cloud organization
-ID or a namespace such as `stacks-27038`. A multi-stack/system policy has a
-much wider blast radius: review it separately rather than accepting the
-provisioning helper's system-realm default.
+Provision a CAP for your stack with `ai-gateway:read` to discover models and
+`ai-gateway:write` to invoke them. Limit the policy to the stacks your app
+needs; avoid granting access to all stacks by default.
 
-On a trusted Go server, use the [Grafana provider](../providers/grafana-gateway.md)
-with the public URL's `/api/v1/aisdk` API prefix:
+On your Go server, use the [Grafana provider](../providers/grafana-gateway.md)
+with the public Gateway URL ending in `/api/v1/aisdk`:
 
 ```go
 client, err := grafana.NewWithCloudCredentials(grafana.CloudCredentialsConfig{
@@ -64,15 +55,13 @@ if err != nil {
 _ = result
 ```
 
-`ListModels`, `DoGenerate`, and `DoStream` use the same Cloud Authorization
-header. This constructor never exchanges tokens or sends `X-Access-Token`.
-Do not attach `WithUserIDToken` to Cloud calls: this route conveys stack
-identity, not an acting user. The client rejects conflicting identity headers.
+This setup authenticates your server for a stack, not an individual app user.
+Keep user login separate from your Gateway credentials.
 
 ## Use a Cloud policy from a Vercel server
 
-The registered `@ai-sdk/gateway` client sends `apiKey` unchanged as a bearer
-credential. On your application server (not in a browser):
+On your application server (not in a browser), configure the Vercel Gateway
+client with your stack ID and CAP token:
 
 ```ts
 import { createGateway } from '@ai-sdk/gateway';
@@ -95,16 +84,11 @@ unsupported options or high-level helpers can still fail. Check the
 [server's client limitations](../../ai-gateway/docs/cloud-authentication.md#client-compatibility)
 before treating authentication success as full API compatibility.
 
-Vercel's `apiKey` performs **no Grafana token exchange**. Supplying a signed JWT
-as `apiKey` does not make it a Go-style `X-Access-Token` request. Do not set
-`AI_GATEWAY_API_KEY` in a browser or use Vercel's ambient OIDC default as a
-substitute for this Grafana credential.
+## JWT-enabled Gateway URLs (Go)
 
-## Internal JWT authentication (Go)
-
-For an explicitly JWT-verifying endpoint, an internal service can exchange an
-allowed CAP token for a short-lived access token, scoped to namespace
-`stacks-<stack-id>` and audience `ai-sdk` (the default):
+If your deployment provides a JWT-enabled Gateway URL and token-exchange
+service, ask its operator for the Gateway URL, token-exchange URL and namespace.
+The Go client can then obtain a short-lived access token:
 
 ```go
 client, err := grafana.NewWithTokenExchange(grafana.TokenExchangeConfig{
@@ -115,42 +99,17 @@ client, err := grafana.NewWithTokenExchange(grafana.TokenExchangeConfig{
 })
 ```
 
-Authlib caches exchanged tokens. The caller must keep the CAP secure and ensure
-it has `access-token:sign` and the allowed audience. Alternatively,
-`NewWithAccessToken` forwards a caller-managed JWT, which the caller must
-refresh before expiry. Both JWT constructors send `X-Access-Token`; for
-verified acting-user identity, they can additionally use
-`grafana.WithUserIDToken(ctx, userIDToken)`.
+For token exchange, your policy must allow `access-token:sign` for the target
+namespace and audience. If you already have a short-lived JWT, use
+`NewWithAccessToken` and refresh it before expiry. JWT-enabled setups can
+attach an acting-user token with `grafana.WithUserIDToken(ctx, userIDToken)`.
 
-**Go migration:** `NewWithCloudAuth` / `CloudAuthConfig` were renamed to
-`NewWithTokenExchange` / `TokenExchangeConfig`; the old names were removed.
-This is a name change, not a switch to direct CAP authentication. Migrate to
-`NewWithCloudCredentials` only when changing the endpoint and policy for the
-Cloud route. Vercel has no built-in equivalent of the Go exchange constructor.
+## Keep credentials secure
 
-## Keep credentials and failures bounded
-
-Use HTTPS for the public endpoint, store CAPs in a server-side secret manager,
-provision the minimum scopes/realms, rotate or expire them, and avoid logging
-request headers or token-bearing errors. Do not give a system CAP to browsers or
-to customer-controlled workers. Delegated k6 sessions need a separate
-short-lived credential design; this client feature does not migrate them.
-
-If a call fails:
-
-1. Check the URL prefix and which endpoint handles it. A Cloud CAP sent as
-   `X-Access-Token`, or an internal JWT sent in Cloud `Authorization`, cannot
-   authenticate through the wrong edge.
-2. Distinguish local configuration validation from a response from cortex-gw.
-   Verify the credential is current, then its policy's **read/write scope** and
-   **realm for the selected stack**. A valid credential alone is insufficient.
-3. If authentication succeeded but a model call fails, check catalog model IDs,
-   supported options and server capability. Do not bypass the proxy or retry
-   against the trusted listener.
-
-Local edge-shim tests verify client header/strip behavior, **not** real CAP
-validation, revocation, policy provisioning, or deployed network isolation.
-Deployment owners must validate those properties before declaring hosted support.
+Use HTTPS, store CAPs in a server-side secret manager, grant only the scopes
+and stacks your app needs, and rotate tokens regularly. Avoid logging request
+headers or errors that may contain credentials. Never include a CAP in browser
+code or distribute it to untrusted workers.
 
 ---
 
