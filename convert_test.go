@@ -212,6 +212,19 @@ func TestConvertToModelMessages_User(t *testing.T) {
 			},
 		},
 		{
+			name:  "empty data URL preserves selected file data",
+			parts: []Part{FilePart{MediaType: "image/png", URL: "data:image/png;base64,"}},
+			check: func(t *testing.T, um provider.Message) {
+				cp := um.Content[0]
+				require.NotNil(t, cp.Data)
+				assert.True(t, cp.Data.IsData())
+				require.NoError(t, provider.ValidateFileInputs([]provider.Message{um}))
+				encoded, err := json.Marshal(cp.Data)
+				require.NoError(t, err)
+				assert.JSONEq(t, `{"type":"data","data":""}`, string(encoded))
+			},
+		},
+		{
 			name:  "file part carries providerMetadata",
 			parts: []Part{FilePart{MediaType: "image/png", URL: "https://example.com/img.png", ProviderMetadata: cacheMeta}},
 			check: func(t *testing.T, um provider.Message) {

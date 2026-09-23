@@ -545,7 +545,7 @@ func convertFileContent(part provider.ContentPart) (chatContentPart, error) {
 	switch topLevel {
 	case "image":
 		resolvedMediaType := mediaType(part.MediaType)
-		if part.Data.URL == "" {
+		if !part.Data.IsURL() {
 			var err error
 			resolvedMediaType, err = resolveFullMediaType(part)
 			if err != nil {
@@ -558,7 +558,7 @@ func convertFileContent(part provider.ContentPart) (chatContentPart, error) {
 		}
 		return chatContentPart{Type: "image_url", ImageURL: &imageURLPart{URL: url}}, nil
 	case "audio":
-		if part.Data.URL != "" {
+		if part.Data.IsURL() {
 			return chatContentPart{}, fmt.Errorf("openai: audio file URL parts are not supported")
 		}
 		resolvedMediaType, err := resolveFullMediaType(part)
@@ -575,7 +575,7 @@ func convertFileContent(part provider.ContentPart) (chatContentPart, error) {
 		}
 		return chatContentPart{Type: "input_audio", InputAudio: &inputAudioPart{Data: data, Format: format}}, nil
 	case "application":
-		if part.Data.URL != "" {
+		if part.Data.IsURL() {
 			return chatContentPart{}, fmt.Errorf("openai: PDF file URL parts are not supported")
 		}
 		resolvedMediaType, err := resolveFullMediaType(part)
@@ -657,7 +657,7 @@ func resolveFullMediaType(part provider.ContentPart) (string, error) {
 	if isFullMediaType(mt) {
 		return mt, nil
 	}
-	if part.Data == nil || part.Data.URL != "" {
+	if part.Data == nil || part.Data.IsURL() {
 		return "", fmt.Errorf("openai: file of media type %q must specify subtype since it is not passed as inline bytes", part.MediaType)
 	}
 	if detected := detectMediaType(part.Data, topLevelMediaType(part.MediaType)); detected != "" {
@@ -687,7 +687,7 @@ func audioFormat(value string) string {
 }
 
 func dataURL(mediaType string, data *provider.DataContent) (string, error) {
-	if data.URL != "" {
+	if data.IsURL() {
 		return data.URL, nil
 	}
 	encoded, err := base64Data(data)
@@ -710,7 +710,7 @@ func base64Data(data *provider.DataContent) (string, error) {
 
 func textFileContent(data *provider.DataContent) (string, error) {
 	switch {
-	case data.URL != "":
+	case data.IsURL():
 		return data.URL, nil
 	case data.Bytes != nil:
 		return string(data.Bytes), nil

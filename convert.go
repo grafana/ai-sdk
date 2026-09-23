@@ -275,7 +275,7 @@ func filePartData(url string, mediaType string, reference map[string]string) (pr
 			if mediaType == "" || mediaType == "image/*" {
 				mediaType = url[len(prefix):base64Index]
 			}
-			return provider.DataContent{Base64: url[base64Index+len(base64Marker):]}, mediaType, nil
+			return provider.Base64DataContent(url[base64Index+len(base64Marker):]), mediaType, nil
 		}
 	}
 
