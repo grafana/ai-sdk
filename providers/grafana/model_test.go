@@ -55,7 +55,7 @@ func TestDecodeGenerate_ProviderToolResults(t *testing.T) {
 		{name: "preliminary", result: `[]`, preliminary: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			body := `{"content":[{"type":"tool-call","toolCallId":"call","toolName":"echo","input":"{}","providerExecuted":true,"dynamic":true,"providerMetadata":{"anthropic":{"type":"mcp-tool-use","serverName":"echo","private":"discard"}}},{"type":"tool-result","toolCallId":"call","toolName":"echo","result":` + tc.result + `,"isError":` + strconv.FormatBool(tc.isError) + `,"preliminary":` + strconv.FormatBool(tc.preliminary) + `,"providerMetadata":{"anthropic":{"type":"mcp-tool-use","serverName":"echo","private":"discard"}}}],"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}}}`
+			body := `{"content":[{"type":"tool-call","toolCallId":"call","toolName":"echo","input":"{}","providerExecuted":true,"dynamic":true,"providerMetadata":{"anthropic":{"type":"mcp-tool-use","serverName":"echo","caller":{"type":"direct"},"private":"discard"}}},{"type":"tool-result","toolCallId":"call","toolName":"echo","result":` + tc.result + `,"isError":` + strconv.FormatBool(tc.isError) + `,"preliminary":` + strconv.FormatBool(tc.preliminary) + `,"providerMetadata":{"anthropic":{"type":"mcp-tool-use","serverName":"echo","private":"discard"}}}],"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}}}`
 			decoded, err := decodeGenerate([]byte(body))
 			require.NoError(t, err)
 			require.Len(t, decoded.Content, 2)

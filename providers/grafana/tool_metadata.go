@@ -45,12 +45,14 @@ func decodeToolMetadata(raw json.RawMessage) (provider.ProviderMetadata, error) 
 		}
 		selected := make(map[string]any)
 		if name == "anthropic" {
+			mcpToolUse := false
 			if rawType, ok := fields["type"]; ok {
 				var kind string
 				if json.Unmarshal(rawType, &kind) != nil {
 					return nil, errToolMetadata
 				}
 				if kind == "mcp-tool-use" {
+					mcpToolUse = true
 					serverName, err := metadataString(fields, "serverName")
 					if err != nil || serverName == "" {
 						return nil, errToolMetadata
@@ -59,7 +61,7 @@ func decodeToolMetadata(raw json.RawMessage) (provider.ProviderMetadata, error) 
 					selected["serverName"] = serverName
 				}
 			}
-			if caller, ok := fields["caller"]; ok {
+			if caller, ok := fields["caller"]; ok && !mcpToolUse {
 				mapped, err := decodeToolCaller(caller, "toolId", "code_execution_20250825", "code_execution_20260120")
 				if err != nil {
 					return nil, err
