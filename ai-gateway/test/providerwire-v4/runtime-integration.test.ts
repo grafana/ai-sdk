@@ -11,7 +11,7 @@ import {
   GatewayInvalidRequestError,
   GatewayModelNotFoundError,
 } from "@ai-sdk/gateway";
-import type { LanguageModelV4StreamPart } from "@ai-sdk/provider";
+import type { LanguageModelV4CallOptions, LanguageModelV4StreamPart } from "@ai-sdk/provider";
 import { buildGoClientCapture, captureGoClient } from "./go-client-capture";
 import { jsonSchema, stepCountIs, streamText, tool } from "ai";
 
@@ -164,25 +164,17 @@ describe("unary function tools through the authenticated real handler", () => {
     assert.equal(executions, 2);
   });
 
-  it("rejects enabled execution markers before either client can execute", async () => {
+  it("preserves enabled execution and dynamic markers in both clients", async () => {
     for (const modelID of ["unary-tools-provider-executed", "unary-tools-dynamic"]) {
-      let executions = 0;
       const gateway = createGateway({ apiKey: "test", baseURL: `${baseURL}/function-tools`, headers: { "x-access-token": "function-test-token" } });
-      await assert.rejects(async () => {
-        const result = await gateway(modelID).doGenerate({ prompt, tools });
-        for (const part of result.content) if (part.type === "tool-call") executions++;
-      }, (error: any) => {
-        assert.equal(error.statusCode, 500);
-        assert.equal(error.type, "internal_server_error");
-        assert.equal(error.message, "internal error");
-        assert.equal(error.isRetryable, true);
-        return true;
-      });
+      const ts = await gateway(modelID).doGenerate({ prompt, tools });
       const go = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/function-tools`, accessToken: "function-test-token", modelID, mode: "generate", options: { prompt, tools } });
-      assert.ok(go.error);
-      assert.deepEqual({ status: go.error.statusCode, category: go.error.category, code: go.error.code, retryable: go.error.isRetryable }, { status: 500, category: "internal_server_error", code: "internal_error", retryable: true });
-      assert.equal(go.result, undefined);
-      assert.equal(executions, 0);
+      assert.equal(go.error, undefined);
+      const call = ts.content.find(part => part.type === "tool-call");
+      assert.ok(call && call.type === "tool-call");
+      assert.deepEqual(go.result.content.map((part: any) => part.type === "text" ? { ...part, text: part.text ?? "" } : part), ts.content);
+      assert.equal(call.providerExecuted === true, modelID === "unary-tools-provider-executed");
+      assert.equal(call.dynamic === true, modelID === "unary-tools-dynamic");
     }
   });
 });
@@ -265,6 +257,55 @@ describe("streaming function tools through the authenticated real handler", () =
     assert.equal(go.error, undefined);
     assert.deepEqual(go, { text: "It is sunny.", steps: 2, executions: 1 });
   });
+});
+
+describe("provider-executed tools through the real handler", () => {
+  for (const streaming of [false, true]) for (const isError of [false, true]) {
+    it(`${streaming ? "stream" : "unary"} deferred ${isError ? "error" : "success"} completes with both clients`, async () => {
+      const modelID = isError ? "hosted-deferred-error" : "hosted-deferred";
+      const client = createGateway({ apiKey: "test", baseURL: `${baseURL}/providerwire-v4` })(modelID);
+      const settings = { tools: [{ type: "provider" as const, id: "anthropic.code_execution_20260120" as const, name: "code", args: {} }], providerOptions: { anthropic: { mcpServers: [{ type: "url", name: "echo", url: "https://mcp.example.test", authorizationToken: "dummy" }] } } };
+      const firstPrompt = [{ role: "user" as const, content: [{ type: "text" as const, text: "hello" }] }];
+      const before = await stats();
+      for (const transport of ["vercel", "go"] as const) {
+        const request = async (history: LanguageModelV4CallOptions["prompt"]) => {
+          const options = { ...settings, prompt: history };
+          if (transport === "vercel") {
+            if (streaming) return await collect((await client.doStream(options)).stream);
+            return (await client.doGenerate(options)).content;
+          }
+          const result = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/providerwire-v4`, accessToken: "token", modelID, mode: streaming ? "stream" : "generate", options });
+          assert.equal(result.error, undefined);
+          return streaming ? result.parts : result.result.content;
+        };
+        const first = await request(firstPrompt);
+        const call = first.find((part: any) => part.type === "tool-call");
+        assert.ok(call);
+        assert.equal(call.providerExecuted, true);
+        assert.equal(call.dynamic, true);
+        assert.deepEqual(call.providerMetadata, { anthropic: { type: "mcp-tool-use", serverName: "echo" } });
+        assert.equal(first.filter((part: any) => part.type === "tool-result").length, 0);
+        const historyCall = { type: "tool-call" as const, toolCallId: call.toolCallId, toolName: call.toolName, input: JSON.parse(call.input), providerExecuted: true, providerOptions: call.providerMetadata };
+        const second = await request([...firstPrompt, { role: "assistant", content: [historyCall] }]);
+        const result = second.find((part: any) => part.type === "tool-result");
+        assert.ok(result);
+        assert.equal(result.isError ?? false, isError);
+        assert.deepEqual(result.result, { result: "done" });
+        assert.deepEqual(result.providerMetadata, { anthropic: { type: "mcp-tool-use", serverName: "echo" } });
+        assert.equal(second.filter((part: any) => part.type === "tool-call").length, 0);
+        const historyResult = { type: "tool-result" as const, toolCallId: result.toolCallId, toolName: result.toolName, output: { type: (isError ? "error-json" : "json") as "error-json" | "json", value: result.result }, providerOptions: result.providerMetadata };
+        const final = await request([...firstPrompt, { role: "assistant", content: [historyCall, historyResult] }]);
+        assert.equal(final.filter((part: any) => part.type === "text" || part.type === "text-delta").map((part: any) => part.text ?? part.delta).join(""), "finished");
+        for (const parts of [first, second, final]) {
+          assert.ok(!JSON.stringify(parts).includes("private-token"));
+          assert.ok(!JSON.stringify(parts).includes("hidden"));
+        }
+      }
+      const after = await stats();
+      assert.equal(after.successCalls - before.successCalls, 6);
+      assert.equal(after.streamCalls - before.streamCalls, streaming ? 6 : 0);
+    });
+  }
 });
 
 describe("real ProviderWire V4 streaming runtime", () => {

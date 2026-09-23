@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://grafana.com/ai-sdk/providerwire/v4/unary-success.schema.json",
-  "title": "ProviderWire V4 unary text and function-call response",
+  "title": "ProviderWire V4 unary text and tool response",
   "type": "object",
   "required": ["content", "finishReason", "usage"],
   "properties": {
@@ -25,7 +25,25 @@
               "type": { "const": "tool-call" },
               "toolCallId": { "type": "string", "minLength": 1 },
               "toolName": { "type": "string", "minLength": 1 },
-              "input": { "type": "string" }
+              "input": { "type": "string" },
+              "providerExecuted": { "type": "boolean" },
+              "dynamic": { "type": "boolean" },
+              "providerMetadata": { "$ref": "#/$defs/toolMetadata" }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": ["type", "toolCallId", "toolName", "result"],
+            "properties": {
+              "type": { "const": "tool-result" },
+              "toolCallId": { "type": "string", "minLength": 1 },
+              "toolName": { "type": "string", "minLength": 1 },
+              "result": { "not": { "type": "null" } },
+              "isError": { "type": "boolean" },
+              "dynamic": { "type": "boolean" },
+              "preliminary": { "type": "boolean" },
+              "providerMetadata": { "$ref": "#/$defs/toolMetadata" }
             },
             "additionalProperties": false
           }
@@ -55,6 +73,51 @@
   },
   "additionalProperties": false,
   "$defs": {
+    "toolMetadata": {
+      "type": "object",
+      "properties": {
+        "anthropic": {
+          "type": "object",
+          "properties": {
+            "type": { "const": "mcp-tool-use" },
+            "serverName": { "type": "string", "minLength": 1 },
+            "caller": { "$ref": "#/$defs/anthropicCaller" }
+          },
+          "dependentRequired": { "type": ["serverName"], "serverName": ["type"] },
+          "additionalProperties": false
+        },
+        "openai": { "$ref": "#/$defs/openaiToolMetadata" },
+        "azure": { "$ref": "#/$defs/openaiToolMetadata" }
+      },
+      "additionalProperties": false
+    },
+    "anthropicCaller": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "enum": ["direct", "code_execution_20250825", "code_execution_20260120"] },
+        "toolId": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "openaiToolMetadata": {
+      "type": "object",
+      "properties": {
+        "itemId": { "type": "string" },
+        "namespace": { "type": "string" },
+        "caller": { "$ref": "#/$defs/openaiCaller" }
+      },
+      "additionalProperties": false
+    },
+    "openaiCaller": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "enum": ["direct", "program"] },
+        "callerId": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
     "tokenCount": {
       "type": "integer",
       "minimum": 0,

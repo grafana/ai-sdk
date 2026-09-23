@@ -196,7 +196,6 @@ func TestStreamingTools_InvalidTransitions(t *testing.T) {
 	call := provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "a", ToolName: "f", Input: "{}"}
 	end := provider.StreamPart{Type: provider.PartToolInputEnd, ID: "a"}
 	result := provider.StreamPart{Type: provider.PartToolResult, ToolCallID: "a", ToolName: "f", Result: json.RawMessage("{}")}
-	yes := true
 	for _, tc := range []struct {
 		name  string
 		parts []provider.StreamPart
@@ -219,9 +218,7 @@ func TestStreamingTools_InvalidTransitions(t *testing.T) {
 		{"empty input name", []provider.StreamPart{{Type: provider.PartToolInputStart, ID: "a"}}},
 		{"empty call id", []provider.StreamPart{{Type: provider.PartToolCall, ToolName: "f", Input: "{}"}}},
 		{"empty call name", []provider.StreamPart{{Type: provider.PartToolCall, ToolCallID: "a", Input: "{}"}}},
-		{"enabled execution", []provider.StreamPart{{Type: provider.PartToolCall, ToolCallID: "a", ToolName: "f", Input: "{}", ProviderExecuted: true}}},
-		{"enabled dynamic", []provider.StreamPart{{Type: provider.PartToolInputStart, ID: "a", ToolName: "f", Dynamic: &yes}}},
-		{"preliminary result", []provider.StreamPart{call, {Type: provider.PartToolResult, ToolCallID: "a", ToolName: "f", Result: json.RawMessage("{}"), Preliminary: &yes}}},
+		{"preliminary without final", []provider.StreamPart{call, {Type: provider.PartToolResult, ToolCallID: "a", ToolName: "f", Result: json.RawMessage("{}"), Preliminary: true}, finishPart()}},
 		{"null result", []provider.StreamPart{call, {Type: provider.PartToolResult, ToolCallID: "a", ToolName: "f", Result: json.RawMessage("null")}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -315,6 +312,7 @@ func TestStreamingTools_FrameBoundsAndNonterminalErrors(t *testing.T) {
 		{typeName: provider.PartToolInputDelta, id: "a", delta: ""},
 		{typeName: provider.PartToolCall, id: "a", toolName: "f", input: strings.Repeat("\x00", 32)},
 		{typeName: provider.PartToolResult, id: "a", toolName: "f", result: json.RawMessage(`{"text":"<>&"}`)},
+		{typeName: provider.PartToolResult, id: "a", toolName: "f", result: json.RawMessage(`false`), preliminary: true, providerMetadata: provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":"item-1"}`)}},
 	} {
 		frame, ok := encodeStreamFrame(event, 1<<20)
 		require.True(t, ok)

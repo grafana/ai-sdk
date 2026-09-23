@@ -119,6 +119,8 @@ finalizer returns.
   rollout, and environment smoke verification.
 - WP27 owns any later per-request Agent Observability control or richer content
   capture decision.
-- Tools, reasoning, files, images, raw output, hooks, and later event families
-  remain with their owning capability work; WP8 observes the current text
-  surface only and does not change ProviderWire schemas or events.
+- WP13 provider-defined tools extend the same metadata-only logical chain
+  without exporting tool names, IDs, arguments, results, MCP URLs/tokens or
+  provider metadata. Reasoning, files, images, raw output, hooks and other
+  later event families remain with their owning capability work; WP8 established
+  the text chain and does not itself change ProviderWire schemas or events.

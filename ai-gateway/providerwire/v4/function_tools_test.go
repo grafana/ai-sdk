@@ -58,11 +58,13 @@ func TestUnaryFunctionOutput(t *testing.T) {
 			if marker == "providerExecuted" {
 				copyResult.Content[1].ProviderExecuted = true
 			} else {
-				yes := true
-				copyResult.Content[1].Dynamic = &yes
+				copyResult.Content[1].Dynamic = true
 			}
-			_, err := mapUnarySuccess(&copyResult, 1<<20)
-			require.Error(t, err)
+			mapped, err := mapUnarySuccess(&copyResult, 1<<20)
+			require.NoError(t, err)
+			body, ok := encodeUnarySuccess(mapped, 1<<20)
+			require.True(t, ok)
+			assert.Contains(t, string(body), `"`+marker+`":true`)
 		})
 	}
 }
@@ -72,7 +74,6 @@ func TestRuntimeFunctionTools_Boundaries(t *testing.T) {
 		`{"prompt":[],"tools":[{"type":"function","name":"f","inputSchema":{},"args":{}}]}`,
 		`{"prompt":[],"tools":[{"type":"function","name":"f","inputSchema":{},"providerOptions":{"gateway":{}}}]}`,
 		`{"prompt":[],"tools":[{"type":"function","name":"f","inputSchema":{},"providerOptions":{"grafana":{"secret":"private"}}}]}`,
-		`{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"a","toolName":"f","input":{},"providerExecuted":true}]}]}`,
 		`{"prompt":[{"role":"user","content":[{"type":"tool-call","toolCallId":"a","toolName":"f","input":{}}]}]}`,
 		`{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"a","toolName":"f","output":{"type":"text"}}]}]}`,
 		`{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"a","toolName":"f","output":{"type":"text","value":"","providerOptions":{"anthropic":{"private":true}}}}]}]}`,
@@ -91,6 +92,7 @@ func TestRuntimeFunctionTools_Boundaries(t *testing.T) {
 		`{"prompt":[],"tools":[{"type":"function","name":"f","inputSchema":{}}]}`,
 		`{"prompt":[],"toolChoice":{"type":"none"}}`,
 		`{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"a","toolName":"f","input":{}}]}]}`,
+		`{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"a","toolName":"f","input":{},"providerExecuted":true}]}]}`,
 	} {
 		harness := newRuntimeHarness(t, testLimits())
 		request := validRequest(body)
@@ -117,27 +119,31 @@ func TestRuntimeFunctionTools_SelectedEmptyArms(t *testing.T) {
 	}
 }
 
-func TestRuntimeUnaryFunctionOutput_RejectsEnabledMarkersBeforeSuccess(t *testing.T) {
+func TestRuntimeUnaryFunctionOutput_SupportsExecutionMarkers(t *testing.T) {
 	for _, marker := range []string{"providerExecuted", "dynamic", "preliminary"} {
 		harness := newRuntimeHarness(t, testLimits())
 		harness.model.generate = func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
 			result := validGenerateResult()
 			part := provider.GenerateContentPart{Type: provider.ContentToolCall, ToolCallID: "private-call", ToolName: "private-tool", Input: json.RawMessage("{}")}
-			yes := true
 			switch marker {
 			case "providerExecuted":
 				part.ProviderExecuted = true
 			case "dynamic":
-				part.Dynamic = &yes
+				part.Dynamic = true
 			case "preliminary":
-				part.Preliminary = &yes
+				part.Preliminary = true
 			}
 			result.Content = append(result.Content, part)
 			return result, nil
 		}
 		response := harness.serve(validRequest(`{"prompt":[]}`))
-		assert.Equal(t, http.StatusInternalServerError, response.Code)
-		assert.Equal(t, string(canonicalInternalError), response.Body.String())
+		if marker == "preliminary" {
+			assert.Equal(t, http.StatusInternalServerError, response.Code)
+			assert.Equal(t, string(canonicalInternalError), response.Body.String())
+		} else {
+			assert.Equal(t, http.StatusOK, response.Code)
+			assert.Contains(t, response.Body.String(), `"`+marker+`":true`)
+		}
 	}
 }
 
@@ -198,26 +204,24 @@ func TestRuntimeUnaryFunctionOutput_InvalidIdentifiersAndUTF8(t *testing.T) {
 func TestRuntimeUnaryFunctionOutput_OpaqueArguments(t *testing.T) {
 	for _, input := range []string{"", `{`, `{"city":"Rio"}`, "\"\\\n☃<>&"} {
 		t.Run(input, func(t *testing.T) {
-			for _, disabled := range []*bool{nil, new(false)} {
-				harness := newRuntimeHarness(t, testLimits())
-				harness.model.generate = func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
-					result := validGenerateResult()
-					result.Content = []provider.GenerateContentPart{{Type: provider.ContentToolCall, ToolCallID: "call", ToolName: "weather", Input: json.RawMessage(input), Dynamic: disabled, ProviderMetadata: provider.ProviderMetadata{"private": json.RawMessage(`{"secret":"private-sentinel"}`)}}}
-					return result, nil
-				}
-				response := harness.serve(validRequest(`{"prompt":[]}`))
-				require.Equal(t, http.StatusOK, response.Code)
-				var decoded struct {
-					Content []struct {
-						Input string `json:"input"`
-					} `json:"content"`
-				}
-				require.NoError(t, json.Unmarshal(response.Body.Bytes(), &decoded))
-				require.Len(t, decoded.Content, 1)
-				assert.Equal(t, input, decoded.Content[0].Input)
-				assert.NotContains(t, response.Body.String(), "private-sentinel")
-				assert.NotContains(t, response.Body.String(), "dynamic")
+			harness := newRuntimeHarness(t, testLimits())
+			harness.model.generate = func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
+				result := validGenerateResult()
+				result.Content = []provider.GenerateContentPart{{Type: provider.ContentToolCall, ToolCallID: "call", ToolName: "weather", Input: json.RawMessage(input), ProviderMetadata: provider.ProviderMetadata{"private": json.RawMessage(`{"secret":"private-sentinel"}`)}}}
+				return result, nil
 			}
+			response := harness.serve(validRequest(`{"prompt":[]}`))
+			require.Equal(t, http.StatusOK, response.Code)
+			var decoded struct {
+				Content []struct {
+					Input string `json:"input"`
+				} `json:"content"`
+			}
+			require.NoError(t, json.Unmarshal(response.Body.Bytes(), &decoded))
+			require.Len(t, decoded.Content, 1)
+			assert.Equal(t, input, decoded.Content[0].Input)
+			assert.NotContains(t, response.Body.String(), "private-sentinel")
+			assert.NotContains(t, response.Body.String(), "dynamic")
 		})
 	}
 }

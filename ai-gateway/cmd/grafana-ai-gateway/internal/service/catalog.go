@@ -90,6 +90,10 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 			ordered.WithAttemptObserver(physicalAttemptObserver(descriptors, sink))
 			lower = fallbackTextModel{LanguageModel: ordered}
 		}
+		lower = mcpRouteModel{
+			LanguageModel: lower,
+			allowMCP:      len(descriptors) == 1 && providers[configured.Primary.Provider].Type == "anthropic",
+		}
 		model, err := factory(id, lower)
 		if err != nil {
 			return nil, fmt.Errorf("gateway service: composing model %q: %w", id, err)
