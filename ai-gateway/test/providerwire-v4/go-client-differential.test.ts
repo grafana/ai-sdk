@@ -7,7 +7,7 @@ import { after, before, describe, it } from "node:test";
 import { createGateway } from "@ai-sdk/gateway";
 import type { LanguageModelV4CallOptions } from "@ai-sdk/provider";
 import { buildGoClientCapture, captureGoClient } from "./go-client-capture";
-import { comprehensiveGoldenCase } from "./request-cases";
+import { comprehensiveGoldenCase, fileInputGoldenCase } from "./request-cases";
 import { assertValidRequest } from "./schema";
 
 let directory: string;
@@ -175,6 +175,31 @@ describe("Go and exact-pinned Gateway differential", () => {
       assertValidRequest(server.requests[0]!.body, "Go comprehensive golden projection");
       assert.deepEqual(server.requests[0]!.body, expected);
     } finally { await server.stop(); }
+  });
+
+  it("matches every focused registered-client file input in both call modes", async () => {
+    const pinned = await fileInputGoldenCase.capture();
+    assert.deepEqual(pinned.map((request) => request.streaming), [false, true]);
+    for (const request of pinned) {
+      const server = await endpoint(request.streaming
+        ? 'data: {"type":"stream-start","warnings":[]}\n\ndata: {"type":"finish","finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}}}\n\n'
+        : JSON.stringify(unary), 200, request.streaming ? "text/event-stream" : "application/json");
+      try {
+        const go = await captureGoClient(binary, {
+          baseURL: server.baseURL,
+          accessToken: "access-token",
+          modelID: "grafana/files",
+          mode: request.streaming ? "stream" : "generate",
+          options: request.body,
+        });
+        assert.equal(go.error, undefined);
+        assert.equal(server.requests.length, 1);
+        assertValidRequest(server.requests[0]!.body, "Go file input projection");
+        assert.deepEqual(server.requests[0]!.body, request.body);
+        assert.equal(server.requests[0]!.headers["ai-language-model-streaming"], String(request.streaming));
+        assert.equal(server.requests[0]!.headers["ai-language-model-id"], "grafana/files");
+      } finally { await server.stop(); }
+    }
   });
 
   const cases: Array<{ name: string; options: LanguageModelV4CallOptions }> = [
