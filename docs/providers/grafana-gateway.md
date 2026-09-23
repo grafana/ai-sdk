@@ -24,9 +24,20 @@ the next request. The Go and Vercel SDKs can manage this tool loop for you. See
 [Tools](../guides/tools.md) and [Agent loops](../guides/agent-loops.md) for setup.
 The Gateway does not retain conversation state between requests.
 
-Provider-executed tools, including provider-hosted MCP, are not yet available
-through the Gateway. Tool approvals, dynamic tools, preliminary or custom tool
-results, and generated media responses are also not yet supported.
+Provider-defined tools are selected by the model provider. A returned call with
+`providerExecuted: true` belongs to the provider; do not execute it in your
+application. Provider-defined tools can also return client-executed calls, so use
+the returned ownership marker rather than the definition to decide who runs them.
+
+Provider calls and correlated results work with unary and streaming requests.
+Preliminary results must be followed by a final result. Include unresolved
+provider calls in assistant history when continuing on a later request; the
+Gateway does not store them for you. Tool metadata is preserved as opaque
+provider data, including extension fields and explicit empty objects. Returning
+that data does not enable telemetry capture.
+
+Anthropic-hosted MCP requires separate Gateway support. Tool approvals, custom
+tool results and generated media responses are not yet supported.
 
 ## Configure provider-specific settings
 

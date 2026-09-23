@@ -236,33 +236,33 @@ func mapWirePart(part wirePart, role provider.Role, toolsEnabled bool) (provider
 	case provider.ContentPartTypeCustom:
 		return provider.ContentPart{}, unsupportedMappingFailure(capabilityCustomContent)
 	case provider.ContentPartTypeToolCall:
-		if !toolsEnabled || part.ProviderExecuted {
+		if !toolsEnabled {
 			return provider.ContentPart{}, unsupportedMappingFailure(capabilityTools)
 		}
 		if role != provider.RoleAssistant {
 			return provider.ContentPart{}, invalidMappingFailure()
 		}
-		partOptions, failure := mapWireProviderOptions(part.ProviderOptions)
+		options, failure := mapToolPartOptions(part.ProviderOptions)
 		if failure != nil {
 			return provider.ContentPart{}, failure
 		}
 		call := provider.ToolCallPart(part.ToolCallID, part.ToolName, part.Input)
-		call.ProviderOptions = partOptions
+		call.ProviderExecuted, call.ProviderOptions = part.ProviderExecuted, options
 		return call, nil
 	case provider.ContentPartTypeToolResult:
-		if !toolsEnabled || role != provider.RoleTool {
+		if !toolsEnabled || role != provider.RoleTool && role != provider.RoleAssistant {
 			return provider.ContentPart{}, unsupportedMappingFailure(capabilityTools)
 		}
 		output, failure := mapToolOutput(part.Output)
 		if failure != nil {
 			return provider.ContentPart{}, failure
 		}
-		partOptions, failure := mapWireProviderOptions(part.ProviderOptions)
+		options, failure := mapToolPartOptions(part.ProviderOptions)
 		if failure != nil {
 			return provider.ContentPart{}, failure
 		}
 		result := provider.ToolResultPart(part.ToolCallID, part.ToolName, output)
-		result.ProviderOptions = partOptions
+		result.ProviderOptions = options
 		return result, nil
 	case provider.ContentPartTypeToolApprovalResponse, provider.ContentPartTypeToolApprovalRequest:
 		return provider.ContentPart{}, unsupportedMappingFailure(capabilityToolApprovals)
@@ -374,9 +374,37 @@ func jsonObject(raw json.RawMessage) (map[string]json.RawMessage, bool) {
 	return object, true
 }
 
-// providerOptionsEmpty reports whether every namespace is an empty object. Tool
-// definitions and tool outputs still refuse non-empty options, which this
-// change does not extend; call, message and part options are mapped instead.
+func mapToolPartOptions(values map[string]json.RawMessage) (provider.ProviderOptions, *requestFailure) {
+	var options provider.ProviderOptions
+	for namespace, raw := range values {
+		if namespace == "gateway" || namespace == "grafana" || namespace == "grafana-ai-sdk" {
+			return nil, unsupportedMappingFailure(capabilityProviderOptions)
+		}
+		var members map[string]json.RawMessage
+		if json.Unmarshal(raw, &members) != nil || members == nil {
+			return nil, invalidMappingFailure()
+		}
+		if len(members) == 0 {
+			continue
+		}
+		if namespace == "anthropic" {
+			var kind string
+			if value, ok := members["type"]; ok && json.Unmarshal(value, &kind) != nil {
+				return nil, invalidMappingFailure()
+			}
+			if kind == "mcp-tool-use" {
+				return nil, unsupportedMappingFailure(capabilityProviderOptions)
+			}
+		}
+		if options == nil {
+			options = make(provider.ProviderOptions)
+		}
+		options[namespace] = provider.RawProviderOption{Key: namespace, Raw: raw}
+	}
+	return options, nil
+}
+
+// providerOptionsEmpty reports whether every namespace is an empty object.
 func providerOptionsEmpty(options map[string]json.RawMessage) bool {
 	for _, raw := range options {
 		var namespace map[string]json.RawMessage
