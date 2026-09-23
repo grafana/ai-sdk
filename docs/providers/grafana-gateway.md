@@ -9,7 +9,8 @@ go get github.com/grafana/ai-sdk/providers/grafana
 ```
 
 The client module is Apache-2.0 and does not depend on the Gateway service
-module. Its executable response family includes text and unary/streaming function calls. Requests preserve
+module. Its executable response family includes text, function calls, and
+bounded provider-defined tool calls/results in unary and streaming modes. Requests preserve
 representable provider options, files, tools, and structured-output settings;
 the deployed Gateway decides which capabilities it can execute and returns a
 public invalid-request error for unsupported calls.
@@ -22,15 +23,41 @@ Gateway-reserved option namespaces remain rejected. History accepts assistant
 calls and text, JSON (including null), error-text, error-JSON, and text-only
 content results, preserving required selected empty values. The application
 executes tools and supplies call/result history on a later independent request.
-The Gateway never executes a tool. Provider-executed/dynamic tools, approvals,
-preliminary results and media results remain unsupported. Logical telemetry
-removes tool-bearing definitions, choices, inputs and outputs before export.
+The Gateway never executes application tools. Direct routes also support
+provider-defined tools and provider-executed results. A provider-tool definition
+has only a registered ID, name and object args; function-only fields, including
+provider options on the definition, are rejected. Direct Go callers may leave
+provider args nil for an empty object; the HTTP request still requires `args: {}`.
+`providerExecuted: true` on a returned call means the client must not run the
+application tool. A provider-defined tool can also return a client-executed call;
+its definition alone does not determine execution ownership.
 
-Streaming direct routes additionally support input start/delta/end, calls and
-matching non-null JSON results. IDs, ordering and empty deltas are preserved.
-Vercel and Go clients own the multi-step orchestration; each HTTP generation
-remains stateless. Ordered fallback routes continue rejecting tool definitions,
-choice and history before any physical invocation.
+Streaming direct routes support input start/delta/end, calls, non-null JSON
+results and preliminary results after a correlated call followed by a final
+result. Early image previews emitted before a tool call remain deferred with
+generated media (WP16). IDs, ordering and empty deltas are preserved. A provider-executed call can finish without a result;
+its result may arrive on a later independent HTTP request when the client sends
+the unresolved call in assistant history. Tool-part provider options carry
+reviewed continuation metadata; response metadata is allowlisted, not arbitrary
+provider passthrough. Tool approvals, file/source and other media output,
+structured output, and general root provider options remain unsupported.
+Vercel and Go clients own multi-step orchestration; each Gateway generation
+remains stateless. Ordered fallback routes reject tool definitions, choices,
+history and MCP server configuration before any physical invocation. Logical
+telemetry omits tool-bearing definitions, names, IDs, inputs, outputs and
+provider metadata before export.
+
+A direct Anthropic route accepts the registered
+`providerOptions.anthropic.mcpServers` request setting. The selected Anthropic
+provider receives its ordered server names, HTTPS URLs, optional authorization
+tokens and tool configuration; no other root provider option is enabled by this
+exception. The response may include the caller-configured MCP `serverName` on a
+tool call/result so a later request can replay the native block. URLs and tokens
+never appear in normalized server output, errors or operational telemetry. The
+Go client's caller-owned `Request.Body` still contains its serialized request,
+so avoid logging it when it carries an MCP token. The Gateway validates HTTPS
+URLs without embedded credentials or fragments but cannot attest to Anthropic's
+remote MCP egress policy. See the [Gateway operator guide](../../ai-gateway/docs/provider-tools.md).
 
 ## Connect with an access token
 
