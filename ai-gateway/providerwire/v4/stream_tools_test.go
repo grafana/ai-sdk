@@ -221,7 +221,7 @@ func TestStreamingTools_InvalidTransitions(t *testing.T) {
 		{"empty call name", []provider.StreamPart{{Type: provider.PartToolCall, ToolCallID: "a", Input: "{}"}}},
 		{"enabled execution", []provider.StreamPart{{Type: provider.PartToolCall, ToolCallID: "a", ToolName: "f", Input: "{}", ProviderExecuted: true}}},
 		{"enabled dynamic", []provider.StreamPart{{Type: provider.PartToolInputStart, ID: "a", ToolName: "f", Dynamic: &yes}}},
-		{"preliminary result", []provider.StreamPart{call, {Type: provider.PartToolResult, ToolCallID: "a", ToolName: "f", Result: json.RawMessage("{}"), Preliminary: &yes}}},
+		{"preliminary result", []provider.StreamPart{call, {Type: provider.PartToolResult, ToolCallID: "a", ToolName: "f", Result: json.RawMessage("{}"), Preliminary: true}}},
 		{"null result", []provider.StreamPart{call, {Type: provider.PartToolResult, ToolCallID: "a", ToolName: "f", Result: json.RawMessage("null")}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

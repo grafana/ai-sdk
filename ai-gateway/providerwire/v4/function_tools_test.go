@@ -58,8 +58,7 @@ func TestUnaryFunctionOutput(t *testing.T) {
 			if marker == "providerExecuted" {
 				copyResult.Content[1].ProviderExecuted = true
 			} else {
-				yes := true
-				copyResult.Content[1].Dynamic = &yes
+				copyResult.Content[1].Dynamic = true
 			}
 			_, err := mapUnarySuccess(&copyResult, 1<<20)
 			require.Error(t, err)
@@ -123,14 +122,13 @@ func TestRuntimeUnaryFunctionOutput_RejectsEnabledMarkersBeforeSuccess(t *testin
 		harness.model.generate = func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
 			result := validGenerateResult()
 			part := provider.GenerateContentPart{Type: provider.ContentToolCall, ToolCallID: "private-call", ToolName: "private-tool", Input: json.RawMessage("{}")}
-			yes := true
 			switch marker {
 			case "providerExecuted":
 				part.ProviderExecuted = true
 			case "dynamic":
-				part.Dynamic = &yes
+				part.Dynamic = true
 			case "preliminary":
-				part.Preliminary = &yes
+				part.Preliminary = true
 			}
 			result.Content = append(result.Content, part)
 			return result, nil
@@ -202,7 +200,7 @@ func TestRuntimeUnaryFunctionOutput_OpaqueArguments(t *testing.T) {
 				harness := newRuntimeHarness(t, testLimits())
 				harness.model.generate = func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
 					result := validGenerateResult()
-					result.Content = []provider.GenerateContentPart{{Type: provider.ContentToolCall, ToolCallID: "call", ToolName: "weather", Input: json.RawMessage(input), Dynamic: disabled, ProviderMetadata: provider.ProviderMetadata{"private": json.RawMessage(`{"secret":"private-sentinel"}`)}}}
+					result.Content = []provider.GenerateContentPart{{Type: provider.ContentToolCall, ToolCallID: "call", ToolName: "weather", Input: json.RawMessage(input), Dynamic: disabled != nil && *disabled, ProviderMetadata: provider.ProviderMetadata{"private": json.RawMessage(`{"secret":"private-sentinel"}`)}}}
 					return result, nil
 				}
 				response := harness.serve(validRequest(`{"prompt":[]}`))

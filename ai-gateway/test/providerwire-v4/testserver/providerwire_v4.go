@@ -164,8 +164,7 @@ func (m *providerWireV4Model) DoGenerate(ctx context.Context, options provider.C
 		call := provider.GenerateContentPart{Type: provider.ContentToolCall, ToolCallID: "call-weather", ToolName: "weather", Input: json.RawMessage(`{"city":"Rio"}`), ProviderMetadata: provider.ProviderMetadata{"private": json.RawMessage(`{"secret":"hidden"}`)}}
 		call.ProviderExecuted = m.kind == "unary-tools-provider-executed"
 		if m.kind == "unary-tools-dynamic" {
-			yes := true
-			call.Dynamic = &yes
+			call.Dynamic = true
 		}
 		return &provider.GenerateResult{Content: []provider.GenerateContentPart{{Type: provider.ContentText, Text: ""}, call}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonToolCalls}}, nil
 	case "success":
