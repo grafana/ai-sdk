@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
@@ -154,6 +155,13 @@ func (m *model) DoGenerate(ctx context.Context, params provider.CallOptions) (*p
 	var response *http.Response
 	requestOpts := m.requestOptions(br, params.Headers)
 	requestOpts = append(requestOpts, option.WithMiddleware(captureRequestBody(&requestBody)), option.WithResponseInto(&response))
+	if deadline, ok := ctx.Deadline(); ok {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return nil, context.DeadlineExceeded
+		}
+		requestOpts = append(requestOpts, option.WithRequestTimeout(remaining))
+	}
 
 	msg, err := m.client.Beta.Messages.New(ctx, p, requestOpts...)
 	if err != nil {
