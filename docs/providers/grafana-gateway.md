@@ -1,7 +1,6 @@
 # Call Grafana AI Gateway from Go
 
-Use the Grafana provider when your service calls an internally provisioned
-Grafana AI Gateway. It uses the same generation, streaming, and registry
+Use the Grafana provider when your server calls Grafana AI Gateway. It uses the same generation, streaming, and registry
 interfaces as other Go providers. Install the separate client module:
 
 ```bash
@@ -53,60 +52,17 @@ continuation metadata remain rejected. The separate `gateway-anthropic-mcp`
 change owns that capability and its routing and privacy controls. See the
 [Gateway operator guide](../../ai-gateway/docs/provider-tools.md).
 
-## Connect with an access token
+## Authenticate the client
 
-The base URL is the API prefix, including `/api/v1/aisdk`, rather than the host
-root or a complete `/language-model` URL. Obtain the short-lived access token
-from your control plane and refresh it in your application when necessary.
+Choose the constructor for your Gateway URL. Use `NewWithCloudCredentials`
+with your stack ID and CAP token for the public Grafana Cloud URL. If your
+deployment provides a separate JWT-enabled Gateway URL, use
+`NewWithTokenExchange` or `NewWithAccessToken` instead.
 
-```go
-client, err := grafana.NewWithAccessToken(grafana.AccessTokenConfig{
-	AccessToken: accessToken,
-	BaseURL:     "https://gateway.example/api/v1/aisdk",
-})
-if err != nil {
-	return err
-}
-model, err := client.LanguageModel("assistant")
-if err != nil {
-	return err
-}
-result, err := aisdk.GenerateText(ctx, model,
-	aisdk.WithModelMessages(provider.UserText("Summarize the incident.")),
-)
-```
-
-This mode forwards the token as `X-Access-Token` without exchanging or caching
-it. Supplying an `Authorization` header alone does not authenticate the Gateway.
-
-## Connect with a Cloud Access Policy token
-
-An internally provisioned service can instead use `NewWithCloudAuth` with its
-CAP token, token-exchange URL, namespace, and Gateway base URL. Omitted audience
-defaults to `ai-sdk`. Grafana authlib exchanges and caches the short-lived
-token; the client adds no second token cache.
-Exchange failures use a fixed public message rather than retaining token-service
-response prose; cancellation remains identifiable through `errors.Is`.
-
-```go
-client, err := grafana.NewWithCloudAuth(grafana.CloudAuthConfig{
-	CAPToken:         capToken,
-	TokenExchangeURL: tokenExchangeURL,
-	Namespace:        namespace,
-	BaseURL:          "https://gateway.example/api/v1/aisdk",
-})
-```
-
-Both constructors accept an HTTP client used for exchange and Gateway calls.
-They preserve its transport and timeout settings in a private client value.
-Redirects are rejected so Grafana credentials cannot follow a redirect to a
-different endpoint. No credentials or endpoint URLs are discovered from the
+See [Authenticate to Grafana AI Gateway](../guides/gateway-authentication.md)
+for Go and Vercel examples, policy scopes, and URL selection. All constructors
+reject redirects and do not discover credentials or endpoints from the
 environment.
-
-For a request acting on behalf of a user, pass a context returned by
-`grafana.WithUserIDToken(ctx, userIDToken)`. The Gateway validates that identity
-separately from the calling service. An absent or empty user token omits
-`X-Grafana-Id`.
 
 ## Discover and select public models
 

@@ -97,7 +97,7 @@ describe("registered Gateway client consumption", () => {
     assert.deepEqual(result.content, serverBody.content);
     assert.deepEqual(result.finishReason, serverBody.finishReason);
     assert.deepEqual(result.usage, serverBody.usage);
-    assert.deepEqual(result.warnings, []);
+    assert.deepEqual(result.warnings, serverBody.warnings);
     assert.deepEqual(result.request, { body: { prompt: [] } });
     assert.equal(result.response?.headers?.["x-server"], "unary");
     assert.deepEqual(result.response?.body, serverBody);

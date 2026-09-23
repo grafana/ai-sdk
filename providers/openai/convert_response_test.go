@@ -523,6 +523,7 @@ func TestConvertResponse_ApplyPatchDeleteOmitsDiff(t *testing.T) {
 	res := mustConvertResponse(t, resp, buildResult{})
 	require.Len(t, res.Content, 1)
 	assert.JSONEq(t, `{"callId":"call_1","operation":{"type":"delete_file","path":"old.txt"}}`, string(res.Content[0].Input))
+	assert.Equal(t, provider.FinishReasonToolCalls, res.FinishReason.Unified)
 }
 
 func TestConvertResponse_ShellProviderExecutedOnlyForContainerShell(t *testing.T) {

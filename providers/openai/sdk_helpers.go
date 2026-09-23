@@ -12,14 +12,8 @@ import (
 // ({"type":"item_reference","id":...}).
 func assistantOutputMessage(text string, options OpenAIPartOptions) responses.ResponseInputItemUnionParam {
 	message := map[string]any{
-		"role": "assistant",
-		"content": []map[string]any{{
-			"type": "output_text",
-			"text": text,
-		}},
-	}
-	if options.ItemID != "" {
-		message["id"] = options.ItemID
+		"role":    "assistant",
+		"content": text,
 	}
 	if options.Phase != "" {
 		message["phase"] = options.Phase

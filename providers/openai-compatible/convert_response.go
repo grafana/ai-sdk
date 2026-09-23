@@ -89,7 +89,7 @@ func responseMetadata(id, modelID, providerName string, created *int64) provider
 		ModelID:  modelID,
 		Provider: providerName,
 	}
-	if created != nil {
+	if created != nil && *created != 0 {
 		md.Timestamp = time.Unix(*created, 0).UTC()
 	}
 	return md

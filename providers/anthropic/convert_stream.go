@@ -202,6 +202,8 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 				providerExecuted: true,
 				firstDelta:       true,
 				providerToolName: providerToolName,
+				callerType:       cb.Caller.Type,
+				callerToolID:     cb.Caller.ToolID,
 			}
 			a.blocks[idx] = bs
 
@@ -484,6 +486,10 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 }
 
 func (a *streamAdapter) emitWebSearchResult(block anthropic.BetaWebSearchToolResultBlock, ch chan<- provider.StreamPart) error {
+	metadata, err := marshalCallerMetadata(block.Caller.Type, block.Caller.ToolID)
+	if err != nil {
+		return err
+	}
 	content := block.Content
 	if content.Type == "web_search_tool_result_error" {
 		errData, err := marshalToolResultError("web_search_tool_result_error", string(content.ErrorCode))
@@ -494,6 +500,7 @@ func (a *streamAdapter) emitWebSearchResult(block anthropic.BetaWebSearchToolRes
 			Type:             provider.PartToolResult,
 			ToolCallID:       block.ToolUseID,
 			ToolName:         a.mapping.toCustomToolName("web_search"),
+			ProviderMetadata: metadata,
 			Result:           errData,
 			IsError:          true,
 			ProviderExecuted: true,
@@ -509,6 +516,7 @@ func (a *streamAdapter) emitWebSearchResult(block anthropic.BetaWebSearchToolRes
 		Type:             provider.PartToolResult,
 		ToolCallID:       block.ToolUseID,
 		ToolName:         a.mapping.toCustomToolName("web_search"),
+		ProviderMetadata: metadata,
 		Result:           resultJSON,
 		ProviderExecuted: true,
 	}
@@ -535,6 +543,10 @@ func (a *streamAdapter) emitWebSearchResult(block anthropic.BetaWebSearchToolRes
 }
 
 func (a *streamAdapter) emitWebFetchResult(block anthropic.BetaWebFetchToolResultBlock, ch chan<- provider.StreamPart) error {
+	metadata, err := marshalCallerMetadata(block.Caller.Type, block.Caller.ToolID)
+	if err != nil {
+		return err
+	}
 	content := block.Content
 	if content.Type == "web_fetch_tool_result_error" {
 		errData, err := json.Marshal(map[string]any{
@@ -548,6 +560,7 @@ func (a *streamAdapter) emitWebFetchResult(block anthropic.BetaWebFetchToolResul
 			Type:             provider.PartToolResult,
 			ToolCallID:       block.ToolUseID,
 			ToolName:         a.mapping.toCustomToolName("web_fetch"),
+			ProviderMetadata: metadata,
 			Result:           errData,
 			IsError:          true,
 			ProviderExecuted: true,
@@ -573,6 +586,7 @@ func (a *streamAdapter) emitWebFetchResult(block anthropic.BetaWebFetchToolResul
 		Type:             provider.PartToolResult,
 		ToolCallID:       block.ToolUseID,
 		ToolName:         a.mapping.toCustomToolName("web_fetch"),
+		ProviderMetadata: metadata,
 		Result:           resultData,
 		ProviderExecuted: true,
 	}

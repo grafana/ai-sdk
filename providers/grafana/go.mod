@@ -3,7 +3,7 @@ module github.com/grafana/ai-sdk/providers/grafana
 go 1.26.3
 
 require (
-	github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260923173611-74293b6204f4
+	github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260923211549-25ba9521879f
 	github.com/grafana/authlib v0.0.0-20260814184937-0d62418c2815
 	github.com/stretchr/testify v1.11.1
 )
@@ -32,7 +32,7 @@ require (
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.41.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260918162117-cecb64721679 // indirect
 	google.golang.org/grpc v1.83.2 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
