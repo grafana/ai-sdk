@@ -11,10 +11,10 @@
 {"type":"tool-output-available","toolCallId":"toolu_01BPKY6YUaeYhQjjNxUTdEkQ","output":{"value":68042591,"unit":"people","source":"2024 census estimate"},"providerMetadata":{"anthropic":{"caller":{"type":"direct"}}}}
 {"type":"finish-step"}
 {"type":"start-step"}
-{"type":"text-start","id":"0"}
-{"type":"text-delta","id":"0","delta":"Now let"}
-{"type":"text-delta","id":"0","delta":" me convert that number to millions."}
-{"type":"text-end","id":"0"}
+{"type":"text-start","id":"id-2"}
+{"type":"text-delta","id":"id-2","delta":"Now let"}
+{"type":"text-delta","id":"id-2","delta":" me convert that number to millions."}
+{"type":"text-end","id":"id-2"}
 {"type":"tool-input-start","toolCallId":"toolu_01Wd4TkQrSLMEgREW2PfWDXX","toolName":"convert_number"}
 {"type":"tool-input-delta","toolCallId":"toolu_01Wd4TkQrSLMEgREW2PfWDXX","inputTextDelta":"{\"value\": 68042591"}
 {"type":"tool-input-delta","toolCallId":"toolu_01Wd4TkQrSLMEgREW2PfWDXX","inputTextDelta":", \"target_format\": \"millions"}
@@ -23,10 +23,10 @@
 {"type":"tool-output-available","toolCallId":"toolu_01Wd4TkQrSLMEgREW2PfWDXX","output":{"result":68.04,"unit":"million"},"providerMetadata":{"anthropic":{"caller":{"type":"direct"}}}}
 {"type":"finish-step"}
 {"type":"start-step"}
-{"type":"text-start","id":"0"}
-{"type":"text-delta","id":"0","delta":"Now let me format this information"}
-{"type":"text-delta","id":"0","delta":" as a short report."}
-{"type":"text-end","id":"0"}
+{"type":"text-start","id":"id-4"}
+{"type":"text-delta","id":"id-4","delta":"Now let me format this information"}
+{"type":"text-delta","id":"id-4","delta":" as a short report."}
+{"type":"text-end","id":"id-4"}
 {"type":"tool-input-start","toolCallId":"toolu_017g9vLaM9BN7XXWfuTsUQ4R","toolName":"format_report"}
 {"type":"tool-input-delta","toolCallId":"toolu_017g9vLaM9BN7XXWfuTsUQ4R","inputTextDelta":"{\"title\": \"France Population Report"}
 {"type":"tool-input-delta","toolCallId":"toolu_017g9vLaM9BN7XXWfuTsUQ4R","inputTextDelta":"\", \"data\": {\n  \"Country"}
@@ -37,10 +37,10 @@
 {"type":"tool-output-available","toolCallId":"toolu_017g9vLaM9BN7XXWfuTsUQ4R","output":{"report":"Population of France: 68.04 million (2024 census estimate)"},"providerMetadata":{"anthropic":{"caller":{"type":"direct"}}}}
 {"type":"finish-step"}
 {"type":"start-step"}
-{"type":"text-start","id":"0"}
-{"type":"text-delta","id":"0","delta":"Perfect! I've completed"}
-{"type":"text-delta","id":"0","delta":" all three steps:\n\n1. **Looked up** the population of France: 68,042,591 people (2024 census estimate)\n2. **Converted** to millions: 68.04 million"}
-{"type":"text-delta","id":"0","delta":"\n3. **Formatted** as a report: \"Population of France: 68.04 million (2024 census estimate)\""}
-{"type":"text-end","id":"0"}
+{"type":"text-start","id":"id-6"}
+{"type":"text-delta","id":"id-6","delta":"Perfect! I've completed"}
+{"type":"text-delta","id":"id-6","delta":" all three steps:\n\n1. **Looked up** the population of France: 68,042,591 people (2024 census estimate)\n2. **Converted** to millions: 68.04 million"}
+{"type":"text-delta","id":"id-6","delta":"\n3. **Formatted** as a report: \"Population of France: 68.04 million (2024 census estimate)\""}
+{"type":"text-end","id":"id-6"}
 {"type":"finish-step"}
 {"type":"finish","finishReason":"stop"}

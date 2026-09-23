@@ -67,7 +67,6 @@ func (m *model) DoGenerate(ctx context.Context, opts provider.CallOptions) (*pro
 	}
 	result.Request = &provider.RequestMetadata{Body: requestBody}
 	result.Response = &provider.GenerateResponse{Headers: responseHeaders(resp.Header), Body: body}
-	result.Warnings = []provider.Warning{}
 	return result, nil
 }
 
@@ -184,8 +183,9 @@ func decodeGenerate(body []byte) (*provider.GenerateResult, error) {
 		Content      *[]json.RawMessage `json:"content"`
 		FinishReason *wireFinish        `json:"finishReason"`
 		Usage        *wireUsage         `json:"usage"`
+		Warnings     []wireWarning      `json:"warnings"`
 	}
-	if err := decodeFields(body, &value, "content", "finishReason", "usage"); err != nil {
+	if err := decodeFields(body, &value, "content", "finishReason", "usage", "warnings"); err != nil {
 		return nil, errors.New("grafana: malformed unary result")
 	}
 	if value.Content == nil {
@@ -228,5 +228,9 @@ func decodeGenerate(body []byte) (*provider.GenerateResult, error) {
 			return nil, errors.New("grafana: unsupported unary content")
 		}
 	}
-	return &provider.GenerateResult{Content: content, FinishReason: finish, Usage: usage}, nil
+	warnings, err := decodeWarnings(value.Warnings)
+	if err != nil {
+		return nil, err
+	}
+	return &provider.GenerateResult{Content: content, FinishReason: finish, Usage: usage, Warnings: warnings}, nil
 }

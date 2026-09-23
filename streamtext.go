@@ -47,6 +47,8 @@ type StreamTextResult struct {
 	elementStream       *losslessStream[json.RawMessage]
 	lastPartialJSON     string
 	emittedElementCount int
+	usedTextIDs         map[string]struct{}
+	usedReasoningIDs    map[string]struct{}
 }
 
 // StreamText starts an LLM streaming call with multi-step tool execution.
@@ -433,6 +435,8 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 	ctx, opCancel = context.WithCancel(ctx)
 	defer opCancel()
 
+	r.usedTextIDs = make(map[string]struct{})
+	r.usedReasoningIDs = make(map[string]struct{})
 	r.emit(StreamStart{})
 
 	if cfg.onStart != nil {
@@ -721,28 +725,16 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 		// are fully resolved within the same API response and do not require a
 		// follow-up request.
 		hasClientToolCalls := false
-		hasUnresolvedExternal := false
-		hasPendingApproval := false
+		hasUnresolvedClientToolCalls := false
 		toolResultsByID := make(map[string]bool, len(step.ToolResults))
 		for _, tr := range step.ToolResults {
 			toolResultsByID[tr.ToolCallID] = true
 		}
-		approvalRequestsByID := make(map[string]bool, len(step.ToolApprovalRequests))
-		for _, ar := range step.ToolApprovalRequests {
-			approvalRequestsByID[ar.ToolCallID] = true
-		}
 		for _, tc := range step.ToolCalls {
 			if !tc.ProviderExecuted {
 				hasClientToolCalls = true
-				if !tc.Invalid {
-					if tool, ok := cfg.tools[tc.ToolName]; ok {
-						if tool.Execute == nil {
-							hasUnresolvedExternal = true
-						}
-					}
-					if approvalRequestsByID[tc.ToolCallID] && !toolResultsByID[tc.ToolCallID] {
-						hasPendingApproval = true
-					}
+				if !toolResultsByID[tc.ToolCallID] {
+					hasUnresolvedClientToolCalls = true
 				}
 			}
 		}
@@ -755,7 +747,7 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 			}
 		}
 
-		if !hasClientToolCalls || stopped || hasUnresolvedExternal || hasPendingApproval {
+		if !hasClientToolCalls || stopped || hasUnresolvedClientToolCalls {
 			if cfg.output != nil && (cfg.parseOutputOnNonStop || step.FinishReason.Unified == provider.FinishReasonStop) {
 				outputVal, outputErr := cfg.output.ParseComplete(step.Text)
 				r.mu.Lock()
@@ -788,6 +780,33 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 		nextResponseMessages = append(nextResponseMessages, responseMessages...)
 		responseMessages = append(nextResponseMessages, stepResponseMessages...)
 	}
+}
+
+func remapStreamPartID(part provider.StreamPart, active map[string]string, used map[string]struct{}, cfg *streamConfig) string {
+	id := part.ID
+	switch part.Type {
+	case provider.PartTextStart, provider.PartReasoningStart:
+		if _, exists := used[id]; exists {
+			generated := generateConfigID(cfg)
+			id = generated
+			for suffix := 1; ; suffix++ {
+				if _, exists := used[id]; !exists {
+					break
+				}
+				id = fmt.Sprintf("%s-%d", generated, suffix)
+			}
+		}
+		used[id] = struct{}{}
+		active[part.ID] = id
+	default:
+		if mapped, exists := active[part.ID]; exists {
+			id = mapped
+		}
+		if part.Type == provider.PartTextEnd || part.Type == provider.PartReasoningEnd {
+			delete(active, part.ID)
+		}
+	}
+	return id
 }
 
 func (r *StreamTextResult) processStep(
@@ -827,6 +846,8 @@ func (r *StreamTextResult) processStep(
 	toolTitleByID := make(map[string]string)
 	responseTextIndex := make(map[string]int)
 	responseReasoningIndex := make(map[string]int)
+	textPartIDs := make(map[string]string)
+	reasoningPartIDs := make(map[string]string)
 
 	var outputTextChunkID string
 	var outputTextChunk strings.Builder
@@ -888,6 +909,13 @@ loop:
 
 		if isSemanticOutputStreamPart(part) {
 			hasOutput = true
+		}
+
+		switch part.Type {
+		case provider.PartTextStart, provider.PartTextDelta, provider.PartTextEnd:
+			part.ID = remapStreamPartID(part, textPartIDs, r.usedTextIDs, cfg)
+		case provider.PartReasoningStart, provider.PartReasoningDelta, provider.PartReasoningEnd:
+			part.ID = remapStreamPartID(part, reasoningPartIDs, r.usedReasoningIDs, cfg)
 		}
 
 		switch part.Type {
@@ -1642,7 +1670,8 @@ func (r *StreamTextResult) executeTools(
 		})
 	}
 
-	if len(executable) == 0 {
+	executionAllowed := step.FinishReason.Unified == provider.FinishReasonStop || step.FinishReason.Unified == provider.FinishReasonToolCalls
+	if len(executable) == 0 || !executionAllowed {
 		return nil
 	}
 

@@ -1,9 +1,9 @@
 {
-  "upstreamCommit": "d76eb85a9a7f2dbe44ab2f3dc858ad5cdcb5242e",
+  "upstreamCommit": "08ae5ad05bc12496dd1ffcf64e34419e0831300d",
   "packages": {
-    "@ai-sdk/gateway": "4.0.52",
-    "@ai-sdk/provider": "4.0.7",
-    "@ai-sdk/provider-utils": "5.0.27"
+    "@ai-sdk/gateway": "4.0.87",
+    "@ai-sdk/provider": "4.0.17",
+    "@ai-sdk/provider-utils": "5.0.45"
   },
   "types": {
     "CallOptions": "struct {\n\tPrompt           []Message         `json:\"prompt,omitempty\"`\n\tTools            []Tool            `json:\"tools,omitempty\"`\n\tToolChoice       *ToolChoice       `json:\"toolChoice,omitempty\"`\n\tMaxOutputTokens  *int              `json:\"maxOutputTokens,omitempty\"`\n\tTemperature      *float64          `json:\"temperature,omitempty\"`\n\tTopP             *float64          `json:\"topP,omitempty\"`\n\tTopK             *int              `json:\"topK,omitempty\"`\n\tPresencePenalty  *float64          `json:\"presencePenalty,omitempty\"`\n\tFrequencyPenalty *float64          `json:\"frequencyPenalty,omitempty\"`\n\tStopSequences    []string          `json:\"stopSequences,omitempty\"`\n\tResponseFormat   *ResponseFormat   `json:\"responseFormat,omitempty\"`\n\tSeed             *int              `json:\"seed,omitempty\"`\n\tReasoning        ReasoningEffort   `json:\"reasoning,omitempty\"`\n\tIncludeRawChunks bool              `json:\"includeRawChunks,omitempty\"`\n\tHeaders          map[string]string `json:\"headers,omitempty\"`\n\tProviderOptions  ProviderOptions   `json:\"providerOptions,omitempty\"`\n}",

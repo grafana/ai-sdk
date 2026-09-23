@@ -11,6 +11,11 @@ import (
 func convertInput(prompt []provider.Message, systemMode string, popts OpenAIResponsesOptions, ctx inputConversionContext) (responses.ResponseInputParam, []provider.Warning, error) {
 	var input responses.ResponseInputParam
 	var warnings []provider.Warning
+	if ctx.hasConversation || ctx.hasPreviousResponseID {
+		ctx.parallelResults = collectParallelResults(prompt, ctx.providerOptionsName)
+		ctx.emittedParallelCalls = make(map[string]bool)
+		ctx.emittedParallelResults = make(map[string]bool)
+	}
 
 	for _, msg := range prompt {
 		switch msg.Role {
