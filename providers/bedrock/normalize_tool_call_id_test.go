@@ -56,7 +56,7 @@ func TestSupportsNativeStructuredOutput(t *testing.T) {
 		expected bool
 	}{
 		{"anthropic.claude-sonnet-4-5-20250929-v1:0", true},
-		{"anthropic.claude-haiku-4-5-20251001-v1:0", true},
+		{"anthropic.claude-haiku-4-5-20251001-v1:0", false},
 		{"anthropic.claude-opus-4-1-20250805-v1:0", true},
 		{"us.anthropic.claude-future-9-20990101-v1:0", true},
 		{"anthropic.claude-3-haiku-20240307-v1:0", false},
@@ -91,7 +91,7 @@ func TestAnthropicReasoningCapabilities(t *testing.T) {
 		{"us.anthropic.claude-3-7-sonnet-20250219-v1:0", 4096, false},
 		{"us.anthropic.claude-future-9-20990101-v1:0", 128000, true},
 		{"anthropic.unknown-model-v1:0", 4096, false},
-		{"amazon.claude-sonnet-4-6-v1:0", 4096, false},
+		{"amazon.claude-sonnet-4-6-v1:0", 128000, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.modelID, func(t *testing.T) {

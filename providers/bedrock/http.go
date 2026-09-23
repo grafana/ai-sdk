@@ -40,7 +40,7 @@ func encodeModelIDPathSegment(modelID string) string {
 //  3. Decode the JSON body with parseResponse on success; otherwise wrap
 //     the response into a `*provider.APICallError`.
 func (m *model) doGenerate(ctx context.Context, params provider.CallOptions) (*provider.GenerateResult, error) {
-	body, warnings, meta, err := buildRequest(m.modelID, params)
+	body, warnings, meta, err := buildRequestWithFamily(m.modelID, m.modelFamily, params)
 	if err != nil {
 		return nil, err
 	}
@@ -111,7 +111,7 @@ func (m *model) doGenerate(ctx context.Context, params provider.CallOptions) (*p
 // AWS Smithy event-stream body whose frames we decode into provider stream
 // parts.
 func (m *model) doStream(ctx context.Context, params provider.CallOptions) (*provider.StreamResult, error) {
-	body, warnings, meta, err := buildRequest(m.modelID, params)
+	body, warnings, meta, err := buildRequestWithFamily(m.modelID, m.modelFamily, params)
 	if err != nil {
 		return nil, err
 	}
