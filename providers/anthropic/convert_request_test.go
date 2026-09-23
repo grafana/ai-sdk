@@ -2157,6 +2157,28 @@ func TestConvertTools_FunctionToolProducesOfTool(t *testing.T) {
 }
 
 func TestBuildParams_ProviderOptions_MCPServers(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		server string
+		want   string
+	}{
+		{name: "minimal", server: `{"type":"url","name":"echo","url":"https://mcp.example.com"}`, want: `{"type":"url","name":"echo","url":"https://mcp.example.com"}`},
+		{name: "allowed tools only", server: `{"type":"url","name":"echo","url":"https://mcp.example.com","toolConfiguration":{"allowedTools":[]}}`, want: `{"type":"url","name":"echo","url":"https://mcp.example.com","tool_configuration":{"allowed_tools":[]}}`},
+		{name: "explicit disabled", server: `{"type":"url","name":"echo","url":"https://mcp.example.com","toolConfiguration":{"enabled":false}}`, want: `{"type":"url","name":"echo","url":"https://mcp.example.com","tool_configuration":{"enabled":false}}`},
+		{name: "explicit empty token", server: `{"type":"url","name":"echo","url":"https://mcp.example.com","authorizationToken":""}`, want: `{"type":"url","name":"echo","url":"https://mcp.example.com","authorization_token":""}`},
+	} {
+		t.Run(tc.name+" native request", func(t *testing.T) {
+			options := provider.CallOptions{ProviderOptions: provider.ProviderOptions{"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(`{"mcpServers":[` + tc.server + `]}`)}}}
+			params, _, _, _, err := buildParams("claude-sonnet-4-6", options, false)
+			require.NoError(t, err)
+			encoded, err := json.Marshal(params)
+			require.NoError(t, err)
+			var request map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal(encoded, &request))
+			assert.JSONEq(t, `[`+tc.want+`]`, string(request["mcp_servers"]))
+		})
+	}
+
 	t.Run("single_server_all_fields", func(t *testing.T) {
 		opts := provider.CallOptions{
 			ProviderOptions: provider.ProviderOptions{

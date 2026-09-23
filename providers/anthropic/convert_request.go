@@ -2539,14 +2539,15 @@ func applyProviderOptions(p *anthropic.BetaMessageNewParams, ao AnthropicOptions
 				Name: s.Name,
 				URL:  s.URL,
 			}
-			if s.AuthorizationToken != "" {
-				srv.AuthorizationToken = anthropic.String(s.AuthorizationToken)
+			if s.AuthorizationToken != nil {
+				srv.AuthorizationToken = anthropic.String(*s.AuthorizationToken)
 			}
 			if s.ToolConfiguration != nil {
-				srv.ToolConfiguration = anthropic.BetaRequestMCPServerToolConfigurationParam{
-					Enabled:      anthropic.Bool(s.ToolConfiguration.Enabled),
-					AllowedTools: s.ToolConfiguration.AllowedTools,
+				config := anthropic.BetaRequestMCPServerToolConfigurationParam{AllowedTools: s.ToolConfiguration.AllowedTools}
+				if s.ToolConfiguration.Enabled != nil {
+					config.Enabled = anthropic.Bool(*s.ToolConfiguration.Enabled)
 				}
+				srv.ToolConfiguration = config
 			}
 			servers[i] = srv
 		}
