@@ -4315,6 +4315,21 @@ func TestConvertAssistantContent_InlineToolResults(t *testing.T) {
 // the pdfs-2024-09-25 beta), text/plain maps to a plain-text document block,
 // and provider options provide title/context/citations metadata. Mirrors
 // upstream convert-to-anthropic-prompt.ts:226-283.
+func TestBuildParams_InvalidDirectFileInputs(t *testing.T) {
+	bad := provider.BytesDataContent([]byte{})
+	bad.URL = "https://example.test/file"
+	for _, prompt := range [][]provider.Message{
+		{provider.NewUserMessage(provider.FilePart("image/png", bad))},
+		{provider.NewToolMessage(provider.ToolResultPart("call-1", "tool", &provider.ToolResultOutput{
+			Type:    provider.ToolOutputContent,
+			Content: []provider.ToolResultContentValue{{Type: provider.ToolContentFile, Data: &bad, MediaType: "image/png"}},
+		}))},
+	} {
+		_, _, _, _, err := buildParams("claude-sonnet-4-6", provider.CallOptions{Prompt: prompt}, false)
+		require.ErrorContains(t, err, "invalid file input")
+	}
+}
+
 func TestBuildParams_DocumentMediaTypes(t *testing.T) {
 	t.Run("application/pdf base64 with title and citations", func(t *testing.T) {
 		opts := provider.CallOptions{
@@ -4322,7 +4337,7 @@ func TestBuildParams_DocumentMediaTypes(t *testing.T) {
 				provider.NewUserMessage(provider.ContentPart{
 					Type:      provider.ContentPartTypeFile,
 					MediaType: "application/pdf",
-					Filename:  "report.pdf",
+					Filename:  testFilename("report.pdf"),
 					Data:      &provider.DataContent{Base64: "JVBERi0=" /* %PDF- */},
 					ProviderOptions: provider.BuildProviderOptions(provider.RawProviderOption{
 						Key: "anthropic",
@@ -4356,6 +4371,24 @@ func TestBuildParams_DocumentMediaTypes(t *testing.T) {
 		assert.True(t, found, "pdfs-2024-09-25 beta must be advertised for application/pdf parts")
 	})
 
+	t.Run("empty selected text document and filename", func(t *testing.T) {
+		part := provider.FilePart("text/plain", provider.TextDataContent(""))
+		part.Filename = testFilename("")
+		p, _, _, _, err := buildParams("claude-sonnet-4-6", provider.CallOptions{
+			Prompt: []provider.Message{provider.NewUserMessage(part)},
+		}, false)
+		require.NoError(t, err)
+		require.Len(t, p.Messages, 1)
+		require.Len(t, p.Messages[0].Content, 1)
+		block := p.Messages[0].Content[0]
+		require.NotNil(t, block.OfDocument)
+		require.NotNil(t, block.OfDocument.Source.OfText)
+		assert.Empty(t, block.OfDocument.Source.OfText.Data)
+		encoded, err := json.Marshal(block)
+		require.NoError(t, err)
+		assert.Contains(t, string(encoded), `"title":""`)
+	})
+
 	t.Run("application/pdf URL", func(t *testing.T) {
 		opts := provider.CallOptions{
 			Prompt: []provider.Message{
@@ -4380,7 +4413,7 @@ func TestBuildParams_DocumentMediaTypes(t *testing.T) {
 				provider.NewUserMessage(provider.ContentPart{
 					Type:      provider.ContentPartTypeFile,
 					MediaType: "text/plain",
-					Filename:  "notes.txt",
+					Filename:  testFilename("notes.txt"),
 					Data:      &provider.DataContent{Bytes: []byte("hello world")},
 					ProviderOptions: provider.BuildProviderOptions(provider.RawProviderOption{
 						Key: "anthropic",

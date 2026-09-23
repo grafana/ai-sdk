@@ -127,6 +127,8 @@ func TestMessagesToAgento11y_UnsupportedFileData(t *testing.T) {
 	}{
 		{name: "reference", data: provider.DataContent{Reference: json.RawMessage(`{"openai":"file-1"}`)}},
 		{name: "text", data: provider.DataContent{Text: "inline document"}},
+		{name: "selected empty text", data: provider.TextDataContent("")},
+		{name: "selected empty reference", data: provider.ReferenceDataContent(json.RawMessage(`{}`))},
 		{name: "malformed base64", data: provider.DataContent{Base64: "%%%"}},
 		{name: "base64 newline", data: provider.DataContent{Base64: "AQ\nID"}},
 		{name: "escaped base64 newline", data: provider.DataContent{URL: "data:image/png;base64,AQ%0AID"}},
@@ -144,6 +146,25 @@ func TestMessagesToAgento11y_UnsupportedFileData(t *testing.T) {
 			_, msgs := messagesToAgento11y(prompt)
 			assert.Nil(t, msgs)
 		})
+	}
+}
+
+func TestMessagesToAgento11y_InputFileFilenamePresence(t *testing.T) {
+	name := "report.png"
+	for _, tc := range []struct {
+		filename *string
+		want     string
+	}{
+		{want: ""},
+		{filename: &name, want: name},
+	} {
+		part := provider.FilePart("image/png", provider.URLDataContent("https://cdn.example.com/image.png"))
+		part.Filename = tc.filename
+		_, msgs := messagesToAgento11y([]provider.Message{provider.NewUserMessage(part)})
+		require.Len(t, msgs, 1)
+		require.Len(t, msgs[0].Parts, 1)
+		require.NotNil(t, msgs[0].Parts[0].Media)
+		assert.Equal(t, tc.want, msgs[0].Parts[0].Media.Name)
 	}
 }
 

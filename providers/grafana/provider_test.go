@@ -209,6 +209,29 @@ func TestTokenExchange_ValidationAndExchange(t *testing.T) {
 	}
 }
 
+func TestCloudAuth_InvalidFileNeverAuthenticatesOrSends(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		calls.Add(1)
+	}))
+	defer server.Close()
+	p, err := NewWithCloudAuth(CloudAuthConfig{
+		CAPToken: "cap", Namespace: "stacks-1", BaseURL: server.URL + "/api",
+		TokenExchangeURL: server.URL + "/exchange", HTTPClient: server.Client(),
+	})
+	require.NoError(t, err)
+	model, err := p.LanguageModel("assistant")
+	require.NoError(t, err)
+	bad := provider.TextDataContent("")
+	bad.URL = "https://example.test/file"
+	input := provider.CallOptions{Prompt: []provider.Message{provider.NewUserMessage(provider.FilePart("text/plain", bad))}}
+	_, err = model.DoGenerate(context.Background(), input)
+	require.Error(t, err)
+	_, err = model.DoStream(context.Background(), input)
+	require.Error(t, err)
+	assert.Zero(t, calls.Load())
+}
+
 func TestProvider_CancellationAndRedirect(t *testing.T) {
 	t.Run("pre-canceled and invalid user never exchange", func(t *testing.T) {
 		p := testProvider(t, func(http.ResponseWriter, *http.Request) { t.Error("unexpected network request") }, nil)
