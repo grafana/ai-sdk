@@ -654,6 +654,78 @@ func TestBuildParams_ToolMessage_EmptyFileData(t *testing.T) {
 	assert.Empty(t, result.Content[0].OfImage.Source.OfBase64.Data)
 }
 
+func TestBuildParams_ToolMessage_FileURLsAndPDF(t *testing.T) {
+	imageURL := provider.URLDataContent("https://example.test/image.png")
+	pdfURL := provider.URLDataContent("https://example.test/report.pdf")
+	pdfData := provider.Base64DataContent("JVBERi0=")
+	p, _, _, _, err := buildParams("claude-sonnet-4-6", provider.CallOptions{
+		Prompt: []provider.Message{provider.NewToolMessage(provider.ToolResultPart("call_1", "search", &provider.ToolResultOutput{
+			Type: provider.ToolOutputContent,
+			Content: []provider.ToolResultContentValue{
+				{Type: provider.ToolContentFile, Data: &imageURL, MediaType: "image/png"},
+				{Type: provider.ToolContentFile, Data: &pdfURL, MediaType: "application/pdf"},
+				{Type: provider.ToolContentFile, Data: &pdfData, MediaType: "application/pdf"},
+			},
+		}))},
+	}, false)
+	require.NoError(t, err)
+	require.Len(t, p.Messages, 1)
+	result := p.Messages[0].Content[0].OfToolResult
+	require.NotNil(t, result)
+	require.Len(t, result.Content, 3)
+	require.NotNil(t, result.Content[0].OfImage)
+	require.NotNil(t, result.Content[0].OfImage.Source.OfURL)
+	assert.Equal(t, "https://example.test/image.png", result.Content[0].OfImage.Source.OfURL.URL)
+	require.NotNil(t, result.Content[1].OfDocument)
+	require.NotNil(t, result.Content[1].OfDocument.Source.OfURL)
+	assert.Equal(t, "https://example.test/report.pdf", result.Content[1].OfDocument.Source.OfURL.URL)
+	require.NotNil(t, result.Content[2].OfDocument)
+	require.NotNil(t, result.Content[2].OfDocument.Source.OfBase64)
+	assert.Equal(t, "JVBERi0=", result.Content[2].OfDocument.Source.OfBase64.Data)
+	assert.Contains(t, p.Betas, sdk.AnthropicBeta("pdfs-2024-09-25"))
+}
+
+func TestBuildParams_ToolResultPDFBeta(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		data     provider.DataContent
+		userRole bool
+		wantBeta bool
+	}{
+		{name: "tool URL only", data: provider.URLDataContent("https://example.test/report.pdf")},
+		{name: "user inline PDF", data: provider.Base64DataContent("JVBERi0="), userRole: true, wantBeta: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			result := provider.ToolResultPart("call_1", "search", &provider.ToolResultOutput{
+				Type: provider.ToolOutputContent,
+				Content: []provider.ToolResultContentValue{
+					{Type: provider.ToolContentFile, Data: &tc.data, MediaType: "application/pdf"},
+				},
+			})
+			message := provider.NewToolMessage(result)
+			if tc.userRole {
+				message = provider.NewUserMessage(result)
+			}
+			p, _, _, _, err := buildParams("claude-sonnet-4-6", provider.CallOptions{
+				Prompt: []provider.Message{message},
+			}, false)
+			require.NoError(t, err)
+			require.Len(t, p.Messages, 1)
+			block := p.Messages[0].Content[0].OfToolResult
+			require.NotNil(t, block)
+			require.Len(t, block.Content, 1)
+			require.NotNil(t, block.Content[0].OfDocument)
+			if tc.wantBeta {
+				require.NotNil(t, block.Content[0].OfDocument.Source.OfBase64)
+				assert.Contains(t, p.Betas, sdk.AnthropicBeta("pdfs-2024-09-25"))
+			} else {
+				require.NotNil(t, block.Content[0].OfDocument.Source.OfURL)
+				assert.NotContains(t, p.Betas, sdk.AnthropicBeta("pdfs-2024-09-25"))
+			}
+		})
+	}
+}
+
 func TestBuildParams_Tools(t *testing.T) {
 	opts := provider.CallOptions{
 		Tools: []provider.Tool{
@@ -1536,7 +1608,7 @@ func TestSerializeToolOutput_ExecutionDenied(t *testing.T) {
 		Reason: "user rejected the tool call",
 	}
 
-	blocks := serializeToolOutput(&output, nil)
+	blocks := serializeToolOutput(&output, nil, nil)
 
 	require.Len(t, blocks, 1)
 	require.NotNil(t, blocks[0].OfText)
@@ -1548,7 +1620,7 @@ func TestSerializeToolOutput_ExecutionDenied_DefaultReason(t *testing.T) {
 		Type: provider.ToolOutputExecutionDenied,
 	}
 
-	blocks := serializeToolOutput(&output, nil)
+	blocks := serializeToolOutput(&output, nil, nil)
 
 	assert.Equal(t, "tool execution was denied", blocks[0].OfText.Text)
 }
@@ -1562,7 +1634,7 @@ func TestSerializeToolOutput_Content(t *testing.T) {
 		},
 	}
 
-	blocks := serializeToolOutput(&output, nil)
+	blocks := serializeToolOutput(&output, nil, nil)
 
 	require.Len(t, blocks, 2)
 	require.NotNil(t, blocks[0].OfText)
@@ -1575,7 +1647,7 @@ func TestSerializeToolOutput_UnsupportedTypeWarns(t *testing.T) {
 	output := provider.ToolResultOutput{Type: provider.ToolResultOutputType("future")}
 	var warnings []provider.Warning
 
-	blocks := serializeToolOutput(&output, &warnings)
+	blocks := serializeToolOutput(&output, nil, &warnings)
 
 	require.Len(t, blocks, 1)
 	require.NotNil(t, blocks[0].OfText)
@@ -4388,6 +4460,25 @@ func TestBuildParams_DocumentMediaTypes(t *testing.T) {
 		require.NoError(t, err)
 		assert.Contains(t, string(encoded), `"title":""`)
 	})
+
+	for _, mediaType := range []string{"application/pdf", "image/png"} {
+		t.Run("inline text with declared "+mediaType, func(t *testing.T) {
+			part := provider.FilePart(mediaType, provider.TextDataContent("document text"))
+			part.Filename = testFilename("notes.txt")
+			p, _, _, _, err := buildParams("claude-sonnet-4-6", provider.CallOptions{
+				Prompt: []provider.Message{provider.NewUserMessage(part)},
+			}, false)
+			require.NoError(t, err)
+			require.Len(t, p.Messages, 1)
+			require.Len(t, p.Messages[0].Content, 1)
+			block := p.Messages[0].Content[0]
+			require.NotNil(t, block.OfDocument)
+			require.NotNil(t, block.OfDocument.Source.OfText)
+			assert.Equal(t, "document text", block.OfDocument.Source.OfText.Data)
+			assert.Equal(t, "notes.txt", block.OfDocument.Title.Or(""))
+			assert.NotContains(t, p.Betas, sdk.AnthropicBeta("pdfs-2024-09-25"))
+		})
+	}
 
 	t.Run("application/pdf URL", func(t *testing.T) {
 		opts := provider.CallOptions{
