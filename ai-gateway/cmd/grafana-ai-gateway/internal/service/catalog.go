@@ -12,8 +12,14 @@ import (
 	"github.com/grafana/ai-sdk/middleware"
 	"github.com/grafana/ai-sdk/provider"
 	anthropicprovider "github.com/grafana/ai-sdk/providers/anthropic"
+	openaiprovider "github.com/grafana/ai-sdk/providers/openai"
 	openaicompatible "github.com/grafana/ai-sdk/providers/openai-compatible"
+	openaisdk "github.com/openai/openai-go/v3"
+	openaioption "github.com/openai/openai-go/v3/option"
+	"github.com/openai/openai-go/v3/responses"
 )
+
+const defaultOpenAIBaseURL = "https://api.openai.com/v1"
 
 type modelConstructor func(apiKey, modelID string, options ...anthropicprovider.Option) provider.LanguageModel
 
@@ -69,6 +75,19 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 					// ProviderWire finish parts carry usage, so streams must request it.
 					openaicompatible.WithIncludeUsage(true),
 				)
+			case "openai":
+				baseURL := providerConfig.BaseURL
+				if baseURL == "" {
+					baseURL = defaultOpenAIBaseURL
+				}
+				// Assembling the client directly keeps ambient OPENAI_* environment defaults out of the request.
+				responsesService := responses.NewResponseService(
+					openaioption.WithAPIKey(providerConfig.APIKey),
+					openaioption.WithBaseURL(baseURL),
+					openaioption.WithHTTPClient(client),
+					openaioption.WithMaxRetries(0),
+				)
+				candidate = openaiprovider.NewResponsesWithClient(openaisdk.Client{Responses: responsesService}, descriptor.Model)
 			default:
 				return nil, fmt.Errorf("gateway service: provider %q is invalid", descriptor.Provider)
 			}

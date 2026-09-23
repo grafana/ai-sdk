@@ -1321,6 +1321,83 @@ describe("authenticated OpenAI-compatible Gateway command", () => {
   });
 });
 
+describe("authenticated OpenAI Responses Gateway command", () => {
+  it("discovers, invokes, and streams usage without exposing private configuration", async () => {
+    const [fake, gateway] = await startOpenAIGateway();
+    try {
+      const rawDiscoveryResponse = await fetch(`${gateway.url}/api/v1/aisdk/config`, {
+        headers: { "X-Access-Token": TEST_TOKEN },
+      });
+      assert.equal(rawDiscoveryResponse.status, 200);
+      const rawDiscovery = await rawDiscoveryResponse.text();
+      for (const privateValue of ["openai-primary", "backend-private", "GATEWAY_TEST_OPENAI_KEY", "integration-openai-key", fake.url]) {
+        assert.ok(!rawDiscovery.includes(privateValue));
+      }
+      const client = gateway.client();
+      const result = await client("grafana/openai").doGenerate({
+        prompt: [{ role: "user", content: [{ type: "text", text: "unary" }] }],
+        maxOutputTokens: 32,
+      });
+      assert.deepEqual(result.content, [{ type: "text", text: "hello from fake openai" }]);
+
+      const stream = await client("openai").doStream({
+        prompt: [{ role: "user", content: [{ type: "text", text: "normal-stream" }] }],
+        maxOutputTokens: 32,
+      });
+      const reader = stream.stream.getReader();
+      const parts: Array<{ type: string; delta?: string; usage?: { outputTokens?: { total?: number } } }> = [];
+      for (;;) {
+        const next = await reader.read();
+        if (next.done) break;
+        parts.push(next.value);
+      }
+      assert.equal(parts.filter((part) => part.type === "text-delta").map((part) => part.delta).join(""), "hello from fake openai stream");
+      assert.equal(parts.find((part) => part.type === "finish")?.usage?.outputTokens?.total, 6);
+
+      assert.equal(fake.requests.length, 2);
+      for (const request of fake.requests) {
+        assert.equal(request.body.max_output_tokens, 32);
+      }
+      assert.deepEqual(fake.violations, []);
+    } finally {
+      await settleCleanup(() => gateway.stop(), () => fake.stop());
+    }
+  });
+
+  it("hides upstream failures and rejects redirects without exposing private configuration", async () => {
+    const [fake, gateway] = await startOpenAIGateway();
+    const redirectTarget = await FakeOpenAI.start();
+    try {
+      fake.failWithSecret = true;
+      const failed = await rawProviderWireRequest(gateway.url, "unary", "openai");
+      assert.ok(failed.status >= 400);
+      const publicError = await failed.text();
+      assert.equal(fake.requests.length, 1);
+
+      fake.failWithSecret = false;
+      fake.redirectTo = redirectTarget.url;
+      const redirected = await rawProviderWireRequest(gateway.url, "unary", "openai");
+      assert.ok(redirected.status >= 400);
+      const redirectError = await redirected.text();
+      assert.equal(redirectTarget.requests.length, 0);
+      assert.deepEqual(fake.violations, []);
+
+      const metrics = await (await fetch(`${gateway.url}/metrics`)).text();
+      assert.equal(await gateway.ready(), true);
+      await gateway.stop();
+      const logs = gateway.stderr;
+      for (const privateValue of ["provider-secret-response", "openai-primary", "backend-private", "integration-openai-key", fake.url, redirectTarget.url, TEST_TOKEN]) {
+        assert.ok(!publicError.includes(privateValue));
+        assert.ok(!redirectError.includes(privateValue));
+        assert.ok(!metrics.includes(privateValue));
+        assert.ok(!logs.includes(privateValue));
+      }
+    } finally {
+      await settleCleanup(() => gateway.stop(), () => fake.stop(), () => redirectTarget.stop());
+    }
+  });
+});
+
 const EDGE_READ_KEY = "27038:dummy-read-key";
 const EDGE_WRITE_KEY = "27038:dummy-write-key";
 const EDGE_INVALID_KEY = "27038:dummy-invalid-key";
@@ -1529,8 +1606,22 @@ async function startCompatibleGateway(): Promise<[FakeCompatible, GatewayProcess
   }
 }
 
+async function startOpenAIGateway(): Promise<[FakeOpenAI, GatewayProcess]> {
+  const fake = await FakeOpenAI.start();
+  try {
+    return [fake, await GatewayProcess.start(binaryPath, "", [], {}, "access-token", openAIConfig(fake.url))];
+  } catch (error) {
+    await settleCleanup(() => fake.stop());
+    throw error;
+  }
+}
+
 function compatibleConfig(url: string): string {
   return `providers:\n  compatible-primary:\n    type: openai-compatible\n    apiKeyEnv: GATEWAY_TEST_COMPATIBLE_KEY\n    baseURL: ${url}/v1\n    providerName: compatible-backend\nmodels:\n  grafana/compatible:\n    name: Grafana Compatible\n    description: Integration model\n    primary:\n      provider: compatible-primary\n      model: backend-private\n    aliases:\n      - compatible\n`;
+}
+
+function openAIConfig(url: string): string {
+  return `providers:\n  openai-primary:\n    type: openai\n    apiKeyEnv: GATEWAY_TEST_OPENAI_KEY\n    baseURL: ${url}/v1\nmodels:\n  grafana/openai:\n    name: Grafana OpenAI\n    description: Integration model\n    primary:\n      provider: openai-primary\n      model: backend-private\n    aliases:\n      - openai\n`;
 }
 
 function anthropicConfig(url: string, backendModel = "backend-private"): string {
@@ -1624,6 +1715,7 @@ class GatewayProcess {
           ...Object.fromEntries(Object.entries(nodeProcess.env).filter(([name]) => !name.startsWith("GRAFANA_AI_GATEWAY_") && !name.startsWith("AGENTO11Y_") && !name.startsWith("SIGIL_"))),
           GATEWAY_TEST_ANTHROPIC_KEY: "integration-anthropic-key",
           GATEWAY_TEST_COMPATIBLE_KEY: "integration-compatible-key",
+          GATEWAY_TEST_OPENAI_KEY: "integration-openai-key",
           ...extraEnv,
         },
       });
@@ -1912,6 +2004,79 @@ class FakeCompatible {
     }
     request.once("close", () => { if (marker != null) this.canceled.add(marker); });
     response.once("close", () => { if (marker != null) this.canceled.add(marker); });
+  }
+}
+
+class FakeOpenAI {
+  readonly url: string;
+  readonly requests: FakeRequest[] = [];
+  readonly violations: string[] = [];
+  redirectTo?: string;
+  failWithSecret = false;
+  private readonly server: ReturnType<typeof createServer>;
+
+  private constructor(server: ReturnType<typeof createServer>, url: string) {
+    this.server = server;
+    this.url = url;
+  }
+
+  static async start(): Promise<FakeOpenAI> {
+    let fake: FakeOpenAI;
+    const server = createServer((request, response) => void fake.handle(request, response));
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (address == null || typeof address === "string") throw new Error("fake server did not bind TCP");
+    fake = new FakeOpenAI(server, `http://127.0.0.1:${address.port}`);
+    return fake;
+  }
+
+  async stop(): Promise<void> {
+    this.server.closeAllConnections();
+    await new Promise<void>((resolve) => this.server.close(() => resolve()));
+  }
+
+  private async handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
+    const chunks: Buffer[] = [];
+    for await (const chunk of request) chunks.push(Buffer.from(chunk));
+    const body = JSON.parse(Buffer.concat(chunks).toString()) as Record<string, unknown>;
+    const authorization = singleHeader(request.headers.authorization);
+    this.requests.push({ path: request.url ?? "", apiKey: authorization, headers: { ...request.headers }, body });
+    if (request.url !== "/v1/responses") this.violations.push(`path=${request.url}`);
+    if (authorization !== "Bearer integration-openai-key") this.violations.push("authorization");
+    if (body.model !== "backend-private") this.violations.push(`model=${String(body.model)}`);
+
+    if (this.redirectTo != null) {
+      response.writeHead(307, { Location: this.redirectTo });
+      response.end();
+      return;
+    }
+    if (this.failWithSecret) {
+      response.writeHead(502, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ error: { type: "server_error", message: "provider-secret-response" } }));
+      return;
+    }
+    const stream = body.stream === true;
+    const text = stream ? "hello from fake openai stream" : "hello from fake openai";
+    const message = { id: "msg_test", type: "message", status: "completed", role: "assistant", content: [{ type: "output_text", annotations: [], logprobs: [], text }] };
+    const completed = (outputTokens: number) => ({
+      id: "resp_test", object: "response", created_at: 1, status: "completed", model: "backend-private", output: [message],
+      usage: { input_tokens: 2, input_tokens_details: { cached_tokens: 0 }, output_tokens: outputTokens, output_tokens_details: { reasoning_tokens: 0 }, total_tokens: 2 + outputTokens },
+    });
+    if (!stream) {
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(JSON.stringify(completed(3)));
+      return;
+    }
+    response.writeHead(200, { "Content-Type": "text/event-stream" });
+    const events: Array<Record<string, unknown>> = [
+      { type: "response.created", response: { ...completed(0), status: "in_progress", output: [], usage: null } },
+      { type: "response.output_item.added", output_index: 0, item: { ...message, status: "in_progress", content: [] } },
+      { type: "response.output_text.delta", output_index: 0, content_index: 0, item_id: "msg_test", delta: text, logprobs: [] },
+      { type: "response.output_item.done", output_index: 0, item: message },
+      { type: "response.completed", response: completed(6) },
+    ];
+    events.forEach((event, index) => response.write(`event: ${String(event.type)}\ndata: ${JSON.stringify({ ...event, sequence_number: index })}\n\n`));
+    response.end();
   }
 }
 

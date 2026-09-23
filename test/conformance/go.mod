@@ -16,7 +16,7 @@ require (
 	github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260916154023-07aacebe97a2
 	github.com/grafana/ai-sdk/providers/anthropic v0.0.0-00010101000000-000000000000
 	github.com/grafana/ai-sdk/providers/bedrock v0.0.0-00010101000000-000000000000
-	github.com/grafana/ai-sdk/providers/openai v0.0.0-20260910193046-bcca929c67e5
+	github.com/grafana/ai-sdk/providers/openai v0.0.0-20260923145714-9fb535a02817
 	github.com/grafana/ai-sdk/providers/openai-compatible v0.0.0-00010101000000-000000000000
 	github.com/openai/openai-go/v3 v3.48.0
 	github.com/stretchr/testify v1.11.1
