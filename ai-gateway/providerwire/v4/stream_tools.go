@@ -10,22 +10,42 @@ import (
 )
 
 type streamToolStartEvent struct {
-	Type     provider.StreamPartType `json:"type"`
-	ID       string                  `json:"id"`
-	ToolName string                  `json:"toolName"`
+	Type             provider.StreamPartType   `json:"type"`
+	ID               string                    `json:"id"`
+	ToolName         string                    `json:"toolName"`
+	ProviderExecuted bool                      `json:"providerExecuted,omitempty"`
+	Dynamic          *bool                     `json:"dynamic,omitempty"`
+	ProviderMetadata provider.ProviderMetadata `json:"providerMetadata,omitempty"`
+}
+type streamToolDeltaEvent struct {
+	Type             provider.StreamPartType   `json:"type"`
+	ID               string                    `json:"id"`
+	Delta            string                    `json:"delta"`
+	ProviderMetadata provider.ProviderMetadata `json:"providerMetadata,omitempty"`
+}
+type streamToolEndEvent struct {
+	Type             provider.StreamPartType   `json:"type"`
+	ID               string                    `json:"id"`
+	ProviderMetadata provider.ProviderMetadata `json:"providerMetadata,omitempty"`
 }
 type streamToolCallEvent struct {
-	Type       provider.StreamPartType `json:"type"`
-	ToolCallID string                  `json:"toolCallId"`
-	ToolName   string                  `json:"toolName"`
-	Input      string                  `json:"input"`
+	Type             provider.StreamPartType   `json:"type"`
+	ToolCallID       string                    `json:"toolCallId"`
+	ToolName         string                    `json:"toolName"`
+	Input            string                    `json:"input"`
+	ProviderExecuted bool                      `json:"providerExecuted,omitempty"`
+	Dynamic          bool                      `json:"dynamic,omitempty"`
+	ProviderMetadata provider.ProviderMetadata `json:"providerMetadata,omitempty"`
 }
 type streamToolResultEvent struct {
-	Type       provider.StreamPartType `json:"type"`
-	ToolCallID string                  `json:"toolCallId"`
-	ToolName   string                  `json:"toolName"`
-	Result     json.RawMessage         `json:"result"`
-	IsError    bool                    `json:"isError,omitempty"`
+	Type             provider.StreamPartType   `json:"type"`
+	ToolCallID       string                    `json:"toolCallId"`
+	ToolName         string                    `json:"toolName"`
+	Result           json.RawMessage           `json:"result"`
+	IsError          bool                      `json:"isError,omitempty"`
+	Dynamic          bool                      `json:"dynamic,omitempty"`
+	Preliminary      bool                      `json:"preliminary,omitempty"`
+	ProviderMetadata provider.ProviderMetadata `json:"providerMetadata,omitempty"`
 }
 type toolStreamPhase uint8
 
@@ -33,6 +53,7 @@ const (
 	toolInputOpen toolStreamPhase = iota + 1
 	toolInputClosed
 	toolCallEmitted
+	toolResultPreliminary
 	toolResultEmitted
 )
 
@@ -42,9 +63,6 @@ type toolStreamState struct {
 }
 
 func (h *handler) processToolStreamPart(w http.ResponseWriter, state *streamState, part provider.StreamPart) streamPartResult {
-	if part.ProviderExecuted || (part.Dynamic != nil && *part.Dynamic) || part.Preliminary {
-		return streamPartAdapterFailure
-	}
 	id := part.ID
 	if part.Type == provider.PartToolCall || part.Type == provider.PartToolResult {
 		id = part.ToolCallID
@@ -53,36 +71,51 @@ func (h *handler) processToolStreamPart(w http.ResponseWriter, state *streamStat
 		return streamPartAdapterFailure
 	}
 	current, exists := state.tools[id]
+	_, seenInHistory := state.history[id]
+	historical := false
+	if !exists && part.Type == provider.PartToolResult {
+		current, historical = state.history[id]
+		exists = historical
+	}
 	next := current
-	event := streamEvent{typeName: part.Type, id: id, toolName: part.ToolName, delta: part.Delta, input: part.Input, result: part.Result, isError: part.IsError}
+	metadata, err := mapToolMetadata(part.ProviderMetadata, h.limits.StreamFrameBytes)
+	if err != nil {
+		return streamPartAdapterFailure
+	}
+	event := streamEvent{typeName: part.Type, id: id, toolName: part.ToolName, delta: part.Delta, input: part.Input, result: part.Result, isError: part.IsError, providerMetadata: metadata}
 	switch part.Type {
 	case provider.PartToolInputStart:
-		if exists || part.ToolName == "" {
+		if exists || seenInHistory || part.ToolName == "" || part.Preliminary {
 			return streamPartAdapterFailure
 		}
 		next = toolStreamState{name: part.ToolName, phase: toolInputOpen}
-	case provider.PartToolInputDelta:
-		if !exists || current.phase != toolInputOpen {
+		event.providerExecuted, event.dynamic = part.ProviderExecuted, part.Dynamic
+	case provider.PartToolInputDelta, provider.PartToolInputEnd:
+		if !exists || current.phase != toolInputOpen || part.ProviderExecuted || (part.Dynamic != nil && *part.Dynamic) || part.Preliminary {
 			return streamPartAdapterFailure
 		}
-	case provider.PartToolInputEnd:
-		if !exists || current.phase != toolInputOpen {
-			return streamPartAdapterFailure
+		if part.Type == provider.PartToolInputEnd {
+			next.phase = toolInputClosed
 		}
-		next.phase = toolInputClosed
 	case provider.PartToolCall:
-		if part.ToolName == "" || (exists && (current.phase != toolInputClosed || current.name != part.ToolName)) {
+		if seenInHistory || part.ToolName == "" || part.Preliminary || (exists && (current.phase != toolInputClosed || current.name != part.ToolName)) {
 			return streamPartAdapterFailure
 		}
 		next = toolStreamState{name: part.ToolName, phase: toolCallEmitted}
+		event.providerExecuted, event.dynamic = part.ProviderExecuted, part.Dynamic
 	case provider.PartToolResult:
-		if !exists || current.phase != toolCallEmitted || current.name != part.ToolName {
+		if !exists || part.ToolName == "" || (current.phase != toolCallEmitted && current.phase != toolResultPreliminary) || current.name != part.ToolName {
 			return streamPartAdapterFailure
 		}
 		if int64(len(part.Result)) > h.limits.StreamFrameBytes || !json.Valid(part.Result) || bytes.Equal(bytes.TrimSpace(part.Result), []byte("null")) {
 			return streamPartAdapterFailure
 		}
-		next.phase = toolResultEmitted
+		if part.Preliminary {
+			next.phase = toolResultPreliminary
+		} else {
+			next.phase = toolResultEmitted
+		}
+		event.dynamic, event.preliminary = part.Dynamic, part.Preliminary
 	}
 	if !exists && len(state.tools) >= h.limits.StreamParts {
 		return streamPartAdapterFailure
@@ -93,7 +126,11 @@ func (h *handler) processToolStreamPart(w http.ResponseWriter, state *streamStat
 	case streamWriteWriterFailure:
 		return streamPartWriterFailure
 	}
-	state.tools[id] = next
+	if historical {
+		state.history[id] = next
+	} else {
+		state.tools[id] = next
+	}
 	state.textStarted = true
 	return streamPartContinue
 }

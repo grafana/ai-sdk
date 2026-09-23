@@ -46,6 +46,68 @@ type providerWireV4Model struct {
 	stats *providerWireV4Stats
 }
 
+func hostedMetadata() provider.ProviderMetadata {
+	return provider.ProviderMetadata{"anthropic": json.RawMessage(`{"caller":{"type":"direct"},"private":"hidden"}`)}
+}
+
+func hostedStage(options provider.CallOptions) (int, error) {
+	if len(options.Tools) != 1 || options.Tools[0].Type != provider.ToolTypeProvider || options.Tools[0].ID != "anthropic.code_execution_20260120" || options.Tools[0].Args == nil || len(options.ProviderOptions) != 0 {
+		return 0, errors.New("invalid hosted tool request")
+	}
+	stage := 0
+	for _, message := range options.Prompt {
+		if message.Role != provider.RoleAssistant {
+			continue
+		}
+		for _, part := range message.Content {
+			if part.Type != provider.ContentPartTypeToolCall && part.Type != provider.ContentPartTypeToolResult {
+				continue
+			}
+			metadata, ok := part.ProviderOptions["anthropic"].(provider.RawProviderOption)
+			if !ok {
+				return 0, errors.New("missing hosted tool metadata")
+			}
+			var fields struct {
+				Caller struct {
+					Type string `json:"type"`
+				} `json:"caller"`
+			}
+			if json.Unmarshal(metadata.Raw, &fields) != nil || fields.Caller.Type != "direct" || part.ToolCallID != "call" || part.ToolName != "echo" {
+				return 0, errors.New("invalid hosted tool history")
+			}
+			if part.Type == provider.ContentPartTypeToolCall {
+				if !part.ProviderExecuted || stage != 0 {
+					return 0, errors.New("invalid hosted call ownership")
+				}
+				stage = 1
+			} else {
+				if stage != 1 || part.Output == nil {
+					return 0, errors.New("invalid hosted result")
+				}
+				stage = 2
+			}
+		}
+	}
+	return stage, nil
+}
+
+func hostedCallContent() provider.GenerateContentPart {
+	return provider.GenerateContentPart{Type: provider.ContentToolCall, ToolCallID: "call", ToolName: "echo", Input: json.RawMessage(`{}`), ProviderExecuted: true, Dynamic: true, ProviderMetadata: hostedMetadata()}
+}
+
+func hostedResultContent(isError bool) provider.GenerateContentPart {
+	return provider.GenerateContentPart{Type: provider.ContentToolResult, ToolCallID: "call", ToolName: "echo", Result: json.RawMessage(`{"result":"done"}`), IsError: isError, ProviderMetadata: hostedMetadata()}
+}
+
+func hostedCallStreamPart() provider.StreamPart {
+	yes := true
+	return provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "call", ToolName: "echo", Input: `{}`, ProviderExecuted: true, Dynamic: &yes, ProviderMetadata: hostedMetadata()}
+}
+
+func hostedResultStreamPart(isError bool) provider.StreamPart {
+	return provider.StreamPart{Type: provider.PartToolResult, ToolCallID: "call", ToolName: "echo", Result: json.RawMessage(`{"result":"done"}`), IsError: isError, ProviderMetadata: hostedMetadata()}
+}
+
 func (*providerWireV4Model) SpecificationVersion() string               { return "v4" }
 func (*providerWireV4Model) Provider() string                           { return "test" }
 func (m *providerWireV4Model) ModelID() string                          { return "private-" + m.kind }
@@ -56,6 +118,20 @@ func (m *providerWireV4Model) DoStream(ctx context.Context, options provider.Cal
 	one := 1
 	two := 2
 	switch m.kind {
+	case "hosted-deferred", "hosted-deferred-error":
+		m.stats.recordSuccess(options)
+		stage, err := hostedStage(options)
+		if err != nil {
+			return nil, err
+		}
+		switch stage {
+		case 0:
+			return &provider.StreamResult{Stream: scenarioStream(hostedCallStreamPart(), provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonToolCalls}, Usage: &provider.Usage{}})}, nil
+		case 1:
+			return &provider.StreamResult{Stream: scenarioStream(hostedResultStreamPart(m.kind == "hosted-deferred-error"), provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: &provider.Usage{}})}, nil
+		default:
+			return &provider.StreamResult{Stream: scenarioStream(provider.StreamPart{Type: provider.PartTextStart, ID: "final"}, provider.StreamPart{Type: provider.PartTextDelta, ID: "final", Delta: "finished"}, provider.StreamPart{Type: provider.PartTextEnd, ID: "final"}, provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: &provider.Usage{}})}, nil
+		}
 	case "stream-tool-arguments":
 		var parts []provider.StreamPart
 		for i, input := range []string{"", `{"service":`, "\"\\\n\t<>&\u2028\u2029"} {
@@ -149,6 +225,23 @@ func (m *providerWireV4Model) DoStream(ctx context.Context, options provider.Cal
 
 func (m *providerWireV4Model) DoGenerate(ctx context.Context, options provider.CallOptions) (*provider.GenerateResult, error) {
 	switch m.kind {
+	case "hosted-deferred", "hosted-deferred-error":
+		m.stats.recordSuccess(options)
+		stage, err := hostedStage(options)
+		if err != nil {
+			return nil, err
+		}
+		result := &provider.GenerateResult{FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}
+		switch stage {
+		case 0:
+			result.Content = []provider.GenerateContentPart{hostedCallContent()}
+			result.FinishReason.Unified = provider.FinishReasonToolCalls
+		case 1:
+			result.Content = []provider.GenerateContentPart{hostedResultContent(m.kind == "hosted-deferred-error")}
+		default:
+			result.Content = []provider.GenerateContentPart{{Type: provider.ContentText, Text: "finished"}}
+		}
+		return result, nil
 	case "unary-tools", "unary-tools-provider-executed", "unary-tools-dynamic":
 		m.stats.recordSuccess(options)
 		for _, message := range options.Prompt {
@@ -202,7 +295,7 @@ type providerWireV4Scenario struct {
 func newProviderWireV4Scenario() (*providerWireV4Scenario, error) {
 	stats := &providerWireV4Stats{}
 	entries := make([]catalog.StaticEntry, 0, 5)
-	for _, id := range []string{"success", "blocking", "stream-errors", "stream-timeout", "stream-blocking", "unary-tools", "unary-tools-provider-executed", "unary-tools-dynamic", "stream-tools", "stream-tool-results", "stream-tool-arguments"} {
+	for _, id := range []string{"success", "blocking", "stream-errors", "stream-timeout", "stream-blocking", "unary-tools", "unary-tools-provider-executed", "unary-tools-dynamic", "stream-tools", "stream-tool-results", "stream-tool-arguments", "hosted-deferred", "hosted-deferred-error"} {
 		entries = append(entries, catalog.StaticEntry{
 			Info:  catalog.ModelInfo{ID: id},
 			Model: &providerWireV4Model{kind: id, stats: stats},

@@ -106,6 +106,35 @@ describe("registered Gateway client consumption", () => {
     assert.equal(result.response?.timestamp, undefined);
   });
 
+  it("passes through unary hosted MCP calls, results and their replay metadata", async () => {
+    const content = [
+      { type: "tool-call", toolCallId: "call-mcp", toolName: "get_weather", input: "{}", providerExecuted: true, dynamic: true,
+        providerMetadata: { anthropic: { type: "mcp-tool-use", serverName: "weather" } } },
+      { type: "tool-result", toolCallId: "call-mcp", toolName: "get_weather", result: { temperature: 0 }, isError: false,
+        providerMetadata: { anthropic: { type: "mcp-tool-use", serverName: "weather" } } },
+    ];
+    const model = modelWithFetch(async () => Response.json({ content, finishReason: { unified: "stop" }, usage: { inputTokens: {}, outputTokens: {} } }));
+    const result = await model.doGenerate({ prompt: [] });
+    assert.deepEqual(result.content, content);
+    assert.deepEqual(result.warnings, []);
+  });
+
+  it("preserves stream tool-input dynamic absence versus explicit false and deferred results", async () => {
+    const parts = [
+      { type: "tool-input-start", id: "absent", toolName: "dynamic_tool" },
+      { type: "tool-input-start", id: "disabled", toolName: "dynamic_tool", dynamic: false },
+      { type: "tool-input-start", id: "enabled", toolName: "dynamic_tool", dynamic: true },
+      { type: "tool-result", toolCallId: "previous-call", toolName: "get_weather", result: "failed", isError: true,
+        providerMetadata: { anthropic: { type: "mcp-tool-use", serverName: "weather" } } },
+    ];
+    const model = modelWithFetch(async () => sseResponse(parts));
+    const output = await collect((await model.doStream({ prompt: [] })).stream);
+    assert.deepEqual(output, parts);
+    assert.equal("dynamic" in output[0], false);
+    assert.equal((output[1] as { dynamic: boolean }).dynamic, false);
+    assert.equal((output[2] as { dynamic: boolean }).dynamic, true);
+  });
+
   it("consumes finish followed by clean EOF", async () => {
     const model = modelWithFetch(async () =>
       sseResponse([

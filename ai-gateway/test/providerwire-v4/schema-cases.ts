@@ -397,6 +397,14 @@ export const invalidRequests: SchemaCase[] = [
       ],
     },
   },
+  ...(["description", "inputSchema", "inputExamples", "strict"] as const).map((field) => ({
+    name: `provider tool forbids ${field} even when empty`,
+    value: { prompt: [], tools: [{ type: "provider", id: "provider.search", name: "search", args: {}, [field]: field === "strict" ? false : field === "inputExamples" ? [] : field === "inputSchema" ? {} : "" }] },
+  })),
+  ...([undefined, null, [], 0] as const).map((args, index) => ({
+    name: `provider tool rejects invalid args ${index}`,
+    value: { prompt: [], tools: [{ type: "provider", id: "provider.search", name: "search", ...(args === undefined ? {} : { args }) }] },
+  })),
   { name: "unknown tool choice", value: { prompt: [], toolChoice: { type: "future" } } },
   { name: "named tool choice missing name", value: { prompt: [], toolChoice: { type: "tool" } } },
   {

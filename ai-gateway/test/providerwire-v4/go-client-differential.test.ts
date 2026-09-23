@@ -203,6 +203,77 @@ describe("Go and exact-pinned Gateway differential", () => {
     } finally { await server.stop(); }
   });
 
+  it("matches provider definitions, continuation and hosted unary output", async () => {
+    const serverBody = { content: [
+      { type: "tool-call", toolCallId: "call", toolName: "echo", input: "{}", providerExecuted: true, dynamic: true, providerMetadata: { anthropic: { caller: { type: "direct" } } } },
+      { type: "tool-result", toolCallId: "call", toolName: "echo", result: { value: 0 }, isError: true, providerMetadata: { anthropic: { caller: { type: "direct" } } } },
+    ], finishReason: { unified: "tool-calls" }, usage: { inputTokens: {}, outputTokens: {} } };
+    const server = await endpoint(JSON.stringify(serverBody));
+    try {
+      const options: LanguageModelV4CallOptions = {
+        prompt: [{ role: "assistant", content: [
+          { type: "tool-call", toolCallId: "history", toolName: "echo", input: {}, providerExecuted: true, providerOptions: { anthropic: { caller: { type: "direct" } } } },
+          { type: "tool-result", toolCallId: "history", toolName: "echo", output: { type: "json", value: { ok: true } }, providerOptions: { anthropic: { caller: { type: "direct" } } } },
+        ] }],
+        tools: [{ type: "provider", id: "anthropic.code_execution_20260120", name: "code", args: {} }],
+      };
+      const ts = await createGateway({ apiKey: "test", baseURL: server.baseURL, headers: { "x-access-token": "token" } })("assistant").doGenerate(options);
+      const go = await captureGoClient(binary, { baseURL: server.baseURL, accessToken: "token", modelID: "assistant", mode: "generate", options });
+      assert.equal(go.error, undefined);
+      assert.deepEqual(semanticRequest(server.requests[1]!), semanticRequest(server.requests[0]!));
+      assert.deepEqual(go.result.content, ts.content);
+      assert.deepEqual(go.result.finishReason, ts.finishReason);
+      assert.deepEqual(go.result.usage, ts.usage);
+      assert.deepEqual(go.result.request, JSON.parse(JSON.stringify(ts.request)));
+    } finally { await server.stop(); }
+  });
+
+  it("keeps provider-defined client tools separate from hosted execution", async () => {
+    const body = { content: [{ type: "tool-call", toolCallId: "computer", toolName: "browser", input: "{}" }], finishReason: { unified: "tool-calls" }, usage: { inputTokens: {}, outputTokens: {} } };
+    const server = await endpoint(JSON.stringify(body));
+    try {
+      const options: LanguageModelV4CallOptions = { prompt: [], tools: [{ type: "provider", id: "openai.computer", name: "browser", args: {} }] };
+      const ts = await createGateway({ apiKey: "test", baseURL: server.baseURL, headers: { "x-access-token": "token" } })("assistant").doGenerate(options);
+      const go = await captureGoClient(binary, { baseURL: server.baseURL, accessToken: "token", modelID: "assistant", mode: "generate", options });
+      assert.equal(go.error, undefined);
+      assert.deepEqual(semanticRequest(server.requests[1]!), semanticRequest(server.requests[0]!));
+      assert.deepEqual(go.result.content, ts.content);
+      const tsCall = ts.content[0];
+      assert.equal(tsCall.type, "tool-call");
+      if (tsCall.type === "tool-call") assert.notEqual(tsCall.providerExecuted, true);
+      assert.notEqual(go.result.content[0].providerExecuted, true);
+    } finally { await server.stop(); }
+  });
+
+  it("matches hosted stream markers, preliminary results and result-only continuation", async () => {
+    const events = [
+      { type: "tool-input-start", id: "call", toolName: "echo", providerExecuted: true, dynamic: false },
+      { type: "tool-input-delta", id: "call", delta: "" },
+      { type: "tool-input-end", id: "call" },
+      { type: "tool-call", toolCallId: "call", toolName: "echo", input: "{}", providerExecuted: true, dynamic: true, providerMetadata: { anthropic: { caller: { type: "direct" } } } },
+      { type: "tool-result", toolCallId: "call", toolName: "echo", result: "preview", preliminary: true, providerMetadata: { anthropic: { caller: { type: "direct" } } } },
+      { type: "tool-result", toolCallId: "call", toolName: "echo", result: "done", isError: false },
+      { type: "finish", finishReason: { unified: "stop" }, usage: { inputTokens: {}, outputTokens: {} } },
+    ];
+    const server = await endpoint(events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join(""), 200, "text/event-stream");
+    try {
+      const options: LanguageModelV4CallOptions = { prompt: [{ role: "assistant", content: [{ type: "tool-call", toolCallId: "previous", toolName: "echo", input: {}, providerExecuted: true }] }] };
+      const ts = await createGateway({ apiKey: "test", baseURL: server.baseURL, headers: { "x-access-token": "token" } })("assistant").doStream(options);
+      const parts: unknown[] = []; for await (const part of ts.stream) parts.push(part);
+      const go = await captureGoClient(binary, { baseURL: server.baseURL, accessToken: "token", modelID: "assistant", mode: "stream", options });
+      assert.equal(go.error, undefined);
+      const normalize = (part: any) => {
+        if (part.type === "tool-result" && part.isError === false) {
+          const { isError: _disabled, ...rest } = part;
+          return rest;
+        }
+        return part;
+      };
+      assert.deepEqual(go.parts.map(normalize), parts.map(normalize));
+      assert.deepEqual(semanticRequest(server.requests[1]!), semanticRequest(server.requests[0]!));
+    } finally { await server.stop(); }
+  });
+
   it("matches public discovery and alias order", async () => {
     const models = [{ id: "assistant", name: "Assistant", description: null, specification: { specificationVersion: "v4", provider: "grafana", modelId: "assistant" } }, { id: "grafana/assistant", name: "Alias", specification: { specificationVersion: "v4", provider: "grafana", modelId: "grafana/assistant" } }];
     const server = await endpoint(JSON.stringify({ models, private: "ignored" }));
