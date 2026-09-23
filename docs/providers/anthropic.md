@@ -64,7 +64,22 @@ configured otherwise.
 
 Anthropic-specific options also cover effort, beta features, remote MCP servers,
 containers, task budgets, and tool streaming. Enable only options supported by
-the chosen model.
+the chosen model. For non-streaming calls with a large model-default output
+budget, set a request context deadline: `DoGenerate` uses its remaining time
+as the Anthropic SDK attempt timeout, and the context still bounds the call.
+An explicit SDK request timeout supplied through model options takes
+precedence. Without either deadline or explicit timeout, the SDK may require
+streaming rather than issuing a long-running unary request. The Gateway adds
+its configured model-duration deadline automatically.
+
+MCP server authorization tokens and the tool-configuration
+`enabled` flag are presence-aware: nil omits them; pointers to `""` or `false`
+forward those explicit values. A non-nil empty `allowedTools` slice forwards an
+empty array rather than omitting the list. Callers previously constructing
+these Go structs with string/bool fields must supply pointers for explicit
+values. Configure remote servers only for callers and models authorized to use
+them; tokens can appear in caller-owned request metadata. These native-provider
+options do not imply that the Gateway service accepts MCP configuration.
 
 ## Avoid duplicate retry policy
 

@@ -129,6 +129,15 @@ two-step Vercel/Go orchestration through the real handler with one local executi
 Safe-JWKS command/native tests separately cover two transport calls per client.
 No tool runner or session state is introduced in the Gateway.
 
+The SDK prerequisite layer validates direct tool variants before native I/O,
+normalizes equivalent execution markers and preserves presence-sensitive
+input-start dynamic behavior. Anthropic native transport tests prove MCP
+optional token/enabled omission versus empty/false and caller-deadline unary
+timeouts without reducing the model-default token budget. Explicit SDK timeouts
+win; unbounded direct callers retain the SDK non-streaming guard. Provider fixture
+inputs are unchanged. Gateway boolean consumers and immutable dependencies are
+migrated while its provider-tool and root-option rejection remains in place.
+
 
 `providers/grafana` is an Apache-licensed, independently buildable client for
 the Gateway service, not a second Gateway implementation. Its focused Go
@@ -145,14 +154,21 @@ The following differences are explicit rather than claims of complete parity:
   strings; timestamps become `time.Time`; local request bodies are serialized
   JSON rather than JavaScript objects; empty warning slices can disappear only
   when the capture process reserializes Go structs with `omitempty`.
-- Representation gaps: zero-value reasoning is omitted. Go optional strings
-  and booleans cannot distinguish absence from explicit empty/false values,
-  including `IncludeRawChunks`, `ProviderExecuted`, and optional tool names,
-  descriptions, and reasons. Required selected empty values are retained.
+- Parity-preserving Go normalizations: `IncludeRawChunks`, `ProviderExecuted`,
+  `Preliminary` and unary `Dynamic` normalize equivalent absent/false values;
+  nil direct-Go provider-tool args become `args: {}`. Streaming input-start
+  `Dynamic *bool` retains absent/false/true for definition inference. Cross-language
+  tests distinguish text-stream inference from UI tool-definition projection.
+- Representation gaps: zero-value reasoning is omitted. Some optional Go
+  descriptive strings and reasons cannot distinguish absence from explicit empty.
+  Required selected empty values are retained.
 - Intentional security boundaries: client-owned authentication/protocol headers
   cannot be overridden through case variants; URL prefixes are retained;
-  discovery is atomic and bounded; response families are closed to text and the
-  supported unary/streaming client-executed function-tool subset.
+  discovery is atomic and bounded; client response families include text and
+  reviewed function/provider calls/results with bounded tool metadata projection.
+  Focused client tests prove execution/dynamic/preliminary markers and deferred
+  result decoding; this reader capability does not activate Gateway service
+  provider-tool or MCP support.
   Upstream's permissive output schema and wildcard supported URLs are not
   adopted. Raw unary response text is retained only within its configured bound.
   Token-exchange errors discard arbitrary token-service response prose, including
