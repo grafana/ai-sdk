@@ -12,7 +12,7 @@
 - [x] 2.4 Verify malformed options, unconfigured names, fallback-without-definitions, non-Anthropic routes and private-safe observation.
 - [x] 2.5 Scope MCP operator/client docs and parity coverage, explicitly leaving live egress and deployment activation unverified.
 - [x] 2.6 Run tests, build, vet, lint, parity, integration, focused race, module-resolution and Gateway-boundary checks; compare the final runtime with the original reviewed implementation.
-- [ ] 2.7 Validate all three unarchived changes, publish the final draft PR and link the stack; supersede #237 without rewriting published prerequisite refs.
+- [x] 2.7 Validate all three unarchived changes, publish the final draft PR and link the stack; supersede #237 without rewriting published prerequisite refs.
 
 ## 3. Integrate the current main baseline
 
