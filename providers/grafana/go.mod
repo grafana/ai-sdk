@@ -3,7 +3,7 @@ module github.com/grafana/ai-sdk/providers/grafana
 go 1.26.3
 
 require (
-	github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260916154023-07aacebe97a2
+	github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260923173611-74293b6204f4
 	github.com/grafana/authlib v0.0.0-20260814184937-0d62418c2815
 	github.com/stretchr/testify v1.11.1
 )
@@ -22,7 +22,7 @@ require (
 	github.com/patrickmn/go-cache v2.1.0+incompatible // indirect
 	github.com/pb33f/ordered-map/v2 v2.3.1 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
-	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2 // indirect
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/otel v1.44.0 // indirect
 	go.opentelemetry.io/otel/metric v1.44.0 // indirect

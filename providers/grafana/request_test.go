@@ -34,6 +34,31 @@ func TestEncodeRequest_Presence(t *testing.T) {
 	assert.JSONEq(t, `{"tools":[{"type":"function","name":"f","inputSchema":{},"inputExamples":[],"strict":false}],"headers":{},"providerOptions":{}}`, string(b))
 }
 
+func TestEncodeRequest_NilProviderArgs(t *testing.T) {
+	tools := []provider.Tool{{Type: provider.ToolTypeProvider, ID: "anthropic.code_execution_20260120", Name: "code_execution"}}
+	body, err := encodeRequest(provider.CallOptions{Tools: tools})
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"tools":[{"type":"provider","id":"anthropic.code_execution_20260120","name":"code_execution","args":{}}]}`, string(body))
+	assert.Nil(t, tools[0].Args)
+
+	strict := false
+	tools[0].Strict = &strict
+	_, err = encodeRequest(provider.CallOptions{Tools: tools})
+	require.Error(t, err)
+}
+
+func TestEncodeRequest_ProviderToolContinuation(t *testing.T) {
+	mcp := provider.ProviderOptions{"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(`{"mcpServers":[{"type":"url","name":"echo","url":"https://mcp.example.test/tools","authorizationToken":"dummy","toolConfiguration":{"enabled":false,"allowedTools":[]}}]}`)}}
+	metadata := provider.ProviderOptions{"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(`{"type":"mcp-tool-use","serverName":"echo"}`)}}
+	call := provider.ToolCallPart("call", "echo", json.RawMessage(`{"message":"hello"}`))
+	call.ProviderExecuted, call.ProviderOptions = true, metadata
+	result := provider.ToolResultPart("call", "echo", &provider.ToolResultOutput{Type: provider.ToolOutputJSON, JSON: json.RawMessage(`{"reply":"hello"}`)})
+	result.ProviderOptions = metadata
+	body, err := encodeRequest(provider.CallOptions{Prompt: []provider.Message{provider.NewAssistantMessage(call, result)}, ProviderOptions: mcp})
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"echo","input":{"message":"hello"},"providerExecuted":true,"providerOptions":{"anthropic":{"type":"mcp-tool-use","serverName":"echo"}}},{"type":"tool-result","toolCallId":"call","toolName":"echo","output":{"type":"json","value":{"reply":"hello"}},"providerOptions":{"anthropic":{"type":"mcp-tool-use","serverName":"echo"}}}]}],"providerOptions":{"anthropic":{"mcpServers":[{"type":"url","name":"echo","url":"https://mcp.example.test/tools","authorizationToken":"dummy","toolConfiguration":{"enabled":false,"allowedTools":[]}}]}}}`, string(body))
+}
+
 func TestEncodeRequest_DataArms(t *testing.T) {
 	for _, tc := range []struct {
 		name string
