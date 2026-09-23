@@ -9,6 +9,7 @@ import {
   providerWireRequiredPackages,
   validateBaseline,
   validateBaselineFiles,
+  validateVerificationDate,
 } from "./validate-baseline.mts";
 
 describe("validateBaseline", () => {
@@ -143,9 +144,33 @@ describe("validateBaseline", () => {
   });
 });
 
+describe("baseline verification date", () => {
+  it("accepts a completed verification date", () => {
+    assert.deepEqual(validateVerificationDate({ upstream: { verifiedAt: "2026-01-01" } }), []);
+  });
+
+  for (const date of [undefined, null, "", "not-a-date", "2026-02-30", "2099-01-01", "2026-01-01T00:00:00Z", 42]) {
+    it(`rejects unverified or invalid date ${date}`, () => {
+      assert.equal(validateVerificationDate({ upstream: { verifiedAt: date } }).length, 1);
+    });
+  }
+
+  it("enforces the date in file validation", () => {
+    const directory = mkdtempSync(join(tmpdir(), "baseline-unverified-"));
+    try {
+      const evidence = readGatewayContractEvidence();
+      const path = join(directory, "baseline.json");
+      writeFileSync(path, JSON.stringify({ upstream: { commit: evidence.upstreamCommit, verifiedAt: null }, packages: evidence.packages }));
+      assert.match(validateBaselineFiles(path, [])[0], /verification date/);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("Gateway client contract witness", () => {
   const evidence = readGatewayContractEvidence();
-  const baseline = { upstream: { commit: evidence.upstreamCommit }, packages: evidence.packages };
+  const baseline = { upstream: { commit: evidence.upstreamCommit, verifiedAt: "2026-01-01" }, packages: evidence.packages };
 
   it("matches the reviewed complete request contract and classifies all finite arms", () => {
     assert.deepEqual(validateGatewayContract(baseline, evidence, collectGatewayContract()), []);

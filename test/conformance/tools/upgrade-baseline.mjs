@@ -1,13 +1,12 @@
 #!/usr/bin/env node
 
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const baselinePath = join(__dirname, "..", "upstream.yaml");
-const workspacePath = join(__dirname, "..", "..", "pnpm-workspace.yaml");
+const repositoryRoot = resolve(__dirname, "..", "..", "..");
 const packagePaths = [
   join(__dirname, "package.json"),
   join(__dirname, "..", "..", "integration", "package.json"),
@@ -250,7 +249,7 @@ function packageVersionsFromBaseline(yaml) {
   return versions;
 }
 
-function updateBaseline(yaml, versions, verifiedAt, commit) {
+function updateBaseline(yaml, versions, commit) {
   let inPackages = false;
 
   return yaml
@@ -260,7 +259,7 @@ function updateBaseline(yaml, versions, verifiedAt, commit) {
         return `  commit: ${commit}`;
       }
       if (line.startsWith("  verifiedAt:")) {
-        return `  verifiedAt: "${verifiedAt.toISOString().slice(0, 10)}"`;
+        return "  verifiedAt: null";
       }
       if (line === "packages:") {
         inPackages = true;
@@ -296,72 +295,184 @@ function resolveTagCommit(repository, tag) {
   return parseTagCommit(output, tag);
 }
 
-function main() {
-  const now = new Date();
-  const baselineYaml = readFileSync(baselinePath, "utf8");
-  const minimumReleaseAge = parseMinimumReleaseAge(readFileSync(workspacePath, "utf8"));
-  const maturityCutoff = new Date(now.getTime() - minimumReleaseAge * 60_000);
-  const baselineVersions = packageVersionsFromBaseline(baselineYaml);
-  const packageMetadata = [...baselineVersions.keys()].map(fetchPackageMetadata);
-  const dependencyCache = new Map();
-  const getDependencies = (packageName, version) => {
-    const packageSpec = `${packageName}@${version}`;
-    if (!dependencyCache.has(packageSpec)) {
-      dependencyCache.set(packageSpec, npmView(packageSpec, "dependencies"));
-    }
-    return dependencyCache.get(packageSpec);
-  };
+function requireCommit(commit) {
+  if (typeof commit !== "string" || !/^[0-9a-f]{40,64}$/.test(commit)) {
+    throw new Error(`invalid upstream source commit: ${commit}`);
+  }
+  return commit;
+}
 
-  console.log(
-    `minimum release age: ${minimumReleaseAge} minutes; ` +
-      `publication cutoff: ${maturityCutoff.toISOString()}`,
-  );
+function timestamp(value) {
+  const date = new Date(value);
+  if (typeof value !== "string" || Number.isNaN(date.getTime()) || date.toISOString() !== value) {
+    throw new Error(`expected an ISO publication/selection timestamp, got ${value}`);
+  }
+  return date;
+}
 
+function samePackageNames(left, right) {
+  return Object.keys(left).length === Object.keys(right).length &&
+    Object.keys(left).every((name) => Object.hasOwn(right, name));
+}
+
+function samePackages(left, right) {
+  return samePackageNames(left, right) &&
+    Object.entries(left).every(([name, version]) => right[name] === version);
+}
+
+function sameBaseline(left, right) {
+  return left.repository === right.repository && left.commit === right.commit &&
+    samePackages(left.packages, right.packages);
+}
+
+export function readBaseline(yaml) {
+  const repository = yaml.match(/^  repository:\s*(\S+)\s*$/m)?.[1];
+  const commit = yaml.match(/^  commit:\s*(\S+)\s*$/m)?.[1];
+  const packages = Object.fromEntries(packageVersionsFromBaseline(yaml));
+  if (!repository || !packages.ai) {
+    throw new Error("baseline must declare upstream.repository, commit and packages.ai");
+  }
+  requireCommit(commit);
+  for (const version of Object.values(packages)) stableVersionParts(version);
+  return { repository, commit, packages };
+}
+
+export function createTarget({ baseline, packageMetadata, minimumReleaseAge, now, getDependencies, getCommit }) {
+  const cutoff = new Date(now.getTime() - minimumReleaseAge * 60_000);
   const { versions } = selectMaturePackageSet(
-    packageMetadata,
-    maturityCutoff,
-    getDependencies,
-    baselineVersions,
+    packageMetadata, cutoff, getDependencies, new Map(Object.entries(baseline.packages)),
   );
-
-  for (const [packageName, version] of versions) {
-    const metadata = packageMetadata.find((candidate) => candidate.name === packageName);
-    const release = metadata.releases.find((candidate) => candidate.version === version);
-    console.log(`${packageName}@${version} (published ${release.publishedAt.toISOString()})`);
-  }
-
-  const repository = baselineYaml.match(/^\s*repository:\s*(\S+)\s*$/m)?.[1];
-  if (!repository) {
-    throw new Error("test/conformance/upstream.yaml must declare upstream.repository");
-  }
-  const aiVersion = versions.get("ai");
-  if (!aiVersion) {
-    throw new Error("test/conformance/upstream.yaml must track the ai package");
-  }
-  const commit = resolveTagCommit(repository, `ai@${aiVersion}`);
-  console.log(`upstream commit: ${commit}`);
-
-  const packageManifests = packagePaths.map((path) => ({
-    path,
-    manifest: JSON.parse(readFileSync(path, "utf8")),
+  const packages = Object.fromEntries([...versions].map(([name, version]) => {
+    const release = packageMetadata.find((metadata) => metadata.name === name)
+      .releases.find((candidate) => candidate.version === version);
+    return [name, {
+      version,
+      publishedAt: release.publishedAt.toISOString(),
+      sourceCommit: requireCommit(getCommit(baseline.repository, `${name}@${version}`)),
+    }];
   }));
-  for (const { path, manifest } of packageManifests) {
+  return { format: 1, selectedAt: now.toISOString(), minimumReleaseAge, baseline, packages };
+}
+
+export function saveTarget(path, target) {
+  writeFileSync(path, `${JSON.stringify(target, null, 2)}\n`, { flag: "wx" });
+}
+
+function fetchRelease(name, version) {
+  const times = npmView(name, "time");
+  return { publishedAt: times[version], dependencies: npmView(`${name}@${version}`, "dependencies") };
+}
+
+export function applyTarget(target, {
+  root = repositoryRoot,
+  now = new Date(),
+  getRelease = fetchRelease,
+  getCommit = resolveTagCommit,
+} = {}) {
+  const baselinePath = join(root, "test/conformance/upstream.yaml");
+  const baselineYaml = readFileSync(baselinePath, "utf8");
+  const baseline = readBaseline(baselineYaml);
+  const minimumReleaseAge = parseMinimumReleaseAge(readFileSync(join(root, "test/pnpm-workspace.yaml"), "utf8"));
+  if (target.format !== 1 || target.minimumReleaseAge !== minimumReleaseAge) {
+    throw new Error("unsupported target format or changed minimum release age; reassess the target");
+  }
+  const selectedAt = timestamp(target.selectedAt);
+  if (selectedAt > now) throw new Error("target selection time is in the future");
+  const source = target.baseline;
+  requireCommit(source.commit);
+  if (source.repository !== baseline.repository || !samePackageNames(target.packages, source.packages)) {
+    throw new Error("target package inventory or repository does not match its source baseline");
+  }
+  const versions = new Map();
+  const cutoff = selectedAt.getTime() - minimumReleaseAge * 60_000;
+  for (const [name, release] of Object.entries(target.packages)) {
+    if (compareStableVersions(release.version, source.packages[name]) < 0) {
+      throw new Error(`target would downgrade ${name}`);
+    }
+    requireCommit(release.sourceCommit);
+    if (timestamp(release.publishedAt).getTime() > cutoff) {
+      throw new Error(`${name}@${release.version} was not mature at target selection`);
+    }
+    versions.set(name, release.version);
+  }
+  const destination = {
+    repository: source.repository,
+    commit: target.packages.ai.sourceCommit,
+    packages: Object.fromEntries(versions),
+  };
+  const alreadyApplied = sameBaseline(baseline, destination);
+  if (!alreadyApplied && !sameBaseline(baseline, source)) {
+    throw new Error("registered baseline changed since target selection; reassessment required");
+  }
+
+  const manifests = packagePaths.map((path) => {
+    const resolved = join(root, relative(repositoryRoot, path));
+    const manifest = JSON.parse(readFileSync(resolved, "utf8"));
     for (const section of ["dependencies", "devDependencies"]) {
-      if (!manifest[section]) {
-        continue;
-      }
-      for (const [packageName, version] of versions) {
-        if (manifest[section][packageName] !== undefined) {
-          manifest[section][packageName] = version;
+      for (const [name, version] of Object.entries(manifest[section] ?? {})) {
+        if (name !== "ai" && !name.startsWith("@ai-sdk/")) continue;
+        if (baseline.packages[name] !== version || !versions.has(name)) {
+          throw new Error(`consumer ${resolved} pin ${name}@${version} differs from its current baseline`);
         }
+        manifest[section][name] = versions.get(name);
       }
     }
-    writeFileSync(path, `${JSON.stringify(manifest, null, 2)}\n`);
-  }
+    return { path: resolved, content: `${JSON.stringify(manifest, null, 2)}\n` };
+  });
 
-  writeFileSync(baselinePath, updateBaseline(baselineYaml, versions, now, commit));
+  const dependencies = new Map();
+  for (const [name, release] of Object.entries(target.packages)) {
+    const actual = getRelease(name, release.version);
+    if (timestamp(actual.publishedAt).toISOString() !== release.publishedAt) {
+      throw new Error(`${name}@${release.version} publication evidence changed`);
+    }
+    if (getCommit(source.repository, `${name}@${release.version}`) !== release.sourceCommit) {
+      throw new Error(`${name}@${release.version} source tag changed`);
+    }
+    dependencies.set(name, actual.dependencies);
+  }
+  const errors = validatePackageSet(versions, (name) => dependencies.get(name));
+  if (errors.length) throw new Error(errors.join("\n"));
+
+  if (alreadyApplied) return;
+  for (const { path, content } of manifests) writeFileSync(path, content);
+  writeFileSync(baselinePath, updateBaseline(baselineYaml, versions, destination.commit));
+}
+
+function main(args) {
+  const [command, argument, ...extra] = args;
+  const flag = command === "select" ? "--output=" : "--target=";
+  if (!["select", "apply"].includes(command) || !argument?.startsWith(flag) ||
+    argument.length === flag.length || extra.length) {
+    throw new Error("usage: upgrade-baseline.mjs select --output=target.json | apply --target=target.json");
+  }
+  const path = resolve(argument.slice(flag.length));
+  if (command === "apply") {
+    applyTarget(JSON.parse(readFileSync(path, "utf8")));
+    console.log("Applied frozen target; review snapshots, attestation and verification before merge.");
+    return;
+  }
+  if (existsSync(path)) throw new Error(`target already exists: ${path}; resume it or choose a new output`);
+  const baseline = readBaseline(readFileSync(join(repositoryRoot, "test/conformance/upstream.yaml"), "utf8"));
+  const minimumReleaseAge = parseMinimumReleaseAge(readFileSync(join(repositoryRoot, "test/pnpm-workspace.yaml"), "utf8"));
+  const packageMetadata = Object.keys(baseline.packages).map(fetchPackageMetadata);
+  const cache = new Map();
+  const getDependencies = (name, version) => {
+    const spec = `${name}@${version}`;
+    if (!cache.has(spec)) cache.set(spec, npmView(spec, "dependencies"));
+    return cache.get(spec);
+  };
+  const target = createTarget({ baseline, minimumReleaseAge, now: new Date(), packageMetadata,
+    getDependencies, getCommit: resolveTagCommit });
+  saveTarget(path, target);
+  console.log(`Selected target saved to ${path}; canonical files are unchanged. Assess and approve before applying.`);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  main();
+  try {
+    main(process.argv.slice(2));
+  } catch (error) {
+    console.error(error.message);
+    process.exitCode = 1;
+  }
 }

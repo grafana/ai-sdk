@@ -1,83 +1,93 @@
 ---
 name: ai-sdk-parity-review
-description: Review any requested ai-sdk scope against the registered upstream Vercel AI SDK parity baseline. Use for PRs, the current git diff, a branch range, a package or directory such as providers/anthropic, a reported bug, a new feature, stream chunks, SSE framing, provider messages, provider request conversion, orchestration, tools, output, provider options, frontend interop, or conformance fixture changes.
+description: Review an ai-sdk diff, feature, bug or package against its upstream parity contract. Find behavioral mismatches, unsupported assumptions, scope drift and gaps in regression evidence.
 ---
 
 # AI SDK Parity Review
 
-Use this skill to review a user-defined scope for problematic upstream parity
-issues against the baseline declared in `test/conformance/upstream.yaml`.
+Review the requested scope against the registered upstream baseline, or the fixed
+target explicitly selected for an upgrade. If no scope is specified, review the
+current diff. Use the [upgrade skill](../ai-sdk-parity-upgrade/SKILL.md) for a broader
+assessment and implementation plan; use this skill to challenge the resulting work.
 
-The scope comes from the user request. It can be a PR, the current git diff, a
-branch range, a package, a directory, a provider, a bug report, or a feature
-area. If the user does not specify a scope, review the current git diff.
+## Establish the contract
 
-## Workflow
+Read `test/conformance/upstream.yaml` and the relevant `PARITY.md` entries to identify
+versions, supported behavior, existing evidence and accepted deviations. For an
+upgrade, distinguish the starting baseline from its selected target and decisions.
 
-1. Read `test/conformance/upstream.yaml` and `test/conformance/PARITY.md`.
-2. Resolve the review scope:
-   - PR: inspect the PR diff and relevant changed files.
-   - Current git diff: inspect staged and unstaged changes.
-   - Branch/range: inspect the diff against the requested base.
-   - Package/directory/provider: inspect the implementation and matching tests
-     in that tree.
-   - Bug or feature: inspect the affected code path and any existing fixtures.
-3. Identify the parity-sensitive layer and capability from the coverage map:
-   core ai-sdk, provider contract, provider implementation, frontend interop,
-   or conformance harness.
-4. Read the matching upstream TypeScript implementation and tests for the
-   registered baseline when available. Prefer sources in this order:
-   - a local upstream checkout at the registered version or matching tag
-   - the conformance tool package installed from the registered baseline
-   - raw GitHub source for the registered package version
-   Record which source was used when reporting findings.
-5. Check conformance evidence appropriate for the layer:
-   `expected.jsonl` for core stream/UI behavior, `expected-requests.jsonl` for
-   provider behavior, `expected-object.json` for structured output, or a
-   documented manual/gap entry.
-6. For reported bugs or new upstream-visible behavior, check whether
-   conformance-first TDD is possible. If so, prefer adding or updating the
-   fixture before or alongside implementation.
-7. Classify each mismatch using the divergence handling table below.
-8. Report only problematic findings: missing features, behavioral deviations,
-   possible bugs, missing or weak conformance coverage, and undocumented
-   intentional deviations. Do not enumerate parity-preserving matches unless
-   they explain why a suspected issue is not a problem.
-9. For broad scopes, include a compact matrix with the reviewed package/area,
-   upstream files or tests checked, conformance artifacts checked, mismatch
-   classification, action taken, and residual risk.
-10. For PR reviews, put accepted gaps, intentional deviations, and residual
-   parity risk in the PR description or review summary. Do not add broad
-   one-off findings to `test/conformance/PARITY.md` or
-   `test/conformance/upstream.yaml` unless the user explicitly asks or the
-   finding changes a long-lived project policy, coverage map, or baseline
-   contract.
-11. Include commands run and residual parity risk in the review summary.
+Inspect matching upstream implementation and tests alongside the Go paths involved.
+Prefer exact local Git references, installed package sources or versioned source
+URLs. If the required source is unavailable, state the gap rather than substituting
+another version. Additional context should answer a concrete review question, not
+be a mandatory reading list.
 
-## Divergence Handling
+## Review in both directions
 
-| Classification | Default action |
-| --- | --- |
-| Implementation bug | Add or update the relevant fixture when practical, fix the Go implementation, and rerun focused checks. |
-| Upstream behavior change | Trace the change to upstream source or tests, regenerate the matching conformance artifact, adapt Go behavior, and rerun parity checks. |
-| Intentional Go deviation | Keep only with a rationale. Document in the PR description or review summary unless it changes a durable baseline contract. |
-| Coverage gap | Add a fixture or test when cheap and relevant. Otherwise document the residual risk in the PR description or review summary. |
-| Large design gap | Stop and ask before deferring when the gap affects public API shape, wire format, provider contracts, or broad harness behavior. |
+### Upstream → Go
 
-## Review Criteria
+- Are the relevant semantics represented, including defaults, optional values,
+  warnings/errors, state transitions and continuation?
+- Does a language-specific adaptation preserve observable behavior and wire shape?
+- Are changes outside existing fixtures accounted for, rather than inferred correct
+  from a passing suite?
+- Are missing capabilities, unsupported families and intentional differences
+  explicitly distinguished?
 
-- Wire shape, chunk type names, JSON tags, ordering, and SSE framing must match
-  upstream unless a documented deviation exists.
-- Provider request bodies and behavior-affecting headers must match upstream
-  request snapshots unless a documented normalization rule applies.
-- Go implementation can use Go idioms, but upstream semantics must be preserved.
-- New gaps must be fixed when practical. Accepted gaps and intentional
-  deviations must be visible in the PR description or review summary; reserve
-  `test/conformance/PARITY.md` and `test/conformance/upstream.yaml` updates for
-  durable coverage-map, baseline-contract, or user-requested documentation.
-- If conformance is not updated for a wire/provider-boundary change, the review
-  must explain why existing coverage is sufficient.
-- Provider implementation changes usually need `expected-requests.jsonl`
-  coverage; core stream changes usually need `expected.jsonl` coverage.
-- If no upstream equivalent exists, state that and classify the compatibility
-  impact.
+### Go → requirement
+
+- Does each implementation change address an assessed need within the scope?
+- Are new APIs, abstractions or altered behavior justified by the contract?
+- Does the regression test fail for the actual bug and exercise the complete path?
+- Are snapshot changes explained by behavior, with intact input provenance?
+
+## Distinguish upgrade review from parity-work review
+
+For a pinned-version upgrade, check consistent references/evidence, required green
+checks and a comprehensive assessment of the current Go implementation against the
+target. The release delta is a guide, not the assessment boundary: older gaps and
+uncovered surfaces also need dispositions. Remaining differences must be linked to
+registered work or an explicit adaptation/exclusion. Check that issue scopes and
+acceptance criteria actually cover the findings, duplicate candidates were considered,
+and every registered parity issue has `upstream-sync`. The upgrade PR should contain
+the run-specific issue list; reject dated assessment sections, issue catalogs and
+copied issue details in `PARITY.md`. That file changes only for durable coverage,
+evidence, support-boundary or accepted-deviation changes. Do not demand completion
+of all parity work, but do not accept broken checks or a target-induced incompatibility
+that prevents a supported integration from working as a mere follow-up.
+
+For a parity work package, review its behavioral acceptance contract against the
+current pinned reference. Check design, implementation and proof; update or close
+the issue when complete. Update the coverage map only if its stable status, evidence,
+supported boundary or accepted deviation changed. One merged PR may deliver only a
+producer prerequisite, so package completion still requires the consumer behavior
+and evidence.
+
+Choose evidence appropriate to the affected layer: provider request snapshots,
+core UI/output snapshots, frontend hook scenarios, focused provider tests or
+Gateway contract/runtime checks. See the [tooling reference](../../../test/conformance/UPGRADING.md)
+for what each check establishes and its limitations.
+
+Inspect actual results, including skips and warning-only reports. Separate missing
+implementation from missing evidence. Verify published dependencies when a consumer
+uses another Go module; workspace tests alone do not prove adoption. Required checks
+must pass for each delivered PR without relying on a later unmerged change.
+
+For a baseline transition, check coherent pins, lockfile, generated expectations,
+reviewed attestation and verification evidence together. A newer upstream release
+alone is not a defect in an implementation targeting a fixed version.
+
+## Report actionable findings
+
+For each finding, provide the behavior at risk, source/code evidence, classification,
+recommended correction and required proof. Classify it as an implementation bug,
+upstream behavior change, intentional deviation, coverage gap or unresolved design
+question. Same-behavior Go adaptations are not findings unless they explain a concern.
+
+Do not list every matching behavior. For broad scope, use a compact area/evidence/
+finding/action matrix. State commands actually run and distinguish completion of the pinned-version
+upgrade/assessment from completion of an individual parity work package. Do not accept a gap
+by omission or suggest weakening comparisons. Actionable deferred work belongs in
+`upstream-sync` issues; durable coverage boundaries and accepted deviations belong
+in `upstream.yaml` or `PARITY.md`; run-specific observations belong in the upgrade
+PR or review report.

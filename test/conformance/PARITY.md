@@ -4,10 +4,22 @@ This document describes what the conformance baseline verifies against the
 registered upstream target in `upstream.yaml`. It is a coverage map, not a claim
 of total parity.
 
+## Record Ownership
+
+This file records stable coverage classifications, confidence sources, supported
+boundaries and accepted deviations. Update it when one of those facts changes.
+
+GitHub issues labeled `upstream-sync` are authoritative for actionable deferred
+work, including its upstream evidence, Go difference, impact, scope, dependencies
+and acceptance tests. Upgrade PRs own their target, validation and run-specific
+issue list. Do not add dated target assessments, issue catalogs, upgrade-run ledgers
+or copies of issue contents here, and do not mirror issue state in this file.
+
 ## Status Values
 
 - `automated`: covered by committed tests or validation scripts.
 - `manual`: requires source or test comparison during implementation or review.
+- `mixed`: only the stated subset has automated or manual evidence.
 - `documented-deviation`: intentionally different from upstream behavior or CI policy.
 - `gap`: known missing coverage or metadata.
 
@@ -230,7 +242,7 @@ No provider recordings or provenance fixtures were fabricated or regenerated.
 | --- | --- | --- | --- |
 | Baseline package validation | automated | `mise run validate-parity-baseline` checks `upstream.yaml` against all retained parity TypeScript consumers: conformance tools, integration tests, CLI tooling, and the ProviderWire V4 contract workspace. | The canonical baseline is the npm package versions recorded in `upstream.yaml`. |
 | Upstream expectation generation | automated | `mise run generate-conformance` produces streaming `expected.jsonl`, unary `expected-generate.json`, request snapshots, structured output expectations, and opt-in per-step usage snapshots. | Generation only covers fields supported by `config.yaml`. |
-| Mature stable baseline upgrade | automated | `mise run parity-upgrade` selects the newest coherent stable package set from the npm `latest` release lines that satisfies pnpm's configured minimum release age, then regenerates expectations. | Divergences still require human classification and fixes. |
+| Frozen-target baseline upgrade | automated | `parity-select` writes a coherent mature target record without changing the baseline; `parity-upgrade` requires and applies that explicit record before regenerating expectations. | Selection and application do not certify semantics; assessment and reviewed verification remain required. |
 | Fixture config expressiveness | automated | Streaming provider fixtures use YAML for models, prompts, tools, provider tools, approvals, provider options, JSON response format, `toolChoice`, `activeTools`, `streamOptions`, and tool provider options. Unary Bedrock fixtures currently support prompts/configured messages, system text, headers, provider options, and response format; other providers and unsupported unary fields fail during config loading/generation. Provider-independent core UI fixtures replay `LanguageModelV4` stream parts directly. | Expand unary or streaming fields only when an authentic fixture needs a new upstream-visible option. |
 | CI enforcement | automated | Baseline validation, full conformance replay, and integration are all required status checks on `main`, so any parity divergence blocks the merge. | Regenerated expectations must land in the same pull request as the behavior change, because a stale expectation now blocks merges rather than emitting a warning. |
 | Upstream fixture import tracking | automated | Provider `upstream/INDEX.yaml` files track imported and missing upstream fixtures; `mise run parity-coverage` rejects unmapped local cases, nonexistent source names, and imported inputs that are not byte-identical to the pinned checkout. | `null` entries are intentional non-streaming or unavailable coverage gaps until imported through a matching operation. |
@@ -245,5 +257,7 @@ as one of:
 - implementation bug
 - coverage gap
 
-Intentional deviations and coverage gaps must be recorded in `upstream.yaml` or
-this coverage map before the change is considered complete.
+Durable intentional deviations and accepted coverage or support boundaries belong
+in `upstream.yaml` or this coverage map. Actionable implementation or proof work
+belongs in an `upstream-sync` issue. A pinned-version upgrade lists created and
+reused issues in its PR rather than duplicating their contents here.

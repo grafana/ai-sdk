@@ -46,6 +46,14 @@ classifies each compatibility surface by layer, status, confidence source, and
 known gaps. Use it when deciding whether a change needs new fixtures, upstream
 source review, or a documented deviation.
 
+For upgrades, use the [parity-upgrade skill](../../.agents/skills/ai-sdk-parity-upgrade/SKILL.md)
+to update the pinned reference, assess current Go behavior comprehensively and
+register remaining parity work for independent implementation. The
+[tooling and evidence reference](UPGRADING.md) explains selection/application,
+recording findings and what the checks prove. In particular,
+fixture inventory is not behavioral coverage, generation is not successful Go
+replay, and passing replay is not proof that all upstream capabilities exist.
+
 Conformance tests are also the preferred regression suite for bugs and features
 that cross the provider or UI wire boundary. When a bug can be represented as
 recorded provider chunks or provider request snapshots, add or update the
@@ -85,7 +93,7 @@ cd .. && go test -run TestUIConformance_ReasoningFiles ./...
 
 ## Structure
 
-```
+```text
 test/conformance/
   go.mod                         # separate Go module (imports aisdk + providers)
   upstream.yaml                  # registered upstream parity baseline
@@ -220,6 +228,7 @@ approval:
 ```
 
 Fields:
+
 - `operation` (optional, default `stream`): provider operation (`stream` or `generate`); unary `generate` is currently Bedrock-only and supports prompt/configured messages, system text, headers, provider options, and response format
 - `model` (required): model ID used for the provider
 - `system` (optional): system prompt text passed as a system-role model message
@@ -253,6 +262,7 @@ The Go runner captures requests received by the replay server and compares them
 against these snapshots after the stream completes.
 
 Comparison rules:
+
 - JSON request bodies are decoded and compared semantically, so object field ordering does not matter.
 - Array order remains significant for messages, content blocks, stop sequences, and multi-step request order.
 - Tool declaration arrays are sorted by tool name/type before comparison because Go exposes tools as a map.
@@ -321,6 +331,7 @@ grep -n '<fixture-name>' ../ai/packages/anthropic/src/anthropic-messages-languag
 ```
 
 Check for:
+
 - **Provider tools** (`type: 'provider'`) — add as `providerTools` in config
 - **Function tools** — add as `tools` with `inputSchema` and `mockResults`
 - **providerOptions** — thinking config, MCP servers, container skills, etc.
@@ -441,6 +452,7 @@ mise run test-conformance
 ## Adding a New Provider
 
 1. Create the provider directory:
+
    ```bash
    mkdir -p test/conformance/<provider>/upstream test/conformance/<provider>/recorded
    ```

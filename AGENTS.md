@@ -117,13 +117,30 @@ can support a parity claim.
 - **Divergence classification**: Every observed upstream difference must be
   classified as parity-preserving Go adaptation, intentional deviation,
   implementation bug, or coverage gap.
-- **Documented gaps**: Intentional deviations and accepted coverage gaps must be
-  recorded in `test/conformance/upstream.yaml` or `test/conformance/PARITY.md`.
-- **Upstream upgrades**: Package/version bumps must update the baseline
-  manifest, conformance dependency pins, generated snapshots, and lockfiles
-  together. The selected stable package set must satisfy the
-  `minimumReleaseAge` in `test/pnpm-workspace.yaml`; do not bypass that gate.
-  Use the `ai-sdk-parity-upgrade` skill for that workflow.
+- **Record ownership**: `upstream-sync` issues are authoritative for actionable
+  deferred work. `PARITY.md` records stable coverage status, confidence sources,
+  supported boundaries and accepted deviations; do not add dated upgrade assessments,
+  issue catalogs or copies of issue details. The upgrade PR owns its run-specific
+  target, validation and compact issue list.
+- **Documented gaps**: Durable intentional deviations and accepted coverage or
+  support boundaries must be recorded in `test/conformance/upstream.yaml` or
+  `test/conformance/PARITY.md`. Actionable gaps belong in `upstream-sync` issues.
+- **Pinned-version upgrades**: Use the `ai-sdk-parity-upgrade` skill to update a
+  fixed coherent reference, validate it and comprehensively assess current Go
+  behavior against that target, not only the release delta. The upgrade PR must
+  pass required checks and account for remaining differences through linked parity
+  work packages or explicit dispositions. The [tooling reference](test/conformance/UPGRADING.md)
+  describes commands and evidence limits. Pins identify a reference, not full parity.
+- **Independent mergeability**: Every PR must pass required checks without a later
+  unmerged change. Account for published Go module dependencies, not just workspace
+  behavior. Changes incompatible with the old baseline must land with the pins,
+  lockfile, expectations and reviewed evidence that validate them.
+- **Parity matching**: Process registered behavioral work packages independently
+  after the pinned-version upgrade, with their own acceptance tests. Update the
+  coverage map only when stable status, evidence, support boundaries or accepted
+  deviations change. Separate missing implementation from missing proof. Registration
+  is not API approval or acceptance of a permanent deviation, and an upgrade-blocking
+  incompatibility cannot be silently deferred.
 
 ## Build / Lint / Test Commands
 
@@ -168,6 +185,12 @@ mise run check
 # Upstream parity checks
 mise run validate-parity-baseline
 mise run parity-check
+mise run verify-module-resolution
+
+# Frozen upgrade workflow (see test/conformance/UPGRADING.md)
+TARGET=/absolute/path/to/new-target.json mise run parity-select
+# Assess and approve before applying that exact record
+TARGET=/absolute/path/to/approved-target.json mise run parity-upgrade
 ```
 
 The Anthropic provider module is a separate `go.mod`. Run its tests from the
