@@ -3058,6 +3058,33 @@ func TestBuildParams_MCPToolCallRoundTrip(t *testing.T) {
 		assert.Equal(t, "tc_1", block.OfMCPToolResult.ToolUseID)
 	})
 
+	t.Run("assistant inline MCP continuation with configured server", func(t *testing.T) {
+		mcpOpts := makeProviderOpts(`{"type":"mcp-tool-use","serverName":"echo"}`)
+		call := provider.ContentPart{
+			Type: provider.ContentPartTypeToolCall, ToolCallID: "tc_1", ToolName: "echo",
+			Input: json.RawMessage(`{"message":"hello"}`), ProviderExecuted: true,
+			ProviderOptions: mcpOpts,
+		}
+		result := provider.ToolResultPart("tc_1", "echo", &provider.ToolResultOutput{Type: provider.ToolOutputJSON, JSON: json.RawMessage(`"hello"`)})
+		result.ProviderOptions = mcpOpts
+		for _, stream := range []bool{false, true} {
+			p, _, warnings, _, err := buildParams("claude-sonnet-4-6", provider.CallOptions{
+				Prompt:          []provider.Message{provider.NewAssistantMessage(call, result)},
+				ProviderOptions: provider.ProviderOptions{"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(`{"mcpServers":[{"type":"url","name":"echo","url":"https://mcp.example.test/tools","authorizationToken":"dummy"}]}`)}},
+			}, stream)
+			require.NoError(t, err)
+			assert.Empty(t, warnings)
+			require.Len(t, p.MCPServers, 1)
+			assert.Equal(t, "echo", p.MCPServers[0].Name)
+			assert.Equal(t, "https://mcp.example.test/tools", p.MCPServers[0].URL)
+			assert.Equal(t, "dummy", p.MCPServers[0].AuthorizationToken.Value)
+			require.Len(t, p.Messages, 1)
+			require.Len(t, p.Messages[0].Content, 2)
+			assert.Equal(t, "echo", p.Messages[0].Content[0].OfMCPToolUse.ServerName)
+			assert.Equal(t, "tc_1", p.Messages[0].Content[1].OfMCPToolResult.ToolUseID)
+		}
+	})
+
 	t.Run("regular_tools_unaffected", func(t *testing.T) {
 		opts := provider.CallOptions{
 			Prompt: []provider.Message{
@@ -5864,8 +5891,7 @@ func TestConvertResponse_CodeExecutionDynamic(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, result.Content, 1)
 		part := result.Content[0]
-		require.NotNil(t, part.Dynamic, "Dynamic must be set when markCodeExecutionDynamic=true")
-		assert.True(t, *part.Dynamic)
+		assert.Equal(t, boolPtr(true), part.Dynamic)
 		assert.True(t, part.ProviderExecuted)
 	})
 
@@ -5887,8 +5913,7 @@ func TestConvertResponse_CodeExecutionDynamic(t *testing.T) {
 		result, err := convertResponse(bash, toolNameMapping{}, false, nil, defaultGenerateID, "anthropic", true)
 		require.NoError(t, err)
 		require.Len(t, result.Content, 1)
-		require.NotNil(t, result.Content[0].Dynamic)
-		assert.True(t, *result.Content[0].Dynamic)
+		assert.Equal(t, boolPtr(true), result.Content[0].Dynamic)
 	})
 
 	t.Run("does not mark non-code_execution server tool", func(t *testing.T) {
