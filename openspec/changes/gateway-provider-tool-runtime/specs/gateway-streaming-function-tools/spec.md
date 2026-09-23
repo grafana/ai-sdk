@@ -22,9 +22,9 @@ Private DTOs SHALL encode function and provider calls and correlated results wit
 - **WHEN** a complete provider-owned call reaches finish without a result and appears unresolved in the next request history
 - **THEN** its matching success or error result SHALL be accepted in the next stream without a repeated call, while results matching completed or client-owned historical calls SHALL fail safely
 
-#### Scenario: Enabled execution marker
-- **WHEN** providerExecuted or dynamic is true on a supported provider call or input-start
-- **THEN** both clients SHALL receive that marker without converting provider ownership into local execution
+#### Scenario: Deferred execution marker
+- **WHEN** providerExecuted, dynamic or preliminary is enabled on a supported provider-tool arm
+- **THEN** both clients SHALL receive the registered marker under gateway-provider-tools without converting provider ownership into local execution, while preliminary results SHALL follow preview-to-final lifecycle validation
 
 #### Scenario: Preliminary results replace before final
 - **WHEN** a call emits several preliminary results and one final result
