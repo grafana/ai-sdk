@@ -583,6 +583,9 @@ func TestRuntimeFileGoldenReplay(t *testing.T) {
 
 			userFiles := prompt[0].Content
 			require.Len(t, userFiles, 5)
+			for i, mediaType := range []string{"application/octet-stream", "application/pdf", "image/png", "application/pdf", "text/plain"} {
+				assert.Equal(t, mediaType, userFiles[i].MediaType)
+			}
 			assertFileArm(t, userFiles[0].Data, `{"type":"data","data":"AAEC"}`)
 			assertFileArm(t, userFiles[1].Data, `{"type":"data","data":""}`)
 			assertFileArm(t, userFiles[2].Data, `{"type":"url","url":"https://example.test/file"}`)
@@ -595,6 +598,9 @@ func TestRuntimeFileGoldenReplay(t *testing.T) {
 
 			assistantFiles := prompt[1].Content
 			require.Len(t, assistantFiles, 5)
+			for i, mediaType := range []string{"application/pdf", "image/png", "application/pdf", "text/plain"} {
+				assert.Equal(t, mediaType, assistantFiles[i].MediaType)
+			}
 			assertFileArm(t, assistantFiles[0].Data, `{"type":"data","data":"YWxyZWFkeS1iYXNlNjQ="}`)
 			assertFileArm(t, assistantFiles[1].Data, `{"type":"url","url":"https://example.test/assistant"}`)
 			assertFileArm(t, assistantFiles[2].Data, `{"type":"reference","reference":{"provider":"file-2"}}`)
@@ -607,6 +613,9 @@ func TestRuntimeFileGoldenReplay(t *testing.T) {
 			output := prompt[2].Content[0].Output
 			require.NotNil(t, output)
 			require.Len(t, output.Content, 5)
+			for i, mediaType := range []string{"application/octet-stream", "application/pdf", "image/png", "application/pdf", "text/plain"} {
+				assert.Equal(t, mediaType, output.Content[i].MediaType)
+			}
 			for i, expected := range []string{
 				`{"type":"data","data":"BQY="}`,
 				`{"type":"data","data":""}`,
