@@ -205,7 +205,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.writeSafeError(w, safeErrorFromProvider(err))
 		return
 	}
-	if result == nil || !h.writeUnarySuccess(w, result, unaryMappingContext{history: history}) {
+	if result == nil || !h.writeUnarySuccess(w, result, unaryMappingContext{history: history, mcpNames: configuredMCPNames(options.ProviderOptions)}) {
 		h.writeSafeError(w, safeError{category: safeInternal})
 	}
 }

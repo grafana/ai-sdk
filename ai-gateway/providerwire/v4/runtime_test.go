@@ -430,6 +430,8 @@ func TestRuntimeGoldenReplay(t *testing.T) {
 		{file: "comprehensive-unions.json", status: http.StatusBadRequest},
 		{file: "provider-tools.json", status: http.StatusOK, modelCalls: 1},
 		{file: "provider-tools.json", index: 1, status: http.StatusOK, modelCalls: 1},
+		{file: "mcp-tools.json", status: http.StatusOK, modelCalls: 1},
+		{file: "mcp-tools.json", index: 1, status: http.StatusOK, modelCalls: 1},
 	}
 	for _, tc := range tests {
 		t.Run(fmt.Sprintf("%s/%d", tc.file, tc.index), func(t *testing.T) {
@@ -473,8 +475,7 @@ func TestRuntimeProviderToolDefinitions(t *testing.T) {
 		{"missing args", `{"prompt":[],"tools":[{"type":"provider","id":"provider.search","name":"search"}]}`},
 		{"null args", `{"prompt":[],"tools":[{"type":"provider","id":"provider.search","name":"search","args":null}]}`},
 		{"function-only field", `{"prompt":[],"tools":[{"type":"provider","id":"provider.search","name":"search","args":{},"strict":false}]}`},
-		{"MCP remains deferred", `{"prompt":[],"providerOptions":{"anthropic":{"mcpServers":[{"type":"url","name":"echo","url":"https://mcp.example.test","authorizationToken":"secret"}]}}}`},
-		{"MCP continuation remains deferred", `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"echo","input":{},"providerExecuted":true,"providerOptions":{"anthropic":{"type":"mcp-tool-use","serverName":"echo"}}}]}]}`},
+		{"MCP continuation requires configured server", `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"echo","input":{},"providerExecuted":true,"providerOptions":{"anthropic":{"type":"mcp-tool-use","serverName":"echo"}}}]}]}`},
 		{"root options remain deferred", `{"prompt":[],"providerOptions":{"anthropic":{"thinking":{"type":"enabled"}}}}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

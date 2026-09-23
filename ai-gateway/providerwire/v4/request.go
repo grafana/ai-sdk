@@ -92,12 +92,15 @@ func mapWireRequest(body []byte, modes ...executionMode) (provider.CallOptions, 
 	if len(request.Headers) > 0 {
 		return provider.CallOptions{}, unsupportedMappingFailure(capabilityBodyHeaders)
 	}
-	if !providerOptionsEmpty(request.ProviderOptions) {
-		return provider.CallOptions{}, unsupportedMappingFailure(capabilityProviderOptions)
+	providerOptions, failure := mapMCPOptions(request.ProviderOptions)
+	if failure != nil {
+		return provider.CallOptions{}, failure
 	}
+	options.ProviderOptions = providerOptions
+	mcpNames := configuredMCPNames(providerOptions)
 	toolsEnabled := len(modes) == 0 || modes[0] == executionUnary || modes[0] == executionStreaming
 	for _, wireMessage := range request.Prompt {
-		message, failure := mapWireMessage(wireMessage, toolsEnabled)
+		message, failure := mapWireMessage(wireMessage, toolsEnabled, mcpNames)
 		if failure != nil {
 			return provider.CallOptions{}, failure
 		}
@@ -136,7 +139,7 @@ func mapWireRequest(body []byte, modes ...executionMode) (provider.CallOptions, 
 	return options, nil
 }
 
-func mapWireMessage(message wireMessage, toolsEnabled bool) (provider.Message, *requestFailure) {
+func mapWireMessage(message wireMessage, toolsEnabled bool, mcpNames map[string]bool) (provider.Message, *requestFailure) {
 	if !providerOptionsEmpty(message.ProviderOptions) {
 		return provider.Message{}, unsupportedMappingFailure(capabilityProviderOptions)
 	}
@@ -155,7 +158,7 @@ func mapWireMessage(message wireMessage, toolsEnabled bool) (provider.Message, *
 		}
 		parts := make([]provider.ContentPart, 0, len(wireParts))
 		for _, wirePart := range wireParts {
-			part, failure := mapWirePart(wirePart, message.Role, toolsEnabled)
+			part, failure := mapWirePart(wirePart, message.Role, toolsEnabled, mcpNames)
 			if failure != nil {
 				return provider.Message{}, failure
 			}
@@ -173,7 +176,7 @@ func mapWireMessage(message wireMessage, toolsEnabled bool) (provider.Message, *
 	}
 }
 
-func mapWirePart(part wirePart, role provider.Role, toolsEnabled bool) (provider.ContentPart, *requestFailure) {
+func mapWirePart(part wirePart, role provider.Role, toolsEnabled bool, mcpNames map[string]bool) (provider.ContentPart, *requestFailure) {
 	if part.Type != provider.ContentPartTypeToolCall && part.Type != provider.ContentPartTypeToolResult && !providerOptionsEmpty(part.ProviderOptions) {
 		return provider.ContentPart{}, unsupportedMappingFailure(capabilityProviderOptions)
 	}
@@ -193,7 +196,7 @@ func mapWirePart(part wirePart, role provider.Role, toolsEnabled bool) (provider
 		if role != provider.RoleAssistant {
 			return provider.ContentPart{}, invalidMappingFailure()
 		}
-		options, failure := mapToolPartOptions(part.ProviderOptions)
+		options, failure := mapToolPartOptions(part.ProviderOptions, part.ProviderExecuted, mcpNames)
 		if failure != nil {
 			return provider.ContentPart{}, failure
 		}
@@ -208,7 +211,7 @@ func mapWirePart(part wirePart, role provider.Role, toolsEnabled bool) (provider
 		if failure != nil {
 			return provider.ContentPart{}, failure
 		}
-		options, failure := mapToolPartOptions(part.ProviderOptions)
+		options, failure := mapToolPartOptions(part.ProviderOptions, role == provider.RoleAssistant, mcpNames)
 		if failure != nil {
 			return provider.ContentPart{}, failure
 		}
@@ -222,7 +225,7 @@ func mapWirePart(part wirePart, role provider.Role, toolsEnabled bool) (provider
 	}
 }
 
-func mapToolPartOptions(values map[string]json.RawMessage) (provider.ProviderOptions, *requestFailure) {
+func mapToolPartOptions(values map[string]json.RawMessage, providerExecuted bool, mcpNames map[string]bool) (provider.ProviderOptions, *requestFailure) {
 	var options provider.ProviderOptions
 	for namespace, raw := range values {
 		if namespace == "gateway" || namespace == "grafana" || namespace == "grafana-ai-sdk" {
@@ -241,7 +244,10 @@ func mapToolPartOptions(values map[string]json.RawMessage) (provider.ProviderOpt
 				return nil, invalidMappingFailure()
 			}
 			if kind == "mcp-tool-use" {
-				return nil, unsupportedMappingFailure(capabilityProviderOptions)
+				var name string
+				if !providerExecuted || len(members) != 2 || json.Unmarshal(members["serverName"], &name) != nil || !mcpNames[name] {
+					return nil, invalidMappingFailure()
+				}
 			}
 		}
 		if options == nil {

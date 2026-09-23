@@ -120,7 +120,7 @@ finalizer returns.
 - WP27 owns any later per-request Agent Observability control or richer content
   capture decision.
 - WP13 provider-defined tools extend the same metadata-only logical chain
-  without exporting tool names, IDs, arguments, results or
+  without exporting tool names, IDs, arguments, results, MCP URLs/tokens or
   provider metadata. Reasoning, files, images, raw output, hooks and other
   later event families remain with their owning capability work; WP8 established
   the text chain and does not itself change ProviderWire schemas or events.

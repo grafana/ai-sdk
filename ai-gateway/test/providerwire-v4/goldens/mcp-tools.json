@@ -1,0 +1,112 @@
+[
+  {
+    "method": "POST",
+    "path": "/language-model",
+    "headers": {
+      "ai-language-model-id": "grafana/mcp-tools",
+      "ai-language-model-specification-version": "4",
+      "ai-language-model-streaming": "false",
+      "content-type": "application/json"
+    },
+    "streaming": false,
+    "hasSignal": false,
+    "body": {
+      "prompt": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "weather"
+            }
+          ]
+        }
+      ],
+      "providerOptions": {
+        "anthropic": {
+          "mcpServers": [
+            {
+              "type": "url",
+              "name": "weather",
+              "url": "https://mcp.example.test/tools",
+              "authorizationToken": "contract-dummy-token",
+              "toolConfiguration": {
+                "enabled": false,
+                "allowedTools": []
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/language-model",
+    "headers": {
+      "ai-language-model-id": "grafana/mcp-tools",
+      "ai-language-model-specification-version": "4",
+      "ai-language-model-streaming": "true",
+      "content-type": "application/json"
+    },
+    "streaming": true,
+    "hasSignal": false,
+    "body": {
+      "prompt": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "tool-call",
+              "toolCallId": "call-mcp",
+              "toolName": "get_weather",
+              "input": {
+                "city": "Paris"
+              },
+              "providerExecuted": true,
+              "providerOptions": {
+                "anthropic": {
+                  "type": "mcp-tool-use",
+                  "serverName": "weather"
+                }
+              }
+            },
+            {
+              "type": "tool-result",
+              "toolCallId": "call-mcp",
+              "toolName": "get_weather",
+              "output": {
+                "type": "json",
+                "value": {
+                  "temperature": 0
+                }
+              },
+              "providerOptions": {
+                "anthropic": {
+                  "type": "mcp-tool-use",
+                  "serverName": "weather"
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "providerOptions": {
+        "anthropic": {
+          "mcpServers": [
+            {
+              "type": "url",
+              "name": "weather",
+              "url": "https://mcp.example.test/tools",
+              "authorizationToken": "contract-dummy-token",
+              "toolConfiguration": {
+                "enabled": false,
+                "allowedTools": []
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+]

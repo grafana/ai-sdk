@@ -78,8 +78,8 @@ forward those explicit values. A non-nil empty `allowedTools` slice forwards an
 empty array rather than omitting the list. Callers previously constructing
 these Go structs with string/bool fields must supply pointers for explicit
 values. Configure remote servers only for callers and models authorized to use
-them; tokens can appear in caller-owned request metadata. These native-provider
-options do not imply that the Gateway service accepts MCP configuration.
+them; tokens can appear in caller-owned request metadata even though the
+Gateway excludes them from normalized output and telemetry.
 
 ## Avoid duplicate retry policy
 

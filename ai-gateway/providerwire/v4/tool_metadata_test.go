@@ -16,7 +16,7 @@ func TestMapToolMetadata_ReviewedProjection(t *testing.T) {
 		"openai":    json.RawMessage(`{"itemId":"item-1","namespace":"tools","caller":{"type":"program","callerId":"parent","private":"hidden"},"backendModel":"private"}`),
 		"private":   json.RawMessage(`{"credential":"private"}`),
 	}
-	mapped, err := mapToolMetadata(metadata, 1024)
+	mapped, err := mapToolMetadata(metadata, nil, 1024)
 	require.NoError(t, err)
 	require.Len(t, mapped, 2)
 	assert.JSONEq(t, `{"caller":{"type":"code_execution_20260120","toolId":"parent"}}`, string(mapped["anthropic"]))
@@ -30,7 +30,7 @@ func TestMapToolMetadata_RejectsUnconfiguredOrOversizedValues(t *testing.T) {
 		metadata provider.ProviderMetadata
 		limit    int64
 	}{
-		{name: "unsupported MCP metadata", metadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"type":"mcp-tool-use","serverName":"other"}`)}, limit: 1024},
+		{name: "unconfigured MCP metadata", metadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"type":"mcp-tool-use","serverName":"other"}`)}, limit: 1024},
 		{name: "unsupported caller", metadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"caller":{"type":"unknown"}}`)}, limit: 1024},
 		{name: "wrong item id type", metadata: provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":42}`)}, limit: 1024},
 		{name: "malformed metadata", metadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{`)}, limit: 1024},
@@ -39,7 +39,7 @@ func TestMapToolMetadata_RejectsUnconfiguredOrOversizedValues(t *testing.T) {
 		{name: "excess cardinality", metadata: provider.ProviderMetadata{"one": nil, "two": nil}, limit: 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := mapToolMetadata(tc.metadata, tc.limit)
+			_, err := mapToolMetadata(tc.metadata, nil, tc.limit)
 			require.Error(t, err)
 		})
 	}

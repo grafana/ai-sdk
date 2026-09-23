@@ -78,7 +78,7 @@ func (h *handler) processToolStreamPart(w http.ResponseWriter, state *streamStat
 		exists = historical
 	}
 	next := current
-	metadata, err := mapToolMetadata(part.ProviderMetadata, h.limits.StreamFrameBytes)
+	metadata, err := mapToolMetadata(part.ProviderMetadata, state.mcpNames, h.limits.StreamFrameBytes)
 	if err != nil {
 		return streamPartAdapterFailure
 	}

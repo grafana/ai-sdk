@@ -43,15 +43,21 @@ provider passthrough. Tool approvals, file/source and other media output,
 structured output, and general root provider options remain unsupported.
 Vercel and Go clients own multi-step orchestration; each Gateway generation
 remains stateless. Ordered fallback routes reject tool definitions, choices,
-and history before any physical invocation. Logical
+history and MCP server configuration before any physical invocation. Logical
 telemetry omits tool-bearing definitions, names, IDs, inputs, outputs and
 provider metadata before export.
 
-Anthropic-hosted MCP is not enabled by provider-tool support. Nonempty root
-provider options, including `providerOptions.anthropic.mcpServers`, and MCP
-continuation metadata remain rejected. The separate `gateway-anthropic-mcp`
-change owns that capability and its routing and privacy controls. See the
-[Gateway operator guide](../../ai-gateway/docs/provider-tools.md).
+A direct Anthropic route accepts the registered
+`providerOptions.anthropic.mcpServers` request setting. The selected Anthropic
+provider receives its ordered server names, HTTPS URLs, optional authorization
+tokens and tool configuration; no other root provider option is enabled by this
+exception. The response may include the caller-configured MCP `serverName` on a
+tool call/result so a later request can replay the native block. URLs and tokens
+never appear in normalized server output, errors or operational telemetry. The
+Go client's caller-owned `Request.Body` still contains its serialized request,
+so avoid logging it when it carries an MCP token. The Gateway validates HTTPS
+URLs without embedded credentials or fragments but cannot attest to Anthropic's
+remote MCP egress policy. See the [Gateway operator guide](../../ai-gateway/docs/provider-tools.md).
 
 ## Connect with an access token
 
