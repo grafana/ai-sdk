@@ -217,6 +217,9 @@ importers:
       '@ai-sdk/anthropic':
         specifier: 4.0.58
         version: 4.0.58(zod@4.4.3)
+      '@ai-sdk/gateway':
+        specifier: 4.0.87
+        version: 4.0.87(zod@4.4.3)
       '@ai-sdk/openai':
         specifier: 4.0.71
         version: 4.0.71(zod@4.4.3)

@@ -23,6 +23,7 @@ import (
 	"github.com/grafana/ai-sdk/output"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/grafana/ai-sdk/schema"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 )
@@ -1123,66 +1124,32 @@ func RunTestCaseWithServer(t *testing.T, tc TestCase, factory ProviderFactory, s
 	model, err := factory(ts.BaseURL, cfg)
 	require.NoError(t, err, "creating provider")
 
-	tools, err := cfg.BuildToolSet()
-	require.NoError(t, err, "building tools")
-
-	providerOpts, err := cfg.BuildProviderOptions()
-	require.NoError(t, err, "building provider options")
-
-	responseFormat, err := cfg.BuildResponseFormat()
-	require.NoError(t, err, "building response format")
-
-	prompt := cfg.Prompt
-	if prompt == "" {
-		prompt = "test"
-	}
-
-	var messages []provider.Message
-	if len(cfg.UIMessages) > 0 {
-		uiMessages, err := cfg.BuildUIMessages()
-		require.NoError(t, err, "building UI messages")
-		messages, err = aisdk.ConvertToModelMessages(uiMessages, aisdk.WithTools(tools))
-		require.NoError(t, err, "converting UI messages")
-	} else {
-		messages, err = cfg.BuildMessages(prompt)
-		require.NoError(t, err, "building messages")
-	}
-
+	result, err := ExecuteScenario(t.Context(), cfg, model)
+	require.NoError(t, err, "executing scenario")
 	if cfg.Operation == OperationGenerate {
 		require.Equal(t, "bedrock", tc.Provider, "operation generate is currently supported only for Bedrock")
-		runGenerateTestCase(t, tc, cfg, ts, model, messages, providerOpts, responseFormat)
+		require.Empty(t, result.Error, "generate error")
+		require.Positive(t, ts.RequestCount(), "replay server received no requests")
+		actualJSON, err := json.Marshal(result.Generate)
+		require.NoError(t, err)
+		expectedJSON, err := os.ReadFile(filepath.Join(tc.Dir, "expected-generate.json"))
+		require.NoError(t, err)
+		require.JSONEq(t, string(expectedJSON), string(actualJSON), "generate result mismatch")
+		expectedRequests, err := LoadExpectedRequests(filepath.Join(tc.Dir, "expected-requests.jsonl"))
+		require.NoError(t, err)
+		CompareRequestSnapshots(t, expectedRequests, ts.Requests())
 		return
 	}
-
-	out, err := cfg.BuildOutput()
-	require.NoError(t, err, "building output")
-	stopConditions := []aisdk.StopCondition{aisdk.StepCountIs(cfg.StopWhenStepCount)}
-	streamOpts := cfg.buildStreamOptions(messages, tools, providerOpts, stopConditions, out, responseFormat)
-	if cfg.MaxRetries != nil {
-		streamOpts = append(streamOpts, aisdk.WithMaxRetries(*cfg.MaxRetries))
-	}
-	result := aisdk.StreamText(t.Context(), model, streamOpts...)
-
-	uiStream := result.ToUIMessageStream(cfg.BuildUIMessageStreamOptions()...)
-
-	var actual []map[string]any
-	for chunk := range uiStream {
-		data, err := json.Marshal(chunk)
-		require.NoError(t, err, "marshaling chunk")
-
-		var parsed map[string]any
-		require.NoError(t, json.Unmarshal(data, &parsed), "parsing marshaled chunk")
-		actual = append(actual, parsed)
-	}
+	actual := result.Chunks
 
 	expected, err := LoadExpected(filepath.Join(tc.Dir, "expected.jsonl"))
 	require.NoError(t, err, "loading expected output")
 
 	require.Positive(t, ts.RequestCount(), "replay server received no requests — check provider URL configuration")
 	if cfg.ExpectStreamError {
-		require.Error(t, result.Err(), "expected stream error")
+		require.NotEmpty(t, result.Error, "expected stream error")
 	} else {
-		require.NoError(t, result.Err(), "stream error")
+		require.Empty(t, result.Error, "stream error")
 	}
 	CompareChunks(t, expected, actual)
 
@@ -1200,12 +1167,7 @@ func RunTestCaseWithServer(t *testing.T, tc TestCase, factory ProviderFactory, s
 
 	expectedUsagePath := filepath.Join(tc.Dir, "expected-usage.json")
 	if expectedUsage, readErr := os.ReadFile(expectedUsagePath); readErr == nil {
-		steps := result.Steps()
-		actualUsage := make([]provider.Usage, len(steps))
-		for i, step := range steps {
-			actualUsage[i] = step.Usage
-		}
-		actualJSON, err := json.Marshal(actualUsage)
+		actualJSON, err := json.Marshal(result.Usage)
 		require.NoError(t, err, "marshaling actual usage")
 		require.JSONEq(t, string(expectedUsage), string(actualJSON), "usage mismatch")
 	} else if !os.IsNotExist(readErr) {
@@ -1214,7 +1176,7 @@ func RunTestCaseWithServer(t *testing.T, tc TestCase, factory ProviderFactory, s
 
 	expectedObjectPath := filepath.Join(tc.Dir, "expected-object.json")
 	if _, err := os.Stat(expectedObjectPath); err == nil {
-		compareOutputObject(t, expectedObjectPath, result.OutputValue(), actual, cfg.AssertOutputValue)
+		compareOutputObject(t, expectedObjectPath, result.Object, actual, cfg.AssertOutputValue)
 	}
 }
 
@@ -1224,60 +1186,6 @@ type generateResultSnapshot struct {
 	Usage            provider.Usage                 `json:"usage"`
 	ProviderMetadata provider.ProviderMetadata      `json:"providerMetadata,omitempty"`
 	Warnings         []provider.Warning             `json:"warnings,omitempty"`
-}
-
-func runGenerateTestCase(
-	t *testing.T,
-	tc TestCase,
-	cfg *Config,
-	ts *TestServer,
-	model provider.LanguageModel,
-	messages []provider.Message,
-	providerOpts []provider.ProviderOption,
-	responseFormat *provider.ResponseFormat,
-) {
-	t.Helper()
-
-	if cfg.System != "" {
-		messages = append(
-			[]provider.Message{provider.NewSystemMessage(cfg.System)},
-			messages...,
-		)
-	}
-	callOpts := provider.CallOptions{
-		Prompt:          messages,
-		ResponseFormat:  responseFormat,
-		Headers:         cfg.Headers,
-		ProviderOptions: provider.BuildProviderOptions(providerOpts...),
-	}
-
-	result, err := model.DoGenerate(t.Context(), callOpts)
-	require.NoError(t, err, "generate error")
-	require.Positive(t, ts.RequestCount(), "replay server received no requests — check provider URL configuration")
-
-	metadata := make(provider.ProviderMetadata)
-	if bedrockMetadata, ok := result.ProviderMetadata["bedrock"]; ok {
-		metadata["bedrock"] = bedrockMetadata
-	}
-	if len(metadata) == 0 {
-		metadata = nil
-	}
-	actual := generateResultSnapshot{
-		Content:          result.Content,
-		FinishReason:     result.FinishReason,
-		Usage:            result.Usage,
-		ProviderMetadata: metadata,
-		Warnings:         result.Warnings,
-	}
-	actualJSON, err := json.Marshal(actual)
-	require.NoError(t, err, "marshaling generate result")
-	expectedJSON, err := os.ReadFile(filepath.Join(tc.Dir, "expected-generate.json"))
-	require.NoError(t, err, "loading expected generate result")
-	require.JSONEq(t, string(expectedJSON), string(actualJSON), "generate result mismatch")
-
-	expectedRequests, err := LoadExpectedRequests(filepath.Join(tc.Dir, "expected-requests.jsonl"))
-	require.NoError(t, err, "loading expected request inputs")
-	CompareRequestSnapshots(t, expectedRequests, ts.Requests())
 }
 
 func defaultTestServerFactory(_ *testing.T, tc TestCase) (*TestServer, error) {
@@ -1450,7 +1358,10 @@ func normalizeConcurrentToolOutputs(chunks []map[string]any) []map[string]any {
 // position, after sorting each run of adjacent locally executed tool outputs
 // in both slices (see normalizeConcurrentToolOutputs). Chunk indexes in failure
 // messages refer to the sorted order.
-func CompareChunks(t *testing.T, expected, actual []map[string]any) {
+func CompareChunks(t interface {
+	assert.TestingT
+	Helper()
+}, expected, actual []map[string]any) {
 	t.Helper()
 
 	expected = normalizeConcurrentToolOutputs(expected)
@@ -1464,15 +1375,18 @@ func CompareChunks(t *testing.T, expected, actual []map[string]any) {
 	for i := 0; i < minLen; i++ {
 		expJSON, _ := json.MarshalIndent(expected[i], "", "  ")
 		actJSON, _ := json.MarshalIndent(actual[i], "", "  ")
-		require.Equalf(t, expected[i], actual[i],
+		assert.Equalf(t, expected[i], actual[i],
 			"chunk %d mismatch\nexpected:\n%s\nactual:\n%s", i, expJSON, actJSON)
 	}
 
-	require.Equalf(t, len(expected), len(actual),
+	assert.Equalf(t, len(expected), len(actual),
 		"chunk count mismatch: expected %d, got %d", len(expected), len(actual))
 }
 
-func CompareRequestSnapshots(t *testing.T, expected, actual []RequestSnapshot) {
+func CompareRequestSnapshots(t interface {
+	assert.TestingT
+	Helper()
+}, expected, actual []RequestSnapshot) {
 	t.Helper()
 
 	minLen := len(expected)
@@ -1481,16 +1395,16 @@ func CompareRequestSnapshots(t *testing.T, expected, actual []RequestSnapshot) {
 	}
 
 	for i := 0; i < minLen; i++ {
-		require.Equalf(t, expected[i].Method, actual[i].Method, "request %d method mismatch", i)
-		require.Equalf(t, expected[i].Path, actual[i].Path, "request %d path mismatch", i)
-		require.Equalf(t, expected[i].Headers, actual[i].Headers, "request %d headers mismatch", i)
+		assert.Equalf(t, expected[i].Method, actual[i].Method, "request %d method mismatch", i)
+		assert.Equalf(t, expected[i].Path, actual[i].Path, "request %d path mismatch", i)
+		assert.Equalf(t, expected[i].Headers, actual[i].Headers, "request %d headers mismatch", i)
 
 		expJSON, _ := json.MarshalIndent(expected[i].Body, "", "  ")
 		actJSON, _ := json.MarshalIndent(actual[i].Body, "", "  ")
-		require.Equalf(t, expected[i].Body, actual[i].Body,
+		assert.Equalf(t, expected[i].Body, actual[i].Body,
 			"request %d body mismatch\nexpected:\n%s\nactual:\n%s", i, expJSON, actJSON)
 	}
 
-	require.Equalf(t, len(expected), len(actual),
+	assert.Equalf(t, len(expected), len(actual),
 		"request count mismatch: expected %d, got %d", len(expected), len(actual))
 }

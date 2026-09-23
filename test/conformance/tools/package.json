@@ -9,12 +9,15 @@
     "coverage-inventory": "tsx coverage-inventory.mts",
     "provider-shape": "tsx provider-shape.mts",
     "test:baseline": "tsx --test validate-baseline.test.mts upgrade-baseline.test.mjs upgrade-target.test.mjs common.test.mts fixture-inventory.test.mts record.test.mts",
+    "test:gateway": "tsx --test gateway-*.test.mts scenario.test.mts replay.test.mts",
+    "gateway": "tsx gateway.mts",
     "generate": "tsx generate.mts",
     "record": "tsx record.mts"
   },
   "dependencies": {
     "@ai-sdk/amazon-bedrock": "5.0.88",
     "@ai-sdk/anthropic": "4.0.58",
+    "@ai-sdk/gateway": "4.0.87",
     "@ai-sdk/openai": "4.0.71",
     "@ai-sdk/openai-compatible": "3.0.53",
     "@ai-sdk/provider": "4.0.17",
