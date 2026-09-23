@@ -30,9 +30,9 @@
 
 ## 5. Establish independent module consumption
 
-- [ ] 5.1 Arrange Apache prerequisite commits before dependent Gateway commits and obtain owner-approved publication of immutable SDK/provider refs. Stop for publication approval/access if unavailable.
-- [ ] 5.2 Update affected module dependencies, including Gateway pins, to proxy-resolvable prerequisite versions without committed replacements or Gateway registration in the root workspace.
-- [ ] 5.3 Verify affected modules with readonly `GOWORK=off` checks and `mise run verify-module-resolution`; verify Apache builds/imports remain independent of the Gateway subtree.
+- [x] 5.1 Arrange Apache prerequisite commits before dependent Gateway commits and obtain owner-approved publication of immutable SDK/provider refs. Stop for publication approval/access if unavailable.
+- [x] 5.2 Update affected module dependencies, including Gateway pins, to proxy-resolvable prerequisite versions without committed replacements or Gateway registration in the root workspace.
+- [x] 5.3 Verify affected modules with readonly `GOWORK=off` checks and `mise run verify-module-resolution`; verify Apache builds/imports remain independent of the Gateway subtree.
 
 ## 6. Enable bounded Gateway file mapping
 
@@ -54,18 +54,18 @@
 
 - [x] 8.1 Update centralized SDK input guidance/examples and Gateway-owned support/operator documentation for constructors, filename migration, provider-specific support, and deferred WP16/17 behavior. Extend production smoke if file inputs are being activated and retain source-offer/license obligations.
 - [x] 8.2 Review fixture provenance and consider affected request/UI/object expectations explicitly; regenerate only justified expectations. Update `PARITY.md` only for stable evidence-boundary changes and register actionable gaps in upstream-sync issues.
-- [ ] 8.3 Run `mise run build`, `mise run test`, `mise run vet`, `mise run lint`, `mise run fmt-check`, `mise run build-examples`, and `mise run test-examples` for the migrated module set.
+- [x] 8.3 Run `mise run build`, `mise run test`, `mise run vet`, `mise run lint`, `mise run fmt-check`, `mise run build-examples`, and `mise run test-examples` for the migrated module set.
 - [x] 8.4 Add a deterministic Go testserver scenario and matching Vitest test proving user/assistant UI file filename absence/empty/non-empty survives Go JSON, model-message conversion, and client projection against pinned TypeScript UI validation/conversion. Run `mise run test-integration`; do not invent filename fields on file SSE chunks, and parse any SSE used by the scenario with `parseJsonEventStream` and `uiMessageChunkSchema`.
-- [ ] 8.5 Run `mise run parity-check`, repeat readonly standalone module verification against committed pins, and run `openspec validate gateway-file-inputs --strict`. Record exact results, remaining evidence gaps, and any intentional deviations before declaring WP15 complete.
+- [x] 8.5 Run `mise run parity-check`, repeat readonly standalone module verification against committed pins, and run `openspec validate gateway-file-inputs --strict`. Record exact results, remaining evidence gaps, and any intentional deviations before declaring WP15 complete.
 
 ## Verification
 
 - Registered reference: `test/conformance/upstream.yaml` commit `08ae5ad05bc12496dd1ffcf64e34419e0831300d`; the local upstream checkout HEAD differs, so all comparisons used that exact Git object and the pinned npm workspace.
 - Passed: `mise run build`, `mise run test`, `mise run vet`, `mise run lint`, `mise run fmt-check`, `mise run build-examples`, `mise run test-examples`, `mise run test-integration`, `mise run test-providerwire-v4`, `mise run test-ai-gateway-command`, `mise run test-ai-gateway`, `mise run parity-check`, `mise run verify-module-resolution`, `mise run verify-ai-gateway-boundary`, `mise run lint-docs`, and `openspec validate gateway-file-inputs --strict`. The final clean-tree formatting check and pinned-version checks were repeated after implementation commits.
-- Published Apache prerequisites: root `f224e3d5`, adapters/observers `252f0507`, Bedrock `94f83881`, and contract/UI evidence `3dcc232d`. The Gateway module pins the published root, Anthropic, OpenAI-compatible, logger, and Agent Observability versions; the Bedrock module pins the published OpenAI adapter. Fresh-cache readonly module tests passed without Gateway imports in Apache production code.
+- Published Apache prerequisites: root `f224e3d5`, adapters/observers `252f0507`, Bedrock `94f83881`, contract/UI evidence `3dcc232d`, and Anthropic file correction `20642796`. The Gateway module pins the corrected Anthropic version and the published root, OpenAI-compatible, logger, and Agent Observability versions; the Bedrock module pins the published OpenAI adapter. Fresh-cache readonly module tests passed without Gateway imports in Apache production code.
 - Provenance: no provider `recorded/` or `upstream/` input was added or changed. `file-inputs.json` is generated by the exact registered Gateway client, not a provider recording. Native request tests and the authenticated command use synthetic deterministic transports; they do not prove live-provider acceptance or deployed ingress behavior.
 - Support boundary: generated media outputs (WP16), reasoning-file runtime (WP17), and file fallback remain deferred. The existing Bedrock tool-result URL warning/omission deviation remains as documented in `PARITY.md`; no new intentional deviation was accepted.
 
 ## Review follow-up
 
-Three review rounds found that the published Anthropic prerequisite silently omits inline-text files with non-text media types and URL/PDF tool-result files that the registered upstream converts. Local native conversion and focused red/green tests now fix these paths; Gateway replay additionally asserts media types, and `PARITY.md` names stable file-input evidence. Local Anthropic tests, Gateway replay, full tests, lint, vet, and parity pass; none proves that the standalone Gateway receives the uncommitted native fix. Tasks 5.1–5.3 and 8.3/8.5 remain open pending owner-approved publication of a new immutable Anthropic module, a Gateway pin update, and clean-tree/readonly final checks. No provider recording was added.
+Three review rounds found that the earlier Anthropic prerequisite silently omitted inline-text files with non-text media types and URL/PDF tool-result files that the registered upstream converts. The corrected native module at `20642796` passed focused red/green tests and was published as an immutable proxy-resolvable prerequisite. Gateway now pins that revision; authenticated Vercel and Go unary/streaming calls assert native text, URL, and PDF sources through the standalone service. Gateway replay additionally asserts media types, and `PARITY.md` names stable file-input evidence. Fresh-cache readonly module checks, full tests, lint, vet, parity, and integration pass. No provider recording was added; live-provider and deployed-ingress acceptance remain unproven.
