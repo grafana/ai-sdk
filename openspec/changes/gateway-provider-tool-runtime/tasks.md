@@ -11,4 +11,4 @@
 - [x] 2.3 Split authenticated native code-execution acceptance from MCP; verify aliases, large default unary token budget, continuation and metadata-only observation in both modes/clients.
 - [x] 2.4 Scope docs and parity coverage to provider tools, with MCP explicitly deferred to its own change.
 - [x] 2.5 Run full tests, build, vet, lint, parity, integration, module-resolution and Gateway-boundary gates on this intermediate branch.
-- [ ] 2.6 Validate the change and publish the second draft PR against the SDK prerequisite; keep both changes unarchived.
+- [x] 2.6 Validate the change and publish the second draft PR against the SDK prerequisite; keep both changes unarchived.
