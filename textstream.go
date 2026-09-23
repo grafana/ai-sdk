@@ -132,6 +132,8 @@ type StreamToolInputStart struct {
 	ToolName         string
 	ProviderExecuted bool
 	Dynamic          *bool
+	uiDynamic        *bool
+	useUIDynamic     bool
 	Title            string
 	ProviderMetadata provider.ProviderMetadata
 }

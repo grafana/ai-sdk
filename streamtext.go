@@ -331,7 +331,11 @@ func translateToChunksWithMetadata(part TextStreamPart, cfg uiMessageStreamConfi
 	case StreamReasoningEnd:
 		return []UIMessageChunk{{Type: ChunkReasoningEnd, ID: p.ID, ProviderMetadata: p.ProviderMetadata}}
 	case StreamToolInputStart:
-		return []UIMessageChunk{{Type: ChunkToolInputStart, ToolCallID: p.ID, ToolName: p.ToolName, ProviderExecuted: p.ProviderExecuted, Dynamic: p.Dynamic, Title: p.Title, ProviderMetadata: p.ProviderMetadata, ToolMetadata: toolMetadataFromProviderMetadata(p.ProviderMetadata)}}
+		dynamic := p.Dynamic
+		if p.useUIDynamic {
+			dynamic = p.uiDynamic
+		}
+		return []UIMessageChunk{{Type: ChunkToolInputStart, ToolCallID: p.ID, ToolName: p.ToolName, ProviderExecuted: p.ProviderExecuted, Dynamic: dynamic, Title: p.Title, ProviderMetadata: p.ProviderMetadata, ToolMetadata: toolMetadataFromProviderMetadata(p.ProviderMetadata)}}
 	case StreamToolInputDelta:
 		return []UIMessageChunk{{Type: ChunkToolInputDelta, ToolCallID: p.ID, InputTextDelta: p.Delta}}
 	case StreamToolInputEnd:
@@ -1105,7 +1109,8 @@ loop:
 			}
 			tsp := StreamToolInputStart{
 				ID: part.ID, ToolName: part.ToolName,
-				ProviderExecuted: part.ProviderExecuted, Dynamic: toolUIDynamic(part.ToolName, part.Dynamic, cfg),
+				ProviderExecuted: part.ProviderExecuted, Dynamic: isInputStartDynamic(part.ToolName, part.Dynamic, cfg.tools),
+				uiDynamic: toolUIDynamic(part.ToolName, part.Dynamic, cfg), useUIDynamic: true,
 				Title: part.Title, ProviderMetadata: part.ProviderMetadata,
 			}
 			r.emit(tsp)
@@ -1532,7 +1537,7 @@ func (r *StreamTextResult) handleToolResult(
 	step *StepResult,
 	cfg *streamConfig,
 ) error {
-	preliminary := part.Preliminary != nil && *part.Preliminary
+	preliminary := part.Preliminary
 	dynamic := part.Dynamic
 	var input json.RawMessage
 	for _, toolCall := range step.ToolCalls {
@@ -3072,6 +3077,14 @@ func toolUIDynamic(toolName string, providerDynamic *bool, cfg *streamConfig) *b
 		return isDynamic(toolName, providerDynamic, cfg.uiTools)
 	}
 	return isDynamic(toolName, providerDynamic, cfg.tools)
+}
+
+func isInputStartDynamic(toolName string, providerDynamic *bool, tools map[string]Tool) *bool {
+	if providerDynamic != nil {
+		return providerDynamic
+	}
+	dynamic := tools[toolName].Type == UserToolDynamic
+	return &dynamic
 }
 
 func isDynamic(toolName string, providerDynamic *bool, tools map[string]Tool) *bool {
