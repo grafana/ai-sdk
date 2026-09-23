@@ -323,7 +323,11 @@ func translateToChunksWithMetadata(part TextStreamPart, cfg uiMessageStreamConfi
 	case StreamReasoningEnd:
 		return []UIMessageChunk{{Type: ChunkReasoningEnd, ID: p.ID, ProviderMetadata: p.ProviderMetadata}}
 	case StreamToolInputStart:
-		return []UIMessageChunk{{Type: ChunkToolInputStart, ToolCallID: p.ID, ToolName: p.ToolName, ProviderExecuted: p.ProviderExecuted, Dynamic: p.Dynamic, Title: p.Title, ProviderMetadata: p.ProviderMetadata, ToolMetadata: toolMetadataFromProviderMetadata(p.ProviderMetadata)}}
+		dynamic := p.Dynamic
+		if p.useUIDynamic {
+			dynamic = p.uiDynamic
+		}
+		return []UIMessageChunk{{Type: ChunkToolInputStart, ToolCallID: p.ID, ToolName: p.ToolName, ProviderExecuted: p.ProviderExecuted, Dynamic: dynamic, Title: p.Title, ProviderMetadata: p.ProviderMetadata, ToolMetadata: toolMetadataFromProviderMetadata(p.ProviderMetadata)}}
 	case StreamToolInputDelta:
 		return []UIMessageChunk{{Type: ChunkToolInputDelta, ToolCallID: p.ID, InputTextDelta: p.Delta}}
 	case StreamToolInputEnd:
@@ -1020,7 +1024,8 @@ loop:
 			}
 			tsp := StreamToolInputStart{
 				ID: part.ID, ToolName: part.ToolName,
-				ProviderExecuted: part.ProviderExecuted, Dynamic: isDynamic(part.ToolName, part.Dynamic, cfg.tools),
+				ProviderExecuted: part.ProviderExecuted, Dynamic: isInputStartDynamic(part.ToolName, part.Dynamic, cfg.tools),
+				uiDynamic: isDynamic(part.ToolName, part.Dynamic, cfg.tools), useUIDynamic: true,
 				Title: part.Title, ProviderMetadata: part.ProviderMetadata,
 			}
 			r.emit(tsp)
@@ -1068,7 +1073,7 @@ loop:
 			if err := r.handleToolResult(part, &step, cfg); err != nil {
 				return step, false, false, hasOutput, err
 			}
-			preliminary := part.Preliminary != nil && *part.Preliminary
+			preliminary := part.Preliminary
 			if !preliminary && len(step.ToolResults) > 0 {
 				tr := step.ToolResults[len(step.ToolResults)-1]
 				if tr.ProviderExecuted && !tr.Preliminary {
@@ -1398,7 +1403,7 @@ func (r *StreamTextResult) handleToolResult(
 	step *StepResult,
 	cfg *streamConfig,
 ) error {
-	preliminary := part.Preliminary != nil && *part.Preliminary
+	preliminary := part.Preliminary
 	dynamic := part.Dynamic
 	var input json.RawMessage
 	for _, toolCall := range step.ToolCalls {
@@ -2832,6 +2837,14 @@ func isJSONObject(data json.RawMessage) bool {
 		}
 	}
 	return false
+}
+
+func isInputStartDynamic(toolName string, providerDynamic *bool, tools map[string]Tool) *bool {
+	if providerDynamic != nil {
+		return providerDynamic
+	}
+	dynamic := tools[toolName].Type == UserToolDynamic
+	return &dynamic
 }
 
 func isDynamic(toolName string, providerDynamic *bool, tools map[string]Tool) *bool {

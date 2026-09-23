@@ -147,9 +147,9 @@ type GenerateContentPart struct {
 	Input            json.RawMessage     `json:"input,omitempty"`
 	Result           json.RawMessage     `json:"result,omitempty"`
 	IsError          bool                `json:"isError,omitempty"`
-	Preliminary      *bool               `json:"preliminary,omitempty"`
+	Preliminary      bool                `json:"preliminary,omitempty"`
 	ProviderExecuted bool                `json:"providerExecuted,omitempty"`
-	Dynamic          *bool               `json:"dynamic,omitempty"`
+	Dynamic          bool                `json:"dynamic,omitempty"`
 	SourceType       SourceType          `json:"sourceType,omitempty"`
 	URL              string              `json:"url,omitempty"`
 	// Title is populated for ContentSource (optional for URL sources, required

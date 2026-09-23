@@ -100,7 +100,7 @@ func TestSimulateStreaming(t *testing.T) {
 							ToolName:         "search",
 							Input:            []byte(`{"q":"test"}`),
 							ProviderExecuted: true,
-							Dynamic:          ptr(true),
+							Dynamic:          true,
 							Kind:             "function",
 						},
 					},

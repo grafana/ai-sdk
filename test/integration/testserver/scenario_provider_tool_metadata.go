@@ -24,10 +24,9 @@ func (*providerToolMetadataModel) DoGenerate(context.Context, provider.CallOptio
 	return nil, nil
 }
 func (*providerToolMetadataModel) DoStream(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
-	preliminary := true
 	stream := make(chan provider.StreamPart, 5)
 	stream <- provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "image-1", ToolName: "image_generation", Input: `{}`, ProviderExecuted: true}
-	stream <- provider.StreamPart{Type: provider.PartToolResult, ToolCallID: "image-1", ToolName: "image_generation", Result: json.RawMessage(`{"stage":"preview"}`), Preliminary: &preliminary, ProviderExecuted: true}
+	stream <- provider.StreamPart{Type: provider.PartToolResult, ToolCallID: "image-1", ToolName: "image_generation", Result: json.RawMessage(`{"stage":"preview"}`), Preliminary: true, ProviderExecuted: true}
 	stream <- provider.StreamPart{Type: provider.PartToolResult, ToolCallID: "image-1", ToolName: "image_generation", Result: json.RawMessage(`{"stage":"final"}`), ProviderExecuted: true}
 	stream <- provider.StreamPart{
 		Type: provider.PartCustom,

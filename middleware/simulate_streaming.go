@@ -94,12 +94,14 @@ func contentPartToStreamPart(part provider.GenerateContentPart) provider.StreamP
 		ToolCallID:       part.ToolCallID,
 		ToolName:         part.ToolName,
 		ProviderExecuted: part.ProviderExecuted,
-		Dynamic:          part.Dynamic,
 		MediaType:        part.MediaType,
 		Filename:         part.Filename,
 		ProviderMetadata: part.ProviderMetadata,
 	}
 
+	if part.Dynamic {
+		sp.Dynamic = &part.Dynamic
+	}
 	if len(part.Input) > 0 {
 		sp.Input = string(part.Input)
 	}

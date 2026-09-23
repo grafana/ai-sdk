@@ -155,7 +155,7 @@ type StreamPart struct {
 	ProviderExecuted bool   `json:"providerExecuted,omitempty"`
 	IsError          bool   `json:"isError,omitempty"`
 	Dynamic          *bool  `json:"dynamic,omitempty"`
-	Preliminary      *bool  `json:"preliminary,omitempty"`
+	Preliminary      bool   `json:"preliminary,omitempty"`
 	Title            string `json:"title,omitempty"`
 
 	// Result is populated for PartToolResult parts and contains the raw JSON

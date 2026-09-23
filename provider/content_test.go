@@ -183,6 +183,29 @@ func TestContentPart_AllTypes_RoundTrip(t *testing.T) {
 	}
 }
 
+func TestGenerateContentPart_ToolMarkers(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		wire        string
+		dynamic     bool
+		preliminary bool
+	}{
+		{name: "absent", wire: `{"type":"tool-result"}`},
+		{name: "false", wire: `{"type":"tool-result","dynamic":false,"preliminary":false}`},
+		{name: "true", wire: `{"type":"tool-result","dynamic":true,"preliminary":true}`, dynamic: true, preliminary: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var part GenerateContentPart
+			require.NoError(t, json.Unmarshal([]byte(tc.wire), &part))
+			assert.Equal(t, tc.dynamic, part.Dynamic)
+			assert.Equal(t, tc.preliminary, part.Preliminary)
+			data, err := json.Marshal(part)
+			require.NoError(t, err)
+			assert.Contains(t, string(data), `"type":"tool-result"`)
+		})
+	}
+}
+
 func TestDataContentValidate_ProviderReference(t *testing.T) {
 	assert.NoError(t, (DataContent{Reference: json.RawMessage(`{"openai":"file-abc123"}`)}).Validate())
 	assert.NoError(t, (DataContent{Reference: json.RawMessage(`{}`)}).Validate())

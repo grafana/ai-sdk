@@ -4577,7 +4577,7 @@ func TestStreamTextContent_PreliminaryProviderResultExcluded(t *testing.T) {
 		stream := make(chan provider.StreamPart, 5)
 		stream <- provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "call-1", ToolName: "provider-tool", Input: `{}`, ProviderExecuted: true}
 		stream <- provider.StreamPart{
-			Type: provider.PartToolResult, ToolCallID: "call-1", ToolName: "provider-tool", ProviderExecuted: true, Preliminary: boolPtr(true),
+			Type: provider.PartToolResult, ToolCallID: "call-1", ToolName: "provider-tool", ProviderExecuted: true, Preliminary: true,
 			Result: json.RawMessage(`{"stage":"preliminary"}`),
 		}
 		stream <- provider.StreamPart{
@@ -4749,6 +4749,58 @@ func TestIsDynamic_UnknownToolPreservesProviderValue(t *testing.T) {
 	t.Run("explicit true", func(t *testing.T) {
 		assert.Equal(t, boolPtr(true), isDynamic("provider.tool", boolPtr(true), nil))
 	})
+}
+
+func TestIsInputStartDynamic_PreservesExplicitValue(t *testing.T) {
+	tools := map[string]Tool{"dynamic_tool": {Type: UserToolDynamic}}
+	for _, tc := range []struct {
+		name  string
+		value *bool
+		want  bool
+	}{
+		{name: "absent infers dynamic", want: true},
+		{name: "explicit false overrides", value: boolPtr(false)},
+		{name: "explicit true", value: boolPtr(true), want: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, boolPtr(tc.want), isInputStartDynamic("dynamic_tool", tc.value, tools))
+		})
+	}
+}
+
+func TestInputStartDynamic_TextAndUIProjection(t *testing.T) {
+	tools := map[string]Tool{
+		"dynamic":  {Type: UserToolDynamic},
+		"ordinary": {Type: UserToolFunction},
+	}
+	for _, tc := range []struct {
+		name            string
+		toolName        string
+		providerDynamic *bool
+		textDynamic     *bool
+		uiDynamic       *bool
+	}{
+		{name: "known dynamic absent", toolName: "dynamic", textDynamic: boolPtr(true), uiDynamic: boolPtr(true)},
+		{name: "known dynamic explicit false", toolName: "dynamic", providerDynamic: boolPtr(false), textDynamic: boolPtr(false), uiDynamic: boolPtr(true)},
+		{name: "known dynamic explicit true", toolName: "dynamic", providerDynamic: boolPtr(true), textDynamic: boolPtr(true), uiDynamic: boolPtr(true)},
+		{name: "known ordinary absent", toolName: "ordinary", textDynamic: boolPtr(false)},
+		{name: "known ordinary explicit true", toolName: "ordinary", providerDynamic: boolPtr(true), textDynamic: boolPtr(true)},
+		{name: "unknown absent", toolName: "unknown", textDynamic: boolPtr(false), uiDynamic: boolPtr(false)},
+		{name: "unknown explicit false", toolName: "unknown", providerDynamic: boolPtr(false), textDynamic: boolPtr(false), uiDynamic: boolPtr(false)},
+		{name: "unknown explicit true", toolName: "unknown", providerDynamic: boolPtr(true), textDynamic: boolPtr(true), uiDynamic: boolPtr(true)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			part := StreamToolInputStart{
+				ID: "call", ToolName: tc.toolName,
+				Dynamic:   isInputStartDynamic(tc.toolName, tc.providerDynamic, tools),
+				uiDynamic: isDynamic(tc.toolName, tc.providerDynamic, tools), useUIDynamic: true,
+			}
+			assert.Equal(t, tc.textDynamic, part.Dynamic)
+			chunks := translateToChunks(part, uiMessageStreamConfig{})
+			require.Len(t, chunks, 1)
+			assert.Equal(t, tc.uiDynamic, chunks[0].Dynamic)
+		})
+	}
 }
 
 func boolPtr(b bool) *bool { return &b }
