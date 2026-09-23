@@ -27,7 +27,7 @@
 
 ## 5. Document and close the consumer boundary
 
-- [x] 5.1 Update Gateway-owned support/operator docs and the root Go-client guide for file support, provider-specific restrictions, rollout, and deferred WP16/17/file fallback. Preserve source-offer/license obligations.
+- [x] 5.1 Clarify direct file support and text-only fallback in the Go-client guide, remove work-package-only guidance, and retain the source-offer obligation in the container guide.
 - [x] 5.2 Review fixture provenance and affected request/UI/object expectations; update `PARITY.md` only for the stable Gateway evidence change, without synthetic recorded provider inputs.
 - [x] 5.3 Run build, tests, vet, lint, formatting, examples, integration, parity, readonly module resolution, strict OpenSpec validation and the AI Gateway license-boundary check on the published-pin branch.
 

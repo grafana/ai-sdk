@@ -107,7 +107,9 @@ to the full source commit.
 License files are under
 `/usr/share/licenses/grafana-ai-gateway/`. The directory includes the Gateway
 license and notice, the exact modules used by the command, and license or
-notice files found in those resolved module versions.
+notice files found in those resolved module versions. When distributing the
+image, include the approved corresponding-source offer for that revision and
+its published dependencies.
 
 ---
 
