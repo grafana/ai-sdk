@@ -119,6 +119,9 @@ finalizer returns.
   rollout, and environment smoke verification.
 - WP27 owns any later per-request Agent Observability control or richer content
   capture decision.
-- Tools, reasoning, files, images, raw output, hooks, and later event families
-  remain with their owning capability work; WP8 observes the current text
-  surface only and does not change ProviderWire schemas or events.
+- WP15 admits ordinary file inputs on direct routes without changing the WP8
+  metadata-only logical observation policy. File payloads, names, URLs,
+  references, and scoped options are not exported to Gateway logs, metrics,
+  or Agent Observability; see [File-input operations](file-inputs.md).
+  Generated media output, reasoning files, raw output, hooks, and later event
+  families remain with their owning work packages.
