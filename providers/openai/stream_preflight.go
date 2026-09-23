@@ -25,11 +25,14 @@ type responseStreamItem struct {
 	recoverable bool
 }
 
-func pumpResponseStream(ctx context.Context, stream *ssestream.Stream[responses.ResponseStreamEventUnion], response *http.Response) <-chan responseStreamItem {
+func pumpResponseStream(ctx context.Context, response *http.Response, requestErr error) <-chan responseStreamItem {
 	items := make(chan responseStreamItem, 64)
 	go func() {
 		defer close(items)
-		defer func() { _ = stream.Close() }()
+		decoder := ssestream.NewDecoder(response)
+		if decoder != nil {
+			defer func() { _ = decoder.Close() }()
+		}
 		send := func(item responseStreamItem) bool {
 			select {
 			case items <- item:
@@ -38,11 +41,10 @@ func pumpResponseStream(ctx context.Context, stream *ssestream.Stream[responses.
 				return false
 			}
 		}
-		if err := stream.Err(); err != nil {
-			send(responseStreamItem{err: err})
+		if requestErr != nil {
+			send(responseStreamItem{err: requestErr})
 			return
 		}
-		decoder := ssestream.NewDecoder(response)
 		if decoder == nil {
 			send(responseStreamItem{err: errors.New("openai: missing stream response")})
 			return

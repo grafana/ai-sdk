@@ -43,7 +43,7 @@ func consumeStreamParts(items <-chan responseStreamItem, buffered []responseStre
 	handle := func(item responseStreamItem) {
 		if item.recoverable {
 			retryable := false
-			adapter.encounteredStreamError = true
+			adapter.recordStreamError("")
 			ch <- provider.StreamPart{Type: provider.PartError, APICallError: provider.NewAPICallError(provider.APICallErrorOptions{Message: item.err.Error(), Cause: item.err, IsRetryable: &retryable})}
 			return
 		}
@@ -53,7 +53,7 @@ func consumeStreamParts(items <-chan responseStreamItem, buffered []responseStre
 			if !ok {
 				apiErr = provider.NewAPICallError(provider.APICallErrorOptions{Message: wrapped.Error(), Cause: wrapped})
 			}
-			adapter.encounteredStreamError = true
+			adapter.recordStreamError("error")
 			ch <- provider.StreamPart{Type: provider.PartError, APICallError: apiErr}
 			return
 		}
@@ -67,7 +67,7 @@ func consumeStreamParts(items <-chan responseStreamItem, buffered []responseStre
 	for item := range items {
 		handle(item)
 	}
-	adapter.emitPendingErrorFinish(ch)
+	adapter.flush(ch)
 }
 
 func drainProviderStreamParts(parts <-chan provider.StreamPart) {

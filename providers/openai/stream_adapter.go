@@ -61,7 +61,8 @@ type streamAdapter struct {
 
 	startEmitted           bool
 	encounteredStreamError bool
-	finishEmitted          bool
+	finishResponse         *responses.Response
+	finishReason           provider.FinishReason
 
 	ongoingToolCalls          map[int64]*ongoingToolCall
 	ongoingAnnotations        []json.RawMessage
@@ -229,10 +230,10 @@ func (a *streamAdapter) handleEvent(event responses.ResponseStreamEventUnion, ch
 		a.handleOutputItemDone(e, ch)
 
 	case responses.ResponseCompletedEvent:
-		a.emitFinish(e.Response, ch)
+		a.recordFinish(e.Response)
 
 	case responses.ResponseIncompleteEvent:
-		a.emitFinish(e.Response, ch)
+		a.recordFinish(e.Response)
 
 	case responses.ResponseFailedEvent:
 		if !a.encounteredStreamError {
@@ -241,10 +242,10 @@ func (a *streamAdapter) handleEvent(event responses.ResponseStreamEventUnion, ch
 				ch <- provider.StreamPart{Type: provider.PartError, APICallError: apiErr}
 			}
 		}
-		a.emitFailedFinish(e.Response, ch)
+		a.recordFailedFinish(e.Response)
 
 	case responses.ResponseErrorEvent:
-		a.encounteredStreamError = true
+		a.recordStreamError("error")
 		apiErr := openAIStreamEventError(event, a.requestBody, a.response)
 		if apiErr == nil {
 			apiErr = provider.NewAPICallError(provider.APICallErrorOptions{Message: e.Message})
@@ -777,52 +778,53 @@ func jsonEscape(s string) string {
 	return s
 }
 
-// emitFinish emits the finish part with usage and finish reason.
-func (a *streamAdapter) emitFinish(resp responses.Response, ch chan<- provider.StreamPart) {
-	if a.finishEmitted {
-		return
+func (a *streamAdapter) recordFinish(resp responses.Response) {
+	if !a.encounteredStreamError {
+		a.finishReason = mapFinishReason(resp.IncompleteDetails.Reason, a.hasFunctionCall)
 	}
-	a.finishEmitted = true
-	fr := mapFinishReason(resp.IncompleteDetails.Reason, a.hasFunctionCall)
-	usage := convertResponseUsage(resp.Usage)
-	ch <- provider.StreamPart{
-		Type:             provider.PartFinish,
-		FinishReason:     &fr,
-		Usage:            &usage,
-		ProviderMetadata: responseMeta(a.providerOptionsName, &resp, a.logprobs),
-	}
+	a.finishResponse = &resp
 }
 
-func (a *streamAdapter) emitFailedFinish(resp responses.Response, ch chan<- provider.StreamPart) {
-	if a.finishEmitted {
-		return
-	}
-	a.finishEmitted = true
-	fr := provider.FinishReason{Unified: provider.FinishReasonError, Raw: "error"}
+func (a *streamAdapter) recordFailedFinish(resp responses.Response) {
+	a.finishReason = provider.FinishReason{Unified: provider.FinishReasonError, Raw: "error"}
 	if resp.IncompleteDetails.Reason != "" {
-		fr = mapFinishReason(resp.IncompleteDetails.Reason, a.hasFunctionCall)
+		a.finishReason = mapFinishReason(resp.IncompleteDetails.Reason, a.hasFunctionCall)
+	}
+	a.finishResponse = &resp
+}
+
+func (a *streamAdapter) recordStreamError(raw string) {
+	a.encounteredStreamError = true
+	a.finishReason = provider.FinishReason{Unified: provider.FinishReasonError, Raw: raw}
+}
+
+func (a *streamAdapter) flush(ch chan<- provider.StreamPart) {
+	indices := make([]int64, 0, len(a.ongoingToolCalls))
+	for index, call := range a.ongoingToolCalls {
+		if call.suppressInput {
+			indices = append(indices, index)
+		}
+	}
+	slices.Sort(indices)
+	for _, index := range indices {
+		call := a.ongoingToolCalls[index]
+		ch <- provider.StreamPart{Type: provider.PartToolInputStart, ID: call.toolCallID, ToolName: call.toolName}
+		for _, delta := range call.bufferedDeltas {
+			ch <- provider.StreamPart{Type: provider.PartToolInputDelta, ID: call.toolCallID, Delta: delta}
+		}
+	}
+	if a.finishResponse == nil && !a.encounteredStreamError {
+		return
+	}
+	resp := a.finishResponse
+	if resp == nil {
+		resp = &responses.Response{ID: a.responseID}
 	}
 	usage := convertResponseUsage(resp.Usage)
 	ch <- provider.StreamPart{
 		Type:             provider.PartFinish,
-		FinishReason:     &fr,
+		FinishReason:     &a.finishReason,
 		Usage:            &usage,
-		ProviderMetadata: responseMeta(a.providerOptionsName, &resp, a.logprobs),
-	}
-}
-
-func (a *streamAdapter) emitPendingErrorFinish(ch chan<- provider.StreamPart) {
-	if !a.encounteredStreamError || a.finishEmitted {
-		return
-	}
-	a.finishEmitted = true
-	fr := provider.FinishReason{Unified: provider.FinishReasonError, Raw: "error"}
-	usage := provider.Usage{}
-	resp := responses.Response{ID: a.responseID}
-	ch <- provider.StreamPart{
-		Type:             provider.PartFinish,
-		FinishReason:     &fr,
-		Usage:            &usage,
-		ProviderMetadata: responseMeta(a.providerOptionsName, &resp, a.logprobs),
+		ProviderMetadata: responseMeta(a.providerOptionsName, resp, a.logprobs),
 	}
 }

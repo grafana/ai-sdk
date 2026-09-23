@@ -20,7 +20,7 @@ Non-goals: implement the entire parity backlog, adopt unsupported upstream produ
 ### Modified Capabilities
 
 - `upstream-parity-governance`: retain the selected target's per-package source record with the transition.
-- `stream-text-lifecycle`: keep text/reasoning identifiers unique across steps.
+- `stream-text-lifecycle`: keep text/reasoning identifiers unique across steps and gate local tool dispatch/continuation after failed or incomplete output.
 - `openai-responses-provider`: easy-input assistant history, apply-patch finish reasons, internal parallel wrappers and recoverable malformed stream events.
 - `provider-executed-tool-roundtrip`: preserve Anthropic caller metadata and web-search error continuation.
 - `grafana-gateway-client`: preserve bounded validated unary warnings.

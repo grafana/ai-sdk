@@ -33,6 +33,7 @@ func collectPartsWithBuildResult(t *testing.T, br buildResult, events ...string)
 	for _, raw := range events {
 		a.handleEvent(unmarshalEvent(t, raw), ch)
 	}
+	a.flush(ch)
 	close(ch)
 	var parts []provider.StreamPart
 	for p := range ch {
@@ -316,9 +317,9 @@ func TestStream_FailedResponseWithUnavailableUsage(t *testing.T) {
 
 func TestStream_PendingErrorFinishHasUnavailableUsage(t *testing.T) {
 	adapter := newStreamAdapter(nil, buildResult{}, responses.ResponseNewParams{}, nil, seqIDGen(), "openai")
-	adapter.encounteredStreamError = true
+	adapter.recordStreamError("error")
 	ch := make(chan provider.StreamPart, 1)
-	adapter.emitPendingErrorFinish(ch)
+	adapter.flush(ch)
 	close(ch)
 
 	finish := <-ch

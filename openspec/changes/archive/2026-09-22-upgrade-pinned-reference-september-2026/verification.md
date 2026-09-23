@@ -46,7 +46,7 @@ Generation was repeated and all 301 expected-artifact hashes were stable.
 | OpenAI assistant history | Target uses easy-input string content rather than incomplete output messages. Two existing request fixtures changed. Seven focused cases cover absent/empty text, unstored IDs, phase and stored references; six fail with the old encoder in an isolated copy. |
 | OpenAI apply-patch | Target counts completed local patch calls as tool-calls. Existing imported fixtures went red; unary and stream/request suites now pass. |
 | Parallel wrapper expansion | Mandatory target streaming import exposed missing expansion. Only undeclared wrappers with valid declared recipients expand atomically; metadata preserves identity. Tests cover declared/invalid wrappers, unary/stream fallback, complete/partial/duplicate scalar continuation and cache breakpoints. Multipart result limits remain explicitly #221, not a full-support claim. |
-| Recoverable malformed SSE | Typed SDK iteration terminated on the exact wrapper fixture's malformed JSON. The adapter now uses the SDK framing decoder with event-local JSON errors while retaining SDK HTTP/auth and preflight behavior. One-request recovery, subsequent text/authoritative finish and nonretryability are tested; existing transport/preflight and race tests pass. |
+| Recoverable malformed SSE | Typed SDK iteration terminated on the exact wrapper fixture's malformed JSON. The adapter now uses the SDK framing decoder with event-local JSON errors while retaining SDK HTTP/auth and preflight behavior. One-request recovery, retained text/usage with an error finish, single decoder ownership and EOF wrapper flushing are regression tested. The post-publication review corrected the original success-finish assertion; see below. |
 | Compatible response metadata | Imported fixture plus a focused red test exposed premature placeholder metadata. Metadata now waits for real ID/model/time and zero timestamps are omitted in both modes, matching target get-response-metadata. |
 | Gateway unary warnings | Five exact-client/differential assertions failed on target warning forwarding. Shared validated warning decoding now preserves them; malformed warning cases fail. Client-owned request/response metadata and server privacy normalization remain unchanged. |
 
@@ -120,6 +120,48 @@ scope overlap with #181; empty-body Chat issue #48 does not establish Mantle Cha
 acceptance. Other new APIs remain decisions within their packages, not implicit
 approval. TypeScript-only product families and private Gateway behavior are
 explicitly excluded in PARITY.md, not silently omitted from the inventory.
+
+## Post-publication review corrections
+
+Independent review of published `7d5bafff` identified three OpenAI stream defects:
+duplicate SDK decoder construction/incorrect ownership, loss of buffered wrapper
+input on early EOF, and malformed-frame errors overwritten by a later completion.
+The parent reproduced them with focused failing tests before correcting them.
+Raw responses still use the SDK endpoint/auth/options; one framing decoder owns
+the stream. Finish state and usage are retained until input is flushed at EOF,
+so malformed events before or after completion cannot report success.
+
+Stronger tests assert exact incomplete/duplicate/conflicting child requests and
+full Anthropic error blocks. Isolated mutations dropping ungrouped outputs or
+forcing `unavailable` error codes fail these assertions. A synthetic HTTP/core
+two-step test executes each expanded child once and verifies the second native
+request's grouped result. It lives in the existing conformance test module;
+production module dependencies and authentic provider inputs are unchanged.
+Frontend scenarios separately verify unfinished wrapper input and failed tool
+calls without output or continuation. These additions are focused synthetic
+tests, not new provider recordings.
+
+Round two promoted #208 into this upgrade: recovered malformed data could expose
+valid local calls that the old core executed despite an error finish. The real
+HTTP/core regression reproduced both executions and a second request. Dispatch
+now requires stop/tool-calls, preserving prior approval processing; continuation
+requires a result or denial for every client call. Tests cover all finish reasons,
+missing finish, approval decisions, malformed prefixes and malformed data after
+completion. The old incomplete-step specification was corrected accordingly.
+
+The review loop completed three rounds. Oracle checks accepted the bounded SDK
+ownership correction and promotion of #208; final fresh correctness/evidence
+reviews found no further actionable issues. Parent validation passed full
+`parity-check`, root and affected provider race suites, fresh standalone module
+resolution, 32 frontend plus 28 command tests, lint, strict specification and
+documentation checks. Overlay mutations confirmed the strengthened assertions
+reject missing outputs and lost error codes. Plain EOF without a terminal/error
+still retains the separately documented Go incomplete-stream policy.
+
+Initial CI results above belong to the published head. Review fixes remain local
+until separately committed and published; they do not inherit its remote CI proof.
+Review reports, red/green logs and mutation evidence are under `review-loop/` in
+the external artifact root below.
 
 ## Durable artifacts and branch
 

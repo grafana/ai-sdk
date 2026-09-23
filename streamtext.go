@@ -725,28 +725,16 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 		// are fully resolved within the same API response and do not require a
 		// follow-up request.
 		hasClientToolCalls := false
-		hasUnresolvedExternal := false
-		hasPendingApproval := false
+		hasUnresolvedClientToolCalls := false
 		toolResultsByID := make(map[string]bool, len(step.ToolResults))
 		for _, tr := range step.ToolResults {
 			toolResultsByID[tr.ToolCallID] = true
 		}
-		approvalRequestsByID := make(map[string]bool, len(step.ToolApprovalRequests))
-		for _, ar := range step.ToolApprovalRequests {
-			approvalRequestsByID[ar.ToolCallID] = true
-		}
 		for _, tc := range step.ToolCalls {
 			if !tc.ProviderExecuted {
 				hasClientToolCalls = true
-				if !tc.Invalid {
-					if tool, ok := cfg.tools[tc.ToolName]; ok {
-						if tool.Execute == nil {
-							hasUnresolvedExternal = true
-						}
-					}
-					if approvalRequestsByID[tc.ToolCallID] && !toolResultsByID[tc.ToolCallID] {
-						hasPendingApproval = true
-					}
+				if !toolResultsByID[tc.ToolCallID] {
+					hasUnresolvedClientToolCalls = true
 				}
 			}
 		}
@@ -759,7 +747,7 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 			}
 		}
 
-		if !hasClientToolCalls || stopped || hasUnresolvedExternal || hasPendingApproval {
+		if !hasClientToolCalls || stopped || hasUnresolvedClientToolCalls {
 			if cfg.output != nil && (cfg.parseOutputOnNonStop || step.FinishReason.Unified == provider.FinishReasonStop) {
 				outputVal, outputErr := cfg.output.ParseComplete(step.Text)
 				r.mu.Lock()
@@ -1682,7 +1670,8 @@ func (r *StreamTextResult) executeTools(
 		})
 	}
 
-	if len(executable) == 0 {
+	executionAllowed := step.FinishReason.Unified == provider.FinishReasonStop || step.FinishReason.Unified == provider.FinishReasonToolCalls
+	if len(executable) == 0 || !executionAllowed {
 		return nil
 	}
 

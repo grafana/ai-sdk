@@ -448,6 +448,11 @@ unexpandable wrappers SHALL retain their original input deltas and call identity
 - **WHEN** parallel is itself a declared function or any nested recipient/parameters are invalid
 - **THEN** the original function call is retained without partial child execution
 
+#### Scenario: Wrapper input ends before its final item
+- **WHEN** a suppressed parallel wrapper reaches EOF without a valid final item
+- **THEN** its original start and buffered deltas are flushed in output-index order before any finish
+- **AND** no completed tool call or input-end is invented
+
 #### Scenario: Stateful scalar results are grouped
 - **WHEN** every child result has matching wrapper metadata and unique indexes in a conversation or previous-response continuation
 - **THEN** one wrapper output contains child outputs in index order
@@ -457,13 +462,21 @@ unexpandable wrappers SHALL retain their original input deltas and call identity
 ### Requirement: Recoverable malformed Responses stream events
 Malformed JSON SSE data SHALL emit a nonretryable stream error without discarding
 subsequent decodable events. Transport/setup failures SHALL retain their existing
-preflight retry/error contract. An authoritative finish SHALL not be replaced by
-a synthetic second finish; error-only termination SHALL finish as an error.
+preflight retry/error contract. The provider SHALL emit at most one finish, after
+flushing pending input. A malformed-frame error SHALL survive later completed or
+incomplete responses while retaining their usage and metadata. SDK transport and
+authentication SHALL remain in control, and each acquired framing decoder SHALL
+be constructed and closed exactly once.
 
 #### Scenario: Malformed events surround valid output
 - **WHEN** malformed JSON occurs before and after valid tool or text events
 - **THEN** errors and valid output retain their order through one HTTP request
 - **AND** subsequent valid events remain visible
+- **AND** the final finish reason is error, including when malformed data follows a completion event
+
+#### Scenario: Custom SDK decoder owns framing resources
+- **WHEN** a configured SDK decoder consumes a framing prefix or owns resources
+- **THEN** one decoder consumes the stream and that same instance is closed on completion or cancellation
 
 ### Requirement: Apply-patch calls contribute tool finish reasons
 Client-executed apply-patch calls SHALL contribute to tool-calls finish mapping in

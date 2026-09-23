@@ -13,14 +13,15 @@ import (
 
 func TestCallerMetadata_ServerToolRoundTrip(t *testing.T) {
 	for _, tc := range []struct {
-		name  string
-		block string
+		name      string
+		block     string
+		errorJSON string
 	}{
 		{name: "server call", block: `{"type":"server_tool_use","id":"call_1","name":"web_search","input":{}}`},
 		{name: "search result", block: `{"type":"web_search_tool_result","tool_use_id":"call_1","content":[]}`},
-		{name: "search error", block: `{"type":"web_search_tool_result","tool_use_id":"call_1","content":{"type":"web_search_tool_result_error","error_code":"invalid_tool_input"}}`},
+		{name: "search error", block: `{"type":"web_search_tool_result","tool_use_id":"call_1","content":{"type":"web_search_tool_result_error","error_code":"invalid_tool_input"}}`, errorJSON: `{"type":"web_search_tool_result_error","errorCode":"invalid_tool_input"}`},
 		{name: "fetch result", block: `{"type":"web_fetch_tool_result","tool_use_id":"call_1","content":{"type":"web_fetch_result","url":"https://example.test","retrieved_at":"2026-09-01T00:00:00Z","content":{"type":"document","title":"Document","source":{"type":"text","media_type":"text/plain","data":"hello"}}}}`},
-		{name: "fetch error", block: `{"type":"web_fetch_tool_result","tool_use_id":"call_1","content":{"type":"web_fetch_tool_result_error","error_code":"invalid_input"}}`},
+		{name: "fetch error", block: `{"type":"web_fetch_tool_result","tool_use_id":"call_1","content":{"type":"web_fetch_tool_result_error","error_code":"invalid_input"}}`, errorJSON: `{"type":"web_fetch_tool_result_error","errorCode":"invalid_input"}`},
 	} {
 		for _, caller := range []string{`{"type":"direct"}`, `{"type":"code_execution_20260120","tool_id":"program_1"}`} {
 			t.Run(tc.name+caller, func(t *testing.T) {
@@ -30,6 +31,11 @@ func TestCallerMetadata_ServerToolRoundTrip(t *testing.T) {
 				require.NoError(t, err)
 				require.NotEmpty(t, result.Content)
 				part := result.Content[0]
+				assert.Equal(t, "call_1", part.ToolCallID)
+				if tc.errorJSON != "" {
+					assert.True(t, part.IsError)
+					assert.JSONEq(t, tc.errorJSON, string(part.Result))
+				}
 				require.Contains(t, part.ProviderMetadata, "anthropic")
 				var expected map[string]any
 				require.NoError(t, json.Unmarshal([]byte(caller), &expected))
@@ -50,6 +56,12 @@ func TestCallerMetadata_ServerToolRoundTrip(t *testing.T) {
 				for _, streamed := range parts {
 					if streamed.Type == provider.PartToolCall || streamed.Type == provider.PartToolResult {
 						assert.Equal(t, part.ProviderMetadata, streamed.ProviderMetadata)
+						assert.Equal(t, part.ToolCallID, streamed.ToolCallID)
+						assert.Equal(t, part.ToolName, streamed.ToolName)
+						assert.Equal(t, part.IsError, streamed.IsError)
+						if streamed.Type == provider.PartToolResult {
+							assert.JSONEq(t, string(part.Result), string(streamed.Result))
+						}
 						found = true
 					}
 				}
@@ -77,6 +89,9 @@ func TestCallerMetadata_ServerToolRoundTrip(t *testing.T) {
 				var fields map[string]json.RawMessage
 				require.NoError(t, json.Unmarshal(encoded, &fields))
 				assert.JSONEq(t, caller, string(fields["caller"]), fmt.Sprintf("request: %s", encoded))
+				if tc.errorJSON != "" {
+					assert.JSONEq(t, block, string(encoded))
+				}
 			})
 		}
 	}

@@ -22,7 +22,7 @@
 
 - [x] 4.1 Run parity, standalone modules, boundary, frontend/Gateway, build, test, race, lint, docs and native-image checks; repeat generation for stability.
 - [x] 4.2 Re-attest Gateway mapping, record reviewed verification date and rerun the full parity gate.
-- [x] 4.3 Verify the nine implemented requirements across six capability specs and prepare validated delta synchronization/archive.
+- [x] 4.3 Verify the eleven implemented requirements across six capability specs and prepare validated delta synchronization/archive.
 - [x] 4.4 Prepare the conventional signed delivery and draft PR description with linked packages and limitations.
 
 Synchronization/archive, the clean-tree formatting check, signed commit, push and

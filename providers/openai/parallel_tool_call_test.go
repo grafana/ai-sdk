@@ -3,6 +3,7 @@ package openai
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/grafana/ai-sdk/provider"
@@ -97,17 +98,41 @@ func TestParallelToolCall_Continuation(t *testing.T) {
 			}
 		})
 	}
-	t.Run("incomplete and duplicate groups stay ungrouped", func(t *testing.T) {
-		for _, duplicate := range []bool{false, true} {
-			prompt := parallelHistory(t)
-			prompt[1].Content = prompt[1].Content[:1]
-			if duplicate {
-				prompt[1].Content = append(prompt[1].Content, prompt[1].Content[0])
-			}
-			body, _ := buildBody(t, "gpt-5.4", provider.CallOptions{Prompt: prompt, ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{Conversation: "conv_1"})})
-			for _, item := range body["input"].([]any) {
-				assert.NotEqual(t, "call_parallel", item.(map[string]any)["call_id"])
-			}
+	t.Run("incomplete and conflicting groups stay ungrouped", func(t *testing.T) {
+		for _, tc := range []struct {
+			name    string
+			results []int
+		}{
+			{name: "incomplete", results: []int{1}},
+			{name: "duplicate", results: []int{1, 1}},
+			{name: "conflicting metadata", results: []int{1, 0}},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				prompt := parallelHistory(t)
+				if tc.name == "conflicting metadata" {
+					part := &prompt[1].Content[0]
+					options, ok, err := provider.ResolveOption[map[string]json.RawMessage](part.ProviderOptions, "openai")
+					require.NoError(t, err)
+					require.True(t, ok)
+					raw, err := json.Marshal(options)
+					require.NoError(t, err)
+					part.ProviderOptions = provider.ProviderOptions{"openai": provider.RawProviderOption{Key: "openai", Raw: json.RawMessage(strings.ReplaceAll(string(raw), "fc_parallel", "fc_conflict"))}}
+				} else {
+					prompt[1].Content = prompt[1].Content[:1]
+					if tc.name == "duplicate" {
+						prompt[1].Content = append(prompt[1].Content, prompt[1].Content[0])
+					}
+				}
+				body, _ := buildBody(t, "gpt-5.4", provider.CallOptions{Prompt: prompt, ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{Conversation: "conv_1"})})
+				want := []any{
+					map[string]any{"type": "function_call", "call_id": "call_parallel_0", "name": "weather", "arguments": `{"location":"SF"}`},
+					map[string]any{"type": "function_call", "call_id": "call_parallel_1", "name": "cityAttractions", "arguments": `{"city":"Rome"}`},
+				}
+				for _, index := range tc.results {
+					want = append(want, map[string]any{"type": "function_call_output", "call_id": fmt.Sprintf("call_parallel_%d", index), "output": []string{"weather", "cityAttractions"}[index]})
+				}
+				assert.Equal(t, want, body["input"])
+			})
 		}
 	})
 	t.Run("scalar cache breakpoints survive grouping", func(t *testing.T) {
