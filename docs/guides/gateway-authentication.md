@@ -1,9 +1,9 @@
 # Authenticate to Grafana AI Gateway
 
-Choose credentials for the **URL you call**, not for the SDK you use.
-Application login identifies a person to your app. Gateway credentials let
-that app call a model; model-provider API keys stay on the Gateway server.
-Keep Gateway credentials and provider API keys out of browser code.
+For the public Grafana Cloud URL, authenticate your application server with
+your stack ID and a Cloud Access Policy (CAP) token. These credentials are
+separate from how users sign in to your app. Grafana AI Gateway manages the
+underlying model-provider API keys.
 
 ## Choose the URL and credential
 
@@ -55,9 +55,6 @@ if err != nil {
 _ = result
 ```
 
-This setup authenticates your server for a stack, not an individual app user.
-Keep user login separate from your Gateway credentials.
-
 ## Use a Cloud policy from a Vercel server
 
 On your application server (not in a browser), configure the Vercel Gateway
@@ -76,13 +73,6 @@ const result = await gateway('assistant').doGenerate({
   maxOutputTokens: 32,
 });
 ```
-
-For streaming, use `gateway('assistant').doStream` with the same prompt and
-`maxOutputTokens`, then consume its stream. The Gateway supports a tested
-subset of the Vercel provider protocol; authenticated requests using
-unsupported options or high-level helpers can still fail. Check the
-[server's client limitations](../../ai-gateway/docs/cloud-authentication.md#client-compatibility)
-before treating authentication success as full API compatibility.
 
 ## JWT-enabled Gateway URLs (Go)
 
