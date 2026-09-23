@@ -64,27 +64,29 @@ unresolved upgrade-blocking risk cannot be silently assigned to later work.
 
 ## 3. Register the parity differences
 
-Keep the assessment compact:
+Give each durable record one responsibility:
 
-| Behavior / surface | Upstream reference | Current Go behavior | Existing / missing proof | Disposition / work package |
-| --- | --- | --- | --- | --- |
-| Observable contract | Exact version and source/test | Matches, missing or differs | What is exercised | Fixed in upgrade, tracked work, adaptation, exclusion or unresolved |
+- **GitHub issues own actionable deferred work.** One `upstream-sync` issue holds
+  the behavior and impact, exact upstream reference, current Go difference,
+  intended outcome, API decisions, dependencies, owner and acceptance evidence.
+  Do not restate that content in repository documentation or mirror issue state.
+- **`PARITY.md` owns stable coverage facts.** Update it only when a surface's
+  coverage classification, confidence source, supported boundary or accepted
+  deviation changes. Never add a dated/versioned assessment section, issue catalog
+  or upgrade-run ledger. A newly discovered actionable difference does not by
+  itself require a `PARITY.md` change once an issue owns it.
+- **The upgrade PR owns the run ledger.** Record the target, corrections,
+  validation and a compact exact list of created or reused issues. Summarize
+  adaptations, exclusions and unresolved blockers there; promote only durable
+  boundaries or accepted deviations to repository coverage metadata.
 
-Use the existing records rather than a new planning system:
-
-- `PARITY.md` and baseline gap metadata summarize current support, evidence and
-  accepted differences. Do not duplicate the same detailed finding in both.
-- Linked issues describe actionable parity work packages, not individual commits
-  or assertions. Search by behavior/provider across both labeled and unlabeled
-  issues; inspect open and closed matches before creating anything. Reuse covered
-  open work and flag ambiguous overlaps rather than automatically duplicating it.
-- Apply **`upstream-sync` to every new or reused parity issue**, adding it when
-  missing without replacing other labels. Use existing optional labels according
-  to the work. Follow the [issue registration rules](../../../test/conformance/UPGRADING.md#issue-creation-and-duplicate-checks)
-  for search, issue contents and label selection, then link the issue from coverage.
-- Each package states the behavior and impact, exact upstream reference, current
-  Go difference, intended outcome, API decisions, dependencies, owner and acceptance
-  evidence. Missing implementation and missing proof remain distinguishable.
+Search by behavior/provider across labeled and unlabeled issues and inspect open
+and closed matches before creating anything. Reuse covered open work and flag
+ambiguous overlaps rather than automatically duplicating it. Apply **`upstream-sync`
+to every new or reused parity issue**, adding it when missing without replacing
+other labels. Follow the [issue registration rules](../../../test/conformance/UPGRADING.md#issue-creation-and-duplicate-checks)
+for search, issue contents and label selection, then link the issue from the
+upgrade PR.
 
 Registering work does not mean accepting a permanent deviation or approving a new
 API design. Obtain explicit scope/deviation decisions where needed. Reassess open
@@ -101,7 +103,9 @@ Select a registered package and confirm its contract against the current pinned
 reference. Refine the Go design and acceptance tests, then implement the complete
 behavior with regression proof. Prefer failing conformance cases with authentic
 inputs; otherwise use focused tests and state the remaining boundary coverage gap.
-Preserve fixture provenance and update the coverage record when work is completed.
+Preserve fixture provenance. When work is completed, close or update its issue;
+change the coverage map only if the stable coverage status, evidence, support
+boundary or accepted deviation changed.
 
 Work packages are behavioral units, not PRs. Related packages may share a PR; a
 package spanning published modules may require producer and consumer changes in

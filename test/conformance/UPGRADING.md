@@ -147,14 +147,24 @@ a test against an older published adapter cannot prove a new adapter is deployed
 The upgrade assessment compares current Go behavior with the new reference across
 declared supported surfaces, not only the release delta or existing fixtures.
 Account for older gaps, unsupported families and inconclusive areas as well as
-newly changed behavior. Keep the decisions and concise proof with the upgrade.
+newly changed behavior.
 
-Use `PARITY.md` and existing baseline gap metadata for the support/coverage summary.
-Link actionable findings to issues representing behavioral work packages. Reuse an
-existing identifier rather than creating duplicate queues. Issue details should
-include the assessed upstream version/source, Go difference and impact, intended
-outcome, design decisions, dependencies, owner and acceptance tests. Do not duplicate
-the entire investigation in the issue, coverage map and manifest.
+Keep each durable record focused:
+
+- `upstream-sync` issues are authoritative for actionable deferred work, including
+  the assessed upstream reference, Go difference and impact, outcome, decisions,
+  dependencies and acceptance tests.
+- `PARITY.md` records stable coverage classifications, confidence sources, supported
+  boundaries and accepted deviations. Update it only when one of those facts changes.
+  Do not add a dated/versioned assessment section, issue catalog, run ledger or copy
+  of issue detail. Do not mirror issue state in repository documentation.
+- The upgrade PR records its target, corrections, validation and a compact exact
+  list of created or reused issues. It may summarize run-specific adaptations,
+  exclusions and blockers without turning those notes into a permanent coverage
+  section.
+
+Reuse an existing issue rather than creating duplicate queues. Full investigation
+notes and raw evidence stay outside Git under the existing artifact policy.
 
 ### Issue creation and duplicate checks
 
@@ -180,8 +190,9 @@ Before creating an issue:
    a likely duplicate or rewriting someone else's issue. A clearly separate package
    may have its own issue with an explicit relationship to the existing one.
 5. Recheck relevant open results immediately before creation, then link the resulting
-   issue identifier from the coverage record. Do not overwrite unrelated content,
-   post comments or close/reopen issues as part of registration.
+   issue identifier from the upgrade PR's deferred-work list. Do not copy its body
+   into `PARITY.md`, overwrite unrelated content, post comments or close/reopen issues
+   as part of registration.
 
 Use `gh issue list --repo grafana/ai-sdk --state all --search '<query>'` for searches
 and `gh issue view <number> --repo grafana/ai-sdk --comments` to inspect candidates.
@@ -229,10 +240,12 @@ as ordinary parity issues merely with a `security` label.
 
 The pinned-version PR is complete when its checks pass and the comprehensive
 assessment is accounted for, including registered remaining work. A parity package
-is complete only when its behavior and proof are delivered; update the coverage
-summary and issue then. A tracked correction is not a permanent accepted deviation,
-and a proposed API is not approved merely because it has an issue. Unresolved
-upgrade-blocking risks or existing failures cannot be relabeled as follow-ups.
+is complete only when its behavior and proof are delivered; update or close its
+issue then, and update the coverage map only if stable coverage, evidence, support
+boundaries or accepted deviations changed. A tracked correction is not a permanent
+accepted deviation, and a proposed API is not approved merely because it has an
+issue. Unresolved upgrade-blocking risks or existing failures cannot be relabeled
+as follow-ups.
 
 When pins advance again, reassess open packages against the new reference. Raw
 logs, probes, full investigation diffs and candidate manifest dumps stay outside

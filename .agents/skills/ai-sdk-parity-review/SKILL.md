@@ -49,14 +49,19 @@ target. The release delta is a guide, not the assessment boundary: older gaps an
 uncovered surfaces also need dispositions. Remaining differences must be linked to
 registered work or an explicit adaptation/exclusion. Check that issue scopes and
 acceptance criteria actually cover the findings, duplicate candidates were considered,
-and every registered parity issue has `upstream-sync`. Do not demand completion of
-all parity work, but do not accept broken checks or a target-induced incompatibility
+and every registered parity issue has `upstream-sync`. The upgrade PR should contain
+the run-specific issue list; reject dated assessment sections, issue catalogs and
+copied issue details in `PARITY.md`. That file changes only for durable coverage,
+evidence, support-boundary or accepted-deviation changes. Do not demand completion
+of all parity work, but do not accept broken checks or a target-induced incompatibility
 that prevents a supported integration from working as a mere follow-up.
 
 For a parity work package, review its behavioral acceptance contract against the
-current pinned reference. Check design, implementation and proof; update the
-coverage record when complete. One merged PR may deliver only a producer
-prerequisite, so package completion still requires the consumer behavior and evidence.
+current pinned reference. Check design, implementation and proof; update or close
+the issue when complete. Update the coverage map only if its stable status, evidence,
+supported boundary or accepted deviation changed. One merged PR may deliver only a
+producer prerequisite, so package completion still requires the consumer behavior
+and evidence.
 
 Choose evidence appropriate to the affected layer: provider request snapshots,
 core UI/output snapshots, frontend hook scenarios, focused provider tests or
@@ -82,5 +87,7 @@ question. Same-behavior Go adaptations are not findings unless they explain a co
 Do not list every matching behavior. For broad scope, use a compact area/evidence/
 finding/action matrix. State commands actually run and distinguish completion of the pinned-version
 upgrade/assessment from completion of an individual parity work package. Do not accept a gap
-by omission or suggest weakening comparisons. Durable coverage decisions belong
-in `upstream.yaml` or `PARITY.md`; review-specific observations belong in the report.
+by omission or suggest weakening comparisons. Actionable deferred work belongs in
+`upstream-sync` issues; durable coverage boundaries and accepted deviations belong
+in `upstream.yaml` or `PARITY.md`; run-specific observations belong in the upgrade
+PR or review report.
