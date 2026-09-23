@@ -234,9 +234,9 @@ func convertUserContent(parts []provider.ContentPart, documentCounter *int, warn
 				continue
 			}
 			switch {
-			case len(p.Data.Reference) > 0:
+			case p.Data.IsReference():
 				return nil, fmt.Errorf("bedrock: file parts with provider references are not supported")
-			case p.Data.URL != "":
+			case p.Data.IsURL():
 				if !isS3URL(p.Data.URL) {
 					return nil, fmt.Errorf("bedrock: file URL data is not supported")
 				}
@@ -267,7 +267,7 @@ func convertUserContent(parts []provider.ContentPart, documentCounter *int, warn
 					return nil, fmt.Errorf("bedrock: file URL data is only supported for images and videos")
 				}
 				continue
-			case p.Data.Text != "":
+			case p.Data.IsText():
 				mediaType := p.MediaType
 				if !isFullMediaType(mediaType) {
 					mediaType = "text/plain"
@@ -281,10 +281,10 @@ func convertUserContent(parts []provider.ContentPart, documentCounter *int, warn
 			}
 
 			b64 := p.Data.Base64
-			if b64 == "" && len(p.Data.Bytes) > 0 {
+			if p.Data.Bytes != nil {
 				b64 = base64.StdEncoding.EncodeToString(p.Data.Bytes)
 			}
-			if b64 == "" {
+			if !p.Data.IsData() {
 				continue
 			}
 			mediaType, err := resolveFullMediaType(p)
@@ -334,11 +334,18 @@ func convertUserContent(parts []provider.ContentPart, documentCounter *int, warn
 }
 
 func buildDocumentContentBlock(p provider.ContentPart, mediaType, b64 string, documentCounter *int) (contentBlock, error) {
-	document, err := buildDocumentBlock(mediaType, p.Filename, b64, p.ProviderOptions, documentCounter)
+	document, err := buildDocumentBlock(mediaType, filenameValue(p.Filename), b64, p.ProviderOptions, documentCounter)
 	if err != nil {
 		return contentBlock{}, err
 	}
 	return contentBlock{Document: document}, nil
+}
+
+func filenameValue(filename *string) string {
+	if filename == nil {
+		return ""
+	}
+	return *filename
 }
 
 func buildDocumentBlock(mediaType, filename, b64 string, providerOptions provider.ProviderOptions, documentCounter *int) (*documentBlock, error) {
@@ -708,7 +715,7 @@ func buildToolResult(p provider.ContentPart, documentCounter *int, isMistral boo
 					})
 					continue
 				}
-				document, err := buildDocumentBlock(mediaType, c.Filename, base64Data, c.ProviderOptions, documentCounter)
+				document, err := buildDocumentBlock(mediaType, filenameValue(c.Filename), base64Data, c.ProviderOptions, documentCounter)
 				if err != nil {
 					return nil, err
 				}
