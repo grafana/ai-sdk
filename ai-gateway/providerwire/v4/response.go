@@ -25,11 +25,34 @@ type unaryTextPart struct {
 }
 
 type unaryToolCall struct {
-	Type       provider.GenerateContentType `json:"type"`
-	ToolCallID string                       `json:"toolCallId"`
-	ToolName   string                       `json:"toolName"`
-	Input      string                       `json:"input"`
-	Metadata   provider.ProviderMetadata    `json:"providerMetadata,omitzero"`
+	Type             provider.GenerateContentType `json:"type"`
+	ToolCallID       string                       `json:"toolCallId"`
+	ToolName         string                       `json:"toolName"`
+	Input            string                       `json:"input"`
+	ProviderExecuted bool                         `json:"providerExecuted,omitempty"`
+	Dynamic          bool                         `json:"dynamic,omitempty"`
+	Metadata         provider.ProviderMetadata    `json:"providerMetadata,omitzero"`
+}
+
+type unaryToolResult struct {
+	Type        provider.GenerateContentType `json:"type"`
+	ToolCallID  string                       `json:"toolCallId"`
+	ToolName    string                       `json:"toolName"`
+	Result      json.RawMessage              `json:"result"`
+	IsError     bool                         `json:"isError,omitempty"`
+	Dynamic     bool                         `json:"dynamic,omitempty"`
+	Preliminary bool                         `json:"preliminary,omitempty"`
+	Metadata    provider.ProviderMetadata    `json:"providerMetadata,omitzero"`
+}
+
+type unaryMappingContext struct {
+	history map[string]string
+}
+
+type unaryToolState struct {
+	name    string
+	preview bool
+	final   bool
 }
 
 type unaryFinishReason struct {
@@ -65,7 +88,7 @@ type unarySuccess struct {
 	Metadata     provider.ProviderMetadata `json:"providerMetadata,omitzero"`
 }
 
-func mapUnarySuccess(result *provider.GenerateResult, limit int64) (unarySuccess, error) {
+func mapUnarySuccess(result *provider.GenerateResult, limit int64, contexts ...unaryMappingContext) (unarySuccess, error) {
 	if !unarySuccessPreflight(result, limit) {
 		return unarySuccess{}, errInvalidUnarySuccess
 	}
@@ -90,8 +113,16 @@ func mapUnarySuccess(result *provider.GenerateResult, limit int64) (unarySuccess
 		}
 		mapped.Response = &identity
 	}
+	var context unaryMappingContext
+	if len(contexts) != 0 {
+		context = contexts[0]
+	}
+	states := make(map[string]unaryToolState, len(context.history))
+	for id, name := range context.history {
+		states[id] = unaryToolState{name: name}
+	}
 	for _, part := range result.Content {
-		if part.ProviderExecuted || (part.Dynamic != nil && *part.Dynamic) || (part.Preliminary != nil && *part.Preliminary) {
+		if part.Type != provider.ContentToolCall && part.Type != provider.ContentToolResult && (part.ProviderExecuted || (part.Dynamic != nil && *part.Dynamic) || (part.Preliminary != nil && *part.Preliminary)) {
 			return unarySuccess{}, errInvalidUnarySuccess
 		}
 		switch part.Type {
@@ -120,11 +151,37 @@ func mapUnarySuccess(result *provider.GenerateResult, limit int64) (unarySuccess
 				mapped.Content = append(mapped.Content, reasoningFilePart{Type: string(part.Type), MediaType: part.MediaType, Data: projectReasoningFile(data), Metadata: part.ProviderMetadata})
 			}
 		case provider.ContentToolCall:
-			if part.ToolCallID == "" || part.ToolName == "" || !utf8.ValidString(part.ToolCallID) || !utf8.ValidString(part.ToolName) || !utf8.Valid(part.Input) {
+			if part.ToolCallID == "" || part.ToolName == "" || !utf8.ValidString(part.ToolCallID) || !utf8.ValidString(part.ToolName) || !utf8.Valid(part.Input) || (part.Preliminary != nil && *part.Preliminary) {
 				return unarySuccess{}, errInvalidUnarySuccess
 			}
-			mapped.Content = append(mapped.Content, unaryToolCall{Type: provider.ContentToolCall, ToolCallID: part.ToolCallID, ToolName: part.ToolName, Input: string(part.Input), Metadata: part.ProviderMetadata})
+			if _, exists := states[part.ToolCallID]; exists {
+				return unarySuccess{}, errInvalidUnarySuccess
+			}
+			states[part.ToolCallID] = unaryToolState{name: part.ToolName}
+			metadata, err := mapToolMetadata(part.ProviderMetadata, limit)
+			if err != nil {
+				return unarySuccess{}, errInvalidUnarySuccess
+			}
+			mapped.Content = append(mapped.Content, unaryToolCall{Type: provider.ContentToolCall, ToolCallID: part.ToolCallID, ToolName: part.ToolName, Input: string(part.Input), ProviderExecuted: part.ProviderExecuted, Dynamic: part.Dynamic != nil && *part.Dynamic, Metadata: metadata})
+		case provider.ContentToolResult:
+			state, exists := states[part.ToolCallID]
+			if !exists || state.name != part.ToolName || state.final || part.ToolCallID == "" || part.ToolName == "" || !utf8.ValidString(part.ToolCallID) || !utf8.ValidString(part.ToolName) || len(part.Result) == 0 || !utf8.Valid(part.Result) || !json.Valid(part.Result) || bytes.Equal(bytes.TrimSpace(part.Result), []byte("null")) {
+				return unarySuccess{}, errInvalidUnarySuccess
+			}
+			metadata, err := mapToolMetadata(part.ProviderMetadata, limit)
+			if err != nil {
+				return unarySuccess{}, errInvalidUnarySuccess
+			}
+			state.preview = part.Preliminary != nil && *part.Preliminary
+			state.final = !state.preview
+			states[part.ToolCallID] = state
+			mapped.Content = append(mapped.Content, unaryToolResult{Type: provider.ContentToolResult, ToolCallID: part.ToolCallID, ToolName: part.ToolName, Result: part.Result, IsError: part.IsError, Dynamic: part.Dynamic != nil && *part.Dynamic, Preliminary: part.Preliminary != nil && *part.Preliminary, Metadata: metadata})
 		default:
+			return unarySuccess{}, errInvalidUnarySuccess
+		}
+	}
+	for _, state := range states {
+		if state.preview {
 			return unarySuccess{}, errInvalidUnarySuccess
 		}
 	}
@@ -209,12 +266,13 @@ func unarySuccessPreflight(result *provider.GenerateResult, limit int64) bool {
 				remaining -= encoded
 			}
 		}
-		for _, length := range []int{len(part.Text), len(part.Title), len(part.ID), len(part.URL), len(part.MediaType), len(part.Filename), len(part.ToolCallID), len(part.ToolName), len(part.Input)} {
+		for _, length := range []int{len(part.Text), len(part.Title), len(part.ID), len(part.URL), len(part.MediaType), len(part.Filename), len(part.ToolCallID), len(part.ToolName), len(part.Input), len(part.Result)} {
 			if int64(length) > remaining {
 				return false
 			}
 			remaining -= int64(length)
 		}
+
 	}
 	if int64(len(result.FinishReason.Raw)) > remaining {
 		return false
@@ -286,8 +344,8 @@ func encodeUnarySuccess(value unarySuccess, limit int64) ([]byte, bool) {
 	return body, true
 }
 
-func (h *handler) writeUnarySuccess(w http.ResponseWriter, result *provider.GenerateResult) bool {
-	mapped, err := mapUnarySuccess(result, h.limits.UnaryResponseBytes)
+func (h *handler) writeUnarySuccess(w http.ResponseWriter, result *provider.GenerateResult, contexts ...unaryMappingContext) bool {
+	mapped, err := mapUnarySuccess(result, h.limits.UnaryResponseBytes, contexts...)
 	if err != nil {
 		return false
 	}
