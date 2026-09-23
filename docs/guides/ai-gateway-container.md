@@ -70,7 +70,11 @@ by that identity.
 
 Gateway process settings use the `GRAFANA_AI_GATEWAY_*` environment prefix.
 Run the command with `--help` for the matching flags, defaults, and limits. The
-container does not change the command's production defaults.
+container does not change the command's production defaults. This example
+uses the default JWT-verifying mode; it is not the public Cloud deployment.
+For client credentials and endpoint selection, see [Authenticate to Grafana AI
+Gateway](gateway-authentication.md). For the trusted-proxy server mode, see the
+[Cloud authentication contract](../../ai-gateway/docs/cloud-authentication.md).
 
 ## Use production endpoints
 
