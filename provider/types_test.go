@@ -94,7 +94,7 @@ func TestToolResultContentValue_RoundTrip(t *testing.T) {
 		},
 		{
 			name: "file data",
-			val:  ToolResultContentValue{Type: ToolContentFile, Data: &DataContent{Base64: "base64data"}, MediaType: "application/pdf", Filename: "report.pdf"},
+			val:  ToolResultContentValue{Type: ToolContentFile, Data: &DataContent{Base64: "base64data"}, MediaType: "application/pdf", Filename: filenamePtr("report.pdf")},
 			want: `{"type":"file","data":{"type":"data","data":"base64data"},"mediaType":"application/pdf","filename":"report.pdf"}`,
 		},
 		{
@@ -131,6 +131,34 @@ func TestToolResultContentValue_RoundTrip(t *testing.T) {
 	}
 }
 
+func TestToolResultFileFilenamePresence(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		filename *string
+		present  bool
+	}{
+		{name: "absent"},
+		{name: "empty", filename: filenamePtr(""), present: true},
+		{name: "named", filename: filenamePtr("report.pdf"), present: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			content := ToolResultContentValue{
+				Type: ToolContentFile, Data: &DataContent{Base64: "AQID"},
+				MediaType: "application/pdf", Filename: tc.filename,
+			}
+			encoded, err := json.Marshal(content)
+			require.NoError(t, err)
+			var fields map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal(encoded, &fields))
+			_, present := fields["filename"]
+			assert.Equal(t, tc.present, present)
+			var decoded ToolResultContentValue
+			require.NoError(t, json.Unmarshal(encoded, &decoded))
+			assert.Equal(t, tc.filename, decoded.Filename)
+		})
+	}
+}
+
 func TestToolResultContentValue_MarshalRejectsInvalidFileData(t *testing.T) {
 	tests := []struct {
 		name string
@@ -154,7 +182,7 @@ func TestToolResultContentValue_MarshalOmitsInactiveVariantFields(t *testing.T) 
 		Text:      "not custom content",
 		Data:      &DataContent{Base64: "ignored"},
 		MediaType: "image/png",
-		Filename:  "ignored.png",
+		Filename:  filenamePtr("ignored.png"),
 	})
 	require.NoError(t, err)
 	assert.JSONEq(t, `{"type":"custom"}`, string(data))

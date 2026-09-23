@@ -496,7 +496,7 @@ func (tc *ToolConfig) buildTool(name string) (aisdk.Tool, error) {
 				Type:      contentType,
 				Text:      value.Text,
 				MediaType: value.MediaType,
-				Filename:  value.Filename,
+				Filename:  configuredFilename(value.Filename),
 			}
 			if value.Type == provider.ToolContentFileData {
 				data := provider.Base64DataContent(value.Data)
@@ -594,6 +594,13 @@ func (cfg *Config) buildConfiguredMessages() ([]provider.Message, error) {
 	return messages, nil
 }
 
+func configuredFilename(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
+}
+
 func (mc *MessageConfig) buildContentParts() ([]provider.ContentPart, error) {
 	if mc.ContentParts == nil {
 		return []provider.ContentPart{provider.TextPart(mc.ContentText)}, nil
@@ -622,7 +629,7 @@ func (mc *MessageConfig) buildContentParts() ([]provider.ContentPart, error) {
 				data = provider.DataContent{Reference: reference}
 			}
 			part = provider.FilePart(partConfig.MediaType, data)
-			part.Filename = partConfig.Filename
+			part.Filename = configuredFilename(partConfig.Filename)
 		case provider.ContentPartTypeToolCall:
 			input, err := json.Marshal(partConfig.Input)
 			if err != nil {

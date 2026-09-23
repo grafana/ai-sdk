@@ -3,6 +3,7 @@ package aisdk
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"testing"
 
 	"github.com/grafana/ai-sdk/provider"
@@ -27,6 +28,48 @@ func systemText(m provider.Message) string {
 		return ""
 	}
 	return m.Content[0].Text
+}
+
+func TestConvertToModelMessages_FileFilenamePresence(t *testing.T) {
+	for _, role := range []string{"user", "assistant"} {
+		for _, tc := range []struct {
+			name     string
+			filename string
+			want     string
+			present  bool
+		}{
+			{name: "absent"},
+			{name: "empty", filename: `,"filename":""`, present: true},
+			{name: "named", filename: `,"filename":"report.pdf"`, want: "report.pdf", present: true},
+		} {
+			t.Run(role+"/"+tc.name, func(t *testing.T) {
+				wire := fmt.Sprintf(`{"id":"msg-1","role":%q,"parts":[{"type":"file","mediaType":"application/pdf","url":"https://example.test/report.pdf"%s}]}`, role, tc.filename)
+				var message UIMessage
+				require.NoError(t, json.Unmarshal([]byte(wire), &message))
+				encoded, err := json.Marshal(message)
+				require.NoError(t, err)
+				var value map[string]any
+				require.NoError(t, json.Unmarshal(encoded, &value))
+				parts := value["parts"].([]any)
+				file := parts[0].(map[string]any)
+				filename, hasFilename := file["filename"]
+				assert.Equal(t, tc.present, hasFilename)
+				if tc.present {
+					assert.Equal(t, tc.want, filename)
+				}
+
+				mapped := convert(t, []UIMessage{message})
+				require.Len(t, mapped, 1)
+				require.Len(t, mapped[0].Content, 1)
+				selected := reflect.ValueOf(mapped[0].Content[0].Filename)
+				require.Equal(t, reflect.Ptr, selected.Kind(), "input filename must retain presence")
+				assert.Equal(t, !tc.present, selected.IsNil())
+				if tc.present && !selected.IsNil() {
+					assert.Equal(t, tc.want, selected.Elem().String())
+				}
+			})
+		}
+	}
 }
 
 func TestConvertToModelMessages_System(t *testing.T) {

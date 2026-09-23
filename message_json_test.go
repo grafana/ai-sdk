@@ -193,7 +193,7 @@ func TestFilePart_ProviderReferenceJSONRoundTrip(t *testing.T) {
 		Parts: []Part{FilePart{
 			MediaType:         "application/pdf",
 			URL:               "data:application/pdf;base64,abc",
-			Filename:          "doc.pdf",
+			Filename:          optionalInputFilename("doc.pdf"),
 			ProviderReference: map[string]string{"openai": "file-abc123"},
 		}},
 	}

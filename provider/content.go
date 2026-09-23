@@ -41,6 +41,35 @@ type DataContent struct {
 //
 // This supersedes the legacy Go `{"bytes"|"base64"|"url":...}` JSON form.
 // Decoding remains tolerant of both shapes (see [DataContent.UnmarshalJSON]).
+// BytesDataContent constructs inline file data from bytes, including an empty payload.
+func BytesDataContent(data []byte) DataContent {
+	if data == nil {
+		data = []byte{}
+	}
+	return DataContent{Bytes: data}
+}
+
+// URLDataContent constructs URL file data, including an empty selected URL.
+func URLDataContent(url string) DataContent {
+	if url == "" {
+		return DataContent{variant: dataContentVariantURL}
+	}
+	return DataContent{URL: url}
+}
+
+// ReferenceDataContent constructs provider-reference file data.
+func ReferenceDataContent(reference json.RawMessage) DataContent {
+	return DataContent{Reference: reference}
+}
+
+// TextDataContent constructs inline text file data, including empty text.
+func TextDataContent(text string) DataContent {
+	if text == "" {
+		return DataContent{variant: dataContentVariantText}
+	}
+	return DataContent{Text: text}
+}
+
 // Base64DataContent constructs inline base64 file data, including an empty payload.
 func Base64DataContent(data string) DataContent {
 	if data == "" {
@@ -59,7 +88,20 @@ func (d DataContent) IsURL() bool {
 	return d.variant == dataContentVariantURL || d.URL != ""
 }
 
+// IsReference reports whether d represents a provider file reference.
+func (d DataContent) IsReference() bool {
+	return d.variant == dataContentVariantRef || len(d.Reference) > 0
+}
+
+// IsText reports whether d represents inline text file data.
+func (d DataContent) IsText() bool {
+	return d.variant == dataContentVariantText || d.Text != ""
+}
+
 func (d DataContent) MarshalJSON() ([]byte, error) {
+	if err := d.Validate(); err != nil {
+		return nil, err
+	}
 	switch {
 	case d.IsData():
 		data := d.Base64
@@ -75,18 +117,18 @@ func (d DataContent) MarshalJSON() ([]byte, error) {
 			Type string `json:"type"`
 			URL  string `json:"url"`
 		}{Type: "url", URL: d.URL})
-	case d.variant == dataContentVariantRef || len(d.Reference) > 0:
+	case d.IsReference():
 		return json.Marshal(struct {
 			Type      string          `json:"type"`
 			Reference json.RawMessage `json:"reference"`
 		}{Type: "reference", Reference: d.Reference})
-	case d.variant == dataContentVariantText || d.Text != "":
+	case d.IsText():
 		return json.Marshal(struct {
 			Type string `json:"type"`
 			Text string `json:"text"`
 		}{Type: "text", Text: d.Text})
 	default:
-		return []byte(`{}`), nil
+		return nil, errors.New("provider: DataContent has no selected arm")
 	}
 }
 
@@ -108,54 +150,64 @@ func (d *DataContent) UnmarshalJSON(data []byte) error {
 		if err := json.Unmarshal(rawType, &variant); err != nil {
 			return fmt.Errorf("provider: decoding file-data variant: %w", err)
 		}
-		*d = DataContent{}
+		selectedField := map[dataContentVariant]string{
+			dataContentVariantData: "data", dataContentVariantURL: "url",
+			dataContentVariantRef: "reference", dataContentVariantText: "text",
+		}[variant]
+		if selectedField == "" {
+			return fmt.Errorf("provider: unsupported file-data variant %q (supported: data, url, reference, text)", variant)
+		}
+		for key := range fields {
+			if key != "type" && key != selectedField {
+				return fmt.Errorf("provider: inactive file-data member %q", key)
+			}
+		}
+		var decoded DataContent
 		switch variant {
 		case dataContentVariantData:
 			raw, ok := fields["data"]
 			if !ok || string(raw) == "null" {
 				return errors.New("provider: file-data variant data is required")
 			}
-			if err := json.Unmarshal(raw, &d.Base64); err != nil {
+			if err := json.Unmarshal(raw, &decoded.Base64); err != nil {
 				return fmt.Errorf("provider: decoding file-data data: %w", err)
 			}
-			if d.Base64 == "" {
-				d.Bytes = []byte{}
+			if decoded.Base64 == "" {
+				decoded.Bytes = []byte{}
 			}
 		case dataContentVariantURL:
 			raw, ok := fields["url"]
 			if !ok || string(raw) == "null" {
 				return errors.New("provider: file-data variant url is required")
 			}
-			if err := json.Unmarshal(raw, &d.URL); err != nil {
+			if err := json.Unmarshal(raw, &decoded.URL); err != nil {
 				return fmt.Errorf("provider: decoding file-data url: %w", err)
 			}
-			if d.URL == "" {
-				d.variant = variant
+			if decoded.URL == "" {
+				decoded.variant = variant
 			}
 		case dataContentVariantRef:
 			raw, ok := fields["reference"]
 			if !ok || string(raw) == "null" {
 				return errors.New("provider: file-data variant reference is required")
 			}
-			var reference map[string]string
-			if err := json.Unmarshal(raw, &reference); err != nil {
-				return fmt.Errorf("provider: decoding file-data reference: %w", err)
-			}
-			d.Reference = append(json.RawMessage(nil), raw...)
+			decoded.Reference = append(json.RawMessage(nil), raw...)
 		case dataContentVariantText:
 			raw, ok := fields["text"]
 			if !ok || string(raw) == "null" {
 				return errors.New("provider: file-data variant text is required")
 			}
-			if err := json.Unmarshal(raw, &d.Text); err != nil {
+			if err := json.Unmarshal(raw, &decoded.Text); err != nil {
 				return fmt.Errorf("provider: decoding file-data text: %w", err)
 			}
-			if d.Text == "" {
-				d.variant = variant
+			if decoded.Text == "" {
+				decoded.variant = variant
 			}
-		default:
-			return fmt.Errorf("provider: unsupported file-data variant %q (supported: data, url, reference, text)", variant)
 		}
+		if err := decoded.Validate(); err != nil {
+			return err
+		}
+		*d = decoded
 		return nil
 	}
 	type alias DataContent
@@ -163,36 +215,69 @@ func (d *DataContent) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &a); err != nil {
 		return err
 	}
-	*d = DataContent(a)
+	decoded := DataContent(a)
+	if _, ok := fields["url"]; ok && decoded.URL == "" {
+		decoded.variant = dataContentVariantURL
+	}
+	if _, ok := fields["text"]; ok && decoded.Text == "" {
+		decoded.variant = dataContentVariantText
+	}
+	if err := decoded.Validate(); err != nil {
+		return err
+	}
+	*d = decoded
 	return nil
 }
 
 // Validate returns an error if DataContent has no data or multiple data sources set.
 func (d DataContent) Validate() error {
-	n := 0
-	if d.Bytes != nil {
-		n++
+	if d.Bytes != nil && d.Base64 != "" {
+		return errors.New("provider: DataContent has multiple inline data representations")
 	}
-	if d.Base64 != "" {
-		n++
+	selected := d.Bytes != nil || d.Base64 != ""
+	if d.URL != "" || d.variant == dataContentVariantURL {
+		if selected {
+			return errors.New("provider: DataContent has multiple data sources set")
+		}
+		selected = true
 	}
-	if d.URL != "" {
-		n++
+	if len(d.Reference) > 0 || d.variant == dataContentVariantRef {
+		if selected {
+			return errors.New("provider: DataContent has multiple data sources set")
+		}
+		selected = true
+		if err := validateFileReference(d.Reference); err != nil {
+			return err
+		}
 	}
-	if len(d.Reference) > 0 {
-		n++
+	if d.Text != "" || d.variant == dataContentVariantText {
+		if selected {
+			return errors.New("provider: DataContent has multiple data sources set")
+		}
+		selected = true
 	}
-	if d.Text != "" {
-		n++
+	if d.variant != "" && d.variant != dataContentVariantURL && d.variant != dataContentVariantRef && d.variant != dataContentVariantText {
+		return fmt.Errorf("provider: unsupported DataContent variant %q", d.variant)
 	}
-	if d.variant != "" {
-		n++
-	}
-	if n == 0 {
+	if !selected {
 		return errors.New("provider: DataContent has no data set")
 	}
-	if n > 1 {
-		return errors.New("provider: DataContent has multiple data sources set (exactly one of Bytes, Base64, URL, Reference, Text should be set)")
+	return nil
+}
+
+func validateFileReference(raw json.RawMessage) error {
+	var reference map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &reference); err != nil || reference == nil {
+		return errors.New("provider: invalid file reference object")
+	}
+	for key, value := range reference {
+		if key == "type" {
+			return errors.New("provider: reserved file reference type")
+		}
+		var id string
+		if string(value) == "null" || json.Unmarshal(value, &id) != nil {
+			return fmt.Errorf("provider: invalid file reference value for %q", key)
+		}
 	}
 	return nil
 }
@@ -265,7 +350,7 @@ type ContentPart struct {
 	Data *DataContent `json:"data,omitempty"`
 
 	// Filename is optional for ContentPartTypeFile.
-	Filename string `json:"filename,omitempty"`
+	Filename *string `json:"filename,omitempty"`
 
 	// MediaType is required for ContentPartTypeFile and ContentPartTypeReasoningFile.
 	MediaType string `json:"mediaType,omitempty"`
@@ -356,16 +441,19 @@ func ReasoningFilePart(mediaType string, data DataContent) ContentPart {
 
 // SourcePart constructs a [ContentPart] of type [ContentPartTypeSource].
 func SourcePart(source SourceInfo) ContentPart {
-	return ContentPart{
+	part := ContentPart{
 		Type:            ContentPartTypeSource,
 		SourceType:      source.SourceType,
 		ID:              source.ID,
 		URL:             source.URL,
 		Title:           source.Title,
 		MediaType:       source.MediaType,
-		Filename:        source.Filename,
 		ProviderOptions: sourceProviderOptions(source.ProviderMetadata),
 	}
+	if source.Filename != "" {
+		part.Filename = &source.Filename
+	}
+	return part
 }
 
 func sourceProviderOptions(meta ProviderMetadata) ProviderOptions {

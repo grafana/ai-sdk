@@ -272,7 +272,8 @@ messages:
 	part := messages[0].Content[0]
 	assert.Equal(t, provider.ContentPartTypeFile, part.Type)
 	assert.Equal(t, "application/pdf", part.MediaType)
-	assert.Equal(t, "doc.pdf", part.Filename)
+	require.NotNil(t, part.Filename)
+	assert.Equal(t, "doc.pdf", *part.Filename)
 	require.NotNil(t, part.Data)
 	assert.JSONEq(t, `{"openai":"file-abc123"}`, string(part.Data.Reference))
 }
@@ -396,7 +397,8 @@ messages:
 	part := messages[0].Content[0]
 	assert.Equal(t, provider.ContentPartTypeFile, part.Type)
 	assert.Equal(t, "application/pdf", part.MediaType)
-	assert.Equal(t, "report.pdf", part.Filename)
+	require.NotNil(t, part.Filename)
+	assert.Equal(t, "report.pdf", *part.Filename)
 	require.NotNil(t, part.Data)
 	assert.Equal(t, "AAECAw==", part.Data.Base64)
 

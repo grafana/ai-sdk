@@ -139,7 +139,7 @@ func (DynamicToolUIPart) PartType() string { return string(UIPartDynamicTool) }
 type FilePart struct {
 	MediaType         string                    `json:"mediaType"`
 	URL               string                    `json:"url"`
-	Filename          string                    `json:"filename,omitempty"`
+	Filename          *string                   `json:"filename,omitempty"`
 	ProviderReference map[string]string         `json:"providerReference,omitempty"`
 	ProviderMetadata  provider.ProviderMetadata `json:"providerMetadata,omitempty"`
 }

@@ -8,6 +8,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func filenamePtr(value string) *string { return &value }
+
 func TestContentPart_AllTypes_RoundTrip(t *testing.T) {
 	cases := []struct {
 		name string
@@ -28,7 +30,7 @@ func TestContentPart_AllTypes_RoundTrip(t *testing.T) {
 				Type:      ContentPartTypeFile,
 				Data:      &DataContent{URL: "https://example.com/image.png"},
 				MediaType: "image/png",
-				Filename:  "image.png",
+				Filename:  filenamePtr("image.png"),
 			},
 		},
 		{
@@ -92,7 +94,7 @@ func TestContentPart_AllTypes_RoundTrip(t *testing.T) {
 				ID:         "src_2",
 				MediaType:  "application/pdf",
 				Title:      "Report",
-				Filename:   "report.pdf",
+				Filename:   filenamePtr("report.pdf"),
 			},
 		},
 		{
@@ -183,6 +185,48 @@ func TestContentPart_AllTypes_RoundTrip(t *testing.T) {
 	}
 }
 
+func TestSourcePartFilenameNormalization(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		filename string
+		want     *string
+	}{
+		{name: "absent"},
+		{name: "named", filename: "report.pdf", want: filenamePtr("report.pdf")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			part := SourcePart(SourceInfo{SourceType: SourceTypeDocument, Filename: tc.filename})
+			assert.Equal(t, tc.want, part.Filename)
+		})
+	}
+}
+
+func TestFileContentPartFilenamePresence(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		filename *string
+		present  bool
+	}{
+		{name: "absent"},
+		{name: "empty", filename: filenamePtr(""), present: true},
+		{name: "named", filename: filenamePtr("report.pdf"), present: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			part := FilePart("application/pdf", Base64DataContent("AQID"))
+			part.Filename = tc.filename
+			encoded, err := json.Marshal(part)
+			require.NoError(t, err)
+			var fields map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal(encoded, &fields))
+			_, present := fields["filename"]
+			assert.Equal(t, tc.present, present)
+			var decoded ContentPart
+			require.NoError(t, json.Unmarshal(encoded, &decoded))
+			assert.Equal(t, tc.filename, decoded.Filename)
+		})
+	}
+}
+
 func TestDataContentValidate_ProviderReference(t *testing.T) {
 	assert.NoError(t, (DataContent{Reference: json.RawMessage(`{"openai":"file-abc123"}`)}).Validate())
 	assert.NoError(t, (DataContent{Reference: json.RawMessage(`{}`)}).Validate())
@@ -195,6 +239,76 @@ func TestDataContentValidate_EmptyVariantConflict(t *testing.T) {
 
 	data.URL = "https://example.com/file"
 	assert.Error(t, data.Validate())
+}
+
+func TestDataContentConstructedArms(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		data DataContent
+		wire string
+	}{
+		{name: "empty bytes", data: BytesDataContent([]byte{}), wire: `{"type":"data","data":""}`},
+		{name: "empty base64", data: Base64DataContent(""), wire: `{"type":"data","data":""}`},
+		{name: "bytes", data: BytesDataContent([]byte{1, 2, 3}), wire: `{"type":"data","data":"AQID"}`},
+		{name: "empty URL", data: URLDataContent(""), wire: `{"type":"url","url":""}`},
+		{name: "empty reference", data: ReferenceDataContent(json.RawMessage(`{}`)), wire: `{"type":"reference","reference":{}}`},
+		{name: "empty text", data: TextDataContent(""), wire: `{"type":"text","text":""}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.NoError(t, tc.data.Validate())
+			encoded, err := json.Marshal(tc.data)
+			require.NoError(t, err)
+			assert.JSONEq(t, tc.wire, string(encoded))
+			var decoded DataContent
+			require.NoError(t, json.Unmarshal(encoded, &decoded))
+			assert.Equal(t, tc.data.IsData(), decoded.IsData())
+			assert.Equal(t, tc.data.IsURL(), decoded.IsURL())
+			assert.Equal(t, tc.data.IsReference(), decoded.IsReference())
+			assert.Equal(t, tc.data.IsText(), decoded.IsText())
+		})
+	}
+}
+
+func TestDataContentTaggedDecodingRejectsInactiveArms(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		wire string
+	}{
+		{name: "empty text with empty URL", wire: `{"type":"text","text":"","url":""}`},
+		{name: "empty text with null URL", wire: `{"type":"text","text":"","url":null}`},
+		{name: "empty data with legacy bytes", wire: `{"type":"data","data":"","bytes":"AQI="}`},
+		{name: "URL with legacy base64", wire: `{"type":"url","url":"https://example.test/file","base64":"AQI="}`},
+		{name: "reference with text", wire: `{"type":"reference","reference":{},"text":""}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var value DataContent
+			require.Error(t, json.Unmarshal([]byte(tc.wire), &value))
+		})
+	}
+}
+
+func TestDataContentInvalidReferences(t *testing.T) {
+	for _, wire := range []string{`null`, `[]`, `{"openai":1}`, `{"type":"file"}`, `{"openai":null}`} {
+		t.Run(wire, func(t *testing.T) {
+			value := DataContent{Reference: json.RawMessage(wire)}
+			require.Error(t, value.Validate())
+			_, err := json.Marshal(value)
+			require.Error(t, err)
+		})
+	}
+}
+
+func TestDataContentSelectedEmptyText(t *testing.T) {
+	var value DataContent
+	require.NoError(t, json.Unmarshal([]byte(`{"type":"text","text":""}`), &value))
+	require.NoError(t, value.Validate())
+	encoded, err := json.Marshal(value)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"type":"text","text":""}`, string(encoded))
+	value.URL = "https://example.test/file"
+	require.Error(t, value.Validate())
+	_, err = json.Marshal(value)
+	require.Error(t, err)
 }
 
 func TestContentPartType_AllConstantsCovered(t *testing.T) {
