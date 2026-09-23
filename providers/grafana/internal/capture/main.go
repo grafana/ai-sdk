@@ -16,19 +16,20 @@ import (
 
 func main() {
 	var input struct {
-		BaseURL           string                   `json:"baseURL"`
-		AccessToken       string                   `json:"accessToken"`
-		UserIDToken       string                   `json:"userIDToken"`
-		Cloud             *grafana.CloudAuthConfig `json:"cloud"`
-		Mode              string                   `json:"mode"`
-		ModelID           string                   `json:"modelID"`
-		Options           provider.CallOptions     `json:"options"`
-		Headers           map[string][]string      `json:"headers"`
-		AbortAfterParts   int                      `json:"abortAfterParts"`
-		AbortBefore       bool                     `json:"abortBefore"`
-		AbortBetweenSteps bool                     `json:"abortBetweenSteps"`
-		CancelAfterMS     int                      `json:"cancelAfterMs"`
-		PreferBytes       bool                     `json:"preferBytes"`
+		BaseURL           string                          `json:"baseURL"`
+		AccessToken       string                          `json:"accessToken"`
+		UserIDToken       string                          `json:"userIDToken"`
+		TokenExchange     *grafana.TokenExchangeConfig    `json:"tokenExchange"`
+		CloudCredentials  *grafana.CloudCredentialsConfig `json:"cloudCredentials"`
+		Mode              string                          `json:"mode"`
+		ModelID           string                          `json:"modelID"`
+		Options           provider.CallOptions            `json:"options"`
+		Headers           map[string][]string             `json:"headers"`
+		AbortAfterParts   int                             `json:"abortAfterParts"`
+		AbortBefore       bool                            `json:"abortBefore"`
+		AbortBetweenSteps bool                            `json:"abortBetweenSteps"`
+		CancelAfterMS     int                             `json:"cancelAfterMs"`
+		PreferBytes       bool                            `json:"preferBytes"`
 	}
 	if err := json.NewDecoder(io.LimitReader(os.Stdin, 1<<20)).Decode(&input); err != nil {
 		emit(map[string]any{"error": map[string]any{"message": "invalid capture input"}})
@@ -63,9 +64,26 @@ func main() {
 	}
 	var client *grafana.Provider
 	var err error
-	if input.Cloud != nil {
-		client, err = grafana.NewWithCloudAuth(*input.Cloud)
-	} else {
+	selected := 0
+	if input.TokenExchange != nil {
+		selected++
+	}
+	if input.CloudCredentials != nil {
+		selected++
+	}
+	if input.AccessToken != "" {
+		selected++
+	}
+	if selected != 1 {
+		emit(map[string]any{"error": map[string]any{"message": "select exactly one authentication method"}})
+		return
+	}
+	switch {
+	case input.TokenExchange != nil:
+		client, err = grafana.NewWithTokenExchange(*input.TokenExchange)
+	case input.CloudCredentials != nil:
+		client, err = grafana.NewWithCloudCredentials(*input.CloudCredentials)
+	default:
 		client, err = grafana.NewWithAccessToken(grafana.AccessTokenConfig{AccessToken: input.AccessToken, BaseURL: input.BaseURL, Headers: input.Headers})
 	}
 	if err != nil {

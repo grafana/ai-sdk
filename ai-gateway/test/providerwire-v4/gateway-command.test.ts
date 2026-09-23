@@ -456,7 +456,7 @@ describe("authenticated Anthropic Gateway command", () => {
     await new Promise<void>((resolve) => exchange.listen(0, "127.0.0.1", resolve));
     try {
       const address = exchange.address(); assert.ok(address && typeof address !== "string");
-      const result = await captureGoClient(goClientBinaryPath, { mode: "discovery", cloud: { CAPToken: "integration-cap", Namespace: "stack-integration", BaseURL: `${gateway.url}/api/v1/aisdk`, TokenExchangeURL: `http://127.0.0.1:${address.port}/exchange/` } });
+      const result = await captureGoClient(goClientBinaryPath, { mode: "discovery", tokenExchange: { CAPToken: "integration-cap", Namespace: "stack-integration", BaseURL: `${gateway.url}/api/v1/aisdk`, TokenExchangeURL: `http://127.0.0.1:${address.port}/exchange/` } });
       assert.equal(result.error, undefined); assert.equal(result.models.length, 2); assert.equal(exchanges, 1);
       assert.equal(fake.requests.length, 0);
       const metrics = await (await fetch(`${gateway.url}/metrics`)).text();
@@ -903,6 +903,76 @@ describe("Trusted-proxy composition (dummy credentials, not production authentic
     });
   }
 
+  it("authenticates Go and pinned Vercel clients with stack-scoped CAP credentials through the Cloud edge", async () => {
+    const [fake, gateway, edge] = await startCloudGateway();
+    const baseURL = `${edge.url}/api/v1/aisdk`;
+    const go = (apiKey: string, mode: "discovery" | "generate" | "stream") => captureGoClient(goClientBinaryPath, {
+      mode, cloudCredentials: { StackID: 27038, CAPToken: apiKey.split(":")[1], BaseURL: baseURL },
+      modelID: "assistant", options: { prompt: [{ role: "user", content: [{ type: "text", text: mode === "stream" ? "normal-stream" : "unary" }] }], maxOutputTokens: 32 },
+    });
+    try {
+      const ambiguous = await captureGoClient(goClientBinaryPath, {
+        mode: "discovery", accessToken: "jwt", cloudCredentials: { StackID: 27038, CAPToken: "dummy-read-key", BaseURL: baseURL },
+      });
+      assert.equal(ambiguous.error?.message, "select exactly one authentication method");
+      assert.equal(edge.received.length, 0);
+      const catalog = await go(EDGE_READ_KEY, "discovery");
+      assert.ok(catalog.models, JSON.stringify(catalog));
+      assert.deepEqual(catalog.models.map((model: { id: string }) => model.id), ["assistant", "grafana/assistant"]);
+      const tsCatalog = await edge.client(EDGE_READ_KEY).getAvailableModels();
+      assert.deepEqual(tsCatalog.models.map((model) => model.id), catalog.models.map((model: { id: string }) => model.id));
+      const generated = await go(EDGE_WRITE_KEY, "generate");
+      assert.equal(generated.result.content[0].text, "hello from fake Anthropic");
+      const tsGenerated = await edge.client(EDGE_WRITE_KEY)("assistant").doGenerate(cloudCall("unary"));
+      assert.deepEqual(tsGenerated.content, [{ type: "text", text: "hello from fake Anthropic" }]);
+      const streamed = await go(EDGE_WRITE_KEY, "stream");
+      assert.ok(streamed.parts.some((part: { type: string }) => part.type === "finish"));
+      assert.equal(streamed.parts.filter((part: { type: string }) => part.type === "text-delta")
+        .map((part: { delta: string }) => part.delta).join(""), "hello from fake Anthropic stream");
+      const tsStream = await edge.client(EDGE_WRITE_KEY)("assistant").doStream(cloudCall("normal-stream"));
+      const tsParts = await collectStream(tsStream.stream);
+      assert.ok(tsParts.some((part) => part.type === "finish"));
+      assert.equal(tsParts.filter((part) => part.type === "text-delta").map((part) => part.delta).join(""),
+        "hello from fake Anthropic stream");
+      assert.equal(edge.received.length, 6);
+      assert.deepEqual(JSON.parse(edge.received[2]!.body), JSON.parse(edge.received[3]!.body));
+      assert.deepEqual(JSON.parse(edge.received[4]!.body), JSON.parse(edge.received[5]!.body));
+      assert.deepEqual(edge.received.map((request) => request.headers.authorization), [
+        `Bearer ${EDGE_READ_KEY}`, `Bearer ${EDGE_READ_KEY}`, `Bearer ${EDGE_WRITE_KEY}`, `Bearer ${EDGE_WRITE_KEY}`,
+        `Bearer ${EDGE_WRITE_KEY}`, `Bearer ${EDGE_WRITE_KEY}`,
+      ]);
+      for (const request of edge.received) {
+        assert.equal(request.headers["x-access-token"], undefined);
+        assert.equal(request.headers["x-grafana-id"], undefined);
+        assert.ok(!request.body.includes("dummy-write-key"));
+      }
+      for (const request of edge.forwarded) {
+        assert.deepEqual(request.headers.filter(([name]) => name.toLowerCase() === "x-scope-orgid"), [EDGE_ASSERTIONS[0]]);
+        assert.ok(!request.headers.some(([name]) => PROHIBITED_HEADERS.includes(name.toLowerCase())));
+      }
+      assert.equal(fake.requests.length, 4);
+      assertCloudPrivateValuesAbsent(JSON.stringify([catalog, generated, streamed, fake.requests, gateway.stderr, await gateway.metrics()]), [
+        EDGE_READ_KEY, EDGE_WRITE_KEY, "dummy-read-key", "dummy-write-key",
+      ]);
+      for (const [key, mode, status, category] of [
+        [EDGE_READ_KEY, "generate", 403, "forbidden"],
+        [EDGE_WRITE_KEY, "discovery", 403, "forbidden"],
+        [EDGE_INVALID_KEY, "stream", 401, "authentication_error"],
+      ] as const) {
+        const requestCount: number = fake.requests.length;
+        const denied = await go(key, mode);
+        assert.equal(denied.error?.statusCode, status);
+        assert.equal(denied.error?.category, category);
+        assert.equal(denied.error?.isRetryable, false);
+        assert.equal(fake.requests.length, requestCount);
+      }
+      assert.equal(edge.denied, 3);
+      assert.equal(edge.forwarded.length, 6);
+    } finally {
+      await settleCleanup(() => edge.stop(), () => gateway.stop(), () => fake.stop());
+    }
+  });
+
   it("uses only the edge stack assertion for read discovery and write unary/stream, never forwarding customer credentials to Anthropic", async () => {
     const [fake, gateway, edge] = await startCloudGateway();
     const spoofed = {
@@ -991,7 +1061,10 @@ describe("Trusted-proxy composition (dummy credentials, not production authentic
               : client("assistant").doStream(cloudCall("normal-stream"))),
           5_000, "edge denial",
         ), (error: unknown) => {
-          assert.equal((error as { statusCode?: number }).statusCode, key === EDGE_INVALID_KEY ? 401 : 403);
+          const failure = error as { statusCode?: number; type?: string; isRetryable?: boolean };
+          assert.equal(failure.statusCode, key === EDGE_INVALID_KEY ? 401 : 403);
+          assert.equal(failure.type, key === EDGE_INVALID_KEY ? "authentication_error" : "forbidden");
+          assert.equal(failure.isRetryable, false);
           return true;
         });
         assert.equal(edge.forwarded.length, 0);
@@ -1325,9 +1398,9 @@ describe("authenticated OpenAI Responses Gateway command", () => {
   });
 });
 
-const EDGE_READ_KEY = "dummy-read-key";
-const EDGE_WRITE_KEY = "dummy-write-key";
-const EDGE_INVALID_KEY = "dummy-invalid-key";
+const EDGE_READ_KEY = "27038:dummy-read-key";
+const EDGE_WRITE_KEY = "27038:dummy-write-key";
+const EDGE_INVALID_KEY = "27038:dummy-invalid-key";
 const EDGE_ASSERTIONS: HeaderPairs = [
   ["X-Scope-OrgID", "17319428876500123"],
 ];
@@ -1473,7 +1546,10 @@ class DummyCloudEdge {
       this.denied++;
       request.resume();
       response.writeHead(known ? 403 : 401, { "Content-Type": "application/json" });
-      response.end('{"error":{"message":"dummy edge denied","type":"authentication_error"}}');
+      response.end(JSON.stringify({ error: {
+        message: "dummy edge denied", type: known ? "forbidden" : "authentication_error",
+        code: known ? "forbidden" : "authentication_error", param: null,
+      } }));
       return;
     }
     const removed = [...PROHIBITED_HEADERS, ...EDGE_ASSERTIONS.map(([name]) => name.toLowerCase()), "x-cloud-org-id", "x-access-policy-id", "x-api-key", "host", "connection"];
