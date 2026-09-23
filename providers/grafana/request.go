@@ -213,8 +213,10 @@ func projectPart(p provider.ContentPart) (requestObject, error) {
 		rest.Data = nil
 		rest.MediaType = ""
 		if p.Type == provider.ContentPartTypeFile {
-			optionalString(out, "filename", p.Filename)
-			rest.Filename = ""
+			if p.Filename != nil {
+				out["filename"] = *p.Filename
+			}
+			rest.Filename = nil
 		}
 	case provider.ContentPartTypeCustom:
 		if !strings.Contains(p.Kind, ".") {
@@ -279,7 +281,7 @@ func projectData(d *provider.DataContent) (requestObject, error) {
 		return requestObject{"type": "data", "data": value}, nil
 	case d.IsURL():
 		return requestObject{"type": "url", "url": d.URL}, nil
-	case d.Reference != nil:
+	case d.IsReference():
 		var reference map[string]string
 		if json.Unmarshal(d.Reference, &reference) != nil || reference == nil {
 			return nil, errRequest
@@ -288,8 +290,10 @@ func projectData(d *provider.DataContent) (requestObject, error) {
 			return nil, errRequest
 		}
 		return requestObject{"type": "reference", "reference": d.Reference}, nil
-	default:
+	case d.IsText():
 		return requestObject{"type": "text", "text": d.Text}, nil
+	default:
+		return nil, errRequest
 	}
 }
 
@@ -384,7 +388,7 @@ func projectResultContent(p provider.ToolResultContentValue) (requestObject, err
 	}
 	switch p.Type {
 	case provider.ToolContentText:
-		if p.Data != nil || p.MediaType != "" || p.Filename != "" {
+		if p.Data != nil || p.MediaType != "" || p.Filename != nil {
 			return nil, errRequest
 		}
 		out["text"] = p.Text
@@ -398,9 +402,11 @@ func projectResultContent(p provider.ToolResultContentValue) (requestObject, err
 		}
 		out["data"] = data
 		out["mediaType"] = p.MediaType
-		optionalString(out, "filename", p.Filename)
+		if p.Filename != nil {
+			out["filename"] = *p.Filename
+		}
 	case provider.ToolContentCustom:
-		if p.Text != "" || p.Data != nil || p.MediaType != "" || p.Filename != "" {
+		if p.Text != "" || p.Data != nil || p.MediaType != "" || p.Filename != nil {
 			return nil, errRequest
 		}
 	default:

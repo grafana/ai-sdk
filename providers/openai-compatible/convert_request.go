@@ -13,6 +13,9 @@ import (
 )
 
 func (m *model) buildRequest(opts provider.CallOptions, streaming bool) (map[string]any, []provider.Warning, error) {
+	if err := provider.ValidateFileInputs(opts.Prompt); err != nil {
+		return nil, nil, fmt.Errorf("openai: invalid file input: %w", err)
+	}
 	warnings := deprecatedProviderOptionWarnings(opts.ProviderOptions, m.providerName)
 
 	openAIOpts, err := readOpenAIOptions(opts.ProviderOptions, m.providerName)
@@ -586,13 +589,13 @@ func convertFileContent(part provider.ContentPart) (chatContentPart, error) {
 		if err != nil {
 			return chatContentPart{}, err
 		}
-		filename := part.Filename
-		if filename == "" {
-			filename = "document.pdf"
+		filename := "document.pdf"
+		if part.Filename != nil {
+			filename = *part.Filename
 		}
 		return chatContentPart{
 			Type: "file",
-			File: &filePart{Filename: filename, FileData: "data:application/pdf;base64," + data},
+			File: &filePart{Filename: &filename, FileData: "data:application/pdf;base64," + data},
 		}, nil
 	case "text":
 		text, err := textFileContent(part.Data)
@@ -696,9 +699,9 @@ func dataURL(mediaType string, data *provider.DataContent) (string, error) {
 
 func base64Data(data *provider.DataContent) (string, error) {
 	switch {
-	case len(data.Bytes) > 0:
+	case data.Bytes != nil:
 		return base64.StdEncoding.EncodeToString(data.Bytes), nil
-	case data.Base64 != "":
+	case data.IsData():
 		return data.Base64, nil
 	default:
 		return "", fmt.Errorf("openai: expected binary data")
@@ -709,9 +712,9 @@ func textFileContent(data *provider.DataContent) (string, error) {
 	switch {
 	case data.URL != "":
 		return data.URL, nil
-	case len(data.Bytes) > 0:
+	case data.Bytes != nil:
 		return string(data.Bytes), nil
-	case data.Base64 != "":
+	case data.IsData():
 		decoded, err := base64.StdEncoding.DecodeString(data.Base64)
 		if err != nil {
 			return "", fmt.Errorf("openai: decoding text file base64: %w", err)

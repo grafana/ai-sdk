@@ -46,6 +46,9 @@ func TestEncodeRequest_DataArms(t *testing.T) {
 		{"url", provider.DataContent{URL: "https://example.com/%"}, `{"type":"url","url":"https://example.com/%"}`},
 		{"reference", provider.DataContent{Reference: json.RawMessage(`{}`)}, `{"type":"reference","reference":{}}`},
 		{"text", provider.DataContent{Text: "text"}, `{"type":"text","text":"text"}`},
+		{"selected empty text", provider.TextDataContent(""), `{"type":"text","text":""}`},
+		{"selected empty URL", provider.URLDataContent(""), `{"type":"url","url":""}`},
+		{"selected empty data", provider.BytesDataContent(nil), `{"type":"data","data":""}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			value, err := projectData(&tc.data)
@@ -63,6 +66,51 @@ func TestEncodeRequest_DataArms(t *testing.T) {
 		b, err := json.Marshal(value)
 		require.NoError(t, err)
 		assert.JSONEq(t, wire, string(b))
+	}
+}
+
+func TestEncodeRequest_FileFilenamePresence(t *testing.T) {
+	empty := ""
+	name := "report.pdf"
+	for _, tc := range []struct {
+		name     string
+		filename *string
+		present  bool
+		want     string
+	}{
+		{name: "absent"},
+		{name: "empty", filename: &empty, present: true},
+		{name: "named", filename: &name, present: true, want: "report.pdf"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			part := provider.FilePart("text/plain", provider.TextDataContent(""))
+			part.Filename = tc.filename
+			content := provider.ToolResultContentValue{
+				Type: provider.ToolContentFile, Data: &provider.DataContent{Bytes: []byte{}},
+				MediaType: "application/pdf", Filename: tc.filename,
+			}
+			body, err := encodeRequest(provider.CallOptions{Prompt: []provider.Message{
+				provider.NewUserMessage(part),
+				provider.NewToolMessage(provider.ToolResultPart("call-1", "tool", &provider.ToolResultOutput{
+					Type: provider.ToolOutputContent, Content: []provider.ToolResultContentValue{content},
+				})),
+			}})
+			require.NoError(t, err)
+			var request map[string]any
+			require.NoError(t, json.Unmarshal(body, &request))
+			prompt := request["prompt"].([]any)
+			userFile := prompt[0].(map[string]any)["content"].([]any)[0].(map[string]any)
+			resultFile := prompt[1].(map[string]any)["content"].([]any)[0].(map[string]any)["output"].(map[string]any)["value"].([]any)[0].(map[string]any)
+			for _, file := range []map[string]any{userFile, resultFile} {
+				got, present := file["filename"]
+				assert.Equal(t, tc.present, present)
+				if tc.present {
+					assert.Equal(t, tc.want, got)
+				}
+			}
+			assert.Equal(t, "", userFile["data"].(map[string]any)["text"])
+			assert.Equal(t, "", resultFile["data"].(map[string]any)["data"])
+		})
 	}
 }
 
@@ -120,6 +168,13 @@ func TestEncodeRequest_RejectsInvalid(t *testing.T) {
 		{"system metadata lost", provider.CallOptions{Prompt: []provider.Message{{Role: provider.RoleSystem, Content: []provider.ContentPart{{Type: provider.ContentPartTypeText, ProviderOptions: provider.ProviderOptions{}}}}}}},
 		{"conflicting data", provider.CallOptions{Prompt: []provider.Message{provider.NewUserMessage(provider.FilePart("image/png", provider.DataContent{Bytes: []byte{}, URL: "https://example.test"}))}}},
 		{"missing data", provider.CallOptions{Prompt: []provider.Message{provider.NewUserMessage(provider.FilePart("image/png", provider.DataContent{}))}}},
+		{"selected empty text with URL", provider.CallOptions{Prompt: []provider.Message{provider.NewUserMessage(func() provider.ContentPart {
+			data := provider.TextDataContent("")
+			data.URL = "https://example.test"
+			return provider.FilePart("text/plain", data)
+		}())}}},
+		{"null provider reference", provider.CallOptions{Prompt: []provider.Message{provider.NewUserMessage(provider.FilePart("application/pdf", provider.ReferenceDataContent(json.RawMessage(`null`))))}}},
+		{"reference with nonstring id", provider.CallOptions{Prompt: []provider.Message{provider.NewUserMessage(provider.FilePart("application/pdf", provider.ReferenceDataContent(json.RawMessage(`{"provider":1}`))))}}},
 		{"invalid tool", provider.CallOptions{Tools: []provider.Tool{{Type: "alien"}}}},
 		{"inactive tool", provider.CallOptions{Tools: []provider.Tool{{Type: provider.ToolTypeProvider, InputSchema: json.RawMessage(`{}`)}}}},
 		{"invalid choice", provider.CallOptions{ToolChoice: &provider.ToolChoice{Type: provider.ToolChoiceAuto, ToolName: "lost"}}},

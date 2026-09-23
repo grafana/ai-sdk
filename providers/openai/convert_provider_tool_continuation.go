@@ -725,9 +725,9 @@ func customToolCallOutputItem(part provider.ContentPart, ctx inputConversionCont
 					}
 					content = append(content, responses.ResponseCustomToolCallOutputOutputOutputContentListItemUnionParam{OfInputImage: &image})
 				} else {
-					filename := value.Filename
-					if filename == "" {
-						filename = "data"
+					filename := "data"
+					if value.Filename != nil {
+						filename = *value.Filename
 					}
 					file := responses.ResponseInputFileParam{FileData: param.NewOpt(uri), Filename: param.NewOpt(filename)}
 					if options.PromptCacheBreakpoint != nil {

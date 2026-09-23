@@ -169,6 +169,9 @@ func buildParams(modelID string, opts provider.CallOptions, stream bool) (anthro
 }
 
 func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stream bool, providerCaps providerCapabilities) (anthropic.BetaMessageNewParams, toolNameMapping, []provider.Warning, buildResult, error) {
+	if err := provider.ValidateFileInputs(opts.Prompt); err != nil {
+		return anthropic.BetaMessageNewParams{}, toolNameMapping{}, nil, buildResult{}, fmt.Errorf("anthropic: invalid file input: %w", err)
+	}
 	var warnings []provider.Warning
 	anthropicOpts, hasAnthropicOpts, err := provider.ResolveOption[AnthropicOptions](opts.ProviderOptions, "anthropic")
 	if err != nil {
@@ -788,10 +791,10 @@ func convertImageFileContentPart(p provider.ContentPart, cc anthropic.BetaCacheC
 		mediaType = "image/jpeg"
 	}
 	b64 := p.Data.Base64
-	if b64 == "" && len(p.Data.Bytes) > 0 {
+	if p.Data.Bytes != nil {
 		b64 = base64.StdEncoding.EncodeToString(p.Data.Bytes)
 	}
-	if b64 != "" {
+	if p.Data.IsData() {
 		return anthropic.BetaContentBlockParamUnion{
 			OfImage: &anthropic.BetaImageBlockParam{
 				Source: anthropic.BetaImageBlockParamSourceUnion{
@@ -804,7 +807,7 @@ func convertImageFileContentPart(p provider.ContentPart, cc anthropic.BetaCacheC
 			},
 		}, true
 	}
-	if p.Data.URL != "" {
+	if p.Data.IsURL() {
 		return anthropic.BetaContentBlockParamUnion{
 			OfImage: &anthropic.BetaImageBlockParam{
 				Source: anthropic.BetaImageBlockParamSourceUnion{
@@ -824,7 +827,7 @@ func convertImageFileContentPart(p provider.ContentPart, cc anthropic.BetaCacheC
 // upstream `getDocumentMetadata` and `shouldEnableCitations` helpers in
 // convert-to-anthropic-prompt.ts.
 type documentMetadata struct {
-	title    string
+	title    *string
 	context  string
 	citation bool
 }
@@ -846,7 +849,7 @@ func extractDocumentMetadata(opts provider.ProviderOptions) documentMetadata {
 	}
 	m := documentMetadata{}
 	if data.Title != nil {
-		m.title = *data.Title
+		m.title = data.Title
 	}
 	if data.Context != nil {
 		m.context = *data.Context
@@ -863,11 +866,11 @@ func extractDocumentMetadata(opts provider.ProviderOptions) documentMetadata {
 func applyDocumentMetadata(doc *anthropic.BetaRequestDocumentBlockParam, p provider.ContentPart) {
 	meta := extractDocumentMetadata(p.ProviderOptions)
 	title := meta.title
-	if title == "" {
+	if title == nil {
 		title = p.Filename
 	}
-	if title != "" {
-		doc.Title = anthropic.String(title)
+	if title != nil {
+		doc.Title = anthropic.String(*title)
 	}
 	if meta.context != "" {
 		doc.Context = anthropic.String(meta.context)
@@ -889,19 +892,17 @@ func convertPDFDocumentContentPart(p provider.ContentPart, cc anthropic.BetaCach
 	}
 	doc := anthropic.BetaRequestDocumentBlockParam{CacheControl: cc}
 	switch {
-	case p.Data.URL != "":
+	case p.Data.IsURL():
 		doc.Source = anthropic.BetaRequestDocumentBlockSourceUnionParam{
 			OfURL: &anthropic.BetaURLPDFSourceParam{URL: p.Data.URL},
 		}
-	case p.Data.Base64 != "":
-		doc.Source = anthropic.BetaRequestDocumentBlockSourceUnionParam{
-			OfBase64: &anthropic.BetaBase64PDFSourceParam{Data: p.Data.Base64},
+	case p.Data.IsData():
+		b64 := p.Data.Base64
+		if p.Data.Bytes != nil {
+			b64 = base64.StdEncoding.EncodeToString(p.Data.Bytes)
 		}
-	case len(p.Data.Bytes) > 0:
 		doc.Source = anthropic.BetaRequestDocumentBlockSourceUnionParam{
-			OfBase64: &anthropic.BetaBase64PDFSourceParam{
-				Data: base64.StdEncoding.EncodeToString(p.Data.Bytes),
-			},
+			OfBase64: &anthropic.BetaBase64PDFSourceParam{Data: b64},
 		}
 	default:
 		return anthropic.BetaContentBlockParamUnion{}, false
@@ -920,21 +921,25 @@ func convertTextDocumentContentPart(p provider.ContentPart, cc anthropic.BetaCac
 	}
 	doc := anthropic.BetaRequestDocumentBlockParam{CacheControl: cc}
 	switch {
-	case p.Data.URL != "":
+	case p.Data.IsURL():
 		doc.Source = anthropic.BetaRequestDocumentBlockSourceUnionParam{
 			OfURL: &anthropic.BetaURLPDFSourceParam{URL: p.Data.URL},
 		}
-	case len(p.Data.Bytes) > 0:
+	case p.Data.IsText():
 		doc.Source = anthropic.BetaRequestDocumentBlockSourceUnionParam{
-			OfText: &anthropic.BetaPlainTextSourceParam{Data: string(p.Data.Bytes)},
+			OfText: &anthropic.BetaPlainTextSourceParam{Data: p.Data.Text},
 		}
-	case p.Data.Base64 != "":
-		decoded, err := base64.StdEncoding.DecodeString(p.Data.Base64)
-		if err != nil {
-			return anthropic.BetaContentBlockParamUnion{}, false
+	case p.Data.IsData():
+		text := string(p.Data.Bytes)
+		if p.Data.Bytes == nil {
+			decoded, err := base64.StdEncoding.DecodeString(p.Data.Base64)
+			if err != nil {
+				return anthropic.BetaContentBlockParamUnion{}, false
+			}
+			text = string(decoded)
 		}
 		doc.Source = anthropic.BetaRequestDocumentBlockSourceUnionParam{
-			OfText: &anthropic.BetaPlainTextSourceParam{Data: string(decoded)},
+			OfText: &anthropic.BetaPlainTextSourceParam{Data: text},
 		}
 	default:
 		return anthropic.BetaContentBlockParamUnion{}, false
