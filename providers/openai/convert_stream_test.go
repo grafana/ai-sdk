@@ -782,8 +782,7 @@ func TestStream_ImageGenerationPartialImage(t *testing.T) {
 	part := parts[1]
 	assert.Equal(t, provider.PartToolResult, part.Type)
 	assert.Equal(t, "ig_1", part.ToolCallID)
-	require.NotNil(t, part.Preliminary)
-	assert.True(t, *part.Preliminary)
+	assert.True(t, part.Preliminary)
 }
 
 func TestStream_ApplyPatchDeleteOmitsDiff(t *testing.T) {

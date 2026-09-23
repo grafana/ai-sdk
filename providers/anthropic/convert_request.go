@@ -169,6 +169,9 @@ func buildParams(modelID string, opts provider.CallOptions, stream bool) (anthro
 }
 
 func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stream bool, providerCaps providerCapabilities) (anthropic.BetaMessageNewParams, toolNameMapping, []provider.Warning, buildResult, error) {
+	if err := provider.ValidateTools(opts.Tools); err != nil {
+		return anthropic.BetaMessageNewParams{}, toolNameMapping{}, nil, buildResult{}, err
+	}
 	var warnings []provider.Warning
 	anthropicOpts, hasAnthropicOpts, err := provider.ResolveOption[AnthropicOptions](opts.ProviderOptions, "anthropic")
 	if err != nil {

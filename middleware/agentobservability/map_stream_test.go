@@ -381,13 +381,12 @@ func TestStreamRecorder_ToolResult(t *testing.T) {
 
 func TestStreamRecorder_ToolResult_CoalescesPreliminaryResults(t *testing.T) {
 	r := newRecorderForStreamTest()
-	preliminary := true
 	r.Observe(provider.StreamPart{
 		Type:        provider.PartToolResult,
 		ToolCallID:  "tc-1",
 		ToolName:    "generate_image",
 		Result:      json.RawMessage(`{"url":"preview"}`),
-		Preliminary: &preliminary,
+		Preliminary: true,
 	})
 	assert.Nil(t, r.Generation().Output)
 

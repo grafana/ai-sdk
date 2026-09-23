@@ -395,7 +395,7 @@ func TestConvertResponse_MCPToolUse(t *testing.T) {
 	assert.Equal(t, "tc_789", part.ToolCallID)
 	assert.Equal(t, "search_docs", part.ToolName)
 	assert.True(t, part.ProviderExecuted)
-	assert.Equal(t, boolPtr(true), part.Dynamic)
+	assert.True(t, part.Dynamic)
 	require.NotNil(t, part.ProviderMetadata)
 
 	var meta map[string]string
@@ -428,7 +428,7 @@ func TestConvertResponse_MCPToolResult(t *testing.T) {
 		assert.Equal(t, "tc_789", part.ToolCallID)
 		assert.Equal(t, "search_docs", part.ToolName)
 		assert.False(t, part.IsError)
-		assert.Equal(t, boolPtr(true), part.Dynamic)
+		assert.True(t, part.Dynamic)
 		require.NotNil(t, part.Result)
 		assert.JSONEq(t, `[{"type":"text","text":"Result data"}]`, string(part.Result))
 		require.NotNil(t, part.ProviderMetadata)
@@ -455,7 +455,7 @@ func TestConvertResponse_MCPToolResult(t *testing.T) {
 		part := result.Content[1]
 		assert.Equal(t, provider.ContentToolResult, part.Type)
 		assert.True(t, part.IsError)
-		assert.Equal(t, boolPtr(true), part.Dynamic)
+		assert.True(t, part.Dynamic)
 		assert.JSONEq(t, `"Tool execution failed"`, string(part.Result))
 	})
 
@@ -483,14 +483,14 @@ func TestConvertResponse_MCPToolResult(t *testing.T) {
 		assert.Equal(t, provider.ContentText, result.Content[0].Type)
 		assert.Equal(t, provider.ContentToolCall, result.Content[1].Type)
 		assert.False(t, result.Content[1].ProviderExecuted)
-		assert.Nil(t, result.Content[1].Dynamic)
+		assert.False(t, result.Content[1].Dynamic)
 
 		assert.Equal(t, provider.ContentToolCall, result.Content[2].Type)
 		assert.True(t, result.Content[2].ProviderExecuted)
-		assert.Equal(t, boolPtr(true), result.Content[2].Dynamic)
+		assert.True(t, result.Content[2].Dynamic)
 
 		assert.Equal(t, provider.ContentToolResult, result.Content[3].Type)
-		assert.Equal(t, boolPtr(true), result.Content[3].Dynamic)
+		assert.True(t, result.Content[3].Dynamic)
 	})
 }
 

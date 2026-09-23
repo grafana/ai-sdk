@@ -174,7 +174,7 @@ func convertResponse(msg *anthropic.BetaMessage, mapping toolNameMapping, usesJs
 			// server_tool_use as dynamic so the tool-validation layer accepts
 			// the call.
 			if markCodeExecutionDynamic && resolvedName == "code_execution" {
-				part.Dynamic = ptrBool(true)
+				part.Dynamic = true
 			}
 			content = append(content, part)
 		case "web_search_tool_result":
@@ -417,7 +417,7 @@ func convertResponse(msg *anthropic.BetaMessage, mapping toolNameMapping, usesJs
 				ToolName:         mtu.Name,
 				Input:            inputJSON,
 				ProviderExecuted: true,
-				Dynamic:          ptrBool(true),
+				Dynamic:          true,
 				ProviderMetadata: meta,
 			})
 		case "mcp_tool_result":
@@ -435,7 +435,7 @@ func convertResponse(msg *anthropic.BetaMessage, mapping toolNameMapping, usesJs
 				ToolCallID:       mtr.ToolUseID,
 				ToolName:         toolName,
 				IsError:          mtr.IsError,
-				Dynamic:          ptrBool(true),
+				Dynamic:          true,
 				ProviderMetadata: meta,
 				Result:           contentJSON,
 			})

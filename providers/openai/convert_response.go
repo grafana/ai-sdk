@@ -136,14 +136,13 @@ func convertResponse(resp *responses.Response, br buildResult, generateID func()
 				}
 			}
 			toolName := "mcp." + v.Name
-			dyn := true
 			content = append(content, provider.GenerateContentPart{
 				Type:             provider.ContentToolCall,
 				ToolCallID:       toolCallID,
 				ToolName:         toolName,
 				Input:            json.RawMessage(orEmptyObject(v.Arguments)),
 				ProviderExecuted: true,
-				Dynamic:          &dyn,
+				Dynamic:          true,
 			})
 			result, err := mcpCallResult(v)
 			if err != nil {
@@ -161,14 +160,13 @@ func convertResponse(resp *responses.Response, br buildResult, generateID func()
 			toolName := "mcp." + v.Name
 			dummyID := generateID()
 			approvalID := mcpApprovalRequestID(v)
-			dyn := true
 			content = append(content, provider.GenerateContentPart{
 				Type:             provider.ContentToolCall,
 				ToolCallID:       dummyID,
 				ToolName:         toolName,
 				Input:            json.RawMessage(orEmptyObject(v.Arguments)),
 				ProviderExecuted: true,
-				Dynamic:          &dyn,
+				Dynamic:          true,
 			})
 			content = append(content, provider.GenerateContentPart{
 				Type:       provider.ContentToolApprovalRequest,
