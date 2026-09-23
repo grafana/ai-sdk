@@ -7,7 +7,7 @@
 - Add public bytes, base64, URL, provider-reference, and text file-data construction and inspection. Preserve selected empty data/text and reject ambiguous or malformed arms before provider I/O.
 - **BREAKING:** Make request-file and tool-result-file filenames `*string`, including ordinary UI file input, so absent and explicitly empty remain distinct. Leave generated/source descriptive filenames unchanged.
 - Align Anthropic/Vertex, OpenAI Responses, OpenAI-compatible, and Bedrock native conversions with the pinned upstream source and provider-specific support. Preserve Anthropic inline-text documents and URL/PDF tool-result content.
-- Update the independent Go Gateway client, reusable Agent Observability and logger, centralized input docs, examples, and deterministic cross-language/UI evidence. Do not import Gateway production code into Apache modules.
+- Update the independent Go Gateway client, reusable Agent Observability and logger, examples, and deterministic cross-language/UI evidence. Do not import Gateway production code into Apache modules.
 - Publish immutable, proxy-resolvable module revisions and pass standalone readonly dependency and parity checks. Do not hand-author provider recording inputs.
 
 ## Capabilities
@@ -25,4 +25,4 @@
 
 ## Impact
 
-Apache-side provider/root, native adapter, independent client, reusable middleware, docs, examples, conformance witness, and UI integration tests change. The Gateway runtime mapper, fallback, HTTP bounds, logical host privacy, and generated-media/reasoning runtime are **not** implemented by this PR; the stacked `gateway-file-inputs` change owns their acceptance. Reference versions remain those in `test/conformance/upstream.yaml`, commit `08ae5ad05bc12496dd1ffcf64e34419e0831300d`.
+Apache-side provider/root, native adapter, independent client, reusable middleware, examples, conformance witness, and UI integration tests change. The Gateway runtime mapper, fallback, HTTP bounds, logical host privacy, and generated-media/reasoning runtime are **not** implemented by this PR; the stacked `gateway-file-inputs` change owns their acceptance. Reference versions remain those in `test/conformance/upstream.yaml`, commit `08ae5ad05bc12496dd1ffcf64e34419e0831300d`.

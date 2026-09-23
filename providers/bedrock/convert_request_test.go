@@ -15,8 +15,6 @@ const testMistralModel = "mistral.mistral-large-2407-v1:0"
 const testNovaModel = "amazon.nova-lite-v1:0"
 const testOpenAIModel = "openai.gpt-oss-20251101-v1:0"
 
-func testFilename(value string) *string { return &value }
-
 func mustBuildRequest(t *testing.T, modelID string, opts provider.CallOptions) (*converseInput, []provider.Warning, requestMeta) {
 	t.Helper()
 	req, warnings, meta, err := buildRequest(modelID, opts)
@@ -820,7 +818,7 @@ func TestBuildRequest_ToolResultDocument(t *testing.T) {
 				Type:            provider.ToolContentFile,
 				Data:            &provider.DataContent{Base64: "base64data"},
 				MediaType:       tt.mediaType,
-				Filename:        testFilename(tt.filename),
+				Filename:        new(tt.filename),
 				ProviderOptions: tt.providerOptions,
 			}))
 
@@ -1185,7 +1183,7 @@ func TestBuildRequest_NamedDocumentDoesNotAdvanceGeneratedName(t *testing.T) {
 				provider.ContentPart{
 					Type:      provider.ContentPartTypeFile,
 					MediaType: "application/pdf",
-					Filename:  testFilename("named.pdf"),
+					Filename:  new("named.pdf"),
 					Data:      &provider.DataContent{Base64: "AAECAw=="},
 				},
 				provider.FilePart("application/pdf", provider.DataContent{Base64: "AAECAw=="}),
@@ -1206,7 +1204,7 @@ func TestBuildRequest_TextDocumentData(t *testing.T) {
 			provider.NewUserMessage(provider.ContentPart{
 				Type:      provider.ContentPartTypeFile,
 				MediaType: "text",
-				Filename:  testFilename("notes.txt"),
+				Filename:  new("notes.txt"),
 				Data:      &provider.DataContent{Text: "hello"},
 			}),
 		},
@@ -1239,7 +1237,7 @@ func TestBuildRequest_InvalidDirectFileInputs(t *testing.T) {
 
 func TestBuildRequest_SelectedEmptyFileData(t *testing.T) {
 	text := provider.FilePart("text/plain", provider.TextDataContent(""))
-	text.Filename = testFilename("")
+	text.Filename = new("")
 	data := provider.FilePart("application/pdf", provider.Base64DataContent(""))
 	req, warnings, _ := mustBuildRequest(t, testAnthropicModel, provider.CallOptions{
 		Prompt: []provider.Message{provider.NewUserMessage(text, data)},

@@ -4409,7 +4409,7 @@ func TestBuildParams_DocumentMediaTypes(t *testing.T) {
 				provider.NewUserMessage(provider.ContentPart{
 					Type:      provider.ContentPartTypeFile,
 					MediaType: "application/pdf",
-					Filename:  testFilename("report.pdf"),
+					Filename:  new("report.pdf"),
 					Data:      &provider.DataContent{Base64: "JVBERi0=" /* %PDF- */},
 					ProviderOptions: provider.BuildProviderOptions(provider.RawProviderOption{
 						Key: "anthropic",
@@ -4445,7 +4445,7 @@ func TestBuildParams_DocumentMediaTypes(t *testing.T) {
 
 	t.Run("empty selected text document and filename", func(t *testing.T) {
 		part := provider.FilePart("text/plain", provider.TextDataContent(""))
-		part.Filename = testFilename("")
+		part.Filename = new("")
 		p, _, _, _, err := buildParams("claude-sonnet-4-6", provider.CallOptions{
 			Prompt: []provider.Message{provider.NewUserMessage(part)},
 		}, false)
@@ -4464,7 +4464,7 @@ func TestBuildParams_DocumentMediaTypes(t *testing.T) {
 	for _, mediaType := range []string{"application/pdf", "image/png"} {
 		t.Run("inline text with declared "+mediaType, func(t *testing.T) {
 			part := provider.FilePart(mediaType, provider.TextDataContent("document text"))
-			part.Filename = testFilename("notes.txt")
+			part.Filename = new("notes.txt")
 			p, _, _, _, err := buildParams("claude-sonnet-4-6", provider.CallOptions{
 				Prompt: []provider.Message{provider.NewUserMessage(part)},
 			}, false)
@@ -4504,7 +4504,7 @@ func TestBuildParams_DocumentMediaTypes(t *testing.T) {
 				provider.NewUserMessage(provider.ContentPart{
 					Type:      provider.ContentPartTypeFile,
 					MediaType: "text/plain",
-					Filename:  testFilename("notes.txt"),
+					Filename:  new("notes.txt"),
 					Data:      &provider.DataContent{Bytes: []byte("hello world")},
 					ProviderOptions: provider.BuildProviderOptions(provider.RawProviderOption{
 						Key: "anthropic",

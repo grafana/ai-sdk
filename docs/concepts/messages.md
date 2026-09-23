@@ -38,36 +38,6 @@ result, err := aisdk.GenerateText(ctx, model,
 Provider messages are closer to the role and content structure expected by LLM
 APIs. Do not convert frontend JSON into provider messages by hand.
 
-## Send files without losing selection
-
-Model-input file parts select one data arm: bytes or base64, URL, provider
-reference, or inline text. Use the public constructors when an empty payload
-must remain selected:
-
-```go
-part := provider.FilePart("text/plain", provider.TextDataContent(""))
-emptyFilename := ""
-part.Filename = &emptyFilename
-message := provider.NewUserMessage(part)
-```
-
-`BytesDataContent`, `Base64DataContent`, `URLDataContent`, and
-`ReferenceDataContent` select the other arms. `DataContent.IsData`, `IsURL`,
-`IsReference`, and `IsText` inspect the selection; `Validate` rejects conflicting
-sources and malformed references. `ReferenceDataContent` takes a
-`json.RawMessage` containing an object of provider names to string file IDs,
-for example `json.RawMessage([]byte("{\"anthropic\":\"file-1\"}"))`.
-The selected provider decides which media types, URL schemes, and reference IDs
-it accepts; the Gateway never downloads submitted URLs.
-
-For request and tool-result files, a nil `Filename` means absent, while a
-pointer to `""` means explicitly empty. Native providers may default an absent
-filename but preserve an explicitly empty one. Ordinary UI `FilePart` uses the
-same distinction through JSON and `ConvertToModelMessages`; UI source-document
-and generated-output filenames retain their descriptive string behavior.
-Generated media responses and reasoning-file runtime input remain outside the
-current Gateway file-input capability.
-
 ## Convert only when you need control
 
 `WithMessages` performs UI-to-model conversion automatically. Call
