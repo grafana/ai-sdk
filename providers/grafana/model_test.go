@@ -160,7 +160,7 @@ func TestModel_GenerateRequestAndNormalization(t *testing.T) {
 	assert.Equal(t, "end_turn", result.FinishReason.Raw)
 	assert.Equal(t, 2, *result.Usage.InputTokens.Total)
 	require.NotNil(t, result.Warnings)
-	assert.Empty(t, result.Warnings)
+	assert.Equal(t, []provider.Warning{{Type: provider.WarnOther, Message: "private-warning"}}, result.Warnings)
 	assert.Nil(t, result.ProviderMetadata)
 	require.NotNil(t, result.Request)
 	assert.Contains(t, string(result.Request.Body), "maxOutputTokens")
@@ -181,6 +181,10 @@ func TestModel_UnaryFailures(t *testing.T) {
 		{"missing text", strings.Replace(unaryFixture, `,"text":"hello"`, "", 1)},
 		{"null text", strings.Replace(unaryFixture, `"text":"hello"`, `"text":null`, 1)},
 		{"unknown finish", strings.Replace(unaryFixture, `"unified":"stop"`, `"unified":"unknown"`, 1)},
+		{"unknown warning", strings.TrimSuffix(unaryFixture, "}") + `,"warnings":[{"type":"unknown","message":"invalid"}]}`},
+		{"missing warning message", strings.TrimSuffix(unaryFixture, "}") + `,"warnings":[{"type":"other"}]}`},
+		{"missing warning feature", strings.TrimSuffix(unaryFixture, "}") + `,"warnings":[{"type":"unsupported"}]}`},
+		{"missing deprecated setting", strings.TrimSuffix(unaryFixture, "}") + `,"warnings":[{"type":"deprecated","message":"invalid"}]}`},
 		{"null finish", strings.Replace(unaryFixture, `{"unified":"stop","raw":"end_turn"}`, `null`, 1)},
 		{"negative usage", strings.Replace(unaryFixture, `"total":2`, `"total":-1`, 1)},
 		{"null usage", strings.Replace(unaryFixture, `"total":2`, `"total":null`, 1)},

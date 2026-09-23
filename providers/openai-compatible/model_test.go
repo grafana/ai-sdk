@@ -141,7 +141,7 @@ func TestDoGenerateSendsCompatibleRequest(t *testing.T) {
 	require.Equal(t, time.Unix(1710000000, 0).UTC(), result.Response.Timestamp)
 }
 
-func TestDoGeneratePreservesEpochTimestamp(t *testing.T) {
+func TestDoGenerateOmitsPlaceholderTimestamp(t *testing.T) {
 	t.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -159,7 +159,7 @@ func TestDoGeneratePreservesEpochTimestamp(t *testing.T) {
 		Prompt: []provider.Message{provider.UserText("hi")},
 	})
 	require.NoError(t, err)
-	require.Equal(t, time.Unix(0, 0).UTC(), result.Response.Timestamp)
+	require.True(t, result.Response.Timestamp.IsZero())
 }
 
 func TestPrepareToolsStrict(t *testing.T) {
@@ -916,7 +916,7 @@ func TestDoStreamRecoversAfterMalformedChunk(t *testing.T) {
 	assert.True(t, sawText)
 	responseMeta := findPart(parts, provider.PartResponseMeta)
 	require.Equal(t, provider.PartResponseMeta, responseMeta.Type)
-	assert.Equal(t, time.Unix(0, 0).UTC(), responseMeta.Timestamp)
+	assert.True(t, responseMeta.Timestamp.IsZero())
 	finish := parts[len(parts)-1]
 	require.Equal(t, provider.PartFinish, finish.Type)
 	assert.Equal(t, provider.FinishReasonStop, finish.FinishReason.Unified)

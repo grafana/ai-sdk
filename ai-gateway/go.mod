@@ -12,9 +12,11 @@ require (
 	github.com/grafana/ai-sdk/middleware/logger v0.0.0-20260915200037-0b83f45375ca
 	github.com/grafana/ai-sdk/middleware/prometheus v0.0.0-20260915200037-0b83f45375ca
 	github.com/grafana/ai-sdk/providers/anthropic v0.0.0-20260923185443-116455e6aae3
+	github.com/grafana/ai-sdk/providers/openai v0.0.0-20260923173742-e3667165be3b
 	github.com/grafana/ai-sdk/providers/openai-compatible v0.0.0-20260923173845-ab3c5a95c298
 	github.com/grafana/authlib v0.0.0-20260814184937-0d62418c2815
 	github.com/grafana/authlib/types v0.0.0-20260814184937-0d62418c2815
+	github.com/openai/openai-go/v3 v3.48.0
 	github.com/prometheus/client_golang v1.24.1
 	github.com/stretchr/testify v1.11.1
 	go.yaml.in/yaml/v4 v4.0.0-rc.6
@@ -69,7 +71,7 @@ require (
 	golang.org/x/text v0.41.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	google.golang.org/api v0.291.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260729162451-8efbd57d26e0 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260918162117-cecb64721679 // indirect
 	google.golang.org/grpc v1.83.2 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect

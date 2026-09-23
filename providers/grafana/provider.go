@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -32,8 +33,8 @@ func DefaultLimits() Limits {
 	return Limits{DiscoveryBytes: 4 << 20, UnaryBytes: 16 << 20, ErrorBytes: 64 << 10, StreamBytes: 64 << 20, StreamEventBytes: 1 << 20, StreamEvents: 100000}
 }
 
-// CloudAuthConfig configures CAP exchange for an internally provisioned service.
-type CloudAuthConfig struct {
+// TokenExchangeConfig configures CAP exchange for an internally provisioned service.
+type TokenExchangeConfig struct {
 	CAPToken         string
 	TokenExchangeURL string
 	Namespace        string
@@ -42,6 +43,16 @@ type CloudAuthConfig struct {
 	HTTPClient       *http.Client
 	Headers          http.Header
 	Limits           *Limits
+}
+
+// CloudCredentialsConfig configures direct Cloud Access Policy authentication at an authenticating proxy.
+type CloudCredentialsConfig struct {
+	StackID    int64
+	CAPToken   string
+	BaseURL    string
+	HTTPClient *http.Client
+	Headers    http.Header
+	Limits     *Limits
 }
 
 // AccessTokenConfig configures a caller-managed, short-lived access token.
@@ -72,6 +83,47 @@ type Provider struct {
 	namespace    string
 	audience     string
 	exchangeGate chan struct{}
+	cloudBearer  string
+}
+
+// NewWithCloudCredentials constructs a provider for a Cloud proxy using a stack-scoped CAP token.
+func NewWithCloudCredentials(cfg CloudCredentialsConfig, opts ...Option) (*Provider, error) {
+	if cfg.StackID <= 0 {
+		return nil, errors.New("grafana: invalid stack ID")
+	}
+	if !validCredential(cfg.CAPToken) {
+		return nil, errors.New("grafana: invalid CAP token")
+	}
+	for name := range cfg.Headers {
+		if cloudReservedHeader(name) {
+			return nil, errors.New("grafana: reserved cloud authentication header")
+		}
+	}
+	p, err := newProvider(cfg.BaseURL, cfg.HTTPClient, cfg.Headers, cfg.Limits, opts)
+	if err != nil {
+		return nil, err
+	}
+	p.cloudBearer = "Bearer " + strconv.FormatInt(cfg.StackID, 10) + ":" + cfg.CAPToken
+	return p, nil
+}
+
+func cloudReservedHeader(name string) bool {
+	switch strings.ToLower(name) {
+	case "authorization", "x-access-token", "x-grafana-id", "x-scope-orgid", "x-cloud-org-id", "x-access-policy-id":
+		return true
+	}
+	return false
+}
+
+func (p *Provider) validateCloudCallHeaders(headers map[string]string) error {
+	if p.cloudBearer != "" {
+		for name := range headers {
+			if cloudReservedHeader(name) {
+				return errors.New("grafana: reserved cloud authentication header")
+			}
+		}
+	}
+	return nil
 }
 
 // NewWithAccessToken constructs a provider without exchanging or refreshing tokens.
@@ -87,8 +139,8 @@ func NewWithAccessToken(cfg AccessTokenConfig, opts ...Option) (*Provider, error
 	return p, nil
 }
 
-// NewWithCloudAuth constructs an authlib token exchanger; omitted audience defaults to ai-sdk.
-func NewWithCloudAuth(cfg CloudAuthConfig, opts ...Option) (*Provider, error) {
+// NewWithTokenExchange constructs an authlib token exchanger; omitted audience defaults to ai-sdk.
+func NewWithTokenExchange(cfg TokenExchangeConfig, opts ...Option) (*Provider, error) {
 	if !validCredential(cfg.CAPToken) {
 		return nil, errors.New("grafana: invalid CAP token")
 	}
@@ -224,6 +276,11 @@ func (p *Provider) request(ctx context.Context, method, route string, callHeader
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	for _, entries := range callHeaders {
+		if err := p.validateCloudCallHeaders(entries); err != nil {
+			return nil, err
+		}
+	}
 	headers := p.headers.Clone()
 	for _, entries := range callHeaders {
 		seen := make(map[string]bool, len(entries))
@@ -239,6 +296,18 @@ func (p *Provider) request(ctx context.Context, method, route string, callHeader
 	user, _ := ctx.Value(userIDTokenKey{}).(string)
 	if user != "" && !validCredential(user) {
 		return nil, errors.New("grafana: invalid acting-user token")
+	}
+	if p.cloudBearer != "" {
+		if user != "" {
+			return nil, errors.New("grafana: acting-user token is unsupported with cloud credentials")
+		}
+		req, err := http.NewRequestWithContext(ctx, method, p.baseURL+route, nil)
+		if err != nil {
+			return nil, errors.New("grafana: cannot construct Gateway request")
+		}
+		req.Header = headers
+		req.Header.Set("Authorization", p.cloudBearer)
+		return req, nil
 	}
 	select {
 	case p.exchangeGate <- struct{}{}:
