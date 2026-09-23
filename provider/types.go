@@ -285,7 +285,7 @@ type ToolResultContentValue struct {
 	Text            string                `json:"text,omitempty"`
 	Data            *DataContent          `json:"data,omitempty"`
 	MediaType       string                `json:"mediaType,omitempty"`
-	Filename        string                `json:"filename,omitempty"`
+	Filename        *string               `json:"filename,omitempty"`
 	ProviderOptions ProviderOptions       `json:"providerOptions,omitempty"`
 }
 
@@ -309,7 +309,7 @@ func (v ToolResultContentValue) MarshalJSON() ([]byte, error) {
 			Type            ToolResultContentType `json:"type"`
 			Data            *DataContent          `json:"data"`
 			MediaType       string                `json:"mediaType"`
-			Filename        string                `json:"filename,omitempty"`
+			Filename        *string               `json:"filename,omitempty"`
 			ProviderOptions ProviderOptions       `json:"providerOptions,omitempty"`
 		}{
 			Type:            ToolContentFile,
@@ -341,7 +341,7 @@ func (v *ToolResultContentValue) UnmarshalJSON(data []byte) error {
 		Text              string                `json:"text"`
 		Data              json.RawMessage       `json:"data"`
 		MediaType         string                `json:"mediaType"`
-		Filename          string                `json:"filename"`
+		Filename          *string               `json:"filename"`
 		URL               string                `json:"url"`
 		ProviderReference map[string]string     `json:"providerReference"`
 		ProviderOptions   ProviderOptions       `json:"providerOptions"`
