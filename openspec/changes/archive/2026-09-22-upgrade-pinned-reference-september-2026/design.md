@@ -1,8 +1,9 @@
 ## Context
 
-The starting baseline is `ai@7.0.65` with upstream commit `d76eb85a9a7f2dbe44ab2f3dc858ad5cdcb5242e`. The approved `selected-target.json` freezes nine exact versions under the configured 4,320-minute maturity policy. Eight package sources resolve to `08ae5ad05bc12496dd1ffcf64e34419e0831300d`; `@ai-sdk/provider@4.0.17` resolves to `1a82df1c7b6239f4cefe9fb73c357b3a6529c629`. Exact Git archives are available without switching the shared upstream checkout.
-
-Initial contract comparison finds no changes to the synchronous LanguageModelV4 call/stream unions; the experimental language-model batch extension was removed from that directory. Gateway changes include additional batch/resource errors and transport retryability. These observations guide investigation, not a completeness claim.
+The upgrade advances `ai@7.0.65` to the nine-package reference frozen in
+[selected-target.json](selected-target.json). Per-package source commits are
+authoritative; the shared upstream checkout is not switched. Coverage and
+remaining work belong in `test/conformance/PARITY.md`, not this design.
 
 ## Goals / Non-Goals
 
@@ -20,7 +21,7 @@ Initial contract comparison finds no changes to the synchronous LanguageModelV4 
 - Publish only after bidirectional parity review, specification completion, required checks, and issue-label verification. Do not treat absent verification metadata as permission to weaken validation.
 - Preserve all upstream streaming inputs byte-for-byte. The new parallel-wrapper fixture has malformed first/last JSON events in the selected source. Retain those errors and decode subsequent valid events using the official SDK's SSE framing decoder plus event-local JSON decoding; keep official SDK request/authentication and initial HTTP/transport error handling. Unlike the typed SDK iterator, one malformed JSON event must not terminate decoding or trigger setup retries.
 - Recognize internal parallel wrappers only for undeclared `parallel` calls whose recipients are all declared function tools. Preserve wrapper metadata for scalar stateful continuation, fall back atomically for invalid wrappers, and leave the separately registered existing multipart conversion limitations visible (#221).
-- Review promoted the finish-reason gate (#208) into this upgrade: recoverable malformed data newly exposes valid local tool calls after an error. Dispatch only on stop/tool-calls, retain approval observations, and require matching client results/denials for continuation. Do not hide recovered calls or broaden the Mantle exception.
+- Include the finish-reason gate (#208): recoverable malformed data newly exposes valid local tool calls after an error. Dispatch only on stop/tool-calls, retain approval observations, and require matching client results/denials for continuation. Do not hide recovered calls or broaden the Mantle exception.
 - Acquire streaming responses through the existing SDK endpoint with its raw-body destination option; one SDK framing decoder owns construction and closure. Retain finish state/usage until EOF so buffered wrappers precede finish and late malformed data cannot overwrite errors with success.
 - Keep text/reasoning ID reservations invocation-wide but active mappings step-local. The two content families have separate namespaces; generating a colliding ID uses a numeric suffix rather than another generator call.
 
@@ -29,7 +30,7 @@ Initial contract comparison finds no changes to the synchronous LanguageModelV4 
 - Broad assessment exceeds fixture coverage → inspect exact source/tests by supported surface, explicitly retain unresolved questions, and do not claim completeness prematurely.
 - Gateway schema/witness drift can hide integration failures → exercise registered-client contract and real-command tests before re-attestation.
 - Workspace builds can mask unpublished dependencies → run the isolated public-module gate and inspect actual consumer versions.
-- This branch includes the still-open workflow PR #205 → retain those commits so the upgrade is independently buildable; disclose inherited tooling in the PR rather than depending on a later merge. Main's #203 and toolchain changes were merged without resetting candidate work.
+- This upgrade is stacked on workflow PR #205; validate against that base. Changes inherited from main, including #194, are not new upgrade implementation.
 
 ## Migration Plan
 

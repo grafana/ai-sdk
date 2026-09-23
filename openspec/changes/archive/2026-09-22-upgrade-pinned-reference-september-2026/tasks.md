@@ -15,7 +15,7 @@
 ## 3. Register and review
 
 - [x] 3.1 Search labeled/unlabeled open/closed work, read candidate discussion/PRs, and register coherent remaining packages.
-- [x] 3.2 Verify upstream-sync on 23 new and 22 reused packages and link them from the coverage assessment.
+- [x] 3.2 Verify upstream-sync labels on new/reused packages and link them from the coverage map.
 - [x] 3.3 Review upstream-to-Go breadth and Go-to-requirement necessity with the parity-review skill; record residual decisions and evidence limits.
 
 ## 4. Validate and prepare publication
@@ -25,8 +25,4 @@
 - [x] 4.3 Verify the eleven implemented requirements across six capability specs and prepare validated delta synchronization/archive.
 - [x] 4.4 Prepare the conventional signed delivery and draft PR description with linked packages and limitations.
 
-Synchronization/archive, the clean-tree formatting check, signed commit, push and
-one draft PR follow this implementation checklist. Their actual outcomes belong
-in the verification/delivery record; these checkboxes do not claim publication
-has already occurred. Remote CI, especially multi-platform image validation,
-remains a separate check on the published candidate.
+Validation and delivery evidence: [verification.md](verification.md).
