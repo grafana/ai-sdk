@@ -80,6 +80,8 @@ github.com/grafana/ai-sdk/providers/anthropic v0.0.0-20260921190651-72c620c2204b
 github.com/grafana/ai-sdk/providers/anthropic v0.0.0-20260921190651-72c620c2204b/go.mod h1:DYFE5/udopZd6A9NAJQCZ3kuMt1EaEs4vp8lu9Smgdc=
 github.com/grafana/ai-sdk/providers/anthropic v0.0.0-20260921194944-e7732b7aa62b h1:gVKAgXMeKDEP/ob+QZzeAfryZ+0B/5AXe/b/2mVoO3c=
 github.com/grafana/ai-sdk/providers/anthropic v0.0.0-20260921194944-e7732b7aa62b/go.mod h1:DYFE5/udopZd6A9NAJQCZ3kuMt1EaEs4vp8lu9Smgdc=
+github.com/grafana/ai-sdk/providers/openai v0.0.0-20260914170650-fd08a3a81a11 h1:fK4T4irE9VbtjDWOcF4nNJVo5NVDPj62EDQLmkteQog=
+github.com/grafana/ai-sdk/providers/openai v0.0.0-20260914170650-fd08a3a81a11/go.mod h1:6o8lhiAmBLuKF7TH9Cmh4P1v8u7wmUZB+KuX8quduHc=
 github.com/grafana/ai-sdk/providers/openai-compatible v0.0.0-20260914170650-fd08a3a81a11 h1:VQ3KSv92M/S7T7PvOAiyrxFF/HnnfLQ06DjeE3felUc=
 github.com/grafana/ai-sdk/providers/openai-compatible v0.0.0-20260914170650-fd08a3a81a11/go.mod h1:ua2ViPMCLV0YpqlxZtdnpE6DM3Qj2T/9h1dMaYxFjlc=
 github.com/grafana/authlib v0.0.0-20260814184937-0d62418c2815 h1:kdWTzTnExdZbbngXmCuA4UPrZpdYiwC/Mf5ujcg+e6Q=
@@ -100,6 +102,8 @@ github.com/kylelemons/godebug v1.1.0 h1:RPNrshWIDI6G2gRW9EHilWtl7Z6Sb1BR0xunSBf0
 github.com/kylelemons/godebug v1.1.0/go.mod h1:9/0rRGxNHcop5bhtWyNeEfOS8JIWk580+fNqagV/RAw=
 github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 h1:C3w9PqII01/Oq1c1nUAm88MOHcQC9l5mIlSMApZMrHA=
 github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822/go.mod h1:+n7T8mK8HuQTcFwEeznm/DIxMOiR9yIdICNftLE1DvQ=
+github.com/openai/openai-go/v3 v3.48.0 h1:HRVBn6UEP4qzGK2c6UWAZ0mdFf6yODNWTJ4ywLIyDpQ=
+github.com/openai/openai-go/v3 v3.48.0/go.mod h1:nCqcbgPr2jYDV8wiCWPA2tRL56mWXdb6QavBmBwzSis=
 github.com/patrickmn/go-cache v2.1.0+incompatible h1:HRMgzkcYKYpi3C8ajMPV8OFXaaRUnok+kx1WdO15EQc=
 github.com/patrickmn/go-cache v2.1.0+incompatible/go.mod h1:3Qf8kWWT7OJRJbdiICTKqZju1ZixQ/KpMGzzAfe6+WQ=
 github.com/pb33f/ordered-map/v2 v2.3.1 h1:5319HDO0aw4DA4gzi+zv4FXU9UlSs3xGZ40wcP1nBjY=

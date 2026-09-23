@@ -134,3 +134,51 @@ func TestOpenAICompatibleModel_UsesHardenedClient(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorIs(t, err, outbound.ErrResponseTooLarge)
 }
+
+func TestOpenAIModel_UsesHardenedClient(t *testing.T) {
+	t.Run("unary response bound", func(t *testing.T) {
+		body := `{"id":"resp_test","object":"response","created_at":1,"status":"completed","model":"backend-private","output":[{"id":"msg_test","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","annotations":[],"text":"` + strings.Repeat("x", 512) + `"}]}]}`
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprint(w, body)
+		}))
+		defer server.Close()
+		_, err := hardenedTestModel(t, server, 128, time.Second, "openai").DoGenerate(context.Background(), modelTestOptions())
+		assert.ErrorIs(t, err, outbound.ErrResponseTooLarge)
+	})
+
+	t.Run("cumulative stream bound", func(t *testing.T) {
+		initial := "event: response.created\ndata: {\"type\":\"response.created\",\"sequence_number\":0,\"response\":{\"id\":\"resp_test\",\"object\":\"response\",\"created_at\":1,\"status\":\"in_progress\",\"model\":\"backend-private\",\"output\":[]}}\n\n"
+		delta := "event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"sequence_number\":1,\"item_id\":\"msg_test\",\"output_index\":0,\"content_index\":0,\"delta\":\"" + strings.Repeat("x", 256) + "\"}\n\n"
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = fmt.Fprint(w, initial)
+			_, _ = fmt.Fprint(w, delta)
+		}))
+		defer server.Close()
+		// openai-go reads ahead before returning the stream, so the bound can trip in DoStream or in a stream part.
+		result, err := hardenedTestModel(t, server, int64(len(initial)+32), time.Second, "openai").DoStream(context.Background(), modelTestOptions())
+		if err == nil {
+			for part := range result.Stream {
+				if part.Type == provider.PartError && part.APICallError != nil {
+					err = part.APICallError
+				}
+			}
+		}
+		assert.ErrorIs(t, err, outbound.ErrResponseTooLarge)
+	})
+
+	t.Run("redirect rejection", func(t *testing.T) {
+		redirected := 0
+		target := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { redirected++ }))
+		defer target.Close()
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Location", target.URL+"/responses")
+			w.WriteHeader(http.StatusTemporaryRedirect)
+		}))
+		defer server.Close()
+		_, err := hardenedTestModel(t, server, 1024, time.Second, "openai").DoGenerate(context.Background(), modelTestOptions())
+		require.Error(t, err)
+		assert.Zero(t, redirected)
+	})
+}
