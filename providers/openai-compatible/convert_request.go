@@ -16,6 +16,9 @@ func (m *model) buildRequest(opts provider.CallOptions, streaming bool) (map[str
 	if err := provider.ValidateFileInputs(opts.Prompt); err != nil {
 		return nil, nil, fmt.Errorf("openai: invalid file input: %w", err)
 	}
+	if err := provider.ValidateTools(opts.Tools); err != nil {
+		return nil, nil, err
+	}
 	warnings := deprecatedProviderOptionWarnings(opts.ProviderOptions, m.providerName)
 
 	openAIOpts, err := readOpenAIOptions(opts.ProviderOptions, m.providerName)
