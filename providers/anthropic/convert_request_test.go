@@ -2179,6 +2179,23 @@ func TestBuildParams_ProviderOptions_MCPServers(t *testing.T) {
 		})
 	}
 
+	t.Run("code execution and MCP together", func(t *testing.T) {
+		options := provider.CallOptions{
+			Prompt:          []provider.Message{provider.UserText("Use tools")},
+			Tools:           []provider.Tool{{Type: provider.ToolTypeProvider, ID: "anthropic.code_execution_20260120", Name: "python", Args: map[string]json.RawMessage{}}},
+			ProviderOptions: provider.ProviderOptions{"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(`{"mcpServers":[{"type":"url","name":"echo","url":"https://mcp.example.test/tools","authorizationToken":"mcp-private-token","toolConfiguration":{"enabled":false,"allowedTools":[]}}]}`)}},
+		}
+		params, _, warnings, _, err := buildParams("claude-sonnet-4-6", options, false)
+		require.NoError(t, err)
+		assert.Empty(t, warnings)
+		encoded, err := json.Marshal(params)
+		require.NoError(t, err)
+		var body map[string]json.RawMessage
+		require.NoError(t, json.Unmarshal(encoded, &body))
+		assert.JSONEq(t, `[{"type":"code_execution_20260120","name":"code_execution"}]`, string(body["tools"]))
+		assert.JSONEq(t, `[{"type":"url","name":"echo","url":"https://mcp.example.test/tools","authorization_token":"mcp-private-token","tool_configuration":{"enabled":false,"allowed_tools":[]}}]`, string(body["mcp_servers"]))
+	})
+
 	t.Run("single_server_all_fields", func(t *testing.T) {
 		opts := provider.CallOptions{
 			ProviderOptions: provider.ProviderOptions{
