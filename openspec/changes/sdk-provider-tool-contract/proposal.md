@@ -26,6 +26,6 @@ WP13 (#107) needs a consistent provider-tool domain and independently usable cli
 
 ## Impact
 
-Touches the provider domain, orchestration, native providers, Grafana client, observability and cross-language tests. Gateway changes only migrate compiled consumers and immutable Apache pins. The registered baseline remains `d76eb85a9a7f2dbe44ab2f3dc858ad5cdcb5242e` (ai 7.0.65, provider 4.0.7, Gateway 4.0.52, Anthropic 4.0.38).
+Touches the provider domain, orchestration, native providers, Grafana client, observability and cross-language tests. Gateway changes only migrate compiled consumers and immutable Apache pins. The reference follows the merged baseline upgrade: `08ae5ad05bc12496dd1ffcf64e34419e0831300d` (ai 7.0.107, provider 4.0.17, Gateway 4.0.87, Anthropic 4.0.58). This change does not upgrade that baseline independently.
 
 Follow-up changes `gateway-provider-tool-runtime` and `gateway-anthropic-mcp` own service activation. Each change remains unarchived for review; this PR does not close #107.

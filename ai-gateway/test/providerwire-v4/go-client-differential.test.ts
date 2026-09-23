@@ -199,7 +199,7 @@ describe("Go and exact-pinned Gateway differential", () => {
       assert.deepEqual(go.result.content.map((part: { type: string; text?: string }) => ({ type: part.type, text: part.text ?? "" })), ts.content);
       assert.deepEqual(go.result.finishReason, ts.finishReason); assert.deepEqual(go.result.usage, ts.usage);
       assert.deepEqual(go.result.request, JSON.parse(JSON.stringify(ts.request))); assert.equal(go.result.response.modelId, undefined); assert.equal(go.result.response.id, undefined);
-      assert.deepEqual(ts.warnings, []); assert.equal(go.result.warnings, undefined);
+      assert.deepEqual(ts.warnings, unary.warnings); assert.deepEqual(go.result.warnings, ts.warnings);
     } finally { await server.stop(); }
   });
 

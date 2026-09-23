@@ -13,3 +13,9 @@
 - [x] 2.5 Scope MCP operator/client docs and parity coverage, explicitly leaving live egress and deployment activation unverified.
 - [x] 2.6 Run tests, build, vet, lint, parity, integration, focused race, module-resolution and Gateway-boundary checks; compare the final runtime with the original reviewed implementation.
 - [ ] 2.7 Validate all three unarchived changes, publish the final draft PR and link the stack; supersede #237 without rewriting published prerequisite refs.
+
+## 3. Integrate the current main baseline
+
+- [x] 3.1 Merge #239's current-reference integration and retain combined published Apache dependencies.
+- [x] 3.2 Review MCP projection/replay against Anthropic 4.0.58 and Gateway 4.0.87 at the registered commit; add denial coverage for main's OpenAI Responses route.
+- [x] 3.3 Re-capture both request goldens with Gateway 4.0.87 (no content changes) and re-run tests, build, vet, lint, parity, frontend integration, authenticated command, focused race, module-resolution and Gateway-boundary checks.

@@ -13,10 +13,10 @@ replace (
 require (
 	github.com/anthropics/anthropic-sdk-go v1.61.0
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.32
-	github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260923173611-74293b6204f4
+	github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260923211549-25ba9521879f
 	github.com/grafana/ai-sdk/providers/anthropic v0.0.0-00010101000000-000000000000
 	github.com/grafana/ai-sdk/providers/bedrock v0.0.0-00010101000000-000000000000
-	github.com/grafana/ai-sdk/providers/openai v0.0.0-20260923173742-e3667165be3b
+	github.com/grafana/ai-sdk/providers/openai v0.0.0-20260923211549-25ba9521879f
 	github.com/grafana/ai-sdk/providers/openai-compatible v0.0.0-00010101000000-000000000000
 	github.com/openai/openai-go/v3 v3.48.0
 	github.com/stretchr/testify v1.11.1
@@ -75,7 +75,7 @@ require (
 	golang.org/x/time v0.15.0 // indirect
 	google.golang.org/api v0.291.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260810153831-ec0a7760b754 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260810153831-ec0a7760b754 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260918162117-cecb64721679 // indirect
 	google.golang.org/grpc v1.83.2 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect

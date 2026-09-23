@@ -1,6 +1,6 @@
 ## Context
 
-This final WP13 slice layers over SDK readiness (#238) and bounded provider-tool transport (#239). Pinned `packages/anthropic/src/anthropic-language-model-options.ts`, `anthropic-language-model.ts` and `convert-to-anthropic-prompt.ts` define request server options, native MCP blocks and type/serverName replay. `packages/gateway/src/gateway-language-model.ts` serializes those root options. All references use registered commit `d76eb85a9a7f2dbe44ab2f3dc858ad5cdcb5242e`, not upstream HEAD. Public client source cannot establish Vercel's private hosted-service policy.
+This final WP13 slice layers over SDK readiness (#238) and bounded provider-tool transport (#239). Pinned `packages/anthropic/src/anthropic-language-model-options.ts`, `anthropic-language-model.ts` and `convert-to-anthropic-prompt.ts` define request server options, native MCP blocks and type/serverName replay. `packages/gateway/src/gateway-language-model.ts` serializes those root options. All references use registered commit `08ae5ad05bc12496dd1ffcf64e34419e0831300d`, not upstream HEAD. Public client source cannot establish Vercel's private hosted-service policy.
 
 ## Goals / Non-Goals
 
@@ -11,7 +11,7 @@ Non-goals: a Gateway MCP executor/proxy, host-managed aliases, general root prov
 ## Decisions
 
 - Add a narrow parser for ordered `mcpServers` instead of general option passthrough. Preserve optional token/enabled/allowed-tools semantics using the corrected Apache prerequisite. Enforce count/field budgets, unique names, HTTPS, no embedded credentials and no URL fragments.
-- Gate effects at service construction, where configured physical provider and fallback topology are known. The wrapped model reports `grafana`, so runtime Provider() identity is not routing authority. A construction-time capability bit allows only single direct Anthropic routes; no public discovery field or broad registry is needed.
+- Gate effects at service construction, where configured physical provider and fallback topology are known. The wrapped model reports `grafana`, so runtime Provider() identity is not routing authority. A construction-time capability bit allows only single direct Anthropic routes, including explicit denial coverage for main's OpenAI Responses route; no public discovery field or broad registry is needed.
 - Derive allowed MCP names from validated options each request. Require provider ownership for MCP call continuation and matching caller-configured names. Return only `anthropic.type='mcp-tool-use'` and serverName, omitting caller/private fields for this shape. Unknown names fail rather than silently degrading to ordinary tools.
 - Reuse the predecessor's bounded history and result lifecycle. Server options never create session state, a tool runner or fallback eligibility.
 - Keep provider-only captures/scenarios and add MCP-specific captures plus table variants. Re-run both-client deferred success/error and authenticated code-execution/MCP native continuation. Fake endpoints establish transport evidence, not recorded provider provenance.

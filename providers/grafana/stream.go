@@ -154,6 +154,38 @@ func (w *wireWarning) UnmarshalJSON(data []byte) error {
 	return decodeFields(data, (*plain)(w), "type", "feature", "details", "setting", "message")
 }
 
+func decodeWarnings(warnings []wireWarning) ([]provider.Warning, error) {
+	result := make([]provider.Warning, 0, len(warnings))
+	for _, warning := range warnings {
+		mapped := provider.Warning{Type: warning.Type}
+		switch warning.Type {
+		case provider.WarnUnsupported, provider.WarnCompatibility:
+			if warning.Feature == nil {
+				return nil, errors.New("grafana: invalid warning feature")
+			}
+			mapped.Feature = *warning.Feature
+			if warning.Details != nil {
+				mapped.Details = *warning.Details
+			}
+		case provider.WarnDeprecated:
+			if warning.Setting == nil || warning.Message == nil {
+				return nil, errors.New("grafana: invalid deprecated warning")
+			}
+			mapped.Setting = *warning.Setting
+			mapped.Message = *warning.Message
+		case provider.WarnOther:
+			if warning.Message == nil {
+				return nil, errors.New("grafana: invalid warning message")
+			}
+			mapped.Message = *warning.Message
+		default:
+			return nil, errors.New("grafana: unsupported warning type")
+		}
+		result = append(result, mapped)
+	}
+	return result, nil
+}
+
 func decodeStreamPart(data []byte) (provider.StreamPart, error) {
 	invalid := func() (provider.StreamPart, error) {
 		return provider.StreamPart{}, errors.New("grafana: invalid stream part")
@@ -235,34 +267,11 @@ func decodeStreamPart(data []byte) (provider.StreamPart, error) {
 		if value.Warnings == nil {
 			return invalid()
 		}
-		part.Warnings = make([]provider.Warning, 0, len(*value.Warnings))
-		for _, warning := range *value.Warnings {
-			mapped := provider.Warning{Type: warning.Type}
-			switch warning.Type {
-			case provider.WarnUnsupported, provider.WarnCompatibility:
-				if warning.Feature == nil {
-					return invalid()
-				}
-				mapped.Feature = *warning.Feature
-				if warning.Details != nil {
-					mapped.Details = *warning.Details
-				}
-			case provider.WarnDeprecated:
-				if warning.Setting == nil || warning.Message == nil {
-					return invalid()
-				}
-				mapped.Setting = *warning.Setting
-				mapped.Message = *warning.Message
-			case provider.WarnOther:
-				if warning.Message == nil {
-					return invalid()
-				}
-				mapped.Message = *warning.Message
-			default:
-				return invalid()
-			}
-			part.Warnings = append(part.Warnings, mapped)
+		warnings, err := decodeWarnings(*value.Warnings)
+		if err != nil {
+			return invalid()
 		}
+		part.Warnings = warnings
 	case provider.PartResponseMeta:
 		if value.ModelID == nil || !publicModelID.MatchString(*value.ModelID) {
 			return invalid()

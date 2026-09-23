@@ -12,3 +12,9 @@
 - [x] 2.4 Scope docs and parity coverage to provider tools, with MCP explicitly deferred to its own change.
 - [x] 2.5 Run full tests, build, vet, lint, parity, integration, module-resolution and Gateway-boundary gates on this intermediate branch.
 - [x] 2.6 Validate the change and publish the second draft PR against the SDK prerequisite; keep both changes unarchived.
+
+## 3. Revalidate the updated prerequisite
+
+- [x] 3.1 Merge #238's current-main integration and combined immutable module pins; retain main's Cloud CAP and OpenAI Responses service coverage.
+- [x] 3.2 Review the registered ai 7.0.107/provider 4.0.17/Gateway 4.0.87/Anthropic 4.0.58/OpenAI 4.0.71 source and preserve the provider-only boundary.
+- [x] 3.3 Re-run full tests, build, vet, lint, parity, frontend integration, authenticated command, module-resolution and Gateway-boundary gates on this intermediate tree.

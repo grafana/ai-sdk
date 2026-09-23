@@ -19,11 +19,13 @@ func TestBuildCatalog_MCPRouteCapability(t *testing.T) {
 	file := config.File{Models: map[string]config.Model{
 		"direct":     {Name: "Direct", Primary: config.Primary{Provider: "anthropic", Model: "backend-direct"}},
 		"compatible": {Name: "Compatible", Primary: config.Primary{Provider: "compatible", Model: "backend-compatible"}},
+		"responses":  {Name: "Responses", Primary: config.Primary{Provider: "openai", Model: "backend-responses"}},
 		"fallback":   {Name: "Fallback", Primary: config.Primary{Provider: "anthropic", Model: "backend-primary"}, Fallback: []config.Primary{{Provider: "anthropic", Model: "backend-secondary"}}},
 	}}
 	providers := map[string]config.ResolvedProvider{
 		"anthropic":  {Type: "anthropic", APIKey: "private-key"},
 		"compatible": {Type: "openai-compatible", APIKey: "private-key", BaseURL: "https://compatible.invalid/v1"},
+		"openai":     {Type: "openai", APIKey: "private-key", BaseURL: "https://responses.invalid/v1"},
 	}
 	calls := 0
 	created, err := buildCatalog(file, providers, http.DefaultClient, func(_ string, _ string, _ ...anthropicprovider.Option) provider.LanguageModel {
@@ -39,7 +41,7 @@ func TestBuildCatalog_MCPRouteCapability(t *testing.T) {
 	})
 	require.NoError(t, err)
 	options := provider.CallOptions{ProviderOptions: provider.ProviderOptions{"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(`{"mcpServers":[{"type":"url","name":"echo","url":"https://mcp.example.test"}]}`)}}}
-	for _, id := range []string{"compatible", "fallback", "direct"} {
+	for _, id := range []string{"compatible", "responses", "fallback", "direct"} {
 		resolved, err := created.ResolveModel(context.Background(), id)
 		require.NoError(t, err)
 		assert.Equal(t, "grafana", resolved.Model.Provider())

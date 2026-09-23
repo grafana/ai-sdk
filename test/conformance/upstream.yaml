@@ -1,18 +1,18 @@
 upstream:
   repository: https://github.com/vercel/ai
-  commit: d76eb85a9a7f2dbe44ab2f3dc858ad5cdcb5242e
+  commit: 08ae5ad05bc12496dd1ffcf64e34419e0831300d
   packageSource: npm
-  verifiedAt: "2026-08-17"
+  verifiedAt: "2026-09-22"
 packages:
-  ai: 7.0.65
-  "@ai-sdk/anthropic": 4.0.38
-  "@ai-sdk/amazon-bedrock": 5.0.55
-  "@ai-sdk/gateway": 4.0.52
-  "@ai-sdk/openai": 4.0.41
-  "@ai-sdk/openai-compatible": 3.0.30
-  "@ai-sdk/provider": 4.0.7
-  "@ai-sdk/provider-utils": 5.0.27
-  "@ai-sdk/react": 4.0.68
+  ai: 7.0.107
+  "@ai-sdk/anthropic": 4.0.58
+  "@ai-sdk/amazon-bedrock": 5.0.88
+  "@ai-sdk/gateway": 4.0.87
+  "@ai-sdk/openai": 4.0.71
+  "@ai-sdk/openai-compatible": 3.0.53
+  "@ai-sdk/provider": 4.0.17
+  "@ai-sdk/provider-utils": 5.0.45
+  "@ai-sdk/react": 4.0.110
 verification:
   status: enforced
   conformanceScope: full
@@ -23,36 +23,23 @@ verification:
 knownGaps:
   - id: astra-model-catalog
     surface: provider-openai
-    status: intentional-deviation
-    description: GPT-6 Astra is added to the advisory Responses model list and
-      Bedrock Mantle compatibility-path table ahead of the registered upstream
-      baseline. AWS documents
-      openai.gpt-6-astra at /openai/v1 in us-west-2. Routing and capabilities are
-      covered by synthetic unit tests; no live Astra conformance recording exists.
-  - id: gpt6-non-reasoning-parameters
-    surface: provider-openai
-    status: intentional-deviation
-    description: GPT-6 and later disable non-reasoning sampling parameters, matching
-      newer upstream commit 6c6c2210b9532a4c369615c044a16d595f3db117 rather than the
-      registered @ai-sdk/openai 4.0.41 baseline. Synthetic request tests verify
-      temperature and topP are stripped even for reasoning effort none, while
-      GPT-5.1+ behavior is preserved.
+    status: gap
+    description: The Astra advisory catalogue and non-reasoning sampling rules now
+      match the registered OpenAI target. Mantle routing retains the documented AWS
+      compatibility-path adaptation. Synthetic tests cover routing/capabilities;
+      no live Astra conformance recording is claimed.
   - id: gpt6-newer-upstream-capabilities
     surface: provider-openai
     status: gap
-    description: Newer upstream commit 6c6c2210b9532a4c369615c044a16d595f3db117
-      advertises GPT-6 supportedReasoningEfforts (low, medium, high, xhigh, max),
-      supportsConfigurationUpdate, and supportsAsyncToolCalling. These newer
-      capability contracts are not implemented by this change; reasoning-effort
-      validation and the configuration-update and async-tool-calling behavior
-      remain follow-up work against a newer upstream baseline.
+    description: The registered OpenAI 4.0.71 target includes reasoning-effort
+      capability validation, configuration updates and async tool calling that
+      remain incomplete in Go. Tracked by https://github.com/grafana/ai-sdk/issues/220.
   - id: concurrent-tool-emission-nondeterminism
     surface: core-streamtext
     status: documented-deviation
-    description: Upstream enqueues each tool result as its own tool resolves. Being
-      single-threaded, it always resolves ties the same way, in tool call order, so
-      its emitted chunk sequence is deterministic. Go emits each result as its tool
-      completes, matching upstream on completion order but not on tie-breaking, so
+    description: Upstream enqueues each tool result as its own tool resolves. Go
+      also emits each result as its tool completes, but concurrent mocked tools
+      need not resolve ties in the same order across runtimes, so
       the relative order of sibling tool outputs within a step is scheduler-dependent.
       The conformance comparator therefore treats a run of adjacent locally-executed
       tool-output-available and tool-output-error chunks as unordered. Provider-executed
@@ -119,11 +106,10 @@ knownGaps:
   - id: batch-language-model-surface
     surface: provider-contract
     status: gap
-    description: Upstream provider v4 exposes optional language-model batch submission
-      and ai exposes batch orchestration, with Anthropic and OpenAI implementations in
-      the registered baseline. The Go LanguageModel contract and providers currently
-      expose only synchronous generate and stream calls, without batch APIs or
-      conformance coverage.
+    description: The target exposes batch through separate provider/core contracts
+      rather than the former experimental language-model batch extension. Go scopes
+      this baseline to synchronous LanguageModel generate/stream calls and does not
+      expose durable batch APIs or batch conformance coverage.
   - id: structured-output-repair-text
     surface: core-orchestration
     status: gap

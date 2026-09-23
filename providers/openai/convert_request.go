@@ -28,6 +28,7 @@ type buildResult struct {
 	// hasComputerTool indicates the client-executed computer tool is present.
 	hasComputerTool   bool
 	logprobsRequested bool
+	functionTools     map[string]struct{}
 }
 
 // buildParams converts provider.CallOptions into an OpenAI Responses request.
@@ -70,6 +71,13 @@ func buildParamsForProvider(modelID string, opts provider.CallOptions, providerO
 		providerOptionsName:        poptsName,
 		toolNameMapping:            newToolNameMapping(opts.Tools),
 		approvalRequestToolCallIDs: approvalRequestToolCallIDMapping(opts.Prompt, poptsName),
+	}
+
+	br.functionTools = make(map[string]struct{})
+	for _, tool := range opts.Tools {
+		if tool.Type == provider.ToolTypeFunction {
+			br.functionTools[tool.Name] = struct{}{}
+		}
 	}
 
 	body := responses.ResponseNewParams{

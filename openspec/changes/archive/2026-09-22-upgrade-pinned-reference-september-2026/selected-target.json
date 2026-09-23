@@ -1,0 +1,67 @@
+{
+  "format": 1,
+  "selectedAt": "2026-09-22T15:21:41.806Z",
+  "minimumReleaseAge": 4320,
+  "baseline": {
+    "repository": "https://github.com/vercel/ai",
+    "commit": "d76eb85a9a7f2dbe44ab2f3dc858ad5cdcb5242e",
+    "packages": {
+      "ai": "7.0.65",
+      "@ai-sdk/anthropic": "4.0.38",
+      "@ai-sdk/amazon-bedrock": "5.0.55",
+      "@ai-sdk/gateway": "4.0.52",
+      "@ai-sdk/openai": "4.0.41",
+      "@ai-sdk/openai-compatible": "3.0.30",
+      "@ai-sdk/provider": "4.0.7",
+      "@ai-sdk/provider-utils": "5.0.27",
+      "@ai-sdk/react": "4.0.68"
+    }
+  },
+  "packages": {
+    "ai": {
+      "version": "7.0.107",
+      "publishedAt": "2026-09-18T22:30:31.100Z",
+      "sourceCommit": "08ae5ad05bc12496dd1ffcf64e34419e0831300d"
+    },
+    "@ai-sdk/anthropic": {
+      "version": "4.0.58",
+      "publishedAt": "2026-09-18T22:29:20.040Z",
+      "sourceCommit": "08ae5ad05bc12496dd1ffcf64e34419e0831300d"
+    },
+    "@ai-sdk/amazon-bedrock": {
+      "version": "5.0.88",
+      "publishedAt": "2026-09-18T22:29:19.478Z",
+      "sourceCommit": "08ae5ad05bc12496dd1ffcf64e34419e0831300d"
+    },
+    "@ai-sdk/gateway": {
+      "version": "4.0.87",
+      "publishedAt": "2026-09-18T22:29:46.755Z",
+      "sourceCommit": "08ae5ad05bc12496dd1ffcf64e34419e0831300d"
+    },
+    "@ai-sdk/openai": {
+      "version": "4.0.71",
+      "publishedAt": "2026-09-18T22:29:57.348Z",
+      "sourceCommit": "08ae5ad05bc12496dd1ffcf64e34419e0831300d"
+    },
+    "@ai-sdk/openai-compatible": {
+      "version": "3.0.53",
+      "publishedAt": "2026-09-18T22:31:17.558Z",
+      "sourceCommit": "08ae5ad05bc12496dd1ffcf64e34419e0831300d"
+    },
+    "@ai-sdk/provider": {
+      "version": "4.0.17",
+      "publishedAt": "2026-09-16T21:39:18.465Z",
+      "sourceCommit": "1a82df1c7b6239f4cefe9fb73c357b3a6529c629"
+    },
+    "@ai-sdk/provider-utils": {
+      "version": "5.0.45",
+      "publishedAt": "2026-09-18T22:30:00.470Z",
+      "sourceCommit": "08ae5ad05bc12496dd1ffcf64e34419e0831300d"
+    },
+    "@ai-sdk/react": {
+      "version": "4.0.110",
+      "publishedAt": "2026-09-18T22:29:40.207Z",
+      "sourceCommit": "08ae5ad05bc12496dd1ffcf64e34419e0831300d"
+    }
+  }
+}

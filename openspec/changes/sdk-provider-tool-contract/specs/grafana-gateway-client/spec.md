@@ -1,15 +1,15 @@
 ## MODIFIED Requirements
 
 ### Requirement: Bounded normalized unary consumption
-For a successful unary response, the client SHALL require a JSON media type, read no more than the configured unary-response byte limit, accept one complete JSON document, and explicitly map registered text, supported function/provider calls and provider results, finish reason and usage into `provider.GenerateResult`. Execution, dynamic and preliminary markers SHALL normalize absent/false to disabled and preserve true on their registered arms. Supported tool metadata SHALL be mapped independently of server DTOs. The client SHALL reject malformed required fields, null output results, unknown content or finish discriminators, negative or non-JavaScript-safe known usage, trailing JSON and oversized input. It SHALL replace server-supplied request, response and warnings: Request.Body SHALL be the locally encoded request, Response.Headers and Response.Body SHALL come from the bounded HTTP response, and Warnings SHALL be a non-nil empty slice. Server response identity and private metadata SHALL not be adopted; reviewed per-tool metadata SHALL follow sdk-provider-tools.
+For a successful unary response, the client SHALL require a JSON media type, read no more than the configured unary-response byte limit, accept one complete JSON document, and explicitly map registered text, supported function/provider calls and provider results, finish reason and usage into `provider.GenerateResult`. Execution, dynamic and preliminary markers SHALL normalize absent/false to disabled and preserve true on their registered arms. Supported tool metadata SHALL be mapped independently of server DTOs. The client SHALL reject malformed required fields, null output results, unknown content or finish discriminators, negative or non-JavaScript-safe known usage, trailing JSON and oversized input. It SHALL replace server-supplied request and response: Request.Body SHALL be the locally encoded request and Response.Headers and Response.Body SHALL come from the bounded HTTP response. Warnings SHALL preserve valid server warning fields in order using the registered streaming warning validation, defaulting to a non-nil empty slice when absent or null. Server response identity and private metadata SHALL not be adopted; reviewed per-tool metadata SHALL follow sdk-provider-tools.
 
 #### Scenario: Minimal unary success is consumed
 - **WHEN** the server returns valid ordered text content, registered finish reason and valid usage
-- **THEN** the client SHALL return those fields plus local request metadata, HTTP response headers/body and empty warnings
+- **THEN** the client SHALL return those fields plus local request metadata, HTTP response headers/body and empty warnings when none were supplied
 
 #### Scenario: Server supplies client-owned fields
 - **WHEN** a successful body includes warnings, request metadata, response ID, model ID, timestamp, headers, body or arbitrary additional provider metadata
-- **THEN** the result SHALL ignore those server values and use only the client-owned replacements while preserving reviewed tool-part metadata
+- **THEN** the result SHALL preserve valid warnings and reviewed tool-part metadata but ignore other server-owned values in favor of client-owned replacements
 
 #### Scenario: Unary response exceeds its bound
 - **WHEN** the response is one byte larger than the configured unary limit or has trailing data

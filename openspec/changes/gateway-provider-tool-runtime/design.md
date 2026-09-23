@@ -1,6 +1,6 @@
 ## Context
 
-This second WP13 slice depends on `sdk-provider-tool-contract` (#238). Source/tests at registered commit `d76eb85a9a7f2dbe44ab2f3dc858ad5cdcb5242e` define the behavior: V4 provider tool/call/result/prompt types; Gateway 4.0.52 serialization; ai 7.0.65 deferred tool results; Anthropic 4.0.38 code-execution alias/replay; OpenAI 4.0.41 item/caller continuation. Public client source does not define Vercel's private hosted-service validation policy.
+This second WP13 slice depends on `sdk-provider-tool-contract` (#238). Source/tests at registered commit `08ae5ad05bc12496dd1ffcf64e34419e0831300d` define the behavior: V4 provider 4.0.17 tool/call/result/prompt types; Gateway 4.0.87 serialization; ai 7.0.107 deferred tool results; Anthropic 4.0.58 code-execution alias/replay; OpenAI 4.0.71 item/caller continuation. Public client source does not define Vercel's private hosted-service validation policy.
 
 ## Goals / Non-Goals
 

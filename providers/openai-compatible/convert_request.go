@@ -133,8 +133,8 @@ func (m *model) buildRequest(opts provider.CallOptions, streaming bool) (map[str
 }
 
 // protectedRequestFields are the body fields a provider option cannot set.
-// Pinned against @ai-sdk/openai-compatible 3.0.30, the version
-// test/conformance pins: its getArgs spreads unknown option fields before
+// Matches the registered @ai-sdk/openai-compatible getArgs ordering
+// (test/conformance/upstream.yaml): unknown option fields are spread before
 // reasoning_effort, verbosity, messages, tools and tool_choice, and its
 // doStream writes stream and stream_options after that. Upstream's doGenerate
 // writes neither stream key, so there a caller's stream and stream_options
