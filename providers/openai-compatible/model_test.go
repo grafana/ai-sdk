@@ -739,8 +739,8 @@ func TestFileFilenamePresenceInNativeRequest(t *testing.T) {
 		want     string
 	}{
 		{name: "absent", want: "document.pdf"},
-		{name: "empty", filename: testFilename(""), want: ""},
-		{name: "named", filename: testFilename("report.pdf"), want: "report.pdf"},
+		{name: "empty", filename: new(""), want: ""},
+		{name: "named", filename: new("report.pdf"), want: "report.pdf"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			part := provider.FilePart("application/pdf", provider.Base64DataContent("JVBERg=="))
@@ -759,8 +759,6 @@ func TestFileFilenamePresenceInNativeRequest(t *testing.T) {
 		})
 	}
 }
-
-func testFilename(value string) *string { return &value }
 
 func TestDoGenerateParsesAudioAndPDFDataURLFileParts(t *testing.T) {
 	t.Parallel()

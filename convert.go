@@ -261,20 +261,6 @@ func ConvertToModelMessages(messages []UIMessage, opts ...ConvertOption) ([]prov
 	return result, nil
 }
 
-func optionalInputFilename(value string) *string {
-	if value == "" {
-		return nil
-	}
-	return &value
-}
-
-func inputFilenameValue(value *string) string {
-	if value == nil {
-		return ""
-	}
-	return *value
-}
-
 func filePartData(url string, mediaType string, reference map[string]string) (provider.DataContent, string, error) {
 	if reference != nil {
 		data, err := providerReferenceFileData(reference)

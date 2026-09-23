@@ -162,6 +162,20 @@ func (p FilePart) MarshalJSON() ([]byte, error) {
 // PartType implements Part.
 func (FilePart) PartType() string { return string(UIPartFile) }
 
+func optionalInputFilename(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
+}
+
+func inputFilenameValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
 // ReasoningFilePart carries a file generated as part of model reasoning.
 type ReasoningFilePart struct {
 	MediaType        string                    `json:"mediaType"`

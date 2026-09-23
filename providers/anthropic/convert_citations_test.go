@@ -11,8 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func testFilename(value string) *string { return &value }
-
 func citationOpts(enabled bool) provider.ProviderOptions {
 	raw, _ := json.Marshal(map[string]any{
 		"citations": map[string]any{"enabled": enabled},
@@ -26,7 +24,7 @@ func TestExtractCitationDocuments(t *testing.T) {
 			provider.Message{Role: provider.RoleUser, Content: []provider.ContentPart{
 				provider.ContentPart{Type: provider.ContentPartTypeFile,
 					MediaType:       "application/pdf",
-					Filename:        testFilename("report.pdf"),
+					Filename:        new("report.pdf"),
 					Data:            &provider.DataContent{Base64: "abc"},
 					ProviderOptions: citationOpts(true),
 				},
@@ -44,7 +42,7 @@ func TestExtractCitationDocuments(t *testing.T) {
 			provider.Message{Role: provider.RoleUser, Content: []provider.ContentPart{
 				provider.ContentPart{Type: provider.ContentPartTypeFile,
 					MediaType:       "text/plain",
-					Filename:        testFilename("notes.txt"),
+					Filename:        new("notes.txt"),
 					Data:            &provider.DataContent{Base64: "abc"},
 					ProviderOptions: citationOpts(true),
 				},
@@ -61,7 +59,7 @@ func TestExtractCitationDocuments(t *testing.T) {
 			provider.Message{Role: provider.RoleUser, Content: []provider.ContentPart{
 				provider.ContentPart{Type: provider.ContentPartTypeFile,
 					MediaType: "application/pdf",
-					Filename:  testFilename("report.pdf"),
+					Filename:  new("report.pdf"),
 					Data:      &provider.DataContent{Base64: "abc"},
 				},
 			}},
@@ -75,7 +73,7 @@ func TestExtractCitationDocuments(t *testing.T) {
 			provider.Message{Role: provider.RoleUser, Content: []provider.ContentPart{
 				provider.ContentPart{Type: provider.ContentPartTypeFile,
 					MediaType:       "application/pdf",
-					Filename:        testFilename("report.pdf"),
+					Filename:        new("report.pdf"),
 					Data:            &provider.DataContent{Base64: "abc"},
 					ProviderOptions: citationOpts(false),
 				},
@@ -90,7 +88,7 @@ func TestExtractCitationDocuments(t *testing.T) {
 			provider.Message{Role: provider.RoleUser, Content: []provider.ContentPart{
 				provider.ContentPart{Type: provider.ContentPartTypeFile,
 					MediaType:       "image/png",
-					Filename:        testFilename("photo.png"),
+					Filename:        new("photo.png"),
 					Data:            &provider.DataContent{Base64: "abc"},
 					ProviderOptions: citationOpts(true),
 				},
@@ -121,13 +119,13 @@ func TestExtractCitationDocuments(t *testing.T) {
 			provider.Message{Role: provider.RoleUser, Content: []provider.ContentPart{
 				provider.ContentPart{Type: provider.ContentPartTypeFile,
 					MediaType:       "application/pdf",
-					Filename:        testFilename("first.pdf"),
+					Filename:        new("first.pdf"),
 					Data:            &provider.DataContent{Base64: "abc"},
 					ProviderOptions: citationOpts(true),
 				},
 				provider.ContentPart{Type: provider.ContentPartTypeFile,
 					MediaType:       "text/plain",
-					Filename:        testFilename("second.txt"),
+					Filename:        new("second.txt"),
 					Data:            &provider.DataContent{Base64: "abc"},
 					ProviderOptions: citationOpts(true),
 				},
@@ -135,7 +133,7 @@ func TestExtractCitationDocuments(t *testing.T) {
 			provider.Message{Role: provider.RoleUser, Content: []provider.ContentPart{
 				provider.ContentPart{Type: provider.ContentPartTypeFile,
 					MediaType:       "application/pdf",
-					Filename:        testFilename("third.pdf"),
+					Filename:        new("third.pdf"),
 					Data:            &provider.DataContent{Base64: "abc"},
 					ProviderOptions: citationOpts(true),
 				},
@@ -164,7 +162,7 @@ func TestExtractCitationDocuments(t *testing.T) {
 			provider.Message{Role: provider.RoleUser, Content: []provider.ContentPart{
 				provider.ContentPart{Type: provider.ContentPartTypeFile,
 					MediaType:       "application/pdf",
-					Filename:        testFilename("empty.pdf"),
+					Filename:        new("empty.pdf"),
 					ProviderOptions: citationOpts(true),
 				},
 			}},
@@ -178,12 +176,12 @@ func TestExtractCitationDocuments(t *testing.T) {
 			provider.Message{Role: provider.RoleUser, Content: []provider.ContentPart{
 				provider.ContentPart{Type: provider.ContentPartTypeFile,
 					MediaType:       "application/pdf",
-					Filename:        testFilename("empty.pdf"),
+					Filename:        new("empty.pdf"),
 					ProviderOptions: citationOpts(true),
 				},
 				provider.ContentPart{Type: provider.ContentPartTypeFile,
 					MediaType:       "application/pdf",
-					Filename:        testFilename("valid.pdf"),
+					Filename:        new("valid.pdf"),
 					Data:            &provider.DataContent{Base64: "abc"},
 					ProviderOptions: citationOpts(true),
 				},

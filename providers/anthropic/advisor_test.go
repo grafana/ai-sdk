@@ -185,7 +185,7 @@ func TestBuildParams_ReferencedAnthropicFiles(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			part := provider.FilePart(tc.mediaType, provider.DataContent{Reference: json.RawMessage(`{"anthropic":"` + tc.fileID + `"}`)})
-			part.Filename = testFilename("report.pdf")
+			part.Filename = new("report.pdf")
 			part.ProviderOptions = tc.providerOptions
 			params, _, warnings, _, err := buildParams("claude-3-haiku-20240307", provider.CallOptions{
 				Prompt: []provider.Message{provider.NewUserMessage(part)},

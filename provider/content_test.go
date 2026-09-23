@@ -8,8 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func filenamePtr(value string) *string { return &value }
-
 func TestContentPart_AllTypes_RoundTrip(t *testing.T) {
 	cases := []struct {
 		name string
@@ -30,7 +28,7 @@ func TestContentPart_AllTypes_RoundTrip(t *testing.T) {
 				Type:      ContentPartTypeFile,
 				Data:      &DataContent{URL: "https://example.com/image.png"},
 				MediaType: "image/png",
-				Filename:  filenamePtr("image.png"),
+				Filename:  new("image.png"),
 			},
 		},
 		{
@@ -94,7 +92,7 @@ func TestContentPart_AllTypes_RoundTrip(t *testing.T) {
 				ID:         "src_2",
 				MediaType:  "application/pdf",
 				Title:      "Report",
-				Filename:   filenamePtr("report.pdf"),
+				Filename:   new("report.pdf"),
 			},
 		},
 		{
@@ -192,7 +190,7 @@ func TestSourcePartFilenameNormalization(t *testing.T) {
 		want     *string
 	}{
 		{name: "absent"},
-		{name: "named", filename: "report.pdf", want: filenamePtr("report.pdf")},
+		{name: "named", filename: "report.pdf", want: new("report.pdf")},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			part := SourcePart(SourceInfo{SourceType: SourceTypeDocument, Filename: tc.filename})
@@ -208,8 +206,8 @@ func TestFileContentPartFilenamePresence(t *testing.T) {
 		present  bool
 	}{
 		{name: "absent"},
-		{name: "empty", filename: filenamePtr(""), present: true},
-		{name: "named", filename: filenamePtr("report.pdf"), present: true},
+		{name: "empty", filename: new(""), present: true},
+		{name: "named", filename: new("report.pdf"), present: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			part := FilePart("application/pdf", Base64DataContent("AQID"))
