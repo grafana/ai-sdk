@@ -48,7 +48,6 @@ evidence boundary changes, not merely because the pinned versions change.
   Arbitrary application text and bounded raw responses remain caller-visible.
 - Linux FIFO deadline tests are platform-specific; socket checks on another
   platform do not establish Linux runtime behavior.
-
 - Gateway conformance preserves failing status but is independent of required
   direct conformance and publication checks. Sanitized startup failures without
   a verified cause are harness failures, not evidence of provider rejection;

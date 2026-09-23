@@ -45,10 +45,18 @@ function bedrockFrame(line: string) {
   return Buffer.concat([body, checksum]);
 }
 
+function extractEventType(line: string): string {
+  try {
+    return JSON.parse(line).type ?? "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
 export function fixtureResponse(fixture: string, provider: string): Buffer {
   const lines = fixture.split("\n").filter(Boolean);
   if (replayAdapter(provider).framing === "bedrock") return Buffer.concat(lines.map(bedrockFrame));
-  return Buffer.from(lines.map(line => `event: ${JSON.parse(line).type ?? "unknown"}\ndata: ${line}\n\n`).join(""));
+  return Buffer.from(lines.map(line => `event: ${extractEventType(line)}\ndata: ${line}\n\n`).join(""));
 }
 
 export async function startReplay(tc: TestCase, host = "127.0.0.1") {

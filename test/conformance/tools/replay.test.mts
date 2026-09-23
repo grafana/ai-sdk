@@ -30,6 +30,8 @@ test("replay isolates multi-step attempts and captures extra requests", async ()
 
 test("replay frames SSE and Bedrock while retaining unary JSON", async () => {
   assert.equal(fixtureResponse('{"type":"text"}\n', "anthropic").toString(), 'event: text\ndata: {"type":"text"}\n\n');
+  assert.equal(fixtureResponse('{"type":"text"\n', "openai").toString(), 'event: unknown\ndata: {"type":"text"\n\n');
+  assert.equal(fixtureResponse('{}\n', "openai-compatible").toString(), 'event: unknown\ndata: {}\n\n');
   const frame = fixtureResponse('{"contentBlockDelta":{"delta":{"text":"hi"}}}\n', "bedrock");
   assert.equal(frame.readUInt32BE(0), frame.length);
   assert.match(frame.toString(), /contentBlockDelta/);
