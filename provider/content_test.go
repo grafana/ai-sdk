@@ -285,6 +285,18 @@ func TestDataContentTaggedDecodingRejectsInactiveArms(t *testing.T) {
 	}
 }
 
+func TestDataContentLegacyDecodingRejectsMultipleArms(t *testing.T) {
+	for _, wire := range []string{
+		`{"url":"","text":""}`,
+		`{"bytes":"","base64":""}`,
+	} {
+		t.Run(wire, func(t *testing.T) {
+			var value DataContent
+			require.Error(t, json.Unmarshal([]byte(wire), &value))
+		})
+	}
+}
+
 func TestDataContentInvalidReferences(t *testing.T) {
 	for _, wire := range []string{`null`, `[]`, `{"openai":1}`, `{"type":"file"}`, `{"openai":null}`} {
 		t.Run(wire, func(t *testing.T) {

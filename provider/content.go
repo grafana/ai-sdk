@@ -210,6 +210,15 @@ func (d *DataContent) UnmarshalJSON(data []byte) error {
 		*d = decoded
 		return nil
 	}
+	selectedFields := 0
+	for _, key := range []string{"bytes", "base64", "url", "reference", "text"} {
+		if _, ok := fields[key]; ok {
+			selectedFields++
+		}
+	}
+	if selectedFields > 1 {
+		return errors.New("provider: DataContent has multiple data sources set")
+	}
 	type alias DataContent
 	var a alias
 	if err := json.Unmarshal(data, &a); err != nil {

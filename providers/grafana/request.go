@@ -282,13 +282,6 @@ func projectData(d *provider.DataContent) (requestObject, error) {
 	case d.IsURL():
 		return requestObject{"type": "url", "url": d.URL}, nil
 	case d.IsReference():
-		var reference map[string]string
-		if json.Unmarshal(d.Reference, &reference) != nil || reference == nil {
-			return nil, errRequest
-		}
-		if _, reserved := reference["type"]; reserved {
-			return nil, errRequest
-		}
 		return requestObject{"type": "reference", "reference": d.Reference}, nil
 	case d.IsText():
 		return requestObject{"type": "text", "text": d.Text}, nil

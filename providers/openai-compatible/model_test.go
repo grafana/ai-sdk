@@ -732,6 +732,43 @@ func TestFileSelectedEmptyDataAndUnsupportedText(t *testing.T) {
 	}
 }
 
+func TestFileSelectedEmptyURL(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		mediaType string
+		want      string
+		wantError string
+	}{
+		{name: "image", mediaType: "image/png", want: `{"type":"image_url","image_url":{"url":""}}`},
+		{name: "image wildcard", mediaType: "image/*", want: `{"type":"image_url","image_url":{"url":""}}`},
+		{name: "text", mediaType: "text/plain", want: `{"type":"text","text":""}`},
+		{name: "audio URL unsupported", mediaType: "audio/wav", wantError: "audio file URL parts are not supported"},
+		{name: "PDF URL unsupported", mediaType: "application/pdf", wantError: "PDF file URL parts are not supported"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body, _, err := (&model{modelID: "test-model"}).buildRequest(provider.CallOptions{
+				Prompt: []provider.Message{provider.NewUserMessage(provider.FilePart(tc.mediaType, provider.URLDataContent("")))},
+			}, false)
+			if tc.wantError != "" {
+				require.ErrorContains(t, err, tc.wantError)
+				return
+			}
+			require.NoError(t, err)
+			encoded, err := json.Marshal(body)
+			require.NoError(t, err)
+			var native struct {
+				Messages []struct {
+					Content []json.RawMessage `json:"content"`
+				} `json:"messages"`
+			}
+			require.NoError(t, json.Unmarshal(encoded, &native))
+			require.Len(t, native.Messages, 1)
+			require.Len(t, native.Messages[0].Content, 1)
+			assert.JSONEq(t, tc.want, string(native.Messages[0].Content[0]))
+		})
+	}
+}
+
 func TestFileFilenamePresenceInNativeRequest(t *testing.T) {
 	for _, tc := range []struct {
 		name     string

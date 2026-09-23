@@ -10,7 +10,7 @@
 - [x] 2.2 Preserve request-file, nested tool-result-file, and ordinary UI filename presence while retaining source/generated descriptive filename behavior.
 - [x] 2.3 Align Anthropic/Vertex, OpenAI Responses, OpenAI-compatible, and Bedrock conversion with provider-specific arm, media, reference, URL, filename, and warning semantics.
 - [x] 2.4 Preserve Anthropic inline text across declared media types and URL/PDF tool-result content; assert URL-only versus inline-PDF beta behavior.
-- [x] 2.5 Update the independent Go client, reusable Agent Observability/logger, examples, and cross-language UI filename scenario.
+- [x] 2.5 Update the independent Go client, reusable Agent Observability/logger, and cross-language UI filename scenario.
 
 ## 3. Publish and validate independently
 
