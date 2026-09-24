@@ -1,5 +1,3 @@
-//go:build source_observer_adoption
-
 package service
 
 import "testing"

@@ -60,10 +60,10 @@ github.com/grafana/agento11y/go-providers/anthropic v0.15.0 h1:F4BhVIVYdengedmLG
 github.com/grafana/agento11y/go-providers/anthropic v0.15.0/go.mod h1:uzje3KC0oKWrJcSqGKSAbafvoxRVQd3xibUBoSdU79w=
 github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260921194944-e7732b7aa62b h1:VkVKhDrkCEtgkUdZiJ24UBf5bTTAyfdU0GEIgNa5fKw=
 github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260921194944-e7732b7aa62b/go.mod h1:dq9czuEHdMxenlmMFrR9bfrdhBitZltt6VtZPfr2vsE=
-github.com/grafana/ai-sdk/middleware/agentobservability v0.0.0-20260915200037-0b83f45375ca h1:hVbJ+Zh7Q2PvzYS7PQZTvc+DHBZwwCx83+A+yPpjkGc=
-github.com/grafana/ai-sdk/middleware/agentobservability v0.0.0-20260915200037-0b83f45375ca/go.mod h1:apA0hv8gJpPV5ihiPiBjqaZSQhuUn87xQXKQJhH8RoY=
-github.com/grafana/ai-sdk/middleware/logger v0.0.0-20260915200037-0b83f45375ca h1:uUJDyT17xVDsewgdp4vgh6SgDd5oAAGJFuxOd1smVbs=
-github.com/grafana/ai-sdk/middleware/logger v0.0.0-20260915200037-0b83f45375ca/go.mod h1:sLGf2FSJj2y4PxHKe5xDzeiXzwwGdWbnPcRhp3RUv2k=
+github.com/grafana/ai-sdk/middleware/agentobservability v0.0.0-20260924134945-aacebf7e6dfb h1:E7XNyGIwrKKyXMDwyYUXPZzWbBosf4WjsP+CqNYPKHI=
+github.com/grafana/ai-sdk/middleware/agentobservability v0.0.0-20260924134945-aacebf7e6dfb/go.mod h1:Kt3s39F4A+BtAn0pEySs8eXScbszJ3AQLopTb9hy4Rg=
+github.com/grafana/ai-sdk/middleware/logger v0.0.0-20260924134945-aacebf7e6dfb h1:a7czBdDHUJTritJT4JnRssViL/76CB928p/9Nr6y1xo=
+github.com/grafana/ai-sdk/middleware/logger v0.0.0-20260924134945-aacebf7e6dfb/go.mod h1:NblzNubhNAvZOjEQCv4V07jeD2A2O916M4I2zXrxGnQ=
 github.com/grafana/ai-sdk/middleware/prometheus v0.0.0-20260915200037-0b83f45375ca h1:UwEK8fvOcrHGQEmYgAhfGlyr37G2cvs8P6juRCimcYk=
 github.com/grafana/ai-sdk/middleware/prometheus v0.0.0-20260915200037-0b83f45375ca/go.mod h1:d0tA6I0Uy2zLoxPR6S+1wVZE2aY5toQ8zZaWyJKazzo=
 github.com/grafana/ai-sdk/providers/anthropic v0.0.0-20260921194944-e7732b7aa62b h1:gVKAgXMeKDEP/ob+QZzeAfryZ+0B/5AXe/b/2mVoO3c=

@@ -47,9 +47,9 @@ evidence boundary changes, not merely because the pinned versions change.
   cover URL/document assembly, required empty document titles and metadata.
   Synthetic command responses do not establish live provider acceptance.
 - Reusable observers treat source as first output without adding an unsupported
-  Agent Observability capture representation. Standalone Gateway tests use its
-  published middleware pins; local workspace tests do not prove adoption of
-  newer source timing in those consumer pins.
+  Agent Observability capture representation. The standalone Gateway adoption
+  regression runs against its published middleware pins; local workspace tests
+  alone are not used as consumer-adoption evidence.
 
 - Conformance comparisons ignore ordering only between adjacent locally executed
   sibling tool outputs. Provider-executed outputs and rejected-input errors remain

@@ -23,8 +23,8 @@ generation on another backend. Source output does not enable provider tools,
 reasoning, generated files or raw output.
 
 Deterministic command and client tests establish mapping, framing and privacy,
-not live provider acceptance. The source-only timing changes in reusable logger
-and Agent Observability modules require published dependency adoption by the
-Gateway. Existing pinned middleware still passes source output without capture.
+not live provider acceptance. The Gateway pins the published logger and Agent
+Observability revisions that count source-only responses as first output while
+continuing to omit source content from capture.
 
 See [text observability](text-observability.md) for telemetry privacy.
