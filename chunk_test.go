@@ -9,6 +9,22 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestReasoningChunkMetadataPresence(t *testing.T) {
+	for _, kind := range []ChunkType{ChunkReasoningStart, ChunkReasoningDelta, ChunkReasoningEnd, ChunkReasoningFile} {
+		for _, meta := range []provider.ProviderMetadata{nil, {}} {
+			encoded, err := json.Marshal(UIMessageChunk{Type: kind, ID: "r", ProviderMetadata: meta})
+			require.NoError(t, err)
+			var fields map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal(encoded, &fields))
+			if meta == nil {
+				assert.NotContains(t, fields, "providerMetadata")
+			} else {
+				assert.JSONEq(t, `{}`, string(fields["providerMetadata"]))
+			}
+		}
+	}
+}
+
 func TestChunkTypeConstants(t *testing.T) {
 	types := []ChunkType{
 		ChunkStart, ChunkFinish, ChunkAbort, ChunkStartStep, ChunkFinishStep, ChunkMessageMetadata,

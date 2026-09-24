@@ -245,6 +245,34 @@ func TestToUIMessageStreamFinishState(t *testing.T) {
 	})
 }
 
+func TestStreamUIMessage_ConcurrentReasoningReplacement(t *testing.T) {
+	old := provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":"old","reasoningEncryptedContent":null}`)}
+	final := provider.ProviderMetadata{"anthropic": json.RawMessage(`{"signature":"final"}`)}
+	messages := collectMessages(StreamUIMessage(chunks(
+		UIMessageChunk{Type: ChunkStart, MessageID: "m"},
+		UIMessageChunk{Type: ChunkReasoningStart, ID: "same", ProviderMetadata: old},
+		UIMessageChunk{Type: ChunkReasoningStart, ID: "other", ProviderMetadata: old},
+		UIMessageChunk{Type: ChunkTextStart, ID: "same"},
+		UIMessageChunk{Type: ChunkReasoningDelta, ID: "same", Delta: "one"},
+		UIMessageChunk{Type: ChunkReasoningDelta, ID: "other", Delta: "two"},
+		UIMessageChunk{Type: ChunkReasoningFile, MediaType: "image/png", URL: "data:image/png;base64,", ProviderMetadata: final},
+		UIMessageChunk{Type: ChunkTextDelta, ID: "same", Delta: "answer"},
+		UIMessageChunk{Type: ChunkReasoningEnd, ID: "other", ProviderMetadata: provider.ProviderMetadata{}},
+		UIMessageChunk{Type: ChunkReasoningEnd, ID: "same", ProviderMetadata: final},
+		UIMessageChunk{Type: ChunkTextEnd, ID: "same"},
+		UIMessageChunk{Type: ChunkFinish},
+	)))
+	parts := messages[len(messages)-1].Parts
+	require.Len(t, parts, 4)
+	assert.Equal(t, "one", parts[0].(ReasoningPart).Text)
+	assert.Equal(t, final, parts[0].(ReasoningPart).ProviderMetadata)
+	assert.Equal(t, "two", parts[1].(ReasoningPart).Text)
+	assert.Empty(t, parts[1].(ReasoningPart).ProviderMetadata)
+	assert.Equal(t, "answer", parts[2].(TextPart).Text)
+	assert.Equal(t, "data:image/png;base64,", parts[3].(ReasoningFilePart).URL)
+	assert.Equal(t, final, parts[3].(ReasoningFilePart).ProviderMetadata)
+}
+
 func TestStreamUIMessage_ProgressiveReasoningAndNonText(t *testing.T) {
 	meta := provider.ProviderMetadata{"anthropic": json.RawMessage(`{"signature":"sig"}`)}
 	messages := collectMessages(StreamUIMessage(chunks(
