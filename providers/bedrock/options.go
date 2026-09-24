@@ -1,6 +1,7 @@
 package bedrock
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 
@@ -154,6 +155,14 @@ func (o *BedrockOptions) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &fields); err != nil {
 		return err
 	}
+	if decoded.ReasoningConfig != nil {
+		var reasoningFields map[string]json.RawMessage
+		if err := json.Unmarshal(fields["reasoningConfig"], &reasoningFields); err != nil {
+			return err
+		}
+		budget, present := reasoningFields["budgetTokens"]
+		decoded.ReasoningConfig.budgetTokensPresent = present && !bytes.Equal(bytes.TrimSpace(budget), []byte("null"))
+	}
 	for _, key := range []string{
 		"reasoningConfig",
 		"structuredOutputMode",
@@ -177,6 +186,8 @@ func (BedrockOptions) ProviderKey() string { return "amazonBedrock" }
 // ReasoningConfig configures Anthropic-on-Bedrock extended thinking and
 // reasoning effort. Mirrors upstream amazonBedrock reasoningConfig.
 type ReasoningConfig struct {
+	budgetTokensPresent bool
+
 	// Type is one of "enabled", "adaptive", or empty when only
 	// MaxReasoningEffort is set.
 	Type string `json:"type,omitempty"`

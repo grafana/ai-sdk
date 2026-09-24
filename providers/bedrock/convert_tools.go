@@ -213,34 +213,3 @@ func jsonOrEmptyObject(raw json.RawMessage) json.RawMessage {
 	}
 	return raw
 }
-
-// injectJSONResponseTool appends the synthetic `json` tool to the configured
-// tool set and forces `toolChoice = required` (any). Returns the updated
-// preparedTools so callers can chain it with [prepareTools] when a JSON
-// response format is requested and the model doesn't support native
-// structured output.
-func injectJSONResponseTool(pt preparedTools, schema json.RawMessage) preparedTools {
-	if pt.toolConfig == nil {
-		pt.toolConfig = &toolConfig{}
-	}
-	pt.toolConfig.Tools = append(pt.toolConfig.Tools, toolDefinition{
-		ToolSpec: &toolSpec{
-			Name:        jsonResponseToolName,
-			Description: "Respond with a JSON object.",
-			InputSchema: toolInputSchema{JSON: jsonOrEmptyObject(schema)},
-		},
-	})
-	if pt.additionalTools != nil {
-		choice := map[string]any{"type": "any"}
-		if previous, ok := pt.additionalTools["tool_choice"].(map[string]any); ok {
-			if disabled, exists := previous["disable_parallel_tool_use"]; exists {
-				choice["disable_parallel_tool_use"] = disabled
-			}
-		}
-		pt.additionalTools["tool_choice"] = choice
-		pt.toolConfig.ToolChoice = nil
-	} else {
-		pt.toolConfig.ToolChoice = &toolChoiceUnion{Any: &struct{}{}}
-	}
-	return pt
-}

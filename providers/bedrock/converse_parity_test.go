@@ -76,6 +76,12 @@ func TestConverseParity_OutputMode(t *testing.T) {
 	}{
 		{name: "sonnet 4.6 auto fallback", modelID: "anthropic.claude-sonnet-4-6", tool: true},
 		{name: "haiku 4.5 auto fallback", modelID: "anthropic.claude-haiku-4-5", tool: true},
+		{name: "older sonnet 4 auto fallback", modelID: "anthropic.claude-sonnet-4-20250514-v1:0", tool: true},
+		{name: "older opus 4 auto fallback", modelID: "anthropic.claude-opus-4-20250514-v1:0", tool: true},
+		{name: "older opus 4.1 native", modelID: "anthropic.claude-opus-4-1-20250805-v1:0", native: true},
+		{name: "unknown claude native", modelID: "us.anthropic.claude-future-9-20990101-v1:0", native: true},
+		{name: "legacy claude fallback", modelID: "anthropic.claude-3-haiku-20240307-v1:0", tool: true},
+		{name: "non-anthropic fallback", modelID: "mistral.mistral-large-2407-v1:0", tool: true},
 		{name: "sonnet 4.6 explicit format", modelID: "anthropic.claude-sonnet-4-6", mode: StructuredOutputModeOutputFormat, native: true},
 		{name: "sonnet 4.5 json tool", modelID: testAnthropicModel, mode: StructuredOutputModeJSONTool, tool: true},
 		{name: "opus 4.8 auto user tools", modelID: "anthropic.claude-opus-4-8", withTool: true, instruction: true},
@@ -112,6 +118,79 @@ func TestConverseParity_OutputMode(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestConverseParity_JSONToolKeepsCallerTools(t *testing.T) {
+	schema := json.RawMessage(`{"type":"object","properties":{"ok":{"type":"boolean"}}}`)
+	for _, choice := range []provider.ToolChoice{{Type: provider.ToolChoiceNone}, {Type: provider.ToolChoiceTool, ToolName: "weather"}} {
+		t.Run(string(choice.Type), func(t *testing.T) {
+			req, _, meta := mustBuildRequest(t, testAnthropicModel, provider.CallOptions{
+				Prompt:          []provider.Message{provider.UserText("hi")},
+				ProviderOptions: provider.BuildProviderOptions(BedrockOptions{StructuredOutputMode: StructuredOutputModeJSONTool}),
+				ResponseFormat:  &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Schema: schema},
+				ToolChoice:      &choice,
+				Tools: []provider.Tool{
+					{Type: provider.ToolTypeFunction, Name: "weather", InputSchema: json.RawMessage(`{"type":"object"}`)},
+					{Type: provider.ToolTypeFunction, Name: "search", InputSchema: json.RawMessage(`{"type":"object"}`)},
+				},
+			})
+			assert.True(t, meta.usesJSONResponseTool)
+			require.NotNil(t, req.ToolConfig)
+			require.Len(t, req.ToolConfig.Tools, 3)
+			assert.Equal(t, []string{"weather", "search", "json"}, []string{req.ToolConfig.Tools[0].ToolSpec.Name, req.ToolConfig.Tools[1].ToolSpec.Name, req.ToolConfig.Tools[2].ToolSpec.Name})
+			assert.Equal(t, &toolChoiceUnion{Any: &struct{}{}}, req.ToolConfig.ToolChoice)
+		})
+	}
+
+	req, _, _ := mustBuildRequest(t, testAnthropicModel, provider.CallOptions{
+		Prompt:          []provider.Message{provider.UserText("hi")},
+		ProviderOptions: provider.BuildProviderOptions(BedrockOptions{StructuredOutputMode: StructuredOutputModeJSONTool}),
+		ResponseFormat:  &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Schema: schema},
+		Tools:           []provider.Tool{{Type: provider.ToolTypeProvider, ID: "anthropic.code_execution_20250522", Name: "code_execution"}},
+	})
+	require.NotNil(t, req.ToolConfig)
+	require.Len(t, req.ToolConfig.Tools, 2)
+	assert.Nil(t, req.ToolConfig.ToolChoice)
+	assert.Equal(t, map[string]any{"type": "any"}, req.AdditionalModelRequestFields["tool_choice"])
+}
+
+func TestConverseParity_ZeroBudgetIdentifiesProfile(t *testing.T) {
+	profile := "arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/opaque"
+	req, warnings, _, err := buildRequestWithFamily(profile, "", provider.CallOptions{
+		Prompt: []provider.Message{provider.UserText("hi")},
+		ProviderOptions: provider.ProviderOptions{
+			"amazonBedrock": provider.RawProviderOption{Key: "amazonBedrock", Raw: json.RawMessage(`{"reasoningConfig":{"type":"enabled","budgetTokens":0}}`)},
+		},
+		Tools: []provider.Tool{{Type: provider.ToolTypeProvider, ID: "anthropic.code_execution_20250522", Name: "code_execution"}},
+	})
+	require.NoError(t, err)
+	assert.Empty(t, warnings)
+	assert.Equal(t, []string{"/delta/stop_sequence"}, req.AdditionalModelResponseFieldPaths)
+	assert.Equal(t, map[string]any{"type": "enabled", "budget_tokens": 0}, req.AdditionalModelRequestFields["thinking"])
+	require.NotNil(t, req.InferenceConfig)
+	require.NotNil(t, req.InferenceConfig.MaxTokens)
+	assert.Equal(t, 4096, *req.InferenceConfig.MaxTokens)
+	require.NotNil(t, req.ToolConfig)
+	require.Len(t, req.ToolConfig.Tools, 1)
+
+	options := provider.ProviderOptions{
+		"amazonBedrock": provider.RawProviderOption{Key: "amazonBedrock", Raw: json.RawMessage(`{"reasoningConfig":{"type":"enabled","budgetTokens":0}}`)},
+	}
+	req, warnings, _, err = buildRequestWithFamily(testAnthropicModel, "", provider.CallOptions{
+		Prompt: []provider.Message{provider.UserText("hi")}, Reasoning: provider.ReasoningHigh, ProviderOptions: options,
+	})
+	require.NoError(t, err)
+	assert.Empty(t, warnings)
+	assert.Equal(t, map[string]any{"type": "enabled", "budget_tokens": 0}, req.AdditionalModelRequestFields["thinking"])
+	require.NotNil(t, req.InferenceConfig)
+	require.NotNil(t, req.InferenceConfig.MaxTokens)
+	assert.Equal(t, 4096, *req.InferenceConfig.MaxTokens)
+
+	_, warnings, _, err = buildRequestWithFamily("amazon.nova-lite-v1:0", "", provider.CallOptions{
+		Prompt: []provider.Message{provider.UserText("hi")}, ProviderOptions: options,
+	})
+	require.NoError(t, err)
+	assert.Contains(t, warningFeatures(warnings), "budgetTokens")
 }
 
 func TestConverseParity_JSONToolModeWithoutResponseFormat(t *testing.T) {

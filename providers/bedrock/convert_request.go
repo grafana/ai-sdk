@@ -54,11 +54,8 @@ func buildRequestWithFamily(modelID string, family ModelFamily, opts provider.Ca
 	if mode != StructuredOutputModeAuto && mode != StructuredOutputModeOutputFormat && mode != StructuredOutputModeJSONTool {
 		return nil, warnings, meta, fmt.Errorf("bedrock: unsupported structuredOutputMode %q", mode)
 	}
-	budget := 0
-	if bo.ReasoningConfig != nil {
-		budget = bo.ReasoningConfig.BudgetTokens
-	}
-	isAnthropic := isAnthropicModelForCall(modelID, family, budget)
+	hasBudgetTokens := bo.ReasoningConfig != nil && (bo.ReasoningConfig.budgetTokensPresent || bo.ReasoningConfig.BudgetTokens != 0)
+	isAnthropic := isAnthropicModelForCall(modelID, family, hasBudgetTokens)
 	bo.ReasoningConfig = resolveReasoningConfig(modelID, isAnthropic, opts.Reasoning, bo.ReasoningConfig, &warnings)
 
 	// Convert the prompt. We must know whether tools are active to decide
@@ -76,10 +73,6 @@ func buildRequestWithFamily(modelID string, family ModelFamily, opts provider.Ca
 	if err != nil {
 		return nil, warnings, meta, err
 	}
-
-	// Tools.
-	pt := prepareTools(opts.Tools, opts.ToolChoice, modelID, isAnthropic, anthropicOpts.DisableParallelToolUse)
-	warnings = append(warnings, pt.warnings...)
 
 	// Whether extended thinking is enabled (Anthropic only). Used both for the
 	// native-structured-output gate and inference-config adjustments below.
@@ -104,7 +97,6 @@ func buildRequestWithFamily(modelID string, family ModelFamily, opts provider.Ca
 			converted.System = injectJSONInstruction(converted.System, opts.ResponseFormat.Schema)
 			meta.usesJSONInstruction = true
 		} else {
-			pt = injectJSONResponseTool(pt, opts.ResponseFormat.Schema)
 			meta.usesJSONResponseTool = true
 		}
 	} else if opts.ResponseFormat != nil && opts.ResponseFormat.Type != provider.ResponseFormatText {
@@ -114,6 +106,18 @@ func buildRequestWithFamily(modelID string, family ModelFamily, opts provider.Ca
 			Details: fmt.Sprintf("Bedrock does not support response format %q", opts.ResponseFormat.Type),
 		})
 	}
+
+	tools := opts.Tools
+	toolChoice := opts.ToolChoice
+	if meta.usesJSONResponseTool {
+		tools = append(append([]provider.Tool(nil), tools...), provider.Tool{
+			Type: provider.ToolTypeFunction, Name: jsonResponseToolName,
+			Description: "Respond with a JSON object.", InputSchema: opts.ResponseFormat.Schema,
+		})
+		toolChoice = &provider.ToolChoice{Type: provider.ToolChoiceRequired}
+	}
+	pt := prepareTools(tools, toolChoice, modelID, isAnthropic, anthropicOpts.DisableParallelToolUse)
+	warnings = append(warnings, pt.warnings...)
 
 	// Inference config (scalar sampling params).
 	inf, infWarnings := buildInferenceConfig(opts, isAnthropic, bo)
@@ -324,7 +328,7 @@ func applyAnthropicPassThroughs(addFields map[string]any, inf **inferenceConfig,
 	if bo.ReasoningConfig != nil {
 		rc := bo.ReasoningConfig
 		if !isAnth {
-			if rc.BudgetTokens > 0 {
+			if rc.BudgetTokens != 0 || rc.budgetTokensPresent {
 				warnings = append(warnings, provider.Warning{
 					Type:    provider.WarnUnsupported,
 					Feature: "budgetTokens",
@@ -338,7 +342,7 @@ func applyAnthropicPassThroughs(addFields map[string]any, inf **inferenceConfig,
 					Details: "adaptive thinking type applies only to Anthropic models on Bedrock.",
 				})
 			}
-		} else if rc.Type == "enabled" && rc.BudgetTokens > 0 {
+		} else if rc.Type == "enabled" && (rc.BudgetTokens != 0 || rc.budgetTokensPresent) {
 			addFields["thinking"] = map[string]any{"type": "enabled", "budget_tokens": rc.BudgetTokens}
 			// Increase maxTokens by budget so the model has room for thinking
 			// plus the actual reply. Upstream does the same; the user-facing
@@ -386,6 +390,7 @@ func resolveReasoningConfig(modelID string, isAnthropic bool, reasoning provider
 	}
 	if resolved != nil && resolved.Type == "disabled" {
 		resolved.BudgetTokens = 0
+		resolved.budgetTokensPresent = false
 		resolved.MaxReasoningEffort = ""
 	}
 	return resolved
@@ -410,8 +415,9 @@ func mergeReasoningConfig(derived, explicit *ReasoningConfig) *ReasoningConfig {
 	if explicit.Type != "" {
 		merged.Type = explicit.Type
 	}
-	if explicit.BudgetTokens != 0 {
+	if explicit.BudgetTokens != 0 || explicit.budgetTokensPresent {
 		merged.BudgetTokens = explicit.BudgetTokens
+		merged.budgetTokensPresent = explicit.budgetTokensPresent
 	}
 	if explicit.Display != "" {
 		merged.Display = explicit.Display

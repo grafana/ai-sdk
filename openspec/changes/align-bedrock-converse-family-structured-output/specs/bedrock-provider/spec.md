@@ -229,7 +229,7 @@ When `provider.CallOptions.Reasoning` is a custom level other than `none` and th
 
 For adaptive models, reasoning levels SHALL map to `additionalModelRequestFields.output_config.effort` as follows: `minimal` to `low`, `low` to `low`, `medium` to `medium`, `high` to `high`, and `xhigh` to `max`. A mapping that changes the level name SHALL emit a compatibility warning. For budget-based models, the provider SHALL derive a token budget from the model's maximum output tokens and increase `inferenceConfig.maxTokens` by that budget.
 
-For custom reasoning other than `none`, non-zero fields from an explicit provider `reasoningConfig` SHALL override the corresponding derived fields while unspecified fields remain derived. If the merged type is `disabled`, derived budget and effort SHALL be removed. Anthropic root reasoning `none` SHALL replace an explicit partial reasoning config with disabled thinking.
+For custom reasoning other than `none`, non-zero fields from an explicit provider `reasoningConfig` SHALL override the corresponding derived fields while unspecified fields remain derived. A raw JSON `budgetTokens` field explicitly set to zero SHALL also override a derived budget and produce `thinking.budget_tokens = 0`; the zero-valued typed Go field with `omitempty` represents omission. If the merged type is `disabled`, derived budget and effort SHALL be removed. Anthropic root reasoning `none` SHALL replace an explicit partial reasoning config with disabled thinking.
 
 #### Scenario: Adaptive-capable model receives adaptive thinking and effort
 
@@ -242,6 +242,17 @@ For custom reasoning other than `none`, non-zero fields from an explicit provide
 
 - **WHEN** root reasoning is `high` for `us.anthropic.claude-sonnet-4-5-20250929-v1:0` or `anthropic.claude-opus-4-1-20250805-v1:0`
 - **THEN** budget-token thinking uses the registered capability maxima of 64000 or 32000 respectively and the corresponding 38400 or 19200 high budget; explicit nonzero budget overrides the derived budget
+
+#### Scenario: Raw zero budget retains explicit presence
+
+- **WHEN** an application inference-profile ARN has raw `reasoningConfig = {type: "enabled", budgetTokens: 0}`
+- **THEN** the provider identifies the Anthropic family and emits `thinking = {type: "enabled", budget_tokens: 0}` with default `inferenceConfig.maxTokens = 4096`
+- **AND** a raw zero budget overrides a derived root-reasoning budget on an Anthropic model
+
+#### Scenario: Older Opus models use their capability maximum
+
+- **WHEN** root reasoning is `high` for Claude Opus 4.1 or another older Claude Opus 4.x model with a `32000` capability maximum
+- **THEN** the reasoning budget SHALL equal `19200`, derived from that maximum
 
 #### Scenario: Older model retains budget-token thinking
 
@@ -339,7 +350,7 @@ When the consumer requests JSON response format with a schema, the provider SHAL
 - **WHEN** Claude Opus 4.7 or 4.8 receives a JSON response schema, at least one user tool, and `auto` mode
 - **THEN** the provider keeps the user tools selectable, omits `output_config.format`, and injects the JSON schema instruction into the system prompt
 
-#### Scenario: Thinking does not override auto native-output rejection
+#### Scenario: Thinking does not override native-output rejection
 
 - **WHEN** thinking is enabled for a model that rejects reliable native structured output in `auto`
 - **THEN** thinking fields remain enabled while `output_config.format` stays absent
