@@ -4,45 +4,22 @@ set -euo pipefail
 repo_root=$(git rev-parse --show-toplevel)
 cd "$repo_root"
 
-gateway_module="github.com/grafana/ai-sdk/ai-gateway"
+gateway_module=github.com/grafana/ai-sdk/ai-gateway
 gateway_root=$(cd ai-gateway && pwd -P)
 readonly_flags="${GOFLAGS:+$GOFLAGS }-mod=readonly"
 
-replacement_targets_gateway() {
-  local base=$1
-  local target=$2
-  local candidate
-  case "$target" in
-    /*) candidate=$target ;;
-    ./*|../*) candidate="$base/$target" ;;
-    *) return 1 ;;
-  esac
-
-  local resolved
-  resolved=$(cd "$candidate" 2>/dev/null && pwd -P) || return 1
-  [[ "$resolved" == "$gateway_root" || "$resolved" == "$gateway_root/"* ]]
-}
-
-require_license() {
-  local path=$1
-  local marker=$2
+for license in 'LICENSE:Apache License' 'ai-gateway/LICENSE:GNU AFFERO GENERAL PUBLIC LICENSE'; do
+  path=${license%%:*}
+  marker=${license#*:}
   if [[ ! -s "$path" ]] || ! grep -Fq "$marker" "$path"; then
     echo "$path is missing the expected license text" >&2
     exit 1
   fi
-}
+done
 
-require_license LICENSE "Apache License"
-require_license ai-gateway/LICENSE "GNU AFFERO GENERAL PUBLIC LICENSE"
-
-gateway_module_json=$(GOWORK=off go mod edit -json ai-gateway/go.mod)
-actual_module=$(jq -er '.Module.Path' <<<"$gateway_module_json")
+actual_module=$(GOWORK=off go mod edit -json ai-gateway/go.mod | jq -er '.Module.Path')
 if [[ "$actual_module" != "$gateway_module" ]]; then
   echo "ai-gateway/go.mod declares $actual_module, expected $gateway_module" >&2
-  exit 1
-fi
-if [[ $(jq '(.Replace // []) | length' <<<"$gateway_module_json") -ne 0 ]]; then
-  echo "ai-gateway/go.mod must not contain replace directives" >&2
   exit 1
 fi
 if [[ -e gateway/catalog || -e gateway/providerwire ]]; then
@@ -51,58 +28,69 @@ if [[ -e gateway/catalog || -e gateway/providerwire ]]; then
 fi
 
 workspace_json=$(go work edit -json go.work)
-while IFS= read -r workspace_path; do
-  workspace_go_mod="$workspace_path/go.mod"
-  if [[ ! -f "$workspace_go_mod" ]]; then
-    echo "go.work entry $workspace_path has no go.mod" >&2
-    exit 1
-  fi
-  workspace_module=$(GOWORK=off go mod edit -json "$workspace_go_mod" | jq -er '.Module.Path')
-  if [[ "$workspace_module" == "$gateway_module" || "$workspace_module" == "$gateway_module/"* ]]; then
-    echo "ai-gateway modules must not be registered in go.work" >&2
-    exit 1
-  fi
-done < <(jq -r '.Use[]?.DiskPath' <<<"$workspace_json")
-
-if jq -e --arg module "$gateway_module" '
-  [(.Replace // [])[]?.Old.Path, (.Replace // [])[]?.New.Path]
-  | map(select(type == "string"))
-  | any(. == $module or startswith($module + "/"))
-' <<<"$workspace_json" >/dev/null; then
-  echo "go.work must not replace the AI Gateway module" >&2
+if [[ $(jq '(.Replace // []) | length' <<<"$workspace_json") -ne 0 ]]; then
+  echo "root go.work must not contain replace directives" >&2
   exit 1
 fi
-while IFS= read -r target; do
-  if replacement_targets_gateway "$repo_root" "$target"; then
-    echo "go.work must not replace a module with AI Gateway source" >&2
-    exit 1
-  fi
-done < <(jq -r '(.Replace // [])[]?.New.Path // empty' <<<"$workspace_json")
-
-GOWORK=off go run ./cmd/modulecheck boundary-modules
-GOWORK=off go run ./cmd/modulecheck boundary-sources
-
-root_graph=$(GOWORK=off GOFLAGS="$readonly_flags" go list -m all)
-while read -r module _; do
+workspace_paths=$(jq -r '.Use[]?.DiskPath' <<<"$workspace_json")
+while IFS= read -r path; do
+  [[ -n "$path" ]] || continue
+  module=$(GOWORK=off go mod edit -json "$path/go.mod" | jq -er '.Module.Path')
   if [[ "$module" == "$gateway_module" || "$module" == "$gateway_module/"* ]]; then
-    echo "the root module graph contains the AI Gateway module" >&2
+    echo "Gateway modules must not be registered in root go.work" >&2
     exit 1
   fi
-done <<<"$root_graph"
+done <<<"$workspace_paths"
 
-(
-  cd providers/grafana
-  if [[ $(GOWORK=off go mod edit -json | jq '(.Replace // []) | length') -ne 0 ]]; then
-    echo "Grafana client must not contain replace directives" >&2
+module_list=$(GOWORK=off go run ./cmd/modulecheck all-modules)
+while IFS=$'\t' read -r root module; do
+  [[ -n "$root" && -n "$module" ]] || continue
+  if [[ "$module" == "$gateway_module" || "$module" == "$gateway_module/"* ]]; then
+    continue
+  fi
+  manifest=$(GOWORK=off go mod edit -json "$root/go.mod")
+  references=$(jq -r --arg gateway "$gateway_module" '
+    [(.Require // [])[]?.Path, (.Replace // [])[]?.Old.Path, (.Replace // [])[]?.New.Path]
+    | map(select(type == "string" and (. == $gateway or startswith($gateway + "/"))))
+    | .[]
+  ' <<<"$manifest")
+  if [[ -n "$references" ]]; then
+    echo "$module requires or replaces the Gateway module: $references" >&2
     exit 1
   fi
-  client_graph=$(GOWORK=off GOFLAGS="$readonly_flags" go list -m all)
+  targets=$(jq -r '(.Replace // [])[]?.New.Path // empty' <<<"$manifest")
+  while IFS= read -r target; do
+    case "$target" in
+      /*) candidate=$target ;;
+      ./*|../*) candidate="$root/$target" ;;
+      *) continue ;;
+    esac
+    if [[ -d "$candidate" ]]; then
+      resolved=$(cd "$candidate" && pwd -P)
+      if [[ "$resolved" == "$gateway_root" || "$resolved" == "$gateway_root/"* ]]; then
+        echo "$module replaces a module with Gateway source" >&2
+        exit 1
+      fi
+    fi
+  done <<<"$targets"
+done <<<"$module_list"
+
+if imports=$(git grep -nF "$gateway_module" -- '*.go' ':(exclude)ai-gateway/**'); then
+  echo "Go source outside ai-gateway references the Gateway module: $imports" >&2
+  exit 1
+else
+  status=$?
+  (( status == 1 )) || exit "$status"
+fi
+
+for root in . providers/grafana; do
+  graph=$(cd "$root" && GOWORK=off GOFLAGS="$readonly_flags" go list -m all)
   while read -r module _; do
     if [[ "$module" == "$gateway_module" || "$module" == "$gateway_module/"* ]]; then
-      echo "the Grafana client module graph contains the AI Gateway module" >&2
+      echo "$root module graph contains the Gateway module" >&2
       exit 1
     fi
-  done <<<"$client_graph"
-)
+  done <<<"$graph"
+done
 
 echo "AI Gateway module and license boundary: OK"

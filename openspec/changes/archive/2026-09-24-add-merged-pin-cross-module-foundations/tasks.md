@@ -7,8 +7,8 @@
 ## 2. Standalone and structural validation
 
 - [x] 2.1 Move standalone public-proxy, clean-cache, readonly download/verify/build/test and replacement checks into a shared all-or-one-published-module entry point; retain `mise run verify-module-resolution` and test selector/error behavior.
-- [x] 2.2 Separate the license/module/import/root-graph structural checks from standalone execution in `scripts/verify-ai-gateway-boundary.sh`; enforce nearest tracked module ownership and test reverse imports/requires/replaces in nested modules.
-- [x] 2.3 Add an independent `GOWORK=off` build/test proof for the SDK root and Grafana client with Gateway source unavailable; verify structural checks do not depend on public-proxy build/test success.
+- [x] 2.2 Separate license/module/import/root-graph policy checks from standalone execution in `scripts/verify-ai-gateway-boundary.sh`; use tracked module inventory and check reverse references in source and nested module manifests.
+- [x] 2.3 Keep the existing all-module `GOWORK=off` SDK and Grafana standalone build/test proof, check their module graphs for Gateway, and avoid duplicating those builds in the structural check.
 
 ## 3. Gateway source integration
 

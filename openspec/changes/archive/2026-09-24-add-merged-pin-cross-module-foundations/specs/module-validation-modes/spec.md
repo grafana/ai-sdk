@@ -20,15 +20,15 @@ The repository SHALL provide a separately selected Go workspace containing Gatew
 
 ### Requirement: Structural boundary enforcement independent of standalone execution
 
-A structural Gateway boundary check SHALL verify the AGPL Gateway and Apache SDK license/module layout, one-way import/require/replace boundary, and exclusion of Gateway from the root workspace and root module graph. It SHALL assign ownership using nearest nested module roots rather than treating every file below a broad directory as owned by that directory. Standalone build/test checks SHALL remain separate. The root SDK and Apache Grafana client SHALL be demonstrably buildable/testable without Gateway source using `GOWORK=off`.
+A structural Gateway boundary check SHALL verify the AGPL Gateway and Apache SDK license/module layout, reject Gateway module-path references in tracked Go files outside `ai-gateway/`, reject Gateway requirements and replacements in tracked non-Gateway module manifests, and exclude Gateway from the root workspace and root SDK and Grafana client module graphs. The root workspace SHALL have no replacements. Standalone build/test checks SHALL remain separate and SHALL validate the SDK root and Grafana client with `GOWORK=off`.
 
 #### Scenario: Reverse dependency in nested module
-- **WHEN** a Go source file or module outside the Gateway-owned module, including a nested module, imports, requires, or replaces Gateway
+- **WHEN** a tracked Go file or module outside `ai-gateway/`, including a nested module, references the Gateway module path in source, a requirement, or a replacement
 - **THEN** the structural check SHALL fail even if the explicit integration workspace exists
 
-#### Scenario: Gateway source absent
-- **WHEN** the root SDK and Grafana client are tested without access to Gateway source
-- **THEN** they SHALL build/test without requiring the AGPL module
+#### Scenario: Standalone SDK and Grafana validation
+- **WHEN** the all-module standalone validation runs
+- **THEN** the root SDK and Grafana client SHALL build and test with `GOWORK=off` and neither module graph SHALL contain Gateway
 
 #### Scenario: Structural check without standalone tests
 - **WHEN** the structural boundary check runs

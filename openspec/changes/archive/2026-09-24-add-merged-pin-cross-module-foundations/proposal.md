@@ -19,7 +19,7 @@ Coordinated SDK, provider, middleware, and Gateway changes currently require unm
 
 ### Modified Capabilities
 
-- `providerwire-v4-http-contract`: Clarify that an explicitly selected Gateway integration workspace is permitted while the root workspace, reverse dependency boundary, license separation, and standalone SDK isolation remain mandatory.
+- `providerwire-v4-http-contract`: Clarify that an explicitly selected Gateway integration workspace is permitted while the root workspace, reverse dependency boundary, license separation, and standalone SDK validation remain mandatory.
 
 ## Impact
 

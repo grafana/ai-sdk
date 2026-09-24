@@ -135,8 +135,6 @@ mise run test-short     # skip integration/E2E tests
 mise run check          # fmt + vet + lint + docs + tests
 mise run verify-ai-gateway-boundary
                         # structural one-way Gateway dependency boundary
-mise run verify-sdk-gateway-isolation
-                        # SDK and Grafana client without Gateway source
 mise run verify-merged-pins
                         # published internal pins descend from canonical main
 mise run verify-module-resolution
@@ -492,7 +490,10 @@ workspace under `test/` for TypeScript-side harnesses.
 it uses local SDK, provider, and middleware source. Ordinary module and image
 builds still use declared versions with `GOWORK=off`. Gateway code may import
 explicitly pinned SDK modules, but no module outside `ai-gateway/` may import,
-require, or replace `github.com/grafana/ai-sdk/ai-gateway`.
+require, or replace `github.com/grafana/ai-sdk/ai-gateway`. The structural check
+rejects reverse source and module references; the standalone gate builds and tests
+published modules with `GOWORK=off`. Neither replaces license review for copied
+code or third-party dependencies.
 
 Every real internal pin in a published module must refer to a commit already
 merged into canonical `grafana/ai-sdk` `main`. Merged pseudo-versions are valid;

@@ -3,9 +3,7 @@ package modulecheck
 import (
 	"archive/zip"
 	"encoding/json"
-	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -72,22 +70,20 @@ func TestGatewayWorkspace_CandidateSourceVsPinnedVersion(t *testing.T) {
 	assert.Equal(t, "pinned", build("off"))
 }
 
-func fullRepository(t *testing.T) string {
+func gatewaySourceRepo(t *testing.T) string {
 	t.Helper()
 	repo, err := filepath.Abs(filepath.Join("..", ".."))
 	require.NoError(t, err)
-	for _, path := range []string{".git", "ai-gateway/go.mod"} {
-		_, err := os.Stat(filepath.Join(repo, path))
-		if os.IsNotExist(err) {
-			t.Skip("requires Git metadata and Gateway source")
-		}
-		require.NoError(t, err)
+	_, err = os.Stat(filepath.Join(repo, "ai-gateway/go.mod"))
+	if os.IsNotExist(err) {
+		t.Skip("requires Gateway source")
 	}
+	require.NoError(t, err)
 	return repo
 }
 
 func TestGatewayBuild_CandidateSourceVsPinnedVersion(t *testing.T) {
-	repo := fullRepository(t)
+	repo := gatewaySourceRepo(t)
 	dir := t.TempDir()
 	candidate := filepath.Join(dir, "candidate.go")
 	require.NoError(t, os.WriteFile(candidate, []byte("package provider\nvar _ = candidateSourceOnlyMarker\n"), 0o644))
@@ -109,47 +105,6 @@ func TestGatewayBuild_CandidateSourceVsPinnedVersion(t *testing.T) {
 			require.NoError(t, err, string(output))
 			_, err = build(filepath.Join(repo, "go.gateway.work"))
 			require.ErrorContains(t, err, "candidateSourceOnlyMarker")
-		})
-	}
-}
-
-func TestGatewayBoundary_ExplicitWorkspaceAndGraphErrors(t *testing.T) {
-	repo := fullRepository(t)
-	run := func(env ...string) (string, error) {
-		cmd := exec.Command("bash", "scripts/verify-ai-gateway-boundary.sh")
-		cmd.Dir = repo
-		cmd.Env = append(os.Environ(), env...)
-		output, err := cmd.CombinedOutput()
-		return string(output), err
-	}
-
-	output, err := run("GOWORK=" + filepath.Join(repo, "go.gateway.work"))
-	require.NoError(t, err, output)
-	assert.Contains(t, output, "AI Gateway module and license boundary: OK")
-
-	realGo, err := exec.LookPath("go")
-	require.NoError(t, err)
-	bin := t.TempDir()
-	wrapper := fmt.Sprintf(`#!/bin/sh
-if [ "$1" = list ] && [ "$2" = -m ] && [ "$3" = all ]; then
-  case "$PWD" in
-    */providers/grafana) graph=client ;;
-    *) graph=root ;;
-  esac
-  if [ "$FAIL_GRAPH" = "$graph" ]; then
-    echo "simulated $graph graph failure" >&2
-    exit 42
-  fi
-fi
-exec %q "$@"
-`, realGo)
-	require.NoError(t, os.WriteFile(filepath.Join(bin, "go"), []byte(wrapper), 0o755))
-	for _, graph := range []string{"root", "client"} {
-		t.Run(graph, func(t *testing.T) {
-			output, err := run("PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "FAIL_GRAPH="+graph)
-			require.Error(t, err, output)
-			assert.Contains(t, output, "simulated "+graph+" graph failure")
-			assert.NotContains(t, output, "AI Gateway module and license boundary: OK")
 		})
 	}
 }

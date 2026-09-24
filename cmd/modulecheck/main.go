@@ -35,18 +35,6 @@ func run() error {
 		for _, pin := range pins {
 			fmt.Printf("%s: %s@%s %s\n", pin.Consumer, pin.Module, pin.Version, pin.Commit)
 		}
-	case "boundary-sources", "boundary-modules":
-		if len(os.Args) != 2 {
-			return fmt.Errorf("usage: modulecheck %s", os.Args[1])
-		}
-		modules, err := modulecheck.Discover(repo)
-		if err != nil {
-			return err
-		}
-		if os.Args[1] == "boundary-sources" {
-			return modulecheck.CheckSourceImports(repo, modules)
-		}
-		return modulecheck.CheckModuleReferences(repo, modules)
 	case "modules", "all-modules":
 		if len(os.Args) > 3 || (os.Args[1] == "all-modules" && len(os.Args) != 2) {
 			return fmt.Errorf("usage: modulecheck modules [module-root-or-path] | all-modules")
@@ -70,7 +58,7 @@ func run() error {
 			fmt.Printf("%s\t%s\n", module.Root, module.Path)
 		}
 	default:
-		return fmt.Errorf("usage: modulecheck pins | modules [module-root-or-path] | all-modules | boundary-sources")
+		return fmt.Errorf("usage: modulecheck pins | modules [module-root-or-path] | all-modules")
 	}
 	return nil
 }

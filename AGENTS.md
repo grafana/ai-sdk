@@ -189,7 +189,6 @@ mise run verify-module-resolution   # all published modules, public proxy, GOWOR
 MODULE=providers/openai mise run verify-published-module
 mise run verify-merged-pins        # real internal pins must descend from canonical main
 mise run verify-ai-gateway-boundary
-mise run verify-sdk-gateway-isolation
 mise run test-ai-gateway-source    # explicit go.gateway.work candidate-source mode
 mise run test-ai-gateway-source-integration
 

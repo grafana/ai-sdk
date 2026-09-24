@@ -172,10 +172,6 @@ run = "GOWORK=off go run ./cmd/modulecheck pins"
 description = "Verify the one-way AI Gateway module and license boundary"
 run = "bash scripts/verify-ai-gateway-boundary.sh"
 
-[tasks.verify-sdk-gateway-isolation]
-description = "Build and test the SDK and Grafana client without Gateway source"
-run = "bash scripts/verify-sdk-gateway-isolation.sh"
-
 [tasks.lint]
 description = "Run golangci-lint across all modules"
 run = """

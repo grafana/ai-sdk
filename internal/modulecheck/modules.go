@@ -94,17 +94,3 @@ func Select(modules []Module, selection string) ([]Module, error) {
 	}
 	return nil, fmt.Errorf("unknown or local-only published module %q", selection)
 }
-
-func Owner(modules []Module, path string) (Module, bool) {
-	path = filepath.ToSlash(filepath.Clean(path))
-	var owner Module
-	found := false
-	for _, module := range modules {
-		if module.Root == "." || path == module.Root || strings.HasPrefix(path, module.Root+"/") {
-			if !found || len(module.Root) > len(owner.Root) {
-				owner, found = module, true
-			}
-		}
-	}
-	return owner, found
-}

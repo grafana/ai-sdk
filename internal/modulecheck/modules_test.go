@@ -57,63 +57,6 @@ func TestDiscover_ClassifiesTrackedModules(t *testing.T) {
 	all, err := Select(modules, "")
 	require.NoError(t, err)
 	assert.Len(t, all, 5)
-	owner, ok := Owner(modules, "ai-gateway/extra/file.go")
-	require.True(t, ok)
-	assert.Equal(t, "ai-gateway/extra", owner.Root)
-	owner, ok = Owner(modules, "provider/language_model.go")
-	require.True(t, ok)
-	assert.Equal(t, ".", owner.Root)
-}
-
-func TestCheckSourceImports_NearestModuleBoundary(t *testing.T) {
-	repo := testRepo(t, ".", "ai-gateway", "ai-gateway/extra", "providers/grafana")
-	gatewayFile := filepath.Join(repo, "ai-gateway/gateway.go")
-	require.NoError(t, os.WriteFile(gatewayFile, []byte("package gateway\nimport _ \""+modulePrefix+"/ai-gateway/catalog\"\n"), 0o644))
-	cmd := exec.Command("git", "add", ".")
-	cmd.Dir = repo
-	output, err := cmd.CombinedOutput()
-	require.NoError(t, err, string(output))
-	modules, err := Discover(repo)
-	require.NoError(t, err)
-	require.NoError(t, CheckSourceImports(repo, modules))
-	for _, path := range []string{"providers/grafana/reverse.go", "ai-gateway/extra/reverse.go"} {
-		t.Run(path, func(t *testing.T) {
-			file := filepath.Join(repo, path)
-			require.NoError(t, os.WriteFile(file, []byte("package check\nimport _ \""+modulePrefix+"/ai-gateway/catalog\"\n"), 0o644))
-			cmd := exec.Command("git", "add", path)
-			cmd.Dir = repo
-			output, err := cmd.CombinedOutput()
-			require.NoError(t, err, string(output))
-			err = CheckSourceImports(repo, modules)
-			require.ErrorContains(t, err, "imports the AI Gateway module")
-			require.NoError(t, os.Remove(file))
-			cmd = exec.Command("git", "rm", "--cached", path)
-			cmd.Dir = repo
-			output, err = cmd.CombinedOutput()
-			require.NoError(t, err, string(output))
-		})
-	}
-}
-
-func TestCheckModuleReferences_NestedModule(t *testing.T) {
-	repo := testRepo(t, ".", "ai-gateway", "ai-gateway/extra")
-	modules, err := Discover(repo)
-	require.NoError(t, err)
-	require.NoError(t, CheckModuleReferences(repo, modules))
-	file := filepath.Join(repo, "ai-gateway/extra/go.mod")
-	for _, tc := range []struct {
-		name string
-		text string
-	}{
-		{"require", "require " + modulePrefix + "/ai-gateway v0.0.0\n"},
-		{"module replacement", "replace " + modulePrefix + "/ai-gateway => example.com/other v1.0.0\n"},
-		{"source replacement", "replace example.com/other => ../\n"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			require.NoError(t, os.WriteFile(file, []byte("module "+modulePrefix+"/ai-gateway/extra\n\ngo 1.26.3\n"+tc.text), 0o644))
-			require.ErrorContains(t, CheckModuleReferences(repo, modules), "AI Gateway")
-		})
-	}
 }
 
 func TestDiscover_RejectsMisdeclaredModule(t *testing.T) {
