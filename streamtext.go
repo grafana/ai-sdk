@@ -28,6 +28,7 @@ var ErrNoOutputGenerated = errors.New("aisdk: no output generated")
 type StreamTextResult struct {
 	fullStream chan TextStreamPart
 	done       chan struct{}
+	tools      map[string]Tool
 	consumed   atomic.Bool
 	mu         sync.Mutex
 
@@ -64,6 +65,7 @@ func streamTextWithConfig(ctx context.Context, model provider.LanguageModel, cfg
 	result := &StreamTextResult{
 		fullStream: make(chan TextStreamPart, defaultStreamBuffer),
 		done:       make(chan struct{}),
+		tools:      cfg.tools,
 	}
 
 	result.partialOutputStream = newLosslessStream[json.RawMessage]()
@@ -169,6 +171,7 @@ func (r *StreamTextResult) Stream() <-chan TextStreamPart {
 // events suitable for SSE output to @ai-sdk/react hooks.
 func (r *StreamTextResult) ToUIMessageStream(opts ...UIMessageStreamOption) <-chan UIMessageChunk {
 	cfg := buildUIMessageStreamConfig(opts)
+	cfg.tools = r.tools
 	out := make(chan UIMessageChunk, defaultStreamBuffer)
 	go func() {
 		defer close(out)
@@ -326,8 +329,8 @@ func translateToChunksWithMetadata(part TextStreamPart, cfg uiMessageStreamConfi
 		return []UIMessageChunk{{Type: ChunkReasoningEnd, ID: p.ID, ProviderMetadata: p.ProviderMetadata}}
 	case StreamToolInputStart:
 		dynamic := p.Dynamic
-		if p.useUIDynamic {
-			dynamic = p.uiDynamic
+		if cfg.tools != nil {
+			dynamic = isDynamic(p.ToolName, dynamic, cfg.tools)
 		}
 		return []UIMessageChunk{{Type: ChunkToolInputStart, ToolCallID: p.ID, ToolName: p.ToolName, ProviderExecuted: p.ProviderExecuted, Dynamic: dynamic, Title: p.Title, ProviderMetadata: p.ProviderMetadata, ToolMetadata: toolMetadataFromProviderMetadata(p.ProviderMetadata)}}
 	case StreamToolInputDelta:
@@ -337,8 +340,8 @@ func translateToChunksWithMetadata(part TextStreamPart, cfg uiMessageStreamConfi
 	case StreamToolCall:
 		if p.Invalid {
 			dynamic := p.Dynamic
-			if p.useUIDynamic {
-				dynamic = p.uiDynamic
+			if cfg.tools != nil {
+				dynamic = isDynamic(p.ToolName, dynamic, cfg.tools)
 			}
 			return []UIMessageChunk{{Type: ChunkToolInputError, ToolCallID: p.ToolCallID, ToolName: p.ToolName, Input: p.Input, ErrorText: errorText(p.Error, cfg), ProviderExecuted: p.ProviderExecuted, Dynamic: dynamic, Title: p.Title, ProviderMetadata: p.ProviderMetadata, ToolMetadata: toolMetadataFromProviderMetadata(p.ProviderMetadata)}}
 		}
@@ -358,8 +361,8 @@ func translateToChunksWithMetadata(part TextStreamPart, cfg uiMessageStreamConfi
 			errText = p.Error.Error()
 		}
 		dynamic := p.Dynamic
-		if p.useUIDynamic {
-			dynamic = p.uiDynamic
+		if cfg.tools != nil {
+			dynamic = isDynamic(p.ToolName, dynamic, cfg.tools)
 		}
 		return []UIMessageChunk{{Type: ChunkToolOutputError, ToolCallID: p.ToolCallID, ErrorText: errText, ProviderExecuted: p.ProviderExecuted, Dynamic: dynamic, ProviderMetadata: p.ProviderMetadata}}
 	case StreamSource:
@@ -1053,7 +1056,6 @@ loop:
 			tsp := StreamToolInputStart{
 				ID: part.ID, ToolName: part.ToolName,
 				ProviderExecuted: part.ProviderExecuted, Dynamic: isInputStartDynamic(part.ToolName, part.Dynamic, cfg.tools),
-				uiDynamic: isDynamic(part.ToolName, part.Dynamic, cfg.tools), useUIDynamic: true,
 				Title: part.Title, ProviderMetadata: part.ProviderMetadata,
 			}
 			r.emit(tsp)
@@ -1514,7 +1516,6 @@ func (r *StreamTextResult) rejectToolCall(
 		title = toolTitleByID[part.ToolCallID]
 	}
 	dynamicTrue := true
-	uiDynamic := isDynamic(part.ToolName, &dynamicTrue, cfg.tools)
 
 	tc := ToolCall{
 		ToolCallID:       part.ToolCallID,
@@ -1538,8 +1539,6 @@ func (r *StreamTextResult) rejectToolCall(
 		Dynamic:          &dynamicTrue,
 		Title:            title,
 		ProviderMetadata: part.ProviderMetadata,
-		uiDynamic:        uiDynamic,
-		useUIDynamic:     true,
 	}
 	r.emit(toolCallPart)
 	r.callOnChunk(cfg, toolCallPart)
@@ -1562,14 +1561,12 @@ func (r *StreamTextResult) rejectToolCall(
 	})
 
 	toolErrorPart := StreamToolError{
-		ToolCallID:   part.ToolCallID,
-		ToolName:     part.ToolName,
-		Input:        input,
-		Error:        err,
-		Dynamic:      &dynamicTrue,
-		Title:        title,
-		uiDynamic:    uiDynamic,
-		useUIDynamic: true,
+		ToolCallID: part.ToolCallID,
+		ToolName:   part.ToolName,
+		Input:      input,
+		Error:      err,
+		Dynamic:    &dynamicTrue,
+		Title:      title,
 	}
 	r.emit(toolErrorPart)
 	r.callOnChunk(cfg, toolErrorPart)
