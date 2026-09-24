@@ -37,6 +37,20 @@ evidence boundary changes, not merely because the pinned versions change.
 
 ## Evidence boundaries
 
+- Gateway sources have explicit URL/document DTO and schema checks, pinned-client
+  differential and synthetic native OpenAI command tests. Source IDs are
+  response-local; only bounded numeric citation positions are retained under
+  `citation`. Native OpenAI `file_path` display identity is replaced by
+  `Document` with no filename. These are intentional Gateway privacy adaptations,
+  not native-provider parity. Unknown metadata and cited text are omitted.
+- Provider-independent `ui/sources` snapshots and schema-parsed frontend tests
+  cover URL/document assembly, required empty document titles and metadata.
+  Synthetic command responses do not establish live provider acceptance.
+- Reusable observers treat source as first output without adding an unsupported
+  Agent Observability capture representation. Standalone Gateway tests use its
+  published middleware pins; local workspace tests do not prove adoption of
+  newer source timing in those consumer pins.
+
 - Conformance comparisons ignore ordering only between adjacent locally executed
   sibling tool outputs. Provider-executed outputs and rejected-input errors remain
   ordered; the comparator deviation is registered in `upstream.yaml`.

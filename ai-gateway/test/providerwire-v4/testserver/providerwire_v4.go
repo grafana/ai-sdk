@@ -56,6 +56,13 @@ func (m *providerWireV4Model) DoStream(ctx context.Context, options provider.Cal
 	one := 1
 	two := 2
 	switch m.kind {
+	case "sources":
+		parts := []provider.StreamPart{}
+		for _, source := range scenarioSources() {
+			parts = append(parts, provider.StreamPart{Type: provider.PartSource, Source: &provider.SourceInfo{SourceType: source.SourceType, ID: source.ID, URL: source.URL, Title: source.Title, MediaType: source.MediaType, Filename: source.Filename, ProviderMetadata: source.ProviderMetadata}})
+		}
+		parts = append(parts, provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: &provider.Usage{}})
+		return &provider.StreamResult{Stream: scenarioStream(parts...)}, nil
 	case "stream-tool-arguments":
 		var parts []provider.StreamPart
 		for i, input := range []string{"", `{"service":`, "\"\\\n\t<>&\u2028\u2029"} {
@@ -149,6 +156,8 @@ func (m *providerWireV4Model) DoStream(ctx context.Context, options provider.Cal
 
 func (m *providerWireV4Model) DoGenerate(ctx context.Context, options provider.CallOptions) (*provider.GenerateResult, error) {
 	switch m.kind {
+	case "sources":
+		return &provider.GenerateResult{Content: scenarioSources(), FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}, nil
 	case "unary-tools", "unary-tools-provider-executed", "unary-tools-dynamic":
 		m.stats.recordSuccess(options)
 		for _, message := range options.Prompt {
@@ -203,7 +212,7 @@ type providerWireV4Scenario struct {
 func newProviderWireV4Scenario() (*providerWireV4Scenario, error) {
 	stats := &providerWireV4Stats{}
 	entries := make([]catalog.StaticEntry, 0, 5)
-	for _, id := range []string{"success", "blocking", "stream-errors", "stream-timeout", "stream-blocking", "unary-tools", "unary-tools-provider-executed", "unary-tools-dynamic", "stream-tools", "stream-tool-results", "stream-tool-arguments"} {
+	for _, id := range []string{"sources", "success", "blocking", "stream-errors", "stream-timeout", "stream-blocking", "unary-tools", "unary-tools-provider-executed", "unary-tools-dynamic", "stream-tools", "stream-tool-results", "stream-tool-arguments"} {
 		entries = append(entries, catalog.StaticEntry{
 			Info:  catalog.ModelInfo{ID: id},
 			Model: &providerWireV4Model{kind: id, stats: stats},
@@ -238,6 +247,14 @@ func scenarioStream(parts ...provider.StreamPart) <-chan provider.StreamPart {
 	}
 	close(stream)
 	return stream
+}
+
+func scenarioSources() []provider.GenerateContentPart {
+	return []provider.GenerateContentPart{
+		{Type: provider.ContentSource, SourceType: provider.SourceTypeURL, ID: "backend-secret", URL: "https://example.com", Title: "URL"},
+		{Type: provider.ContentSource, SourceType: provider.SourceTypeDocument, ID: "backend-secret", MediaType: "text/plain", Title: "", ProviderMetadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"startPageNumber":1,"endPageNumber":2,"citedText":"private"}`)}},
+		{Type: provider.ContentSource, SourceType: provider.SourceTypeDocument, ID: "file-native", MediaType: "application/octet-stream", Title: "file-private", Filename: "file-private", ProviderMetadata: provider.ProviderMetadata{"openai": json.RawMessage(`{"type":"file_path","fileId":"file-private","index":0}`)}},
+	}
 }
 
 func (s *providerWireV4Scenario) register(mux *http.ServeMux) {

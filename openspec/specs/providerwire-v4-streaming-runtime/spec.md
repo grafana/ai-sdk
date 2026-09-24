@@ -166,7 +166,7 @@ Before a valid finish is written, an unsupported stream family, lifecycle violat
 - **THEN** the handler SHALL attempt one terminal internal error and SHALL not emit a finish or `[DONE]`
 
 #### Scenario: Unsupported stream family appears
-- **WHEN** the text runtime receives reasoning, provider-executed/dynamic/preliminary tool behavior, file, source, custom, raw, approval, or another unsupported part
+- **WHEN** the text runtime receives reasoning, provider-executed/dynamic/preliminary tool behavior, file, custom, raw, approval, or another unsupported part
 - **THEN** it SHALL emit at most one terminal internal error rather than serializing the provider-domain part
 
 #### Scenario: Provider errors precede an adapter failure

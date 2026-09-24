@@ -9,6 +9,8 @@
       "type": "array",
       "items": {
         "oneOf": [
+          { "$ref": "#/$defs/urlSource" },
+          { "$ref": "#/$defs/documentSource" },
           {
             "type": "object",
             "required": ["type", "text"],
@@ -55,6 +57,111 @@
   },
   "additionalProperties": false,
   "$defs": {
+    "sourceMetadata": {
+      "type": "object",
+      "properties": {
+        "citation": {
+          "type": "object",
+          "properties": {
+            "index": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000000
+            },
+            "startPageNumber": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000000
+            },
+            "endPageNumber": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000000
+            },
+            "startCharIndex": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000000
+            },
+            "endCharIndex": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000000
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "urlSource": {
+      "type": "object",
+      "required": [
+        "type",
+        "sourceType",
+        "id",
+        "url"
+      ],
+      "properties": {
+        "type": {
+          "const": "source"
+        },
+        "sourceType": {
+          "const": "url"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "url": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "providerMetadata": {
+          "$ref": "#/$defs/sourceMetadata"
+        }
+      },
+      "additionalProperties": false
+    },
+    "documentSource": {
+      "type": "object",
+      "required": [
+        "type",
+        "sourceType",
+        "id",
+        "mediaType",
+        "title"
+      ],
+      "properties": {
+        "type": {
+          "const": "source"
+        },
+        "sourceType": {
+          "const": "document"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mediaType": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "filename": {
+          "type": "string",
+          "minLength": 1
+        },
+        "providerMetadata": {
+          "$ref": "#/$defs/sourceMetadata"
+        }
+      },
+      "additionalProperties": false
+    },
     "tokenCount": {
       "type": "integer",
       "minimum": 0,

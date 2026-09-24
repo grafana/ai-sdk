@@ -110,6 +110,14 @@ finalizer returns.
 
 ## Work-package boundaries
 
+URL and document source output is passed through unchanged by observers.
+Metadata-only logs, metrics and Agent Observability omit source identifiers,
+URLs, titles, filenames and metadata. Agent Observability has no source-content
+representation, so sources are not converted into fabricated text or media.
+Updated reusable observers count sources as first output; the Gateway must adopt
+their published module revisions before source-only timing is available there.
+See the [source guide](sources.md) for the public response privacy policy.
+
 - WP6 image capacity/distribution does not use this text-model chain.
 - WP7's Go client and ProviderWire contract are unchanged; correlation is
   server-internal and is neither accepted from nor returned to clients.

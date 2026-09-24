@@ -1,9 +1,7 @@
 ## Purpose
 
 Define the production ProviderWire V4 unary text and client-executed function-tool runtime and the observable contract proven against the registered Gateway client.
-
 ## Requirements
-
 ### Requirement: Constructed language-model handler
 
 The `ai-gateway/providerwire/v4` package SHALL provide one HTTP handler for relative `POST /language-model` unary and streaming requests. Construction SHALL require a non-nil `catalog.ModelResolver` and positive limits for request bytes, unary response bytes, provider stream-part count, complete SSE frame bytes, total model duration, stream idle duration, and bounded post-cancellation drain duration. Request and unary byte limits and the stream-part limit SHALL support safe `limit+1` arithmetic, and the frame limit SHALL contain the fixed start and stream-error frames.
@@ -114,19 +112,19 @@ Every runtime error response SHALL be selected from precomputed documents with f
 
 ### Requirement: Minimal unary success response
 
-A successful unary response SHALL contain only ordered supported text and function-tool-call `content`, `finishReason`, and `usage`. The handler SHALL accept only registered finish reasons and non-negative usage counts no greater than JavaScript's maximum safe integer. Provider warnings, request data, response IDs, timestamps, model IDs, provider identity, headers, bodies, raw usage, provider metadata, and content metadata SHALL be omitted. The registered Gateway client owns unary `warnings`, `request`, and `response`; raw response-body details outside this minimal contract are not guaranteed.
+A successful unary response SHALL contain only ordered supported text, function-tool-call and source `content`, `finishReason`, and `usage`. The handler SHALL accept only registered finish reasons and non-negative usage counts no greater than JavaScript's maximum safe integer. Provider warnings, request data, response IDs, timestamps, model IDs, provider identity, headers, bodies, raw usage, provider metadata, and content metadata SHALL be omitted except the closed public source metadata defined by gateway-sources. The registered Gateway client owns unary `warnings`, `request`, and `response`; raw response-body details outside this minimal contract are not guaranteed.
 
 #### Scenario: Valid text result
 - **WHEN** the model returns text, a registered finish reason, and valid usage
 - **THEN** the handler SHALL preserve those values and emit no other top-level members
 
 #### Scenario: Unsupported provider result
-- **WHEN** the model returns content outside the supported text/function-tool-call subset, an unknown finish reason, invalid usage, `nil, nil`, or panics
+- **WHEN** the model returns content outside the supported text/function-tool-call/source subset, an unknown finish reason, invalid usage, `nil, nil`, or panics
 - **THEN** the handler SHALL return the fixed internal-error document before committing HTTP 200
 
 #### Scenario: Provider-private fields
 - **WHEN** the model result contains warnings, response metadata, raw usage, backend identity, or provider metadata
-- **THEN** none of those values SHALL appear in the unary response document
+- **THEN** none of those values SHALL appear in the unary response document except the explicitly normalized public source metadata
 
 ### Requirement: Bounded preflight and standard success encoding
 

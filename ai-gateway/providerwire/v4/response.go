@@ -69,11 +69,18 @@ func mapUnarySuccess(result *provider.GenerateResult, limit int64) (unarySuccess
 			Raw:     result.FinishReason.Raw,
 		},
 	}
+	ids := make(sourceIDs)
 	for _, part := range result.Content {
 		if part.ProviderExecuted || (part.Dynamic != nil && *part.Dynamic) || (part.Preliminary != nil && *part.Preliminary) {
 			return unarySuccess{}, errInvalidUnarySuccess
 		}
 		switch part.Type {
+		case provider.ContentSource:
+			source, err := mapSource(unarySource(part), ids, limit)
+			if err != nil {
+				return unarySuccess{}, err
+			}
+			mapped.Content = append(mapped.Content, source)
 		case provider.ContentText:
 			if !utf8.ValidString(part.Text) {
 				return unarySuccess{}, errInvalidUnarySuccess
@@ -121,7 +128,13 @@ func unarySuccessPreflight(result *provider.GenerateResult, limit int64) bool {
 	}
 	remaining := limit
 	for _, part := range result.Content {
-		for _, length := range []int{len(part.Text), len(part.ToolCallID), len(part.ToolName), len(part.Input)} {
+		if part.Type == provider.ContentSource && !sourcePreflight(unarySource(part), remaining) {
+			return false
+		}
+		if part.Type == provider.ContentSource {
+			remaining -= int64(len(part.ProviderMetadata["anthropic"]) + len(part.ProviderMetadata["openai"]))
+		}
+		for _, length := range []int{len(part.Text), len(part.Title), len(part.ID), len(part.URL), len(part.MediaType), len(part.Filename), len(part.ToolCallID), len(part.ToolName), len(part.Input)} {
 			if int64(length) > remaining {
 				return false
 			}
