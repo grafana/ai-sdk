@@ -87,6 +87,13 @@ The command requires an explicit target. Reapplication is idempotent and preserv
 subsequent gap metadata and an already recorded verification date. A changed or mixed
 baseline/pin set is rejected for reassessment rather than silently repaired.
 
+When the Bedrock/Anthropic tool baseline changes, update the pinned versions in
+`scripts/generate-bedrock-provider-tool-schemas.mjs`, then run
+`node scripts/generate-bedrock-provider-tool-schemas.mjs`. The script extracts
+canonical provider-tool JSON schemas from the matching Anthropic package into the
+Go Converse catalog, omitting tools Bedrock filters out. Use `--check` to verify
+the committed file without rewriting it; this is not a live provider recording.
+
 Applying a new target clears `upstream.verifiedAt`; selection is not verification.
 The final metadata check deliberately remains incomplete until evidence is reviewed
 and the actual verification date is recorded. The Gateway witness can likewise fail

@@ -355,7 +355,7 @@ func TestConverseParity_UnsupportedProviderToolsFiltered(t *testing.T) {
 }
 
 func TestConverseParity_ProviderToolCatalog(t *testing.T) {
-	require.Len(t, anthropicProviderToolSchemas, 22)
+	require.Len(t, anthropicProviderToolSchemas, 19)
 	require.Len(t, anthropicProviderToolBetas, 19)
 	for id, beta := range anthropicProviderToolBetas {
 		t.Run(id, func(t *testing.T) {
@@ -375,6 +375,7 @@ func TestConverseParity_ProviderToolCatalog(t *testing.T) {
 	}
 	for _, id := range []string{"anthropic.web_search_20250305", "anthropic.web_search_20260318", "anthropic.web_fetch_20260318"} {
 		t.Run(id+" filtered", func(t *testing.T) {
+			assert.NotContains(t, anthropicProviderToolSchemas, id)
 			pt := prepareTools([]provider.Tool{{Type: provider.ToolTypeProvider, ID: id, Name: "web"}}, nil, testAnthropicModel, true, nil)
 			assert.Nil(t, pt.toolConfig)
 			require.Len(t, pt.warnings, 1)

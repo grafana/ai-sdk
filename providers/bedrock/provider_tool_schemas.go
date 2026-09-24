@@ -922,46 +922,7 @@ var anthropicProviderToolSchemas = map[string]json.RawMessage{
   ],
   "additionalProperties": false
 }`),
-	"anthropic.web_fetch_20260318": json.RawMessage(`{
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "type": "object",
-  "properties": {
-    "url": {
-      "type": "string"
-    }
-  },
-  "required": [
-    "url"
-  ],
-  "additionalProperties": false
-}`),
-	"anthropic.web_search_20250305": json.RawMessage(`{
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "type": "object",
-  "properties": {
-    "query": {
-      "type": "string"
-    }
-  },
-  "required": [
-    "query"
-  ],
-  "additionalProperties": false
-}`),
 	"anthropic.web_search_20260209": json.RawMessage(`{
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "type": "object",
-  "properties": {
-    "query": {
-      "type": "string"
-    }
-  },
-  "required": [
-    "query"
-  ],
-  "additionalProperties": false
-}`),
-	"anthropic.web_search_20260318": json.RawMessage(`{
   "$schema": "http://json-schema.org/draft-07/schema#",
   "type": "object",
   "properties": {
