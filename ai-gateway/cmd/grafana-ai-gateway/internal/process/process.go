@@ -141,7 +141,7 @@ func Run(ctx context.Context, args []string, lookupEnv config.LookupEnv, listen 
 		agentRuntime.Close()
 		return err
 	}
-	chatHandler, err := chatcompletions.New(chatcompletions.Config{Resolver: modelCatalog, Policies: service.NativePolicies(file), Limits: chatcompletions.Limits{
+	chatHandler, err := chatcompletions.New(chatcompletions.Config{Resolver: modelCatalog, Policies: service.ChatCompletionsPolicies(file), Limits: chatcompletions.Limits{
 		RequestBytes: settings.ProviderWire.RequestBytes, ResponseBytes: settings.ProviderWire.UnaryResponseBytes, FrameBytes: settings.ProviderWire.StreamFrameBytes, StreamParts: settings.ProviderWire.StreamParts,
 		ModelDuration: settings.ProviderWire.ModelDuration, IdleDuration: settings.ProviderWire.StreamIdleDuration, DrainDuration: settings.ProviderWire.StreamDrainDuration,
 	}})

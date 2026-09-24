@@ -10,14 +10,14 @@ import (
 	"github.com/grafana/ai-sdk/provider"
 )
 
-type nativeError struct {
+type apiError struct {
 	Message string `json:"message"`
 	Type    string `json:"type"`
 	Param   any    `json:"param"`
 	Code    string `json:"code"`
 }
 type errorEnvelope struct {
-	Error nativeError `json:"error"`
+	Error apiError `json:"error"`
 }
 
 func errorBody(status int) []byte {
@@ -46,11 +46,11 @@ func errorBody(status int) []byte {
 	case 504:
 		code, message = "timeout", "request timed out"
 	}
-	b, _ := json.Marshal(errorEnvelope{nativeError{message, typ, nil, code}})
+	b, _ := json.Marshal(errorEnvelope{apiError{message, typ, nil, code}})
 	return b
 }
 
-// WriteError writes a fixed native envelope for host-owned route/auth failures.
+// WriteError writes a fixed Chat Completions envelope for host-owned route/auth failures.
 func WriteError(w http.ResponseWriter, status int) {
 	switch status {
 	case 400, 401, 403, 404, 405, 413, 415, 429, 500, 502, 503, 504:

@@ -90,8 +90,8 @@ func newRouter(deps RouterDependencies, api, operational bool) http.Handler {
 		routes["/api/v1/aisdk/config"] = route{http.MethodGet, protectedDiscovery.ServeHTTP}
 		routes["/api/v1/aisdk/language-model"] = route{http.MethodPost, protectedLanguageModel.ServeHTTP}
 		if deps.ChatCompletions != nil {
-			protectedNative := gatewayauth.Middleware(gatewayauth.NativeAuthenticator(deps.Authenticator, deps.AuthSource), func(w http.ResponseWriter) { chatcompletions.WriteError(w, 401) }, observe, deps.ChatCompletions)
-			routes[chatcompletions.Path] = route{http.MethodPost, protectedNative.ServeHTTP}
+			protectedAdapter := gatewayauth.Middleware(gatewayauth.AdapterAuthenticator(deps.Authenticator, deps.AuthSource), func(w http.ResponseWriter) { chatcompletions.WriteError(w, 401) }, observe, deps.ChatCompletions)
+			routes[chatcompletions.Path] = route{http.MethodPost, protectedAdapter.ServeHTTP}
 		}
 	}
 

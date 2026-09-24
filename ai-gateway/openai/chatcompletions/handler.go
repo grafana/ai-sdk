@@ -14,7 +14,7 @@ import (
 	"github.com/grafana/ai-sdk/provider"
 )
 
-// Path is the sole native endpoint; authentication is supplied by the host.
+// Path is the OpenAI Chat Completions adapter endpoint; authentication is supplied by the host.
 const Path = "/v1/chat/completions"
 
 func (h *handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
@@ -65,7 +65,8 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		WriteError(w, 500)
 		return
 	}
-	if r.applyPolicy(h.policies[model.ID]) != nil {
+	policy := h.policies[model.ID]
+	if policy == nil || policy(&r.options, r.requirements()) != nil {
 		WriteError(w, 400)
 		return
 	}

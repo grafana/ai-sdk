@@ -55,7 +55,7 @@ type streamState struct {
 	bytes    int64
 }
 
-// consume validates provider lifecycle and returns only representable native progress.
+// consume validates provider lifecycle and returns only representable Chat Completions progress.
 func (s *streamState) consume(p provider.StreamPart, r mappedRequest, max int64) (*delta, error) {
 	s.bytes += int64(len(p.Delta)) + int64(len(p.Input)) + int64(len(p.ID)) + int64(len(p.ToolCallID)) + int64(len(p.ToolName))
 	if s.bytes > max || !utf8.ValidString(p.Delta) || !utf8.ValidString(p.Input) {
@@ -128,7 +128,15 @@ func (s *streamState) consume(p provider.StreamPart, r mappedRequest, max int64)
 			return nil, errOutput
 		}
 		if t := s.tools[p.ToolCallID]; t != nil {
-			if t.final || !t.ended || t.call.Function.Name != call.Function.Name || t.arguments.String() != call.Function.Arguments {
+			if t.final || !t.ended || t.call.Function.Name != call.Function.Name {
+				return nil, errOutput
+			}
+			if t.arguments.Len() == 0 && call.Function.Arguments == "{}" {
+				t.arguments.WriteString("{}")
+				t.final = true
+				return &delta{ToolCalls: []toolDelta{{Index: t.index, Function: functionDelta{Arguments: ptr("{}")}}}}, nil
+			}
+			if t.arguments.String() != call.Function.Arguments {
 				return nil, errOutput
 			}
 			t.final = true
@@ -310,7 +318,7 @@ func (h *handler) serveStream(ctx context.Context, cancel context.CancelFunc, w 
 				}
 				// Finish is terminal in the provider contract. Require closure before
 				// committing success so duplicate finishes/late content cannot hide in
-				// cleanup after an apparently successful native completion.
+				// cleanup after an apparently successful adapter completion.
 				closeTimer := time.NewTimer(h.limits.IdleDuration)
 				select {
 				case <-ctx.Done():

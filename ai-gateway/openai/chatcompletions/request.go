@@ -475,65 +475,11 @@ func schemaVocabulary(obj map[string]any) bool {
 	return true
 }
 
-func (r *mappedRequest) applyPolicy(backend Backend) error {
-	if backend == "" {
-		return errRequest
+func (r mappedRequest) requirements() Requirements {
+	requirements := Requirements{History: r.history, JSONOutput: r.jsonOutput, StrictJSONOutput: r.strictOutput}
+	if r.Parallel != nil {
+		requirements.HasParallelTools = true
+		requirements.ParallelToolCalls = *r.Parallel
 	}
-	if backend == BackendFallback && (len(r.Tools) > 0 || r.history || r.Parallel != nil || r.jsonOutput || r.Reasoning != "" || r.options.ToolChoice != nil && r.options.ToolChoice.Type != provider.ToolChoiceAuto) {
-		return errRequest
-	}
-	if (backend == BackendAnthropic || backend == BackendFallback) && (r.FrequencyPenalty != nil || r.PresencePenalty != nil || r.Seed != nil || r.Parallel != nil || r.jsonOutput || r.Reasoning != "") {
-		return errRequest
-	}
-	if backend == BackendAnthropic || backend == BackendFallback {
-		// A finite native ceiling avoids the Anthropic SDK's unary-only streaming
-		// requirement and provider-side token clamping on the smallest profile.
-		if r.options.MaxOutputTokens == nil {
-			r.options.MaxOutputTokens = ptr(4096)
-		} else if *r.options.MaxOutputTokens > 4096 {
-			return errRequest
-		}
-		if r.Temperature != nil && *r.Temperature > 1 {
-			return errRequest
-		}
-		for i, tool := range r.options.Tools {
-			if boolValue(tool.Strict) {
-				return errRequest
-			}
-			// These Anthropic profiles are non-strict. Do not send an unsupported
-			// explicit false setting to their provider converter.
-			r.options.Tools[i].Strict = nil
-		}
-	}
-	if backend == BackendCompatible && (r.Parallel != nil || r.Reasoning != "" || r.jsonOutput) {
-		return errRequest
-	}
-	if backend == BackendCompatible {
-		r.options.ProviderOptions = provider.ProviderOptions{"openaiCompatible": provider.RawProviderOption{Key: "openaiCompatible", Raw: json.RawMessage(`{"store":false}`)}}
-	}
-	if backend == BackendReasoning && (len(r.Tools) > 0 || r.history || r.Temperature != nil || r.TopP != nil) {
-		return errRequest
-	}
-	if backend == BackendResponses || backend == BackendReasoning {
-		if r.Seed != nil || r.PresencePenalty != nil || r.FrequencyPenalty != nil || len(r.options.StopSequences) > 0 {
-			return errRequest
-		}
-		if r.Reasoning != "" {
-			if backend != BackendReasoning {
-				return errRequest
-			}
-			switch r.Reasoning {
-			case provider.ReasoningLow, provider.ReasoningMedium, provider.ReasoningHigh:
-			default:
-				return errRequest
-			}
-		}
-		options := map[string]any{"store": false, "strictJsonSchema": r.strictOutput}
-		if r.Parallel != nil {
-			options["parallelToolCalls"] = *r.Parallel
-		}
-		b, _ := json.Marshal(options)
-		r.options.ProviderOptions = provider.ProviderOptions{"openai": provider.RawProviderOption{Key: "openai", Raw: b}}
-	}
-	return nil
+	return requirements
 }

@@ -328,7 +328,7 @@ cd test && pnpm --filter @ai-sdk/providerwire-v4-contract test:command
 """
 
 [tasks.test-native-chat]
-description = "Run native Chat adapter and official SDK command contracts"
+description = "Run the OpenAI Chat Completions adapter and official SDK contracts"
 run = """
 (cd ai-gateway && GOWORK=off GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" go test -race -count=1 ./openai/chatcompletions ./test/native)
 mise deps install --only test

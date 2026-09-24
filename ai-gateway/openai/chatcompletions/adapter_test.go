@@ -46,9 +46,64 @@ func testHandler(t *testing.T, f *fakeModel, change func(*Limits)) *handler {
 	if change != nil {
 		change(&l)
 	}
-	h, err := New(Config{Resolver: c, Policies: map[string]Backend{"canonical": BackendResponses}, Limits: l})
+	h, err := New(Config{Resolver: c, Policies: map[string]RequestPolicy{"canonical": testPolicy(testResponses)}, Limits: l})
 	require.NoError(t, err)
 	return h
+}
+
+type testBackend string
+
+const (
+	testAnthropic  testBackend = "anthropic"
+	testResponses  testBackend = "responses"
+	testReasoning  testBackend = "reasoning"
+	testCompatible testBackend = "compatible"
+	testFallback   testBackend = "fallback"
+)
+
+func testPolicy(backend testBackend) RequestPolicy {
+	return func(options *provider.CallOptions, requirements Requirements) error {
+		if backend == testFallback && (len(options.Tools) > 0 || requirements.History || requirements.HasParallelTools || requirements.JSONOutput || options.Reasoning != "" || options.ToolChoice != nil && options.ToolChoice.Type != provider.ToolChoiceAuto) {
+			return errRequest
+		}
+		if (backend == testAnthropic || backend == testFallback) && (options.FrequencyPenalty != nil || options.PresencePenalty != nil || options.Seed != nil || requirements.HasParallelTools || requirements.JSONOutput || options.Reasoning != "") {
+			return errRequest
+		}
+		if backend == testAnthropic || backend == testFallback {
+			if options.MaxOutputTokens == nil {
+				options.MaxOutputTokens = ptr(4096)
+			} else if *options.MaxOutputTokens > 4096 {
+				return errRequest
+			}
+			if options.Temperature != nil && *options.Temperature > 1 {
+				return errRequest
+			}
+			for i, tool := range options.Tools {
+				if boolValue(tool.Strict) {
+					return errRequest
+				}
+				options.Tools[i].Strict = nil
+			}
+		}
+		if backend == testCompatible && (requirements.HasParallelTools || options.Reasoning != "" || requirements.JSONOutput) {
+			return errRequest
+		}
+		if backend == testReasoning && (len(options.Tools) > 0 || requirements.History || options.Temperature != nil || options.TopP != nil) {
+			return errRequest
+		}
+		if backend == testResponses || backend == testReasoning {
+			if options.Seed != nil || options.PresencePenalty != nil || options.FrequencyPenalty != nil || len(options.StopSequences) > 0 || options.Reasoning != "" && backend != testReasoning {
+				return errRequest
+			}
+			values := map[string]any{"store": false, "strictJsonSchema": requirements.StrictJSONOutput}
+			if requirements.HasParallelTools {
+				values["parallelToolCalls"] = requirements.ParallelToolCalls
+			}
+			encoded, _ := json.Marshal(values)
+			options.ProviderOptions = provider.ProviderOptions{"openai": provider.RawProviderOption{Key: "openai", Raw: encoded}}
+		}
+		return nil
+	}
 }
 
 const basic = `{"model":"alias","messages":[{"role":"user","content":"hello"}]}`
@@ -81,7 +136,7 @@ func TestRequestDefaultsAndRejections(t *testing.T) {
 			raw := strings.Replace(tool, `"parameters"`, `"parameters"`, 1)
 			raw = strings.Replace(raw, `"type":"object"}}}]`, `"type":"object"}`+strict+`}}]`, 1)
 			r := requestWith(t, raw)
-			require.NoError(t, r.applyPolicy(BackendResponses))
+			require.NoError(t, testPolicy(testResponses)(&r.options, r.requirements()))
 			require.NotNil(t, r.options.Tools[0].Strict)
 			assert.Equal(t, strings.Contains(strict, "true"), *r.options.Tools[0].Strict)
 			b, err := json.Marshal(r.options.ProviderOptions)
@@ -99,21 +154,21 @@ func TestRequestDefaultsAndRejections(t *testing.T) {
 		_, err := mapRequest([]byte(body))
 		require.Error(t, err)
 	}
-	for _, backend := range []Backend{BackendAnthropic, BackendCompatible, BackendFallback} {
+	for _, backend := range []testBackend{testAnthropic, testCompatible, testFallback} {
 		r := requestWith(t, `,"reasoning_effort":"high"`)
-		require.Error(t, r.applyPolicy(backend))
+		require.Error(t, testPolicy(backend)(&r.options, r.requirements()))
 	}
 	r := requestWith(t, tool)
-	require.Error(t, r.applyPolicy(BackendFallback))
+	require.Error(t, testPolicy(testFallback)(&r.options, r.requirements()))
 	r = requestWith(t, `,"reasoning_effort":"high"`)
-	require.NoError(t, r.applyPolicy(BackendReasoning))
+	require.NoError(t, testPolicy(testReasoning)(&r.options, r.requirements()))
 }
 
 func TestContinuationAndStructuredValidation(t *testing.T) {
 	raw := `{"model":"alias","messages":[{"role":"assistant","content":null,"tool_calls":[{"id":"call","type":"function","function":{"name":"weather","arguments":"{}"}}]},{"role":"tool","tool_call_id":"call","content":"sunny"},{"role":"user","content":[{"type":"text","text":"thanks"}]}]}`
 	r, err := mapRequest([]byte(raw))
 	require.NoError(t, err)
-	require.NoError(t, r.applyPolicy(BackendResponses))
+	require.NoError(t, testPolicy(testResponses)(&r.options, r.requirements()))
 	assert.True(t, r.history)
 	require.Len(t, r.options.Prompt, 3)
 	assert.Equal(t, "weather", r.options.Prompt[1].Content[0].ToolName)
@@ -202,14 +257,26 @@ func TestStreamFunctionState(t *testing.T) {
 	mismatch.Input = `{"x":2}`
 	_, err = bad.consume(mismatch, r, 1<<20)
 	require.Error(t, err)
+
+	empty := streamState{textIDs: map[string]bool{}, tools: map[string]*toolState{}}
+	for _, p := range []provider.StreamPart{{Type: provider.PartToolInputStart, ID: "empty", ToolName: "weather"}, {Type: provider.PartToolInputEnd, ID: "empty"}} {
+		_, err = empty.consume(p, r, 1<<20)
+		require.NoError(t, err)
+	}
+	d, err := empty.consume(provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "empty", ToolName: "weather", Input: `{}`}, r, 1<<20)
+	require.NoError(t, err)
+	require.NotNil(t, d)
+	assert.Equal(t, "{}", *d.ToolCalls[0].Function.Arguments)
+	_, _, err = empty.finish(provider.StreamPart{FinishReason: &provider.FinishReason{Unified: provider.FinishReasonToolCalls}}, r)
+	require.NoError(t, err)
 }
 
 func TestUnsupportedProfilesDoNotInvokeModel(t *testing.T) {
 	for _, tc := range []struct {
-		backend Backend
+		backend testBackend
 		extra   string
 	}{
-		{BackendAnthropic, `,"temperature":2`}, {BackendAnthropic, `,"max_tokens":4097`}, {BackendCompatible, `,"response_format":{"type":"json_object"}`}, {BackendReasoning, `,"temperature":0`}, {BackendResponses, `,"seed":1`}, {BackendResponses, `,"reasoning_effort":"high"`}, {BackendFallback, `,"tool_choice":"none"`},
+		{testAnthropic, `,"temperature":2`}, {testAnthropic, `,"max_tokens":4097`}, {testCompatible, `,"response_format":{"type":"json_object"}`}, {testReasoning, `,"temperature":0`}, {testResponses, `,"seed":1`}, {testResponses, `,"reasoning_effort":"high"`}, {testFallback, `,"tool_choice":"none"`},
 	} {
 		t.Run(string(tc.backend)+tc.extra, func(t *testing.T) {
 			calls := 0
@@ -218,7 +285,7 @@ func TestUnsupportedProfilesDoNotInvokeModel(t *testing.T) {
 				return textResult(), nil
 			}}
 			h := testHandler(t, f, nil)
-			h.policies["canonical"] = tc.backend
+			h.policies["canonical"] = testPolicy(tc.backend)
 			w := httptest.NewRecorder()
 			req := httptest.NewRequest("POST", Path, strings.NewReader(strings.TrimSuffix(basic, "}")+tc.extra+"}"))
 			req.Header.Set("Content-Type", "application/json")

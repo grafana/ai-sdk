@@ -1,13 +1,16 @@
-# Native Chat Completions
+# OpenAI Chat Completions adapter
 
 `POST /v1/chat/completions` is an intentionally bounded OpenAI-compatible subset,
 not a full implementation of the OpenAI platform. The adapter is AGPL, independent
 of ProviderWire codecs, and uses the same catalog, outbound transports, logical
-model middleware, authentication verification and process shutdown.
+model middleware, authentication verification and process shutdown. Its sole
+responsibility is translating the public Chat Completions wire contract to and
+from the canonical provider domain. Backend selection, fallback and upstream
+serialization remain host/catalog and provider responsibilities.
 
 ## Authority and proof
 
-Native JSON/SSE authority is the official OpenAI API contract and exact official
+The adapter's JSON/SSE authority is the official OpenAI API contract and exact official
 SDKs: Go `openai-go/v3 v3.48.0` and JavaScript `openai 6.27.0` (workspace lockfile).
 The JavaScript pin is an explicit compatibility witness, not a claim to be latest.
 See [Chat create](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create),
@@ -29,25 +32,27 @@ Access-token mode accepts exactly one `Authorization: Bearer <token>`; scheme
 matching is case-insensitive, token whitespace/comma and duplicate values are
 rejected. X-Access-Token, X-Grafana-Id, and X-Scope-* conflicts are rejected, even
 when empty. The existing verifier validates JWT signatures/audiences/namespace.
-Optional Grafana ID tokens are deliberately unsupported on this native route.
+Optional Grafana ID tokens are deliberately unsupported on this adapter route.
 
 Cloud mode requires the trusted edge to strip Authorization, X-Access-Token and
 X-Grafana-Id; the existing positive X-Scope-OrgID assertion contract is unchanged.
 Never expose a cloud-auth listener directly to untrusted clients. SDKs sending
 Bearer credentials must go through the credential-stripping edge.
 
-Native unknown routes (including `/v1/models`) receive a safe JSON 404. Wrong
+Unknown adapter routes (including `/v1/models`) receive a safe JSON 404. Wrong
 Chat methods receive JSON 405 plus Allow: POST. Raw-path aliases, query strings,
 non-JSON bodies and encoded request bodies are not accepted. Authentication
 precedes body decoding. Error bodies never include upstream messages, request
 content, credentials or backend identity. Organization/project headers are not
 forwarded or interpreted as authorization.
 
-## Finite backend matrix
+## Finite route capability matrix
 
-Policies are frozen from configuration before middleware wraps backend identity.
+Route policies are frozen by host composition before middleware wraps backend
+identity, then supplied to the adapter as provider-agnostic canonical request
+policies. The adapter does not inspect provider type or backend model identity.
 Public aliases resolve to canonical public response model IDs. Other configured
-backend IDs remain usable through ProviderWire but receive native 400.
+backend IDs remain usable through ProviderWire but receive adapter 400.
 
 | Profile / exact model IDs | Text/scalars | Functions/history | Structured output | Reasoning |
 | --- | --- | --- | --- | --- |
@@ -112,7 +117,7 @@ safely rather than disappear. Private reasoning content is deliberately not
 exposed as assistant text; signed reasoning tool replay is not supported.
 Successful stop without represented nonempty text or function calls is rejected,
 including refusal-only output discarded by a lower converter. The adapter does
-not reconstruct native refusal semantics or metadata absent from the shared
+not reconstruct OpenAI refusal semantics or metadata absent from the shared
 provider-domain result.
 
 ## Streaming and lifecycle
@@ -149,9 +154,9 @@ a 32-client streaming cancellation storm, not an unbounded-load claim.
 
 `mise run test-native-chat` runs adapter/command Go tests, TypeScript typechecking
 and the official JavaScript SDK command suite. `mise run test-ai-gateway` includes
-all native Go tests; `mise run test-integration` also owns the native SDK task.
+all adapter Go tests; `mise run test-integration` also owns the SDK adapter task.
 Run `GOWORK=off go test -race ./openai/chatcompletions ./test/native` in ai-gateway
-for native race coverage. Tests use local signed JWKS, synthetic Responses,
+for adapter race coverage. Tests use local signed JWKS, synthetic Responses,
 compatible and Anthropic servers, no live credentials. Existing parity and
-AGPL/Apache boundary checks remain required; native compatibility does not expand
+AGPL/Apache boundary checks remain required; adapter compatibility does not expand
 ProviderWire or UIMessage parity claims.

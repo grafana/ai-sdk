@@ -25,16 +25,16 @@ func TestNativeBearerBoundary(t *testing.T) {
 		{"Authorization": {"Bearer a"}, "X-Access-Token": {}}, {"Authorization": {"Bearer a"}, "X-Grafana-Id": {"b"}}, {"Authorization": {"Bearer a"}, "X-Scope-OrgID": {"42"}},
 	} {
 		capture := &nativeCapture{}
-		_, err := NativeAuthenticator(capture, SourceAccessToken).Authenticate(context.Background(), headers)
+		_, err := AdapterAuthenticator(capture, SourceAccessToken).Authenticate(context.Background(), headers)
 		require.Error(t, err)
 		assert.Zero(t, capture.calls)
 	}
 	capture := &nativeCapture{}
-	caller, err := NativeAuthenticator(capture, SourceAccessToken).Authenticate(context.Background(), http.Header{"Authorization": {"bEaReR token"}, "Private": {"do-not-forward"}})
+	caller, err := AdapterAuthenticator(capture, SourceAccessToken).Authenticate(context.Background(), http.Header{"Authorization": {"bEaReR token"}, "Private": {"do-not-forward"}})
 	require.NoError(t, err)
 	assert.Equal(t, "stack", caller.Namespace)
 	assert.Equal(t, http.Header{"X-Access-Token": {"token"}}, capture.headers)
-	cloud := NativeAuthenticator(NewCloudProviderWireAuthenticator(), SourceCloudGateway)
+	cloud := AdapterAuthenticator(NewCloudProviderWireAuthenticator(), SourceCloudGateway)
 	_, err = cloud.Authenticate(context.Background(), http.Header{"X-Scope-OrgID": {"42"}, "Authorization": {"Bearer token"}})
 	require.Error(t, err)
 	caller, err = cloud.Authenticate(context.Background(), http.Header{"X-Scope-OrgID": {"42"}})
