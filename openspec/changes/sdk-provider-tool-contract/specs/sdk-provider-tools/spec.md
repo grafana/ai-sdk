@@ -12,7 +12,7 @@ Direct native-provider entry points and the Go Gateway client SHALL reject repre
 - **THEN** conversion SHALL use empty-object semantics and the Go Gateway request SHALL contain `args: {}`
 
 ### Requirement: Independent bounded client metadata projection
-The Go Gateway client SHALL decode tool metadata independently of server DTOs. It SHALL retain Anthropic MCP type/serverName, closed Anthropic caller type/toolId, and OpenAI/Azure itemId, namespace and closed caller type/callerId shapes. Unknown/private fields SHALL be omitted; malformed supported shapes SHALL fail. MCP metadata SHALL exclude caller fields. Response-level identity SHALL remain client-owned. These readers SHALL NOT claim that the current Gateway supports every decoded family.
+The Go Gateway client SHALL decode tool metadata independently of server DTOs. It SHALL retain Anthropic MCP type/serverName, closed Anthropic caller type/toolId, and OpenAI/Azure itemId, namespace and closed caller type/callerId shapes. Unknown/private fields SHALL be omitted; malformed supported shapes SHALL fail. MCP metadata SHALL exclude caller fields. Response-level identity SHALL remain client-owned. Client decoding SHALL be independent of which capabilities the Gateway service currently accepts.
 
 #### Scenario: MCP metadata with private fields
 - **WHEN** a tool response contains Anthropic MCP type/serverName together with caller and arbitrary private fields
@@ -22,9 +22,9 @@ The Go Gateway client SHALL decode tool metadata independently of server DTOs. I
 - **WHEN** a successful unary or SSE response contains only a supported tool result
 - **THEN** the client SHALL decode it without importing server correlation state
 
-### Requirement: SDK readiness does not activate Gateway capabilities
-Existing Gateway consumers SHALL migrate to the new boolean fields and published immutable dependencies without enabling provider tools, provider-owned results or nonempty root provider options. Apache modules SHALL NOT import Gateway code. Workspace and isolated module checks SHALL pass without local Gateway replacements.
+### Requirement: Client decoding does not activate Gateway capabilities
+The Gateway service SHALL continue to reject provider tools, provider-owned results and nonempty root provider options until it validates and routes those capabilities. Existing consumers SHALL compile against the updated SDK types without introducing a dependency from Apache modules to Gateway code. Isolated module checks SHALL pass without local Gateway replacements.
 
 #### Scenario: Existing service rejection is preserved
 - **WHEN** provider definitions, enabled provider output markers or MCP root options reach the existing Gateway runtime
-- **THEN** the existing safe rejection behavior SHALL remain until the corresponding service capability change lands
+- **THEN** the service SHALL safely reject the unsupported capability before invocation
