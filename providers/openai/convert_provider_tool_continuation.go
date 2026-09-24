@@ -753,15 +753,9 @@ func customToolCallOutputItem(part provider.ContentPart, ctx inputConversionCont
 					content = append(content, responses.ResponseCustomToolCallOutputOutputOutputContentListItemUnionParam{OfInputFile: &file})
 				}
 			default:
-				dataType := "unknown"
-				if len(value.Data.Reference) > 0 {
-					dataType = "reference"
-				} else if value.Data.Text != "" {
-					dataType = "text"
-				}
 				warnings = append(warnings, provider.Warning{
 					Type:    provider.WarnOther,
-					Message: fmt.Sprintf("unsupported custom tool content part type: file with data type: %s", dataType),
+					Message: fmt.Sprintf("unsupported custom tool content part type: file with data type: %s", unsupportedFileDataType(value.Data)),
 				})
 			}
 		default:

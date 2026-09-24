@@ -2,6 +2,7 @@ package openai
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 
 	"github.com/grafana/ai-sdk/provider"
@@ -70,9 +71,13 @@ func convertFunctionResultOutput(part provider.ContentPart, ctx inputConversionC
 					appendFunctionResultFile(&content, item, options)
 				}
 			case data.IsData():
-				mediaType, err := resolveFullMediaType(provider.ContentPart{MediaType: value.MediaType, Data: data})
-				if err != nil {
-					return "", nil, nil, fmt.Errorf("openai: resolving tool result media type: %w", err)
+				mediaType := value.MediaType
+				if !isFullMediaType(mediaType) {
+					var err error
+					mediaType, err = resolveFullMediaType(provider.ContentPart{MediaType: value.MediaType, Data: data})
+					if err != nil {
+						return "", nil, nil, fmt.Errorf("openai: resolving tool result media type: %w", err)
+					}
 				}
 				encoded := data.Base64
 				if data.Bytes != nil {
@@ -91,17 +96,30 @@ func convertFunctionResultOutput(part provider.ContentPart, ctx inputConversionC
 					appendFunctionResultFile(&content, item, options)
 				}
 			default:
-				dataType := "unknown"
-				if data.Text != "" {
-					dataType = "text"
-				}
-				warnings = append(warnings, provider.Warning{Type: provider.WarnOther, Message: fmt.Sprintf("unsupported tool content part type: file with data type: %s", dataType)})
+				warnings = append(warnings, provider.Warning{Type: provider.WarnOther, Message: fmt.Sprintf("unsupported tool content part type: file with data type: %s", unsupportedFileDataType(data))})
 			}
 		default:
 			warnings = append(warnings, provider.Warning{Type: provider.WarnOther, Message: fmt.Sprintf("unsupported tool content part type: %s", value.Type)})
 		}
 	}
 	return "", content, warnings, nil
+}
+
+func unsupportedFileDataType(data *provider.DataContent) string {
+	if data == nil {
+		return "unknown"
+	}
+	raw, err := data.MarshalJSON()
+	if err != nil {
+		return "unknown"
+	}
+	var value struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(raw, &value); err != nil || value.Type == "" {
+		return "unknown"
+	}
+	return value.Type
 }
 
 func appendFunctionResultImage(content *responses.ResponseFunctionCallOutputItemListParam, item responses.ResponseInputImageContentParam, options OpenAIPartOptions) {

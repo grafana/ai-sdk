@@ -153,6 +153,42 @@ func TestBuildParams_FunctionResultMultipart(t *testing.T) {
 	}
 }
 
+func TestBuildParams_FunctionResultMediaType(t *testing.T) {
+	part := provider.ToolResultPart("call_1", "search", &provider.ToolResultOutput{Type: provider.ToolOutputContent, Content: []provider.ToolResultContentValue{
+		{Type: provider.ToolContentFile, Data: &provider.DataContent{Bytes: []byte("hello")}, MediaType: "text/plain; charset=utf-8"},
+	}})
+	body, warnings := resultBody(t, "openai", provider.CallOptions{Prompt: []provider.Message{provider.NewToolMessage(part)}})
+	assert.Empty(t, warnings)
+	output := body["input"].([]any)[0].(map[string]any)["output"].([]any)
+	require.Len(t, output, 1)
+	assert.Equal(t, "data:text/plain; charset=utf-8;base64,aGVsbG8=", output[0].(map[string]any)["file_data"])
+
+	part.Output.Content[0] = provider.ToolResultContentValue{Type: provider.ToolContentFile, Data: &provider.DataContent{Bytes: []byte("unrecognized")}, MediaType: "image"}
+	_, _, _, err := buildParamsForProvider("gpt-4o", provider.CallOptions{Prompt: []provider.Message{provider.NewToolMessage(part)}}, "openai")
+	require.ErrorContains(t, err, "could not be auto-detected")
+}
+
+func TestBuildParams_UnsupportedEmptyTextFileData(t *testing.T) {
+	var value provider.ToolResultContentValue
+	require.NoError(t, json.Unmarshal([]byte(`{"type":"file","data":{"type":"text","text":""},"mediaType":"text/plain"}`), &value))
+	for _, tc := range []struct {
+		name    string
+		tools   []provider.Tool
+		warning string
+	}{
+		{name: "function", warning: "unsupported tool content part type: file with data type: text"},
+		{name: "custom", tools: []provider.Tool{{Type: provider.ToolTypeProvider, ID: toolIDCustom, Name: "write_sql"}}, warning: "unsupported custom tool content part type: file with data type: text"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			part := provider.ToolResultPart("call_1", "write_sql", &provider.ToolResultOutput{Type: provider.ToolOutputContent, Content: []provider.ToolResultContentValue{value}})
+			body, warnings := resultBody(t, "openai", provider.CallOptions{Prompt: []provider.Message{provider.NewToolMessage(part)}, Tools: tc.tools})
+			require.Len(t, warnings, 1)
+			assert.Equal(t, tc.warning, warnings[0].Message)
+			assert.Empty(t, body["input"].([]any)[0].(map[string]any)["output"])
+		})
+	}
+}
+
 func TestBuildParams_FunctionResultMissingReference(t *testing.T) {
 	_, _, _, err := buildParamsForProvider("gpt-4o", provider.CallOptions{Prompt: []provider.Message{provider.NewToolMessage(provider.ToolResultPart("call_1", "search", &provider.ToolResultOutput{
 		Type: provider.ToolOutputContent, Content: []provider.ToolResultContentValue{{Type: provider.ToolContentFile, MediaType: "application/pdf", Data: &provider.DataContent{Reference: json.RawMessage(`{"azure":"file-1"}`)}}},
@@ -162,6 +198,10 @@ func TestBuildParams_FunctionResultMissingReference(t *testing.T) {
 
 func TestBuildParams_CustomResultParity(t *testing.T) {
 	breakpoint := resultOptions(t, "openai", true)
+	plain := provider.ToolResultPart("call_custom", "write_sql", &provider.ToolResultOutput{Type: provider.ToolOutputText, Text: "plain"})
+	plainBody, plainWarnings := resultBody(t, "openai", provider.CallOptions{Prompt: []provider.Message{provider.NewToolMessage(plain)}, Tools: []provider.Tool{{Type: provider.ToolTypeProvider, ID: toolIDCustom, Name: "write_sql"}}})
+	assert.Empty(t, plainWarnings)
+	assert.Equal(t, "plain", plainBody["input"].([]any)[0].(map[string]any)["output"])
 	for _, tc := range []struct {
 		output provider.ToolResultOutput
 		want   string

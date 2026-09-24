@@ -202,6 +202,34 @@ func TestParallelToolCall_MultipartResults(t *testing.T) {
 	}
 }
 
+func TestParallelToolCall_UnsupportedMultipartChild(t *testing.T) {
+	prompt := parallelHistory(t)
+	for index := range prompt[1].Content {
+		part := &prompt[1].Content[index]
+		if part.ToolName == "weather" {
+			part.Output = &provider.ToolResultOutput{Type: provider.ToolOutputContent, Content: []provider.ToolResultContentValue{
+				{Type: provider.ToolContentText, Text: "before"},
+				{Type: provider.ToolContentCustom},
+				{Type: provider.ToolContentText, Text: "after"},
+			}}
+		}
+	}
+	body, warnings := buildBody(t, "gpt-5.4", provider.CallOptions{Prompt: prompt, ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{Conversation: "conv_1"})})
+	require.Len(t, warnings, 1)
+	assert.Equal(t, "unsupported tool content part type: custom", warnings[0].Message)
+	items := body["input"].([]any)
+	require.Len(t, items, 1)
+	output := items[0].(map[string]any)["output"].(string)
+	segments := strings.SplitN(output, "\n", 2)
+	require.Len(t, segments, 2)
+	assert.Equal(t, "cityAttractions", segments[1])
+	var content []map[string]any
+	require.NoError(t, json.Unmarshal([]byte(segments[0]), &content))
+	require.Len(t, content, 2)
+	assert.Equal(t, "before", content[0]["text"])
+	assert.Equal(t, "after", content[1]["text"])
+}
+
 func TestParallelToolCall_UnaryAndFallbackStream(t *testing.T) {
 	br := buildResult{functionTools: map[string]struct{}{"weather": {}, "cityAttractions": {}}}
 	encoded, err := json.Marshal(parallelInput)
