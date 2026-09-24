@@ -87,12 +87,13 @@ The command requires an explicit target. Reapplication is idempotent and preserv
 subsequent gap metadata and an already recorded verification date. A changed or mixed
 baseline/pin set is rejected for reassessment rather than silently repaired.
 
-When the Bedrock/Anthropic tool baseline changes, update the pinned versions in
-`scripts/generate-bedrock-provider-tool-schemas.mjs`, then run
-`node scripts/generate-bedrock-provider-tool-schemas.mjs`. The script extracts
-canonical provider-tool JSON schemas from the matching Anthropic package into the
-Go Converse catalog, omitting tools Bedrock filters out. Use `--check` to verify
-the committed file without rewriting it; this is not a live provider recording.
+`parity-upgrade` also regenerates the Bedrock Converse provider-tool schema
+catalog from the registered Anthropic/provider package versions and the Anthropic
+Zod version in the lockfile at the pinned upstream commit. It omits tools Bedrock
+filters out, warns about new upstream tools for parity assessment, and fails if
+a Go-supported tool disappears upstream. Use
+`node scripts/generate-bedrock-provider-tool-schemas.mjs --check` to verify the
+committed file without rewriting it. This is not a live provider recording.
 
 Applying a new target clears `upstream.verifiedAt`; selection is not verification.
 The final metadata check deliberately remains incomplete until evidence is reviewed

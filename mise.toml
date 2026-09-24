@@ -404,6 +404,7 @@ cd test
 pnpm install --lockfile-only --no-frozen-lockfile
 cd ..
 mise deps install --only test
+node scripts/generate-bedrock-provider-tool-schemas.mjs
 mise run generate-conformance
 mise run validate-parity-baseline
 """
