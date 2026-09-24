@@ -18,6 +18,12 @@ Gateway code may import explicitly pinned SDK modules. SDK modules must not
 import, require, or replace the Gateway module, which remains outside the root
 `go.work`.
 
+The additive native [Chat Completions endpoint](docs/native-chat-completions.md)
+accepts official OpenAI SDK requests at `/v1/chat/completions` with Bearer JWT
+authentication. Its finite backend/feature matrix, defaults and unsupported
+features are documented separately from ProviderWire. Run `mise run test-native-chat`
+for the official SDK command contracts.
+
 Run `mise run test-providerwire-v4` for the contract and
 `mise run verify-ai-gateway-boundary` for the module boundary. Repository-wide
 development guidance is in [`../CONTRIBUTING.md`](../CONTRIBUTING.md).

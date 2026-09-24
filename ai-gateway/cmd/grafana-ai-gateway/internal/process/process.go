@@ -15,6 +15,7 @@ import (
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/discovery"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/outbound"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/service"
+	"github.com/grafana/ai-sdk/ai-gateway/openai/chatcompletions"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 	"github.com/grafana/authlib/authn"
 )
@@ -140,15 +141,24 @@ func Run(ctx context.Context, args []string, lookupEnv config.LookupEnv, listen 
 		agentRuntime.Close()
 		return err
 	}
+	chatHandler, err := chatcompletions.New(chatcompletions.Config{Resolver: modelCatalog, Policies: service.NativePolicies(file), Limits: chatcompletions.Limits{
+		RequestBytes: settings.ProviderWire.RequestBytes, ResponseBytes: settings.ProviderWire.UnaryResponseBytes, FrameBytes: settings.ProviderWire.StreamFrameBytes, StreamParts: settings.ProviderWire.StreamParts,
+		ModelDuration: settings.ProviderWire.ModelDuration, IdleDuration: settings.ProviderWire.StreamIdleDuration, DrainDuration: settings.ProviderWire.StreamDrainDuration,
+	}})
+	if err != nil {
+		agentRuntime.Close()
+		return err
+	}
 	readiness := &service.Readiness{}
 	deps := service.RouterDependencies{
-		Readiness:     readiness,
-		Telemetry:     telemetry,
-		Authenticator: authenticator,
-		AuthSource:    gatewayauth.Source(settings.AuthMode),
-		ErrorWriter:   errorWriter,
-		Discovery:     discoveryHandler,
-		LanguageModel: languageHandler,
+		Readiness:       readiness,
+		Telemetry:       telemetry,
+		Authenticator:   authenticator,
+		AuthSource:      gatewayauth.Source(settings.AuthMode),
+		ErrorWriter:     errorWriter,
+		Discovery:       discoveryHandler,
+		LanguageModel:   languageHandler,
+		ChatCompletions: chatHandler,
 	}
 	var handlers []http.Handler
 	addresses := []string{settings.ListenAddress}

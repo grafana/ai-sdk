@@ -100,6 +100,16 @@ Never let a unit test call a destructive production tool target.
 Avoid snapshotting entire responses when a smaller semantic assertion will be
 more stable. Use conformance fixtures when exact wire bytes are the contract.
 
+## Native Gateway Chat compatibility
+
+`mise run test-native-chat` owns the AGPL native DTO/runtime tests, TypeScript
+typecheck, and exact official OpenAI SDK command suites. Tests start the real
+Gateway executable with local fake upstreams and JWKS; they need no live provider
+credentials. `test-ai-gateway` includes native Go tests, and `test-integration`
+includes the native task. Run the native Go packages under `-race` separately.
+The [support matrix](../../ai-gateway/docs/native-chat-completions.md) separates
+native compatibility from ProviderWire parity and explains per-request limits.
+
 ---
 
 ← [Middleware](../middleware/overview.md) · [Docs index](../README.md) · [Structured logging →](../middleware/structured-logging.md)

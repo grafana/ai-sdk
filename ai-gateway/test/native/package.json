@@ -1,0 +1,9 @@
+{
+  "name": "@ai-sdk/native-chat-contract",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "scripts": { "typecheck": "tsc --noEmit", "test": "tsx --test command.test.ts" },
+  "dependencies": { "openai": "6.27.0" },
+  "devDependencies": { "@types/node": "25.9.5", "tsx": "4.23.12", "typescript": "7.0.2" }
+}
