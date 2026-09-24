@@ -92,13 +92,38 @@ func shouldEnableCitations(opts provider.ProviderOptions) (bool, error) {
 // of a content part's ProviderOptions. Used when forwarding assistant reasoning
 // content back to Bedrock without breaking signed thinking blocks. Returns an
 // error when the option is present but malformed.
-func readReasoningMetadata(opts provider.ProviderOptions) (ReasoningMetadata, bool, error) {
-	rm, ok, err := resolveBedrockOption[ReasoningMetadata](opts)
-	if err != nil {
-		return ReasoningMetadata{}, false, err
+type reasoningReplayMetadata struct {
+	Signature       *string `json:"signature,omitempty"`
+	RedactedData    *string `json:"redactedData,omitempty"`
+	RedactedContent *string `json:"redactedContent,omitempty"`
+}
+
+func readReasoningMetadata(opts provider.ProviderOptions) (reasoningReplayMetadata, bool, error) {
+	// Keep the public typed options compatible while retaining presence when
+	// replaying raw metadata (where a present empty string is meaningful).
+	for _, key := range providerOptionKeys {
+		var typed *ReasoningMetadata
+		switch value := opts[key].(type) {
+		case ReasoningMetadata:
+			typed = &value
+		case *ReasoningMetadata:
+			typed = value
+		}
+		if typed != nil {
+			copyOptions := make(provider.ProviderOptions, len(opts))
+			for k, value := range opts {
+				copyOptions[k] = value
+			}
+			copyOptions[key] = provider.RawProviderOption{Key: key, Raw: jsonRawOrZero(typed)}
+			opts = copyOptions
+		}
 	}
-	if !ok || (rm.Signature == "" && rm.RedactedData == "") {
-		return ReasoningMetadata{}, false, nil
+	rm, ok, err := resolveBedrockOption[reasoningReplayMetadata](opts)
+	if err != nil {
+		return reasoningReplayMetadata{}, false, err
+	}
+	if !ok || (rm.Signature == nil && rm.RedactedData == nil && rm.RedactedContent == nil) {
+		return reasoningReplayMetadata{}, false, nil
 	}
 	return rm, true, nil
 }

@@ -1225,6 +1225,9 @@ func TestBuildRequest_InvalidDirectFileInputs(t *testing.T) {
 	bad.URL = "https://example.test/file"
 	for _, prompt := range [][]provider.Message{
 		{provider.NewUserMessage(provider.FilePart("image/png", bad))},
+		{provider.NewAssistantMessage(provider.ReasoningFilePart("image/png", bad))},
+		{provider.NewAssistantMessage(provider.ReasoningFilePart("image/png", provider.TextDataContent("")))},
+		{provider.NewAssistantMessage(provider.ContentPart{Type: provider.ContentPartTypeReasoningFile, MediaType: "image/png"})},
 		{provider.NewToolMessage(provider.ToolResultPart("call-1", "tool", &provider.ToolResultOutput{
 			Type:    provider.ToolOutputContent,
 			Content: []provider.ToolResultContentValue{{Type: provider.ToolContentFile, Data: &bad, MediaType: "image/png"}},

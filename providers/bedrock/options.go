@@ -201,8 +201,9 @@ func (FilePartOptions) ProviderKey() string { return "amazonBedrock" }
 // ReasoningMetadata carries Bedrock reasoning provider metadata round-trips.
 // Mirrors upstream amazonBedrockReasoningMetadata.
 type ReasoningMetadata struct {
-	Signature    string `json:"signature,omitempty"`
-	RedactedData string `json:"redactedData,omitempty"`
+	Signature       string `json:"signature,omitempty"`
+	RedactedData    string `json:"redactedData,omitempty"`
+	RedactedContent string `json:"redactedContent,omitempty"`
 }
 
 // ProviderKey returns the reasoning metadata namespace.

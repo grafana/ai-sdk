@@ -94,7 +94,7 @@ func convertResponse(msg *anthropic.BetaMessage, mapping toolNameMapping, usesJs
 				Type: provider.ContentReasoning,
 				Text: block.Thinking,
 			}
-			if block.Signature != "" {
+			if block.JSON.Signature.Valid() {
 				meta, err := json.Marshal(map[string]string{"signature": block.Signature})
 				if err != nil {
 					return nil, fmt.Errorf("marshaling thinking signature: %w", err)
