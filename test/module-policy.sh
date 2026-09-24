@@ -47,6 +47,23 @@ git -C "$fork" config user.name Fork
 git -C "$fork" merge --no-ff -qm 'fork merge' FETCH_HEAD
 assert_fails 'not an ancestor' verify_history "$canonical" "$(record "$unmerged" v0.2.0)"
 
+remote="file://$canonical"
+rewrite="url.file://$fork.insteadOf"
+git config --file "$fixture/gitconfig" "$rewrite" "$remote"
+redirected=$(GIT_CONFIG_GLOBAL="$fixture/gitconfig" git ls-remote "$remote" refs/heads/main | cut -f1)
+[[ "$redirected" == "$(git -C "$fork" rev-parse HEAD)" ]] || fail 'Git URL rewrite fixture is not active'
+GIT_CONFIG_GLOBAL="$fixture/gitconfig" assert_fails 'not an ancestor' verify_history "$remote" "$(record "$unmerged" v0.2.0)"
+redirected=$(GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="$rewrite" GIT_CONFIG_VALUE_0="$remote" git ls-remote "$remote" refs/heads/main | cut -f1)
+[[ "$redirected" == "$(git -C "$fork" rev-parse HEAD)" ]] || fail 'Git inline rewrite fixture is not active'
+GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="$rewrite" GIT_CONFIG_VALUE_0="$remote" \
+  assert_fails 'not an ancestor' verify_history "$remote" "$(record "$unmerged" v0.2.0)"
+mkdir "$fixture/git-template"
+git config --file "$fixture/git-template/config" "$rewrite" "$remote"
+GIT_TEMPLATE_DIR="$fixture/git-template" git init --bare -q "$fixture/poisoned.git"
+redirected=$(git -C "$fixture/poisoned.git" ls-remote "$remote" refs/heads/main | cut -f1)
+[[ "$redirected" == "$(git -C "$fork" rev-parse HEAD)" ]] || fail 'Git template rewrite fixture is not active'
+GIT_TEMPLATE_DIR="$fixture/git-template" assert_fails 'not an ancestor' verify_history "$remote" "$(record "$unmerged" v0.2.0)"
+
 version=v0.1.0
 hash=$merged
 go() {
@@ -130,9 +147,28 @@ done
   )
   printf 'module example.com/wrong\n' >providers/openai/go.mod
   assert_fails 'declares example.com/wrong' modules
+  printf 'module %s\n\ngo 1.26.3\n' "$module_prefix/providers/openai" >providers/openai/go.mod
 )
 assert_fails 'unknown or local-only' standalone test/conformance
 assert_fails 'unknown or local-only' standalone nonexistent
+(
+  cd "$module_repo"
+  go() {
+    case "$1 $2" in
+      'mod edit') command go "$@" ;;
+      'mod download'|'mod verify'|'build ./...'|'test ./...') printf '%s\t%s\n' "$PWD" "$1 $2" >>"$fixture/scoped-operations" ;;
+      *) fail "unexpected Go command: $*" ;;
+    esac
+  }
+  for selection in ai-gateway "$gateway_module"; do
+    : >"$fixture/scoped-operations"
+    standalone "$selection" >/dev/null
+    [[ $(wc -l <"$fixture/scoped-operations") -eq 4 ]] || fail "scoped selection did not run all checks for $selection"
+    for operation in 'mod download' 'mod verify' 'build ./...' 'test ./...'; do
+      grep -Fxq "$module_repo/ai-gateway"$'\t'"$operation" "$fixture/scoped-operations" || fail "missing scoped operation: $operation"
+    done
+  done
+)
 
 boundary_repo=$fixture/boundary
 for root in . ai-gateway providers/grafana; do
@@ -165,8 +201,8 @@ candidate=$fixture/candidate.go
 overlay=$fixture/overlay.json
 printf 'package provider\nvar _ = candidateSourceOnlyMarker\n' >"$candidate"
 jq -n --arg source "$repo_root/provider/doc.go" --arg candidate "$candidate" '{Replace:{($source):$candidate}}' >"$overlay"
+(cd "$repo_root/ai-gateway" && GOWORK=off GOFLAGS=-mod=readonly command go build -overlay "$overlay" "$module_prefix/provider")
 for root in ai-gateway/cmd/grafana-ai-gateway ai-gateway/test/providerwire-v4/testserver; do
-  (cd "$repo_root/$root" && GOWORK=off GOFLAGS=-mod=readonly command go build -overlay "$overlay" -o "$fixture/gateway" .)
   assert_fails candidateSourceOnlyMarker bash -c 'cd "$1" && GOWORK="$2" GOFLAGS=-mod=readonly go build -overlay "$3" -o "$4" .' \
     bash "$repo_root/$root" "$repo_root/go.gateway.work" "$overlay" "$fixture/gateway"
 done

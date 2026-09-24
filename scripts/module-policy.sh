@@ -86,6 +86,8 @@ pin_commit() {
 
 verify_history() (
   local remote=$1 records=$2 dir anchor consumer path version hash
+  unset GIT_CONFIG_PARAMETERS GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_TEMPLATE_DIR
+  export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_COUNT=0
   dir=$(mktemp -d)
   trap 'rm -rf "$dir"' EXIT
   git init --bare -q "$dir"
