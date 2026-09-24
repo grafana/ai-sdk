@@ -212,12 +212,28 @@ func decodeStreamPart(data []byte) (provider.StreamPart, error) {
 		ProviderExecuted bool                    `json:"providerExecuted"`
 		Dynamic          bool                    `json:"dynamic"`
 		Preliminary      bool                    `json:"preliminary"`
+		MediaType        *string                 `json:"mediaType"`
+		Data             json.RawMessage         `json:"data"`
+		Metadata         json.RawMessage         `json:"providerMetadata"`
 	}
-	if decodeFields(data, &value, "type", "id", "delta", "modelId", "timestamp", "warnings", "finishReason", "usage", "rawValue", "error", "toolCallId", "toolName", "input", "result", "isError", "providerExecuted", "dynamic", "preliminary") != nil {
+	if decodeFields(data, &value, "type", "id", "delta", "modelId", "timestamp", "warnings", "finishReason", "usage", "rawValue", "error", "toolCallId", "toolName", "input", "result", "isError", "providerExecuted", "dynamic", "preliminary", "mediaType", "data", "providerMetadata") != nil {
 		return invalid()
 	}
 	part := provider.StreamPart{Type: value.Type}
+	if value.Type == provider.PartReasoningStart || value.Type == provider.PartReasoningDelta || value.Type == provider.PartReasoningEnd || value.Type == provider.PartReasoningFile {
+		metadata, err := decodeReasoningMetadata(value.Metadata)
+		if err != nil {
+			return invalid()
+		}
+		part.ProviderMetadata = metadata
+	}
 	switch value.Type {
+	case provider.PartReasoningFile:
+		file, err := decodeReasoningFile(value.Data)
+		if err != nil || value.MediaType == nil {
+			return invalid()
+		}
+		part.Data, part.MediaType = file, *value.MediaType
 	case provider.PartToolInputStart, provider.PartToolInputDelta, provider.PartToolInputEnd:
 		if value.ID == nil || *value.ID == "" || value.ProviderExecuted || value.Dynamic || value.Preliminary {
 			return invalid()
@@ -280,12 +296,15 @@ func decodeStreamPart(data []byte) (provider.StreamPart, error) {
 			}
 			part.Timestamp = parsed
 		}
-	case provider.PartTextStart, provider.PartTextEnd, provider.PartTextDelta:
-		if value.ID == nil || strings.TrimSpace(*value.ID) == "" {
+	case provider.PartTextStart, provider.PartTextEnd, provider.PartTextDelta, provider.PartReasoningStart, provider.PartReasoningEnd, provider.PartReasoningDelta:
+		if value.ID == nil || *value.ID == "" {
+			return invalid()
+		}
+		if (value.Type == provider.PartTextStart || value.Type == provider.PartTextEnd || value.Type == provider.PartTextDelta) && strings.TrimSpace(*value.ID) == "" {
 			return invalid()
 		}
 		part.ID = *value.ID
-		if value.Type == provider.PartTextDelta {
+		if value.Type == provider.PartTextDelta || value.Type == provider.PartReasoningDelta {
 			if value.Delta == nil {
 				return invalid()
 			}

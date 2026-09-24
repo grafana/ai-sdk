@@ -10,7 +10,7 @@ import nodeProcess from "node:process";
 import { after, before, describe, it } from "node:test";
 import { createGateway } from "@ai-sdk/gateway";
 import type { LanguageModelV4CallOptions } from "@ai-sdk/provider";
-import { isStepCount, jsonSchema, streamText, tool } from "ai";
+import { generateText, isStepCount, jsonSchema, streamText, tool, wrapLanguageModel } from "ai";
 import { buildGoClientCapture, buildGoStreamTextCapture, captureGoClient } from "./go-client-capture";
 
 const AI_GATEWAY_ROOT = resolve(import.meta.dirname, "../..");
@@ -47,6 +47,30 @@ after(() => {
 });
 
 describe("authenticated Anthropic Gateway command", () => {
+  for (const family of ["anthropic", "openai"] as const) {
+    it(`replays assembled ${family} reasoning through authenticated native requests in both clients`, async () => {
+      const [fake,gateway] = family === "anthropic" ? await startGateway() : await startOpenAIGateway();
+      const id=family === "anthropic" ? "assistant" : "openai";
+      try {
+        const first=streamText({model:gateway.client()(id),prompt:"wp17-reasoning",maxOutputTokens:64});
+        const response=await first.response;
+        assert.equal(await first.reasoningText,"private thought");
+        const metadata=(await first.reasoning)[0].providerMetadata;
+        assert.deepEqual(metadata,family === "anthropic" ? {anthropic:{signature:"end-signature"}} : {openai:{itemId:"rs_wp17",reasoningEncryptedContent:"final-encrypted"}});
+        const second=streamText({model:gateway.client()(id),messages:[{role:"user",content:"wp17-reasoning"},...response.messages],maxOutputTokens:64});
+        await second.consumeStream();
+        assert.equal(fake.requests.length,2);
+        const field=family === "anthropic" ? "messages" : "input";
+        const native=fake.requests[1].body[field];
+        assert.ok(JSON.stringify(native).includes(family === "anthropic" ? "end-signature" : "rs_wp17"));
+        const go=await captureGoClient(goStreamTextBinaryPath,{baseURL:`${gateway.url}/api/v1/aisdk`,accessToken:TEST_TOKEN,modelID:id,mode:"reasoning-replay",options:{prompt:[{role:"user",content:[{type:"text",text:"wp17-reasoning"}]}],maxOutputTokens:64}});
+        assert.equal(go.error,undefined);
+        assert.equal(fake.requests.length,4);
+        assert.deepEqual(fake.requests[3].body[field],native);
+        assert.deepEqual(fake.violations,[]);
+      } finally {await gateway.stop();await fake.stop();}
+    });
+  }
   it("preserves authenticated Vercel and Go text behavior across ordered fallback", async () => {
     const keys = generateKeyPairSync("ec", { namedCurve: "P-256" });
     const jwk = { ...keys.publicKey.export({ format: "jwk" }), kid: "fallback-test", alg: "ES256", use: "sig" };
@@ -1315,6 +1339,34 @@ describe("Trusted-proxy composition (dummy credentials, not production authentic
 });
 
 describe("authenticated OpenAI-compatible Gateway command", () => {
+  it("returns reasoning-only paid unary once and replays high-level history in both clients", async () => {
+    const [fake, gateway] = await startCompatibleGateway();
+    try {
+      const model = gateway.client()("compatible");
+      // Deliberate host transport adaptation; never enable native body headers.
+      const unaryModel = wrapLanguageModel({ model, middleware: { specificationVersion: "v4", wrapGenerate: async ({params}) => {
+        const {headers,...options}=params;
+        assert.deepEqual(Object.keys(headers ?? {}),["user-agent"]);
+        assert.match(headers!["user-agent"]!,/^ai\/7\.0\.107(?:\s|$)/);
+        return createGateway({apiKey:"ignored",baseURL:`${gateway.url}/api/v1/aisdk`,headers:{"X-Access-Token":TEST_TOKEN,"user-agent":headers!["user-agent"]!}})("compatible").doGenerate(options);
+      } } });
+      const unary = await generateText({model:unaryModel,prompt:"wp17-reasoning",maxOutputTokens:64});
+      assert.equal(fake.requests.length,1);
+      assert.equal(unary.reasoningText,"private thought");
+      const first=streamText({model,prompt:"wp17-reasoning",maxOutputTokens:64});
+      const response=await first.response;
+      assert.equal(await first.reasoningText,"private thought");
+      const second=streamText({model,messages:[{role:"user",content:"wp17-reasoning"},...response.messages],maxOutputTokens:64});
+      await second.consumeStream();
+      assert.equal(fake.requests.length,3);
+      assert.ok(JSON.stringify(fake.requests[2].body.messages).includes("private thought"));
+      const go=await captureGoClient(goStreamTextBinaryPath,{baseURL:`${gateway.url}/api/v1/aisdk`,accessToken:TEST_TOKEN,modelID:"compatible",mode:"reasoning-replay",options:{prompt:[{role:"user",content:[{type:"text",text:"wp17-reasoning"}]}],maxOutputTokens:64}});
+      assert.equal(go.error,undefined);
+      assert.equal(fake.requests.length,5);
+      assert.deepEqual(fake.requests[4].body.messages,fake.requests[2].body.messages);
+      assert.deepEqual(fake.violations,[]);
+    } finally { await gateway.stop(); await fake.stop(); }
+  });
   it("discovers, invokes, and streams usage without exposing private configuration", async () => {
     const [fake, gateway] = await startCompatibleGateway();
     try {
@@ -1949,6 +2001,21 @@ class FakeAnthropic {
     if (body.model !== this.backendModel) this.violations.push(`model=${String(body.model)}`);
     if (request.headers["x-access-token"] != null || request.headers["x-grafana-id"] != null) this.violations.push("forwarded-caller-credential");
 
+    if (serialized.includes("wp17-reasoning")) {
+      response.writeHead(200,{"Content-Type":"text/event-stream"});
+      const events=[
+        {type:"message_start",message:{id:"r",type:"message",role:"assistant",model:"backend-private",content:[],stop_reason:null,usage:{input_tokens:2,output_tokens:0}}},
+        {type:"content_block_start",index:0,content_block:{type:"thinking",thinking:"",signature:""}},
+        {type:"content_block_delta",index:0,delta:{type:"thinking_delta",thinking:"private thought"}},
+        {type:"content_block_delta",index:0,delta:{type:"signature_delta",signature:"end-signature"}},
+        {type:"content_block_stop",index:0},
+        {type:"message_delta",delta:{stop_reason:"end_turn",stop_sequence:null},usage:{output_tokens:3}},
+        {type:"message_stop"},
+      ];
+      for(const event of events)response.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
+      response.end();return;
+    }
+
     if (this.failureStatus != null) {
       response.writeHead(this.failureStatus, { "Content-Type": "application/json", "x-private-provider": "backend-private" });
       response.end(JSON.stringify({ type: "error", error: { type: "api_error", message: "provider-secret-response integration-anthropic-key backend-private" }, request_id: "backend-private-request" }));
@@ -2068,6 +2135,18 @@ class FakeCompatible {
     if (authorization !== "Bearer integration-compatible-key") this.violations.push("authorization");
     if (body.model !== "backend-private") this.violations.push(`model=${String(body.model)}`);
 
+    if (JSON.stringify(body).includes("wp17-reasoning")) {
+      if (body.stream !== true) {
+        response.writeHead(200,{"Content-Type":"application/json"});
+        response.end(JSON.stringify({id:"reasoning",object:"chat.completion",created:1,model:"backend-private",choices:[{index:0,message:{role:"assistant",content:null,reasoning_content:"private thought"},finish_reason:"stop"}],usage:{prompt_tokens:2,completion_tokens:3,total_tokens:5,completion_tokens_details:{reasoning_tokens:3}}}));
+      } else {
+        response.writeHead(200,{"Content-Type":"text/event-stream"});
+        for(const choices of [[{index:0,delta:{role:"assistant",reasoning_content:"private thought"},finish_reason:null}],[{index:0,delta:{},finish_reason:"stop"}]]) response.write(`data: ${JSON.stringify({id:"reasoning",object:"chat.completion.chunk",created:1,model:"backend-private",choices})}\n\n`);
+        response.end("data: [DONE]\n\n");
+      }
+      return;
+    }
+
     if (this.redirectTo != null) {
       response.writeHead(307, { Location: this.redirectTo });
       response.end();
@@ -2140,6 +2219,20 @@ class FakeOpenAI {
     if (request.url !== "/v1/responses") this.violations.push(`path=${request.url}`);
     if (authorization !== "Bearer integration-openai-key") this.violations.push("authorization");
     if (body.model !== "backend-private") this.violations.push(`model=${String(body.model)}`);
+
+    if (JSON.stringify(body).includes("wp17-reasoning")) {
+      response.writeHead(200,{"Content-Type":"text/event-stream"});
+      const item={type:"reasoning",id:"rs_wp17",summary:[{type:"summary_text",text:"private thought"}],encrypted_content:"final-encrypted"};
+      const events=[
+        {type:"response.created",response:{id:"resp_wp17",object:"response",created_at:1,status:"in_progress",model:"backend-private",output:[],usage:null}},
+        {type:"response.output_item.added",output_index:0,item:{...item,summary:[],encrypted_content:null}},
+        {type:"response.reasoning_summary_text.delta",output_index:0,item_id:"rs_wp17",summary_index:0,delta:"private thought"},
+        {type:"response.output_item.done",output_index:0,item},
+        {type:"response.completed",response:{id:"resp_wp17",object:"response",created_at:1,status:"completed",model:"backend-private",output:[item],usage:{input_tokens:2,output_tokens:3,output_tokens_details:{reasoning_tokens:3},total_tokens:5}}},
+      ];
+      events.forEach((event,index)=>response.write(`event: ${event.type}\ndata: ${JSON.stringify({...event,sequence_number:index})}\n\n`));
+      response.end();return;
+    }
 
     if (this.redirectTo != null) {
       response.writeHead(307, { Location: this.redirectTo });

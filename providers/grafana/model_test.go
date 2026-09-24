@@ -103,7 +103,7 @@ func TestModel_UnaryFailures(t *testing.T) {
 	for _, tc := range []struct{ name, body string }{
 		{"missing content", `{"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}}}`},
 		{"null content", strings.Replace(unaryFixture, `[{"type":"text","text":"hello"},{"type":"text","text":""}]`, `null`, 1)},
-		{"unknown family", strings.Replace(unaryFixture, `"type":"text"`, `"type":"reasoning"`, 1)},
+		{"unknown family", strings.Replace(unaryFixture, `"type":"text"`, `"type":"custom"`, 1)},
 		{"missing text", strings.Replace(unaryFixture, `,"text":"hello"`, "", 1)},
 		{"null text", strings.Replace(unaryFixture, `"text":"hello"`, `"text":null`, 1)},
 		{"unknown finish", strings.Replace(unaryFixture, `"unified":"stop"`, `"unified":"unknown"`, 1)},

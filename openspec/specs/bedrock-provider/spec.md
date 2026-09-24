@@ -1,9 +1,7 @@
 ## Purpose
 
 Define the AWS Bedrock provider module, its `provider.LanguageModel` implementation driving the Bedrock Converse API, request/response conversion, authentication, streaming, error semantics, and registry integration.
-
 ## Requirements
-
 ### Requirement: Module location and naming
 
 The Bedrock provider SHALL be implemented as a separate Go module located at `providers/bedrock/` with module path `github.com/grafana/ai-sdk/providers/bedrock`. It MUST NOT be a subpackage of the root `aisdk` module and MUST NOT depend on `providers/anthropic`.
@@ -499,3 +497,12 @@ The provider's `Provider()` method SHALL return `"amazon-bedrock"`. Its `ModelID
 
 - **WHEN** a consumer constructs `bedrock.New("amazon.nova-lite-v1:0")`
 - **THEN** `ModelID()` returns `"amazon.nova-lite-v1:0"` verbatim
+
+### Requirement: Redacted reasoning continuation
+
+The provider SHALL preserve native redactedContent as reasoning metadata under both amazonBedrock and bedrock. Streaming fragments SHALL accumulate per native block and be published as the complete opaque value on reasoning-end. Assistant replay SHALL select signature, then redactedContent, then legacy redactedData, preserving present empty raw values and signed whitespace. Existing public typed string options SHALL remain compatible.
+
+#### Scenario: Fragmented opaque continuation
+- **WHEN** one native reasoning block emits multiple redactedContent fragments
+- **THEN** its final metadata SHALL contain their concatenation, not merely the last fragment
+- **AND** replay SHALL reconstruct the native redactedContent value

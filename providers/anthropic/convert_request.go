@@ -985,17 +985,17 @@ func convertAssistantContent(v *cacheControlValidator, mapping toolNameMapping, 
 			sig := extractSignature(p.ProviderOptions)
 			redacted := extractRedactedData(p.ProviderOptions)
 			switch {
-			case sig != "":
+			case sig != nil:
 				blocks = append(blocks, anthropic.BetaContentBlockParamUnion{
 					OfThinking: &anthropic.BetaThinkingBlockParam{
 						Thinking:  p.Text,
-						Signature: sig,
+						Signature: *sig,
 					},
 				})
-			case redacted != "":
+			case redacted != nil:
 				blocks = append(blocks, anthropic.BetaContentBlockParamUnion{
 					OfRedactedThinking: &anthropic.BetaRedactedThinkingBlockParam{
-						Data: redacted,
+						Data: *redacted,
 					},
 				})
 			case p.Text != "":
@@ -2673,16 +2673,16 @@ func extractRawJSON(opts provider.ProviderOptions) json.RawMessage {
 	return nil
 }
 
-func extractSignature(opts provider.ProviderOptions) string {
+func extractSignature(opts provider.ProviderOptions) *string {
 	raw := extractRawJSON(opts)
 	if raw == nil {
-		return ""
+		return nil
 	}
 	var data struct {
-		Signature string `json:"signature"`
+		Signature *string `json:"signature"`
 	}
 	if json.Unmarshal(raw, &data) != nil {
-		return ""
+		return nil
 	}
 	return data.Signature
 }
@@ -2690,16 +2690,16 @@ func extractSignature(opts provider.ProviderOptions) string {
 // extractRedactedData reads the anthropic-namespaced `redactedData` value off
 // a reasoning ContentPart's ProviderOptions; used to round-trip Anthropic's
 // `redacted_thinking` blocks across multi-turn requests.
-func extractRedactedData(opts provider.ProviderOptions) string {
+func extractRedactedData(opts provider.ProviderOptions) *string {
 	raw := extractRawJSON(opts)
 	if raw == nil {
-		return ""
+		return nil
 	}
 	var data struct {
-		RedactedData string `json:"redactedData"`
+		RedactedData *string `json:"redactedData"`
 	}
 	if json.Unmarshal(raw, &data) != nil {
-		return ""
+		return nil
 	}
 	return data.RedactedData
 }

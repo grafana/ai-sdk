@@ -173,6 +173,25 @@ func mapWireMessage(message wireMessage, toolsEnabled bool) (provider.Message, *
 }
 
 func mapWirePart(part wirePart, role provider.Role, toolsEnabled bool) (provider.ContentPart, *requestFailure) {
+	if part.Type == provider.ContentPartTypeReasoning || part.Type == provider.ContentPartTypeReasoningFile {
+		if role != provider.RoleAssistant {
+			return provider.ContentPart{}, invalidMappingFailure()
+		}
+		options, failure := mapScopedProviderOptions(part.ProviderOptions)
+		if failure != nil {
+			return provider.ContentPart{}, failure
+		}
+		mapped := provider.ReasoningPart(part.Text)
+		if part.Type == provider.ContentPartTypeReasoningFile {
+			data, failure := mapWireFileData(part.Data)
+			if failure != nil || (!data.IsData() && !data.IsURL()) {
+				return provider.ContentPart{}, invalidMappingFailure()
+			}
+			mapped = provider.ReasoningFilePart(part.MediaType, data)
+		}
+		mapped.ProviderOptions = options
+		return mapped, nil
+	}
 	if part.Type == provider.ContentPartTypeFile {
 		options, failure := mapScopedProviderOptions(part.ProviderOptions)
 		if failure != nil {
@@ -193,8 +212,6 @@ func mapWirePart(part wirePart, role provider.Role, toolsEnabled bool) (provider
 	switch part.Type {
 	case provider.ContentPartTypeText:
 		return provider.TextPart(part.Text), nil
-	case provider.ContentPartTypeReasoningFile, provider.ContentPartTypeReasoning:
-		return provider.ContentPart{}, unsupportedMappingFailure(capabilityReasoningContent)
 	case provider.ContentPartTypeCustom:
 		return provider.ContentPart{}, unsupportedMappingFailure(capabilityCustomContent)
 	case provider.ContentPartTypeToolCall:

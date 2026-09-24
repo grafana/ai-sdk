@@ -17,6 +17,9 @@ func TestDoStream_CommitmentBoundary(t *testing.T) {
 		{Type: provider.PartError, APICallError: provider.NewAPICallError(provider.APICallErrorOptions{Message: "retryable", StatusCode: 503})},
 		{Type: provider.StreamPartType("unrecognized")},
 		{Type: provider.PartTextDelta, Delta: ""},
+		{Type: provider.PartReasoningStart, ID: "r1"},
+		{Type: provider.PartReasoningDelta, ID: "r1", Delta: ""},
+		{Type: provider.PartReasoningFile, MediaType: "image/png", Data: &provider.StreamFileData{Type: provider.StreamFileDataTypeData}},
 	} {
 		t.Run(string(first.Type)+first.Delta, func(t *testing.T) {
 			parts := []provider.StreamPart{first, {Type: provider.PartError}, {Type: provider.PartTextDelta, Delta: "after"}}
