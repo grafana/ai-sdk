@@ -117,7 +117,11 @@ func main() {
 				cancel()
 			}
 		}
-		emit(map[string]any{"parts": parts, "request": result.Request, "response": result.Response, "canceled": ctx.Err() != nil})
+		metadata := make([]provider.ProviderMetadata, len(parts))
+		for i, part := range parts {
+			metadata[i] = part.ProviderMetadata
+		}
+		emit(map[string]any{"parts": parts, "partMetadata": metadata, "request": result.Request, "response": result.Response, "canceled": ctx.Err() != nil})
 		return
 	}
 	if input.Mode == "stream-text" {
@@ -133,6 +137,29 @@ func main() {
 			return
 		}
 		emit(map[string]any{"text": result.Text()})
+		return
+	}
+	if input.Mode == "reasoning-replay" {
+		opts := []aisdk.GenerateOption{aisdk.WithModelMessages(input.Options.Prompt...)}
+		if input.Options.MaxOutputTokens != nil {
+			opts = append(opts, aisdk.WithMaxOutputTokens(*input.Options.MaxOutputTokens))
+		}
+		first, err := aisdk.GenerateText(ctx, model, opts...)
+		if err != nil {
+			emitError(err)
+			return
+		}
+		history := append(append([]provider.Message{}, input.Options.Prompt...), first.Response.Messages...)
+		opts = []aisdk.GenerateOption{aisdk.WithModelMessages(history...)}
+		if input.Options.MaxOutputTokens != nil {
+			opts = append(opts, aisdk.WithMaxOutputTokens(*input.Options.MaxOutputTokens))
+		}
+		_, err = aisdk.GenerateText(ctx, model, opts...)
+		if err != nil {
+			emitError(err)
+			return
+		}
+		emit(map[string]any{"reasoning": first.Reasoning, "messages": first.Response.Messages, "usage": first.Usage})
 		return
 	}
 	if input.Mode == "stream-loop" {
@@ -183,7 +210,13 @@ func main() {
 		emitError(err)
 		return
 	}
-	emit(map[string]any{"result": result})
+	// Producer-domain JSON omitempty drops empty maps. Capture the in-memory
+	// metadata separately so differential tests distinguish {} from nil.
+	metadata := make([]provider.ProviderMetadata, len(result.Content))
+	for i, part := range result.Content {
+		metadata[i] = part.ProviderMetadata
+	}
+	emit(map[string]any{"result": result, "contentMetadata": metadata})
 }
 
 func emitError(err error) {

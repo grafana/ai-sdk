@@ -212,11 +212,37 @@ func decodeGenerate(body []byte) (*provider.GenerateResult, error) {
 			Input            *string                      `json:"input"`
 			ProviderExecuted bool                         `json:"providerExecuted"`
 			Dynamic          bool                         `json:"dynamic"`
+			MediaType        *string                      `json:"mediaType"`
+			Data             json.RawMessage              `json:"data"`
+			Metadata         json.RawMessage              `json:"providerMetadata"`
 		}
-		if decodeFields(raw, &part, "type", "text", "toolCallId", "toolName", "input", "providerExecuted", "dynamic") != nil || part.ProviderExecuted || part.Dynamic {
+		if decodeFields(raw, &part, "type", "text", "toolCallId", "toolName", "input", "providerExecuted", "dynamic", "mediaType", "data", "providerMetadata") != nil || part.ProviderExecuted || part.Dynamic {
 			return nil, errors.New("grafana: invalid unary content")
 		}
 		switch part.Type {
+		case provider.ContentReasoning, provider.ContentReasoningFile:
+			metadata, err := decodeReasoningMetadata(part.Metadata)
+			if err != nil {
+				return nil, err
+			}
+			mapped := provider.GenerateContentPart{Type: part.Type, ProviderMetadata: metadata}
+			if part.Type == provider.ContentReasoning {
+				if part.Text == nil {
+					return nil, errors.New("grafana: missing reasoning text")
+				}
+				mapped.Text = *part.Text
+			} else {
+				data, err := decodeReasoningFile(part.Data)
+				if err != nil || part.MediaType == nil {
+					return nil, errors.New("grafana: invalid reasoning file")
+				}
+				file := provider.Base64DataContent(data.Base64)
+				if data.Type == provider.StreamFileDataTypeURL {
+					file = provider.URLDataContent(data.URL)
+				}
+				mapped.Data, mapped.MediaType = &file, *part.MediaType
+			}
+			content = append(content, mapped)
 		case provider.ContentText:
 			if part.Text == nil {
 				return nil, errors.New("grafana: missing unary text")

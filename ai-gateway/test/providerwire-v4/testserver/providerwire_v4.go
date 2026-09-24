@@ -56,6 +56,29 @@ func (m *providerWireV4Model) DoStream(ctx context.Context, options provider.Cal
 	one := 1
 	two := 2
 	switch m.kind {
+	case "reasoning-files":
+		m.stats.recordSuccess(options)
+		meta := provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":"file","reasoningEncryptedContent":null}`)}
+		return &provider.StreamResult{Stream: scenarioStream(
+			provider.StreamPart{Type: provider.PartReasoningFile, MediaType: "image/png", Data: &provider.StreamFileData{Type: provider.StreamFileDataTypeData}, ProviderMetadata: meta},
+			provider.StreamPart{Type: provider.PartReasoningFile, MediaType: "image/png", Data: &provider.StreamFileData{Bytes: []byte{1, 2, 3}}, ProviderMetadata: provider.ProviderMetadata{}},
+			provider.StreamPart{Type: provider.PartReasoningFile, MediaType: "image/png", Data: &provider.StreamFileData{Type: provider.StreamFileDataTypeURL, URL: "https://example.test/reasoning"}},
+			provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: &provider.Usage{OutputTokens: provider.OutputTokenUsage{Total: &two, Reasoning: &two}}},
+		)}, nil
+	case "reasoning":
+		m.stats.recordSuccess(options)
+		return &provider.StreamResult{Stream: scenarioStream(
+			provider.StreamPart{Type: provider.PartReasoningStart, ID: "1", ProviderMetadata: provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":"old","reasoningEncryptedContent":null}`)}},
+			provider.StreamPart{Type: provider.PartReasoningStart, ID: "2"},
+			provider.StreamPart{Type: provider.PartTextStart, ID: "1"},
+			provider.StreamPart{Type: provider.PartReasoningDelta, ID: "1", Delta: "first "},
+			provider.StreamPart{Type: provider.PartReasoningDelta, ID: "2", Delta: "second"},
+			provider.StreamPart{Type: provider.PartTextDelta, ID: "1", Delta: "answer"},
+			provider.StreamPart{Type: provider.PartReasoningEnd, ID: "2", ProviderMetadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"signature":"end-signature"}`)}},
+			provider.StreamPart{Type: provider.PartReasoningEnd, ID: "1", ProviderMetadata: provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":"final","reasoningEncryptedContent":"opaque"}`)}},
+			provider.StreamPart{Type: provider.PartTextEnd, ID: "1"},
+			provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: &provider.Usage{}},
+		)}, nil
 	case "stream-tool-arguments":
 		var parts []provider.StreamPart
 		for i, input := range []string{"", `{"service":`, "\"\\\n\t<>&\u2028\u2029"} {
@@ -149,6 +172,18 @@ func (m *providerWireV4Model) DoStream(ctx context.Context, options provider.Cal
 
 func (m *providerWireV4Model) DoGenerate(ctx context.Context, options provider.CallOptions) (*provider.GenerateResult, error) {
 	switch m.kind {
+	case "reasoning-files":
+		m.stats.recordSuccess(options)
+		empty, data, url := provider.Base64DataContent(""), provider.BytesDataContent([]byte{1, 2, 3}), provider.URLDataContent("https://example.test/reasoning")
+		two := 2
+		return &provider.GenerateResult{Content: []provider.GenerateContentPart{
+			{Type: provider.ContentReasoningFile, MediaType: "image/png", Data: &empty, ProviderMetadata: provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":"file","reasoningEncryptedContent":null}`)}},
+			{Type: provider.ContentReasoningFile, MediaType: "image/png", Data: &data, ProviderMetadata: provider.ProviderMetadata{}},
+			{Type: provider.ContentReasoningFile, MediaType: "image/png", Data: &url},
+		}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: provider.Usage{OutputTokens: provider.OutputTokenUsage{Total: &two, Reasoning: &two}}}, nil
+	case "reasoning":
+		m.stats.recordSuccess(options)
+		return &provider.GenerateResult{Content: []provider.GenerateContentPart{{Type: provider.ContentReasoning, Text: "", ProviderMetadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"signature":"end-signature"}`)}}}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}, nil
 	case "unary-tools", "unary-tools-provider-executed", "unary-tools-dynamic":
 		m.stats.recordSuccess(options)
 		for _, message := range options.Prompt {
@@ -203,7 +238,7 @@ type providerWireV4Scenario struct {
 func newProviderWireV4Scenario() (*providerWireV4Scenario, error) {
 	stats := &providerWireV4Stats{}
 	entries := make([]catalog.StaticEntry, 0, 5)
-	for _, id := range []string{"success", "blocking", "stream-errors", "stream-timeout", "stream-blocking", "unary-tools", "unary-tools-provider-executed", "unary-tools-dynamic", "stream-tools", "stream-tool-results", "stream-tool-arguments"} {
+	for _, id := range []string{"reasoning-files", "reasoning", "success", "blocking", "stream-errors", "stream-timeout", "stream-blocking", "unary-tools", "unary-tools-provider-executed", "unary-tools-dynamic", "stream-tools", "stream-tool-results", "stream-tool-arguments"} {
 		entries = append(entries, catalog.StaticEntry{
 			Info:  catalog.ModelInfo{ID: id},
 			Model: &providerWireV4Model{kind: id, stats: stats},
@@ -259,6 +294,11 @@ func (s *providerWireV4Scenario) register(mux *http.ServeMux) {
 			"streamBlockingCalls": s.stats.streamBlockingCalls.Load(),
 			"cancellations":       s.stats.cancellations.Load(),
 		})
+	})
+	// Test-only capture, never a production diagnostics surface.
+	mux.HandleFunc("GET "+providerWireV4Prefix+"/options", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(s.stats.options())
 	})
 }
 
