@@ -23,10 +23,17 @@ func SimulateStreaming() Middleware {
 			ch := make(chan provider.StreamPart, 64)
 			go func() {
 				defer close(ch)
+				send := func(part provider.StreamPart) bool {
+					select {
+					case <-ctx.Done():
+						return false
+					case ch <- part:
+						return true
+					}
+				}
 
-				ch <- provider.StreamPart{
-					Type:     provider.PartStreamStart,
-					Warnings: result.Warnings,
+				if !send(provider.StreamPart{Type: provider.PartStreamStart, Warnings: result.Warnings}) {
+					return
 				}
 
 				responseMeta := provider.StreamPart{Type: provider.PartResponseMeta}
@@ -36,7 +43,9 @@ func SimulateStreaming() Middleware {
 					responseMeta.Timestamp = result.Response.Timestamp
 					responseMeta.ResponseHeaders = result.Response.Headers
 				}
-				ch <- responseMeta
+				if !send(responseMeta) {
+					return
+				}
 
 				id := 0
 				for _, part := range result.Content {
@@ -44,27 +53,33 @@ func SimulateStreaming() Middleware {
 					switch part.Type {
 					case provider.ContentText:
 						if len(part.Text) > 0 {
-							ch <- provider.StreamPart{Type: provider.PartTextStart, ID: idStr}
-							ch <- provider.StreamPart{Type: provider.PartTextDelta, ID: idStr, Delta: part.Text}
-							ch <- provider.StreamPart{Type: provider.PartTextEnd, ID: idStr}
+							if !send(provider.StreamPart{Type: provider.PartTextStart, ID: idStr, ProviderMetadata: part.ProviderMetadata}) ||
+								!send(provider.StreamPart{Type: provider.PartTextDelta, ID: idStr, Delta: part.Text}) ||
+								!send(provider.StreamPart{Type: provider.PartTextEnd, ID: idStr}) {
+								return
+							}
 							id++
 						}
 					case provider.ContentReasoning:
-						ch <- provider.StreamPart{Type: provider.PartReasoningStart, ID: idStr, ProviderMetadata: part.ProviderMetadata}
-						ch <- provider.StreamPart{Type: provider.PartReasoningDelta, ID: idStr, Delta: part.Text}
-						ch <- provider.StreamPart{Type: provider.PartReasoningEnd, ID: idStr}
+						if !send(provider.StreamPart{Type: provider.PartReasoningStart, ID: idStr, ProviderMetadata: part.ProviderMetadata}) ||
+							!send(provider.StreamPart{Type: provider.PartReasoningDelta, ID: idStr, Delta: part.Text}) ||
+							!send(provider.StreamPart{Type: provider.PartReasoningEnd, ID: idStr}) {
+							return
+						}
 						id++
 					default:
-						ch <- contentPartToStreamPart(part)
+						if !send(contentPartToStreamPart(part)) {
+							return
+						}
 					}
 				}
 
-				ch <- provider.StreamPart{
+				send(provider.StreamPart{
 					Type:             provider.PartFinish,
 					FinishReason:     &result.FinishReason,
 					Usage:            &result.Usage,
 					ProviderMetadata: result.ProviderMetadata,
-				}
+				})
 			}()
 
 			var req *provider.RequestMetadata
@@ -91,34 +106,43 @@ func contentPartToStreamPart(part provider.GenerateContentPart) provider.StreamP
 	sp := provider.StreamPart{
 		Type:             provider.StreamPartType(string(part.Type)),
 		Kind:             part.Kind,
+		ApprovalID:       part.ApprovalID,
 		ToolCallID:       part.ToolCallID,
 		ToolName:         part.ToolName,
+		Result:           part.Result,
+		IsError:          part.IsError,
+		Preliminary:      part.Preliminary,
 		ProviderExecuted: part.ProviderExecuted,
 		Dynamic:          part.Dynamic,
-		MediaType:        part.MediaType,
-		Filename:         part.Filename,
 		ProviderMetadata: part.ProviderMetadata,
 	}
 
-	if len(part.Input) > 0 {
+	switch part.Type {
+	case provider.ContentToolCall:
 		sp.Input = string(part.Input)
-	}
-
-	if part.SourceType != "" || part.URL != "" {
+	case provider.ContentSource:
+		sp.ProviderMetadata = nil
 		sp.Source = &provider.SourceInfo{
-			SourceType: part.SourceType,
-			URL:        part.URL,
+			SourceType:       part.SourceType,
+			ID:               part.ID,
+			URL:              part.URL,
+			Title:            part.Title,
+			MediaType:        part.MediaType,
+			Filename:         part.Filename,
+			ProviderMetadata: part.ProviderMetadata,
 		}
-	}
-
-	if part.Data != nil {
-		switch {
-		case part.Data.Bytes != nil:
-			sp.Data = &provider.StreamFileData{Type: provider.StreamFileDataTypeData, Bytes: part.Data.Bytes}
-		case part.Data.Base64 != "":
-			sp.Data = &provider.StreamFileData{Type: provider.StreamFileDataTypeData, Base64: part.Data.Base64}
-		case part.Data.URL != "":
-			sp.Data = &provider.StreamFileData{Type: provider.StreamFileDataTypeURL, URL: part.Data.URL}
+	case provider.ContentFile, provider.ContentReasoningFile:
+		sp.MediaType = part.MediaType
+		sp.Filename = part.Filename
+		if part.Data != nil {
+			switch {
+			case part.Data.Bytes != nil:
+				sp.Data = &provider.StreamFileData{Type: provider.StreamFileDataTypeData, Bytes: part.Data.Bytes}
+			case part.Data.Base64 != "":
+				sp.Data = &provider.StreamFileData{Type: provider.StreamFileDataTypeData, Base64: part.Data.Base64}
+			case part.Data.URL != "":
+				sp.Data = &provider.StreamFileData{Type: provider.StreamFileDataTypeURL, URL: part.Data.URL}
+			}
 		}
 	}
 
