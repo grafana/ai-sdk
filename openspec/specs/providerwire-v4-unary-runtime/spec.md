@@ -1,9 +1,7 @@
 ## Purpose
 
 Define the production ProviderWire V4 unary text and client-executed function-tool runtime and the observable contract proven against the registered Gateway client.
-
 ## Requirements
-
 ### Requirement: Constructed language-model handler
 
 The `ai-gateway/providerwire/v4` package SHALL provide one HTTP handler for relative `POST /language-model` unary and streaming requests. Construction SHALL require a non-nil `catalog.ModelResolver` and positive limits for request bytes, unary response bytes, provider stream-part count, complete SSE frame bytes, total model duration, stream idle duration, and bounded post-cancellation drain duration. Request and unary byte limits and the stream-part limit SHALL support safe `limit+1` arithmetic, and the frame limit SHALL contain the fixed start and stream-error frames.
@@ -70,15 +68,11 @@ The handler SHALL preserve ordered system messages and user or assistant text pa
 
 ### Requirement: Unsupported capability families
 
-Schema-valid files, reasoning content, custom content, provider tools and tool approvals, structured output, non-empty provider options, body headers, and raw output SHALL return a stable invalid-request document naming the unsupported family before resolution or model invocation. Unary function definitions/choices and assistant-call/tool-result history SHALL execute only within the gateway-unary-function-tools subset. Function-tool provider options SHALL be supported within that subset; deferred nested result options SHALL remain unsupported. Streaming function requests SHALL remain unsupported until WP12. The runtime SHALL not define client-visible precedence among multiple simultaneously activated unsupported families.
+Custom content, provider tools and approvals, structured output, non-empty root provider options, body headers and raw output SHALL remain unsupported before resolution. File inputs SHALL execute only within gateway-file-inputs; function-tool requests SHALL execute only within their unary/streaming subsets. Assistant reasoning text and reasoning-file history SHALL execute within gateway-reasoning-content. Scoped continuation options SHALL not enable root options or headers.
 
-#### Scenario: One unsupported family
-- **WHEN** a request activates one unsupported family
-- **THEN** the response SHALL name that family and no model SHALL be resolved or invoked
-
-#### Scenario: Malformed unsupported branch
-- **WHEN** an unsupported branch violates the complete request schema
-- **THEN** it SHALL fail as schema-invalid rather than as a valid unsupported capability
+#### Scenario: Reasoning continuation is supported
+- **WHEN** a valid assistant reasoning part carries supported scoped continuation options
+- **THEN** the model SHALL receive them without enabling deferred capability families
 
 ### Requirement: Resolution and bounded model invocation
 
@@ -114,19 +108,12 @@ Every runtime error response SHALL be selected from precomputed documents with f
 
 ### Requirement: Minimal unary success response
 
-A successful unary response SHALL contain only ordered supported text and function-tool-call `content`, `finishReason`, and `usage`. The handler SHALL accept only registered finish reasons and non-negative usage counts no greater than JavaScript's maximum safe integer. Provider warnings, request data, response IDs, timestamps, model IDs, provider identity, headers, bodies, raw usage, provider metadata, and content metadata SHALL be omitted. The registered Gateway client owns unary `warnings`, `request`, and `response`; raw response-body details outside this minimal contract are not guaranteed.
+A successful response SHALL contain only ordered supported text, function-tool-call, reasoning and reasoning-file content, finishReason and usage. Reasoning content metadata SHALL use the closed, bounded continuation projection in gateway-reasoning-content. All other response/request metadata, warnings, identity, headers and raw usage SHALL remain omitted. Required empty reasoning text and selected empty inline file data SHALL be retained. Invalid output SHALL fail safely before HTTP 200.
 
-#### Scenario: Valid text result
-- **WHEN** the model returns text, a registered finish reason, and valid usage
-- **THEN** the handler SHALL preserve those values and emit no other top-level members
-
-#### Scenario: Unsupported provider result
-- **WHEN** the model returns content outside the supported text/function-tool-call subset, an unknown finish reason, invalid usage, `nil, nil`, or panics
-- **THEN** the handler SHALL return the fixed internal-error document before committing HTTP 200
-
-#### Scenario: Provider-private fields
-- **WHEN** the model result contains warnings, response metadata, raw usage, backend identity, or provider metadata
-- **THEN** none of those values SHALL appear in the unary response document
+#### Scenario: Reasoning-only paid success
+- **WHEN** a provider returns a valid reasoning-only result
+- **THEN** the Gateway SHALL return success rather than a retryable adaptation error
+- **AND** default high-level retries SHALL not invoke the provider again for that valid result
 
 ### Requirement: Bounded preflight and standard success encoding
 
