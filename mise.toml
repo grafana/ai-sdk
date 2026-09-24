@@ -52,6 +52,18 @@ run = "go test ./..."
 description = "Run AI Gateway tests outside the root workspace"
 run = "cd ai-gateway && GOWORK=off GOFLAGS=\"${GOFLAGS:+$GOFLAGS }-mod=readonly\" go test ./..."
 
+[tasks.verify-gateway-workspace]
+description = "Verify explicit Gateway workspace resolves candidate SDK source"
+run = "bash scripts/verify-gateway-workspace.sh"
+
+[tasks.test-ai-gateway-source]
+description = "Run Gateway Go tests against candidate SDK source"
+run = """
+workspace_file="$PWD/go.gateway.work"
+mise run verify-gateway-workspace
+(cd ai-gateway && GOWORK="$workspace_file" GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" go test ./...)
+"""
+
 [tasks.build-ai-gateway-image]
 description = "Build and load the AI Gateway image for the local architecture"
 run = """
@@ -145,38 +157,24 @@ go vet ./...
 """
 
 [tasks.verify-module-resolution]
-description = "Verify each published module resolves from the public proxy and tests outside the workspace"
-run = """
-set -e
-module_cache=$(mktemp -d)
-trap 'chmod -R u+w "$module_cache" 2>/dev/null || true; rm -rf "$module_cache"' EXIT
-export GOMODCACHE="$module_cache"
-export GOPROXY="https://proxy.golang.org"
-export GOPRIVATE=
-export GONOPROXY=
-export GONOSUMDB=
-export GOWORK=off
-for go_mod in $(git ls-files 'go.mod' '*/go.mod' | while read -r file; do [ -f "$file" ] && echo "$file"; done | sort); do
-  module_path=$(go mod edit -json "$go_mod" | jq -r '.Module.Path')
-  case "$module_path" in
-    github.com/grafana/ai-sdk/examples/*|github.com/grafana/ai-sdk/test/*)
-      continue
-      ;;
-  esac
-  replacements=$(go mod edit -json "$go_mod" | jq '(.Replace // []) | length')
-  if [ "$replacements" -ne 0 ]; then
-    echo "$module_path contains replace directives"
-    exit 1
-  fi
-  mod=$(dirname "$go_mod")
-  echo "==> $mod"
-  (cd "$mod" && go mod download && go mod verify > /dev/null && go test -mod=readonly ./...)
-done
-"""
+description = "Verify every published module from the public proxy outside the workspace"
+run = "bash scripts/verify-module-resolution.sh"
+
+[tasks.verify-published-module]
+description = "Verify one published module outside the workspace (MODULE=providers/openai)"
+run = "bash scripts/verify-module-resolution.sh \"${MODULE:?set MODULE to a published module root or path}\""
+
+[tasks.verify-merged-pins]
+description = "Verify published internal pins descend from canonical merged main"
+run = "GOWORK=off go run ./cmd/modulecheck pins"
 
 [tasks.verify-ai-gateway-boundary]
 description = "Verify the one-way AI Gateway module and license boundary"
 run = "bash scripts/verify-ai-gateway-boundary.sh"
+
+[tasks.verify-sdk-gateway-isolation]
+description = "Build and test the SDK and Grafana client without Gateway source"
+run = "bash scripts/verify-sdk-gateway-isolation.sh"
 
 [tasks.lint]
 description = "Run golangci-lint across all modules"
@@ -323,6 +321,18 @@ description = "Run the authenticated AI Gateway command integration"
 run = """
 mise deps install --only test
 cd test && pnpm --filter @ai-sdk/providerwire-v4-contract test:command
+"""
+
+[tasks.test-ai-gateway-source-integration]
+description = "Run Gateway command and ProviderWire integration against candidate SDK source"
+run = """
+workspace_file="$PWD/go.gateway.work"
+mise run verify-gateway-workspace
+mise deps install --only test
+export GATEWAY_TEST_GOWORK="$workspace_file"
+cd test
+pnpm --filter @ai-sdk/providerwire-v4-contract exec tsx --test runtime-integration.test.ts
+pnpm --filter @ai-sdk/providerwire-v4-contract test:command
 """
 
 [tasks.update-providerwire-v4-goldens]

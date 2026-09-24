@@ -50,7 +50,7 @@ if [[ -e gateway/catalog || -e gateway/providerwire ]]; then
   exit 1
 fi
 
-workspace_json=$(go work edit -json)
+workspace_json=$(go work edit -json go.work)
 while IFS= read -r workspace_path; do
   workspace_go_mod="$workspace_path/go.mod"
   if [[ ! -f "$workspace_go_mod" ]]; then
@@ -79,63 +79,30 @@ while IFS= read -r target; do
   fi
 done < <(jq -r '(.Replace // [])[]?.New.Path // empty' <<<"$workspace_json")
 
-while IFS= read -r go_mod; do
-  if [[ "$go_mod" == ./ai-gateway/* ]]; then
-    continue
-  fi
+GOWORK=off go run ./cmd/modulecheck boundary-modules
+GOWORK=off go run ./cmd/modulecheck boundary-sources
 
-  module_json=$(GOWORK=off go mod edit -json "$go_mod")
-  if jq -e --arg module "$gateway_module" '
-    [(.Require // [])[]?.Path, (.Replace // [])[]?.Old.Path, (.Replace // [])[]?.New.Path]
-    | map(select(type == "string"))
-    | any(. == $module or startswith($module + "/"))
-  ' <<<"$module_json" >/dev/null; then
-    echo "${go_mod#./} requires or replaces the AI Gateway module" >&2
-    exit 1
-  fi
-  while IFS= read -r target; do
-    if replacement_targets_gateway "$(dirname "$go_mod")" "$target"; then
-      echo "${go_mod#./} replaces a module with AI Gateway source" >&2
-      exit 1
-    fi
-  done < <(jq -r '(.Replace // [])[]?.New.Path // empty' <<<"$module_json")
-done < <(find . -name go.mod ! -path './.git/*' ! -path '*/node_modules/*' | sort)
-
-while IFS= read -r source; do
-  if grep -nF "$gateway_module" "$source"; then
-    echo "Go source outside ai-gateway imports the AI Gateway module" >&2
-    exit 1
-  fi
-done < <(find . -type f -name '*.go' ! -path './.git/*' ! -path './ai-gateway/*' ! -path '*/node_modules/*' ! -path '*/vendor/*' | sort)
-
+root_graph=$(GOWORK=off GOFLAGS="$readonly_flags" go list -m all)
 while read -r module _; do
   if [[ "$module" == "$gateway_module" || "$module" == "$gateway_module/"* ]]; then
     echo "the root module graph contains the AI Gateway module" >&2
     exit 1
   fi
-done < <(GOWORK=off GOFLAGS="$readonly_flags" go list -m all)
+done <<<"$root_graph"
 
-GOWORK=off GOFLAGS="$readonly_flags" go build ./...
-GOWORK=off GOFLAGS="$readonly_flags" go test ./...
 (
   cd providers/grafana
   if [[ $(GOWORK=off go mod edit -json | jq '(.Replace // []) | length') -ne 0 ]]; then
     echo "Grafana client must not contain replace directives" >&2
     exit 1
   fi
+  client_graph=$(GOWORK=off GOFLAGS="$readonly_flags" go list -m all)
   while read -r module _; do
     if [[ "$module" == "$gateway_module" || "$module" == "$gateway_module/"* ]]; then
       echo "the Grafana client module graph contains the AI Gateway module" >&2
       exit 1
     fi
-  done < <(GOWORK=off GOFLAGS="$readonly_flags" go list -m all)
-  GOWORK=off GOFLAGS="$readonly_flags" go build ./...
-  GOWORK=off GOFLAGS="$readonly_flags" go test ./...
-)
-(
-  cd ai-gateway
-  GOWORK=off GOFLAGS="$readonly_flags" go build ./...
-  GOWORK=off GOFLAGS="$readonly_flags" go test ./...
+  done <<<"$client_graph"
 )
 
 echo "AI Gateway module and license boundary: OK"

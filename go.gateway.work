@@ -1,0 +1,15 @@
+go 1.26.3
+
+use (
+	.
+	./ai-gateway
+	./middleware/agentobservability
+	./middleware/enrichment
+	./middleware/logger
+	./middleware/prometheus
+	./providers/anthropic
+	./providers/bedrock
+	./providers/grafana
+	./providers/openai
+	./providers/openai-compatible
+)
