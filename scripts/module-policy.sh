@@ -1,4 +1,18 @@
 #!/usr/bin/env bash
+# Repository module policy; invoke through mise tasks or the modes below.
+# Inventory: published modules are tracked go.mod roots outside examples/ and
+# test/; declared module paths must match their repository locations.
+# Pins: declared and selected internal versions must resolve to commits on an
+# independently fetched canonical grafana/ai-sdk main, not merely download.
+# Standalone: published modules have no replacements and must download, verify,
+# build, and test with a fresh public-proxy cache, readonly manifests, and no
+# workspace substitutions. One module may be selected by root or module path.
+# Boundary: the AGPL Gateway stays under ai-gateway/; Apache SDK modules must
+# not reference it; root go.work and the SDK/Grafana graphs exclude it.
+# Workspace: go.gateway.work explicitly selects local candidate source; the
+# root workspace does not. Isolation: SDK and Grafana build/test without Gateway
+# source present. These checks do not replace copied-code or dependency license
+# review, and candidate-source checks do not relax required standalone gates.
 set -euo pipefail
 
 repo_root=$(git rev-parse --show-toplevel)
