@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"maps"
 
 	"github.com/grafana/ai-sdk/internal/anthropicschema"
 	"github.com/grafana/ai-sdk/provider"
@@ -26,6 +27,10 @@ type requestMeta struct {
 // body. Returns the request shape, collected warnings, and per-request
 // metadata used during response decoding.
 func buildRequest(modelID string, opts provider.CallOptions) (*converseInput, []provider.Warning, requestMeta, error) {
+	return buildRequestWithFamily(modelID, "", opts)
+}
+
+func buildRequestWithFamily(modelID string, family ModelFamily, opts provider.CallOptions) (*converseInput, []provider.Warning, requestMeta, error) {
 	var warnings []provider.Warning
 	meta := requestMeta{isMistral: isMistralModel(modelID)}
 
@@ -35,7 +40,23 @@ func buildRequest(modelID string, opts provider.CallOptions) (*converseInput, []
 	if err != nil {
 		return nil, warnings, meta, err
 	}
-	bo.ReasoningConfig = resolveReasoningConfig(modelID, opts.Reasoning, bo.ReasoningConfig, &warnings)
+	anthropicOpts, err := readAnthropicCallOptions(opts.ProviderOptions)
+	if err != nil {
+		return nil, warnings, meta, err
+	}
+	mode := bo.StructuredOutputMode
+	if mode == "" {
+		mode = anthropicOpts.StructuredOutputMode
+	}
+	if mode == "" {
+		mode = StructuredOutputModeAuto
+	}
+	if mode != StructuredOutputModeAuto && mode != StructuredOutputModeOutputFormat && mode != StructuredOutputModeJSONTool {
+		return nil, warnings, meta, fmt.Errorf("bedrock: unsupported structuredOutputMode %q", mode)
+	}
+	hasBudgetTokens := bo.ReasoningConfig != nil && (bo.ReasoningConfig.budgetTokensPresent || bo.ReasoningConfig.BudgetTokens != 0)
+	isAnthropic := isAnthropicModelForCall(modelID, family, hasBudgetTokens)
+	bo.ReasoningConfig = resolveReasoningConfig(modelID, isAnthropic, opts.Reasoning, bo.ReasoningConfig, &warnings)
 
 	// Convert the prompt. We must know whether tools are active to decide
 	// whether to strip tool content. Pre-prepare tools first so we know.
@@ -52,10 +73,6 @@ func buildRequest(modelID string, opts provider.CallOptions) (*converseInput, []
 	if err != nil {
 		return nil, warnings, meta, err
 	}
-
-	// Tools.
-	pt := prepareTools(opts.Tools, opts.ToolChoice, modelID)
-	warnings = append(warnings, pt.warnings...)
 
 	// Whether extended thinking is enabled (Anthropic only). Used both for the
 	// native-structured-output gate and inference-config adjustments below.
@@ -74,13 +91,12 @@ func buildRequest(modelID string, opts provider.CallOptions) (*converseInput, []
 				Feature: "responseFormat",
 				Details: "Bedrock requires a schema for JSON response format; ignoring",
 			})
-		} else if isAnthropicModel(modelID) && !rejectsNativeStructuredOutput(modelID) && (supportsNativeStructuredOutput(modelID) || isThinkingEnabled) {
+		} else if isAnthropic && (mode == StructuredOutputModeOutputFormat || (mode == StructuredOutputModeAuto && !rejectsNativeStructuredOutput(modelID) && (supportsStructuredOutputCapability(modelID) || isThinkingEnabled || family == ModelFamilyAnthropic))) {
 			useNativeStructuredOutput = true
-		} else if isAnthropicModel(modelID) && usesJSONInstructionForStructuredOutput(modelID) && len(opts.Tools) > 0 {
+		} else if mode != StructuredOutputModeJSONTool && isAnthropic && usesJSONInstructionForStructuredOutput(modelID) && len(opts.Tools) > 0 {
 			converted.System = injectJSONInstruction(converted.System, opts.ResponseFormat.Schema)
 			meta.usesJSONInstruction = true
 		} else {
-			pt = injectJSONResponseTool(pt, opts.ResponseFormat.Schema)
 			meta.usesJSONResponseTool = true
 		}
 	} else if opts.ResponseFormat != nil && opts.ResponseFormat.Type != provider.ResponseFormatText {
@@ -91,19 +107,34 @@ func buildRequest(modelID string, opts provider.CallOptions) (*converseInput, []
 		})
 	}
 
+	tools := opts.Tools
+	toolChoice := opts.ToolChoice
+	if meta.usesJSONResponseTool {
+		tools = append(append([]provider.Tool(nil), tools...), provider.Tool{
+			Type: provider.ToolTypeFunction, Name: jsonResponseToolName,
+			Description: "Respond with a JSON object.", InputSchema: opts.ResponseFormat.Schema,
+		})
+		toolChoice = &provider.ToolChoice{Type: provider.ToolChoiceRequired}
+	}
+	pt, err := prepareTools(tools, toolChoice, modelID, isAnthropic, anthropicOpts.DisableParallelToolUse)
+	if err != nil {
+		return nil, warnings, meta, err
+	}
+	warnings = append(warnings, pt.warnings...)
+
 	// Inference config (scalar sampling params).
-	inf, infWarnings := buildInferenceConfig(opts, modelID, bo)
+	inf, infWarnings := buildInferenceConfig(opts, isAnthropic, bo)
 	warnings = append(warnings, infWarnings...)
 
 	// additionalModelRequestFields construction.
 	addRequestFields := map[string]any{}
 
 	// Anthropic-specific thinking/effort/beta pass-throughs.
-	addWarn := applyAnthropicPassThroughs(addRequestFields, &inf, modelID, bo)
+	addWarn := applyAnthropicPassThroughs(addRequestFields, &inf, isAnthropic, bo)
 	warnings = append(warnings, addWarn...)
 
 	// OpenAI / Nova effort routing (non-Anthropic, model-prefix gated).
-	applyNonAnthropicEffort(addRequestFields, modelID, bo)
+	applyNonAnthropicEffort(addRequestFields, modelID, isAnthropic, bo)
 
 	// Native structured output goes through additionalModelRequestFields.
 	if useNativeStructuredOutput {
@@ -122,6 +153,16 @@ func buildRequest(modelID string, opts provider.CallOptions) (*converseInput, []
 	for k, v := range bo.AdditionalModelRequestFields {
 		mergeAdditionalModelRequestField(addRequestFields, k, v)
 	}
+	if mode == StructuredOutputModeJSONTool {
+		if original, ok := addRequestFields["output_config"].(map[string]any); ok {
+			config := maps.Clone(original)
+			addRequestFields["output_config"] = config
+			delete(config, "format")
+			if len(config) == 0 {
+				delete(addRequestFields, "output_config")
+			}
+		}
+	}
 
 	// Merge in additionalTools (Anthropic provider-tool tool_choice).
 	for k, v := range pt.additionalTools {
@@ -131,9 +172,7 @@ func buildRequest(modelID string, opts provider.CallOptions) (*converseInput, []
 	// Anthropic beta propagation.
 	if bo.AnthropicBeta != nil || len(pt.betas) > 0 {
 		betas := append([]string{}, bo.AnthropicBeta...)
-		for b := range pt.betas {
-			betas = append(betas, b)
-		}
+		betas = append(betas, pt.betaOrder...)
 		addRequestFields["anthropic_beta"] = betas
 	}
 
@@ -147,7 +186,7 @@ func buildRequest(modelID string, opts provider.CallOptions) (*converseInput, []
 	// Anthropic models so the response decoder can pick up
 	// delta.stop_sequence from messageStop metadata.
 	var addRespPaths []string
-	if isAnthropicModel(modelID) {
+	if isAnthropic {
 		addRespPaths = []string{"/delta/stop_sequence"}
 	}
 
@@ -201,7 +240,7 @@ func mergeAdditionalModelRequestField(dst map[string]any, key string, value any)
 // buildInferenceConfig maps scalar CallOptions params to Converse
 // inferenceConfig, with clamping and warnings for out-of-range values and
 // unsupported params (frequency/presence penalties, seed).
-func buildInferenceConfig(opts provider.CallOptions, modelID string, bo BedrockOptions) (*inferenceConfig, []provider.Warning) {
+func buildInferenceConfig(opts provider.CallOptions, isAnthropic bool, bo BedrockOptions) (*inferenceConfig, []provider.Warning) {
 	var warnings []provider.Warning
 	inf := &inferenceConfig{}
 
@@ -252,7 +291,7 @@ func buildInferenceConfig(opts provider.CallOptions, modelID string, bo BedrockO
 
 	// When thinking is enabled (Anthropic only), drop temperature/topP/topK
 	// with warnings.
-	if bo.ReasoningConfig != nil && (bo.ReasoningConfig.Type == "enabled" || bo.ReasoningConfig.Type == "adaptive") && isAnthropicModel(modelID) {
+	if bo.ReasoningConfig != nil && (bo.ReasoningConfig.Type == "enabled" || bo.ReasoningConfig.Type == "adaptive") && isAnthropic {
 		if inf.Temperature != nil {
 			warnings = append(warnings, provider.Warning{
 				Type: provider.WarnUnsupported, Feature: "temperature",
@@ -286,14 +325,13 @@ func buildInferenceConfig(opts provider.CallOptions, modelID string, bo BedrockO
 // applyAnthropicPassThroughs writes Anthropic-on-Bedrock specific knobs into
 // additionalModelRequestFields. For non-Anthropic models that receive
 // Anthropic-only options, it instead emits warnings.
-func applyAnthropicPassThroughs(addFields map[string]any, inf **inferenceConfig, modelID string, bo BedrockOptions) []provider.Warning {
+func applyAnthropicPassThroughs(addFields map[string]any, inf **inferenceConfig, isAnth bool, bo BedrockOptions) []provider.Warning {
 	var warnings []provider.Warning
-	isAnth := isAnthropicModel(modelID)
 
 	if bo.ReasoningConfig != nil {
 		rc := bo.ReasoningConfig
 		if !isAnth {
-			if rc.BudgetTokens > 0 {
+			if rc.BudgetTokens != 0 || rc.budgetTokensPresent {
 				warnings = append(warnings, provider.Warning{
 					Type:    provider.WarnUnsupported,
 					Feature: "budgetTokens",
@@ -307,7 +345,7 @@ func applyAnthropicPassThroughs(addFields map[string]any, inf **inferenceConfig,
 					Details: "adaptive thinking type applies only to Anthropic models on Bedrock.",
 				})
 			}
-		} else if rc.Type == "enabled" && rc.BudgetTokens > 0 {
+		} else if rc.Type == "enabled" && (rc.BudgetTokens != 0 || rc.budgetTokensPresent) {
 			addFields["thinking"] = map[string]any{"type": "enabled", "budget_tokens": rc.BudgetTokens}
 			// Increase maxTokens by budget so the model has room for thinking
 			// plus the actual reply. Upstream does the same; the user-facing
@@ -338,23 +376,24 @@ func applyAnthropicPassThroughs(addFields map[string]any, inf **inferenceConfig,
 	return warnings
 }
 
-func resolveReasoningConfig(modelID string, reasoning provider.ReasoningEffort, explicit *ReasoningConfig, warnings *[]provider.Warning) *ReasoningConfig {
+func resolveReasoningConfig(modelID string, isAnthropic bool, reasoning provider.ReasoningEffort, explicit *ReasoningConfig, warnings *[]provider.Warning) *ReasoningConfig {
 	if reasoning == provider.ReasoningProviderDefault {
 		return explicit
 	}
 
 	var resolved *ReasoningConfig
 	if reasoning == provider.ReasoningNone {
-		if isAnthropicModel(modelID) {
+		if isAnthropic {
 			resolved = &ReasoningConfig{Type: "disabled"}
 		} else {
 			resolved = cloneReasoningConfig(explicit)
 		}
 	} else {
-		resolved = mergeReasoningConfig(deriveReasoningConfig(modelID, reasoning, warnings), explicit)
+		resolved = mergeReasoningConfig(deriveReasoningConfig(modelID, isAnthropic, reasoning, warnings), explicit)
 	}
 	if resolved != nil && resolved.Type == "disabled" {
 		resolved.BudgetTokens = 0
+		resolved.budgetTokensPresent = false
 		resolved.MaxReasoningEffort = ""
 	}
 	return resolved
@@ -379,8 +418,9 @@ func mergeReasoningConfig(derived, explicit *ReasoningConfig) *ReasoningConfig {
 	if explicit.Type != "" {
 		merged.Type = explicit.Type
 	}
-	if explicit.BudgetTokens != 0 {
+	if explicit.BudgetTokens != 0 || explicit.budgetTokensPresent {
 		merged.BudgetTokens = explicit.BudgetTokens
+		merged.budgetTokensPresent = explicit.budgetTokensPresent
 	}
 	if explicit.Display != "" {
 		merged.Display = explicit.Display
@@ -391,17 +431,17 @@ func mergeReasoningConfig(derived, explicit *ReasoningConfig) *ReasoningConfig {
 	return merged
 }
 
-func deriveReasoningConfig(modelID string, reasoning provider.ReasoningEffort, warnings *[]provider.Warning) *ReasoningConfig {
+func deriveReasoningConfig(modelID string, isAnthropic bool, reasoning provider.ReasoningEffort, warnings *[]provider.Warning) *ReasoningConfig {
 	if reasoning == provider.ReasoningProviderDefault {
 		return nil
 	}
 	if reasoning == provider.ReasoningNone {
-		if isAnthropicModel(modelID) {
+		if isAnthropic {
 			return &ReasoningConfig{Type: "disabled"}
 		}
 		return nil
 	}
-	if isAnthropicModel(modelID) {
+	if isAnthropic {
 		if supportsAdaptiveThinking(modelID) {
 			effort, ok := reasoningEffort(reasoning, warnings)
 			if !ok {
@@ -487,16 +527,20 @@ func reasoningEffort(reasoning provider.ReasoningEffort, warnings *[]provider.Wa
 }
 
 // applyNonAnthropicEffort routes effort hints to OpenAI/Nova-specific shapes.
-func applyNonAnthropicEffort(addFields map[string]any, modelID string, bo BedrockOptions) {
+func applyNonAnthropicEffort(addFields map[string]any, modelID string, isAnthropic bool, bo BedrockOptions) {
 	if bo.ReasoningConfig == nil || bo.ReasoningConfig.MaxReasoningEffort == "" {
 		return
 	}
-	if isAnthropicModel(modelID) {
+	if isAnthropic {
 		return
 	}
 	effort := bo.ReasoningConfig.MaxReasoningEffort
 	if isOpenAIModel(modelID) {
-		addFields["reasoning_effort"] = effort
+		if isOpenAIGptOSSModel(modelID) {
+			addFields["reasoning_effort"] = effort
+		} else {
+			ensureMap(addFields, "reasoning")["effort"] = effort
+		}
 		return
 	}
 	// Default to Nova-style reasoningConfig nesting for other model families.

@@ -18,7 +18,8 @@
 // Anthropic-specific request features (thinking, effort, betas, native
 // structured output) are routed through Converse's
 // additionalModelRequestFields pass-through when the model ID identifies an
-// Anthropic model on Bedrock.
+// Anthropic model, when an application inference profile has an explicit
+// reasoning budget, or when WithModelFamily specifies the Anthropic family.
 //
 // The module is independent of providers/anthropic and ships its own AWS SDK
 // v2 dependency. Provider() returns "amazon-bedrock", matching the upstream

@@ -13,11 +13,23 @@ func isAnthropicModel(modelID string) bool {
 	return strings.Contains(modelID, "anthropic")
 }
 
+func isAnthropicModelForCall(modelID string, family ModelFamily, hasBudgetTokens bool) bool {
+	return family == ModelFamilyAnthropic || isAnthropicModel(modelID) ||
+		(strings.Contains(modelID, ":application-inference-profile/") && hasBudgetTokens)
+}
+
 // isOpenAIModel returns true when the Bedrock model ID refers to an OpenAI
 // model on Bedrock (e.g. `openai.gpt-oss-...`). Cross-region prefixes
 // (`us.openai.`) also match.
+var openAIModelPattern = regexp.MustCompile(`^(?:[^.]+\.)?openai\..+$`)
+var openAIGptOSSModelPattern = regexp.MustCompile(`^(?:[^.]+\.)?openai\.gpt-oss-.+$`)
+
 func isOpenAIModel(modelID string) bool {
-	return strings.Contains(modelID, "openai.")
+	return openAIModelPattern.MatchString(modelID)
+}
+
+func isOpenAIGptOSSModel(modelID string) bool {
+	return openAIGptOSSModelPattern.MatchString(modelID)
 }
 
 // isMistralModel returns true when the Bedrock model ID refers to a Mistral
@@ -29,27 +41,26 @@ func isMistralModel(modelID string) bool {
 }
 
 var legacyClaudeModelPattern = regexp.MustCompile(`claude-(instant($|-)|v?2($|[-.:])|3($|[-.]))`)
+var olderClaude4ModelPattern = regexp.MustCompile(`claude-(sonnet|opus)-4(-|@)`)
 
-// supportsNativeStructuredOutput returns true when the model supports
-// Converse `additionalModelRequestFields.output_config.format` for JSON
-// schema output. We approximate upstream's `getModelCapabilities` here by
-// detecting recent Anthropic models. The upstream list is fluid; we err on
-// the side of fallback (synthetic json tool) when uncertain.
-func supportsNativeStructuredOutput(modelID string) bool {
-	if !isAnthropicModel(modelID) || rejectsNativeStructuredOutput(modelID) {
-		return false
+func supportsStructuredOutputCapability(modelID string) bool {
+	if rejectsNewerSchemaFields(modelID) {
+		return true
 	}
-	// Claude Sonnet 4 / 4.5, Opus 4 / 4.5, Haiku 4 / 4.5 support native JSON
-	// schema output. Conservative substring match keeps the implementation
-	// simple while accepting Bedrock cross-region prefixes.
 	for _, marker := range []string{
-		"claude-sonnet-4",
-		"claude-opus-4",
-		"claude-haiku-4",
+		"claude-sonnet-4-5",
+		"claude-sonnet-4-6",
+		"claude-opus-4-1",
+		"claude-opus-4-5",
+		"claude-opus-4-6",
+		"claude-haiku-4-5",
 	} {
 		if strings.Contains(modelID, marker) {
 			return true
 		}
+	}
+	if olderClaude4ModelPattern.MatchString(modelID) {
+		return false
 	}
 	return strings.Contains(modelID, "claude-") && !legacyClaudeModelPattern.MatchString(modelID)
 }
@@ -72,7 +83,7 @@ func rejectsNewerSchemaFields(modelID string) bool {
 }
 
 func rejectsNativeStructuredOutput(modelID string) bool {
-	return rejectsNewerSchemaFields(modelID)
+	return rejectsNewerSchemaFields(modelID) || strings.Contains(modelID, "claude-sonnet-4-6") || strings.Contains(modelID, "claude-haiku-4-5")
 }
 
 func usesJSONInstructionForStructuredOutput(modelID string) bool {
@@ -85,11 +96,9 @@ type anthropicReasoningCapabilities struct {
 }
 
 func getAnthropicReasoningCapabilities(modelID string) anthropicReasoningCapabilities {
-	if !isAnthropicModel(modelID) {
-		return anthropicReasoningCapabilities{maxOutputTokens: 4096}
-	}
 	switch {
-	case strings.Contains(modelID, "claude-opus-4-8"),
+	case strings.Contains(modelID, "claude-opus-5"),
+		strings.Contains(modelID, "claude-opus-4-8"),
 		strings.Contains(modelID, "claude-opus-4-7"),
 		strings.Contains(modelID, "claude-fable-5"),
 		strings.Contains(modelID, "claude-sonnet-5"),
