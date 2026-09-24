@@ -20,15 +20,16 @@ The repository SHALL provide a separately selected Go workspace containing Gatew
 
 ### Requirement: Structural boundary enforcement independent of standalone execution
 
-A structural Gateway boundary check SHALL verify the AGPL Gateway and Apache SDK license/module layout, reject Gateway module-path references in tracked Go files outside `ai-gateway/`, reject Gateway requirements and replacements in tracked non-Gateway module manifests, and exclude Gateway from the root workspace and root SDK and Grafana client module graphs. The root workspace SHALL have no replacements. Standalone build/test checks SHALL remain separate and SHALL validate the SDK root and Grafana client with `GOWORK=off`.
+A structural Gateway boundary check SHALL verify the AGPL Gateway and Apache SDK license/module layout, reject Gateway module-path references in tracked Go files outside `ai-gateway/`, reject Gateway requirements and replacements in tracked non-Gateway module manifests, and exclude Gateway from the root workspace and root SDK and Grafana client module graphs. The root workspace SHALL have no replacements. Standalone build/test checks SHALL remain separate and SHALL validate the SDK root and Grafana client with `GOWORK=off`. An independent check SHALL build and test both with Gateway source absent.
 
 #### Scenario: Reverse dependency in nested module
 - **WHEN** a tracked Go file or module outside `ai-gateway/`, including a nested module, references the Gateway module path in source, a requirement, or a replacement
 - **THEN** the structural check SHALL fail even if the explicit integration workspace exists
 
-#### Scenario: Standalone SDK and Grafana validation
-- **WHEN** the all-module standalone validation runs
+#### Scenario: SDK and Grafana source independence
+- **WHEN** the all-module standalone validation and the independent source-absent check run
 - **THEN** the root SDK and Grafana client SHALL build and test with `GOWORK=off` and neither module graph SHALL contain Gateway
+- **AND** the independent check SHALL build and test both without Gateway source present
 
 #### Scenario: Structural check without standalone tests
 - **WHEN** the structural boundary check runs

@@ -189,6 +189,8 @@ mise run verify-module-resolution   # all published modules, public proxy, GOWOR
 MODULE=providers/openai mise run verify-published-module
 mise run verify-merged-pins        # real internal pins must descend from canonical main
 mise run verify-ai-gateway-boundary
+mise run verify-sdk-gateway-isolation
+mise run test-module-policy         # deterministic Bash policy fixtures
 mise run test-ai-gateway-source    # explicit go.gateway.work candidate-source mode
 mise run test-ai-gateway-source-integration
 
@@ -203,7 +205,9 @@ The Anthropic provider module is a separate `go.mod`. Run its tests from the
 Bedrock provider module under `providers/bedrock/`.
 
 The root `go.work` remains SDK-only. `go.gateway.work` is an explicit
-candidate-source integration mode, not a default or release build mode. Real
+candidate-source integration mode, not a default or release build mode.
+`scripts/module-policy.sh` owns module inventory, merged-pin ancestry,
+standalone validation, the license boundary, and the source-absent SDK proof. Real
 published internal module pins must already be merged on canonical `main`; an
 older merged pseudo-version is valid if standalone tests pass. `mise run
 verify-module-resolution` and Gateway production/image builds still use

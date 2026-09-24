@@ -54,7 +54,7 @@ run = "cd ai-gateway && GOWORK=off GOFLAGS=\"${GOFLAGS:+$GOFLAGS }-mod=readonly\
 
 [tasks.verify-gateway-workspace]
 description = "Verify explicit Gateway workspace resolves candidate SDK source"
-run = "bash scripts/verify-gateway-workspace.sh"
+run = "bash scripts/module-policy.sh workspace"
 
 [tasks.test-ai-gateway-source]
 description = "Run Gateway Go tests against candidate SDK source"
@@ -158,19 +158,27 @@ go vet ./...
 
 [tasks.verify-module-resolution]
 description = "Verify every published module from the public proxy outside the workspace"
-run = "bash scripts/verify-module-resolution.sh"
+run = "bash scripts/module-policy.sh standalone"
 
 [tasks.verify-published-module]
 description = "Verify one published module outside the workspace (MODULE=providers/openai)"
-run = "bash scripts/verify-module-resolution.sh \"${MODULE:?set MODULE to a published module root or path}\""
+run = "bash scripts/module-policy.sh standalone \"${MODULE:?set MODULE to a published module root or path}\""
 
 [tasks.verify-merged-pins]
 description = "Verify published internal pins descend from canonical merged main"
-run = "GOWORK=off go run ./cmd/modulecheck pins"
+run = "bash scripts/module-policy.sh pins"
 
 [tasks.verify-ai-gateway-boundary]
 description = "Verify the one-way AI Gateway module and license boundary"
-run = "bash scripts/verify-ai-gateway-boundary.sh"
+run = "bash scripts/module-policy.sh boundary"
+
+[tasks.verify-sdk-gateway-isolation]
+description = "Build and test the SDK and Grafana client without Gateway source"
+run = "bash scripts/module-policy.sh isolation"
+
+[tasks.test-module-policy]
+description = "Run deterministic Bash module-policy fixtures"
+run = "bash test/module-policy.sh"
 
 [tasks.lint]
 description = "Run golangci-lint across all modules"

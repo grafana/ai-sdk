@@ -6,7 +6,7 @@ Coordinated SDK, provider, middleware, and Gateway changes currently require unm
 
 - Add a fail-closed check that every real internal dependency selected for a published module resolves to a commit already merged into an explicitly fetched canonical `grafana/ai-sdk` `main`, including direct requirements and the selected graph. Migrate existing unmerged pins only after reviewing old/new provenance and standalone behavior.
 - Add an explicitly selected Gateway source-integration workspace alongside the SDK-only root `go.work`; test that it uses candidate source, while production and release builds remain `GOWORK=off`.
-- Separate structural license/import/module boundary checks from standalone build/test execution, and support selecting a published module for standalone validation while retaining the existing all-module command and required checks.
+- Consolidate module checks into a Bash entry point with separate structural license/import/module policy, merged-pin, source-absent SDK proof, and selectable standalone modes while retaining the existing all-module command and required checks.
 - Update developer guidance and the Gateway boundary contract to allow the explicit integration workspace without allowing SDK-to-Gateway dependencies or a Gateway entry in root `go.work`.
 - Do **not** relax source PR gates, change Gateway publication/deployment authorization, or introduce release/version automation. Those belong to #245/#21.
 
@@ -19,7 +19,7 @@ Coordinated SDK, provider, middleware, and Gateway changes currently require unm
 
 ### Modified Capabilities
 
-- `providerwire-v4-http-contract`: Clarify that an explicitly selected Gateway integration workspace is permitted while the root workspace, reverse dependency boundary, license separation, and standalone SDK validation remain mandatory.
+- `providerwire-v4-http-contract`: Clarify that an explicitly selected Gateway integration workspace is permitted while the root workspace, reverse dependency boundary, license separation, and independent source-absent SDK proof remain mandatory.
 
 ## Impact
 

@@ -1,6 +1,6 @@
 # Internal pin migration evidence for #244
 
-Carry this table into the implementation PR for review. The old versions were resolved through `go mod download -json` from the public Go proxy; the new full commits were checked against a freshly fetched canonical `grafana/ai-sdk` `main` by `go run ./cmd/modulecheck pins`. Neither proxy availability nor this table alone establishes behavioral equivalence.
+Carry this table into the implementation PR for review. The old versions were resolved through `go mod download -json` from the public Go proxy; the new full commits were checked against a freshly fetched canonical `grafana/ai-sdk` `main` by `mise run verify-merged-pins`. Neither proxy availability nor this table alone establishes behavioral equivalence.
 
 | Consumer and dependency | Old version / full commit (branch-only) | New version / full commit (merged) | Behavior evidence |
 | --- | --- | --- | --- |

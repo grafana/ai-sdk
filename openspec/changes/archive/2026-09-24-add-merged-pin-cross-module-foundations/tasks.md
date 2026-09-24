@@ -1,14 +1,14 @@
 ## 1. Published module inventory and merged-pin checker
 
-- [x] 1.1 Extract tracked nested `go.mod` discovery and published/local-only module classification; test root, Gateway, providers, middleware, examples, tests, and unknown selections.
+- [x] 1.1 Share tracked nested `go.mod` discovery and published/local-only module classification in the Bash policy entry point; test root, Gateway, providers, middleware, examples, tests, and unknown selections.
 - [x] 1.2 Implement independently callable merged-pin checking for direct requirements and selected internal module graphs with `GOWORK=off`, readonly manifests, immutable version-to-commit resolution, and an explicitly fetched canonical `main` anchor.
-- [x] 1.3 Add local Git/module-fixture tests for merged tags and pseudo-versions, branch-only commits/tags, missing revisions, shallow/fork checkout, and synthetic merge-ref false positives; verify failure is closed and diagnostic.
+- [x] 1.3 Add deterministic Bash Git/module-fixture tests for merged tags and pseudo-versions, branch-only commits/tags, missing revisions, shallow/fork checkout, and synthetic merge-ref false positives; verify failure is closed and diagnostic.
 
 ## 2. Standalone and structural validation
 
 - [x] 2.1 Move standalone public-proxy, clean-cache, readonly download/verify/build/test and replacement checks into a shared all-or-one-published-module entry point; retain `mise run verify-module-resolution` and test selector/error behavior.
-- [x] 2.2 Separate license/module/import/root-graph policy checks from standalone execution in `scripts/verify-ai-gateway-boundary.sh`; use tracked module inventory and check reverse references in source and nested module manifests.
-- [x] 2.3 Keep the existing all-module `GOWORK=off` SDK and Grafana standalone build/test proof, check their module graphs for Gateway, and avoid duplicating those builds in the structural check.
+- [x] 2.2 Separate license/module/import/root-graph policy checks from standalone execution in `scripts/module-policy.sh`; use tracked module inventory and check reverse references in source and nested module manifests.
+- [x] 2.3 Keep the existing all-module `GOWORK=off` SDK and Grafana standalone build/test proof, check their module graphs for Gateway, and independently build/test both in a temporary copy without Gateway source through the same Bash entry point.
 
 ## 3. Gateway source integration
 
