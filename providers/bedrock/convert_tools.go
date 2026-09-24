@@ -37,12 +37,12 @@ type preparedTools struct {
 // requires routing the `tool_choice` through `additionalModelRequestFields`
 // while still describing the tools in `toolConfig.tools` for validation.
 // Non-Anthropic provider tools are reported as unsupported.
-func prepareTools(tools []provider.Tool, toolChoice *provider.ToolChoice, modelID string, isAnthropic bool, disableParallelToolUse *bool) preparedTools {
+func prepareTools(tools []provider.Tool, toolChoice *provider.ToolChoice, modelID string, isAnthropic bool, disableParallelToolUse *bool) (preparedTools, error) {
 	res := preparedTools{
 		betas: map[string]struct{}{},
 	}
 	if len(tools) == 0 {
-		return res
+		return res, nil
 	}
 
 	// Filter out unsupported provider tools and emit warnings.
@@ -65,7 +65,7 @@ func prepareTools(tools []provider.Tool, toolChoice *provider.ToolChoice, modelI
 		supported = append(supported, t)
 	}
 	if len(supported) == 0 {
-		return res
+		return res, nil
 	}
 
 	providerTools := make([]provider.Tool, 0)
@@ -86,6 +86,10 @@ func prepareTools(tools []provider.Tool, toolChoice *provider.ToolChoice, modelI
 	// toolConfig.tools with its inputSchema.
 	if isAnthropic && len(providerTools) > 0 {
 		for _, t := range providerTools {
+			schema, err := providerToolSchema(t.ID)
+			if err != nil {
+				return res, err
+			}
 			beta := anthropicProviderToolBetas[t.ID]
 			if beta != "" {
 				if _, exists := res.betas[beta]; !exists {
@@ -94,7 +98,7 @@ func prepareTools(tools []provider.Tool, toolChoice *provider.ToolChoice, modelI
 				}
 			}
 			tc.Tools = append(tc.Tools, toolDefinition{ToolSpec: &toolSpec{
-				Name: t.Name, InputSchema: toolInputSchema{JSON: anthropicProviderToolSchemas[t.ID]},
+				Name: t.Name, InputSchema: toolInputSchema{JSON: schema},
 			}})
 		}
 	} else {
@@ -204,7 +208,7 @@ func prepareTools(tools []provider.Tool, toolChoice *provider.ToolChoice, modelI
 	if len(tc.Tools) > 0 || tc.ToolChoice != nil {
 		res.toolConfig = tc
 	}
-	return res
+	return res, nil
 }
 
 func jsonOrEmptyObject(raw json.RawMessage) json.RawMessage {

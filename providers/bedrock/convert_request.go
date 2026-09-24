@@ -116,7 +116,10 @@ func buildRequestWithFamily(modelID string, family ModelFamily, opts provider.Ca
 		})
 		toolChoice = &provider.ToolChoice{Type: provider.ToolChoiceRequired}
 	}
-	pt := prepareTools(tools, toolChoice, modelID, isAnthropic, anthropicOpts.DisableParallelToolUse)
+	pt, err := prepareTools(tools, toolChoice, modelID, isAnthropic, anthropicOpts.DisableParallelToolUse)
+	if err != nil {
+		return nil, warnings, meta, err
+	}
 	warnings = append(warnings, pt.warnings...)
 
 	// Inference config (scalar sampling params).

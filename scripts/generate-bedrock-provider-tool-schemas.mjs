@@ -76,7 +76,7 @@ async function main(args) {
     throw new Error(`fetching pinned upstream lockfile failed: HTTP ${response.status}`);
   }
   const zod = readAnthropicZodVersion(await response.text());
-  const target = join(root, 'providers/bedrock/provider_tool_schemas.go');
+  const target = join(root, 'providers/bedrock/provider_tool_schemas.json');
   const workdir = mkdtempSync(join(tmpdir(), 'bedrock-provider-tool-schemas-'));
 
   try {
@@ -104,16 +104,8 @@ console.log(JSON.stringify(schemas));
       console.warn(`Upstream provider tools not in the Go catalog; assess for parity work: ${newToolIds.join(', ')}`);
     }
 
-    const lines = ['package bedrock', '', 'import "encoding/json"', '', 'var anthropicProviderToolSchemas = map[string]json.RawMessage{'];
-    for (const id of Object.keys(schemas).sort()) {
-      const schema = JSON.stringify(schemas[id], null, 2);
-      if (schema.includes('`')) {
-        throw new Error(`schema cannot be embedded as a Go raw string: ${id}`);
-      }
-      lines.push(`\t${JSON.stringify(id)}: json.RawMessage(\`${schema}\`),`);
-    }
-    lines.push('}', '');
-    const output = execFileSync('gofmt', { input: lines.join('\n'), encoding: 'utf8' });
+    const sorted = Object.fromEntries(Object.keys(schemas).sort().map(id => [id, schemas[id]]));
+    const output = `${JSON.stringify(sorted)}\n`;
     if (check) {
       if (readFileSync(target, 'utf8') !== output) {
         throw new Error(`${target} differs from the pinned upstream schemas`);

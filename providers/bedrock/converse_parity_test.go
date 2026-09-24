@@ -355,13 +355,16 @@ func TestConverseParity_UnsupportedProviderToolsFiltered(t *testing.T) {
 }
 
 func TestConverseParity_ProviderToolCatalog(t *testing.T) {
-	require.Len(t, anthropicProviderToolSchemas, 19)
+	schemas, err := decodeProviderToolSchemas(providerToolSchemasJSON)
+	require.NoError(t, err)
+	require.Len(t, schemas, 19)
 	require.Len(t, anthropicProviderToolBetas, 19)
 	for id, beta := range anthropicProviderToolBetas {
 		t.Run(id, func(t *testing.T) {
-			canonical := anthropicProviderToolSchemas[id]
+			canonical := schemas[id]
 			require.True(t, json.Valid(canonical))
-			pt := prepareTools([]provider.Tool{{Type: provider.ToolTypeProvider, ID: id, Name: "catalog-tool", InputSchema: json.RawMessage(`{"type":"string"}`)}}, nil, testAnthropicModel, true, nil)
+			pt, err := prepareTools([]provider.Tool{{Type: provider.ToolTypeProvider, ID: id, Name: "catalog-tool", InputSchema: json.RawMessage(`{"type":"string"}`)}}, nil, testAnthropicModel, true, nil)
+			require.NoError(t, err)
 			require.Empty(t, pt.warnings)
 			require.NotNil(t, pt.toolConfig)
 			require.Len(t, pt.toolConfig.Tools, 1)
@@ -375,15 +378,23 @@ func TestConverseParity_ProviderToolCatalog(t *testing.T) {
 	}
 	for _, id := range []string{"anthropic.web_search_20250305", "anthropic.web_search_20260318", "anthropic.web_fetch_20260318"} {
 		t.Run(id+" filtered", func(t *testing.T) {
-			assert.NotContains(t, anthropicProviderToolSchemas, id)
-			pt := prepareTools([]provider.Tool{{Type: provider.ToolTypeProvider, ID: id, Name: "web"}}, nil, testAnthropicModel, true, nil)
+			assert.NotContains(t, schemas, id)
+			pt, err := prepareTools([]provider.Tool{{Type: provider.ToolTypeProvider, ID: id, Name: "web"}}, nil, testAnthropicModel, true, nil)
+			require.NoError(t, err)
 			assert.Nil(t, pt.toolConfig)
 			require.Len(t, pt.warnings, 1)
 		})
 	}
-	assert.JSONEq(t, `{"$schema":"http://json-schema.org/draft-07/schema#","type":"object","properties":{"command":{"type":"string"},"restart":{"type":"boolean"}},"required":["command"],"additionalProperties":false}`, string(anthropicProviderToolSchemas["anthropic.bash_20241022"]))
+	assert.JSONEq(t, `{"$schema":"http://json-schema.org/draft-07/schema#","type":"object","properties":{"command":{"type":"string"},"restart":{"type":"boolean"}},"required":["command"],"additionalProperties":false}`, string(schemas["anthropic.bash_20241022"]))
 	assert.Equal(t, "code-execution-2025-08-25", anthropicProviderToolBetas["anthropic.code_execution_20250825"])
 	assert.Equal(t, "advisor-tool-2026-03-01", anthropicProviderToolBetas["anthropic.advisor_20260301"])
+}
+
+func TestConverseParity_InvalidProviderToolSchemaAsset(t *testing.T) {
+	_, err := decodeProviderToolSchemas([]byte(`{`))
+	require.ErrorContains(t, err, "decoding provider-tool schemas")
+	_, err = providerToolSchema("anthropic.unregistered_tool")
+	require.ErrorContains(t, err, "missing provider-tool schema")
 }
 
 func TestConverseParity_InvalidAnthropicOptions(t *testing.T) {
