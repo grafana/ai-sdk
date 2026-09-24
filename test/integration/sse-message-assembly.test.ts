@@ -152,6 +152,13 @@ describe("SSE message assembly", () => {
       mediaType: "application/pdf",
       title: "Financial Report",
       filename: "financial-report.pdf",
+      providerMetadata: {citation:{startPageNumber:1}},
+    });
+    expect(lastMessage.parts.filter(part=>part.type==="source-url")).toEqual([
+      {type:"source-url",sourceId:"source-2",url:"https://example.com",title:"URL",providerMetadata:{citation:{index:0}}},
+    ]);
+    expect(lastMessage.parts.find(part=>part.type==="source-document" && part.sourceId==="source-3")).toMatchObject({
+      type:"source-document",sourceId:"source-3",mediaType:"text/plain",title:"",
     });
   });
 });

@@ -125,6 +125,29 @@ async function collect(stream: ReadableStream<LanguageModelV4StreamPart>): Promi
 before(async () => { baseURL = await startServer(); goClientBinary = buildGoClientCapture(temporaryDirectory); });
 after(async () => { await stopServer(); });
 
+describe("sources through the authenticated handler", () => {
+  it("preserves registered URL/document fields and normalizes privacy in both clients", async () => {
+    const client = createGateway({apiKey:"test",baseURL:`${baseURL}/function-tools`,headers:{"x-access-token":"function-test-token"}})("sources");
+    const options = {prompt:[]};
+    const expected = [
+      {type:"source",sourceType:"url",id:"source-1",url:"https://example.com",title:"URL"},
+      {type:"source",sourceType:"document",id:"source-2",mediaType:"text/plain",title:"",providerMetadata:{citation:{startPageNumber:1,endPageNumber:2}}},
+      {type:"source",sourceType:"document",id:"source-3",mediaType:"application/octet-stream",title:"Document",providerMetadata:{citation:{index:0}}},
+    ];
+    assert.deepEqual((await client.doGenerate(options)).content, expected);
+    assert.deepEqual((await collect((await client.doStream(options)).stream)).filter(p=>p.type==="source"),expected);
+    const config={baseURL:`${baseURL}/function-tools`,accessToken:"function-test-token",modelID:"sources",options};
+    const unary=await captureGoClient(goClientBinary,{...config,mode:"generate"});
+    assert.equal(unary.error,undefined);
+    const normalized=unary.result.content.map((p:any)=>({...p,title:p.title??"",text:undefined}));
+    assert.deepEqual(normalized,expected.map(p=>({...p,text:undefined})));
+    const stream=await captureGoClient(goClientBinary,{...config,mode:"stream"});
+    assert.equal(stream.error,undefined);
+    const sources=stream.parts.filter((p:any)=>p.type==="source").map((p:any)=>({...p,title:p.title??""}));
+    assert.deepEqual(sources,expected);
+  });
+});
+
 describe("unary function tools through the authenticated real handler", () => {
   const tools = [{ type: "function" as const, name: "weather", inputSchema: { type: "object" as const }, strict: false }];
   const prompt = [{ role: "user" as const, content: [{ type: "text" as const, text: "Weather in Rio?" }] }];

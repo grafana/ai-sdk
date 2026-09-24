@@ -1322,6 +1322,37 @@ describe("authenticated OpenAI-compatible Gateway command", () => {
 });
 
 describe("authenticated OpenAI Responses Gateway command", () => {
+  it("projects native URL and file-path sources without private identity in both clients", async () => {
+    const [fake,gateway]=await startOpenAIGateway();
+    fake.sources=true;
+    try {
+      const options={prompt:[{role:"user" as const,content:[{type:"text" as const,text:"sources"}]}],maxOutputTokens:32};
+      const expected=[
+        {type:"source",sourceType:"url",id:"source-1",url:"https://public.example",title:"Public citation"},
+        {type:"source",sourceType:"document",id:"source-2",mediaType:"application/octet-stream",title:"Document",providerMetadata:{citation:{index:0}}},
+      ];
+      const unary=await gateway.client()("openai").doGenerate(options);
+      assert.deepEqual(unary.content.filter(part=>part.type==="source"),expected);
+      const streamed=await gateway.client()("openai").doStream(options);
+      const parts:unknown[]=[];
+      const reader=streamed.stream.getReader();
+      for (;;) {const next=await reader.read();if(next.done)break;parts.push(next.value);}
+      assert.deepEqual(parts.filter((part:any)=>part.type==="source"),expected);
+      const config={baseURL:`${gateway.url}/api/v1/aisdk`,accessToken:TEST_TOKEN,modelID:"openai",options};
+      const goUnary=await captureGoClient(goClientBinaryPath,{...config,mode:"generate"});
+      assert.equal(goUnary.error,undefined);
+      assert.deepEqual(goUnary.result.content.filter((part:any)=>part.type==="source").map((part:any)=>({...part,text:undefined})),expected.map(part=>({...part,text:undefined})));
+      const goStream=await captureGoClient(goClientBinaryPath,{...config,mode:"stream"});
+      assert.equal(goStream.error,undefined);
+      assert.deepEqual(goStream.parts.filter((part:any)=>part.type==="source"),expected);
+      const metrics=await (await fetch(`${gateway.url}/metrics`)).text();
+      for (const privateValue of ["native-file-private","Public citation","https://public.example"]) {
+        assert.ok(!gateway.stderr.includes(privateValue));
+        assert.ok(!metrics.includes(privateValue));
+      }
+      assert.deepEqual(fake.violations,[]);
+    } finally {await settleCleanup(()=>gateway.stop(),()=>fake.stop());}
+  });
   it("discovers, invokes, and streams usage without exposing private configuration", async () => {
     const [fake, gateway] = await startOpenAIGateway();
     try {
@@ -2013,6 +2044,7 @@ class FakeOpenAI {
   readonly violations: string[] = [];
   redirectTo?: string;
   failWithSecret = false;
+  sources = false;
   private readonly server: ReturnType<typeof createServer>;
 
   private constructor(server: ReturnType<typeof createServer>, url: string) {
@@ -2057,7 +2089,11 @@ class FakeOpenAI {
     }
     const stream = body.stream === true;
     const text = stream ? "hello from fake openai stream" : "hello from fake openai";
-    const message = { id: "msg_test", type: "message", status: "completed", role: "assistant", content: [{ type: "output_text", annotations: [], logprobs: [], text }] };
+    const annotations=this.sources ? [
+      {type:"url_citation",url:"https://public.example",title:"Public citation",start_index:0,end_index:5},
+      {type:"file_path",file_id:"native-file-private",index:0},
+    ] : [];
+    const message = { id: "msg_test", type: "message", status: "completed", role: "assistant", content: [{ type: "output_text", annotations, logprobs: [], text }] };
     const completed = (outputTokens: number) => ({
       id: "resp_test", object: "response", created_at: 1, status: "completed", model: "backend-private", output: [message],
       usage: { input_tokens: 2, input_tokens_details: { cached_tokens: 0 }, output_tokens: outputTokens, output_tokens_details: { reasoning_tokens: 0 }, total_tokens: 2 + outputTokens },
@@ -2072,6 +2108,7 @@ class FakeOpenAI {
       { type: "response.created", response: { ...completed(0), status: "in_progress", output: [], usage: null } },
       { type: "response.output_item.added", output_index: 0, item: { ...message, status: "in_progress", content: [] } },
       { type: "response.output_text.delta", output_index: 0, content_index: 0, item_id: "msg_test", delta: text, logprobs: [] },
+      ...annotations.map((annotation,annotation_index)=>({type:"response.output_text.annotation.added",output_index:0,content_index:0,item_id:"msg_test",annotation_index,annotation})),
       { type: "response.output_item.done", output_index: 0, item: message },
       { type: "response.completed", response: completed(6) },
     ];

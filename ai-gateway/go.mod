@@ -8,8 +8,8 @@ require (
 	github.com/go-jose/go-jose/v4 v4.1.5
 	github.com/grafana/agento11y/go v0.15.0
 	github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260921194944-e7732b7aa62b
-	github.com/grafana/ai-sdk/middleware/agentobservability v0.0.0-20260915200037-0b83f45375ca
-	github.com/grafana/ai-sdk/middleware/logger v0.0.0-20260915200037-0b83f45375ca
+	github.com/grafana/ai-sdk/middleware/agentobservability v0.0.0-20260924134945-aacebf7e6dfb
+	github.com/grafana/ai-sdk/middleware/logger v0.0.0-20260924134945-aacebf7e6dfb
 	github.com/grafana/ai-sdk/middleware/prometheus v0.0.0-20260915200037-0b83f45375ca
 	github.com/grafana/ai-sdk/providers/anthropic v0.0.0-20260921194944-e7732b7aa62b
 	github.com/grafana/ai-sdk/providers/openai v0.0.0-20260914170650-fd08a3a81a11
@@ -19,6 +19,7 @@ require (
 	github.com/openai/openai-go/v3 v3.48.0
 	github.com/prometheus/client_golang v1.24.1
 	github.com/stretchr/testify v1.11.1
+	go.opentelemetry.io/otel/sdk/metric v1.45.0
 	go.yaml.in/yaml/v4 v4.0.0-rc.6
 	golang.org/x/sys v0.47.0
 )
@@ -62,7 +63,6 @@ require (
 	go.opentelemetry.io/otel v1.45.0 // indirect
 	go.opentelemetry.io/otel/metric v1.45.0 // indirect
 	go.opentelemetry.io/otel/sdk v1.45.0 // indirect
-	go.opentelemetry.io/otel/sdk/metric v1.45.0 // indirect
 	go.opentelemetry.io/otel/trace v1.45.0 // indirect
 	golang.org/x/crypto v0.56.0 // indirect
 	golang.org/x/net v0.58.0 // indirect

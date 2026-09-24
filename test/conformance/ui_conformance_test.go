@@ -39,6 +39,22 @@ func (m uiFixtureModel) DoGenerate(context.Context, provider.CallOptions) (*prov
 	return nil, errors.New("ui fixture model does not support generate")
 }
 
+func TestUIConformance_Sources(t *testing.T) {
+	fixtureDir := filepath.Join("ui", "sources")
+	parts := loadUIFixtureParts(t, filepath.Join(fixtureDir, "input.jsonl"))
+	expected := loadUIExpected(t, filepath.Join(fixtureDir, "expected.jsonl"))
+	result := aisdk.StreamText(context.Background(), uiFixtureModel{parts: parts}, aisdk.WithModelMessages(provider.UserText("test")))
+	var actual []map[string]any
+	for chunk := range result.ToUIMessageStream(aisdk.WithUIMessageStreamSources(true), aisdk.WithUIMessageStreamGenerateID(func() string { return "message-1" })) {
+		data, err := json.Marshal(chunk)
+		require.NoError(t, err)
+		var decoded map[string]any
+		require.NoError(t, json.Unmarshal(data, &decoded))
+		actual = append(actual, decoded)
+	}
+	require.Equal(t, expected, actual)
+}
+
 func TestUIConformance_ReasoningFiles(t *testing.T) {
 	fixtureDir := filepath.Join("ui", "generated-files", "data-and-url")
 	parts := loadUIFixtureParts(t, filepath.Join(fixtureDir, "input.jsonl"))

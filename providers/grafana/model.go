@@ -217,6 +217,12 @@ func decodeGenerate(body []byte) (*provider.GenerateResult, error) {
 			return nil, errors.New("grafana: invalid unary content")
 		}
 		switch part.Type {
+		case provider.ContentSource:
+			source, err := decodeSource(raw)
+			if err != nil {
+				return nil, err
+			}
+			content = append(content, provider.GenerateContentPart{Type: provider.ContentSource, SourceType: source.SourceType, ID: source.ID, URL: source.URL, Title: source.Title, Text: source.Title, MediaType: source.MediaType, Filename: source.Filename, ProviderMetadata: source.ProviderMetadata})
 		case provider.ContentText:
 			if part.Text == nil {
 				return nil, errors.New("grafana: missing unary text")

@@ -534,7 +534,7 @@ func isPayloadPart(part provider.StreamPart) bool {
 	switch part.Type {
 	case provider.PartTextDelta, provider.PartReasoningDelta, provider.PartToolInputDelta:
 		return part.Delta != ""
-	case provider.PartToolCall:
+	case provider.PartToolCall, provider.PartSource:
 		return true
 	default:
 		return false
