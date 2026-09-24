@@ -72,9 +72,22 @@ func TestGatewayWorkspace_CandidateSourceVsPinnedVersion(t *testing.T) {
 	assert.Equal(t, "pinned", build("off"))
 }
 
-func TestGatewayBuild_CandidateSourceVsPinnedVersion(t *testing.T) {
+func fullRepository(t *testing.T) string {
+	t.Helper()
 	repo, err := filepath.Abs(filepath.Join("..", ".."))
 	require.NoError(t, err)
+	for _, path := range []string{".git", "ai-gateway/go.mod"} {
+		_, err := os.Stat(filepath.Join(repo, path))
+		if os.IsNotExist(err) {
+			t.Skip("requires Git metadata and Gateway source")
+		}
+		require.NoError(t, err)
+	}
+	return repo
+}
+
+func TestGatewayBuild_CandidateSourceVsPinnedVersion(t *testing.T) {
+	repo := fullRepository(t)
 	dir := t.TempDir()
 	candidate := filepath.Join(dir, "candidate.go")
 	require.NoError(t, os.WriteFile(candidate, []byte("package provider\nvar _ = candidateSourceOnlyMarker\n"), 0o644))
@@ -101,8 +114,7 @@ func TestGatewayBuild_CandidateSourceVsPinnedVersion(t *testing.T) {
 }
 
 func TestGatewayBoundary_ExplicitWorkspaceAndGraphErrors(t *testing.T) {
-	repo, err := filepath.Abs(filepath.Join("..", ".."))
-	require.NoError(t, err)
+	repo := fullRepository(t)
 	run := func(env ...string) (string, error) {
 		cmd := exec.Command("bash", "scripts/verify-ai-gateway-boundary.sh")
 		cmd.Dir = repo
