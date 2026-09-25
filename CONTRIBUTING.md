@@ -490,9 +490,10 @@ The repository uses Go modules across several module roots, plus a pnpm
 workspace under `test/` for TypeScript-side harnesses.
 
 `ai-gateway/` is intentionally absent from the root `go.work`. The separate
-`go.gateway.work` is selected by required Gateway source-integration commands;
-it uses local SDK, provider, and middleware source. Standalone module and image
-builds still use declared versions with `GOWORK=off`. Gateway code may import
+`go.gateway.work` is selected by required Gateway source-integration commands
+and Gateway container builds; it uses local SDK, provider, and middleware source.
+Standalone Go-module validation still uses declared versions with `GOWORK=off`.
+Gateway code may import
 explicitly pinned SDK modules, but no module outside `ai-gateway/` may import,
 require, or replace `github.com/grafana/ai-sdk/ai-gateway`. The structural check
 rejects reverse source and module references; standalone validation builds and tests
@@ -505,8 +506,13 @@ merged into canonical `grafana/ai-sdk` `main`. Merged pseudo-versions are valid;
 local-only example/test replacements are not published pins. A green workspace
 integration test proves candidate-source behavior, not standalone consumability.
 All-module standalone validation is available on demand, not a source-PR gate.
-Gateway publication requires standalone validation at the artifact revision.
-Do not use a workspace or an unmerged pin to make a standalone check pass.
+Gateway is released as a container, not a supported standalone Go module. Main
+and Gateway-tag image builds use a clean checkout and the explicit workspace at
+the push SHA, with image builds and native smoke blocking publication. They do
+not wait for Gateway standalone compilation or SDK/provider release tags. SDK,
+provider, and middleware Go-module releases remain subject to standalone
+`GOWORK=off` validation; an image build does not authorize module tags. Do not
+use a workspace or an unmerged pin to make a standalone module check pass.
 
 ```bash
 mise run tidy        # go mod tidy across all modules

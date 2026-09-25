@@ -1,8 +1,11 @@
 # Run AI Gateway in a container
 
-The repository builds a container for the standalone `grafana-ai-gateway`
-command. The image keeps the Gateway module outside the root Go workspace and
-uses the versions pinned in `ai-gateway/go.mod`.
+The repository builds a container for the `grafana-ai-gateway` command from
+Gateway and local SDK/provider/middleware source in the checked-in
+`go.gateway.work`. Gateway remains outside the root SDK-only `go.work`.
+Published images use the source at the pushed revision, even if the internal
+module pins in `ai-gateway/go.mod` are older. Gateway is released as an image,
+not as a supported standalone Go module or importable application package.
 
 After all required CI checks pass, pushes to `grafana/ai-sdk` publish Linux AMD64 and ARM64 images:
 
@@ -19,7 +22,11 @@ Run the build task from the repository root:
 mise run build-ai-gateway-image
 ```
 
-Set `AI_GATEWAY_IMAGE` to build with another local image name:
+Local builds use the same Dockerfile, workspace and repository-root context as
+CI, including uncommitted local source. Their OCI revision label and local-module
+inventory say `local-unverified` rather than claiming the HEAD commit; published
+images are built from a clean checkout and identify the push SHA. Set
+`AI_GATEWAY_IMAGE` to build with another local image name:
 
 ```bash
 AI_GATEWAY_IMAGE=example/ai-gateway:test mise run build-ai-gateway-image
@@ -101,13 +108,19 @@ the runtime sends `SIGKILL`.
 ## Track source and dependencies
 
 The image has Open Container Initiative (OCI) labels for the source repository,
-source revision, and AGPL-3.0-only license. Build automation sets the revision
-to the full source commit.
+source revision, and AGPL-3.0-only license. Publication sets the revision to
+the full verified source commit. The Gateway-specific Docker context excludes
+Git metadata, local configuration, credentials and development caches; supply
+provider secrets only at runtime.
 
 License files are under
 `/usr/share/licenses/grafana-ai-gateway/`. The directory includes the Gateway
-license and notice, the exact modules used by the command, and license or
-notice files found in those resolved module versions.
+AGPL license and notice, the target-platform command's used modules (local
+modules at the verified SHA or `local-unverified`, external modules at resolved
+versions and checksums), inherited root Apache licensing for local SDK modules,
+and discovered dependency license/notice files. SDK/provider/middleware Go
+module releases still require separate standalone `GOWORK=off` validation;
+passing image checks does not authorize their publication.
 
 ---
 
