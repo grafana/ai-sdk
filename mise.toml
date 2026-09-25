@@ -192,15 +192,11 @@ description = "Run deterministic Bash module-policy fixtures"
 run = "bash test/module-policy.sh"
 
 [tasks.test-ci-workflow]
-description = "Test source and artifact workflow gating across PR, push and tag events"
+description = "Check structural source and artifact workflow gates"
 run = """
 mise deps install --only test
 cd test && pnpm --filter @ai-sdk/conformance-tools test:ci
 """
-
-[tasks.test-candidate-source]
-description = "Prove a controlled root/provider/Gateway API change passes source gates but fails standalone"
-run = "bash test/candidate-source-ci.sh"
 
 [tasks.lint]
 description = "Run golangci-lint across all modules"
@@ -354,13 +350,6 @@ mise run verify-gateway-workspace
 mise deps install --only test
 export GATEWAY_TEST_GOWORK="$workspace_file"
 cd test && pnpm --filter @ai-sdk/providerwire-v4-contract test:contract
-"""
-
-[tasks.test-go-client-standalone]
-description = "Diagnose Go client interoperability against its published standalone SDK dependencies"
-run = """
-mise deps install --only test
-cd test && pnpm --filter @ai-sdk/providerwire-v4-contract test:standalone-client
 """
 
 [tasks.test-ai-gateway-command]

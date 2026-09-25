@@ -185,15 +185,13 @@ mise run check
 # Upstream parity checks
 mise run validate-parity-baseline
 mise run parity-check
-mise run verify-module-resolution   # standalone diagnostic for all published modules, public proxy, GOWORK=off
+mise run verify-module-resolution   # on-demand standalone check for all published modules, public proxy, GOWORK=off
 MODULE=providers/openai mise run verify-published-module
 mise run verify-merged-pins        # real internal pins must descend from canonical main
 mise run verify-ai-gateway-boundary
 mise run verify-sdk-gateway-isolation
 mise run test-module-policy         # deterministic Bash policy fixtures
-mise run test-ci-workflow           # PR/push/tag source and artifact gate graph
-mise run test-candidate-source      # coordinated candidate passes; standalone fails
-mise run test-go-client-standalone  # pinned Go client diagnostic
+mise run test-ci-workflow           # structural source and artifact workflow checks
 mise run test-ai-gateway-source    # explicit go.gateway.work candidate-source mode
 mise run test-ai-gateway-source-integration
 
@@ -213,9 +211,10 @@ select a development workspace. `scripts/module-policy.sh` owns module
 inventory, merged-pin ancestry, standalone validation, the license boundary,
 and the candidate-source, Gateway-absent SDK proof. Real published internal
 module pins must already be merged on canonical `main`; an older merged
-pseudo-version may lag candidate source. All-module standalone validation is a
-visible, nonblocking source-PR diagnostic, not a merge gate. An exact-revision
-standalone Gateway validation and image check block publication and deployment.
+pseudo-version may lag candidate source. All-module standalone validation is
+available on demand, not a source-PR merge gate. On eligible pushes, the
+`image-validation` job runs exact-revision standalone Gateway validation before
+building and smoking production images; publication and deployment require it.
 Until #245 release-readiness safeguards are incorporated in #21, maintainers
 must run `MODULE=<module-root> mise run verify-published-module` before manual
 module publication. Do not enable the old #21 release workflow unchanged or

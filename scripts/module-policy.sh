@@ -12,7 +12,7 @@
 # Workspace: go.gateway.work explicitly selects local candidate source; the
 # root workspace does not. Isolation: SDK and Grafana build/test without Gateway
 # source present. These checks do not replace copied-code or dependency license
-# review. Standalone builds are artifact gates and independent PR diagnostics.
+# review. Standalone builds gate artifacts, not source PRs.
 set -euo pipefail
 
 repo_root=$(git rev-parse --show-toplevel)

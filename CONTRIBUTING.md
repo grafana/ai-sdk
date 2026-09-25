@@ -505,10 +505,11 @@ Every real internal pin in a published module must refer to a commit already
 merged into canonical `grafana/ai-sdk` `main`. Merged pseudo-versions are valid;
 local-only example/test replacements are not published pins. A green workspace
 integration test proves candidate-source behavior, not standalone consumability.
-The all-module standalone check is a visible, nonblocking PR diagnostic;
-merged-pin ancestry, boundaries, source integration and parity still block
-source PRs. A Gateway image cannot be published or deployed until standalone
-Gateway and production image checks pass at the artifact revision. A green
+All-module standalone validation is available on demand, not a source-PR
+prerequisite; merged-pin ancestry, boundaries, source integration and parity
+still block source PRs. On eligible main and Gateway-tag pushes, image
+validation runs exact-revision standalone Gateway checks before building and
+smoking production images. Publication and deployment require that gate. A green
 source PR alone is not release evidence: before manual publication, maintainers
 must run `MODULE=<module-root> mise run verify-published-module`. No SDK tags
 are created by this workflow. Issue [#21](https://github.com/grafana/ai-sdk/issues/21)

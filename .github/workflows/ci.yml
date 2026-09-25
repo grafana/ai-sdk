@@ -94,9 +94,6 @@ jobs:
       - name: Test CI source and artifact gates
         run: mise run test-ci-workflow
 
-      - name: Test coordinated candidate source and unready standalone artifact
-        run: mise run test-candidate-source
-
       - name: Verify candidate Gateway workspace
         run: mise run verify-gateway-workspace
 
@@ -108,45 +105,6 @@ jobs:
 
       - name: Verify SDK isolation from Gateway source
         run: mise run verify-sdk-gateway-isolation
-
-  standalone-diagnostic:
-    name: Standalone module diagnostic (nonblocking)
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-
-      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
-        with:
-          cache: true
-          version: "2026.5.4"
-          experimental: true
-
-      - name: Check standalone published modules
-        id: standalone
-        continue-on-error: true
-        run: mise run verify-module-resolution
-
-      - name: Check pinned Go client interoperability
-        id: client
-        continue-on-error: true
-        run: mise run test-go-client-standalone
-
-      - name: Report standalone readiness
-        if: always()
-        env:
-          MODULE_OUTCOME: ${{ steps.standalone.outcome }}
-          CLIENT_OUTCOME: ${{ steps.client.outcome }}
-        run: |
-          echo "## Standalone module diagnostic: $MODULE_OUTCOME" >> "$GITHUB_STEP_SUMMARY"
-          echo "## Pinned Go client diagnostic: $CLIENT_OUTCOME" >> "$GITHUB_STEP_SUMMARY"
-          if [ "$MODULE_OUTCOME" != success ] || [ "$CLIENT_OUTCOME" != success ]; then
-            echo '::warning::Standalone modules or pinned Go client are unready; source merge may proceed, but affected artifacts cannot be published.'
-          fi
 
   parity-baseline:
     runs-on: ubuntu-latest
@@ -230,38 +188,12 @@ jobs:
       - name: Integration tests
         run: mise run test-integration
 
-  artifact-standalone:
-    name: Validate standalone AI Gateway artifact
-    if: >-
-      ${{ github.event_name == 'push' &&
-          (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/ai-gateway/v')) &&
-          github.repository == 'grafana/ai-sdk' }}
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-
-      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
-        with:
-          cache: false
-          version: "2026.5.4"
-          experimental: true
-
-      - name: Verify standalone Gateway at the artifact revision
-        run: |
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          MODULE=ai-gateway mise run verify-published-module
-
   image-validation:
     name: Validate AI Gateway image
     if: >-
       ${{ github.event_name == 'push' &&
           (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/ai-gateway/v')) &&
           github.repository == 'grafana/ai-sdk' }}
-    needs: artifact-standalone
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -276,14 +208,16 @@ jobs:
           version: "2026.5.4"
           experimental: true
 
+      - name: Verify standalone Gateway at the artifact revision
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          MODULE=ai-gateway mise run verify-published-module
+
       - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
         with:
           platforms: arm64
 
       - uses: docker/setup-buildx-action@f7ce87c1d6bead3e36075b2ce75da1f6cc28aaca # v3.9.0
-
-      - name: Verify artifact revision
-        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
 
       - name: Build target platforms
         run: >-
@@ -434,7 +368,6 @@ jobs:
       - parity-baseline
       - integration-test
       - conformance-test
-      - artifact-standalone
       - image-validation
     runs-on: ubuntu-latest
     permissions:

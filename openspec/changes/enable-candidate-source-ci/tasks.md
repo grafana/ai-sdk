@@ -1,23 +1,18 @@
-## 1. Map and prove current gates
+## 1. Required source execution
 
-- [x] 1.1 Inventory every required `.github/workflows/ci.yml` path (including job-level and aggregate `needs`), `mise.toml` command, Go subprocess/testserver and example workspace mode; record which paths compile candidate versus pinned code and which parity/conformance commands use nested local replacements.
-- [x] 1.2 Add a deterministic root+provider+Gateway controlled breaking-change fixture/test harness with unchanged older merged internal pins, asserting actual required source behavior changes while selected/all-module standalone compilation is unready. Include a previously valid standalone baseline.
+- [x] 1.1 Inventory required job/task paths, Go subprocesses and workspace selection; retain source-only formatting, docs, parity, integration and security checks.
+- [x] 1.2 Select root `go.work` for SDK/provider/middleware/examples and explicit `go.gateway.work` for required Gateway build/test/vet/lint and command/testserver integration.
+- [x] 1.3 Keep required ProviderWire differential against candidate Grafana client and root, pinned TypeScript comparator and copied-mutant semantic red controls; verify temporary workspaces select the copied client.
+- [x] 1.4 Use a Gateway-free copied candidate workspace for SDK/client source-absence tests; preserve structural reverse-dependency checks and canonical merged-pin ancestry fixtures.
 
-## 2. Activate candidate source checks without dropping protections
+## 2. Separate source eligibility from artifacts
 
-- [x] 2.1 Select root `go.work` for SDK build/test/vet/lint and explicit absolute `go.gateway.work` with readonly manifests for Gateway in required mise commands; audit provider, middleware and example tasks for stale-published-root compilation and preserve root Gateway exclusion.
-- [x] 2.2 Update ProviderWire Go parity test, Gateway runtime and authenticated command cross-language testserver builds to use candidate Gateway workspace in required CI; keep SDK-only integration server Gateway-free. Keep `test-providerwire-v4` → `test:contract` → `test:client` blocking, including `go-client-differential.test.ts` and `go-client-request-mutations.test.ts`: build/run candidate Grafana client captures against candidate root, and give each copied mutated client an explicit temporary workspace/fixture selecting that copy instead of the unmutated provider. Assert actual selected sources and a semantic differential `AssertionError` for each mutation, not a build/setup failure. Retain genuinely pinned Go-client consumption assertions separately as visible nonblocking standalone diagnostics/artifact evidence; do not demote the candidate differential, red controls or pinned TypeScript comparator.
-- [x] 2.3 Change `scripts/module-policy.sh isolation` to build/test candidate root and Grafana client in a copy without Gateway source, asserting local root selection; retain independent structural reverse-reference/license/graph checks and add fixtures for stale merged, unmerged/unverifiable pins and reverse imports/replacements.
-- [x] 2.4 Split mixed `module-resolution` CI: keep module fixtures, structural boundary and canonical declared/selected pin provenance as blocking source checks; expose all-module standalone on PRs in a distinct visible nonblocking diagnostic with no path into required jobs. Keep selected/all-module commands and make failures conspicuous.
+- [x] 2.1 Remove full-repo controlled-mutation harness from required CI and its task; keep a focused deterministic module-selection/execution fixture without a live candidate standalone precondition.
+- [x] 2.2 Remove all-module standalone compilation from required `module-resolution` without weakening ancestry/boundary checks; retain on-demand selected/all-module standalone commands. Remove unnecessary PR diagnostic and pinned-Go-client-only machinery.
+- [x] 2.3 Run `MODULE=ai-gateway mise run verify-published-module` first in existing push-only `image-validation` at the exact checkout revision; only then build and smoke-test standalone production images. Keep publisher and deployment fail-closed dependencies.
+- [x] 2.4 Replace synthetic workflow scheduler tests with small structural assertions for source/artifact separation, ordered image-validation steps, production workspace exclusion and publication/deployment dependencies.
 
-## 3. Gate production artifacts at the exact revision
+## 3. Documentation and proof
 
-- [x] 3.1 Add a fail-closed artifact job on eligible canonical main/Gateway tag pushes running `MODULE=ai-gateway mise run verify-published-module` with clean public-proxy readonly `GOWORK=off` validation of the checkout SHA and no local replacements; retain native/multiarch standalone Docker image validation and smoke checks at that SHA as an artifact prerequisite, not a required PR source gate.
-- [x] 3.2 Rewire publisher `needs` and conditions so all required source checks plus successful standalone/image gates for the same SHA are mandatory before push; keep deployment dependent on successful publication of that SHA; verify production Dockerfile excludes workspace and release builds never select source workspace.
-- [x] 3.3 Add deterministic workflow graph/event tests for PR/main/Gateway tag, fork/noncanonical cases, successful baseline and failed/skipped/cancelled standalone or image gates, diagnostic-only failures, tag publication and deployment propagation; assert source checks still fail for real regressions.
-
-## 4. Documentation, rollout and validation
-
-- [x] 4.1 Update `AGENTS.md`, `CONTRIBUTING.md`, CI/task descriptions and module-policy comments to distinguish mergeable candidate source from standalone artifact readiness; describe manual selected-module standalone validation before publication and prohibit SDK auto-tagging in this change.
-- [x] 4.2 Document the #21 dependency on #245 release-readiness safeguards and require maintainer inventory and approval of actual required-check/ruleset identities before migration; coordinate old/new names and rollback without bypasses or settings changes in this implementation.
-- [x] 4.3 Run policy/workflow tests, candidate Go build/test/vet/lint, Gateway source cross-language integration, parity baseline/conformance/integration (including candidate differential and semantic mutation red controls) and artifact standalone/image checks for a valid revision; run controlled negative tests to prove source eligibility with broken standalone, unmerged pins/reverse dependency rejection and blocked image/deployment. Record any external ruleset or publication proof that cannot run locally as a rollout prerequisite, not a passing test.
+- [x] 3.1 Align `AGENTS.md`, `CONTRIBUTING.md`, task descriptions and OpenSpec evidence with the narrower contract; preserve existing required check identities and record #245/#21 as the separate SDK release boundary.
+- [x] 3.2 Validate module-policy/workflow fixtures, candidate Go build/test/vet/lint, ProviderWire differential and mutants, Gateway cross-language integration and relevant parity. Validate standalone Gateway and existing image path separately; record hosted publication evidence as not locally established.

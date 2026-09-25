@@ -1,50 +1,32 @@
 ## ADDED Requirements
 
-### Requirement: Candidate source is the required integration target
-Required source CI SHALL compile, lint, vet, test and run cross-language integration for candidate SDK, provider, middleware and Gateway code together. It SHALL retain formatting, docs, security, parity, conformance, structural boundary, module-policy fixture and merged-pin checks. It SHALL NOT require a published dependency to implement a changed candidate API for ordinary source PR merge eligibility.
+### Requirement: Required CI integrates candidate source
+Required source CI SHALL build, vet, lint, test and exercise cross-language integration against candidate SDK, providers, middleware and Gateway. It SHALL retain formatting, docs, license/isolation, parity/conformance, structural boundary, module-policy and canonical merged-pin checks. Real published internal pins MAY lag candidate source but SHALL remain downloadable and merged in canonical main; required source checks SHALL NOT compile candidate code against those pins as a prerequisite to merge.
 
-#### Scenario: Coordinated change with older merged pins
-- **WHEN** a controlled breaking SDK, provider and Gateway change is coherent in the candidate workspace but cannot build standalone against unchanged older merged pins
-- **THEN** every required source check SHALL pass on the candidate revision
-- **AND** the standalone failure SHALL remain observable outside source eligibility
+#### Scenario: Coordinated source with older merged pins
+- **WHEN** candidate root/provider/middleware/Gateway changes work together but an older merged dependency pin cannot compile that candidate independently
+- **THEN** required source checks SHALL execute and validate the candidate modules without requiring a standalone build to pass
+- **AND** unmerged or unverifiable pins, forbidden reverse dependencies and real source regressions SHALL still fail their required checks
 
-#### Scenario: ProviderWire differential red controls
-- **WHEN** the required ProviderWire client contract and request-mutation controls run
-- **THEN** the Go differential SHALL execute the candidate Grafana client against candidate SDK root while retaining the pinned TypeScript comparator
-- **AND** each copied client mutant SHALL be selected in an explicit candidate-root workspace and rejected by a semantic differential assertion, not a build or setup failure
-- **AND** genuinely pinned Go-client standalone consumption evidence MAY run separately as a nonblocking PR diagnostic without demoting the candidate differential or red controls
+#### Scenario: ProviderWire candidate differential
+- **WHEN** the required ProviderWire client differential and request-mutation controls run
+- **THEN** the Go capture SHALL build and run candidate Grafana client against candidate SDK root, retaining the pinned TypeScript comparator
+- **AND** every copied Go-client mutant SHALL be selected by its test workspace and rejected by a semantic differential assertion, not a build/setup failure
 
-#### Scenario: Real source regression
-- **WHEN** candidate code fails a required source, parity, integration, formatting, security or policy check
-- **THEN** the source PR SHALL be blocked without treating an unrelated standalone diagnostic as the cause
+### Requirement: Gateway publication is independently gated
+Standalone selected-module and all-module commands SHALL remain available without directly or indirectly blocking an ordinary source PR. On an eligible canonical main or Gateway-tag push, image validation SHALL first test the Gateway module at the exact checkout revision with public-proxy dependencies, a clean module cache, readonly module files, `GOWORK=off` and no local replacements. Only after that succeeds MAY it build and smoke-test standalone production images. Publication SHALL depend on successful required source and image-validation jobs for that revision; main deployment SHALL follow successful publication. A skipped, cancelled or failed image-validation job SHALL NOT authorize publication.
 
-### Requirement: Diagnostic and publication checks are independent
-Public-proxy standalone validation SHALL remain available and visible on source PRs without a direct or transitive required-check dependency. Gateway image publication on main or Gateway tags SHALL require successful exact-checkout-revision public-proxy readonly workspace-off standalone validation without local replacements, production image validation and all required source checks. Deployment SHALL require successful publication of that same revision. Skipped, cancelled and failed artifact checks SHALL block publication and deployment, not a source PR.
-
-#### Scenario: Diagnostic failure on a source PR
-- **WHEN** a PR's candidate source checks succeed and its standalone diagnostic fails
-- **THEN** the diagnostic SHALL report failure clearly, while no required PR aggregate or source job SHALL fail on its account
-
-#### Scenario: Push to main or Gateway tag with unready artifact
-- **WHEN** standalone dependency build or image validation fails at the checkout SHA on a canonical main push or `ai-gateway/v*` tag
-- **THEN** that revision SHALL NOT publish an image or deploy even if its source checks passed
+#### Scenario: Unready Gateway artifact
+- **WHEN** source checks pass but the Gateway module cannot build or test with its declared published dependencies
+- **THEN** the source PR SHALL remain eligible to merge and an artifact push SHALL NOT publish or deploy that Gateway image
 
 #### Scenario: Valid artifact
-- **WHEN** all required source checks and standalone artifact and image gates pass for the same checkout SHA on an eligible push
-- **THEN** image publication MAY proceed; deployment on main SHALL only follow successful publication
+- **WHEN** required source checks, Gateway standalone validation and production image validation all pass for the same eligible push revision
+- **THEN** publication MAY proceed, and main deployment MAY follow successful publication
 
-#### Scenario: Missing gate result
-- **WHEN** an artifact prerequisite is skipped or cancelled on an eligible push
-- **THEN** the publisher SHALL NOT treat the absent result as success
+### Requirement: Release automation remains separate
+A green source PR SHALL NOT authorize an SDK release or change required-check/ruleset settings. Any required-check identity change SHALL require coordinated maintainer approval without bypassing checks. SDK release automation remains owned by #245/#21.
 
-### Requirement: Approved rollout and manual module release boundary
-Activation SHALL document maintainer-approved changes to required checks/rulesets, without bypasses or orphaned check names. Until #245 release readiness is integrated in #21, maintainers SHALL validate each selected published module standalone before manual publication and SHALL NOT enable old #21 SDK release assumptions unchanged. Candidate-source merge success SHALL NOT authorize automatic SDK tagging.
-
-#### Scenario: Required check identity changes
-- **WHEN** job names or required-check identities must change
-- **THEN** maintainers SHALL approve the migration and coordinate settings with workflow rollout before the new check graph becomes required
-
-#### Scenario: Module publication before release automation
-- **WHEN** a maintainer intends to publish a module after candidate source merges
-- **THEN** the maintainer SHALL run selected-module standalone validation before manual publication
-- **AND** no source CI success SHALL itself create an SDK tag
+#### Scenario: Source PR passes
+- **WHEN** a coordinated source PR passes required checks
+- **THEN** no SDK tag or module publication SHALL be created by this workflow

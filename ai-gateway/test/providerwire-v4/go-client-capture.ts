@@ -28,16 +28,6 @@ export function buildGoClientCapture(directory: string, sourceDirectory = resolv
   return binary;
 }
 
-export function buildPinnedGoClientCapture(directory: string): string {
-  const binary = join(directory, "go-client-capture");
-  execFileSync("go", ["build", "-o", binary, "./internal/capture"], {
-    cwd: resolve(import.meta.dirname, "../../../providers/grafana"),
-    env: { ...nodeProcess.env, GOWORK: "off", GOFLAGS: "-mod=readonly" },
-    stdio: "pipe",
-  });
-  return binary;
-}
-
 export function buildGoStreamTextCapture(directory: string): string {
   const root = resolve(import.meta.dirname, "../../..");
   const env = { ...nodeProcess.env, GOWORK: join(root, "go.work"), GOFLAGS: "-mod=readonly" };

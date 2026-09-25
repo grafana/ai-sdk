@@ -1,24 +1,24 @@
 ## Why
 
-The #249 foundation supplies an explicit candidate Gateway workspace, but required CI still compiles published modules against older pinned dependencies. A coherent SDK/provider/middleware/Gateway source PR therefore cannot merge until prerequisite modules have been published. Issue #258 activates integrated source validation before #21 while retaining independent, revision-specific publication safety.
+Source PRs currently compile the Gateway against older published SDK/provider/middleware pins in required CI. A coordinated change cannot merge until its dependencies have been published, even when the candidate modules work together. Issue #258 separates source integration from artifact readiness without relaxing merged-pin provenance or the SDK-to-Gateway boundary.
 
 ## What Changes
 
-- Make required source checks run candidate SDK modules via root `go.work` and Gateway via explicit `go.gateway.work`, including hidden testserver/probe paths; keep formatting, security, parity, conformance, docs, integration, ancestry, policy fixtures and module/license boundaries blocking.
-- Keep public-proxy standalone all-module and selected-module commands; report failing standalone PR diagnostics without making them (or a dependent aggregate) merge requirements. Keep declared/selected merged-pin provenance and reverse-dependency checks blocking.
-- Gate Gateway image publication and deployment on standalone, readonly, replacement-free public-proxy validation and production image validation of the **same checkout SHA**; a push/tag alone never authorizes an image. Leave SDK tagging/manual module publication outside automation; maintainers validate selected modules standalone before manually publishing.
-- Update policy documentation and OpenSpec contracts, test failure paths, and require an approved required-check/ruleset migration before rollout. #21 must incorporate #245 release readiness before its release automation can run with relaxed source gates.
+- Run required SDK checks in root `go.work` and Gateway build/test/vet/lint and cross-language checks in explicit `go.gateway.work`, including the candidate Grafana client and copied semantic mutants.
+- Keep merged-pin ancestry, structural boundary, source-absence, parity, formatting and integration checks blocking. Keep selected/all-module public-proxy standalone commands available, but not required for source PRs.
+- Before publishing a Gateway image on an eligible main/tag push, make the existing image-validation job test the Gateway standalone with readonly public-proxy dependencies at the checkout revision, then build and smoke-test standalone images. Deployment follows successful publication only.
+- Preserve required check names and document the separate #245/#21 SDK release-automation boundary. Do not change rulesets or enable SDK tagging here.
 
 ## Capabilities
 
 ### New Capabilities
-- `candidate-source-ci`: Required source eligibility, separate artifact-revision gating, diagnostic isolation and rollout safety for coordinated changes.
+- `candidate-source-ci`: Candidate-source merge eligibility and standalone Gateway artifact gating.
 
 ### Modified Capabilities
-- `module-validation-modes`: Activate candidate Gateway mode for required source checks, preserve explicit standalone modes and change isolation to use candidate source without Gateway.
-- `merged-internal-pins`: Preserve blocking canonical ancestry while separating it from standalone compilation in source CI.
-- `upstream-parity-governance`: Replace the older published-producer-before-consumer PR prerequisite with independent candidate-source mergeability and separate publication evidence; retain parity-check rigor.
+- `module-validation-modes`: Activate explicit Gateway candidate-source checks and use candidate root/client for Gateway-absent isolation while retaining standalone entry points.
+- `merged-internal-pins`: Keep canonical ancestry blocking even when merged pins lag candidate source.
+- `upstream-parity-governance`: Distinguish a green candidate-source PR from independently consumable published modules.
 
 ## Impact
 
-Planning targets `.github/workflows/ci.yml`, `mise.toml`, `scripts/module-policy.sh`, Gateway ProviderWire/client test build paths, workflow/module-policy tests, `AGENTS.md`, `CONTRIBUTING.md`, and the three affected specifications. Root `go.work` remains Gateway-free; `go.gateway.work` remains explicit; `ai-gateway/Dockerfile` remains standalone. No runtime, upstream baseline, release-please, repository settings, or tagging changes are included in this proposal.
+Changes are limited to CI/task selection, the module-policy source-absence proof, the ProviderWire Go-client test build mode, workflow/policy tests and the related documentation. `go.work` remains Gateway-free; `ai-gateway/Dockerfile` remains standalone. No SDK runtime behavior or upstream baseline changes are intended.
