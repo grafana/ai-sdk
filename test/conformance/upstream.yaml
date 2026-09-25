@@ -2,7 +2,7 @@ upstream:
   repository: https://github.com/vercel/ai
   commit: 4e8c387622ee1bb0d55841664416d38754d5c9a3
   packageSource: npm
-  verifiedAt: null
+  verifiedAt: "2026-09-25"
 packages:
   ai: 7.0.109
   "@ai-sdk/anthropic": 4.0.59
