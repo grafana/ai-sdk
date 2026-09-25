@@ -16,11 +16,15 @@ The strict Gateway mapper SHALL support user/assistant ordinary file parts and f
 - **THEN** the applicable deferred capability SHALL fail safely before model invocation without enabling that family as a side effect of file support
 
 ### Requirement: Scoped file options preserve semantic JSON
-Supported message-level and ordinary file-part provider options, including nested tool-result file options, SHALL preserve namespace objects and opaque nested JSON at their original scope. Reserved host namespaces `gateway`, `grafana`, and `grafana-ai-sdk` SHALL fail safely rather than reach native providers. This capability SHALL NOT enable top-level call options, body headers, output-level tool-result options, or unrelated part options.
+Supported message-level and ordinary file-part provider options, including nested tool-result file options, SHALL preserve namespace objects and opaque nested JSON at their original scope. Reserved host namespaces `gateway`, `grafana`, and `grafana-ai-sdk` SHALL fail safely rather than reach native providers. File-entry and function-tool options SHALL obey the existing protected-field and selected-backend policies. Existing call-level options, body headers, and text-part options SHALL retain their mapping and host protections. This capability SHALL NOT enable output-level tool-result options or non-file nested result options.
 
 #### Scenario: Scoped opaque values survive
 - **WHEN** supported message/file scopes carry ordinary provider options containing nested null, false, zero, empty strings, arrays, or objects
 - **THEN** the model SHALL receive semantically identical values at the same scopes, including explicitly empty namespace objects
+
+#### Scenario: File options follow the selected backend
+- **WHEN** file-entry or function-tool options contain both the selected backend's namespace and an unrelated namespace
+- **THEN** only the selected backend's permitted fields SHALL reach the model at their original scopes
 
 #### Scenario: Host namespace is not forwarded
 - **WHEN** a supported message or file scope includes a reserved host namespace
@@ -38,7 +42,7 @@ Malformed role/data/reference/media-field shapes, typed null, mixed arms, missin
 - **THEN** only the first two SHALL reach mapping and the oversized body SHALL fail without unbounded buffering or provider invocation
 
 #### Scenario: Existing route restriction remains effective
-- **WHEN** newly admitted files, active scoped options, or disallowed tool history target a text-only fallback route
+- **WHEN** newly admitted files, active options retained by the selected-backend policy, or disallowed tool history target a text-only fallback route
 - **THEN** that restriction SHALL remain effective before any physical candidate invocation
 
 ### Requirement: File observation remains private
