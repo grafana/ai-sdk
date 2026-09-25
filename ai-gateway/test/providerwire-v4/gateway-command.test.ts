@@ -32,8 +32,6 @@ before(() => {
     stdio: "pipe",
     env: {
       ...nodeProcess.env,
-      // CI and release verification always use immutable module pins. A local
-      // unpublished-middleware checkout may opt into an explicit go.work path.
       GOWORK: nodeProcess.env.GATEWAY_TEST_GOWORK ?? "off",
       GOFLAGS: `${nodeProcess.env.GOFLAGS ? `${nodeProcess.env.GOFLAGS} ` : ""}-mod=readonly`,
     },

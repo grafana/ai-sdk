@@ -12,7 +12,10 @@ import { assertValidRequest } from "./schema";
 
 let directory: string;
 let binary: string;
-before(() => { directory = mkdtempSync(join(tmpdir(), "wp7-go-differential-")); binary = buildGoClientCapture(directory, process.env.GRAFANA_CLIENT_MUTATION_SOURCE); });
+before(() => {
+  directory = mkdtempSync(join(tmpdir(), "wp7-go-differential-"));
+  binary = buildGoClientCapture(directory, process.env.GRAFANA_CLIENT_MUTATION_SOURCE);
+});
 after(() => { rmSync(directory, { recursive: true, force: true }); });
 
 const unary = {

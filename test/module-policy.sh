@@ -171,7 +171,7 @@ assert_fails 'unknown or local-only' standalone nonexistent
 )
 
 boundary_repo=$fixture/boundary
-for root in . ai-gateway providers/grafana; do
+for root in . ai-gateway providers/grafana middleware/logger; do
   path=$module_prefix
   [[ "$root" == . ]] || path+=/$root
   mkdir -p "$boundary_repo/$root"
@@ -192,6 +192,32 @@ printf 'package sdk\n' >"$boundary_repo/consumer.go"
   printf 'package sdk\n' >consumer.go
   printf 'require %s v0.1.0\n' "$gateway_module" >>providers/grafana/go.mod
   assert_fails 'requires or replaces Gateway' boundary
+  printf 'module %s\n\ngo 1.26.3\nreplace %s => ../../ai-gateway\n' "$module_prefix/providers/grafana" "$module_prefix" >providers/grafana/go.mod
+  assert_fails 'replaces a module with Gateway source' boundary
+  printf 'module %s\n\ngo 1.26.3\n' "$module_prefix/providers/grafana" >providers/grafana/go.mod
+  printf 'package logger\nimport _ "%s"\n' "$gateway_module" >middleware/logger/consumer.go
+  git add middleware/logger/consumer.go
+  assert_fails 'outside ai-gateway references Gateway' boundary
+  rm middleware/logger/consumer.go
+  git add -u middleware/logger/consumer.go
+  printf 'require %s v0.1.0\n' "$gateway_module" >>middleware/logger/go.mod
+  assert_fails 'requires or replaces Gateway' boundary
+)
+
+source_absent_repo=$fixture/source-absent
+mkdir -p "$source_absent_repo/providers/grafana" "$source_absent_repo/ai-gateway"
+printf 'module %s\n\ngo 1.26.3\n' "$module_prefix" >"$source_absent_repo/go.mod"
+printf 'module %s/providers/grafana\n\ngo 1.26.3\nrequire %s v0.1.0-alpha.1.0.20260921202550-3dff0f7087dc\n' "$module_prefix" "$module_prefix" >"$source_absent_repo/providers/grafana/go.mod"
+printf 'go 1.26.3\nuse (\n .\n ./providers/grafana\n)\n' >"$source_absent_repo/go.work"
+printf 'package aisdk\nfunc CandidateOnly() string { return "candidate" }\n' >"$source_absent_repo/candidate.go"
+printf 'package aisdk\nimport "testing"\nfunc TestCandidate(t *testing.T) { if CandidateOnly() != "candidate" { t.Fatal("candidate root not executed") } }\n' >"$source_absent_repo/candidate_test.go"
+printf 'package grafana\nimport "%s"\nfunc Candidate() string { return aisdk.CandidateOnly() }\n' "$module_prefix" >"$source_absent_repo/providers/grafana/candidate.go"
+printf 'package grafana\nimport "testing"\nfunc TestCandidate(t *testing.T) { if Candidate() != "candidate" { t.Fatal("candidate client not executed") } }\n' >"$source_absent_repo/providers/grafana/candidate_test.go"
+(
+  repo_root=$source_absent_repo
+  isolation
+  printf 'package aisdk\nfunc CandidateOnly() string { return "regressed" }\n' >"$source_absent_repo/candidate.go"
+  assert_fails 'candidate root not executed' isolation
 )
 
 bash "$repo_root/scripts/module-policy.sh" workspace
