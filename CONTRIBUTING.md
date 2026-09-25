@@ -490,37 +490,22 @@ The repository uses Go modules across several module roots, plus a pnpm
 workspace under `test/` for TypeScript-side harnesses.
 
 `ai-gateway/` is intentionally absent from the root `go.work`. The separate
-`go.gateway.work` is explicitly selected by required Gateway source checks;
-it uses local SDK, provider, and middleware source. Gateway production and
-image builds instead use declared versions with `GOWORK=off`. Gateway code may
-import explicitly pinned SDK modules, but no module outside `ai-gateway/` may import,
+`go.gateway.work` is selected by required Gateway source-integration commands;
+it uses local SDK, provider, and middleware source. Standalone module and image
+builds still use declared versions with `GOWORK=off`. Gateway code may import
+explicitly pinned SDK modules, but no module outside `ai-gateway/` may import,
 require, or replace `github.com/grafana/ai-sdk/ai-gateway`. The structural check
-rejects reverse source and module references; standalone validation builds and
-tests published modules with `GOWORK=off`, and a separate required source check
-builds the candidate SDK and Grafana client with Gateway source absent. These
-checks share `scripts/module-policy.sh`.
+rejects reverse source and module references; standalone validation builds and tests
+published modules with `GOWORK=off`, and a separate check builds the candidate SDK
+and Grafana client with Gateway source absent. These checks share `scripts/module-policy.sh`.
 None replaces license review for copied code or third-party dependencies.
 
 Every real internal pin in a published module must refer to a commit already
 merged into canonical `grafana/ai-sdk` `main`. Merged pseudo-versions are valid;
 local-only example/test replacements are not published pins. A green workspace
 integration test proves candidate-source behavior, not standalone consumability.
-All-module standalone validation is available on demand, not a source-PR
-prerequisite; merged-pin ancestry, boundaries, source integration and parity
-still block source PRs. On eligible main and Gateway-tag pushes, image
-validation runs exact-revision standalone Gateway checks before building and
-smoking production images. Publication and deployment require that gate. A green
-source PR alone is not release evidence: before manual publication, maintainers
-must run `MODULE=<module-root> mise run verify-published-module`. No SDK tags
-are created by this workflow. Issue [#21](https://github.com/grafana/ai-sdk/issues/21)
-must incorporate [#245](https://github.com/grafana/ai-sdk/issues/245)
-release-readiness safeguards before SDK release automation is enabled.
-
-Before changing required checks or rulesets, inventory live check identities and
-obtain maintainer approval. Preserve existing required names where possible;
-coordinate any required-check migration with the workflow rollout so no orphaned
-name blocks all PRs. Do not bypass checks. If the source or artifact gate loses
-protection, roll back the workflow and approved ruleset changes together.
+All-module standalone validation is available on demand, not a source-PR gate.
+Gateway publication requires standalone validation at the artifact revision.
 Do not use a workspace or an unmerged pin to make a standalone check pass.
 
 ```bash
