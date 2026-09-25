@@ -42,8 +42,6 @@ github.com/googleapis/enterprise-certificate-proxy v0.3.22 h1:NU4XpII6jD+Dxcot94
 github.com/googleapis/enterprise-certificate-proxy v0.3.22/go.mod h1:L3D/IQExI6LqEjBdXcZQ1WluSgigQmSwBboFstVPM4w=
 github.com/googleapis/gax-go/v2 v2.23.0 h1:Tchl7qkvE7Ip3y+ztvNufYFvkfqTe7NfLTYGIdJRLuE=
 github.com/googleapis/gax-go/v2 v2.23.0/go.mod h1:rBQKOVJCdb8IFEzg+FCwlt1LP/xMDGuqUXhUG+XMXEg=
-github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260923211549-25ba9521879f h1:tbY+iB1nMiMLoCP5MMLVQXhmvKO7cQ5fZgf1U1vnTM4=
-github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260923211549-25ba9521879f/go.mod h1:dq9czuEHdMxenlmMFrR9bfrdhBitZltt6VtZPfr2vsE=
 github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260924122940-2bd94975dd2d h1:CIFRlZ2NCtYnltwN5p5BGkpZypsS6tVfOLGBGfxujHI=
 github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260924122940-2bd94975dd2d/go.mod h1:dq9czuEHdMxenlmMFrR9bfrdhBitZltt6VtZPfr2vsE=
 github.com/invopop/jsonschema v0.14.0 h1:MHQqLhvpNUZfw+hM3AZDYK7jxO8FZoQeQM77g8iyZjg=

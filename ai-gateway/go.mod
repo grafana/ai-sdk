@@ -7,13 +7,13 @@ require (
 	github.com/anthropics/anthropic-sdk-go v1.61.0
 	github.com/go-jose/go-jose/v4 v4.1.5
 	github.com/grafana/agento11y/go v0.15.0
-	github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260923211549-25ba9521879f
-	github.com/grafana/ai-sdk/middleware/agentobservability v0.0.0-20260923211549-25ba9521879f
+	github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260924122940-2bd94975dd2d
+	github.com/grafana/ai-sdk/middleware/agentobservability v0.0.0-20260924123522-3e7015d6a890
 	github.com/grafana/ai-sdk/middleware/logger v0.0.0-20260915200037-0b83f45375ca
 	github.com/grafana/ai-sdk/middleware/prometheus v0.0.0-20260915200037-0b83f45375ca
-	github.com/grafana/ai-sdk/providers/anthropic v0.0.0-20260923211549-25ba9521879f
-	github.com/grafana/ai-sdk/providers/openai v0.0.0-20260923211549-25ba9521879f
-	github.com/grafana/ai-sdk/providers/openai-compatible v0.0.0-20260923211549-25ba9521879f
+	github.com/grafana/ai-sdk/providers/anthropic v0.0.0-20260924123522-3e7015d6a890
+	github.com/grafana/ai-sdk/providers/openai v0.0.0-20260924123522-3e7015d6a890
+	github.com/grafana/ai-sdk/providers/openai-compatible v0.0.0-20260924123522-3e7015d6a890
 	github.com/grafana/authlib v0.0.0-20260814184937-0d62418c2815
 	github.com/grafana/authlib/types v0.0.0-20260814184937-0d62418c2815
 	github.com/openai/openai-go/v3 v3.48.0
