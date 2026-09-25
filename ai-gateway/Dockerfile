@@ -15,6 +15,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 
 COPY LICENSE NOTICE ./
 COPY catalog ./catalog
+COPY openai ./openai
 COPY providerwire ./providerwire
 COPY cmd ./cmd
 

@@ -25,7 +25,7 @@ func TestCloudGatewayAuthenticator_Assertions(t *testing.T) {
 		valid  bool
 	}{
 		{name: "stack only", valid: true},
-		{name: "parser leaves credentials to adapter", mutate: func(h http.Header) { h.Set("Authorization", "native-provider-credential") }, valid: true},
+		{name: "parser leaves credentials to adapter", mutate: func(h http.Header) { h.Set("Authorization", "provider-credential") }, valid: true},
 		{name: "leading zero digits", mutate: func(h http.Header) { h.Set("X-Scope-OrgID", "00123") }, valid: true},
 		{name: "ignored policy headers", mutate: func(h http.Header) {
 			h[http.CanonicalHeaderKey("X-Cloud-Org-ID")] = []string{"malformed", "duplicated"}
