@@ -20,12 +20,13 @@ const (
 )
 
 type model struct {
-	client              responses.ResponseService
-	modelID             string
-	provider            string
-	providerOptionsName string
-	requestOpts         []option.RequestOption
-	generateID          func() string
+	client                           responses.ResponseService
+	modelID                          string
+	provider                         string
+	providerOptionsName              string
+	requestOpts                      []option.RequestOption
+	generateID                       func() string
+	webSearchSourcesIncludeSupported bool
 }
 
 // NewResponses creates a [provider.LanguageModel] for the OpenAI Responses API.
@@ -49,9 +50,10 @@ func NewResponsesWithClient(client openaisdk.Client, modelID string, opts ...Opt
 
 func newModel(modelID string, opts ...Option) *model {
 	m := &model{
-		modelID:    modelID,
-		provider:   providerName,
-		generateID: defaultGenerateID,
+		modelID:                          modelID,
+		provider:                         providerName,
+		generateID:                       defaultGenerateID,
+		webSearchSourcesIncludeSupported: true,
 	}
 	for _, o := range opts {
 		o(m)
@@ -161,10 +163,7 @@ func (m *model) DoStream(ctx context.Context, params provider.CallOptions) (*pro
 }
 
 func (m *model) buildParams(params provider.CallOptions) (responses.ResponseNewParams, []provider.Warning, buildResult, error) {
-	if m.providerOptionsName == "" {
-		return buildParams(m.modelID, params)
-	}
-	return buildParamsForProvider(m.modelID, params, m.providerOptionsName)
+	return buildParamsWithConfig(m.modelID, params, m.providerOptionsName, m.webSearchSourcesIncludeSupported)
 }
 
 func (m *model) requestOptions(headers map[string]string) []option.RequestOption {

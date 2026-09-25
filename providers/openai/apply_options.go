@@ -187,7 +187,7 @@ func applyProviderOptions(body *responses.ResponseNewParams, popts OpenAIRespons
 // applyIncludeAndReasoning populates the include array (logprobs, web search
 // sources, code interpreter outputs, encrypted reasoning) and the reasoning
 // effort/summary block for reasoning models.
-func applyIncludeAndReasoning(body *responses.ResponseNewParams, opts provider.CallOptions, popts OpenAIResponsesOptions, isReasoning, store bool, br *buildResult) {
+func applyIncludeAndReasoning(body *responses.ResponseNewParams, opts provider.CallOptions, popts OpenAIResponsesOptions, isReasoning, store, webSearchSourcesIncludeSupported bool, br *buildResult) {
 	includes := map[responses.ResponseIncludable]bool{}
 	for _, inc := range popts.Include {
 		includes[responses.ResponseIncludable(inc)] = true
@@ -208,7 +208,7 @@ func applyIncludeAndReasoning(body *responses.ResponseNewParams, opts provider.C
 		br.logprobsRequested = true
 	}
 
-	if br.hasWebSearchTool {
+	if br.hasWebSearchTool && webSearchSourcesIncludeSupported && (popts.IncludeWebSearchSources == nil || *popts.IncludeWebSearchSources) {
 		includes[responses.ResponseIncludableWebSearchCallActionSources] = true
 	}
 	if br.hasCodeInterpreterTool {
