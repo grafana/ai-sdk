@@ -73,7 +73,7 @@ func generationInputs() map[string]genFixtureInput {
 		},
 		FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop, Raw: "end_turn"},
 		Usage: provider.Usage{
-			InputTokens:  provider.InputTokenUsage{Total: intP(10)},
+			InputTokens:  provider.InputTokenUsage{Total: intP(10), NoCache: intP(10)},
 			OutputTokens: provider.OutputTokenUsage{Total: intP(20)},
 		},
 		Response: &provider.GenerateResponse{
@@ -103,7 +103,7 @@ func generationInputs() map[string]genFixtureInput {
 		},
 		FinishReason: provider.FinishReason{Unified: provider.FinishReasonToolCalls, Raw: "tool_use"},
 		Usage: provider.Usage{
-			InputTokens:  provider.InputTokenUsage{Total: intP(15)},
+			InputTokens:  provider.InputTokenUsage{Total: intP(15), NoCache: intP(15)},
 			OutputTokens: provider.OutputTokenUsage{Total: intP(8)},
 		},
 		Response: &provider.GenerateResponse{
@@ -128,7 +128,7 @@ func generationInputs() map[string]genFixtureInput {
 		},
 		FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop, Raw: "end_turn"},
 		Usage: provider.Usage{
-			InputTokens:  provider.InputTokenUsage{Total: intP(20)},
+			InputTokens:  provider.InputTokenUsage{Total: intP(20), NoCache: intP(20)},
 			OutputTokens: provider.OutputTokenUsage{Total: intP(12), Reasoning: intP(8)},
 		},
 		Response: &provider.GenerateResponse{
@@ -146,7 +146,7 @@ func generationInputs() map[string]genFixtureInput {
 		},
 		FinishReason: provider.FinishReason{Unified: provider.FinishReasonLength, Raw: "max_tokens"},
 		Usage: provider.Usage{
-			InputTokens:  provider.InputTokenUsage{Total: intP(5)},
+			InputTokens:  provider.InputTokenUsage{Total: intP(5), NoCache: intP(5)},
 			OutputTokens: provider.OutputTokenUsage{Total: intP(50)},
 		},
 		Response: &provider.GenerateResponse{
@@ -175,7 +175,7 @@ func generationInputs() map[string]genFixtureInput {
 		},
 		FinishReason: provider.FinishReason{Unified: provider.FinishReasonToolCalls, Raw: "tool_use"},
 		Usage: provider.Usage{
-			InputTokens:  provider.InputTokenUsage{Total: intP(12)},
+			InputTokens:  provider.InputTokenUsage{Total: intP(12), NoCache: intP(12)},
 			OutputTokens: provider.OutputTokenUsage{Total: intP(7)},
 		},
 		Response: &provider.GenerateResponse{
@@ -209,7 +209,7 @@ func streamInputs() map[string]streamFixtureInput {
 			{Type: provider.PartTextDelta, ID: "t0", Delta: "world!"},
 			{Type: provider.PartTextEnd, ID: "t0"},
 			{Type: provider.PartFinish, FinishReason: &finishStop, Usage: &provider.Usage{
-				InputTokens:  provider.InputTokenUsage{Total: intP(2)},
+				InputTokens:  provider.InputTokenUsage{Total: intP(2), NoCache: intP(2)},
 				OutputTokens: provider.OutputTokenUsage{Total: intP(3)},
 			}},
 		},
@@ -230,7 +230,7 @@ func streamInputs() map[string]streamFixtureInput {
 			{Type: provider.PartTextDelta, ID: "t0", Delta: "4"},
 			{Type: provider.PartTextEnd, ID: "t0"},
 			{Type: provider.PartFinish, FinishReason: &finishStop, Usage: &provider.Usage{
-				InputTokens:  provider.InputTokenUsage{Total: intP(4)},
+				InputTokens:  provider.InputTokenUsage{Total: intP(4), NoCache: intP(4)},
 				OutputTokens: provider.OutputTokenUsage{Total: intP(2), Reasoning: intP(1)},
 			}},
 		},
@@ -255,7 +255,7 @@ func streamInputs() map[string]streamFixtureInput {
 			{Type: provider.PartToolInputDelta, ID: "tu_s", Delta: `"SF"}`},
 			{Type: provider.PartToolInputEnd, ID: "tu_s"},
 			{Type: provider.PartFinish, FinishReason: &finishTool, Usage: &provider.Usage{
-				InputTokens:  provider.InputTokenUsage{Total: intP(5)},
+				InputTokens:  provider.InputTokenUsage{Total: intP(5), NoCache: intP(5)},
 				OutputTokens: provider.OutputTokenUsage{Total: intP(8)},
 			}},
 		},

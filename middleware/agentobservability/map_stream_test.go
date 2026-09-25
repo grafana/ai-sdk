@@ -31,7 +31,7 @@ func TestStreamRecorder_TextOnlyStream(t *testing.T) {
 		Type:         provider.PartFinish,
 		FinishReason: &fr,
 		Usage: &provider.Usage{
-			InputTokens:  provider.InputTokenUsage{Total: intPtr(3)},
+			InputTokens:  provider.InputTokenUsage{Total: intPtr(3), NoCache: intPtr(3)},
 			OutputTokens: provider.OutputTokenUsage{Total: &out},
 		},
 	})
@@ -43,6 +43,7 @@ func TestStreamRecorder_TextOnlyStream(t *testing.T) {
 	assert.Equal(t, "Hello, world", gen.Output[0].Parts[0].Text)
 	assert.Equal(t, int64(3), gen.Usage.InputTokens)
 	assert.Equal(t, int64(5), gen.Usage.OutputTokens)
+	assert.Equal(t, agento11y.TokenInputSemanticsInclusive, gen.Usage.InputSemantics)
 	assert.Equal(t, "end_turn", gen.StopReason)
 }
 
@@ -74,6 +75,7 @@ func TestStreamRecorder_UsageAggregatesEveryPart(t *testing.T) {
 	assert.Equal(t, int64(cacheRead), usage.CacheReadInputTokens)
 	assert.Equal(t, int64(cacheWrite), usage.CacheWriteInputTokens)
 	assert.Equal(t, int64(outputReasoning), usage.ReasoningTokens)
+	assert.Equal(t, agento11y.TokenInputSemanticsInclusive, usage.InputSemantics)
 }
 
 func TestStreamRecorder_ServerToolUsageMetadata(t *testing.T) {

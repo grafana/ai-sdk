@@ -2,6 +2,7 @@ package agentobservability
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -46,7 +47,36 @@ func newHooksTestServer(t *testing.T, resp agento11y.HookEvaluateResponse) *hook
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(h.statusCode)
-		_ = json.NewEncoder(w).Encode(h.response)
+		payload, err := json.Marshal(h.response)
+		if err != nil {
+			t.Errorf("marshal hook response: %v", err)
+			return
+		}
+		var response map[string]any
+		if err := json.Unmarshal(payload, &response); err != nil {
+			t.Errorf("decode hook response: %v", err)
+			return
+		}
+		if transformed, ok := response["transformed_input"].(map[string]any); ok {
+			if tools, ok := transformed["tools"].([]any); ok {
+				for _, value := range tools {
+					tool, ok := value.(map[string]any)
+					if !ok {
+						continue
+					}
+					if schema, ok := tool["input_schema"]; ok {
+						schemaJSON, err := json.Marshal(schema)
+						if err != nil {
+							t.Errorf("marshal tool input schema: %v", err)
+							return
+						}
+						tool["input_schema_json"] = base64.StdEncoding.EncodeToString(schemaJSON)
+						delete(tool, "input_schema")
+					}
+				}
+			}
+		}
+		_ = json.NewEncoder(w).Encode(response)
 	}))
 	t.Cleanup(h.srv.Close)
 	return h
@@ -124,11 +154,6 @@ func TestHooksMiddleware_TransformFailureDoesNotInvokeModel(t *testing.T) {
 		transformed agento11y.HookInput
 	}{
 		{
-			name:        "empty transform",
-			prompt:      []provider.Message{provider.UserText("secret")},
-			transformed: agento11y.HookInput{},
-		},
-		{
 			name: "multimodal input",
 			prompt: []provider.Message{provider.NewUserMessage(
 				provider.TextPart("describe this"),
@@ -201,11 +226,10 @@ func TestHooksMiddleware_TransformFailureDoesNotInvokeModel(t *testing.T) {
 	}
 }
 
-func TestHooksMiddleware_TransformFailureBlocksStream(t *testing.T) {
-	transformed := agento11y.HookInput{}
+func TestHooksMiddleware_EmptyTransformedInputIsNoOp(t *testing.T) {
 	h := newHooksTestServer(t, agento11y.HookEvaluateResponse{
 		Action:           agento11y.HookActionAllow,
-		TransformedInput: &transformed,
+		TransformedInput: &agento11y.HookInput{},
 	})
 	model := &mockLanguageModel{provider_: "anthropic", modelID: "claude"}
 	client := h.clientWithHooksEnabled()
@@ -216,9 +240,16 @@ func TestHooksMiddleware_TransformFailureBlocksStream(t *testing.T) {
 		})},
 	})
 
-	_, err := wrapped.DoStream(context.Background(), provider.CallOptions{Prompt: []provider.Message{provider.UserText("secret")}})
-	require.ErrorIs(t, err, ErrHookTransformFailed)
-	assert.Equal(t, 0, model.streamHit)
+	params := provider.CallOptions{Prompt: []provider.Message{provider.UserText("secret")}}
+	_, err := wrapped.DoGenerate(context.Background(), params)
+	require.NoError(t, err)
+	stream, err := wrapped.DoStream(context.Background(), params)
+	require.NoError(t, err)
+	for range stream.Stream {
+	}
+	assert.Equal(t, int32(2), h.hits.Load())
+	assert.Equal(t, 1, model.generateHit)
+	assert.Equal(t, 1, model.streamHit)
 }
 
 func TestHooksMiddleware_TransformAppliesToStream(t *testing.T) {

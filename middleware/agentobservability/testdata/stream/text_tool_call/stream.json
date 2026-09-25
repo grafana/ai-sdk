@@ -6,7 +6,7 @@
   {
     "type": "text-delta",
     "id": "t0",
-    "delta": "Looking it up…"
+    "delta": "Looking it up\u2026"
   },
   {
     "type": "text-end",
@@ -35,7 +35,8 @@
     "type": "finish",
     "usage": {
       "inputTokens": {
-        "total": 5
+        "total": 5,
+        "noCache": 5
       },
       "outputTokens": {
         "total": 8

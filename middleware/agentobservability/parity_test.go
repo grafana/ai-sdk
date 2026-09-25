@@ -65,7 +65,7 @@ func TestParity_PlainText(t *testing.T) {
 		},
 		FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop, Raw: "end_turn"},
 		Usage: provider.Usage{
-			InputTokens:  provider.InputTokenUsage{Total: intPtr(10)},
+			InputTokens:  provider.InputTokenUsage{Total: intPtr(10), NoCache: intPtr(10)},
 			OutputTokens: provider.OutputTokenUsage{Total: intPtr(20)},
 		},
 		Response: &provider.GenerateResponse{
@@ -160,7 +160,7 @@ func TestParity_ToolUse(t *testing.T) {
 		},
 		FinishReason: provider.FinishReason{Unified: provider.FinishReasonToolCalls, Raw: "tool_use"},
 		Usage: provider.Usage{
-			InputTokens:  provider.InputTokenUsage{Total: intPtr(15)},
+			InputTokens:  provider.InputTokenUsage{Total: intPtr(15), NoCache: intPtr(15)},
 			OutputTokens: provider.OutputTokenUsage{Total: intPtr(5)},
 		},
 		Response: &provider.GenerateResponse{
