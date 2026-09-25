@@ -269,6 +269,7 @@ func TestUsageToAgento11y_Zero(t *testing.T) {
 
 func TestUsageToAgento11y_InputSemanticsRequiresCompleteConsistentBreakdown(t *testing.T) {
 	total, noCache, cacheRead, cacheWrite := 100, 25, 50, 25
+	totalWithoutWrite := 75
 	wrongCacheWrite := 26
 	tests := []struct {
 		name  string
@@ -287,8 +288,19 @@ func TestUsageToAgento11y_InputSemanticsRequiresCompleteConsistentBreakdown(t *t
 			usage: provider.InputTokenUsage{NoCache: &noCache, CacheRead: &cacheRead, CacheWrite: &cacheWrite},
 		},
 		{
-			name:  "cache bucket absent",
-			usage: provider.InputTokenUsage{Total: &total, NoCache: &noCache, CacheRead: &cacheRead},
+			name: "cache write bucket absent and zero",
+			usage: provider.InputTokenUsage{
+				Total: &totalWithoutWrite, NoCache: &noCache, CacheRead: &cacheRead,
+			},
+			want: agento11y.TokenInputSemanticsInclusive,
+		},
+		{
+			name:  "no-cache bucket absent",
+			usage: provider.InputTokenUsage{Total: &total, CacheRead: &cacheRead, CacheWrite: &cacheWrite},
+		},
+		{
+			name:  "total only",
+			usage: provider.InputTokenUsage{Total: &total},
 		},
 		{
 			name: "total does not match breakdown",

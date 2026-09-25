@@ -2,7 +2,7 @@
   "content": [
     {
       "type": "reasoning",
-      "text": "two plus two…"
+      "text": "two plus two\u2026"
     },
     {
       "type": "text",
@@ -15,7 +15,8 @@
   },
   "usage": {
     "inputTokens": {
-      "total": 20
+      "total": 20,
+      "noCache": 20
     },
     "outputTokens": {
       "total": 12,

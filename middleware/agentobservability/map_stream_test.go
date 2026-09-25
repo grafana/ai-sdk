@@ -31,7 +31,7 @@ func TestStreamRecorder_TextOnlyStream(t *testing.T) {
 		Type:         provider.PartFinish,
 		FinishReason: &fr,
 		Usage: &provider.Usage{
-			InputTokens:  provider.InputTokenUsage{Total: intPtr(3)},
+			InputTokens:  provider.InputTokenUsage{Total: intPtr(3), NoCache: intPtr(3)},
 			OutputTokens: provider.OutputTokenUsage{Total: &out},
 		},
 	})

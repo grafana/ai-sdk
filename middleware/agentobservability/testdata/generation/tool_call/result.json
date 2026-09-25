@@ -2,7 +2,7 @@
   "content": [
     {
       "type": "text",
-      "text": "Looking up SF…"
+      "text": "Looking up SF\u2026"
     },
     {
       "type": "tool-call",
@@ -19,7 +19,8 @@
   },
   "usage": {
     "inputTokens": {
-      "total": 15
+      "total": 15,
+      "noCache": 15
     },
     "outputTokens": {
       "total": 8

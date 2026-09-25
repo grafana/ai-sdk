@@ -164,16 +164,18 @@ func usageToAgento11y(usage provider.Usage) agento11y.TokenUsage {
 }
 
 func inputUsageIsInclusive(usage provider.InputTokenUsage) bool {
-	if usage.Total == nil {
+	// A reported total alone does not establish whether cache buckets are included.
+	if usage.Total == nil || usage.NoCache == nil {
 		return false
 	}
-	if usage.NoCache == nil && usage.CacheRead == nil && usage.CacheWrite == nil {
-		return true
+	cacheRead, cacheWrite := 0, 0
+	if usage.CacheRead != nil {
+		cacheRead = *usage.CacheRead
 	}
-	if usage.NoCache == nil || usage.CacheRead == nil || usage.CacheWrite == nil {
-		return false
+	if usage.CacheWrite != nil {
+		cacheWrite = *usage.CacheWrite
 	}
-	return *usage.Total == *usage.NoCache+*usage.CacheRead+*usage.CacheWrite
+	return *usage.Total == *usage.NoCache+cacheRead+cacheWrite
 }
 
 func intPtrOrZero(v *int) int64 {
