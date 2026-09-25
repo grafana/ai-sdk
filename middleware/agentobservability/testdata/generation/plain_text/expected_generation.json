@@ -34,7 +34,8 @@
   "usage": {
     "input_tokens": 10,
     "output_tokens": 20,
-    "total_tokens": 30
+    "total_tokens": 30,
+    "input_semantics": 1
   },
   "stop_reason": "end_turn",
   "started_at": "0001-01-01T00:00:00Z",

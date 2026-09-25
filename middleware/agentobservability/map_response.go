@@ -156,8 +156,24 @@ func usageToAgento11y(usage provider.Usage) agento11y.TokenUsage {
 		CacheWriteInputTokens: intPtrOrZero(usage.InputTokens.CacheWrite),
 		ReasoningTokens:       intPtrOrZero(usage.OutputTokens.Reasoning),
 	}
+	if inputUsageIsInclusive(usage.InputTokens) {
+		out.InputSemantics = agento11y.TokenInputSemanticsInclusive
+	}
 	out.TotalTokens = out.InputTokens + out.OutputTokens
 	return out
+}
+
+func inputUsageIsInclusive(usage provider.InputTokenUsage) bool {
+	if usage.Total == nil {
+		return false
+	}
+	if usage.NoCache == nil && usage.CacheRead == nil && usage.CacheWrite == nil {
+		return true
+	}
+	if usage.NoCache == nil || usage.CacheRead == nil || usage.CacheWrite == nil {
+		return false
+	}
+	return *usage.Total == *usage.NoCache+*usage.CacheRead+*usage.CacheWrite
 }
 
 func intPtrOrZero(v *int) int64 {

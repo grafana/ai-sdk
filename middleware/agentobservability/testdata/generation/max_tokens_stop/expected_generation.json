@@ -33,7 +33,8 @@
   "usage": {
     "input_tokens": 5,
     "output_tokens": 50,
-    "total_tokens": 55
+    "total_tokens": 55,
+    "input_semantics": 1
   },
   "stop_reason": "max_tokens",
   "started_at": "0001-01-01T00:00:00Z",
