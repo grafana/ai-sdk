@@ -158,22 +158,22 @@ func (g *parallelToolResultGroup) output(ctx inputConversionContext) (*responses
 	hasBreakpoint := false
 	for index := range texts {
 		part := g.results[index]
-		texts[index] = toolResultOutputString(part.Output, ctx.hasOutputSchema(part.ToolName))
-		if part.Output != nil && part.Output.Type == provider.ToolOutputContent {
-			item, outputWarnings := customToolCallOutputItem(part, ctx)
-			warnings = append(warnings, outputWarnings...)
-			encoded, err := json.Marshal(item.OfCustomToolCallOutput.Output)
-			if err != nil {
-				return nil, nil, fmt.Errorf("openai: marshaling parallel tool result: %w", err)
-			}
-			texts[index] = string(encoded)
-		} else {
-			breakpoints[index] = ctx.outputOptions(part.Output).PromptCacheBreakpoint
-			if breakpoints[index] == nil {
-				breakpoints[index] = ctx.partOptions(part).PromptCacheBreakpoint
-			}
+		if part.Output == nil || part.Output.Type != provider.ToolOutputContent {
+			texts[index] = toolResultOutputString(part.Output, ctx.hasOutputSchema(part.ToolName))
+			breakpoints[index] = ctx.scalarResultBreakpoint(part)
 			hasBreakpoint = hasBreakpoint || breakpoints[index] != nil
+			continue
 		}
+		_, content, outputWarnings, err := convertFunctionResultOutput(part, ctx)
+		if err != nil {
+			return nil, nil, err
+		}
+		warnings = append(warnings, outputWarnings...)
+		encoded, err := json.Marshal(content)
+		if err != nil {
+			return nil, nil, fmt.Errorf("openai: marshaling parallel tool result: %w", err)
+		}
+		texts[index] = string(encoded)
 	}
 	if !hasBreakpoint {
 		item := responses.ResponseInputItemParamOfFunctionCallOutput(g.metadata.ToolCallID, strings.Join(texts, "\n"))
