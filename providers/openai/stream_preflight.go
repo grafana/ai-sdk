@@ -23,6 +23,8 @@ type responseStreamItem struct {
 	event       *responses.ResponseStreamEventUnion
 	err         error
 	recoverable bool
+	rawEvent    bool
+	rawValue    json.RawMessage
 }
 
 func pumpResponseStream(ctx context.Context, response *http.Response, requestErr error) <-chan responseStreamItem {
@@ -56,7 +58,7 @@ func pumpResponseStream(ctx context.Context, response *http.Response, requestErr
 			}
 			var event responses.ResponseStreamEventUnion
 			if err := json.Unmarshal(frame.Data, &event); err != nil {
-				if !send(responseStreamItem{err: fmt.Errorf("openai: decoding stream event: %w", err), recoverable: true}) {
+				if !send(responseStreamItem{err: fmt.Errorf("openai: decoding stream event: %w", err), recoverable: true, rawEvent: true}) {
 					return
 				}
 				continue
@@ -65,10 +67,10 @@ func pumpResponseStream(ctx context.Context, response *http.Response, requestErr
 				Error json.RawMessage `json:"error"`
 			}
 			if json.Unmarshal(frame.Data, &envelope) == nil && len(envelope.Error) > 0 && string(envelope.Error) != "null" {
-				send(responseStreamItem{err: &ssestream.StreamError{Message: "received error while streaming: " + string(envelope.Error), Event: frame}})
+				send(responseStreamItem{err: &ssestream.StreamError{Message: "received error while streaming: " + string(envelope.Error), Event: frame}, rawEvent: true, rawValue: append(json.RawMessage(nil), bytes.TrimSpace(frame.Data)...)})
 				return
 			}
-			if !send(responseStreamItem{event: &event}) {
+			if !send(responseStreamItem{event: &event, rawEvent: true, rawValue: append(json.RawMessage(nil), bytes.TrimSpace(frame.Data)...)}) {
 				return
 			}
 		}

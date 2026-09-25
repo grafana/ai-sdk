@@ -1,6 +1,7 @@
 package v4
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -20,6 +21,26 @@ func validGenerateResult() *provider.GenerateResult {
 	}
 }
 
+func TestRuntimeUnaryTransportMetadataPrivacy(t *testing.T) {
+	harness := newRuntimeHarness(t, testLimits())
+	harness.model.generate = func(_ context.Context, _ provider.CallOptions) (*provider.GenerateResult, error) {
+		result := validGenerateResult()
+		result.Request = &provider.RequestMetadata{Body: json.RawMessage(`{"private-request":"credential"}`)}
+		result.Response = &provider.GenerateResponse{
+			ResponseMetadata: provider.ResponseMetadata{ID: "private-id", ModelID: "private-model"},
+			Headers:          map[string]string{"Authorization": "secret-token"},
+			Body:             json.RawMessage(`{"private-response":"credential"}`),
+		}
+		return result, nil
+	}
+	response := harness.serve(validRequest(`{"prompt":[]}`))
+	require.Equal(t, http.StatusOK, response.Code)
+	assert.Contains(t, response.Body.String(), `"text":"ok"`)
+	for _, private := range []string{"private", "credential", "secret-token", "Authorization"} {
+		assert.NotContains(t, response.Body.String(), private)
+	}
+}
+
 func TestUnarySuccessMapping(t *testing.T) {
 	zero := 0
 	maximum := maxJavaScriptSafeInteger
@@ -35,9 +56,12 @@ func TestUnarySuccessMapping(t *testing.T) {
 			Raw:          json.RawMessage(`{"private":true}`),
 		},
 		Warnings: []provider.Warning{{Type: provider.WarningType("future"), Message: "private warning"}},
-		Response: &provider.GenerateResponse{ResponseMetadata: provider.ResponseMetadata{
-			ID: "private-response", ModelID: "private-model", Provider: "private-provider",
-		}},
+		Request:  &provider.RequestMetadata{Body: json.RawMessage(`{"private-request":"credential"}`)},
+		Response: &provider.GenerateResponse{
+			ResponseMetadata: provider.ResponseMetadata{ID: "private-response", ModelID: "private-model", Provider: "private-provider"},
+			Headers:          map[string]string{"Authorization": "secret-token"},
+			Body:             json.RawMessage(`{"private-response-body":"credential"}`),
+		},
 	}
 
 	mapped, err := mapUnarySuccess(result, 1<<20)
@@ -54,7 +78,7 @@ func TestUnarySuccessMapping(t *testing.T) {
 		"usage":{"inputTokens":{"total":9007199254740991,"noCache":0,"cacheRead":0,"cacheWrite":0},"outputTokens":{"total":0,"text":0,"reasoning":0}}
 	}`, string(body))
 	assert.Contains(t, string(body), `html=\u003c\u003e\u0026`)
-	for _, private := range []string{"private warning", "private-response", "private-model", "private-provider", `"private":true`, "warnings", "response"} {
+	for _, private := range []string{"private warning", "private-response", "private-model", "private-provider", "private-request", "private-response-body", "secret-token", "Authorization", `"private":true`, "warnings", "response"} {
 		assert.NotContains(t, string(body), private)
 	}
 }

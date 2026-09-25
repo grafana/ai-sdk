@@ -77,7 +77,7 @@ func TestPreflightResponseStream(t *testing.T) {
 		parts := make(chan provider.StreamPart, 8)
 		go func() {
 			defer close(parts)
-			consumeStream(context.Background(), items, buffered, parts, nil, buildResult{}, requestBody, nil, seqIDGen(), "openai")
+			consumeStream(context.Background(), items, buffered, parts, nil, buildResult{}, requestBody, nil, seqIDGen(), "openai", false)
 		}()
 		var got []provider.StreamPart
 		for part := range parts {

@@ -8,11 +8,11 @@ import (
 	"github.com/openai/openai-go/v3/responses"
 )
 
-func consumeStream(ctx context.Context, items <-chan responseStreamItem, buffered []responseStreamItem, ch chan<- provider.StreamPart, warnings []provider.Warning, br buildResult, requestBody responses.ResponseNewParams, response *http.Response, generateID func() string, providerName string) {
+func consumeStream(ctx context.Context, items <-chan responseStreamItem, buffered []responseStreamItem, ch chan<- provider.StreamPart, warnings []provider.Warning, br buildResult, requestBody responses.ResponseNewParams, response *http.Response, generateID func() string, providerName string, includeRawChunks bool) {
 	parts := make(chan provider.StreamPart, 64)
 	go func() {
 		defer close(parts)
-		consumeStreamParts(items, buffered, parts, warnings, br, requestBody, response, generateID, providerName)
+		consumeStreamParts(items, buffered, parts, warnings, br, requestBody, response, generateID, providerName, includeRawChunks)
 	}()
 
 	for {
@@ -34,13 +34,16 @@ func consumeStream(ctx context.Context, items <-chan responseStreamItem, buffere
 	}
 }
 
-func consumeStreamParts(items <-chan responseStreamItem, buffered []responseStreamItem, ch chan<- provider.StreamPart, warnings []provider.Warning, br buildResult, requestBody responses.ResponseNewParams, response *http.Response, generateID func() string, providerName string) {
+func consumeStreamParts(items <-chan responseStreamItem, buffered []responseStreamItem, ch chan<- provider.StreamPart, warnings []provider.Warning, br buildResult, requestBody responses.ResponseNewParams, response *http.Response, generateID func() string, providerName string, includeRawChunks bool) {
 	adapter := newStreamAdapter(warnings, br, requestBody, response, generateID, providerName)
 
 	adapter.startEmitted = true
 	ch <- provider.StreamPart{Type: provider.PartStreamStart, Warnings: warnings}
 
 	handle := func(item responseStreamItem) {
+		if includeRawChunks && item.rawEvent {
+			ch <- provider.StreamPart{Type: provider.PartRaw, RawValue: item.rawValue}
+		}
 		if item.recoverable {
 			retryable := false
 			adapter.recordStreamError("")

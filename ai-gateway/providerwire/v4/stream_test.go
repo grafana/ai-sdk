@@ -331,12 +331,18 @@ func TestStreamingRuntimeTextStateAndUnsupportedParts(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			harness := newRuntimeHarness(t, testLimits())
 			harness.model.stream = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
-				return &provider.StreamResult{Stream: makeStream(tc.parts...)}, nil
+				return &provider.StreamResult{
+					Stream:   makeStream(tc.parts...),
+					Request:  &provider.RequestMetadata{Body: json.RawMessage(`{"private-request":"credential"}`)},
+					Response: &provider.ResponseHeaders{Headers: map[string]string{"Authorization": "secret-token"}},
+				}, nil
 			}
 			response := harness.serve(streamRequest(`{"prompt":[]}`))
 			assert.Equal(t, http.StatusOK, response.Code)
 			assert.Equal(t, 1, strings.Count(response.Body.String(), `"code":"internal_error"`))
-			assert.NotContains(t, response.Body.String(), "private")
+			for _, private := range []string{"private", "credential", "secret-token", "Authorization"} {
+				assert.NotContains(t, response.Body.String(), private)
+			}
 			assert.NotContains(t, response.Body.String(), `"type":"finish"`)
 		})
 	}

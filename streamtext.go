@@ -831,6 +831,9 @@ func (r *StreamTextResult) processStep(
 	var warnings []provider.Warning
 	responseMeta := provider.ResponseMetadata{ID: generateConfigID(cfg), ModelID: stepModel.ModelID}
 	var responseHeaders map[string]string
+	if streamResult.Response != nil {
+		responseHeaders = streamResult.Response.Headers
+	}
 	var textBuilder strings.Builder
 	var reasoningBlocks []ReasoningOutput
 	type activeReasoningBlock struct {
@@ -1171,7 +1174,9 @@ loop:
 				Provider:  part.Provider,
 				Timestamp: part.Timestamp,
 			}
-			responseHeaders = part.ResponseHeaders
+			if part.ResponseHeaders != nil {
+				responseHeaders = part.ResponseHeaders
+			}
 
 		case provider.PartFinish:
 			completed = true
