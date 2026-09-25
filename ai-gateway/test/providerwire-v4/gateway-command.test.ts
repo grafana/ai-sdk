@@ -84,7 +84,7 @@ describe("authenticated Anthropic Gateway command", () => {
         { prompt: [call] },
         { prompt: [call, result] },
         { prompt: [{ role: "user", content: [{ type: "file", data: { type: "text", text: "private-file" }, mediaType: "text/plain" }] }] },
-        { prompt: [{ role: "user", content: [{ type: "text", text: "hello" }], providerOptions: { vendor: { flag: false } } }] },
+        { prompt: [{ role: "user", content: [{ type: "text", text: "hello" }], providerOptions: { anthropic: { cacheControl: { type: "ephemeral" } } } }] },
       ];
       for (const options of effectRequests) {
         const counts: [number, number] = [primary.requests.length, secondary.requests.length];
@@ -129,18 +129,21 @@ describe("authenticated Anthropic Gateway command", () => {
       }
       primary.failureStatus = 503;
       secondary.failureStatus = undefined;
+      const textRequests: LanguageModelV4CallOptions[] = [
+        { prompt: [{ role: "user", content: [{ type: "text", text: "normal-stream" }], providerOptions: { anthropic: {} } }] },
+        { prompt: [{ role: "user", content: [{ type: "text", text: "normal-stream" }], providerOptions: { vendor: { flag: false } } }] },
+      ];
       for (const mode of ["generate", "stream"] as const) {
-        const options = {
-          prompt: [{ role: "user" as const, content: [{ type: "text" as const, text: "normal-stream" }], providerOptions: { vendor: {} } }],
-        };
-        const counts: [number, number] = [primary.requests.length, secondary.requests.length];
-        const go = await captureGoClient(goClientBinaryPath, { ...base, mode, options });
-        assert.equal(go.error, undefined);
-        const model = client("assistant");
-        const result = mode === "generate" ? await model.doGenerate(options) : await collectGatewayStream((await model.doStream(options)).stream);
-        assert.ok(JSON.stringify(result).includes("hello from fake Anthropic"));
-        assert.deepEqual([primary.requests.length - counts[0], secondary.requests.length - counts[1]], [2, 2]);
-        assert.deepEqual(primary.requests.at(-1)?.body, secondary.requests.at(-1)?.body);
+        for (const options of textRequests) {
+          const counts: [number, number] = [primary.requests.length, secondary.requests.length];
+          const go = await captureGoClient(goClientBinaryPath, { ...base, mode, options });
+          assert.equal(go.error, undefined);
+          const model = client("assistant");
+          const result = mode === "generate" ? await model.doGenerate(options) : await collectGatewayStream((await model.doStream(options)).stream);
+          assert.ok(JSON.stringify(result).includes("hello from fake Anthropic"));
+          assert.deepEqual([primary.requests.length - counts[0], secondary.requests.length - counts[1]], [2, 2]);
+          assert.deepEqual(primary.requests.at(-1)?.body, secondary.requests.at(-1)?.body);
+        }
       }
       for (const row of [
         { primary: undefined, secondary: undefined, count: 0, status: undefined },
