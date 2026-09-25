@@ -75,8 +75,9 @@ environment-variable credential references. Omitting `fallback` creates a direct
 route; removing it restores direct routing without changing the public model ID.
 Candidates retain configuration order and each new call starts at primary.
 Models without fallback accept supported file inputs. Models configured with
-fallback are text-only: files, nonempty tools, tool-call/result history, active
-provider options, and tool choices other than plain auto are rejected before any
+fallback are text-only: files, nonempty tools, tool-call/result history,
+backend-relevant active provider options, and tool choices other than plain
+auto are rejected before any
 candidate, including primary, runs. Message-level namespaces containing only
 empty objects retain text fallback eligibility without losing their original
 representation. A stream's

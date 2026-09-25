@@ -6,9 +6,9 @@
 
 - Accept user/assistant ordinary file parts and file entries in supported tool-result history, preserving all four selected data arms, media types, order, filename presence, and scoped opaque provider options.
 - Reject malformed or mixed file arms, forbidden references, reserved namespaces, and still-deferred capabilities before model invocation. Bound complete encoded requests, preserve cancellation, and never fetch file URLs in the Gateway.
-- Retain text-only fallback eligibility for empty ordinary message-option namespaces without allowing files, active options, or effectful history through fallback.
+- Retain text-only fallback eligibility for empty message-option namespaces after selected-backend filtering without allowing files, backend-relevant active options, or effectful history through fallback.
 - Keep file payloads, URLs, references, filenames, and options out of Gateway logical logs, metrics, Agent Observability, and safe errors. Verify Vercel and Go clients through authenticated unary/streaming calls and native request capture.
-- Pin the published Apache prerequisites—including corrected Anthropic `206427960ce2`—with readonly standalone module validation. Keep generated output (WP16), reasoning-file runtime (WP17), custom content, approvals/provider-executed history, top-level provider options, body headers, and file fallback deferred.
+- Use already-merged published module requirements and validate the coordinated Apache and Gateway source through the explicit candidate workspace. Preserve the existing call-level provider-option and body-header policy. Keep generated output (WP16), reasoning-file runtime (WP17), custom content, approvals/provider-executed history, and file fallback deferred.
 
 ## Capabilities
 
@@ -24,4 +24,4 @@
 
 ## Impact
 
-The Gateway module changes private ProviderWire DTO mapping, fallback guard, host command/privacy tests, module pins, and Gateway-owned operator docs. Producer-side SDK/provider/client/UI changes and their five OpenSpec deltas belong exclusively to the stacked Apache prerequisite PR (#234). This consumer PR (#235) targets that branch; it is not independently mergeable before those immutable modules are available. Authority remains `test/conformance/upstream.yaml` at commit `08ae5ad05bc12496dd1ffcf64e34419e0831300d`; no upstream baseline upgrade is included.
+The Gateway module changes private ProviderWire DTO mapping, fallback guard, host command/privacy tests, and Gateway-owned operator docs. Producer-side SDK/provider/client/UI changes and their five OpenSpec deltas belong exclusively to the stacked Apache prerequisite PR (#234). This consumer PR (#235) targets that branch and validates its file behavior against candidate source; production artifacts still require independently published compatible modules. Authority remains `test/conformance/upstream.yaml` at commit `08ae5ad05bc12496dd1ffcf64e34419e0831300d`; no upstream baseline upgrade is included.
