@@ -4,9 +4,9 @@ Required source CI tests coordinated Gateway and SDK/provider/middleware changes
 
 ## What Changes
 
-- Build local, main-SHA and `ai-gateway/vX.Y.Z` images from the exact selected repository revision using the checked-in `go.gateway.work`, root Docker context and one explicit Dockerfile build recipe. Keep the root `go.work` SDK-only, dependency pins and base/tool versions fixed, and exclude secrets and build caches from context and runtime layers.
+- Build main-SHA and `ai-gateway/vX.Y.Z` images from the exact selected repository revision, and local images from the current working tree, using the checked-in `go.gateway.work`, root Docker context and one explicit Dockerfile recipe with Gateway-specific ignore rules. Attribute local builds as unverified development source rather than an exact commit. Keep the root `go.work` SDK-only, dependency pins and base/tool versions fixed, and exclude secrets and build caches from context and runtime layers.
 - Gate publication on source checks, merged-pin ancestry and one-way license/import boundary, multiarch image builds and native smoke at the selected SHA, not standalone Gateway module compilation. Main deployment still requires successful publication; retain existing guards, tag naming and release-please ownership.
-- Inventory the target-platform command's actual dependency closure, including local modules attributed to the source SHA with inherited Apache license material and Gateway AGPL/notice, plus resolved external module versions/checksums and notices.
+- Inventory the target-platform command's actual dependency closure: attribute local modules to the verified source SHA for published images or to unverified development source for local builds; include inherited Apache license material, Gateway AGPL/notice, and resolved external module versions/checksums and notices.
 - Update the focused credential-free workflow/container regression and documentation; distinguish image readiness from standalone `GOWORK=off` SDK/provider/middleware module release readiness under #245/#21.
 
 ## Capabilities
@@ -22,4 +22,4 @@ Required source CI tests coordinated Gateway and SDK/provider/middleware changes
 
 ## Impact
 
-Planning affects `ai-gateway/Dockerfile`, root-context Docker ignore, `mise.toml`, `.github/workflows/ci.yml`, license inventory, focused tests in `test/conformance/tools/`, `docs/guides/ai-gateway-container.md`, `AGENTS.md`, `CONTRIBUTING.md` and the four existing specs above. No SDK API/wire or upstream baseline change, release-please implementation, module repin/release bot, module consolidation, licensing relaxation, new mandatory PR standalone gate, duplicate full-CI fixture job, digest promotion or repository protection change is proposed. No images/tags are published by this proposal.
+Planning affects `ai-gateway/Dockerfile`, Gateway Dockerfile-specific root-context ignore, `mise.toml`, `.github/workflows/ci.yml`, license inventory, focused tests in `test/conformance/tools/`, `docs/guides/ai-gateway-container.md`, `AGENTS.md`, `CONTRIBUTING.md` and the four existing specs above. No SDK API/wire or upstream baseline change, release-please implementation, module repin/release bot, module consolidation, licensing relaxation, new mandatory PR standalone gate, duplicate full-CI fixture job, digest promotion or repository protection change is proposed. No images/tags are published by this proposal.
