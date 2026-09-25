@@ -26,6 +26,14 @@ var anthropicOptionPolicy = catalog.ProviderOptionPolicy{
 	}},
 }
 
+func directAnthropicOptionPolicy() catalog.ProviderOptionPolicy {
+	return catalog.ProviderOptionPolicy{
+		Namespaces: []string{"anthropic"},
+		Fields: map[string][]string{"anthropic": append(append([]string(nil), anthropicOptionPolicy.Fields["anthropic"]...),
+			"mcpServers", "type", "serverName")},
+	}
+}
+
 // openAIOptionPolicy forwards the namespaces providers/openai reads, "openai"
 // and its "azure" parity fallback, restricted to the fields that provider reads
 // at call and part level. A field the provider gains later is removed until it

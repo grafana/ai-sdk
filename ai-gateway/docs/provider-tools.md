@@ -26,10 +26,29 @@ and tool history before running any candidate.
 ## Support boundaries
 
 Root, message and part provider options and call headers follow the Gateway's
-existing configured-backend and protected-field policy. Anthropic `mcpServers`
-and MCP continuation/output metadata remain rejected rather than silently
-reinterpreted as ordinary tools. The `gateway-anthropic-mcp` change separately
-owns remote server options, route eligibility and name validation.
+configured-backend and protected-field policy. Direct Anthropic routes also
+accept validated `providerOptions.anthropic.mcpServers` alongside ordinary
+allowed options. Other routes reject MCP before invoking a backend, even without
+tool definitions. Protected spelling variants and nested MCP options remain
+rejected. A nonempty server list is effectful and cannot be retried across
+fallback candidates.
+
+## Anthropic-hosted MCP
+
+The caller supplies distinct nonempty server names and bounded HTTPS URLs
+without embedded credentials or fragments. Optional authorization tokens and
+tool configuration are forwarded only in the selected native request. Absent
+versus explicitly empty tokens and absent versus false enabled flags remain
+distinct. Anthropic connects to the remote server; the Gateway does not. These
+are Grafana policy checks, not evidence of Vercel's private hosted-service
+policy or Anthropic's egress controls.
+
+Tool-call/result continuation metadata may identify only a server configured in
+the current request. Public MCP metadata retains type and server name, not the
+URL, token, backend identity or unrelated caller fields. The native request and
+the Go client's caller-owned request body necessarily contain the submitted
+configuration; do not log either body. The Gateway's context deadline bounds
+unary native attempts without reducing their configured token budget.
 
 Approvals, sources, files and other media retain their explicit unsupported
 failures. Image previews emitted before their tool call remain WP16 (#110),
@@ -41,6 +60,6 @@ writer/cancellation and cleanup limits continue to apply.
 Both registered clients are tested against the real handler and authenticated
 Gateway command, including native Anthropic code-execution alias/continuation
 requests. Fake native responses are deterministic transport evidence, not
-provider recordings. No deployment activation or live-provider smoke is claimed.
+provider recordings. No deployment activation or live MCP egress is claimed.
 Before rollout, use the reviewed image and corresponding-source notices; rollback
 uses the prior image/module set and requires no persisted-state migration.

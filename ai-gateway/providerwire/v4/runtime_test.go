@@ -376,7 +376,7 @@ func TestRuntimeUnsupportedCapabilities(t *testing.T) {
 		{name: "reserved provider option namespace", body: `{"prompt":[],"providerOptions":{"grafana":{"enabled":true}}}`, capability: capabilityReservedProviderOptions},
 		{name: "protected provider option, model", body: `{"prompt":[],"providerOptions":{"openaiCompatible":{"model":"someone-elses-model"}}}`, capability: capabilityProtectedProviderOption},
 		{name: "protected provider option, prompt", body: `{"prompt":[],"providerOptions":{"openaiCompatible":{"messages":[{"role":"user","content":"rewritten"}]}}}`, capability: capabilityProtectedProviderOption},
-		{name: "protected provider option, server-side tools", body: `{"prompt":[],"providerOptions":{"anthropic":{"mcpServers":[{"type":"url","url":"https://caller.example/mcp","name":"caller"}]}}}`, capability: capabilityProtectedProviderOption},
+		{name: "protected provider option, nested server-side tools", body: `{"prompt":[{"role":"user","content":[{"type":"text","text":"hi"}],"providerOptions":{"anthropic":{"mcpServers":[{"type":"url","url":"https://caller.example/mcp","name":"caller"}]}}}]}`, capability: capabilityProtectedProviderOption},
 		{name: "protected call header", body: `{"prompt":[],"headers":{"Authorization":"Bearer caller"}}`, capability: capabilityProtectedCallHeader},
 		{name: "protected call header, other case", body: `{"prompt":[],"headers":{"X-ACCESS-TOKEN":"caller"}}`, capability: capabilityProtectedCallHeader},
 		{name: "raw output", body: `{"prompt":[],"includeRawChunks":true}`, capability: capabilityRawOutput},

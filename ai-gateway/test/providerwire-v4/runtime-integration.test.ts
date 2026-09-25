@@ -260,11 +260,12 @@ describe("streaming function tools through the authenticated real handler", () =
 });
 
 describe("provider-executed tools through the real handler", () => {
-  for (const streaming of [false, true]) for (const isError of [false, true]) {
-    it(`${streaming ? "stream" : "unary"} deferred ${isError ? "error" : "success"} completes with both clients`, async () => {
+  for (const streaming of [false, true]) for (const isError of [false, true]) for (const mcp of [false, true]) {
+    it(`${streaming ? "stream" : "unary"} deferred ${isError ? "error" : "success"} ${mcp ? "MCP" : "provider"} result completes with both clients`, async () => {
       const modelID = isError ? "hosted-deferred-error" : "hosted-deferred";
       const client = createGateway({ apiKey: "test", baseURL: `${baseURL}/providerwire-v4` })(modelID);
-      const settings = { tools: [{ type: "provider" as const, id: "anthropic.code_execution_20260120" as const, name: "code", args: {} }] };
+      const settings = { tools: [{ type: "provider" as const, id: "anthropic.code_execution_20260120" as const, name: "code", args: {} }], ...(mcp ? { providerOptions: { anthropic: { mcpServers: [{ type: "url", name: "echo", url: "https://mcp.example.test", authorizationToken: "dummy" }] } } } : {}) };
+      const expectedMetadata = { anthropic: mcp ? { type: "mcp-tool-use", serverName: "echo" } : { caller: { type: "direct" } } };
       const firstPrompt = [{ role: "user" as const, content: [{ type: "text" as const, text: "hello" }] }];
       const before = await stats();
       for (const transport of ["vercel", "go"] as const) {
@@ -283,7 +284,7 @@ describe("provider-executed tools through the real handler", () => {
         assert.ok(call);
         assert.equal(call.providerExecuted, true);
         assert.equal(call.dynamic, true);
-        assert.deepEqual(call.providerMetadata, { anthropic: { caller: { type: "direct" } } });
+        assert.deepEqual(call.providerMetadata, expectedMetadata);
         assert.equal(first.filter((part: any) => part.type === "tool-result").length, 0);
         const historyCall = { type: "tool-call" as const, toolCallId: call.toolCallId, toolName: call.toolName, input: JSON.parse(call.input), providerExecuted: true, providerOptions: call.providerMetadata };
         const second = await request([...firstPrompt, { role: "assistant", content: [historyCall] }]);
@@ -291,7 +292,7 @@ describe("provider-executed tools through the real handler", () => {
         assert.ok(result);
         assert.equal(result.isError ?? false, isError);
         assert.deepEqual(result.result, { result: "done" });
-        assert.deepEqual(result.providerMetadata, { anthropic: { caller: { type: "direct" } } });
+        assert.deepEqual(result.providerMetadata, expectedMetadata);
         assert.equal(second.filter((part: any) => part.type === "tool-call").length, 0);
         const historyResult = { type: "tool-result" as const, toolCallId: result.toolCallId, toolName: result.toolName, output: { type: (isError ? "error-json" : "json") as "error-json" | "json", value: result.result }, providerOptions: result.providerMetadata };
         const final = await request([...firstPrompt, { role: "assistant", content: [historyCall, historyResult] }]);

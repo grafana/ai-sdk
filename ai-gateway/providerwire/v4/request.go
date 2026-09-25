@@ -94,9 +94,18 @@ func mapWireRequest(body []byte, modes ...executionMode) (provider.CallOptions, 
 		StopSequences:    request.StopSequences,
 		Seed:             request.Seed,
 	}
+	if failure := validateMCPOptions(request.ProviderOptions); failure != nil {
+		return provider.CallOptions{}, failure
+	}
+	rootOptions, failure := mapWireProviderOptionsWithMCP(request.ProviderOptions, true)
+	if failure != nil {
+		return provider.CallOptions{}, failure
+	}
+	options.ProviderOptions = rootOptions
+	mcpNames := configuredMCPNames(rootOptions)
 	toolsEnabled := len(modes) == 0 || modes[0] == executionUnary || modes[0] == executionStreaming
 	for _, wireMessage := range request.Prompt {
-		message, failure := mapWireMessage(wireMessage, toolsEnabled)
+		message, failure := mapWireMessage(wireMessage, toolsEnabled, mcpNames)
 		if failure != nil {
 			return provider.CallOptions{}, failure
 		}
@@ -127,11 +136,6 @@ func mapWireRequest(body []byte, modes ...executionMode) (provider.CallOptions, 
 			return provider.CallOptions{}, invalidMappingFailure()
 		}
 	}
-	rootOptions, failure := mapWireProviderOptions(request.ProviderOptions)
-	if failure != nil {
-		return provider.CallOptions{}, failure
-	}
-	options.ProviderOptions = rootOptions
 	if request.IncludeRawChunks {
 		return provider.CallOptions{}, unsupportedMappingFailure(capabilityRawOutput)
 	}
@@ -145,7 +149,7 @@ func mapWireRequest(body []byte, modes ...executionMode) (provider.CallOptions, 
 	return options, nil
 }
 
-func mapWireMessage(message wireMessage, toolsEnabled bool) (provider.Message, *requestFailure) {
+func mapWireMessage(message wireMessage, toolsEnabled bool, mcpNames map[string]bool) (provider.Message, *requestFailure) {
 	messageOptions, failure := mapWireProviderOptions(message.ProviderOptions)
 	if failure != nil {
 		return provider.Message{}, failure
@@ -167,7 +171,7 @@ func mapWireMessage(message wireMessage, toolsEnabled bool) (provider.Message, *
 		}
 		parts := make([]provider.ContentPart, 0, len(wireParts))
 		for _, wirePart := range wireParts {
-			part, failure := mapWirePart(wirePart, message.Role, toolsEnabled)
+			part, failure := mapWirePart(wirePart, message.Role, toolsEnabled, mcpNames)
 			if failure != nil {
 				return provider.Message{}, failure
 			}
@@ -189,7 +193,7 @@ func mapWireMessage(message wireMessage, toolsEnabled bool) (provider.Message, *
 	}
 }
 
-func mapWirePart(part wirePart, role provider.Role, toolsEnabled bool) (provider.ContentPart, *requestFailure) {
+func mapWirePart(part wirePart, role provider.Role, toolsEnabled bool, mcpNames map[string]bool) (provider.ContentPart, *requestFailure) {
 	// Options are mapped inside the branch that keeps them, so a part type this
 	// runtime does not support reports its own family whatever options it carries.
 	switch part.Type {
@@ -214,7 +218,7 @@ func mapWirePart(part wirePart, role provider.Role, toolsEnabled bool) (provider
 		if role != provider.RoleAssistant {
 			return provider.ContentPart{}, invalidMappingFailure()
 		}
-		partOptions, failure := mapToolPartOptions(part.ProviderOptions)
+		partOptions, failure := mapToolPartOptions(part.ProviderOptions, part.ProviderExecuted, mcpNames)
 		if failure != nil {
 			return provider.ContentPart{}, failure
 		}
@@ -229,7 +233,7 @@ func mapWirePart(part wirePart, role provider.Role, toolsEnabled bool) (provider
 		if failure != nil {
 			return provider.ContentPart{}, failure
 		}
-		partOptions, failure := mapToolPartOptions(part.ProviderOptions)
+		partOptions, failure := mapToolPartOptions(part.ProviderOptions, role == provider.RoleAssistant, mcpNames)
 		if failure != nil {
 			return provider.ContentPart{}, failure
 		}
@@ -243,7 +247,44 @@ func mapWirePart(part wirePart, role provider.Role, toolsEnabled bool) (provider
 	}
 }
 
-func mapToolPartOptions(values map[string]json.RawMessage) (provider.ProviderOptions, *requestFailure) {
+func mapToolPartOptions(values map[string]json.RawMessage, providerExecuted bool, mcpNames map[string]bool) (provider.ProviderOptions, *requestFailure) {
+	if raw, exists := values["anthropic"]; exists {
+		members, valid := jsonObject(raw)
+		if !valid {
+			return nil, invalidMappingFailure()
+		}
+		if kind, exists := members["type"]; exists {
+			var value string
+			if json.Unmarshal(kind, &value) != nil {
+				return nil, invalidMappingFailure()
+			}
+			if value == "mcp-tool-use" {
+				var name string
+				if !providerExecuted || len(members) != 2 || json.Unmarshal(members["serverName"], &name) != nil || !mcpNames[name] {
+					return nil, invalidMappingFailure()
+				}
+				other := make(map[string]json.RawMessage, len(values)-1)
+				for namespace, entry := range values {
+					if namespace != "anthropic" {
+						other[namespace] = entry
+					}
+				}
+				options, failure := mapOrdinaryToolPartOptions(other)
+				if failure != nil {
+					return nil, failure
+				}
+				if options == nil {
+					options = make(provider.ProviderOptions)
+				}
+				options["anthropic"] = provider.RawProviderOption{Key: "anthropic", Raw: raw}
+				return options, nil
+			}
+		}
+	}
+	return mapOrdinaryToolPartOptions(values)
+}
+
+func mapOrdinaryToolPartOptions(values map[string]json.RawMessage) (provider.ProviderOptions, *requestFailure) {
 	if _, reserved := values["gateway"]; reserved {
 		return nil, unsupportedMappingFailure(capabilityProviderOptions)
 	}
@@ -339,6 +380,10 @@ func mapWireHeaders(headers map[string]string) (map[string]string, *requestFailu
 // namespace value must be a JSON object; nested contents are preserved byte for
 // byte, including null, false, zero, empty string, empty object and array.
 func mapWireProviderOptions(options map[string]json.RawMessage) (provider.ProviderOptions, *requestFailure) {
+	return mapWireProviderOptionsWithMCP(options, false)
+}
+
+func mapWireProviderOptionsWithMCP(options map[string]json.RawMessage, allowMCP bool) (provider.ProviderOptions, *requestFailure) {
 	if len(options) == 0 {
 		return nil, nil
 	}
@@ -359,6 +404,9 @@ func mapWireProviderOptions(options map[string]json.RawMessage) (provider.Provid
 			return nil, invalidMappingFailure()
 		}
 		for field := range fields {
+			if allowMCP && namespace == "anthropic" && field == "mcpServers" {
+				continue
+			}
 			if _, protected := protectedProviderOptionFields[normalizeProviderOptionField(field)]; protected {
 				return nil, unsupportedMappingFailure(capabilityProtectedProviderOption)
 			}

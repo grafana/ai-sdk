@@ -67,6 +67,9 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 				}
 				candidate = construct(providerConfig.APIKey, descriptor.Model, anthropicprovider.WithRequestOptions(requestOptions...))
 				policy = anthropicOptionPolicy
+				if len(descriptors) == 1 {
+					policy = directAnthropicOptionPolicy()
+				}
 			case "openai-compatible":
 				if providerConfig.BaseURL == "" {
 					return nil, fmt.Errorf("gateway service: provider %q is invalid", descriptor.Provider)
@@ -115,6 +118,10 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 			}
 			ordered.WithAttemptObserver(physicalAttemptObserver(descriptors, sink))
 			lower = fallbackTextModel{LanguageModel: ordered}
+		}
+		lower = mcpRouteModel{
+			LanguageModel: lower,
+			allowMCP:      len(descriptors) == 1 && providers[configured.Primary.Provider].Type == "anthropic",
 		}
 		model, err := factory(id, lower)
 		if err != nil {

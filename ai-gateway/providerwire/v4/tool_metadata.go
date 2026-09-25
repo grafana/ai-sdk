@@ -10,7 +10,7 @@ import (
 
 var errInvalidToolMetadata = errors.New("providerwire v4: invalid tool metadata")
 
-func mapToolMetadata(metadata provider.ProviderMetadata, limit int64) (provider.ProviderMetadata, error) {
+func mapToolMetadata(metadata provider.ProviderMetadata, mcpNames map[string]bool, limit int64) (provider.ProviderMetadata, error) {
 	if len(metadata) == 0 {
 		return nil, nil
 	}
@@ -43,16 +43,22 @@ func mapToolMetadata(metadata provider.ProviderMetadata, limit int64) (provider.
 		}
 		selected := make(map[string]any)
 		if name == "anthropic" {
+			mcpToolUse := false
 			if value, ok := fields["type"]; ok {
 				kind, err := toolMetadataString(value)
 				if err != nil {
 					return nil, err
 				}
 				if kind == "mcp-tool-use" {
-					return nil, errInvalidToolMetadata
+					mcpToolUse = true
+					serverName, err := toolMetadataString(fields["serverName"])
+					if err != nil || !mcpNames[serverName] {
+						return nil, errInvalidToolMetadata
+					}
+					selected["type"], selected["serverName"] = kind, serverName
 				}
 			}
-			if value, ok := fields["caller"]; ok {
+			if value, ok := fields["caller"]; ok && !mcpToolUse {
 				caller, err := mapToolCallerMetadata(value, "toolId", "code_execution_20250825", "code_execution_20260120")
 				if err != nil {
 					return nil, err

@@ -47,11 +47,14 @@ and history before any physical invocation. Logical
 telemetry omits tool-bearing definitions, names, IDs, inputs, outputs and
 provider metadata before export.
 
-Anthropic-hosted MCP is not enabled by provider-tool support.
-`providerOptions.anthropic.mcpServers` and MCP continuation metadata remain
-rejected; other allowed provider options follow the configured backend's policy.
-The separate `gateway-anthropic-mcp` change owns that capability and its routing
-and privacy controls. See the
+Authenticated direct Anthropic routes accept bounded
+`providerOptions.anthropic.mcpServers` alongside other allowed options. MCP
+continuation metadata must name a server configured in the current request;
+public output retains only the type and server name. Fallback, OpenAI and
+compatible routes reject MCP before backend invocation, even without tools.
+Other provider options and call headers retain the configured-backend and
+protected-field policy. The Gateway never connects to the remote MCP URL itself;
+Anthropic's egress and deployment activation need separate review. See the
 [Gateway operator guide](../../ai-gateway/docs/provider-tools.md).
 
 ## Authenticate the client

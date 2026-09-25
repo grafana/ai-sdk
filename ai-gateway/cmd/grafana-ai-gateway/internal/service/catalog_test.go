@@ -48,7 +48,7 @@ func TestBuildCatalog_ConstructsImmutableCanonicalAndAliasModelsOnce(t *testing.
 	assert.Equal(t, "grafana/assistant", canonical.Model.ModelID())
 }
 
-func TestBuildCatalog_ModelFactoryReceivesCanonicalAndUnchangedLowerOnce(t *testing.T) {
+func TestBuildCatalog_ModelFactoryReceivesCanonicalAndGatedLowerOnce(t *testing.T) {
 	file := testCatalogFile()
 	resolved := map[string]config.ResolvedProvider{
 		"anthropic-primary": {Type: "anthropic", APIKey: "secret"},
@@ -63,11 +63,14 @@ func TestBuildCatalog_ModelFactoryReceivesCanonicalAndUnchangedLowerOnce(t *test
 		return model
 	}, func(canonicalID string, lower provider.LanguageModel) (provider.LanguageModel, error) {
 		factoryCalls++
+		gated, ok := lower.(mcpRouteModel)
+		require.True(t, ok)
+		assert.True(t, gated.allowMCP)
 		switch canonicalID {
 		case "grafana/assistant":
-			assert.Same(t, direct["claude-assistant"], lower)
+			assert.Same(t, direct["claude-assistant"], gated.LanguageModel)
 		case "grafana/other":
-			assert.Same(t, direct["claude-other"], lower)
+			assert.Same(t, direct["claude-other"], gated.LanguageModel)
 		default:
 			t.Fatalf("unexpected canonical ID %q", canonicalID)
 		}

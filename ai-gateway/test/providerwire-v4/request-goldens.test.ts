@@ -7,6 +7,7 @@ import {
   comprehensiveGoldenCase,
   headersGoldenCase,
   providerToolsGoldenCase,
+  mcpToolsGoldenCase,
   requestGoldenCases,
   scalarGoldenCase,
   sequenceGoldenCase,
@@ -102,6 +103,24 @@ describe("registered Gateway semantic request goldens", () => {
     assert.equal(assistant.content[0].providerExecuted, true);
     assert.equal(assistant.content[0].toolName, "python");
     assert.deepEqual(assistant.content[1].output, { type: "json", value: { stdout: "0" } });
+  });
+
+  it("captures request-level MCP servers and assistant continuation without definitions", async () => {
+    const [unary, streaming] = await mcpToolsGoldenCase.capture();
+    assert.equal(unary.streaming, false);
+    assert.equal(streaming.streaming, true);
+    const first = unary.body as JsonObject;
+    assert.equal(first.tools, undefined);
+    const server = first.providerOptions.anthropic.mcpServers[0];
+    assert.deepEqual(server.toolConfiguration, { enabled: false, allowedTools: [] });
+    assert.equal(server.authorizationToken, "contract-dummy-token");
+    const assistant = message(streaming.body as JsonObject, "assistant");
+    assert.deepEqual(assistant.content.map((part: JsonObject) => [part.type, part.toolCallId]), [
+      ["tool-call", "call-mcp"], ["tool-result", "call-mcp"],
+    ]);
+    assert.equal(assistant.content[0].providerExecuted, true);
+    assert.deepEqual(assistant.content[0].providerOptions, { anthropic: { type: "mcp-tool-use", serverName: "weather" } });
+    assert.deepEqual(assistant.content[1].providerOptions, assistant.content[0].providerOptions);
   });
 
   it("captures file transformations in every registered client position", async () => {

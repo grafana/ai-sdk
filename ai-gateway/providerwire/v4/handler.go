@@ -11,6 +11,7 @@ import (
 	"mime"
 	"net/http"
 	"reflect"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -196,6 +197,11 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.writeSafeError(w, safeError{category: safeInternal})
 		return
 	}
+	if len(configuredMCPNames(options.ProviderOptions)) > 0 &&
+		(!slices.Contains(resolved.ProviderOptions.Namespaces, "anthropic") || !slices.Contains(resolved.ProviderOptions.Fields["anthropic"], "mcpServers")) {
+		h.writeSafeError(w, safeError{category: safeInvalidRequest})
+		return
+	}
 	options = applyProviderOptionPolicy(options, resolved.ProviderOptions)
 	if validated.mode == executionStreaming {
 		h.serveStream(w, r.Context(), resolved.Model, options, resolved.ID, history)
@@ -206,7 +212,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.writeSafeError(w, safeErrorFromProvider(err))
 		return
 	}
-	if result == nil || !h.writeUnarySuccess(w, result, unaryMappingContext{history: history}) {
+	if result == nil || !h.writeUnarySuccess(w, result, unaryMappingContext{history: history, mcpNames: configuredMCPNames(options.ProviderOptions)}) {
 		h.writeSafeError(w, safeError{category: safeInternal})
 	}
 }

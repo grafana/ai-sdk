@@ -360,6 +360,32 @@ async function providerToolsCapture(): Promise<SemanticRequest[]> {
   });
 }
 
+async function mcpToolsCapture(): Promise<SemanticRequest[]> {
+  const mcpServers = [{
+    type: "url" as const,
+    name: "weather",
+    url: "https://mcp.example.test/tools",
+    authorizationToken: "contract-dummy-token",
+    toolConfiguration: { enabled: false, allowedTools: [] },
+  }];
+  return captureCalls({
+    modelId: "grafana/mcp-tools",
+    calls: async (model) => {
+      await generate(model, {
+        prompt: [{ role: "user", content: [{ type: "text", text: "weather" }] }],
+        providerOptions: { anthropic: { mcpServers } },
+      });
+      await stream(model, {
+        prompt: [{ role: "assistant", content: [
+          { type: "tool-call", toolCallId: "call-mcp", toolName: "get_weather", input: { city: "Paris" }, providerExecuted: true, providerOptions: { anthropic: { type: "mcp-tool-use", serverName: "weather" } } },
+          { type: "tool-result", toolCallId: "call-mcp", toolName: "get_weather", output: { type: "json", value: { temperature: 0 } }, providerOptions: { anthropic: { type: "mcp-tool-use", serverName: "weather" } } },
+        ] }],
+        providerOptions: { anthropic: { mcpServers } },
+      });
+    },
+  });
+}
+
 async function sequenceCapture(): Promise<SemanticRequest[]> {
   return captureCalls({
     modelId: "grafana/sequence",
@@ -399,6 +425,11 @@ export const providerToolsGoldenCase: RequestGoldenCase = {
   fileName: "provider-tools.json",
   capture: providerToolsCapture,
 };
+export const mcpToolsGoldenCase: RequestGoldenCase = {
+  name: "MCP servers and continuation",
+  fileName: "mcp-tools.json",
+  capture: mcpToolsCapture,
+};
 export const sequenceGoldenCase: RequestGoldenCase = {
   name: "ordered sequence",
   fileName: "sequence.json",
@@ -409,6 +440,7 @@ export const requestGoldenCases: RequestGoldenCase[] = [
   scalarGoldenCase,
   comprehensiveGoldenCase,
   providerToolsGoldenCase,
+  mcpToolsGoldenCase,
   streamingGoldenCase,
   headersGoldenCase,
   sequenceGoldenCase,

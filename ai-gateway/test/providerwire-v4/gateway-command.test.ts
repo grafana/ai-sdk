@@ -80,6 +80,7 @@ describe("authenticated Anthropic Gateway command", () => {
       const effectRequests: LanguageModelV4CallOptions[] = [
         { prompt: [], tools: [{ type: "function", name: "private-tool", inputSchema: { type: "object" } }] },
         { prompt: [], tools: [{ type: "provider", id: "anthropic.code_execution_20260120", name: "private-tool", args: {} }] },
+        { prompt: [], providerOptions: { anthropic: { mcpServers: [{ type: "url", name: "echo", url: "https://mcp.example.test", authorizationToken: "fallback-mcp-secret" }] } } },
         ...(["none", "required"] as const).map(type => ({ prompt: [], toolChoice: { type } })),
         { prompt: [], toolChoice: { type: "tool", toolName: "private-tool" } },
         { prompt: [call] },
@@ -101,13 +102,14 @@ describe("authenticated Anthropic Gateway command", () => {
         assert.equal(raw.status, 400);
         assert.equal(await raw.text(), '{"error":{"message":"invalid request","type":"invalid_request_error","param":null,"code":"invalid_request"}}');
         assert.deepEqual([primary.requests.length, secondary.requests.length], counts, "unary effects must not invoke either fallback candidate");
-        assertPrivateValuesAbsent([go.error, { message: failure.message, type: failure.type, responseBody: failure.responseBody }], primary, [secondary.url, "private-call", "private-tool", "private-input", "private-result", token]);
+        assertPrivateValuesAbsent([go.error, { message: failure.message, type: failure.type, responseBody: failure.responseBody }], primary, [secondary.url, "private-call", "private-tool", "private-input", "private-result", "fallback-mcp-secret", token]);
       }
       const streamCall = { type: "tool-call" as const, toolCallId: "private-call", toolName: "private-tool", input: {} };
       const history = [{ role: "assistant" as const, content: [streamCall] }];
       for (const options of [
         { prompt: [], tools: [{ type: "function" as const, name: "private-tool", inputSchema: {} }] },
         { prompt: [], tools: [{ type: "provider" as const, id: "anthropic.code_execution_20260120" as const, name: "private-tool", args: {} }] },
+        { prompt: [], providerOptions: { anthropic: { mcpServers: [{ type: "url", name: "echo", url: "https://mcp.example.test", authorizationToken: "fallback-mcp-secret" }] } } },
         { prompt: [], toolChoice: { type: "none" as const } },
         { prompt: history },
         { prompt: [...history, { role: "tool" as const, content: [{ type: "tool-result" as const, toolCallId: streamCall.toolCallId, toolName: streamCall.toolName, output: { type: "text" as const, value: "private-result" } }] }] },
@@ -291,7 +293,7 @@ describe("authenticated Anthropic Gateway command", () => {
     }
   });
 
-  it("routes authenticated Anthropic provider tools and continuation through both clients", async () => {
+  for (const mcpEnabled of [false, true]) it(`routes authenticated Anthropic provider tools ${mcpEnabled ? "with MCP" : "without MCP"} and continuation through both clients`, async () => {
     const observer = await FakeAgentObservability.start();
     let resources: [FakeAnthropic, GatewayProcess] | undefined;
     try {
@@ -299,17 +301,20 @@ describe("authenticated Anthropic Gateway command", () => {
         "--agento11y.enabled", "--agento11y.protocol=http", `--agento11y.endpoint=${observer.url}`,
         "--no-agento11y.tls", "--agento11y.auth-secret-env=GATEWAY_TEST_AGENTO11Y_KEY",
         "--agento11y.batch-size=1", "--agento11y.flush-interval=1ms",
-        "--agento11y.flush-timeout=2s", "--agento11y.shutdown-timeout=2s",
+        "--agento11y.flush-timeout=2s",
       ], { GATEWAY_TEST_AGENTO11Y_KEY: "integration-agento11y-key" }, "claude-sonnet-4-6");
       const [fake, gateway] = resources;
       fake.providerTools = true;
+      const token = "mcp-private-token";
+      const url = "https://mcp.example.test/tools";
+      const providerOptions = mcpEnabled ? { anthropic: { mcpServers: [{ type: "url", name: "echo", url, authorizationToken: token, toolConfiguration: { enabled: false, allowedTools: [] } }] } } : undefined;
       const tools = [{ type: "provider" as const, id: "anthropic.code_execution_20260120" as const, name: "python", args: {} }];
       const prompt = [{ role: "user" as const, content: [{ type: "text" as const, text: "Use tools" }] }];
       const client = gateway.client();
       for (const mode of ["generate", "stream"] as const) {
         for (const implementation of ["vercel", "go"] as const) {
           const invoke = async (messages: LanguageModelV4CallOptions["prompt"]): Promise<any[]> => {
-            const options = { prompt: messages, tools };
+            const options = { prompt: messages, tools, providerOptions };
             if (implementation === "go") {
               const result = await captureGoClient(goClientBinaryPath, { baseURL: `${gateway.url}/api/v1/aisdk`, accessToken: TEST_TOKEN, modelID: "assistant", mode, options });
               assert.equal(result.error, undefined);
@@ -320,13 +325,18 @@ describe("authenticated Anthropic Gateway command", () => {
           const first = await invoke(prompt);
           const calls = first.filter(part => part.type === "tool-call");
           const results = first.filter(part => part.type === "tool-result");
-          assert.deepEqual(calls.map(part => part.toolName), ["python"]);
-          assert.deepEqual(results.map(part => part.toolName), ["python"]);
+          assert.deepEqual(calls.map(part => part.toolName), mcpEnabled ? ["python", "echo"] : ["python"]);
+          assert.deepEqual(results.map(part => part.toolName), mcpEnabled ? ["python", "echo"] : ["python"]);
           assert.ok(calls.every(part => part.providerExecuted === true));
+          if (mcpEnabled) {
+            assert.equal(calls[1].dynamic, true);
+            assert.deepEqual(calls[1].providerMetadata, { anthropic: { type: "mcp-tool-use", serverName: "echo" } });
+            assert.deepEqual(results[1].providerMetadata, calls[1].providerMetadata);
+          }
           const native = fake.requests.at(-1)!.body as any;
           assert.deepEqual(native.tools, [{ type: "code_execution_20260120", name: "code_execution" }]);
           assert.equal(native.max_tokens, 128000);
-          assert.equal(native.mcp_servers, undefined);
+          assert.deepEqual(native.mcp_servers, mcpEnabled ? [{ type: "url", name: "echo", url, authorization_token: token, tool_configuration: { enabled: false, allowed_tools: [] } }] : undefined);
           const history = calls.flatMap((call, index) => [
             { type: "tool-call" as const, toolCallId: call.toolCallId, toolName: call.toolName, input: JSON.parse(call.input), providerExecuted: true, ...(call.providerMetadata && { providerOptions: call.providerMetadata }) },
             { type: "tool-result" as const, toolCallId: results[index].toolCallId, toolName: results[index].toolName, output: { type: "json" as const, value: results[index].result }, ...(results[index].providerMetadata && { providerOptions: results[index].providerMetadata }) },
@@ -334,11 +344,32 @@ describe("authenticated Anthropic Gateway command", () => {
           const final = await invoke([...prompt, { role: "assistant", content: history }]);
           assert.equal(final.filter(part => part.type === (mode === "generate" ? "text" : "text-delta")).map(part => part.text ?? part.delta).join(""), "Hosted tools finished.");
           const continuation = fake.requests.at(-1)!.body as any;
-          assert.deepEqual(continuation.messages[1].content.map((part: any) => part.type), ["server_tool_use", "code_execution_tool_result"]);
+          assert.deepEqual(continuation.messages[1].content.map((part: any) => part.type), mcpEnabled ? ["server_tool_use", "code_execution_tool_result", "mcp_tool_use", "mcp_tool_result"] : ["server_tool_use", "code_execution_tool_result"]);
           assert.equal(continuation.messages[1].content[0].name, "code_execution");
+          if (mcpEnabled) assert.equal(continuation.messages[1].content[2].server_name, "echo");
+          assert.ok(!JSON.stringify([first, final]).includes(token));
+          assert.ok(!JSON.stringify([first, final]).includes(url));
         }
       }
       assert.equal(fake.requests.length, 8);
+      if (mcpEnabled) {
+        for (const invalidOptions of [
+          { prompt, tools, providerOptions: { anthropic: { mcpServers: [{ type: "url", name: "echo", url: "http://mcp.example.test", authorizationToken: "invalid-private-token" }] } }, maxOutputTokens: 64 },
+          { prompt: [...prompt, { role: "assistant" as const, content: [{ type: "tool-call" as const, toolCallId: "call-mcp", toolName: "echo", input: {}, providerExecuted: true, providerOptions: { anthropic: { type: "mcp-tool-use", serverName: "not-configured" } } }] }], tools, providerOptions, maxOutputTokens: 64 },
+        ]) {
+          for (const mode of ["generate", "stream"] as const) {
+            const go = await captureGoClient(goClientBinaryPath, { baseURL: `${gateway.url}/api/v1/aisdk`, accessToken: TEST_TOKEN, modelID: "assistant", mode, options: invalidOptions });
+            assert.equal(go.error?.statusCode, 400);
+            assert.equal(go.error?.code, "invalid_request");
+            assert.equal(go.parts, undefined);
+            await assert.rejects(async () => {
+              if (mode === "generate") await client("assistant").doGenerate(invalidOptions);
+              else await client("assistant").doStream(invalidOptions);
+            }, (error: any) => error.statusCode === 400 && error.message === "invalid request");
+            assert.equal(fake.requests.length, 8, "invalid MCP settings must fail before native invocation");
+          }
+        }
+      }
       assert.deepEqual(fake.violations, []);
       await observer.waitForGenerations(8);
       assert.equal(observer.generations.length, 8);
@@ -347,7 +378,7 @@ describe("authenticated Anthropic Gateway command", () => {
       }
       const metrics = await gateway.metrics();
       await gateway.stop();
-      assertPrivateValuesAbsent([gateway.stderr, metrics, observer.generations], fake, ["call-code", "python", "code_execution", "integration-agento11y-key"]);
+      assertPrivateValuesAbsent([gateway.stderr, metrics, observer.generations], fake, [token, url, "call-code", "call-mcp", "python", "echo", "code_execution", "integration-agento11y-key"]);
     } finally {
       await settleCleanup(...(resources ? [() => resources![1].stop(), () => resources![0].stop()] : []), () => observer.stop());
     }
@@ -1292,7 +1323,7 @@ describe("authenticated OpenAI-compatible Gateway command", () => {
         await assert.rejects(async () => {
           if (mode === "generate") await gateway.client()("compatible").doGenerate(options);
           else await gateway.client()("compatible").doStream(options);
-        }, (error: any) => error.statusCode === 400 && error.message === "protected provider option");
+        }, (error: any) => error.statusCode === 400 && error.message === "invalid request");
         assert.equal(fake.requests.length, 0);
         assert.ok(!JSON.stringify(go.error).includes("compatible-private-token"));
       }
@@ -2100,6 +2131,10 @@ class FakeAnthropic {
         : [
             { type: "server_tool_use", id: "call-code", name: "code_execution", input: { code: "1+1" } },
             { type: "code_execution_tool_result", tool_use_id: "call-code", content: { type: "code_execution_result", stdout: "2", stderr: "", return_code: 0 } },
+            ...(body.mcp_servers ? [
+              { type: "mcp_tool_use", id: "call-mcp", name: "echo", server_name: "echo", input: { message: "hello" } },
+              { type: "mcp_tool_result", tool_use_id: "call-mcp", is_error: false, content: "done" },
+            ] : []),
           ];
       if (body.stream !== true) {
         response.writeHead(200, { "Content-Type": "application/json" });

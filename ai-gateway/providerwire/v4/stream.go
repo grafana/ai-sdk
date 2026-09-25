@@ -320,7 +320,7 @@ func (h *handler) serveStream(w http.ResponseWriter, requestContext context.Cont
 	if !commitStreamResponse(w) {
 		return
 	}
-	h.runStream(w, requestContext, modelContext, cancel, outcome.result.Stream, counter, idleTimer, modelID, history)
+	h.runStream(w, requestContext, modelContext, cancel, outcome.result.Stream, counter, idleTimer, modelID, history, configuredMCPNames(options.ProviderOptions))
 }
 
 func callStream(ctx context.Context, model provider.LanguageModel, options provider.CallOptions) (outcome streamOutcome) {
@@ -425,21 +425,22 @@ type streamState struct {
 	usedIDs      map[string]struct{}
 	tools        map[string]toolStreamState
 	history      map[string]toolStreamState
+	mcpNames     map[string]bool
 }
 
-func newStreamState(limit int, history map[string]string) *streamState {
+func newStreamState(limit int, history map[string]string, mcpNames map[string]bool) *streamState {
 	capacity := limit
 	if capacity > 64 {
 		capacity = 64
 	}
-	state := &streamState{usedIDs: make(map[string]struct{}, capacity), tools: make(map[string]toolStreamState, capacity), history: make(map[string]toolStreamState, len(history))}
+	state := &streamState{usedIDs: make(map[string]struct{}, capacity), tools: make(map[string]toolStreamState, capacity), history: make(map[string]toolStreamState, len(history)), mcpNames: mcpNames}
 	for id, name := range history {
 		state.history[id] = toolStreamState{name: name, phase: toolCallEmitted}
 	}
 	return state
 }
 
-func (h *handler) runStream(w http.ResponseWriter, requestContext, modelContext context.Context, cancel context.CancelFunc, stream <-chan provider.StreamPart, counter *streamPartCounter, idleTimer *time.Timer, modelID string, history map[string]string) {
+func (h *handler) runStream(w http.ResponseWriter, requestContext, modelContext context.Context, cancel context.CancelFunc, stream <-chan provider.StreamPart, counter *streamPartCounter, idleTimer *time.Timer, modelID string, history map[string]string, mcpNames map[string]bool) {
 	part, waitResult := waitStreamPart(requestContext, modelContext, stream, counter, idleTimer.C)
 	if waitResult != streamWaitPart {
 		cancel()
@@ -483,7 +484,7 @@ func (h *handler) runStream(w http.ResponseWriter, requestContext, modelContext 
 		if h.emitStreamEvent(w, streamEvent{typeName: provider.PartStreamStart}) != streamWriteSuccess {
 			return
 		}
-		state := newStreamState(h.limits.StreamParts, history)
+		state := newStreamState(h.limits.StreamParts, history, mcpNames)
 		result := h.processStreamPart(w, state, part, modelID)
 		if h.handleStreamPartResult(w, cancel, result) {
 			return
@@ -493,7 +494,7 @@ func (h *handler) runStream(w http.ResponseWriter, requestContext, modelContext 
 		return
 	}
 
-	h.consumeStreamParts(w, requestContext, modelContext, cancel, stream, counter, idleTimer, modelID, newStreamState(h.limits.StreamParts, history))
+	h.consumeStreamParts(w, requestContext, modelContext, cancel, stream, counter, idleTimer, modelID, newStreamState(h.limits.StreamParts, history, mcpNames))
 }
 
 func (h *handler) consumeStreamParts(w http.ResponseWriter, requestContext, modelContext context.Context, cancel context.CancelFunc, stream <-chan provider.StreamPart, counter *streamPartCounter, idleTimer *time.Timer, modelID string, state *streamState) {

@@ -44,7 +44,8 @@ type unaryToolResult struct {
 }
 
 type unaryMappingContext struct {
-	history map[string]string
+	history  map[string]string
+	mcpNames map[string]bool
 }
 
 type unaryToolState struct {
@@ -117,7 +118,7 @@ func mapUnarySuccess(result *provider.GenerateResult, limit int64, contexts ...u
 				return unarySuccess{}, errInvalidUnarySuccess
 			}
 			states[part.ToolCallID] = unaryToolState{name: part.ToolName}
-			metadata, err := mapToolMetadata(part.ProviderMetadata, limit)
+			metadata, err := mapToolMetadata(part.ProviderMetadata, context.mcpNames, limit)
 			if err != nil {
 				return unarySuccess{}, errInvalidUnarySuccess
 			}
@@ -127,7 +128,7 @@ func mapUnarySuccess(result *provider.GenerateResult, limit int64, contexts ...u
 			if !exists || state.name != part.ToolName || state.final || part.ToolCallID == "" || part.ToolName == "" || !utf8.ValidString(part.ToolCallID) || !utf8.ValidString(part.ToolName) || len(part.Result) == 0 || !utf8.Valid(part.Result) || !json.Valid(part.Result) || bytes.Equal(bytes.TrimSpace(part.Result), []byte("null")) {
 				return unarySuccess{}, errInvalidUnarySuccess
 			}
-			metadata, err := mapToolMetadata(part.ProviderMetadata, limit)
+			metadata, err := mapToolMetadata(part.ProviderMetadata, context.mcpNames, limit)
 			if err != nil {
 				return unarySuccess{}, errInvalidUnarySuccess
 			}

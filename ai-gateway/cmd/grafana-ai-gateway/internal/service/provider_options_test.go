@@ -90,7 +90,7 @@ func TestBuildCatalog_SetsTheProviderOptionPolicyOfEachBackend(t *testing.T) {
 	require.NoError(t, err)
 
 	for id, want := range map[string]catalog.ProviderOptionPolicy{
-		"claude": anthropicOptionPolicy,
+		"claude": directAnthropicOptionPolicy(),
 		"local":  {Namespaces: []string{"openai-compatible", "openaiCompatible", "ollama"}},
 	} {
 		resolved, err := created.ResolveModel(context.Background(), id)
@@ -122,7 +122,7 @@ func TestBuildCatalog_MixedProviderFallbackForwardsNoOptions(t *testing.T) {
 
 	single, err := created.ResolveModel(context.Background(), "single")
 	require.NoError(t, err)
-	assert.Equal(t, anthropicOptionPolicy, single.ProviderOptions, "a single-provider model keeps its policy")
+	assert.Equal(t, directAnthropicOptionPolicy(), single.ProviderOptions, "a single-provider model keeps its policy")
 }
 
 func TestOpenAIOptionPolicy_ClassifiesEveryTypedField(t *testing.T) {
