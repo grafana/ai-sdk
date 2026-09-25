@@ -2,6 +2,7 @@ package bedrock
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"testing"
 
@@ -14,6 +15,17 @@ import (
 
 // Compile-time check that *model satisfies provider.LanguageModel.
 var _ provider.LanguageModel = (*model)(nil)
+
+func TestModel_InvalidToolDoesNotInvokeProvider(t *testing.T) {
+	requests := 0
+	model := newStubBedrockProvider(t, http.HandlerFunc(func(http.ResponseWriter, *http.Request) { requests++ }))
+	options := provider.CallOptions{Prompt: []provider.Message{provider.UserText("hello")}, Tools: []provider.Tool{{Type: provider.ToolTypeFunction, Name: "search", InputSchema: json.RawMessage(`{}`), Args: map[string]json.RawMessage{}}}}
+	_, err := model.DoGenerate(context.Background(), options)
+	require.Error(t, err)
+	_, err = model.DoStream(context.Background(), options)
+	require.Error(t, err)
+	assert.Zero(t, requests)
+}
 
 func TestModel_Identity(t *testing.T) {
 	m := New("anthropic.claude-sonnet-4-5-20250929-v1:0",
