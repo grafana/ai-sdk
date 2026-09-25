@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/stretchr/testify/assert"
@@ -133,6 +134,251 @@ func TestModel_UnaryFailures(t *testing.T) {
 			var api *provider.APICallError
 			require.ErrorAs(t, err, &api)
 			assert.False(t, api.IsRetryable)
+		})
+	}
+}
+
+type observedResponseBody struct {
+	io.ReadCloser
+	closed bool
+}
+
+func (b *observedResponseBody) Close() error {
+	b.closed = true
+	return b.ReadCloser.Close()
+}
+
+func TestModel_PostHeaderTransportFailure(t *testing.T) {
+	var calls atomic.Int32
+	const privateBody = `{"private":"sensitive-value"`
+	p := testProvider(t, func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Length", "4096")
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, privateBody)
+		w.(http.Flusher).Flush()
+		conn, _, err := w.(http.Hijacker).Hijack()
+		if err != nil {
+			t.Errorf("hijacking response: %v", err)
+			return
+		}
+		_ = conn.Close()
+	}, nil)
+	var body *observedResponseBody
+	p.client.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		resp, err := http.DefaultTransport.RoundTrip(req)
+		if err == nil {
+			body = &observedResponseBody{ReadCloser: resp.Body}
+			resp.Body = body
+		}
+		return resp, err
+	})
+	m, err := p.LanguageModel("assistant")
+	require.NoError(t, err)
+	result, err := m.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{}})
+	require.Error(t, err)
+	assert.Nil(t, result)
+	var api *provider.APICallError
+	require.ErrorAs(t, err, &api)
+	assert.Equal(t, http.StatusOK, api.StatusCode)
+	assert.True(t, api.IsRetryable)
+	assert.ErrorIs(t, err, io.ErrUnexpectedEOF)
+	assert.NotContains(t, err.Error(), privateBody)
+	assert.NotContains(t, err.Error(), "sensitive-value")
+	assert.Less(t, len(api.Message), 100)
+	require.NotNil(t, body)
+	assert.True(t, body.closed)
+	assert.Equal(t, int32(1), calls.Load())
+
+	t.Run("non-EOF body read failure", func(t *testing.T) {
+		cause := errors.New("private socket reset")
+		body := &trackedBody{Reader: &partialReadError{data: []byte(`{"partial":`), err: cause}}
+		var calls atomic.Int32
+		p, err := NewWithAccessToken(AccessTokenConfig{
+			AccessToken: "token", BaseURL: "https://example.test",
+			HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				calls.Add(1)
+				return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": {"application/json"}}, Body: body, Request: req}, nil
+			})},
+		})
+		require.NoError(t, err)
+		m, err := p.LanguageModel("assistant")
+		require.NoError(t, err)
+		result, err := m.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{}})
+		require.Error(t, err)
+		assert.Nil(t, result)
+		var api *provider.APICallError
+		require.ErrorAs(t, err, &api)
+		assert.Equal(t, http.StatusOK, api.StatusCode)
+		assert.True(t, api.IsRetryable)
+		assert.ErrorIs(t, err, cause)
+		assert.NotContains(t, err.Error(), "private socket reset")
+		assert.Less(t, len(api.Message), 100)
+		assert.True(t, body.closed)
+		assert.Equal(t, int32(1), calls.Load())
+	})
+}
+
+type partialReadError struct {
+	data   []byte
+	err    error
+	onRead func()
+}
+
+func (r *partialReadError) Read(p []byte) (int, error) {
+	n := copy(p, r.data)
+	r.data = nil
+	if r.onRead != nil {
+		r.onRead()
+	}
+	return n, r.err
+}
+
+func TestModel_UnaryProtocolFailures(t *testing.T) {
+	for _, tc := range []struct {
+		name, media, body string
+		limit             int64
+	}{
+		{name: "wrong media", media: "text/html", body: `{"private":"sensitive-value"}`},
+		{name: "malformed JSON", media: "application/json", body: `{"private":"sensitive-value"`},
+		{name: "invalid schema", media: "application/json", body: `{"private":"sensitive-value"}`},
+		{name: "byte limit", media: "application/json", body: `{"private":"sensitive-value"}`, limit: 5},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var calls atomic.Int32
+			limits := DefaultLimits()
+			if tc.limit != 0 {
+				limits.UnaryBytes = tc.limit
+			}
+			p := testProvider(t, func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				w.Header().Set("Content-Type", tc.media)
+				_, _ = io.WriteString(w, tc.body)
+			}, &limits)
+			m, err := p.LanguageModel("assistant")
+			require.NoError(t, err)
+			result, err := m.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{}})
+			require.Error(t, err)
+			assert.Nil(t, result)
+			var api *provider.APICallError
+			require.ErrorAs(t, err, &api)
+			assert.False(t, api.IsRetryable)
+			assert.Equal(t, http.StatusOK, api.StatusCode)
+			assert.Empty(t, api.ResponseBody)
+			assert.NotContains(t, err.Error(), "sensitive-value")
+			assert.Less(t, len(api.Message), 100)
+			assert.Equal(t, int32(1), calls.Load())
+		})
+	}
+}
+
+func TestModel_UnaryReadPrecedence(t *testing.T) {
+	for _, tc := range []struct {
+		name             string
+		cancelDuringRead bool
+	}{
+		{name: "limit before transport"},
+		{name: "cancellation before limit", cancelDuringRead: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			reader := &partialReadError{data: []byte("private"), err: io.ErrUnexpectedEOF}
+			if tc.cancelDuringRead {
+				reader.onRead = cancel
+			}
+			body := &trackedBody{Reader: reader}
+			limits := DefaultLimits()
+			limits.UnaryBytes = 4
+			var calls atomic.Int32
+			p, err := NewWithAccessToken(AccessTokenConfig{
+				AccessToken: "token", BaseURL: "https://example.test", Limits: &limits,
+				HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					calls.Add(1)
+					return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": {"application/json"}}, Body: body, Request: req}, nil
+				})},
+			})
+			require.NoError(t, err)
+			m, err := p.LanguageModel("assistant")
+			require.NoError(t, err)
+			result, err := m.DoGenerate(ctx, provider.CallOptions{Prompt: []provider.Message{}})
+			require.Error(t, err)
+			assert.Nil(t, result)
+			var api *provider.APICallError
+			require.ErrorAs(t, err, &api)
+			assert.Equal(t, http.StatusOK, api.StatusCode)
+			assert.False(t, api.IsRetryable)
+			if tc.cancelDuringRead {
+				assert.ErrorIs(t, err, context.Canceled)
+			} else {
+				assert.ErrorContains(t, errors.Unwrap(api), "response byte limit exceeded")
+			}
+			assert.NotErrorIs(t, err, io.ErrUnexpectedEOF)
+			assert.NotContains(t, err.Error(), "private")
+			assert.True(t, body.closed)
+			assert.Equal(t, int32(1), calls.Load())
+		})
+	}
+}
+
+func TestModel_UnaryReadCancellation(t *testing.T) {
+	for _, deadline := range []bool{false, true} {
+		name := "cancel"
+		if deadline {
+			name = "deadline"
+		}
+		t.Run(name, func(t *testing.T) {
+			var calls atomic.Int32
+			started := make(chan struct{})
+			p := testProvider(t, func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				w.(http.Flusher).Flush()
+				close(started)
+				<-r.Context().Done()
+			}, nil)
+			m, err := p.LanguageModel("assistant")
+			require.NoError(t, err)
+			var ctx context.Context
+			var cancel context.CancelFunc
+			expected := context.Canceled
+			if deadline {
+				ctx, cancel = context.WithTimeout(context.Background(), time.Second)
+				expected = context.DeadlineExceeded
+			} else {
+				ctx, cancel = context.WithCancel(context.Background())
+			}
+			defer cancel()
+			done := make(chan error, 1)
+			go func() {
+				result, err := m.DoGenerate(ctx, provider.CallOptions{Prompt: []provider.Message{}})
+				if result != nil {
+					done <- errors.New("grafana: canceled unary call returned a result")
+					return
+				}
+				done <- err
+			}()
+			select {
+			case <-started:
+			case <-time.After(3 * time.Second):
+				t.Fatal("unary response headers were not sent")
+			}
+			if !deadline {
+				cancel()
+			}
+			select {
+			case err := <-done:
+				require.ErrorIs(t, err, expected)
+				var api *provider.APICallError
+				if errors.As(err, &api) {
+					assert.False(t, api.IsRetryable)
+				}
+			case <-time.After(3 * time.Second):
+				t.Fatal("canceled unary read did not finish")
+			}
+			assert.Equal(t, int32(1), calls.Load())
 		})
 	}
 }

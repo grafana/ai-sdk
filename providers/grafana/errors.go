@@ -51,7 +51,7 @@ type wireError struct {
 }
 
 func readGatewayError(ctx context.Context, resp *http.Response, limit int64) error {
-	body, err := readJSON(ctx, resp, limit)
+	body, _, err := readJSON(ctx, resp, limit)
 	if err != nil {
 		return protocolError("grafana: invalid Gateway error response", resp.StatusCode, err)
 	}

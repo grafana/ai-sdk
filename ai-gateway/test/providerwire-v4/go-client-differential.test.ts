@@ -38,6 +38,25 @@ async function endpoint(body: string, status = 200, contentType = "application/j
   return { baseURL, requests, stop: () => new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve())) };
 }
 
+async function truncatedUnaryEndpoint() {
+  let requests = 0;
+  const partialBody = '{"private":"sensitive-value"';
+  const server = createServer((request, response) => {
+    request.resume();
+    requests++;
+    response.writeHead(200, { "content-type": "application/json", "content-length": "4096" });
+    response.flushHeaders();
+    response.write(partialBody, () => response.socket?.destroy());
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address(); assert.ok(address && typeof address !== "string");
+  return {
+    baseURL: `http://127.0.0.1:${address.port}/api/v1/aisdk`,
+    requests: () => requests,
+    stop: () => new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve())),
+  };
+}
+
 function semanticRequest(request: Captured) {
   if (request.method === "POST") assertValidRequest(request.body, "Go/TypeScript differential request");
   const names = ["x-access-token", "x-grafana-id", "x-configured", "x-call", "ai-language-model-id", "ai-language-model-specification-version", "ai-language-model-streaming", "content-type"];
@@ -116,6 +135,27 @@ describe("Go and exact-pinned Gateway differential", () => {
       }
     }
     assert.ok(classifiedOwnershipDifferences > 0, "pinned permissive header overrides differ intentionally from protected Go ownership");
+  });
+
+  it("preserves retryability for a post-header unary transport failure", async () => {
+    const server = await truncatedUnaryEndpoint();
+    try {
+      let ts: any;
+      try { await createGateway({ apiKey: "test", baseURL: server.baseURL })("assistant").doGenerate({ prompt: [] }); } catch (error) { ts = error; }
+      assert.ok(ts, "pinned client must observe a failed body read");
+      assert.equal(ts.statusCode, 200, "pinned client must observe a post-header failure");
+      assert.equal(ts.isRetryable, true, "pinned client must classify the socket failure as retryable");
+      assert.equal(server.requests(), 1);
+
+      const go = await captureGoClient(binary, { baseURL: server.baseURL, accessToken: "token", modelID: "assistant", mode: "generate", options: { prompt: [] } });
+      assert.equal(go.result, undefined);
+      assert.equal(go.error?.statusCode, 200);
+      assert.equal(go.error?.isRetryable, ts.isRetryable);
+      assert.equal(go.error?.canceled, false);
+      assert.ok(go.error.causes.some((cause: string) => cause.includes("unexpected EOF")), "Go must retain the body-read cause");
+      assert.ok(!go.error.message.includes("sensitive-value"), "public error must not expose the body");
+      assert.equal(server.requests(), 2, "neither client replays the request");
+    } finally { await server.stop(); }
   });
 
   it("preserves cancellation before I/O, during unary reads, and after the first stream part", async () => {
