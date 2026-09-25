@@ -208,10 +208,13 @@ jobs:
           version: "2026.5.4"
           experimental: true
 
-      - name: Verify standalone Gateway at the artifact revision
+      - name: Verify clean image source at the artifact revision
         run: |
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          MODULE=ai-gateway mise run verify-published-module
+          test -z "$(git status --porcelain --untracked-files=all)"
+
+      - name: Verify local workspace source in the image
+        run: mise run test-ai-gateway-image-source
 
       - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
         with:
@@ -225,7 +228,7 @@ jobs:
           --platform linux/amd64,linux/arm64
           --build-arg VCS_REF="$GITHUB_SHA"
           --output "type=oci,dest=$RUNNER_TEMP/ai-gateway.oci"
-          ai-gateway
+          -f ai-gateway/Dockerfile .
 
       - name: Build native image
         env:
@@ -385,6 +388,7 @@ jobs:
         shell: bash
         run: |
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -z "$(git status --porcelain --untracked-files=all)"
           if [[ "$GITHUB_REF" == refs/heads/main ]]; then
             tag="sha-$GITHUB_SHA"
           else
@@ -410,7 +414,7 @@ jobs:
       - name: Build and publish image
         env:
           IMAGE_TAG: ${{ steps.image.outputs.tag }}
-        run: docker buildx build --platform linux/amd64,linux/arm64 --build-arg "VCS_REF=$GITHUB_SHA" --tag "ghcr.io/grafana/ai-gateway:$IMAGE_TAG" --push ai-gateway
+        run: docker buildx build --platform linux/amd64,linux/arm64 --build-arg "VCS_REF=$GITHUB_SHA" --tag "ghcr.io/grafana/ai-gateway:$IMAGE_TAG" --push -f ai-gateway/Dockerfile .
 
       - name: Log out of GHCR
         if: always()
