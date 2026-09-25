@@ -13,6 +13,9 @@ import (
 )
 
 func (m *model) buildRequest(opts provider.CallOptions, streaming bool) (map[string]any, []provider.Warning, error) {
+	if err := provider.ValidateFileInputs(opts.Prompt); err != nil {
+		return nil, nil, fmt.Errorf("openai: invalid file input: %w", err)
+	}
 	warnings := deprecatedProviderOptionWarnings(opts.ProviderOptions, m.providerName)
 
 	openAIOpts, err := readOpenAIOptions(opts.ProviderOptions, m.providerName)
@@ -542,7 +545,7 @@ func convertFileContent(part provider.ContentPart) (chatContentPart, error) {
 	switch topLevel {
 	case "image":
 		resolvedMediaType := mediaType(part.MediaType)
-		if part.Data.URL == "" {
+		if !part.Data.IsURL() {
 			var err error
 			resolvedMediaType, err = resolveFullMediaType(part)
 			if err != nil {
@@ -555,7 +558,7 @@ func convertFileContent(part provider.ContentPart) (chatContentPart, error) {
 		}
 		return chatContentPart{Type: "image_url", ImageURL: &imageURLPart{URL: url}}, nil
 	case "audio":
-		if part.Data.URL != "" {
+		if part.Data.IsURL() {
 			return chatContentPart{}, fmt.Errorf("openai: audio file URL parts are not supported")
 		}
 		resolvedMediaType, err := resolveFullMediaType(part)
@@ -572,7 +575,7 @@ func convertFileContent(part provider.ContentPart) (chatContentPart, error) {
 		}
 		return chatContentPart{Type: "input_audio", InputAudio: &inputAudioPart{Data: data, Format: format}}, nil
 	case "application":
-		if part.Data.URL != "" {
+		if part.Data.IsURL() {
 			return chatContentPart{}, fmt.Errorf("openai: PDF file URL parts are not supported")
 		}
 		resolvedMediaType, err := resolveFullMediaType(part)
@@ -586,13 +589,13 @@ func convertFileContent(part provider.ContentPart) (chatContentPart, error) {
 		if err != nil {
 			return chatContentPart{}, err
 		}
-		filename := part.Filename
-		if filename == "" {
-			filename = "document.pdf"
+		filename := "document.pdf"
+		if part.Filename != nil {
+			filename = *part.Filename
 		}
 		return chatContentPart{
 			Type: "file",
-			File: &filePart{Filename: filename, FileData: "data:application/pdf;base64," + data},
+			File: &filePart{Filename: &filename, FileData: "data:application/pdf;base64," + data},
 		}, nil
 	case "text":
 		text, err := textFileContent(part.Data)
@@ -654,7 +657,7 @@ func resolveFullMediaType(part provider.ContentPart) (string, error) {
 	if isFullMediaType(mt) {
 		return mt, nil
 	}
-	if part.Data == nil || part.Data.URL != "" {
+	if part.Data == nil || part.Data.IsURL() {
 		return "", fmt.Errorf("openai: file of media type %q must specify subtype since it is not passed as inline bytes", part.MediaType)
 	}
 	if detected := detectMediaType(part.Data, topLevelMediaType(part.MediaType)); detected != "" {
@@ -684,7 +687,7 @@ func audioFormat(value string) string {
 }
 
 func dataURL(mediaType string, data *provider.DataContent) (string, error) {
-	if data.URL != "" {
+	if data.IsURL() {
 		return data.URL, nil
 	}
 	encoded, err := base64Data(data)
@@ -696,9 +699,9 @@ func dataURL(mediaType string, data *provider.DataContent) (string, error) {
 
 func base64Data(data *provider.DataContent) (string, error) {
 	switch {
-	case len(data.Bytes) > 0:
+	case data.Bytes != nil:
 		return base64.StdEncoding.EncodeToString(data.Bytes), nil
-	case data.Base64 != "":
+	case data.IsData():
 		return data.Base64, nil
 	default:
 		return "", fmt.Errorf("openai: expected binary data")
@@ -707,11 +710,11 @@ func base64Data(data *provider.DataContent) (string, error) {
 
 func textFileContent(data *provider.DataContent) (string, error) {
 	switch {
-	case data.URL != "":
+	case data.IsURL():
 		return data.URL, nil
-	case len(data.Bytes) > 0:
+	case data.Bytes != nil:
 		return string(data.Bytes), nil
-	case data.Base64 != "":
+	case data.IsData():
 		decoded, err := base64.StdEncoding.DecodeString(data.Base64)
 		if err != nil {
 			return "", fmt.Errorf("openai: decoding text file base64: %w", err)

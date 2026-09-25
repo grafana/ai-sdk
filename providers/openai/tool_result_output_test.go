@@ -153,6 +153,40 @@ func TestBuildParams_FunctionResultMultipart(t *testing.T) {
 	}
 }
 
+func TestBuildParams_FunctionResultFilenamePresence(t *testing.T) {
+	for _, namespace := range []string{"openai", "azure"} {
+		for _, tc := range []struct {
+			name     string
+			filename *string
+			data     provider.DataContent
+			wantName string
+			wantData string
+		}{
+			{name: "absent", data: provider.BytesDataContent([]byte("doc")), wantName: "data", wantData: "data:application/pdf;base64,ZG9j"},
+			{name: "empty", filename: new(""), data: provider.Base64DataContent(""), wantName: "", wantData: "data:application/pdf;base64,"},
+			{name: "named", filename: new("report.pdf"), data: provider.BytesDataContent([]byte("doc")), wantName: "report.pdf", wantData: "data:application/pdf;base64,ZG9j"},
+		} {
+			t.Run(namespace+"/"+tc.name, func(t *testing.T) {
+				part := provider.ToolResultPart("call_1", "search", &provider.ToolResultOutput{
+					Type: provider.ToolOutputContent,
+					Content: []provider.ToolResultContentValue{{
+						Type: provider.ToolContentFile, MediaType: "application/pdf", Data: &tc.data, Filename: tc.filename,
+					}},
+				})
+				body, warnings := resultBody(t, namespace, provider.CallOptions{Prompt: []provider.Message{provider.NewToolMessage(part)}})
+				assert.Empty(t, warnings)
+				item := body["input"].([]any)[0].(map[string]any)
+				content := item["output"].([]any)
+				require.Len(t, content, 1)
+				file := content[0].(map[string]any)
+				assert.Equal(t, "input_file", file["type"])
+				assert.Equal(t, tc.wantName, file["filename"])
+				assert.Equal(t, tc.wantData, file["file_data"])
+			})
+		}
+	}
+}
+
 func TestBuildParams_FunctionResultMediaType(t *testing.T) {
 	part := provider.ToolResultPart("call_1", "search", &provider.ToolResultOutput{Type: provider.ToolOutputContent, Content: []provider.ToolResultContentValue{
 		{Type: provider.ToolContentFile, Data: &provider.DataContent{Bytes: []byte("hello")}, MediaType: "text/plain; charset=utf-8"},

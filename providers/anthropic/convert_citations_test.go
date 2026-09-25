@@ -24,7 +24,7 @@ func TestExtractCitationDocuments(t *testing.T) {
 			provider.Message{Role: provider.RoleUser, Content: []provider.ContentPart{
 				provider.ContentPart{Type: provider.ContentPartTypeFile,
 					MediaType:       "application/pdf",
-					Filename:        "report.pdf",
+					Filename:        new("report.pdf"),
 					Data:            &provider.DataContent{Base64: "abc"},
 					ProviderOptions: citationOpts(true),
 				},
@@ -42,7 +42,7 @@ func TestExtractCitationDocuments(t *testing.T) {
 			provider.Message{Role: provider.RoleUser, Content: []provider.ContentPart{
 				provider.ContentPart{Type: provider.ContentPartTypeFile,
 					MediaType:       "text/plain",
-					Filename:        "notes.txt",
+					Filename:        new("notes.txt"),
 					Data:            &provider.DataContent{Base64: "abc"},
 					ProviderOptions: citationOpts(true),
 				},
@@ -59,7 +59,7 @@ func TestExtractCitationDocuments(t *testing.T) {
 			provider.Message{Role: provider.RoleUser, Content: []provider.ContentPart{
 				provider.ContentPart{Type: provider.ContentPartTypeFile,
 					MediaType: "application/pdf",
-					Filename:  "report.pdf",
+					Filename:  new("report.pdf"),
 					Data:      &provider.DataContent{Base64: "abc"},
 				},
 			}},
@@ -73,7 +73,7 @@ func TestExtractCitationDocuments(t *testing.T) {
 			provider.Message{Role: provider.RoleUser, Content: []provider.ContentPart{
 				provider.ContentPart{Type: provider.ContentPartTypeFile,
 					MediaType:       "application/pdf",
-					Filename:        "report.pdf",
+					Filename:        new("report.pdf"),
 					Data:            &provider.DataContent{Base64: "abc"},
 					ProviderOptions: citationOpts(false),
 				},
@@ -88,7 +88,7 @@ func TestExtractCitationDocuments(t *testing.T) {
 			provider.Message{Role: provider.RoleUser, Content: []provider.ContentPart{
 				provider.ContentPart{Type: provider.ContentPartTypeFile,
 					MediaType:       "image/png",
-					Filename:        "photo.png",
+					Filename:        new("photo.png"),
 					Data:            &provider.DataContent{Base64: "abc"},
 					ProviderOptions: citationOpts(true),
 				},
@@ -119,13 +119,13 @@ func TestExtractCitationDocuments(t *testing.T) {
 			provider.Message{Role: provider.RoleUser, Content: []provider.ContentPart{
 				provider.ContentPart{Type: provider.ContentPartTypeFile,
 					MediaType:       "application/pdf",
-					Filename:        "first.pdf",
+					Filename:        new("first.pdf"),
 					Data:            &provider.DataContent{Base64: "abc"},
 					ProviderOptions: citationOpts(true),
 				},
 				provider.ContentPart{Type: provider.ContentPartTypeFile,
 					MediaType:       "text/plain",
-					Filename:        "second.txt",
+					Filename:        new("second.txt"),
 					Data:            &provider.DataContent{Base64: "abc"},
 					ProviderOptions: citationOpts(true),
 				},
@@ -133,7 +133,7 @@ func TestExtractCitationDocuments(t *testing.T) {
 			provider.Message{Role: provider.RoleUser, Content: []provider.ContentPart{
 				provider.ContentPart{Type: provider.ContentPartTypeFile,
 					MediaType:       "application/pdf",
-					Filename:        "third.pdf",
+					Filename:        new("third.pdf"),
 					Data:            &provider.DataContent{Base64: "abc"},
 					ProviderOptions: citationOpts(true),
 				},
@@ -162,7 +162,7 @@ func TestExtractCitationDocuments(t *testing.T) {
 			provider.Message{Role: provider.RoleUser, Content: []provider.ContentPart{
 				provider.ContentPart{Type: provider.ContentPartTypeFile,
 					MediaType:       "application/pdf",
-					Filename:        "empty.pdf",
+					Filename:        new("empty.pdf"),
 					ProviderOptions: citationOpts(true),
 				},
 			}},
@@ -176,12 +176,12 @@ func TestExtractCitationDocuments(t *testing.T) {
 			provider.Message{Role: provider.RoleUser, Content: []provider.ContentPart{
 				provider.ContentPart{Type: provider.ContentPartTypeFile,
 					MediaType:       "application/pdf",
-					Filename:        "empty.pdf",
+					Filename:        new("empty.pdf"),
 					ProviderOptions: citationOpts(true),
 				},
 				provider.ContentPart{Type: provider.ContentPartTypeFile,
 					MediaType:       "application/pdf",
-					Filename:        "valid.pdf",
+					Filename:        new("valid.pdf"),
 					Data:            &provider.DataContent{Base64: "abc"},
 					ProviderOptions: citationOpts(true),
 				},

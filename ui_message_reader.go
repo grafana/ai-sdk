@@ -205,7 +205,7 @@ func (s *uiMessageReaderState) apply(chunk UIMessageChunk) (bool, error) {
 		s.message.Parts = append(s.message.Parts, FilePart{
 			MediaType:        chunk.MediaType,
 			URL:              chunk.URL,
-			Filename:         chunk.Filename,
+			Filename:         optionalInputFilename(chunk.Filename),
 			ProviderMetadata: cloneProviderMetadata(chunk.ProviderMetadata),
 		})
 		return true, nil

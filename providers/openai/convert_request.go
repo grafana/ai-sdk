@@ -43,6 +43,9 @@ func buildParams(modelID string, opts provider.CallOptions) (responses.ResponseN
 }
 
 func buildParamsForProvider(modelID string, opts provider.CallOptions, providerOptionsName string) (responses.ResponseNewParams, []provider.Warning, buildResult, error) {
+	if err := provider.ValidateFileInputs(opts.Prompt); err != nil {
+		return responses.ResponseNewParams{}, nil, buildResult{}, fmt.Errorf("openai: invalid file input: %w", err)
+	}
 	var warnings []provider.Warning
 
 	caps := getModelCapabilities(modelID)

@@ -33,6 +33,9 @@ func buildRequest(modelID string, opts provider.CallOptions) (*converseInput, []
 func buildRequestWithFamily(modelID string, family ModelFamily, opts provider.CallOptions) (*converseInput, []provider.Warning, requestMeta, error) {
 	var warnings []provider.Warning
 	meta := requestMeta{isMistral: isMistralModel(modelID)}
+	if err := provider.ValidateFileInputs(opts.Prompt); err != nil {
+		return nil, warnings, meta, fmt.Errorf("bedrock: invalid file input: %w", err)
+	}
 
 	// Resolve Bedrock provider options (legacy `bedrock` key honored). A
 	// malformed option is a hard error (matching the anthropic provider).

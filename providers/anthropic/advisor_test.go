@@ -185,7 +185,7 @@ func TestBuildParams_ReferencedAnthropicFiles(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			part := provider.FilePart(tc.mediaType, provider.DataContent{Reference: json.RawMessage(`{"anthropic":"` + tc.fileID + `"}`)})
-			part.Filename = "report.pdf"
+			part.Filename = new("report.pdf")
 			part.ProviderOptions = tc.providerOptions
 			params, _, warnings, _, err := buildParams("claude-3-haiku-20240307", provider.CallOptions{
 				Prompt: []provider.Message{provider.NewUserMessage(part)},
@@ -205,10 +205,11 @@ func TestBuildParams_ReferencedAnthropicFileRequiresProviderID(t *testing.T) {
 	tests := []struct {
 		name      string
 		reference json.RawMessage
+		want      string
 	}{
-		{name: "different provider", reference: json.RawMessage(`{"openai":"file-123"}`)},
-		{name: "null ID", reference: json.RawMessage(`{"anthropic":null}`)},
-		{name: "malformed", reference: json.RawMessage(`{"anthropic":`)},
+		{name: "different provider", reference: json.RawMessage(`{"openai":"file-123"}`), want: "no provider reference found for provider anthropic"},
+		{name: "null ID", reference: json.RawMessage(`{"anthropic":null}`), want: "invalid file reference value"},
+		{name: "malformed", reference: json.RawMessage(`{"anthropic":`), want: "invalid file reference object"},
 	}
 
 	for _, tc := range tests {
@@ -217,7 +218,7 @@ func TestBuildParams_ReferencedAnthropicFileRequiresProviderID(t *testing.T) {
 			_, _, _, _, err := buildParams("claude-3-haiku-20240307", provider.CallOptions{
 				Prompt: []provider.Message{provider.NewUserMessage(part)},
 			}, true)
-			require.ErrorContains(t, err, "no provider reference found for provider anthropic")
+			require.ErrorContains(t, err, tc.want)
 			if tc.name == "different provider" {
 				require.ErrorContains(t, err, "available providers: openai")
 			}

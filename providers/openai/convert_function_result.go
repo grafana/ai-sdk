@@ -88,9 +88,9 @@ func convertFunctionResultOutput(part provider.ContentPart, ctx inputConversionC
 					item := responses.ResponseInputImageContentParam{ImageURL: param.NewOpt(uri)}
 					appendFunctionResultImage(&content, item, options)
 				} else {
-					filename := value.Filename
-					if filename == "" {
-						filename = "data"
+					filename := "data"
+					if value.Filename != nil {
+						filename = *value.Filename
 					}
 					item := responses.ResponseInputFileContentParam{FileData: param.NewOpt(uri), Filename: param.NewOpt(filename)}
 					appendFunctionResultFile(&content, item, options)

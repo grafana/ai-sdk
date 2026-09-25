@@ -74,8 +74,8 @@ type inputAudioPart struct {
 }
 
 type filePart struct {
-	Filename string `json:"filename,omitempty"`
-	FileData string `json:"file_data"`
+	Filename *string `json:"filename,omitempty"`
+	FileData string  `json:"file_data"`
 }
 
 type chatTool struct {
