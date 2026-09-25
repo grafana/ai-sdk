@@ -7,7 +7,7 @@ The repository SHALL provide a separately selected Go workspace containing Gatew
 - **WHEN** coordinated source changes affect SDK and Gateway and required checks run
 - **THEN** Go tests and cross-language binaries SHALL execute the candidate implementations, not merely report local paths from `go list`
 
-#### Scenario: Standalone production build
+#### Scenario: Isolated Gateway validation
 - **WHEN** Gateway artifact validation or a production image build runs
 - **THEN** Go SHALL resolve declared versions with `GOWORK=off`, readonly manifests and no workspace substitutions
 
@@ -22,9 +22,13 @@ A structural check SHALL retain the AGPL Gateway / Apache SDK license and module
 - **WHEN** tracked source or a manifest outside `ai-gateway/` references Gateway, including in a nested module
 - **THEN** the structural check SHALL fail in any validation mode
 
-#### Scenario: Gateway-absent candidate source
+#### Scenario: SDK and Grafana source independence
 - **WHEN** the independent source-absence check runs
 - **THEN** candidate SDK root and Grafana client SHALL build and test with Gateway absent without needing compatibility with an older published root pin
+
+#### Scenario: Structural check without standalone tests
+- **WHEN** the structural boundary check runs
+- **THEN** it SHALL report boundary violations independently of public-proxy build/test execution
 
 ### Requirement: Selectable published-module standalone validation
 The repository SHALL retain one-module and all-published-module standalone commands using a public Go proxy, clean module cache, `GOWORK=off`, readonly manifests, dependency download/verification, build/test and no committed local replacements. Inventory SHALL use tracked nested `go.mod` roots and declared paths. Unknown or local-only example/test selection SHALL fail. These commands SHALL be callable on demand; selected Gateway validation SHALL block artifact publication, but all-module standalone results SHALL NOT block ordinary source PRs.
