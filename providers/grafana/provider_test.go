@@ -215,7 +215,7 @@ func TestCloudAuth_InvalidFileNeverAuthenticatesOrSends(t *testing.T) {
 		calls.Add(1)
 	}))
 	defer server.Close()
-	p, err := NewWithCloudAuth(CloudAuthConfig{
+	p, err := NewWithTokenExchange(TokenExchangeConfig{
 		CAPToken: "cap", Namespace: "stacks-1", BaseURL: server.URL + "/api",
 		TokenExchangeURL: server.URL + "/exchange", HTTPClient: server.Client(),
 	})
