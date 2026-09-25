@@ -163,9 +163,9 @@ func getModelCapabilities(modelID string) modelCapabilities {
 		return modelCapabilities{maxOutputTokens: 64000, supportsStructuredOutput: true, isKnownModel: true}
 	case strings.Contains(modelID, "claude-opus-4-1"):
 		return modelCapabilities{maxOutputTokens: 32000, supportsStructuredOutput: true, isKnownModel: true}
-	case strings.Contains(modelID, "claude-sonnet-4-"):
+	case strings.Contains(modelID, "claude-sonnet-4-") || strings.Contains(modelID, "claude-sonnet-4@"):
 		return modelCapabilities{maxOutputTokens: 64000, isKnownModel: true}
-	case strings.Contains(modelID, "claude-opus-4-"):
+	case strings.Contains(modelID, "claude-opus-4-") || strings.Contains(modelID, "claude-opus-4@"):
 		return modelCapabilities{maxOutputTokens: 32000, isKnownModel: true}
 	case strings.Contains(modelID, "claude-3-haiku"):
 		return modelCapabilities{maxOutputTokens: 4096, isKnownModel: true}
