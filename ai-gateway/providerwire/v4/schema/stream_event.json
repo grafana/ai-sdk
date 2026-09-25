@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://grafana.com/ai-sdk/providerwire/v4/stream-event.schema.json",
-  "title": "ProviderWire V4 strict streaming text and function-tool event",
+  "title": "ProviderWire V4 strict streaming text and tool event",
   "oneOf": [
     { "$ref": "#/$defs/streamStart" },
     { "$ref": "#/$defs/responseMetadata" },
@@ -17,29 +17,66 @@
     { "$ref": "#/$defs/error" }
   ],
   "$defs": {
+    "toolMetadata": {
+      "type": "object",
+      "properties": {
+        "anthropic": {
+          "type": "object",
+          "properties": {
+            "type": { "const": "mcp-tool-use" },
+            "serverName": { "type": "string", "minLength": 1 },
+            "caller": { "$ref": "#/$defs/anthropicCaller" }
+          },
+          "dependentRequired": { "type": ["serverName"], "serverName": ["type"] },
+          "additionalProperties": false
+        },
+        "openai": { "$ref": "#/$defs/openaiToolMetadata" },
+        "azure": { "$ref": "#/$defs/openaiToolMetadata" }
+      },
+      "additionalProperties": false
+    },
+    "anthropicCaller": {
+      "type": "object", "required": ["type"],
+      "properties": { "type": { "enum": ["direct", "code_execution_20250825", "code_execution_20260120"] }, "toolId": { "type": "string" } },
+      "additionalProperties": false
+    },
+    "openaiToolMetadata": {
+      "type": "object",
+      "properties": {
+        "itemId": { "type": "string" },
+        "namespace": { "type": "string" },
+        "caller": { "$ref": "#/$defs/openaiCaller" }
+      },
+      "additionalProperties": false
+    },
+    "openaiCaller": {
+      "type": "object", "required": ["type"],
+      "properties": { "type": { "enum": ["direct", "program"] }, "callerId": { "type": "string" } },
+      "additionalProperties": false
+    },
     "toolInputStart": {
       "type": "object", "required": ["type", "id", "toolName"],
-      "properties": {"type": {"const": "tool-input-start"}, "id": {"type": "string", "minLength": 1}, "toolName": {"type": "string", "minLength": 1}},
+      "properties": {"type": {"const": "tool-input-start"}, "id": {"type": "string", "minLength": 1}, "toolName": {"type": "string", "minLength": 1}, "providerExecuted": {"type": "boolean"}, "dynamic": {"type": "boolean"}, "providerMetadata": {"$ref": "#/$defs/toolMetadata"}},
       "additionalProperties": false
     },
     "toolInputDelta": {
       "type": "object", "required": ["type", "id", "delta"],
-      "properties": {"type": {"const": "tool-input-delta"}, "id": {"type": "string", "minLength": 1}, "delta": {"type": "string"}},
+      "properties": {"type": {"const": "tool-input-delta"}, "id": {"type": "string", "minLength": 1}, "delta": {"type": "string"}, "providerMetadata": {"$ref": "#/$defs/toolMetadata"}},
       "additionalProperties": false
     },
     "toolInputEnd": {
       "type": "object", "required": ["type", "id"],
-      "properties": {"type": {"const": "tool-input-end"}, "id": {"type": "string", "minLength": 1}},
+      "properties": {"type": {"const": "tool-input-end"}, "id": {"type": "string", "minLength": 1}, "providerMetadata": {"$ref": "#/$defs/toolMetadata"}},
       "additionalProperties": false
     },
     "toolCall": {
       "type": "object", "required": ["type", "toolCallId", "toolName", "input"],
-      "properties": {"type": {"const": "tool-call"}, "toolCallId": {"type": "string", "minLength": 1}, "toolName": {"type": "string", "minLength": 1}, "input": {"type": "string"}},
+      "properties": {"type": {"const": "tool-call"}, "toolCallId": {"type": "string", "minLength": 1}, "toolName": {"type": "string", "minLength": 1}, "input": {"type": "string"}, "providerExecuted": {"type": "boolean"}, "dynamic": {"type": "boolean"}, "providerMetadata": {"$ref": "#/$defs/toolMetadata"}},
       "additionalProperties": false
     },
     "toolResult": {
       "type": "object", "required": ["type", "toolCallId", "toolName", "result"],
-      "properties": {"type": {"const": "tool-result"}, "toolCallId": {"type": "string", "minLength": 1}, "toolName": {"type": "string", "minLength": 1}, "result": {"not": {"type": "null"}}, "isError": {"type": "boolean"}},
+      "properties": {"type": {"const": "tool-result"}, "toolCallId": {"type": "string", "minLength": 1}, "toolName": {"type": "string", "minLength": 1}, "result": {"not": {"type": "null"}}, "isError": {"type": "boolean"}, "dynamic": {"type": "boolean"}, "preliminary": {"type": "boolean"}, "providerMetadata": {"$ref": "#/$defs/toolMetadata"}},
       "additionalProperties": false
     },
     "streamStart": {

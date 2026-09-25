@@ -56,7 +56,14 @@ action completes.
 
 Some providers also supply provider-executed tools such as web search or code
 execution. Those are configured through the provider package and run by the
-provider, not by your `Execute` function.
+provider, not by your `Execute` function. A provider-defined tool may instead
+return a client-executed call; inspect `ProviderExecuted` on the call rather
+than inferring ownership from its definition. Provider-tool definitions carry
+only an ID, name and args object, not function-only fields or definition-level
+provider options. Go callers may use nil args for an empty object; a serialized
+Gateway request must contain `args: {}`. Preliminary provider results replace
+earlier previews only after the final result arrives; do not treat a preview
+as a completed tool execution.
 
 ## Validate and limit tools
 

@@ -82,12 +82,14 @@ func TestProviderOptions_ProtectedFieldIsRejectedAtEveryLevel(t *testing.T) {
 	// Every level maps through mapWireProviderOptions, so each call site is
 	// covered: a per-level shortcut would otherwise regress two of them silently.
 	for name, body := range map[string]string{
-		"call level":    `{"prompt":[],"providerOptions":{"ns":{"model":"someone-elses-model"}}}`,
-		"message level": `{"prompt":[{"role":"user","content":[{"type":"text","text":"hi"}],"providerOptions":{"ns":{"messages":[]}}}]}`,
-		"system level":  `{"prompt":[{"role":"system","content":"hi","providerOptions":{"ns":{"tools":[]}}}]}`,
-		"part level":    `{"prompt":[{"role":"user","content":[{"type":"text","text":"hi","providerOptions":{"ns":{"response_format":{"type":"json_schema"}}}}]}]}`,
-		"part type":     `{"prompt":[{"role":"user","content":[{"type":"text","text":"hi","providerOptions":{"openaiCompatible":{"type":"image_url","image_url":{"url":"https://caller.example/x.png"}}}}]}]}`,
-		"message role":  `{"prompt":[{"role":"user","content":[{"type":"text","text":"hi"}],"providerOptions":{"openaiCompatible":{"role":"tool","tool_call_id":"call_1"}}}]}`,
+		"call level":       `{"prompt":[],"providerOptions":{"ns":{"model":"someone-elses-model"}}}`,
+		"message level":    `{"prompt":[{"role":"user","content":[{"type":"text","text":"hi"}],"providerOptions":{"ns":{"messages":[]}}}]}`,
+		"system level":     `{"prompt":[{"role":"system","content":"hi","providerOptions":{"ns":{"tools":[]}}}]}`,
+		"part level":       `{"prompt":[{"role":"user","content":[{"type":"text","text":"hi","providerOptions":{"ns":{"response_format":{"type":"json_schema"}}}}]}]}`,
+		"part type":        `{"prompt":[{"role":"user","content":[{"type":"text","text":"hi","providerOptions":{"openaiCompatible":{"type":"image_url","image_url":{"url":"https://caller.example/x.png"}}}}]}]}`,
+		"tool call part":   `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"c1","toolName":"f","input":{},"providerOptions":{"openaiCompatible":{"content":[{"type":"image_url"}]}}}]}]}`,
+		"tool result part": `{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"c1","toolName":"f","output":{"type":"json","value":{}},"providerOptions":{"openaiCompatible":{"model":"other"}}}]}]}`,
+		"message role":     `{"prompt":[{"role":"user","content":[{"type":"text","text":"hi"}],"providerOptions":{"openaiCompatible":{"role":"tool","tool_call_id":"call_1"}}}]}`,
 		// A content array carries image and file parts underneath the top-level
 		// field checks, which is how it reinstates what the runtime refused.
 		"message content": `{"prompt":[{"role":"user","content":[{"type":"text","text":"hi"}],"providerOptions":{"openaiCompatible":{"content":[{"type":"image_url","image_url":{"url":"https://caller.example/x.png"}}]}}}]}`,

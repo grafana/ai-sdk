@@ -208,28 +208,28 @@ func mapWirePart(part wirePart, role provider.Role, toolsEnabled bool) (provider
 	case provider.ContentPartTypeCustom:
 		return provider.ContentPart{}, unsupportedMappingFailure(capabilityCustomContent)
 	case provider.ContentPartTypeToolCall:
-		if !toolsEnabled || part.ProviderExecuted {
+		if !toolsEnabled {
 			return provider.ContentPart{}, unsupportedMappingFailure(capabilityTools)
 		}
 		if role != provider.RoleAssistant {
 			return provider.ContentPart{}, invalidMappingFailure()
 		}
-		partOptions, failure := mapWireProviderOptions(part.ProviderOptions)
+		partOptions, failure := mapToolPartOptions(part.ProviderOptions)
 		if failure != nil {
 			return provider.ContentPart{}, failure
 		}
 		call := provider.ToolCallPart(part.ToolCallID, part.ToolName, part.Input)
-		call.ProviderOptions = partOptions
+		call.ProviderExecuted, call.ProviderOptions = part.ProviderExecuted, partOptions
 		return call, nil
 	case provider.ContentPartTypeToolResult:
-		if !toolsEnabled || role != provider.RoleTool {
+		if !toolsEnabled || role != provider.RoleTool && role != provider.RoleAssistant {
 			return provider.ContentPart{}, unsupportedMappingFailure(capabilityTools)
 		}
 		output, failure := mapToolOutput(part.Output)
 		if failure != nil {
 			return provider.ContentPart{}, failure
 		}
-		partOptions, failure := mapWireProviderOptions(part.ProviderOptions)
+		partOptions, failure := mapToolPartOptions(part.ProviderOptions)
 		if failure != nil {
 			return provider.ContentPart{}, failure
 		}
@@ -241,6 +241,31 @@ func mapWirePart(part wirePart, role provider.Role, toolsEnabled bool) (provider
 	default:
 		return provider.ContentPart{}, invalidMappingFailure()
 	}
+}
+
+func mapToolPartOptions(values map[string]json.RawMessage) (provider.ProviderOptions, *requestFailure) {
+	if _, reserved := values["gateway"]; reserved {
+		return nil, unsupportedMappingFailure(capabilityProviderOptions)
+	}
+	if _, reserved := values["grafana-ai-sdk"]; reserved {
+		return nil, unsupportedMappingFailure(capabilityProviderOptions)
+	}
+	if raw, exists := values["anthropic"]; exists {
+		members, valid := jsonObject(raw)
+		if !valid {
+			return nil, invalidMappingFailure()
+		}
+		if kind, exists := members["type"]; exists {
+			var value string
+			if json.Unmarshal(kind, &value) != nil {
+				return nil, invalidMappingFailure()
+			}
+			if value == "mcp-tool-use" {
+				return nil, unsupportedMappingFailure(capabilityProviderOptions)
+			}
+		}
+	}
+	return mapWireProviderOptions(values)
 }
 
 // ReservedProviderOptionNamespace is the provider-option namespace the host

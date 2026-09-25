@@ -17,6 +17,13 @@ type wireFunctionTool struct {
 	ProviderOptions map[string]json.RawMessage `json:"providerOptions"`
 }
 
+type wireProviderTool struct {
+	Type provider.ToolType          `json:"type"`
+	ID   string                     `json:"id"`
+	Name string                     `json:"name"`
+	Args map[string]json.RawMessage `json:"args"`
+}
+
 type wireInputExample struct {
 	Input json.RawMessage `json:"input"`
 }
@@ -33,12 +40,26 @@ type wireToolOutput struct {
 func mapFunctionTools(rawTools []json.RawMessage, rawChoice json.RawMessage) ([]provider.Tool, *provider.ToolChoice, *requestFailure) {
 	tools := make([]provider.Tool, 0, len(rawTools))
 	for _, raw := range rawTools {
+		var kind struct {
+			Type provider.ToolType `json:"type"`
+		}
+		if json.Unmarshal(raw, &kind) != nil {
+			return nil, nil, invalidMappingFailure()
+		}
+		if kind.Type == provider.ToolTypeProvider {
+			var wire wireProviderTool
+			if json.Unmarshal(raw, &wire) != nil || wire.Args == nil {
+				return nil, nil, invalidMappingFailure()
+			}
+			tools = append(tools, provider.Tool{Type: wire.Type, ID: wire.ID, Name: wire.Name, Args: wire.Args})
+			continue
+		}
+		if kind.Type != provider.ToolTypeFunction {
+			return nil, nil, unsupportedMappingFailure(capabilityTools)
+		}
 		var wire wireFunctionTool
 		if json.Unmarshal(raw, &wire) != nil {
 			return nil, nil, invalidMappingFailure()
-		}
-		if wire.Type != provider.ToolTypeFunction {
-			return nil, nil, unsupportedMappingFailure(capabilityTools)
 		}
 		if trimmed := bytes.TrimSpace(wire.InputSchema); len(trimmed) == 0 || trimmed[0] != '{' {
 			return nil, nil, unsupportedMappingFailure(capabilityTools)
