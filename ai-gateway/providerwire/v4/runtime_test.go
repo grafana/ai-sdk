@@ -132,7 +132,7 @@ type runtimeHarness struct {
 // harnessOptionPolicy forwards the namespaces these tests send, so tests about
 // mapping are not also tests about the policy. Policy tests set their own.
 var harnessOptionPolicy = catalog.ProviderOptionPolicy{
-	Namespaces: []string{"call", "message", "part", "ns", "example", "p", "Grafana", "anthropic", "openaiCompatible"},
+	Namespaces: []string{"call", "message", "part", "ns", "example", "p", "provider", "Grafana", "anthropic", "openaiCompatible"},
 }
 
 func newRuntimeHarness(t *testing.T, limits Limits) *runtimeHarness {
@@ -476,10 +476,9 @@ func TestRuntimeFileValidationBeforeInvocation(t *testing.T) {
 		{name: "reference nonstring value", body: `{"prompt":[{"role":"user","content":[{"type":"file","data":{"type":"reference","reference":{"provider":1}},"mediaType":"application/pdf"}]}]}`},
 		{name: "tool role ordinary file", body: `{"prompt":[{"role":"tool","content":[{"type":"file","data":{"type":"text","text":""},"mediaType":"text/plain"}]}]}`},
 		{name: "reasoning file text arm", body: `{"prompt":[{"role":"assistant","content":[{"type":"reasoning-file","data":{"type":"text","text":""},"mediaType":"text/plain"}]}]}`},
-		{name: "reserved message option", body: `{"prompt":[{"role":"user","content":[],"providerOptions":{"gateway":{}}}]}`, want: unsupportedProviderOptionsError},
-		{name: "reserved file option", body: `{"prompt":[{"role":"user","content":[{"type":"file","data":{"type":"data","data":""},"mediaType":"image/png","providerOptions":{"grafana":{}}}]}]}`, want: unsupportedProviderOptionsError},
-		{name: "reserved result file option", body: `{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"call","toolName":"tool","output":{"type":"content","value":[{"type":"file","data":{"type":"text","text":""},"mediaType":"text/plain","providerOptions":{"grafana-ai-sdk":{}}}]}}]}]}`, want: unsupportedProviderOptionsError},
-		{name: "deferred text part options", body: `{"prompt":[{"role":"user","content":[{"type":"text","text":"ok","providerOptions":{"provider":{"private":true}}}]}]}`, want: unsupportedProviderOptionsError},
+		{name: "reserved message option", body: `{"prompt":[{"role":"user","content":[],"providerOptions":{"gateway":{}}}]}`, want: reservedProviderOptionsError},
+		{name: "reserved file option", body: `{"prompt":[{"role":"user","content":[{"type":"file","data":{"type":"data","data":""},"mediaType":"image/png","providerOptions":{"grafana":{}}}]}]}`, want: reservedProviderOptionsError},
+		{name: "reserved result file option", body: `{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"call","toolName":"tool","output":{"type":"content","value":[{"type":"file","data":{"type":"text","text":""},"mediaType":"text/plain","providerOptions":{"grafana-ai-sdk":{}}}]}}]}]}`, want: reservedProviderOptionsError},
 		{name: "deferred tool output options", body: `{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"call","toolName":"tool","output":{"type":"content","value":[{"type":"file","data":{"type":"text","text":""},"mediaType":"text/plain"}],"providerOptions":{"provider":{"private":true}}}}]}]}`, want: canonicalInvalidRequestError},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
