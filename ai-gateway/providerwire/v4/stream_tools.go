@@ -42,7 +42,7 @@ type toolStreamState struct {
 }
 
 func (h *handler) processToolStreamPart(w http.ResponseWriter, state *streamState, part provider.StreamPart) streamPartResult {
-	if part.ProviderExecuted || (part.Dynamic != nil && *part.Dynamic) || (part.Preliminary != nil && *part.Preliminary) {
+	if part.ProviderExecuted || (part.Dynamic != nil && *part.Dynamic) || part.Preliminary {
 		return streamPartAdapterFailure
 	}
 	id := part.ID

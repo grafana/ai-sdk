@@ -70,7 +70,7 @@ func mapUnarySuccess(result *provider.GenerateResult, limit int64) (unarySuccess
 		},
 	}
 	for _, part := range result.Content {
-		if part.ProviderExecuted || (part.Dynamic != nil && *part.Dynamic) || (part.Preliminary != nil && *part.Preliminary) {
+		if part.ProviderExecuted || part.Dynamic || part.Preliminary {
 			return unarySuccess{}, errInvalidUnarySuccess
 		}
 		switch part.Type {

@@ -210,16 +210,17 @@ func decodeStreamPart(data []byte) (provider.StreamPart, error) {
 		Result           json.RawMessage         `json:"result"`
 		IsError          bool                    `json:"isError"`
 		ProviderExecuted bool                    `json:"providerExecuted"`
-		Dynamic          bool                    `json:"dynamic"`
+		Dynamic          *bool                   `json:"dynamic"`
 		Preliminary      bool                    `json:"preliminary"`
+		ProviderMetadata json.RawMessage         `json:"providerMetadata"`
 	}
-	if decodeFields(data, &value, "type", "id", "delta", "modelId", "timestamp", "warnings", "finishReason", "usage", "rawValue", "error", "toolCallId", "toolName", "input", "result", "isError", "providerExecuted", "dynamic", "preliminary") != nil {
+	if !validToolFlags(data) || decodeFields(data, &value, "type", "id", "delta", "modelId", "timestamp", "warnings", "finishReason", "usage", "rawValue", "error", "toolCallId", "toolName", "input", "result", "isError", "providerExecuted", "dynamic", "preliminary", "providerMetadata") != nil {
 		return invalid()
 	}
 	part := provider.StreamPart{Type: value.Type}
 	switch value.Type {
 	case provider.PartToolInputStart, provider.PartToolInputDelta, provider.PartToolInputEnd:
-		if value.ID == nil || *value.ID == "" || value.ProviderExecuted || value.Dynamic || value.Preliminary {
+		if value.ID == nil || *value.ID == "" || value.Preliminary {
 			return invalid()
 		}
 		part.ID = *value.ID
@@ -228,6 +229,10 @@ func decodeStreamPart(data []byte) (provider.StreamPart, error) {
 				return invalid()
 			}
 			part.ToolName = *value.ToolName
+			part.ProviderExecuted = value.ProviderExecuted
+			part.Dynamic = value.Dynamic
+		} else if value.ProviderExecuted || (value.Dynamic != nil && *value.Dynamic) {
+			return invalid()
 		}
 		if value.Type == provider.PartToolInputDelta {
 			if value.Delta == nil {
@@ -236,20 +241,27 @@ func decodeStreamPart(data []byte) (provider.StreamPart, error) {
 			part.Delta = *value.Delta
 		}
 	case provider.PartToolCall, provider.PartToolResult:
-		if value.ToolCallID == nil || *value.ToolCallID == "" || value.ToolName == nil || *value.ToolName == "" || value.ProviderExecuted || value.Dynamic || value.Preliminary {
+		if value.ToolCallID == nil || *value.ToolCallID == "" || value.ToolName == nil || *value.ToolName == "" {
 			return invalid()
 		}
 		part.ToolCallID, part.ToolName = *value.ToolCallID, *value.ToolName
 		if value.Type == provider.PartToolCall {
-			if value.Input == nil {
+			if value.Input == nil || len(value.Result) != 0 || value.Preliminary || value.IsError {
 				return invalid()
 			}
 			part.Input = *value.Input
+			part.ProviderExecuted = value.ProviderExecuted
+			if value.Dynamic != nil && *value.Dynamic {
+				part.Dynamic = value.Dynamic
+			}
 		} else {
-			if len(value.Result) == 0 || string(value.Result) == "null" {
+			if value.Input != nil || value.ProviderExecuted || len(value.Result) == 0 || string(bytes.TrimSpace(value.Result)) == "null" {
 				return invalid()
 			}
-			part.Result, part.IsError = value.Result, value.IsError
+			part.Result, part.IsError, part.Preliminary = value.Result, value.IsError, value.Preliminary
+			if value.Dynamic != nil && *value.Dynamic {
+				part.Dynamic = value.Dynamic
+			}
 		}
 	case provider.PartStreamStart:
 		if value.Warnings == nil {
@@ -324,6 +336,14 @@ func decodeStreamPart(data []byte) (provider.StreamPart, error) {
 		part.APICallError = gateway.cause
 	default:
 		return invalid()
+	}
+	switch part.Type {
+	case provider.PartToolInputStart, provider.PartToolInputDelta, provider.PartToolInputEnd, provider.PartToolCall, provider.PartToolResult:
+		metadata, err := decodeToolMetadata(value.ProviderMetadata)
+		if err != nil {
+			return invalid()
+		}
+		part.ProviderMetadata = metadata
 	}
 	return part, nil
 }

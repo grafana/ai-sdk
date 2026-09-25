@@ -17,6 +17,7 @@ import (
 )
 
 func sseFrame(value string) string { return "data: " + value + "\n\n" }
+func boolPointer(value bool) *bool { return &value }
 
 func jsonMember(t *testing.T, body []byte, key string) string {
 	t.Helper()
@@ -115,6 +116,69 @@ func TestModel_StreamNormalization(t *testing.T) {
 			assert.Equal(t, provider.PartFinish, parts[len(parts)-1].Type)
 			assert.True(t, body.closed)
 		})
+	}
+}
+
+func TestModel_StreamProviderToolParts(t *testing.T) {
+	frames := []string{
+		`{"type":"tool-input-start","id":"call","toolName":"echo","providerExecuted":true,"dynamic":false}`,
+		`{"type":"tool-input-delta","id":"call","delta":""}`,
+		`{"type":"tool-input-end","id":"call"}`,
+		`{"type":"tool-call","toolCallId":"call","toolName":"echo","input":"{}","providerExecuted":true,"dynamic":true,"providerMetadata":{"anthropic":{"type":"mcp-tool-use","serverName":"echo","private":"discard"}}}`,
+		`{"type":"tool-result","toolCallId":"call","toolName":"echo","result":{"temperature":0},"isError":true,"preliminary":true,"providerMetadata":{"anthropic":{"type":"mcp-tool-use","serverName":"echo"}}}`,
+		`{"type":"tool-result","toolCallId":"call","toolName":"echo","result":"final"}`,
+		finishEvent,
+	}
+	var payload strings.Builder
+	for _, frame := range frames {
+		payload.WriteString(sseFrame(frame))
+	}
+	model := streamFromBody(t, io.NopCloser(strings.NewReader(payload.String())), nil)
+	stream, err := model.DoStream(context.Background(), provider.CallOptions{})
+	require.NoError(t, err)
+	parts := collectParts(t, stream)
+	require.Len(t, parts, len(frames))
+	assert.True(t, parts[0].ProviderExecuted)
+	assert.Equal(t, boolPointer(false), parts[0].Dynamic)
+	assert.Equal(t, "", parts[1].Delta)
+	assert.True(t, parts[3].ProviderExecuted)
+	assert.Equal(t, boolPointer(true), parts[3].Dynamic)
+	assert.JSONEq(t, `{"type":"mcp-tool-use","serverName":"echo"}`, string(parts[3].ProviderMetadata["anthropic"]))
+	assert.True(t, parts[4].Preliminary)
+	assert.True(t, parts[4].IsError)
+	assert.JSONEq(t, `{"temperature":0}`, string(parts[4].Result))
+	assert.False(t, parts[5].Preliminary)
+	assert.Nil(t, parts[5].Dynamic)
+}
+
+func TestDecodeStreamPart_DeferredAndMarkers(t *testing.T) {
+	for _, tc := range []struct {
+		name, event string
+		dynamic     *bool
+	}{
+		{name: "absent", event: `{"type":"tool-input-start","id":"call","toolName":"echo"}`},
+		{name: "false", event: `{"type":"tool-input-start","id":"call","toolName":"echo","dynamic":false}`, dynamic: boolPointer(false)},
+		{name: "true", event: `{"type":"tool-input-start","id":"call","toolName":"echo","dynamic":true}`, dynamic: boolPointer(true)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			part, err := decodeStreamPart([]byte(tc.event))
+			require.NoError(t, err)
+			assert.Equal(t, tc.dynamic, part.Dynamic)
+		})
+	}
+	result, err := decodeStreamPart([]byte(`{"type":"tool-result","toolCallId":"history-call","toolName":"echo","result":"error","isError":true}`))
+	require.NoError(t, err)
+	assert.Equal(t, "history-call", result.ToolCallID)
+	assert.True(t, result.IsError)
+	for _, event := range []string{
+		`{"type":"tool-input-start","id":"call","toolName":"echo","dynamic":null}`,
+		`{"type":"tool-call","toolCallId":"call","toolName":"echo","input":"{}","providerExecuted":"true"}`,
+		`{"type":"tool-result","toolCallId":"call","toolName":"echo","result":null}`,
+		`{"type":"tool-result","toolCallId":"call","toolName":"echo","result":{},"providerExecuted":true}`,
+		`{"type":"tool-result","toolCallId":"call","toolName":"echo","result":{},"providerMetadata":{"anthropic":{"type":"mcp-tool-use","serverName":null}}}`,
+	} {
+		_, err := decodeStreamPart([]byte(event))
+		require.Error(t, err, event)
 	}
 }
 
@@ -328,10 +392,11 @@ func TestDecodeStreamPart_FunctionTools(t *testing.T) {
 		assert.NotEmpty(t, part.Type)
 	}
 	for _, raw := range []string{
-		`{"type":"tool-input-start","id":"a","toolName":"f","providerExecuted":true}`,
+		`{"type":"tool-input-start","id":"a","toolName":"f","preliminary":true}`,
 		`{"type":"tool-call","toolCallId":"a","toolName":"f"}`,
-		`{"type":"tool-call","toolCallId":"a","toolName":"f","input":"{}","dynamic":true}`,
+		`{"type":"tool-call","toolCallId":"a","toolName":"f","input":"{}","preliminary":true}`,
 		`{"type":"tool-result","toolCallId":"a","toolName":"f","result":null}`,
+		`{"type":"tool-result","toolCallId":"a","toolName":"f","result":{},"providerExecuted":true}`,
 		`{"type":"tool-input-delta","id":"a"}`,
 	} {
 		_, err := decodeStreamPart([]byte(raw))

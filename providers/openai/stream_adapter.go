@@ -216,14 +216,13 @@ func (a *streamAdapter) handleEvent(event responses.ResponseStreamEventUnion, ch
 		}
 
 	case responses.ResponseImageGenCallPartialImageEvent:
-		preliminary := true
 		result, _ := json.Marshal(map[string]any{"result": e.PartialImageB64})
 		ch <- provider.StreamPart{
 			Type:        provider.PartToolResult,
 			ToolCallID:  e.ItemID,
 			ToolName:    a.br.toolNameMapping.toCustomToolName("image_generation"),
 			Result:      result,
-			Preliminary: &preliminary,
+			Preliminary: true,
 		}
 
 	case responses.ResponseOutputItemDoneEvent:

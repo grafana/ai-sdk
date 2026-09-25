@@ -240,6 +240,7 @@ func assembleResponseMessageWithInitial(messageID string, chunks []UIMessageChun
 }
 
 type uiMessageStreamConfig struct {
+	tools               map[string]Tool
 	originalMessages    []UIMessage
 	hasOriginalMessages bool
 	generateMessageID   func() string

@@ -42,27 +42,45 @@ func TestStreamPartConstruction(t *testing.T) {
 }
 
 func TestStreamPart_Preliminary(t *testing.T) {
-	t.Run("preliminary tool result", func(t *testing.T) {
-		preliminary := true
-		p := StreamPart{
-			Type:        PartToolResult,
-			ToolCallID:  "call_1",
-			ToolName:    "preview",
-			Preliminary: &preliminary,
-		}
-		assert.Equal(t, PartToolResult, p.Type)
-		assert.NotNil(t, p.Preliminary)
-		assert.True(t, *p.Preliminary)
-	})
+	for _, tc := range []struct {
+		name        string
+		wire        string
+		preliminary bool
+	}{
+		{name: "absent", wire: `{"type":"tool-result"}`},
+		{name: "false", wire: `{"type":"tool-result","preliminary":false}`},
+		{name: "true", wire: `{"type":"tool-result","preliminary":true}`, preliminary: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var part StreamPart
+			require.NoError(t, json.Unmarshal([]byte(tc.wire), &part))
+			assert.Equal(t, tc.preliminary, part.Preliminary)
+			data, err := json.Marshal(part)
+			require.NoError(t, err)
+			assert.Equal(t, tc.preliminary, string(data) != `{"type":"tool-result"}`)
+		})
+	}
+}
 
-	t.Run("final tool result has nil preliminary", func(t *testing.T) {
-		p := StreamPart{
-			Type:       PartToolResult,
-			ToolCallID: "call_1",
-			ToolName:   "search",
-		}
-		assert.Nil(t, p.Preliminary)
-	})
+func TestStreamPart_InputStartDynamicPresence(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		wire    string
+		dynamic *bool
+	}{
+		{name: "absent", wire: `{"type":"tool-input-start","id":"call","toolName":"dynamic_tool"}`},
+		{name: "false", wire: `{"type":"tool-input-start","id":"call","toolName":"dynamic_tool","dynamic":false}`, dynamic: boolPtr(false)},
+		{name: "true", wire: `{"type":"tool-input-start","id":"call","toolName":"dynamic_tool","dynamic":true}`, dynamic: boolPtr(true)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var part StreamPart
+			require.NoError(t, json.Unmarshal([]byte(tc.wire), &part))
+			assert.Equal(t, tc.dynamic, part.Dynamic)
+			data, err := json.Marshal(part)
+			require.NoError(t, err)
+			assert.JSONEq(t, tc.wire, string(data))
+		})
+	}
 }
 
 func TestStreamPart_PartError_CarriesAPICallError(t *testing.T) {

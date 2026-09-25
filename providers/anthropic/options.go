@@ -186,13 +186,13 @@ type ToolChange struct {
 type MCPServer struct {
 	Name               string                `json:"name"`
 	URL                string                `json:"url"`
-	AuthorizationToken string                `json:"authorizationToken,omitempty"`
+	AuthorizationToken *string               `json:"authorizationToken,omitempty"`
 	ToolConfiguration  *MCPToolConfiguration `json:"toolConfiguration,omitempty"`
 }
 
 // MCPToolConfiguration controls which tools are available from an MCP server.
 type MCPToolConfiguration struct {
-	Enabled      bool     `json:"enabled,omitempty"`
+	Enabled      *bool    `json:"enabled,omitempty"`
 	AllowedTools []string `json:"allowedTools,omitempty"`
 }
 

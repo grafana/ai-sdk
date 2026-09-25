@@ -113,8 +113,10 @@ func contentPartToStreamPart(part provider.GenerateContentPart) provider.StreamP
 		IsError:          part.IsError,
 		Preliminary:      part.Preliminary,
 		ProviderExecuted: part.ProviderExecuted,
-		Dynamic:          part.Dynamic,
 		ProviderMetadata: part.ProviderMetadata,
+	}
+	if part.Dynamic {
+		sp.Dynamic = &part.Dynamic
 	}
 
 	switch part.Type {

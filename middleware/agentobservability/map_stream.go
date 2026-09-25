@@ -240,7 +240,7 @@ func (r *StreamRecorder) markFirstChunk() {
 }
 
 func (r *StreamRecorder) observeToolResult(part provider.StreamPart) {
-	preliminary := part.Preliminary != nil && *part.Preliminary
+	preliminary := part.Preliminary
 	result := streamToolResultAcc{
 		id:               part.ToolCallID,
 		name:             part.ToolName,

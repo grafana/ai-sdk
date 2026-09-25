@@ -31,6 +31,9 @@ func buildRequest(modelID string, opts provider.CallOptions) (*converseInput, []
 }
 
 func buildRequestWithFamily(modelID string, family ModelFamily, opts provider.CallOptions) (*converseInput, []provider.Warning, requestMeta, error) {
+	if err := provider.ValidateTools(opts.Tools); err != nil {
+		return nil, nil, requestMeta{}, err
+	}
 	var warnings []provider.Warning
 	meta := requestMeta{isMistral: isMistralModel(modelID)}
 

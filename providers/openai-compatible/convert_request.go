@@ -13,6 +13,9 @@ import (
 )
 
 func (m *model) buildRequest(opts provider.CallOptions, streaming bool) (map[string]any, []provider.Warning, error) {
+	if err := provider.ValidateTools(opts.Tools); err != nil {
+		return nil, nil, err
+	}
 	warnings := deprecatedProviderOptionWarnings(opts.ProviderOptions, m.providerName)
 
 	openAIOpts, err := readOpenAIOptions(opts.ProviderOptions, m.providerName)

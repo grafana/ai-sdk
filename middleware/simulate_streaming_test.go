@@ -101,7 +101,7 @@ func TestSimulateStreaming(t *testing.T) {
 							ToolName:         "search",
 							Input:            []byte(`{"q":"test"}`),
 							ProviderExecuted: true,
-							Dynamic:          ptr(true),
+							Dynamic:          true,
 							Kind:             "function",
 						},
 					},
@@ -417,12 +417,11 @@ func TestSimulateStreaming_ContentProjection(t *testing.T) {
 			content: []provider.GenerateContentPart{{
 				Type: provider.ContentToolCall, ToolCallID: "call-1", ToolName: "lookup",
 				Input: json.RawMessage(`{"q":"go"}`), ProviderExecuted: true,
-				Dynamic: ptr(false), ProviderMetadata: metadata,
+				Dynamic: false, ProviderMetadata: metadata,
 			}},
 			want: []provider.StreamPart{{
 				Type: provider.PartToolCall, ToolCallID: "call-1", ToolName: "lookup",
-				Input: `{"q":"go"}`, ProviderExecuted: true,
-				Dynamic: ptr(false), ProviderMetadata: metadata,
+				Input: `{"q":"go"}`, ProviderExecuted: true, ProviderMetadata: metadata,
 			}},
 		},
 		{
@@ -430,23 +429,23 @@ func TestSimulateStreaming_ContentProjection(t *testing.T) {
 			content: []provider.GenerateContentPart{{
 				Type: provider.ContentToolResult, ToolCallID: "call-1", ToolName: "lookup",
 				Result: json.RawMessage(`{"error":"unavailable"}`), IsError: true,
-				Preliminary: ptr(true), Dynamic: ptr(true), ProviderMetadata: metadata,
+				Preliminary: true, Dynamic: true, ProviderMetadata: metadata,
 			}},
 			want: []provider.StreamPart{{
 				Type: provider.PartToolResult, ToolCallID: "call-1", ToolName: "lookup",
 				Result: json.RawMessage(`{"error":"unavailable"}`), IsError: true,
-				Preliminary: ptr(true), Dynamic: ptr(true), ProviderMetadata: metadata,
+				Preliminary: true, Dynamic: ptr(true), ProviderMetadata: metadata,
 			}},
 		},
 		{
 			name: "tool result with preliminary false",
 			content: []provider.GenerateContentPart{{
 				Type: provider.ContentToolResult, ToolCallID: "call-2", ToolName: "lookup",
-				Result: json.RawMessage(`null`), Preliminary: ptr(false),
+				Result: json.RawMessage(`null`), Preliminary: false,
 			}},
 			want: []provider.StreamPart{{
 				Type: provider.PartToolResult, ToolCallID: "call-2", ToolName: "lookup",
-				Result: json.RawMessage(`null`), Preliminary: ptr(false),
+				Result: json.RawMessage(`null`), Preliminary: false,
 			}},
 		},
 		{

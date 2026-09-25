@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -29,9 +30,69 @@ func TestDecodeGenerate_FunctionCalls(t *testing.T) {
 		assert.Equal(t, "call", result.Content[1].ToolCallID)
 		for _, marker := range []string{"providerExecuted", "dynamic"} {
 			marked := strings.Replace(body, `"toolName":"weather"`, `"toolName":"weather","`+marker+`":true`, 1)
-			_, err := decodeGenerate([]byte(marked))
-			require.Error(t, err)
+			result, err := decodeGenerate([]byte(marked))
+			require.NoError(t, err)
+			if marker == "providerExecuted" {
+				assert.True(t, result.Content[1].ProviderExecuted)
+			} else {
+				assert.True(t, result.Content[1].Dynamic)
+			}
 		}
+	}
+}
+
+func TestDecodeGenerate_ProviderToolResults(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		result      string
+		isError     bool
+		preliminary bool
+	}{
+		{name: "empty object", result: `{}`},
+		{name: "zero", result: `0`},
+		{name: "false", result: `false`},
+		{name: "empty string and error", result: `""`, isError: true},
+		{name: "preliminary", result: `[]`, preliminary: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := `{"content":[{"type":"tool-call","toolCallId":"call","toolName":"echo","input":"{}","providerExecuted":true,"dynamic":true,"providerMetadata":{"anthropic":{"type":"mcp-tool-use","serverName":"echo","caller":{"type":"direct"},"private":"discard"}}},{"type":"tool-result","toolCallId":"call","toolName":"echo","result":` + tc.result + `,"isError":` + strconv.FormatBool(tc.isError) + `,"preliminary":` + strconv.FormatBool(tc.preliminary) + `,"providerMetadata":{"anthropic":{"type":"mcp-tool-use","serverName":"echo","private":"discard"}}}],"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}}}`
+			decoded, err := decodeGenerate([]byte(body))
+			require.NoError(t, err)
+			require.Len(t, decoded.Content, 2)
+			assert.True(t, decoded.Content[0].ProviderExecuted)
+			assert.True(t, decoded.Content[0].Dynamic)
+			assert.JSONEq(t, `{"type":"mcp-tool-use","serverName":"echo"}`, string(decoded.Content[0].ProviderMetadata["anthropic"]))
+			assert.Len(t, decoded.Content[0].ProviderMetadata, 1)
+			assert.JSONEq(t, tc.result, string(decoded.Content[1].Result))
+			assert.Equal(t, tc.isError, decoded.Content[1].IsError)
+			assert.Equal(t, tc.preliminary, decoded.Content[1].Preliminary)
+			assert.Equal(t, decoded.Content[0].ProviderMetadata, decoded.Content[1].ProviderMetadata)
+		})
+	}
+	for _, result := range []string{`null`, ``, `{"bad":`} {
+		body := `{"content":[{"type":"tool-result","toolCallId":"call","toolName":"echo","result":` + result + `}],"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}}}`
+		_, err := decodeGenerate([]byte(body))
+		require.Error(t, err)
+	}
+}
+
+func TestDecodeGenerate_ToolMetadataAndMarkerValidation(t *testing.T) {
+	body := `{"content":[{"type":"tool-call","toolCallId":"call","toolName":"search","input":"{}","providerMetadata":{"openai":{"itemId":"item-1","namespace":"tools","caller":{"type":"program","callerId":"parent"},"secret":"discard"},"private":{"url":"hidden"}}},{"type":"tool-result","toolCallId":"call","toolName":"search","result":false,"providerMetadata":{"openai":{"itemId":"output-1"}}}],"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}}}`
+	decoded, err := decodeGenerate([]byte(body))
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"itemId":"item-1","namespace":"tools","caller":{"type":"program","callerId":"parent"}}`, string(decoded.Content[0].ProviderMetadata["openai"]))
+	assert.NotContains(t, string(decoded.Content[0].ProviderMetadata["openai"]), "secret")
+	assert.NotContains(t, decoded.Content[0].ProviderMetadata, "private")
+	assert.JSONEq(t, `{"itemId":"output-1"}`, string(decoded.Content[1].ProviderMetadata["openai"]))
+	for _, value := range []string{
+		`{"providerExecuted":null}`, `{"dynamic":"false"}`, `{"preliminary":null}`,
+		`{"providerMetadata":{"anthropic":{"type":"mcp-tool-use"}}}`,
+		`{"providerMetadata":{"anthropic":{"type":"mcp-tool-use","serverName":null}}}`,
+		`{"providerMetadata":{"openai":{"itemId":5}}}`,
+	} {
+		content := `{"type":"tool-call","toolCallId":"call","toolName":"search","input":"{}",` + strings.TrimPrefix(value, "{")
+		_, err := decodeGenerate([]byte(`{"content":[` + content + `],"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}}}`))
+		require.Error(t, err, value)
 	}
 }
 
@@ -47,6 +108,19 @@ func TestDecodeGenerate_FunctionCallRequiredFields(t *testing.T) {
 		_, err := decodeGenerate([]byte(body))
 		require.Error(t, err)
 	}
+}
+
+func TestModel_InvalidProviderToolDoesNotSendRequest(t *testing.T) {
+	var calls atomic.Int32
+	p := testProvider(t, func(http.ResponseWriter, *http.Request) { calls.Add(1) }, nil)
+	m, err := p.LanguageModel("assistant")
+	require.NoError(t, err)
+	options := provider.CallOptions{Tools: []provider.Tool{{Type: provider.ToolTypeProvider, ID: "anthropic.web_search", Name: "search", ProviderOptions: provider.ProviderOptions{}}}}
+	_, err = m.DoGenerate(context.Background(), options)
+	require.Error(t, err)
+	_, err = m.DoStream(context.Background(), options)
+	require.Error(t, err)
+	assert.Zero(t, calls.Load())
 }
 
 func TestModel_GenerateRequestAndNormalization(t *testing.T) {

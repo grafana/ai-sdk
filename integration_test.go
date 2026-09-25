@@ -289,12 +289,11 @@ func TestE2EProviderExecutedToolResultConversionErrorOrdering(t *testing.T) {
 }
 
 func TestE2EProviderExecutedPreliminaryToolResults(t *testing.T) {
-	preliminary := true
 	model := &mockModel{
 		streamFunc: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
 			ch := make(chan provider.StreamPart, 4)
 			ch <- provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "c1", ToolName: "image", Input: `{}`, ProviderExecuted: true}
-			ch <- provider.StreamPart{Type: provider.PartToolResult, ToolCallID: "c1", ToolName: "image", Result: json.RawMessage(`"preview"`), Preliminary: &preliminary}
+			ch <- provider.StreamPart{Type: provider.PartToolResult, ToolCallID: "c1", ToolName: "image", Result: json.RawMessage(`"preview"`), Preliminary: true}
 			ch <- provider.StreamPart{Type: provider.PartToolResult, ToolCallID: "c1", ToolName: "image", Result: json.RawMessage(`"final"`)}
 			ch <- provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}}
 			close(ch)

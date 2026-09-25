@@ -39,6 +39,9 @@ var _ = requestCallOptionsFields(provider.CallOptions{})
 var errRequest = errors.New("grafana: invalid or unrepresentable request")
 
 func encodeRequest(opts provider.CallOptions) ([]byte, error) {
+	if err := provider.ValidateTools(opts.Tools); err != nil {
+		return nil, errRequest
+	}
 	if err := validateRequestValue(reflect.ValueOf(opts), 0); err != nil {
 		return nil, err
 	}
@@ -319,11 +322,15 @@ func projectTool(t provider.Tool) (requestObject, error) {
 			out["inputExamples"] = examples
 		}
 	case provider.ToolTypeProvider:
-		if t.Description != "" || t.InputSchema != nil || t.InputExamples != nil || t.Strict != nil || t.ProviderOptions != nil || t.Args == nil || !strings.Contains(t.ID, ".") {
+		if t.Description != "" || t.InputSchema != nil || t.InputExamples != nil || t.Strict != nil || t.ProviderOptions != nil || !strings.Contains(t.ID, ".") {
 			return nil, errRequest
 		}
 		out["id"] = t.ID
-		out["args"] = t.Args
+		if t.Args == nil {
+			out["args"] = requestObject{}
+		} else {
+			out["args"] = t.Args
+		}
 	default:
 		return nil, errRequest
 	}
