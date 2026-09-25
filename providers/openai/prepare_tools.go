@@ -148,7 +148,7 @@ func functionToolParam(t provider.Tool, options OpenAIToolOptions) (responses.Fu
 	for _, caller := range options.AllowedCallers {
 		fn.AllowedCallers = append(fn.AllowedCallers, string(caller))
 	}
-	if len(options.OutputSchema) > 0 {
+	if len(options.OutputSchema) > 0 && !isJSONNull(options.OutputSchema) {
 		output, outputWarnings, err := normalizeOpenAIJSONSchema(options.OutputSchema)
 		if err != nil {
 			return responses.FunctionToolParam{}, nil, fmt.Errorf("openai: function tool %q output schema: %w", t.Name, err)

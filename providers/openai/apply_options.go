@@ -23,7 +23,7 @@ func applyResponseFormat(body *responses.ResponseNewParams, opts provider.CallOp
 
 	if rf != nil && rf.Type == provider.ResponseFormatJSON {
 		hasText = true
-		if len(rf.Schema) > 0 {
+		if len(rf.Schema) > 0 && !isJSONNull(rf.Schema) {
 			strict := true
 			if popts.StrictJSONSchema != nil {
 				strict = *popts.StrictJSONSchema

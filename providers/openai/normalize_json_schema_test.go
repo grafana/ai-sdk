@@ -172,6 +172,67 @@ func TestResponsesSchemaNormalization_GenerateAndStream(t *testing.T) {
 	assert.JSONEq(t, `{"type":"object","propertyNames":{"type":"string"}}`, string(output))
 }
 
+func TestResponsesSchemaNormalization_NullOptionalSchemas(t *testing.T) {
+	for _, tc := range []struct {
+		name, schemaPosition string
+		namespace            bool
+	}{
+		{name: "response", schemaPosition: "response"},
+		{name: "regular tool output", schemaPosition: "output"},
+		{name: "namespaced tool output", schemaPosition: "output", namespace: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var bodies []map[string]any
+			client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				data, err := io.ReadAll(req.Body)
+				require.NoError(t, err)
+				var body map[string]any
+				require.NoError(t, json.Unmarshal(data, &body))
+				bodies = append(bodies, body)
+				contentType, payload := "application/json", `{"id":"resp_1","status":"completed","output":[]}`
+				if body["stream"] == true {
+					contentType = "text/event-stream"
+					payload = "event: response.completed\n" + `data: {"type":"response.completed","sequence_number":0,"response":{"id":"resp_1","status":"completed","output":[]}}` + "\n\n"
+				}
+				return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{contentType}}, Body: io.NopCloser(strings.NewReader(payload)), Request: req}, nil
+			})}
+			model := NewResponses("test-key", "gpt-4o", WithRequestOptions(option.WithHTTPClient(client), option.WithMaxRetries(0)))
+			opts := provider.CallOptions{Prompt: []provider.Message{provider.UserText("hi")}}
+			if tc.schemaPosition == "response" {
+				opts.ResponseFormat = &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Schema: json.RawMessage(`null`)}
+			} else {
+				toolOptions := OpenAIToolOptions{OutputSchema: json.RawMessage(`null`)}
+				if tc.namespace {
+					toolOptions.Namespace = &OpenAIToolNamespaceOptions{Name: "tools"}
+				}
+				opts.Tools = []provider.Tool{{Type: provider.ToolTypeFunction, Name: "lookup", InputSchema: json.RawMessage(`{"type":"object"}`), ProviderOptions: provider.BuildProviderOptions(toolOptions)}}
+			}
+			generated, err := model.DoGenerate(t.Context(), opts)
+			require.NoError(t, err)
+			assert.Empty(t, generated.Warnings)
+			streamed, err := model.DoStream(t.Context(), opts)
+			require.NoError(t, err)
+			for part := range streamed.Stream {
+				if part.Type == provider.PartStreamStart {
+					assert.Empty(t, part.Warnings)
+				}
+			}
+			require.Len(t, bodies, 2)
+			for _, body := range bodies {
+				if tc.schemaPosition == "response" {
+					assert.Equal(t, "json_object", body["text"].(map[string]any)["format"].(map[string]any)["type"])
+				} else {
+					fn := toolsArray(t, body)[0]
+					if tc.namespace {
+						fn = fn["tools"].([]any)[0].(map[string]any)
+					}
+					assert.NotContains(t, fn, "output_schema")
+				}
+			}
+		})
+	}
+}
+
 func TestResponsesSchemaNormalization_RejectsBeforeHTTP(t *testing.T) {
 	for _, tc := range []struct {
 		name, position string

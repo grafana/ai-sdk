@@ -9,6 +9,10 @@ Before building an OpenAI Responses request, the provider SHALL normalize each s
 - **AND** exactly one `compatibility` warning is returned for that schema even if multiple nodes have `propertyNames`
 - **AND** the caller's schema remains unchanged
 
+#### Scenario: Null optional schemas are absent
+- **WHEN** a JSON response format has `schema: null` or a regular or namespaced function tool has `outputSchema: null`
+- **THEN** the response uses `json_object` or the function tool omits `output_schema`, respectively, without a schema warning or error on either generate or stream
+
 #### Scenario: Both input and output function schemas need normalization
 - **WHEN** a regular or namespaced function tool contains a string `propertyNames` schema in both its input and optional output schemas
 - **THEN** the request contains normalized `parameters` and `output_schema` and returns one `compatibility` warning for each affected schema
