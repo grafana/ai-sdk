@@ -168,6 +168,23 @@ run = "bash scripts/module-policy.sh standalone \"${MODULE:?set MODULE to a publ
 description = "Verify published internal pins descend from canonical merged main"
 run = "bash scripts/module-policy.sh pins"
 
+[tasks.release-check]
+description = "Validate the release-please configuration against published modules"
+run = "go test ./internal/releasecheck"
+
+[tasks.release-preview]
+description = "Dry-run the next release pull request against GitHub"
+run = """
+npx --yes --ignore-scripts release-please@17.10.4 release-pr \
+  --repo-url=grafana/ai-sdk \
+  --target-branch=main \
+  --config-file=release-please-config.json \
+  --manifest-file=.release-please-manifest.json \
+  --token="$(gh auth token)" \
+  --dry-run \
+  --debug
+"""
+
 [tasks.verify-ai-gateway-boundary]
 description = "Verify the one-way AI Gateway module and license boundary"
 run = "bash scripts/module-policy.sh boundary"
