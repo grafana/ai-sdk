@@ -1,11 +1,17 @@
 package anthropic
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync/atomic"
 	"testing"
 
 	sdk "github.com/anthropics/anthropic-sdk-go"
+	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -24,6 +30,453 @@ func warningFeatures(warnings []provider.Warning) []string {
 		features = append(features, w.Feature)
 	}
 	return features
+}
+
+func TestWebTool_HTTPNumberProjection(t *testing.T) {
+	cases := []struct {
+		name, id, args, choice, schema, wantTools string
+		prefixUnknown                             bool
+	}{
+		{"fractional search", "anthropic.web_search_20260318", `{"maxUses":1.5,"unknown":"strip"}`, "", "", `[{"type":"web_search_20260318","name":"web_search","max_uses":1.5}]`, false},
+		{"empty domain lists", "anthropic.web_search_20260318", `{"allowedDomains":[],"blockedDomains":[]}`, "", "", `[{"type":"web_search_20260318","name":"web_search","allowed_domains":[],"blocked_domains":[]}]`, false},
+		{"large fetch after skipped tool", "anthropic.web_fetch_20260318", `{"maxUses":100000000000000000000,"maxContentTokens":2.5,"useCache":false}`, "", "", `[{"type":"web_fetch_20260318","name":"web_fetch","max_uses":100000000000000000000,"max_content_tokens":2.5,"use_cache":false}]`, true},
+		{"older fractional fetch", "anthropic.web_fetch_20250910", `{"maxContentTokens":3.5}`, "", "", `[{"type":"web_fetch_20250910","name":"web_fetch","max_content_tokens":3.5}]`, false},
+		{"large content tokens", "anthropic.web_fetch_20260318", `{"maxContentTokens":100000000000000000000}`, "", "", `[{"type":"web_fetch_20260318","name":"web_fetch","max_content_tokens":100000000000000000000}]`, false},
+		{"zero uses", "anthropic.web_search_20260318", `{"maxUses":0}`, "", "", `[{"type":"web_search_20260318","name":"web_search","max_uses":0}]`, false},
+		{"none removes web tool", "anthropic.web_fetch_20260318", `{"maxUses":1.5}`, "none", "", `[]`, false},
+		{"none followed by JSON fallback", "anthropic.web_fetch_20260318", `{"maxUses":1.5}`, "none", `{"type":"object"}`, `[{"name":"json","description":"Respond with a JSON object.","input_schema":{"type":"object"}}]`, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, stream := range []bool{false, true} {
+				var requests = make(chan map[string]json.RawMessage, 1)
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					var body map[string]json.RawMessage
+					if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+						http.Error(w, err.Error(), http.StatusBadRequest)
+						return
+					}
+					requests <- body
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusBadRequest)
+					_, _ = w.Write([]byte(`{"type":"error","error":{"type":"invalid_request_error","message":"captured"}}`))
+				}))
+				model := New("test-key", "claude-sonnet-4-20250514", WithRequestOptions(option.WithBaseURL(server.URL), option.WithHTTPClient(server.Client()), option.WithMaxRetries(0)))
+				var args map[string]json.RawMessage
+				require.NoError(t, json.Unmarshal([]byte(tc.args), &args))
+				maxTokens := 1024
+				opts := provider.CallOptions{MaxOutputTokens: &maxTokens, Prompt: []provider.Message{provider.UserText("hello")}, Tools: []provider.Tool{{Type: provider.ToolTypeProvider, ID: tc.id, Name: "custom_web", Args: args}}}
+				if tc.prefixUnknown {
+					opts.Tools = append([]provider.Tool{{Type: provider.ToolTypeProvider, ID: "anthropic.unknown", Name: "unknown"}}, opts.Tools...)
+					p, _, warnings, _, err := buildParams("claude-sonnet-4-20250514", opts, stream)
+					require.NoError(t, err)
+					require.Len(t, p.Tools, 1)
+					assert.Contains(t, warningFeatures(warnings), "provider tool anthropic.unknown")
+				}
+				if tc.choice == "none" {
+					opts.ToolChoice = &provider.ToolChoice{Type: provider.ToolChoiceNone}
+				}
+				if tc.schema != "" {
+					opts.ResponseFormat = &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Schema: json.RawMessage(tc.schema)}
+				}
+				if stream {
+					_, err := model.DoStream(context.Background(), opts)
+					require.Error(t, err)
+				} else {
+					_, err := model.DoGenerate(context.Background(), opts)
+					require.Error(t, err)
+				}
+				body := <-requests
+				if tc.choice == "none" && tc.schema == "" {
+					assert.NotContains(t, body, "tools")
+				} else if tc.schema != "" && stream {
+					assert.JSONEq(t, `[{"name":"json","description":"Respond with a JSON object.","input_schema":{"type":"object"},"eager_input_streaming":true}]`, string(body["tools"]))
+				} else {
+					assert.JSONEq(t, tc.wantTools, string(body["tools"]))
+				}
+				server.Close()
+			}
+		})
+	}
+}
+
+func TestWebTool_HTTPMixedRequest(t *testing.T) {
+	strict := true
+	for _, vertex := range []bool{false, true} {
+		for _, stream := range []bool{false, true} {
+			t.Run(fmt.Sprintf("vertex=%t/stream=%t", vertex, stream), func(t *testing.T) {
+				requests := make(chan map[string]json.RawMessage, 1)
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					var body map[string]json.RawMessage
+					if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+						http.Error(w, err.Error(), http.StatusBadRequest)
+						return
+					}
+					requests <- body
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusBadRequest)
+					_, _ = w.Write([]byte(`{"type":"error","error":{"type":"invalid_request_error","message":"captured"}}`))
+				}))
+				defer server.Close()
+				m := New("test-key", "claude-sonnet-4-5", WithRequestOptions(option.WithBaseURL(server.URL), option.WithHTTPClient(server.Client()), option.WithMaxRetries(0))).(*model)
+				if vertex {
+					m.resolveModel = ResolveVertexModelID
+					m.capabilities = vertexProviderCapabilities
+				}
+				maxTokens := 1024
+				opts := provider.CallOptions{
+					MaxOutputTokens: &maxTokens,
+					Prompt:          []provider.Message{provider.UserText("hello")},
+					Tools: []provider.Tool{
+						{Type: provider.ToolTypeFunction, Name: "lookup", InputSchema: json.RawMessage(`{"type":"object"}`), Strict: &strict, InputExamples: []provider.InputExample{{Input: json.RawMessage(`{"query":"Go"}`)}}},
+						{Type: provider.ToolTypeProvider, ID: "anthropic.web_fetch_20260318", Name: "fetch_latest", Args: map[string]json.RawMessage{"maxUses": json.RawMessage(`1.5`)}},
+					},
+				}
+				if stream {
+					_, err := m.DoStream(context.Background(), opts)
+					require.Error(t, err)
+				} else {
+					_, err := m.DoGenerate(context.Background(), opts)
+					require.Error(t, err)
+				}
+				body := <-requests
+				wantModel := `"claude-sonnet-4-5"`
+				if vertex {
+					wantModel = `"claude-sonnet-4-5@20250929"`
+				}
+				assert.JSONEq(t, wantModel, string(body["model"]))
+				var tools []map[string]json.RawMessage
+				require.NoError(t, json.Unmarshal(body["tools"], &tools))
+				require.Len(t, tools, 2)
+				assert.JSONEq(t, `"lookup"`, string(tools[0]["name"]))
+				assert.JSONEq(t, `[{"query":"Go"}]`, string(tools[0]["input_examples"]))
+				if vertex {
+					assert.NotContains(t, tools[0], "strict")
+				} else {
+					assert.JSONEq(t, `true`, string(tools[0]["strict"]))
+				}
+				data, err := json.Marshal(tools[1])
+				require.NoError(t, err)
+				assert.JSONEq(t, `{"name":"web_fetch","type":"web_fetch_20260318","max_uses":1.5}`, string(data))
+			})
+		}
+	}
+}
+
+func TestBuildParams_MixedFunctionAndWebTools(t *testing.T) {
+	strict := true
+	deferLoading := true
+	function := provider.Tool{
+		Type:            provider.ToolTypeFunction,
+		Name:            "lookup",
+		InputSchema:     json.RawMessage(`{"type":"object"}`),
+		Strict:          &strict,
+		InputExamples:   []provider.InputExample{{Input: json.RawMessage(`{"query":"Go"}`)}},
+		ProviderOptions: provider.BuildProviderOptions(AnthropicToolOptions{DeferLoading: &deferLoading}),
+	}
+	server := provider.Tool{Type: provider.ToolTypeProvider, ID: "anthropic.web_fetch_20260318", Name: "fetch_latest", Args: map[string]json.RawMessage{"useCache": json.RawMessage(`false`)}, Strict: &strict, InputExamples: function.InputExamples, ProviderOptions: function.ProviderOptions}
+	for _, tc := range []struct {
+		name, modelID string
+		caps          providerCapabilities
+		wantStrict    bool
+	}{
+		{"direct", "claude-sonnet-4-6", directProviderCapabilities, true},
+		{"vertex", "claude-sonnet-4-6", vertexProviderCapabilities, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, stream := range []bool{false, true} {
+				p, _, warnings, _, err := buildParamsWithCapabilities(tc.modelID, provider.CallOptions{Tools: []provider.Tool{function, server}}, stream, tc.caps)
+				require.NoError(t, err)
+				require.Len(t, p.Tools, 2)
+				require.NotNil(t, p.Tools[0].OfTool)
+				assert.Equal(t, tc.wantStrict, p.Tools[0].OfTool.Strict.Valid())
+				assert.True(t, p.Tools[0].OfTool.DeferLoading.Value)
+				assert.Len(t, p.Tools[0].OfTool.InputExamples, 1)
+				require.NotNil(t, p.Tools[1].OfWebFetchTool20260318)
+				encoded, err := json.Marshal(p.Tools[1])
+				require.NoError(t, err)
+				assert.JSONEq(t, `{"name":"web_fetch","type":"web_fetch_20260318","use_cache":false}`, string(encoded))
+				if tc.wantStrict {
+					assert.Empty(t, warnings)
+				} else {
+					assert.Contains(t, warningFeatures(warnings), "strict")
+				}
+			}
+		})
+	}
+}
+
+func TestWebTool_HTTPBetaHeaders(t *testing.T) {
+	cases := []struct {
+		id, beta string
+		explicit bool
+	}{
+		{"anthropic.web_search_20250305", "", false},
+		{"anthropic.web_search_20260209", "code-execution-web-tools-2026-02-09", false},
+		{"anthropic.web_search_20260318", "", false},
+		{"anthropic.web_fetch_20250910", "web-fetch-2025-09-10", false},
+		{"anthropic.web_fetch_20260209", "code-execution-web-tools-2026-02-09", false},
+		{"anthropic.web_fetch_20260318", "", false},
+		{"anthropic.web_fetch_20260209", "code-execution-web-tools-2026-02-09", true},
+	}
+	for _, tc := range cases {
+		t.Run(fmt.Sprintf("%s/explicit=%t", tc.id, tc.explicit), func(t *testing.T) {
+			for _, vertex := range []bool{false, true} {
+				for _, stream := range []bool{false, true} {
+					requests := make(chan struct {
+						beta string
+						body map[string]json.RawMessage
+						err  error
+					}, 1)
+					server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+						var body map[string]json.RawMessage
+						err := json.NewDecoder(r.Body).Decode(&body)
+						requests <- struct {
+							beta string
+							body map[string]json.RawMessage
+							err  error
+						}{strings.Join(r.Header.Values("anthropic-beta"), ","), body, err}
+						if err != nil {
+							http.Error(w, err.Error(), http.StatusBadRequest)
+							return
+						}
+						w.Header().Set("Content-Type", "application/json")
+						w.WriteHeader(http.StatusBadRequest)
+						_, _ = w.Write([]byte(`{"type":"error","error":{"type":"invalid_request_error","message":"captured"}}`))
+					}))
+					m := New("test-key", "claude-sonnet-4-20250514", WithRequestOptions(option.WithBaseURL(server.URL), option.WithHTTPClient(server.Client()), option.WithMaxRetries(0))).(*model)
+					if vertex {
+						m.resolveModel = ResolveVertexModelID
+						m.capabilities = vertexProviderCapabilities
+					}
+					betas := []string{"user-beta"}
+					if tc.explicit {
+						betas = append(betas, tc.beta)
+					}
+					maxTokens := 1024
+					opts := provider.CallOptions{MaxOutputTokens: &maxTokens, Prompt: []provider.Message{provider.UserText("hello")}, Tools: []provider.Tool{{Type: provider.ToolTypeProvider, ID: tc.id, Name: "web"}}, ProviderOptions: provider.BuildProviderOptions(AnthropicOptions{Betas: betas})}
+					if stream {
+						_, err := m.DoStream(context.Background(), opts)
+						require.Error(t, err)
+					} else {
+						_, err := m.DoGenerate(context.Background(), opts)
+						require.Error(t, err)
+					}
+					request := <-requests
+					require.NoError(t, request.err)
+					assert.Contains(t, request.beta, "user-beta")
+					if tc.beta != "" {
+						assert.Equal(t, 1, strings.Count(request.beta, tc.beta), "anthropic-beta: %q", request.beta)
+					} else {
+						assert.NotContains(t, request.beta, "web-fetch-2025-09-10")
+						assert.NotContains(t, request.beta, "code-execution-web-tools-2026-02-09")
+					}
+					var tools []map[string]json.RawMessage
+					require.NoError(t, json.Unmarshal(request.body["tools"], &tools))
+					require.Len(t, tools, 1)
+					assert.JSONEq(t, `"`+strings.TrimPrefix(tc.id, "anthropic.")+`"`, string(tools[0]["type"]))
+					name := "web_search"
+					if strings.HasPrefix(tc.id, "anthropic.web_fetch_") {
+						name = "web_fetch"
+					}
+					assert.JSONEq(t, `"`+name+`"`, string(tools[0]["name"]))
+					server.Close()
+				}
+			}
+		})
+	}
+}
+
+func TestBuildParams_WebToolValidation(t *testing.T) {
+	cases := []struct {
+		id, args string
+	}{
+		{"anthropic.web_search_20250305", `{"maxUses":"two"}`},
+		{"anthropic.web_search_20260318", `{"maxUses":"1.5"}`},
+		{"anthropic.web_fetch_20260318", `{"maxContentTokens":"2.5"}`},
+		{"anthropic.web_search_20260209", `{"maxUses":null}`},
+		{"anthropic.web_fetch_20250910", `{"maxContentTokens":"large"}`},
+		{"anthropic.web_fetch_20260209", `{"maxUses":null}`},
+		{"anthropic.web_search_20260318", `{"userLocation":{}}`},
+		{"anthropic.web_search_20250305", `{"userLocation":{}}`},
+		{"anthropic.web_fetch_20250910", `{"citations":{}}`},
+		{"anthropic.web_search_20260318", `{"userLocation":{"type":"precise"}}`},
+		{"anthropic.web_search_20260318", `{"userLocation":{"type":"approximate","city":42}}`},
+		{"anthropic.web_search_20260318", `{"allowedDomains":["valid.com",4]}`},
+		{"anthropic.web_search_20260318", `{"blockedDomains":null}`},
+		{"anthropic.web_search_20260318", `{"responseInclusion":"invalid"}`},
+		{"anthropic.web_fetch_20260318", `{"citations":{}}`},
+		{"anthropic.web_fetch_20260318", `{"citations":{"enabled":"yes"}}`},
+		{"anthropic.web_fetch_20260318", `{"useCache":"false"}`},
+		{"anthropic.web_fetch_20260318", `{"responseInclusion":null}`},
+	}
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	defer server.Close()
+	model := New("test-key", "claude-sonnet-4-6", WithRequestOptions(option.WithBaseURL(server.URL), option.WithHTTPClient(server.Client()), option.WithMaxRetries(0)))
+	for _, tc := range cases {
+		t.Run(tc.id+"/"+tc.args, func(t *testing.T) {
+			var args map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal([]byte(tc.args), &args))
+			opts := provider.CallOptions{Prompt: []provider.Message{provider.UserText("hello")}, Tools: []provider.Tool{{Type: provider.ToolTypeProvider, ID: tc.id, Name: "web", Args: args}}}
+			_, err := model.DoGenerate(context.Background(), opts)
+			require.ErrorContains(t, err, "invalid")
+			_, err = model.DoStream(context.Background(), opts)
+			require.ErrorContains(t, err, "invalid")
+			assert.Zero(t, calls.Load())
+		})
+	}
+}
+
+func TestWebTool_HTTPVersionMatrix(t *testing.T) {
+	cases := []struct {
+		id, args, wireType, wireName, beta string
+		fields                             map[string]string
+		absent                             []string
+	}{
+		{"anthropic.web_search_20250305", `{"maxUses":2,"allowedDomains":["example.com"],"blockedDomains":["blocked.com"],"userLocation":{"type":"approximate","city":"Paris"},"responseInclusion":"excluded"}`, "web_search_20250305", "web_search", "", map[string]string{"max_uses": `2`, "allowed_domains": `["example.com"]`, "blocked_domains": `["blocked.com"]`, "user_location": `{"type":"approximate","city":"Paris"}`}, []string{"response_inclusion"}},
+		{"anthropic.web_search_20260209", `{"maxUses":2,"allowedDomains":["example.com"],"blockedDomains":["blocked.com"],"userLocation":{"type":"approximate","city":"Paris"},"responseInclusion":"excluded"}`, "web_search_20260209", "web_search", "code-execution-web-tools-2026-02-09", map[string]string{"max_uses": `2`, "allowed_domains": `["example.com"]`, "blocked_domains": `["blocked.com"]`, "user_location": `{"type":"approximate","city":"Paris"}`}, []string{"response_inclusion"}},
+		{"anthropic.web_search_20260318", `{"maxUses":2,"allowedDomains":["example.com"],"blockedDomains":["blocked.com"],"userLocation":{"type":"approximate","city":"Paris","ignored":true},"responseInclusion":"full","ignored":true}`, "web_search_20260318", "web_search", "", map[string]string{"max_uses": `2`, "allowed_domains": `["example.com"]`, "blocked_domains": `["blocked.com"]`, "user_location": `{"type":"approximate","city":"Paris"}`, "response_inclusion": `"full"`}, nil},
+		{"anthropic.web_fetch_20250910", `{"maxUses":3,"allowedDomains":["example.com"],"blockedDomains":["blocked.com"],"citations":{"enabled":true},"maxContentTokens":500,"useCache":false,"responseInclusion":"excluded"}`, "web_fetch_20250910", "web_fetch", "web-fetch-2025-09-10", map[string]string{"max_uses": `3`, "allowed_domains": `["example.com"]`, "blocked_domains": `["blocked.com"]`, "citations": `{"enabled":true}`, "max_content_tokens": `500`}, []string{"use_cache", "response_inclusion"}},
+		{"anthropic.web_fetch_20260209", `{"maxUses":3,"allowedDomains":["example.com"],"blockedDomains":["blocked.com"],"citations":{"enabled":true},"maxContentTokens":500,"useCache":false,"responseInclusion":"excluded"}`, "web_fetch_20260209", "web_fetch", "code-execution-web-tools-2026-02-09", map[string]string{"max_uses": `3`, "allowed_domains": `["example.com"]`, "blocked_domains": `["blocked.com"]`, "citations": `{"enabled":true}`, "max_content_tokens": `500`}, []string{"use_cache", "response_inclusion"}},
+		{"anthropic.web_fetch_20260318", `{"maxUses":3,"allowedDomains":["example.com"],"blockedDomains":["blocked.com"],"citations":{"enabled":true,"ignored":true},"maxContentTokens":500,"useCache":false,"responseInclusion":"excluded","ignored":true}`, "web_fetch_20260318", "web_fetch", "", map[string]string{"max_uses": `3`, "allowed_domains": `["example.com"]`, "blocked_domains": `["blocked.com"]`, "citations": `{"enabled":true}`, "max_content_tokens": `500`, "use_cache": `false`, "response_inclusion": `"excluded"`}, nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.id, func(t *testing.T) {
+			var args map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal([]byte(tc.args), &args))
+			for _, stream := range []bool{false, true} {
+				p, _, warnings, _, err := buildParams("claude-sonnet-4-6", provider.CallOptions{Tools: []provider.Tool{{Type: provider.ToolTypeProvider, ID: tc.id, Name: "custom_web", Args: args}}}, stream)
+				require.NoError(t, err)
+				assert.Empty(t, warnings)
+				require.Len(t, p.Tools, 1)
+				requests := make(chan struct {
+					body map[string]json.RawMessage
+					err  error
+				}, 1)
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					var body map[string]json.RawMessage
+					err := json.NewDecoder(r.Body).Decode(&body)
+					requests <- struct {
+						body map[string]json.RawMessage
+						err  error
+					}{body, err}
+					if err != nil {
+						http.Error(w, err.Error(), http.StatusBadRequest)
+						return
+					}
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusBadRequest)
+					_, _ = w.Write([]byte(`{"type":"error","error":{"type":"invalid_request_error","message":"captured"}}`))
+				}))
+				model := New("test-key", "claude-sonnet-4-6", WithRequestOptions(option.WithBaseURL(server.URL), option.WithHTTPClient(server.Client()), option.WithMaxRetries(0)))
+				maxTokens := 1024
+				opts := provider.CallOptions{MaxOutputTokens: &maxTokens, Prompt: []provider.Message{provider.UserText("hello")}, Tools: []provider.Tool{{Type: provider.ToolTypeProvider, ID: tc.id, Name: "custom_web", Args: args}}}
+				if stream {
+					_, err = model.DoStream(context.Background(), opts)
+				} else {
+					_, err = model.DoGenerate(context.Background(), opts)
+				}
+				require.Error(t, err)
+				request := <-requests
+				require.NoError(t, request.err)
+				var tools []map[string]json.RawMessage
+				require.NoError(t, json.Unmarshal(request.body["tools"], &tools))
+				require.Len(t, tools, 1)
+				wire := tools[0]
+				assert.JSONEq(t, `"`+tc.wireType+`"`, string(wire["type"]))
+				assert.JSONEq(t, `"`+tc.wireName+`"`, string(wire["name"]))
+				for field, want := range tc.fields {
+					assert.JSONEq(t, want, string(wire[field]), field)
+				}
+				for _, field := range tc.absent {
+					assert.NotContains(t, wire, field)
+				}
+				if tc.beta == "" {
+					assert.Empty(t, p.Betas)
+				} else {
+					assert.Contains(t, p.Betas, sdk.AnthropicBeta(tc.beta))
+				}
+				server.Close()
+			}
+		})
+	}
+}
+
+func TestBuildParams_DatedModelCapabilities(t *testing.T) {
+	temperature := 0.5
+	cases := []struct {
+		name            string
+		modelID         string
+		vertex          bool
+		wantModel       string
+		wantMax         int64
+		wantAdaptive    bool
+		wantSampling    bool
+		wantUnknownWarn bool
+	}{
+		{"direct sonnet date", "claude-sonnet-4-20250514", false, "claude-sonnet-4-20250514", 64000, false, true, false},
+		{"vertex sonnet date", "claude-sonnet-4-20250514", true, "claude-sonnet-4@20250514", 64000, false, true, false},
+		{"direct opus date", "claude-opus-4-20250514", false, "claude-opus-4-20250514", 32000, false, true, false},
+		{"vertex opus date", "claude-opus-4-20250514", true, "claude-opus-4@20250514", 32000, false, true, false},
+		{"direct sonnet alias", "claude-sonnet-4-0", false, "claude-sonnet-4-0", 64000, false, true, false},
+		{"vertex sonnet alias", "claude-sonnet-4-0", true, "claude-sonnet-4@20250514", 64000, false, true, false},
+		{"direct opus alias", "claude-opus-4-0", false, "claude-opus-4-0", 32000, false, true, false},
+		{"vertex opus alias", "claude-opus-4-0", true, "claude-opus-4@20250514", 32000, false, true, false},
+		{"specific opus 4-1", "claude-opus-4-1", false, "claude-opus-4-1", 32000, false, true, false},
+		{"specific sonnet 4-5", "claude-sonnet-4-5", true, "claude-sonnet-4-5@20250929", 64000, false, true, false},
+		{"specific sonnet 4-6", "claude-sonnet-4-6", true, "claude-sonnet-4-6", 128000, true, true, false},
+		{"specific opus 4-7", "claude-opus-4-7", true, "claude-opus-4-7", 128000, true, false, false},
+		{"specific opus 4-8", "claude-opus-4-8", false, "claude-opus-4-8", 128000, true, false, false},
+		{"specific sonnet 5", "claude-sonnet-5", true, "claude-sonnet-5", 128000, true, false, false},
+		{"unknown claude", "claude-future-9", false, "claude-future-9", 128000, true, false, true},
+		{"unknown model", "some-future-model", false, "some-future-model", 4096, false, true, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			modelID := tc.modelID
+			caps := directProviderCapabilities
+			if tc.vertex {
+				modelID = ResolveVertexModelID(modelID)
+				caps = vertexProviderCapabilities
+			}
+			for _, reasoning := range []provider.ReasoningEffort{provider.ReasoningProviderDefault, provider.ReasoningMedium} {
+				opts := provider.CallOptions{Reasoning: reasoning}
+				if reasoning == provider.ReasoningProviderDefault {
+					opts.Temperature = &temperature
+				}
+				p, _, warnings, _, err := buildParamsWithCapabilities(modelID, opts, false, caps)
+				require.NoError(t, err)
+				assert.Equal(t, sdk.Model(tc.wantModel), p.Model)
+				assert.Equal(t, tc.wantUnknownWarn, containsWarningFeature(warnings, "maxOutputTokens"))
+				if reasoning == provider.ReasoningMedium {
+					assert.Equal(t, tc.wantAdaptive, p.Thinking.OfAdaptive != nil)
+					if tc.wantAdaptive {
+						assert.Equal(t, tc.wantMax, p.MaxTokens)
+						assert.Nil(t, p.Thinking.OfEnabled)
+					} else {
+						assert.NotNil(t, p.Thinking.OfEnabled)
+					}
+				} else {
+					assert.Equal(t, tc.wantMax, p.MaxTokens)
+					assert.Equal(t, tc.wantSampling, p.Temperature.Valid())
+					assert.Equal(t, !tc.wantSampling, containsWarningFeature(warnings, "temperature"))
+				}
+			}
+		})
+	}
+}
+
+func containsWarningFeature(warnings []provider.Warning, feature string) bool {
+	for _, warning := range warnings {
+		if warning.Feature == feature {
+			return true
+		}
+	}
+	return false
 }
 
 func TestBuildParams_SystemMessage(t *testing.T) {
