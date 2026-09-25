@@ -1,7 +1,7 @@
 ## 1. Focused regression contract
 
 - [ ] 1.1 Extend `test/conformance/tools/ci-workflow.test.mts` to assert main/tag image gates, exact SHA, common root-context Dockerfile/workspace recipe, retained source/ancestry/boundary dependencies and fail-closed publication/deployment; remove old standalone-Gateway prerequisite assertions without encoding incidental job scheduling.
-- [ ] 1.2 Add one credential-free Docker regression with an uncommitted candidate local SDK/provider behavior change, unchanged older merged pins and readonly manifests; show the locally built Gateway image runs candidate behavior, not downloaded older modules, and standalone Gateway readiness need not pass. Avoid real credentials and invented provider recordings.
+- [ ] 1.2 Add one credential-free Docker regression in a temporary source copy/worktree (leaving the user's checkout untouched) with an uncommitted candidate local SDK/provider behavior change, unchanged older merged pins and readonly manifests; show the locally built Gateway image runs candidate behavior, not downloaded older modules, and standalone Gateway readiness need not pass. Avoid real credentials and invented provider recordings.
 - [ ] 1.3 Add context and license-evidence assertions for excluded sentinel secrets/caches, included command embeds, unverified-local source attribution in OCI label and local-module inventory, root Apache/Gateway AGPL notice and resolved external dependencies at target platform. Establish regression failure against the existing published-pin image recipe where feasible.
 
 ## 2. Workspace image recipe
