@@ -93,6 +93,73 @@ func TestNewResponses_MissingOutput(t *testing.T) {
 	}
 }
 
+func TestNewResponses_WebSearchSourcesIncludeRequests(t *testing.T) {
+	no := false
+	for _, tc := range []struct {
+		name    string
+		stream  bool
+		opts    []Option
+		perCall *bool
+		want    bool
+	}{
+		{name: "generate default", want: true},
+		{name: "stream default", stream: true, want: true},
+		{name: "generate per-call opt-out", perCall: &no},
+		{name: "stream per-call opt-out", stream: true, perCall: &no},
+		{name: "generate endpoint opt-out", opts: []Option{WithWebSearchSourcesIncludeSupport(false)}},
+		{name: "stream endpoint opt-out", stream: true, opts: []Option{WithWebSearchSourcesIncludeSupport(false)}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				var body map[string]any
+				require.NoError(t, json.NewDecoder(req.Body).Decode(&body))
+				assert.Len(t, toolsArray(t, body), 1)
+				if tc.want {
+					assert.Equal(t, []string{"web_search_call.action.sources"}, toStringSlice(body["include"]))
+				} else {
+					assert.NotContains(t, toStringSlice(body["include"]), "web_search_call.action.sources")
+				}
+				contentType := "application/json"
+				payload := `{"id":"resp_1","created_at":1700000000,"model":"gpt-4o","object":"response","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}`
+				if tc.stream {
+					contentType = "text/event-stream"
+					payload = "event: response.completed\n" + `data: {"type":"response.completed","sequence_number":0,"response":{"id":"resp_1","created_at":1700000000,"model":"gpt-4o","object":"response","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}}` + "\n\n"
+				}
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     http.Header{"Content-Type": []string{contentType}},
+					Body:       io.NopCloser(strings.NewReader(payload)),
+					Request:    req,
+				}, nil
+			})}
+			opts := append([]Option{WithRequestOptions(option.WithHTTPClient(client), option.WithMaxRetries(0))}, tc.opts...)
+			model := NewResponses("test-key", "gpt-4o", opts...)
+			call := provider.CallOptions{
+				Prompt: []provider.Message{provider.UserText("hi")},
+				Tools:  []provider.Tool{{Type: provider.ToolTypeProvider, ID: toolIDWebSearch, Name: "search"}},
+				ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{
+					IncludeWebSearchSources: tc.perCall,
+				}),
+			}
+			if tc.stream {
+				result, err := model.DoStream(t.Context(), call)
+				require.NoError(t, err)
+				var finished bool
+				for part := range result.Stream {
+					assert.NotEqual(t, provider.PartError, part.Type)
+					if part.Type == provider.PartFinish {
+						finished = true
+					}
+				}
+				assert.True(t, finished)
+			} else {
+				_, err := model.DoGenerate(t.Context(), call)
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
 func TestNewResponses_UsesProductionBaseURLByDefault(t *testing.T) {
 	unsetEnv(t, "OPENAI_BASE_URL")
 

@@ -12,6 +12,7 @@ import (
 
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/config"
+	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 	"github.com/grafana/ai-sdk/provider"
 	anthropicprovider "github.com/grafana/ai-sdk/providers/anthropic"
 	openaiprovider "github.com/grafana/ai-sdk/providers/openai"
@@ -137,4 +138,47 @@ func TestOpenAIOptionPolicy_ClassifiesEveryTypedField(t *testing.T) {
 			assert.Contains(t, allowed, name, "%s.%s is read by providers/openai but not forwarded", kind.Name(), name)
 		}
 	}
+}
+
+func TestOpenAIOptionPolicy_ForwardsWebSearchOptOut(t *testing.T) {
+	for _, namespace := range []string{"openai", "azure"} {
+		t.Run(namespace, func(t *testing.T) {
+			var captured provider.CallOptions
+			file := config.File{Models: map[string]config.Model{
+				"public": {Name: "OpenAI", Primary: config.Primary{Provider: "backend", Model: "gpt-4o"}},
+			}}
+			created, err := buildCatalog(file, map[string]config.ResolvedProvider{
+				"backend": {Type: "openai", APIKey: "key"},
+			}, http.DefaultClient, anthropicprovider.New, func(_ string, lower provider.LanguageModel) (provider.LanguageModel, error) {
+				return &optionCaptureModel{LanguageModel: lower, captured: &captured}, nil
+			})
+			require.NoError(t, err)
+			handler, err := providerv4.New(providerv4.Config{Resolver: created, Limits: serviceTestLimits()})
+			require.NoError(t, err)
+
+			body := `{"prompt":[],"providerOptions":{"` + namespace + `":{"includeWebSearchSources":false,"unknown":true}}}`
+			request := httptest.NewRequest(http.MethodPost, providerv4.LanguageModelPath, strings.NewReader(body))
+			request.Header.Set("Content-Type", "application/json")
+			request.Header.Set(providerv4.HeaderSpecificationVersion, providerv4.SpecificationVersion)
+			request.Header.Set(providerv4.HeaderModelID, "public")
+			request.Header.Set(providerv4.HeaderStreaming, "false")
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+
+			option, ok := captured.ProviderOptions[namespace].(provider.RawProviderOption)
+			require.True(t, ok)
+			assert.JSONEq(t, `{"includeWebSearchSources":false}`, string(option.Raw))
+		})
+	}
+}
+
+type optionCaptureModel struct {
+	provider.LanguageModel
+	captured *provider.CallOptions
+}
+
+func (model *optionCaptureModel) DoGenerate(_ context.Context, opts provider.CallOptions) (*provider.GenerateResult, error) {
+	*model.captured = opts
+	return &provider.GenerateResult{FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}, nil
 }

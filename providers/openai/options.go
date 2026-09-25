@@ -44,6 +44,15 @@ func WithProviderName(name string) Option {
 	}
 }
 
+// WithWebSearchSourcesIncludeSupport controls whether the endpoint supports
+// automatically requesting web-search sources. It defaults to true. Disabling
+// it does not remove sources explicitly requested in Include.
+func WithWebSearchSourcesIncludeSupport(supported bool) Option {
+	return func(m *model) {
+		m.webSearchSourcesIncludeSupported = supported
+	}
+}
+
 // WithGenerateID overrides the ID generator used for synthesized identifiers
 // (e.g., source/citation IDs, MCP approval dummy tool-call IDs). Tests inject a
 // deterministic generator so conformance output is byte-stable.
@@ -66,6 +75,9 @@ type OpenAIResponsesOptions struct {
 	// "reasoning.encrypted_content", "file_search_call.results",
 	// "message.output_text.logprobs").
 	Include []string `json:"include,omitempty"`
+	// IncludeWebSearchSources controls automatic inclusion of web-search sources.
+	// When nil, the model's endpoint capability determines the default.
+	IncludeWebSearchSources *bool `json:"includeWebSearchSources,omitempty"`
 	// Instructions overrides the system/developer instructions, separate from
 	// message history. Used when continuing via PreviousResponseID.
 	Instructions string `json:"instructions,omitempty"`
