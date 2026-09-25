@@ -20,8 +20,8 @@
     "ajv": "8.17.1"
   },
   "devDependencies": {
-    "@types/node": "25.9.5",
-    "tsx": "4.23.12",
+    "@types/node": "25.9.8",
+    "tsx": "4.23.15",
     "typescript": "7.0.2"
   }
 }
