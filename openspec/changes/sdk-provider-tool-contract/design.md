@@ -16,18 +16,18 @@ Behavior follows the registered reference `08ae5ad05bc12496dd1ffcf64e34419e08313
 - Use bool for unary dynamic and preliminary markers, where absence and false mean the same thing. Retain `*bool` for streaming dynamic, because input-start explicitly false overrides definition-based text-stream inference. UI conversion independently classifies known application tools as the registered frontend does; tests cover both outputs rather than assuming they agree.
 - Extend the client's closed unary/SSE readers with explicit provider-call/result and metadata allowlists rather than sharing server DTOs. Preserve byte/event bounds, cancellation, client-owned response fields, and valid warning order. Do not require a current-response call for deferred results or add an independent server lifecycle validator.
 - Use pointers for Anthropic MCP token/enabled options so omission differs from empty/false. For unary Anthropic calls, supply a future context deadline as the default SDK timeout before its large-token check; an explicit request timeout still wins. Neither streaming nor the no-deadline SDK guard changes.
-- Keep Apache SDK modules independent of Gateway code. The Gateway service consumes published immutable module versions, migrates its existing field uses, and retains rejection of capabilities it does not yet validate or route.
+- Keep Apache SDK modules independent of Gateway code. Source checks use the candidate SDK, providers, client and Gateway together; declared internal module pins remain real, downloadable versions already merged into canonical main. Migrate existing Gateway field uses without activating capabilities it does not yet validate or route. Standalone module readiness is checked separately before publication.
 
 ## Risks / Trade-offs
 
-- Changed Go field types can break consumers → migrate compiled callers and test isolated modules without workspace replacements.
+- Changed Go field types can break consumers → migrate callers in the candidate-source workspace; validate standalone published modules separately before producing artifacts.
 - A client can decode responses the service does not yet emit → keep service rejection tests and describe SDK decoding separately from service support.
 - Accepting new tool variants prematurely could enable effects → reject unsupported service inputs before invocation.
 - Synthetic transport tests cannot prove provider behavior → retain fixture provenance and report live-provider gaps separately.
 
 ## Migration Plan
 
-Update compiled consumers together with published module dependencies, leaving existing service behavior unchanged. Verify direct provider calls, both stream projections, client decoding, isolated module resolution, and Gateway rejection. Roll back the corresponding module set if needed; no persistent state is introduced.
+Update compiled consumers together while keeping internal pins on merged revisions and existing service behavior unchanged. Verify direct provider calls, both stream projections, client decoding, candidate-source integration, merged-pin ancestry and Gateway rejection. Standalone module checks gate publication separately; no persistent state is introduced.
 
 ## Open Questions
 

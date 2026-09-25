@@ -129,10 +129,16 @@ type runtimeHarness struct {
 	model    *recordingModel
 }
 
+// harnessOptionPolicy forwards the namespaces these tests send, so tests about
+// mapping are not also tests about the policy. Policy tests set their own.
+var harnessOptionPolicy = catalog.ProviderOptionPolicy{
+	Namespaces: []string{"call", "message", "part", "ns", "example", "p", "Grafana", "anthropic", "openaiCompatible"},
+}
+
 func newRuntimeHarness(t *testing.T, limits Limits) *runtimeHarness {
 	t.Helper()
 	model := &recordingModel{}
-	resolver := &recordingResolver{resolved: catalog.ResolvedModel{ID: "canonical/model", Model: model}}
+	resolver := &recordingResolver{resolved: catalog.ResolvedModel{ID: "canonical/model", Model: model, ProviderOptions: harnessOptionPolicy}}
 	created, err := New(Config{Resolver: resolver, Limits: limits})
 	require.NoError(t, err)
 	return &runtimeHarness{handler: created.(*handler), resolver: resolver, model: model}
@@ -340,8 +346,10 @@ func TestRuntimeSupportedMapping(t *testing.T) {
 	}
 	assert.Equal(t, []string{"first", "second"}, options.StopSequences)
 	assert.Equal(t, provider.ReasoningHigh, options.Reasoning)
-	assert.Nil(t, options.Headers)
-	assert.Nil(t, options.ProviderOptions)
+	assert.Nil(t, options.Headers, "an empty header map maps to no headers")
+	assert.Equal(t, provider.ProviderOptions{
+		"p": provider.RawProviderOption{Key: "p", Raw: json.RawMessage(`{}`)},
+	}, options.ProviderOptions, "a present namespace survives even when empty")
 }
 
 func TestRuntimeStandardJSONNormalization(t *testing.T) {
@@ -373,8 +381,12 @@ func TestRuntimeUnsupportedCapabilities(t *testing.T) {
 		{name: "provider executed tool call", body: `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"c","toolName":"f","input":{},"providerExecuted":true}]}]}`, capability: capabilityTools},
 		{name: "tool approvals", body: `{"prompt":[{"role":"tool","content":[{"type":"tool-approval-response","approvalId":"a","approved":false}]}]}`, capability: capabilityToolApprovals},
 		{name: "structured output", body: `{"prompt":[],"responseFormat":{"type":"json"}}`, capability: capabilityStructuredOutput},
-		{name: "provider options", body: `{"prompt":[],"providerOptions":{"p":{"enabled":true}}}`, capability: capabilityProviderOptions},
-		{name: "body headers", body: `{"prompt":[],"headers":{"x-example":""}}`, capability: capabilityBodyHeaders},
+		{name: "reserved provider option namespace", body: `{"prompt":[],"providerOptions":{"grafana":{"enabled":true}}}`, capability: capabilityReservedProviderOptions},
+		{name: "protected provider option, model", body: `{"prompt":[],"providerOptions":{"openaiCompatible":{"model":"someone-elses-model"}}}`, capability: capabilityProtectedProviderOption},
+		{name: "protected provider option, prompt", body: `{"prompt":[],"providerOptions":{"openaiCompatible":{"messages":[{"role":"user","content":"rewritten"}]}}}`, capability: capabilityProtectedProviderOption},
+		{name: "protected provider option, server-side tools", body: `{"prompt":[],"providerOptions":{"anthropic":{"mcpServers":[{"type":"url","url":"https://caller.example/mcp","name":"caller"}]}}}`, capability: capabilityProtectedProviderOption},
+		{name: "protected call header", body: `{"prompt":[],"headers":{"Authorization":"Bearer caller"}}`, capability: capabilityProtectedCallHeader},
+		{name: "protected call header, other case", body: `{"prompt":[],"headers":{"X-ACCESS-TOKEN":"caller"}}`, capability: capabilityProtectedCallHeader},
 		{name: "raw output", body: `{"prompt":[],"includeRawChunks":true}`, capability: capabilityRawOutput},
 	}
 	for _, tc := range tests {
@@ -432,9 +444,9 @@ func TestRuntimeGoldenReplay(t *testing.T) {
 		{file: "streaming.json", status: http.StatusOK, modelCalls: 1},
 		{file: "sequence.json", status: http.StatusOK, modelCalls: 1},
 		{file: "sequence.json", index: 1, status: http.StatusOK, modelCalls: 1},
-		{file: "scalar-presence.json", status: http.StatusBadRequest, capability: capabilityBodyHeaders},
-		{file: "headers.json", status: http.StatusBadRequest, capability: capabilityBodyHeaders},
-		{file: "headers.json", index: 1, status: http.StatusBadRequest, capability: capabilityBodyHeaders},
+		{file: "scalar-presence.json", status: http.StatusOK, modelCalls: 1},
+		{file: "headers.json", status: http.StatusOK, modelCalls: 1},
+		{file: "headers.json", index: 1, status: http.StatusOK, modelCalls: 1},
 		{file: "comprehensive-unions.json", status: http.StatusBadRequest},
 	}
 	for _, tc := range tests {

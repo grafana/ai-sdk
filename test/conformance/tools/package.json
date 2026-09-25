@@ -9,6 +9,7 @@
     "coverage-inventory": "tsx coverage-inventory.mts",
     "provider-shape": "tsx provider-shape.mts",
     "test:baseline": "tsx --test validate-baseline.test.mts upgrade-baseline.test.mjs upgrade-target.test.mjs bedrock-schema-generation.test.mjs common.test.mts fixture-inventory.test.mts record.test.mts",
+    "test:ci": "tsx --test ci-workflow.test.mts",
     "generate": "tsx generate.mts",
     "record": "tsx record.mts"
   },
