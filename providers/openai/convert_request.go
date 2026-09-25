@@ -94,7 +94,11 @@ func buildParamsForProvider(modelID string, opts provider.CallOptions, providerO
 	warnings = append(warnings, applyScalarParams(&body, opts, caps, isReasoning, popts)...)
 
 	// Structured output.
-	applyResponseFormat(&body, opts, popts)
+	formatWarnings, err := applyResponseFormat(&body, opts, popts)
+	if err != nil {
+		return responses.ResponseNewParams{}, nil, buildResult{}, err
+	}
+	warnings = append(warnings, formatWarnings...)
 
 	// Tools + tool choice.
 	toolWarnings, err := prepareTools(&body, opts, popts, &br)
