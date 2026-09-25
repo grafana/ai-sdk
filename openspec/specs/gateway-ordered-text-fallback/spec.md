@@ -100,6 +100,22 @@ Enabling function tools on direct routes in WP11 or WP12 SHALL NOT enable them o
 - **WHEN** a unary or streaming call combines automatic choice with nonempty tools, tool history, or another unsupported control
 - **THEN** it SHALL fail before any physical candidate executes rather than selecting a fallback or silently removing those options
 
+### Requirement: Empty message options retain text fallback eligibility
+Otherwise eligible text requests SHALL remain eligible for fallback when supported ordinary message-level provider-option namespaces contain only empty JSON objects. The guard SHALL assess semantic emptiness rather than namespace-map length, without removing or mutating the preserved options. A namespace with any member, including null, false, zero, empty strings, arrays, or nested objects, SHALL count as active and remain rejected. Invalid options and reserved host namespaces SHALL NOT qualify for this exception. File content, effectful history, tools, and all other existing route restrictions SHALL remain enforced.
+
+#### Scenario: Authenticated text failover preserves empty namespaces
+- **WHEN** an authenticated unary or streaming text request carries message options `{"vendor":{}}` and the primary fails under existing retry rules before commitment
+- **THEN** the request SHALL retain its prior text fallback eligibility
+- **AND** each attempted candidate SHALL receive the same empty namespace object without removal or promotion to call options
+
+#### Scenario: Active values are not recursively treated as empty
+- **WHEN** message options contain `{"vendor":{"flag":false}}`, `{"vendor":{"value":null}}`, or `{"vendor":{"nested":{}}}`
+- **THEN** the fallback route guard SHALL reject the request before physical invocation rather than recursively treating the namespace as empty
+
+#### Scenario: Empty options do not enable file fallback
+- **WHEN** a request combines ordinary empty message-option namespaces with files or disallowed tool history
+- **THEN** the existing route restriction SHALL fail safely before any physical candidate is invoked
+
 ### Requirement: Strict model configuration and public IDs
 A bounded strict YAML document SHALL own named providers and public model routes. YAML decoding SHALL reject unknown fields, duplicate mapping keys, and trailing documents. Configuration SHALL reject empty names, unknown provider types, missing provider or backend model references, duplicate or colliding canonical IDs and aliases, missing required presentation names, an empty model set, an empty effective route, and duplicate candidate tuples within a route.
 
