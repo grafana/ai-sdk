@@ -5,8 +5,8 @@ go 1.26.3
 replace github.com/grafana/ai-sdk => ../../..
 
 require (
-	github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260923162042-f224e3d5d1dc
-	github.com/grafana/ai-sdk/providers/grafana v0.0.0-20260923162252-252f0507f5f9
+	github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260921202550-3dff0f7087dc
+	github.com/grafana/ai-sdk/providers/grafana v0.0.0-20260921202550-3dff0f7087dc
 	github.com/stretchr/testify v1.11.1
 )
 
