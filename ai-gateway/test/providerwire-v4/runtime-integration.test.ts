@@ -367,10 +367,17 @@ describe("real ProviderWire V4 unary runtime", () => {
   });
 
   it("maps representative failures", async () => {
+    // An ordinary body header is carried; a credential-bearing one is refused,
+    // because providers apply call headers after their own authorization header.
+    const carried = await model("success").doGenerate({
+      prompt: [],
+      headers: { "x-body-header": "carried" },
+    });
+    assert.deepEqual(carried.content, [{ type: "text", text: "hello from Go" }]);
     await assert.rejects(
       async () => await model("success").doGenerate({
         prompt: [],
-        headers: { "x-body-header": "unsupported" },
+        headers: { authorization: "Bearer caller-controlled" },
       }),
       (error: unknown) => GatewayInvalidRequestError.isInstance(error),
     );
