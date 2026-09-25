@@ -18,11 +18,12 @@ public invalid-request error for unsupported calls.
 Direct routes support unary client-executed function tools. Definitions preserve
 `strict: false`, examples, object schemas, and ordinary provider options;
 Gateway-reserved option namespaces remain rejected. History accepts assistant
-calls and text, JSON (including null), error-text, error-JSON, and text-only
-content results, preserving required selected empty values. The application
-executes tools and supplies call/result history on a later independent request.
+calls and text, JSON (including null), error-text, error-JSON, and content
+results with text or supported file entries, preserving selected empty values.
+The application executes tools and supplies call/result history on a later independent request.
 The Gateway never executes a tool. Provider-executed/dynamic tools, approvals,
-preliminary results and media results remain unsupported. Logical telemetry
+preliminary results, custom tool-result content, generated media responses, and
+reasoning-file input remain unsupported. Logical telemetry
 removes tool-bearing definitions, choices, inputs and outputs before export.
 
 Streaming direct routes additionally support input start/delta/end, calls and
@@ -73,8 +74,13 @@ Both provider instances must be declared in `providers` using the existing
 environment-variable credential references. Omitting `fallback` creates a direct
 route; removing it restores direct routing without changing the public model ID.
 Candidates retain configuration order and each new call starts at primary.
-Fallback routes accept text only: tools, tool choice, tool-call/result history,
-and other effectful content are rejected before any candidate runs. A stream's
+Models without fallback accept supported file inputs. Models configured with
+fallback are text-only: files, nonempty tools, tool-call/result history,
+backend-relevant active provider options, and tool choices other than plain
+auto are rejected before any
+candidate, including primary, runs. Message-level namespaces containing only
+empty objects retain text fallback eligibility without losing their original
+representation. A stream's
 first part commits its candidate, including an error part. No later failure
 restarts on another provider. Client retries can multiply physical attempts;
 the Gateway disables native-provider retries.

@@ -1,0 +1,496 @@
+[
+  {
+    "method": "POST",
+    "path": "/language-model",
+    "headers": {
+      "ai-language-model-id": "grafana/files",
+      "ai-language-model-specification-version": "4",
+      "ai-language-model-streaming": "false",
+      "content-type": "application/json"
+    },
+    "streaming": false,
+    "hasSignal": false,
+    "body": {
+      "prompt": [
+        {
+          "role": "user",
+          "providerOptions": {
+            "provider": {
+              "nested": {
+                "nullValue": null,
+                "falseValue": false,
+                "zero": 0,
+                "empty": ""
+              },
+              "array": [
+                null,
+                false,
+                0,
+                "",
+                [],
+                {}
+              ]
+            }
+          },
+          "content": [
+            {
+              "type": "file",
+              "filename": "bytes.bin",
+              "data": {
+                "type": "data",
+                "data": "AAEC"
+              },
+              "mediaType": "application/octet-stream",
+              "providerOptions": {
+                "provider": {
+                  "nested": {
+                    "nullValue": null,
+                    "falseValue": false,
+                    "zero": 0,
+                    "empty": ""
+                  },
+                  "array": [
+                    null,
+                    false,
+                    0,
+                    "",
+                    [],
+                    {}
+                  ]
+                }
+              }
+            },
+            {
+              "type": "file",
+              "filename": "",
+              "data": {
+                "type": "data",
+                "data": ""
+              },
+              "mediaType": "application/pdf"
+            },
+            {
+              "type": "file",
+              "data": {
+                "type": "url",
+                "url": "https://example.test/file"
+              },
+              "mediaType": "image/png"
+            },
+            {
+              "type": "file",
+              "data": {
+                "type": "reference",
+                "reference": {
+                  "provider": "file-1"
+                }
+              },
+              "mediaType": "application/pdf"
+            },
+            {
+              "type": "file",
+              "filename": "",
+              "data": {
+                "type": "text",
+                "text": ""
+              },
+              "mediaType": "text/plain",
+              "providerOptions": {
+                "provider": {
+                  "nested": {
+                    "nullValue": null,
+                    "falseValue": false,
+                    "zero": 0,
+                    "empty": ""
+                  },
+                  "array": [
+                    null,
+                    false,
+                    0,
+                    "",
+                    [],
+                    {}
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "role": "assistant",
+          "providerOptions": {
+            "provider": {}
+          },
+          "content": [
+            {
+              "type": "file",
+              "data": {
+                "type": "data",
+                "data": "YWxyZWFkeS1iYXNlNjQ="
+              },
+              "mediaType": "application/pdf"
+            },
+            {
+              "type": "file",
+              "filename": "",
+              "data": {
+                "type": "url",
+                "url": "https://example.test/assistant"
+              },
+              "mediaType": "image/png"
+            },
+            {
+              "type": "file",
+              "data": {
+                "type": "reference",
+                "reference": {
+                  "provider": "file-2"
+                }
+              },
+              "mediaType": "application/pdf"
+            },
+            {
+              "type": "file",
+              "data": {
+                "type": "text",
+                "text": "assistant text"
+              },
+              "mediaType": "text/plain"
+            },
+            {
+              "type": "tool-call",
+              "toolCallId": "call-1",
+              "toolName": "lookup",
+              "input": {}
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "content": [
+            {
+              "type": "tool-result",
+              "toolCallId": "call-1",
+              "toolName": "lookup",
+              "output": {
+                "type": "content",
+                "value": [
+                  {
+                    "type": "file",
+                    "filename": "result.bin",
+                    "data": {
+                      "type": "data",
+                      "data": "BQY="
+                    },
+                    "mediaType": "application/octet-stream",
+                    "providerOptions": {
+                      "provider": {
+                        "nested": {
+                          "nullValue": null,
+                          "falseValue": false,
+                          "zero": 0,
+                          "empty": ""
+                        },
+                        "array": [
+                          null,
+                          false,
+                          0,
+                          "",
+                          [],
+                          {}
+                        ]
+                      }
+                    }
+                  },
+                  {
+                    "type": "file",
+                    "filename": "",
+                    "data": {
+                      "type": "data",
+                      "data": ""
+                    },
+                    "mediaType": "application/pdf"
+                  },
+                  {
+                    "type": "file",
+                    "data": {
+                      "type": "url",
+                      "url": "https://example.test/result"
+                    },
+                    "mediaType": "image/png"
+                  },
+                  {
+                    "type": "file",
+                    "data": {
+                      "type": "reference",
+                      "reference": {
+                        "provider": "file-3"
+                      }
+                    },
+                    "mediaType": "application/pdf"
+                  },
+                  {
+                    "type": "file",
+                    "filename": "",
+                    "data": {
+                      "type": "text",
+                      "text": ""
+                    },
+                    "mediaType": "text/plain"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/language-model",
+    "headers": {
+      "ai-language-model-id": "grafana/files",
+      "ai-language-model-specification-version": "4",
+      "ai-language-model-streaming": "true",
+      "content-type": "application/json"
+    },
+    "streaming": true,
+    "hasSignal": false,
+    "body": {
+      "prompt": [
+        {
+          "role": "user",
+          "providerOptions": {
+            "provider": {
+              "nested": {
+                "nullValue": null,
+                "falseValue": false,
+                "zero": 0,
+                "empty": ""
+              },
+              "array": [
+                null,
+                false,
+                0,
+                "",
+                [],
+                {}
+              ]
+            }
+          },
+          "content": [
+            {
+              "type": "file",
+              "filename": "bytes.bin",
+              "data": {
+                "type": "data",
+                "data": "AAEC"
+              },
+              "mediaType": "application/octet-stream",
+              "providerOptions": {
+                "provider": {
+                  "nested": {
+                    "nullValue": null,
+                    "falseValue": false,
+                    "zero": 0,
+                    "empty": ""
+                  },
+                  "array": [
+                    null,
+                    false,
+                    0,
+                    "",
+                    [],
+                    {}
+                  ]
+                }
+              }
+            },
+            {
+              "type": "file",
+              "filename": "",
+              "data": {
+                "type": "data",
+                "data": ""
+              },
+              "mediaType": "application/pdf"
+            },
+            {
+              "type": "file",
+              "data": {
+                "type": "url",
+                "url": "https://example.test/file"
+              },
+              "mediaType": "image/png"
+            },
+            {
+              "type": "file",
+              "data": {
+                "type": "reference",
+                "reference": {
+                  "provider": "file-1"
+                }
+              },
+              "mediaType": "application/pdf"
+            },
+            {
+              "type": "file",
+              "filename": "",
+              "data": {
+                "type": "text",
+                "text": ""
+              },
+              "mediaType": "text/plain",
+              "providerOptions": {
+                "provider": {
+                  "nested": {
+                    "nullValue": null,
+                    "falseValue": false,
+                    "zero": 0,
+                    "empty": ""
+                  },
+                  "array": [
+                    null,
+                    false,
+                    0,
+                    "",
+                    [],
+                    {}
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "role": "assistant",
+          "providerOptions": {
+            "provider": {}
+          },
+          "content": [
+            {
+              "type": "file",
+              "data": {
+                "type": "data",
+                "data": "YWxyZWFkeS1iYXNlNjQ="
+              },
+              "mediaType": "application/pdf"
+            },
+            {
+              "type": "file",
+              "filename": "",
+              "data": {
+                "type": "url",
+                "url": "https://example.test/assistant"
+              },
+              "mediaType": "image/png"
+            },
+            {
+              "type": "file",
+              "data": {
+                "type": "reference",
+                "reference": {
+                  "provider": "file-2"
+                }
+              },
+              "mediaType": "application/pdf"
+            },
+            {
+              "type": "file",
+              "data": {
+                "type": "text",
+                "text": "assistant text"
+              },
+              "mediaType": "text/plain"
+            },
+            {
+              "type": "tool-call",
+              "toolCallId": "call-1",
+              "toolName": "lookup",
+              "input": {}
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "content": [
+            {
+              "type": "tool-result",
+              "toolCallId": "call-1",
+              "toolName": "lookup",
+              "output": {
+                "type": "content",
+                "value": [
+                  {
+                    "type": "file",
+                    "filename": "result.bin",
+                    "data": {
+                      "type": "data",
+                      "data": "BQY="
+                    },
+                    "mediaType": "application/octet-stream",
+                    "providerOptions": {
+                      "provider": {
+                        "nested": {
+                          "nullValue": null,
+                          "falseValue": false,
+                          "zero": 0,
+                          "empty": ""
+                        },
+                        "array": [
+                          null,
+                          false,
+                          0,
+                          "",
+                          [],
+                          {}
+                        ]
+                      }
+                    }
+                  },
+                  {
+                    "type": "file",
+                    "filename": "",
+                    "data": {
+                      "type": "data",
+                      "data": ""
+                    },
+                    "mediaType": "application/pdf"
+                  },
+                  {
+                    "type": "file",
+                    "data": {
+                      "type": "url",
+                      "url": "https://example.test/result"
+                    },
+                    "mediaType": "image/png"
+                  },
+                  {
+                    "type": "file",
+                    "data": {
+                      "type": "reference",
+                      "reference": {
+                        "provider": "file-3"
+                      }
+                    },
+                    "mediaType": "application/pdf"
+                  },
+                  {
+                    "type": "file",
+                    "filename": "",
+                    "data": {
+                      "type": "text",
+                      "text": ""
+                    },
+                    "mediaType": "text/plain"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+]

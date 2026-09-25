@@ -16,6 +16,14 @@ import (
 // backend. Refusals that do not depend on the backend happen during mapping.
 func applyProviderOptionPolicy(options provider.CallOptions, policy catalog.ProviderOptionPolicy) provider.CallOptions {
 	options.ProviderOptions = filterProviderOptions(options.ProviderOptions, policy)
+	if len(options.Tools) > 0 {
+		tools := make([]provider.Tool, len(options.Tools))
+		for i, tool := range options.Tools {
+			tool.ProviderOptions = filterProviderOptions(tool.ProviderOptions, policy)
+			tools[i] = tool
+		}
+		options.Tools = tools
+	}
 	if len(options.Prompt) == 0 {
 		return options
 	}
@@ -26,6 +34,16 @@ func applyProviderOptionPolicy(options provider.CallOptions, policy catalog.Prov
 			content := make([]provider.ContentPart, len(message.Content))
 			for j, part := range message.Content {
 				part.ProviderOptions = filterProviderOptions(part.ProviderOptions, policy)
+				if part.Type == provider.ContentPartTypeToolResult && part.Output != nil && len(part.Output.Content) > 0 {
+					output := *part.Output
+					values := make([]provider.ToolResultContentValue, len(output.Content))
+					for k, value := range output.Content {
+						value.ProviderOptions = filterProviderOptions(value.ProviderOptions, policy)
+						values[k] = value
+					}
+					output.Content = values
+					part.Output = &output
+				}
 				content[j] = part
 			}
 			message.Content = content

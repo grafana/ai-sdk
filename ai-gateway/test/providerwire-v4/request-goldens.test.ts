@@ -5,6 +5,7 @@ import { createGateway } from "@ai-sdk/gateway";
 import { createCaptureFetch, drainStream } from "./capture.ts";
 import {
   comprehensiveGoldenCase,
+  fileInputGoldenCase,
   headersGoldenCase,
   requestGoldenCases,
   scalarGoldenCase,
@@ -125,6 +126,38 @@ describe("registered Gateway semantic request goldens", () => {
     assert.equal(reasoningURL.data.url, "https://example.test/reasoning");
     assert.equal(resultBytes.data.data, "BQY=");
     assert.equal(resultURL.data.url, "https://example.test/result");
+  });
+
+  it("preserves selected file arms and filename presence in both modes", async () => {
+    const requests = await fileInputGoldenCase.capture();
+    assert.deepEqual(requests.map((request) => request.streaming), [false, true]);
+    for (const request of requests) {
+      const body = request.body as JsonObject;
+      const user = message(body, "user");
+      const assistant = message(body, "assistant");
+      const tool = message(body, "tool");
+      const nestedFiles = tool.content[0].output.value;
+      for (const files of [user.content, nestedFiles]) {
+        assert.deepEqual(files.map((part: JsonObject) => part.data.type), ["data", "data", "url", "reference", "text"]);
+      }
+      assert.deepEqual(assistant.content.slice(0, 4).map((part: JsonObject) => part.data.type), ["data", "url", "reference", "text"]);
+      assert.equal(user.content[0].data.data, "AAEC");
+      assert.equal(nestedFiles[0].data.data, "BQY=");
+      for (const files of [user.content, nestedFiles]) {
+        assert.equal(files[1].data.data, "");
+        assert.equal(files[1].filename, "");
+        assert.equal("filename" in files[2], false);
+        assert.deepEqual(files[3].data.reference, { provider: files === user.content ? "file-1" : "file-3" });
+        assert.equal(files[4].data.text, "");
+        assert.equal(files[4].filename, "");
+      }
+      assert.equal(assistant.content[1].filename, "");
+      assert.equal(assistant.content[0].data.data, "YWxyZWFkeS1iYXNlNjQ=");
+      assert.equal(body.prompt[0].providerOptions.provider.nested.nullValue, null);
+      assert.equal(user.content[0].providerOptions.provider.nested.falseValue, false);
+      assert.deepEqual(assistant.providerOptions.provider, {});
+      assert.equal(nestedFiles[0].providerOptions.provider.nested.zero, 0);
+    }
   });
 
   it("omits abortSignal from the streaming body", async () => {
