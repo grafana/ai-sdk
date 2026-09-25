@@ -6,7 +6,7 @@ Issue [#227](https://github.com/grafana/ai-sdk/issues/227) remains a request-con
 
 - Make OpenAI Responses web-search source auto-inclusion conditional on a default-enabled model capability and an optional per-call `includeWebSearchSources` switch. Keep caller-specified `include` values intact, even if either switch is false.
 - Configure only the Mantle Responses adapter to disable automatic web-search source inclusion. Preserve web tool emission and other independent includes, metadata and attribution.
-- Add request-level OpenAI option/capability matrix coverage and strict synthetic Mantle generate and stream endpoint tests that reject the unsupported automatic include; verify the standalone published-module dependency boundary.
+- Add request-level OpenAI option/capability matrix coverage and strict synthetic Mantle generate and stream endpoint tests that reject the unsupported automatic include; verify the candidate-source Bedrock consumer boundary under #262's merged-pin policy.
 
 ## Capabilities
 
@@ -21,4 +21,4 @@ None.
 
 ## Impact
 
-`providers/openai/options.go`, `model.go`, `convert_request.go`, `apply_options.go` and focused tests; `providers/bedrock/mantle/provider.go` and transport tests; published OpenAI producer dependency in `providers/bedrock/go.mod`/`go.sum` upon consumer adoption. Baseline is `test/conformance/upstream.yaml` commit `08ae5ad05bc12496dd1ffcf64e34419e0831300d` (`@ai-sdk/openai` 4.0.71, `@ai-sdk/amazon-bedrock` 5.0.88); provider-adapter and published-dependency proof boundaries are in `test/conformance/PARITY.md`. The exported Go option and field names were approved separately before implementation; this change does not alter the frozen baseline or provider fixtures, expand Mantle Chat support, or merge #207 assistant history or #164 reasoning-summary work.
+`providers/openai/options.go`, `model.go`, `convert_request.go`, `apply_options.go` and focused tests; `providers/bedrock/mantle/provider.go` and transport tests; candidate-source Bedrock tests with its OpenAI dependency left on a merged-main revision. Baseline is `test/conformance/upstream.yaml` commit `08ae5ad05bc12496dd1ffcf64e34419e0831300d` (`@ai-sdk/openai` 4.0.71, `@ai-sdk/amazon-bedrock` 5.0.88); provider-adapter evidence boundaries are in `test/conformance/PARITY.md`; candidate-source and merged-pin checks are defined by #262. The exported Go option and field names were approved separately before implementation; this change does not alter the frozen baseline or provider fixtures, expand Mantle Chat support, or merge #207 assistant history or #164 reasoning-summary work.

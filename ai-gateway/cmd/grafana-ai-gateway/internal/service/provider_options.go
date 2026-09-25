@@ -41,7 +41,7 @@ var openAIOptionPolicy = catalog.ProviderOptionPolicy{
 // openAIOptionFields lists OpenAIResponsesOptions and OpenAIPartOptions members.
 var openAIOptionFields = []string{
 	// OpenAIResponsesOptions, read at call level.
-	"conversation", "include", "instructions", "logprobs", "maxToolCalls", "metadata",
+	"conversation", "include", "includeWebSearchSources", "instructions", "logprobs", "maxToolCalls", "metadata",
 	"parallelToolCalls", "previousResponseId", "promptCacheKey", "promptCacheRetention",
 	"promptCacheOptions", "reasoningEffort", "reasoningMode", "reasoningContext",
 	"reasoningSummary", "safetyIdentifier", "serviceTier", "store",

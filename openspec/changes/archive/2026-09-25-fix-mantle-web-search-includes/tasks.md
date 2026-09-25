@@ -5,14 +5,14 @@
 - [x] 1.3 Implement default-enabled model capability and nullable per-call `includeWebSearchSources` handling in `providers/openai/options.go`, `model.go`, `convert_request.go`, `apply_options.go`, shared by `DoGenerate` and `DoStream`; do not gate explicitly requested includes or unrelated include kinds.
 - [x] 1.4 Assert unchanged code-interpreter outputs, positive logprobs and stateless encrypted-reasoning includes in focused request tests; run `cd providers/openai && go test ./...` and standalone `GOWORK=off go test -mod=readonly ./...` from that module.
 
-## 2. Published producer to Bedrock consumer
+## 2. Candidate-source producer and Bedrock consumer
 
-- [x] 2.1 Make OpenAI producer independently mergeable and publish a publicly resolvable version containing the capability; do not adopt an unpublished or workspace-only version in Bedrock.
+- [x] 2.1 Keep OpenAI producer and Bedrock consumer source independently testable while retaining existing merged-main dependency pins; use #262's candidate-source checks to validate the coordinated change.
 - [x] 2.2 Add Mantle strict fake-endpoint tests in `providers/bedrock/mantle/provider_test.go` for `DoGenerate` and `DoStream`: reject unsupported automatic source include, assert web tool survives, consume the accepted SSE stream and assert identity; separately inspect explicit caller include serialization without claiming acceptance by Mantle.
-- [x] 2.3 Configure `providers/bedrock/mantle/provider.go` to disable only automatic web source inclusion and update `providers/bedrock/go.mod`/`go.sum` to the published OpenAI producer; verify no unrelated #207, #164 or Chat behavior changes.
-- [x] 2.4 Run `cd providers/bedrock && go test ./...` and `cd providers/bedrock && GOWORK=off go test -mod=readonly ./...` to prove the consumer boundary; check include behavior with published dependencies, not just `go.work`.
+- [x] 2.3 Configure `providers/bedrock/mantle/provider.go` to disable only automatic web source inclusion and keep `providers/bedrock/go.mod`/`go.sum` on merged-main pins; verify no unrelated #207, #164 or Chat behavior changes.
+- [x] 2.4 Run `cd providers/bedrock && go test ./...` against the candidate SDK workspace and `mise run verify-merged-pins`; reserve `GOWORK=off` Bedrock validation for a published OpenAI producer before Bedrock artifact publication.
 
 ## 3. Parity and evidence review
 
 - [x] 3.1 Inspect existing provider request snapshots for affected cases; only regenerate expectations from provenance-valid captured or imported inputs when necessary, never synthesize recorded/upstream provider input chunks; document a provider-boundary coverage gap if no suitable fixture exists.
-- [x] 3.2 Run `mise run parity-check` for changed parity behavior plus relevant build/test checks; report pinned-source alignment, synthetic endpoint evidence versus live Mantle acceptance, standalone published-module results and any residual live verification gap without altering the registered upstream pins.
+- [x] 3.2 Run `mise run parity-check` for changed parity behavior plus required candidate-source checks; report pinned-source alignment, synthetic endpoint evidence versus live Mantle acceptance, and the separate post-merge standalone-module validation boundary without altering registered upstream pins.

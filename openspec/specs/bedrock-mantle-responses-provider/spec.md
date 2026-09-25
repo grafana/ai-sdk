@@ -148,8 +148,9 @@ Mantle Responses SHALL configure the shared OpenAI Responses model so that
 web-search tool in either unary or streaming calls. This provider-owned
 restriction SHALL NOT remove the web tool, change response attribution, block
 other automatic include kinds, or silently remove an explicit caller `include`
-entry. The Bedrock module SHALL exercise this behavior against a publicly
-resolvable OpenAI module version without workspace substitutions.
+entry. Candidate-source checks SHALL exercise this behavior with the shared
+OpenAI implementation in the SDK workspace while Bedrock's declared OpenAI
+module version remains pinned to a revision already merged on canonical main.
 
 #### Scenario: Unary request accepted by strict compatibility endpoint
 - **WHEN** a Mantle Responses model makes a `DoGenerate` call with a web-search tool to a synthetic endpoint rejecting `web_search_call.action.sources`
@@ -168,9 +169,9 @@ resolvable OpenAI module version without workspace substitutions.
 - **WHEN** Mantle requests code-interpreter outputs, logprobs, or stateless encrypted reasoning alongside a web-search tool
 - **THEN** their existing automatic include behavior remains intact, and response attribution stays `bedrock-mantle.responses`
 
-#### Scenario: Published module consumer boundary
-- **WHEN** the Bedrock module is tested with `GOWORK=off` using its declared published OpenAI module dependency
-- **THEN** Mantle unary and streaming web-tool requests retain the same automatic-source opt-out behavior as workspace tests
+#### Scenario: Candidate-source consumer boundary
+- **WHEN** the Bedrock module is tested in the SDK workspace with its declared OpenAI module dependency pinned to an older merged revision
+- **THEN** Mantle unary and streaming web-tool requests use the candidate OpenAI source and omit the automatic source include
 
 ### Requirement: Responses-only parity scope
 The provider SHALL expose only the Mantle Responses surface until an equivalent
