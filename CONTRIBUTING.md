@@ -134,7 +134,20 @@ mise run test           # all Go tests across all modules
 mise run test-short     # skip integration/E2E tests
 mise run check          # fmt + vet + lint + docs + tests
 mise run verify-ai-gateway-boundary
-                        # verify the one-way Gateway dependency boundary
+                        # structural one-way Gateway dependency boundary
+mise run verify-sdk-gateway-isolation
+                        # SDK and Grafana client without Gateway source
+mise run test-module-policy
+                        # deterministic Bash fixtures for module checks
+mise run verify-merged-pins
+                        # published internal pins descend from canonical main
+mise run verify-module-resolution
+                        # all published modules, fresh public-proxy cache, GOWORK=off
+MODULE=providers/openai mise run verify-published-module
+                        # same standalone checks for one published module
+mise run test-ai-gateway-source
+mise run test-ai-gateway-source-integration
+                        # explicitly selected candidate-source Gateway checks
 ```
 
 To run a single test, invoke `go test` in the right module directory:
@@ -476,9 +489,25 @@ maintainer to trigger CI.
 The repository uses Go modules across several module roots, plus a pnpm
 workspace under `test/` for TypeScript-side harnesses.
 
-`ai-gateway/` is intentionally absent from the root `go.work`. Gateway code may
-import explicitly pinned SDK modules, but no module outside `ai-gateway/` may
-import or require `github.com/grafana/ai-sdk/ai-gateway`.
+`ai-gateway/` is intentionally absent from the root `go.work`. The separate
+`go.gateway.work` is selected only by the Gateway source-integration commands;
+it uses local SDK, provider, and middleware source. Ordinary module and image
+builds still use declared versions with `GOWORK=off`. Gateway code may import
+explicitly pinned SDK modules, but no module outside `ai-gateway/` may import,
+require, or replace `github.com/grafana/ai-sdk/ai-gateway`. The structural check
+rejects reverse source and module references; the standalone gate builds and tests
+published modules with `GOWORK=off`, and a separate check builds the SDK and Grafana
+client with Gateway source absent. These checks share `scripts/module-policy.sh`.
+None replaces license review for copied code or third-party dependencies.
+
+Every real internal pin in a published module must refer to a commit already
+merged into canonical `grafana/ai-sdk` `main`. Merged pseudo-versions are valid;
+local-only example/test replacements are not published pins. A green workspace
+integration test proves candidate-source behavior, not standalone consumability.
+The existing all-module standalone gate remains required for source PRs until
+issue [#245](https://github.com/grafana/ai-sdk/issues/245) separately changes
+source and release gates. Do not use this workspace or
+an unmerged pin to make a standalone check pass.
 
 ```bash
 mise run tidy        # go mod tidy across all modules

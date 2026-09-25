@@ -88,11 +88,20 @@ jobs:
           version: "2026.5.4"
           experimental: true
 
+      - name: Test module policy fixtures
+        run: mise run test-module-policy
+
       - name: Verify published module requirements resolve
         run: mise run verify-module-resolution
 
       - name: Verify AI Gateway module and license boundary
         run: mise run verify-ai-gateway-boundary
+
+      - name: Verify merged internal module pins
+        run: mise run verify-merged-pins
+
+      - name: Verify SDK isolation from Gateway source
+        run: mise run verify-sdk-gateway-isolation
 
   parity-baseline:
     runs-on: ubuntu-latest
