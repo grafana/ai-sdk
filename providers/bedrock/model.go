@@ -47,6 +47,7 @@ const defaultRegion = "us-east-1"
 // calls on a shared model are race-free.
 type model struct {
 	modelID     string
+	modelFamily ModelFamily
 	region      string
 	baseURL     string
 	bearerToken string
@@ -75,8 +76,8 @@ type model struct {
 //
 // The returned value implements provider.LanguageModel. Anthropic-specific
 // pass-throughs (thinking, effort, betas, native structured output) activate
-// only when modelID identifies an Anthropic model (model ID contains
-// "anthropic"); for other model families they emit warnings.
+// when modelID or WithModelFamily identifies an Anthropic model; for other
+// model families they emit warnings.
 func New(modelID string, opts ...Option) provider.LanguageModel {
 	m := &model{
 		modelID:    modelID,

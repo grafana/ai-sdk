@@ -308,10 +308,11 @@ func newProviderWireV4Scenario() (*providerWireV4Scenario, error) {
 	stats := &providerWireV4Stats{}
 	entries := make([]catalog.StaticEntry, 0, 5)
 	for _, id := range []string{"success", "blocking", "stream-errors", "stream-timeout", "stream-blocking", "unary-tools", "unary-tools-provider-executed", "unary-tools-dynamic", "stream-tools", "stream-tool-results", "stream-tool-arguments", "hosted-deferred", "hosted-deferred-error"} {
-		entries = append(entries, catalog.StaticEntry{
-			Info:  catalog.ModelInfo{ID: id},
-			Model: &providerWireV4Model{kind: id, stats: stats},
-		})
+		entry := catalog.StaticEntry{Info: catalog.ModelInfo{ID: id}, Model: &providerWireV4Model{kind: id, stats: stats}}
+		if id == "hosted-deferred" || id == "hosted-deferred-error" {
+			entry.ProviderOptions = catalog.ProviderOptionPolicy{Namespaces: []string{"anthropic"}, Fields: map[string][]string{"anthropic": {"caller", "mcpServers", "type", "serverName"}}}
+		}
+		entries = append(entries, entry)
 	}
 	resolver, err := catalog.NewStatic(entries)
 	if err != nil {

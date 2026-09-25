@@ -8,7 +8,7 @@ The SDK prerequisite in #238 can represent provider tools, but the Gateway still
 - Encode ordered unary/SSE calls, results and execution markers with reviewed non-MCP metadata.
 - Correlate deferred results with unresolved provider-owned history; permit previews only before a final result.
 - Prove both-client behavior through the real handler and authenticated native Anthropic code-execution transport.
-- Keep all nonempty root provider options, MCP metadata, effectful fallback and later output families rejected.
+- Preserve the Gateway's configured-backend provider-option and call-header policy, while keeping MCP server configuration, MCP metadata, effectful fallback and later output families rejected.
 
 ## Capabilities
 
@@ -23,4 +23,4 @@ The SDK prerequisite in #238 can represent provider tools, but the Gateway still
 
 ## Impact
 
-Depends on `sdk-provider-tool-contract`; uses its already-published Apache pins with `GOWORK=off`. Changes AGPL request/output mapping, test-only schemas, deterministic transport tests, docs and parity coverage. Registered upstream versions and authentic provider fixture inputs remain unchanged. The subsequent `gateway-anthropic-mcp` change owns remote MCP support. All changes remain unarchived for review.
+Depends on `sdk-provider-tool-contract`; candidate-source checks exercise both modules together while internal pins remain on merged revisions. Changes AGPL request/output mapping, test-only schemas, deterministic transport tests, docs and parity coverage. Registered upstream versions and authentic provider fixture inputs remain unchanged. The subsequent `gateway-anthropic-mcp` change owns remote MCP support. All changes remain unarchived for review.

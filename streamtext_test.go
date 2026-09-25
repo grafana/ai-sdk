@@ -4792,15 +4792,63 @@ func TestInputStartDynamic_TextAndUIProjection(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			part := StreamToolInputStart{
 				ID: "call", ToolName: tc.toolName,
-				Dynamic:   isInputStartDynamic(tc.toolName, tc.providerDynamic, tools),
-				uiDynamic: isDynamic(tc.toolName, tc.providerDynamic, tools), useUIDynamic: true,
+				Dynamic: isInputStartDynamic(tc.toolName, tc.providerDynamic, tools),
 			}
 			assert.Equal(t, tc.textDynamic, part.Dynamic)
-			chunks := translateToChunks(part, uiMessageStreamConfig{})
+			chunks := translateToChunks(part, uiMessageStreamConfig{tools: tools})
 			require.Len(t, chunks, 1)
 			assert.Equal(t, tc.uiDynamic, chunks[0].Dynamic)
 		})
 	}
+}
+
+func TestToolInputErrorDynamic_UIProjection(t *testing.T) {
+	tools := map[string]Tool{
+		"dynamic":  {Type: UserToolDynamic},
+		"ordinary": {Type: UserToolFunction},
+	}
+	for _, tc := range []struct {
+		name     string
+		toolName string
+		want     *bool
+	}{
+		{name: "known dynamic", toolName: "dynamic", want: boolPtr(true)},
+		{name: "known ordinary", toolName: "ordinary"},
+		{name: "unknown", toolName: "unknown", want: boolPtr(true)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, part := range []TextStreamPart{
+				StreamToolCall{ToolName: tc.toolName, Invalid: true, Dynamic: boolPtr(true), Error: errors.New("invalid input")},
+				StreamToolError{ToolName: tc.toolName, Dynamic: boolPtr(true), Error: errors.New("invalid input")},
+			} {
+				chunks := translateToChunks(part, uiMessageStreamConfig{tools: tools})
+				require.Len(t, chunks, 1)
+				assert.Equal(t, tc.want, chunks[0].Dynamic)
+			}
+		})
+	}
+}
+
+func TestStreamTextToUIMessageStream_DynamicToolInputStart(t *testing.T) {
+	model := &mockModel{streamFunc: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+		ch := make(chan provider.StreamPart, 2)
+		ch <- provider.StreamPart{Type: provider.PartToolInputStart, ID: "c1", ToolName: "dynamic", Dynamic: boolPtr(false)}
+		ch <- provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}}
+		close(ch)
+		return &provider.StreamResult{Stream: ch}, nil
+	}}
+	result := StreamText(context.Background(), model,
+		WithModelMessages(provider.UserText("hi")),
+		WithTools(ToolSet{"dynamic": {Type: UserToolDynamic}}),
+	)
+	var starts []UIMessageChunk
+	for chunk := range result.ToUIMessageStream() {
+		if chunk.Type == ChunkToolInputStart {
+			starts = append(starts, chunk)
+		}
+	}
+	require.Len(t, starts, 1)
+	assert.Equal(t, boolPtr(true), starts[0].Dynamic)
 }
 
 func boolPtr(b bool) *bool { return &b }

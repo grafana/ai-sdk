@@ -211,7 +211,7 @@ func TestBuildRequest_FunctionToolStrict(t *testing.T) {
 					Type:        provider.ToolTypeFunction,
 					Name:        "weather",
 					Strict:      tc.strict,
-					InputSchema: json.RawMessage(`{"type":"object"}`),
+					InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false}`),
 				}},
 			})
 			require.NotNil(t, req.ToolConfig)

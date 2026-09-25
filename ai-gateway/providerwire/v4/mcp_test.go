@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/grafana/ai-sdk/ai-gateway/catalog"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/grafana/ai-sdk/schema"
 	"github.com/stretchr/testify/assert"
@@ -16,11 +17,21 @@ import (
 
 const mcpRequestOptions = `"providerOptions":{"anthropic":{"mcpServers":[{"type":"url","name":"echo","url":"https://mcp.example.test","authorizationToken":"private-token"}]}}`
 
+func newMCPRuntimeHarness(t *testing.T) *runtimeHarness {
+	t.Helper()
+	harness := newRuntimeHarness(t, testLimits())
+	harness.resolver.resolved.ProviderOptions = catalog.ProviderOptionPolicy{
+		Namespaces: []string{"anthropic"},
+		Fields:     map[string][]string{"anthropic": {"mcpServers", "type", "serverName", "thinking"}},
+	}
+	return harness
+}
+
 func TestRuntimeProviderToolDefinitionsAndMCPOptions(t *testing.T) {
 	for _, streaming := range []bool{false, true} {
 		t.Run(fmt.Sprintf("streaming=%t", streaming), func(t *testing.T) {
-			harness := newRuntimeHarness(t, testLimits())
-			body := `{"prompt":[],"tools":[{"type":"function","name":"f","inputSchema":{}},{"type":"provider","id":"anthropic.code_execution_20260120","name":"code","args":{}},{"type":"provider","id":"provider.search","name":"search","args":{"limit":0,"nested":{"value":null}}}],"providerOptions":{"anthropic":{"mcpServers":[{"type":"url","name":"echo","url":"https://mcp.example.test/tools","authorizationToken":"private-token","toolConfiguration":{"enabled":false,"allowedTools":[]}}]}}}`
+			harness := newMCPRuntimeHarness(t)
+			body := `{"prompt":[],"tools":[{"type":"function","name":"f","inputSchema":{}},{"type":"provider","id":"anthropic.code_execution_20260120","name":"code","args":{}},{"type":"provider","id":"provider.search","name":"search","args":{"limit":0,"nested":{"value":null}}}],"providerOptions":{"anthropic":{"mcpServers":[{"type":"url","name":"echo","url":"https://mcp.example.test/tools","authorizationToken":"private-token","toolConfiguration":{"enabled":false,"allowedTools":[]}}],"thinking":{"type":"enabled"}}}}`
 			request := validRequest(body)
 			if streaming {
 				request.Header.Set(HeaderStreaming, "true")
@@ -38,7 +49,7 @@ func TestRuntimeProviderToolDefinitionsAndMCPOptions(t *testing.T) {
 			assert.JSONEq(t, `{"value":null}`, string(opts.Tools[2].Args["nested"]))
 			mcp, ok := opts.ProviderOptions["anthropic"].(provider.RawProviderOption)
 			require.True(t, ok)
-			assert.JSONEq(t, `{"mcpServers":[{"type":"url","name":"echo","url":"https://mcp.example.test/tools","authorizationToken":"private-token","toolConfiguration":{"enabled":false,"allowedTools":[]}}]}`, string(mcp.Raw))
+			assert.JSONEq(t, `{"mcpServers":[{"type":"url","name":"echo","url":"https://mcp.example.test/tools","authorizationToken":"private-token","toolConfiguration":{"enabled":false,"allowedTools":[]}}],"thinking":{"type":"enabled"}}`, string(mcp.Raw))
 			assert.NotContains(t, response.Body.String(), "private-token")
 		})
 	}
@@ -51,12 +62,14 @@ func TestRuntimeProviderToolDefinitionsAndMCPOptions(t *testing.T) {
 		{"URL credentials", `{"prompt":[],"providerOptions":{"anthropic":{"mcpServers":[{"type":"url","name":"echo","url":"https://secret:password@mcp.example.test"}]}}}`},
 		{"empty URL fragment", `{"prompt":[],"providerOptions":{"anthropic":{"mcpServers":[{"type":"url","name":"echo","url":"https://mcp.example.test/#"}]}}}`},
 		{"duplicate server", `{"prompt":[],"providerOptions":{"anthropic":{"mcpServers":[{"type":"url","name":"echo","url":"https://mcp.example.test"},{"type":"url","name":"echo","url":"https://mcp2.example.test"}]}}}`},
-		{"extra root options", `{"prompt":[],"providerOptions":{"anthropic":{"mcpServers":[],"thinking":{"type":"enabled"}}}}`},
+		{"protected root field", `{"prompt":[],"providerOptions":{"anthropic":{"mcpServers":[],"model":"other"}}}`},
+		{"protected spelling", `{"prompt":[],"providerOptions":{"anthropic":{"MCP_SERVERS":[{"type":"url","name":"echo","url":"https://mcp.example.test"}]}}}`},
+		{"nested MCP option", `{"prompt":[{"role":"user","content":[{"type":"text","text":"hi"}],"providerOptions":{"anthropic":{"mcpServers":[]}}}]}`},
 		{"nested typed null", `{"prompt":[],"providerOptions":{"anthropic":{"mcpServers":[{"type":"url","name":"echo","url":"https://mcp.example.test","toolConfiguration":{"allowedTools":[null]}}]}}}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			for _, streaming := range []bool{false, true} {
-				harness := newRuntimeHarness(t, testLimits())
+				harness := newMCPRuntimeHarness(t)
 				request := validRequest(tc.body)
 				if streaming {
 					request.Header.Set(HeaderStreaming, "true")
@@ -68,6 +81,14 @@ func TestRuntimeProviderToolDefinitionsAndMCPOptions(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestRuntimeMCP_RequiresConfiguredRoutePolicy(t *testing.T) {
+	harness := newRuntimeHarness(t, testLimits())
+	response := harness.serve(validRequest(`{"prompt":[],` + mcpRequestOptions + `}`))
+	assert.Equal(t, http.StatusBadRequest, response.Code)
+	assert.Zero(t, harness.model.callCount())
+	assert.NotContains(t, response.Body.String(), "private-token")
 }
 
 func TestRuntimeUnaryMCP_MetadataAndHistory(t *testing.T) {
@@ -82,7 +103,7 @@ func TestRuntimeUnaryMCP_MetadataAndHistory(t *testing.T) {
 		{name: "result only after history", body: `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"echo","input":{"message":"hi"},"providerExecuted":true,"providerOptions":{"anthropic":{"type":"mcp-tool-use","serverName":"echo"}}}]}],` + mcpRequestOptions + `}`, content: []provider.GenerateContentPart{resultPart}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			harness := newRuntimeHarness(t, testLimits())
+			harness := newMCPRuntimeHarness(t)
 			harness.model.generate = func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
 				response := validGenerateResult()
 				response.Content = tc.content
@@ -109,7 +130,7 @@ func TestRuntimeUnaryMCP_MetadataAndHistory(t *testing.T) {
 }
 
 func TestStreamingProviderTools_DeferredMCPResultOnly(t *testing.T) {
-	harness := newRuntimeHarness(t, testLimits())
+	harness := newMCPRuntimeHarness(t)
 	harness.model.stream = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
 		return &provider.StreamResult{Stream: makeStream(
 			provider.StreamPart{Type: provider.PartToolResult, ToolCallID: "call", ToolName: "echo", Result: json.RawMessage(`"failed"`), IsError: true, ProviderMetadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"type":"mcp-tool-use","serverName":"echo","private":"discard"}`)}},

@@ -13,10 +13,10 @@ replace (
 require (
 	github.com/anthropics/anthropic-sdk-go v1.61.0
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.32
-	github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260923211549-25ba9521879f
+	github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260921202550-3dff0f7087dc
 	github.com/grafana/ai-sdk/providers/anthropic v0.0.0-00010101000000-000000000000
 	github.com/grafana/ai-sdk/providers/bedrock v0.0.0-00010101000000-000000000000
-	github.com/grafana/ai-sdk/providers/openai v0.0.0-20260923211549-25ba9521879f
+	github.com/grafana/ai-sdk/providers/openai v0.0.0-20260923145714-9fb535a02817
 	github.com/grafana/ai-sdk/providers/openai-compatible v0.0.0-00010101000000-000000000000
 	github.com/openai/openai-go/v3 v3.48.0
 	github.com/stretchr/testify v1.11.1

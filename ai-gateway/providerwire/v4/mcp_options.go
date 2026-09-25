@@ -32,84 +32,72 @@ type wireMCPServer struct {
 	} `json:"toolConfiguration"`
 }
 
-func mapMCPOptions(values map[string]json.RawMessage) (provider.ProviderOptions, *requestFailure) {
-	if providerOptionsEmpty(values) {
-		return nil, nil
+func validateMCPOptions(values map[string]json.RawMessage) *requestFailure {
+	raw, exists := values["anthropic"]
+	if !exists {
+		return nil
 	}
-	var servers json.RawMessage
-	for namespace, raw := range values {
-		var members map[string]json.RawMessage
-		if json.Unmarshal(raw, &members) != nil || members == nil {
-			return nil, invalidMappingFailure()
-		}
-		if len(members) == 0 {
-			continue
-		}
-		if namespace != "anthropic" || len(members) != 1 {
-			return nil, unsupportedMappingFailure(capabilityProviderOptions)
-		}
-		var ok bool
-		servers, ok = members["mcpServers"]
-		if !ok {
-			return nil, unsupportedMappingFailure(capabilityProviderOptions)
-		}
+	members, valid := jsonObject(raw)
+	if !valid {
+		return invalidMappingFailure()
 	}
-	if len(servers) == 0 {
-		return nil, nil
+	servers, exists := members["mcpServers"]
+	if !exists {
+		return nil
 	}
 	if bytes.Equal(bytes.TrimSpace(servers), []byte("null")) {
-		return nil, invalidMappingFailure()
+		return invalidMappingFailure()
 	}
 	var entries []json.RawMessage
 	if json.Unmarshal(servers, &entries) != nil || len(entries) > maxMCPServers {
-		return nil, invalidMappingFailure()
+		return invalidMappingFailure()
 	}
 	if len(entries) == 0 {
-		return nil, nil
+		return nil
 	}
 	seen := make(map[string]bool, len(entries))
 	for _, raw := range entries {
 		var members map[string]json.RawMessage
 		if json.Unmarshal(raw, &members) != nil || members == nil || !allowedMCPMembers(members, "type", "name", "url", "authorizationToken", "toolConfiguration") {
-			return nil, invalidMappingFailure()
+			return invalidMappingFailure()
 		}
 		var entry wireMCPServer
 		if json.Unmarshal(raw, &entry) != nil || entry.Type != mcpServerURL || entry.Name == "" || len(entry.Name) > maxMCPNameBytes || seen[entry.Name] || len(entry.URL) > maxMCPURLBytes {
-			return nil, invalidMappingFailure()
+			return invalidMappingFailure()
 		}
 		seen[entry.Name] = true
 		endpoint, err := url.Parse(entry.URL)
 		if err != nil || endpoint.Scheme != "https" || endpoint.Hostname() == "" || endpoint.User != nil || strings.Contains(entry.URL, "#") {
-			return nil, invalidMappingFailure()
+			return invalidMappingFailure()
 		}
 		if entry.AuthorizationToken != nil && len(*entry.AuthorizationToken) > maxMCPTokenBytes {
-			return nil, invalidMappingFailure()
+			return invalidMappingFailure()
 		}
 		if config, ok := members["toolConfiguration"]; ok && !bytes.Equal(bytes.TrimSpace(config), []byte("null")) {
 			var fields map[string]json.RawMessage
 			if json.Unmarshal(config, &fields) != nil || fields == nil || !allowedMCPMembers(fields, "enabled", "allowedTools") {
-				return nil, invalidMappingFailure()
+				return invalidMappingFailure()
 			}
 			if entry.ToolConfiguration != nil {
 				if len(entry.ToolConfiguration.AllowedTools) > maxMCPAllowedTools {
-					return nil, invalidMappingFailure()
+					return invalidMappingFailure()
 				}
 				if allowed, exists := fields["allowedTools"]; exists && !bytes.Equal(bytes.TrimSpace(allowed), []byte("null")) {
 					var names []json.RawMessage
 					if json.Unmarshal(allowed, &names) != nil {
-						return nil, invalidMappingFailure()
+						return invalidMappingFailure()
 					}
 					for _, name := range names {
 						var text string
 						if len(name) == 0 || name[0] != '"' || json.Unmarshal(name, &text) != nil || len(text) > maxMCPNameBytes {
-							return nil, invalidMappingFailure()
+							return invalidMappingFailure()
 						}
 					}
 				}
 			}
 		}
 	}
-	return provider.ProviderOptions{"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: values["anthropic"]}}, nil
+	return nil
 }
 
 func configuredMCPNames(options provider.ProviderOptions) map[string]bool {

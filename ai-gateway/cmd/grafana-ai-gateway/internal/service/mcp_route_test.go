@@ -72,6 +72,13 @@ func TestMCPRouteModel_BoundToConfiguredRoute(t *testing.T) {
 	for _, allow := range []bool{false, true} {
 		t.Run(map[bool]string{false: "non-Anthropic or fallback", true: "direct Anthropic"}[allow], func(t *testing.T) {
 			model := mcpRouteModel{LanguageModel: lower, allowMCP: allow}
+			ordinary := provider.CallOptions{ProviderOptions: provider.ProviderOptions{"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(`{"thinking":{"type":"enabled"}}`)}}}
+			_, err := model.DoGenerate(context.Background(), ordinary)
+			require.NoError(t, err)
+			_, err = model.DoStream(context.Background(), ordinary)
+			require.NoError(t, err)
+			assert.Equal(t, 2, calls, "ordinary options are not MCP effects")
+			calls = 0
 			_, generateErr := model.DoGenerate(context.Background(), options)
 			_, streamErr := model.DoStream(context.Background(), options)
 			if allow {
@@ -81,6 +88,9 @@ func TestMCPRouteModel_BoundToConfiguredRoute(t *testing.T) {
 			} else {
 				assert.True(t, errors.Is(generateErr, catalog.ErrUnsupportedRequest))
 				assert.True(t, errors.Is(streamErr, catalog.ErrUnsupportedRequest))
+				typed := provider.CallOptions{ProviderOptions: provider.BuildProviderOptions(anthropicprovider.AnthropicOptions{MCPServers: []anthropicprovider.MCPServer{{Name: "echo", URL: "https://mcp.example.test"}}})}
+				_, err = model.DoGenerate(context.Background(), typed)
+				assert.ErrorIs(t, err, catalog.ErrUnsupportedRequest)
 				assert.Zero(t, calls)
 			}
 		})

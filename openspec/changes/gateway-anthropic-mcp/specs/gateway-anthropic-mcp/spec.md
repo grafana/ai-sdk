@@ -1,15 +1,19 @@
 ## ADDED Requirements
 
 ### Requirement: Narrow request-level server projection
-Direct Anthropic unary and streaming routes SHALL accept registered `providerOptions.anthropic.mcpServers` with ordered type/url/name definitions, optional authorizationToken and toolConfiguration. Omitted versus explicit empty token, enabled false and empty allowedTools SHALL retain native semantics. Other nonempty root members/namespaces SHALL remain unsupported. Empty no-op options SHALL not enable unrelated capabilities.
+Direct Anthropic unary and streaming routes SHALL accept registered `providerOptions.anthropic.mcpServers` with ordered type/url/name definitions, optional authorizationToken and toolConfiguration. Omitted versus explicit empty token, enabled false and empty allowedTools SHALL retain native semantics. Other root, message and part options and call headers SHALL retain the Gateway's configured-backend and protected-field policy. Only the exact root `anthropic.mcpServers` member may bypass the protected-field refusal after bounded validation; spelling variants and nested MCP options SHALL remain rejected. Empty no-op options SHALL not enable unrelated capabilities.
 
 #### Scenario: Native projection
 - **WHEN** an authenticated client supplies valid ordered server definitions with optional token and explicit disabled/empty configuration
 - **THEN** only the selected native Anthropic request SHALL receive matching `mcp_servers` and the required beta
 
-#### Scenario: Unrelated root options
-- **WHEN** another nonempty namespace or Anthropic member accompanies mcpServers
-- **THEN** mapping SHALL fail before provider invocation
+#### Scenario: Ordinary options accompany MCP
+- **WHEN** valid root Anthropic options accompany mcpServers on a configured direct Anthropic route
+- **THEN** both SHALL reach the native request without altering unrelated root, message and part policy
+
+#### Scenario: Protected fields remain denied
+- **WHEN** MCP uses a spelling variant or is nested under a message or part, or another host-owned field accompanies a valid root server list
+- **THEN** mapping SHALL fail before provider invocation without forwarding private values
 
 ### Requirement: Bounded destination policy
 The mapper SHALL enforce server count, unique names, URL/token/name/allowed-tool limits and registered field shapes. URLs SHALL use HTTPS with a host and no embedded credentials or fragment delimiter. Failures SHALL NOT expose URL/token material. These restrictions SHALL be documented as Grafana policy, not inferred Vercel hosted-service behavior.

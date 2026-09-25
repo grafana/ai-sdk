@@ -4,7 +4,7 @@ go 1.26.3
 
 require (
 	github.com/anthropics/anthropic-sdk-go v1.61.0
-	github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260923211549-25ba9521879f
+	github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260921202550-3dff0f7087dc
 	github.com/stretchr/testify v1.11.1
 )
 

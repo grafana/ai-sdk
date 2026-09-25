@@ -1,68 +1,65 @@
-# Provider tools on direct routes
+# Provider-defined tools
 
-The strict ProviderWire V4 Gateway accepts registered function and provider
-(tool ID, name, object args) definitions in unary and streaming requests to
-direct public models. It does not execute application tools or store a session.
-Provider-executed calls and results are forwarded in order; an absent or false
-`providerExecuted` call remains client-owned. Streaming tool-input IDs and
-preliminary results have bounded lifecycles. A provider-executed call can finish
-without a result and receive that result in a later request when the unresolved
-call is included in assistant history. An unfinished preliminary series fails
-safely; an ordinary call without a result may finish normally. Provider-specific
-image previews emitted before their call are deferred with generated media
-(WP16), not silently accepted as correlated WP13 results.
+Direct routes accept provider definitions with an ID, name and object args,
+and return provider-executed calls and non-null JSON results. Function-only
+fields are rejected on provider definitions. Provider-defined does not mean
+provider-executed: callers use the returned ownership marker, not the definition,
+to decide whether application execution is needed.
+
+Unary and streaming calls share history-aware correlation. A provider-owned
+call may finish without a result and receive its result in a later request when
+the client supplies that unresolved assistant call in history. Streaming allows
+multiple preliminary results followed by one final result; unfinished previews
+fail safely. State is bounded and request-local, not a Gateway session or executor.
+
+## Continuation and privacy
+
+Tool-part options retain ordinary provider continuation values under the
+Gateway's protected-field and configured-backend policy; host-owned controls
+remain rejected. Public tool metadata uses an allowlist: Anthropic caller identity
+and OpenAI/Azure item, namespace and caller correlation. Arbitrary metadata,
+physical backend identity and credentials are not normalized public output.
+Logical observation remains metadata-only; tool names, IDs, inputs and results
+are not logs, metric labels or exported payloads. Fallback routes reject tools
+and tool history before running any candidate.
+
+## Support boundaries
+
+Root, message and part provider options and call headers follow the Gateway's
+configured-backend and protected-field policy. Direct Anthropic routes also
+accept validated `providerOptions.anthropic.mcpServers` alongside ordinary
+allowed options. Other routes reject MCP before invoking a backend, even without
+tool definitions. Protected spelling variants and nested MCP options remain
+rejected. A nonempty server list is effectful and cannot be retried across
+fallback candidates.
 
 ## Anthropic-hosted MCP
 
-An authenticated caller of a **direct Anthropic route** may supply the
-registered `providerOptions.anthropic.mcpServers` array. This is the only
-nonempty root provider-option family enabled before general provider options
-(WP21). The provider receives the caller-supplied server name, URL, optional
-authorization token and tool configuration in the native Anthropic request.
-Calls to non-Anthropic and fallback routes reject MCP configuration before a
-physical request. A nonempty MCP server list is effectful even without tool
-definitions and cannot be retried across fallback candidates.
+The caller supplies distinct nonempty server names and bounded HTTPS URLs
+without embedded credentials or fragments. Optional authorization tokens and
+tool configuration are forwarded only in the selected native request. Absent
+versus explicitly empty tokens and absent versus false enabled flags remain
+distinct. Anthropic connects to the remote server; the Gateway does not. These
+are Grafana policy checks, not evidence of Vercel's private hosted-service
+policy or Anthropic's egress controls.
 
-The strict adapter requires distinct nonempty server names and HTTPS URLs
-without embedded user credentials or fragments. Server definitions and nested
-settings are bounded, and unsupported option keys fail before native I/O.
-Native Anthropic `toolConfiguration.enabled` preserves absent versus explicit
-false, and `authorizationToken` preserves absent versus explicit empty. The
-Gateway authenticates requests before decoding bodies; it does **not** connect
-to the MCP URL itself. Anthropic performs the remote connection, so operators
-must review destinations, authorization scope and Anthropic's remote egress
-controls before deployment. These checks are Grafana host policy, not a claim
-about Vercel's unpublished hosted Gateway policy.
+Tool-call/result continuation metadata may identify only a server configured in
+the current request. Public MCP metadata retains type and server name, not the
+URL, token, backend identity or unrelated caller fields. The native request and
+the Go client's caller-owned request body necessarily contain the submitted
+configuration; do not log either body. The Gateway's context deadline bounds
+unary native attempts without reducing their configured token budget.
 
-The Gateway's total model-duration limit supplies a context deadline for
-Anthropic unary requests. The Go Anthropic SDK uses that deadline as its
-per-attempt timeout when the configured model has a large default output
-budget; explicit native timeout options still take precedence. The Gateway
-does not rewrite `maxOutputTokens`. Direct Go callers without a deadline or
-explicit timeout retain the SDK's own non-streaming guard.
+Approvals, sources, files and other media retain their explicit unsupported
+failures. Image previews emitted before their tool call remain WP16 (#110),
+not correlated provider-tool results. The existing byte, frame, part, duration,
+writer/cancellation and cleanup limits continue to apply.
 
-A validated MCP tool call/result can carry only the configured server's name
-and the registered `mcp-tool-use` type in public `anthropic` tool metadata.
-That name is caller-selected, not a backend model or provider instance ID.
-Neither the URL nor authorization token enters normalized output, public errors,
-logs, metrics or metadata-only Agent Observability. The selected native
-Anthropic request necessarily contains them, and a Go client's caller-owned
-`Request.Body` contains the serialized request. Do not log either request
-body. Other supported tool metadata is projected from reviewed Anthropic or
-OpenAI/Azure correlation fields; arbitrary provider metadata is discarded.
+## Validation and rollout
 
-## Remaining boundaries
-
-Provider tools that also emit sources, generated files, reasoning, custom
-content, or approvals still encounter those families' explicit safe failure
-until their owning work packages land. Nested tool-result output/content
-provider options and unrestricted root options remain deferred. Native
-provider conversions for unsupported tool IDs retain their documented warning
-behavior. Gateway tests cover deterministic fake-provider native requests and
-client interoperability; they do not claim a live MCP network recording or a
-verified deployed Anthropic egress policy. Production rollout must separately
-validate secrets, notices, source offer, backend network policy and capability
-smoke with its approved configuration.
-
-See [Grafana Go client](../../docs/providers/grafana-gateway.md), [Anthropic
-provider](../../docs/providers/anthropic.md) and the [pinned parity baseline](../../test/conformance/upstream.yaml).
+Both registered clients are tested against the real handler and authenticated
+Gateway command, including native Anthropic code-execution alias/continuation
+requests. Fake native responses are deterministic transport evidence, not
+provider recordings. No deployment activation or live MCP egress is claimed.
+Before rollout, use the reviewed image and corresponding-source notices; rollback
+uses the prior image/module set and requires no persisted-state migration.

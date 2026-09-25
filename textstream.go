@@ -132,8 +132,6 @@ type StreamToolInputStart struct {
 	ToolName         string
 	ProviderExecuted bool
 	Dynamic          *bool
-	uiDynamic        *bool
-	useUIDynamic     bool
 	Title            string
 	ProviderMetadata provider.ProviderMetadata
 }
@@ -191,8 +189,6 @@ type StreamToolCall struct {
 	Dynamic          *bool
 	Title            string
 	ProviderMetadata provider.ProviderMetadata
-	uiDynamic        *bool
-	useUIDynamic     bool
 }
 
 func (StreamToolCall) textStreamPart() {}
@@ -262,8 +258,6 @@ type StreamToolError struct {
 	Dynamic          *bool
 	Title            string
 	ProviderMetadata provider.ProviderMetadata
-	uiDynamic        *bool
-	useUIDynamic     bool
 }
 
 func (StreamToolError) textStreamPart() {}

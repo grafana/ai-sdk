@@ -54,6 +54,10 @@ After envelope validation, the handler SHALL read and close the request body thr
 
 The handler SHALL preserve ordered system messages and user or assistant text parts, including required empty strings. It SHALL map optional integer and continuous generation controls with ordinary Go JSON numeric range checks, preserve explicit zero values, preserve stop-sequence order, and map typed reasoning values. Omitted reasoning and wire `provider-default` SHALL both map to zero-valued `ReasoningProviderDefault`.
 
+The handler SHALL map call-level, message-level and text-part provider options to opaque provider options, preserving each namespace's nested JSON byte for byte, including null, false, zero, empty string, empty object and empty array members. A namespace value that is not a JSON object SHALL fail as an invalid request before resolution or model invocation. A namespace present with an empty object SHALL be preserved and not dropped. Namespace names SHALL be compared exactly, because provider-option namespaces are case-significant. Provider options carried by a message role or part type the runtime does not support SHALL NOT be inspected, so such a request SHALL report the family of that role or part type.
+
+The handler SHALL map body-carried call headers to provider call headers, preserving each key's original case. Two body headers whose names differ only in case SHALL fail as an invalid request, because either value could otherwise reach the backend depending on map order. An empty header map SHALL map to no headers. Body-carried headers SHALL remain distinct from the outer HTTP headers of the gateway request, which the runtime reads only for the protocol headers it owns. A body-carried header whose name belongs to the runtime's own protocol namespaces SHALL be accepted and SHALL NOT be forwarded to a backend, because the HTTP contract round-trips such a name in the body while the name addresses this runtime.
+
 #### Scenario: Supported request
 - **WHEN** a schema-valid unary request contains text messages and supported scalar controls
 - **THEN** the model SHALL receive the same text order, scalar presence, zero values, stop-sequence order, and reasoning value
@@ -68,9 +72,17 @@ The handler SHALL preserve ordered system messages and user or assistant text pa
 - **WHEN** tools, headers, and provider-options namespaces are empty, raw chunks are false, and response format is text
 - **THEN** those values SHALL normalize to the supported ordinary text behavior
 
+#### Scenario: Populated provider options and headers
+- **WHEN** a request carries call-level, message-level and text-part provider options and ordinary body headers
+- **THEN** the model SHALL receive each namespace with its nested JSON unchanged and each header with its original key case
+
+#### Scenario: Malformed provider option namespace
+- **WHEN** a provider-option namespace value is null, an array, or a scalar
+- **THEN** mapping SHALL return an invalid request before resolution or invocation
+
 ### Requirement: Unsupported capability families
 
-Schema-valid files, reasoning content, custom content, provider tools and tool approvals, structured output, non-empty provider options, body headers, and raw output SHALL return a stable invalid-request document naming the unsupported family before resolution or model invocation. Unary function definitions/choices and assistant-call/tool-result history SHALL execute only within the gateway-unary-function-tools subset. Function-tool provider options SHALL be supported within that subset; deferred nested result options SHALL remain unsupported. Streaming function requests SHALL remain unsupported until WP12. The runtime SHALL not define client-visible precedence among multiple simultaneously activated unsupported families.
+Schema-valid files, reasoning content, custom content, provider tools and tool approvals, structured output, and raw output SHALL return a stable invalid-request document naming the unsupported family before resolution or model invocation. Unary function definitions/choices and assistant-call/tool-result history SHALL execute only within the gateway-unary-function-tools subset. Function-tool provider options SHALL be supported within that subset; deferred nested result options SHALL remain unsupported. Streaming function requests SHALL remain unsupported until WP12. The runtime SHALL not define client-visible precedence among multiple simultaneously activated unsupported families.
 
 #### Scenario: One unsupported family
 - **WHEN** a request activates one unsupported family
@@ -79,6 +91,59 @@ Schema-valid files, reasoning content, custom content, provider tools and tool a
 #### Scenario: Malformed unsupported branch
 - **WHEN** an unsupported branch violates the complete request schema
 - **THEN** it SHALL fail as schema-invalid rather than as a valid unsupported capability
+
+### Requirement: Reserved provider options and protected call headers
+
+The runtime SHALL reserve the `grafana` provider-option namespace for the host. A request carrying it SHALL be rejected with a stable invalid-request document before resolution or model invocation, rather than silently stripped, so nothing it carries reaches a backend and the caller learns the option was refused.
+
+The runtime SHALL refuse body-carried call headers whose name matches a credential-bearing header, compared without case sensitivity, covering at least `authorization`, `proxy-authorization`, `x-access-token`, `x-grafana-id`, `x-api-key`, `api-key`, `openai-api-key` and `anthropic-api-key`. The openai and openai-compatible providers apply call headers after setting their own authorization header, so an accepted credential-bearing header would choose the credential presented to those backends. The refused set SHALL cover every header name the inbound authenticated edge refuses in outer headers, which a test SHALL assert by driving the edge with a valid stack assertion and each candidate name, with an accepted ordinary header as a negative control, and requiring the body mapper to refuse every name the edge refused.
+
+The runtime SHALL refuse a provider-option namespace carrying a field that names a decision the runtime has already made, covering at least `model`, `fallbacks`, `messages`, `prompt`, `tools`, `toolChoice`, `functions`, `function_call`, `mcpServers`, `container`, `responseFormat`, `stream`, `streamOptions`, and the message and part fields `role`, `content`, `tool_calls`, `tool_call_id`, `type`, `image_url`, `input_audio` and `file`, which providers spread over the entry they build and which would otherwise restore tools or files. A `content` field SHALL be refused because it carries parts of any type underneath the field checks, which is how it reinstates an image or file the runtime refused to map. Field names SHALL be compared after folding case and removing `_` and `-`, because a provider may read a field under another spelling: `providers/anthropic` decodes options with `encoding/json`, which matches names case-insensitively, so `MCPServers` and `mcp_servers` reach the same field. The set SHALL cover every capability the runtime refuses at the wire level, so a refused capability cannot be restated as a provider option. Providers merge unknown option fields into the request body, so an accepted model, fallbacks or prompt field would redirect the call away from the resolved catalog model that telemetry reports, an accepted tool field, including the legacy `functions` pair, would run tools the runtime never mapped on the host's credentials, an accepted response-format field would restate the structured output the runtime refuses at the wire level, and an accepted stream field would answer in a transport the runtime is not reading.
+
+These refusals SHALL use fixed documents that never echo the offending namespace, field name, header name or value.
+
+#### Scenario: Reserved namespace
+- **WHEN** a request carries the `grafana` provider-option namespace
+- **THEN** the response SHALL be a stable invalid-request document naming neither the namespace contents nor the caller's values
+- **AND** no model SHALL be resolved or invoked
+
+#### Scenario: Protected provider option
+- **WHEN** a request carries a provider-option field naming the model, the prompt, or server-side tools
+- **THEN** the response SHALL be a stable invalid-request document
+- **AND** no model SHALL be resolved or invoked
+
+#### Scenario: Protected call header
+- **WHEN** a request carries a credential-bearing body header in any letter case
+- **THEN** the response SHALL be a stable invalid-request document
+- **AND** no model SHALL be resolved or invoked
+
+#### Scenario: Protocol header in the body
+- **WHEN** a request carries a protocol header name such as `AI-Language-Model-Id` as a body-carried call header
+- **THEN** the request SHALL be accepted, because the HTTP contract retains that name in the body
+- **AND** the name SHALL NOT reach the selected backend
+
+#### Scenario: Reserved namespace in a different case
+- **WHEN** a request carries a provider-option namespace such as `Grafana`
+- **THEN** it SHALL be mapped like any other namespace, because namespace names are compared exactly
+
+### Requirement: Selected-backend provider options
+
+After resolution, the handler SHALL forward only the provider options the resolved backend reads, at call, message and content-part level, as described by the resolved model's `catalog.ProviderOptionPolicy`. A namespace outside the policy's namespaces SHALL NOT reach the model, and SHALL NOT fail the request, because an option for another backend is one every provider ignores. Where the policy lists fields for a namespace, other top-level fields SHALL be removed, compared after folding case and removing `_` and `-`; a namespace with nothing removed SHALL keep its bytes exactly. The zero-value policy SHALL forward no provider options.
+
+The command SHALL set a policy for every provider type it constructs, and a model whose fallback candidates resolve to different policies SHALL forward no caller provider options, because no single policy is safe for every attempt. For `anthropic`, the policy SHALL forward the `anthropic` namespace restricted to the fields `providers/anthropic` reads, excluding the fields the runtime refuses, and a test SHALL fail when the provider's typed option structs gain a field that is neither forwarded nor refused. For `openai`, the policy SHALL forward the `openai` namespace and its `azure` parity fallback, restricted to the fields `providers/openai` reads at call and part level. For `openai-compatible`, the policy SHALL forward the namespaces the provider reads for its configured provider name, without restricting fields, and a test SHALL check those namespaces against the provider itself.
+
+#### Scenario: Options for another backend
+- **WHEN** a request to an openai-compatible model carries `anthropic` and `openai` provider options alongside its own namespace
+- **THEN** the model SHALL receive only its own namespace, byte for byte
+- **AND** the response SHALL succeed
+
+#### Scenario: Unclassified Anthropic field
+- **WHEN** a request to an Anthropic model carries an `anthropic` field the policy does not list
+- **THEN** that field SHALL be removed before the model runs, and the listed fields SHALL keep their values
+
+#### Scenario: Unclassified backend
+- **WHEN** a resolved model carries the zero-value policy
+- **THEN** it SHALL receive no caller provider options
 
 ### Requirement: Resolution and bounded model invocation
 

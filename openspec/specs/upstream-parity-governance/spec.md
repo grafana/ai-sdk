@@ -293,12 +293,16 @@ Applying an unverified target SHALL clear the previous verification date and SHA
 - **THEN** baseline validation SHALL report incomplete verification
 
 ### Requirement: Publication-aware independent mergeability
-Upgrade plans SHALL account for published Go module dependencies before implementation. Producer APIs/behavior required by a separately resolved consumer SHALL be merged and publicly resolvable before the consumer adopts them. Each delivered PR SHALL run the existing module-resolution gate and required parity/interop checks on its own proposed merge state; the enclosing parity work package SHALL additionally satisfy its complete behavioral acceptance contract.
+Upgrade plans SHALL account for published Go module dependencies before implementation. Coordinated producer and consumer changes MAY land in a single independently green candidate-source PR when required source parity/interop checks exercise the changed implementations together and internal published pins remain real, downloadable, replacement-free and merged into canonical main. An upgrade PR SHALL NOT rely on a later unmerged source change to pass its required checks. Source integration SHALL NOT count as independently consumable release evidence: before manually publishing a selected module, maintainers SHALL validate its standalone public-proxy, readonly, workspace-off build and tests; Gateway image publication and deployment SHALL require successful standalone artifact validation for the same revision. The enclosing parity work package SHALL additionally satisfy its full behavioral acceptance contract.
 
 #### Scenario: Workspace masks an unpublished dependency
-- **WHEN** a consumer passes only with a workspace copy of a producer change
-- **THEN** planning SHALL allocate a green producer prerequisite and subsequent consumer adoption
-- **AND** it SHALL NOT weaken checks, add production replacements or remove regression tests to permit a red merge
+- **WHEN** a coordinated source PR passes only with candidate workspace copies of producer and consumer changes while existing published pins are older but merged
+- **THEN** its required checks SHALL prove integrated candidate behavior and parity/interop independently of later PRs
+- **AND** standalone compilation failure SHALL NOT alone block source merge but SHALL block an affected artifact's publication until resolved
+
+#### Scenario: Parity upgrade has a failing required check
+- **WHEN** a pinned-version upgrade fails a required parity, integration or candidate-source check
+- **THEN** it SHALL correct that failure in the upgrade PR or wait rather than registering it as deferred nonblocking work
 
 ### Requirement: Scheduled pinned-version upgrade and assessment
 The configured daily parity automation SHALL execute the repository's pinned-version upgrade and comprehensive assessment workflow, not only discover releases. Its authorization SHALL include necessary compatibility corrections, registration of actionable follow-up issues, signed commits, branch push and creation of a draft upgrade PR. It SHALL NOT automatically implement nonblocking parity packages, approve unresolved material API/scope decisions, merge a PR, mutate a shared upstream checkout or replace another upgrade's fixed target. Local memory SHALL be advisory rather than source or approval authority. The automation SHALL keep run-specific assessment and issue links in the upgrade PR and SHALL NOT create a dated assessment section or issue catalog in the parity coverage map.

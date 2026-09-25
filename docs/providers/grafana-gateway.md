@@ -38,25 +38,24 @@ generated media (WP16). IDs, ordering and empty deltas are preserved. A provider
 its result may arrive on a later independent HTTP request when the client sends
 the unresolved call in assistant history. Tool-part provider options carry
 reviewed continuation metadata; response metadata is allowlisted, not arbitrary
-provider passthrough. Tool approvals, file/source and other media output,
-structured output, and general root provider options remain unsupported.
-Vercel and Go clients own multi-step orchestration; each Gateway generation
+provider passthrough. Tool approvals, file/source and other media output, and
+structured output remain unsupported. Root, message and part provider options
+and call headers retain the Gateway's protected-field and configured-backend
+policy. Vercel and Go clients own multi-step orchestration; each Gateway generation
 remains stateless. Ordered fallback routes reject tool definitions, choices,
-history and MCP server configuration before any physical invocation. Logical
+and history before any physical invocation. Logical
 telemetry omits tool-bearing definitions, names, IDs, inputs, outputs and
 provider metadata before export.
 
-A direct Anthropic route accepts the registered
-`providerOptions.anthropic.mcpServers` request setting. The selected Anthropic
-provider receives its ordered server names, HTTPS URLs, optional authorization
-tokens and tool configuration; no other root provider option is enabled by this
-exception. The response may include the caller-configured MCP `serverName` on a
-tool call/result so a later request can replay the native block. URLs and tokens
-never appear in normalized server output, errors or operational telemetry. The
-Go client's caller-owned `Request.Body` still contains its serialized request,
-so avoid logging it when it carries an MCP token. The Gateway validates HTTPS
-URLs without embedded credentials or fragments but cannot attest to Anthropic's
-remote MCP egress policy. See the [Gateway operator guide](../../ai-gateway/docs/provider-tools.md).
+Authenticated direct Anthropic routes accept bounded
+`providerOptions.anthropic.mcpServers` alongside other allowed options. MCP
+continuation metadata must name a server configured in the current request;
+public output retains only the type and server name. Fallback, OpenAI and
+compatible routes reject MCP before backend invocation, even without tools.
+Other provider options and call headers retain the configured-backend and
+protected-field policy. The Gateway never connects to the remote MCP URL itself;
+Anthropic's egress and deployment activation need separate review. See the
+[Gateway operator guide](../../ai-gateway/docs/provider-tools.md).
 
 ## Authenticate the client
 
