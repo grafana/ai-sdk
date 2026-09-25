@@ -6,13 +6,18 @@ import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
 import { createGateway } from "@ai-sdk/gateway";
 import type { LanguageModelV4CallOptions } from "@ai-sdk/provider";
-import { buildGoClientCapture, captureGoClient } from "./go-client-capture";
+import { buildGoClientCapture, buildPinnedGoClientCapture, captureGoClient } from "./go-client-capture";
 import { comprehensiveGoldenCase } from "./request-cases";
 import { assertValidRequest } from "./schema";
 
 let directory: string;
 let binary: string;
-before(() => { directory = mkdtempSync(join(tmpdir(), "wp7-go-differential-")); binary = buildGoClientCapture(directory, process.env.GRAFANA_CLIENT_MUTATION_SOURCE); });
+before(() => {
+  directory = mkdtempSync(join(tmpdir(), "wp7-go-differential-"));
+  binary = process.env.GRAFANA_CLIENT_STANDALONE === "1"
+    ? buildPinnedGoClientCapture(directory)
+    : buildGoClientCapture(directory, process.env.GRAFANA_CLIENT_MUTATION_SOURCE);
+});
 after(() => { rmSync(directory, { recursive: true, force: true }); });
 
 const unary = {

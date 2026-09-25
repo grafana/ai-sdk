@@ -1,0 +1,18 @@
+# Implementation validation and rollout evidence
+
+The registered upstream reference remains `test/conformance/upstream.yaml` (`ai` 7.0.107, provider 4.0.17, `@ai-sdk/react` 4.0.110); this change only alters CI policy and test execution mode, not SDK wire behavior or the baseline.
+
+## Locally validated
+
+- `mise deps`, `mise run build`, `mise run vet`, `mise run lint`, `mise run test-short` — candidate SDK/Gateway modules and examples pass.
+- `mise run test-providerwire-v4`, `mise run test-integration`, `mise run test-ai-gateway-source-integration`, `mise run parity-check`, `mise run typecheck-conformance`, `mise run lint-docs` — candidate command/testserver and Go differential/mutation red controls pass; conformance retains its local source replacements.
+- `mise run verify-sdk-gateway-isolation`, `mise run test-module-policy`, `mise run verify-merged-pins`, `mise run test-ci-workflow` — candidate root/client without Gateway, reverse-import/replacement rejection, canonical ancestry and deterministic PR/main/tag/failure graph pass.
+- `mise run test-candidate-source` — copies the tree, proves an existing standalone Gateway passes first, introduces a new provider/root API consumed by Gateway with unchanged merged pins, then runs actual source build/short tests/vet/lint/ProviderWire cross-language/integration/conformance/isolation/boundary/merged-pin paths in the copy. Its tests execute each candidate API. A deliberately broken root test fails, and selected Gateway standalone verification fails specifically on the missing API in its published dependencies.
+- `mise run verify-module-resolution`, `MODULE=ai-gateway mise run verify-published-module`, `mise run test-go-client-standalone` — existing standalone artifacts and the pinned Go-client differential pass. Native `mise run build-ai-gateway-image`, readiness smoke with network disabled, and multiarch `docker buildx build --platform linux/amd64,linux/arm64 --output type=oci` pass locally. The Dockerfile sets `GOWORK=off` and copies only the Gateway module.
+- `openspec validate enable-candidate-source-ci` and `git diff --check` pass. Run `mise run fmt-check` only on the committed tree because it intentionally rejects any preexisting working-tree diff.
+
+## Required-check and publication rollout
+
+Read-only `gh api repos/grafana/ai-sdk/rulesets/19928998` on 2026-09-25 found the active `main` ruleset requires `ci`, `docs-lint`, `module-resolution`, `parity-baseline`, `integration-test`, `conformance-test`, and `Validate Changes`. These identities remain intact; `standalone-diagnostic` and the push-only standalone/image artifact gates are not added to source-PR requirements. Reconfirm the live ruleset and obtain maintainer approval before any *subsequent* required-check identity/membership change; coordinate workflow and settings changes atomically, without bypasses. Roll back both if protection is lost or an orphaned name blocks PRs.
+
+Local workflow-graph tests are not a GitHub Actions run. Publication/deployment has not been triggered: validate the final merged exact SHA on canonical main and Gateway tags before treating an image as authorized. `publish-ai-gateway-image` requires all source jobs plus successful standalone and image validation at that SHA; `deploy-ai-gateway` follows publication on main only. A skipped/cancelled/failed artifact gate must block both. Do not push a tag as part of this change. Until #21 incorporates #245 release-readiness safeguards, manually validate each selected module standalone before publication; source merge is not release authorization and the old #21 assumptions must not be enabled unchanged.

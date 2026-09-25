@@ -28,8 +28,9 @@ outputs = ["test/node_modules/.modules.yaml"]
 run = "cd test && pnpm install --frozen-lockfile"
 
 [tasks.test]
-description = "Run all Go tests across all modules"
+description = "Run candidate-source Go tests across all modules"
 run = """
+export GOWORK="$PWD/go.work"
 mise run test-examples
 mise run test-root
 mise run test-ai-gateway
@@ -45,12 +46,16 @@ mise run test-prometheus-middleware
 """
 
 [tasks.test-root]
-description = "Run root module tests"
-run = "go test ./..."
+description = "Run root candidate-source module tests"
+run = 'GOWORK="$PWD/go.work" go test ./...'
 
 [tasks.test-ai-gateway]
-description = "Run AI Gateway tests outside the root workspace"
-run = "cd ai-gateway && GOWORK=off GOFLAGS=\"${GOFLAGS:+$GOFLAGS }-mod=readonly\" go test ./..."
+description = "Run AI Gateway tests against candidate SDK source"
+run = """
+workspace_file="$PWD/go.gateway.work"
+mise run verify-gateway-workspace
+(cd ai-gateway && GOWORK="$workspace_file" GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" go test ./...)
+"""
 
 [tasks.verify-gateway-workspace]
 description = "Verify explicit Gateway workspace resolves candidate SDK source"
@@ -113,11 +118,14 @@ description = "Run Agent Observability middleware conformance and parity tests"
 run = "cd middleware/agentobservability && go test -run 'TestConformance|TestParity' ./..."
 
 [tasks.test-short]
-description = "Run short tests across all modules"
+description = "Run short candidate-source tests across all modules"
 run = """
+workspace_file="$PWD/go.gateway.work"
+export GOWORK="$PWD/go.work"
+mise run verify-gateway-workspace
 mise run test-examples
 go test -short ./...
-(cd ai-gateway && GOWORK=off GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" go test -short ./...)
+(cd ai-gateway && GOWORK="$workspace_file" GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" go test -short ./...)
 (cd providers/anthropic && go test -short ./...)
 (cd providers/bedrock && go test -short ./...)
 (cd providers/grafana && go test -short ./...)
@@ -141,10 +149,13 @@ git diff --exit-code || (echo "Code is not formatted. Run 'mise run fmt' and com
 """
 
 [tasks.vet]
-description = "Run go vet across all modules"
+description = "Vet candidate source across all modules"
 run = """
+workspace_file="$PWD/go.gateway.work"
+export GOWORK="$PWD/go.work"
+mise run verify-gateway-workspace
 go vet ./...
-(cd ai-gateway && GOWORK=off GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" go vet ./...)
+(cd ai-gateway && GOWORK="$workspace_file" GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" go vet ./...)
 (cd providers/anthropic && go vet ./...)
 (cd providers/bedrock && go vet ./...)
 (cd providers/grafana && go vet ./...)
@@ -180,21 +191,37 @@ run = "bash scripts/module-policy.sh isolation"
 description = "Run deterministic Bash module-policy fixtures"
 run = "bash test/module-policy.sh"
 
+[tasks.test-ci-workflow]
+description = "Test source and artifact workflow gating across PR, push and tag events"
+run = """
+mise deps install --only test
+cd test && pnpm --filter @ai-sdk/conformance-tools test:ci
+"""
+
+[tasks.test-candidate-source]
+description = "Prove a controlled root/provider/Gateway API change passes source gates but fails standalone"
+run = "bash test/candidate-source-ci.sh"
+
 [tasks.lint]
 description = "Run golangci-lint across all modules"
 run = """
 set -e
 workspace_file="$PWD/go.work"
+gateway_workspace_file="$PWD/go.gateway.work"
+mise run verify-gateway-workspace
 workspace_modules=$(go work edit -json "$workspace_file" | jq -r '.Use[].DiskPath | if startswith("./") then ltrimstr("./") else . end')
 
 run_in_module() {
   module=$1
   shift
   module_name=${module#./}
-  if printf '%s\n' "$workspace_modules" | grep -Fxq "$module_name"; then
+  if [ "$module_name" = ai-gateway ]; then
+    (cd "$module" && GOWORK="$gateway_workspace_file" GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" "$@")
+  elif printf '%s\n' "$workspace_modules" | grep -Fxq "$module_name"; then
     (cd "$module" && GOWORK="$workspace_file" "$@")
   else
-    (cd "$module" && GOWORK=off "$@")
+    echo "module $module_name has no candidate workspace" >&2
+    exit 1
   fi
 }
 
@@ -243,11 +270,14 @@ go mod tidy
 """
 
 [tasks.build]
-description = "Build all modules and examples"
+description = "Build candidate source modules and examples"
 run = """
+workspace_file="$PWD/go.gateway.work"
+export GOWORK="$PWD/go.work"
+mise run verify-gateway-workspace
 mise run build-examples
 go build ./...
-(cd ai-gateway && GOWORK=off GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" go build ./...)
+(cd ai-gateway && GOWORK="$workspace_file" GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" go build ./...)
 (cd providers/anthropic && go build ./...)
 (cd providers/bedrock && go build ./...)
 (cd providers/grafana && go build ./...)
@@ -260,8 +290,9 @@ go build ./...
 """
 
 [tasks.build-examples]
-description = "Build every example module"
+description = "Build every example module against candidate SDK source"
 run = """
+export GOWORK="$PWD/go.work"
 for mod in $(find examples -name go.mod -exec dirname {} \\;); do
   echo "build $mod"
   (cd "$mod" && go build ./...)
@@ -269,8 +300,9 @@ done
 """
 
 [tasks.test-examples]
-description = "Run short tests in every example module"
+description = "Run short example tests against candidate SDK source"
 run = """
+export GOWORK="$PWD/go.work"
 for mod in $(find examples -name go.mod -exec dirname {} \\; | sort); do
   test_file=$(find "$mod" -name '*_test.go' -type f -print -quit)
   if [ -z "$test_file" ]; then
@@ -283,8 +315,9 @@ done
 """
 
 [tasks.test-integration]
-description = "Run cross-language integration tests"
+description = "Run cross-language candidate-source integration tests"
 run = """
+export GOWORK="$PWD/go.work"
 mise deps install --only test
 (cd test/integration/testserver && go test ./...)
 (cd test && pnpm --filter @ai-sdk/test-integration test)
@@ -313,17 +346,30 @@ cd test && pnpm --filter @ai-sdk/conformance-tools typecheck
 """
 
 [tasks.test-providerwire-v4]
-description = "Run the non-mutating ProviderWire V4 contract checks"
+description = "Run ProviderWire V4 contract checks against candidate source"
 run = """
-(cd ai-gateway && GOWORK=off GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" go test ./providerwire/v4)
+workspace_file="$PWD/go.gateway.work"
+mise run verify-gateway-workspace
+(cd ai-gateway && GOWORK="$workspace_file" GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" go test ./providerwire/v4)
 mise deps install --only test
+export GATEWAY_TEST_GOWORK="$workspace_file"
 cd test && pnpm --filter @ai-sdk/providerwire-v4-contract test:contract
 """
 
-[tasks.test-ai-gateway-command]
-description = "Run the authenticated AI Gateway command integration"
+[tasks.test-go-client-standalone]
+description = "Diagnose Go client interoperability against its published standalone SDK dependencies"
 run = """
 mise deps install --only test
+cd test && pnpm --filter @ai-sdk/providerwire-v4-contract test:standalone-client
+"""
+
+[tasks.test-ai-gateway-command]
+description = "Run the authenticated candidate-source AI Gateway command integration"
+run = """
+workspace_file="$PWD/go.gateway.work"
+mise run verify-gateway-workspace
+mise deps install --only test
+export GATEWAY_TEST_GOWORK="$workspace_file"
 cd test && pnpm --filter @ai-sdk/providerwire-v4-contract test:command
 """
 

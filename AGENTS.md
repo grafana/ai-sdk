@@ -185,12 +185,15 @@ mise run check
 # Upstream parity checks
 mise run validate-parity-baseline
 mise run parity-check
-mise run verify-module-resolution   # all published modules, public proxy, GOWORK=off
+mise run verify-module-resolution   # standalone diagnostic for all published modules, public proxy, GOWORK=off
 MODULE=providers/openai mise run verify-published-module
 mise run verify-merged-pins        # real internal pins must descend from canonical main
 mise run verify-ai-gateway-boundary
 mise run verify-sdk-gateway-isolation
 mise run test-module-policy         # deterministic Bash policy fixtures
+mise run test-ci-workflow           # PR/push/tag source and artifact gate graph
+mise run test-candidate-source      # coordinated candidate passes; standalone fails
+mise run test-go-client-standalone  # pinned Go client diagnostic
 mise run test-ai-gateway-source    # explicit go.gateway.work candidate-source mode
 mise run test-ai-gateway-source-integration
 
@@ -204,15 +207,19 @@ The Anthropic provider module is a separate `go.mod`. Run its tests from the
 `providers/anthropic/` directory or via `mise run test`. The same applies to the
 Bedrock provider module under `providers/bedrock/`.
 
-The root `go.work` remains SDK-only. `go.gateway.work` is an explicit
-candidate-source integration mode, not a default or release build mode.
-`scripts/module-policy.sh` owns module inventory, merged-pin ancestry,
-standalone validation, the license boundary, and the source-absent SDK proof. Real
-published internal module pins must already be merged on canonical `main`; an
-older merged pseudo-version is valid if standalone tests pass. `mise run
-verify-module-resolution` and Gateway production/image builds still use
-`GOWORK=off`. This change does not relax source-PR gates or authorize releases;
-release-readiness policy is separate (#245).
+The root `go.work` remains SDK-only. Required Gateway source checks explicitly
+select `go.gateway.work`; production/image builds use `GOWORK=off` and never
+select a development workspace. `scripts/module-policy.sh` owns module
+inventory, merged-pin ancestry, standalone validation, the license boundary,
+and the candidate-source, Gateway-absent SDK proof. Real published internal
+module pins must already be merged on canonical `main`; an older merged
+pseudo-version may lag candidate source. All-module standalone validation is a
+visible, nonblocking source-PR diagnostic, not a merge gate. An exact-revision
+standalone Gateway validation and image check block publication and deployment.
+Until #245 release-readiness safeguards are incorporated in #21, maintainers
+must run `MODULE=<module-root> mise run verify-published-module` before manual
+module publication. Do not enable the old #21 release workflow unchanged or
+infer permission to tag an SDK release from a green source PR.
 
 ## Project Structure
 

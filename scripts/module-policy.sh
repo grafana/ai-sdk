@@ -12,7 +12,7 @@
 # Workspace: go.gateway.work explicitly selects local candidate source; the
 # root workspace does not. Isolation: SDK and Grafana build/test without Gateway
 # source present. These checks do not replace copied-code or dependency license
-# review, and candidate-source checks do not relax required standalone gates.
+# review. Standalone builds are artifact gates and independent PR diagnostics.
 set -euo pipefail
 
 repo_root=$(git rev-parse --show-toplevel)
@@ -206,14 +206,20 @@ workspace() {
 }
 
 isolation() (
-  local dir root
+  local dir root module selected directory workspace_file
   dir=$(mktemp -d)
   trap 'rm -rf "$dir"' EXIT
   rsync -a --exclude='/.git' --exclude='/ai-gateway' --exclude='**/node_modules' "$repo_root/" "$dir/"
   [[ ! -e "$dir/ai-gateway" ]] || fail 'isolated copy contains Gateway source'
+  workspace_file=$dir/go.work
   for root in . providers/grafana; do
     echo "==> $root without Gateway source"
-    (cd "$dir/$root" && GOWORK=off GOFLAGS="$readonly_flags" go build ./... && GOWORK=off GOFLAGS="$readonly_flags" go test ./...)
+    module=$module_prefix
+    [[ "$root" == . ]] || module+=/$root
+    selected=$(cd "$dir/$root" && GOWORK="$workspace_file" GOFLAGS="$readonly_flags" go list -m -json "$module")
+    directory=$(cd "$dir/$root" && pwd -P)
+    [[ $(jq -r '.Main' <<<"$selected") == true && $(jq -r '.Dir' <<<"$selected") == "$directory" ]] || fail "isolated copy did not select candidate $module"
+    (cd "$dir/$root" && GOWORK="$workspace_file" GOFLAGS="$readonly_flags" go build ./... && GOWORK="$workspace_file" GOFLAGS="$readonly_flags" go test ./...)
   done
 )
 
