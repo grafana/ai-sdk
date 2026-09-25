@@ -207,46 +207,81 @@ func TestBuildParams_MixedFunctionAndWebTools(t *testing.T) {
 }
 
 func TestWebTool_HTTPBetaHeaders(t *testing.T) {
-	cases := []struct{ id, beta string }{
-		{"anthropic.web_search_20250305", ""},
-		{"anthropic.web_search_20260209", "code-execution-web-tools-2026-02-09"},
-		{"anthropic.web_search_20260318", ""},
-		{"anthropic.web_fetch_20250910", "web-fetch-2025-09-10"},
-		{"anthropic.web_fetch_20260209", "code-execution-web-tools-2026-02-09"},
-		{"anthropic.web_fetch_20260318", ""},
+	cases := []struct {
+		id, beta string
+		explicit bool
+	}{
+		{"anthropic.web_search_20250305", "", false},
+		{"anthropic.web_search_20260209", "code-execution-web-tools-2026-02-09", false},
+		{"anthropic.web_search_20260318", "", false},
+		{"anthropic.web_fetch_20250910", "web-fetch-2025-09-10", false},
+		{"anthropic.web_fetch_20260209", "code-execution-web-tools-2026-02-09", false},
+		{"anthropic.web_fetch_20260318", "", false},
+		{"anthropic.web_fetch_20260209", "code-execution-web-tools-2026-02-09", true},
 	}
 	for _, tc := range cases {
-		t.Run(tc.id, func(t *testing.T) {
+		t.Run(fmt.Sprintf("%s/explicit=%t", tc.id, tc.explicit), func(t *testing.T) {
 			for _, vertex := range []bool{false, true} {
-				headers := make(chan string, 1)
-				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					headers <- strings.Join(r.Header.Values("anthropic-beta"), ",")
-					w.Header().Set("Content-Type", "application/json")
-					w.WriteHeader(http.StatusBadRequest)
-					_, _ = w.Write([]byte(`{"type":"error","error":{"type":"invalid_request_error","message":"captured"}}`))
-				}))
-				m := New("test-key", "claude-sonnet-4-20250514", WithRequestOptions(option.WithBaseURL(server.URL), option.WithHTTPClient(server.Client()), option.WithMaxRetries(0))).(*model)
-				if vertex {
-					m.resolveModel = ResolveVertexModelID
-					m.capabilities = vertexProviderCapabilities
+				for _, stream := range []bool{false, true} {
+					requests := make(chan struct {
+						beta string
+						body map[string]json.RawMessage
+						err  error
+					}, 1)
+					server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+						var body map[string]json.RawMessage
+						err := json.NewDecoder(r.Body).Decode(&body)
+						requests <- struct {
+							beta string
+							body map[string]json.RawMessage
+							err  error
+						}{strings.Join(r.Header.Values("anthropic-beta"), ","), body, err}
+						if err != nil {
+							http.Error(w, err.Error(), http.StatusBadRequest)
+							return
+						}
+						w.Header().Set("Content-Type", "application/json")
+						w.WriteHeader(http.StatusBadRequest)
+						_, _ = w.Write([]byte(`{"type":"error","error":{"type":"invalid_request_error","message":"captured"}}`))
+					}))
+					m := New("test-key", "claude-sonnet-4-20250514", WithRequestOptions(option.WithBaseURL(server.URL), option.WithHTTPClient(server.Client()), option.WithMaxRetries(0))).(*model)
+					if vertex {
+						m.resolveModel = ResolveVertexModelID
+						m.capabilities = vertexProviderCapabilities
+					}
+					betas := []string{"user-beta"}
+					if tc.explicit {
+						betas = append(betas, tc.beta)
+					}
+					maxTokens := 1024
+					opts := provider.CallOptions{MaxOutputTokens: &maxTokens, Prompt: []provider.Message{provider.UserText("hello")}, Tools: []provider.Tool{{Type: provider.ToolTypeProvider, ID: tc.id, Name: "web"}}, ProviderOptions: provider.BuildProviderOptions(AnthropicOptions{Betas: betas})}
+					if stream {
+						_, err := m.DoStream(context.Background(), opts)
+						require.Error(t, err)
+					} else {
+						_, err := m.DoGenerate(context.Background(), opts)
+						require.Error(t, err)
+					}
+					request := <-requests
+					require.NoError(t, request.err)
+					assert.Contains(t, request.beta, "user-beta")
+					if tc.beta != "" {
+						assert.Equal(t, 1, strings.Count(request.beta, tc.beta), "anthropic-beta: %q", request.beta)
+					} else {
+						assert.NotContains(t, request.beta, "web-fetch-2025-09-10")
+						assert.NotContains(t, request.beta, "code-execution-web-tools-2026-02-09")
+					}
+					var tools []map[string]json.RawMessage
+					require.NoError(t, json.Unmarshal(request.body["tools"], &tools))
+					require.Len(t, tools, 1)
+					assert.JSONEq(t, `"`+strings.TrimPrefix(tc.id, "anthropic.")+`"`, string(tools[0]["type"]))
+					name := "web_search"
+					if strings.HasPrefix(tc.id, "anthropic.web_fetch_") {
+						name = "web_fetch"
+					}
+					assert.JSONEq(t, `"`+name+`"`, string(tools[0]["name"]))
+					server.Close()
 				}
-				betas := []string{"user-beta"}
-				if tc.beta != "" {
-					betas = append(betas, tc.beta)
-				}
-				maxTokens := 1024
-				opts := provider.CallOptions{MaxOutputTokens: &maxTokens, Prompt: []provider.Message{provider.UserText("hello")}, Tools: []provider.Tool{{Type: provider.ToolTypeProvider, ID: tc.id, Name: "web"}}, ProviderOptions: provider.BuildProviderOptions(AnthropicOptions{Betas: betas})}
-				_, err := m.DoGenerate(context.Background(), opts)
-				require.Error(t, err)
-				header := <-headers
-				assert.Contains(t, header, "user-beta")
-				if tc.beta != "" {
-					assert.Equal(t, 1, strings.Count(header, tc.beta), "anthropic-beta: %q", header)
-				} else {
-					assert.NotContains(t, header, "web-fetch-2025-09-10")
-					assert.NotContains(t, header, "code-execution-web-tools-2026-02-09")
-				}
-				server.Close()
 			}
 		})
 	}
@@ -257,6 +292,8 @@ func TestBuildParams_WebToolValidation(t *testing.T) {
 		id, args string
 	}{
 		{"anthropic.web_search_20250305", `{"maxUses":"two"}`},
+		{"anthropic.web_search_20260318", `{"maxUses":"1.5"}`},
+		{"anthropic.web_fetch_20260318", `{"maxContentTokens":"2.5"}`},
 		{"anthropic.web_search_20260209", `{"maxUses":null}`},
 		{"anthropic.web_fetch_20250910", `{"maxContentTokens":"large"}`},
 		{"anthropic.web_fetch_20260209", `{"maxUses":null}`},
@@ -294,7 +331,7 @@ func TestBuildParams_WebToolValidation(t *testing.T) {
 	}
 }
 
-func TestBuildParams_WebToolVersionMatrix(t *testing.T) {
+func TestWebTool_HTTPVersionMatrix(t *testing.T) {
 	cases := []struct {
 		id, args, wireType, wireName, beta string
 		fields                             map[string]string
@@ -316,10 +353,40 @@ func TestBuildParams_WebToolVersionMatrix(t *testing.T) {
 				require.NoError(t, err)
 				assert.Empty(t, warnings)
 				require.Len(t, p.Tools, 1)
-				data, err := json.Marshal(p.Tools[0])
-				require.NoError(t, err)
-				var wire map[string]json.RawMessage
-				require.NoError(t, json.Unmarshal(data, &wire))
+				requests := make(chan struct {
+					body map[string]json.RawMessage
+					err  error
+				}, 1)
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					var body map[string]json.RawMessage
+					err := json.NewDecoder(r.Body).Decode(&body)
+					requests <- struct {
+						body map[string]json.RawMessage
+						err  error
+					}{body, err}
+					if err != nil {
+						http.Error(w, err.Error(), http.StatusBadRequest)
+						return
+					}
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusBadRequest)
+					_, _ = w.Write([]byte(`{"type":"error","error":{"type":"invalid_request_error","message":"captured"}}`))
+				}))
+				model := New("test-key", "claude-sonnet-4-6", WithRequestOptions(option.WithBaseURL(server.URL), option.WithHTTPClient(server.Client()), option.WithMaxRetries(0)))
+				maxTokens := 1024
+				opts := provider.CallOptions{MaxOutputTokens: &maxTokens, Prompt: []provider.Message{provider.UserText("hello")}, Tools: []provider.Tool{{Type: provider.ToolTypeProvider, ID: tc.id, Name: "custom_web", Args: args}}}
+				if stream {
+					_, err = model.DoStream(context.Background(), opts)
+				} else {
+					_, err = model.DoGenerate(context.Background(), opts)
+				}
+				require.Error(t, err)
+				request := <-requests
+				require.NoError(t, request.err)
+				var tools []map[string]json.RawMessage
+				require.NoError(t, json.Unmarshal(request.body["tools"], &tools))
+				require.Len(t, tools, 1)
+				wire := tools[0]
 				assert.JSONEq(t, `"`+tc.wireType+`"`, string(wire["type"]))
 				assert.JSONEq(t, `"`+tc.wireName+`"`, string(wire["name"]))
 				for field, want := range tc.fields {
@@ -333,6 +400,7 @@ func TestBuildParams_WebToolVersionMatrix(t *testing.T) {
 				} else {
 					assert.Contains(t, p.Betas, sdk.AnthropicBeta(tc.beta))
 				}
+				server.Close()
 			}
 		})
 	}

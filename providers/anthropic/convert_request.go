@@ -2048,12 +2048,11 @@ func validateWebToolArgs(id string, args map[string]json.RawMessage) error {
 			if key == "maxContentTokens" && search {
 				continue
 			}
-			var number json.Number
-			if err := json.Unmarshal(raw, &number); err != nil {
+			var value *float64
+			if err := json.Unmarshal(raw, &value); err != nil || value == nil {
 				return fmt.Errorf("%s must be a number", key)
 			}
-			value, err := strconv.ParseFloat(number.String(), 64)
-			if err != nil || math.IsInf(value, 0) || math.IsNaN(value) {
+			if math.IsInf(*value, 0) || math.IsNaN(*value) {
 				return fmt.Errorf("%s must be a finite number", key)
 			}
 		case "allowedDomains", "blockedDomains":
