@@ -111,7 +111,8 @@ func TestNewResponses_WebSearchSourcesInclude(t *testing.T) {
 		{name: "stream per-call true", stream: true, perCall: &yes},
 		{name: "generate per-call false", perCall: &no},
 		{name: "stream per-call false", stream: true, perCall: &no},
-		{name: "explicit include retained", explicit: true},
+		{name: "generate explicit include retained", explicit: true},
+		{name: "stream explicit include retained", stream: true, explicit: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
@@ -170,6 +171,10 @@ func TestNewResponses_WebSearchSourcesInclude(t *testing.T) {
 			}
 			if tc.stream {
 				result, err := model.DoStream(t.Context(), call)
+				if tc.explicit {
+					require.ErrorContains(t, err, "unsupported include")
+					return
+				}
 				require.NoError(t, err)
 				var finished, attributed bool
 				for part := range result.Stream {
@@ -187,7 +192,7 @@ func TestNewResponses_WebSearchSourcesInclude(t *testing.T) {
 			} else {
 				result, err := model.DoGenerate(t.Context(), call)
 				if tc.explicit {
-					require.Error(t, err)
+					require.ErrorContains(t, err, "unsupported include")
 					return
 				}
 				require.NoError(t, err)

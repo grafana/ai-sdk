@@ -304,14 +304,41 @@ the corresponding Responses tool objects. It SHALL resolve `toolChoice` of
 `auto`/`none`/`required` as pass-through strings and `tool` as the typed/object
 choice, with `allowedTools` overriding `toolChoice` as an `allowed_tools`
 choice. Unknown tools SHALL emit an `unsupported` warning rather than erroring.
+When a supported web-search tool is present, the provider SHALL automatically
+add `web_search_call.action.sources` to `include` unless either a provider-owned
+model capability is false or the per-call `includeWebSearchSources` option is
+explicitly false. This capability SHALL default to enabled for ordinary OpenAI
+Responses models. An explicit per-call true SHALL NOT override a disabled model
+capability. The provider SHALL retain all caller-specified `include` values even
+when automatic web sources are disabled; unrelated automatic includes SHALL
+remain independent. Without a web-search tool it SHALL NOT automatically add
+web sources.
 
 #### Scenario: Function tool declaration
 - **WHEN** a function tool is provided
 - **THEN** the request `tools` contains a `function` declaration with name, description, and parameters schema
 
 #### Scenario: Web search tool auto-includes sources
-- **WHEN** a `openai.web_search` provider tool is provided
-- **THEN** the request `tools` contains a `web_search` tool and `include` contains `web_search_call.action.sources`
+- **WHEN** an `openai.web_search` or `openai.web_search_preview` provider tool is provided to a default OpenAI model without a per-call opt-out
+- **THEN** the request `tools` contains the web-search tool and `include` contains `web_search_call.action.sources`
+
+#### Scenario: Per-call opt-out and explicit true
+- **WHEN** a web-search tool is supplied on an enabled OpenAI model and `includeWebSearchSources` is explicitly false
+- **THEN** the request retains the web tool but does not automatically include `web_search_call.action.sources`
+- **AND** when the per-call value is true instead, automatic inclusion remains enabled
+
+#### Scenario: Model capability dominates per-call true
+- **WHEN** a web-search tool is supplied on a model whose source-include capability is disabled and `includeWebSearchSources` is true or unset
+- **THEN** the request retains the web tool but does not automatically include `web_search_call.action.sources`
+
+#### Scenario: Explicit include survives automatic opt-out
+- **WHEN** a caller explicitly lists `web_search_call.action.sources` in `include` while the per-call option or model capability disables automatic inclusion
+- **THEN** the serialized request still contains the explicitly requested source include exactly once
+- **AND** independent code-interpreter, logprobs and encrypted-reasoning includes remain governed by their own options
+
+#### Scenario: No web-search tool
+- **WHEN** no web-search tool is supplied, whether `includeWebSearchSources` is true or unset
+- **THEN** the request does not automatically add `web_search_call.action.sources`
 
 #### Scenario: allowedTools overrides tool choice
 - **WHEN** the `allowedTools` option lists tool names and `toolChoice` is also set
