@@ -1,11 +1,11 @@
 ## Why
 
-OpenAI SDK users need a native Chat Completions endpoint without depending on ProviderWire headers or payloads. The adapter must preserve authentication, catalog identity, middleware ownership, and bounded execution while explicitly rejecting features the underlying provider routes cannot preserve.
+OpenAI SDK users need a Chat Completions adapter without depending on ProviderWire headers or payloads. The adapter must preserve authentication, catalog identity, middleware ownership, and bounded execution while explicitly rejecting features the underlying provider routes cannot preserve.
 
 ## What Changes
 
-- Add independent AGPL Chat DTOs, strict request mapping, safe native errors, unary serialization and SSE lifecycle.
-- Add POST `/v1/chat/completions`, native Bearer authentication and native 404/405 responses.
+- Add independent AGPL Chat DTOs, strict request mapping, safe OpenAI errors, unary serialization and SSE lifecycle.
+- Add POST `/v1/chat/completions`, adapter Bearer authentication and OpenAI 404/405 responses.
 - Freeze a conservative finite backend capability matrix at catalog composition; preserve the text-only fallback guard.
 - Force Responses `store:false` and translate Chat's omitted/null function strict to false.
 - Add deterministic official SDK consumption tests and documented limits/non-goals.
@@ -14,7 +14,7 @@ OpenAI SDK users need a native Chat Completions endpoint without depending on Pr
 
 ### New Capabilities
 
-- `gateway-native-chat-completions`: bounded native OpenAI Chat subset with shared Gateway service foundations.
+- `gateway-openai-chat-completions-adapter`: bounded OpenAI Chat adapter subset with shared Gateway service foundations.
 
 ### Modified Capabilities
 

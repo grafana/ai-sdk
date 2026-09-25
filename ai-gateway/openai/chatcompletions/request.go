@@ -114,7 +114,7 @@ func decodeStrict(data []byte, dst any) error {
 	return nil
 }
 
-// The standard decoder accepts duplicate/case-insensitive fields. Native JSON
+// The standard decoder accepts duplicate/case-insensitive fields. OpenAI JSON
 // deliberately does not, so proxy/client interpretations cannot disagree.
 func uniqueJSON(data []byte) bool {
 	d := json.NewDecoder(bytes.NewReader(data))

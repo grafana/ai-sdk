@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestNativeRouterOwnsErrorsBeforeBody(t *testing.T) {
+func TestChatCompletionsRouterOwnsErrorsBeforeBody(t *testing.T) {
 	for _, source := range []gatewayauth.Source{gatewayauth.SourceAccessToken, gatewayauth.SourceCloudGateway} {
 		t.Run(string(source), func(t *testing.T) {
 			telemetry, err := NewTelemetry(slog.New(slog.NewTextHandler(io.Discard, nil)))

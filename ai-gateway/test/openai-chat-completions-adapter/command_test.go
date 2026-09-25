@@ -1,6 +1,6 @@
-// Package native_test exercises the real command with the official Go SDK.
+// Package chatcompletionsadapter_test exercises the real command with the official Go SDK.
 // The upstream below is a deterministic synthetic test server, not a recording.
-package native_test
+package chatcompletionsadapter_test
 
 import (
 	"bytes"
@@ -135,7 +135,7 @@ func startCommand(t *testing.T, backend, jwks string) (string, func()) {
 	build.Env = append(os.Environ(), "GOWORK=off")
 	output, err := build.CombinedOutput()
 	require.NoError(t, err, string(output))
-	config := fmt.Sprintf("providers:\n  test:\n    type: openai\n    apiKeyEnv: NATIVE_TEST_KEY\n    baseURL: %s/v1\nmodels:\n  public/chat:\n    name: Chat\n    primary:\n      provider: test\n      model: gpt-4.1\n    aliases: [chat]\n  public/reasoning:\n    name: Reasoning\n    primary:\n      provider: test\n      model: o3-mini\n", backend)
+	config := fmt.Sprintf("providers:\n  test:\n    type: openai\n    apiKeyEnv: CHAT_COMPLETIONS_ADAPTER_TEST_KEY\n    baseURL: %s/v1\nmodels:\n  public/chat:\n    name: Chat\n    primary:\n      provider: test\n      model: gpt-4.1\n    aliases: [chat]\n  public/reasoning:\n    name: Reasoning\n    primary:\n      provider: test\n      model: o3-mini\n", backend)
 	configPath := filepath.Join(dir, "models.yaml")
 	require.NoError(t, os.WriteFile(configPath, []byte(config), 0600))
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -160,7 +160,7 @@ func startCommand(t *testing.T, backend, jwks string) (string, func()) {
 			cmd.Env = append(cmd.Env, entry)
 		}
 	}
-	cmd.Env = append(cmd.Env, "NATIVE_TEST_KEY=fake-backend-key")
+	cmd.Env = append(cmd.Env, "CHAT_COMPLETIONS_ADAPTER_TEST_KEY=fake-backend-key")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	require.NoError(t, cmd.Start())
@@ -203,12 +203,12 @@ func verifiedToken(t *testing.T) (string, string, *httptest.Server) {
 	require.NoError(t, err)
 	enc := base64.RawURLEncoding.EncodeToString
 	jwks := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_ = json.NewEncoder(w).Encode(map[string]any{"keys": []any{map[string]any{"kty": "EC", "crv": "P-256", "kid": "native", "alg": "ES256", "use": "sig", "x": enc(key.X.FillBytes(make([]byte, 32))), "y": enc(key.Y.FillBytes(make([]byte, 32)))}}})
+		_ = json.NewEncoder(w).Encode(map[string]any{"keys": []any{map[string]any{"kty": "EC", "crv": "P-256", "kid": "adapter", "alg": "ES256", "use": "sig", "x": enc(key.X.FillBytes(make([]byte, 32))), "y": enc(key.Y.FillBytes(make([]byte, 32)))}}})
 	}))
 	t.Cleanup(jwks.Close)
-	header := enc([]byte(`{"alg":"ES256","typ":"at+jwt","kid":"native"}`))
+	header := enc([]byte(`{"alg":"ES256","typ":"at+jwt","kid":"adapter"}`))
 	signToken := func(expiry time.Time) string {
-		payload, _ := json.Marshal(map[string]any{"sub": "access-policy:native", "aud": []string{"ai-sdk"}, "exp": expiry.Unix(), "namespace": "stack-native", "serviceIdentity": "native-test"})
+		payload, _ := json.Marshal(map[string]any{"sub": "access-policy:adapter", "aud": []string{"ai-sdk"}, "exp": expiry.Unix(), "namespace": "stack-adapter", "serviceIdentity": "adapter-test"})
 		unsigned := header + "." + enc(payload)
 		digest := sha256.Sum256([]byte(unsigned))
 		r, s, err := ecdsa.Sign(rand.Reader, key, digest[:])
@@ -232,7 +232,7 @@ func TestOfficialSDKRealCommand(t *testing.T) {
 	t.Cleanup(up.Close)
 	url, stop := startCommand(t, up.URL, jwks.URL)
 	client := openai.NewClient(option.WithBaseURL(url+"/v1"), option.WithAPIKey(token), option.WithMaxRetries(0))
-	t.Run("native malformed and expired credentials", func(t *testing.T) {
+	t.Run("adapter malformed and expired credentials", func(t *testing.T) {
 		before := fake.count()
 		for _, headers := range []http.Header{{}, {"Authorization": {"Bearer " + expired}}, {"Authorization": {"Bearer " + token, "Bearer " + token}}, {"Authorization": {"Bearer " + token + ", other"}}, {"Authorization": {"Bearer " + token}, "X-Access-Token": {"other"}}, {"Authorization": {"Bearer " + token}, "X-Grafana-Id": {"other"}}, {"Authorization": {"Bearer " + token}, "X-Scope-OrgID": {"42"}}} {
 			req, err := http.NewRequest("POST", url+"/v1/chat/completions", strings.NewReader(`not even JSON`))
@@ -461,7 +461,7 @@ func TestOfficialSDKRealCommand(t *testing.T) {
 		select {
 		case <-streamReady:
 		case <-time.After(time.Second):
-			t.Fatal("native SSE did not commit before shutdown")
+			t.Fatal("adapter SSE did not commit before shutdown")
 		}
 		stop()
 		for range 3 {

@@ -463,7 +463,7 @@ func TestLateSetupAndSlowClientAreBounded(t *testing.T) {
 	})
 }
 
-func TestUsageAndNativeByteBounds(t *testing.T) {
+func TestUsageAndAdapterByteBounds(t *testing.T) {
 	u, err := mapUsage(provider.Usage{})
 	require.NoError(t, err)
 	assert.Nil(t, u)

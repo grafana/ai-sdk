@@ -16,11 +16,11 @@ async function port(): Promise<number> {
 }
 function token(): string {
   const encode=(value: unknown)=>Buffer.from(JSON.stringify(value)).toString('base64url');
-  return `${encode({alg:'ES256',typ:'at+jwt'})}.${encode({sub:'access-policy:native',aud:['ai-sdk'],exp:Math.floor(Date.now()/1000)+3600,namespace:'stack-native',serviceIdentity:'native-test'})}.${Buffer.alloc(64).toString('base64url')}`;
+  return `${encode({alg:'ES256',typ:'at+jwt'})}.${encode({sub:'access-policy:adapter',aud:['ai-sdk'],exp:Math.floor(Date.now()/1000)+3600,namespace:'stack-adapter',serviceIdentity:'adapter-test'})}.${Buffer.alloc(64).toString('base64url')}`;
 }
 
 test('official JavaScript SDK against real command: compatible and Anthropic profiles', async t=>{
-  const directory=mkdtempSync(join(tmpdir(),'native-chat-js-'));
+  const directory=mkdtempSync(join(tmpdir(),'chat-completions-adapter-js-'));
   const binary=join(directory,'gateway');
   try {
     execFileSync('go',['build','-race','-mod=readonly','-o',binary,'./cmd/grafana-ai-gateway'],{cwd:resolve(import.meta.dirname,'../..'),env:{...process.env,GOWORK:'off'},stdio:'pipe'});
@@ -62,9 +62,9 @@ test('official JavaScript SDK against real command: compatible and Anthropic pro
         const address=`127.0.0.1:${await port()}`;const baseURL=`http://127.0.0.1:${addr.port}${backend==='anthropic'?'':'/v1'}`;
         const config=join(directory,`${backend}.yaml`);
         const fallbackConfig=backend==='anthropic'?'  public/fallback:\n    name: Fallback\n    primary:\n      provider: local\n      model: claude-sonnet-4-20250514\n    fallback:\n      - provider: local\n        model: claude-3-5-haiku-20241022\n':'';
-        writeFileSync(config,`providers:\n  local:\n    type: ${backend}\n    apiKeyEnv: NATIVE_JS_KEY\n    baseURL: ${baseURL}\nmodels:\n  public/chat:\n    name: Chat\n    primary:\n      provider: local\n      model: ${backend==='anthropic'?'claude-sonnet-4-20250514':'gpt-4o-mini'}\n    aliases: [chat]\n${fallbackConfig}`);
+        writeFileSync(config,`providers:\n  local:\n    type: ${backend}\n    apiKeyEnv: CHAT_COMPLETIONS_ADAPTER_JS_KEY\n    baseURL: ${baseURL}\nmodels:\n  public/chat:\n    name: Chat\n    primary:\n      provider: local\n      model: ${backend==='anthropic'?'claude-sonnet-4-20250514':'gpt-4o-mini'}\n    aliases: [chat]\n${fallbackConfig}`);
         const env=Object.fromEntries(Object.entries(process.env).filter(([key])=>!['GRAFANA_AI_GATEWAY_','AGENTO11Y_','SIGIL_'].some(prefix=>key.startsWith(prefix))));
-        const proc=spawn(binary,[`--config.file=${config}`,'--deployment.mode=development','--auth.unsafe',`--server.listen-address=${address}`,'--server.shutdown-timeout=2s'],{env:{...env,NATIVE_JS_KEY:'fake-key'},stdio:['ignore','ignore','pipe']});
+        const proc=spawn(binary,[`--config.file=${config}`,'--deployment.mode=development','--auth.unsafe',`--server.listen-address=${address}`,'--server.shutdown-timeout=2s'],{env:{...env,CHAT_COMPLETIONS_ADAPTER_JS_KEY:'fake-key'},stdio:['ignore','ignore','pipe']});
         let stderr='';proc.stderr.on('data',chunk=>stderr+=chunk);const exited=new Promise<number|null>(r=>proc.once('exit',r));
         try {
           let ready=false;for(let i=0;i<400;i++){try{const response=await fetch(`http://${address}/ready`);ready=response.ok;await response.text();if(ready)break}catch{}await new Promise(r=>setTimeout(r,25))}assert.ok(ready,stderr);

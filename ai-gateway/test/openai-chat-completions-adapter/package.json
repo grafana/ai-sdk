@@ -1,5 +1,5 @@
 {
-  "name": "@ai-sdk/native-chat-contract",
+  "name": "@ai-sdk/openai-chat-completions-adapter-contract",
   "private": true,
   "license": "AGPL-3.0-only",
   "type": "module",

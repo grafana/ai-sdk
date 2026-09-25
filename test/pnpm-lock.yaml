@@ -166,7 +166,7 @@ importers:
 
   .: {}
 
-  ../ai-gateway/test/native:
+  ../ai-gateway/test/openai-chat-completions-adapter:
     dependencies:
       openai:
         specifier: 6.27.0
