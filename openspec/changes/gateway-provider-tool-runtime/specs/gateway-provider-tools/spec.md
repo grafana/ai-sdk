@@ -23,7 +23,7 @@ Calls/input-start SHALL preserve providerExecuted true. Dynamic SHALL survive on
 - **THEN** the encoded SSE and Go client SHALL preserve each state for subsequent inference
 
 ### Requirement: Provider result and continuation transport
-Unary/SSE output SHALL preserve ordered calls and non-null JSON results, including error, dynamic and preliminary semantics. Assistant provider calls and basic assistant-side results SHALL map into continuation. Ordinary tool-part options SHALL retain object namespaces while rejecting host-reserved controls. Nested output/content options and deferred content families SHALL remain unsupported.
+Unary/SSE output SHALL preserve ordered calls and non-null JSON results, including error, dynamic and preliminary semantics. Assistant provider calls and basic assistant-side results SHALL map into continuation. Ordinary tool-part options SHALL retain object namespaces under the Gateway's protected-field and configured-backend policy while rejecting host-reserved controls. Nested output/content options and deferred content families SHALL remain unsupported.
 
 #### Scenario: Selected result values
 - **WHEN** output results contain empty string, false, zero, empty object or array
@@ -49,7 +49,7 @@ Output results SHALL match current-response calls or unresolved provider-owned a
 - **THEN** its entries SHALL NOT consume the current provider stream-part budget or retain history payloads
 
 ### Requirement: Reviewed non-MCP tool metadata
-Public metadata SHALL project reviewed Anthropic caller type/toolId and OpenAI/Azure itemId, namespace and caller type/callerId shapes. Unknown/private fields SHALL be omitted; malformed supported fields SHALL fail. Metadata bytes and cardinality SHALL be bounded before copying. This capability SHALL NOT enable MCP: nonempty root options and explicit MCP continuation/output metadata SHALL remain rejected until separately enabled by gateway-anthropic-mcp.
+Public metadata SHALL project reviewed Anthropic caller type/toolId and OpenAI/Azure itemId, namespace and caller type/callerId shapes. Unknown/private fields SHALL be omitted; malformed supported fields SHALL fail. Metadata bytes and cardinality SHALL be bounded before copying. This capability SHALL NOT enable MCP: MCP server options and explicit MCP continuation/output metadata SHALL remain rejected. Other root, message and part options and call headers SHALL retain the Gateway's existing protected-field and configured-backend policy.
 
 #### Scenario: Correlation metadata with private fields
 - **WHEN** reviewed metadata includes arbitrary secret-bearing fields
@@ -82,8 +82,8 @@ The Gateway SHALL execute no local tools and retain no cross-request state. Fall
 - **THEN** both candidate invocation counts SHALL remain zero
 
 ### Requirement: Independent acceptance evidence
-Both registered clients SHALL exercise real-handler and authenticated-command scenarios without requiring MCP. Request goldens SHALL be captured from the pinned client. Provider fixtures SHALL retain authentic provenance, Apache modules SHALL NOT import Gateway code, and Gateway checks SHALL use published pins with GOWORK disabled.
+Both registered clients SHALL exercise real-handler and authenticated-command scenarios without requiring MCP. Request goldens SHALL be captured from the pinned client. Provider fixtures SHALL retain authentic provenance and Apache modules SHALL NOT import Gateway code. Required source checks SHALL use candidate modules with merged internal pins; standalone Gateway validation SHALL gate artifact publication separately.
 
-#### Scenario: Intermediate PR validation
+#### Scenario: Provider-tool validation before MCP activation
 - **WHEN** this change is validated before MCP support lands
 - **THEN** provider-tool contract, native continuation, lifecycle, privacy and module checks SHALL pass with MCP still rejected

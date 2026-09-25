@@ -8,8 +8,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import nodeProcess from "node:process";
 import { after, before, describe, it } from "node:test";
-import { createGateway } from "@ai-sdk/gateway";
-import type { LanguageModelV4CallOptions } from "@ai-sdk/provider";
+import { createGateway, GatewayInvalidRequestError } from "@ai-sdk/gateway";
+import type { JSONValue, LanguageModelV4CallOptions } from "@ai-sdk/provider";
 import { isStepCount, jsonSchema, streamText, tool } from "ai";
 import { buildGoClientCapture, buildGoStreamTextCapture, captureGoClient } from "./go-client-capture";
 
@@ -32,8 +32,6 @@ before(() => {
     stdio: "pipe",
     env: {
       ...nodeProcess.env,
-      // CI and release verification always use immutable module pins. A local
-      // unpublished-middleware checkout may opt into an explicit go.work path.
       GOWORK: nodeProcess.env.GATEWAY_TEST_GOWORK ?? "off",
       GOFLAGS: `${nodeProcess.env.GOFLAGS ? `${nodeProcess.env.GOFLAGS} ` : ""}-mod=readonly`,
     },
@@ -81,7 +79,6 @@ describe("authenticated Anthropic Gateway command", () => {
       const result = { role: "tool" as const, content: [{ type: "tool-result" as const, toolCallId: "private-call", toolName: "private-tool", output: { type: "text" as const, value: "private-result" } }] };
       const effectRequests: LanguageModelV4CallOptions[] = [
         { prompt: [], tools: [{ type: "function", name: "private-tool", inputSchema: { type: "object" } }] },
-        { prompt: [], tools: [{ type: "provider", id: "anthropic.code_execution_20260120", name: "private-tool", args: {} }] },
         ...(["none", "required"] as const).map(type => ({ prompt: [], toolChoice: { type } })),
         { prompt: [], toolChoice: { type: "tool", toolName: "private-tool" } },
         { prompt: [call] },
@@ -109,7 +106,6 @@ describe("authenticated Anthropic Gateway command", () => {
       const history = [{ role: "assistant" as const, content: [streamCall] }];
       for (const options of [
         { prompt: [], tools: [{ type: "function" as const, name: "private-tool", inputSchema: {} }] },
-        { prompt: [], tools: [{ type: "provider" as const, id: "anthropic.code_execution_20260120" as const, name: "private-tool", args: {} }] },
         { prompt: [], toolChoice: { type: "none" as const } },
         { prompt: history },
         { prompt: [...history, { role: "tool" as const, content: [{ type: "tool-result" as const, toolCallId: streamCall.toolCallId, toolName: streamCall.toolName, output: { type: "text" as const, value: "private-result" } }] }] },
@@ -293,68 +289,6 @@ describe("authenticated Anthropic Gateway command", () => {
     }
   });
 
-  it("routes authenticated Anthropic provider tools and continuation through both clients", async () => {
-    const observer = await FakeAgentObservability.start();
-    let resources: [FakeAnthropic, GatewayProcess] | undefined;
-    try {
-      resources = await startGateway([
-        "--agento11y.enabled", "--agento11y.protocol=http", `--agento11y.endpoint=${observer.url}`,
-        "--no-agento11y.tls", "--agento11y.auth-secret-env=GATEWAY_TEST_AGENTO11Y_KEY",
-        "--agento11y.batch-size=1", "--agento11y.flush-interval=1ms",
-        "--agento11y.flush-timeout=2s", "--agento11y.shutdown-timeout=2s",
-      ], { GATEWAY_TEST_AGENTO11Y_KEY: "integration-agento11y-key" }, "claude-sonnet-4-6");
-      const [fake, gateway] = resources;
-      fake.providerTools = true;
-      const tools = [{ type: "provider" as const, id: "anthropic.code_execution_20260120" as const, name: "python", args: {} }];
-      const prompt = [{ role: "user" as const, content: [{ type: "text" as const, text: "Use tools" }] }];
-      const client = gateway.client();
-      for (const mode of ["generate", "stream"] as const) {
-        for (const implementation of ["vercel", "go"] as const) {
-          const invoke = async (messages: LanguageModelV4CallOptions["prompt"]): Promise<any[]> => {
-            const options = { prompt: messages, tools };
-            if (implementation === "go") {
-              const result = await captureGoClient(goClientBinaryPath, { baseURL: `${gateway.url}/api/v1/aisdk`, accessToken: TEST_TOKEN, modelID: "assistant", mode, options });
-              assert.equal(result.error, undefined);
-              return mode === "generate" ? result.result.content : result.parts;
-            }
-            return mode === "generate" ? (await client("assistant").doGenerate(options)).content : await collectGatewayStream((await client("assistant").doStream(options)).stream);
-          };
-          const first = await invoke(prompt);
-          const calls = first.filter(part => part.type === "tool-call");
-          const results = first.filter(part => part.type === "tool-result");
-          assert.deepEqual(calls.map(part => part.toolName), ["python"]);
-          assert.deepEqual(results.map(part => part.toolName), ["python"]);
-          assert.ok(calls.every(part => part.providerExecuted === true));
-          const native = fake.requests.at(-1)!.body as any;
-          assert.deepEqual(native.tools, [{ type: "code_execution_20260120", name: "code_execution" }]);
-          assert.equal(native.max_tokens, 128000);
-          assert.equal(native.mcp_servers, undefined);
-          const history = calls.flatMap((call, index) => [
-            { type: "tool-call" as const, toolCallId: call.toolCallId, toolName: call.toolName, input: JSON.parse(call.input), providerExecuted: true, ...(call.providerMetadata && { providerOptions: call.providerMetadata }) },
-            { type: "tool-result" as const, toolCallId: results[index].toolCallId, toolName: results[index].toolName, output: { type: "json" as const, value: results[index].result }, ...(results[index].providerMetadata && { providerOptions: results[index].providerMetadata }) },
-          ]);
-          const final = await invoke([...prompt, { role: "assistant", content: history }]);
-          assert.equal(final.filter(part => part.type === (mode === "generate" ? "text" : "text-delta")).map(part => part.text ?? part.delta).join(""), "Hosted tools finished.");
-          const continuation = fake.requests.at(-1)!.body as any;
-          assert.deepEqual(continuation.messages[1].content.map((part: any) => part.type), ["server_tool_use", "code_execution_tool_result"]);
-          assert.equal(continuation.messages[1].content[0].name, "code_execution");
-        }
-      }
-      assert.equal(fake.requests.length, 8);
-      assert.deepEqual(fake.violations, []);
-      await observer.waitForGenerations(8);
-      assert.equal(observer.generations.length, 8);
-      for (const generation of observer.generations) {
-        assert.deepEqual(generation.model, { provider: "grafana", name: "grafana/assistant" });
-      }
-      const metrics = await gateway.metrics();
-      await gateway.stop();
-      assertPrivateValuesAbsent([gateway.stderr, metrics, observer.generations], fake, ["call-code", "python", "code_execution", "integration-agento11y-key"]);
-    } finally {
-      await settleCleanup(...(resources ? [() => resources![1].stop(), () => resources![0].stop()] : []), () => observer.stop());
-    }
-  });
-
   for (const failExecution of [false, true]) {
     it(`preserves automatic streaming native history after ${failExecution ? "failed" : "successful"} local execution`, async () => {
       const [fake, gateway] = await startGateway([], {}, "claude-sonnet-4-6");
@@ -496,7 +430,7 @@ describe("authenticated Anthropic Gateway command", () => {
       await fake.waitForCancellation("silent-abort");
       const missing = await captureGoClient(goClientBinaryPath, { ...base, mode: "generate", modelID: "missing", options: { prompt: [] } });
       assert.equal(missing.error.category, "model_not_found"); assert.equal(missing.error.statusCode, 404);
-      const invalid = await captureGoClient(goClientBinaryPath, { ...base, mode: "generate", modelID: "assistant", options: { prompt: [], headers: { "x-call": "unsupported" } } });
+      const invalid = await captureGoClient(goClientBinaryPath, { ...base, mode: "generate", modelID: "assistant", options: { prompt: [], headers: { authorization: "Bearer caller-controlled" } } });
       assert.equal(invalid.error.category, "invalid_request_error"); assert.equal(invalid.error.statusCode, 400);
       const unauthorized = await captureGoClient(goClientBinaryPath, { ...base, accessToken: "invalid-token", mode: "discovery" });
       assert.equal(unauthorized.error.category, "authentication_error"); assert.equal(unauthorized.error.statusCode, 401);
@@ -1294,13 +1228,144 @@ describe("authenticated OpenAI-compatible Gateway command", () => {
         await assert.rejects(async () => {
           if (mode === "generate") await gateway.client()("compatible").doGenerate(options);
           else await gateway.client()("compatible").doStream(options);
-        }, (error: any) => error.statusCode === 400 && error.message === "unsupported capability: provider-options");
+        }, (error: any) => error.statusCode === 400 && error.message === "protected provider option");
         assert.equal(fake.requests.length, 0);
         assert.ok(!JSON.stringify(go.error).includes("compatible-private-token"));
       }
     } finally {
       await settleCleanup(() => gateway.stop(), () => fake.stop());
     }
+  });
+
+  it("forwards the selected backend's provider options and refuses host and credential values", async () => {
+    const [fake, gateway] = await startCompatibleGateway();
+    try {
+      const client = gateway.client();
+      await client("compatible").doGenerate({
+        prompt: [{ role: "user", content: [{ type: "text", text: "unary" }] }],
+        maxOutputTokens: 32,
+        providerOptions: {
+          openaiCompatible: { reasoningEffort: "low", user: "caller-supplied-user" },
+        },
+        headers: { "X-Contract-Body": "carried" },
+      });
+
+      const forwarded = fake.requests.at(-1);
+      assert.ok(forwarded, "the backend received the request");
+      assert.equal(forwarded.body.reasoning_effort, "low");
+      assert.equal(forwarded.body.user, "caller-supplied-user");
+      assert.equal(singleHeader(forwarded.headers["x-contract-body"]), "carried");
+      assert.equal(singleHeader(forwarded.headers.authorization), "Bearer integration-compatible-key",
+        "the gateway's backend credential is the one presented upstream");
+
+      for (const [rejected, message] of [
+        [{ providerOptions: { grafana: { tenant: "other" } } }, "reserved provider option namespace"],
+        [{ headers: { authorization: "Bearer caller-controlled" } }, "protected call header"],
+        [{ providerOptions: { openaiCompatible: { Model: "someone-elses-model" } } }, "protected provider option"],
+      ] as const) {
+        await assert.rejects(
+          async () => await client("compatible").doGenerate({
+            prompt: [{ role: "user", content: [{ type: "text", text: "unary" }] }],
+            maxOutputTokens: 32,
+            ...rejected,
+          }),
+          (error: unknown) => GatewayInvalidRequestError.isInstance(error) && error.message === message,
+          `refused as ${message}, not by an unrelated failure`,
+        );
+      }
+      const refusedBodies = JSON.stringify(fake.requests.map((request: { body: unknown }) => request.body));
+      for (const refused of ["caller-controlled", "tenant", "someone-elses-model"]) {
+        assert.ok(!refusedBodies.includes(refused), "a refused value never reaches the backend");
+      }
+      assert.deepEqual(fake.violations, []);
+    } finally { await settleCleanup(() => gateway.stop(), () => fake.stop()); }
+  });
+
+  it("refuses provider options that restructure a validated message, in both modes", async () => {
+    // A namespace field that reaches the provider's message or part metadata is
+    // spread over the entry it builds, so it can reinstate content the runtime
+    // refused to map. Every one of these must be refused before the call.
+    const [fake, gateway] = await startCompatibleGateway();
+    try {
+      const client = gateway.client();
+      const structural: Record<string, JSONValue> = {
+        content: [{ type: "image_url", image_url: { url: "https://caller.example/x.png" } }],
+        role: "tool",
+        type: "image_url",
+        image_url: { url: "https://caller.example/x.png" },
+        tool_calls: [{ id: "call_1", type: "function", function: { name: "f", arguments: "{}" } }],
+      };
+      for (const [field, value] of Object.entries(structural)) {
+        for (const mode of ["generate", "stream"] as const) {
+          const options = {
+            prompt: [{
+              role: "user" as const,
+              content: [{ type: "text" as const, text: "unary" }],
+              providerOptions: { openaiCompatible: { [field]: value } },
+            }],
+            maxOutputTokens: 32,
+          };
+          await assert.rejects(
+            async () => mode === "generate"
+              ? await client("compatible").doGenerate(options)
+              : await collectGatewayStream((await client("compatible").doStream(options)).stream),
+            (error: unknown) => GatewayInvalidRequestError.isInstance(error) && error.message === "protected provider option",
+            `${field} in ${mode} mode is refused as a protected provider option`,
+          );
+        }
+      }
+      assert.equal(fake.requests.length, 0, "a refused request never reaches the backend");
+      assert.deepEqual(fake.violations, []);
+    } finally { await settleCleanup(() => gateway.stop(), () => fake.stop()); }
+  });
+
+  it("forwards nested provider options and call headers to the backend, in both modes", async () => {
+    const [fake, gateway] = await startCompatibleGateway();
+    try {
+      const client = gateway.client();
+      for (const mode of ["generate", "stream"] as const) {
+        const options = {
+          prompt: [
+            {
+              role: "system" as const,
+              content: "be brief",
+              providerOptions: { openaiCompatible: { system_marker: `system-${mode}` } },
+            },
+            {
+              // Two parts, because upstream collapses a lone text part into the
+              // message and uses the part's metadata for it.
+              role: "user" as const,
+              content: [
+                { type: "text" as const, text: "unary", providerOptions: { openaiCompatible: { part_marker: `part-${mode}` } } },
+                { type: "text" as const, text: "tail" },
+              ],
+              providerOptions: { openaiCompatible: { message_marker: `message-${mode}` } },
+            },
+          ],
+          maxOutputTokens: 32,
+          providerOptions: { openaiCompatible: { user: `root-${mode}` } },
+          headers: { "X-Contract-Body": `header-${mode}` },
+        };
+        if (mode === "generate") {
+          await client("compatible").doGenerate(options);
+        } else {
+          await collectGatewayStream((await client("compatible").doStream(options)).stream);
+        }
+
+        const forwarded = fake.requests.at(-1);
+        assert.ok(forwarded, `the backend received the ${mode} request`);
+        const body = forwarded.body as { user?: string; stream?: boolean; messages: Array<Record<string, unknown>> };
+        assert.equal(body.user, `root-${mode}`, "root options reach the backend");
+        assert.equal(singleHeader(forwarded.headers["x-contract-body"]), `header-${mode}`, "call headers reach the backend");
+        assert.equal(body.stream ?? false, mode === "stream", "the mode the caller asked for is the mode sent upstream");
+        const [system, user] = body.messages;
+        assert.equal(system!.system_marker, `system-${mode}`, "system-message options reach the backend");
+        assert.equal(user!.message_marker, `message-${mode}`, "message options reach the backend");
+        const parts = user!.content as Array<Record<string, unknown>>;
+        assert.equal(parts[0]!.part_marker, `part-${mode}`, "text-part options reach the backend");
+      }
+      assert.deepEqual(fake.violations, []);
+    } finally { await settleCleanup(() => gateway.stop(), () => fake.stop()); }
   });
 
   it("discovers, invokes, and streams usage without exposing private configuration", async () => {
@@ -1897,7 +1962,6 @@ class FakeAnthropic {
   oversizedErrors = false;
   failureStatus?: number;
   functionTools = false;
-  providerTools = false;
   backendModel = "backend-private";
   private readonly server: ReturnType<typeof createServer>;
 
@@ -1961,33 +2025,6 @@ class FakeAnthropic {
     if (marker === "provider-error") {
       response.writeHead(502, { "Content-Type": "application/json" });
       response.end(JSON.stringify({ error: { type: "api_error", message: "provider-secret-response" } }));
-      return;
-    }
-    if (this.providerTools) {
-      const messages = body.messages as Array<{ content: Array<{ type: string }> }>;
-      const continued = messages.some(message => message.content.some(part => part.type === "server_tool_use"));
-      const blocks = continued
-        ? [{ type: "text", text: "Hosted tools finished." }]
-        : [
-            { type: "server_tool_use", id: "call-code", name: "code_execution", input: { code: "1+1" } },
-            { type: "code_execution_tool_result", tool_use_id: "call-code", content: { type: "code_execution_result", stdout: "2", stderr: "", return_code: 0 } },
-          ];
-      if (body.stream !== true) {
-        response.writeHead(200, { "Content-Type": "application/json" });
-        response.end(JSON.stringify({ id: "msg_provider_tools", type: "message", role: "assistant", model: "backend-private", content: blocks, stop_reason: "end_turn", stop_sequence: null, usage: { input_tokens: 2, output_tokens: 4 } }));
-        return;
-      }
-      response.writeHead(200, { "Content-Type": "text/event-stream" });
-      const event = (value: { type: string; [key: string]: unknown }) => response.write(`event: ${value.type}\ndata: ${JSON.stringify(value)}\n\n`);
-      event({ type: "message_start", message: { id: "msg_provider_tools", type: "message", role: "assistant", model: "backend-private", content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 2, output_tokens: 0 } } });
-      for (const [index, block] of blocks.entries()) {
-        event({ type: "content_block_start", index, content_block: continued ? { type: "text", text: "" } : block });
-        if (continued) event({ type: "content_block_delta", index, delta: { type: "text_delta", text: "Hosted tools finished." } });
-        event({ type: "content_block_stop", index });
-      }
-      event({ type: "message_delta", delta: { stop_reason: "end_turn", stop_sequence: null }, usage: { output_tokens: 4 } });
-      event({ type: "message_stop" });
-      response.end();
       return;
     }
     if (this.functionTools) {

@@ -14,8 +14,9 @@ fail safely. State is bounded and request-local, not a Gateway session or execut
 
 ## Continuation and privacy
 
-Tool-part options retain ordinary provider continuation values except reserved
-host controls. Public tool metadata uses an allowlist: Anthropic caller identity
+Tool-part options retain ordinary provider continuation values under the
+Gateway's protected-field and configured-backend policy; host-owned controls
+remain rejected. Public tool metadata uses an allowlist: Anthropic caller identity
 and OpenAI/Azure item, namespace and caller correlation. Arbitrary metadata,
 physical backend identity and credentials are not normalized public output.
 Logical observation remains metadata-only; tool names, IDs, inputs and results
@@ -24,9 +25,10 @@ and tool history before running any candidate.
 
 ## Support boundaries
 
-All nonempty root provider options remain unsupported, including Anthropic
-`mcpServers`. MCP continuation/output metadata is rejected rather than silently
-reinterpreted as an ordinary tool. The `gateway-anthropic-mcp` change separately
+Root, message and part provider options and call headers follow the Gateway's
+existing configured-backend and protected-field policy. Anthropic `mcpServers`
+and MCP continuation/output metadata remain rejected rather than silently
+reinterpreted as ordinary tools. The `gateway-anthropic-mcp` change separately
 owns remote server options, route eligibility and name validation.
 
 Approvals, sources, files and other media retain their explicit unsupported

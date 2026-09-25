@@ -38,18 +38,20 @@ generated media (WP16). IDs, ordering and empty deltas are preserved. A provider
 its result may arrive on a later independent HTTP request when the client sends
 the unresolved call in assistant history. Tool-part provider options carry
 reviewed continuation metadata; response metadata is allowlisted, not arbitrary
-provider passthrough. Tool approvals, file/source and other media output,
-structured output, and general root provider options remain unsupported.
-Vercel and Go clients own multi-step orchestration; each Gateway generation
+provider passthrough. Tool approvals, file/source and other media output, and
+structured output remain unsupported. Root, message and part provider options
+and call headers retain the Gateway's protected-field and configured-backend
+policy. Vercel and Go clients own multi-step orchestration; each Gateway generation
 remains stateless. Ordered fallback routes reject tool definitions, choices,
 and history before any physical invocation. Logical
 telemetry omits tool-bearing definitions, names, IDs, inputs, outputs and
 provider metadata before export.
 
-Anthropic-hosted MCP is not enabled by provider-tool support. Nonempty root
-provider options, including `providerOptions.anthropic.mcpServers`, and MCP
-continuation metadata remain rejected. The separate `gateway-anthropic-mcp`
-change owns that capability and its routing and privacy controls. See the
+Anthropic-hosted MCP is not enabled by provider-tool support.
+`providerOptions.anthropic.mcpServers` and MCP continuation metadata remain
+rejected; other allowed provider options follow the configured backend's policy.
+The separate `gateway-anthropic-mcp` change owns that capability and its routing
+and privacy controls. See the
 [Gateway operator guide](../../ai-gateway/docs/provider-tools.md).
 
 ## Authenticate the client
