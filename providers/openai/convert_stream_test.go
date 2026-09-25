@@ -197,6 +197,7 @@ func TestStream_LogprobsTerminalFinishPaths(t *testing.T) {
 			nil,
 			seqIDGen(),
 			"openai",
+			false,
 		)
 		close(ch)
 		var parts []provider.StreamPart

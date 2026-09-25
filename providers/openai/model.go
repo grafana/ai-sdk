@@ -85,7 +85,8 @@ func (m *model) DoGenerate(ctx context.Context, params provider.CallOptions) (*p
 		return nil, err
 	}
 	var rawResponse *http.Response
-	requestOpts := append(m.requestOptions(params.Headers), option.WithResponseInto(&rawResponse))
+	capture := &requestCapture{}
+	requestOpts := append(m.requestOptions(params.Headers), capture.option(), option.WithResponseInto(&rawResponse))
 	resp, err := m.client.New(ctx, body, requestOpts...)
 	if err != nil {
 		return nil, wrapAPIError(err, body)
@@ -101,6 +102,8 @@ func (m *model) DoGenerate(ctx context.Context, params provider.CallOptions) (*p
 		return nil, err
 	}
 	result.Warnings = append(result.Warnings, warnings...)
+	result.Request = capture.request()
+	result.Response.Headers = transportHeaders(rawResponse)
 	return result, nil
 }
 
@@ -144,9 +147,10 @@ func (m *model) DoStream(ctx context.Context, params provider.CallOptions) (*pro
 		return nil, err
 	}
 	var rawResponse *http.Response
-	requestOptions := append(m.requestOptions(params.Headers), option.WithResponseBodyInto(&rawResponse), option.WithJSONSet("stream", true))
+	capture := &requestCapture{}
+	requestOptions := append(m.requestOptions(params.Headers), capture.option(), option.WithResponseBodyInto(&rawResponse), option.WithJSONSet("stream", true))
 	_, err = m.client.New(ctx, body, requestOptions...)
-	items := pumpResponseStream(ctx, rawResponse, err)
+	items := pumpResponseStream(ctx, rawResponse, err, params.IncludeRawChunks)
 	buffered, err := preflightResponseStream(ctx, items, body, rawResponse)
 	if err != nil {
 		return nil, err
@@ -155,9 +159,13 @@ func (m *model) DoStream(ctx context.Context, params provider.CallOptions) (*pro
 	ch := make(chan provider.StreamPart, 64)
 	go func() {
 		defer close(ch)
-		consumeStream(ctx, items, buffered, ch, warnings, br, body, rawResponse, m.generateID, m.provider)
+		consumeStream(ctx, items, buffered, ch, warnings, br, body, rawResponse, m.generateID, m.provider, params.IncludeRawChunks)
 	}()
-	return &provider.StreamResult{Stream: ch}, nil
+	return &provider.StreamResult{
+		Stream:   ch,
+		Request:  capture.request(),
+		Response: &provider.ResponseHeaders{Headers: transportHeaders(rawResponse)},
+	}, nil
 }
 
 func (m *model) buildParams(params provider.CallOptions) (responses.ResponseNewParams, []provider.Warning, buildResult, error) {

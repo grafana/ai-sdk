@@ -75,7 +75,7 @@ func TestDoStream_NestedSSEErrorReturnsStructuredError(t *testing.T) {
 	m := NewResponses("test-key", "gpt-4o",
 		WithRequestOptions(option.WithBaseURL(srv.URL), option.WithHTTPClient(srv.Client()), option.WithMaxRetries(0)),
 	)
-	result, err := m.DoStream(context.Background(), provider.CallOptions{Prompt: []provider.Message{provider.UserText("hi")}})
+	result, err := m.DoStream(context.Background(), provider.CallOptions{Prompt: []provider.Message{provider.UserText("hi")}, IncludeRawChunks: true})
 	require.Error(t, err)
 	assert.Nil(t, result)
 	var apiErr *provider.APICallError
