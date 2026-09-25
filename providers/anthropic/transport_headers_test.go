@@ -89,6 +89,59 @@ func TestModel_CallHeaders(t *testing.T) {
 	}
 }
 
+func TestModel_ConfiguredMiddlewareCannotOverrideCallHeaders(t *testing.T) {
+	for _, vertex := range []bool{false, true} {
+		for _, streaming := range []bool{false, true} {
+			name := "direct/generate"
+			if vertex {
+				name = "vertex/generate"
+			}
+			if streaming {
+				name = strings.Replace(name, "generate", "stream", 1)
+			}
+			t.Run(name, func(t *testing.T) {
+				requests := make(chan http.Header, 1)
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					requests <- r.Header.Clone()
+					if streaming {
+						w.Header().Set("Content-Type", "text/event-stream")
+						_, _ = fmt.Fprint(w, "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_test\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-test\",\"usage\":{\"input_tokens\":1,\"output_tokens\":0}}}\n\n")
+						return
+					}
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = fmt.Fprint(w, `{"id":"msg_test","type":"message","role":"assistant","content":[],"model":"claude-test","stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}`)
+				}))
+				defer server.Close()
+				m := newTransportTestModel(t, server, vertex,
+					option.WithMiddleware(func(req *http.Request, next option.MiddlewareNext) (*http.Response, error) {
+						req.Header.Set("X-Shared", "middleware")
+						req.Header.Set("anthropic-beta", "config-beta,sdk-beta")
+						return next(req)
+					}),
+				)
+				maxTokens := 64
+				params := provider.CallOptions{
+					Prompt: []provider.Message{provider.UserText("hello")}, MaxOutputTokens: &maxTokens,
+					ProviderOptions: provider.BuildProviderOptions(AnthropicOptions{Betas: []string{"sdk-beta"}}),
+					Headers:         map[string]string{"x-shared": "per-call", "anthropic-beta": "call-beta"},
+				}
+				if streaming {
+					result, err := m.DoStream(t.Context(), params)
+					require.NoError(t, err)
+					for range result.Stream {
+					}
+				} else {
+					_, err := m.DoGenerate(t.Context(), params)
+					require.NoError(t, err)
+				}
+				headers := <-requests
+				assert.Equal(t, "per-call", headers.Get("X-Shared"))
+				assert.Equal(t, "config-beta,sdk-beta,call-beta", headers.Get("anthropic-beta"))
+			})
+		}
+	}
+}
+
 func newTransportTestModel(t *testing.T, server *httptest.Server, vertex bool, extras ...option.RequestOption) provider.LanguageModel {
 	t.Helper()
 	requestOpts := append([]option.RequestOption{

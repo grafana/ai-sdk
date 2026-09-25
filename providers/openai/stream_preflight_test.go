@@ -3,6 +3,9 @@ package openai
 import (
 	"context"
 	"errors"
+	"io"
+	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -11,6 +14,28 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestPumpResponseStream_RawCaptureOnlyWhenEnabled(t *testing.T) {
+	for _, includeRaw := range []bool{false, true} {
+		name := "disabled"
+		if includeRaw {
+			name = "enabled"
+		}
+		t.Run(name, func(t *testing.T) {
+			const raw = `{"type":"response.output_text.delta","item_id":"msg_1","delta":"hello"}`
+			response := &http.Response{Body: io.NopCloser(strings.NewReader("data: " + raw + "\n\n"))}
+			item, ok := <-pumpResponseStream(t.Context(), response, nil, includeRaw)
+			require.True(t, ok)
+			require.NotNil(t, item.event)
+			assert.Equal(t, includeRaw, item.rawEvent)
+			if includeRaw {
+				assert.JSONEq(t, raw, string(item.rawValue))
+			} else {
+				assert.Nil(t, item.rawValue)
+			}
+		})
+	}
+}
 
 func TestPreflightResponseStream(t *testing.T) {
 	requestBody := responses.ResponseNewParams{Model: "gpt-4o"}

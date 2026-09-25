@@ -173,28 +173,39 @@ func (m *model) callRequestOptions(providerOpts []option.RequestOption, headers 
 	opts = append(opts, providerOpts...)
 	opts = append(opts, m.requestOpts...)
 	var callBetas string
+	callHeaders := make(map[string]string)
 	for key, value := range headers {
 		if strings.EqualFold(key, "anthropic-beta") {
 			callBetas = value
-		} else {
-			opts = append(opts, option.WithHeader(key, value))
+			continue
+		}
+		opts = append(opts, option.WithHeader(key, value))
+		if !strings.EqualFold(key, "authorization") && !strings.EqualFold(key, "x-api-key") {
+			callHeaders[key] = value
 		}
 	}
 	if callBetas != "" {
 		opts = append(opts, option.WithHeaderAdd("anthropic-beta", callBetas))
+	}
+	if len(callHeaders) > 0 || callBetas != "" {
 		opts = append(opts, option.WithMiddleware(func(req *http.Request, next option.MiddlewareNext) (*http.Response, error) {
-			seen := make(map[string]bool)
-			var betas []string
-			for _, header := range req.Header.Values("anthropic-beta") {
-				for _, token := range strings.Split(header, ",") {
-					beta := strings.ToLower(strings.TrimSpace(token))
-					if beta != "" && !seen[beta] {
-						seen[beta] = true
-						betas = append(betas, beta)
+			for key, value := range callHeaders {
+				req.Header.Set(key, value)
+			}
+			if callBetas != "" {
+				seen := make(map[string]bool)
+				var betas []string
+				for _, header := range append(req.Header.Values("anthropic-beta"), callBetas) {
+					for _, token := range strings.Split(header, ",") {
+						beta := strings.ToLower(strings.TrimSpace(token))
+						if beta != "" && !seen[beta] {
+							seen[beta] = true
+							betas = append(betas, beta)
+						}
 					}
 				}
+				req.Header.Set("anthropic-beta", strings.Join(betas, ","))
 			}
-			req.Header.Set("anthropic-beta", strings.Join(betas, ","))
 			return next(req)
 		}))
 	}

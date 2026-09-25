@@ -150,7 +150,7 @@ func (m *model) DoStream(ctx context.Context, params provider.CallOptions) (*pro
 	capture := &requestCapture{}
 	requestOptions := append(m.requestOptions(params.Headers), capture.option(), option.WithResponseBodyInto(&rawResponse), option.WithJSONSet("stream", true))
 	_, err = m.client.New(ctx, body, requestOptions...)
-	items := pumpResponseStream(ctx, rawResponse, err)
+	items := pumpResponseStream(ctx, rawResponse, err, params.IncludeRawChunks)
 	buffered, err := preflightResponseStream(ctx, items, body, rawResponse)
 	if err != nil {
 		return nil, err

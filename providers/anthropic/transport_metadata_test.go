@@ -5,12 +5,40 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
+	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type partialReadTransport struct{ responseBody string }
+
+func (tr partialReadTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	_, _ = io.ReadFull(req.Body, make([]byte, 1))
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": {"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(tr.responseBody)),
+		Request:    req,
+	}, nil
+}
+
+func TestModel_IncompleteRequestCaptureIsAbsent(t *testing.T) {
+	const responseBody = `{"id":"msg_test","type":"message","role":"assistant","content":[],"model":"claude-test","stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}`
+	m := New("direct-key", "claude-test", WithRequestOptions(
+		option.WithHTTPClient(&http.Client{Transport: partialReadTransport{responseBody: responseBody}}), option.WithMaxRetries(0),
+	))
+	maxTokens := 64
+	result, err := m.DoGenerate(t.Context(), provider.CallOptions{
+		Prompt: []provider.Message{provider.UserText("hello")}, MaxOutputTokens: &maxTokens,
+	})
+	require.NoError(t, err)
+	assert.Nil(t, result.Request)
+	assert.JSONEq(t, responseBody, string(result.Response.Body))
+}
 
 func TestModel_TransportMetadata(t *testing.T) {
 	const responseBody = `{"id":"msg_test","type":"message","role":"assistant","content":[{"type":"text","text":"Hello"}],"model":"claude-test","stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":1,"output_tokens":1}}`

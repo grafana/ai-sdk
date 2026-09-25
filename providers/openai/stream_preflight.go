@@ -27,7 +27,7 @@ type responseStreamItem struct {
 	rawValue    json.RawMessage
 }
 
-func pumpResponseStream(ctx context.Context, response *http.Response, requestErr error) <-chan responseStreamItem {
+func pumpResponseStream(ctx context.Context, response *http.Response, requestErr error, includeRawChunks bool) <-chan responseStreamItem {
 	items := make(chan responseStreamItem, 64)
 	go func() {
 		defer close(items)
@@ -51,6 +51,12 @@ func pumpResponseStream(ctx context.Context, response *http.Response, requestErr
 			send(responseStreamItem{err: errors.New("openai: missing stream response")})
 			return
 		}
+		copyRaw := func(data []byte) json.RawMessage {
+			if !includeRawChunks {
+				return nil
+			}
+			return append(json.RawMessage(nil), bytes.TrimSpace(data)...)
+		}
 		for decoder.Next() {
 			frame := decoder.Event()
 			if bytes.Equal(bytes.TrimSpace(frame.Data), []byte("[DONE]")) {
@@ -58,7 +64,7 @@ func pumpResponseStream(ctx context.Context, response *http.Response, requestErr
 			}
 			var event responses.ResponseStreamEventUnion
 			if err := json.Unmarshal(frame.Data, &event); err != nil {
-				if !send(responseStreamItem{err: fmt.Errorf("openai: decoding stream event: %w", err), recoverable: true, rawEvent: true}) {
+				if !send(responseStreamItem{err: fmt.Errorf("openai: decoding stream event: %w", err), recoverable: true, rawEvent: includeRawChunks}) {
 					return
 				}
 				continue
@@ -67,10 +73,10 @@ func pumpResponseStream(ctx context.Context, response *http.Response, requestErr
 				Error json.RawMessage `json:"error"`
 			}
 			if json.Unmarshal(frame.Data, &envelope) == nil && len(envelope.Error) > 0 && string(envelope.Error) != "null" {
-				send(responseStreamItem{err: &ssestream.StreamError{Message: "received error while streaming: " + string(envelope.Error), Event: frame}, rawEvent: true, rawValue: append(json.RawMessage(nil), bytes.TrimSpace(frame.Data)...)})
+				send(responseStreamItem{err: &ssestream.StreamError{Message: "received error while streaming: " + string(envelope.Error), Event: frame}, rawEvent: includeRawChunks, rawValue: copyRaw(frame.Data)})
 				return
 			}
-			if !send(responseStreamItem{event: &event, rawEvent: true, rawValue: append(json.RawMessage(nil), bytes.TrimSpace(frame.Data)...)}) {
+			if !send(responseStreamItem{event: &event, rawEvent: includeRawChunks, rawValue: copyRaw(frame.Data)}) {
 				return
 			}
 		}

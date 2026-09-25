@@ -33,73 +33,88 @@ func (c *rawFrameCapture) take() []provider.StreamPart {
 	return parts
 }
 
-func (c *rawFrameCapture) record(frame []byte) {
-	var lines [][]byte
-	for _, line := range bytes.Split(frame, []byte{'\n'}) {
-		line = bytes.TrimSuffix(line, []byte{'\r'})
-		key, value, ok := bytes.Cut(line, []byte{':'})
-		if !ok || !bytes.Equal(key, []byte("data")) {
-			continue
-		}
-		value = bytes.TrimPrefix(value, []byte{' '})
-		lines = append(lines, value)
-	}
-	if len(lines) == 0 {
-		return
-	}
-	data := bytes.TrimSpace(bytes.Join(lines, []byte{'\n'}))
+func (c *rawFrameCapture) record(data []byte) {
+	data = bytes.TrimSpace(data)
 	if bytes.Equal(data, []byte("[DONE]")) {
 		return
 	}
 	var raw json.RawMessage
-	if json.Valid(data) {
-		var compact bytes.Buffer
-		if json.Compact(&compact, data) == nil {
-			raw = append(json.RawMessage(nil), compact.Bytes()...)
-		}
+	var compact bytes.Buffer
+	if json.Compact(&compact, data) == nil {
+		raw = compact.Bytes()
 	}
 	c.pending = append(c.pending, provider.StreamPart{Type: provider.PartRaw, RawValue: raw})
 }
 
 type rawFrameBody struct {
 	io.ReadCloser
-	reader  *bufio.Reader
-	capture *rawFrameCapture
-	frame   []byte
-	offset  int
-	lastErr error
+	reader     *bufio.Reader
+	capture    *rawFrameCapture
+	chunk      []byte
+	line       []byte
+	frameData  []byte
+	ignoreLine bool
+	hasData    bool
+	frameDone  bool
+	offset     int
+	lastErr    error
 }
 
 func (b *rawFrameBody) Read(p []byte) (int, error) {
 	if len(p) == 0 {
 		return 0, nil
 	}
-	if len(b.frame) == 0 {
+	if len(b.chunk) == 0 {
 		if b.lastErr != nil {
 			return 0, b.lastErr
 		}
-		for {
-			line, err := b.reader.ReadBytes('\n')
-			b.frame = append(b.frame, line...)
-			if err != nil {
-				b.lastErr = err
-				break
-			}
-			if bytes.Equal(line, []byte{'\n'}) || bytes.Equal(line, []byte{'\r', '\n'}) {
-				break
-			}
+		chunk, err := b.reader.ReadSlice('\n')
+		b.chunk = chunk
+		if err != nil && err != bufio.ErrBufferFull {
+			b.lastErr = err
 		}
-		if len(b.frame) == 0 {
+		if err == bufio.ErrBufferFull && len(b.line) == 0 && !bytes.HasPrefix(chunk, []byte("data:")) {
+			b.ignoreLine = true
+		}
+		if !b.ignoreLine {
+			b.line = append(b.line, chunk...)
+		}
+		if err == nil {
+			if !b.ignoreLine {
+				line := bytes.TrimSuffix(b.line, []byte{'\n'})
+				line = bytes.TrimSuffix(line, []byte{'\r'})
+				if len(line) == 0 {
+					b.frameDone = true
+				} else {
+					key, value, _ := bytes.Cut(line, []byte{':'})
+					if bytes.Equal(key, []byte("data")) {
+						if b.hasData {
+							b.frameData = append(b.frameData, '\n')
+						}
+						b.frameData = append(b.frameData, bytes.TrimPrefix(value, []byte{' '})...)
+						b.hasData = true
+					}
+				}
+			}
+			b.line = nil
+			b.ignoreLine = false
+		}
+		if len(b.chunk) == 0 {
 			return 0, b.lastErr
 		}
 	}
-	n := copy(p, b.frame[b.offset:])
+	n := copy(p, b.chunk[b.offset:])
 	b.offset += n
-	if b.offset == len(b.frame) {
-		if b.lastErr == nil {
-			b.capture.record(b.frame)
+	if b.offset == len(b.chunk) {
+		if b.frameDone {
+			if b.hasData {
+				b.capture.record(b.frameData)
+			}
+			b.frameData = nil
+			b.hasData = false
+			b.frameDone = false
 		}
-		b.frame = nil
+		b.chunk = nil
 		b.offset = 0
 	}
 	return n, nil

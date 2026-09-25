@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/grafana/ai-sdk/provider"
@@ -13,6 +14,24 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestModel_IncompleteRequestCaptureIsAbsent(t *testing.T) {
+	const responseBody = `{"id":"resp_1","created_at":1700000000,"model":"gpt-4o","object":"response","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}`
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		_, _ = io.ReadFull(req.Body, make([]byte, 1))
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": {"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(responseBody)),
+			Request:    req,
+		}, nil
+	})}
+	m := NewResponses("sdk-key", "gpt-4o", WithRequestOptions(option.WithHTTPClient(client), option.WithMaxRetries(0)))
+	result, err := m.DoGenerate(t.Context(), provider.CallOptions{Prompt: []provider.Message{provider.UserText("hello")}})
+	require.NoError(t, err)
+	assert.Nil(t, result.Request)
+	assert.JSONEq(t, responseBody, string(result.Response.Body))
+}
 
 func TestModel_TransportMetadata(t *testing.T) {
 	const responseBody = `{"id":"resp_123","created_at":1700000000,"model":"gpt-4o","object":"response","status":"completed","output":[{"type":"message","id":"msg_1","role":"assistant","status":"completed","content":[{"type":"output_text","text":"Hello!","annotations":[]}]}],"usage":{"input_tokens":5,"output_tokens":2,"total_tokens":7}}`

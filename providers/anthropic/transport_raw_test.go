@@ -97,6 +97,7 @@ func TestDoStream_SDKHiddenRawFrames(t *testing.T) {
 		{name: "malformed ping", frame: "event: ping\ndata: not JSON\n\n"},
 		{name: "unknown event", frame: "event: future_event\ndata: {\"type\":\"future_event\"}\n\n"},
 		{name: "malformed", frame: "event: message_delta\ndata: not JSON\n\n"},
+		{name: "bare data", frame: "event: message_delta\ndata\n\n"},
 		{name: "error", frame: "event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"api_error\",\"message\":\"failed\"}}\n\n"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -137,7 +138,7 @@ func TestDoStream_SDKHiddenRawFrames(t *testing.T) {
 			} else {
 				assert.Equal(t, provider.PartRaw, parts[len(parts)-2].Type)
 				assert.Equal(t, provider.PartError, parts[len(parts)-1].Type)
-				if tc.name == "malformed" {
+				if tc.name == "malformed" || tc.name == "bare data" {
 					assert.Nil(t, raw[1].RawValue)
 				} else {
 					assert.JSONEq(t, `{"type":"error","error":{"type":"api_error","message":"failed"}}`, string(raw[1].RawValue))

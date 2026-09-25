@@ -6,11 +6,62 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestRawFrameBody_ForwardsBeforeLongLineCompletes(t *testing.T) {
+	reader, writer := io.Pipe()
+	defer func() { _ = reader.Close() }()
+	defer func() { _ = writer.Close() }()
+	capture := &rawFrameCapture{}
+	body := &rawFrameBody{ReadCloser: reader, reader: bufio.NewReaderSize(reader, 16), capture: capture}
+	release := make(chan struct{})
+	defer close(release)
+	go func() {
+		_, _ = io.WriteString(writer, "data: "+strings.Repeat("x", 11))
+		<-release
+		_, _ = io.WriteString(writer, "\n\n")
+		_ = writer.Close()
+	}()
+	read := make(chan int, 1)
+	go func() {
+		buf := make([]byte, 16)
+		n, _ := body.Read(buf)
+		read <- n
+	}()
+	select {
+	case n := <-read:
+		assert.Positive(t, n)
+	case <-time.After(time.Second):
+		require.FailNow(t, "read waited for a line terminator instead of forwarding to the SDK")
+	}
+}
+
+func TestRawFrameBody_DoesNotBufferUnterminatedComment(t *testing.T) {
+	original := io.NopCloser(strings.NewReader(":" + strings.Repeat("x", 256<<10)))
+	capture := &rawFrameCapture{}
+	body := &rawFrameBody{ReadCloser: original, reader: bufio.NewReaderSize(original, 16), capture: capture}
+	_, err := io.Copy(io.Discard, body)
+	require.NoError(t, err)
+	assert.Empty(t, body.line)
+	assert.Empty(t, body.frameData)
+	assert.Empty(t, capture.take())
+}
+
+func TestRawFrameBody_DoesNotBufferNonDataLines(t *testing.T) {
+	original := io.NopCloser(strings.NewReader(strings.Repeat(": ignored\n", 10000)))
+	capture := &rawFrameCapture{}
+	body := &rawFrameBody{ReadCloser: original, reader: bufio.NewReaderSize(original, 16), capture: capture}
+	_, err := io.Copy(io.Discard, body)
+	require.NoError(t, err)
+	assert.Empty(t, body.frameData)
+	assert.Empty(t, body.line)
+	assert.Empty(t, capture.take())
+}
 
 func TestRawFrameBody_Frames(t *testing.T) {
 	for _, tc := range []struct {
