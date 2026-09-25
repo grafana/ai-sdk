@@ -20,6 +20,7 @@ Go `providers/openai/prepare_tools_test.go` already proves the default include. 
 
 - [Strict fake transport can show request encoding but not real Mantle acceptance or actual web-search results] → Label proof synthetic and leave live recording as a coverage gap unless genuine provider events are captured.
 - [Older merged pin lacks the new capability] → Run required source checks using candidate OpenAI and Bedrock together, and verify every declared internal pin descends from canonical main. Do not claim that `GOWORK=off` Bedrock tests pass before the producer is merged and published; selected standalone verification belongs before Bedrock artifact publication.
+- [Gateway image uses an older published OpenAI pin] → Forward the new typed option through candidate-source Gateway, but do not claim its current `GOWORK=off` image honors the opt-out. Do not merge this PR until Gateway's source-based image build lands; the Gateway test proves option forwarding, not a provider web-search call, which ProviderWire currently rejects.
 - [Over-gating may remove explicit caller intent or unrelated includes] → Request matrix asserts explicit precedence, tool emission, code interpreter/logprobs/encrypted reasoning and no-web-tool behavior.
 
 ## Migration Plan
