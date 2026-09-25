@@ -71,6 +71,7 @@ func NewResponses(ctx context.Context, modelID string, cfg Config, clientOpts ..
 		client,
 		modelID,
 		openaiprovider.WithProviderName(responsesProviderName),
+		openaiprovider.WithWebSearchSourcesIncludeSupport(false),
 	), nil
 }
 
