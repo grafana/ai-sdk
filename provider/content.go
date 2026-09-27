@@ -225,10 +225,10 @@ func (d *DataContent) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	decoded := DataContent(a)
-	if _, ok := fields["url"]; ok && decoded.URL == "" {
+	if raw, ok := fields["url"]; ok && string(raw) != "null" && decoded.URL == "" {
 		decoded.variant = dataContentVariantURL
 	}
-	if _, ok := fields["text"]; ok && decoded.Text == "" {
+	if raw, ok := fields["text"]; ok && string(raw) != "null" && decoded.Text == "" {
 		decoded.variant = dataContentVariantText
 	}
 	if err := decoded.Validate(); err != nil {

@@ -297,6 +297,44 @@ func TestDataContentLegacyDecodingRejectsMultipleArms(t *testing.T) {
 	}
 }
 
+func TestDataContentLegacyDecoding_Selection(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		wire string
+		want string
+	}{
+		{name: "missing", wire: `{}`},
+		{name: "null bytes", wire: `{"bytes":null}`},
+		{name: "null base64", wire: `{"base64":null}`},
+		{name: "null URL", wire: `{"url":null}`},
+		{name: "null reference", wire: `{"reference":null}`},
+		{name: "null text", wire: `{"text":null}`},
+		{name: "null URL with whitespace", wire: `{"url": null }`},
+		{name: "null text with whitespace", wire: `{"text": null }`},
+		{name: "nonstring URL", wire: `{"url":42}`},
+		{name: "nonstring text", wire: `{"text":false}`},
+		{name: "empty URL", wire: `{"url":""}`, want: `{"type":"url","url":""}`},
+		{name: "URL", wire: `{"url":"https://example.test/file"}`, want: `{"type":"url","url":"https://example.test/file"}`},
+		{name: "empty text", wire: `{"text":""}`, want: `{"type":"text","text":""}`},
+		{name: "text", wire: `{"text":"hello"}`, want: `{"type":"text","text":"hello"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var value DataContent
+			err := json.Unmarshal([]byte(tc.wire), &value)
+			if tc.want == "" {
+				require.Error(t, err)
+				assert.Equal(t, DataContent{}, value)
+				return
+			}
+			require.NoError(t, err)
+			require.NoError(t, value.Validate())
+			encoded, err := json.Marshal(value)
+			require.NoError(t, err)
+			assert.JSONEq(t, tc.want, string(encoded))
+		})
+	}
+}
+
 func TestDataContentInvalidReferences(t *testing.T) {
 	for _, wire := range []string{`null`, `[]`, `{"openai":1}`, `{"type":"file"}`, `{"openai":null}`} {
 		t.Run(wire, func(t *testing.T) {

@@ -685,6 +685,40 @@ func TestBuildParams_ToolMessage_FileURLsAndPDF(t *testing.T) {
 	assert.Contains(t, p.Betas, sdk.AnthropicBeta("pdfs-2024-09-25"))
 }
 
+func TestBuildParams_ToolMessage_FileURLMediaTypes(t *testing.T) {
+	for _, tc := range []struct {
+		mediaType string
+		want      string
+	}{
+		{mediaType: "image", want: `[{"type":"image","source":{"type":"url","url":"https://example.test/file"}}]`},
+		{mediaType: "image/*", want: `[{"type":"image","source":{"type":"url","url":"https://example.test/file"}}]`},
+		{mediaType: "image/png", want: `[{"type":"image","source":{"type":"url","url":"https://example.test/file"}}]`},
+		{mediaType: "application/pdf", want: `[{"type":"document","source":{"type":"url","url":"https://example.test/file"}}]`},
+	} {
+		t.Run(tc.mediaType, func(t *testing.T) {
+			data := provider.URLDataContent("https://example.test/file")
+			p, _, warnings, _, err := buildParams("claude-sonnet-4-6", provider.CallOptions{
+				Prompt: []provider.Message{provider.NewToolMessage(provider.ToolResultPart("call_1", "search", &provider.ToolResultOutput{
+					Type: provider.ToolOutputContent,
+					Content: []provider.ToolResultContentValue{
+						{Type: provider.ToolContentFile, Data: &data, MediaType: tc.mediaType},
+					},
+				}))},
+			}, false)
+			require.NoError(t, err)
+			assert.Empty(t, warnings)
+			assert.Empty(t, p.Betas)
+			require.Len(t, p.Messages, 1)
+			require.Len(t, p.Messages[0].Content, 1)
+			result := p.Messages[0].Content[0].OfToolResult
+			require.NotNil(t, result)
+			content, err := json.Marshal(result.Content)
+			require.NoError(t, err)
+			assert.JSONEq(t, tc.want, string(content))
+		})
+	}
+}
+
 func TestBuildParams_ToolResultPDFBeta(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
