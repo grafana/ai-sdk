@@ -11,8 +11,7 @@
   },
   "usage": {
     "inputTokens": {
-      "total": 5,
-      "noCache": 5
+      "total": 5
     },
     "outputTokens": {
       "total": 50

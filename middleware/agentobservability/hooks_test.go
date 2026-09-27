@@ -45,41 +45,41 @@ func newHooksTestServer(t *testing.T, resp agento11y.HookEvaluateResponse) *hook
 				return
 			}
 		}
+		payload, err := hookServerResponseJSON(h.response)
+		if err != nil {
+			t.Errorf("encode hook response: %v", err)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(h.statusCode)
-		payload, err := json.Marshal(h.response)
-		if err != nil {
-			t.Errorf("marshal hook response: %v", err)
-			return
-		}
-		var response map[string]any
-		if err := json.Unmarshal(payload, &response); err != nil {
-			t.Errorf("decode hook response: %v", err)
-			return
-		}
-		if transformed, ok := response["transformed_input"].(map[string]any); ok {
-			if tools, ok := transformed["tools"].([]any); ok {
-				for _, value := range tools {
-					tool, ok := value.(map[string]any)
-					if !ok {
-						continue
-					}
-					if schema, ok := tool["input_schema"]; ok {
-						schemaJSON, err := json.Marshal(schema)
-						if err != nil {
-							t.Errorf("marshal tool input schema: %v", err)
-							return
-						}
-						tool["input_schema_json"] = base64.StdEncoding.EncodeToString(schemaJSON)
-						delete(tool, "input_schema")
-					}
-				}
-			}
-		}
-		_ = json.NewEncoder(w).Encode(response)
+		_, _ = w.Write(payload)
 	}))
 	t.Cleanup(h.srv.Close)
 	return h
+}
+
+// hookServerResponseJSON encodes resp the way the hooks:evaluate server does.
+// The server marshals protobuf structs with encoding/json, so a tool schema
+// travels as base64 bytes under input_schema_json rather than as the raw
+// input_schema that agento11y.ToolDefinition marshals to.
+func hookServerResponseJSON(resp agento11y.HookEvaluateResponse) ([]byte, error) {
+	payload, err := json.Marshal(resp)
+	if err != nil || resp.TransformedInput == nil || len(resp.TransformedInput.Tools) == 0 {
+		return payload, err
+	}
+	var body map[string]any
+	if err := json.Unmarshal(payload, &body); err != nil {
+		return nil, err
+	}
+	wireTools := body["transformed_input"].(map[string]any)["tools"].([]any)
+	for i, tool := range resp.TransformedInput.Tools {
+		wireTool := wireTools[i].(map[string]any)
+		delete(wireTool, "input_schema")
+		if len(tool.InputSchema) > 0 {
+			wireTool["input_schema_json"] = base64.StdEncoding.EncodeToString(tool.InputSchema)
+		}
+	}
+	return json.Marshal(body)
 }
 
 func (h *hooksTestServer) clientWithHooksEnabled() *agento11y.Client {
@@ -153,6 +153,11 @@ func TestHooksMiddleware_TransformFailureDoesNotInvokeModel(t *testing.T) {
 		prompt      []provider.Message
 		transformed agento11y.HookInput
 	}{
+		{
+			name:        "transform without messages",
+			prompt:      []provider.Message{provider.UserText("secret")},
+			transformed: agento11y.HookInput{Tools: []agento11y.ToolDefinition{{Name: "lookup"}}},
+		},
 		{
 			name: "multimodal input",
 			prompt: []provider.Message{provider.NewUserMessage(
@@ -250,6 +255,26 @@ func TestHooksMiddleware_EmptyTransformedInputIsNoOp(t *testing.T) {
 	assert.Equal(t, int32(2), h.hits.Load())
 	assert.Equal(t, 1, model.generateHit)
 	assert.Equal(t, 1, model.streamHit)
+	assert.Equal(t, params.Prompt, model.lastParams.Prompt)
+}
+
+func TestHooksMiddleware_TransformFailureBlocksStream(t *testing.T) {
+	h := newHooksTestServer(t, agento11y.HookEvaluateResponse{
+		Action:           agento11y.HookActionAllow,
+		TransformedInput: &agento11y.HookInput{Tools: []agento11y.ToolDefinition{{Name: "lookup"}}},
+	})
+	model := &mockLanguageModel{provider_: "anthropic", modelID: "claude"}
+	client := h.clientWithHooksEnabled()
+	wrapped := middleware.Wrap(middleware.WrapOptions{
+		Model: model,
+		Middleware: []middleware.Middleware{HooksMiddleware(HooksOptions{
+			ClientResolver: func(context.Context) *agento11y.Client { return client },
+		})},
+	})
+
+	_, err := wrapped.DoStream(context.Background(), provider.CallOptions{Prompt: []provider.Message{provider.UserText("secret")}})
+	require.ErrorIs(t, err, ErrHookTransformFailed)
+	assert.Equal(t, 0, model.streamHit)
 }
 
 func TestHooksMiddleware_TransformAppliesToStream(t *testing.T) {

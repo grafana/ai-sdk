@@ -38,8 +38,7 @@
     "type": "finish",
     "usage": {
       "inputTokens": {
-        "total": 4,
-        "noCache": 4
+        "total": 4
       },
       "outputTokens": {
         "total": 2,
