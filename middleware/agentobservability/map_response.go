@@ -167,17 +167,18 @@ func usageToAgento11y(usage provider.Usage) agento11y.TokenUsage {
 // declared to include the cache buckets. Total is inclusive by the
 // provider.InputTokenUsage contract; the claim is withheld only when the
 // reported buckets contradict it, since consumers derive fresh input as
-// InputTokens minus the cache buckets.
+// InputTokens minus the cache buckets. An unreported bucket is unknown, so only
+// a complete breakdown must sum to Total exactly.
 func inputUsageIsInclusive(usage provider.InputTokenUsage) bool {
 	if usage.Total == nil {
 		return false
 	}
 	total := int64(*usage.Total)
-	cached := intPtrOrZero(usage.CacheRead) + intPtrOrZero(usage.CacheWrite)
-	if usage.NoCache != nil {
-		return total == int64(*usage.NoCache)+cached
+	known := intPtrOrZero(usage.NoCache) + intPtrOrZero(usage.CacheRead) + intPtrOrZero(usage.CacheWrite)
+	if usage.NoCache != nil && usage.CacheRead != nil && usage.CacheWrite != nil {
+		return total == known
 	}
-	return total >= cached
+	return total >= known
 }
 
 func intPtrOrZero(v *int) int64 {

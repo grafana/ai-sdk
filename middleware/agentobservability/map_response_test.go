@@ -288,6 +288,15 @@ func TestUsageToAgento11y_InputSemanticsFollowsReportedTotal(t *testing.T) {
 			want:  agento11y.TokenInputSemanticsInclusive,
 		},
 		{
+			name:  "unreported cache write explains the gap",
+			usage: provider.InputTokenUsage{Total: &total, NoCache: &noCache, CacheRead: &cacheRead},
+			want:  agento11y.TokenInputSemanticsInclusive,
+		},
+		{
+			name:  "partial breakdown exceeds total",
+			usage: provider.InputTokenUsage{Total: &totalWithoutWrite, NoCache: &noCache, CacheRead: &total},
+		},
+		{
 			name:  "no-cache bucket absent",
 			usage: provider.InputTokenUsage{Total: &total, CacheRead: &cacheRead, CacheWrite: &cacheWrite},
 			want:  agento11y.TokenInputSemanticsInclusive,
