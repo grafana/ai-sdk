@@ -299,7 +299,7 @@ func convertUserContent(parts []provider.ContentPart, documentCounter *int, warn
 					return nil, fmt.Errorf("bedrock: image media type %q is not supported", mediaType)
 				}
 				out = append(out, contentBlock{
-					Image: &imageBlock{Format: format, Source: imageSource{Bytes: b64}},
+					Image: &imageBlock{Format: format, Source: imageSource{Bytes: &b64}},
 				})
 				continue
 			case "video":
@@ -308,7 +308,7 @@ func convertUserContent(parts []provider.ContentPart, documentCounter *int, warn
 					return nil, fmt.Errorf("bedrock: video media type %q is not supported", mediaType)
 				}
 				out = append(out, contentBlock{
-					Video: &videoBlock{Format: format, Source: videoSource{Bytes: b64}},
+					Video: &videoBlock{Format: format, Source: videoSource{Bytes: &b64}},
 				})
 				continue
 			}
@@ -703,7 +703,7 @@ func buildToolResult(p provider.ContentPart, documentCounter *int, isMistral boo
 						return nil, fmt.Errorf("bedrock: image media type %q is not supported", mediaType)
 					}
 					out.Content = append(out.Content, toolResultContent{
-						Image: &imageBlock{Format: format, Source: imageSource{Bytes: base64Data}},
+						Image: &imageBlock{Format: format, Source: imageSource{Bytes: &base64Data}},
 					})
 					continue
 				case "video":
@@ -712,7 +712,7 @@ func buildToolResult(p provider.ContentPart, documentCounter *int, isMistral boo
 						return nil, fmt.Errorf("bedrock: video media type %q is not supported", mediaType)
 					}
 					out.Content = append(out.Content, toolResultContent{
-						Video: &videoBlock{Format: format, Source: videoSource{Bytes: base64Data}},
+						Video: &videoBlock{Format: format, Source: videoSource{Bytes: &base64Data}},
 					})
 					continue
 				}

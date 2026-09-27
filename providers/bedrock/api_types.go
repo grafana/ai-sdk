@@ -81,7 +81,7 @@ type imageBlock struct {
 }
 
 type imageSource struct {
-	Bytes      string           `json:"bytes,omitempty"`
+	Bytes      *string          `json:"bytes,omitempty"`
 	S3Location *s3LocationBlock `json:"s3Location,omitempty"`
 }
 
@@ -91,7 +91,7 @@ type videoBlock struct {
 }
 
 type videoSource struct {
-	Bytes      string           `json:"bytes,omitempty"`
+	Bytes      *string          `json:"bytes,omitempty"`
 	S3Location *s3LocationBlock `json:"s3Location,omitempty"`
 }
 

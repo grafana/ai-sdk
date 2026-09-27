@@ -1914,7 +1914,7 @@ func serializeToolOutput(output *provider.ToolResultOutput, betas *[]anthropic.A
 					continue
 				}
 				file := provider.FilePart(v.MediaType, *v.Data)
-				if strings.HasPrefix(v.MediaType, "image/") {
+				if strings.HasPrefix(v.MediaType, "image/") || (v.Data.IsURL() && v.MediaType == "image") {
 					if image, ok := convertImageFileContentPart(file, anthropic.BetaCacheControlEphemeralParam{}); ok {
 						blocks = append(blocks, anthropic.BetaToolResultBlockParamContentUnion{OfImage: image.OfImage})
 					}

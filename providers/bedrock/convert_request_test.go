@@ -857,7 +857,7 @@ func TestBuildRequest_ToolResultImage(t *testing.T) {
 	image := result.Content[0].Image
 	require.NotNil(t, image)
 	assert.Equal(t, "jpeg", image.Format)
-	assert.Equal(t, "base64data", image.Source.Bytes)
+	assert.Equal(t, new("base64data"), image.Source.Bytes)
 	assert.Empty(t, warnings)
 }
 
@@ -874,7 +874,7 @@ func TestBuildRequest_ToolResultEmptyData(t *testing.T) {
 	require.NotNil(t, result)
 	require.Len(t, result.Content, 1)
 	require.NotNil(t, result.Content[0].Image)
-	assert.Empty(t, result.Content[0].Image.Source.Bytes)
+	assert.Equal(t, new(""), result.Content[0].Image.Source.Bytes)
 	assert.Empty(t, warnings)
 }
 
@@ -974,7 +974,7 @@ func TestBuildRequest_ImageMessage(t *testing.T) {
 	require.Len(t, req.Messages[0].Content, 1)
 	require.NotNil(t, req.Messages[0].Content[0].Image)
 	assert.Equal(t, "png", req.Messages[0].Content[0].Image.Format)
-	assert.Equal(t, "iVBOR...", req.Messages[0].Content[0].Image.Source.Bytes)
+	assert.Equal(t, new("iVBOR..."), req.Messages[0].Content[0].Image.Source.Bytes)
 	assert.Empty(t, warnings)
 }
 
@@ -990,7 +990,7 @@ func TestBuildRequest_VideoMessage(t *testing.T) {
 		video := req.Messages[0].Content[0].Video
 		require.NotNil(t, video)
 		assert.Equal(t, "mp4", video.Format)
-		assert.Equal(t, "AAECAw==", video.Source.Bytes)
+		assert.Equal(t, new("AAECAw=="), video.Source.Bytes)
 		assert.Empty(t, warnings)
 	})
 
@@ -1032,7 +1032,7 @@ func TestBuildRequest_ToolResultVideo(t *testing.T) {
 		video := result.Content[0].Video
 		require.NotNil(t, video)
 		assert.Equal(t, "mp4", video.Format)
-		assert.Equal(t, "AAECAw==", video.Source.Bytes)
+		assert.Equal(t, new("AAECAw=="), video.Source.Bytes)
 		assert.Empty(t, warnings)
 	})
 
@@ -1252,6 +1252,67 @@ func TestBuildRequest_SelectedEmptyFileData(t *testing.T) {
 		assert.Equal(t, "", doc.Source.Bytes)
 	}
 	assert.Empty(t, warnings)
+}
+
+func TestBuildRequest_FileDataSources(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		mediaType    string
+		wantMessages string
+		s3URL        string
+	}{
+		{
+			name:         "image",
+			mediaType:    "image/png",
+			wantMessages: `[{"role":"user","content":[{"image":{"format":"png","source":%s}}]}]`,
+			s3URL:        "s3://bucket/image.png",
+		},
+		{
+			name:         "video",
+			mediaType:    "video/mp4",
+			wantMessages: `[{"role":"user","content":[{"video":{"format":"mp4","source":%s}}]}]`,
+			s3URL:        "s3://bucket/video.mp4",
+		},
+		{
+			name:         "pdf",
+			mediaType:    "application/pdf",
+			wantMessages: `[{"role":"user","content":[{"document":{"format":"pdf","name":"document-1","source":%s}}]}]`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, tt := range []struct {
+				name       string
+				data       provider.DataContent
+				wantSource string
+			}{
+				{"empty bytes", provider.BytesDataContent([]byte{}), `{"bytes":""}`},
+				{"nil bytes", provider.BytesDataContent(nil), `{"bytes":""}`},
+				{"empty base64", provider.Base64DataContent(""), `{"bytes":""}`},
+				{"bytes", provider.BytesDataContent([]byte{0, 1, 2, 3}), `{"bytes":"AAECAw=="}`},
+				{"base64", provider.Base64DataContent("AAECAw=="), `{"bytes":"AAECAw=="}`},
+			} {
+				t.Run(tt.name, func(t *testing.T) {
+					req, warnings, _ := mustBuildRequest(t, testAnthropicModel, provider.CallOptions{
+						Prompt: []provider.Message{provider.NewUserMessage(provider.FilePart(tc.mediaType, tt.data))},
+					})
+					assert.Empty(t, warnings)
+					body := marshalRequestBody(t, req)
+					assert.JSONEq(t, fmt.Sprintf(tc.wantMessages, tt.wantSource), string(body["messages"]))
+				})
+			}
+			if tc.s3URL != "" {
+				t.Run("S3 URL", func(t *testing.T) {
+					req, warnings, _ := mustBuildRequest(t, testAnthropicModel, provider.CallOptions{
+						Prompt: []provider.Message{provider.NewUserMessage(provider.FilePart(tc.mediaType, provider.URLDataContent(tc.s3URL)))},
+					})
+					assert.Empty(t, warnings)
+					body := marshalRequestBody(t, req)
+					wantSource := fmt.Sprintf(`{"s3Location":{"uri":%q}}`, tc.s3URL)
+					assert.JSONEq(t, fmt.Sprintf(tc.wantMessages, wantSource), string(body["messages"]))
+				})
+			}
+		})
+	}
 }
 
 func TestBuildRequest_UnsupportedDocumentMediaType(t *testing.T) {
