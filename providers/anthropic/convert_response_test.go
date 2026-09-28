@@ -111,6 +111,23 @@ func TestConvertResponse_ServerToolUse(t *testing.T) {
 	assert.True(t, part.ProviderExecuted, "expected ProviderExecuted=true")
 }
 
+func TestConvertResponse_Web20260318Aliases(t *testing.T) {
+	for _, tc := range []struct{ id, native, custom string }{
+		{"anthropic.web_search_20260318", "web_search", "search_latest"},
+		{"anthropic.web_fetch_20260318", "web_fetch", "fetch_latest"},
+	} {
+		t.Run(tc.id, func(t *testing.T) {
+			msg := unmarshalMessage(t, `{"id":"msg_1","type":"message","role":"assistant","model":"claude-sonnet-4-6","content":[{"type":"server_tool_use","id":"stu_1","name":"`+tc.native+`","input":{}}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}`)
+			mapping := newToolNameMapping([]provider.Tool{{Type: provider.ToolTypeProvider, ID: tc.id, Name: tc.custom}})
+			result, err := convertResponse(msg, mapping, false, nil, defaultGenerateID, "anthropic", false)
+			require.NoError(t, err)
+			require.Len(t, result.Content, 1)
+			assert.Equal(t, tc.custom, result.Content[0].ToolName)
+			assert.True(t, result.Content[0].ProviderExecuted)
+		})
+	}
+}
+
 func TestConvertResponse_CodeExecutionPreservesInputFieldOrder(t *testing.T) {
 	msg := unmarshalMessage(t, `{
 		"id":"msg_1",

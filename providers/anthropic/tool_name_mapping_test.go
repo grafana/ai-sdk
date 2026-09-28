@@ -98,6 +98,27 @@ func TestNewToolNameMapping_WebFetchMemoryTools(t *testing.T) {
 	assert.Equal(t, "fetch_v2", mapping.toCustomToolName("web_fetch"))
 }
 
+func TestNewToolNameMapping_Web20260318(t *testing.T) {
+	for _, tc := range []struct{ id, name, native string }{
+		{"anthropic.web_search_20260318", "search_latest", "web_search"},
+		{"anthropic.web_fetch_20260318", "fetch_latest", "web_fetch"},
+	} {
+		t.Run(tc.id, func(t *testing.T) {
+			mapping := newToolNameMapping([]provider.Tool{{Type: provider.ToolTypeProvider, ID: tc.id, Name: tc.name}})
+			assert.Equal(t, tc.native, mapping.toProviderToolName(tc.name))
+			assert.Equal(t, tc.name, mapping.toCustomToolName(tc.native))
+			params, _, _, _, err := buildParams("claude-sonnet-4-6", provider.CallOptions{
+				Tools:      []provider.Tool{{Type: provider.ToolTypeProvider, ID: tc.id, Name: tc.name}},
+				ToolChoice: &provider.ToolChoice{Type: provider.ToolChoiceTool, ToolName: tc.name},
+			}, false)
+			assert.NoError(t, err)
+			if assert.NotNil(t, params.ToolChoice.OfTool) {
+				assert.Equal(t, tc.native, params.ToolChoice.OfTool.Name)
+			}
+		})
+	}
+}
+
 func TestNewToolNameMapping_FunctionOnlyToolsProduceEmptyMapping(t *testing.T) {
 	mapping := newToolNameMapping([]provider.Tool{
 		provider.Tool{Type: provider.ToolTypeFunction, Name: "search"},

@@ -20,8 +20,10 @@ var providerToolNames = map[string]string{
 	"anthropic.bash_20250124":              "bash",
 	"anthropic.memory_20250818":            "memory",
 	"anthropic.web_search_20260209":        "web_search",
+	"anthropic.web_search_20260318":        "web_search",
 	"anthropic.web_fetch_20250910":         "web_fetch",
 	"anthropic.web_fetch_20260209":         "web_fetch",
+	"anthropic.web_fetch_20260318":         "web_fetch",
 	"anthropic.advisor_20260301":           "advisor",
 }
 

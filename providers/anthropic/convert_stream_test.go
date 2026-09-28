@@ -388,6 +388,27 @@ func TestStreamAdapter_ServerToolUse(t *testing.T) {
 	})
 }
 
+func TestStreamAdapter_Web20260318Aliases(t *testing.T) {
+	for _, tc := range []struct{ id, native, custom string }{
+		{"anthropic.web_search_20260318", "web_search", "search_latest"},
+		{"anthropic.web_fetch_20260318", "web_fetch", "fetch_latest"},
+	} {
+		t.Run(tc.id, func(t *testing.T) {
+			mapping := newToolNameMapping([]provider.Tool{{Type: provider.ToolTypeProvider, ID: tc.id, Name: tc.custom}})
+			events := []anthropic.BetaRawMessageStreamEventUnion{
+				unmarshalEvent(t, `{"type":"content_block_start","index":0,"content_block":{"type":"server_tool_use","id":"stu_1","name":"`+tc.native+`"}}`),
+				unmarshalEvent(t, `{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{}"}}`),
+				unmarshalEvent(t, `{"type":"content_block_stop","index":0}`),
+			}
+			parts := collectPartsWithMapping(events, mapping)
+			require.Len(t, parts, 4)
+			assert.Equal(t, tc.custom, parts[0].ToolName)
+			assert.Equal(t, tc.custom, parts[3].ToolName)
+			assert.True(t, parts[3].ProviderExecuted)
+		})
+	}
+}
+
 func TestStreamAdapter_CallerMetadata(t *testing.T) {
 	t.Run("direct_caller", func(t *testing.T) {
 		events := []anthropic.BetaRawMessageStreamEventUnion{
