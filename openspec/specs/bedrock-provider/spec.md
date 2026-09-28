@@ -282,7 +282,7 @@ When `provider.CallOptions.Reasoning` is a custom level other than `none` and th
 
 For adaptive models, reasoning levels SHALL map to `additionalModelRequestFields.output_config.effort` as follows: `minimal` to `low`, `low` to `low`, `medium` to `medium`, `high` to `high`, and `xhigh` to `max`. A mapping that changes the level name SHALL emit a compatibility warning. For budget-based models, the provider SHALL derive a token budget from the model's maximum output tokens and increase `inferenceConfig.maxTokens` by that budget.
 
-For custom reasoning other than `none`, non-zero fields from an explicit provider `reasoningConfig` SHALL override the corresponding derived fields while unspecified fields remain derived. A raw JSON `budgetTokens` field explicitly set to zero SHALL also override a derived budget and produce `thinking.budget_tokens = 0`; the zero-valued typed Go field with `omitempty` represents omission. If the merged type is `disabled`, derived budget and effort SHALL be removed. Anthropic root reasoning `none` SHALL replace an explicit partial reasoning config with disabled thinking.
+For custom reasoning other than `none`, non-zero fields from an explicit provider `reasoningConfig` SHALL override the corresponding derived fields while unspecified fields remain derived. A raw JSON `budgetTokens` field explicitly set to zero SHALL also override a derived budget and produce `thinking.budget_tokens = 0`; the zero-valued typed Go field with `omitempty` represents omission. If the merged type is `disabled`, derived budget and effort SHALL be removed. Anthropic root reasoning `none` SHALL replace an explicit partial reasoning config with disabled thinking, except on models that support `between_tools` thinking (IDs containing `claude-sonnet-5-5`), where it SHALL use `between_tools` thinking. This is an intentional deviation from `@ai-sdk/amazon-bedrock` 5.0.99, recorded in `test/conformance/upstream.yaml`: upstream sends disabled thinking, which omits `thinking` and lets the model run adaptive thinking at its default effort.
 
 #### Scenario: Adaptive-capable model receives adaptive thinking and effort
 
@@ -358,7 +358,7 @@ For custom reasoning other than `none`, non-zero fields from an explicit provide
 
 #### Scenario: Reasoning none disables Anthropic thinking
 
-- **WHEN** root reasoning is `none` for an Anthropic Bedrock model
+- **WHEN** root reasoning is `none` for an Anthropic Bedrock model that does not support `between_tools` thinking
 - **THEN** the derived reasoning configuration SHALL disable thinking
 - **AND** the request SHALL NOT include a derived reasoning budget or effort
 
@@ -383,6 +383,12 @@ For custom reasoning other than `none`, non-zero fields from an explicit provide
 
 - **WHEN** root reasoning is `none` for an Anthropic model and provider reasoning config only sets display
 - **THEN** the request SHALL omit thinking and effort fields
+
+#### Scenario: Reasoning none on Sonnet 5.5 uses between_tools thinking
+
+- **WHEN** root reasoning is `none` for `global.anthropic.claude-sonnet-5-5`, with or without a partial provider reasoning config
+- **THEN** `additionalModelRequestFields.thinking` SHALL equal `{type: "between_tools"}`
+- **AND** the request SHALL NOT include a derived reasoning budget or effort
 
 ### Requirement: Native structured output for supported Anthropic models
 
@@ -653,3 +659,36 @@ The provider's `Provider()` method SHALL return `"amazon-bedrock"`. Its `ModelID
 
 - **WHEN** a consumer constructs `bedrock.New("amazon.nova-lite-v1:0")`
 - **THEN** `ModelID()` returns `"amazon.nova-lite-v1:0"` verbatim
+
+### Requirement: Converse Claude models that reject disabled thinking and forced tool use
+
+For Anthropic Bedrock model IDs containing `claude-sonnet-5-5`, the Converse adapter SHALL avoid request shapes the model rejects, following `@ai-sdk/amazon-bedrock` 5.0.99 unless noted. A `required` tool choice SHALL be sent as `auto`, and a named tool choice SHALL be sent as `auto` with only the named tool, each with an unsupported `toolChoice` warning. A JSON schema response SHALL use the system-prompt JSON instruction instead of the forced JSON tool, whatever the structured-output mode, unless native `outputFormat` output is selected.
+
+As a Go extension, `reasoningConfig.type` SHALL also accept `between_tools`. It SHALL be sent as `thinking: {type: "between_tools"}` without `display` or `budget_tokens`, SHALL count as active thinking for sampling-parameter removal, and SHALL lower `maxReasoningEffort` `xhigh` or `max` to `high` with an unsupported warning for feature `providerOptions.amazonBedrock.reasoningConfig.maxReasoningEffort`. Upstream 5.0.99 has no `between_tools` type.
+
+#### Scenario: Required tool choice on Sonnet 5.5
+
+- **WHEN** `global.anthropic.claude-sonnet-5-5` is called with two function tools and tool choice `required`
+- **THEN** `toolConfig.toolChoice` SHALL be `auto` and both tools SHALL be sent
+- **AND** an unsupported `toolChoice` warning SHALL be emitted
+
+#### Scenario: Named tool choice on Sonnet 5.5
+
+- **WHEN** `global.anthropic.claude-sonnet-5-5` is called with tools `weather` and `search` and tool choice `tool` named `search`
+- **THEN** `toolConfig.toolChoice` SHALL be `auto` and only `search` SHALL be sent
+
+#### Scenario: JSON response without native output on Sonnet 5.5
+
+- **WHEN** `global.anthropic.claude-sonnet-5-5` receives a JSON schema response with no caller tools and `structuredOutputMode` `jsonTool`
+- **THEN** the JSON schema instruction SHALL be injected into the system prompt and no `json` tool or forced tool choice SHALL be sent
+
+#### Scenario: between_tools effort limit
+
+- **WHEN** provider options set `reasoningConfig: {type: "between_tools", maxReasoningEffort: "max"}` for `global.anthropic.claude-sonnet-5-5`
+- **THEN** `additionalModelRequestFields.thinking` SHALL equal `{type: "between_tools"}` and `output_config.effort` SHALL equal `high`
+- **AND** an unsupported warning for `providerOptions.amazonBedrock.reasoningConfig.maxReasoningEffort` SHALL be emitted
+
+#### Scenario: Claude Sonnet 5 keeps forced tool use
+
+- **WHEN** `anthropic.claude-sonnet-5` is called with tool choice `required`
+- **THEN** `toolConfig.toolChoice` SHALL be `any`

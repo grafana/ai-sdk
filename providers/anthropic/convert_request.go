@@ -52,7 +52,7 @@ type buildResult struct {
 	requestOptions           []option.RequestOption
 }
 
-func applyResponseFormat(p *anthropic.BetaMessageNewParams, rf *provider.ResponseFormat, caps modelCapabilities, defaultEagerInputStreaming bool, opts AnthropicOptions) buildResult {
+func applyResponseFormat(p *anthropic.BetaMessageNewParams, modelID string, rf *provider.ResponseFormat, caps modelCapabilities, defaultEagerInputStreaming bool, opts AnthropicOptions) buildResult {
 	if rf.Type == provider.ResponseFormatText {
 		return buildResult{}
 	}
@@ -105,7 +105,7 @@ func applyResponseFormat(p *anthropic.BetaMessageNewParams, rf *provider.Respons
 		warnings = append(warnings, provider.Warning{
 			Type:    provider.WarnUnsupported,
 			Feature: "providerOptions.anthropic.structuredOutputMode",
-			Details: "structuredOutputMode 'jsonTool' is not supported by this model because it rejects forced tool use. Using 'outputFormat' instead.",
+			Details: fmt.Sprintf("structuredOutputMode 'jsonTool' is not supported by %s because it rejects forced tool use. Using 'outputFormat' instead.", modelID),
 		})
 		useStructuredOutput = true
 	}
@@ -370,16 +370,15 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 
 	warnings = append(warnings, v.warnings...)
 
+	// forcedToolChoice is a required or named tool choice for a model that
+	// rejects forced tool use. It is resolved after the response format,
+	// because the JSON response tool replaces the caller's tool choice.
+	var forcedToolChoice *provider.ToolChoice
 	if opts.ToolChoice != nil {
 		if opts.ToolChoice.Type == provider.ToolChoiceNone {
 			p.Tools = nil
 		} else if caps.rejectsForcedToolUse && (opts.ToolChoice.Type == provider.ToolChoiceRequired || opts.ToolChoice.Type == provider.ToolChoiceTool) {
-			// Mirrors upstream prepareTools (@ai-sdk/anthropic 4.0.67): send
-			// auto, and for a named tool send only that tool.
-			warnings = append(warnings, forcedToolChoiceWarning(*opts.ToolChoice))
-			if opts.ToolChoice.Type == provider.ToolChoiceTool {
-				p.Tools = toolsNamed(p.Tools, mapping.toProviderToolName(opts.ToolChoice.ToolName))
-			}
+			forcedToolChoice = opts.ToolChoice
 			p.ToolChoice = anthropic.BetaToolChoiceUnionParam{OfAuto: &anthropic.BetaToolChoiceAutoParam{}}
 		} else if opts.ToolChoice.Type != provider.ToolChoiceAuto || len(opts.Tools) > 0 {
 			p.ToolChoice = convertToolChoice(*opts.ToolChoice, mapping)
@@ -442,8 +441,16 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 	if opts.ResponseFormat != nil {
 		responseFormatCaps := caps
 		responseFormatCaps.supportsStructuredOutput = supportsNativeStructuredOutput
-		br = applyResponseFormat(&p, opts.ResponseFormat, responseFormatCaps, defaultEagerInputStreaming, anthropicOpts)
+		br = applyResponseFormat(&p, modelID, opts.ResponseFormat, responseFormatCaps, defaultEagerInputStreaming, anthropicOpts)
 		warnings = append(warnings, br.warnings...)
+	}
+	// Mirrors upstream prepareTools (@ai-sdk/anthropic 4.0.67): send auto,
+	// and for a named tool send only that tool.
+	if forcedToolChoice != nil && !br.usesJsonResponseTool {
+		warnings = append(warnings, forcedToolChoiceWarning(*forcedToolChoice))
+		if forcedToolChoice.Type == provider.ToolChoiceTool {
+			p.Tools = toolsNamed(p.Tools, mapping.toProviderToolName(forcedToolChoice.ToolName))
+		}
 	}
 	br.markCodeExecutionDynamic = hasWebTool20260209WithoutCodeExecution(opts.Tools)
 	if len(p.Tools) > 0 && (opts.ToolChoice == nil || opts.ToolChoice.Type != provider.ToolChoiceNone) {

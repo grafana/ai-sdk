@@ -110,6 +110,12 @@ routing accounts for Bedrock's model-specific native-output reliability.
 Reasoning, structured output, cache controls, and other provider options may be
 supported by one family and ignored with a warning by another.
 
+Claude Sonnet 5.5 rejects disabled thinking and forced tool use. For
+`claude-sonnet-5-5` IDs, root reasoning `none` sends `between_tools` thinking,
+a `required` or named tool choice is sent as `auto` with a warning, and a JSON
+schema response uses a system-prompt instruction instead of the forced JSON
+tool.
+
 Validate the capabilities required by your workflow before putting unlike model
 families in the same fallback chain.
 

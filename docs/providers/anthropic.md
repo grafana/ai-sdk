@@ -62,6 +62,13 @@ Reasoning increases token usage and latency. Decide whether reasoning content
 should be forwarded to a frontend; UI streams include it by default unless
 configured otherwise.
 
+Some models always think and reject forced tool use. On `claude-sonnet-5-5`,
+disabled and budget-based thinking, a `required` tool choice, and a named tool
+choice all fail at the API. The provider rewrites them instead: root reasoning
+`none` sends `between_tools` thinking, the model's lowest setting, and a forced
+tool choice is sent as `auto` with an `unsupported` warning. Tell the model in
+the prompt to call the tool, and check the result for the tool call.
+
 Anthropic-specific options also cover effort, beta features, remote MCP servers,
 containers, task budgets, and tool streaming. Enable only options supported by
 the chosen model.

@@ -185,7 +185,11 @@ func TestSonnet55JSONToolModeUsesOutputFormat(t *testing.T) {
 	assert.False(t, br.usesJsonResponseTool)
 	assert.NotEmpty(t, p.OutputConfig.Format.Schema)
 	assert.Nil(t, p.ToolChoice.OfAny)
-	assert.Contains(t, warningFeatures(warnings), "providerOptions.anthropic.structuredOutputMode")
+	assert.Contains(t, warnings, provider.Warning{
+		Type:    provider.WarnUnsupported,
+		Feature: "providerOptions.anthropic.structuredOutputMode",
+		Details: "structuredOutputMode 'jsonTool' is not supported by claude-sonnet-5-5 because it rejects forced tool use. Using 'outputFormat' instead.",
+	})
 }
 
 func TestSonnet55JSONToolWithoutNativeOutputUsesAuto(t *testing.T) {
@@ -198,6 +202,42 @@ func TestSonnet55JSONToolWithoutNativeOutputUsesAuto(t *testing.T) {
 	require.NotNil(t, p.ToolChoice.OfAuto)
 	assert.Nil(t, p.ToolChoice.OfAny)
 	assert.Contains(t, warningFeatures(warnings), "toolChoice")
+
+	// The JSON response tool replaces the caller's tool choice, as upstream
+	// does, so a forced caller choice keeps every tool and warns once.
+	tools := []provider.Tool{
+		{Type: provider.ToolTypeFunction, Name: "weather", InputSchema: json.RawMessage(`{"type":"object"}`)},
+		{Type: provider.ToolTypeFunction, Name: "search", InputSchema: json.RawMessage(`{"type":"object"}`)},
+	}
+	for _, tc := range []provider.ToolChoice{
+		{Type: provider.ToolChoiceRequired},
+		{Type: provider.ToolChoiceTool, ToolName: "search"},
+	} {
+		t.Run(string(tc.Type), func(t *testing.T) {
+			p, _, warnings, br, err := buildParamsWithCapabilities("claude-sonnet-5-5", provider.CallOptions{
+				Tools:          tools,
+				ToolChoice:     &tc,
+				ResponseFormat: &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Schema: schema},
+			}, false, providerCapabilities{})
+			require.NoError(t, err)
+			assert.True(t, br.usesJsonResponseTool)
+			require.NotNil(t, p.ToolChoice.OfAuto)
+			assert.True(t, p.ToolChoice.OfAuto.DisableParallelToolUse.Value)
+			var names []string
+			for _, tool := range p.Tools {
+				names = append(names, *tool.GetName())
+			}
+			assert.Equal(t, []string{"weather", "search", "json"}, names)
+			var toolChoiceWarnings []provider.Warning
+			for _, w := range warnings {
+				if w.Feature == "toolChoice" {
+					toolChoiceWarnings = append(toolChoiceWarnings, w)
+				}
+			}
+			require.Len(t, toolChoiceWarnings, 1)
+			assert.Equal(t, forcedToolChoiceWarning(provider.ToolChoice{Type: provider.ToolChoiceRequired}), toolChoiceWarnings[0])
+		})
+	}
 }
 
 func assertThinkingJSON(t *testing.T, thinking any, want string) {

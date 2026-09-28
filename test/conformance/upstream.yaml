@@ -68,7 +68,7 @@ knownGaps:
       5.0.99, ahead of the registered targets. The recorder drives the registered
       packages, which send disabled thinking to this model, so coverage is focused
       unit tests plus manual live checks; no recorded fixture is claimed until the
-      baseline reaches those versions.
+      baseline reaches those versions. Tracked by grafana/ai-sdk#278.
   - id: bedrock-sonnet-5-5-reasoning-none
     surface: provider-bedrock
     status: documented-deviation
@@ -76,7 +76,9 @@ knownGaps:
       disabled, which omits the thinking field, so claude-sonnet-5-5 runs adaptive
       thinking at its default effort. Go sends thinking type between_tools, the
       model's lowest setting, matching the Anthropic provider; Bedrock Converse
-      accepts it at low, medium, and high effort.
+      accepts it at low, medium, and high effort. Go also accepts
+      reasoningConfig.type between_tools, which upstream does not, and lowers
+      xhigh or max effort to high for it, as the Anthropic provider does.
   - id: bedrock-anthropic-invoke-surface
     surface: provider-bedrock
     status: gap

@@ -97,11 +97,16 @@ func TestSonnet55ForcedToolChoiceFallsBackToAuto(t *testing.T) {
 
 func TestSonnet55JSONResponseUsesInstructionWithoutTools(t *testing.T) {
 	schema := json.RawMessage(`{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}`)
-	req, _, meta := mustBuildRequest(t, testSonnet55Model, provider.CallOptions{
-		Prompt:         []provider.Message{provider.UserText("x")},
-		ResponseFormat: &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Schema: schema},
-	})
-	assert.True(t, meta.usesJSONInstruction)
-	assert.False(t, meta.usesJSONResponseTool)
-	assert.Nil(t, req.ToolConfig, "no forced JSON tool")
+	for _, mode := range []StructuredOutputMode{StructuredOutputModeAuto, StructuredOutputModeJSONTool} {
+		t.Run(string(mode), func(t *testing.T) {
+			req, _, meta := mustBuildRequest(t, testSonnet55Model, provider.CallOptions{
+				Prompt:          []provider.Message{provider.UserText("x")},
+				ResponseFormat:  &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Schema: schema},
+				ProviderOptions: provider.BuildProviderOptions(BedrockOptions{StructuredOutputMode: mode}),
+			})
+			assert.True(t, meta.usesJSONInstruction)
+			assert.False(t, meta.usesJSONResponseTool)
+			assert.Nil(t, req.ToolConfig, "no forced JSON tool")
+		})
+	}
 }
