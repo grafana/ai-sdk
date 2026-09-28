@@ -46,10 +46,15 @@ that executes a typed tool across model steps and streams the result to
 
 ## Decide where execution happens
 
-A tool with `Execute` runs in the Go process. The SDK returns its output to the
-model and can continue to another step.
+A tool with `Execute` or `ExecuteStream` runs in the Go process. The SDK returns
+its final output to the model and can continue to another step. Streaming tools
+can emit preliminary outputs to the UI before completing; each emitted value is
+preliminary, and the last is repeated as the final result. Only the final
+result enters the next model prompt. A tool must not configure both execution
+forms. `TypedTool` currently wraps single-result executors; configure a `Tool`
+directly for streamed execution.
 
-A tool without `Execute` is external. Its call is emitted to the result stream
+A tool without either execution function is external. Its call is emitted to the result stream
 and the current loop stops so a browser, queue worker, or another service can
 handle it. Resume with the resulting conversation state after the external
 action completes.
@@ -57,6 +62,25 @@ action completes.
 Some providers also supply provider-executed tools such as web search or code
 execution. Those are configured through the provider package and run by the
 provider, not by your `Execute` function.
+
+## Route tools through callers
+
+Use caller routing when the model should call a local or provider caller instead
+of seeing every application tool directly. Configure the caller tool in the
+`ToolSet`, then map each callee to the callers allowed to invoke it. A callee
+listed only under a local caller is omitted from the provider's direct tool
+list but remains available to that caller's bound tool set. Add the direct-call
+sentinel when the callee should also stay model-visible. Active-tool settings
+are applied per step before binding callers.
+
+A provider caller can prepare the routed tool's provider options, such as
+provider-specific `allowedCallers`. Manually supplied provider options pass
+through when no caller preparation is configured; otherwise the preparation
+callback controls the resulting options. Different providers use different
+caller names and semantics. Caller routing mirrors upstream exposure and
+binding; it does **not** independently authorize an unexpected provider-emitted
+call against caller metadata. Enforce any security policy required by your
+application within the tool's executor and approval policy.
 
 ## Validate and limit tools
 

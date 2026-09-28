@@ -391,6 +391,9 @@ func mergeBaseConfig(dst *baseConfig, call *baseConfig) {
 	if call.tools != nil {
 		dst.tools = cloneToolSet(call.tools)
 	}
+	if call.toolCallers != nil {
+		dst.toolCallers = cloneToolCallers(call.toolCallers)
+	}
 	if call.toolChoice != nil {
 		v := *call.toolChoice
 		dst.toolChoice = &v
@@ -513,6 +516,7 @@ func cloneBaseConfig(src baseConfig) baseConfig {
 	cfg.modelMessages = cloneProviderMessages(src.modelMessages)
 	cfg.system = cloneSystemMessages(src.system)
 	cfg.tools = cloneToolSet(src.tools)
+	cfg.toolCallers = cloneToolCallers(src.toolCallers)
 	cfg.activeTools = append([]string(nil), src.activeTools...)
 	cfg.stopWhen = append([]StopCondition(nil), src.stopWhen...)
 	cfg.toolApproval = cloneToolApprovalConfig(src.toolApproval)
@@ -564,6 +568,17 @@ func cloneBaseConfig(src baseConfig) baseConfig {
 		cfg.reasoning = &v
 	}
 	return cfg
+}
+
+func cloneToolCallers(callers map[string][]string) map[string][]string {
+	if callers == nil {
+		return nil
+	}
+	out := make(map[string][]string, len(callers))
+	for name, allowed := range callers {
+		out[name] = append([]string(nil), allowed...)
+	}
+	return out
 }
 
 func cloneToolSet(tools ToolSet) ToolSet {

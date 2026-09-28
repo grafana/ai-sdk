@@ -443,6 +443,15 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 		cfg.onStart(OnStartState{})
 	}
 
+	if err := validateToolCallers(cfg.tools, cfg.toolCallers); err != nil {
+		r.emitError(err, cfg.onError)
+		return
+	}
+	if err := validateToolExecutors(cfg.tools); err != nil {
+		r.emitError(err, cfg.onError)
+		return
+	}
+
 	// Convert messages
 	var msgs []provider.Message
 	if cfg.modelMessages != nil {
@@ -603,9 +612,15 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 		}
 
 		// Build provider tools (sorted for deterministic order)
-		provTools, toolWarnings := toolSetToProviderTools(cfg.tools)
+		executionTools, modelTools, callerMessages := prepareToolsForCallers(cfg.tools, cfg.toolCallers, activeTools, activeToolsSet)
+		if err := validateToolExecutors(executionTools); err != nil {
+			r.emitError(err, cfg.onError)
+			return
+		}
+		currentMsgs = appendToolCallerMessages(currentMsgs, callerMessages)
+		provTools, toolWarnings := toolSetToProviderTools(modelTools)
 		r.allWarnings = append(r.allWarnings, toolWarnings...)
-		if activeToolsSet {
+		if cfg.toolCallers == nil && activeToolsSet {
 			provTools = filterProviderTools(provTools, activeTools)
 		}
 		if toolChoice == nil {
@@ -665,7 +680,9 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 			return
 		}
 
-		step, stepCompleted, stepTerminated, stepHasOutput, err := r.processStep(ctx, stepNum, stepModel, streamResult, cfg, stepContext, currentMsgs, opCancel)
+		stepCfg := *cfg
+		stepCfg.tools = executionTools
+		step, stepCompleted, stepTerminated, stepHasOutput, err := r.processStep(ctx, stepNum, stepModel, streamResult, &stepCfg, stepContext, currentMsgs, opCancel)
 		if stepTimer != nil {
 			stepTimer.Stop()
 		}
@@ -1660,7 +1677,7 @@ func (r *StreamTextResult) executeTools(
 		default:
 			return fmt.Errorf("aisdk: unsupported tool approval status %q", decision.Status)
 		}
-		if tc.ProviderExecuted || tool.Execute == nil {
+		if tc.ProviderExecuted || !isExecutableTool(tool) {
 			continue
 		}
 		executable = append(executable, executableTool{
@@ -1676,9 +1693,9 @@ func (r *StreamTextResult) executeTools(
 	}
 
 	outcomes := make([]toolExecOutcome, len(executable))
-	r.runToolsEmitOnCompletion(cfg, outcomes, func(i int) {
+	r.runToolsEmitOnCompletion(ctx, cfg, outcomes, func(i int, emit func(TextStreamPart) error) {
 		et := executable[i]
-		r.executeSingleTool(ctx, step, cfg, et.tc, et.tool, stepContext, currentMsgs, outcomes, et.index)
+		r.executeSingleTool(ctx, step, cfg, et.tc, et.tool, stepContext, currentMsgs, outcomes, et.index, emit)
 	})
 
 	// Events went out as each tool completed; results stay in call order.
@@ -1688,21 +1705,40 @@ func (r *StreamTextResult) executeTools(
 	return nil
 }
 
-// runToolsEmitOnCompletion runs exec for every outcome index in its own
-// goroutine and emits each outcome's event as that tool completes. Only the
-// calling goroutine emits, so OnChunk is never invoked concurrently.
-func (r *StreamTextResult) runToolsEmitOnCompletion(cfg *streamConfig, outcomes []toolExecOutcome, exec func(i int)) {
-	done := make(chan int, len(outcomes))
+// runToolsEmitOnCompletion serializes tool events and OnChunk calls while
+// tools execute concurrently.
+func (r *StreamTextResult) runToolsEmitOnCompletion(ctx context.Context, cfg *streamConfig, outcomes []toolExecOutcome, exec func(int, func(TextStreamPart) error)) {
+	type toolEvent struct {
+		index int
+		part  TextStreamPart
+		final bool
+	}
+	events := make(chan toolEvent, len(outcomes))
 	for i := range outcomes {
 		go func(i int) {
-			exec(i)
-			done <- i
+			exec(i, func(part TextStreamPart) error {
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+				select {
+				case events <- toolEvent{part: part}:
+					return nil
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			})
+			events <- toolEvent{index: i, final: true}
 		}(i)
 	}
-	for range outcomes {
-		if ev := outcomes[<-done].event; ev != nil {
-			r.emit(ev)
-			r.callOnChunk(cfg, ev)
+	for completed := 0; completed < len(outcomes); {
+		event := <-events
+		if event.final {
+			completed++
+			event.part = outcomes[event.index].event
+		}
+		if event.part != nil {
+			r.emit(event.part)
+			r.callOnChunk(cfg, event.part)
 		}
 	}
 }
@@ -1757,6 +1793,7 @@ func (r *StreamTextResult) executeSingleTool(
 	currentMsgs []provider.Message,
 	outcomes []toolExecOutcome,
 	index int,
+	emit func(TextStreamPart) error,
 ) {
 	if cfg.onToolCallStart != nil {
 		cfg.onToolCallStart(OnToolCallStartState{
@@ -1767,11 +1804,31 @@ func (r *StreamTextResult) executeSingleTool(
 	}
 
 	start := time.Now()
-	output, err := tool.Execute(ctx, tc.Input, ToolExecutionOptions{
-		ToolCallID: tc.ToolCallID,
-		Messages:   currentMsgs,
-		Context:    stepContext,
-	})
+	opts := ToolExecutionOptions{ToolCallID: tc.ToolCallID, Messages: currentMsgs, Context: stepContext}
+	var output json.RawMessage
+	var err error
+	if tool.ExecuteStream != nil {
+		err = tool.ExecuteStream(ctx, tc.Input, opts, func(value json.RawMessage) error {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			preliminary := append(json.RawMessage(nil), value...)
+			if emitErr := emit(StreamToolResult{
+				ToolCallID: tc.ToolCallID, ToolName: tc.ToolName, Input: tc.Input,
+				Output: preliminary, Preliminary: true, Dynamic: tc.Dynamic,
+				Title: tc.Title, ProviderMetadata: tc.ProviderMetadata,
+			}); emitErr != nil {
+				return emitErr
+			}
+			output = preliminary
+			return nil
+		})
+		if err == nil {
+			err = ctx.Err()
+		}
+	} else {
+		output, err = tool.Execute(ctx, tc.Input, opts)
+	}
 	durationMs := time.Since(start).Milliseconds()
 
 	if err != nil {
@@ -1868,7 +1925,8 @@ func (r *StreamTextResult) executeSingleTool(
 		},
 		event: StreamToolResult{
 			ToolCallID: tc.ToolCallID, ToolName: tc.ToolName,
-			Input: tc.Input, Output: output, ProviderMetadata: tc.ProviderMetadata,
+			Input: tc.Input, Output: output, Dynamic: tc.Dynamic,
+			Title: tc.Title, ProviderMetadata: tc.ProviderMetadata,
 		},
 	}
 
@@ -2006,7 +2064,7 @@ func (r *StreamTextResult) resolveToolApprovals(ctx context.Context, cfg *stream
 			continue
 		}
 		tool, ok := cfg.tools[approval.toolCall.ToolName]
-		if !ok || tool.Execute == nil {
+		if !ok || !isExecutableTool(tool) {
 			return nil, &ToolNotExecutableError{ToolName: approval.toolCall.ToolName}
 		}
 		tc := ToolCall{
@@ -2031,9 +2089,9 @@ func (r *StreamTextResult) resolveToolApprovals(ctx context.Context, cfg *stream
 	// model step (which uses StepNumber 1).
 	outcomes := make([]toolExecOutcome, len(executable))
 	resumeStep := &StepResult{StepNumber: 0, Model: StepModel{}}
-	r.runToolsEmitOnCompletion(cfg, outcomes, func(i int) {
+	r.runToolsEmitOnCompletion(ctx, cfg, outcomes, func(i int, emit func(TextStreamPart) error) {
 		et := executable[i]
-		r.executeSingleTool(ctx, resumeStep, cfg, et.tc, et.tool, nil, msgs, outcomes, et.index)
+		r.executeSingleTool(ctx, resumeStep, cfg, et.tc, et.tool, nil, msgs, outcomes, et.index, emit)
 	})
 
 	approvedToolParts := make([]provider.ContentPart, 0, len(executable))
@@ -2081,7 +2139,7 @@ func validateApprovedToolApprovals(cfg *streamConfig, msgs []provider.Message, a
 		}
 
 		tool, ok := cfg.tools[approval.toolCall.ToolName]
-		if ok && tool.Execute != nil {
+		if ok && isExecutableTool(tool) {
 			if tool.InputSchema.Compiled() != nil && isJSONObject(approval.toolCall.Input) {
 				if err := tool.InputSchema.Validate(approval.toolCall.Input); err != nil {
 					return nil, nil, fmt.Errorf("invalid input for tool %s: %w", approval.toolCall.ToolName, err)

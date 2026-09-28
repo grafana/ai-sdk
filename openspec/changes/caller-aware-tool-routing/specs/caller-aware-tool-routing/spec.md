@@ -57,7 +57,7 @@ An active local caller SHALL be bound on each step to the active tools that name
 
 ### Requirement: Provider caller prepares per-tool provider options
 
-An active provider caller SHALL transform each routed callee's provider options using its configured preparation callback in caller-list order. That callee SHALL remain model-visible without requiring direct access. Explicitly supplied provider options SHALL remain unchanged in the absence of such a callback, and the transformation SHALL not mutate caller-owned options. Orchestration SHALL not impose a generic conflict or authorization rule on manually supplied `allowedCallers`.
+An active provider caller SHALL transform each routed callee's provider options using its configured preparation callback in caller-list order. That callee SHALL remain model-visible without requiring direct access. Explicitly supplied provider options SHALL remain unchanged in the absence of such a callback. Orchestration SHALL not itself mutate caller-owned options or impose a generic conflict or authorization rule on manually supplied `allowedCallers`; the configured callback controls its returned options and any mutation it performs.
 
 #### Scenario: Provider-only route
 - **WHEN** a callee lists only an active provider caller
