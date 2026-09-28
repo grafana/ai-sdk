@@ -865,17 +865,17 @@ Gateway streaming scenarios SHALL execute the calling SDK's high-level text stre
 
 ### Requirement: Gateway replay uses the production container boundary
 
-Gateway conformance SHALL target the actual production gateway image and its real provider adapters, with provider responses supplied by deterministic local replay servers. CI SHALL build the image from the checked-out source using the production Dockerfile and pinned gateway module dependencies. The harness SHALL use isolated test credentials and networking, SHALL NOT require live provider credentials or send model requests to live providers, and SHALL NOT import the gateway implementation into reusable SDK or conformance modules. Reports SHALL identify the image, source, dependency pins, client versions, and registered upstream baseline.
+Gateway conformance SHALL target the actual production gateway image and its real provider adapters, with provider responses supplied by deterministic local replay servers. CI SHALL build the image from the checked-out repository source using the production Dockerfile and the explicit same-revision Gateway workspace, retaining pinned external module dependencies. The harness SHALL use isolated test credentials and networking, SHALL NOT require live provider credentials or send model requests to live providers, and SHALL NOT import the gateway implementation into reusable SDK or conformance modules. Reports SHALL identify the image, source revision, workspace build mode, bundled local-module attribution and external dependency pins, client versions, and registered upstream baseline.
 
 #### Scenario: Offline image execution
 - **WHEN** gateway conformance runs without provider credentials
 - **THEN** clients call the gateway container and the gateway calls only configured replay backends for model operations
 - **AND** production provider conversion and gateway wire handling execute without fabricated provider input files
 
-#### Scenario: Image and checkout provider versions differ
-- **WHEN** the gateway module pins older providers than the direct checkout
-- **THEN** the image retains its pinned dependencies
-- **AND** the report preserves the version distinction for diagnosis
+#### Scenario: Image uses the production same-revision workspace
+- **WHEN** the harness builds the gateway image from the checkout
+- **THEN** the production Dockerfile receives the repository root as its build context and selects the explicit Gateway workspace
+- **AND** the report records the source revision, local-module attribution, and pinned external dependencies without treating older internal go.mod pins as the image's source
 
 ### Requirement: Independent bounded gateway attempts
 

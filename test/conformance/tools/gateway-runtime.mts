@@ -78,6 +78,10 @@ export function command(file: string, args: string[], options: { cwd?: string; i
   });
 }
 
+export async function buildGatewayImage(image: string, revision: string, repository: string, signal: AbortSignal, run = command) {
+  await run("docker", ["build", "-f", "ai-gateway/Dockerfile", "--build-arg", `VCS_REF=${revision}`, "--tag", image, "."], { cwd: repository, timeout: 600_000, signal });
+}
+
 export function gatewayConfig(tc: TestCase, cfg: Config, replayURL: string) {
   const baseURL = replayURL + replayAdapter(tc.provider).basePath;
   return stringify({

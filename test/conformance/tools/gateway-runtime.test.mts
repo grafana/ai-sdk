@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createPublicKey, verify } from "node:crypto";
 import { test } from "node:test";
 import { parse } from "yaml";
-import { authentication, command, createNetwork, gatewayConfig, removeResource, startAuthentication, startGateway } from "./gateway-runtime.mts";
+import { authentication, buildGatewayImage, command, createNetwork, gatewayConfig, removeResource, startAuthentication, startGateway } from "./gateway-runtime.mts";
 
 test("commands fail on exit, timeout, cancellation and excessive output", async () => {
   assert.equal(await command(process.execPath, ["-e", "process.stdout.write('ok')"]), "ok");
@@ -13,6 +13,14 @@ test("commands fail on exit, timeout, cancellation and excessive output", async 
   await assert.rejects(command(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { signal: controller.signal }), /canceled/);
   await assert.rejects(command(process.execPath, ["-e", "process.stdout.write('x'.repeat(5*1024*1024))"]), /exceeded limit/);
   assert.equal(await command(process.execPath, ["-e", "process.stderr.write('evidence')"], { includeStderr: true }), "evidence");
+});
+
+test("image build uses the production Dockerfile and same-revision workspace context", async () => {
+  const calls: Array<{ file: string; args: string[]; options: unknown }> = [];
+  const run: typeof command = async (file, args, options) => { calls.push({ file, args, options }); return ""; };
+  const signal = new AbortController().signal;
+  await buildGatewayImage("ai-gateway:test", "source-revision", "/repository", signal, run);
+  assert.deepEqual(calls, [{ file: "docker", args: ["build", "-f", "ai-gateway/Dockerfile", "--build-arg", "VCS_REF=source-revision", "--tag", "ai-gateway:test", "."], options: { cwd: "/repository", timeout: 600_000, signal } }]);
 });
 
 test("authentication serves an ephemeral verifiable access token without unsafe mode", async () => {
