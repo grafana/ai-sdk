@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { relative, resolve } from "node:path";
 import { describe, it } from "node:test";
-import { parseDocument } from "yaml";
+import { parseAllDocuments, parseDocument } from "yaml";
 
 const root = resolve(import.meta.dirname, "../../..");
 const document = parseDocument(readFileSync(resolve(root, ".github/workflows/ci.yml"), "utf8"));
@@ -28,6 +28,15 @@ const dependencies = (job: string) => {
 };
 
 describe("source and artifact workflow gates", () => {
+  it("keeps pnpm packages under the shared lockfile root", () => {
+    const workspace = parseDocument(readFileSync(resolve(root, "pnpm-workspace.yaml"), "utf8")).toJS() as { packages: string[] };
+    const lockfile = parseAllDocuments(readFileSync(resolve(root, "pnpm-lock.yaml"), "utf8")).at(-1)?.toJS() as { importers: Record<string, unknown> };
+    for (const packagePath of workspace.packages) {
+      assert.equal(relative(root, resolve(root, packagePath)), packagePath);
+      assert.ok(Object.hasOwn(lockfile.importers, packagePath), `${packagePath} missing from root lockfile`);
+    }
+  });
+
   it("keeps candidate-source checks blocking without standalone prerequisites", () => {
     for (const job of source) {
       assert.ok(jobs[job], `missing source check ${job}`);

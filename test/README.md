@@ -28,6 +28,10 @@ URL=http://localhost:8080/scenario/simple-text mise run test-cli
 
 ## Structure
 
+The pnpm workspace root (`package.json`, `pnpm-workspace.yaml`, and
+`pnpm-lock.yaml`) is at the repository root and includes the Gateway tests
+under `ai-gateway/test/providerwire-v4`.
+
 ```
 test/
 ├── integration/
@@ -45,8 +49,8 @@ test/
 ├── cli/
 │   └── src/
 │       └── index.ts          # CLI tool for ad-hoc stream inspection
-├── package.json              # pnpm workspace root
-└── pnpm-workspace.yaml
+└── conformance/
+    └── tools/                # Upstream parity tooling
 ```
 
 ## How It Works
