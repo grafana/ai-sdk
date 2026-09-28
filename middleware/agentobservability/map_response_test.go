@@ -257,11 +257,12 @@ func TestUsageToAgento11y(t *testing.T) {
 	assert.Equal(t, int64(50), got.CacheReadInputTokens)
 	assert.Equal(t, int64(25), got.CacheWriteInputTokens)
 	assert.Equal(t, int64(15), got.ReasoningTokens)
+	assert.Equal(t, agento11y.TokenInputSemanticsInclusive, got.InputSemantics)
 }
 
 func TestUsageToAgento11y_Zero(t *testing.T) {
 	got := usageToAgento11y(provider.Usage{})
-	assert.Equal(t, agento11y.TokenUsage{}, got)
+	assert.Equal(t, agento11y.TokenUsage{InputSemantics: agento11y.TokenInputSemanticsInclusive}, got)
 }
 
 func TestMetadataFromUsage_ServerToolUse(t *testing.T) {

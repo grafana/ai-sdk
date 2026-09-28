@@ -57,6 +57,20 @@ Handle `ErrHookDenied` as a policy outcome. Give hook evaluation a bounded
 latency and decide how the application should handle policy-service
 unavailability.
 
+Transforms are validated **after the agento11y client decodes and normalizes the
+hook response**. An empty wire transform is a no-op. The client may normalize
+unknown roles to user, drop unsupported parts, recover encoded JSON payloads,
+and discard part metadata. The middleware cannot validate information removed
+by that decoding step.
+
+A non-empty normalized transform replaces the prompt and retained tools; it is
+not a patch. Denials take precedence. Unusable normalized messages, unsafe tool
+changes, changed signed reasoning, and transforms of prompts with undisclosed
+media still fail closed. Provider-specific tool parts whose required
+discriminators are discarded also fail closed rather than becoming ordinary
+tool calls. The client adds available conversation and trace correlation to hook
+requests; media remains excluded.
+
 ## Record media
 
 Recording maps provider `file` and `reasoning-file` content to Agent
@@ -87,7 +101,9 @@ export.
 
 Recording captures unary and streaming generations, including results, usage,
 and errors. Streaming usage combines every usage-bearing part and preserves the
-greatest value observed for each normalized counter. Context helpers relate
+greatest value observed for each normalized counter. Input totals are marked as
+cache-inclusive in exported generations, spans, and token metrics; cache reads
+and writes are already included and are not added again. Context helpers relate
 parent, child, and linked generations across agents and tool workflows. Use
 these helpers for generation relationships and reserve generic enrichment for
 other provider-bound metadata.
@@ -105,6 +121,14 @@ or enrichment.
 Ordering determines whether another middleware sees denied attempts,
 transformed parameters, or only calls that passed policy. Test both allowed and
 denied paths.
+
+## Export protocol scope
+
+The integration's recording and privacy tests cover the agento11y HTTP/gRPC
+generation-export paths. Experimental OTel generation export is not enabled or
+validated by this integration. In that upstream mode, `full_with_metadata_spans`
+resolves to full capture, so do not assume it preserves the HTTP/gRPC split
+between content export and metadata-only spans.
 
 ## Reference
 

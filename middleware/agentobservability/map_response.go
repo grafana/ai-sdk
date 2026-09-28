@@ -150,6 +150,7 @@ func providerTypeForGenerateToolCall(part provider.GenerateContentPart, tools []
 // JSON output is preserved across the two paths.
 func usageToAgento11y(usage provider.Usage) agento11y.TokenUsage {
 	out := agento11y.TokenUsage{
+		InputSemantics:        agento11y.TokenInputSemanticsInclusive,
 		InputTokens:           intPtrOrZero(usage.InputTokens.Total),
 		OutputTokens:          intPtrOrZero(usage.OutputTokens.Total),
 		CacheReadInputTokens:  intPtrOrZero(usage.InputTokens.CacheRead),

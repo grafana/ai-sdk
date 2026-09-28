@@ -20,7 +20,7 @@ TARGET=/absolute/path/to/new-target.json mise run parity-select
 ```
 
 Selection uses the stable npm latest release lines and the minimum release age in
-`test/pnpm-workspace.yaml`. It writes exact package versions, publication times,
+`pnpm-workspace.yaml`. It writes exact package versions, publication times,
 per-package source commits, the starting baseline and selection policy to a new
 record. It does not change canonical pins and refuses to overwrite an existing file.
 
