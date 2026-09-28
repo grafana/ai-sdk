@@ -490,12 +490,11 @@ The repository uses Go modules across several module roots, plus a pnpm
 workspace under `test/` for TypeScript-side harnesses.
 
 `ai-gateway/` is intentionally absent from the root `go.work`. The separate
-`go.gateway.work` is selected by required Gateway source-integration commands
-and Gateway container builds; it uses local SDK, provider, and middleware source.
-Standalone Go-module validation still uses declared versions with `GOWORK=off`.
-Gateway code may import
-explicitly pinned SDK modules, but no module outside `ai-gateway/` may import,
-require, or replace `github.com/grafana/ai-sdk/ai-gateway`. The structural check
+`go.gateway.work` selects local SDK, provider, and middleware source for Gateway
+source checks and image builds. Standalone Go-module validation still uses
+declared versions with `GOWORK=off`. Gateway code may import explicitly pinned
+SDK modules, but no module outside `ai-gateway/` may import, require, or replace
+`github.com/grafana/ai-sdk/ai-gateway`. The structural check
 rejects reverse source and module references; standalone validation builds and tests
 published modules with `GOWORK=off`, and a separate check builds the candidate SDK
 and Grafana client with Gateway source absent. These checks share `scripts/module-policy.sh`.
@@ -506,13 +505,11 @@ merged into canonical `grafana/ai-sdk` `main`. Merged pseudo-versions are valid;
 local-only example/test replacements are not published pins. A green workspace
 integration test proves candidate-source behavior, not standalone consumability.
 All-module standalone validation is available on demand, not a source-PR gate.
-Gateway is released as a container, not a supported standalone Go module. Main
-and Gateway-tag image builds use a clean checkout and the explicit workspace at
-the push SHA, with image builds and native smoke blocking publication. They do
-not wait for Gateway standalone compilation or SDK/provider release tags. SDK,
-provider, and middleware Go-module releases remain subject to standalone
-`GOWORK=off` validation; an image build does not authorize module tags. Do not
-use a workspace or an unmerged pin to make a standalone module check pass.
+Gateway is released as an image built from same-revision workspace source,
+not as a standalone Go module. Image success does not authorize SDK, provider,
+or middleware Go-module releases; validate those with `GOWORK=off` before
+publication (#245/#21). Do not use a workspace or an unmerged pin to make a
+standalone module check pass.
 
 ```bash
 mise run tidy        # go mod tidy across all modules
