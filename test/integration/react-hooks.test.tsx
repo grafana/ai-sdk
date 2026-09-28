@@ -1,9 +1,14 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { parseJsonEventStream } from "@ai-sdk/provider-utils";
 import { useChat, useCompletion, useObject } from "@ai-sdk/react";
 import {
   DefaultChatTransport,
   lastAssistantMessageIsCompleteWithApprovalResponses,
+  readUIMessageStream,
+  uiMessageChunkSchema,
   type ChatStatus,
+  type UIMessage,
+  type UIMessageChunk,
 } from "ai";
 import { useCallback, useEffect, useState } from "react";
 import { z } from "zod";
@@ -35,6 +40,30 @@ function assistantText(messages: AgentToolMessage[]): string {
     .filter(part => part.type === "text")
     .map(part => part.text ?? "")
     .join("");
+}
+
+function readProbe<T>(testId: string): T {
+  return JSON.parse(screen.getByTestId(testId).textContent ?? "null") as T;
+}
+
+async function readHookStream(response: Response): Promise<{ chunks: UIMessageChunk[]; messages: UIMessage[] }> {
+  expect(response.ok).toBe(true);
+  const parsed = parseJsonEventStream({ stream: response.body!, schema: uiMessageChunkSchema });
+  const chunks: UIMessageChunk[] = [];
+  const stream = parsed.pipeThrough(new TransformStream({
+    transform(result, controller) {
+      expect(result.success).toBe(true);
+      if (result.success) {
+        chunks.push(result.value);
+        controller.enqueue(result.value);
+      }
+    },
+  }));
+  const messages: UIMessage[] = [];
+  for await (const message of readUIMessageStream({ stream, terminateOnError: true })) {
+    messages.push(message);
+  }
+  return { chunks, messages };
 }
 
 function expectOrderedSubsequence<T>(values: T[], expected: T[]): void {
@@ -84,13 +113,30 @@ type AgentToolMessage = {
 
 function ChatProbe({ scenario }: { scenario: string }) {
   const { trackedFetch, abortCount } = useAbortTrackingFetch();
-  const { messages, sendMessage, status, error, stop } = useChat({
+  const [finishCalls, setFinishCalls] = useState<unknown[]>([]);
+  const [errorCalls, setErrorCalls] = useState<string[]>([]);
+  const [dataCalls, setDataCalls] = useState<unknown[]>([]);
+  const [resumeCount, setResumeCount] = useState(0);
+  const { messages, sendMessage, regenerate, resumeStream, status, error, stop } = useChat({
+    id: "chat-interop",
+    messages: scenario.startsWith("reconnect-")
+      ? [{ id: "user-seeded", role: "user", parts: [{ type: "text", text: "hi" }] }]
+      : undefined,
     transport: new DefaultChatTransport({
       api: `${getServerUrl()}/scenario/${scenario}`,
       fetch: trackedFetch,
     }),
+    onFinish: result => setFinishCalls(current => [...current, {
+      messageId: result.message.id,
+      isAbort: result.isAbort,
+      isError: result.isError,
+      finishReason: result.finishReason ?? null,
+    }]),
+    onError: callbackError => setErrorCalls(current => [...current, callbackError.message]),
+    onData: data => setDataCalls(current => [...current, data]),
   });
   const statusHistory = useSnapshotHistory<ChatStatus>(status);
+  const messageHistory = useSnapshotHistory(messages);
 
   return (
     <div>
@@ -101,6 +147,17 @@ function ChatProbe({ scenario }: { scenario: string }) {
         }
       />
       <button data-testid="chat-stop" onClick={stop} />
+      <button data-testid="chat-regenerate" onClick={() => void regenerate()} />
+      <button
+        data-testid="chat-resume"
+        onClick={() => void resumeStream().then(() => setResumeCount(count => count + 1))}
+      />
+      <div data-testid="chat-resume-count">{resumeCount}</div>
+      <div data-testid="chat-messages">{JSON.stringify(messages)}</div>
+      <div data-testid="chat-message-history">{JSON.stringify(messageHistory)}</div>
+      <div data-testid="chat-finish-calls">{JSON.stringify(finishCalls)}</div>
+      <div data-testid="chat-error-calls">{JSON.stringify(errorCalls)}</div>
+      <div data-testid="chat-data-calls">{JSON.stringify(dataCalls)}</div>
       <div data-testid="chat-status">{status}</div>
       <div data-testid="chat-status-history">{JSON.stringify(statusHistory)}</div>
       <div data-testid="chat-error">{error?.message}</div>
@@ -227,6 +284,9 @@ function CompletionProbe({ scenario }: { scenario: string }) {
         data-testid="completion-send"
         onClick={() => void complete("json")}
       />
+      <button data-testid="completion-first" onClick={() => void complete("first")} />
+      <button data-testid="completion-first-error" onClick={() => void complete("first-error")} />
+      <button data-testid="completion-second" onClick={() => void complete("second")} />
       <button data-testid="completion-stop" onClick={stop} />
       <div data-testid="completion-text">{completion}</div>
       <div data-testid="completion-error">{error?.message}</div>
@@ -251,13 +311,15 @@ type ObjectFinishSnapshot = {
 
 function ObjectProbe({ scenario }: { scenario: string }) {
   const [finishCalls, setFinishCalls] = useState<ObjectFinishSnapshot[]>([]);
-  const { object, submit } = useObject({
+  const [errorCalls, setErrorCalls] = useState<string[]>([]);
+  const { object, submit, stop, error, isLoading } = useObject({
     api: `${getServerUrl()}/scenario/${scenario}`,
     schema: z.object({
       name: z.string(),
       age: z.number(),
       active: z.boolean(),
     }),
+    onError: callbackError => setErrorCalls(current => [...current, callbackError.message]),
     onFinish: result => {
       setFinishCalls(current => [
         ...current,
@@ -270,10 +332,16 @@ function ObjectProbe({ scenario }: { scenario: string }) {
     },
   });
 
+  const loadingHistory = useSnapshotHistory(isLoading);
   return (
     <div>
       <button data-testid="object-send" onClick={() => submit("json")} />
+      <button data-testid="object-stop" onClick={stop} />
       <div data-testid="object-text">{JSON.stringify(object)}</div>
+      <div data-testid="object-error">{error?.message}</div>
+      <div data-testid="object-loading">{JSON.stringify(isLoading)}</div>
+      <div data-testid="object-loading-history">{JSON.stringify(loadingHistory)}</div>
+      <div data-testid="object-error-calls">{JSON.stringify(errorCalls)}</div>
       <div data-testid="object-finish-calls">{JSON.stringify(finishCalls)}</div>
     </div>
   );
@@ -561,5 +629,242 @@ describe("React hook interop", () => {
         },
       ]);
     });
+  });
+
+  it("useChat regenerates with the same user ID and a replacement assistant", async () => {
+    render(<ChatProbe scenario="chat-regenerate" />);
+    screen.getByTestId("chat-send").click();
+    await waitFor(() => {
+      expect(screen.getByTestId("chat-status").textContent).toBe("ready");
+      expect(screen.getByTestId("chat-text").textContent).toBe("First response");
+    });
+    const initial = readProbe<UIMessage[]>("chat-messages");
+    expect(initial.map(message => message.role)).toEqual(["user", "assistant"]);
+    expect(initial[1].id).toBe("assistant-first");
+
+    screen.getByTestId("chat-regenerate").click();
+    await waitFor(() => {
+      expect(screen.getByTestId("chat-text").textContent).toBe("Second response");
+      expect(screen.getByTestId("chat-status").textContent).toBe("ready");
+    });
+    const replacement = readProbe<UIMessage[]>("chat-messages");
+    expect(replacement.map(message => message.id)).toEqual([initial[0].id, "assistant-second"]);
+    expect(readProbe<UIMessage[][]>("chat-message-history")).toEqual(
+      expect.arrayContaining([initial]),
+    );
+    expect(readProbe<unknown[]>("chat-finish-calls")).toEqual([
+      { messageId: "assistant-first", isAbort: false, isError: false, finishReason: "stop" },
+      { messageId: "assistant-second", isAbort: false, isError: false, finishReason: "stop" },
+    ]);
+  });
+
+  it.each([
+    { scenario: "reconnect-stream", status: "ready", text: "Reconnected response" },
+    { scenario: "reconnect-empty", status: "ready", text: "" },
+    { scenario: "reconnect-error", status: "error", text: "" },
+  ])("useChat reconnects through test transport: $scenario", async ({ scenario, status, text }) => {
+    render(<ChatProbe scenario={scenario} />);
+    screen.getByTestId("chat-resume").click();
+    await waitFor(() => {
+      expect(screen.getByTestId("chat-resume-count").textContent).toBe("1");
+      expect(screen.getByTestId("chat-status").textContent).toBe(status);
+      expect(screen.getByTestId("chat-text").textContent).toBe(text);
+      if (scenario === "reconnect-stream") {
+        expect(readProbe<UIMessage[]>("chat-messages")).toHaveLength(2);
+      } else if (scenario === "reconnect-error") {
+        expect(readProbe<string[]>("chat-error-calls")).toEqual(["intentional server error"]);
+      }
+    });
+    const messages = readProbe<UIMessage[]>("chat-messages");
+    expect(messages[0].id).toBe("user-seeded");
+    if (scenario === "reconnect-stream") {
+      expect(messages[1].id).toBe("assistant-reconnected");
+      expectOrderedSubsequence(readProbe<ChatStatus[]>("chat-status-history"), ["submitted", "streaming", "ready"]);
+      expect(readProbe<unknown[]>("chat-finish-calls")).toEqual([
+        { messageId: "assistant-reconnected", isAbort: false, isError: false, finishReason: "stop" },
+      ]);
+    } else {
+      expect(messages).toHaveLength(1);
+      expect(readProbe<ChatStatus[]>("chat-status-history")).not.toContain("submitted");
+      expect(readProbe<unknown[]>("chat-finish-calls")).toEqual([]);
+    }
+  });
+
+  it("useChat delivers updated metadata and transient data without retaining it", async () => {
+    render(<ChatProbe scenario="chat-data" />);
+    screen.getByTestId("chat-send").click();
+    await waitFor(() => expect(screen.getByTestId("chat-text").textContent).toBe("Data received"));
+    const message = readProbe<UIMessage[]>("chat-messages")[1];
+    expect(message.id).toBe("assistant-data");
+    expect(message.metadata).toEqual({ phase: "updated", source: "go" });
+    expect(message.parts.filter(part => part.type.startsWith("data-"))).toEqual([
+      { type: "data-weather", data: { temp: 70 } },
+    ]);
+    expect(readProbe<unknown[]>("chat-data-calls")).toEqual([
+      { type: "data-weather", data: { temp: 70 } },
+      { type: "data-notice", data: { status: "sent" }, transient: true },
+    ]);
+
+    const response = await fetch(`${getServerUrl()}/scenario/chat-data`, { method: "POST" });
+    const { chunks, messages: snapshots } = await readHookStream(response);
+    expect(chunks.map(chunk => chunk.type)).toContain("message-metadata");
+    expect(chunks.map(chunk => chunk.type)).toContain("data-notice");
+    expect(snapshots.at(-1)).toMatchObject({ id: "assistant-data", metadata: { phase: "updated", source: "go" } });
+    expect(snapshots.at(-1)?.parts.filter(part => part.type.startsWith("data-"))).toEqual([
+      { type: "data-weather", data: { temp: 70 } },
+    ]);
+  });
+
+  it("parses and assembles regenerate and reconnect UI SSE through the pinned schema", async () => {
+    for (const [trigger, id, text] of [
+      ["submit-message", "assistant-first", "First response"],
+      ["regenerate-message", "assistant-second", "Second response"],
+    ]) {
+      const response = await fetch(`${getServerUrl()}/scenario/chat-regenerate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ trigger, messages: [{ role: "user", parts: [{ type: "text", text: "hi" }] }] }),
+      });
+      const { chunks, messages } = await readHookStream(response);
+      expect(chunks[0]).toMatchObject({ type: "start", messageId: id });
+      expect(messages.at(-1)).toMatchObject({
+        id,
+        parts: expect.arrayContaining([expect.objectContaining({ type: "text", text })]),
+      });
+    }
+    const response = await fetch(`${getServerUrl()}/scenario/reconnect-stream/chat-interop/stream`);
+    const { chunks, messages } = await readHookStream(response);
+    expect(chunks[0]).toMatchObject({ type: "start", messageId: "assistant-reconnected" });
+    expect(messages.at(-1)).toMatchObject({
+      id: "assistant-reconnected",
+      parts: expect.arrayContaining([
+        expect.objectContaining({ type: "text", text: "Reconnected response" }),
+      ]),
+    });
+  });
+
+  it("useChat distinguishes stopped and failed response callbacks", async () => {
+    render(<ChatProbe scenario="abortable-ui-stream" />);
+    screen.getByTestId("chat-send").click();
+    await waitFor(() => expect(screen.getByTestId("chat-text").textContent).toBe("Hello"));
+    screen.getByTestId("chat-stop").click();
+    await waitFor(() => {
+      expect(readProbe<unknown[]>("chat-finish-calls")).toEqual([
+        expect.objectContaining({ isAbort: true, isError: false }),
+      ]);
+      expect(screen.getByTestId("chat-status").textContent).toBe("ready");
+    });
+    expect(readProbe<string[]>("chat-error-calls")).toEqual([]);
+    expect(screen.getByTestId("chat-text").textContent).toBe("Hello");
+  });
+
+  it.each(["http-error", "ui-stream-error"])("useChat reports callback failure for %s", async scenario => {
+    render(<ChatProbe scenario={scenario} />);
+    screen.getByTestId("chat-send").click();
+    await waitFor(() => expect(screen.getByTestId("chat-status").textContent).toBe("error"));
+    expect(readProbe<string[]>("chat-error-calls")).toEqual([
+      scenario === "http-error" ? "intentional server error" : "intentional stream error",
+    ]);
+    expect(readProbe<unknown[]>("chat-finish-calls")).toEqual([
+      expect.objectContaining({ isAbort: false, isError: true, finishReason: null }),
+    ]);
+  });
+
+  it.each(["first", "first-error"])("useCompletion keeps newer request state when %s settles", async prompt => {
+    render(<CompletionProbe scenario="completion-overlap" />);
+    screen.getByTestId(prompt === "first" ? "completion-first" : "completion-first-error").click();
+    if (prompt === "first") {
+      await waitFor(() => expect(screen.getByTestId("completion-text").textContent).toBe("first partial"));
+    } else {
+      await waitFor(() => expect(screen.getByTestId("completion-loading").textContent).toBe("true"));
+    }
+    screen.getByTestId("completion-second").click();
+    await waitFor(() => expect(screen.getByTestId("completion-text").textContent).toBe("second partial"));
+    await waitFor(() => {
+      if (prompt === "first") {
+        expect(readProbe<CompletionFinishCall[]>("completion-finish-calls")).toContainEqual({
+          prompt: "first",
+          completion: "first partial finished",
+        });
+      } else {
+        expect(readProbe<CompletionErrorCall[]>("completion-error-calls")).toContainEqual({
+          message: "intentional server error",
+          errorIsError: true,
+        });
+      }
+    });
+    expect(screen.getByTestId("completion-text").textContent).toBe("second partial");
+    expect(screen.getByTestId("completion-error").textContent).toBe("");
+    expect(screen.getByTestId("completion-loading").textContent).toBe("true");
+    await waitFor(() => {
+      expect(screen.getByTestId("completion-text").textContent).toBe("second partial finished");
+      expect(screen.getByTestId("completion-loading").textContent).toBe("false");
+    });
+    expect(readProbe<CompletionFinishCall[]>("completion-finish-calls")).toEqual(
+      prompt === "first"
+        ? [
+            { prompt: "first", completion: "first partial finished" },
+            { prompt: "second", completion: "second partial finished" },
+          ]
+        : [{ prompt: "second", completion: "second partial finished" }],
+    );
+    expect(readProbe<CompletionErrorCall[]>("completion-error-calls")).toEqual(
+      prompt === "first-error"
+        ? [{ message: "intentional server error", errorIsError: true }]
+        : [],
+    );
+  });
+
+  it.each([
+    { scenario: "http-error", error: "intentional server error" },
+    { scenario: "object-body-error", error: undefined },
+  ])("useObject reports $scenario through onError without onFinish", async ({ scenario, error }) => {
+    render(<ObjectProbe scenario={scenario} />);
+    screen.getByTestId("object-send").click();
+    if (scenario === "object-body-error") {
+      await waitFor(() => expect(readProbe<unknown>("object-text")).toMatchObject({ name: "Alice" }));
+    }
+    await waitFor(() => {
+      expect(screen.getByTestId("object-loading").textContent).toBe("false");
+      expect(readProbe<string[]>("object-error-calls")).toHaveLength(1);
+    });
+    const message = readProbe<string[]>("object-error-calls")[0];
+    if (error) expect(message).toBe(error);
+    else expect(message).toMatch(/terminated|fetch|network/i);
+    expect(screen.getByTestId("object-error").textContent).toBe(message);
+    await waitFor(() => expectOrderedSubsequence(
+      readProbe<boolean[]>("object-loading-history"), [true, false],
+    ));
+    expect(readProbe<unknown[]>("object-finish-calls")).toEqual([]);
+    if (scenario === "object-body-error") {
+      expect(readProbe<unknown>("object-text")).toMatchObject({ name: "Alice" });
+    }
+  });
+
+  it("useObject stop retains partial JSON without callbacks", async () => {
+    render(<ObjectProbe scenario="object-abortable" />);
+    screen.getByTestId("object-send").click();
+    await waitFor(() => expect(readProbe<unknown>("object-text")).toMatchObject({ name: "Alice" }));
+    screen.getByTestId("object-stop").click();
+    await waitFor(() => expect(screen.getByTestId("object-loading").textContent).toBe("false"));
+    expect(readProbe<unknown>("object-text")).toMatchObject({ name: "Alice" });
+    expect(readProbe<unknown[]>("object-error-calls")).toEqual([]);
+    expect(readProbe<unknown[]>("object-finish-calls")).toEqual([]);
+    await waitFor(() => expectOrderedSubsequence(
+      readProbe<boolean[]>("object-loading-history"), [true, false],
+    ));
+  });
+
+  it("useObject completes valid JSON with one successful onFinish", async () => {
+    render(<ObjectProbe scenario="text-stream" />);
+    screen.getByTestId("object-send").click();
+    await waitFor(() => expect(readProbe<ObjectFinishSnapshot[]>("object-finish-calls")).toEqual([
+      { objectDefined: true, object: { name: "Alice", age: 30, active: true }, errorIsError: false },
+    ]));
+    expect(readProbe<string[]>("object-error-calls")).toEqual([]);
+    expect(screen.getByTestId("object-loading").textContent).toBe("false");
+    await waitFor(() => expectOrderedSubsequence(
+      readProbe<boolean[]>("object-loading-history"), [true, false],
+    ));
   });
 });
