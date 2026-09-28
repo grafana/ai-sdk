@@ -14,7 +14,11 @@ import (
 )
 
 func contentFilePartToAgento11y(part provider.ContentPart, providerType string) (agento11y.Part, bool) {
-	return mediaDataToAgento11y(part.MediaType, part.Filename, part.Data, providerType)
+	filename := ""
+	if part.Filename != nil {
+		filename = *part.Filename
+	}
+	return mediaDataToAgento11y(part.MediaType, filename, part.Data, providerType)
 }
 
 func generateFilePartToAgento11y(part provider.GenerateContentPart, providerType string) (agento11y.Part, bool) {

@@ -46,6 +46,12 @@ func convertUserFilePart(part provider.ContentPart, index int, popts OpenAIRespo
 	if part.Data == nil {
 		return nil, fmt.Errorf("openai: file part has no data")
 	}
+	if err := part.Data.Validate(); err != nil {
+		return nil, fmt.Errorf("openai: invalid file data: %w", err)
+	}
+	if part.Data.IsText() {
+		return nil, fmt.Errorf("openai: text file parts are not supported")
+	}
 
 	if topLevel == "image" {
 		img := responses.ResponseInputImageParam{}
@@ -59,20 +65,18 @@ func convertUserFilePart(part provider.ContentPart, index int, popts OpenAIRespo
 				return nil, err
 			}
 			img.FileID = param.NewOpt(fileID)
-		case part.Data.URL != "":
+		case part.Data.IsURL():
 			img.ImageURL = param.NewOpt(part.Data.URL)
-		case part.Data.Base64 != "":
+		case part.Data.IsData():
 			mediaType, err := resolveFullMediaType(part)
 			if err != nil {
 				return nil, err
 			}
-			img.ImageURL = param.NewOpt(dataURI(mediaType, part.Data.Base64))
-		case len(part.Data.Bytes) > 0:
-			mediaType, err := resolveFullMediaType(part)
-			if err != nil {
-				return nil, err
+			b64 := part.Data.Base64
+			if part.Data.Bytes != nil {
+				b64 = base64.StdEncoding.EncodeToString(part.Data.Bytes)
 			}
-			img.ImageURL = param.NewOpt(dataURI(mediaType, base64.StdEncoding.EncodeToString(part.Data.Bytes)))
+			img.ImageURL = param.NewOpt(dataURI(mediaType, b64))
 		}
 		if breakpoint := promptCacheBreakpoint(part.ProviderOptions, providerOptionsName); breakpoint != nil {
 			img.SetExtraFields(map[string]any{"prompt_cache_breakpoint": breakpoint})
@@ -89,9 +93,9 @@ func convertUserFilePart(part provider.ContentPart, index int, popts OpenAIRespo
 			return nil, err
 		}
 		f.FileID = param.NewOpt(fileID)
-	case part.Data.URL != "":
+	case part.Data.IsURL():
 		f.FileURL = param.NewOpt(part.Data.URL)
-	case part.Data.Base64 != "", len(part.Data.Bytes) > 0:
+	case part.Data.IsData():
 		mediaType, err := resolveFullMediaType(part)
 		if err != nil {
 			return nil, err
@@ -103,12 +107,12 @@ func convertUserFilePart(part provider.ContentPart, index int, popts OpenAIRespo
 		if b64 == "" {
 			b64 = base64.StdEncoding.EncodeToString(part.Data.Bytes)
 		}
-		filename := part.Filename
-		if filename == "" {
-			filename = fmt.Sprintf("part-%d", index)
-			if mediaType == "application/pdf" {
-				filename += ".pdf"
-			}
+		filename := fmt.Sprintf("part-%d", index)
+		if mediaType == "application/pdf" {
+			filename += ".pdf"
+		}
+		if part.Filename != nil {
+			filename = *part.Filename
 		}
 		f.FileData = param.NewOpt(dataURI(mediaType, b64))
 		f.Filename = param.NewOpt(filename)

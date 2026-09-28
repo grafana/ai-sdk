@@ -250,6 +250,28 @@ func TestToResponseMessages(t *testing.T) {
 		assert.Equal(t, "iVBORw0KGgo=", got[0].Content[1].Data.Base64)
 	})
 
+	t.Run("input file filename presence survives response message conversion", func(t *testing.T) {
+		empty := ""
+		for _, tc := range []struct {
+			name     string
+			filename *string
+		}{
+			{name: "absent"},
+			{name: "empty", filename: &empty},
+			{name: "named", filename: optionalInputFilename("report.pdf")},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				got := ToResponseMessages([]provider.ContentPart{{
+					Type: provider.ContentPartTypeFile, Data: &provider.DataContent{Base64: "AQID"},
+					MediaType: "application/pdf", Filename: tc.filename,
+				}})
+				require.Len(t, got, 1)
+				require.Len(t, got[0].Content, 1)
+				assert.Equal(t, tc.filename, got[0].Content[0].Filename)
+			})
+		}
+	})
+
 	t.Run("reasoning-file part preserves Data, MediaType, and ProviderOptions", func(t *testing.T) {
 		opts := provider.ProviderOptions{
 			"testProvider": provider.RawProviderOption{Key: "testProvider", Raw: json.RawMessage(`{"signature":"sig"}`)},

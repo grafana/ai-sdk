@@ -1130,7 +1130,7 @@ loop:
 					URL:             src.URL,
 					Title:           src.Title,
 					MediaType:       src.MediaType,
-					Filename:        src.Filename,
+					Filename:        optionalInputFilename(src.Filename),
 					ProviderOptions: providerMetadataToOptions(src.ProviderMetadata),
 				})
 				tsp := StreamSource{Source: src}
@@ -2929,7 +2929,7 @@ func buildRecordedContent(step StepResult) []ContentPart {
 				URL:              recorded.URL,
 				Title:            recorded.Title,
 				MediaType:        recorded.MediaType,
-				Filename:         recorded.Filename,
+				Filename:         inputFilenameValue(recorded.Filename),
 				ProviderMetadata: optionsToProviderMetadata(recorded.ProviderOptions),
 			}})
 		case provider.ContentPartTypeCustom:

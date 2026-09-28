@@ -169,6 +169,9 @@ func buildParams(modelID string, opts provider.CallOptions, stream bool) (anthro
 }
 
 func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stream bool, providerCaps providerCapabilities) (anthropic.BetaMessageNewParams, toolNameMapping, []provider.Warning, buildResult, error) {
+	if err := provider.ValidateFileInputs(opts.Prompt); err != nil {
+		return anthropic.BetaMessageNewParams{}, toolNameMapping{}, nil, buildResult{}, fmt.Errorf("anthropic: invalid file input: %w", err)
+	}
 	var warnings []provider.Warning
 	anthropicOpts, hasAnthropicOpts, err := provider.ResolveOption[AnthropicOptions](opts.ProviderOptions, "anthropic")
 	if err != nil {
@@ -309,7 +312,7 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 					}
 					content = append(content, converted...)
 				case provider.RoleTool:
-					content = append(content, convertToolContent(v, msg.Content, msg.ProviderOptions, mcpToolUseIDs, &warnings)...)
+					content = append(content, convertToolContent(v, msg.Content, msg.ProviderOptions, mcpToolUseIDs, &p.Betas, &warnings)...)
 				}
 			}
 			p.Messages = append(p.Messages, anthropic.BetaMessageParam{
@@ -725,6 +728,10 @@ func convertUserContent(
 				continue
 			}
 			switch {
+			case p.Data != nil && p.Data.IsText():
+				if b, ok := convertTextDocumentContentPart(p, cc); ok {
+					blocks = append(blocks, b)
+				}
 			case strings.HasPrefix(p.MediaType, "image/"):
 				if b, ok := convertImageFileContentPart(p, cc); ok {
 					blocks = append(blocks, b)
@@ -741,7 +748,7 @@ func convertUserContent(
 			}
 		case provider.ContentPartTypeToolResult:
 			cc := v.resolveCacheControl(p.ProviderOptions, msgOpts, isLast, true)
-			blocks = appendToolResultBlock(blocks, p, cc, mcpToolUseIDs, warnings)
+			blocks = appendToolResultBlock(blocks, p, cc, mcpToolUseIDs, betas, warnings)
 		case provider.ContentPartTypeToolApprovalResponse:
 			// Mirrors upstream user-block handler line 319: silently skip.
 			// The `RoleTool` path keeps its existing warning behavior in
@@ -788,10 +795,10 @@ func convertImageFileContentPart(p provider.ContentPart, cc anthropic.BetaCacheC
 		mediaType = "image/jpeg"
 	}
 	b64 := p.Data.Base64
-	if b64 == "" && len(p.Data.Bytes) > 0 {
+	if p.Data.Bytes != nil {
 		b64 = base64.StdEncoding.EncodeToString(p.Data.Bytes)
 	}
-	if b64 != "" {
+	if p.Data.IsData() {
 		return anthropic.BetaContentBlockParamUnion{
 			OfImage: &anthropic.BetaImageBlockParam{
 				Source: anthropic.BetaImageBlockParamSourceUnion{
@@ -804,7 +811,7 @@ func convertImageFileContentPart(p provider.ContentPart, cc anthropic.BetaCacheC
 			},
 		}, true
 	}
-	if p.Data.URL != "" {
+	if p.Data.IsURL() {
 		return anthropic.BetaContentBlockParamUnion{
 			OfImage: &anthropic.BetaImageBlockParam{
 				Source: anthropic.BetaImageBlockParamSourceUnion{
@@ -824,7 +831,7 @@ func convertImageFileContentPart(p provider.ContentPart, cc anthropic.BetaCacheC
 // upstream `getDocumentMetadata` and `shouldEnableCitations` helpers in
 // convert-to-anthropic-prompt.ts.
 type documentMetadata struct {
-	title    string
+	title    *string
 	context  string
 	citation bool
 }
@@ -846,7 +853,7 @@ func extractDocumentMetadata(opts provider.ProviderOptions) documentMetadata {
 	}
 	m := documentMetadata{}
 	if data.Title != nil {
-		m.title = *data.Title
+		m.title = data.Title
 	}
 	if data.Context != nil {
 		m.context = *data.Context
@@ -863,11 +870,11 @@ func extractDocumentMetadata(opts provider.ProviderOptions) documentMetadata {
 func applyDocumentMetadata(doc *anthropic.BetaRequestDocumentBlockParam, p provider.ContentPart) {
 	meta := extractDocumentMetadata(p.ProviderOptions)
 	title := meta.title
-	if title == "" {
+	if title == nil {
 		title = p.Filename
 	}
-	if title != "" {
-		doc.Title = anthropic.String(title)
+	if title != nil {
+		doc.Title = anthropic.String(*title)
 	}
 	if meta.context != "" {
 		doc.Context = anthropic.String(meta.context)
@@ -889,19 +896,17 @@ func convertPDFDocumentContentPart(p provider.ContentPart, cc anthropic.BetaCach
 	}
 	doc := anthropic.BetaRequestDocumentBlockParam{CacheControl: cc}
 	switch {
-	case p.Data.URL != "":
+	case p.Data.IsURL():
 		doc.Source = anthropic.BetaRequestDocumentBlockSourceUnionParam{
 			OfURL: &anthropic.BetaURLPDFSourceParam{URL: p.Data.URL},
 		}
-	case p.Data.Base64 != "":
-		doc.Source = anthropic.BetaRequestDocumentBlockSourceUnionParam{
-			OfBase64: &anthropic.BetaBase64PDFSourceParam{Data: p.Data.Base64},
+	case p.Data.IsData():
+		b64 := p.Data.Base64
+		if p.Data.Bytes != nil {
+			b64 = base64.StdEncoding.EncodeToString(p.Data.Bytes)
 		}
-	case len(p.Data.Bytes) > 0:
 		doc.Source = anthropic.BetaRequestDocumentBlockSourceUnionParam{
-			OfBase64: &anthropic.BetaBase64PDFSourceParam{
-				Data: base64.StdEncoding.EncodeToString(p.Data.Bytes),
-			},
+			OfBase64: &anthropic.BetaBase64PDFSourceParam{Data: b64},
 		}
 	default:
 		return anthropic.BetaContentBlockParamUnion{}, false
@@ -920,21 +925,25 @@ func convertTextDocumentContentPart(p provider.ContentPart, cc anthropic.BetaCac
 	}
 	doc := anthropic.BetaRequestDocumentBlockParam{CacheControl: cc}
 	switch {
-	case p.Data.URL != "":
+	case p.Data.IsURL():
 		doc.Source = anthropic.BetaRequestDocumentBlockSourceUnionParam{
 			OfURL: &anthropic.BetaURLPDFSourceParam{URL: p.Data.URL},
 		}
-	case len(p.Data.Bytes) > 0:
+	case p.Data.IsText():
 		doc.Source = anthropic.BetaRequestDocumentBlockSourceUnionParam{
-			OfText: &anthropic.BetaPlainTextSourceParam{Data: string(p.Data.Bytes)},
+			OfText: &anthropic.BetaPlainTextSourceParam{Data: p.Data.Text},
 		}
-	case p.Data.Base64 != "":
-		decoded, err := base64.StdEncoding.DecodeString(p.Data.Base64)
-		if err != nil {
-			return anthropic.BetaContentBlockParamUnion{}, false
+	case p.Data.IsData():
+		text := string(p.Data.Bytes)
+		if p.Data.Bytes == nil {
+			decoded, err := base64.StdEncoding.DecodeString(p.Data.Base64)
+			if err != nil {
+				return anthropic.BetaContentBlockParamUnion{}, false
+			}
+			text = string(decoded)
 		}
 		doc.Source = anthropic.BetaRequestDocumentBlockSourceUnionParam{
-			OfText: &anthropic.BetaPlainTextSourceParam{Data: string(decoded)},
+			OfText: &anthropic.BetaPlainTextSourceParam{Data: text},
 		}
 	default:
 		return anthropic.BetaContentBlockParamUnion{}, false
@@ -1800,14 +1809,14 @@ func toolOutputTypeLabel(output *provider.ToolResultOutput) string {
 	return string(output.Type)
 }
 
-func convertToolContent(v *cacheControlValidator, parts []provider.ContentPart, msgOpts provider.ProviderOptions, mcpToolUseIDs map[string]bool, warnings *[]provider.Warning) []anthropic.BetaContentBlockParamUnion {
+func convertToolContent(v *cacheControlValidator, parts []provider.ContentPart, msgOpts provider.ProviderOptions, mcpToolUseIDs map[string]bool, betas *[]anthropic.AnthropicBeta, warnings *[]provider.Warning) []anthropic.BetaContentBlockParamUnion {
 	var blocks []anthropic.BetaContentBlockParamUnion
 	for i, p := range parts {
 		isLast := i == len(parts)-1
 		switch p.Type {
 		case provider.ContentPartTypeToolResult:
 			cc := v.resolveCacheControl(p.ProviderOptions, msgOpts, isLast, true)
-			blocks = appendToolResultBlock(blocks, p, cc, mcpToolUseIDs, warnings)
+			blocks = appendToolResultBlock(blocks, p, cc, mcpToolUseIDs, betas, warnings)
 		case provider.ContentPartTypeToolApprovalResponse:
 			continue
 		}
@@ -1834,6 +1843,7 @@ func appendToolResultBlock(
 	p provider.ContentPart,
 	cc anthropic.BetaCacheControlEphemeralParam,
 	mcpToolUseIDs map[string]bool,
+	betas *[]anthropic.AnthropicBeta,
 	warnings *[]provider.Warning,
 ) []anthropic.BetaContentBlockParamUnion {
 	if mcpToolUseIDs[p.ToolCallID] {
@@ -1848,7 +1858,7 @@ func appendToolResultBlock(
 			},
 		})
 	}
-	content := serializeToolOutput(p.Output, warnings)
+	content := serializeToolOutput(p.Output, betas, warnings)
 	result := &anthropic.BetaToolResultBlockParam{
 		ToolUseID:    p.ToolCallID,
 		Content:      content,
@@ -1865,7 +1875,7 @@ func appendToolResultBlock(
 	})
 }
 
-func serializeToolOutput(output *provider.ToolResultOutput, warnings *[]provider.Warning) []anthropic.BetaToolResultBlockParamContentUnion {
+func serializeToolOutput(output *provider.ToolResultOutput, betas *[]anthropic.AnthropicBeta, warnings *[]provider.Warning) []anthropic.BetaToolResultBlockParamContentUnion {
 	if output == nil {
 		return []anthropic.BetaToolResultBlockParamContentUnion{
 			{OfText: &anthropic.BetaTextBlockParam{Text: ""}},
@@ -1900,24 +1910,21 @@ func serializeToolOutput(output *provider.ToolResultOutput, warnings *[]provider
 					OfText: &anthropic.BetaTextBlockParam{Text: v.Text},
 				})
 			case provider.ToolContentFile:
-				if v.Data == nil || !strings.HasPrefix(v.MediaType, "image/") {
+				if v.Data == nil || (!v.Data.IsURL() && !v.Data.IsData()) {
 					continue
 				}
-				data := v.Data.Base64
-				if data == "" && len(v.Data.Bytes) > 0 {
-					data = base64.StdEncoding.EncodeToString(v.Data.Bytes)
-				}
-				if v.Data.IsData() {
-					blocks = append(blocks, anthropic.BetaToolResultBlockParamContentUnion{
-						OfImage: &anthropic.BetaImageBlockParam{
-							Source: anthropic.BetaImageBlockParamSourceUnion{
-								OfBase64: &anthropic.BetaBase64ImageSourceParam{
-									Data:      data,
-									MediaType: anthropic.BetaBase64ImageSourceMediaType(v.MediaType),
-								},
-							},
-						},
-					})
+				file := provider.FilePart(v.MediaType, *v.Data)
+				if strings.HasPrefix(v.MediaType, "image/") {
+					if image, ok := convertImageFileContentPart(file, anthropic.BetaCacheControlEphemeralParam{}); ok {
+						blocks = append(blocks, anthropic.BetaToolResultBlockParamContentUnion{OfImage: image.OfImage})
+					}
+				} else if v.Data.IsURL() || v.MediaType == "application/pdf" {
+					if document, ok := convertPDFDocumentContentPart(file, anthropic.BetaCacheControlEphemeralParam{}); ok {
+						blocks = append(blocks, anthropic.BetaToolResultBlockParamContentUnion{OfDocument: document.OfDocument})
+						if v.Data.IsData() && betas != nil {
+							*betas = appendBetaUnique(*betas, "pdfs-2024-09-25")
+						}
+					}
 				}
 			}
 		}

@@ -139,7 +139,7 @@ func (DynamicToolUIPart) PartType() string { return string(UIPartDynamicTool) }
 type FilePart struct {
 	MediaType         string                    `json:"mediaType"`
 	URL               string                    `json:"url"`
-	Filename          string                    `json:"filename,omitempty"`
+	Filename          *string                   `json:"filename,omitempty"`
 	ProviderReference map[string]string         `json:"providerReference,omitempty"`
 	ProviderMetadata  provider.ProviderMetadata `json:"providerMetadata,omitempty"`
 }
@@ -161,6 +161,20 @@ func (p FilePart) MarshalJSON() ([]byte, error) {
 
 // PartType implements Part.
 func (FilePart) PartType() string { return string(UIPartFile) }
+
+func optionalInputFilename(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
+}
+
+func inputFilenameValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
 
 // ReasoningFilePart carries a file generated as part of model reasoning.
 type ReasoningFilePart struct {
