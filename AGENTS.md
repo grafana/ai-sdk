@@ -132,9 +132,8 @@ can support a parity claim.
   work packages or explicit dispositions. The [tooling reference](test/conformance/UPGRADING.md)
   describes commands and evidence limits. Pins identify a reference, not full parity.
 - **Independent mergeability**: Every PR must pass required checks without a later
-  unmerged change. Account for published Go module dependencies, not just workspace
-  behavior. Changes incompatible with the old baseline must land with the pins,
-  lockfile, expectations and reviewed evidence that validate them.
+  unmerged change. Changes incompatible with the old baseline must land with the
+  pins, lockfile, expectations and reviewed evidence that validate them.
 - **Parity matching**: Process registered behavioral work packages independently
   after the pinned-version upgrade, with their own acceptance tests. Update the
   coverage map only when stable status, evidence, support boundaries or accepted
@@ -185,8 +184,8 @@ mise run check
 # Upstream parity checks
 mise run validate-parity-baseline
 mise run parity-check
-mise run verify-module-resolution   # all published modules, public proxy, GOWORK=off
-MODULE=providers/openai mise run verify-published-module
+mise run verify-module-resolution   # optional standalone diagnostic, not a source-PR gate
+MODULE=providers/openai mise run verify-published-module  # optional selected-module diagnostic
 mise run verify-merged-pins        # real internal pins must descend from canonical main
 mise run verify-ai-gateway-boundary
 mise run verify-sdk-gateway-isolation
@@ -210,10 +209,10 @@ for required Gateway source checks and image builds.
 standalone validation, the license boundary, and the candidate-source,
 Gateway-absent SDK proof. Real published internal module pins must already be
 merged on canonical `main`; an older merged pseudo-version may lag candidate
-source. `mise run verify-module-resolution` remains on demand. Gateway is
-released as an image built from same-revision workspace source, not as a
-standalone Go module. SDK/provider/middleware Go-module releases still require
-`GOWORK=off` validation before publication (#245/#21).
+source. Standalone module checks are optional diagnostics, not source-PR
+requirements. Gateway is released as an image built from same-revision workspace
+source, not as a standalone Go module; its push-only image validation checks the
+Gateway artifact at the checkout revision.
 
 ## Project Structure
 

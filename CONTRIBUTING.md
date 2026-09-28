@@ -142,9 +142,9 @@ mise run test-module-policy
 mise run verify-merged-pins
                         # published internal pins descend from canonical main
 mise run verify-module-resolution
-                        # all published modules, fresh public-proxy cache, GOWORK=off
+                        # optional standalone public-proxy diagnostic, not a PR gate
 MODULE=providers/openai mise run verify-published-module
-                        # same standalone checks for one published module
+                        # optional selected-module diagnostic
 mise run test-ai-gateway-source
 mise run test-ai-gateway-source-integration
                         # explicitly selected candidate-source Gateway checks
@@ -265,8 +265,7 @@ Process each registered parity work package independently afterward, with its ow
 behavioral outcome, design and regression proof. Update or close its issue when
 it is delivered, and update the coverage map only when its stable facts change.
 Packages and PRs need not map one-to-one, but every PR must pass
-required checks independently. Account for published Go module dependencies;
-workspace success can hide an older consumer dependency. A failing upgrade check
+required checks independently against candidate source. A failing upgrade check
 or an incompatibility that prevents a supported integration from working cannot
 be made acceptable merely by registering a follow-up.
 
@@ -493,25 +492,21 @@ SDK's Go module dependency graph.
 
 `ai-gateway/` is intentionally absent from the root `go.work`. The separate
 `go.gateway.work` selects local SDK, provider, and middleware source for Gateway
-source checks and image builds. Standalone Go-module validation still uses
-declared versions with `GOWORK=off`. Gateway code may import explicitly pinned
+source checks and image builds. Gateway code may import explicitly pinned
 SDK modules, but no module outside `ai-gateway/` may import, require, or replace
-`github.com/grafana/ai-sdk/ai-gateway`. The structural check
-rejects reverse source and module references; standalone validation builds and tests
-published modules with `GOWORK=off`, and a separate check builds the candidate SDK
-and Grafana client with Gateway source absent. These checks share `scripts/module-policy.sh`.
+`github.com/grafana/ai-sdk/ai-gateway`. The structural check rejects reverse
+source and module references; a separate check builds the candidate SDK and
+Grafana client with Gateway source absent. Optional standalone diagnostics use
+declared versions with `GOWORK=off`. These checks share `scripts/module-policy.sh`.
 None replaces license review for copied code or third-party dependencies.
 
 Every real internal pin in a published module must refer to a commit already
 merged into canonical `grafana/ai-sdk` `main`. Merged pseudo-versions are valid;
-local-only example/test replacements are not published pins. A green workspace
-integration test proves candidate-source behavior, not standalone consumability.
-All-module standalone validation is available on demand, not a source-PR gate.
-Gateway is released as an image built from same-revision workspace source,
-not as a standalone Go module. Image success does not authorize SDK, provider,
-or middleware Go-module releases; validate those with `GOWORK=off` before
-publication (#245/#21). Do not use a workspace or an unmerged pin to make a
-standalone module check pass.
+local-only example/test replacements are not published pins. Source PRs run
+candidate-source checks; standalone module resolution is optional, not a source-PR
+or SDK/provider/middleware release gate. Gateway is released as an image built
+from same-revision workspace source, not as a standalone Go module. Its push-only
+image validation checks the Gateway artifact at the checkout revision.
 
 ```bash
 mise run tidy        # go mod tidy across all modules
