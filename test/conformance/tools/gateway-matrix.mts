@@ -85,7 +85,7 @@ export function summarize(results: RowResult[]): string {
     const key = `${row.provider} / ${row.client}`;
     groups.set(key, [...(groups.get(key) ?? []), row]);
   }
-  const lines = ["# Gateway conformance (advisory)", "", "| Provider / client | Passed | Failed | Not executed | Invoked |", "| --- | ---: | ---: | ---: | ---: |"];
+  const lines = ["# Gateway conformance (required for merging)", "", "| Provider / client | Passed | Failed | Not executed | Invoked |", "| --- | ---: | ---: | ---: | ---: |"];
   for (const [key, rows] of groups) {
     lines.push(`| ${key} | ${rows.filter(r => r.outcome === "passed").length} | ${rows.filter(r => r.outcome === "failed").length} | ${rows.filter(r => r.outcome === "not-executed").length} | ${rows.filter(r => r.invoked).length} |`);
   }

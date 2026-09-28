@@ -844,14 +844,14 @@ The gateway suite SHALL produce a machine-readable report and human-readable sum
 - **WHEN** a discovered fixture/client pair has no result record
 - **THEN** inventory reconciliation fails the run as incomplete
 
-### Requirement: Independent advisory gateway CI
+### Requirement: Required gateway conformance for merging
 
-The repository SHALL provide `mise run test-conformance-gateway` and an independent gateway CI job that runs the full two-client provider matrix. Initially the gateway check SHALL remain non-required for merging while retaining a failing conclusion when the suite fails. It SHALL NOT be a prerequisite of required direct checks or image publication/deployment. Existing required direct conformance and parity commands SHALL retain their enforcement and SHALL NOT gain a dependency on gateway conformance. CI SHALL publish available summaries and diagnostics after failures. Promotion to a required check SHALL be an explicit later policy change.
+The repository SHALL provide `mise run test-conformance-gateway` and an independent gateway CI job that runs the full two-client provider matrix. The existing required `conformance-test` status SHALL succeed only when both direct conformance and gateway conformance succeed. The direct conformance job SHALL run independently, retain its own failing status, and remain a publication prerequisite without making gateway conformance a prerequisite of image publication or deployment. CI SHALL publish available summaries and diagnostics after failures.
 
 #### Scenario: Direct conformance passes and gateway conformance fails
 - **WHEN** the required direct suite passes and gateway rows fail
 - **THEN** the gateway check is visibly unsuccessful with its report available
-- **AND** its advisory status does not independently block merging or existing image publication/deployment prerequisites
+- **AND** the required `conformance-test` status fails, blocking merging but not independently blocking image publication or deployment
 
 #### Scenario: Gateway failure is not disguised
 - **WHEN** the gateway suite exits nonzero
@@ -860,4 +860,4 @@ The repository SHALL provide `mise run test-conformance-gateway` and an independ
 
 #### Scenario: Direct regression remains blocking
 - **WHEN** an existing direct conformance scenario regresses
-- **THEN** the existing required check fails regardless of the advisory gateway result
+- **THEN** the existing required check fails regardless of the gateway result

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { test } from "node:test";
 import { discoverMatrix, reconcile, runMatrix, type RowResult } from "./gateway-matrix.mts";
 
@@ -25,6 +25,20 @@ test("matrix discovers all providers and categories without a capabilities list"
     assert.throws(() => discoverMatrix(root, { scenario: "missing" }), /no fixtures/);
   } finally {
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("registered gateway matrix includes newly routable and still unsupported capabilities for both clients", () => {
+  const root = resolve(import.meta.dirname, "..");
+  const { rows } = discoverMatrix(root);
+  for (const [name, pattern] of [
+    ["openai/recorded/simple-text", /headers:/],
+    ["openai/upstream/compaction", /providerOptions:/],
+    ["anthropic/upstream/code-execution-file-upload", /type: file/],
+    ["bedrock/upstream/text", /model:/],
+  ] as const) {
+    assert.match(readFileSync(join(root, name, "config.yaml"), "utf8"), pattern);
+    assert.deepEqual(rows.filter(row => row.name === name).map(row => row.client), ["typescript", "go"]);
   }
 });
 
