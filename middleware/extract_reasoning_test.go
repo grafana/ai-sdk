@@ -526,6 +526,27 @@ func TestExtractReasoning_Stream(t *testing.T) {
 			},
 		},
 		{
+			name: "MultipleNonemptySegmentsAcrossBlocks",
+			input: []provider.StreamPart{
+				{Type: provider.PartTextStart, ID: "a"}, {Type: provider.PartTextStart, ID: "b"},
+				{Type: provider.PartTextDelta, ID: "a", Delta: "<think>A</think>x"},
+				{Type: provider.PartTextDelta, ID: "b", Delta: "<think>B"},
+				{Type: provider.PartTextDelta, ID: "a", Delta: "<think>C</think>y"},
+				{Type: provider.PartTextDelta, ID: "b", Delta: "2</think>z"},
+				{Type: provider.PartTextEnd, ID: "a"}, {Type: provider.PartTextEnd, ID: "b"},
+			},
+			want: []provider.StreamPart{
+				{Type: provider.PartReasoningStart, ID: "reasoning-0"}, {Type: provider.PartReasoningDelta, ID: "reasoning-0", Delta: "A"}, {Type: provider.PartReasoningEnd, ID: "reasoning-0"},
+				{Type: provider.PartTextStart, ID: "a"}, {Type: provider.PartTextDelta, ID: "a", Delta: "x"},
+				{Type: provider.PartReasoningStart, ID: "reasoning-1"}, {Type: provider.PartReasoningDelta, ID: "reasoning-1", Delta: "B"},
+				{Type: provider.PartReasoningStart, ID: "reasoning-2"}, {Type: provider.PartReasoningDelta, ID: "reasoning-2", Delta: "\nC"}, {Type: provider.PartReasoningEnd, ID: "reasoning-2"},
+				{Type: provider.PartTextDelta, ID: "a", Delta: "\ny"},
+				{Type: provider.PartReasoningDelta, ID: "reasoning-1", Delta: "2"}, {Type: provider.PartReasoningEnd, ID: "reasoning-1"},
+				{Type: provider.PartTextStart, ID: "b"}, {Type: provider.PartTextDelta, ID: "b", Delta: "z"},
+				{Type: provider.PartTextEnd, ID: "a"}, {Type: provider.PartTextEnd, ID: "b"},
+			},
+		},
+		{
 			name: "LaterEmptyPreservesUpstreamBehavior",
 			input: []provider.StreamPart{
 				{Type: provider.PartTextStart, ID: "a"},
@@ -566,6 +587,13 @@ func TestExtractReasoning_Stream(t *testing.T) {
 
 		input <- provider.StreamPart{Type: provider.PartTextStart, ID: "a"}
 		input <- provider.StreamPart{Type: provider.PartTextStart, ID: "b"}
+		input <- provider.StreamPart{Type: provider.PartStreamStart}
+		select {
+		case part := <-result.Stream:
+			require.Equal(t, provider.PartStreamStart, part.Type)
+		case <-time.After(time.Second):
+			t.Fatal("transformed stream did not process both pending starts")
+		}
 		cancel()
 
 		select {
