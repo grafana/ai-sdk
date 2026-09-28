@@ -293,7 +293,7 @@ jobs:
           echo 'AI Gateway did not become ready within 30 attempts' >&2
           exit 1
 
-  conformance-test:
+  direct-conformance-test:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -362,7 +362,7 @@ jobs:
           exit "${{ steps.conformance.outputs.exit_code }}"
 
   gateway-conformance-test:
-    name: Gateway conformance (advisory)
+    name: Gateway conformance
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -409,6 +409,23 @@ jobs:
             printf '\n[Download full report and per-row evidence](%s)\n' "$ARTIFACT_URL" >> "$GITHUB_STEP_SUMMARY"
           fi
 
+  conformance-test:
+    name: conformance-test
+    if: ${{ always() }}
+    needs:
+      - direct-conformance-test
+      - gateway-conformance-test
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Require both conformance suites
+        env:
+          DIRECT_RESULT: ${{ needs.direct-conformance-test.result }}
+          GATEWAY_RESULT: ${{ needs.gateway-conformance-test.result }}
+        run: |
+          echo "Direct conformance: $DIRECT_RESULT; Gateway conformance: $GATEWAY_RESULT"
+          test "$DIRECT_RESULT" = success && test "$GATEWAY_RESULT" = success
+
   publish-ai-gateway-image:
     name: Publish AI Gateway image
     if: >-
@@ -421,7 +438,7 @@ jobs:
       - module-resolution
       - parity-baseline
       - integration-test
-      - conformance-test
+      - direct-conformance-test
       - image-validation
     runs-on: ubuntu-latest
     permissions:

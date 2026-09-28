@@ -91,7 +91,7 @@ pnpm exec tsx ../ui/generated-files/data-and-url/generate.mts
 cd .. && go test -run TestUIConformance_ReasoningFiles ./...
 ```
 
-## Gateway compatibility matrix (advisory)
+## Gateway compatibility matrix (required for merging)
 
 The same provider fixtures also run through two clients against the production
 AI Gateway image:
@@ -143,23 +143,24 @@ The current gateway sanitizes startup errors, so unsupported provider attempts
 can only be reported as unclassified startup failures with their configuration
 and Docker evidence—not verified provider rejection messages.
 
-The initial image supports Anthropic and OpenAI-compatible backends and text-only
-responses. Many cases fail, including ordinary high-level requests rejected for
-tool-choice defaults. The matrix is the executable compatibility backlog; a red
-matrix is expected during gateway development. Intentional security/metadata
-policy differences remain visible and require a separate reviewed contract
-decision rather than broad normalization or new gateway-specific goldens.
+The current image routes Anthropic, OpenAI Responses, and OpenAI-compatible
+backends; Bedrock configuration remains unsupported. Supported request and
+response families are narrower than the full fixture corpus. The matrix is an
+executable compatibility backlog: a red row blocks this PR until the underlying
+compatibility work lands. Intentional security/metadata policy differences remain
+visible and require a separate reviewed contract decision rather than broad
+normalization or new gateway-specific goldens.
 
 The image uses the versions pinned in `ai-gateway/go.mod`, not local provider
 replacements. Reports include the image's actual module inventory so dependency
 lag is distinguishable from checkout behavior.
 
-CI keeps `conformance-test` required and adds **Gateway conformance (advisory)**
-as an independent failing check, without `continue-on-error`. It is not a
-publication/deployment prerequisite. Repository maintainers must verify that
-branch protection/rulesets leave the new check non-required; workflow YAML alone
-does not control merge policy. A later explicit policy change can require it once
-the full matrix passes. Existing direct parity commands remain unchanged.
+CI runs direct and gateway conformance independently. The existing required
+`conformance-test` status aggregates both: it fails unless both jobs succeed,
+even if one was skipped or failed. The direct conformance job remains a separate
+publication/deployment prerequisite; the gateway job is not one. The required
+status blocks merging while the matrix is red. Existing direct parity commands
+remain unchanged.
 
 ## Structure
 
