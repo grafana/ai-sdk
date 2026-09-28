@@ -310,10 +310,12 @@ type ObjectFinishSnapshot = {
 };
 
 function ObjectProbe({ scenario }: { scenario: string }) {
+  const { trackedFetch, abortCount } = useAbortTrackingFetch();
   const [finishCalls, setFinishCalls] = useState<ObjectFinishSnapshot[]>([]);
   const [errorCalls, setErrorCalls] = useState<string[]>([]);
   const { object, submit, stop, error, isLoading } = useObject({
     api: `${getServerUrl()}/scenario/${scenario}`,
+    fetch: trackedFetch,
     schema: z.object({
       name: z.string(),
       age: z.number(),
@@ -339,6 +341,7 @@ function ObjectProbe({ scenario }: { scenario: string }) {
       <button data-testid="object-stop" onClick={stop} />
       <div data-testid="object-text">{JSON.stringify(object)}</div>
       <div data-testid="object-error">{error?.message}</div>
+      <div data-testid="object-abort-count">{abortCount}</div>
       <div data-testid="object-loading">{JSON.stringify(isLoading)}</div>
       <div data-testid="object-loading-history">{JSON.stringify(loadingHistory)}</div>
       <div data-testid="object-error-calls">{JSON.stringify(errorCalls)}</div>
@@ -693,10 +696,25 @@ describe("React hook interop", () => {
   it("useChat delivers updated metadata and transient data without retaining it", async () => {
     render(<ChatProbe scenario="chat-data" />);
     screen.getByTestId("chat-send").click();
-    await waitFor(() => expect(screen.getByTestId("chat-text").textContent).toBe("Data received"));
+    await waitFor(() => {
+      expect(screen.getByTestId("chat-text").textContent).toBe("Data");
+      expect(readProbe<UIMessage[]>("chat-messages")[1].metadata).toEqual({ phase: "initial" });
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("chat-text").textContent).toBe("Data received");
+      expect(screen.getByTestId("chat-status").textContent).toBe("ready");
+    });
     const message = readProbe<UIMessage[]>("chat-messages")[1];
     expect(message.id).toBe("assistant-data");
     expect(message.metadata).toEqual({ phase: "updated", source: "go" });
+    const snapshots = readProbe<UIMessage[][]>("chat-message-history")
+      .map(messages => messages[1])
+      .filter(Boolean);
+    expect(snapshots.map(snapshot => snapshot.metadata)).toContainEqual({ phase: "initial" });
+    expect(snapshots.map(snapshot => snapshot.metadata)).toContainEqual({ phase: "updated", source: "go" });
+    expect(readProbe<unknown[]>("chat-finish-calls")).toEqual([
+      { messageId: "assistant-data", isAbort: false, isError: false, finishReason: "stop" },
+    ]);
     expect(message.parts.filter(part => part.type.startsWith("data-"))).toEqual([
       { type: "data-weather", data: { temp: 70 } },
     ]);
@@ -706,11 +724,11 @@ describe("React hook interop", () => {
     ]);
 
     const response = await fetch(`${getServerUrl()}/scenario/chat-data`, { method: "POST" });
-    const { chunks, messages: snapshots } = await readHookStream(response);
+    const { chunks, messages: assembled } = await readHookStream(response);
     expect(chunks.map(chunk => chunk.type)).toContain("message-metadata");
     expect(chunks.map(chunk => chunk.type)).toContain("data-notice");
-    expect(snapshots.at(-1)).toMatchObject({ id: "assistant-data", metadata: { phase: "updated", source: "go" } });
-    expect(snapshots.at(-1)?.parts.filter(part => part.type.startsWith("data-"))).toEqual([
+    expect(assembled.at(-1)).toMatchObject({ id: "assistant-data", metadata: { phase: "updated", source: "go" } });
+    expect(assembled.at(-1)?.parts.filter(part => part.type.startsWith("data-"))).toEqual([
       { type: "data-weather", data: { temp: 70 } },
     ]);
   });
@@ -778,8 +796,12 @@ describe("React hook interop", () => {
     } else {
       await waitFor(() => expect(screen.getByTestId("completion-loading").textContent).toBe("true"));
     }
+    expect(readProbe<CompletionFinishCall[]>("completion-finish-calls")).toEqual([]);
+    expect(readProbe<CompletionErrorCall[]>("completion-error-calls")).toEqual([]);
     screen.getByTestId("completion-second").click();
     await waitFor(() => expect(screen.getByTestId("completion-text").textContent).toBe("second partial"));
+    expect(readProbe<CompletionFinishCall[]>("completion-finish-calls")).toEqual([]);
+    expect(readProbe<CompletionErrorCall[]>("completion-error-calls")).toEqual([]);
     await waitFor(() => {
       if (prompt === "first") {
         expect(readProbe<CompletionFinishCall[]>("completion-finish-calls")).toContainEqual({
@@ -792,14 +814,14 @@ describe("React hook interop", () => {
           errorIsError: true,
         });
       }
-    });
+    }, { timeout: 2500 });
     expect(screen.getByTestId("completion-text").textContent).toBe("second partial");
     expect(screen.getByTestId("completion-error").textContent).toBe("");
     expect(screen.getByTestId("completion-loading").textContent).toBe("true");
     await waitFor(() => {
       expect(screen.getByTestId("completion-text").textContent).toBe("second partial finished");
       expect(screen.getByTestId("completion-loading").textContent).toBe("false");
-    });
+    }, { timeout: 2500 });
     expect(readProbe<CompletionFinishCall[]>("completion-finish-calls")).toEqual(
       prompt === "first"
         ? [
@@ -846,7 +868,10 @@ describe("React hook interop", () => {
     screen.getByTestId("object-send").click();
     await waitFor(() => expect(readProbe<unknown>("object-text")).toMatchObject({ name: "Alice" }));
     screen.getByTestId("object-stop").click();
-    await waitFor(() => expect(screen.getByTestId("object-loading").textContent).toBe("false"));
+    await waitFor(() => {
+      expect(screen.getByTestId("object-loading").textContent).toBe("false");
+      expect(screen.getByTestId("object-abort-count").textContent).toBe("1");
+    });
     expect(readProbe<unknown>("object-text")).toMatchObject({ name: "Alice" });
     expect(readProbe<unknown[]>("object-error-calls")).toEqual([]);
     expect(readProbe<unknown[]>("object-finish-calls")).toEqual([]);

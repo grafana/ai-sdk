@@ -70,16 +70,31 @@ func handleChatData(w http.ResponseWriter, r *http.Request) {
 	chunks := []aisdk.UIMessageChunk{
 		{Type: aisdk.ChunkStart, MessageID: "assistant-data", MessageMetadata: json.RawMessage(`{"phase":"initial"}`)},
 		{Type: aisdk.ChunkStartStep},
+		{Type: aisdk.ChunkTextStart, ID: "text-1"},
+		{Type: aisdk.ChunkTextDelta, ID: "text-1", Delta: "Data"},
 		{Type: aisdk.ChunkMessageMetadata, MessageMetadata: json.RawMessage(`{"phase":"updated","source":"go"}`)},
 		aisdk.DataChunk("weather", json.RawMessage(`{"temp":70}`), false),
 		aisdk.DataChunk("notice", json.RawMessage(`{"status":"sent"}`), true),
-		{Type: aisdk.ChunkTextStart, ID: "text-1"},
-		{Type: aisdk.ChunkTextDelta, ID: "text-1", Delta: "Data received"},
+		{Type: aisdk.ChunkTextDelta, ID: "text-1", Delta: " received"},
 		{Type: aisdk.ChunkTextEnd, ID: "text-1"},
 		{Type: aisdk.ChunkFinishStep},
 		{Type: aisdk.ChunkFinish, FinishReason: "stop"},
 	}
-	if err := writeHookUIChunks(w, chunks...); err != nil && r.Context().Err() == nil {
+	stream := make(chan aisdk.UIMessageChunk, 1)
+	go func() {
+		defer close(stream)
+		for _, chunk := range chunks {
+			if chunk.Type == aisdk.ChunkMessageMetadata && !waitForContext(r.Context(), controlledStreamStartDelay) {
+				return
+			}
+			select {
+			case stream <- chunk:
+			case <-r.Context().Done():
+				return
+			}
+		}
+	}()
+	if err := aisdk.PipeUIMessageStreamToResponse(w, stream); err != nil && r.Context().Err() == nil {
 		log.Printf("chat data stream: %v", err)
 	}
 }
@@ -112,7 +127,7 @@ func handleCompletionOverlap(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if request.Prompt == "first-error" {
-		if !waitForContext(r.Context(), controlledStreamHold) {
+		if !waitForContext(r.Context(), 2*controlledStreamHold) {
 			return
 		}
 		handleHTTPError(w, r)
@@ -127,13 +142,13 @@ func handleCompletionOverlap(w http.ResponseWriter, r *http.Request) {
 	_, _ = fmt.Fprint(w, request.Prompt+" partial")
 	flushHookResponse(w)
 	if request.Prompt == "first" {
-		if !waitForContext(r.Context(), controlledStreamHold) {
+		if !waitForContext(r.Context(), 2*controlledStreamHold) {
 			return
 		}
 		_, _ = fmt.Fprint(w, " finished")
 		return
 	}
-	if !waitForContext(r.Context(), 2*controlledStreamHold) {
+	if !waitForContext(r.Context(), 4*controlledStreamHold) {
 		return
 	}
 	_, _ = fmt.Fprint(w, " finished")
