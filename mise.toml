@@ -16,16 +16,16 @@ golangci-lint = "2.14.0"
 [deps.test]
 auto = false
 sources = [
-  "test/package.json",
-  "test/pnpm-lock.yaml",
-  "test/pnpm-workspace.yaml",
+  "package.json",
+  "pnpm-lock.yaml",
+  "pnpm-workspace.yaml",
   "test/cli/package.json",
   "test/conformance/tools/package.json",
   "test/integration/package.json",
   "ai-gateway/test/providerwire-v4/package.json",
 ]
-outputs = ["test/node_modules/.modules.yaml"]
-run = "cd test && pnpm install --frozen-lockfile"
+outputs = ["node_modules/.modules.yaml"]
+run = "pnpm install --frozen-lockfile"
 
 [tasks.test]
 description = "Run candidate-source Go tests across all modules"
@@ -449,9 +449,7 @@ description = "Apply a frozen target and regenerate expectations; verification r
 run = """
 set -e
 mise run parity-apply
-cd test
 pnpm install --lockfile-only --no-frozen-lockfile
-cd ..
 mise deps install --only test
 node scripts/generate-bedrock-provider-tool-schemas.mjs
 mise run generate-conformance

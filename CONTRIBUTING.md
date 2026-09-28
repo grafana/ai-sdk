@@ -95,7 +95,7 @@ git clone https://github.com/grafana/ai-sdk.git
 cd ai-sdk
 
 mise trust   # trust the project config on first checkout
-mise deps    # install workspace dependencies (the test/ pnpm workspace)
+mise deps    # install test workspace dependencies
 ```
 
 Run `mise tasks` to list every task.
@@ -486,8 +486,10 @@ maintainer to trigger CI.
 
 ## Dependency management
 
-The repository uses Go modules across several module roots, plus a pnpm
-workspace under `test/` for TypeScript-side harnesses.
+The repository uses Go modules across several module roots, plus a repository-root
+pnpm workspace for TypeScript-side harnesses. The workspace includes the Gateway
+contract tests under `ai-gateway/`; it does not change their AGPL license or the
+SDK's Go module dependency graph.
 
 `ai-gateway/` is intentionally absent from the root `go.work`. The separate
 `go.gateway.work` is selected by required Gateway source-integration commands;
@@ -515,9 +517,9 @@ mise run tidy        # go mod tidy across all modules
 Commit `go.mod` and `go.sum` changes together. When adding a dependency to a
 provider or middleware module, run tidy from that module's directory.
 
-The `test/` pnpm workspace is supply-chain hardened: `blockExoticSubdeps`,
+The pnpm test workspace is supply-chain hardened: `blockExoticSubdeps`,
 `strictDepBuilds`, and a `minimumReleaseAge` gate in
-`test/pnpm-workspace.yaml`. Do not bypass those settings to land a version bump.
+`pnpm-workspace.yaml`. Do not bypass those settings to land a version bump.
 Dependency updates are otherwise automated via Renovate
 ([`renovate.json`](renovate.json)).
 

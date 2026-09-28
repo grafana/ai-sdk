@@ -166,7 +166,7 @@ importers:
 
   .: {}
 
-  ../ai-gateway/test/providerwire-v4:
+  ai-gateway/test/providerwire-v4:
     dependencies:
       '@ai-sdk/gateway':
         specifier: 4.0.88
@@ -194,7 +194,7 @@ importers:
         specifier: 7.0.2
         version: 7.0.2
 
-  cli:
+  test/cli:
     devDependencies:
       '@ai-sdk/provider-utils':
         specifier: 5.0.45
@@ -209,7 +209,7 @@ importers:
         specifier: ^7.0.0
         version: 7.0.2
 
-  conformance/tools:
+  test/conformance/tools:
     dependencies:
       '@ai-sdk/amazon-bedrock':
         specifier: 5.0.90
@@ -249,7 +249,7 @@ importers:
         specifier: ^7.0.0
         version: 7.0.2
 
-  integration:
+  test/integration:
     devDependencies:
       '@ai-sdk/provider-utils':
         specifier: 5.0.45
@@ -282,7 +282,7 @@ importers:
         specifier: ^5.0.0
         version: 5.0.1(@types/node@25.9.5)(jsdom@30.0.1)(vite@8.3.0(@types/node@25.9.5)(esbuild@0.28.2)(tsx@4.23.12)(yaml@2.9.1))
       zod:
-        specifier: ^4.4.3
+        specifier: 4.4.3
         version: 4.4.3
 
 packages:
