@@ -80,7 +80,7 @@ func buildRequestWithFamily(modelID string, family ModelFamily, opts provider.Ca
 	// Whether extended thinking is enabled (Anthropic only). Used both for the
 	// native-structured-output gate and inference-config adjustments below.
 	isThinkingEnabled := bo.ReasoningConfig != nil &&
-		(bo.ReasoningConfig.Type == "enabled" || bo.ReasoningConfig.Type == "adaptive")
+		(bo.ReasoningConfig.Type == "enabled" || bo.ReasoningConfig.Type == "adaptive" || bo.ReasoningConfig.Type == reasoningTypeBetweenTools)
 
 	// ResponseFormat handling. Some Anthropic models reject native
 	// output_config.format even when their model family otherwise supports it.
@@ -96,7 +96,10 @@ func buildRequestWithFamily(modelID string, family ModelFamily, opts provider.Ca
 			})
 		} else if isAnthropic && (mode == StructuredOutputModeOutputFormat || (mode == StructuredOutputModeAuto && !rejectsNativeStructuredOutput(modelID) && (supportsStructuredOutputCapability(modelID) || isThinkingEnabled || family == ModelFamilyAnthropic))) {
 			useNativeStructuredOutput = true
-		} else if mode != StructuredOutputModeJSONTool && isAnthropic && usesJSONInstructionForStructuredOutput(modelID) && len(opts.Tools) > 0 {
+		} else if isAnthropic && (rejectsForcedToolUse(modelID) || (mode != StructuredOutputModeJSONTool && usesJSONInstructionForStructuredOutput(modelID) && len(opts.Tools) > 0)) {
+			// The JSON response tool needs forced tool use, so models that
+			// reject it always get the instruction (upstream
+			// amazon-bedrock-chat-language-model.ts, 5.0.99).
 			converted.System = injectJSONInstruction(converted.System, opts.ResponseFormat.Schema)
 			meta.usesJSONInstruction = true
 		} else {
@@ -294,7 +297,7 @@ func buildInferenceConfig(opts provider.CallOptions, isAnthropic bool, bo Bedroc
 
 	// When thinking is enabled (Anthropic only), drop temperature/topP/topK
 	// with warnings.
-	if bo.ReasoningConfig != nil && (bo.ReasoningConfig.Type == "enabled" || bo.ReasoningConfig.Type == "adaptive") && isAnthropic {
+	if bo.ReasoningConfig != nil && (bo.ReasoningConfig.Type == "enabled" || bo.ReasoningConfig.Type == "adaptive" || bo.ReasoningConfig.Type == reasoningTypeBetweenTools) && isAnthropic {
 		if inf.Temperature != nil {
 			warnings = append(warnings, provider.Warning{
 				Type: provider.WarnUnsupported, Feature: "temperature",
@@ -369,6 +372,18 @@ func applyAnthropicPassThroughs(addFields map[string]any, inf **inferenceConfig,
 				m["display"] = rc.Display
 			}
 			addFields["thinking"] = m
+		} else if rc.Type == reasoningTypeBetweenTools {
+			// between_tools accepts no display or budget, and only low,
+			// medium, and high effort.
+			addFields["thinking"] = map[string]any{"type": reasoningTypeBetweenTools}
+			if rc.MaxReasoningEffort == "xhigh" || rc.MaxReasoningEffort == "max" {
+				warnings = append(warnings, provider.Warning{
+					Type:    provider.WarnUnsupported,
+					Feature: "providerOptions.amazonBedrock.reasoningConfig.maxReasoningEffort",
+					Details: fmt.Sprintf("effort '%s' is not supported with 'between_tools' thinking. The effort has been lowered to 'high'.", rc.MaxReasoningEffort),
+				})
+				rc.MaxReasoningEffort = "high"
+			}
 		}
 
 		if rc.MaxReasoningEffort != "" && isAnth {
@@ -387,7 +402,7 @@ func resolveReasoningConfig(modelID string, isAnthropic bool, reasoning provider
 	var resolved *ReasoningConfig
 	if reasoning == provider.ReasoningNone {
 		if isAnthropic {
-			resolved = &ReasoningConfig{Type: "disabled"}
+			resolved = &ReasoningConfig{Type: anthropicNoneReasoningType(modelID)}
 		} else {
 			resolved = cloneReasoningConfig(explicit)
 		}
@@ -400,6 +415,22 @@ func resolveReasoningConfig(modelID string, isAnthropic bool, reasoning provider
 		resolved.MaxReasoningEffort = ""
 	}
 	return resolved
+}
+
+// reasoningTypeBetweenTools is the lowest thinking setting on models that
+// reject disabled thinking; see supportsBetweenToolsThinking.
+const reasoningTypeBetweenTools = "between_tools"
+
+// anthropicNoneReasoningType returns the thinking type for reasoning "none".
+// Upstream @ai-sdk/amazon-bedrock 5.0.99 uses "disabled", which omits the
+// thinking field and runs claude-sonnet-5-5 at its default adaptive effort.
+// This intentionally sends between_tools instead so "none" keeps up-front
+// thinking off, as the Anthropic provider does.
+func anthropicNoneReasoningType(modelID string) string {
+	if supportsBetweenToolsThinking(modelID) {
+		return reasoningTypeBetweenTools
+	}
+	return "disabled"
 }
 
 func cloneReasoningConfig(config *ReasoningConfig) *ReasoningConfig {
@@ -440,7 +471,7 @@ func deriveReasoningConfig(modelID string, isAnthropic bool, reasoning provider.
 	}
 	if reasoning == provider.ReasoningNone {
 		if isAnthropic {
-			return &ReasoningConfig{Type: "disabled"}
+			return &ReasoningConfig{Type: anthropicNoneReasoningType(modelID)}
 		}
 		return nil
 	}

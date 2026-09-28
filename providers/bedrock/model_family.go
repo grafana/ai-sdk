@@ -90,6 +90,20 @@ func usesJSONInstructionForStructuredOutput(modelID string) bool {
 	return rejectsNewerSchemaFields(modelID)
 }
 
+// rejectsForcedToolUse reports Anthropic models that reject tool_choice
+// "any" and named-tool choices with a 400. Mirrors @ai-sdk/anthropic 4.0.67
+// getModelCapabilities, which upstream @ai-sdk/amazon-bedrock 5.0.99 reuses.
+func rejectsForcedToolUse(modelID string) bool {
+	return strings.Contains(modelID, "claude-sonnet-5-5")
+}
+
+// supportsBetweenToolsThinking reports Anthropic models that accept thinking
+// type "between_tools", their lowest thinking setting. These models reject
+// thinking type "disabled".
+func supportsBetweenToolsThinking(modelID string) bool {
+	return strings.Contains(modelID, "claude-sonnet-5-5")
+}
+
 type anthropicReasoningCapabilities struct {
 	maxOutputTokens          int
 	supportsAdaptiveThinking bool

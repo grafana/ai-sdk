@@ -188,7 +188,8 @@ func (BedrockOptions) ProviderKey() string { return "amazonBedrock" }
 type ReasoningConfig struct {
 	budgetTokensPresent bool
 
-	// Type is one of "enabled", "adaptive", or empty when only
+	// Type is one of "enabled", "adaptive", "between_tools" (claude-sonnet-5-5
+	// only; low, medium, or high effort), or empty when only
 	// MaxReasoningEffort is set.
 	Type string `json:"type,omitempty"`
 	// BudgetTokens is the thinking budget for Type="enabled". Required when

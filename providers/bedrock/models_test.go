@@ -9,7 +9,7 @@ import (
 
 func TestModelIDs(t *testing.T) {
 	ids := ModelIDs()
-	assert.Len(t, ids, 78)
+	assert.Len(t, ids, 79)
 	assert.Contains(t, ids, "anthropic.claude-opus-4-8")
 	assert.Contains(t, ids, "anthropic.claude-fable-5")
 	assert.Contains(t, ids, "openai.gpt-oss-120b-1:0")

@@ -33,6 +33,14 @@ const minReasoningBudget = 1024
 
 func resolveReasoningConfig(reasoning provider.ReasoningEffort, caps modelCapabilities, warnings *[]provider.Warning) *reasoningConfig {
 	if reasoning == provider.ReasoningNone {
+		// between_tools is the lowest thinking setting on models that reject
+		// disabled thinking: no up-front thinking, only short progress notes
+		// between tool calls.
+		if caps.supportsBetweenToolsThinking {
+			return &reasoningConfig{
+				thinking: &ThinkingConfig{Type: ThinkingBetweenTools},
+			}
+		}
 		return &reasoningConfig{
 			thinking: &ThinkingConfig{Type: ThinkingDisabled},
 		}
@@ -144,6 +152,10 @@ func applyReasoningConfigWithProviderHints(p *anthropic.BetaMessageNewParams, rc
 		case ThinkingDisabled:
 			p.Thinking = anthropic.BetaThinkingConfigParamUnion{
 				OfDisabled: &anthropic.BetaThinkingConfigDisabledParam{},
+			}
+		case ThinkingBetweenTools:
+			p.Thinking = anthropic.BetaThinkingConfigParamUnion{
+				OfBetweenTools: &anthropic.BetaThinkingConfigBetweenToolsParam{},
 			}
 		case ThinkingAdaptive:
 			p.Thinking = anthropic.BetaThinkingConfigParamUnion{

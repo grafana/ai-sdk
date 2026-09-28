@@ -96,6 +96,20 @@ func applyResponseFormat(p *anthropic.BetaMessageNewParams, rf *provider.Respons
 		useStructuredOutput = false
 	}
 
+	var warnings []provider.Warning
+	// The JSON response tool relies on forced tool use, which some models
+	// reject. Fall back to native structured outputs when the model supports
+	// them. Mirrors upstream anthropic-language-model.ts (@ai-sdk/anthropic
+	// 4.0.67).
+	if !useStructuredOutput && caps.rejectsForcedToolUse && caps.supportsStructuredOutput {
+		warnings = append(warnings, provider.Warning{
+			Type:    provider.WarnUnsupported,
+			Feature: "providerOptions.anthropic.structuredOutputMode",
+			Details: "structuredOutputMode 'jsonTool' is not supported by this model because it rejects forced tool use. Using 'outputFormat' instead.",
+		})
+		useStructuredOutput = true
+	}
+
 	if useStructuredOutput {
 		// Construct BetaJSONOutputFormatParam directly instead of calling
 		// anthropic.BetaJSONSchemaOutputFormat. The SDK helper wraps a second
@@ -108,7 +122,7 @@ func applyResponseFormat(p *anthropic.BetaMessageNewParams, rf *provider.Respons
 		p.OutputConfig.Format = anthropic.BetaJSONOutputFormatParam{
 			Schema: sanitizeJSONSchema(schemaMap),
 		}
-		return buildResult{}
+		return buildResult{warnings: warnings}
 	}
 
 	jsonToolParam := &anthropic.BetaToolParam{
@@ -128,12 +142,22 @@ func applyResponseFormat(p *anthropic.BetaMessageNewParams, rf *provider.Respons
 	// Override any user-set tool choice to required (OfAny). The json tool must
 	// be callable, and DisableParallelToolUse prevents multi-tool turns that
 	// would complicate response remapping. This matches upstream behavior.
-	p.ToolChoice = anthropic.BetaToolChoiceUnionParam{
-		OfAny: &anthropic.BetaToolChoiceAnyParam{
-			DisableParallelToolUse: anthropic.Bool(true),
-		},
+	// Models that reject forced tool use get auto instead, as upstream
+	// prepareTools does for a required tool choice.
+	if caps.rejectsForcedToolUse {
+		warnings = append(warnings, forcedToolChoiceWarning(provider.ToolChoice{Type: provider.ToolChoiceRequired}))
+		p.ToolChoice = anthropic.BetaToolChoiceUnionParam{
+			OfAuto: &anthropic.BetaToolChoiceAutoParam{
+				DisableParallelToolUse: anthropic.Bool(true),
+			},
+		}
+	} else {
+		p.ToolChoice = anthropic.BetaToolChoiceUnionParam{
+			OfAny: &anthropic.BetaToolChoiceAnyParam{
+				DisableParallelToolUse: anthropic.Bool(true),
+			},
+		}
 	}
-	warnings := []provider.Warning(nil)
 	if opts.DisableParallelToolUse != nil && !*opts.DisableParallelToolUse {
 		warnings = append(warnings, provider.Warning{
 			Type:    provider.WarnUnsupported,
@@ -349,6 +373,14 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 	if opts.ToolChoice != nil {
 		if opts.ToolChoice.Type == provider.ToolChoiceNone {
 			p.Tools = nil
+		} else if caps.rejectsForcedToolUse && (opts.ToolChoice.Type == provider.ToolChoiceRequired || opts.ToolChoice.Type == provider.ToolChoiceTool) {
+			// Mirrors upstream prepareTools (@ai-sdk/anthropic 4.0.67): send
+			// auto, and for a named tool send only that tool.
+			warnings = append(warnings, forcedToolChoiceWarning(*opts.ToolChoice))
+			if opts.ToolChoice.Type == provider.ToolChoiceTool {
+				p.Tools = toolsNamed(p.Tools, mapping.toProviderToolName(opts.ToolChoice.ToolName))
+			}
+			p.ToolChoice = anthropic.BetaToolChoiceUnionParam{OfAuto: &anthropic.BetaToolChoiceAutoParam{}}
 		} else if opts.ToolChoice.Type != provider.ToolChoiceAuto || len(opts.Tools) > 0 {
 			p.ToolChoice = convertToolChoice(*opts.ToolChoice, mapping)
 		}
@@ -432,6 +464,36 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 		}
 	}
 
+	// Some models always think and reject disabled and budget-based enabled
+	// thinking with a 400. Replace the unsupported setting so the request
+	// still succeeds. Mirrors upstream anthropic-language-model.ts
+	// (@ai-sdk/anthropic 4.0.67).
+	if caps.rejectsThinkingDisabled && anthropicOpts.Thinking != nil {
+		switch {
+		case anthropicOpts.Thinking.Type == ThinkingDisabled && caps.supportsBetweenToolsThinking:
+			warnings = append(warnings, provider.Warning{
+				Type:    provider.WarnUnsupported,
+				Feature: "providerOptions.anthropic.thinking",
+				Details: fmt.Sprintf("thinking cannot be disabled for %s. Using 'between_tools' thinking, the lowest thinking setting, instead.", modelID),
+			})
+			anthropicOpts.Thinking = &ThinkingConfig{Type: ThinkingBetweenTools}
+		case anthropicOpts.Thinking.Type == ThinkingDisabled:
+			warnings = append(warnings, provider.Warning{
+				Type:    provider.WarnUnsupported,
+				Feature: "providerOptions.anthropic.thinking",
+				Details: fmt.Sprintf("thinking cannot be disabled for %s; it always uses adaptive thinking. The thinking setting has been removed. Lower 'effort' to reduce thinking.", modelID),
+			})
+			anthropicOpts.Thinking = nil
+		case anthropicOpts.Thinking.Type == ThinkingEnabled:
+			warnings = append(warnings, provider.Warning{
+				Type:    provider.WarnUnsupported,
+				Feature: "providerOptions.anthropic.thinking",
+				Details: fmt.Sprintf("budget-based thinking is not supported by %s; it always uses adaptive thinking. Using adaptive thinking instead. Use 'effort' to control how much the model thinks.", modelID),
+			})
+			anthropicOpts.Thinking = &ThinkingConfig{Type: ThinkingAdaptive}
+		}
+	}
+
 	if caps.rejectsThinkingDisabledAboveHighEffort &&
 		anthropicOpts.Thinking != nil &&
 		anthropicOpts.Thinking.Type == ThinkingDisabled &&
@@ -440,6 +502,20 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 			Type:    provider.WarnUnsupported,
 			Feature: "providerOptions.anthropic.effort",
 			Details: fmt.Sprintf("effort '%s' is not supported by %s when thinking is disabled. The effort has been lowered to 'high'.", anthropicOpts.Effort, modelID),
+		})
+		anthropicOpts.Effort = "high"
+	}
+
+	// between_tools thinking is only accepted at low, medium, and high effort.
+	// Lower the effort to keep the minimal thinking setting instead of
+	// sending a request the API would reject.
+	if anthropicOpts.Thinking != nil &&
+		anthropicOpts.Thinking.Type == ThinkingBetweenTools &&
+		(anthropicOpts.Effort == "xhigh" || anthropicOpts.Effort == "max") {
+		warnings = append(warnings, provider.Warning{
+			Type:    provider.WarnUnsupported,
+			Feature: "providerOptions.anthropic.effort",
+			Details: fmt.Sprintf("effort '%s' is not supported with 'between_tools' thinking. The effort has been lowered to 'high'.", anthropicOpts.Effort),
 		})
 		anthropicOpts.Effort = "high"
 	}
@@ -491,11 +567,12 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 		}
 	}
 
-	// When thinking is active (enabled or adaptive), Anthropic rejects
-	// requests that also carry temperature/topP/topK sampling params.
-	// Mirror upstream anthropic-language-model.ts:608-633: drop the params
-	// and emit unsupported warnings.
-	if p.Thinking.OfEnabled != nil || p.Thinking.OfAdaptive != nil {
+	// When thinking is active (enabled, adaptive, or between_tools),
+	// Anthropic rejects requests that also carry temperature/topP/topK
+	// sampling params. Mirror upstream anthropic-language-model.ts:608-633:
+	// drop the params and emit unsupported warnings.
+	thinkingActive := p.Thinking.OfEnabled != nil || p.Thinking.OfAdaptive != nil || p.Thinking.OfBetweenTools != nil
+	if thinkingActive {
 		if p.Temperature.Valid() {
 			p.Temperature = param.Opt[float64]{}
 			warnings = append(warnings, provider.Warning{
@@ -522,7 +599,7 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 		}
 	}
 
-	if p.Thinking.OfEnabled == nil && p.Thinking.OfAdaptive == nil && caps.isKnownModel && p.Temperature.Valid() && p.TopP.Valid() {
+	if !thinkingActive && caps.isKnownModel && p.Temperature.Valid() && p.TopP.Valid() {
 		p.TopP = param.Opt[float64]{}
 		warnings = append(warnings, provider.Warning{
 			Type:    provider.WarnUnsupported,
@@ -2638,6 +2715,27 @@ func extractWebFetchArgs(args map[string]json.RawMessage) webFetchArgs {
 	return a
 }
 
+// forcedToolChoiceWarning reports a required or named tool choice sent as auto
+// to a model that rejects forced tool use.
+func forcedToolChoiceWarning(tc provider.ToolChoice) provider.Warning {
+	details := "toolChoice 'required' is not supported by this model because it rejects forced tool use. Using 'auto' instead. Instruct the model to use a tool in the prompt and verify that a tool call was made."
+	if tc.Type == provider.ToolChoiceTool {
+		details = fmt.Sprintf("toolChoice 'tool' is not supported by this model because it rejects forced tool use. Only the '%s' tool is sent with 'auto' tool choice. Instruct the model to use the tool in the prompt and verify that a tool call was made.", tc.ToolName)
+	}
+	return provider.Warning{Type: provider.WarnUnsupported, Feature: "toolChoice", Details: details}
+}
+
+// toolsNamed returns the tools whose name matches name.
+func toolsNamed(tools []anthropic.BetaToolUnionParam, name string) []anthropic.BetaToolUnionParam {
+	var kept []anthropic.BetaToolUnionParam
+	for _, tool := range tools {
+		if n := tool.GetName(); n != nil && *n == name {
+			kept = append(kept, tool)
+		}
+	}
+	return kept
+}
+
 func convertToolChoice(tc provider.ToolChoice, mapping toolNameMapping) anthropic.BetaToolChoiceUnionParam {
 	switch tc.Type {
 	case provider.ToolChoiceAuto:
@@ -2729,6 +2827,10 @@ func applyProviderOptions(p *anthropic.BetaMessageNewParams, ao AnthropicOptions
 		case ThinkingDisabled:
 			p.Thinking = anthropic.BetaThinkingConfigParamUnion{
 				OfDisabled: &anthropic.BetaThinkingConfigDisabledParam{},
+			}
+		case ThinkingBetweenTools:
+			p.Thinking = anthropic.BetaThinkingConfigParamUnion{
+				OfBetweenTools: &anthropic.BetaThinkingConfigBetweenToolsParam{},
 			}
 		case ThinkingAdaptive:
 			adaptive := &anthropic.BetaThinkingConfigAdaptiveParam{}

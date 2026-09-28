@@ -3,7 +3,7 @@ module github.com/grafana/ai-sdk/middleware/agentobservability
 go 1.26.3
 
 require (
-	github.com/anthropics/anthropic-sdk-go v1.75.0
+	github.com/anthropics/anthropic-sdk-go v1.76.0
 	github.com/grafana/agento11y/go v0.18.0
 	github.com/grafana/agento11y/go-providers/anthropic v0.18.0
 	github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260921202550-3dff0f7087dc

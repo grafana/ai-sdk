@@ -11,7 +11,7 @@ replace (
 )
 
 require (
-	github.com/anthropics/anthropic-sdk-go v1.75.0
+	github.com/anthropics/anthropic-sdk-go v1.76.0
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.6
 	github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260921202550-3dff0f7087dc
 	github.com/grafana/ai-sdk/providers/anthropic v0.0.0-00010101000000-000000000000

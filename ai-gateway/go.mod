@@ -4,7 +4,7 @@ go 1.26.3
 
 require (
 	github.com/alecthomas/kingpin/v2 v2.4.0
-	github.com/anthropics/anthropic-sdk-go v1.75.0
+	github.com/anthropics/anthropic-sdk-go v1.76.0
 	github.com/go-jose/go-jose/v4 v4.1.5
 	github.com/grafana/agento11y/go v0.18.0
 	github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260921202550-3dff0f7087dc
