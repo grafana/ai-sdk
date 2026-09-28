@@ -70,10 +70,20 @@ func prepareTools(body *responses.ResponseNewParams, opts provider.CallOptions, 
 				} else if namespaceTool.Description != namespace.Description {
 					return nil, fmt.Errorf("openai: conflicting descriptions for OpenAI tool namespace %q", namespace.Name)
 				}
-				namespaceTool.Tools = append(namespaceTool.Tools, namespaceFunctionTool(t, openaiOptions))
+				fn, schemaWarnings, err := namespaceFunctionTool(t, openaiOptions)
+				if err != nil {
+					return nil, err
+				}
+				warnings = append(warnings, schemaWarnings...)
+				namespaceTool.Tools = append(namespaceTool.Tools, fn)
 				continue
 			}
-			tools = append(tools, functionTool(t, openaiOptions))
+			fn, schemaWarnings, err := functionTool(t, openaiOptions)
+			if err != nil {
+				return nil, err
+			}
+			warnings = append(warnings, schemaWarnings...)
+			tools = append(tools, fn)
 
 		case provider.ToolTypeProvider:
 			tool, w, ok, err := providerTool(t, br)
@@ -104,15 +114,23 @@ func prepareTools(body *responses.ResponseNewParams, opts provider.CallOptions, 
 	return warnings, nil
 }
 
-func functionTool(t provider.Tool, options OpenAIToolOptions) responses.ToolUnionParam {
-	fn := functionToolParam(t, options)
-	return responses.ToolUnionParam{OfFunction: &fn}
+func functionTool(t provider.Tool, options OpenAIToolOptions) (responses.ToolUnionParam, []provider.Warning, error) {
+	fn, warnings, err := functionToolParam(t, options)
+	if err != nil {
+		return responses.ToolUnionParam{}, nil, err
+	}
+	return responses.ToolUnionParam{OfFunction: &fn}, warnings, nil
 }
 
-func functionToolParam(t provider.Tool, options OpenAIToolOptions) responses.FunctionToolParam {
+func functionToolParam(t provider.Tool, options OpenAIToolOptions) (responses.FunctionToolParam, []provider.Warning, error) {
 	var params map[string]any
+	var warnings []provider.Warning
 	if len(t.InputSchema) > 0 {
-		_ = json.Unmarshal(t.InputSchema, &params)
+		var err error
+		params, warnings, err = normalizeOpenAIJSONSchema(t.InputSchema)
+		if err != nil {
+			return responses.FunctionToolParam{}, nil, fmt.Errorf("openai: function tool %q input schema: %w", t.Name, err)
+		}
 	}
 	fn := responses.FunctionToolParam{
 		Name:       t.Name,
@@ -130,14 +148,22 @@ func functionToolParam(t provider.Tool, options OpenAIToolOptions) responses.Fun
 	for _, caller := range options.AllowedCallers {
 		fn.AllowedCallers = append(fn.AllowedCallers, string(caller))
 	}
-	if len(options.OutputSchema) > 0 {
-		_ = json.Unmarshal(options.OutputSchema, &fn.OutputSchema)
+	if len(options.OutputSchema) > 0 && !isJSONNull(options.OutputSchema) {
+		output, outputWarnings, err := normalizeOpenAIJSONSchema(options.OutputSchema)
+		if err != nil {
+			return responses.FunctionToolParam{}, nil, fmt.Errorf("openai: function tool %q output schema: %w", t.Name, err)
+		}
+		fn.OutputSchema = output
+		warnings = append(warnings, outputWarnings...)
 	}
-	return fn
+	return fn, warnings, nil
 }
 
-func namespaceFunctionTool(t provider.Tool, options OpenAIToolOptions) responses.NamespaceToolToolUnionParam {
-	fn := functionToolParam(t, options)
+func namespaceFunctionTool(t provider.Tool, options OpenAIToolOptions) (responses.NamespaceToolToolUnionParam, []provider.Warning, error) {
+	fn, warnings, err := functionToolParam(t, options)
+	if err != nil {
+		return responses.NamespaceToolToolUnionParam{}, nil, err
+	}
 	namespaceFn := responses.NamespaceToolToolFunctionParam{
 		Name:           fn.Name,
 		Parameters:     fn.Parameters,
@@ -147,7 +173,7 @@ func namespaceFunctionTool(t provider.Tool, options OpenAIToolOptions) responses
 		AllowedCallers: fn.AllowedCallers,
 		OutputSchema:   fn.OutputSchema,
 	}
-	return responses.NamespaceToolToolUnionParam{OfFunction: &namespaceFn}
+	return responses.NamespaceToolToolUnionParam{OfFunction: &namespaceFn}, warnings, nil
 }
 
 func providerTool(t provider.Tool, br *buildResult) (responses.ToolUnionParam, []provider.Warning, bool, error) {
