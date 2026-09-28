@@ -174,6 +174,43 @@ func TestParity_ToolUse(t *testing.T) {
 	assertGenerationsEquivalent(t, want, got)
 }
 
+func TestParity_CachedUsage(t *testing.T) {
+	request := asdk.BetaMessageNewParams{
+		Model: "claude-sonnet-4-5", MaxTokens: 1024,
+		Messages: []asdk.BetaMessageParam{{Role: asdk.BetaMessageParamRoleUser,
+			Content: []asdk.BetaContentBlockParamUnion{{OfText: &asdk.BetaTextBlockParam{Text: "hello"}}},
+		}},
+	}
+	response := &asdk.BetaMessage{
+		Model:   request.Model,
+		Content: []asdk.BetaContentBlockUnion{{Type: "text", Text: "hi"}},
+		Usage:   asdk.BetaUsage{InputTokens: 10, CacheReadInputTokens: 30, CacheCreationInputTokens: 20, OutputTokens: 5},
+	}
+	want, err := agento11yanthropic.FromRequestResponse(request, response)
+	require.NoError(t, err)
+	usage := provider.Usage{
+		InputTokens:  provider.InputTokenUsage{Total: intPtr(60), NoCache: intPtr(10), CacheRead: intPtr(30), CacheWrite: intPtr(20)},
+		OutputTokens: provider.OutputTokenUsage{Total: intPtr(5)},
+	}
+	params := provider.CallOptions{Prompt: []provider.Message{provider.UserText("hello")}}
+	generated := MapGenerateResult(params, &provider.GenerateResult{Usage: usage}, ContextInfo{})
+	stream := NewStreamRecorder(agento11y.GenerationStart{}, params)
+	stream.Observe(provider.StreamPart{Type: provider.PartFinish, Usage: &usage})
+	for _, tc := range []struct {
+		name  string
+		usage agento11y.TokenUsage
+	}{
+		{name: "generate", usage: generated.Usage},
+		{name: "stream", usage: stream.Generation().Usage},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, want.Usage, tc.usage)
+			assert.Equal(t, int64(60), tc.usage.InputTokens)
+			assert.Equal(t, int64(65), tc.usage.TotalTokens)
+		})
+	}
+}
+
 // assertGenerationsEquivalent compares two agento11y.Generation values modulo
 // recorder-set fields and known-divergent fields (artifacts, which we
 // intentionally do not produce). The diff prints both sides as indented JSON
