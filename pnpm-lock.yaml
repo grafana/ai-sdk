@@ -185,11 +185,11 @@ importers:
         version: 8.18.0
     devDependencies:
       '@types/node':
-        specifier: 25.9.5
-        version: 25.9.5
+        specifier: 25.9.8
+        version: 25.9.8
       tsx:
-        specifier: 4.23.12
-        version: 4.23.12
+        specifier: 4.23.15
+        version: 4.23.15
       typescript:
         specifier: 7.0.2
         version: 7.0.2
@@ -253,10 +253,10 @@ importers:
     devDependencies:
       '@ai-sdk/provider-utils':
         specifier: 5.0.45
-        version: 5.0.45(zod@4.4.3)
+        version: 5.0.45(zod@4.6.5)
       '@ai-sdk/react':
         specifier: 4.0.112
-        version: 4.0.112(react@19.3.0)(zod@4.4.3)
+        version: 4.0.112(react@19.3.0)(zod@4.6.5)
       '@testing-library/react':
         specifier: ^16.3.2
         version: 16.3.3(@testing-library/dom@10.4.2)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -265,7 +265,7 @@ importers:
         version: 6.1.1(vite@8.3.0(@types/node@25.9.5)(esbuild@0.28.2)(tsx@4.23.12)(yaml@2.9.1))
       ai:
         specifier: 7.0.109
-        version: 7.0.109(zod@4.4.3)
+        version: 7.0.109(zod@4.6.5)
       jsdom:
         specifier: ^30.0.0
         version: 30.0.1
@@ -282,8 +282,8 @@ importers:
         specifier: ^5.0.0
         version: 5.0.1(@types/node@25.9.5)(jsdom@30.0.1)(vite@8.3.0(@types/node@25.9.5)(esbuild@0.28.2)(tsx@4.23.12)(yaml@2.9.1))
       zod:
-        specifier: 4.4.3
-        version: 4.4.3
+        specifier: 4.6.5
+        version: 4.6.5
 
 packages:
 
@@ -728,6 +728,9 @@ packages:
 
   '@types/node@25.9.5':
     resolution: {integrity: sha512-OScDchr2fwuUmWdf4kZ9h7PcJiYDVInhJizG/biAq3cAvqwYktuy/TYGGdZNMtNTFUP7rnb0NU4TUdm82kt4Rg==}
+
+  '@types/node@25.9.8':
+    resolution: {integrity: sha512-VfMrScDmMhUJQmd5hArdQnFvK0OIeD36uN2Va1FcpYaLB/BgkgM8Ulc50XtYISPMz7APJ30+N0T5EM0jlcdfRw==}
 
   '@typescript/typescript-aix-ppc64@7.0.2':
     resolution: {integrity: sha512-MTKKkWB7p/0E9xi1d1tHtZ5PiLkGEMIq88pK2CubZjOsLtYTLqhgIgi6zepFa+9GHZ6h05NMCkQxGKiPXMxXtQ==}
@@ -1240,6 +1243,11 @@ packages:
     engines: {node: '>=18.0.0'}
     hasBin: true
 
+  tsx@4.23.15:
+    resolution: {integrity: sha512-Yiex1Ovn8z2xPpOWckIiysV1SSyRMY9BkLF++q0yKiDxCqRhosKfMg3janKkiLBwZ5c/YryloKwGZcrEmtwxKw==}
+    engines: {node: '>=18.0.0'}
+    hasBin: true
+
   typescript@7.0.2:
     resolution: {integrity: sha512-8FYau96o3NKOhbjKi/qNvG/W5jhzxkbdm5sj9AbZ/5T5sWqn3hJgLfGx27sRKZWTvyzCP8dLRBTf5tBTSRVUNA==}
     engines: {node: '>=16.20.0'}
@@ -1387,9 +1395,6 @@ packages:
     engines: {node: '>= 14.6'}
     hasBin: true
 
-  zod@4.4.3:
-    resolution: {integrity: sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==}
-
   zod@4.6.5:
     resolution: {integrity: sha512-v5l/aFXZQeai4awLbOpSoHecE9UiMrnfx75tEXLjNonXVARxQ5mOeipTjROUchszUNCqnE+hqAMujRsRHsut2Q==}
 
@@ -1412,13 +1417,6 @@ snapshots:
       '@ai-sdk/provider-utils': 5.0.45(zod@4.6.5)
       zod: 4.6.5
 
-  '@ai-sdk/gateway@4.0.88(zod@4.4.3)':
-    dependencies:
-      '@ai-sdk/provider': 4.0.17
-      '@ai-sdk/provider-utils': 5.0.45(zod@4.4.3)
-      '@vercel/oidc': 3.2.0
-      zod: 4.4.3
-
   '@ai-sdk/gateway@4.0.88(zod@4.6.5)':
     dependencies:
       '@ai-sdk/provider': 4.0.17
@@ -1426,13 +1424,13 @@ snapshots:
       '@vercel/oidc': 3.2.0
       zod: 4.6.5
 
-  '@ai-sdk/mcp@2.0.55(zod@4.4.3)':
+  '@ai-sdk/mcp@2.0.55(zod@4.6.5)':
     dependencies:
       '@ai-sdk/provider': 4.0.17
-      '@ai-sdk/provider-utils': 5.0.45(zod@4.4.3)
+      '@ai-sdk/provider-utils': 5.0.45(zod@4.6.5)
       cross-spawn: 7.0.6
       pkce-challenge: 5.0.1
-      zod: 4.4.3
+      zod: 4.6.5
 
   '@ai-sdk/openai-compatible@3.0.53(zod@4.6.5)':
     dependencies:
@@ -1445,15 +1443,6 @@ snapshots:
       '@ai-sdk/provider': 4.0.17
       '@ai-sdk/provider-utils': 5.0.45(zod@4.6.5)
       zod: 4.6.5
-
-  '@ai-sdk/provider-utils@5.0.45(zod@4.4.3)':
-    dependencies:
-      '@ai-sdk/provider': 4.0.17
-      '@standard-schema/spec': 1.1.0
-      '@workflow/serde': 4.1.0
-      eventsource-parser: 3.1.1
-      undici: 7.29.1
-      zod: 4.4.3
 
   '@ai-sdk/provider-utils@5.0.45(zod@4.6.5)':
     dependencies:
@@ -1468,12 +1457,12 @@ snapshots:
     dependencies:
       json-schema: 0.4.0
 
-  '@ai-sdk/react@4.0.112(react@19.3.0)(zod@4.4.3)':
+  '@ai-sdk/react@4.0.112(react@19.3.0)(zod@4.6.5)':
     dependencies:
-      '@ai-sdk/mcp': 2.0.55(zod@4.4.3)
+      '@ai-sdk/mcp': 2.0.55(zod@4.6.5)
       '@ai-sdk/provider': 4.0.17
-      '@ai-sdk/provider-utils': 5.0.45(zod@4.4.3)
-      ai: 7.0.109(zod@4.4.3)
+      '@ai-sdk/provider-utils': 5.0.45(zod@4.6.5)
+      ai: 7.0.109(zod@4.6.5)
       react: 19.3.0
       swr: 2.5.1(react@19.3.0)
       throttleit: 2.1.0
@@ -1725,6 +1714,10 @@ snapshots:
     dependencies:
       undici-types: 7.24.6
 
+  '@types/node@25.9.8':
+    dependencies:
+      undici-types: 7.24.6
+
   '@typescript/typescript-aix-ppc64@7.0.2':
     optional: true
 
@@ -1804,13 +1797,6 @@ snapshots:
   '@vitest/spy@5.0.1': {}
 
   '@workflow/serde@4.1.0': {}
-
-  ai@7.0.109(zod@4.4.3):
-    dependencies:
-      '@ai-sdk/gateway': 4.0.88(zod@4.4.3)
-      '@ai-sdk/provider': 4.0.17
-      '@ai-sdk/provider-utils': 5.0.45(zod@4.4.3)
-      zod: 4.4.3
 
   ai@7.0.109(zod@4.6.5):
     dependencies:
@@ -2146,6 +2132,12 @@ snapshots:
     optionalDependencies:
       fsevents: 2.3.3
 
+  tsx@4.23.15:
+    dependencies:
+      esbuild: 0.28.2
+    optionalDependencies:
+      fsevents: 2.3.3
+
   typescript@7.0.2:
     optionalDependencies:
       '@typescript/typescript-aix-ppc64': 7.0.2
@@ -2253,7 +2245,5 @@ snapshots:
   xmlchars@2.2.0: {}
 
   yaml@2.9.1: {}
-
-  zod@4.4.3: {}
 
   zod@4.6.5: {}
