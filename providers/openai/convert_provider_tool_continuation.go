@@ -282,10 +282,11 @@ func convertProviderToolResult(part provider.ContentPart, ctx inputConversionCon
 		}
 		var item responses.ResponseInputItemUnionParam
 		if content != nil {
-			item = responses.ResponseInputItemParamOfFunctionCallOutput(part.ToolCallID, content)
+			item = responses.ResponseInputItemParamOfFunctionCallOutput(content)
 		} else {
-			item = responses.ResponseInputItemParamOfFunctionCallOutput(part.ToolCallID, text)
+			item = responses.ResponseInputItemParamOfFunctionCallOutput(text)
 		}
+		item.OfFunctionCallOutput.CallID = param.NewOpt(part.ToolCallID)
 		item.OfFunctionCallOutput.Caller = functionCallOutputCallerParam(ctx.partOptions(part).Caller)
 		return &item, warnings, nil
 	}

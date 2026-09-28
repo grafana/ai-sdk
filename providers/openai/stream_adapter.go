@@ -129,7 +129,7 @@ func (a *streamAdapter) handleEvent(event responses.ResponseStreamEventUnion, ch
 		// Accumulate the raw annotation; attached to the text-end metadata.
 		if raw := e.JSON.Annotation.Raw(); raw != "" {
 			a.ongoingAnnotations = append(a.ongoingAnnotations, json.RawMessage(raw))
-		} else if e.Annotation != nil {
+		} else if e.Annotation.Type != "" {
 			if b, err := json.Marshal(e.Annotation); err == nil {
 				a.ongoingAnnotations = append(a.ongoingAnnotations, b)
 			}

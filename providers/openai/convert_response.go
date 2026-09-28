@@ -499,15 +499,16 @@ func mcpCallResult(call responses.ResponseOutputItemMcpCall) (json.RawMessage, e
 	if call.JSON.Output.Valid() {
 		result["output"] = call.Output
 	}
-	if call.JSON.Error.Valid() {
-		result["error"] = call.Error
-	} else if raw := call.JSON.Error.Raw(); raw != "" && raw != "null" {
-		var structuredError map[string]any
-		if err := json.Unmarshal([]byte(raw), &structuredError); err != nil {
+	if raw := call.JSON.Error.Raw(); raw != "" && raw != "null" {
+		var value any
+		if err := json.Unmarshal([]byte(raw), &value); err != nil {
 			return nil, fmt.Errorf("openai: decoding mcp call error: %w", err)
 		}
-		if structuredError != nil {
+		switch value.(type) {
+		case string, map[string]any:
 			result["error"] = json.RawMessage(raw)
+		default:
+			return nil, fmt.Errorf("openai: decoding mcp call error: expected string or object")
 		}
 	}
 	b, err := json.Marshal(result)

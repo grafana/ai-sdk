@@ -8,12 +8,12 @@ require (
 	github.com/go-jose/go-jose/v4 v4.1.5
 	github.com/grafana/agento11y/go v0.18.0
 	github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260921202550-3dff0f7087dc
-	github.com/grafana/ai-sdk/middleware/agentobservability v0.1.0-alpha.1
-	github.com/grafana/ai-sdk/middleware/logger v0.1.0-alpha.1
-	github.com/grafana/ai-sdk/middleware/prometheus v0.1.0-alpha.1
-	github.com/grafana/ai-sdk/providers/anthropic v0.1.0-alpha.1
-	github.com/grafana/ai-sdk/providers/openai v0.1.0-alpha.1
-	github.com/grafana/ai-sdk/providers/openai-compatible v0.1.0-alpha.1
+	github.com/grafana/ai-sdk/middleware/agentobservability v0.0.0-20260916172658-4f597f358b99
+	github.com/grafana/ai-sdk/middleware/logger v0.0.0-20260916172658-4f597f358b99
+	github.com/grafana/ai-sdk/middleware/prometheus v0.0.0-20260916172658-4f597f358b99
+	github.com/grafana/ai-sdk/providers/anthropic v0.0.0-20260921202550-3dff0f7087dc
+	github.com/grafana/ai-sdk/providers/openai v0.0.0-20260914170650-fd08a3a81a11
+	github.com/grafana/ai-sdk/providers/openai-compatible v0.0.0-20260914170650-fd08a3a81a11
 	github.com/grafana/authlib v0.0.0-20260814184937-0d62418c2815
 	github.com/grafana/authlib/types v0.0.0-20260814184937-0d62418c2815
 	github.com/openai/openai-go/v3 v3.66.0
@@ -21,6 +21,7 @@ require (
 	github.com/stretchr/testify v1.12.1
 	go.yaml.in/yaml/v4 v4.0.0-rc.6
 	golang.org/x/sys v0.48.0
+	google.golang.org/grpc v1.84.0
 )
 
 require (
@@ -32,7 +33,7 @@ require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/buger/jsonparser v1.6.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
+	github.com/coder/websocket v1.8.15 // indirect
 	github.com/felixge/httpsnoop v1.1.0 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
@@ -45,7 +46,6 @@ require (
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/patrickmn/go-cache v2.1.0+incompatible // indirect
 	github.com/pb33f/ordered-map/v2 v2.3.1 // indirect
-	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/prometheus/client_model v0.6.3 // indirect
 	github.com/prometheus/common v0.71.0 // indirect
 	github.com/prometheus/procfs v0.22.0 // indirect
@@ -65,6 +65,7 @@ require (
 	go.opentelemetry.io/otel/sdk v1.46.0 // indirect
 	go.opentelemetry.io/otel/sdk/metric v1.46.0 // indirect
 	go.opentelemetry.io/otel/trace v1.46.0 // indirect
+	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/crypto v0.57.0 // indirect
 	golang.org/x/net v0.59.0 // indirect
 	golang.org/x/oauth2 v0.37.0 // indirect
@@ -73,7 +74,5 @@ require (
 	golang.org/x/time v0.16.0 // indirect
 	google.golang.org/api v0.299.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260921155816-b14227669459 // indirect
-	google.golang.org/grpc v1.84.0 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

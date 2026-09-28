@@ -24,9 +24,16 @@
     "platformAutomerge": true,
     "packageRules": [
       {
-        "description": "Ignore self-referential dependency (replace directive makes the version cosmetic)",
+        "description": "Manage root SDK dependency pins explicitly",
         "matchManagers": ["gomod"],
         "matchPackageNames": ["github.com/grafana/ai-sdk"],
+        "enabled": false
+      },
+      {
+        "description": "Keep internal submodules on merged pseudo-versions; do not apply root release tags",
+        "matchManagers": ["gomod"],
+        "matchPackageNames": ["github.com/grafana/ai-sdk/**"],
+        "matchUpdateTypes": ["major", "minor", "patch"],
         "enabled": false
       },
       {
