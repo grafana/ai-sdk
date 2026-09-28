@@ -62,6 +62,9 @@ func mcpCallFieldPresenceCases() []mcpCallFieldPresenceCase {
 		{name: "output only", fields: `,"output":"ok","error":null`, want: with(map[string]any{"output": "ok"})},
 		{name: "string error only", fields: `,"output":null,"error":"failed"`, approval: true, want: with(map[string]any{"error": "failed"})},
 		{name: "object error only", fields: `,"output":null,"error":{"type":"tool_error","code":500,"message":"failed"}`, approval: true, want: with(map[string]any{"error": map[string]any{"type": "tool_error", "code": float64(500), "message": "failed"}})},
+		{name: "empty error", fields: `,"error":""`, want: with(map[string]any{"error": ""})},
+		{name: "empty object error", fields: `,"error":{}`, want: with(map[string]any{"error": map[string]any{}})},
+		{name: "object error with extra fields", fields: `,"error":{"type":"tool_error","details":{"retryable":true}}`, want: with(map[string]any{"error": map[string]any{"type": "tool_error", "details": map[string]any{"retryable": true}}})},
 		{name: "both fields", fields: `,"output":"partial","error":"failed"`, want: with(map[string]any{"output": "partial", "error": "failed"})},
 	}
 }
