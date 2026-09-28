@@ -699,6 +699,7 @@ func TestNewModelObservabilityFactory_AgentExportIsCanonicalMetadataOnly(t *test
 	assert.Equal(t, "63", testkit.StringValue(t, generation, "usage", "total_tokens"))
 	assert.Equal(t, "30", testkit.StringValue(t, generation, "usage", "cache_read_input_tokens"))
 	assert.Equal(t, "20", testkit.StringValue(t, generation, "usage", "cache_write_input_tokens"))
+	assert.NotContains(t, logs.String()+testMetrics(t, telemetry), "web_search_requests")
 }
 
 func TestNewModelObservabilityFactory_UnaryProviderFailureIsSafeAndFailThrough(t *testing.T) {

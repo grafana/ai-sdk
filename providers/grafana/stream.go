@@ -126,7 +126,7 @@ func consumeStream(ctx context.Context, body io.ReadCloser, parts chan<- provide
 		if bytes.Equal(data, []byte("[DONE]")) {
 			continue
 		}
-		part, err := decodeStreamPart(data)
+		part, err := decodeStreamPart(data, limits.StreamEventBytes)
 		if err != nil {
 			api := protocolError("grafana: invalid stream event", 200, err)
 			send(provider.StreamPart{Type: provider.PartError, APICallError: api})
@@ -186,7 +186,7 @@ func decodeWarnings(warnings []wireWarning) ([]provider.Warning, error) {
 	return result, nil
 }
 
-func decodeStreamPart(data []byte) (provider.StreamPart, error) {
+func decodeStreamPart(data []byte, limit int64) (provider.StreamPart, error) {
 	invalid := func() (provider.StreamPart, error) {
 		return provider.StreamPart{}, errors.New("grafana: invalid stream part")
 	}
@@ -296,7 +296,7 @@ func decodeStreamPart(data []byte) (provider.StreamPart, error) {
 		if err != nil {
 			return invalid()
 		}
-		usage, err := decodeUsage(value.Usage)
+		usage, err := decodeUsage(value.Usage, limit)
 		if err != nil {
 			return invalid()
 		}

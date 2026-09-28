@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -118,6 +119,61 @@ func TestModel_StreamNormalization(t *testing.T) {
 	}
 }
 
+func TestModel_StreamRawUsage(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{name: "absent"},
+		{name: "empty", raw: `{}`, want: `{}`},
+		{name: "native", raw: `{"input_tokens":32,"service_tier":"standard","nested":[1,true]}`, want: `{"input_tokens":32,"service_tier":"standard","nested":[1,true]}`},
+		{name: "valid surrogate", raw: `{"nested":{"\ud83d\ude00":1}}`, want: `{"nested":{"😀":1}}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			finish := finishEvent
+			if tc.raw != "" {
+				finish = strings.Replace(finish, `"outputTokens":{}`, `"outputTokens":{},"raw":`+tc.raw, 1)
+			}
+			m := streamFromBody(t, io.NopCloser(strings.NewReader(sseFrame(`{"type":"raw","rawValue":{}}`)+sseFrame(finish))), nil)
+			result, err := m.DoStream(context.Background(), provider.CallOptions{IncludeRawChunks: false})
+			require.NoError(t, err)
+			parts := collectParts(t, result)
+			require.Len(t, parts, 1)
+			require.Equal(t, provider.PartFinish, parts[0].Type)
+			require.NotNil(t, parts[0].Usage)
+			if tc.want == "" {
+				assert.Nil(t, parts[0].Usage.Raw)
+			} else {
+				assert.JSONEq(t, tc.want, string(parts[0].Usage.Raw))
+			}
+		})
+	}
+}
+
+func TestModel_StreamRawUsageSize(t *testing.T) {
+	for _, size := range []int{maxRawUsageBytes, maxRawUsageBytes + 1} {
+		t.Run(strconv.Itoa(size), func(t *testing.T) {
+			raw := `{"large":"` + strings.Repeat("x", size-len(`{"large":""}`)) + `"}`
+			finish := strings.Replace(finishEvent, `"outputTokens":{}`, `"outputTokens":{},"raw":`+raw, 1)
+			limits := DefaultLimits()
+			limits.StreamEventBytes = 2 << 20
+			m := streamFromBody(t, io.NopCloser(strings.NewReader(sseFrame(finish))), &limits)
+			result, err := m.DoStream(context.Background(), provider.CallOptions{})
+			require.NoError(t, err)
+			parts := collectParts(t, result)
+			require.Len(t, parts, 1)
+			if size == maxRawUsageBytes {
+				assert.Equal(t, provider.PartFinish, parts[0].Type)
+				assert.Len(t, parts[0].Usage.Raw, size)
+			} else {
+				assert.Equal(t, provider.PartError, parts[0].Type)
+				assert.False(t, parts[0].APICallError.IsRetryable)
+			}
+		})
+	}
+}
+
 func TestModel_StreamEOF(t *testing.T) {
 	for _, tc := range []struct {
 		name, payload string
@@ -160,24 +216,35 @@ func TestModel_StreamFramingAndWarnings(t *testing.T) {
 			assert.Equal(t, "a", parts[0].ID)
 		})
 	}
-	part, err := decodeStreamPart([]byte(`{"type":"stream-start","warnings":[{"type":"deprecated","setting":"model setting","message":"use another setting"},{"type":"other","message":""},{"type":"unsupported","feature":"","details":""}]}`))
+	part, err := decodeStreamPart([]byte(`{"type":"stream-start","warnings":[{"type":"deprecated","setting":"model setting","message":"use another setting"},{"type":"other","message":""},{"type":"unsupported","feature":"","details":""}]}`), 1<<20)
 	require.NoError(t, err)
 	require.Len(t, part.Warnings, 3)
 	assert.Equal(t, "model setting", part.Warnings[0].Setting)
 	assert.Equal(t, "use another setting", part.Warnings[0].Message)
 	for _, event := range []string{`{"type":"response-metadata"}`, `{"type":"response-metadata","modelId":""}`, `{"type":"response-metadata","modelId":"assistant","timestamp":"2026-08-22T00:00:00,123Z"}`} {
-		_, err := decodeStreamPart([]byte(event))
+		_, err := decodeStreamPart([]byte(event), 1<<20)
 		require.Error(t, err)
 	}
 }
 
 func TestModel_StreamInvalidEvents(t *testing.T) {
 	for _, event := range []string{
+		strings.Replace(finishEvent, `"outputTokens":{}`, `"outputTokens":{},"raw":null`, 1),
+		strings.Replace(finishEvent, `"outputTokens":{}`, `"outputTokens":{},"raw":[]`, 1),
+		strings.Replace(finishEvent, `"outputTokens":{}`, `"outputTokens":{},"raw":{"nested":["\ud800"]}`, 1),
+		strings.Replace(finishEvent, `"outputTokens":{}`, `"outputTokens":{},"raw":{"\udc00":1}`, 1),
+		strings.Replace(finishEvent, `"outputTokens":{}`, `"outputTokens":{},"raw":{"nested":"`+string([]byte{0xff})+`"}`, 1),
+		strings.Replace(finishEvent, `"outputTokens":{}`, `"outputTokens":{},"raw":{"private":`, 1),
+		strings.Replace(finishEvent, `"outputTokens":{}`, `"outputTokens":{},"raw":{"private":"`+strings.Repeat("x", 1<<20)+`"}`, 1),
 		`{"type":"stream-start","warnings":[{"Type":"other","message":"safe"}]}`,
 		`{"type":"stream-start","warnings":[{"type":"other","Message":"safe"}]}`,
 		`{"type":"reasoning-start","id":"a"}`, `{"type":"text-start"}`, `{"type":"text-delta","id":"a"}`, `{"type":"text-end","id":null}`, `{"type":"finish"}`, `{"type":"stream-start"}`, `{"type":"stream-start","warnings":[{"type":"unknown"}]}`, `{"type":"response-metadata","timestamp":"bad"}`, `{"type":"raw"}`, `{"type":"error","error":{"message":"bad"}}`, `{"type":"error","error":{"message":"safe","type":"internal_server_error","param":null,"code":"upstream_error","statusCode":502,"retryable":false}}`, `{"type":"text-delta","id":"a","delta":1}`, `{"type":"finish","finishReason":{"unified":"stop"},"usage":{"inputTokens":{"total":-1},"outputTokens":{}}}`, `{"type":`, "[DONE] ", "",
 	} {
-		t.Run(event, func(t *testing.T) {
+		name := event
+		if len(name) > 120 {
+			name = name[:120]
+		}
+		t.Run(name, func(t *testing.T) {
 			payload := sseFrame(event) + sseFrame(finishEvent)
 			body := &trackedBody{Reader: strings.NewReader(payload)}
 			m := streamFromBody(t, body, nil)
@@ -188,6 +255,7 @@ func TestModel_StreamInvalidEvents(t *testing.T) {
 			assert.Equal(t, provider.PartError, parts[0].Type)
 			require.NotNil(t, parts[0].APICallError)
 			assert.False(t, parts[0].APICallError.IsRetryable)
+			assert.NotContains(t, parts[0].APICallError.Error(), "private")
 			assert.True(t, body.closed)
 		})
 	}
@@ -350,7 +418,7 @@ func TestDecodeStreamPart_FunctionTools(t *testing.T) {
 		`{"type":"tool-call","toolCallId":"a","toolName":"f","input":"{}"}`,
 		`{"type":"tool-result","toolCallId":"a","toolName":"f","result":false,"isError":true}`,
 	} {
-		part, err := decodeStreamPart([]byte(raw))
+		part, err := decodeStreamPart([]byte(raw), 1<<20)
 		require.NoError(t, err)
 		assert.NotEmpty(t, part.Type)
 	}
@@ -361,13 +429,13 @@ func TestDecodeStreamPart_FunctionTools(t *testing.T) {
 		`{"type":"tool-result","toolCallId":"a","toolName":"f","result":null}`,
 		`{"type":"tool-input-delta","id":"a"}`,
 	} {
-		_, err := decodeStreamPart([]byte(raw))
+		_, err := decodeStreamPart([]byte(raw), 1<<20)
 		require.Error(t, err)
 	}
 	for _, input := range []string{"", `{"service":`, "\"\\\n\t<>&\u2028\u2029"} {
 		raw, err := json.Marshal(map[string]string{"type": "tool-call", "toolCallId": "a", "toolName": "f", "input": input})
 		require.NoError(t, err)
-		part, err := decodeStreamPart(raw)
+		part, err := decodeStreamPart(raw, 1<<20)
 		require.NoError(t, err)
 		assert.Equal(t, input, part.Input)
 	}

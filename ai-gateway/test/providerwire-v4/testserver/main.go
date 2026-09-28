@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 )
 
 func main() {
@@ -21,6 +22,13 @@ func run() error {
 	})
 	if err := registerProviderWireV4(mux); err != nil {
 		return err
+	}
+	if root := os.Getenv("PROVIDERWIRE_RECORDED_USAGE_DIR"); root != "" {
+		closeRecorded, err := registerRecordedUsage(mux, root)
+		if err != nil {
+			return err
+		}
+		defer closeRecorded()
 	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

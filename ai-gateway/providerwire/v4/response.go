@@ -49,6 +49,7 @@ type unaryOutputTokenUsage struct {
 type unaryUsage struct {
 	InputTokens  unaryInputTokenUsage  `json:"inputTokens"`
 	OutputTokens unaryOutputTokenUsage `json:"outputTokens"`
+	Raw          json.RawMessage       `json:"raw,omitempty"`
 }
 
 type unarySuccess struct {
@@ -111,7 +112,10 @@ func mapUnarySuccess(result *provider.GenerateResult, limit int64) (unarySuccess
 	if err != nil {
 		return unarySuccess{}, err
 	}
-	mapped.Usage = unaryUsage{InputTokens: inputUsage, OutputTokens: outputUsage}
+	if !validRawUsage(result.Usage.Raw, limit) {
+		return unarySuccess{}, errInvalidUnarySuccess
+	}
+	mapped.Usage = unaryUsage{InputTokens: inputUsage, OutputTokens: outputUsage, Raw: result.Usage.Raw}
 	return mapped, nil
 }
 
@@ -128,7 +132,11 @@ func unarySuccessPreflight(result *provider.GenerateResult, limit int64) bool {
 			remaining -= int64(length)
 		}
 	}
-	return int64(len(result.FinishReason.Raw)) <= remaining
+	if int64(len(result.FinishReason.Raw)) > remaining {
+		return false
+	}
+	remaining -= int64(len(result.FinishReason.Raw))
+	return int64(len(result.Usage.Raw)) <= remaining && len(result.Usage.Raw) <= maxRawUsageBytes
 }
 
 func mapInputUsage(usage provider.InputTokenUsage) (unaryInputTokenUsage, error) {

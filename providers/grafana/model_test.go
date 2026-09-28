@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -23,14 +24,14 @@ func TestDecodeGenerate_FunctionCalls(t *testing.T) {
 		encoded, err := json.Marshal(input)
 		require.NoError(t, err)
 		body := `{"content":[{"type":"text","text":""},{"type":"tool-call","toolCallId":"call","toolName":"weather","input":` + string(encoded) + `}],"finishReason":{"unified":"tool-calls"},"usage":{"inputTokens":{},"outputTokens":{}}}`
-		result, err := decodeGenerate([]byte(body))
+		result, err := decodeGenerate([]byte(body), int64(len(body)))
 		require.NoError(t, err)
 		require.Len(t, result.Content, 2)
 		assert.Equal(t, input, string(result.Content[1].Input))
 		assert.Equal(t, "call", result.Content[1].ToolCallID)
 		for _, marker := range []string{"providerExecuted", "dynamic"} {
 			marked := strings.Replace(body, `"toolName":"weather"`, `"toolName":"weather","`+marker+`":true`, 1)
-			_, err := decodeGenerate([]byte(marked))
+			_, err := decodeGenerate([]byte(marked), int64(len(marked)))
 			require.Error(t, err)
 		}
 	}
@@ -45,7 +46,7 @@ func TestDecodeGenerate_FunctionCallRequiredFields(t *testing.T) {
 		`{"type":"tool-call","toolCallId":"a","toolName":"f","input":{}}`,
 	} {
 		body := `{"content":[` + content + `],"finishReason":{"unified":"tool-calls"},"usage":{"inputTokens":{},"outputTokens":{}}}`
-		_, err := decodeGenerate([]byte(body))
+		_, err := decodeGenerate([]byte(body), int64(len(body)))
 		require.Error(t, err)
 	}
 }
@@ -100,6 +101,63 @@ func TestModel_GenerateRequestAndNormalization(t *testing.T) {
 	assert.Equal(t, int32(1), calls.Load())
 }
 
+func TestModel_UnaryRawUsage(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{name: "absent"},
+		{name: "empty", raw: `{}`, want: `{}`},
+		{name: "native", raw: `{"input_tokens":32,"service_tier":"standard","nested":[1,true]}`, want: `{"input_tokens":32,"service_tier":"standard","nested":[1,true]}`},
+		{name: "valid surrogate", raw: `{"nested":{"\ud83d\ude00":1}}`, want: `{"nested":{"😀":1}}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := unaryFixture
+			if tc.raw != "" {
+				body = strings.Replace(body, `"outputTokens":{"total":1,"text":1,"reasoning":0}`, `"outputTokens":{"total":1,"text":1,"reasoning":0},"raw":`+tc.raw, 1)
+			}
+			p := testProvider(t, func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = io.WriteString(w, body)
+			}, nil)
+			m, err := p.LanguageModel("assistant")
+			require.NoError(t, err)
+			result, err := m.DoGenerate(context.Background(), provider.CallOptions{})
+			require.NoError(t, err)
+			assert.Equal(t, 2, *result.Usage.InputTokens.Total)
+			if tc.want == "" {
+				assert.Nil(t, result.Usage.Raw)
+			} else {
+				assert.JSONEq(t, tc.want, string(result.Usage.Raw))
+			}
+		})
+	}
+}
+
+func TestModel_UnaryRawUsageSize(t *testing.T) {
+	for _, size := range []int{maxRawUsageBytes, maxRawUsageBytes + 1} {
+		t.Run(strconv.Itoa(size), func(t *testing.T) {
+			raw := `{"large":"` + strings.Repeat("x", size-len(`{"large":""}`)) + `"}`
+			body := strings.Replace(unaryFixture, `"outputTokens":{"total":1,"text":1,"reasoning":0}`, `"outputTokens":{"total":1,"text":1,"reasoning":0},"raw":`+raw, 1)
+			p := testProvider(t, func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = io.WriteString(w, body)
+			}, nil)
+			m, err := p.LanguageModel("assistant")
+			require.NoError(t, err)
+			result, err := m.DoGenerate(context.Background(), provider.CallOptions{})
+			if size == maxRawUsageBytes {
+				require.NoError(t, err)
+				assert.Len(t, result.Usage.Raw, size)
+			} else {
+				require.Error(t, err)
+				assert.Nil(t, result)
+			}
+		})
+	}
+}
+
 func TestModel_UnaryFailures(t *testing.T) {
 	for _, tc := range []struct{ name, body string }{
 		{"missing content", `{"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}}}`},
@@ -118,6 +176,14 @@ func TestModel_UnaryFailures(t *testing.T) {
 		{"unsafe usage", strings.Replace(unaryFixture, `"total":2`, `"total":9007199254740992`, 1)},
 		{"fractional usage", strings.Replace(unaryFixture, `"total":2`, `"total":0.5`, 1)},
 		{"missing usage side", strings.Replace(unaryFixture, `"outputTokens"`, `"missing"`, 1)},
+		{"null raw", strings.Replace(unaryFixture, `"outputTokens":{"total":1,"text":1,"reasoning":0}`, `"outputTokens":{"total":1,"text":1,"reasoning":0},"raw":null`, 1)},
+		{"array raw", strings.Replace(unaryFixture, `"outputTokens":{"total":1,"text":1,"reasoning":0}`, `"outputTokens":{"total":1,"text":1,"reasoning":0},"raw":[]`, 1)},
+		{"scalar raw", strings.Replace(unaryFixture, `"outputTokens":{"total":1,"text":1,"reasoning":0}`, `"outputTokens":{"total":1,"text":1,"reasoning":0},"raw":1`, 1)},
+		{"unpaired surrogate raw", strings.Replace(unaryFixture, `"outputTokens":{"total":1,"text":1,"reasoning":0}`, `"outputTokens":{"total":1,"text":1,"reasoning":0},"raw":{"nested":{"\ud800":"private"}}`, 1)},
+		{"unpaired low surrogate raw", strings.Replace(unaryFixture, `"outputTokens":{"total":1,"text":1,"reasoning":0}`, `"outputTokens":{"total":1,"text":1,"reasoning":0},"raw":{"nested":["\udc00"]}`, 1)},
+		{"invalid UTF-8 raw", strings.Replace(unaryFixture, `"outputTokens":{"total":1,"text":1,"reasoning":0}`, `"outputTokens":{"total":1,"text":1,"reasoning":0},"raw":{"nested":"`+string([]byte{0xff})+`"}`, 1)},
+		{"malformed raw", strings.Replace(unaryFixture, `"outputTokens":{"total":1,"text":1,"reasoning":0}`, `"outputTokens":{"total":1,"text":1,"reasoning":0},"raw":{"private":`, 1)},
+		{"oversized raw", strings.Replace(unaryFixture, `"outputTokens":{"total":1,"text":1,"reasoning":0}`, `"outputTokens":{"total":1,"text":1,"reasoning":0},"raw":{"private":"`+strings.Repeat("x", 1<<20)+`"}`, 1)},
 		{"trailing", unaryFixture + `{}`},
 		{"malformed", `{"content":`},
 	} {
@@ -134,6 +200,7 @@ func TestModel_UnaryFailures(t *testing.T) {
 			var api *provider.APICallError
 			require.ErrorAs(t, err, &api)
 			assert.False(t, api.IsRetryable)
+			assert.NotContains(t, err.Error(), "private")
 		})
 	}
 }

@@ -76,7 +76,7 @@ func (m *model) DoGenerate(ctx context.Context, opts provider.CallOptions) (*pro
 		}
 		return nil, protocolError("grafana: invalid unary response", resp.StatusCode, err)
 	}
-	result, err := decodeGenerate(body)
+	result, err := decodeGenerate(body, m.provider.limits.UnaryBytes)
 	if err != nil {
 		return nil, protocolError("grafana: invalid unary result", resp.StatusCode, err)
 	}
@@ -120,7 +120,10 @@ func (w *wireFinish) UnmarshalJSON(data []byte) error {
 	return decodeFields(data, (*plain)(w), "unified", "raw")
 }
 
+const maxRawUsageBytes = 1 << 20
+
 type wireUsage struct {
+	Raw         json.RawMessage `json:"raw"`
 	InputTokens *struct {
 		Total      *int `json:"total"`
 		NoCache    *int `json:"noCache"`
@@ -157,11 +160,21 @@ func (w *wireUsage) UnmarshalJSON(data []byte) error {
 			}
 		}
 	}
+	raw, present := groups["raw"]
+	if present && len(raw) > maxRawUsageBytes {
+		return errors.New("grafana: invalid raw usage")
+	}
 	encoded, err := json.Marshal(filtered)
 	if err != nil {
 		return err
 	}
-	return json.Unmarshal(encoded, (*plain)(w))
+	if err := json.Unmarshal(encoded, (*plain)(w)); err != nil {
+		return err
+	}
+	if present {
+		w.Raw = raw
+	}
+	return nil
 }
 
 func decodeFinish(value *wireFinish) (provider.FinishReason, error) {
@@ -180,7 +193,7 @@ func decodeFinish(value *wireFinish) (provider.FinishReason, error) {
 	return result, nil
 }
 
-func decodeUsage(value *wireUsage) (provider.Usage, error) {
+func decodeUsage(value *wireUsage, limit int64) (provider.Usage, error) {
 	if value == nil || value.InputTokens == nil || value.OutputTokens == nil {
 		return provider.Usage{}, errors.New("grafana: missing usage")
 	}
@@ -190,10 +203,17 @@ func decodeUsage(value *wireUsage) (provider.Usage, error) {
 			return provider.Usage{}, errors.New("grafana: invalid token count")
 		}
 	}
-	return provider.Usage{InputTokens: provider.InputTokenUsage{Total: i.Total, NoCache: i.NoCache, CacheRead: i.CacheRead, CacheWrite: i.CacheWrite}, OutputTokens: provider.OutputTokenUsage{Total: o.Total, Text: o.Text, Reasoning: o.Reasoning}}, nil
+	if len(value.Raw) > 0 && (len(value.Raw) > maxRawUsageBytes || int64(len(value.Raw)) > limit || !json.Valid(value.Raw) || value.Raw[0] != '{') {
+		return provider.Usage{}, errors.New("grafana: invalid raw usage")
+	}
+	var raw json.RawMessage
+	if len(value.Raw) > 0 {
+		raw = append(raw, value.Raw...)
+	}
+	return provider.Usage{InputTokens: provider.InputTokenUsage{Total: i.Total, NoCache: i.NoCache, CacheRead: i.CacheRead, CacheWrite: i.CacheWrite}, OutputTokens: provider.OutputTokenUsage{Total: o.Total, Text: o.Text, Reasoning: o.Reasoning}, Raw: raw}, nil
 }
 
-func decodeGenerate(body []byte) (*provider.GenerateResult, error) {
+func decodeGenerate(body []byte, limit int64) (*provider.GenerateResult, error) {
 	var value struct {
 		Content      *[]json.RawMessage `json:"content"`
 		FinishReason *wireFinish        `json:"finishReason"`
@@ -210,7 +230,7 @@ func decodeGenerate(body []byte) (*provider.GenerateResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	usage, err := decodeUsage(value.Usage)
+	usage, err := decodeUsage(value.Usage, limit)
 	if err != nil {
 		return nil, err
 	}
