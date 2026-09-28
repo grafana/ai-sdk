@@ -205,16 +205,15 @@ The Anthropic provider module is a separate `go.mod`. Run its tests from the
 Bedrock provider module under `providers/bedrock/`.
 
 The root `go.work` remains SDK-only. `go.gateway.work` is explicitly selected
-for required Gateway source checks, not a default or release build mode.
+for required Gateway source checks and image builds.
 `scripts/module-policy.sh` owns module inventory, merged-pin ancestry,
 standalone validation, the license boundary, and the candidate-source,
 Gateway-absent SDK proof. Real published internal module pins must already be
 merged on canonical `main`; an older merged pseudo-version may lag candidate
-source. `mise run verify-module-resolution` remains on demand; Gateway
-production/image builds still use `GOWORK=off`. The push-only image gate
-validates Gateway standalone at the same revision before publication.
-Source PR success does not authorize SDK releases; manually validate selected
-modules before publication until #245 is incorporated into #21.
+source. `mise run verify-module-resolution` remains on demand. Gateway is
+released as an image built from same-revision workspace source, not as a
+standalone Go module. SDK/provider/middleware Go-module releases still require
+`GOWORK=off` validation before publication (#245/#21).
 
 ## Project Structure
 

@@ -1,10 +1,4 @@
-# module-validation-modes Specification
-
-## Purpose
-
-Separate required Gateway candidate-source integration from standalone artifact validation without weakening the SDK-to-Gateway boundary or publication gates.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Explicit Gateway candidate-source integration
 
@@ -22,22 +16,6 @@ The repository SHALL provide a separately selected Go workspace containing Gatew
 #### Scenario: Root default workspace
 - **WHEN** Go selects root `go.work`
 - **THEN** Gateway SHALL be absent from that workspace
-
-### Requirement: Structural boundary enforcement independent of standalone execution
-
-A structural check SHALL retain the AGPL Gateway / Apache SDK license and module boundary: reject Gateway imports, requirements or replacements in tracked source and manifests outside `ai-gateway/`; exclude Gateway from root `go.work` and SDK/Grafana module graphs; and reject root workspace replacements. Independently, a required check SHALL build and test candidate SDK root and Grafana client with Gateway source physically absent, using a copied Gateway-free workspace. Standalone root/client checks MAY run on demand for consumer readiness but SHALL NOT become a source-PR prerequisite.
-
-#### Scenario: Reverse dependency in nested module
-- **WHEN** tracked source or a manifest outside `ai-gateway/` references Gateway, including in a nested module
-- **THEN** the structural check SHALL fail in any validation mode
-
-#### Scenario: SDK and Grafana source independence
-- **WHEN** the independent source-absence check runs
-- **THEN** candidate SDK root and Grafana client SHALL build and test with Gateway absent without needing compatibility with an older published root pin
-
-#### Scenario: Structural check without standalone tests
-- **WHEN** the structural boundary check runs
-- **THEN** it SHALL report boundary violations independently of public-proxy build/test execution
 
 ### Requirement: Selectable published-module standalone validation
 
