@@ -192,7 +192,7 @@ func applyProviderOptions(body *responses.ResponseNewParams, popts OpenAIRespons
 // applyIncludeAndReasoning populates the include array (logprobs, web search
 // sources, code interpreter outputs, encrypted reasoning) and the reasoning
 // effort/summary block for reasoning models.
-func applyIncludeAndReasoning(body *responses.ResponseNewParams, opts provider.CallOptions, popts OpenAIResponsesOptions, isReasoning, store, webSearchSourcesIncludeSupported bool, br *buildResult) {
+func applyIncludeAndReasoning(body *responses.ResponseNewParams, popts OpenAIResponsesOptions, resolvedEffort string, isReasoning, store, webSearchSourcesIncludeSupported bool, br *buildResult) {
 	includes := map[responses.ResponseIncludable]bool{}
 	for _, inc := range popts.Include {
 		includes[responses.ResponseIncludable(inc)] = true
@@ -244,18 +244,14 @@ func applyIncludeAndReasoning(body *responses.ResponseNewParams, opts provider.C
 
 	// Reasoning effort + summary block.
 	if isReasoning {
-		effort := popts.ReasoningEffort
-		if effort == "" && opts.Reasoning != provider.ReasoningProviderDefault {
-			effort = string(opts.Reasoning)
-		}
 		summary := popts.ReasoningSummary
-		if summary == "" && effort != "" && effort != "none" {
+		if summary == "" && resolvedEffort != "" && resolvedEffort != "none" {
 			summary = "detailed"
 		}
-		if effort != "" || summary != "" || popts.ReasoningMode != "" || popts.ReasoningContext != "" {
+		if resolvedEffort != "" || summary != "" || popts.ReasoningMode != "" || popts.ReasoningContext != "" {
 			r := shared.ReasoningParam{}
-			if effort != "" {
-				r.Effort = shared.ReasoningEffort(effort)
+			if resolvedEffort != "" {
+				r.Effort = shared.ReasoningEffort(resolvedEffort)
 			}
 			if summary != "" {
 				r.Summary = shared.ReasoningSummary(summary)

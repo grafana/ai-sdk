@@ -24,6 +24,17 @@ type ongoingToolCall struct {
 	applyPatchDone    bool
 	suppressInput     bool
 	bufferedDeltas    []string
+	async             *bool
+}
+
+func asyncFromDone(value bool, present bool, ongoing *ongoingToolCall) *bool {
+	if present {
+		return &value
+	}
+	if ongoing != nil {
+		return ongoing.async
+	}
+	return nil
 }
 
 type reasoningSummaryState string
@@ -268,7 +279,7 @@ func (a *streamAdapter) handleOutputItemAdded(e responses.ResponseOutputItemAdde
 
 	case responses.ResponseFunctionToolCall:
 		suppress := a.br.isUndeclaredParallelTool(v.Name)
-		a.ongoingToolCalls[e.OutputIndex] = &ongoingToolCall{toolName: v.Name, toolCallID: v.CallID, suppressInput: suppress}
+		a.ongoingToolCalls[e.OutputIndex] = &ongoingToolCall{toolName: v.Name, toolCallID: v.CallID, suppressInput: suppress, async: presentAsync(v.Async, v.JSON.Async.Valid())}
 		if !suppress {
 			ch <- provider.StreamPart{Type: provider.PartToolInputStart, ID: v.CallID, ToolName: v.Name}
 		}
@@ -298,7 +309,7 @@ func (a *streamAdapter) handleOutputItemAdded(e responses.ResponseOutputItemAdde
 
 	case responses.ResponseCustomToolCall:
 		toolName := v.Name
-		a.ongoingToolCalls[e.OutputIndex] = &ongoingToolCall{toolName: toolName, toolCallID: v.CallID}
+		a.ongoingToolCalls[e.OutputIndex] = &ongoingToolCall{toolName: toolName, toolCallID: v.CallID, async: presentAsync(v.Async, v.JSON.Async.Valid())}
 		ch <- provider.StreamPart{Type: provider.PartToolInputStart, ID: v.CallID, ToolName: toolName}
 
 	case responses.ResponseComputerToolCall:
@@ -397,7 +408,7 @@ func (a *streamAdapter) handleOutputItemDone(e responses.ResponseOutputItemDoneE
 			ToolCallID:       v.CallID,
 			ToolName:         v.Name,
 			Input:            orEmptyObject(v.Arguments),
-			ProviderMetadata: itemIDNamespaceCallerMeta(a.providerOptionsName, v.ID, v.Namespace, v.Caller.Type, v.Caller.CallerID),
+			ProviderMetadata: toolCallMeta(a.providerOptionsName, v.ID, v.Namespace, v.Caller.Type, v.Caller.CallerID, asyncFromDone(v.Async, v.JSON.Async.Valid(), ongoing)),
 		}
 
 	case responses.ResponseOutputItemProgram:
@@ -463,6 +474,7 @@ func (a *streamAdapter) handleOutputItemDone(e responses.ResponseOutputItemDoneE
 
 	case responses.ResponseCustomToolCall:
 		a.hasFunctionCall = true
+		ongoing := a.ongoingToolCalls[e.OutputIndex]
 		delete(a.ongoingToolCalls, e.OutputIndex)
 		input, _ := json.Marshal(v.Input)
 		ch <- provider.StreamPart{Type: provider.PartToolInputEnd, ID: v.CallID}
@@ -471,7 +483,7 @@ func (a *streamAdapter) handleOutputItemDone(e responses.ResponseOutputItemDoneE
 			ToolCallID:       v.CallID,
 			ToolName:         v.Name,
 			Input:            string(input),
-			ProviderMetadata: itemIDMeta(a.providerOptionsName, v.ID),
+			ProviderMetadata: toolCallMeta(a.providerOptionsName, v.ID, "", "", "", asyncFromDone(v.Async, v.JSON.Async.Valid(), ongoing)),
 		}
 
 	case responses.ResponseComputerToolCall:

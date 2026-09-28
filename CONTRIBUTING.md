@@ -142,9 +142,9 @@ mise run test-module-policy
 mise run verify-merged-pins
                         # published internal pins descend from canonical main
 mise run verify-module-resolution
-                        # all published modules, fresh public-proxy cache, GOWORK=off
+                        # on-demand release check for all published modules
 MODULE=providers/openai mise run verify-published-module
-                        # same standalone checks for one published module
+                        # on-demand release check for one published module
 mise run test-ai-gateway-source
 mise run test-ai-gateway-source-integration
                         # explicitly selected candidate-source Gateway checks
@@ -497,16 +497,20 @@ source checks and image builds. Standalone Go-module validation still uses
 declared versions with `GOWORK=off`. Gateway code may import explicitly pinned
 SDK modules, but no module outside `ai-gateway/` may import, require, or replace
 `github.com/grafana/ai-sdk/ai-gateway`. The structural check
-rejects reverse source and module references; standalone validation builds and tests
-published modules with `GOWORK=off`, and a separate check builds the candidate SDK
-and Grafana client with Gateway source absent. These checks share `scripts/module-policy.sh`.
+rejects reverse source and module references. Required source checks build the
+candidate modules together and separately prove the candidate SDK and Grafana client
+without Gateway source. On-demand standalone validation builds published modules with
+`GOWORK=off`; it is release evidence, not a source-PR prerequisite. These checks share
+`scripts/module-policy.sh`.
 None replaces license review for copied code or third-party dependencies.
 
 Every real internal pin in a published module must refer to a commit already
 merged into canonical `grafana/ai-sdk` `main`. Merged pseudo-versions are valid;
-local-only example/test replacements are not published pins. A green workspace
-integration test proves candidate-source behavior, not standalone consumability.
-All-module standalone validation is available on demand, not a source-PR gate.
+local-only example/test replacements are not published pins. Coordinated root,
+provider, middleware, and Gateway changes may land together when required candidate-
+source checks exercise them; older merged pins need not compile candidate source.
+Standalone validation is available on demand for separately published module releases,
+not as a source-PR gate.
 Gateway is released as an image built from same-revision workspace source,
 not as a standalone Go module. Image success does not authorize SDK, provider,
 or middleware Go-module releases; validate those with `GOWORK=off` before
