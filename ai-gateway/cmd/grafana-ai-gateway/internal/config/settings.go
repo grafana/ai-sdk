@@ -51,6 +51,7 @@ type AgentObservabilitySettings struct {
 	MaxRetries      int
 	InitialBackoff  time.Duration
 	MaxBackoff      time.Duration
+	ExportTimeout   time.Duration
 	FlushInterval   time.Duration
 	FlushTimeout    time.Duration
 	ShutdownTimeout time.Duration
@@ -135,6 +136,7 @@ func ParseSettings(args []string, lookupEnv LookupEnv) (Settings, error) {
 	app.Flag("agento11y.max-retries", "Maximum Agent Observability export retries.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_AGENTO11Y_MAX_RETRIES", "5")).IntVar(&settings.AgentObservability.MaxRetries)
 	app.Flag("agento11y.initial-backoff", "Initial Agent Observability retry backoff.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_AGENTO11Y_INITIAL_BACKOFF", "100ms")).DurationVar(&settings.AgentObservability.InitialBackoff)
 	app.Flag("agento11y.max-backoff", "Maximum Agent Observability retry backoff.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_AGENTO11Y_MAX_BACKOFF", "5s")).DurationVar(&settings.AgentObservability.MaxBackoff)
+	app.Flag("agento11y.export-timeout", "Maximum duration of each Agent Observability HTTP or gRPC export attempt.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_AGENTO11Y_EXPORT_TIMEOUT", "10s")).DurationVar(&settings.AgentObservability.ExportTimeout)
 	app.Flag("agento11y.flush-interval", "Agent Observability asynchronous batch flush interval.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_AGENTO11Y_FLUSH_INTERVAL", "1s")).DurationVar(&settings.AgentObservability.FlushInterval)
 	app.Flag("agento11y.flush-timeout", "Maximum Agent Observability explicit flush duration.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_AGENTO11Y_FLUSH_TIMEOUT", "5s")).DurationVar(&settings.AgentObservability.FlushTimeout)
 	app.Flag("agento11y.shutdown-timeout", "Maximum Agent Observability shutdown duration.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_AGENTO11Y_SHUTDOWN_TIMEOUT", "5s")).DurationVar(&settings.AgentObservability.ShutdownTimeout)
@@ -362,6 +364,11 @@ var ambientAgentObservabilityEnvironment = []string{
 	"AGENTO11Y_CONTENT_CAPTURE_MODE", "SIGIL_CONTENT_CAPTURE_MODE",
 	"AGENTO11Y_DEBUG", "SIGIL_DEBUG",
 	"AGENTO11Y_REDACT_INPUT_MESSAGES", "SIGIL_REDACT_INPUT_MESSAGES",
+	"AGENTO11Y_EXPORT_TIMEOUT_MS", "SIGIL_EXPORT_TIMEOUT_MS",
+	"AGENTO11Y_MAX_RETRIES", "SIGIL_MAX_RETRIES",
+	"AGENTO11Y_MAX_BACKOFF_MS", "SIGIL_MAX_BACKOFF_MS",
+	"AGENTO11Y_QUEUE_SIZE", "SIGIL_QUEUE_SIZE",
+	"AGENTO11Y_ENABLE_EXPERIMENTAL_FEATURES", "AGENTO11Y_USE_EXPERIMENTAL_OTEL", "SIGIL_USE_EXPERIMENTAL_OTEL",
 }
 
 func (settings AgentObservabilitySettings) validate(mode DeploymentMode) error {
@@ -409,6 +416,7 @@ func (settings AgentObservabilitySettings) validate(mode DeploymentMode) error {
 	}{
 		{name: "initial backoff", value: settings.InitialBackoff},
 		{name: "maximum backoff", value: settings.MaxBackoff},
+		{name: "export timeout", value: settings.ExportTimeout},
 		{name: "flush interval", value: settings.FlushInterval},
 		{name: "flush timeout", value: settings.FlushTimeout},
 		{name: "shutdown timeout", value: settings.ShutdownTimeout},

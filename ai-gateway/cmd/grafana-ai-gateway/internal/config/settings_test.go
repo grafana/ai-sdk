@@ -45,6 +45,7 @@ func TestParseSettings_Defaults(t *testing.T) {
 			MaxRetries:      5,
 			InitialBackoff:  100 * time.Millisecond,
 			MaxBackoff:      5 * time.Second,
+			ExportTimeout:   10 * time.Second,
 			FlushInterval:   time.Second,
 			FlushTimeout:    5 * time.Second,
 			ShutdownTimeout: 5 * time.Second,
@@ -110,6 +111,7 @@ func TestParseSettings_ExactFlagAndEnvironmentBindings(t *testing.T) {
 			assert.Equal(t, 200*time.Millisecond, s.AgentObservability.InitialBackoff)
 		}},
 		{flag: "agento11y.max-backoff", env: "GRAFANA_AI_GATEWAY_AGENTO11Y_MAX_BACKOFF", value: "10s", check: func(t *testing.T, s Settings) { assert.Equal(t, 10*time.Second, s.AgentObservability.MaxBackoff) }},
+		{flag: "agento11y.export-timeout", env: "GRAFANA_AI_GATEWAY_AGENTO11Y_EXPORT_TIMEOUT", value: "3s", check: func(t *testing.T, s Settings) { assert.Equal(t, 3*time.Second, s.AgentObservability.ExportTimeout) }},
 		{flag: "agento11y.flush-interval", env: "GRAFANA_AI_GATEWAY_AGENTO11Y_FLUSH_INTERVAL", value: "2s", check: func(t *testing.T, s Settings) { assert.Equal(t, 2*time.Second, s.AgentObservability.FlushInterval) }},
 		{flag: "agento11y.flush-timeout", env: "GRAFANA_AI_GATEWAY_AGENTO11Y_FLUSH_TIMEOUT", value: "7s", check: func(t *testing.T, s Settings) { assert.Equal(t, 7*time.Second, s.AgentObservability.FlushTimeout) }},
 		{flag: "agento11y.shutdown-timeout", env: "GRAFANA_AI_GATEWAY_AGENTO11Y_SHUTDOWN_TIMEOUT", value: "8s", check: func(t *testing.T, s Settings) { assert.Equal(t, 8*time.Second, s.AgentObservability.ShutdownTimeout) }},
@@ -227,6 +229,9 @@ func TestSettingsValidate_BoundsAndRelationships(t *testing.T) {
 		{name: "agento11y retry overflow", mutate: func(s *Settings) { s.AgentObservability.MaxRetries = 11 }},
 		{name: "agento11y retries disabled", mutate: func(s *Settings) { s.AgentObservability.MaxRetries = 0 }},
 		{name: "agento11y reserved secret reference", mutate: func(s *Settings) { s.AgentObservability.AuthSecretEnv = "AGENTO11Y_AUTH_TOKEN" }},
+		{name: "agento11y export timeout zero", mutate: func(s *Settings) { s.AgentObservability.ExportTimeout = 0 }},
+		{name: "agento11y export timeout negative", mutate: func(s *Settings) { s.AgentObservability.ExportTimeout = -time.Second }},
+		{name: "agento11y export timeout overflow", mutate: func(s *Settings) { s.AgentObservability.ExportTimeout = 5*time.Minute + time.Nanosecond }},
 		{name: "agento11y duration zero", mutate: func(s *Settings) { s.AgentObservability.FlushTimeout = 0 }},
 		{name: "agento11y duration overflow", mutate: func(s *Settings) { s.AgentObservability.ShutdownTimeout = 5*time.Minute + time.Nanosecond }},
 		{name: "agento11y backoff order", mutate: func(s *Settings) {
@@ -402,6 +407,25 @@ func TestAgentObservabilitySettings_RejectsEveryAmbientSDKEnvironmentKey(t *test
 		return "private-ambient-value", true
 	}))
 	assert.Zero(t, calls)
+}
+
+func TestAgentObservabilitySettings_RejectsNewSDKEnvironmentKeys(t *testing.T) {
+	settings, err := ParseSettings(nil, mapLookup(baseSettingsEnvironment()))
+	require.NoError(t, err)
+	for _, name := range []string{
+		"AGENTO11Y_EXPORT_TIMEOUT_MS", "SIGIL_EXPORT_TIMEOUT_MS",
+		"AGENTO11Y_MAX_RETRIES", "SIGIL_MAX_RETRIES",
+		"AGENTO11Y_MAX_BACKOFF_MS", "SIGIL_MAX_BACKOFF_MS",
+		"AGENTO11Y_QUEUE_SIZE", "SIGIL_QUEUE_SIZE",
+		"AGENTO11Y_ENABLE_EXPERIMENTAL_FEATURES", "AGENTO11Y_USE_EXPERIMENTAL_OTEL", "SIGIL_USE_EXPERIMENTAL_OTEL",
+	} {
+		t.Run(name, func(t *testing.T) {
+			err := settings.AgentObservability.ValidateAmbientEnvironment(mapLookup(map[string]string{name: "private-invalid-value"}))
+			require.EqualError(t, err, "config: ambient agent observability SDK environment is not allowed")
+			_, err = ParseSettings([]string{"--agento11y.auth-secret-env=" + name}, mapLookup(baseSettingsEnvironment()))
+			require.ErrorContains(t, err, "SDK-reserved")
+		})
+	}
 }
 
 func TestParseSettings_AuthModes(t *testing.T) {
