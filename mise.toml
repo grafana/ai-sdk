@@ -7,11 +7,11 @@ experimental = true
 go = "1.27.1"
 jq = "1.8.2"
 node = "24"
-pnpm = "12.4.2"
+pnpm = "12.6.0"
 python = "3.14.7"
-golangci-lint = "2.13.2"
+golangci-lint = "2.14.0"
 "npm:@fission-ai/openspec" = "1"
-"npm:markdownlint-cli2" = "0.23.2"
+"npm:markdownlint-cli2" = "0.23.3"
 
 [deps.test]
 auto = false

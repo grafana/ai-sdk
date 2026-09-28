@@ -607,7 +607,7 @@ func sanitizeContentPart(part provider.ContentPart, capture CaptureOptions) prov
 	case provider.ContentPartTypeFile, provider.ContentPartTypeReasoningFile:
 		if !capture.Files {
 			part.Data = nil
-			part.Filename = ""
+			part.Filename = nil
 		}
 	case provider.ContentPartTypeToolCall:
 		if !capture.ToolInputs {
@@ -616,6 +616,25 @@ func sanitizeContentPart(part provider.ContentPart, capture CaptureOptions) prov
 	case provider.ContentPartTypeToolResult:
 		if !capture.ToolOutputs {
 			part.Output = nil
+		} else if part.Output != nil {
+			output := *part.Output
+			if !capture.ProviderOptions {
+				output.ProviderOptions = nil
+			}
+			if output.Type == provider.ToolOutputContent {
+				content := make([]provider.ToolResultContentValue, 0, len(output.Content))
+				for _, value := range output.Content {
+					if value.Type == provider.ToolContentFile && !capture.Files {
+						continue
+					}
+					if !capture.ProviderOptions {
+						value.ProviderOptions = nil
+					}
+					content = append(content, value)
+				}
+				output.Content = content
+			}
+			part.Output = &output
 		}
 	}
 	return part
