@@ -49,6 +49,7 @@ func prepareTools(body *responses.ResponseNewParams, opts provider.CallOptions, 
 
 	var tools []responses.ToolUnionParam
 	namespaceTools := map[string]*responses.NamespaceToolParam{}
+	allowed := newAllowedToolIndex()
 
 	for _, t := range opts.Tools {
 		switch t.Type {
@@ -76,6 +77,7 @@ func prepareTools(body *responses.ResponseNewParams, opts provider.CallOptions, 
 				}
 				warnings = append(warnings, schemaWarnings...)
 				namespaceTool.Tools = append(namespaceTool.Tools, fn)
+				allowed.record(t.Name, allowedToolResolution{reason: "tools inside an OpenAI tool namespace are not visible to tool_choice.allowed_tools"}, "")
 				continue
 			}
 			fn, schemaWarnings, err := functionTool(t, openaiOptions)
@@ -84,6 +86,11 @@ func prepareTools(body *responses.ResponseNewParams, opts provider.CallOptions, 
 			}
 			warnings = append(warnings, schemaWarnings...)
 			tools = append(tools, fn)
+			resolution := allowedToolResolution{kind: allowedToolFunction, name: t.Name}
+			if openaiOptions.DeferLoading != nil && *openaiOptions.DeferLoading {
+				resolution = allowedToolResolution{reason: "deferred tools are not visible to tool_choice.allowed_tools"}
+			}
+			allowed.record(t.Name, resolution, "")
 
 		case provider.ToolTypeProvider:
 			tool, w, ok, err := providerTool(t, br)
@@ -96,6 +103,7 @@ func prepareTools(body *responses.ResponseNewParams, opts provider.CallOptions, 
 			}
 			warnings = append(warnings, w...)
 			tools = append(tools, tool)
+			allowed.record(t.Name, providerAllowedToolResolution(t, tool), br.toolNameMapping.toProviderToolName(t.Name))
 
 		default:
 			warnings = append(warnings, provider.Warning{
@@ -110,7 +118,12 @@ func prepareTools(body *responses.ResponseNewParams, opts provider.CallOptions, 
 		body.Tools = tools
 	}
 
-	applyToolChoice(body, opts.ToolChoice, popts, opts.Tools, br.toolNameMapping)
+	if popts.AllowedTools != nil {
+		choiceWarnings, err := applyAllowedTools(body, popts.AllowedTools, allowed, br.toolNameMapping)
+		warnings = append(warnings, choiceWarnings...)
+		return warnings, err
+	}
+	applyToolChoice(body, opts.ToolChoice, opts.Tools, br.toolNameMapping)
 	return warnings, nil
 }
 
@@ -443,27 +456,7 @@ func toolSearchTool(t provider.Tool) *responses.ToolSearchToolParam {
 	return &ts
 }
 
-// applyToolChoice resolves the tool choice, honoring an allowedTools override.
-func applyToolChoice(body *responses.ResponseNewParams, tc *provider.ToolChoice, popts OpenAIResponsesOptions, tools []provider.Tool, mapping toolNameMapping) {
-	// allowedTools overrides the request tool choice entirely.
-	if popts.AllowedTools != nil && len(popts.AllowedTools.ToolNames) > 0 {
-		var fns []map[string]any
-		for _, name := range popts.AllowedTools.ToolNames {
-			fns = append(fns, map[string]any{"type": "function", "name": mapping.toProviderToolName(name)})
-		}
-		mode := responses.ToolChoiceAllowedMode("auto")
-		if popts.AllowedTools.Mode != "" {
-			mode = responses.ToolChoiceAllowedMode(popts.AllowedTools.Mode)
-		}
-		body.ToolChoice = responses.ResponseNewParamsToolChoiceUnion{
-			OfAllowedTools: &responses.ToolChoiceAllowedParam{
-				Mode:  mode,
-				Tools: fns,
-			},
-		}
-		return
-	}
-
+func applyToolChoice(body *responses.ResponseNewParams, tc *provider.ToolChoice, tools []provider.Tool, mapping toolNameMapping) {
 	if tc == nil {
 		return
 	}
