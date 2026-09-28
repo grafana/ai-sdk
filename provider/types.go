@@ -36,7 +36,8 @@ type Usage struct {
 	Raw          json.RawMessage  `json:"raw,omitempty"`
 }
 
-// InputTokenUsage breaks down input token usage.
+// InputTokenUsage breaks down input token usage. Total counts every input
+// token, so it equals NoCache + CacheRead + CacheWrite when all are reported.
 type InputTokenUsage struct {
 	Total      *int `json:"total,omitempty"`
 	NoCache    *int `json:"noCache,omitempty"`

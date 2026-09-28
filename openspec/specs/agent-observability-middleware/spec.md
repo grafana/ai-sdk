@@ -155,7 +155,7 @@ If `opts.ContextProvider` is `nil`, the middleware SHALL log a warning at most o
 - `Input.MaxTokens`, `Temperature`, `TopP`, `ToolChoice` are derived from the corresponding `provider.CallOptions` fields.
 - Anthropic thinking-budget metadata (`agento11y.gen_ai.request.thinking.budget_tokens`) is derived from `params.ProviderOptions["anthropic"]` via `json.RawMessage` decoding, not by importing `providers/anthropic`.
 - `Output` contains an assistant `agento11y.Message` for supported model content and additional tool-role messages for tool-result entries. Empty reasoning parts SHALL be omitted.
-- `Usage` maps from `result.Usage` (input tokens, output tokens, cache hits where applicable).
+- `Usage` maps from normalized `result.Usage` and SHALL set `InputSemantics` to `TokenInputSemanticsInclusive` when an input total is reported and its reported buckets do not contradict it. A complete breakdown SHALL sum to the total; a partial breakdown SHALL NOT exceed it. Missing buckets SHALL remain unknown, not assumed zero. Missing totals or contradictory breakdowns SHALL leave semantics unspecified. Input totals already include cache reads and writes; the mapper SHALL NOT add cache buckets again. Total tokens SHALL equal normalized input plus output tokens. The same contract SHALL apply to observed streamed usage, generation export, and client-owned token telemetry. Streams with no observed usage MAY leave the usage value and semantics marker unset.
 - `StopReason` is produced by `finishReasonToAgento11yStop(result.FinishReason)` and SHALL match the string values the legacy `internal/llm/claude/` path emitted (e.g. `"end_turn"`, `"max_tokens"`, `"tool_use"`, `"stop_sequence"`).
 - `Metadata` starts with caller metadata, then applies reserved request and usage derivations. Derived Anthropic thinking-budget and positive server-tool request counts SHALL override conflicting caller values, matching the pinned agento11y Anthropic helper.
 - Provider tool calls and results SHALL retain recoverable Anthropic discriminators, including MCP metadata and configured provider-tool aliases for web search, web fetch, code execution, and tool search. Irrecoverable provider subtypes MAY use the generic discriminator.
@@ -399,10 +399,10 @@ For streams, the recording goroutine SHALL select on `ctx.Done()` to avoid block
 2. Resolve a client via `opts.ClientResolver`. If `nil`, pass through unchanged.
 3. Build an `agento11y.HookEvaluateRequest` from `params` (phase = preflight), excluding `file` and `reasoning-file` media.
 4. Call `client.EvaluateHook(ctx, request)`. If `opts.MaxLatency > 0`, the call SHALL be bounded by `context.WithTimeout(ctx, opts.MaxLatency)`; otherwise the request context SHALL be inherited unchanged.
-5. Branch on the response:
+5. Branch on the response after the pinned agento11y client's wire decoding and normalization. The client owns wire field names, protobuf/base64 payload decoding, role and part normalization, and conversation/trace correlation. The middleware SHALL validate the normalized response, not attempt to recover discarded wire information:
    - **Deny**: return `&HookDenialError{Reason, RuleID, Cause: nil}` to the caller. The inner model SHALL NOT be invoked.
    - **Allow**: invoke the inner model with `params` unchanged.
-   - **TransformedInput**: treat the transformed input as an authoritative replacement, rebuild `params.Prompt` and the retained subset of `params.Tools`, and invoke the inner model with the new params. If any returned content cannot be reconstructed without loss or reintroducing omitted content, return `ErrHookTransformFailed` without invoking the model.
+   - **TransformedInput**: treat the transformed input as an authoritative replacement, rebuild `params.Prompt` and the retained subset of `params.Tools`, and invoke the inner model with the new params. If the normalized content cannot be reconstructed without loss or reintroducing omitted content, return `ErrHookTransformFailed` without invoking the model. Deny SHALL take precedence over a decoded transform.
 
 #### Scenario: Allow path passes through
 
@@ -428,26 +428,48 @@ For streams, the recording goroutine SHALL select on `ctx.Done()` to avoid block
 - **THEN** the hook call SHALL be cancelled via context deadline
 - **AND** the original request context SHALL NOT be cancelled (only the derived hook-bounded context)
 
-### Requirement: Hook transforms are authoritative and lossless
+### Requirement: Normalized hook transforms are authoritative and reconstructable
 
-When `EvaluateHook` returns a non-nil `TransformedInput`, `HooksMiddleware` SHALL treat it as an authoritative replacement rather than a partial patch:
+The middleware SHALL adopt the pinned agento11y client's normalized hook semantics. An empty wire `transformed_input` that the client normalizes to nil SHALL be treated as no transform. Unknown roles may become user roles, unsupported or empty parts may be dropped or normalized to text, JSON payloads may be recovered from base64 or strings, and part metadata may be discarded before middleware validation. The middleware SHALL NOT promise lossless validation of the original wire response.
+
+When `EvaluateHook` returns a non-nil normalized `TransformedInput`, `HooksMiddleware` SHALL treat it as an authoritative replacement rather than a partial patch:
 
 1. A non-empty `SystemPrompt` SHALL become one system message. An empty `SystemPrompt` SHALL carry no original system message forward.
-2. Every transformed message SHALL be rebuilt in returned order. Unknown roles, unsupported part kinds, empty payload parts, and malformed tool payloads SHALL fail with `ErrHookTransformFailed`.
+2. Every normalized transformed message SHALL be rebuilt in returned order. Roles, part kinds, empty payloads, and malformed tool payloads that remain invalid after client normalization SHALL fail with `ErrHookTransformFailed`.
 3. Omitted assistant parts SHALL remain omitted. The middleware SHALL NOT restore an entire original assistant message based only on visible text.
 4. An unchanged reasoning part MAY reuse the exact original part to preserve its provider signature. Matching SHALL use an unambiguous unused reasoning part with identical reasoning text; changed or ambiguous signed reasoning SHALL fail closed.
-5. Unchanged provider-executed tool calls and provider-specific tool results SHALL retain their provider fields only after an exact ID, name, and payload match. A provider-specific part that cannot be matched exactly SHALL fail closed.
+5. Unchanged provider-executed tool calls and provider-specific tool results SHALL retain their provider fields only after an exact ID, name, payload, and provider discriminator match. A provider-specific part that cannot be matched exactly, including when the client discards its required discriminator, SHALL fail closed.
 6. Because hook evaluation intentionally excludes media, message-level provider options, text-part provider options, empty reasoning metadata, and other unsupported content, a transform of a prompt containing undisclosed content SHALL fail closed rather than silently dropping or restoring it.
 7. Returned tools SHALL be matched exactly to disclosed original tool definitions. Exact retained tools MAY be preserved or reordered and omitted tools SHALL be removed; new or modified tools that cannot be reconstructed losslessly SHALL fail closed. Removing tools SHALL also fail closed when it leaves a required or specifically named `ToolChoice` unsatisfied.
-8. An empty transform SHALL fail closed. A system-only replacement is valid.
+8. A non-nil normalized transform without a usable prompt SHALL fail closed. A system-only replacement is valid.
 
-#### Scenario: Empty transform fails closed
+#### Scenario: Empty wire transform is a no-op
 
 - **GIVEN** a non-empty original prompt
-- **AND** `EvaluateHook` returns a non-nil but empty `TransformedInput`
-- **WHEN** the transform is applied
+- **AND** the hook service returns an allow response with `transformed_input: {}`
+- **WHEN** the pinned client normalizes that input to nil
+- **THEN** the model SHALL receive the original call options unchanged
+
+#### Scenario: Normalization precedes validation
+
+- **GIVEN** an allow response with an unknown message role, a supported text part, and an unsupported payload-less part
+- **WHEN** the pinned client normalizes the role to user and drops the unsupported part
+- **THEN** the model SHALL receive the normalized user text
+- **AND** the middleware SHALL NOT reject information no longer present in the decoded response
+
+#### Scenario: Normalized message without usable content fails closed
+
+- **GIVEN** the client returns a non-nil transform containing a message whose parts were all dropped
+- **WHEN** the middleware reconstructs the normalized prompt
 - **THEN** `ErrHookTransformFailed` SHALL be returned
-- **AND** the inner model SHALL NOT be invoked with the original prompt
+- **AND** the inner model SHALL NOT be invoked
+
+#### Scenario: Provider discriminator discarded during decoding
+
+- **GIVEN** an original provider-executed tool call
+- **AND** the normalized transform retains its ID, name, and payload but lacks its required provider discriminator
+- **WHEN** the middleware reconstructs the normalized prompt
+- **THEN** it SHALL fail closed rather than silently convert the call to a client-executed tool
 
 #### Scenario: Removed assistant parts stay removed
 
@@ -549,7 +571,7 @@ Error states on the generation path SHALL reach the trace via `recorder.SetCallE
 The module SHALL include a `testdata/` directory containing:
 - `generation/`: paired (ai-sdk-typed `CallOptions` + `GenerateResult`, expected `agento11y.Generation` JSON) triples sourced from `agento11y/go-providers/anthropic` conformance helpers.
 - `stream/`: captured chunk-stream fixtures (reused from `providers/anthropic/test/conformance/recorded/` where overlapping content allows).
-- `hooks/`: paired (input prompt, hook response, expected post-transform prompt) triples.
+- `hooks/`: paired (input prompt, hook wire response, expected post-transform prompt) triples replayed through the real client HTTP decoder and middleware. Focused HTTP-boundary tests SHALL additionally cover wire tool schemas, base64 payloads, normalization, deny precedence, correlation, and media exclusion.
 
 A `mise run test-agent-observability-conformance` task SHALL run these tests in isolation. The conformance tests SHALL re-run on every PR that touches `middleware/agentobservability/` or bumps the `agento11y` dependency in `go.mod`.
 
