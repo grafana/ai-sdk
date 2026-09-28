@@ -152,6 +152,97 @@ func TestPrepareTools_WebSearchAutoIncludesSources(t *testing.T) {
 	assert.Contains(t, include, "web_search_call.action.sources")
 }
 
+func TestPrepareTools_WebSearchSourcesIncludePrecedence(t *testing.T) {
+	yes, no := true, false
+	const sources = "web_search_call.action.sources"
+	tests := []struct {
+		name     string
+		toolID   string
+		support  *bool
+		perCall  *bool
+		explicit bool
+		want     bool
+	}{
+		{name: "default web search", toolID: toolIDWebSearch, want: true},
+		{name: "default preview", toolID: toolIDWebSearchPreview, want: true},
+		{name: "explicit true", toolID: toolIDWebSearch, perCall: &yes, want: true},
+		{name: "explicit false", toolID: toolIDWebSearch, perCall: &no},
+		{name: "enabled capability", toolID: toolIDWebSearch, support: &yes, want: true},
+		{name: "disabled capability", toolID: toolIDWebSearch, support: &no},
+		{name: "disabled capability with true", toolID: toolIDWebSearch, support: &no, perCall: &yes},
+		{name: "disabled capability with false", toolID: toolIDWebSearch, support: &no, perCall: &no},
+		{name: "no web tool", perCall: &yes},
+		{name: "explicit source with per-call false", toolID: toolIDWebSearch, perCall: &no, explicit: true, want: true},
+		{name: "explicit source with disabled capability", toolID: toolIDWebSearchPreview, support: &no, explicit: true, want: true},
+		{name: "explicit source with both disabled", toolID: toolIDWebSearch, support: &no, perCall: &no, explicit: true, want: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var options []Option
+			if tc.support != nil {
+				options = append(options, WithWebSearchSourcesIncludeSupport(*tc.support))
+			}
+			call := provider.CallOptions{Prompt: []provider.Message{provider.UserText("hi")}}
+			if tc.toolID != "" {
+				call.Tools = []provider.Tool{{Type: provider.ToolTypeProvider, ID: tc.toolID, Name: "search"}}
+			}
+			popts := OpenAIResponsesOptions{IncludeWebSearchSources: tc.perCall}
+			if tc.explicit {
+				popts.Include = []string{sources, sources}
+			}
+			call.ProviderOptions = withOpenAIOptions(popts)
+
+			params, warnings, _, err := newModel("gpt-4o", options...).buildParams(call)
+			require.NoError(t, err)
+			require.Empty(t, warnings)
+			encoded, err := json.Marshal(params)
+			require.NoError(t, err)
+			var body map[string]any
+			require.NoError(t, json.Unmarshal(encoded, &body))
+			if tc.toolID != "" {
+				tools := toolsArray(t, body)
+				require.Len(t, tools, 1)
+				wantType := "web_search"
+				if tc.toolID == toolIDWebSearchPreview {
+					wantType = "web_search_preview"
+				}
+				assert.Equal(t, wantType, tools[0]["type"])
+			}
+			if tc.want {
+				assert.Equal(t, []string{sources}, toStringSlice(body["include"]))
+			} else {
+				assert.NotContains(t, toStringSlice(body["include"]), sources)
+			}
+		})
+	}
+}
+
+func TestPrepareTools_WebSearchOptOutPreservesOtherIncludes(t *testing.T) {
+	no := false
+	logprobs := int64(3)
+	params, warnings, _, err := newModel("gpt-5", WithWebSearchSourcesIncludeSupport(false)).buildParams(provider.CallOptions{
+		Prompt: []provider.Message{provider.UserText("hi")},
+		Tools: []provider.Tool{
+			{Type: provider.ToolTypeProvider, ID: toolIDWebSearch, Name: "search"},
+			{Type: provider.ToolTypeProvider, ID: toolIDCodeInterpreter, Name: "python"},
+		},
+		ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{
+			Store: &no, Logprobs: &LogprobsOption{Int: &logprobs},
+		}),
+	})
+	require.NoError(t, err)
+	require.Empty(t, warnings)
+	encoded, err := json.Marshal(params)
+	require.NoError(t, err)
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(encoded, &body))
+	assert.Equal(t, []string{
+		"reasoning.encrypted_content", "code_interpreter_call.outputs", "message.output_text.logprobs",
+	}, toStringSlice(body["include"]))
+	assert.EqualValues(t, 3, body["top_logprobs"])
+	assert.Len(t, toolsArray(t, body), 2)
+}
+
 func TestPrepareTools_WebSearchBlockedDomainsOnly(t *testing.T) {
 	body, warnings := buildBody(t, "gpt-4o", provider.CallOptions{
 		Prompt: []provider.Message{provider.UserText("hi")},
