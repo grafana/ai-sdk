@@ -34,12 +34,12 @@
     },
     "toolCall": {
       "type": "object", "required": ["type", "toolCallId", "toolName", "input"],
-      "properties": {"type": {"const": "tool-call"}, "toolCallId": {"type": "string", "minLength": 1}, "toolName": {"type": "string", "minLength": 1}, "input": {"type": "string"}},
+      "properties": {"type": {"const": "tool-call"}, "toolCallId": {"type": "string", "minLength": 1}, "toolName": {"type": "string", "minLength": 1}, "input": {"type": "string"}, "providerMetadata": {"$ref": "#/$defs/toolProviderMetadata"}},
       "additionalProperties": false
     },
     "toolResult": {
       "type": "object", "required": ["type", "toolCallId", "toolName", "result"],
-      "properties": {"type": {"const": "tool-result"}, "toolCallId": {"type": "string", "minLength": 1}, "toolName": {"type": "string", "minLength": 1}, "result": {"not": {"type": "null"}}, "isError": {"type": "boolean"}},
+      "properties": {"type": {"const": "tool-result"}, "toolCallId": {"type": "string", "minLength": 1}, "toolName": {"type": "string", "minLength": 1}, "result": {"not": {"type": "null"}}, "isError": {"type": "boolean"}, "providerMetadata": {"$ref": "#/$defs/toolProviderMetadata"}},
       "additionalProperties": false
     },
     "streamStart": {
@@ -71,7 +71,8 @@
       "required": ["type", "id"],
       "properties": {
         "type": { "const": "text-start" },
-        "id": { "type": "string", "minLength": 1 }
+        "id": { "type": "string", "minLength": 1 },
+        "providerMetadata": { "$ref": "#/$defs/textProviderMetadata" }
       },
       "additionalProperties": false
     },
@@ -90,7 +91,8 @@
       "required": ["type", "id"],
       "properties": {
         "type": { "const": "text-end" },
-        "id": { "type": "string", "minLength": 1 }
+        "id": { "type": "string", "minLength": 1 },
+        "providerMetadata": { "$ref": "#/$defs/textProviderMetadata" }
       },
       "additionalProperties": false
     },
@@ -144,6 +146,27 @@
           "additionalProperties": false
         }
       },
+      "additionalProperties": false
+    },
+    "itemId": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" },
+    "openaiMetadata": {
+      "type": "object", "required": ["itemId"],
+      "properties": { "itemId": { "$ref": "#/$defs/itemId" } },
+      "additionalProperties": false
+    },
+    "anthropicMetadata": {
+      "type": "object", "required": ["caller"],
+      "properties": { "caller": { "type": "object", "required": ["type"], "properties": { "type": { "const": "direct" } }, "additionalProperties": false } },
+      "additionalProperties": false
+    },
+    "textProviderMetadata": {
+      "type": "object", "required": ["openai"],
+      "properties": { "openai": { "$ref": "#/$defs/openaiMetadata" } },
+      "additionalProperties": false
+    },
+    "toolProviderMetadata": {
+      "type": "object", "minProperties": 1,
+      "properties": { "openai": { "$ref": "#/$defs/openaiMetadata" }, "anthropic": { "$ref": "#/$defs/anthropicMetadata" } },
       "additionalProperties": false
     },
     "finishReason": {

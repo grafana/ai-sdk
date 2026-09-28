@@ -224,8 +224,17 @@ func decodeGenerate(body []byte) (*provider.GenerateResult, error) {
 			Input            *string                      `json:"input"`
 			ProviderExecuted bool                         `json:"providerExecuted"`
 			Dynamic          bool                         `json:"dynamic"`
+			ProviderMetadata json.RawMessage              `json:"providerMetadata"`
 		}
-		if decodeFields(raw, &part, "type", "text", "toolCallId", "toolName", "input", "providerExecuted", "dynamic") != nil || part.ProviderExecuted || part.Dynamic {
+		if decodeFields(raw, &part, "type", "text", "toolCallId", "toolName", "input", "providerExecuted", "dynamic", "providerMetadata") != nil || part.ProviderExecuted || part.Dynamic {
+			return nil, errors.New("grafana: invalid unary content")
+		}
+		allowAnthropic := part.Type == provider.ContentToolCall
+		if !allowAnthropic && part.Type != provider.ContentText && len(part.ProviderMetadata) > 0 {
+			return nil, errors.New("grafana: invalid unary content")
+		}
+		metadata, err := decodeProviderMetadata(part.ProviderMetadata, allowAnthropic, "")
+		if err != nil {
 			return nil, errors.New("grafana: invalid unary content")
 		}
 		switch part.Type {
@@ -233,12 +242,12 @@ func decodeGenerate(body []byte) (*provider.GenerateResult, error) {
 			if part.Text == nil {
 				return nil, errors.New("grafana: missing unary text")
 			}
-			content = append(content, provider.GenerateContentPart{Type: provider.ContentText, Text: *part.Text})
+			content = append(content, provider.GenerateContentPart{Type: provider.ContentText, Text: *part.Text, ProviderMetadata: metadata})
 		case provider.ContentToolCall:
 			if part.ToolCallID == nil || *part.ToolCallID == "" || part.ToolName == nil || *part.ToolName == "" || part.Input == nil {
 				return nil, errors.New("grafana: invalid unary tool call")
 			}
-			content = append(content, provider.GenerateContentPart{Type: provider.ContentToolCall, ToolCallID: *part.ToolCallID, ToolName: *part.ToolName, Input: json.RawMessage(*part.Input)})
+			content = append(content, provider.GenerateContentPart{Type: provider.ContentToolCall, ToolCallID: *part.ToolCallID, ToolName: *part.ToolName, Input: json.RawMessage(*part.Input), ProviderMetadata: metadata})
 		default:
 			return nil, errors.New("grafana: unsupported unary content")
 		}

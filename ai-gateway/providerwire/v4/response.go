@@ -17,15 +17,17 @@ const (
 var errInvalidUnarySuccess = errors.New("providerwire v4: invalid unary success")
 
 type unaryTextPart struct {
-	Type provider.GenerateContentType `json:"type"`
-	Text string                       `json:"text"`
+	Type             provider.GenerateContentType `json:"type"`
+	Text             string                       `json:"text"`
+	ProviderMetadata *projectedMetadata           `json:"providerMetadata,omitempty"`
 }
 
 type unaryToolCall struct {
-	Type       provider.GenerateContentType `json:"type"`
-	ToolCallID string                       `json:"toolCallId"`
-	ToolName   string                       `json:"toolName"`
-	Input      string                       `json:"input"`
+	Type             provider.GenerateContentType `json:"type"`
+	ToolCallID       string                       `json:"toolCallId"`
+	ToolName         string                       `json:"toolName"`
+	Input            string                       `json:"input"`
+	ProviderMetadata *projectedMetadata           `json:"providerMetadata,omitempty"`
 }
 
 type unaryFinishReason struct {
@@ -78,12 +80,20 @@ func mapUnarySuccess(result *provider.GenerateResult, limit int64) (unarySuccess
 			if !utf8.ValidString(part.Text) {
 				return unarySuccess{}, errInvalidUnarySuccess
 			}
-			mapped.Content = append(mapped.Content, unaryTextPart{Type: provider.ContentText, Text: part.Text})
+			metadata, err := projectProviderMetadata(part.ProviderMetadata, false, "", limit)
+			if err != nil {
+				return unarySuccess{}, errInvalidUnarySuccess
+			}
+			mapped.Content = append(mapped.Content, unaryTextPart{Type: provider.ContentText, Text: part.Text, ProviderMetadata: metadata})
 		case provider.ContentToolCall:
 			if part.ToolCallID == "" || part.ToolName == "" || !utf8.ValidString(part.ToolCallID) || !utf8.ValidString(part.ToolName) || !utf8.Valid(part.Input) {
 				return unarySuccess{}, errInvalidUnarySuccess
 			}
-			mapped.Content = append(mapped.Content, unaryToolCall{Type: provider.ContentToolCall, ToolCallID: part.ToolCallID, ToolName: part.ToolName, Input: string(part.Input)})
+			metadata, err := projectProviderMetadata(part.ProviderMetadata, true, "", limit)
+			if err != nil {
+				return unarySuccess{}, errInvalidUnarySuccess
+			}
+			mapped.Content = append(mapped.Content, unaryToolCall{Type: provider.ContentToolCall, ToolCallID: part.ToolCallID, ToolName: part.ToolName, Input: string(part.Input), ProviderMetadata: metadata})
 		default:
 			return unarySuccess{}, errInvalidUnarySuccess
 		}
@@ -126,6 +136,17 @@ func unarySuccessPreflight(result *provider.GenerateResult, limit int64) bool {
 				return false
 			}
 			remaining -= int64(length)
+		}
+		for _, name := range []string{"openai", "anthropic"} {
+			if name == "anthropic" && part.Type != provider.ContentToolCall {
+				continue
+			}
+			if raw, ok := part.ProviderMetadata[name]; ok {
+				if int64(len(raw)) > remaining {
+					return false
+				}
+				remaining -= int64(len(raw))
+			}
 		}
 	}
 	return int64(len(result.FinishReason.Raw)) <= remaining

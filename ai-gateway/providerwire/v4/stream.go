@@ -56,6 +56,7 @@ type streamEvent struct {
 	input        string
 	result       json.RawMessage
 	isError      bool
+	metadata     *projectedMetadata
 }
 
 type streamStartEvent struct {
@@ -71,9 +72,10 @@ type streamMetadataEvent struct {
 }
 
 type streamTextEvent struct {
-	Type  provider.StreamPartType `json:"type"`
-	ID    string                  `json:"id"`
-	Delta *string                 `json:"delta,omitempty"`
+	Type             provider.StreamPartType `json:"type"`
+	ID               string                  `json:"id"`
+	Delta            *string                 `json:"delta,omitempty"`
+	ProviderMetadata *projectedMetadata      `json:"providerMetadata,omitempty"`
 }
 
 type streamFinishEvent struct {
@@ -103,7 +105,7 @@ func encodeStreamFrame(value streamEvent, limit int64) ([]byte, bool) {
 		}
 		payload, err = json.Marshal(streamMetadataEvent{Type: value.typeName, ID: value.id, ModelID: value.modelID, Timestamp: timestamp})
 	case provider.PartTextStart, provider.PartTextEnd:
-		payload, err = json.Marshal(streamTextEvent{Type: value.typeName, ID: value.id})
+		payload, err = json.Marshal(streamTextEvent{Type: value.typeName, ID: value.id, ProviderMetadata: value.metadata})
 	case provider.PartTextDelta:
 		payload, err = json.Marshal(streamTextEvent{Type: value.typeName, ID: value.id, Delta: &value.delta})
 	case provider.PartToolInputStart:
@@ -113,9 +115,9 @@ func encodeStreamFrame(value streamEvent, limit int64) ([]byte, bool) {
 	case provider.PartToolInputEnd:
 		payload, err = json.Marshal(streamTextEvent{Type: value.typeName, ID: value.id})
 	case provider.PartToolCall:
-		payload, err = json.Marshal(streamToolCallEvent{Type: value.typeName, ToolCallID: value.id, ToolName: value.toolName, Input: value.input})
+		payload, err = json.Marshal(streamToolCallEvent{Type: value.typeName, ToolCallID: value.id, ToolName: value.toolName, Input: value.input, ProviderMetadata: value.metadata})
 	case provider.PartToolResult:
-		payload, err = json.Marshal(streamToolResultEvent{Type: value.typeName, ToolCallID: value.id, ToolName: value.toolName, Result: value.result, IsError: value.isError})
+		payload, err = json.Marshal(streamToolResultEvent{Type: value.typeName, ToolCallID: value.id, ToolName: value.toolName, Result: value.result, IsError: value.isError, ProviderMetadata: value.metadata})
 	case provider.PartFinish:
 		payload, err = json.Marshal(streamFinishEvent{
 			Type:         value.typeName,
@@ -152,6 +154,9 @@ func streamEventPreflight(value streamEvent, limit int64) bool {
 	}
 
 	if !check(string(value.typeName)) {
+		return false
+	}
+	if value.metadata != nil && value.metadata.OpenAI != nil && !check(value.metadata.OpenAI.ItemID) {
 		return false
 	}
 	switch value.typeName {
@@ -583,7 +588,11 @@ func (h *handler) processStreamPart(w http.ResponseWriter, state *streamState, p
 		if _, exists := state.usedIDs[part.ID]; exists {
 			return streamPartAdapterFailure
 		}
-		if result := h.emitStreamEvent(w, streamEvent{typeName: provider.PartTextStart, id: part.ID}); result != streamWriteSuccess {
+		metadata, err := projectProviderMetadata(part.ProviderMetadata, false, part.ID, h.limits.StreamFrameBytes-int64(len(part.ID)))
+		if err != nil {
+			return streamPartAdapterFailure
+		}
+		if result := h.emitStreamEvent(w, streamEvent{typeName: provider.PartTextStart, id: part.ID, metadata: metadata}); result != streamWriteSuccess {
 			if result == streamWriteEncodingFailure {
 				return streamPartAdapterFailure
 			}
@@ -608,7 +617,11 @@ func (h *handler) processStreamPart(w http.ResponseWriter, state *streamState, p
 		if state.activeID == "" || part.ID != state.activeID {
 			return streamPartAdapterFailure
 		}
-		if result := h.emitStreamEvent(w, streamEvent{typeName: provider.PartTextEnd, id: part.ID}); result != streamWriteSuccess {
+		metadata, err := projectProviderMetadata(part.ProviderMetadata, false, part.ID, h.limits.StreamFrameBytes-int64(len(part.ID)))
+		if err != nil {
+			return streamPartAdapterFailure
+		}
+		if result := h.emitStreamEvent(w, streamEvent{typeName: provider.PartTextEnd, id: part.ID, metadata: metadata}); result != streamWriteSuccess {
 			if result == streamWriteEncodingFailure {
 				return streamPartAdapterFailure
 			}

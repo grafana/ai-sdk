@@ -267,6 +267,36 @@ describe("streaming function tools through the authenticated real handler", () =
   });
 });
 
+describe("closed provider metadata through the real handler", () => {
+  it("preserves only approved unary content fields in both clients", async () => {
+    const ts = await model("metadata").doGenerate({ prompt: [] });
+    const go = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/providerwire-v4`, accessToken: "runtime-test-key", modelID: "metadata", mode: "generate", options: { prompt: [] } });
+    assert.equal(go.error, undefined);
+    for (const result of [ts, go.result]) {
+      assert.deepEqual(result.content.map((part: any) => part.providerMetadata), [
+        { openai: { itemId: "msg_1" } },
+        { anthropic: { caller: { type: "direct" } } },
+      ]);
+      assert.equal(result.providerMetadata, undefined);
+      assert.equal(JSON.stringify(result).includes("private-key"), false);
+    }
+  });
+
+  it("preserves only approved stream fields and never copies them to finish", async () => {
+    const ts = await collect((await model("metadata").doStream({ prompt: [] })).stream);
+    const go = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/providerwire-v4`, accessToken: "runtime-test-key", modelID: "metadata", mode: "stream", options: { prompt: [] } });
+    assert.equal(go.error, undefined);
+    for (const parts of [ts, go.parts]) {
+      assert.deepEqual(parts.map((part: any) => part.type), ["stream-start", "text-start", "text-delta", "text-end", "tool-call", "tool-result", "finish"]);
+      assert.deepEqual(parts.map((part: any) => part.providerMetadata ?? null), [
+        null, { openai: { itemId: "msg_1" } }, null, { openai: { itemId: "msg_1" } },
+        { anthropic: { caller: { type: "direct" } } }, { anthropic: { caller: { type: "direct" } } }, null,
+      ]);
+      assert.equal(JSON.stringify(parts).includes("private-key"), false);
+    }
+  });
+});
+
 describe("real ProviderWire V4 streaming runtime", () => {
   it("consumes normalized text, metadata, warnings, finish, and clean EOF", async () => {
     const result = await model("success").doStream({ prompt: [] });

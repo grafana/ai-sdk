@@ -14,7 +14,8 @@
             "required": ["type", "text"],
             "properties": {
               "type": { "const": "text" },
-              "text": { "type": "string" }
+              "text": { "type": "string" },
+              "providerMetadata": { "$ref": "#/$defs/textProviderMetadata" }
             },
             "additionalProperties": false
           },
@@ -25,7 +26,8 @@
               "type": { "const": "tool-call" },
               "toolCallId": { "type": "string", "minLength": 1 },
               "toolName": { "type": "string", "minLength": 1 },
-              "input": { "type": "string" }
+              "input": { "type": "string" },
+              "providerMetadata": { "$ref": "#/$defs/toolProviderMetadata" }
             },
             "additionalProperties": false
           }
@@ -55,6 +57,27 @@
   },
   "additionalProperties": false,
   "$defs": {
+    "itemId": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" },
+    "openaiMetadata": {
+      "type": "object", "required": ["itemId"],
+      "properties": { "itemId": { "$ref": "#/$defs/itemId" } },
+      "additionalProperties": false
+    },
+    "anthropicMetadata": {
+      "type": "object", "required": ["caller"],
+      "properties": { "caller": { "type": "object", "required": ["type"], "properties": { "type": { "const": "direct" } }, "additionalProperties": false } },
+      "additionalProperties": false
+    },
+    "textProviderMetadata": {
+      "type": "object", "required": ["openai"],
+      "properties": { "openai": { "$ref": "#/$defs/openaiMetadata" } },
+      "additionalProperties": false
+    },
+    "toolProviderMetadata": {
+      "type": "object", "minProperties": 1,
+      "properties": { "openai": { "$ref": "#/$defs/openaiMetadata" }, "anthropic": { "$ref": "#/$defs/anthropicMetadata" } },
+      "additionalProperties": false
+    },
     "tokenCount": {
       "type": "integer",
       "minimum": 0,

@@ -121,6 +121,16 @@ func (m *providerWireV4Model) DoStream(ctx context.Context, options provider.Cal
 		}, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop, Raw: "test-stop"}}
 		close(stream)
 		return &provider.StreamResult{Stream: stream}, nil
+	case "metadata":
+		m.stats.recordSuccess(options)
+		return &provider.StreamResult{Stream: scenarioStream(
+			provider.StreamPart{Type: provider.PartTextStart, ID: "msg_1", ProviderMetadata: provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":"msg_1","secret":"private-key"}`), "private": json.RawMessage(`{bad`)}},
+			provider.StreamPart{Type: provider.PartTextDelta, ID: "msg_1", Delta: "hello"},
+			provider.StreamPart{Type: provider.PartTextEnd, ID: "msg_1", ProviderMetadata: provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":"msg_1"}`)}},
+			provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "call", ToolName: "weather", Input: `{"city":"Rio"}`, ProviderMetadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"caller":{"type":"direct"},"token":"private-key"}`)}},
+			provider.StreamPart{Type: provider.PartToolResult, ToolCallID: "call", ToolName: "weather", Result: json.RawMessage(`{"result":"sunny"}`), ProviderMetadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"caller":{"type":"direct"}}`)}},
+			provider.StreamPart{Type: provider.PartFinish, Usage: &provider.Usage{}, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}, ProviderMetadata: provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":"private-key"}`)}},
+		)}, nil
 	case "stream-errors":
 		stream := make(chan provider.StreamPart, 8)
 		stream <- provider.StreamPart{Type: provider.PartError, APICallError: provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: http.StatusServiceUnavailable, Message: "private overload"})}
@@ -168,6 +178,16 @@ func (m *providerWireV4Model) DoGenerate(ctx context.Context, options provider.C
 			call.Dynamic = &yes
 		}
 		return &provider.GenerateResult{Content: []provider.GenerateContentPart{{Type: provider.ContentText, Text: ""}, call}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonToolCalls}}, nil
+	case "metadata":
+		m.stats.recordSuccess(options)
+		return &provider.GenerateResult{
+			Content: []provider.GenerateContentPart{
+				{Type: provider.ContentText, Text: "hello", ProviderMetadata: provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":"msg_1","secret":"private-key"}`)}},
+				{Type: provider.ContentToolCall, ToolCallID: "call", ToolName: "weather", Input: json.RawMessage(`{"city":"Rio"}`), ProviderMetadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"caller":{"type":"direct"},"token":"private-key"}`)}},
+			},
+			FinishReason:     provider.FinishReason{Unified: provider.FinishReasonToolCalls},
+			ProviderMetadata: provider.ProviderMetadata{"private": json.RawMessage(`{"secret":"private-key"}`)},
+		}, nil
 	case "success":
 		m.stats.recordSuccess(options)
 		zero := 0
@@ -203,7 +223,7 @@ type providerWireV4Scenario struct {
 func newProviderWireV4Scenario() (*providerWireV4Scenario, error) {
 	stats := &providerWireV4Stats{}
 	entries := make([]catalog.StaticEntry, 0, 5)
-	for _, id := range []string{"success", "blocking", "stream-errors", "stream-timeout", "stream-blocking", "unary-tools", "unary-tools-provider-executed", "unary-tools-dynamic", "stream-tools", "stream-tool-results", "stream-tool-arguments"} {
+	for _, id := range []string{"success", "blocking", "stream-errors", "stream-timeout", "stream-blocking", "unary-tools", "unary-tools-provider-executed", "unary-tools-dynamic", "stream-tools", "stream-tool-results", "stream-tool-arguments", "metadata"} {
 		entries = append(entries, catalog.StaticEntry{
 			Info:  catalog.ModelInfo{ID: id},
 			Model: &providerWireV4Model{kind: id, stats: stats},

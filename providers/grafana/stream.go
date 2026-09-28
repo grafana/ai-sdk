@@ -212,11 +212,27 @@ func decodeStreamPart(data []byte) (provider.StreamPart, error) {
 		ProviderExecuted bool                    `json:"providerExecuted"`
 		Dynamic          bool                    `json:"dynamic"`
 		Preliminary      bool                    `json:"preliminary"`
+		ProviderMetadata json.RawMessage         `json:"providerMetadata"`
 	}
-	if decodeFields(data, &value, "type", "id", "delta", "modelId", "timestamp", "warnings", "finishReason", "usage", "rawValue", "error", "toolCallId", "toolName", "input", "result", "isError", "providerExecuted", "dynamic", "preliminary") != nil {
+	if decodeFields(data, &value, "type", "id", "delta", "modelId", "timestamp", "warnings", "finishReason", "usage", "rawValue", "error", "toolCallId", "toolName", "input", "result", "isError", "providerExecuted", "dynamic", "preliminary", "providerMetadata") != nil {
 		return invalid()
 	}
 	part := provider.StreamPart{Type: value.Type}
+	if len(value.ProviderMetadata) > 0 {
+		allowAnthropic := value.Type == provider.PartToolCall || value.Type == provider.PartToolResult
+		if !allowAnthropic && value.Type != provider.PartTextStart && value.Type != provider.PartTextEnd {
+			return invalid()
+		}
+		textID := ""
+		if !allowAnthropic && value.ID != nil {
+			textID = *value.ID
+		}
+		metadata, err := decodeProviderMetadata(value.ProviderMetadata, allowAnthropic, textID)
+		if err != nil {
+			return invalid()
+		}
+		part.ProviderMetadata = metadata
+	}
 	switch value.Type {
 	case provider.PartToolInputStart, provider.PartToolInputDelta, provider.PartToolInputEnd:
 		if value.ID == nil || *value.ID == "" || value.ProviderExecuted || value.Dynamic || value.Preliminary {

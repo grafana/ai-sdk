@@ -1566,14 +1566,14 @@ describe("authenticated OpenAI Responses Gateway command", () => {
         prompt: [{ role: "user", content: [{ type: "text", text: "unary" }] }],
         maxOutputTokens: 32,
       });
-      assert.deepEqual(result.content, [{ type: "text", text: "hello from fake openai" }]);
+      assert.deepEqual(result.content, [{ type: "text", text: "hello from fake openai", providerMetadata: { openai: { itemId: "msg_test" } } }]);
 
       const stream = await client("openai").doStream({
         prompt: [{ role: "user", content: [{ type: "text", text: "normal-stream" }] }],
         maxOutputTokens: 32,
       });
       const reader = stream.stream.getReader();
-      const parts: Array<{ type: string; delta?: string; usage?: { outputTokens?: { total?: number } } }> = [];
+      const parts: Array<{ type: string; delta?: string; modelId?: string; providerMetadata?: { openai?: { itemId?: string } }; usage?: { outputTokens?: { total?: number } } }> = [];
       for (;;) {
         const next = await reader.read();
         if (next.done) break;
@@ -1581,6 +1581,11 @@ describe("authenticated OpenAI Responses Gateway command", () => {
       }
       assert.equal(parts.filter((part) => part.type === "text-delta").map((part) => part.delta).join(""), "hello from fake openai stream");
       assert.equal(parts.find((part) => part.type === "finish")?.usage?.outputTokens?.total, 6);
+      assert.equal(parts.find((part) => part.type === "response-metadata")?.modelId, "grafana/openai");
+      for (const type of ["text-start", "text-end"]) {
+        assert.deepEqual(parts.find((part) => part.type === type)?.providerMetadata, { openai: { itemId: "msg_test" } });
+      }
+      assert.equal(JSON.stringify(parts).includes("backend-private"), false);
 
       assert.equal(fake.requests.length, 2);
       for (const request of fake.requests) {

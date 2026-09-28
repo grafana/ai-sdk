@@ -15,17 +15,19 @@ type streamToolStartEvent struct {
 	ToolName string                  `json:"toolName"`
 }
 type streamToolCallEvent struct {
-	Type       provider.StreamPartType `json:"type"`
-	ToolCallID string                  `json:"toolCallId"`
-	ToolName   string                  `json:"toolName"`
-	Input      string                  `json:"input"`
+	Type             provider.StreamPartType `json:"type"`
+	ToolCallID       string                  `json:"toolCallId"`
+	ToolName         string                  `json:"toolName"`
+	Input            string                  `json:"input"`
+	ProviderMetadata *projectedMetadata      `json:"providerMetadata,omitempty"`
 }
 type streamToolResultEvent struct {
-	Type       provider.StreamPartType `json:"type"`
-	ToolCallID string                  `json:"toolCallId"`
-	ToolName   string                  `json:"toolName"`
-	Result     json.RawMessage         `json:"result"`
-	IsError    bool                    `json:"isError,omitempty"`
+	Type             provider.StreamPartType `json:"type"`
+	ToolCallID       string                  `json:"toolCallId"`
+	ToolName         string                  `json:"toolName"`
+	Result           json.RawMessage         `json:"result"`
+	IsError          bool                    `json:"isError,omitempty"`
+	ProviderMetadata *projectedMetadata      `json:"providerMetadata,omitempty"`
 }
 type toolStreamPhase uint8
 
@@ -86,6 +88,13 @@ func (h *handler) processToolStreamPart(w http.ResponseWriter, state *streamStat
 	}
 	if !exists && len(state.tools) >= h.limits.StreamParts {
 		return streamPartAdapterFailure
+	}
+	if part.Type == provider.PartToolCall || part.Type == provider.PartToolResult {
+		metadata, err := projectProviderMetadata(part.ProviderMetadata, true, "", h.limits.StreamFrameBytes-int64(len(id)+len(part.ToolName)+len(part.Input)+len(part.Result)))
+		if err != nil {
+			return streamPartAdapterFailure
+		}
+		event.metadata = metadata
 	}
 	switch h.emitStreamEvent(w, event) {
 	case streamWriteEncodingFailure:

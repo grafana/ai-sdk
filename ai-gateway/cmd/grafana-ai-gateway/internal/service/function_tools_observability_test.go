@@ -34,16 +34,17 @@ func TestFunctionTools_MetadataOnlyExports(t *testing.T) {
 				if continuation {
 					reason.Unified = provider.FinishReasonStop
 				}
+				metadata := provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":"msg_1","token":"private-metadata"}`), "anthropic": json.RawMessage(`{"caller":{"type":"direct"}}`)}
 				lower := &observabilityTestModel{
 					generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
-						return &provider.GenerateResult{Content: []provider.GenerateContentPart{{Type: provider.ContentToolCall, ToolCallID: "private-call", ToolName: "private-name", Input: json.RawMessage(`{"secret":"private-input"}`)}}, FinishReason: reason}, nil
+						return &provider.GenerateResult{Content: []provider.GenerateContentPart{{Type: provider.ContentToolCall, ToolCallID: "private-call", ToolName: "private-name", Input: json.RawMessage(`{"secret":"private-input"}`), ProviderMetadata: metadata}}, FinishReason: reason}, nil
 					},
 					stream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
 						ch := make(chan provider.StreamPart, 5)
 						ch <- provider.StreamPart{Type: provider.PartToolInputStart, ID: "private-call", ToolName: "private-name"}
 						ch <- provider.StreamPart{Type: provider.PartToolInputDelta, ID: "private-call", Delta: "private-delta"}
 						ch <- provider.StreamPart{Type: provider.PartToolInputEnd, ID: "private-call"}
-						ch <- provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "private-call", ToolName: "private-name", Input: `{"secret":"private-input"}`}
+						ch <- provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "private-call", ToolName: "private-name", Input: `{"secret":"private-input"}`, ProviderMetadata: metadata}
 						ch <- provider.StreamPart{Type: provider.PartFinish, FinishReason: &reason, Usage: &provider.Usage{}}
 						close(ch)
 						return &provider.StreamResult{Stream: ch}, nil
@@ -69,7 +70,7 @@ func TestFunctionTools_MetadataOnlyExports(t *testing.T) {
 				encoded, err := json.Marshal(generation)
 				require.NoError(t, err)
 				all := string(encoded) + logs.String() + testMetrics(t, telemetry)
-				for _, secret := range []string{"private-name", "private-call", "private-input", "private-schema", "private-result", "private-delta"} {
+				for _, secret := range []string{"private-name", "private-call", "private-input", "private-schema", "private-result", "private-delta", "private-metadata", "msg_1", "caller"} {
 					assert.NotContains(t, all, secret)
 				}
 				assert.Equal(t, string(reason.Unified), generation["stop_reason"])
