@@ -82,6 +82,7 @@ type baseConfig struct {
 	prepareStep    PrepareStepFunc
 	runtimeContext any
 	output         Output
+	repairText     RepairTextFunc
 }
 
 type streamConfig struct {
@@ -417,4 +418,13 @@ func WithPrepareStep(fn PrepareStepFunc) Option {
 // WithOutput sets structured output processing.
 func WithOutput(out Output) Option {
 	return sharedOption{fn: func(c *baseConfig) { c.output = out }}
+}
+
+// WithRepairText configures one optional repair attempt for invalid complete
+// structured output. It has no effect without WithOutput. Repair runs only when
+// ParseComplete returns both ErrNoObjectGenerated and ErrInvalidOutputText;
+// custom Output implementations must wrap both to enable repair. The callback
+// runs synchronously at final parsing and does not alter the raw model response.
+func WithRepairText(fn RepairTextFunc) Option {
+	return sharedOption{fn: func(c *baseConfig) { c.repairText = fn }}
 }

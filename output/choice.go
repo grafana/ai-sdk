@@ -86,14 +86,14 @@ func (o *ChoiceOutput) ResponseFormat() *provider.ResponseFormat {
 func (o *ChoiceOutput) ParseComplete(text string) (any, error) {
 	data := json.RawMessage(text)
 	if err := o.wrappedSchema.Validate(data); err != nil {
-		return nil, fmt.Errorf("%w: %v", aisdk.ErrNoObjectGenerated, err)
+		return nil, fmt.Errorf("%w: %w: %w", aisdk.ErrNoObjectGenerated, aisdk.ErrInvalidOutputText, err)
 	}
 
 	var wrapper struct {
 		Result string `json:"result"`
 	}
 	if err := json.Unmarshal([]byte(text), &wrapper); err != nil {
-		return nil, fmt.Errorf("%w: unmarshaling: %v", aisdk.ErrNoObjectGenerated, err)
+		return nil, fmt.Errorf("%w: unmarshaling: %w", aisdk.ErrNoObjectGenerated, err)
 	}
 	return wrapper.Result, nil
 }

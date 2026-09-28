@@ -2,11 +2,13 @@ package output
 
 import (
 	"encoding/json"
+	"errors"
 	"testing"
 
 	aisdk "github.com/grafana/ai-sdk"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/grafana/ai-sdk/schema"
+	jsonschema "github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -270,6 +272,92 @@ func TestTextOutput_ParsePartial(t *testing.T) {
 	v, ok := out.ParsePartial("partial text")
 	assert.True(t, ok, "ParsePartial should always succeed for text")
 	assert.Equal(t, "partial text", v)
+}
+
+type failingUnmarshaler struct{}
+
+var errTypedConversion = errors.New("typed conversion failed")
+
+func (*failingUnmarshaler) UnmarshalJSON([]byte) error { return errTypedConversion }
+
+func TestOutputRepairErrorClassification(t *testing.T) {
+	objectSchema := mustSchema(t, `{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}`)
+	obj, err := Object[struct {
+		Name int `json:"name"`
+	}](objectSchema)
+	require.NoError(t, err)
+	array, err := Array[struct {
+		Name int `json:"name"`
+	}](objectSchema)
+	require.NoError(t, err)
+	choice, err := Choice("sunny")
+	require.NoError(t, err)
+
+	for _, tc := range []struct {
+		name string
+		out  aisdk.Output
+		text string
+	}{
+		{"object JSON", obj, `{"name":`},
+		{"object schema", obj, `{"wrong":"value"}`},
+		{"array JSON", array, `{"elements":`},
+		{"array schema", array, `{"elements":[{"wrong":"value"}]}`},
+		{"choice schema", choice, `{"result":"rainy"}`},
+		{"JSON syntax", JSON(), `{"name":`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := tc.out.ParseComplete(tc.text)
+			require.Error(t, err)
+			assert.ErrorIs(t, err, aisdk.ErrNoObjectGenerated)
+			assert.ErrorIs(t, err, aisdk.ErrInvalidOutputText)
+			if json.Valid([]byte(tc.text)) {
+				var validationErr *jsonschema.ValidationError
+				assert.ErrorAs(t, err, &validationErr)
+			} else {
+				var syntaxErr *json.SyntaxError
+				assert.ErrorAs(t, err, &syntaxErr)
+			}
+		})
+	}
+
+	for _, tc := range []struct {
+		name  string
+		out   aisdk.Output
+		text  string
+		cause error
+	}{
+		{"object type mismatch", obj, `{"name":"valid"}`, nil},
+		{"array type mismatch", array, `{"elements":[{"name":"valid"}]}`, nil},
+		{"object custom unmarshaler", mustObject[failingUnmarshaler](t, objectSchema), `{"name":"valid"}`, errTypedConversion},
+		{"array custom unmarshaler", mustArray[failingUnmarshaler](t, mustSchema(t, `{"type":"object"}`)), `{"elements":[{}]}`, errTypedConversion},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := tc.out.ParseComplete(tc.text)
+			require.Error(t, err)
+			assert.ErrorIs(t, err, aisdk.ErrNoObjectGenerated)
+			assert.NotErrorIs(t, err, aisdk.ErrInvalidOutputText)
+			if tc.cause != nil {
+				assert.ErrorIs(t, err, tc.cause)
+			} else {
+				var typeErr *json.UnmarshalTypeError
+				assert.ErrorAs(t, err, &typeErr)
+			}
+		})
+	}
+}
+
+func mustObject[T any](t *testing.T, s schema.Schema) aisdk.Output {
+	t.Helper()
+	out, err := Object[T](s)
+	require.NoError(t, err)
+	return out
+}
+
+func mustArray[T any](t *testing.T, s schema.Schema) aisdk.Output {
+	t.Helper()
+	out, err := Array[T](s)
+	require.NoError(t, err)
+	return out
 }
 
 var (
