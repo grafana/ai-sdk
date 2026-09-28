@@ -665,6 +665,138 @@ func TestDoGenerateResolvesInlineWildcardAudioAndPDFMediaTypes(t *testing.T) {
 	require.Equal(t, "data:application/pdf;base64,"+encodedPDF, file["file_data"])
 }
 
+func TestInvalidDirectFileInputs(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	invalid := provider.BytesDataContent([]byte{})
+	invalid.URL = "https://example.test/file"
+	_, err := New("test-model", WithBaseURL(server.URL)).DoGenerate(context.Background(), provider.CallOptions{
+		Prompt: []provider.Message{provider.NewUserMessage(provider.FilePart("image/png", invalid))},
+	})
+	require.ErrorContains(t, err, "invalid file input")
+	assert.Zero(t, requests)
+
+	bad := provider.BytesDataContent([]byte{})
+	bad.URL = "https://example.test/file"
+	for _, prompt := range [][]provider.Message{
+		{provider.NewUserMessage(provider.FilePart("image/png", bad))},
+		{provider.NewToolMessage(provider.ToolResultPart("call-1", "tool", &provider.ToolResultOutput{
+			Type:    provider.ToolOutputContent,
+			Content: []provider.ToolResultContentValue{{Type: provider.ToolContentFile, Data: &bad, MediaType: "image/png"}},
+		}))},
+	} {
+		_, _, err := (&model{modelID: "test-model"}).buildRequest(provider.CallOptions{Prompt: prompt}, false)
+		require.ErrorContains(t, err, "invalid file input")
+	}
+}
+
+func TestFileSelectedEmptyDataAndUnsupportedText(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		mediaType string
+		data      provider.DataContent
+		wantType  string
+		wantData  string
+		invalid   bool
+	}{
+		{name: "PDF empty data", mediaType: "application/pdf", data: provider.Base64DataContent(""), wantType: "file", wantData: "data:application/pdf;base64,"},
+		{name: "plain text empty data", mediaType: "text/plain", data: provider.BytesDataContent(nil), wantType: "text", wantData: ""},
+		{name: "text arm unsupported", mediaType: "text/plain", data: provider.TextDataContent(""), invalid: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body, _, err := (&model{modelID: "test-model"}).buildRequest(provider.CallOptions{
+				Prompt: []provider.Message{provider.NewUserMessage(provider.FilePart(tc.mediaType, tc.data))},
+			}, false)
+			if tc.invalid {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			encoded, err := json.Marshal(body)
+			require.NoError(t, err)
+			var native map[string]any
+			require.NoError(t, json.Unmarshal(encoded, &native))
+			message := native["messages"].([]any)[0].(map[string]any)
+			content := message["content"].([]any)[0].(map[string]any)
+			assert.Equal(t, tc.wantType, content["type"])
+			if tc.wantType == "file" {
+				assert.Equal(t, tc.wantData, content["file"].(map[string]any)["file_data"])
+			} else {
+				assert.Equal(t, tc.wantData, content["text"])
+			}
+		})
+	}
+}
+
+func TestFileSelectedEmptyURL(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		mediaType string
+		want      string
+		wantError string
+	}{
+		{name: "image", mediaType: "image/png", want: `{"type":"image_url","image_url":{"url":""}}`},
+		{name: "image wildcard", mediaType: "image/*", want: `{"type":"image_url","image_url":{"url":""}}`},
+		{name: "text", mediaType: "text/plain", want: `{"type":"text","text":""}`},
+		{name: "audio URL unsupported", mediaType: "audio/wav", wantError: "audio file URL parts are not supported"},
+		{name: "PDF URL unsupported", mediaType: "application/pdf", wantError: "PDF file URL parts are not supported"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body, _, err := (&model{modelID: "test-model"}).buildRequest(provider.CallOptions{
+				Prompt: []provider.Message{provider.NewUserMessage(provider.FilePart(tc.mediaType, provider.URLDataContent("")))},
+			}, false)
+			if tc.wantError != "" {
+				require.ErrorContains(t, err, tc.wantError)
+				return
+			}
+			require.NoError(t, err)
+			encoded, err := json.Marshal(body)
+			require.NoError(t, err)
+			var native struct {
+				Messages []struct {
+					Content []json.RawMessage `json:"content"`
+				} `json:"messages"`
+			}
+			require.NoError(t, json.Unmarshal(encoded, &native))
+			require.Len(t, native.Messages, 1)
+			require.Len(t, native.Messages[0].Content, 1)
+			assert.JSONEq(t, tc.want, string(native.Messages[0].Content[0]))
+		})
+	}
+}
+
+func TestFileFilenamePresenceInNativeRequest(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		filename *string
+		want     string
+	}{
+		{name: "absent", want: "document.pdf"},
+		{name: "empty", filename: new(""), want: ""},
+		{name: "named", filename: new("report.pdf"), want: "report.pdf"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			part := provider.FilePart("application/pdf", provider.Base64DataContent("JVBERg=="))
+			part.Filename = tc.filename
+			body, _, err := (&model{modelID: "test-model"}).buildRequest(provider.CallOptions{
+				Prompt: []provider.Message{provider.NewUserMessage(part)},
+			}, false)
+			require.NoError(t, err)
+			encoded, err := json.Marshal(body)
+			require.NoError(t, err)
+			var native map[string]any
+			require.NoError(t, json.Unmarshal(encoded, &native))
+			message := native["messages"].([]any)[0].(map[string]any)
+			file := message["content"].([]any)[0].(map[string]any)["file"].(map[string]any)
+			assert.Equal(t, tc.want, file["filename"])
+		})
+	}
+}
+
 func TestDoGenerateParsesAudioAndPDFDataURLFileParts(t *testing.T) {
 	t.Parallel()
 

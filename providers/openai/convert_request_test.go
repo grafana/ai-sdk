@@ -248,6 +248,43 @@ func TestBuildParams_UserImageAndFile(t *testing.T) {
 		assert.Equal(t, "part-0.pdf", f["filename"])
 	})
 
+	t.Run("selected empty PDF data", func(t *testing.T) {
+		body, _ := buildBody(t, "gpt-4o", provider.CallOptions{Prompt: []provider.Message{
+			provider.NewUserMessage(provider.FilePart("application/pdf", provider.Base64DataContent(""))),
+		}})
+		content := body["input"].([]any)[0].(map[string]any)["content"].([]any)
+		file := content[0].(map[string]any)
+		assert.Equal(t, "data:application/pdf;base64,", file["file_data"])
+	})
+
+	t.Run("inline text file is unsupported", func(t *testing.T) {
+		_, _, _, err := buildParams("gpt-4o", provider.CallOptions{Prompt: []provider.Message{
+			provider.NewUserMessage(provider.FilePart("text/plain", provider.TextDataContent(""))),
+		}})
+		require.Error(t, err)
+	})
+
+	t.Run("PDF filename presence in native JSON", func(t *testing.T) {
+		for _, tc := range []struct {
+			name     string
+			filename *string
+			want     string
+		}{
+			{name: "absent", want: "part-0.pdf"},
+			{name: "empty", filename: ptr(""), want: ""},
+			{name: "named", filename: ptr("report.pdf"), want: "report.pdf"},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				part := provider.FilePart("application/pdf", provider.Base64DataContent("AQID"))
+				part.Filename = tc.filename
+				body, _ := buildBody(t, "gpt-4o", provider.CallOptions{Prompt: []provider.Message{provider.NewUserMessage(part)}})
+				input := body["input"].([]any)
+				content := input[0].(map[string]any)["content"].([]any)
+				assert.Equal(t, tc.want, content[0].(map[string]any)["filename"])
+			})
+		}
+	})
+
 	t.Run("wildcard application media type detects pdf bytes", func(t *testing.T) {
 		body, _ := buildBody(t, "gpt-4o", provider.CallOptions{
 			Prompt: []provider.Message{
@@ -1039,6 +1076,49 @@ func TestBuildParams_CustomToolContentOptions(t *testing.T) {
 	assert.Equal(t, "high", output[1].(map[string]any)["detail"])
 	assert.Equal(t, "data:image/png;base64,aW1hZ2U=", output[2].(map[string]any)["image_url"])
 	assert.Equal(t, "data:image/png;base64,", output[3].(map[string]any)["image_url"])
+}
+
+func TestBuildParams_InvalidDirectFileInputs(t *testing.T) {
+	bad := provider.BytesDataContent([]byte{})
+	bad.URL = "https://example.test/file"
+	for _, prompt := range [][]provider.Message{
+		{provider.NewUserMessage(provider.FilePart("image/png", bad))},
+		{provider.NewToolMessage(provider.ToolResultPart("call-1", "tool", &provider.ToolResultOutput{
+			Type:    provider.ToolOutputContent,
+			Content: []provider.ToolResultContentValue{{Type: provider.ToolContentFile, Data: &bad, MediaType: "image/png"}},
+		}))},
+	} {
+		_, _, _, err := buildParams("gpt-4o", provider.CallOptions{Prompt: prompt})
+		require.ErrorContains(t, err, "invalid file input")
+	}
+}
+
+func TestBuildParams_ToolResultFileFilenamePresence(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		filename *string
+		want     string
+	}{
+		{name: "absent", want: "data"},
+		{name: "empty", filename: ptr(""), want: ""},
+		{name: "named", filename: ptr("result.pdf"), want: "result.pdf"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body, _ := buildBody(t, "gpt-5", provider.CallOptions{
+				Prompt: []provider.Message{provider.NewToolMessage(provider.ToolResultPart("call_custom", "write_sql", &provider.ToolResultOutput{
+					Type: provider.ToolOutputContent,
+					Content: []provider.ToolResultContentValue{{
+						Type: provider.ToolContentFile, MediaType: "application/pdf",
+						Data: &provider.DataContent{Base64: "AQID"}, Filename: tc.filename,
+					}},
+				}))},
+				Tools: []provider.Tool{{Type: provider.ToolTypeProvider, ID: toolIDCustom, Name: "write_sql"}},
+			})
+			output := findInput(body, "custom_tool_call_output")["output"].([]any)
+			require.Len(t, output, 1)
+			assert.Equal(t, tc.want, output[0].(map[string]any)["filename"])
+		})
+	}
 }
 
 func TestBuildParams_ComputerCallRoundTrip(t *testing.T) {

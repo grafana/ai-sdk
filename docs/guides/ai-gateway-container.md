@@ -1,8 +1,7 @@
 # Run AI Gateway in a container
 
-The repository builds a container for the standalone `grafana-ai-gateway`
-command. The image keeps the Gateway module outside the root Go workspace and
-uses the versions pinned in `ai-gateway/go.mod`.
+Published `grafana-ai-gateway` images build Gateway and SDK source from the
+same repository revision. Gateway is distributed as a container image.
 
 After all required CI checks pass, pushes to `grafana/ai-sdk` publish Linux AMD64 and ARM64 images:
 
@@ -19,6 +18,7 @@ Run the build task from the repository root:
 mise run build-ai-gateway-image
 ```
 
+Local builds include uncommitted source and are labeled `local-unverified`.
 Set `AI_GATEWAY_IMAGE` to build with another local image name:
 
 ```bash
@@ -100,14 +100,11 @@ the runtime sends `SIGKILL`.
 
 ## Track source and dependencies
 
-The image has Open Container Initiative (OCI) labels for the source repository,
-source revision, and AGPL-3.0-only license. Build automation sets the revision
-to the full source commit.
-
-License files are under
-`/usr/share/licenses/grafana-ai-gateway/`. The directory includes the Gateway
-license and notice, the exact modules used by the command, and license or
-notice files found in those resolved module versions.
+The image labels identify its source repository, revision (the pushed commit
+for published images), and AGPL-3.0-only license. Licenses and the module
+inventory are under `/usr/share/licenses/grafana-ai-gateway/`, including
+Gateway and SDK licenses, dependency notices, and resolved module versions
+and checksums.
 
 ---
 

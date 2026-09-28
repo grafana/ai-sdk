@@ -263,6 +263,34 @@ func TestPrepareTools_MCPRequireApprovalDefault(t *testing.T) {
 	assert.Equal(t, "never", tools[0]["require_approval"])
 }
 
+func TestPrepareTools_MCPConnector(t *testing.T) {
+	for _, connectorID := range []string{"", "connector_googledrive"} {
+		t.Run(connectorID, func(t *testing.T) {
+			body, warnings := buildBody(t, "gpt-4o", provider.CallOptions{
+				Tools: []provider.Tool{{
+					Type: provider.ToolTypeProvider,
+					ID:   toolIDMCP,
+					Name: "mcp",
+					Args: map[string]json.RawMessage{
+						"serverLabel": json.RawMessage(`"srv"`),
+						"connectorId": json.RawMessage(`"` + connectorID + `"`),
+					},
+				}},
+			})
+			assert.Empty(t, warnings)
+			tools := toolsArray(t, body)
+			require.Len(t, tools, 1)
+			if connectorID == "" {
+				assert.NotContains(t, tools[0], "connector_id")
+			} else {
+				assert.Equal(t, connectorID, tools[0]["connector_id"])
+			}
+			assert.Equal(t, "srv", tools[0]["server_label"])
+			assert.Equal(t, "never", tools[0]["require_approval"])
+		})
+	}
+}
+
 func TestPrepareTools_ProviderToolArgs(t *testing.T) {
 	body, warnings := buildBody(t, "gpt-4o", provider.CallOptions{
 		Prompt: []provider.Message{provider.UserText("hi")},

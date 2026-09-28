@@ -371,7 +371,7 @@ func mcpTool(t provider.Tool) *responses.ToolMcpParam {
 		mcp.Authorization = param.NewOpt(auth)
 	}
 	if connectorID := stringArg(t.Args, "connectorId"); connectorID != "" {
-		mcp.ConnectorID = connectorID
+		mcp.SetExtraFields(map[string]any{"connector_id": connectorID})
 	}
 	if desc := stringArg(t.Args, "serverDescription"); desc != "" {
 		mcp.ServerDescription = param.NewOpt(desc)

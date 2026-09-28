@@ -188,21 +188,31 @@ func TestNewModelObservabilityFactory_CloseWaitsForAbandonedStreamRecording(t *t
 }
 
 func TestNewAgentObservabilityRuntime_RejectsActualSDKEnvironment(t *testing.T) {
-	t.Setenv("AGENTO11Y_TAGS", "private=ambient")
-	telemetry, err := NewTelemetry(slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)))
-	require.NoError(t, err)
-	settings := config.AgentObservabilitySettings{Enabled: true, AuthSecretEnv: "AO_SECRET"}
-	runtime, err := NewAgentObservabilityRuntime(settings, func(name string) (string, bool) {
-		if name == "AO_SECRET" {
-			return "private-secret", true
-		}
-		return "", false
-	}, telemetry)
-	require.Error(t, err)
-	assert.Nil(t, runtime)
-	assert.EqualError(t, err, "config: ambient agent observability SDK environment is not allowed")
-	assert.NotContains(t, err.Error(), "AGENTO11Y_TAGS")
-	assert.NotContains(t, err.Error(), "private=ambient")
+	for _, name := range []string{
+		"AGENTO11Y_TAGS", "AGENTO11Y_EXPORT_TIMEOUT_MS", "SIGIL_EXPORT_TIMEOUT_MS",
+		"AGENTO11Y_MAX_RETRIES", "SIGIL_MAX_RETRIES", "AGENTO11Y_MAX_BACKOFF_MS", "SIGIL_MAX_BACKOFF_MS",
+		"AGENTO11Y_QUEUE_SIZE", "SIGIL_QUEUE_SIZE", "AGENTO11Y_ENABLE_EXPERIMENTAL_FEATURES",
+		"AGENTO11Y_USE_EXPERIMENTAL_OTEL", "SIGIL_USE_EXPERIMENTAL_OTEL",
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv(name, "private=ambient")
+			telemetry, err := NewTelemetry(slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)))
+			require.NoError(t, err)
+			settings := config.AgentObservabilitySettings{Enabled: true, AuthSecretEnv: "AO_SECRET"}
+			runtime, err := NewAgentObservabilityRuntime(settings, func(name string) (string, bool) {
+				if name == "AO_SECRET" {
+					t.Error("secret resolved before ambient environment validation")
+					return "private-secret", true
+				}
+				return "", false
+			}, telemetry)
+			require.Error(t, err)
+			assert.Nil(t, runtime)
+			assert.EqualError(t, err, "config: ambient agent observability SDK environment is not allowed")
+			assert.NotContains(t, err.Error(), name)
+			assert.NotContains(t, err.Error(), "private=ambient")
+		})
+	}
 }
 
 func TestNewAgentObservabilityRuntime_HTTPExportUsesOneResolvedSecretAndSafePayload(t *testing.T) {
@@ -481,7 +491,7 @@ func TestFilterAgentGeneration_ClosedMetadataAndIdentityPolicy(t *testing.T) {
 	})
 
 	assert.Equal(t, generation.Model, filtered.Model)
-	assert.Equal(t, generation.Usage, filtered.Usage)
+	assert.Equal(t, agento11y.TokenUsage{InputSemantics: agento11y.TokenInputSemanticsInclusive, InputTokens: 2, OutputTokens: 3}, filtered.Usage)
 	assert.Equal(t, generation.SystemPrompt, filtered.SystemPrompt)
 	assert.Equal(t, map[string]any{
 		"gateway.correlation_id": "correlation",
@@ -627,11 +637,12 @@ func TestNewModelObservabilityFactory_AgentExportIsCanonicalMetadataOnly(t *test
 	factory, err := NewModelObservabilityFactory(telemetry, logger, runtime, 10*time.Millisecond)
 	require.NoError(t, err)
 
-	inputTokens, outputTokens := 2, 3
+	inputTokens, outputTokens := 60, 3
+	noCache, cacheRead, cacheWrite := 10, 30, 20
 	result := &provider.GenerateResult{
 		Content: []provider.GenerateContentPart{{Type: provider.ContentText, Text: "output-private"}},
 		Usage: provider.Usage{
-			InputTokens:  provider.InputTokenUsage{Total: &inputTokens},
+			InputTokens:  provider.InputTokenUsage{Total: &inputTokens, NoCache: &noCache, CacheRead: &cacheRead, CacheWrite: &cacheWrite},
 			OutputTokens: provider.OutputTokenUsage{Total: &outputTokens},
 			Raw:          json.RawMessage(`{"server_tool_use":{"web_search_requests":7}}`),
 		},
@@ -682,8 +693,12 @@ func TestNewModelObservabilityFactory_AgentExportIsCanonicalMetadataOnly(t *test
 	assert.Equal(t, "caller", metadata["gateway.caller_service"])
 	assert.Equal(t, "namespace", metadata["gateway.namespace"])
 	assert.Equal(t, "stop", generation["stop_reason"])
-	assert.Equal(t, "2", testkit.StringValue(t, generation, "usage", "input_tokens"))
+	assert.Equal(t, "TOKEN_INPUT_SEMANTICS_INCLUSIVE", testkit.StringValue(t, generation, "usage", "input_semantics"))
+	assert.Equal(t, "60", testkit.StringValue(t, generation, "usage", "input_tokens"))
 	assert.Equal(t, "3", testkit.StringValue(t, generation, "usage", "output_tokens"))
+	assert.Equal(t, "63", testkit.StringValue(t, generation, "usage", "total_tokens"))
+	assert.Equal(t, "30", testkit.StringValue(t, generation, "usage", "cache_read_input_tokens"))
+	assert.Equal(t, "20", testkit.StringValue(t, generation, "usage", "cache_write_input_tokens"))
 }
 
 func TestNewModelObservabilityFactory_UnaryProviderFailureIsSafeAndFailThrough(t *testing.T) {
@@ -778,7 +793,8 @@ func TestNewModelObservabilityFactory_StreamIsObservedOnceAndPassesThrough(t *te
 	factory, err := NewModelObservabilityFactory(telemetry, logger, runtime, 10*time.Millisecond)
 	require.NoError(t, err)
 
-	inputTokens, outputTokens := 4, 6
+	inputTokens, outputTokens := 60, 6
+	noCache, cacheRead, cacheWrite := 10, 30, 20
 	finish := provider.FinishReason{Unified: provider.FinishReasonStop, Raw: "finish-private"}
 	privateError := provider.NewAPICallError(provider.APICallErrorOptions{
 		Message:      "error-private",
@@ -789,7 +805,7 @@ func TestNewModelObservabilityFactory_StreamIsObservedOnceAndPassesThrough(t *te
 	parts := []provider.StreamPart{
 		{Type: provider.PartResponseMeta, ResponseID: "response-private", Provider: "anthropic", ModelID: "backend-private", ResponseHeaders: map[string]string{"X-Private": "header-private"}, ProviderMetadata: provider.ProviderMetadata{"private": json.RawMessage(`{"topology":"topology-private"}`)}},
 		{Type: provider.PartTextStart, ID: "text"},
-		{Type: provider.PartTextDelta, ID: "text", Delta: "output-private", Usage: &provider.Usage{InputTokens: provider.InputTokenUsage{Total: &inputTokens}}},
+		{Type: provider.PartTextDelta, ID: "text", Delta: "output-private", Usage: &provider.Usage{InputTokens: provider.InputTokenUsage{Total: &inputTokens, NoCache: &noCache, CacheRead: &cacheRead, CacheWrite: &cacheWrite}}},
 		{Type: provider.PartError, APICallError: privateError},
 		{Type: provider.PartTextDelta, ID: "text", Delta: "later-private"},
 		{Type: provider.PartTextEnd, ID: "text"},
@@ -843,8 +859,12 @@ func TestNewModelObservabilityFactory_StreamIsObservedOnceAndPassesThrough(t *te
 	assert.Equal(t, "grafana", testkit.StringValue(t, generation, "model", "provider"))
 	assert.Equal(t, "grafana/assistant", testkit.StringValue(t, generation, "model", "name"))
 	assert.Equal(t, "stop", generation["stop_reason"])
-	assert.Equal(t, "4", testkit.StringValue(t, generation, "usage", "input_tokens"))
+	assert.Equal(t, "TOKEN_INPUT_SEMANTICS_INCLUSIVE", testkit.StringValue(t, generation, "usage", "input_semantics"))
+	assert.Equal(t, "60", testkit.StringValue(t, generation, "usage", "input_tokens"))
 	assert.Equal(t, "6", testkit.StringValue(t, generation, "usage", "output_tokens"))
+	assert.Equal(t, "66", testkit.StringValue(t, generation, "usage", "total_tokens"))
+	assert.Equal(t, "30", testkit.StringValue(t, generation, "usage", "cache_read_input_tokens"))
+	assert.Equal(t, "20", testkit.StringValue(t, generation, "usage", "cache_write_input_tokens"))
 }
 
 func TestNewModelObservabilityFactory_CanceledStreamsCloseWithinBoundedDrain(t *testing.T) {

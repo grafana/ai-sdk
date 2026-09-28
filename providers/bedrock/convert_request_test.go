@@ -818,7 +818,7 @@ func TestBuildRequest_ToolResultDocument(t *testing.T) {
 				Type:            provider.ToolContentFile,
 				Data:            &provider.DataContent{Base64: "base64data"},
 				MediaType:       tt.mediaType,
-				Filename:        tt.filename,
+				Filename:        new(tt.filename),
 				ProviderOptions: tt.providerOptions,
 			}))
 
@@ -1183,7 +1183,7 @@ func TestBuildRequest_NamedDocumentDoesNotAdvanceGeneratedName(t *testing.T) {
 				provider.ContentPart{
 					Type:      provider.ContentPartTypeFile,
 					MediaType: "application/pdf",
-					Filename:  "named.pdf",
+					Filename:  new("named.pdf"),
 					Data:      &provider.DataContent{Base64: "AAECAw=="},
 				},
 				provider.FilePart("application/pdf", provider.DataContent{Base64: "AAECAw=="}),
@@ -1204,7 +1204,7 @@ func TestBuildRequest_TextDocumentData(t *testing.T) {
 			provider.NewUserMessage(provider.ContentPart{
 				Type:      provider.ContentPartTypeFile,
 				MediaType: "text",
-				Filename:  "notes.txt",
+				Filename:  new("notes.txt"),
 				Data:      &provider.DataContent{Text: "hello"},
 			}),
 		},
@@ -1217,6 +1217,40 @@ func TestBuildRequest_TextDocumentData(t *testing.T) {
 	assert.Equal(t, "txt", document.Format)
 	assert.Equal(t, "notes", document.Name)
 	assert.Equal(t, "aGVsbG8=", document.Source.Bytes)
+	assert.Empty(t, warnings)
+}
+
+func TestBuildRequest_InvalidDirectFileInputs(t *testing.T) {
+	bad := provider.BytesDataContent([]byte{})
+	bad.URL = "https://example.test/file"
+	for _, prompt := range [][]provider.Message{
+		{provider.NewUserMessage(provider.FilePart("image/png", bad))},
+		{provider.NewToolMessage(provider.ToolResultPart("call-1", "tool", &provider.ToolResultOutput{
+			Type:    provider.ToolOutputContent,
+			Content: []provider.ToolResultContentValue{{Type: provider.ToolContentFile, Data: &bad, MediaType: "image/png"}},
+		}))},
+	} {
+		_, _, _, err := buildRequest(testAnthropicModel, provider.CallOptions{Prompt: prompt})
+		require.ErrorContains(t, err, "invalid file input")
+	}
+}
+
+func TestBuildRequest_SelectedEmptyFileData(t *testing.T) {
+	text := provider.FilePart("text/plain", provider.TextDataContent(""))
+	text.Filename = new("")
+	data := provider.FilePart("application/pdf", provider.Base64DataContent(""))
+	req, warnings, _ := mustBuildRequest(t, testAnthropicModel, provider.CallOptions{
+		Prompt: []provider.Message{provider.NewUserMessage(text, data)},
+	})
+	require.Len(t, req.Messages, 1)
+	require.Len(t, req.Messages[0].Content, 2)
+	for i, format := range []string{"txt", "pdf"} {
+		doc := req.Messages[0].Content[i].Document
+		require.NotNil(t, doc)
+		assert.Equal(t, format, doc.Format)
+		assert.Equal(t, fmt.Sprintf("document-%d", i+1), doc.Name)
+		assert.Equal(t, "", doc.Source.Bytes)
+	}
 	assert.Empty(t, warnings)
 }
 

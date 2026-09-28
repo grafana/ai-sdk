@@ -44,7 +44,7 @@ export function parseTagCommit(output, tag) {
 export function parseMinimumReleaseAge(yaml) {
   const match = yaml.match(/^minimumReleaseAge:\s*(\d+)\s*(?:#.*)?$/m);
   if (!match) {
-    throw new Error("test/pnpm-workspace.yaml must declare an integer minimumReleaseAge");
+    throw new Error("pnpm-workspace.yaml must declare an integer minimumReleaseAge");
   }
   return Number.parseInt(match[1], 10);
 }
@@ -372,7 +372,7 @@ export function applyTarget(target, {
   const baselinePath = join(root, "test/conformance/upstream.yaml");
   const baselineYaml = readFileSync(baselinePath, "utf8");
   const baseline = readBaseline(baselineYaml);
-  const minimumReleaseAge = parseMinimumReleaseAge(readFileSync(join(root, "test/pnpm-workspace.yaml"), "utf8"));
+  const minimumReleaseAge = parseMinimumReleaseAge(readFileSync(join(root, "pnpm-workspace.yaml"), "utf8"));
   if (target.format !== 1 || target.minimumReleaseAge !== minimumReleaseAge) {
     throw new Error("unsupported target format or changed minimum release age; reassess the target");
   }
@@ -454,7 +454,7 @@ function main(args) {
   }
   if (existsSync(path)) throw new Error(`target already exists: ${path}; resume it or choose a new output`);
   const baseline = readBaseline(readFileSync(join(repositoryRoot, "test/conformance/upstream.yaml"), "utf8"));
-  const minimumReleaseAge = parseMinimumReleaseAge(readFileSync(join(repositoryRoot, "test/pnpm-workspace.yaml"), "utf8"));
+  const minimumReleaseAge = parseMinimumReleaseAge(readFileSync(join(repositoryRoot, "pnpm-workspace.yaml"), "utf8"));
   const packageMetadata = Object.keys(baseline.packages).map(fetchPackageMetadata);
   const cache = new Map();
   const getDependencies = (name, version) => {
