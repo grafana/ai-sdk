@@ -104,7 +104,8 @@ The image labels identify its source repository, revision (the pushed commit
 for published images), and AGPL-3.0-only license. Licenses and the module
 inventory are under `/usr/share/licenses/grafana-ai-gateway/`, including
 Gateway and SDK licenses, dependency notices, and resolved module versions
-and checksums.
+and checksums. When distributing the image, include the approved
+corresponding-source offer for that revision and its dependencies.
 
 ---
 

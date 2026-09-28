@@ -48,7 +48,6 @@ var (
 	canonicalCancellationError   = []byte(`{"error":{"message":"request canceled","type":"internal_server_error","param":null,"code":"canceled"}}`)
 	canonicalInternalError       = []byte(`{"error":{"message":"internal error","type":"internal_server_error","param":null,"code":"internal_error"}}`)
 
-	unsupportedFilesError            = []byte(`{"error":{"message":"unsupported capability: files","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
 	unsupportedReasoningContentError = []byte(`{"error":{"message":"unsupported capability: reasoning-content","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
 	unsupportedCustomContentError    = []byte(`{"error":{"message":"unsupported capability: custom-content","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
 	unsupportedToolsError            = []byte(`{"error":{"message":"unsupported capability: tools","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
@@ -95,8 +94,6 @@ func documentForSafeError(value safeError) safeErrorDocument {
 
 func unsupportedCapabilityDocument(capability unsupportedCapability) []byte {
 	switch capability {
-	case capabilityFiles:
-		return unsupportedFilesError
 	case capabilityReasoningContent:
 		return unsupportedReasoningContentError
 	case capabilityCustomContent:

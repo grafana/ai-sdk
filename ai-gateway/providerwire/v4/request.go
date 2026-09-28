@@ -11,7 +11,6 @@ import (
 type unsupportedCapability string
 
 const (
-	capabilityFiles            unsupportedCapability = "files"
 	capabilityReasoningContent unsupportedCapability = "reasoning-content"
 	capabilityCustomContent    unsupportedCapability = "custom-content"
 	capabilityTools            unsupportedCapability = "tools"
@@ -54,6 +53,9 @@ type wireMessage struct {
 type wirePart struct {
 	Type             provider.ContentPartType   `json:"type"`
 	Text             string                     `json:"text"`
+	Data             json.RawMessage            `json:"data"`
+	MediaType        string                     `json:"mediaType"`
+	Filename         *string                    `json:"filename"`
 	ProviderOptions  map[string]json.RawMessage `json:"providerOptions"`
 	ToolCallID       string                     `json:"toolCallId"`
 	ToolName         string                     `json:"toolName"`
@@ -201,9 +203,20 @@ func mapWirePart(part wirePart, role provider.Role, toolsEnabled bool) (provider
 		text := provider.TextPart(part.Text)
 		text.ProviderOptions = partOptions
 		return text, nil
-	case provider.ContentPartTypeFile, provider.ContentPartTypeReasoningFile:
-		return provider.ContentPart{}, unsupportedMappingFailure(capabilityFiles)
-	case provider.ContentPartTypeReasoning:
+	case provider.ContentPartTypeFile:
+		partOptions, failure := mapWireProviderOptions(part.ProviderOptions)
+		if failure != nil {
+			return provider.ContentPart{}, failure
+		}
+		data, failure := mapWireFileData(part.Data)
+		if failure != nil {
+			return provider.ContentPart{}, failure
+		}
+		file := provider.FilePart(part.MediaType, data)
+		file.Filename = part.Filename
+		file.ProviderOptions = partOptions
+		return file, nil
+	case provider.ContentPartTypeReasoningFile, provider.ContentPartTypeReasoning:
 		return provider.ContentPart{}, unsupportedMappingFailure(capabilityReasoningContent)
 	case provider.ContentPartTypeCustom:
 		return provider.ContentPart{}, unsupportedMappingFailure(capabilityCustomContent)
@@ -317,15 +330,17 @@ func mapWireProviderOptions(options map[string]json.RawMessage) (provider.Provid
 	if len(options) == 0 {
 		return nil, nil
 	}
-	// The reserved namespace is found in its own pass, so a request carrying both
+	// Reserved namespaces are found in their own pass, so a request carrying both
 	// a reserved namespace and a malformed one always reports the same refusal
 	// rather than whichever the map yielded first. Namespace names are compared
 	// exactly, because provider-option namespaces are case-significant. Between a
 	// malformed namespace and a protected field the refusal is whichever the map
 	// yields first, which the request schema keeps unreachable over HTTP by
 	// requiring every namespace to be an object.
-	if _, reserved := options[ReservedProviderOptionNamespace]; reserved {
-		return nil, unsupportedMappingFailure(capabilityReservedProviderOptions)
+	for _, namespace := range []string{ReservedProviderOptionNamespace, "gateway", "grafana-ai-sdk"} {
+		if _, reserved := options[namespace]; reserved {
+			return nil, unsupportedMappingFailure(capabilityReservedProviderOptions)
+		}
 	}
 	mapped := make(provider.ProviderOptions, len(options))
 	for namespace, raw := range options {
