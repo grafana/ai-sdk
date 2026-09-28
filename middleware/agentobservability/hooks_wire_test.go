@@ -36,6 +36,7 @@ func TestHooksMiddleware_WireResponses(t *testing.T) {
 	}{
 		{name: "empty transform is no-op", body: `{"action":"allow","transformed_input":{}}`, want: []provider.Message{provider.UserText("original")}},
 		{name: "empty collections are no-op", body: `{"action":"allow","transformed_input":{"messages":[],"tools":[]}}`, want: []provider.Message{provider.UserText("original")}},
+		{name: "tools-only transform fails closed", body: `{"action":"allow","transformed_input":{"tools":[{"name":"lookup"}]}}`, wantErr: ErrHookTransformFailed},
 		{name: "unknown role becomes user", body: `{"action":"allow","transformed_input":{"messages":[{"role":"unknown","parts":[{"kind":"text","text":"filtered"}]}]}}`, want: []provider.Message{provider.UserText("filtered")}},
 		{name: "unknown kind with text becomes text", body: `{"action":"allow","transformed_input":{"messages":[{"role":"user","parts":[{"kind":"unknown","text":"filtered"}]}]}}`, want: []provider.Message{provider.UserText("filtered")}},
 		{name: "unsupported parts are dropped", body: `{"action":"allow","transformed_input":{"messages":[{"role":"user","parts":[{"kind":"unknown"},{"kind":"text","text":""},{"kind":"text","text":"filtered"}]}]}}`, want: []provider.Message{provider.UserText("filtered")}},

@@ -262,7 +262,71 @@ func TestUsageToAgento11y(t *testing.T) {
 
 func TestUsageToAgento11y_Zero(t *testing.T) {
 	got := usageToAgento11y(provider.Usage{})
-	assert.Equal(t, agento11y.TokenUsage{InputSemantics: agento11y.TokenInputSemanticsInclusive}, got)
+	assert.Equal(t, agento11y.TokenUsage{}, got)
+}
+
+func TestUsageToAgento11y_InputSemanticsFollowsReportedTotal(t *testing.T) {
+	total, noCache, cacheRead, cacheWrite := 100, 25, 50, 25
+	totalWithoutWrite := 75
+	wrongCacheWrite := 26
+	smallTotal := 70
+	tests := []struct {
+		name  string
+		usage provider.InputTokenUsage
+		want  agento11y.TokenInputSemantics
+	}{
+		{
+			name: "complete breakdown",
+			usage: provider.InputTokenUsage{
+				Total: &total, NoCache: &noCache, CacheRead: &cacheRead, CacheWrite: &cacheWrite,
+			},
+			want: agento11y.TokenInputSemanticsInclusive,
+		},
+		{
+			name:  "cache write bucket absent",
+			usage: provider.InputTokenUsage{Total: &totalWithoutWrite, NoCache: &noCache, CacheRead: &cacheRead},
+			want:  agento11y.TokenInputSemanticsInclusive,
+		},
+		{
+			name:  "unreported cache write explains the gap",
+			usage: provider.InputTokenUsage{Total: &total, NoCache: &noCache, CacheRead: &cacheRead},
+			want:  agento11y.TokenInputSemanticsInclusive,
+		},
+		{
+			name:  "partial breakdown exceeds total",
+			usage: provider.InputTokenUsage{Total: &totalWithoutWrite, NoCache: &noCache, CacheRead: &total},
+		},
+		{
+			name:  "no-cache bucket absent",
+			usage: provider.InputTokenUsage{Total: &total, CacheRead: &cacheRead, CacheWrite: &cacheWrite},
+			want:  agento11y.TokenInputSemanticsInclusive,
+		},
+		{
+			name:  "total only",
+			usage: provider.InputTokenUsage{Total: &total},
+			want:  agento11y.TokenInputSemanticsInclusive,
+		},
+		{
+			name:  "total absent",
+			usage: provider.InputTokenUsage{NoCache: &noCache, CacheRead: &cacheRead, CacheWrite: &cacheWrite},
+		},
+		{
+			name: "total does not match breakdown",
+			usage: provider.InputTokenUsage{
+				Total: &total, NoCache: &noCache, CacheRead: &cacheRead, CacheWrite: &wrongCacheWrite,
+			},
+		},
+		{
+			name:  "cache buckets exceed total",
+			usage: provider.InputTokenUsage{Total: &smallTotal, CacheRead: &cacheRead, CacheWrite: &cacheWrite},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := usageToAgento11y(provider.Usage{InputTokens: tc.usage})
+			assert.Equal(t, tc.want, got.InputSemantics)
+		})
+	}
 }
 
 func TestMetadataFromUsage_ServerToolUse(t *testing.T) {
