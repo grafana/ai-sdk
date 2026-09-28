@@ -8,7 +8,7 @@ import { parseArgs } from "node:util";
 import { parse } from "yaml";
 import { createSourceIdNormalizer, loadConfig } from "./common.mts";
 import { discoverMatrix, reconcile, runMatrix, summarize, type Client, type Row, type RowResult, type Stage } from "./gateway-matrix.mts";
-import { authentication, backendKey, command, createNetwork, gatewayAPIKey, gatewayConfig, modelID, removeResource, startAuthentication, startGateway } from "./gateway-runtime.mts";
+import { authentication, backendKey, buildGatewayImage, command, createNetwork, gatewayAPIKey, gatewayConfig, modelID, removeResource, startAuthentication, startGateway } from "./gateway-runtime.mts";
 import { startReplay } from "./replay.mts";
 import { normalizeOpenAIApprovalToolCallIds, type ScenarioResult } from "./scenario.mts";
 
@@ -41,12 +41,14 @@ async function main() {
     report.metadata.baseline = parse(readFileSync(join(root, "upstream.yaml"), "utf8"));
     report.metadata.clientPackages = JSON.parse(readFileSync(join(tools, "package.json"), "utf8")).dependencies;
     report.metadata.checkoutGatewayGoMod = readFileSync(join(repository, "ai-gateway/go.mod"), "utf8");
+    report.metadata.checkoutGatewayWorkspace = readFileSync(join(repository, "go.gateway.work"), "utf8");
+    report.metadata.imageBuildMode = values.image ? "supplied-image" : "same-revision-workspace";
     report.metadata.goVersion = (await command("go", ["version"])).trim();
     report.metadata.sourceRevision = (await command("git", ["rev-parse", "HEAD"], { cwd: repository })).trim();
     report.metadata.checkoutStatus = await command("git", ["status", "--short"], { cwd: repository });
     save("report.json", report);
     const image = values.image ?? "ai-gateway:conformance";
-    if (!values.image) await command("docker", ["build", "--build-arg", `VCS_REF=${report.metadata.sourceRevision}`, "--tag", image, "ai-gateway"], { cwd: repository, timeout: 600_000, signal: controller.signal });
+    if (!values.image) await buildGatewayImage(image, String(report.metadata.sourceRevision), repository, controller.signal);
     const imageInfo = JSON.parse(await command("docker", ["image", "inspect", image]))[0];
     report.metadata.image = { requested: image, id: imageInfo.Id, labels: imageInfo.Config.Labels };
     const modulesContainer = `conformance-modules-${process.pid}-${Date.now()}`;

@@ -128,8 +128,8 @@ Docker daemons and Docker Desktop networking are not supported by this harness.
 Results are written to the ignored `test/conformance/gateway-results/` directory:
 
 - `summary.md`: per-provider/client totals, invocation counts, and evidence filenames.
-- `report.json`: every fixture/client row, scope, image/dependency identity, stages,
-  outcomes, and infrastructure errors.
+- `report.json`: every fixture/client row, scope, source/workspace and
+  image/dependency identity, stages, outcomes, and infrastructure errors.
 - `row-*.json`: configuration, client capture, backend requests, comparison diffs,
   and bounded, credential-redacted gateway logs for an attempted row.
 
@@ -151,9 +151,14 @@ compatibility work lands. Intentional security/metadata policy differences remai
 visible and require a separate reviewed contract decision rather than broad
 normalization or new gateway-specific goldens.
 
-The image uses the versions pinned in `ai-gateway/go.mod`, not local provider
-replacements. Reports include the image's actual module inventory so dependency
-lag is distinguishable from checkout behavior.
+The harness builds the production Dockerfile with the repository-root context
+and the explicit `go.gateway.work` workspace, just like the production image
+build. Internal SDK/provider/middleware source comes from the checked-out
+revision rather than the older published versions in `ai-gateway/go.mod`;
+external dependencies remain pinned. Reports include the checkout workspace,
+image build mode, source revision and the image's actual module inventory.
+An explicitly supplied image may have a different revision; its labels and
+inventory remain visible in the report.
 
 CI runs direct and gateway conformance independently. The existing required
 `conformance-test` status aggregates both: it fails unless both jobs succeed,
