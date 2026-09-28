@@ -25,6 +25,7 @@ const (
 	midConversationToolChangesBeta = anthropic.AnthropicBeta("mid-conversation-tool-changes-2026-07-01")
 	serverSideFallbackDefaultBeta  = anthropic.AnthropicBeta("server-side-fallback-2026-07-01")
 	serverSideFallbackExplicitBeta = anthropic.AnthropicBeta("server-side-fallback-2026-06-01")
+	dangerousToolUseBeta           = anthropic.AnthropicBeta("dangerous-tool-use-2026-09-03")
 )
 
 func trimECMAScriptWhitespace(s string) string {
@@ -175,11 +176,18 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 		return anthropic.BetaMessageNewParams{}, toolNameMapping{}, nil, buildResult{}, fmt.Errorf("anthropic: invalid file input: %w", err)
 	}
 	var warnings []provider.Warning
+	if err := rejectRawSafeguardNulls(opts.ProviderOptions); err != nil {
+		return anthropic.BetaMessageNewParams{}, toolNameMapping{}, nil, buildResult{}, fmt.Errorf("anthropic: invalid provider options: %w", err)
+	}
 	anthropicOpts, hasAnthropicOpts, err := provider.ResolveOption[AnthropicOptions](opts.ProviderOptions, "anthropic")
 	if err != nil {
 		return anthropic.BetaMessageNewParams{}, toolNameMapping{}, nil, buildResult{}, fmt.Errorf("anthropic: invalid provider options: %w", err)
 	}
 	if err := validateFallbackConfig(anthropicOpts.Fallbacks); err != nil {
+		return anthropic.BetaMessageNewParams{}, toolNameMapping{}, nil, buildResult{}, fmt.Errorf("anthropic: invalid provider options: %w", err)
+	}
+	safeguards, err := projectAnthropicSafeguards(anthropicOpts.Safeguards)
+	if err != nil {
 		return anthropic.BetaMessageNewParams{}, toolNameMapping{}, nil, buildResult{}, fmt.Errorf("anthropic: invalid provider options: %w", err)
 	}
 	v := &cacheControlValidator{}
@@ -446,6 +454,10 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 
 	applyFallbacks(&p, anthropicOpts.Fallbacks, providerCaps, &br, &warnings)
 	applyProviderOptions(&p, anthropicOpts, hasAnthropicOpts, &warnings)
+	if len(safeguards) > 0 {
+		br.requestOptions = append(br.requestOptions, option.WithJSONSet("safeguards", safeguards))
+		p.Betas = appendBetaUnique(p.Betas, dangerousToolUseBeta)
+	}
 
 	for _, b := range toolBetas {
 		p.Betas = appendBetaUnique(p.Betas, anthropic.AnthropicBeta(b))
@@ -2711,6 +2723,64 @@ func applyFallbacks(p *anthropic.BetaMessageNewParams, fallbacks *FallbackConfig
 	}
 	p.Fallbacks = anthropic.BetaFallbacksParamUnion{OfBetaFallbackArray: convertedFallbacks}
 	p.Betas = appendBetaUnique(p.Betas, serverSideFallbackExplicitBeta)
+}
+
+func rejectRawSafeguardNulls(opts provider.ProviderOptions) error {
+	raw, ok := opts["anthropic"].(provider.RawProviderOption)
+	if !ok {
+		return nil
+	}
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw.Raw, &fields) != nil {
+		return nil
+	}
+	value, ok := fields["safeguards"]
+	if !ok {
+		return nil
+	}
+	if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+		return fmt.Errorf("safeguards must be an array, not null")
+	}
+	var entries []json.RawMessage
+	if err := json.Unmarshal(value, &entries); err != nil {
+		return fmt.Errorf("decoding safeguards: %w", err)
+	}
+	for i, entry := range entries {
+		var entryFields map[string]json.RawMessage
+		if json.Unmarshal(entry, &entryFields) != nil {
+			continue
+		}
+		if bytes.Equal(bytes.TrimSpace(entryFields["classifierContext"]), []byte("null")) {
+			return fmt.Errorf("safeguards[%d].classifierContext must be an object, not null", i)
+		}
+	}
+	return nil
+}
+
+func projectAnthropicSafeguards(entries []AnthropicSafeguard) ([]map[string]any, error) {
+	if len(entries) == 0 {
+		return nil, nil
+	}
+	projected := make([]map[string]any, 0, len(entries))
+	for i, entry := range entries {
+		if entry.Type != AnthropicSafeguardDangerousToolUse {
+			return nil, fmt.Errorf("safeguards[%d].type must be %q", i, AnthropicSafeguardDangerousToolUse)
+		}
+		item := map[string]any{"type": entry.Type}
+		if entry.ClassifierContext != nil {
+			if *entry.ClassifierContext == nil {
+				return nil, fmt.Errorf("safeguards[%d].classifierContext must be an object, not null", i)
+			}
+			for name, value := range *entry.ClassifierContext {
+				if !json.Valid(value) {
+					return nil, fmt.Errorf("safeguards[%d].classifierContext[%q] contains invalid JSON", i, name)
+				}
+			}
+			item["classifier_context"] = *entry.ClassifierContext
+		}
+		projected = append(projected, item)
+	}
+	return projected, nil
 }
 
 func applyProviderOptions(p *anthropic.BetaMessageNewParams, ao AnthropicOptions, ok bool, warnings *[]provider.Warning) {

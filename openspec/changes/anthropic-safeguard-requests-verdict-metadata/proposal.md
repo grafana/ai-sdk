@@ -22,5 +22,5 @@ None.
 ## Impact
 
 - `providers/anthropic/options.go`, `convert_request.go`, `model.go`, `provider_metadata.go`, `convert_response.go` and `convert_stream.go` and their focused tests. The `provider.LanguageModel` interface, generic provider result shapes, and SSE chunk discriminators remain unchanged.
-- The current separate Anthropic module depends on `github.com/anthropics/anthropic-sdk-go@v1.75.0`, which has no typed safeguards request/response fields; request serialization and raw-response handling must be verified against that SDK. A dependency bump, if ultimately needed, must independently resolve as a published version with `GOWORK=off`.
+- The current separate Anthropic module depends on `github.com/anthropics/anthropic-sdk-go@v1.75.0`, which has no typed safeguards request/response fields; request serialization and raw-response handling must be verified against that SDK. No SDK dependency bump is needed for the verified JSON overlay.
 - This is provider-implementation parity against registered source commit `4e8c387622ee1bb0d55841664416d38754d5c9a3`, not a pinned-version upgrade or evidence of live provider acceptance.

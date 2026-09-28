@@ -36,9 +36,13 @@ type AnthropicOptions struct {
 	DisableParallelToolUse *bool                `json:"disableParallelToolUse,omitempty"`
 	Effort                 string               `json:"effort,omitempty"` // "low", "medium", "high", "xhigh", "max"
 	Betas                  []string             `json:"betas,omitempty"`
-	MCPServers             []MCPServer          `json:"mcpServers,omitempty"`
-	TaskBudget             *TaskBudgetConfig    `json:"taskBudget,omitempty"`
-	Container              *Container           `json:"container,omitempty"`
+	// Safeguards requests opt-in dangerous-tool-use classification. Anthropic
+	// must authorize the beta for the credential and model; the provider may
+	// reject the request when it is unavailable.
+	Safeguards []AnthropicSafeguard `json:"safeguards,omitempty"`
+	MCPServers []MCPServer          `json:"mcpServers,omitempty"`
+	TaskBudget *TaskBudgetConfig    `json:"taskBudget,omitempty"`
+	Container  *Container           `json:"container,omitempty"`
 	// ToolStreaming controls whether function tools receive a default
 	// `eager_input_streaming: true` on streaming requests. A nil value
 	// is treated as true, matching upstream's `?? true` semantics.
@@ -49,6 +53,23 @@ type AnthropicOptions struct {
 }
 
 func (AnthropicOptions) ProviderKey() string { return "anthropic" }
+
+// AnthropicSafeguardType identifies an Anthropic safeguard classifier.
+type AnthropicSafeguardType string
+
+const (
+	// AnthropicSafeguardDangerousToolUse requests dangerous-tool-use classification.
+	AnthropicSafeguardDangerousToolUse AnthropicSafeguardType = "dangerous_tool_use"
+)
+
+// AnthropicSafeguard configures an opt-in classifier. A non-nil
+// ClassifierContext pointer preserves even an empty JSON object on the wire.
+// Returned verdicts are exposed as anthropic.safeguardResults in provider
+// metadata; they do not enforce a tool-execution policy.
+type AnthropicSafeguard struct {
+	Type              AnthropicSafeguardType      `json:"type"`
+	ClassifierContext *map[string]json.RawMessage `json:"classifierContext,omitempty"`
+}
 
 // FallbackConfig configures Anthropic server-side refusal fallbacks.
 // Use [DefaultFallbacks] for Anthropic's recommended model or

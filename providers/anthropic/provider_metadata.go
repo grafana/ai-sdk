@@ -1,6 +1,7 @@
 package anthropic
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 
@@ -26,12 +27,101 @@ func buildAnthropicProviderMetadata(fields map[string]json.RawMessage, usageRaw 
 	if stopDetails := mapStopDetailsMetadata(rawJSONValue(fields["stop_details"])); stopDetails != nil {
 		metadata["stopDetails"] = stopDetails
 	}
+	if value := fields["safeguard_results"]; len(value) > 0 && !bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+		results, err := mapSafeguardResults(value)
+		if err != nil {
+			return nil, err
+		}
+		metadata["safeguardResults"] = results
+	}
 
 	raw, err := json.Marshal(metadata)
 	if err != nil {
 		return nil, fmt.Errorf("marshaling Anthropic provider metadata: %w", err)
 	}
 	return provider.ProviderMetadata{"anthropic": raw}, nil
+}
+
+func mapSafeguardResults(raw json.RawMessage) ([]map[string]any, error) {
+	var entries []json.RawMessage
+	if err := json.Unmarshal(raw, &entries); err != nil || entries == nil {
+		return nil, fmt.Errorf("anthropic: invalid safeguard_results array")
+	}
+	results := make([]map[string]any, 0, len(entries))
+	for i, entry := range entries {
+		fields, ok := safeguardObject(entry)
+		if !ok {
+			return nil, fmt.Errorf("anthropic: invalid safeguard_results[%d] object", i)
+		}
+		kind, ok := safeguardString(fields, "type")
+		if !ok {
+			return nil, fmt.Errorf("anthropic: invalid safeguard_results[%d].type", i)
+		}
+		statusFields, ok := safeguardObject(fields["status"])
+		if !ok {
+			return nil, fmt.Errorf("anthropic: invalid safeguard_results[%d].status", i)
+		}
+		statusType, ok := safeguardString(statusFields, "type")
+		if !ok {
+			return nil, fmt.Errorf("anthropic: invalid safeguard_results[%d].status.type", i)
+		}
+		status := map[string]any{"type": statusType}
+		if toolUses, exists := statusFields["tool_uses"]; exists {
+			if bytes.Equal(bytes.TrimSpace(toolUses), []byte("null")) {
+				status["tool_uses"] = nil
+			} else {
+				uses, ok := safeguardObject(toolUses)
+				if !ok {
+					return nil, fmt.Errorf("anthropic: invalid safeguard_results[%d].status.tool_uses", i)
+				}
+				mapped := make(map[string]any, len(uses))
+				for id, rawUse := range uses {
+					use, ok := safeguardObject(rawUse)
+					if !ok {
+						return nil, fmt.Errorf("anthropic: invalid safeguard_results[%d].status.tool_uses entry", i)
+					}
+					useType, ok := safeguardString(use, "type")
+					if !ok {
+						return nil, fmt.Errorf("anthropic: invalid safeguard_results[%d].status.tool_uses type", i)
+					}
+					verdict := map[string]any{"type": useType}
+					for _, key := range []string{"outcome", "explanation"} {
+						if value, exists := use[key]; exists {
+							if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+								verdict[key] = nil
+							} else if text, ok := safeguardString(use, key); ok {
+								verdict[key] = text
+							} else {
+								return nil, fmt.Errorf("anthropic: invalid safeguard_results[%d].status.tool_uses %s", i, key)
+							}
+						}
+					}
+					mapped[id] = verdict
+				}
+				status["tool_uses"] = mapped
+			}
+		}
+		results = append(results, map[string]any{"type": kind, "status": status})
+	}
+	return results, nil
+}
+
+func safeguardObject(raw json.RawMessage) (map[string]json.RawMessage, bool) {
+	var object map[string]json.RawMessage
+	err := json.Unmarshal(raw, &object)
+	return object, err == nil && object != nil
+}
+
+func safeguardString(fields map[string]json.RawMessage, key string) (string, bool) {
+	raw := bytes.TrimSpace(fields[key])
+	if len(raw) == 0 || raw[0] != '"' {
+		return "", false
+	}
+	var value string
+	if json.Unmarshal(raw, &value) != nil {
+		return "", false
+	}
+	return value, true
 }
 
 func messageMetadataFields(raw string) map[string]json.RawMessage {
