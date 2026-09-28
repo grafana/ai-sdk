@@ -3,6 +3,7 @@ package middleware
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/stretchr/testify/assert"
@@ -449,6 +450,130 @@ func TestExtractReasoning_Stream(t *testing.T) {
 		require.NotEqual(t, -1, reasoningStartIdx, "should have reasoning-start")
 		require.NotEqual(t, -1, textStartIdx, "should have text-start")
 		assert.Less(t, reasoningStartIdx, textStartIdx, "reasoning-start should come before text-start")
+	})
+
+	for _, tc := range []struct {
+		name  string
+		input []provider.StreamPart
+		want  []provider.StreamPart
+	}{
+		{
+			name: "OverlappingPlainText",
+			input: []provider.StreamPart{
+				{Type: provider.PartTextStart, ID: "a"}, {Type: provider.PartTextStart, ID: "b"},
+				{Type: provider.PartTextDelta, ID: "a", Delta: "Alpha."},
+				{Type: provider.PartTextDelta, ID: "b", Delta: "Beta."},
+				{Type: provider.PartTextEnd, ID: "b"}, {Type: provider.PartTextEnd, ID: "a"},
+			},
+			want: []provider.StreamPart{
+				{Type: provider.PartTextStart, ID: "a"}, {Type: provider.PartTextDelta, ID: "a", Delta: "Alpha."},
+				{Type: provider.PartTextStart, ID: "b"}, {Type: provider.PartTextDelta, ID: "b", Delta: "Beta."},
+				{Type: provider.PartTextEnd, ID: "b"}, {Type: provider.PartTextEnd, ID: "a"},
+			},
+		},
+		{
+			name: "OverlappingSplitReasoning",
+			input: []provider.StreamPart{
+				{Type: provider.PartTextStart, ID: "a"}, {Type: provider.PartTextStart, ID: "b"},
+				{Type: provider.PartTextDelta, ID: "a", Delta: "<think>A"},
+				{Type: provider.PartTextDelta, ID: "b", Delta: "<thi"},
+				{Type: provider.PartTextDelta, ID: "b", Delta: "nk>B"},
+				{Type: provider.PartTextDelta, ID: "a", Delta: "1</think>Alpha."},
+				{Type: provider.PartTextDelta, ID: "b", Delta: "2</think>Beta."},
+				{Type: provider.PartTextEnd, ID: "b"}, {Type: provider.PartTextEnd, ID: "a"},
+			},
+			want: []provider.StreamPart{
+				{Type: provider.PartReasoningStart, ID: "reasoning-0"}, {Type: provider.PartReasoningDelta, ID: "reasoning-0", Delta: "A"},
+				{Type: provider.PartReasoningStart, ID: "reasoning-1"}, {Type: provider.PartReasoningDelta, ID: "reasoning-1", Delta: "B"},
+				{Type: provider.PartReasoningDelta, ID: "reasoning-0", Delta: "1"}, {Type: provider.PartReasoningEnd, ID: "reasoning-0"},
+				{Type: provider.PartTextStart, ID: "a"}, {Type: provider.PartTextDelta, ID: "a", Delta: "Alpha."},
+				{Type: provider.PartReasoningDelta, ID: "reasoning-1", Delta: "2"}, {Type: provider.PartReasoningEnd, ID: "reasoning-1"},
+				{Type: provider.PartTextStart, ID: "b"}, {Type: provider.PartTextDelta, ID: "b", Delta: "Beta."},
+				{Type: provider.PartTextEnd, ID: "b"}, {Type: provider.PartTextEnd, ID: "a"},
+			},
+		},
+		{
+			name: "ReasoningOnlyBlock",
+			input: []provider.StreamPart{
+				{Type: provider.PartTextStart, ID: "a"}, {Type: provider.PartTextStart, ID: "b"},
+				{Type: provider.PartTextDelta, ID: "a", Delta: "<think>A</think>Alpha."},
+				{Type: provider.PartTextDelta, ID: "b", Delta: "<think>B</think>"},
+				{Type: provider.PartTextEnd, ID: "b"}, {Type: provider.PartTextEnd, ID: "a"},
+			},
+			want: []provider.StreamPart{
+				{Type: provider.PartReasoningStart, ID: "reasoning-0"}, {Type: provider.PartReasoningDelta, ID: "reasoning-0", Delta: "A"}, {Type: provider.PartReasoningEnd, ID: "reasoning-0"},
+				{Type: provider.PartTextStart, ID: "a"}, {Type: provider.PartTextDelta, ID: "a", Delta: "Alpha."},
+				{Type: provider.PartReasoningStart, ID: "reasoning-1"}, {Type: provider.PartReasoningDelta, ID: "reasoning-1", Delta: "B"}, {Type: provider.PartReasoningEnd, ID: "reasoning-1"},
+				{Type: provider.PartTextStart, ID: "b"}, {Type: provider.PartTextEnd, ID: "b"}, {Type: provider.PartTextEnd, ID: "a"},
+			},
+		},
+		{
+			name: "FirstEmptyAndLaterSegments",
+			input: []provider.StreamPart{
+				{Type: provider.PartTextStart, ID: "a"}, {Type: provider.PartTextStart, ID: "b"},
+				{Type: provider.PartTextDelta, ID: "a", Delta: "<think></think>x<think>R</think>y"},
+				{Type: provider.PartTextDelta, ID: "b", Delta: "<think>B</think>z"},
+				{Type: provider.PartTextEnd, ID: "a"}, {Type: provider.PartTextEnd, ID: "b"},
+			},
+			want: []provider.StreamPart{
+				{Type: provider.PartReasoningStart, ID: "reasoning-0"}, {Type: provider.PartReasoningEnd, ID: "reasoning-0"},
+				{Type: provider.PartTextStart, ID: "a"}, {Type: provider.PartTextDelta, ID: "a", Delta: "x"},
+				{Type: provider.PartReasoningStart, ID: "reasoning-1"}, {Type: provider.PartReasoningDelta, ID: "reasoning-1", Delta: "R"}, {Type: provider.PartReasoningEnd, ID: "reasoning-1"},
+				{Type: provider.PartTextDelta, ID: "a", Delta: "\ny"},
+				{Type: provider.PartReasoningStart, ID: "reasoning-2"}, {Type: provider.PartReasoningDelta, ID: "reasoning-2", Delta: "B"}, {Type: provider.PartReasoningEnd, ID: "reasoning-2"},
+				{Type: provider.PartTextStart, ID: "b"}, {Type: provider.PartTextDelta, ID: "b", Delta: "z"},
+				{Type: provider.PartTextEnd, ID: "a"}, {Type: provider.PartTextEnd, ID: "b"},
+			},
+		},
+		{
+			name: "LaterEmptyPreservesUpstreamBehavior",
+			input: []provider.StreamPart{
+				{Type: provider.PartTextStart, ID: "a"},
+				{Type: provider.PartTextDelta, ID: "a", Delta: "<think>A</think>x<think></think>y"},
+				{Type: provider.PartTextEnd, ID: "a"},
+			},
+			want: []provider.StreamPart{
+				{Type: provider.PartReasoningStart, ID: "reasoning-0"}, {Type: provider.PartReasoningDelta, ID: "reasoning-0", Delta: "A"}, {Type: provider.PartReasoningEnd, ID: "reasoning-0"},
+				{Type: provider.PartTextStart, ID: "a"}, {Type: provider.PartTextDelta, ID: "a", Delta: "x"},
+				{Type: provider.PartReasoningEnd, ID: "reasoning-1"}, {Type: provider.PartTextDelta, ID: "a", Delta: "\ny"}, {Type: provider.PartTextEnd, ID: "a"},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			model := &mockModel{doStream: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+				ch := make(chan provider.StreamPart, len(tc.input))
+				for _, part := range tc.input {
+					ch <- part
+				}
+				close(ch)
+				return &provider.StreamResult{Stream: ch}, nil
+			}}
+			result, err := WrapLanguageModel(model, ExtractReasoning(ExtractReasoningOptions{TagName: "think"})).DoStream(t.Context(), provider.CallOptions{})
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, collectParts(t, result))
+		})
+	}
+
+	t.Run("CancelWithOverlappingPendingStarts", func(t *testing.T) {
+		input := make(chan provider.StreamPart)
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		model := &mockModel{doStream: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+			return &provider.StreamResult{Stream: input}, nil
+		}}
+		result, err := WrapLanguageModel(model, ExtractReasoning(ExtractReasoningOptions{TagName: "think"})).DoStream(ctx, provider.CallOptions{})
+		require.NoError(t, err)
+
+		input <- provider.StreamPart{Type: provider.PartTextStart, ID: "a"}
+		input <- provider.StreamPart{Type: provider.PartTextStart, ID: "b"}
+		cancel()
+
+		select {
+		case part, ok := <-result.Stream:
+			assert.False(t, ok, "pending text starts should not be flushed on cancellation: %+v", part)
+		case <-time.After(time.Second):
+			t.Fatal("transformed stream did not close after cancellation")
+		}
 	})
 }
 
