@@ -25,9 +25,9 @@ evidence boundary changes, not merely because the pinned versions change.
 | Structured output | mixed | Object snapshots and unit tests exercise schemas, partial values, array elements and parsing. | Final-value snapshots do not establish partial-delivery or failure behavior; those require focused tests. |
 | UI messages and SSE | mixed | Chunk snapshots, framing tests and schema-parsed frontend tests exercise conversion, ordering and assembly. | Reader/writer tests do not establish all browser or hook lifecycle behavior. |
 | React hooks | mixed | Actual useChat, useCompletion and useObject tests exercise selected success, error, stop, tool and approval flows. | Other lifecycle paths are not established by these tests or by chunk snapshots alone. |
-| Agent, middleware and registry | mixed | Root tests exercise configuration, wrapping, provider resolution and shared orchestration. | Delegation to another implementation does not independently prove every entry point. |
+| Agent, middleware and registry | mixed | Root tests exercise configuration, wrapping, provider resolution, simulated generated-content projection and cancellation; a schema-parsed frontend scenario checks simulated UI chunks and assembly. | Synthetic simulated generation does not prove real provider emissions; delegation to another implementation does not independently prove every entry point. |
 | LanguageModelV4 contract | mixed | Discriminator checks, finite ProviderWire witnesses and provider request snapshots exercise represented types and mappings. | Shape checks are not complete semantic interface verification. |
-| Provider adapters | mixed | `recorded/` and `upstream/` fixtures exercise represented requests, stream events, usage and outputs; provider tests cover synthetic failures and local invariants. | Synthetic HTTP tests are not provider recordings. Request capture does not prove returned SDK metadata. Volatile SigV4 headers are excluded from snapshots. |
+| Provider adapters | mixed | `recorded/` and `upstream/` fixtures exercise represented requests, stream events, usage and outputs; provider tests cover synthetic failures and local invariants, including OpenAI multipart function-result request conversion. | No recorded/imported OpenAI request fixture exercises multipart result references or cache breakpoints; focused request tests do not prove live acceptance. Request capture does not prove returned SDK metadata. Volatile SigV4 headers are excluded from snapshots. |
 | Bedrock Mantle Responses continuation | mixed | [Mantle assistant-history request tests](../../providers/bedrock/mantle/provider_test.go) capture unary and streaming reconstruction, phase, empty text and stored references; standalone readonly Bedrock tests with a publicly resolved OpenAI dependency exercise [#207](https://github.com/grafana/ai-sdk/issues/207)'s consumer boundary. | Fake transport validates request encoding, not live Mantle acceptance or a provider recording. OpenAI producer tests or workspace substitutions alone do not establish Bedrock consumer adoption. Mantle Chat remains unsupported. |
 | ProviderWire request projection | automated | Registered-client HTTP goldens, type/schema witnesses and mapping mutation tests are replayed through Go handlers. | This establishes the public client projection, not Vercel's private service behavior. |
 | Gateway runtime and Go client | mixed | Handler, differential and command tests exercise supported text/function-tool paths, framing, bounds, privacy, cancellation and ownership. | Schema acceptance and runtime support differ. Permissive client parsing does not prove strict server output, privacy or resource bounds. |
@@ -47,9 +47,10 @@ evidence boundary changes, not merely because the pinned versions change.
   cover URL/document assembly, required empty document titles and metadata.
   Synthetic command responses do not establish live provider acceptance.
 - Reusable observers treat source as first output without adding an unsupported
-  Agent Observability capture representation. The standalone Gateway adoption
-  regression runs against its published middleware pins; local workspace tests
-  alone are not used as consumer-adoption evidence.
+  Agent Observability capture representation. Candidate-source Gateway tests
+  verify this behavior with local middleware modules. The merged published pins
+  predate it, so standalone Gateway adoption and image readiness remain gated
+  on later middleware releases and the same-revision image build.
 
 - Conformance comparisons ignore ordering only between adjacent locally executed
   sibling tool outputs. Provider-executed outputs and rejected-input errors remain

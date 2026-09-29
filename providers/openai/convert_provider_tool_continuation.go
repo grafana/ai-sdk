@@ -276,9 +276,18 @@ func convertProviderToolResult(part provider.ContentPart, ctx inputConversionCon
 		item, warnings := customToolCallOutputItem(part, ctx)
 		return item, warnings, nil
 	default:
-		item := responses.ResponseInputItemParamOfFunctionCallOutput(part.ToolCallID, toolResultOutputString(part.Output, ctx.hasOutputSchema(part.ToolName)))
+		text, content, warnings, err := convertFunctionResultOutput(part, ctx)
+		if err != nil {
+			return nil, nil, err
+		}
+		var item responses.ResponseInputItemUnionParam
+		if content != nil {
+			item = responses.ResponseInputItemParamOfFunctionCallOutput(part.ToolCallID, content)
+		} else {
+			item = responses.ResponseInputItemParamOfFunctionCallOutput(part.ToolCallID, text)
+		}
 		item.OfFunctionCallOutput.Caller = functionCallOutputCallerParam(ctx.partOptions(part).Caller)
-		return &item, nil, nil
+		return &item, warnings, nil
 	}
 }
 
@@ -668,7 +677,15 @@ func customToolCallOutputItem(part provider.ContentPart, ctx inputConversionCont
 		return &item, nil
 	}
 	if part.Output.Type != provider.ToolOutputContent {
-		item := responses.ResponseInputItemParamOfCustomToolCallOutput(part.ToolCallID, toolResultOutputString(part.Output, false))
+		text := toolResultOutputString(part.Output, false)
+		if breakpoint := ctx.scalarResultBreakpoint(part); breakpoint != nil {
+			value := responses.ResponseInputTextParam{Text: text}
+			value.SetExtraFields(map[string]any{"prompt_cache_breakpoint": breakpoint})
+			content := []responses.ResponseCustomToolCallOutputOutputOutputContentListItemUnionParam{{OfInputText: &value}}
+			item := responses.ResponseInputItemParamOfCustomToolCallOutput(part.ToolCallID, content)
+			return &item, nil
+		}
+		item := responses.ResponseInputItemParamOfCustomToolCallOutput(part.ToolCallID, text)
 		return &item, nil
 	}
 
@@ -738,7 +755,7 @@ func customToolCallOutputItem(part provider.ContentPart, ctx inputConversionCont
 			default:
 				warnings = append(warnings, provider.Warning{
 					Type:    provider.WarnOther,
-					Message: "unsupported custom tool file data variant",
+					Message: fmt.Sprintf("unsupported custom tool content part type: file with data type: %s", unsupportedFileDataType(value.Data)),
 				})
 			}
 		default:

@@ -114,7 +114,9 @@ URL and document source output is passed through unchanged by observers.
 Metadata-only logs, metrics and Agent Observability omit source identifiers,
 URLs, titles, filenames and metadata. Agent Observability has no source-content
 representation, so sources are not converted into fabricated text or media.
-The Gateway's published reusable-observer pins count sources as first output.
+Candidate-source Gateway tests verify that reusable observers count sources as
+first output. The currently pinned published revisions predate that behavior;
+standalone Gateway delivery requires their later module release.
 See the [source guide](sources.md) for the public response privacy policy.
 
 - WP6 image capacity/distribution does not use this text-model chain.

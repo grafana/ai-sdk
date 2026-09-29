@@ -101,8 +101,9 @@ func TestErrorSchema(t *testing.T) {
 		unsupportedToolsError,
 		unsupportedToolApprovalsError,
 		unsupportedStructuredOutputError,
-		unsupportedProviderOptionsError,
-		unsupportedBodyHeadersError,
+		reservedProviderOptionsError,
+		protectedCallHeaderError,
+		protectedProviderOptionError,
 		unsupportedRawOutputError,
 	}
 	for _, document := range documents {

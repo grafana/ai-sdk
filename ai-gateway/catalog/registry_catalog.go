@@ -11,6 +11,7 @@ type registryCatalog struct {
 	namespace modelNamespace
 	provider  registry.Provider
 	targets   map[string]string
+	policies  map[string]ProviderOptionPolicy
 }
 
 // NewRegistry creates an immutable public catalog backed by a registry
@@ -23,12 +24,14 @@ func NewRegistry(provider registry.Provider, routes []RegistryRoute) (Catalog, e
 
 	infos := make([]ModelInfo, len(routes))
 	targets := make(map[string]string, len(routes))
+	policies := make(map[string]ProviderOptionPolicy, len(routes))
 	for i, route := range routes {
 		if route.ProviderModelID == "" {
 			return nil, fmt.Errorf("catalog: provider model ID is required for route %q", route.Info.ID)
 		}
 		infos[i] = route.Info
 		targets[route.Info.ID] = route.ProviderModelID
+		policies[route.Info.ID] = route.ProviderOptions.clone()
 	}
 
 	namespace, err := newModelNamespace(infos)
@@ -40,6 +43,7 @@ func NewRegistry(provider registry.Provider, routes []RegistryRoute) (Catalog, e
 		namespace: namespace,
 		provider:  provider,
 		targets:   targets,
+		policies:  policies,
 	}, nil
 }
 
@@ -58,7 +62,7 @@ func (c *registryCatalog) ResolveModel(_ context.Context, modelID string) (Resol
 		return ResolvedModel{}, fmt.Errorf("catalog: provider returned nil model for route %q", canonicalID)
 	}
 
-	return ResolvedModel{ID: canonicalID, Model: model}, nil
+	return ResolvedModel{ID: canonicalID, Model: model, ProviderOptions: c.policies[canonicalID].clone()}, nil
 }
 
 func (c *registryCatalog) ListModels(_ context.Context) ([]ModelInfo, error) {

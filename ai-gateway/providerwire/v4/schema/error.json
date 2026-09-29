@@ -47,8 +47,10 @@
                 "unsupported capability: tools",
                 "unsupported capability: tool-approvals",
                 "unsupported capability: structured-output",
+                "reserved provider option namespace",
+                "protected call header",
+                "protected provider option",
                 "unsupported capability: provider-options",
-                "unsupported capability: body-headers",
                 "unsupported capability: raw-output"
               ]
             },

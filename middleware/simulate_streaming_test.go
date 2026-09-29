@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -365,4 +366,280 @@ func TestSimulateStreaming(t *testing.T) {
 		for range result.Stream {
 		}
 	})
+}
+
+func TestSimulateStreaming_ContentProjection(t *testing.T) {
+	metadata := provider.ProviderMetadata{"test": json.RawMessage(`{"signature":"signed"}`)}
+	finish := provider.FinishReason{Unified: provider.FinishReasonStop}
+	usage := provider.Usage{OutputTokens: provider.OutputTokenUsage{Total: ptr(3)}}
+	warnings := []provider.Warning{{Type: provider.WarnUnsupported, Feature: "logprobs"}}
+
+	tests := []struct {
+		name       string
+		content    []provider.GenerateContentPart
+		want       []provider.StreamPart
+		sourceJSON string
+	}{
+		{
+			name: "text with metadata",
+			content: []provider.GenerateContentPart{
+				{Type: provider.ContentText, Text: "hello", ProviderMetadata: metadata},
+			},
+			want: []provider.StreamPart{
+				{Type: provider.PartTextStart, ID: "0", ProviderMetadata: metadata},
+				{Type: provider.PartTextDelta, ID: "0", Delta: "hello"},
+				{Type: provider.PartTextEnd, ID: "0"},
+			},
+		},
+		{
+			name: "empty text consumes no ID",
+			content: []provider.GenerateContentPart{
+				{Type: provider.ContentText, ProviderMetadata: metadata},
+				{Type: provider.ContentText, Text: "next", ProviderMetadata: metadata},
+			},
+			want: []provider.StreamPart{
+				{Type: provider.PartTextStart, ID: "0", ProviderMetadata: metadata},
+				{Type: provider.PartTextDelta, ID: "0", Delta: "next"},
+				{Type: provider.PartTextEnd, ID: "0"},
+			},
+		},
+		{
+			name:    "empty reasoning consumes ID",
+			content: []provider.GenerateContentPart{{Type: provider.ContentReasoning, ProviderMetadata: metadata}},
+			want: []provider.StreamPart{
+				{Type: provider.PartReasoningStart, ID: "0", ProviderMetadata: metadata},
+				{Type: provider.PartReasoningDelta, ID: "0"},
+				{Type: provider.PartReasoningEnd, ID: "0"},
+			},
+		},
+		{
+			name: "tool call",
+			content: []provider.GenerateContentPart{{
+				Type: provider.ContentToolCall, ToolCallID: "call-1", ToolName: "lookup",
+				Input: json.RawMessage(`{"q":"go"}`), ProviderExecuted: true,
+				Dynamic: ptr(false), ProviderMetadata: metadata,
+			}},
+			want: []provider.StreamPart{{
+				Type: provider.PartToolCall, ToolCallID: "call-1", ToolName: "lookup",
+				Input: `{"q":"go"}`, ProviderExecuted: true,
+				Dynamic: ptr(false), ProviderMetadata: metadata,
+			}},
+		},
+		{
+			name: "tool result error with preliminary true",
+			content: []provider.GenerateContentPart{{
+				Type: provider.ContentToolResult, ToolCallID: "call-1", ToolName: "lookup",
+				Result: json.RawMessage(`{"error":"unavailable"}`), IsError: true,
+				Preliminary: ptr(true), Dynamic: ptr(true), ProviderMetadata: metadata,
+			}},
+			want: []provider.StreamPart{{
+				Type: provider.PartToolResult, ToolCallID: "call-1", ToolName: "lookup",
+				Result: json.RawMessage(`{"error":"unavailable"}`), IsError: true,
+				Preliminary: ptr(true), Dynamic: ptr(true), ProviderMetadata: metadata,
+			}},
+		},
+		{
+			name: "tool result with preliminary false",
+			content: []provider.GenerateContentPart{{
+				Type: provider.ContentToolResult, ToolCallID: "call-2", ToolName: "lookup",
+				Result: json.RawMessage(`null`), Preliminary: ptr(false),
+			}},
+			want: []provider.StreamPart{{
+				Type: provider.PartToolResult, ToolCallID: "call-2", ToolName: "lookup",
+				Result: json.RawMessage(`null`), Preliminary: ptr(false),
+			}},
+		},
+		{
+			name: "approval request",
+			content: []provider.GenerateContentPart{{
+				Type: provider.ContentToolApprovalRequest, ApprovalID: "approval-1",
+				ToolCallID: "call-1", ProviderMetadata: metadata,
+			}},
+			want: []provider.StreamPart{{
+				Type: provider.PartToolApprovalRequest, ApprovalID: "approval-1",
+				ToolCallID: "call-1", ProviderMetadata: metadata,
+			}},
+		},
+		{
+			name: "URL source",
+			content: []provider.GenerateContentPart{{
+				Type: provider.ContentSource, SourceType: provider.SourceTypeURL,
+				ID: "source-url", URL: "https://example.com", Title: "Example", ProviderMetadata: metadata,
+			}},
+			want: []provider.StreamPart{{
+				Type: provider.PartSource,
+				Source: &provider.SourceInfo{SourceType: provider.SourceTypeURL, ID: "source-url",
+					URL: "https://example.com", Title: "Example", ProviderMetadata: metadata},
+			}},
+			sourceJSON: `{"type":"source","sourceType":"url","id":"source-url","url":"https://example.com","title":"Example","providerMetadata":{"test":{"signature":"signed"}}}`,
+		},
+		{
+			name: "document source",
+			content: []provider.GenerateContentPart{{
+				Type: provider.ContentSource, SourceType: provider.SourceTypeDocument,
+				ID: "source-doc", Title: "Report", MediaType: "application/pdf",
+				Filename: "report.pdf", ProviderMetadata: metadata,
+			}},
+			want: []provider.StreamPart{{
+				Type: provider.PartSource,
+				Source: &provider.SourceInfo{SourceType: provider.SourceTypeDocument,
+					ID: "source-doc", Title: "Report", MediaType: "application/pdf",
+					Filename: "report.pdf", ProviderMetadata: metadata},
+			}},
+			sourceJSON: `{"type":"source","sourceType":"document","id":"source-doc","title":"Report","mediaType":"application/pdf","filename":"report.pdf","providerMetadata":{"test":{"signature":"signed"}}}`,
+		},
+		{
+			name:    "file bytes",
+			content: []provider.GenerateContentPart{{Type: provider.ContentFile, Data: &provider.DataContent{Bytes: []byte{1, 2}}, MediaType: "image/png", ProviderMetadata: metadata}},
+			want:    []provider.StreamPart{{Type: provider.PartFile, Data: &provider.StreamFileData{Type: provider.StreamFileDataTypeData, Bytes: []byte{1, 2}}, MediaType: "image/png", ProviderMetadata: metadata}},
+		},
+		{
+			name:    "file base64",
+			content: []provider.GenerateContentPart{{Type: provider.ContentFile, Data: &provider.DataContent{Base64: "AQID"}, MediaType: "image/png"}},
+			want:    []provider.StreamPart{{Type: provider.PartFile, Data: &provider.StreamFileData{Type: provider.StreamFileDataTypeData, Base64: "AQID"}, MediaType: "image/png"}},
+		},
+		{
+			name:    "file empty bytes",
+			content: []provider.GenerateContentPart{{Type: provider.ContentFile, Data: &provider.DataContent{Bytes: []byte{}}, MediaType: "image/png"}},
+			want:    []provider.StreamPart{{Type: provider.PartFile, Data: &provider.StreamFileData{Type: provider.StreamFileDataTypeData, Bytes: []byte{}}, MediaType: "image/png"}},
+		},
+		{
+			name:    "file URL",
+			content: []provider.GenerateContentPart{{Type: provider.ContentFile, Data: &provider.DataContent{URL: "https://example.com/file"}, MediaType: "image/png", ProviderMetadata: metadata}},
+			want:    []provider.StreamPart{{Type: provider.PartFile, Data: &provider.StreamFileData{Type: provider.StreamFileDataTypeURL, URL: "https://example.com/file"}, MediaType: "image/png", ProviderMetadata: metadata}},
+		},
+		{
+			name:    "reasoning file bytes",
+			content: []provider.GenerateContentPart{{Type: provider.ContentReasoningFile, Data: &provider.DataContent{Bytes: []byte{1, 2}}, MediaType: "image/png"}},
+			want:    []provider.StreamPart{{Type: provider.PartReasoningFile, Data: &provider.StreamFileData{Type: provider.StreamFileDataTypeData, Bytes: []byte{1, 2}}, MediaType: "image/png"}},
+		},
+		{
+			name:    "reasoning file base64",
+			content: []provider.GenerateContentPart{{Type: provider.ContentReasoningFile, Data: &provider.DataContent{Base64: "AQID"}, MediaType: "image/png", ProviderMetadata: metadata}},
+			want:    []provider.StreamPart{{Type: provider.PartReasoningFile, Data: &provider.StreamFileData{Type: provider.StreamFileDataTypeData, Base64: "AQID"}, MediaType: "image/png", ProviderMetadata: metadata}},
+		},
+		{
+			name:    "reasoning file empty bytes",
+			content: []provider.GenerateContentPart{{Type: provider.ContentReasoningFile, Data: &provider.DataContent{Bytes: []byte{}}, MediaType: "image/png"}},
+			want:    []provider.StreamPart{{Type: provider.PartReasoningFile, Data: &provider.StreamFileData{Type: provider.StreamFileDataTypeData, Bytes: []byte{}}, MediaType: "image/png"}},
+		},
+		{
+			name:    "reasoning file URL",
+			content: []provider.GenerateContentPart{{Type: provider.ContentReasoningFile, Data: &provider.DataContent{URL: "https://example.com/reasoning"}, MediaType: "image/png"}},
+			want:    []provider.StreamPart{{Type: provider.PartReasoningFile, Data: &provider.StreamFileData{Type: provider.StreamFileDataTypeURL, URL: "https://example.com/reasoning"}, MediaType: "image/png"}},
+		},
+		{
+			name:    "custom content",
+			content: []provider.GenerateContentPart{{Type: provider.ContentCustom, Kind: "custom-kind", ProviderMetadata: metadata}},
+			want:    []provider.StreamPart{{Type: provider.PartCustom, Kind: "custom-kind", ProviderMetadata: metadata}},
+		},
+		{
+			name: "mixed ordering and IDs",
+			content: []provider.GenerateContentPart{
+				{Type: provider.ContentText, Text: "first"},
+				{Type: provider.ContentCustom, Kind: "middle"},
+				{Type: provider.ContentReasoning, Text: "think"},
+				{Type: provider.ContentText},
+				{Type: provider.ContentText, Text: "last"},
+			},
+			want: []provider.StreamPart{
+				{Type: provider.PartTextStart, ID: "0"},
+				{Type: provider.PartTextDelta, ID: "0", Delta: "first"},
+				{Type: provider.PartTextEnd, ID: "0"},
+				{Type: provider.PartCustom, Kind: "middle"},
+				{Type: provider.PartReasoningStart, ID: "1"},
+				{Type: provider.PartReasoningDelta, ID: "1", Delta: "think"},
+				{Type: provider.PartReasoningEnd, ID: "1"},
+				{Type: provider.PartTextStart, ID: "2"},
+				{Type: provider.PartTextDelta, ID: "2", Delta: "last"},
+				{Type: provider.PartTextEnd, ID: "2"},
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			model := &mockModel{
+				doGenerate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
+					return &provider.GenerateResult{
+						Content: tc.content, FinishReason: finish, Usage: usage,
+						Warnings: warnings, ProviderMetadata: metadata,
+					}, nil
+				},
+			}
+			result, err := WrapLanguageModel(model, SimulateStreaming()).DoStream(t.Context(), provider.CallOptions{})
+			require.NoError(t, err)
+			var parts []provider.StreamPart
+			for part := range result.Stream {
+				parts = append(parts, part)
+			}
+			want := []provider.StreamPart{
+				{Type: provider.PartStreamStart, Warnings: warnings},
+				{Type: provider.PartResponseMeta},
+			}
+			want = append(want, tc.want...)
+			want = append(want, provider.StreamPart{Type: provider.PartFinish, FinishReason: &finish, Usage: &usage, ProviderMetadata: metadata})
+			assert.Equal(t, want, parts)
+			if tc.sourceJSON != "" {
+				require.Greater(t, len(parts), 2)
+				data, err := json.Marshal(parts[2])
+				require.NoError(t, err)
+				assert.JSONEq(t, tc.sourceJSON, string(data))
+			}
+		})
+	}
+}
+
+func TestSimulateStreaming_BlockedConsumerCancellation(t *testing.T) {
+	const contentCount = 128
+	tests := []struct {
+		name    string
+		content provider.GenerateContentPart
+	}{
+		{"default parts", provider.GenerateContentPart{Type: provider.ContentCustom, Kind: "test"}},
+		{"text multipart", provider.GenerateContentPart{Type: provider.ContentText, Text: "hello"}},
+		{"reasoning multipart", provider.GenerateContentPart{Type: provider.ContentReasoning, Text: "thinking"}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			content := make([]provider.GenerateContentPart, contentCount)
+			for i := range content {
+				content[i] = tc.content
+			}
+			model := &mockModel{
+				doGenerate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
+					return &provider.GenerateResult{Content: content, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}, nil
+				},
+			}
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			result, err := WrapLanguageModel(model, SimulateStreaming()).DoStream(ctx, provider.CallOptions{})
+			require.NoError(t, err)
+
+			require.Eventually(t, func() bool {
+				return len(result.Stream) == cap(result.Stream)
+			}, time.Second, time.Millisecond)
+			cancel()
+
+			deadline, stop := context.WithTimeout(context.Background(), time.Second)
+			defer stop()
+			var parts []provider.StreamPart
+			for {
+				select {
+				case part, ok := <-result.Stream:
+					if !ok {
+						assert.Less(t, len(parts), contentCount)
+						for _, received := range parts {
+							assert.NotEqual(t, provider.PartFinish, received.Type)
+						}
+						return
+					}
+					parts = append(parts, part)
+				case <-deadline.Done():
+					t.Fatal("simulated stream did not close after cancellation")
+				}
+			}
+		})
+	}
 }

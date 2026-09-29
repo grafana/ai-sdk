@@ -2,6 +2,6 @@ package service
 
 import "testing"
 
-func TestSourcesPublishedObserverAdoption(t *testing.T) {
+func TestSourcesCandidateObserverAdoption(t *testing.T) {
 	testSourcesMetadataOnlyObservation(t, true)
 }

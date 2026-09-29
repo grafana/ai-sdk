@@ -23,8 +23,10 @@ generation on another backend. Source output does not enable provider tools,
 reasoning, generated files or raw output.
 
 Deterministic command and client tests establish mapping, framing and privacy,
-not live provider acceptance. The Gateway pins the published logger and Agent
-Observability revisions that count source-only responses as first output while
-continuing to omit source content from capture.
+not live provider acceptance. Candidate-source Gateway tests exercise the
+logger and Agent Observability changes that count source-only responses as
+first output while continuing to omit source content from capture. The pinned
+published middleware revisions are older and require a later module release
+before standalone Gateway builds can adopt this behavior.
 
 See [text observability](text-observability.md) for telemetry privacy.

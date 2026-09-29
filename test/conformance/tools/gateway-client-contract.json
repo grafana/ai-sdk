@@ -1,7 +1,7 @@
 {
-  "upstreamCommit": "08ae5ad05bc12496dd1ffcf64e34419e0831300d",
+  "upstreamCommit": "4e8c387622ee1bb0d55841664416d38754d5c9a3",
   "packages": {
-    "@ai-sdk/gateway": "4.0.87",
+    "@ai-sdk/gateway": "4.0.88",
     "@ai-sdk/provider": "4.0.17",
     "@ai-sdk/provider-utils": "5.0.45"
   },
