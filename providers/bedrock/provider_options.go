@@ -105,7 +105,25 @@ func extractCachePoint(opts provider.ProviderOptions) (*cachePoint, error) {
 	return &cachePoint{Type: typ, TTL: bo.CachePoint.TTL}, nil
 }
 
-func readPartOptions(opts provider.ProviderOptions) (map[string]json.RawMessage, error) {
+type textPartFields struct {
+	GuardContent           json.RawMessage `json:"guardContent"`
+	GuardContentQualifiers json.RawMessage `json:"guardContentQualifiers"`
+}
+
+type imagePartFields struct {
+	GuardContent json.RawMessage `json:"guardContent"`
+}
+
+type documentPartFields struct {
+	Citations json.RawMessage `json:"citations"`
+}
+
+type citationFields struct {
+	Enabled json.RawMessage `json:"enabled"`
+}
+
+func readPartOptions[T any](opts provider.ProviderOptions) (T, error) {
+	var fields T
 	for _, key := range providerOptionKeys {
 		option := opts[key]
 		if option == nil {
@@ -118,57 +136,53 @@ func readPartOptions(opts provider.ProviderOptions) (map[string]json.RawMessage,
 			var err error
 			data, err = json.Marshal(option)
 			if err != nil {
-				return nil, fmt.Errorf("bedrock: marshaling provider options for %q: %w", key, err)
+				return fields, fmt.Errorf("bedrock: marshaling provider options for %q: %w", key, err)
 			}
 		}
 		data = bytes.TrimSpace(data)
 		if len(data) == 0 || bytes.Equal(data, []byte("null")) {
 			continue
 		}
-		var fields map[string]json.RawMessage
-		if len(data) < 2 || data[0] != '{' || json.Unmarshal(data, &fields) != nil {
-			return nil, fmt.Errorf("bedrock: invalid provider options for %q: expected JSON object", key)
+		if err := json.Unmarshal(data, &fields); err != nil {
+			return fields, fmt.Errorf("bedrock: invalid provider options for %q: %w", key, err)
 		}
 		return fields, nil
 	}
-	return nil, nil
+	return fields, nil
 }
 
-func readPartField[T any](fields map[string]json.RawMessage, key string) (T, bool, error) {
-	var value T
-	raw, ok := fields[key]
-	if !ok {
-		return value, false, nil
+func decodePartField(raw json.RawMessage, name string, value any) (bool, error) {
+	if raw == nil {
+		return false, nil
 	}
 	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
-		return value, true, fmt.Errorf("bedrock: invalid %s: null is not allowed", key)
+		return true, fmt.Errorf("bedrock: invalid %s: null is not allowed", name)
 	}
-	if err := json.Unmarshal(raw, &value); err != nil {
-		return value, true, fmt.Errorf("bedrock: invalid %s: %w", key, err)
+	if err := json.Unmarshal(raw, value); err != nil {
+		return true, fmt.Errorf("bedrock: invalid %s: %w", name, err)
 	}
-	return value, true, nil
+	return true, nil
 }
 
 func readTextGuardContent(opts provider.ProviderOptions) (bool, *[]GuardContentQualifier, error) {
-	fields, err := readPartOptions(opts)
+	fields, err := readPartOptions[textPartFields](opts)
 	if err != nil {
 		return false, nil, err
 	}
-	guarded, _, err := readPartField[bool](fields, "guardContent")
+	var guarded bool
+	if _, err := decodePartField(fields.GuardContent, "guardContent", &guarded); err != nil {
+		return false, nil, err
+	}
+	var qualifiers []GuardContentQualifier
+	present, err := decodePartField(fields.GuardContentQualifiers, "guardContentQualifiers", &qualifiers)
 	if err != nil {
 		return false, nil, err
 	}
-	qualifiers, present, err := readPartField[[]GuardContentQualifier](fields, "guardContentQualifiers")
-	if err != nil {
-		return false, nil, err
-	}
-	if present {
-		for _, qualifier := range qualifiers {
-			switch qualifier {
-			case GuardContentQualifierGroundingSource, GuardContentQualifierQuery, GuardContentQualifierGuardContent:
-			default:
-				return false, nil, fmt.Errorf("bedrock: invalid guardContentQualifiers value %q", qualifier)
-			}
+	for _, qualifier := range qualifiers {
+		switch qualifier {
+		case GuardContentQualifierGroundingSource, GuardContentQualifierQuery, GuardContentQualifierGuardContent:
+		default:
+			return false, nil, fmt.Errorf("bedrock: invalid guardContentQualifiers value %q", qualifier)
 		}
 	}
 	if !present {
@@ -178,11 +192,12 @@ func readTextGuardContent(opts provider.ProviderOptions) (bool, *[]GuardContentQ
 }
 
 func readImageGuardContent(opts provider.ProviderOptions) (bool, error) {
-	fields, err := readPartOptions(opts)
+	fields, err := readPartOptions[imagePartFields](opts)
 	if err != nil {
 		return false, err
 	}
-	guarded, _, err := readPartField[bool](fields, "guardContent")
+	var guarded bool
+	_, err = decodePartField(fields.GuardContent, "guardContent", &guarded)
 	return guarded, err
 }
 
@@ -190,23 +205,19 @@ func readImageGuardContent(opts provider.ProviderOptions) (bool, error) {
 // Bedrock document citations. Returns an error when the option is present but
 // malformed.
 func shouldEnableCitations(opts provider.ProviderOptions) (bool, error) {
-	fields, err := readPartOptions(opts)
+	fields, err := readPartOptions[documentPartFields](opts)
 	if err != nil {
 		return false, err
 	}
-	raw, ok := fields["citations"]
-	if !ok {
+	if fields.Citations == nil {
 		return false, nil
 	}
-	raw = bytes.TrimSpace(raw)
-	if len(raw) == 0 || raw[0] != '{' {
-		return false, fmt.Errorf("bedrock: invalid provider options for citations: expected JSON object")
-	}
-	var citations map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &citations); err != nil {
+	var citations citationFields
+	if _, err := decodePartField(fields.Citations, "citations", &citations); err != nil {
 		return false, fmt.Errorf("bedrock: invalid provider options for citations: %w", err)
 	}
-	enabled, present, err := readPartField[bool](citations, "enabled")
+	var enabled bool
+	present, err := decodePartField(citations.Enabled, "enabled", &enabled)
 	if err != nil {
 		return false, fmt.Errorf("bedrock: invalid provider options for citations: %w", err)
 	}
