@@ -141,6 +141,18 @@ def verify_library(root, base, roots):
         subprocess.run(["bash", "scripts/module-policy.sh", "standalone", root], check=True, env=env)
 
 
+def release_publication_disabled(workflow):
+    action = re.search(
+        r"(?m)^        uses: googleapis/release-please-action@[^\n]+\n"
+        r"        with:\n(?P<options>(?:          [^\n]*\n)*)",
+        workflow,
+    )
+    return bool(action and re.search(
+        r"(?m)^          skip-github-release: true(?:\s+#.*)?$",
+        action.group("options"),
+    ))
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--pull-request", required=True)
@@ -151,7 +163,7 @@ def main():
     base_files = tree(base)
     if MANIFEST not in base_files:
         workflow = Path(".github/workflows/release-please.yml").read_text()
-        if "skip-github-release: true" not in workflow:
+        if not release_publication_disabled(workflow):
             raise ValueError("initial adoption must keep automatic publication disabled")
         print("Release readiness: adoption change; publication disabled")
         return

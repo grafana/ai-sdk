@@ -107,7 +107,16 @@ class ReleaseReadinessTest(unittest.TestCase):
     def test_publication_is_disabled_until_activation_review(self):
         root = Path(__file__).resolve().parent.parent
         workflow = (root / ".github/workflows/release-please.yml").read_text()
-        self.assertIn("skip-github-release: true", workflow)
+        self.assertTrue(readiness.release_publication_disabled(workflow))
+        self.assertFalse(readiness.release_publication_disabled(workflow.replace(
+            "          skip-github-release: true",
+            "          skip-github-release: false # skip-github-release: true",
+        )))
+        self.assertFalse(readiness.release_publication_disabled(
+            "# skip-github-release: true\n" + workflow.replace(
+                "          skip-github-release: true", "",
+            )
+        ))
         self.assertIn("googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7", workflow)
         self.assertIn("release-please@17.6.0", (root / "mise.toml").read_text())
 
