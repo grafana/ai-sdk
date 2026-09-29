@@ -28,7 +28,9 @@ Use a scope that names the affected module when the change is module-specific:
 feat(providers/openai): add continuation support to streamed responses
 ```
 
-A change is attributed to a module by the files it touches. A pull request that
+Library attribution follows actual module ownership, including root-owned middleware.
+Gateway workspace changes also need application release intent; #245 must finish
+that attribution before publication activation. A pull request that
 spans core and a provider releases both. When work legitimately splits into
 different bump levels per module, split it into separate pull requests rather
 than picking one type for everything.
@@ -60,16 +62,17 @@ bypassing the check.
 
 ## Do Not Publish
 
-Publication is automatic and belongs to maintainers:
+Publication is currently disabled pending #245 activation; release PR preparation is enabled.
+After reviewed activation, publication belongs to maintainers:
 
 - Every push to `main` refreshes one `chore(main): release ...` pull request per
   module with pending changes, on `release-please--branches--main--components--*`
-  branches.
+  branches (root uses `release-please--branches--main` without a component).
 - Merging one of those pull requests creates that module's tag and GitHub
   Release.
 - Release prerequisites before their dependents: root before every nested
-  module, OpenAI before Bedrock, and Anthropic, OpenAI-compatible, Agent
-  Observability, Logger, and Prometheus before AI Gateway.
+  library module, and OpenAI before Bedrock. Gateway is independently versioned
+  as a workspace-built Docker application and does not wait for library tags.
 
 Never create or push a tag, never create a GitHub Release, and never merge a
 release pull request on a user's behalf unless they explicitly ask for that

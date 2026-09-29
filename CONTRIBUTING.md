@@ -491,7 +491,8 @@ maintainer to trigger CI.
 
 ## Releases and independent modules
 
-Core, providers, and middleware are released independently as Go modules.
+Core, providers, and middleware are released independently as Go libraries.
+Gateway is an independently versioned Docker application with workspace source.
 Versions, changelogs, tags, and GitHub Releases are produced by
 [release-please](https://github.com/googleapis/release-please) from the
 Conventional Commits that land on `main`. Pull requests are squash-merged with
@@ -512,11 +513,12 @@ the `alpha` channel, each release advances the prerelease counter
 Validate the configuration after adding a module or changing tag settings:
 
 ```bash
-mise run release-check      # config, tag shapes, and publishability
+mise run release-check      # configuration and readiness policy tests
 mise run release-preview    # dry-run of the next release pull request
 ```
 
-Each module gets its own release pull request. Maintainers merge the root one
+Publication is disabled until #245 readiness and Gateway attribution/image gates
+are activated. Each library gets its own release pull request. Maintainers merge the root one
 first, let Renovate carry the new core version into the nested `go.mod` files,
 then merge the rest. The complete workflow is in the
 [release runbook](release/README.md).

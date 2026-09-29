@@ -11,12 +11,20 @@ import (
 
 const repositoryRoot = "../.."
 
-func TestReleasePleaseConfig_PublishedModules(t *testing.T) {
+func TestReleasePleaseConfig_ReleaseComponents(t *testing.T) {
 	config, err := LoadConfig(repositoryRoot)
 	require.NoError(t, err)
-	modules, err := PublishedModules(repositoryRoot)
+	modules, err := ReleaseComponents(repositoryRoot)
 	require.NoError(t, err)
 	require.NotEmpty(t, modules)
+	applications := 0
+	for _, module := range modules {
+		if module.Application {
+			applications++
+			assert.Equal(t, "ai-gateway", module.Directory)
+		}
+	}
+	assert.Equal(t, 1, applications)
 
 	t.Run("every published module is registered", func(t *testing.T) {
 		for _, module := range modules {
@@ -90,7 +98,7 @@ func TestReleasePleaseConfig_Settings(t *testing.T) {
 func TestReleasePleaseConfig_RootExcludesNestedModules(t *testing.T) {
 	config, err := LoadConfig(repositoryRoot)
 	require.NoError(t, err)
-	modules, err := PublishedModules(repositoryRoot)
+	modules, err := ReleaseComponents(repositoryRoot)
 	require.NoError(t, err)
 
 	excluded := make(map[string]bool, len(config.Packages[RootPackage].ExcludePaths))
@@ -102,11 +110,11 @@ func TestReleasePleaseConfig_RootExcludesNestedModules(t *testing.T) {
 		if module.Directory == RootPackage {
 			continue
 		}
-		parent := filepath.Dir(module.Directory)
-		assert.Truef(t, excluded[module.Directory] || excluded[parent],
+		assert.Truef(t, excluded[module.Directory],
 			"a change to %s must not bump the root module: add %q to the root exclude-paths",
-			module.ModulePath, parent)
+			module.ModulePath, module.Directory)
 	}
+	assert.False(t, excluded["middleware"], "root-owned middleware must retain root release intent")
 }
 
 func TestReleasePleaseManifest(t *testing.T) {

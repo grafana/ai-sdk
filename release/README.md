@@ -1,15 +1,15 @@
 # Release runbook
 
-The repository publishes the core SDK, AI Gateway, each provider, and each
-middleware integration as independently versioned Go modules. Releases are
-driven by [release-please](https://github.com/googleapis/release-please): merged
+The repository publishes the core SDK, providers, and middleware as independently
+versioned Go libraries. Gateway is an independently versioned Docker application;
+its Go module is an internal build and license boundary. Releases are driven by [release-please](https://github.com/googleapis/release-please): merged
 Conventional Commits become versions, changelogs, tags, and GitHub Releases
 without a maintainer calculating anything.
 
 Configuration lives in two files:
 
 - [`release-please-config.json`](../release-please-config.json) registers every
-  published module, its component name, and its tag shape.
+  release component, its name, and its tag shape.
 - [`.release-please-manifest.json`](../.release-please-manifest.json) records
   the last released version of each module. release-please owns this file.
 
@@ -23,7 +23,8 @@ the manifest and tags provide a clean release boundary for every module.
 
 Root releases are tagged `vX.Y.Z`; nested releases are tagged
 `<module-directory>/vX.Y.Z`, which is what the Go tool requires to resolve a
-module inside a repository.
+library module inside a repository. Gateway retains `ai-gateway/vX.Y.Z` application
+tags without promising standalone `go install` or external Go imports.
 
 ## Record release intent in normal pull requests
 
@@ -39,8 +40,11 @@ reads. Nothing else is needed in a feature pull request:
 | `chore: ...`, `ci: ...`, `docs: ...`, `refactor: ...`, `test: ...` | no release |
 
 A change is attributed to a module by the files it touches, not by its scope.
-A pull request under `providers/openai/` releases only that provider; one that
-also touches the repository root releases core as well. Scopes are still worth
+Library attribution follows actual module ownership: root-owned files such as
+`middleware/extract_json.go` release core; nested `middleware/logger/` files release
+Logger. A provider-only change can also affect a workspace-built Gateway image.
+Automatic Gateway attribution for these linked changes remains an activation blocker
+in #245; do not manufacture dependency bumps or assume path-only attribution is enough. Scopes are still worth
 writing because they appear in the changelog.
 
 Squash merging is load-bearing. Under merge commits both the branch commit and
@@ -68,7 +72,7 @@ changing anything:
 mise run release-preview
 ```
 
-This runs the release-please CLI in dry-run mode against the GitHub API using
+This runs release-please 17.6.0, matching the pinned action dependency, in dry-run mode against the GitHub API using
 your `gh` credentials. It prints the proposed release pull request, including
 each module's next version and changelog entry.
 
@@ -77,43 +81,55 @@ working tree, so the preview reflects the configuration on `main`. To preview a
 configuration change before it merges, push the branch and add
 `--target-branch=<branch>` to the command.
 
-## Publish a release
+## Publication status and readiness
 
-Every module gets its own release pull request, on a branch named
-`release-please--branches--main--components--<component>`. Every push to `main`
-refreshes the pull requests for the modules that change. Each one holds the
-calculated version, the generated changelog, and the manifest update for a
-single module, and the full CI suite runs against it.
+Automatic tag and GitHub Release creation is disabled with `skip-github-release:
+true` in the pinned action. Release PR preparation remains enabled. Do not merge
+release PRs as publication authorization until the activation work below is reviewed;
+removing the switch can otherwise publish already-merged pending releases.
 
-Merging a release pull request makes release-please create that module's tag
-and GitHub Release. Modules with nothing pending have no pull request, so the
-set of open release pull requests is the set of releasable modules.
+The `release-readiness` check recognizes a library release from a single manifest
+version change, the dedicated App author, canonical repository/branch metadata, and
+a checkout merging the current canonical base with the exact release head. Ordinary
+source PRs report publication checks as not applicable and keep #262's source gates.
+A label alone never authorizes publication.
 
-**Release prerequisites before their dependents.** Every nested module requires
-a published core version. Bedrock also requires the OpenAI provider, while the
-AI Gateway requires the Anthropic and OpenAI-compatible providers plus the
-Agent Observability, Logger, and Prometheus middleware modules. The order is:
+For the selected library, readiness resolves its selected dependency graph from a
+fresh public-proxy cache. Internal prerequisites must be tagged, have canonical Git
+origin, and belong to canonical main. Their owned source snapshot must equal the
+candidate base's snapshot; merely compiling against an older dependency is insufficient.
+Then the existing selected-module validator downloads, verifies, builds, and tests the
+candidate with `GOWORK=off` and readonly manifests. It does not test unrelated downstream
+modules, so root can progress while providers wait for prerequisite releases.
 
-1. Merge the root release pull request. The core tag publishes.
-2. Renovate opens a `fix(deps)` pull request updating the root requirement in
-   every nested module. It auto-merges.
-3. Merge release pull requests for every module whose first-party requirements
-   are now published. On the initial bootstrap this wave includes Anthropic,
-   Grafana, OpenAI, OpenAI-compatible, Agent Observability, Enrichment, Logger,
-   and Prometheus; Bedrock and AI Gateway still wait for their additional
-   prerequisites.
-4. Renovate updates those first-party requirements in Bedrock and AI Gateway.
-5. Merge the Bedrock and AI Gateway release pull requests after their complete
-   published dependency sets resolve.
+Snapshot ownership follows the longest registered module root. Nested module files
+are excluded from their parent's snapshot; root middleware remains root-owned. The
+conservative snapshot includes owned source and potential runtime assets, excluding
+tests/testdata, documentation, examples, OpenSpec, release/CI/tooling directories,
+dotfiles, and root workspace/release-tool configuration. This checks content freshness,
+not commit titles or changelog inference. A change outside the shipped source snapshot
+does not force a prerequisite release. Changes to ownership must update its tests.
 
-The `module-resolution` check enforces this on every pull request rather than
-leaving it to discipline. It tests every published module with `GOWORK=off`,
-`-mod=readonly`, and the public Go proxy — that is, against the versions its
-`go.mod` actually pins rather than the working tree that `go.work` would
-otherwise supply. A release pull request that needs an unpublished first-party
-API stays red until the corresponding Renovate update lands.
+The normal library progression is root release -> Renovate root updates -> directly
+dependent library releases -> Renovate provider updates -> Bedrock readiness. The first
+root release needs no internal prerequisite tags; nested first releases wait for tagged
+prerequisites. Already-merged pseudo-versions remain valid for ordinary source PRs.
 
-Never move or delete a published tag. Correct a bad release with a new version.
+Gateway has a separate application contract: main and versioned images must build the
+same-revision workspace and pass image/runtime validation, with no dependency on prior
+SDK tags or standalone Gateway compilation. Gateway release readiness currently fails
+closed pending #263's image integration and #245's linked workspace release attribution.
+It remains registered and independently versioned. Library readiness does not substitute
+for application/image readiness.
+
+Before activation, complete Gateway attribution and image validation; register the
+release readiness check as required; enforce up-to-date bases or equivalent merge-queue
+validation; confirm App/broker prerequisites; and review exact-candidate publication,
+bootstrap boundaries, retry behavior, and pending release PRs. The new check rejects a
+stale base at execution time, but repository protection must prevent merging an old green
+result after main advances. These administrative and application gates remain unfinished.
+
+Never move or delete published tags. Correct a bad release with a new version.
 
 ## Keep dependent modules on released first-party requirements
 
@@ -182,7 +198,7 @@ visible in `main`.
 1. Add the module's `go.mod`.
 2. Register it in `release-please-config.json` with a `component` equal to its
    repository directory and an `initial-version`.
-3. Add its directory (or its parent directory) to the root package's
+3. Add its exact module directory to the root package's
    `exclude-paths` so its commits do not bump the core module.
 4. Run `mise run release-check`.
 
@@ -198,7 +214,8 @@ Three things must be true before the first release.
 pre-adoption release history. After this pull request merges, create
 release-worthy changes in dependency order rather than trying to reconstruct
 historical changelogs: core first, then the directly dependent modules, then
-Bedrock and AI Gateway after Renovate has published their prerequisite bumps.
+Bedrock after Renovate has published its prerequisite bumps. Gateway uses its
+independent workspace application contract.
 Once every module has its first release tag, remove the temporary
 `last-release-sha` setting in a normal reviewed pull request.
 

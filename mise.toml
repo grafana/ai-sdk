@@ -181,12 +181,15 @@ run = "bash scripts/module-policy.sh pins"
 
 [tasks.release-check]
 description = "Validate the release-please configuration against published modules"
-run = "go test ./internal/releasecheck"
+run = """
+go test ./internal/releasecheck
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts -p 'test_release_readiness.py'
+"""
 
 [tasks.release-preview]
 description = "Dry-run the next release pull request against GitHub"
 run = """
-npx --yes --ignore-scripts release-please@17.10.4 release-pr \
+npx --yes --ignore-scripts release-please@17.6.0 release-pr \
   --repo-url=grafana/ai-sdk \
   --target-branch=main \
   --config-file=release-please-config.json \

@@ -1,10 +1,8 @@
-// Package releasecheck validates that the release-please configuration still
-// describes every published Go module in the repository.
+// Package releasecheck validates the release-please component inventory.
 //
 // release-please owns version calculation, changelog generation, tagging, and
-// GitHub Releases. The only repository-specific invariants it cannot enforce
-// are that each published module is registered, that its tag shape is
-// importable by the Go tool, and that it stays free of local replacements.
+// GitHub Releases. Library publication readiness is validated separately from
+// this configuration inventory and from Gateway application readiness.
 package releasecheck
 
 import (
@@ -43,10 +41,11 @@ type PackageConfig struct {
 	ExcludePaths          []string `json:"exclude-paths"`
 }
 
-// Module is a Go module directory that release-please must publish.
+// Module is a release component with a Go module build boundary.
 type Module struct {
-	Directory  string
-	ModulePath string
+	Directory   string
+	ModulePath  string
+	Application bool
 }
 
 // LoadConfig reads the release-please configuration from the repository root.
@@ -77,10 +76,9 @@ func LoadManifest(root string) (map[string]string, error) {
 
 var moduleDeclaration = regexp.MustCompile(`(?m)^module[ \t]+(\S+)`)
 
-// PublishedModules discovers every Go module that is published to proxy users.
-// Example programs and test harnesses are internal to the repository and are
-// deliberately excluded.
-func PublishedModules(root string) ([]Module, error) {
+// ReleaseComponents discovers library modules and the Gateway application.
+// Example programs and test harnesses are excluded.
+func ReleaseComponents(root string) ([]Module, error) {
 	var modules []Module
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
@@ -112,7 +110,7 @@ func PublishedModules(root string) ([]Module, error) {
 		if err != nil {
 			return err
 		}
-		modules = append(modules, Module{Directory: filepath.ToSlash(directory), ModulePath: modulePath})
+		modules = append(modules, Module{Directory: filepath.ToSlash(directory), ModulePath: modulePath, Application: modulePath == CorePath+"/ai-gateway"})
 		return nil
 	})
 	if err != nil {
