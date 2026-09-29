@@ -118,7 +118,9 @@ prerequisites. Already-merged pseudo-versions remain valid for ordinary source P
 Gateway has a separate application contract: main and versioned images must build the
 same-revision workspace and pass image/runtime validation, with no dependency on prior
 SDK tags or standalone Gateway compilation. Gateway release readiness currently fails
-closed pending #263's image integration and #245's linked workspace release attribution.
+closed pending versioned-image validation and #245's linked workspace release attribution.
+The merged source baseline includes #263's workspace image recipe, but this release
+path has not yet proved its selected tag, image smoke and license evidence.
 It remains registered and independently versioned. Library readiness does not substitute
 for application/image readiness.
 
@@ -137,9 +139,13 @@ The requirement bump cannot live in a release pull request, because the
 first-party version it would point at is not published until its own release
 pull request merges.
 
-Renovate owns the bump instead. Its rule is the last entry in
-[`renovate.json`](../renovate.json) because it has to override the weekly
-schedule and the 14-day `minimumReleaseAge` that the generic Go rules apply.
+Renovate will own the bump after the release path is activated. Current
+[`renovate.json`](../renovate.json) deliberately disables root and internal
+module version updates while source PRs use merged pseudo-versions. Before
+enabling publication, add and test a narrowly scoped first-party release rule
+that overrides those disables, the weekly schedule and the 14-day
+`minimumReleaseAge` for tagged prerequisite updates. Do not activate it while
+publication remains disabled.
 
 Two consequences are worth knowing. Renovate commits through the GitHub API, so
 its commits are signed and satisfy the organization's signed-commit ruleset,
@@ -249,7 +255,6 @@ the repository's squash defaults must be `PR_TITLE` for the commit title and
 `COMMIT_OR_PR_TITLE` default makes the release subject depend on how many
 commits a branch happened to have.
 
-**Renovate.** The `first-party module requirements` rule in
-[`renovate.json`](../renovate.json) must stay the last `packageRules` entry, or
-the generic Go rules will hold dependent modules on stale prerequisites for up
-to two weeks.
+**Renovate.** Add and validate the first-party tagged-prerequisite rule before
+activation. The current internal-module rules intentionally prevent version
+updates, and a new rule must explicitly override them and the generic Go delay.

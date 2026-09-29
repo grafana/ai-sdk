@@ -22,5 +22,24 @@ These changes are preparation and do not claim publication authorization.
 
 The pinned built-in linked-versions plugin forces shared versions, conflicting with
 independent Gateway application versions. It must not be used as an attribution shortcut.
-A release-please-based linked-commit attribution mechanism still needs implementation and
-history fixtures. #263 owns the workspace image build; this change does not duplicate it.
+Release-please 17.6.0 splits commits by touched package paths before each component's
+strategy computes its version. Neither a conventional scope nor `Release-As` can restore
+a provider-only commit once that split has excluded it from `ai-gateway`. A second
+manifest rooted at `.` would see linked changes, but its denylist cannot express the
+exact source set built into the image and would create separate release state. We will
+instead evaluate a small wrapper around the pinned release-please API that registers a
+preconfigure plugin. It must add Gateway-relevant commits to `commitsByPath["ai-gateway"]`
+before the normal Gateway strategy calculates its independent version and changelog.
+
+The plugin must read history since the Gateway's own last release, not union other
+components' already-truncated commit lists. It must use an explicit allowlist of
+workspace source/runtime paths included in the image, preserve commit metadata needed
+for release notes, and deduplicate by SHA. It must ignore docs/examples-only commits.
+The stock action cannot load externally registered plugins, so replacing its invocation
+requires an exact-engine wrapper, bot-token handling, serialization and release-PR/tag
+parity tests. This is a design direction, not an implemented release mechanism.
+
+#263's workspace Docker build is present in the merged source baseline. Gateway
+versioned-image readiness must still prove that an `ai-gateway/vX.Y.Z` tag selects the
+same repository revision and image recipe, and that image validation/smoke and license
+evidence gate publication. A new Gateway release intent without that proof is unsafe.
