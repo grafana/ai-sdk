@@ -477,18 +477,16 @@ SDK's Go module dependency graph.
 
 ### What to validate
 
-- **Source PRs:** CI builds and tests candidate SDK, provider, middleware, and
-  Gateway source together. It also checks that no SDK module depends on Gateway,
-  that the SDK and Grafana client build without Gateway source, and that real
-  published-module pins point to commits already merged on `main`. A source PR
-  does **not** have to resolve every module against its declared published
-  dependencies. See [CI](.github/workflows/ci.yml) for the required checks.
-- **Before publishing an SDK, provider, or middleware module:** Validate the
-  selected module against its declared dependencies with
-  `MODULE=providers/anthropic mise run verify-published-module` (substitute the
-  module being published). This check remains manual pending release automation
-  (#245/#21). `mise run verify-module-resolution` checks all published modules
-  the same way and is an optional diagnostic, not a source-PR gate.
+- **Source PRs:** CI builds and tests the SDK, providers, middleware, Grafana
+  client, and Gateway from the proposed source. It also verifies module-pin
+  ancestry and dependency and license boundaries. See
+  [CI](.github/workflows/ci.yml) for the required checks.
+- **Go module releases:** Before tagging an SDK, provider, or middleware version
+  for external Go consumers, validate that module against its declared `go.mod`
+  dependencies with `MODULE=providers/anthropic mise run verify-published-module`
+  (substitute the module being released). This check remains manual pending
+  release automation (#245/#21). For a broader diagnostic,
+  `mise run verify-module-resolution` checks all published modules.
 - **Gateway images:** Gateway uses the separate `go.gateway.work` to build from
   same-revision local source. Push-only image validation checks the Gateway
   artifact at the checkout revision before publication or deployment. Gateway
