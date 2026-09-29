@@ -83,13 +83,18 @@ configuration change before it merges, push the branch and add
 
 ## Publication status and readiness
 
-Automatic tag and GitHub Release creation is disabled with `skip-github-release:
-true` in the pinned action. Release PR preparation remains enabled. Do not merge
-release PRs as publication authorization until the activation work below is reviewed;
-removing the switch can otherwise publish already-merged pending releases.
+Release automation is inactive pending #245 activation. The workflow has only a
+manual trigger and its job is unconditionally skipped: merging this scaffold
+cannot prepare release PRs, create tags, or publish GitHub Releases. The pinned
+action also retains `skip-github-release: true` as a second guard. #245 must
+complete Gateway attribution and artifact readiness before enabling the main
+trigger or job. Review pending release PRs and already-merged candidates before
+removing the publication guard; activation must not publish an unvalidated version.
 
-The `release-readiness` check recognizes a library release from a single manifest
-version change, the dedicated App author, canonical repository/branch metadata, and
+The `release-readiness` check runs as an informational scaffold; it is not a
+required branch-protection check yet. It recognizes a library release from a
+single manifest version change, the dedicated App author, canonical
+repository/branch metadata, and
 a checkout merging the current canonical base with the exact release head. Ordinary
 source PRs report publication checks as not applicable and keep #262's source gates.
 A label alone never authorizes publication.

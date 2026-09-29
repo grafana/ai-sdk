@@ -1,8 +1,10 @@
 name: Release
 
+# Inactive scaffold. #245 will complete artifact readiness and Gateway release
+# attribution before enabling this workflow on main. A manual dispatch also
+# skips the job, so merging #21 cannot create release PRs, tags, or releases.
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 permissions: {}
 
@@ -15,6 +17,7 @@ concurrency:
 
 jobs:
   release-please:
+    if: ${{ false }} # Activation belongs to #245.
     runs-on: ubuntu-latest
     permissions:
       id-token: write # mint the release app token through Vault
@@ -34,7 +37,7 @@ jobs:
         with:
           github_app: grafana-ai-sdk-release
 
-      - name: Groom release pull requests (publication awaits activation review)
+      - name: Prepare release pull requests (enabled by #245)
         id: release
         uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         with:

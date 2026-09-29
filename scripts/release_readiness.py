@@ -153,6 +153,16 @@ def release_publication_disabled(workflow):
     ))
 
 
+def release_automation_disabled(workflow):
+    return bool(
+        re.search(r"(?m)^on:\n  workflow_dispatch:\n\npermissions:", workflow)
+        and re.search(
+            r"(?m)^  release-please:\n    if: \$\{\{ false \}\}(?:[ \t]+#.*)?$",
+            workflow,
+        )
+    )
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--pull-request", required=True)
@@ -163,9 +173,9 @@ def main():
     base_files = tree(base)
     if MANIFEST not in base_files:
         workflow = Path(".github/workflows/release-please.yml").read_text()
-        if not release_publication_disabled(workflow):
-            raise ValueError("initial adoption must keep automatic publication disabled")
-        print("Release readiness: adoption change; publication disabled")
+        if not release_publication_disabled(workflow) or not release_automation_disabled(workflow):
+            raise ValueError("initial adoption must keep release automation and publication disabled")
+        print("Release readiness: adoption change; release automation disabled pending #245")
         return
     before = json.loads(run("git", "show", f"{base}:{MANIFEST}"))
     if before == after:

@@ -477,7 +477,8 @@ maintainer to trigger CI.
 
 Core, providers, and middleware are released independently as Go libraries.
 Gateway is an independently versioned Docker application with workspace source.
-Versions, changelogs, tags, and GitHub Releases are produced by
+After #245 activates release automation, versions, changelogs, tags, and GitHub
+Releases will be produced by
 [release-please](https://github.com/googleapis/release-please) from the
 Conventional Commits that land on `main`. Pull requests are squash-merged with
 their title as the subject, so a pull request records its release intent by
@@ -489,9 +490,10 @@ using the right type in its title:
 - `chore:`, `ci:`, `docs:`, `refactor:`, `test:`, and `build:` produce no
   release.
 
-A change is attributed to a module by the files it touches, so a pull request
-under `providers/openai/` releases only that provider. While the modules are in
-the `alpha` channel, each release advances the prerelease counter
+A library change is attributed to its module by the files it touches. #245 will
+also attribute relevant SDK, provider, and middleware changes to the
+workspace-built Gateway image release. While the modules are in the `alpha`
+channel, each release advances the prerelease counter
 (`v0.1.0-alpha.1` to `v0.1.0-alpha.2`).
 
 Validate the configuration after adding a module or changing tag settings:
@@ -501,8 +503,9 @@ mise run release-check      # configuration and readiness policy tests
 mise run release-preview    # dry-run of the next release pull request
 ```
 
-Publication is disabled until #245 readiness and Gateway attribution/image gates
-are activated. Each library gets its own release pull request. Maintainers merge the root one
+Release automation is inactive until #245 readiness and Gateway attribution/image
+gates are implemented and reviewed. No release PRs or tags are created by #21 alone.
+After activation, each library gets its own release pull request. Maintainers merge the root one
 first, let Renovate carry the new core version into the nested `go.mod` files,
 then merge the rest. The complete workflow is in the
 [release runbook](release/README.md).

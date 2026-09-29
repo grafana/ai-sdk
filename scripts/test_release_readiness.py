@@ -104,9 +104,16 @@ class ReleaseReadinessTest(unittest.TestCase):
                         with self.assertRaises(ValueError):
                             readiness.verify_library("providers/openai", "base", self.config["packages"])
 
-    def test_publication_is_disabled_until_activation_review(self):
+    def test_release_automation_is_disabled_until_activation_review(self):
         root = Path(__file__).resolve().parent.parent
         workflow = (root / ".github/workflows/release-please.yml").read_text()
+        self.assertTrue(readiness.release_automation_disabled(workflow))
+        self.assertFalse(readiness.release_automation_disabled(workflow.replace(
+            "  workflow_dispatch:", "  push:\n    branches: [main]",
+        )))
+        self.assertFalse(readiness.release_automation_disabled(workflow.replace(
+            "    if: ${{ false }}", "    if: ${{ true }}",
+        )))
         self.assertTrue(readiness.release_publication_disabled(workflow))
         self.assertFalse(readiness.release_publication_disabled(workflow.replace(
             "          skip-github-release: true",

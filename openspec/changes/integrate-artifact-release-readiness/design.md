@@ -1,8 +1,10 @@
 # Design
 
-Release-please remains the version/changelog/tag engine. The pinned action and local
-preview both use release-please 17.6.0. The action prepares release PRs while
-`skip-github-release: true` prevents creating tags or releases during integration.
+Release-please remains the intended version/changelog/tag engine. The pinned action
+and local preview both use release-please 17.6.0. #21 merges as an inactive scaffold:
+the workflow has only a manual trigger, its job always skips, and
+`skip-github-release: true` remains in the pinned action. #245 owns activation
+after Gateway attribution and artifact readiness are implemented and reviewed.
 
 A manifest version change must identify exactly one configured component and originate
 from the dedicated release App in the canonical repository. Readiness requires the

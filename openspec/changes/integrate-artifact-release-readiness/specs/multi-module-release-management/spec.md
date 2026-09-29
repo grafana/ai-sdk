@@ -53,12 +53,14 @@ calculator or manufactured dependency changes.
 
 ### Requirement: Fail-closed activation
 
-Publication SHALL remain disabled until artifact-specific readiness, required-check
-protection, current-candidate authorization, App prerequisites and Gateway release
+Release automation, including release PR preparation, SHALL remain disabled until
+artifact-specific readiness, required-check protection, current-candidate
+authorization, App prerequisites and Gateway release
 attribution are reviewed. The activation change SHALL account for already-merged
 pending release pull requests. Published tags SHALL remain immutable.
 
 #### Scenario: Incomplete Gateway integration
 
 - **WHEN** workspace image validation or linked release attribution is incomplete
-- **THEN** Gateway release readiness fails and automatic tag creation remains disabled
+- **THEN** Gateway release readiness fails and release PR preparation and
+  automatic tag creation remain disabled

@@ -62,7 +62,8 @@ bypassing the check.
 
 ## Do Not Publish
 
-Publication is currently disabled pending #245 activation; release PR preparation is enabled.
+Release automation is inactive pending #245 activation: no release PR preparation,
+tags, or GitHub Releases run from #21 alone.
 After reviewed activation, publication belongs to maintainers:
 
 - Every push to `main` refreshes one `chore(main): release ...` pull request per
