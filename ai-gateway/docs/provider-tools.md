@@ -15,7 +15,7 @@ fail safely. State is bounded and request-local, not a Gateway session or execut
 ## Continuation and privacy
 
 Tool-part options retain ordinary provider continuation values except reserved
-host controls. Public tool metadata uses an allowlist: Anthropic caller identity
+host controls and fields that could override validated tool identity or shape. Public tool metadata uses an allowlist: Anthropic caller identity
 and OpenAI/Azure item, namespace and caller correlation. Arbitrary metadata,
 physical backend identity and credentials are not normalized public output.
 Logical observation remains metadata-only; tool names, IDs, inputs and results
@@ -24,14 +24,15 @@ and tool history before running any candidate.
 
 ## Support boundaries
 
-All nonempty root provider options remain unsupported, including Anthropic
-`mcpServers`. MCP continuation/output metadata is rejected rather than silently
-reinterpreted as an ordinary tool. The `gateway-anthropic-mcp` change separately
+Ordinary root provider options follow the existing Gateway policy; protected
+Anthropic `mcpServers` remain unsupported. MCP continuation/output metadata is
+rejected rather than silently reinterpreted as an ordinary tool. The `gateway-anthropic-mcp` change separately
 owns remote server options, route eligibility and name validation.
 
-Approvals, sources, files and other media retain their explicit unsupported
-failures. Image previews emitted before their tool call remain WP16 (#110),
-not correlated provider-tool results. The existing byte, frame, part, duration,
+Approvals, sources and generated media retain their explicit unsupported
+failures. The base Gateway supports file inputs and supported tool-result files.
+Image previews emitted before their tool call remain WP16 (#110), not correlated
+provider-tool results. The existing byte, frame, part, duration,
 writer/cancellation and cleanup limits continue to apply.
 
 ## Validation and rollout

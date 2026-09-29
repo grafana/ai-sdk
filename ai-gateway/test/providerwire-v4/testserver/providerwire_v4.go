@@ -364,6 +364,7 @@ func newProviderWireV4Scenario() (*providerWireV4Scenario, error) {
 			Info:  catalog.ModelInfo{ID: id},
 			Model: &providerWireV4Model{kind: id, stats: stats},
 		})
+
 	}
 	ordered, err := fallback.New(&providerWireV4Model{kind: "setup-failure", stats: stats}, &providerWireV4Model{kind: "success", stats: stats})
 	if err != nil {

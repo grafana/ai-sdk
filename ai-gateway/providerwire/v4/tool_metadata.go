@@ -117,15 +117,16 @@ func mapToolCallerMetadata(raw json.RawMessage, idName string, variants ...strin
 		return nil, errInvalidToolMetadata
 	}
 	selected := map[string]string{"type": kind}
-	if rawID, ok := fields[idName]; ok {
-		if kind == "direct" {
+	if kind == "direct" {
+		if _, ok := fields[idName]; ok {
 			return nil, errInvalidToolMetadata
 		}
-		id, err := toolMetadataString(rawID)
-		if err != nil {
-			return nil, err
-		}
-		selected[idName] = id
+		return selected, nil
 	}
+	id, err := toolMetadataString(fields[idName])
+	if err != nil || id == "" {
+		return nil, errInvalidToolMetadata
+	}
+	selected[idName] = id
 	return selected, nil
 }

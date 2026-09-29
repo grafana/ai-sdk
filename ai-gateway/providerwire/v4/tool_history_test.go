@@ -18,6 +18,8 @@ func TestRuntimeProviderToolHistory(t *testing.T) {
 	}{
 		{name: "unresolved hosted call", body: `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"deferred","toolName":"code_execution","input":{"code":"print(1)"},"providerExecuted":true}]}]}`, pending: map[string]string{"deferred": "code_execution"}, status: http.StatusOK},
 		{name: "completed hosted call", body: `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"code_execution","input":{},"providerExecuted":true},{"type":"tool-result","toolCallId":"call","toolName":"code_execution","output":{"type":"json","value":{"ok":true}}}]}]}`, pending: map[string]string{}, status: http.StatusOK},
+		{name: "truncated history result", body: `{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"prior","toolName":"other","output":{"type":"text","value":"done"}}]}]}`, pending: map[string]string{}, status: http.StatusOK},
+		{name: "result before provider call with same ID", body: `{"prompt":[{"role":"assistant","content":[{"type":"tool-result","toolCallId":"call","toolName":"echo","output":{"type":"json","value":{}}},{"type":"tool-call","toolCallId":"call","toolName":"echo","input":{},"providerExecuted":true}]}]}`, status: http.StatusBadRequest},
 		{name: "client call never eligible", body: `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"local","toolName":"f","input":{}}]}]}`, pending: map[string]string{}, status: http.StatusOK},
 		{name: "provider continuation", body: `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"echo","input":{},"providerExecuted":true,"providerOptions":{"anthropic":{"caller":{"type":"direct"}}}},{"type":"tool-result","toolCallId":"call","toolName":"echo","output":{"type":"json","value":{"ok":true}},"providerOptions":{"anthropic":{"caller":{"type":"direct"}}}}]}]}`, pending: map[string]string{}, status: http.StatusOK},
 		{name: "unconfigured MCP name", body: `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"mcp","toolName":"echo","input":{},"providerExecuted":true,"providerOptions":{"anthropic":{"type":"mcp-tool-use","serverName":"other"}}}]}],"providerOptions":{"anthropic":{"mcpServers":[{"type":"url","name":"echo","url":"https://mcp.example.test"}]}}}`, status: http.StatusBadRequest},
@@ -48,6 +50,15 @@ func TestRuntimeProviderToolHistory(t *testing.T) {
 			}
 		})
 	}
+	t.Run("reserved namespace precedes MCP metadata", func(t *testing.T) {
+		harness := newRuntimeHarness(t, testLimits())
+		body := `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"echo","input":{},"providerExecuted":true,"providerOptions":{"gateway":{},"anthropic":{"type":"mcp-tool-use","serverName":"echo"}}}]}]}`
+		response := harness.serve(validRequest(body))
+		assert.Equal(t, http.StatusBadRequest, response.Code)
+		assert.JSONEq(t, string(reservedProviderOptionsError), response.Body.String())
+		assert.Zero(t, harness.resolver.callCount())
+		assert.Zero(t, harness.model.callCount())
+	})
 }
 
 func TestUnresolvedProviderCalls_RejectsAmbiguousHistory(t *testing.T) {

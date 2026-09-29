@@ -8,7 +8,7 @@ The SDK prerequisite in #238 can represent provider tools, but the Gateway still
 - Encode ordered unary/SSE calls, results and execution markers with reviewed non-MCP metadata.
 - Correlate deferred results with unresolved provider-owned history; permit previews only before a final result.
 - Prove both-client behavior through the real handler and authenticated native Anthropic code-execution transport.
-- Keep all nonempty root provider options, MCP metadata, effectful fallback and later output families rejected.
+- Keep protected MCP root options, MCP metadata, effectful fallback and later output families rejected; preserve the base PR's ordinary root provider options.
 
 ## Capabilities
 

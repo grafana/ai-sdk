@@ -375,31 +375,21 @@ func jsonObject(raw json.RawMessage) (map[string]json.RawMessage, bool) {
 }
 
 func mapToolPartOptions(values map[string]json.RawMessage) (provider.ProviderOptions, *requestFailure) {
-	var options provider.ProviderOptions
-	for namespace, raw := range values {
-		if namespace == "gateway" || namespace == "grafana" || namespace == "grafana-ai-sdk" {
-			return nil, unsupportedMappingFailure(capabilityProviderOptions)
-		}
-		var members map[string]json.RawMessage
-		if json.Unmarshal(raw, &members) != nil || members == nil {
-			return nil, invalidMappingFailure()
-		}
-		if len(members) == 0 {
-			continue
-		}
-		if namespace == "anthropic" {
+	options, failure := mapWireProviderOptions(values)
+	if failure != nil {
+		return nil, failure
+	}
+	if raw, ok := values["anthropic"]; ok {
+		fields, _ := jsonObject(raw)
+		if value, exists := fields["type"]; exists {
 			var kind string
-			if value, ok := members["type"]; ok && json.Unmarshal(value, &kind) != nil {
+			if json.Unmarshal(value, &kind) != nil {
 				return nil, invalidMappingFailure()
 			}
 			if kind == "mcp-tool-use" {
 				return nil, unsupportedMappingFailure(capabilityProviderOptions)
 			}
 		}
-		if options == nil {
-			options = make(provider.ProviderOptions)
-		}
-		options[namespace] = provider.RawProviderOption{Key: namespace, Raw: raw}
 	}
 	return options, nil
 }

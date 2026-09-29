@@ -878,7 +878,7 @@ describe("authenticated Anthropic Gateway command", () => {
       for (const mode of ["generate", "stream"] as const) {
         for (const implementation of ["vercel", "go"] as const) {
           const invoke = async (messages: LanguageModelV4CallOptions["prompt"]): Promise<any[]> => {
-            const options = { prompt: messages, tools };
+            const options = { prompt: messages, tools, providerOptions: { anthropic: { disableParallelToolUse: true } } };
             if (implementation === "go") {
               const result = await captureGoClient(goClientBinaryPath, { baseURL: `${gateway.url}/api/v1/aisdk`, accessToken: TEST_TOKEN, modelID: "assistant", mode, options });
               assert.equal(result.error, undefined);
@@ -892,9 +892,11 @@ describe("authenticated Anthropic Gateway command", () => {
           assert.deepEqual(calls.map(part => part.toolName), ["python"]);
           assert.deepEqual(results.map(part => part.toolName), ["python"]);
           assert.ok(calls.every(part => part.providerExecuted === true));
+          assert.deepEqual(calls[0].providerMetadata, { anthropic: { caller: { type: "direct" } } });
           const native = fake.requests.at(-1)!.body as any;
           assert.deepEqual(native.tools, [{ type: "code_execution_20260120", name: "code_execution" }]);
           assert.equal(native.max_tokens, 128000);
+          assert.equal(native.tool_choice?.disable_parallel_tool_use, true);
           assert.equal(native.mcp_servers, undefined);
           const history = calls.flatMap((call, index) => [
             { type: "tool-call" as const, toolCallId: call.toolCallId, toolName: call.toolName, input: JSON.parse(call.input), providerExecuted: true, ...(call.providerMetadata && { providerOptions: call.providerMetadata }) },
@@ -905,6 +907,8 @@ describe("authenticated Anthropic Gateway command", () => {
           const continuation = fake.requests.at(-1)!.body as any;
           assert.deepEqual(continuation.messages[1].content.map((part: any) => part.type), ["server_tool_use", "code_execution_tool_result"]);
           assert.equal(continuation.messages[1].content[0].name, "code_execution");
+          assert.deepEqual(continuation.messages[1].content[0].caller, { type: "direct" });
+          assert.equal(continuation.tool_choice?.disable_parallel_tool_use, true);
         }
       }
       assert.equal(fake.requests.length, 8);
@@ -920,6 +924,41 @@ describe("authenticated Anthropic Gateway command", () => {
     } finally {
       await settleCleanup(...(resources ? [() => resources![1].stop(), () => resources![0].stop()] : []), () => observer.stop());
     }
+  });
+
+  it("preserves non-direct caller IDs through both clients and native continuation", async () => {
+    const [fake, gateway] = await startGateway([], {}, "claude-sonnet-4-6");
+    fake.providerToolCaller = true;
+    try {
+      const tools = [{ type: "function" as const, name: "execute", inputSchema: { type: "object" } }];
+      const prompt = [{ role: "user" as const, content: [{ type: "text" as const, text: "Use a tool" }] }];
+      for (const mode of ["generate", "stream"] as const) {
+        for (const implementation of ["vercel", "go"] as const) {
+          const invoke = async (messages: LanguageModelV4CallOptions["prompt"]): Promise<any[]> => {
+            const options = { prompt: messages, tools };
+            if (implementation === "go") {
+              const captured = await captureGoClient(goClientBinaryPath, { baseURL: `${gateway.url}/api/v1/aisdk`, accessToken: TEST_TOKEN, modelID: "assistant", mode, options });
+              assert.equal(captured.error, undefined);
+              return mode === "generate" ? captured.result.content : captured.parts;
+            }
+            return mode === "generate" ? (await gateway.client()("assistant").doGenerate(options)).content : await collectGatewayStream((await gateway.client()("assistant").doStream(options)).stream);
+          };
+          const first = await invoke(prompt);
+          const call = first.find(part => part.type === "tool-call");
+          assert.ok(call);
+          assert.deepEqual(call.providerMetadata, { anthropic: { caller: { type: "code_execution_20260120", toolId: "call-parent" } } });
+          const historyCall = { type: "tool-call" as const, toolCallId: call.toolCallId, toolName: call.toolName, input: JSON.parse(call.input), providerOptions: call.providerMetadata };
+          const historyResult = { type: "tool-result" as const, toolCallId: call.toolCallId, toolName: call.toolName, output: { type: "text" as const, value: "done" } };
+          const final = await invoke([...prompt, { role: "assistant", content: [historyCall] }, { role: "tool", content: [historyResult] }]);
+          assert.equal(final.filter(part => part.type === (mode === "generate" ? "text" : "text-delta")).map(part => part.text ?? part.delta).join(""), "Hosted tools finished.");
+          const continuation = fake.requests.at(-1)!.body as any;
+          assert.deepEqual(continuation.messages[1].content[0].caller, { type: "code_execution_20260120", tool_id: "call-parent" });
+          assert.equal(continuation.messages[2].content[0].type, "tool_result");
+        }
+      }
+      assert.equal(fake.requests.length, 8);
+      assert.deepEqual(fake.violations, []);
+    } finally { await settleCleanup(() => gateway.stop(), () => fake.stop()); }
   });
 
   for (const failExecution of [false, true]) {
@@ -2790,6 +2829,7 @@ class FakeAnthropic {
   failureStatus?: number;
   functionTools = false;
   providerTools = false;
+  providerToolCaller = false;
   backendModel = "backend-private";
   private readonly server: ReturnType<typeof createServer>;
 
@@ -2871,18 +2911,21 @@ class FakeAnthropic {
       response.end(JSON.stringify({ error: { type: "api_error", message: "provider-secret-response" } }));
       return;
     }
-    if (this.providerTools) {
+    if (this.providerTools || this.providerToolCaller) {
       const messages = body.messages as Array<{ content: Array<{ type: string }> }>;
-      const continued = messages.some(message => message.content.some(part => part.type === "server_tool_use"));
+      const continued = messages.some(message => message.content.some(part => part.type === "server_tool_use" || part.type === "tool_result"));
       const blocks = continued
         ? [{ type: "text", text: "Hosted tools finished." }]
-        : [
-            { type: "server_tool_use", id: "call-code", name: "code_execution", input: { code: "1+1" } },
-            { type: "code_execution_tool_result", tool_use_id: "call-code", content: { type: "code_execution_result", stdout: "2", stderr: "", return_code: 0 } },
-          ];
+        : this.providerToolCaller
+          ? [{ type: "tool_use", id: "call-child", name: "execute", input: {}, caller: { type: "code_execution_20260120", tool_id: "call-parent" } }]
+          : [
+              { type: "server_tool_use", id: "call-code", name: "code_execution", input: { code: "1+1" }, caller: { type: "direct" } },
+              { type: "code_execution_tool_result", tool_use_id: "call-code", content: { type: "code_execution_result", stdout: "2", stderr: "", return_code: 0 } },
+            ];
+      const stopReason = !continued && this.providerToolCaller ? "tool_use" : "end_turn";
       if (body.stream !== true) {
         response.writeHead(200, { "Content-Type": "application/json" });
-        response.end(JSON.stringify({ id: "msg_provider_tools", type: "message", role: "assistant", model: "backend-private", content: blocks, stop_reason: "end_turn", stop_sequence: null, usage: { input_tokens: 2, output_tokens: 4 } }));
+        response.end(JSON.stringify({ id: "msg_provider_tools", type: "message", role: "assistant", model: "backend-private", content: blocks, stop_reason: stopReason, stop_sequence: null, usage: { input_tokens: 2, output_tokens: 4 } }));
         return;
       }
       response.writeHead(200, { "Content-Type": "text/event-stream" });
@@ -2893,7 +2936,7 @@ class FakeAnthropic {
         if (continued) event({ type: "content_block_delta", index, delta: { type: "text_delta", text: "Hosted tools finished." } });
         event({ type: "content_block_stop", index });
       }
-      event({ type: "message_delta", delta: { stop_reason: "end_turn", stop_sequence: null }, usage: { output_tokens: 4 } });
+      event({ type: "message_delta", delta: { stop_reason: stopReason, stop_sequence: null }, usage: { output_tokens: 4 } });
       event({ type: "message_stop" });
       response.end();
       return;
