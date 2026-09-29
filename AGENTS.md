@@ -184,14 +184,6 @@ mise run check
 # Upstream parity checks
 mise run validate-parity-baseline
 mise run parity-check
-mise run verify-module-resolution   # optional standalone diagnostic, not a source-PR gate
-MODULE=providers/openai mise run verify-published-module  # optional selected-module diagnostic
-mise run verify-merged-pins        # real internal pins must descend from canonical main
-mise run verify-ai-gateway-boundary
-mise run verify-sdk-gateway-isolation
-mise run test-module-policy         # deterministic Bash policy fixtures
-mise run test-ai-gateway-source    # explicit go.gateway.work candidate-source mode
-mise run test-ai-gateway-source-integration
 
 # Frozen upgrade workflow (see test/conformance/UPGRADING.md)
 TARGET=/absolute/path/to/new-target.json mise run parity-select
@@ -203,16 +195,10 @@ The Anthropic provider module is a separate `go.mod`. Run its tests from the
 `providers/anthropic/` directory or via `mise run test`. The same applies to the
 Bedrock provider module under `providers/bedrock/`.
 
-The root `go.work` remains SDK-only. `go.gateway.work` is explicitly selected
-for required Gateway source checks and image builds.
-`scripts/module-policy.sh` owns module inventory, merged-pin ancestry,
-standalone validation, the license boundary, and the candidate-source,
-Gateway-absent SDK proof. Real published internal module pins must already be
-merged on canonical `main`; an older merged pseudo-version may lag candidate
-source. Standalone module checks are optional diagnostics, not source-PR
-requirements. Gateway is released as an image built from same-revision workspace
-source, not as a standalone Go module; its push-only image validation checks the
-Gateway artifact at the checkout revision.
+Source PRs use candidate-source checks, not standalone resolution of every
+published module. A selected module still needs validation before publication.
+See [What to validate](CONTRIBUTING.md#what-to-validate) for the commands and
+Gateway image rules.
 
 ## Project Structure
 

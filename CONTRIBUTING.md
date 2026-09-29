@@ -133,21 +133,6 @@ mise run build          # build all modules, including examples
 mise run test           # all Go tests across all modules
 mise run test-short     # skip integration/E2E tests
 mise run check          # fmt + vet + lint + docs + tests
-mise run verify-ai-gateway-boundary
-                        # structural one-way Gateway dependency boundary
-mise run verify-sdk-gateway-isolation
-                        # SDK and Grafana client without Gateway source
-mise run test-module-policy
-                        # deterministic Bash fixtures for module checks
-mise run verify-merged-pins
-                        # published internal pins descend from canonical main
-mise run verify-module-resolution
-                        # optional standalone public-proxy diagnostic, not a PR gate
-MODULE=providers/openai mise run verify-published-module
-                        # optional selected-module diagnostic
-mise run test-ai-gateway-source
-mise run test-ai-gateway-source-integration
-                        # explicitly selected candidate-source Gateway checks
 ```
 
 To run a single test, invoke `go test` in the right module directory:
@@ -490,23 +475,31 @@ pnpm workspace for TypeScript-side harnesses. The workspace includes the Gateway
 contract tests under `ai-gateway/`; it does not change their AGPL license or the
 SDK's Go module dependency graph.
 
-`ai-gateway/` is intentionally absent from the root `go.work`. The separate
-`go.gateway.work` selects local SDK, provider, and middleware source for Gateway
-source checks and image builds. Gateway code may import explicitly pinned
-SDK modules, but no module outside `ai-gateway/` may import, require, or replace
-`github.com/grafana/ai-sdk/ai-gateway`. The structural check rejects reverse
-source and module references; a separate check builds the candidate SDK and
-Grafana client with Gateway source absent. Optional standalone diagnostics use
-declared versions with `GOWORK=off`. These checks share `scripts/module-policy.sh`.
-None replaces license review for copied code or third-party dependencies.
+### What to validate
 
-Every real internal pin in a published module must refer to a commit already
-merged into canonical `grafana/ai-sdk` `main`. Merged pseudo-versions are valid;
-local-only example/test replacements are not published pins. Source PRs run
-candidate-source checks; standalone module resolution is optional, not a source-PR
-or SDK/provider/middleware release gate. Gateway is released as an image built
-from same-revision workspace source, not as a standalone Go module. Its push-only
-image validation checks the Gateway artifact at the checkout revision.
+- **Source PRs:** CI builds and tests candidate SDK, provider, middleware, and
+  Gateway source together. It also checks that no SDK module depends on Gateway,
+  that the SDK and Grafana client build without Gateway source, and that real
+  published-module pins point to commits already merged on `main`. A source PR
+  does **not** have to resolve every module against its declared published
+  dependencies. See [CI](.github/workflows/ci.yml) for the required checks.
+- **Before publishing an SDK, provider, or middleware module:** Validate the
+  selected module against its declared dependencies with
+  `MODULE=providers/anthropic mise run verify-published-module` (substitute the
+  module being published). This check remains manual pending release automation
+  (#245/#21). `mise run verify-module-resolution` checks all published modules
+  the same way and is an optional diagnostic, not a source-PR gate.
+- **Gateway images:** Gateway uses the separate `go.gateway.work` to build from
+  same-revision local source. Push-only image validation checks the Gateway
+  artifact at the checkout revision before publication or deployment. Gateway
+  is not published as a standalone Go module.
+
+The root `go.work` excludes `ai-gateway/`. Gateway may depend on SDK modules,
+but SDK modules must not import, require, or replace Gateway. Real published
+module pins must refer to commits merged on canonical `grafana/ai-sdk` `main`;
+merged pseudo-versions are valid, while local example/test replacements are not
+published pins. `scripts/module-policy.sh` implements the module checks. These
+checks do not replace license review for copied code or third-party dependencies.
 
 ```bash
 mise run tidy        # go mod tidy across all modules

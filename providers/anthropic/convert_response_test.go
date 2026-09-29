@@ -32,10 +32,15 @@ func TestConvertResponse_SafeguardResults(t *testing.T) {
 		},
 		{name: "unknown strings and null optional fields", raw: `[{"type":"future","status":{"type":"future","tool_uses":{"toolu_02":{"type":"future","outcome":null,"explanation":null}}}}]`, want: `[{"type":"future","status":{"type":"future","tool_uses":{"toolu_02":{"type":"future","outcome":null,"explanation":null}}}}]`},
 		{name: "null tool uses", raw: `[{"type":"future","status":{"type":"available","tool_uses":null}}]`, want: `[{"type":"future","status":{"type":"available","tool_uses":null}}]`},
+		{name: "empty tool uses strips extra fields", raw: `[{"type":"","status":{"type":"","tool_uses":{},"extra":"excluded"}}]`, want: `[{"type":"","status":{"type":"","tool_uses":{}}}]`},
 		{name: "not array", raw: `42`, invalid: true},
+		{name: "null entry", raw: `[null]`, invalid: true},
 		{name: "missing status", raw: `[{"type":"dangerous_tool_use"}]`, invalid: true},
 		{name: "invalid status", raw: `[{"type":"dangerous_tool_use","status":null}]`, invalid: true},
+		{name: "invalid tool uses", raw: `[{"type":"dangerous_tool_use","status":{"type":"available","tool_uses":[]}}]`, invalid: true},
+		{name: "null tool use", raw: `[{"type":"dangerous_tool_use","status":{"type":"available","tool_uses":{"toolu_01":null}}}]`, invalid: true},
 		{name: "invalid tool use", raw: `[{"type":"dangerous_tool_use","status":{"type":"available","tool_uses":{"toolu_01":{"type":1,"explanation":"private-verdict"}}}}]`, invalid: true},
+		{name: "invalid optional field", raw: `[{"type":"dangerous_tool_use","status":{"type":"available","tool_uses":{"toolu_01":{"type":"evaluated","outcome":12}}}}]`, invalid: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

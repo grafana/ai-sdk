@@ -36,9 +36,9 @@ type AnthropicOptions struct {
 	DisableParallelToolUse *bool                `json:"disableParallelToolUse,omitempty"`
 	Effort                 string               `json:"effort,omitempty"` // "low", "medium", "high", "xhigh", "max"
 	Betas                  []string             `json:"betas,omitempty"`
-	// Safeguards requests opt-in dangerous-tool-use classification. Anthropic
-	// must authorize the beta for the credential and model; the provider may
-	// reject the request when it is unavailable.
+	// Safeguards requests opt-in dangerous-tool-use classification. A nonempty
+	// list sends the dangerous-tool-use-2026-09-03 beta. Confirm Anthropic has
+	// authorized it for the credential, model, and endpoint before enabling it.
 	Safeguards []AnthropicSafeguard `json:"safeguards,omitempty"`
 	MCPServers []MCPServer          `json:"mcpServers,omitempty"`
 	TaskBudget *TaskBudgetConfig    `json:"taskBudget,omitempty"`
@@ -65,7 +65,8 @@ const (
 // AnthropicSafeguard configures an opt-in classifier. A non-nil
 // ClassifierContext pointer preserves even an empty JSON object on the wire.
 // Returned verdicts are exposed as anthropic.safeguardResults in provider
-// metadata; they do not enforce a tool-execution policy.
+// metadata; streams retain the last non-null verdict. Verdicts do not enforce
+// a tool-execution policy.
 type AnthropicSafeguard struct {
 	Type              AnthropicSafeguardType      `json:"type"`
 	ClassifierContext *map[string]json.RawMessage `json:"classifierContext,omitempty"`

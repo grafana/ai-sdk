@@ -2730,27 +2730,23 @@ func rejectRawSafeguardNulls(opts provider.ProviderOptions) error {
 	if !ok {
 		return nil
 	}
-	var fields map[string]json.RawMessage
-	if json.Unmarshal(raw.Raw, &fields) != nil {
+	var fields struct {
+		Safeguards json.RawMessage `json:"safeguards"`
+	}
+	if json.Unmarshal(raw.Raw, &fields) != nil || len(fields.Safeguards) == 0 {
 		return nil
 	}
-	value, ok := fields["safeguards"]
-	if !ok {
-		return nil
-	}
-	if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+	if bytes.Equal(bytes.TrimSpace(fields.Safeguards), []byte("null")) {
 		return fmt.Errorf("safeguards must be an array, not null")
 	}
-	var entries []json.RawMessage
-	if err := json.Unmarshal(value, &entries); err != nil {
+	var entries []struct {
+		ClassifierContext json.RawMessage `json:"classifierContext"`
+	}
+	if err := json.Unmarshal(fields.Safeguards, &entries); err != nil {
 		return fmt.Errorf("decoding safeguards: %w", err)
 	}
 	for i, entry := range entries {
-		var entryFields map[string]json.RawMessage
-		if json.Unmarshal(entry, &entryFields) != nil {
-			continue
-		}
-		if bytes.Equal(bytes.TrimSpace(entryFields["classifierContext"]), []byte("null")) {
+		if bytes.Equal(bytes.TrimSpace(entry.ClassifierContext), []byte("null")) {
 			return fmt.Errorf("safeguards[%d].classifierContext must be an object, not null", i)
 		}
 	}
