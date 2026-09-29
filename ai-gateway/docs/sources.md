@@ -25,8 +25,9 @@ reasoning, generated files or raw output.
 Deterministic command and client tests establish mapping, framing and privacy,
 not live provider acceptance. Candidate-source Gateway tests exercise the
 logger and Agent Observability changes that count source-only responses as
-first output while continuing to omit source content from capture. The pinned
-published middleware revisions are older and require a later module release
-before standalone Gateway builds can adopt this behavior.
+first output while continuing to omit source content from capture. The Gateway
+image builds from this same-revision source through `go.gateway.work`; image
+readiness still requires its build gate. Published middleware revisions remain
+older and require later module releases for standalone module consumers.
 
 See [text observability](text-observability.md) for telemetry privacy.

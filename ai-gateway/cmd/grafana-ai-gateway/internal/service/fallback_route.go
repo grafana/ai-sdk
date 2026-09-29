@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
 	"github.com/grafana/ai-sdk/provider"
@@ -39,13 +40,30 @@ func fallbackTextRequest(options provider.CallOptions) bool {
 		default:
 			return false
 		}
-		if len(message.ProviderOptions) != 0 {
+		if !emptyMessageOptions(message.ProviderOptions) {
 			return false
 		}
 		for _, part := range message.Content {
 			if part.Type != provider.ContentPartTypeText || len(part.ProviderOptions) != 0 {
 				return false
 			}
+		}
+	}
+	return true
+}
+
+func emptyMessageOptions(options provider.ProviderOptions) bool {
+	for name, value := range options {
+		if name == "gateway" || name == "grafana" || name == "grafana-ai-sdk" {
+			return false
+		}
+		raw, ok := value.(provider.RawProviderOption)
+		if !ok || raw.Key == "gateway" || raw.Key == "grafana" || raw.Key == "grafana-ai-sdk" {
+			return false
+		}
+		var members map[string]json.RawMessage
+		if json.Unmarshal(raw.Raw, &members) != nil || members == nil || len(members) != 0 {
+			return false
 		}
 	}
 	return true

@@ -60,8 +60,20 @@ func (m *model) DoGenerate(ctx context.Context, opts provider.CallOptions) (*pro
 		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	body, err := readJSON(ctx, resp, m.provider.limits.UnaryBytes)
+	body, transportFailure, err := readJSON(ctx, resp, m.provider.limits.UnaryBytes)
 	if err != nil {
+		if transportFailure {
+			switch {
+			case ctx.Err() != nil:
+				err = ctx.Err()
+			case int64(len(body)) > m.provider.limits.UnaryBytes:
+				err = errors.New("grafana: response byte limit exceeded")
+			default:
+				return nil, provider.NewAPICallError(provider.APICallErrorOptions{
+					Message: "grafana: unary response transport failed", StatusCode: resp.StatusCode, Cause: err, IsRetryable: &transportFailure,
+				})
+			}
+		}
 		return nil, protocolError("grafana: invalid unary response", resp.StatusCode, err)
 	}
 	result, err := decodeGenerate(body)

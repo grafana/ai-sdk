@@ -7,7 +7,7 @@ import { after, before, describe, it } from "node:test";
 import { createGateway } from "@ai-sdk/gateway";
 import type { LanguageModelV4CallOptions } from "@ai-sdk/provider";
 import { buildGoClientCapture, captureGoClient } from "./go-client-capture";
-import { comprehensiveGoldenCase } from "./request-cases";
+import { comprehensiveGoldenCase, fileInputGoldenCase } from "./request-cases";
 import { assertValidRequest } from "./schema";
 
 let directory: string;
@@ -39,6 +39,25 @@ async function endpoint(body: string, status = 200, contentType = "application/j
   const address = server.address(); assert.ok(address && typeof address !== "string");
   const baseURL = `http://127.0.0.1:${address.port}/api/v1/aisdk`;
   return { baseURL, requests, stop: () => new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve())) };
+}
+
+async function truncatedUnaryEndpoint() {
+  let requests = 0;
+  const partialBody = '{"private":"sensitive-value"';
+  const server = createServer((request, response) => {
+    request.resume();
+    requests++;
+    response.writeHead(200, { "content-type": "application/json", "content-length": "4096" });
+    response.flushHeaders();
+    response.write(partialBody, () => response.socket?.destroy());
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address(); assert.ok(address && typeof address !== "string");
+  return {
+    baseURL: `http://127.0.0.1:${address.port}/api/v1/aisdk`,
+    requests: () => requests,
+    stop: () => new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve())),
+  };
 }
 
 function semanticRequest(request: Captured) {
@@ -121,6 +140,27 @@ describe("Go and exact-pinned Gateway differential", () => {
     assert.ok(classifiedOwnershipDifferences > 0, "pinned permissive header overrides differ intentionally from protected Go ownership");
   });
 
+  it("preserves retryability for a post-header unary transport failure", async () => {
+    const server = await truncatedUnaryEndpoint();
+    try {
+      let ts: any;
+      try { await createGateway({ apiKey: "test", baseURL: server.baseURL })("assistant").doGenerate({ prompt: [] }); } catch (error) { ts = error; }
+      assert.ok(ts, "pinned client must observe a failed body read");
+      assert.equal(ts.statusCode, 200, "pinned client must observe a post-header failure");
+      assert.equal(ts.isRetryable, true, "pinned client must classify the socket failure as retryable");
+      assert.equal(server.requests(), 1);
+
+      const go = await captureGoClient(binary, { baseURL: server.baseURL, accessToken: "token", modelID: "assistant", mode: "generate", options: { prompt: [] } });
+      assert.equal(go.result, undefined);
+      assert.equal(go.error?.statusCode, 200);
+      assert.equal(go.error?.isRetryable, ts.isRetryable);
+      assert.equal(go.error?.canceled, false);
+      assert.ok(go.error.causes.some((cause: string) => cause.includes("unexpected EOF")), "Go must retain the body-read cause");
+      assert.ok(!go.error.message.includes("sensitive-value"), "public error must not expose the body");
+      assert.equal(server.requests(), 2, "neither client replays the request");
+    } finally { await server.stop(); }
+  });
+
   it("preserves cancellation before I/O, during unary reads, and after the first stream part", async () => {
     for (const streaming of [false, true]) {
       const server = await cancellationEndpoint(streaming);
@@ -175,6 +215,31 @@ describe("Go and exact-pinned Gateway differential", () => {
       assertValidRequest(server.requests[0]!.body, "Go comprehensive golden projection");
       assert.deepEqual(server.requests[0]!.body, expected);
     } finally { await server.stop(); }
+  });
+
+  it("matches every focused registered-client file input in both call modes", async () => {
+    const pinned = await fileInputGoldenCase.capture();
+    assert.deepEqual(pinned.map((request) => request.streaming), [false, true]);
+    for (const request of pinned) {
+      const server = await endpoint(request.streaming
+        ? 'data: {"type":"stream-start","warnings":[]}\n\ndata: {"type":"finish","finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}}}\n\n'
+        : JSON.stringify(unary), 200, request.streaming ? "text/event-stream" : "application/json");
+      try {
+        const go = await captureGoClient(binary, {
+          baseURL: server.baseURL,
+          accessToken: "access-token",
+          modelID: "grafana/files",
+          mode: request.streaming ? "stream" : "generate",
+          options: request.body,
+        });
+        assert.equal(go.error, undefined);
+        assert.equal(server.requests.length, 1);
+        assertValidRequest(server.requests[0]!.body, "Go file input projection");
+        assert.deepEqual(server.requests[0]!.body, request.body);
+        assert.equal(server.requests[0]!.headers["ai-language-model-streaming"], String(request.streaming));
+        assert.equal(server.requests[0]!.headers["ai-language-model-id"], "grafana/files");
+      } finally { await server.stop(); }
+    }
   });
 
   const cases: Array<{ name: string; options: LanguageModelV4CallOptions }> = [

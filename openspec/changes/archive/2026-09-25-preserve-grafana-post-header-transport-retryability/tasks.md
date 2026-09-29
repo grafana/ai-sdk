@@ -1,0 +1,22 @@
+## 1. Reproduce and establish pinned evidence
+
+- [x] 1.1 Add a focused `providers/grafana/model_test.go` real `httptest` HTTP 200 handler that flushes JSON headers and partial below-limit body, advertises a longer `Content-Length`, and closes the connection; assert a body read failure (not malformed JSON), nil result, API status 200, cause discoverability, bounded private-safe primary message, retryability, cleanup, and exactly one request. Run the test to confirm it fails before implementation.
+- [x] 1.2 Add an equivalent terminated-body case to `ai-gateway/test/providerwire-v4/go-client-differential.test.ts` comparing Go capture and actual `@ai-sdk/gateway@4.0.87` client from the registered lockfile. Assert both observe retryability with one request each, without asserting equal error prose or permissive output schemas; verify the test fails on Go before fixing. If the pinned client does not report retryable for the fixture, inspect pinned `@ai-sdk/provider-utils@5.0.45` cause handling and adjust the fixture to prove genuine socket I/O without widening error classification.
+
+## 2. Narrow classification and regressions
+
+- [x] 2.1 Distinguish the bounded `readJSON` body I/O branch from media/size/JSON errors at successful `DoGenerate` only; retain status 200, original I/O cause, static bounded message, no result and explicit retryability for a within-limit transport failure. When the bounded read returns an over-limit partial body with an error, classify the unary byte-limit failure as non-retryable before classifying the read error; check context cancellation or deadline expiry first. Keep `decodeGenerate` failures, non-2xx error mapping, `/config`, and Grafana service taxonomy unchanged.
+- [x] 2.2 Expand focused Go tests for malformed JSON, wrong media type, strict output-schema failure, unary limit, and body-read cancellation/deadline (`errors.Is` context identity and non-retryability), checking one model request and no leaked response body. Add a focused over-limit-then-truncate test whose body read returns more than the unary limit and a transport error together; assert a non-retryable bounded byte-limit protocol error, no result, and one request. Verify cancellation still takes precedence when applicable. Inspect `readGatewayError` and `ListModels` behavior explicitly for accidental changes without promising post-header retryability on either path.
+- [x] 2.3 Check existing stream transport-failure-after-part tests (add a focused real handler case if not covered) to prove one request and no replay of delivered parts, with cancellation and stream-limit behavior unchanged.
+
+## 3. Validate boundaries
+
+- [x] 3.1 Run focused `providers/grafana` Go tests and the Go/registered Gateway client differential suite; record the exact commands and observed outcome.
+- [x] 3.2 Run `mise run validate-parity-baseline` and `mise run parity-check` for this parity-sensitive client change; update only warranted evidence snapshots/coverage status with correct provenance, without invented recorded provider inputs or pin changes.
+- [x] 3.3 Review the implementation against pinned Gateway/provider-utils sources and `openspec/specs/grafana-gateway-client/spec.md` to confirm strict mapping, bounds, privacy, one-request policy, and no unrelated discovery/non-2xx behavior drift.
+
+## Validation evidence
+
+- Before the fix, `cd providers/grafana && go test -run '^TestModel_PostHeaderTransportFailure$' -count=1 ./...` failed on `IsRetryable`; `cd test && pnpm --filter @ai-sdk/providerwire-v4-contract exec tsx --test --test-name-pattern='preserves retryability for a post-header unary transport failure' go-client-differential.test.ts` failed because pinned Gateway returned `true` and Go returned `false`.
+- After the fix, `cd providers/grafana && go test ./...`, `mise run test-providerwire-v4`, `mise run validate-parity-baseline`, and `mise run parity-check` passed.
+- Focused `cd providers/grafana && go test -race -run '^TestModel_(PostHeaderTransportFailure|UnaryProtocolFailures|UnaryReadPrecedence|UnaryReadCancellation|StreamCancellationAndTransport)$' -count=1 ./...`, `cd providers/grafana && go vet ./...`, and `openspec validate preserve-grafana-post-header-transport-retryability --type change --strict --no-interactive` passed. No provider recordings, pins, or stable coverage status changed.

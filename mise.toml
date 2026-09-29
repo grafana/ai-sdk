@@ -7,25 +7,25 @@ experimental = true
 go = "1.27.1"
 jq = "1.8.2"
 node = "24"
-pnpm = "12.4.2"
+pnpm = "12.6.0"
 python = "3.14.7"
-golangci-lint = "2.13.2"
+golangci-lint = "2.14.0"
 "npm:@fission-ai/openspec" = "1"
-"npm:markdownlint-cli2" = "0.23.2"
+"npm:markdownlint-cli2" = "0.23.3"
 
 [deps.test]
 auto = false
 sources = [
-  "test/package.json",
-  "test/pnpm-lock.yaml",
-  "test/pnpm-workspace.yaml",
+  "package.json",
+  "pnpm-lock.yaml",
+  "pnpm-workspace.yaml",
   "test/cli/package.json",
   "test/conformance/tools/package.json",
   "test/integration/package.json",
   "ai-gateway/test/providerwire-v4/package.json",
 ]
-outputs = ["test/node_modules/.modules.yaml"]
-run = "cd test && pnpm install --frozen-lockfile"
+outputs = ["node_modules/.modules.yaml"]
+run = "pnpm install --frozen-lockfile"
 
 [tasks.test]
 description = "Run candidate-source Go tests across all modules"
@@ -73,8 +73,15 @@ mise run verify-gateway-workspace
 description = "Build and load the AI Gateway image for the local architecture"
 run = """
 image=${AI_GATEWAY_IMAGE:-ai-gateway:local}
-revision=${AI_GATEWAY_VCS_REF:-$(git rev-parse HEAD)}
-docker build --build-arg "VCS_REF=$revision" --tag "$image" ai-gateway
+revision=${AI_GATEWAY_VCS_REF:-local-unverified}
+docker build -f ai-gateway/Dockerfile --build-arg "VCS_REF=$revision" --tag "$image" .
+"""
+
+[tasks.test-ai-gateway-image-source]
+description = "Prove the Gateway image uses local SDK/provider source and packages its dependency evidence"
+run = """
+mise deps install --only test
+cd test/conformance/tools && pnpm exec tsx --test gateway-image-source.test.mts
 """
 
 [tasks.test-anthropic]
@@ -449,9 +456,7 @@ description = "Apply a frozen target and regenerate expectations; verification r
 run = """
 set -e
 mise run parity-apply
-cd test
 pnpm install --lockfile-only --no-frozen-lockfile
-cd ..
 mise deps install --only test
 node scripts/generate-bedrock-provider-tool-schemas.mjs
 mise run generate-conformance

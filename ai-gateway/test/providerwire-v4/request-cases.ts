@@ -288,6 +288,65 @@ async function comprehensiveCapture(): Promise<SemanticRequest[]> {
   });
 }
 
+function fileInputOptions(): LanguageModelV4CallOptions {
+  return {
+    prompt: [
+      {
+        role: "user",
+        providerOptions: opaqueOptions,
+        content: [
+          { type: "file", filename: "bytes.bin", data: { type: "data", data: new Uint8Array([0, 1, 2]) }, mediaType: "application/octet-stream", providerOptions: opaqueOptions },
+          { type: "file", filename: "", data: { type: "data", data: "" }, mediaType: "application/pdf" },
+          { type: "file", data: { type: "url", url: new URL("https://example.test/file") }, mediaType: "image/png" },
+          { type: "file", data: { type: "reference", reference: { provider: "file-1" } }, mediaType: "application/pdf" },
+          { type: "file", filename: "", data: { type: "text", text: "" }, mediaType: "text/plain", providerOptions: opaqueOptions },
+        ],
+      },
+      {
+        role: "assistant",
+        providerOptions: { provider: {} },
+        content: [
+          { type: "file", data: { type: "data", data: "YWxyZWFkeS1iYXNlNjQ=" }, mediaType: "application/pdf" },
+          { type: "file", filename: "", data: { type: "url", url: new URL("https://example.test/assistant") }, mediaType: "image/png" },
+          { type: "file", data: { type: "reference", reference: { provider: "file-2" } }, mediaType: "application/pdf" },
+          { type: "file", data: { type: "text", text: "assistant text" }, mediaType: "text/plain" },
+          { type: "tool-call", toolCallId: "call-1", toolName: "lookup", input: {} },
+        ],
+      },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: "call-1",
+            toolName: "lookup",
+            output: {
+              type: "content",
+              value: [
+                { type: "file", filename: "result.bin", data: { type: "data", data: new Uint8Array([5, 6]) }, mediaType: "application/octet-stream", providerOptions: opaqueOptions },
+                { type: "file", filename: "", data: { type: "data", data: "" }, mediaType: "application/pdf" },
+                { type: "file", data: { type: "url", url: new URL("https://example.test/result") }, mediaType: "image/png" },
+                { type: "file", data: { type: "reference", reference: { provider: "file-3" } }, mediaType: "application/pdf" },
+                { type: "file", filename: "", data: { type: "text", text: "" }, mediaType: "text/plain" },
+              ],
+            },
+          },
+        ],
+      },
+    ],
+  };
+}
+
+async function fileInputCapture(): Promise<SemanticRequest[]> {
+  return captureCalls({
+    modelId: "grafana/files",
+    calls: async (model) => {
+      await generate(model, fileInputOptions());
+      await stream(model, fileInputOptions());
+    },
+  });
+}
+
 async function streamingCapture(): Promise<SemanticRequest[]> {
   const controller = new AbortController();
   return captureCalls({
@@ -363,6 +422,11 @@ export const comprehensiveGoldenCase: RequestGoldenCase = {
   fileName: "comprehensive-unions.json",
   capture: comprehensiveCapture,
 };
+export const fileInputGoldenCase: RequestGoldenCase = {
+  name: "file inputs",
+  fileName: "file-inputs.json",
+  capture: fileInputCapture,
+};
 export const streamingGoldenCase: RequestGoldenCase = {
   name: "streaming",
   fileName: "streaming.json",
@@ -382,6 +446,7 @@ export const sequenceGoldenCase: RequestGoldenCase = {
 export const requestGoldenCases: RequestGoldenCase[] = [
   scalarGoldenCase,
   comprehensiveGoldenCase,
+  fileInputGoldenCase,
   streamingGoldenCase,
   headersGoldenCase,
   sequenceGoldenCase,

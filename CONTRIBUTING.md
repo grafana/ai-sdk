@@ -95,7 +95,7 @@ git clone https://github.com/grafana/ai-sdk.git
 cd ai-sdk
 
 mise trust   # trust the project config on first checkout
-mise deps    # install workspace dependencies (the test/ pnpm workspace)
+mise deps    # install test workspace dependencies
 ```
 
 Run `mise tasks` to list every task.
@@ -486,15 +486,17 @@ maintainer to trigger CI.
 
 ## Dependency management
 
-The repository uses Go modules across several module roots, plus a pnpm
-workspace under `test/` for TypeScript-side harnesses.
+The repository uses Go modules across several module roots, plus a repository-root
+pnpm workspace for TypeScript-side harnesses. The workspace includes the Gateway
+contract tests under `ai-gateway/`; it does not change their AGPL license or the
+SDK's Go module dependency graph.
 
 `ai-gateway/` is intentionally absent from the root `go.work`. The separate
-`go.gateway.work` is selected by required Gateway source-integration commands;
-it uses local SDK, provider, and middleware source. Standalone module and image
-builds still use declared versions with `GOWORK=off`. Gateway code may import
-explicitly pinned SDK modules, but no module outside `ai-gateway/` may import,
-require, or replace `github.com/grafana/ai-sdk/ai-gateway`. The structural check
+`go.gateway.work` selects local SDK, provider, and middleware source for Gateway
+source checks and image builds. Standalone Go-module validation still uses
+declared versions with `GOWORK=off`. Gateway code may import explicitly pinned
+SDK modules, but no module outside `ai-gateway/` may import, require, or replace
+`github.com/grafana/ai-sdk/ai-gateway`. The structural check
 rejects reverse source and module references; standalone validation builds and tests
 published modules with `GOWORK=off`, and a separate check builds the candidate SDK
 and Grafana client with Gateway source absent. These checks share `scripts/module-policy.sh`.
@@ -505,8 +507,11 @@ merged into canonical `grafana/ai-sdk` `main`. Merged pseudo-versions are valid;
 local-only example/test replacements are not published pins. A green workspace
 integration test proves candidate-source behavior, not standalone consumability.
 All-module standalone validation is available on demand, not a source-PR gate.
-Gateway publication requires standalone validation at the artifact revision.
-Do not use a workspace or an unmerged pin to make a standalone check pass.
+Gateway is released as an image built from same-revision workspace source,
+not as a standalone Go module. Image success does not authorize SDK, provider,
+or middleware Go-module releases; validate those with `GOWORK=off` before
+publication (#245/#21). Do not use a workspace or an unmerged pin to make a
+standalone module check pass.
 
 ```bash
 mise run tidy        # go mod tidy across all modules
@@ -515,9 +520,9 @@ mise run tidy        # go mod tidy across all modules
 Commit `go.mod` and `go.sum` changes together. When adding a dependency to a
 provider or middleware module, run tidy from that module's directory.
 
-The `test/` pnpm workspace is supply-chain hardened: `blockExoticSubdeps`,
+The pnpm test workspace is supply-chain hardened: `blockExoticSubdeps`,
 `strictDepBuilds`, and a `minimumReleaseAge` gate in
-`test/pnpm-workspace.yaml`. Do not bypass those settings to land a version bump.
+`pnpm-workspace.yaml`. Do not bypass those settings to land a version bump.
 Dependency updates are otherwise automated via Renovate
 ([`renovate.json`](renovate.json)).
 

@@ -295,6 +295,33 @@ func TestModel_StreamCancellationAndTransport(t *testing.T) {
 		assert.NotContains(t, parts[1].APICallError.Error(), "private transport error")
 		assert.True(t, body.closed)
 	})
+	t.Run("real transport after output does not replay", func(t *testing.T) {
+		var calls atomic.Int32
+		p := testProvider(t, func(w http.ResponseWriter, r *http.Request) {
+			calls.Add(1)
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.Header().Set("Content-Length", "4096")
+			w.WriteHeader(http.StatusOK)
+			_, _ = io.WriteString(w, sseFrame(`{"type":"text-start","id":"a"}`))
+			w.(http.Flusher).Flush()
+			conn, _, err := w.(http.Hijacker).Hijack()
+			if err != nil {
+				t.Errorf("hijacking response: %v", err)
+				return
+			}
+			_ = conn.Close()
+		}, nil)
+		m, err := p.LanguageModel("assistant")
+		require.NoError(t, err)
+		result, err := m.DoStream(context.Background(), provider.CallOptions{Prompt: []provider.Message{}})
+		require.NoError(t, err)
+		parts := collectParts(t, result)
+		require.Len(t, parts, 2)
+		assert.Equal(t, provider.PartTextStart, parts[0].Type)
+		assert.Equal(t, provider.PartError, parts[1].Type)
+		assert.ErrorIs(t, parts[1].APICallError, io.ErrUnexpectedEOF)
+		assert.Equal(t, int32(1), calls.Load())
+	})
 }
 
 func TestModel_StreamSetupFailure(t *testing.T) {
