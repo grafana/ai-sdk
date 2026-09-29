@@ -56,7 +56,7 @@ func validateToolExecutors(tools ToolSet) error {
 }
 
 func prepareToolsForCallers(tools ToolSet, callers map[string][]string, active []string, activeSet bool) (ToolSet, ToolSet, []provider.Message) {
-	if callers == nil {
+	if tools == nil || callers == nil {
 		return tools, tools, nil
 	}
 	activeNames := make(map[string]bool, len(active))

@@ -33,6 +33,36 @@ func TestToolCallers_Validation(t *testing.T) {
 	}
 }
 
+func TestToolCallers_AbsentAndEmptyTools(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		tools   ToolSet
+		wantNil bool
+	}{
+		{name: "absent", wantNil: true},
+		{name: "explicitly empty", tools: ToolSet{}, wantNil: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var got []provider.Tool
+			model := &mockModel{streamFunc: func(_ context.Context, opts provider.CallOptions) (*provider.StreamResult, error) {
+				got = opts.Tools
+				return &provider.StreamResult{Stream: textStreamParts("done")}, nil
+			}}
+			result := StreamText(t.Context(), model, WithModelMessages(provider.UserText("hello")),
+				WithTools(tc.tools), WithToolCallers(map[string][]string{}))
+			for range result.FullStream() {
+			}
+			require.NoError(t, result.Err())
+			if tc.wantNil {
+				assert.Nil(t, got)
+			} else {
+				assert.NotNil(t, got)
+				assert.Empty(t, got)
+			}
+		})
+	}
+}
+
 func TestToolCallers_InvalidUnusedLocalCaller(t *testing.T) {
 	model := &mockModel{streamFunc: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
 		return &provider.StreamResult{Stream: textStreamParts("unexpected")}, nil
