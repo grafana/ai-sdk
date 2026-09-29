@@ -35,6 +35,12 @@ The plugin must read history since the Gateway's own last release, not union oth
 components' already-truncated commit lists. It must use an explicit allowlist of
 workspace source/runtime paths included in the image, preserve commit metadata needed
 for release notes, and deduplicate by SHA. It must ignore docs/examples-only commits.
+The reviewed [Dockerfile.dockerignore](../../../ai-gateway/Dockerfile.dockerignore)
+is the starting inventory: it includes root Go/workspace files, selected package
+trees, provider and middleware Go/module files, and embedded schemas. Keep the
+release-intent matcher synchronized with that build context, and fail tests when
+either side adds a new source path without updating the other. Changes to the
+Dockerfile or its ignore policy already touch `ai-gateway/` directly.
 The stock action cannot load externally registered plugins, so replacing its invocation
 requires an exact-engine wrapper, bot-token handling, serialization and release-PR/tag
 parity tests. This is a design direction, not an implemented release mechanism.
