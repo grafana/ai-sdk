@@ -2,6 +2,7 @@ package aisdk
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -43,7 +44,7 @@ func TestGeneratedFileDownload_DataAndValidation(t *testing.T) {
 		"ftp://example.com/file", "http://localhost/file", "http://localhost./file",
 		"https://name.local/file", "http://127.0.0.1/file", "http://169.254.169.254/file",
 		"http://[::1]/file", "http://[::ffff:127.0.0.1]/file", "http://[64:ff9b::7f00:1]/file",
-		"http://user:password@example.com/file",
+		(&url.URL{Scheme: "http", Host: "example.com", Path: "/file", User: url.UserPassword("user", "password")}).String(),
 	} {
 		t.Run(raw, func(t *testing.T) {
 			_, err := downloadGeneratedFile(context.Background(), raw)
@@ -96,6 +97,28 @@ func TestGeneratedFileDownload_ValidatedNetwork(t *testing.T) {
 	assert.EqualValues(t, 3, calls.Load())
 	_, err = downloadGeneratedFileWithClient(context.Background(), base+"/error", client)
 	require.ErrorContains(t, err, "HTTP 503")
+
+	t.Run("tries next validated address", func(t *testing.T) {
+		var attempts []string
+		var lookups atomic.Int32
+		fallback := newGeneratedFileClient(func(context.Context, string) ([]net.IPAddr, error) {
+			lookups.Add(1)
+			return []net.IPAddr{{IP: net.ParseIP("8.8.8.8")}, {IP: net.ParseIP("1.1.1.1")}}, nil
+		}, func(ctx context.Context, network, address string) (net.Conn, error) {
+			attempts = append(attempts, address)
+			if address == "8.8.8.8:"+serverURL.Port() {
+				return nil, errors.New("first address unavailable")
+			}
+			return (&net.Dialer{}).DialContext(ctx, network, serverURL.Host)
+		})
+		defer fallback.CloseIdleConnections()
+
+		data, err := downloadGeneratedFileWithClient(context.Background(), base+"/file", fallback)
+		require.NoError(t, err)
+		assert.Equal(t, "Hello World", string(data))
+		assert.Equal(t, []string{"8.8.8.8:" + serverURL.Port(), "1.1.1.1:" + serverURL.Port()}, attempts)
+		assert.EqualValues(t, 1, lookups.Load())
+	})
 }
 
 func TestGeneratedFileDownload_DNSAndBounds(t *testing.T) {
@@ -107,6 +130,16 @@ func TestGeneratedFileDownload_DNSAndBounds(t *testing.T) {
 		return nil, nil
 	})
 	_, err := downloadGeneratedFileWithClient(context.Background(), "http://example.com/file", client)
+	require.ErrorContains(t, err, "disallowed address")
+	assert.False(t, dialed)
+
+	mixed := newGeneratedFileClient(func(context.Context, string) ([]net.IPAddr, error) {
+		return []net.IPAddr{{IP: net.ParseIP("8.8.8.8")}, {IP: net.ParseIP("127.0.0.1")}}, nil
+	}, func(context.Context, string, string) (net.Conn, error) {
+		dialed = true
+		return nil, nil
+	})
+	_, err = downloadGeneratedFileWithClient(context.Background(), "http://example.com/file", mixed)
 	require.ErrorContains(t, err, "disallowed address")
 	assert.False(t, dialed)
 
@@ -164,6 +197,24 @@ func TestGeneratedFileDownload_Cancellation(t *testing.T) {
 	<-started
 	cancel()
 	require.ErrorIs(t, <-finished, context.Canceled)
+
+	t.Run("does not try another address after cancellation", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		var attempts atomic.Int32
+		client := newGeneratedFileClient(func(context.Context, string) ([]net.IPAddr, error) {
+			return []net.IPAddr{{IP: net.ParseIP("8.8.8.8")}, {IP: net.ParseIP("1.1.1.1")}}, nil
+		}, func(context.Context, string, string) (net.Conn, error) {
+			attempts.Add(1)
+			cancel()
+			return nil, context.Canceled
+		})
+		defer client.CloseIdleConnections()
+
+		_, err := downloadGeneratedFileWithClient(ctx, "http://example.com/file", client)
+		require.ErrorIs(t, err, context.Canceled)
+		assert.EqualValues(t, 1, attempts.Load())
+	})
 }
 
 func TestGeneratedFileDownload_FailurePropagation(t *testing.T) {

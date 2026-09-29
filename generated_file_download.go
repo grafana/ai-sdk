@@ -3,6 +3,7 @@ package aisdk
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -209,7 +210,21 @@ func newGeneratedFileClient(lookup func(context.Context, string) ([]net.IPAddr, 
 					return nil, fmt.Errorf("generated file host resolved to a disallowed address")
 				}
 			}
-			return dial(ctx, network, net.JoinHostPort(addresses[0].IP.String(), port))
+			var lastErr error
+			for _, candidate := range addresses {
+				conn, err := dial(ctx, network, net.JoinHostPort(candidate.IP.String(), port))
+				if err == nil {
+					return conn, nil
+				}
+				if ctx.Err() != nil {
+					return nil, ctx.Err()
+				}
+				if errors.Is(err, context.Canceled) {
+					return nil, err
+				}
+				lastErr = err
+			}
+			return nil, fmt.Errorf("dialing generated file host: %w", lastErr)
 		},
 	}
 	return &http.Client{

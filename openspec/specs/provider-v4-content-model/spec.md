@@ -261,6 +261,12 @@ The provider package SHALL define `PartReasoningFile StreamPartType = "reasoning
 - **AND** HTTP(S) downloads SHALL have a 2 GiB maximum, reject unsafe endpoints and redirect targets, validate and pin DNS results at connection time, send no provider credentials, and respect context cancellation
 - **AND** a rejected URL, HTTP failure, or oversized body SHALL fail the operation rather than emitting a malformed file URL
 
+#### Scenario: Validated generated-file DNS fallback
+
+- **WHEN** a generated-file host resolves to multiple public addresses and the first connection fails
+- **THEN** the download SHALL try the next validated address without resolving the hostname again
+- **AND** any unsafe DNS answer SHALL prevent all connection attempts, and cancellation SHALL stop fallback
+
 #### Scenario: Public content preserves generated-file order and metadata
 - **WHEN** regular files, text, reasoning files, tools, or sources are interleaved in provider output
 - **THEN** `StepResult.Content` SHALL preserve recorded provider order for those parts and regular/reasoning file content SHALL retain provider metadata
