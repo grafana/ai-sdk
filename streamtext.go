@@ -1809,9 +1809,6 @@ func (r *StreamTextResult) executeSingleTool(
 	var err error
 	if tool.ExecuteStream != nil {
 		err = tool.ExecuteStream(ctx, tc.Input, opts, func(value json.RawMessage) error {
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
 			preliminary := append(json.RawMessage(nil), value...)
 			if emitErr := emit(StreamToolResult{
 				ToolCallID: tc.ToolCallID, ToolName: tc.ToolName, Input: tc.Input,
