@@ -17,7 +17,7 @@ var anthropicOptionPolicy = catalog.ProviderOptionPolicy{
 	Namespaces: []string{"anthropic"},
 	Fields: map[string][]string{"anthropic": {
 		// AnthropicOptions, read at call level.
-		"thinking", "structuredOutputMode", "disableParallelToolUse", "effort", "betas", "taskBudget", "toolStreaming",
+		"thinking", "structuredOutputMode", "disableParallelToolUse", "effort", "betas", "taskBudget", "toolStreaming", "safeguards",
 		// AnthropicSystemMessageOptions, read on system messages. cacheControl
 		// is also read on messages and parts, under either spelling.
 		"toolChanges", "cacheControl",

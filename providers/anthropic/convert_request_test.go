@@ -24,6 +24,162 @@ var (
 	_ provider.ProviderOption = AnthropicCacheControl{}
 )
 
+func TestSafeguardsSDKOverlayTransport(t *testing.T) {
+	for _, vertex := range []bool{false, true} {
+		for _, stream := range []bool{false, true} {
+			t.Run(fmt.Sprintf("vertex=%t/stream=%t", vertex, stream), func(t *testing.T) {
+				type capturedRequest struct {
+					body  map[string]json.RawMessage
+					betas string
+				}
+				requests := make(chan capturedRequest, 1)
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					var body map[string]json.RawMessage
+					if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+						http.Error(w, err.Error(), http.StatusBadRequest)
+						return
+					}
+					requests <- capturedRequest{body: body, betas: r.Header.Get("anthropic-beta")}
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusBadRequest)
+					_, _ = w.Write([]byte(`{"type":"error","error":{"type":"invalid_request_error","message":"captured"}}`))
+				}))
+				defer server.Close()
+
+				caps := directProviderCapabilities
+				if vertex {
+					caps = vertexProviderCapabilities
+				}
+				p, _, _, br, err := buildParamsWithCapabilities("claude-sonnet-4-6", provider.CallOptions{
+					Prompt: []provider.Message{provider.UserText("hello")},
+				}, stream, caps)
+				require.NoError(t, err)
+				p.MaxTokens = 1024
+				p.Betas = appendBetaUnique(p.Betas, "dangerous-tool-use-2026-09-03")
+				requestOpts := append(br.requestOptions, option.WithJSONSet("safeguards", []map[string]any{
+					{"type": "dangerous_tool_use", "classifier_context": map[string]any{"v": 1, "nested": []any{true, nil}}},
+				}))
+				requestOpts = append(requestOpts, option.WithJSONSet("metadata.user_id", "probe"), option.WithBaseURL(server.URL), option.WithHTTPClient(server.Client()), option.WithMaxRetries(0))
+				client := sdk.NewClient(option.WithoutEnvironmentDefaults(), option.WithAPIKey("test-key"))
+				var callErr error
+				if stream {
+					s := client.Beta.Messages.NewStreaming(context.Background(), p, requestOpts...)
+					_ = s.Next()
+					callErr = s.Err()
+					_ = s.Close()
+				} else {
+					_, callErr = client.Beta.Messages.New(context.Background(), p, requestOpts...)
+				}
+				var captured capturedRequest
+				select {
+				case captured = <-requests:
+				default:
+					require.FailNow(t, "SDK did not send a request", "%v", callErr)
+				}
+				assert.JSONEq(t, `[{"type":"dangerous_tool_use","classifier_context":{"v":1,"nested":[true,null]}}]`, string(captured.body["safeguards"]))
+				assert.JSONEq(t, `{"user_id":"probe"}`, string(captured.body["metadata"]))
+				assert.Contains(t, captured.betas, "dangerous-tool-use-2026-09-03")
+			})
+		}
+	}
+}
+
+func TestSafeguardsRequest(t *testing.T) {
+	classifierContext := map[string]json.RawMessage{
+		"v": json.RawMessage(`1`), "nested": json.RawMessage(`{"values":[true,null]}`),
+	}
+	empty := map[string]json.RawMessage{}
+	var nilContext map[string]json.RawMessage
+	roundTrip := func(opts provider.ProviderOptions) provider.ProviderOptions {
+		data, err := json.Marshal(opts)
+		require.NoError(t, err)
+		var decoded provider.ProviderOptions
+		require.NoError(t, json.Unmarshal(data, &decoded))
+		return decoded
+	}
+	raw := func(data string) provider.ProviderOptions {
+		return provider.ProviderOptions{"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(data)}}
+	}
+	cases := []struct {
+		name           string
+		options        provider.ProviderOptions
+		wantSafeguards string
+		wantBeta       int
+		wantOtherBeta  bool
+		invalid        bool
+	}{
+		{name: "omitted"},
+		{name: "empty", options: provider.BuildProviderOptions(AnthropicOptions{Safeguards: []AnthropicSafeguard{}})},
+		{name: "configured", options: provider.BuildProviderOptions(AnthropicOptions{Safeguards: []AnthropicSafeguard{{Type: AnthropicSafeguardDangerousToolUse, ClassifierContext: &classifierContext}}}), wantSafeguards: `[{"type":"dangerous_tool_use","classifier_context":{"v":1,"nested":{"values":[true,null]}}}]`, wantBeta: 1},
+		{name: "round trip", options: roundTrip(provider.BuildProviderOptions(AnthropicOptions{Safeguards: []AnthropicSafeguard{{Type: AnthropicSafeguardDangerousToolUse, ClassifierContext: &classifierContext}}})), wantSafeguards: `[{"type":"dangerous_tool_use","classifier_context":{"v":1,"nested":{"values":[true,null]}}}]`, wantBeta: 1},
+		{name: "empty context round trip", options: roundTrip(provider.BuildProviderOptions(AnthropicOptions{Safeguards: []AnthropicSafeguard{{Type: AnthropicSafeguardDangerousToolUse, ClassifierContext: &empty}}})), wantSafeguards: `[{"type":"dangerous_tool_use","classifier_context":{}}]`, wantBeta: 1},
+		{name: "absent context", options: provider.BuildProviderOptions(AnthropicOptions{Safeguards: []AnthropicSafeguard{{Type: AnthropicSafeguardDangerousToolUse}}}), wantSafeguards: `[{"type":"dangerous_tool_use"}]`, wantBeta: 1},
+		{name: "deduplicated beta", options: provider.BuildProviderOptions(AnthropicOptions{Betas: []string{"other-beta", "dangerous-tool-use-2026-09-03"}, Safeguards: []AnthropicSafeguard{{Type: AnthropicSafeguardDangerousToolUse}}}), wantSafeguards: `[{"type":"dangerous_tool_use"}]`, wantBeta: 1, wantOtherBeta: true},
+		{name: "explicit beta without safeguards", options: provider.BuildProviderOptions(AnthropicOptions{Betas: []string{"dangerous-tool-use-2026-09-03"}}), wantBeta: 1},
+		{name: "raw null safeguards", options: raw(`{"safeguards":null}`), invalid: true},
+		{name: "raw null context", options: raw(`{"safeguards":[{"type":"dangerous_tool_use","classifierContext":null}]}`), invalid: true},
+		{name: "typed nil context map", options: provider.BuildProviderOptions(AnthropicOptions{Safeguards: []AnthropicSafeguard{{Type: AnthropicSafeguardDangerousToolUse, ClassifierContext: &nilContext}}}), invalid: true},
+		{name: "unsupported type", options: provider.BuildProviderOptions(AnthropicOptions{Safeguards: []AnthropicSafeguard{{Type: AnthropicSafeguardType("other")}}}), invalid: true},
+		{name: "missing type", options: raw(`{"safeguards":[{}]}`), invalid: true},
+		{name: "non-object context", options: raw(`{"safeguards":[{"type":"dangerous_tool_use","classifierContext":1}]}`), invalid: true},
+		{name: "invalid context JSON", options: provider.BuildProviderOptions(AnthropicOptions{Safeguards: []AnthropicSafeguard{{Type: AnthropicSafeguardDangerousToolUse, ClassifierContext: &map[string]json.RawMessage{"bad": json.RawMessage(`{`)}}}}), invalid: true},
+		{name: "empty raw context value", options: provider.BuildProviderOptions(AnthropicOptions{Safeguards: []AnthropicSafeguard{{Type: AnthropicSafeguardDangerousToolUse, ClassifierContext: &map[string]json.RawMessage{"bad": nil}}}}), invalid: true},
+	}
+	for _, tc := range cases {
+		for _, vertex := range []bool{false, true} {
+			for _, stream := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/vertex=%t/stream=%t", tc.name, vertex, stream), func(t *testing.T) {
+					type capturedRequest struct {
+						body  map[string]json.RawMessage
+						betas string
+					}
+					requests := make(chan capturedRequest, 1)
+					var count atomic.Int32
+					server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+						count.Add(1)
+						var body map[string]json.RawMessage
+						if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+							http.Error(w, err.Error(), http.StatusBadRequest)
+							return
+						}
+						requests <- capturedRequest{body: body, betas: strings.Join(r.Header.Values("anthropic-beta"), ",")}
+						w.Header().Set("Content-Type", "application/json")
+						w.WriteHeader(http.StatusBadRequest)
+						_, _ = w.Write([]byte(`{"type":"error","error":{"type":"invalid_request_error","message":"captured"}}`))
+					}))
+					defer server.Close()
+					m := New("test-key", "claude-sonnet-4-6", WithRequestOptions(option.WithBaseURL(server.URL), option.WithHTTPClient(server.Client()), option.WithMaxRetries(0))).(*model)
+					if vertex {
+						m.capabilities = vertexProviderCapabilities
+					}
+					maxTokens := 1024
+					opts := provider.CallOptions{Prompt: []provider.Message{provider.UserText("hello")}, MaxOutputTokens: &maxTokens, ProviderOptions: tc.options}
+					var err error
+					if stream {
+						_, err = m.DoStream(context.Background(), opts)
+					} else {
+						_, err = m.DoGenerate(context.Background(), opts)
+					}
+					require.Error(t, err)
+					if tc.invalid {
+						assert.Zero(t, count.Load())
+						return
+					}
+					require.EqualValues(t, 1, count.Load())
+					captured := <-requests
+					if tc.wantSafeguards == "" {
+						assert.NotContains(t, captured.body, "safeguards")
+					} else {
+						assert.JSONEq(t, tc.wantSafeguards, string(captured.body["safeguards"]))
+					}
+					assert.Equal(t, tc.wantBeta, strings.Count(captured.betas, "dangerous-tool-use-2026-09-03"))
+					assert.Equal(t, tc.wantOtherBeta, strings.Contains(captured.betas, "other-beta"))
+				})
+			}
+		}
+	}
+}
+
 func warningFeatures(warnings []provider.Warning) []string {
 	features := make([]string, 0, len(warnings))
 	for _, w := range warnings {

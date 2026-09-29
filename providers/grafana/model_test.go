@@ -100,6 +100,79 @@ func TestModel_GenerateRequestAndNormalization(t *testing.T) {
 	assert.Equal(t, int32(1), calls.Load())
 }
 
+func TestModel_UnaryRawUsage(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{name: "absent"},
+		{name: "empty", raw: `{}`, want: `{}`},
+		{name: "native", raw: `{"input_tokens":32,"service_tier":"standard","nested":[1,true]}`, want: `{"input_tokens":32,"service_tier":"standard","nested":[1,true]}`},
+		{name: "valid surrogate", raw: `{"nested":{"\ud83d\ude00":1}}`, want: `{"nested":{"😀":1}}`},
+		{name: "lone high key", raw: `{"nested":{"\ud800":"private"}}`, want: `{"nested":{"\ud800":"private"}}`},
+		{name: "lone low nested", raw: `{"nested":["\udc00"]}`, want: `{"nested":["\udc00"]}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := unaryFixture
+			if tc.raw != "" {
+				body = strings.Replace(body, `"outputTokens":{"total":1,"text":1,"reasoning":0}`, `"outputTokens":{"total":1,"text":1,"reasoning":0},"raw":`+tc.raw, 1)
+			}
+			p := testProvider(t, func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = io.WriteString(w, body)
+			}, nil)
+			m, err := p.LanguageModel("assistant")
+			require.NoError(t, err)
+			result, err := m.DoGenerate(context.Background(), provider.CallOptions{})
+			require.NoError(t, err)
+			assert.Equal(t, 2, *result.Usage.InputTokens.Total)
+			if tc.want == "" {
+				assert.Nil(t, result.Usage.Raw)
+			} else {
+				assert.JSONEq(t, tc.want, string(result.Usage.Raw))
+				if strings.Contains(tc.name, "lone") {
+					assert.Equal(t, tc.raw, string(result.Usage.Raw))
+				}
+			}
+		})
+	}
+}
+
+func TestModel_UnaryRawUsageSize(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		raw      string
+		wantSize int
+	}{
+		{name: "exact", raw: `{"large":"` + strings.Repeat("x", maxRawUsageBytes-len(`{"large":""}`)) + `"}`, wantSize: maxRawUsageBytes},
+		{name: "one over", raw: `{"large":"` + strings.Repeat("x", maxRawUsageBytes+1-len(`{"large":""}`)) + `"}`},
+		{name: "whitespace exact", raw: strings.Repeat(" ", maxRawUsageBytes-2) + `{}`, wantSize: 2},
+		{name: "leading whitespace", raw: strings.Repeat(" ", maxRawUsageBytes-1) + `{}`, wantSize: 2},
+		{name: "trailing whitespace", raw: `{}` + strings.Repeat(" ", maxRawUsageBytes-1), wantSize: 2},
+		{name: "interior whitespace", raw: `{"x":` + strings.Repeat(" ", maxRawUsageBytes) + `0}`, wantSize: len(`{"x":0}`)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := strings.Replace(unaryFixture, `"outputTokens":{"total":1,"text":1,"reasoning":0}`, `"outputTokens":{"total":1,"text":1,"reasoning":0},"raw":`+tc.raw, 1)
+			p := testProvider(t, func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = io.WriteString(w, body)
+			}, nil)
+			m, err := p.LanguageModel("assistant")
+			require.NoError(t, err)
+			result, err := m.DoGenerate(context.Background(), provider.CallOptions{})
+			if tc.wantSize != 0 {
+				require.NoError(t, err)
+				assert.Len(t, result.Usage.Raw, tc.wantSize)
+				assert.JSONEq(t, tc.raw, string(result.Usage.Raw))
+			} else {
+				require.Error(t, err)
+				assert.Nil(t, result)
+			}
+		})
+	}
+}
+
 func TestModel_UnaryFailures(t *testing.T) {
 	for _, tc := range []struct{ name, body string }{
 		{"missing content", `{"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}}}`},
@@ -118,6 +191,12 @@ func TestModel_UnaryFailures(t *testing.T) {
 		{"unsafe usage", strings.Replace(unaryFixture, `"total":2`, `"total":9007199254740992`, 1)},
 		{"fractional usage", strings.Replace(unaryFixture, `"total":2`, `"total":0.5`, 1)},
 		{"missing usage side", strings.Replace(unaryFixture, `"outputTokens"`, `"missing"`, 1)},
+		{"null raw", strings.Replace(unaryFixture, `"outputTokens":{"total":1,"text":1,"reasoning":0}`, `"outputTokens":{"total":1,"text":1,"reasoning":0},"raw":null`, 1)},
+		{"array raw", strings.Replace(unaryFixture, `"outputTokens":{"total":1,"text":1,"reasoning":0}`, `"outputTokens":{"total":1,"text":1,"reasoning":0},"raw":[]`, 1)},
+		{"scalar raw", strings.Replace(unaryFixture, `"outputTokens":{"total":1,"text":1,"reasoning":0}`, `"outputTokens":{"total":1,"text":1,"reasoning":0},"raw":1`, 1)},
+		{"invalid UTF-8 raw", strings.Replace(unaryFixture, `"outputTokens":{"total":1,"text":1,"reasoning":0}`, `"outputTokens":{"total":1,"text":1,"reasoning":0},"raw":{"nested":"`+string([]byte{0xff})+`"}`, 1)},
+		{"malformed raw", strings.Replace(unaryFixture, `"outputTokens":{"total":1,"text":1,"reasoning":0}`, `"outputTokens":{"total":1,"text":1,"reasoning":0},"raw":{"private":`, 1)},
+		{"oversized raw", strings.Replace(unaryFixture, `"outputTokens":{"total":1,"text":1,"reasoning":0}`, `"outputTokens":{"total":1,"text":1,"reasoning":0},"raw":{"private":"`+strings.Repeat("x", 1<<20)+`"}`, 1)},
 		{"trailing", unaryFixture + `{}`},
 		{"malformed", `{"content":`},
 	} {
@@ -134,6 +213,7 @@ func TestModel_UnaryFailures(t *testing.T) {
 			var api *provider.APICallError
 			require.ErrorAs(t, err, &api)
 			assert.False(t, api.IsRetryable)
+			assert.NotContains(t, err.Error(), "private")
 		})
 	}
 }

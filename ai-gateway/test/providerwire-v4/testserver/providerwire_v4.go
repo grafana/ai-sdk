@@ -17,6 +17,8 @@ import (
 
 const providerWireV4Prefix = "/providerwire-v4"
 
+var syntheticRawUsage = json.RawMessage(`{"input_tokens":32,"cache_read_input_tokens":18,"service_tier":"standard","inference_geo":"us","nested":{"tokens":[1,2]}}`)
+
 type providerWireV4Stats struct {
 	successCalls        atomic.Int64
 	streamCalls         atomic.Int64
@@ -129,6 +131,12 @@ func (m *providerWireV4Model) DoStream(ctx context.Context, options provider.Cal
 			provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "call-weather", ToolName: "weather", Input: `{"city":"Rio"}`},
 			provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonToolCalls}, Usage: &provider.Usage{}},
 		)}, nil
+	case "raw-usage", "raw-usage-empty":
+		raw := syntheticRawUsage
+		if m.kind == "raw-usage-empty" {
+			raw = json.RawMessage(`{}`)
+		}
+		return &provider.StreamResult{Stream: scenarioStream(provider.StreamPart{Type: provider.PartFinish, Usage: &provider.Usage{Raw: raw}, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}})}, nil
 	case "success":
 		m.stats.recordSuccess(options)
 		stream := make(chan provider.StreamPart, 8)
@@ -203,6 +211,12 @@ func (m *providerWireV4Model) DoGenerate(ctx context.Context, options provider.C
 			call.Dynamic = &yes
 		}
 		return &provider.GenerateResult{Content: []provider.GenerateContentPart{{Type: provider.ContentText, Text: ""}, call}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonToolCalls}}, nil
+	case "raw-usage", "raw-usage-empty":
+		raw := syntheticRawUsage
+		if m.kind == "raw-usage-empty" {
+			raw = json.RawMessage(`{}`)
+		}
+		return &provider.GenerateResult{Content: []provider.GenerateContentPart{{Type: provider.ContentText, Text: "ok"}}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: provider.Usage{Raw: raw}}, nil
 	case "success":
 		m.stats.recordSuccess(options)
 		zero := 0
@@ -237,8 +251,8 @@ type providerWireV4Scenario struct {
 
 func newProviderWireV4Scenario() (*providerWireV4Scenario, error) {
 	stats := &providerWireV4Stats{}
-	entries := make([]catalog.StaticEntry, 0, 5)
-	for _, id := range []string{"reasoning-files", "reasoning", "success", "blocking", "stream-errors", "stream-timeout", "stream-blocking", "unary-tools", "unary-tools-provider-executed", "unary-tools-dynamic", "stream-tools", "stream-tool-results", "stream-tool-arguments"} {
+	entries := make([]catalog.StaticEntry, 0, 15)
+	for _, id := range []string{"reasoning-files", "reasoning", "success", "raw-usage", "raw-usage-empty", "blocking", "stream-errors", "stream-timeout", "stream-blocking", "unary-tools", "unary-tools-provider-executed", "unary-tools-dynamic", "stream-tools", "stream-tool-results", "stream-tool-arguments"} {
 		var policy catalog.ProviderOptionPolicy
 		if id == "reasoning" || id == "reasoning-files" {
 			policy = catalog.ProviderOptionPolicy{

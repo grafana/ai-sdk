@@ -118,6 +118,79 @@ func TestModel_StreamNormalization(t *testing.T) {
 	}
 }
 
+func TestModel_StreamRawUsage(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{name: "absent"},
+		{name: "empty", raw: `{}`, want: `{}`},
+		{name: "native", raw: `{"input_tokens":32,"service_tier":"standard","nested":[1,true]}`, want: `{"input_tokens":32,"service_tier":"standard","nested":[1,true]}`},
+		{name: "valid surrogate", raw: `{"nested":{"\ud83d\ude00":1}}`, want: `{"nested":{"😀":1}}`},
+		{name: "lone high key", raw: `{"nested":{"\ud800":1}}`, want: `{"nested":{"\ud800":1}}`},
+		{name: "lone low nested", raw: `{"nested":["\udc00"]}`, want: `{"nested":["\udc00"]}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			finish := finishEvent
+			if tc.raw != "" {
+				finish = strings.Replace(finish, `"outputTokens":{}`, `"outputTokens":{},"raw":`+tc.raw, 1)
+			}
+			m := streamFromBody(t, io.NopCloser(strings.NewReader(sseFrame(`{"type":"raw","rawValue":{}}`)+sseFrame(finish))), nil)
+			result, err := m.DoStream(context.Background(), provider.CallOptions{IncludeRawChunks: false})
+			require.NoError(t, err)
+			parts := collectParts(t, result)
+			require.Len(t, parts, 1)
+			require.Equal(t, provider.PartFinish, parts[0].Type)
+			require.NotNil(t, parts[0].Usage)
+			if tc.want == "" {
+				assert.Nil(t, parts[0].Usage.Raw)
+			} else {
+				assert.JSONEq(t, tc.want, string(parts[0].Usage.Raw))
+				if strings.Contains(tc.name, "lone") {
+					assert.Equal(t, tc.raw, string(parts[0].Usage.Raw))
+				}
+			}
+		})
+	}
+}
+
+func TestModel_StreamRawUsageSize(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		raw      string
+		wantSize int
+	}{
+		{name: "exact", raw: `{"large":"` + strings.Repeat("x", maxRawUsageBytes-len(`{"large":""}`)) + `"}`, wantSize: maxRawUsageBytes},
+		{name: "one over", raw: `{"large":"` + strings.Repeat("x", maxRawUsageBytes+1-len(`{"large":""}`)) + `"}`},
+		{name: "whitespace exact", raw: strings.Repeat(" ", maxRawUsageBytes-2) + `{}`, wantSize: 2},
+		{name: "leading whitespace", raw: strings.Repeat(" ", maxRawUsageBytes-1) + `{}`, wantSize: 2},
+		{name: "trailing whitespace", raw: `{}` + strings.Repeat(" ", maxRawUsageBytes-1), wantSize: 2},
+		{name: "interior whitespace", raw: `{"x":` + strings.Repeat(" ", maxRawUsageBytes) + `0}`, wantSize: len(`{"x":0}`)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			finish := strings.Replace(finishEvent, `"outputTokens":{}`, `"outputTokens":{},"raw":`+tc.raw, 1)
+			limits := DefaultLimits()
+			limits.StreamEventBytes = 2 << 20
+			m := streamFromBody(t, io.NopCloser(strings.NewReader(sseFrame(finish))), &limits)
+			result, err := m.DoStream(context.Background(), provider.CallOptions{})
+			require.NoError(t, err)
+			parts := collectParts(t, result)
+			require.Len(t, parts, 1)
+			if tc.wantSize != 0 {
+				require.Equal(t, provider.PartFinish, parts[0].Type)
+				require.NotNil(t, parts[0].Usage)
+				assert.Len(t, parts[0].Usage.Raw, tc.wantSize)
+				assert.JSONEq(t, tc.raw, string(parts[0].Usage.Raw))
+			} else {
+				if assert.Equal(t, provider.PartError, parts[0].Type) && assert.NotNil(t, parts[0].APICallError) {
+					assert.False(t, parts[0].APICallError.IsRetryable)
+				}
+			}
+		})
+	}
+}
+
 func TestModel_StreamEOF(t *testing.T) {
 	for _, tc := range []struct {
 		name, payload string
@@ -173,11 +246,20 @@ func TestModel_StreamFramingAndWarnings(t *testing.T) {
 
 func TestModel_StreamInvalidEvents(t *testing.T) {
 	for _, event := range []string{
+		strings.Replace(finishEvent, `"outputTokens":{}`, `"outputTokens":{},"raw":null`, 1),
+		strings.Replace(finishEvent, `"outputTokens":{}`, `"outputTokens":{},"raw":[]`, 1),
+		strings.Replace(finishEvent, `"outputTokens":{}`, `"outputTokens":{},"raw":{"nested":"`+string([]byte{0xff})+`"}`, 1),
+		strings.Replace(finishEvent, `"outputTokens":{}`, `"outputTokens":{},"raw":{"private":`, 1),
+		strings.Replace(finishEvent, `"outputTokens":{}`, `"outputTokens":{},"raw":{"private":"`+strings.Repeat("x", 1<<20)+`"}`, 1),
 		`{"type":"stream-start","warnings":[{"Type":"other","message":"safe"}]}`,
 		`{"type":"stream-start","warnings":[{"type":"other","Message":"safe"}]}`,
 		`{"type":"reasoning-start"}`, `{"type":"text-start"}`, `{"type":"text-delta","id":"a"}`, `{"type":"text-end","id":null}`, `{"type":"finish"}`, `{"type":"stream-start"}`, `{"type":"stream-start","warnings":[{"type":"unknown"}]}`, `{"type":"response-metadata","timestamp":"bad"}`, `{"type":"raw"}`, `{"type":"error","error":{"message":"bad"}}`, `{"type":"error","error":{"message":"safe","type":"internal_server_error","param":null,"code":"upstream_error","statusCode":502,"retryable":false}}`, `{"type":"text-delta","id":"a","delta":1}`, `{"type":"finish","finishReason":{"unified":"stop"},"usage":{"inputTokens":{"total":-1},"outputTokens":{}}}`, `{"type":`, "[DONE] ", "",
 	} {
-		t.Run(event, func(t *testing.T) {
+		name := event
+		if len(name) > 120 {
+			name = name[:120]
+		}
+		t.Run(name, func(t *testing.T) {
 			payload := sseFrame(event) + sseFrame(finishEvent)
 			body := &trackedBody{Reader: strings.NewReader(payload)}
 			m := streamFromBody(t, body, nil)
@@ -188,6 +270,7 @@ func TestModel_StreamInvalidEvents(t *testing.T) {
 			assert.Equal(t, provider.PartError, parts[0].Type)
 			require.NotNil(t, parts[0].APICallError)
 			assert.False(t, parts[0].APICallError.IsRetryable)
+			assert.NotContains(t, parts[0].APICallError.Error(), "private")
 			assert.True(t, body.closed)
 		})
 	}

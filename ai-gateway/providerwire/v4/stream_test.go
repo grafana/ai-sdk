@@ -198,7 +198,7 @@ func TestStreamingRuntimeHappyPathPrivacyAndOrder(t *testing.T) {
 		{Type: provider.PartError, APICallError: nil},
 		{Type: provider.PartTextDelta, ID: "text-1", Delta: "hello"},
 		{Type: provider.PartTextEnd, ID: "text-1"},
-		{Type: provider.PartFinish, Usage: &provider.Usage{InputTokens: provider.InputTokenUsage{Total: &total}, Raw: json.RawMessage(`{"secret":true}`)}, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}},
+		{Type: provider.PartFinish, Usage: &provider.Usage{InputTokens: provider.InputTokenUsage{Total: &total}, Raw: json.RawMessage(`{"native_usage":true}`)}, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}},
 	}
 	harness := newRuntimeHarness(t, testLimits())
 	harness.model.stream = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
@@ -223,7 +223,7 @@ func TestStreamingRuntimeHappyPathPrivacyAndOrder(t *testing.T) {
 		`{"type":"error","error":{"message":"internal error","type":"internal_server_error","param":null,"code":"internal_error","statusCode":500,"retryable":true}}`,
 		`{"type":"text-delta","id":"text-1","delta":"hello"}`,
 		`{"type":"text-end","id":"text-1"}`,
-		`{"type":"finish","usage":{"inputTokens":{"total":3},"outputTokens":{}},"finishReason":{"unified":"stop"}}`,
+		`{"type":"finish","usage":{"inputTokens":{"total":3},"outputTokens":{},"raw":{"native_usage":true}},"finishReason":{"unified":"stop"}}`,
 	}
 	position := 0
 	for _, payload := range expected {
