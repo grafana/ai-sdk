@@ -106,11 +106,16 @@ The Anthropic provider SHALL trim ECMAScript-defined leading and trailing whites
 
 ### Requirement: Assistant compaction text round-trips without trimming
 
-An assistant text part with `ProviderOptions["anthropic"].type == "compaction"` SHALL be serialized as an Anthropic `compaction` content block rather than a `text` block. Its content SHALL remain byte-identical even when it is the final content part of the final assistant block. Part-level and message-level cache control SHALL be resolved by the same rules as ordinary assistant text.
+A nonempty assistant text part with `ProviderOptions["anthropic"].type == "compaction"` SHALL be serialized as an Anthropic `compaction` content block rather than a `text` block. Its content SHALL remain byte-identical even when it is the final content part of the final assistant block. An empty compaction part SHALL be omitted; if its assistant message has no other content, that message SHALL also be omitted. Part-level and message-level cache control SHALL be resolved by the same rules as ordinary assistant text.
 
 #### Scenario: Final compaction content preserves whitespace and block type
 - **WHEN** the prompt ends with an assistant text part containing `"Compaction summary  \n"` and Anthropic provider option `type == "compaction"`
 - **THEN** the resulting content block SHALL be `{type: "compaction", content: "Compaction summary  \n"}`
+
+#### Scenario: Empty compaction does not produce an invalid block or message
+- **WHEN** an assistant message contains only an empty compaction part
+- **THEN** neither the compaction block nor the empty assistant message is sent to Anthropic
+- **AND** an empty compaction part alongside ordinary text is omitted without dropping that text
 
 ### Requirement: System messages continue to flow into p.System
 

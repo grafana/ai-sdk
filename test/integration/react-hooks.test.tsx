@@ -70,6 +70,8 @@ type AgentToolPart = {
   input?: unknown;
   output?: unknown;
   text?: string;
+  url?: string;
+  mediaType?: string;
   approval?: {
     id: string;
     approved?: boolean;
@@ -91,6 +93,9 @@ function ChatProbe({ scenario }: { scenario: string }) {
     }),
   });
   const statusHistory = useSnapshotHistory<ChatStatus>(status);
+  const files = (messages as AgentToolMessage[])
+    .flatMap(message => message.parts)
+    .filter(part => part.type === "file");
 
   return (
     <div>
@@ -108,6 +113,7 @@ function ChatProbe({ scenario }: { scenario: string }) {
       <div data-testid="chat-text">
         {assistantText(messages as AgentToolMessage[])}
       </div>
+      <div data-testid="chat-files">{JSON.stringify(files)}</div>
     </div>
   );
 }
@@ -291,6 +297,24 @@ describe("React hook interop", () => {
         screen.getByTestId("chat-status-history").textContent ?? "[]",
       ) as ChatStatus[];
       expectOrderedSubsequence(history, ["submitted", "streaming", "ready"]);
+    });
+  });
+
+  it("useChat assembles a resolved generated file from Go SSE", async () => {
+    render(<ChatProbe scenario="generated-file" />);
+    screen.getByTestId("chat-send").click();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("chat-status").textContent).toBe("ready");
+      expect(JSON.parse(screen.getByTestId("chat-files").textContent ?? "[]")).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: "file",
+            mediaType: "text/plain",
+            url: "data:text/plain;base64,SGVsbG8=",
+          }),
+        ]),
+      );
     });
   });
 

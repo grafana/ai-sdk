@@ -669,7 +669,7 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 		if stepTimer != nil {
 			stepTimer.Stop()
 		}
-		if err != nil {
+		if err != nil && ctx.Err() == nil {
 			r.emitError(err, cfg.onError)
 			return
 		}
@@ -1139,7 +1139,10 @@ loop:
 			}
 
 		case provider.PartFile:
-			gf := generatedFileFromStreamData(part.Data, part.MediaType)
+			gf, err := resolveGeneratedFile(ctx, part.Data, part.MediaType)
+			if err != nil {
+				return step, false, false, hasOutput, err
+			}
 			step.Files = append(step.Files, gf)
 			step.responseContent = append(step.responseContent, provider.ContentPart{
 				Type:            provider.ContentPartTypeFile,
@@ -1152,7 +1155,10 @@ loop:
 			r.callOnChunk(cfg, tsp)
 
 		case provider.PartReasoningFile:
-			gf := generatedFileFromStreamData(part.Data, part.MediaType)
+			gf, err := resolveGeneratedFile(ctx, part.Data, part.MediaType)
+			if err != nil {
+				return step, false, false, hasOutput, err
+			}
 			reasoningBlocks = append(reasoningBlocks, ReasoningFileOutput{File: gf, ProviderMetadata: part.ProviderMetadata})
 			step.responseContent = append(step.responseContent, provider.ContentPart{
 				Type:            provider.ContentPartTypeReasoningFile,

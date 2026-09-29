@@ -590,6 +590,10 @@ Before building an OpenAI Responses request, the provider SHALL normalize each s
 - **WHEN** a JSON response schema or regular or namespaced function input or optional output schema contains a boolean or non-string-schema, non-null `propertyNames` value, including in a nested schema
 - **THEN** request preparation returns an error identifying unsupported `propertyNames` and sends no HTTP request
 
+#### Scenario: Function tools default to non-strict requests
+- **WHEN** a function tool has no explicit strict setting, including inside a namespace or with programmatic tool options
+- **THEN** its Responses request contains `strict: false`; explicit true and false values remain unchanged
+
 #### Scenario: Generate and stream agree with strict disabled
 - **WHEN** equivalent response and function-tool schemas are submitted through `DoGenerate` and `DoStream`, including with `strictJsonSchema` false
 - **THEN** their requests contain the same normalized schema payloads and compatible warnings, with the requested `strict` setting unchanged

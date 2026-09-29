@@ -337,10 +337,12 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 				}
 				content = append(content, converted...)
 			}
-			p.Messages = append(p.Messages, anthropic.BetaMessageParam{
-				Role:    anthropic.BetaMessageParamRoleAssistant,
-				Content: content,
-			})
+			if len(content) > 0 {
+				p.Messages = append(p.Messages, anthropic.BetaMessageParam{
+					Role:    anthropic.BetaMessageParamRoleAssistant,
+					Content: content,
+				})
+			}
 		}
 	}
 
@@ -965,6 +967,9 @@ func convertAssistantContent(v *cacheControlValidator, mapping toolNameMapping, 
 		case provider.ContentPartTypeText:
 			cc := v.resolveCacheControl(p.ProviderOptions, msgOpts, isLast, true)
 			if isCompaction(p.ProviderOptions) {
+				if p.Text == "" {
+					continue
+				}
 				blocks = append(blocks, anthropic.BetaContentBlockParamUnion{
 					OfCompaction: &anthropic.BetaCompactionBlockParam{
 						Content:      anthropic.String(p.Text),
