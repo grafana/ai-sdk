@@ -6,7 +6,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -152,10 +151,19 @@ func TestModel_StreamRawUsage(t *testing.T) {
 }
 
 func TestModel_StreamRawUsageSize(t *testing.T) {
-	for _, size := range []int{maxRawUsageBytes, maxRawUsageBytes + 1} {
-		t.Run(strconv.Itoa(size), func(t *testing.T) {
-			raw := `{"large":"` + strings.Repeat("x", size-len(`{"large":""}`)) + `"}`
-			finish := strings.Replace(finishEvent, `"outputTokens":{}`, `"outputTokens":{},"raw":`+raw, 1)
+	for _, tc := range []struct {
+		name  string
+		raw   string
+		valid bool
+	}{
+		{name: "exact", raw: `{"large":"` + strings.Repeat("x", maxRawUsageBytes-len(`{"large":""}`)) + `"}`, valid: true},
+		{name: "one over", raw: `{"large":"` + strings.Repeat("x", maxRawUsageBytes+1-len(`{"large":""}`)) + `"}`},
+		{name: "whitespace exact", raw: strings.Repeat(" ", maxRawUsageBytes-2) + `{}`, valid: true},
+		{name: "leading whitespace", raw: strings.Repeat(" ", maxRawUsageBytes-1) + `{}`},
+		{name: "trailing whitespace", raw: `{}` + strings.Repeat(" ", maxRawUsageBytes-1)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			finish := strings.Replace(finishEvent, `"outputTokens":{}`, `"outputTokens":{},"raw":`+tc.raw, 1)
 			limits := DefaultLimits()
 			limits.StreamEventBytes = 2 << 20
 			m := streamFromBody(t, io.NopCloser(strings.NewReader(sseFrame(finish))), &limits)
@@ -163,12 +171,13 @@ func TestModel_StreamRawUsageSize(t *testing.T) {
 			require.NoError(t, err)
 			parts := collectParts(t, result)
 			require.Len(t, parts, 1)
-			if size == maxRawUsageBytes {
+			if tc.valid {
 				assert.Equal(t, provider.PartFinish, parts[0].Type)
-				assert.Len(t, parts[0].Usage.Raw, size)
+				assert.Len(t, parts[0].Usage.Raw, len(strings.TrimSpace(tc.raw)))
 			} else {
-				assert.Equal(t, provider.PartError, parts[0].Type)
-				assert.False(t, parts[0].APICallError.IsRetryable)
+				if assert.Equal(t, provider.PartError, parts[0].Type) && assert.NotNil(t, parts[0].APICallError) {
+					assert.False(t, parts[0].APICallError.IsRetryable)
+				}
 			}
 		})
 	}

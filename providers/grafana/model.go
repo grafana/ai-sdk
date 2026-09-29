@@ -161,7 +161,7 @@ func (w *wireUsage) UnmarshalJSON(data []byte) error {
 		}
 	}
 	raw, present := groups["raw"]
-	if present && len(raw) > maxRawUsageBytes {
+	if present && (len(raw) > maxRawUsageBytes || rawUsageWireTooLarge(data)) {
 		return errors.New("grafana: invalid raw usage")
 	}
 	encoded, err := json.Marshal(filtered)
@@ -175,6 +175,48 @@ func (w *wireUsage) UnmarshalJSON(data []byte) error {
 		w.Raw = raw
 	}
 	return nil
+}
+
+func rawUsageWireTooLargeInResponse(data []byte) bool {
+	var response map[string]json.RawMessage
+	if json.Unmarshal(data, &response) != nil {
+		return true
+	}
+	usage := response["usage"]
+	return len(usage) > 0 && rawUsageWireTooLarge(usage)
+}
+
+func rawUsageWireTooLarge(data []byte) bool {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	if _, err := decoder.Token(); err != nil {
+		return true
+	}
+	for decoder.More() {
+		key, err := decoder.Token()
+		if err != nil {
+			return true
+		}
+		keyEnd := int(decoder.InputOffset())
+		var value json.RawMessage
+		if err := decoder.Decode(&value); err != nil {
+			return true
+		}
+		if key != "raw" {
+			continue
+		}
+		valueEnd := int(decoder.InputOffset())
+		colon := bytes.IndexByte(data[keyEnd:valueEnd], ':')
+		if colon < 0 {
+			return true
+		}
+		for valueEnd < len(data) && (data[valueEnd] == ' ' || data[valueEnd] == '\n' || data[valueEnd] == '\r' || data[valueEnd] == '\t') {
+			valueEnd++
+		}
+		if valueEnd-(keyEnd+colon+1) > maxRawUsageBytes {
+			return true
+		}
+	}
+	return false
 }
 
 func decodeFinish(value *wireFinish) (provider.FinishReason, error) {
@@ -229,6 +271,9 @@ func decodeGenerate(body []byte, limit int64) (*provider.GenerateResult, error) 
 	finish, err := decodeFinish(value.FinishReason)
 	if err != nil {
 		return nil, err
+	}
+	if rawUsageWireTooLargeInResponse(body) {
+		return nil, errors.New("grafana: invalid raw usage")
 	}
 	usage, err := decodeUsage(value.Usage, limit)
 	if err != nil {

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -136,10 +135,19 @@ func TestModel_UnaryRawUsage(t *testing.T) {
 }
 
 func TestModel_UnaryRawUsageSize(t *testing.T) {
-	for _, size := range []int{maxRawUsageBytes, maxRawUsageBytes + 1} {
-		t.Run(strconv.Itoa(size), func(t *testing.T) {
-			raw := `{"large":"` + strings.Repeat("x", size-len(`{"large":""}`)) + `"}`
-			body := strings.Replace(unaryFixture, `"outputTokens":{"total":1,"text":1,"reasoning":0}`, `"outputTokens":{"total":1,"text":1,"reasoning":0},"raw":`+raw, 1)
+	for _, tc := range []struct {
+		name  string
+		raw   string
+		valid bool
+	}{
+		{name: "exact", raw: `{"large":"` + strings.Repeat("x", maxRawUsageBytes-len(`{"large":""}`)) + `"}`, valid: true},
+		{name: "one over", raw: `{"large":"` + strings.Repeat("x", maxRawUsageBytes+1-len(`{"large":""}`)) + `"}`},
+		{name: "whitespace exact", raw: strings.Repeat(" ", maxRawUsageBytes-2) + `{}`, valid: true},
+		{name: "leading whitespace", raw: strings.Repeat(" ", maxRawUsageBytes-1) + `{}`},
+		{name: "trailing whitespace", raw: `{}` + strings.Repeat(" ", maxRawUsageBytes-1)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := strings.Replace(unaryFixture, `"outputTokens":{"total":1,"text":1,"reasoning":0}`, `"outputTokens":{"total":1,"text":1,"reasoning":0},"raw":`+tc.raw, 1)
 			p := testProvider(t, func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				_, _ = io.WriteString(w, body)
@@ -147,15 +155,21 @@ func TestModel_UnaryRawUsageSize(t *testing.T) {
 			m, err := p.LanguageModel("assistant")
 			require.NoError(t, err)
 			result, err := m.DoGenerate(context.Background(), provider.CallOptions{})
-			if size == maxRawUsageBytes {
+			if tc.valid {
 				require.NoError(t, err)
-				assert.Len(t, result.Usage.Raw, size)
+				assert.Len(t, result.Usage.Raw, len(strings.TrimSpace(tc.raw)))
 			} else {
 				require.Error(t, err)
 				assert.Nil(t, result)
 			}
 		})
 	}
+}
+
+func TestRawUsageWireTooLargeInResponse(t *testing.T) {
+	usage := `{"inputTokens":{},"outputTokens":{},"raw":` + strings.Repeat(" ", maxRawUsageBytes-1) + `{}}`
+	body := `{"usage":` + usage + `,"Usage":{"inputTokens":{},"outputTokens":{}}}`
+	assert.True(t, rawUsageWireTooLargeInResponse([]byte(body)))
 }
 
 func TestModel_UnaryFailures(t *testing.T) {

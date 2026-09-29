@@ -292,6 +292,9 @@ func decodeStreamPart(data []byte, limit int64) (provider.StreamPart, error) {
 			part.Delta = *value.Delta
 		}
 	case provider.PartFinish:
+		if rawUsageWireTooLargeInResponse(data) {
+			return invalid()
+		}
 		finish, err := decodeFinish(value.FinishReason)
 		if err != nil {
 			return invalid()
