@@ -282,10 +282,11 @@ func convertProviderToolResult(part provider.ContentPart, ctx inputConversionCon
 		}
 		var item responses.ResponseInputItemUnionParam
 		if content != nil {
-			item = responses.ResponseInputItemParamOfFunctionCallOutput(part.ToolCallID, content)
+			item = responses.ResponseInputItemParamOfFunctionCallOutput(content)
 		} else {
-			item = responses.ResponseInputItemParamOfFunctionCallOutput(part.ToolCallID, text)
+			item = responses.ResponseInputItemParamOfFunctionCallOutput(text)
 		}
+		item.OfFunctionCallOutput.CallID = param.NewOpt(part.ToolCallID)
 		item.OfFunctionCallOutput.Caller = functionCallOutputCallerParam(ctx.partOptions(part).Caller)
 		return &item, warnings, nil
 	}
@@ -742,9 +743,9 @@ func customToolCallOutputItem(part provider.ContentPart, ctx inputConversionCont
 					}
 					content = append(content, responses.ResponseCustomToolCallOutputOutputOutputContentListItemUnionParam{OfInputImage: &image})
 				} else {
-					filename := value.Filename
-					if filename == "" {
-						filename = "data"
+					filename := "data"
+					if value.Filename != nil {
+						filename = *value.Filename
 					}
 					file := responses.ResponseInputFileParam{FileData: param.NewOpt(uri), Filename: param.NewOpt(filename)}
 					if options.PromptCacheBreakpoint != nil {

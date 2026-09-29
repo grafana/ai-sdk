@@ -35,14 +35,24 @@ type buildResult struct {
 // It returns the request body, accumulated warnings, conversion metadata, and
 // an error.
 func buildParams(modelID string, opts provider.CallOptions) (responses.ResponseNewParams, []provider.Warning, buildResult, error) {
-	_, providerOptionsName, err := resolveProviderOptions(opts)
-	if err != nil {
-		return responses.ResponseNewParams{}, nil, buildResult{}, err
-	}
-	return buildParamsForProvider(modelID, opts, providerOptionsName)
+	return buildParamsWithConfig(modelID, opts, "", true)
 }
 
 func buildParamsForProvider(modelID string, opts provider.CallOptions, providerOptionsName string) (responses.ResponseNewParams, []provider.Warning, buildResult, error) {
+	return buildParamsWithConfig(modelID, opts, providerOptionsName, true)
+}
+
+func buildParamsWithConfig(modelID string, opts provider.CallOptions, providerOptionsName string, webSearchSourcesIncludeSupported bool) (responses.ResponseNewParams, []provider.Warning, buildResult, error) {
+	if providerOptionsName == "" {
+		_, name, err := resolveProviderOptions(opts)
+		if err != nil {
+			return responses.ResponseNewParams{}, nil, buildResult{}, err
+		}
+		providerOptionsName = name
+	}
+	if err := provider.ValidateFileInputs(opts.Prompt); err != nil {
+		return responses.ResponseNewParams{}, nil, buildResult{}, fmt.Errorf("openai: invalid file input: %w", err)
+	}
 	var warnings []provider.Warning
 
 	caps := getModelCapabilities(modelID)
@@ -94,7 +104,11 @@ func buildParamsForProvider(modelID string, opts provider.CallOptions, providerO
 	warnings = append(warnings, applyScalarParams(&body, opts, caps, isReasoning, popts)...)
 
 	// Structured output.
-	applyResponseFormat(&body, opts, popts)
+	formatWarnings, err := applyResponseFormat(&body, opts, popts)
+	if err != nil {
+		return responses.ResponseNewParams{}, nil, buildResult{}, err
+	}
+	warnings = append(warnings, formatWarnings...)
 
 	// Tools + tool choice.
 	toolWarnings, err := prepareTools(&body, opts, popts, &br)
@@ -107,7 +121,7 @@ func buildParamsForProvider(modelID string, opts provider.CallOptions, providerO
 	warnings = append(warnings, applyProviderOptions(&body, popts, isReasoning, caps)...)
 
 	// include auto-population + reasoning block.
-	applyIncludeAndReasoning(&body, opts, popts, isReasoning, store, &br)
+	applyIncludeAndReasoning(&body, opts, popts, isReasoning, store, webSearchSourcesIncludeSupported, &br)
 
 	return body, warnings, br, nil
 }

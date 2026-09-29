@@ -46,15 +46,17 @@ func TestProviderOptions_MalformedNamespaceIsInvalidRequest(t *testing.T) {
 }
 
 func TestProviderOptions_ReservedNamespaceIsRejected(t *testing.T) {
-	harness := newRuntimeHarness(t, testLimits())
-	body := `{"prompt":[],"providerOptions":{"grafana":{"tenant":"other"}}}`
-
-	response := harness.serve(validRequest(body))
-
-	require.Equal(t, http.StatusBadRequest, response.Code)
-	assert.JSONEq(t, string(reservedProviderOptionsError), response.Body.String())
-	assert.NotContains(t, response.Body.String(), "tenant", "the refusal never echoes caller input")
-	assert.Zero(t, harness.model.calls, "the reserved namespace is refused before the model runs")
+	for _, namespace := range []string{"grafana", "gateway", "grafana-ai-sdk"} {
+		t.Run(namespace, func(t *testing.T) {
+			harness := newRuntimeHarness(t, testLimits())
+			body := `{"prompt":[],"providerOptions":{"` + namespace + `":{"tenant":"other"}}}`
+			response := harness.serve(validRequest(body))
+			require.Equal(t, http.StatusBadRequest, response.Code)
+			assert.JSONEq(t, string(reservedProviderOptionsError), response.Body.String())
+			assert.NotContains(t, response.Body.String(), "tenant", "the refusal never echoes caller input")
+			assert.Zero(t, harness.model.calls, "the reserved namespace is refused before the model runs")
+		})
+	}
 }
 
 func TestCallHeaders_CaseInsensitiveDuplicateIsInvalid(t *testing.T) {
@@ -82,15 +84,16 @@ func TestProviderOptions_ProtectedFieldIsRejectedAtEveryLevel(t *testing.T) {
 	// Every level maps through mapWireProviderOptions, so each call site is
 	// covered: a per-level shortcut would otherwise regress two of them silently.
 	for name, body := range map[string]string{
-		"call level":    `{"prompt":[],"providerOptions":{"ns":{"model":"someone-elses-model"}}}`,
-		"message level": `{"prompt":[{"role":"user","content":[{"type":"text","text":"hi"}],"providerOptions":{"ns":{"messages":[]}}}]}`,
-		"system level":  `{"prompt":[{"role":"system","content":"hi","providerOptions":{"ns":{"tools":[]}}}]}`,
-		"part level":    `{"prompt":[{"role":"user","content":[{"type":"text","text":"hi","providerOptions":{"ns":{"response_format":{"type":"json_schema"}}}}]}]}`,
-		"part type":     `{"prompt":[{"role":"user","content":[{"type":"text","text":"hi","providerOptions":{"openaiCompatible":{"type":"image_url","image_url":{"url":"https://caller.example/x.png"}}}}]}]}`,
-		"message role":  `{"prompt":[{"role":"user","content":[{"type":"text","text":"hi"}],"providerOptions":{"openaiCompatible":{"role":"tool","tool_call_id":"call_1"}}}]}`,
-		// A content array carries image and file parts underneath the top-level
-		// field checks, which is how it reinstates what the runtime refused.
-		"message content": `{"prompt":[{"role":"user","content":[{"type":"text","text":"hi"}],"providerOptions":{"openaiCompatible":{"content":[{"type":"image_url","image_url":{"url":"https://caller.example/x.png"}}]}}}]}`,
+		"call level":       `{"prompt":[],"providerOptions":{"ns":{"model":"someone-elses-model"}}}`,
+		"message level":    `{"prompt":[{"role":"user","content":[{"type":"text","text":"hi"}],"providerOptions":{"ns":{"messages":[]}}}]}`,
+		"system level":     `{"prompt":[{"role":"system","content":"hi","providerOptions":{"ns":{"tools":[]}}}]}`,
+		"part level":       `{"prompt":[{"role":"user","content":[{"type":"text","text":"hi","providerOptions":{"ns":{"response_format":{"type":"json_schema"}}}}]}]}`,
+		"part type":        `{"prompt":[{"role":"user","content":[{"type":"text","text":"hi","providerOptions":{"openaiCompatible":{"type":"image_url","image_url":{"url":"https://caller.example/x.png"}}}}]}]}`,
+		"message role":     `{"prompt":[{"role":"user","content":[{"type":"text","text":"hi"}],"providerOptions":{"openaiCompatible":{"role":"tool","tool_call_id":"call_1"}}}]}`,
+		"message content":  `{"prompt":[{"role":"user","content":[{"type":"text","text":"hi"}],"providerOptions":{"openaiCompatible":{"content":[{"type":"image_url","image_url":{"url":"https://caller.example/x.png"}}]}}}]}`,
+		"file part":        `{"prompt":[{"role":"user","content":[{"type":"file","data":{"type":"data","data":""},"mediaType":"image/png","providerOptions":{"ns":{"model":"other"}}}]}]}`,
+		"function tool":    `{"prompt":[],"tools":[{"type":"function","name":"search","inputSchema":{},"providerOptions":{"ns":{"model":"other"}}}]}`,
+		"tool-result file": `{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"call","toolName":"tool","output":{"type":"content","value":[{"type":"file","data":{"type":"data","data":""},"mediaType":"image/png","providerOptions":{"ns":{"model":"other"}}}]}}]}]}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			harness := newRuntimeHarness(t, testLimits())
@@ -153,20 +156,15 @@ func TestProviderOptions_ReservedNamespaceIsCaseSignificant(t *testing.T) {
 }
 
 func TestProviderOptions_UnsupportedPartReportsItsOwnFamily(t *testing.T) {
-	// A part type the runtime does not support reports that family whatever
-	// options it carries, so the refusal does not depend on a field the part
-	// type cannot use.
 	for name, body := range map[string]string{
-		"file part with a reserved namespace":  `{"prompt":[{"role":"user","content":[{"type":"file","data":{"type":"text","text":"x"},"mediaType":"text/plain","providerOptions":{"grafana":{}}}]}]}`,
-		"file part with a malformed namespace": `{"prompt":[{"role":"user","content":[{"type":"file","data":{"type":"text","text":"x"},"mediaType":"text/plain","providerOptions":{"ns":{}}}]}]}`,
+		"reserved options": `{"prompt":[{"role":"assistant","content":[{"type":"reasoning-file","data":{"type":"data","data":""},"mediaType":"image/png","providerOptions":{"grafana":{}}}]}]}`,
+		"ordinary options": `{"prompt":[{"role":"assistant","content":[{"type":"reasoning-file","data":{"type":"data","data":""},"mediaType":"image/png","providerOptions":{"ns":{}}}]}]}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			harness := newRuntimeHarness(t, testLimits())
-
 			response := harness.serve(validRequest(body))
-
 			require.Equal(t, http.StatusBadRequest, response.Code)
-			assert.JSONEq(t, string(unsupportedFilesError), response.Body.String())
+			assert.JSONEq(t, string(unsupportedReasoningContentError), response.Body.String())
 		})
 	}
 }
@@ -216,6 +214,35 @@ func TestProviderOptionPolicy_ForwardsOnlyTheSelectedBackendsNamespaces(t *testi
 	assert.Equal(t, provider.ProviderOptions{
 		"openaiCompatible": provider.RawProviderOption{Key: "openaiCompatible", Raw: json.RawMessage(`{"kept":1}`)},
 	}, options.Prompt[0].Content[0].ProviderOptions, "part level applies the same rule")
+}
+
+func TestProviderOptionPolicy_FunctionAndNestedFileOptions(t *testing.T) {
+	harness := newRuntimeHarness(t, testLimits())
+	harness.resolver.resolved.ProviderOptions = catalog.ProviderOptionPolicy{
+		Namespaces: []string{"anthropic"},
+		Fields:     map[string][]string{"anthropic": {"cacheControl"}},
+	}
+	options := `{"anthropic":{"cacheControl":{"type":"ephemeral"},"other":"private"},"openai":{"user":"private"}}`
+	body := `{"tools":[{"type":"function","name":"search","inputSchema":{},"providerOptions":` + options + `}],` +
+		`"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"call","toolName":"search","output":` +
+		`{"type":"content","value":[{"type":"file","data":{"type":"data","data":""},"mediaType":"application/pdf","providerOptions":` + options + `}]}}]}]}`
+	response := harness.serve(validRequest(body))
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	received := harness.model.receivedOptions()
+	require.Len(t, received.Tools, 1)
+	require.Len(t, received.Prompt, 1)
+	require.Len(t, received.Prompt[0].Content, 1)
+	require.NotNil(t, received.Prompt[0].Content[0].Output)
+	require.Len(t, received.Prompt[0].Content[0].Output.Content, 1)
+	for _, scoped := range []provider.ProviderOptions{
+		received.Tools[0].ProviderOptions,
+		received.Prompt[0].Content[0].Output.Content[0].ProviderOptions,
+	} {
+		require.Len(t, scoped, 1)
+		value, ok := scoped["anthropic"].(provider.RawProviderOption)
+		require.True(t, ok)
+		assert.JSONEq(t, `{"cacheControl":{"type":"ephemeral"}}`, string(value.Raw))
+	}
 }
 
 func TestProviderOptionPolicy_ZeroValueForwardsNothing(t *testing.T) {

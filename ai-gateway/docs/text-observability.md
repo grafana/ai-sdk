@@ -33,13 +33,15 @@ options, and none of these request-scoped fields becomes a metric label.
 Model logging disables prompt, output, and per-stream-part capture and applies
 a fixed attribute allowlist followed by the default secret redactor. Agent
 Observability always uses metadata-only content capture, provided-only context,
-requested identity, a final Gateway allowlist, and no hooks. It retains
+requested identity, a final Gateway allowlist, and no hooks or experimental SDK
+features. It retains
 lifecycle, structural part types, normalized usage and unified finish/error
 classes, but not text, detailed errors, credentials, response IDs, backend
 model IDs, provider topology, arbitrary tags, or request controls. The client
 may add its fixed `agento11y.sdk.*` metadata markers and a closed `call_error`
 category after the Gateway filter; no arbitrary exporter or provider error is
-exported.
+exported. The Gateway marks normalized input usage as cache-inclusive at its
+export filter without adding cache-read or cache-write buckets again.
 
 ## Prometheus
 
@@ -91,13 +93,17 @@ equivalent `GRAFANA_AI_GATEWAY_` environment binding shown below.
 | `--agento11y.max-retries` | `GRAFANA_AI_GATEWAY_AGENTO11Y_MAX_RETRIES` | `5`; 1–10 |
 | `--agento11y.initial-backoff` | `GRAFANA_AI_GATEWAY_AGENTO11Y_INITIAL_BACKOFF` | `100ms`; positive, at most 5m |
 | `--agento11y.max-backoff` | `GRAFANA_AI_GATEWAY_AGENTO11Y_MAX_BACKOFF` | `5s`; initial–5m |
+| `--agento11y.export-timeout` | `GRAFANA_AI_GATEWAY_AGENTO11Y_EXPORT_TIMEOUT` | `10s`; per HTTP/gRPC export attempt, positive, at most 5m |
 | `--agento11y.flush-interval` | `GRAFANA_AI_GATEWAY_AGENTO11Y_FLUSH_INTERVAL` | `1s`; positive, at most 5m |
 | `--agento11y.flush-timeout` | `GRAFANA_AI_GATEWAY_AGENTO11Y_FLUSH_TIMEOUT` | `5s`; independent positive bound, at most 5m |
 | `--agento11y.shutdown-timeout` | `GRAFANA_AI_GATEWAY_AGENTO11Y_SHUTDOWN_TIMEOUT` | `5s`; independent positive bound, at most 5m |
 
 The secret reference is resolved once before the listener binds; neither its
 name nor value is logged. Ambient `AGENTO11Y_*` and legacy `SIGIL_*` SDK
-configuration is rejected so it cannot bypass validated Gateway policy.
+configuration is rejected so it cannot bypass validated Gateway policy. This
+includes timeout, retry, queue, and experimental-feature settings. Export-attempt
+timeouts are independent of flush and shutdown deadlines; the explicit 10-second
+default avoids inheriting SDK timeout changes.
 
 Queue pressure, validation failures, exporter rejection/outage, and bounded
 flush or shutdown failure are fail-open for model traffic. Diagnostics and
@@ -107,18 +113,3 @@ already-started recorders and refuses new recorder acquisition. Flush and
 shutdown then each receive a fresh independent timeout. The
 `process_shutdown_completed` lifecycle event is logged only after this bounded
 finalizer returns.
-
-## Work-package boundaries
-
-- WP6 image capacity/distribution does not use this text-model chain.
-- WP7's Go client and ProviderWire contract are unchanged; correlation is
-  server-internal and is neither accepted from nor returned to clients.
-- WP9 owns physical fallback attempts, candidate identity, and retry topology
-  below the unchanged logical wrapper.
-- WP10 owns production endpoint, credential, region/application values,
-  rollout, and environment smoke verification.
-- WP27 owns any later per-request Agent Observability control or richer content
-  capture decision.
-- Tools, reasoning, files, images, raw output, hooks, and later event families
-  remain with their owning capability work; WP8 observes the current text
-  surface only and does not change ProviderWire schemas or events.

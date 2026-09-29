@@ -24,7 +24,7 @@ import (
 type hooksTestServer struct {
 	srv      *httptest.Server
 	hits     atomic.Int32
-	response agento11y.HookEvaluateResponse
+	response json.RawMessage
 	// delay, when non-zero, sleeps before responding so MaxLatency tests can
 	// observe a timeout cancellation.
 	delay time.Duration
@@ -34,7 +34,14 @@ type hooksTestServer struct {
 
 func newHooksTestServer(t *testing.T, resp agento11y.HookEvaluateResponse) *hooksTestServer {
 	t.Helper()
-	h := &hooksTestServer{response: resp, statusCode: http.StatusOK}
+	body, err := json.Marshal(resp)
+	require.NoError(t, err)
+	return newHooksWireTestServer(t, body)
+}
+
+func newHooksWireTestServer(t *testing.T, body json.RawMessage) *hooksTestServer {
+	t.Helper()
+	h := &hooksTestServer{response: body, statusCode: http.StatusOK}
 	h.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h.hits.Add(1)
 		if h.delay > 0 {
@@ -124,9 +131,9 @@ func TestHooksMiddleware_TransformFailureDoesNotInvokeModel(t *testing.T) {
 		transformed agento11y.HookInput
 	}{
 		{
-			name:        "empty transform",
+			name:        "normalized message without content",
 			prompt:      []provider.Message{provider.UserText("secret")},
-			transformed: agento11y.HookInput{},
+			transformed: agento11y.HookInput{Messages: []agento11y.Message{{Role: agento11y.RoleUser}}},
 		},
 		{
 			name: "multimodal input",
@@ -202,7 +209,7 @@ func TestHooksMiddleware_TransformFailureDoesNotInvokeModel(t *testing.T) {
 }
 
 func TestHooksMiddleware_TransformFailureBlocksStream(t *testing.T) {
-	transformed := agento11y.HookInput{}
+	transformed := agento11y.HookInput{Messages: []agento11y.Message{{Role: agento11y.RoleUser}}}
 	h := newHooksTestServer(t, agento11y.HookEvaluateResponse{
 		Action:           agento11y.HookActionAllow,
 		TransformedInput: &transformed,
@@ -226,15 +233,13 @@ func TestHooksMiddleware_TransformAppliesToStream(t *testing.T) {
 		{Type: provider.ToolTypeFunction, Name: "keep", Description: "kept", InputSchema: json.RawMessage(`{"type":"object"}`)},
 		{Type: provider.ToolTypeFunction, Name: "remove", Description: "removed", InputSchema: json.RawMessage(`{"type":"object"}`)},
 	}
-	transformed := agento11y.HookInput{
-		Messages: []agento11y.Message{{
-			Role: agento11y.RoleUser, Parts: []agento11y.Part{agento11y.TextPart("filtered")},
-		}},
-		Tools: toolsToAgento11y(originalTools[:1]),
-	}
-	h := newHooksTestServer(t, agento11y.HookEvaluateResponse{
-		Action: agento11y.HookActionAllow, TransformedInput: &transformed,
-	})
+	h := newHooksWireTestServer(t, json.RawMessage(`{
+		"action":"allow",
+		"transformed_input":{
+			"messages":[{"role":"user","parts":[{"kind":"text","text":"filtered"}]}],
+			"tools":[{"name":"keep","description":"kept","input_schema_json":"eyJ0eXBlIjoib2JqZWN0In0="}]
+		}
+	}`))
 	model := &mockLanguageModel{provider_: "anthropic", modelID: "claude"}
 	client := h.clientWithHooksEnabled()
 	wrapped := middleware.Wrap(middleware.WrapOptions{

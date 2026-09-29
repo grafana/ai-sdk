@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/grafana/ai-sdk/provider"
+	"github.com/openai/openai-go/v3/packages/param"
 	"github.com/openai/openai-go/v3/responses"
 )
 
@@ -176,7 +177,8 @@ func (g *parallelToolResultGroup) output(ctx inputConversionContext) (*responses
 		texts[index] = string(encoded)
 	}
 	if !hasBreakpoint {
-		item := responses.ResponseInputItemParamOfFunctionCallOutput(g.metadata.ToolCallID, strings.Join(texts, "\n"))
+		item := responses.ResponseInputItemParamOfFunctionCallOutput(strings.Join(texts, "\n"))
+		item.OfFunctionCallOutput.CallID = param.NewOpt(g.metadata.ToolCallID)
 		return &item, warnings, nil
 	}
 	content := make(responses.ResponseFunctionCallOutputItemListParam, len(texts))
@@ -190,6 +192,7 @@ func (g *parallelToolResultGroup) output(ctx inputConversionContext) (*responses
 		}
 		content[index] = responses.ResponseFunctionCallOutputItemUnionParam{OfInputText: &part}
 	}
-	item := responses.ResponseInputItemParamOfFunctionCallOutput(g.metadata.ToolCallID, content)
+	item := responses.ResponseInputItemParamOfFunctionCallOutput(content)
+	item.OfFunctionCallOutput.CallID = param.NewOpt(g.metadata.ToolCallID)
 	return &item, warnings, nil
 }

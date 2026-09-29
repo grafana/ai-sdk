@@ -96,6 +96,113 @@ func TestNewResponses_GenerateAndContinue(t *testing.T) {
 	assert.NotContains(t, string(bodies[1]), "first answer")
 }
 
+func TestNewResponses_WebSearchSourcesInclude(t *testing.T) {
+	yes, no := true, false
+	const sources = "web_search_call.action.sources"
+	for _, tc := range []struct {
+		name     string
+		stream   bool
+		perCall  *bool
+		explicit bool
+	}{
+		{name: "generate default"},
+		{name: "stream default", stream: true},
+		{name: "generate per-call true", perCall: &yes},
+		{name: "stream per-call true", stream: true, perCall: &yes},
+		{name: "generate per-call false", perCall: &no},
+		{name: "stream per-call false", stream: true, perCall: &no},
+		{name: "generate explicit include retained", explicit: true},
+		{name: "stream explicit include retained", stream: true, explicit: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				var body map[string]any
+				require.NoError(t, json.NewDecoder(req.Body).Decode(&body))
+				tools, ok := body["tools"].([]any)
+				require.True(t, ok)
+				require.Len(t, tools, 2)
+				assert.Equal(t, "web_search", tools[0].(map[string]any)["type"])
+				assert.Equal(t, "code_interpreter", tools[1].(map[string]any)["type"])
+				include, ok := body["include"].([]any)
+				require.True(t, ok)
+				assert.Contains(t, include, "reasoning.encrypted_content")
+				assert.Contains(t, include, "code_interpreter_call.outputs")
+				assert.Contains(t, include, "message.output_text.logprobs")
+				assert.EqualValues(t, 3, body["top_logprobs"])
+				if tc.explicit {
+					assert.Contains(t, include, sources)
+					return jsonHTTPResponse(req, http.StatusBadRequest, `{"error":{"message":"unsupported include","type":"invalid_request_error"}}`), nil
+				}
+				if assert.NotContains(t, include, sources) {
+					if tc.stream {
+						return &http.Response{
+							StatusCode: http.StatusOK,
+							Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+							Body: io.NopCloser(strings.NewReader("event: response.created\n" +
+								`data: {"type":"response.created","sequence_number":0,"response":{"id":"resp_123","created_at":1700000000,"model":"openai.gpt-5.6-luna","object":"response","status":"in_progress","output":[]}}` + "\n\n" +
+								"event: response.completed\n" +
+								`data: {"type":"response.completed","sequence_number":1,"response":{"id":"resp_123","created_at":1700000000,"model":"openai.gpt-5.6-luna","object":"response","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}}` + "\n\n")),
+							Request: req,
+						}, nil
+					}
+					return jsonHTTPResponse(req, http.StatusOK, responseWithoutOutput), nil
+				}
+				return jsonHTTPResponse(req, http.StatusBadRequest, `{"error":{"message":"unsupported include","type":"invalid_request_error"}}`), nil
+			})}
+			model, err := NewResponses(t.Context(), "openai.gpt-5.6-luna",
+				Config{BaseURL: "https://provider.example.test/openai/v1", SkipAuth: true},
+				option.WithHTTPClient(client), option.WithMaxRetries(0))
+			require.NoError(t, err)
+			logprobs := int64(3)
+			popts := openaiprovider.OpenAIResponsesOptions{
+				Store: &no, ForceReasoning: &yes, Logprobs: &openaiprovider.LogprobsOption{Int: &logprobs},
+				IncludeWebSearchSources: tc.perCall,
+			}
+			if tc.explicit {
+				popts.Include = []string{sources}
+			}
+			call := provider.CallOptions{
+				Prompt: []provider.Message{provider.UserText("hi")},
+				Tools: []provider.Tool{
+					{Type: provider.ToolTypeProvider, ID: "openai.web_search", Name: "search"},
+					{Type: provider.ToolTypeProvider, ID: "openai.code_interpreter", Name: "python"},
+				},
+				ProviderOptions: provider.BuildProviderOptions(popts),
+			}
+			if tc.stream {
+				result, err := model.DoStream(t.Context(), call)
+				if tc.explicit {
+					require.ErrorContains(t, err, "unsupported include")
+					return
+				}
+				require.NoError(t, err)
+				var finished, attributed bool
+				for part := range result.Stream {
+					assert.NotEqual(t, provider.PartError, part.Type)
+					if part.Type == provider.PartResponseMeta {
+						attributed = true
+						assert.Equal(t, "bedrock-mantle.responses", part.Provider)
+					}
+					if part.Type == provider.PartFinish {
+						finished = true
+					}
+				}
+				assert.True(t, attributed)
+				assert.True(t, finished)
+			} else {
+				result, err := model.DoGenerate(t.Context(), call)
+				if tc.explicit {
+					require.ErrorContains(t, err, "unsupported include")
+					return
+				}
+				require.NoError(t, err)
+				require.NotNil(t, result.Response)
+				assert.Equal(t, "bedrock-mantle.responses", result.Response.Provider)
+			}
+		})
+	}
+}
+
 func TestNewResponses_AssistantHistory(t *testing.T) {
 	for _, tc := range []struct {
 		name  string

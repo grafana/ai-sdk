@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -169,6 +171,9 @@ func buildParams(modelID string, opts provider.CallOptions, stream bool) (anthro
 }
 
 func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stream bool, providerCaps providerCapabilities) (anthropic.BetaMessageNewParams, toolNameMapping, []provider.Warning, buildResult, error) {
+	if err := provider.ValidateFileInputs(opts.Prompt); err != nil {
+		return anthropic.BetaMessageNewParams{}, toolNameMapping{}, nil, buildResult{}, fmt.Errorf("anthropic: invalid file input: %w", err)
+	}
 	var warnings []provider.Warning
 	anthropicOpts, hasAnthropicOpts, err := provider.ResolveOption[AnthropicOptions](opts.ProviderOptions, "anthropic")
 	if err != nil {
@@ -309,7 +314,7 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 					}
 					content = append(content, converted...)
 				case provider.RoleTool:
-					content = append(content, convertToolContent(v, msg.Content, msg.ProviderOptions, mcpToolUseIDs, &warnings)...)
+					content = append(content, convertToolContent(v, msg.Content, msg.ProviderOptions, mcpToolUseIDs, &p.Betas, &warnings)...)
 				}
 			}
 			p.Messages = append(p.Messages, anthropic.BetaMessageParam{
@@ -409,6 +414,9 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 		warnings = append(warnings, br.warnings...)
 	}
 	br.markCodeExecutionDynamic = hasWebTool20260209WithoutCodeExecution(opts.Tools)
+	if len(p.Tools) > 0 && (opts.ToolChoice == nil || opts.ToolChoice.Type != provider.ToolChoiceNone) {
+		br.requestOptions = append(br.requestOptions, webToolNumberOptions(opts.Tools, p.Tools)...)
+	}
 
 	// Map top-level Reasoning to Anthropic thinking/effort. Provider options
 	// always take precedence: we only fall back to top-level mapping when
@@ -725,6 +733,10 @@ func convertUserContent(
 				continue
 			}
 			switch {
+			case p.Data != nil && p.Data.IsText():
+				if b, ok := convertTextDocumentContentPart(p, cc); ok {
+					blocks = append(blocks, b)
+				}
 			case strings.HasPrefix(p.MediaType, "image/"):
 				if b, ok := convertImageFileContentPart(p, cc); ok {
 					blocks = append(blocks, b)
@@ -741,7 +753,7 @@ func convertUserContent(
 			}
 		case provider.ContentPartTypeToolResult:
 			cc := v.resolveCacheControl(p.ProviderOptions, msgOpts, isLast, true)
-			blocks = appendToolResultBlock(blocks, p, cc, mcpToolUseIDs, warnings)
+			blocks = appendToolResultBlock(blocks, p, cc, mcpToolUseIDs, betas, warnings)
 		case provider.ContentPartTypeToolApprovalResponse:
 			// Mirrors upstream user-block handler line 319: silently skip.
 			// The `RoleTool` path keeps its existing warning behavior in
@@ -788,10 +800,10 @@ func convertImageFileContentPart(p provider.ContentPart, cc anthropic.BetaCacheC
 		mediaType = "image/jpeg"
 	}
 	b64 := p.Data.Base64
-	if b64 == "" && len(p.Data.Bytes) > 0 {
+	if p.Data.Bytes != nil {
 		b64 = base64.StdEncoding.EncodeToString(p.Data.Bytes)
 	}
-	if b64 != "" {
+	if p.Data.IsData() {
 		return anthropic.BetaContentBlockParamUnion{
 			OfImage: &anthropic.BetaImageBlockParam{
 				Source: anthropic.BetaImageBlockParamSourceUnion{
@@ -804,7 +816,7 @@ func convertImageFileContentPart(p provider.ContentPart, cc anthropic.BetaCacheC
 			},
 		}, true
 	}
-	if p.Data.URL != "" {
+	if p.Data.IsURL() {
 		return anthropic.BetaContentBlockParamUnion{
 			OfImage: &anthropic.BetaImageBlockParam{
 				Source: anthropic.BetaImageBlockParamSourceUnion{
@@ -824,7 +836,7 @@ func convertImageFileContentPart(p provider.ContentPart, cc anthropic.BetaCacheC
 // upstream `getDocumentMetadata` and `shouldEnableCitations` helpers in
 // convert-to-anthropic-prompt.ts.
 type documentMetadata struct {
-	title    string
+	title    *string
 	context  string
 	citation bool
 }
@@ -846,7 +858,7 @@ func extractDocumentMetadata(opts provider.ProviderOptions) documentMetadata {
 	}
 	m := documentMetadata{}
 	if data.Title != nil {
-		m.title = *data.Title
+		m.title = data.Title
 	}
 	if data.Context != nil {
 		m.context = *data.Context
@@ -863,11 +875,11 @@ func extractDocumentMetadata(opts provider.ProviderOptions) documentMetadata {
 func applyDocumentMetadata(doc *anthropic.BetaRequestDocumentBlockParam, p provider.ContentPart) {
 	meta := extractDocumentMetadata(p.ProviderOptions)
 	title := meta.title
-	if title == "" {
+	if title == nil {
 		title = p.Filename
 	}
-	if title != "" {
-		doc.Title = anthropic.String(title)
+	if title != nil {
+		doc.Title = anthropic.String(*title)
 	}
 	if meta.context != "" {
 		doc.Context = anthropic.String(meta.context)
@@ -889,19 +901,17 @@ func convertPDFDocumentContentPart(p provider.ContentPart, cc anthropic.BetaCach
 	}
 	doc := anthropic.BetaRequestDocumentBlockParam{CacheControl: cc}
 	switch {
-	case p.Data.URL != "":
+	case p.Data.IsURL():
 		doc.Source = anthropic.BetaRequestDocumentBlockSourceUnionParam{
 			OfURL: &anthropic.BetaURLPDFSourceParam{URL: p.Data.URL},
 		}
-	case p.Data.Base64 != "":
-		doc.Source = anthropic.BetaRequestDocumentBlockSourceUnionParam{
-			OfBase64: &anthropic.BetaBase64PDFSourceParam{Data: p.Data.Base64},
+	case p.Data.IsData():
+		b64 := p.Data.Base64
+		if p.Data.Bytes != nil {
+			b64 = base64.StdEncoding.EncodeToString(p.Data.Bytes)
 		}
-	case len(p.Data.Bytes) > 0:
 		doc.Source = anthropic.BetaRequestDocumentBlockSourceUnionParam{
-			OfBase64: &anthropic.BetaBase64PDFSourceParam{
-				Data: base64.StdEncoding.EncodeToString(p.Data.Bytes),
-			},
+			OfBase64: &anthropic.BetaBase64PDFSourceParam{Data: b64},
 		}
 	default:
 		return anthropic.BetaContentBlockParamUnion{}, false
@@ -920,21 +930,25 @@ func convertTextDocumentContentPart(p provider.ContentPart, cc anthropic.BetaCac
 	}
 	doc := anthropic.BetaRequestDocumentBlockParam{CacheControl: cc}
 	switch {
-	case p.Data.URL != "":
+	case p.Data.IsURL():
 		doc.Source = anthropic.BetaRequestDocumentBlockSourceUnionParam{
 			OfURL: &anthropic.BetaURLPDFSourceParam{URL: p.Data.URL},
 		}
-	case len(p.Data.Bytes) > 0:
+	case p.Data.IsText():
 		doc.Source = anthropic.BetaRequestDocumentBlockSourceUnionParam{
-			OfText: &anthropic.BetaPlainTextSourceParam{Data: string(p.Data.Bytes)},
+			OfText: &anthropic.BetaPlainTextSourceParam{Data: p.Data.Text},
 		}
-	case p.Data.Base64 != "":
-		decoded, err := base64.StdEncoding.DecodeString(p.Data.Base64)
-		if err != nil {
-			return anthropic.BetaContentBlockParamUnion{}, false
+	case p.Data.IsData():
+		text := string(p.Data.Bytes)
+		if p.Data.Bytes == nil {
+			decoded, err := base64.StdEncoding.DecodeString(p.Data.Base64)
+			if err != nil {
+				return anthropic.BetaContentBlockParamUnion{}, false
+			}
+			text = string(decoded)
 		}
 		doc.Source = anthropic.BetaRequestDocumentBlockSourceUnionParam{
-			OfText: &anthropic.BetaPlainTextSourceParam{Data: string(decoded)},
+			OfText: &anthropic.BetaPlainTextSourceParam{Data: text},
 		}
 	default:
 		return anthropic.BetaContentBlockParamUnion{}, false
@@ -1800,14 +1814,14 @@ func toolOutputTypeLabel(output *provider.ToolResultOutput) string {
 	return string(output.Type)
 }
 
-func convertToolContent(v *cacheControlValidator, parts []provider.ContentPart, msgOpts provider.ProviderOptions, mcpToolUseIDs map[string]bool, warnings *[]provider.Warning) []anthropic.BetaContentBlockParamUnion {
+func convertToolContent(v *cacheControlValidator, parts []provider.ContentPart, msgOpts provider.ProviderOptions, mcpToolUseIDs map[string]bool, betas *[]anthropic.AnthropicBeta, warnings *[]provider.Warning) []anthropic.BetaContentBlockParamUnion {
 	var blocks []anthropic.BetaContentBlockParamUnion
 	for i, p := range parts {
 		isLast := i == len(parts)-1
 		switch p.Type {
 		case provider.ContentPartTypeToolResult:
 			cc := v.resolveCacheControl(p.ProviderOptions, msgOpts, isLast, true)
-			blocks = appendToolResultBlock(blocks, p, cc, mcpToolUseIDs, warnings)
+			blocks = appendToolResultBlock(blocks, p, cc, mcpToolUseIDs, betas, warnings)
 		case provider.ContentPartTypeToolApprovalResponse:
 			continue
 		}
@@ -1834,6 +1848,7 @@ func appendToolResultBlock(
 	p provider.ContentPart,
 	cc anthropic.BetaCacheControlEphemeralParam,
 	mcpToolUseIDs map[string]bool,
+	betas *[]anthropic.AnthropicBeta,
 	warnings *[]provider.Warning,
 ) []anthropic.BetaContentBlockParamUnion {
 	if mcpToolUseIDs[p.ToolCallID] {
@@ -1848,7 +1863,7 @@ func appendToolResultBlock(
 			},
 		})
 	}
-	content := serializeToolOutput(p.Output, warnings)
+	content := serializeToolOutput(p.Output, betas, warnings)
 	result := &anthropic.BetaToolResultBlockParam{
 		ToolUseID:    p.ToolCallID,
 		Content:      content,
@@ -1865,7 +1880,7 @@ func appendToolResultBlock(
 	})
 }
 
-func serializeToolOutput(output *provider.ToolResultOutput, warnings *[]provider.Warning) []anthropic.BetaToolResultBlockParamContentUnion {
+func serializeToolOutput(output *provider.ToolResultOutput, betas *[]anthropic.AnthropicBeta, warnings *[]provider.Warning) []anthropic.BetaToolResultBlockParamContentUnion {
 	if output == nil {
 		return []anthropic.BetaToolResultBlockParamContentUnion{
 			{OfText: &anthropic.BetaTextBlockParam{Text: ""}},
@@ -1900,24 +1915,21 @@ func serializeToolOutput(output *provider.ToolResultOutput, warnings *[]provider
 					OfText: &anthropic.BetaTextBlockParam{Text: v.Text},
 				})
 			case provider.ToolContentFile:
-				if v.Data == nil || !strings.HasPrefix(v.MediaType, "image/") {
+				if v.Data == nil || (!v.Data.IsURL() && !v.Data.IsData()) {
 					continue
 				}
-				data := v.Data.Base64
-				if data == "" && len(v.Data.Bytes) > 0 {
-					data = base64.StdEncoding.EncodeToString(v.Data.Bytes)
-				}
-				if v.Data.IsData() {
-					blocks = append(blocks, anthropic.BetaToolResultBlockParamContentUnion{
-						OfImage: &anthropic.BetaImageBlockParam{
-							Source: anthropic.BetaImageBlockParamSourceUnion{
-								OfBase64: &anthropic.BetaBase64ImageSourceParam{
-									Data:      data,
-									MediaType: anthropic.BetaBase64ImageSourceMediaType(v.MediaType),
-								},
-							},
-						},
-					})
+				file := provider.FilePart(v.MediaType, *v.Data)
+				if strings.HasPrefix(v.MediaType, "image/") {
+					if image, ok := convertImageFileContentPart(file, anthropic.BetaCacheControlEphemeralParam{}); ok {
+						blocks = append(blocks, anthropic.BetaToolResultBlockParamContentUnion{OfImage: image.OfImage})
+					}
+				} else if v.Data.IsURL() || v.MediaType == "application/pdf" {
+					if document, ok := convertPDFDocumentContentPart(file, anthropic.BetaCacheControlEphemeralParam{}); ok {
+						blocks = append(blocks, anthropic.BetaToolResultBlockParamContentUnion{OfDocument: document.OfDocument})
+						if v.Data.IsData() && betas != nil {
+							*betas = appendBetaUnique(*betas, "pdfs-2024-09-25")
+						}
+					}
 				}
 			}
 		}
@@ -2005,14 +2017,147 @@ func validateAdvisorResult(output *provider.ToolResultOutput) error {
 
 func validateProviderToolArgs(tools []provider.Tool) error {
 	for _, tool := range tools {
-		if tool.Type != provider.ToolTypeProvider || tool.ID != "anthropic.advisor_20260301" {
+		if tool.Type != provider.ToolTypeProvider {
 			continue
 		}
-		if err := validateAdvisorToolArgs(tool.Args); err != nil {
-			return fmt.Errorf("anthropic: invalid advisor tool arguments: %w", err)
+		if tool.ID == "anthropic.advisor_20260301" {
+			if err := validateAdvisorToolArgs(tool.Args); err != nil {
+				return fmt.Errorf("anthropic: invalid advisor tool arguments: %w", err)
+			}
+			continue
+		}
+		if !isWebTool(tool.ID) {
+			continue
+		}
+		if err := validateWebToolArgs(tool.ID, tool.Args); err != nil {
+			return fmt.Errorf("anthropic: invalid %s tool arguments: %w", tool.ID, err)
 		}
 	}
 	return nil
+}
+
+func isWebTool(id string) bool {
+	switch id {
+	case "anthropic.web_search_20250305", "anthropic.web_search_20260209", "anthropic.web_search_20260318",
+		"anthropic.web_fetch_20250910", "anthropic.web_fetch_20260209", "anthropic.web_fetch_20260318":
+		return true
+	default:
+		return false
+	}
+}
+
+func validateWebToolArgs(id string, args map[string]json.RawMessage) error {
+	search := strings.HasPrefix(id, "anthropic.web_search_")
+	latest := strings.HasSuffix(id, "20260318")
+	for key, raw := range args {
+		switch key {
+		case "maxUses", "maxContentTokens":
+			if key == "maxContentTokens" && search {
+				continue
+			}
+			var value *float64
+			if err := json.Unmarshal(raw, &value); err != nil || value == nil {
+				return fmt.Errorf("%s must be a number", key)
+			}
+			if math.IsInf(*value, 0) || math.IsNaN(*value) {
+				return fmt.Errorf("%s must be a finite number", key)
+			}
+		case "allowedDomains", "blockedDomains":
+			var values []json.RawMessage
+			if err := json.Unmarshal(raw, &values); err != nil || values == nil {
+				return fmt.Errorf("%s must be a string array", key)
+			}
+			for _, value := range values {
+				if !validJSONString(value) {
+					return fmt.Errorf("%s must be a string array", key)
+				}
+			}
+		case "citations":
+			if search {
+				continue
+			}
+			var fields map[string]json.RawMessage
+			if err := json.Unmarshal(raw, &fields); err != nil || fields == nil || !validJSONBool(fields["enabled"]) {
+				return errors.New("citations.enabled must be a boolean")
+			}
+		case "userLocation":
+			if !search {
+				continue
+			}
+			var fields map[string]json.RawMessage
+			if err := json.Unmarshal(raw, &fields); err != nil || fields == nil || !validJSONString(fields["type"]) {
+				return errors.New("userLocation.type must be approximate")
+			}
+			var locationType string
+			if err := json.Unmarshal(fields["type"], &locationType); err != nil || locationType != "approximate" {
+				return errors.New("userLocation.type must be approximate")
+			}
+			for _, name := range []string{"city", "region", "country", "timezone"} {
+				if value, ok := fields[name]; ok && !validJSONString(value) {
+					return fmt.Errorf("userLocation.%s must be a string", name)
+				}
+			}
+		case "useCache":
+			if !search && latest && !validJSONBool(raw) {
+				return errors.New("useCache must be a boolean")
+			}
+		case "responseInclusion":
+			if latest {
+				var value string
+				if err := json.Unmarshal(raw, &value); err != nil || (value != "full" && value != "excluded") {
+					return errors.New("responseInclusion must be full or excluded")
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func validJSONString(raw json.RawMessage) bool {
+	var value *string
+	return json.Unmarshal(raw, &value) == nil && value != nil
+}
+
+func validJSONBool(raw json.RawMessage) bool {
+	var value *bool
+	return json.Unmarshal(raw, &value) == nil && value != nil
+}
+
+func webToolNumberOptions(tools []provider.Tool, converted []anthropic.BetaToolUnionParam) []option.RequestOption {
+	var options []option.RequestOption
+	index := 0
+	for _, tool := range tools {
+		if tool.Type == provider.ToolTypeFunction {
+			index++
+			continue
+		}
+		if tool.Type != provider.ToolTypeProvider {
+			continue
+		}
+		_, _, warning := convertProviderTool(tool)
+		if warning != nil {
+			continue
+		}
+		if index >= len(converted) {
+			break
+		}
+		if isWebTool(tool.ID) {
+			for _, entry := range []struct{ argument, wire string }{{"maxUses", "max_uses"}, {"maxContentTokens", "max_content_tokens"}} {
+				if entry.argument == "maxContentTokens" && strings.HasPrefix(tool.ID, "anthropic.web_search_") {
+					continue
+				}
+				raw, ok := tool.Args[entry.argument]
+				if !ok {
+					continue
+				}
+				if _, err := strconv.ParseInt(string(raw), 10, 64); err != nil {
+					options = append(options, option.WithJSONSet(fmt.Sprintf("tools.%d.%s", index, entry.wire), json.Number(raw)))
+				}
+			}
+		}
+		index++
+	}
+	return options
 }
 
 func validateAdvisorToolArgs(args map[string]json.RawMessage) error {
@@ -2306,6 +2451,33 @@ func convertProviderTool(t provider.Tool) (anthropic.BetaToolUnionParam, []strin
 		}
 		return anthropic.BetaToolUnionParam{OfWebFetchTool20250910: param}, []string{"web-fetch-2025-09-10"}, nil
 
+	case "anthropic.web_fetch_20260318":
+		a := extractWebFetchArgs(t.Args)
+		param := &anthropic.BetaWebFetchTool20260318Param{
+			AllowedDomains: a.AllowedDomains,
+			BlockedDomains: a.BlockedDomains,
+			Citations:      a.Citations,
+		}
+		if a.HasMaxUses {
+			param.MaxUses = anthropic.Opt(a.MaxUses)
+		}
+		if a.HasMaxContent {
+			param.MaxContentTokens = anthropic.Opt(a.MaxContentTokens)
+		}
+		if raw, ok := t.Args["useCache"]; ok {
+			var value bool
+			if json.Unmarshal(raw, &value) == nil {
+				param.UseCache = anthropic.Bool(value)
+			}
+		}
+		if raw, ok := t.Args["responseInclusion"]; ok {
+			var value string
+			if json.Unmarshal(raw, &value) == nil {
+				param.ResponseInclusion = anthropic.BetaWebFetchTool20260318ResponseInclusion(value)
+			}
+		}
+		return anthropic.BetaToolUnionParam{OfWebFetchTool20260318: param}, nil, nil
+
 	case "anthropic.web_fetch_20260209":
 		a := extractWebFetchArgs(t.Args)
 		param := &anthropic.BetaWebFetchTool20260209Param{
@@ -2320,6 +2492,31 @@ func convertProviderTool(t provider.Tool) (anthropic.BetaToolUnionParam, []strin
 			param.MaxContentTokens = anthropic.Opt(a.MaxContentTokens)
 		}
 		return anthropic.BetaToolUnionParam{OfWebFetchTool20260209: param}, []string{"code-execution-web-tools-2026-02-09"}, nil
+
+	case "anthropic.web_search_20260318":
+		param := &anthropic.BetaWebSearchTool20260318Param{}
+		if raw, ok := t.Args["maxUses"]; ok {
+			var value int64
+			if json.Unmarshal(raw, &value) == nil {
+				param.MaxUses = anthropic.Opt(value)
+			}
+		}
+		if raw, ok := t.Args["allowedDomains"]; ok {
+			_ = json.Unmarshal(raw, &param.AllowedDomains)
+		}
+		if raw, ok := t.Args["blockedDomains"]; ok {
+			_ = json.Unmarshal(raw, &param.BlockedDomains)
+		}
+		if raw, ok := t.Args["userLocation"]; ok {
+			_ = json.Unmarshal(raw, &param.UserLocation)
+		}
+		if raw, ok := t.Args["responseInclusion"]; ok {
+			var value string
+			if json.Unmarshal(raw, &value) == nil {
+				param.ResponseInclusion = anthropic.BetaWebSearchTool20260318ResponseInclusion(value)
+			}
+		}
+		return anthropic.BetaToolUnionParam{OfWebSearchTool20260318: param}, nil, nil
 
 	case "anthropic.web_search_20260209":
 		param := &anthropic.BetaWebSearchTool20260209Param{}

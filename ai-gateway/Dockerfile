@@ -3,41 +3,49 @@
 FROM --platform=$BUILDPLATFORM golang:1.27.1-bookworm@sha256:69a7b9788769bec032d238959b61854e9ae87f57be9029ec04e9885fabf99195 AS build
 
 ARG TARGETOS TARGETARCH
+ARG VCS_REF=local-unverified
 
 WORKDIR /src
 
 ENV CGO_ENABLED=0 \
-    GOWORK=off
+    GOWORK=/src/go.gateway.work
 
-COPY go.mod go.sum ./
-RUN --mount=type=cache,target=/go/pkg/mod \
-    go mod download
-
-COPY LICENSE NOTICE ./
-COPY catalog ./catalog
-COPY providerwire ./providerwire
-COPY cmd ./cmd
+COPY . .
 
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
     GOOS=$TARGETOS GOARCH=$TARGETARCH \
-    go build -mod=readonly -trimpath -o /out/grafana-ai-gateway ./cmd/grafana-ai-gateway
+    go build -mod=readonly -trimpath -o /out/grafana-ai-gateway ./ai-gateway/cmd/grafana-ai-gateway
 
 RUN --mount=type=cache,target=/go/pkg/mod \
     set -eu; \
     mkdir -p /out/licenses/grafana-ai-gateway /out/licenses/dependencies; \
-    cp LICENSE NOTICE /out/licenses/grafana-ai-gateway/; \
+    cp ai-gateway/LICENSE ai-gateway/NOTICE /out/licenses/grafana-ai-gateway/; \
     GOOS=$TARGETOS GOARCH=$TARGETARCH go list -deps -mod=readonly \
-      -f '{{with .Module}}{{if .Version}}{{.Path}}{{"\t"}}{{.Version}}{{"\t"}}{{.Dir}}{{end}}{{end}}' \
-      ./cmd/grafana-ai-gateway | sort -u > /out/licenses/THIRD_PARTY_MODULES.txt; \
-    while IFS="$(printf '\t')" read -r module version directory; do \
-      destination="/out/licenses/dependencies/${module}@${version}"; \
+      -f '{{with .Module}}{{.Path}}{{"\t"}}{{if .Version}}{{.Version}}{{else}}local{{end}}{{"\t"}}{{if .Sum}}{{.Sum}}{{else}}-{{end}}{{"\t"}}{{.Dir}}{{end}}' \
+      ./ai-gateway/cmd/grafana-ai-gateway | sort -u > /tmp/modules; \
+    : > /out/licenses/THIRD_PARTY_MODULES.txt; \
+    while IFS="$(printf '\t')" read -r module version checksum directory; do \
+      if [ "$version" = local ]; then \
+        case "$directory" in /src|/src/*) ;; *) echo "unexpected local module: $module" >&2; exit 1 ;; esac; \
+        attribution="$VCS_REF"; \
+      else \
+        [ "$checksum" != - ] || { echo "missing module checksum: $module" >&2; exit 1; }; \
+        attribution="$version"; \
+      fi; \
+      printf '%s\t%s\t%s\n' "$module" "$attribution" "$checksum" >> /out/licenses/THIRD_PARTY_MODULES.txt; \
+      destination="/out/licenses/dependencies/${module}@${attribution}"; \
       mkdir -p "$destination"; \
-      for file in "$directory"/LICENSE* "$directory"/LICENCE* "$directory"/NOTICE*; do \
+      if [ "$version" = local ]; then \
+        case "$directory" in /src/ai-gateway) license_dir=/src/ai-gateway ;; *) license_dir=/src ;; esac; \
+      else \
+        license_dir="$directory"; \
+      fi; \
+      for file in "$license_dir"/LICENSE* "$license_dir"/LICENCE* "$license_dir"/NOTICE*; do \
         [ -f "$file" ] || continue; \
         cp "$file" "$destination/"; \
       done; \
-    done < /out/licenses/THIRD_PARTY_MODULES.txt
+    done < /tmp/modules
 
 FROM debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171 AS runtime
 
@@ -47,7 +55,7 @@ RUN apt-get update \
   && groupadd --gid 10001 --system gateway \
   && useradd --uid 10001 --gid 10001 --system --no-create-home gateway
 
-ARG VCS_REF=unknown
+ARG VCS_REF=local-unverified
 ARG SOURCE_URL=https://github.com/grafana/ai-sdk
 
 LABEL org.opencontainers.image.title="Grafana AI Gateway" \

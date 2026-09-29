@@ -52,7 +52,7 @@ function fixture(t) {
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const files = {
     "test/conformance/upstream.yaml": baselineYaml,
-    "test/pnpm-workspace.yaml": "packages: []\nminimumReleaseAge: 4320\n",
+    "pnpm-workspace.yaml": "packages: []\nminimumReleaseAge: 4320\n",
     ...Object.fromEntries(consumerPaths.map((path) => [path, JSON.stringify({
       name: path,
       dependencies: { ai: "1.0.0", "@ai-sdk/provider": "1.0.0", other: "^3.0.0" },

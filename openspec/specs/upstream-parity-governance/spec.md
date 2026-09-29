@@ -293,16 +293,21 @@ Applying an unverified target SHALL clear the previous verification date and SHA
 - **THEN** baseline validation SHALL report incomplete verification
 
 ### Requirement: Publication-aware independent mergeability
-Upgrade plans SHALL account for published Go module dependencies before implementation. Coordinated producer and consumer changes MAY land in a single independently green candidate-source PR when required source parity/interop checks exercise the changed implementations together and internal published pins remain real, downloadable, replacement-free and merged into canonical main. An upgrade PR SHALL NOT rely on a later unmerged source change to pass its required checks. Source integration SHALL NOT count as independently consumable release evidence: before manually publishing a selected module, maintainers SHALL validate its standalone public-proxy, readonly, workspace-off build and tests; Gateway image publication and deployment SHALL require successful standalone artifact validation for the same revision. The enclosing parity work package SHALL additionally satisfy its full behavioral acceptance contract.
+Upgrade plans SHALL account for published Go module dependencies before implementation. Coordinated producer and consumer changes MAY land in a single independently green candidate-source PR when required source parity/interop checks exercise the changed implementations together and internal published pins remain real, downloadable, replacement-free and merged into canonical main. An upgrade PR SHALL NOT rely on a later unmerged source change to pass its required checks. Source integration SHALL NOT count as independently consumable Go-module release evidence: before manually publishing a selected SDK/provider/middleware module, maintainers SHALL validate its standalone public-proxy, readonly, workspace-off build and tests. Gateway is a container-only supported release component: image publication and deployment SHALL require successful same-revision workspace-source multiarchitecture image validation and native smoke, not Gateway standalone module readiness against older published pins. The enclosing parity work package SHALL additionally satisfy its full behavioral acceptance contract.
 
 #### Scenario: Workspace masks an unpublished dependency
 - **WHEN** a coordinated source PR passes only with candidate workspace copies of producer and consumer changes while existing published pins are older but merged
 - **THEN** its required checks SHALL prove integrated candidate behavior and parity/interop independently of later PRs
-- **AND** standalone compilation failure SHALL NOT alone block source merge but SHALL block an affected artifact's publication until resolved
+- **AND** standalone compilation failure SHALL NOT alone block source merge or Gateway container publication after same-revision image validation, but SHALL block an affected independently consumable Go module's publication until resolved
 
 #### Scenario: Parity upgrade has a failing required check
 - **WHEN** a pinned-version upgrade fails a required parity, integration or candidate-source check
 - **THEN** it SHALL correct that failure in the upgrade PR or wait rather than registering it as deferred nonblocking work
+
+#### Scenario: Gateway publication at a coherent candidate revision
+- **WHEN** a Gateway image validates with candidate SDK/provider/middleware source while its declared older published module pins cannot compile standalone
+- **THEN** it MAY publish only after source, ancestry, boundary, image and smoke checks for that revision succeed
+- **AND** its success SHALL NOT authorize any SDK/provider/middleware module tag without independent standalone verification
 
 ### Requirement: Scheduled pinned-version upgrade and assessment
 The configured daily parity automation SHALL execute the repository's pinned-version upgrade and comprehensive assessment workflow, not only discover releases. Its authorization SHALL include necessary compatibility corrections, registration of actionable follow-up issues, signed commits, branch push and creation of a draft upgrade PR. It SHALL NOT automatically implement nonblocking parity packages, approve unresolved material API/scope decisions, merge a PR, mutate a shared upstream checkout or replace another upgrade's fixed target. Local memory SHALL be advisory rather than source or approval authority. The automation SHALL keep run-specific assessment and issue links in the upgrade PR and SHALL NOT create a dated assessment section or issue catalog in the parity coverage map.
