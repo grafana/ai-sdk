@@ -1,6 +1,7 @@
 package v4
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 
 const (
 	maxJavaScriptSafeInteger = 9007199254740991
+	maxRawUsageBytes         = 1 << 20
 	minimumTextPartBytes     = int64(len(`{"type":"text","text":""}`))
 )
 
@@ -167,6 +169,17 @@ func validTokenCounts(values ...*int) bool {
 		}
 	}
 	return true
+}
+
+func validRawUsage(raw json.RawMessage, limit int64) bool {
+	if len(raw) == 0 {
+		return true
+	}
+	if int64(len(raw)) > limit || len(raw) > maxRawUsageBytes || !utf8.Valid(raw) || !json.Valid(raw) {
+		return false
+	}
+	trimmed := bytes.TrimSpace(raw)
+	return len(trimmed) > 0 && trimmed[0] == '{'
 }
 
 func encodeUnarySuccess(value unarySuccess, limit int64) ([]byte, bool) {
