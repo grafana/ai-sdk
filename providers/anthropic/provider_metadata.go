@@ -1,6 +1,7 @@
 package anthropic
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 
@@ -26,12 +27,87 @@ func buildAnthropicProviderMetadata(fields map[string]json.RawMessage, usageRaw 
 	if stopDetails := mapStopDetailsMetadata(rawJSONValue(fields["stop_details"])); stopDetails != nil {
 		metadata["stopDetails"] = stopDetails
 	}
+	if value := fields["safeguard_results"]; len(value) > 0 && !bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+		results, err := mapSafeguardResults(value)
+		if err != nil {
+			return nil, err
+		}
+		metadata["safeguardResults"] = results
+	}
 
 	raw, err := json.Marshal(metadata)
 	if err != nil {
 		return nil, fmt.Errorf("marshaling Anthropic provider metadata: %w", err)
 	}
 	return provider.ProviderMetadata{"anthropic": raw}, nil
+}
+
+type safeguardResult struct {
+	Type   *string          `json:"type"`
+	Status *safeguardStatus `json:"status"`
+}
+
+type safeguardStatus struct {
+	Type     *string         `json:"type"`
+	ToolUses json.RawMessage `json:"tool_uses,omitempty"`
+}
+
+type safeguardToolUse struct {
+	Type        *string         `json:"type"`
+	Outcome     json.RawMessage `json:"outcome,omitempty"`
+	Explanation json.RawMessage `json:"explanation,omitempty"`
+}
+
+func mapSafeguardResults(raw json.RawMessage) ([]safeguardResult, error) {
+	var results []safeguardResult
+	if err := json.Unmarshal(raw, &results); err != nil || results == nil {
+		return nil, fmt.Errorf("anthropic: invalid safeguard_results array")
+	}
+	for i := range results {
+		result := &results[i]
+		if result.Type == nil {
+			return nil, fmt.Errorf("anthropic: invalid safeguard_results[%d].type", i)
+		}
+		if result.Status == nil {
+			return nil, fmt.Errorf("anthropic: invalid safeguard_results[%d].status", i)
+		}
+		if result.Status.Type == nil {
+			return nil, fmt.Errorf("anthropic: invalid safeguard_results[%d].status.type", i)
+		}
+		if len(result.Status.ToolUses) == 0 || bytes.Equal(bytes.TrimSpace(result.Status.ToolUses), []byte("null")) {
+			continue
+		}
+		var uses map[string]safeguardToolUse
+		if err := json.Unmarshal(result.Status.ToolUses, &uses); err != nil || uses == nil {
+			return nil, fmt.Errorf("anthropic: invalid safeguard_results[%d].status.tool_uses", i)
+		}
+		for _, use := range uses {
+			if use.Type == nil {
+				return nil, fmt.Errorf("anthropic: invalid safeguard_results[%d].status.tool_uses type", i)
+			}
+			for _, field := range []struct {
+				name  string
+				value json.RawMessage
+			}{
+				{"outcome", use.Outcome},
+				{"explanation", use.Explanation},
+			} {
+				if len(field.value) == 0 || bytes.Equal(bytes.TrimSpace(field.value), []byte("null")) {
+					continue
+				}
+				var text string
+				if json.Unmarshal(field.value, &text) != nil {
+					return nil, fmt.Errorf("anthropic: invalid safeguard_results[%d].status.tool_uses %s", i, field.name)
+				}
+			}
+		}
+		filtered, err := json.Marshal(uses)
+		if err != nil {
+			return nil, fmt.Errorf("anthropic: marshaling safeguard_results[%d].status.tool_uses: %w", i, err)
+		}
+		result.Status.ToolUses = filtered
+	}
+	return results, nil
 }
 
 func messageMetadataFields(raw string) map[string]json.RawMessage {

@@ -681,7 +681,7 @@ func TestNewModelObservabilityFactory_AgentExportIsCanonicalMetadataOnly(t *test
 	export := string(serialized)
 	for _, private := range []string{
 		"prompt-private", "output-private", "finish-private", "metadata-private", "response-private",
-		"anthropic", "backend-private", "header-private", "body-private", "bearer-private", "2048", "web_search_requests", "topology-private",
+		"anthropic", "backend-private", "header-private", "body-private", "bearer-private", "budgetTokens", "web_search_requests", "topology-private",
 	} {
 		assert.NotContains(t, export, private)
 	}
