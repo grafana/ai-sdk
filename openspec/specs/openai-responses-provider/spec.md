@@ -260,7 +260,7 @@ when no schema is provided.
 - **THEN** the request `text.format` is a `json_schema` format carrying the normalized schema, name, and `strict` flag
 
 ### Requirement: GPT-6 Responses capability and reasoning-effort validation
-The OpenAI Responses provider SHALL recognize anchored `gpt-6` and later model IDs as supporting configuration updates and async tool calling, with supported request-level reasoning efforts `low`, `medium`, `high`, `xhigh`, `max`. It SHALL resolve the request effort from the existing provider-option/core-setting precedence and omit an effort not in that list with an `unsupported` warning for `reasoningEffort` listing the supported values. Earlier, non-GPT, and unrecognized models SHALL retain their existing request-effort behavior. An explicitly forced reasoning mode SHALL NOT by itself turn on GPT-6 capabilities. For the Mantle-prefixed provider variant, existing endpoint-specific overrides SHALL remain intact; enabling the new flags for that endpoint requires separate endpoint-owner verification rather than inference from its OpenAI-like model ID.
+The OpenAI Responses provider SHALL recognize anchored `gpt-6` and later model IDs as supporting configuration updates and async tool calling, with supported request-level reasoning efforts `low`, `medium`, `high`, `xhigh`, `max`. It SHALL resolve the request effort from the existing provider-option/core-setting precedence and omit an effort not in that list with an `unsupported` warning for `reasoningEffort` listing the supported values. Earlier, non-GPT, and unrecognized models SHALL retain their existing request-effort behavior. An explicitly forced reasoning mode SHALL NOT by itself turn on GPT-6 capabilities. GPT-6 and later reasoning models SHALL omit requested logprobs and the `message.output_text.logprobs` include with an `unsupported` `logprobs` warning. They SHALL also omit legacy `promptCacheRetention` with an `unsupported` warning directing callers to `promptCacheOptions`. For the Mantle-prefixed provider variant, existing endpoint-specific overrides SHALL remain intact; enabling the new flags for that endpoint requires separate endpoint-owner verification rather than inference from its OpenAI-like model ID.
 
 #### Scenario: Supported GPT-6 effort from provider option
 - **WHEN** a `gpt-6-astra` generate or stream request sets `reasoningEffort` to `max`
@@ -270,6 +270,15 @@ The OpenAI Responses provider SHALL recognize anchored `gpt-6` and later model I
 - **WHEN** a GPT-6 or later generate or stream request resolves effort `none` or `minimal` from either the OpenAI provider option or the existing core reasoning setting
 - **THEN** the request omits reasoning effort and emits an `unsupported` `reasoningEffort` warning naming `low, medium, high, xhigh, max`
 - **AND** it does not mutate the supplied options
+
+#### Scenario: GPT-6 omits unsupported logprobs
+- **WHEN** a GPT-6 or later reasoning request asks for top logprobs or includes `message.output_text.logprobs`
+- **THEN** both settings are omitted and an `unsupported` `logprobs` warning is emitted
+
+#### Scenario: GPT-6 omits legacy prompt-cache retention
+- **WHEN** a GPT-6 or later request specifies `promptCacheRetention`
+- **THEN** the field is omitted with an `unsupported` warning directing the caller to `promptCacheOptions`
+- **AND** pre-GPT-6 and Mantle-prefixed models retain their existing retention behavior
 
 #### Scenario: Conservative model identity
 - **WHEN** a GPT-5.6, `gpt-6chat`, custom, or other nonmatching model ID receives an existing valid reasoning effort
@@ -313,6 +322,10 @@ The OpenAI provider SHALL accept a tri-state `async` setting on function-tool an
 #### Scenario: False is distinct from absent
 - **WHEN** a tool explicitly provides `async: false` on a non-GPT-6 model
 - **THEN** `async: false` is sent without a capability warning; a tool without the setting omits it
+
+#### Scenario: Invalid custom async setting fails locally
+- **WHEN** an `openai.custom` tool provides a present `async` value that is not a JSON boolean
+- **THEN** request preparation fails before sending an HTTP request
 
 #### Scenario: Generate and stream metadata survives continuation
 - **WHEN** non-streaming output or streaming added/done events describe a function or custom-tool call with an explicitly present `async` value and the call is continued with `store: false`

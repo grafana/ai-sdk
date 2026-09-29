@@ -383,8 +383,15 @@ func customTool(t provider.Tool, caps modelCapabilities) (*responses.CustomToolP
 	}
 	custom := responses.CustomToolParam{Name: t.Name}
 	var warnings []provider.Warning
-	if value, ok := boolArg(t.Args, "async"); ok {
-		if async, warning := supportedAsyncToolOption(&value, caps, t.Name); warning != nil {
+	if raw, ok := rawArg(t.Args, "async"); ok {
+		var value *bool
+		if err := json.Unmarshal(raw, &value); err != nil {
+			return nil, nil, fmt.Errorf("openai: custom tool %q async must be a boolean: %w", t.Name, err)
+		}
+		if value == nil {
+			return nil, nil, fmt.Errorf("openai: custom tool %q async must be a boolean", t.Name)
+		}
+		if async, warning := supportedAsyncToolOption(value, caps, t.Name); warning != nil {
 			warnings = append(warnings, *warning)
 		} else if async != nil {
 			custom.Async = param.NewOpt(*async)

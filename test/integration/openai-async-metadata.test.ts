@@ -18,9 +18,9 @@ describe("OpenAI async tool metadata", () => {
       { id: "call_absent", name: "lookup_absent", metadata: { itemId: "fc_absent" } },
     ];
     for (const { id, name, metadata } of expected) {
-      expect(chunks.find(chunk => chunk.type === "tool-input-available" && chunk.toolCallId === id)).toMatchObject({
-        toolName: name, providerMetadata: { openai: metadata },
-      });
+      const chunk = chunks.find(chunk => chunk.type === "tool-input-available" && chunk.toolCallId === id);
+      expect(chunk).toMatchObject({ toolName: name });
+      expect(chunk && "providerMetadata" in chunk ? chunk.providerMetadata?.openai : undefined).toEqual(metadata);
     }
     expect(chunks.filter(chunk => chunk.type === "start-step")).toHaveLength(2);
     expect(chunks.some(chunk => chunk.type === "text-delta" && chunk.delta === "continued")).toBe(true);
@@ -30,9 +30,9 @@ describe("OpenAI async tool metadata", () => {
       terminateOnError: true,
     })) message = next;
     for (const { id, name, metadata } of expected) {
-      expect(message?.parts.find(part => part.type === `tool-${name}`)).toMatchObject({
-        toolCallId: id, callProviderMetadata: { openai: metadata }, state: "output-available", output: { ok: true },
-      });
+      const part = message?.parts.find(part => part.type === `tool-${name}`);
+      expect(part).toMatchObject({ toolCallId: id, state: "output-available", output: { ok: true } });
+      expect(part && "callProviderMetadata" in part ? part.callProviderMetadata?.openai : undefined).toEqual(metadata);
     }
     expect(message?.parts.find(part => part.type === "text")).toMatchObject({ text: "continued" });
   });

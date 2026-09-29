@@ -64,6 +64,38 @@ func TestBuildParams_AsyncToolCapabilities(t *testing.T) {
 	}
 }
 
+func TestBuildParams_CustomToolAsyncValidation(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		value     json.RawMessage
+		wantError bool
+	}{
+		{name: "absent"},
+		{name: "true", value: json.RawMessage(`true`)},
+		{name: "false", value: json.RawMessage(`false`)},
+		{name: "string", value: json.RawMessage(`"true"`), wantError: true},
+		{name: "null", value: json.RawMessage(`null`), wantError: true},
+		{name: "object", value: json.RawMessage(`{}`), wantError: true},
+		{name: "malformed", value: json.RawMessage(`{`), wantError: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			args := map[string]json.RawMessage{}
+			if tc.value != nil {
+				args["async"] = tc.value
+			}
+			_, _, _, err := buildParams("gpt-6", provider.CallOptions{
+				Prompt: []provider.Message{provider.UserText("hi")},
+				Tools:  []provider.Tool{{Type: provider.ToolTypeProvider, ID: toolIDCustom, Name: "write_sql", Args: args}},
+			})
+			if tc.wantError {
+				require.ErrorContains(t, err, `custom tool "write_sql" async must be a boolean`)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
 func boolPointer(value bool) *bool { return &value }
 
 func TestConvertResponse_AsyncToolCallMetadata(t *testing.T) {

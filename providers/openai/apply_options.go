@@ -107,7 +107,14 @@ func applyProviderOptions(body *responses.ResponseNewParams, popts OpenAIRespons
 		body.SafetyIdentifier = param.NewOpt(popts.SafetyIdentifier)
 	}
 	if popts.PromptCacheRetention != "" {
-		body.PromptCacheRetention = responses.ResponseNewParamsPromptCacheRetention(popts.PromptCacheRetention)
+		if caps.supportsConfigurationUpdate {
+			warnings = append(warnings, provider.Warning{
+				Type: provider.WarnUnsupported, Feature: "promptCacheRetention",
+				Details: "promptCacheRetention is not supported by GPT-6 and later models; use promptCacheOptions instead",
+			})
+		} else {
+			body.PromptCacheRetention = responses.ResponseNewParamsPromptCacheRetention(popts.PromptCacheRetention)
+		}
 	}
 	if popts.PromptCacheOptions != nil {
 		body.SetExtraFields(map[string]any{"prompt_cache_options": popts.PromptCacheOptions})
@@ -192,7 +199,8 @@ func applyProviderOptions(body *responses.ResponseNewParams, popts OpenAIRespons
 // applyIncludeAndReasoning populates the include array (logprobs, web search
 // sources, code interpreter outputs, encrypted reasoning) and the reasoning
 // effort/summary block for reasoning models.
-func applyIncludeAndReasoning(body *responses.ResponseNewParams, popts OpenAIResponsesOptions, resolvedEffort string, isReasoning, store, webSearchSourcesIncludeSupported bool, br *buildResult) {
+func applyIncludeAndReasoning(body *responses.ResponseNewParams, popts OpenAIResponsesOptions, resolvedEffort string, isReasoning, store, webSearchSourcesIncludeSupported bool, caps modelCapabilities, br *buildResult) []provider.Warning {
+	var warnings []provider.Warning
 	includes := map[responses.ResponseIncludable]bool{}
 	for _, inc := range popts.Include {
 		includes[responses.ResponseIncludable(inc)] = true
@@ -207,9 +215,16 @@ func applyIncludeAndReasoning(body *responses.ResponseNewParams, popts OpenAIRes
 			topLogprobs = *popts.Logprobs.Int
 		}
 	}
-	if topLogprobs > 0 {
+	logprobsInclude := responses.ResponseIncludableMessageOutputTextLogprobs
+	if isReasoning && caps.supportedReasoningEfforts != nil && (topLogprobs > 0 || includes[logprobsInclude]) {
+		delete(includes, logprobsInclude)
+		warnings = append(warnings, provider.Warning{
+			Type: provider.WarnUnsupported, Feature: "logprobs",
+			Details: "logprobs is not supported for reasoning models",
+		})
+	} else if topLogprobs > 0 {
 		body.TopLogprobs = param.NewOpt(topLogprobs)
-		includes[responses.ResponseIncludableMessageOutputTextLogprobs] = true
+		includes[logprobsInclude] = true
 		br.logprobsRequested = true
 	}
 
@@ -269,6 +284,7 @@ func applyIncludeAndReasoning(body *responses.ResponseNewParams, popts OpenAIRes
 			body.Reasoning = r
 		}
 	}
+	return warnings
 }
 
 // includeOrder defines the canonical ordering for include entries to keep

@@ -152,7 +152,7 @@ func buildParamsWithConfig(modelID string, opts provider.CallOptions, providerOp
 	warnings = append(warnings, applyProviderOptions(&body, popts, isReasoning, caps)...)
 
 	// include auto-population + reasoning block.
-	applyIncludeAndReasoning(&body, popts, resolvedEffort, isReasoning, store, webSearchSourcesIncludeSupported, &br)
+	warnings = append(warnings, applyIncludeAndReasoning(&body, popts, resolvedEffort, isReasoning, store, webSearchSourcesIncludeSupported, caps, &br)...)
 
 	return body, warnings, br, nil
 }

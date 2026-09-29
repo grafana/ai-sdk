@@ -6,9 +6,9 @@
 
 ## 2. Provider request construction
 
-- [x] 2.1 Write deterministic `providers/openai` model-matrix and `DoGenerate`/`DoStream` request assertions for supported/unsupported resolved reasoning efforts, including core fallback, aliases, third-party IDs and existing endpoint overrides; implement the capability flags and warning/omission behavior in `models.go`, `convert_request.go`, and `apply_options.go`.
+- [x] 2.1 Write deterministic `providers/openai` model-matrix and `DoGenerate`/`DoStream` request assertions for supported/unsupported resolved reasoning efforts, including core fallback, aliases, third-party IDs, GPT-6 logprobs and legacy prompt-cache-retention omission, plus existing endpoint overrides; implement the capability flags and warning/omission behavior in `models.go`, `convert_request.go`, and `apply_options.go`.
 - [x] 2.2 Write request assertions for supported and rejected `reasoningEffortUpdate` combinations (including present empty context management), request-level effort independence, previous-response continuation, `compactionTrigger` true/false and input order/immutability; add approved typed options and encode controls via pinned SDK input union without modifying prompt history.
-- [x] 2.3 Write tool request assertions for absent/false/true async on ordinary and namespaced functions and `openai.custom`, supported and unsupported models, preserved allowed callers and tool-named warnings; implement in `prepare_tools.go` without mutating tool args.
+- [x] 2.3 Write tool request assertions for absent/false/true async on ordinary and namespaced functions and `openai.custom`, supported and unsupported models, invalid custom async values, preserved allowed callers and tool-named warnings; implement in `prepare_tools.go` without mutating tool args.
 
 ## 3. Metadata and continuation
 

@@ -176,15 +176,22 @@ func TestBuildParams_CompactionTriggerFollowsHistory(t *testing.T) {
 
 func TestResponsesCapabilityControls_GenerateAndStreamRequests(t *testing.T) {
 	trigger := true
+	logprobs := int64(5)
 	for _, tc := range []struct {
-		name, model string
-		options     OpenAIResponsesOptions
-		wantUpdate  bool
-		wantWarning string
+		name, model              string
+		options                  OpenAIResponsesOptions
+		wantUpdate               bool
+		wantNoLogprobs           bool
+		wantPromptCacheRetention string
+		wantWarning              string
 	}{
 		{name: "supported", model: "gpt-6-astra", options: OpenAIResponsesOptions{ReasoningEffort: "high", ReasoningEffortUpdate: OpenAIReasoningEffortUpdateLow, CompactionTrigger: &trigger}, wantUpdate: true},
 		{name: "unsupported effort and update", model: "gpt-5.6", options: OpenAIResponsesOptions{ReasoningEffortUpdate: OpenAIReasoningEffortUpdateLow}, wantWarning: "reasoningEffortUpdate"},
 		{name: "invalid gpt6 effort", model: "gpt-6-astra", options: OpenAIResponsesOptions{ReasoningEffort: "none"}, wantWarning: "reasoningEffort"},
+		{name: "gpt6 omits logprobs", model: "gpt-6-astra", options: OpenAIResponsesOptions{ReasoningEffort: "low", Logprobs: &LogprobsOption{Int: &logprobs}, Include: []string{"message.output_text.logprobs"}}, wantNoLogprobs: true, wantWarning: "logprobs"},
+		{name: "gpt6 omits legacy prompt cache retention", model: "gpt-6-astra", options: OpenAIResponsesOptions{PromptCacheRetention: "24h"}, wantWarning: "promptCacheRetention"},
+		{name: "gpt5 retains legacy prompt cache retention", model: "gpt-5.6", options: OpenAIResponsesOptions{PromptCacheRetention: "24h"}, wantPromptCacheRetention: "24h"},
+		{name: "mantle retains legacy prompt cache retention", model: "openai.gpt-6-astra", options: OpenAIResponsesOptions{PromptCacheRetention: "24h"}, wantPromptCacheRetention: "24h"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var bodies []map[string]any
@@ -223,6 +230,15 @@ func TestResponsesCapabilityControls_GenerateAndStreamRequests(t *testing.T) {
 					assert.Equal(t, "high", body["reasoning"].(map[string]any)["effort"])
 				} else {
 					assert.Contains(t, input[0].(map[string]any), "content")
+					if tc.wantNoLogprobs {
+						assert.NotContains(t, body, "top_logprobs")
+						assert.NotContains(t, body, "include")
+					}
+					if tc.wantPromptCacheRetention == "" {
+						assert.NotContains(t, body, "prompt_cache_retention")
+					} else {
+						assert.Equal(t, tc.wantPromptCacheRetention, body["prompt_cache_retention"])
+					}
 					if tc.wantWarning == "reasoningEffort" {
 						if reasoning, ok := body["reasoning"].(map[string]any); ok {
 							assert.NotContains(t, reasoning, "effort")
