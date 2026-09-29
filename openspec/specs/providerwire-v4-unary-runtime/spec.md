@@ -211,7 +211,7 @@ A successful unary response SHALL contain only ordered supported text and functi
 
 ### Requirement: Bounded preflight and standard success encoding
 
-Before encoding, the handler SHALL reject content cardinality or aggregate content, raw-finish string bytes, and raw-usage input bytes that cannot fit the configured unary budget using overflow-safe accounting. It SHALL count raw-usage bytes before parsing or marshaling and reject raw usage longer than 1,048,576 bytes or the configured unary response limit, including whitespace. It SHALL then validate that any present raw is a single JSON object with valid UTF-8 and no unpaired escaped UTF-16 surrogates, including in nested string keys and values, on original bytes before Go JSON encoding can normalize invalid Unicode; valid high/low pairs SHALL be accepted. Unicode scanning SHALL occur only after the size preflight so it remains bounded. The complete minimal private DTO SHALL then be encoded with standard Go JSON, rejected when the final bytes exceed the configured limit, and committed only after successful encoding and the final size check. Provider-domain JSON marshalers SHALL NOT control the response. Standard encoding MAY allocate a bounded constant multiple of the configured limit for worst-case escaping.
+Before encoding, the handler SHALL reject content cardinality or aggregate content, raw-finish string bytes, and raw-usage input bytes that cannot fit the configured unary budget using overflow-safe accounting. It SHALL count raw-usage bytes before parsing or marshaling and reject raw usage longer than 1,048,576 bytes or the configured unary response limit, including whitespace. It SHALL then validate that any present raw is a single JSON object with valid UTF-8 on original bytes. Standard JSON encoding SHALL preserve valid JSON escape sequences, including lone and paired UTF-16 surrogate escapes, in the raw object. Validation SHALL occur only after the size preflight so it remains bounded. The complete minimal private DTO SHALL then be encoded with standard Go JSON, rejected when the final bytes exceed the configured limit, and committed only after successful encoding and the final size check. Provider-domain JSON marshalers SHALL NOT control the response. Standard encoding MAY allocate a bounded constant multiple of the configured limit for worst-case escaping.
 
 #### Scenario: Preflight rejects oversized provider values
 - **WHEN** content count or aggregate raw string bytes (including supplied raw usage) exceed the unary budget, or raw usage exceeds 1,048,576 bytes
@@ -221,11 +221,11 @@ Before encoding, the handler SHALL reject content cardinality or aggregate conte
 - **WHEN** raw bytes pass preflight but standard JSON escaping makes the encoded response exceed the limit
 - **THEN** the handler SHALL return the fixed internal error before committing HTTP 200
 
-#### Scenario: Invalid raw Unicode fails before normalization
-- **WHEN** in-limit provider raw usage contains invalid UTF-8 or a lone escaped surrogate in an object key or nested value
+#### Scenario: Raw UTF-8 and JSON escapes
+- **WHEN** in-limit provider raw usage contains invalid UTF-8 in an object key or nested value
 - **THEN** the handler SHALL reject it before JSON encoding and return the fixed internal error without committing HTTP 200
-- **WHEN** in-limit raw usage contains a valid escaped surrogate pair
-- **THEN** it SHALL pass Unicode validation, with success still subject to object and complete-response limits
+- **WHEN** in-limit raw usage contains valid JSON with lone or paired escaped surrogates
+- **THEN** the handler SHALL preserve the raw JSON escapes, with success still subject to object and complete-response limits
 
 #### Scenario: Response byte boundary
 - **WHEN** the encoded response is below, exactly at, or above the configured limit

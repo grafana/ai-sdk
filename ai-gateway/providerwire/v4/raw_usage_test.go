@@ -23,6 +23,8 @@ func TestRawUsageResponses(t *testing.T) {
 		{name: "empty object", raw: json.RawMessage(`{}`), want: `{}`},
 		{name: "absent"},
 		{name: "valid surrogate pair", raw: json.RawMessage(`{"nested":{"\ud83d\ude00":"\ud83d\ude00"}}`), want: `{"nested":{"😀":"😀"}}`},
+		{name: "lone high surrogate", raw: json.RawMessage(`{"\ud800":1}`), want: `{"\ud800":1}`},
+		{name: "lone low surrogate", raw: json.RawMessage(`{"nested":["\udc00"]}`), want: `{"nested":["\udc00"]}`},
 	} {
 		for _, streaming := range []bool{false, true} {
 			name := "unary"
@@ -70,6 +72,9 @@ func TestRawUsageResponses(t *testing.T) {
 					assert.Nil(t, value.Usage.Raw)
 				} else {
 					assert.JSONEq(t, tc.want, string(value.Usage.Raw))
+					if strings.Contains(tc.name, "lone") {
+						assert.Equal(t, string(tc.raw), string(value.Usage.Raw))
+					}
 				}
 			})
 		}
@@ -135,8 +140,6 @@ func TestRawUsageRejectsInvalidProviderData(t *testing.T) {
 		{name: "whitespace only", raw: json.RawMessage(`  `)},
 		{name: "invalid UTF-8 key", raw: append([]byte(`{"`), append([]byte{0xff}, []byte(`":1}`)...)...)},
 		{name: "invalid UTF-8 nested", raw: append([]byte(`{"nested":["`), append([]byte{0xff}, []byte(`"]}`)...)...)},
-		{name: "lone high key", raw: json.RawMessage(`{"\ud800":1}`)},
-		{name: "lone low nested", raw: json.RawMessage(`{"nested":["\udc00"]}`)},
 		{name: "raw input ceiling", raw: json.RawMessage(`{"large":"` + strings.Repeat("x", 1<<20) + `"}`)},
 	} {
 		for _, streaming := range []bool{false, true} {

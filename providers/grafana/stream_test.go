@@ -128,6 +128,8 @@ func TestModel_StreamRawUsage(t *testing.T) {
 		{name: "empty", raw: `{}`, want: `{}`},
 		{name: "native", raw: `{"input_tokens":32,"service_tier":"standard","nested":[1,true]}`, want: `{"input_tokens":32,"service_tier":"standard","nested":[1,true]}`},
 		{name: "valid surrogate", raw: `{"nested":{"\ud83d\ude00":1}}`, want: `{"nested":{"😀":1}}`},
+		{name: "lone high key", raw: `{"nested":{"\ud800":1}}`, want: `{"nested":{"\ud800":1}}`},
+		{name: "lone low nested", raw: `{"nested":["\udc00"]}`, want: `{"nested":["\udc00"]}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			finish := finishEvent
@@ -145,6 +147,9 @@ func TestModel_StreamRawUsage(t *testing.T) {
 				assert.Nil(t, parts[0].Usage.Raw)
 			} else {
 				assert.JSONEq(t, tc.want, string(parts[0].Usage.Raw))
+				if strings.Contains(tc.name, "lone") {
+					assert.Equal(t, tc.raw, string(parts[0].Usage.Raw))
+				}
 			}
 		})
 	}
@@ -152,15 +157,16 @@ func TestModel_StreamRawUsage(t *testing.T) {
 
 func TestModel_StreamRawUsageSize(t *testing.T) {
 	for _, tc := range []struct {
-		name  string
-		raw   string
-		valid bool
+		name     string
+		raw      string
+		wantSize int
 	}{
-		{name: "exact", raw: `{"large":"` + strings.Repeat("x", maxRawUsageBytes-len(`{"large":""}`)) + `"}`, valid: true},
+		{name: "exact", raw: `{"large":"` + strings.Repeat("x", maxRawUsageBytes-len(`{"large":""}`)) + `"}`, wantSize: maxRawUsageBytes},
 		{name: "one over", raw: `{"large":"` + strings.Repeat("x", maxRawUsageBytes+1-len(`{"large":""}`)) + `"}`},
-		{name: "whitespace exact", raw: strings.Repeat(" ", maxRawUsageBytes-2) + `{}`, valid: true},
-		{name: "leading whitespace", raw: strings.Repeat(" ", maxRawUsageBytes-1) + `{}`},
-		{name: "trailing whitespace", raw: `{}` + strings.Repeat(" ", maxRawUsageBytes-1)},
+		{name: "whitespace exact", raw: strings.Repeat(" ", maxRawUsageBytes-2) + `{}`, wantSize: 2},
+		{name: "leading whitespace", raw: strings.Repeat(" ", maxRawUsageBytes-1) + `{}`, wantSize: 2},
+		{name: "trailing whitespace", raw: `{}` + strings.Repeat(" ", maxRawUsageBytes-1), wantSize: 2},
+		{name: "interior whitespace", raw: `{"x":` + strings.Repeat(" ", maxRawUsageBytes) + `0}`, wantSize: len(`{"x":0}`)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			finish := strings.Replace(finishEvent, `"outputTokens":{}`, `"outputTokens":{},"raw":`+tc.raw, 1)
@@ -171,9 +177,11 @@ func TestModel_StreamRawUsageSize(t *testing.T) {
 			require.NoError(t, err)
 			parts := collectParts(t, result)
 			require.Len(t, parts, 1)
-			if tc.valid {
-				assert.Equal(t, provider.PartFinish, parts[0].Type)
-				assert.Len(t, parts[0].Usage.Raw, len(strings.TrimSpace(tc.raw)))
+			if tc.wantSize != 0 {
+				require.Equal(t, provider.PartFinish, parts[0].Type)
+				require.NotNil(t, parts[0].Usage)
+				assert.Len(t, parts[0].Usage.Raw, tc.wantSize)
+				assert.JSONEq(t, tc.raw, string(parts[0].Usage.Raw))
 			} else {
 				if assert.Equal(t, provider.PartError, parts[0].Type) && assert.NotNil(t, parts[0].APICallError) {
 					assert.False(t, parts[0].APICallError.IsRetryable)
@@ -225,13 +233,13 @@ func TestModel_StreamFramingAndWarnings(t *testing.T) {
 			assert.Equal(t, "a", parts[0].ID)
 		})
 	}
-	part, err := decodeStreamPart([]byte(`{"type":"stream-start","warnings":[{"type":"deprecated","setting":"model setting","message":"use another setting"},{"type":"other","message":""},{"type":"unsupported","feature":"","details":""}]}`), 1<<20)
+	part, err := decodeStreamPart([]byte(`{"type":"stream-start","warnings":[{"type":"deprecated","setting":"model setting","message":"use another setting"},{"type":"other","message":""},{"type":"unsupported","feature":"","details":""}]}`))
 	require.NoError(t, err)
 	require.Len(t, part.Warnings, 3)
 	assert.Equal(t, "model setting", part.Warnings[0].Setting)
 	assert.Equal(t, "use another setting", part.Warnings[0].Message)
 	for _, event := range []string{`{"type":"response-metadata"}`, `{"type":"response-metadata","modelId":""}`, `{"type":"response-metadata","modelId":"assistant","timestamp":"2026-08-22T00:00:00,123Z"}`} {
-		_, err := decodeStreamPart([]byte(event), 1<<20)
+		_, err := decodeStreamPart([]byte(event))
 		require.Error(t, err)
 	}
 }
@@ -240,8 +248,6 @@ func TestModel_StreamInvalidEvents(t *testing.T) {
 	for _, event := range []string{
 		strings.Replace(finishEvent, `"outputTokens":{}`, `"outputTokens":{},"raw":null`, 1),
 		strings.Replace(finishEvent, `"outputTokens":{}`, `"outputTokens":{},"raw":[]`, 1),
-		strings.Replace(finishEvent, `"outputTokens":{}`, `"outputTokens":{},"raw":{"nested":["\ud800"]}`, 1),
-		strings.Replace(finishEvent, `"outputTokens":{}`, `"outputTokens":{},"raw":{"\udc00":1}`, 1),
 		strings.Replace(finishEvent, `"outputTokens":{}`, `"outputTokens":{},"raw":{"nested":"`+string([]byte{0xff})+`"}`, 1),
 		strings.Replace(finishEvent, `"outputTokens":{}`, `"outputTokens":{},"raw":{"private":`, 1),
 		strings.Replace(finishEvent, `"outputTokens":{}`, `"outputTokens":{},"raw":{"private":"`+strings.Repeat("x", 1<<20)+`"}`, 1),
@@ -427,7 +433,7 @@ func TestDecodeStreamPart_FunctionTools(t *testing.T) {
 		`{"type":"tool-call","toolCallId":"a","toolName":"f","input":"{}"}`,
 		`{"type":"tool-result","toolCallId":"a","toolName":"f","result":false,"isError":true}`,
 	} {
-		part, err := decodeStreamPart([]byte(raw), 1<<20)
+		part, err := decodeStreamPart([]byte(raw))
 		require.NoError(t, err)
 		assert.NotEmpty(t, part.Type)
 	}
@@ -438,13 +444,13 @@ func TestDecodeStreamPart_FunctionTools(t *testing.T) {
 		`{"type":"tool-result","toolCallId":"a","toolName":"f","result":null}`,
 		`{"type":"tool-input-delta","id":"a"}`,
 	} {
-		_, err := decodeStreamPart([]byte(raw), 1<<20)
+		_, err := decodeStreamPart([]byte(raw))
 		require.Error(t, err)
 	}
 	for _, input := range []string{"", `{"service":`, "\"\\\n\t<>&\u2028\u2029"} {
 		raw, err := json.Marshal(map[string]string{"type": "tool-call", "toolCallId": "a", "toolName": "f", "input": input})
 		require.NoError(t, err)
-		part, err := decodeStreamPart(raw, 1<<20)
+		part, err := decodeStreamPart(raw)
 		require.NoError(t, err)
 		assert.Equal(t, input, part.Input)
 	}

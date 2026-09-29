@@ -146,17 +146,17 @@ A finish part SHALL be valid only when no text or tool-input block is active, it
 - **THEN** the finish SHALL NOT be written and the handler SHALL attempt at most one fixed complete terminal internal-error SSE frame, without reflecting the offending value or issuing normalized-only finish
 
 ### Requirement: Bounded raw-usage finish representation
-The handler SHALL count supplied raw-usage bytes, including whitespace, before JSON validation or encoding. It SHALL reject raw usage exceeding the smaller of 1,048,576 bytes and configured `StreamFrameBytes`, validate one complete JSON object when present, and reject invalid UTF-8 or unpaired escaped UTF-16 surrogates in any raw string key or nested value on the original bytes before Go JSON encoding normalizes them; valid surrogate pairs SHALL be accepted. It SHALL only write a finish after the entire `data: <json>\n\n` frame fits `StreamFrameBytes`. Existing `StreamParts` and complete-frame limits SHALL continue to bound aggregate represented stream output; validation and encoding SHALL use memory bounded by a constant multiple of the configured frame limit.
+The handler SHALL count supplied raw-usage bytes, including whitespace, before JSON validation or encoding. It SHALL reject raw usage exceeding the smaller of 1,048,576 bytes and configured `StreamFrameBytes`, validate one complete JSON object when present, and reject invalid UTF-8 in any raw string key or nested value on the original bytes. Valid JSON escapes, including lone and paired UTF-16 surrogate escapes, SHALL be preserved in the raw object. It SHALL only write a finish after the entire `data: <json>\n\n` frame fits `StreamFrameBytes`. Existing `StreamParts` and complete-frame limits SHALL continue to bound aggregate represented stream output; validation and encoding SHALL use memory bounded by a constant multiple of the configured frame limit.
 
 #### Scenario: Input fits but SSE framing does not
 - **WHEN** raw usage meets its input limit but JSON encoding or SSE framing makes the finish exceed `StreamFrameBytes`
 - **THEN** no finish bytes SHALL be committed and the handler SHALL attempt at most one fixed bounded terminal error frame
 
-#### Scenario: Invalid raw Unicode fails before finish commitment
-- **WHEN** in-limit finish raw usage contains invalid UTF-8 or a lone escaped surrogate in an object key or nested value
+#### Scenario: Raw UTF-8 and JSON escapes at finish
+- **WHEN** in-limit finish raw usage contains invalid UTF-8 in an object key or nested value
 - **THEN** the handler SHALL not encode or write finish and SHALL attempt at most one fixed bounded terminal error frame
-- **WHEN** in-limit raw usage contains a valid escaped surrogate pair
-- **THEN** it SHALL pass Unicode validation, with success still subject to object and complete-frame limits
+- **WHEN** in-limit raw usage contains valid JSON with lone or paired escaped surrogates
+- **THEN** the handler SHALL preserve the raw JSON escapes, with success still subject to object and complete-frame limits
 
 #### Scenario: Oversized input never reaches parser
 - **WHEN** raw usage has one byte more than its input limit, including JSON whitespace

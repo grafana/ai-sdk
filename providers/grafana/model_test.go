@@ -23,14 +23,14 @@ func TestDecodeGenerate_FunctionCalls(t *testing.T) {
 		encoded, err := json.Marshal(input)
 		require.NoError(t, err)
 		body := `{"content":[{"type":"text","text":""},{"type":"tool-call","toolCallId":"call","toolName":"weather","input":` + string(encoded) + `}],"finishReason":{"unified":"tool-calls"},"usage":{"inputTokens":{},"outputTokens":{}}}`
-		result, err := decodeGenerate([]byte(body), int64(len(body)))
+		result, err := decodeGenerate([]byte(body))
 		require.NoError(t, err)
 		require.Len(t, result.Content, 2)
 		assert.Equal(t, input, string(result.Content[1].Input))
 		assert.Equal(t, "call", result.Content[1].ToolCallID)
 		for _, marker := range []string{"providerExecuted", "dynamic"} {
 			marked := strings.Replace(body, `"toolName":"weather"`, `"toolName":"weather","`+marker+`":true`, 1)
-			_, err := decodeGenerate([]byte(marked), int64(len(marked)))
+			_, err := decodeGenerate([]byte(marked))
 			require.Error(t, err)
 		}
 	}
@@ -45,7 +45,7 @@ func TestDecodeGenerate_FunctionCallRequiredFields(t *testing.T) {
 		`{"type":"tool-call","toolCallId":"a","toolName":"f","input":{}}`,
 	} {
 		body := `{"content":[` + content + `],"finishReason":{"unified":"tool-calls"},"usage":{"inputTokens":{},"outputTokens":{}}}`
-		_, err := decodeGenerate([]byte(body), int64(len(body)))
+		_, err := decodeGenerate([]byte(body))
 		require.Error(t, err)
 	}
 }
@@ -110,6 +110,8 @@ func TestModel_UnaryRawUsage(t *testing.T) {
 		{name: "empty", raw: `{}`, want: `{}`},
 		{name: "native", raw: `{"input_tokens":32,"service_tier":"standard","nested":[1,true]}`, want: `{"input_tokens":32,"service_tier":"standard","nested":[1,true]}`},
 		{name: "valid surrogate", raw: `{"nested":{"\ud83d\ude00":1}}`, want: `{"nested":{"😀":1}}`},
+		{name: "lone high key", raw: `{"nested":{"\ud800":"private"}}`, want: `{"nested":{"\ud800":"private"}}`},
+		{name: "lone low nested", raw: `{"nested":["\udc00"]}`, want: `{"nested":["\udc00"]}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			body := unaryFixture
@@ -129,6 +131,9 @@ func TestModel_UnaryRawUsage(t *testing.T) {
 				assert.Nil(t, result.Usage.Raw)
 			} else {
 				assert.JSONEq(t, tc.want, string(result.Usage.Raw))
+				if strings.Contains(tc.name, "lone") {
+					assert.Equal(t, tc.raw, string(result.Usage.Raw))
+				}
 			}
 		})
 	}
@@ -136,15 +141,16 @@ func TestModel_UnaryRawUsage(t *testing.T) {
 
 func TestModel_UnaryRawUsageSize(t *testing.T) {
 	for _, tc := range []struct {
-		name  string
-		raw   string
-		valid bool
+		name     string
+		raw      string
+		wantSize int
 	}{
-		{name: "exact", raw: `{"large":"` + strings.Repeat("x", maxRawUsageBytes-len(`{"large":""}`)) + `"}`, valid: true},
+		{name: "exact", raw: `{"large":"` + strings.Repeat("x", maxRawUsageBytes-len(`{"large":""}`)) + `"}`, wantSize: maxRawUsageBytes},
 		{name: "one over", raw: `{"large":"` + strings.Repeat("x", maxRawUsageBytes+1-len(`{"large":""}`)) + `"}`},
-		{name: "whitespace exact", raw: strings.Repeat(" ", maxRawUsageBytes-2) + `{}`, valid: true},
-		{name: "leading whitespace", raw: strings.Repeat(" ", maxRawUsageBytes-1) + `{}`},
-		{name: "trailing whitespace", raw: `{}` + strings.Repeat(" ", maxRawUsageBytes-1)},
+		{name: "whitespace exact", raw: strings.Repeat(" ", maxRawUsageBytes-2) + `{}`, wantSize: 2},
+		{name: "leading whitespace", raw: strings.Repeat(" ", maxRawUsageBytes-1) + `{}`, wantSize: 2},
+		{name: "trailing whitespace", raw: `{}` + strings.Repeat(" ", maxRawUsageBytes-1), wantSize: 2},
+		{name: "interior whitespace", raw: `{"x":` + strings.Repeat(" ", maxRawUsageBytes) + `0}`, wantSize: len(`{"x":0}`)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			body := strings.Replace(unaryFixture, `"outputTokens":{"total":1,"text":1,"reasoning":0}`, `"outputTokens":{"total":1,"text":1,"reasoning":0},"raw":`+tc.raw, 1)
@@ -155,21 +161,16 @@ func TestModel_UnaryRawUsageSize(t *testing.T) {
 			m, err := p.LanguageModel("assistant")
 			require.NoError(t, err)
 			result, err := m.DoGenerate(context.Background(), provider.CallOptions{})
-			if tc.valid {
+			if tc.wantSize != 0 {
 				require.NoError(t, err)
-				assert.Len(t, result.Usage.Raw, len(strings.TrimSpace(tc.raw)))
+				assert.Len(t, result.Usage.Raw, tc.wantSize)
+				assert.JSONEq(t, tc.raw, string(result.Usage.Raw))
 			} else {
 				require.Error(t, err)
 				assert.Nil(t, result)
 			}
 		})
 	}
-}
-
-func TestRawUsageWireTooLargeInResponse(t *testing.T) {
-	usage := `{"inputTokens":{},"outputTokens":{},"raw":` + strings.Repeat(" ", maxRawUsageBytes-1) + `{}}`
-	body := `{"usage":` + usage + `,"Usage":{"inputTokens":{},"outputTokens":{}}}`
-	assert.True(t, rawUsageWireTooLargeInResponse([]byte(body)))
 }
 
 func TestModel_UnaryFailures(t *testing.T) {
@@ -193,8 +194,6 @@ func TestModel_UnaryFailures(t *testing.T) {
 		{"null raw", strings.Replace(unaryFixture, `"outputTokens":{"total":1,"text":1,"reasoning":0}`, `"outputTokens":{"total":1,"text":1,"reasoning":0},"raw":null`, 1)},
 		{"array raw", strings.Replace(unaryFixture, `"outputTokens":{"total":1,"text":1,"reasoning":0}`, `"outputTokens":{"total":1,"text":1,"reasoning":0},"raw":[]`, 1)},
 		{"scalar raw", strings.Replace(unaryFixture, `"outputTokens":{"total":1,"text":1,"reasoning":0}`, `"outputTokens":{"total":1,"text":1,"reasoning":0},"raw":1`, 1)},
-		{"unpaired surrogate raw", strings.Replace(unaryFixture, `"outputTokens":{"total":1,"text":1,"reasoning":0}`, `"outputTokens":{"total":1,"text":1,"reasoning":0},"raw":{"nested":{"\ud800":"private"}}`, 1)},
-		{"unpaired low surrogate raw", strings.Replace(unaryFixture, `"outputTokens":{"total":1,"text":1,"reasoning":0}`, `"outputTokens":{"total":1,"text":1,"reasoning":0},"raw":{"nested":["\udc00"]}`, 1)},
 		{"invalid UTF-8 raw", strings.Replace(unaryFixture, `"outputTokens":{"total":1,"text":1,"reasoning":0}`, `"outputTokens":{"total":1,"text":1,"reasoning":0},"raw":{"nested":"`+string([]byte{0xff})+`"}`, 1)},
 		{"malformed raw", strings.Replace(unaryFixture, `"outputTokens":{"total":1,"text":1,"reasoning":0}`, `"outputTokens":{"total":1,"text":1,"reasoning":0},"raw":{"private":`, 1)},
 		{"oversized raw", strings.Replace(unaryFixture, `"outputTokens":{"total":1,"text":1,"reasoning":0}`, `"outputTokens":{"total":1,"text":1,"reasoning":0},"raw":{"private":"`+strings.Repeat("x", 1<<20)+`"}`, 1)},
