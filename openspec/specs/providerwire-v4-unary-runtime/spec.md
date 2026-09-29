@@ -132,7 +132,7 @@ These refusals SHALL use fixed documents that never echo the offending namespace
 
 ### Requirement: Selected-backend provider options
 
-After resolution, the handler SHALL forward only the provider options the resolved backend reads, at call, message, content-part, function-tool and nested tool-result file-entry level, as described by the resolved model's `catalog.ProviderOptionPolicy`. A namespace outside the policy's namespaces SHALL NOT reach the model, and SHALL NOT fail the request, because an option for another backend is one every provider ignores. Where the policy lists fields for a namespace, other top-level fields SHALL be removed, compared after folding case and removing `_` and `-`; a namespace with nothing removed SHALL keep its bytes exactly. The zero-value policy SHALL forward no provider options.
+After resolution, the handler SHALL forward only the provider options the resolved backend reads, at call, message, content-part, function-tool and nested tool-result file-entry level, as described by the resolved model's `catalog.ProviderOptionPolicy`. A namespace outside the policy's namespaces SHALL NOT reach the model, and SHALL NOT fail the request, because an option for another backend is one every provider ignores. Where the policy lists fields for a namespace, other top-level fields SHALL be removed, compared after folding case and removing `_` and `-`; a namespace with nothing removed SHALL keep its bytes exactly except when the permitted direct Anthropic caller is canonicalized. An Anthropic `caller` listed in the policy SHALL be forwarded only on basic assistant tool-call parts and only when it has exactly `{"type":"direct"}`; other caller locations, values and aliases SHALL be filtered. The zero-value policy SHALL forward no provider options.
 
 The command SHALL set a policy for every provider type it constructs, and a model whose fallback candidates resolve to different policies SHALL forward no caller provider options, because no single policy is safe for every attempt. For `anthropic`, the policy SHALL forward the `anthropic` namespace restricted to the fields `providers/anthropic` reads, excluding the fields the runtime refuses, and a test SHALL fail when the provider's typed option structs gain a field that is neither forwarded nor refused. For `openai`, the policy SHALL forward the `openai` namespace and its `azure` parity fallback, restricted to the fields `providers/openai` reads at call and part level. For `openai-compatible`, the policy SHALL forward the namespaces the provider reads for its configured provider name, without restricting fields, and a test SHALL check those namespaces against the provider itself.
 
@@ -143,7 +143,11 @@ The command SHALL set a policy for every provider type it constructs, and a mode
 
 #### Scenario: Unclassified Anthropic field
 - **WHEN** a request to an Anthropic model carries an `anthropic` field the policy does not list
-- **THEN** that field SHALL be removed before the model runs, and the listed fields SHALL keep their values
+- **THEN** that field SHALL be removed before the model runs, and other listed fields SHALL keep their values except for the scoped direct-caller rule
+
+#### Scenario: Narrow Anthropic caller continuation
+- **WHEN** assistant basic tool-call options carry an exact direct Anthropic caller alongside caller options in other locations, code-execution values or alternate caller spellings
+- **THEN** only the assistant basic tool-call SHALL retain the canonical direct caller; unsupported caller variants and locations SHALL not reach the selected backend
 
 #### Scenario: Unclassified backend
 - **WHEN** a resolved model carries the zero-value policy
@@ -187,7 +191,7 @@ Every runtime error response SHALL be selected from precomputed documents with f
 
 ### Requirement: Minimal unary success response
 
-A successful unary response SHALL contain only ordered supported text and function-tool-call `content`, `finishReason`, and `usage`. The handler SHALL accept only registered finish reasons and non-negative usage counts no greater than JavaScript's maximum safe integer. Provider warnings, request data, response IDs, timestamps, model IDs, provider identity, headers, bodies, raw usage, provider metadata, and content metadata SHALL be omitted. The registered Gateway client owns unary `warnings`, `request`, and `response`; raw response-body details outside this minimal contract are not guaranteed.
+A successful unary response SHALL contain only ordered supported text and function-tool-call `content`, `finishReason`, and `usage`. The handler SHALL accept only registered finish reasons and non-negative usage counts no greater than JavaScript's maximum safe integer. Provider warnings, request data, response IDs, timestamps, model IDs, provider identity, headers, bodies, raw usage, and top-level provider metadata SHALL be omitted. Eligible text/function-tool-call content SHALL contain only the closed OpenAI itemId or Anthropic direct caller metadata projection defined by the streaming runtime, without adding new content types. Unary OpenAI itemId SHALL be a nonempty ASCII `[A-Za-z0-9_-]+` identifier; unary text has no public text ID to compare against. The registered Gateway client owns unary `warnings`, `request`, and `response`; raw response-body details outside this minimal contract are not guaranteed.
 
 #### Scenario: Valid text result
 - **WHEN** the model returns text, a registered finish reason, and valid usage
@@ -198,16 +202,28 @@ A successful unary response SHALL contain only ordered supported text and functi
 - **THEN** the handler SHALL return the fixed internal-error document before committing HTTP 200
 
 #### Scenario: Provider-private fields
-- **WHEN** the model result contains warnings, response metadata, raw usage, backend identity, or provider metadata
-- **THEN** none of those values SHALL appear in the unary response document
+- **WHEN** the model result contains warnings, response metadata, raw usage, backend identity, top-level provider metadata or unknown content metadata
+- **THEN** none of those values SHALL appear in the unary response document; eligible approved content metadata alone SHALL survive
+
+#### Scenario: Unary supported content metadata
+- **WHEN** supported unary text includes a valid OpenAI itemId or a basic function-tool-call has valid OpenAI itemId or Anthropic direct caller metadata
+- **THEN** only that approved content metadata SHALL survive on its original part, without adopting top-level result metadata
 
 ### Requirement: Bounded preflight and standard success encoding
 
-Before encoding, the handler SHALL reject content cardinality or aggregate content and raw-finish string bytes that cannot fit the configured unary budget using overflow-safe accounting. It SHALL validate UTF-8 only after the size preflight so scanning remains bounded. The complete minimal private DTO SHALL then be encoded with standard Go JSON, rejected when the final bytes exceed the configured limit, and committed only after successful encoding and the final size check. Provider-domain JSON marshalers SHALL NOT control the response. Standard encoding MAY allocate a bounded constant multiple of the configured limit for worst-case escaping.
+Before encoding, the handler SHALL reject content cardinality or aggregate content, recognized-namespace raw-metadata and raw-finish string bytes that cannot fit the configured unary budget using overflow-safe accounting. Unknown provider-domain namespaces SHALL be discarded without sizing or parsing their values; each recognized namespace SHALL be byte-bounded before parsing and SHALL obey the streaming runtime's shallow-shape and field validation policy even if it contains only unknown fields. It SHALL validate UTF-8 only after the size preflight so scanning remains bounded. The complete minimal private DTO SHALL then be encoded with standard Go JSON, rejected when the final bytes exceed the configured limit, and committed only after successful encoding and the final size check. Provider-domain JSON marshalers SHALL NOT control the response. Standard encoding MAY allocate a bounded constant multiple of the configured limit for worst-case escaping.
 
 #### Scenario: Preflight rejects oversized provider values
 - **WHEN** content count or aggregate raw string bytes exceed the unary budget
 - **THEN** the result SHALL fail before UTF-8 scanning or JSON encoding
+
+#### Scenario: Invalid supported metadata
+- **WHEN** a recognized content metadata namespace is malformed, has duplicate keys, wrong approved-field type or value, hostile identifier, excessive depth in an unknown sibling, or excess raw bytes even if only unknown fields are present
+- **THEN** no partial success document SHALL be committed and only the fixed safe internal error SHALL be returned
+
+#### Scenario: Unary unknown namespace and bounded unknown sibling
+- **WHEN** supported content carries an unknown provider-domain namespace with deep, oversized or malformed raw value and a recognized namespace with bounded well-formed shallow unknown fields
+- **THEN** the unknown namespace and unknown fields SHALL be dropped without exposing their values, and only approved fields (if present) SHALL be emitted
 
 #### Scenario: Escaping crosses the final boundary
 - **WHEN** raw bytes pass preflight but standard JSON escaping makes the encoded response exceed the limit
