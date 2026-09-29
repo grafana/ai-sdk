@@ -17,6 +17,11 @@ func TestReleasePleaseConfig_ReleaseComponents(t *testing.T) {
 	modules, err := ReleaseComponents(repositoryRoot)
 	require.NoError(t, err)
 	require.NotEmpty(t, modules)
+	isolated := os.Getenv("SDK_GATEWAY_ISOLATION") == "1"
+	if isolated {
+		_, err := os.Stat(filepath.Join(repositoryRoot, "ai-gateway"))
+		require.True(t, os.IsNotExist(err), "isolation test must exclude Gateway source")
+	}
 	applications := 0
 	for _, module := range modules {
 		if module.Application {
@@ -24,7 +29,11 @@ func TestReleasePleaseConfig_ReleaseComponents(t *testing.T) {
 			assert.Equal(t, "ai-gateway", module.Directory)
 		}
 	}
-	assert.Equal(t, 1, applications)
+	if isolated {
+		assert.Equal(t, 0, applications)
+	} else {
+		assert.Equal(t, 1, applications)
+	}
 
 	t.Run("every published module is registered", func(t *testing.T) {
 		for _, module := range modules {
@@ -39,6 +48,9 @@ func TestReleasePleaseConfig_ReleaseComponents(t *testing.T) {
 			directories[module.Directory] = true
 		}
 		for packagePath := range config.Packages {
+			if isolated && packagePath == "ai-gateway" {
+				continue
+			}
 			assert.Truef(t, directories[packagePath],
 				"release-please-config.json registers %q, which is not a published Go module", packagePath)
 		}
