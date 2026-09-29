@@ -146,11 +146,12 @@ type toolResultContent struct {
 type reasoningContentBlock struct {
 	ReasoningText     *reasoningText     `json:"reasoningText,omitempty"`
 	RedactedReasoning *redactedReasoning `json:"redactedReasoning,omitempty"`
+	RedactedContent   *string            `json:"redactedContent,omitempty"`
 }
 
 type reasoningText struct {
 	Text      string `json:"text"`
-	Signature string `json:"signature,omitempty"`
+	Signature string `json:"signature"`
 }
 
 type redactedReasoning struct {
@@ -326,9 +327,10 @@ type streamToolUseDelta struct {
 }
 
 type streamReasoningContentDelta struct {
-	Text      string `json:"text,omitempty"`
-	Signature string `json:"signature,omitempty"`
-	Data      string `json:"data,omitempty"`
+	RedactedContent string `json:"redactedContent,omitempty"`
+	Text            string `json:"text,omitempty"`
+	Signature       string `json:"signature,omitempty"`
+	Data            string `json:"data,omitempty"`
 }
 
 type streamContentBlockStop struct {

@@ -684,6 +684,9 @@ func TestInvalidDirectFileInputs(t *testing.T) {
 	bad.URL = "https://example.test/file"
 	for _, prompt := range [][]provider.Message{
 		{provider.NewUserMessage(provider.FilePart("image/png", bad))},
+		{provider.NewAssistantMessage(provider.ReasoningFilePart("image/png", bad))},
+		{provider.NewAssistantMessage(provider.ReasoningFilePart("image/png", provider.TextDataContent("")))},
+		{provider.NewAssistantMessage(provider.ContentPart{Type: provider.ContentPartTypeReasoningFile, MediaType: "image/png"})},
 		{provider.NewToolMessage(provider.ToolResultPart("call-1", "tool", &provider.ToolResultOutput{
 			Type:    provider.ToolOutputContent,
 			Content: []provider.ToolResultContentValue{{Type: provider.ToolContentFile, Data: &bad, MediaType: "image/png"}},
@@ -691,6 +694,16 @@ func TestInvalidDirectFileInputs(t *testing.T) {
 	} {
 		_, _, err := (&model{modelID: "test-model"}).buildRequest(provider.CallOptions{Prompt: prompt}, false)
 		require.ErrorContains(t, err, "invalid file input")
+		for _, streaming := range []bool{false, true} {
+			model := New("test-model", WithBaseURL(server.URL))
+			if streaming {
+				_, err = model.DoStream(context.Background(), provider.CallOptions{Prompt: prompt})
+			} else {
+				_, err = model.DoGenerate(context.Background(), provider.CallOptions{Prompt: prompt})
+			}
+			require.ErrorContains(t, err, "invalid file input")
+			assert.Zero(t, requests)
+		}
 	}
 }
 

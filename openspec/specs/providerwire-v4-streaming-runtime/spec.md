@@ -159,19 +159,16 @@ Each pre-finish provider `PartError` SHALL be independently reduced through the 
 - **AND** a valid status-bearing provider error, including an SSE error reported with HTTP status 200, SHALL retain status-based classification
 
 ### Requirement: Synthetic terminal adapter errors
-Before a valid finish is written, an unsupported stream family, lifecycle violation, invalid provider output, premature channel close, mapping failure, frame overflow, total timeout, idle timeout, or caller cancellation SHALL cancel provider work and produce at most one synthetic terminal safe error when the writer remains usable. Lifecycle, mapping, framing, premature-EOF, and invalid-output failures SHALL use the canonical internal category; cancellation and timeout SHALL retain their closed categories. A terminal error SHALL not close active blocks synthetically or emit a synthetic finish. If a terminal event has already been written or the writer has failed, no further event SHALL be attempted.
 
-#### Scenario: Provider channel closes before finish
-- **WHEN** the provider stream closes without a valid finish
-- **THEN** the handler SHALL attempt one terminal internal error and SHALL not emit a finish or `[DONE]`
+Before valid finish, unsupported families, lifecycle violations, invalid output, premature close, mapping or framing failure, timeout and cancellation SHALL retain existing bounded terminal error behavior. Reasoning start/delta/end and atomic reasoning-file events SHALL be supported under gateway-reasoning-content, not classified as unsupported families. Ordinary generated files, sources, custom/raw output, approvals and unsupported tool behavior SHALL remain unsupported. Failure SHALL not synthesize block closures or a finish, nor emit after terminal authority or writer failure.
 
-#### Scenario: Unsupported stream family appears
-- **WHEN** the text runtime receives reasoning, provider-executed/dynamic/preliminary tool behavior, file, source, custom, raw, approval, or another unsupported part
-- **THEN** it SHALL emit at most one terminal internal error rather than serializing the provider-domain part
+#### Scenario: Reasoning lifecycle violation
+- **WHEN** reasoning ends without a matching active start, reuses an ended reasoning ID, or remains open at finish
+- **THEN** the handler SHALL produce at most one safe terminal error and no synthetic finish
 
-#### Scenario: Provider errors precede an adapter failure
-- **WHEN** one or more non-terminal provider errors are written before a later lifecycle failure
-- **THEN** those provider errors SHALL remain in order and at most one additional synthetic terminal error SHALL end the stream
+#### Scenario: Concurrent reasoning
+- **WHEN** two reasoning blocks and a text block sharing one raw ID interleave
+- **THEN** family-specific active state SHALL preserve each block independently and IDs SHALL not be rewritten
 
 ### Requirement: Complete bounded SSE framing and flushing
 Committed responses SHALL use HTTP 200, `Content-Type: text/event-stream`, and `Cache-Control: no-cache, no-transform`; connection-specific keep-alive headers SHALL not be protocol requirements. The handler SHALL flush commitment headers and every fully written event. Unsupported flushing SHALL not fail the stream; every other header or frame flush error or panic SHALL be a writer failure. Every public event SHALL contain only its registered allowlisted fields and SHALL be framed as exactly `data: <json>\n\n`. Encoding work and temporary memory SHALL remain bounded by a constant multiple of the configured frame limit, and the complete frame SHALL fit that limit before any of its bytes are written. Synthetic terminal errors SHALL use fixed complete frames. The server SHALL never emit SSE `event:` fields or `[DONE]`. A write error, short write, writer panic, or supported flush failure SHALL cancel provider work and end immediately without another write.

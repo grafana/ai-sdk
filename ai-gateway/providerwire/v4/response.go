@@ -79,6 +79,23 @@ func mapUnarySuccess(result *provider.GenerateResult, limit int64) (unarySuccess
 				return unarySuccess{}, errInvalidUnarySuccess
 			}
 			mapped.Content = append(mapped.Content, unaryTextPart{Type: provider.ContentText, Text: part.Text})
+		case provider.ContentReasoning, provider.ContentReasoningFile:
+			metadata, err := projectReasoningMetadata(part.ProviderMetadata, limit)
+			if err != nil {
+				return unarySuccess{}, err
+			}
+			if part.Type == provider.ContentReasoning {
+				if !utf8.ValidString(part.Text) {
+					return unarySuccess{}, errInvalidUnarySuccess
+				}
+				mapped.Content = append(mapped.Content, reasoningTextPart{Type: part.Type, Text: part.Text, Metadata: metadata})
+			} else {
+				data := unaryReasoningFile(part.Data)
+				if !validReasoningFile(data, part.MediaType) {
+					return unarySuccess{}, errInvalidUnarySuccess
+				}
+				mapped.Content = append(mapped.Content, reasoningFilePart{Type: string(part.Type), MediaType: part.MediaType, Data: projectReasoningFile(data), Metadata: metadata})
+			}
 		case provider.ContentToolCall:
 			if part.ToolCallID == "" || part.ToolName == "" || !utf8.ValidString(part.ToolCallID) || !utf8.ValidString(part.ToolName) || !utf8.Valid(part.Input) {
 				return unarySuccess{}, errInvalidUnarySuccess
@@ -121,6 +138,30 @@ func unarySuccessPreflight(result *provider.GenerateResult, limit int64) bool {
 	}
 	remaining := limit
 	for _, part := range result.Content {
+		if part.Type == provider.ContentReasoning || part.Type == provider.ContentReasoningFile {
+			if !reasoningMetadataFits(part.ProviderMetadata, &remaining) {
+				return false
+			}
+			if part.Type == provider.ContentReasoningFile {
+				if part.Data == nil {
+					return false
+				}
+				for _, size := range []int{len(part.MediaType), len(part.Data.Base64), len(part.Data.URL), len(part.Data.Reference), len(part.Data.Text)} {
+					if int64(size) > remaining {
+						return false
+					}
+					remaining -= int64(size)
+				}
+				if int64(len(part.Data.Bytes)) > (remaining/4)*3 {
+					return false
+				}
+				encoded := (int64(len(part.Data.Bytes)) + 2) / 3 * 4
+				if encoded > remaining {
+					return false
+				}
+				remaining -= encoded
+			}
+		}
 		for _, length := range []int{len(part.Text), len(part.ToolCallID), len(part.ToolName), len(part.Input)} {
 			if int64(length) > remaining {
 				return false

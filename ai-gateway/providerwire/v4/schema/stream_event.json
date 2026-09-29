@@ -3,6 +3,9 @@
   "$id": "https://grafana.com/ai-sdk/providerwire/v4/stream-event.schema.json",
   "title": "ProviderWire V4 strict streaming text and function-tool event",
   "oneOf": [
+    { "$ref": "#/$defs/reasoningBoundary" },
+    { "$ref": "#/$defs/reasoningDelta" },
+    { "$ref": "#/$defs/reasoningFile" },
     { "$ref": "#/$defs/streamStart" },
     { "$ref": "#/$defs/responseMetadata" },
     { "$ref": "#/$defs/textStart" },
@@ -17,6 +20,37 @@
     { "$ref": "#/$defs/error" }
   ],
   "$defs": {
+    "reasoningBoundary": {
+      "type": "object", "required": ["type", "id"],
+      "properties": {"type": {"enum": ["reasoning-start", "reasoning-end"]}, "id": {"type": "string", "minLength": 1}, "providerMetadata": {"$ref": "#/$defs/reasoningMetadata"}},
+      "additionalProperties": false
+    },
+    "reasoningDelta": {
+      "type": "object", "required": ["type", "id", "delta"],
+      "properties": {"type": {"const": "reasoning-delta"}, "id": {"type": "string", "minLength": 1}, "delta": {"type": "string"}, "providerMetadata": {"$ref": "#/$defs/reasoningMetadata"}},
+      "additionalProperties": false
+    },
+    "reasoningFile": {
+      "type": "object", "required": ["type", "mediaType", "data"],
+      "properties": {"type": {"const": "reasoning-file"}, "mediaType": {"type": "string"}, "data": {"$ref": "#/$defs/reasoningFileData"}, "providerMetadata": {"$ref": "#/$defs/reasoningMetadata"}},
+      "additionalProperties": false
+    },
+    "reasoningFileData": {
+      "oneOf": [
+        {"type": "object", "required": ["type", "data"], "properties": {"type": {"const": "data"}, "data": {"type": "string"}}, "additionalProperties": false},
+        {"type": "object", "required": ["type", "url"], "properties": {"type": {"const": "url"}, "url": {"type": "string", "minLength": 1}}, "additionalProperties": false}
+      ]
+    },
+    "reasoningMetadata": {
+      "type": "object",
+      "properties": {
+        "anthropic": {"type": "object", "properties": {"signature": {"type": "string"}, "redactedData": {"type": "string"}}, "additionalProperties": false},
+        "bedrock": {"type": "object", "properties": {"signature": {"type": "string"}, "redactedData": {"type": "string"}, "redactedContent": {"type": "string"}}, "additionalProperties": false},
+        "amazonBedrock": {"type": "object", "properties": {"signature": {"type": "string"}, "redactedData": {"type": "string"}, "redactedContent": {"type": "string"}}, "additionalProperties": false},
+        "openai": {"type": "object", "properties": {"itemId": {"type": "string"}, "reasoningEncryptedContent": {"type": ["string", "null"]}}, "additionalProperties": false}
+      },
+      "additionalProperties": false
+    },
     "toolInputStart": {
       "type": "object", "required": ["type", "id", "toolName"],
       "properties": {"type": {"const": "tool-input-start"}, "id": {"type": "string", "minLength": 1}, "toolName": {"type": "string", "minLength": 1}},

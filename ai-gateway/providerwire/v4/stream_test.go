@@ -319,7 +319,7 @@ func TestStreamingRuntimeTextStateAndUnsupportedParts(t *testing.T) {
 		{name: "mismatched delta", parts: []provider.StreamPart{{Type: provider.PartTextStart, ID: "a"}, {Type: provider.PartTextDelta, ID: "b"}}},
 		{name: "end without start", parts: []provider.StreamPart{{Type: provider.PartTextEnd, ID: "a"}}},
 		{name: "reused id", parts: []provider.StreamPart{{Type: provider.PartTextStart, ID: "a"}, {Type: provider.PartTextEnd, ID: "a"}, {Type: provider.PartTextStart, ID: "a"}}},
-		{name: "reasoning", parts: []provider.StreamPart{{Type: provider.PartReasoningStart, ID: "private"}}},
+		{name: "reasoning delta without start", parts: []provider.StreamPart{{Type: provider.PartReasoningDelta, ID: "private"}}},
 		{name: "tool", parts: []provider.StreamPart{{Type: provider.PartToolCall, ToolName: "private"}}},
 		{name: "file", parts: []provider.StreamPart{{Type: provider.PartFile, Filename: "private"}}},
 		{name: "source", parts: []provider.StreamPart{{Type: provider.PartSource, Title: "private"}}},
