@@ -10,8 +10,9 @@ classifies Gateway as a Go library. These assumptions cannot authorize publicati
 
 - Prepare a dedicated release-identity and selected-library readiness check.
 - Preserve root-owned middleware release intent and match preview to action 17.6.0.
-- Classify Gateway as an application and keep publication disabled during integration.
-- Complete Gateway linked workspace attribution and #263 image readiness before activation.
+- Classify Gateway as an application and keep all release automation inactive.
+- Record Gateway linked workspace attribution and #263 image readiness as activation
+  requirements owned by #245, outside this inactive scaffold.
 
 ## Impact
 
