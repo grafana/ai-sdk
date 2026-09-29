@@ -215,7 +215,7 @@ retained. Invalid output SHALL fail safely before HTTP 200.
 - **THEN** the handler SHALL preserve those values and emit no other top-level members
 
 #### Scenario: Unsupported provider result
-- **WHEN** the model returns content outside the supported text/function-tool-call/reasoning subset, an unknown finish reason, invalid usage, `nil, nil`, or panics
+- **WHEN** the model returns content outside the supported text/function-tool-call/reasoning/reasoning-file subset, an unknown finish reason, invalid usage, `nil, nil`, or panics
 - **THEN** the handler SHALL return the fixed internal-error document before committing HTTP 200
 
 #### Scenario: Provider-private fields
