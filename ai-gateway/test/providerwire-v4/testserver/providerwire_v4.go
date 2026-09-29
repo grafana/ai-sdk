@@ -17,6 +17,8 @@ import (
 
 const providerWireV4Prefix = "/providerwire-v4"
 
+var syntheticRawUsage = json.RawMessage(`{"input_tokens":32,"cache_read_input_tokens":18,"service_tier":"standard","inference_geo":"us","nested":{"tokens":[1,2]}}`)
+
 type providerWireV4Stats struct {
 	successCalls        atomic.Int64
 	streamCalls         atomic.Int64
@@ -124,6 +126,12 @@ func (m *providerWireV4Model) DoStream(ctx context.Context, options provider.Cal
 			call,
 			provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonToolCalls}, Usage: &provider.Usage{}},
 		)}, nil
+	case "raw-usage", "raw-usage-empty":
+		raw := syntheticRawUsage
+		if m.kind == "raw-usage-empty" {
+			raw = json.RawMessage(`{}`)
+		}
+		return &provider.StreamResult{Stream: scenarioStream(provider.StreamPart{Type: provider.PartFinish, Usage: &provider.Usage{Raw: raw}, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}})}, nil
 	case "success":
 		m.stats.recordSuccess(options)
 		stream := make(chan provider.StreamPart, 8)
@@ -147,7 +155,7 @@ func (m *providerWireV4Model) DoStream(ctx context.Context, options provider.Cal
 			provider.StreamPart{Type: provider.PartTextEnd, ID: "msg_1", ProviderMetadata: provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":"msg_1"}`)}},
 			provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "call", ToolName: "weather", Input: `{"city":"Rio"}`, ProviderMetadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"caller":{"type":"direct"},"token":"private-key"}`)}},
 			provider.StreamPart{Type: provider.PartToolResult, ToolCallID: "call", ToolName: "weather", Result: json.RawMessage(`{"result":"sunny"}`), ProviderMetadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"caller":{"type":"direct"}}`)}},
-			provider.StreamPart{Type: provider.PartFinish, Usage: &provider.Usage{}, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}, ProviderMetadata: provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":"private-key"}`)}},
+			provider.StreamPart{Type: provider.PartFinish, Usage: &provider.Usage{Raw: syntheticRawUsage}, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}, ProviderMetadata: provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":"private-key"}`)}},
 		)}, nil
 	case "metadata-invalid":
 		return &provider.StreamResult{Stream: scenarioStream(
@@ -212,8 +220,15 @@ func (m *providerWireV4Model) DoGenerate(ctx context.Context, options provider.C
 				{Type: provider.ContentToolCall, ToolCallID: "call", ToolName: "weather", Input: json.RawMessage(`{"city":"Rio"}`), ProviderMetadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"caller":{"type":"direct"},"token":"private-key"}`)}},
 			},
 			FinishReason:     provider.FinishReason{Unified: provider.FinishReasonToolCalls},
+			Usage:            provider.Usage{Raw: syntheticRawUsage},
 			ProviderMetadata: provider.ProviderMetadata{"private": json.RawMessage(`{"secret":"private-key"}`)},
 		}, nil
+	case "raw-usage", "raw-usage-empty":
+		raw := syntheticRawUsage
+		if m.kind == "raw-usage-empty" {
+			raw = json.RawMessage(`{}`)
+		}
+		return &provider.GenerateResult{Content: []provider.GenerateContentPart{{Type: provider.ContentText, Text: "ok"}}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: provider.Usage{Raw: raw}}, nil
 	case "success":
 		m.stats.recordSuccess(options)
 		zero := 0
@@ -249,7 +264,7 @@ type providerWireV4Scenario struct {
 func newProviderWireV4Scenario() (*providerWireV4Scenario, error) {
 	stats := &providerWireV4Stats{}
 	entries := make([]catalog.StaticEntry, 0, 5)
-	for _, id := range []string{"success", "blocking", "stream-errors", "stream-timeout", "stream-blocking", "unary-tools", "unary-tools-provider-executed", "unary-tools-dynamic", "stream-tools", "stream-tool-results", "stream-tool-arguments", "metadata", "metadata-invalid", "stream-metadata-tools"} {
+	for _, id := range []string{"success", "raw-usage", "raw-usage-empty", "blocking", "stream-errors", "stream-timeout", "stream-blocking", "unary-tools", "unary-tools-provider-executed", "unary-tools-dynamic", "stream-tools", "stream-tool-results", "stream-tool-arguments", "metadata", "metadata-invalid", "stream-metadata-tools"} {
 		entry := catalog.StaticEntry{Info: catalog.ModelInfo{ID: id}, Model: &providerWireV4Model{kind: id, stats: stats}}
 		if id == "stream-metadata-tools" {
 			entry.ProviderOptions = catalog.ProviderOptionPolicy{Namespaces: []string{"anthropic"}, Fields: map[string][]string{"anthropic": {"caller"}}}
