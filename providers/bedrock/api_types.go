@@ -66,12 +66,23 @@ type converseMessage struct {
 type contentBlock struct {
 	Text             string                 `json:"text,omitempty"`
 	Image            *imageBlock            `json:"image,omitempty"`
+	GuardContent     *guardContentBlock     `json:"guardContent,omitempty"`
 	Video            *videoBlock            `json:"video,omitempty"`
 	Document         *documentBlock         `json:"document,omitempty"`
 	ToolUse          *toolUseBlock          `json:"toolUse,omitempty"`
 	ToolResult       *toolResultBlock       `json:"toolResult,omitempty"`
 	ReasoningContent *reasoningContentBlock `json:"reasoningContent,omitempty"`
 	CachePoint       *cachePoint            `json:"cachePoint,omitempty"`
+}
+
+type guardContentBlock struct {
+	Text  *guardContentText `json:"text,omitempty"`
+	Image *imageBlock       `json:"image,omitempty"`
+}
+
+type guardContentText struct {
+	Text       string                   `json:"text"`
+	Qualifiers *[]GuardContentQualifier `json:"qualifiers,omitempty"`
 }
 
 // imageBlock is the Converse representation of an image part.

@@ -21,7 +21,7 @@ after(() => { rmSync(directory, { recursive: true, force: true }); });
 const unary = {
   content: [{ type: "text", text: "hello" }, { type: "text", text: "" }],
   finishReason: { unified: "stop", raw: "end_turn" },
-  usage: { inputTokens: { total: 2, noCache: 2, cacheRead: 0, cacheWrite: 0 }, outputTokens: { total: 1, text: 1, reasoning: 0 } },
+  usage: { inputTokens: { total: 2, noCache: 2, cacheRead: 0, cacheWrite: 0 }, outputTokens: { total: 1, text: 1, reasoning: 0 }, raw: { input_tokens: 2, service_tier: "standard" } },
   request: { body: "ignored" }, response: { modelId: "ignored", id: "ignored" }, warnings: [{ type: "other", message: "ignored" }],
 };
 
@@ -284,7 +284,7 @@ describe("Go and exact-pinned Gateway differential", () => {
   });
 
   it("matches stream order, raw filtering, timestamps, DONE and EOF", async () => {
-    const values = [{ type: "stream-start", warnings: [] }, { type: "response-metadata", id: "response-1", modelId: "assistant", timestamp: "2026-08-22T00:00:00.123Z" }, { type: "text-start", id: "a" }, { type: "text-delta", id: "a", delta: "" }, { type: "raw", rawValue: { x: 1 } }, { type: "text-delta", id: "a", delta: "hello" }, { type: "text-end", id: "a" }, { type: "finish", finishReason: { unified: "stop" }, usage: { inputTokens: {}, outputTokens: {} } }];
+    const values = [{ type: "stream-start", warnings: [] }, { type: "response-metadata", id: "response-1", modelId: "assistant", timestamp: "2026-08-22T00:00:00.123Z" }, { type: "text-start", id: "a" }, { type: "text-delta", id: "a", delta: "" }, { type: "raw", rawValue: { x: 1 } }, { type: "text-delta", id: "a", delta: "hello" }, { type: "text-end", id: "a" }, { type: "finish", finishReason: { unified: "stop" }, usage: { inputTokens: {}, outputTokens: {}, raw: { input_tokens: 2, service_tier: "standard" } } }];
     for (const includeRawChunks of [false, true]) {
       const server = await endpoint(values.map((value) => `data: ${JSON.stringify(value)}\r\n\r\n`).join("") + "data: [DONE]\r\n\r\n", 200, "text/event-stream");
       try {

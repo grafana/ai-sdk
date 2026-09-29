@@ -20,7 +20,9 @@ amazon-bedrock-json-tool-text-then-weather-then-json.1: json-tool-text-then-weat
 # Non-streaming Converse fixture:
 amazon-bedrock-json-tool-with-answer.1: json-tool-with-answer/input.response.json
 
-amazon-bedrock-guard-content-intervened: null
+# Copied byte-for-byte from 4e8c387622ee1bb0d55841664416d38754d5c9a3;
+# SHA-256: 969f2790083d9b814cf8a41022078b05095104c955b5748fb72a002cdc76e81d.
+amazon-bedrock-guard-content-intervened: guard-content-intervened/input.response.json
 
 # Non-streaming counterparts to imported streaming fixtures:
 amazon-bedrock-json-other-tool.1.json: null

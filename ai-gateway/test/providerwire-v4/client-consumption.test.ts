@@ -77,6 +77,7 @@ describe("registered Gateway client consumption", () => {
       usage: {
         inputTokens: { total: 2, noCache: 2, cacheRead: 0, cacheWrite: 0 },
         outputTokens: { total: 1, text: 1, reasoning: 0 },
+        raw: { input_tokens: 2, service_tier: "standard", nested: { tokens: [1] } },
       },
       warnings: [{ type: "other", message: "server warning" }],
       request: { body: "server request" },
@@ -164,7 +165,7 @@ describe("registered Gateway client consumption", () => {
       { type: "raw", rawValue: { secret: "opaque" } },
       {
         type: "finish",
-        usage: { inputTokens: {}, outputTokens: {} },
+        usage: { inputTokens: {}, outputTokens: {}, raw: { service_tier: "standard" } },
         finishReason: { unified: "stop" },
       },
     ];
@@ -194,6 +195,11 @@ describe("registered Gateway client consumption", () => {
       type: "raw",
       rawValue: { secret: "opaque" },
     });
+    for (const parts of [filtered, explicitlyFiltered, included]) {
+      const finish = parts.at(-1);
+      assert.equal(finish?.type, "finish");
+      if (finish?.type === "finish") assert.deepEqual(finish.usage.raw, { service_tier: "standard" });
+    }
   });
 
   it("maps structured unary and streaming setup errors", async () => {
