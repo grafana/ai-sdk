@@ -54,9 +54,16 @@ var (
 	unsupportedToolsError            = []byte(`{"error":{"message":"unsupported capability: tools","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
 	unsupportedToolApprovalsError    = []byte(`{"error":{"message":"unsupported capability: tool-approvals","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
 	unsupportedStructuredOutputError = []byte(`{"error":{"message":"unsupported capability: structured-output","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
-	unsupportedProviderOptionsError  = []byte(`{"error":{"message":"unsupported capability: provider-options","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
-	unsupportedBodyHeadersError      = []byte(`{"error":{"message":"unsupported capability: body-headers","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
 	unsupportedRawOutputError        = []byte(`{"error":{"message":"unsupported capability: raw-output","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
+	// Function-tool definitions and tool outputs still refuse provider options;
+	// call, message and part options are mapped.
+	unsupportedProviderOptionsError = []byte(`{"error":{"message":"unsupported capability: provider-options","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
+
+	// Policy rejections. The messages never name the offending key or header,
+	// because both are caller-controlled.
+	reservedProviderOptionsError = []byte(`{"error":{"message":"reserved provider option namespace","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
+	protectedCallHeaderError     = []byte(`{"error":{"message":"protected call header","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
+	protectedProviderOptionError = []byte(`{"error":{"message":"protected provider option","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
 )
 
 func documentForSafeError(value safeError) safeErrorDocument {
@@ -100,12 +107,16 @@ func unsupportedCapabilityDocument(capability unsupportedCapability) []byte {
 		return unsupportedToolApprovalsError
 	case capabilityStructuredOutput:
 		return unsupportedStructuredOutputError
-	case capabilityProviderOptions:
-		return unsupportedProviderOptionsError
-	case capabilityBodyHeaders:
-		return unsupportedBodyHeadersError
+	case capabilityReservedProviderOptions:
+		return reservedProviderOptionsError
+	case capabilityProtectedCallHeader:
+		return protectedCallHeaderError
+	case capabilityProtectedProviderOption:
+		return protectedProviderOptionError
 	case capabilityRawOutput:
 		return unsupportedRawOutputError
+	case capabilityProviderOptions:
+		return unsupportedProviderOptionsError
 	default:
 		return nil
 	}

@@ -4,4 +4,4 @@
 {"type":"tool-input-delta","toolCallId":"call_delete_1","inputTextDelta":"{\"callId\":\"call_delete_1\",\"operation\":{\"type\":\"delete_file\",\"path\":\"obsolete.txt\"}}"}
 {"type":"tool-input-available","toolCallId":"call_delete_1","toolName":"apply_patch","input":{"callId":"call_delete_1","operation":{"type":"delete_file","path":"obsolete.txt"}},"providerMetadata":{"openai":{"itemId":"apc_delete_001"}}}
 {"type":"finish-step"}
-{"type":"finish","finishReason":"stop"}
+{"type":"finish","finishReason":"tool-calls"}

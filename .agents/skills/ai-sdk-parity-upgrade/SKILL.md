@@ -1,70 +1,120 @@
 ---
 name: ai-sdk-parity-upgrade
-description: Upgrade the registered upstream Vercel AI SDK parity baseline for the Go ai-sdk repo. Use when bumping upstream ai or @ai-sdk/* package versions, regenerating conformance expectations, reconciling upstream behavior changes, or moving test/conformance/upstream.yaml forward.
+description: Upgrade the pinned upstream AI SDK reference, assess the current Go implementation against it, and register parity work for independent implementation afterward.
 ---
 
-# AI SDK Parity Upgrade
+# Pinned-Version Upgrade and Parity Assessment
 
-Use this skill to move `test/conformance/upstream.yaml` to a newer upstream
-baseline.
+Separate updating the upstream reference from matching all of its behavior:
 
-## Workflow
+1. **Pinned-version upgrade:** update the reference, validate it, assess parity and
+   register remaining differences. This produces one independently mergeable PR.
+2. **Parity work:** implement the registered behavioral work packages independently.
+   This may produce several subsequent PRs without another upstream version bump.
 
-1. Read `test/conformance/upstream.yaml`, `test/conformance/PARITY.md`, and
-   `test/conformance/README.md`.
-2. Identify the old upstream target and the affected providers.
-3. Inspect upstream changelog, source, and tests for parity-sensitive changes
-   between the old baseline and the mature stable package set selected from the
-   npm `latest` release lines.
-   Prefer sources in this order:
-   - a local upstream checkout at the registered version or matching tag
-   - the conformance tool package installed from the registered baseline
-   - raw GitHub source for the registered package version
-   Record which source was used in the PR description when it explains a
-   finding or accepted risk.
-4. Run `mise run parity-upgrade` to update `test/conformance/upstream.yaml`,
-   update `test/conformance/tools/package.json`, refresh `test/pnpm-lock.yaml`,
-   regenerate conformance expectations, and validate baseline consistency.
-5. Run focused Go tests for implementation areas affected by upstream changes.
-6. Classify every mismatch using the divergence handling table below.
-7. Fix implementation bugs before marking the upgrade complete. Stop and ask
-   before deferring a large design gap that affects public API shape, wire
-   format, provider contracts, or broad harness behavior. Document
-   accepted deviations, gaps, and residual parity risk in the PR description.
-   Do not add broad one-off upgrade findings to
-   `test/conformance/upstream.yaml` or `test/conformance/PARITY.md` unless the
-   user explicitly asks or the finding changes a long-lived project policy,
-   coverage map, or baseline contract.
-8. Update the coverage map when the upgrade adds a new provider capability,
-   stream behavior, frontend interop concern, or harness limitation.
+The pinned version defines what we compare against; it does not claim exhaustive
+parity. A successful upgrade must leave a valid reference and an accountable
+assessment, not an empty parity backlog.
 
-## Divergence Handling
+## 1. Upgrade the pinned reference
 
-| Classification | Default action |
-| --- | --- |
-| Implementation bug | Add or update the relevant fixture when practical, fix the Go implementation, and rerun focused checks. |
-| Upstream behavior change | Trace the change to upstream source or tests, regenerate the matching conformance artifact, adapt Go behavior, and rerun parity checks. |
-| Intentional Go deviation | Keep only with a rationale. Document in the PR description unless it changes a durable baseline contract. |
-| Coverage gap | Add a fixture or test when cheap and relevant. Otherwise document the residual risk in the PR description. |
-| Large design gap | Stop and ask before deferring when the gap affects public API shape, wire format, provider contracts, or broad harness behavior. |
+Use `test/conformance/upstream.yaml` for the starting versions and a fixed, coherent,
+mature target for the destination. Update all consumer pins, the lockfile, generated
+expectations and reviewed evidence together. Keep the starting references available
+for explaining changed behavior. See the [tooling reference](../../../test/conformance/UPGRADING.md)
+for selection, application and validation commands.
 
-## Rules
+Run the tests and tooling against the target. Explain snapshot changes and resolve
+required-check failures. If the new reference introduces an incompatibility that
+prevents a supported integration from working, correct it here or wait to upgrade;
+registering a follow-up is not a substitute. This applies even when existing tests
+miss the incompatibility. Do not weaken comparisons to make the upgrade green.
 
-- Do not update the registered baseline without reviewing generated
-  `expected.jsonl` and `expected-requests.jsonl` diffs.
-- Always upgrade to the newest coherent stable package set from the npm
-  `latest` release lines that satisfies `test/pnpm-workspace.yaml`'s
-  `minimumReleaseAge`; do not bypass the age gate or pin a beta, canary, or
-  partial package set unless the user explicitly asks for that exception.
-- Do not treat snapshot churn as automatically correct; trace behavior changes
-  to upstream source or tests.
-- Treat regenerated conformance as the upgrade confidence suite: provider
-  implementation changes should be reviewed through request snapshots, and core
-  stream behavior should be reviewed through UI chunk snapshots.
-- Live provider recording remains manual and must not be required for normal CI.
-- Keep package pins, lockfile changes, regenerated snapshots, and baseline
-  metadata in the same change when practical. Keep residual finding summaries in
-  the PR description unless they need durable parity metadata.
-- End the PR description with a short residual-risk section listing accepted
-  gaps, intentional deviations, skipped fixtures, and follow-up owners when
-  known.
+These are upgrade blockers, not a requirement to implement every upstream feature
+before moving the pins. Other assessed differences can be registered for later work.
+
+## 2. Assess the current Go implementation against the target
+
+Perform a comprehensive comparison across the declared supported surfaces: core
+orchestration, provider contracts/adapters, frontend behavior and Gateway. Include
+harness limitations when evaluating the evidence. Use relevant `PARITY.md` entries
+to identify current support, deviations and coverage.
+
+Inspect exact upstream implementation and tests alongside the current Go paths.
+The release delta and changelogs guide investigation, but do not bound it: look for
+older gaps too. Trace requests, stream state, continuation, errors and interactions.
+Do not infer matching behavior from unchanged files or passing fixtures alone.
+Identify unsupported upstream product families separately, and state any area the
+assessment could not resolve rather than claiming it was covered.
+
+| Finding | Decision | Evidence needed |
+| --- | --- | --- |
+| Target breaks required checks or a supported integration | Resolve in the pinned-version upgrade or block it | Reproduction, source/test contract and regression proof |
+| Go behavior differs without blocking the reference upgrade | Register a parity correction | Exact difference, impact and proposed acceptance tests |
+| Go already matches | Retain it; register missing coverage if needed | Existing proof or a focused comparison |
+| New capability within a supported area | Recommend a parity work package or explicit exclusion | Semantics, Go design implications and dependencies |
+| Different mechanism, same observable behavior | Retain the Go adaptation | Behavioral and wire equivalence |
+| Intentional observable difference or unsupported family | Confirm and document the disposition | Rationale and precise scope boundary |
+| Behavior or impact is inconclusive | Investigate; keep the question visible | Missing source, reproduction or design decision |
+
+Implementation and evidence are separate: a capability may work without sufficient
+proof, and a passing scenario may cover only part of it. Give new and existing gaps
+the same scrutiny. A known bug cannot disappear behind a coverage label, and an
+unresolved upgrade-blocking risk cannot be silently assigned to later work.
+
+## 3. Register the parity differences
+
+Give each durable record one responsibility:
+
+- **GitHub issues own actionable deferred work.** One `upstream-sync` issue holds
+  the behavior and impact, exact upstream reference, current Go difference,
+  intended outcome, API decisions, dependencies, owner and acceptance evidence.
+  Do not restate that content in repository documentation or mirror issue state.
+- **`PARITY.md` owns stable coverage facts.** Update it only when a surface's
+  coverage classification, confidence source, supported boundary or accepted
+  deviation changes. Never add a dated/versioned assessment section, issue catalog
+  or upgrade-run ledger. A newly discovered actionable difference does not by
+  itself require a `PARITY.md` change once an issue owns it.
+- **The upgrade PR owns the run ledger.** Record the target, corrections,
+  validation and a compact exact list of created or reused issues. Summarize
+  adaptations, exclusions and unresolved blockers there; promote only durable
+  boundaries or accepted deviations to repository coverage metadata.
+
+Search by behavior/provider across labeled and unlabeled issues and inspect open
+and closed matches before creating anything. Reuse covered open work and flag
+ambiguous overlaps rather than automatically duplicating it. Apply **`upstream-sync`
+to every new or reused parity issue**, adding it when missing without replacing
+other labels. Follow the [issue registration rules](../../../test/conformance/UPGRADING.md#issue-creation-and-duplicate-checks)
+for search, issue contents and label selection, then link the issue from the
+upgrade PR.
+
+Registering work does not mean accepting a permanent deviation or approving a new
+API design. Obtain explicit scope/deviation decisions where needed. Reassess open
+packages against a later pinned reference instead of blindly carrying stale claims.
+
+The upgrade PR is complete when the pins/evidence are consistent, required checks
+pass, the supported-surface assessment is accounted for and remaining differences
+are linked to work or an explicit disposition. A version bump alone is incomplete;
+a nonempty, honest parity inventory is not itself a failed upgrade.
+
+## 4. Implement parity work independently
+
+Select a registered package and confirm its contract against the current pinned
+reference. Refine the Go design and acceptance tests, then implement the complete
+behavior with regression proof. Prefer failing conformance cases with authentic
+inputs; otherwise use focused tests and state the remaining boundary coverage gap.
+Preserve fixture provenance. When work is completed, close or update its issue;
+change the coverage map only if the stable coverage status, evidence, support
+boundary or accepted deviation changed.
+
+Work packages are behavioral units, not PRs. Related packages may share a PR; a
+package spanning published modules may require producer and consumer changes in
+separate PRs. Each PR must independently pass required checks, and the package is
+complete only when its full outcome and evidence are delivered. Go consumer pins
+change when they need published producer behavior, not automatically because the
+upstream reference changed.
+
+Review in both directions: **upstream → Go** for missing semantics and edge cases,
+and **Go → package** for scope, design justification and regression proof. Use the
+parity-review skill for that review. Report package completion separately from
+completion of the earlier pinned-version upgrade.

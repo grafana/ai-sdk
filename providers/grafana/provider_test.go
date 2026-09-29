@@ -153,20 +153,20 @@ func TestProvider_DiscoveryConcurrencyAndActingUser(t *testing.T) {
 	assert.Equal(t, int32(32), calls.Load())
 }
 
-func TestCloudAuth_ValidationAndExchange(t *testing.T) {
+func TestTokenExchange_ValidationAndExchange(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
-		change func(*CloudAuthConfig)
+		change func(*TokenExchangeConfig)
 	}{
-		{"CAP", func(c *CloudAuthConfig) { c.CAPToken = " " }},
-		{"namespace", func(c *CloudAuthConfig) { c.Namespace = " " }},
-		{"audience", func(c *CloudAuthConfig) { c.Audience = " " }},
-		{"exchange URL", func(c *CloudAuthConfig) { c.TokenExchangeURL = "https://secret@host" }},
+		{"CAP", func(c *TokenExchangeConfig) { c.CAPToken = " " }},
+		{"namespace", func(c *TokenExchangeConfig) { c.Namespace = " " }},
+		{"audience", func(c *TokenExchangeConfig) { c.Audience = " " }},
+		{"exchange URL", func(c *TokenExchangeConfig) { c.TokenExchangeURL = "https://secret@host" }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg := CloudAuthConfig{CAPToken: "cap", Namespace: "stacks-1", BaseURL: "https://gateway.test", TokenExchangeURL: "https://auth.test"}
+			cfg := TokenExchangeConfig{CAPToken: "cap", Namespace: "stacks-1", BaseURL: "https://gateway.test", TokenExchangeURL: "https://auth.test"}
 			tc.change(&cfg)
-			_, err := NewWithCloudAuth(cfg)
+			_, err := NewWithTokenExchange(cfg)
 			require.Error(t, err)
 		})
 	}
@@ -196,7 +196,7 @@ func TestCloudAuth_ValidationAndExchange(t *testing.T) {
 				_, _ = io.WriteString(w, discoveryFixture)
 			}))
 			defer srv.Close()
-			p, err := NewWithCloudAuth(CloudAuthConfig{CAPToken: "cap", Namespace: "stacks-1", Audience: audience, BaseURL: srv.URL + "/api", TokenExchangeURL: srv.URL + "/exchange", HTTPClient: srv.Client()})
+			p, err := NewWithTokenExchange(TokenExchangeConfig{CAPToken: "cap", Namespace: "stacks-1", Audience: audience, BaseURL: srv.URL + "/api", TokenExchangeURL: srv.URL + "/exchange", HTTPClient: srv.Client()})
 			require.NoError(t, err)
 			for range 2 {
 				rows, err := p.ListModels(context.Background())
@@ -258,7 +258,7 @@ func (f exchangeFunc) Exchange(ctx context.Context, req authn.TokenExchangeReque
 	return f(ctx, req)
 }
 
-func TestCloudAuth_FailureAndCancellation(t *testing.T) {
+func TestTokenExchange_FailureAndCancellation(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		response *authn.TokenExchangeResponse

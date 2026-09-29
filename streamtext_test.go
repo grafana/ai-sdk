@@ -474,6 +474,93 @@ func TestStreamTextPrepareStep_CallSettings(t *testing.T) {
 	})
 }
 
+func TestStreamText_ToolChoice(t *testing.T) {
+	auto := provider.ToolChoice{Type: provider.ToolChoiceAuto}
+	tools := ToolSet{"lookup": {Description: "lookup"}}
+	for _, tc := range []struct {
+		name      string
+		opts      []StreamOption
+		toolCount int
+	}{
+		{name: "absent tools"},
+		{name: "empty tools", opts: []StreamOption{WithTools(ToolSet{})}},
+		{name: "active tools", opts: []StreamOption{WithTools(tools)}, toolCount: 1},
+		{name: "global empty active tools", opts: []StreamOption{WithTools(tools), WithActiveTools()}},
+		{name: "step empty active tools", opts: []StreamOption{WithTools(tools), WithPrepareStep(func(PrepareStepState) (*PrepareStepResult, error) {
+			return &PrepareStepResult{ActiveTools: []string{}}, nil
+		})}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, choice := range []*provider.ToolChoice{nil, &auto, {Type: provider.ToolChoiceNone}, {Type: provider.ToolChoiceRequired}, {Type: provider.ToolChoiceTool, ToolName: "lookup"}} {
+				name := "default"
+				if choice != nil {
+					name = string(choice.Type)
+				}
+				t.Run(name, func(t *testing.T) {
+					var got provider.CallOptions
+					model := &mockModel{streamFunc: func(_ context.Context, opts provider.CallOptions) (*provider.StreamResult, error) {
+						got = opts
+						return &provider.StreamResult{Stream: textStreamParts("done")}, nil
+					}}
+					opts := append([]StreamOption{WithModelMessages(provider.UserText("hello"))}, tc.opts...)
+					want := auto
+					if choice != nil {
+						opts = append(opts, WithToolChoice(*choice))
+						want = *choice
+					}
+					result := StreamText(t.Context(), model, opts...)
+					for range result.FullStream() {
+					}
+					require.NoError(t, result.Err())
+					assert.Equal(t, &want, got.ToolChoice)
+					assert.Len(t, got.Tools, tc.toolCount)
+					assert.Equal(t, 1, model.callCount)
+				})
+			}
+		})
+	}
+}
+
+func TestStreamText_ToolChoiceStepPrecedence(t *testing.T) {
+	for _, configured := range []*provider.ToolChoice{nil, {Type: provider.ToolChoiceRequired}} {
+		name := "default"
+		if configured != nil {
+			name = string(configured.Type)
+		}
+		t.Run(name, func(t *testing.T) {
+			var choices []*provider.ToolChoice
+			model := &mockModel{streamFunc: func(_ context.Context, opts provider.CallOptions) (*provider.StreamResult, error) {
+				choices = append(choices, opts.ToolChoice)
+				if len(choices) < 3 {
+					return &provider.StreamResult{Stream: toolCallStreamParts("lookup", `{}`)}, nil
+				}
+				return &provider.StreamResult{Stream: textStreamParts("done")}, nil
+			}}
+			override := provider.ToolChoice{Type: provider.ToolChoiceTool, ToolName: "lookup"}
+			opts := []StreamOption{WithModelMessages(provider.UserText("hello")), WithTools(ToolSet{"lookup": {
+				Execute: func(context.Context, json.RawMessage, ToolExecutionOptions) (json.RawMessage, error) {
+					return json.RawMessage(`{}`), nil
+				},
+			}}), WithStopWhen(StepCountIs(3)), WithPrepareStep(func(state PrepareStepState) (*PrepareStepResult, error) {
+				if state.StepNumber == 1 {
+					return &PrepareStepResult{ToolChoice: &override, ActiveTools: []string{}}, nil
+				}
+				return &PrepareStepResult{}, nil
+			})}
+			want := &provider.ToolChoice{Type: provider.ToolChoiceAuto}
+			if configured != nil {
+				opts = append(opts, WithToolChoice(*configured))
+				want = configured
+			}
+			result := StreamText(t.Context(), model, opts...)
+			for range result.FullStream() {
+			}
+			require.NoError(t, result.Err())
+			assert.Equal(t, []*provider.ToolChoice{want, &override, want}, choices)
+		})
+	}
+}
+
 func TestStreamTextPrepareStep_ActiveToolsAndContext(t *testing.T) {
 	t.Run("explicit empty active tools disables every tool", func(t *testing.T) {
 		for _, tc := range []struct {

@@ -16,6 +16,10 @@ func convertResponse(msg *anthropic.BetaMessage, mapping toolNameMapping, usesJs
 	var isJsonResponseFromTool bool
 
 	for _, block := range msg.Content {
+		callerMetadata, err := marshalCallerMetadata(block.Caller.Type, block.Caller.ToolID)
+		if err != nil {
+			return nil, err
+		}
 		switch block.Type {
 		case "text":
 			if !usesJsonResponseTool {
@@ -167,6 +171,7 @@ func convertResponse(msg *anthropic.BetaMessage, mapping toolNameMapping, usesJs
 				ToolName:         mapping.toCustomToolName(resolvedName),
 				Input:            inputJSON,
 				ProviderExecuted: true,
+				ProviderMetadata: callerMetadata,
 			}
 			// Mirrors upstream anthropic-language-model.ts:1043-1047: when
 			// a 20260209 web tool is configured without an explicit
@@ -186,11 +191,12 @@ func convertResponse(msg *anthropic.BetaMessage, mapping toolNameMapping, usesJs
 					return nil, fmt.Errorf("marshaling web search error: %w", err)
 				}
 				content = append(content, provider.GenerateContentPart{
-					Type:       provider.ContentToolResult,
-					ToolCallID: ws.ToolUseID,
-					ToolName:   mapping.toCustomToolName("web_search"),
-					IsError:    true,
-					Result:     errData,
+					Type:             provider.ContentToolResult,
+					ToolCallID:       ws.ToolUseID,
+					ToolName:         mapping.toCustomToolName("web_search"),
+					ProviderMetadata: callerMetadata,
+					IsError:          true,
+					Result:           errData,
 				})
 			} else {
 				resultJSON, err := json.Marshal(marshalWebSearchResults(wsContent.OfBetaWebSearchResultBlockArray))
@@ -198,10 +204,11 @@ func convertResponse(msg *anthropic.BetaMessage, mapping toolNameMapping, usesJs
 					return nil, fmt.Errorf("marshaling web search results: %w", err)
 				}
 				content = append(content, provider.GenerateContentPart{
-					Type:       provider.ContentToolResult,
-					ToolCallID: ws.ToolUseID,
-					ToolName:   mapping.toCustomToolName("web_search"),
-					Result:     resultJSON,
+					Type:             provider.ContentToolResult,
+					ToolCallID:       ws.ToolUseID,
+					ToolName:         mapping.toCustomToolName("web_search"),
+					ProviderMetadata: callerMetadata,
+					Result:           resultJSON,
 				})
 				for _, result := range wsContent.OfBetaWebSearchResultBlockArray {
 					pageAgeMeta, err := json.Marshal(map[string]any{"pageAge": nilIfEmpty(result.PageAge)})
@@ -232,11 +239,12 @@ func convertResponse(msg *anthropic.BetaMessage, mapping toolNameMapping, usesJs
 					return nil, fmt.Errorf("marshaling web fetch error: %w", err)
 				}
 				content = append(content, provider.GenerateContentPart{
-					Type:       "tool-result",
-					ToolCallID: wf.ToolUseID,
-					ToolName:   mapping.toCustomToolName("web_fetch"),
-					IsError:    true,
-					Result:     errData,
+					Type:             "tool-result",
+					ToolCallID:       wf.ToolUseID,
+					ToolName:         mapping.toCustomToolName("web_fetch"),
+					ProviderMetadata: callerMetadata,
+					IsError:          true,
+					Result:           errData,
 				})
 			} else {
 				title := wfContent.Content.Title
@@ -253,10 +261,11 @@ func convertResponse(msg *anthropic.BetaMessage, mapping toolNameMapping, usesJs
 					return nil, fmt.Errorf("marshaling web fetch result: %w", err)
 				}
 				content = append(content, provider.GenerateContentPart{
-					Type:       "tool-result",
-					ToolCallID: wf.ToolUseID,
-					ToolName:   mapping.toCustomToolName("web_fetch"),
-					Result:     resultData,
+					Type:             "tool-result",
+					ToolCallID:       wf.ToolUseID,
+					ToolName:         mapping.toCustomToolName("web_fetch"),
+					ProviderMetadata: callerMetadata,
+					Result:           resultData,
 				})
 			}
 		case "tool_search_tool_result":
@@ -477,6 +486,9 @@ func convertResponse(msg *anthropic.BetaMessage, mapping toolNameMapping, usesJs
 }
 
 func marshalCallerMetadata(callerType, callerToolID string) (provider.ProviderMetadata, error) {
+	if callerType == "" {
+		return nil, nil
+	}
 	caller := map[string]string{"type": callerType}
 	if callerToolID != "" {
 		caller["toolId"] = callerToolID

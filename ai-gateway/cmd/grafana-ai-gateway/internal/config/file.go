@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"strings"
 
+	v4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
+
 	"go.yaml.in/yaml/v4"
 )
 
@@ -105,7 +107,7 @@ func (file File) Validate() error {
 			return fmt.Errorf("config: provider name must not be empty")
 		}
 		switch provider.Type {
-		case "anthropic":
+		case "anthropic", "openai":
 			if provider.ProviderName != "" {
 				return fmt.Errorf("config: providers.%s.providerName is only supported for openai-compatible providers", name)
 			}
@@ -113,8 +115,18 @@ func (file File) Validate() error {
 			if strings.TrimSpace(provider.BaseURL) == "" {
 				return fmt.Errorf("config: providers.%s.baseURL is required for openai-compatible providers", name)
 			}
+			// The provider name doubles as the provider-option namespace callers
+			// use for this backend, and the runtime reserves one namespace for
+			// the host. Naming a provider after it would leave that backend with
+			// a namespace every caller is refused.
+			// openai-compatible reads options under the name before the first dot,
+			// trimmed, so "grafana.chat" and " grafana" collide too.
+			namespace, _, _ := strings.Cut(provider.ProviderName, ".")
+			if strings.TrimSpace(namespace) == v4.ReservedProviderOptionNamespace {
+				return fmt.Errorf("config: providers.%s.providerName %q is reserved by the runtime as the host provider-option namespace; rename the provider", name, v4.ReservedProviderOptionNamespace)
+			}
 		default:
-			return fmt.Errorf("config: providers.%s.type %q is unsupported (want anthropic or openai-compatible)", name, provider.Type)
+			return fmt.Errorf("config: providers.%s.type %q is unsupported (want anthropic, openai or openai-compatible)", name, provider.Type)
 		}
 		if strings.TrimSpace(provider.APIKeyEnv) == "" {
 			return fmt.Errorf("config: providers.%s.apiKeyEnv is required", name)

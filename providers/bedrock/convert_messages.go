@@ -13,6 +13,7 @@ import (
 // imageMediaTypeFormat maps `image/<X>` media types to the Bedrock image
 // format string (`jpeg`, `png`, `gif`, `webp`).
 var invalidBedrockToolNameCharacters = regexp.MustCompile(`[^a-zA-Z0-9_-]`)
+var invalidBedrockDocumentNameCharacters = regexp.MustCompile(`[^a-zA-Z0-9 ()\[\]-]`)
 
 var imageMediaTypeFormat = map[string]string{
 	"image/jpeg": "jpeg",
@@ -350,14 +351,14 @@ func buildDocumentBlock(mediaType, filename, b64 string, providerOptions provide
 	if !ok {
 		return nil, fmt.Errorf("bedrock: file media type %q is not supported", mediaType)
 	}
-	name := filename
+	name := sanitizeDocumentName(filename)
 	if name == "" {
 		*documentCounter++
 		name = fmt.Sprintf("document-%d", *documentCounter)
 	}
 	document := &documentBlock{
 		Format: format,
-		Name:   stripFileExtension(name),
+		Name:   name,
 		Source: documentSource{Bytes: b64},
 	}
 	if enableCitations {
@@ -777,6 +778,15 @@ func filterToolContentFromMessages(messages []converseMessage, warnings []provid
 // stripFileExtension trims the suffix starting at the first `.` so document
 // names don't include extension segments (matches upstream's behavior of
 // `stripFileExtension`).
+func sanitizeDocumentName(filename string) string {
+	name := strings.Join(strings.Fields(stripFileExtension(filename)), " ")
+	name = strings.TrimSpace(invalidBedrockDocumentNameCharacters.ReplaceAllString(name, ""))
+	if len(name) > 200 {
+		name = strings.TrimSpace(name[:200])
+	}
+	return name
+}
+
 func stripFileExtension(name string) string {
 	if dot := strings.Index(name, "."); dot >= 0 {
 		return name[:dot]

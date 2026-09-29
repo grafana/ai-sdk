@@ -5,9 +5,7 @@ Define the OpenAI Responses API provider module, including request conversion,
 tool preparation, response and stream mapping, provider options, error handling,
 and conformance expectations needed to stay aligned with Vercel's upstream AI
 SDK behavior.
-
 ## Requirements
-
 ### Requirement: Provider construction and identity
 The system SHALL provide a `providers/openai` Go module exposing both
 `NewResponses(apiKey, modelID string, opts ...Option) provider.LanguageModel`
@@ -92,8 +90,9 @@ The provider SHALL convert user messages to `{ role: "user", content: [...] }`
 input items mapping text parts to `input_text`, image parts to `input_image`
 (via `image_url`, `file_id`, or data URI; honoring `imageDetail`), and file
 parts to `input_file` (via `file_id`, `file_url`, or `filename` + `file_data`).
-Assistant text parts SHALL be emitted as `output_text` content (or as an
-`item_reference` when `store` is true and an item id is present). Unsupported
+Reconstructed assistant text SHALL use string content in an easy-input message,
+retaining phase but omitting stale item IDs. Stored assistant text SHALL use an
+`item_reference` when store is true and an item ID is present. Unsupported
 file media types SHALL emit a warning or error matching upstream behavior.
 
 #### Scenario: User text and image
@@ -117,8 +116,13 @@ file media types SHALL emit a warning or error matching upstream behavior.
 - **THEN** request conversion SHALL return an error rather than emitting an empty file input or falling back to another data source
 
 #### Scenario: Stored assistant text becomes an item reference
-- **WHEN** `store` is true and an assistant text part carries an item id
-- **THEN** the request emits an `item_reference` item for that id rather than inline `output_text`
+- **WHEN** store is true and an assistant text part carries an item ID
+- **THEN** the request emits an item_reference item for that ID rather than inline text
+
+#### Scenario: Reconstructed assistant text retains phase
+- **WHEN** store is false or an assistant text part has no stored item ID
+- **THEN** the request emits string content, including an explicitly empty string
+- **AND** phase is preserved when present without emitting an incomplete output message
 
 ### Requirement: Tool call and tool result conversion
 The provider SHALL convert assistant tool-call parts to `function_call` items
@@ -162,6 +166,58 @@ results SHALL be omitted when no corresponding OpenAI item exists.
 - **WHEN** assistant provider-executed tool history is continued with `store` disabled
 - **THEN** hosted items are omitted with the upstream warning unless that tool taxonomy supports stateless reconstruction
 - **AND** execution-denied synthetic results are omitted
+
+### Requirement: Function result output conversion
+The OpenAI Responses provider SHALL convert ordinary function tool results to `function_call_output` with the original `call_id` and existing result `caller`. Scalar text, error-text, JSON, error-JSON, and execution-denied outputs SHALL retain their current string and output-schema JSON-encoding rules. A scalar output-level cache breakpoint SHALL take precedence over the tool-result part breakpoint, both resolved under the active OpenAI/Azure provider-options namespace; either SHALL wrap the string as an `input_text` array element carrying `prompt_cache_breakpoint`. Without a selected breakpoint, scalar output SHALL remain a string. Content-array output SHALL instead preserve content order as typed `input_text`, `input_image`, and `input_file` elements, with cache breakpoints read from each content element's provider options rather than result/output-level scalar options.
+
+#### Scenario: Scalar results retain cache precedence and schema encoding
+- **WHEN** a function output is text, JSON, error-text, error-JSON, or execution-denied and both its output and tool-result part carry distinct active-namespace cache breakpoints
+- **THEN** its `function_call_output.output` is an `input_text` array carrying the output-level breakpoint and the correctly encoded scalar text
+- **AND** without an output-level breakpoint the result-part breakpoint applies, and without either breakpoint output remains a string
+- **AND** a function tool with an output schema quotes text/error-text/denial as JSON string literals, while JSON/error-JSON remains JSON-serialized and denial without a reason uses the default reason
+
+#### Scenario: Generic multipart text and file content
+- **WHEN** a generic function result contains mixed text, image data/URL, and non-image file data/URL content elements with per-element cache options
+- **THEN** output contains ordered `input_text` text, `input_image` data URI or `image_url` (including optional image detail), and `input_file` `filename` plus base64 `file_data` or `file_url` entries
+- **AND** inline non-image data without a filename uses `data`
+- **AND** each surviving element carries only its own active-namespace cache breakpoint, even when the result/output also has a scalar breakpoint
+
+#### Scenario: Generic uploaded references resolve by active namespace
+- **WHEN** a generic function result contains image and non-image file references with an entry for the active OpenAI or Azure provider namespace
+- **THEN** the corresponding typed `input_image` and `input_file` elements carry that entry as `file_id` and preserve image detail and element cache breakpoint
+- **AND** a reference missing the active provider entry fails conversion instead of falling back to another namespace or silently dropping the file
+
+#### Scenario: Unsupported generic content is dropped with warning
+- **WHEN** a generic multipart function result contains an unsupported content type or file data variant
+- **THEN** each unsupported element is omitted with an `other` warning naming `unsupported tool content part type: <type>` or `unsupported tool content part type: file with data type: <type>` respectively
+- **AND** supported elements remain in their original order under the same `call_id`
+
+### Requirement: Custom tool result output conversion
+The provider SHALL retain `custom_tool_call_output` and the original `call_id` for configured custom provider tools. Scalar text, error-text, JSON, error-JSON, and execution-denied outputs SHALL remain strings unless a cache breakpoint is selected from output-level options before tool-result part options in the active namespace; when selected, the output SHALL be an `input_text` array. Custom multipart text, inline file/image data, and file/image URLs SHALL retain typed content, image detail and per-content cache options. For custom multipart uploaded file references, the provider SHALL warn `unsupported custom tool content part type: file with data type: reference` and omit the reference content; it SHALL NOT claim or emit `file_id` support for custom outputs under the registered upstream baseline.
+
+#### Scenario: Custom scalar breakpoint and output identity
+- **WHEN** a custom tool result has a scalar output with output-level or result-part active-namespace cache breakpoint
+- **THEN** `custom_tool_call_output` retains its `call_id` and wraps the scalar string in one `input_text` with output-level precedence
+- **AND** without either breakpoint scalar output remains a string, without function output-schema quoting
+
+#### Scenario: Custom multipart reference warns and drops
+- **WHEN** custom multipart output contains a supported text/image/file data or URL element alongside an uploaded reference
+- **THEN** supported elements remain typed and ordered with their individual cache breakpoints
+- **AND** the uploaded reference is absent and an `other` warning has message `unsupported custom tool content part type: file with data type: reference`
+- **AND** no custom reference is represented as `file_id`
+
+### Requirement: Parallel wrapper function result serialization
+Grouped internal parallel function-tool results SHALL retain their original wrapper `call_id`, child index order, and existing continuation behavior. Each child SHALL use ordinary function-result conversion before its output is serialized: scalar strings remain strings, while multipart typed arrays become JSON-serialized strings. The wrapper SHALL join child strings with newlines. A selected scalar child output/result-part breakpoint SHALL instead produce ordered `input_text` wrapper elements (newline-prefixed after the first), carrying only the corresponding scalar child breakpoint. Multipart child-level scalar breakpoints SHALL NOT apply; multipart content element breakpoints SHALL survive inside the serialized JSON string. Unsupported multipart items SHALL emit warnings without reordering other child output. Existing hosted-tool and invalid/incomplete parallel-group dispatch SHALL remain unchanged.
+
+#### Scenario: Ordered multipart and scalar children
+- **WHEN** a grouped parallel wrapper receives child results out of index order, including generic multipart output with an uploaded reference and a scalar child
+- **THEN** the wrapper emits one `function_call_output` with the wrapper `call_id` and newline-joined child outputs in original child index order
+- **AND** the multipart child output is JSON-serialized typed content with its active-namespace `file_id` and per-content cache hints rather than discarded or emitted as separate native blocks
+
+#### Scenario: Scalar child breakpoints preserve their positions
+- **WHEN** one or more grouped parallel children have selected scalar output/result-part cache breakpoints
+- **THEN** the wrapper output is an ordered array of `input_text` child strings with later children newline-prefixed and each selected breakpoint on its corresponding element
+- **AND** multipart child result/output-level cache options do not cause wrapper-level breakpoints
 
 ### Requirement: Reasoning conversion
 The provider SHALL convert assistant reasoning parts to `reasoning` input items
@@ -426,3 +482,58 @@ API boundary.
 #### Scenario: API error during streaming
 - **WHEN** the API returns an error status while opening or reading a stream
 - **THEN** the stream emits a `PartError` carrying an `APICallError`
+
+### Requirement: Internal parallel function wrappers
+The provider SHALL expand an undeclared function named parallel only when its
+nonempty tool_uses array contains object parameters and functions-prefixed
+recipients that are all declared function tools. Expansion SHALL be atomic and
+preserve original wrapper identity and child index/count in provider metadata.
+Streaming SHALL buffer wrapper input until it can emit child input lifecycles;
+unexpandable wrappers SHALL retain their original input deltas and call identity.
+
+#### Scenario: Valid wrapper expands
+- **WHEN** a wrapper references two declared function tools
+- **THEN** generate returns two tool calls and stream emits each child's start/delta/end/call sequence
+- **AND** IDs are the wrapper call ID suffixed with the zero-based child index
+
+#### Scenario: Declared or invalid wrapper stays a normal call
+- **WHEN** parallel is itself a declared function or any nested recipient/parameters are invalid
+- **THEN** the original function call is retained without partial child execution
+
+#### Scenario: Wrapper input ends before its final item
+- **WHEN** a suppressed parallel wrapper reaches EOF without a valid final item
+- **THEN** its original start and buffered deltas are flushed in output-index order before any finish
+- **AND** no completed tool call or input-end is invented
+
+#### Scenario: Stateful scalar results are grouped
+- **WHEN** every child result has matching wrapper metadata and unique indexes in a conversation or previous-response continuation
+- **THEN** one wrapper output contains child outputs in index order
+- **AND** conversations omit the existing wrapper call while previous-response chains reconstruct it
+- **AND** incomplete or conflicting groups remain ordinary child results
+
+### Requirement: Recoverable malformed Responses stream events
+Malformed JSON SSE data SHALL emit a nonretryable stream error without discarding
+subsequent decodable events. Transport/setup failures SHALL retain their existing
+preflight retry/error contract. The provider SHALL emit at most one finish, after
+flushing pending input. A malformed-frame error SHALL survive later completed or
+incomplete responses while retaining their usage and metadata. SDK transport and
+authentication SHALL remain in control, and each acquired framing decoder SHALL
+be constructed and closed exactly once.
+
+#### Scenario: Malformed events surround valid output
+- **WHEN** malformed JSON occurs before and after valid tool or text events
+- **THEN** errors and valid output retain their order through one HTTP request
+- **AND** subsequent valid events remain visible
+- **AND** the final finish reason is error, including when malformed data follows a completion event
+
+#### Scenario: Custom SDK decoder owns framing resources
+- **WHEN** a configured SDK decoder consumes a framing prefix or owns resources
+- **THEN** one decoder consumes the stream and that same instance is closed on completion or cancellation
+
+### Requirement: Apply-patch calls contribute tool finish reasons
+Client-executed apply-patch calls SHALL contribute to tool-calls finish mapping in
+both generate and completed stream calls.
+
+#### Scenario: Completed patch call finishes
+- **WHEN** a response contains a completed local apply-patch call
+- **THEN** its unified finish reason is tool-calls rather than stop

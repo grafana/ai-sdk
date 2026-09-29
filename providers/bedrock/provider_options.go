@@ -2,6 +2,7 @@ package bedrock
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 
 	"github.com/grafana/ai-sdk/provider"
@@ -54,6 +55,36 @@ func resolveBedrockOption[T any](opts provider.ProviderOptions) (T, bool, error)
 // when neither key is set, and an error when a present option fails to decode.
 func readBedrockOptions(opts provider.ProviderOptions) (BedrockOptions, bool, error) {
 	return resolveBedrockOption[BedrockOptions](opts)
+}
+
+type anthropicCallOptions struct {
+	StructuredOutputMode   StructuredOutputMode `json:"structuredOutputMode,omitempty"`
+	DisableParallelToolUse *bool                `json:"disableParallelToolUse,omitempty"`
+}
+
+func readAnthropicCallOptions(opts provider.ProviderOptions) (anthropicCallOptions, error) {
+	var value anthropicCallOptions
+	option := opts["anthropic"]
+	if option == nil {
+		return value, nil
+	}
+	var data []byte
+	if raw, ok := option.(provider.RawProviderOption); ok {
+		data = raw.Raw
+	} else {
+		var err error
+		data, err = json.Marshal(option)
+		if err != nil {
+			return value, fmt.Errorf("bedrock: marshaling anthropic provider options: %w", err)
+		}
+	}
+	if len(data) == 0 || bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+		return value, nil
+	}
+	if err := json.Unmarshal(data, &value); err != nil {
+		return value, fmt.Errorf("bedrock: invalid provider options for %q: %w", "anthropic", err)
+	}
+	return value, nil
 }
 
 // extractCachePoint reads a cache-point configuration from a message or

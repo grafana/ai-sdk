@@ -38,6 +38,7 @@ anthropic-web-fetch-tool-20260209.1: web-fetch-tool-20260209
 anthropic-web-search-tool.1: web-search-tool
 
 # Non-streaming fixtures not yet imported:
+evaluation: null
 anthropic-advisor-20260301.1: null
 anthropic-advisor-stop-reasons.json: null
 anthropic-claude-opus-5-reasoning-high.1: null

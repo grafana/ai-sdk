@@ -24,6 +24,9 @@ type inputConversionContext struct {
 	customProviderToolNames map[string]struct{}
 	outputSchemaToolNames   map[string]struct{}
 	processedApprovalIDs    map[string]struct{}
+	parallelResults         map[string]*parallelToolResultGroup
+	emittedParallelCalls    map[string]bool
+	emittedParallelResults  map[string]bool
 }
 
 func newInputConversionContext(tools []provider.Tool, mapping toolNameMapping, store bool, providerOptionsName string, hasConversation, hasPreviousResponseID bool) inputConversionContext {
@@ -90,6 +93,15 @@ func (c inputConversionContext) contentOptions(content provider.ToolResultConten
 }
 
 func convertAssistantToolCall(part provider.ContentPart, ctx inputConversionContext) (*responses.ResponseInputItemUnionParam, error) {
+	if group := ctx.parallelGroup(part); group != nil {
+		id := group.metadata.ToolCallID
+		if ctx.emittedParallelCalls[id] || ctx.hasConversation {
+			return nil, nil
+		}
+		ctx.emittedParallelCalls[id] = true
+		item := responses.ResponseInputItemParamOfFunctionCall(group.metadata.Input, id, group.metadata.ToolName)
+		return &item, nil
+	}
 	po := ctx.partOptions(part)
 	if ctx.hasConversation && po.ItemID != "" {
 		return nil, nil
@@ -230,6 +242,14 @@ func convertAssistantToolResult(part provider.ContentPart, ctx inputConversionCo
 }
 
 func convertProviderToolResult(part provider.ContentPart, ctx inputConversionContext) (*responses.ResponseInputItemUnionParam, []provider.Warning, error) {
+	if group := ctx.parallelGroup(part); group != nil {
+		id := group.metadata.ToolCallID
+		if ctx.emittedParallelResults[id] {
+			return nil, nil, nil
+		}
+		ctx.emittedParallelResults[id] = true
+		return group.output(ctx)
+	}
 	if part.Output != nil && part.Output.Type == provider.ToolOutputExecutionDenied && ctx.outputOptions(part.Output).ApprovalID != "" {
 		return nil, nil, nil
 	}
@@ -256,9 +276,18 @@ func convertProviderToolResult(part provider.ContentPart, ctx inputConversionCon
 		item, warnings := customToolCallOutputItem(part, ctx)
 		return item, warnings, nil
 	default:
-		item := responses.ResponseInputItemParamOfFunctionCallOutput(part.ToolCallID, toolResultOutputString(part.Output, ctx.hasOutputSchema(part.ToolName)))
+		text, content, warnings, err := convertFunctionResultOutput(part, ctx)
+		if err != nil {
+			return nil, nil, err
+		}
+		var item responses.ResponseInputItemUnionParam
+		if content != nil {
+			item = responses.ResponseInputItemParamOfFunctionCallOutput(part.ToolCallID, content)
+		} else {
+			item = responses.ResponseInputItemParamOfFunctionCallOutput(part.ToolCallID, text)
+		}
 		item.OfFunctionCallOutput.Caller = functionCallOutputCallerParam(ctx.partOptions(part).Caller)
-		return &item, nil, nil
+		return &item, warnings, nil
 	}
 }
 
@@ -648,7 +677,15 @@ func customToolCallOutputItem(part provider.ContentPart, ctx inputConversionCont
 		return &item, nil
 	}
 	if part.Output.Type != provider.ToolOutputContent {
-		item := responses.ResponseInputItemParamOfCustomToolCallOutput(part.ToolCallID, toolResultOutputString(part.Output, false))
+		text := toolResultOutputString(part.Output, false)
+		if breakpoint := ctx.scalarResultBreakpoint(part); breakpoint != nil {
+			value := responses.ResponseInputTextParam{Text: text}
+			value.SetExtraFields(map[string]any{"prompt_cache_breakpoint": breakpoint})
+			content := []responses.ResponseCustomToolCallOutputOutputOutputContentListItemUnionParam{{OfInputText: &value}}
+			item := responses.ResponseInputItemParamOfCustomToolCallOutput(part.ToolCallID, content)
+			return &item, nil
+		}
+		item := responses.ResponseInputItemParamOfCustomToolCallOutput(part.ToolCallID, text)
 		return &item, nil
 	}
 
@@ -718,7 +755,7 @@ func customToolCallOutputItem(part provider.ContentPart, ctx inputConversionCont
 			default:
 				warnings = append(warnings, provider.Warning{
 					Type:    provider.WarnOther,
-					Message: "unsupported custom tool file data variant",
+					Message: fmt.Sprintf("unsupported custom tool content part type: file with data type: %s", unsupportedFileDataType(value.Data)),
 				})
 			}
 		default:

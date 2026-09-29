@@ -1,0 +1,19 @@
+## 1. Baseline and regression contracts
+
+- [x] 1.1 Reconfirm pinned `@ai-sdk/amazon-bedrock` 5.0.88 and Anthropic capability/schema behavior against commit `08ae5ad05bc12496dd1ffcf64e34419e0831300d`; inventory existing `recorded/` and `upstream/` Bedrock inputs and INDEX provenance before altering expectations.
+- [x] 1.2 Add failing focused Bedrock generate/stream request tests for explicit family/profile budget, dated and regional capability budgets including non-adaptive Sonnet 4.x, Opus 4/4.1 (32000-token maximum), Opus 4.5 (64000-token maximum), and adaptive 4.6, unknown `claude-` IDs (adaptive, 128000-token capability maximum) versus unknown non-Claude Anthropic profile IDs (conservative 4096-token budget fallback) versus known legacy Claude (pinned 4096-token budget capability), GPT-OSS vs newer OpenAI effort, and opaque-ID negative cases; compare request JSON and warnings with pinned tests.
+- [x] 1.3 Add failing focused tests for `auto`/`jsonTool`/`outputFormat`, Bedrock/Anthropic namespace precedence, thinking and user-tool combinations, mode override, synthetic-tool response metadata, strict supported/unsupported/nested schemas, parallel choice (including `none` with function-only tools versus supported Anthropic provider tools with or without functions, and filtered-only tools), beta/cache precedence, and sanitized document names; do not synthesize `recorded/` inputs.
+
+## 2. Converse routing
+
+- [x] 2.1 Obtain OpenSpec/owner approval for the proposed public model-scoped `WithModelFamily` constructor API before implementing it; then add explicit Anthropic family detection shared by reasoning, tools, output and response fields, recognize application inference profiles only when budget is explicitly configured, and preserve root reasoning override and pinned dated/regional/legacy/unknown capability distinctions.
+- [x] 2.2 Parse `structuredOutputMode` from Bedrock options or Anthropic fallback and `disableParallelToolUse` from Anthropic options with strict malformed-option handling; exclude mode from outgoing top-level pass-through.
+- [x] 2.3 Centralize structured-output decision across `auto`, `jsonTool`, `outputFormat` with separate reliable-native and strict gates; ensure jsonTool clears caller-supplied format but retains sibling fields, and selected instruction/tool/native path drives both response decoders.
+- [x] 2.4 Align function/provider-tool preparation: recursively validate strict schema, warn and drop unsupported strict/web tools, use supported Anthropic provider-tool schemas/betas, route effective parallel-tool choice once, retain pinned provider-tool definitions and betas without a choice for `none` (but drop function-only tools), and retain forced JSON-tool choice behavior.
+- [x] 2.5 Split anchored GPT-OSS flat effort from newer OpenAI nested effort with nested-field preservation; apply document-name sanitation/fallback to user and tool-result documents; verify cache placement and beta/pass-through precedence.
+
+## 3. Dependency and parity proof
+
+- [x] 3.1 Keep any new strict-schema helper local to Bedrock unless a root producer helper is essential; if essential, publish root helper first, update Bedrock `go.mod`/`go.sum` to that published version, and prove `GOWORK=off` readonly Bedrock tests resolve without local substitutions.
+- [x] 3.2 Run focused and full Bedrock module tests including generate/stream HTTP request captures, `mise run parity-check`, `mise run verify-module-resolution` (plus standalone consumer proof if dependency changes), and `openspec validate align-bedrock-converse-family-structured-output --strict`.
+- [x] 3.3 Assess existing conformance request expectations: refresh only expectations derived from existing provenance-valid inputs when affected; do not edit recorded input events or hand-author upstream fixtures. Document synthetic-only/live-account coverage limit; update `PARITY.md` only if its stable evidence boundary changes.

@@ -24,7 +24,10 @@ func (model fallbackTextModel) DoStream(ctx context.Context, options provider.Ca
 }
 
 func fallbackTextRequest(options provider.CallOptions) bool {
-	if len(options.Tools) != 0 || options.ToolChoice != nil || len(options.ProviderOptions) != 0 || len(options.Headers) != 0 || options.IncludeRawChunks {
+	if options.ToolChoice != nil && (options.ToolChoice.Type != provider.ToolChoiceAuto || options.ToolChoice.ToolName != "") {
+		return false
+	}
+	if len(options.Tools) != 0 || len(options.ProviderOptions) != 0 || len(options.Headers) != 0 || options.IncludeRawChunks {
 		return false
 	}
 	if options.ResponseFormat != nil && options.ResponseFormat.Type != provider.ResponseFormatText {

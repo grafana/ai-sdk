@@ -96,6 +96,99 @@ func TestNewResponses_GenerateAndContinue(t *testing.T) {
 	assert.NotContains(t, string(bodies[1]), "first answer")
 }
 
+func TestNewResponses_AssistantHistory(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		store bool
+		text  string
+		part  openaiprovider.OpenAIPartOptions
+		want  map[string]any
+	}{
+		{name: "unstored without ID", text: "The code word is cobalt.", want: map[string]any{"role": "assistant", "content": "The code word is cobalt."}},
+		{name: "stored without ID", store: true, text: "The code word is cobalt.", want: map[string]any{"role": "assistant", "content": "The code word is cobalt."}},
+		{name: "unstored with ID", text: "The code word is cobalt.", part: openaiprovider.OpenAIPartOptions{ItemID: "msg_1"}, want: map[string]any{"role": "assistant", "content": "The code word is cobalt."}},
+		{name: "commentary", text: "The code word is cobalt.", part: openaiprovider.OpenAIPartOptions{ItemID: "msg_1", Phase: "commentary"}, want: map[string]any{"role": "assistant", "content": "The code word is cobalt.", "phase": "commentary"}},
+		{name: "final answer", text: "The code word is cobalt.", part: openaiprovider.OpenAIPartOptions{ItemID: "msg_1", Phase: "final_answer"}, want: map[string]any{"role": "assistant", "content": "The code word is cobalt.", "phase": "final_answer"}},
+		{name: "empty text", want: map[string]any{"role": "assistant", "content": ""}},
+		{name: "stored reference", store: true, text: "The code word is cobalt.", part: openaiprovider.OpenAIPartOptions{ItemID: "msg_1"}, want: map[string]any{"type": "item_reference", "id": "msg_1"}},
+	} {
+		for _, stream := range []bool{false, true} {
+			name := "unary"
+			if stream {
+				name = "stream"
+			}
+			t.Run(tc.name+"/"+name, func(t *testing.T) {
+				var body []byte
+				client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					var err error
+					body, err = io.ReadAll(req.Body)
+					require.NoError(t, err)
+					if !stream {
+						return jsonHTTPResponse(req, http.StatusOK, responseWithoutOutput), nil
+					}
+					return &http.Response{
+						StatusCode: http.StatusOK,
+						Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+						Body: io.NopCloser(strings.NewReader("event: response.created\n" +
+							`data: {"type":"response.created","sequence_number":0,"response":{"id":"resp_123","created_at":1700000000,"model":"openai.gpt-oss-20b","object":"response","status":"in_progress","output":[]}}` + "\n\n" +
+							"event: response.completed\n" +
+							`data: {"type":"response.completed","sequence_number":1,"response":{"id":"resp_123","created_at":1700000000,"model":"openai.gpt-oss-20b","object":"response","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2,"input_tokens_details":{"cached_tokens":0},"output_tokens_details":{"reasoning_tokens":0}}}}` + "\n\n")),
+						Request: req,
+					}, nil
+				})}
+				model, err := NewResponses(t.Context(), "openai.gpt-oss-20b",
+					Config{BaseURL: "https://provider.example.test/v1", SkipAuth: true},
+					option.WithHTTPClient(client), option.WithMaxRetries(0))
+				require.NoError(t, err)
+
+				opts := provider.CallOptions{
+					Prompt: []provider.Message{
+						provider.UserText("Remember a code word."),
+						provider.NewAssistantMessage(provider.ContentPart{
+							Type: provider.ContentPartTypeText, Text: tc.text,
+							ProviderOptions: provider.BuildProviderOptions(tc.part),
+						}),
+						provider.UserText("Repeat the code word only."),
+					},
+					ProviderOptions: provider.BuildProviderOptions(openaiprovider.OpenAIResponsesOptions{Store: &tc.store}),
+				}
+				if stream {
+					result, err := model.DoStream(t.Context(), opts)
+					require.NoError(t, err)
+					var finished bool
+					for part := range result.Stream {
+						assert.NotEqual(t, provider.PartError, part.Type)
+						if part.Type == provider.PartFinish {
+							finished = true
+						}
+					}
+					assert.True(t, finished)
+				} else {
+					_, err := model.DoGenerate(t.Context(), opts)
+					require.NoError(t, err)
+				}
+
+				require.NotEmpty(t, body)
+				var request struct {
+					Input  []map[string]any `json:"input"`
+					Store  *bool            `json:"store"`
+					Stream bool             `json:"stream"`
+				}
+				require.NoError(t, json.Unmarshal(body, &request))
+				require.NotNil(t, request.Store)
+				assert.Equal(t, tc.store, *request.Store)
+				assert.Equal(t, stream, request.Stream)
+				require.Len(t, request.Input, 3)
+				assert.Equal(t, "user", request.Input[0]["role"])
+				assert.Equal(t, []any{map[string]any{"type": "input_text", "text": "Remember a code word."}}, request.Input[0]["content"])
+				assert.Equal(t, tc.want, request.Input[1])
+				assert.Equal(t, "user", request.Input[2]["role"])
+				assert.Equal(t, []any{map[string]any{"type": "input_text", "text": "Repeat the code word only."}}, request.Input[2]["content"])
+			})
+		}
+	}
+}
+
 func TestNewResponses_DefaultRoutes(t *testing.T) {
 	tests := []struct {
 		name      string

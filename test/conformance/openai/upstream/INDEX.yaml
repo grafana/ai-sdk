@@ -7,6 +7,8 @@
 #
 # Every mapped input is a byte-identical copy of the named pinned fixture.
 
+parallel-tool-call-wrapper.1: parallel-tool-call-wrapper
+parallel-tool-call-wrapper.1.json: null
 github-copilot-id-rotation.1: rotated-item-ids
 openai-code-interpreter-tool.1: code-interpreter
 programmatic-tool-calling.1: programmatic-tool-calling

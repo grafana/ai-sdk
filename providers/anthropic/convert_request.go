@@ -1031,6 +1031,9 @@ func convertAssistantContent(v *cacheControlValidator, mapping toolNameMapping, 
 			} else if p.ProviderExecuted {
 				block := convertProviderExecutedToolCall(p, mapping, cc, warnings)
 				if block != nil {
+					if caller, ok := extractCallerMetadata(p.ProviderOptions); ok && block.OfServerToolUse != nil {
+						block.OfServerToolUse.Caller = anthropic.BetaServerToolUseBlockParamCallerUnion(caller)
+					}
 					blocks = append(blocks, *block)
 				}
 			} else {
@@ -1049,6 +1052,14 @@ func convertAssistantContent(v *cacheControlValidator, mapping toolNameMapping, 
 			cc := v.resolveCacheControl(p.ProviderOptions, msgOpts, isLast, true)
 			block := convertProviderExecutedToolResult(p, mapping, cc, mcpToolUseIDs, warnings)
 			if block != nil {
+				if caller, ok := extractCallerMetadata(p.ProviderOptions); ok {
+					if block.OfWebSearchToolResult != nil {
+						block.OfWebSearchToolResult.Caller = anthropic.BetaWebSearchToolResultBlockParamCallerUnion(caller)
+					}
+					if block.OfWebFetchToolResult != nil {
+						block.OfWebFetchToolResult.Caller = anthropic.BetaWebFetchToolResultBlockParamCallerUnion(caller)
+					}
+				}
 				blocks = append(blocks, *block)
 			}
 		case provider.ContentPartTypeToolApprovalRequest:
@@ -1291,6 +1302,29 @@ func convertProviderExecutedToolResult(p provider.ContentPart, mapping toolNameM
 }
 
 func convertInlineWebSearchResult(p provider.ContentPart, cc anthropic.BetaCacheControlEphemeralParam, warnings *[]provider.Warning) *anthropic.BetaContentBlockParamUnion {
+	if p.Output != nil && p.Output.Type == provider.ToolOutputErrorJSON {
+		data := p.Output.JSON
+		var text string
+		if json.Unmarshal(data, &text) == nil {
+			data = json.RawMessage(text)
+		}
+		var value struct {
+			ErrorCode *string `json:"errorCode"`
+		}
+		code := "unavailable"
+		if json.Unmarshal(data, &value) == nil && value.ErrorCode != nil {
+			code = *value.ErrorCode
+		}
+		return &anthropic.BetaContentBlockParamUnion{
+			OfWebSearchToolResult: &anthropic.BetaWebSearchToolResultBlockParam{
+				ToolUseID: p.ToolCallID,
+				Content: anthropic.BetaWebSearchToolResultBlockParamContentUnion{
+					OfError: &anthropic.BetaWebSearchToolRequestErrorParam{ErrorCode: anthropic.BetaWebSearchToolResultErrorCode(code)},
+				},
+				CacheControl: cc,
+			},
+		}
+	}
 	outputJSON := extractOutputJSON(p.Output)
 	if outputJSON == nil {
 		*warnings = append(*warnings, provider.Warning{

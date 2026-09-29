@@ -122,7 +122,7 @@ func (m *model) runStream(ctx context.Context, endpoint string, requestBody []by
 			continue
 		}
 
-		if firstChunk {
+		if firstChunk && (chunk.ID != "" || chunk.Model != "" || (chunk.Created != nil && *chunk.Created != 0)) {
 			firstChunk = false
 			metadata := responseMetadata(chunk.ID, chunk.Model, m.providerName, chunk.Created)
 			if !sendStreamPart(ctx, out, provider.StreamPart{

@@ -77,6 +77,7 @@ the service your application calls:
 - [OpenAI-compatible APIs](providers/openai-compatible.md) for local or hosted
   Chat Completions-compatible servers.
 - [Grafana AI Gateway](providers/grafana-gateway.md) for authenticated public-model discovery and text calls.
+- [Authenticate to Grafana AI Gateway](guides/gateway-authentication.md) to choose Cloud or JWT credentials for Go and server-side Vercel clients.
 
 ## Extend model infrastructure
 

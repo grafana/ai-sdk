@@ -9,7 +9,7 @@ import { collectGatewayContract, readGatewayContractEvidence, validateGatewayCon
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export interface BaselineManifest {
-  upstream?: { commit?: string };
+  upstream?: { commit?: string; verifiedAt?: unknown };
   packages?: Record<string, unknown>;
 }
 
@@ -66,9 +66,20 @@ export function validateBaseline(
   return errors;
 }
 
+export function validateVerificationDate(baseline: BaselineManifest): string[] {
+  const value = baseline.upstream?.verifiedAt;
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const date = new Date(`${value}T00:00:00.000Z`);
+    if (!Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value && date <= new Date()) {
+      return [];
+    }
+  }
+  return ["baseline verification date is missing or invalid; record verifiedAt only after successful reviewed verification"];
+}
+
 export function validateBaselineFiles(manifestPath: string, packagePaths: string[]): string[] {
   const baseline = parseYaml(readFileSync(manifestPath, "utf8")) as BaselineManifest;
-  const errors: string[] = [];
+  const errors: string[] = validateVerificationDate(baseline);
 
   for (const packagePath of packagePaths) {
     const packageManifest = JSON.parse(readFileSync(packagePath, "utf8")) as PackageManifest;

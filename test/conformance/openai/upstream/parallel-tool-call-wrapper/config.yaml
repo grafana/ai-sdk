@@ -1,0 +1,21 @@
+model: gpt-5.4
+prompt: Hello
+expectStreamError: true
+maxRetries: 0
+tools:
+  weather:
+    inputSchema:
+      type: object
+      properties:
+        location:
+          type: string
+      required:
+        - location
+  cityAttractions:
+    inputSchema:
+      type: object
+      properties:
+        city:
+          type: string
+      required:
+        - city

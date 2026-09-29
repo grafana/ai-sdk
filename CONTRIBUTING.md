@@ -135,7 +135,20 @@ mise run test           # all Go tests across all modules
 mise run test-short     # skip integration/E2E tests
 mise run check          # fmt + vet + lint + docs + tests
 mise run verify-ai-gateway-boundary
-                        # verify the one-way Gateway dependency boundary
+                        # structural one-way Gateway dependency boundary
+mise run verify-sdk-gateway-isolation
+                        # SDK and Grafana client without Gateway source
+mise run test-module-policy
+                        # deterministic Bash fixtures for module checks
+mise run verify-merged-pins
+                        # published internal pins descend from canonical main
+mise run verify-module-resolution
+                        # all published modules, fresh public-proxy cache, GOWORK=off
+MODULE=providers/openai mise run verify-published-module
+                        # same standalone checks for one published module
+mise run test-ai-gateway-source
+mise run test-ai-gateway-source-integration
+                        # explicitly selected candidate-source Gateway checks
 ```
 
 To run a single test, invoke `go test` in the right module directory:
@@ -168,10 +181,16 @@ version.
 
 ### The coverage map and the layers
 
-[`test/conformance/PARITY.md`](test/conformance/PARITY.md) is the coverage map.
-It records, per capability, whether parity is `automated`, `manual`, a
-`documented-deviation`, or a `gap`. Start there: it tells you what proof your
-change needs, because the required evidence differs by layer.
+[`test/conformance/PARITY.md`](test/conformance/PARITY.md) is the stable coverage
+map. It records, per capability, whether parity is `automated`, `manual`, a
+`documented-deviation`, or a `gap`, together with confidence sources and durable
+boundaries. Start there: it tells you what proof your change needs, because the
+required evidence differs by layer.
+
+It is not the parity backlog or an upgrade-run ledger. Actionable deferred work
+belongs in GitHub issues labeled `upstream-sync`; upgrade-specific issue lists and
+validation belong in the upgrade PR. Do not add dated target assessments, issue
+catalogs or copies of issue contents to `PARITY.md`.
 
 | Layer | Typical proof |
 |---|---|
@@ -204,8 +223,11 @@ Every difference you observe against upstream must be classified as one of:
 1. **Parity-preserving Go adaptation** — same behavior, idiomatic Go shape. Fine.
 2. **Intentional deviation** — must be recorded in `upstream.yaml` or
    `PARITY.md` with a rationale.
-3. **Implementation bug** — fix it, with a fixture where possible.
-4. **Coverage gap** — record it in `PARITY.md`.
+3. **Implementation bug** — fix it, with a fixture where possible, or register
+   the deferred correction in an `upstream-sync` issue.
+4. **Coverage gap** — register actionable proof work in an `upstream-sync` issue;
+   update `PARITY.md` only when its stable coverage classification or evidence
+   boundary changes.
 
 Silently diverging is the one option that is not available.
 
@@ -226,10 +248,28 @@ alters wire-format or provider-boundary behavior, consider whether
 `expected.jsonl`, `expected-requests.jsonl`, or `expected-object.json` need to be
 regenerated.
 
-Baseline upgrades — bumping upstream `ai` or `@ai-sdk/*` versions — must move the
-manifest, the conformance dependency pins, the generated snapshots, and the
-lockfiles together. The selected package set must satisfy the
-`minimumReleaseAge` gate in `test/pnpm-workspace.yaml`; do not bypass it.
+Treat pinned-version upgrades and parity matching as separate activities. The
+[parity-upgrade skill](.agents/skills/ai-sdk-parity-upgrade/SKILL.md) provides the
+decision matrix; the [tooling reference](test/conformance/UPGRADING.md) explains
+commands, evidence and recording findings.
+
+The pinned-version upgrade produces one PR: update a fixed coherent target, run
+the tests/tooling, and comprehensively compare current Go behavior against that
+reference. Include older gaps, not just the release delta. Resolve compatibility
+blockers and register remaining actionable differences in `upstream-sync` issues;
+the upgrade PR keeps the compact run-specific issue list. Update `PARITY.md` only
+for durable coverage, evidence, support-boundary or accepted-deviation changes.
+The PR can finish with outstanding parity work; the pins are not a claim of
+exhaustive implementation.
+
+Process each registered parity work package independently afterward, with its own
+behavioral outcome, design and regression proof. Update or close its issue when
+it is delivered, and update the coverage map only when its stable facts change.
+Packages and PRs need not map one-to-one, but every PR must pass
+required checks independently. Account for published Go module dependencies;
+workspace success can hide an older consumer dependency. A failing upgrade check
+or an incompatibility that prevents a supported integration from working cannot
+be made acceptable merely by registering a follow-up.
 
 In CI, every retained parity job is a required status check:
 `parity-baseline`, `conformance-test`, and `integration-test` all block the
@@ -436,8 +476,9 @@ Checklist:
    against.
 4. **Tests** are added or updated — a regression test for a bug fix, a
    conformance fixture where the behavior crosses a wire boundary.
-5. **Parity artifacts** are updated if the change is parity-sensitive:
-   `upstream.yaml`, `PARITY.md`, and any regenerated fixtures.
+5. **Parity artifacts** affected by the change are updated: baseline metadata,
+   fixtures and expectations as needed; `PARITY.md` only when stable coverage,
+   evidence, support boundaries or accepted deviations change.
 6. **OpenSpec change is archived** if the pull request touches `openspec/`.
 7. **Docs** are updated for any user-visible change, in the right surface.
 8. **Release intent** is carried by the title's type, and is verifiably correct
@@ -485,9 +526,24 @@ then merge the rest. The complete workflow is in the
 The repository uses Go modules across several module roots, plus a pnpm
 workspace under `test/` for TypeScript-side harnesses.
 
-`ai-gateway/` is intentionally absent from the root `go.work`. Gateway code may
-import explicitly pinned SDK modules, but no module outside `ai-gateway/` may
-import or require `github.com/grafana/ai-sdk/ai-gateway`.
+`ai-gateway/` is intentionally absent from the root `go.work`. The separate
+`go.gateway.work` is selected by required Gateway source-integration commands;
+it uses local SDK, provider, and middleware source. Standalone module and image
+builds still use declared versions with `GOWORK=off`. Gateway code may import
+explicitly pinned SDK modules, but no module outside `ai-gateway/` may import,
+require, or replace `github.com/grafana/ai-sdk/ai-gateway`. The structural check
+rejects reverse source and module references; standalone validation builds and tests
+published modules with `GOWORK=off`, and a separate check builds the candidate SDK
+and Grafana client with Gateway source absent. These checks share `scripts/module-policy.sh`.
+None replaces license review for copied code or third-party dependencies.
+
+Every real internal pin in a published module must refer to a commit already
+merged into canonical `grafana/ai-sdk` `main`. Merged pseudo-versions are valid;
+local-only example/test replacements are not published pins. A green workspace
+integration test proves candidate-source behavior, not standalone consumability.
+All-module standalone validation is available on demand, not a source-PR gate.
+Gateway publication requires standalone validation at the artifact revision.
+Do not use a workspace or an unmerged pin to make a standalone check pass.
 
 ```bash
 mise run tidy        # go mod tidy across all modules

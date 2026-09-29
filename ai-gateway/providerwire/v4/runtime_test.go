@@ -129,10 +129,16 @@ type runtimeHarness struct {
 	model    *recordingModel
 }
 
+// harnessOptionPolicy forwards the namespaces these tests send, so tests about
+// mapping are not also tests about the policy. Policy tests set their own.
+var harnessOptionPolicy = catalog.ProviderOptionPolicy{
+	Namespaces: []string{"call", "message", "part", "ns", "example", "p", "Grafana", "anthropic", "openaiCompatible"},
+}
+
 func newRuntimeHarness(t *testing.T, limits Limits) *runtimeHarness {
 	t.Helper()
 	model := &recordingModel{}
-	resolver := &recordingResolver{resolved: catalog.ResolvedModel{ID: "canonical/model", Model: model}}
+	resolver := &recordingResolver{resolved: catalog.ResolvedModel{ID: "canonical/model", Model: model, ProviderOptions: harnessOptionPolicy}}
 	created, err := New(Config{Resolver: resolver, Limits: limits})
 	require.NoError(t, err)
 	return &runtimeHarness{handler: created.(*handler), resolver: resolver, model: model}
@@ -165,6 +171,71 @@ func TestRuntimeModeDispatch(t *testing.T) {
 			assert.Equal(t, tc.streamCalls, streamCalls)
 			assert.Equal(t, 1, harness.resolver.callCount())
 		})
+	}
+}
+
+func TestRuntimeToolChoice(t *testing.T) {
+	for _, streaming := range []string{"false", "true"} {
+		for _, tools := range []string{"", `,"tools":[]`} {
+			for _, tc := range []struct {
+				name     string
+				field    string
+				expected *provider.ToolChoice
+			}{
+				{name: "omitted"},
+				{name: "auto", field: `,"toolChoice":{"type":"auto"}`, expected: &provider.ToolChoice{Type: provider.ToolChoiceAuto}},
+				{name: "none", field: `,"toolChoice":{"type":"none"}`, expected: &provider.ToolChoice{Type: provider.ToolChoiceNone}},
+				{name: "required", field: `,"toolChoice":{"type":"required"}`, expected: &provider.ToolChoice{Type: provider.ToolChoiceRequired}},
+				{name: "named", field: `,"toolChoice":{"type":"tool","toolName":"f"}`, expected: &provider.ToolChoice{Type: provider.ToolChoiceTool, ToolName: "f"}},
+			} {
+				t.Run(streaming+"/"+tools+"/"+tc.name, func(t *testing.T) {
+					harness := newRuntimeHarness(t, testLimits())
+					request := validRequest(`{"prompt":[]` + tools + tc.field + `}`)
+					request.Header.Set(HeaderStreaming, streaming)
+					response := harness.serve(request)
+					require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+					assert.Equal(t, 1, harness.resolver.callCount())
+					generate, stream := harness.model.invocationCounts()
+					if streaming == "true" {
+						assert.Equal(t, 0, generate)
+						assert.Equal(t, 1, stream)
+					} else {
+						assert.Equal(t, 1, generate)
+						assert.Equal(t, 0, stream)
+					}
+					opts := harness.model.receivedOptions()
+					assert.Empty(t, opts.Tools)
+					assert.Equal(t, tc.expected, opts.ToolChoice)
+				})
+			}
+		}
+		for _, tc := range []struct {
+			name          string
+			fields        string
+			schemaInvalid bool
+		}{
+			{name: "provider", fields: `"toolChoice":{"type":"auto"},"tools":[{"type":"provider","id":"p.f","name":"f","args":{}}]`},
+			{name: "null", fields: `"toolChoice":null`, schemaInvalid: true},
+			{name: "unknown", fields: `"toolChoice":{"type":"future"}`, schemaInvalid: true},
+			{name: "string", fields: `"toolChoice":"auto"`, schemaInvalid: true},
+			{name: "extra", fields: `"toolChoice":{"type":"auto","toolName":"f"}`, schemaInvalid: true},
+		} {
+			t.Run(streaming+"/"+tc.name, func(t *testing.T) {
+				harness := newRuntimeHarness(t, testLimits())
+				request := validRequest(`{"prompt":[],` + tc.fields + `}`)
+				request.Header.Set(HeaderStreaming, streaming)
+				response := harness.serve(request)
+				assert.Equal(t, http.StatusBadRequest, response.Code)
+				assert.Contains(t, response.Header().Get("Content-Type"), "application/json")
+				if tc.schemaInvalid {
+					assert.Equal(t, string(canonicalInvalidRequestError), response.Body.String())
+				} else {
+					assert.Equal(t, string(unsupportedCapabilityDocument(capabilityTools)), response.Body.String())
+				}
+				assert.Zero(t, harness.resolver.callCount())
+				assert.Zero(t, harness.model.callCount())
+			})
+		}
 	}
 }
 
@@ -275,8 +346,10 @@ func TestRuntimeSupportedMapping(t *testing.T) {
 	}
 	assert.Equal(t, []string{"first", "second"}, options.StopSequences)
 	assert.Equal(t, provider.ReasoningHigh, options.Reasoning)
-	assert.Nil(t, options.Headers)
-	assert.Nil(t, options.ProviderOptions)
+	assert.Nil(t, options.Headers, "an empty header map maps to no headers")
+	assert.Equal(t, provider.ProviderOptions{
+		"p": provider.RawProviderOption{Key: "p", Raw: json.RawMessage(`{}`)},
+	}, options.ProviderOptions, "a present namespace survives even when empty")
 }
 
 func TestRuntimeStandardJSONNormalization(t *testing.T) {
@@ -304,22 +377,34 @@ func TestRuntimeUnsupportedCapabilities(t *testing.T) {
 		{name: "files", body: `{"prompt":[{"role":"user","content":[{"type":"file","data":{"type":"text","text":"x"},"mediaType":"text/plain"}]}]}`, capability: capabilityFiles},
 		{name: "reasoning", body: `{"prompt":[{"role":"assistant","content":[{"type":"reasoning","text":"x"}]}]}`, capability: capabilityReasoningContent},
 		{name: "custom", body: `{"prompt":[{"role":"assistant","content":[{"type":"custom","kind":"p.x"}]}]}`, capability: capabilityCustomContent},
-		{name: "tools", body: `{"prompt":[],"tools":[{"type":"provider","id":"provider.f","name":"f","args":{}}]}`, capability: capabilityTools},
+		{name: "provider tools", body: `{"prompt":[],"tools":[{"type":"provider","id":"provider.f","name":"f","args":{}}]}`, capability: capabilityTools},
+		{name: "provider executed tool call", body: `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"c","toolName":"f","input":{},"providerExecuted":true}]}]}`, capability: capabilityTools},
 		{name: "tool approvals", body: `{"prompt":[{"role":"tool","content":[{"type":"tool-approval-response","approvalId":"a","approved":false}]}]}`, capability: capabilityToolApprovals},
 		{name: "structured output", body: `{"prompt":[],"responseFormat":{"type":"json"}}`, capability: capabilityStructuredOutput},
-		{name: "provider options", body: `{"prompt":[],"providerOptions":{"p":{"enabled":true}}}`, capability: capabilityProviderOptions},
-		{name: "body headers", body: `{"prompt":[],"headers":{"x-example":""}}`, capability: capabilityBodyHeaders},
+		{name: "reserved provider option namespace", body: `{"prompt":[],"providerOptions":{"grafana":{"enabled":true}}}`, capability: capabilityReservedProviderOptions},
+		{name: "protected provider option, model", body: `{"prompt":[],"providerOptions":{"openaiCompatible":{"model":"someone-elses-model"}}}`, capability: capabilityProtectedProviderOption},
+		{name: "protected provider option, prompt", body: `{"prompt":[],"providerOptions":{"openaiCompatible":{"messages":[{"role":"user","content":"rewritten"}]}}}`, capability: capabilityProtectedProviderOption},
+		{name: "protected provider option, server-side tools", body: `{"prompt":[],"providerOptions":{"anthropic":{"mcpServers":[{"type":"url","url":"https://caller.example/mcp","name":"caller"}]}}}`, capability: capabilityProtectedProviderOption},
+		{name: "protected call header", body: `{"prompt":[],"headers":{"Authorization":"Bearer caller"}}`, capability: capabilityProtectedCallHeader},
+		{name: "protected call header, other case", body: `{"prompt":[],"headers":{"X-ACCESS-TOKEN":"caller"}}`, capability: capabilityProtectedCallHeader},
 		{name: "raw output", body: `{"prompt":[],"includeRawChunks":true}`, capability: capabilityRawOutput},
 	}
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			harness := newRuntimeHarness(t, testLimits())
-			response := harness.serve(validRequest(tc.body))
-			assert.Equal(t, http.StatusBadRequest, response.Code)
-			assert.Equal(t, string(unsupportedCapabilityDocument(tc.capability)), response.Body.String())
-			assert.Zero(t, harness.resolver.callCount())
-			assert.Zero(t, harness.model.callCount())
-		})
+		for _, streaming := range []string{"false", "true"} {
+			for _, choice := range []string{"", `"toolChoice":{"type":"auto"},`} {
+				t.Run(tc.name+"/"+streaming+"/"+choice, func(t *testing.T) {
+					harness := newRuntimeHarness(t, testLimits())
+					request := validRequest("{" + choice + tc.body[1:])
+					request.Header.Set(HeaderStreaming, streaming)
+					response := harness.serve(request)
+					assert.Equal(t, http.StatusBadRequest, response.Code)
+					assert.Contains(t, response.Header().Get("Content-Type"), "application/json")
+					assert.Equal(t, string(unsupportedCapabilityDocument(tc.capability)), response.Body.String())
+					assert.Zero(t, harness.resolver.callCount())
+					assert.Zero(t, harness.model.callCount())
+				})
+			}
+		}
 	}
 }
 
@@ -359,9 +444,9 @@ func TestRuntimeGoldenReplay(t *testing.T) {
 		{file: "streaming.json", status: http.StatusOK, modelCalls: 1},
 		{file: "sequence.json", status: http.StatusOK, modelCalls: 1},
 		{file: "sequence.json", index: 1, status: http.StatusOK, modelCalls: 1},
-		{file: "scalar-presence.json", status: http.StatusBadRequest, capability: capabilityBodyHeaders},
-		{file: "headers.json", status: http.StatusBadRequest, capability: capabilityBodyHeaders},
-		{file: "headers.json", index: 1, status: http.StatusBadRequest, capability: capabilityBodyHeaders},
+		{file: "scalar-presence.json", status: http.StatusOK, modelCalls: 1},
+		{file: "headers.json", status: http.StatusOK, modelCalls: 1},
+		{file: "headers.json", index: 1, status: http.StatusOK, modelCalls: 1},
 		{file: "comprehensive-unions.json", status: http.StatusBadRequest},
 	}
 	for _, tc := range tests {

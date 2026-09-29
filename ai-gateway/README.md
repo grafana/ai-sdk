@@ -6,8 +6,8 @@ path is `github.com/grafana/ai-sdk/ai-gateway`.
 
 This directory contains the ProviderWire V4 request contract, exact-pinned
 registered-client evidence, public model catalog, unary and streaming text HTTP
-runtimes, the authenticated Anthropic and OpenAI-compatible service under
-`cmd/grafana-ai-gateway`, and its container packaging. The service supports
+runtimes, the authenticated Anthropic, OpenAI Responses and OpenAI-compatible
+service under `cmd/grafana-ai-gateway`, and its container packaging. The service supports
 `X-Access-Token` JSON Web Token (JWT) authentication or caller identity supplied
 by a trusted authenticating reverse proxy. Provider credentials come from server
 configuration in both modes. The reverse-proxy mode requires a separate listener

@@ -66,6 +66,10 @@ func convertResponse(resp *responses.Response, br buildResult, generateID func()
 
 		case responses.ResponseFunctionToolCall:
 			hasFunctionCall = true
+			if expanded := br.expandParallelToolCall(v, providerOptionsName); expanded != nil {
+				content = append(content, expanded...)
+				continue
+			}
 			content = append(content, provider.GenerateContentPart{
 				Type:             provider.ContentToolCall,
 				ToolCallID:       v.CallID,
@@ -268,6 +272,7 @@ func convertResponse(resp *responses.Response, br buildResult, generateID func()
 			})
 
 		case responses.ResponseApplyPatchToolCall:
+			hasFunctionCall = true
 			toolName := br.toolNameMapping.toCustomToolName("apply_patch")
 			input := applyPatchInput(v.CallID, v.Operation)
 			content = append(content, provider.GenerateContentPart{

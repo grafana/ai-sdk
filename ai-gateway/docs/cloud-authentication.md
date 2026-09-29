@@ -3,7 +3,9 @@
 At startup, Grafana AI Gateway selects exactly one authentication mode: JSON Web
 Token (JWT) verification or identity headers supplied by an authenticating reverse
 proxy. A request that fails the selected mode is rejected; the gateway does not try
-the other mode. Provider credentials come from server configuration in both modes.
+the other mode. Provider credentials come from server configuration in both modes. For Go and
+server-side Vercel client credentials and examples, see [Authenticate to Grafana
+AI Gateway](../../docs/guides/gateway-authentication.md).
 
 ## Authentication modes
 
@@ -71,18 +73,15 @@ keep active streams from being canceled at that point.
 
 ## Client compatibility
 
-The registered client baseline is `@ai-sdk/gateway@4.0.52` and `ai@7.0.65`.
-See the [baseline manifest](../../test/conformance/upstream.yaml) and
-[coverage map](../../test/conformance/PARITY.md).
-
 Configure clients with the endpoint and credentials required by the authenticating
-proxy. Clients must not bypass the proxy and send those credentials directly to
+proxy, as described in the [shared authentication guide](../../docs/guides/gateway-authentication.md).
+Clients must not bypass the proxy and send those credentials directly to
 the application's `cloud-gateway` listener. Keep provider credentials in server-side
 configuration; never place them in browser code or logs.
 
-With the registered client versions above, the supported calls are
-`getAvailableModels`, `doGenerate`, and `doStream`. Calls to `doGenerate` and
-`doStream` must set `maxOutputTokens` explicitly.
+Supported client calls include `getAvailableModels`, `doGenerate`, and
+`doStream`. Calls to `doGenerate` and `doStream` must set
+`maxOutputTokens` explicitly.
 
 `generateText` and `streamText` both set `toolChoice` to `auto`. The unary mapper
 accepts that choice, while streaming and fallback routes reject it. `generateText`
