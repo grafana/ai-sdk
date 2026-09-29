@@ -81,6 +81,13 @@ func (m *providerWireV4Model) DoStream(ctx context.Context, options provider.Cal
 			provider.StreamPart{Type: provider.PartTextEnd, ID: "1"},
 			provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: &provider.Usage{}},
 		)}, nil
+	case "sources":
+		parts := []provider.StreamPart{}
+		for _, source := range scenarioSources() {
+			parts = append(parts, provider.StreamPart{Type: provider.PartSource, Source: &provider.SourceInfo{SourceType: source.SourceType, ID: source.ID, URL: source.URL, Title: source.Title, MediaType: source.MediaType, Filename: source.Filename, ProviderMetadata: source.ProviderMetadata}})
+		}
+		parts = append(parts, provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: &provider.Usage{}})
+		return &provider.StreamResult{Stream: scenarioStream(parts...)}, nil
 	case "stream-tool-arguments":
 		var parts []provider.StreamPart
 		for i, input := range []string{"", `{"service":`, "\"\\\n\t<>&\u2028\u2029"} {
@@ -192,6 +199,8 @@ func (m *providerWireV4Model) DoGenerate(ctx context.Context, options provider.C
 	case "reasoning":
 		m.stats.recordSuccess(options)
 		return &provider.GenerateResult{Content: []provider.GenerateContentPart{{Type: provider.ContentReasoning, Text: "", ProviderMetadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"signature":"end-signature"}`)}}}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}, nil
+	case "sources":
+		return &provider.GenerateResult{Content: scenarioSources(), FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}, nil
 	case "unary-tools", "unary-tools-provider-executed", "unary-tools-dynamic":
 		m.stats.recordSuccess(options)
 		for _, message := range options.Prompt {
@@ -251,8 +260,8 @@ type providerWireV4Scenario struct {
 
 func newProviderWireV4Scenario() (*providerWireV4Scenario, error) {
 	stats := &providerWireV4Stats{}
-	entries := make([]catalog.StaticEntry, 0, 15)
-	for _, id := range []string{"reasoning-files", "reasoning", "success", "raw-usage", "raw-usage-empty", "blocking", "stream-errors", "stream-timeout", "stream-blocking", "unary-tools", "unary-tools-provider-executed", "unary-tools-dynamic", "stream-tools", "stream-tool-results", "stream-tool-arguments"} {
+	entries := make([]catalog.StaticEntry, 0, 16)
+	for _, id := range []string{"reasoning-files", "reasoning", "sources", "success", "raw-usage", "raw-usage-empty", "blocking", "stream-errors", "stream-timeout", "stream-blocking", "unary-tools", "unary-tools-provider-executed", "unary-tools-dynamic", "stream-tools", "stream-tool-results", "stream-tool-arguments"} {
 		var policy catalog.ProviderOptionPolicy
 		if id == "reasoning" || id == "reasoning-files" {
 			policy = catalog.ProviderOptionPolicy{
@@ -298,6 +307,14 @@ func scenarioStream(parts ...provider.StreamPart) <-chan provider.StreamPart {
 	}
 	close(stream)
 	return stream
+}
+
+func scenarioSources() []provider.GenerateContentPart {
+	return []provider.GenerateContentPart{
+		{Type: provider.ContentSource, SourceType: provider.SourceTypeURL, ID: "backend-secret", URL: "https://example.com", Title: "URL"},
+		{Type: provider.ContentSource, SourceType: provider.SourceTypeDocument, ID: "backend-secret", MediaType: "text/plain", Title: "", ProviderMetadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"startPageNumber":1,"endPageNumber":2,"citedText":"private"}`)}},
+		{Type: provider.ContentSource, SourceType: provider.SourceTypeDocument, ID: "file-native", MediaType: "application/octet-stream", Title: "file-private", Filename: "file-private", ProviderMetadata: provider.ProviderMetadata{"openai": json.RawMessage(`{"type":"file_path","fileId":"file-private","index":0}`)}},
+	}
 }
 
 func (s *providerWireV4Scenario) register(mux *http.ServeMux) {

@@ -1,0 +1,4 @@
+{"type":"stream-start","warnings":[]}
+{"type":"source","sourceType":"url","id":"source-1","url":"https://example.com","title":"Public URL","providerMetadata":{"citation":{"index":0}}}
+{"type":"source","sourceType":"document","id":"source-2","mediaType":"text/plain","title":"","filename":"example.txt","providerMetadata":{"citation":{"startPageNumber":1}}}
+{"type":"finish","finishReason":{"unified":"stop","raw":"stop"},"usage":{"inputTokens":{"total":1},"outputTokens":{"total":1}}}

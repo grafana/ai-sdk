@@ -113,3 +113,29 @@ already-started recorders and refuses new recorder acquisition. Flush and
 shutdown then each receive a fresh independent timeout. The
 `process_shutdown_completed` lifecycle event is logged only after this bounded
 finalizer returns.
+
+## Work-package boundaries
+
+URL and document source output is passed through unchanged by observers.
+Metadata-only logs, metrics and Agent Observability omit source identifiers,
+URLs, titles, filenames and metadata. Agent Observability has no source-content
+representation, so sources are not converted into fabricated text or media.
+Candidate-source Gateway tests verify that reusable observers count sources as
+first output. The Gateway image uses same-revision modules through
+`go.gateway.work` and still requires its image build gate. Currently pinned
+published middleware revisions predate this behavior; standalone middleware
+consumers need later module releases.
+See the [source guide](sources.md) for the public response privacy policy.
+
+- WP6 image capacity/distribution does not use this text-model chain.
+- WP7's Go client and ProviderWire contract are unchanged; correlation is
+  server-internal and is neither accepted from nor returned to clients.
+- WP9 owns physical fallback attempts, candidate identity, and retry topology
+  below the unchanged logical wrapper.
+- WP10 owns production endpoint, credential, region/application values,
+  rollout, and environment smoke verification.
+- WP27 owns any later per-request Agent Observability control or richer content
+  capture decision.
+- Tools, reasoning, files, images, raw output, hooks, and later event families
+  remain with their owning capability work; WP8 observes the current text
+  surface only and does not change ProviderWire schemas or events.

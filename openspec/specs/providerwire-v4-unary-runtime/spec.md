@@ -1,9 +1,7 @@
 ## Purpose
 
 Define the production ProviderWire V4 unary text and client-executed function-tool runtime and the observable contract proven against the registered Gateway client.
-
 ## Requirements
-
 ### Requirement: Constructed language-model handler
 
 The `ai-gateway/providerwire/v4` package SHALL provide one HTTP handler for relative `POST /language-model` unary and streaming requests. Construction SHALL require a non-nil `catalog.ModelResolver` and positive limits for request bytes, unary response bytes, provider stream-part count, complete SSE frame bytes, total model duration, stream idle duration, and bounded post-cancellation drain duration. Request and unary byte limits and the stream-part limit SHALL support safe `limit+1` arithmetic, and the frame limit SHALL contain the fixed start and stream-error frames.
@@ -192,10 +190,11 @@ Every runtime error response SHALL be selected from precomputed documents with f
 ### Requirement: Minimal unary success response
 
 A successful response SHALL contain only ordered supported text, function-tool-call,
-reasoning and reasoning-file content, finishReason and usage. The handler SHALL
+source, reasoning and reasoning-file content, finishReason and usage. The handler SHALL
 accept only registered finish reasons and non-negative usage counts no greater
 than JavaScript's maximum safe integer. Reasoning content metadata SHALL use
-the closed, bounded continuation projection in gateway-reasoning-content.
+the closed, bounded continuation projection in gateway-reasoning-content. Source
+metadata SHALL use the closed public projection defined by gateway-sources.
 Provider warnings, request data, response IDs, timestamps, model IDs, provider
 identity, headers, bodies and other provider metadata SHALL be omitted.
 `usage.raw` SHALL be omitted when provider `Usage.Raw` is absent and SHALL
@@ -215,13 +214,14 @@ retained. Invalid output SHALL fail safely before HTTP 200.
 - **THEN** the handler SHALL preserve those values and emit no other top-level members
 
 #### Scenario: Unsupported provider result
-- **WHEN** the model returns content outside the supported text/function-tool-call/reasoning/reasoning-file subset, an unknown finish reason, invalid usage, `nil, nil`, or panics
+- **WHEN** the model returns content outside the supported text/function-tool-call/source/reasoning/reasoning-file subset, an unknown finish reason, invalid usage, `nil, nil`, or panics
 - **THEN** the handler SHALL return the fixed internal-error document before committing HTTP 200
 
 #### Scenario: Provider-private fields
 - **WHEN** the model result contains warnings, response metadata, backend identity, or provider metadata
 - **THEN** none of those values SHALL appear outside the explicitly allowed
-  reasoning continuation projection and provider `usage.raw` object
+  reasoning continuation projection, normalized public source metadata and
+  provider `usage.raw` object in the unary response document
 
 #### Scenario: Provider raw usage is present or absent
 - **WHEN** provider usage contains a valid in-limit object including provider-native nested values, an empty object, or no Raw bytes
