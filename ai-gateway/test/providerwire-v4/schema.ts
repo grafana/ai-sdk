@@ -9,6 +9,8 @@ const schema = JSON.parse(readFileSync(schemaPath, "utf8")) as object;
 const ajv = new Ajv2020({ allErrors: true, strict: true });
 
 export const validateRequest: ValidateFunction<unknown> = ajv.compile(schema);
+export const validateUnarySuccess: ValidateFunction<unknown> = ajv.compile(JSON.parse(readFileSync(fileURLToPath(new URL("../../providerwire/v4/schema/unary_success.json", import.meta.url)), "utf8")) as object);
+export const validateStreamEvent: ValidateFunction<unknown> = new Ajv2020({ allErrors: true, strict: true, formats: { "date-time": true } }).compile(JSON.parse(readFileSync(fileURLToPath(new URL("../../providerwire/v4/schema/stream_event.json", import.meta.url)), "utf8")) as object);
 
 export function compileDefinition(name: string): ValidateFunction<unknown> {
   return ajv.compile({ $ref: `${(schema as { $id: string }).$id}#/$defs/${name}` });

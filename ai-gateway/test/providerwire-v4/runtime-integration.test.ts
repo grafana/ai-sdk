@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import nodeProcess from "node:process";
@@ -13,6 +13,7 @@ import {
 } from "@ai-sdk/gateway";
 import type { LanguageModelV4StreamPart } from "@ai-sdk/provider";
 import { buildGoClientCapture, captureGoClient } from "./go-client-capture";
+import { validateStreamEvent, validateUnarySuccess } from "./schema";
 import { jsonSchema, stepCountIs, streamText, tool } from "ai";
 
 const TEST_DIR = dirname(fileURLToPath(import.meta.url));
@@ -48,7 +49,7 @@ async function startServer(): Promise<string> {
     },
   });
 
-  const process = spawn(binary, [], { cwd: SERVER_DIR, stdio: ["ignore", "pipe", "pipe"] });
+  const process = spawn(binary, [], { cwd: SERVER_DIR, stdio: ["ignore", "pipe", "pipe"], env: { ...nodeProcess.env, PROVIDERWIRE_RECORDED_USAGE_DIR: resolve(TEST_DIR, "../../../test/conformance/anthropic/recorded") } });
   serverProcess = process;
   let stdout = "";
   let stderr = "";
@@ -288,6 +289,80 @@ describe("streaming function tools through the authenticated real handler", () =
     assert.equal(go.error, undefined);
     assert.deepEqual(go, { text: "It is sunny.", steps: 2, executions: 1 });
   });
+});
+
+describe("bounded provider raw usage through the real handler", () => {
+  const native = { input_tokens: 32, cache_read_input_tokens: 18, service_tier: "standard", inference_geo: "us", nested: { tokens: [1, 2] } };
+  for (const { id, raw } of [{ id: "raw-usage", raw: native }, { id: "raw-usage-empty", raw: {} }, { id: "success", raw: undefined }]) {
+    it(`returns ${id} unary raw usage to both clients and validates the HTTP body`, async () => {
+      const ts = await model(id).doGenerate({ prompt: [] });
+      const go = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/providerwire-v4`, accessToken: "runtime-test-key", modelID: id, mode: "generate", options: { prompt: [] } });
+      assert.equal(go.error, undefined);
+      assert.deepEqual(go.result.usage, ts.usage);
+      assert.deepEqual(ts.usage.raw, raw);
+      const http = await fetch(`${baseURL}/providerwire-v4/language-model`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "ai-language-model-specification-version": "4", "ai-language-model-id": id, "ai-language-model-streaming": "false" },
+        body: JSON.stringify({ prompt: [] }),
+      });
+      assert.equal(http.status, 200);
+      const body = await http.json();
+      assert.equal(validateUnarySuccess(body), true, JSON.stringify(validateUnarySuccess.errors));
+      assert.deepEqual(body.usage.raw, raw);
+      assert.deepEqual(Object.keys(body).sort(), ["content", "finishReason", "usage"]);
+    });
+
+    it(`returns ${id} streaming finish raw usage to both clients and validates SSE frames`, async () => {
+      const tsParts = await collect((await model(id).doStream({ prompt: [], includeRawChunks: false })).stream);
+      const go = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/providerwire-v4`, accessToken: "runtime-test-key", modelID: id, mode: "stream", options: { prompt: [] } });
+      assert.equal(go.error, undefined);
+      const tsFinish = tsParts.find(part => part.type === "finish");
+      const goFinish = go.parts.find((part: { type: string }) => part.type === "finish") as { usage: { raw?: unknown } } | undefined;
+      assert.ok(tsFinish?.type === "finish" && goFinish);
+      assert.deepEqual(tsFinish.usage.raw, raw);
+      assert.deepEqual(goFinish.usage, tsFinish.usage);
+      const http = await fetch(`${baseURL}/providerwire-v4/language-model`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "ai-language-model-specification-version": "4", "ai-language-model-id": id, "ai-language-model-streaming": "true" },
+        body: JSON.stringify({ prompt: [] }),
+      });
+      assert.equal(http.status, 200);
+      const frames = (await http.text()).trim().split("\n\n").map(frame => JSON.parse(frame.slice("data: ".length))) as Array<{ usage?: { raw?: unknown } }>;
+      assert.ok(frames.every(frame => validateStreamEvent(frame)));
+      assert.deepEqual(frames.at(-1)?.usage?.raw, raw);
+    });
+  }
+});
+
+describe("unchanged recorded Anthropic usage through the real Gateway streaming handler", () => {
+  for (const name of ["usage-compaction-advisor", "usage-fallback"]) {
+    it(`preserves ${name} per-step usage for both clients`, async () => {
+      const dir = resolve(TEST_DIR, `../../../test/conformance/anthropic/recorded/${name}`);
+      const config = readFileSync(join(dir, "config.yaml"), "utf8");
+      const prompt = config.match(/^prompt: (.+)$/m)?.[1];
+      assert.ok(prompt);
+      const originalPrompt = JSON.parse(prompt) as string;
+      const expected = JSON.parse(readFileSync(join(dir, "expected-usage.json"), "utf8")) as unknown[];
+      const readCount = async () => (await (await fetch(`${baseURL}/recorded-usage/${name}/requests`)).json() as { count: number }).count;
+      const countBefore = await readCount();
+      const result = streamText({ model: createGateway({ apiKey: "runtime-test-key", baseURL: `${baseURL}/recorded-usage` })(name), prompt: originalPrompt, maxRetries: 0 });
+      for await (const part of result.fullStream) if (part.type === "error") throw part.error;
+      assert.deepEqual((await result.steps).map(step => ({
+        inputTokens: {
+          total: step.usage.inputTokens,
+          noCache: step.usage.inputTokenDetails.noCacheTokens,
+          cacheRead: step.usage.inputTokenDetails.cacheReadTokens,
+          cacheWrite: step.usage.inputTokenDetails.cacheWriteTokens,
+        },
+        outputTokens: { total: step.usage.outputTokens },
+        raw: step.usage.raw,
+      })), expected);
+      const go = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/recorded-usage`, accessToken: "runtime-test-key", modelID: name, mode: "stream", options: { prompt: [{ role: "user", content: [{ type: "text", text: originalPrompt }] }] } });
+      assert.equal(go.error, undefined);
+      assert.deepEqual(go.parts.filter((part: { type: string }) => part.type === "finish").map((part: { usage: unknown }) => part.usage), expected);
+      assert.equal(await readCount(), countBefore + 2);
+    });
+  }
 });
 
 describe("real ProviderWire V4 streaming runtime", () => {

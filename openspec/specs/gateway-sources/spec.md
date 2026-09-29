@@ -27,12 +27,12 @@ The Gateway SHALL map the structured pair (sourceType, native ID) to a response-
 
 ### Requirement: Closed public source metadata
 
-The only public source metadata namespace SHALL be citation. Its only fields SHALL be index, startPageNumber, endPageNumber, startCharIndex and endCharIndex, each an integer from 0 through 1000000000 inclusive. index SHALL originate only from the native openai namespace; page/character fields SHALL originate only from anthropic. Malformed, null, fractional, negative or out-of-range approved values SHALL be omitted. Unknown namespaces/fields, native IDs, encrypted indexes, cited text, credentials and transport fields SHALL be omitted without recursive sanitization. Each inspected native namespace SHALL be at most 8192 bytes and within response/frame preflight bounds before JSON decoding; oversize SHALL fail safely. Malformed namespace JSON SHALL be omitted. Empty public metadata SHALL be absent. This is an intentional Gateway privacy projection, not native-provider metadata parity.
+The only public source metadata namespace SHALL be citation. Its only fields SHALL be index, startPageNumber, endPageNumber, startCharIndex and endCharIndex, each an integer from 0 through 1000000000 inclusive. index SHALL originate only from the native openai or azure namespace; page/character fields SHALL originate only from anthropic. Malformed, null, fractional, negative or out-of-range approved values SHALL be omitted. Unknown namespaces/fields, native IDs, encrypted indexes, cited text, credentials and transport fields SHALL be omitted without recursive sanitization. Each inspected native namespace SHALL be at most 8192 bytes and within response/frame preflight bounds before JSON decoding; oversize SHALL fail safely. Malformed namespace JSON SHALL be omitted. Empty public metadata SHALL be absent. This is an intentional Gateway privacy projection, not native-provider metadata parity.
 
-For document sources with recognized openai.type equal to file_path, title SHALL be "Document" and filename SHALL be omitted regardless of their original display values. Native providers SHALL retain their upstream representation outside the Gateway. Other title, URL and filename fields SHALL be treated as public application content, not generically redacted.
+For document sources with recognized openai.type or azure.type equal to file_path, title SHALL be "Document" and filename SHALL be omitted regardless of their original display values. Native providers SHALL retain their upstream representation outside the Gateway. Other title, URL and filename fields SHALL be treated as public application content, not generically redacted.
 
 #### Scenario: Native file path
-- **WHEN** OpenAI file_path supplies a native file ID as both title and filename
+- **WHEN** OpenAI or Azure file_path supplies a native file ID as both title and filename
 - **THEN** Gateway output SHALL use title "Document", omit filename, replace source identity and omit native metadata
 - **AND** a valid index MAY survive under citation
 

@@ -55,7 +55,7 @@ func sourcePreflight(source provider.SourceInfo, limit int64) bool {
 		}
 		limit -= int64(len(value))
 	}
-	for _, namespace := range []string{"anthropic", "openai"} {
+	for _, namespace := range []string{"anthropic", "openai", "azure"} {
 		raw := source.ProviderMetadata[namespace]
 		if len(raw) > maxSourceMetadataBytes || int64(len(raw)) > limit {
 			return false
@@ -106,17 +106,17 @@ func mapSource(source provider.SourceInfo, ids sourceIDs, limit int64) (any, err
 func publicSourceMetadata(metadata provider.ProviderMetadata) (provider.ProviderMetadata, bool) {
 	approved := make(map[string]int64)
 	filePath := false
-	for _, namespace := range []string{"anthropic", "openai"} {
+	for _, namespace := range []string{"anthropic", "openai", "azure"} {
 		var fields map[string]json.RawMessage
 		raw := metadata[namespace]
 		if !utf8.Valid(raw) || json.Unmarshal(raw, &fields) != nil {
 			continue
 		}
 		keys := []string{"startPageNumber", "endPageNumber", "startCharIndex", "endCharIndex"}
-		if namespace == "openai" {
+		if namespace == "openai" || namespace == "azure" {
 			var kind string
 			_ = json.Unmarshal(fields["type"], &kind)
-			filePath = kind == "file_path"
+			filePath = filePath || kind == "file_path"
 			keys = []string{"index"}
 		}
 		for _, key := range keys {

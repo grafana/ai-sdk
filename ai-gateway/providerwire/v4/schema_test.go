@@ -25,12 +25,15 @@ func TestUnarySuccessSchema(t *testing.T) {
 
 	valid := []byte(`{"content":[{"type":"text","text":""}],"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}}}`)
 	require.NoError(t, compiled.Validate(json.RawMessage(valid)))
+	require.NoError(t, compiled.Validate(json.RawMessage(`{"content":[],"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{},"raw":{"native":{"tokens":[1,null,true]}}}}`)))
 
 	invalid := [][]byte{
 		[]byte(`{"content":[],"finishReason":{"unified":"stop"}}`),
 		[]byte(`{"content":[],"finishReason":{"unified":"future"},"usage":{"inputTokens":{},"outputTokens":{}}}`),
 		[]byte(`{"content":[],"finishReason":{"unified":"stop"},"usage":{"inputTokens":{"total":-1},"outputTokens":{}}}`),
 		[]byte(`{"content":[],"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}},"response":{}}`),
+		[]byte(`{"content":[],"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{},"raw":null}}`),
+		[]byte(`{"content":[],"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{},"raw":[],"private":1}}`),
 	}
 	for _, document := range invalid {
 		require.Error(t, compiled.Validate(json.RawMessage(document)))
@@ -48,6 +51,7 @@ func TestStreamEventSchema(t *testing.T) {
 		`{"type":"text-delta","id":"a","delta":""}`,
 		`{"type":"text-end","id":"a"}`,
 		`{"type":"finish","usage":{"inputTokens":{},"outputTokens":{}},"finishReason":{"unified":"stop"}}`,
+		`{"type":"finish","usage":{"inputTokens":{},"outputTokens":{},"raw":{"native":{"tokens":[1,null,true]}}},"finishReason":{"unified":"stop"}}`,
 	}
 	for _, frame := range [][]byte{
 		canonicalRateLimitStreamErrorFrame,
@@ -71,6 +75,8 @@ func TestStreamEventSchema(t *testing.T) {
 		`{"type":"text-start","id":""}`,
 		`{"type":"text-delta","id":"a"}`,
 		`{"type":"finish","usage":{"inputTokens":{},"outputTokens":{}},"finishReason":{"unified":"future"}}`,
+		`{"type":"finish","usage":{"inputTokens":{},"outputTokens":{},"raw":null},"finishReason":{"unified":"stop"}}`,
+		`{"type":"finish","usage":{"inputTokens":{},"outputTokens":{},"raw":[],"private":1},"finishReason":{"unified":"stop"}}`,
 		`{"type":"error","error":{"message":"private","type":"internal_server_error","param":null,"code":"internal_error","statusCode":500,"retryable":true}}`,
 		`{"type":"error","error":{"message":"internal error","type":"rate_limit_exceeded","param":null,"code":"rate_limit_exceeded","statusCode":429,"retryable":true}}`,
 		`{"type":"error","error":{"message":"internal error","type":"internal_server_error","param":null,"code":"internal_error","statusCode":500,"retryable":true,"details":"private"}}`,

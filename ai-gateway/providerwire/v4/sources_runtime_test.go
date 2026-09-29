@@ -73,6 +73,41 @@ func TestSourcesProjectionPrivacyAndBounds(t *testing.T) {
 	require.NoError(t, compiled.Validate(json.RawMessage(encoded)))
 }
 
+func TestSourcesOpenAIAndAzureMetadata(t *testing.T) {
+	for _, tc := range []struct {
+		name, namespace, metadata, wantTitle, wantCitation string
+	}{
+		{"openai file citation", "openai", `{"type":"file_citation","fileId":"secret","index":4,"unapproved":"secret"}`, "Public title", `"citation":{"index":4}`},
+		{"azure file citation", "azure", `{"type":"file_citation","fileId":"secret","index":4,"unapproved":"secret"}`, "Public title", `"citation":{"index":4}`},
+		{"openai file path", "openai", `{"type":"file_path","fileId":"secret","index":0}`, "Document", `"citation":{"index":0}`},
+		{"azure file path", "azure", `{"type":"file_path","fileId":"secret","index":0}`, "Document", `"citation":{"index":0}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			filename := "public.txt"
+			if strings.Contains(tc.name, "file path") {
+				filename = "file-secret"
+			}
+			source := provider.SourceInfo{SourceType: provider.SourceTypeDocument, ID: "private-id", Title: "Public title", Filename: filename, MediaType: "text/plain", ProviderMetadata: provider.ProviderMetadata{tc.namespace: json.RawMessage(tc.metadata)}}
+			mapped, err := mapSource(source, make(sourceIDs), 4096)
+			require.NoError(t, err)
+			encoded, err := json.Marshal(mapped)
+			require.NoError(t, err)
+			assert.Contains(t, string(encoded), `"title":"`+tc.wantTitle+`"`)
+			assert.Contains(t, string(encoded), tc.wantCitation)
+			assert.NotContains(t, string(encoded), "private-id")
+			assert.NotContains(t, string(encoded), "secret")
+			assert.NotContains(t, string(encoded), `"azure"`)
+			assert.NotContains(t, string(encoded), `"openai"`)
+			if strings.Contains(tc.name, "file path") {
+				assert.NotContains(t, string(encoded), `"filename"`)
+			}
+		})
+	}
+	oversize := provider.SourceInfo{SourceType: provider.SourceTypeURL, ID: "id", URL: "https://example.com", ProviderMetadata: provider.ProviderMetadata{"azure": json.RawMessage(strings.Repeat(" ", maxSourceMetadataBytes+1))}}
+	_, err := mapSource(oversize, make(sourceIDs), 16384)
+	require.ErrorIs(t, err, errInvalidUnarySuccess)
+}
+
 func TestSourcesStreamingLifecycle(t *testing.T) {
 	source := provider.StreamPart{Type: provider.PartSource, Source: &provider.SourceInfo{SourceType: provider.SourceTypeURL, ID: "native-id", URL: "https://public.example", ProviderMetadata: provider.ProviderMetadata{"openai": json.RawMessage(`{"fileId":"secret","index":2}`)}}}
 	for _, tc := range []struct {

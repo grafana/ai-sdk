@@ -52,6 +52,32 @@ func TestUIConformance_Sources(t *testing.T) {
 		require.NoError(t, json.Unmarshal(data, &decoded))
 		actual = append(actual, decoded)
 	}
+	require.NoError(t, result.Err())
+	require.Equal(t, expected, actual)
+}
+
+func TestUIConformance_LocalToolPreliminary(t *testing.T) {
+	fixtureDir := filepath.Join("ui", "local-tool-preliminary")
+	parts := loadUIFixtureParts(t, filepath.Join(fixtureDir, "input.jsonl"))
+	expected := loadUIExpected(t, filepath.Join(fixtureDir, "expected.jsonl"))
+	result := aisdk.StreamText(t.Context(), uiFixtureModel{parts: parts},
+		aisdk.WithModelMessages(provider.UserText("test")),
+		aisdk.WithTools(aisdk.ToolSet{"lookup": {ExecuteStream: func(_ context.Context, _ json.RawMessage, _ aisdk.ToolExecutionOptions, emit func(json.RawMessage) error) error {
+			if err := emit(json.RawMessage(`{"stage":"loading"}`)); err != nil {
+				return err
+			}
+			return emit(json.RawMessage(`{"stage":"done"}`))
+		}}}),
+	)
+	var actual []map[string]any
+	for chunk := range result.ToUIMessageStream(aisdk.WithUIMessageStreamGenerateID(func() string { return "message-1" })) {
+		data, err := json.Marshal(chunk)
+		require.NoError(t, err)
+		var decoded map[string]any
+		require.NoError(t, json.Unmarshal(data, &decoded))
+		actual = append(actual, decoded)
+	}
+	require.NoError(t, result.Err())
 	require.Equal(t, expected, actual)
 }
 

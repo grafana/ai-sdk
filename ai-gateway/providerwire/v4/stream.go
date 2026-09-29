@@ -52,6 +52,7 @@ type streamEvent struct {
 	finishReason provider.FinishReason
 	inputUsage   unaryInputTokenUsage
 	outputUsage  unaryOutputTokenUsage
+	rawUsage     json.RawMessage
 	toolName     string
 	input        string
 	result       json.RawMessage
@@ -122,7 +123,7 @@ func encodeStreamFrame(value streamEvent, limit int64) ([]byte, bool) {
 	case provider.PartFinish:
 		payload, err = json.Marshal(streamFinishEvent{
 			Type:         value.typeName,
-			Usage:        unaryUsage{InputTokens: value.inputUsage, OutputTokens: value.outputUsage},
+			Usage:        unaryUsage{InputTokens: value.inputUsage, OutputTokens: value.outputUsage, Raw: value.rawUsage},
 			FinishReason: unaryFinishReason{Unified: value.finishReason.Unified, Raw: value.finishReason.Raw},
 		})
 	default:
@@ -187,7 +188,7 @@ func streamEventPreflight(value streamEvent, limit int64) bool {
 	case provider.PartToolResult:
 		return check(value.id, value.toolName, string(value.result))
 	case provider.PartFinish:
-		return check(string(value.finishReason.Unified), value.finishReason.Raw)
+		return check(string(value.finishReason.Unified), value.finishReason.Raw) && validRawUsage(value.rawUsage, remaining)
 	default:
 		return false
 	}
@@ -666,7 +667,7 @@ func (h *handler) processStreamPart(w http.ResponseWriter, state *streamState, p
 		if err != nil {
 			return streamPartAdapterFailure
 		}
-		event := streamEvent{typeName: provider.PartFinish, finishReason: *part.FinishReason, inputUsage: inputUsage, outputUsage: outputUsage}
+		event := streamEvent{typeName: provider.PartFinish, finishReason: *part.FinishReason, inputUsage: inputUsage, outputUsage: outputUsage, rawUsage: part.Usage.Raw}
 		if result := h.emitStreamEvent(w, event); result != streamWriteSuccess {
 			if result == streamWriteEncodingFailure {
 				return streamPartAdapterFailure
