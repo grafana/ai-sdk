@@ -249,6 +249,10 @@ func TestDecodeStreamPart_DeferredAndMarkers(t *testing.T) {
 		`{"type":"tool-result","toolCallId":"call","toolName":"echo","result":null}`,
 		`{"type":"tool-result","toolCallId":"call","toolName":"echo","result":{},"providerExecuted":true}`,
 		`{"type":"tool-result","toolCallId":"call","toolName":"echo","result":{},"providerMetadata":{"anthropic":{"type":"mcp-tool-use","serverName":null}}}`,
+		`{"type":"tool-call","toolCallId":"call","toolName":"echo","input":"{}","providerMetadata":{"anthropic":{"caller":{"type":"code_execution_20250825"}}}}`,
+		`{"type":"tool-call","toolCallId":"call","toolName":"echo","input":"{}","providerMetadata":{"anthropic":{"caller":{"type":"code_execution_20260120","toolId":""}}}}`,
+		`{"type":"tool-call","toolCallId":"call","toolName":"echo","input":"{}","providerMetadata":{"openai":{"caller":{"type":"program"}}}}`,
+		`{"type":"tool-call","toolCallId":"call","toolName":"echo","input":"{}","providerMetadata":{"azure":{"caller":{"type":"program","callerId":""}}}}`,
 	} {
 		_, err := decodeStreamPart([]byte(event))
 		require.Error(t, err, event)

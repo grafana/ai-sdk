@@ -77,6 +77,33 @@ func TestDecodeGenerate_ProviderToolResults(t *testing.T) {
 	}
 }
 
+func TestDecodeGenerate_ToolCallerMetadata(t *testing.T) {
+	for _, tc := range []struct {
+		name, metadata, namespace, want string
+	}{
+		{"anthropic 20250825", `{"anthropic":{"caller":{"type":"code_execution_20250825","toolId":"srv-1","private":"discard"}}}`, "anthropic", `{"caller":{"type":"code_execution_20250825","toolId":"srv-1"}}`},
+		{"anthropic 20260120", `{"anthropic":{"caller":{"type":"code_execution_20260120","toolId":"srv-2"}}}`, "anthropic", `{"caller":{"type":"code_execution_20260120","toolId":"srv-2"}}`},
+		{"azure program", `{"azure":{"caller":{"type":"program","callerId":"parent"}}}`, "azure", `{"caller":{"type":"program","callerId":"parent"}}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := `{"content":[{"type":"tool-call","toolCallId":"call","toolName":"search","input":"{}","providerMetadata":` + tc.metadata + `}],"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}}}`
+			result, err := decodeGenerate([]byte(body))
+			require.NoError(t, err)
+			require.Len(t, result.Content, 1)
+			assert.JSONEq(t, tc.want, string(result.Content[0].ProviderMetadata[tc.namespace]))
+		})
+	}
+}
+
+func TestDecodeGenerate_TextMetadataIsDiscarded(t *testing.T) {
+	body := `{"content":[{"type":"text","text":"hello","providerMetadata":{"private":{"token":"secret"}}}],"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}}}`
+	result, err := decodeGenerate([]byte(body))
+	require.NoError(t, err)
+	require.Len(t, result.Content, 1)
+	assert.Equal(t, "hello", result.Content[0].Text)
+	assert.Nil(t, result.Content[0].ProviderMetadata)
+}
+
 func TestDecodeGenerate_ToolMetadataAndMarkerValidation(t *testing.T) {
 	body := `{"content":[{"type":"tool-call","toolCallId":"call","toolName":"search","input":"{}","providerMetadata":{"openai":{"itemId":"item-1","namespace":"tools","caller":{"type":"program","callerId":"parent"},"secret":"discard"},"private":{"url":"hidden"}}},{"type":"tool-result","toolCallId":"call","toolName":"search","result":false,"providerMetadata":{"openai":{"itemId":"output-1"}}}],"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}}}`
 	decoded, err := decodeGenerate([]byte(body))
@@ -90,6 +117,10 @@ func TestDecodeGenerate_ToolMetadataAndMarkerValidation(t *testing.T) {
 		`{"providerMetadata":{"anthropic":{"type":"mcp-tool-use"}}}`,
 		`{"providerMetadata":{"anthropic":{"type":"mcp-tool-use","serverName":null}}}`,
 		`{"providerMetadata":{"openai":{"itemId":5}}}`,
+		`{"providerMetadata":{"anthropic":{"caller":{"type":"code_execution_20250825"}}}}`,
+		`{"providerMetadata":{"anthropic":{"caller":{"type":"code_execution_20260120","toolId":""}}}}`,
+		`{"providerMetadata":{"openai":{"caller":{"type":"program"}}}}`,
+		`{"providerMetadata":{"azure":{"caller":{"type":"program","callerId":""}}}}`,
 	} {
 		content := `{"type":"tool-call","toolCallId":"call","toolName":"search","input":"{}",` + strings.TrimPrefix(value, "{")
 		_, err := decodeGenerate([]byte(`{"content":[` + content + `],"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}}}`))

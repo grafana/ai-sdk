@@ -26,4 +26,4 @@ Provider-defined tools and provider-executed results need a consistent contract 
 
 ## Impact
 
-Affects provider types, native request conversion, stream/UI projection, the standalone Go Gateway client, and their tests. Some Go field types change; existing consumers must migrate. The Gateway service continues to reject the newly decodable capabilities until service-side support is added. The registered upstream reference is `08ae5ad05bc12496dd1ffcf64e34419e0831300d` (ai 7.0.107, provider 4.0.17, Gateway 4.0.87, Anthropic 4.0.58).
+Affects provider types, native request conversion, stream/UI projection, the standalone Go Gateway client, and their tests. Some Go field types change; existing consumers must migrate. The Gateway service continues to reject the newly decodable capabilities until service-side support is added. The registered upstream reference is `4e8c387622ee1bb0d55841664416d38754d5c9a3` (ai 7.0.109, provider 4.0.17, Gateway 4.0.88, Anthropic 4.0.59).
