@@ -1,45 +1,60 @@
-# Provider-defined tools
+# Use provider-defined tools through Grafana AI Gateway
 
-Direct routes accept provider definitions with an ID, name and object args,
-and return provider-executed calls and non-null JSON results. Function-only
-fields are rejected on provider definitions. Provider-defined does not mean
-provider-executed: callers use the returned ownership marker, not the definition,
-to decide whether application execution is needed.
+A direct Gateway model route can send provider-defined tools to the model and
+return their calls and results to your application. Configure the tools in your
+SDK request as you would for a direct provider call. The Gateway does not run
+application tools or keep a conversation between requests.
 
-Unary and streaming calls share history-aware correlation. A provider-owned
-call may finish without a result and receive its result in a later request when
-the client supplies that unresolved assistant call in history. Streaming allows
-multiple preliminary results followed by one final result; unfinished previews
-fail safely. State is bounded and request-local, not a Gateway session or executor.
+See [Tools](../../docs/guides/tools.md) for the SDK tool lifecycle and
+[Call Grafana AI Gateway from Go](../../docs/providers/grafana-gateway.md) for
+client setup.
 
-## Continuation and privacy
+## Decide who executes a call
 
-Tool-part options retain ordinary provider continuation values except reserved
-host controls and fields that could override validated tool identity or shape. Public tool metadata uses an allowlist: Anthropic caller identity
-and OpenAI/Azure item, namespace and caller correlation. Arbitrary metadata,
-physical backend identity and credentials are not normalized public output.
-Logical observation remains metadata-only; tool names, IDs, inputs and results
-are not logs, metric labels or exported payloads. Fallback routes reject tools
-and tool history before running any candidate.
+A provider-tool definition contains an ID, name, and JSON object of arguments.
+It cannot contain function-tool fields such as an input schema or definition-level
+provider options. Direct Go callers can leave arguments nil for an empty object;
+a serialized Gateway request must contain `args: {}`.
 
-## Support boundaries
+Check `ProviderExecuted` on each returned call. When true, the provider owns
+execution; do not run the tool in your application. When false, your application
+handles the call as an ordinary tool. The definition's type does not determine
+who executes a particular call.
 
-Ordinary root provider options follow the existing Gateway policy; protected
-Anthropic `mcpServers` remain unsupported. MCP continuation/output metadata is
-rejected rather than silently reinterpreted as an ordinary tool. The `gateway-anthropic-mcp` change separately
-owns remote server options, route eligibility and name validation.
+## Continue after a provider-owned call
 
-Approvals, sources and generated media retain their explicit unsupported
-failures. The base Gateway supports file inputs and supported tool-result files.
-Image previews emitted before their tool call remain WP16 (#110), not correlated
-provider-tool results. The existing byte, frame, part, duration,
-writer/cancellation and cleanup limits continue to apply.
+A provider-owned call may finish a response without a result. To continue, send
+the unresolved assistant call in the next request's conversation history. Keep
+its ID, name, input, execution marker, and returned provider metadata intact.
+The provider can return the matching result in that later response without
+repeating the call. The Gateway does not correlate calls across requests unless
+you supply their history.
 
-## Validation and rollout
+In a stream, a preliminary result is only a preview. Wait for its final result
+before treating the tool as complete. A completed provider-owned call can also
+have no result yet; that is different from a preliminary result awaiting its
+final value.
 
-Both registered clients are tested against the real handler and authenticated
-Gateway command, including native Anthropic code-execution alias/continuation
-requests. Fake native responses are deterministic transport evidence, not
-provider recordings. No deployment activation or live-provider smoke is claimed.
-Before rollout, use the reviewed image and corresponding-source notices; rollback
-uses the prior image/module set and requires no persisted-state migration.
+## Supported routes and limits
+
+Provider tools and their history work on direct model routes. Fallback routes
+reject tool definitions, tool choices, and tool-call/result history before
+calling a provider. Ordinary provider options follow the configured route's
+policy; reserved Gateway controls and fields that override a validated tool
+call are rejected.
+
+Anthropic-hosted MCP server configuration and MCP continuation are not supported
+by this route. Tool approvals, sources, generated media, and image previews
+emitted before a tool call are also unsupported. File inputs and supported
+file entries in application tool-result history remain available on direct
+routes.
+
+Gateway telemetry records tool-bearing requests without exporting tool names,
+IDs, inputs, results, or provider metadata. Your application still receives the
+supported tool data needed for execution and continuation; validate and handle
+it as untrusted input. See [Text observability](text-observability.md) for
+telemetry and privacy details.
+
+---
+
+← [AI Gateway](../README.md) · [SDK documentation](../../docs/README.md)
