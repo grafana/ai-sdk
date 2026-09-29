@@ -215,6 +215,10 @@ For a successful unary response, the client SHALL require a JSON media type, rea
 - **WHEN** a warning has an unknown discriminator or lacks a required field
 - **THEN** the call SHALL fail rather than exposing unvalidated warning content
 
+#### Scenario: Provider-owned unary result
+- **WHEN** ordered content contains a hosted call and its result
+- **THEN** the client SHALL preserve call ownership, IDs, names, input, result and supported markers/metadata without requiring or emitting a result-level providerExecuted wire member
+
 ### Requirement: Successful unary transport read failures retain retryability
 When a successful HTTP 200 `DoGenerate` response body fails to read because of transport I/O after headers, the Grafana client SHALL return a retryable `*provider.APICallError` with HTTP status 200, a bounded locally worded primary message, and a discoverable underlying read cause, without returning a partial result or making another model request. Wrong media type, malformed JSON, strict output-schema violations, and unary byte-limit violations SHALL remain non-retryable protocol failures. Context cancellation or deadline expiry SHALL remain discoverable with `errors.Is` and SHALL NOT be classified as a retryable transport failure. Non-2xx Gateway error responses and discovery retain their existing classification; this requirement does not add any new public service-error category.
 
@@ -235,7 +239,7 @@ When a successful HTTP 200 `DoGenerate` response body fails to read because of t
 - **THEN** the client SHALL NOT issue another HTTP request or replay any previously delivered part
 
 ### Requirement: Incremental bounded SSE consumption
-A successful streaming setup SHALL require SSE media type and return a `StreamResult` whose request body and response headers are client-owned. One goroutine SHALL own the body, parse incrementally under configured cumulative-byte, complete-event-byte, and event-count limits, send mapped parts with context-aware backpressure, close the body, and close the output channel exactly once. It SHALL not buffer the full response or an unbounded line/event. The initial WP7 mapper SHALL accept the WP5 text stream family, safe error parts, and bounded raw parts needed for pinned filtering parity; every unsupported, malformed, or oversized event SHALL emit at most one terminal non-retryable protocol `PartError` and close.
+A successful streaming setup SHALL require SSE media type and return a `StreamResult` whose request body and response headers are client-owned. One goroutine SHALL own the body, parse incrementally under configured cumulative-byte, complete-event-byte, and event-count limits, send mapped parts with context-aware backpressure, close the body, and close the output channel exactly once. It SHALL not buffer the full response or an unbounded line/event. The mapper SHALL accept supported text, function-tool and provider-tool calls/results, safe error parts and bounded raw parts needed for registered filtering behavior. Supported execution/dynamic/preliminary markers and reviewed tool metadata SHALL be preserved. Input-start dynamic SHALL retain absent, explicit false and true independently through decoding; it SHALL NOT be eagerly defaulted. A deferred result SHALL NOT require a repeated call in the same response. Every unsupported, malformed or oversized event SHALL emit at most one terminal non-retryable protocol PartError and close. Server lifecycle validation SHALL NOT be imported into the client as a new independent protocol dialect.
 
 #### Scenario: Text stream completes
 - **WHEN** the server emits valid start, metadata, sequential text parts, safe errors, and finish frames
@@ -250,8 +254,20 @@ A successful streaming setup SHALL require SSE media type and return a `StreamRe
 - **THEN** the client SHALL stop reading, emit at most one bounded protocol error when delivery remains possible, and close all owned resources
 
 #### Scenario: Unsupported response family is received
-- **WHEN** the WP5 text client receives a reasoning, tool, file, source, custom, approval, or other later-package stream part
+- **WHEN** the client receives reasoning, file, source, custom, approval or another unsupported later-package stream part
 - **THEN** it SHALL produce an explicit protocol error rather than decoding through provider-domain JSON accidentally
+
+#### Scenario: Hosted dynamic call with preview results
+- **WHEN** valid tool input, a provider-owned dynamic call, preliminary results and a final result arrive before finish
+- **THEN** all parts and enabled markers SHALL be delivered in order, with equivalent absent/false markers normalized, input-start dynamic presence retained and final-event-before-EOF behavior unchanged
+
+#### Scenario: Input-start dynamic is presence-sensitive
+- **WHEN** otherwise equivalent input-start events omit dynamic or contain false or true
+- **THEN** the client SHALL preserve nil, false and true respectively for subsequent core inference
+
+#### Scenario: Deferred result is consumed
+- **WHEN** the current request carries an unresolved provider-owned call in history and the response contains only its result and finish
+- **THEN** the client SHALL deliver the success or error result without demanding a repeated call or adding a result-level providerExecuted wire member
 
 ### Requirement: Registered stream normalization
 The client SHALL ignore an SSE data payload exactly equal to `[DONE]`, SHALL treat transport clean EOF as clean completion with or without a preceding finish, SHALL filter `raw` parts unless `IncludeRawChunks` is true, SHALL convert valid response-metadata timestamps into `time.Time`, and SHALL preserve response order. Context cancellation SHALL end the stream without manufacturing a provider error. A finish received before EOF SHALL be delivered before channel closure; the client SHALL not create a synthetic finish or require the server to emit `[DONE]`.

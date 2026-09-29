@@ -15,7 +15,7 @@ For a successful unary response, the client SHALL require a JSON media type, rea
 - **WHEN** the response is one byte larger than the configured unary limit or has trailing data
 - **THEN** the call SHALL fail without returning a partial result or retaining an unbounded body
 
-#### Scenario: Unary result is not in the WP5 text family
+#### Scenario: Unsupported unary result family
 - **WHEN** a successful body contains an output discriminator not owned by the supported text/function/provider-tool families
 - **THEN** the client SHALL fail explicitly until that capability extends the closed mapper
 
