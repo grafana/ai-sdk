@@ -13,6 +13,37 @@ var errInvalidResponseMetadata = errors.New("grafana: invalid provider metadata"
 
 const acceptedCallerDirect = "direct"
 
+func uniqueProviderMetadataField(data []byte) bool {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	first, err := decoder.Token()
+	if err != nil || first != json.Delim('{') {
+		return false
+	}
+	seen := false
+	for decoder.More() {
+		key, err := decoder.Token()
+		if err != nil {
+			return false
+		}
+		if key == "providerMetadata" {
+			if seen {
+				return false
+			}
+			seen = true
+		}
+		var value json.RawMessage
+		if decoder.Decode(&value) != nil {
+			return false
+		}
+	}
+	_, err = decoder.Token()
+	if err != nil {
+		return false
+	}
+	_, err = decoder.Token()
+	return err == io.EOF
+}
+
 func strictMetadataObject(data []byte) (map[string]json.RawMessage, error) {
 	if !validJSON(data) {
 		return nil, errInvalidResponseMetadata

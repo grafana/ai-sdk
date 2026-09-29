@@ -282,6 +282,50 @@ describe("closed provider metadata through the real handler", () => {
     }
   });
 
+  it("preserves direct caller through stateless tool-use continuation in both clients", async () => {
+    const result = streamText({
+      model: model("stream-metadata-tools"), prompt: "Weather in Rio?", maxRetries: 0, stopWhen: stepCountIs(2),
+      tools: { weather: tool({ inputSchema: jsonSchema<{city:string}>({ type: "object", properties: { city: { type: "string" } }, required: ["city"] }), execute: async input => { assert.equal(input.city, "Rio"); return "sunny"; } }) },
+    });
+    const calls: unknown[] = [];
+    for await (const part of result.fullStream) {
+      if (part.type === "error") throw part.error;
+      if (part.type === "tool-call") calls.push(part.providerMetadata);
+    }
+    assert.deepEqual(calls, [{ anthropic: { caller: { type: "direct" } } }]);
+    assert.equal(await result.text, "It is sunny.");
+    assert.equal((await result.steps).length, 2);
+
+    const go = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/providerwire-v4`, accessToken: "runtime-test-key", modelID: "stream-metadata-tools", mode: "stream-loop" });
+    assert.equal(go.error, undefined);
+    assert.deepEqual(go, { text: "It is sunny.", steps: 2, executions: 1 });
+  });
+
+  it("rejects invalid recognized metadata through the handler in both clients", async () => {
+    await assert.rejects(async () => await model("metadata-invalid").doGenerate({ prompt: [] }), (error: any) => {
+      assert.equal(error.statusCode, 500);
+      assert.equal(error.message, "internal error");
+      assert.equal(JSON.stringify(error).includes("private-key"), false);
+      return true;
+    });
+    const unary = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/providerwire-v4`, accessToken: "runtime-test-key", modelID: "metadata-invalid", mode: "generate", options: { prompt: [] } });
+    assert.equal(unary.result, undefined);
+    assert.deepEqual({ status: unary.error.statusCode, code: unary.error.code }, { status: 500, code: "internal_error" });
+    assert.equal(JSON.stringify(unary).includes("private-key"), false);
+
+    const ts = await collect((await model("metadata-invalid").doStream({ prompt: [] })).stream);
+    const go = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/providerwire-v4`, accessToken: "runtime-test-key", modelID: "metadata-invalid", mode: "stream", options: { prompt: [] } });
+    assert.equal(go.error, undefined);
+    for (const parts of [ts, go.parts]) {
+      assert.deepEqual(parts.map((part: any) => part.type), ["stream-start", "text-start", "error"]);
+      assert.deepEqual(parts[1].providerMetadata, { openai: { itemId: "msg_1" } });
+      const failure = parts[2].error as { code?: string; statusCode?: number; responseBody?: string };
+      assert.equal(failure.code ?? JSON.parse(failure.responseBody ?? "{}").error?.code, "internal_error");
+      assert.equal(failure.statusCode, 500);
+      assert.equal(JSON.stringify(parts).includes("private-key"), false);
+    }
+  });
+
   it("preserves only approved stream fields and never copies them to finish", async () => {
     const ts = await collect((await model("metadata").doStream({ prompt: [] })).stream);
     const go = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/providerwire-v4`, accessToken: "runtime-test-key", modelID: "metadata", mode: "stream", options: { prompt: [] } });

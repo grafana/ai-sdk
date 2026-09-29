@@ -15,11 +15,11 @@ import (
 // ignores, so dropping it changes nothing the caller could observe from that
 // backend. Refusals that do not depend on the backend happen during mapping.
 func applyProviderOptionPolicy(options provider.CallOptions, policy catalog.ProviderOptionPolicy) provider.CallOptions {
-	options.ProviderOptions = filterProviderOptions(options.ProviderOptions, policy)
+	options.ProviderOptions = filterProviderOptions(options.ProviderOptions, policy, false)
 	if len(options.Tools) > 0 {
 		tools := make([]provider.Tool, len(options.Tools))
 		for i, tool := range options.Tools {
-			tool.ProviderOptions = filterProviderOptions(tool.ProviderOptions, policy)
+			tool.ProviderOptions = filterProviderOptions(tool.ProviderOptions, policy, false)
 			tools[i] = tool
 		}
 		options.Tools = tools
@@ -29,16 +29,17 @@ func applyProviderOptionPolicy(options provider.CallOptions, policy catalog.Prov
 	}
 	prompt := make([]provider.Message, len(options.Prompt))
 	for i, message := range options.Prompt {
-		message.ProviderOptions = filterProviderOptions(message.ProviderOptions, policy)
+		message.ProviderOptions = filterProviderOptions(message.ProviderOptions, policy, false)
 		if len(message.Content) > 0 {
 			content := make([]provider.ContentPart, len(message.Content))
 			for j, part := range message.Content {
-				part.ProviderOptions = filterProviderOptions(part.ProviderOptions, policy)
+				allowDirectCaller := message.Role == provider.RoleAssistant && part.Type == provider.ContentPartTypeToolCall && !part.ProviderExecuted
+				part.ProviderOptions = filterProviderOptions(part.ProviderOptions, policy, allowDirectCaller)
 				if part.Type == provider.ContentPartTypeToolResult && part.Output != nil && len(part.Output.Content) > 0 {
 					output := *part.Output
 					values := make([]provider.ToolResultContentValue, len(output.Content))
 					for k, value := range output.Content {
-						value.ProviderOptions = filterProviderOptions(value.ProviderOptions, policy)
+						value.ProviderOptions = filterProviderOptions(value.ProviderOptions, policy, false)
 						values[k] = value
 					}
 					output.Content = values
@@ -54,7 +55,7 @@ func applyProviderOptionPolicy(options provider.CallOptions, policy catalog.Prov
 	return options
 }
 
-func filterProviderOptions(options provider.ProviderOptions, policy catalog.ProviderOptionPolicy) provider.ProviderOptions {
+func filterProviderOptions(options provider.ProviderOptions, policy catalog.ProviderOptionPolicy, allowDirectCaller bool) provider.ProviderOptions {
 	if len(options) == 0 {
 		return nil
 	}
@@ -69,6 +70,12 @@ func filterProviderOptions(options provider.ProviderOptions, policy catalog.Prov
 				continue
 			}
 			value = restrictedValue
+			if namespace == "anthropic" && slices.Contains(allowed, "caller") {
+				value, ok = restrictDirectCaller(value, allowDirectCaller)
+				if !ok {
+					continue
+				}
+			}
 		}
 		filtered[namespace] = value
 	}
@@ -76,6 +83,46 @@ func filterProviderOptions(options provider.ProviderOptions, policy catalog.Prov
 		return nil
 	}
 	return filtered
+}
+
+func restrictDirectCaller(value provider.ProviderOption, allowed bool) (provider.ProviderOption, bool) {
+	raw, ok := value.(provider.RawProviderOption)
+	if !ok {
+		return nil, false
+	}
+	fields, ok := jsonObject(raw.Raw)
+	if !ok {
+		return nil, false
+	}
+	caller, present := fields["caller"]
+	removedAlias := false
+	for name := range fields {
+		if name != "caller" && normalizeProviderOptionField(name) == "caller" {
+			delete(fields, name)
+			removedAlias = true
+		}
+	}
+	if !present && !removedAlias {
+		return value, true
+	}
+	if present {
+		var members map[string]json.RawMessage
+		if !allowed || !validMetadataNamespace(caller, int64(len(caller))) || json.Unmarshal(caller, &members) != nil || len(members) != 1 {
+			delete(fields, "caller")
+		} else {
+			var kind string
+			if json.Unmarshal(members["type"], &kind) != nil || kind != string(projectedCallerDirect) {
+				delete(fields, "caller")
+			} else {
+				fields["caller"] = json.RawMessage(`{"type":"direct"}`)
+			}
+		}
+	}
+	encoded, err := json.Marshal(fields)
+	if err != nil {
+		return nil, false
+	}
+	return provider.RawProviderOption{Key: raw.Key, Raw: encoded}, true
 }
 
 // restrictProviderOptionFields keeps only the allowed top-level fields. A

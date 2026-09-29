@@ -190,7 +190,7 @@ func decodeStreamPart(data []byte) (provider.StreamPart, error) {
 	invalid := func() (provider.StreamPart, error) {
 		return provider.StreamPart{}, errors.New("grafana: invalid stream part")
 	}
-	if !validJSON(data) {
+	if !validJSON(data) || !uniqueProviderMetadataField(data) {
 		return invalid()
 	}
 	var value struct {

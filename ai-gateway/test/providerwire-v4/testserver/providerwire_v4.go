@@ -80,12 +80,26 @@ func (m *providerWireV4Model) DoStream(ctx context.Context, options provider.Cal
 		}
 		parts = append(parts, provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: &provider.Usage{}})
 		return &provider.StreamResult{Stream: scenarioStream(parts...)}, nil
-	case "stream-tools":
+	case "stream-tools", "stream-metadata-tools":
 		m.stats.recordSuccess(options)
 		for _, message := range options.Prompt {
 			for _, part := range message.Content {
 				if part.Type == provider.ContentPartTypeToolResult {
 					validOutput := part.Output != nil && (part.Output.Type == provider.ToolOutputText && part.Output.Text == "sunny" || part.Output.Type == provider.ToolOutputJSON && string(part.Output.JSON) == `"sunny"`)
+					if m.kind == "stream-metadata-tools" {
+						foundCaller := false
+						for _, prompt := range options.Prompt {
+							for _, call := range prompt.Content {
+								if call.Type == provider.ContentPartTypeToolCall && call.ToolCallID == "call-weather" {
+									value, ok := call.ProviderOptions["anthropic"].(provider.RawProviderOption)
+									foundCaller = ok && string(value.Raw) == `{"caller":{"type":"direct"}}`
+								}
+							}
+						}
+						if !foundCaller {
+							return nil, errors.New("missing direct caller on continued tool use")
+						}
+					}
 					if part.ToolCallID != "call-weather" || part.ToolName != "weather" || !validOutput {
 						return nil, errors.New("invalid streaming continuation")
 					}
@@ -98,12 +112,16 @@ func (m *providerWireV4Model) DoStream(ctx context.Context, options provider.Cal
 				}
 			}
 		}
+		call := provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "call-weather", ToolName: "weather", Input: `{"city":"Rio"}`}
+		if m.kind == "stream-metadata-tools" {
+			call.ProviderMetadata = provider.ProviderMetadata{"anthropic": json.RawMessage(`{"caller":{"type":"direct"},"secret":"private-key"}`)}
+		}
 		return &provider.StreamResult{Stream: scenarioStream(
 			provider.StreamPart{Type: provider.PartToolInputStart, ID: "call-weather", ToolName: "weather"},
 			provider.StreamPart{Type: provider.PartToolInputDelta, ID: "call-weather", Delta: ""},
 			provider.StreamPart{Type: provider.PartToolInputDelta, ID: "call-weather", Delta: `{"city":"Rio"}`},
 			provider.StreamPart{Type: provider.PartToolInputEnd, ID: "call-weather"},
-			provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "call-weather", ToolName: "weather", Input: `{"city":"Rio"}`},
+			call,
 			provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonToolCalls}, Usage: &provider.Usage{}},
 		)}, nil
 	case "success":
@@ -130,6 +148,12 @@ func (m *providerWireV4Model) DoStream(ctx context.Context, options provider.Cal
 			provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "call", ToolName: "weather", Input: `{"city":"Rio"}`, ProviderMetadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"caller":{"type":"direct"},"token":"private-key"}`)}},
 			provider.StreamPart{Type: provider.PartToolResult, ToolCallID: "call", ToolName: "weather", Result: json.RawMessage(`{"result":"sunny"}`), ProviderMetadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"caller":{"type":"direct"}}`)}},
 			provider.StreamPart{Type: provider.PartFinish, Usage: &provider.Usage{}, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}, ProviderMetadata: provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":"private-key"}`)}},
+		)}, nil
+	case "metadata-invalid":
+		return &provider.StreamResult{Stream: scenarioStream(
+			provider.StreamPart{Type: provider.PartTextStart, ID: "msg_1", ProviderMetadata: provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":"msg_1"}`)}},
+			provider.StreamPart{Type: provider.PartTextEnd, ID: "msg_1", ProviderMetadata: provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":"msg_1","secret":"\ud800 private-key"}`)}},
+			provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: &provider.Usage{}},
 		)}, nil
 	case "stream-errors":
 		stream := make(chan provider.StreamPart, 8)
@@ -178,6 +202,8 @@ func (m *providerWireV4Model) DoGenerate(ctx context.Context, options provider.C
 			call.Dynamic = &yes
 		}
 		return &provider.GenerateResult{Content: []provider.GenerateContentPart{{Type: provider.ContentText, Text: ""}, call}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonToolCalls}}, nil
+	case "metadata-invalid":
+		return &provider.GenerateResult{Content: []provider.GenerateContentPart{{Type: provider.ContentText, Text: "hello", ProviderMetadata: provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":"msg_1","secret":"\ud800 private-key"}`)}}}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}, nil
 	case "metadata":
 		m.stats.recordSuccess(options)
 		return &provider.GenerateResult{
@@ -223,11 +249,12 @@ type providerWireV4Scenario struct {
 func newProviderWireV4Scenario() (*providerWireV4Scenario, error) {
 	stats := &providerWireV4Stats{}
 	entries := make([]catalog.StaticEntry, 0, 5)
-	for _, id := range []string{"success", "blocking", "stream-errors", "stream-timeout", "stream-blocking", "unary-tools", "unary-tools-provider-executed", "unary-tools-dynamic", "stream-tools", "stream-tool-results", "stream-tool-arguments", "metadata"} {
-		entries = append(entries, catalog.StaticEntry{
-			Info:  catalog.ModelInfo{ID: id},
-			Model: &providerWireV4Model{kind: id, stats: stats},
-		})
+	for _, id := range []string{"success", "blocking", "stream-errors", "stream-timeout", "stream-blocking", "unary-tools", "unary-tools-provider-executed", "unary-tools-dynamic", "stream-tools", "stream-tool-results", "stream-tool-arguments", "metadata", "metadata-invalid", "stream-metadata-tools"} {
+		entry := catalog.StaticEntry{Info: catalog.ModelInfo{ID: id}, Model: &providerWireV4Model{kind: id, stats: stats}}
+		if id == "stream-metadata-tools" {
+			entry.ProviderOptions = catalog.ProviderOptionPolicy{Namespaces: []string{"anthropic"}, Fields: map[string][]string{"anthropic": {"caller"}}}
+		}
+		entries = append(entries, entry)
 	}
 	resolver, err := catalog.NewStatic(entries)
 	if err != nil {

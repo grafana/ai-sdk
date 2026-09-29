@@ -23,6 +23,8 @@ func TestDecodeGenerate_ProviderMetadata(t *testing.T) {
 		{"openai tool", `{"openai":{"itemId":"fc_1"}}`, `{"itemId":"fc_1"}`, true, true},
 		{"unknown namespace", `{"private":{"key":"secret"}}`, "", false, false},
 		{"unknown field", `{"openai":{"itemId":"msg_1","key":"secret"}}`, "", false, false},
+		{"duplicate outer metadata", `{"private":{"key":"secret"}},"providerMetadata":{"openai":{"itemId":"msg_1"}}`, "", false, false},
+		{"escaped duplicate outer metadata", `{"private":{"key":"secret"}},"providerMetad\u0061ta":{"openai":{"itemId":"msg_1"}}`, "", false, false},
 		{"extra caller member", `{"anthropic":{"caller":{"type":"direct","key":"secret"}}}`, "", false, true},
 		{"unsafe identifier", `{"openai":{"itemId":"Bearer secret"}}`, "", false, false},
 		{"wrong caller", `{"anthropic":{"caller":{"type":"tool"}}}`, "", false, true},
@@ -63,6 +65,8 @@ func TestDecodeStreamPart_ProviderMetadata(t *testing.T) {
 		{"openai tool result", `{"type":"tool-result","toolCallId":"call","toolName":"f","result":{},"providerMetadata":{"openai":{"itemId":"fc_1"}}}`, "openai", `{"itemId":"fc_1"}`, true},
 		{"unknown namespace", `{"type":"text-start","id":"a","providerMetadata":{"private":{"token":"secret"}}}`, "", "", false},
 		{"unknown field", `{"type":"text-start","id":"a","providerMetadata":{"openai":{"itemId":"a","private":"secret"}}}`, "", "", false},
+		{"duplicate outer metadata", `{"type":"text-start","id":"a","providerMetadata":{"private":{"key":"secret"}},"providerMetadata":{"openai":{"itemId":"a"}}}`, "", "", false},
+		{"escaped duplicate outer metadata", `{"type":"text-start","id":"a","providerMetadata":{"private":{"key":"secret"}},"providerMetad\u0061ta":{"openai":{"itemId":"a"}}}`, "", "", false},
 		{"extra caller", `{"type":"tool-call","toolCallId":"call","toolName":"f","input":"{}","providerMetadata":{"anthropic":{"caller":{"type":"direct","extra":true}}}}`, "", "", false},
 		{"unexpected placement", `{"type":"finish","finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}},"providerMetadata":{"openai":{"itemId":"a"}}}`, "", "", false},
 	} {
@@ -76,12 +80,25 @@ func TestDecodeStreamPart_ProviderMetadata(t *testing.T) {
 			assert.JSONEq(t, tc.want, string(part.ProviderMetadata[tc.namespace]))
 		})
 	}
-	part, err := decodeStreamPart([]byte(`{"type":"text-start","id":"a","other":"ignored"}`))
+	part, err := decodeStreamPart([]byte(`{"type":"text-start","id":"a","other":"ignored","other":"still ignored"}`))
 	require.NoError(t, err)
 	assert.Equal(t, provider.PartTextStart, part.Type)
 	assert.Nil(t, part.ProviderMetadata)
 	_, err = json.Marshal(part)
 	require.NoError(t, err)
+}
+
+func TestProviderMetadata_DuplicateOuterFieldClosesStream(t *testing.T) {
+	frames := sseFrame(`{"type":"text-start","id":"msg_1","providerMetadata":{"private":{"secret":"private-key"}},"providerMetadata":{"openai":{"itemId":"msg_1"}}}`) + sseFrame(finishEvent)
+	body := &trackedBody{Reader: strings.NewReader(frames)}
+	m := streamFromBody(t, body, nil)
+	result, err := m.DoStream(context.Background(), provider.CallOptions{})
+	require.NoError(t, err)
+	parts := collectParts(t, result)
+	require.Len(t, parts, 1)
+	assert.Equal(t, provider.PartError, parts[0].Type)
+	assert.NotContains(t, parts[0].APICallError.Message, "private-key")
+	assert.True(t, body.closed)
 }
 
 func TestProviderMetadata_ClientByteLimits(t *testing.T) {

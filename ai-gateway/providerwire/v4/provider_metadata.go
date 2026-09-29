@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"strconv"
 	"unicode/utf8"
 
 	"github.com/grafana/ai-sdk/provider"
@@ -91,11 +92,49 @@ func readMetadataValue(decoder *json.Decoder, depth int) error {
 	return err
 }
 
+func validMetadataEscapes(raw []byte) bool {
+	inString := false
+	for i := 0; i < len(raw); i++ {
+		switch raw[i] {
+		case '"':
+			inString = !inString
+		case '\\':
+			if !inString || i+1 >= len(raw) {
+				return false
+			}
+			if raw[i+1] != 'u' {
+				i++
+				continue
+			}
+			if i+5 >= len(raw) {
+				return false
+			}
+			value, err := strconv.ParseUint(string(raw[i+2:i+6]), 16, 16)
+			if err != nil || value >= 0xdc00 && value <= 0xdfff {
+				return false
+			}
+			if value >= 0xd800 && value <= 0xdbff {
+				if i+11 >= len(raw) || raw[i+6] != '\\' || raw[i+7] != 'u' {
+					return false
+				}
+				low, err := strconv.ParseUint(string(raw[i+8:i+12]), 16, 16)
+				if err != nil || low < 0xdc00 || low > 0xdfff {
+					return false
+				}
+				i += 6
+			}
+			i += 5
+		}
+	}
+	return true
+}
+
 func validMetadataNamespace(raw json.RawMessage, limit int64) bool {
-	if int64(len(raw)) > limit || !utf8.Valid(raw) {
+	if int64(len(raw)) > limit || !utf8.Valid(raw) || !validMetadataEscapes(raw) {
 		return false
 	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
 	first, err := decoder.Token()
 	if err != nil || first != json.Delim('{') {
 		return false

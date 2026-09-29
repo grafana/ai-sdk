@@ -54,6 +54,9 @@ func TestProviderMetadata_ValidationAndPrivacy(t *testing.T) {
 		{"unknown malformed", "private", `{bad`, 1, false},
 		{"unknown deeply nested", "private", `{"a":{"b":{"c":{"secret":"private-key"}}}}`, 1, false},
 		{"recognized unknown sibling", "openai", `{"itemId":"msg_1","private":"private-key"}`, 100, false},
+		{"recognized unknown large number", "openai", `{"itemId":"msg_1","unknown":1e999}`, 100, false},
+		{"recognized paired surrogate", "openai", `{"itemId":"msg_1","unknown":"\ud83d\ude00"}`, 100, false},
+		{"recognized escaped slash before surrogate", "openai", `{"itemId":"msg_1","unknown":"\\uD800"}`, 100, false},
 		{"recognized unknown only", "openai", `{"private":"private-key"}`, 100, false},
 		{"recognized at raw limit", "openai", `{"itemId":"msg_1"}`, int64(len(`{"itemId":"msg_1"}`)), false},
 		{"recognized over raw limit", "openai", `{"itemId":"msg_1"}`, int64(len(`{"itemId":"msg_1"}`) - 1), true},
@@ -61,6 +64,9 @@ func TestProviderMetadata_ValidationAndPrivacy(t *testing.T) {
 		{"recognized malformed", "openai", `{bad`, 100, true},
 		{"recognized duplicate", "openai", `{"itemId":"msg_1","itemId":"msg_1"}`, 100, true},
 		{"recognized invalid UTF-8", "openai", string([]byte{0xff}), 100, true},
+		{"recognized invalid surrogate in unknown field", "openai", `{"itemId":"msg_1","private":"\ud800"}`, 100, true},
+		{"recognized invalid surrogate in key", "openai", `{"itemId":"msg_1","\udc00":"private"}`, 100, true},
+		{"recognized invalid second surrogate", "openai", `{"itemId":"msg_1","unknown":"\ud83d\u0061"}`, 100, true},
 		{"recognized deep unknown", "openai", `{"itemId":"msg_1","x":{"y":{"secret":"private-key"}}}`, 100, true},
 		{"unsafe item ID", "openai", `{"itemId":"Bearer private-key"}`, 100, true},
 		{"mismatched text ID", "openai", `{"itemId":"another"}`, 100, true},
@@ -120,6 +126,7 @@ func TestProviderMetadata_FailureBeforeCommitment(t *testing.T) {
 		{"duplicate", `{"itemId":"msg_1","itemId":"msg_1"}`},
 		{"unsafe identifier", `{"itemId":"Bearer private-key"}`},
 		{"deep unknown sibling", `{"itemId":"msg_1","private":{"nested":{"token":"private-key"}}}`},
+		{"invalid surrogate in unknown field", `{"itemId":"msg_1","private":"\ud800"}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			result := validGenerateResult()

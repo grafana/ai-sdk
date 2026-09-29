@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	anthropicoption "github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/config"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
@@ -138,6 +139,64 @@ func TestOpenAIOptionPolicy_ClassifiesEveryTypedField(t *testing.T) {
 			assert.Contains(t, allowed, name, "%s.%s is read by providers/openai but not forwarded", kind.Name(), name)
 		}
 	}
+}
+
+func TestAnthropicOptionPolicy_ForwardsDirectCallerOnContinuedToolUse(t *testing.T) {
+	var captured provider.CallOptions
+	file := config.File{Models: map[string]config.Model{
+		"public": {Name: "Anthropic", Primary: config.Primary{Provider: "backend", Model: "claude-backend"}},
+	}}
+	created, err := buildCatalog(file, map[string]config.ResolvedProvider{
+		"backend": {Type: "anthropic", APIKey: "key"},
+	}, http.DefaultClient, anthropicprovider.New, func(_ string, lower provider.LanguageModel) (provider.LanguageModel, error) {
+		return &optionCaptureModel{LanguageModel: lower, captured: &captured}, nil
+	})
+	require.NoError(t, err)
+	handler, err := providerv4.New(providerv4.Config{Resolver: created, Limits: serviceTestLimits()})
+	require.NoError(t, err)
+
+	body := `{"maxOutputTokens":32,"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"weather","input":{},"providerOptions":{"anthropic":{"caller":{"type":"direct"},"secret":"private-key"}}}]},{"role":"tool","content":[{"type":"tool-result","toolCallId":"call","toolName":"weather","output":{"type":"text","value":"sunny"},"providerOptions":{"anthropic":{"caller":{"type":"direct"}}}}]}]}`
+	request := httptest.NewRequest(http.MethodPost, providerv4.LanguageModelPath, strings.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set(providerv4.HeaderSpecificationVersion, providerv4.SpecificationVersion)
+	request.Header.Set(providerv4.HeaderModelID, "public")
+	request.Header.Set(providerv4.HeaderStreaming, "false")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	require.Len(t, captured.Prompt, 2)
+	callOption, ok := captured.Prompt[0].Content[0].ProviderOptions["anthropic"].(provider.RawProviderOption)
+	require.True(t, ok)
+	assert.JSONEq(t, `{"caller":{"type":"direct"}}`, string(callOption.Raw))
+	resultOption, ok := captured.Prompt[1].Content[0].ProviderOptions["anthropic"].(provider.RawProviderOption)
+	require.True(t, ok)
+	assert.JSONEq(t, `{}`, string(resultOption.Raw))
+	assert.NotContains(t, response.Body.String(), "private-key")
+
+	var backendBody map[string]any
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.NoError(t, json.NewDecoder(r.Body).Decode(&backendBody))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"msg_test","type":"message","role":"assistant","content":[{"type":"text","text":"done"}],"model":"claude-backend","stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":1,"output_tokens":1}}`))
+	}))
+	defer backend.Close()
+	model := anthropicprovider.New("key", "claude-backend", anthropicprovider.WithRequestOptions(anthropicoption.WithBaseURL(backend.URL)))
+	_, err = model.DoGenerate(context.Background(), captured)
+	require.NoError(t, err)
+	messages, ok := backendBody["messages"].([]any)
+	require.True(t, ok)
+	require.NotEmpty(t, messages)
+	assistant, ok := messages[0].(map[string]any)
+	require.True(t, ok)
+	content, ok := assistant["content"].([]any)
+	require.True(t, ok)
+	require.NotEmpty(t, content)
+	call, ok := content[0].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, map[string]any{"type": "direct"}, call["caller"])
+	encodedBackend, err := json.Marshal(backendBody)
+	require.NoError(t, err)
+	assert.NotContains(t, string(encodedBackend), "private-key")
 }
 
 func TestOpenAIOptionPolicy_ForwardsWebSearchOptOut(t *testing.T) {

@@ -226,7 +226,7 @@ func decodeGenerate(body []byte) (*provider.GenerateResult, error) {
 			Dynamic          bool                         `json:"dynamic"`
 			ProviderMetadata json.RawMessage              `json:"providerMetadata"`
 		}
-		if decodeFields(raw, &part, "type", "text", "toolCallId", "toolName", "input", "providerExecuted", "dynamic", "providerMetadata") != nil || part.ProviderExecuted || part.Dynamic {
+		if !uniqueProviderMetadataField(raw) || decodeFields(raw, &part, "type", "text", "toolCallId", "toolName", "input", "providerExecuted", "dynamic", "providerMetadata") != nil || part.ProviderExecuted || part.Dynamic {
 			return nil, errors.New("grafana: invalid unary content")
 		}
 		allowAnthropic := part.Type == provider.ContentToolCall
