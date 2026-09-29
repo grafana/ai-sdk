@@ -28,10 +28,11 @@ const (
 // content. Tool blocks accumulate JSON fragments until contentBlockStop so
 // we can emit a single PartToolCall after streaming all input deltas.
 type blockState struct {
-	kind       blockKind
-	toolCallID string
-	toolName   string
-	jsonText   string
+	kind            blockKind
+	toolCallID      string
+	toolName        string
+	jsonText        string
+	redactedContent string
 	// isJSONResponseTool flips the stream conversion to emit text deltas
 	// (rather than tool input deltas) when the synthetic json tool is in use.
 	isJSONResponseTool bool
@@ -331,6 +332,10 @@ func (c *streamConsumer) handleContentBlockDelta(payload []byte) error {
 			})
 		}
 		switch {
+		case rc.RedactedContent != "":
+			// Metadata replaces the previous object in core assemblers. Publish
+			// the complete opaque continuation once, at the block boundary.
+			block.redactedContent += rc.RedactedContent
 		case rc.Text != "":
 			_ = sendStreamPart(context.Background(), c.out, provider.StreamPart{
 				Type:  provider.PartReasoningDelta,
@@ -380,9 +385,15 @@ func (c *streamConsumer) handleContentBlockStop(payload []byte) error {
 			ID:   strconv.Itoa(ev.ContentBlockIndex),
 		})
 	case blockKindReasoning:
+		var metadata provider.ProviderMetadata
+		if block.redactedContent != "" {
+			raw := jsonRawOrZero(map[string]string{"redactedContent": block.redactedContent})
+			metadata = provider.ProviderMetadata{"amazonBedrock": raw, "bedrock": raw}
+		}
 		_ = sendStreamPart(context.Background(), c.out, provider.StreamPart{
-			Type: provider.PartReasoningEnd,
-			ID:   strconv.Itoa(ev.ContentBlockIndex),
+			Type:             provider.PartReasoningEnd,
+			ID:               strconv.Itoa(ev.ContentBlockIndex),
+			ProviderMetadata: metadata,
 		})
 	case blockKindTool:
 		input := block.jsonText

@@ -217,7 +217,23 @@ func mapWirePart(part wirePart, role provider.Role, toolsEnabled bool) (provider
 		file.ProviderOptions = partOptions
 		return file, nil
 	case provider.ContentPartTypeReasoningFile, provider.ContentPartTypeReasoning:
-		return provider.ContentPart{}, unsupportedMappingFailure(capabilityReasoningContent)
+		if role != provider.RoleAssistant {
+			return provider.ContentPart{}, invalidMappingFailure()
+		}
+		options, failure := mapWireProviderOptions(part.ProviderOptions)
+		if failure != nil {
+			return provider.ContentPart{}, failure
+		}
+		mapped := provider.ReasoningPart(part.Text)
+		if part.Type == provider.ContentPartTypeReasoningFile {
+			data, failure := mapWireFileData(part.Data)
+			if failure != nil || (!data.IsData() && !data.IsURL()) {
+				return provider.ContentPart{}, invalidMappingFailure()
+			}
+			mapped = provider.ReasoningFilePart(part.MediaType, data)
+		}
+		mapped.ProviderOptions = options
+		return mapped, nil
 	case provider.ContentPartTypeCustom:
 		return provider.ContentPart{}, unsupportedMappingFailure(capabilityCustomContent)
 	case provider.ContentPartTypeToolCall:
