@@ -620,7 +620,7 @@ func TestRuntimeProviderToolDefinitions(t *testing.T) {
 	for _, streaming := range []bool{false, true} {
 		t.Run(fmt.Sprintf("streaming=%t", streaming), func(t *testing.T) {
 			harness := newRuntimeHarness(t, testLimits())
-			body := `{"prompt":[],"tools":[{"type":"function","name":"f","inputSchema":{}},{"type":"provider","id":"anthropic.code_execution_20260120","name":"code","args":{}},{"type":"provider","id":"provider.search","name":"search","args":{"limit":0,"nested":{"value":null}}}]}`
+			body := `{"prompt":[],"tools":[{"type":"function","name":"f","inputSchema":{}},{"type":"provider","id":"anthropic.code_execution_20260120","name":"code","args":{}},{"type":"provider","id":"provider.search","name":"search","args":{"limit":0,"nested":{"value":null}}}],"providerOptions":{"anthropic":{"thinking":{"type":"enabled"}}}}`
 			request := validRequest(body)
 			if streaming {
 				request.Header.Set(HeaderStreaming, "true")
@@ -636,7 +636,9 @@ func TestRuntimeProviderToolDefinitions(t *testing.T) {
 			assert.NotNil(t, opts.Tools[1].Args)
 			assert.JSONEq(t, `0`, string(opts.Tools[2].Args["limit"]))
 			assert.JSONEq(t, `{"value":null}`, string(opts.Tools[2].Args["nested"]))
-			assert.Empty(t, opts.ProviderOptions)
+			root, ok := opts.ProviderOptions["anthropic"].(provider.RawProviderOption)
+			require.True(t, ok)
+			assert.JSONEq(t, `{"thinking":{"type":"enabled"}}`, string(root.Raw))
 			assert.NotContains(t, response.Body.String(), "private-token")
 		})
 	}
@@ -646,7 +648,6 @@ func TestRuntimeProviderToolDefinitions(t *testing.T) {
 		{"function-only field", `{"prompt":[],"tools":[{"type":"provider","id":"provider.search","name":"search","args":{},"strict":false}]}`},
 		{"MCP remains deferred", `{"prompt":[],"providerOptions":{"anthropic":{"mcpServers":[{"type":"url","name":"echo","url":"https://mcp.example.test","authorizationToken":"secret"}]}}}`},
 		{"MCP continuation remains deferred", `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"echo","input":{},"providerExecuted":true,"providerOptions":{"anthropic":{"type":"mcp-tool-use","serverName":"echo"}}}]}]}`},
-		{"root options remain deferred", `{"prompt":[],"providerOptions":{"anthropic":{"thinking":{"type":"enabled"}}}}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			for _, streaming := range []bool{false, true} {

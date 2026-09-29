@@ -1,6 +1,6 @@
 ## Context
 
-This second WP13 slice depends on `sdk-provider-tool-contract` (#238). Source/tests at registered commit `d76eb85a9a7f2dbe44ab2f3dc858ad5cdcb5242e` define the behavior: V4 provider tool/call/result/prompt types; Gateway 4.0.52 serialization; ai 7.0.65 deferred tool results; Anthropic 4.0.38 code-execution alias/replay; OpenAI 4.0.41 item/caller continuation. Public client source does not define Vercel's private hosted-service validation policy.
+This second WP13 slice depends on `sdk-provider-tool-contract` (#238). Source/tests at registered commit `4e8c387622ee1bb0d55841664416d38754d5c9a3` define the behavior: V4 provider tool/call/result/prompt types; Gateway 4.0.88 serialization; ai 7.0.109 deferred tool results; Anthropic 4.0.59 code-execution alias/replay; OpenAI 4.0.72 item/caller continuation. Public client source does not define Vercel's private hosted-service validation policy.
 
 ## Goals / Non-Goals
 
@@ -13,8 +13,8 @@ Non-goals: MCP root options or MCP metadata, later content families, local tool 
 - Extend the existing discriminator-specific private mappers and DTOs. The complete request schema rejects inactive provider-definition fields before model resolution; native providers retain tool ID/argument/alias authority.
 - Track only call identity and lifecycle. Seed eligible unresolved provider-owned calls from bounded request history, exclude completed/client-owned history, and do not charge historical calls against current provider-part count. Do not copy payloads or persist state.
 - Permit complete calls to finish without results, but once previews start require a final result. Preserve input-start dynamic absence/false/true and omit the unregistered result-level providerExecuted wire field.
-- Bound metadata before projection. Anthropic caller type/toolId and OpenAI/Azure itemId, namespace and caller type/callerId are reviewed producer/replay fields; unknown private fields are omitted. Explicit MCP metadata fails rather than becoming an ordinary tool. Ordinary request-part options remain opaque namespace objects except host-reserved namespaces.
-- Keep MCP acceptance out of this PR rather than adding a disabled feature switch. Nonempty root options remain unsupported. The successor introduces options, configured-server matching and service-owned route eligibility together.
+- Bound metadata before projection. Anthropic caller type/toolId and OpenAI/Azure itemId, namespace and caller type/callerId are reviewed producer/replay fields; unknown private fields are omitted. Explicit MCP metadata fails rather than becoming an ordinary tool. Ordinary request-part options remain opaque namespace objects except host-reserved namespaces and fields that could override validated tool identity or shape.
+- Keep MCP acceptance out of this PR rather than adding a disabled feature switch. The base PR accepts ordinary root options but rejects protected MCP server configuration. The successor introduces bounded MCP options, configured-server matching and service-owned route eligibility together.
 - Split combined tests into ordinary code-execution and later MCP scenarios. Capture provider-only goldens with the pinned client instead of editing captured payloads. Keep native fake-provider evidence distinct from authentic provider fixtures.
 
 ## Risks / Trade-offs

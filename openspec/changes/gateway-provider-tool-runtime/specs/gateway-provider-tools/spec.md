@@ -23,7 +23,7 @@ Calls/input-start SHALL preserve providerExecuted true. Dynamic SHALL survive on
 - **THEN** the encoded SSE and Go client SHALL preserve each state for subsequent inference
 
 ### Requirement: Provider result and continuation transport
-Unary/SSE output SHALL preserve ordered calls and non-null JSON results, including error, dynamic and preliminary semantics. Assistant provider calls and basic assistant-side results SHALL map into continuation. Ordinary tool-part options SHALL retain object namespaces while rejecting host-reserved controls. Nested output/content options and deferred content families SHALL remain unsupported.
+Unary/SSE output SHALL preserve ordered calls and non-null JSON results, including error, dynamic and preliminary semantics. Assistant provider calls and basic assistant-side results SHALL map into continuation. Ordinary tool-part options SHALL retain object namespaces while rejecting host-reserved controls and protected fields that could override validated tool identity, shape or request policy. Nested output/content options and deferred content families SHALL remain unsupported.
 
 #### Scenario: Selected result values
 - **WHEN** output results contain empty string, false, zero, empty object or array
@@ -34,14 +34,14 @@ Unary/SSE output SHALL preserve ordered calls and non-null JSON results, includi
 - **THEN** native conversion SHALL preserve the pairing without a Gateway session or executor
 
 ### Requirement: History-aware deferred result correlation
-Output results SHALL match current-response calls or unresolved provider-owned assistant calls from request history. Completed/client-owned historical calls SHALL NOT qualify. Unknown IDs, mismatched names, duplicate calls and results after completion SHALL fail safely. State SHALL retain only bounded identity/lifecycle information and SHALL be discarded per request.
+Output results SHALL match current-response calls or unresolved provider-owned assistant calls from request history. Completed/client-owned historical calls SHALL NOT qualify. Unknown IDs, mismatched names, duplicate calls, results before their matching call, and results after completion SHALL fail safely. Unrelated results in truncated history SHALL NOT seed new pending calls. State SHALL retain only bounded identity/lifecycle information and SHALL be discarded per request.
 
 #### Scenario: Deferred success or error
 - **WHEN** a provider call finishes without a result and the next request includes it unresolved in history
 - **THEN** unary and streaming success/error results SHALL be accepted without repeating the call
 
 #### Scenario: Invalid historical match
-- **WHEN** an output matches only unknown, completed, mismatched or client-owned history
+- **WHEN** an output matches only unknown, completed, out-of-order, mismatched or client-owned history
 - **THEN** unary output SHALL fail before commitment and streaming SHALL use the bounded safe terminal path
 
 #### Scenario: History accounting
@@ -49,7 +49,7 @@ Output results SHALL match current-response calls or unresolved provider-owned a
 - **THEN** its entries SHALL NOT consume the current provider stream-part budget or retain history payloads
 
 ### Requirement: Reviewed non-MCP tool metadata
-Public metadata SHALL project reviewed Anthropic caller type/toolId and OpenAI/Azure itemId, namespace and caller type/callerId shapes. Unknown/private fields SHALL be omitted; malformed supported fields SHALL fail. Metadata bytes and cardinality SHALL be bounded before copying. This capability SHALL NOT enable MCP: nonempty root options and explicit MCP continuation/output metadata SHALL remain rejected until separately enabled by gateway-anthropic-mcp.
+Public metadata SHALL project reviewed Anthropic caller type/toolId and OpenAI/Azure itemId, namespace and caller type/callerId shapes. Unknown/private fields SHALL be omitted; malformed supported fields SHALL fail. Metadata bytes and cardinality SHALL be bounded before copying. This capability SHALL NOT enable MCP: protected MCP root options and explicit MCP continuation/output metadata SHALL remain rejected until separately enabled by gateway-anthropic-mcp. Ordinary root provider options accepted by the base Gateway runtime SHALL remain supported.
 
 #### Scenario: Correlation metadata with private fields
 - **WHEN** reviewed metadata includes arbitrary secret-bearing fields
@@ -82,7 +82,7 @@ The Gateway SHALL execute no local tools and retain no cross-request state. Fall
 - **THEN** both candidate invocation counts SHALL remain zero
 
 ### Requirement: Independent acceptance evidence
-Both registered clients SHALL exercise real-handler and authenticated-command scenarios without requiring MCP. Request goldens SHALL be captured from the pinned client. Provider fixtures SHALL retain authentic provenance, Apache modules SHALL NOT import Gateway code, and Gateway checks SHALL use published pins with GOWORK disabled.
+Both registered clients SHALL exercise real-handler and authenticated-command scenarios without requiring MCP. Request goldens SHALL be captured from the pinned client. Provider fixtures SHALL retain authentic provenance and Apache modules SHALL NOT import Gateway code. Candidate-source checks SHALL select `go.gateway.work` explicitly; standalone Gateway builds SHALL use published pins with GOWORK disabled.
 
 #### Scenario: Intermediate PR validation
 - **WHEN** this change is validated before MCP support lands

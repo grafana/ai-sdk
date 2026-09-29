@@ -73,6 +73,31 @@ func TestRuntimeUnaryProviderTools_InvalidResultsFailBeforeCommit(t *testing.T) 
 	}
 }
 
+func TestRuntimeProviderToolHistory_ProtectsNativeToolFields(t *testing.T) {
+	for _, tc := range []struct{ name, body string }{
+		{"tool call function", `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"echo","input":{},"providerExecuted":true,"providerOptions":{"openaiCompatible":{"function":{"name":"injected","arguments":"{}"}}}}]}]}`},
+		{"tool call id", `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"echo","input":{},"providerExecuted":true,"providerOptions":{"openaiCompatible":{"ID":"injected"}}}]}]}`},
+		{"tool call model", `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"echo","input":{},"providerExecuted":true,"providerOptions":{"openaiCompatible":{"Model":"other"}}}]}]}`},
+		{"tool result type", `{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"call","toolName":"echo","output":{"type":"json","value":{}},"providerOptions":{"openaiCompatible":{"Type":"tool-call"}}}]}]}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, streaming := range []bool{false, true} {
+				harness := newRuntimeHarness(t, testLimits())
+				request := validRequest(tc.body)
+				if streaming {
+					request.Header.Set(HeaderStreaming, "true")
+				}
+				response := harness.serve(request)
+				assert.Equal(t, http.StatusBadRequest, response.Code)
+				assert.JSONEq(t, string(protectedProviderOptionError), response.Body.String())
+				assert.Zero(t, harness.resolver.callCount())
+				assert.Zero(t, harness.model.callCount())
+				assert.NotContains(t, response.Body.String(), "injected")
+			}
+		})
+	}
+}
+
 func TestRuntimeUnaryProviderTools_DeferredCompoundOutputFailsBeforeCommit(t *testing.T) {
 	harness := newRuntimeHarness(t, testLimits())
 	harness.model.generate = func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {

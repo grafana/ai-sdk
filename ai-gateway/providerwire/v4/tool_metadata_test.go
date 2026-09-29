@@ -32,6 +32,10 @@ func TestMapToolMetadata_RejectsUnconfiguredOrOversizedValues(t *testing.T) {
 	}{
 		{name: "unsupported MCP metadata", metadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"type":"mcp-tool-use","serverName":"other"}`)}, limit: 1024},
 		{name: "unsupported caller", metadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"caller":{"type":"unknown"}}`)}, limit: 1024},
+		{name: "missing anthropic tool id", metadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"caller":{"type":"code_execution_20260120"}}`)}, limit: 1024},
+		{name: "empty anthropic tool id", metadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"caller":{"type":"code_execution_20260120","toolId":""}}`)}, limit: 1024},
+		{name: "missing openai caller id", metadata: provider.ProviderMetadata{"openai": json.RawMessage(`{"caller":{"type":"program"}}`)}, limit: 1024},
+		{name: "empty azure caller id", metadata: provider.ProviderMetadata{"azure": json.RawMessage(`{"caller":{"type":"program","callerId":""}}`)}, limit: 1024},
 		{name: "wrong item id type", metadata: provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":42}`)}, limit: 1024},
 		{name: "malformed metadata", metadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{`)}, limit: 1024},
 		{name: "oversized known field", metadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"type":"mcp-tool-use","serverName":"` + strings.Repeat("x", 200) + `"}`)}, limit: 128},
