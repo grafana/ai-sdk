@@ -1,6 +1,7 @@
 package v4
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 
 const (
 	maxJavaScriptSafeInteger = 9007199254740991
+	maxRawUsageBytes         = 1 << 20
 	minimumTextPartBytes     = int64(len(`{"type":"text","text":""}`))
 )
 
@@ -49,6 +51,7 @@ type unaryOutputTokenUsage struct {
 type unaryUsage struct {
 	InputTokens  unaryInputTokenUsage  `json:"inputTokens"`
 	OutputTokens unaryOutputTokenUsage `json:"outputTokens"`
+	Raw          json.RawMessage       `json:"raw,omitempty"`
 }
 
 type unarySuccess struct {
@@ -111,7 +114,10 @@ func mapUnarySuccess(result *provider.GenerateResult, limit int64) (unarySuccess
 	if err != nil {
 		return unarySuccess{}, err
 	}
-	mapped.Usage = unaryUsage{InputTokens: inputUsage, OutputTokens: outputUsage}
+	if !validRawUsage(result.Usage.Raw, limit) {
+		return unarySuccess{}, errInvalidUnarySuccess
+	}
+	mapped.Usage = unaryUsage{InputTokens: inputUsage, OutputTokens: outputUsage, Raw: result.Usage.Raw}
 	return mapped, nil
 }
 
@@ -128,7 +134,11 @@ func unarySuccessPreflight(result *provider.GenerateResult, limit int64) bool {
 			remaining -= int64(length)
 		}
 	}
-	return int64(len(result.FinishReason.Raw)) <= remaining
+	if int64(len(result.FinishReason.Raw)) > remaining {
+		return false
+	}
+	remaining -= int64(len(result.FinishReason.Raw))
+	return int64(len(result.Usage.Raw)) <= remaining && len(result.Usage.Raw) <= maxRawUsageBytes
 }
 
 func mapInputUsage(usage provider.InputTokenUsage) (unaryInputTokenUsage, error) {
@@ -159,6 +169,17 @@ func validTokenCounts(values ...*int) bool {
 		}
 	}
 	return true
+}
+
+func validRawUsage(raw json.RawMessage, limit int64) bool {
+	if len(raw) == 0 {
+		return true
+	}
+	if int64(len(raw)) > limit || len(raw) > maxRawUsageBytes || !utf8.Valid(raw) || !json.Valid(raw) {
+		return false
+	}
+	trimmed := bytes.TrimSpace(raw)
+	return len(trimmed) > 0 && trimmed[0] == '{'
 }
 
 func encodeUnarySuccess(value unarySuccess, limit int64) ([]byte, bool) {
