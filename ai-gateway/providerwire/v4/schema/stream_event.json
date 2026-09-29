@@ -3,6 +3,8 @@
   "$id": "https://grafana.com/ai-sdk/providerwire/v4/stream-event.schema.json",
   "title": "ProviderWire V4 strict streaming text and function-tool event",
   "oneOf": [
+    { "$ref": "#/$defs/urlSource" },
+    { "$ref": "#/$defs/documentSource" },
     { "$ref": "#/$defs/streamStart" },
     { "$ref": "#/$defs/responseMetadata" },
     { "$ref": "#/$defs/textStart" },
@@ -17,6 +19,111 @@
     { "$ref": "#/$defs/error" }
   ],
   "$defs": {
+    "sourceMetadata": {
+      "type": "object",
+      "properties": {
+        "citation": {
+          "type": "object",
+          "properties": {
+            "index": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000000
+            },
+            "startPageNumber": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000000
+            },
+            "endPageNumber": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000000
+            },
+            "startCharIndex": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000000
+            },
+            "endCharIndex": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000000
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "urlSource": {
+      "type": "object",
+      "required": [
+        "type",
+        "sourceType",
+        "id",
+        "url"
+      ],
+      "properties": {
+        "type": {
+          "const": "source"
+        },
+        "sourceType": {
+          "const": "url"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "url": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "providerMetadata": {
+          "$ref": "#/$defs/sourceMetadata"
+        }
+      },
+      "additionalProperties": false
+    },
+    "documentSource": {
+      "type": "object",
+      "required": [
+        "type",
+        "sourceType",
+        "id",
+        "mediaType",
+        "title"
+      ],
+      "properties": {
+        "type": {
+          "const": "source"
+        },
+        "sourceType": {
+          "const": "document"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mediaType": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "filename": {
+          "type": "string",
+          "minLength": 1
+        },
+        "providerMetadata": {
+          "$ref": "#/$defs/sourceMetadata"
+        }
+      },
+      "additionalProperties": false
+    },
     "toolInputStart": {
       "type": "object", "required": ["type", "id", "toolName"],
       "properties": {"type": {"const": "tool-input-start"}, "id": {"type": "string", "minLength": 1}, "toolName": {"type": "string", "minLength": 1}},

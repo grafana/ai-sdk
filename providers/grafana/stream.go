@@ -218,6 +218,12 @@ func decodeStreamPart(data []byte) (provider.StreamPart, error) {
 	}
 	part := provider.StreamPart{Type: value.Type}
 	switch value.Type {
+	case provider.PartSource:
+		source, err := decodeSource(data)
+		if err != nil {
+			return invalid()
+		}
+		part.Source = source
 	case provider.PartToolInputStart, provider.PartToolInputDelta, provider.PartToolInputEnd:
 		if value.ID == nil || *value.ID == "" || value.ProviderExecuted || value.Dynamic || value.Preliminary {
 			return invalid()

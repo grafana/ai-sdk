@@ -265,7 +265,7 @@ func (s *streamSummary) observe(part provider.StreamPart) {
 
 func isFirstContentPart(part provider.StreamPart) bool {
 	switch part.Type {
-	case provider.PartTextDelta, provider.PartReasoningDelta, provider.PartToolCall, provider.PartToolInputDelta:
+	case provider.PartTextDelta, provider.PartReasoningDelta, provider.PartToolCall, provider.PartToolInputDelta, provider.PartSource:
 		return true
 	default:
 		return false

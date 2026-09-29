@@ -57,6 +57,7 @@ type streamEvent struct {
 	input        string
 	result       json.RawMessage
 	isError      bool
+	source       any
 }
 
 type streamStartEvent struct {
@@ -91,6 +92,8 @@ func encodeStreamFrame(value streamEvent, limit int64) ([]byte, bool) {
 	var payload []byte
 	var err error
 	switch value.typeName {
+	case provider.PartSource:
+		payload, err = json.Marshal(value.source)
 	case provider.PartStreamStart:
 		warnings := value.warnings
 		if warnings == nil {
@@ -156,6 +159,8 @@ func streamEventPreflight(value streamEvent, limit int64) bool {
 		return false
 	}
 	switch value.typeName {
+	case provider.PartSource:
+		return value.source != nil
 	case provider.PartStreamStart:
 		if !streamWarningCountFits(len(value.warnings), limit) {
 			return false
@@ -411,6 +416,7 @@ type streamState struct {
 	activeID     string
 	usedIDs      map[string]struct{}
 	tools        map[string]toolStreamState
+	sources      sourceIDs
 }
 
 func newStreamState(limit int) *streamState {
@@ -418,7 +424,7 @@ func newStreamState(limit int) *streamState {
 	if capacity > 64 {
 		capacity = 64
 	}
-	return &streamState{usedIDs: make(map[string]struct{}, capacity), tools: make(map[string]toolStreamState, capacity)}
+	return &streamState{usedIDs: make(map[string]struct{}, capacity), tools: make(map[string]toolStreamState, capacity), sources: make(sourceIDs)}
 }
 
 func (h *handler) runStream(w http.ResponseWriter, requestContext, modelContext context.Context, cancel context.CancelFunc, stream <-chan provider.StreamPart, counter *streamPartCounter, idleTimer *time.Timer, modelID string) {
@@ -562,6 +568,22 @@ func validStreamTimestamp(value time.Time) bool {
 
 func (h *handler) processStreamPart(w http.ResponseWriter, state *streamState, part provider.StreamPart, modelID string) streamPartResult {
 	switch part.Type {
+	case provider.PartSource:
+		if part.Source == nil {
+			return streamPartAdapterFailure
+		}
+		source, err := mapSource(*part.Source, state.sources, h.limits.StreamFrameBytes-int64(len("data: \n\n")))
+		if err != nil {
+			return streamPartAdapterFailure
+		}
+		if result := h.emitStreamEvent(w, streamEvent{typeName: provider.PartSource, source: source}); result != streamWriteSuccess {
+			if result == streamWriteEncodingFailure {
+				return streamPartAdapterFailure
+			}
+			return streamPartWriterFailure
+		}
+		state.textStarted = true
+		return streamPartContinue
 	case provider.PartToolInputStart, provider.PartToolInputDelta, provider.PartToolInputEnd, provider.PartToolCall, provider.PartToolResult:
 		return h.processToolStreamPart(w, state, part)
 	case provider.PartResponseMeta:
