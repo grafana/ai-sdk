@@ -12,19 +12,19 @@ import (
 
 func TestToolCallers_Validation(t *testing.T) {
 	for _, tc := range []struct {
-		name    string
-		callers map[string][]string
-		want    string
+		name   string
+		routes ToolRoutes
+		want   string
 	}{
-		{name: "unknown tool", callers: map[string][]string{"missing": {ToolCallerDirect}}, want: "unknown tool"},
-		{name: "non caller", callers: map[string][]string{"lookup": {"other"}}, want: "invalid caller"},
+		{name: "unknown tool", routes: ToolRoutes{"missing": {Direct: true}}, want: "unknown tool"},
+		{name: "non caller", routes: ToolRoutes{"lookup": {Callers: []string{"other"}}}, want: "invalid caller"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			model := &mockModel{streamFunc: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
 				return &provider.StreamResult{Stream: textStreamParts("unexpected")}, nil
 			}}
 			result := StreamText(t.Context(), model, WithModelMessages(provider.UserText("hello")),
-				WithTools(ToolSet{"lookup": {}, "other": {}}), WithToolCallers(tc.callers))
+				WithTools(ToolSet{"lookup": {}, "other": {}}), WithToolRoutes(tc.routes))
 			for range result.FullStream() {
 			}
 			require.ErrorContains(t, result.Err(), tc.want)
@@ -49,7 +49,7 @@ func TestToolCallers_AbsentAndEmptyTools(t *testing.T) {
 				return &provider.StreamResult{Stream: textStreamParts("done")}, nil
 			}}
 			result := StreamText(t.Context(), model, WithModelMessages(provider.UserText("hello")),
-				WithTools(tc.tools), WithToolCallers(map[string][]string{}))
+				WithTools(tc.tools), WithToolRoutes(ToolRoutes{}))
 			for range result.FullStream() {
 			}
 			require.NoError(t, result.Err())
@@ -68,7 +68,7 @@ func TestToolCallers_InvalidUnusedLocalCaller(t *testing.T) {
 		return &provider.StreamResult{Stream: textStreamParts("unexpected")}, nil
 	}}
 	result := StreamText(t.Context(), model, WithModelMessages(provider.UserText("hello")),
-		WithTools(ToolSet{"unused": {Caller: &ToolCaller{Type: ToolCallerLocal}}}), WithToolCallers(map[string][]string{}))
+		WithTools(ToolSet{"unused": {Caller: &ToolCaller{Type: ToolCallerLocal}}}), WithToolRoutes(ToolRoutes{}))
 	for range result.FullStream() {
 	}
 	require.ErrorContains(t, result.Err(), "invalid local caller")
@@ -86,7 +86,7 @@ func TestToolCallers_BoundToolDualExecutionRejected(t *testing.T) {
 	}}
 	result := StreamText(t.Context(), model, WithModelMessages(provider.UserText("hello")),
 		WithTools(ToolSet{"runner": {Caller: &ToolCaller{Type: ToolCallerLocal, Bind: func(ToolSet) Tool { return both }}}}),
-		WithToolCallers(map[string][]string{}))
+		WithToolRoutes(ToolRoutes{}))
 	for range result.FullStream() {
 	}
 	require.ErrorContains(t, result.Err(), "both Execute and ExecuteStream")
@@ -119,7 +119,7 @@ func TestToolCallers_LocalRouting(t *testing.T) {
 		return &provider.StreamResult{Stream: toolCallStreamParts("code_mode", `{}`)}, nil
 	}}
 	result := StreamText(t.Context(), model, WithModelMessages(provider.UserText("hello")),
-		WithTools(tools), WithToolCallers(map[string][]string{"getInventory": {"code_mode"}}))
+		WithTools(tools), WithToolRoutes(ToolRoutes{"getInventory": {Callers: []string{"code_mode"}}}))
 	for range result.FullStream() {
 	}
 	require.NoError(t, result.Err())
@@ -132,15 +132,16 @@ func TestToolCallers_LocalRouting(t *testing.T) {
 
 func TestToolCallers_ModelVisibility(t *testing.T) {
 	for _, tc := range []struct {
-		name    string
-		callers []string
-		active  []string
-		want    []string
+		name   string
+		route  ToolRoute
+		active []string
+		want   []string
 	}{
-		{name: "direct and local", callers: []string{ToolCallerDirect, "code_mode"}, want: []string{"code_mode", "lookup"}},
-		{name: "local only", callers: []string{"code_mode"}, want: []string{"code_mode"}},
-		{name: "empty list", callers: []string{}, want: []string{"code_mode"}},
-		{name: "inactive caller", callers: []string{"code_mode"}, active: []string{"lookup"}, want: nil},
+		{name: "direct and local", route: ToolRoute{Direct: true, Callers: []string{"code_mode"}}, want: []string{"code_mode", "lookup"}},
+		{name: "direct only", route: ToolRoute{Direct: true}, want: []string{"code_mode", "lookup"}},
+		{name: "local only", route: ToolRoute{Callers: []string{"code_mode"}}, want: []string{"code_mode"}},
+		{name: "zero route", want: []string{"code_mode"}},
+		{name: "inactive caller", route: ToolRoute{Callers: []string{"code_mode"}}, active: []string{"lookup"}, want: nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			model := &mockModel{streamFunc: func(_ context.Context, opts provider.CallOptions) (*provider.StreamResult, error) {
@@ -149,7 +150,7 @@ func TestToolCallers_ModelVisibility(t *testing.T) {
 			}}
 			opts := []StreamOption{WithModelMessages(provider.UserText("hello")),
 				WithTools(ToolSet{"code_mode": {Caller: &ToolCaller{Type: ToolCallerLocal, Bind: func(ToolSet) Tool { return Tool{} }}}, "lookup": {}}),
-				WithToolCallers(map[string][]string{"lookup": tc.callers})}
+				WithToolRoutes(ToolRoutes{"lookup": tc.route})}
 			if tc.active != nil {
 				opts = append(opts, WithActiveTools(tc.active...))
 			}
@@ -184,7 +185,7 @@ func TestToolCallers_ModelMessageAndActiveTools(t *testing.T) {
 	result := StreamText(t.Context(), model,
 		WithModelMessages(provider.UserText("caller has inventory")),
 		WithTools(ToolSet{"code_mode": caller, "inventory": {}, "hidden": {}}),
-		WithToolCallers(map[string][]string{"inventory": {"code_mode"}, "hidden": {"code_mode"}}),
+		WithToolRoutes(ToolRoutes{"inventory": {Callers: []string{"code_mode"}}, "hidden": {Callers: []string{"code_mode"}}}),
 		WithActiveTools("code_mode", "inventory"))
 	for range result.FullStream() {
 	}
@@ -209,7 +210,7 @@ func TestToolCallers_ProviderOptions(t *testing.T) {
 	}}
 	tools := ToolSet{"programmatic": providerCaller, "lookup": {ProviderOptions: original}}
 	result := StreamText(t.Context(), model, WithModelMessages(provider.UserText("hello")), WithTools(tools),
-		WithToolCallers(map[string][]string{"lookup": {ToolCallerDirect, "programmatic"}}))
+		WithToolRoutes(ToolRoutes{"lookup": {Direct: true, Callers: []string{"programmatic"}}}))
 	for range result.FullStream() {
 	}
 	require.NoError(t, result.Err())
@@ -230,7 +231,7 @@ func TestToolCallers_ProviderOnlyAndNamedChoice(t *testing.T) {
 		return provider.ProviderOptions{"test": provider.RawProviderOption{Key: "test", Raw: json.RawMessage(`{"allowedCallers":["programmatic"]}`)}}
 	}}}, "lookup": {}}
 	result := StreamText(t.Context(), model, WithModelMessages(provider.UserText("hello")), WithTools(tools),
-		WithToolChoice(choice), WithToolCallers(map[string][]string{"lookup": {"programmatic"}}))
+		WithToolChoice(choice), WithToolRoutes(ToolRoutes{"lookup": {Callers: []string{"programmatic"}}}))
 	for range result.FullStream() {
 	}
 	require.NoError(t, result.Err())
@@ -251,7 +252,7 @@ func TestToolCallers_PerStepActiveTools(t *testing.T) {
 				return json.RawMessage(`"ok"`), nil
 			}}
 		}}}, "lookup": {},
-	}), WithToolCallers(map[string][]string{"lookup": {"runner"}}), WithStopWhen(StepCountIs(2)),
+	}), WithToolRoutes(ToolRoutes{"lookup": {Callers: []string{"runner"}}}), WithStopWhen(StepCountIs(2)),
 		WithPrepareStep(func(state PrepareStepState) (*PrepareStepResult, error) {
 			if state.StepNumber == 1 {
 				return &PrepareStepResult{ActiveTools: []string{}}, nil
@@ -268,17 +269,17 @@ func TestToolCallers_EntryPointsAndProviderCalls(t *testing.T) {
 	tools := ToolSet{"hidden": {Execute: func(context.Context, json.RawMessage, ToolExecutionOptions) (json.RawMessage, error) {
 		return json.RawMessage(`"ok"`), nil
 	}}, "runner": {Caller: &ToolCaller{Type: ToolCallerLocal, Bind: func(ToolSet) Tool { return Tool{} }}}}
-	callers := map[string][]string{"hidden": {"runner"}}
+	routes := ToolRoutes{"hidden": {Callers: []string{"runner"}}}
 	for _, tc := range []struct {
 		name string
 		run  func(*mockModel) error
 	}{
 		{name: "generate", run: func(m *mockModel) error {
-			_, err := GenerateText(t.Context(), m, WithModelMessages(provider.UserText("hello")), WithTools(tools), WithToolCallers(callers))
+			_, err := GenerateText(t.Context(), m, WithModelMessages(provider.UserText("hello")), WithTools(tools), WithToolRoutes(routes))
 			return err
 		}},
 		{name: "agent", run: func(m *mockModel) error {
-			agent := NewToolLoopAgent(m, WithToolLoopAgentOptions(WithTools(tools), WithToolCallers(callers)))
+			agent := NewToolLoopAgent(m, WithToolLoopAgentOptions(WithTools(tools), WithToolRoutes(routes)))
 			result := agent.Stream(t.Context(), WithAgentPrompt("hello"))
 			for range result.FullStream() {
 			}
@@ -293,6 +294,23 @@ func TestToolCallers_EntryPointsAndProviderCalls(t *testing.T) {
 			require.NoError(t, tc.run(model))
 		})
 	}
+}
+
+func TestToolCallers_AgentRoutesSnapshot(t *testing.T) {
+	routes := ToolRoutes{"lookup": {Callers: []string{"runner"}}}
+	model := &mockModel{streamFunc: func(_ context.Context, opts provider.CallOptions) (*provider.StreamResult, error) {
+		assert.Equal(t, []string{"runner"}, toolNames(opts.Tools))
+		return &provider.StreamResult{Stream: textStreamParts("done")}, nil
+	}}
+	agent := NewToolLoopAgent(model, WithToolLoopAgentOptions(WithTools(ToolSet{
+		"lookup": {},
+		"runner": {Caller: &ToolCaller{Type: ToolCallerLocal, Bind: func(ToolSet) Tool { return Tool{} }}},
+	}), WithToolRoutes(routes)))
+	routes["lookup"].Callers[0] = "unknown"
+	result := agent.Stream(t.Context(), WithAgentPrompt("hello"))
+	for range result.FullStream() {
+	}
+	require.NoError(t, result.Err())
 }
 
 func TestToolCallers_ProviderExecutedAndUnknownDynamic(t *testing.T) {
@@ -310,7 +328,7 @@ func TestToolCallers_ProviderExecutedAndUnknownDynamic(t *testing.T) {
 			executed = true
 			return nil, nil
 		}}, "runner": {Caller: &ToolCaller{Type: ToolCallerLocal, Bind: func(ToolSet) Tool { return Tool{} }}}}),
-		WithToolCallers(map[string][]string{"lookup": {"runner"}}))
+		WithToolRoutes(ToolRoutes{"lookup": {Callers: []string{"runner"}}}))
 	for range result.FullStream() {
 	}
 	require.NoError(t, result.Err())

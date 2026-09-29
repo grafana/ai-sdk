@@ -8,7 +8,7 @@ Define opt-in per-step visibility and execution of tools routed through local or
 
 ### Requirement: Caller configuration is opt-in and validated
 
-`StreamText` and `GenerateText` SHALL accept an optional mapping from tool names to ordered allowed caller names. The direct-call sentinel SHALL identify direct model access. Non-direct names SHALL refer to tools explicitly configured as local or provider callers in the supplied tool set. When a tool set and mapping are present, unknown callee names or names that are not configured caller tools SHALL cause a configuration error. An unlisted tool SHALL retain ordinary behavior; a listed tool with an empty caller list SHALL have no direct or provider-model visibility. A missing tool set or missing mapping SHALL retain ordinary unconfigured behavior.
+`StreamText` and `GenerateText` SHALL accept an optional `ToolRoutes` mapping keyed by callee tool name. Each `ToolRoute` SHALL separate a `Direct` flag from an ordered `Callers` list of tool names. Caller names SHALL refer to tools explicitly configured as local or provider callers in the supplied tool set. When a tool set and mapping are present, unknown callee names or names that are not configured caller tools SHALL cause a configuration error. An unlisted tool SHALL retain ordinary behavior; a listed tool with a zero-value route SHALL have no direct or provider-model visibility. A missing tool set or missing mapping SHALL retain ordinary unconfigured behavior.
 
 #### Scenario: Unknown callee
 - **WHEN** a configured mapping names a callee not in the tool set
@@ -22,8 +22,8 @@ Define opt-in per-step visibility and execution of tools routed through local or
 - **WHEN** a tool has no caller-list entry
 - **THEN** it SHALL retain its existing provider visibility and execution behavior
 
-#### Scenario: Explicitly empty caller list
-- **WHEN** a tool has a configured empty caller list
+#### Scenario: Zero-value route
+- **WHEN** a tool has a configured route with `Direct` false and no callers
 - **THEN** it SHALL not appear among the model tools for that step
 
 ### Requirement: Separate model and execution tools per step
@@ -36,7 +36,7 @@ For each model step, orchestration SHALL filter the available tools by the effec
 - **AND** the bound caller SHALL be able to invoke the callee
 
 #### Scenario: Direct and local routes
-- **WHEN** a caller list includes both the direct sentinel and an active local caller
+- **WHEN** a route has `Direct` true and names an active local caller
 - **THEN** the callee SHALL remain model-visible and SHALL also be supplied to the local caller
 
 #### Scenario: Per-step active-tool filtering
@@ -70,7 +70,7 @@ An active provider caller SHALL transform each routed callee's provider options 
 - **THEN** the callee SHALL remain in the provider tool definitions with the callback-prepared options
 
 #### Scenario: Direct and provider routes
-- **WHEN** a callee lists both direct access and a provider caller
+- **WHEN** a route has `Direct` true and names a provider caller
 - **THEN** it SHALL remain directly model-visible and carry the callback-prepared options
 
 #### Scenario: Manual provider options

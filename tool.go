@@ -138,8 +138,6 @@ type ToolCallerType string
 const (
 	ToolCallerLocal    ToolCallerType = "local"
 	ToolCallerProvider ToolCallerType = "provider"
-	// ToolCallerDirect allows the model to call a routed tool directly.
-	ToolCallerDirect = "AI_SDK_DIRECT_TOOL_CALL"
 )
 
 // ToolCaller configures a tool that can invoke other tools.
@@ -189,6 +187,17 @@ type Tool struct {
 
 // ToolSet is a named collection of tools. Tools are keyed by name.
 type ToolSet map[string]Tool
+
+// ToolRoute controls how a configured tool is exposed to the model and caller tools.
+// Direct permits model visibility; Callers names caller tools in preparation order.
+// A zero-value route hides the tool from the model but keeps it executable.
+type ToolRoute struct {
+	Direct  bool
+	Callers []string
+}
+
+// ToolRoutes maps callee tool names to their routes. Unlisted tools are unchanged.
+type ToolRoutes map[string]ToolRoute
 
 func isExecutableTool(tool Tool) bool { return tool.Execute != nil || tool.ExecuteStream != nil }
 

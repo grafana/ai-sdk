@@ -67,11 +67,22 @@ provider, not by your `Execute` function.
 
 Use caller routing when the model should call a local or provider caller instead
 of seeing every application tool directly. Configure the caller tool in the
-`ToolSet`, then map each callee to the callers allowed to invoke it. A callee
-listed only under a local caller is omitted from the provider's direct tool
-list but remains available to that caller's bound tool set. Add the direct-call
-sentinel when the callee should also stay model-visible. Active-tool settings
-are applied per step before binding callers.
+`ToolSet`, then use `WithToolRoutes` to map each **callee** to its caller tool
+names:
+
+```go
+aisdk.WithToolRoutes(aisdk.ToolRoutes{
+    "get_inventory": {Callers: []string{"code_mode"}},
+    "get_weather":   {Direct: true, Callers: []string{"code_mode"}},
+    "internal":      {},
+})
+```
+
+A callee routed only through a local caller is omitted from the provider's
+direct tool list but remains in that caller's bound tool set. `Direct` also
+exposes the callee to the model; a zero-value route hides it, while an unlisted
+tool retains its ordinary behavior. Active-tool settings are applied per step
+before binding callers.
 
 A provider caller can prepare the routed tool's provider options, such as
 provider-specific `allowedCallers`. Manually supplied provider options pass

@@ -443,7 +443,7 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 		cfg.onStart(OnStartState{})
 	}
 
-	if err := validateToolCallers(cfg.tools, cfg.toolCallers); err != nil {
+	if err := validateToolRoutes(cfg.tools, cfg.toolRoutes); err != nil {
 		r.emitError(err, cfg.onError)
 		return
 	}
@@ -612,7 +612,7 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 		}
 
 		// Build provider tools (sorted for deterministic order)
-		executionTools, modelTools, callerMessages := prepareToolsForCallers(cfg.tools, cfg.toolCallers, activeTools, activeToolsSet)
+		executionTools, modelTools, callerMessages := prepareToolsForCallers(cfg.tools, cfg.toolRoutes, activeTools, activeToolsSet)
 		if err := validateToolExecutors(executionTools); err != nil {
 			r.emitError(err, cfg.onError)
 			return
@@ -620,7 +620,7 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 		currentMsgs = appendToolCallerMessages(currentMsgs, callerMessages)
 		provTools, toolWarnings := toolSetToProviderTools(modelTools)
 		r.allWarnings = append(r.allWarnings, toolWarnings...)
-		if cfg.toolCallers == nil && activeToolsSet {
+		if cfg.toolRoutes == nil && activeToolsSet {
 			provTools = filterProviderTools(provTools, activeTools)
 		}
 		if toolChoice == nil {

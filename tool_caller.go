@@ -8,8 +8,8 @@ import (
 	"github.com/grafana/ai-sdk/provider"
 )
 
-func validateToolCallers(tools ToolSet, callers map[string][]string) error {
-	if tools == nil || callers == nil {
+func validateToolRoutes(tools ToolSet, routes ToolRoutes) error {
+	if tools == nil || routes == nil {
 		return nil
 	}
 	for name, tool := range tools {
@@ -29,14 +29,11 @@ func validateToolCallers(tools ToolSet, callers map[string][]string) error {
 			return fmt.Errorf("aisdk: tool callers: invalid caller %q", name)
 		}
 	}
-	for name, allowed := range callers {
+	for name, route := range routes {
 		if _, ok := tools[name]; !ok {
 			return fmt.Errorf("aisdk: tool callers: unknown tool %q", name)
 		}
-		for _, callerName := range allowed {
-			if callerName == ToolCallerDirect {
-				continue
-			}
+		for _, callerName := range route.Callers {
 			caller, ok := tools[callerName]
 			if !ok || caller.Caller == nil {
 				return fmt.Errorf("aisdk: tool callers: invalid caller %q for tool %q", callerName, name)
@@ -55,8 +52,8 @@ func validateToolExecutors(tools ToolSet) error {
 	return nil
 }
 
-func prepareToolsForCallers(tools ToolSet, callers map[string][]string, active []string, activeSet bool) (ToolSet, ToolSet, []provider.Message) {
-	if tools == nil || callers == nil {
+func prepareToolsForCallers(tools ToolSet, routes ToolRoutes, active []string, activeSet bool) (ToolSet, ToolSet, []provider.Message) {
+	if tools == nil || routes == nil {
 		return tools, tools, nil
 	}
 	activeNames := make(map[string]bool, len(active))
@@ -71,17 +68,14 @@ func prepareToolsForCallers(tools ToolSet, callers map[string][]string, active [
 	}
 	model := maps.Clone(execution)
 	local := make(map[string]ToolSet)
-	for _, name := range slices.Sorted(maps.Keys(callers)) {
+	for _, name := range slices.Sorted(maps.Keys(routes)) {
 		tool, ok := execution[name]
 		if !ok {
 			continue
 		}
-		direct, providerVisible := false, false
-		for _, callerName := range callers[name] {
-			if callerName == ToolCallerDirect {
-				direct = true
-				continue
-			}
+		route := routes[name]
+		providerVisible := false
+		for _, callerName := range route.Callers {
 			caller := execution[callerName].Caller
 			if caller == nil {
 				continue
@@ -97,7 +91,7 @@ func prepareToolsForCallers(tools ToolSet, callers map[string][]string, active [
 			}
 		}
 		execution[name] = tool
-		if direct || providerVisible {
+		if route.Direct || providerVisible {
 			model[name] = tool
 		} else {
 			delete(model, name)

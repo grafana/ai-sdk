@@ -44,7 +44,7 @@ type baseConfig struct {
 	modelMessages      []provider.Message
 	system             []SystemModelMessage
 	tools              ToolSet
-	toolCallers        map[string][]string
+	toolRoutes         ToolRoutes
 	toolChoice         *provider.ToolChoice
 	activeTools        []string
 	activeToolsSet     bool
@@ -309,11 +309,11 @@ func WithToolChoice(tc provider.ToolChoice) Option {
 	return sharedOption{fn: func(c *baseConfig) { c.toolChoice = &tc }}
 }
 
-// WithToolCallers configures which caller tools may invoke each named tool.
-// ToolCallerDirect permits direct model calls; a configured empty list hides
-// a tool from the model while keeping it available for execution.
-func WithToolCallers(callers map[string][]string) Option {
-	return sharedOption{fn: func(c *baseConfig) { c.toolCallers = callers }}
+// WithToolRoutes configures how each named tool is exposed to the model and
+// caller tools. An unlisted tool is unchanged; a zero-value route hides it
+// from the model while keeping it available for execution.
+func WithToolRoutes(routes ToolRoutes) Option {
+	return sharedOption{fn: func(c *baseConfig) { c.toolRoutes = routes }}
 }
 
 // WithActiveTools filters which tools are active for a call.
