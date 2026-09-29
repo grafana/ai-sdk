@@ -2,7 +2,7 @@
 
 Direct provider calls, core streaming, and the standalone Gateway client currently expose different subsets of provider-tool behavior. Incompatible tool fields can reach a backend, marker defaults can erase an explicit input-start value, and the client cannot safely read provider-owned results. At the same time, the service must not accept new request families merely because its SDK dependency can decode them.
 
-Behavior follows the registered reference `08ae5ad05bc12496dd1ffcf64e34419e0831300d` (provider 4.0.17, ai 7.0.107, Anthropic 4.0.58, Gateway 4.0.87), particularly the provider tool/result types, stream-language-model-call and UI chunk conversion, Anthropic request options, and Gateway client serialization.
+Behavior follows the registered reference `4e8c387622ee1bb0d55841664416d38754d5c9a3` (provider 4.0.17, ai 7.0.109, Anthropic 4.0.59, Gateway 4.0.88), particularly the provider tool/result types, stream-language-model-call and UI chunk conversion, Anthropic request options, and Gateway client serialization.
 
 ## Goals / Non-Goals
 
