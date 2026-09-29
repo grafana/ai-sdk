@@ -10,11 +10,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestToolCallMetadata_ThroughGenerateAndStreamContinuation(t *testing.T) {
+func TestToolCallProviderMetadata_ThroughGenerateAndStreamContinuation(t *testing.T) {
 	for _, mode := range []string{"generate", "stream"} {
-		for _, async := range []string{"true", "false"} {
-			t.Run(mode+"/async="+async, func(t *testing.T) {
-				metadata := provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":"fc_1","async":` + async + `,"caller":{"type":"program","callerId":"prog_1"}}`)}
+		for _, flag := range []string{"true", "false"} {
+			t.Run(mode+"/flag="+flag, func(t *testing.T) {
+				metadata := provider.ProviderMetadata{"test": json.RawMessage(`{"token":"meta_1","flag":` + flag + `}`)}
 				var continuation []provider.Message
 				calls := 0
 				model := &mockModel{streamFunc: func(_ context.Context, opts provider.CallOptions) (*provider.StreamResult, error) {
@@ -48,29 +48,29 @@ func TestToolCallMetadata_ThroughGenerateAndStreamContinuation(t *testing.T) {
 					}
 					require.NoError(t, result.Err())
 					require.NotNil(t, available)
-					assert.JSONEq(t, string(metadata["openai"]), string(available.ProviderMetadata["openai"]))
+					assert.JSONEq(t, string(metadata["test"]), string(available.ProviderMetadata["test"]))
 				}
 				require.Equal(t, 2, calls)
 				require.Len(t, continuation, 3)
 				require.Len(t, continuation[1].Content, 1)
 				call := continuation[1].Content[0]
 				assert.Equal(t, provider.ContentPartTypeToolCall, call.Type)
-				callMetadata, ok := call.ProviderOptions["openai"].(provider.RawProviderOption)
+				callMetadata, ok := call.ProviderOptions["test"].(provider.RawProviderOption)
 				require.True(t, ok)
-				assert.JSONEq(t, string(metadata["openai"]), string(callMetadata.Raw))
+				assert.JSONEq(t, string(metadata["test"]), string(callMetadata.Raw))
 				require.Len(t, continuation[2].Content, 1)
-				resultMetadata, ok := continuation[2].Content[0].ProviderOptions["openai"].(provider.RawProviderOption)
+				resultMetadata, ok := continuation[2].Content[0].ProviderOptions["test"].(provider.RawProviderOption)
 				require.True(t, ok)
-				assert.JSONEq(t, string(metadata["openai"]), string(resultMetadata.Raw))
+				assert.JSONEq(t, string(metadata["test"]), string(resultMetadata.Raw))
 			})
 		}
 	}
 }
 
-func TestProgrammaticDenialMetadata_ThroughGenerateAndStreamContinuation(t *testing.T) {
+func TestToolDenialProviderMetadata_ThroughGenerateAndStreamContinuation(t *testing.T) {
 	for _, mode := range []string{"generate", "stream"} {
 		t.Run(mode, func(t *testing.T) {
-			metadata := provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":"fc_1","async":true,"caller":{"type":"program","callerId":"prog_1"}}`)}
+			metadata := provider.ProviderMetadata{"test": json.RawMessage(`{"token":"meta_1","source":"nested"}`)}
 			calls := 0
 			model := &mockModel{streamFunc: func(_ context.Context, opts provider.CallOptions) (*provider.StreamResult, error) {
 				calls++
@@ -82,9 +82,9 @@ func TestProgrammaticDenialMetadata_ThroughGenerateAndStreamContinuation(t *test
 					return &provider.StreamResult{Stream: ch}, nil
 				}
 				require.Len(t, opts.Prompt, 3)
-				callMetadata, ok := opts.Prompt[1].Content[0].ProviderOptions["openai"].(provider.RawProviderOption)
+				callMetadata, ok := opts.Prompt[1].Content[0].ProviderOptions["test"].(provider.RawProviderOption)
 				require.True(t, ok)
-				assert.JSONEq(t, string(metadata["openai"]), string(callMetadata.Raw))
+				assert.JSONEq(t, string(metadata["test"]), string(callMetadata.Raw))
 				var denied bool
 				for _, part := range opts.Prompt[2].Content {
 					if part.Output != nil && part.Output.Type == provider.ToolOutputExecutionDenied && part.ToolCallID == "call_1" {

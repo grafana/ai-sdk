@@ -132,12 +132,9 @@ can support a parity claim.
   work packages or explicit dispositions. The [tooling reference](test/conformance/UPGRADING.md)
   describes commands and evidence limits. Pins identify a reference, not full parity.
 - **Independent mergeability**: Every PR must pass required checks without a later
-  unmerged source change. Coordinated root/provider changes may land together when
-  required candidate-source parity and interop checks exercise them in the workspace;
-  older real internal pins must remain downloadable, replacement-free and merged in
-  canonical `main`, but standalone compilation against those pins is not a source-PR
-  gate. Standalone public-proxy validation remains release evidence for separately
-  published SDK/provider/middleware modules.
+  unmerged change. Account for published Go module dependencies, not just workspace
+  behavior. Changes incompatible with the old baseline must land with the pins,
+  lockfile, expectations and reviewed evidence that validate them.
 - **Parity matching**: Process registered behavioral work packages independently
   after the pinned-version upgrade, with their own acceptance tests. Update the
   coverage map only when stable status, evidence, support boundaries or accepted
@@ -188,8 +185,8 @@ mise run check
 # Upstream parity checks
 mise run validate-parity-baseline
 mise run parity-check
-mise run verify-module-resolution   # on-demand release check for all published modules
-MODULE=providers/openai mise run verify-published-module # on-demand selected-module release check
+mise run verify-module-resolution   # all published modules, public proxy, GOWORK=off
+MODULE=providers/openai mise run verify-published-module
 mise run verify-merged-pins        # real internal pins must descend from canonical main
 mise run verify-ai-gateway-boundary
 mise run verify-sdk-gateway-isolation
@@ -213,11 +210,10 @@ for required Gateway source checks and image builds.
 standalone validation, the license boundary, and the candidate-source,
 Gateway-absent SDK proof. Real published internal module pins must already be
 merged on canonical `main`; an older merged pseudo-version may lag candidate
-source and need not compile candidate source for a source PR to merge.
-`mise run verify-module-resolution` remains an on-demand release check, not a
-source-PR gate. Gateway is released as an image built from same-revision workspace
-source, not as a standalone Go module. SDK/provider/middleware Go-module releases
-still require `GOWORK=off` validation before publication (#245/#21).
+source. `mise run verify-module-resolution` remains on demand. Gateway is
+released as an image built from same-revision workspace source, not as a
+standalone Go module. SDK/provider/middleware Go-module releases still require
+`GOWORK=off` validation before publication (#245/#21).
 
 ## Project Structure
 
