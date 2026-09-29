@@ -32,11 +32,28 @@ evidence boundary changes, not merely because the pinned versions change.
 | Bedrock Mantle Responses continuation | mixed | [Mantle assistant-history request tests](../../providers/bedrock/mantle/provider_test.go) capture unary and streaming reconstruction, phase, empty text and stored references; standalone readonly Bedrock tests with a publicly resolved OpenAI dependency exercise [#207](https://github.com/grafana/ai-sdk/issues/207)'s consumer boundary. | Fake transport validates request encoding, not live Mantle acceptance or a provider recording. OpenAI producer tests or workspace substitutions alone do not establish Bedrock consumer adoption. Mantle Chat remains unsupported. |
 | ProviderWire request projection | automated | Registered-client HTTP goldens, type/schema witnesses and mapping mutation tests are replayed through Go handlers. | This establishes the public client projection, not Vercel's private service behavior. |
 | Gateway runtime and Go client | mixed | Handler, differential and command tests exercise supported text/function-tool/file-input paths, framing, bounds, privacy, cancellation and ownership. | Schema acceptance and runtime support differ. Permissive client parsing does not prove strict server output, privacy or resource bounds. |
+| Gateway reasoning transport | mixed | Strict runtime and pinned TS/Go differential tests cover reasoning-file data/URL, usage and metadata; authenticated command tests replay both clients' assembled Anthropic/OpenAI/compatible history. Schema-parsed frontend SSE covers concurrency, replacement and files; native Anthropic/Bedrock HTTP tests cover empty/opaque continuation. | Synthetic native requests are not recordings. High-level unary TS uses explicit host user-agent transport adaptation; arbitrary body headers remain unsupported. Command Bedrock configuration is not provided. Workspace/conformance success does not establish published adoption of local producer fixes. |
 | Gateway host composition | mixed | Real-command tests use fake providers/JWKS for identity separation, routing, fallback, tool continuation and shutdown; a dummy Cloud edge exercises Go and pinned Vercel stack/CAP bearer headers, credential stripping and scope outcomes. | The dummy edge does not prove production CAP validation, expiry/revocation, policy realms or deployed ingress isolation. Generic HTTP error coverage is broader than errors reachable through the command's configured policies. |
 | Baseline and fixture inventory | automated | Baseline validation covers registered consumers; generation and INDEX checks verify source existence, streaming inventory and byte-identical imports. | Generation does not establish input provenance. Unimported operations remain explicit in INDEX files. |
 | Published module dependencies | automated | Standalone readonly tests resolve published dependencies with GOWORK=off. | Workspace substitutions do not prove consumer adoption of a producer change. |
 
 ## Evidence boundaries
+
+- Gateway sources have explicit URL/document DTO and schema checks, pinned-client
+  differential and synthetic native OpenAI command tests. Source IDs are
+  response-local; only bounded numeric citation positions are retained under
+  `citation`. Native OpenAI/Azure `file_path` display identity is replaced by
+  `Document` with no filename. These are intentional Gateway privacy adaptations,
+  not native-provider parity. Unknown metadata and cited text are omitted.
+- Provider-independent `ui/sources` snapshots and schema-parsed frontend tests
+  cover URL/document assembly, required empty document titles and metadata.
+  Synthetic command responses do not establish live provider acceptance.
+- Reusable observers treat source as first output without adding an unsupported
+  Agent Observability capture representation. Candidate-source Gateway tests
+  verify this behavior with local middleware modules. The Gateway image uses
+  same-revision source through `go.gateway.work`, with the image build as its
+  delivery gate. The merged published pins predate this behavior, so standalone
+  middleware consumers require later module releases.
 
 - Conformance comparisons ignore ordering only between adjacent locally executed
   sibling tool outputs. Provider-executed outputs and rejected-input errors remain

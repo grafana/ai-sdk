@@ -12,6 +12,10 @@ import (
 // It receives the parsed input and returns the tool output as JSON.
 type ToolExecuteFunc func(ctx context.Context, input json.RawMessage, opts ToolExecutionOptions) (json.RawMessage, error)
 
+// ToolExecuteStreamFunc emits preliminary outputs and returns when the tool is complete.
+// The last emitted output is repeated as the final tool result on success.
+type ToolExecuteStreamFunc func(ctx context.Context, input json.RawMessage, opts ToolExecutionOptions, emit func(json.RawMessage) error) error
+
 // ToolNeedsApprovalFunc decides whether a tool invocation requires user approval.
 type ToolNeedsApprovalFunc func(input json.RawMessage, opts ToolExecutionOptions) (bool, error)
 
@@ -128,6 +132,22 @@ const (
 	UserToolDynamic  UserToolType = "dynamic"
 )
 
+// ToolCallerType identifies how a caller tool invokes other tools.
+type ToolCallerType string
+
+const (
+	ToolCallerLocal    ToolCallerType = "local"
+	ToolCallerProvider ToolCallerType = "provider"
+)
+
+// ToolCaller configures a tool that can invoke other tools.
+type ToolCaller struct {
+	Type                   ToolCallerType
+	Bind                   func(ToolSet) Tool
+	PrepareModelMessage    func(ToolSet) *string
+	PrepareProviderOptions func(provider.ProviderOptions) provider.ProviderOptions
+}
+
 // Tool defines a tool that a language model can call.
 //
 // For function tools (Type "" or UserToolFunction), the tool is defined by the
@@ -154,6 +174,8 @@ type Tool struct {
 	ProviderOptions provider.ProviderOptions
 
 	Execute       ToolExecuteFunc
+	ExecuteStream ToolExecuteStreamFunc
+	Caller        *ToolCaller
 	NeedsApproval *ToolApprovalConfig
 	ValidateInput func(input json.RawMessage) error
 	ToModelOutput func(ToolOutputContext) (*provider.ToolResultOutput, error)
@@ -165,6 +187,19 @@ type Tool struct {
 
 // ToolSet is a named collection of tools. Tools are keyed by name.
 type ToolSet map[string]Tool
+
+// ToolRoute controls how a configured tool is exposed to the model and caller tools.
+// Direct permits model visibility; Callers names caller tools in preparation order.
+// A zero-value route hides the tool from the model but keeps it executable.
+type ToolRoute struct {
+	Direct  bool
+	Callers []string
+}
+
+// ToolRoutes maps callee tool names to their routes. Unlisted tools are unchanged.
+type ToolRoutes map[string]ToolRoute
+
+func isExecutableTool(tool Tool) bool { return tool.Execute != nil || tool.ExecuteStream != nil }
 
 // ToolCall represents a complete tool call from the model.
 type ToolCall struct {

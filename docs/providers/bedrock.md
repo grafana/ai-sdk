@@ -99,6 +99,17 @@ the `bedrock-mantle` signing service for a Mantle host, it still emits
 Converse-shaped requests and must not be used for the Mantle OpenAI-compatible
 surface.
 
+## Protect selected Converse content
+
+When a guardrail should inspect only selected input, attach Bedrock provider
+options to individual user text or inline image parts. Enable `guardContent`
+on those parts; text parts can also specify qualifiers such as `query` or
+`grounding_source`. Other parts stay ordinary. Configure the guardrail itself
+with the request-level `guardrailConfig`; selecting content does not replace
+that configuration. This applies to both Converse and ConverseStream, but not
+to document, video, or S3 URL image parts. See the [Bedrock package reference](https://pkg.go.dev/github.com/grafana/ai-sdk/providers/bedrock)
+for the typed part options. Gateway provider-option transport is separate.
+
 ## Account for model-family differences
 
 The provider translates common AI SDK messages and tools into Converse requests,

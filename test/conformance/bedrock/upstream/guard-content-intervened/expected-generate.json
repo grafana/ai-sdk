@@ -1,0 +1,59 @@
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "Sorry, the model cannot answer this question."
+    }
+  ],
+  "finishReason": {
+    "unified": "content-filter",
+    "raw": "guardrail_intervened"
+  },
+  "usage": {
+    "inputTokens": {
+      "total": 18,
+      "noCache": 18,
+      "cacheRead": 0,
+      "cacheWrite": 0
+    },
+    "outputTokens": {
+      "total": 12,
+      "text": 12
+    },
+    "raw": {
+      "inputTokens": 18,
+      "outputTokens": 12,
+      "totalTokens": 30,
+      "cacheReadInputTokens": 0,
+      "cacheWriteInputTokens": 0,
+      "cacheReadInputTokenCount": 0,
+      "cacheWriteInputTokenCount": 0,
+      "serverToolUsage": {}
+    }
+  },
+  "providerMetadata": {
+    "bedrock": {
+      "trace": {
+        "guardrail": {
+          "inputAssessment": {
+            "1abcd2ef34gh": {
+              "topicPolicy": {
+                "topics": [
+                  {
+                    "action": "BLOCKED",
+                    "name": "Restricted topic",
+                    "type": "DENY"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      "usage": {
+        "cacheWriteInputTokens": 0
+      },
+      "stopSequence": null
+    }
+  }
+}

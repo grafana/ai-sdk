@@ -9,6 +9,10 @@
       "type": "array",
       "items": {
         "oneOf": [
+          { "$ref": "#/$defs/urlSource" },
+          { "$ref": "#/$defs/documentSource" },
+          { "$ref": "#/$defs/reasoning" },
+          { "$ref": "#/$defs/reasoningFile" },
           {
             "type": "object",
             "required": ["type", "text"],
@@ -48,13 +52,145 @@
       "required": ["inputTokens", "outputTokens"],
       "properties": {
         "inputTokens": { "$ref": "#/$defs/inputTokenUsage" },
-        "outputTokens": { "$ref": "#/$defs/outputTokenUsage" }
+        "outputTokens": { "$ref": "#/$defs/outputTokenUsage" },
+        "raw": { "type": "object" }
       },
       "additionalProperties": false
     }
   },
   "additionalProperties": false,
   "$defs": {
+    "reasoning": {
+      "type": "object", "required": ["type", "text"],
+      "properties": { "type": {"const": "reasoning"}, "text": {"type": "string"}, "providerMetadata": {"$ref": "#/$defs/reasoningMetadata"} },
+      "additionalProperties": false
+    },
+    "reasoningFile": {
+      "type": "object", "required": ["type", "mediaType", "data"],
+      "properties": { "type": {"const": "reasoning-file"}, "mediaType": {"type": "string"}, "data": {"$ref": "#/$defs/reasoningFileData"}, "providerMetadata": {"$ref": "#/$defs/reasoningMetadata"} },
+      "additionalProperties": false
+    },
+    "reasoningFileData": {
+      "oneOf": [
+        { "type": "object", "required": ["type", "data"], "properties": {"type": {"const": "data"}, "data": {"type": "string"}}, "additionalProperties": false },
+        { "type": "object", "required": ["type", "url"], "properties": {"type": {"const": "url"}, "url": {"type": "string", "minLength": 1}}, "additionalProperties": false }
+      ]
+    },
+    "reasoningMetadata": {
+      "type": "object",
+      "properties": {
+        "anthropic": {"type": "object", "properties": {"signature": {"type": "string"}, "redactedData": {"type": "string"}}, "additionalProperties": false},
+        "bedrock": {"type": "object", "properties": {"signature": {"type": "string"}, "redactedData": {"type": "string"}, "redactedContent": {"type": "string"}}, "additionalProperties": false},
+        "amazonBedrock": {"type": "object", "properties": {"signature": {"type": "string"}, "redactedData": {"type": "string"}, "redactedContent": {"type": "string"}}, "additionalProperties": false},
+        "openai": {"type": "object", "properties": {"itemId": {"type": "string"}, "reasoningEncryptedContent": {"type": ["string", "null"]}}, "additionalProperties": false}
+      },
+      "additionalProperties": false
+    },
+    "sourceMetadata": {
+      "type": "object",
+      "properties": {
+        "citation": {
+          "type": "object",
+          "properties": {
+            "index": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000000
+            },
+            "startPageNumber": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000000
+            },
+            "endPageNumber": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000000
+            },
+            "startCharIndex": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000000
+            },
+            "endCharIndex": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000000
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "urlSource": {
+      "type": "object",
+      "required": [
+        "type",
+        "sourceType",
+        "id",
+        "url"
+      ],
+      "properties": {
+        "type": {
+          "const": "source"
+        },
+        "sourceType": {
+          "const": "url"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "url": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "providerMetadata": {
+          "$ref": "#/$defs/sourceMetadata"
+        }
+      },
+      "additionalProperties": false
+    },
+    "documentSource": {
+      "type": "object",
+      "required": [
+        "type",
+        "sourceType",
+        "id",
+        "mediaType",
+        "title"
+      ],
+      "properties": {
+        "type": {
+          "const": "source"
+        },
+        "sourceType": {
+          "const": "document"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mediaType": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "filename": {
+          "type": "string",
+          "minLength": 1
+        },
+        "providerMetadata": {
+          "$ref": "#/$defs/sourceMetadata"
+        }
+      },
+      "additionalProperties": false
+    },
     "tokenCount": {
       "type": "integer",
       "minimum": 0,
