@@ -104,7 +104,8 @@
           "required": ["inputTokens", "outputTokens"],
           "properties": {
             "inputTokens": { "$ref": "#/$defs/inputTokenUsage" },
-            "outputTokens": { "$ref": "#/$defs/outputTokenUsage" }
+            "outputTokens": { "$ref": "#/$defs/outputTokenUsage" },
+            "raw": { "type": "object" }
           },
           "additionalProperties": false
         },

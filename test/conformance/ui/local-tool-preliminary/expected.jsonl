@@ -1,0 +1,8 @@
+{"type":"start","messageId":"message-1"}
+{"type":"start-step"}
+{"type":"tool-input-available","toolCallId":"call-1","toolName":"lookup","input":{}}
+{"type":"tool-output-available","toolCallId":"call-1","output":{"stage":"loading"},"preliminary":true}
+{"type":"tool-output-available","toolCallId":"call-1","output":{"stage":"done"},"preliminary":true}
+{"type":"tool-output-available","toolCallId":"call-1","output":{"stage":"done"}}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"tool-calls"}

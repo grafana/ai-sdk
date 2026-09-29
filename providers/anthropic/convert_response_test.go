@@ -17,6 +17,57 @@ func unmarshalMessage(t *testing.T, raw string) *anthropic.BetaMessage {
 	return &msg
 }
 
+func TestConvertResponse_SafeguardResults(t *testing.T) {
+	cases := []struct {
+		name, raw, want string
+		invalid         bool
+	}{
+		{name: "absent"},
+		{name: "null", raw: `null`},
+		{name: "empty array", raw: `[]`, want: `[]`},
+		{
+			name: "verdict with tool use",
+			raw:  `[{"type":"dangerous_tool_use","status":{"type":"available","tool_uses":{"toolu_01":{"type":"evaluated","outcome":"flagged","explanation":"[Data Exfiltration]","secret":"excluded"}},"extra":"excluded"},"extra":"excluded"}]`,
+			want: `[{"type":"dangerous_tool_use","status":{"type":"available","tool_uses":{"toolu_01":{"type":"evaluated","outcome":"flagged","explanation":"[Data Exfiltration]"}}}}]`,
+		},
+		{name: "unknown strings and null optional fields", raw: `[{"type":"future","status":{"type":"future","tool_uses":{"toolu_02":{"type":"future","outcome":null,"explanation":null}}}}]`, want: `[{"type":"future","status":{"type":"future","tool_uses":{"toolu_02":{"type":"future","outcome":null,"explanation":null}}}}]`},
+		{name: "null tool uses", raw: `[{"type":"future","status":{"type":"available","tool_uses":null}}]`, want: `[{"type":"future","status":{"type":"available","tool_uses":null}}]`},
+		{name: "empty tool uses strips extra fields", raw: `[{"type":"","status":{"type":"","tool_uses":{},"extra":"excluded"}}]`, want: `[{"type":"","status":{"type":"","tool_uses":{}}}]`},
+		{name: "not array", raw: `42`, invalid: true},
+		{name: "null entry", raw: `[null]`, invalid: true},
+		{name: "missing status", raw: `[{"type":"dangerous_tool_use"}]`, invalid: true},
+		{name: "invalid status", raw: `[{"type":"dangerous_tool_use","status":null}]`, invalid: true},
+		{name: "invalid tool uses", raw: `[{"type":"dangerous_tool_use","status":{"type":"available","tool_uses":[]}}]`, invalid: true},
+		{name: "null tool use", raw: `[{"type":"dangerous_tool_use","status":{"type":"available","tool_uses":{"toolu_01":null}}}]`, invalid: true},
+		{name: "invalid tool use", raw: `[{"type":"dangerous_tool_use","status":{"type":"available","tool_uses":{"toolu_01":{"type":1,"explanation":"private-verdict"}}}}]`, invalid: true},
+		{name: "invalid optional field", raw: `[{"type":"dangerous_tool_use","status":{"type":"available","tool_uses":{"toolu_01":{"type":"evaluated","outcome":12}}}}]`, invalid: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			field := ""
+			if tc.raw != "" {
+				field = `,"safeguard_results":` + tc.raw
+			}
+			msg := unmarshalMessage(t, `{"id":"msg_1","type":"message","role":"assistant","model":"claude-sonnet-4-6","content":[],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1},"unrelated":"private-verdict"`+field+`}`)
+			result, err := convertResponse(msg, toolNameMapping{}, false, nil, defaultGenerateID, "anthropic", false)
+			if tc.invalid {
+				require.Error(t, err)
+				assert.NotContains(t, err.Error(), "private-verdict")
+				return
+			}
+			require.NoError(t, err)
+			var metadata map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal(result.ProviderMetadata["anthropic"], &metadata))
+			assert.NotContains(t, metadata, "unrelated")
+			if tc.want == "" {
+				assert.NotContains(t, metadata, "safeguardResults")
+			} else {
+				assert.JSONEq(t, tc.want, string(metadata["safeguardResults"]))
+			}
+		})
+	}
+}
+
 func TestConvertResponse_CarriesProviderAndModel(t *testing.T) {
 	msg := unmarshalMessage(t, `{
 		"id": "msg_1",

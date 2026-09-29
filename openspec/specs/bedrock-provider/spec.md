@@ -114,7 +114,7 @@ The provider SHALL resolve the SigV4 credential-scope service name per request a
 
 ### Requirement: Request conversion to Converse format
 
-The provider SHALL translate `provider.CallOptions` into the AWS Bedrock Converse request shape (`system`, `messages`, `inferenceConfig`, `toolConfig`, `additionalModelRequestFields`, `additionalModelResponseFieldPaths`) before each call.
+The provider SHALL translate `provider.CallOptions` into the AWS Bedrock Converse request shape (`system`, `messages`, `inferenceConfig`, `toolConfig`, `additionalModelRequestFields`, `additionalModelResponseFieldPaths`) before each call. When a user text or inline image part opts into selective guard content, its guarded form SHALL replace only that part's ordinary Converse content block.
 
 #### Scenario: System messages
 
@@ -123,7 +123,7 @@ The provider SHALL translate `provider.CallOptions` into the AWS Bedrock Convers
 
 #### Scenario: User text message
 
-- **WHEN** the prompt contains a `UserMessage` with a text part
+- **WHEN** the prompt contains a `UserMessage` with a text part without an enabled per-part `guardContent` option
 - **THEN** the request includes `{role: "user", content: [{text: "<content>"}]}`
 
 #### Scenario: Supported user document media type
@@ -158,7 +158,7 @@ The provider SHALL translate `provider.CallOptions` into the AWS Bedrock Convers
 
 #### Scenario: Unsupported user file data source
 
-- **WHEN** a user file part carries URL data or a provider reference
+- **WHEN** a user file part carries unsupported URL data (for example, a non-S3 URL) or a provider reference
 - **THEN** request conversion returns an unsupported-functionality error before issuing an HTTP request
 - **AND** the provider MUST NOT silently drop the file or degrade the error to a warning
 
@@ -222,6 +222,74 @@ The provider SHALL translate `provider.CallOptions` into the AWS Bedrock Convers
 
 - **WHEN** an OpenAI model is called with stop sequences, temperature, and topP
 - **THEN** the request omits stop sequences for all OpenAI models and omits temperature and topP for non-GPT-OSS OpenAI models, with an unsupported warning per omitted field
+
+### Requirement: Selective Converse guard-content per-part options
+
+The Bedrock adapter SHALL accept typed user text and inline image part `guardContent` controls under `amazonBedrock` or legacy `bedrock`. Enabled text parts SHALL serialize as `{guardContent:{text:{text:<part text>,qualifiers:<optional array>}}}` and enabled inline image parts as `{guardContent:{image:{format,source}}}`. Only the enabled part SHALL change; option absence or `false` SHALL preserve ordinary conversion. Qualifier values SHALL be restricted to `grounding_source`, `query`, and `guard_content` and SHALL be accepted on text parts only. Both DoGenerate and DoStream SHALL use this same request conversion.
+
+#### Scenario: Mixed protected and unprotected user text
+
+- **WHEN** a user message has `guardContent:true` text with two valid qualifiers, followed by ordinary text and `guardContent:false` text, followed by guarded text with an explicitly empty qualifier array
+- **THEN** the Converse request contains corresponding guarded, ordinary, ordinary and guarded text blocks in that order, with both qualifier arrays (including `[]`) retained and with no qualifiers on ordinary blocks
+
+#### Scenario: Guarded inline image among ordinary image and text
+
+- **WHEN** a user message contains an inline image with `guardContent:true`, an inline image with `guardContent:false` and an ordinary text part
+- **THEN** the first image alone is wrapped under `guardContent.image` with identical format/base64 bytes, while the other image and text remain ordinary blocks in original order
+
+#### Scenario: Legacy part options
+
+- **WHEN** a user text or inline image part has `guardContent:true` under legacy `bedrock` only, or modern `amazonBedrock:null` with legacy `bedrock.guardContent:true`
+- **THEN** that part is guarded
+
+#### Scenario: Modern part options take precedence
+
+- **WHEN** modern non-null `amazonBedrock.guardContent:false` and legacy `bedrock.guardContent:true` coexist on a user text or inline image part
+- **THEN** the ordinary block is emitted without merging legacy controls
+- **AND** a modern object containing only unrelated keys likewise suppresses legacy fallback
+
+#### Scenario: Unrelated typed Bedrock options on target parts
+
+- **WHEN** a user text or inline image part carries typed `FilePartOptions` with citations in its Bedrock namespace, or an inline image carries typed text-part qualifier options without an enabled image guard flag
+- **THEN** conversion ignores controls unrelated to that part and emits its ordinary text or image block without a typed-option mismatch error
+- **AND** recognized guard controls, if also present for that part, retain strict validation and modern/legacy precedence
+
+#### Scenario: Typed guard controls on a non-target document
+
+- **WHEN** a user document part carries typed image- or text-part guard options in its Bedrock namespace
+- **THEN** it remains an ordinary document, with no `guardContent` and no typed-option mismatch error
+- **AND** typed `FilePartOptions.Citations` on a document continue to enable citations
+
+#### Scenario: Validate text controls even when guard flag is false
+
+- **WHEN** a text part's recognized raw or typed guard control is not boolean, is explicitly null, or has non-array, non-string, null or unknown qualifier values (including when `guardContent:false`)
+- **THEN** request conversion returns an error before either endpoint issues an HTTP request rather than silently emitting ordinary or guarded content
+
+#### Scenario: Validate image controls without applying text qualifiers
+
+- **WHEN** an inline image's recognized raw or typed guard control is not boolean or is explicitly null
+- **THEN** request conversion returns an error before an HTTP request
+- **AND** text-only qualifier properties do not turn image, document, video, S3 URL image, or tool-result image content into guarded content
+
+#### Scenario: Existing non-user content and default shape
+
+- **WHEN** selective controls are absent or false, or the prompt contains system, assistant, tool-result, document, video or S3 URL image parts
+- **THEN** the existing request content/ordering and top-level `guardrailConfig` passthrough remain unchanged and no `guardContent` member is emitted for those parts, including when an image/text guard option is attached to a non-target part
+
+#### Scenario: Both Converse endpoints
+
+- **WHEN** the same guarded user prompt is sent via DoGenerate and DoStream
+- **THEN** `/converse` and `/converse-stream` each receive the equivalent `messages[*].content[*].guardContent` shape before decoding the response
+
+### Requirement: Unary guarded-input intervention fidelity
+
+When a non-streaming Converse response reports `stopReason: guardrail_intervened` and a trace and usage, the provider SHALL expose the content-filter finish reason while preserving the provider trace and reported usage. An authentic upstream response fixture SHALL be used for parity verification; a recorded stream guardrail event SHALL NOT be treated as proof of selective guarded input.
+
+#### Scenario: Registered upstream intervention response
+
+- **WHEN** the exact registered `amazon-bedrock-guard-content-intervened.json` unary fixture is replayed for a guarded query text request with trace-enabled top-level guardrailConfig
+- **THEN** the result has raw finish reason `guardrail_intervened`, unified `content-filter`, the reported response text, `providerMetadata.bedrock.trace.guardrail.inputAssessment` including the blocked topic policy, and the fixture's input/output/cache/total and raw usage values
+- **AND** the provider request snapshot contains guarded query text and unchanged top-level guardrailConfig
 
 ### Requirement: Top-level Converse provider option pass-through
 
