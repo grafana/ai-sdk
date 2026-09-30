@@ -1,39 +1,33 @@
 ## MODIFIED Requirements
 
 ### Requirement: OpenAI Responses backend identity stays private
-Discovery SHALL remain an authorized public route catalog with provider grafana and public IDs/names/descriptions/aliases, not an OpenAI configuration dump. Configured provider-instance keys, baseURL, API keys, apiKeyEnv names and fallback topology SHALL NOT be exposed through caller diagnostics or discovery. Access logs, metrics and metadata-only Agent Observability SHALL retain closed logical identity and SHALL NOT contain caller/provider response data or actionable error details.
+Discovery SHALL remain an authorized grafana public-route catalog, not a provider configuration dump. Configured instance/baseURL/key/environment reference/fallback topology SHALL remain excluded from public diagnostics/discovery. Logical logs/metrics/metadata-only Agent Observability SHALL retain canonical low-cardinality identity and exclude caller/provider response data.
 
-Supported actual response identity, sources/warnings and ordinary metadata under #280 SHALL remain caller-visible at registered fields rather than be concealed as backend secrets. Configured backend model IDs SHALL NOT be synthesized as public configuration fields, but an actual supplied registered response model value SHALL survive even when it equals that ID. Typed unary identity SHALL remain overwritten by pinned clients and available only in bounded raw response body. Native transport/credentials SHALL remain excluded; public errors SHALL preserve only gateway-caller-response-policy's reviewed diagnostics, bound to the trusted physical adapter policy installed at construction before fallback/logical wrapping. Existing strict startup configuration, hardened transport, ambient-default rejection, SDK retry settings and execution guards SHALL remain unchanged.
+Implemented warnings/source display/supplied actual registered identity and minimal reviewed direct-provider diagnostics SHALL remain caller semantics even when they identify a backend model. Configured identities SHALL not be synthesized as extra fields; typed unary identity remains raw-body-only. Trusted minimal direct-route diagnostic authority SHALL derive from configuration through existing projection paths, not caller body/logical grafana identity, new stream lifetimes or error API redesign. Current metadata transport remains unchanged until #280. Strict construction/hardened transport/ambient exclusion/retry/execution guards remain.
 
-#### Scenario: Discovery lists OpenAI models
-- **WHEN** an authenticated client requests /api/v1/aisdk/config
-- **THEN** public canonical/alias rows SHALL be listed with no private provider configuration or fallback topology
-
-#### Scenario: Actual OpenAI identity is caller data
-- **WHEN** a configured OpenAI model supplies registered response model/id values and a reviewed structured provider error
-- **THEN** applicable success/error responses SHALL preserve those contracted values using that same candidate's trusted error policy
-- **AND** configured endpoint/auth/instance/environment references SHALL remain protected independently from useful caller semantics
+#### Scenario: Actual OpenAI model is useful response data
+- **WHEN** a configured direct model supplies registered actual identity and reviewed structured error diagnostics
+- **THEN** implemented applicable caller values SHALL survive while protected configuration/transport remains excluded
 
 ### Requirement: Compatible backend identity stays private
-Discovery SHALL keep publishing provider grafana and only public route IDs/names/descriptions/aliases. Configured compatible provider-instance keys, providerName, baseURL, API keys, apiKeyEnv names and operator fallback topology SHALL NOT be copied into discovery or public diagnostics. Access logs, metrics and metadata-only Agent Observability SHALL retain closed logical identity and omit caller/provider response data and arbitrary provider prose. These restrictions protect configuration and telemetry independently of provider-account ownership; startup-configured credentials SHALL not imply implemented BYOK provisioning.
+Compatible discovery/configuration/telemetry protections SHALL remain independent of account ownership. Configured instance/providerName/baseURL/key/environment reference/topology and whole native error transport SHALL not be exposed. Implemented actual identity/warnings/source display and reviewed minimal direct-provider error messages/status/native detail SHALL follow the caller policy, not blanket error-body censorship. Unknown compatible schemas/ambiguous routes remain fixed-safe with explicit coverage gaps. Current metadata transport awaits #280; startup accounts do not implement BYOK.
 
-Supported actual response identity and ordinary metadata under #280 SHALL survive at registered fields even when provider-supplied values identify the model/provider; configured identities SHALL NOT be synthesized into an operator dump. Pinned typed unary overwrite/raw-body-only identity remains explicit. Reviewed actionable error message/status/code/type/param SHALL follow gateway-caller-response-policy's source-specific projection, selected by the trusted candidate policy before fallback/logical wrapping, never by body claims or configured logical providerName. Whole native error bodies, unknown siblings, transport/auth material and joined fallback prose SHALL remain excluded. Unknown/unreviewed compatible schemas SHALL use fixed safe fallback. Existing strict configuration, required endpoints/credentials, hardened shared transport, cancellation, usage request behavior, retry and effect guards SHALL remain effective.
+Trusted diagnostic selection SHALL use reviewed configuration/schema, never caller claims or generic raw serialization. Protected auth prose/param uses safe provider-account guidance, not Gateway-key instructions. Ordinary application strings SHALL not be generically classified as secrets. Current strict YAML/endpoints/hardened transport/usage/cancellation/retry/effect guards remain.
 
-#### Scenario: Discovery lists compatible models
-- **WHEN** an authenticated client requests /api/v1/aisdk/config
-- **THEN** public compatible canonical/alias rows SHALL be listed without private provider configuration
+#### Scenario: Backend error has protected sources and ordinary diagnostic
+- **WHEN** a reviewed compatible direct error contains protected auth/transport/unknown-body markers alongside a safe application diagnostic
+- **THEN** only bounded reviewed diagnostics SHALL survive for the caller and no arbitrary marker SHALL enter telemetry
 
-#### Scenario: Backend failure carries protected credential material
-- **WHEN** a compatible backend returns 502 with protected transport/auth/request fields or unknown error-body siblings carrying credential markers beside a reviewed diagnostic message
-- **THEN** those protected markers and whole native body SHALL not appear in public error/debug fields, access logs or metrics
-- **AND** the reviewed bounded message/code/param SHALL survive for the caller only, without searching arbitrary application strings for secret-like patterns
+#### Scenario: Auth error echoes credentials
+- **WHEN** native auth prose/param can contain a key
+- **THEN** fixed actionable provider-account authorization prose SHALL replace credential-bearing data without changing it into Gateway auth guidance
 
-#### Scenario: Provider auth prose echoes a credential
-- **WHEN** a reviewed compatible auth failure can echo an API key in its native message/param
-- **THEN** fixed actionable provider-account authorization prose SHALL replace those credential-bearing diagnostics while reviewed safe type/status/code follow the policy
-- **AND** Gateway authentication guidance SHALL not replace a provider-account failure
+## ADDED Requirements
 
-#### Scenario: Ordinary caller value resembles a token
-- **WHEN** supported metadata or a reviewed non-auth application diagnostic contains a harmless token-shaped value within its provenance and bounds
-- **THEN** that value SHALL remain caller data, not be heuristically censored
-- **AND** none of it SHALL enter logs, metric labels or metadata-only exports
+### Requirement: Anthropic caller request-policy foundation
+Command construction SHALL permit the reviewed caller option at already-supported assistant function-call part history on direct Anthropic routes. Native registered consumed caller semantics SHALL remain authoritative, including direct and code_execution variants with required toolId; no exact-key/direct-only competing filter SHALL be introduced. This SHALL NOT enable providerExecuted/MCP/credential/role/union/effectful fallback behavior or depend on future response metadata/tool helpers.
+
+#### Scenario: Both clients supply caller history
+- **WHEN** pinned TS and independent Go clients send supplied/built supported caller history through unary or streaming command calls
+- **THEN** fake native Anthropic requests SHALL retain registered tool_use.caller semantics
+- **AND** proof SHALL be identified as request policy only, with actual response-derived continuation owned by #280

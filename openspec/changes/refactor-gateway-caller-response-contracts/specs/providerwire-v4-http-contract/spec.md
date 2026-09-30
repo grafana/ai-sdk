@@ -1,50 +1,26 @@
 ## MODIFIED Requirements
 
 ### Requirement: Focused unary client-consumption evidence
-The workspace SHALL exercise unary success with the exact registered public client and injected responses. Probes SHALL assert generated content, finish reason, usage, supported metadata, response headers and warning preservation/combination. Client-owned request and response SHALL overwrite server-native transport, while server warnings SHALL precede client warnings rather than be erased. Registered server response id/modelId/timestamp SHALL remain present in raw response.body but not typed unary response after overwrite. Evidence SHALL not claim typed unary identity parity.
+Exact registered injected-response probes SHALL assert supported content/finish/usage, delivered warning preservation/combination and Gateway response headers. Local request/response SHALL overwrite server-native typed transport, with server warnings preceding client warnings. Supplied registered response id/modelId/timestamp SHALL remain in bounded raw response.body, not typed unary response. Current metadata behavior SHALL remain unchanged until #280; no typed identity or future metadata parity SHALL be claimed.
 
-#### Scenario: Unary result is consumed
-- **WHEN** injected fetch returns a valid supported result with server warnings/metadata
-- **THEN** the client SHALL resolve with content, finish reason, usage, supported metadata and combined warnings
-
-#### Scenario: Client transport replaces server transport without erasing warnings
-- **WHEN** the body includes server request/response plus ordered warnings
-- **THEN** local request and Gateway response headers/body SHALL replace typed transport fields
-- **AND** server warnings SHALL survive before client warnings and native response identity SHALL be inspectable only in raw body
+#### Scenario: Transport overwrite does not erase warnings
+- **WHEN** the body contains actual identity and ordered server warnings
+- **THEN** typed transport SHALL be client-owned, warnings SHALL survive before client warnings and native identity SHALL remain raw-body-only
 
 ### Requirement: Focused streaming client-consumption evidence
+Exact registered SSE probes SHALL retain clean EOF/DONE/raw filtering/timestamp behavior and prove delivered warning/source ID/display/actual identity semantics. Current metadata transport SHALL remain unchanged; #280 ordinary metadata/source integration/continuation is later owner acceptance, not a foundation gate. No additional stream-lifecycle layer SHALL be introduced to deliver diagnostics.
 
-The workspace SHALL exercise streaming success through the registered client using SSE responses. The probes SHALL cover clean EOF after the final JSON event, tolerated `[DONE]`, raw-part filtering based on `includeRawChunks`, meaningful warning fields, ordinary supported providerMetadata through #280, source identity/display, actual response model identity and response-metadata timestamp conversion. Ordinary metadata SHALL not be filtered with raw parts.
-
-#### Scenario: Finish followed by clean EOF is consumed
-- **WHEN** the SSE response emits valid stream parts including `finish` and then closes without `[DONE]`
-- **THEN** the registered client stream SHALL deliver the parts in order and close successfully
-
-#### Scenario: DONE sentinel is tolerated
-- **WHEN** the SSE response contains `data: [DONE]`
-- **THEN** the registered client SHALL ignore the sentinel without emitting a stream part or failing the stream
-
-#### Scenario: Raw parts are suppressed by default
-- **WHEN** SSE contains raw parts and `includeRawChunks` is absent or false
-- **THEN** the registered client SHALL omit those raw parts
-
-#### Scenario: Requested raw parts are preserved
-- **WHEN** SSE contains raw parts and `includeRawChunks` is true
-- **THEN** the registered client SHALL preserve them in order
-
-#### Scenario: Response metadata timestamp is converted
-- **WHEN** a response-metadata part contains a timestamp string
-- **THEN** the registered client SHALL expose that timestamp as a `Date` with the same instant
+#### Scenario: Foundation stream is consumed
+- **WHEN** valid current parts carry warnings/native source display/actual identity and finish at clean EOF
+- **THEN** registered values/order/timestamp semantics SHALL survive without claiming unimplemented metadata placements
 
 ### Requirement: Focused non-success client-consumption evidence
+Exact registered HTTP probes SHALL prove minimal direct-provider versus fixed Gateway error category/message/status/retry and bounded native type/code/detail access through existing param/cause/body. Existing Go string Code/error API SHALL remain; no new typed detail properties or full native top-level-code equivalence is implied. HTTP 408/409/429/5xx retry and provider override gaps SHALL be explicitly tested; plain forwarded SSE error values remain distinct from HTTP error classes. Strict server output/bounds/security are independent of permissive client acceptance.
 
-The workspace SHALL exercise representative non-2xx JSON responses through the registered client and assert the public error classification, status, message and bounded code/param availability observable at the registered package boundary. Probes SHALL demonstrate cause/body access to string/number/null codes and projected details without claiming direct typed TS properties, plus native 408/409/429/5xx retryability and unrepresentable provider retry overrides. HTTP setup errors SHALL be distinguished from forwarded plain SSE error values. Any malformed-response coverage SHALL treat registered fallback behavior only as client evidence and SHALL NOT define the server error envelope.
+#### Scenario: Minimal error diagnostics survive
+- **WHEN** a reviewed direct non-2xx response contains native status and bounded detail in registered param
+- **THEN** both clients SHALL expose contracted existing fields and cause/body detail with pinned retry behavior
 
-#### Scenario: Structured non-2xx response is consumed
-- **WHEN** the injected fetch returns a representative structured non-2xx Gateway response
-- **THEN** unary and streaming setup calls SHALL reject with the registered public Gateway error behavior for that status and body
-
-#### Scenario: Error probe remains client evidence
-- **WHEN** a non-2xx response is accepted or normalized by the registered client
-- **THEN** that result SHALL document client consumption only
-- **AND** it SHALL NOT establish which fields the strict server may emit
+#### Scenario: Client parser is not server oracle
+- **WHEN** the pinned client accepts additional malformed or arbitrary data
+- **THEN** its normalization SHALL not define approved server output/security/bounds

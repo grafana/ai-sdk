@@ -1,36 +1,36 @@
 ## Why
 
-Gateway response restrictions currently treat useful provider metadata, warnings, sources and identity as shared Grafana-account secrets. Issue #303 revises that assumption: customers retain their provider relationship and billing, while tenant authorization, credential protection, execution safety and telemetry privacy remain independent obligations; the current startup-configured credentials are not BYOK provisioning.
+Issue #303 corrects Gateway contracts that conflate useful authorized provider responses with telemetry and protection of shared Grafana accounts. Customer-owned provider relationships do not relax credential/tenant/execute/resource guards or implement BYOK provisioning. The foundation must precede—not depend on—metadata and provider-tool work.
 
 ## What Changes
 
-- Establish an explicit restriction inventory with retained, removed and deferred policies and concrete rationales, separating authorized caller data from telemetry and operator configuration.
-- Preserve unary warnings and meaningful stream warnings; stop rewriting native source IDs/display fields and streaming response model identity. Emit unary identity only at registered response fields, documenting the pinned client's transport overwrite and typed-identity boundary.
-- Treat supported opaque provider metadata as ordinary bounded response data. **#280 exclusively owns metadata codecs, client filters and continuation implementation**; this proposal coordinates the revised contract and dependent acceptance, not a duplicate implementation.
-- Replace blanket provider-error concealment with adapter-reviewed bounded messages/status/code/type/details in the registered envelope; bind diagnostics to a trusted AGPL-only per-candidate provenance wrapper before fallback/logical identity composition. Project only the authoritative candidate failure, retain fixed Gateway-internal errors and protect credential-bearing transport, pinned retry and stream termination semantics.
-- Define debugging as Gateway-owned client request/response transport plus registered bounded response identity and reviewed error diagnostics—not native transport passthrough.
-- **BREAKING** for consumers relying on normalized `source-N` IDs, numeric-only `citation` metadata, fixed warning prose, canonical stream model IDs or fixed provider-error code/status combinations; independent Go `GatewayError.Code` becomes JSON-valued to preserve string/number/null codes, with bounded JSON `Param` details. Retain strict protocol unions and existing lifecycle/security guards; no compatibility dialect.
-- Deliver focused independently green behavior packages with normative specs, schemas, client mappings, docs and two-client evidence in each implementation PR. Do not rewrite historical milestone acceptance.
+- Deliver **#303 → #280 → #238 → #239 → #240** in that order. #303 is independently green/completable from current main; handoffs.md explicitly preserves broader refactor acceptance for successors instead of requiring future output transport or #201's undelivered matrix.
+- Classify concrete request/response restrictions now in restriction_inventory.md: keep protections with present reasons; remove obsolete concealment and supported consumed-option loss; defer capabilities with explicit owners/boundaries.
+- Preserve unary/stream warnings, native source IDs/display and actual registered response identity. Keep current source-metadata transport unchanged until #280; document the pinned typed unary identity overwrite/raw-body boundary.
+- Fix the narrow Anthropic caller request policy for already-supported assistant function history. Both clients' supplied/built history must retain pinned consumed caller semantics in fake native Anthropic requests without needing a prior response, provider execution or future helper. #280 later proves actual response-derived continuation.
+- #303 owns minimal reviewed actionable provider errors within existing handler/stream lifetimes and public error API. Define diagnostic/security/status/retry behavior before choosing mechanisms; no prescribed sentinel error tree, new stream reader or breaking GatewayError.Code type. Required invasive work needs a separately registered Gateway follow-up coordinated with #299.
+- **BREAKING behavior** for consumers relying on source-N IDs/display censorship, fixed warning prose, canonical actual model substitution or fixed provider-error status/message. No new compatibility dialect or public error type redesign.
+- Keep Apache client independent from AGPL server and preserve candidate-source/image versus published-module validation. Sync/archive only behavior actually delivered by each owner.
 
 ## Capabilities
 
 ### New Capabilities
-- `gateway-caller-response-policy`: Restriction dispositions, credential/tenant provenance, bounded actionable provider errors, debugging and response/telemetry separation.
+- `gateway-caller-response-policy`: foundation/target boundary, restriction dispositions, bounded minimal provider diagnostics, debugging and response/telemetry separation.
 
 ### Modified Capabilities
-- `providerwire-v4-unary-runtime`: Supported warnings, metadata integration, registered response identity and provider-versus-internal failures.
-- `providerwire-v4-streaming-runtime`: Value-preserving warnings, actual response identity, metadata integration and bounded non-terminal provider errors.
-- `grafana-gateway-client`: Independent bounded decoding without concealment filters, registered error details and explicit unary transport/identity boundary.
-- `gateway-sources`: Native identity/display and bounded metadata instead of response-local citation projection.
-- `gateway-reasoning-content`: Replace the closed continuation allowlist under #280, retaining replacement and lifecycle semantics.
-- `gateway-unary-function-tools`: Supported tool-call metadata under #280 without changing execution ownership.
-- `gateway-streaming-function-tools`: Supported tool-event metadata under #280 without enabling provider execution.
-- `providerwire-v4-http-contract`: Correct unary warning combination evidence and registered-client response-identity/error consumption proof.
-- `gateway-ordered-text-fallback`: Preserve caller response identity/reviewed diagnostics and authoritative exhausted-fallback provenance while retaining ordering, execution/commitment, private attempt observation and topology protections.
-- `gateway-provider-configuration`: Replace blanket caller backend/error-body concealment with source-specific credential/configuration/telemetry protections and trusted construction-time error policy.
+- `providerwire-v4-unary-runtime`: request-policy/caller prerequisite, warnings, source display/identity, registered response identity and minimal provider-versus-internal failure mapping.
+- `providerwire-v4-streaming-runtime`: warning/actual identity values and minimal existing-path error projection, with unchanged metadata transport/lifecycle.
+- `grafana-gateway-client`: warning/identity/source consumption and minimal error envelope/cause-body mapping without public API redesign.
+- `gateway-sources`: native identity/display; metadata transport explicitly unchanged pending #280.
+- `gateway-unary-function-tools`: supplied assistant function history/caller request evidence and unchanged execution ownership.
+- `providerwire-v4-http-contract`: exact-pinned warning/unary identity/minimal error consumption evidence.
+- `gateway-ordered-text-fallback`: remove caller identity concealment, refuse rather than silently lose consumed unrouteable options, retain effect/commitment/telemetry guards and safe unresolved diagnostics.
+- `gateway-provider-configuration`: distinguish private configuration from caller data, trusted minimal direct-route diagnostic policy and narrow Anthropic caller prerequisite.
+
+Metadata-only reasoning/function-tool/source/client transport deltas are not foundation requirements: #280 owns them and their continuation proof, recorded in handoffs.md.
 
 ## Impact
 
-Server: `ai-gateway/providerwire/v4/{response,stream,errors,sources,reasoning}.go` and response schemas; an AGPL-only internal providererrors wrapper/projection seam is installed per physical candidate in `service/catalog.go` before fallback and logical composition. Catalog/provider/core interfaces remain unchanged. Active service/fallback contracts are revised alongside runtime behavior; option/discovery and telemetry policies are audited, not blanket opened. Client: private codecs in Apache `providers/grafana`, never importing AGPL server DTOs. Tests: ProviderWire TypeScript workspace, independent Go client, authenticated command, authentic two-client conformance, provider request continuation and UI integration where affected. Docs and stable parity boundaries update with implementation. Full authentic two-client matrix acceptance depends on delivery of #201's currently open draft harness; current main's focused ProviderWire/command checks and direct conformance are not that matrix.
+Server: `ai-gateway/providerwire/v4/{request,provider_option_policy,response,stream,errors,sources}.go`, response schemas and command provider-option/route policy. Client: existing private Apache codecs, never AGPL DTO imports or a changed public error API. Tests: exact-pinned TS/Go handler/command/native fake requests, independent guards/telemetry/lifecycle, unchanged direct conformance; full authentic matrix later #201. Central docs and stable parity evidence update only for delivered support.
 
-The reference stays commit `4e8c387622ee1bb0d55841664416d38754d5c9a3` (`ai@7.0.109`, `@ai-sdk/gateway@4.0.88`, `@ai-sdk/provider@4.0.17`). #299's later error target is separate. No credential provisioning/storage, native API adapters, unsupported content/tools, catalog configuration dump, core termination redesign or baseline upgrade is included. This plan is not implementation or acceptance proof.
+Baseline stays `4e8c387622ee1bb0d55841664416d38754d5c9a3` (ai 7.0.109, Gateway 4.0.88, Anthropic 4.0.59, provider 4.0.17). #299's newer core-error target is separate. This PLAN neither implements nor proves acceptance of BYOK, metadata roundtrip, new tools/MCP or the full original refactor. Nara's approved minimal-error ownership is explicit; invasive Gateway diagnostic follow-up registration remains a later action, not a GitHub mutation by this run.

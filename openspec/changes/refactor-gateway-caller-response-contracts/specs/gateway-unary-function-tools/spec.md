@@ -1,21 +1,27 @@
 ## MODIFIED Requirements
 
+### Requirement: Unary function history and selected results
+Supported assistant function calls and tool-role text/json/error/text-file results SHALL retain current strict unions, required empties and file-selection/scope semantics. On configured direct Anthropic routes, assistant function-call part caller options SHALL reach native conversion with the registered consumed direct/code_execution variants and required toolId; no exact-key/direct-only competing validator SHALL be introduced. Supplied history attribution SHALL NOT enable providerExecuted, MCP, role/union/credential/unsupported result options or effectful fallback.
+
+#### Scenario: Supplied caller history reaches native tool use
+- **WHEN** either client sends built/supplied ordinary assistant function history with supported caller
+- **THEN** the native Anthropic request SHALL preserve tool_use.caller and tool_id semantics without a prior response, server tool or future helper
+- **AND** unknown/missing/empty forms SHALL follow verified registered consumed/ignored behavior
+
+#### Scenario: Unsupported execution remains refused
+- **WHEN** caller data accompanies a forbidden providerExecuted/MCP/role/union/effectful fallback request
+- **THEN** existing guards SHALL refuse it before prohibited provider execution
+
 ### Requirement: Bounded private unary tool calls
-Unary output SHALL preserve ordered text and client-executed function tool calls using explicit private DTOs with toolCallId, toolName and string input. Provider output containing providerExecuted true or dynamic true SHALL be rejected with the existing fixed internal-error document before HTTP 200. False or absent markers MAY normalize to disabled. The encoder SHALL NOT strip an enabled execution marker and forward the call as client-executed. Provider-tool results and enabled preliminary behavior SHALL remain outside this supported unary output union. New strings/cardinality SHALL participate in preflight and final encoding bounds. Supported tool-call providerMetadata SHALL be preserved through #280 under ordinary reviewed bounds. Actual registered response identity SHALL follow gateway-caller-response-policy; invented topology, credentials and native transport SHALL remain excluded. No metadata field SHALL enable an otherwise unsupported execution marker.
+Supported unary function calls SHALL retain private bounded DTOs/call ID/name/string input and current client execution ownership. Enabled providerExecuted/dynamic/preliminary or unsupported results SHALL fail safely before HTTP 200 rather than be stripped into a client call. Current metadata transport SHALL remain unchanged until #280; future preservation/continuation SHALL not be a foundation gate. Registered actual response identity follows the caller-response policy, excluding native transport/configuration.
 
-#### Scenario: Enabled execution marker cannot become a client call
-- **WHEN** a provider unary result contains a tool call with providerExecuted true or dynamic true, including alongside valid text
-- **THEN** the entire response SHALL be the fixed internal-error document before HTTP 200, with no partial success content
-- **AND** both registered Vercel and Go client scenarios SHALL observe an error and execute zero local tools
+#### Scenario: Enabled marker cannot become client execution
+- **WHEN** output carries an enabled unsupported ownership marker
+- **THEN** the whole response SHALL fail safely without a partial call or local execution
 
-#### Scenario: Disabled markers preserve client ownership
-- **WHEN** a supported function call has absent or false providerExecuted and dynamic markers
-- **THEN** it SHALL remain client-executed and its disabled markers MAY be omitted without changing ownership
+### Requirement: Unary client and provider acceptance evidence
+Both registered clients SHALL prove current supported function behavior and the independent supplied caller-history/native request prerequisite through the authenticated handler/command. Native schemas/examples/strict/choice/ownership/credential/telemetry/bounds evidence SHALL remain. #303 supplied history SHALL not be presented as first-response metadata transport/continuation; #280 owns actual output-derived native roundtrip. Apache modules and fixture provenance remain independent.
 
-#### Scenario: Tool call consumed by both clients
-- **WHEN** a provider produces a supported function call with a tool-calls finish
-- **THEN** both clients SHALL receive semantically equivalent call IDs, names, inputs, usage and finish through the real handler
-
-#### Scenario: Oversized tool input
-- **WHEN** a provider output cannot fit the configured unary budget
-- **THEN** no partial HTTP 200 SHALL be committed and the fixed safe error SHALL be returned
+#### Scenario: Caller request prerequisite is accepted
+- **WHEN** supplied history/native-request tests pass before #280
+- **THEN** request policy acceptance SHALL be recorded independently and output-derived continuation SHALL remain a successor handoff

@@ -1,89 +1,54 @@
 ## MODIFIED Requirements
 
+### Requirement: Selected-backend provider options
+After resolution, provider options SHALL follow reviewed native consumed scopes and concrete restriction dispositions, not be silently removed solely because a current allowlist omitted them. Namespaces actually ignored by the selected backend MAY be omitted without request failure; supported consumed omissions SHALL be corrected or explicitly handed off. Existing protected credential/host/role/union/transport/effect fields SHALL remain refused. Generic zero policy SHALL remain an explicit unreviewed capability boundary, not a claim that its model consumes no options.
+
+On configured direct Anthropic routes, caller options on already-supported assistant function-tool-call history SHALL reach native conversion with registered consumed semantics, including direct and both code_execution variants with required toolId. The policy SHALL NOT impose a competing exact-key/direct-only caller schema or enable providerExecuted/MCP effects. Current supported other fields SHALL retain values at their reviewed scopes. If heterogeneous fallback cannot safely forward active options a candidate consumes, it SHALL reject before invocation rather than silently strip them; all-candidate irrelevant options and supported semantic empties retain their existing behavior.
+
+#### Scenario: Caller history reaches Anthropic
+- **WHEN** either registered client supplies ordinary assistant function-call history with a supported Anthropic caller
+- **THEN** the direct native request SHALL preserve tool_use.caller without a prior response or future tool helper
+- **AND** caller data SHALL not bypass execution/credential/role/union/MCP guards
+
+#### Scenario: Consumed fallback option has no safe route
+- **WHEN** an active option is consumed by a candidate but lacks supported common routing
+- **THEN** no physical candidate SHALL run and a fixed nonretryable unsupported-request response SHALL result rather than silent option loss
+
 ### Requirement: Fixed privacy-safe errors
-Gateway-internal, host, resolver, panic, invalid-request and transport-only failures SHALL retain fixed safe status/message/type/code/param documents, including fixed host authentication and permission errors. Reviewed provider API failures SHALL instead use gateway-caller-response-policy's bounded selected-adapter projection and registered status/category/retry policy. Generic causes, provider transport credentials, URLs, headers, request bodies and whole native bodies/data SHALL never be serialized. Unknown or invalid categories SHALL fall back to fixed internal error.
+Host/internal/resolver/panic/protocol/transport-only failures SHALL retain fixed safe documents. Trusted configured direct provider structured failures SHALL use gateway-caller-response-policy's bounded minimal diagnostics/status/retry mapping through existing paths. Unsupported/unreviewed/ambiguous sources SHALL retain safe diagnostics and explicit gaps. Whole bodies/headers/URLs/requests/causes SHALL not be serialized. Existing public error API SHALL remain; native detail access SHALL use existing registered param/cause/body.
 
-#### Scenario: Provider API failure
-- **WHEN** DoGenerate returns a reviewed structured provider API failure
-- **THEN** the handler SHALL expose only its bounded actionable projection, not reduce all valid provider messages/codes to generic prose
+#### Scenario: Direct provider API failure
+- **WHEN** DoGenerate returns a reviewed direct structured provider failure
+- **THEN** only bounded actionable diagnostics SHALL survive with protected sources excluded
 
-#### Scenario: Internal or transport failure
-- **WHEN** DoGenerate returns a transport-only or arbitrary internal error, panics or lacks a reviewed provider source
-- **THEN** the handler SHALL retain fixed safe diagnostics without serializing the cause
-
-#### Scenario: Unknown model
-- **WHEN** catalog resolution reports an unknown public model
-- **THEN** the handler SHALL return the fixed model-not-found document
-
-#### Scenario: Client classification
-- **WHEN** both clients consume reviewed provider or fixed Gateway errors
-- **THEN** category/status/retry behavior SHALL match the exact registered public client, with code/param availability described accurately
+#### Scenario: Unknown public model
+- **WHEN** resolution reports an unknown public route
+- **THEN** the fixed model-not-found document SHALL remain distinct from a native provider model failure
 
 ### Requirement: Minimal unary success response
-A successful response SHALL contain ordered supported text, client-executed function-tool-call, URL/document source, reasoning and reasoning-file content, registered finishReason, validated usage, preserved warnings and supported providerMetadata. #280 SHALL own providerMetadata preservation across content/results with unknown object-valued namespaces, nested JSON values and absent/empty distinctions under reviewed bounds, not gated by IncludeRawChunks. Source identity/display SHALL follow gateway-sources. Required empty text/reasoning and selected empty file data SHALL survive. Existing non-negative JavaScript-safe usage validation and usage.raw object/absent/1 MiB contract SHALL remain unchanged.
+Success SHALL preserve ordered supported text/function-call/source/reasoning/reasoning-file content, finish reason, validated usage, warning values and supplied registered response id/modelId/timestamp. Warnings SHALL be a non-null registered union/order array with required empty strings, optional-empty Go normalization and 4096-byte string plus aggregate/complete-output bounds. Native request/response headers/body and invented topology SHALL remain excluded; canonical route identity SHALL not replace supplied actual identity. Pinned clients SHALL replace typed unary response with Gateway transport, leaving native identity available only in bounded raw response body.
 
-Warnings SHALL be a non-null array preserving registered fields/order under gateway-caller-response-policy bounds and documented optional-empty Go normalization. Registered response id/modelId/timestamp SHALL preserve supplied actual provider values when present and valid; canonical route identity SHALL NOT substitute for them. Native request data, provider response headers/body and invented provider/topology members SHALL remain omitted. Clients SHALL own Gateway request/response transport: pinned typed unary identity is overwritten, but the registered response fields remain available in the bounded raw response body. Valid output SHALL not fail solely for carrying supported metadata/warnings/actual identity. Invalid output SHALL fail safely before HTTP 200.
+This foundation SHALL NOT add providerMetadata placements or change current bounded source/reasoning metadata transport. #280 owns all future metadata server/client/schema transport and actual-output continuation; those are explicit handoffs rather than foundation success gates. Required empty text/reasoning/file values, current execution unions and usage.raw object/absent/1 MiB behavior SHALL remain unchanged. Invalid output SHALL fail safely before HTTP 200.
 
-#### Scenario: Reasoning-only paid success
-- **WHEN** a provider returns a valid reasoning-only result
-- **THEN** the Gateway SHALL return success rather than a retryable adaptation error
-- **AND** default high-level retries SHALL not invoke the provider again for that valid result
+#### Scenario: Supported warnings and actual identity
+- **WHEN** valid supported output includes warnings and actual registered identity
+- **THEN** those values SHALL survive without canonical substitution or native transport
+- **AND** typed unary overwrite/raw-body availability SHALL be asserted through both clients
 
-#### Scenario: Valid text result
-- **WHEN** the model returns text, a registered finish reason and valid usage with supported warnings/metadata
-- **THEN** the handler SHALL preserve those values and only registered supported top-level members
-
-#### Scenario: Unsupported provider result
-- **WHEN** the model returns unsupported content/execution markers, unknown finish reason, invalid usage, nil result without error or panics
-- **THEN** the handler SHALL return fixed internal error before committing HTTP 200, without stripping enabled execution markers into success
-
-#### Scenario: Caller response differs from transport
-- **WHEN** the result contains supported metadata, warnings and actual response identity plus native headers/body
-- **THEN** supported caller data SHALL survive while native transport SHALL be omitted
-- **AND** pinned clients SHALL combine unary warnings and retain their own transport, with native identity visible only in raw response body
-
-#### Scenario: Provider raw usage is present or absent
-- **WHEN** provider usage supplies a valid in-limit nested object, empty object or no Raw bytes
-- **THEN** usage.raw SHALL respectively contain that object, contain {} or be absent without changing normalized counts
-
-#### Scenario: Supplied raw usage is invalid
-- **WHEN** nonempty Raw is malformed, null, array/scalar or over its existing input limit
-- **THEN** fixed internal error SHALL occur before HTTP success without reflecting it or returning normalized-only success
+#### Scenario: Foundation metadata boundary
+- **WHEN** a foundation response contains current supported metadata or unimplemented future placements
+- **THEN** current transport SHALL remain unchanged and its explicit gap SHALL be handed to #280, not claimed as delivered ordinary metadata parity
 
 ### Requirement: Bounded preflight and standard success encoding
+Before scanning/parsing/encoding, overflow-safe preflight SHALL bound cardinality and aggregate content/current metadata/warning/identity/finish/raw-usage bytes. Raw usage SHALL remain capped at 1,048,576 original bytes and the unary limit, validated as one UTF-8 JSON object only after size preflight. Private explicit DTOs SHALL use standard JSON and final complete-byte checks before commitment; provider-domain marshalers SHALL not control wire output. Valid raw surrogate escapes SHALL remain preserved and worst-case escaping/copies bounded by the containing limit.
 
-Before encoding, the handler SHALL reject content cardinality or aggregate content, metadata, warning and response-identity bytes, raw-finish string bytes, and raw-usage input bytes that cannot fit the configured unary budget using overflow-safe accounting. It SHALL count raw-usage bytes before parsing or marshaling and reject raw usage longer than 1,048,576 bytes or the configured unary response limit, including whitespace. It SHALL then validate that any present raw is a single JSON object with valid UTF-8 on original bytes. Standard JSON encoding SHALL preserve valid JSON escape sequences, including lone and paired UTF-16 surrogate escapes, in the raw object. Validation SHALL occur only after the size preflight so it remains bounded. The complete explicit private DTO SHALL then be encoded with standard Go JSON, rejected when the final bytes exceed the configured limit, and committed only after successful encoding and the final size check. Provider-domain JSON marshalers SHALL NOT control the response. Standard encoding MAY allocate a bounded constant multiple of the configured limit for worst-case escaping.
-
-#### Scenario: Preflight rejects oversized provider values
-- **WHEN** content count or aggregate raw string bytes (including metadata, warnings, response identity and supplied raw usage) exceed the unary budget, or raw usage exceeds 1,048,576 bytes
-- **THEN** the result SHALL fail before UTF-8 scanning or JSON encoding
-
-#### Scenario: Escaping crosses the final boundary
-- **WHEN** raw bytes pass preflight but standard JSON escaping makes the encoded response exceed the limit
-- **THEN** the handler SHALL return the fixed internal error before committing HTTP 200
-
-#### Scenario: Raw UTF-8 and JSON escapes
-- **WHEN** in-limit provider raw usage contains invalid UTF-8 in an object key or nested value
-- **THEN** the handler SHALL reject it before JSON encoding and return the fixed internal error without committing HTTP 200
-- **WHEN** in-limit raw usage contains valid JSON with lone or paired escaped surrogates
-- **THEN** the handler SHALL preserve the raw JSON escapes, with success still subject to object and complete-response limits
-
-#### Scenario: Response byte boundary
-- **WHEN** the encoded response is below, exactly at, or above the configured limit
-- **THEN** only complete in-limit documents SHALL receive HTTP 200
-
-#### Scenario: Raw usage exactly meets its input cap
-- **WHEN** raw usage bytes, including JSON whitespace, are at or one byte above the smaller of 1,048,576 bytes and the configured unary response limit
-- **THEN** only the at-limit value SHALL reach JSON validation, and success SHALL still require the final complete response to fit the unary limit
+#### Scenario: Raw bytes or escaped encoding exceed bounds
+- **WHEN** provider values exceed preflight or complete encoded limits
+- **THEN** no partial HTTP 200 SHALL be committed and the fixed adaptation failure SHALL remain
 
 ### Requirement: Compatibility evidence
+Current registered-client request goldens SHALL replay unchanged. Exact-pinned TS and independent Go handler/command tests SHALL prove delivered warnings/identity/source display and caller request semantics; raw tests SHALL own strict schema/security/bytes/lifecycle proof. #280 actual-output metadata continuation and #201 full authentic matrix SHALL remain later explicit acceptance, not foundation requirements or duplicated harnesses.
 
-The runtime SHALL replay every committed ProviderWire request golden without modifying it. Cross-language integration tests SHALL call the production handler through the exact registered `@ai-sdk/gateway` version and verify supported unary success, streaming text through clean EOF, representative errors, and cancellation. Raw Go tests SHALL remain authoritative for exact documents, privacy, sequencing, lifecycle, and byte bounds.
-
-#### Scenario: Registered client success
-- **WHEN** the pinned Gateway client sends a supported unary request
-- **THEN** it SHALL consume content, finish reason, and usage from the production handler and combine server and client warnings and supply its own request/response transport fields, while tests explicitly assert the typed unary response-identity overwrite boundary
-
-#### Scenario: Streaming request
-- **WHEN** the registered client sends a supported streaming text request
-- **THEN** the handler SHALL invoke `DoStream` once and the client SHALL consume the strict stream through clean EOF
+#### Scenario: Registered unary client
+- **WHEN** the pinned client consumes foundation output
+- **THEN** content/usage/finish and server-before-client warnings SHALL survive with client-owned transport and typed identity overwrite accurately recorded

@@ -1,121 +1,60 @@
 ## ADDED Requirements
 
-### Requirement: Explicit restriction ownership and account boundary
-The Gateway SHALL classify request/response restrictions as protocol correctness, capability support, tenant/credential security, telemetry policy or obsolete shared-account concealment, and record retained, removed and deferred dispositions with concrete rationales. Customer provider-account ownership SHALL NOT imply caller authorization to override credentials, access another tenant's state, execute unsupported tools, bypass resource limits or enable effectful fallback. Current startup-configured accounts SHALL NOT be described as implemented BYOK provisioning. Historical acceptance of completed milestones SHALL remain historical.
+### Requirement: Foundation sequencing and explicit acceptance handoff
+The #303 foundation SHALL be independently green and completable before #280, followed by #238, #239 and #240. It SHALL deliver restriction dispositions, non-metadata warning/source-identity/display/response-identity behavior, supported Anthropic caller request policy and minimal actionable provider diagnostics using current API/lifecycle. It SHALL NOT require successor metadata transport/continuation, future tool helpers or #201's undelivered matrix as foundation completion gates. Full original refactor acceptance SHALL remain explicitly mapped to subsequent owners rather than be claimed or silently dropped.
 
-#280 SHALL exclusively own supported provider-metadata codecs, schema changes, independent-client metadata filtering and subsequent-request continuation implementation. #303 SHALL own warning/source-identity/response-identity/error and restriction policy changes and integrate the #280 contract without duplicating its implementation. Metadata SHALL be ordinary supported response data, independent of IncludeRawChunks.
+#280 SHALL exclusively implement ordinary supported metadata server/client/schema transport, unknown metadata/presence/budgets and actual-output continuation/source-metadata integration. Desired metadata semantics SHALL be independent of IncludeRawChunks, but unimplemented target transport SHALL remain a handoff, not a foundation normative sync claiming delivery. Customer ownership SHALL NOT imply BYOK provisioning, credential substitution, unsupported tools/MCP, effectful fallback or relaxed bounds/tenant/telemetry guards. Historical milestone acceptance SHALL remain historical.
 
-#### Scenario: Account ownership changes response policy
-- **WHEN** a restriction exists solely to hide the selected provider account from its authorized caller
-- **THEN** its inventory disposition SHALL remove that concealment rather than relabel it security
-- **AND** separate protocol, authorization and telemetry protections SHALL remain effective
+#### Scenario: Foundation completes before metadata
+- **WHEN** #303's implemented foundation behavior and current registered checks pass without #280 or #201's harness
+- **THEN** foundation completion SHALL be reported separately from metadata/actual continuation/full-matrix acceptance
+- **AND** successors SHALL retain their explicit handoffs and implementation ownership
 
-#### Scenario: Metadata work is integrated
-- **WHEN** a #303 behavior package needs supported source, text, tool, reasoning or finish metadata
-- **THEN** it SHALL depend on #280's reviewed contract and implementation rather than introduce another metadata projection or gate
+### Requirement: Reviewed restriction dispositions
+Every request/response restriction SHALL have a concrete keep/remove/defer classification by protocol correctness, capability support, credential/tenant authorization, telemetry or obsolete account concealment. Current allowlist membership SHALL NOT establish relevance or harmless omission. A supported consumed option filtered today SHALL be corrected or explicitly handed off with scope/reason/owner; genuinely ignored fields require pinned consumer evidence. Unknown/effectful provider extensions SHALL not bypass registered mapped roles/unions/tools/credentials.
 
-### Requirement: Trusted per-candidate error provenance
-The AGPL Gateway SHALL install a reviewed adapter-policy model wrapper around each physical candidate before fallback composition and logical identity wrapping. Policy SHALL originate from trusted provider configuration, not caller input, logical model identity, error-body claims or another candidate. A server-only internal providererrors package SHALL own adapter sentinels, wrapping and projection selection; Apache provider/core/client contracts SHALL remain unchanged. An unconfigured/generic resolver or zero/unreviewed policy SHALL have no authority to disclose native diagnostics and SHALL retain fixed safe projection.
+#### Scenario: Consumed caller field is missing
+- **WHEN** native conversion consumes caller on already-supported assistant function history but the command policy removes it
+- **THEN** the foundation SHALL restore that request semantic and prove it independently from response metadata
 
-Unary and stream-setup errors SHALL use a standard two-child errors.Join node pairing the exact private adapter sentinel with that invocation's original error. Streaming PartError values SHALL be copied and their concrete APICallError recreated with unchanged exported values and explicit native retry flag, with that same paired node as Cause. Original objects SHALL NOT be mutated; provenance SHALL NOT be stored in Data, providerMetadata or public fields. Existing errors.As/Is, context-window recognition, retry eligibility and result-plus-error cleanup SHALL remain effective. The wrapper SHALL preserve physical identity for private observation without adding logical middleware.
+#### Scenario: Fallback cannot route consumed options
+- **WHEN** active options are consumed by a fallback candidate but no safe common routing is supported
+- **THEN** the request SHALL fail explicitly before physical invocation rather than succeed with silently lost semantics
 
-Projection SHALL use bounded structural traversal and bind the selected policy and API source to the same paired original-error subtree. Cancellation/deadline priority SHALL remain authoritative. Exhausted fallback SHALL project only the first candidate-failure branch in its existing newest-first aggregate order; if that branch lacks a reviewed source, fixed safe classification SHALL apply rather than scanning older candidates. Separate aggregate-wide searches for policy and API errors, aggregate prose serialization and candidate enumeration SHALL be forbidden. Malformed, cyclic or over-budget traversal SHALL fail safely.
+### Requirement: Minimal provider diagnostics without lifetime or public API redesign
+The foundation SHALL preserve reviewed actionable provider diagnostics for trusted configured direct routes through existing unary/setup/stream-error paths. Diagnostic authority SHALL derive from trusted adapter configuration, not caller namespaces/body claims or logical grafana identity. Unconfigured/unreviewed routes, ambiguous fallback aggregates, message-only/local/internal/transport sources SHALL retain safe diagnostics with explicit support gaps. Fixed host authentication/permission/internal failures SHALL remain distinct from provider-account failures. No new stream reader/lifecycle layer or public error API redesign SHALL be required for this foundation.
 
-One bounded context-aware wrapper forwarding owner SHALL read and drain each wrapped source channel; fallback/handler SHALL own only its output channel. Non-nil result streams SHALL retain this ownership even when accompanied by setup errors. Nil error pointers and non-error parts SHALL retain existing behavior. Wrapping SHALL NOT synthesize parts, change first-part commitment, replay after output, change core termination or introduce duplicate channel readers/cleanup owners.
+Projection SHALL use bounded reviewed structured source fields, not generic Error()/APICallError.Message, whole Data/ResponseBody, URLs/headers/request bodies or causes. Source and complete error SHALL be at most 16384 bytes, message/projected detail at most 4096 bytes, type/string-code at most 256 bytes, with original-byte UTF-8/JSON/number validation and complete enclosing server bounds before output. Client limits remain independent. Malformed/oversized/unreviewed detail SHALL fall back safely, not be truncated or copied generically.
 
-#### Scenario: Heterogeneous fallback is exhausted
-- **WHEN** differently configured candidates fail with different structured error schemas before commitment
-- **THEN** only the newest authoritative candidate's paired policy and original error SHALL determine public diagnostics
-- **AND** no other candidate's marker, API source, identity or aggregate prose SHALL be combined into that projection
+The existing registered message/type/code/param envelope and existing Go GatewayError.Code string/API SHALL remain. Public category code SHALL remain a Gateway string; reviewed native type/code/parameter details, including number/null codes where represented, SHALL use bounded existing param/cause/body access. No new typed properties or full native top-level-code parity SHALL be claimed. Credential/auth prose or parameters that may echo keys SHALL use fixed provider-account authorization prose with protected sources excluded, not Gateway-key guidance. Ordinary application strings SHALL not be heuristically censored.
 
-#### Scenario: Authoritative failure has no reviewed source
-- **WHEN** the newest failure is unconfigured, premature EOF, invalid result or otherwise lacks reviewed provenance
-- **THEN** fixed safe diagnostics SHALL apply without searching an older failure for an actionable message
+#### Scenario: Direct structured provider failure
+- **WHEN** a trusted direct adapter supplies reviewed structured diagnostic fields within bounds
+- **THEN** both clients SHALL preserve the minimal contracted message/status/native details through existing fields/cause/body
+- **AND** internal causes, native transport and credential-bearing sources SHALL remain excluded
 
-#### Scenario: Generic resolver returns an API-shaped error
-- **WHEN** an unwrapped model returns an error body resembling a reviewed provider schema
-- **THEN** its shape or logical Provider value SHALL NOT authorize native diagnostic disclosure
+#### Scenario: Unsupported richer error source
+- **WHEN** trusted diagnostics need invasive representation/transport/API work or aggregate provenance unavailable in the existing path
+- **THEN** fixed-safe behavior and a concrete separately registered Gateway handoff coordinated with #299 SHALL remain
+- **AND** the foundation SHALL not invent a sentinel-tree protocol or add stream lifetimes/public API breaks to hide that gap
 
-#### Scenario: Stream error is copied without changing ownership
-- **WHEN** a wrapped candidate emits a PartError followed by valid parts while its error is also reused by another invocation
-- **THEN** the wrapper SHALL annotate a copy bound to that invocation's policy without modifying either original or later part order
-- **AND** fallback SHALL commit on the first part with one reader per channel and bounded cancellation/drain
+### Requirement: Status retry and lifecycle authority
+Reviewed direct provider non-2xx status SHALL be preserved: 400/422 use invalid_request_error, 429 rate_limit_exceeded, remaining 4xx failed_dependency and 5xx internal_server_error. HTTP retry SHALL match the pinned 408/409/429/5xx rule; nonrepresentable provider retry overrides SHALL be documented, not tunneled through new flags/status fiction. Existing available direct stream errors SHALL retain ordered non-terminal provider behavior and reviewed statusCode/retryable without changing core termination. Original errors.As/Is/native fallback eligibility and commitment SHALL remain effective. No implicit client/fallback replay after output or exactly-once generation promise SHALL be introduced.
 
-#### Scenario: Native decision facts survive wrapping
-- **WHEN** an original error is nonretryable, signals context-window overflow or wraps recognizable cancellation
-- **THEN** errors.As/Is and existing fallback decisions SHALL retain those facts rather than use sanitized public diagnostics to decide execution
+#### Scenario: Native conflict is retryable
+- **WHEN** a reviewed direct provider returns HTTP 409
+- **THEN** its status and pinned retryability SHALL survive rather than become nonretryable 424
 
-### Requirement: Reviewed bounded provider error projection
-The Gateway SHALL separate reviewed provider API failures from Gateway-internal, host authentication/authorization, transport, panic, resolver and adaptation failures. Internal/host failures SHALL retain fixed safe documents. Provider diagnostics SHALL be extracted only from the selected trusted adapter's reviewed structured error sources, never generic error strings, APICallError.Message, URLs, headers, request bodies, causes or whole opaque bodies/data. Reviewed sources SHALL cover OpenAI/Azure HTTP and structured Responses errors, Anthropic HTTP/structured SSE and reviewed OpenAI-compatible envelopes; unsupported/message-only/local conversion sources SHALL use fixed safe fallback and have their gap recorded.
+#### Scenario: Paid-generation adaptation fails
+- **WHEN** output adaptation or transport fails at precommit/postcommit boundaries
+- **THEN** existing safe failure/cleanup/finish authority SHALL remain and caller retry call counts SHALL be exposed without exactly-once claims
 
-Structured source bytes SHALL be capped at 16384 before JSON parsing and validated for UTF-8/syntax. Public message SHALL be at most 4096 UTF-8 bytes, native type and string code at most 256 bytes each, projected param at most 4096 encoded bytes, and complete error at most 16384 bytes and within its enclosing response/event budget. Code SHALL preserve reviewed string, finite JavaScript-safe number, null and absence normalized to null. Oversized/malformed diagnostic fields SHALL not be truncated or generically exposed; fixed prose/code/null detail SHALL retain valid status/category/retry classification. Invalid HTTP status SHALL select the fixed internal failure.
+### Requirement: Debug privacy telemetry and independently green delivery
+Supported debugging SHALL remain client-owned Gateway request and bounded HTTP response headers/body, registered actual response identity with typed unary overwrite caveat, and delivered reviewed diagnostics. Native provider transport SHALL NOT be tunneled through metadata/debug fields. Credentials/other-tenant/configuration/topology protections SHALL rely on source/authorization boundaries rather than arbitrary secret-looking string identification.
 
-The registered envelope SHALL use message, Gateway-category type, code and param only. Provider param SHALL be a bounded closed projection with providerStatusCode and optional providerType and providerParam (string or null); native param absence SHALL remain distinct from explicit null. Unknown native siblings/details SHALL be omitted, not recursively copied. Provider credential/auth failures SHALL use fixed actionable `provider account authorization failed` prose and omit arbitrary native message/param while retaining reviewed status/type/code. Protection SHALL rely on provenance/owned credential sources, not identifying arbitrary secret-looking application strings.
+Caller content/metadata/warnings/source/actual identity/actionable error fields SHALL NOT enter logs, metric labels or metadata-only Agent Observability, including internal teams. Apache client SHALL remain independent of AGPL implementation/DTOs; candidate-source/image proof and public producer releases/consumer readonly adoption SHALL remain distinct. Strict server schema, exact-pinned TS/Go/native-request, synthetic lifecycle/security and authentic conformance evidence SHALL remain separate. Each owner SHALL sync/archive only its implemented behavior; #201 SHALL own later full authentic replay without weakened goldens or duplicate harness.
 
-#### Scenario: Structured actionable provider error
-- **WHEN** a reviewed provider error carries a valid message, native type, numeric code and scalar parameter within all bounds
-- **THEN** clients SHALL receive those reviewed diagnostics at the existing registered fields with no native transport or internal cause
-- **AND** pinned TS code/param access SHALL be demonstrated through its bounded cause/body rather than claimed as typed public properties
-
-#### Scenario: Credential material and application content differ
-- **WHEN** a provider auth error can echo a credential and ordinary caller metadata contains a harmless token-shaped string
-- **THEN** the auth error SHALL use fixed actionable prose with credential-bearing fields excluded
-- **AND** ordinary supported metadata SHALL remain unchanged under #280 rather than being heuristically censored
-
-#### Scenario: Unsupported or over-limit source
-- **WHEN** an error has only a generic message or an oversized, malformed or unreviewed structured source
-- **THEN** only fixed safe diagnostics SHALL be emitted, preserving valid status-derived classification without exposing source bytes
-
-### Requirement: Registered retry and lifecycle boundary
-Reviewed provider non-2xx HTTP status SHALL be preserved: 400/422 map to invalid_request_error, 429 to rate_limit_exceeded, remaining 4xx to failed_dependency, and 5xx to internal_server_error. Provider credential failure SHALL NOT become Gateway authentication guidance, and native provider model lookup failure SHALL NOT become public-route model_not_found. Unknown public routes and transport-only failures SHALL retain existing fixed classifications.
-
-HTTP retryability SHALL match the pinned public client: 408, 409, 429 and 5xx are retryable. A provider override not representable by that client SHALL be explicitly tested and documented rather than tunneled through a new flag or status fiction. In-stream errors SHALL retain the existing statusCode/retryable fields and ordered non-terminal provider semantics, including valid status 200, without changing core termination. No client SHALL automatically replay an invocation after response/event delivery. Adaptation failures SHALL retain safe precommit JSON or postcommit terminal SSE behavior, including currently retryable HTTP 500; the Gateway SHALL NOT promise exactly-once generation.
-
-#### Scenario: Provider status differs from old bucket
-- **WHEN** a reviewed provider failure has HTTP 409
-- **THEN** HTTP 409 and failed_dependency SHALL survive with pinned retryability true rather than becoming nonretryable 424
-
-#### Scenario: Provider retry override is not representable
-- **WHEN** a native nonretryable HTTP 500 reaches the pinned HTTP client
-- **THEN** evidence SHALL show its status-derived retryability and explicitly record the override gap without changing the baseline or adding a dialect
-
-#### Scenario: Error precedes valid stream completion
-- **WHEN** a reviewed provider error appears between supported stream parts and a valid finish follows
-- **THEN** its projection SHALL remain in order without altering active blocks or making it terminal at the provider boundary
-
-#### Scenario: Adapter fails after paid generation
-- **WHEN** unsupported or invalid output causes precommit adaptation failure, or a committed stream violates bounds/lifecycle
-- **THEN** the Gateway SHALL retain its safe error boundary and cleanup/finish authority
-- **AND** tests SHALL expose caller retry call counts and SHALL NOT imply exactly-once execution
-
-### Requirement: Supported debugging and caller telemetry separation
-Clients SHALL own Gateway request metadata and bounded Gateway response headers/body. Native provider transport (URLs, headers, request/response bodies, SDK dumps and causes) SHALL NOT be restored, tunneled through metadata or promised as raw passthrough. Registered response identity and reviewed bounded provider errors SHALL remain supported diagnostic data. Pinned typed unary response overwrite SHALL be explicitly described; native unary identity SHALL remain inspectable only in the bounded raw response body. No new provider/topology/debug field SHALL be invented.
-
-Authorization/tenant and known credential-source protections SHALL remain independent from response semantics. Caller content, provider metadata, warning prose, source data, actual response identity and provider error details SHALL NOT enter logs, metric labels or metadata-only Agent Observability, including internal-team calls. Discovery SHALL remain an authorized public route catalog, not an operator dump. Tests SHALL distinguish fixture-context isolation from unimplemented per-customer credential lifecycle.
-
-#### Scenario: Caller receives useful response data
-- **WHEN** supported output carries unique markers in metadata, warnings, sources and actual identity
-- **THEN** authorized caller fields SHALL retain their contracted semantics while logs, labels and metadata-only exports SHALL contain none of those markers
-
-#### Scenario: Two fixture contexts differ
-- **WHEN** two authenticated test contexts have distinct authorized/private state and credential markers
-- **THEN** neither response nor telemetry SHALL disclose the other context's private state or provider auth material
-- **AND** evidence SHALL NOT claim live BYOK provisioning or storage isolation
-
-### Requirement: Independently green contract delivery and provenance
-Each behavior package SHALL update its normative contracts, DTO/schema, independent client mappings, docs and tests together and pass required checks against the registered baseline. #280-dependent packages SHALL not claim metadata implementation or weaken tests before that dependency lands. Apache client code SHALL not import AGPL server DTOs/implementation. Public producer releases SHALL precede consumer pin adoption with GOWORK=off readonly proof; same-revision Gateway image/workspace delivery SHALL remain distinct.
-
-Full authentic two-client replay acceptance SHALL depend on delivery of #201's currently undelivered harness and use its then-registered commands, not guessed task names or a duplicate local harness. Current focused ProviderWire/command and direct conformance proof SHALL remain independently green and SHALL NOT be reported as that full matrix. Existing authentic provider inputs and unchanged direct expectations SHALL be replayed through both clients where applicable once the prerequisite is delivered. Synthetic error/credential/transport/lifecycle cases SHALL remain focused tests, not recorded/upstream provider evidence. Raw strict server schemas, exact-pinned client differential/command tests, subsequent native provider requests and applicable schema-parsed UI integration SHALL provide separate proof. Remaining coverage/support gaps SHALL be reported and actionable follow-ups linked; PARITY.md SHALL contain stable evidence boundaries, not a dated issue catalog.
-
-#### Scenario: Published consumer is accepted
-- **WHEN** a behavior package changes a public producer needed by the independent client or command
-- **THEN** acceptance SHALL distinguish candidate-source/image checks from published module resolution and SHALL require the relevant released pins and readonly consumer check
-
-#### Scenario: Full replay harness is not delivered
-- **WHEN** #201 remains undelivered in the checked worktree
-- **THEN** focused packages SHALL use current registered validation without claiming full matrix acceptance
-- **AND** the missing harness SHALL remain an explicit external prerequisite rather than be recreated or bypassed
-
-#### Scenario: Regression input is synthetic
-- **WHEN** a transport fault or credential-bearing provider failure is synthesized
-- **THEN** it SHALL exercise a focused deterministic test without modifying authentic input or direct expected goldens to conceal a difference
+#### Scenario: Useful caller data is not telemetry
+- **WHEN** foundation fields carry unique application markers and protected transport carries credential markers
+- **THEN** contracted caller values SHALL survive while protected sources and all arbitrary markers SHALL remain absent from telemetry
+- **AND** scoped fixture tests SHALL not be described as implemented BYOK storage isolation
