@@ -331,14 +331,14 @@ func translateToChunksWithMetadata(part TextStreamPart, cfg uiMessageStreamConfi
 	case StreamToolInputEnd:
 		return nil // not sent to wire
 	case StreamToolCall:
+		dynamic := p.Dynamic
+		if p.useUIDynamic {
+			dynamic = p.uiDynamic
+		}
 		if p.Invalid {
-			dynamic := p.Dynamic
-			if p.useUIDynamic {
-				dynamic = p.uiDynamic
-			}
 			return []UIMessageChunk{{Type: ChunkToolInputError, ToolCallID: p.ToolCallID, ToolName: p.ToolName, Input: p.Input, ErrorText: errorText(p.Error, cfg), ProviderExecuted: p.ProviderExecuted, Dynamic: dynamic, Title: p.Title, ProviderMetadata: p.ProviderMetadata, ToolMetadata: toolMetadataFromProviderMetadata(p.ProviderMetadata)}}
 		}
-		return []UIMessageChunk{{Type: ChunkToolInputAvailable, ToolCallID: p.ToolCallID, ToolName: p.ToolName, Input: p.Input, ProviderExecuted: p.ProviderExecuted, Dynamic: p.Dynamic, Title: p.Title, ProviderMetadata: p.ProviderMetadata, ToolMetadata: toolMetadataFromProviderMetadata(p.ProviderMetadata)}}
+		return []UIMessageChunk{{Type: ChunkToolInputAvailable, ToolCallID: p.ToolCallID, ToolName: p.ToolName, Input: p.Input, ProviderExecuted: p.ProviderExecuted, Dynamic: dynamic, Title: p.Title, ProviderMetadata: p.ProviderMetadata, ToolMetadata: toolMetadataFromProviderMetadata(p.ProviderMetadata)}}
 	case StreamToolApprovalRequest:
 		return []UIMessageChunk{{Type: ChunkToolApprovalRequest, ApprovalID: p.ApprovalID, ToolCallID: p.ToolCallID, IsAutomatic: p.IsAutomatic, Signature: p.Signature}}
 	case StreamToolApprovalResponse:
@@ -443,6 +443,21 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 		cfg.onStart(OnStartState{})
 	}
 
+	if err := validateToolRoutes(cfg.tools, cfg.toolRoutes); err != nil {
+		r.emitError(err, cfg.onError)
+		return
+	}
+	if err := validateToolExecutors(cfg.tools); err != nil {
+		r.emitError(err, cfg.onError)
+		return
+	}
+
+	toolSearch, err := newToolSearchState(cfg.tools, cfg.toolRoutes)
+	if err != nil {
+		r.emitError(err, cfg.onError)
+		return
+	}
+
 	// Convert messages
 	var msgs []provider.Message
 	if cfg.modelMessages != nil {
@@ -465,7 +480,6 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 	}
 
 	preApprovalMessageCount := len(msgs)
-	var err error
 	msgs, err = r.resolveToolApprovals(ctx, cfg, msgs)
 	if err != nil {
 		r.emitError(err, cfg.onError)
@@ -603,9 +617,18 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 		}
 
 		// Build provider tools (sorted for deterministic order)
-		provTools, toolWarnings := toolSetToProviderTools(cfg.tools)
+		stepTools := toolSearch.prepare(cfg.tools, activeTools, activeToolsSet, stepContext)
+		stepTools = resolveToolDescriptions(stepTools, stepContext, activeTools, activeToolsSet)
+		executionTools, modelTools, callerMessages := prepareToolsForCallers(stepTools, cfg.toolRoutes, activeTools, activeToolsSet)
+		modelTools = resolveToolDescriptions(modelTools, stepContext, activeTools, activeToolsSet)
+		if err := validateToolExecutors(executionTools); err != nil {
+			r.emitError(err, cfg.onError)
+			return
+		}
+		currentMsgs = appendToolCallerMessages(currentMsgs, callerMessages)
+		provTools, toolWarnings := toolSetToProviderTools(modelTools)
 		r.allWarnings = append(r.allWarnings, toolWarnings...)
-		if activeToolsSet {
+		if cfg.toolRoutes == nil && activeToolsSet {
 			provTools = filterProviderTools(provTools, activeTools)
 		}
 		if toolChoice == nil {
@@ -665,11 +688,16 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 			return
 		}
 
-		step, stepCompleted, stepTerminated, stepHasOutput, err := r.processStep(ctx, stepNum, stepModel, streamResult, cfg, stepContext, currentMsgs, opCancel)
+		stepCfg := *cfg
+		stepCfg.tools = executionTools
+		if toolSearch != nil {
+			stepCfg.uiTools = cfg.tools
+		}
+		step, stepCompleted, stepTerminated, stepHasOutput, err := r.processStep(ctx, stepNum, stepModel, streamResult, &stepCfg, stepContext, currentMsgs, opCancel)
 		if stepTimer != nil {
 			stepTimer.Stop()
 		}
-		if err != nil {
+		if err != nil && ctx.Err() == nil {
 			r.emitError(err, cfg.onError)
 			return
 		}
@@ -748,7 +776,8 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 		}
 
 		if !hasClientToolCalls || stopped || hasUnresolvedClientToolCalls {
-			if cfg.output != nil && (cfg.parseOutputOnNonStop || step.FinishReason.Unified == provider.FinishReasonStop) {
+			if cfg.output != nil && (cfg.parseOutputOnAllFinishes || step.FinishReason.Unified == provider.FinishReasonStop ||
+				(step.FinishReason.Unified != provider.FinishReasonToolCalls && step.Text != "")) {
 				outputVal, outputErr := cfg.output.ParseComplete(step.Text)
 				r.mu.Lock()
 				r.outputValue = outputVal
@@ -1048,7 +1077,7 @@ loop:
 			}
 			tsp := StreamToolInputStart{
 				ID: part.ID, ToolName: part.ToolName,
-				ProviderExecuted: part.ProviderExecuted, Dynamic: isDynamic(part.ToolName, part.Dynamic, cfg.tools),
+				ProviderExecuted: part.ProviderExecuted, Dynamic: toolUIDynamic(part.ToolName, part.Dynamic, cfg),
 				Title: part.Title, ProviderMetadata: part.ProviderMetadata,
 			}
 			r.emit(tsp)
@@ -1130,7 +1159,7 @@ loop:
 					URL:             src.URL,
 					Title:           src.Title,
 					MediaType:       src.MediaType,
-					Filename:        src.Filename,
+					Filename:        optionalInputFilename(src.Filename),
 					ProviderOptions: providerMetadataToOptions(src.ProviderMetadata),
 				})
 				tsp := StreamSource{Source: src}
@@ -1139,7 +1168,10 @@ loop:
 			}
 
 		case provider.PartFile:
-			gf := generatedFileFromStreamData(part.Data, part.MediaType)
+			gf, err := resolveGeneratedFile(ctx, part.Data, part.MediaType)
+			if err != nil {
+				return step, false, false, hasOutput, err
+			}
 			step.Files = append(step.Files, gf)
 			step.responseContent = append(step.responseContent, provider.ContentPart{
 				Type:            provider.ContentPartTypeFile,
@@ -1152,7 +1184,10 @@ loop:
 			r.callOnChunk(cfg, tsp)
 
 		case provider.PartReasoningFile:
-			gf := generatedFileFromStreamData(part.Data, part.MediaType)
+			gf, err := resolveGeneratedFile(ctx, part.Data, part.MediaType)
+			if err != nil {
+				return step, false, false, hasOutput, err
+			}
 			reasoningBlocks = append(reasoningBlocks, ReasoningFileOutput{File: gf, ProviderMetadata: part.ProviderMetadata})
 			step.responseContent = append(step.responseContent, provider.ContentPart{
 				Type:            provider.ContentPartTypeReasoningFile,
@@ -1412,6 +1447,7 @@ func (r *StreamTextResult) handleToolCall(
 		ToolCallID: part.ToolCallID, ToolName: part.ToolName,
 		Input: parsedInput, ProviderExecuted: part.ProviderExecuted,
 		Dynamic: dynamic, Title: title, ProviderMetadata: part.ProviderMetadata,
+		uiDynamic: toolUIDynamic(part.ToolName, part.Dynamic, cfg), useUIDynamic: cfg.uiTools != nil,
 	}
 	r.emit(tsp)
 	r.callOnChunk(cfg, tsp)
@@ -1509,7 +1545,7 @@ func (r *StreamTextResult) rejectToolCall(
 		title = toolTitleByID[part.ToolCallID]
 	}
 	dynamicTrue := true
-	uiDynamic := isDynamic(part.ToolName, &dynamicTrue, cfg.tools)
+	uiDynamic := toolUIDynamic(part.ToolName, &dynamicTrue, cfg)
 
 	tc := ToolCall{
 		ToolCallID:       part.ToolCallID,
@@ -1660,7 +1696,7 @@ func (r *StreamTextResult) executeTools(
 		default:
 			return fmt.Errorf("aisdk: unsupported tool approval status %q", decision.Status)
 		}
-		if tc.ProviderExecuted || tool.Execute == nil {
+		if tc.ProviderExecuted || !isExecutableTool(tool) {
 			continue
 		}
 		executable = append(executable, executableTool{
@@ -1676,9 +1712,9 @@ func (r *StreamTextResult) executeTools(
 	}
 
 	outcomes := make([]toolExecOutcome, len(executable))
-	r.runToolsEmitOnCompletion(cfg, outcomes, func(i int) {
+	r.runToolsEmitOnCompletion(ctx, cfg, outcomes, func(i int, emit func(TextStreamPart) error) {
 		et := executable[i]
-		r.executeSingleTool(ctx, step, cfg, et.tc, et.tool, stepContext, currentMsgs, outcomes, et.index)
+		r.executeSingleTool(ctx, step, cfg, et.tc, et.tool, stepContext, currentMsgs, outcomes, et.index, emit)
 	})
 
 	// Events went out as each tool completed; results stay in call order.
@@ -1688,21 +1724,40 @@ func (r *StreamTextResult) executeTools(
 	return nil
 }
 
-// runToolsEmitOnCompletion runs exec for every outcome index in its own
-// goroutine and emits each outcome's event as that tool completes. Only the
-// calling goroutine emits, so OnChunk is never invoked concurrently.
-func (r *StreamTextResult) runToolsEmitOnCompletion(cfg *streamConfig, outcomes []toolExecOutcome, exec func(i int)) {
-	done := make(chan int, len(outcomes))
+// runToolsEmitOnCompletion serializes tool events and OnChunk calls while
+// tools execute concurrently.
+func (r *StreamTextResult) runToolsEmitOnCompletion(ctx context.Context, cfg *streamConfig, outcomes []toolExecOutcome, exec func(int, func(TextStreamPart) error)) {
+	type toolEvent struct {
+		index int
+		part  TextStreamPart
+		final bool
+	}
+	events := make(chan toolEvent, len(outcomes))
 	for i := range outcomes {
 		go func(i int) {
-			exec(i)
-			done <- i
+			exec(i, func(part TextStreamPart) error {
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+				select {
+				case events <- toolEvent{part: part}:
+					return nil
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			})
+			events <- toolEvent{index: i, final: true}
 		}(i)
 	}
-	for range outcomes {
-		if ev := outcomes[<-done].event; ev != nil {
-			r.emit(ev)
-			r.callOnChunk(cfg, ev)
+	for completed := 0; completed < len(outcomes); {
+		event := <-events
+		if event.final {
+			completed++
+			event.part = outcomes[event.index].event
+		}
+		if event.part != nil {
+			r.emit(event.part)
+			r.callOnChunk(cfg, event.part)
 		}
 	}
 }
@@ -1757,6 +1812,7 @@ func (r *StreamTextResult) executeSingleTool(
 	currentMsgs []provider.Message,
 	outcomes []toolExecOutcome,
 	index int,
+	emit func(TextStreamPart) error,
 ) {
 	if cfg.onToolCallStart != nil {
 		cfg.onToolCallStart(OnToolCallStartState{
@@ -1767,11 +1823,28 @@ func (r *StreamTextResult) executeSingleTool(
 	}
 
 	start := time.Now()
-	output, err := tool.Execute(ctx, tc.Input, ToolExecutionOptions{
-		ToolCallID: tc.ToolCallID,
-		Messages:   currentMsgs,
-		Context:    stepContext,
-	})
+	opts := ToolExecutionOptions{ToolCallID: tc.ToolCallID, Messages: currentMsgs, Context: stepContext}
+	var output json.RawMessage
+	var err error
+	if tool.ExecuteStream != nil {
+		err = tool.ExecuteStream(ctx, tc.Input, opts, func(value json.RawMessage) error {
+			preliminary := append(json.RawMessage(nil), value...)
+			if emitErr := emit(StreamToolResult{
+				ToolCallID: tc.ToolCallID, ToolName: tc.ToolName, Input: tc.Input,
+				Output: preliminary, Preliminary: true, Dynamic: tc.Dynamic,
+				Title: tc.Title, ProviderMetadata: tc.ProviderMetadata,
+			}); emitErr != nil {
+				return emitErr
+			}
+			output = preliminary
+			return nil
+		})
+		if err == nil {
+			err = ctx.Err()
+		}
+	} else {
+		output, err = tool.Execute(ctx, tc.Input, opts)
+	}
 	durationMs := time.Since(start).Milliseconds()
 
 	if err != nil {
@@ -1868,7 +1941,8 @@ func (r *StreamTextResult) executeSingleTool(
 		},
 		event: StreamToolResult{
 			ToolCallID: tc.ToolCallID, ToolName: tc.ToolName,
-			Input: tc.Input, Output: output, ProviderMetadata: tc.ProviderMetadata,
+			Input: tc.Input, Output: output, Dynamic: tc.Dynamic,
+			Title: tc.Title, ProviderMetadata: tc.ProviderMetadata,
 		},
 	}
 
@@ -2006,7 +2080,7 @@ func (r *StreamTextResult) resolveToolApprovals(ctx context.Context, cfg *stream
 			continue
 		}
 		tool, ok := cfg.tools[approval.toolCall.ToolName]
-		if !ok || tool.Execute == nil {
+		if !ok || !isExecutableTool(tool) {
 			return nil, &ToolNotExecutableError{ToolName: approval.toolCall.ToolName}
 		}
 		tc := ToolCall{
@@ -2031,9 +2105,9 @@ func (r *StreamTextResult) resolveToolApprovals(ctx context.Context, cfg *stream
 	// model step (which uses StepNumber 1).
 	outcomes := make([]toolExecOutcome, len(executable))
 	resumeStep := &StepResult{StepNumber: 0, Model: StepModel{}}
-	r.runToolsEmitOnCompletion(cfg, outcomes, func(i int) {
+	r.runToolsEmitOnCompletion(ctx, cfg, outcomes, func(i int, emit func(TextStreamPart) error) {
 		et := executable[i]
-		r.executeSingleTool(ctx, resumeStep, cfg, et.tc, et.tool, nil, msgs, outcomes, et.index)
+		r.executeSingleTool(ctx, resumeStep, cfg, et.tc, et.tool, nil, msgs, outcomes, et.index, emit)
 	})
 
 	approvedToolParts := make([]provider.ContentPart, 0, len(executable))
@@ -2081,7 +2155,7 @@ func validateApprovedToolApprovals(cfg *streamConfig, msgs []provider.Message, a
 		}
 
 		tool, ok := cfg.tools[approval.toolCall.ToolName]
-		if ok && tool.Execute != nil {
+		if ok && isExecutableTool(tool) {
 			if tool.InputSchema.Compiled() != nil && isJSONObject(approval.toolCall.Input) {
 				if err := tool.InputSchema.Validate(approval.toolCall.Input); err != nil {
 					return nil, nil, fmt.Errorf("invalid input for tool %s: %w", approval.toolCall.ToolName, err)
@@ -2863,6 +2937,13 @@ func isJSONObject(data json.RawMessage) bool {
 	return false
 }
 
+func toolUIDynamic(toolName string, providerDynamic *bool, cfg *streamConfig) *bool {
+	if cfg.uiTools != nil {
+		return isDynamic(toolName, providerDynamic, cfg.uiTools)
+	}
+	return isDynamic(toolName, providerDynamic, cfg.tools)
+}
+
 func isDynamic(toolName string, providerDynamic *bool, tools map[string]Tool) *bool {
 	t, known := tools[toolName]
 	if !known {
@@ -2929,7 +3010,7 @@ func buildRecordedContent(step StepResult) []ContentPart {
 				URL:              recorded.URL,
 				Title:            recorded.Title,
 				MediaType:        recorded.MediaType,
-				Filename:         recorded.Filename,
+				Filename:         inputFilenameValue(recorded.Filename),
 				ProviderMetadata: optionsToProviderMetadata(recorded.ProviderOptions),
 			}})
 		case provider.ContentPartTypeCustom:

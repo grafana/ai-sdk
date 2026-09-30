@@ -129,10 +129,16 @@ type runtimeHarness struct {
 	model    *recordingModel
 }
 
+// harnessOptionPolicy forwards the namespaces these tests send, so tests about
+// mapping are not also tests about the policy. Policy tests set their own.
+var harnessOptionPolicy = catalog.ProviderOptionPolicy{
+	Namespaces: []string{"call", "message", "part", "ns", "example", "p", "provider", "Grafana", "anthropic", "openaiCompatible"},
+}
+
 func newRuntimeHarness(t *testing.T, limits Limits) *runtimeHarness {
 	t.Helper()
 	model := &recordingModel{}
-	resolver := &recordingResolver{resolved: catalog.ResolvedModel{ID: "canonical/model", Model: model}}
+	resolver := &recordingResolver{resolved: catalog.ResolvedModel{ID: "canonical/model", Model: model, ProviderOptions: harnessOptionPolicy}}
 	created, err := New(Config{Resolver: resolver, Limits: limits})
 	require.NoError(t, err)
 	return &runtimeHarness{handler: created.(*handler), resolver: resolver, model: model}
@@ -340,8 +346,10 @@ func TestRuntimeSupportedMapping(t *testing.T) {
 	}
 	assert.Equal(t, []string{"first", "second"}, options.StopSequences)
 	assert.Equal(t, provider.ReasoningHigh, options.Reasoning)
-	assert.Nil(t, options.Headers)
-	assert.Nil(t, options.ProviderOptions)
+	assert.Nil(t, options.Headers, "an empty header map maps to no headers")
+	assert.Equal(t, provider.ProviderOptions{
+		"p": provider.RawProviderOption{Key: "p", Raw: json.RawMessage(`{}`)},
+	}, options.ProviderOptions, "a present namespace survives even when empty")
 }
 
 func TestRuntimeStandardJSONNormalization(t *testing.T) {
@@ -366,15 +374,17 @@ func TestRuntimeUnsupportedCapabilities(t *testing.T) {
 		body       string
 		capability unsupportedCapability
 	}{
-		{name: "files", body: `{"prompt":[{"role":"user","content":[{"type":"file","data":{"type":"text","text":"x"},"mediaType":"text/plain"}]}]}`, capability: capabilityFiles},
-		{name: "reasoning", body: `{"prompt":[{"role":"assistant","content":[{"type":"reasoning","text":"x"}]}]}`, capability: capabilityReasoningContent},
 		{name: "custom", body: `{"prompt":[{"role":"assistant","content":[{"type":"custom","kind":"p.x"}]}]}`, capability: capabilityCustomContent},
 		{name: "provider tools", body: `{"prompt":[],"tools":[{"type":"provider","id":"provider.f","name":"f","args":{}}]}`, capability: capabilityTools},
 		{name: "provider executed tool call", body: `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"c","toolName":"f","input":{},"providerExecuted":true}]}]}`, capability: capabilityTools},
 		{name: "tool approvals", body: `{"prompt":[{"role":"tool","content":[{"type":"tool-approval-response","approvalId":"a","approved":false}]}]}`, capability: capabilityToolApprovals},
 		{name: "structured output", body: `{"prompt":[],"responseFormat":{"type":"json"}}`, capability: capabilityStructuredOutput},
-		{name: "provider options", body: `{"prompt":[],"providerOptions":{"p":{"enabled":true}}}`, capability: capabilityProviderOptions},
-		{name: "body headers", body: `{"prompt":[],"headers":{"x-example":""}}`, capability: capabilityBodyHeaders},
+		{name: "reserved provider option namespace", body: `{"prompt":[],"providerOptions":{"grafana":{"enabled":true}}}`, capability: capabilityReservedProviderOptions},
+		{name: "protected provider option, model", body: `{"prompt":[],"providerOptions":{"openaiCompatible":{"model":"someone-elses-model"}}}`, capability: capabilityProtectedProviderOption},
+		{name: "protected provider option, prompt", body: `{"prompt":[],"providerOptions":{"openaiCompatible":{"messages":[{"role":"user","content":"rewritten"}]}}}`, capability: capabilityProtectedProviderOption},
+		{name: "protected provider option, server-side tools", body: `{"prompt":[],"providerOptions":{"anthropic":{"mcpServers":[{"type":"url","url":"https://caller.example/mcp","name":"caller"}]}}}`, capability: capabilityProtectedProviderOption},
+		{name: "protected call header", body: `{"prompt":[],"headers":{"Authorization":"Bearer caller"}}`, capability: capabilityProtectedCallHeader},
+		{name: "protected call header, other case", body: `{"prompt":[],"headers":{"X-ACCESS-TOKEN":"caller"}}`, capability: capabilityProtectedCallHeader},
 		{name: "raw output", body: `{"prompt":[],"includeRawChunks":true}`, capability: capabilityRawOutput},
 	}
 	for _, tc := range tests {
@@ -432,9 +442,9 @@ func TestRuntimeGoldenReplay(t *testing.T) {
 		{file: "streaming.json", status: http.StatusOK, modelCalls: 1},
 		{file: "sequence.json", status: http.StatusOK, modelCalls: 1},
 		{file: "sequence.json", index: 1, status: http.StatusOK, modelCalls: 1},
-		{file: "scalar-presence.json", status: http.StatusBadRequest, capability: capabilityBodyHeaders},
-		{file: "headers.json", status: http.StatusBadRequest, capability: capabilityBodyHeaders},
-		{file: "headers.json", index: 1, status: http.StatusBadRequest, capability: capabilityBodyHeaders},
+		{file: "scalar-presence.json", status: http.StatusOK, modelCalls: 1},
+		{file: "headers.json", status: http.StatusOK, modelCalls: 1},
+		{file: "headers.json", index: 1, status: http.StatusOK, modelCalls: 1},
 		{file: "comprehensive-unions.json", status: http.StatusBadRequest},
 	}
 	for _, tc := range tests {
@@ -449,6 +459,201 @@ func TestRuntimeGoldenReplay(t *testing.T) {
 			assert.Equal(t, tc.modelCalls, harness.model.callCount())
 		})
 	}
+}
+
+func TestRuntimeFileValidationBeforeInvocation(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		body string
+		want []byte
+	}{
+		{name: "missing media type", body: `{"prompt":[{"role":"user","content":[{"type":"file","data":{"type":"text","text":""}}]}]}`},
+		{name: "null filename", body: `{"prompt":[{"role":"user","content":[{"type":"file","data":{"type":"text","text":""},"mediaType":"text/plain","filename":null}]}]}`},
+		{name: "mixed data arms", body: `{"prompt":[{"role":"user","content":[{"type":"file","data":{"type":"text","text":"","url":""},"mediaType":"text/plain"}]}]}`},
+		{name: "reference reserved type", body: `{"prompt":[{"role":"user","content":[{"type":"file","data":{"type":"reference","reference":{"type":"file"}},"mediaType":"application/pdf"}]}]}`},
+		{name: "reference nonstring value", body: `{"prompt":[{"role":"user","content":[{"type":"file","data":{"type":"reference","reference":{"provider":1}},"mediaType":"application/pdf"}]}]}`},
+		{name: "tool role ordinary file", body: `{"prompt":[{"role":"tool","content":[{"type":"file","data":{"type":"text","text":""},"mediaType":"text/plain"}]}]}`},
+		{name: "reasoning file text arm", body: `{"prompt":[{"role":"assistant","content":[{"type":"reasoning-file","data":{"type":"text","text":""},"mediaType":"text/plain"}]}]}`},
+		{name: "reserved message option", body: `{"prompt":[{"role":"user","content":[],"providerOptions":{"gateway":{}}}]}`, want: reservedProviderOptionsError},
+		{name: "reserved file option", body: `{"prompt":[{"role":"user","content":[{"type":"file","data":{"type":"data","data":""},"mediaType":"image/png","providerOptions":{"grafana":{}}}]}]}`, want: reservedProviderOptionsError},
+		{name: "reserved result file option", body: `{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"call","toolName":"tool","output":{"type":"content","value":[{"type":"file","data":{"type":"text","text":""},"mediaType":"text/plain","providerOptions":{"grafana-ai-sdk":{}}}]}}]}]}`, want: reservedProviderOptionsError},
+		{name: "deferred tool output options", body: `{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"call","toolName":"tool","output":{"type":"content","value":[{"type":"file","data":{"type":"text","text":""},"mediaType":"text/plain"}],"providerOptions":{"provider":{"private":true}}}}]}]}`, want: canonicalInvalidRequestError},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			harness := newRuntimeHarness(t, testLimits())
+			response := harness.serve(validRequest(tc.body))
+			assert.Equal(t, http.StatusBadRequest, response.Code)
+			want := tc.want
+			if want == nil {
+				want = canonicalInvalidRequestError
+			}
+			assert.Equal(t, string(want), response.Body.String())
+			assert.Zero(t, harness.resolver.callCount())
+			assert.Zero(t, harness.model.callCount())
+		})
+	}
+}
+
+func TestRuntimeFileRequestByteBoundary(t *testing.T) {
+	body := `{"prompt":[{"role":"user","content":[{"type":"file","data":{"type":"data","data":"AAEC"},"mediaType":"application/pdf","filename":"escaped\\u0000name"}]}]}`
+	for _, tc := range []struct {
+		name string
+		body string
+		want int
+	}{
+		{name: "below", body: body, want: http.StatusOK},
+		{name: "at", body: body + " ", want: http.StatusOK},
+		{name: "above", body: body + "  ", want: http.StatusBadRequest},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			limits := testLimits()
+			limits.RequestBytes = int64(len(body) + 1)
+			harness := newRuntimeHarness(t, limits)
+			response := harness.serve(validRequest(tc.body))
+			assert.Equal(t, tc.want, response.Code)
+			if tc.want == http.StatusBadRequest {
+				assert.Zero(t, harness.resolver.callCount())
+				assert.Zero(t, harness.model.callCount())
+			} else {
+				assert.Equal(t, 1, harness.model.callCount())
+			}
+		})
+	}
+}
+
+func TestRuntimeFileURLIsNotFetched(t *testing.T) {
+	var fetched int
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { fetched++ }))
+	defer server.Close()
+	body := fmt.Sprintf(`{"prompt":[{"role":"user","content":[{"type":"file","data":{"type":"url","url":%q},"mediaType":"application/pdf"}]}]}`, server.URL+"/private-file")
+	for _, streaming := range []string{"false", "true"} {
+		t.Run(streaming, func(t *testing.T) {
+			harness := newRuntimeHarness(t, testLimits())
+			request := validRequest(body)
+			request.Header.Set(HeaderStreaming, streaming)
+			response := harness.serve(request)
+			require.Equal(t, http.StatusOK, response.Code)
+			assert.Zero(t, fetched)
+			assert.Equal(t, server.URL+"/private-file", harness.model.receivedOptions().Prompt[0].Content[0].Data.URL)
+
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			cancelled := newRuntimeHarness(t, testLimits())
+			request = validRequest(body).WithContext(ctx)
+			request.Header.Set(HeaderStreaming, streaming)
+			response = cancelled.serve(request)
+			assert.Equal(t, 499, response.Code)
+			assert.Zero(t, cancelled.model.callCount())
+			assert.Zero(t, fetched)
+		})
+	}
+}
+
+func TestRuntimeFileGoldenReplay(t *testing.T) {
+	records := loadGolden(t, "file-inputs.json")
+	require.Len(t, records, 2)
+	for _, record := range records {
+		t.Run(record.Headers[HeaderStreaming], func(t *testing.T) {
+			harness := newRuntimeHarness(t, testLimits())
+			response := harness.serve(requestFromGolden(t, record))
+			require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+			assert.Equal(t, "grafana/files", harness.resolver.requestedModelID())
+			assert.Equal(t, 1, harness.resolver.callCount())
+			assert.Equal(t, 1, harness.model.callCount())
+			generate, stream := harness.model.invocationCounts()
+			if record.Headers[HeaderStreaming] == "true" {
+				assert.Equal(t, 0, generate)
+				assert.Equal(t, 1, stream)
+			} else {
+				assert.Equal(t, 1, generate)
+				assert.Equal(t, 0, stream)
+			}
+
+			prompt := harness.model.receivedOptions().Prompt
+			require.Len(t, prompt, 3)
+			assert.Equal(t, []provider.Role{provider.RoleUser, provider.RoleAssistant, provider.RoleTool}, []provider.Role{prompt[0].Role, prompt[1].Role, prompt[2].Role})
+			assertFileOptions(t, prompt[0].ProviderOptions)
+			assertFileOptions(t, prompt[0].Content[0].ProviderOptions)
+			assertFileOptions(t, prompt[0].Content[4].ProviderOptions)
+			assertFileOptions(t, prompt[2].Content[0].Output.Content[0].ProviderOptions)
+			assert.Equal(t, provider.ProviderOptions{"provider": provider.RawProviderOption{Key: "provider", Raw: json.RawMessage(`{}`)}}, prompt[1].ProviderOptions)
+
+			userFiles := prompt[0].Content
+			require.Len(t, userFiles, 5)
+			for i, mediaType := range []string{"application/octet-stream", "application/pdf", "image/png", "application/pdf", "text/plain"} {
+				assert.Equal(t, mediaType, userFiles[i].MediaType)
+			}
+			assertFileArm(t, userFiles[0].Data, `{"type":"data","data":"AAEC"}`)
+			assertFileArm(t, userFiles[1].Data, `{"type":"data","data":""}`)
+			assertFileArm(t, userFiles[2].Data, `{"type":"url","url":"https://example.test/file"}`)
+			assertFileArm(t, userFiles[3].Data, `{"type":"reference","reference":{"provider":"file-1"}}`)
+			assertFileArm(t, userFiles[4].Data, `{"type":"text","text":""}`)
+			assertFilenamePresence(t, userFiles[0].Filename, "bytes.bin", true)
+			assertFilenamePresence(t, userFiles[1].Filename, "", true)
+			assertFilenamePresence(t, userFiles[2].Filename, "", false)
+			assertFilenamePresence(t, userFiles[4].Filename, "", true)
+
+			assistantFiles := prompt[1].Content
+			require.Len(t, assistantFiles, 5)
+			for i, mediaType := range []string{"application/pdf", "image/png", "application/pdf", "text/plain"} {
+				assert.Equal(t, mediaType, assistantFiles[i].MediaType)
+			}
+			assertFileArm(t, assistantFiles[0].Data, `{"type":"data","data":"YWxyZWFkeS1iYXNlNjQ="}`)
+			assertFileArm(t, assistantFiles[1].Data, `{"type":"url","url":"https://example.test/assistant"}`)
+			assertFileArm(t, assistantFiles[2].Data, `{"type":"reference","reference":{"provider":"file-2"}}`)
+			assertFileArm(t, assistantFiles[3].Data, `{"type":"text","text":"assistant text"}`)
+			assertFilenamePresence(t, assistantFiles[0].Filename, "", false)
+			assertFilenamePresence(t, assistantFiles[1].Filename, "", true)
+			assert.Equal(t, provider.ContentPartTypeToolCall, assistantFiles[4].Type)
+
+			require.Len(t, prompt[2].Content, 1)
+			output := prompt[2].Content[0].Output
+			require.NotNil(t, output)
+			require.Len(t, output.Content, 5)
+			for i, mediaType := range []string{"application/octet-stream", "application/pdf", "image/png", "application/pdf", "text/plain"} {
+				assert.Equal(t, mediaType, output.Content[i].MediaType)
+			}
+			for i, expected := range []string{
+				`{"type":"data","data":"BQY="}`,
+				`{"type":"data","data":""}`,
+				`{"type":"url","url":"https://example.test/result"}`,
+				`{"type":"reference","reference":{"provider":"file-3"}}`,
+				`{"type":"text","text":""}`,
+			} {
+				assertFileArm(t, output.Content[i].Data, expected)
+			}
+			assertFilenamePresence(t, output.Content[0].Filename, "result.bin", true)
+			assertFilenamePresence(t, output.Content[1].Filename, "", true)
+			assertFilenamePresence(t, output.Content[2].Filename, "", false)
+			assertFilenamePresence(t, output.Content[4].Filename, "", true)
+		})
+	}
+}
+
+func assertFileArm(t *testing.T, data *provider.DataContent, expected string) {
+	t.Helper()
+	require.NotNil(t, data)
+	encoded, err := json.Marshal(data)
+	require.NoError(t, err)
+	assert.JSONEq(t, expected, string(encoded))
+}
+
+func assertFilenamePresence(t *testing.T, value *string, expected string, present bool) {
+	t.Helper()
+	if !present {
+		assert.Nil(t, value)
+		return
+	}
+	require.NotNil(t, value)
+	assert.Equal(t, expected, *value)
+}
+
+func assertFileOptions(t *testing.T, options provider.ProviderOptions) {
+	t.Helper()
+	require.NotNil(t, options)
+	value, ok := options["provider"].(provider.RawProviderOption)
+	require.True(t, ok)
+	assert.JSONEq(t, `{"nested":{"nullValue":null,"falseValue":false,"zero":0,"empty":""},"array":[null,false,0,"",[],{}]}`, string(value.Raw))
 }
 
 func TestRuntimeResolution(t *testing.T) {
@@ -611,7 +816,7 @@ func TestSafeErrorReduction(t *testing.T) {
 			{value: safeError{category: safeTimeout}, status: http.StatusGatewayTimeout},
 			{value: safeError{category: safeCancellation}, status: 499},
 			{value: safeError{category: safeInternal}, status: http.StatusInternalServerError},
-			{value: safeError{category: safeInvalidRequest, capability: capabilityFiles}, status: http.StatusBadRequest},
+			{value: safeError{category: safeInvalidRequest, capability: capabilityReasoningContent}, status: http.StatusBadRequest},
 		} {
 			h := newTestHandler(t, testLimits())
 			response := httptest.NewRecorder()

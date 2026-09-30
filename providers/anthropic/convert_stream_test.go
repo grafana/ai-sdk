@@ -1,10 +1,15 @@
 package anthropic
 
 import (
+	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/anthropics/anthropic-sdk-go/option"
+	aisdk "github.com/grafana/ai-sdk"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -48,6 +53,100 @@ func collectPartsWithOpts(events []anthropic.BetaRawMessageStreamEventUnion, map
 		parts = append(parts, p)
 	}
 	return parts
+}
+
+func TestStreamAdapter_SafeguardResults(t *testing.T) {
+	verdict := `[{"type":"dangerous_tool_use","status":{"type":"available","tool_uses":{"toolu_01":{"type":"evaluated","outcome":"flagged","extra":"excluded"}}},"extra":"excluded"}]`
+	wantVerdict := `[{"type":"dangerous_tool_use","status":{"type":"available","tool_uses":{"toolu_01":{"type":"evaluated","outcome":"flagged"}}}}]`
+	start := func(id, extra string) string {
+		return `{"type":"message_start","message":{"id":"` + id + `","type":"message","role":"assistant","model":"claude-sonnet-4-6","content":[],"usage":{"input_tokens":1,"output_tokens":0}` + extra + `}}`
+	}
+	delta := func(raw string) string {
+		field := ""
+		if raw != "" {
+			field = `,"safeguard_results":` + raw
+		}
+		return `{"type":"message_delta","delta":{"stop_reason":"end_turn"` + field + `},"usage":{"output_tokens":1}}`
+	}
+	for _, tc := range []struct {
+		name         string
+		startExtra   string
+		deltas       []string
+		nextMessage  bool
+		wantFinishes []string
+	}{
+		{name: "no verdict", deltas: []string{"", "null"}, wantFinishes: []string{"", ""}},
+		{name: "start alone is ignored", startExtra: `,"safeguard_results":` + verdict, deltas: []string{"", "null"}, wantFinishes: []string{"", ""}},
+		{name: "last non-null", deltas: []string{"null", verdict, "null"}, wantFinishes: []string{"", wantVerdict, wantVerdict}},
+		{name: "empty replaces verdict", deltas: []string{verdict, "[]"}, wantFinishes: []string{wantVerdict, "[]"}},
+		{name: "reset on next message", deltas: []string{verdict}, nextMessage: true, wantFinishes: []string{wantVerdict, ""}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			events := []anthropic.BetaRawMessageStreamEventUnion{unmarshalEvent(t, start("msg_1", tc.startExtra))}
+			for _, raw := range tc.deltas {
+				events = append(events, unmarshalEvent(t, delta(raw)))
+			}
+			if tc.nextMessage {
+				events = append(events, unmarshalEvent(t, `{"type":"message_stop"}`), unmarshalEvent(t, start("msg_2", "")), unmarshalEvent(t, delta("")))
+			}
+			var finishes []provider.StreamPart
+			for _, part := range collectParts(events) {
+				if part.Type == provider.PartFinish {
+					finishes = append(finishes, part)
+				}
+			}
+			require.Len(t, finishes, len(tc.wantFinishes))
+			for i, finish := range finishes {
+				var metadata map[string]json.RawMessage
+				require.NoError(t, json.Unmarshal(finish.ProviderMetadata["anthropic"], &metadata))
+				if tc.wantFinishes[i] == "" {
+					assert.NotContains(t, metadata, "safeguardResults")
+				} else {
+					assert.JSONEq(t, tc.wantFinishes[i], string(metadata["safeguardResults"]))
+				}
+			}
+		})
+	}
+}
+
+func TestSafeguardsStreamTextProviderMetadata(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("event: message_start\ndata: " + `{"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","model":"claude-sonnet-4-6","content":[],"usage":{"input_tokens":1,"output_tokens":0}}}` + "\n\n"))
+		_, _ = w.Write([]byte("event: content_block_start\ndata: " + `{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}` + "\n\n"))
+		_, _ = w.Write([]byte("event: content_block_delta\ndata: " + `{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hello"}}` + "\n\n"))
+		_, _ = w.Write([]byte("event: content_block_stop\ndata: " + `{"type":"content_block_stop","index":0}` + "\n\n"))
+		_, _ = w.Write([]byte("event: message_delta\ndata: " + `{"type":"message_delta","delta":{"stop_reason":"end_turn","safeguard_results":null},"usage":{"output_tokens":1}}` + "\n\n"))
+		_, _ = w.Write([]byte("event: message_delta\ndata: " + `{"type":"message_delta","delta":{"stop_reason":"end_turn","safeguard_results":[{"type":"dangerous_tool_use","status":{"type":"available"}}]},"usage":{"output_tokens":1}}` + "\n\n"))
+		_, _ = w.Write([]byte("event: message_delta\ndata: " + `{"type":"message_delta","delta":{"stop_reason":"end_turn","safeguard_results":null},"usage":{"output_tokens":1}}` + "\n\n"))
+		_, _ = w.Write([]byte("event: message_stop\ndata: " + `{"type":"message_stop"}` + "\n\n"))
+	}))
+	defer server.Close()
+	model := New("test-key", "claude-sonnet-4-6", WithRequestOptions(option.WithBaseURL(server.URL), option.WithHTTPClient(server.Client()), option.WithMaxRetries(0)))
+	result := aisdk.StreamText(context.Background(), model,
+		aisdk.WithModelMessages(provider.UserText("hello")),
+		aisdk.WithProviderOptions(AnthropicOptions{Safeguards: []AnthropicSafeguard{{Type: AnthropicSafeguardDangerousToolUse}}}),
+	)
+	for range result.FullStream() {
+	}
+	require.NoError(t, result.Err())
+	var metadata map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(result.ProviderMetadata()["anthropic"], &metadata))
+	assert.JSONEq(t, `[{"type":"dangerous_tool_use","status":{"type":"available"}}]`, string(metadata["safeguardResults"]))
+	require.Len(t, result.Steps(), 1)
+	assert.JSONEq(t, string(result.ProviderMetadata()["anthropic"]), string(result.Steps()[0].ProviderMetadata["anthropic"]))
+}
+
+func TestStreamAdapter_SafeguardResultsMalformed(t *testing.T) {
+	adapter := &streamAdapter{blocks: make(map[int64]*blockState), serverToolCalls: make(map[string]string), mcpToolCalls: make(map[string]mcpToolCallInfo)}
+	parts := make(chan provider.StreamPart, 10)
+	require.NoError(t, adapter.handleEvent(unmarshalEvent(t, `{"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","model":"claude-sonnet-4-6","content":[],"usage":{"input_tokens":1,"output_tokens":0}}}`), parts))
+	err := adapter.handleEvent(unmarshalEvent(t, `{"type":"message_delta","delta":{"stop_reason":"end_turn","safeguard_results":[{"type":"dangerous_tool_use","status":{"type":"available","tool_uses":{"toolu_01":{"type":1,"explanation":"private-verdict"}}}}]},"usage":{"output_tokens":1}}`), parts)
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "private-verdict")
+	for len(parts) > 0 {
+		assert.NotEqual(t, provider.PartFinish, (<-parts).Type)
+	}
 }
 
 func TestStreamAdapter_FallbackProviderMetadata(t *testing.T) {
@@ -386,6 +485,27 @@ func TestStreamAdapter_ServerToolUse(t *testing.T) {
 			assert.False(t, p.ProviderExecuted, "part[%d] should NOT have ProviderExecuted=true for regular tool_use", i)
 		}
 	})
+}
+
+func TestStreamAdapter_Web20260318Aliases(t *testing.T) {
+	for _, tc := range []struct{ id, native, custom string }{
+		{"anthropic.web_search_20260318", "web_search", "search_latest"},
+		{"anthropic.web_fetch_20260318", "web_fetch", "fetch_latest"},
+	} {
+		t.Run(tc.id, func(t *testing.T) {
+			mapping := newToolNameMapping([]provider.Tool{{Type: provider.ToolTypeProvider, ID: tc.id, Name: tc.custom}})
+			events := []anthropic.BetaRawMessageStreamEventUnion{
+				unmarshalEvent(t, `{"type":"content_block_start","index":0,"content_block":{"type":"server_tool_use","id":"stu_1","name":"`+tc.native+`"}}`),
+				unmarshalEvent(t, `{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{}"}}`),
+				unmarshalEvent(t, `{"type":"content_block_stop","index":0}`),
+			}
+			parts := collectPartsWithMapping(events, mapping)
+			require.Len(t, parts, 4)
+			assert.Equal(t, tc.custom, parts[0].ToolName)
+			assert.Equal(t, tc.custom, parts[3].ToolName)
+			assert.True(t, parts[3].ProviderExecuted)
+		})
+	}
 }
 
 func TestStreamAdapter_CallerMetadata(t *testing.T) {

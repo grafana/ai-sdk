@@ -1,0 +1,19 @@
+packages:
+  - test/integration
+  - test/cli
+  - test/conformance/tools
+  - ai-gateway/test/providerwire-v4
+  - ai-gateway/test/openai-chat-completions-adapter
+
+# Supply-chain hardening
+blockExoticSubdeps: true
+strictDepBuilds: true
+minimumReleaseAge: 4320
+
+# Dependencies explicitly allowed to run build scripts (required by
+# strictDepBuilds; everything not listed has its build scripts blocked).
+allowBuilds:
+  esbuild: true
+minimumReleaseAgeExclude:
+  # Renovate security update: vitest@4.1.11
+  - vitest@4.1.11

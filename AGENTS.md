@@ -131,10 +131,9 @@ can support a parity claim.
   pass required checks and account for remaining differences through linked parity
   work packages or explicit dispositions. The [tooling reference](test/conformance/UPGRADING.md)
   describes commands and evidence limits. Pins identify a reference, not full parity.
-- **Independent mergeability**: Every PR must pass required checks without a later
-  unmerged change. Account for published Go module dependencies, not just workspace
-  behavior. Changes incompatible with the old baseline must land with the pins,
-  lockfile, expectations and reviewed evidence that validate them.
+- **Self-contained parity changes**: Each PR must pass required CI against its
+  registered upstream baseline. If a change needs a newer baseline, include the
+  pins, lockfile, expectations and reviewed evidence in the same PR.
 - **Parity matching**: Process registered behavioral work packages independently
   after the pinned-version upgrade, with their own acceptance tests. Update the
   coverage map only when stable status, evidence, support boundaries or accepted
@@ -185,7 +184,6 @@ mise run check
 # Upstream parity checks
 mise run validate-parity-baseline
 mise run parity-check
-mise run verify-module-resolution
 
 # Frozen upgrade workflow (see test/conformance/UPGRADING.md)
 TARGET=/absolute/path/to/new-target.json mise run parity-select
@@ -196,6 +194,10 @@ TARGET=/absolute/path/to/approved-target.json mise run parity-upgrade
 The Anthropic provider module is a separate `go.mod`. Run its tests from the
 `providers/anthropic/` directory or via `mise run test`. The same applies to the
 Bedrock provider module under `providers/bedrock/`.
+
+PRs must pass candidate-source CI. See
+[What to validate](CONTRIBUTING.md#what-to-validate) for PR checks, Go module
+releases, and Gateway image checks.
 
 ## Project Structure
 

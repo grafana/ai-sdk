@@ -9,11 +9,6 @@
 !catalog/*.go
 catalog/*_test.go
 
-!openai/
-!openai/chatcompletions/
-!openai/chatcompletions/*.go
-openai/**/*_test.go
-
 !providerwire/
 !providerwire/v4/
 !providerwire/v4/*.go

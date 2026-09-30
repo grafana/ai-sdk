@@ -169,15 +169,16 @@ User-facing guidance SHALL explain how Go and server-side Vercel clients authent
 - **AND** documentation links/navigation SHALL pass the repository docs checks
 
 ### Requirement: Explicit request projection and presence
-The client SHALL explicitly map the complete current `provider.CallOptions` shape into the registered LanguageModelV4 Gateway request projection without importing server DTOs or calling server validators. It SHALL preserve every representable absent, explicit zero, explicit false, empty string, empty array, empty object, nested null, selected empty union arm, URL string, and supported binary-to-base64 distinction. It SHALL omit the Go zero value `ReasoningProviderDefault` and encode every non-zero registered reasoning value. It SHALL reject invalid UTF-8, non-finite numeric values, invalid raw JSON, unknown discriminators, conflicting selected arms, and any other value without an unambiguous registered representation before authentication or network I/O.
+The client SHALL explicitly map the complete current `provider.CallOptions` shape into the registered LanguageModelV4 Gateway request projection without importing server DTOs or calling server validators. It SHALL preserve every representable absent, explicit zero, explicit false, empty string, empty array, empty object, nested null, selected empty union arm, URL string, and supported binary-to-base64 distinction. It SHALL omit the Go zero value `ReasoningProviderDefault` and encode every non-zero registered reasoning value. It SHALL reject invalid UTF-8, non-finite numeric values, invalid raw JSON, unknown discriminators, conflicting selected arms, and any other value without an unambiguous registered representation before authentication or network I/O. Ordinary prompt and tool-result file projection SHALL support data, URL, reference, and text arms, preserving selected empties and absent/empty/non-empty filenames. Message and file-part options SHALL retain their registered scopes. Reasoning files SHALL retain their narrower data/URL-only projection without implying server runtime support.
 
 #### Scenario: Presence-sensitive text request is encoded
 - **WHEN** a text/scalar call contains explicit zero, false, empty collections, empty strings, and opaque nested JSON
-- **THEN** the semantic body SHALL match the equivalent request emitted by registered `@ai-sdk/gateway@4.0.87` for every Go-representable distinction
+- **THEN** the semantic body SHALL match the equivalent request emitted by the exact `@ai-sdk/gateway` version registered in `test/conformance/upstream.yaml` for every Go-representable distinction
 
 #### Scenario: File data is representable
-- **WHEN** a currently representable selected binary or URL data arm is supplied
-- **THEN** bytes SHALL become standard base64, URLs SHALL become strings, the selected arm SHALL remain selected, and the strict server SHALL own current capability rejection
+- **WHEN** a selected binary, URL, reference, or text arm is supplied in an ordinary prompt or tool-result file
+- **THEN** bytes SHALL become standard base64, URLs SHALL remain strings, selected empty payloads SHALL remain selected, and filename absence SHALL remain distinct from explicit empty
+- **AND** the strict server SHALL own current runtime capability rejection
 
 #### Scenario: Reasoning uses the Go default
 - **WHEN** `Reasoning` is `ReasoningProviderDefault`
@@ -186,6 +187,10 @@ The client SHALL explicitly map the complete current `provider.CallOptions` shap
 #### Scenario: Provider-domain input is invalid
 - **WHEN** any selected value cannot be mapped unambiguously to the registered projection
 - **THEN** both unary and streaming setup SHALL fail before token acquisition or HTTP and SHALL not silently omit or reinterpret the value
+
+#### Scenario: Reasoning file uses a forbidden arm
+- **WHEN** a reasoning file selects reference or text, or supplies an inactive filename
+- **THEN** client encoding SHALL fail before authentication or network I/O
 
 ### Requirement: Bounded normalized unary consumption
 For a successful unary response, the client SHALL require a JSON media type, read no more than the configured unary-response byte limit, accept one complete JSON document, and map only registered text content, finish reason, and usage into provider.GenerateResult. It SHALL reject malformed required fields, unknown content or finish discriminators, negative or non-JavaScript-safe known usage, trailing JSON, and oversized input. The client SHALL replace server-supplied request and response: Request.Body SHALL be the locally encoded request, and Response.Headers and Response.Body SHALL come from the bounded HTTP response. Warnings SHALL preserve valid server warning fields in order, defaulting to a non-nil empty slice when absent or null. Warning decoding SHALL use the same registered types and validation as streaming. Server response identity and provider-private metadata SHALL not be adopted.
@@ -209,6 +214,25 @@ For a successful unary response, the client SHALL require a JSON media type, rea
 #### Scenario: Unary warning is malformed
 - **WHEN** a warning has an unknown discriminator or lacks a required field
 - **THEN** the call SHALL fail rather than exposing unvalidated warning content
+
+### Requirement: Successful unary transport read failures retain retryability
+When a successful HTTP 200 `DoGenerate` response body fails to read because of transport I/O after headers, the Grafana client SHALL return a retryable `*provider.APICallError` with HTTP status 200, a bounded locally worded primary message, and a discoverable underlying read cause, without returning a partial result or making another model request. Wrong media type, malformed JSON, strict output-schema violations, and unary byte-limit violations SHALL remain non-retryable protocol failures. Context cancellation or deadline expiry SHALL remain discoverable with `errors.Is` and SHALL NOT be classified as a retryable transport failure. Non-2xx Gateway error responses and discovery retain their existing classification; this requirement does not add any new public service-error category.
+
+#### Scenario: HTTP 200 response body is interrupted after headers
+- **WHEN** the real HTTP handler sends JSON headers and a partial, below-limit body with a declared longer `Content-Length`, then closes the connection before the body completes
+- **THEN** `DoGenerate` SHALL return no result and one retryable `*provider.APICallError` with status 200, a locally bounded primary message that does not disclose the response body, and the underlying body-read failure discoverable through its cause chain, after exactly one model request
+
+#### Scenario: Successful unary body cannot be accepted for protocol reasons
+- **WHEN** a successful unary response has a wrong media type, malformed JSON, invalid registered result schema, or exceeds the configured unary byte limit, including when an over-limit partial body and a transport read error occur together
+- **THEN** `DoGenerate` SHALL return no partial result and a non-retryable bounded protocol error after exactly one model request; the unary byte limit SHALL take precedence over the read error, except that context cancellation or deadline expiry SHALL retain highest precedence
+
+#### Scenario: Unary read is canceled
+- **WHEN** the call context is canceled or reaches its deadline while a successful unary response body is being read
+- **THEN** `DoGenerate` SHALL preserve context error identity through `errors.Is`, SHALL NOT return a retryable transport error, and SHALL NOT replay the request
+
+#### Scenario: Stream parts precede a transport failure
+- **WHEN** an established `DoStream` response delivers one or more parts and then its transport fails
+- **THEN** the client SHALL NOT issue another HTTP request or replay any previously delivered part
 
 ### Requirement: Incremental bounded SSE consumption
 A successful streaming setup SHALL require SSE media type and return a `StreamResult` whose request body and response headers are client-owned. One goroutine SHALL own the body, parse incrementally under configured cumulative-byte, complete-event-byte, and event-count limits, send mapped parts with context-aware backpressure, close the body, and close the output channel exactly once. It SHALL not buffer the full response or an unbounded line/event. The initial WP7 mapper SHALL accept the WP5 text stream family, safe error parts, and bounded raw parts needed for pinned filtering parity; every unsupported, malformed, or oversized event SHALL emit at most one terminal non-retryable protocol `PartError` and close.
@@ -251,6 +275,31 @@ The client SHALL ignore an SSE data payload exactly equal to `[DONE]`, SHALL tre
 #### Scenario: Clean EOF occurs without finish
 - **WHEN** a valid stream or `[DONE]` is followed by transport EOF before any finish
 - **THEN** the client SHALL close cleanly to match the registered client's observable EOF behavior
+
+### Requirement: Optional bounded provider raw usage consumption
+On a successful unary result and a streaming finish, the Grafana client SHALL preserve a supplied `usage.raw` as a `provider.Usage.Raw` JSON object, including nested provider-native fields and `{}`; absent raw SHALL remain absent. The client SHALL reject present null, scalar, array, malformed or incomplete JSON, and a retained raw object larger than 1,048,576 bytes. This raw-object limit applies to the retained representation after JSON decoding/compaction removes insignificant whitespace around and inside the value; the original complete unary response or event SHALL remain bounded by its configured `UnaryBytes` or `StreamEventBytes`. The client SHALL validate those original bounded documents for UTF-8 and JSON syntax before Go decoding can normalize invalid bytes. Valid JSON with lone or paired escaped surrogates SHALL be accepted, with raw-object escapes preserved in `provider.Usage.Raw`. The existing cumulative-stream and event-count limits SHALL still apply, and intermediate `decodeFields`/usage-map copies SHALL remain bounded by the full-response or event limits. The client SHALL continue to validate known normalized token counts and filter all unrelated unknown usage and server-owned metadata; distinct `type: "raw"` stream-part filtering SHALL remain governed by `IncludeRawChunks` and SHALL NOT filter `usage.raw`.
+
+#### Scenario: Unary and finish have present or absent raw
+- **WHEN** a bounded valid unary result or finish contains nested raw usage, `{}`, or no raw member
+- **THEN** the resulting Go usage SHALL preserve the supplied JSON object semantics, retain an empty object when supplied, or leave `Raw` absent while preserving validated normalized counts
+
+#### Scenario: Hostile unary response contains invalid raw
+- **WHEN** a successful HTTP 200 unary response contains malformed, null, non-object, or over-limit retained `usage.raw`
+- **THEN** the client SHALL return a bounded non-retryable protocol error without any partial result or raw data in its error text
+
+#### Scenario: Hostile streaming finish contains invalid raw
+- **WHEN** a streaming finish contains malformed, null, non-object, or over-limit retained `usage.raw`
+- **THEN** the client SHALL emit at most one bounded terminal non-retryable protocol `PartError` and close, without delivering the invalid finish
+
+#### Scenario: UTF-8 and JSON escapes in both paths
+- **WHEN** bounded unary or streaming finish JSON contains invalid UTF-8 in `usage.raw`, including a nested key or value
+- **THEN** the client SHALL reject the response with the path's bounded protocol error, without retaining normalized replacement characters in raw usage
+- **WHEN** `usage.raw` contains valid JSON with lone or paired escaped surrogates
+- **THEN** both paths SHALL accept the object under the same size and shape limits and preserve its raw JSON escapes
+
+#### Scenario: Raw part filtering does not erase usage
+- **WHEN** a finish includes `usage.raw` and `IncludeRawChunks` is false
+- **THEN** the finish SHALL retain its raw usage even when independent `type: "raw"` stream parts are filtered
 
 ### Requirement: Closed Gateway error classification
 Every non-2xx model or discovery response SHALL be read within the configured error-body limit and mapped only from the registered public error envelope into the closed categories authentication, forbidden, invalid request, model not found, rate limit, failed dependency, and internal server. The resulting `GatewayError` SHALL expose category, public code, public message, HTTP status, and status-derived retryability and SHALL unwrap to a bounded `*provider.APICallError`. Unknown or malformed error bodies, wrong media types, and transport failures SHALL use local bounded error text rather than copying arbitrary response bytes into the primary message. Context cancellation and deadlines SHALL remain discoverable with `errors.Is`.
@@ -315,3 +364,12 @@ Automated tests SHALL compare equivalent Go and registered `@ai-sdk/gateway@4.0.
 #### Scenario: Authenticated command is exercised
 - **WHEN** the repository integration suite starts the WP5 command with deterministic auth and provider fakes
 - **THEN** the Go client SHALL complete discovery, unary text, streaming text, acting-user propagation, cancellation, and registered errors without exposing configured credentials or private backend identity
+
+### Requirement: Source response consumption
+
+The independent Go client SHALL decode registered URL and document sources in unary and streaming responses without importing Gateway code. Required document title SHALL accept an empty string. Optional URL title and document filename absence and empty string SHALL normalize to empty Go strings. Public source identity, order and object-valued provider metadata SHALL survive. Missing required fields, malformed types and unknown source discriminators SHALL use the existing bounded protocol-error path. Unary source Title SHALL be populated, with Text retained for compatibility with older consumers.
+
+#### Scenario: URL and document consumption
+- **WHEN** both registered variants arrive through bounded unary or SSE readers
+- **THEN** the source content SHALL retain the appropriate variant fields, identity and metadata
+- **AND** a missing document title SHALL fail while an explicitly empty title SHALL succeed

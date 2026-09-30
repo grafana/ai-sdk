@@ -8,7 +8,7 @@ Concurrent execution of multiple tool calls within a single step, matching upstr
 
 When a model returns multiple tool calls in a single step, `executeTools()` SHALL execute all eligible tool calls concurrently using goroutines. Each tool call SHALL run in its own goroutine. The function SHALL wait for all goroutines to complete before returning.
 
-Eligible tool calls are those where `ProviderExecuted` is false AND the tool exists in `params.Tools` with a non-nil `Execute` function.
+Eligible tool calls are those where `ProviderExecuted` is false AND the tool exists in the effective step execution tool set with either a non-nil `Execute` function or a configured streaming execution function. The existing allowed-finish and approval gates SHALL continue to apply.
 
 #### Scenario: Multiple tool calls execute concurrently
 
@@ -22,8 +22,13 @@ Eligible tool calls are those where `ProviderExecuted` is false AND the tool exi
 
 #### Scenario: No eligible tool calls
 
-- **WHEN** a step contains tool calls that are all provider-executed or have no Execute function
+- **WHEN** a step contains tool calls that are all provider-executed or have neither an Execute function nor a streaming execution function
 - **THEN** `executeTools()` returns immediately without spawning any goroutines
+
+#### Scenario: Streaming and single-result tools execute together
+
+- **WHEN** a step contains one streaming tool and one single-result tool that are both eligible
+- **THEN** both SHALL execute concurrently and finish independently
 
 ### Requirement: Independent error handling per tool
 

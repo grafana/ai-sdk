@@ -80,11 +80,13 @@ func NewAgentObservabilityRuntime(settings config.AgentObservabilitySettings, lo
 			InitialBackoff:             settings.InitialBackoff,
 			MaxBackoff:                 settings.MaxBackoff,
 			PayloadMaxBytes:            settings.PayloadMaxBytes,
+			ExportTimeout:              settings.ExportTimeout,
 		},
-		Hooks:          agento11y.HooksConfig{Enabled: false},
-		ContentCapture: agento11y.ContentCaptureModeMetadataOnly,
-		Debug:          agento11y.BoolPtr(false),
-		Logger:         log.New(agentDiagnosticWriter{telemetry: telemetry}, "", 0),
+		EnableExperimentalFeatures: agento11y.BoolPtr(false),
+		Hooks:                      agento11y.HooksConfig{Enabled: false},
+		ContentCapture:             agento11y.ContentCaptureModeMetadataOnly,
+		Debug:                      agento11y.BoolPtr(false),
+		Logger:                     log.New(agentDiagnosticWriter{telemetry: telemetry}, "", 0),
 	}
 	defer func() {
 		if recover() != nil {
@@ -289,6 +291,7 @@ var allowedAgentMetadataKeys = map[string]struct{}{
 // metadata are discarded in favor of normalized Generation.Usage.
 func filterAgentGeneration(input agentmiddleware.GenerationFilterInput) agento11y.Generation {
 	generation := input.Generation
+	generation.Usage.InputSemantics = agento11y.TokenInputSemanticsInclusive
 	metadata := make(map[string]any, len(allowedAgentMetadataKeys))
 	for key := range allowedAgentMetadataKeys {
 		value, ok := generation.Metadata[key]

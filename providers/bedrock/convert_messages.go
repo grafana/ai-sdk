@@ -13,6 +13,7 @@ import (
 // imageMediaTypeFormat maps `image/<X>` media types to the Bedrock image
 // format string (`jpeg`, `png`, `gif`, `webp`).
 var invalidBedrockToolNameCharacters = regexp.MustCompile(`[^a-zA-Z0-9_-]`)
+var invalidBedrockDocumentNameCharacters = regexp.MustCompile(`[^a-zA-Z0-9 ()\[\]-]`)
 
 var imageMediaTypeFormat = map[string]string{
 	"image/jpeg": "jpeg",
@@ -227,16 +228,24 @@ func convertUserContent(parts []provider.ContentPart, documentCounter *int, warn
 	for _, p := range parts {
 		switch p.Type {
 		case provider.ContentPartTypeText:
-			out = append(out, contentBlock{Text: p.Text})
+			guarded, qualifiers, err := readTextGuardContent(p.ProviderOptions)
+			if err != nil {
+				return nil, err
+			}
+			if guarded {
+				out = append(out, contentBlock{GuardContent: &guardContentBlock{Text: &guardContentText{Text: p.Text, Qualifiers: qualifiers}}})
+			} else {
+				out = append(out, contentBlock{Text: p.Text})
+			}
 
 		case provider.ContentPartTypeFile:
 			if p.Data == nil {
 				continue
 			}
 			switch {
-			case len(p.Data.Reference) > 0:
+			case p.Data.IsReference():
 				return nil, fmt.Errorf("bedrock: file parts with provider references are not supported")
-			case p.Data.URL != "":
+			case p.Data.IsURL():
 				if !isS3URL(p.Data.URL) {
 					return nil, fmt.Errorf("bedrock: file URL data is not supported")
 				}
@@ -267,7 +276,7 @@ func convertUserContent(parts []provider.ContentPart, documentCounter *int, warn
 					return nil, fmt.Errorf("bedrock: file URL data is only supported for images and videos")
 				}
 				continue
-			case p.Data.Text != "":
+			case p.Data.IsText():
 				mediaType := p.MediaType
 				if !isFullMediaType(mediaType) {
 					mediaType = "text/plain"
@@ -281,10 +290,10 @@ func convertUserContent(parts []provider.ContentPart, documentCounter *int, warn
 			}
 
 			b64 := p.Data.Base64
-			if b64 == "" && len(p.Data.Bytes) > 0 {
+			if p.Data.Bytes != nil {
 				b64 = base64.StdEncoding.EncodeToString(p.Data.Bytes)
 			}
-			if b64 == "" {
+			if !p.Data.IsData() {
 				continue
 			}
 			mediaType, err := resolveFullMediaType(p)
@@ -297,9 +306,16 @@ func convertUserContent(parts []provider.ContentPart, documentCounter *int, warn
 				if !ok {
 					return nil, fmt.Errorf("bedrock: image media type %q is not supported", mediaType)
 				}
-				out = append(out, contentBlock{
-					Image: &imageBlock{Format: format, Source: imageSource{Bytes: b64}},
-				})
+				image := &imageBlock{Format: format, Source: imageSource{Bytes: b64}}
+				guarded, err := readImageGuardContent(p.ProviderOptions)
+				if err != nil {
+					return nil, err
+				}
+				if guarded {
+					out = append(out, contentBlock{GuardContent: &guardContentBlock{Image: image}})
+				} else {
+					out = append(out, contentBlock{Image: image})
+				}
 				continue
 			case "video":
 				format, ok := videoMediaTypeFormat[mediaType]
@@ -334,11 +350,18 @@ func convertUserContent(parts []provider.ContentPart, documentCounter *int, warn
 }
 
 func buildDocumentContentBlock(p provider.ContentPart, mediaType, b64 string, documentCounter *int) (contentBlock, error) {
-	document, err := buildDocumentBlock(mediaType, p.Filename, b64, p.ProviderOptions, documentCounter)
+	document, err := buildDocumentBlock(mediaType, filenameValue(p.Filename), b64, p.ProviderOptions, documentCounter)
 	if err != nil {
 		return contentBlock{}, err
 	}
 	return contentBlock{Document: document}, nil
+}
+
+func filenameValue(filename *string) string {
+	if filename == nil {
+		return ""
+	}
+	return *filename
 }
 
 func buildDocumentBlock(mediaType, filename, b64 string, providerOptions provider.ProviderOptions, documentCounter *int) (*documentBlock, error) {
@@ -350,14 +373,14 @@ func buildDocumentBlock(mediaType, filename, b64 string, providerOptions provide
 	if !ok {
 		return nil, fmt.Errorf("bedrock: file media type %q is not supported", mediaType)
 	}
-	name := filename
+	name := sanitizeDocumentName(filename)
 	if name == "" {
 		*documentCounter++
 		name = fmt.Sprintf("document-%d", *documentCounter)
 	}
 	document := &documentBlock{
 		Format: format,
-		Name:   stripFileExtension(name),
+		Name:   name,
 		Source: documentSource{Bytes: b64},
 	}
 	if enableCitations {
@@ -531,10 +554,12 @@ func convertAssistantContent(parts []provider.ContentPart, warnings *[]provider.
 			}
 			rc := &reasoningContentBlock{}
 			switch {
-			case meta.Signature != "":
-				rc.ReasoningText = &reasoningText{Text: p.Text, Signature: meta.Signature}
-			case meta.RedactedData != "":
-				rc.RedactedReasoning = &redactedReasoning{Data: meta.RedactedData}
+			case meta.Signature != nil:
+				rc.ReasoningText = &reasoningText{Text: p.Text, Signature: *meta.Signature}
+			case meta.RedactedContent != nil:
+				rc.RedactedContent = meta.RedactedContent
+			case meta.RedactedData != nil:
+				rc.RedactedReasoning = &redactedReasoning{Data: *meta.RedactedData}
 			default:
 				continue
 			}
@@ -708,7 +733,7 @@ func buildToolResult(p provider.ContentPart, documentCounter *int, isMistral boo
 					})
 					continue
 				}
-				document, err := buildDocumentBlock(mediaType, c.Filename, base64Data, c.ProviderOptions, documentCounter)
+				document, err := buildDocumentBlock(mediaType, filenameValue(c.Filename), base64Data, c.ProviderOptions, documentCounter)
 				if err != nil {
 					return nil, err
 				}
@@ -777,6 +802,15 @@ func filterToolContentFromMessages(messages []converseMessage, warnings []provid
 // stripFileExtension trims the suffix starting at the first `.` so document
 // names don't include extension segments (matches upstream's behavior of
 // `stripFileExtension`).
+func sanitizeDocumentName(filename string) string {
+	name := strings.Join(strings.Fields(stripFileExtension(filename)), " ")
+	name = strings.TrimSpace(invalidBedrockDocumentNameCharacters.ReplaceAllString(name, ""))
+	if len(name) > 200 {
+		name = strings.TrimSpace(name[:200])
+	}
+	return name
+}
+
 func stripFileExtension(name string) string {
 	if dot := strings.Index(name, "."); dot >= 0 {
 		return name[:dot]

@@ -23,27 +23,29 @@ test('official JavaScript SDK against real command: compatible and Anthropic pro
   const directory=mkdtempSync(join(tmpdir(),'chat-completions-adapter-js-'));
   const binary=join(directory,'gateway');
   try {
-    execFileSync('go',['build','-race','-mod=readonly','-o',binary,'./cmd/grafana-ai-gateway'],{cwd:resolve(import.meta.dirname,'../..'),env:{...process.env,GOWORK:'off'},stdio:'pipe'});
+    execFileSync('go',['build','-race','-mod=readonly','-o',binary,'./cmd/grafana-ai-gateway'],{cwd:resolve(import.meta.dirname,'../..'),env:{...process.env,GOWORK:process.env.GATEWAY_TEST_GOWORK ?? process.env.GOWORK ?? 'off'},stdio:'pipe'});
     for (const backend of ['openai-compatible','anthropic'] as const) {
       await t.test(backend,async()=>{
         const requests: Record<string,any>[]=[];
         let failNext=false;
+        let emptyArgumentsNext=false;
         const upstream=createServer(async(req,res)=>{
           const chunks: Buffer[]=[];for await(const chunk of req)chunks.push(Buffer.from(chunk));
           const body=JSON.parse(Buffer.concat(chunks).toString());requests.push(body);
           if(failNext){failNext=false;res.writeHead(503,{'Content-Type':'application/json'});res.end(JSON.stringify({type:'error',error:{type:'overloaded_error',message:'synthetic retryable'}}));return;}
           const isAnthropic=backend==='anthropic';
+          const emptyArguments=emptyArgumentsNext;emptyArgumentsNext=false;
           if(!isAnthropic)assert.equal(body.store,false);
-          assert.equal(req.url,isAnthropic?'/v1/messages?beta=true':'/v1/chat/completions');
+          assert.equal(req.url,isAnthropic?'/v1/messages':'/v1/chat/completions');
           assert.equal(isAnthropic?req.headers['x-api-key']:req.headers.authorization,isAnthropic?'fake-key':'Bearer fake-key');
           const tool=!!body.tools?.length && !JSON.stringify(body.messages).includes('tool_result') && !body.messages.some((m:any)=>m.role==='tool');
           if(isAnthropic){
-            const content=tool?[{type:'tool_use',id:'call_weather',name:'weather',input:{city:'Rio'}}]:[{type:'text',text:'hello'}];
+            const content=tool?[{type:'tool_use',id:'call_weather',name:'weather',input:emptyArguments?{}:{city:'Rio'}}]:[{type:'text',text:'hello'}];
             const message={id:'msg_private',type:'message',role:'assistant',model:body.model,content,stop_reason:tool?'tool_use':'end_turn',stop_sequence:null,usage:{input_tokens:3,output_tokens:2}};
             if(!body.stream){res.setHeader('Content-Type','application/json');res.end(JSON.stringify(message));return;}
             res.setHeader('Content-Type','text/event-stream');
             const events:any[]=[{type:'message_start',message:{...message,content:[],stop_reason:null,usage:{input_tokens:3,output_tokens:0}}}];
-            if(tool){events.push({type:'content_block_start',index:0,content_block:{type:'tool_use',id:'call_weather',name:'weather',input:{}}},{type:'content_block_delta',index:0,delta:{type:'input_json_delta',partial_json:'{"city":"Rio"}'}})}
+            if(tool){events.push({type:'content_block_start',index:0,content_block:{type:'tool_use',id:'call_weather',name:'weather',input:{}}});if(!emptyArguments)events.push({type:'content_block_delta',index:0,delta:{type:'input_json_delta',partial_json:'{"city":"Rio"}'}})}
             else{events.push({type:'content_block_start',index:0,content_block:{type:'text',text:''}},{type:'content_block_delta',index:0,delta:{type:'text_delta',text:'hello'}})}
             events.push({type:'content_block_stop',index:0},{type:'message_delta',delta:{stop_reason:message.stop_reason,stop_sequence:null},usage:{output_tokens:2}},{type:'message_stop'});
             for(const event of events)res.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);res.end();return;
@@ -81,6 +83,11 @@ test('official JavaScript SDK against real command: compatible and Anthropic pro
           }
           const before=requests.length;await assert.rejects(()=>client.chat.completions.create({model:'chat',messages,n:2}),error=>error instanceof OpenAI.APIError && error.status===400);assert.equal(requests.length,before);
           if(backend==='anthropic'){
+            emptyArgumentsNext=true;
+            const emptyStream=await client.chat.completions.create({model:'chat',messages,tools:[{type:'function',function:{name:'weather',parameters:{type:'object',properties:{}}}}],stream:true});
+            const fragments:string[]=[];let emptyFinishes=0;
+            for await(const chunk of emptyStream){for(const choice of chunk.choices){for(const call of choice.delta.tool_calls??[]){if(call.function?.arguments)fragments.push(call.function.arguments)}if(choice.finish_reason){assert.equal(choice.finish_reason,'tool_calls');emptyFinishes++}}}
+            assert.deepEqual(fragments,['{}']);assert.equal(emptyFinishes,1);
             failNext=true;const count=requests.length;const recovered=await client.chat.completions.create({model:'public/fallback',messages});assert.equal(recovered.model,'public/fallback');assert.equal(recovered.choices[0].message.content,'hello');assert.equal(requests.length,count+2);
             const after=requests.length;await assert.rejects(()=>client.chat.completions.create({model:'public/fallback',messages,tools}),error=>error instanceof OpenAI.APIError && error.status===400);assert.equal(requests.length,after);
           }

@@ -496,7 +496,7 @@ func (tc *ToolConfig) buildTool(name string) (aisdk.Tool, error) {
 				Type:      contentType,
 				Text:      value.Text,
 				MediaType: value.MediaType,
-				Filename:  value.Filename,
+				Filename:  configuredFilename(value.Filename),
 			}
 			if value.Type == provider.ToolContentFileData {
 				data := provider.Base64DataContent(value.Data)
@@ -594,6 +594,13 @@ func (cfg *Config) buildConfiguredMessages() ([]provider.Message, error) {
 	return messages, nil
 }
 
+func configuredFilename(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
+}
+
 func (mc *MessageConfig) buildContentParts() ([]provider.ContentPart, error) {
 	if mc.ContentParts == nil {
 		return []provider.ContentPart{provider.TextPart(mc.ContentText)}, nil
@@ -622,7 +629,7 @@ func (mc *MessageConfig) buildContentParts() ([]provider.ContentPart, error) {
 				data = provider.DataContent{Reference: reference}
 			}
 			part = provider.FilePart(partConfig.MediaType, data)
-			part.Filename = partConfig.Filename
+			part.Filename = configuredFilename(partConfig.Filename)
 		case provider.ContentPartTypeToolCall:
 			input, err := json.Marshal(partConfig.Input)
 			if err != nil {
@@ -893,13 +900,16 @@ func newRequestSnapshot(providerName string, r *http.Request, body []byte) (Requ
 	if err != nil {
 		return RequestSnapshot{}, err
 	}
+	path := r.URL.EscapedPath()
+	if path == "" {
+		path = "/"
+	}
+	if r.URL.RawQuery != "" {
+		path += "?" + r.URL.RawQuery
+	}
 	return RequestSnapshot{
-		Method: strings.ToUpper(r.Method),
-		// EscapedPath preserves percent-encoding (e.g. ":" -> "%3A" in Bedrock
-		// model IDs) so the captured path matches what was sent on the wire and
-		// what the upstream TypeScript snapshot records. For paths without
-		// escapable characters this is identical to r.URL.Path.
-		Path:    r.URL.EscapedPath(),
+		Method:  strings.ToUpper(r.Method),
+		Path:    path,
 		Headers: normalizeRequestHeaders(providerName, r.Header),
 		Body:    decoded,
 	}, nil

@@ -95,7 +95,7 @@ git clone https://github.com/grafana/ai-sdk.git
 cd ai-sdk
 
 mise trust   # trust the project config on first checkout
-mise deps    # install workspace dependencies (the test/ pnpm workspace)
+mise deps    # install test workspace dependencies
 ```
 
 Run `mise tasks` to list every task.
@@ -133,8 +133,6 @@ mise run build          # build all modules, including examples
 mise run test           # all Go tests across all modules
 mise run test-short     # skip integration/E2E tests
 mise run check          # fmt + vet + lint + docs + tests
-mise run verify-ai-gateway-boundary
-                        # verify the one-way Gateway dependency boundary
 ```
 
 To run a single test, invoke `go test` in the right module directory:
@@ -252,8 +250,7 @@ Process each registered parity work package independently afterward, with its ow
 behavioral outcome, design and regression proof. Update or close its issue when
 it is delivered, and update the coverage map only when its stable facts change.
 Packages and PRs need not map one-to-one, but every PR must pass
-required checks independently. Account for published Go module dependencies;
-workspace success can hide an older consumer dependency. A failing upgrade check
+required checks independently against candidate source. A failing upgrade check
 or an incompatibility that prevents a supported integration from working cannot
 be made acceptable merely by registering a follow-up.
 
@@ -473,12 +470,34 @@ maintainer to trigger CI.
 
 ## Dependency management
 
-The repository uses Go modules across several module roots, plus a pnpm
-workspace under `test/` for TypeScript-side harnesses.
+The repository uses Go modules across several module roots, plus a repository-root
+pnpm workspace for TypeScript-side harnesses. The workspace includes the Gateway
+contract tests under `ai-gateway/`; it does not change their AGPL license or the
+SDK's Go module dependency graph.
 
-`ai-gateway/` is intentionally absent from the root `go.work`. Gateway code may
-import explicitly pinned SDK modules, but no module outside `ai-gateway/` may
-import or require `github.com/grafana/ai-sdk/ai-gateway`.
+### What to validate
+
+- **Source PRs:** CI builds and tests the SDK, providers, middleware, Grafana
+  client, and Gateway from the proposed source. It also verifies module-pin
+  ancestry and dependency and license boundaries. See
+  [CI](.github/workflows/ci.yml) for the required checks.
+- **Go module releases:** Before tagging an SDK, provider, or middleware version
+  for external Go consumers, validate that module against its declared `go.mod`
+  dependencies with `MODULE=providers/anthropic mise run verify-published-module`
+  (substitute the module being released). This check remains manual pending
+  release automation (#245/#21). For a broader diagnostic,
+  `mise run verify-module-resolution` checks all published modules.
+- **Gateway images:** Gateway uses the separate `go.gateway.work` to build from
+  same-revision local source. Push-only image validation checks the Gateway
+  artifact at the checkout revision before publication or deployment. Gateway
+  is not published as a standalone Go module.
+
+The root `go.work` excludes `ai-gateway/`. Gateway may depend on SDK modules,
+but SDK modules must not import, require, or replace Gateway. Real published
+module pins must refer to commits merged on canonical `grafana/ai-sdk` `main`;
+merged pseudo-versions are valid, while local example/test replacements are not
+published pins. `scripts/module-policy.sh` implements the module checks. These
+checks do not replace license review for copied code or third-party dependencies.
 
 ```bash
 mise run tidy        # go mod tidy across all modules
@@ -487,9 +506,9 @@ mise run tidy        # go mod tidy across all modules
 Commit `go.mod` and `go.sum` changes together. When adding a dependency to a
 provider or middleware module, run tidy from that module's directory.
 
-The `test/` pnpm workspace is supply-chain hardened: `blockExoticSubdeps`,
+The pnpm test workspace is supply-chain hardened: `blockExoticSubdeps`,
 `strictDepBuilds`, and a `minimumReleaseAge` gate in
-`test/pnpm-workspace.yaml`. Do not bypass those settings to land a version bump.
+`pnpm-workspace.yaml`. Do not bypass those settings to land a version bump.
 Dependency updates are otherwise automated via Renovate
 ([`renovate.json`](renovate.json)).
 

@@ -1,6 +1,7 @@
 package bedrock
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 
@@ -81,6 +82,25 @@ func WithGenerateID(gen func() string) Option {
 	return func(m *model) { m.generateID = gen }
 }
 
+// ModelFamily selects an explicit Bedrock model family for opaque model IDs.
+type ModelFamily string
+
+const ModelFamilyAnthropic ModelFamily = "anthropic"
+
+// WithModelFamily identifies an opaque model as an Anthropic Converse model.
+func WithModelFamily(family ModelFamily) Option {
+	return func(m *model) { m.modelFamily = family }
+}
+
+// StructuredOutputMode selects how JSON schema responses are requested.
+type StructuredOutputMode string
+
+const (
+	StructuredOutputModeAuto         StructuredOutputMode = "auto"
+	StructuredOutputModeOutputFormat StructuredOutputMode = "outputFormat"
+	StructuredOutputModeJSONTool     StructuredOutputMode = "jsonTool"
+)
+
 // BedrockOptions carries Bedrock-specific request options from
 // CallOptions.ProviderOptions["amazonBedrock"]. Upstream also accepts the
 // legacy key "bedrock"; both are honored at request build time.
@@ -90,6 +110,8 @@ type BedrockOptions struct {
 	// ReasoningConfig configures Anthropic-on-Bedrock extended thinking. Only
 	// applied for Anthropic models; emits a warning otherwise.
 	ReasoningConfig *ReasoningConfig `json:"reasoningConfig,omitempty"`
+	// StructuredOutputMode selects native schema output, JSON tool, or auto routing.
+	StructuredOutputMode StructuredOutputMode `json:"structuredOutputMode,omitempty"`
 	// AnthropicBeta enumerates Anthropic beta flags to forward via
 	// additionalModelRequestFields.anthropic_beta. Only meaningful for
 	// Anthropic models on Bedrock.
@@ -133,8 +155,17 @@ func (o *BedrockOptions) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &fields); err != nil {
 		return err
 	}
+	if decoded.ReasoningConfig != nil {
+		var reasoningFields map[string]json.RawMessage
+		if err := json.Unmarshal(fields["reasoningConfig"], &reasoningFields); err != nil {
+			return err
+		}
+		budget, present := reasoningFields["budgetTokens"]
+		decoded.ReasoningConfig.budgetTokensPresent = present && !bytes.Equal(bytes.TrimSpace(budget), []byte("null"))
+	}
 	for _, key := range []string{
 		"reasoningConfig",
+		"structuredOutputMode",
 		"additionalModelRequestFields",
 		"serviceTier",
 	} {
@@ -155,6 +186,8 @@ func (BedrockOptions) ProviderKey() string { return "amazonBedrock" }
 // ReasoningConfig configures Anthropic-on-Bedrock extended thinking and
 // reasoning effort. Mirrors upstream amazonBedrock reasoningConfig.
 type ReasoningConfig struct {
+	budgetTokensPresent bool
+
 	// Type is one of "enabled", "adaptive", or empty when only
 	// MaxReasoningEffort is set.
 	Type string `json:"type,omitempty"`
@@ -180,6 +213,32 @@ type CachePoint struct {
 	TTL string `json:"ttl,omitempty"`
 }
 
+// GuardContentQualifier selects a Bedrock text guardrail qualifier.
+type GuardContentQualifier string
+
+const (
+	GuardContentQualifierGroundingSource GuardContentQualifier = "grounding_source"
+	GuardContentQualifierQuery           GuardContentQualifier = "query"
+	GuardContentQualifierGuardContent    GuardContentQualifier = "guard_content"
+)
+
+// TextPartOptions controls selective protection of a user text part.
+type TextPartOptions struct {
+	GuardContent           *bool                    `json:"guardContent,omitempty"`
+	GuardContentQualifiers *[]GuardContentQualifier `json:"guardContentQualifiers,omitempty"`
+}
+
+// ProviderKey returns the per-part Bedrock option namespace.
+func (TextPartOptions) ProviderKey() string { return "amazonBedrock" }
+
+// ImagePartOptions controls selective protection of an inline user image part.
+type ImagePartOptions struct {
+	GuardContent *bool `json:"guardContent,omitempty"`
+}
+
+// ProviderKey returns the per-part Bedrock option namespace.
+func (ImagePartOptions) ProviderKey() string { return "amazonBedrock" }
+
 // FilePartOptions carries per-file-part Bedrock configuration from
 // `ContentPart.ProviderOptions["amazonBedrock"]`. Mirrors upstream
 // amazonBedrockFilePartProviderOptions, which only exposes citations at the
@@ -201,8 +260,9 @@ func (FilePartOptions) ProviderKey() string { return "amazonBedrock" }
 // ReasoningMetadata carries Bedrock reasoning provider metadata round-trips.
 // Mirrors upstream amazonBedrockReasoningMetadata.
 type ReasoningMetadata struct {
-	Signature    string `json:"signature,omitempty"`
-	RedactedData string `json:"redactedData,omitempty"`
+	Signature       string `json:"signature,omitempty"`
+	RedactedData    string `json:"redactedData,omitempty"`
+	RedactedContent string `json:"redactedContent,omitempty"`
 }
 
 // ProviderKey returns the reasoning metadata namespace.

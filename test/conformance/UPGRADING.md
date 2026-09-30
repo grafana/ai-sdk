@@ -20,7 +20,7 @@ TARGET=/absolute/path/to/new-target.json mise run parity-select
 ```
 
 Selection uses the stable npm latest release lines and the minimum release age in
-`test/pnpm-workspace.yaml`. It writes exact package versions, publication times,
+`pnpm-workspace.yaml`. It writes exact package versions, publication times,
 per-package source commits, the starting baseline and selection policy to a new
 record. It does not change canonical pins and refuses to overwrite an existing file.
 
@@ -86,6 +86,15 @@ TARGET=/absolute/path/to/approved-target.json mise run parity-upgrade
 The command requires an explicit target. Reapplication is idempotent and preserves
 subsequent gap metadata and an already recorded verification date. A changed or mixed
 baseline/pin set is rejected for reassessment rather than silently repaired.
+
+`parity-upgrade` also regenerates the embedded Bedrock Converse
+`providers/bedrock/provider_tool_schemas.json` asset from the registered
+Anthropic/provider package versions and the Anthropic Zod version in the lockfile
+at the pinned upstream commit. It omits tools Bedrock filters out, warns about
+new upstream tools for parity assessment, and fails if a Go-supported tool
+disappears upstream. Use
+`node scripts/generate-bedrock-provider-tool-schemas.mjs --check` to verify the
+committed file without rewriting it. This is not a live provider recording.
 
 Applying a new target clears `upstream.verifiedAt`; selection is not verification.
 The final metadata check deliberately remains incomplete until evidence is reviewed

@@ -1,7 +1,7 @@
 package openai
 
 import (
-	"encoding/json"
+	"fmt"
 
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/openai/openai-go/v3/packages/param"
@@ -14,7 +14,8 @@ const topLogprobsMax = 20
 // applyResponseFormat maps a JSON response format to the Responses text.format.
 // A schema produces a json_schema format honoring strict/name/description; an
 // absent schema produces a json_object format. textVerbosity is also applied.
-func applyResponseFormat(body *responses.ResponseNewParams, opts provider.CallOptions, popts OpenAIResponsesOptions) {
+func applyResponseFormat(body *responses.ResponseNewParams, opts provider.CallOptions, popts OpenAIResponsesOptions) ([]provider.Warning, error) {
+	var warnings []provider.Warning
 	rf := opts.ResponseFormat
 
 	var hasText bool
@@ -22,13 +23,16 @@ func applyResponseFormat(body *responses.ResponseNewParams, opts provider.CallOp
 
 	if rf != nil && rf.Type == provider.ResponseFormatJSON {
 		hasText = true
-		if len(rf.Schema) > 0 {
+		if len(rf.Schema) > 0 && !isJSONNull(rf.Schema) {
 			strict := true
 			if popts.StrictJSONSchema != nil {
 				strict = *popts.StrictJSONSchema
 			}
-			var schemaMap map[string]any
-			_ = json.Unmarshal(rf.Schema, &schemaMap)
+			schemaMap, schemaWarnings, err := normalizeOpenAIJSONSchema(rf.Schema)
+			if err != nil {
+				return nil, fmt.Errorf("openai: normalizing response schema: %w", err)
+			}
+			warnings = append(warnings, schemaWarnings...)
 			name := rf.Name
 			if name == "" {
 				name = "response"
@@ -57,6 +61,7 @@ func applyResponseFormat(body *responses.ResponseNewParams, opts provider.CallOp
 	if hasText {
 		body.Text = text
 	}
+	return warnings, nil
 }
 
 // applyProviderOptions maps typed provider options onto the request body and
@@ -102,7 +107,14 @@ func applyProviderOptions(body *responses.ResponseNewParams, popts OpenAIRespons
 		body.SafetyIdentifier = param.NewOpt(popts.SafetyIdentifier)
 	}
 	if popts.PromptCacheRetention != "" {
-		body.PromptCacheRetention = responses.ResponseNewParamsPromptCacheRetention(popts.PromptCacheRetention)
+		if caps.supportsConfigurationUpdate {
+			warnings = append(warnings, provider.Warning{
+				Type: provider.WarnUnsupported, Feature: "promptCacheRetention",
+				Details: "promptCacheRetention is not supported by GPT-6 and later models; use promptCacheOptions instead",
+			})
+		} else {
+			body.PromptCacheRetention = responses.ResponseNewParamsPromptCacheRetention(popts.PromptCacheRetention)
+		}
 	}
 	if popts.PromptCacheOptions != nil {
 		body.SetExtraFields(map[string]any{"prompt_cache_options": popts.PromptCacheOptions})
@@ -187,7 +199,8 @@ func applyProviderOptions(body *responses.ResponseNewParams, popts OpenAIRespons
 // applyIncludeAndReasoning populates the include array (logprobs, web search
 // sources, code interpreter outputs, encrypted reasoning) and the reasoning
 // effort/summary block for reasoning models.
-func applyIncludeAndReasoning(body *responses.ResponseNewParams, opts provider.CallOptions, popts OpenAIResponsesOptions, isReasoning, store bool, br *buildResult) {
+func applyIncludeAndReasoning(body *responses.ResponseNewParams, popts OpenAIResponsesOptions, resolvedEffort string, isReasoning, store, webSearchSourcesIncludeSupported bool, caps modelCapabilities, br *buildResult) []provider.Warning {
+	var warnings []provider.Warning
 	includes := map[responses.ResponseIncludable]bool{}
 	for _, inc := range popts.Include {
 		includes[responses.ResponseIncludable(inc)] = true
@@ -202,13 +215,20 @@ func applyIncludeAndReasoning(body *responses.ResponseNewParams, opts provider.C
 			topLogprobs = *popts.Logprobs.Int
 		}
 	}
-	if topLogprobs > 0 {
+	logprobsInclude := responses.ResponseIncludableMessageOutputTextLogprobs
+	if isReasoning && caps.supportedReasoningEfforts != nil && (topLogprobs > 0 || includes[logprobsInclude]) {
+		delete(includes, logprobsInclude)
+		warnings = append(warnings, provider.Warning{
+			Type: provider.WarnUnsupported, Feature: "logprobs",
+			Details: "logprobs is not supported for reasoning models",
+		})
+	} else if topLogprobs > 0 {
 		body.TopLogprobs = param.NewOpt(topLogprobs)
-		includes[responses.ResponseIncludableMessageOutputTextLogprobs] = true
+		includes[logprobsInclude] = true
 		br.logprobsRequested = true
 	}
 
-	if br.hasWebSearchTool {
+	if br.hasWebSearchTool && webSearchSourcesIncludeSupported && (popts.IncludeWebSearchSources == nil || *popts.IncludeWebSearchSources) {
 		includes[responses.ResponseIncludableWebSearchCallActionSources] = true
 	}
 	if br.hasCodeInterpreterTool {
@@ -239,18 +259,14 @@ func applyIncludeAndReasoning(body *responses.ResponseNewParams, opts provider.C
 
 	// Reasoning effort + summary block.
 	if isReasoning {
-		effort := popts.ReasoningEffort
-		if effort == "" && opts.Reasoning != provider.ReasoningProviderDefault {
-			effort = string(opts.Reasoning)
-		}
 		summary := popts.ReasoningSummary
-		if summary == "" && effort != "" && effort != "none" {
+		if summary == "" && resolvedEffort != "" && resolvedEffort != "none" {
 			summary = "detailed"
 		}
-		if effort != "" || summary != "" || popts.ReasoningMode != "" || popts.ReasoningContext != "" {
+		if resolvedEffort != "" || summary != "" || popts.ReasoningMode != "" || popts.ReasoningContext != "" {
 			r := shared.ReasoningParam{}
-			if effort != "" {
-				r.Effort = shared.ReasoningEffort(effort)
+			if resolvedEffort != "" {
+				r.Effort = shared.ReasoningEffort(resolvedEffort)
 			}
 			if summary != "" {
 				r.Summary = shared.ReasoningSummary(summary)
@@ -268,6 +284,7 @@ func applyIncludeAndReasoning(body *responses.ResponseNewParams, opts provider.C
 			body.Reasoning = r
 		}
 	}
+	return warnings
 }
 
 // includeOrder defines the canonical ordering for include entries to keep

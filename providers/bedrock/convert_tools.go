@@ -28,6 +28,7 @@ type preparedTools struct {
 	toolConfig      *toolConfig
 	additionalTools map[string]any
 	betas           map[string]struct{}
+	betaOrder       []string
 	warnings        []provider.Warning
 }
 
@@ -36,32 +37,36 @@ type preparedTools struct {
 // requires routing the `tool_choice` through `additionalModelRequestFields`
 // while still describing the tools in `toolConfig.tools` for validation.
 // Non-Anthropic provider tools are reported as unsupported.
-func prepareTools(tools []provider.Tool, toolChoice *provider.ToolChoice, modelID string) preparedTools {
+func prepareTools(tools []provider.Tool, toolChoice *provider.ToolChoice, modelID string, isAnthropic bool, disableParallelToolUse *bool) (preparedTools, error) {
 	res := preparedTools{
 		betas: map[string]struct{}{},
 	}
 	if len(tools) == 0 {
-		return res
+		return res, nil
 	}
 
 	// Filter out unsupported provider tools and emit warnings.
 	supported := make([]provider.Tool, 0, len(tools))
 	for _, t := range tools {
-		if t.Type == provider.ToolTypeProvider && t.ID == unsupportedWebSearchToolID {
+		if t.Type == provider.ToolTypeProvider && (t.ID == unsupportedWebSearchToolID || t.ID == "anthropic.web_search_20260318" || t.ID == "anthropic.web_fetch_20260318") {
 			res.warnings = append(res.warnings, provider.Warning{
 				Type:    provider.WarnUnsupported,
-				Feature: "web_search_20250305 tool",
-				Details: "The web_search_20250305 tool is not supported on Amazon Bedrock.",
+				Feature: strings.TrimPrefix(t.ID, "anthropic.") + " tool",
+				Details: "The " + strings.TrimPrefix(t.ID, "anthropic.") + " tool is not supported on Amazon Bedrock.",
 			})
 			continue
+		}
+		if t.Type == provider.ToolTypeProvider && isAnthropic {
+			if _, ok := anthropicProviderToolBetas[t.ID]; !ok {
+				res.warnings = append(res.warnings, provider.Warning{Type: provider.WarnUnsupported, Feature: "provider-defined tool " + t.ID})
+				continue
+			}
 		}
 		supported = append(supported, t)
 	}
 	if len(supported) == 0 {
-		return res
+		return res, nil
 	}
-
-	isAnthropic := isAnthropicModel(modelID)
 
 	providerTools := make([]provider.Tool, 0)
 	functionTools := make([]provider.Tool, 0)
@@ -80,17 +85,21 @@ func prepareTools(tools []provider.Tool, toolChoice *provider.ToolChoice, modelI
 	// additionalModelRequestFields; the tool itself is described in
 	// toolConfig.tools with its inputSchema.
 	if isAnthropic && len(providerTools) > 0 {
-		// We accept the caller's provider tools by name + inputSchema. Beta
-		// flags are propagated unconditionally for now; per-tool beta
-		// catalogues can be added later as recorded conformance fixtures
-		// exercise specific Anthropic tools on Bedrock.
 		for _, t := range providerTools {
-			tc.Tools = append(tc.Tools, toolDefinition{
-				ToolSpec: &toolSpec{
-					Name:        t.Name,
-					InputSchema: toolInputSchema{JSON: jsonOrEmptyObject(t.InputSchema)},
-				},
-			})
+			schema, err := providerToolSchema(t.ID)
+			if err != nil {
+				return res, err
+			}
+			beta := anthropicProviderToolBetas[t.ID]
+			if beta != "" {
+				if _, exists := res.betas[beta]; !exists {
+					res.betas[beta] = struct{}{}
+					res.betaOrder = append(res.betaOrder, beta)
+				}
+			}
+			tc.Tools = append(tc.Tools, toolDefinition{ToolSpec: &toolSpec{
+				Name: t.Name, InputSchema: toolInputSchema{JSON: schema},
+			}})
 		}
 	} else {
 		for _, t := range providerTools {
@@ -130,6 +139,11 @@ func prepareTools(tools []provider.Tool, toolChoice *provider.ToolChoice, modelI
 					Details: fmt.Sprintf("Tool '%s' has strict: %t, but strict mode is not supported by this model on Amazon Bedrock. The strict property will be ignored.", t.Name, *t.Strict),
 				})
 			}
+		} else if t.Strict != nil && *t.Strict && !isStrictToolSchemaCompatible(jsonOrEmptyObject(t.InputSchema)) {
+			res.warnings = append(res.warnings, provider.Warning{
+				Type: provider.WarnUnsupported, Feature: "strict",
+				Details: fmt.Sprintf("Tool '%s' has strict: true, but Amazon Bedrock requires every object in a strict tool schema to set additionalProperties: false. The strict property will be ignored.", t.Name),
+			})
 		} else {
 			spec.Strict = t.Strict
 		}
@@ -139,22 +153,29 @@ func prepareTools(tools []provider.Tool, toolChoice *provider.ToolChoice, modelI
 	// Tool choice translation. For Anthropic-on-Bedrock provider tools the
 	// choice rides on additionalModelRequestFields; otherwise it goes into
 	// toolConfig.toolChoice.
-	if toolChoice != nil {
+	if toolChoice != nil || (isAnthropic && disableParallelToolUse != nil && *disableParallelToolUse) {
 		if isAnthropic && len(providerTools) > 0 {
 			res.additionalTools = map[string]any{}
-			switch toolChoice.Type {
+			choiceType := provider.ToolChoiceAuto
+			if toolChoice != nil {
+				choiceType = toolChoice.Type
+			}
+			switch choiceType {
 			case provider.ToolChoiceAuto:
 				res.additionalTools["tool_choice"] = map[string]any{"type": "auto"}
 			case provider.ToolChoiceRequired:
 				res.additionalTools["tool_choice"] = map[string]any{"type": "any"}
 			case provider.ToolChoiceNone:
-				// "none" maps to no tool choice in Anthropic's model.
-				// Drop tools entirely to match upstream behavior.
-				tc.Tools = nil
+				// The pinned provider-tool path retains tool definitions without a choice.
 			case provider.ToolChoiceTool:
 				res.additionalTools["tool_choice"] = map[string]any{"type": "tool", "name": toolChoice.ToolName}
 			}
-		} else if len(tc.Tools) > 0 {
+			if disableParallelToolUse != nil {
+				if choice, ok := res.additionalTools["tool_choice"].(map[string]any); ok {
+					choice["disable_parallel_tool_use"] = *disableParallelToolUse
+				}
+			}
+		} else if len(tc.Tools) > 0 && toolChoice != nil {
 			switch toolChoice.Type {
 			case provider.ToolChoiceAuto:
 				tc.ToolChoice = &toolChoiceUnion{Auto: &struct{}{}}
@@ -169,11 +190,25 @@ func prepareTools(tools []provider.Tool, toolChoice *provider.ToolChoice, modelI
 			}
 		}
 	}
+	if isAnthropic && disableParallelToolUse != nil && *disableParallelToolUse && len(tc.Tools) > 0 && (toolChoice == nil || toolChoice.Type != provider.ToolChoiceNone) {
+		choice := map[string]any{"type": "auto", "disable_parallel_tool_use": true}
+		if toolChoice != nil {
+			switch toolChoice.Type {
+			case provider.ToolChoiceRequired:
+				choice["type"] = "any"
+			case provider.ToolChoiceTool:
+				choice["type"] = "tool"
+				choice["name"] = toolChoice.ToolName
+			}
+		}
+		res.additionalTools = map[string]any{"tool_choice": choice}
+		tc.ToolChoice = nil
+	}
 
 	if len(tc.Tools) > 0 || tc.ToolChoice != nil {
 		res.toolConfig = tc
 	}
-	return res
+	return res, nil
 }
 
 func jsonOrEmptyObject(raw json.RawMessage) json.RawMessage {
@@ -181,24 +216,4 @@ func jsonOrEmptyObject(raw json.RawMessage) json.RawMessage {
 		return json.RawMessage(`{"type":"object","properties":{}}`)
 	}
 	return raw
-}
-
-// injectJSONResponseTool appends the synthetic `json` tool to the configured
-// tool set and forces `toolChoice = required` (any). Returns the updated
-// preparedTools so callers can chain it with [prepareTools] when a JSON
-// response format is requested and the model doesn't support native
-// structured output.
-func injectJSONResponseTool(pt preparedTools, schema json.RawMessage) preparedTools {
-	if pt.toolConfig == nil {
-		pt.toolConfig = &toolConfig{}
-	}
-	pt.toolConfig.Tools = append(pt.toolConfig.Tools, toolDefinition{
-		ToolSpec: &toolSpec{
-			Name:        jsonResponseToolName,
-			Description: "Respond with a JSON object.",
-			InputSchema: toolInputSchema{JSON: jsonOrEmptyObject(schema)},
-		},
-	})
-	pt.toolConfig.ToolChoice = &toolChoiceUnion{Any: &struct{}{}}
-	return pt
 }

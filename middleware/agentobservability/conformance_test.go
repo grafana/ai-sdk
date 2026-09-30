@@ -1,6 +1,7 @@
 package agentobservability
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -8,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/grafana/agento11y/go/agento11y"
+	"github.com/grafana/ai-sdk/middleware"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -151,9 +153,6 @@ func TestConformance_Stream(t *testing.T) {
 	}
 }
 
-// TestConformance_Hooks walks testdata/hooks/* and validates the transformed
-// prompt produced by applyTransformedInput against the captured expected
-// prompt, plus the deny-path error shape.
 func TestConformance_Hooks(t *testing.T) {
 	scenarios := []struct {
 		name      string
@@ -168,19 +167,24 @@ func TestConformance_Hooks(t *testing.T) {
 		t.Run(sc.name, func(t *testing.T) {
 			dir := filepath.Join("testdata", "hooks", sc.expectDir)
 			originalPrompt := readJSONFile[[]provider.Message](t, filepath.Join(dir, "original_prompt.json"))
-			hookResp := readJSONFile[agento11y.HookEvaluateResponse](t, filepath.Join(dir, "hook_response.json"))
+			body, err := os.ReadFile(filepath.Join(dir, "hook_response.json"))
+			require.NoError(t, err)
+			var hookResp agento11y.HookEvaluateResponse
+			require.NoError(t, json.Unmarshal(body, &hookResp))
+			h := newHooksWireTestServer(t, body)
+			client := h.clientWithHooksEnabled()
+			t.Cleanup(func() { require.NoError(t, client.Shutdown(context.Background())) })
+			model := &mockLanguageModel{provider_: "anthropic", modelID: "claude"}
+			wrapped := middleware.Wrap(middleware.WrapOptions{Model: model, Middleware: []middleware.Middleware{HooksMiddleware(HooksOptions{
+				ClientResolver: func(context.Context) *agento11y.Client { return client },
+			})}})
+			_, err = wrapped.DoGenerate(context.Background(), provider.CallOptions{Prompt: originalPrompt})
 
 			switch hookResp.Action {
 			case agento11y.HookActionAllow:
-				var got []provider.Message
-				if hookResp.TransformedInput == nil {
-					// Allow without transform: prompt is unchanged.
-					got = originalPrompt
-				} else {
-					var err error
-					got, err = applyTransformedInput(originalPrompt, *hookResp.TransformedInput)
-					require.NoError(t, err)
-				}
+				require.NoError(t, err)
+				require.Equal(t, 1, model.generateHit)
+				got := model.lastParams.Prompt
 				if regenerateConformanceFixtures {
 					writeJSONFile(t, filepath.Join(dir, "expected_prompt.json"), got)
 					return
@@ -189,10 +193,12 @@ func TestConformance_Hooks(t *testing.T) {
 				assertPromptsEquivalent(t, expected, got)
 
 			case agento11y.HookActionDeny:
-				// Deny fixtures don't have a transformed prompt; just verify
-				// the response shape carries the expected reason/rule_id.
-				assert.NotEmpty(t, hookResp.RuleID, "deny fixtures must include rule_id")
-				assert.NotEmpty(t, hookResp.Reason, "deny fixtures must include reason")
+				require.ErrorIs(t, err, ErrHookDenied)
+				var denial *HookDenialError
+				require.ErrorAs(t, err, &denial)
+				assert.Equal(t, hookResp.RuleID, denial.RuleID)
+				assert.Equal(t, hookResp.Reason, denial.Reason)
+				assert.Zero(t, model.generateHit)
 			}
 		})
 	}

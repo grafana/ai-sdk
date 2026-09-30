@@ -11,7 +11,7 @@ serialization remain host/catalog and provider responsibilities.
 ## Authority and proof
 
 The adapter's JSON/SSE authority is the official OpenAI API contract and exact official
-SDKs: Go `openai-go/v3 v3.48.0` and JavaScript `openai 6.27.0` (workspace lockfile).
+SDKs: Go `openai-go/v3 v3.66.0` and JavaScript `openai 6.27.0` (workspace lockfile).
 The JavaScript pin is an explicit compatibility witness, not a claim to be latest.
 See [Chat create](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create),
 [function calling](https://developers.openai.com/api/docs/guides/function-calling)
@@ -21,9 +21,10 @@ Gateway intentionally rejects persistence even if an upstream account defaults
 to storing completions.
 
 Provider-domain conversion remains on the registered Vercel baseline in
-`test/conformance/upstream.yaml`: commit `08ae5ad05bc12496dd1ffcf64e34419e0831300d`.
-The AGPL module uses its immutable published Go module versions, not root-workspace
-replacements. Synthetic local upstreams in `test/openai-chat-completions-adapter` prove mappings and SDK
+`test/conformance/upstream.yaml`: commit `ee3169b3c4880e2abe4d0d7c781243bb81822ec4`.
+Gateway source tests and the container build use the explicit `go.gateway.work`
+workspace so the adapter runs with candidate SDK/provider source. Standalone
+module checks separately verify the immutable published dependency versions. Synthetic local upstreams in `test/openai-chat-completions-adapter` prove mappings and SDK
 consumption, not live-provider parity. No recorded fixture has been invented.
 
 ## Authentication and routing
@@ -155,8 +156,9 @@ a 32-client streaming cancellation storm, not an unbounded-load claim.
 `mise run test-openai-chat-completions-adapter` runs adapter/command Go tests, TypeScript typechecking
 and the official JavaScript SDK command suite. `mise run test-ai-gateway` includes
 all adapter Go tests; `mise run test-integration` also owns the SDK adapter task.
-Run `GOWORK=off go test -race ./openai/chatcompletions ./test/openai-chat-completions-adapter` in ai-gateway
-for adapter race coverage. Tests use local signed JWKS, synthetic Responses,
+The task selects `go.gateway.work` for both the Go tests and the binaries built
+by the official SDK contract tests. `GATEWAY_TEST_GOWORK` can explicitly select
+the workspace for those subprocesses; otherwise they inherit `GOWORK`. Tests use local signed JWKS, synthetic Responses,
 compatible and Anthropic servers, no live credentials. Existing parity and
 AGPL/Apache boundary checks remain required; adapter compatibility does not expand
 ProviderWire or UIMessage parity claims.

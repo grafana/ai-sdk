@@ -250,6 +250,28 @@ func TestToResponseMessages(t *testing.T) {
 		assert.Equal(t, "iVBORw0KGgo=", got[0].Content[1].Data.Base64)
 	})
 
+	t.Run("input file filename presence survives response message conversion", func(t *testing.T) {
+		empty := ""
+		for _, tc := range []struct {
+			name     string
+			filename *string
+		}{
+			{name: "absent"},
+			{name: "empty", filename: &empty},
+			{name: "named", filename: optionalInputFilename("report.pdf")},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				got := ToResponseMessages([]provider.ContentPart{{
+					Type: provider.ContentPartTypeFile, Data: &provider.DataContent{Base64: "AQID"},
+					MediaType: "application/pdf", Filename: tc.filename,
+				}})
+				require.Len(t, got, 1)
+				require.Len(t, got[0].Content, 1)
+				assert.Equal(t, tc.filename, got[0].Content[0].Filename)
+			})
+		}
+	})
+
 	t.Run("reasoning-file part preserves Data, MediaType, and ProviderOptions", func(t *testing.T) {
 		opts := provider.ProviderOptions{
 			"testProvider": provider.RawProviderOption{Key: "testProvider", Raw: json.RawMessage(`{"signature":"sig"}`)},
@@ -664,11 +686,11 @@ func TestStreamTextResponseMessages_GeneratedFiles(t *testing.T) {
 				ch <- provider.StreamPart{Type: provider.PartTextDelta, ID: "t1", Delta: "Here are the images"}
 				ch <- provider.StreamPart{Type: provider.PartTextEnd, ID: "t1", ProviderMetadata: textMetadata}
 				ch <- provider.StreamPart{Type: provider.PartFile, Data: &provider.StreamFileData{Type: provider.StreamFileDataTypeData, Bytes: jpegBytes}, MediaType: "image/jpeg"}
-				ch <- provider.StreamPart{Type: provider.PartFile, Data: &provider.StreamFileData{Type: provider.StreamFileDataTypeURL, URL: "https://example.com/image.png"}, MediaType: "image/png"}
+				ch <- provider.StreamPart{Type: provider.PartFile, Data: &provider.StreamFileData{Type: provider.StreamFileDataTypeURL, URL: "data:image/png;base64,AQID"}, MediaType: "image/png"}
 				ch <- provider.StreamPart{Type: provider.PartFile, Data: &provider.StreamFileData{Type: provider.StreamFileDataTypeData}, MediaType: "application/octet-stream"}
 				ch <- provider.StreamPart{Type: provider.PartReasoningStart, ID: "r1", ProviderMetadata: reasoningMetadata}
 				ch <- provider.StreamPart{Type: provider.PartReasoningDelta, ID: "r1", Delta: "thinking", ProviderMetadata: reasoningMetadata}
-				ch <- provider.StreamPart{Type: provider.PartReasoningFile, Data: &provider.StreamFileData{Type: provider.StreamFileDataTypeURL, URL: "https://example.com/reasoning.png"}, MediaType: "image/png", ProviderMetadata: reasoningMetadata}
+				ch <- provider.StreamPart{Type: provider.PartReasoningFile, Data: &provider.StreamFileData{Type: provider.StreamFileDataTypeURL, URL: "data:image/png;base64,AQID"}, MediaType: "image/png", ProviderMetadata: reasoningMetadata}
 				ch <- provider.StreamPart{Type: provider.PartReasoningEnd, ID: "r1", ProviderMetadata: reasoningMetadata}
 				ch <- provider.StreamPart{
 					Type:         provider.PartFinish,
@@ -718,9 +740,9 @@ func TestStreamTextResponseMessages_GeneratedFiles(t *testing.T) {
 
 	assert.Equal(t, provider.ContentPartTypeFile, assistant.Content[3].Type)
 	require.NotNil(t, assistant.Content[3].Data)
-	assert.Equal(t, "https://example.com/image.png", assistant.Content[3].Data.Base64)
-	assert.Equal(t, "https://example.com/image.png", steps[0].Files[2].Base64)
-	assert.Equal(t, "data:image/png;base64,https://example.com/image.png", steps[0].Files[2].DataURL())
+	assert.Equal(t, []byte{1, 2, 3}, assistant.Content[3].Data.Bytes)
+	assert.Equal(t, []byte{1, 2, 3}, steps[0].Files[2].Data)
+	assert.Equal(t, "data:image/png;base64,AQID", steps[0].Files[2].DataURL())
 
 	assert.Equal(t, provider.ContentPartTypeFile, assistant.Content[4].Type)
 	require.NotNil(t, assistant.Content[4].Data)
@@ -735,20 +757,18 @@ func TestStreamTextResponseMessages_GeneratedFiles(t *testing.T) {
 
 	assert.Equal(t, provider.ContentPartTypeReasoningFile, assistant.Content[6].Type)
 	require.NotNil(t, assistant.Content[6].Data)
-	assert.Equal(t, "https://example.com/reasoning.png", assistant.Content[6].Data.Base64)
+	assert.Equal(t, []byte{1, 2, 3}, assistant.Content[6].Data.Bytes)
 	require.Len(t, streamedReasoningFiles, 1)
-	assert.Equal(t, "https://example.com/reasoning.png", streamedReasoningFiles[0].File.Base64)
+	assert.Equal(t, []byte{1, 2, 3}, streamedReasoningFiles[0].File.Data)
 	assert.Equal(t, reasoningMetadata, streamedReasoningFiles[0].ProviderMetadata)
 	chunks := translateToChunks(streamedReasoningFiles[0], uiMessageStreamConfig{})
 	require.Len(t, chunks, 1)
 	assert.Equal(t, ChunkReasoningFile, chunks[0].Type)
-	// The registered upstream ai baseline stringifies URL-valued generated files
-	// and uses that string as base64 when constructing the UI data URL.
-	assert.Equal(t, "data:image/png;base64,https://example.com/reasoning.png", chunks[0].URL)
+	assert.Equal(t, "data:image/png;base64,AQID", chunks[0].URL)
 	assert.Equal(t, reasoningMetadata, chunks[0].ProviderMetadata)
 	chunkJSON, err := json.Marshal(chunks[0])
 	require.NoError(t, err)
-	assert.JSONEq(t, `{"type":"reasoning-file","url":"data:image/png;base64,https://example.com/reasoning.png","mediaType":"image/png","providerMetadata":{"test":{"kind":"reasoning"}}}`, string(chunkJSON))
+	assert.JSONEq(t, `{"type":"reasoning-file","url":"data:image/png;base64,AQID","mediaType":"image/png","providerMetadata":{"test":{"kind":"reasoning"}}}`, string(chunkJSON))
 
 	require.Len(t, steps[0].Reasoning, 2)
 	reasoningText, ok := steps[0].Reasoning[0].(ReasoningTextOutput)
@@ -756,7 +776,7 @@ func TestStreamTextResponseMessages_GeneratedFiles(t *testing.T) {
 	assert.Equal(t, "thinking", reasoningText.Text)
 	reasoningOutput, ok := steps[0].Reasoning[1].(ReasoningFileOutput)
 	require.True(t, ok)
-	assert.Equal(t, "https://example.com/reasoning.png", reasoningOutput.File.Base64)
+	assert.Equal(t, []byte{1, 2, 3}, reasoningOutput.File.Data)
 	assert.Equal(t, reasoningMetadata, reasoningOutput.ProviderMetadata)
 
 	require.Len(t, steps[0].Content, 7)
@@ -778,7 +798,7 @@ func TestStreamTextResponseMessages_GeneratedFiles(t *testing.T) {
 	assert.Equal(t, "thinking", reasoningTextContent.Text)
 	reasoningContent, ok := steps[0].Content[6].(ReasoningFileContent)
 	require.True(t, ok)
-	assert.Equal(t, "https://example.com/reasoning.png", reasoningContent.File.Base64)
+	assert.Equal(t, []byte{1, 2, 3}, reasoningContent.File.Data)
 	assert.Equal(t, reasoningMetadata, reasoningContent.ProviderMetadata)
 
 	// result.Response() reflects the last step.

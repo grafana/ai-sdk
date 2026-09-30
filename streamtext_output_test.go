@@ -676,6 +676,6 @@ func TestGenerateText_OutputWithLengthFinishReason(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, provider.FinishReasonLength, result.FinishReason.Unified)
-	assert.Nil(t, result.Output)
-	assert.Nil(t, result.OutputError)
+	assert.Equal(t, s{Name: "test"}, result.Output)
+	assert.NoError(t, result.OutputError)
 }

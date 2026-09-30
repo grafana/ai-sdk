@@ -56,13 +56,15 @@ func extractCitationDocuments(prompt []provider.Message) []citationDocument {
 			if fp.Data == nil || !hasFileData(*fp.Data) {
 				continue
 			}
-			title := fp.Filename
-			if title == "" {
-				title = "Untitled Document"
+			title := "Untitled Document"
+			filename := ""
+			if fp.Filename != nil {
+				title = *fp.Filename
+				filename = *fp.Filename
 			}
 			docs = append(docs, citationDocument{
 				title:     title,
-				filename:  fp.Filename,
+				filename:  filename,
 				mediaType: fp.MediaType,
 			})
 		}
@@ -71,7 +73,7 @@ func extractCitationDocuments(prompt []provider.Message) []citationDocument {
 }
 
 func hasFileData(data provider.DataContent) bool {
-	return data.Base64 != "" || len(data.Bytes) > 0 || data.URL != ""
+	return data.IsData() || data.IsURL() || data.IsReference() || data.IsText()
 }
 
 func hasCitationsEnabled(opts provider.ProviderOptions) bool {

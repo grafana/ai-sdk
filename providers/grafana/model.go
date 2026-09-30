@@ -60,8 +60,20 @@ func (m *model) DoGenerate(ctx context.Context, opts provider.CallOptions) (*pro
 		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	body, err := readJSON(ctx, resp, m.provider.limits.UnaryBytes)
+	body, transportFailure, err := readJSON(ctx, resp, m.provider.limits.UnaryBytes)
 	if err != nil {
+		if transportFailure {
+			switch {
+			case ctx.Err() != nil:
+				err = ctx.Err()
+			case int64(len(body)) > m.provider.limits.UnaryBytes:
+				err = errors.New("grafana: response byte limit exceeded")
+			default:
+				return nil, provider.NewAPICallError(provider.APICallErrorOptions{
+					Message: "grafana: unary response transport failed", StatusCode: resp.StatusCode, Cause: err, IsRetryable: &transportFailure,
+				})
+			}
+		}
 		return nil, protocolError("grafana: invalid unary response", resp.StatusCode, err)
 	}
 	result, err := decodeGenerate(body)
@@ -108,7 +120,10 @@ func (w *wireFinish) UnmarshalJSON(data []byte) error {
 	return decodeFields(data, (*plain)(w), "unified", "raw")
 }
 
+const maxRawUsageBytes = 1 << 20
+
 type wireUsage struct {
+	Raw         json.RawMessage `json:"raw"`
 	InputTokens *struct {
 		Total      *int `json:"total"`
 		NoCache    *int `json:"noCache"`
@@ -145,11 +160,21 @@ func (w *wireUsage) UnmarshalJSON(data []byte) error {
 			}
 		}
 	}
+	raw, present := groups["raw"]
+	if present && (len(raw) > maxRawUsageBytes || len(raw) == 0 || raw[0] != '{') {
+		return errors.New("grafana: invalid raw usage")
+	}
 	encoded, err := json.Marshal(filtered)
 	if err != nil {
 		return err
 	}
-	return json.Unmarshal(encoded, (*plain)(w))
+	if err := json.Unmarshal(encoded, (*plain)(w)); err != nil {
+		return err
+	}
+	if present {
+		w.Raw = raw
+	}
+	return nil
 }
 
 func decodeFinish(value *wireFinish) (provider.FinishReason, error) {
@@ -178,7 +203,11 @@ func decodeUsage(value *wireUsage) (provider.Usage, error) {
 			return provider.Usage{}, errors.New("grafana: invalid token count")
 		}
 	}
-	return provider.Usage{InputTokens: provider.InputTokenUsage{Total: i.Total, NoCache: i.NoCache, CacheRead: i.CacheRead, CacheWrite: i.CacheWrite}, OutputTokens: provider.OutputTokenUsage{Total: o.Total, Text: o.Text, Reasoning: o.Reasoning}}, nil
+	var raw json.RawMessage
+	if len(value.Raw) > 0 {
+		raw = append(raw, value.Raw...)
+	}
+	return provider.Usage{InputTokens: provider.InputTokenUsage{Total: i.Total, NoCache: i.NoCache, CacheRead: i.CacheRead, CacheWrite: i.CacheWrite}, OutputTokens: provider.OutputTokenUsage{Total: o.Total, Text: o.Text, Reasoning: o.Reasoning}, Raw: raw}, nil
 }
 
 func decodeGenerate(body []byte) (*provider.GenerateResult, error) {
@@ -212,11 +241,43 @@ func decodeGenerate(body []byte) (*provider.GenerateResult, error) {
 			Input            *string                      `json:"input"`
 			ProviderExecuted bool                         `json:"providerExecuted"`
 			Dynamic          bool                         `json:"dynamic"`
+			MediaType        *string                      `json:"mediaType"`
+			Data             json.RawMessage              `json:"data"`
+			Metadata         json.RawMessage              `json:"providerMetadata"`
 		}
-		if decodeFields(raw, &part, "type", "text", "toolCallId", "toolName", "input", "providerExecuted", "dynamic") != nil || part.ProviderExecuted || part.Dynamic {
+		if decodeFields(raw, &part, "type", "text", "toolCallId", "toolName", "input", "providerExecuted", "dynamic", "mediaType", "data", "providerMetadata") != nil || part.ProviderExecuted || part.Dynamic {
 			return nil, errors.New("grafana: invalid unary content")
 		}
 		switch part.Type {
+		case provider.ContentReasoning, provider.ContentReasoningFile:
+			metadata, err := decodeReasoningMetadata(part.Metadata)
+			if err != nil {
+				return nil, err
+			}
+			mapped := provider.GenerateContentPart{Type: part.Type, ProviderMetadata: metadata}
+			if part.Type == provider.ContentReasoning {
+				if part.Text == nil {
+					return nil, errors.New("grafana: missing reasoning text")
+				}
+				mapped.Text = *part.Text
+			} else {
+				data, err := decodeReasoningFile(part.Data)
+				if err != nil || part.MediaType == nil {
+					return nil, errors.New("grafana: invalid reasoning file")
+				}
+				file := provider.Base64DataContent(data.Base64)
+				if data.Type == provider.StreamFileDataTypeURL {
+					file = provider.URLDataContent(data.URL)
+				}
+				mapped.Data, mapped.MediaType = &file, *part.MediaType
+			}
+			content = append(content, mapped)
+		case provider.ContentSource:
+			source, err := decodeSource(raw)
+			if err != nil {
+				return nil, err
+			}
+			content = append(content, provider.GenerateContentPart{Type: provider.ContentSource, SourceType: source.SourceType, ID: source.ID, URL: source.URL, Title: source.Title, Text: source.Title, MediaType: source.MediaType, Filename: source.Filename, ProviderMetadata: source.ProviderMetadata})
 		case provider.ContentText:
 			if part.Text == nil {
 				return nil, errors.New("grafana: missing unary text")

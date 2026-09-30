@@ -132,7 +132,14 @@ func startCommand(t *testing.T, backend, jwks string) (string, func()) {
 	dir := t.TempDir()
 	binary := filepath.Join(dir, "gateway")
 	build := exec.Command("go", "build", "-race", "-mod=readonly", "-o", binary, "../../cmd/grafana-ai-gateway")
-	build.Env = append(os.Environ(), "GOWORK=off")
+	workspace := os.Getenv("GATEWAY_TEST_GOWORK")
+	if workspace == "" {
+		workspace = os.Getenv("GOWORK")
+	}
+	if workspace == "" {
+		workspace = "off"
+	}
+	build.Env = append(os.Environ(), "GOWORK="+workspace)
 	output, err := build.CombinedOutput()
 	require.NoError(t, err, string(output))
 	config := fmt.Sprintf("providers:\n  test:\n    type: openai\n    apiKeyEnv: CHAT_COMPLETIONS_ADAPTER_TEST_KEY\n    baseURL: %s/v1\nmodels:\n  public/chat:\n    name: Chat\n    primary:\n      provider: test\n      model: gpt-4.1\n    aliases: [chat]\n  public/reasoning:\n    name: Reasoning\n    primary:\n      provider: test\n      model: o3-mini\n", backend)

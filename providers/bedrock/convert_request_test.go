@@ -76,6 +76,50 @@ func TestBuildRequest_InferenceConfig(t *testing.T) {
 	assert.Empty(t, warnings)
 }
 
+func TestBuildRequest_UnsupportedSamplingByModel(t *testing.T) {
+	temp, topP, topK := 2.0, 0.9, 20
+	clamped := 1.0
+	stop := []string{"END"}
+	cases := []struct {
+		name            string
+		modelID         string
+		wantFeatures    []string
+		wantTemperature *float64
+		wantTopP        *float64
+		wantTopK        *int
+		wantStop        []string
+	}{
+		{name: "sonnet 5", modelID: "us.anthropic.claude-sonnet-5-v1:0", wantFeatures: []string{"temperature", "topK", "topP"}, wantStop: stop},
+		{name: "sonnet 5.5", modelID: "us.anthropic.claude-sonnet-5-5-v1:0", wantFeatures: []string{"temperature", "topK", "topP"}, wantStop: stop},
+		{name: "opus 4.7", modelID: "global.anthropic.claude-opus-4-7", wantFeatures: []string{"temperature", "topK", "topP"}, wantStop: stop},
+		{name: "opus 4.8", modelID: "anthropic.claude-opus-4-8", wantFeatures: []string{"temperature", "topK", "topP"}, wantStop: stop},
+		{name: "opus 5", modelID: "anthropic.claude-opus-5", wantFeatures: []string{"temperature", "topK", "topP"}, wantStop: stop},
+		{name: "opus 5.5", modelID: "anthropic.claude-opus-5-5", wantFeatures: []string{"temperature", "topK", "topP"}, wantStop: stop},
+		{name: "fable 5", modelID: "anthropic.claude-fable-5", wantFeatures: []string{"temperature", "topK", "topP"}, wantStop: stop},
+		{name: "fable 5.1", modelID: "anthropic.claude-fable-5-1", wantFeatures: []string{"temperature", "topK", "topP"}, wantStop: stop},
+		{name: "older claude", modelID: testAnthropicModel, wantFeatures: []string{"temperature"}, wantTemperature: &clamped, wantTopP: &topP, wantTopK: &topK, wantStop: stop},
+		{name: "openai gpt oss", modelID: testOpenAIModel, wantFeatures: []string{"temperature", "stopSequences"}, wantTemperature: &clamped, wantTopP: &topP, wantTopK: &topK},
+		{name: "openai gpt", modelID: "us.openai.gpt-5.6-luna", wantFeatures: []string{"temperature", "topP", "stopSequences"}, wantTopK: &topK},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req, warnings, _ := mustBuildRequest(t, tc.modelID, provider.CallOptions{
+				Prompt: []provider.Message{provider.UserText("x")}, Temperature: &temp, TopP: &topP, TopK: &topK, StopSequences: stop,
+			})
+			var features []string
+			for _, warning := range warnings {
+				features = append(features, warning.Feature)
+			}
+			assert.Equal(t, tc.wantFeatures, features)
+			require.NotNil(t, req.InferenceConfig)
+			assert.Equal(t, tc.wantTemperature, req.InferenceConfig.Temperature)
+			assert.Equal(t, tc.wantTopP, req.InferenceConfig.TopP)
+			assert.Equal(t, tc.wantTopK, req.InferenceConfig.TopK)
+			assert.Equal(t, tc.wantStop, req.InferenceConfig.StopSequences)
+		})
+	}
+}
+
 func TestBuildRequest_TemperatureClamping(t *testing.T) {
 	tooHigh := 2.0
 	req, warnings, _ := mustBuildRequest(t, testAnthropicModel, provider.CallOptions{
@@ -211,7 +255,7 @@ func TestBuildRequest_FunctionToolStrict(t *testing.T) {
 					Type:        provider.ToolTypeFunction,
 					Name:        "weather",
 					Strict:      tc.strict,
-					InputSchema: json.RawMessage(`{"type":"object"}`),
+					InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false}`),
 				}},
 			})
 			require.NotNil(t, req.ToolConfig)
@@ -467,13 +511,50 @@ func TestBuildRequest_TopLevelReasoningNonAnthropicEffort(t *testing.T) {
 	})
 	assert.Equal(t, "medium", req.AdditionalModelRequestFields["reasoning_effort"])
 
-	req, _, _ = mustBuildRequest(t, testNovaModel, provider.CallOptions{
+	req, warnings, _ := mustBuildRequest(t, "us.amazon.nova-2-lite-v1:0", provider.CallOptions{
 		Prompt:    []provider.Message{provider.UserText("x")},
 		Reasoning: reasoning,
 	})
+	assert.Empty(t, warnings)
 	rc, ok := req.AdditionalModelRequestFields["reasoningConfig"].(map[string]any)
 	require.True(t, ok)
-	assert.Equal(t, "medium", rc["maxReasoningEffort"])
+	assert.Equal(t, map[string]any{"type": "enabled", "maxReasoningEffort": "medium"}, rc)
+}
+
+func TestBuildRequest_TopLevelReasoningUnknownModel(t *testing.T) {
+	const unsupported = "Portable reasoning is not supported for this model and will be ignored. If the model supports a provider-specific reasoning configuration, use providerOptions.amazonBedrock.reasoningConfig."
+	for _, tc := range []struct {
+		name     string
+		modelID  string
+		explicit *ReasoningConfig
+		want     map[string]any
+		warning  string
+	}{
+		{name: "Nova micro has no portable support", modelID: "amazon.nova-micro-v1:0", warning: unsupported},
+		{name: "Mistral has no portable support", modelID: "mistral.mistral-large-2407-v1:0", warning: unsupported},
+		{name: "explicit config forwarded", modelID: "amazon.nova-micro-v1:0", explicit: &ReasoningConfig{Type: "enabled"}, want: map[string]any{"type": "enabled", "maxReasoningEffort": "high"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			call := provider.CallOptions{Prompt: []provider.Message{provider.UserText("x")}, Reasoning: provider.ReasoningHigh}
+			if tc.explicit != nil {
+				call.ProviderOptions = provider.ProviderOptions{"amazonBedrock": BedrockOptions{ReasoningConfig: tc.explicit}}
+			}
+			req, warnings, _ := mustBuildRequest(t, tc.modelID, call)
+			if tc.want == nil {
+				assert.NotContains(t, req.AdditionalModelRequestFields, "reasoningConfig")
+			} else {
+				assert.Equal(t, tc.want, req.AdditionalModelRequestFields["reasoningConfig"])
+			}
+			if tc.warning != "" {
+				require.Len(t, warnings, 1)
+				assert.Equal(t, provider.WarnUnsupported, warnings[0].Type)
+				assert.Equal(t, "reasoning", warnings[0].Feature)
+				assert.Equal(t, tc.warning, warnings[0].Details)
+			} else {
+				assert.Empty(t, warnings)
+			}
+		})
+	}
 }
 
 func TestBuildRequest_TopLevelReasoningNonAnthropicCompatibilityWarnings(t *testing.T) {
@@ -818,7 +899,7 @@ func TestBuildRequest_ToolResultDocument(t *testing.T) {
 				Type:            provider.ToolContentFile,
 				Data:            &provider.DataContent{Base64: "base64data"},
 				MediaType:       tt.mediaType,
-				Filename:        tt.filename,
+				Filename:        new(tt.filename),
 				ProviderOptions: tt.providerOptions,
 			}))
 
@@ -960,8 +1041,8 @@ func TestBuildRequest_MistralNormalizesToolCallId(t *testing.T) {
 		},
 		Tools: []provider.Tool{{Type: provider.ToolTypeFunction, Name: "weather", InputSchema: json.RawMessage(`{"type":"object"}`)}},
 	})
-	assert.Equal(t, "toolusebp", req.Messages[1].Content[0].ToolUse.ToolUseID)
-	assert.Equal(t, "toolusebp", req.Messages[2].Content[0].ToolResult.ToolUseID)
+	assert.Equal(t, "8eHypBDcw", req.Messages[1].Content[0].ToolUse.ToolUseID)
+	assert.Equal(t, "8eHypBDcw", req.Messages[2].Content[0].ToolResult.ToolUseID)
 }
 
 func TestBuildRequest_ImageMessage(t *testing.T) {
@@ -1183,7 +1264,7 @@ func TestBuildRequest_NamedDocumentDoesNotAdvanceGeneratedName(t *testing.T) {
 				provider.ContentPart{
 					Type:      provider.ContentPartTypeFile,
 					MediaType: "application/pdf",
-					Filename:  "named.pdf",
+					Filename:  new("named.pdf"),
 					Data:      &provider.DataContent{Base64: "AAECAw=="},
 				},
 				provider.FilePart("application/pdf", provider.DataContent{Base64: "AAECAw=="}),
@@ -1204,7 +1285,7 @@ func TestBuildRequest_TextDocumentData(t *testing.T) {
 			provider.NewUserMessage(provider.ContentPart{
 				Type:      provider.ContentPartTypeFile,
 				MediaType: "text",
-				Filename:  "notes.txt",
+				Filename:  new("notes.txt"),
 				Data:      &provider.DataContent{Text: "hello"},
 			}),
 		},
@@ -1217,6 +1298,43 @@ func TestBuildRequest_TextDocumentData(t *testing.T) {
 	assert.Equal(t, "txt", document.Format)
 	assert.Equal(t, "notes", document.Name)
 	assert.Equal(t, "aGVsbG8=", document.Source.Bytes)
+	assert.Empty(t, warnings)
+}
+
+func TestBuildRequest_InvalidDirectFileInputs(t *testing.T) {
+	bad := provider.BytesDataContent([]byte{})
+	bad.URL = "https://example.test/file"
+	for _, prompt := range [][]provider.Message{
+		{provider.NewUserMessage(provider.FilePart("image/png", bad))},
+		{provider.NewAssistantMessage(provider.ReasoningFilePart("image/png", bad))},
+		{provider.NewAssistantMessage(provider.ReasoningFilePart("image/png", provider.TextDataContent("")))},
+		{provider.NewAssistantMessage(provider.ContentPart{Type: provider.ContentPartTypeReasoningFile, MediaType: "image/png"})},
+		{provider.NewToolMessage(provider.ToolResultPart("call-1", "tool", &provider.ToolResultOutput{
+			Type:    provider.ToolOutputContent,
+			Content: []provider.ToolResultContentValue{{Type: provider.ToolContentFile, Data: &bad, MediaType: "image/png"}},
+		}))},
+	} {
+		_, _, _, err := buildRequest(testAnthropicModel, provider.CallOptions{Prompt: prompt})
+		require.ErrorContains(t, err, "invalid file input")
+	}
+}
+
+func TestBuildRequest_SelectedEmptyFileData(t *testing.T) {
+	text := provider.FilePart("text/plain", provider.TextDataContent(""))
+	text.Filename = new("")
+	data := provider.FilePart("application/pdf", provider.Base64DataContent(""))
+	req, warnings, _ := mustBuildRequest(t, testAnthropicModel, provider.CallOptions{
+		Prompt: []provider.Message{provider.NewUserMessage(text, data)},
+	})
+	require.Len(t, req.Messages, 1)
+	require.Len(t, req.Messages[0].Content, 2)
+	for i, format := range []string{"txt", "pdf"} {
+		doc := req.Messages[0].Content[i].Document
+		require.NotNil(t, doc)
+		assert.Equal(t, format, doc.Format)
+		assert.Equal(t, fmt.Sprintf("document-%d", i+1), doc.Name)
+		assert.Equal(t, "", doc.Source.Bytes)
+	}
 	assert.Empty(t, warnings)
 }
 

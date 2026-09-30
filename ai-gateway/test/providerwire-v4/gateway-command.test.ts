@@ -8,9 +8,9 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import nodeProcess from "node:process";
 import { after, before, describe, it } from "node:test";
-import { createGateway } from "@ai-sdk/gateway";
-import type { LanguageModelV4CallOptions } from "@ai-sdk/provider";
-import { isStepCount, jsonSchema, streamText, tool } from "ai";
+import { createGateway, GatewayInvalidRequestError } from "@ai-sdk/gateway";
+import type { JSONValue, LanguageModelV4CallOptions } from "@ai-sdk/provider";
+import { generateText, isStepCount, jsonSchema, streamText, tool, wrapLanguageModel } from "ai";
 import { buildGoClientCapture, buildGoStreamTextCapture, captureGoClient } from "./go-client-capture";
 
 const AI_GATEWAY_ROOT = resolve(import.meta.dirname, "../..");
@@ -32,8 +32,6 @@ before(() => {
     stdio: "pipe",
     env: {
       ...nodeProcess.env,
-      // CI and release verification always use immutable module pins. A local
-      // unpublished-middleware checkout may opt into an explicit go.work path.
       GOWORK: nodeProcess.env.GATEWAY_TEST_GOWORK ?? "off",
       GOFLAGS: `${nodeProcess.env.GOFLAGS ? `${nodeProcess.env.GOFLAGS} ` : ""}-mod=readonly`,
     },
@@ -47,6 +45,30 @@ after(() => {
 });
 
 describe("authenticated Anthropic Gateway command", () => {
+  for (const family of ["anthropic", "openai"] as const) {
+    it(`replays assembled ${family} reasoning through authenticated native requests in both clients`, async () => {
+      const [fake,gateway] = family === "anthropic" ? await startGateway() : await startOpenAIGateway();
+      const id=family === "anthropic" ? "assistant" : "openai";
+      try {
+        const first=streamText({model:gateway.client()(id),prompt:"wp17-reasoning",maxOutputTokens:64});
+        const response=await first.response;
+        assert.equal(await first.reasoningText,"private thought");
+        const metadata=(await first.reasoning)[0].providerMetadata;
+        assert.deepEqual(metadata,family === "anthropic" ? {anthropic:{signature:"end-signature"}} : {openai:{itemId:"rs_wp17",reasoningEncryptedContent:"final-encrypted"}});
+        const second=streamText({model:gateway.client()(id),messages:[{role:"user",content:"wp17-reasoning"},...response.messages],maxOutputTokens:64});
+        await second.consumeStream();
+        assert.equal(fake.requests.length,2);
+        const field=family === "anthropic" ? "messages" : "input";
+        const native=fake.requests[1].body[field];
+        assert.ok(JSON.stringify(native).includes(family === "anthropic" ? "end-signature" : "rs_wp17"));
+        const go=await captureGoClient(goStreamTextBinaryPath,{baseURL:`${gateway.url}/api/v1/aisdk`,accessToken:TEST_TOKEN,modelID:id,mode:"reasoning-replay",options:{prompt:[{role:"user",content:[{type:"text",text:"wp17-reasoning"}]}],maxOutputTokens:64}});
+        assert.equal(go.error,undefined);
+        assert.equal(fake.requests.length,4);
+        assert.deepEqual(fake.requests[3].body[field],native);
+        assert.deepEqual(fake.violations,[]);
+      } finally {await gateway.stop();await fake.stop();}
+    });
+  }
   it("preserves authenticated Vercel and Go text behavior across ordered fallback", async () => {
     const keys = generateKeyPairSync("ec", { namedCurve: "P-256" });
     const jwk = { ...keys.publicKey.export({ format: "jwk" }), kid: "fallback-test", alg: "ES256", use: "sig" };
@@ -85,6 +107,8 @@ describe("authenticated Anthropic Gateway command", () => {
         { prompt: [], toolChoice: { type: "tool", toolName: "private-tool" } },
         { prompt: [call] },
         { prompt: [call, result] },
+        { prompt: [{ role: "user", content: [{ type: "file", data: { type: "text", text: "private-file" }, mediaType: "text/plain" }] }] },
+        { prompt: [{ role: "user", content: [{ type: "text", text: "hello" }], providerOptions: { anthropic: { cacheControl: { type: "ephemeral" } } } }] },
       ];
       for (const options of effectRequests) {
         const counts: [number, number] = [primary.requests.length, secondary.requests.length];
@@ -126,6 +150,24 @@ describe("authenticated Anthropic Gateway command", () => {
         });
         assert.equal(primary.requests.length, 0, "streaming tools/history must not invoke primary");
         assert.equal(secondary.requests.length, 0, "streaming tools/history must not invoke fallback");
+      }
+      primary.failureStatus = 503;
+      secondary.failureStatus = undefined;
+      const textRequests: LanguageModelV4CallOptions[] = [
+        { prompt: [{ role: "user", content: [{ type: "text", text: "normal-stream" }], providerOptions: { anthropic: {} } }] },
+        { prompt: [{ role: "user", content: [{ type: "text", text: "normal-stream" }], providerOptions: { vendor: { flag: false } } }] },
+      ];
+      for (const mode of ["generate", "stream"] as const) {
+        for (const options of textRequests) {
+          const counts: [number, number] = [primary.requests.length, secondary.requests.length];
+          const go = await captureGoClient(goClientBinaryPath, { ...base, mode, options });
+          assert.equal(go.error, undefined);
+          const model = client("assistant");
+          const result = mode === "generate" ? await model.doGenerate(options) : await collectGatewayStream((await model.doStream(options)).stream);
+          assert.ok(JSON.stringify(result).includes("hello from fake Anthropic"));
+          assert.deepEqual([primary.requests.length - counts[0], secondary.requests.length - counts[1]], [2, 2]);
+          assert.deepEqual(primary.requests.at(-1)?.body, secondary.requests.at(-1)?.body);
+        }
       }
       for (const row of [
         { primary: undefined, secondary: undefined, count: 0, status: undefined },
@@ -432,7 +474,7 @@ describe("authenticated Anthropic Gateway command", () => {
       await fake.waitForCancellation("silent-abort");
       const missing = await captureGoClient(goClientBinaryPath, { ...base, mode: "generate", modelID: "missing", options: { prompt: [] } });
       assert.equal(missing.error.category, "model_not_found"); assert.equal(missing.error.statusCode, 404);
-      const invalid = await captureGoClient(goClientBinaryPath, { ...base, mode: "generate", modelID: "assistant", options: { prompt: [], headers: { "x-call": "unsupported" } } });
+      const invalid = await captureGoClient(goClientBinaryPath, { ...base, mode: "generate", modelID: "assistant", options: { prompt: [], headers: { authorization: "Bearer caller-controlled" } } });
       assert.equal(invalid.error.category, "invalid_request_error"); assert.equal(invalid.error.statusCode, 400);
       const unauthorized = await captureGoClient(goClientBinaryPath, { ...base, accessToken: "invalid-token", mode: "discovery" });
       assert.equal(unauthorized.error.category, "authentication_error"); assert.equal(unauthorized.error.statusCode, 401);
@@ -440,6 +482,79 @@ describe("authenticated Anthropic Gateway command", () => {
       const metrics = await (await fetch(`${gateway.url}/metrics`)).text();
       await gateway.stop();
       assertPrivateValuesAbsent([discovery, actingUser, invalidUser, stream, abort, missing, invalid, unauthorized, metrics, gateway.stderr], fake, ["invalid-user-token", "invalid-token"]);
+    } finally { await settleCleanup(() => gateway.stop(), () => fake.stop()); }
+  });
+
+  it("maps file inputs and file-result continuation through authenticated native calls", async () => {
+    const [fake, gateway] = await startGateway();
+    const client = gateway.client();
+    const base = { baseURL: `${gateway.url}/api/v1/aisdk`, accessToken: TEST_TOKEN, modelID: "assistant" };
+    try {
+      const prompt: LanguageModelV4CallOptions["prompt"] = [{
+        role: "user",
+        content: [
+          { type: "text", text: "normal-stream" },
+          { type: "file", data: { type: "data", data: "AQID" }, mediaType: "image/png", filename: "" },
+          { type: "file", data: { type: "text", text: "" }, mediaType: "text/plain", filename: "" },
+          { type: "file", data: { type: "url", url: new URL("https://example.test/doc.pdf") }, mediaType: "application/pdf" },
+          { type: "file", data: { type: "reference", reference: { anthropic: "file-1" } }, mediaType: "application/pdf" },
+          { type: "file", data: { type: "text", text: "inline document" }, mediaType: "application/pdf", filename: "notes.txt" },
+        ],
+      }];
+      for (const mode of ["generate", "stream"] as const) {
+        const options = { prompt };
+        const ts = mode === "generate"
+          ? (await client("assistant").doGenerate(options)).content
+          : await collectGatewayStream((await client("assistant").doStream(options)).stream);
+        const go = await captureGoClient(goClientBinaryPath, { ...base, mode, options: JSON.parse(JSON.stringify(options)) });
+        assert.equal(go.error, undefined);
+        assert.ok(JSON.stringify(ts).includes("hello from fake Anthropic"));
+        assert.ok(JSON.stringify(mode === "generate" ? go.result.content : go.parts).includes("hello from fake Anthropic"));
+        const first = fake.requests.at(-2)!.body as any;
+        const second = fake.requests.at(-1)!.body as any;
+        assert.deepEqual(second, first);
+        const content = first.messages[0].content;
+        assert.deepEqual(content[1].source, { type: "base64", media_type: "image/png", data: "AQID" });
+        assert.deepEqual(content[2].source, { type: "text", media_type: "text/plain", data: "" });
+        assert.equal(content[2].title, "");
+        assert.deepEqual(content[3].source, { type: "url", url: "https://example.test/doc.pdf" });
+        assert.deepEqual(content[4].source, { type: "file", file_id: "file-1" });
+        assert.deepEqual(content[5].source, { type: "text", media_type: "text/plain", data: "inline document" });
+        assert.equal(content[5].title, "notes.txt");
+      }
+
+      fake.functionTools = true;
+      const fileResult: LanguageModelV4CallOptions = {
+        prompt: [...prompt,
+          { role: "assistant", content: [{ type: "tool-call", toolCallId: "call-weather", toolName: "weather", input: { city: "Rio" } }] },
+          { role: "tool", content: [{ type: "tool-result", toolCallId: "call-weather", toolName: "weather", output: { type: "content", value: [
+            { type: "text", text: "weather result" },
+            { type: "file", filename: "", data: { type: "data", data: "BQY=" }, mediaType: "image/png" },
+            { type: "file", data: { type: "url", url: new URL("https://example.test/result.png") }, mediaType: "image/png" },
+            { type: "file", data: { type: "url", url: new URL("https://example.test/result.pdf") }, mediaType: "application/pdf" },
+            { type: "file", data: { type: "data", data: "JVBERi0=" }, mediaType: "application/pdf" },
+          ] } }] },
+        ],
+      };
+      for (const mode of ["generate", "stream"] as const) {
+        const ts = mode === "generate"
+          ? (await client("assistant").doGenerate(fileResult)).content
+          : await collectGatewayStream((await client("assistant").doStream(fileResult)).stream);
+        const go = await captureGoClient(goClientBinaryPath, { ...base, mode, options: JSON.parse(JSON.stringify(fileResult)) });
+        assert.equal(go.error, undefined);
+        assert.ok(JSON.stringify(ts).includes("It is sunny."));
+        assert.ok(JSON.stringify(mode === "generate" ? go.result.content : go.parts).includes("It is sunny."));
+        const first = fake.requests.at(-2)!.body as any;
+        const second = fake.requests.at(-1)!.body as any;
+        assert.deepEqual(second, first);
+        const result = first.messages.at(-1).content[0];
+        assert.equal(result.type, "tool_result");
+        assert.deepEqual(result.content[1].source, { type: "base64", media_type: "image/png", data: "BQY=" });
+        assert.deepEqual(result.content[2].source, { type: "url", url: "https://example.test/result.png" });
+        assert.deepEqual(result.content[3].source, { type: "url", url: "https://example.test/result.pdf" });
+        assert.deepEqual(result.content[4].source, { type: "base64", media_type: "application/pdf", data: "JVBERi0=" });
+      }
+      assert.deepEqual(fake.violations, []);
     } finally { await settleCleanup(() => gateway.stop(), () => fake.stop()); }
   });
 
@@ -502,7 +617,7 @@ describe("authenticated Anthropic Gateway command", () => {
 
       assert.equal(fake.requests.length, 3);
       for (const request of fake.requests) {
-        assert.equal(request.path, "/v1/messages?beta=true");
+        assert.equal(request.path, "/v1/messages");
         assert.equal(request.apiKey, "integration-anthropic-key");
         assert.equal(request.body.model, "backend-private");
         assert.equal(request.body.max_tokens, 32);
@@ -603,15 +718,21 @@ describe("authenticated Anthropic Gateway command", () => {
         "--agento11y.shutdown-timeout=2s",
       ], { GATEWAY_TEST_AGENTO11Y_KEY: "integration-agento11y-key" });
       const [fake, gateway] = resources;
+      const fileParts = [
+        { type: "file", filename: "private-filename", data: { type: "data", data: "cHJpdmF0ZS1ieXRlcw==" }, mediaType: "image/png" },
+        { type: "file", data: { type: "url", url: new URL("https://cdn.example.test/private-url?token=private-query") }, mediaType: "application/pdf" },
+        { type: "file", data: { type: "reference", reference: { anthropic: "private-reference" } }, mediaType: "application/pdf" },
+        { type: "file", filename: "", data: { type: "text", text: "private-document-text" }, mediaType: "text/plain", providerOptions: { anthropic: { title: "private-file-title" } } },
+      ] as const;
 
       const unary = await gateway.client()("assistant").doGenerate({
-        prompt: [{ role: "user", content: [{ type: "text", text: "private-unary-input" }] }],
+        prompt: [{ role: "user", content: [{ type: "text", text: "private-unary-input" }, ...fileParts] }],
         maxOutputTokens: 32,
       });
       assert.deepEqual(unary.content, [{ type: "text", text: "hello from fake Anthropic" }]);
 
       const streamed = await gateway.client()("assistant").doStream({
-        prompt: [{ role: "user", content: [{ type: "text", text: "normal-stream" }] }],
+        prompt: [{ role: "user", content: [{ type: "text", text: "normal-stream" }, ...fileParts] }],
         maxOutputTokens: 32,
       });
       const streamParts = await collectGatewayStream(streamed.stream);
@@ -621,14 +742,14 @@ describe("authenticated Anthropic Gateway command", () => {
       ]);
       assert.equal(streamParts.filter((part) => part.type === "text-delta").map((part) => part.delta).join(""), "hello from fake Anthropic stream");
 
-      const providerFailure = await rawProviderWireRequest(gateway.url, "provider-error");
+      const providerFailure = await rawProviderWireRequest(gateway.url, "provider-error", "assistant", fileParts);
       assert.equal(providerFailure.status, 502);
       assert.deepEqual(await providerFailure.json(), {
         error: { message: "upstream failure", type: "internal_server_error", param: null, code: "upstream_error" },
       });
 
       const aborted = await gateway.client()("assistant").doStream({
-        prompt: [{ role: "user", content: [{ type: "text", text: "silent-abort" }] }],
+        prompt: [{ role: "user", content: [{ type: "text", text: "silent-abort" }, ...fileParts] }],
         maxOutputTokens: 32,
       });
       const abortReader = aborted.stream.getReader();
@@ -639,7 +760,7 @@ describe("authenticated Anthropic Gateway command", () => {
       await fake.waitForCancellation("silent-abort");
 
       const shuttingDown = await gateway.client()("assistant").doStream({
-        prompt: [{ role: "user", content: [{ type: "text", text: "silent-shutdown" }] }],
+        prompt: [{ role: "user", content: [{ type: "text", text: "silent-shutdown" }, ...fileParts] }],
         maxOutputTokens: 32,
       });
       const shutdownStart = await shuttingDown.stream.getReader().read();
@@ -687,7 +808,7 @@ describe("authenticated Anthropic Gateway command", () => {
       for (const privateValue of [
         "integration-anthropic-key", "integration-agento11y-key", "GATEWAY_TEST_AGENTO11Y_KEY",
         "backend-private", fake.url, observer.url, TEST_TOKEN, "private-unary-input",
-        "hello from fake Anthropic", "provider-secret-response",
+        "hello from fake Anthropic", "provider-secret-response", "private-filename", "cHJpdmF0ZS1ieXRlcw==", "private-url", "private-query", "private-reference", "private-document-text", "private-file-title",
       ]) {
         assert.ok(!surfaces.includes(privateValue), `private value leaked: ${privateValue}`);
       }
@@ -1219,6 +1340,165 @@ describe("Trusted-proxy composition (dummy credentials, not production authentic
 });
 
 describe("authenticated OpenAI-compatible Gateway command", () => {
+  it("forwards the selected backend's provider options and refuses host and credential values", async () => {
+    const [fake, gateway] = await startCompatibleGateway();
+    try {
+      const client = gateway.client();
+      await client("compatible").doGenerate({
+        prompt: [{ role: "user", content: [{ type: "text", text: "unary" }] }],
+        maxOutputTokens: 32,
+        providerOptions: {
+          openaiCompatible: { reasoningEffort: "low", user: "caller-supplied-user" },
+        },
+        headers: { "X-Contract-Body": "carried" },
+      });
+
+      const forwarded = fake.requests.at(-1);
+      assert.ok(forwarded, "the backend received the request");
+      assert.equal(forwarded.body.reasoning_effort, "low");
+      assert.equal(forwarded.body.user, "caller-supplied-user");
+      assert.equal(singleHeader(forwarded.headers["x-contract-body"]), "carried");
+      assert.equal(singleHeader(forwarded.headers.authorization), "Bearer integration-compatible-key",
+        "the gateway's backend credential is the one presented upstream");
+
+      for (const [rejected, message] of [
+        [{ providerOptions: { grafana: { tenant: "other" } } }, "reserved provider option namespace"],
+        [{ headers: { authorization: "Bearer caller-controlled" } }, "protected call header"],
+        [{ providerOptions: { openaiCompatible: { Model: "someone-elses-model" } } }, "protected provider option"],
+      ] as const) {
+        await assert.rejects(
+          async () => await client("compatible").doGenerate({
+            prompt: [{ role: "user", content: [{ type: "text", text: "unary" }] }],
+            maxOutputTokens: 32,
+            ...rejected,
+          }),
+          (error: unknown) => GatewayInvalidRequestError.isInstance(error) && error.message === message,
+          `refused as ${message}, not by an unrelated failure`,
+        );
+      }
+      const refusedBodies = JSON.stringify(fake.requests.map((request: { body: unknown }) => request.body));
+      for (const refused of ["caller-controlled", "tenant", "someone-elses-model"]) {
+        assert.ok(!refusedBodies.includes(refused), "a refused value never reaches the backend");
+      }
+      assert.deepEqual(fake.violations, []);
+    } finally { await settleCleanup(() => gateway.stop(), () => fake.stop()); }
+  });
+
+  it("refuses provider options that restructure a validated message, in both modes", async () => {
+    // A namespace field that reaches the provider's message or part metadata is
+    // spread over the entry it builds, so it can reinstate content the runtime
+    // refused to map. Every one of these must be refused before the call.
+    const [fake, gateway] = await startCompatibleGateway();
+    try {
+      const client = gateway.client();
+      const structural: Record<string, JSONValue> = {
+        content: [{ type: "image_url", image_url: { url: "https://caller.example/x.png" } }],
+        role: "tool",
+        type: "image_url",
+        image_url: { url: "https://caller.example/x.png" },
+        tool_calls: [{ id: "call_1", type: "function", function: { name: "f", arguments: "{}" } }],
+      };
+      for (const [field, value] of Object.entries(structural)) {
+        for (const mode of ["generate", "stream"] as const) {
+          const options = {
+            prompt: [{
+              role: "user" as const,
+              content: [{ type: "text" as const, text: "unary" }],
+              providerOptions: { openaiCompatible: { [field]: value } },
+            }],
+            maxOutputTokens: 32,
+          };
+          await assert.rejects(
+            async () => mode === "generate"
+              ? await client("compatible").doGenerate(options)
+              : await collectGatewayStream((await client("compatible").doStream(options)).stream),
+            (error: unknown) => GatewayInvalidRequestError.isInstance(error) && error.message === "protected provider option",
+            `${field} in ${mode} mode is refused as a protected provider option`,
+          );
+        }
+      }
+      assert.equal(fake.requests.length, 0, "a refused request never reaches the backend");
+      assert.deepEqual(fake.violations, []);
+    } finally { await settleCleanup(() => gateway.stop(), () => fake.stop()); }
+  });
+
+  it("forwards nested provider options and call headers to the backend, in both modes", async () => {
+    const [fake, gateway] = await startCompatibleGateway();
+    try {
+      const client = gateway.client();
+      for (const mode of ["generate", "stream"] as const) {
+        const options = {
+          prompt: [
+            {
+              role: "system" as const,
+              content: "be brief",
+              providerOptions: { openaiCompatible: { system_marker: `system-${mode}` } },
+            },
+            {
+              // Two parts, because upstream collapses a lone text part into the
+              // message and uses the part's metadata for it.
+              role: "user" as const,
+              content: [
+                { type: "text" as const, text: mode === "stream" ? "normal-stream" : "unary", providerOptions: { openaiCompatible: { part_marker: `part-${mode}` } } },
+                { type: "text" as const, text: "tail" },
+              ],
+              providerOptions: { openaiCompatible: { message_marker: `message-${mode}` } },
+            },
+          ],
+          maxOutputTokens: 32,
+          providerOptions: { openaiCompatible: { user: `root-${mode}` } },
+          headers: { "X-Contract-Body": `header-${mode}` },
+        };
+        if (mode === "generate") {
+          await client("compatible").doGenerate(options);
+        } else {
+          await collectGatewayStream((await client("compatible").doStream(options)).stream);
+        }
+
+        const forwarded = fake.requests.at(-1);
+        assert.ok(forwarded, `the backend received the ${mode} request`);
+        const body = forwarded.body as { user?: string; stream?: boolean; messages: Array<Record<string, unknown>> };
+        assert.equal(body.user, `root-${mode}`, "root options reach the backend");
+        assert.equal(singleHeader(forwarded.headers["x-contract-body"]), `header-${mode}`, "call headers reach the backend");
+        assert.equal(body.stream ?? false, mode === "stream", "the mode the caller asked for is the mode sent upstream");
+        const [system, user] = body.messages;
+        assert.equal(system!.system_marker, `system-${mode}`, "system-message options reach the backend");
+        assert.equal(user!.message_marker, `message-${mode}`, "message options reach the backend");
+        const parts = user!.content as Array<Record<string, unknown>>;
+        assert.equal(parts[0]!.part_marker, `part-${mode}`, "text-part options reach the backend");
+      }
+      assert.deepEqual(fake.violations, []);
+    } finally { await settleCleanup(() => gateway.stop(), () => fake.stop()); }
+  });
+
+  it("returns reasoning-only paid unary once and replays high-level history in both clients", async () => {
+    const [fake, gateway] = await startCompatibleGateway();
+    try {
+      const model = gateway.client()("compatible");
+      // Deliberate host transport adaptation; never enable native body headers.
+      const unaryModel = wrapLanguageModel({ model, middleware: { specificationVersion: "v4", wrapGenerate: async ({params}) => {
+        const {headers,...options}=params;
+        assert.deepEqual(Object.keys(headers ?? {}),["user-agent"]);
+        assert.match(headers!["user-agent"]!,/^ai\/7\.0\.116(?:\s|$)/);
+        return createGateway({apiKey:"ignored",baseURL:`${gateway.url}/api/v1/aisdk`,headers:{"X-Access-Token":TEST_TOKEN,"user-agent":headers!["user-agent"]!}})("compatible").doGenerate(options);
+      } } });
+      const unary = await generateText({model:unaryModel,prompt:"wp17-reasoning",maxOutputTokens:64});
+      assert.equal(fake.requests.length,1);
+      assert.equal(unary.reasoningText,"private thought");
+      const first=streamText({model,prompt:"wp17-reasoning",maxOutputTokens:64});
+      const response=await first.response;
+      assert.equal(await first.reasoningText,"private thought");
+      const second=streamText({model,messages:[{role:"user",content:"wp17-reasoning"},...response.messages],maxOutputTokens:64});
+      await second.consumeStream();
+      assert.equal(fake.requests.length,3);
+      assert.ok(JSON.stringify(fake.requests[2].body.messages).includes("private thought"));
+      const go=await captureGoClient(goStreamTextBinaryPath,{baseURL:`${gateway.url}/api/v1/aisdk`,accessToken:TEST_TOKEN,modelID:"compatible",mode:"reasoning-replay",options:{prompt:[{role:"user",content:[{type:"text",text:"wp17-reasoning"}]}],maxOutputTokens:64}});
+      assert.equal(go.error,undefined);
+      assert.equal(fake.requests.length,5);
+      assert.deepEqual(fake.requests[4].body.messages,fake.requests[2].body.messages);
+      assert.deepEqual(fake.violations,[]);
+    } finally { await gateway.stop(); await fake.stop(); }
+  });
   it("discovers, invokes, and streams usage without exposing private configuration", async () => {
     const [fake, gateway] = await startCompatibleGateway();
     try {
@@ -1322,6 +1602,37 @@ describe("authenticated OpenAI-compatible Gateway command", () => {
 });
 
 describe("authenticated OpenAI Responses Gateway command", () => {
+  it("projects native URL and file-path sources without private identity in both clients", async () => {
+    const [fake,gateway]=await startOpenAIGateway();
+    fake.sources=true;
+    try {
+      const options={prompt:[{role:"user" as const,content:[{type:"text" as const,text:"sources"}]}],maxOutputTokens:32};
+      const expected=[
+        {type:"source",sourceType:"url",id:"source-1",url:"https://public.example",title:"Public citation"},
+        {type:"source",sourceType:"document",id:"source-2",mediaType:"application/octet-stream",title:"Document",providerMetadata:{citation:{index:0}}},
+      ];
+      const unary=await gateway.client()("openai").doGenerate(options);
+      assert.deepEqual(unary.content.filter(part=>part.type==="source"),expected);
+      const streamed=await gateway.client()("openai").doStream(options);
+      const parts:unknown[]=[];
+      const reader=streamed.stream.getReader();
+      for (;;) {const next=await reader.read();if(next.done)break;parts.push(next.value);}
+      assert.deepEqual(parts.filter((part:any)=>part.type==="source"),expected);
+      const config={baseURL:`${gateway.url}/api/v1/aisdk`,accessToken:TEST_TOKEN,modelID:"openai",options};
+      const goUnary=await captureGoClient(goClientBinaryPath,{...config,mode:"generate"});
+      assert.equal(goUnary.error,undefined);
+      assert.deepEqual(goUnary.result.content.filter((part:any)=>part.type==="source").map((part:any)=>({...part,text:undefined})),expected.map(part=>({...part,text:undefined})));
+      const goStream=await captureGoClient(goClientBinaryPath,{...config,mode:"stream"});
+      assert.equal(goStream.error,undefined);
+      assert.deepEqual(goStream.parts.filter((part:any)=>part.type==="source"),expected);
+      const metrics=await (await fetch(`${gateway.url}/metrics`)).text();
+      for (const privateValue of ["native-file-private","Public citation","https://public.example"]) {
+        assert.ok(!gateway.stderr.includes(privateValue));
+        assert.ok(!metrics.includes(privateValue));
+      }
+      assert.deepEqual(fake.violations,[]);
+    } finally {await settleCleanup(()=>gateway.stop(),()=>fake.stop());}
+  });
   it("discovers, invokes, and streams usage without exposing private configuration", async () => {
     const [fake, gateway] = await startOpenAIGateway();
     try {
@@ -1848,10 +2159,25 @@ class FakeAnthropic {
     const marker = ["silent-abort", "silent-shutdown", "silent-unary-shutdown", "normal-stream", "provider-error", "redirect", "oversized"]
       .find((value) => serialized.includes(value));
     this.requests.push({ path: request.url ?? "", apiKey: singleHeader(request.headers["x-api-key"]), headers: { ...request.headers }, body });
-    if (request.url !== "/v1/messages?beta=true") this.violations.push(`path=${request.url}`);
+    if (request.url !== "/v1/messages") this.violations.push(`path=${request.url}`);
     if (singleHeader(request.headers["x-api-key"]) !== "integration-anthropic-key") this.violations.push("api-key");
     if (body.model !== this.backendModel) this.violations.push(`model=${String(body.model)}`);
     if (request.headers["x-access-token"] != null || request.headers["x-grafana-id"] != null) this.violations.push("forwarded-caller-credential");
+
+    if (serialized.includes("wp17-reasoning")) {
+      response.writeHead(200,{"Content-Type":"text/event-stream"});
+      const events=[
+        {type:"message_start",message:{id:"r",type:"message",role:"assistant",model:"backend-private",content:[],stop_reason:null,usage:{input_tokens:2,output_tokens:0}}},
+        {type:"content_block_start",index:0,content_block:{type:"thinking",thinking:"",signature:""}},
+        {type:"content_block_delta",index:0,delta:{type:"thinking_delta",thinking:"private thought"}},
+        {type:"content_block_delta",index:0,delta:{type:"signature_delta",signature:"end-signature"}},
+        {type:"content_block_stop",index:0},
+        {type:"message_delta",delta:{stop_reason:"end_turn",stop_sequence:null},usage:{output_tokens:3}},
+        {type:"message_stop"},
+      ];
+      for(const event of events)response.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
+      response.end();return;
+    }
 
     if (this.failureStatus != null) {
       response.writeHead(this.failureStatus, { "Content-Type": "application/json", "x-private-provider": "backend-private" });
@@ -1972,6 +2298,18 @@ class FakeCompatible {
     if (authorization !== "Bearer integration-compatible-key") this.violations.push("authorization");
     if (body.model !== "backend-private") this.violations.push(`model=${String(body.model)}`);
 
+    if (JSON.stringify(body).includes("wp17-reasoning")) {
+      if (body.stream !== true) {
+        response.writeHead(200,{"Content-Type":"application/json"});
+        response.end(JSON.stringify({id:"reasoning",object:"chat.completion",created:1,model:"backend-private",choices:[{index:0,message:{role:"assistant",content:null,reasoning_content:"private thought"},finish_reason:"stop"}],usage:{prompt_tokens:2,completion_tokens:3,total_tokens:5,completion_tokens_details:{reasoning_tokens:3}}}));
+      } else {
+        response.writeHead(200,{"Content-Type":"text/event-stream"});
+        for(const choices of [[{index:0,delta:{role:"assistant",reasoning_content:"private thought"},finish_reason:null}],[{index:0,delta:{},finish_reason:"stop"}]]) response.write(`data: ${JSON.stringify({id:"reasoning",object:"chat.completion.chunk",created:1,model:"backend-private",choices})}\n\n`);
+        response.end("data: [DONE]\n\n");
+      }
+      return;
+    }
+
     if (this.redirectTo != null) {
       response.writeHead(307, { Location: this.redirectTo });
       response.end();
@@ -2013,6 +2351,7 @@ class FakeOpenAI {
   readonly violations: string[] = [];
   redirectTo?: string;
   failWithSecret = false;
+  sources = false;
   private readonly server: ReturnType<typeof createServer>;
 
   private constructor(server: ReturnType<typeof createServer>, url: string) {
@@ -2045,6 +2384,20 @@ class FakeOpenAI {
     if (authorization !== "Bearer integration-openai-key") this.violations.push("authorization");
     if (body.model !== "backend-private") this.violations.push(`model=${String(body.model)}`);
 
+    if (JSON.stringify(body).includes("wp17-reasoning")) {
+      response.writeHead(200,{"Content-Type":"text/event-stream"});
+      const item={type:"reasoning",id:"rs_wp17",summary:[{type:"summary_text",text:"private thought"}],encrypted_content:"final-encrypted"};
+      const events=[
+        {type:"response.created",response:{id:"resp_wp17",object:"response",created_at:1,status:"in_progress",model:"backend-private",output:[],usage:null}},
+        {type:"response.output_item.added",output_index:0,item:{...item,summary:[],encrypted_content:null}},
+        {type:"response.reasoning_summary_text.delta",output_index:0,item_id:"rs_wp17",summary_index:0,delta:"private thought"},
+        {type:"response.output_item.done",output_index:0,item},
+        {type:"response.completed",response:{id:"resp_wp17",object:"response",created_at:1,status:"completed",model:"backend-private",output:[item],usage:{input_tokens:2,output_tokens:3,output_tokens_details:{reasoning_tokens:3},total_tokens:5}}},
+      ];
+      events.forEach((event,index)=>response.write(`event: ${event.type}\ndata: ${JSON.stringify({...event,sequence_number:index})}\n\n`));
+      response.end();return;
+    }
+
     if (this.redirectTo != null) {
       response.writeHead(307, { Location: this.redirectTo });
       response.end();
@@ -2057,7 +2410,11 @@ class FakeOpenAI {
     }
     const stream = body.stream === true;
     const text = stream ? "hello from fake openai stream" : "hello from fake openai";
-    const message = { id: "msg_test", type: "message", status: "completed", role: "assistant", content: [{ type: "output_text", annotations: [], logprobs: [], text }] };
+    const annotations=this.sources ? [
+      {type:"url_citation",url:"https://public.example",title:"Public citation",start_index:0,end_index:5},
+      {type:"file_path",file_id:"native-file-private",index:0},
+    ] : [];
+    const message = { id: "msg_test", type: "message", status: "completed", role: "assistant", content: [{ type: "output_text", annotations, logprobs: [], text }] };
     const completed = (outputTokens: number) => ({
       id: "resp_test", object: "response", created_at: 1, status: "completed", model: "backend-private", output: [message],
       usage: { input_tokens: 2, input_tokens_details: { cached_tokens: 0 }, output_tokens: outputTokens, output_tokens_details: { reasoning_tokens: 0 }, total_tokens: 2 + outputTokens },
@@ -2072,6 +2429,7 @@ class FakeOpenAI {
       { type: "response.created", response: { ...completed(0), status: "in_progress", output: [], usage: null } },
       { type: "response.output_item.added", output_index: 0, item: { ...message, status: "in_progress", content: [] } },
       { type: "response.output_text.delta", output_index: 0, content_index: 0, item_id: "msg_test", delta: text, logprobs: [] },
+      ...annotations.map((annotation,annotation_index)=>({type:"response.output_text.annotation.added",output_index:0,content_index:0,item_id:"msg_test",annotation_index,annotation})),
       { type: "response.output_item.done", output_index: 0, item: message },
       { type: "response.completed", response: completed(6) },
     ];
@@ -2148,7 +2506,7 @@ function sumPrometheusSamples(metrics: string, family: string, requiredLabels: s
   return total;
 }
 
-function rawProviderWireRequest(baseURL: string, text: string, modelID = "assistant"): Promise<Response> {
+function rawProviderWireRequest(baseURL: string, text: string, modelID = "assistant", extraParts: readonly unknown[] = []): Promise<Response> {
   return fetch(`${baseURL}/api/v1/aisdk/language-model`, {
     method: "POST",
     headers: {
@@ -2159,7 +2517,7 @@ function rawProviderWireRequest(baseURL: string, text: string, modelID = "assist
       "ai-language-model-streaming": "false",
     },
     body: JSON.stringify({
-      prompt: [{ role: "user", content: [{ type: "text", text }] }],
+      prompt: [{ role: "user", content: [{ type: "text", text }, ...extraParts] }],
       maxOutputTokens: 32,
       temperature: 0.2,
     }),

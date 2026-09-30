@@ -27,6 +27,7 @@ type inputConversionContext struct {
 	parallelResults         map[string]*parallelToolResultGroup
 	emittedParallelCalls    map[string]bool
 	emittedParallelResults  map[string]bool
+	programmaticToolCallIDs map[string]bool
 }
 
 func newInputConversionContext(tools []provider.Tool, mapping toolNameMapping, store bool, providerOptionsName string, hasConversation, hasPreviousResponseID bool) inputConversionContext {
@@ -39,6 +40,7 @@ func newInputConversionContext(tools []provider.Tool, mapping toolNameMapping, s
 		customProviderToolNames: make(map[string]struct{}),
 		outputSchemaToolNames:   make(map[string]struct{}),
 		processedApprovalIDs:    make(map[string]struct{}),
+		programmaticToolCallIDs: make(map[string]bool),
 	}
 	for _, tool := range tools {
 		if tool.Type == provider.ToolTypeFunction {
@@ -172,11 +174,17 @@ func convertAssistantToolCall(part provider.ContentPart, ctx inputConversionCont
 		if po.ItemID != "" {
 			item.OfCustomToolCall.ID = param.NewOpt(po.ItemID)
 		}
+		if po.Async != nil {
+			item.OfCustomToolCall.Async = param.NewOpt(*po.Async)
+		}
 		return &item, nil
 	default:
 		item := responses.ResponseInputItemParamOfFunctionCall(serializeToolCallArguments(part.Input), part.ToolCallID, toolName)
 		if po.Namespace != "" {
 			item.OfFunctionCall.Namespace = param.NewOpt(po.Namespace)
+		}
+		if po.Async != nil {
+			item.OfFunctionCall.Async = param.NewOpt(*po.Async)
 		}
 		item.OfFunctionCall.Caller = functionToolCallerParam(po.Caller)
 		return &item, nil
@@ -250,11 +258,19 @@ func convertProviderToolResult(part provider.ContentPart, ctx inputConversionCon
 		ctx.emittedParallelResults[id] = true
 		return group.output(ctx)
 	}
-	if part.Output != nil && part.Output.Type == provider.ToolOutputExecutionDenied && ctx.outputOptions(part.Output).ApprovalID != "" {
-		return nil, nil, nil
+	if part.Output != nil && part.Output.Type == provider.ToolOutputExecutionDenied {
+		if ctx.outputOptions(part.Output).ApprovalID != "" {
+			return nil, nil, nil
+		}
 	}
 
 	toolName := ctx.toolNameMapping.toProviderToolName(part.ToolName)
+	if part.Output != nil && part.Output.Type == provider.ToolOutputExecutionDenied && !ctx.isCustomProviderTool(toolName) {
+		caller := ctx.partOptions(part).Caller
+		if (caller != nil && caller.Type == OpenAIToolCallerProgram) || ctx.programmaticToolCallIDs[part.ToolCallID] {
+			return nil, nil, fmt.Errorf("openai: unsupported functionality: execution-denied results for programmatic tool calls")
+		}
+	}
 
 	switch {
 	case toolName == "tool_search" && part.Output != nil && part.Output.Type == provider.ToolOutputJSON:
@@ -276,9 +292,19 @@ func convertProviderToolResult(part provider.ContentPart, ctx inputConversionCon
 		item, warnings := customToolCallOutputItem(part, ctx)
 		return item, warnings, nil
 	default:
-		item := responses.ResponseInputItemParamOfFunctionCallOutput(part.ToolCallID, toolResultOutputString(part.Output, ctx.hasOutputSchema(part.ToolName)))
+		text, content, warnings, err := convertFunctionResultOutput(part, ctx)
+		if err != nil {
+			return nil, nil, err
+		}
+		var item responses.ResponseInputItemUnionParam
+		if content != nil {
+			item = responses.ResponseInputItemParamOfFunctionCallOutput(content)
+		} else {
+			item = responses.ResponseInputItemParamOfFunctionCallOutput(text)
+		}
+		item.OfFunctionCallOutput.CallID = param.NewOpt(part.ToolCallID)
 		item.OfFunctionCallOutput.Caller = functionCallOutputCallerParam(ctx.partOptions(part).Caller)
-		return &item, nil, nil
+		return &item, warnings, nil
 	}
 }
 
@@ -668,7 +694,15 @@ func customToolCallOutputItem(part provider.ContentPart, ctx inputConversionCont
 		return &item, nil
 	}
 	if part.Output.Type != provider.ToolOutputContent {
-		item := responses.ResponseInputItemParamOfCustomToolCallOutput(part.ToolCallID, toolResultOutputString(part.Output, false))
+		text := toolResultOutputString(part.Output, false)
+		if breakpoint := ctx.scalarResultBreakpoint(part); breakpoint != nil {
+			value := responses.ResponseInputTextParam{Text: text}
+			value.SetExtraFields(map[string]any{"prompt_cache_breakpoint": breakpoint})
+			content := []responses.ResponseCustomToolCallOutputOutputOutputContentListItemUnionParam{{OfInputText: &value}}
+			item := responses.ResponseInputItemParamOfCustomToolCallOutput(part.ToolCallID, content)
+			return &item, nil
+		}
+		item := responses.ResponseInputItemParamOfCustomToolCallOutput(part.ToolCallID, text)
 		return &item, nil
 	}
 
@@ -725,9 +759,9 @@ func customToolCallOutputItem(part provider.ContentPart, ctx inputConversionCont
 					}
 					content = append(content, responses.ResponseCustomToolCallOutputOutputOutputContentListItemUnionParam{OfInputImage: &image})
 				} else {
-					filename := value.Filename
-					if filename == "" {
-						filename = "data"
+					filename := "data"
+					if value.Filename != nil {
+						filename = *value.Filename
 					}
 					file := responses.ResponseInputFileParam{FileData: param.NewOpt(uri), Filename: param.NewOpt(filename)}
 					if options.PromptCacheBreakpoint != nil {
@@ -738,7 +772,7 @@ func customToolCallOutputItem(part provider.ContentPart, ctx inputConversionCont
 			default:
 				warnings = append(warnings, provider.Warning{
 					Type:    provider.WarnOther,
-					Message: "unsupported custom tool file data variant",
+					Message: fmt.Sprintf("unsupported custom tool content part type: file with data type: %s", unsupportedFileDataType(value.Data)),
 				})
 			}
 		default:

@@ -47,7 +47,7 @@ func (p *Provider) ListModels(ctx context.Context) ([]ModelInfo, error) {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, readGatewayError(ctx, resp, p.limits.ErrorBytes)
 	}
-	body, err := readJSON(ctx, resp, p.limits.DiscoveryBytes)
+	body, _, err := readJSON(ctx, resp, p.limits.DiscoveryBytes)
 	if err != nil {
 		return nil, protocolError("grafana: invalid discovery response", resp.StatusCode, err)
 	}
@@ -92,25 +92,25 @@ func validPublicText(value string) bool {
 	return utf8.ValidString(value) && strings.TrimSpace(value) != ""
 }
 
-func readJSON(ctx context.Context, resp *http.Response, limit int64) ([]byte, error) {
+func readJSON(ctx context.Context, resp *http.Response, limit int64) (body []byte, transportFailure bool, err error) {
 	media, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
 	if err != nil || media != "application/json" && (!strings.HasPrefix(media, "application/") || !strings.HasSuffix(media, "+json")) {
-		return nil, errors.New("grafana: expected JSON media type")
+		return nil, false, errors.New("grafana: expected JSON media type")
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	body, err = io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	if ctx.Err() != nil {
-		return nil, ctx.Err()
+		return nil, false, ctx.Err()
 	}
 	if err != nil {
-		return nil, err
+		return body, true, err
 	}
 	if int64(len(body)) > limit {
-		return nil, errors.New("grafana: response byte limit exceeded")
+		return nil, false, errors.New("grafana: response byte limit exceeded")
 	}
 	if !validJSON(body) {
-		return nil, errors.New("grafana: malformed JSON response")
+		return nil, false, errors.New("grafana: malformed JSON response")
 	}
-	return body, nil
+	return body, false, nil
 }
 
 func protocolError(message string, status int, cause error) *provider.APICallError {

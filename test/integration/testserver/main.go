@@ -23,6 +23,8 @@ func main() {
 		_, _ = fmt.Fprint(w, "ok")
 	})
 
+	mux.HandleFunc("GET /scenario/{name}/{id}/stream", handleHookReconnect)
+
 	mux.HandleFunc("POST /scenario/{name}", func(w http.ResponseWriter, r *http.Request) {
 		name := r.PathValue("name")
 		handler, ok := scenarios[name]

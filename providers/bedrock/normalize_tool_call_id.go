@@ -1,25 +1,38 @@
 package bedrock
 
-// normalizeToolCallID rewrites a tool call ID into a form acceptable by the
-// model. For non-Mistral models the ID passes through unchanged. For Mistral
-// models on Bedrock, the ID must match `^[a-zA-Z0-9]{9}$` -- exactly 9
-// alphanumeric characters. Bedrock generates IDs like
-// `tooluse_bpe71yCfRu2b5i-nKGDr5g` which Mistral rejects, so we keep the
-// first 9 alphanumeric characters.
-//
-// Mirrors upstream `normalize-tool-call-id.ts`.
+import "unicode/utf16"
+
+const mistralIDCharacters = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+const mistralIDSpace uint64 = 13_537_086_546_263_552
+
 func normalizeToolCallID(toolCallID string, isMistral bool) string {
 	if !isMistral {
 		return toolCallID
 	}
-	var buf [9]byte
-	n := 0
-	for i := 0; i < len(toolCallID) && n < 9; i++ {
-		c := toolCallID[i]
-		if (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') {
-			buf[n] = c
-			n++
+	if len(toolCallID) == 9 {
+		valid := true
+		for i := range 9 {
+			c := toolCallID[i]
+			if (c < '0' || c > '9') && (c < 'A' || c > 'Z') && (c < 'a' || c > 'z') {
+				valid = false
+				break
+			}
+		}
+		if valid {
+			return toolCallID
 		}
 	}
-	return string(buf[:n])
+
+	var hash uint64 = 14695981039346656037
+	for _, unit := range utf16.Encode([]rune(toolCallID)) {
+		hash ^= uint64(unit)
+		hash *= 1099511628211
+	}
+	value := hash % mistralIDSpace
+	var normalized [9]byte
+	for i := 8; i >= 0; i-- {
+		normalized[i] = mistralIDCharacters[value%62]
+		value /= 62
+	}
+	return string(normalized[:])
 }

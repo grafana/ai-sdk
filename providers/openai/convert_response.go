@@ -75,7 +75,7 @@ func convertResponse(resp *responses.Response, br buildResult, generateID func()
 				ToolCallID:       v.CallID,
 				ToolName:         v.Name,
 				Input:            json.RawMessage(v.Arguments),
-				ProviderMetadata: itemIDNamespaceCallerMeta(providerOptionsName, v.ID, v.Namespace, v.Caller.Type, v.Caller.CallerID),
+				ProviderMetadata: toolCallMeta(providerOptionsName, v.ID, v.Namespace, v.Caller.Type, v.Caller.CallerID, presentAsync(v.Async, v.JSON.Async.Valid())),
 			})
 
 		case responses.ResponseOutputItemProgram:
@@ -191,7 +191,7 @@ func convertResponse(resp *responses.Response, br buildResult, generateID func()
 				ToolCallID:       v.CallID,
 				ToolName:         v.Name,
 				Input:            input,
-				ProviderMetadata: itemIDMeta(providerOptionsName, v.ID),
+				ProviderMetadata: toolCallMeta(providerOptionsName, v.ID, "", "", "", presentAsync(v.Async, v.JSON.Async.Valid())),
 			})
 
 		case responses.ResponseOutputItemImageGenerationCall:
@@ -499,15 +499,16 @@ func mcpCallResult(call responses.ResponseOutputItemMcpCall) (json.RawMessage, e
 	if call.JSON.Output.Valid() {
 		result["output"] = call.Output
 	}
-	if call.JSON.Error.Valid() {
-		result["error"] = call.Error
-	} else if raw := call.JSON.Error.Raw(); raw != "" && raw != "null" {
-		var structuredError map[string]any
-		if err := json.Unmarshal([]byte(raw), &structuredError); err != nil {
+	if raw := call.JSON.Error.Raw(); raw != "" && raw != "null" {
+		var value any
+		if err := json.Unmarshal([]byte(raw), &value); err != nil {
 			return nil, fmt.Errorf("openai: decoding mcp call error: %w", err)
 		}
-		if structuredError != nil {
+		switch value.(type) {
+		case string, map[string]any:
 			result["error"] = json.RawMessage(raw)
+		default:
+			return nil, fmt.Errorf("openai: decoding mcp call error: expected string or object")
 		}
 	}
 	b, err := json.Marshal(result)
@@ -548,7 +549,18 @@ func itemIDAndNamespaceMeta(providerName, itemID, namespace string) provider.Pro
 }
 
 func itemIDNamespaceCallerMeta(providerName, itemID, namespace, callerType, callerID string) provider.ProviderMetadata {
-	if itemID == "" && namespace == "" && callerType == "" {
+	return toolCallMeta(providerName, itemID, namespace, callerType, callerID, nil)
+}
+
+func presentAsync(value bool, present bool) *bool {
+	if !present {
+		return nil
+	}
+	return &value
+}
+
+func toolCallMeta(providerName, itemID, namespace, callerType, callerID string, async *bool) provider.ProviderMetadata {
+	if itemID == "" && namespace == "" && callerType == "" && async == nil {
 		return nil
 	}
 	m := map[string]any{}
@@ -557,6 +569,9 @@ func itemIDNamespaceCallerMeta(providerName, itemID, namespace, callerType, call
 	}
 	if namespace != "" {
 		m["namespace"] = namespace
+	}
+	if async != nil {
+		m["async"] = *async
 	}
 	if callerType != "" {
 		caller := map[string]any{"type": callerType}

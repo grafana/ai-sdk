@@ -1,9 +1,7 @@
 ## Purpose
 
 Define the production ProviderWire V4 unary text and client-executed function-tool runtime and the observable contract proven against the registered Gateway client.
-
 ## Requirements
-
 ### Requirement: Constructed language-model handler
 
 The `ai-gateway/providerwire/v4` package SHALL provide one HTTP handler for relative `POST /language-model` unary and streaming requests. Construction SHALL require a non-nil `catalog.ModelResolver` and positive limits for request bytes, unary response bytes, provider stream-part count, complete SSE frame bytes, total model duration, stream idle duration, and bounded post-cancellation drain duration. Request and unary byte limits and the stream-part limit SHALL support safe `limit+1` arithmetic, and the frame limit SHALL contain the fixed start and stream-error frames.
@@ -54,6 +52,10 @@ After envelope validation, the handler SHALL read and close the request body thr
 
 The handler SHALL preserve ordered system messages and user or assistant text parts, including required empty strings. It SHALL map optional integer and continuous generation controls with ordinary Go JSON numeric range checks, preserve explicit zero values, preserve stop-sequence order, and map typed reasoning values. Omitted reasoning and wire `provider-default` SHALL both map to zero-valued `ReasoningProviderDefault`.
 
+The handler SHALL map call-level, message-level and text-part provider options to opaque provider options, preserving each namespace's nested JSON byte for byte, including null, false, zero, empty string, empty object and empty array members. A namespace value that is not a JSON object SHALL fail as an invalid request before resolution or model invocation. A namespace present with an empty object SHALL be preserved and not dropped. Namespace names SHALL be compared exactly, because provider-option namespaces are case-significant. Provider options carried by a message role or part type the runtime does not support SHALL NOT be inspected, so such a request SHALL report the family of that role or part type.
+
+The handler SHALL map body-carried call headers to provider call headers, preserving each key's original case. Two body headers whose names differ only in case SHALL fail as an invalid request, because either value could otherwise reach the backend depending on map order. An empty header map SHALL map to no headers. Body-carried headers SHALL remain distinct from the outer HTTP headers of the gateway request, which the runtime reads only for the protocol headers it owns. A body-carried header whose name belongs to the runtime's own protocol namespaces SHALL be accepted and SHALL NOT be forwarded to a backend, because the HTTP contract round-trips such a name in the body while the name addresses this runtime.
+
 #### Scenario: Supported request
 - **WHEN** a schema-valid unary request contains text messages and supported scalar controls
 - **THEN** the model SHALL receive the same text order, scalar presence, zero values, stop-sequence order, and reasoning value
@@ -68,9 +70,17 @@ The handler SHALL preserve ordered system messages and user or assistant text pa
 - **WHEN** tools, headers, and provider-options namespaces are empty, raw chunks are false, and response format is text
 - **THEN** those values SHALL normalize to the supported ordinary text behavior
 
+#### Scenario: Populated provider options and headers
+- **WHEN** a request carries call-level, message-level and text-part provider options and ordinary body headers
+- **THEN** the model SHALL receive each namespace with its nested JSON unchanged and each header with its original key case
+
+#### Scenario: Malformed provider option namespace
+- **WHEN** a provider-option namespace value is null, an array, or a scalar
+- **THEN** mapping SHALL return an invalid request before resolution or invocation
+
 ### Requirement: Unsupported capability families
 
-Schema-valid files, reasoning content, custom content, provider tools and tool approvals, structured output, non-empty provider options, body headers, and raw output SHALL return a stable invalid-request document naming the unsupported family before resolution or model invocation. Unary function definitions/choices and assistant-call/tool-result history SHALL execute only within the gateway-unary-function-tools subset. Function-tool provider options SHALL be supported within that subset; deferred nested result options SHALL remain unsupported. Streaming function requests SHALL remain unsupported until WP12. The runtime SHALL not define client-visible precedence among multiple simultaneously activated unsupported families.
+Schema-valid custom content, provider tools and tool approvals, structured output, and raw output SHALL return a stable invalid-request document naming the unsupported family before resolution or model invocation. Ordinary file inputs and message/file-part options SHALL execute within gateway-file-inputs, alongside existing call-level options and body-carried headers. Function definitions/choices and assistant-call/tool-result history SHALL execute only within the gateway-unary-function-tools and gateway-streaming-function-tools subsets, including the ordinary file-result extension. Function-tool and ordinary file-entry provider options SHALL be supported within those subsets; deferred output-level and non-file nested result options SHALL remain unsupported. Assistant reasoning text and reasoning-file history SHALL execute within gateway-reasoning-content, using the same protected-field and selected-backend provider-option policy. The runtime SHALL not define client-visible precedence among multiple simultaneously activated unsupported families.
 
 #### Scenario: One unsupported family
 - **WHEN** a request activates one unsupported family
@@ -79,6 +89,71 @@ Schema-valid files, reasoning content, custom content, provider tools and tool a
 #### Scenario: Malformed unsupported branch
 - **WHEN** an unsupported branch violates the complete request schema
 - **THEN** it SHALL fail as schema-invalid rather than as a valid unsupported capability
+
+#### Scenario: Reasoning continuation is supported
+- **WHEN** a valid assistant reasoning part carries supported scoped continuation options
+- **THEN** the model SHALL receive them without enabling deferred capability families
+
+#### Scenario: Ordinary files no longer trigger blanket rejection
+- **WHEN** a schema-valid unary or streaming request contains only supported text, ordinary files, supported tool history, and permitted message/file options
+- **THEN** it SHALL map without a blanket files or provider-options failure and continue through the existing execution boundary
+
+### Requirement: Reserved provider options and protected call headers
+
+The runtime SHALL reserve the `grafana`, `gateway`, and `grafana-ai-sdk` provider-option namespaces for the host. A request carrying any of them SHALL be rejected with a stable invalid-request document before resolution or model invocation, rather than silently stripped, so nothing it carries reaches a backend and the caller learns the option was refused.
+
+The runtime SHALL refuse body-carried call headers whose name matches a credential-bearing header, compared without case sensitivity, covering at least `authorization`, `proxy-authorization`, `x-access-token`, `x-grafana-id`, `x-api-key`, `api-key`, `openai-api-key` and `anthropic-api-key`. The openai and openai-compatible providers apply call headers after setting their own authorization header, so an accepted credential-bearing header would choose the credential presented to those backends. The refused set SHALL cover every header name the inbound authenticated edge refuses in outer headers, which a test SHALL assert by driving the edge with a valid stack assertion and each candidate name, with an accepted ordinary header as a negative control, and requiring the body mapper to refuse every name the edge refused.
+
+The runtime SHALL refuse a provider-option namespace carrying a field that names a decision the runtime has already made, covering at least `model`, `fallbacks`, `messages`, `prompt`, `tools`, `toolChoice`, `functions`, `function_call`, `mcpServers`, `container`, `responseFormat`, `stream`, `streamOptions`, and the message and part fields `role`, `content`, `tool_calls`, `tool_call_id`, `type`, `image_url`, `input_audio` and `file`, which providers spread over the entry they build and which could otherwise bypass the registered tool or file mapping. A `content` field SHALL be refused because it carries parts of any type underneath the field checks, which is how it bypasses the registered part mapping. Field names SHALL be compared after folding case and removing `_` and `-`, because a provider may read a field under another spelling: `providers/anthropic` decodes options with `encoding/json`, which matches names case-insensitively, so `MCPServers` and `mcp_servers` reach the same field. The set SHALL cover every capability the runtime refuses at the wire level, so a refused capability cannot be restated as a provider option. Providers merge unknown option fields into the request body, so an accepted model, fallbacks or prompt field would redirect the call away from the resolved catalog model that telemetry reports, an accepted tool field, including the legacy `functions` pair, would run tools the runtime never mapped on the host's credentials, an accepted response-format field would restate the structured output the runtime refuses at the wire level, and an accepted stream field would answer in a transport the runtime is not reading.
+
+These refusals SHALL use fixed documents that never echo the offending namespace, field name, header name or value.
+
+#### Scenario: Reserved namespace
+- **WHEN** a request carries the `grafana`, `gateway`, or `grafana-ai-sdk` provider-option namespace
+- **THEN** the response SHALL be a stable invalid-request document naming neither the namespace contents nor the caller's values
+- **AND** no model SHALL be resolved or invoked
+
+#### Scenario: Protected provider option
+- **WHEN** a request carries a provider-option field naming the model, the prompt, or server-side tools
+- **THEN** the response SHALL be a stable invalid-request document
+- **AND** no model SHALL be resolved or invoked
+
+#### Scenario: Protected call header
+- **WHEN** a request carries a credential-bearing body header in any letter case
+- **THEN** the response SHALL be a stable invalid-request document
+- **AND** no model SHALL be resolved or invoked
+
+#### Scenario: Protocol header in the body
+- **WHEN** a request carries a protocol header name such as `AI-Language-Model-Id` as a body-carried call header
+- **THEN** the request SHALL be accepted, because the HTTP contract retains that name in the body
+- **AND** the name SHALL NOT reach the selected backend
+
+#### Scenario: Reserved namespace in a different case
+- **WHEN** a request carries a provider-option namespace such as `Grafana`
+- **THEN** it SHALL be mapped like any other namespace, because namespace names are compared exactly
+
+### Requirement: Selected-backend provider options
+
+After resolution, the handler SHALL forward only the provider options the resolved backend reads, at call, message, content-part, function-tool and nested tool-result file-entry level, as described by the resolved model's `catalog.ProviderOptionPolicy`. A namespace outside the policy's namespaces SHALL NOT reach the model, and SHALL NOT fail the request, because an option for another backend is one every provider ignores. Where the policy lists fields for a namespace, other top-level fields SHALL be removed, compared after folding case and removing `_` and `-`; a namespace with nothing removed SHALL keep its bytes exactly. The zero-value policy SHALL forward no provider options.
+
+The command SHALL set a policy for every provider type it constructs, and a model whose fallback candidates resolve to different policies SHALL forward no caller provider options, because no single policy is safe for every attempt. For `anthropic`, the policy SHALL forward the `anthropic` namespace restricted to the fields `providers/anthropic` reads, excluding the fields the runtime refuses, and a test SHALL fail when the provider's typed option structs gain a field that is neither forwarded nor refused. For `openai`, the policy SHALL forward the `openai` namespace and its `azure` parity fallback, restricted to the fields `providers/openai` reads at call and part level. For `openai-compatible`, the policy SHALL forward the namespaces the provider reads for its configured provider name, without restricting fields, and a test SHALL check those namespaces against the provider itself.
+
+#### Scenario: Options for another backend
+- **WHEN** a request to an openai-compatible model carries `anthropic` and `openai` provider options alongside its own namespace
+- **THEN** the model SHALL receive only its own namespace, byte for byte
+- **AND** the response SHALL succeed
+
+#### Scenario: Unclassified Anthropic field
+- **WHEN** a request to an Anthropic model carries an `anthropic` field the policy does not list
+- **THEN** that field SHALL be removed before the model runs, and the listed fields SHALL keep their values
+
+#### Scenario: Unclassified backend
+- **WHEN** a resolved model carries the zero-value policy
+- **THEN** it SHALL receive no caller provider options
+
+#### Scenario: File and function-tool options follow the backend policy
+- **WHEN** file-entry or function-tool options contain selected-backend fields alongside an unrelated namespace or unclassified fields
+- **THEN** only the selected backend's permitted fields SHALL reach the model in those scopes
 
 ### Requirement: Resolution and bounded model invocation
 
@@ -114,35 +189,73 @@ Every runtime error response SHALL be selected from precomputed documents with f
 
 ### Requirement: Minimal unary success response
 
-A successful unary response SHALL contain only ordered supported text and function-tool-call `content`, `finishReason`, and `usage`. The handler SHALL accept only registered finish reasons and non-negative usage counts no greater than JavaScript's maximum safe integer. Provider warnings, request data, response IDs, timestamps, model IDs, provider identity, headers, bodies, raw usage, provider metadata, and content metadata SHALL be omitted. The registered Gateway client owns unary `warnings`, `request`, and `response`; raw response-body details outside this minimal contract are not guaranteed.
+A successful response SHALL contain only ordered supported text, function-tool-call,
+source, reasoning and reasoning-file content, finishReason and usage. The handler SHALL
+accept only registered finish reasons and non-negative usage counts no greater
+than JavaScript's maximum safe integer. Reasoning content metadata SHALL use
+the closed, bounded continuation projection in gateway-reasoning-content. Source
+metadata SHALL use the closed public projection defined by gateway-sources.
+Provider warnings, request data, response IDs, timestamps, model IDs, provider
+identity, headers, bodies and other provider metadata SHALL be omitted.
+`usage.raw` SHALL be omitted when provider `Usage.Raw` is absent and SHALL
+contain the provider JSON object unchanged in meaning when present, valid and
+bounded. The registered Gateway client owns unary `warnings`, `request`, and
+`response`; raw response-body details outside this contract are not guaranteed.
+Required empty reasoning text and selected empty inline file data SHALL be
+retained. Invalid output SHALL fail safely before HTTP 200.
+
+#### Scenario: Reasoning-only paid success
+- **WHEN** a provider returns a valid reasoning-only result
+- **THEN** the Gateway SHALL return success rather than a retryable adaptation error
+- **AND** default high-level retries SHALL not invoke the provider again for that valid result
 
 #### Scenario: Valid text result
 - **WHEN** the model returns text, a registered finish reason, and valid usage
 - **THEN** the handler SHALL preserve those values and emit no other top-level members
 
 #### Scenario: Unsupported provider result
-- **WHEN** the model returns content outside the supported text/function-tool-call subset, an unknown finish reason, invalid usage, `nil, nil`, or panics
+- **WHEN** the model returns content outside the supported text/function-tool-call/source/reasoning/reasoning-file subset, an unknown finish reason, invalid usage, `nil, nil`, or panics
 - **THEN** the handler SHALL return the fixed internal-error document before committing HTTP 200
 
 #### Scenario: Provider-private fields
-- **WHEN** the model result contains warnings, response metadata, raw usage, backend identity, or provider metadata
-- **THEN** none of those values SHALL appear in the unary response document
+- **WHEN** the model result contains warnings, response metadata, backend identity, or provider metadata
+- **THEN** none of those values SHALL appear outside the explicitly allowed
+  reasoning continuation projection, normalized public source metadata and
+  provider `usage.raw` object in the unary response document
+
+#### Scenario: Provider raw usage is present or absent
+- **WHEN** provider usage contains a valid in-limit object including provider-native nested values, an empty object, or no Raw bytes
+- **THEN** the unary response SHALL respectively include the object under `usage.raw` with its native keys, include `{}`, or omit the `raw` member without changing normalized counts
+
+#### Scenario: Supplied raw usage is invalid
+- **WHEN** provider `Usage.Raw` is nonempty but malformed JSON, JSON null, an array or scalar, or exceeds its input byte limit
+- **THEN** the handler SHALL emit the fixed internal-error document before HTTP success is committed, without serializing the raw data or returning normalized-only success
 
 ### Requirement: Bounded preflight and standard success encoding
 
-Before encoding, the handler SHALL reject content cardinality or aggregate content and raw-finish string bytes that cannot fit the configured unary budget using overflow-safe accounting. It SHALL validate UTF-8 only after the size preflight so scanning remains bounded. The complete minimal private DTO SHALL then be encoded with standard Go JSON, rejected when the final bytes exceed the configured limit, and committed only after successful encoding and the final size check. Provider-domain JSON marshalers SHALL NOT control the response. Standard encoding MAY allocate a bounded constant multiple of the configured limit for worst-case escaping.
+Before encoding, the handler SHALL reject content cardinality or aggregate content, raw-finish string bytes, and raw-usage input bytes that cannot fit the configured unary budget using overflow-safe accounting. It SHALL count raw-usage bytes before parsing or marshaling and reject raw usage longer than 1,048,576 bytes or the configured unary response limit, including whitespace. It SHALL then validate that any present raw is a single JSON object with valid UTF-8 on original bytes. Standard JSON encoding SHALL preserve valid JSON escape sequences, including lone and paired UTF-16 surrogate escapes, in the raw object. Validation SHALL occur only after the size preflight so it remains bounded. The complete minimal private DTO SHALL then be encoded with standard Go JSON, rejected when the final bytes exceed the configured limit, and committed only after successful encoding and the final size check. Provider-domain JSON marshalers SHALL NOT control the response. Standard encoding MAY allocate a bounded constant multiple of the configured limit for worst-case escaping.
 
 #### Scenario: Preflight rejects oversized provider values
-- **WHEN** content count or aggregate raw string bytes exceed the unary budget
+- **WHEN** content count or aggregate raw string bytes (including supplied raw usage) exceed the unary budget, or raw usage exceeds 1,048,576 bytes
 - **THEN** the result SHALL fail before UTF-8 scanning or JSON encoding
 
 #### Scenario: Escaping crosses the final boundary
 - **WHEN** raw bytes pass preflight but standard JSON escaping makes the encoded response exceed the limit
 - **THEN** the handler SHALL return the fixed internal error before committing HTTP 200
 
+#### Scenario: Raw UTF-8 and JSON escapes
+- **WHEN** in-limit provider raw usage contains invalid UTF-8 in an object key or nested value
+- **THEN** the handler SHALL reject it before JSON encoding and return the fixed internal error without committing HTTP 200
+- **WHEN** in-limit raw usage contains valid JSON with lone or paired escaped surrogates
+- **THEN** the handler SHALL preserve the raw JSON escapes, with success still subject to object and complete-response limits
+
 #### Scenario: Response byte boundary
 - **WHEN** the encoded response is below, exactly at, or above the configured limit
 - **THEN** only complete in-limit documents SHALL receive HTTP 200
+
+#### Scenario: Raw usage exactly meets its input cap
+- **WHEN** raw usage bytes, including JSON whitespace, are at or one byte above the smaller of 1,048,576 bytes and the configured unary response limit
+- **THEN** only the at-limit value SHALL reach JSON validation, and success SHALL still require the final complete response to fit the unary limit
 
 ### Requirement: Compatibility evidence
 

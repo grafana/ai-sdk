@@ -107,11 +107,12 @@ func extractReasoningStream(openingTag, closingTag string, opts ExtractReasoning
 		}
 
 		state := &extractionState{
-			openingTag:  openingTag,
-			closingTag:  closingTag,
-			separator:   opts.Separator,
-			isReasoning: opts.StartWithReasoning,
-			extractions: make(map[string]*perIDExtraction),
+			openingTag:        openingTag,
+			closingTag:        closingTag,
+			separator:         opts.Separator,
+			isReasoning:       opts.StartWithReasoning,
+			extractions:       make(map[string]*perIDExtraction),
+			delayedTextStarts: make(map[string]provider.StreamPart),
 		}
 
 		return TransformStream(ctx, result, state.transform, nil), nil
@@ -124,29 +125,31 @@ type perIDExtraction struct {
 	afterSwitch      bool
 	isReasoning      bool
 	buffer           string
-	idCounter        int
+	reasoningID      string
 	textID           string
 }
 
 type extractionState struct {
-	openingTag       string
-	closingTag       string
-	separator        string
-	isReasoning      bool
-	extractions      map[string]*perIDExtraction
-	delayedTextStart *provider.StreamPart
+	openingTag         string
+	closingTag         string
+	separator          string
+	isReasoning        bool
+	extractions        map[string]*perIDExtraction
+	delayedTextStarts  map[string]provider.StreamPart
+	reasoningIDCounter int
 }
 
 func (s *extractionState) transform(part provider.StreamPart, emit func(provider.StreamPart)) {
 	if part.Type == provider.PartTextStart {
-		p := part
-		s.delayedTextStart = &p
+		s.delayedTextStarts[part.ID] = part
 		return
 	}
 
-	if part.Type == provider.PartTextEnd && s.delayedTextStart != nil {
-		emit(*s.delayedTextStart)
-		s.delayedTextStart = nil
+	if part.Type == provider.PartTextEnd {
+		if start, ok := s.delayedTextStarts[part.ID]; ok {
+			emit(start)
+			delete(s.delayedTextStarts, part.ID)
+		}
 	}
 
 	if part.Type != provider.PartTextDelta {
@@ -192,14 +195,14 @@ func (s *extractionState) transform(part provider.StreamPart, emit func(provider
 				if ext.isFirstReasoning {
 					emit(provider.StreamPart{
 						Type: provider.PartReasoningStart,
-						ID:   fmt.Sprintf("reasoning-%d", ext.idCounter),
+						ID:   s.reasoningID(ext),
 					})
 				}
 				emit(provider.StreamPart{
 					Type: provider.PartReasoningEnd,
-					ID:   fmt.Sprintf("reasoning-%d", ext.idCounter),
+					ID:   s.reasoningID(ext),
 				})
-				ext.idCounter++
+				ext.reasoningID = ""
 			}
 
 			ext.isReasoning = !ext.isReasoning
@@ -209,6 +212,14 @@ func (s *extractionState) transform(part provider.StreamPart, emit func(provider
 			break
 		}
 	}
+}
+
+func (s *extractionState) reasoningID(ext *perIDExtraction) string {
+	if ext.reasoningID == "" {
+		ext.reasoningID = fmt.Sprintf("reasoning-%d", s.reasoningIDCounter)
+		s.reasoningIDCounter++
+	}
+	return ext.reasoningID
 }
 
 func (s *extractionState) publish(ext *perIDExtraction, text string, emit func(provider.StreamPart)) {
@@ -229,19 +240,19 @@ func (s *extractionState) publish(ext *perIDExtraction, text string, emit func(p
 		if ext.afterSwitch || ext.isFirstReasoning {
 			emit(provider.StreamPart{
 				Type: provider.PartReasoningStart,
-				ID:   fmt.Sprintf("reasoning-%d", ext.idCounter),
+				ID:   s.reasoningID(ext),
 			})
 		}
 		emit(provider.StreamPart{
 			Type:  provider.PartReasoningDelta,
 			Delta: prefix + text,
-			ID:    fmt.Sprintf("reasoning-%d", ext.idCounter),
+			ID:    s.reasoningID(ext),
 		})
 		ext.isFirstReasoning = false
 	} else {
-		if s.delayedTextStart != nil {
-			emit(*s.delayedTextStart)
-			s.delayedTextStart = nil
+		if start, ok := s.delayedTextStarts[ext.textID]; ok {
+			emit(start)
+			delete(s.delayedTextStarts, ext.textID)
 		}
 		emit(provider.StreamPart{
 			Type:  provider.PartTextDelta,

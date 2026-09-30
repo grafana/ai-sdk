@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/stretchr/testify/assert"
@@ -99,11 +100,84 @@ func TestModel_GenerateRequestAndNormalization(t *testing.T) {
 	assert.Equal(t, int32(1), calls.Load())
 }
 
+func TestModel_UnaryRawUsage(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{name: "absent"},
+		{name: "empty", raw: `{}`, want: `{}`},
+		{name: "native", raw: `{"input_tokens":32,"service_tier":"standard","nested":[1,true]}`, want: `{"input_tokens":32,"service_tier":"standard","nested":[1,true]}`},
+		{name: "valid surrogate", raw: `{"nested":{"\ud83d\ude00":1}}`, want: `{"nested":{"😀":1}}`},
+		{name: "lone high key", raw: `{"nested":{"\ud800":"private"}}`, want: `{"nested":{"\ud800":"private"}}`},
+		{name: "lone low nested", raw: `{"nested":["\udc00"]}`, want: `{"nested":["\udc00"]}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := unaryFixture
+			if tc.raw != "" {
+				body = strings.Replace(body, `"outputTokens":{"total":1,"text":1,"reasoning":0}`, `"outputTokens":{"total":1,"text":1,"reasoning":0},"raw":`+tc.raw, 1)
+			}
+			p := testProvider(t, func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = io.WriteString(w, body)
+			}, nil)
+			m, err := p.LanguageModel("assistant")
+			require.NoError(t, err)
+			result, err := m.DoGenerate(context.Background(), provider.CallOptions{})
+			require.NoError(t, err)
+			assert.Equal(t, 2, *result.Usage.InputTokens.Total)
+			if tc.want == "" {
+				assert.Nil(t, result.Usage.Raw)
+			} else {
+				assert.JSONEq(t, tc.want, string(result.Usage.Raw))
+				if strings.Contains(tc.name, "lone") {
+					assert.Equal(t, tc.raw, string(result.Usage.Raw))
+				}
+			}
+		})
+	}
+}
+
+func TestModel_UnaryRawUsageSize(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		raw      string
+		wantSize int
+	}{
+		{name: "exact", raw: `{"large":"` + strings.Repeat("x", maxRawUsageBytes-len(`{"large":""}`)) + `"}`, wantSize: maxRawUsageBytes},
+		{name: "one over", raw: `{"large":"` + strings.Repeat("x", maxRawUsageBytes+1-len(`{"large":""}`)) + `"}`},
+		{name: "whitespace exact", raw: strings.Repeat(" ", maxRawUsageBytes-2) + `{}`, wantSize: 2},
+		{name: "leading whitespace", raw: strings.Repeat(" ", maxRawUsageBytes-1) + `{}`, wantSize: 2},
+		{name: "trailing whitespace", raw: `{}` + strings.Repeat(" ", maxRawUsageBytes-1), wantSize: 2},
+		{name: "interior whitespace", raw: `{"x":` + strings.Repeat(" ", maxRawUsageBytes) + `0}`, wantSize: len(`{"x":0}`)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := strings.Replace(unaryFixture, `"outputTokens":{"total":1,"text":1,"reasoning":0}`, `"outputTokens":{"total":1,"text":1,"reasoning":0},"raw":`+tc.raw, 1)
+			p := testProvider(t, func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = io.WriteString(w, body)
+			}, nil)
+			m, err := p.LanguageModel("assistant")
+			require.NoError(t, err)
+			result, err := m.DoGenerate(context.Background(), provider.CallOptions{})
+			if tc.wantSize != 0 {
+				require.NoError(t, err)
+				assert.Len(t, result.Usage.Raw, tc.wantSize)
+				assert.JSONEq(t, tc.raw, string(result.Usage.Raw))
+			} else {
+				require.Error(t, err)
+				assert.Nil(t, result)
+			}
+		})
+	}
+}
+
 func TestModel_UnaryFailures(t *testing.T) {
 	for _, tc := range []struct{ name, body string }{
 		{"missing content", `{"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}}}`},
 		{"null content", strings.Replace(unaryFixture, `[{"type":"text","text":"hello"},{"type":"text","text":""}]`, `null`, 1)},
-		{"unknown family", strings.Replace(unaryFixture, `"type":"text"`, `"type":"reasoning"`, 1)},
+		{"unknown family", strings.Replace(unaryFixture, `"type":"text"`, `"type":"custom"`, 1)},
 		{"missing text", strings.Replace(unaryFixture, `,"text":"hello"`, "", 1)},
 		{"null text", strings.Replace(unaryFixture, `"text":"hello"`, `"text":null`, 1)},
 		{"unknown finish", strings.Replace(unaryFixture, `"unified":"stop"`, `"unified":"unknown"`, 1)},
@@ -117,6 +191,12 @@ func TestModel_UnaryFailures(t *testing.T) {
 		{"unsafe usage", strings.Replace(unaryFixture, `"total":2`, `"total":9007199254740992`, 1)},
 		{"fractional usage", strings.Replace(unaryFixture, `"total":2`, `"total":0.5`, 1)},
 		{"missing usage side", strings.Replace(unaryFixture, `"outputTokens"`, `"missing"`, 1)},
+		{"null raw", strings.Replace(unaryFixture, `"outputTokens":{"total":1,"text":1,"reasoning":0}`, `"outputTokens":{"total":1,"text":1,"reasoning":0},"raw":null`, 1)},
+		{"array raw", strings.Replace(unaryFixture, `"outputTokens":{"total":1,"text":1,"reasoning":0}`, `"outputTokens":{"total":1,"text":1,"reasoning":0},"raw":[]`, 1)},
+		{"scalar raw", strings.Replace(unaryFixture, `"outputTokens":{"total":1,"text":1,"reasoning":0}`, `"outputTokens":{"total":1,"text":1,"reasoning":0},"raw":1`, 1)},
+		{"invalid UTF-8 raw", strings.Replace(unaryFixture, `"outputTokens":{"total":1,"text":1,"reasoning":0}`, `"outputTokens":{"total":1,"text":1,"reasoning":0},"raw":{"nested":"`+string([]byte{0xff})+`"}`, 1)},
+		{"malformed raw", strings.Replace(unaryFixture, `"outputTokens":{"total":1,"text":1,"reasoning":0}`, `"outputTokens":{"total":1,"text":1,"reasoning":0},"raw":{"private":`, 1)},
+		{"oversized raw", strings.Replace(unaryFixture, `"outputTokens":{"total":1,"text":1,"reasoning":0}`, `"outputTokens":{"total":1,"text":1,"reasoning":0},"raw":{"private":"`+strings.Repeat("x", 1<<20)+`"}`, 1)},
 		{"trailing", unaryFixture + `{}`},
 		{"malformed", `{"content":`},
 	} {
@@ -133,6 +213,252 @@ func TestModel_UnaryFailures(t *testing.T) {
 			var api *provider.APICallError
 			require.ErrorAs(t, err, &api)
 			assert.False(t, api.IsRetryable)
+			assert.NotContains(t, err.Error(), "private")
+		})
+	}
+}
+
+type observedResponseBody struct {
+	io.ReadCloser
+	closed bool
+}
+
+func (b *observedResponseBody) Close() error {
+	b.closed = true
+	return b.ReadCloser.Close()
+}
+
+func TestModel_PostHeaderTransportFailure(t *testing.T) {
+	var calls atomic.Int32
+	const privateBody = `{"private":"sensitive-value"`
+	p := testProvider(t, func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Length", "4096")
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, privateBody)
+		w.(http.Flusher).Flush()
+		conn, _, err := w.(http.Hijacker).Hijack()
+		if err != nil {
+			t.Errorf("hijacking response: %v", err)
+			return
+		}
+		_ = conn.Close()
+	}, nil)
+	var body *observedResponseBody
+	p.client.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		resp, err := http.DefaultTransport.RoundTrip(req)
+		if err == nil {
+			body = &observedResponseBody{ReadCloser: resp.Body}
+			resp.Body = body
+		}
+		return resp, err
+	})
+	m, err := p.LanguageModel("assistant")
+	require.NoError(t, err)
+	result, err := m.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{}})
+	require.Error(t, err)
+	assert.Nil(t, result)
+	var api *provider.APICallError
+	require.ErrorAs(t, err, &api)
+	assert.Equal(t, http.StatusOK, api.StatusCode)
+	assert.True(t, api.IsRetryable)
+	assert.ErrorIs(t, err, io.ErrUnexpectedEOF)
+	assert.NotContains(t, err.Error(), privateBody)
+	assert.NotContains(t, err.Error(), "sensitive-value")
+	assert.Less(t, len(api.Message), 100)
+	require.NotNil(t, body)
+	assert.True(t, body.closed)
+	assert.Equal(t, int32(1), calls.Load())
+
+	t.Run("non-EOF body read failure", func(t *testing.T) {
+		cause := errors.New("private socket reset")
+		body := &trackedBody{Reader: &partialReadError{data: []byte(`{"partial":`), err: cause}}
+		var calls atomic.Int32
+		p, err := NewWithAccessToken(AccessTokenConfig{
+			AccessToken: "token", BaseURL: "https://example.test",
+			HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				calls.Add(1)
+				return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": {"application/json"}}, Body: body, Request: req}, nil
+			})},
+		})
+		require.NoError(t, err)
+		m, err := p.LanguageModel("assistant")
+		require.NoError(t, err)
+		result, err := m.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{}})
+		require.Error(t, err)
+		assert.Nil(t, result)
+		var api *provider.APICallError
+		require.ErrorAs(t, err, &api)
+		assert.Equal(t, http.StatusOK, api.StatusCode)
+		assert.True(t, api.IsRetryable)
+		assert.ErrorIs(t, err, cause)
+		assert.NotContains(t, err.Error(), "private socket reset")
+		assert.Less(t, len(api.Message), 100)
+		assert.True(t, body.closed)
+		assert.Equal(t, int32(1), calls.Load())
+	})
+}
+
+type partialReadError struct {
+	data   []byte
+	err    error
+	onRead func()
+}
+
+func (r *partialReadError) Read(p []byte) (int, error) {
+	n := copy(p, r.data)
+	r.data = nil
+	if r.onRead != nil {
+		r.onRead()
+	}
+	return n, r.err
+}
+
+func TestModel_UnaryProtocolFailures(t *testing.T) {
+	for _, tc := range []struct {
+		name, media, body string
+		limit             int64
+	}{
+		{name: "wrong media", media: "text/html", body: `{"private":"sensitive-value"}`},
+		{name: "malformed JSON", media: "application/json", body: `{"private":"sensitive-value"`},
+		{name: "invalid schema", media: "application/json", body: `{"private":"sensitive-value"}`},
+		{name: "byte limit", media: "application/json", body: `{"private":"sensitive-value"}`, limit: 5},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var calls atomic.Int32
+			limits := DefaultLimits()
+			if tc.limit != 0 {
+				limits.UnaryBytes = tc.limit
+			}
+			p := testProvider(t, func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				w.Header().Set("Content-Type", tc.media)
+				_, _ = io.WriteString(w, tc.body)
+			}, &limits)
+			m, err := p.LanguageModel("assistant")
+			require.NoError(t, err)
+			result, err := m.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{}})
+			require.Error(t, err)
+			assert.Nil(t, result)
+			var api *provider.APICallError
+			require.ErrorAs(t, err, &api)
+			assert.False(t, api.IsRetryable)
+			assert.Equal(t, http.StatusOK, api.StatusCode)
+			assert.Empty(t, api.ResponseBody)
+			assert.NotContains(t, err.Error(), "sensitive-value")
+			assert.Less(t, len(api.Message), 100)
+			assert.Equal(t, int32(1), calls.Load())
+		})
+	}
+}
+
+func TestModel_UnaryReadPrecedence(t *testing.T) {
+	for _, tc := range []struct {
+		name             string
+		cancelDuringRead bool
+	}{
+		{name: "limit before transport"},
+		{name: "cancellation before limit", cancelDuringRead: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			reader := &partialReadError{data: []byte("private"), err: io.ErrUnexpectedEOF}
+			if tc.cancelDuringRead {
+				reader.onRead = cancel
+			}
+			body := &trackedBody{Reader: reader}
+			limits := DefaultLimits()
+			limits.UnaryBytes = 4
+			var calls atomic.Int32
+			p, err := NewWithAccessToken(AccessTokenConfig{
+				AccessToken: "token", BaseURL: "https://example.test", Limits: &limits,
+				HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					calls.Add(1)
+					return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": {"application/json"}}, Body: body, Request: req}, nil
+				})},
+			})
+			require.NoError(t, err)
+			m, err := p.LanguageModel("assistant")
+			require.NoError(t, err)
+			result, err := m.DoGenerate(ctx, provider.CallOptions{Prompt: []provider.Message{}})
+			require.Error(t, err)
+			assert.Nil(t, result)
+			var api *provider.APICallError
+			require.ErrorAs(t, err, &api)
+			assert.Equal(t, http.StatusOK, api.StatusCode)
+			assert.False(t, api.IsRetryable)
+			if tc.cancelDuringRead {
+				assert.ErrorIs(t, err, context.Canceled)
+			} else {
+				assert.ErrorContains(t, errors.Unwrap(api), "response byte limit exceeded")
+			}
+			assert.NotErrorIs(t, err, io.ErrUnexpectedEOF)
+			assert.NotContains(t, err.Error(), "private")
+			assert.True(t, body.closed)
+			assert.Equal(t, int32(1), calls.Load())
+		})
+	}
+}
+
+func TestModel_UnaryReadCancellation(t *testing.T) {
+	for _, deadline := range []bool{false, true} {
+		name := "cancel"
+		if deadline {
+			name = "deadline"
+		}
+		t.Run(name, func(t *testing.T) {
+			var calls atomic.Int32
+			started := make(chan struct{})
+			p := testProvider(t, func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				w.(http.Flusher).Flush()
+				close(started)
+				<-r.Context().Done()
+			}, nil)
+			m, err := p.LanguageModel("assistant")
+			require.NoError(t, err)
+			var ctx context.Context
+			var cancel context.CancelFunc
+			expected := context.Canceled
+			if deadline {
+				ctx, cancel = context.WithTimeout(context.Background(), time.Second)
+				expected = context.DeadlineExceeded
+			} else {
+				ctx, cancel = context.WithCancel(context.Background())
+			}
+			defer cancel()
+			done := make(chan error, 1)
+			go func() {
+				result, err := m.DoGenerate(ctx, provider.CallOptions{Prompt: []provider.Message{}})
+				if result != nil {
+					done <- errors.New("grafana: canceled unary call returned a result")
+					return
+				}
+				done <- err
+			}()
+			select {
+			case <-started:
+			case <-time.After(3 * time.Second):
+				t.Fatal("unary response headers were not sent")
+			}
+			if !deadline {
+				cancel()
+			}
+			select {
+			case err := <-done:
+				require.ErrorIs(t, err, expected)
+				var api *provider.APICallError
+				if errors.As(err, &api) {
+					assert.False(t, api.IsRetryable)
+				}
+			case <-time.After(3 * time.Second):
+				t.Fatal("canceled unary read did not finish")
+			}
+			assert.Equal(t, int32(1), calls.Load())
 		})
 	}
 }

@@ -1,0 +1,21 @@
+## 1. Verify registered transport and evidence boundary
+
+- [x] 1.1 Recheck the registered `@ai-sdk/anthropic@4.0.59` commit `4e8c387622ee1bb0d55841664416d38754d5c9a3` request/response schema and tests against `test/conformance/upstream.yaml` and current Go adapter; confirm #255 remains the ownership record for this gap.
+- [x] 1.2 Probe `anthropic-sdk-go@v1.75.0` with real fake-HTTP `Beta.Messages.New` and `NewStreaming` calls: verify `option.WithJSONSet("safeguards", ...)` survives serialization alongside existing request options, preserves classifier-context JSON, and beta headers are correct on direct and Vertex-capability paths. If it cannot, choose a compatible transport mapping before implementing.
+
+## 2. Request contract and implementation
+
+- [x] 2.1 Add failing `providers/anthropic/convert_request_test.go` cases for absent/empty/configured safeguards, rejection before HTTP of raw explicit `safeguards: null`, raw configured `classifierContext: null`, and a typed non-nil pointer to a nil classifier-context map, typed-to-raw round trip preserving explicit `{}` versus absent context, optional arbitrary JSON context, invalid entries/JSON with no HTTP call, explicit beta deduplication and actual unary/stream HTTP body/header captures.
+- [x] 2.2 Add typed safeguard option and discriminator in `providers/anthropic/options.go`, represent context so typed JSON retains `{}` but omits absent context, inspect raw safeguards/context fields for explicit null before `ResolveOption` erases presence, reject typed non-nil context pointers to nil maps, then validate configured entries in the shared `buildParamsWithCapabilities` path, project only nonempty entries with `option.WithJSONSet`, and append `dangerous-tool-use-2026-09-03` once via `appendBetaUnique`; pass request tests without changing unrelated option behavior.
+
+## 3. Response and streaming contract
+
+- [x] 3.1 Add failing `providers/anthropic/convert_response_test.go` and `convert_stream_test.go` cases for absent/null/empty/present verdicts, nested snake_case and tool-call-id preservation, unknown allowed string discriminators, unrelated raw-field stripping, invalid array/object/field types and no raw-data exposure in errors.
+- [x] 3.2 Extend `provider_metadata.go` whitelist and validation using SDK `RawJSON()` in unary `convert_response.go` and stream `convert_stream.go`; isolate verdict state from the `message_start` raw metadata map, retain only the last non-null `message_delta` array (including later `[]`), and clear state at a new `message_start`. Test a verdict present only on `message_start` followed by an omitted or null delta; confirm multiple deltas, a later null, final finish and final `StreamText` step/provider metadata; retain existing finish timing unless the final result demonstrably requires a separately reviewed lifecycle change.
+- [x] 3.3 Add a mocked unary and streaming transport-failure test: errors stay errors (no silent fallback without safeguards), malformed stream metadata yields `PartError`, and no unvalidated safeguard data escapes in a successful result or error text.
+
+## 4. Release and validation
+
+- [x] 4.1 Document the opt-in API/metadata in Anthropic godoc and `docs/providers/anthropic.md`, including provider-permission prerequisite, non-policy semantics and potential beta rejection; confirm provider support/permission before claiming production availability.
+- [x] 4.2 Run focused and full `providers/anthropic` tests, `mise run parity-check`, and `mise run validate-parity-baseline` if baseline metadata changes. Check whether finish metadata changes any frontend wire chunks; if so, add a deterministic `test/integration/testserver/` scenario plus a Vitest schema-parse/assembled-message test and run `mise run test-integration`.
+- [x] 4.3 Keep any new provider conformance input provenance-valid: add only unmodified live recording if access permits, or matching indexed upstream input if available. Otherwise document the remaining provider-boundary/live-acceptance gap in #255 without inventing provider events or changing stable `PARITY.md` status.

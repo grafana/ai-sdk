@@ -61,7 +61,7 @@ type ContentPart struct {
     Type             ContentPartType `json:"type"`
     Text             string          `json:"text,omitempty"`
     Data             *DataContent    `json:"data,omitempty"`
-    Filename         string          `json:"filename,omitempty"`
+    Filename         *string         `json:"filename,omitempty"`
     MediaType        string          `json:"mediaType,omitempty"`
     Kind             string          `json:"kind,omitempty"`
     ToolCallID       string          `json:"toolCallId,omitempty"`
@@ -78,6 +78,8 @@ type ContentPart struct {
 
 The previous sealed interfaces `UserContentPart`, `AssistantContentPart`, `ToolMessageContentPart` SHALL be removed. The previous concrete types `TextContentPart`, `FileContentPart`, `ReasoningContentPart`, `ToolCallContentPart`, `ToolResultContentPart`, `CustomContentPart`, `ReasoningFileContentPart`, and `ToolApprovalResponseContentPart` SHALL be removed.
 
+For input files, nil `Filename` SHALL mean absent and a pointer to an empty string SHALL mean explicitly supplied empty. Source conversions using the shared flat struct SHALL retain existing absent/empty normalization; this field change SHALL NOT make `SourceInfo`, generated-output, stream, or UI `SourceDocumentPart` filenames presence-aware. Ordinary UI `FilePart` inputs SHALL instead preserve filename presence under the ui-message-conversion contract.
+
 #### Scenario: Removed types
 - **WHEN** the `provider` package is inspected
 - **THEN** none of the listed concrete content-part types and none of the three `*ContentPart` interfaces SHALL exist as identifiers
@@ -89,6 +91,14 @@ The previous sealed interfaces `UserContentPart`, `AssistantContentPart`, `ToolM
 #### Scenario: Round-trip every ContentPartType
 - **WHEN** every defined `ContentPartType` value is constructed as a `ContentPart`, marshaled to JSON, and unmarshaled back
 - **THEN** the decoded value SHALL equal the original for every type
+
+#### Scenario: Input filename presence survives JSON
+- **WHEN** file content with absent, explicit empty, and non-empty filenames is encoded and decoded
+- **THEN** all three states SHALL remain distinct and only nil SHALL omit the filename member
+
+#### Scenario: Source filename normalization remains stable
+- **WHEN** source information with an absent or empty descriptive filename crosses the `ContentPart` boundary
+- **THEN** it SHALL retain the existing no-filename semantics without changing source or UI wire representations
 
 ### Requirement: ContentPart constructor helpers
 
@@ -243,6 +253,19 @@ The provider package SHALL define `PartReasoningFile StreamPartType = "reasoning
 #### Scenario: Reasoning files propagate through orchestration
 - **WHEN** `StreamText` receives interleaved reasoning text and `PartReasoningFile` events
 - **THEN** its public reasoning result SHALL preserve both variants in provider order, emit a reasoning-file text stream part, retain the part in response messages and step content, and emit a `reasoning-file` UI chunk
+
+#### Scenario: URL-valued generated files resolve before public output
+- **WHEN** a provider emits a `PartFile` or `PartReasoningFile` whose data is a URL
+- **THEN** `StreamText` and `GenerateText` SHALL resolve the URL into bytes before adding the file to stream chunks, UI data URLs, step content, and response messages, preserving the provider media type and metadata
+- **AND** `data:` URL values SHALL decode without network access
+- **AND** HTTP(S) downloads SHALL have a 2 GiB maximum, reject unsafe endpoints and redirect targets, validate and pin DNS results at connection time, send no provider credentials, and respect context cancellation
+- **AND** a rejected URL, HTTP failure, or oversized body SHALL fail the operation rather than emitting a malformed file URL
+
+#### Scenario: Validated generated-file DNS fallback
+
+- **WHEN** a generated-file host resolves to multiple public addresses and the first connection fails
+- **THEN** the download SHALL try the next validated address without resolving the hostname again
+- **AND** any unsafe DNS answer SHALL prevent all connection attempts, and cancellation SHALL stop fallback
 
 #### Scenario: Public content preserves generated-file order and metadata
 - **WHEN** regular files, text, reasoning files, tools, or sources are interleaved in provider output

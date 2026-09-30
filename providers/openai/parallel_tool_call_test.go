@@ -154,6 +154,82 @@ func TestParallelToolCall_Continuation(t *testing.T) {
 	})
 }
 
+func TestParallelToolCall_MultipartResults(t *testing.T) {
+	for _, scalarBreakpoint := range []bool{false, true} {
+		t.Run(fmt.Sprintf("scalar breakpoint %t", scalarBreakpoint), func(t *testing.T) {
+			prompt := parallelHistory(t)
+			for i := range prompt[1].Content {
+				part := &prompt[1].Content[i]
+				if part.ToolName == "weather" {
+					part.Output = &provider.ToolResultOutput{
+						Type:            provider.ToolOutputContent,
+						ProviderOptions: provider.BuildProviderOptions(OpenAIPartOptions{PromptCacheBreakpoint: &PromptCacheBreakpoint{Mode: "explicit"}}),
+						Content: []provider.ToolResultContentValue{
+							{Type: provider.ToolContentText, Text: "weather", ProviderOptions: provider.BuildProviderOptions(OpenAIPartOptions{PromptCacheBreakpoint: &PromptCacheBreakpoint{Mode: "explicit"}})},
+							{Type: provider.ToolContentFile, MediaType: "application/pdf", Data: &provider.DataContent{Reference: json.RawMessage(`{"openai":"file_1"}`)}},
+						},
+					}
+				} else if scalarBreakpoint {
+					part.Output.ProviderOptions = provider.BuildProviderOptions(OpenAIPartOptions{PromptCacheBreakpoint: &PromptCacheBreakpoint{Mode: "explicit"}})
+				}
+			}
+			body, warnings := buildBody(t, "gpt-5.4", provider.CallOptions{Prompt: prompt, ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{Conversation: "conv_1"})})
+			assert.Empty(t, warnings)
+			input := body["input"].([]any)
+			require.Len(t, input, 1)
+			item := input[0].(map[string]any)
+			assert.Equal(t, "call_parallel", item["call_id"])
+			var childText string
+			if scalarBreakpoint {
+				parts := item["output"].([]any)
+				require.Len(t, parts, 2)
+				assert.NotContains(t, parts[0].(map[string]any), "prompt_cache_breakpoint")
+				assert.Equal(t, map[string]any{"mode": "explicit"}, parts[1].(map[string]any)["prompt_cache_breakpoint"])
+				childText = parts[0].(map[string]any)["text"].(string) + parts[1].(map[string]any)["text"].(string)
+			} else {
+				childText = item["output"].(string)
+			}
+			segments := strings.SplitN(childText, "\n", 2)
+			require.Len(t, segments, 2)
+			assert.Equal(t, "cityAttractions", segments[1])
+			var content []map[string]any
+			require.NoError(t, json.Unmarshal([]byte(segments[0]), &content))
+			require.Len(t, content, 2)
+			assert.Equal(t, "weather", content[0]["text"])
+			assert.Equal(t, map[string]any{"mode": "explicit"}, content[0]["prompt_cache_breakpoint"])
+			assert.Equal(t, "file_1", content[1]["file_id"])
+		})
+	}
+}
+
+func TestParallelToolCall_UnsupportedMultipartChild(t *testing.T) {
+	prompt := parallelHistory(t)
+	for index := range prompt[1].Content {
+		part := &prompt[1].Content[index]
+		if part.ToolName == "weather" {
+			part.Output = &provider.ToolResultOutput{Type: provider.ToolOutputContent, Content: []provider.ToolResultContentValue{
+				{Type: provider.ToolContentText, Text: "before"},
+				{Type: provider.ToolContentCustom},
+				{Type: provider.ToolContentText, Text: "after"},
+			}}
+		}
+	}
+	body, warnings := buildBody(t, "gpt-5.4", provider.CallOptions{Prompt: prompt, ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{Conversation: "conv_1"})})
+	require.Len(t, warnings, 1)
+	assert.Equal(t, "unsupported tool content part type: custom", warnings[0].Message)
+	items := body["input"].([]any)
+	require.Len(t, items, 1)
+	output := items[0].(map[string]any)["output"].(string)
+	segments := strings.SplitN(output, "\n", 2)
+	require.Len(t, segments, 2)
+	assert.Equal(t, "cityAttractions", segments[1])
+	var content []map[string]any
+	require.NoError(t, json.Unmarshal([]byte(segments[0]), &content))
+	require.Len(t, content, 2)
+	assert.Equal(t, "before", content[0]["text"])
+	assert.Equal(t, "after", content[1]["text"])
+}
+
 func TestParallelToolCall_UnaryAndFallbackStream(t *testing.T) {
 	br := buildResult{functionTools: map[string]struct{}{"weather": {}, "cityAttractions": {}}}
 	encoded, err := json.Marshal(parallelInput)

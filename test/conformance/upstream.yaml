@@ -1,18 +1,18 @@
 upstream:
   repository: https://github.com/vercel/ai
-  commit: 08ae5ad05bc12496dd1ffcf64e34419e0831300d
+  commit: ee3169b3c4880e2abe4d0d7c781243bb81822ec4
   packageSource: npm
-  verifiedAt: "2026-09-22"
+  verifiedAt: "2026-09-29"
 packages:
-  ai: 7.0.107
-  "@ai-sdk/anthropic": 4.0.58
-  "@ai-sdk/amazon-bedrock": 5.0.88
-  "@ai-sdk/gateway": 4.0.87
-  "@ai-sdk/openai": 4.0.71
-  "@ai-sdk/openai-compatible": 3.0.53
-  "@ai-sdk/provider": 4.0.17
-  "@ai-sdk/provider-utils": 5.0.45
-  "@ai-sdk/react": 4.0.110
+  ai: 7.0.116
+  "@ai-sdk/anthropic": 4.0.65
+  "@ai-sdk/amazon-bedrock": 5.0.97
+  "@ai-sdk/gateway": 4.0.94
+  "@ai-sdk/openai": 4.0.78
+  "@ai-sdk/openai-compatible": 3.0.57
+  "@ai-sdk/provider": 4.0.18
+  "@ai-sdk/provider-utils": 5.0.49
+  "@ai-sdk/react": 4.0.119
 verification:
   status: enforced
   conformanceScope: full
@@ -24,16 +24,10 @@ knownGaps:
   - id: astra-model-catalog
     surface: provider-openai
     status: gap
-    description: The Astra advisory catalogue and non-reasoning sampling rules now
-      match the registered OpenAI target. Mantle routing retains the documented AWS
-      compatibility-path adaptation. Synthetic tests cover routing/capabilities;
-      no live Astra conformance recording is claimed.
-  - id: gpt6-newer-upstream-capabilities
-    surface: provider-openai
-    status: gap
-    description: The registered OpenAI 4.0.71 target includes reasoning-effort
-      capability validation, configuration updates and async tool calling that
-      remain incomplete in Go. Tracked by https://github.com/grafana/ai-sdk/issues/220.
+    description: The GPT-6 Astra, Sol and Luna advisory catalogue and existing
+      non-reasoning sampling rules match the registered OpenAI target. Mantle
+      routing retains the documented AWS compatibility-path adaptation. Synthetic
+      tests cover routing/capabilities; no live GPT-6 recording is claimed.
   - id: concurrent-tool-emission-nondeterminism
     surface: core-streamtext
     status: documented-deviation
@@ -52,6 +46,13 @@ knownGaps:
       base URL to include /v1. The Go provider currently exposes raw anthropic-sdk-go
       request options rather than a first-class TypeScript-compatible base URL
       setting, so this provider configuration behavior is not parity-covered.
+  - id: openai-chat-provider
+    surface: provider-openai
+    status: gap
+    description: Upstream OpenAI exposes both Chat Completions and Responses
+      language models. The Go OpenAI provider intentionally exposes only its
+      Responses adapter, so Chat-only request/output behavior (including audio
+      transcript fallback) is outside the current supported provider surface.
   - id: openai-base-url-validation
     surface: provider-openai
     status: gap
@@ -73,6 +74,14 @@ knownGaps:
       languageModel, and chat surface, including Chat-only safeguard models. The Go
       Mantle package currently exposes Responses only because the Go OpenAI provider
       has no shared Chat implementation; it does not present Responses as the default.
+  - id: embedding-and-evaluation-model-surfaces
+    surface: provider-contract
+    status: gap
+    description: The registered provider and core packages expose embedding
+      and experimental evaluation models, including per-batch embedding options
+      and evaluation lifecycle hooks. The Go port currently scopes provider parity
+      to LanguageModel calls and does not expose these model families or their
+      conformance coverage.
   - id: transcription-model-surface
     surface: provider-contract
     status: gap

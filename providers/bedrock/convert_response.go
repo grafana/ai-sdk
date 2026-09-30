@@ -87,6 +87,9 @@ func parseResponse(body []byte, headers map[string][]string, modelID string, met
 						"bedrock":       jsonRawOrZero(ReasoningMetadata{Signature: rc.ReasoningText.Signature}),
 					}
 				}
+			case rc.RedactedContent != nil:
+				metadata := jsonRawOrZero(map[string]string{"redactedContent": *rc.RedactedContent})
+				cp.ProviderMetadata = provider.ProviderMetadata{"amazonBedrock": metadata, "bedrock": metadata}
 			case rc.RedactedReasoning != nil:
 				cp.Text = ""
 				cp.ProviderMetadata = provider.ProviderMetadata{

@@ -14,11 +14,15 @@ func TestNormalizeToolCallID(t *testing.T) {
 		expected string
 	}{
 		{"non-mistral passes through", "tooluse_bpe71yCfRu2b5i-nKGDr5g", false, "tooluse_bpe71yCfRu2b5i-nKGDr5g"},
-		{"mistral takes first 9 alphanumeric", "tooluse_bpe71yCfRu2b5i-nKGDr5g", true, "toolusebp"},
-		{"mistral handles short id", "abc-123", true, "abc123"},
-		{"mistral handles empty", "", true, ""},
+		{"mistral hashes Bedrock id", "tooluse_bpe71yCfRu2b5i-nKGDr5g", true, "8eHypBDcw"},
+		{"mistral hashes short id", "abc", true, "GRuIyUwcV"},
+		{"mistral hashes empty id", "", true, "bkRR8oQIH"},
+		{"mistral hashes punctuation id", "___---___", true, "5C589HVqG"},
+		{"mistral hashes UTF-16 units", "tool😀id", true, "kHX3nweiV"},
+		{"mistral distinguishes shared prefixes", "tooluse_Ac1Xq9ZklmNoPq", true, "7rDVWRig0"},
+		{"mistral distinguishes second prefix", "tooluse_Ac2Yt7WrstUvWx", true, "bNZvZKNBZ"},
 		{"mistral handles exactly 9 alphanumeric", "abc123XYZ", true, "abc123XYZ"},
-		{"mistral strips underscores", "tool_use_id", true, "tooluseid"},
+		{"mistral hashes underscore id", "tool-use_123ABC456", true, "hvVDqPNyj"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -50,27 +54,6 @@ func TestModelFamilyDetection(t *testing.T) {
 	}
 }
 
-func TestSupportsNativeStructuredOutput(t *testing.T) {
-	cases := []struct {
-		modelID  string
-		expected bool
-	}{
-		{"anthropic.claude-sonnet-4-5-20250929-v1:0", true},
-		{"anthropic.claude-haiku-4-5-20251001-v1:0", true},
-		{"anthropic.claude-opus-4-1-20250805-v1:0", true},
-		{"us.anthropic.claude-future-9-20990101-v1:0", true},
-		{"anthropic.claude-3-haiku-20240307-v1:0", false},
-		{"us.anthropic.claude-3-7-sonnet-20250219-v1:0", false},
-		{"mistral.mistral-large-2407-v1:0", false},
-		{"amazon.nova-lite-v1:0", false},
-	}
-	for _, tc := range cases {
-		t.Run(tc.modelID, func(t *testing.T) {
-			assert.Equal(t, tc.expected, supportsNativeStructuredOutput(tc.modelID))
-		})
-	}
-}
-
 func TestAnthropicReasoningCapabilities(t *testing.T) {
 	cases := []struct {
 		modelID   string
@@ -91,7 +74,7 @@ func TestAnthropicReasoningCapabilities(t *testing.T) {
 		{"us.anthropic.claude-3-7-sonnet-20250219-v1:0", 4096, false},
 		{"us.anthropic.claude-future-9-20990101-v1:0", 128000, true},
 		{"anthropic.unknown-model-v1:0", 4096, false},
-		{"amazon.claude-sonnet-4-6-v1:0", 4096, false},
+		{"amazon.claude-sonnet-4-6-v1:0", 128000, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.modelID, func(t *testing.T) {
