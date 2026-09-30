@@ -48,7 +48,7 @@ verbatim and SHALL NOT use Bedrock Converse request paths or shapes.
 - **THEN** it sends `POST https://bedrock-mantle.us-east-1.api.aws/v1/responses`
 
 #### Scenario: Documented regional route exceptions
-- **WHEN** any documented GPT-5.4, GPT-5.5, GPT-5.6 variant, Grok 4.3/4.6, or Gemma 4 model sends a Responses request without a custom base URL
+- **WHEN** any documented GPT-5.4, GPT-5.5, GPT-5.6 variant, GPT-6 Astra/Sol/Luna, Grok 4.3/4.6, or Gemma 4 model sends a Responses request without a custom base URL
 - **THEN** it sends `POST https://bedrock-mantle.<region>.api.aws/openai/v1/responses`
 
 #### Scenario: Normalize explicit AWS settings

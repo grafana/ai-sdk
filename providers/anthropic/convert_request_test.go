@@ -1152,25 +1152,57 @@ func TestBuildParams_AssistantPrefillWhitespace(t *testing.T) {
 }
 
 func TestBuildParams_AssistantCompaction(t *testing.T) {
-	part := provider.TextPart("Compaction summary  \n")
-	part.ProviderOptions = makeProviderOpts(`{"type":"compaction","cacheControl":{"type":"ephemeral"}}`)
+	t.Run("preserves nonempty block", func(t *testing.T) {
+		part := provider.TextPart("Compaction summary  \n")
+		part.ProviderOptions = makeProviderOpts(`{"type":"compaction","cacheControl":{"type":"ephemeral"}}`)
 
-	p, _, _, _, err := buildParams("claude-sonnet-4-6", provider.CallOptions{
-		Prompt: []provider.Message{
-			provider.UserText("Continue"),
-			provider.NewAssistantMessage(part),
-		},
-	}, false)
-	require.NoError(t, err)
+		p, _, _, _, err := buildParams("claude-sonnet-4-6", provider.CallOptions{
+			Prompt: []provider.Message{
+				provider.UserText("Continue"),
+				provider.NewAssistantMessage(part),
+			},
+		}, false)
+		require.NoError(t, err)
+		require.Len(t, p.Messages, 2)
+		require.Len(t, p.Messages[1].Content, 1)
+		block := p.Messages[1].Content[0]
+		require.NotNil(t, block.OfCompaction)
+		assert.Nil(t, block.OfText)
+		assert.True(t, block.OfCompaction.Content.Valid())
+		assert.Equal(t, "Compaction summary  \n", block.OfCompaction.Content.Value)
+		assert.EqualValues(t, "ephemeral", block.OfCompaction.CacheControl.Type)
+	})
 
-	require.Len(t, p.Messages, 2)
-	require.Len(t, p.Messages[1].Content, 1)
-	block := p.Messages[1].Content[0]
-	require.NotNil(t, block.OfCompaction)
-	assert.Nil(t, block.OfText)
-	assert.True(t, block.OfCompaction.Content.Valid())
-	assert.Equal(t, "Compaction summary  \n", block.OfCompaction.Content.Value)
-	assert.EqualValues(t, "ephemeral", block.OfCompaction.CacheControl.Type)
+	t.Run("omits empty block among text", func(t *testing.T) {
+		empty := provider.TextPart("")
+		empty.ProviderOptions = makeProviderOpts(`{"type":"compaction"}`)
+		p, _, _, _, err := buildParams("claude-sonnet-4-6", provider.CallOptions{
+			Prompt: []provider.Message{
+				provider.UserText("Continue"),
+				provider.NewAssistantMessage(empty, provider.TextPart("Summary")),
+			},
+		}, false)
+		require.NoError(t, err)
+		require.Len(t, p.Messages, 2)
+		require.Len(t, p.Messages[1].Content, 1)
+		assert.Equal(t, "Summary", p.Messages[1].Content[0].OfText.Text)
+	})
+
+	t.Run("omits assistant message with only empty compaction", func(t *testing.T) {
+		empty := provider.TextPart("")
+		empty.ProviderOptions = makeProviderOpts(`{"type":"compaction"}`)
+		p, _, _, _, err := buildParams("claude-sonnet-4-6", provider.CallOptions{
+			Prompt: []provider.Message{
+				provider.UserText("First"),
+				provider.NewAssistantMessage(empty),
+				provider.UserText("Second"),
+			},
+		}, false)
+		require.NoError(t, err)
+		require.Len(t, p.Messages, 2)
+		assert.Equal(t, "user", string(p.Messages[0].Role))
+		assert.Equal(t, "user", string(p.Messages[1].Role))
+	})
 }
 
 func TestBuildParams_AssistantTextCitations(t *testing.T) {
@@ -2992,8 +3024,7 @@ func TestBuildParams_MCPToolCallRoundTrip(t *testing.T) {
 
 		p, _, warnings, _, err := buildParams("claude-sonnet-4-6", opts, false)
 		require.NoError(t, err)
-		require.Len(t, p.Messages, 1)
-		assert.Empty(t, p.Messages[0].Content)
+		assert.Empty(t, p.Messages)
 		require.Len(t, warnings, 1)
 		assert.Equal(t, provider.WarnOther, warnings[0].Type)
 		assert.Contains(t, warnings[0].Message, "server name is required")
