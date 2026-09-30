@@ -305,6 +305,8 @@ func TestNewResponses_DefaultRoutes(t *testing.T) {
 		{name: "GPT OSS 20B", modelID: "openai.gpt-oss-20b", wantRoute: "/v1/responses"},
 		{name: "GPT OSS 120B", modelID: "openai.gpt-oss-120b", wantRoute: "/v1/responses"},
 		{name: "GPT-6 Astra", modelID: "openai.gpt-6-astra", wantRoute: "/openai/v1/responses"},
+		{name: "GPT-6 Sol", modelID: "openai.gpt-6-sol", wantRoute: "/openai/v1/responses"},
+		{name: "GPT-6 Luna", modelID: "openai.gpt-6-luna", wantRoute: "/openai/v1/responses"},
 		{name: "GPT-5.4", modelID: "openai.gpt-5.4", wantRoute: "/openai/v1/responses"},
 		{name: "GPT-5.5", modelID: "openai.gpt-5.5", wantRoute: "/openai/v1/responses"},
 		{name: "GPT-5.6 Cyber", modelID: "openai.gpt-5.6-cyber", wantRoute: "/openai/v1/responses"},

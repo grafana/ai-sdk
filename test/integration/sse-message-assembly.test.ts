@@ -52,12 +52,10 @@ describe("SSE message assembly", () => {
     expect(lastMessage.role).toBe("assistant");
     expect(lastMessage.parts).toBeDefined();
 
-    const textParts = lastMessage.parts.filter(
-      (p: { type: string }) => p.type === "text",
-    );
+    const textParts = lastMessage.parts.filter(part => part.type === "text");
     expect(textParts.length).toBeGreaterThanOrEqual(1);
 
-    const fullText = textParts.map((p: { text: string }) => p.text).join("");
+    const fullText = textParts.map(part => part.text).join("");
     expect(fullText).toBe("Hello, world!");
   });
 

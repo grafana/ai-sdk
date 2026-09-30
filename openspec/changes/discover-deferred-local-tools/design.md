@@ -1,12 +1,14 @@
 ## Context
 
-The registered baseline is `ai@7.0.109` / `@ai-sdk/provider-utils@5.0.45` at [4e8c387622ee1bb0d55841664416d38754d5c9a3](https://github.com/vercel/ai/tree/4e8c387622ee1bb0d55841664416d38754d5c9a3). Relevant upstream paths at that exact commit:
+The original design baseline was `ai@7.0.109` / `@ai-sdk/provider-utils@5.0.45` at [4e8c387622ee1bb0d55841664416d38754d5c9a3](https://github.com/vercel/ai/tree/4e8c387622ee1bb0d55841664416d38754d5c9a3). Relevant upstream paths at that exact commit:
 
 - `packages/ai/src/tool-search/tool-search.ts:15-58`: marked function tool, fixed schemas/description and unbound-execution error.
 - `packages/ai/src/tool-search/prepare-tool-search.ts:16-138` and its tests: generation-owned discovery, route validation, active snapshot, contextual descriptions and scoring.
 - `packages/ai/src/tool-search/tool-search.test.ts:80-320`: direct/nested next-step activation and all four core/agent entry points.
 - `packages/ai/src/generate-text/stream-text.ts:1393,2040-2130,2351-2364` and `generate-text.ts:580,920-935`: state creation, original-registry approval resume, then active filtering → search preparation → caller preparation.
 - `packages/provider-utils/src/types/tool.ts:55-72,185-203`: `deferLoading` and context-dependent description functions.
+
+Merging `origin/main` advances the registered baseline to `ai@7.0.116` / `@ai-sdk/provider-utils@5.0.49` at [ee3169b3c4880e2abe4d0d7c781243bb81822ec4](https://github.com/vercel/ai/tree/ee3169b3c4880e2abe4d0d7c781243bb81822ec4). Discovery source and tests remain behaviorally aligned; regenerating the paired core fixtures with these package versions produces byte-identical scenarios, requests and UI chunks.
 
 Go currently has static `Tool.Description`, caller metadata and no discovery controls (`tool.go:111-203`). `streamtext.go:615-624` prepares callers and provider definitions directly, with a no-routes active filter applied only to provider definitions; `stepCfg.tools` controls parsing/execution (`674-690`). `tool_caller.go:55-121` separates execution/model sets, late binding and announcements. GenerateText collects StreamText (`generatetext.go:1-75`). #211's routing is already implemented by #290, so it is not an outstanding delivery prerequisite.
 
