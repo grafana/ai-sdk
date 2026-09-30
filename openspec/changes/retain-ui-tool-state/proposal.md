@@ -8,6 +8,8 @@ Issue #213 remains valid against the registered `ai@7.0.109` / `@ai-sdk/react@4.
 - **BREAKING**: change persisted tool `ErrorText` and `ToolApproval.Reason` to optional string pointers so missing and explicitly empty strings remain distinguishable; migrate repository callers.
 - Add a cloned initial-message reader option for resuming assistant tool parts without duplicates. Non-assistant seeds retain their supplied ID but not their parts/metadata. Keep the current progressive/blocking reader error contracts; error/cancellation/lifecycle API work remains in #181.
 - Correct conversion defaults, preliminary filtering, denied fallback text, raw-input fallback and source-specific provider metadata selection; add a text/file-only data-part converter. Preserve existing `ToModelOutput`, custom content, approval placement, file references and filename presence.
+- Preserve required empty model text through discriminator-aware `provider.ContentPart` JSON encoding, retaining `Text string` and all other variant encodings.
+- Match pinned consecutive tool-message coalescing and metadata precedence at provider prompt preparation so resumed approvals retain the exact supported provider projection.
 - Extend existing pre-Agent validation with state constraints, configured static-tool schemas, and the pinned Agent-specific normalization of obsolete terminal static history to dynamic parts.
 - Add differential persistence/conversion tests against the pinned TypeScript APIs and a real hook-level persisted-resume scenario.
 
@@ -25,6 +27,6 @@ Issue #213 remains valid against the registered `ai@7.0.109` / `@ai-sdk/react@4.
 
 ## Impact
 
-Root package seams: `message.go`, `message_json.go`, `chunk.go`, `ui_message_reader.go`, `convert.go`, and `agent.go`; their tests, `test/conformance/ui/`, `test/integration/testserver/`, and Vitest/hook tests. Proposed additive APIs are `WithUIMessageReaderInitialMessage` and `WithConvertDataPart`; pointer migrations are source-breaking but retain existing wire names. Chunk codec work is limited to existing optional-field presence and the registered `approvalDescriptor` field, not SSE framing (#180), new chunk types, or provider producer redesign.
+Root package seams plus scoped text encoding in `provider/content.go` and tool-message coalescing in `streamtext.go`: `message.go`, `message_json.go`, `chunk.go`, `ui_message_reader.go`, `convert.go`, and `agent.go`; their tests, `test/conformance/ui/`, `test/integration/testserver/`, and Vitest/hook tests. Proposed additive APIs are `WithUIMessageReaderInitialMessage` and `WithConvertDataPart`; pointer migrations are source-breaking but retain existing wire names. Chunk codec work is limited to existing optional-field presence and the registered `approvalDescriptor` field, not SSE framing (#180), new chunk types, or provider producer redesign.
 
 No baseline or dependency upgrade is needed. This is one independently green root-module work package, not a cumulative provider stack. `PARITY.md` changes only if delivered evidence/support boundaries change. Metadata/data schema configuration and a general exported validator are not introduced; their absence is an explicit coverage boundary, not full `validateUIMessages` parity. This proposal is subject to design/API review, not authorization inferred from issue registration.

@@ -23,9 +23,9 @@ evidence boundary changes, not merely because the pinned versions change.
 | --- | --- | --- | --- |
 | Core orchestration and tools | mixed | Root tests, provider-independent UI fixtures and HTTP/core integration tests exercise lifecycle, tool execution, approvals, continuation, ordering and cancellation. | Provider replay covers configured scenarios, not every core option or scheduling interleaving. |
 | Structured output | mixed | Object snapshots and unit tests exercise schemas, partial values, array elements and parsing. | Final-value snapshots do not establish partial-delivery or failure behavior; those require focused tests. |
-| UI messages and SSE | mixed | Chunk snapshots, framing tests and schema-parsed frontend tests exercise conversion, ordering and assembly. | Reader/writer tests do not establish all browser or hook lifecycle behavior. |
-| React hooks | mixed | Actual useChat, useCompletion and useObject tests exercise selected success, error, stop, tool and approval flows. | Other lifecycle paths are not established by these tests or by chunk snapshots alone. |
-| Agent, middleware and registry | mixed | Root tests exercise configuration, wrapping, provider resolution, simulated generated-content projection and cancellation; a schema-parsed frontend scenario checks simulated UI chunks and assembly. | Synthetic simulated generation does not prove real provider emissions; delegation to another implementation does not independently prove every entry point. |
+| UI messages and SSE | mixed | Chunk snapshots, framing tests and schema-parsed frontend tests exercise conversion, ordering and assembly. Pinned differential tool-state tests compare all seven static/dynamic states, optional values, write points, persistence, resume and model conversion. | Reader/writer tests do not establish all browser or hook lifecycle behavior; scalar construction and provider-domain optional-empty representations remain bounded adaptations. |
+| React hooks | mixed | Actual useChat, useCompletion and useObject tests exercise selected success, error, stop, tool and approval flows. Tool-state tests mount, persist through Go JSON, remount and resume preliminary/approval history through the Go Agent to a final result and compare the fake provider prompt with the pinned Agent. | Other lifecycle paths are not established by these tests or by chunk snapshots alone; the deterministic model does not prove live provider acceptance. |
+| Agent, middleware and registry | mixed | Root tests exercise configuration, wrapping, provider resolution, simulated generated-content projection and cancellation; schema-parsed frontend scenarios check simulated UI chunks, cloned tool-history validation and pinned Agent terminal normalization. Invalid represented/schema histories assert zero provider calls. | Dynamic history skips static schemas; application metadata/data schemas and unrepresented provider-tool schemas are not validated. Shared schema cases do not prove every JSON Schema family. Synthetic generation does not prove real provider emissions. |
 | Agent Observability integration | mixed | Tests against the agento11y versions in the middleware's `go.mod` cover cached unary/streaming usage, inclusive export/span/metric semantics, and hook fixtures replayed through the real HTTP decoder. Gateway tests cover cached unary/streaming inclusive exports with both source and published middleware, bounded HTTP/gRPC export attempts, and ambient configuration rejection. | Hook validation starts after SDK normalization; discarded wire fields cannot be validated, and lost provider-tool discriminators fail reconstruction. Local HTTP servers do not prove deployed hook-service compatibility. Experimental OTel generation export is outside this evidence. |
 | LanguageModelV4 contract | mixed | Discriminator checks, finite ProviderWire witnesses and provider request snapshots exercise represented types and mappings. | Shape checks are not complete semantic interface verification. |
 | Provider adapters | mixed | `recorded/` and `upstream/` fixtures exercise represented requests, stream events, usage and outputs; provider tests cover synthetic failures and local invariants, including OpenAI capability-gated reasoning/configuration controls, async tool metadata and continuation, multipart function-result conversion, and immutable Responses schema normalization. | No recorded/imported OpenAI request fixture exercises multipart result references, cache breakpoints or `propertyNames` normalization; focused request tests do not prove live acceptance. Request capture does not prove returned SDK metadata. Volatile SigV4 headers are excluded from snapshots. |
@@ -67,12 +67,27 @@ evidence boundary changes, not merely because the pinned versions change.
 - Linux FIFO deadline tests are platform-specific; socket checks on another
   platform do not establish Linux runtime behavior.
 
+- Tool-state differential fixtures under `test/integration/fixtures/` contain
+  provider-independent core chunks, not recorded provider payloads. Pinned reader,
+  conversion and public Agent helpers own the reference expectations. Model
+  comparisons preserve message grouping and required empty text; they do not
+  normalize arbitrary empty values or metadata fallback choices. Provider prompt
+  coalescing has focused deep-precedence and caller-isolation tests.
+
 ## Retained deviations without issue ownership
 
 These notes prevent matching tests from being mistaken for upstream equivalence.
 If a deviation becomes tracked work, its rationale and disposition belong in the
 issue rather than being maintained in both places.
 
+- UI tool persistence retains selected pointer/raw-JSON presence. Existing scalar
+  provider-executed/automatic flags and signatures omit false/empty values; direct
+  Go chunk scalar zero values remain omitted. Decoded tool chunks retain selected
+  empty/false presence and false updates clear prior true. Static tool JSON carries
+  a redundant tool name. Provider projections can omit empty options and optional
+  approval reasons/signatures/false flags; required denied text and constructed
+  text content remain present. These are bounded Go representation adaptations,
+  not exhaustive optional-presence parity.
 - Core batches local approval handling after provider streaming. ToUIMessageStream
   supplies a default ID generator with original messages and avoids an unused
   generation on continuation. Timeout warnings are returned on successful results

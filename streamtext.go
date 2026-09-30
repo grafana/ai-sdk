@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -2329,7 +2330,19 @@ func sanitizePromptForProvider(msgs []provider.Message) ([]provider.Message, err
 			}
 			filtered.Content = append(filtered.Content, part)
 		}
-		if msg.Role != provider.RoleTool || len(filtered.Content) > 0 {
+		if msg.Role == provider.RoleTool && len(result) > 0 && result[len(result)-1].Role == provider.RoleTool {
+			previous := &result[len(result)-1]
+			if len(previous.Content) > 0 && previous.ProviderOptions != nil {
+				last := &previous.Content[len(previous.Content)-1]
+				merged, err := mergeStepProviderOptions(previous.ProviderOptions, last.ProviderOptions)
+				if err != nil {
+					return nil, fmt.Errorf("aisdk: merging tool message provider options: %w", err)
+				}
+				last.ProviderOptions = merged
+			}
+			previous.Content = append(previous.Content, filtered.Content...)
+			previous.ProviderOptions = filtered.ProviderOptions
+		} else {
 			result = append(result, filtered)
 		}
 	}
@@ -2393,7 +2406,9 @@ func sanitizePromptForProvider(msgs []provider.Message) ([]provider.Message, err
 	if err := missingResultsError(); err != nil {
 		return nil, err
 	}
-	return result, nil
+	return slices.DeleteFunc(result, func(message provider.Message) bool {
+		return message.Role == provider.RoleTool && len(message.Content) == 0
+	}), nil
 }
 
 func (r *StreamTextResult) callOnChunk(cfg *streamConfig, tsp TextStreamPart) {

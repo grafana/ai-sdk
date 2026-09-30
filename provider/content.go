@@ -422,6 +422,18 @@ type ContentPart struct {
 	ProviderOptions ProviderOptions `json:"providerOptions,omitempty"`
 }
 
+// MarshalJSON preserves the required text field on text content parts.
+func (p ContentPart) MarshalJSON() ([]byte, error) {
+	type contentPart ContentPart
+	if p.Type != ContentPartTypeText {
+		return json.Marshal(contentPart(p))
+	}
+	return json.Marshal(struct {
+		contentPart
+		Text string `json:"text"`
+	}{contentPart(p), p.Text})
+}
+
 // TextPart constructs a [ContentPart] of type [ContentPartTypeText].
 func TextPart(text string) ContentPart {
 	return ContentPart{Type: ContentPartTypeText, Text: text}

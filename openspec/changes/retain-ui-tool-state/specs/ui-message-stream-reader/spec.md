@@ -73,6 +73,11 @@ Both readers SHALL carry title/tool metadata across partial input updates, prese
 - **AND** the dynamic output-error part SHALL retain Input
 - **AND** title, tool metadata and result-provider metadata SHALL remain associated with that part
 
+#### Scenario: Static error continuations preserve rejected input
+- **WHEN** a static tool-input-error or seeded static output-error part with RawInput receives a tool-output-error continuation
+- **THEN** reader snapshots SHALL retain RawInput separately from absent Input
+- **AND** conversion SHALL still use that retained input through its nullish fallback
+
 #### Scenario: Final output replaces preliminary output
 - **WHEN** a tool receives a preliminary available output followed by a final available output
 - **THEN** snapshots SHALL contain one tool part with the respective current output and preliminary presence

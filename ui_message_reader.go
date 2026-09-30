@@ -8,7 +8,8 @@ import (
 )
 
 type uiMessageReaderConfig struct {
-	generateID func() string
+	generateID     func() string
+	initialMessage *UIMessage
 }
 
 // UIMessageReaderOption configures UI message stream readers.
@@ -30,6 +31,13 @@ func WithUIMessageReaderGenerateID(fn func() string) UIMessageReaderOption {
 	})
 }
 
+// WithUIMessageReaderInitialMessage resumes from a cloned assistant message.
+// Non-assistant messages supply only their ID. Each reader receives an isolated copy.
+func WithUIMessageReaderInitialMessage(message UIMessage) UIMessageReaderOption {
+	initial := cloneUIMessage(message)
+	return uiMessageReaderOptionFunc(func(cfg *uiMessageReaderConfig) { cfg.initialMessage = &initial })
+}
+
 func buildUIMessageReaderConfig(opts []UIMessageReaderOption) uiMessageReaderConfig {
 	var cfg uiMessageReaderConfig
 	for _, opt := range opts {
@@ -44,11 +52,11 @@ func buildUIMessageReaderConfig(opts []UIMessageReaderOption) uiMessageReaderCon
 }
 
 type partialToolCallState struct {
-	text             string
-	toolName         string
-	dynamic          bool
-	providerExecuted bool
-	callMetadata     provider.ProviderMetadata
+	text         string
+	toolName     string
+	dynamic      bool
+	title        *string
+	toolMetadata json.RawMessage
 }
 
 type uiMessageReaderState struct {
@@ -63,7 +71,7 @@ type uiMessageReaderState struct {
 }
 
 func newUIMessageReaderState(cfg uiMessageReaderConfig) *uiMessageReaderState {
-	return &uiMessageReaderState{
+	state := &uiMessageReaderState{
 		message: UIMessage{
 			Role:  RoleAssistant,
 			Parts: nil,
@@ -74,6 +82,21 @@ func newUIMessageReaderState(cfg uiMessageReaderConfig) *uiMessageReaderState {
 		partialToolCalls:     make(map[string]*partialToolCallState),
 		dataPartIndex:        make(map[string]int),
 	}
+	if cfg.initialMessage != nil {
+		state.message.ID = cfg.initialMessage.ID
+		if cfg.initialMessage.Role == RoleAssistant {
+			state.message = cloneUIMessage(*cfg.initialMessage)
+		}
+	}
+	for i, part := range state.message.Parts {
+		if data, ok := part.(DataPart); ok && data.ID != "" {
+			key := data.DataName + "\x00" + data.ID
+			if _, exists := state.dataPartIndex[key]; !exists {
+				state.dataPartIndex[key] = i
+			}
+		}
+	}
+	return state
 }
 
 func (s *uiMessageReaderState) ensureID() {
@@ -240,13 +263,11 @@ func (s *uiMessageReaderState) apply(chunk UIMessageChunk) (bool, error) {
 	case ChunkToolInputStart:
 		dynamic := chunk.Dynamic != nil && *chunk.Dynamic
 		s.partialToolCalls[chunk.ToolCallID] = &partialToolCallState{
-			toolName:         chunk.ToolName,
-			dynamic:          dynamic,
-			providerExecuted: chunk.ProviderExecuted,
-			callMetadata:     cloneProviderMetadata(chunk.ProviderMetadata),
+			toolName: chunk.ToolName, dynamic: dynamic,
+			title: chunkToolTitle(chunk), toolMetadata: cloneRawMessage(chunk.ToolMetadata),
 		}
-		s.upsertToolPart(chunk.ToolCallID, chunk.ToolName, dynamic, ToolStateInputStreaming, nil, "", chunk.ProviderExecuted, chunk.ProviderMetadata, false)
-		return true, nil
+		chunk.Input = nil
+		return true, s.upsertToolPart(chunk, dynamic, ToolStateInputStreaming)
 
 	case ChunkToolInputDelta:
 		partial, ok := s.partialToolCalls[chunk.ToolCallID]
@@ -254,22 +275,22 @@ func (s *uiMessageReaderState) apply(chunk UIMessageChunk) (bool, error) {
 			return false, fmt.Errorf("aisdk: received tool-input-delta for missing tool call %q", chunk.ToolCallID)
 		}
 		partial.text += chunk.InputTextDelta
-		input := parsePartialJSONRaw(partial.text)
-		s.upsertToolPart(chunk.ToolCallID, partial.toolName, partial.dynamic, ToolStateInputStreaming, input, "", partial.providerExecuted, partial.callMetadata, false)
-		return true, nil
+		next := UIMessageChunk{Type: ChunkToolInputDelta, ToolCallID: chunk.ToolCallID, ToolName: partial.toolName, Input: parsePartialJSONRaw(partial.text), ToolMetadata: partial.toolMetadata}
+		if partial.title != nil {
+			next.Title = *partial.title
+			next.titlePresent = true
+		}
+		return true, s.upsertToolPart(next, partial.dynamic, ToolStateInputStreaming)
 
 	case ChunkToolInputAvailable:
-		dynamic := chunk.Dynamic != nil && *chunk.Dynamic
-		s.upsertToolPart(chunk.ToolCallID, chunk.ToolName, dynamic, ToolStateInputAvailable, chunk.Input, "", chunk.ProviderExecuted, chunk.ProviderMetadata, false)
-		return true, nil
+		return true, s.upsertToolPart(chunk, chunk.Dynamic != nil && *chunk.Dynamic, ToolStateInputAvailable)
 
 	case ChunkToolInputError:
 		dynamic := chunk.Dynamic != nil && *chunk.Dynamic
 		if idx, ok := s.findCurrentStepToolPart(chunk.ToolCallID); ok {
 			dynamic = isDynamicToolPart(s.message.Parts[idx])
 		}
-		s.upsertToolPart(chunk.ToolCallID, chunk.ToolName, dynamic, ToolStateOutputError, chunk.Input, chunk.ErrorText, chunk.ProviderExecuted, chunk.ProviderMetadata, true)
-		return true, nil
+		return true, s.upsertToolPart(chunk, dynamic, ToolStateOutputError)
 
 	case ChunkToolApprovalRequest:
 		idx, ok := s.findToolPart(chunk.ToolCallID)
@@ -278,7 +299,10 @@ func (s *uiMessageReaderState) apply(chunk UIMessageChunk) (bool, error) {
 		}
 		s.updateToolAt(idx, func(tp *toolPartFields) {
 			tp.State = ToolStateApprovalRequested
-			tp.Approval = &ToolApproval{ID: chunk.ApprovalID, IsAutomatic: chunk.IsAutomatic, Signature: chunk.Signature}
+			tp.Approval = &ToolApproval{ID: chunk.ApprovalID, IsAutomatic: chunk.IsAutomatic, Signature: chunk.Signature, RequestReason: chunkApprovalReason(chunk)}
+			if !isJSONNull(chunk.ApprovalDescriptor) {
+				tp.Approval.Descriptor = cloneRawMessage(chunk.ApprovalDescriptor)
+			}
 		})
 		return true, nil
 
@@ -288,19 +312,19 @@ func (s *uiMessageReaderState) apply(chunk UIMessageChunk) (bool, error) {
 			return false, fmt.Errorf("aisdk: received tool-approval-response for missing approval %q", chunk.ApprovalID)
 		}
 		s.updateToolAt(idx, func(tp *toolPartFields) {
-			approved := chunk.Approved
-			approval := &ToolApproval{
-				ID:       chunk.ApprovalID,
-				Approved: &approved,
-				Reason:   chunk.Reason,
+			approval := cloneToolApproval(tp.Approval)
+			if approval == nil {
+				approval = &ToolApproval{}
 			}
-			if tp.Approval != nil && tp.Approval.IsAutomatic {
-				approval.IsAutomatic = true
+			approval.ID = chunk.ApprovalID
+			approval.Approved = new(chunk.Approved)
+			if reason := chunkApprovalReason(chunk); reason != nil {
+				approval.Reason = reason
 			}
 			tp.State = ToolStateApprovalResponded
 			tp.Approval = approval
-			if chunk.ProviderExecuted {
-				tp.ProviderExecuted = true
+			if chunk.ProviderExecuted || chunk.providerExecutedPresent {
+				tp.ProviderExecuted = chunk.ProviderExecuted
 			}
 			if chunk.ProviderMetadata != nil {
 				tp.CallProviderMetadata = cloneProviderMetadata(chunk.ProviderMetadata)
@@ -324,8 +348,16 @@ func (s *uiMessageReaderState) apply(chunk UIMessageChunk) (bool, error) {
 		s.updateToolAt(idx, func(tp *toolPartFields) {
 			tp.State = ToolStateOutputAvailable
 			tp.Output = cloneRawMessage(chunk.Output)
-			if chunk.ProviderExecuted {
-				tp.ProviderExecuted = true
+			tp.ErrorText = nil
+			tp.Preliminary = nil
+			if chunk.Preliminary || chunk.preliminaryPresent {
+				tp.Preliminary = new(chunk.Preliminary)
+			}
+			if !isDynamicToolPart(s.message.Parts[idx]) {
+				tp.RawInput = nil
+			}
+			if chunk.ProviderExecuted || chunk.providerExecutedPresent {
+				tp.ProviderExecuted = chunk.ProviderExecuted
 			}
 			if chunk.ProviderMetadata != nil {
 				tp.ResultProviderMetadata = cloneProviderMetadata(chunk.ProviderMetadata)
@@ -340,9 +372,11 @@ func (s *uiMessageReaderState) apply(chunk UIMessageChunk) (bool, error) {
 		}
 		s.updateToolAt(idx, func(tp *toolPartFields) {
 			tp.State = ToolStateOutputError
-			tp.ErrorText = chunk.ErrorText
-			if chunk.ProviderExecuted {
-				tp.ProviderExecuted = true
+			tp.Output = nil
+			tp.Preliminary = nil
+			tp.ErrorText = new(chunk.ErrorText)
+			if chunk.ProviderExecuted || chunk.providerExecutedPresent {
+				tp.ProviderExecuted = chunk.ProviderExecuted
 			}
 			if chunk.ProviderMetadata != nil {
 				tp.ResultProviderMetadata = cloneProviderMetadata(chunk.ProviderMetadata)
@@ -439,47 +473,72 @@ func isUnsafeJSONMergeKey(key string) bool {
 	return key == "__proto__" || key == "constructor" || key == "prototype"
 }
 
-func (s *uiMessageReaderState) upsertToolPart(toolCallID, toolName string, dynamic bool, state ToolInvocationState, input json.RawMessage, errorText string, providerExecuted bool, metadata provider.ProviderMetadata, resultMetadata bool) {
-	if idx, ok := s.findCurrentStepToolPart(toolCallID); ok {
-		s.updateToolAt(idx, func(tp *toolPartFields) {
-			tp.ToolName = toolNameOrExisting(toolName, tp.ToolName)
-			tp.State = state
-			tp.Input = cloneRawMessage(input)
-			tp.ErrorText = errorText
-			if providerExecuted {
-				tp.ProviderExecuted = true
-			}
-			if metadata != nil {
-				if resultMetadata {
-					tp.ResultProviderMetadata = cloneProviderMetadata(metadata)
-				} else {
-					tp.CallProviderMetadata = cloneProviderMetadata(metadata)
-				}
-			}
-		})
-		return
+func chunkToolTitle(chunk UIMessageChunk) *string {
+	if chunk.Title != "" || chunk.titlePresent {
+		return new(chunk.Title)
 	}
+	return nil
+}
 
-	fields := toolPartFields{
-		ToolCallID:       toolCallID,
-		ToolName:         toolName,
-		State:            state,
-		Input:            cloneRawMessage(input),
-		ErrorText:        errorText,
-		ProviderExecuted: providerExecuted,
+func chunkApprovalReason(chunk UIMessageChunk) *string {
+	if chunk.Reason != "" || chunk.reasonPresent {
+		return new(chunk.Reason)
 	}
-	if metadata != nil {
-		if resultMetadata {
-			fields.ResultProviderMetadata = cloneProviderMetadata(metadata)
-		} else {
-			fields.CallProviderMetadata = cloneProviderMetadata(metadata)
+	return nil
+}
+
+func (s *uiMessageReaderState) upsertToolPart(chunk UIMessageChunk, dynamic bool, state ToolInvocationState) error {
+	var toolMetadata map[string]json.RawMessage
+	if len(chunk.ToolMetadata) > 0 {
+		if err := json.Unmarshal(chunk.ToolMetadata, &toolMetadata); err != nil {
+			return fmt.Errorf("aisdk: parsing tool metadata: %w", err)
 		}
 	}
+	update := func(tp *toolPartFields) {
+		tp.ToolName = toolNameOrExisting(chunk.ToolName, tp.ToolName)
+		tp.State = state
+		tp.Input = cloneRawMessage(chunk.Input)
+		tp.Output = nil
+		tp.ErrorText = nil
+		tp.Preliminary = nil
+		if !dynamic {
+			tp.RawInput = nil
+		}
+		if state == ToolStateOutputError {
+			tp.ErrorText = new(chunk.ErrorText)
+			if !dynamic {
+				tp.RawInput = tp.Input
+				tp.Input = nil
+			}
+		} else if title := chunkToolTitle(chunk); title != nil {
+			tp.Title = title
+		}
+		if toolMetadata != nil {
+			tp.ToolMetadata = toolMetadata
+		}
+		if chunk.ProviderExecuted || chunk.providerExecutedPresent {
+			tp.ProviderExecuted = chunk.ProviderExecuted
+		}
+		if chunk.ProviderMetadata != nil {
+			if state == ToolStateOutputError {
+				tp.ResultProviderMetadata = cloneProviderMetadata(chunk.ProviderMetadata)
+			} else {
+				tp.CallProviderMetadata = cloneProviderMetadata(chunk.ProviderMetadata)
+			}
+		}
+	}
+	if idx, ok := s.findCurrentStepToolPart(chunk.ToolCallID); ok {
+		s.updateToolAt(idx, update)
+		return nil
+	}
+	fields := toolPartFields{ToolCallID: chunk.ToolCallID}
+	update(&fields)
 	if dynamic {
 		s.message.Parts = append(s.message.Parts, DynamicToolUIPart(fields))
-		return
+	} else {
+		s.message.Parts = append(s.message.Parts, ToolInvocationPart(fields))
 	}
-	s.message.Parts = append(s.message.Parts, ToolInvocationPart(fields))
+	return nil
 }
 
 func toolNameOrExisting(next, current string) string {
@@ -828,21 +887,21 @@ func clonePart(part Part) Part {
 		p.ProviderMetadata = cloneProviderMetadata(p.ProviderMetadata)
 		return p
 	case ToolInvocationPart:
-		p.Input = cloneRawMessage(p.Input)
-		p.Output = cloneRawMessage(p.Output)
-		p.CallProviderMetadata = cloneProviderMetadata(p.CallProviderMetadata)
-		p.ResultProviderMetadata = cloneProviderMetadata(p.ResultProviderMetadata)
-		p.Approval = cloneToolApproval(p.Approval)
-		return p
+		return ToolInvocationPart(cloneToolFields(toolPartFields(p)))
 	case DynamicToolUIPart:
-		p.Input = cloneRawMessage(p.Input)
-		p.Output = cloneRawMessage(p.Output)
-		p.CallProviderMetadata = cloneProviderMetadata(p.CallProviderMetadata)
-		p.ResultProviderMetadata = cloneProviderMetadata(p.ResultProviderMetadata)
-		p.Approval = cloneToolApproval(p.Approval)
-		return p
+		return DynamicToolUIPart(cloneToolFields(toolPartFields(p)))
 	case FilePart:
 		p.ProviderMetadata = cloneProviderMetadata(p.ProviderMetadata)
+		if p.Filename != nil {
+			p.Filename = new(*p.Filename)
+		}
+		if p.ProviderReference != nil {
+			references := make(map[string]string, len(p.ProviderReference))
+			for key, value := range p.ProviderReference {
+				references[key] = value
+			}
+			p.ProviderReference = references
+		}
 		return p
 	case ReasoningFilePart:
 		p.ProviderMetadata = cloneProviderMetadata(p.ProviderMetadata)
@@ -866,11 +925,44 @@ func clonePart(part Part) Part {
 	}
 }
 
+func cloneToolFields(p toolPartFields) toolPartFields {
+	p.Input = cloneRawMessage(p.Input)
+	p.RawInput = cloneRawMessage(p.RawInput)
+	p.Output = cloneRawMessage(p.Output)
+	p.CallProviderMetadata = cloneProviderMetadata(p.CallProviderMetadata)
+	p.ResultProviderMetadata = cloneProviderMetadata(p.ResultProviderMetadata)
+	if p.ToolMetadata != nil {
+		metadata := make(map[string]json.RawMessage, len(p.ToolMetadata))
+		for key, value := range p.ToolMetadata {
+			metadata[key] = cloneRawMessage(value)
+		}
+		p.ToolMetadata = metadata
+	}
+	if p.Title != nil {
+		p.Title = new(*p.Title)
+	}
+	if p.ErrorText != nil {
+		p.ErrorText = new(*p.ErrorText)
+	}
+	if p.Preliminary != nil {
+		p.Preliminary = new(*p.Preliminary)
+	}
+	p.Approval = cloneToolApproval(p.Approval)
+	return p
+}
+
 func cloneToolApproval(approval *ToolApproval) *ToolApproval {
 	if approval == nil {
 		return nil
 	}
 	clone := *approval
+	clone.Descriptor = cloneRawMessage(approval.Descriptor)
+	if approval.RequestReason != nil {
+		clone.RequestReason = new(*approval.RequestReason)
+	}
+	if approval.Reason != nil {
+		clone.Reason = new(*approval.Reason)
+	}
 	if approval.Approved != nil {
 		approved := *approval.Approved
 		clone.Approved = &approved

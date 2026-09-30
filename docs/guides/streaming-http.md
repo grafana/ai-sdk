@@ -126,6 +126,24 @@ Use `r.Context()` so client disconnects stop provider calls and tools. Configure
 total, step, and chunk timeouts for stalled connections. Verify streaming in the
 deployed path, including reverse proxies that may buffer SSE.
 
+## Resume an assembled message
+
+For a persisted assistant message, use
+[`WithUIMessageReaderInitialMessage`](https://pkg.go.dev/github.com/grafana/ai-sdk#WithUIMessageReaderInitialMessage)
+with either reader. The option clones at construction and again for each reader;
+output and approval continuations update matching tool parts without duplicates.
+Identified data parts also update in place. Non-assistant seeds contribute their
+ID only; a later start chunk can replace it.
+
+Resuming does not activate old text/reasoning/input delta sequences: new deltas
+still require start chunks. An empty progressive stream emits no snapshots; an
+empty blocking assembly returns the cloned seed. Snapshots remain isolated.
+
+The reader error contracts are unchanged: `StreamUIMessage` ignores error chunks
+and closes on malformed transitions, while `AssembleUIMessage` returns errors.
+Additional reader error/cancellation/lifecycle APIs remain separate work in
+[#181](https://github.com/grafana/ai-sdk/issues/181).
+
 ## Reference
 
 - [`WriteUIMessageStream`](https://pkg.go.dev/github.com/grafana/ai-sdk#WriteUIMessageStream)

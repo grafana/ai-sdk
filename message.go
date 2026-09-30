@@ -78,11 +78,16 @@ func (ReasoningPart) PartType() string { return string(UIPartReasoning) }
 // is unset while a request is pending and set true/false once the user
 // responds.
 type ToolApproval struct {
-	ID          string `json:"id,omitempty"`
-	Approved    *bool  `json:"approved,omitempty"`
-	Reason      string `json:"reason,omitempty"`
-	IsAutomatic bool   `json:"isAutomatic,omitempty"`
-	Signature   string `json:"signature,omitempty"`
+	ID       string `json:"id,omitempty"`
+	Approved *bool  `json:"approved,omitempty"`
+	// Descriptor retains opaque approval request data, including JSON null.
+	Descriptor json.RawMessage `json:"descriptor,omitempty"`
+	// RequestReason explains the request; nil is absent and an empty string is present.
+	RequestReason *string `json:"requestReason,omitempty"`
+	// Reason explains the decision; nil differs from an explicitly empty reason.
+	Reason      *string `json:"reason,omitempty"`
+	IsAutomatic bool    `json:"isAutomatic,omitempty"`
+	Signature   string  `json:"signature,omitempty"`
 }
 
 // ToolInvocationState identifies the lifecycle state of a tool invocation.
@@ -99,35 +104,49 @@ const (
 )
 
 // ToolInvocationPart carries a tool invocation lifecycle in a UIMessage.
+// Title, ErrorText and Preliminary use nil for absence and preserve explicit
+// empty strings or false. Output-error requires a non-nil ErrorText.
+// ToolMetadata and call/result metadata preserve non-nil empty objects.
+// RawInput retains rejected or legacy input separately from Input; opaque JSON
+// fields preserve JSON null, while nil means absent.
 type ToolInvocationPart struct {
-	ToolCallID             string                    `json:"toolCallId"`
-	ToolName               string                    `json:"toolName"`
-	State                  ToolInvocationState       `json:"state"`
-	Input                  json.RawMessage           `json:"input,omitempty"`
-	Output                 json.RawMessage           `json:"output,omitempty"`
-	ErrorText              string                    `json:"errorText,omitempty"`
-	ProviderExecuted       bool                      `json:"providerExecuted,omitempty"`
-	Approval               *ToolApproval             `json:"approval,omitempty"`
-	CallProviderMetadata   provider.ProviderMetadata `json:"callProviderMetadata,omitempty"`
-	ResultProviderMetadata provider.ProviderMetadata `json:"resultProviderMetadata,omitempty"`
+	ToolCallID             string                     `json:"toolCallId"`
+	ToolName               string                     `json:"toolName"`
+	State                  ToolInvocationState        `json:"state"`
+	Title                  *string                    `json:"title,omitempty"`
+	ToolMetadata           map[string]json.RawMessage `json:"toolMetadata,omitempty"`
+	Input                  json.RawMessage            `json:"input,omitempty"`
+	RawInput               json.RawMessage            `json:"rawInput,omitempty"`
+	Output                 json.RawMessage            `json:"output,omitempty"`
+	ErrorText              *string                    `json:"errorText,omitempty"`
+	Preliminary            *bool                      `json:"preliminary,omitempty"`
+	ProviderExecuted       bool                       `json:"providerExecuted,omitempty"`
+	Approval               *ToolApproval              `json:"approval,omitempty"`
+	CallProviderMetadata   provider.ProviderMetadata  `json:"callProviderMetadata,omitempty"`
+	ResultProviderMetadata provider.ProviderMetadata  `json:"resultProviderMetadata,omitempty"`
 }
 
 // PartType implements Part.
 func (p ToolInvocationPart) PartType() string { return "tool-" + p.ToolName }
 
 // DynamicToolUIPart carries a dynamic/MCP tool invocation in a UIMessage.
-// Same shape as ToolInvocationPart but with type "dynamic-tool" on the wire.
+// Same shape and field-presence contracts as [ToolInvocationPart], but with
+// type "dynamic-tool" on the wire.
 type DynamicToolUIPart struct {
-	ToolCallID             string                    `json:"toolCallId"`
-	ToolName               string                    `json:"toolName"`
-	State                  ToolInvocationState       `json:"state"`
-	Input                  json.RawMessage           `json:"input,omitempty"`
-	Output                 json.RawMessage           `json:"output,omitempty"`
-	ErrorText              string                    `json:"errorText,omitempty"`
-	ProviderExecuted       bool                      `json:"providerExecuted,omitempty"`
-	Approval               *ToolApproval             `json:"approval,omitempty"`
-	CallProviderMetadata   provider.ProviderMetadata `json:"callProviderMetadata,omitempty"`
-	ResultProviderMetadata provider.ProviderMetadata `json:"resultProviderMetadata,omitempty"`
+	ToolCallID             string                     `json:"toolCallId"`
+	ToolName               string                     `json:"toolName"`
+	State                  ToolInvocationState        `json:"state"`
+	Title                  *string                    `json:"title,omitempty"`
+	ToolMetadata           map[string]json.RawMessage `json:"toolMetadata,omitempty"`
+	Input                  json.RawMessage            `json:"input,omitempty"`
+	RawInput               json.RawMessage            `json:"rawInput,omitempty"`
+	Output                 json.RawMessage            `json:"output,omitempty"`
+	ErrorText              *string                    `json:"errorText,omitempty"`
+	Preliminary            *bool                      `json:"preliminary,omitempty"`
+	ProviderExecuted       bool                       `json:"providerExecuted,omitempty"`
+	Approval               *ToolApproval              `json:"approval,omitempty"`
+	CallProviderMetadata   provider.ProviderMetadata  `json:"callProviderMetadata,omitempty"`
+	ResultProviderMetadata provider.ProviderMetadata  `json:"resultProviderMetadata,omitempty"`
 }
 
 // PartType implements Part.

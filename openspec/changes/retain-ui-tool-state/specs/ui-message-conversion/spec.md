@@ -63,6 +63,15 @@ A local output-denied tool SHALL produce an error-text result using its approval
 - **THEN** the callback SHALL receive the tool call ID, original Input and Output
 - **AND** returned model output SHALL preserve its placement and callback errors SHALL abort conversion
 
+### Requirement: Provider prompts coalesce consecutive tool messages
+
+Provider prompt preparation SHALL coalesce consecutive tool-role messages after approval bookkeeping removal, preserving content order. Before appending the next message, the preceding message's provider options SHALL be deeply merged into its last content part, with part options taking precedence. The combined message SHALL retain the final message's provider options. Empty tool messages SHALL participate before final removal. Caller history SHALL NOT be mutated, and direct ConvertToModelMessages grouping SHALL remain unchanged.
+
+#### Scenario: Resumed approval results share a tool message
+- **WHEN** approval resumption appends results immediately after an existing tool message
+- **THEN** the provider SHALL receive one combined tool message with the existing results followed by resumed results
+- **AND** metadata precedence SHALL match the registered upstream prompt preparation
+
 ### Requirement: Data parts support opt-in text or file conversion
 
 The root package SHALL expose `WithConvertDataPart(fn func(DataPart) (*provider.ContentPart, error)) ConvertOption`. Conversion SHALL invoke a non-nil callback on user and assistant data parts in part order, retaining assistant step boundaries. Nil callbacks/results SHALL skip data parts. Only text and file content discriminators SHALL be accepted; all other returned kinds and callback errors SHALL yield contextual conversion errors. Returned text/file content SHALL be preserved directly. System parts SHALL NOT invoke the hook. Existing Agent helper options SHALL NOT gain an implicit data converter.
@@ -79,6 +88,11 @@ The root package SHALL expose `WithConvertDataPart(fn func(DataPart) (*provider.
 #### Scenario: Unsupported converter results fail explicitly
 - **WHEN** a converter returns a reasoning/tool/custom discriminator or an error
 - **THEN** conversion SHALL return a contextual error instead of silently accepting or dropping it
+
+#### Scenario: Required empty converted text survives model JSON
+- **WHEN** a data converter returns a text content part containing an empty string
+- **THEN** model JSON SHALL retain `"text": ""` using the existing text discriminator
+- **AND** `provider.ContentPart.Text` SHALL remain a string and other variant encodings SHALL remain unchanged
 
 #### Scenario: System data is not converted
 - **WHEN** a system message contains text and data parts with a converter configured

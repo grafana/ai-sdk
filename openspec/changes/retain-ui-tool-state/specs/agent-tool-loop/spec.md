@@ -43,12 +43,22 @@ The helper SHALL reject invalid tool history before starting a provider stream w
 
 ### Requirement: Persisted tool state constraints are validated before Agent invocation
 
-The Agent UI helper SHALL validate represented role/part structure and tool-state required/forbidden fields before invoking Agent.Stream. Available input, approval states, output-available and output-denied SHALL require Input; streaming/error input SHALL be optional. Output SHALL be required only on output-available; errorText SHALL be required only on output-error and SHALL accept a present empty string. Approval SHALL be forbidden on input-streaming/input-available, required with ID and absent Approved/decision Reason on approval-requested, required with Approved on approval-responded, required with Approved false on output-denied, and if present SHALL have Approved true on output-available/output-error. Unknown states, missing state-required fields, forbidden output/error/approval fields, unsupported parts and invalid represented JSON SHALL fail with message/part context. Existing nonempty tool identity checks SHALL remain. Whole lifecycle parts SHALL NOT require separate preceding input/approval-request parts. No general exported validator or application metadata/data schema API SHALL be introduced.
+The Agent UI helper SHALL reject nil/empty histories and validate represented role/part structure and tool-state required/forbidden fields before invoking Agent.Stream. On its isolated normalized clone, it SHALL remove RawInput retained by dynamic reader updates outside output-error, matching pinned validation without changing caller history or weakening other state constraints. Available input, approval states, output-available and output-denied SHALL require Input; streaming/error input SHALL be optional. Output SHALL be required only on output-available; errorText SHALL be required only on output-error and SHALL accept a present empty string. Approval SHALL be forbidden on input-streaming/input-available, required with ID and absent Approved/decision Reason on approval-requested, required with Approved on approval-responded, required with Approved false on output-denied, and if present SHALL have Approved true on output-available/output-error. Unknown states, missing state-required fields, forbidden output/error/approval fields, unsupported parts and invalid represented JSON SHALL fail with message/part context. Existing nonempty tool identity checks SHALL remain. Whole lifecycle parts SHALL NOT require separate preceding input/approval-request parts. No general exported validator or application metadata/data schema API SHALL be introduced.
 
 #### Scenario: Invalid state combinations never reach a provider
 - **WHEN** persisted messages contain unknown states, missing required fields or contradictory output/error/approval combinations
 - **THEN** the helper SHALL return a contextual error before Agent.Stream
 - **AND** fake provider invocation count SHALL be zero
+
+#### Scenario: Empty histories do not invoke the Agent
+- **WHEN** the UI helper receives nil or empty message history
+- **THEN** it SHALL return a validation error before Agent.Stream
+- **AND** provider invocation count SHALL be zero
+
+#### Scenario: Dynamic reader history remains loadable after success
+- **WHEN** a seeded dynamic output-error with RawInput receives a successful output and is persisted
+- **THEN** Agent validation SHALL accept the reader-produced history and remove RawInput from its normalized clone
+- **AND** conversion and response assembly SHALL use that clone without mutating the persisted caller history
 
 #### Scenario: Explicit empty errors are valid but absent errors are not
 - **WHEN** otherwise valid output-error parts contain present empty errorText or absent errorText

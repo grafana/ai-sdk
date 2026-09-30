@@ -71,6 +71,31 @@ The helper validates and converts UI message history, runs the Agent, and writes
 the UI message SSE stream. The [full-stack chat guide](../getting-started/full-stack-chat.md)
 shows the corresponding direct `StreamText` endpoint.
 
+## Load persisted tool history safely
+
+The UI helper requires nonempty history and validates an isolated clone before
+invoking the Agent or provider.
+State-required fields and approval decisions must agree: denied output requires
+an approval with `approved: false`; an explicitly empty error string is valid,
+but a missing error string is not. Malformed optional tool fields are rejected
+rather than silently decoded as absent.
+
+Configured static tool input/output schemas apply at the supported state gates.
+Partial streaming input skips its input schema. Obsolete terminal static tools,
+failed inputs incompatible with the current schema, and completed incompatible
+empty-object inputs normalize to dynamic parts. Nonempty incompatible completed
+input or invalid configured output still fails. Conversion and response assembly
+use the same normalized clone without modifying caller history.
+
+Dynamic tool parts receive structural/state checks but not configured static
+schemas. Their reader-retained raw input is removed from the normalized clone
+outside output-error; the caller's persisted history remains unchanged. Provider-defined tools without represented schemas cannot acquire
+invented schemas. Application metadata/data payloads receive JSON checks, not
+application schema validation; there are no metadata/data schema options here.
+History validation does not invoke `Tool.ValidateInput` business callbacks.
+Direct `ConvertToModelMessages` and `StreamText` do not automatically acquire
+these Agent UI validation gates.
+
 ## Design bounded agents
 
 - Give every loop an explicit stop condition.

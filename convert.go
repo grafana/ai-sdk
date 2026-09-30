@@ -1,6 +1,7 @@
 package aisdk
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -13,6 +14,7 @@ import (
 type convertConfig struct {
 	ignoreIncompleteToolCalls bool
 	tools                     ToolSet
+	convertDataPart           func(DataPart) (*provider.ContentPart, error)
 }
 
 // ConvertOption configures ConvertToModelMessages.
@@ -32,6 +34,26 @@ func WithIgnoreIncompleteToolCalls() ConvertOption {
 	return convertOptionFunc(func(cfg *convertConfig) {
 		cfg.ignoreIncompleteToolCalls = true
 	})
+}
+
+// WithConvertDataPart converts user and assistant data parts to text or file content.
+// A nil result skips the data part; callback errors abort conversion.
+func WithConvertDataPart(fn func(DataPart) (*provider.ContentPart, error)) ConvertOption {
+	return convertOptionFunc(func(cfg *convertConfig) { cfg.convertDataPart = fn })
+}
+
+func convertDataPart(part DataPart, fn func(DataPart) (*provider.ContentPart, error)) (*provider.ContentPart, error) {
+	if fn == nil {
+		return nil, nil
+	}
+	converted, err := fn(part)
+	if err != nil {
+		return nil, fmt.Errorf("aisdk: converting data part %q: %w", part.DataName, err)
+	}
+	if converted != nil && converted.Type != provider.ContentPartTypeText && converted.Type != provider.ContentPartTypeFile {
+		return nil, fmt.Errorf("aisdk: data part %q converter returned unsupported content type %q", part.DataName, converted.Type)
+	}
+	return converted, nil
 }
 
 func buildConvertConfig(opts []ConvertOption) convertConfig {
@@ -69,6 +91,14 @@ func ConvertToModelMessages(messages []UIMessage, opts ...ConvertOption) ([]prov
 			var parts []provider.ContentPart
 			for _, p := range msg.Parts {
 				switch v := p.(type) {
+				case DataPart:
+					converted, err := convertDataPart(v, opt.convertDataPart)
+					if err != nil {
+						return nil, err
+					}
+					if converted != nil {
+						parts = append(parts, *converted)
+					}
 				case TextPart:
 					parts = append(parts, provider.ContentPart{
 						Type:            provider.ContentPartTypeText,
@@ -121,15 +151,25 @@ func ConvertToModelMessages(messages []UIMessage, opts ...ConvertOption) ([]prov
 			// optionally a tool-approval-response and either a regular or
 			// synthetic execution-denied tool-result.
 			processToolPart := func(tp toolPartFields) error {
-				if opt.ignoreIncompleteToolCalls && !isCompleteToolCallState(tp.State) {
+				if tp.State == ToolStateInputStreaming || (opt.ignoreIncompleteToolCalls && (!isCompleteToolCallState(tp.State) || (tp.State == ToolStateOutputAvailable && tp.Preliminary != nil && *tp.Preliminary))) {
 					return nil
 				}
-				callOpts := providerMetadataToOptions(tp.CallProviderMetadata)
+				input := tp.Input
+				callMetadata := tp.CallProviderMetadata
+				if tp.State == ToolStateOutputError {
+					if len(input) == 0 || bytes.Equal(bytes.TrimSpace(input), []byte("null")) {
+						input = tp.RawInput
+					}
+					if callMetadata == nil {
+						callMetadata = tp.ResultProviderMetadata
+					}
+				}
+				callOpts := providerMetadataToOptions(callMetadata)
 				assistParts = append(assistParts, provider.ContentPart{
 					Type:             provider.ContentPartTypeToolCall,
 					ToolCallID:       tp.ToolCallID,
 					ToolName:         tp.ToolName,
-					Input:            tp.Input,
+					Input:            input,
 					ProviderExecuted: tp.ProviderExecuted,
 					ProviderOptions:  callOpts,
 				})
@@ -139,14 +179,15 @@ func ConvertToModelMessages(messages []UIMessage, opts ...ConvertOption) ([]prov
 						ApprovalID:  tp.Approval.ID,
 						ToolCallID:  tp.ToolCallID,
 						Signature:   tp.Approval.Signature,
+						Reason:      stringValue(tp.Approval.RequestReason),
 						IsAutomatic: tp.Approval.IsAutomatic,
 					})
 				}
 				// Upstream falls back to callProviderMetadata when the
 				// result-side metadata is absent (convert-to-model-messages.ts:231-232).
 				resultOpts := providerMetadataToOptions(tp.ResultProviderMetadata)
-				if resultOpts == nil {
-					resultOpts = callOpts
+				if tp.ResultProviderMetadata == nil {
+					resultOpts = providerMetadataToOptions(tp.CallProviderMetadata)
 				}
 				if tp.ProviderExecuted {
 					r, err := providerExecutedToolResult(tp, resultOpts, opt.tools)
@@ -167,7 +208,7 @@ func ConvertToModelMessages(messages []UIMessage, opts ...ConvertOption) ([]prov
 						Type:             provider.ContentPartTypeToolApprovalResponse,
 						ApprovalID:       tp.Approval.ID,
 						Approved:         &approvedCopy,
-						Reason:           tp.Approval.Reason,
+						Reason:           stringValue(tp.Approval.Reason),
 						ProviderExecuted: tp.ProviderExecuted,
 					})
 				}
@@ -179,16 +220,16 @@ func ConvertToModelMessages(messages []UIMessage, opts ...ConvertOption) ([]prov
 						Type:            provider.ContentPartTypeToolResult,
 						ToolCallID:      tp.ToolCallID,
 						ToolName:        tp.ToolName,
-						ProviderOptions: callOpts,
+						ProviderOptions: providerMetadataToOptions(tp.CallProviderMetadata),
 						Output: &provider.ToolResultOutput{
 							Type:   provider.ToolOutputExecutionDenied,
-							Reason: tp.Approval.Reason,
+							Reason: stringValue(tp.Approval.Reason),
 						},
 					})
 				}
 				if !tp.ProviderExecuted {
 					var err error
-					toolMsgParts, err = appendToolResult(toolMsgParts, tp, resultOpts, opt.tools)
+					toolMsgParts, err = appendToolResult(toolMsgParts, tp, providerMetadataToOptions(tp.CallProviderMetadata), opt.tools)
 					if err != nil {
 						return err
 					}
@@ -200,6 +241,14 @@ func ConvertToModelMessages(messages []UIMessage, opts ...ConvertOption) ([]prov
 				switch v := p.(type) {
 				case StepStartPart:
 					flushBlock()
+				case DataPart:
+					converted, err := convertDataPart(v, opt.convertDataPart)
+					if err != nil {
+						return nil, err
+					}
+					if converted != nil {
+						assistParts = append(assistParts, *converted)
+					}
 				case TextPart:
 					if v.Text != "" {
 						assistParts = append(assistParts, provider.ContentPart{
@@ -317,9 +366,13 @@ type toolPartFields struct {
 	ToolCallID             string
 	ToolName               string
 	State                  ToolInvocationState
+	Title                  *string
+	ToolMetadata           map[string]json.RawMessage
 	Input                  json.RawMessage
+	RawInput               json.RawMessage
 	Output                 json.RawMessage
-	ErrorText              string
+	ErrorText              *string
+	Preliminary            *bool
 	ProviderExecuted       bool
 	Approval               *ToolApproval
 	CallProviderMetadata   provider.ProviderMetadata
@@ -353,7 +406,7 @@ func providerExecutedToolResult(tp toolPartFields, resultOpts provider.ProviderO
 		}, nil
 	}
 	if tp.State == ToolStateOutputError {
-		errorJSON, err := json.Marshal(tp.ErrorText)
+		errorJSON, err := json.Marshal(stringValue(tp.ErrorText))
 		if err != nil {
 			errorJSON = []byte(`"error"`)
 		}
@@ -398,13 +451,13 @@ func appendToolResult(parts []provider.ContentPart, tp toolPartFields, resultOpt
 			ProviderOptions: resultOpts,
 			Output: &provider.ToolResultOutput{
 				Type: provider.ToolOutputErrorText,
-				Text: tp.ErrorText,
+				Text: stringValue(tp.ErrorText),
 			},
 		}), nil
 	case ToolStateOutputDenied:
-		reason := "Tool execution denied."
-		if tp.Approval != nil && tp.Approval.Reason != "" {
-			reason = tp.Approval.Reason
+		reason := "Tool call execution denied."
+		if tp.Approval != nil && tp.Approval.Reason != nil {
+			reason = *tp.Approval.Reason
 		}
 		return append(parts, provider.ContentPart{
 			Type:            provider.ContentPartTypeToolResult,
@@ -419,6 +472,13 @@ func appendToolResult(parts []provider.ContentPart, tp toolPartFields, resultOpt
 	default:
 		return parts, nil
 	}
+}
+
+func stringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 func createToolModelOutput(tp toolPartFields, tools ToolSet) (*provider.ToolResultOutput, error) {

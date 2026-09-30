@@ -3,6 +3,7 @@ package aisdk
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http/httptest"
 	"testing"
 
@@ -10,6 +11,46 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestUIMessageReader_PersistedToolFields(t *testing.T) {
+	for _, dynamic := range []bool{false, true} {
+		t.Run(fmt.Sprint(dynamic), func(t *testing.T) {
+			var input []UIMessageChunk
+			for _, raw := range []string{
+				fmt.Sprintf(`{"type":"tool-input-start","toolCallId":"c","toolName":"lookup","dynamic":%t,"title":"","toolMetadata":{},"providerExecuted":true}`, dynamic),
+				`{"type":"tool-input-available","toolCallId":"c","toolName":"lookup","input":{},"dynamic":` + fmt.Sprint(dynamic) + `}`,
+				`{"type":"tool-approval-request","toolCallId":"c","approvalId":"a","approvalDescriptor":{"scope":"test"},"reason":"","signature":"sig"}`,
+				`{"type":"tool-approval-response","approvalId":"a","approved":true,"reason":"","providerExecuted":false}`,
+				`{"type":"tool-output-available","toolCallId":"c","output":null,"preliminary":false}`,
+			} {
+				var chunk UIMessageChunk
+				require.NoError(t, json.Unmarshal([]byte(raw), &chunk))
+				encoded, err := json.Marshal(chunk)
+				require.NoError(t, err)
+				assert.JSONEq(t, raw, string(encoded))
+				input = append(input, chunk)
+			}
+			message, err := AssembleUIMessage(chunks(input...))
+			require.NoError(t, err)
+			encoded, err := json.Marshal(message)
+			require.NoError(t, err)
+			var envelope struct {
+				Parts []map[string]json.RawMessage `json:"parts"`
+			}
+			require.NoError(t, json.Unmarshal(encoded, &envelope))
+			require.Len(t, envelope.Parts, 1)
+			part := envelope.Parts[0]
+			assert.Equal(t, `""`, string(part["title"]))
+			assert.Equal(t, `{}`, string(part["toolMetadata"]))
+			assert.Equal(t, `false`, string(part["preliminary"]))
+			assert.JSONEq(t, `{"id":"a","approved":true,"descriptor":{"scope":"test"},"requestReason":"","reason":"","signature":"sig"}`, string(part["approval"]))
+			models, err := ConvertToModelMessages([]UIMessage{message})
+			require.NoError(t, err)
+			require.Len(t, models, 2)
+			assert.Equal(t, provider.RoleTool, models[1].Role)
+		})
+	}
+}
 
 func TestUtilityFunctionalOptions(t *testing.T) {
 	t.Run("default calls compile and nil options are ignored", func(t *testing.T) {
@@ -368,7 +409,7 @@ func TestStreamUIMessage_ProgressiveToolLifecycle(t *testing.T) {
 
 	dyn := requireDynamicToolPart(t, messages[8], 1)
 	assert.Equal(t, ToolStateOutputError, dyn.State)
-	assert.Equal(t, "failed", dyn.ErrorText)
+	assert.Equal(t, new("failed"), dyn.ErrorText)
 }
 
 func TestStreamUIMessage_RepeatedToolCallIDAcrossSteps(t *testing.T) {
@@ -398,7 +439,7 @@ func TestStreamUIMessage_RepeatedToolCallIDAcrossSteps(t *testing.T) {
 	assert.JSONEq(t, `{"itemId":"fc-step-2"}`, string(second.CallProviderMetadata["openai"]))
 }
 
-func TestStreamUIMessage_ToolApprovalResponseDropsRequestSignature(t *testing.T) {
+func TestStreamUIMessage_ToolApprovalResponsePreservesRequestSignature(t *testing.T) {
 	messages := collectMessages(StreamUIMessage(chunks(
 		UIMessageChunk{Type: ChunkToolInputAvailable, ToolCallID: "c1", ToolName: "weather", Input: json.RawMessage(`{}`)},
 		UIMessageChunk{Type: ChunkToolApprovalRequest, ToolCallID: "c1", ApprovalID: "apr", Signature: "sig", IsAutomatic: true},
@@ -410,7 +451,7 @@ func TestStreamUIMessage_ToolApprovalResponseDropsRequestSignature(t *testing.T)
 	require.NotNil(t, part.Approval)
 	assert.Equal(t, "apr", part.Approval.ID)
 	assert.True(t, part.Approval.IsAutomatic)
-	assert.Empty(t, part.Approval.Signature)
+	assert.Equal(t, "sig", part.Approval.Signature)
 	require.NotNil(t, part.Approval.Approved)
 	assert.True(t, *part.Approval.Approved)
 }
@@ -425,8 +466,9 @@ func TestStreamUIMessage_ToolInputErrorAndOutputDenied(t *testing.T) {
 	require.Len(t, messages, 3)
 	inputErr := requireToolInvocationPart(t, messages[0], 0)
 	assert.Equal(t, ToolStateOutputError, inputErr.State)
-	assert.Equal(t, "bad input", inputErr.ErrorText)
-	assert.JSONEq(t, `{"city":1}`, string(inputErr.Input))
+	assert.Equal(t, new("bad input"), inputErr.ErrorText)
+	assert.Nil(t, inputErr.Input)
+	assert.JSONEq(t, `{"city":1}`, string(inputErr.RawInput))
 
 	denied := requireToolInvocationPart(t, messages[2], 1)
 	assert.Equal(t, ToolStateOutputDenied, denied.State)
