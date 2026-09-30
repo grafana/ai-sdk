@@ -20,14 +20,12 @@ import (
 
 func executeSearch(t *testing.T, tool Tool, query string) []toolSearchMatch {
 	t.Helper()
-	input, err := json.Marshal(map[string]string{"query": query})
+	input, err := json.Marshal(toolSearchInput{Query: query})
 	require.NoError(t, err)
 	output, err := tool.Execute(t.Context(), input, ToolExecutionOptions{})
 	require.NoError(t, err)
 	require.NoError(t, ToolSearch().OutputSchema.Validate(output))
-	var result struct {
-		Tools []toolSearchMatch `json:"tools"`
-	}
+	var result toolSearchOutput
 	require.NoError(t, json.Unmarshal(output, &result))
 	require.NotNil(t, result.Tools)
 	return result.Tools
@@ -48,6 +46,30 @@ func TestToolSearch_Contract(t *testing.T) {
 	tool := ToolSearch()
 	assert.Equal(t, UserToolFunction, tool.Type)
 	assert.Equal(t, toolSearchDescription, tool.Description)
+	t.Run("upstream schema shapes", func(t *testing.T) {
+		assert.JSONEq(t, `{
+			"type": "object",
+			"properties": {"query": {"type": "string", "minLength": 1}},
+			"required": ["query"],
+			"additionalProperties": false
+		}`, string(tool.InputSchema.JSON()))
+		assert.JSONEq(t, `{
+			"type": "object",
+			"properties": {
+				"tools": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"properties": {"name": {"type": "string"}, "description": {"type": "string"}},
+						"required": ["name"],
+						"additionalProperties": false
+					}
+				}
+			},
+			"required": ["tools"],
+			"additionalProperties": false
+		}`, string(tool.OutputSchema.JSON()))
+	})
 	for _, tc := range []struct {
 		name, input string
 		valid       bool

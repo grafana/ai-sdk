@@ -16,15 +16,32 @@ import (
 )
 
 const toolSearchLimit = 5
-const toolSearchDescription = "Search for tools by keywords in their names and descriptions. Returns up to five matching tools. Matches become available on the next model step, after this execution finishes. Wait for their tool definitions before calling the discovered tools. If no tools match, try different keywords."
+const toolSearchDescription = "Search for tools by keywords in their names and descriptions. " +
+	"Returns up to five matching tools. " +
+	"Matches become available on the next model step, after this execution finishes. " +
+	"Wait for their tool definitions before calling the discovered tools. " +
+	"If no tools match, try different keywords."
+
+type toolSearchInput struct {
+	Query string `json:"query" jsonschema:"minLength=1"`
+}
+
+type toolSearchOutput struct {
+	Tools []toolSearchMatch `json:"tools"`
+}
 
 // ToolSearch returns a core function tool that discovers explicitly deferred tools.
 // Matches become available on the next model step within the same generation.
 // It must be registered in a ToolSet; its original executor is not bound to a registry.
 func ToolSearch() Tool {
-	input, inputErr := schema.SchemaFromJSON(json.RawMessage(`{"type":"object","properties":{"query":{"type":"string","minLength":1}},"required":["query"],"additionalProperties":false}`))
-	output, outputErr := schema.SchemaFromJSON(json.RawMessage(`{"type":"object","properties":{"tools":{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"description":{"type":"string"}},"required":["name"],"additionalProperties":false}}},"required":["tools"],"additionalProperties":false}`))
-	return Tool{Type: UserToolFunction, Description: toolSearchDescription, InputSchema: input, OutputSchema: output, toolSearch: true,
+	input, inputErr := schema.SchemaFor[toolSearchInput]()
+	output, outputErr := schema.SchemaFor[toolSearchOutput]()
+	return Tool{
+		Type:         UserToolFunction,
+		Description:  toolSearchDescription,
+		InputSchema:  input,
+		OutputSchema: output,
+		toolSearch:   true,
 		Execute: func(context.Context, json.RawMessage, ToolExecutionOptions) (json.RawMessage, error) {
 			if err := errors.Join(inputErr, outputErr); err != nil {
 				return nil, fmt.Errorf("aisdk: compiling tool search schemas: %w", err)
@@ -153,9 +170,7 @@ func (s *toolSearchState) prepare(tools ToolSet, active []string, activeSet bool
 			}
 		}
 		tool.Execute = func(_ context.Context, input json.RawMessage, _ ToolExecutionOptions) (json.RawMessage, error) {
-			var args struct {
-				Query string `json:"query"`
-			}
+			var args toolSearchInput
 			if err := json.Unmarshal(input, &args); err != nil {
 				return nil, fmt.Errorf("aisdk: parsing tool search input: %w", err)
 			}
@@ -165,9 +180,7 @@ func (s *toolSearchState) prepare(tools ToolSet, active []string, activeSet bool
 				s.discovered[match.Name] = true
 			}
 			s.mu.Unlock()
-			return json.Marshal(struct {
-				Tools []toolSearchMatch `json:"tools"`
-			}{Tools: matches})
+			return json.Marshal(toolSearchOutput{Tools: matches})
 		}
 		prepared[searchName] = tool
 	}
