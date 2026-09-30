@@ -1602,11 +1602,13 @@ func TestBuildParams_VertexExplicitStructuredOutputBeta(t *testing.T) {
 	tests := []struct {
 		name           string
 		responseFormat *provider.ResponseFormat
+		mode           StructuredOutputMode
 		wantFallback   bool
 	}{
 		{name: "function tool"},
 		{
-			name: "JSON tool fallback",
+			name: "explicit JSON tool fallback",
+			mode: StructuredOutputJSONTool,
 			responseFormat: &provider.ResponseFormat{
 				Type:   provider.ResponseFormatJSON,
 				Schema: testSchema,
@@ -1624,12 +1626,10 @@ func TestBuildParams_VertexExplicitStructuredOutputBeta(t *testing.T) {
 					InputSchema: json.RawMessage(`{"type":"object"}`),
 				}},
 				ResponseFormat: tc.responseFormat,
-				ProviderOptions: provider.ProviderOptions{
-					"anthropic": provider.RawProviderOption{
-						Key: "anthropic",
-						Raw: json.RawMessage(`{"betas":["structured-outputs-2025-11-13"]}`),
-					},
-				},
+				ProviderOptions: provider.BuildProviderOptions(AnthropicOptions{
+					Betas:                []string{"structured-outputs-2025-11-13"},
+					StructuredOutputMode: tc.mode,
+				}),
 			}, false, vertexProviderCapabilities)
 			require.NoError(t, err)
 			assert.Equal(t, tc.wantFallback, br.usesJsonResponseTool)
@@ -3528,7 +3528,7 @@ func TestBuildParams_StructuredOutput(t *testing.T) {
 			"structured outputs beta should be added when native mode + tools")
 	})
 
-	t.Run("VertexUsesToolFallback", func(t *testing.T) {
+	t.Run("VertexUsesNativeOutput", func(t *testing.T) {
 		opts := provider.CallOptions{
 			ResponseFormat: &provider.ResponseFormat{
 				Type:   provider.ResponseFormatJSON,
@@ -3544,14 +3544,13 @@ func TestBuildParams_StructuredOutput(t *testing.T) {
 		p, _, warnings, br, err := buildParamsWithCapabilities("claude-sonnet-4-6", opts, false, vertexProviderCapabilities)
 		require.NoError(t, err)
 
-		assert.True(t, br.usesJsonResponseTool)
+		assert.False(t, br.usesJsonResponseTool)
 		assert.Empty(t, warnings)
-		assert.Empty(t, p.OutputConfig.Format.Schema)
-		require.Len(t, p.Tools, 2)
+		assert.NotEmpty(t, p.OutputConfig.Format.Schema)
+		require.Len(t, p.Tools, 1)
 		assert.Equal(t, "search", p.Tools[0].OfTool.Name)
-		assert.Equal(t, jsonResponseToolName, p.Tools[1].OfTool.Name)
-		require.NotNil(t, p.ToolChoice.OfAny)
-		assert.True(t, p.ToolChoice.OfAny.DisableParallelToolUse.Value)
+		assert.Nil(t, p.ToolChoice.OfAny)
+		assert.Nil(t, p.ToolChoice.OfTool)
 		assert.NotContains(t, p.Betas, sdk.AnthropicBeta("structured-outputs-2025-11-13"))
 	})
 
@@ -5874,4 +5873,28 @@ func TestConvertResponse_CodeExecutionDynamic(t *testing.T) {
 		require.Len(t, result.Content, 1)
 		assert.Nil(t, result.Content[0].Dynamic)
 	})
+}
+
+func TestBuildParams_VertexJSONOutput(t *testing.T) {
+	for _, modelID := range []string{"claude-sonnet-4-5", "claude-sonnet-4-6", "claude-sonnet-5-5"} {
+		for _, stream := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/stream=%t", modelID, stream), func(t *testing.T) {
+				schema := json.RawMessage(`{"type":"object","properties":{"actions":{"type":"array","items":{"type":"string"}}},"required":["actions"],"additionalProperties":false}`)
+				p, _, warnings, br, err := buildParamsWithCapabilities(modelID, provider.CallOptions{
+					ResponseFormat: &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Schema: schema},
+				}, stream, vertexProviderCapabilities)
+				require.NoError(t, err)
+				assert.Empty(t, warnings)
+				assert.False(t, br.usesJsonResponseTool)
+				body, err := json.Marshal(p)
+				require.NoError(t, err)
+				var request map[string]json.RawMessage
+				require.NoError(t, json.Unmarshal(body, &request))
+				assert.JSONEq(t, `{"format":{"type":"json_schema","schema":`+string(schema)+`}}`, string(request["output_config"]))
+				assert.NotContains(t, request, "tool_choice")
+				assert.NotContains(t, request, "tools")
+				assert.NotContains(t, p.Betas, sdk.AnthropicBeta("structured-outputs-2025-11-13"))
+			})
+		}
+	}
 }
