@@ -27,6 +27,7 @@ type inputConversionContext struct {
 	parallelResults         map[string]*parallelToolResultGroup
 	emittedParallelCalls    map[string]bool
 	emittedParallelResults  map[string]bool
+	programmaticToolCallIDs map[string]bool
 }
 
 func newInputConversionContext(tools []provider.Tool, mapping toolNameMapping, store bool, providerOptionsName string, hasConversation, hasPreviousResponseID bool) inputConversionContext {
@@ -39,6 +40,7 @@ func newInputConversionContext(tools []provider.Tool, mapping toolNameMapping, s
 		customProviderToolNames: make(map[string]struct{}),
 		outputSchemaToolNames:   make(map[string]struct{}),
 		processedApprovalIDs:    make(map[string]struct{}),
+		programmaticToolCallIDs: make(map[string]bool),
 	}
 	for _, tool := range tools {
 		if tool.Type == provider.ToolTypeFunction {
@@ -172,11 +174,17 @@ func convertAssistantToolCall(part provider.ContentPart, ctx inputConversionCont
 		if po.ItemID != "" {
 			item.OfCustomToolCall.ID = param.NewOpt(po.ItemID)
 		}
+		if po.Async != nil {
+			item.OfCustomToolCall.Async = param.NewOpt(*po.Async)
+		}
 		return &item, nil
 	default:
 		item := responses.ResponseInputItemParamOfFunctionCall(serializeToolCallArguments(part.Input), part.ToolCallID, toolName)
 		if po.Namespace != "" {
 			item.OfFunctionCall.Namespace = param.NewOpt(po.Namespace)
+		}
+		if po.Async != nil {
+			item.OfFunctionCall.Async = param.NewOpt(*po.Async)
 		}
 		item.OfFunctionCall.Caller = functionToolCallerParam(po.Caller)
 		return &item, nil
@@ -250,11 +258,19 @@ func convertProviderToolResult(part provider.ContentPart, ctx inputConversionCon
 		ctx.emittedParallelResults[id] = true
 		return group.output(ctx)
 	}
-	if part.Output != nil && part.Output.Type == provider.ToolOutputExecutionDenied && ctx.outputOptions(part.Output).ApprovalID != "" {
-		return nil, nil, nil
+	if part.Output != nil && part.Output.Type == provider.ToolOutputExecutionDenied {
+		if ctx.outputOptions(part.Output).ApprovalID != "" {
+			return nil, nil, nil
+		}
 	}
 
 	toolName := ctx.toolNameMapping.toProviderToolName(part.ToolName)
+	if part.Output != nil && part.Output.Type == provider.ToolOutputExecutionDenied && !ctx.isCustomProviderTool(toolName) {
+		caller := ctx.partOptions(part).Caller
+		if (caller != nil && caller.Type == OpenAIToolCallerProgram) || ctx.programmaticToolCallIDs[part.ToolCallID] {
+			return nil, nil, fmt.Errorf("openai: unsupported functionality: execution-denied results for programmatic tool calls")
+		}
+	}
 
 	switch {
 	case toolName == "tool_search" && part.Output != nil && part.Output.Type == provider.ToolOutputJSON:

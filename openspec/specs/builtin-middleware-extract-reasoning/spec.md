@@ -29,7 +29,7 @@ Configuration options:
 ### Requirement: Extract reasoning from streaming output
 `ExtractReasoning` SHALL transform streaming text deltas, emitting reasoning-start/delta/end events for tagged sections and text deltas for non-tagged content.
 
-The stream transform SHALL handle partial tags across chunk boundaries (buffering until a complete tag open/close is confirmed or ruled out).
+The stream transform SHALL handle partial tags across chunk boundaries (buffering until a complete tag open/close is confirmed or ruled out). For interleaved text blocks with distinct provider IDs, it SHALL retain each block's own delayed text start until that block emits visible text or ends, SHALL associate every emitted text delta and text end with the correct text start and ID, and SHALL assign a distinct reasoning ID to each reasoning segment across the stream (including segments in different text blocks).
 
 #### Scenario: Streaming reasoning extraction
 - **WHEN** streaming text deltas contain `<think>` and `</think>` boundaries
@@ -45,3 +45,19 @@ The stream transform SHALL handle partial tags across chunk boundaries (bufferin
 - **WHEN** `StartWithReasoning` is true
 - **THEN** the middleware SHALL treat the start of output as inside a reasoning tag (no opening tag needed)
 - **AND** SHALL emit reasoning events until the first closing tag is encountered
+
+#### Scenario: Interleaved blocks retain their text lifecycles
+- **WHEN** text starts for IDs `a` and `b` precede interleaved deltas and their corresponding ends
+- **THEN** each text start SHALL be emitted only before its own first visible text delta or its own text end
+- **AND** every emitted text delta and text end SHALL retain its originating text ID with exactly one corresponding text start
+- **AND** a reasoning-only block SHALL emit its own delayed text start before its text end without stealing another block's start
+
+#### Scenario: Interleaved nonempty reasoning segments have distinct IDs
+- **WHEN** text blocks `a` and `b` contain overlapping nonempty tagged reasoning segments
+- **THEN** each such segment SHALL have a matching reasoning-start and reasoning-end with the same ID
+- **AND** reasoning segments in different blocks SHALL have distinct IDs, even if their starts and ends interleave
+- **AND** visible text and reasoning content SHALL remain associated with their respective blocks when streamed to UI messages
+
+#### Scenario: First empty reasoning segment retains existing behavior
+- **WHEN** a block's first reasoning segment is empty
+- **THEN** the middleware SHALL emit a reasoning-start and reasoning-end with the same ID for that segment

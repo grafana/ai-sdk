@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"regexp"
 
@@ -23,17 +24,20 @@ func (m *sourceDocumentModel) DoGenerate(context.Context, provider.CallOptions) 
 	return nil, nil
 }
 func (m *sourceDocumentModel) DoStream(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
-	parts := make(chan provider.StreamPart, 2)
+	parts := make(chan provider.StreamPart, 4)
 	parts <- provider.StreamPart{
 		Type: provider.PartSource,
 		Source: &provider.SourceInfo{
-			SourceType: provider.SourceTypeDocument,
-			ID:         "source-1",
-			MediaType:  "application/pdf",
-			Title:      "Financial Report",
-			Filename:   "financial-report.pdf",
+			SourceType:       provider.SourceTypeDocument,
+			ID:               "source-1",
+			MediaType:        "application/pdf",
+			Title:            "Financial Report",
+			Filename:         "financial-report.pdf",
+			ProviderMetadata: provider.ProviderMetadata{"citation": json.RawMessage(`{"startPageNumber":1}`)},
 		},
 	}
+	parts <- provider.StreamPart{Type: provider.PartSource, Source: &provider.SourceInfo{SourceType: provider.SourceTypeURL, ID: "source-2", URL: "https://example.com", Title: "URL", ProviderMetadata: provider.ProviderMetadata{"citation": json.RawMessage(`{"index":0}`)}}}
+	parts <- provider.StreamPart{Type: provider.PartSource, Source: &provider.SourceInfo{SourceType: provider.SourceTypeDocument, ID: "source-3", MediaType: "text/plain", Title: ""}}
 	parts <- provider.StreamPart{
 		Type:         provider.PartFinish,
 		FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop},

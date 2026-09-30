@@ -28,13 +28,6 @@ knownGaps:
       non-reasoning sampling rules match the registered OpenAI target. Mantle
       routing retains the documented AWS compatibility-path adaptation. Synthetic
       tests cover routing/capabilities; no live GPT-6 recording is claimed.
-  - id: gpt6-newer-upstream-capabilities
-    surface: provider-openai
-    status: gap
-    description: The registered OpenAI 4.0.78 target includes reasoning-effort
-      capability validation (including GPT-6 Sol/Luna), configuration updates
-      and async tool calling that
-      remain incomplete in Go. Tracked by https://github.com/grafana/ai-sdk/issues/220.
   - id: concurrent-tool-emission-nondeterminism
     surface: core-streamtext
     status: documented-deviation
