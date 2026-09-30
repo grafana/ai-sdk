@@ -46,7 +46,7 @@
 
 ## 7. Foundation validation and handoff completion
 
-Validation uses candidate go.work/go.gateway.work source, per nara's clarification; published dependencies are not a completion gate. Implementation and delivered normative updates remain local. PR splitting/creation and follow-up issue registration in 1.4 remain deferred because this run has no GitHub mutation authority. The change is not archived.
+Validation uses candidate go.work/go.gateway.work source, per nara's clarification; published dependencies are not a completion gate. Implementation and delivered normative updates remain local. Nara authorized pushing the foundation and creating a draft PR for review. Follow-up issue registration and any additional PR splitting in 1.4 remain pending. The change is not archived.
 
 - [x] 7.1 Install dependencies with mise deps only for build/tests. Run current validate-parity-baseline, parity-check, direct test-conformance, test-providerwire-v4, test-ai-gateway-command and test-ai-gateway-source-integration; affected server/client module tests and schema-parsed test-integration where applicable. No #280 response roundtrip or undelivered #201 harness gate.
 - [x] 7.2 Run applicable required test/build/vet/lint/fmt-check/lint-docs/test-ci-workflow/verify-gateway-workspace and Gateway image gates from CONTRIBUTING. Use candidate source through go.work/go.gateway.work as the owner-approved validation boundary. Published dependencies/adoption are not gates for this change; leave module pins untouched.

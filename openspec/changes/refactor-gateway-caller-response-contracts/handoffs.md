@@ -14,11 +14,11 @@ Order approved by nara: **#303 → #280 → #238 → #239 → #240**. #201's aut
 
 ## Implementation checkpoint
 
-Owner-authorized local implementation has completed 31/32 tasks. Caller forwarding, warnings/identity, source display, minimal trusted direct diagnostics and heterogeneous consumed-option refusal are implemented. Normative synchronization covers those delivered fields only; source/reasoning metadata codecs and successor ownership remain unchanged. Task 1.4's PR splitting/creation and GitHub follow-up registration remain outside this local run; no archive is performed.
+Owner-authorized local implementation has completed 31/32 tasks. Caller forwarding, warnings/identity, source display, minimal trusted direct diagnostics and heterogeneous consumed-option refusal are implemented. Normative synchronization covers those delivered fields only; source/reasoning metadata codecs and successor ownership remain unchanged. Nara authorized pushing this foundation and creating a draft PR for review. Task 1.4's follow-up issue registration and any additional PR splitting remain pending; no archive is performed.
 
 Candidate-source parity (including unchanged direct conformance), ProviderWire differential/schema, 40 authenticated command tests, source/frontend integration, all candidate Go module tests, build/vet/lint/docs/workflow checks, race/repeated privacy tests and actual Gateway image gates passed. The restriction/telemetry/lifecycle audit and caller immutability regression are included. See validation.md for proof boundaries and the high-level paid-generation retry distinction.
 
-Nara confirmed candidate source through go.work/go.gateway.work is the validation boundary for this work. Published dependency/adoption checks are not gates, and pins remain untouched. The exploratory standalone check reproduced existing root-pin compile errors at planning HEAD; that result does not block implementation. No diagnostic follow-up issue has been registered.
+Nara confirmed candidate source through go.work/go.gateway.work is the validation boundary for this work. Published dependency/adoption checks are not gates, and pins remain untouched. The exploratory standalone check reproduced existing root-pin compile errors at planning HEAD; that result does not block implementation. No diagnostic follow-up issue has been registered; draft PR authorization does not include creating follow-up issues.
 
 ## Acceptance disposition
 
