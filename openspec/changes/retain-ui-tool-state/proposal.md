@@ -1,6 +1,6 @@
 ## Why
 
-Issue #213 remains valid against the registered `ai@7.0.109` / `@ai-sdk/react@4.0.112` baseline: chunks can carry tool information that Go assembly and persistence discard, and resumed model messages differ from upstream. Schema-valid initial SSE is insufficient evidence of correct persisted history, approval resumption, or preliminary-output filtering.
+Issue #213 was confirmed against the originally registered `ai@7.0.109` / `@ai-sdk/react@4.0.112` baseline and its represented contracts revalidated against `ai@7.0.116` / `@ai-sdk/react@4.0.119` after merging `origin/main`: chunks can carry tool information that Go assembly and persistence discard, and resumed model messages differ from upstream. Schema-valid initial SSE is insufficient evidence of correct persisted history, approval resumption, or preliminary-output filtering.
 
 ## What Changes
 

@@ -51,8 +51,6 @@ func generatedFileFromStreamData(data *provider.StreamFileData, mediaType string
 		} else {
 			file.Data = []byte{}
 		}
-	} else {
-		file.Base64 = data.URL
 	}
 	return file
 }

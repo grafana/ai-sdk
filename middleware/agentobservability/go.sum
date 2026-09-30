@@ -23,8 +23,8 @@ github.com/grafana/agento11y/go v0.18.0 h1:hyEYXSGWFuZZqAs04tfyayzLyF8yrIX3jLj/a
 github.com/grafana/agento11y/go v0.18.0/go.mod h1:KSNO0Z/dx7ai6JxJRLSO/XUVlw/YfAzBVEu1VgTaXus=
 github.com/grafana/agento11y/go-providers/anthropic v0.18.0 h1:uFtbQHiAmJJboJt862GOvhGe4WWCwAkj6mwTyl64O0k=
 github.com/grafana/agento11y/go-providers/anthropic v0.18.0/go.mod h1:wBCsfCfNsZ653cTIB5Ka0L/0n8biDQohXpEPHGHTu28=
-github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260921202550-3dff0f7087dc h1:E+QVAoXrKK2VqBgkN0Dyv2sAS+oQPt1r6Qa8AOzQHUQ=
-github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260921202550-3dff0f7087dc/go.mod h1:dq9czuEHdMxenlmMFrR9bfrdhBitZltt6VtZPfr2vsE=
+github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260928202004-dd43c6dff058 h1:XNnu1NBOkL3iZamN5yctjNWCnrk36g9jsomTrYRVV5I=
+github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260928202004-dd43c6dff058/go.mod h1:lZ5jHMgw468oEci9F4bPrQLMZp3a11AyBtTLzv92MP8=
 github.com/invopop/jsonschema v0.14.0 h1:MHQqLhvpNUZfw+hM3AZDYK7jxO8FZoQeQM77g8iyZjg=
 github.com/invopop/jsonschema v0.14.0/go.mod h1:ygm6C2EaVNMBDPpaPlnOA2pFAxBnxGjFlMZABxm9n2I=
 github.com/pb33f/ordered-map/v2 v2.3.1 h1:5319HDO0aw4DA4gzi+zv4FXU9UlSs3xGZ40wcP1nBjY=

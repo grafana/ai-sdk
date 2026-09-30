@@ -1,6 +1,8 @@
 ## Context
 
-The registered reference is `ai@7.0.109`, `@ai-sdk/react@4.0.112`, commit `4e8c387622ee1bb0d55841664416d38754d5c9a3` in `test/conformance/upstream.yaml`. The issue cites the older 7.0.107 reference; no pin change is required. Reference paths below are in `packages/ai/src/` at that exact commit, available through immutable Git objects or pinned URLs.
+The original design reference was `ai@7.0.109`, `@ai-sdk/react@4.0.112`, commit `4e8c387622ee1bb0d55841664416d38754d5c9a3`. The issue cites the older 7.0.107 reference. The initial evidence table below refers to `packages/ai/src/` at the original design commit.
+
+Merging `origin/main` advances the registered reference in `test/conformance/upstream.yaml` to `ai@7.0.116`, `@ai-sdk/react@4.0.119`, commit `ee3169b3c4880e2abe4d0d7c781243bb81822ec4`. Matching source/tests were compared and the represented contracts revalidated against those packages. Newly added approval `inputSchemaInput` and schema-transform/refinement paths remain outside the represented Go API and this change's proof; passing the existing differentials does not establish those paths.
 
 | Seam | Current evidence | Pinned behavioral reference |
 | --- | --- | --- |
