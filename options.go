@@ -87,6 +87,7 @@ type baseConfig struct {
 
 type streamConfig struct {
 	baseConfig
+	uiTools                  ToolSet
 	onChunk                  func(OnChunkState)
 	onAbort                  func(OnAbortState)
 	includeRawChunks         bool
