@@ -24,20 +24,21 @@ func (m *sourceDocumentModel) DoGenerate(context.Context, provider.CallOptions) 
 	return nil, nil
 }
 func (m *sourceDocumentModel) DoStream(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
-	parts := make(chan provider.StreamPart, 4)
+	parts := make(chan provider.StreamPart, 5)
 	parts <- provider.StreamPart{
 		Type: provider.PartSource,
 		Source: &provider.SourceInfo{
 			SourceType:       provider.SourceTypeDocument,
-			ID:               "source-1",
+			ID:               "native-shared-source",
 			MediaType:        "application/pdf",
 			Title:            "Financial Report",
 			Filename:         "financial-report.pdf",
 			ProviderMetadata: provider.ProviderMetadata{"citation": json.RawMessage(`{"startPageNumber":1}`)},
 		},
 	}
-	parts <- provider.StreamPart{Type: provider.PartSource, Source: &provider.SourceInfo{SourceType: provider.SourceTypeURL, ID: "source-2", URL: "https://example.com", Title: "URL", ProviderMetadata: provider.ProviderMetadata{"citation": json.RawMessage(`{"index":0}`)}}}
-	parts <- provider.StreamPart{Type: provider.PartSource, Source: &provider.SourceInfo{SourceType: provider.SourceTypeDocument, ID: "source-3", MediaType: "text/plain", Title: ""}}
+	parts <- provider.StreamPart{Type: provider.PartSource, Source: &provider.SourceInfo{SourceType: provider.SourceTypeURL, ID: "native-shared-source", URL: "https://example.com", Title: "URL", ProviderMetadata: provider.ProviderMetadata{"citation": json.RawMessage(`{"index":0}`)}}}
+	parts <- provider.StreamPart{Type: provider.PartSource, Source: &provider.SourceInfo{SourceType: provider.SourceTypeDocument, ID: "native-empty-title", MediaType: "text/plain", Title: ""}}
+	parts <- provider.StreamPart{Type: provider.PartSource, Source: &provider.SourceInfo{SourceType: provider.SourceTypeDocument, ID: "native-shared-source", MediaType: "application/octet-stream", Title: "native-file-id", Filename: "native-file-id", ProviderMetadata: provider.ProviderMetadata{"citation": json.RawMessage(`{"index":0}`)}}}
 	parts <- provider.StreamPart{
 		Type:         provider.PartFinish,
 		FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop},

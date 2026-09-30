@@ -66,13 +66,28 @@ func readGatewayError(ctx context.Context, resp *http.Response, limit int64) err
 }
 
 func mapGatewayError(value *wireError, status int) error {
-	if value.Message == nil || !validPublicText(*value.Message) || string(value.Param) != "null" || !registeredError(value.Type, value.Code, status) {
+	return mapGatewayErrorWithRetry(value, status, nil)
+}
+
+func mapGatewayErrorWithRetry(value *wireError, status int, streamRetryable *bool) error {
+	if value.Message == nil || !validPublicText(*value.Message) {
 		return protocolError("grafana: invalid Gateway error fields", status, nil)
+	}
+	var retryable *bool
+	if string(value.Param) == "null" {
+		if !registeredError(value.Type, value.Code, status) {
+			return protocolError("grafana: invalid Gateway error fields", status, nil)
+		}
+	} else {
+		if len(*value.Message) > maxProviderMessageBytes || !validProviderDetail(value.Param) || !registeredProviderError(value.Type, value.Code, status, streamRetryable != nil) {
+			return protocolError("grafana: invalid Gateway error fields", status, nil)
+		}
+		retryable = streamRetryable
 	}
 	publicBody, _ := json.Marshal(struct {
 		Error *wireError `json:"error"`
 	}{value})
-	cause := provider.NewAPICallError(provider.APICallErrorOptions{Message: *value.Message, StatusCode: status, ResponseBody: string(publicBody)})
+	cause := provider.NewAPICallError(provider.APICallErrorOptions{Message: *value.Message, StatusCode: status, ResponseBody: string(publicBody), IsRetryable: retryable})
 	return &GatewayError{Category: value.Type, Code: value.Code, Message: *value.Message, StatusCode: status, IsRetryable: cause.IsRetryable, cause: cause}
 }
 

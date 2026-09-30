@@ -19,21 +19,21 @@ The Gateway SHALL emit atomic flat source parts in unary content and streams. UR
 
 ### Requirement: Bounded response-local source identity
 
-The Gateway SHALL map the structured pair (sourceType, native ID) to a response-local sequential public ID. Native IDs SHALL be nonempty, valid UTF-8 and at most 1024 bytes, checked before map lookup. The same pair SHALL retain one public ID; distinct pairs SHALL remain distinct. No native ID SHALL be included or hashed into public identity. Unary preflight SHALL bound total input strings and recognized metadata by UnaryResponseBytes, and content cardinality SHALL bound map growth. Streaming SHALL use StreamParts and complete-frame bounds. Identity entries SHALL be inserted only after successful bounded source encoding.
+The Gateway SHALL preserve native source IDs exactly, including repeated IDs and the same ID across URL/document variants, without replacement or hashing. IDs SHALL remain nonempty, valid UTF-8 and at most 1024 bytes. Unary preflight SHALL bound cardinality, total input strings and current recognized metadata by UnaryResponseBytes. Streaming SHALL retain StreamParts and complete-frame bounds. Only complete valid source output SHALL be committed.
 
 #### Scenario: Repeated source
 - **WHEN** a provider emits the same URL source ID twice and a document with the same native ID
-- **THEN** the repeated URL SHALL keep one public ID and the document SHALL get a distinct ID
+- **THEN** every occurrence SHALL preserve that native ID without deduplication or cross-variant rewriting
 
 ### Requirement: Closed public source metadata
 
-The only public source metadata namespace SHALL be citation. Its only fields SHALL be index, startPageNumber, endPageNumber, startCharIndex and endCharIndex, each an integer from 0 through 1000000000 inclusive. index SHALL originate only from the native openai or azure namespace; page/character fields SHALL originate only from anthropic. Malformed, null, fractional, negative or out-of-range approved values SHALL be omitted. Unknown namespaces/fields, native IDs, encrypted indexes, cited text, credentials and transport fields SHALL be omitted without recursive sanitization. Each inspected native namespace SHALL be at most 8192 bytes and within response/frame preflight bounds before JSON decoding; oversize SHALL fail safely. Malformed namespace JSON SHALL be omitted. Empty public metadata SHALL be absent. This is an intentional Gateway privacy projection, not native-provider metadata parity.
+The only public source metadata namespace SHALL be citation. Its only fields SHALL be index, startPageNumber, endPageNumber, startCharIndex and endCharIndex, each an integer from 0 through 1000000000 inclusive. index SHALL originate only from the native openai or azure namespace; page/character fields SHALL originate only from anthropic. Malformed, null, fractional, negative or out-of-range approved values SHALL be omitted. Unknown namespaces/fields, native IDs, encrypted indexes, cited text, credentials and transport fields SHALL be omitted without recursive sanitization. Each inspected native namespace SHALL be at most 8192 bytes and within response/frame preflight bounds before JSON decoding; oversize SHALL fail safely. Malformed namespace JSON SHALL be omitted. Empty public metadata SHALL be absent. This remains a temporary bounded capability gap, not native-provider metadata parity or an account-concealment rationale. #280 owns native source metadata transport and integration; this foundation does not change that codec.
 
-For document sources with recognized openai.type or azure.type equal to file_path, title SHALL be "Document" and filename SHALL be omitted regardless of their original display values. Native providers SHALL retain their upstream representation outside the Gateway. Other title, URL and filename fields SHALL be treated as public application content, not generically redacted.
+Registered URL/document display SHALL preserve native values, including OpenAI/Azure file_path title and filename. Display fields SHALL remain public application content rather than be generically redacted. Required empty document titles and optional-empty URL title/filename normalization SHALL remain unchanged.
 
 #### Scenario: Native file path
 - **WHEN** OpenAI or Azure file_path supplies a native file ID as both title and filename
-- **THEN** Gateway output SHALL use title "Document", omit filename, replace source identity and omit native metadata
+- **THEN** Gateway output SHALL preserve native ID/title/filename while keeping the current numeric citation metadata projection unchanged
 - **AND** a valid index MAY survive under citation
 
 ### Requirement: Atomic source lifecycle and observation

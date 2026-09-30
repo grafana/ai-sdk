@@ -73,15 +73,16 @@ The runtime SHALL use one request-scoped counter for every value received from t
 - **THEN** mapping SHALL reject the warning list before allocating a same-sized output slice
 
 ### Requirement: Normalized stream start and value-safe warnings
-Every committed writable stream SHALL emit exactly one public `stream-start` as its first JSON event. The handler SHALL read the first provider part before choosing that event: a provider `stream-start` is valid only as the first provider part and SHALL be consumed while its warnings are mapped through a streaming-specific value-safe mapper. Unary output SHALL omit provider warnings. The streaming mapper SHALL never copy arbitrary provider `Feature`, `Setting`, `Message`, or `Details` strings. It SHALL map `unsupported` to `feature: "model capability"` and `details: "a requested model capability is unsupported"`; `compatibility` to `feature: "model compatibility"` and `details: "a requested setting was adjusted for model compatibility"`; `deprecated` to `setting: "model setting"` and `message: "a requested model setting is deprecated"`; and `other` to `message: "the model reported a warning"`. It SHALL include no provider or model identity in warning prose. Unknown warning discriminators, invalid canonical identity, or oversized warning starts SHALL cause an empty public start followed by at most one synthetic terminal internal error. When the provider omits start, the handler SHALL emit `warnings: []` and process the first provider part. Built-in Anthropic streaming SHALL preserve its initial upstream-event error preflight, then emit one `PartStreamStart` carrying request-conversion warnings before handling or emitting the pre-read first event, and SHALL no longer attach warnings to `PartFinish`.
+Every committed writable stream SHALL emit exactly one public `stream-start` as its first JSON event. The handler SHALL read the first provider part before choosing that event: a provider `stream-start` is valid only as the first provider part and SHALL be consumed while its warnings are mapped through the shared registered warning mapper. Unary and streaming warnings SHALL preserve meaningful selected fields and order, including required empty strings and optional-empty Go details normalization. Each selected string SHALL be valid UTF-8 and at most 4096 bytes; count, aggregate and complete escaped-frame bounds SHALL precede commitment. Inactive fields SHALL be omitted; warning prose SHALL not enter telemetry. Unknown warning discriminators, invalid selected strings, invalid canonical identity, or oversized warning starts SHALL cause an empty public start followed by at most one synthetic terminal internal error. When the provider omits start, the handler SHALL emit `warnings: []` and process the first provider part. Built-in Anthropic streaming SHALL preserve its initial upstream-event error preflight, then emit one `PartStreamStart` carrying request-conversion warnings before handling or emitting the pre-read first event, and SHALL no longer attach warnings to `PartFinish`.
 
 #### Scenario: Provider start carries known warnings
 - **WHEN** the first provider part is `stream-start` with known registered warnings
-- **THEN** the client SHALL receive exactly one start containing only approved identifiers and fixed prose with no arbitrary provider string or metadata
+- **THEN** the client SHALL receive exactly one start preserving registered union values/order within all bounds
 
-#### Scenario: Warning contains hostile private values
-- **WHEN** a provider warning contains a credential, URL, private backend model ID, body, header, or arbitrary prose in any warning string field
-- **THEN** none of those values SHALL appear publicly and the warning SHALL be generically normalized or fail safely
+#### Scenario: Warning validation fails
+- **WHEN** a selected warning field is invalid UTF-8 or exceeds its string, aggregate or escaped-frame bound
+- **THEN** the handler SHALL emit the existing empty start and at most one fixed terminal error rather than partial warnings
+- **AND** valid ordinary provider warning strings SHALL not be heuristically censored
 
 #### Scenario: Provider omits start
 - **WHEN** the first provider part is metadata, text, provider error, or finish
@@ -100,11 +101,11 @@ Every committed writable stream SHALL emit exactly one public `stream-start` as 
 - **THEN** `DoStream` SHALL return that error before any `StreamResult` or provider start is exposed
 
 ### Requirement: Canonical metadata and text block state
-After the public start and within the configured provider-part count, the state machine SHALL accept at most one response-metadata part before the first text or tool event, zero or more sequential text blocks and independently tracked function-tool input/call/result events governed by gateway-streaming-function-tools, non-terminal provider error parts at any pre-finish point, and exactly one finish. Response metadata SHALL preserve an optional valid response ID and timestamp, SHALL always set `modelId` to the resolver's canonical public ID, and SHALL omit provider identity, backend model ID, response headers, and provider metadata. Each text start ID SHALL be valid UTF-8, non-empty, globally unique within the stream, and SHALL open the only active block. Text deltas and ends SHALL use the active ID; an end SHALL close it. Required empty deltas SHALL be preserved. Provider errors SHALL not open, close, or otherwise change text or metadata state.
+After the public start and within the configured provider-part count, the state machine SHALL accept at most one response-metadata part before the first text or tool event, zero or more sequential text blocks and independently tracked function-tool input/call/result events governed by gateway-streaming-function-tools, non-terminal provider error parts at any pre-finish point, and exactly one finish. Response metadata SHALL preserve supplied valid response ID, actual modelId and timestamp without canonical substitution; absent modelId SHALL remain absent. Provider identity, native response headers, private configuration/topology and unrelated provider metadata SHALL remain omitted. Canonical public route identity SHALL remain authoritative for routing/discovery/logical observation, not response identity. Each text start ID SHALL be valid UTF-8, non-empty, globally unique within the stream, and SHALL open the only active block. Text deltas and ends SHALL use the active ID; an end SHALL close it. Required empty deltas SHALL be preserved. Provider errors SHALL not open, close, or otherwise change text or metadata state.
 
 #### Scenario: Canonical metadata precedes text
 - **WHEN** a provider emits one valid response-metadata part before text or tool events
-- **THEN** the public metadata SHALL preserve only allowlisted ID and timestamp values and SHALL use the canonical public model ID
+- **THEN** the public metadata SHALL preserve supplied registered ID, actual modelId and timestamp and SHALL not invent canonical modelId
 
 #### Scenario: Sequential text blocks are valid
 - **WHEN** a provider emits multiple non-overlapping text start/delta/end blocks with unique IDs
@@ -163,7 +164,7 @@ The handler SHALL count supplied raw-usage bytes, including whitespace, before J
 - **THEN** the handler SHALL reject it before parsing or encoding raw JSON
 
 ### Requirement: Ordered non-terminal provider errors
-Each pre-finish provider `PartError` SHALL be independently reduced through the closed safe-error classification and emitted in place as `{"type":"error","error":{"message":string,"type":string,"param":null,"code":string,"statusCode":integer,"retryable":boolean}}`. A valid provider error SHALL not terminate the stream or alter lifecycle state; later metadata, content, additional provider errors, and finish SHALL remain valid. Nil, malformed, or unclassifiable provider error values SHALL reduce to the canonical internal safe error part. No provider message, URL, body, header, data, cause, provider identity, backend model ID, or arbitrary metadata SHALL enter the public event.
+Each pre-finish provider `PartError` SHALL be independently projected in its existing processing path. Reviewed structured errors on trusted configured direct routes SHALL use gateway-caller-response-policy's bounded minimal envelope, including existing statusCode/retryable and param details. Unreviewed/message-only/local/transport/ambiguous sources SHALL retain closed fixed-safe classification. No extra stream reader or error/producer representation SHALL be introduced. A valid provider error SHALL not terminate the stream or alter lifecycle state; later metadata, content, additional provider errors, and finish SHALL remain valid. Nil, malformed, or unclassifiable provider error values SHALL reduce to the canonical internal safe error part. Whole native errors/Data/bodies/headers/URLs/requests/causes and unrelated metadata SHALL not enter the public event. Fixed provider-account auth prose SHALL replace credential-bearing authorization diagnostics; ordinary reviewed application strings SHALL not be heuristically censored.
 
 #### Scenario: Provider error is followed by content
 - **WHEN** a provider emits an error before or within a text block and later emits otherwise valid content and finish
@@ -173,9 +174,10 @@ Each pre-finish provider `PartError` SHALL be independently reduced through the 
 - **WHEN** a provider emits multiple errors separated by valid stream parts
 - **THEN** each error SHALL be independently normalized and retained in its original position without terminating the stream
 
-#### Scenario: Provider error contains hostile detail
-- **WHEN** a provider error contains credentials, URLs, bodies, headers, data, causes, backend identity, or arbitrary messages
-- **THEN** its public event SHALL contain only the closed safe fields and approved category message
+#### Scenario: Provider diagnostic sources are excluded
+- **WHEN** native errors contain unreviewed fields, transport or cause dumps, or protected authorization prose
+- **THEN** only bounded contracted details SHALL survive, with fixed provider-account auth prose when needed
+- **AND** malformed/oversized/unreviewed sources SHALL use fixed-safe diagnostics
 
 #### Scenario: Provider error status is malformed
 - **WHEN** an `APICallError` carries a non-zero status outside the valid HTTP range 100 through 599

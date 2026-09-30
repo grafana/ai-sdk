@@ -21,6 +21,10 @@ Gateway-reserved option namespaces remain rejected. History accepts assistant
 calls and text, JSON (including null), error-text, error-JSON, and content
 results with text or supported file entries, preserving selected empty values.
 The application executes tools and supplies call/result history on a later independent request.
+Direct Anthropic routes preserve supported `anthropic.caller` options on ordinary
+assistant function-call history, including direct and code-execution attribution.
+Attribution does not authorize provider execution or hosted MCP. Supplied-history
+request tests establish forwarding, not response-derived metadata continuation.
 The Gateway never executes a tool. Provider-executed/dynamic tools, approvals,
 preliminary results, custom tool-result content, generated media responses, and
 reasoning-file input remain unsupported. Logical telemetry
@@ -31,6 +35,20 @@ matching non-null JSON results. IDs, ordering and empty deltas are preserved.
 Vercel and Go clients own the multi-step orchestration; each HTTP generation
 remains stateless. Ordered fallback routes continue rejecting tool definitions,
 choice and history before any physical invocation.
+
+## Inspect caller-visible responses
+
+Unary and streaming warnings preserve registered provider text and order, including
+required empty strings. Native source IDs and URL/document display values survive,
+including repeated IDs and OpenAI file paths. The existing bounded numeric citation
+metadata projection is unchanged; native metadata and response-derived continuation
+remain separate work.
+
+Streaming response metadata exposes supplied native response ID, model ID and
+timestamp, not the canonical routing ID. Both pinned clients replace typed unary
+response metadata with Gateway transport; inspect the bounded `Response.Body` for
+native unary identity. Discovery and logical telemetry continue using public route
+identity and do not expose backend configuration or fallback topology.
 
 ## Authenticate the client
 
@@ -125,9 +143,24 @@ Use `errors.As` with `*grafana.GatewayError` for the public category/code and
 with `*provider.APICallError` for retryability. Context cancellation and deadlines
 remain identifiable with `errors.Is`. A malformed response is a non-retryable
 protocol failure; a transport failure is retryable but never retried internally.
-Warnings and public error messages remain server-provided text. Unknown private
-metadata is not promoted into model identity or Gateway error fields. A unary
-response's bounded raw HTTP body remains available in `Response.Body`.
+Configured direct Anthropic, OpenAI and reviewed OpenAI-compatible errors preserve
+bounded structured provider messages and native HTTP status. Native type/code/parameter
+values are available in the error envelope's `param`, through the underlying
+`APICallError.ResponseBody`; `GatewayError.Code` remains the Gateway's string category
+code. Numeric and null native codes do not become new typed error properties.
+Provider credential failures instead report provider-account authorization failure,
+not instructions to replace Gateway credentials. HTTP retryability follows status
+408/409/429/5xx; native HTTP retry overrides cannot survive this pinned protocol.
+Available structured SSE errors retain their status/retry flag and remain ordered,
+non-terminal provider events.
+
+Unconfigured routes, fallback aggregates, unknown compatible schemas, message-only
+errors and local/transport failures retain fixed-safe diagnostics. Richer provenance
+and producer/error API work is a separate Gateway follow-up, not implemented here.
+Malformed or oversized diagnostics also fail safely. Native transport bodies,
+headers, URLs and causes are never copied wholesale. Caller-visible warnings,
+sources, actual identity and diagnostic prose do not enter logical telemetry.
+A unary response's bounded raw HTTP body remains available in `Response.Body`.
 
 Configured headers are applied before call headers, then client-owned auth,
 content negotiation, and model protocol headers. Call headers also remain in

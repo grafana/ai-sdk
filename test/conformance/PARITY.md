@@ -40,11 +40,11 @@ evidence boundary changes, not merely because the pinned versions change.
 ## Evidence boundaries
 
 - Gateway sources have explicit URL/document DTO and schema checks, pinned-client
-  differential and synthetic native OpenAI command tests. Source IDs are
-  response-local; only bounded numeric citation positions are retained under
-  `citation`. Native OpenAI/Azure `file_path` display identity is replaced by
-  `Document` with no filename. These are intentional Gateway privacy adaptations,
-  not native-provider parity. Unknown metadata and cited text are omitted.
+  differential and synthetic native OpenAI command tests. Native source IDs,
+  repeated/cross-variant IDs and OpenAI/Azure `file_path` display are preserved.
+  Only bounded numeric citation positions are retained under `citation`; unknown
+  metadata and cited text are omitted. This unchanged metadata codec remains a
+  capability gap, not evidence of native-provider metadata parity.
 - Provider-independent `ui/sources` snapshots and schema-parsed frontend tests
   cover URL/document assembly, required empty document titles and metadata.
   Synthetic command responses do not establish live provider acceptance.
@@ -87,8 +87,12 @@ issue rather than being maintained in both places.
   claim of complete upstream EOF parity.
 - Bedrock warns and omits unsupported tool-result file URLs instead of failing.
 - Gateway is a Grafana extension with no private-service oracle. It deliberately
-  uses strict response families, protected auth/protocol headers and fixed server
-  warning prose. The client retains bounded public error prose without upstream
-  auth guidance or generation-ID suffixes; Go cancellation preserves context
-  identity. The [client contract](../../openspec/specs/grafana-gateway-client/spec.md)
+  uses strict response families and protected auth/protocol headers. Registered
+  warnings and actual response identity survive; both clients overwrite typed
+  unary identity, leaving it in the bounded raw response body. Trusted configured
+  direct routes project reviewed structured diagnostics through existing fields
+  and causes, not richer typed native-code properties. Unconfigured routes,
+  unknown schemas, message-only errors and fallback aggregates remain fixed-safe.
+  Provider authorization prose is fixed; ordinary application strings are not
+  scanned for secret patterns. Go cancellation preserves context identity. The [client contract](../../openspec/specs/grafana-gateway-client/spec.md)
   defines the detailed boundary.

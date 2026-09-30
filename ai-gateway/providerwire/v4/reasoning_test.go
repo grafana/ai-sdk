@@ -59,9 +59,9 @@ func TestReasoningConcurrentLifecycle(t *testing.T) {
 		{Type: provider.PartTextEnd, ID: "1"},
 	}
 	for _, part := range parts {
-		require.Equal(t, streamPartContinue, h.processStreamPart(w, state, part, "public/model"), part.Type)
+		require.Equal(t, streamPartContinue, h.processStreamPart(w, state, part), part.Type)
 	}
-	require.Equal(t, streamPartFinished, h.processStreamPart(w, state, finishPart(), "public/model"))
+	require.Equal(t, streamPartFinished, h.processStreamPart(w, state, finishPart()))
 	assert.Contains(t, w.Body.String(), `"delta":""`)
 	assert.Contains(t, w.Body.String(), `"providerMetadata":{}`)
 	assert.Contains(t, w.Body.String(), "end-only")
@@ -166,7 +166,7 @@ func TestReasoningFrameBoundsAndLifecycle(t *testing.T) {
 			if i == len(parts)-1 {
 				want = streamPartAdapterFailure
 			}
-			assert.Equal(t, want, h.processStreamPart(w, state, part, "public/model"))
+			assert.Equal(t, want, h.processStreamPart(w, state, part))
 		}
 	}
 }

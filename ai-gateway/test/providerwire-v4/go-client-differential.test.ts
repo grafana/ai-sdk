@@ -271,6 +271,31 @@ describe("Go and exact-pinned Gateway differential", () => {
     } finally { await server.stop(); }
   });
 
+  it("matches unary warning defaults and registered warning values", async () => {
+    const warnings = [
+      { type: "unsupported", feature: "", details: "" },
+      { type: "compatibility", feature: "feature", details: "adjustment" },
+      { type: "deprecated", setting: "", message: "" },
+      { type: "other", message: "caller warning" },
+    ];
+    for (const fields of [{}, { warnings: null }, { warnings: [] }, { warnings }]) {
+      const { warnings: ignored, ...body } = unary;
+      const server = await endpoint(JSON.stringify({ ...body, ...fields }));
+      try {
+        const ts = await createGateway({ apiKey: "test", baseURL: server.baseURL })("assistant").doGenerate({ prompt: [] });
+        const go = await captureGoClient(binary, { baseURL: server.baseURL, accessToken: "token", modelID: "assistant", mode: "generate", options: { prompt: [] } });
+        assert.equal(go.error, undefined);
+        const normalize = (warning: any) => {
+          const value = { ...warning, ...(warning.type === "unsupported" || warning.type === "compatibility" ? { feature: warning.feature ?? "" } : {}), ...(warning.type === "deprecated" ? { setting: warning.setting ?? "", message: warning.message ?? "" } : {}) };
+          if (value.details === "") delete value.details;
+          return value;
+        };
+        assert.deepEqual((go.result.warnings ?? []).map(normalize), ts.warnings.map(normalize));
+        assert.deepEqual(ts.warnings, fields.warnings ?? []);
+      } finally { await server.stop(); }
+    }
+  });
+
   it("matches public discovery and alias order", async () => {
     const models = [{ id: "assistant", name: "Assistant", description: null, specification: { specificationVersion: "v4", provider: "grafana", modelId: "assistant" } }, { id: "grafana/assistant", name: "Alias", specification: { specificationVersion: "v4", provider: "grafana", modelId: "grafana/assistant" } }];
     const server = await endpoint(JSON.stringify({ models, private: "ignored" }));
@@ -313,6 +338,43 @@ describe("Go and exact-pinned Gateway differential", () => {
         const normalize = (part: any) => part.type === "error" ? { type: part.type, message: part.error.message, statusCode: part.error.statusCode, retryable: part.error.isRetryable ?? part.error.retryable } : part;
         assert.deepEqual(go.parts.map(normalize), parts.map(normalize));
         assert.deepEqual(go.parts.map((part: any) => part.type), ["text-start", "error", "text-delta"]);
+      } finally { await server.stop(); }
+    }
+  });
+
+  it("preserves minimal provider diagnostics through existing error fields and causes", async () => {
+    for (const status of [400, 401, 403, 408, 409, 422, 429, 500, 503, 529]) {
+      const type = status === 400 || status === 422 ? "invalid_request_error" : status === 429 ? "rate_limit_exceeded" : status < 500 ? "failed_dependency" : "internal_server_error";
+      const code = type === "invalid_request_error" ? "invalid_request" : type === "internal_server_error" ? "upstream_error" : type;
+      const param = { type: "native_type", code: status === 400 ? null : status === 422 ? 42 : "native_code", param: "temperature" };
+      const server = await endpoint(JSON.stringify({ error: { message: "fix application input", type, code, param } }), status);
+      try {
+        let ts: any;
+        try { await createGateway({ apiKey: "test", baseURL: server.baseURL })("assistant").doGenerate({ prompt: [] }); } catch (error) { ts = error; }
+        const go = await captureGoClient(binary, { baseURL: server.baseURL, accessToken: "token", modelID: "assistant", mode: "generate", options: { prompt: [] } });
+        assert.equal(go.error.category, ts.type);
+        assert.equal(go.error.message, ts.message);
+        assert.equal(go.error.statusCode, status);
+        assert.equal(go.error.isRetryable, ts.isRetryable);
+        assert.equal(ts.isRetryable, [408, 409, 429].includes(status) || status >= 500);
+        assert.deepEqual(JSON.parse(go.error.apiError.responseBody).error.param, param);
+        assert.deepEqual(JSON.parse(ts.cause.responseBody).error.param, param);
+        assert.equal(server.requests.length, 2, "one HTTP request per client invocation");
+      } finally { await server.stop(); }
+    }
+    for (const retryable of [false, true]) {
+      const error = { message: "native stream error", type: "internal_server_error", code: "upstream_error", param: { type: "api_error", code: null }, statusCode: 200, retryable };
+      const server = await endpoint(`data: ${JSON.stringify({ type: "error", error })}\n\ndata: {"type":"text-start","id":"a"}\n\ndata: {"type":"text-end","id":"a"}\n\n`, 200, "text/event-stream");
+      try {
+        const ts = await createGateway({ apiKey: "test", baseURL: server.baseURL })("assistant").doStream({ prompt: [] });
+        const parts: any[] = []; for await (const part of ts.stream) parts.push(part);
+        const go = await captureGoClient(binary, { baseURL: server.baseURL, accessToken: "token", modelID: "assistant", mode: "stream", options: { prompt: [] } });
+        assert.equal(go.error, undefined);
+        assert.deepEqual(go.parts.map((part: any) => part.type), parts.map(part => part.type));
+        assert.deepEqual(parts[0].error, error);
+        assert.equal(go.parts[0].error.statusCode, 200);
+        assert.equal(go.parts[0].error.isRetryable, retryable);
+        assert.deepEqual(JSON.parse(go.parts[0].error.responseBody).error.param, error.param);
       } finally { await server.stop(); }
     }
   });

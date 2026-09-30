@@ -341,7 +341,7 @@ func decodeStreamPart(data []byte) (provider.StreamPart, error) {
 		if decodeFields(value.Error, &eventError, "message", "type", "code", "param", "statusCode", "retryable") != nil || eventError.Retryable == nil {
 			return invalid()
 		}
-		err := mapGatewayError(&eventError.wireError, eventError.StatusCode)
+		err := mapGatewayErrorWithRetry(&eventError.wireError, eventError.StatusCode, eventError.Retryable)
 		gateway, ok := err.(*GatewayError)
 		if !ok || gateway.IsRetryable != *eventError.Retryable {
 			return invalid()

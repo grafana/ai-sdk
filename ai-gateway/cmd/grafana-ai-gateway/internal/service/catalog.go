@@ -3,7 +3,7 @@ package service
 import (
 	"fmt"
 	"net/http"
-	"reflect"
+	"slices"
 	"sort"
 
 	"github.com/anthropics/anthropic-sdk-go/option"
@@ -104,6 +104,15 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 			policies = append(policies, policy)
 		}
 		lower := candidates[0]
+		var errorFormat catalog.ProviderErrorFormat
+		if len(candidates) == 1 {
+			switch providers[configured.Primary.Provider].Type {
+			case "anthropic":
+				errorFormat = catalog.ProviderErrorAnthropic
+			case "openai", "openai-compatible":
+				errorFormat = catalog.ProviderErrorOpenAI
+			}
+		}
 		if len(candidates) > 1 {
 			ordered, err := fallback.New(candidates...)
 			if err != nil {
@@ -132,24 +141,53 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 			},
 			Model:           model,
 			ProviderOptions: sharedOptionPolicy(policies),
+			ProviderErrors:  errorFormat,
 		})
 	}
 	return catalog.NewStatic(entries)
 }
 
-// sharedOptionPolicy returns the policy every candidate agrees on. A model whose
-// fallbacks use another provider type has no single safe policy, so it forwards
-// no caller provider options until the runtime can pick one per attempt.
 func sharedOptionPolicy(policies []catalog.ProviderOptionPolicy) catalog.ProviderOptionPolicy {
 	if len(policies) == 0 {
 		return catalog.ProviderOptionPolicy{}
 	}
-	for _, policy := range policies[1:] {
-		if !reflect.DeepEqual(policy, policies[0]) {
-			return catalog.ProviderOptionPolicy{}
+	if len(policies) == 1 {
+		return policies[0]
+	}
+	result := catalog.ProviderOptionPolicy{Fields: make(map[string][]string)}
+	for _, policy := range policies {
+		for _, namespace := range policy.Namespaces {
+			if !slices.Contains(result.Namespaces, namespace) {
+				result.Namespaces = append(result.Namespaces, namespace)
+			}
 		}
 	}
-	return policies[0]
+	for _, namespace := range result.Namespaces {
+		var fields []string
+		unrestricted := false
+		for _, policy := range policies {
+			if !slices.Contains(policy.Namespaces, namespace) {
+				continue
+			}
+			allowed, restricted := policy.Fields[namespace]
+			if !restricted {
+				unrestricted = true
+				break
+			}
+			for _, field := range allowed {
+				if !slices.Contains(fields, field) {
+					fields = append(fields, field)
+				}
+			}
+		}
+		if !unrestricted {
+			result.Fields[namespace] = fields
+		}
+	}
+	if len(result.Fields) == 0 {
+		result.Fields = nil
+	}
+	return result
 }
 
 func identityModelFactory(canonicalID string, lower provider.LanguageModel) (provider.LanguageModel, error) {

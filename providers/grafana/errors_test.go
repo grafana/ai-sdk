@@ -50,6 +50,35 @@ func TestGatewayError_RegisteredMatrix(t *testing.T) {
 	}
 }
 
+func TestGatewayError_InvalidProviderDiagnostics(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		param  string
+		status int
+	}{
+		{name: "unknown detail", param: `{"unknown":"private-marker"}`, status: 422},
+		{name: "boolean code", param: `{"code":true}`, status: 422},
+		{name: "nonfinite code", param: `{"code":1e400}`, status: 422},
+		{name: "nested parameter", param: `{"param":{"input":"private-marker"}}`, status: 422},
+		{name: "type byte limit", param: `{"type":"` + strings.Repeat("é", 129) + `"}`, status: 422},
+		{name: "string code limit", param: `{"code":"` + strings.Repeat("x", 257) + `"}`, status: 422},
+		{name: "detail byte limit", param: `{"param":"` + strings.Repeat("x", 4097) + `"}`, status: 422},
+		{name: "wrong category status", param: `{"code":42}`, status: 500},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			value := wireError{Message: new("private-marker"), Type: GatewayInvalidRequest, Code: "invalid_request", Param: json.RawMessage(tc.param)}
+			err := mapGatewayError(&value, tc.status)
+			var gateway *GatewayError
+			assert.NotErrorAs(t, err, &gateway)
+			var api *provider.APICallError
+			require.ErrorAs(t, err, &api)
+			assert.False(t, api.IsRetryable)
+			assert.Empty(t, api.ResponseBody)
+			assert.NotContains(t, err.Error(), "private-marker")
+		})
+	}
+}
+
 func TestGatewayError_InvalidEnvelopes(t *testing.T) {
 	valid := `{"error":{"message":"safe","type":"invalid_request_error","param":null,"code":"invalid_request"}}`
 	for _, tc := range []struct {

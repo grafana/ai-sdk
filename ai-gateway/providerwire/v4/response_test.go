@@ -34,7 +34,7 @@ func TestUnarySuccessMapping(t *testing.T) {
 			OutputTokens: provider.OutputTokenUsage{Total: &zero, Text: &zero, Reasoning: &zero},
 			Raw:          json.RawMessage(`{"native_usage":true}`),
 		},
-		Warnings: []provider.Warning{{Type: provider.WarningType("future"), Message: "private warning"}},
+		Warnings: []provider.Warning{{Type: provider.WarnOther, Message: "caller warning"}},
 		Response: &provider.GenerateResponse{ResponseMetadata: provider.ResponseMetadata{
 			ID: "private-response", ModelID: "private-model", Provider: "private-provider",
 		}},
@@ -51,10 +51,11 @@ func TestUnarySuccessMapping(t *testing.T) {
 	assert.JSONEq(t, `{
 		"content":[{"type":"text","text":""},{"type":"text","text":"quote=\" slash=\\ newline=\n snowman=☃ html=<>&"}],
 		"finishReason":{"unified":"other","raw":"raw-stop"},
-		"usage":{"inputTokens":{"total":9007199254740991,"noCache":0,"cacheRead":0,"cacheWrite":0},"outputTokens":{"total":0,"text":0,"reasoning":0},"raw":{"native_usage":true}}
+		"usage":{"inputTokens":{"total":9007199254740991,"noCache":0,"cacheRead":0,"cacheWrite":0},"outputTokens":{"total":0,"text":0,"reasoning":0},"raw":{"native_usage":true}},
+		"warnings":[{"type":"other","message":"caller warning"}],"response":{"id":"private-response","modelId":"private-model"}
 	}`, string(body))
 	assert.Contains(t, string(body), `html=\u003c\u003e\u0026`)
-	for _, private := range []string{"private warning", "private-response", "private-model", "private-provider", "warnings", "response"} {
+	for _, private := range []string{"private-provider", "headers"} {
 		assert.NotContains(t, string(body), private)
 	}
 }

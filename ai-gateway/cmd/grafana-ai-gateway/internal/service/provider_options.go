@@ -22,7 +22,7 @@ var anthropicOptionPolicy = catalog.ProviderOptionPolicy{
 		// is also read on messages and parts, under either spelling.
 		"toolChanges", "cacheControl",
 		// Read from message and part options by the request converter.
-		"citations", "title", "context", "signature", "redactedData",
+		"citations", "title", "context", "signature", "redactedData", "caller",
 	}},
 }
 

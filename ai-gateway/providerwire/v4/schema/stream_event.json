@@ -19,7 +19,8 @@
     { "$ref": "#/$defs/toolCall" },
     { "$ref": "#/$defs/toolResult" },
     { "$ref": "#/$defs/finish" },
-    { "$ref": "#/$defs/error" }
+    { "$ref": "#/$defs/error" },
+    { "$ref": "#/$defs/providerErrorEvent" }
   ],
   "$defs": {
     "reasoningBoundary": {
@@ -194,11 +195,11 @@
     },
     "responseMetadata": {
       "type": "object",
-      "required": ["type", "modelId"],
+      "required": ["type"],
       "properties": {
         "type": { "const": "response-metadata" },
         "id": { "type": "string" },
-        "modelId": { "type": "string", "minLength": 1 },
+        "modelId": { "type": "string" },
         "timestamp": {
           "type": "string",
           "format": "date-time",
@@ -317,6 +318,33 @@
       },
       "additionalProperties": false
     },
+    "providerErrorEvent": {
+      "type": "object", "required": ["type", "error"],
+      "properties": {
+        "type": {"const": "error"},
+        "error": {
+          "type": "object", "required": ["message", "type", "code", "param", "statusCode", "retryable"],
+          "properties": {
+            "message": {"type": "string", "maxLength": 4096}, "type": {"type": "string"}, "code": {"type": "string"},
+            "statusCode": {"type": "integer"}, "retryable": {"type": "boolean"},
+            "param": {
+              "type": "object", "properties": {
+                "type": {"type": "string", "maxLength": 256},
+                "code": {"oneOf": [{"type": "string", "maxLength": 256}, {"type": "number"}, {"type": "null"}]},
+                "param": {"type": ["string", "null"], "maxLength": 4096}
+              }, "additionalProperties": false
+            }
+          },
+          "additionalProperties": false,
+          "oneOf": [
+            {"properties": {"type": {"const": "invalid_request_error"}, "code": {"const": "invalid_request"}, "statusCode": {"enum": [400, 422]}}},
+            {"properties": {"type": {"const": "rate_limit_exceeded"}, "code": {"const": "rate_limit_exceeded"}, "statusCode": {"const": 429}}},
+            {"properties": {"type": {"const": "failed_dependency"}, "code": {"const": "failed_dependency"}, "statusCode": {"type": "integer", "minimum": 400, "maximum": 499, "not": {"enum": [400, 422, 429]}}}},
+            {"properties": {"type": {"const": "internal_server_error"}, "code": {"const": "upstream_error"}, "statusCode": {"anyOf": [{"const": 200}, {"type": "integer", "minimum": 500, "maximum": 599}]}}}
+          ]
+        }
+      }, "additionalProperties": false
+    },
     "warning": {
       "oneOf": [
         { "$ref": "#/$defs/unsupportedWarning" },
@@ -327,21 +355,21 @@
     },
     "unsupportedWarning": {
       "type": "object",
-      "required": ["type", "feature", "details"],
+      "required": ["type", "feature"],
       "properties": {
         "type": { "const": "unsupported" },
-        "feature": { "const": "model capability" },
-        "details": { "const": "a requested model capability is unsupported" }
+        "feature": { "type": "string", "maxLength": 4096 },
+        "details": { "type": "string", "maxLength": 4096 }
       },
       "additionalProperties": false
     },
     "compatibilityWarning": {
       "type": "object",
-      "required": ["type", "feature", "details"],
+      "required": ["type", "feature"],
       "properties": {
         "type": { "const": "compatibility" },
-        "feature": { "const": "model compatibility" },
-        "details": { "const": "a requested setting was adjusted for model compatibility" }
+        "feature": { "type": "string", "maxLength": 4096 },
+        "details": { "type": "string", "maxLength": 4096 }
       },
       "additionalProperties": false
     },
@@ -350,8 +378,8 @@
       "required": ["type", "setting", "message"],
       "properties": {
         "type": { "const": "deprecated" },
-        "setting": { "const": "model setting" },
-        "message": { "const": "a requested model setting is deprecated" }
+        "setting": { "type": "string", "maxLength": 4096 },
+        "message": { "type": "string", "maxLength": 4096 }
       },
       "additionalProperties": false
     },
@@ -360,7 +388,7 @@
       "required": ["type", "message"],
       "properties": {
         "type": { "const": "other" },
-        "message": { "const": "the model reported a warning" }
+        "message": { "type": "string", "maxLength": 4096 }
       },
       "additionalProperties": false
     }

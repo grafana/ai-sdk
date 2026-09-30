@@ -23,9 +23,9 @@ func TestUnarySuccessSchema(t *testing.T) {
 	compiled, err := schema.CompileSchema(unarySuccessSchemaJSON)
 	require.NoError(t, err)
 
-	valid := []byte(`{"content":[{"type":"text","text":""}],"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}}}`)
+	valid := []byte(`{"content":[{"type":"text","text":""}],"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}},"warnings":[]}`)
 	require.NoError(t, compiled.Validate(json.RawMessage(valid)))
-	require.NoError(t, compiled.Validate(json.RawMessage(`{"content":[],"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{},"raw":{"native":{"tokens":[1,null,true]}}}}`)))
+	require.NoError(t, compiled.Validate(json.RawMessage(`{"content":[],"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{},"raw":{"native":{"tokens":[1,null,true]}}},"warnings":[]}`)))
 
 	invalid := [][]byte{
 		[]byte(`{"content":[],"finishReason":{"unified":"stop"}}`),
@@ -69,8 +69,8 @@ func TestStreamEventSchema(t *testing.T) {
 	}
 	invalid := []string{
 		`{"type":"stream-start"}`,
-		`{"type":"stream-start","warnings":[{"type":"other","message":"private"}]}`,
-		`{"type":"response-metadata","modelId":""}`,
+		`{"type":"stream-start","warnings":[{"type":"other","message":"private","feature":"inactive"}]}`,
+		`{"type":"response-metadata","modelId":null}`,
 		`{"type":"response-metadata","modelId":"public","provider":"private"}`,
 		`{"type":"text-start","id":""}`,
 		`{"type":"text-delta","id":"a"}`,

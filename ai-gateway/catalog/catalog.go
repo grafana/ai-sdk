@@ -34,7 +34,19 @@ type ResolvedModel struct {
 	Model provider.LanguageModel
 	// ProviderOptions limits which caller provider options reach Model.
 	ProviderOptions ProviderOptionPolicy
+	// ProviderErrors authorizes reviewed direct-provider diagnostics; zero is fixed-safe.
+	ProviderErrors ProviderErrorFormat
 }
+
+// ProviderErrorFormat selects a reviewed diagnostic schema on a trusted direct route.
+type ProviderErrorFormat string
+
+const (
+	// ProviderErrorAnthropic selects structured Anthropic error fields.
+	ProviderErrorAnthropic ProviderErrorFormat = "anthropic"
+	// ProviderErrorOpenAI selects structured OpenAI or compatible error fields.
+	ProviderErrorOpenAI ProviderErrorFormat = "openai"
+)
 
 // ProviderOptionPolicy limits which caller provider options reach a resolved
 // model, at call, message and content-part level. The zero value forwards
@@ -87,6 +99,8 @@ type StaticEntry struct {
 	Model provider.LanguageModel
 	// ProviderOptions limits which caller provider options reach Model.
 	ProviderOptions ProviderOptionPolicy
+	// ProviderErrors authorizes reviewed direct-provider diagnostics; zero is fixed-safe.
+	ProviderErrors ProviderErrorFormat
 }
 
 // RegistryRoute maps one public model entry to an opaque provider model ID.

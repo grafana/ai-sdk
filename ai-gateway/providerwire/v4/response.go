@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"time"
 	"unicode/utf8"
 
 	"github.com/grafana/ai-sdk/provider"
@@ -54,10 +55,18 @@ type unaryUsage struct {
 	Raw          json.RawMessage       `json:"raw,omitempty"`
 }
 
+type unaryResponseIdentity struct {
+	ID        string `json:"id,omitempty"`
+	ModelID   string `json:"modelId,omitempty"`
+	Timestamp string `json:"timestamp,omitempty"`
+}
+
 type unarySuccess struct {
-	Content      []any             `json:"content"`
-	FinishReason unaryFinishReason `json:"finishReason"`
-	Usage        unaryUsage        `json:"usage"`
+	Warnings     []streamWarning        `json:"warnings"`
+	Response     *unaryResponseIdentity `json:"response,omitempty"`
+	Content      []any                  `json:"content"`
+	FinishReason unaryFinishReason      `json:"finishReason"`
+	Usage        unaryUsage             `json:"usage"`
 }
 
 func mapUnarySuccess(result *provider.GenerateResult, limit int64) (unarySuccess, error) {
@@ -72,14 +81,28 @@ func mapUnarySuccess(result *provider.GenerateResult, limit int64) (unarySuccess
 			Raw:     result.FinishReason.Raw,
 		},
 	}
-	ids := make(sourceIDs)
+	warnings, err := mapStreamWarnings(result.Warnings, limit)
+	if err != nil {
+		return unarySuccess{}, err
+	}
+	mapped.Warnings = warnings
+	if result.Response != nil {
+		identity := result.Response.ResponseMetadata
+		if !utf8.ValidString(identity.ID) || !utf8.ValidString(identity.ModelID) || !validStreamTimestamp(identity.Timestamp) {
+			return unarySuccess{}, errInvalidUnarySuccess
+		}
+		mapped.Response = &unaryResponseIdentity{ID: identity.ID, ModelID: identity.ModelID}
+		if !identity.Timestamp.IsZero() {
+			mapped.Response.Timestamp = identity.Timestamp.UTC().Format(time.RFC3339Nano)
+		}
+	}
 	for _, part := range result.Content {
 		if part.ProviderExecuted || (part.Dynamic != nil && *part.Dynamic) || (part.Preliminary != nil && *part.Preliminary) {
 			return unarySuccess{}, errInvalidUnarySuccess
 		}
 		switch part.Type {
 		case provider.ContentSource:
-			source, err := mapSource(unarySource(part), ids, limit)
+			source, err := mapSource(unarySource(part), limit)
 			if err != nil {
 				return unarySuccess{}, err
 			}
@@ -150,6 +173,17 @@ func unarySuccessPreflight(result *provider.GenerateResult, limit int64) bool {
 		return false
 	}
 	remaining := limit
+	if !warningBytesFit(result.Warnings, &remaining) {
+		return false
+	}
+	if result.Response != nil {
+		for _, value := range []string{result.Response.ID, result.Response.ModelID} {
+			if int64(len(value)) > remaining {
+				return false
+			}
+			remaining -= int64(len(value))
+		}
+	}
 	for _, part := range result.Content {
 		if part.Type == provider.ContentReasoning || part.Type == provider.ContentReasoningFile {
 			if !reasoningMetadataFits(part.ProviderMetadata, &remaining) {

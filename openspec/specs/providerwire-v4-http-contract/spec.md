@@ -198,7 +198,7 @@ Normal contract verification SHALL compile the production schema, run focused po
 
 ### Requirement: Focused unary client-consumption evidence
 
-The workspace SHALL exercise unary success through the registered client using an injected response. The probe SHALL assert consumption of representative generated content, finish reason, usage, and response headers, and SHALL explicitly assert the client's overwrite behavior for `request`, `response`, and `warnings`.
+The workspace SHALL exercise unary success through the registered client using an injected response. The probe SHALL assert consumption of representative generated content, finish reason, usage, and response headers, and SHALL explicitly assert typed `request`/`response` overwrite, bounded raw-body native identity availability, and server-before-client warning preservation with absent/null default.
 
 #### Scenario: Unary result is consumed
 - **WHEN** the injected fetch returns a valid representative JSON generate result
@@ -206,7 +206,8 @@ The workspace SHALL exercise unary success through the registered client using a
 
 #### Scenario: Client-owned unary fields replace server fields
 - **WHEN** the unary response body includes server-supplied `request`, `response`, and `warnings`
-- **THEN** the resolved result SHALL contain the request body, raw response data, response headers, and warning values assigned by the registered client rather than those server-supplied fields
+- **THEN** the resolved result SHALL contain client-owned request body, raw response data and headers rather than typed native response identity
+- **AND** registered server warnings SHALL survive before client warnings, defaulting to an empty array when absent or null
 
 ### Requirement: Focused streaming client-consumption evidence
 

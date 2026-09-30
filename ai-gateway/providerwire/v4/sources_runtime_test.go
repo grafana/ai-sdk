@@ -18,20 +18,19 @@ func TestSourcesProjectionPrivacyAndBounds(t *testing.T) {
 		"openai":    json.RawMessage(`{"type":"file_citation","fileId":"secret","index":3}`),
 		"private":   json.RawMessage(`{"token":"secret"}`),
 	}}
-	ids := make(sourceIDs)
-	mapped, err := mapSource(base, ids, 4096)
+	mapped, err := mapSource(base, 4096)
 	require.NoError(t, err)
 	encoded, err := json.Marshal(mapped)
 	require.NoError(t, err)
 	assert.NotContains(t, string(encoded), "secret")
-	assert.NotContains(t, string(encoded), "private-id")
+	assert.Contains(t, string(encoded), `"id":"private-id"`)
 	assert.Contains(t, string(encoded), `"citation":{"endPageNumber":2,"index":3,"startPageNumber":1}`)
 	for _, delta := range []int64{-1, 0, 1} {
 		source := provider.SourceInfo{SourceType: provider.SourceTypeURL, ID: "id", URL: strings.Repeat("<", 80)}
-		mapped, err := mapSource(source, make(sourceIDs), 4096)
+		mapped, err := mapSource(source, 4096)
 		require.NoError(t, err)
 		b, _ := json.Marshal(mapped)
-		_, err = mapSource(source, make(sourceIDs), int64(len(b))+delta)
+		_, err = mapSource(source, int64(len(b))+delta)
 		assert.Equal(t, delta < 0, err != nil)
 	}
 	for _, tc := range []struct {
@@ -49,25 +48,19 @@ func TestSourcesProjectionPrivacyAndBounds(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			source := base
 			tc.mutate(&source)
-			ids := make(sourceIDs)
-			_, err := mapSource(source, ids, 16384)
+			mapped, err := mapSource(source, 16384)
 			require.Error(t, err)
-			assert.Empty(t, ids)
+			assert.Nil(t, mapped)
 		})
 	}
 	document := base
 	document.ProviderMetadata = provider.ProviderMetadata{"openai": json.RawMessage(`{"type":"file_path","fileId":"file-secret","index":0}`)}
 	document.Title, document.Filename = "file-secret", "file-secret"
-	mapped, err = mapSource(document, make(sourceIDs), 4096)
+	mapped, err = mapSource(document, 4096)
 	require.NoError(t, err)
 	encoded, _ = json.Marshal(mapped)
-	assert.Contains(t, string(encoded), `"title":"Document"`)
-	assert.NotContains(t, string(encoded), "file-secret")
-	assert.NotContains(t, string(encoded), "filename")
-	document.SourceType = provider.SourceTypeURL
-	_, err = mapSource(document, ids, 4096)
-	require.NoError(t, err)
-	assert.Len(t, ids, 2)
+	assert.Contains(t, string(encoded), `"title":"file-secret"`)
+	assert.Contains(t, string(encoded), `"filename":"file-secret"`)
 	compiled, err := schema.CompileSchema(streamEventSchemaJSON)
 	require.NoError(t, err)
 	require.NoError(t, compiled.Validate(json.RawMessage(encoded)))
@@ -79,8 +72,8 @@ func TestSourcesOpenAIAndAzureMetadata(t *testing.T) {
 	}{
 		{"openai file citation", "openai", `{"type":"file_citation","fileId":"secret","index":4,"unapproved":"secret"}`, "Public title", `"citation":{"index":4}`},
 		{"azure file citation", "azure", `{"type":"file_citation","fileId":"secret","index":4,"unapproved":"secret"}`, "Public title", `"citation":{"index":4}`},
-		{"openai file path", "openai", `{"type":"file_path","fileId":"secret","index":0}`, "Document", `"citation":{"index":0}`},
-		{"azure file path", "azure", `{"type":"file_path","fileId":"secret","index":0}`, "Document", `"citation":{"index":0}`},
+		{"openai file path", "openai", `{"type":"file_path","fileId":"secret","index":0}`, "Public title", `"citation":{"index":0}`},
+		{"azure file path", "azure", `{"type":"file_path","fileId":"secret","index":0}`, "Public title", `"citation":{"index":0}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			filename := "public.txt"
@@ -88,23 +81,23 @@ func TestSourcesOpenAIAndAzureMetadata(t *testing.T) {
 				filename = "file-secret"
 			}
 			source := provider.SourceInfo{SourceType: provider.SourceTypeDocument, ID: "private-id", Title: "Public title", Filename: filename, MediaType: "text/plain", ProviderMetadata: provider.ProviderMetadata{tc.namespace: json.RawMessage(tc.metadata)}}
-			mapped, err := mapSource(source, make(sourceIDs), 4096)
+			mapped, err := mapSource(source, 4096)
 			require.NoError(t, err)
 			encoded, err := json.Marshal(mapped)
 			require.NoError(t, err)
 			assert.Contains(t, string(encoded), `"title":"`+tc.wantTitle+`"`)
 			assert.Contains(t, string(encoded), tc.wantCitation)
-			assert.NotContains(t, string(encoded), "private-id")
-			assert.NotContains(t, string(encoded), "secret")
+			assert.Contains(t, string(encoded), `"id":"private-id"`)
+			assert.NotContains(t, string(encoded), `"fileId"`)
 			assert.NotContains(t, string(encoded), `"azure"`)
 			assert.NotContains(t, string(encoded), `"openai"`)
 			if strings.Contains(tc.name, "file path") {
-				assert.NotContains(t, string(encoded), `"filename"`)
+				assert.Contains(t, string(encoded), `"filename":"file-secret"`)
 			}
 		})
 	}
 	oversize := provider.SourceInfo{SourceType: provider.SourceTypeURL, ID: "id", URL: "https://example.com", ProviderMetadata: provider.ProviderMetadata{"azure": json.RawMessage(strings.Repeat(" ", maxSourceMetadataBytes+1))}}
-	_, err := mapSource(oversize, make(sourceIDs), 16384)
+	_, err := mapSource(oversize, 16384)
 	require.ErrorIs(t, err, errInvalidUnarySuccess)
 }
 
@@ -131,10 +124,9 @@ func TestSourcesStreamingLifecycle(t *testing.T) {
 			body := response.Body.String()
 			requireStreamBodyMatchesSchema(t, body)
 			assert.Equal(t, tc.failure, strings.Contains(body, `"type":"error"`))
-			assert.NotContains(t, body, "native-id")
 			assert.NotContains(t, body, "secret")
 			if tc.name == "interleaved" {
-				assert.Equal(t, 2, strings.Count(body, `"id":"source-1"`))
+				assert.Equal(t, 2, strings.Count(body, `"id":"native-id"`))
 				assert.Contains(t, body, `"type":"finish"`)
 			}
 			if tc.name == "post finish" {
@@ -150,7 +142,7 @@ func TestSourcesStreamingLifecycle(t *testing.T) {
 
 func TestSourcesCompleteFrameAndAggregateBounds(t *testing.T) {
 	source := provider.SourceInfo{SourceType: provider.SourceTypeURL, ID: "id", URL: strings.Repeat("<", 80)}
-	mapped, err := mapSource(source, make(sourceIDs), 4096)
+	mapped, err := mapSource(source, 4096)
 	require.NoError(t, err)
 	frame, ok := encodeStreamFrame(streamEvent{typeName: provider.PartSource, source: mapped}, 4096)
 	require.True(t, ok)
@@ -174,7 +166,7 @@ func TestSourcesCompleteFrameAndAggregateBounds(t *testing.T) {
 			require.NoError(t, err)
 			wrap := func(value string) string {
 				if string(schemaJSON) == string(unarySuccessSchemaJSON) {
-					return `{"content":[` + value + `],"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}}}`
+					return `{"content":[` + value + `],"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}},"warnings":[]}`
 				}
 				return value
 			}

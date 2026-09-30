@@ -148,17 +148,21 @@ describe("SSE message assembly", () => {
 
     expect(source).toMatchObject({
       type: "source-document",
-      sourceId: "source-1",
+      sourceId: "native-shared-source",
       mediaType: "application/pdf",
       title: "Financial Report",
       filename: "financial-report.pdf",
       providerMetadata: {citation:{startPageNumber:1}},
     });
     expect(lastMessage.parts.filter(part=>part.type==="source-url")).toEqual([
-      {type:"source-url",sourceId:"source-2",url:"https://example.com",title:"URL",providerMetadata:{citation:{index:0}}},
+      {type:"source-url",sourceId:"native-shared-source",url:"https://example.com",title:"URL",providerMetadata:{citation:{index:0}}},
     ]);
-    expect(lastMessage.parts.find(part=>part.type==="source-document" && part.sourceId==="source-3")).toMatchObject({
-      type:"source-document",sourceId:"source-3",mediaType:"text/plain",title:"",
+    expect(lastMessage.parts.find(part=>part.type==="source-document" && part.sourceId==="native-empty-title")).toMatchObject({
+      type:"source-document",sourceId:"native-empty-title",mediaType:"text/plain",title:"",
+    });
+    expect(lastMessage.parts.filter(part=>part.type==="source-document" && part.sourceId==="native-shared-source")).toHaveLength(2);
+    expect(lastMessage.parts.at(-1)).toMatchObject({
+      type:"source-document",sourceId:"native-shared-source",mediaType:"application/octet-stream",title:"native-file-id",filename:"native-file-id",providerMetadata:{citation:{index:0}},
     });
   });
 });

@@ -9,18 +9,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/grafana/ai-sdk/ai-gateway/catalog"
 	"github.com/grafana/ai-sdk/provider"
-)
-
-const (
-	minimumMappedStreamWarningBytes   = int64(len(`{"type":"other","message":"the model reported a warning"}`))
-	streamWarningUnsupportedFeature   = "model capability"
-	streamWarningUnsupportedDetails   = "a requested model capability is unsupported"
-	streamWarningCompatibilityFeature = "model compatibility"
-	streamWarningCompatibilityDetails = "a requested setting was adjusted for model compatibility"
-	streamWarningDeprecatedSetting    = "model setting"
-	streamWarningDeprecatedMessage    = "a requested model setting is deprecated"
-	streamWarningOtherMessage         = "the model reported a warning"
 )
 
 var (
@@ -33,14 +23,6 @@ var (
 	canonicalCancellationStreamErrorFrame = []byte("data: {\"type\":\"error\",\"error\":{\"message\":\"request canceled\",\"type\":\"internal_server_error\",\"param\":null,\"code\":\"canceled\",\"statusCode\":499,\"retryable\":false}}\n\n")
 	canonicalInternalStreamErrorFrame     = []byte("data: {\"type\":\"error\",\"error\":{\"message\":\"internal error\",\"type\":\"internal_server_error\",\"param\":null,\"code\":\"internal_error\",\"statusCode\":500,\"retryable\":true}}\n\n")
 )
-
-type streamWarning struct {
-	Type    provider.WarningType `json:"type"`
-	Feature string               `json:"feature,omitempty"`
-	Setting string               `json:"setting,omitempty"`
-	Message string               `json:"message,omitempty"`
-	Details string               `json:"details,omitempty"`
-}
 
 type streamEvent struct {
 	typeName          provider.StreamPartType
@@ -71,7 +53,7 @@ type streamStartEvent struct {
 type streamMetadataEvent struct {
 	Type      provider.StreamPartType `json:"type"`
 	ID        string                  `json:"id,omitempty"`
-	ModelID   string                  `json:"modelId"`
+	ModelID   string                  `json:"modelId,omitempty"`
 	Timestamp string                  `json:"timestamp,omitempty"`
 }
 
@@ -190,8 +172,13 @@ func streamEventPreflight(value streamEvent, limit int64) bool {
 			return false
 		}
 		for _, warning := range value.warnings {
-			if !check(string(warning.Type), warning.Feature, warning.Setting, warning.Message, warning.Details) {
+			if !check(string(warning.Type)) {
 				return false
+			}
+			for _, field := range []*string{warning.Feature, warning.Setting, warning.Message, warning.Details} {
+				if field != nil && (len(*field) > maxWarningStringBytes || !check(*field)) {
+					return false
+				}
 			}
 		}
 		return true
@@ -218,56 +205,6 @@ func streamEventPreflight(value streamEvent, limit int64) bool {
 	}
 }
 
-func streamWarningCountFits(count int, limit int64) bool {
-	if count == 0 {
-		return int64(len(canonicalEmptyStartFrame)) <= limit
-	}
-	available := limit - int64(len(canonicalEmptyStartFrame))
-	if available < minimumMappedStreamWarningBytes {
-		return false
-	}
-	return int64(count) <= (available+1)/(minimumMappedStreamWarningBytes+1)
-}
-
-func mapStreamWarnings(warnings []provider.Warning, limit int64) ([]streamWarning, error) {
-	if !streamWarningCountFits(len(warnings), limit) {
-		return nil, errInvalidStreamWarning
-	}
-	mapped := make([]streamWarning, 0, len(warnings))
-	for _, warning := range warnings {
-		switch warning.Type {
-		case provider.WarnUnsupported:
-			mapped = append(mapped, streamWarning{
-				Type:    warning.Type,
-				Feature: streamWarningUnsupportedFeature,
-				Details: streamWarningUnsupportedDetails,
-			})
-		case provider.WarnCompatibility:
-			mapped = append(mapped, streamWarning{
-				Type:    warning.Type,
-				Feature: streamWarningCompatibilityFeature,
-				Details: streamWarningCompatibilityDetails,
-			})
-		case provider.WarnDeprecated:
-			mapped = append(mapped, streamWarning{
-				Type:    warning.Type,
-				Setting: streamWarningDeprecatedSetting,
-				Message: streamWarningDeprecatedMessage,
-			})
-		case provider.WarnOther:
-			mapped = append(mapped, streamWarning{
-				Type:    warning.Type,
-				Message: streamWarningOtherMessage,
-			})
-		default:
-			return nil, errInvalidStreamWarning
-		}
-	}
-	return mapped, nil
-}
-
-var errInvalidStreamWarning = errors.New("providerwire v4: invalid stream warning")
-
 type streamOutcome struct {
 	result *provider.StreamResult
 	err    error
@@ -285,7 +222,7 @@ func newStreamPartCounter(limit int) *streamPartCounter {
 func (c *streamPartCounter) take() bool     { return c.count.Add(1) <= c.limit }
 func (c *streamPartCounter) exceeded() bool { return c.count.Load() > c.limit }
 
-func (h *handler) serveStream(w http.ResponseWriter, requestContext context.Context, model provider.LanguageModel, options provider.CallOptions, modelID string) {
+func (h *handler) serveStream(w http.ResponseWriter, requestContext context.Context, model provider.LanguageModel, options provider.CallOptions, modelID string, errorFormat catalog.ProviderErrorFormat) {
 	if err := requestContext.Err(); err != nil {
 		h.writeSafeError(w, safeErrorFromProvider(err))
 		return
@@ -320,7 +257,7 @@ func (h *handler) serveStream(w http.ResponseWriter, requestContext context.Cont
 			h.startStreamDrain(outcome.result.Stream, counter)
 		}
 		if !isNilInterface(outcome.err) {
-			h.writeSafeError(w, safeErrorFromProvider(outcome.err))
+			h.writeProviderError(w, outcome.err, errorFormat)
 		} else {
 			h.writeSafeError(w, safeError{category: safeInternal})
 		}
@@ -336,7 +273,7 @@ func (h *handler) serveStream(w http.ResponseWriter, requestContext context.Cont
 	if !commitStreamResponse(w) {
 		return
 	}
-	h.runStream(w, requestContext, modelContext, cancel, outcome.result.Stream, counter, idleTimer, modelID)
+	h.runStream(w, requestContext, modelContext, cancel, outcome.result.Stream, counter, idleTimer, modelID, errorFormat)
 }
 
 func callStream(ctx context.Context, model provider.LanguageModel, options provider.CallOptions) (outcome streamOutcome) {
@@ -435,6 +372,7 @@ const (
 )
 
 type streamState struct {
+	errorFormat      catalog.ProviderErrorFormat
 	metadataSeen     bool
 	textStarted      bool
 	activeID         string
@@ -442,7 +380,6 @@ type streamState struct {
 	tools            map[string]toolStreamState
 	reasoningIDs     map[string]struct{}
 	usedReasoningIDs map[string]struct{}
-	sources          sourceIDs
 }
 
 func newStreamState(limit int) *streamState {
@@ -450,10 +387,10 @@ func newStreamState(limit int) *streamState {
 	if capacity > 64 {
 		capacity = 64
 	}
-	return &streamState{usedIDs: make(map[string]struct{}, capacity), tools: make(map[string]toolStreamState, capacity), reasoningIDs: make(map[string]struct{}, capacity), usedReasoningIDs: make(map[string]struct{}, capacity), sources: make(sourceIDs)}
+	return &streamState{usedIDs: make(map[string]struct{}, capacity), tools: make(map[string]toolStreamState, capacity), reasoningIDs: make(map[string]struct{}, capacity), usedReasoningIDs: make(map[string]struct{}, capacity)}
 }
 
-func (h *handler) runStream(w http.ResponseWriter, requestContext, modelContext context.Context, cancel context.CancelFunc, stream <-chan provider.StreamPart, counter *streamPartCounter, idleTimer *time.Timer, modelID string) {
+func (h *handler) runStream(w http.ResponseWriter, requestContext, modelContext context.Context, cancel context.CancelFunc, stream <-chan provider.StreamPart, counter *streamPartCounter, idleTimer *time.Timer, modelID string, errorFormat catalog.ProviderErrorFormat) {
 	part, waitResult := waitStreamPart(requestContext, modelContext, stream, counter, idleTimer.C)
 	if waitResult != streamWaitPart {
 		cancel()
@@ -498,19 +435,22 @@ func (h *handler) runStream(w http.ResponseWriter, requestContext, modelContext 
 			return
 		}
 		state := newStreamState(h.limits.StreamParts)
-		result := h.processStreamPart(w, state, part, modelID)
+		state.errorFormat = errorFormat
+		result := h.processStreamPart(w, state, part)
 		if h.handleStreamPartResult(w, cancel, result) {
 			return
 		}
 		idleTimer.Reset(h.limits.StreamIdleDuration)
-		h.consumeStreamParts(w, requestContext, modelContext, cancel, stream, counter, idleTimer, modelID, state)
+		h.consumeStreamParts(w, requestContext, modelContext, cancel, stream, counter, idleTimer, state)
 		return
 	}
 
-	h.consumeStreamParts(w, requestContext, modelContext, cancel, stream, counter, idleTimer, modelID, newStreamState(h.limits.StreamParts))
+	state := newStreamState(h.limits.StreamParts)
+	state.errorFormat = errorFormat
+	h.consumeStreamParts(w, requestContext, modelContext, cancel, stream, counter, idleTimer, state)
 }
 
-func (h *handler) consumeStreamParts(w http.ResponseWriter, requestContext, modelContext context.Context, cancel context.CancelFunc, stream <-chan provider.StreamPart, counter *streamPartCounter, idleTimer *time.Timer, modelID string, state *streamState) {
+func (h *handler) consumeStreamParts(w http.ResponseWriter, requestContext, modelContext context.Context, cancel context.CancelFunc, stream <-chan provider.StreamPart, counter *streamPartCounter, idleTimer *time.Timer, state *streamState) {
 	for {
 		part, waitResult := waitStreamPart(requestContext, modelContext, stream, counter, idleTimer.C)
 		if waitResult != streamWaitPart {
@@ -518,7 +458,7 @@ func (h *handler) consumeStreamParts(w http.ResponseWriter, requestContext, mode
 			h.writeStreamTerminalForWait(w, waitResult)
 			return
 		}
-		result := h.processStreamPart(w, state, part, modelID)
+		result := h.processStreamPart(w, state, part)
 		if h.handleStreamPartResult(w, cancel, result) {
 			return
 		}
@@ -592,7 +532,7 @@ func validStreamTimestamp(value time.Time) bool {
 	return year >= 0 && year <= 9999
 }
 
-func (h *handler) processStreamPart(w http.ResponseWriter, state *streamState, part provider.StreamPart, modelID string) streamPartResult {
+func (h *handler) processStreamPart(w http.ResponseWriter, state *streamState, part provider.StreamPart) streamPartResult {
 	switch part.Type {
 	case provider.PartReasoningStart, provider.PartReasoningDelta, provider.PartReasoningEnd, provider.PartReasoningFile:
 		return h.processReasoningPart(w, state, part)
@@ -600,7 +540,7 @@ func (h *handler) processStreamPart(w http.ResponseWriter, state *streamState, p
 		if part.Source == nil {
 			return streamPartAdapterFailure
 		}
-		source, err := mapSource(*part.Source, state.sources, h.limits.StreamFrameBytes-int64(len("data: \n\n")))
+		source, err := mapSource(*part.Source, h.limits.StreamFrameBytes-int64(len("data: \n\n")))
 		if err != nil {
 			return streamPartAdapterFailure
 		}
@@ -618,7 +558,7 @@ func (h *handler) processStreamPart(w http.ResponseWriter, state *streamState, p
 		if state.metadataSeen || state.textStarted || !utf8.ValidString(part.ResponseID) || !validStreamTimestamp(part.Timestamp) {
 			return streamPartAdapterFailure
 		}
-		event := streamEvent{typeName: provider.PartResponseMeta, id: part.ResponseID, modelID: modelID, timestamp: part.Timestamp}
+		event := streamEvent{typeName: provider.PartResponseMeta, id: part.ResponseID, modelID: part.ModelID, timestamp: part.Timestamp}
 		if result := h.emitStreamEvent(w, event); result != streamWriteSuccess {
 			if result == streamWriteEncodingFailure {
 				return streamPartAdapterFailure
@@ -668,7 +608,7 @@ func (h *handler) processStreamPart(w http.ResponseWriter, state *streamState, p
 		state.activeID = ""
 		return streamPartContinue
 	case provider.PartError:
-		if result := h.emitSafeStreamError(w, safeErrorFromStreamProvider(part.APICallError)); result != streamWriteSuccess {
+		if result := h.emitProviderStreamError(w, part.APICallError, state.errorFormat); result != streamWriteSuccess {
 			if result == streamWriteEncodingFailure {
 				return streamPartAdapterFailure
 			}

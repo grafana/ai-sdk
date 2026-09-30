@@ -44,11 +44,12 @@ WP9 SHALL define and own the private physical record type, bounded sink/queue, n
 - **THEN** the Gateway SHALL drop that private telemetry event without changing candidate selection, extending request latency, or creating one goroutine per event
 
 ### Requirement: Public topology confidentiality
-Discovery, public model resolution errors, ProviderWire JSON/SSE, HTTP access logs, WP8 logical logs/metrics/Agent Observability, and client-visible metadata SHALL expose only the requested identity where required and canonical public identity where authoritative. They SHALL NOT expose candidate count/order, provider-instance names, backend model IDs, raw provider failures, or whether fallback occurred.
+Discovery, public resolution errors, access logs and WP8 logical logs/metrics/Agent Observability SHALL retain public route identity and exclude backend configuration. Successful ProviderWire JSON/SSE SHALL preserve registered actual response identity, warnings and source display without canonical substitution. Neither surface SHALL add candidate count/order, provider-instance names, endpoints, credentials or fallback-selection flags. Exhausted aggregates SHALL remain fixed-safe; no branch's diagnostics SHALL gain authority from a different branch.
 
 #### Scenario: Primary and secondary produce equivalent success
 - **WHEN** otherwise equivalent calls are served by different physical candidates
-- **THEN** their public identity and protocol shape SHALL remain indistinguishable except for provider-independent generated content, usage, timing, and finish behavior
+- **THEN** generated content, registered warnings, source display and actual response identity MAY reflect their native outputs
+- **AND** discovery/logical observation SHALL retain the same public route identity without added topology or selection flags
 
 #### Scenario: Fallback chain is exhausted
 - **WHEN** every candidate fails before commitment
@@ -101,7 +102,7 @@ Enabling function tools on direct routes in WP11 or WP12 SHALL NOT enable them o
 - **THEN** it SHALL fail before any physical candidate executes rather than selecting a fallback or silently removing those options
 
 ### Requirement: Empty message options retain text fallback eligibility
-Otherwise eligible text requests SHALL remain eligible for fallback when ordinary message-level provider-option namespaces retained by the selected-backend policy contain only empty JSON objects. The guard SHALL assess semantic emptiness rather than namespace-map length, without removing or mutating the options it receives. A retained namespace with any member, including null, false, zero, empty strings, arrays, or nested objects, SHALL count as active and remain rejected. Namespaces removed by the backend policy do not make text fallback ineligible; invalid options and reserved host namespaces SHALL fail before that policy runs. File content, effectful history, tools, and all other existing route restrictions SHALL remain enforced.
+Otherwise eligible text requests SHALL remain eligible for fallback when ordinary message-level provider-option namespaces retained by the selected-backend policy contain only empty JSON objects. The guard SHALL assess semantic emptiness rather than namespace-map length, without removing or mutating the options it receives. A retained namespace with any member, including null, false, zero, empty strings, arrays, or nested objects, SHALL count as active and remain rejected. Active options consumed by any heterogeneous candidate without supported common routing SHALL fail before invocation instead of being silently stripped. Only namespaces all candidates ignore MAY be removed without blocking text fallback; invalid options and reserved host namespaces SHALL fail before that policy runs. File content, effectful history, tools, and all other existing route restrictions SHALL remain enforced.
 
 #### Scenario: Authenticated text failover preserves empty namespaces
 - **WHEN** an authenticated unary or streaming text request carries message options `{"anthropic":{}}` for an Anthropic fallback route and the primary fails under existing retry rules before commitment
@@ -149,7 +150,7 @@ Every canonical public ID and alias SHALL be 1-128 ASCII bytes and SHALL match `
 - **AND** logs and errors SHALL NOT contain any environment-variable value
 
 ### Requirement: Immutable direct-Anthropic construction
-The service SHALL construct each configured provider/backend candidate once with the hardened HTTP client and build one immutable static catalog once at startup. Direct provider construction SHALL use the `anthropic-provider-construction` contract so ambient Anthropic SDK environment defaults cannot alter the service-owned endpoint, credential, auth mechanism, profile/federation behavior, or headers. A route with no fallback entries SHALL use its direct primary model; a route with fallback entries SHALL compose those already constructed candidates in declared order through the Apache fallback primitive and one private attempt hook. Repeated resolution of a canonical ID or alias SHALL return the same final composed model instance and canonical catalog identity. ProviderWire streaming metadata SHALL use canonical public identity when that stream part is emitted; minimal unary output SHALL not add response metadata that registered clients replace.
+The service SHALL construct each configured provider/backend candidate once with the hardened HTTP client and build one immutable static catalog once at startup. Direct provider construction SHALL use the `anthropic-provider-construction` contract so ambient Anthropic SDK environment defaults cannot alter the service-owned endpoint, credential, auth mechanism, profile/federation behavior, or headers. A route with no fallback entries SHALL use its direct primary model; a route with fallback entries SHALL compose those already constructed candidates in declared order through the Apache fallback primitive and one private attempt hook. Repeated resolution of a canonical ID or alias SHALL return the same final composed model instance and canonical catalog identity. Registered actual response identity SHALL survive without canonical substitution. Typed unary identity SHALL remain replaced by pinned client transport, with native values available in bounded raw response body. Zero/unreviewed/fallback diagnostic policy SHALL remain fixed-safe.
 
 #### Scenario: Alias and canonical ID share a composed model
 - **WHEN** a canonical ID and one of its aliases are resolved repeatedly for a fallback route
@@ -166,16 +167,16 @@ The service SHALL construct each configured provider/backend candidate once with
 - **AND** discovery, public logs, logical metrics, logical Agent Observability, and public errors SHALL NOT expose it
 
 ### Requirement: Authenticated direct-Anthropic text execution
-An authenticated registered Gateway client SHALL complete the strict runtime's supported unary and streaming text requests through either a configured direct Anthropic route or its ordered Anthropic fallback candidates. The service SHALL preserve the existing ProviderWire validation/mapping order after authentication, forward supported mapped scalar and text options unchanged to every attempted candidate, normalize successful output to canonical public identity, and preserve bounded safe unary and SSE behavior. Fallback SHALL occur only before unary success or the first provider stream part; all public behavior after selection SHALL remain the existing strict adapter behavior.
+An authenticated registered Gateway client SHALL complete the strict runtime's supported unary and streaming text requests through either a configured direct Anthropic route or its ordered Anthropic fallback candidates. The service SHALL preserve the existing ProviderWire validation/mapping order after authentication, forward supported mapped scalar and text options unchanged to every attempted candidate, preserve registered native response identity while observing canonical public route identity, and preserve bounded safe unary and SSE behavior. Fallback SHALL occur only before unary success or the first provider stream part; all public behavior after selection SHALL remain the existing strict adapter behavior.
 
 #### Scenario: Direct unary alias call remains valid
 - **WHEN** an authenticated client invokes an alias for a direct-only route with a supported text request
-- **THEN** the configured primary SHALL receive the mapped request exactly once and the minimal unary result SHALL expose no backend identity or redundant response metadata
+- **THEN** the configured primary SHALL receive the mapped request exactly once and registered native unary response identity SHALL survive only in the bounded raw body after typed client overwrite
 
 #### Scenario: Unary alias call reaches a fallback candidate
 - **WHEN** an authenticated client invokes an alias, the primary returns an eligible pre-commit error, and the secondary succeeds
 - **THEN** each candidate SHALL receive the same mapped supported request in configured order exactly once
-- **AND** the minimal unary result SHALL expose no backend identity, candidate count, or redundant response metadata
+- **AND** registered actual response identity SHALL survive without added candidate count or topology
 
 #### Scenario: Streaming premature EOF reaches next candidate
 - **WHEN** an authenticated streaming call's primary channel closes before any provider part and the secondary produces a valid text stream

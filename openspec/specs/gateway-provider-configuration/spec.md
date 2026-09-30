@@ -1,9 +1,17 @@
 # gateway-provider-configuration Specification
 
 ## Purpose
-Define how the authenticated Gateway command configures named provider instances that back public models, keeping explicit configuration authoritative, outbound model traffic bounded, and backend identity private.
+Define how the authenticated Gateway command configures named provider instances that back public models, keeping explicit configuration authoritative, outbound model traffic bounded and backend configuration private while preserving registered caller-visible identity and diagnostics.
 
 ## Requirements
+
+### Requirement: Anthropic caller request-policy foundation
+Command construction SHALL permit registered consumed caller options on ordinary assistant function-call history in direct Anthropic routes. Attribution SHALL NOT authorize providerExecuted/MCP/credential/role/union/effectful fallback behavior. Both registered clients SHALL prove supplied-history forwarding in unary and streaming native requests independently of future response metadata transport.
+
+#### Scenario: Caller attribution reaches native requests
+- **WHEN** either client supplies direct or supported code_execution caller history through an authenticated direct route
+- **THEN** native tool_use.caller SHALL preserve registered consumed semantics and tool_id conversion
+- **AND** forbidden execution or protected overrides SHALL be refused before provider invocation
 
 ### Requirement: OpenAI Responses provider configuration
 The Gateway command model configuration SHALL accept `providers.<name>` instances with `type: openai`. Each instance SHALL require a non-empty `apiKeyEnv` and SHALL accept an optional `baseURL`. When `baseURL` is empty, OpenAI Responses models SHALL use `https://api.openai.com/v1`. A non-empty `baseURL` SHALL pass the same credential-free endpoint validation as other provider endpoints, including HTTPS in production deployment mode. Configuration SHALL remain strict YAML, and every failure SHALL occur during startup before readiness.
@@ -32,7 +40,7 @@ Each public model backed by an `openai` provider SHALL be constructed once throu
 - **AND** the client SHALL receive a fixed safe error
 
 ### Requirement: OpenAI Responses backend identity stays private
-Discovery responses, public error responses, access logs and metrics SHALL NOT contain an OpenAI provider's instance key, `baseURL`, API key, `apiKeyEnv` name or backend model ID. Discovery SHALL keep publishing provider `grafana` with only public model IDs, names, descriptions and aliases.
+Discovery, access logs and logical metrics SHALL retain public route identity and exclude OpenAI backend configuration. Caller responses SHALL preserve supplied registered native identity and reviewed minimal direct-provider diagnostics through gateway-caller-response-policy. Private instance names, endpoints, credentials, environment-variable names and invented topology SHALL not be serialized from configuration or native transport. Discovery SHALL keep publishing provider `grafana` with only public model IDs, names, descriptions and aliases.
 
 #### Scenario: Discovery lists OpenAI models
 - **WHEN** an authenticated client requests `/api/v1/aisdk/config`
@@ -96,7 +104,7 @@ When a client cancels an established stream from a compatible public model, the 
 - **AND** `/ready` SHALL continue to succeed
 
 ### Requirement: Compatible backend identity stays private
-Discovery responses, public error responses, access logs and metrics SHALL NOT contain a compatible provider's instance key, `providerName`, `baseURL`, API key, `apiKeyEnv` name, backend model ID, or backend error body. Discovery SHALL keep publishing provider `grafana` with only public model IDs, names, descriptions and aliases.
+Discovery, access logs and logical metrics SHALL retain public route identity and exclude compatible backend configuration. Registered actual response identity and reviewed structured direct-provider diagnostics MAY survive on caller surfaces; unknown compatible schemas SHALL remain fixed-safe. Instance names, providerName, endpoints, credentials, environment-variable names, native body/cause dumps and invented topology SHALL not be serialized. Discovery SHALL keep publishing provider `grafana` with only public model IDs, names, descriptions and aliases.
 
 #### Scenario: Discovery lists compatible models
 - **WHEN** an authenticated client requests `/api/v1/aisdk/config`
@@ -104,5 +112,6 @@ Discovery responses, public error responses, access logs and metrics SHALL NOT c
 - **AND** SHALL NOT contain any private compatible provider configuration
 
 #### Scenario: Backend failure carries a secret
-- **WHEN** a compatible backend returns `502` with a secret marker in its error body
-- **THEN** the client error, access logs and metrics SHALL NOT contain the marker or any private provider configuration
+- **WHEN** a compatible backend's structured error includes a contracted message and secret markers in unreviewed fields or native transport
+- **THEN** the client SHALL preserve only bounded reviewed diagnostics and exclude those protected sources
+- **AND** access logs and metrics SHALL contain no diagnostic prose or protected markers

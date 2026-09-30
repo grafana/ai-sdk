@@ -18,6 +18,15 @@ import (
 
 const unaryFixture = `{"content":[{"type":"text","text":"hello"},{"type":"text","text":""}],"finishReason":{"unified":"stop","raw":"end_turn"},"usage":{"inputTokens":{"total":2,"noCache":2,"cacheRead":0,"cacheWrite":0},"outputTokens":{"total":1,"text":1,"reasoning":0}}}`
 
+func TestDecodeGenerate_EmptyWarnings(t *testing.T) {
+	for _, field := range []string{"", `,"warnings":null`, `,"warnings":[]`} {
+		result, err := decodeGenerate([]byte(strings.TrimSuffix(unaryFixture, "}") + field + "}"))
+		require.NoError(t, err)
+		require.NotNil(t, result.Warnings)
+		assert.Empty(t, result.Warnings)
+	}
+}
+
 func TestDecodeGenerate_FunctionCalls(t *testing.T) {
 	for _, input := range []string{"", "{}", "{\"city\":\"Rio\"}"} {
 		encoded, err := json.Marshal(input)

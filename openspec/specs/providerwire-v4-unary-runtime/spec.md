@@ -136,12 +136,21 @@ These refusals SHALL use fixed documents that never echo the offending namespace
 
 After resolution, the handler SHALL forward only the provider options the resolved backend reads, at call, message, content-part, function-tool and nested tool-result file-entry level, as described by the resolved model's `catalog.ProviderOptionPolicy`. A namespace outside the policy's namespaces SHALL NOT reach the model, and SHALL NOT fail the request, because an option for another backend is one every provider ignores. Where the policy lists fields for a namespace, other top-level fields SHALL be removed, compared after folding case and removing `_` and `-`; a namespace with nothing removed SHALL keep its bytes exactly. The zero-value policy SHALL forward no provider options.
 
-The command SHALL set a policy for every provider type it constructs, and a model whose fallback candidates resolve to different policies SHALL forward no caller provider options, because no single policy is safe for every attempt. For `anthropic`, the policy SHALL forward the `anthropic` namespace restricted to the fields `providers/anthropic` reads, excluding the fields the runtime refuses, and a test SHALL fail when the provider's typed option structs gain a field that is neither forwarded nor refused. For `openai`, the policy SHALL forward the `openai` namespace and its `azure` parity fallback, restricted to the fields `providers/openai` reads at call and part level. For `openai-compatible`, the policy SHALL forward the namespaces the provider reads for its configured provider name, without restricting fields, and a test SHALL check those namespaces against the provider itself.
+The command SHALL set a reviewed policy for every provider type it constructs. A model with heterogeneous candidate policies SHALL retain their consumed namespace/field union for pre-invocation refusal: active consumed options without supported common routing SHALL fail explicitly rather than silently disappear. Namespaces all candidates ignore MAY still be omitted; supported semantically empty message namespaces SHALL remain eligible. Generic zero policy SHALL remain an explicit unreviewed capability boundary. Supported consumed omissions SHALL be corrected or explicitly handed off with scope/reason/owner, not presumed ignored. For `anthropic`, the policy SHALL forward the `anthropic` namespace restricted to the fields `providers/anthropic` reads, excluding the fields the runtime refuses, and a test SHALL fail when the provider's typed option structs gain a field that is neither forwarded nor refused. For `openai`, the policy SHALL forward the `openai` namespace and its `azure` parity fallback, restricted to the fields `providers/openai` reads at call and part level. For `openai-compatible`, the policy SHALL forward the namespaces the provider reads for its configured provider name, without restricting fields, and a test SHALL check those namespaces against the provider itself.
 
 #### Scenario: Options for another backend
 - **WHEN** a request to an openai-compatible model carries `anthropic` and `openai` provider options alongside its own namespace
 - **THEN** the model SHALL receive only its own namespace, byte for byte
 - **AND** the response SHALL succeed
+
+#### Scenario: Anthropic caller history
+- **WHEN** either client supplies ordinary assistant function-call history with supported direct or code-execution Anthropic caller attribution
+- **THEN** the native request SHALL preserve caller and tool_id without enabling provider execution, MCP, credential or role overrides
+- **AND** supplied-history evidence SHALL establish request forwarding only, not response-derived continuation
+
+#### Scenario: Consumed heterogeneous fallback option
+- **WHEN** an active option consumed by a candidate has no supported common routing
+- **THEN** no candidate SHALL run and the fixed nonretryable unsupported response SHALL result
 
 #### Scenario: Unclassified Anthropic field
 - **WHEN** a request to an Anthropic model carries an `anthropic` field the policy does not list
@@ -173,11 +182,12 @@ For a supported request, the handler SHALL resolve the exact requested model ID 
 
 ### Requirement: Fixed privacy-safe errors
 
-Every runtime error response SHALL be selected from precomputed documents with fixed status, message, type, code, and `param: null`. Invalid request, model-not-found, rate-limit, overload, failed-dependency, upstream, timeout, cancellation, and internal categories SHALL use Gateway-recognized error types and status-derived retryability. Unknown or invalid internal categories SHALL fall back to the fixed internal-error document. Provider, transport, resolver, panic, body, URL, header, credential, backend identity, and metadata details SHALL never be serialized.
+Host/internal/resolver/panic/protocol/transport-only failures SHALL retain precomputed fixed documents with `param: null`. Trusted configured direct structured provider failures SHALL use gateway-caller-response-policy's bounded minimal diagnostics and native status/retry mapping through the existing path. Unsupported/unreviewed/ambiguous sources SHALL retain safe diagnostics and explicit gaps. Whole bodies, headers, URLs, requests and causes SHALL not be serialized. Native reviewed details SHALL use existing param/cause/body access without a public error API change.
 
 #### Scenario: Provider API failure
-- **WHEN** `DoGenerate` returns an API, transport, timeout, cancellation, or arbitrary internal error
-- **THEN** the handler SHALL reduce it to the corresponding fixed safe document without serializing the cause
+- **WHEN** `DoGenerate` returns reviewed structured evidence on a trusted configured direct route
+- **THEN** the handler SHALL preserve only bounded contracted diagnostics
+- **AND** unreviewed, transport, timeout, cancellation or arbitrary internal errors SHALL retain the fixed-safe path without serializing their causes
 
 #### Scenario: Unknown model
 - **WHEN** catalog resolution reports an unknown public model
@@ -189,18 +199,25 @@ Every runtime error response SHALL be selected from precomputed documents with f
 
 ### Requirement: Minimal unary success response
 
-A successful response SHALL contain only ordered supported text, function-tool-call,
-source, reasoning and reasoning-file content, finishReason and usage. The handler SHALL
+A successful response SHALL contain ordered supported text, function-tool-call,
+source, reasoning and reasoning-file content, finishReason, usage, warnings and
+supplied registered response identity. The handler SHALL
 accept only registered finish reasons and non-negative usage counts no greater
 than JavaScript's maximum safe integer. Reasoning content metadata SHALL use
 the closed, bounded continuation projection in gateway-reasoning-content. Source
 metadata SHALL use the closed public projection defined by gateway-sources.
-Provider warnings, request data, response IDs, timestamps, model IDs, provider
-identity, headers, bodies and other provider metadata SHALL be omitted.
+Warnings SHALL preserve registered union values/order with required empty strings,
+optional-empty Go normalization, 4096-byte string limits and aggregate/complete-output
+bounds. Supplied response id, actual modelId and timestamp SHALL survive without
+canonical substitution. Native request data, provider identity, headers, bodies
+and other provider metadata SHALL remain omitted. Current source/reasoning metadata
+codecs SHALL remain unchanged; #280 owns native metadata transport and actual-output
+continuation.
 `usage.raw` SHALL be omitted when provider `Usage.Raw` is absent and SHALL
 contain the provider JSON object unchanged in meaning when present, valid and
-bounded. The registered Gateway client owns unary `warnings`, `request`, and
-`response`; raw response-body details outside this contract are not guaranteed.
+bounded. Both pinned clients preserve server warnings but replace typed unary request and
+response with Gateway transport. Native unary response identity SHALL remain available
+in the bounded raw response body, not fabricated in typed fields.
 Required empty reasoning text and selected empty inline file data SHALL be
 retained. Invalid output SHALL fail safely before HTTP 200.
 
@@ -211,7 +228,7 @@ retained. Invalid output SHALL fail safely before HTTP 200.
 
 #### Scenario: Valid text result
 - **WHEN** the model returns text, a registered finish reason, and valid usage
-- **THEN** the handler SHALL preserve those values and emit no other top-level members
+- **THEN** the handler SHALL preserve those values, non-null warnings and supplied registered response identity only
 
 #### Scenario: Unsupported provider result
 - **WHEN** the model returns content outside the supported text/function-tool-call/source/reasoning/reasoning-file subset, an unknown finish reason, invalid usage, `nil, nil`, or panics
@@ -219,9 +236,9 @@ retained. Invalid output SHALL fail safely before HTTP 200.
 
 #### Scenario: Provider-private fields
 - **WHEN** the model result contains warnings, response metadata, backend identity, or provider metadata
-- **THEN** none of those values SHALL appear outside the explicitly allowed
-  reasoning continuation projection, normalized public source metadata and
-  provider `usage.raw` object in the unary response document
+- **THEN** valid warnings and registered actual response identity SHALL survive
+- **AND** other values SHALL remain limited to current reasoning continuation,
+  numeric source citation and provider `usage.raw` projections without new metadata placements
 
 #### Scenario: Provider raw usage is present or absent
 - **WHEN** provider usage contains a valid in-limit object including provider-native nested values, an empty object, or no Raw bytes
@@ -233,7 +250,7 @@ retained. Invalid output SHALL fail safely before HTTP 200.
 
 ### Requirement: Bounded preflight and standard success encoding
 
-Before encoding, the handler SHALL reject content cardinality or aggregate content, raw-finish string bytes, and raw-usage input bytes that cannot fit the configured unary budget using overflow-safe accounting. It SHALL count raw-usage bytes before parsing or marshaling and reject raw usage longer than 1,048,576 bytes or the configured unary response limit, including whitespace. It SHALL then validate that any present raw is a single JSON object with valid UTF-8 on original bytes. Standard JSON encoding SHALL preserve valid JSON escape sequences, including lone and paired UTF-16 surrogate escapes, in the raw object. Validation SHALL occur only after the size preflight so it remains bounded. The complete minimal private DTO SHALL then be encoded with standard Go JSON, rejected when the final bytes exceed the configured limit, and committed only after successful encoding and the final size check. Provider-domain JSON marshalers SHALL NOT control the response. Standard encoding MAY allocate a bounded constant multiple of the configured limit for worst-case escaping.
+Before encoding, the handler SHALL reject content cardinality or aggregate content, warning/identity bytes, raw-finish string bytes, and raw-usage input bytes that cannot fit the configured unary budget using overflow-safe accounting. It SHALL count raw-usage bytes before parsing or marshaling and reject raw usage longer than 1,048,576 bytes or the configured unary response limit, including whitespace. It SHALL then validate that any present raw is a single JSON object with valid UTF-8 on original bytes. Standard JSON encoding SHALL preserve valid JSON escape sequences, including lone and paired UTF-16 surrogate escapes, in the raw object. Validation SHALL occur only after the size preflight so it remains bounded. The complete minimal private DTO SHALL then be encoded with standard Go JSON, rejected when the final bytes exceed the configured limit, and committed only after successful encoding and the final size check. Provider-domain JSON marshalers SHALL NOT control the response. Standard encoding MAY allocate a bounded constant multiple of the configured limit for worst-case escaping.
 
 #### Scenario: Preflight rejects oversized provider values
 - **WHEN** content count or aggregate raw string bytes (including supplied raw usage) exceed the unary budget, or raw usage exceeds 1,048,576 bytes
@@ -263,7 +280,7 @@ The runtime SHALL replay every committed ProviderWire request golden without mod
 
 #### Scenario: Registered client success
 - **WHEN** the pinned Gateway client sends a supported unary request
-- **THEN** it SHALL consume content, finish reason, and usage from the production handler and supply its own warnings/request/response fields
+- **THEN** it SHALL consume content, finish reason, usage and server-before-client warnings, replacing typed request/response while retaining native identity in bounded raw body
 
 #### Scenario: Streaming request
 - **WHEN** the registered client sends a supported streaming text request

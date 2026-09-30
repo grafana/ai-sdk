@@ -25,6 +25,13 @@ Unary mapping SHALL support function names, object schemas, examples, optional d
 ### Requirement: Unary function history and selected results
 The mapper SHALL support assistant tool calls and tool-role results with text, json, error-text, error-json or text/file content output. It SHALL preserve required empty text, empty content arrays, selected JSON null, and file-data selection and filename presence as defined by gateway-file-inputs. Registered file-content provider options SHALL be supported at the file-entry scope. It SHALL reject inactive fields and leave approvals, execution-denied, provider-executed behavior, custom content, and non-empty output-level or non-file nested result options unsupported.
 
+Direct Anthropic routes SHALL preserve registered consumed caller options on ordinary assistant function-call parts, including direct and both code_execution variants with required toolId. Native conversion SHALL own consumed/ignored caller semantics; attribution SHALL NOT enable provider-executed history, MCP or credential/role/union overrides. Both registered clients SHALL prove unary and streaming forwarding from supplied history into native requests independently of response metadata continuation.
+
+#### Scenario: Supplied caller history
+- **WHEN** either registered client supplies supported ordinary assistant function-call history with Anthropic caller attribution
+- **THEN** the native request SHALL preserve caller and tool_id semantics without a prior response or server execution
+- **AND** malformed/unknown caller forms SHALL follow registered native consumed/ignored behavior while execution and credential guards remain enforced
+
 #### Scenario: Empty selected result
 - **WHEN** continuation includes a text result with empty value or a JSON result with null
 - **THEN** the selected result arm and value SHALL reach the provider without omission or substitution

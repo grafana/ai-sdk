@@ -286,6 +286,24 @@ func TestProviderOptionPolicy_FieldAllowlistRemovesOtherFields(t *testing.T) {
 		"an allowed field under another spelling is kept, and an untouched namespace keeps its bytes")
 }
 
+func TestProviderOptionPolicy_CallerWithoutMutation(t *testing.T) {
+	original := provider.CallOptions{Prompt: []provider.Message{{Role: provider.RoleAssistant, Content: []provider.ContentPart{{
+		Type: provider.ContentPartTypeToolCall, ToolCallID: "call", ToolName: "lookup", Input: json.RawMessage(`{}`),
+		ProviderOptions: provider.ProviderOptions{"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(`{"caller":{"type":"code_execution_20260120","toolId":"tool","extra":true},"ignored":true}`)}},
+	}}}}}
+	before, err := json.Marshal(original)
+	require.NoError(t, err)
+	filtered := applyProviderOptionPolicy(original, catalog.ProviderOptionPolicy{Namespaces: []string{"anthropic"}, Fields: map[string][]string{"anthropic": {"caller"}}})
+	option, ok := filtered.Prompt[0].Content[0].ProviderOptions["anthropic"].(provider.RawProviderOption)
+	require.True(t, ok)
+	assert.JSONEq(t, `{"caller":{"type":"code_execution_20260120","toolId":"tool","extra":true}}`, string(option.Raw))
+	filtered.Prompt[0].Content[0].ToolName = "changed"
+	delete(filtered.Prompt[0].Content[0].ProviderOptions, "anthropic")
+	after, err := json.Marshal(original)
+	require.NoError(t, err)
+	assert.Equal(t, before, after)
+}
+
 func TestProviderOptionPolicy_ReasoningContinuation(t *testing.T) {
 	for _, kind := range []string{"reasoning", "reasoning-file"} {
 		t.Run(kind, func(t *testing.T) {

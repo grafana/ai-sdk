@@ -103,15 +103,15 @@ function model(modelID: string) {
 // user-agent to provider call options. That identifies this HTTP client, not a
 // native-provider forwarding request. Move precisely that SDK-owned value to
 // the outer transport; arbitrary call/body headers remain unsupported (WP21).
-function reasoningHostModel() {
+function reasoningHostModel(modelID = "reasoning") {
   const settings = { apiKey: "test", baseURL: `${baseURL}/function-tools`, headers: { "x-access-token": "function-test-token" } };
-  return wrapLanguageModel({ model: createGateway(settings)("reasoning"), middleware: {
+  return wrapLanguageModel({ model: createGateway(settings)(modelID), middleware: {
     specificationVersion: "v4",
     wrapGenerate: async ({ params }) => {
       const { headers, ...options } = params;
       assert.deepEqual(Object.keys(headers ?? {}), ["user-agent"]);
       assert.match(headers!["user-agent"]!, /^ai\/7\.0\.109(?:\s|$)/);
-      return createGateway({ ...settings, headers: { ...settings.headers, "user-agent": headers!["user-agent"]! } })("reasoning").doGenerate(options);
+      return createGateway({ ...settings, headers: { ...settings.headers, "user-agent": headers!["user-agent"]! } })(modelID).doGenerate(options);
     },
   } });
 }
@@ -191,6 +191,16 @@ describe("reasoning continuation through the authenticated real handler", () => 
     assert.deepEqual(result.reasoning[0].providerMetadata, { anthropic: { signature: "end-signature" } });
   });
 
+  it("counts paid output adaptation failures at each client's high-level commitment boundary", async () => {
+    const beforeTS = await stats();
+    await assert.rejects(generateText({ model: reasoningHostModel("invalid-paid-output"), prompt: "paid failure" }));
+    assert.equal((await stats()).successCalls - beforeTS.successCalls, 3, "the SDK retries a precommit 500; the Gateway does not promise exactly once");
+    const beforeGo = await stats();
+    const go = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/providerwire-v4`, accessToken: "token", modelID: "invalid-paid-output", mode: "reasoning-replay", options: { prompt: [{ role: "user", content: [{ type: "text", text: "paid failure" }] }] } });
+    assert.ok(go.error);
+    assert.equal((await stats()).successCalls - beforeGo.successCalls, 1, "Go GenerateText collects a committed stream and does not replay a late adaptation failure");
+  });
+
   it("keeps concurrent reasoning separate, replaces final metadata and replays assembled history", async () => {
     const result = streamText({ model: model("reasoning"), prompt: "think" });
     const response = await result.response;
@@ -214,13 +224,13 @@ describe("reasoning continuation through the authenticated real handler", () => 
 });
 
 describe("sources through the authenticated handler", () => {
-  it("preserves registered URL/document fields and normalizes privacy in both clients", async () => {
+  it("preserves native source identity/display with unchanged metadata in both clients", async () => {
     const client = createGateway({apiKey:"test",baseURL:`${baseURL}/function-tools`,headers:{"x-access-token":"function-test-token"}})("sources");
     const options = {prompt:[]};
     const expected = [
-      {type:"source",sourceType:"url",id:"source-1",url:"https://example.com",title:"URL"},
-      {type:"source",sourceType:"document",id:"source-2",mediaType:"text/plain",title:"",providerMetadata:{citation:{startPageNumber:1,endPageNumber:2}}},
-      {type:"source",sourceType:"document",id:"source-3",mediaType:"application/octet-stream",title:"Document",providerMetadata:{citation:{index:0}}},
+      {type:"source",sourceType:"url",id:"backend-secret",url:"https://example.com",title:"URL"},
+      {type:"source",sourceType:"document",id:"backend-secret",mediaType:"text/plain",title:"",providerMetadata:{citation:{startPageNumber:1,endPageNumber:2}}},
+      {type:"source",sourceType:"document",id:"file-native",mediaType:"application/octet-stream",title:"file-private",filename:"file-private",providerMetadata:{citation:{index:0}}},
     ];
     assert.deepEqual((await client.doGenerate(options)).content, expected);
     assert.deepEqual((await collect((await client.doStream(options)).stream)).filter(p=>p.type==="source"),expected);
@@ -396,7 +406,7 @@ describe("bounded provider raw usage through the real handler", () => {
       const body = await http.json();
       assert.equal(validateUnarySuccess(body), true, JSON.stringify(validateUnarySuccess.errors));
       assert.deepEqual(body.usage.raw, raw);
-      assert.deepEqual(Object.keys(body).sort(), ["content", "finishReason", "usage"]);
+      assert.deepEqual(Object.keys(body).sort(), id === "success" ? ["content", "finishReason", "response", "usage", "warnings"] : ["content", "finishReason", "usage", "warnings"]);
     });
 
     it(`returns ${id} streaming finish raw usage to both clients and validates SSE frames`, async () => {
@@ -468,7 +478,7 @@ describe("real ProviderWire V4 streaming runtime", () => {
     ]);
     assert.deepEqual(parts[0], {
       type: "stream-start",
-      warnings: [{ type: "other", message: "the model reported a warning" }],
+      warnings: [{ type: "other", message: "private warning" }],
     });
     assert.deepEqual(parts.filter((part) => part.type === "text-delta").map((part) => part.delta), [
       "",
@@ -478,9 +488,15 @@ describe("real ProviderWire V4 streaming runtime", () => {
     assert.equal(metadata?.type, "response-metadata");
     if (metadata?.type === "response-metadata") {
       assert.equal(metadata.id, "stream-response-1");
-      assert.equal(metadata.modelId, "success");
+      assert.equal(metadata.modelId, "private-backend");
       assert.equal(metadata.timestamp instanceof Date, true);
     }
+    const go = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/providerwire-v4`, accessToken: "runtime-test-key", modelID: "success", mode: "stream", options: { prompt: [] } });
+    assert.equal(go.error, undefined);
+    assert.deepEqual(go.parts[0].warnings, parts[0].type === "stream-start" ? parts[0].warnings : undefined);
+    assert.equal(go.parts[1].modelId, "private-backend");
+    assert.equal(go.parts[1].id, "stream-response-1");
+    assert.equal(new Date(go.parts[1].timestamp).toISOString(), (metadata?.type === "response-metadata" ? metadata.timestamp : undefined)?.toISOString());
   });
 
   it("preserves ordered provider errors and emits terminal timeout", async () => {
@@ -539,8 +555,12 @@ describe("real ProviderWire V4 unary runtime", () => {
       inputTokens: { total: 2, noCache: 1, cacheRead: 1, cacheWrite: 0 },
       outputTokens: { total: 1, text: 1, reasoning: 0 },
     });
-    assert.deepEqual(result.warnings, []);
+    assert.deepEqual(result.warnings, [{ type: "other", message: "server warning" }]);
+    assert.equal(result.response?.modelId, undefined);
+    assert.equal(result.response?.id, undefined);
     assert.deepEqual(result.response?.body, {
+      warnings: [{ type: "other", message: "server warning" }],
+      response: { id: "private-response", modelId: "private-backend-model" },
       content: [{ type: "text", text: "hello from Go" }],
       finishReason: { unified: "stop", raw: "test-stop" },
       usage: {
@@ -548,6 +568,13 @@ describe("real ProviderWire V4 unary runtime", () => {
         outputTokens: { total: 1, text: 1, reasoning: 0 },
       },
     });
+    assert.equal(validateUnarySuccess(result.response?.body), true, JSON.stringify(validateUnarySuccess.errors));
+    const go = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/providerwire-v4`, accessToken: "runtime-test-key", modelID: "success", mode: "generate", options: { prompt: [] } });
+    assert.equal(go.error, undefined);
+    assert.deepEqual(go.result.warnings, result.warnings);
+    assert.equal(go.result.response.id, undefined);
+    assert.equal(go.result.response.modelId, undefined);
+    assert.deepEqual(go.result.response.body, result.response?.body);
     assert.equal((await stats()).successCalls > 0, true);
   });
 
