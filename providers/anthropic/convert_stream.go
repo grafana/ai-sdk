@@ -53,6 +53,7 @@ type streamAdapter struct {
 	citationDocuments []citationDocument
 	generateID        func() string
 	providerName      string
+	responseHeaders   map[string]string
 }
 
 func blockID(idx int64) string {
@@ -84,11 +85,12 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 		a.safeguardResults = nil
 		usage := convertAnthropicUsage(a.usage)
 		ch <- provider.StreamPart{
-			Type:       provider.PartResponseMeta,
-			ResponseID: msg.ID,
-			ModelID:    string(msg.Model),
-			Provider:   a.providerName,
-			Usage:      &usage,
+			Type:            provider.PartResponseMeta,
+			ResponseID:      msg.ID,
+			ModelID:         string(msg.Model),
+			Provider:        a.providerName,
+			ResponseHeaders: a.responseHeaders,
+			Usage:           &usage,
 		}
 
 		for _, block := range msg.Content {

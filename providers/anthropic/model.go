@@ -2,12 +2,15 @@ package anthropic
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"regexp"
+	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
-	"github.com/anthropics/anthropic-sdk-go/packages/ssestream"
+	"github.com/anthropics/anthropic-sdk-go/packages/param"
 	vertexsdk "github.com/anthropics/anthropic-sdk-go/vertex"
 	"github.com/grafana/ai-sdk/provider"
 )
@@ -104,26 +107,39 @@ func (m *model) DoStream(ctx context.Context, params provider.CallOptions) (*pro
 	}
 
 	citDocs := extractCitationDocuments(params.Prompt)
-	requestOpts := append([]option.RequestOption{}, br.requestOptions...)
-	requestOpts = append(requestOpts, m.requestOpts...)
-	stream := m.client.Beta.Messages.NewStreaming(ctx, p, requestOpts...)
-
-	var firstEvent *anthropic.BetaRawMessageStreamEventUnion
-	if stream.Next() {
-		event := stream.Current()
-		firstEvent = &event
-	} else if err := stream.Err(); err != nil {
-		_ = stream.Close()
+	var requestBody json.RawMessage
+	var response *http.Response
+	requestOpts := m.requestOptions(br, params.Headers)
+	for _, beta := range p.Betas {
+		requestOpts = append(requestOpts, option.WithHeaderAdd("anthropic-beta", string(beta)))
+	}
+	if !param.IsOmitted(p.UserProfileID) {
+		requestOpts = append(requestOpts, option.WithHeader("anthropic-user-profile-id", p.UserProfileID.Value))
+	}
+	if !param.IsOmitted(p.WorkspaceID) {
+		requestOpts = append(requestOpts, option.WithHeader("anthropic-workspace-id", p.WorkspaceID.Value))
+	}
+	requestOpts = append(requestOpts, option.WithMiddleware(captureRequestBody(&requestBody)), option.WithJSONSet("stream", true))
+	streamCtx, cancel := context.WithCancel(ctx)
+	if err := m.client.Post(streamCtx, "v1/messages?beta=true", p, &response, requestOpts...); err != nil {
+		cancel()
 		return nil, wrapInitialStreamError(err, p)
+	}
+	items := pumpMessageStream(streamCtx, response, params.IncludeRawChunks)
+	buffered, err := preflightMessageStream(streamCtx, items, p)
+	if err != nil {
+		cancel()
+		return nil, err
 	}
 
 	ch := make(chan provider.StreamPart, 64)
 	go func() {
 		defer close(ch)
-		consumeStream(stream, firstEvent, ch, mapping, warnings, br.usesJsonResponseTool, citDocs, m.generateID, m.providerName, br.markCodeExecutionDynamic)
+		defer cancel()
+		consumeStream(ctx, items, buffered, ch, mapping, warnings, br.usesJsonResponseTool, citDocs, m.generateID, m.providerName, br.markCodeExecutionDynamic, flattenHeaders(response.Header))
 	}()
 
-	return &provider.StreamResult{Stream: ch}, nil
+	return &provider.StreamResult{Stream: ch, Request: &provider.RequestMetadata{Body: requestBody}, Response: &provider.ResponseHeaders{Headers: flattenHeaders(response.Header)}}, nil
 }
 
 func (m *model) DoGenerate(ctx context.Context, params provider.CallOptions) (*provider.GenerateResult, error) {
@@ -133,8 +149,10 @@ func (m *model) DoGenerate(ctx context.Context, params provider.CallOptions) (*p
 	}
 
 	citDocs := extractCitationDocuments(params.Prompt)
-	requestOpts := append([]option.RequestOption{}, br.requestOptions...)
-	requestOpts = append(requestOpts, m.requestOpts...)
+	var requestBody json.RawMessage
+	var response *http.Response
+	requestOpts := m.requestOptions(br, params.Headers)
+	requestOpts = append(requestOpts, option.WithMiddleware(captureRequestBody(&requestBody)), option.WithResponseInto(&response))
 
 	msg, err := m.client.Beta.Messages.New(ctx, p, requestOpts...)
 	if err != nil {
@@ -146,12 +164,58 @@ func (m *model) DoGenerate(ctx context.Context, params provider.CallOptions) (*p
 		return nil, fmt.Errorf("converting response: %w", err)
 	}
 	result.Warnings = append(result.Warnings, warnings...)
+	result.Request = &provider.RequestMetadata{Body: requestBody}
+	result.Response.Headers = flattenHeaders(response.Header)
+	result.Response.Body = json.RawMessage(msg.RawJSON())
 	return result, nil
 }
 
-func consumeStream(stream *ssestream.Stream[anthropic.BetaRawMessageStreamEventUnion], firstEvent *anthropic.BetaRawMessageStreamEventUnion, ch chan<- provider.StreamPart, mapping toolNameMapping, warnings []provider.Warning, usesJsonResponseTool bool, citDocs []citationDocument, generateID func() string, providerName string, markCodeExecutionDynamic bool) {
-	defer func() { _ = stream.Close() }()
+func (m *model) requestOptions(br buildResult, headers map[string]string) []option.RequestOption {
+	opts := append([]option.RequestOption(nil), br.requestOptions...)
+	opts = append(opts, m.requestOpts...)
+	for key, value := range headers {
+		if strings.EqualFold(key, "anthropic-beta") {
+			opts = append(opts, option.WithHeaderAdd(key, value))
+		} else {
+			opts = append(opts, option.WithHeader(key, value))
+		}
+	}
+	return append(opts, option.WithMiddleware(normalizeBetaHeaders))
+}
 
+func consumeStream(ctx context.Context, items <-chan messageStreamItem, buffered []messageStreamItem, ch chan<- provider.StreamPart, mapping toolNameMapping, warnings []provider.Warning, usesJsonResponseTool bool, citDocs []citationDocument, generateID func() string, providerName string, markCodeExecutionDynamic bool, responseHeaders map[string]string) {
+	parts := make(chan provider.StreamPart, 64)
+	go func() {
+		defer close(parts)
+		consumeStreamParts(ctx, items, buffered, parts, mapping, warnings, usesJsonResponseTool, citDocs, generateID, providerName, markCodeExecutionDynamic, responseHeaders)
+	}()
+	for {
+		select {
+		case <-ctx.Done():
+			drainProviderStreamParts(parts)
+			return
+		case part, ok := <-parts:
+			if !ok {
+				return
+			}
+			select {
+			case ch <- part:
+			case <-ctx.Done():
+				drainProviderStreamParts(parts)
+				return
+			}
+		}
+	}
+}
+
+func drainProviderStreamParts(parts <-chan provider.StreamPart) {
+	go func() {
+		for range parts {
+		}
+	}()
+}
+
+func consumeStreamParts(ctx context.Context, items <-chan messageStreamItem, buffered []messageStreamItem, ch chan<- provider.StreamPart, mapping toolNameMapping, warnings []provider.Warning, usesJsonResponseTool bool, citDocs []citationDocument, generateID func() string, providerName string, markCodeExecutionDynamic bool, responseHeaders map[string]string) {
 	ch <- provider.StreamPart{Type: provider.PartStreamStart, Warnings: warnings}
 
 	adapter := &streamAdapter{
@@ -164,10 +228,21 @@ func consumeStream(stream *ssestream.Stream[anthropic.BetaRawMessageStreamEventU
 		citationDocuments:        citDocs,
 		generateID:               generateID,
 		providerName:             providerName,
+		responseHeaders:          responseHeaders,
 	}
 
-	handleEvent := func(event anthropic.BetaRawMessageStreamEventUnion) bool {
-		if err := adapter.handleEvent(event, ch); err != nil {
+	handle := func(item messageStreamItem) bool {
+		if item.hasRaw {
+			ch <- provider.StreamPart{Type: provider.PartRaw, RawValue: item.rawValue}
+		}
+		if item.err != nil {
+			ch <- provider.StreamPart{Type: provider.PartError, APICallError: wrapAsAPICallError(item.err, "", nil)}
+			return false
+		}
+		if item.event == nil {
+			return true
+		}
+		if err := adapter.handleEvent(*item.event, ch); err != nil {
 			ch <- provider.StreamPart{
 				Type: provider.PartError,
 				APICallError: provider.NewAPICallError(provider.APICallErrorOptions{
@@ -180,19 +255,19 @@ func consumeStream(stream *ssestream.Stream[anthropic.BetaRawMessageStreamEventU
 		return true
 	}
 
-	if firstEvent != nil && !handleEvent(*firstEvent) {
-		return
-	}
-	for stream.Next() {
-		if !handleEvent(stream.Current()) {
+	for _, item := range buffered {
+		if !handle(item) {
 			return
 		}
 	}
-
-	if err := stream.Err(); err != nil {
-		ch <- provider.StreamPart{
-			Type:         provider.PartError,
-			APICallError: wrapAsAPICallError(err, "", nil),
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case item, ok := <-items:
+			if !ok || !handle(item) {
+				return
+			}
 		}
 	}
 }

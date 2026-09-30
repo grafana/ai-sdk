@@ -33,6 +33,7 @@ func TestParallelToolCall_StreamTextRoundTrip(t *testing.T) {
 				}
 				bodies <- body
 				w.Header().Set("Content-Type", "text/event-stream")
+				w.Header().Set("X-Transport-Step", fmt.Sprint(requests.Load()+1))
 				var events []string
 				if requests.Add(1) == 1 {
 					events = []string{
@@ -49,6 +50,7 @@ func TestParallelToolCall_StreamTextRoundTrip(t *testing.T) {
 						`{"type":"response.completed","response":{"id":"resp_2","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}}`,
 					}
 				}
+				events = append([]string{fmt.Sprintf(`{"type":"response.created","response":{"id":"resp_%d","model":"gpt-5.4","created_at":1700000000}}`, requests.Load())}, events...)
 				if requests.Load() == 1 {
 					if failure == "malformed before calls" {
 						events = append([]string{`not JSON`}, events...)
@@ -111,8 +113,17 @@ func TestParallelToolCall_StreamTextRoundTrip(t *testing.T) {
 			assert.Equal(t, map[string]int{"weather": 1, "cityAttractions": 1}, executions)
 			mu.Unlock()
 			require.Len(t, bodies, 2)
-			<-bodies
+			first := <-bodies
 			second := <-bodies
+			steps := result.Steps()
+			require.Len(t, steps, 2)
+			for i, body := range []map[string]any{first, second} {
+				wire, err := json.Marshal(body)
+				require.NoError(t, err)
+				assert.JSONEq(t, string(wire), string(steps[i].Request.Body))
+				assert.Equal(t, fmt.Sprint(i+1), steps[i].Response.Headers["X-Transport-Step"])
+			}
+			assert.Equal(t, "2", result.Response().Headers["X-Transport-Step"])
 			assert.Equal(t, "conv_1", second["conversation"])
 			assert.Equal(t, []any{
 				map[string]any{"role": "user", "content": []any{map[string]any{"type": "input_text", "text": "weather"}}},
