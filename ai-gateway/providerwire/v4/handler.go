@@ -193,12 +193,12 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	options = applyProviderOptionPolicy(options, resolved.ProviderOptions)
 	if validated.mode == executionStreaming {
-		h.serveStream(w, r.Context(), resolved.Model, options, resolved.ID, resolved.ProviderErrors)
+		h.serveStream(w, r.Context(), resolved.Model, options, resolved.ID, resolved.ErrorSchema)
 		return
 	}
 	result, err := h.invokeModel(r.Context(), resolved.Model, options)
 	if err != nil {
-		h.writeProviderError(w, err, resolved.ProviderErrors)
+		h.writeProviderError(w, err, resolved.ErrorSchema)
 		return
 	}
 	if result == nil || !h.writeUnarySuccess(w, result) {

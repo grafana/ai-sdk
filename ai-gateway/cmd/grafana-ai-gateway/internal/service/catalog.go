@@ -104,13 +104,13 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 			policies = append(policies, policy)
 		}
 		lower := candidates[0]
-		var errorFormat catalog.ProviderErrorFormat
+		var errorSchema catalog.ProviderErrorSchema
 		if len(candidates) == 1 {
 			switch providers[configured.Primary.Provider].Type {
 			case "anthropic":
-				errorFormat = catalog.ProviderErrorAnthropic
+				errorSchema = catalog.AnthropicErrorSchema
 			case "openai", "openai-compatible":
-				errorFormat = catalog.ProviderErrorOpenAI
+				errorSchema = catalog.OpenAIErrorSchema
 			}
 		}
 		if len(candidates) > 1 {
@@ -141,7 +141,7 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 			},
 			Model:           model,
 			ProviderOptions: sharedOptionPolicy(policies),
-			ProviderErrors:  errorFormat,
+			ErrorSchema:     errorSchema,
 		})
 	}
 	return catalog.NewStatic(entries)

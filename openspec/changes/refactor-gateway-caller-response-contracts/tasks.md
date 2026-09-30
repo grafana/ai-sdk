@@ -46,9 +46,15 @@
 
 ## 7. Foundation validation and handoff completion
 
-Validation uses candidate go.work/go.gateway.work source, per nara's clarification; published dependencies are not a completion gate. Implementation and delivered normative updates remain local. Nara authorized pushing the foundation and creating a draft PR for review. Follow-up issue registration and any additional PR splitting in 1.4 remain pending. The change is not archived.
+Validation uses candidate go.work/go.gateway.work source, per nara's clarification; published dependencies are not a completion gate. Implementation and delivered normative updates are on draft PR #309. Nara authorized pushing the foundation and creating a draft PR for review. Follow-up issue registration and any additional PR splitting in 1.4 remain pending. The change is not archived.
 
 - [x] 7.1 Install dependencies with mise deps only for build/tests. Run current validate-parity-baseline, parity-check, direct test-conformance, test-providerwire-v4, test-ai-gateway-command and test-ai-gateway-source-integration; affected server/client module tests and schema-parsed test-integration where applicable. No #280 response roundtrip or undelivered #201 harness gate.
 - [x] 7.2 Run applicable required test/build/vet/lint/fmt-check/lint-docs/test-ci-workflow/verify-gateway-workspace and Gateway image gates from CONTRIBUTING. Use candidate source through go.work/go.gateway.work as the owner-approved validation boundary. Published dependencies/adoption are not gates for this change; leave module pins untouched.
 - [x] 7.3 Update PARITY.md only for achieved stable evidence/support boundaries and central docs without godoc duplication. Verify authentic inputs/direct expectations unchanged, strict OpenSpec validation and only implemented normative sync/archival.
 - [x] 7.4 Map completed foundation acceptance and outstanding original refactor acceptance to handoffs.md. Hand #280 the caller prerequisite/target contract, #238/#239/#240 their readiness/runtime/MCP boundaries, #201 full authentic replay, and the separately registered Gateway diagnostic follow-up its concrete gaps. Report registration not yet performed where this PLAN lacks GH mutation authority; never claim full original acceptance from foundation completion.
+
+## 8. PR review follow-up
+
+- [x] 8.1 Move this PR's new observability and caller-response/diagnostic tests into the existing model-observability, response, runtime and stream test files without removing coverage.
+- [x] 8.2 Name the trusted policy as an error JSON schema, separate eligibility/decoding/public mapping, remove mode-dependent projection state, and reuse the existing stream frame encoder. Preserve exact key selection, bounds, auth sanitation and stream ownership.
+- [x] 8.3 Run candidate workspace, interop/parity, race, lint/build checks; commit and push the review changes to #309.

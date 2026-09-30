@@ -36,6 +36,16 @@ The restriction inventory now separates real-handler policy forwarding for every
 
 `mise run fmt-check` passed after local implementation commit `81702b20`. The command requires committed changes because it compares the whole worktree with HEAD. Nara subsequently authorized pushing this foundation and creating a draft PR. Task 1.4's follow-up issue registration and any additional PR splitting remain pending, not implementation blockers.
 
+## PR review follow-up
+
+The caller-response observability, warning/identity and diagnostic regressions now live in the existing model-observability, response, runtime and stream test files. Their three standalone files were removed; original coverage remains, with the former projection ownership test updated for the separated mapper.
+
+The trusted catalog field is now ErrorSchema with ProviderErrorSchema constants. OpenAIErrorSchema describes the shared JSON error envelope, not provider identity; the registered OpenAI and OpenAI-compatible upstream schemas have the same default fields. Eligibility, native field decoding and public error mapping are separate. HTTP and SSE add their own transport fields; no mode-dependent projection or private status field remains. SSE diagnostics use the existing bounded frame encoder and writer.
+
+Exact case-sensitive field selection remains deliberate: normal Go struct unmarshaling would accept additional key casing. Regressions cover casing, last duplicate value, inactive Anthropic fields, typed-nil/wrapped/context/aggregate error eligibility and exact/escaped diagnostic frame bounds. This is a behavior-preserving refactor, not a new diagnostic schema or metadata capability.
+
+Reran candidate workspace test/build/vet/lint, Gateway handler/service/catalog race tests, authenticated source interop, parity and frontend integration, and the actual image-source build/run test. All passed. OpenSpec/formatting checks are repeated with the review commit.
+
 ## Not claimed
 
 Published dependencies are not a gate: nara explicitly selected candidate go.work/go.gateway.work source. No pins or releases were changed. No #280 metadata transport/actual-output continuation, #238/#239 provider-tool readiness/runtime, #240 MCP activation or #201 full authentic matrix is claimed. Gateway diagnostic and additional producer follow-up candidates are not registered; their issue creation was not requested. This foundation is authorized for a draft PR; any additional PR splitting remains pending. The change is not archived and full original refactor acceptance remains open in handoffs.md.

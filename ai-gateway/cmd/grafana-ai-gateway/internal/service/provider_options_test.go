@@ -135,11 +135,11 @@ func TestBuildCatalog_SetsTheProviderOptionPolicyOfEachBackend(t *testing.T) {
 		resolved, err := created.ResolveModel(context.Background(), id)
 		require.NoError(t, err)
 		assert.Equal(t, want, resolved.ProviderOptions, id)
-		expectedFormat := catalog.ProviderErrorOpenAI
+		expectedSchema := catalog.OpenAIErrorSchema
 		if id == "claude" {
-			expectedFormat = catalog.ProviderErrorAnthropic
+			expectedSchema = catalog.AnthropicErrorSchema
 		}
-		assert.Equal(t, expectedFormat, resolved.ProviderErrors)
+		assert.Equal(t, expectedSchema, resolved.ErrorSchema)
 	}
 }
 
@@ -171,7 +171,7 @@ func TestBuildCatalog_MixedProviderFallbackRefusesConsumedOptions(t *testing.T) 
 	assert.Equal(t, []string{"anthropic", "openai-compatible", "openaiCompatible", "ollama"}, mixed.ProviderOptions.Namespaces)
 	assert.Equal(t, anthropicOptionPolicy.Fields["anthropic"], mixed.ProviderOptions.Fields["anthropic"])
 	assert.NotContains(t, mixed.ProviderOptions.Fields, "ollama")
-	assert.Empty(t, mixed.ProviderErrors)
+	assert.Empty(t, mixed.ErrorSchema)
 	handler, err := providerv4.New(providerv4.Config{Resolver: created, Limits: serviceTestLimits()})
 	require.NoError(t, err)
 	for _, tc := range []struct {

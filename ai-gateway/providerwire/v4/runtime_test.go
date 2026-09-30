@@ -13,12 +13,14 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
 	"github.com/grafana/ai-sdk/provider"
+	"github.com/grafana/ai-sdk/schema"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -800,6 +802,186 @@ type testAddr string
 
 func (a testAddr) Network() string { return "tcp" }
 func (a testAddr) String() string  { return string(a) }
+
+func TestProviderDiagnostics_DirectRoute(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		schema   catalog.ProviderErrorSchema
+		raw      string
+		status   int
+		typeName string
+		param    string
+	}{
+		{name: "openai request", schema: catalog.OpenAIErrorSchema, status: 422, raw: `{"message":"fix this input","type":"invalid_request_error","code":42,"param":"temperature","unknown":"excluded"}`, typeName: "invalid_request_error", param: `{"type":"invalid_request_error","code":42,"param":"temperature"}`},
+		{name: "anthropic conflict", schema: catalog.AnthropicErrorSchema, status: 409, raw: `{"type":"error","error":{"type":"api_error","message":"fix this input"},"request_id":"excluded"}`, typeName: "failed_dependency", param: `{"type":"api_error"}`},
+		{name: "compatible limit", schema: catalog.OpenAIErrorSchema, status: 429, raw: `{"error":{"message":"fix this input","type":"rate_limit_error","code":null,"param":null}}`, typeName: "rate_limit_exceeded", param: `{"type":"rate_limit_error","code":null,"param":null}`},
+		{name: "openai server", schema: catalog.OpenAIErrorSchema, status: 529, raw: `{"message":"fix this input","type":"server_error","code":"overloaded"}`, typeName: "internal_server_error", param: `{"type":"server_error","code":"overloaded"}`},
+		{name: "exact keys", schema: catalog.OpenAIErrorSchema, status: 400, raw: `{"message":"fix this input","Message":"excluded","Type":"excluded","CODE":"excluded","Param":"excluded","Error":{"message":"excluded"}}`, typeName: "invalid_request_error", param: `{}`},
+		{name: "last duplicate", schema: catalog.OpenAIErrorSchema, status: 400, raw: `{"message":42,"message":"fix this input","type":false,"type":"api_error"}`, typeName: "invalid_request_error", param: `{"type":"api_error"}`},
+		{name: "anthropic inactive fields", schema: catalog.AnthropicErrorSchema, status: 400, raw: `{"error":{"type":"api_error","message":"fix this input","code":true,"param":{"unknown":"excluded"}}}`, typeName: "invalid_request_error", param: `{"type":"api_error"}`},
+	} {
+		for _, streaming := range []bool{false, true} {
+			t.Run(tc.name+map[bool]string{false: "/unary", true: "/stream"}[streaming], func(t *testing.T) {
+				harness := newRuntimeHarness(t, testLimits())
+				harness.resolver.resolved.ErrorSchema = tc.schema
+				original := provider.NewAPICallError(provider.APICallErrorOptions{Message: "excluded sdk dump", StatusCode: tc.status, Data: json.RawMessage(tc.raw), URL: "https://excluded.invalid", ResponseHeaders: map[string][]string{"Authorization": {"excluded"}}})
+				wrapped := errors.Join(original, errors.New("excluded cause"))
+				harness.model.generate = func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) { return nil, original }
+				harness.model.stream = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+					return &provider.StreamResult{Stream: makeStream(provider.StreamPart{Type: provider.PartError, APICallError: original}, finishPart())}, nil
+				}
+				request := validRequest(`{"prompt":[]}`)
+				if streaming {
+					request = streamRequest(`{"prompt":[]}`)
+				}
+				response := harness.serve(request)
+				var payload []byte
+				if streaming {
+					require.Equal(t, http.StatusOK, response.Code)
+					requireStreamBodyMatchesSchema(t, response.Body.String())
+					frames := strings.Split(strings.TrimSpace(response.Body.String()), "\n\n")
+					payload = []byte(strings.TrimPrefix(frames[1], "data: "))
+					assert.Contains(t, response.Body.String(), `"type":"finish"`)
+				} else {
+					require.Equal(t, tc.status, response.Code, response.Body.String())
+					compiled, err := schema.CompileSchema(errorSchemaJSON)
+					require.NoError(t, err)
+					require.NoError(t, compiled.Validate(response.Body.Bytes()))
+					payload = response.Body.Bytes()
+				}
+				var value struct {
+					Error struct {
+						Message    string
+						Type       string
+						Param      json.RawMessage
+						StatusCode int
+						Retryable  bool
+					}
+				}
+				require.NoError(t, json.Unmarshal(payload, &value))
+				assert.Equal(t, "fix this input", value.Error.Message)
+				assert.Equal(t, tc.typeName, value.Error.Type)
+				assert.JSONEq(t, tc.param, string(value.Error.Param))
+				if streaming {
+					assert.Equal(t, original.StatusCode, value.Error.StatusCode)
+					assert.Equal(t, original.IsRetryable, value.Error.Retryable)
+				}
+				assert.NotContains(t, response.Body.String(), "excluded")
+				assert.Equal(t, "excluded sdk dump", original.Message)
+				var api *provider.APICallError
+				require.ErrorAs(t, wrapped, &api)
+				assert.Same(t, original, api)
+			})
+		}
+	}
+}
+
+func TestProviderDiagnostics_TrustedErrors(t *testing.T) {
+	original := provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 400})
+	var typedNil *provider.APICallError
+	for _, tc := range []struct {
+		name string
+		err  error
+		want *provider.APICallError
+	}{
+		{name: "direct", err: original, want: original},
+		{name: "wrapped", err: fmt.Errorf("context: %w", original), want: original},
+		{name: "nil"},
+		{name: "typed nil", err: typedNil},
+		{name: "aggregate", err: errors.Join(original)},
+		{name: "canceled", err: provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 400, Cause: context.Canceled})},
+		{name: "deadline", err: provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 400, Cause: context.DeadlineExceeded})},
+		{name: "unsupported", err: provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 400, Cause: catalog.ErrUnsupportedRequest})},
+		{name: "transport status", err: provider.NewAPICallError(provider.APICallErrorOptions{})},
+		{name: "invalid status", err: provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 600})},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Same(t, tc.want, trustedProviderAPIError(tc.err, catalog.OpenAIErrorSchema))
+		})
+	}
+}
+
+func TestProviderDiagnostics_BoundsAndOwnership(t *testing.T) {
+	original := provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 409, ResponseBody: `{"error":{"message":"native diagnostic","type":"api_error","code":null,"param":"input"}}`, Message: "excluded dump"})
+	before, err := json.Marshal(original)
+	require.NoError(t, err)
+	api := trustedProviderAPIError(original, catalog.OpenAIErrorSchema)
+	require.Same(t, original, api)
+	body, ok := mapProviderError(api, catalog.OpenAIErrorSchema)
+	require.True(t, ok)
+	assert.JSONEq(t, `{"type":"api_error","code":null,"param":"input"}`, string(body.Param))
+	assert.Nil(t, trustedProviderAPIError(errors.Join(original, errors.New("different source")), catalog.OpenAIErrorSchema))
+	after, err := json.Marshal(original)
+	require.NoError(t, err)
+	assert.Equal(t, before, after)
+	for _, raw := range []string{
+		`{"message":"native","type":"` + strings.Repeat("x", 257) + `"}`,
+		`{"message":"native","code":"` + strings.Repeat("x", 257) + `"}`,
+		`{"message":"native","code":true}`,
+		`{"message":"native","param":{"unknown":"excluded"}}`,
+		`{"message":"native","param":"` + strings.Repeat("x", 4097) + `"}`,
+		string([]byte{'{', '"', 'm', 'e', 's', 's', 'a', 'g', 'e', '"', ':', '"', 255, '"', '}'}),
+	} {
+		_, ok = mapProviderError(provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 400, Data: json.RawMessage(raw)}), catalog.OpenAIErrorSchema)
+		assert.False(t, ok)
+	}
+	for _, streaming := range []bool{false, true} {
+		limits := testLimits()
+		limits.UnaryResponseBytes, limits.StreamFrameBytes = 512, 512
+		harness := newRuntimeHarness(t, limits)
+		harness.resolver.resolved.ErrorSchema = catalog.OpenAIErrorSchema
+		api := provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 400, Data: json.RawMessage(`{"message":"` + strings.Repeat("<", 100) + `","type":"native"}`)})
+		harness.model.generate = func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) { return nil, api }
+		harness.model.stream = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+			return &provider.StreamResult{Stream: makeStream(provider.StreamPart{Type: provider.PartError, APICallError: api}, finishPart())}, nil
+		}
+		request := validRequest(`{"prompt":[]}`)
+		if streaming {
+			request = streamRequest(`{"prompt":[]}`)
+		}
+		response := harness.serve(request)
+		assert.NotContains(t, response.Body.String(), `\\u003c`)
+		assert.Contains(t, response.Body.String(), "failed dependency")
+		if streaming {
+			assert.Contains(t, response.Body.String(), `"type":"finish"`)
+		}
+	}
+}
+
+func TestProviderDiagnostics_SafeSources(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		schema catalog.ProviderErrorSchema
+		raw    string
+		status int
+	}{
+		{name: "unconfigured", raw: `{"message":"excluded","type":"api_error"}`, status: 400},
+		{name: "unknown schema", schema: "unknown", raw: `{"message":"excluded"}`, status: 400},
+		{name: "invalid json", schema: catalog.OpenAIErrorSchema, raw: `{`, status: 400},
+		{name: "oversize", schema: catalog.OpenAIErrorSchema, raw: strings.Repeat(" ", 16385), status: 400},
+		{name: "oversize message", schema: catalog.OpenAIErrorSchema, raw: `{"message":"` + strings.Repeat("x", 4097) + `"}`, status: 400},
+		{name: "nonfinite code", schema: catalog.OpenAIErrorSchema, raw: `{"message":"excluded","code":1e400}`, status: 400},
+		{name: "auth", schema: catalog.OpenAIErrorSchema, raw: `{"message":"excluded key","type":"authentication_error","param":"excluded key","code":"excluded key"}`, status: 401},
+		{name: "uppercase message", schema: catalog.OpenAIErrorSchema, raw: `{"Message":"excluded"}`, status: 400},
+		{name: "uppercase envelope", schema: catalog.OpenAIErrorSchema, raw: `{"Error":{"message":"excluded"}}`, status: 400},
+		{name: "null envelope", schema: catalog.OpenAIErrorSchema, raw: `{"error":null,"message":"excluded"}`, status: 400},
+		{name: "stream-only status", schema: catalog.OpenAIErrorSchema, raw: `{"message":"excluded"}`, status: 200},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			harness := newRuntimeHarness(t, testLimits())
+			harness.resolver.resolved.ErrorSchema = tc.schema
+			harness.model.generate = func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
+				return nil, provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: tc.status, Message: "excluded dump", Data: json.RawMessage(tc.raw)})
+			}
+			response := harness.serve(validRequest(`{"prompt":[]}`))
+			assert.NotContains(t, response.Body.String(), "excluded")
+			if tc.name == "auth" {
+				assert.Equal(t, http.StatusUnauthorized, response.Code)
+				assert.Contains(t, response.Body.String(), "provider account authorization failed")
+			}
+		})
+	}
+}
 
 func TestSafeErrorReduction(t *testing.T) {
 	t.Run("fixed documents", func(t *testing.T) {

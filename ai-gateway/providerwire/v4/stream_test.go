@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/ai-sdk/ai-gateway/catalog"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/grafana/ai-sdk/schema"
 	"github.com/stretchr/testify/assert"
@@ -110,6 +111,26 @@ func TestStreamFrameEncoding(t *testing.T) {
 				assert.LessOrEqual(t, len(got), int(tc.limit))
 			})
 		}
+	})
+
+	t.Run("provider diagnostics use complete frame bounds", func(t *testing.T) {
+		event := streamEvent{typeName: provider.PartError, providerError: &streamProviderError{
+			providerErrorBody: providerErrorBody{Message: "native failure", Type: diagnosticInternal, Param: json.RawMessage(`{}`), Code: "upstream_error"},
+			StatusCode:        http.StatusOK,
+			Retryable:         false,
+		}}
+		frame, ok := encodeStreamFrame(event, 1<<20)
+		require.True(t, ok)
+		assert.JSONEq(t, `{"type":"error","error":{"message":"native failure","type":"internal_server_error","param":{},"code":"upstream_error","statusCode":200,"retryable":false}}`, strings.TrimSuffix(strings.TrimPrefix(string(frame), "data: "), "\n\n"))
+		_, ok = encodeStreamFrame(event, int64(len(frame)))
+		assert.True(t, ok)
+		_, ok = encodeStreamFrame(event, int64(len(frame)-1))
+		assert.False(t, ok)
+		event.providerError.Message = strings.Repeat("<", maxProviderMessageBytes)
+		_, ok = encodeStreamFrame(event, 1<<20)
+		assert.False(t, ok, "the diagnostic cap also bounds escaped output under a larger frame limit")
+		_, ok = encodeStreamFrame(streamEvent{typeName: provider.PartError}, 1<<20)
+		assert.False(t, ok)
 	})
 
 	t.Run("invalid utf8 and unsupported event fail before output", func(t *testing.T) {
@@ -458,6 +479,60 @@ func TestStreamingRuntimePartLimitAndTerminalAuthority(t *testing.T) {
 		assert.Equal(t, 1, strings.Count(response.Body.String(), `"code":"internal_error"`))
 		assert.NotContains(t, response.Body.String(), "id-4")
 	})
+}
+
+func TestProviderDiagnostics_StreamOwnershipAndWriterFailure(t *testing.T) {
+	t.Run("result plus error remains precommit", func(t *testing.T) {
+		harness := newRuntimeHarness(t, testLimits())
+		harness.resolver.resolved.ErrorSchema = catalog.OpenAIErrorSchema
+		api := provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 409, Data: json.RawMessage(`{"message":"native conflict","code":null}`)})
+		parts := make(chan provider.StreamPart, 1)
+		parts <- provider.StreamPart{Type: provider.PartRaw}
+		close(parts)
+		var modelContext context.Context
+		harness.model.stream = func(ctx context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+			modelContext = ctx
+			return &provider.StreamResult{Stream: parts}, api
+		}
+		response := harness.serve(streamRequest(`{"prompt":[]}`))
+		assert.Equal(t, 409, response.Code)
+		assert.Contains(t, response.Body.String(), "native conflict")
+		assert.NotContains(t, response.Body.String(), "data: ")
+		require.ErrorIs(t, modelContext.Err(), context.Canceled)
+		require.Eventually(t, func() bool { return len(parts) == 0 }, time.Second, time.Millisecond)
+		generate, streaming := harness.model.invocationCounts()
+		assert.Zero(t, generate)
+		assert.Equal(t, 1, streaming)
+		assert.Equal(t, 409, api.StatusCode)
+	})
+	for _, failure := range []string{"write", "flush"} {
+		t.Run(failure, func(t *testing.T) {
+			harness := newRuntimeHarness(t, testLimits())
+			harness.resolver.resolved.ErrorSchema = catalog.OpenAIErrorSchema
+			var modelContext context.Context
+			api := provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 500, Data: json.RawMessage(`{"message":"native failure","type":"server_error"}`)})
+			harness.model.stream = func(ctx context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+				modelContext = ctx
+				return &provider.StreamResult{Stream: makeStream(provider.StreamPart{Type: provider.PartError, APICallError: api}, finishPart())}, nil
+			}
+			writer := &responseWriterProbe{}
+			if failure == "write" {
+				writer.onWrite = func() {
+					if writer.writes == 2 {
+						writer.writeErr = errors.New("writer failed")
+					}
+				}
+			} else {
+				writer.flushErrors = []error{nil, nil, errors.New("flush failed")}
+			}
+			harness.handler.ServeHTTP(writer, streamRequest(`{"prompt":[]}`))
+			require.ErrorIs(t, modelContext.Err(), context.Canceled)
+			assert.Equal(t, 2, writer.writes)
+			assert.NotContains(t, writer.body.String(), `"type":"finish"`)
+			_, streaming := harness.model.invocationCounts()
+			assert.Equal(t, 1, streaming)
+		})
+	}
 }
 
 func TestStreamingRuntimeProviderErrorsAndFinishValidation(t *testing.T) {

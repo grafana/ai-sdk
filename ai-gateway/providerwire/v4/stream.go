@@ -43,6 +43,7 @@ type streamEvent struct {
 	mediaType         string
 	fileData          *provider.StreamFileData
 	source            any
+	providerError     *streamProviderError
 }
 
 type streamStartEvent struct {
@@ -68,6 +69,12 @@ type streamFinishEvent struct {
 	Type         provider.StreamPartType `json:"type"`
 	Usage        unaryUsage              `json:"usage"`
 	FinishReason unaryFinishReason       `json:"finishReason"`
+}
+
+type streamProviderError struct {
+	providerErrorBody
+	StatusCode int  `json:"statusCode"`
+	Retryable  bool `json:"retryable"`
 }
 
 func encodeStreamFrame(value streamEvent, limit int64) ([]byte, bool) {
@@ -122,6 +129,12 @@ func encodeStreamFrame(value streamEvent, limit int64) ([]byte, bool) {
 		payload, err = json.Marshal(streamToolCallEvent{Type: value.typeName, ToolCallID: value.id, ToolName: value.toolName, Input: value.input})
 	case provider.PartToolResult:
 		payload, err = json.Marshal(streamToolResultEvent{Type: value.typeName, ToolCallID: value.id, ToolName: value.toolName, Result: value.result, IsError: value.isError})
+	case provider.PartError:
+		limit = min(limit, int64(maxProviderErrorBytes))
+		payload, err = json.Marshal(struct {
+			Type  provider.StreamPartType `json:"type"`
+			Error *streamProviderError    `json:"error"`
+		}{value.typeName, value.providerError})
 	case provider.PartFinish:
 		payload, err = json.Marshal(streamFinishEvent{
 			Type:         value.typeName,
@@ -198,6 +211,8 @@ func streamEventPreflight(value streamEvent, limit int64) bool {
 		return check(value.id, value.toolName, value.input)
 	case provider.PartToolResult:
 		return check(value.id, value.toolName, string(value.result))
+	case provider.PartError:
+		return value.providerError != nil && check(value.providerError.Message, string(value.providerError.Type), value.providerError.Code, string(value.providerError.Param))
 	case provider.PartFinish:
 		return check(string(value.finishReason.Unified), value.finishReason.Raw) && validRawUsage(value.rawUsage, remaining)
 	default:
@@ -222,7 +237,7 @@ func newStreamPartCounter(limit int) *streamPartCounter {
 func (c *streamPartCounter) take() bool     { return c.count.Add(1) <= c.limit }
 func (c *streamPartCounter) exceeded() bool { return c.count.Load() > c.limit }
 
-func (h *handler) serveStream(w http.ResponseWriter, requestContext context.Context, model provider.LanguageModel, options provider.CallOptions, modelID string, errorFormat catalog.ProviderErrorFormat) {
+func (h *handler) serveStream(w http.ResponseWriter, requestContext context.Context, model provider.LanguageModel, options provider.CallOptions, modelID string, errorSchema catalog.ProviderErrorSchema) {
 	if err := requestContext.Err(); err != nil {
 		h.writeSafeError(w, safeErrorFromProvider(err))
 		return
@@ -257,7 +272,7 @@ func (h *handler) serveStream(w http.ResponseWriter, requestContext context.Cont
 			h.startStreamDrain(outcome.result.Stream, counter)
 		}
 		if !isNilInterface(outcome.err) {
-			h.writeProviderError(w, outcome.err, errorFormat)
+			h.writeProviderError(w, outcome.err, errorSchema)
 		} else {
 			h.writeSafeError(w, safeError{category: safeInternal})
 		}
@@ -273,7 +288,7 @@ func (h *handler) serveStream(w http.ResponseWriter, requestContext context.Cont
 	if !commitStreamResponse(w) {
 		return
 	}
-	h.runStream(w, requestContext, modelContext, cancel, outcome.result.Stream, counter, idleTimer, modelID, errorFormat)
+	h.runStream(w, requestContext, modelContext, cancel, outcome.result.Stream, counter, idleTimer, modelID, errorSchema)
 }
 
 func callStream(ctx context.Context, model provider.LanguageModel, options provider.CallOptions) (outcome streamOutcome) {
@@ -372,7 +387,7 @@ const (
 )
 
 type streamState struct {
-	errorFormat      catalog.ProviderErrorFormat
+	errorSchema      catalog.ProviderErrorSchema
 	metadataSeen     bool
 	textStarted      bool
 	activeID         string
@@ -390,7 +405,7 @@ func newStreamState(limit int) *streamState {
 	return &streamState{usedIDs: make(map[string]struct{}, capacity), tools: make(map[string]toolStreamState, capacity), reasoningIDs: make(map[string]struct{}, capacity), usedReasoningIDs: make(map[string]struct{}, capacity)}
 }
 
-func (h *handler) runStream(w http.ResponseWriter, requestContext, modelContext context.Context, cancel context.CancelFunc, stream <-chan provider.StreamPart, counter *streamPartCounter, idleTimer *time.Timer, modelID string, errorFormat catalog.ProviderErrorFormat) {
+func (h *handler) runStream(w http.ResponseWriter, requestContext, modelContext context.Context, cancel context.CancelFunc, stream <-chan provider.StreamPart, counter *streamPartCounter, idleTimer *time.Timer, modelID string, errorSchema catalog.ProviderErrorSchema) {
 	part, waitResult := waitStreamPart(requestContext, modelContext, stream, counter, idleTimer.C)
 	if waitResult != streamWaitPart {
 		cancel()
@@ -435,7 +450,7 @@ func (h *handler) runStream(w http.ResponseWriter, requestContext, modelContext 
 			return
 		}
 		state := newStreamState(h.limits.StreamParts)
-		state.errorFormat = errorFormat
+		state.errorSchema = errorSchema
 		result := h.processStreamPart(w, state, part)
 		if h.handleStreamPartResult(w, cancel, result) {
 			return
@@ -446,7 +461,7 @@ func (h *handler) runStream(w http.ResponseWriter, requestContext, modelContext 
 	}
 
 	state := newStreamState(h.limits.StreamParts)
-	state.errorFormat = errorFormat
+	state.errorSchema = errorSchema
 	h.consumeStreamParts(w, requestContext, modelContext, cancel, stream, counter, idleTimer, state)
 }
 
@@ -608,7 +623,7 @@ func (h *handler) processStreamPart(w http.ResponseWriter, state *streamState, p
 		state.activeID = ""
 		return streamPartContinue
 	case provider.PartError:
-		if result := h.emitProviderStreamError(w, part.APICallError, state.errorFormat); result != streamWriteSuccess {
+		if result := h.emitProviderStreamError(w, part.APICallError, state.errorSchema); result != streamWriteSuccess {
 			if result == streamWriteEncodingFailure {
 				return streamPartAdapterFailure
 			}
