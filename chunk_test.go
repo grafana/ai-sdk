@@ -9,6 +9,52 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestUIMessageChunk_ToolScalarConstruction(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		chunk UIMessageChunk
+		want  string
+	}{
+		{"input literal", UIMessageChunk{Type: ChunkToolInputAvailable, ToolCallID: "c", ToolName: "lookup", Input: json.RawMessage(`{}`)}, `{"type":"tool-input-available","toolCallId":"c","toolName":"lookup","input":{}}`},
+		{"output literal", UIMessageChunk{Type: ChunkToolOutputAvailable, ToolCallID: "c", Output: json.RawMessage(`null`)}, `{"type":"tool-output-available","toolCallId":"c","output":null}`},
+		{"required empty error", UIMessageChunk{Type: ChunkToolOutputError, ToolCallID: "c"}, `{"type":"tool-output-error","toolCallId":"c","errorText":""}`},
+		{"approval reason omitted", UIMessageChunk{Type: ChunkToolApprovalResponse, ApprovalID: "a"}, `{"type":"tool-approval-response","approvalId":"a","approved":false}`},
+		{"source URL unchanged", UIMessageChunk{Type: ChunkSourceURL, SourceID: "s", URL: "https://example.test"}, `{"type":"source-url","sourceId":"s","url":"https://example.test"}`},
+		{"source document required title", UIMessageChunk{Type: ChunkSourceDocument, SourceID: "s", MediaType: "text/plain"}, `{"type":"source-document","sourceId":"s","mediaType":"text/plain","title":""}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := json.Marshal(tc.chunk)
+			require.NoError(t, err)
+			assert.JSONEq(t, tc.want, string(got))
+			event, err := FormatSSEEvent(tc.chunk)
+			require.NoError(t, err)
+			assert.Equal(t, "data: "+string(got)+"\n\n", string(event))
+		})
+	}
+}
+
+func TestUIMessageChunk_ApprovalResponseMetadataPresence(t *testing.T) {
+	for _, tc := range []struct {
+		name, fields string
+	}{
+		{"absent", ""},
+		{"empty", `,"providerMetadata":{}`},
+		{"populated", `,"providerMetadata":{"test":{"phase":"decision"}}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			raw := `{"type":"tool-approval-response","approvalId":"a","approved":true` + tc.fields + `}`
+			var chunk UIMessageChunk
+			require.NoError(t, json.Unmarshal([]byte(raw), &chunk))
+			encoded, err := json.Marshal(chunk)
+			require.NoError(t, err)
+			assert.JSONEq(t, raw, string(encoded))
+			event, err := FormatSSEEvent(chunk)
+			require.NoError(t, err)
+			assert.Equal(t, "data: "+string(encoded)+"\n\n", string(event))
+		})
+	}
+}
+
 func TestReasoningChunkMetadataPresence(t *testing.T) {
 	for _, kind := range []ChunkType{ChunkReasoningStart, ChunkReasoningDelta, ChunkReasoningEnd, ChunkReasoningFile} {
 		for _, meta := range []provider.ProviderMetadata{nil, {}} {
