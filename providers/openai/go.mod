@@ -3,7 +3,7 @@ module github.com/grafana/ai-sdk/providers/openai
 go 1.26.3
 
 require (
-	github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260921202550-3dff0f7087dc
+	github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260928202004-dd43c6dff058
 	github.com/openai/openai-go/v3 v3.66.0
 	github.com/stretchr/testify v1.12.1
 )

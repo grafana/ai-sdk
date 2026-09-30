@@ -110,7 +110,7 @@ function reasoningHostModel() {
     wrapGenerate: async ({ params }) => {
       const { headers, ...options } = params;
       assert.deepEqual(Object.keys(headers ?? {}), ["user-agent"]);
-      assert.match(headers!["user-agent"]!, /^ai\/7\.0\.109(?:\s|$)/);
+      assert.match(headers!["user-agent"]!, /^ai\/7\.0\.116(?:\s|$)/);
       return createGateway({ ...settings, headers: { ...settings.headers, "user-agent": headers!["user-agent"]! } })("reasoning").doGenerate(options);
     },
   } });

@@ -1,7 +1,7 @@
 github.com/coder/websocket v1.8.15 h1:6B2JPeOGlpff2Uz6vOEH1Vzpi0iUz20A+lPVhPHtNUA=
 github.com/coder/websocket v1.8.15/go.mod h1:NX3SzP+inril6yawo5CQXx8+fk145lPDC6pumgx0mVg=
-github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260921202550-3dff0f7087dc h1:E+QVAoXrKK2VqBgkN0Dyv2sAS+oQPt1r6Qa8AOzQHUQ=
-github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260921202550-3dff0f7087dc/go.mod h1:dq9czuEHdMxenlmMFrR9bfrdhBitZltt6VtZPfr2vsE=
+github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260928202004-dd43c6dff058 h1:XNnu1NBOkL3iZamN5yctjNWCnrk36g9jsomTrYRVV5I=
+github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260928202004-dd43c6dff058/go.mod h1:lZ5jHMgw468oEci9F4bPrQLMZp3a11AyBtTLzv92MP8=
 github.com/openai/openai-go/v3 v3.66.0 h1:hykUFik2rqpkKf8O2bc41OpSZuVA1lGFUu+UfjvYn1k=
 github.com/openai/openai-go/v3 v3.66.0/go.mod h1:+dSPa+nbX+dNoXg1jecMnVpgRP+E/5IBA6Jiz9Pc8WM=
 github.com/stretchr/testify v1.12.1 h1:EuwCh5fleGS7H32xRwO3wRGT7DxrDhLAT6FF8MpWDWE=

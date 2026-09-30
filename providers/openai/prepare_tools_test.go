@@ -66,12 +66,12 @@ func TestPrepareTools_FunctionStrict(t *testing.T) {
 			})
 			tool := toolsArray(t, body)[0]
 			got, ok := tool["strict"]
-			if tc.strict == nil {
-				assert.False(t, ok)
-				return
-			}
 			require.True(t, ok)
-			assert.Equal(t, *tc.strict, got)
+			if tc.strict == nil {
+				assert.Equal(t, false, got)
+			} else {
+				assert.Equal(t, *tc.strict, got)
+			}
 		})
 	}
 }

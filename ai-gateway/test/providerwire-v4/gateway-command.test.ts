@@ -617,7 +617,7 @@ describe("authenticated Anthropic Gateway command", () => {
 
       assert.equal(fake.requests.length, 3);
       for (const request of fake.requests) {
-        assert.equal(request.path, "/v1/messages?beta=true");
+        assert.equal(request.path, "/v1/messages");
         assert.equal(request.apiKey, "integration-anthropic-key");
         assert.equal(request.body.model, "backend-private");
         assert.equal(request.body.max_tokens, 32);
@@ -1479,7 +1479,7 @@ describe("authenticated OpenAI-compatible Gateway command", () => {
       const unaryModel = wrapLanguageModel({ model, middleware: { specificationVersion: "v4", wrapGenerate: async ({params}) => {
         const {headers,...options}=params;
         assert.deepEqual(Object.keys(headers ?? {}),["user-agent"]);
-        assert.match(headers!["user-agent"]!,/^ai\/7\.0\.109(?:\s|$)/);
+        assert.match(headers!["user-agent"]!,/^ai\/7\.0\.116(?:\s|$)/);
         return createGateway({apiKey:"ignored",baseURL:`${gateway.url}/api/v1/aisdk`,headers:{"X-Access-Token":TEST_TOKEN,"user-agent":headers!["user-agent"]!}})("compatible").doGenerate(options);
       } } });
       const unary = await generateText({model:unaryModel,prompt:"wp17-reasoning",maxOutputTokens:64});
@@ -2159,7 +2159,7 @@ class FakeAnthropic {
     const marker = ["silent-abort", "silent-shutdown", "silent-unary-shutdown", "normal-stream", "provider-error", "redirect", "oversized"]
       .find((value) => serialized.includes(value));
     this.requests.push({ path: request.url ?? "", apiKey: singleHeader(request.headers["x-api-key"]), headers: { ...request.headers }, body });
-    if (request.url !== "/v1/messages?beta=true") this.violations.push(`path=${request.url}`);
+    if (request.url !== "/v1/messages") this.violations.push(`path=${request.url}`);
     if (singleHeader(request.headers["x-api-key"]) !== "integration-anthropic-key") this.violations.push("api-key");
     if (body.model !== this.backendModel) this.violations.push(`model=${String(body.model)}`);
     if (request.headers["x-access-token"] != null || request.headers["x-grafana-id"] != null) this.violations.push("forwarded-caller-credential");
