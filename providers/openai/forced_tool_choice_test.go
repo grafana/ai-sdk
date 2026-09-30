@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -15,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestForcedToolChoice_RequestSnapshots(t *testing.T) {
+func TestForcedToolChoice_RequestModes(t *testing.T) {
 	for _, tc := range []struct {
 		id        string
 		canonical string
@@ -35,11 +33,6 @@ func TestForcedToolChoice_RequestSnapshots(t *testing.T) {
 			} {
 				for _, mode := range []string{"generate", "stream"} {
 					t.Run(selection.name+"/"+mode, func(t *testing.T) {
-						golden, err := os.ReadFile(filepath.Join("testdata", "forced_tool_choice", tc.canonical+"-"+selection.name+"-"+mode+".json"))
-						require.NoError(t, err)
-						var expected map[string]any
-						require.NoError(t, json.Unmarshal(golden, &expected))
-
 						var body map[string]any
 						requests := 0
 						client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
@@ -78,11 +71,13 @@ func TestForcedToolChoice_RequestSnapshots(t *testing.T) {
 							assert.True(t, finished)
 						}
 						require.Equal(t, 1, requests)
-						projection := map[string]any{"tools": body["tools"], "tool_choice": body["tool_choice"]}
-						if stream, ok := body["stream"]; ok {
-							projection["stream"] = stream
+						assert.Equal(t, []any{map[string]any{"type": tc.canonical}}, body["tools"])
+						assert.Equal(t, map[string]any{"type": "function", "name": tc.canonical}, body["tool_choice"])
+						if mode == "stream" {
+							assert.Equal(t, true, body["stream"])
+						} else {
+							assert.NotContains(t, body, "stream")
 						}
-						assert.Equal(t, expected, projection)
 					})
 				}
 			}

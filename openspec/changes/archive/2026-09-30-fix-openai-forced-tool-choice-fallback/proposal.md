@@ -6,7 +6,7 @@
 
 - Restrict ordinary forced hosted choices to the registered upstream allowlist; serialize the three affected kinds as `{ "type": "function", "name": "<canonical name>" }`.
 - Preserve configured alias-to-canonical resolution, provider tool declarations, supported hosted/custom/function choices, and the separate `allowedTools` override.
-- Add focused canonical/alias regressions and credential-free unary/streaming HTTP request goldens, with expectations captured from pinned TypeScript 4.0.72. These are synthetic request evidence, not provider recordings or proof of live OpenAI acceptance.
+- Add focused canonical/alias regressions and credential-free unary/streaming HTTP request tests with inline expectations derived from the registered TypeScript 4.0.72 source. These are synthetic request evidence, not provider recordings or proof of live OpenAI acceptance.
 
 ## Capabilities
 
@@ -20,4 +20,4 @@ None.
 
 ## Impact
 
-The implementation is confined to `providers/openai/prepare_tools.go`, focused provider tests, and provider-module request golden evidence. No public Go API, dependency, baseline, conformance-harness, response/SSE, frontend, or other-provider change is required. Existing conformance provider inputs remain byte-identical. This fixes observable request JSON rather than introducing a new compatibility policy; consumers forcing these tools will receive the registered upstream shape.
+The implementation is confined to `providers/openai/prepare_tools.go`, focused provider tests, and inline provider-module request assertions. No public Go API, dependency, baseline, conformance-harness, response/SSE, frontend, or other-provider change is required. Existing conformance provider inputs remain byte-identical. This fixes observable request JSON rather than introducing a new compatibility policy; consumers forcing these tools will receive the registered upstream shape.
