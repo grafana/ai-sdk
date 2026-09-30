@@ -154,6 +154,9 @@ func convertAssistantMessage(msg provider.Message, ctx inputConversionContext) (
 			items = append(items, assistantOutputMessage(part.Text, po))
 
 		case provider.ContentPartTypeToolCall:
+			if caller := ctx.partOptions(part).Caller; caller != nil && caller.Type == OpenAIToolCallerProgram {
+				ctx.programmaticToolCallIDs[part.ToolCallID] = true
+			}
 			item, err := convertAssistantToolCall(part, ctx)
 			if err != nil {
 				return nil, nil, err
@@ -191,6 +194,24 @@ func convertAssistantMessage(msg provider.Message, ctx inputConversionContext) (
 				continue
 			}
 			items = append(items, reasoningItem(po.ItemID, *po.ReasoningEncryptedContent, part.Text))
+
+		case provider.ContentPartTypeCustom:
+			if part.Kind != "openai.compaction" {
+				continue
+			}
+			po := ctx.partOptions(part)
+			if ctx.hasConversation && po.ItemID != "" {
+				continue
+			}
+			if ctx.store && po.ItemID != "" {
+				items = append(items, itemReference(po.ItemID))
+				continue
+			}
+			if po.ItemID != "" && po.EncryptedContent != nil {
+				item := responses.ResponseInputItemParamOfCompaction(*po.EncryptedContent)
+				item.OfCompaction.ID = param.NewOpt(po.ItemID)
+				items = append(items, item)
+			}
 		}
 	}
 

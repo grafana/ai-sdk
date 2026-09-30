@@ -53,6 +53,32 @@ func TestGetModelCapabilities(t *testing.T) {
 	}
 }
 
+func TestGetModelCapabilities_GPT6Controls(t *testing.T) {
+	for _, tc := range []struct {
+		modelID   string
+		supported bool
+	}{
+		{modelID: "gpt-6-astra", supported: true},
+		{modelID: "gpt-7", supported: true},
+		{modelID: "gpt-99-nano", supported: true},
+		{modelID: "gpt-5.6"},
+		{modelID: "gpt-6chat"},
+		{modelID: "openai.gpt-6-astra"},
+		{modelID: "ft:gpt-6:org:custom:abc"},
+	} {
+		t.Run(tc.modelID, func(t *testing.T) {
+			caps := getModelCapabilities(tc.modelID)
+			assert.Equal(t, tc.supported, caps.supportsConfigurationUpdate)
+			assert.Equal(t, tc.supported, caps.supportsAsyncToolCalling)
+			if tc.supported {
+				assert.Equal(t, []string{"low", "medium", "high", "xhigh", "max"}, caps.supportedReasoningEfforts)
+			} else {
+				assert.Nil(t, caps.supportedReasoningEfforts)
+			}
+		})
+	}
+}
+
 func TestModelIDs(t *testing.T) {
 	ids := ModelIDs()
 	assert.Len(t, ids, 68)

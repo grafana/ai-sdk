@@ -15,6 +15,9 @@ type modelCapabilities struct {
 	supportsFlexProcessing         bool
 	supportsPriorityProcessing     bool
 	supportsNonReasoningParameters bool
+	supportsConfigurationUpdate    bool
+	supportsAsyncToolCalling       bool
+	supportedReasoningEfforts      []string
 }
 
 var (
@@ -42,6 +45,9 @@ func getBedrockMantleModelCapabilities(modelID string) modelCapabilities {
 	caps.supportsFlexProcessing = false
 	caps.supportsPriorityProcessing = false
 	caps.supportsNonReasoningParameters = false
+	caps.supportsConfigurationUpdate = false
+	caps.supportsAsyncToolCalling = false
+	caps.supportedReasoningEfforts = nil
 	return caps
 }
 
@@ -58,6 +64,11 @@ func getOpenAIModelCapabilities(modelID string) modelCapabilities {
 		(hasOSeriesVersion && oVersion >= 3)
 	supportsNonReasoningParams := hasGPTVersion &&
 		gpt.major == 5 && gpt.minor != nil && *gpt.minor >= 1
+	isGPT6OrLater := hasGPTVersion && gpt.major >= 6
+	var supportedReasoningEfforts []string
+	if isGPT6OrLater {
+		supportedReasoningEfforts = []string{"low", "medium", "high", "xhigh", "max"}
+	}
 
 	mode := "system"
 	if isReasoning {
@@ -69,6 +80,9 @@ func getOpenAIModelCapabilities(modelID string) modelCapabilities {
 		supportsFlexProcessing:         supportsFlex,
 		supportsPriorityProcessing:     supportsPriority,
 		supportsNonReasoningParameters: supportsNonReasoningParams,
+		supportsConfigurationUpdate:    isGPT6OrLater,
+		supportsAsyncToolCalling:       isGPT6OrLater,
+		supportedReasoningEfforts:      supportedReasoningEfforts,
 	}
 }
 

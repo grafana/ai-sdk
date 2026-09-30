@@ -40,7 +40,7 @@ type shellNetworkPolicyArg struct {
 // prepareTools converts CallOptions tools and tool choice into the Responses
 // request, returning warnings for unsupported tools. It also records tool
 // presence flags on the buildResult for include auto-population.
-func prepareTools(body *responses.ResponseNewParams, opts provider.CallOptions, popts OpenAIResponsesOptions, br *buildResult) ([]provider.Warning, error) {
+func prepareTools(body *responses.ResponseNewParams, opts provider.CallOptions, popts OpenAIResponsesOptions, caps modelCapabilities, br *buildResult) ([]provider.Warning, error) {
 	var warnings []provider.Warning
 
 	if len(opts.Tools) == 0 {
@@ -70,7 +70,7 @@ func prepareTools(body *responses.ResponseNewParams, opts provider.CallOptions, 
 				} else if namespaceTool.Description != namespace.Description {
 					return nil, fmt.Errorf("openai: conflicting descriptions for OpenAI tool namespace %q", namespace.Name)
 				}
-				fn, schemaWarnings, err := namespaceFunctionTool(t, openaiOptions)
+				fn, schemaWarnings, err := namespaceFunctionTool(t, openaiOptions, caps)
 				if err != nil {
 					return nil, err
 				}
@@ -78,7 +78,7 @@ func prepareTools(body *responses.ResponseNewParams, opts provider.CallOptions, 
 				namespaceTool.Tools = append(namespaceTool.Tools, fn)
 				continue
 			}
-			fn, schemaWarnings, err := functionTool(t, openaiOptions)
+			fn, schemaWarnings, err := functionTool(t, openaiOptions, caps)
 			if err != nil {
 				return nil, err
 			}
@@ -86,7 +86,7 @@ func prepareTools(body *responses.ResponseNewParams, opts provider.CallOptions, 
 			tools = append(tools, fn)
 
 		case provider.ToolTypeProvider:
-			tool, w, ok, err := providerTool(t, br)
+			tool, w, ok, err := providerTool(t, caps, br)
 			if err != nil {
 				return nil, err
 			}
@@ -114,15 +114,15 @@ func prepareTools(body *responses.ResponseNewParams, opts provider.CallOptions, 
 	return warnings, nil
 }
 
-func functionTool(t provider.Tool, options OpenAIToolOptions) (responses.ToolUnionParam, []provider.Warning, error) {
-	fn, warnings, err := functionToolParam(t, options)
+func functionTool(t provider.Tool, options OpenAIToolOptions, caps modelCapabilities) (responses.ToolUnionParam, []provider.Warning, error) {
+	fn, warnings, err := functionToolParam(t, options, caps)
 	if err != nil {
 		return responses.ToolUnionParam{}, nil, err
 	}
 	return responses.ToolUnionParam{OfFunction: &fn}, warnings, nil
 }
 
-func functionToolParam(t provider.Tool, options OpenAIToolOptions) (responses.FunctionToolParam, []provider.Warning, error) {
+func functionToolParam(t provider.Tool, options OpenAIToolOptions, caps modelCapabilities) (responses.FunctionToolParam, []provider.Warning, error) {
 	var params map[string]any
 	var warnings []provider.Warning
 	if len(t.InputSchema) > 0 {
@@ -142,6 +142,11 @@ func functionToolParam(t provider.Tool, options OpenAIToolOptions) (responses.Fu
 	if t.Description != "" {
 		fn.Description = param.NewOpt(t.Description)
 	}
+	if async, warning := supportedAsyncToolOption(options.Async, caps, t.Name); warning != nil {
+		warnings = append(warnings, *warning)
+	} else if async != nil {
+		fn.Async = param.NewOpt(*async)
+	}
 	if options.DeferLoading != nil {
 		fn.DeferLoading = param.NewOpt(*options.DeferLoading)
 	}
@@ -159,13 +164,14 @@ func functionToolParam(t provider.Tool, options OpenAIToolOptions) (responses.Fu
 	return fn, warnings, nil
 }
 
-func namespaceFunctionTool(t provider.Tool, options OpenAIToolOptions) (responses.NamespaceToolToolUnionParam, []provider.Warning, error) {
-	fn, warnings, err := functionToolParam(t, options)
+func namespaceFunctionTool(t provider.Tool, options OpenAIToolOptions, caps modelCapabilities) (responses.NamespaceToolToolUnionParam, []provider.Warning, error) {
+	fn, warnings, err := functionToolParam(t, options, caps)
 	if err != nil {
 		return responses.NamespaceToolToolUnionParam{}, nil, err
 	}
 	namespaceFn := responses.NamespaceToolToolFunctionParam{
 		Name:           fn.Name,
+		Async:          fn.Async,
 		Parameters:     fn.Parameters,
 		Strict:         fn.Strict,
 		Description:    fn.Description,
@@ -176,7 +182,7 @@ func namespaceFunctionTool(t provider.Tool, options OpenAIToolOptions) (response
 	return responses.NamespaceToolToolUnionParam{OfFunction: &namespaceFn}, warnings, nil
 }
 
-func providerTool(t provider.Tool, br *buildResult) (responses.ToolUnionParam, []provider.Warning, bool, error) {
+func providerTool(t provider.Tool, caps modelCapabilities, br *buildResult) (responses.ToolUnionParam, []provider.Warning, bool, error) {
 	switch t.ID {
 	case toolIDWebSearch:
 		if br.webSearchToolName == "" {
@@ -203,11 +209,11 @@ func providerTool(t provider.Tool, br *buildResult) (responses.ToolUnionParam, [
 		return responses.ToolUnionParam{OfMcp: mcpTool(t)}, nil, true, nil
 
 	case toolIDCustom:
-		tool, err := customTool(t)
+		tool, warnings, err := customTool(t, caps)
 		if err != nil {
 			return responses.ToolUnionParam{}, nil, false, err
 		}
-		return responses.ToolUnionParam{OfCustom: tool}, nil, true, nil
+		return responses.ToolUnionParam{OfCustom: tool}, warnings, true, nil
 
 	case toolIDImageGeneration:
 		return responses.ToolUnionParam{OfImageGeneration: imageGenerationTool(t)}, nil, true, nil
@@ -370,12 +376,27 @@ func imageGenerationTool(t provider.Tool) *responses.ToolImageGenerationParam {
 	return &ig
 }
 
-func customTool(t provider.Tool) (*responses.CustomToolParam, error) {
+func customTool(t provider.Tool, caps modelCapabilities) (*responses.CustomToolParam, []provider.Warning, error) {
 	options, err := toolOptions(t)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	custom := responses.CustomToolParam{Name: t.Name}
+	var warnings []provider.Warning
+	if raw, ok := rawArg(t.Args, "async"); ok {
+		var value *bool
+		if err := json.Unmarshal(raw, &value); err != nil {
+			return nil, nil, fmt.Errorf("openai: custom tool %q async must be a boolean: %w", t.Name, err)
+		}
+		if value == nil {
+			return nil, nil, fmt.Errorf("openai: custom tool %q async must be a boolean", t.Name)
+		}
+		if async, warning := supportedAsyncToolOption(value, caps, t.Name); warning != nil {
+			warnings = append(warnings, *warning)
+		} else if async != nil {
+			custom.Async = param.NewOpt(*async)
+		}
+	}
 	if desc := stringArg(t.Args, "description"); desc != "" {
 		custom.Description = param.NewOpt(desc)
 	}
@@ -385,7 +406,17 @@ func customTool(t provider.Tool) (*responses.CustomToolParam, error) {
 	if options.DeferLoading != nil {
 		custom.DeferLoading = param.NewOpt(*options.DeferLoading)
 	}
-	return &custom, nil
+	return &custom, warnings, nil
+}
+
+func supportedAsyncToolOption(value *bool, caps modelCapabilities, name string) (*bool, *provider.Warning) {
+	if value == nil || !*value || caps.supportsAsyncToolCalling {
+		return value, nil
+	}
+	return nil, &provider.Warning{
+		Type: provider.WarnUnsupported, Feature: fmt.Sprintf("async tool calling for %q", name),
+		Details: "Async tool calling is only supported by GPT-6 and later models.",
+	}
 }
 
 func mcpTool(t provider.Tool) *responses.ToolMcpParam {
