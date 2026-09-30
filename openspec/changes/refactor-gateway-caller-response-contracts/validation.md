@@ -34,7 +34,7 @@ The restriction inventory now separates real-handler policy forwarding for every
 - Focused Grafana client error/interrupted-read/cancellation tests, provider diagnostic lifecycle tests and 20 repetitions of caller-response telemetry tests.
 - `openspec validate --all --strict --json`: active change and all 80 main specs valid; `git diff --check` and changed Go formatting checks pass.
 
-The repository fmt-check command requires committed changes because it compares the whole worktree with HEAD; it is run after the local implementation commit.
+`mise run fmt-check` passed after local implementation commit `81702b20`. The command requires committed changes because it compares the whole worktree with HEAD. Task 1.4's future PR packaging and issue registration remain pending, not implementation blockers.
 
 ## Not claimed
 
