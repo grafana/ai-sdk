@@ -45,10 +45,17 @@ func resolveToolDescription(tool Tool, runtimeContext any) *string {
 	return nil
 }
 
-func resolveToolDescriptions(tools ToolSet, runtimeContext any) ToolSet {
+func resolveToolDescriptions(tools ToolSet, runtimeContext any, active []string, activeSet bool) ToolSet {
+	var activeNames map[string]bool
+	if activeSet {
+		activeNames = make(map[string]bool, len(active))
+		for _, name := range active {
+			activeNames[name] = true
+		}
+	}
 	var resolved ToolSet
 	for name, tool := range tools {
-		if tool.DescriptionFunc == nil {
+		if tool.DescriptionFunc == nil || (activeSet && !activeNames[name]) {
 			continue
 		}
 		if resolved == nil {
@@ -118,10 +125,13 @@ func (s *toolSearchState) prepare(tools ToolSet, active []string, activeSet bool
 	if s == nil {
 		return tools
 	}
-	eligible := make(ToolSet, len(tools))
-	for name, tool := range tools {
-		if !activeSet || slices.Contains(active, name) {
-			eligible[name] = tool
+	eligible := tools
+	if activeSet {
+		eligible = make(ToolSet, len(active))
+		for _, name := range active {
+			if tool, ok := tools[name]; ok {
+				eligible[name] = tool
+			}
 		}
 	}
 	prepared := make(ToolSet, len(eligible))

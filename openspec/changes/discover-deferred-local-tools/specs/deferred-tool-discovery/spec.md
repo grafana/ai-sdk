@@ -21,6 +21,11 @@ The root package SHALL expose `ToolSearch() Tool` and an optional `Tool.DeferLoa
 - **THEN** its next-step definition SHALL retain its provider type and arguments
 - **AND** a provider-executed call SHALL NOT run a local executor as a consequence of discovery
 
+#### Scenario: Provider-driven call presentation before discovery
+- **WHEN** a provider emits an accepted provider-executed dynamic call for a registered static deferred entry before discovery
+- **THEN** its streamed input and available input SHALL retain the registered static UI classification and assemble into one tool part
+- **AND** presentation classification SHALL NOT restore input validation, callbacks or local execution eligibility
+
 ### Requirement: Search has a bounded schema-only public contract
 
 ToolSearch SHALL accept a JSON object containing only the required `query` string of minimum length one. It SHALL return an object containing only `tools`, an array of objects with required `name` and optional `description`. Search results SHALL NOT include input/output schemas, tool definitions, titles or unrelated registry data. Its ordinary model description and schemas SHALL remain stable across steps unless explicitly customized by the caller.
@@ -98,6 +103,11 @@ Tool SHALL preserve its static Description string and accept an optional Descrip
 - **WHEN** a candidate's callback returns a capability keyword from the effective PrepareStep context and search queries that keyword
 - **THEN** search SHALL match and return the resolved description
 - **AND** subsequent eligible model definitions and caller catalogs SHALL resolve descriptions against their own effective step context
+
+#### Scenario: Inactive descriptions are not evaluated
+- **WHEN** an explicit active selection excludes an entry, including an empty selection without discovery controls
+- **THEN** model and caller-catalog preparation SHALL NOT evaluate that entry's DescriptionFunc
+- **AND** existing non-discovery execution lookup behavior SHALL remain unchanged
 
 #### Scenario: Empty versus absent description
 - **WHEN** one matching candidate has an empty static Description with no callback and another callback returns an empty string

@@ -100,7 +100,7 @@ func TestToolSearch_Descriptions(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			assert.Equal(t, tc.want, resolveToolDescription(tc.tool, "current"))
 			original := ToolSet{"tool": tc.tool}
-			resolved := resolveToolDescriptions(original, "current")
+			resolved := resolveToolDescriptions(original, "current", nil, false)
 			if tc.want != nil {
 				assert.Equal(t, *tc.want, resolved["tool"].Description)
 			}
@@ -126,7 +126,7 @@ func TestToolSearch_Descriptions(t *testing.T) {
 		require.Len(t, matches, 2)
 		assert.Equal(t, new(""), matches[0].Description)
 		assert.Nil(t, matches[1].Description)
-		second := resolveToolDescriptions(state.prepare(registry, nil, false, "Atmosphere"), "Atmosphere")
+		second := resolveToolDescriptions(state.prepare(registry, nil, false, "Atmosphere"), "Atmosphere", nil, false)
 		assert.Equal(t, "Atmosphere", second["capability"].Description)
 		assert.NotNil(t, registry["capability"].DescriptionFunc)
 	})
@@ -262,6 +262,12 @@ func TestToolSearch_Ranking(t *testing.T) {
 			assert.Equal(t, matches, executeSearch(t, next["search"], tc.query))
 		})
 	}
+	t.Run("uneven duplicate terms", func(t *testing.T) {
+		matches := searchDeferredTools(ToolSet{"alpha": {}, "beta": {Description: "beta"}}, "alpha alpha beta", nil)
+		require.Len(t, matches, 2)
+		assert.Equal(t, "beta", matches[0].Name)
+		assert.Equal(t, "alpha", matches[1].Name)
+	})
 	for _, tc := range []struct {
 		input string
 		want  []string
@@ -512,30 +518,52 @@ func TestToolSearch_ProviderLifecycle(t *testing.T) {
 }
 
 func TestToolSearch_IndependentGenerations(t *testing.T) {
-	registry := ToolSet{"search": ToolSearch(), "weather": discoveryTool(t)}
-	var wg sync.WaitGroup
-	for index := range 8 {
-		wg.Go(func() {
-			calls := 0
-			model := &mockModel{streamFunc: func(_ context.Context, opts provider.CallOptions) (*provider.StreamResult, error) {
-				calls++
-				if calls == 1 {
-					assert.Equal(t, []string{"search"}, toolNames(opts.Tools))
-					if index%2 == 0 {
-						return &provider.StreamResult{Stream: toolCallStreamParts("search", `{"query":"weather"}`)}, nil
-					}
-				} else {
-					assert.Equal(t, []string{"search", "weather"}, toolNames(opts.Tools))
-				}
-				return &provider.StreamResult{Stream: textStreamParts("done")}, nil
-			}}
-			result := StreamText(t.Context(), model, WithTools(registry), WithStopWhen(StepCountIs(2)))
-			for range result.FullStream() {
+	searchStarted, otherStarted, searchFinished := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	registry := ToolSet{"search": ToolSearch(), "weather": discoveryTool(t), "idle": {Execute: func(ctx context.Context, _ json.RawMessage, _ ToolExecutionOptions) (json.RawMessage, error) {
+		select {
+		case <-searchFinished:
+			return json.RawMessage(`"done"`), nil
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}}}
+	searchCalls, otherCalls := 0, 0
+	searchModel := &mockModel{streamFunc: func(ctx context.Context, opts provider.CallOptions) (*provider.StreamResult, error) {
+		searchCalls++
+		if searchCalls == 1 {
+			assert.Equal(t, []string{"idle", "search"}, toolNames(opts.Tools))
+			close(searchStarted)
+			select {
+			case <-otherStarted:
+			case <-ctx.Done():
+				return nil, ctx.Err()
 			}
-			assert.NoError(t, result.Err())
-		})
+			return &provider.StreamResult{Stream: toolCallStreamParts("search", `{"query":"weather"}`)}, nil
+		}
+		assert.Equal(t, []string{"idle", "search", "weather"}, toolNames(opts.Tools))
+		close(searchFinished)
+		return &provider.StreamResult{Stream: textStreamParts("done")}, nil
+	}}
+	otherModel := &mockModel{streamFunc: func(_ context.Context, opts provider.CallOptions) (*provider.StreamResult, error) {
+		otherCalls++
+		assert.Equal(t, []string{"idle", "search"}, toolNames(opts.Tools))
+		if otherCalls == 1 {
+			close(otherStarted)
+			return &provider.StreamResult{Stream: toolCallStreamParts("idle", `{}`)}, nil
+		}
+		return &provider.StreamResult{Stream: textStreamParts("done")}, nil
+	}}
+	searchResult := StreamText(t.Context(), searchModel, WithTools(registry), WithStopWhen(StepCountIs(2)))
+	<-searchStarted
+	otherResult := StreamText(t.Context(), otherModel, WithTools(registry), WithStopWhen(StepCountIs(2)))
+	for range searchResult.FullStream() {
 	}
-	wg.Wait()
+	for range otherResult.FullStream() {
+	}
+	require.NoError(t, searchResult.Err())
+	require.NoError(t, otherResult.Err())
+	assert.Equal(t, 2, searchCalls)
+	assert.Equal(t, 2, otherCalls)
 	assert.NotNil(t, registry["weather"].Execute)
 }
 
