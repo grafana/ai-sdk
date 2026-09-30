@@ -1,0 +1,12 @@
+{
+  "tools": [
+    {
+      "type": "tool_search"
+    }
+  ],
+  "tool_choice": {
+    "type": "function",
+    "name": "tool_search"
+  },
+  "stream": true
+}

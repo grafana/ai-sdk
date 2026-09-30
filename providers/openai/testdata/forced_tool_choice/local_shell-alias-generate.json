@@ -1,0 +1,11 @@
+{
+  "tools": [
+    {
+      "type": "local_shell"
+    }
+  ],
+  "tool_choice": {
+    "type": "function",
+    "name": "local_shell"
+  }
+}

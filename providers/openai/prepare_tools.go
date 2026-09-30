@@ -515,9 +515,6 @@ func applyToolChoice(body *responses.ResponseNewParams, tc *provider.ToolChoice,
 			case "apply_patch":
 				toolChoice := responses.NewToolChoiceApplyPatchParam()
 				body.ToolChoice = responses.ResponseNewParamsToolChoiceUnion{OfSpecificApplyPatchToolChoice: &toolChoice}
-			case "shell":
-				toolChoice := responses.NewToolChoiceShellParam()
-				body.ToolChoice = responses.ResponseNewParamsToolChoiceUnion{OfSpecificShellToolChoice: &toolChoice}
 			default:
 				body.ToolChoice = responses.ResponseNewParamsToolChoiceUnion{
 					OfHostedTool: &responses.ToolChoiceTypesParam{Type: responses.ToolChoiceTypesType(hostedToolType)},
@@ -534,12 +531,13 @@ func applyToolChoice(body *responses.ResponseNewParams, tc *provider.ToolChoice,
 // hostedToolChoiceType returns the hosted tool type for a named built-in tool,
 // or "" if the name refers to a function tool.
 func hostedToolChoiceType(name string) string {
-	for _, providerToolName := range providerToolNames {
-		if providerToolName == name {
-			return providerToolName
-		}
+	switch name {
+	case "code_interpreter", "file_search", "image_generation", "web_search_preview", "web_search",
+		"mcp", "apply_patch", "computer", "programmatic_tool_calling":
+		return name
+	default:
+		return ""
 	}
-	return ""
 }
 
 func customProviderToolChoice(name string, tools []provider.Tool) bool {

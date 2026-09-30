@@ -1,0 +1,12 @@
+{
+  "tools": [
+    {
+      "type": "shell"
+    }
+  ],
+  "tool_choice": {
+    "type": "function",
+    "name": "shell"
+  },
+  "stream": true
+}
