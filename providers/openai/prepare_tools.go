@@ -149,6 +149,7 @@ func functionToolParam(t provider.Tool, options OpenAIToolOptions, caps modelCap
 		Name:       t.Name,
 		Parameters: params,
 	}
+	fn.Strict = param.NewOpt(false)
 	if t.Strict != nil {
 		fn.Strict = param.NewOpt(*t.Strict)
 	}

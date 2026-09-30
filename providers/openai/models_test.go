@@ -81,7 +81,7 @@ func TestGetModelCapabilities_GPT6Controls(t *testing.T) {
 
 func TestModelIDs(t *testing.T) {
 	ids := ModelIDs()
-	assert.Len(t, ids, 68)
+	assert.Len(t, ids, 70)
 	assert.Contains(t, ids, "gpt-4o")
 	assert.Contains(t, ids, "gpt-4o-2024-11-20")
 	assert.Contains(t, ids, "gpt-4o-audio-preview")
@@ -89,6 +89,8 @@ func TestModelIDs(t *testing.T) {
 	assert.Contains(t, ids, "gpt-5.5-2026-04-23")
 	assert.Contains(t, ids, "gpt-5.6-terra")
 	assert.Contains(t, ids, "gpt-6-astra")
+	assert.Contains(t, ids, "gpt-6-luna")
+	assert.Contains(t, ids, "gpt-6-sol")
 	assert.Contains(t, ids, "gpt-5.1-codex-max")
 	assert.Contains(t, ids, "o4-mini-2025-04-16")
 	assert.True(t, sort.StringsAreSorted(ids))

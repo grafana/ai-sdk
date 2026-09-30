@@ -14,11 +14,15 @@ func TestNormalizeToolCallID(t *testing.T) {
 		expected string
 	}{
 		{"non-mistral passes through", "tooluse_bpe71yCfRu2b5i-nKGDr5g", false, "tooluse_bpe71yCfRu2b5i-nKGDr5g"},
-		{"mistral takes first 9 alphanumeric", "tooluse_bpe71yCfRu2b5i-nKGDr5g", true, "toolusebp"},
-		{"mistral handles short id", "abc-123", true, "abc123"},
-		{"mistral handles empty", "", true, ""},
+		{"mistral hashes Bedrock id", "tooluse_bpe71yCfRu2b5i-nKGDr5g", true, "8eHypBDcw"},
+		{"mistral hashes short id", "abc", true, "GRuIyUwcV"},
+		{"mistral hashes empty id", "", true, "bkRR8oQIH"},
+		{"mistral hashes punctuation id", "___---___", true, "5C589HVqG"},
+		{"mistral hashes UTF-16 units", "tool😀id", true, "kHX3nweiV"},
+		{"mistral distinguishes shared prefixes", "tooluse_Ac1Xq9ZklmNoPq", true, "7rDVWRig0"},
+		{"mistral distinguishes second prefix", "tooluse_Ac2Yt7WrstUvWx", true, "bNZvZKNBZ"},
 		{"mistral handles exactly 9 alphanumeric", "abc123XYZ", true, "abc123XYZ"},
-		{"mistral strips underscores", "tool_use_id", true, "tooluseid"},
+		{"mistral hashes underscore id", "tool-use_123ABC456", true, "hvVDqPNyj"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
