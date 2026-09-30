@@ -59,7 +59,11 @@ evidence boundary changes, not merely because the pinned versions change.
   sibling tool outputs. Provider-executed outputs and rejected-input errors remain
   ordered; the comparator deviation is registered in `upstream.yaml`.
 - GenerateText and Agent.Generate collect StreamText. Provider DoGenerate tests
-  therefore do not prove those high-level paths.
+  therefore do not prove those high-level paths. Effective required/named choice
+  enforcement has direct entry-point tests,
+  [provider-independent UI snapshots](ui/effective-tool-choice/) and schema-parsed
+  frontend assembly tests. These establish completed-response
+  rejection and retained completion data, not live provider adherence to choice.
 - Captured provider inputs, synthetic failures and provider-independent UI parts
   are distinct evidence sources; passing one does not establish the others.
 - Gateway privacy assertions cover protocol metadata, errors, logs and metrics.
@@ -73,10 +77,14 @@ These notes prevent matching tests from being mistaken for upstream equivalence.
 If a deviation becomes tracked work, its rationale and disposition belong in the
 issue rather than being maintained in both places.
 
-- Core batches local approval handling after provider streaming. ToUIMessageStream
-  supplies a default ID generator with original messages and avoids an unused
-  generation on continuation. Timeout warnings are returned on successful results
-  rather than logged globally before invocation.
+- Core batches local approval handling after provider streaming. Completed
+  tool-choice violations bypass new local approvals and execution; already streamed
+  provider events and prior-message approvals keep their existing handling.
+  Upstream resolves streaming approvals before completed-response validation, so
+  approval suppression is a Go batching safety boundary, not identical timing.
+  ToUIMessageStream supplies a default ID generator with original messages and
+  avoids an unused generation on continuation. Timeout warnings are returned on
+  successful results rather than logged globally before invocation.
 - Anthropic uses explicit credentials/options rather than ambient SDK defaults.
   With no tools, required/named choices are retained. Its api_error/overloaded_error
   retry classification is broader than upstream's initial-overload rule; the full
