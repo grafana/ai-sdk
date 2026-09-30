@@ -228,7 +228,15 @@ func convertUserContent(parts []provider.ContentPart, documentCounter *int, warn
 	for _, p := range parts {
 		switch p.Type {
 		case provider.ContentPartTypeText:
-			out = append(out, contentBlock{Text: p.Text})
+			guarded, qualifiers, err := readTextGuardContent(p.ProviderOptions)
+			if err != nil {
+				return nil, err
+			}
+			if guarded {
+				out = append(out, contentBlock{GuardContent: &guardContentBlock{Text: &guardContentText{Text: p.Text, Qualifiers: qualifiers}}})
+			} else {
+				out = append(out, contentBlock{Text: p.Text})
+			}
 
 		case provider.ContentPartTypeFile:
 			if p.Data == nil {
@@ -298,9 +306,16 @@ func convertUserContent(parts []provider.ContentPart, documentCounter *int, warn
 				if !ok {
 					return nil, fmt.Errorf("bedrock: image media type %q is not supported", mediaType)
 				}
-				out = append(out, contentBlock{
-					Image: &imageBlock{Format: format, Source: imageSource{Bytes: b64}},
-				})
+				image := &imageBlock{Format: format, Source: imageSource{Bytes: b64}}
+				guarded, err := readImageGuardContent(p.ProviderOptions)
+				if err != nil {
+					return nil, err
+				}
+				if guarded {
+					out = append(out, contentBlock{GuardContent: &guardContentBlock{Image: image}})
+				} else {
+					out = append(out, contentBlock{Image: image})
+				}
 				continue
 			case "video":
 				format, ok := videoMediaTypeFormat[mediaType]
@@ -539,10 +554,12 @@ func convertAssistantContent(parts []provider.ContentPart, warnings *[]provider.
 			}
 			rc := &reasoningContentBlock{}
 			switch {
-			case meta.Signature != "":
-				rc.ReasoningText = &reasoningText{Text: p.Text, Signature: meta.Signature}
-			case meta.RedactedData != "":
-				rc.RedactedReasoning = &redactedReasoning{Data: meta.RedactedData}
+			case meta.Signature != nil:
+				rc.ReasoningText = &reasoningText{Text: p.Text, Signature: *meta.Signature}
+			case meta.RedactedContent != nil:
+				rc.RedactedContent = meta.RedactedContent
+			case meta.RedactedData != nil:
+				rc.RedactedReasoning = &redactedReasoning{Data: *meta.RedactedData}
 			default:
 				continue
 			}

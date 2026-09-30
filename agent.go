@@ -272,7 +272,7 @@ func (a *ToolLoopAgent) Generate(ctx context.Context, opts ...AgentGenerateOptio
 	cfg.onChunk = nil
 	cfg.onAbort = nil
 	cfg.includeRawChunks = false
-	cfg.parseOutputOnNonStop = false
+	cfg.parseOutputOnAllFinishes = false
 	cfg.timeout.FirstChunk = 0
 	cfg.timeout.Chunk = 0
 	a.finalizeConfig(cfg, call.runtimeContext, call.runtimeContextSet)
@@ -391,6 +391,9 @@ func mergeBaseConfig(dst *baseConfig, call *baseConfig) {
 	if call.tools != nil {
 		dst.tools = cloneToolSet(call.tools)
 	}
+	if call.toolRoutes != nil {
+		dst.toolRoutes = cloneToolRoutes(call.toolRoutes)
+	}
 	if call.toolChoice != nil {
 		v := *call.toolChoice
 		dst.toolChoice = &v
@@ -499,11 +502,11 @@ func cloneStreamConfig(src *streamConfig) *streamConfig {
 	}
 	base := cloneBaseConfig(src.baseConfig)
 	return &streamConfig{
-		baseConfig:           base,
-		onChunk:              src.onChunk,
-		onAbort:              src.onAbort,
-		includeRawChunks:     src.includeRawChunks,
-		parseOutputOnNonStop: src.parseOutputOnNonStop,
+		baseConfig:               base,
+		onChunk:                  src.onChunk,
+		onAbort:                  src.onAbort,
+		includeRawChunks:         src.includeRawChunks,
+		parseOutputOnAllFinishes: src.parseOutputOnAllFinishes,
 	}
 }
 
@@ -513,6 +516,7 @@ func cloneBaseConfig(src baseConfig) baseConfig {
 	cfg.modelMessages = cloneProviderMessages(src.modelMessages)
 	cfg.system = cloneSystemMessages(src.system)
 	cfg.tools = cloneToolSet(src.tools)
+	cfg.toolRoutes = cloneToolRoutes(src.toolRoutes)
 	cfg.activeTools = append([]string(nil), src.activeTools...)
 	cfg.stopWhen = append([]StopCondition(nil), src.stopWhen...)
 	cfg.toolApproval = cloneToolApprovalConfig(src.toolApproval)
@@ -564,6 +568,18 @@ func cloneBaseConfig(src baseConfig) baseConfig {
 		cfg.reasoning = &v
 	}
 	return cfg
+}
+
+func cloneToolRoutes(routes ToolRoutes) ToolRoutes {
+	if routes == nil {
+		return nil
+	}
+	out := make(ToolRoutes, len(routes))
+	for name, route := range routes {
+		route.Callers = append([]string(nil), route.Callers...)
+		out[name] = route
+	}
+	return out
 }
 
 func cloneToolSet(tools ToolSet) ToolSet {

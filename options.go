@@ -44,6 +44,7 @@ type baseConfig struct {
 	modelMessages      []provider.Message
 	system             []SystemModelMessage
 	tools              ToolSet
+	toolRoutes         ToolRoutes
 	toolChoice         *provider.ToolChoice
 	activeTools        []string
 	activeToolsSet     bool
@@ -87,10 +88,10 @@ type baseConfig struct {
 
 type streamConfig struct {
 	baseConfig
-	onChunk              func(OnChunkState)
-	onAbort              func(OnAbortState)
-	includeRawChunks     bool
-	parseOutputOnNonStop bool
+	onChunk                  func(OnChunkState)
+	onAbort                  func(OnAbortState)
+	includeRawChunks         bool
+	parseOutputOnAllFinishes bool
 }
 
 type generateConfig struct {
@@ -105,7 +106,7 @@ func (gc *generateConfig) toStreamConfig() *streamConfig {
 }
 
 func buildStreamConfig(opts []StreamOption) *streamConfig {
-	cfg := &streamConfig{parseOutputOnNonStop: true}
+	cfg := &streamConfig{parseOutputOnAllFinishes: true}
 	for _, opt := range opts {
 		opt.applyStream(cfg)
 	}
@@ -307,6 +308,13 @@ func WithToolApprovalSecretBytes(secret []byte) Option {
 // WithToolChoice sets the tool choice strategy.
 func WithToolChoice(tc provider.ToolChoice) Option {
 	return sharedOption{fn: func(c *baseConfig) { c.toolChoice = &tc }}
+}
+
+// WithToolRoutes configures how each named tool is exposed to the model and
+// caller tools. An unlisted tool is unchanged; a zero-value route hides it
+// from the model while keeping it available for execution.
+func WithToolRoutes(routes ToolRoutes) Option {
+	return sharedOption{fn: func(c *baseConfig) { c.toolRoutes = routes }}
 }
 
 // WithActiveTools filters which tools are active for a call.

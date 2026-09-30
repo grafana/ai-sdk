@@ -52,12 +52,10 @@ describe("SSE message assembly", () => {
     expect(lastMessage.role).toBe("assistant");
     expect(lastMessage.parts).toBeDefined();
 
-    const textParts = lastMessage.parts.filter(
-      (p: { type: string }) => p.type === "text",
-    );
+    const textParts = lastMessage.parts.filter(part => part.type === "text");
     expect(textParts.length).toBeGreaterThanOrEqual(1);
 
-    const fullText = textParts.map((p: { text: string }) => p.text).join("");
+    const fullText = textParts.map(part => part.text).join("");
     expect(fullText).toBe("Hello, world!");
   });
 
@@ -152,6 +150,13 @@ describe("SSE message assembly", () => {
       mediaType: "application/pdf",
       title: "Financial Report",
       filename: "financial-report.pdf",
+      providerMetadata: {citation:{startPageNumber:1}},
+    });
+    expect(lastMessage.parts.filter(part=>part.type==="source-url")).toEqual([
+      {type:"source-url",sourceId:"source-2",url:"https://example.com",title:"URL",providerMetadata:{citation:{index:0}}},
+    ]);
+    expect(lastMessage.parts.find(part=>part.type==="source-document" && part.sourceId==="source-3")).toMatchObject({
+      type:"source-document",sourceId:"source-3",mediaType:"text/plain",title:"",
     });
   });
 });

@@ -126,6 +126,35 @@ func TestBuildCatalog_MixedProviderFallbackForwardsNoOptions(t *testing.T) {
 	assert.Equal(t, anthropicOptionPolicy, single.ProviderOptions, "a single-provider model keeps its policy")
 }
 
+func TestAnthropicOptionPolicy_ForwardsSafeguards(t *testing.T) {
+	var captured provider.CallOptions
+	file := config.File{Models: map[string]config.Model{
+		"claude": {Name: "Claude", Primary: config.Primary{Provider: "backend", Model: "claude-backend"}},
+	}}
+	created, err := buildCatalog(file, map[string]config.ResolvedProvider{
+		"backend": {Type: "anthropic", APIKey: "key"},
+	}, http.DefaultClient, anthropicprovider.New, func(_ string, lower provider.LanguageModel) (provider.LanguageModel, error) {
+		return &optionCaptureModel{LanguageModel: lower, captured: &captured}, nil
+	})
+	require.NoError(t, err)
+	handler, err := providerv4.New(providerv4.Config{Resolver: created, Limits: serviceTestLimits()})
+	require.NoError(t, err)
+
+	body := `{"prompt":[],"providerOptions":{"anthropic":{"safeguards":[{"type":"dangerous_tool_use"}],"unknown":true}}}`
+	request := httptest.NewRequest(http.MethodPost, providerv4.LanguageModelPath, strings.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set(providerv4.HeaderSpecificationVersion, providerv4.SpecificationVersion)
+	request.Header.Set(providerv4.HeaderModelID, "claude")
+	request.Header.Set(providerv4.HeaderStreaming, "false")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+
+	option, ok := captured.ProviderOptions["anthropic"].(provider.RawProviderOption)
+	require.True(t, ok)
+	assert.JSONEq(t, `{"safeguards":[{"type":"dangerous_tool_use"}]}`, string(option.Raw))
+}
+
 func TestOpenAIOptionPolicy_ClassifiesEveryTypedField(t *testing.T) {
 	allowed := openAIOptionPolicy.Fields["openai"]
 	for _, typed := range []any{openaiprovider.OpenAIResponsesOptions{}, openaiprovider.OpenAIPartOptions{}} {
@@ -140,7 +169,7 @@ func TestOpenAIOptionPolicy_ClassifiesEveryTypedField(t *testing.T) {
 	}
 }
 
-func TestOpenAIOptionPolicy_ForwardsWebSearchOptOut(t *testing.T) {
+func TestOpenAIOptionPolicy_ForwardsCapabilityControls(t *testing.T) {
 	for _, namespace := range []string{"openai", "azure"} {
 		t.Run(namespace, func(t *testing.T) {
 			var captured provider.CallOptions
@@ -156,7 +185,7 @@ func TestOpenAIOptionPolicy_ForwardsWebSearchOptOut(t *testing.T) {
 			handler, err := providerv4.New(providerv4.Config{Resolver: created, Limits: serviceTestLimits()})
 			require.NoError(t, err)
 
-			body := `{"prompt":[],"providerOptions":{"` + namespace + `":{"includeWebSearchSources":false,"unknown":true}}}`
+			body := `{"prompt":[],"providerOptions":{"` + namespace + `":{"includeWebSearchSources":false,"reasoningEffortUpdate":"high","compactionTrigger":true,"async":false,"encryptedContent":"blob","unknown":true}}}`
 			request := httptest.NewRequest(http.MethodPost, providerv4.LanguageModelPath, strings.NewReader(body))
 			request.Header.Set("Content-Type", "application/json")
 			request.Header.Set(providerv4.HeaderSpecificationVersion, providerv4.SpecificationVersion)
@@ -168,7 +197,7 @@ func TestOpenAIOptionPolicy_ForwardsWebSearchOptOut(t *testing.T) {
 
 			option, ok := captured.ProviderOptions[namespace].(provider.RawProviderOption)
 			require.True(t, ok)
-			assert.JSONEq(t, `{"includeWebSearchSources":false}`, string(option.Raw))
+			assert.JSONEq(t, `{"includeWebSearchSources":false,"reasoningEffortUpdate":"high","compactionTrigger":true,"async":false,"encryptedContent":"blob"}`, string(option.Raw))
 		})
 	}
 }

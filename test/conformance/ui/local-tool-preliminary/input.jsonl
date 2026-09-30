@@ -1,0 +1,3 @@
+{"type":"stream-start","warnings":[]}
+{"type":"tool-call","toolCallId":"call-1","toolName":"lookup","input":"{}"}
+{"type":"finish","finishReason":{"unified":"tool-calls","raw":"tool_calls"},"usage":{"inputTokens":{"total":10},"outputTokens":{"total":3}}}

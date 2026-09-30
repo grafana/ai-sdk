@@ -11,7 +11,7 @@ func TestValidJSON_Unicode(t *testing.T) {
 		input string
 		valid bool
 	}{
-		{`{"x":"\ud83d\ude00"}`, true}, {`{"x":"😀"}`, true}, {`{"x":"\ud800"}`, false}, {`{"x":"\udc00"}`, false}, {`{"x":"\ud800\u0061"}`, false}, {`{"x":"\\ud800"}`, true}, {`{"x":"\"quoted\""}`, true}, {`"\u0061"`, true}, {`"\ud800\ud800"`, false}, {`"\u`, false},
+		{`{"x":"\ud83d\ude00"}`, true}, {`{"x":"😀"}`, true}, {`{"x":"\ud800"}`, true}, {`{"x":"\udc00"}`, true}, {`{"x":"\ud800\u0061"}`, true}, {`{"x":"\\ud800"}`, true}, {`{"x":"\"quoted\""}`, true}, {`"\u0061"`, true}, {`"\ud800\ud800"`, true}, {`"\u`, false},
 	} {
 		t.Run(tc.input, func(t *testing.T) { assert.Equal(t, tc.valid, validJSON([]byte(tc.input))) })
 	}

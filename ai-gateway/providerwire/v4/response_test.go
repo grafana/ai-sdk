@@ -32,7 +32,7 @@ func TestUnarySuccessMapping(t *testing.T) {
 		Usage: provider.Usage{
 			InputTokens:  provider.InputTokenUsage{Total: &maximum, NoCache: &zero, CacheRead: &zero, CacheWrite: &zero},
 			OutputTokens: provider.OutputTokenUsage{Total: &zero, Text: &zero, Reasoning: &zero},
-			Raw:          json.RawMessage(`{"private":true}`),
+			Raw:          json.RawMessage(`{"native_usage":true}`),
 		},
 		Warnings: []provider.Warning{{Type: provider.WarningType("future"), Message: "private warning"}},
 		Response: &provider.GenerateResponse{ResponseMetadata: provider.ResponseMetadata{
@@ -51,10 +51,10 @@ func TestUnarySuccessMapping(t *testing.T) {
 	assert.JSONEq(t, `{
 		"content":[{"type":"text","text":""},{"type":"text","text":"quote=\" slash=\\ newline=\n snowman=☃ html=<>&"}],
 		"finishReason":{"unified":"other","raw":"raw-stop"},
-		"usage":{"inputTokens":{"total":9007199254740991,"noCache":0,"cacheRead":0,"cacheWrite":0},"outputTokens":{"total":0,"text":0,"reasoning":0}}
+		"usage":{"inputTokens":{"total":9007199254740991,"noCache":0,"cacheRead":0,"cacheWrite":0},"outputTokens":{"total":0,"text":0,"reasoning":0},"raw":{"native_usage":true}}
 	}`, string(body))
 	assert.Contains(t, string(body), `html=\u003c\u003e\u0026`)
-	for _, private := range []string{"private warning", "private-response", "private-model", "private-provider", `"private":true`, "warnings", "response"} {
+	for _, private := range []string{"private warning", "private-response", "private-model", "private-provider", "warnings", "response"} {
 		assert.NotContains(t, string(body), private)
 	}
 }
@@ -81,7 +81,7 @@ func TestUnarySuccessValidation(t *testing.T) {
 		tooLarge := maxJavaScriptSafeInteger + 1
 		tests := []*provider.GenerateResult{
 			nil,
-			{Content: []provider.GenerateContentPart{{Type: provider.ContentReasoning}}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}},
+			{Content: []provider.GenerateContentPart{{Type: provider.ContentCustom}}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}},
 			{Content: []provider.GenerateContentPart{{Type: provider.ContentText}}, FinishReason: provider.FinishReason{Unified: provider.UnifiedFinishReason("future")}},
 			{Content: []provider.GenerateContentPart{{Type: provider.ContentText}}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: provider.Usage{InputTokens: provider.InputTokenUsage{Total: &negative}}},
 			{Content: []provider.GenerateContentPart{{Type: provider.ContentText}}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: provider.Usage{OutputTokens: provider.OutputTokenUsage{Total: &tooLarge}}},

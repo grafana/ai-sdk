@@ -1,0 +1,18 @@
+operation: generate
+model: anthropic.claude-3-haiku-20240307-v1:0
+messages:
+  - role: user
+    content:
+      - type: text
+        text: Tell me something restricted.
+        providerOptions:
+          bedrock:
+            guardContent: true
+            guardContentQualifiers:
+              - query
+providerOptions:
+  bedrock:
+    guardrailConfig:
+      guardrailIdentifier: 1abcd2ef34gh
+      guardrailVersion: "1"
+      trace: enabled

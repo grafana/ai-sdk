@@ -105,7 +105,7 @@ func TestBuildParams_ProgrammaticToolCalling(t *testing.T) {
 	require.NoError(t, err)
 	assert.JSONEq(t, `[
 		{"type":"programmatic_tool_calling"},
-		{"type":"function","name":"lookup","parameters":{"type":"object"},"allowed_callers":["programmatic"],"output_schema":{"type":"object","properties":{"ok":{"type":"boolean"}}}}
+		{"type":"function","name":"lookup","parameters":{"type":"object"},"strict":false,"allowed_callers":["programmatic"],"output_schema":{"type":"object","properties":{"ok":{"type":"boolean"}}}}
 	]`, string(encoded))
 
 	input, err := json.Marshal(body["input"])

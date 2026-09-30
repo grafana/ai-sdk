@@ -25,6 +25,7 @@ const (
 	midConversationToolChangesBeta = anthropic.AnthropicBeta("mid-conversation-tool-changes-2026-07-01")
 	serverSideFallbackDefaultBeta  = anthropic.AnthropicBeta("server-side-fallback-2026-07-01")
 	serverSideFallbackExplicitBeta = anthropic.AnthropicBeta("server-side-fallback-2026-06-01")
+	dangerousToolUseBeta           = anthropic.AnthropicBeta("dangerous-tool-use-2026-09-03")
 )
 
 func trimECMAScriptWhitespace(s string) string {
@@ -163,7 +164,9 @@ var (
 		supportsStrictTools:            true,
 		supportsDirectBetaFeatures:     true,
 	}
-	vertexProviderCapabilities = providerCapabilities{}
+	vertexProviderCapabilities = providerCapabilities{
+		supportsNativeStructuredOutput: true,
+	}
 )
 
 func buildParams(modelID string, opts provider.CallOptions, stream bool) (anthropic.BetaMessageNewParams, toolNameMapping, []provider.Warning, buildResult, error) {
@@ -175,11 +178,18 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 		return anthropic.BetaMessageNewParams{}, toolNameMapping{}, nil, buildResult{}, fmt.Errorf("anthropic: invalid file input: %w", err)
 	}
 	var warnings []provider.Warning
+	if err := rejectRawSafeguardNulls(opts.ProviderOptions); err != nil {
+		return anthropic.BetaMessageNewParams{}, toolNameMapping{}, nil, buildResult{}, fmt.Errorf("anthropic: invalid provider options: %w", err)
+	}
 	anthropicOpts, hasAnthropicOpts, err := provider.ResolveOption[AnthropicOptions](opts.ProviderOptions, "anthropic")
 	if err != nil {
 		return anthropic.BetaMessageNewParams{}, toolNameMapping{}, nil, buildResult{}, fmt.Errorf("anthropic: invalid provider options: %w", err)
 	}
 	if err := validateFallbackConfig(anthropicOpts.Fallbacks); err != nil {
+		return anthropic.BetaMessageNewParams{}, toolNameMapping{}, nil, buildResult{}, fmt.Errorf("anthropic: invalid provider options: %w", err)
+	}
+	safeguards, err := projectAnthropicSafeguards(anthropicOpts.Safeguards)
+	if err != nil {
 		return anthropic.BetaMessageNewParams{}, toolNameMapping{}, nil, buildResult{}, fmt.Errorf("anthropic: invalid provider options: %w", err)
 	}
 	v := &cacheControlValidator{}
@@ -337,10 +347,12 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 				}
 				content = append(content, converted...)
 			}
-			p.Messages = append(p.Messages, anthropic.BetaMessageParam{
-				Role:    anthropic.BetaMessageParamRoleAssistant,
-				Content: content,
-			})
+			if len(content) > 0 {
+				p.Messages = append(p.Messages, anthropic.BetaMessageParam{
+					Role:    anthropic.BetaMessageParamRoleAssistant,
+					Content: content,
+				})
+			}
 		}
 	}
 
@@ -446,12 +458,16 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 
 	applyFallbacks(&p, anthropicOpts.Fallbacks, providerCaps, &br, &warnings)
 	applyProviderOptions(&p, anthropicOpts, hasAnthropicOpts, &warnings)
+	if len(safeguards) > 0 {
+		br.requestOptions = append(br.requestOptions, option.WithJSONSet("safeguards", safeguards))
+		p.Betas = appendBetaUnique(p.Betas, dangerousToolUseBeta)
+	}
 
 	for _, b := range toolBetas {
 		p.Betas = appendBetaUnique(p.Betas, anthropic.AnthropicBeta(b))
 	}
 
-	if supportsNativeStructuredOutput && !br.usesJsonResponseTool && hasFunctionTools(opts.Tools) {
+	if providerCaps.supportsDirectBetaFeatures && supportsNativeStructuredOutput && !br.usesJsonResponseTool && hasFunctionTools(opts.Tools) {
 		p.Betas = appendBetaUnique(p.Betas, "structured-outputs-2025-11-13")
 	}
 
@@ -965,6 +981,9 @@ func convertAssistantContent(v *cacheControlValidator, mapping toolNameMapping, 
 		case provider.ContentPartTypeText:
 			cc := v.resolveCacheControl(p.ProviderOptions, msgOpts, isLast, true)
 			if isCompaction(p.ProviderOptions) {
+				if p.Text == "" {
+					continue
+				}
 				blocks = append(blocks, anthropic.BetaContentBlockParamUnion{
 					OfCompaction: &anthropic.BetaCompactionBlockParam{
 						Content:      anthropic.String(p.Text),
@@ -990,17 +1009,17 @@ func convertAssistantContent(v *cacheControlValidator, mapping toolNameMapping, 
 			sig := extractSignature(p.ProviderOptions)
 			redacted := extractRedactedData(p.ProviderOptions)
 			switch {
-			case sig != "":
+			case sig != nil:
 				blocks = append(blocks, anthropic.BetaContentBlockParamUnion{
 					OfThinking: &anthropic.BetaThinkingBlockParam{
 						Thinking:  p.Text,
-						Signature: sig,
+						Signature: *sig,
 					},
 				})
-			case redacted != "":
+			case redacted != nil:
 				blocks = append(blocks, anthropic.BetaContentBlockParamUnion{
 					OfRedactedThinking: &anthropic.BetaRedactedThinkingBlockParam{
-						Data: redacted,
+						Data: *redacted,
 					},
 				})
 			case p.Text != "":
@@ -2713,6 +2732,60 @@ func applyFallbacks(p *anthropic.BetaMessageNewParams, fallbacks *FallbackConfig
 	p.Betas = appendBetaUnique(p.Betas, serverSideFallbackExplicitBeta)
 }
 
+func rejectRawSafeguardNulls(opts provider.ProviderOptions) error {
+	raw, ok := opts["anthropic"].(provider.RawProviderOption)
+	if !ok {
+		return nil
+	}
+	var fields struct {
+		Safeguards json.RawMessage `json:"safeguards"`
+	}
+	if json.Unmarshal(raw.Raw, &fields) != nil || len(fields.Safeguards) == 0 {
+		return nil
+	}
+	if bytes.Equal(bytes.TrimSpace(fields.Safeguards), []byte("null")) {
+		return fmt.Errorf("safeguards must be an array, not null")
+	}
+	var entries []struct {
+		ClassifierContext json.RawMessage `json:"classifierContext"`
+	}
+	if err := json.Unmarshal(fields.Safeguards, &entries); err != nil {
+		return fmt.Errorf("decoding safeguards: %w", err)
+	}
+	for i, entry := range entries {
+		if bytes.Equal(bytes.TrimSpace(entry.ClassifierContext), []byte("null")) {
+			return fmt.Errorf("safeguards[%d].classifierContext must be an object, not null", i)
+		}
+	}
+	return nil
+}
+
+func projectAnthropicSafeguards(entries []AnthropicSafeguard) ([]map[string]any, error) {
+	if len(entries) == 0 {
+		return nil, nil
+	}
+	projected := make([]map[string]any, 0, len(entries))
+	for i, entry := range entries {
+		if entry.Type != AnthropicSafeguardDangerousToolUse {
+			return nil, fmt.Errorf("safeguards[%d].type must be %q", i, AnthropicSafeguardDangerousToolUse)
+		}
+		item := map[string]any{"type": entry.Type}
+		if entry.ClassifierContext != nil {
+			if *entry.ClassifierContext == nil {
+				return nil, fmt.Errorf("safeguards[%d].classifierContext must be an object, not null", i)
+			}
+			for name, value := range *entry.ClassifierContext {
+				if !json.Valid(value) {
+					return nil, fmt.Errorf("safeguards[%d].classifierContext[%q] contains invalid JSON", i, name)
+				}
+			}
+			item["classifier_context"] = *entry.ClassifierContext
+		}
+		projected = append(projected, item)
+	}
+	return projected, nil
+}
+
 func applyProviderOptions(p *anthropic.BetaMessageNewParams, ao AnthropicOptions, ok bool, warnings *[]provider.Warning) {
 	if !ok {
 		return
@@ -2863,16 +2936,16 @@ func extractRawJSON(opts provider.ProviderOptions) json.RawMessage {
 	return nil
 }
 
-func extractSignature(opts provider.ProviderOptions) string {
+func extractSignature(opts provider.ProviderOptions) *string {
 	raw := extractRawJSON(opts)
 	if raw == nil {
-		return ""
+		return nil
 	}
 	var data struct {
-		Signature string `json:"signature"`
+		Signature *string `json:"signature"`
 	}
 	if json.Unmarshal(raw, &data) != nil {
-		return ""
+		return nil
 	}
 	return data.Signature
 }
@@ -2880,16 +2953,16 @@ func extractSignature(opts provider.ProviderOptions) string {
 // extractRedactedData reads the anthropic-namespaced `redactedData` value off
 // a reasoning ContentPart's ProviderOptions; used to round-trip Anthropic's
 // `redacted_thinking` blocks across multi-turn requests.
-func extractRedactedData(opts provider.ProviderOptions) string {
+func extractRedactedData(opts provider.ProviderOptions) *string {
 	raw := extractRawJSON(opts)
 	if raw == nil {
-		return ""
+		return nil
 	}
 	var data struct {
-		RedactedData string `json:"redactedData"`
+		RedactedData *string `json:"redactedData"`
 	}
 	if json.Unmarshal(raw, &data) != nil {
-		return ""
+		return nil
 	}
 	return data.RedactedData
 }

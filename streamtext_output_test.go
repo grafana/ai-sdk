@@ -965,7 +965,7 @@ func TestStreamText_OutputWithLengthFinishReason(t *testing.T) {
 	}
 }
 
-func TestGenerateText_OutputWithLengthFinishReason(t *testing.T) {
+func TestGenerateText_RepairOutputWithLengthFinishReason(t *testing.T) {
 	ch := make(chan provider.StreamPart, 10)
 	go func() {
 		defer close(ch)
@@ -1000,8 +1000,9 @@ func TestGenerateText_OutputWithLengthFinishReason(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	assert.False(t, called)
+	assert.True(t, called)
 	assert.Equal(t, provider.FinishReasonLength, result.FinishReason.Unified)
-	assert.Nil(t, result.Output)
-	assert.Nil(t, result.OutputError)
+	assert.Equal(t, `{"name":`, result.Text)
+	assert.Equal(t, s{Name: "repaired"}, result.Output)
+	assert.NoError(t, result.OutputError)
 }

@@ -552,9 +552,9 @@ The conformance suite SHALL support deterministic provider-independent cases for
 
 #### Scenario: Generated-file UI chunk parity
 
-- **WHEN** a controlled model replays URL-valued reasoning-file and inline-data file stream parts
-- **THEN** Go SHALL emit the same `reasoning-file` and `file` UI chunks, fields, metadata, ordering, and lifecycle chunks as the registered upstream `ai` package
-- **AND** the expected sequence SHALL be reproducible from the fixture's stream-part input and exact-baseline TypeScript generator
+- **WHEN** a controlled model replays a `data:` URL-valued reasoning-file and inline-data file stream parts
+- **THEN** Go SHALL emit the same resolved `reasoning-file` and `file` UI chunks, fields, metadata, ordering, and lifecycle chunks as the registered upstream `ai` package
+- **AND** the expected sequence SHALL be reproducible from the fixture's stream-part input and exact-baseline TypeScript generator without external network access
 
 #### Scenario: Cancellation before provider output
 
