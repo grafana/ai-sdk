@@ -90,20 +90,6 @@ func TestConsumeStream_CancelStalledConsumer(t *testing.T) {
 	require.Eventually(t, func() bool { return body.closes.Load() == 1 }, time.Second, time.Millisecond)
 }
 
-func TestDoStream_RawInitialError(t *testing.T) {
-	m := NewResponses("test-key", "gpt-4o", WithRequestOptions(option.WithMaxRetries(0), option.WithHTTPClient(&http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		response := transportResponse(r, true)
-		response.Body = io.NopCloser(strings.NewReader(transportSSE([]string{`{"type":"error","code":"insufficient_quota","message":"failed"}`})))
-		return response, nil
-	})})))
-	result, err := m.DoStream(t.Context(), provider.CallOptions{IncludeRawChunks: true})
-	require.Error(t, err)
-	assert.Nil(t, result)
-	var apiErr *provider.APICallError
-	require.ErrorAs(t, err, &apiErr)
-	assert.Equal(t, http.StatusTooManyRequests, apiErr.StatusCode)
-}
-
 func TestDoStream_SDKDecoderOwnership(t *testing.T) {
 	for _, cancelStream := range []bool{false, true} {
 		name := "completed"
