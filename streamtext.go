@@ -766,7 +766,7 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 		}
 
 		if outcome.toolChoiceViolated || !hasClientToolCalls || stopped || hasUnresolvedClientToolCalls {
-			if !outcome.toolChoiceViolated && cfg.output != nil && (cfg.parseOutputOnAllFinishes || step.FinishReason.Unified == provider.FinishReasonStop ||
+			if cfg.output != nil && (cfg.parseOutputOnAllFinishes || step.FinishReason.Unified == provider.FinishReasonStop ||
 				(step.FinishReason.Unified != provider.FinishReasonToolCalls && step.Text != "")) {
 				outputVal, outputErr := cfg.output.ParseComplete(step.Text)
 				r.mu.Lock()
@@ -1342,7 +1342,11 @@ loop:
 		choiceViolation = validateToolChoice(*cfg.toolChoice, step.ToolCalls)
 		if choiceViolation != nil {
 			step.FinishReason.Unified = provider.FinishReasonError
-			r.emitStreamError(choiceViolation, cfg.onError)
+			r.emitStreamError(choiceViolation, nil)
+			r.callOnChunk(cfg, StreamError{Error: choiceViolation})
+			if cfg.onError != nil {
+				cfg.onError(choiceViolation)
+			}
 		}
 	}
 	if completed || partialCompleted {

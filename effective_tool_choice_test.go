@@ -53,7 +53,8 @@ func TestStreamText_EffectiveToolChoiceViolation(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			model := effectiveToolChoiceModel(effectiveToolChoiceParts(tc.calls...))
-			executions, errors, stepFinishes, finishes := 0, 0, 0, 0
+			executions, errors, chunkErrors, stepFinishes, finishes := 0, 0, 0, 0, 0
+			var errorCallbacks []string
 			var callbackStep OnStepFinishState
 			var callbackFinish OnFinishState
 			result := StreamText(t.Context(), model,
@@ -62,7 +63,13 @@ func TestStreamText_EffectiveToolChoiceViolation(t *testing.T) {
 					executions++
 					return json.RawMessage(`"unexpected"`), nil
 				}}}),
-				OnError(func(error) { errors++ }),
+				OnChunk(func(state OnChunkState) {
+					if _, ok := state.Chunk.(StreamError); ok {
+						chunkErrors++
+						errorCallbacks = append(errorCallbacks, "chunk")
+					}
+				}),
+				OnError(func(error) { errors++; errorCallbacks = append(errorCallbacks, "error") }),
 				OnStepFinish(func(state OnStepFinishState) { stepFinishes++; callbackStep = state }),
 				OnFinish(func(state OnFinishState) { finishes++; callbackFinish = state }),
 			)
@@ -74,6 +81,8 @@ func TestStreamText_EffectiveToolChoiceViolation(t *testing.T) {
 			assert.Zero(t, executions)
 			assert.Equal(t, 1, model.callCount)
 			assert.Equal(t, 1, errors)
+			assert.Equal(t, 1, chunkErrors)
+			assert.Equal(t, []string{"chunk", "error"}, errorCallbacks)
 			assert.Equal(t, 1, stepFinishes)
 			assert.Equal(t, 1, finishes)
 			require.Len(t, result.Steps(), 1)
