@@ -82,14 +82,14 @@ When IncludeRawChunks is true, both native adapters SHALL emit PartStreamStart f
 
 ### Requirement: Malformed and error frames preserve the raw-value boundary
 
-For a frame delivered after successful preflight, valid JSON SHALL remain valid RawValue even if typed decoding fails. Syntactically invalid JSON SHALL produce a PartRaw with nil RawValue when raw is enabled, followed by the normalized error; the adapter SHALL NOT put invalid bytes in json.RawMessage or substitute a JSON string. Valid JSON null SHALL remain distinguishable from missing RawValue. Error preflight SHALL retain its existing return-versus-stream behavior regardless of raw selection; no stream result SHALL be returned solely to expose raw evidence of an initial failure.
+For a frame delivered after successful preflight, valid JSON SHALL remain valid RawValue even if typed decoding fails. Syntactically invalid JSON in events eligible for SDK typed decoding SHALL produce a PartRaw with nil RawValue when raw is enabled, followed by the normalized error; the adapter SHALL NOT put invalid bytes in json.RawMessage or substitute a JSON string. Valid JSON null SHALL remain distinguishable from missing RawValue. Error preflight SHALL retain its existing return-versus-stream behavior regardless of raw selection; no stream result SHALL be returned solely to expose raw evidence of an initial failure.
 
 #### Scenario: Valid JSON cannot decode into a typed event
 - **WHEN** a post-preflight frame is valid JSON but fails typed decoding with raw enabled
 - **THEN** its complete valid JSON raw part precedes the decoding error
 
 #### Scenario: Invalid JSON after preflight
-- **WHEN** a post-preflight frame contains syntactically invalid JSON with raw enabled
+- **WHEN** a post-preflight frame eligible for SDK typed decoding contains syntactically invalid JSON with raw enabled
 - **THEN** a raw part with nil RawValue precedes the error
 - **AND** provider stream-part serialization does not fail because of invalid RawValue bytes
 
@@ -105,6 +105,20 @@ For a frame delivered after successful preflight, valid JSON SHALL remain valid 
 #### Scenario: Initial error still fails setup
 - **WHEN** existing preflight recognizes an initial provider failure with IncludeRawChunks true
 - **THEN** DoStream returns the existing classified error without a stream result
+
+#### Scenario: Anthropic ignored malformed payload retains SDK behavior
+- **WHEN** an Anthropic ping or ignored SSE event contains invalid JSON
+- **THEN** normalization ignores that event as the existing SDK does
+- **AND** raw selection exposes nil RawValue without introducing a normalized error
+
+### Requirement: Startup retention is bounded independently of raw selection
+
+Both native adapters SHALL limit startup processing to 64 data frames and 1 MiB of event data before stream handoff. Exceeding either budget SHALL return a non-retryable setup error without a stream result and cancel decoder ownership. The same policy SHALL apply with raw output enabled or disabled; neither truncation nor an earlier handoff SHALL substitute for overflow failure.
+
+#### Scenario: Startup prefix exceeds the budget
+- **WHEN** pings, ignored events, or other startup frames exceed a startup budget before handoff
+- **THEN** DoStream returns a non-retryable setup error without a stream result
+- **AND** acquired decoder ownership is released once without consumer reads
 
 ### Requirement: Transport capture preserves SDK ownership
 

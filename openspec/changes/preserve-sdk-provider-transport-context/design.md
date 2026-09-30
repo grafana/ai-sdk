@@ -54,9 +54,11 @@ OpenAI extends its existing responseStreamItem with raw evidence through pump, p
 
 ### 5. Raw means JSON event evidence, not wire-byte archival
 
-Emit stream-start first, then one raw part before each event's normalized parts when requested. Include Anthropic pings and ignored JSON events; exclude SSE comments, empty non-data frames, and `[DONE]`. Preserve original valid JSON, including unknown fields and provider error envelopes, even when typed decoding fails. Invalid JSON produces nil RawValue followed by an error, representing upstream's undefined rawValue; JSON `null` remains distinct valid raw JSON.
+Emit stream-start first, then one raw part before each event's normalized parts when requested. Include Anthropic pings and ignored JSON events; exclude SSE comments, empty non-data frames, and `[DONE]`. Preserve original valid JSON, including unknown fields and provider error envelopes, even when typed decoding fails. Invalid JSON produces nil RawValue followed by an error when the SDK would decode that event, representing upstream's undefined rawValue; JSON `null` remains distinct valid raw JSON. Anthropic retains the SDK's event-name filtering: malformed ping/unknown payloads remain ignored by normalization but are raw-observable with nil RawValue.
 
 Emit no raw parts when omitted/false. Do not accumulate a whole stream or duplicate raw storage when disabled beyond decoding/error needs. Preflight errors return no stream result, so they cannot also deliver raw parts; post-preflight errors retain raw-before-error ordering. Closing/canceling owns decoder cleanup once and must unblock channel sends with a stalled consumer.
+
+Both adapters limit startup retention to 64 data frames and 1 MiB of data, independently of raw selection. Exceeding either limit returns a non-retryable setup error and cancels the decoder without handing off a stream or truncating raw evidence. This approved resource-safety adaptation preserves ordinary initial-error behavior but rejects oversized/pathological startup prefixes.
 
 ### 6. Preserve the Gateway boundary
 
@@ -72,7 +74,7 @@ Keep native metadata local to native provider/core surfaces. Gateway continues r
 
 ## Migration Plan
 
-Implement failing focused tests first, then headers/metadata and frame-level raw support incrementally. Do not fabricate recorded provider fixtures. Run affected module/core tests, public-module checks, Gateway privacy regressions, and `mise run parity-check`. Add schema-parsed cross-language regression evidence if frontend wire behavior changes. Update durable parity coverage only after tests establish the new boundary; record the outbound-body adaptation without copying an issue backlog into PARITY.md.
+Implement failing focused tests first, then headers/metadata and frame-level raw support incrementally. Do not fabricate recorded provider fixtures. Run affected candidate-source module/core tests, Gateway privacy regressions, and the parity gates with workspace conformance. Public-module (`GOWORK=off`) validation is excluded from this implementation scope. Add schema-parsed cross-language regression evidence if frontend wire behavior changes. Update durable parity coverage only after tests establish the new boundary; record the outbound-body adaptation without copying an issue backlog into PARITY.md.
 
 No public API migration is needed. Rollback reverts adapter-local implementation and its new tests without changing client construction or Gateway policy. Completion requires both adapters and result propagation; metadata-only progress does not close #229.
 
