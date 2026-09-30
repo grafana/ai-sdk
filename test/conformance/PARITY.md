@@ -34,6 +34,7 @@ evidence boundary changes, not merely because the pinned versions change.
 | Gateway runtime and Go client | mixed | Handler, differential and command tests exercise supported text/function-tool/file-input paths, framing, bounds, privacy, cancellation and ownership. | Schema acceptance and runtime support differ. Permissive client parsing does not prove strict server output, privacy or resource bounds. |
 | Gateway reasoning transport | mixed | Strict runtime and pinned TS/Go differential tests cover reasoning-file data/URL, usage and metadata; authenticated command tests replay both clients' assembled Anthropic/OpenAI/compatible history. Schema-parsed frontend SSE covers concurrency, replacement and files; native Anthropic/Bedrock HTTP tests cover empty/opaque continuation. | Synthetic native requests are not recordings. High-level unary TS uses explicit host user-agent transport adaptation; arbitrary body headers remain unsupported. Command Bedrock configuration is not provided. Workspace/conformance success does not establish published adoption of local producer fixes. |
 | Gateway host composition | mixed | Real-command tests use fake providers/JWKS for identity separation, routing, fallback, tool continuation and shutdown; a dummy Cloud edge exercises Go and pinned Vercel stack/CAP bearer headers, credential stripping and scope outcomes. | The dummy edge does not prove production CAP validation, expiry/revocation, policy realms or deployed ingress isolation. Generic HTTP error coverage is broader than errors reachable through the command's configured policies. |
+| Gateway provider conformance matrix | mixed | `test-conformance-gateway` runs every provider fixture through both registered Gateway clients against the production image and compares existing UI/request/object/usage/unary goldens. `test-conformance-gateway-harness` checks infrastructure and direct TypeScript replay without rewriting goldens. | Required for merging, with no capability skips or expected-failure passes; it does not establish full gateway parity or deployed-service behavior. Image execution requires Linux/local Docker; provider-independent UI fixtures remain direct-only. |
 | Baseline and fixture inventory | automated | Baseline validation covers registered consumers; generation and INDEX checks verify source existence, streaming inventory and byte-identical imports. | Generation does not establish input provenance. Unimported operations remain explicit in INDEX files. |
 | Published module dependencies | automated | Standalone readonly tests resolve published dependencies with GOWORK=off. | Workspace substitutions do not prove consumer adoption of a producer change. |
 
@@ -66,6 +67,10 @@ evidence boundary changes, not merely because the pinned versions change.
   Arbitrary application text and bounded raw responses remain caller-visible.
 - Linux FIFO deadline tests are platform-specific; socket checks on another
   platform do not establish Linux runtime behavior.
+- Gateway conformance is required for merging but remains independent of
+  production image publication. Sanitized startup failures without a verified
+  cause are harness failures, not evidence of provider rejection; reports
+  distinguish attempts from actual client executions.
 
 ## Retained deviations without issue ownership
 

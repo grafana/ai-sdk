@@ -290,7 +290,7 @@ jobs:
           echo 'AI Gateway did not become ready within 30 attempts' >&2
           exit 1
 
-  conformance-test:
+  direct-conformance-test:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -358,6 +358,71 @@ jobs:
           fi
           exit "${{ steps.conformance.outputs.exit_code }}"
 
+  gateway-conformance-test:
+    name: Gateway conformance
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          version: "2026.5.4"
+          experimental: true
+          cache: false
+
+      - name: Gateway conformance harness tests
+        run: mise run test-conformance-gateway-harness
+
+      - name: Full gateway conformance matrix
+        if: ${{ !cancelled() }}
+        run: mise run test-conformance-gateway
+
+      - name: Gateway conformance artifacts
+        id: gateway-artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: gateway-conformance
+          path: test/conformance/gateway-results/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Gateway conformance summary
+        if: always()
+        env:
+          ARTIFACT_URL: ${{ steps.gateway-artifacts.outputs.artifact-url }}
+        run: |
+          if [ -f test/conformance/gateway-results/summary.md ]; then
+            cat test/conformance/gateway-results/summary.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'Gateway conformance did not produce a report; inspect setup logs.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -n "$ARTIFACT_URL" ]; then
+            printf '\n[Download full report and per-row evidence](%s)\n' "$ARTIFACT_URL" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  conformance-test:
+    name: conformance-test
+    if: ${{ always() }}
+    needs:
+      - direct-conformance-test
+      - gateway-conformance-test
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Require both conformance suites
+        env:
+          DIRECT_RESULT: ${{ needs.direct-conformance-test.result }}
+          GATEWAY_RESULT: ${{ needs.gateway-conformance-test.result }}
+        run: |
+          echo "Direct conformance: $DIRECT_RESULT; Gateway conformance: $GATEWAY_RESULT"
+          test "$DIRECT_RESULT" = success && test "$GATEWAY_RESULT" = success
+
   publish-ai-gateway-image:
     name: Publish AI Gateway image
     if: >-
@@ -370,7 +435,7 @@ jobs:
       - module-resolution
       - parity-baseline
       - integration-test
-      - conformance-test
+      - direct-conformance-test
       - image-validation
     runs-on: ubuntu-latest
     permissions:
