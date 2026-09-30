@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"strings"
 
 	"github.com/grafana/ai-sdk/internal/anthropicschema"
 	"github.com/grafana/ai-sdk/provider"
@@ -129,7 +130,7 @@ func buildRequestWithFamily(modelID string, family ModelFamily, opts provider.Ca
 	warnings = append(warnings, pt.warnings...)
 
 	// Inference config (scalar sampling params).
-	inf, infWarnings := buildInferenceConfig(opts, isAnthropic, bo)
+	inf, infWarnings := buildInferenceConfig(modelID, opts, isAnthropic, bo)
 	warnings = append(warnings, infWarnings...)
 
 	// additionalModelRequestFields construction.
@@ -246,24 +247,42 @@ func mergeAdditionalModelRequestField(dst map[string]any, key string, value any)
 // buildInferenceConfig maps scalar CallOptions params to Converse
 // inferenceConfig, with clamping and warnings for out-of-range values and
 // unsupported params (frequency/presence penalties, seed).
-func buildInferenceConfig(opts provider.CallOptions, isAnthropic bool, bo BedrockOptions) (*inferenceConfig, []provider.Warning) {
+func buildInferenceConfig(modelID string, opts provider.CallOptions, isAnthropic bool, bo BedrockOptions) (*inferenceConfig, []provider.Warning) {
 	var warnings []provider.Warning
 	inf := &inferenceConfig{}
+	rejectsSampling := isAnthropic && rejectsSamplingParameters(modelID)
+	if rejectsSampling {
+		for _, feature := range []struct {
+			name    string
+			present bool
+		}{
+			{"temperature", opts.Temperature != nil},
+			{"topK", opts.TopK != nil},
+			{"topP", opts.TopP != nil},
+		} {
+			if feature.present {
+				warnings = append(warnings, provider.Warning{
+					Type: provider.WarnUnsupported, Feature: feature.name,
+					Details: fmt.Sprintf("%s is not supported by %s and will be ignored", feature.name, modelID),
+				})
+			}
+		}
+	}
 
 	if opts.MaxOutputTokens != nil {
 		v := *opts.MaxOutputTokens
 		inf.MaxTokens = &v
 	}
-	if opts.Temperature != nil {
+	if opts.Temperature != nil && !rejectsSampling {
 		t := *opts.Temperature
-		if t > 1 {
+		if t > 1 && (!isOpenAIModel(modelID) || isOpenAIGptOSSModel(modelID)) {
 			warnings = append(warnings, provider.Warning{
 				Type:    provider.WarnUnsupported,
 				Feature: "temperature",
 				Details: fmt.Sprintf("%v exceeds bedrock maximum of 1.0. clamped to 1.0", t),
 			})
 			t = 1
-		} else if t < 0 {
+		} else if t < 0 && (!isOpenAIModel(modelID) || isOpenAIGptOSSModel(modelID)) {
 			warnings = append(warnings, provider.Warning{
 				Type:    provider.WarnUnsupported,
 				Feature: "temperature",
@@ -273,11 +292,11 @@ func buildInferenceConfig(opts provider.CallOptions, isAnthropic bool, bo Bedroc
 		}
 		inf.Temperature = &t
 	}
-	if opts.TopP != nil {
+	if opts.TopP != nil && !rejectsSampling {
 		v := *opts.TopP
 		inf.TopP = &v
 	}
-	if opts.TopK != nil {
+	if opts.TopK != nil && !rejectsSampling {
 		v := *opts.TopK
 		inf.TopK = &v
 	}
@@ -318,6 +337,26 @@ func buildInferenceConfig(opts provider.CallOptions, isAnthropic bool, bo Bedroc
 				Details: "topK is not supported when thinking is enabled",
 			})
 			inf.TopK = nil
+		}
+	}
+
+	if isOpenAIModel(modelID) {
+		for _, feature := range []struct {
+			name    string
+			present bool
+			clear   func()
+		}{
+			{"temperature", !isOpenAIGptOSSModel(modelID) && inf.Temperature != nil, func() { inf.Temperature = nil }},
+			{"topP", !isOpenAIGptOSSModel(modelID) && inf.TopP != nil, func() { inf.TopP = nil }},
+			{"stopSequences", len(inf.StopSequences) > 0, func() { inf.StopSequences = nil }},
+		} {
+			if feature.present {
+				feature.clear()
+				warnings = append(warnings, provider.Warning{
+					Type: provider.WarnUnsupported, Feature: feature.name,
+					Details: fmt.Sprintf("%s is not supported by this OpenAI model on the Converse API", feature.name),
+				})
+			}
 		}
 	}
 
@@ -407,7 +446,18 @@ func resolveReasoningConfig(modelID string, isAnthropic bool, reasoning provider
 			resolved = cloneReasoningConfig(explicit)
 		}
 	} else {
+		if !isAnthropic && !isOpenAIModel(modelID) && !strings.Contains(modelID, "amazon.nova-2-lite-v1:0") && explicit == nil {
+			*warnings = append(*warnings, provider.Warning{
+				Type:    provider.WarnUnsupported,
+				Feature: "reasoning",
+				Details: "Portable reasoning is not supported for this model and will be ignored. If the model supports a provider-specific reasoning configuration, use providerOptions.amazonBedrock.reasoningConfig.",
+			})
+			return nil
+		}
 		resolved = mergeReasoningConfig(deriveReasoningConfig(modelID, isAnthropic, reasoning, warnings), explicit)
+		if !isAnthropic && strings.Contains(modelID, "amazon.nova-2-lite-v1:0") && resolved != nil && resolved.Type == "" {
+			resolved.Type = "enabled"
+		}
 	}
 	if resolved != nil && resolved.Type == "disabled" {
 		resolved.BudgetTokens = 0

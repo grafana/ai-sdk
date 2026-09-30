@@ -229,7 +229,7 @@ func TestParseResponse_MistralToolCallNormalized(t *testing.T) {
 	result, err := parseResponse(body, nil, testMistralModel, requestMeta{isMistral: true}, defaultGenerateID)
 	require.NoError(t, err)
 	require.Len(t, result.Content, 1)
-	assert.Equal(t, "toolusebp", result.Content[0].ToolCallID)
+	assert.Equal(t, "8eHypBDcw", result.Content[0].ToolCallID)
 }
 
 func TestParseResponse_ErrorOnInvalidJSON(t *testing.T) {

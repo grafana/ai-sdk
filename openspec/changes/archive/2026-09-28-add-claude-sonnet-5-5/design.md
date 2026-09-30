@@ -1,8 +1,8 @@
 ## Context
 
-The registered reference in `test/conformance/upstream.yaml` is `@ai-sdk/anthropic` 4.0.59 and `@ai-sdk/amazon-bedrock` 5.0.90. Neither knows `claude-sonnet-5-5`. The behavior here comes from `@ai-sdk/anthropic` 4.0.67 and `@ai-sdk/amazon-bedrock` 5.0.99, both published from vercel/ai commit `ec683e7`. The upstream sources are `anthropic-language-model.ts` (`getModelCapabilities`, thinking normalization, JSON-tool selection), `anthropic-prepare-tools.ts` (the forced tool-choice fallback), `amazon-bedrock-chat-language-model.ts` and `amazon-bedrock-prepare-tools.ts`. The upstream tests are the `claude-sonnet-5-5 specific behavior` block in `anthropic-language-model.test.ts` and the `models that reject forced tool use` block in `amazon-bedrock-chat-language-model.test.ts`. Upstream has no `__fixtures__` recordings for this model.
+The registered reference in `test/conformance/upstream.yaml` is `@ai-sdk/anthropic` 4.0.65 and `@ai-sdk/amazon-bedrock` 5.0.97. Neither knows `claude-sonnet-5-5`. The behavior here comes from `@ai-sdk/anthropic` 4.0.67 and `@ai-sdk/amazon-bedrock` 5.0.99, both published from vercel/ai commit `ec683e7`. The upstream sources are `anthropic-language-model.ts` (`getModelCapabilities`, thinking normalization, JSON-tool selection), `anthropic-prepare-tools.ts` (the forced tool-choice fallback), `amazon-bedrock-chat-language-model.ts` and `amazon-bedrock-prepare-tools.ts`. The upstream tests are the `claude-sonnet-5-5 specific behavior` block in `anthropic-language-model.test.ts` and the `models that reject forced tool use` block in `amazon-bedrock-chat-language-model.test.ts`. Upstream has no `__fixtures__` recordings for this model.
 
-The conformance recorder drives the registered packages, so any recording made today would come from 4.0.59 and would send `disabled` thinking, which this model rejects. Porting ahead of the baseline therefore loses the usual upstream-backed replay. See proposal.md for why the port still goes ahead.
+The conformance recorder drives the registered packages, so any recording made today would come from the registered packages and would send `disabled` thinking, which this model rejects. Porting ahead of the baseline therefore loses the usual upstream-backed replay. See proposal.md for why the port still goes ahead.
 
 ## Goals / Non-Goals
 
@@ -10,11 +10,10 @@ The conformance recorder drives the registered packages, so any recording made t
 
 **Non-Goals:**
 - Advancing the registered baseline.
-- The other 4.0.60–4.0.67 capability changes: `claude-opus-5-5` and `claude-fable-5-1` get the same flags upstream, and upstream maps reasoning `none` to effort `low` on models without `between_tools`.
-- The Bedrock 5.0.93 sampling-parameter removal for newer Claude models.
+- The other capability changes up to 4.0.67: `claude-opus-5-5` and `claude-fable-5-1` get the same flags upstream, and upstream maps reasoning `none` to effort `low` on models without `between_tools`.
 - Recorded provider fixtures.
 
-The Opus 5.5 and Fable 5.1 items are already tracked by [#275](https://github.com/grafana/ai-sdk/issues/275). The Bedrock sampling removal is tracked by [#279](https://github.com/grafana/ai-sdk/issues/279), and the missing upstream-backed evidence for this model by [#278](https://github.com/grafana/ai-sdk/issues/278).
+The Opus 5.5 and Fable 5.1 items are already tracked by [#275](https://github.com/grafana/ai-sdk/issues/275). The Bedrock 5.0.93 sampling removal for newer Claude models, first tracked by [#279](https://github.com/grafana/ai-sdk/issues/279), landed on `main` with the 4.0.65 / 5.0.97 baseline upgrade (#301) and also covers this model. The missing upstream-backed evidence for this model by [#278](https://github.com/grafana/ai-sdk/issues/278).
 
 ## Decisions
 
@@ -34,7 +33,7 @@ The Opus 5.5 and Fable 5.1 items are already tracked by [#275](https://github.co
 | No `us.anthropic.claude-sonnet-5-5` in the advisory list | Parity-preserving adaptation |
 | Tool-choice warning appears before sampling warnings, not last | Parity-preserving adaptation (same warnings, different order) |
 | `claude-opus-5-5`, `claude-fable-5-1` flags; reasoning `none` → effort `low` | Implementation gap, tracked by #275 |
-| Bedrock 5.0.93 sampling removal for newer Claude models | Implementation gap, tracked by #279 |
+| Bedrock 5.0.93 sampling removal for newer Claude models | Fixed on `main` by #301 (closes #279) |
 | No upstream-backed replay for this model | Coverage gap, tracked by #278 |
 
 ## Risks / Trade-offs

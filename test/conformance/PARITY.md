@@ -21,14 +21,14 @@ evidence boundary changes, not merely because the pinned versions change.
 
 | Surface | Status | Evidence | Boundary |
 | --- | --- | --- | --- |
-| Core orchestration and tools | mixed | Root tests, provider-independent UI fixtures and HTTP/core integration tests exercise lifecycle, tool execution, approvals, continuation, ordering and cancellation. | Provider replay covers configured scenarios, not every core option or scheduling interleaving. |
+| Core orchestration and tools | mixed | Root tests, provider-independent UI fixtures and HTTP/core integration tests exercise lifecycle, tool execution, approvals, continuation, ordering, cancellation and URL-backed generated-file resolution with deterministic network policy tests. | Provider replay covers configured scenarios, not every core option or scheduling interleaving. Deterministic generated-file HTTP tests do not prove live provider-hosted downloads. |
 | Structured output | mixed | Object snapshots and unit tests exercise schemas, partial values, array elements and parsing. | Final-value snapshots do not establish partial-delivery or failure behavior; those require focused tests. |
 | UI messages and SSE | mixed | Chunk snapshots, framing tests and schema-parsed frontend tests exercise conversion, ordering and assembly. | Reader/writer tests do not establish all browser or hook lifecycle behavior. |
-| React hooks | mixed | Actual useChat, useCompletion and useObject tests exercise selected success, error, stop, tool and approval flows. | Other lifecycle paths are not established by these tests or by chunk snapshots alone. |
+| React hooks | mixed | Actual useChat, useCompletion and useObject tests exercise selected success, error, stop, tool, approval and generated-file delivery flows. | Other lifecycle paths are not established by these tests or by chunk snapshots alone. |
 | Agent, middleware and registry | mixed | Root tests exercise configuration, wrapping, provider resolution, simulated generated-content projection and cancellation; a schema-parsed frontend scenario checks simulated UI chunks and assembly. | Synthetic simulated generation does not prove real provider emissions; delegation to another implementation does not independently prove every entry point. |
 | Agent Observability integration | mixed | Tests against the agento11y versions in the middleware's `go.mod` cover cached unary/streaming usage, inclusive export/span/metric semantics, and hook fixtures replayed through the real HTTP decoder. Gateway tests cover cached unary/streaming inclusive exports with both source and published middleware, bounded HTTP/gRPC export attempts, and ambient configuration rejection. | Hook validation starts after SDK normalization; discarded wire fields cannot be validated, and lost provider-tool discriminators fail reconstruction. Local HTTP servers do not prove deployed hook-service compatibility. Experimental OTel generation export is outside this evidence. |
 | LanguageModelV4 contract | mixed | Discriminator checks, finite ProviderWire witnesses and provider request snapshots exercise represented types and mappings. | Shape checks are not complete semantic interface verification. |
-| Provider adapters | mixed | `recorded/` and `upstream/` fixtures exercise represented requests, stream events, usage and outputs; provider tests cover synthetic failures and local invariants, including OpenAI multipart function-result conversion and immutable Responses schema normalization. | No recorded/imported OpenAI request fixture exercises multipart result references, cache breakpoints or `propertyNames` normalization; focused request tests do not prove live acceptance. Request capture does not prove returned SDK metadata. Volatile SigV4 headers are excluded from snapshots. |
+| Provider adapters | mixed | `recorded/` and `upstream/` fixtures exercise represented requests, stream events, usage and outputs; provider tests cover synthetic failures and local invariants, including OpenAI capability-gated reasoning/configuration controls, async tool metadata and continuation, multipart function-result conversion, and immutable Responses schema normalization. | No recorded/imported OpenAI request fixture exercises multipart result references, cache breakpoints or `propertyNames` normalization; focused request tests do not prove live acceptance. Request capture does not prove returned SDK metadata. Volatile SigV4 headers are excluded from snapshots. |
 | Bedrock Mantle Responses continuation | mixed | [Mantle assistant-history request tests](../../providers/bedrock/mantle/provider_test.go) capture unary and streaming reconstruction, phase, empty text and stored references; standalone readonly Bedrock tests with a publicly resolved OpenAI dependency exercise [#207](https://github.com/grafana/ai-sdk/issues/207)'s consumer boundary. | Fake transport validates request encoding, not live Mantle acceptance or a provider recording. OpenAI producer tests or workspace substitutions alone do not establish Bedrock consumer adoption. Mantle Chat remains unsupported. |
 | ProviderWire request projection | automated | Registered-client HTTP goldens, type/schema witnesses and mapping mutation tests are replayed through Go handlers. | This establishes the public client projection, not Vercel's private service behavior. |
 | Gateway runtime and Go client | mixed | Handler, differential and command tests exercise supported text/function-tool/file-input paths, framing, bounds, privacy, cancellation and ownership. | Schema acceptance and runtime support differ. Permissive client parsing does not prove strict server output, privacy or resource bounds. |
@@ -92,3 +92,15 @@ issue rather than being maintained in both places.
   auth guidance or generation-ID suffixes; Go cancellation preserves context
   identity. The [client contract](../../openspec/specs/grafana-gateway-client/spec.md)
   defines the detailed boundary.
+
+### Vertex JSON-schema output
+
+Vertex enables the Anthropic adapter's native JSON output capability, following
+Google Cloud's documented `output_config.format` support. This is a
+provider-configuration adaptation of the registered `@ai-sdk/anthropic` 4.0.59
+capability gate, not a change to response mapping or the upstream baseline.
+Strict tool capability remains separate. Synthetic request-serialization tests
+cover supported models (including Sonnet 5.5), streaming and non-streaming
+requests, and the absence of forced tool choice and synthetic tools. Existing
+fallback tests cover older models and explicit JSON-tool mode. No live Vertex
+recording is claimed; organization policy must enable structured outputs.

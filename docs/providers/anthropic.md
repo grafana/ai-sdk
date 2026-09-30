@@ -45,6 +45,14 @@ Use the model IDs supported by the selected Anthropic or Vertex endpoint. The
 package exposes model-ID helpers for discovery; availability still depends on
 your account and region.
 
+Vertex uses native `output_config.format` for JSON-schema responses on models
+that support structured output, rather than forcing a synthetic tool call.
+Your Google Cloud organization must allow the `structured_outputs` feature in
+`constraints/vertexai.allowedPartnerModelFeatures`; see
+[Google Cloud's structured-output guide](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/partner-models/claude/structured-outputs).
+The explicit `StructuredOutputJSONTool` mode remains available for models that
+support forced tool choice.
+
 ## Enable reasoning deliberately
 
 ```go

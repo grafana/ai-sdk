@@ -15,7 +15,7 @@ When the tool-based fallback is active, `buildParams` SHALL override `ToolChoice
 - **THEN** `ToolChoice` SHALL be overridden to `OfAny` with `DisableParallelToolUse: true`
 
 #### Scenario: Tool choice auto on a model that rejects forced tool use
-- **WHEN** the tool-based fallback is active for `claude-sonnet-5-5` on the Vertex provider
+- **WHEN** the tool-based fallback is active for `claude-sonnet-5-5` on a provider transport without native structured output
 - **THEN** `ToolChoice` SHALL be `OfAuto` with `DisableParallelToolUse: true`
 - **AND** one unsupported warning with feature `toolChoice` SHALL be emitted
 
@@ -34,6 +34,10 @@ When `structuredOutputMode` is `jsonTool` and the model rejects forced tool use 
 - **THEN** `OutputConfig.Format` SHALL contain the sanitized schema and no `json` tool SHALL be added
 - **AND** the warning SHALL name `claude-sonnet-5-5`
 
+#### Scenario: jsonTool mode on Vertex Sonnet 5.5
+- **WHEN** the Vertex provider calls `claude-sonnet-5-5` with a JSON schema response and `structuredOutputMode: jsonTool`
+- **THEN** `OutputConfig.Format` SHALL contain the sanitized schema, no `json` tool SHALL be added, and the same warning SHALL be emitted
+
 #### Scenario: jsonTool mode without native transport support
-- **WHEN** the Vertex provider calls `claude-sonnet-5-5` with a JSON schema response
+- **WHEN** a provider transport without native structured output calls `claude-sonnet-5-5` with a JSON schema response
 - **THEN** the tool-based fallback SHALL be used with an `auto` tool choice

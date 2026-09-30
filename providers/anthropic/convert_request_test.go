@@ -1152,25 +1152,57 @@ func TestBuildParams_AssistantPrefillWhitespace(t *testing.T) {
 }
 
 func TestBuildParams_AssistantCompaction(t *testing.T) {
-	part := provider.TextPart("Compaction summary  \n")
-	part.ProviderOptions = makeProviderOpts(`{"type":"compaction","cacheControl":{"type":"ephemeral"}}`)
+	t.Run("preserves nonempty block", func(t *testing.T) {
+		part := provider.TextPart("Compaction summary  \n")
+		part.ProviderOptions = makeProviderOpts(`{"type":"compaction","cacheControl":{"type":"ephemeral"}}`)
 
-	p, _, _, _, err := buildParams("claude-sonnet-4-6", provider.CallOptions{
-		Prompt: []provider.Message{
-			provider.UserText("Continue"),
-			provider.NewAssistantMessage(part),
-		},
-	}, false)
-	require.NoError(t, err)
+		p, _, _, _, err := buildParams("claude-sonnet-4-6", provider.CallOptions{
+			Prompt: []provider.Message{
+				provider.UserText("Continue"),
+				provider.NewAssistantMessage(part),
+			},
+		}, false)
+		require.NoError(t, err)
+		require.Len(t, p.Messages, 2)
+		require.Len(t, p.Messages[1].Content, 1)
+		block := p.Messages[1].Content[0]
+		require.NotNil(t, block.OfCompaction)
+		assert.Nil(t, block.OfText)
+		assert.True(t, block.OfCompaction.Content.Valid())
+		assert.Equal(t, "Compaction summary  \n", block.OfCompaction.Content.Value)
+		assert.EqualValues(t, "ephemeral", block.OfCompaction.CacheControl.Type)
+	})
 
-	require.Len(t, p.Messages, 2)
-	require.Len(t, p.Messages[1].Content, 1)
-	block := p.Messages[1].Content[0]
-	require.NotNil(t, block.OfCompaction)
-	assert.Nil(t, block.OfText)
-	assert.True(t, block.OfCompaction.Content.Valid())
-	assert.Equal(t, "Compaction summary  \n", block.OfCompaction.Content.Value)
-	assert.EqualValues(t, "ephemeral", block.OfCompaction.CacheControl.Type)
+	t.Run("omits empty block among text", func(t *testing.T) {
+		empty := provider.TextPart("")
+		empty.ProviderOptions = makeProviderOpts(`{"type":"compaction"}`)
+		p, _, _, _, err := buildParams("claude-sonnet-4-6", provider.CallOptions{
+			Prompt: []provider.Message{
+				provider.UserText("Continue"),
+				provider.NewAssistantMessage(empty, provider.TextPart("Summary")),
+			},
+		}, false)
+		require.NoError(t, err)
+		require.Len(t, p.Messages, 2)
+		require.Len(t, p.Messages[1].Content, 1)
+		assert.Equal(t, "Summary", p.Messages[1].Content[0].OfText.Text)
+	})
+
+	t.Run("omits assistant message with only empty compaction", func(t *testing.T) {
+		empty := provider.TextPart("")
+		empty.ProviderOptions = makeProviderOpts(`{"type":"compaction"}`)
+		p, _, _, _, err := buildParams("claude-sonnet-4-6", provider.CallOptions{
+			Prompt: []provider.Message{
+				provider.UserText("First"),
+				provider.NewAssistantMessage(empty),
+				provider.UserText("Second"),
+			},
+		}, false)
+		require.NoError(t, err)
+		require.Len(t, p.Messages, 2)
+		assert.Equal(t, "user", string(p.Messages[0].Role))
+		assert.Equal(t, "user", string(p.Messages[1].Role))
+	})
 }
 
 func TestBuildParams_AssistantTextCitations(t *testing.T) {
@@ -1602,11 +1634,13 @@ func TestBuildParams_VertexExplicitStructuredOutputBeta(t *testing.T) {
 	tests := []struct {
 		name           string
 		responseFormat *provider.ResponseFormat
+		mode           StructuredOutputMode
 		wantFallback   bool
 	}{
 		{name: "function tool"},
 		{
-			name: "JSON tool fallback",
+			name: "explicit JSON tool fallback",
+			mode: StructuredOutputJSONTool,
 			responseFormat: &provider.ResponseFormat{
 				Type:   provider.ResponseFormatJSON,
 				Schema: testSchema,
@@ -1624,12 +1658,10 @@ func TestBuildParams_VertexExplicitStructuredOutputBeta(t *testing.T) {
 					InputSchema: json.RawMessage(`{"type":"object"}`),
 				}},
 				ResponseFormat: tc.responseFormat,
-				ProviderOptions: provider.ProviderOptions{
-					"anthropic": provider.RawProviderOption{
-						Key: "anthropic",
-						Raw: json.RawMessage(`{"betas":["structured-outputs-2025-11-13"]}`),
-					},
-				},
+				ProviderOptions: provider.BuildProviderOptions(AnthropicOptions{
+					Betas:                []string{"structured-outputs-2025-11-13"},
+					StructuredOutputMode: tc.mode,
+				}),
 			}, false, vertexProviderCapabilities)
 			require.NoError(t, err)
 			assert.Equal(t, tc.wantFallback, br.usesJsonResponseTool)
@@ -2992,8 +3024,7 @@ func TestBuildParams_MCPToolCallRoundTrip(t *testing.T) {
 
 		p, _, warnings, _, err := buildParams("claude-sonnet-4-6", opts, false)
 		require.NoError(t, err)
-		require.Len(t, p.Messages, 1)
-		assert.Empty(t, p.Messages[0].Content)
+		assert.Empty(t, p.Messages)
 		require.Len(t, warnings, 1)
 		assert.Equal(t, provider.WarnOther, warnings[0].Type)
 		assert.Contains(t, warnings[0].Message, "server name is required")
@@ -3528,7 +3559,7 @@ func TestBuildParams_StructuredOutput(t *testing.T) {
 			"structured outputs beta should be added when native mode + tools")
 	})
 
-	t.Run("VertexUsesToolFallback", func(t *testing.T) {
+	t.Run("VertexUsesNativeOutput", func(t *testing.T) {
 		opts := provider.CallOptions{
 			ResponseFormat: &provider.ResponseFormat{
 				Type:   provider.ResponseFormatJSON,
@@ -3544,14 +3575,13 @@ func TestBuildParams_StructuredOutput(t *testing.T) {
 		p, _, warnings, br, err := buildParamsWithCapabilities("claude-sonnet-4-6", opts, false, vertexProviderCapabilities)
 		require.NoError(t, err)
 
-		assert.True(t, br.usesJsonResponseTool)
+		assert.False(t, br.usesJsonResponseTool)
 		assert.Empty(t, warnings)
-		assert.Empty(t, p.OutputConfig.Format.Schema)
-		require.Len(t, p.Tools, 2)
+		assert.NotEmpty(t, p.OutputConfig.Format.Schema)
+		require.Len(t, p.Tools, 1)
 		assert.Equal(t, "search", p.Tools[0].OfTool.Name)
-		assert.Equal(t, jsonResponseToolName, p.Tools[1].OfTool.Name)
-		require.NotNil(t, p.ToolChoice.OfAny)
-		assert.True(t, p.ToolChoice.OfAny.DisableParallelToolUse.Value)
+		assert.Nil(t, p.ToolChoice.OfAny)
+		assert.Nil(t, p.ToolChoice.OfTool)
 		assert.NotContains(t, p.Betas, sdk.AnthropicBeta("structured-outputs-2025-11-13"))
 	})
 
@@ -5874,4 +5904,28 @@ func TestConvertResponse_CodeExecutionDynamic(t *testing.T) {
 		require.Len(t, result.Content, 1)
 		assert.Nil(t, result.Content[0].Dynamic)
 	})
+}
+
+func TestBuildParams_VertexJSONOutput(t *testing.T) {
+	for _, modelID := range []string{"claude-sonnet-4-5", "claude-sonnet-4-6", "claude-sonnet-5-5"} {
+		for _, stream := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/stream=%t", modelID, stream), func(t *testing.T) {
+				schema := json.RawMessage(`{"type":"object","properties":{"actions":{"type":"array","items":{"type":"string"}}},"required":["actions"],"additionalProperties":false}`)
+				p, _, warnings, br, err := buildParamsWithCapabilities(modelID, provider.CallOptions{
+					ResponseFormat: &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Schema: schema},
+				}, stream, vertexProviderCapabilities)
+				require.NoError(t, err)
+				assert.Empty(t, warnings)
+				assert.False(t, br.usesJsonResponseTool)
+				body, err := json.Marshal(p)
+				require.NoError(t, err)
+				var request map[string]json.RawMessage
+				require.NoError(t, json.Unmarshal(body, &request))
+				assert.JSONEq(t, `{"format":{"type":"json_schema","schema":`+string(schema)+`}}`, string(request["output_config"]))
+				assert.NotContains(t, request, "tool_choice")
+				assert.NotContains(t, request, "tools")
+				assert.NotContains(t, p.Betas, sdk.AnthropicBeta("structured-outputs-2025-11-13"))
+			})
+		}
+	}
 }

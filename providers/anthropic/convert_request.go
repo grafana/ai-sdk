@@ -188,7 +188,9 @@ var (
 		supportsStrictTools:            true,
 		supportsDirectBetaFeatures:     true,
 	}
-	vertexProviderCapabilities = providerCapabilities{}
+	vertexProviderCapabilities = providerCapabilities{
+		supportsNativeStructuredOutput: true,
+	}
 )
 
 func buildParams(modelID string, opts provider.CallOptions, stream bool) (anthropic.BetaMessageNewParams, toolNameMapping, []provider.Warning, buildResult, error) {
@@ -369,10 +371,12 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 				}
 				content = append(content, converted...)
 			}
-			p.Messages = append(p.Messages, anthropic.BetaMessageParam{
-				Role:    anthropic.BetaMessageParamRoleAssistant,
-				Content: content,
-			})
+			if len(content) > 0 {
+				p.Messages = append(p.Messages, anthropic.BetaMessageParam{
+					Role:    anthropic.BetaMessageParamRoleAssistant,
+					Content: content,
+				})
+			}
 		}
 	}
 
@@ -546,7 +550,7 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 		p.Betas = appendBetaUnique(p.Betas, anthropic.AnthropicBeta(b))
 	}
 
-	if supportsNativeStructuredOutput && !br.usesJsonResponseTool && hasFunctionTools(opts.Tools) {
+	if providerCaps.supportsDirectBetaFeatures && supportsNativeStructuredOutput && !br.usesJsonResponseTool && hasFunctionTools(opts.Tools) {
 		p.Betas = appendBetaUnique(p.Betas, "structured-outputs-2025-11-13")
 	}
 
@@ -1061,6 +1065,9 @@ func convertAssistantContent(v *cacheControlValidator, mapping toolNameMapping, 
 		case provider.ContentPartTypeText:
 			cc := v.resolveCacheControl(p.ProviderOptions, msgOpts, isLast, true)
 			if isCompaction(p.ProviderOptions) {
+				if p.Text == "" {
+					continue
+				}
 				blocks = append(blocks, anthropic.BetaContentBlockParamUnion{
 					OfCompaction: &anthropic.BetaCompactionBlockParam{
 						Content:      anthropic.String(p.Text),

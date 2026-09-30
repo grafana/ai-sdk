@@ -87,10 +87,10 @@ type baseConfig struct {
 
 type streamConfig struct {
 	baseConfig
-	onChunk              func(OnChunkState)
-	onAbort              func(OnAbortState)
-	includeRawChunks     bool
-	parseOutputOnNonStop bool
+	onChunk                  func(OnChunkState)
+	onAbort                  func(OnAbortState)
+	includeRawChunks         bool
+	parseOutputOnAllFinishes bool
 }
 
 type generateConfig struct {
@@ -105,7 +105,7 @@ func (gc *generateConfig) toStreamConfig() *streamConfig {
 }
 
 func buildStreamConfig(opts []StreamOption) *streamConfig {
-	cfg := &streamConfig{parseOutputOnNonStop: true}
+	cfg := &streamConfig{parseOutputOnAllFinishes: true}
 	for _, opt := range opts {
 		opt.applyStream(cfg)
 	}

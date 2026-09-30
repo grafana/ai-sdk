@@ -4,7 +4,7 @@ go 1.26.3
 
 require (
 	github.com/anthropics/anthropic-sdk-go v1.76.0
-	github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260921202550-3dff0f7087dc
+	github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260928202004-dd43c6dff058
 	github.com/stretchr/testify v1.12.1
 )
 
@@ -23,6 +23,7 @@ require (
 	github.com/googleapis/gax-go/v2 v2.26.0 // indirect
 	github.com/invopop/jsonschema v0.14.0 // indirect
 	github.com/pb33f/ordered-map/v2 v2.3.1 // indirect
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3 // indirect
 	github.com/standard-webhooks/standard-webhooks/libraries v0.0.1 // indirect
 	github.com/tidwall/gjson v1.19.0 // indirect
 	github.com/tidwall/match v1.2.0 // indirect

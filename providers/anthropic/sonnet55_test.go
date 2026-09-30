@@ -180,16 +180,23 @@ func TestSonnet55JSONToolModeUsesOutputFormat(t *testing.T) {
 		ResponseFormat:  &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Schema: schema},
 		ProviderOptions: provider.BuildProviderOptions(AnthropicOptions{StructuredOutputMode: StructuredOutputJSONTool}),
 	}
-	p, _, warnings, br, err := buildParams("claude-sonnet-5-5", opts, false)
-	require.NoError(t, err)
-	assert.False(t, br.usesJsonResponseTool)
-	assert.NotEmpty(t, p.OutputConfig.Format.Schema)
-	assert.Nil(t, p.ToolChoice.OfAny)
-	assert.Contains(t, warnings, provider.Warning{
-		Type:    provider.WarnUnsupported,
-		Feature: "providerOptions.anthropic.structuredOutputMode",
-		Details: "structuredOutputMode 'jsonTool' is not supported by claude-sonnet-5-5 because it rejects forced tool use. Using 'outputFormat' instead.",
-	})
+	for name, caps := range map[string]providerCapabilities{
+		"direct": directProviderCapabilities,
+		"vertex": vertexProviderCapabilities,
+	} {
+		t.Run(name, func(t *testing.T) {
+			p, _, warnings, br, err := buildParamsWithCapabilities("claude-sonnet-5-5", opts, false, caps)
+			require.NoError(t, err)
+			assert.False(t, br.usesJsonResponseTool)
+			assert.NotEmpty(t, p.OutputConfig.Format.Schema)
+			assert.Nil(t, p.ToolChoice.OfAny)
+			assert.Contains(t, warnings, provider.Warning{
+				Type:    provider.WarnUnsupported,
+				Feature: "providerOptions.anthropic.structuredOutputMode",
+				Details: "structuredOutputMode 'jsonTool' is not supported by claude-sonnet-5-5 because it rejects forced tool use. Using 'outputFormat' instead.",
+			})
+		})
+	}
 }
 
 func TestSonnet55JSONToolWithoutNativeOutputUsesAuto(t *testing.T) {

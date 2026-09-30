@@ -66,12 +66,12 @@ func TestPrepareTools_FunctionStrict(t *testing.T) {
 			})
 			tool := toolsArray(t, body)[0]
 			got, ok := tool["strict"]
-			if tc.strict == nil {
-				assert.False(t, ok)
-				return
-			}
 			require.True(t, ok)
-			assert.Equal(t, *tc.strict, got)
+			if tc.strict == nil {
+				assert.Equal(t, false, got)
+			} else {
+				assert.Equal(t, *tc.strict, got)
+			}
 		})
 	}
 }
@@ -598,7 +598,7 @@ func TestPrepareTools_AllowedToolsMapsProviderToolNames(t *testing.T) {
 	toolChoice := body["tool_choice"].(map[string]any)
 	tools := toolChoice["tools"].([]any)
 	require.Len(t, tools, 1)
-	assert.Equal(t, "file_search", tools[0].(map[string]any)["name"])
+	assert.Equal(t, map[string]any{"type": "file_search"}, tools[0])
 }
 
 func TestPrepareTools_UnknownProviderToolWarning(t *testing.T) {

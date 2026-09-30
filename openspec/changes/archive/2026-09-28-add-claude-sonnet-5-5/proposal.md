@@ -2,7 +2,7 @@
 
 Claude Sonnet 5.5 (`claude-sonnet-5-5`) always thinks and rejects forced tool use. The Claude API, Vertex AI and Bedrock Converse return a 400 for `thinking: {"type":"disabled"}`, budget-based `enabled` thinking, and `tool_choice` `any` or `tool`. On `main` the model falls into the `claude-sonnet-5` capability row, so root reasoning `none`, a `required` or named tool choice, and the forced JSON response tool all produce requests the provider rejects. Vertex also resolves the undated ID to `claude-sonnet-5-5@latest`.
 
-The registered baseline (`@ai-sdk/anthropic` 4.0.59, `@ai-sdk/amazon-bedrock` 5.0.90) does not know this model. Upstream added it in `@ai-sdk/anthropic` 4.0.67 and `@ai-sdk/amazon-bedrock` 5.0.99. Waiting for the next pinned-version upgrade would leave the model unusable for common calls, so this change ports that behavior ahead of the baseline. The specs name the upstream version each behavior comes from, and an `upstream-sync` issue tracks the missing upstream-backed evidence, so the next pinned-version upgrade reassesses it instead of rediscovering it.
+The registered baseline (`@ai-sdk/anthropic` 4.0.65, `@ai-sdk/amazon-bedrock` 5.0.97) does not know this model. Upstream added it in `@ai-sdk/anthropic` 4.0.67 and `@ai-sdk/amazon-bedrock` 5.0.99. Waiting for the next pinned-version upgrade would leave the model unusable for common calls, so this change ports that behavior ahead of the baseline. The specs name the upstream version each behavior comes from, and an `upstream-sync` issue tracks the missing upstream-backed evidence, so the next pinned-version upgrade reassesses it instead of rediscovering it.
 
 ## What Changes
 
