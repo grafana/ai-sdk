@@ -1,0 +1,15 @@
+{"type":"start","messageId":"message-1"}
+{"type":"start-step"}
+{"type":"tool-input-available","toolCallId":"search","toolName":"code","input":{"name":"search","input":{"query":"weather"}}}
+{"type":"tool-output-available","toolCallId":"search","output":{"tools":[{"name":"getWeather","description":"Weather forecast"}]}}
+{"type":"finish-step"}
+{"type":"start-step"}
+{"type":"tool-input-available","toolCallId":"weather","toolName":"code","input":{"name":"getWeather","input":{}}}
+{"type":"tool-output-available","toolCallId":"weather","output":"sunny"}
+{"type":"finish-step"}
+{"type":"start-step"}
+{"type":"text-start","id":"text"}
+{"type":"text-delta","id":"text","delta":"sunny"}
+{"type":"text-end","id":"text"}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"stop"}

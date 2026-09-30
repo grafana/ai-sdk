@@ -208,8 +208,18 @@ The provider SHALL translate `provider.CallOptions` into the AWS Bedrock Convers
 
 #### Scenario: Temperature clamping
 
-- **WHEN** the consumer sets `Temperature` outside `[0, 1]`
+- **WHEN** the consumer sets `Temperature` outside `[0, 1]` for a model that accepts it and requires Bedrock temperature normalization
 - **THEN** the request body clamps the value to the nearest bound and emits a `Warning{Type: "unsupported", Feature: "temperature", Details: "...clamped..."}`
+
+#### Scenario: Newer Claude models reject sampling parameters
+
+- **WHEN** a supported Claude model that rejects sampling parameters is called with temperature, topK, and topP, even with thinking disabled
+- **THEN** the request omits all three and emits a model-specific unsupported warning for each; older models retain supported sampling settings
+
+#### Scenario: OpenAI Converse models reject unsupported inference settings
+
+- **WHEN** an OpenAI model is called with stop sequences, temperature, and topP
+- **THEN** the request omits stop sequences for all OpenAI models and omits temperature and topP for non-GPT-OSS OpenAI models, with an unsupported warning per omitted field
 
 ### Requirement: Selective Converse guard-content per-part options
 
@@ -555,7 +565,7 @@ The Bedrock Converse adapter SHALL keep strict-tool support independent of nativ
 
 ### Requirement: Converse OpenAI effort routing
 
-The Bedrock provider SHALL classify OpenAI model IDs with an optional regional prefix and an `openai.` segment at the start (not by arbitrary substring). GPT-OSS IDs SHALL use flat `additionalModelRequestFields.reasoning_effort`; other OpenAI IDs SHALL use nested `additionalModelRequestFields.reasoning.effort` while preserving unrelated reasoning fields. Non-OpenAI models SHALL retain their existing family-specific routing.
+The Bedrock provider SHALL classify OpenAI model IDs with an optional regional prefix and an `openai.` segment at the start (not by arbitrary substring). GPT-OSS IDs SHALL use flat `additionalModelRequestFields.reasoning_effort`; other OpenAI IDs SHALL use nested `additionalModelRequestFields.reasoning.effort` while preserving unrelated reasoning fields. Anthropic models SHALL retain their family-specific routing; Nova 2 Lite SHALL use `reasoningConfig` with `type: enabled`. For other non-OpenAI, non-Anthropic models, portable reasoning without an explicit provider `reasoningConfig` SHALL emit an unsupported warning and SHALL NOT add a reasoning field. An explicit provider `reasoningConfig` SHALL still be forwarded and merged with portable reasoning.
 
 #### Scenario: GPT-OSS versus newer regional OpenAI
 
@@ -565,7 +575,17 @@ The Bedrock provider SHALL classify OpenAI model IDs with an optional regional p
 #### Scenario: Embedded OpenAI substring is not an OpenAI ID
 
 - **WHEN** a custom model ID embeds `openai.` away from the anchored vendor position
-- **THEN** effort uses non-OpenAI routing instead of either OpenAI-specific shape
+- **THEN** portable reasoning is ignored with an unsupported warning rather than using an OpenAI-specific shape or an unrequested `reasoningConfig`
+
+#### Scenario: Nova 2 Lite receives portable reasoning
+
+- **WHEN** `us.amazon.nova-2-lite-v1:0` receives portable reasoning `medium`
+- **THEN** the additional request fields contain `reasoningConfig: {type: "enabled", maxReasoningEffort: "medium"}`
+
+#### Scenario: Other Nova models require explicit reasoning configuration
+
+- **WHEN** `amazon.nova-micro-v1:0` receives portable reasoning `high` without an explicit `reasoningConfig`
+- **THEN** no reasoning field is sent and an unsupported warning is returned; with an explicit config its fields are forwarded and merged
 
 ### Requirement: Converse option merge preserves cache and beta precedence
 
@@ -583,7 +603,7 @@ Converse prompt conversion SHALL preserve cache-point placement on system and us
 
 ### Requirement: Mistral tool call id normalization
 
-For Mistral models on Bedrock, the provider SHALL normalize tool call IDs to match Mistral's expectations (no underscores, length-bounded numeric form) before emitting them downstream.
+For Mistral models on Bedrock, the provider SHALL preserve valid 9-character alphanumeric tool call IDs and deterministically hash incompatible IDs into 9-character base62 values before sending or emitting them. Different IDs sharing an initial prefix SHALL not collapse to the same normalized value in the tested cases.
 
 #### Scenario: Mistral tool call id
 

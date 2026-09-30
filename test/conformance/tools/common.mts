@@ -539,8 +539,11 @@ export function writeRequestSnapshots(path: string, snapshots: RequestSnapshot[]
 }
 
 function normalizeRequestPath(rawURL: string | undefined): string {
-  const url = new URL(rawURL ?? "/", "http://localhost");
-  return url.pathname;
+  const target = (rawURL ?? "/").split("#", 1)[0];
+  const url = new URL(target, "http://localhost");
+  const queryIndex = target.indexOf("?");
+  const query = queryIndex < 0 || queryIndex === target.length - 1 ? "" : target.slice(queryIndex);
+  return url.pathname + query;
 }
 
 function normalizeRequestHeaders(
