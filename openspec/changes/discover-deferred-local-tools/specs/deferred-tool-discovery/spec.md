@@ -110,6 +110,7 @@ A generation SHALL snapshot step tools before execution and SHALL exclude undisc
 #### Scenario: Direct search with an early call
 - **WHEN** one model step calls search and then attempts a static deferred tool call before the next preparation
 - **THEN** search SHALL return matching names but the early call SHALL produce the existing tool error lifecycle without executing the deferred callback
+- **AND** UI error classification SHALL use the original registry so that a registered static tool SHALL NOT become a dynamic tool merely because it is undiscovered
 - **AND** only the next step SHALL advertise and permit an active discovered tool
 
 #### Scenario: Same-step nested call

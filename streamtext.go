@@ -452,6 +452,12 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 		return
 	}
 
+	toolSearch, err := newToolSearchState(cfg.tools, cfg.toolRoutes)
+	if err != nil {
+		r.emitError(err, cfg.onError)
+		return
+	}
+
 	// Convert messages
 	var msgs []provider.Message
 	if cfg.modelMessages != nil {
@@ -474,7 +480,6 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 	}
 
 	preApprovalMessageCount := len(msgs)
-	var err error
 	msgs, err = r.resolveToolApprovals(ctx, cfg, msgs)
 	if err != nil {
 		r.emitError(err, cfg.onError)
@@ -612,7 +617,10 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 		}
 
 		// Build provider tools (sorted for deterministic order)
-		executionTools, modelTools, callerMessages := prepareToolsForCallers(cfg.tools, cfg.toolRoutes, activeTools, activeToolsSet)
+		stepTools := toolSearch.prepare(cfg.tools, activeTools, activeToolsSet, stepContext)
+		stepTools = resolveToolDescriptions(stepTools, stepContext)
+		executionTools, modelTools, callerMessages := prepareToolsForCallers(stepTools, cfg.toolRoutes, activeTools, activeToolsSet)
+		modelTools = resolveToolDescriptions(modelTools, stepContext)
 		if err := validateToolExecutors(executionTools); err != nil {
 			r.emitError(err, cfg.onError)
 			return
@@ -682,6 +690,9 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 
 		stepCfg := *cfg
 		stepCfg.tools = executionTools
+		if toolSearch != nil {
+			stepCfg.uiTools = cfg.tools
+		}
 		step, stepCompleted, stepTerminated, stepHasOutput, err := r.processStep(ctx, stepNum, stepModel, streamResult, &stepCfg, stepContext, currentMsgs, opCancel)
 		if stepTimer != nil {
 			stepTimer.Stop()
@@ -1066,7 +1077,7 @@ loop:
 			}
 			tsp := StreamToolInputStart{
 				ID: part.ID, ToolName: part.ToolName,
-				ProviderExecuted: part.ProviderExecuted, Dynamic: isDynamic(part.ToolName, part.Dynamic, cfg.tools),
+				ProviderExecuted: part.ProviderExecuted, Dynamic: toolUIDynamic(part.ToolName, part.Dynamic, cfg),
 				Title: part.Title, ProviderMetadata: part.ProviderMetadata,
 			}
 			r.emit(tsp)
@@ -1527,7 +1538,7 @@ func (r *StreamTextResult) rejectToolCall(
 		title = toolTitleByID[part.ToolCallID]
 	}
 	dynamicTrue := true
-	uiDynamic := isDynamic(part.ToolName, &dynamicTrue, cfg.tools)
+	uiDynamic := toolUIDynamic(part.ToolName, &dynamicTrue, cfg)
 
 	tc := ToolCall{
 		ToolCallID:       part.ToolCallID,
@@ -2917,6 +2928,13 @@ func isJSONObject(data json.RawMessage) bool {
 		}
 	}
 	return false
+}
+
+func toolUIDynamic(toolName string, providerDynamic *bool, cfg *streamConfig) *bool {
+	if cfg.uiTools != nil {
+		return isDynamic(toolName, providerDynamic, cfg.uiTools)
+	}
+	return isDynamic(toolName, providerDynamic, cfg.tools)
 }
 
 func isDynamic(toolName string, providerDynamic *bool, tools map[string]Tool) *bool {

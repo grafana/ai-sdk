@@ -21,7 +21,7 @@ evidence boundary changes, not merely because the pinned versions change.
 
 | Surface | Status | Evidence | Boundary |
 | --- | --- | --- | --- |
-| Core orchestration and tools | mixed | Root tests, provider-independent UI fixtures and HTTP/core integration tests exercise lifecycle, tool execution, approvals, continuation, ordering and cancellation. | Provider replay covers configured scenarios, not every core option or scheduling interleaving. |
+| Core orchestration and tools | mixed | Root tests, provider-independent UI fixtures and HTTP/core integration tests exercise lifecycle, tool execution, approvals, continuation, ordering and cancellation. Pinned core mock request/UI snapshots cover direct and nested deferred discovery and next-step activation; root race tests cover search state isolation. | Provider replay covers configured scenarios, not every core option or scheduling interleaving. Deferred discovery mock evidence does not establish live provider acceptance. |
 | Structured output | mixed | Object snapshots and unit tests exercise schemas, partial values, array elements and parsing. | Final-value snapshots do not establish partial-delivery or failure behavior; those require focused tests. |
 | UI messages and SSE | mixed | Chunk snapshots, framing tests and schema-parsed frontend tests exercise conversion, ordering and assembly. | Reader/writer tests do not establish all browser or hook lifecycle behavior. |
 | React hooks | mixed | Actual useChat, useCompletion and useObject tests exercise selected success, error, stop, tool and approval flows. | Other lifecycle paths are not established by these tests or by chunk snapshots alone. |
@@ -58,6 +58,13 @@ evidence boundary changes, not merely because the pinned versions change.
 - Conformance comparisons ignore ordering only between adjacent locally executed
   sibling tool outputs. Provider-executed outputs and rejected-input errors remain
   ordered; the comparator deviation is registered in `upstream.yaml`.
+- Deferred discovery uses sorted tool names for equal-score matches because Go
+  ToolSet maps have no insertion order; upstream ties preserve object insertion
+  order. Context-dependent descriptions use the existing shared Go runtime
+  context, not upstream's per-tool context or sandbox-session surface. Paired
+  `ui/deferred-tool-discovery` core request/UI snapshots and schema-parsed frontend
+  assembly cover discovery, early static-call errors and next-step execution,
+  not provider-hosted search or live adapter acceptance.
 - GenerateText and Agent.Generate collect StreamText. Provider DoGenerate tests
   therefore do not prove those high-level paths.
 - Captured provider inputs, synthetic failures and provider-independent UI parts
