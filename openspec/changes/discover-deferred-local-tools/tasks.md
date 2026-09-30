@@ -1,0 +1,44 @@
+## 1. Establish the exact-baseline regression contract
+
+- [ ] 1.1 Re-read registered ai 7.0.109/provider-utils 5.0.45 source/tests at 4e8c387622ee1bb0d55841664416d38754d5c9a3; map direct/nested lifecycle and preparation cases to this change's scenarios. Confirm #211's existing ToolRoutes/ToolCaller implementation; do not rebuild it or upgrade pins.
+- [ ] 1.2 Add a focused pinned-TypeScript core mock driver under `test/conformance/tools/` for direct discovery with an early call and nested caller discovery. Capture provider-neutral request projections and UI chunks into provider-independent `test/conformance/ui/deferred-tool-discovery/` fixtures with source/version/provenance notes. Normalize only known IDs and documented sorted-name ordering; avoid tied rankings in parity fixtures and test the Go tie adaptation separately.
+- [ ] 1.3 Add a corresponding multi-step Go mock driver/test in `test/conformance/ui_conformance_test.go` that configures real ToolSearch/deferred tools and captures both requests and UI output. Show activation/request regression failures before fixing orchestration; precomputed tool outputs alone do not satisfy this task. Keep all synthetic input under `ui/` or focused tests, never provider `recorded/`/`upstream/` directories.
+
+## 2. Introduce opt-in tools and description resolution
+
+- [ ] 2.1 Add `Tool.DeferLoading`, a value-copy-preserving private marker, and `ToolSearch() Tool` in `tool.go`/new `tool_search.go`; match baseline function type, description, input/output schemas and unbound executor error. Add `TestToolSearch_Contract` table cases for customization/copy, arbitrary registration name, empty/extra-property input errors and unbound execution.
+- [ ] 2.2 Add `ToolDescriptionOptions`, `ToolDescriptionFunc` and optional `Tool.DescriptionFunc`; implement one internal resolver retaining present-versus-absent description. Test static fallback, callback precedence, explicit empty callback result, runtime context and no registry mutation in `tool_search_test.go` and focused conversion tests.
+- [ ] 2.3 Integrate resolved copies into eligible caller catalogs and model-definition preparation near `convert.go:446`, including descriptions from caller-bound replacements. Test current PrepareStep context, catalog/provider agreement and unchanged stable caller model definitions in `tool_caller_test.go`; keep search candidate callbacks available for execution-time resolution. Preserve existing static FingerprintTools scope and demonstrate configuring a TypedTool result without expanding TypedToolDef.
+
+## 3. Implement generation state, eligibility and scoring
+
+- [ ] 3.1 Create generation-local discovery state and validate the original registry's deferred/search routes before provider requests. Test active/inactive invalid provider callers, local callers without PrepareModelMessage, deferred search, omitted routes, explicit empty routes and unchanged ordinary caller validation.
+- [ ] 3.2 Implement step snapshots, active selection and per-search shared-caller candidate filtering. Test nil versus explicit-empty selections, unknown active names, direct/local overlap, inactive named callers, isolated named callers, excluded candidates and previously discovered candidates.
+- [ ] 3.3 Implement exact baseline tokenization/unique query scoring, contextual candidate descriptions, descending scores, sorted-name ties and five-result cap. Add table cases for ASCII camel-case/digit boundaries, mixed case, Unicode letter/number words, repeated terms, punctuation/whitespace, no match, tie selection, repeat discovery and no schemas in output.
+- [ ] 3.4 Add race-safe union updates without mutating step bindings or holding state locks across callbacks. Test sibling searches finding independent tools, two search registrations, shared ToolSet values in concurrent independent generations, and deferred-only registries with no search.
+
+## 4. Wire the model-step lifecycle without widening default behavior
+
+- [ ] 4.1 Initialize state once in StreamText and insert effective active filtering → search preparation → resolved catalogs → existing caller preparation → provider conversion at `streamtext.go:615`. Use eligible execution tools in stepCfg for parsing/approval/execution; preserve the existing no-discovery path and stop conditions.
+- [ ] 4.2 Add `TestStreamText_DeferredToolDiscovery` direct lifecycle cases with captured request tools/prompts: absent schema before search, early-call error without callback execution, next-step activation, stable search definition, no direct catalog injection, unrelated-schema exclusion, deactivation/reactivation and default one-step stop.
+- [ ] 4.3 Add nested caller lifecycle cases in `tool_caller_test.go`: first binding/catalog contains search only, a same-step attempted nested callee is unavailable, next binding/catalog contains discoveries, original caller definition is stable, announcements deduplicate and no new provenance rejection is introduced.
+- [ ] 4.4 Exercise the direct/nested contract explicitly through GenerateText and ToolLoopAgent Generate/Stream in `generatetext_test.go`/`agent_test.go`. Test that filtering does not convert provider-defined entries into functions, invoke provider-executed callbacks locally or change unknown dynamic-call handling; ordinary non-discovery active-tool/caller tests must remain green.
+
+## 5. Preserve approval resume and cancellation boundaries
+
+- [ ] 5.1 Add focused search pending/denied/automatic-approval tests and deferred-callee validation/approval tests using existing policy APIs. Verify no discovery without bound execution, next-step-only activation after auto approval, and caller-owned nested execution without an added approval layer.
+- [ ] 5.2 Add historical resume cases in approval tests: approved original-registry ToolSearch yields the ordinary unbound tool-output error; approved deferred callee uses existing resume signature/policy rules but does not seed discovery. Assert that new step schemas remain undiscovered and no history reconstructs state. Do not rebind search before resume or alter existing authorization/signature semantics.
+- [ ] 5.3 Add deterministic cancellation/timeout cases around tool execution and the next-step boundary, checking abort events, no subsequent provider call and isolation of a later generation. Run race tests on concurrent searches/requests; do not assert rollback of already completed search executions.
+
+## 6. Lock down frontend evidence and documentation
+
+- [ ] 6.1 Complete Go replay of the baseline core/UI/request fixtures from section 1, asserting full request sequence, search output, early rejection and later execution. Record the mock-driver provenance and evidence limitations next to the fixtures; do not regenerate unrelated provider expectations.
+- [ ] 6.2 Add `test/integration/testserver/scenario_deferred_tool_discovery.go` and `test/integration/deferred-tool-discovery.test.ts`. Use parseJsonEventStream and uiMessageChunkSchema from the pinned frontend to assert search output, early-call error, next-step output, step ordering and assembled UI messages without new SSE framing/chunk types.
+- [ ] 6.3 Add godoc for exported API and update `docs/guides/tools.md` with opt-in usage, required multi-step stop conditions, direct versus caller discovery, contextual description callback expectations, approval-resume boundary and provider-hosted distinction. Keep signatures/options in godoc, not narrative tables.
+- [ ] 6.4 Update `test/conformance/PARITY.md` only for stable new core/request/UI proof, the sorted-name tie adaptation and the unsupported live-provider evidence boundary. Keep baseline pins unchanged and actionable work owned by #261/#107 rather than adding dated assessment/issue catalogs.
+
+## 7. Validate and deliver one independently green feature
+
+- [ ] 7.1 Run `mise deps` before implementation build/test phases, then focused root discovery/caller/approval/agent tests, `go test -race ./...`, and affected conversion/default-behavior tests. Capture commands/results and fix regressions.
+- [ ] 7.2 Run `mise run fmt`, `mise run vet`, `mise run test`, `mise run test-conformance`, `mise run test-integration` and `mise run parity-check` against unchanged registered pins. Inspect snapshots and provenance; report any genuine environment/credential limits without substituting invented provider responses.
+- [ ] 7.3 Run `openspec validate discover-deferred-local-tools --type change --strict --no-interactive`; review implementation against exact upstream source/tests and all change scenarios. Deliver root API, orchestration, evidence and docs together as one green change; no provider-module publication prerequisite or red cumulative stack. Publish only through normal owner-controlled release workflow after merge.
