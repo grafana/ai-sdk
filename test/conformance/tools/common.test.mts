@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, it } from "node:test";
 import { safeValidateTypes } from "@ai-sdk/provider-utils";
 import {
@@ -7,8 +10,47 @@ import {
   buildToolChoice,
   buildTools,
   createSourceIdNormalizer,
+  normalizeRequestSnapshot,
   unsupportedGenerateFields,
 } from "./common.mts";
+import { checkRequestSnapshots, requestTargetCases } from "./request-snapshots.mts";
+
+describe("request snapshot targets", () => {
+  for (const tc of requestTargetCases) {
+    it(tc.name, () => {
+      const snapshot = normalizeRequestSnapshot(
+        "anthropic",
+        { method: "POST", url: tc.url, headers: { "content-type": "application/json" } },
+        "{}",
+      );
+      assert.equal(snapshot.path, tc.expectedPath);
+    });
+  }
+
+  it("uses the root path when url is absent", () => {
+    assert.equal(normalizeRequestSnapshot("anthropic", { headers: {} }, "{}").path, "/");
+  });
+
+  it("matches the committed TypeScript snapshots without rewriting them", () => {
+    const path = new URL("../testdata/request-snapshots/expected-requests.jsonl", import.meta.url);
+    const before = readFileSync(path);
+    checkRequestSnapshots();
+    assert.deepEqual(readFileSync(path), before);
+  });
+
+  it("rejects stale snapshots without rewriting them", () => {
+    const dir = mkdtempSync(join(tmpdir(), "aisdk-stale-snapshots-"));
+    try {
+      const path = join(dir, "expected-requests.jsonl");
+      const stale = '{"path":"/v1/messages"}\n';
+      writeFileSync(path, stale);
+      assert.throws(() => checkRequestSnapshots(path), /stale request snapshots/);
+      assert.equal(readFileSync(path, "utf8"), stale);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
 
 describe("conformance common config", () => {
   it("normalizes source IDs consistently", () => {

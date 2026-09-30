@@ -35,6 +35,7 @@ func New(apiKey, modelID string, opts ...Option) provider.LanguageModel {
 			option.WithoutEnvironmentDefaults(),
 			option.WithAPIKey(apiKey),
 		),
+		requestOpts:  []option.RequestOption{option.WithQueryDel("beta")},
 		modelID:      modelID,
 		providerName: "anthropic",
 		resolveModel: func(id string) string { return id },

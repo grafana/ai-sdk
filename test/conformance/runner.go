@@ -900,13 +900,16 @@ func newRequestSnapshot(providerName string, r *http.Request, body []byte) (Requ
 	if err != nil {
 		return RequestSnapshot{}, err
 	}
+	path := r.URL.EscapedPath()
+	if path == "" {
+		path = "/"
+	}
+	if r.URL.RawQuery != "" {
+		path += "?" + r.URL.RawQuery
+	}
 	return RequestSnapshot{
-		Method: strings.ToUpper(r.Method),
-		// EscapedPath preserves percent-encoding (e.g. ":" -> "%3A" in Bedrock
-		// model IDs) so the captured path matches what was sent on the wire and
-		// what the upstream TypeScript snapshot records. For paths without
-		// escapable characters this is identical to r.URL.Path.
-		Path:    r.URL.EscapedPath(),
+		Method:  strings.ToUpper(r.Method),
+		Path:    path,
 		Headers: normalizeRequestHeaders(providerName, r.Header),
 		Body:    decoded,
 	}, nil
