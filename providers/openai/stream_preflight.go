@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/grafana/ai-sdk/provider"
@@ -17,22 +18,25 @@ import (
 	"github.com/openai/openai-go/v3/responses"
 )
 
-const acceptedStreamErrorGrace = 50 * time.Millisecond
+const (
+	acceptedStreamErrorGrace = 50 * time.Millisecond
+	maxPreflightFrames       = 64
+	maxPreflightBytes        = 1 << 20
+)
 
 type responseStreamItem struct {
 	event       *responses.ResponseStreamEventUnion
 	err         error
 	recoverable bool
+	rawValue    json.RawMessage
+	hasRaw      bool
+	frameBytes  int
 }
 
-func pumpResponseStream(ctx context.Context, response *http.Response, requestErr error) <-chan responseStreamItem {
+func pumpResponseStream(ctx context.Context, response *http.Response, requestErr error, includeRaw bool) <-chan responseStreamItem {
 	items := make(chan responseStreamItem, 64)
 	go func() {
 		defer close(items)
-		decoder := ssestream.NewDecoder(response)
-		if decoder != nil {
-			defer func() { _ = decoder.Close() }()
-		}
 		send := func(item responseStreamItem) bool {
 			select {
 			case items <- item:
@@ -45,18 +49,33 @@ func pumpResponseStream(ctx context.Context, response *http.Response, requestErr
 			send(responseStreamItem{err: requestErr})
 			return
 		}
+		decoder := ssestream.NewDecoder(response)
 		if decoder == nil {
 			send(responseStreamItem{err: errors.New("openai: missing stream response")})
 			return
 		}
+		var closeOnce sync.Once
+		closeDecoder := func() { closeOnce.Do(func() { _ = decoder.Close() }) }
+		stopClose := context.AfterFunc(ctx, closeDecoder)
+		defer func() { stopClose(); closeDecoder() }()
 		for decoder.Next() {
 			frame := decoder.Event()
-			if bytes.Equal(bytes.TrimSpace(frame.Data), []byte("[DONE]")) {
+			data := bytes.TrimSpace(frame.Data)
+			if bytes.Equal(data, []byte("[DONE]")) {
 				return
+			}
+			if len(frame.Data) == 0 {
+				continue
+			}
+			item := responseStreamItem{hasRaw: includeRaw, frameBytes: len(frame.Data)}
+			if includeRaw && json.Valid(frame.Data) {
+				item.rawValue = append(json.RawMessage(nil), frame.Data...)
 			}
 			var event responses.ResponseStreamEventUnion
 			if err := json.Unmarshal(frame.Data, &event); err != nil {
-				if !send(responseStreamItem{err: fmt.Errorf("openai: decoding stream event: %w", err), recoverable: true}) {
+				item.err = fmt.Errorf("openai: decoding stream event: %w", err)
+				item.recoverable = true
+				if !send(item) {
 					return
 				}
 				continue
@@ -65,10 +84,12 @@ func pumpResponseStream(ctx context.Context, response *http.Response, requestErr
 				Error json.RawMessage `json:"error"`
 			}
 			if json.Unmarshal(frame.Data, &envelope) == nil && len(envelope.Error) > 0 && string(envelope.Error) != "null" {
-				send(responseStreamItem{err: &ssestream.StreamError{Message: "received error while streaming: " + string(envelope.Error), Event: frame}})
+				item.err = &ssestream.StreamError{Message: "received error while streaming: " + string(envelope.Error), Event: frame}
+				send(item)
 				return
 			}
-			if !send(responseStreamItem{event: &event}) {
+			item.event = &event
+			if !send(item) {
 				return
 			}
 		}
@@ -81,6 +102,7 @@ func pumpResponseStream(ctx context.Context, response *http.Response, requestErr
 
 func preflightResponseStream(ctx context.Context, items <-chan responseStreamItem, requestBody responses.ResponseNewParams, response *http.Response) ([]responseStreamItem, error) {
 	var buffered []responseStreamItem
+	var frames, frameBytes int
 	accepted := false
 	if err := ctx.Err(); err != nil {
 		drainResponseStream(items)
@@ -137,6 +159,14 @@ func preflightResponseStream(ctx context.Context, items <-chan responseStreamIte
 		}
 		if !ok {
 			return buffered, nil
+		}
+		if item.frameBytes > 0 {
+			frames++
+			frameBytes += item.frameBytes
+			if frames > maxPreflightFrames || frameBytes > maxPreflightBytes {
+				retryable := false
+				return nil, provider.NewAPICallError(provider.APICallErrorOptions{Message: "openai: stream startup buffer limit exceeded", IsRetryable: &retryable})
+			}
 		}
 		if item.recoverable {
 			return append(buffered, item), nil

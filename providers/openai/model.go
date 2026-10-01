@@ -87,7 +87,8 @@ func (m *model) DoGenerate(ctx context.Context, params provider.CallOptions) (*p
 		return nil, err
 	}
 	var rawResponse *http.Response
-	requestOpts := append(m.requestOptions(params.Headers), option.WithResponseInto(&rawResponse))
+	var requestBody json.RawMessage
+	requestOpts := append(m.requestOptions(params.Headers), option.WithResponseInto(&rawResponse), option.WithMiddleware(captureRequestBody(&requestBody)))
 	resp, err := m.client.New(ctx, body, requestOpts...)
 	if err != nil {
 		return nil, wrapAPIError(err, body)
@@ -103,6 +104,8 @@ func (m *model) DoGenerate(ctx context.Context, params provider.CallOptions) (*p
 		return nil, err
 	}
 	result.Warnings = append(result.Warnings, warnings...)
+	result.Request = &provider.RequestMetadata{Body: requestBody}
+	result.Response.Headers = flattenHeaders(rawResponse.Header)
 	return result, nil
 }
 
@@ -146,20 +149,24 @@ func (m *model) DoStream(ctx context.Context, params provider.CallOptions) (*pro
 		return nil, err
 	}
 	var rawResponse *http.Response
-	requestOptions := append(m.requestOptions(params.Headers), option.WithResponseBodyInto(&rawResponse), option.WithJSONSet("stream", true))
-	_, err = m.client.New(ctx, body, requestOptions...)
-	items := pumpResponseStream(ctx, rawResponse, err)
-	buffered, err := preflightResponseStream(ctx, items, body, rawResponse)
+	var requestBody json.RawMessage
+	requestOptions := append(m.requestOptions(params.Headers), option.WithResponseBodyInto(&rawResponse), option.WithJSONSet("stream", true), option.WithMiddleware(captureRequestBody(&requestBody)))
+	streamCtx, cancel := context.WithCancel(ctx)
+	_, err = m.client.New(streamCtx, body, requestOptions...)
+	items := pumpResponseStream(streamCtx, rawResponse, err, params.IncludeRawChunks)
+	buffered, err := preflightResponseStream(streamCtx, items, body, rawResponse)
 	if err != nil {
+		cancel()
 		return nil, err
 	}
 
 	ch := make(chan provider.StreamPart, 64)
 	go func() {
 		defer close(ch)
-		consumeStream(ctx, items, buffered, ch, warnings, br, body, rawResponse, m.generateID, m.provider)
+		defer cancel()
+		consumeStream(streamCtx, items, buffered, ch, warnings, br, body, rawResponse, m.generateID, m.provider)
 	}()
-	return &provider.StreamResult{Stream: ch}, nil
+	return &provider.StreamResult{Stream: ch, Request: &provider.RequestMetadata{Body: requestBody}, Response: &provider.ResponseHeaders{Headers: flattenHeaders(rawResponse.Header)}}, nil
 }
 
 func (m *model) buildParams(params provider.CallOptions) (responses.ResponseNewParams, []provider.Warning, buildResult, error) {

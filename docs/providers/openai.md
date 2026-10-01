@@ -51,6 +51,11 @@ Set request-scoped headers with `aisdk.WithHeaders`. Headers configured through
 `openai.WithRequestOptions` apply to every request; a per-call header overrides
 a configured header with the same name.
 
+Native call results retain final outbound JSON and HTTP response headers for
+diagnostics. Raw streaming events are opt-in and precede their normalized
+content or errors. Treat these values as sensitive; they are not automatically
+projected into frontend UI streams or the Gateway's public transport.
+
 Use typed OpenAI options for behavior that is not part of the common model
 contract:
 

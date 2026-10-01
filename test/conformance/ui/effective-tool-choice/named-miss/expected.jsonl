@@ -1,0 +1,6 @@
+{"type":"start","messageId":"message-1"}
+{"type":"start-step"}
+{"type":"tool-input-available","toolCallId":"call-1","toolName":"tool2","input":{"value":"value"}}
+{"type":"error","errorText":"tool choice violated"}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"error"}

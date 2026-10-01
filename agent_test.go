@@ -99,10 +99,19 @@ func TestToolLoopAgent_ToolChoice(t *testing.T) {
 					result := agent.Stream(t.Context(), WithAgentPrompt("hello"), WithAgentOptions(tc.call...))
 					for range result.FullStream() {
 					}
-					require.NoError(t, result.Err())
+					if tc.want.Type == provider.ToolChoiceRequired || tc.want.Type == provider.ToolChoiceTool {
+						require.ErrorContains(t, result.Err(), "tool choice")
+					} else {
+						require.NoError(t, result.Err())
+					}
 				} else {
-					_, err := agent.Generate(t.Context(), WithAgentPrompt("hello"), WithAgentOptions(tc.call...))
-					require.NoError(t, err)
+					result, err := agent.Generate(t.Context(), WithAgentPrompt("hello"), WithAgentOptions(tc.call...))
+					if tc.want.Type == provider.ToolChoiceRequired || tc.want.Type == provider.ToolChoiceTool {
+						require.ErrorContains(t, err, "tool choice")
+						assert.Nil(t, result)
+					} else {
+						require.NoError(t, err)
+					}
 				}
 				assert.Empty(t, got.Tools)
 				assert.Equal(t, &tc.want, got.ToolChoice)

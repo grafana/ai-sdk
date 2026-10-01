@@ -35,9 +35,10 @@ func TestUnarySuccessMapping(t *testing.T) {
 			Raw:          json.RawMessage(`{"native_usage":true}`),
 		},
 		Warnings: []provider.Warning{{Type: provider.WarningType("future"), Message: "private warning"}},
+		Request:  &provider.RequestMetadata{Body: json.RawMessage(`{"private-request":true}`)},
 		Response: &provider.GenerateResponse{ResponseMetadata: provider.ResponseMetadata{
 			ID: "private-response", ModelID: "private-model", Provider: "private-provider",
-		}},
+		}, Headers: map[string]string{"Authorization": "private-token"}, Body: json.RawMessage(`{"private-body":true}`)},
 	}
 
 	mapped, err := mapUnarySuccess(result, 1<<20)
@@ -54,7 +55,7 @@ func TestUnarySuccessMapping(t *testing.T) {
 		"usage":{"inputTokens":{"total":9007199254740991,"noCache":0,"cacheRead":0,"cacheWrite":0},"outputTokens":{"total":0,"text":0,"reasoning":0},"raw":{"native_usage":true}}
 	}`, string(body))
 	assert.Contains(t, string(body), `html=\u003c\u003e\u0026`)
-	for _, private := range []string{"private warning", "private-response", "private-model", "private-provider", "warnings", "response"} {
+	for _, private := range []string{"private warning", "private-response", "private-model", "private-provider", "private-request", "private-token", "private-body", "Authorization", "warnings", "response"} {
 		assert.NotContains(t, string(body), private)
 	}
 }

@@ -409,6 +409,8 @@ the corresponding Responses tool objects. It SHALL resolve `toolChoice` of
 `auto`/`none`/`required` as pass-through strings and `tool` as the typed/object
 choice, with `allowedTools` overriding `toolChoice` as an `allowed_tools`
 choice when declarations exist. Unknown declarations SHALL emit an `unsupported` warning rather than erroring.
+For ordinary forced `tool` choices when `allowedTools` is absent, the provider SHALL resolve configured provider-tool aliases to their canonical names before selecting the request shape. The ordinary hosted-choice allowlist SHALL be exactly `code_interpreter`, `file_search`, `image_generation`, `web_search_preview`, `web_search`, `mcp`, `apply_patch`, `computer`, and `programmatic_tool_calling`, emitted as `{type: <canonical name>}`. Named custom provider tools SHALL retain `{type: "custom", name: <custom name>}` choices. Other ordinary selections SHALL use `{type: "function", name: <resolved name>}`, including `shell`, `local_shell`, and `tool_search`; an unmapped name SHALL retain its spelling. This classification SHALL NOT remove supported provider declarations or their bidirectional name mappings, alter the separate `allowedTools` resolution, or introduce new name validation.
+
 When a supported web-search tool is present, the provider SHALL automatically
 add `web_search_call.action.sources` to `include` unless either a provider-owned
 model capability is false or the per-call `includeWebSearchSources` option is
@@ -489,6 +491,36 @@ For nonempty declarations and a present `allowedTools` option, the provider SHAL
 #### Scenario: Client-executed computer declaration and choice
 - **WHEN** an `openai.computer` provider tool is provided and selected by name
 - **THEN** the request includes `{type: "computer"}` in `tools` and `tool_choice`
+
+#### Scenario: Ordinary forced shell choice
+- **WHEN** an `openai.shell` provider tool is declared as `shell` or configured with alias `terminal` and ordinary `toolChoice` selects its canonical name or configured alias without `allowedTools`
+- **THEN** both unary and streaming requests contain exactly `{"type":"function","name":"shell"}` as `tool_choice`
+- **AND** the tool declaration remains a `shell` declaration
+
+#### Scenario: Ordinary forced local-shell choice
+- **WHEN** an `openai.local_shell` provider tool is declared as `local_shell` or configured with alias `localTerminal` and ordinary `toolChoice` selects its canonical name or configured alias without `allowedTools`
+- **THEN** both unary and streaming requests contain exactly `{"type":"function","name":"local_shell"}` as `tool_choice`
+- **AND** the tool declaration remains a `local_shell` declaration
+
+#### Scenario: Ordinary forced tool-search choice
+- **WHEN** an `openai.tool_search` provider tool is declared as `tool_search` or configured with alias `discover` and ordinary `toolChoice` selects its canonical name or configured alias without `allowedTools`
+- **THEN** both unary and streaming requests contain exactly `{"type":"function","name":"tool_search"}` as `tool_choice`
+- **AND** the tool declaration remains a `tool_search` declaration
+
+#### Scenario: Ordinary forced hosted controls
+- **WHEN** ordinary `toolChoice` selects a canonical name or configured alias for any of `code_interpreter`, `file_search`, `image_generation`, `web_search_preview`, `web_search`, `mcp`, `apply_patch`, `computer`, or `programmatic_tool_calling` without `allowedTools`
+- **THEN** `tool_choice` is exactly `{type: <canonical name>}` without a function or custom `name` field
+
+#### Scenario: Ordinary custom and function controls
+- **WHEN** ordinary `toolChoice` selects a custom provider tool named `freeform` without `allowedTools`
+- **THEN** `tool_choice` is exactly `{"type":"custom","name":"freeform"}`
+- **AND** an ordinary function selection `getWeather` remains exactly `{"type":"function","name":"getWeather"}`
+- **AND** an unmapped selection remains a function choice with the selected name unchanged
+
+#### Scenario: Allowed shell choices remain declaration-aware
+- **WHEN** `allowedTools` selects a declared `shell` or `local_shell` canonical name or configured alias and ordinary `toolChoice` is also supplied
+- **THEN** the overriding `allowed_tools` choice still uses `{type: "shell"}` or `{type: "local_shell"}`, not the ordinary function fallback
+- **AND** selecting a declared `tool_search` alongside a selectable function still warns and drops `tool_search`, preserving the function
 
 ### Requirement: Non-streaming response conversion
 `DoGenerate` SHALL convert every Responses output item to provider content:

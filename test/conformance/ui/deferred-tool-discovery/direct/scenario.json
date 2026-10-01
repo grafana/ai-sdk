@@ -1,0 +1,27 @@
+{
+  "mode": "direct",
+  "steps": [
+    [
+      {
+        "id": "search",
+        "name": "search",
+        "input": {
+          "query": "weather"
+        }
+      },
+      {
+        "id": "too-early",
+        "name": "getWeather",
+        "input": {}
+      }
+    ],
+    [
+      {
+        "id": "weather",
+        "name": "getWeather",
+        "input": {}
+      }
+    ],
+    []
+  ]
+}

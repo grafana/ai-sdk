@@ -47,9 +47,7 @@ type Agent interface {
 // result shape cannot distinguish an omitted context from an intentional nil clear.
 //
 // The Agent user-agent marker is added only to provider.CallOptions headers;
-// provider modules must honor call headers for it to reach the network. OpenAI
-// Responses currently does not honor call headers, and provider default
-// User-Agent append semantics require separate provider work.
+// provider modules must honor call headers for it to reach the network.
 type ToolLoopAgent struct {
 	model               provider.LanguageModel
 	id                  string

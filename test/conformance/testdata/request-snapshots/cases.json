@@ -1,0 +1,77 @@
+[
+  {
+    "name": "api-version and repeated values",
+    "url": "/v1/messages?api-version=2024-10-21&feature=a&feature=b",
+    "expectedPath": "/v1/messages?api-version=2024-10-21&feature=a&feature=b"
+  },
+  {
+    "name": "escaped path and query delimiters",
+    "url": "/v1/a%2Fb?q=a%26b%3Dc&space=a+b&space=a%20b",
+    "expectedPath": "/v1/a%2Fb?q=a%26b%3Dc&space=a+b&space=a%20b"
+  },
+  {
+    "name": "interleaved duplicates and empty values",
+    "url": "/v1/messages?feature=a&flag&feature=b&empty=&feature=a",
+    "expectedPath": "/v1/messages?feature=a&flag&feature=b&empty=&feature=a"
+  },
+  {
+    "name": "percent-encoded UTF-8 and escape spelling",
+    "url": "/v1/%E2%9C%93?q=%e2%9c%93",
+    "expectedPath": "/v1/%E2%9C%93?q=%e2%9c%93"
+  },
+  {
+    "name": "literal apostrophe in origin form",
+    "url": "/v1/messages?q=O'Reilly",
+    "expectedPath": "/v1/messages?q=O'Reilly"
+  },
+  {
+    "name": "literal apostrophe in absolute form",
+    "url": "https://example.test/v1/messages?q=O'Reilly",
+    "expectedPath": "/v1/messages?q=O'Reilly"
+  },
+  {
+    "name": "absolute URL with query",
+    "url": "https://example.test/v1/messages?api-version=v1&feature=a&feature=b",
+    "expectedPath": "/v1/messages?api-version=v1&feature=a&feature=b"
+  },
+  {
+    "name": "queryless escaped path",
+    "url": "/model/anthropic.claude%3A0/converse-stream",
+    "expectedPath": "/model/anthropic.claude%3A0/converse-stream"
+  },
+  {
+    "name": "queryless request",
+    "url": "/v1/messages",
+    "expectedPath": "/v1/messages"
+  },
+  {
+    "name": "empty query marker",
+    "url": "/v1/messages?",
+    "expectedPath": "/v1/messages"
+  },
+  {
+    "name": "absolute URL with empty path",
+    "url": "https://example.test",
+    "expectedPath": "/"
+  },
+  {
+    "name": "empty path with query and fragment",
+    "url": "https://example.test?x=1#ignored",
+    "expectedPath": "/?x=1"
+  },
+  {
+    "name": "query delimiter only inside fragment",
+    "url": "/v1/messages#ignored?not=a-query",
+    "expectedPath": "/v1/messages"
+  },
+  {
+    "name": "empty query followed by fragment",
+    "url": "/v1/messages?#ignored?not=a-query",
+    "expectedPath": "/v1/messages"
+  },
+  {
+    "name": "query containing question mark",
+    "url": "/v1/messages?redirect=%2Fsearch?q=a?b#ignored",
+    "expectedPath": "/v1/messages?redirect=%2Fsearch?q=a?b"
+  }
+]
