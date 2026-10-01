@@ -1479,7 +1479,7 @@ describe("authenticated OpenAI-compatible Gateway command", () => {
       const unaryModel = wrapLanguageModel({ model, middleware: { specificationVersion: "v4", wrapGenerate: async ({params}) => {
         const {headers,...options}=params;
         assert.deepEqual(Object.keys(headers ?? {}),["user-agent"]);
-        assert.match(headers!["user-agent"]!,/^ai\/7\.0\.116(?:\s|$)/);
+        assert.match(headers!["user-agent"]!,/^ai\/7\.0\.118(?:\s|$)/);
         return createGateway({apiKey:"ignored",baseURL:`${gateway.url}/api/v1/aisdk`,headers:{"X-Access-Token":TEST_TOKEN,"user-agent":headers!["user-agent"]!}})("compatible").doGenerate(options);
       } } });
       const unary = await generateText({model:unaryModel,prompt:"wp17-reasoning",maxOutputTokens:64});
