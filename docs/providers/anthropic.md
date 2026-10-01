@@ -24,6 +24,18 @@ Pass the model to [Generate text from Go](../getting-started/backend-only.md) or
 appear on the first model call. Create the model once and reuse its underlying
 HTTP resources across requests.
 
+## Configure call headers
+
+Use `aisdk.WithHeaders` for request-scoped headers. Ordinary call headers override
+configured headers with the same name. Anthropic beta headers instead combine
+configured, per-call, and feature-required tokens into a normalized, deduplicated
+union. The same behavior applies to direct API and Vertex calls.
+
+Native call results retain outbound JSON and response headers for diagnostics.
+These can contain sensitive prompt or backend data; do not automatically log or
+forward them. Raw streaming events are opt-in and remain separate from normalized
+content and frontend UI streams.
+
 ## Use Vertex AI
 
 `NewVertex` resolves Google Application Default Credentials and can fail during
