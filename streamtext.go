@@ -690,10 +690,11 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 
 		stepCfg := *cfg
 		stepCfg.tools = executionTools
+		stepCfg.toolChoice = toolChoice
 		if toolSearch != nil {
 			stepCfg.uiTools = cfg.tools
 		}
-		step, stepCompleted, stepTerminated, stepHasOutput, err := r.processStep(ctx, stepNum, stepModel, streamResult, &stepCfg, stepContext, currentMsgs, opCancel)
+		step, outcome, err := r.processStep(ctx, stepNum, stepModel, streamResult, &stepCfg, stepContext, currentMsgs, opCancel)
 		if stepTimer != nil {
 			stepTimer.Stop()
 		}
@@ -706,7 +707,7 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 		// the provider stream. Fire onAbort, and only fire onFinish if
 		// earlier steps completed (matching upstream recordedSteps semantics).
 		if ctx.Err() != nil {
-			if stepCompleted {
+			if outcome.completed {
 				r.mu.Lock()
 				r.steps = append(r.steps, step)
 				r.lastStep = &r.steps[len(r.steps)-1]
@@ -731,7 +732,7 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 			return
 		}
 
-		if !stepTerminated && !stepHasOutput {
+		if !outcome.terminated && !outcome.hasOutput {
 			r.emitStreamError(fmt.Errorf("%w: model stream ended without a finish chunk", ErrNoOutputGenerated), cfg.onError)
 			return
 		}
@@ -775,7 +776,7 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 			}
 		}
 
-		if !hasClientToolCalls || stopped || hasUnresolvedClientToolCalls {
+		if outcome.toolChoiceViolated || !hasClientToolCalls || stopped || hasUnresolvedClientToolCalls {
 			if cfg.output != nil && (cfg.parseOutputOnAllFinishes || step.FinishReason.Unified == provider.FinishReasonStop ||
 				(step.FinishReason.Unified != provider.FinishReasonToolCalls && step.Text != "")) {
 				outputVal, outputErr := cfg.output.ParseComplete(step.Text)
@@ -838,6 +839,13 @@ func remapStreamPartID(part provider.StreamPart, active map[string]string, used 
 	return id
 }
 
+type stepStreamOutcome struct {
+	completed          bool
+	terminated         bool
+	hasOutput          bool
+	toolChoiceViolated bool
+}
+
 func (r *StreamTextResult) processStep(
 	ctx context.Context,
 	stepNum int,
@@ -847,7 +855,7 @@ func (r *StreamTextResult) processStep(
 	stepContext any,
 	currentMsgs []provider.Message,
 	opCancel context.CancelFunc,
-) (StepResult, bool, bool, bool, error) {
+) (StepResult, stepStreamOutcome, error) {
 	step := StepResult{
 		StepNumber: stepNum,
 		StepType:   StepTypeInitial,
@@ -871,6 +879,7 @@ func (r *StreamTextResult) processStep(
 	var completed bool
 	var terminated bool
 	var hasOutput bool
+	var providerFailed bool
 	toolNameByID := make(map[string]string)
 	toolTitleByID := make(map[string]string)
 	responseTextIndex := make(map[string]int)
@@ -1123,7 +1132,7 @@ loop:
 
 		case provider.PartToolResult:
 			if err := r.handleToolResult(part, &step, cfg); err != nil {
-				return step, false, false, hasOutput, err
+				return step, stepStreamOutcome{hasOutput: hasOutput}, err
 			}
 			preliminary := part.Preliminary != nil && *part.Preliminary
 			if !preliminary && len(step.ToolResults) > 0 {
@@ -1170,7 +1179,7 @@ loop:
 		case provider.PartFile:
 			gf, err := resolveGeneratedFile(ctx, part.Data, part.MediaType)
 			if err != nil {
-				return step, false, false, hasOutput, err
+				return step, stepStreamOutcome{hasOutput: hasOutput}, err
 			}
 			step.Files = append(step.Files, gf)
 			step.responseContent = append(step.responseContent, provider.ContentPart{
@@ -1186,7 +1195,7 @@ loop:
 		case provider.PartReasoningFile:
 			gf, err := resolveGeneratedFile(ctx, part.Data, part.MediaType)
 			if err != nil {
-				return step, false, false, hasOutput, err
+				return step, stepStreamOutcome{hasOutput: hasOutput}, err
 			}
 			reasoningBlocks = append(reasoningBlocks, ReasoningFileOutput{File: gf, ProviderMetadata: part.ProviderMetadata})
 			step.responseContent = append(step.responseContent, provider.ContentPart{
@@ -1249,7 +1258,7 @@ loop:
 			}
 			if req.Signature == "" {
 				if err := maybeSignToolApproval(cfg.toolApprovalSecret, &req); err != nil {
-					return step, false, false, hasOutput, err
+					return step, stepStreamOutcome{hasOutput: hasOutput}, err
 				}
 			}
 			step.ToolApprovalRequests = append(step.ToolApprovalRequests, req)
@@ -1278,6 +1287,7 @@ loop:
 
 		case provider.PartError:
 			terminated = true
+			providerFailed = true
 			// Synthesize a non-retryable APICallError when a producer emits
 			// a PartError without a populated APICallError. Wire boundaries
 			// MUST always carry an *APICallError so the orchestration layer
@@ -1344,9 +1354,23 @@ loop:
 			ProviderMetadata: step.ProviderMetadata,
 		})
 	}
+	var choiceViolation error
+	if completed && !providerFailed && ctx.Err() == nil {
+		choiceViolation = validateToolChoice(*cfg.toolChoice, step.ToolCalls)
+		if choiceViolation != nil {
+			step.FinishReason.Unified = provider.FinishReasonError
+			r.emitStreamError(choiceViolation, nil)
+			r.callOnChunk(cfg, StreamError{Error: choiceViolation})
+			if cfg.onError != nil {
+				cfg.onError(choiceViolation)
+			}
+		}
+	}
 	if completed || partialCompleted {
-		if err := r.executeTools(ctx, &step, cfg, stepContext, currentMsgs); err != nil {
-			return step, false, false, hasOutput, err
+		if choiceViolation == nil {
+			if err := r.executeTools(ctx, &step, cfg, stepContext, currentMsgs); err != nil {
+				return step, stepStreamOutcome{hasOutput: hasOutput}, err
+			}
 		}
 		step.Content = buildContent(step)
 		// Populate Response.Messages with the next-call message tail
@@ -1362,7 +1386,33 @@ loop:
 		})
 	}
 
-	return step, completed, terminated, hasOutput, nil
+	return step, stepStreamOutcome{
+		completed: completed, terminated: terminated, hasOutput: hasOutput,
+		toolChoiceViolated: choiceViolation != nil,
+	}, nil
+}
+
+func validateToolChoice(choice provider.ToolChoice, calls []ToolCall) error {
+	switch choice.Type {
+	case provider.ToolChoiceRequired:
+		if len(calls) == 0 {
+			return errors.New("aisdk: tool choice required but model response did not contain a tool call")
+		}
+	case provider.ToolChoiceTool:
+		seen := make(map[string]bool, len(calls))
+		for i := len(calls) - 1; i >= 0; i-- {
+			call := calls[i]
+			if seen[call.ToolCallID] {
+				continue
+			}
+			seen[call.ToolCallID] = true
+			if call.ToolName == choice.ToolName {
+				return nil
+			}
+		}
+		return fmt.Errorf("aisdk: tool choice requires %q but model response did not contain a call to that tool", choice.ToolName)
+	}
+	return nil
 }
 
 func isSemanticOutputStreamPart(part provider.StreamPart) bool {

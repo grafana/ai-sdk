@@ -225,7 +225,7 @@ func TestToolCallers_ProviderOnlyAndNamedChoice(t *testing.T) {
 		assert.Equal(t, []string{"lookup", "programmatic"}, toolNames(opts.Tools))
 		assert.Equal(t, &choice, opts.ToolChoice)
 		assert.JSONEq(t, `{"test":{"allowedCallers":["programmatic"]}}`, marshalJSON(t, opts.Tools[0].ProviderOptions))
-		return &provider.StreamResult{Stream: textStreamParts("done")}, nil
+		return &provider.StreamResult{Stream: toolCallStreamParts("lookup", `{}`)}, nil
 	}}
 	tools := ToolSet{"programmatic": {Caller: &ToolCaller{Type: ToolCallerProvider, PrepareProviderOptions: func(provider.ProviderOptions) provider.ProviderOptions {
 		return provider.ProviderOptions{"test": provider.RawProviderOption{Key: "test", Raw: json.RawMessage(`{"allowedCallers":["programmatic"]}`)}}
