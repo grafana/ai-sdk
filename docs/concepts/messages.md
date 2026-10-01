@@ -62,11 +62,10 @@ Pass the applicable tool set when persisted messages can contain completed tool
 results. Conversion then applies each tool's `ToModelOutput` hook before sending
 the result to the provider. Add `WithIgnoreIncompleteToolCalls` when incomplete
 tool calls and preliminary results should be omitted during explicit conversion.
-Input-streaming tools are always excluded. Successful output projection uses
-`ToModelOutput`; error and denied results bypass that hook. Data parts are skipped
-by default; opt into text/file projection with
+Input-streaming tools are always excluded; errors and denials bypass `ToModelOutput`.
+Data parts are skipped unless you supply
 [`WithConvertDataPart`](https://pkg.go.dev/github.com/grafana/ai-sdk#WithConvertDataPart)
-when application data belongs in model input.
+for text/file projection.
 
 If both message options are supplied, `WithModelMessages` takes precedence.
 
@@ -109,30 +108,13 @@ persisted history; see [Tool approval](../guides/tool-approval.md).
 
 ### Retain tool field presence
 
-Persist the UI history rather than a model-message projection. Tool titles,
-metadata, preliminary flags, rejected raw input and request/decision approval
-reasons carry UI state that model messages do not preserve. A final output
-replaces its preliminary result on the same tool part.
-
-When migrating Go callers, tool `ErrorText` and `ToolApproval.Reason` are string
-pointers: nil means absent; `new("")` is an explicitly empty value. An output-error
-requires a non-nil error string, including `""`. A denied tool with no reason uses
-`Tool call execution denied.`; a present empty reason remains empty. Optional
-Title/Preliminary pointers follow the same presence rule. Non-nil empty tool,
-call and result metadata maps persist as `{}`; opaque raw JSON preserves `null`.
-The [tool part API](https://pkg.go.dev/github.com/grafana/ai-sdk#ToolInvocationPart)
-owns the full field reference.
-
-Existing scalar provider-executed/automatic flags and signatures still omit
-false/empty values in persisted Go JSON. Decoded tool chunks distinguish false
-from omission during updates: false clears a prior true value, while omission
-inherits it. Direct Go chunk scalar zero values retain optional omission.
-
-Model projections have bounded existing normalization: empty provider-options
-maps and optional approval reason/signature strings and false scalar flags may
-be omitted. This never permits discarding required denied-result text or selecting
-populated fallback metadata over an explicitly empty result map. Static Go tool
-parts also carry a redundant tool name alongside their `tool-{name}` discriminator.
+Store UI history, not model projections, to retain tool presentation and approval
+state. Tool `ErrorText` and `ToolApproval.Reason` are now string pointers: nil is
+absent; `new("")` is explicitly empty. Output errors require a non-nil error;
+denials use `Tool call execution denied.` only when the reason is absent.
+See the [tool part API](https://pkg.go.dev/github.com/grafana/ai-sdk#ToolInvocationPart)
+for field semantics and [parity boundaries](../../test/conformance/PARITY.md#retained-deviations-without-issue-ownership)
+for the remaining scalar/optional-value normalization.
 
 ## Continue Go-only model conversations
 
@@ -140,10 +122,8 @@ When building lower-level loops, `ToResponseMessages` converts collected model
 response content into assistant and tool messages suitable for a later call. It
 preserves provider information required by reasoning and tool round trips.
 `StreamText` handles this conversation loop automatically for most applications.
-At provider prompt preparation, consecutive tool messages combine in part order.
-Earlier message-level provider options move to the last part of their message,
-with part options overriding them; the final message's options remain on the
-combined message. Direct UI-to-model conversion retains its step-block grouping.
+Provider prompt preparation combines consecutive tool messages in order;
+direct UI-to-model conversion retains its step-block grouping.
 
 ## Reference
 

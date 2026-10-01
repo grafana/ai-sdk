@@ -73,28 +73,17 @@ shows the corresponding direct `StreamText` endpoint.
 
 ## Load persisted tool history safely
 
-The UI helper requires nonempty history and validates an isolated clone before
-invoking the Agent or provider.
-State-required fields and approval decisions must agree: denied output requires
-an approval with `approved: false`; an explicitly empty error string is valid,
-but a missing error string is not. Malformed optional tool fields are rejected
-rather than silently decoded as absent.
+The UI helper validates nonempty history on a clone before invoking the Agent.
+It checks tool states and configured static schemas, normalizes obsolete or
+incompatible terminal history at the supported gates, and uses that clone for
+conversion and response assembly. Caller history is unchanged.
 
-Configured static tool input/output schemas apply at the supported state gates.
-Partial streaming input skips its input schema. Obsolete terminal static tools,
-failed inputs incompatible with the current schema, and completed incompatible
-empty-object inputs normalize to dynamic parts. Nonempty incompatible completed
-input or invalid configured output still fails. Conversion and response assembly
-use the same normalized clone without modifying caller history.
-
-Dynamic tool parts receive structural/state checks but not configured static
-schemas. Their reader-retained raw input is removed from the normalized clone
-outside output-error; the caller's persisted history remains unchanged. Provider-defined tools without represented schemas cannot acquire
-invented schemas. Application metadata/data payloads receive JSON checks, not
-application schema validation; there are no metadata/data schema options here.
-History validation does not invoke `Tool.ValidateInput` business callbacks.
-Direct `ConvertToModelMessages` and `StreamText` do not automatically acquire
-these Agent UI validation gates.
+Dynamic tools skip static schemas; application metadata/data and unrepresented
+provider-tool schemas are not validated. History validation does not call
+`Tool.ValidateInput`, and direct conversion/`StreamText` do not acquire these gates.
+See [`CreateAgentUIStream`](https://pkg.go.dev/github.com/grafana/ai-sdk#CreateAgentUIStream)
+and the [validation contract](../../openspec/specs/agent-tool-loop/spec.md#requirement-static-tool-schemas-use-pinned-agent-normalization-gates)
+for terminal-state rules.
 
 ## Design bounded agents
 

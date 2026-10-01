@@ -6,34 +6,10 @@ The root package SHALL provide an Agent UI stream helper equivalent in intent to
 
 The helper SHALL reject invalid tool history before starting a provider stream when represented by the current Go UI model: static `ToolInvocationPart` tool names that are empty or absent from the Agent tool set in nonterminal states, unknown tool invocation states, and final-state tool parts with missing `ToolCallID`, tool name, or state-required fields. A static `ToolInvocationPart` or `DynamicToolUIPart` in a final state (`output-available`, `output-error`, `output-denied`, or `approval-responded`) SHALL be treated as representing the tool call itself when those required fields are present. The helper SHALL NOT require a separate prior input part, approval-request part, or prior `ToolCallID` reference for those current lifecycle parts. If a future UI model introduces separate result or approval-response parts that do not themselves represent the tool call, only those separate parts SHALL require cross-reference validation against a prior represented tool call or approval request with the same ID and tool name. Missing terminal static tools in output-available, output-error or output-denied states SHALL normalize to DynamicToolUIPart with all represented fields preserved, matching validateUIMessagesForAgent. Caller history SHALL NOT be mutated. The normalized slice SHALL be used consistently for conversion and original-message response assembly. Schema and state constraints below SHALL run before Agent.Stream, and failures SHALL NOT invoke a provider. Optional application metadata/data schemas, unrepresented provider-tool schemas and existing provider-domain optional-empty serialization SHALL remain explicit support/evidence boundaries, not claims of exhaustive validation parity.
 
-#### Scenario: UI messages are converted before Agent stream
-- **WHEN** the Agent UI stream helper receives valid UI messages
-- **THEN** it SHALL convert them to model messages with the existing UI-to-model conversion behavior
-- **AND** it SHALL call the Agent stream method with those model messages
-
-#### Scenario: Conversion error is returned before streaming
-- **WHEN** the Agent UI stream helper receives UI messages that cannot be converted or validated
-- **THEN** it SHALL return an error before starting a provider stream
-- **AND** it SHALL NOT emit partial UI message chunks
-
 #### Scenario: Invalid tool name is rejected before streaming
 - **WHEN** the Agent UI stream helper receives a static tool invocation part for tool `missingTool` in input-available state
 - **AND** the Agent tool set does not contain `missingTool`
 - **THEN** the helper SHALL return an error before starting a provider stream
-
-#### Scenario: Single final-state tool invocation is accepted before streaming
-- **WHEN** the Agent UI stream helper receives a persisted assistant message containing a single static `ToolInvocationPart` with state `ToolStateOutputAvailable`, tool call ID `call-1`, tool name `search`, and required output fields
-- **AND** the supplied UI history has no separate prior input or approval-request part for `call-1`
-- **THEN** the helper SHALL accept the message as a represented tool call
-- **AND** it SHALL convert the UI history to model messages before starting the provider stream
-
-#### Scenario: Missing final-state required fields are rejected before streaming
-- **WHEN** the Agent UI stream helper receives a final-state tool invocation part with an empty tool call ID, empty tool name, or missing fields required by that state
-- **THEN** the helper SHALL return an error before starting a provider stream
-
-#### Scenario: UI chunks match existing conversion
-- **WHEN** an Agent stream produces the same `TextStreamPart` sequence as a direct `StreamText` call
-- **THEN** the Agent UI stream helper SHALL emit the same `UIMessageChunk` sequence as `StreamTextResult.ToUIMessageStream` for the same `UIMessageStreamOptions`
 
 #### Scenario: Original messages are preserved for response assembly
 - **WHEN** the Agent UI stream helper is called with UI message history

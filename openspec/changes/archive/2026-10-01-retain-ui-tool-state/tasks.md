@@ -1,52 +1,54 @@
 ## 1. Establish pinned failing contracts
 
-- [x] 1.1 Read implementation and tests at originally registered commit `4e8c387622ee1bb0d55841664416d38754d5c9a3` for UI types/process/read/conversion/validation, `validateUIMessagesForAgent`, Agent UI helper and create-tool-model-output; enumerate the supported states, presence cases and existing representation boundaries in test tables without changing pins.
-- [x] 1.2 Add focused failing root tests in `message_json_test.go`, `ui_message_reader_test.go` and `convert_test.go` for all seven static/dynamic states, new fields, explicit empty/false/null, approvals, preliminary filtering, denied default and raw-input distinctions. Confirm they fail for the actual current losses/defaults before implementation.
-- [x] 1.3 Add provider-independent UI fixture/differential cases where core chunks reproduce the bugs; use focused synthetic tests for cases not representable by fixtures. Preserve provider input provenance: no fabricated or edited recorded provider payloads.
+- [x] 1.1 Compare matching upstream UI/Agent implementation and tests; enumerate states and presence boundaries without changing pins.
+- [x] 1.2 Establish failing JSON, reader and conversion regressions for seven static/dynamic states and optional values.
+- [x] 1.3 Add provider-independent fixtures/differentials without fabricating or editing recorded provider input.
 
 ## 2. Persisted types and scoped chunk presence
 
-- [x] 2.1 Extend both concrete tool structs and matching `toolPartFields` with Title, ToolMetadata, RawInput and Preliminary; migrate ErrorText and ToolApproval.Reason pointers and add Descriptor/RequestReason. Update every affected repository construction/access site, preserving existing scalar normalization outside the selected migrations.
-- [x] 2.2 Update typed JSON encoding/decoding to retain non-nil empty tool/call/result metadata objects, new optional pointers and raw JSON values. Verify absent, empty, null and false cases with JSON assertions, not map ordering. Reject explicit null/wrong types for optional non-null strings/bools/object metadata before nil decoding erases them, while retaining permitted opaque null values.
-- [x] 2.3 Add only scoped decoded presence handling for tool Title/approval Reason/Preliminary/ProviderExecuted in `chunk.go`, and registered ApprovalDescriptor/request reason serialization. Test decode/re-encode of explicit providerExecuted false as well as empty strings/false preliminary, required empty errorText, unchanged source titles/framing and direct-literal zero-value normalization; do not migrate the public bool or introduce requestReason wire fields or generic presence infrastructure.
-- [x] 2.4 Extend reader clone helpers for all raw values, metadata maps, optional pointers and nested approvals; add caller-mutation and cross-snapshot aliasing tests.
+- [x] 2.1 Extend tool/approval fields and migrate pointer callers, preserving unrelated scalar normalization.
+- [x] 2.2 Preserve empty metadata/raw JSON; reject malformed non-null optional fields before presence is erased.
+- [x] 2.3 Preserve decoded title/reason/preliminary/provider-execution presence and registered approval fields without scalar API or framing changes.
+- [x] 2.4 Deep-clone new pointers/maps/raw approval data; test caller and snapshot isolation.
 
 ## 3. Reader lifecycle and resume
 
-- [x] 3.1 Retain title/toolMetadata in partial tool state and implement source-specific static/dynamic transition clearing, input-error RawInput/Input arms and preliminary/final replacement. Apply supplied ProviderExecuted values, including decoded false clearing prior true, while absent inherits prior state. Add static/dynamic differential output-transition tests for explicit false versus omission and resulting local-tool-role versus provider-inline model results; assert one-part identity, call/result metadata and current write-point behavior.
-- [x] 3.2 Merge approval responses with previous descriptor/requestReason/signature/automatic state and transfer chunk reason presence to the correct approval field. Test static/dynamic requested/responded/denied and subsequent outputs, including prior providerExecuted true cleared by decoded false versus inherited on omission and the resulting model-result placement.
-- [x] 3.3 Implement WithUIMessageReaderInitialMessage with option-construction and per-reader deep clones, assistant-only content seeding, tool/data matching and empty active delta maps. For non-assistant seeds ignore parts/metadata but retain supplied ID; cover supplied-ID retention, absent-ID generated fallback and later start-ID replacement, alongside option reuse, empty streams and malformed unstarted deltas.
-- [x] 3.4 Verify current progressive/blocking error contracts and no synthetic final snapshots remain unchanged; keep #181 error/cancellation/lifecycle options and #180 framing work outside this change.
+- [x] 3.1 Match static/dynamic transitions, raw-input arms, preliminary replacement and false-vs-omitted provider execution/result placement.
+- [x] 3.2 Merge approval responses without losing request data; verify denied/output transitions.
+- [x] 3.3 Add isolated initial-message seeding, ID/data matching, option reuse and empty/invalid-delta cases.
+- [x] 3.4 Preserve progressive/blocking error contracts and no synthetic final snapshots; exclude #181/#180.
 
 ## 4. Conversion behavior and data hook
 
-- [x] 4.1 Always omit input-streaming tools and extend opt-in incomplete filtering to preliminary true; table-test static/dynamic states with and without the option and assert callbacks do not run for filtered parts.
-- [x] 4.2 Implement output-error nullish Input/RawInput and call/result metadata selection, selecting presence before provider-domain normalization. Test populated/empty/absent metadata across local/provider results; explicitly empty result metadata must suppress populated call fallback.
-- [x] 4.3 Fix local output-denied default to `Tool call execution denied.` and preserve present empty reason. Protect distinct approval-responded execution-denied behavior, successful ToModelOutput context/error propagation and non-invocation in error modes; retain custom content, references, filename presence and step ordering.
-- [x] 4.4 Add WithConvertDataPart on the existing ConvertOption seam with user/assistant-only invocation, nil skip, text/file discriminator guard, direct output preservation and contextual errors. Test part/block order, excluded system data and unsupported returned kinds. Preserve required empty text in provider.ContentPart JSON by its existing text discriminator, keeping Text string and all other variant encodings unchanged.
-- [x] 4.5 Verify/document only the existing provider-domain optional-empty Reason/providerOptions normalization boundaries in differential comparisons; do not normalize required denied output text, metadata source selection or arbitrary empty fields. Escalate meaningful behavior loss beyond these bounded cases rather than silently expanding provider APIs.
+- [x] 4.1 Filter streaming/preliminary tools before output callbacks for both tool kinds.
+- [x] 4.2 Match nullish input and presence-based call/result metadata selection.
+- [x] 4.3 Preserve denied text/empty reason and distinct negative-approval behavior; protect output callbacks and existing content ordering.
+- [x] 4.4 Add text/file-only data conversion with nil/error handling; retain required empty text without changing Text string.
+- [x] 4.5 Bound differential normalization to documented optional provider representations, not required text or metadata selection.
 
 ## 5. Agent validation and terminal normalization
 
-- [x] 5.1 Extend internal validation to return an isolated normalized history and use it consistently for CreateAgentUIStream conversion/original-message assembly. Test no caller mutation and Agent/provider invocation count zero on failure.
-- [x] 5.2 Enforce represented role/part structure, known states, required/forbidden lifecycle fields and approval constraints; test empty-versus-absent errorText, malformed JSON and invalid denied/success approvals, retaining whole-part identity without separate prior-call requirements.
-- [x] 5.3 Reuse configured static input/output schemas at the pinned gates; test partial/dynamic exemptions, absent/legacy error input, schema failures, missing terminal-tool normalization, missing nonterminal rejection, invalid error-input normalization, and empty-versus-nonempty incompatible available input. Ensure output schema validates before conversion to dynamic.
-- [x] 5.4 Document absent application metadata/data-schema configuration and unrepresented provider-tool schemas as validation boundaries, without adding no-op options, a general exported validator or history-time ValidateInput callback invocation.
+- [x] 5.1 Use one normalized clone for conversion/assembly; assert caller isolation and zero calls on failure.
+- [x] 5.2 Validate represented roles/parts, required/forbidden state fields and approvals without separate prior-call requirements.
+- [x] 5.3 Apply configured static schemas and pinned terminal normalization; check output before dynamic normalization.
+- [x] 5.4 Document application/unrepresented provider-schema boundaries; do not invoke history-time ValidateInput callbacks.
 
 ## 6. Differential and hook-level proof
 
-- [x] 6.1 Add deterministic testserver persistence/assembly/conversion cases and a matching Vitest `ui-tool-state-persistence.test.ts`. Compare all static/dynamic states and optional cases using pinned readUIMessageStream and convertToModelMessages, including metadata, raw input, approvals, preliminary/final, custom/data parts and ToModelOutput.
-- [x] 6.2 Parse SSE with parseJsonEventStream/uiMessageChunkSchema and assert decoded fields plus assembled messages; add round-trip compatibility fixtures or test endpoints so successful schema parsing alone cannot hide Go persistence loss.
-- [x] 6.3 Extend real useChat tests to persist/remount/resume preliminary/approval tool history through Go JSON and Agent validation/conversion to a deterministic fake provider; assert retained fields, no duplicates, final result and exact supported model projection. Include invalid persisted/schema cases with no provider invocation. Coalesce consecutive tool messages at provider prompt preparation, preserving part order and pinned deep message/part metadata precedence without mutating caller history.
-- [x] 6.4 Compare normalization with the pinned Agent-specific validator where accessible and shared schema cases with pinned validation; explicitly classify known representation/schema boundaries instead of deriving all expectations from Go or overclaiming exhaustive frontend/provider parity.
+- [x] 6.1 Compare persistence/assembly/conversion with pinned TypeScript APIs across tool states and optional values.
+- [x] 6.2 Parse SSE with parseJsonEventStream/uiMessageChunkSchema and assert fields plus assembled history.
+- [x] 6.3 Prove real useChat persist/remount/resume, final output and provider prompt; verify ordered, isolated tool-message coalescing.
+- [x] 6.4 Compare Agent-specific normalization/shared schemas and classify representation/proof boundaries.
 
 ## 7. Documentation and independently green delivery
 
-- [x] 7.1 Add godoc for proposed fields/options and update existing UI/tool guides for pointer migration, nil/empty semantics, persistence/resume and stricter validation; preserve documentation separation and reference #181 for reader error/lifecycle gaps.
-- [x] 7.2 Update PARITY.md only for stable delivered evidence/support-boundary changes, not an issue catalog or dated assessment; regenerate only expectations affected by committed behavior, preserving fixture provenance.
-- [x] 7.3 After `mise deps`, run root tests and affected all-module checks (`mise run check`), `mise run build-examples`, `mise run test-examples`, `mise run test-integration` and `mise run parity-check`; inspect skips/failures and require ordinary candidate-source CI green for this work package alone.
-- [x] 7.4 Verify OpenSpec deltas against delivered behavior and confirm scope excludes baseline/provider upgrades and reader lifecycle work. Before a later root release run `MODULE=. mise run verify-published-module`; any later consumer module adoption needs its own published-dependency evidence rather than workspace success.
+- [x] 7.1 Document API/pointer migration, persistence, resume and validation; keep lifecycle gaps in #181.
+- [x] 7.2 Update stable parity evidence/boundaries only; preserve fixture provenance.
+- [x] 7.3 Pass all-module checks, example builds/tests, integration, parity and candidate-source CI; inspect skips.
+- [x] 7.4 Verify/sync/archive deltas; before release run `MODULE=. mise run verify-published-module`. Consumer adoption needs published-dependency evidence.
 
-All requested local suites and candidate-source build, short-test and module-policy checks passed. The provider-shape skip was resolved with a separate check against an immutable export of the registered source. Formatting passed `mise run fmt-check` after staging the reviewed implementation. Candidate-source Build & Test CI passed for `1ca88c87` in [run 36770987472](https://github.com/grafana/ai-sdk/actions/runs/36770987472), including core CI, docs lint, module resolution, parity baseline, integration and conformance. The separate OpenSpec gate passed change validation and failed only because the change was still active; this sync/archive resolves that lifecycle requirement.
-
-After merging `origin/main`, matching implementation/test changes were compared at the new registered commit `ee3169b3c4880e2abe4d0d7c781243bb81822ec4`. `mise deps`, `mise run check`, `mise run lint`, example build/tests, integration (101 tests), parity checks and supplemental exact-source provider-shape validation passed against `ai@7.0.116` / `@ai-sdk/react@4.0.119`. Integration TypeScript checking now passes; main resolved the previously reported `sse-message-assembly.test.ts:60` error. Newly added approval input-schema provenance and schema-transform/refinement paths remain unrepresented, rather than being claimed as covered by the existing contracts.
+Validation passed against 7.0.116 / React 4.0.119, including exact-source provider
+shape checks and integration typechecking. Candidate-source Build & Test
+[run 36770987472](https://github.com/grafana/ai-sdk/actions/runs/36770987472) passed;
+the separate OpenSpec gate required archiving. Approval input-schema provenance
+and schema-transform/refinement paths remain unrepresented.

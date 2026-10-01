@@ -3,63 +3,9 @@
 ### Requirement: StreamUIMessage emits upstream write-point snapshots
 `StreamUIMessage` SHALL expose the signature `func StreamUIMessage(stream <-chan UIMessageChunk, opts ...UIMessageReaderOption) <-chan UIMessage`. It SHALL consume `UIMessageChunk` values in input order and emit isolated `UIMessage` snapshots only for the state update write points that match upstream `ai@7.0.116` `readUIMessageStream` behavior as represented by Go `UIMessage` and `Part` types. It SHALL NOT emit a synthetic final snapshot solely because the input channel closes.
 
-#### Scenario: Progressive text snapshots
-- **WHEN** `StreamUIMessage` receives a start chunk followed by text start, text delta, another text delta, and text end chunks for the same text part
-- **THEN** the output channel yields snapshots at upstream write points showing the assistant message evolving from an empty text part to the accumulated text and then the completed text part
-- **AND** each later text snapshot preserves the same message ID and includes all prior text deltas in order
-
-#### Scenario: Progressive reasoning snapshots
-- **WHEN** `StreamUIMessage` receives reasoning start, reasoning delta, and reasoning end chunks
-- **THEN** the output channel yields snapshots showing a `ReasoningPart` being created, updated with accumulated reasoning text, and completed without losing provider metadata
-
-#### Scenario: Progressive tool snapshots update one part
-- **WHEN** `StreamUIMessage` receives tool input start, tool input delta, tool input available, approval request, approval response, output available, output denied, or output error chunks for a tool call
-- **THEN** the output channel yields snapshots at upstream write points that update one tool part for that tool call ID instead of appending duplicate tool parts for each lifecycle transition
-- **AND** static tool calls use `ToolInvocationPart` while dynamic tool calls use `DynamicToolUIPart`
-
-#### Scenario: Partial tool input uses valid RawMessage values
-- **WHEN** `StreamUIMessage` receives tool-input-delta chunks whose accumulated input text is complete JSON or can be repaired using upstream-compatible partial JSON repair
-- **THEN** the emitted tool part snapshot includes `Input` as valid `json.RawMessage` produced from the parsed JSON value
-- **AND** marshaling the `UIMessage` snapshot succeeds
-
-#### Scenario: Unparseable partial tool input omits Input
-- **WHEN** `StreamUIMessage` receives a tool-input-delta chunk whose accumulated input text cannot be parsed or repaired as JSON
-- **THEN** the emitted tool part remains in `input-streaming` state
-- **AND** the tool part's `Input` is nil or omitted instead of containing invalid `json.RawMessage`
-- **AND** marshaling the `UIMessage` snapshot succeeds
-
 #### Scenario: Progressive non-text parts
 - **WHEN** `StreamUIMessage` receives file, reasoning file, source URL, source document, step start, non-transient data, or message metadata chunks
 - **THEN** the output channel yields snapshots that include the corresponding Go message part or metadata update whenever upstream `ai@7.0.116` would write a message snapshot for that chunk type
-
-#### Scenario: Transient data is not assembled
-- **WHEN** `StreamUIMessage` receives a data chunk with `Transient` set to true
-- **THEN** the transient data is not appended to the message parts
-- **AND** no snapshot is emitted solely for that transient data chunk
-
-#### Scenario: Error chunk does not emit or terminate progressive output
-- **WHEN** `StreamUIMessage` receives a `ChunkError` chunk between otherwise valid chunks
-- **THEN** no snapshot is emitted for the `ChunkError` chunk
-- **AND** the reader continues consuming subsequent chunks
-- **AND** subsequent valid chunks can still produce snapshots
-
-#### Scenario: Invalid chunk order closes progressive output
-- **WHEN** `StreamUIMessage` receives a stateful chunk that references a missing active part or missing tool call, such as text delta before text start or tool output before tool input
-- **THEN** no snapshot is emitted for the invalid chunk
-- **AND** the output channel closes because the streaming API has no error return channel
-
-#### Scenario: Empty stream emits no snapshots
-- **WHEN** the input chunk channel closes without any chunks
-- **THEN** the output message channel closes without yielding a `UIMessage`
-
-#### Scenario: Non-writing stream emits no synthetic final snapshot
-- **WHEN** the input chunk channel contains only chunks that do not produce upstream write-point snapshots
-- **THEN** the output message channel closes without yielding a synthetic final `UIMessage`
-
-#### Scenario: Output closes after input closes
-- **WHEN** the input chunk channel closes without a malformed state transition
-- **THEN** the output message channel closes after all upstream write-point snapshots have been sent
-- **AND** if at least one snapshot was emitted, the last received message snapshot is the latest assembled state produced by those write points
 
 ## ADDED Requirements
 
