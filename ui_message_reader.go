@@ -3,6 +3,7 @@ package aisdk
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 
 	"github.com/grafana/ai-sdk/provider"
 )
@@ -895,13 +896,7 @@ func clonePart(part Part) Part {
 		if p.Filename != nil {
 			p.Filename = new(*p.Filename)
 		}
-		if p.ProviderReference != nil {
-			references := make(map[string]string, len(p.ProviderReference))
-			for key, value := range p.ProviderReference {
-				references[key] = value
-			}
-			p.ProviderReference = references
-		}
+		p.ProviderReference = maps.Clone(p.ProviderReference)
 		return p
 	case ReasoningFilePart:
 		p.ProviderMetadata = cloneProviderMetadata(p.ProviderMetadata)
@@ -931,13 +926,7 @@ func cloneToolFields(p toolPartFields) toolPartFields {
 	p.Output = cloneRawMessage(p.Output)
 	p.CallProviderMetadata = cloneProviderMetadata(p.CallProviderMetadata)
 	p.ResultProviderMetadata = cloneProviderMetadata(p.ResultProviderMetadata)
-	if p.ToolMetadata != nil {
-		metadata := make(map[string]json.RawMessage, len(p.ToolMetadata))
-		for key, value := range p.ToolMetadata {
-			metadata[key] = cloneRawMessage(value)
-		}
-		p.ToolMetadata = metadata
-	}
+	p.ToolMetadata = cloneProviderMetadata(p.ToolMetadata)
 	if p.Title != nil {
 		p.Title = new(*p.Title)
 	}

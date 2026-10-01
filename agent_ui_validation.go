@@ -38,12 +38,14 @@ func validateAgentUIPart(part Part, tools ToolSet) (Part, error) {
 	if _, err := marshalPart(part); err != nil {
 		return nil, err
 	}
+	var metadata provider.ProviderMetadata
 	switch p := part.(type) {
 	case ToolInvocationPart:
 		fields := toolPartFields(p)
-		if err := validateToolUIState(fields); err != nil {
+		if err := validateToolUIState(&fields); err != nil {
 			return nil, err
 		}
+		p = ToolInvocationPart(fields)
 		tool, exists := tools[p.ToolName]
 		terminal := p.State == ToolStateOutputAvailable || p.State == ToolStateOutputError || p.State == ToolStateOutputDenied
 		if !exists {
@@ -70,55 +72,43 @@ func validateAgentUIPart(part Part, tools ToolSet) (Part, error) {
 		if toDynamic {
 			return DynamicToolUIPart(fields), nil
 		}
+		return p, nil
 	case DynamicToolUIPart:
-		if p.State != ToolStateOutputError {
-			p.RawInput = nil
-		}
-		if err := validateToolUIState(toolPartFields(p)); err != nil {
+		fields := toolPartFields(p)
+		if err := validateToolUIState(&fields); err != nil {
 			return nil, err
 		}
-		return p, nil
+		return DynamicToolUIPart(fields), nil
 	case TextPart:
 		if err := validateUIContentState(p.State); err != nil {
 			return nil, err
 		}
-		if err := validateProviderMetadata(p.ProviderMetadata); err != nil {
-			return nil, err
-		}
+		metadata = p.ProviderMetadata
 	case ReasoningPart:
 		if err := validateUIContentState(p.State); err != nil {
 			return nil, err
 		}
-		if err := validateProviderMetadata(p.ProviderMetadata); err != nil {
-			return nil, err
-		}
+		metadata = p.ProviderMetadata
 	case DataPart:
 		if p.DataName == "" || len(p.Data) == 0 {
 			return nil, fmt.Errorf("data part is missing name or data")
 		}
 	case FilePart:
-		if err := validateProviderMetadata(p.ProviderMetadata); err != nil {
-			return nil, err
-		}
+		metadata = p.ProviderMetadata
 	case ReasoningFilePart:
-		if err := validateProviderMetadata(p.ProviderMetadata); err != nil {
-			return nil, err
-		}
+		metadata = p.ProviderMetadata
 	case SourceURLPart:
-		if err := validateProviderMetadata(p.ProviderMetadata); err != nil {
-			return nil, err
-		}
+		metadata = p.ProviderMetadata
 	case SourceDocumentPart:
-		if err := validateProviderMetadata(p.ProviderMetadata); err != nil {
-			return nil, err
-		}
+		metadata = p.ProviderMetadata
 	case CustomPart:
-		if err := validateProviderMetadata(p.ProviderMetadata); err != nil {
-			return nil, err
-		}
+		metadata = p.ProviderMetadata
 	case StepStartPart:
 	default:
 		return nil, fmt.Errorf("unsupported UI part %T", part)
+	}
+	if err := validateProviderMetadata(metadata); err != nil {
+		return nil, err
 	}
 	return part, nil
 }
@@ -135,7 +125,7 @@ func isEmptyJSONObj(raw json.RawMessage) bool {
 	return json.Unmarshal(raw, &object) == nil && object != nil && len(object) == 0
 }
 
-func validateToolUIState(part toolPartFields) error {
+func validateToolUIState(part *toolPartFields) error {
 	for _, metadata := range []provider.ProviderMetadata{part.CallProviderMetadata, part.ResultProviderMetadata} {
 		if err := validateProviderMetadata(metadata); err != nil {
 			return err
@@ -158,14 +148,14 @@ func validateToolUIState(part toolPartFields) error {
 	if failed != (part.ErrorText != nil) {
 		return fmt.Errorf("tool invocation %q has invalid error text for state %q", part.ToolCallID, part.State)
 	}
-	if !available && part.Preliminary != nil {
-		return fmt.Errorf("preliminary is only valid on output-available")
+	if !available {
+		part.Preliminary = nil
 	}
-	if !failed && part.RawInput != nil {
-		return fmt.Errorf("raw input is only valid on output-error")
+	if !failed {
+		part.RawInput = nil
 	}
-	if !available && !failed && part.ResultProviderMetadata != nil {
-		return fmt.Errorf("result metadata is not valid in state %q", part.State)
+	if !available && !failed {
+		part.ResultProviderMetadata = nil
 	}
 	approval := part.Approval
 	switch part.State {

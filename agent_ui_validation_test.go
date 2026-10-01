@@ -3,10 +3,10 @@ package aisdk
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/grafana/ai-sdk/provider"
-	"github.com/grafana/ai-sdk/schema"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -24,6 +24,13 @@ func (a *uiValidationAgentSpy) Stream(ctx context.Context, opts ...AgentStreamOp
 var _ Agent = (*uiValidationAgentSpy)(nil)
 
 func TestValidateAgentUIMessages_Structure(t *testing.T) {
+	t.Run("content state precedes metadata", func(t *testing.T) {
+		metadata := provider.ProviderMetadata{"test": json.RawMessage(`null`)}
+		for _, part := range []Part{TextPart{State: "invalid", ProviderMetadata: metadata}, ReasoningPart{State: "invalid", ProviderMetadata: metadata}} {
+			_, err := validateAgentUIPart(part, nil)
+			assert.ErrorContains(t, err, "unknown content state")
+		}
+	})
 	for _, tc := range []struct {
 		name    string
 		message UIMessage
@@ -34,6 +41,7 @@ func TestValidateAgentUIMessages_Structure(t *testing.T) {
 		{"invalid JSON", UIMessage{Role: RoleAssistant, Metadata: json.RawMessage(`invalid`)}},
 		{"invalid payload", UIMessage{Role: RoleAssistant, Parts: []Part{DataPart{DataName: "x", Data: json.RawMessage(`invalid`)}}}},
 		{"invalid metadata namespace", UIMessage{Role: RoleAssistant, Parts: []Part{TextPart{Text: "x", ProviderMetadata: provider.ProviderMetadata{"test": json.RawMessage(`null`)}}}}},
+		{"invalid inapplicable metadata", UIMessage{Role: RoleAssistant, Parts: []Part{DynamicToolUIPart{ToolCallID: "c", ToolName: "lookup", State: ToolStateInputAvailable, Input: json.RawMessage(`{}`), ResultProviderMetadata: provider.ProviderMetadata{"test": json.RawMessage(`null`)}}}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			messages, err := validateAgentUIMessages([]UIMessage{tc.message}, nil)
@@ -62,6 +70,43 @@ func TestValidateAgentUIMessages_Structure(t *testing.T) {
 			assert.Nil(t, messages)
 			assert.ErrorContains(t, err, "part 0")
 		})
+	}
+}
+
+func TestValidateAgentUIMessages_StateProjection(t *testing.T) {
+	for _, dynamic := range []bool{false, true} {
+		for _, tc := range []struct{ state, fields string }{
+			{"input-streaming", ""},
+			{"input-available", ""},
+			{"approval-requested", `,"approval":{"id":"a"}`},
+			{"approval-responded", `,"approval":{"id":"a","approved":true}`},
+			{"output-available", `,"output":"ok"`},
+			{"output-error", `,"errorText":""`},
+			{"output-denied", `,"approval":{"id":"a","approved":false}`},
+		} {
+			t.Run(fmt.Sprintf("dynamic-%t/%s", dynamic, tc.state), func(t *testing.T) {
+				kind := "tool-lookup"
+				if dynamic {
+					kind = "dynamic-tool"
+				}
+				var message UIMessage
+				require.NoError(t, json.Unmarshal([]byte(`{"id":"m","role":"assistant","parts":[{"type":"`+kind+`","toolName":"lookup","toolCallId":"c","input":{"q":"x"},"state":"`+tc.state+`","rawInput":"legacy","preliminary":false,"resultProviderMetadata":{}`+tc.fields+`}]}`), &message))
+				before, err := json.Marshal(message)
+				require.NoError(t, err)
+				normalized, err := validateAgentUIMessages([]UIMessage{message}, ToolSet{"lookup": {InputSchema: testMustSchema(t, `{"type":"object","properties":{"q":{"type":"string"}},"required":["q"]}`)}})
+				require.NoError(t, err)
+				encoded, err := json.Marshal(normalized[0])
+				require.NoError(t, err)
+				var value struct{ Parts []map[string]json.RawMessage }
+				require.NoError(t, json.Unmarshal(encoded, &value))
+				assert.Equal(t, tc.state == "output-error", value.Parts[0]["rawInput"] != nil)
+				assert.Equal(t, tc.state == "output-available", value.Parts[0]["preliminary"] != nil)
+				assert.Equal(t, tc.state == "output-available" || tc.state == "output-error", value.Parts[0]["resultProviderMetadata"] != nil)
+				after, err := json.Marshal(message)
+				require.NoError(t, err)
+				assert.JSONEq(t, string(before), string(after))
+			})
+		}
 	}
 }
 
@@ -105,13 +150,8 @@ func TestCreateAgentUIStream_EmptyHistory(t *testing.T) {
 		messages []UIMessage
 	}{{"nil", nil}, {"empty", []UIMessage{}}} {
 		t.Run(tc.name, func(t *testing.T) {
-			calls := 0
 			model := &mockModel{streamFunc: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
-				calls++
-				stream := make(chan provider.StreamPart, 1)
-				stream <- provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}}
-				close(stream)
-				return &provider.StreamResult{Stream: stream}, nil
+				return &provider.StreamResult{Stream: finishStreamParts()}, nil
 			}}
 			spy := &uiValidationAgentSpy{Agent: NewToolLoopAgent(model)}
 			stream, err := CreateAgentUIStream(t.Context(), spy, tc.messages)
@@ -122,7 +162,7 @@ func TestCreateAgentUIStream_EmptyHistory(t *testing.T) {
 			assert.Error(t, err)
 			assert.Nil(t, stream)
 			assert.Zero(t, spy.streamCalls)
-			assert.Zero(t, calls)
+			assert.Zero(t, model.callCount)
 		})
 	}
 }
@@ -142,14 +182,9 @@ func TestCreateAgentUIStream_DynamicRawInputContinuation(t *testing.T) {
 	assert.JSONEq(t, `"legacy"`, string(persisted.Parts[0].(DynamicToolUIPart).RawInput))
 	*part.Title = "changed"
 	assert.Equal(t, "", *persisted.Parts[0].(DynamicToolUIPart).Title)
-	calls := 0
 	model := &mockModel{streamFunc: func(_ context.Context, options provider.CallOptions) (*provider.StreamResult, error) {
-		calls++
 		assert.JSONEq(t, `{"q":"old"}`, string(options.Prompt[0].Content[0].Input))
-		stream := make(chan provider.StreamPart, 1)
-		stream <- provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}}
-		close(stream)
-		return &provider.StreamResult{Stream: stream}, nil
+		return &provider.StreamResult{Stream: finishStreamParts()}, nil
 	}}
 	spy := &uiValidationAgentSpy{Agent: NewToolLoopAgent(model)}
 	var finished UIMessageStreamOnFinishState
@@ -158,7 +193,7 @@ func TestCreateAgentUIStream_DynamicRawInputContinuation(t *testing.T) {
 	for range stream {
 	}
 	assert.Equal(t, 1, spy.streamCalls)
-	assert.Equal(t, 1, calls)
+	assert.Equal(t, 1, model.callCount)
 	assert.Nil(t, finished.ResponseMessage.Parts[0].(DynamicToolUIPart).RawInput)
 	after, err := json.Marshal(persisted)
 	require.NoError(t, err)
@@ -166,10 +201,8 @@ func TestCreateAgentUIStream_DynamicRawInputContinuation(t *testing.T) {
 }
 
 func TestCreateAgentUIStream_PersistedValidation(t *testing.T) {
-	inputSchema, err := schema.SchemaFromJSON(json.RawMessage(`{"type":"object","properties":{"q":{"type":"string"}},"required":["q"]}`))
-	require.NoError(t, err)
-	outputSchema, err := schema.SchemaFromJSON(json.RawMessage(`{"type":"string"}`))
-	require.NoError(t, err)
+	inputSchema := testMustSchema(t, `{"type":"object","properties":{"q":{"type":"string"}},"required":["q"]}`)
+	outputSchema := testMustSchema(t, `{"type":"string"}`)
 	for _, tc := range []struct {
 		name, part string
 		valid      bool
@@ -196,13 +229,8 @@ func TestCreateAgentUIStream_PersistedValidation(t *testing.T) {
 			require.NoError(t, json.Unmarshal([]byte(`{"id":"m","role":"assistant","parts":[{"type":"tool-lookup","toolName":"lookup","toolCallId":"c",`+tc.part+`}]}`), &message))
 			before, err := json.Marshal(message)
 			require.NoError(t, err)
-			calls := 0
 			model := &mockModel{streamFunc: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
-				calls++
-				stream := make(chan provider.StreamPart, 1)
-				stream <- provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}}
-				close(stream)
-				return &provider.StreamResult{Stream: stream}, nil
+				return &provider.StreamResult{Stream: finishStreamParts()}, nil
 			}}
 			agent := NewToolLoopAgent(model, WithToolLoopAgentOptions(WithTools(ToolSet{"lookup": {InputSchema: inputSchema, OutputSchema: outputSchema, Execute: func(context.Context, json.RawMessage, ToolExecutionOptions) (json.RawMessage, error) {
 				return json.RawMessage(`"ok"`), nil
@@ -215,12 +243,12 @@ func TestCreateAgentUIStream_PersistedValidation(t *testing.T) {
 				for range stream {
 				}
 				if tc.name != "valid input" && tc.name != "dynamic exempt" {
-					assert.Equal(t, 1, calls)
+					assert.Equal(t, 1, model.callCount)
 				}
 			} else {
 				require.Error(t, err)
 				assert.Nil(t, stream)
-				assert.Equal(t, 0, calls)
+				assert.Equal(t, 0, model.callCount)
 				assert.Zero(t, spy.streamCalls)
 			}
 			after, err := json.Marshal(message)

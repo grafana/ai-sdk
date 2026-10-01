@@ -125,31 +125,50 @@ func ConvertToModelMessages(messages []UIMessage, opts ...ConvertOption) ([]prov
 
 		case RoleAssistant:
 			var assistParts []provider.ContentPart
-			var toolMsgParts []provider.ContentPart
+			var toolParts []toolPartFields
 
-			// flushBlock emits the accumulated assistant and tool messages,
-			// mirroring the TypeScript SDK's step-based block splitting.
-			// Each step produces at most one assistant message followed by
-			// one tool message, ensuring tool_use/tool_result ordering.
-			flushBlock := func() {
+			flushBlock := func() error {
+				var toolMsgParts []provider.ContentPart
+				for _, tp := range toolParts {
+					if tp.Approval != nil && tp.Approval.Approved != nil {
+						toolMsgParts = append(toolMsgParts, provider.ContentPart{
+							Type:             provider.ContentPartTypeToolApprovalResponse,
+							ApprovalID:       tp.Approval.ID,
+							Approved:         new(*tp.Approval.Approved),
+							Reason:           stringValue(tp.Approval.Reason),
+							ProviderExecuted: tp.ProviderExecuted,
+						})
+					}
+					if tp.State == ToolStateApprovalResponded && tp.Approval != nil && tp.Approval.Approved != nil && !*tp.Approval.Approved {
+						toolMsgParts = append(toolMsgParts, provider.ContentPart{
+							Type:            provider.ContentPartTypeToolResult,
+							ToolCallID:      tp.ToolCallID,
+							ToolName:        tp.ToolName,
+							ProviderOptions: providerMetadataToOptions(tp.CallProviderMetadata),
+							Output: &provider.ToolResultOutput{
+								Type:   provider.ToolOutputExecutionDenied,
+								Reason: stringValue(tp.Approval.Reason),
+							},
+						})
+					}
+					if !tp.ProviderExecuted {
+						var err error
+						toolMsgParts, err = appendToolResult(toolMsgParts, tp, providerMetadataToOptions(tp.CallProviderMetadata), opt.tools)
+						if err != nil {
+							return err
+						}
+					}
+				}
 				if len(assistParts) > 0 {
 					result = append(result, provider.NewAssistantMessage(assistParts...))
-					assistParts = nil
 				}
 				if len(toolMsgParts) > 0 {
 					result = append(result, provider.NewToolMessage(toolMsgParts...))
-					toolMsgParts = nil
 				}
+				assistParts, toolParts = nil, nil
+				return nil
 			}
 
-			// processToolPart handles both ToolInvocationPart and DynamicToolUIPart,
-			// which share identical fields and conversion logic.
-			//
-			// Mirrors the upstream convert-to-model-messages.ts step block:
-			// emit the tool-call assistant part, optionally an inline
-			// provider-executed tool-result, and on the tool message side
-			// optionally a tool-approval-response and either a regular or
-			// synthetic execution-denied tool-result.
 			processToolPart := func(tp toolPartFields) error {
 				if tp.State == ToolStateInputStreaming || (opt.ignoreIncompleteToolCalls && (!isCompleteToolCallState(tp.State) || (tp.State == ToolStateOutputAvailable && tp.Preliminary != nil && *tp.Preliminary))) {
 					return nil
@@ -198,49 +217,16 @@ func ConvertToModelMessages(messages []UIMessage, opts ...ConvertOption) ([]prov
 						assistParts = append(assistParts, *r)
 					}
 				}
-				// Approval response on the tool message side (only when the
-				// user has actually responded). Upstream emits this for both
-				// provider-executed and client-executed tools whenever
-				// approval.approved is set (convert-to-model-messages.ts:293-301).
-				if tp.Approval != nil && tp.Approval.Approved != nil {
-					approvedCopy := *tp.Approval.Approved
-					toolMsgParts = append(toolMsgParts, provider.ContentPart{
-						Type:             provider.ContentPartTypeToolApprovalResponse,
-						ApprovalID:       tp.Approval.ID,
-						Approved:         &approvedCopy,
-						Reason:           stringValue(tp.Approval.Reason),
-						ProviderExecuted: tp.ProviderExecuted,
-					})
-				}
-				// Synthetic execution-denied tool-result for denied tool
-				// approvals (provider-executed and client-executed alike;
-				// upstream gates on state==approval-responded && approved==false).
-				if tp.State == ToolStateApprovalResponded && tp.Approval != nil && tp.Approval.Approved != nil && !*tp.Approval.Approved {
-					toolMsgParts = append(toolMsgParts, provider.ContentPart{
-						Type:            provider.ContentPartTypeToolResult,
-						ToolCallID:      tp.ToolCallID,
-						ToolName:        tp.ToolName,
-						ProviderOptions: providerMetadataToOptions(tp.CallProviderMetadata),
-						Output: &provider.ToolResultOutput{
-							Type:   provider.ToolOutputExecutionDenied,
-							Reason: stringValue(tp.Approval.Reason),
-						},
-					})
-				}
-				if !tp.ProviderExecuted {
-					var err error
-					toolMsgParts, err = appendToolResult(toolMsgParts, tp, providerMetadataToOptions(tp.CallProviderMetadata), opt.tools)
-					if err != nil {
-						return err
-					}
-				}
+				toolParts = append(toolParts, tp)
 				return nil
 			}
 
 			for _, p := range msg.Parts {
 				switch v := p.(type) {
 				case StepStartPart:
-					flushBlock()
+					if err := flushBlock(); err != nil {
+						return nil, err
+					}
 				case DataPart:
 					converted, err := convertDataPart(v, opt.convertDataPart)
 					if err != nil {
@@ -303,7 +289,9 @@ func ConvertToModelMessages(messages []UIMessage, opts ...ConvertOption) ([]prov
 				}
 			}
 
-			flushBlock()
+			if err := flushBlock(); err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -362,22 +350,7 @@ func extractSystemContent(parts []Part) (string, provider.ProviderOptions) {
 
 // toolPartFields holds the common fields shared by ToolInvocationPart and
 // DynamicToolUIPart, used to avoid duplicating conversion logic.
-type toolPartFields struct {
-	ToolCallID             string
-	ToolName               string
-	State                  ToolInvocationState
-	Title                  *string
-	ToolMetadata           map[string]json.RawMessage
-	Input                  json.RawMessage
-	RawInput               json.RawMessage
-	Output                 json.RawMessage
-	ErrorText              *string
-	Preliminary            *bool
-	ProviderExecuted       bool
-	Approval               *ToolApproval
-	CallProviderMetadata   provider.ProviderMetadata
-	ResultProviderMetadata provider.ProviderMetadata
-}
+type toolPartFields ToolInvocationPart
 
 func isCompleteToolCallState(state ToolInvocationState) bool {
 	switch state {

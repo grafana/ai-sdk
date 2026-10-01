@@ -43,7 +43,7 @@ application-schema options and blanket optional-scalar migration are out of scop
 - Normalize one isolated history before Agent conversion/response assembly using
   `validateUIMessagesForAgent` gates, not public-validator defaults. Check represented
   states and configured static schemas, normalize supported terminal cases, and
-  strip non-error dynamic RawInput only from the clone. Dynamic tools skip static
+  project state-applicable RawInput/preliminary/result metadata only on the clone. Dynamic tools skip static
   schemas; history validation does not invoke `Tool.ValidateInput`.
 
 ## Evidence / Risks

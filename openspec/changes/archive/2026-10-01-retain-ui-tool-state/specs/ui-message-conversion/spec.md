@@ -74,12 +74,17 @@ Provider prompt preparation SHALL coalesce consecutive tool-role messages after 
 
 ### Requirement: Data parts support opt-in text or file conversion
 
-The root package SHALL expose `WithConvertDataPart(fn func(DataPart) (*provider.ContentPart, error)) ConvertOption`. Conversion SHALL invoke a non-nil callback on user and assistant data parts in part order, retaining assistant step boundaries. Nil callbacks/results SHALL skip data parts. Only text and file content discriminators SHALL be accepted; all other returned kinds and callback errors SHALL yield contextual conversion errors. Returned text/file content SHALL be preserved directly. System parts SHALL NOT invoke the hook. Existing Agent helper options SHALL NOT gain an implicit data converter.
+The root package SHALL expose `WithConvertDataPart(fn func(DataPart) (*provider.ContentPart, error)) ConvertOption`. Conversion SHALL invoke a non-nil callback on user and assistant data parts in part order, retaining assistant step boundaries. Each assistant block SHALL complete assistant/data processing before projecting local tool results; provider-executed outputs SHALL remain inline. Nil callbacks/results SHALL skip data parts. Only text and file content discriminators SHALL be accepted; all other returned kinds and callback errors SHALL yield contextual conversion errors. Returned text/file content SHALL be preserved directly. System parts SHALL NOT invoke the hook. Existing Agent helper options SHALL NOT gain an implicit data converter.
 
 #### Scenario: User and assistant data preserve converter order
 - **WHEN** user/assistant messages interleave ordinary parts, data parts and assistant step starts
 - **THEN** returned text/file parts SHALL appear at the data positions in their respective blocks
 - **AND** IDs, payloads and names SHALL be available in each callback DataPart
+
+#### Scenario: Data conversion precedes local output callbacks within a step
+- **WHEN** an assistant block contains a local available tool followed by a data part
+- **THEN** the data callback SHALL run before the local ToModelOutput callback, and a data failure SHALL prevent that local callback
+- **AND** provider-executed output callbacks SHALL remain inline while step boundaries SHALL flush prior local results before later blocks
 
 #### Scenario: Nil result and default conversion skip data
 - **WHEN** no converter is supplied or its result is nil

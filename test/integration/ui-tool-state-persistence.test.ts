@@ -89,6 +89,44 @@ describe("pinned UI tool state persistence", () => {
     expect(go.modelMessages[0].content[1]).toEqual({ type: "text", text: "" });
   });
 
+  it.each([false, true])("matches block-local callback order and failure precedence (dynamic: %s)", async dynamic => {
+    for (const tc of [
+      {}, { providerExecuted: true }, { separate: true }, { failData: true },
+      { failOutput: true }, { failData: true, failOutput: true },
+      { providerExecuted: true, failData: true }, { providerExecuted: true, failData: true, failOutput: true },
+    ] as Array<{ providerExecuted?: boolean; separate?: boolean; failData?: boolean; failOutput?: boolean }>) {
+      const message = stateMessage("output-available", dynamic, { providerExecuted: tc.providerExecuted });
+      if (tc.separate) message.parts.push({ type: "step-start" });
+      message.parts.push({ type: "data-count", data: null });
+      const callbacks: string[] = [];
+      let outputCalls = 0;
+      const expected = convertToModelMessages([message], {
+        tools: { lookup: tool({ inputSchema: jsonSchema({}), toModelOutput: ({ output }) => {
+          callbacks.push("output");
+          outputCalls++;
+          if (tc.failOutput) throw new Error("output converter failed");
+          return { type: "content", value: [{ type: "text", text: "converted:" + JSON.stringify(output) }] };
+        } }) },
+        convertDataPart: () => {
+          callbacks.push("data");
+          if (tc.failData) throw new Error("data converter failed");
+          return { type: "text", text: String(outputCalls) };
+        },
+      });
+      const outcome = await expected.then(modelMessages => ({ modelMessages, error: undefined }), error => ({ modelMessages: undefined, error: (error as Error).message }));
+      const response = await fetchScenario("ui-tool-state-persistence", { headers: { "content-type": "application/json" }, body: JSON.stringify({ messages: [message], convertData: true, convertOutput: true, traceCallbacks: true, ...tc }) });
+      const go = await response.json();
+      expect(go.callbacks).toEqual(callbacks);
+      if (outcome.error) {
+        expect(response.status).toBe(400);
+        expect(go.error).toContain(outcome.error);
+      } else {
+        expect(response.status).toBe(200);
+        expect(canonicalModel(go.modelMessages)).toEqual(canonicalModel(outcome.modelMessages));
+      }
+    }
+  });
+
   it("resumes persisted approval/preliminary history with pinned update and placement rules", async () => {
     for (const dynamic of [false, true]) {
       for (const supplied of [false, true]) {
@@ -187,6 +225,54 @@ describe("pinned UI tool state persistence", () => {
     const go = await response.json();
     expect(go.metadata.providerCalls).toBe(1);
     expect(go.message.parts[0]).toEqual(normalized[0].parts[0]);
+    expect(canonicalModel(go.metadata.modelMessages)).toEqual(canonicalModel(model.doStreamCalls[0].prompt));
+    expect(messages).toEqual(original);
+  });
+
+  it.each([false, true])("projects state-specific fields before Agent conversion (dynamic: %s)", async dynamic => {
+    for (const state of states) {
+      const message = stateMessage(state, dynamic, { rawInput: "legacy", preliminary: false, resultProviderMetadata: {} });
+      const messages: UIMessage[] = [{ id: "u", role: "user", parts: [{ type: "text", text: "continue" }] }, message];
+      const original = json(messages);
+      const normalized = await validateUIMessages({ messages, tools: toolStateReferenceTools });
+      const model = referenceToolStateModel();
+      const stream = await createAgentUIStream({ agent: new ToolLoopAgent({ model, tools: toolStateReferenceTools }), uiMessages: messages });
+      for await (const _ of stream) {}
+      const response = await fetchScenario("ui-tool-state-validation", { headers: { "content-type": "application/json" }, body: JSON.stringify({ messages }) });
+      expect(response.status).toBe(200);
+      const go = await response.json();
+      expect(go.metadata?.providerCalls ?? 0, state).toBe(model.doStreamCalls.length);
+      if (model.doStreamCalls.length > 0) expect(canonicalModel(go.metadata.modelMessages)).toEqual(canonicalModel(model.doStreamCalls[0].prompt));
+      for (const key of ["rawInput", "preliminary", "resultProviderMetadata"]) {
+        if (!(key in normalized[1].parts[0])) expect(go.message.parts[0]).not.toHaveProperty(key);
+      }
+      expect(messages).toEqual(original);
+    }
+  });
+
+  it.each([false, true])("accepts persisted retry/approval history with retained result metadata (dynamic: %s)", async dynamic => {
+    const initialMessage = stateMessage("output-error", dynamic, { input: { q: "old" } });
+    const updates: UIMessageChunk[] = [
+      { type: "tool-input-available", toolCallId: "c", toolName: "lookup", input: { q: "new" }, dynamic },
+      { type: "tool-approval-request", toolCallId: "c", approvalId: "a" },
+      { type: "tool-approval-response", approvalId: "a", approved: true },
+    ];
+    const expected: UIMessage[] = [];
+    for await (const message of readUIMessageStream({ message: json(initialMessage), stream: simulateReadableStream({ chunks: updates }), terminateOnError: true })) expected.push(json(message));
+    const assembled = await persist({ initialMessage, chunks: updates });
+    expect(canonicalUI(assembled.snapshots)).toEqual(canonicalUI(expected));
+    expect(assembled.uiMessages[0].parts[0].resultProviderMetadata).toEqual({});
+    const messages = assembled.uiMessages as UIMessage[];
+    const original = json(messages);
+    const model = referenceToolStateModel();
+    const stream = await createAgentUIStream({ agent: new ToolLoopAgent({ model, tools: toolStateReferenceTools }), uiMessages: messages });
+    for await (const _ of stream) {}
+    const response = await fetchScenario("ui-tool-state-validation", { headers: { "content-type": "application/json" }, body: JSON.stringify({ messages }) });
+    expect(response.status).toBe(200);
+    const go = await response.json();
+    expect(go.metadata.providerCalls).toBe(1);
+    expect(go.message.parts[0]).not.toHaveProperty("resultProviderMetadata");
+    expect(go.message.parts[0]).toMatchObject({ state: "output-available", output: "approved" });
     expect(canonicalModel(go.metadata.modelMessages)).toEqual(canonicalModel(model.doStreamCalls[0].prompt));
     expect(messages).toEqual(original);
   });

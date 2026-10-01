@@ -184,6 +184,23 @@ func TestUIMessageReader_InitialMessageIsolation(t *testing.T) {
 	})
 }
 
+func TestUIMessageReader_FileCloneIsolation(t *testing.T) {
+	for i, references := range []map[string]string{nil, {}, {"test": "file"}} {
+		t.Run(fmt.Sprint(i), func(t *testing.T) {
+			original := FilePart{Filename: new("original"), ProviderReference: references}
+			cloned := clonePart(original).(FilePart)
+			assert.Equal(t, original, cloned)
+			*cloned.Filename = "changed"
+			assert.Equal(t, "original", *original.Filename)
+			if references != nil {
+				before := references["test"]
+				cloned.ProviderReference["test"] = "changed"
+				assert.Equal(t, before, original.ProviderReference["test"])
+			}
+		})
+	}
+}
+
 func TestUIMessageReader_ToolSnapshotIsolation(t *testing.T) {
 	for _, dynamic := range []bool{false, true} {
 		t.Run(map[bool]string{false: "static", true: "dynamic"}[dynamic], func(t *testing.T) {

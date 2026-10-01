@@ -207,13 +207,9 @@ func (c UIMessageChunk) MarshalJSON() ([]byte, error) {
 	case ChunkToolInputStart:
 		m["toolCallId"] = c.ToolCallID
 		m["toolName"] = c.ToolName
-		if c.ProviderExecuted || c.providerExecutedPresent {
-			m["providerExecuted"] = c.ProviderExecuted
-		}
+		setPresentBool(m, "providerExecuted", c.ProviderExecuted, c.providerExecutedPresent)
 		setOptBoolP(m, c.Dynamic)
-		if c.Title != "" || c.titlePresent {
-			m["title"] = c.Title
-		}
+		setPresentString(m, "title", c.Title, c.titlePresent)
 		setPresentMeta(m, c.ProviderMetadata)
 		setOptRaw(m, "toolMetadata", c.ToolMetadata)
 
@@ -225,13 +221,9 @@ func (c UIMessageChunk) MarshalJSON() ([]byte, error) {
 		m["toolCallId"] = c.ToolCallID
 		m["toolName"] = c.ToolName
 		m["input"] = c.Input
-		if c.ProviderExecuted || c.providerExecutedPresent {
-			m["providerExecuted"] = c.ProviderExecuted
-		}
+		setPresentBool(m, "providerExecuted", c.ProviderExecuted, c.providerExecutedPresent)
 		setOptBoolP(m, c.Dynamic)
-		if c.Title != "" || c.titlePresent {
-			m["title"] = c.Title
-		}
+		setPresentString(m, "title", c.Title, c.titlePresent)
 		setPresentMeta(m, c.ProviderMetadata)
 		setOptRaw(m, "toolMetadata", c.ToolMetadata)
 
@@ -240,13 +232,9 @@ func (c UIMessageChunk) MarshalJSON() ([]byte, error) {
 		m["toolName"] = c.ToolName
 		m["input"] = c.Input
 		m["errorText"] = c.ErrorText
-		if c.ProviderExecuted || c.providerExecutedPresent {
-			m["providerExecuted"] = c.ProviderExecuted
-		}
+		setPresentBool(m, "providerExecuted", c.ProviderExecuted, c.providerExecutedPresent)
 		setOptBoolP(m, c.Dynamic)
-		if c.Title != "" || c.titlePresent {
-			m["title"] = c.Title
-		}
+		setPresentString(m, "title", c.Title, c.titlePresent)
 		setPresentMeta(m, c.ProviderMetadata)
 		setOptRaw(m, "toolMetadata", c.ToolMetadata)
 
@@ -256,19 +244,13 @@ func (c UIMessageChunk) MarshalJSON() ([]byte, error) {
 		setOptBool(m, "isAutomatic", c.IsAutomatic)
 		setOpt(m, "signature", c.Signature)
 		setOptRaw(m, "approvalDescriptor", c.ApprovalDescriptor)
-		if c.Reason != "" || c.reasonPresent {
-			m["reason"] = c.Reason
-		}
+		setPresentString(m, "reason", c.Reason, c.reasonPresent)
 
 	case ChunkToolApprovalResponse:
 		m["approvalId"] = c.ApprovalID
 		m["approved"] = c.Approved
-		if c.Reason != "" || c.reasonPresent {
-			m["reason"] = c.Reason
-		}
-		if c.ProviderExecuted || c.providerExecutedPresent {
-			m["providerExecuted"] = c.ProviderExecuted
-		}
+		setPresentString(m, "reason", c.Reason, c.reasonPresent)
+		setPresentBool(m, "providerExecuted", c.ProviderExecuted, c.providerExecutedPresent)
 		setPresentMeta(m, c.ProviderMetadata)
 
 	case ChunkToolOutputDenied:
@@ -277,21 +259,15 @@ func (c UIMessageChunk) MarshalJSON() ([]byte, error) {
 	case ChunkToolOutputAvailable:
 		m["toolCallId"] = c.ToolCallID
 		m["output"] = c.Output
-		if c.ProviderExecuted || c.providerExecutedPresent {
-			m["providerExecuted"] = c.ProviderExecuted
-		}
+		setPresentBool(m, "providerExecuted", c.ProviderExecuted, c.providerExecutedPresent)
 		setOptBoolP(m, c.Dynamic)
-		if c.Preliminary || c.preliminaryPresent {
-			m["preliminary"] = c.Preliminary
-		}
+		setPresentBool(m, "preliminary", c.Preliminary, c.preliminaryPresent)
 		setPresentMeta(m, c.ProviderMetadata)
 
 	case ChunkToolOutputError:
 		m["toolCallId"] = c.ToolCallID
 		m["errorText"] = c.ErrorText
-		if c.ProviderExecuted || c.providerExecutedPresent {
-			m["providerExecuted"] = c.ProviderExecuted
-		}
+		setPresentBool(m, "providerExecuted", c.ProviderExecuted, c.providerExecutedPresent)
 		setOptBoolP(m, c.Dynamic)
 		setPresentMeta(m, c.ProviderMetadata)
 
@@ -342,6 +318,18 @@ func setOpt(m map[string]any, key, val string) {
 
 func setOptBool(m map[string]any, key string, val bool) {
 	if val {
+		m[key] = val
+	}
+}
+
+func setPresentString(m map[string]any, key, val string, present bool) {
+	if val != "" || present {
+		m[key] = val
+	}
+}
+
+func setPresentBool(m map[string]any, key string, val, present bool) {
+	if val || present {
 		m[key] = val
 	}
 }

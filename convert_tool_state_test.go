@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"testing"
 
 	"github.com/grafana/ai-sdk/provider"
@@ -62,6 +63,73 @@ func TestConvertToModelMessages_DataPartConverter(t *testing.T) {
 		assert.Nil(t, converted)
 		assert.ErrorContains(t, err, "unsupported content type")
 	})
+}
+
+func TestConvertToModelMessages_CallbackOrder(t *testing.T) {
+	dataError, outputError := errors.New("data failed"), errors.New("output failed")
+	for _, dynamic := range []bool{false, true} {
+		for _, tc := range []struct {
+			name                                     string
+			executed, separate, failData, failOutput bool
+			trace                                    []string
+			text                                     string
+			err                                      error
+		}{
+			{name: "local", trace: []string{"data", "output"}, text: "0"},
+			{name: "inline", executed: true, trace: []string{"output", "data"}, text: "1"},
+			{name: "separate steps", separate: true, trace: []string{"output", "data"}, text: "1"},
+			{name: "data failure", failData: true, trace: []string{"data"}, err: dataError},
+			{name: "both fail", failData: true, failOutput: true, trace: []string{"data"}, err: dataError},
+			{name: "output failure", failOutput: true, trace: []string{"data", "output"}, err: outputError},
+			{name: "inline data failure", executed: true, failData: true, trace: []string{"output", "data"}, err: dataError},
+			{name: "inline both fail", executed: true, failData: true, failOutput: true, trace: []string{"output"}, err: outputError},
+		} {
+			t.Run(fmt.Sprintf("dynamic-%t/%s", dynamic, tc.name), func(t *testing.T) {
+				fields := toolPartFields{ToolCallID: "c", ToolName: "lookup", State: ToolStateOutputAvailable, Input: json.RawMessage(`{}`), Output: json.RawMessage(`"ok"`), ProviderExecuted: tc.executed}
+				var part Part = ToolInvocationPart(fields)
+				if dynamic {
+					part = DynamicToolUIPart(fields)
+				}
+				parts := []Part{part}
+				if tc.separate {
+					parts = append(parts, StepStartPart{})
+				}
+				parts = append(parts, DataPart{DataName: "count", Data: json.RawMessage(`null`)})
+				calls := 0
+				var trace []string
+				got, err := ConvertToModelMessages([]UIMessage{{Role: RoleAssistant, Parts: parts}}, WithTools(ToolSet{"lookup": {ToModelOutput: func(ToolOutputContext) (*provider.ToolResultOutput, error) {
+					trace = append(trace, "output")
+					calls++
+					if tc.failOutput {
+						return nil, outputError
+					}
+					return &provider.ToolResultOutput{Type: provider.ToolOutputText, Text: "mapped"}, nil
+				}}}), WithConvertDataPart(func(DataPart) (*provider.ContentPart, error) {
+					trace = append(trace, "data")
+					if tc.failData {
+						return nil, dataError
+					}
+					return &provider.ContentPart{Type: provider.ContentPartTypeText, Text: strconv.Itoa(calls)}, nil
+				}))
+				assert.Equal(t, tc.trace, trace)
+				if tc.err != nil {
+					assert.ErrorIs(t, err, tc.err)
+					assert.Nil(t, got)
+				} else {
+					require.NoError(t, err)
+					var texts []string
+					for _, message := range got {
+						for _, content := range message.Content {
+							if content.Type == provider.ContentPartTypeText {
+								texts = append(texts, content.Text)
+							}
+						}
+					}
+					assert.Equal(t, []string{tc.text}, texts)
+				}
+			})
+		}
+	}
 }
 
 func TestConvertToModelMessages_ToolFilteringCallbacks(t *testing.T) {

@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"regexp"
+	"strconv"
 
 	aisdk "github.com/grafana/ai-sdk"
 	"github.com/grafana/ai-sdk/provider"
@@ -25,6 +27,9 @@ type uiToolStateRequest struct {
 	IgnoreIncomplete bool                   `json:"ignoreIncomplete"`
 	ConvertData      bool                   `json:"convertData"`
 	ConvertOutput    bool                   `json:"convertOutput"`
+	TraceCallbacks   bool                   `json:"traceCallbacks"`
+	FailData         bool                   `json:"failData"`
+	FailOutput       bool                   `json:"failOutput"`
 }
 
 func uiToolStateError(w http.ResponseWriter, err error, calls int) {
@@ -79,8 +84,17 @@ func handleUIToolStatePersistence(w http.ResponseWriter, r *http.Request) {
 	if input.IgnoreIncomplete {
 		options = append(options, aisdk.WithIgnoreIncompleteToolCalls())
 	}
+	var callbacks []string
+	outputCalls := 0
 	if input.ConvertData {
 		options = append(options, aisdk.WithConvertDataPart(func(part aisdk.DataPart) (*provider.ContentPart, error) {
+			callbacks = append(callbacks, "data")
+			if input.FailData {
+				return nil, errors.New("data converter failed")
+			}
+			if input.TraceCallbacks {
+				return &provider.ContentPart{Type: provider.ContentPartTypeText, Text: strconv.Itoa(outputCalls)}, nil
+			}
 			if part.DataName == "skip" {
 				return nil, nil
 			}
@@ -92,16 +106,22 @@ func handleUIToolStatePersistence(w http.ResponseWriter, r *http.Request) {
 	}
 	if input.ConvertOutput {
 		options = append(options, aisdk.WithTools(aisdk.ToolSet{"lookup": {ToModelOutput: func(ctx aisdk.ToolOutputContext) (*provider.ToolResultOutput, error) {
+			callbacks = append(callbacks, "output")
+			outputCalls++
+			if input.FailOutput {
+				return nil, errors.New("output converter failed")
+			}
 			return &provider.ToolResultOutput{Type: provider.ToolOutputContent, Content: []provider.ToolResultContentValue{{Type: provider.ToolContentText, Text: "converted:" + string(ctx.Output)}}}, nil
 		}}}))
 	}
 	converted, err := aisdk.ConvertToModelMessages(input.Messages, options...)
-	if err != nil {
-		uiToolStateError(w, err, 0)
-		return
-	}
+	body := map[string]any{"uiMessages": input.Messages, "modelMessages": converted, "snapshots": snapshots, "callbacks": callbacks}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{"uiMessages": input.Messages, "modelMessages": converted, "snapshots": snapshots})
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		body = map[string]any{"error": err.Error(), "providerCalls": 0, "callbacks": callbacks}
+	}
+	_ = json.NewEncoder(w).Encode(body)
 }
 
 type uiToolStateModel struct {
