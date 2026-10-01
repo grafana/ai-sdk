@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -17,29 +16,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-func TestNewResponses_ReasoningSummarySupport(t *testing.T) {
-	for _, supported := range []bool{true, false} {
-		t.Run(fmt.Sprintf("supported=%t", supported), func(t *testing.T) {
-			client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-				var body map[string]any
-				require.NoError(t, json.NewDecoder(req.Body).Decode(&body))
-				reasoning := body["reasoning"].(map[string]any)
-				assert.Equal(t, "high", reasoning["effort"])
-				if supported {
-					assert.Equal(t, "detailed", reasoning["summary"])
-				} else {
-					assert.NotContains(t, reasoning, "summary")
-				}
-				return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"id":"resp_1","model":"gpt-6-luna","status":"completed","output":[]}`)), Request: req}, nil
-			})}
-			model := NewResponses("test", "gpt-6-luna", WithRequestOptions(option.WithHTTPClient(client)), WithReasoningSummarySupport(supported))
-			effort := provider.ReasoningHigh
-			_, err := model.DoGenerate(t.Context(), provider.CallOptions{Prompt: []provider.Message{provider.UserText("hi")}, Reasoning: effort})
-			require.NoError(t, err)
-		})
-	}
-}
 
 func TestNewResponses_MissingOutput(t *testing.T) {
 	tests := []struct {
@@ -595,4 +571,59 @@ func unsetEnv(t *testing.T, key string) {
 			_ = os.Unsetenv(key)
 		}
 	})
+}
+
+func TestNewResponses_ReasoningSummaryOverrides(t *testing.T) {
+	const modelID = "gpt-6-luna"
+	for _, stream := range []bool{false, true} {
+		for _, tc := range []struct{ name, options, summary string }{
+			{"unset", `{}`, "detailed"},
+			{"null", `{"reasoningSummary":null}`, ""},
+			{"auto", `{"reasoningSummary":"auto"}`, "auto"},
+		} {
+			mode := "generate"
+			if stream {
+				mode = "stream"
+			}
+			t.Run(modelID+"/"+mode+"/"+tc.name, func(t *testing.T) {
+				expected := tc.summary
+
+				client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					var body map[string]any
+					require.NoError(t, json.NewDecoder(req.Body).Decode(&body))
+					reasoning, ok := body["reasoning"].(map[string]any)
+					require.True(t, ok)
+					assert.Equal(t, "high", reasoning["effort"])
+					if expected == "" {
+						assert.NotContains(t, reasoning, "summary")
+					} else {
+						assert.Equal(t, expected, reasoning["summary"])
+					}
+					contentType := "application/json"
+					response := `{"id":"resp_1","model":"gpt-6-luna","status":"completed","output":[]}`
+					if stream {
+						contentType = "text/event-stream"
+						response = "data: " + `{"type":"response.created","sequence_number":0,"response":{"id":"resp_1","model":"gpt-6-luna","status":"in_progress","output":[]}}` + "\n\n" +
+							"data: " + `{"type":"response.completed","sequence_number":1,"response":{"id":"resp_1","model":"gpt-6-luna","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}}` + "\n\n"
+					}
+					return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {contentType}}, Body: io.NopCloser(strings.NewReader(response)), Request: req}, nil
+				})}
+				model := NewResponses("test", modelID, WithRequestOptions(option.WithHTTPClient(client)))
+				var options OpenAIResponsesOptions
+				require.NoError(t, json.Unmarshal([]byte(tc.options), &options))
+				opts := provider.CallOptions{Prompt: []provider.Message{provider.UserText("hi")}, Reasoning: provider.ReasoningHigh,
+					ProviderOptions: provider.BuildProviderOptions(options)}
+				if stream {
+					result, err := model.DoStream(t.Context(), opts)
+					require.NoError(t, err)
+					for part := range result.Stream {
+						assert.NotEqual(t, provider.PartError, part.Type)
+					}
+				} else {
+					_, err := model.DoGenerate(t.Context(), opts)
+					require.NoError(t, err)
+				}
+			})
+		}
+	}
 }

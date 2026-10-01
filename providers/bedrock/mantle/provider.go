@@ -73,9 +73,8 @@ func NewResponses(ctx context.Context, modelID string, cfg Config, clientOpts ..
 		openaiprovider.WithProviderName(responsesProviderName),
 		openaiprovider.WithWebSearchSourcesIncludeSupport(false),
 	}
-	// Luna 6 rejects summaries on Mantle even though it supports reasoning effort.
 	if modelID == "openai.gpt-6-luna" {
-		opts = append(opts, openaiprovider.WithReasoningSummarySupport(false))
+		opts = append(opts, openaiprovider.WithDefaultReasoningSummary(""))
 	}
 	return openaiprovider.NewResponsesWithClient(
 		client,
