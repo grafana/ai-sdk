@@ -15,6 +15,7 @@ import type { LanguageModelV4StreamPart, LanguageModelV4CallOptions } from "@ai-
 import { buildGoClientCapture, captureGoClient } from "./go-client-capture";
 import { validateStreamEvent, validateUnarySuccess } from "./schema";
 import { generateText, jsonSchema, stepCountIs, streamText, tool, wrapLanguageModel } from "ai";
+import packageManifest from "./package.json" with { type: "json" };
 
 const TEST_DIR = dirname(fileURLToPath(import.meta.url));
 const SERVER_DIR = resolve(TEST_DIR, "testserver");
@@ -110,7 +111,7 @@ function reasoningHostModel() {
     wrapGenerate: async ({ params }) => {
       const { headers, ...options } = params;
       assert.deepEqual(Object.keys(headers ?? {}), ["user-agent"]);
-      assert.match(headers!["user-agent"]!, /^ai\/7\.0\.118(?:\s|$)/);
+      assert.equal(headers!["user-agent"]!.split(/\s/, 1)[0], `ai/${packageManifest.dependencies.ai}`);
       return createGateway({ ...settings, headers: { ...settings.headers, "user-agent": headers!["user-agent"]! } })("reasoning").doGenerate(options);
     },
   } });

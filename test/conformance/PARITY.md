@@ -128,8 +128,8 @@ issue rather than being maintained in both places.
 
 Vertex enables the Anthropic adapter's native JSON output capability, following
 Google Cloud's documented `output_config.format` support. This is a
-provider-configuration adaptation of the registered `@ai-sdk/anthropic` 4.0.59
-capability gate, not a change to response mapping or the upstream baseline.
+provider-configuration adaptation of the Anthropic capability gate, not a change
+to response mapping or the upstream baseline.
 Strict tool capability remains separate. Synthetic request-serialization tests
 cover supported models (including Sonnet 5.5), streaming and non-streaming
 requests, and the absence of forced tool choice and synthetic tools. Existing
