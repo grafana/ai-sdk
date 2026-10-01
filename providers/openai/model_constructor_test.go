@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -16,6 +17,29 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestNewResponses_ReasoningSummarySupport(t *testing.T) {
+	for _, supported := range []bool{true, false} {
+		t.Run(fmt.Sprintf("supported=%t", supported), func(t *testing.T) {
+			client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				var body map[string]any
+				require.NoError(t, json.NewDecoder(req.Body).Decode(&body))
+				reasoning := body["reasoning"].(map[string]any)
+				assert.Equal(t, "high", reasoning["effort"])
+				if supported {
+					assert.Equal(t, "detailed", reasoning["summary"])
+				} else {
+					assert.NotContains(t, reasoning, "summary")
+				}
+				return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"id":"resp_1","model":"gpt-6-luna","status":"completed","output":[]}`)), Request: req}, nil
+			})}
+			model := NewResponses("test", "gpt-6-luna", WithRequestOptions(option.WithHTTPClient(client)), WithReasoningSummarySupport(supported))
+			effort := provider.ReasoningHigh
+			_, err := model.DoGenerate(t.Context(), provider.CallOptions{Prompt: []provider.Message{provider.UserText("hi")}, Reasoning: effort})
+			require.NoError(t, err)
+		})
+	}
+}
 
 func TestNewResponses_MissingOutput(t *testing.T) {
 	tests := []struct {

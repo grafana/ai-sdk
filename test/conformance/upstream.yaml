@@ -21,6 +21,14 @@ verification:
     conformance: mise run test-conformance
     regenerate: mise run generate-conformance
 knownGaps:
+  - id: mantle-luna-reasoning-summary
+    surface: provider-openai
+    status: intentional-deviation
+    description: A constructor summary-support opt-out preserves effort while
+      omitting summaries on Mantle Luna 6, which rejected reasoning.summary in
+      the Sigil dev route. Direct OpenAI defaults remain upstream-compatible.
+      Synthetic HTTP tests cover the request contract; no live SDK Mantle
+      conformance recording is claimed.
   - id: astra-model-catalog
     surface: provider-openai
     status: gap

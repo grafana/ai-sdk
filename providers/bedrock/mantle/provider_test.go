@@ -32,7 +32,7 @@ func TestNewResponses_GenerateAndContinue(t *testing.T) {
 
 	model, err := NewResponses(
 		t.Context(),
-		"openai.gpt-5.6-luna",
+		"openai.gpt-6-luna",
 		Config{
 			BaseURL:  "https://provider.example.test/openai/v1",
 			SkipAuth: true,
@@ -44,12 +44,13 @@ func TestNewResponses_GenerateAndContinue(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "v4", model.SpecificationVersion())
 	assert.Equal(t, "bedrock-mantle.responses", model.Provider())
-	assert.Equal(t, "openai.gpt-5.6-luna", model.ModelID())
+	assert.Equal(t, "openai.gpt-6-luna", model.ModelID())
 
 	first, err := model.DoGenerate(t.Context(), provider.CallOptions{
 		Prompt: []provider.Message{provider.UserText("hi")},
 		ProviderOptions: provider.BuildProviderOptions(openaiprovider.OpenAIResponsesOptions{
-			Instructions: "be concise",
+			Instructions:    "be concise",
+			ReasoningEffort: "high",
 		}),
 		Headers: map[string]string{"X-Call": "call"},
 	})
@@ -85,7 +86,12 @@ func TestNewResponses_GenerateAndContinue(t *testing.T) {
 	assert.Empty(t, requests[0].Header.Get("Authorization"))
 	assert.Equal(t, "configured", requests[0].Header.Get("X-Configured"))
 	assert.Equal(t, "call", requests[0].Header.Get("X-Call"))
-	assert.Contains(t, string(bodies[0]), `"model":"openai.gpt-5.6-luna"`)
+	assert.Contains(t, string(bodies[0]), `"model":"openai.gpt-6-luna"`)
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(bodies[0], &body))
+	reasoning := body["reasoning"].(map[string]any)
+	assert.Equal(t, "high", reasoning["effort"])
+	assert.NotContains(t, reasoning, "summary")
 	assert.Contains(t, string(bodies[0]), `"instructions":"be concise"`)
 
 	var continuation map[string]any

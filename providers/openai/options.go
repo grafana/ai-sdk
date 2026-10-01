@@ -10,6 +10,17 @@ import (
 // Option configures an OpenAI Responses model instance at construction time.
 type Option func(*model)
 
+// WithReasoningSummarySupport controls whether the endpoint accepts reasoning
+// summaries. Disabling summaries preserves reasoning effort and leaves the
+// default OpenAI behavior unchanged when this option is omitted.
+func WithReasoningSummarySupport(supported bool) Option {
+	return func(m *model) {
+		if !supported {
+			m.requestOpts = append(m.requestOpts, option.WithJSONDel("reasoning.summary"))
+		}
+	}
+}
+
 // WithRequestOptions appends raw SDK request options (e.g., custom headers,
 // base URL, HTTP client). Per-call CallOptions.Headers override configured
 // headers with the same name. Used by tests to point the model at a
