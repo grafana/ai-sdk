@@ -10,6 +10,13 @@ import (
 // Option configures an OpenAI Responses model instance at construction time.
 type Option func(*model)
 
+// WithDefaultReasoningSummary overrides the summary requested when reasoning
+// effort is enabled and the call leaves ReasoningSummary unset. An empty value
+// omits the summary. Explicit per-call values, including null, take precedence.
+func WithDefaultReasoningSummary(summary string) Option {
+	return func(m *model) { m.defaultReasoningSummary = summary }
+}
+
 // WithRequestOptions appends raw SDK request options (e.g., custom headers,
 // base URL, HTTP client). Per-call CallOptions.Headers override configured
 // headers with the same name. Used by tests to point the model at a
@@ -110,8 +117,9 @@ type OpenAIResponsesOptions struct {
 	// ReasoningContext controls GPT-5.6 access to prior reasoning items.
 	ReasoningContext string `json:"reasoningContext,omitempty"`
 	// ReasoningSummary controls reasoning summary output ("auto","concise",
-	// "detailed").
-	ReasoningSummary string `json:"reasoningSummary,omitempty"`
+	// "detailed"). Nil uses the endpoint default; JSON null omits the summary
+	// without disabling reasoning effort.
+	ReasoningSummary json.RawMessage `json:"reasoningSummary,omitempty"`
 	// SafetyIdentifier is a stable identifier for end users.
 	SafetyIdentifier string `json:"safetyIdentifier,omitempty"`
 	// ServiceTier is "auto","flex","priority","fast","default".

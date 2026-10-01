@@ -69,11 +69,17 @@ func NewResponses(ctx context.Context, modelID string, cfg Config, clientOpts ..
 	if err != nil {
 		return nil, fmt.Errorf("bedrock mantle: create client: %w", err)
 	}
+	opts := []openaiprovider.Option{
+		openaiprovider.WithProviderName(responsesProviderName),
+		openaiprovider.WithWebSearchSourcesIncludeSupport(false),
+	}
+	if modelID == "openai.gpt-6-luna" {
+		opts = append(opts, openaiprovider.WithDefaultReasoningSummary(""))
+	}
 	return openaiprovider.NewResponsesWithClient(
 		client,
 		modelID,
-		openaiprovider.WithProviderName(responsesProviderName),
-		openaiprovider.WithWebSearchSourcesIncludeSupport(false),
+		opts...,
 	), nil
 }
 

@@ -1,6 +1,7 @@
 package openai
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/grafana/ai-sdk/provider"
@@ -170,7 +171,7 @@ func applyProviderOptions(body *responses.ResponseNewParams, popts OpenAIRespons
 				Details: "reasoningEffort is not supported for non-reasoning models",
 			})
 		}
-		if popts.ReasoningSummary != "" {
+		if len(popts.ReasoningSummary) > 0 && !isJSONNull(popts.ReasoningSummary) {
 			warnings = append(warnings, provider.Warning{
 				Type:    provider.WarnUnsupported,
 				Feature: "reasoningSummary",
@@ -199,7 +200,7 @@ func applyProviderOptions(body *responses.ResponseNewParams, popts OpenAIRespons
 // applyIncludeAndReasoning populates the include array (logprobs, web search
 // sources, code interpreter outputs, encrypted reasoning) and the reasoning
 // effort/summary block for reasoning models.
-func applyIncludeAndReasoning(body *responses.ResponseNewParams, popts OpenAIResponsesOptions, resolvedEffort string, isReasoning, store, webSearchSourcesIncludeSupported bool, caps modelCapabilities, br *buildResult) []provider.Warning {
+func applyIncludeAndReasoning(body *responses.ResponseNewParams, popts OpenAIResponsesOptions, resolvedEffort string, isReasoning, store, webSearchSourcesIncludeSupported bool, defaultReasoningSummary string, caps modelCapabilities, br *buildResult) []provider.Warning {
 	var warnings []provider.Warning
 	includes := map[responses.ResponseIncludable]bool{}
 	for _, inc := range popts.Include {
@@ -260,18 +261,19 @@ func applyIncludeAndReasoning(body *responses.ResponseNewParams, popts OpenAIRes
 	// Reasoning effort + summary block.
 	if isReasoning {
 		summary := popts.ReasoningSummary
-		if summary == "" && resolvedEffort != "" && resolvedEffort != "none" {
-			summary = "detailed"
+		if len(summary) == 0 && resolvedEffort != "" && resolvedEffort != "none" && defaultReasoningSummary != "" {
+			summary, _ = json.Marshal(defaultReasoningSummary)
 		}
-		if resolvedEffort != "" || summary != "" || popts.ReasoningMode != "" || popts.ReasoningContext != "" {
+		hasSummary := len(summary) > 0 && !isJSONNull(summary)
+		if resolvedEffort != "" || hasSummary || popts.ReasoningMode != "" || popts.ReasoningContext != "" {
 			r := shared.ReasoningParam{}
 			if resolvedEffort != "" {
 				r.Effort = shared.ReasoningEffort(resolvedEffort)
 			}
-			if summary != "" {
-				r.Summary = shared.ReasoningSummary(summary)
-			}
 			extraFields := map[string]any{}
+			if hasSummary {
+				extraFields["summary"] = summary
+			}
 			if popts.ReasoningMode != "" {
 				extraFields["mode"] = popts.ReasoningMode
 			}
