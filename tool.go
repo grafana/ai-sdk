@@ -115,6 +115,14 @@ type ToolExecutionOptions struct {
 	Context    any // user-defined context (experimental_context in AI SDK)
 }
 
+// ToolDescriptionOptions carries the effective step runtime context into description resolution.
+type ToolDescriptionOptions struct {
+	Context any
+}
+
+// ToolDescriptionFunc resolves a tool description for the effective step runtime context.
+type ToolDescriptionFunc func(ToolDescriptionOptions) string
+
 // ToolOutputContext is passed to Tool.ToModelOutput for converting tool output
 // to the provider's expected format.
 type ToolOutputContext struct {
@@ -165,7 +173,13 @@ type Tool struct {
 	ID   string                     // provider tool identifier (e.g. "anthropic.web_search_20250305"), only for provider tools
 	Args map[string]json.RawMessage // provider-specific tool configuration, only for provider tools
 
-	Description     string
+	Description string
+	// DescriptionFunc overrides Description for the effective step runtime context,
+	// including an empty result. It must be safe for concurrent calls.
+	DescriptionFunc ToolDescriptionFunc
+	// DeferLoading excludes the tool from new step calls until ToolSearch discovers it.
+	// Discovery lasts only for the current generation and takes effect on the next step.
+	DeferLoading    bool
 	Title           string
 	InputSchema     schema.Schema
 	OutputSchema    schema.Schema
@@ -183,6 +197,8 @@ type Tool struct {
 	OnInputStart     func(ToolExecutionOptions)
 	OnInputDelta     func(inputTextDelta string, opts ToolExecutionOptions)
 	OnInputAvailable func(input json.RawMessage, opts ToolExecutionOptions)
+
+	toolSearch bool
 }
 
 // ToolSet is a named collection of tools. Tools are keyed by name.
