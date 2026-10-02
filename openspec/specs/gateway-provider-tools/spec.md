@@ -55,15 +55,15 @@ Output results SHALL match current-response calls or unresolved provider-owned a
 - **THEN** its entries SHALL NOT consume the current provider stream-part budget or retain history payloads
 
 ### Requirement: Opaque non-MCP tool metadata
-Tool metadata SHALL use gateway-provider-metadata's shared bounded opaque transport, preserving unknown namespace objects, nested extension fields and omission versus explicit empty objects. Known caller/item correlation fields SHALL be validated separately without projecting metadata. Aggregate original bytes/cardinality and complete encoded response/frame sizes SHALL remain bounded. This capability SHALL NOT activate hosted MCP: consumed Anthropic MCP configuration and explicit MCP continuation/output metadata SHALL remain unsupported until separately enabled by gateway-anthropic-mcp. Foreign namespaces not consumed by a native adapter SHALL retain the base runtime's forwarding semantics without gaining execution or routing authority. Returned metadata SHALL NOT authorize telemetry capture.
+Tool metadata SHALL use gateway-provider-metadata's shared bounded opaque transport, preserving unknown namespace objects, nested extension fields and omission versus explicit empty objects. Provider-specific metadata interpretation SHALL belong to the actual native consuming boundary; the codec SHALL retain generic tool ownership, ID/name, deferred-result and lifecycle checks without interpreting namespace fields as routing or execution authority. Aggregate original bytes/cardinality and complete encoded response/frame sizes SHALL remain bounded. This capability SHALL NOT activate hosted MCP: consumed Anthropic MCP configuration and native MCP continuation SHALL remain unsupported until separately enabled by gateway-anthropic-mcp. Foreign namespaces not consumed by a native adapter SHALL retain the base runtime's forwarding semantics without gaining execution or routing authority. Returned metadata SHALL NOT authorize telemetry capture.
 
 #### Scenario: Correlation metadata with extensions
 - **WHEN** tool metadata contains valid caller correlation alongside unknown object namespaces and nested fields
 - **THEN** both clients SHALL receive all metadata unchanged, including omitted/empty presence, independently of operator telemetry capture
 
 #### Scenario: MCP remains deferred
-- **WHEN** the selected native Anthropic adapter consumes non-empty mcpServers, a request supplies explicit MCP tool-part history, or output contains explicit MCP tool metadata
-- **THEN** the unsupported consuming boundary SHALL reject it safely rather than activate hosted MCP
+- **WHEN** the selected native Anthropic adapter consumes non-empty mcpServers or native MCP tool-part history
+- **THEN** the unsupported native consuming boundary SHALL reject it safely rather than activate hosted MCP; opaque returned metadata SHALL NOT trigger codec-level configured-server classification or membership rejection
 
 #### Scenario: Foreign MCP settings are inert
 - **WHEN** compatible inference uses a configured namespace other than anthropic and receives foreign anthropic.mcpServers settings

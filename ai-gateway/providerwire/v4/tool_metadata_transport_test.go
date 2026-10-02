@@ -19,6 +19,10 @@ func TestRuntimeToolMetadata_OpaquePresence(t *testing.T) {
 	}{
 		{name: "omitted"},
 		{name: "empty", metadata: provider.ProviderMetadata{}},
+		{name: "inert semantic fields", metadata: provider.ProviderMetadata{
+			"anthropic": json.RawMessage(`{"type":"mcp-tool-use","serverName":"unconfigured","caller":null}`),
+			"openai":    json.RawMessage(`{"itemId":42,"namespace":null,"caller":{"type":"future"}}`),
+		}},
 		{name: "extensions", metadata: provider.ProviderMetadata{
 			"anthropic": json.RawMessage(`{"caller":{"type":"direct","extension":{"nested":[null,false,{}]}}}`),
 			"future":    json.RawMessage(`{"credential":"opaque-not-a-routing-authority","nested":{"unicode":"☃<&>"}}`),

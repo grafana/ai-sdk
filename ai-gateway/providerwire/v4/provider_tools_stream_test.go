@@ -283,7 +283,6 @@ func TestStreamingProviderTools_InvalidFinalization(t *testing.T) {
 		{name: "unmatched result", parts: []provider.StreamPart{final, finishPart()}, request: `{"prompt":[]}`},
 		{name: "mismatched historical name", parts: []provider.StreamPart{final, finishPart()}, request: `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"other","input":{},"providerExecuted":true}]}]}`},
 		{name: "empty historical name", parts: []provider.StreamPart{{Type: provider.PartToolResult, ToolCallID: "call", ToolName: "", Result: json.RawMessage(`false`)}, finishPart()}, request: `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"","input":{},"providerExecuted":true}]}]}`},
-		{name: "unconfigured MCP metadata", parts: []provider.StreamPart{{Type: provider.PartToolCall, ToolCallID: "call", ToolName: "echo", Input: `{}`, ProviderExecuted: true, ProviderMetadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"type":"mcp-tool-use","serverName":"echo"}`)}}, finishPart()}, request: `{"prompt":[]}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			harness := newRuntimeHarness(t, testLimits())

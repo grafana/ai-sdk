@@ -158,16 +158,10 @@ func mapUnarySuccess(result *provider.GenerateResult, limit int64, contexts ...u
 				return unarySuccess{}, errInvalidUnarySuccess
 			}
 			states[part.ToolCallID] = unaryToolState{name: part.ToolName}
-			if err := validateToolMetadata(part.ProviderMetadata); err != nil {
-				return unarySuccess{}, errInvalidUnarySuccess
-			}
 			mapped.Content = append(mapped.Content, unaryToolCall{Type: provider.ContentToolCall, ToolCallID: part.ToolCallID, ToolName: part.ToolName, Input: string(part.Input), ProviderExecuted: part.ProviderExecuted, Dynamic: part.Dynamic, Metadata: part.ProviderMetadata})
 		case provider.ContentToolResult:
 			state, exists := states[part.ToolCallID]
 			if !exists || state.name != part.ToolName || state.final || part.ToolCallID == "" || part.ToolName == "" || !utf8.ValidString(part.ToolCallID) || !utf8.ValidString(part.ToolName) || len(part.Result) == 0 || !utf8.Valid(part.Result) || !json.Valid(part.Result) || bytes.Equal(bytes.TrimSpace(part.Result), []byte("null")) {
-				return unarySuccess{}, errInvalidUnarySuccess
-			}
-			if err := validateToolMetadata(part.ProviderMetadata); err != nil {
 				return unarySuccess{}, errInvalidUnarySuccess
 			}
 			state.preview = part.Preliminary != nil && *part.Preliminary

@@ -79,7 +79,7 @@ func (h *handler) processToolStreamPart(w http.ResponseWriter, state *streamStat
 	}
 	next := current
 	event := streamEvent{typeName: part.Type, id: id, toolName: part.ToolName, delta: part.Delta, input: part.Input, result: part.Result, isError: part.IsError, metadata: part.ProviderMetadata}
-	if !streamEventPreflight(event, h.limits.StreamFrameBytes) || validateToolMetadata(part.ProviderMetadata) != nil {
+	if !streamEventPreflight(event, h.limits.StreamFrameBytes) {
 		return streamPartAdapterFailure
 	}
 	switch part.Type {
