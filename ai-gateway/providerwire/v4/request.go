@@ -22,7 +22,6 @@ const (
 	// provider options and call headers, and refuses only what the host owns.
 	capabilityReservedProviderOptions unsupportedCapability = "reserved-provider-options"
 	capabilityProtectedCallHeader     unsupportedCapability = "protected-call-header"
-	capabilityProtectedProviderOption unsupportedCapability = "protected-provider-option"
 )
 
 type wireRequest struct {
@@ -349,10 +348,7 @@ func mapWireProviderOptions(options map[string]json.RawMessage) (provider.Provid
 	// Reserved namespaces are found in their own pass, so a request carrying both
 	// a reserved namespace and a malformed one always reports the same refusal
 	// rather than whichever the map yielded first. Namespace names are compared
-	// exactly, because provider-option namespaces are case-significant. Between a
-	// malformed namespace and a protected field the refusal is whichever the map
-	// yields first, which the request schema keeps unreachable over HTTP by
-	// requiring every namespace to be an object.
+	// exactly, because provider-option namespaces are case-significant.
 	for _, namespace := range []string{ReservedProviderOptionNamespace, "gateway", "grafana-ai-sdk"} {
 		if _, reserved := options[namespace]; reserved {
 			return nil, unsupportedMappingFailure(capabilityReservedProviderOptions)
@@ -360,72 +356,12 @@ func mapWireProviderOptions(options map[string]json.RawMessage) (provider.Provid
 	}
 	mapped := make(provider.ProviderOptions, len(options))
 	for namespace, raw := range options {
-		fields, ok := jsonObject(raw)
-		if !ok {
+		if _, ok := jsonObject(raw); !ok {
 			return nil, invalidMappingFailure()
-		}
-		for field := range fields {
-			if _, protected := protectedProviderOptionFields[normalizeProviderOptionField(field)]; protected {
-				return nil, unsupportedMappingFailure(capabilityProtectedProviderOption)
-			}
 		}
 		mapped[namespace] = provider.RawProviderOption{Key: namespace, Raw: raw}
 	}
 	return mapped, nil
-}
-
-// protectedProviderOptionFields name decisions this runtime has already made,
-// so a caller may not make them again through a provider namespace. Providers
-// merge unknown option fields into the request body, which is how a field here
-// would otherwise reach a backend: model, fallbacks and the prompt fields
-// would redirect the call the catalog resolved and telemetry reports, the tool
-// fields (including the legacy functions pair) would run tools this runtime
-// never mapped on the host's credentials, the response format fields would
-// restate the structured output this runtime refuses at the wire level, and
-// the stream fields would answer in a transport the runtime is not reading.
-//
-// Entries are normalized by normalizeProviderOptionField, because providers do
-// not read field names exactly: providers/anthropic decodes with encoding/json,
-// which matches names case-insensitively, so MCPServers reaches mcp_servers.
-//
-// After resolution the catalog's ProviderOptionPolicy narrows options further,
-// to the resolved backend's namespaces and, where it lists them, its fields.
-//
-// ponytail: this list still carries openai-compatible, whose policy forwards
-// every field because passing endpoint-specific fields through is that
-// provider's purpose. Whether the Gateway restricts them is open on #115.
-var protectedProviderOptionFields = map[string]struct{}{
-	"model":          {},
-	"fallbacks":      {},
-	"messages":       {},
-	"prompt":         {},
-	"tools":          {},
-	"toolchoice":     {},
-	"functions":      {},
-	"functioncall":   {},
-	"mcpservers":     {},
-	"container":      {},
-	"responseformat": {},
-	"stream":         {},
-	"streamoptions":  {},
-	// Message and part providers spread option fields over the entry they build
-	// (upstream does the same), so these would restructure a mapped message:
-	// a tool role or tool calls would restore tools, and a part type or media
-	// field would restore the files the wire refuses.
-	"role":       {},
-	"content":    {},
-	"toolcalls":  {},
-	"toolcallid": {},
-	"type":       {},
-	"imageurl":   {},
-	"inputaudio": {},
-	"file":       {},
-}
-
-// normalizeProviderOptionField folds the spellings a provider may read for one
-// field (case, snake_case, kebab-case) to a single key.
-func normalizeProviderOptionField(field string) string {
-	return strings.NewReplacer("_", "", "-", "").Replace(strings.ToLower(field))
 }
 
 // jsonObject decodes raw as a JSON object and reports whether it is one. A JSON

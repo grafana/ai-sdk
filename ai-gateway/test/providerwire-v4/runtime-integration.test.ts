@@ -143,6 +143,45 @@ async function collect(stream: ReadableStream<LanguageModelV4StreamPart>): Promi
 before(async () => { baseURL = await startServer(); goClientBinary = buildGoClientCapture(temporaryDirectory); });
 after(async () => { await stopServer(); });
 
+describe("opaque native options through the production handler", () => {
+  it("preserves every supported scope in both independent clients and modes", async () => {
+    const scoped = { futureNamespace: { model: "ordinary", type: "ordinary", nested: { null: null, false: false, zero: 0, empty: "", array: [], object: {} } }, empty: {}, FutureNamespace: { case: true } };
+    const options: LanguageModelV4CallOptions = {
+      providerOptions: scoped,
+      tools: [{ type: "function", name: "lookup", inputSchema: {}, providerOptions: scoped }],
+      prompt: [
+        { role: "system", content: "system", providerOptions: scoped },
+        { role: "user", providerOptions: scoped, content: [
+          { type: "text", text: "hi", providerOptions: scoped },
+          { type: "file", mediaType: "application/pdf", data: { type: "data", data: "" }, providerOptions: scoped },
+        ] },
+        { role: "assistant", content: [
+          { type: "reasoning", text: "thought", providerOptions: scoped },
+          { type: "tool-call", toolCallId: "call", toolName: "lookup", input: {}, providerOptions: scoped },
+        ] },
+        { role: "tool", content: [{ type: "tool-result", toolCallId: "call", toolName: "lookup", providerOptions: scoped, output: { type: "content", value: [{ type: "file", mediaType: "application/pdf", data: { type: "data", data: "" }, providerOptions: scoped }] } }] },
+      ],
+    };
+    const original = JSON.stringify(options);
+    const client = createGateway({ apiKey: "test", baseURL: `${baseURL}/function-tools`, headers: { "x-access-token": "function-test-token" } })("success");
+    for (const mode of ["generate", "stream"] as const) {
+      for (const language of ["typescript", "go"] as const) {
+        if (language === "go") {
+          const result = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/function-tools`, accessToken: "function-test-token", modelID: "success", mode, options });
+          assert.equal(result.error, undefined);
+        } else if (mode === "generate") await client.doGenerate(options);
+        else await collect((await client.doStream(options)).stream);
+        const captured = await (await fetch(`${baseURL}/providerwire-v4/options`)).json();
+        const scopes = [captured.providerOptions, captured.tools[0].providerOptions, captured.prompt[0].providerOptions, captured.prompt[1].providerOptions,
+          ...captured.prompt[1].content.map((part: any) => part.providerOptions), ...captured.prompt[2].content.map((part: any) => part.providerOptions),
+          captured.prompt[3].content[0].providerOptions, captured.prompt[3].content[0].output.value[0].providerOptions];
+        for (const value of scopes) assert.deepEqual(value, scoped, `${language}/${mode}`);
+      }
+      assert.equal(JSON.stringify(options), original);
+    }
+  });
+});
+
 describe("reasoning continuation through the authenticated real handler", () => {
   it("admits pinned-client reasoning history and matches independent file data/URL/usage in both modes", async () => {
     const client = createGateway({ apiKey: "test", baseURL: `${baseURL}/function-tools`, headers: { "x-access-token": "function-test-token" } });

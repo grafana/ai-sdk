@@ -262,20 +262,9 @@ func newProviderWireV4Scenario() (*providerWireV4Scenario, error) {
 	stats := &providerWireV4Stats{}
 	entries := make([]catalog.StaticEntry, 0, 16)
 	for _, id := range []string{"reasoning-files", "reasoning", "sources", "success", "raw-usage", "raw-usage-empty", "blocking", "stream-errors", "stream-timeout", "stream-blocking", "unary-tools", "unary-tools-provider-executed", "unary-tools-dynamic", "stream-tools", "stream-tool-results", "stream-tool-arguments"} {
-		var policy catalog.ProviderOptionPolicy
-		if id == "reasoning" || id == "reasoning-files" {
-			policy = catalog.ProviderOptionPolicy{
-				Namespaces: []string{"anthropic", "openai"},
-				Fields: map[string][]string{
-					"anthropic": {"signature", "redactedData"},
-					"openai":    {"itemId", "reasoningEncryptedContent"},
-				},
-			}
-		}
 		entries = append(entries, catalog.StaticEntry{
-			Info:            catalog.ModelInfo{ID: id},
-			Model:           &providerWireV4Model{kind: id, stats: stats},
-			ProviderOptions: policy,
+			Info:  catalog.ModelInfo{ID: id},
+			Model: &providerWireV4Model{kind: id, stats: stats},
 		})
 	}
 	resolver, err := catalog.NewStatic(entries)

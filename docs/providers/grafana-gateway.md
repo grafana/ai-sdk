@@ -32,6 +32,31 @@ Vercel and Go clients own the multi-step orchestration; each HTTP generation
 remains stateless. Ordered fallback routes continue rejecting tool definitions,
 choice and history before any physical invocation.
 
+## Native provider options
+
+Direct routes carry ordinary provider-option objects to the native adapter at
+supported call, message, content-part, function-tool, and nested tool-result
+file-entry scopes. The Gateway does not maintain an allowed-field inventory or
+remove irrelevant namespaces. Empty objects and nested JSON remain intact;
+the adapter selects its own namespaces, applies native precedence, and decides
+which values it consumes. Forwarding an unknown field does not promise that a
+native adapter emits it in its HTTP request.
+
+Concrete credential, account, destination, mapped-content, tool-ownership and
+transport protections still apply. For example, compatible metadata cannot
+rewrite a mapped role or function call, and Anthropic options cannot activate
+MCP history, server tools or native model fallback. Safe contextual controls,
+such as assistant compaction history and local assistant-call caller metadata,
+remain available. Ordinary Anthropic tool-role result caller metadata reaches
+the adapter but is currently ignored by its native result converter. Supplied
+history is request-path support, not a promise of output-derived continuation.
+
+Gateway-owned routing/BYOK/operator namespaces remain explicitly unsupported
+unless an owning feature consumes them. Outer Gateway authentication stays
+separate from body-carried provider call headers. Operator capture settings do
+not filter native request options or change request/result semantics; this
+behavior does not enable server payload capture or alter consumer capture.
+
 ## Authenticate the client
 
 Choose the constructor for your Gateway URL. Use `NewWithCloudCredentials`
@@ -76,11 +101,14 @@ route; removing it restores direct routing without changing the public model ID.
 Candidates retain configuration order and each new call starts at primary.
 Models without fallback accept supported file inputs. Models configured with
 fallback are text-only: files, nonempty tools, tool-call/result history,
-backend-relevant active provider options, and tool choices other than plain
-auto are rejected before any
-candidate, including primary, runs. Message-level namespaces containing only
-empty objects retain text fallback eligibility without losing their original
-representation. A stream's
+active provider options, and tool choices other than plain auto are rejected
+before any candidate, including primary, runs. Message-level namespaces
+containing only empty objects retain text fallback eligibility without losing
+their original representation. Active options under irrelevant namespaces are
+also preserved and therefore rejected by the existing fallback guard rather
+than silently removed. This is an interim fallback support boundary, separate
+from direct native-option forwarding; broader mapped fallback support remains
+separately scoped. A stream's
 first part commits its candidate, including an error part. No later failure
 restarts on another provider. Client retries can multiply physical attempts;
 the Gateway disables native-provider retries.
