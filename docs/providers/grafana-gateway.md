@@ -43,7 +43,7 @@ URL/document sources preserve native IDs/title/filename without sequential ID
 rewriting, deduplication or `file_path` display substitution. Required IDs and
 document titles may be empty; optional empty title/filename values are omitted
 by Go-produced responses. See the [source guide](../../ai-gateway/docs/sources.md)
-for display semantics, bounds and the separately outstanding metadata gap.
+for citation display and current metadata limitations.
 
 Raw unary `response` and streaming `response-metadata` carry supplied native
 ID/modelId/timestamp, not requested/canonical route defaults. Native model IDs

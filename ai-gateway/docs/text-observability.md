@@ -116,27 +116,24 @@ finalizer returns.
 
 ## Returned values and consumer observation
 
-Operator capture restrictions do not censor supported normal response values.
-Native warnings, source ID/display and registered response identity remain
-caller-visible within protocol bounds. Requested/canonical routing and logical
-operator identity stay separate; arbitrary warning/source/identity strings do
-not become operator attributes or metric labels.
+Gateway telemetry helps you monitor usage, latency and failures without
+collecting response content. Your application can still receive model warnings,
+citations and response details; making those available to the caller does not
+add them to Gateway logs or metrics.
 
-Consumers can wrap `providers/grafana` with existing
-[provider middleware](../../docs/middleware/overview.md) independently of server
-capture. `WrapGenerate` receives warnings, source content and the bounded
-Gateway response body; `WrapStream` receives stream-start warnings, sources and
-native response metadata. Hook access does not imply automatic capture/export
-by every built-in middleware. The pinned TS and Go clients replace typed unary
-response identity with Gateway-hop information; native identity survives inside
-that raw body, not typed ID/model/timestamp fields.
+The model named in a response may differ from the public model you selected.
+Gateway telemetry continues to identify calls by their configured public model,
+so aliases share the same operational view. Use response details for inspecting
+a particular generation, not as a replacement for the model ID your application
+uses to select a model. See the [Go client guide](../../docs/providers/grafana-gateway.md#native-response-values)
+for accessing those details in generated and streamed responses.
 
-Opt-in consumer logger response-body capture can log this Gateway body to a
-consumer-owned destination within its capture/redaction budget. Tests assert
-actual destination records, not merely raw-body access. This is not native
-provider transport capture. The logger does not automatically export every
-stream warning/source field, and Agent Observability has no generic source
-capture representation. No middleware API or diagnostic carrier is added.
+If you need response content for application diagnostics, configure logging in
+your application separately. This does not enable content capture on the
+Gateway. Capture only what you need, restrict access and retention, and account
+for sensitive content in warnings, citations and response bodies. The
+[structured logging guide](../../docs/middleware/structured-logging.md)
+explains how to choose capture settings and redact application logs.
 
 ## Work-package boundaries
 

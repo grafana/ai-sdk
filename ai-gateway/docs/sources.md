@@ -1,47 +1,50 @@
 # Sources
 
-Unary and streaming responses preserve registered URL and document sources.
-Document titles and source IDs are always present, including empty strings.
-Empty optional URL titles and document filenames are omitted because Go cannot
-distinguish absent and empty optional strings. The Go client exposes unary
-source titles in both Title and the legacy Text field. A nonempty Title wins
-when the native unary provider supplies both; otherwise Text supplies the title.
+Use sources to show readers which web pages or documents a model referenced in
+its answer. The Gateway returns sources when the selected model provides them;
+not every model or request produces citations.
 
-Native source IDs survive without sequential replacement, deduplication or
-cross-variant collision repair. Repeated references and URL/document sources
-with equal IDs retain their values and order. Their lifetime is provider-owned,
-not a Gateway persistence guarantee. Source IDs are not public route IDs; their
-resource bound is the containing unary response or complete SSE frame, not the
-removed 1024-byte identity-map cap.
+## Display citations
 
-OpenAI/Azure `file_path` sources retain the adapter-generated source ID and
-native title/filename, including file IDs used as display content. Consumers
-must stop relying on `source-N` IDs, `Document` substitution or removed filenames.
-The Gateway neither fetches nor canonicalizes source URLs.
+A web source points to a URL. Show its title when available, or use the URL as
+its label. A document source identifies a file or document rather than a web
+page. Its title or filename may be a provider-assigned identifier, so choose a
+readable fallback label when neither is useful. A document reference does not
+provide a download link.
 
-The existing bounded numeric citation projection remains: OpenAI/Azure index
-and Anthropic start/end page or character positions under `citation`.
-Unknown namespaces/fields and cited text are still omitted. This is an
-outstanding opaque-metadata implementation gap, not an approved privacy policy
-or a claim of complete native parity. This scalar/display change does not
-expand that codec. Malformed positions are omitted; oversized recognized
-metadata fails safely.
+Keep source IDs as reference values, not display labels or permanent document
+keys. IDs can be empty or repeated, including across web and document sources.
+If your citation list needs unique UI keys, assign those separately rather than
+assuming every source ID is unique.
 
-Sources may appear between text/tool events without closing their blocks.
-The first provider part commits a fallback candidate; a subsequent failure
-cannot replay the generation on another backend. Source output does not enable
-additional provider tools or raw output.
+Treat source URLs and labels as untrusted content. Escape labels when rendering
+and validate links before making them clickable; see the
+[security guide](../../docs/best-practices/security.md).
 
-Deterministic raw/schema, both-client and authenticated command tests establish
-mapping, framing and bounds, not live provider acceptance. Schema-parsed UI
-assembly preserves repeated native source IDs/display; response identity in
-that frontend scenario is explicitly mapped by a test-only message-metadata
-callback, not an automatic UI field. Warnings remain provider/client values.
+## Include sources in a chat UI
 
-Operator capture remains metadata-only and canonical without altering returned
-source values. Consumer middleware is independently configured; see
-[text observability](text-observability.md) and the
-[Go client guide](../../docs/providers/grafana-gateway.md#native-response-values).
-The Gateway image uses same-revision source through `go.gateway.work` and
-requires its build gate. Published middleware revisions still need later
-module releases to adopt source-only first-output timing independently.
+When your application forwards a response to a chat frontend, enable source
+forwarding and render the source parts alongside the answer. See
+[Streaming over HTTP](../../docs/guides/streaming-http.md#control-client-visible-content)
+for a Go server example. Returning sources from the Gateway alone does not make
+them visible in your UI.
+
+## Understand the limits
+
+Some sources include page or character positions that can help readers locate
+the reference. The Gateway currently returns limited citation metadata, not all
+provider annotations or cited passages. Design your citation UI to work without
+those extra details.
+
+A citation is a model-provided reference, not verification that the answer is
+correct or that the linked content is still available. The Gateway does not
+retrieve source URLs for you.
+
+Sources returned to your application are not automatically captured in Gateway
+logs or telemetry. See [text observability](text-observability.md#returned-values-and-consumer-observation)
+for the distinction and the [Go client guide](../../docs/providers/grafana-gateway.md)
+for accessing response data.
+
+---
+
+← [Model catalog](model-catalog.md) · [Docs index](../../docs/README.md) · [Text observability →](text-observability.md)
