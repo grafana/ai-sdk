@@ -318,7 +318,7 @@ describe("native option forwarding through the authenticated command", () => {
         { prompt: [], providerOptions: { anthropic: { MCPServers: [{ type: "url", name: "server", url: "https://other.example" }] } } },
         { prompt: [], providerOptions: { anthropic: { container: { skills: [{ type: "anthropic", skillId: "skill" }] } } } },
         { prompt: [], providerOptions: { anthropic: { fallbacks: "default" } } },
-        { prompt: [{ role: "assistant", content: [{ type: "tool-call", toolCallId: "call", toolName: "lookup", input: {}, providerOptions: { anthropic: { Type: "mcp-tool-use", serverName: "server" } } }] }] },
+        { prompt: [{ role: "assistant", content: [{ type: "tool-call", toolCallId: "call", toolName: "lookup", input: {}, providerExecuted: true, providerOptions: { anthropic: { Type: "mcp-tool-use", serverName: "server" } } }] }] },
       ];
       for (const mode of ["generate", "stream"] as const) {
         for (const options of attempts) {
