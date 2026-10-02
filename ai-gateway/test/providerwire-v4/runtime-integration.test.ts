@@ -13,8 +13,9 @@ import {
 } from "@ai-sdk/gateway";
 import type { LanguageModelV4StreamPart, LanguageModelV4CallOptions } from "@ai-sdk/provider";
 import { buildGoClientCapture, captureGoClient } from "./go-client-capture";
+import { fileInputGoldenCase } from "./request-cases";
 import { validateStreamEvent, validateUnarySuccess } from "./schema";
-import { generateText, jsonSchema, stepCountIs, streamText, tool, wrapLanguageModel } from "ai";
+import { generateText, jsonSchema, stepCountIs, streamText, tool } from "ai";
 
 const TEST_DIR = dirname(fileURLToPath(import.meta.url));
 const SERVER_DIR = resolve(TEST_DIR, "testserver");
@@ -99,21 +100,12 @@ function model(modelID: string) {
   })(modelID);
 }
 
-// Host composition for the strict service: ai.generateText adds an SDK
-// user-agent to provider call options. That identifies this HTTP client, not a
-// native-provider forwarding request. Move precisely that SDK-owned value to
-// the outer transport; arbitrary call/body headers remain unsupported (WP21).
-function reasoningHostModel() {
-  const settings = { apiKey: "test", baseURL: `${baseURL}/function-tools`, headers: { "x-access-token": "function-test-token" } };
-  return wrapLanguageModel({ model: createGateway(settings)("reasoning"), middleware: {
-    specificationVersion: "v4",
-    wrapGenerate: async ({ params }) => {
-      const { headers, ...options } = params;
-      assert.deepEqual(Object.keys(headers ?? {}), ["user-agent"]);
-      assert.match(headers!["user-agent"]!, /^ai\/7\.0\.116(?:\s|$)/);
-      return createGateway({ ...settings, headers: { ...settings.headers, "user-agent": headers!["user-agent"]! } })("reasoning").doGenerate(options);
-    },
-  } });
+function reasoningModel() {
+  return createGateway({
+    apiKey: "test",
+    baseURL: `${baseURL}/function-tools`,
+    headers: { "x-access-token": "function-test-token" },
+  })("reasoning");
 }
 
 type RuntimeStats = {
@@ -144,6 +136,80 @@ before(async () => { baseURL = await startServer(); goClientBinary = buildGoClie
 after(async () => { await stopServer(); });
 
 describe("opaque native options through the production handler", () => {
+  it("preserves omitted output-token limits in direct and fallback calls from both clients", async () => {
+    const prompt: LanguageModelV4CallOptions["prompt"] = [{ role: "user", content: [{ type: "text", text: "hello" }] }];
+    for (const modelID of ["success", "mapped-fallback"]) {
+      const client = createGateway({ apiKey: "test", baseURL: `${baseURL}/function-tools`, headers: { "x-access-token": "function-test-token" } })(modelID);
+      for (const mode of ["generate", "stream"] as const) {
+        for (const language of ["typescript", "go"] as const) {
+          if (language === "go") {
+            const result = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/function-tools`, accessToken: "function-test-token", modelID, mode, options: { prompt } });
+            assert.equal(result.error, undefined);
+            if (mode === "generate") assert.equal(result.result.finishReason.unified, "stop");
+            else {
+              assert.equal(result.parts.at(-1).type, "finish");
+              assert.equal(result.parts.filter((part: { type: string }) => part.type === "finish").length, 1);
+              assert.ok(result.parts.every((part: { type: string }) => part.type !== "error"));
+            }
+          } else if (mode === "generate") {
+            assert.equal((await client.doGenerate({ prompt })).finishReason.unified, "stop");
+          } else {
+            const parts = await collect((await client.doStream({ prompt })).stream);
+            assert.equal(parts.at(-1)?.type, "finish");
+            assert.equal(parts.filter(part => part.type === "finish").length, 1);
+            assert.ok(parts.every(part => part.type !== "error"));
+          }
+          const captured = await (await fetch(`${baseURL}/providerwire-v4/options`)).json();
+          assert.equal(Object.hasOwn(captured, "maxOutputTokens"), false, `${modelID}/${language}/${mode}`);
+          assert.deepEqual(captured.prompt, prompt);
+        }
+      }
+      const unary = await generateText({ model: client, prompt: "hello", maxRetries: 0 });
+      assert.equal(unary.text, "hello from Go");
+      assert.equal(unary.finishReason, "stop");
+      const unaryOptions = await (await fetch(`${baseURL}/providerwire-v4/options`)).json();
+      assert.equal(Object.hasOwn(unaryOptions, "maxOutputTokens"), false);
+      assert.match(unaryOptions.headers["user-agent"], /^ai\/7\.0\.116(?:\s|$)/);
+      const streaming = streamText({ model: client, prompt: "hello", maxRetries: 0 });
+      assert.equal(await streaming.text, "hello from Go stream");
+      assert.equal(await streaming.finishReason, "stop");
+      const streamOptions = await (await fetch(`${baseURL}/providerwire-v4/options`)).json();
+      assert.equal(Object.hasOwn(streamOptions, "maxOutputTokens"), false);
+    }
+  });
+
+  it("preserves registered file arms and presence through direct and fallback mapping in both clients", async () => {
+    for (const request of await fileInputGoldenCase.capture()) {
+      const mode = request.streaming ? "stream" : "generate";
+      const options = request.body as LanguageModelV4CallOptions;
+      let direct: unknown;
+      for (const modelID of ["success", "mapped-fallback"]) {
+        for (const language of ["typescript", "go"]) {
+          if (language === "go") {
+            const result = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/function-tools`, accessToken: "function-test-token", modelID, mode, options });
+            assert.equal(result.error, undefined);
+            assert.ok(!(result.parts ?? []).some((part: { type: string }) => part.type === "error"));
+          } else {
+            const client = createGateway({ apiKey: "test", baseURL: `${baseURL}/function-tools`, headers: { "x-access-token": "function-test-token" } })(modelID);
+            if (mode === "generate") await client.doGenerate(options);
+            else assert.ok(!(await collect((await client.doStream(options)).stream)).some(part => part.type === "error"));
+          }
+          const captured = await (await fetch(`${baseURL}/providerwire-v4/options`)).json();
+          if (direct === undefined) direct = captured;
+          else assert.deepEqual(captured, direct, `${modelID}/${language}/${mode}`);
+          const files = captured.prompt[0].content;
+          assert.deepEqual(files.map((part: any) => part.data.type), ["data", "data", "url", "reference", "text"]);
+          assert.deepEqual(files.map((part: any) => part.filename), ["bytes.bin", "", undefined, undefined, ""]);
+          assert.equal(files[1].data.data, "");
+          assert.equal(files[4].data.text, "");
+          const results = captured.prompt[2].content[0].output.value;
+          assert.deepEqual(results.map((part: any) => part.data.type), ["data", "data", "url", "reference", "text"]);
+          assert.deepEqual(results.map((part: any) => part.filename), ["result.bin", "", undefined, undefined, ""]);
+        }
+      }
+    }
+  });
+
   it("preserves every supported scope in both independent clients and modes", async () => {
     const providerOptionsFor = (scope: string) => ({ futureNamespace: { scope, model: "ordinary", type: "ordinary", nested: { null: null, false: false, zero: 0, empty: "", array: [], object: {} } }, empty: {}, FutureNamespace: { case: true } });
     const scoped = {
@@ -174,38 +240,40 @@ describe("opaque native options through the production handler", () => {
       ],
     };
     const original = JSON.stringify(options);
-    const client = createGateway({ apiKey: "test", baseURL: `${baseURL}/function-tools`, headers: { "x-access-token": "function-test-token" } })("success");
-    for (const mode of ["generate", "stream"] as const) {
-      for (const language of ["typescript", "go"] as const) {
-        if (language === "go") {
-          const result = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/function-tools`, accessToken: "function-test-token", modelID: "success", mode, options });
-          assert.equal(result.error, undefined);
-          if (mode === "stream") {
-            assert.equal(result.canceled, false);
-            assert.equal(result.parts.filter((part: { type: string }) => part.type === "finish").length, 1);
-            assert.equal(result.parts.at(-1).type, "finish");
-            assert.ok(result.parts.every((part: { type: string }) => part.type !== "error"));
+    for (const modelID of ["success", "mapped-fallback"]) {
+      const client = createGateway({ apiKey: "test", baseURL: `${baseURL}/function-tools`, headers: { "x-access-token": "function-test-token" } })(modelID);
+      for (const mode of ["generate", "stream"] as const) {
+        for (const language of ["typescript", "go"] as const) {
+          if (language === "go") {
+            const result = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/function-tools`, accessToken: "function-test-token", modelID, mode, options });
+            assert.equal(result.error, undefined);
+            if (mode === "stream") {
+              assert.equal(result.canceled, false);
+              assert.equal(result.parts.filter((part: { type: string }) => part.type === "finish").length, 1);
+              assert.equal(result.parts.at(-1).type, "finish");
+              assert.ok(result.parts.every((part: { type: string }) => part.type !== "error"));
+            }
+          } else if (mode === "generate") await client.doGenerate(options);
+          else {
+            const parts = await collect((await client.doStream(options)).stream);
+            assert.equal(parts.filter(part => part.type === "finish").length, 1);
+            assert.equal(parts.at(-1)?.type, "finish");
+            assert.ok(parts.every(part => part.type !== "error"));
           }
-        } else if (mode === "generate") await client.doGenerate(options);
-        else {
-          const parts = await collect((await client.doStream(options)).stream);
-          assert.equal(parts.filter(part => part.type === "finish").length, 1);
-          assert.equal(parts.at(-1)?.type, "finish");
-          assert.ok(parts.every(part => part.type !== "error"));
+          const captured = await (await fetch(`${baseURL}/providerwire-v4/options`)).json();
+          assert.deepEqual({
+            call: captured.providerOptions, functionTool: captured.tools[0].providerOptions,
+            system: captured.prompt[0].providerOptions, user: captured.prompt[1].providerOptions,
+            text: captured.prompt[1].content[0].providerOptions, file: captured.prompt[1].content[1].providerOptions,
+            reasoning: captured.prompt[2].content[0].providerOptions, toolCall: captured.prompt[2].content[1].providerOptions,
+            toolResult: captured.prompt[3].content[0].providerOptions, resultFile: captured.prompt[3].content[0].output.value[0].providerOptions,
+          }, scoped, `${modelID}/${language}/${mode}`);
+          assert.equal(captured.tools[1].providerOptions, undefined);
+          assert.equal(captured.prompt[1].content[2].providerOptions, undefined);
+          assert.equal(captured.prompt[3].content[0].output.value[1].providerOptions, undefined);
         }
-        const captured = await (await fetch(`${baseURL}/providerwire-v4/options`)).json();
-        assert.deepEqual({
-          call: captured.providerOptions, functionTool: captured.tools[0].providerOptions,
-          system: captured.prompt[0].providerOptions, user: captured.prompt[1].providerOptions,
-          text: captured.prompt[1].content[0].providerOptions, file: captured.prompt[1].content[1].providerOptions,
-          reasoning: captured.prompt[2].content[0].providerOptions, toolCall: captured.prompt[2].content[1].providerOptions,
-          toolResult: captured.prompt[3].content[0].providerOptions, resultFile: captured.prompt[3].content[0].output.value[0].providerOptions,
-        }, scoped, `${language}/${mode}`);
-        assert.equal(captured.tools[1].providerOptions, undefined);
-        assert.equal(captured.prompt[1].content[2].providerOptions, undefined);
-        assert.equal(captured.prompt[3].content[0].output.value[1].providerOptions, undefined);
+        assert.equal(JSON.stringify(options), original);
       }
-      assert.equal(JSON.stringify(options), original);
     }
   });
 });
@@ -252,8 +320,11 @@ describe("reasoning continuation through the authenticated real handler", () => 
 
   it("accepts paid unary reasoning with default retries and one provider invocation", async () => {
     const before = await stats();
-    const result = await generateText({ model: reasoningHostModel(), prompt: "think" });
+    const result = await generateText({ model: reasoningModel(), prompt: "think" });
     assert.equal((await stats()).successCalls - before.successCalls, 1);
+    const captured = await (await fetch(`${baseURL}/providerwire-v4/options`)).json();
+    assert.equal(Object.hasOwn(captured, "maxOutputTokens"), false);
+    assert.match(captured.headers["user-agent"], /^ai\/7\.0\.116(?:\s|$)/);
     assert.equal(result.reasoning.length, 1);
     assert.deepEqual(result.reasoning[0].providerMetadata, { anthropic: { signature: "end-signature" } });
   });
@@ -268,7 +339,7 @@ describe("reasoning continuation through the authenticated real handler", () => 
       { openai: { itemId: "final", reasoningEncryptedContent: "opaque" } },
       { anthropic: { signature: "end-signature" } },
     ]);
-    await generateText({ model: reasoningHostModel(), messages: response.messages });
+    await generateText({ model: reasoningModel(), messages: response.messages });
     const options = await (await fetch(`${baseURL}/providerwire-v4/options`)).json();
     const parts = options.prompt[0].content.filter((part: any) => part.type === "reasoning");
     assert.deepEqual(parts.map((part: any) => part.providerOptions), reasoning.map(part => part.providerMetadata));

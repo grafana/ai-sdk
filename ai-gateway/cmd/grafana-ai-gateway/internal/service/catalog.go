@@ -116,7 +116,7 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 				sink = physical[0]
 			}
 			ordered.WithAttemptObserver(physicalAttemptObserver(descriptors, sink))
-			lower = fallbackTextModel{LanguageModel: ordered}
+			lower = ordered
 		}
 		model, err := factory(id, lower)
 		if err != nil {

@@ -136,9 +136,11 @@ attempts:
 Set retry and fallback limits from the request's latency and cost budget. Make
 side-effecting tools idempotent and monitor provider attempts per application
 request. Provider retries × candidate count × SDK attempts can multiply physical
-calls. Gateway ordered fallback is restricted to effect-disabled text requests;
-function tools on direct Gateway routes do not enable tool fallback.
-See [Retry and timeout](retry-and-timeout.md).
+calls. A failed attempt may still be billable, so fallback does not guarantee that
+a request incurs model costs only once. See [Retry and timeout](retry-and-timeout.md).
+
+To configure fallback behind a public Grafana AI Gateway model, see
+[Configure Gateway fallback](../providers/grafana-gateway.md#configure-fallback).
 
 ## Account for usage
 

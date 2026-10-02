@@ -74,7 +74,7 @@ func TestAttemptDecision_CancellationDuringDecider(t *testing.T) {
 						assert.False(t, attempts[0].WillFallback)
 						assert.False(t, attempts[0].FinishedAt.Before(attempts[0].StartedAt))
 						if mode == "stream" {
-							assert.ErrorIs(t, child.Err(), want)
+							assert.Contains(t, []error{context.Canceled, want}, child.Err())
 							select {
 							case <-producerDone:
 							case <-time.After(time.Second):

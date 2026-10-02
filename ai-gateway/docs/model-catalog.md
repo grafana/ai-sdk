@@ -134,9 +134,13 @@ Both interfaces receive `context.Context`, allowing a host wrapper to read
 request-scoped identity and policy. The built-in catalogs expose the configured
 namespace; the host applies request-specific visibility.
 
-`ModelInfo.Capabilities` contains labels defined by the public API. A route
-backed by fallback models should advertise capabilities supported by every
-candidate.
+Use `ModelInfo.Capabilities` to tell callers what they can do with a public model.
+If that model has fallbacks, advertise only features that every candidate supports,
+such as function tools or file inputs. Otherwise, a request that works on the
+primary model may fail when a backup is needed.
+
+Choose provider-specific settings that are valid for the models in the route.
+Fallback does not adapt those settings for a different provider.
 
 An unknown public ID returns an error matching `catalog.ErrUnknownModel` and
 records the requested ID in `*catalog.UnknownModelError`. The error does not
