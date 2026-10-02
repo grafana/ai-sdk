@@ -284,7 +284,7 @@ func mapWirePart(part wirePart, role provider.Role, toolsEnabled bool) (provider
 		if role != provider.RoleAssistant {
 			return provider.ContentPart{}, invalidMappingFailure()
 		}
-		options, failure := mapToolPartOptions(part.ProviderOptions)
+		options, failure := mapWireProviderOptions(part.ProviderOptions)
 		if failure != nil {
 			return provider.ContentPart{}, failure
 		}
@@ -299,7 +299,7 @@ func mapWirePart(part wirePart, role provider.Role, toolsEnabled bool) (provider
 		if failure != nil {
 			return provider.ContentPart{}, failure
 		}
-		options, failure := mapToolPartOptions(part.ProviderOptions)
+		options, failure := mapWireProviderOptions(part.ProviderOptions)
 		if failure != nil {
 			return provider.ContentPart{}, failure
 		}
@@ -414,26 +414,6 @@ func jsonObject(raw json.RawMessage) (map[string]json.RawMessage, bool) {
 		return nil, false
 	}
 	return object, true
-}
-
-func mapToolPartOptions(values map[string]json.RawMessage) (provider.ProviderOptions, *requestFailure) {
-	options, failure := mapWireProviderOptions(values)
-	if failure != nil {
-		return nil, failure
-	}
-	if raw, ok := values["anthropic"]; ok {
-		fields, _ := jsonObject(raw)
-		if value, exists := fields["type"]; exists {
-			var kind string
-			if json.Unmarshal(value, &kind) != nil {
-				return nil, invalidMappingFailure()
-			}
-			if kind == "mcp-tool-use" {
-				return nil, unsupportedMappingFailure(capabilityProviderOptions)
-			}
-		}
-	}
-	return options, nil
 }
 
 // providerOptionsEmpty reports whether every namespace is an empty object.

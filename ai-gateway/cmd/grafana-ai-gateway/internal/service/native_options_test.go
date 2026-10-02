@@ -108,6 +108,7 @@ func TestNativeOptions_BypassAndOrdinaryControls(t *testing.T) {
 				{"skills", "anthropic", `{"prompt":[],"providerOptions":{"anthropic":{"container":{"skills":[{"type":"anthropic","skillId":"skill"}]}}}}`, true},
 				{"fallback", "anthropic", `{"prompt":[],"providerOptions":{"anthropic":{"fallbacks":"default"}}}`, true},
 				{"MCP history", "anthropic", `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"lookup","input":{},"providerOptions":{"anthropic":{"Type":"mcp-tool-use","serverName":"server"}}}]}]}`, true},
+				{"inert MCP result metadata", "anthropic", `{"prompt":[{"role":"assistant","content":[{"type":"tool-result","toolCallId":"call","toolName":"lookup","output":{"type":"json","value":{}},"providerOptions":{"anthropic":{"type":"mcp-tool-use","serverName":"server"}}}]}]}`, false},
 				{"noop execution", "anthropic", `{"prompt":[],"providerOptions":{"anthropic":{"mcpServers":[],"container":null,"fallbacks":null,"mcp_servers":[{"ordinary":true}]}}}`, false},
 				{"compaction", "anthropic", `{"prompt":[{"role":"assistant","content":[{"type":"text","text":"summary","providerOptions":{"anthropic":{"type":"compaction"}}}]}]}`, false},
 				{"irrelevant namespace", "anthropic", `{"prompt":[],"providerOptions":{"openaiCompatible":{"role":"tool","model":"ignored","content":[]}}}`, false},
