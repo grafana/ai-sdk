@@ -97,9 +97,8 @@ type Tool struct {
 	ID   string                     `json:"id,omitempty"`
 	Args map[string]json.RawMessage `json:"args,omitempty"`
 
-	// ProviderOptions carries provider-specific options keyed by provider name.
-	// Both function tools and provider tools may carry options; producers MAY
-	// leave this nil for provider tools.
+	// ProviderOptions carries provider-specific function-tool options keyed by provider name.
+	// Provider tools use Args instead; ValidateTools rejects ProviderOptions on them.
 	ProviderOptions ProviderOptions `json:"providerOptions,omitempty"`
 }
 
