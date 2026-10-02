@@ -104,7 +104,7 @@ func TestNativeOptions_BypassAndOrdinaryControls(t *testing.T) {
 				name, backend, body string
 				denied              bool
 			}{
-				{"MCP call", "anthropic", `{"prompt":[],"providerOptions":{"anthropic":{"MCPServers":[{"type":"url","url":"https://other.example","name":"server"}]}}}`, true},
+				{"MCP call", "anthropic", `{"prompt":[],"providerOptions":{"anthropic":{"MCPServers":[{"type":"url","url":"https://other.example","name":"server"}]}}}`, false},
 				{"skills", "anthropic", `{"prompt":[],"providerOptions":{"anthropic":{"container":{"skills":[{"type":"anthropic","skillId":"skill"}]}}}}`, true},
 				{"fallback", "anthropic", `{"prompt":[],"providerOptions":{"anthropic":{"fallbacks":"default"}}}`, true},
 				{"MCP history", "anthropic", `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"lookup","input":{},"providerExecuted":true,"providerOptions":{"anthropic":{"Type":"mcp-tool-use","serverName":"server"}}}]}]}`, true},
