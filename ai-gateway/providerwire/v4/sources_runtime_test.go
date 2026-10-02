@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestSourcesProjectionPrivacyAndBounds(t *testing.T) {
+func TestSourcesMetadataAndBounds(t *testing.T) {
 	base := provider.SourceInfo{SourceType: provider.SourceTypeDocument, ID: "private-id", Title: "Public title", MediaType: "text/plain", Filename: "public.txt", ProviderMetadata: provider.ProviderMetadata{
 		"anthropic": json.RawMessage(`{"startPageNumber":1,"endPageNumber":2,"startCharIndex":-1,"endCharIndex":"bad","citedText":"secret","encryptedIndex":"secret"}`),
 		"openai":    json.RawMessage(`{"type":"file_citation","fileId":"secret","index":3}`),
@@ -23,9 +23,13 @@ func TestSourcesProjectionPrivacyAndBounds(t *testing.T) {
 	require.NoError(t, err)
 	encoded, err := json.Marshal(mapped)
 	require.NoError(t, err)
-	assert.NotContains(t, string(encoded), "secret")
+	var decoded struct {
+		Metadata provider.ProviderMetadata `json:"providerMetadata"`
+	}
+	require.NoError(t, json.Unmarshal(encoded, &decoded))
+	assert.Equal(t, base.ProviderMetadata, decoded.Metadata)
 	assert.NotContains(t, string(encoded), "private-id")
-	assert.Contains(t, string(encoded), `"citation":{"endPageNumber":2,"index":3,"startPageNumber":1}`)
+	assert.NotContains(t, string(encoded), `"citation"`)
 	for _, delta := range []int64{-1, 0, 1} {
 		source := provider.SourceInfo{SourceType: provider.SourceTypeURL, ID: "id", URL: strings.Repeat("<", 80)}
 		mapped, err := mapSource(source, make(sourceIDs), 4096)
@@ -62,7 +66,7 @@ func TestSourcesProjectionPrivacyAndBounds(t *testing.T) {
 	require.NoError(t, err)
 	encoded, _ = json.Marshal(mapped)
 	assert.Contains(t, string(encoded), `"title":"Document"`)
-	assert.NotContains(t, string(encoded), "file-secret")
+	assert.Contains(t, string(encoded), `"fileId":"file-secret"`)
 	assert.NotContains(t, string(encoded), "filename")
 	document.SourceType = provider.SourceTypeURL
 	_, err = mapSource(document, ids, 4096)
@@ -75,12 +79,12 @@ func TestSourcesProjectionPrivacyAndBounds(t *testing.T) {
 
 func TestSourcesOpenAIAndAzureMetadata(t *testing.T) {
 	for _, tc := range []struct {
-		name, namespace, metadata, wantTitle, wantCitation string
+		name, namespace, metadata, wantTitle string
 	}{
-		{"openai file citation", "openai", `{"type":"file_citation","fileId":"secret","index":4,"unapproved":"secret"}`, "Public title", `"citation":{"index":4}`},
-		{"azure file citation", "azure", `{"type":"file_citation","fileId":"secret","index":4,"unapproved":"secret"}`, "Public title", `"citation":{"index":4}`},
-		{"openai file path", "openai", `{"type":"file_path","fileId":"secret","index":0}`, "Document", `"citation":{"index":0}`},
-		{"azure file path", "azure", `{"type":"file_path","fileId":"secret","index":0}`, "Document", `"citation":{"index":0}`},
+		{"openai file citation", "openai", `{"type":"file_citation","fileId":"secret","index":4,"unapproved":"secret"}`, "Public title"},
+		{"azure file citation", "azure", `{"type":"file_citation","fileId":"secret","index":4,"unapproved":"secret"}`, "Public title"},
+		{"openai file path", "openai", `{"type":"file_path","fileId":"secret","index":0}`, "Document"},
+		{"azure file path", "azure", `{"type":"file_path","fileId":"secret","index":0}`, "Document"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			filename := "public.txt"
@@ -93,17 +97,19 @@ func TestSourcesOpenAIAndAzureMetadata(t *testing.T) {
 			encoded, err := json.Marshal(mapped)
 			require.NoError(t, err)
 			assert.Contains(t, string(encoded), `"title":"`+tc.wantTitle+`"`)
-			assert.Contains(t, string(encoded), tc.wantCitation)
+			var decoded struct {
+				Metadata provider.ProviderMetadata `json:"providerMetadata"`
+			}
+			require.NoError(t, json.Unmarshal(encoded, &decoded))
+			assert.JSONEq(t, tc.metadata, string(decoded.Metadata[tc.namespace]))
 			assert.NotContains(t, string(encoded), "private-id")
-			assert.NotContains(t, string(encoded), "secret")
-			assert.NotContains(t, string(encoded), `"azure"`)
-			assert.NotContains(t, string(encoded), `"openai"`)
+			assert.NotContains(t, string(encoded), `"citation"`)
 			if strings.Contains(tc.name, "file path") {
 				assert.NotContains(t, string(encoded), `"filename"`)
 			}
 		})
 	}
-	oversize := provider.SourceInfo{SourceType: provider.SourceTypeURL, ID: "id", URL: "https://example.com", ProviderMetadata: provider.ProviderMetadata{"azure": json.RawMessage(strings.Repeat(" ", maxSourceMetadataBytes+1))}}
+	oversize := provider.SourceInfo{SourceType: provider.SourceTypeURL, ID: "id", URL: "https://example.com", ProviderMetadata: provider.ProviderMetadata{"azure": json.RawMessage(strings.Repeat(" ", 4097))}}
 	_, err := mapSource(oversize, make(sourceIDs), 16384)
 	require.ErrorIs(t, err, errInvalidUnarySuccess)
 }
@@ -132,7 +138,9 @@ func TestSourcesStreamingLifecycle(t *testing.T) {
 			requireStreamBodyMatchesSchema(t, body)
 			assert.Equal(t, tc.failure, strings.Contains(body, `"type":"error"`))
 			assert.NotContains(t, body, "native-id")
-			assert.NotContains(t, body, "secret")
+			if tc.name != "nil source" && tc.name != "post finish" {
+				assert.Contains(t, body, `"fileId":"secret"`)
+			}
 			if tc.name == "interleaved" {
 				assert.Equal(t, 2, strings.Count(body, `"id":"source-1"`))
 				assert.Contains(t, body, `"type":"finish"`)
@@ -179,7 +187,7 @@ func TestSourcesCompleteFrameAndAggregateBounds(t *testing.T) {
 				return value
 			}
 			require.NoError(t, compiled.Validate(json.RawMessage(wrap(raw))))
-			for _, field := range []string{`"unknown":true`, `"providerMetadata":{"openai":{"fileId":"private"}}`, `"providerMetadata":{"citation":{"index":-1}}`} {
+			for _, field := range []string{`"unknown":true`, `"providerMetadata":{"future":null}`, `"providerMetadata":{"future":[]}`} {
 				invalid := strings.TrimSuffix(raw, "}") + "," + field + "}"
 				require.Error(t, compiled.Validate(json.RawMessage(wrap(invalid))))
 			}

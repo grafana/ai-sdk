@@ -176,16 +176,16 @@ func (c UIMessageChunk) MarshalJSON() ([]byte, error) {
 
 	case ChunkReasoningStart:
 		m["id"] = c.ID
-		setPresentReasoningMeta(m, c.ProviderMetadata)
+		setOptMeta(m, c.ProviderMetadata)
 
 	case ChunkReasoningDelta:
 		m["id"] = c.ID
 		m["delta"] = c.Delta
-		setPresentReasoningMeta(m, c.ProviderMetadata)
+		setOptMeta(m, c.ProviderMetadata)
 
 	case ChunkReasoningEnd:
 		m["id"] = c.ID
-		setPresentReasoningMeta(m, c.ProviderMetadata)
+		setOptMeta(m, c.ProviderMetadata)
 
 	case ChunkToolInputStart:
 		m["toolCallId"] = c.ToolCallID
@@ -272,7 +272,7 @@ func (c UIMessageChunk) MarshalJSON() ([]byte, error) {
 	case ChunkReasoningFile:
 		m["url"] = c.URL
 		m["mediaType"] = c.MediaType
-		setPresentReasoningMeta(m, c.ProviderMetadata)
+		setOptMeta(m, c.ProviderMetadata)
 
 	case ChunkError:
 		m["errorText"] = c.ErrorText
@@ -316,14 +316,6 @@ func setOptRaw(m map[string]any, key string, val json.RawMessage) {
 }
 
 func setOptMeta(m map[string]any, meta provider.ProviderMetadata) {
-	if len(meta) > 0 {
-		m["providerMetadata"] = meta
-	}
-}
-
-// An explicit empty reasoning metadata object replaces earlier metadata in
-// the pinned frontend assembler. Omission must not turn clearing into retain.
-func setPresentReasoningMeta(m map[string]any, meta provider.ProviderMetadata) {
 	if meta != nil {
 		m["providerMetadata"] = meta
 	}

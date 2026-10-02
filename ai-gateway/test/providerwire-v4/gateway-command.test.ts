@@ -12,6 +12,7 @@ import { createGateway, GatewayInvalidRequestError } from "@ai-sdk/gateway";
 import type { JSONValue, LanguageModelV4, LanguageModelV4CallOptions, LanguageModelV4StreamPart } from "@ai-sdk/provider";
 import { generateText, isStepCount, jsonSchema, streamText, tool } from "ai";
 import { buildGoClientCapture, buildGoStreamTextCapture, captureGoClient } from "./go-client-capture";
+import { nativeMetadataReply } from "./native-metadata";
 
 const AI_GATEWAY_ROOT = resolve(import.meta.dirname, "../..");
 const COMMAND_DIR = resolve(AI_GATEWAY_ROOT, "cmd/grafana-ai-gateway");
@@ -42,6 +43,129 @@ before(() => {
 
 after(() => {
   rmSync(buildDirectory, { recursive: true, force: true });
+});
+
+describe("output-derived metadata continuation", () => {
+  for (const family of ["anthropic", "openai", "compatible"] as const) {
+    for (const fallback of [false, true]) {
+      for (const store of family === "openai" ? [false, true] : [false]) {
+        it(`${family} ${fallback ? "fallback" : "direct"} store=${store} preserves actual output in separate unary and streaming client paths`, async () => {
+          const anthropic = await FakeAnthropic.start();
+          const openai = await FakeOpenAI.start();
+          const compatible = await FakeCompatible.start();
+          const candidates = { anthropic, openai, compatible };
+          candidates[family].metadata = true;
+          const loser = family === "anthropic" ? "openai" : "anthropic";
+          if (fallback) {
+            if (loser === "anthropic") anthropic.failureStatus = 503;
+            else openai.failWithSecret = true;
+          }
+          const config = `providers:
+  anthropic:
+    type: anthropic
+    apiKeyEnv: GATEWAY_TEST_ANTHROPIC_KEY
+    baseURL: ${anthropic.url}
+  openai:
+    type: openai
+    apiKeyEnv: GATEWAY_TEST_OPENAI_KEY
+    baseURL: ${openai.url}/v1
+  compatible:
+    type: openai-compatible
+    apiKeyEnv: GATEWAY_TEST_COMPATIBLE_KEY
+    baseURL: ${compatible.url}/v1
+    providerName: google
+models:
+  metadata:
+    name: Metadata
+    primary:
+      provider: ${fallback ? loser : family}
+      model: backend-private
+${fallback ? `    fallback:\n      - provider: ${family}\n        model: backend-private\n` : ""}`;
+          let gateway: GatewayProcess | undefined;
+          try {
+            gateway = await GatewayProcess.start(binaryPath, "", [], {}, "access-token", config);
+            const model = gateway.client()("metadata");
+            for (const path of ["ts-unary", "ts-stream", "go-unary", "go-stream"] as const) {
+              const before = Object.fromEntries(Object.entries(candidates).map(([key, fake]) => [key, fake.requests.length]));
+              let executions = 0;
+              if (path.startsWith("ts")) {
+                const options = { model, prompt: "metadata", maxOutputTokens: 64, providerOptions: { openai: { store } }, stopWhen: isStepCount(2), maxRetries: 0, tools: { weather: tool({ inputSchema: jsonSchema<{ city: string }>({ type: "object", properties: { city: { type: "string" } }, required: ["city"] }), execute: async ({ city }) => { assert.equal(city, "Rio"); executions++; return "sunny"; } }) } };
+                if (path === "ts-unary") await generateText(options);
+                else await streamText(options).consumeStream();
+              } else {
+                const go = await captureGoClient(goClientBinaryPath, { baseURL: `${gateway.url}/api/v1/aisdk`, accessToken: TEST_TOKEN, modelID: "metadata", mode: path === "go-unary" ? "metadata-unary-replay" : "metadata-stream-replay", options: { prompt: [{ role: "user", content: [{ type: "text", text: "metadata" }] }], maxOutputTokens: 64, providerOptions: { openai: { store } }, tools: [{ type: "function", name: "weather", inputSchema: { type: "object", properties: { city: { type: "string" } } } }] } });
+                assert.equal(go.error, undefined);
+                executions = go.executions;
+              }
+              assert.equal(executions, 1, path);
+              for (const [key, fake] of Object.entries(candidates)) {
+                const requests = fake.requests.slice(before[key]);
+                assert.equal(requests.length, key === family || (fallback && key === loser) ? 2 : 0, `${path}: ${key}`);
+                for (const request of requests) assert.equal(request.body.stream ?? false, path.endsWith("stream"), `${path}: native selector`);
+              }
+              const replay = candidates[family].requests.at(-1)!.body;
+              if (family === "anthropic") {
+                const blocks = (replay.messages as any[]).filter(message => message.role === "assistant").flatMap(message => message.content);
+                assert.deepEqual(blocks.find(block => block.type === "tool_use").caller, { type: "direct" });
+                assert.equal(blocks.find(block => block.type === "thinking").signature, "returned-signature");
+                assert.equal(blocks.find(block => block.type === "redacted_thinking").data, "returned-redacted");
+              } else if (family === "openai") {
+                const input = replay.input as any[];
+                if (store) {
+                  assert.ok(input.some(item => item.type === "item_reference" && item.id === "msg-metadata"));
+                  assert.ok(input.some(item => item.type === "item_reference" && item.id === "rs-metadata"));
+                } else {
+                  assert.equal(input.find(item => item.role === "assistant").phase, "commentary");
+                  assert.equal(input.find(item => item.type === "reasoning").encrypted_content, "returned-encrypted");
+                }
+              } else {
+                const call = (replay.messages as any[]).find(message => message.tool_calls)?.tool_calls[0];
+                assert.equal(call?.extra_content?.google?.thought_signature, "returned-thought-signature");
+              }
+            }
+            for (const fake of Object.values(candidates)) assert.deepEqual(fake.violations, []);
+          } finally {
+            await settleCleanup(...(gateway ? [() => gateway!.stop()] : []), () => anthropic.stop(), () => openai.stop(), () => compatible.stop());
+          }
+        });
+      }
+    }
+  }
+});
+
+describe("metadata observation policies", () => {
+  it("keeps caller metadata and independent consumer observation unchanged with operator capture off or metadata-only", async () => {
+    const observer = await FakeAgentObservability.start();
+    const seen: unknown[] = [];
+    try {
+      for (const enabled of [false, true]) {
+        const args = enabled ? ["--agento11y.enabled", "--agento11y.protocol=http", `--agento11y.endpoint=${observer.url}`, "--no-agento11y.tls", "--agento11y.auth-secret-env=GATEWAY_TEST_AGENTO11Y_KEY", "--agento11y.batch-size=1", "--agento11y.flush-interval=1ms"] : [];
+        const [fake, gateway] = await startGateway(args, { GATEWAY_TEST_AGENTO11Y_KEY: "integration-agento11y-key" });
+        fake.metadata = true;
+        try {
+          const options: LanguageModelV4CallOptions = { prompt: [{ role: "user", content: [{ type: "text", text: "metadata observation" }] }], maxOutputTokens: 64 };
+          const unary = await gateway.client()("assistant").doGenerate(options);
+          const stream = await collectGatewayStream((await gateway.client()("assistant").doStream(options)).stream);
+          const go = await captureGoClient(goClientBinaryPath, { baseURL: `${gateway.url}/api/v1/aisdk`, accessToken: TEST_TOKEN, modelID: "assistant", mode: "metadata-observe", options });
+          assert.equal(go.error, undefined);
+          assert.deepEqual(go.observedUnary, [unary.providerMetadata ?? null, ...unary.content.map(part => part.providerMetadata ?? null)]);
+          assert.deepEqual(go.observedStream, go.returnedStream);
+          assert.deepEqual(go.returnedStream, stream.map(part => "providerMetadata" in part ? part.providerMetadata ?? null : null));
+          seen.push({ content: unary.content, metadata: unary.providerMetadata, stream, observedUnary: go.observedUnary, observedStream: go.observedStream });
+          const caller = JSON.stringify(seen.at(-1));
+          assert.ok(caller.includes("returned-signature"));
+          assert.ok(caller.includes("returned-redacted"));
+          for (const credential of [TEST_TOKEN, "integration-anthropic-key", "integration-agento11y-key"]) assert.ok(!caller.includes(credential));
+          assert.deepEqual(fake.violations, []);
+        } finally { await settleCleanup(() => gateway.stop(), () => fake.stop()); }
+      }
+      assert.deepEqual(seen[0], seen[1]);
+      await observer.waitForGenerations(4);
+      const exported = JSON.stringify(observer.generations);
+      for (const value of ["returned-signature", "returned-redacted", "metadata observation", "integration-anthropic-key"]) assert.ok(!exported.includes(value));
+      assert.deepEqual(observer.violations, []);
+    } finally { await observer.stop(); }
+  });
 });
 
 describe("native option forwarding through the authenticated command", () => {
@@ -954,7 +1078,7 @@ describe("authenticated Anthropic Gateway command", () => {
       const rawUnaryResponse = await rawProviderWireRequest(gateway.url, "unary");
       assert.equal(rawUnaryResponse.status, 200);
       const rawUnary = await rawUnaryResponse.json() as Record<string, unknown>;
-      assert.deepEqual(Object.keys(rawUnary).sort(), ["content", "finishReason", "usage"]);
+      assert.deepEqual(Object.keys(rawUnary).sort(), ["content", "finishReason", "providerMetadata", "usage"]);
 
       assert.equal(fake.requests.length, 3);
       for (const request of fake.requests) {
@@ -1183,7 +1307,7 @@ describe("authenticated Anthropic Gateway command", () => {
       const response = await rawProviderWireRequest(gateway.url, "outage-private-input");
       assert.equal(response.status, 200);
       const body = await response.json() as Record<string, unknown>;
-      assert.deepEqual(Object.keys(body).sort(), ["content", "finishReason", "usage"]);
+      assert.deepEqual(Object.keys(body).sort(), ["content", "finishReason", "providerMetadata", "usage"]);
       let metrics = "";
       await poll(async () => {
         metrics = await (await fetch(`${gateway.url}/metrics`)).text();
@@ -1961,14 +2085,14 @@ describe("authenticated OpenAI-compatible Gateway command", () => {
 });
 
 describe("authenticated OpenAI Responses Gateway command", () => {
-  it("projects native URL and file-path sources without private identity in both clients", async () => {
+  it("preserves native source metadata independently of baseline scalar projection in both clients", async () => {
     const [fake,gateway]=await startOpenAIGateway();
     fake.sources=true;
     try {
       const options={prompt:[{role:"user" as const,content:[{type:"text" as const,text:"sources"}]}],maxOutputTokens:32};
       const expected=[
         {type:"source",sourceType:"url",id:"source-1",url:"https://public.example",title:"Public citation"},
-        {type:"source",sourceType:"document",id:"source-2",mediaType:"application/octet-stream",title:"Document",providerMetadata:{citation:{index:0}}},
+        {type:"source",sourceType:"document",id:"source-2",mediaType:"application/octet-stream",title:"Document",providerMetadata:{openai:{type:"file_path",fileId:"native-file-private",index:0}}},
       ];
       const unary=await gateway.client()("openai").doGenerate(options);
       assert.deepEqual(unary.content.filter(part=>part.type==="source"),expected);
@@ -2008,7 +2132,7 @@ describe("authenticated OpenAI Responses Gateway command", () => {
         prompt: [{ role: "user", content: [{ type: "text", text: "unary" }] }],
         maxOutputTokens: 32,
       });
-      assert.deepEqual(result.content, [{ type: "text", text: "hello from fake openai" }]);
+      assert.deepEqual(result.content, [{ type: "text", text: "hello from fake openai", providerMetadata: { openai: { itemId: "msg_test" } } }]);
 
       const stream = await client("openai").doStream({
         prompt: [{ role: "user", content: [{ type: "text", text: "normal-stream" }] }],
@@ -2475,6 +2599,7 @@ class GatewayProcess {
 type FakeRequest = { path: string; apiKey?: string; headers: IncomingMessage["headers"]; body: Record<string, unknown> };
 
 class FakeAnthropic {
+  metadata = false;
   readonly url: string;
   readonly requests: FakeRequest[] = [];
   readonly violations: string[] = [];
@@ -2543,6 +2668,7 @@ class FakeAnthropic {
       response.end(JSON.stringify({ type: "error", error: { type: "api_error", message: "provider-secret-response integration-anthropic-key backend-private" }, request_id: "backend-private-request" }));
       return;
     }
+    if (this.metadata) { nativeMetadataReply("anthropic", body, response); return; }
     if (marker === "silent-unary-shutdown") {
       response.once("close", () => this.canceled.add(marker));
       return;
@@ -2614,6 +2740,7 @@ class FakeAnthropic {
 }
 
 class FakeCompatible {
+  metadata = false;
   readonly url: string;
   readonly requests: FakeRequest[] = [];
   readonly violations: string[] = [];
@@ -2679,6 +2806,7 @@ class FakeCompatible {
       response.end(JSON.stringify({ error: { type: "server_error", message: "provider-secret-response" } }));
       return;
     }
+    if (this.metadata) { nativeMetadataReply("compatible", body, response); return; }
     if (body.stream !== true) {
       response.writeHead(200, { "Content-Type": "application/json" });
       response.end(JSON.stringify({
@@ -2705,6 +2833,7 @@ class FakeCompatible {
 }
 
 class FakeOpenAI {
+  metadata = false;
   readonly url: string;
   readonly requests: FakeRequest[] = [];
   readonly violations: string[] = [];
@@ -2767,6 +2896,7 @@ class FakeOpenAI {
       response.end(JSON.stringify({ error: { type: "server_error", message: "provider-secret-response" } }));
       return;
     }
+    if (this.metadata) { nativeMetadataReply("openai", body, response); return; }
     const stream = body.stream === true;
     const text = stream ? "hello from fake openai stream" : "hello from fake openai";
     const annotations=this.sources ? [

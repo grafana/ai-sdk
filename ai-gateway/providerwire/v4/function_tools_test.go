@@ -50,7 +50,7 @@ func TestUnaryFunctionOutput(t *testing.T) {
 	body, ok := encodeUnarySuccess(mapped, 1<<20)
 	require.True(t, ok)
 	assert.Contains(t, string(body), `"input":"{\"city\":\"Rio\"}"`)
-	assert.NotContains(t, string(body), "hidden")
+	assert.Contains(t, string(body), `"providerMetadata":{"private":{"secret":"hidden"}}`)
 	for _, marker := range []string{"providerExecuted", "dynamic"} {
 		t.Run(marker, func(t *testing.T) {
 			copyResult := *result
@@ -215,7 +215,7 @@ func TestRuntimeUnaryFunctionOutput_OpaqueArguments(t *testing.T) {
 				require.NoError(t, json.Unmarshal(response.Body.Bytes(), &decoded))
 				require.Len(t, decoded.Content, 1)
 				assert.Equal(t, input, decoded.Content[0].Input)
-				assert.NotContains(t, response.Body.String(), "private-sentinel")
+				assert.Contains(t, response.Body.String(), `"providerMetadata":{"private":{"secret":"private-sentinel"}}`)
 				assert.NotContains(t, response.Body.String(), "dynamic")
 			}
 		})

@@ -502,9 +502,10 @@ func newFallbackAcceptance(t *testing.T, primary, secondary *observabilityTestMo
 		for _, private := range []string{"primary-instance", "secondary-instance", "backend-primary", "backend-secondary"} {
 			assert.NotContains(t, public, private)
 		}
-		for _, private := range []string{"private-credential", "private.example", "private-header", "private-request-body", "private-response-body", "private-error", "private-data", "private-metadata"} {
+		for _, private := range []string{"private-credential", "private.example", "private-header", "private-request-body", "private-response-body", "private-error", "private-data"} {
 			assert.NotContains(t, public+logical+output.String(), private)
 		}
+		assert.NotContains(t, logical+output.String(), "private-metadata")
 		lines := strings.Split(strings.TrimSpace(output.String()), "\n")
 		require.Len(t, lines, len(outcomes))
 		assert.Equal(t, int32(1), h.calls[0].Load())
@@ -581,5 +582,51 @@ func awaitFallbackSignal(t *testing.T, signal <-chan struct{}) {
 	case <-signal:
 	case <-time.After(time.Second):
 		t.Fatal("composed fallback lifecycle exceeded its cleanup bound")
+	}
+}
+
+func TestFallbackAcceptance_MetadataFailureDoesNotReplay(t *testing.T) {
+	for _, selectedSecondary := range []bool{false, true} {
+		for _, streaming := range []bool{false, true} {
+			t.Run(fmt.Sprintf("secondary=%v/stream=%v", selectedSecondary, streaming), func(t *testing.T) {
+				metadata := provider.ProviderMetadata{"future": json.RawMessage(`null`)}
+				invalid := &observabilityTestModel{
+					generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
+						return &provider.GenerateResult{Content: []provider.GenerateContentPart{{Type: provider.ContentText, Text: "paid"}}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}, ProviderMetadata: metadata}, nil
+					},
+					stream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+						return fallbackParts(provider.StreamPart{Type: provider.PartTextStart, ID: "text", ProviderMetadata: metadata}), nil
+					},
+				}
+				primary, secondary := invalid, &observabilityTestModel{}
+				outcomes := []fallback.AttemptOutcome{fallback.AttemptSelected}
+				if selectedSecondary {
+					primary = &observabilityTestModel{
+						generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
+							return nil, hostileFallbackError(503)
+						},
+						stream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+							return nil, hostileFallbackError(503)
+						},
+					}
+					secondary = invalid
+					outcomes = []fallback.AttemptOutcome{fallback.AttemptFailed, fallback.AttemptSelected}
+				}
+				h := newFallbackAcceptance(t, primary, secondary)
+				w := httptest.NewRecorder()
+				h.handler.ServeHTTP(w, h.request(t.Context(), streaming))
+				mode := "generate"
+				if streaming {
+					mode = "stream"
+					assert.Equal(t, http.StatusOK, w.Code)
+					assert.NotContains(t, w.Body.String(), `"type":"text-start"`)
+					assert.Contains(t, w.Body.String(), `"type":"error"`)
+				} else {
+					assert.Equal(t, http.StatusInternalServerError, w.Code)
+				}
+				assert.NotContains(t, w.Body.String(), "future")
+				h.verify(t, mode, w.Body.String(), outcomes)
+			})
+		}
 	}
 }

@@ -1126,9 +1126,18 @@ func TestProviderMetadataToOptions(t *testing.T) {
 		assert.Nil(t, opts)
 	})
 
-	t.Run("empty metadata returns nil", func(t *testing.T) {
+	t.Run("empty metadata remains present", func(t *testing.T) {
 		opts := providerMetadataToOptions(provider.ProviderMetadata{})
-		assert.Nil(t, opts)
+		assert.NotNil(t, opts)
+		assert.Empty(t, opts)
+	})
+
+	t.Run("metadata presence", func(t *testing.T) {
+		assert.Nil(t, providerMetadataToOptions(nil))
+		assert.NotNil(t, providerMetadataToOptions(provider.ProviderMetadata{}))
+		assert.Nil(t, optionsToProviderMetadata(nil))
+		assert.NotNil(t, optionsToProviderMetadata(provider.ProviderOptions{}))
+		assert.Nil(t, optionsToProviderMetadata(provider.ProviderOptions{"future": nil}))
 	})
 
 	t.Run("round-trip through ConvertToModelMessages", func(t *testing.T) {

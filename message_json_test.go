@@ -334,3 +334,22 @@ func extractPartType(t *testing.T, msgJSON []byte) string {
 	require.NoError(t, json.Unmarshal(parts[0]["type"], &typStr))
 	return typStr
 }
+
+func TestUIMessage_MetadataPresence(t *testing.T) {
+	for _, part := range []Part{
+		TextPart{Text: "answer", ProviderMetadata: provider.ProviderMetadata{}},
+		ReasoningPart{Text: "thought", ProviderMetadata: provider.ProviderMetadata{}},
+		ReasoningFilePart{MediaType: "image/png", URL: "data:image/png;base64,", ProviderMetadata: provider.ProviderMetadata{}},
+		SourceURLPart{SourceID: "source", URL: "https://example.test", ProviderMetadata: provider.ProviderMetadata{}},
+		SourceDocumentPart{SourceID: "document", MediaType: "text/plain", Title: "Document", ProviderMetadata: provider.ProviderMetadata{}},
+		FilePart{MediaType: "image/png", URL: "data:image/png;base64,", ProviderMetadata: provider.ProviderMetadata{}},
+		DynamicToolUIPart{ToolName: "weather", ToolCallID: "dynamic", CallProviderMetadata: provider.ProviderMetadata{}, ResultProviderMetadata: provider.ProviderMetadata{}},
+		ToolInvocationPart{ToolName: "weather", ToolCallID: "call", CallProviderMetadata: provider.ProviderMetadata{}, ResultProviderMetadata: provider.ProviderMetadata{}},
+	} {
+		raw, err := json.Marshal(UIMessage{ID: "message", Role: RoleAssistant, Parts: []Part{part}})
+		require.NoError(t, err)
+		var persisted UIMessage
+		require.NoError(t, json.Unmarshal(raw, &persisted))
+		assert.Equal(t, part, persisted.Parts[0])
+	}
+}
