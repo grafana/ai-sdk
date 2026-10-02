@@ -254,7 +254,7 @@ A successful streaming setup SHALL require SSE media type and return a `StreamRe
 - **THEN** the client SHALL stop reading, emit at most one bounded protocol error when delivery remains possible, and close all owned resources
 
 #### Scenario: Unsupported response family is received
-- **WHEN** the client receives reasoning, file, source, custom, approval or another unsupported later-package stream part
+- **WHEN** the client receives file, custom, approval or another unsupported later-package stream part
 - **THEN** it SHALL produce an explicit protocol error rather than decoding through provider-domain JSON accidentally
 
 #### Scenario: Hosted dynamic call with preview results
@@ -363,7 +363,7 @@ The Grafana client SHALL issue at most one Gateway model request per `DoGenerate
 - **THEN** the client SHALL not issue another HTTP request or change model identity
 
 ### Requirement: Exact-pinned differential and black-box evidence
-Automated tests SHALL compare equivalent Go and registered `@ai-sdk/gateway@4.0.87` scenarios for semantic method, path, effective protocol and call headers, body presence, normalized unary and stream results, error category, retryability, cancellation, discovery, `[DONE]`, raw filtering, timestamp conversion, and EOF. Tests SHALL use the versions registered in `test/conformance/upstream.yaml`; a baseline change SHALL update pins, lockfiles, captures, classification, and client behavior together. Separate hostile fake-server tests SHALL prove all client bounds and resource cleanup. Authenticated black-box tests SHALL exercise the work-package-5 command over HTTP without importing Gateway implementation packages into Apache production code.
+Automated tests SHALL compare equivalent Go and registered `@ai-sdk/gateway@4.0.94` scenarios for semantic method, path, effective protocol and call headers, body presence, normalized unary and stream results, error category, retryability, cancellation, discovery, `[DONE]`, raw filtering, timestamp conversion, and EOF. Tests SHALL use the versions registered in `test/conformance/upstream.yaml`; a baseline change SHALL update pins, lockfiles, captures, classification, and client behavior together. Separate hostile fake-server tests SHALL prove all client bounds and resource cleanup. Authenticated black-box tests SHALL exercise the work-package-5 command over HTTP without importing Gateway implementation packages into Apache production code.
 
 #### Scenario: Equivalent text calls are compared
 - **WHEN** the differential suite issues representable unary and streaming text/scalar calls through both clients

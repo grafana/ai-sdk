@@ -13,7 +13,7 @@
 
 ## 3. Preserve service boundaries and verify
 
-- [x] 3.1 Migrate existing Gateway consumers and immutable module dependencies without activating provider tools or MCP in the service; retain rejection tests.
+- [x] 3.1 Migrate existing Gateway consumers and immutable module dependencies without activating provider tools or MCP in the service; retain actual unsupported-capability checks without foreign-option or metadata inventories.
 - [x] 3.2 Scope SDK documentation and parity evidence to supported behavior without changing authentic provider fixtures.
 - [x] 3.3 Review the implementation against the registered upstream source and tests; preserve inherited warning, authentication and provider continuation behavior.
 - [x] 3.4 Run tests, build, vet, lint, parity, frontend integration, isolated module-resolution and Gateway-boundary checks; validate this change.

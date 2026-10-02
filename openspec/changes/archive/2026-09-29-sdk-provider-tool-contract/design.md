@@ -2,7 +2,7 @@
 
 Direct provider calls, core streaming, and the standalone Gateway client currently expose different subsets of provider-tool behavior. Incompatible tool fields can reach a backend, marker defaults can erase an explicit input-start value, and the client cannot safely read provider-owned results. At the same time, the service must not accept new request families merely because its SDK dependency can decode them.
 
-Behavior follows the registered reference `4e8c387622ee1bb0d55841664416d38754d5c9a3` (provider 4.0.17, ai 7.0.109, Anthropic 4.0.59, Gateway 4.0.88), particularly the provider tool/result types, stream-language-model-call and UI chunk conversion, Anthropic request options, and Gateway client serialization.
+Behavior follows the registered reference `ee3169b3c4880e2abe4d0d7c781243bb81822ec4` (provider 4.0.18, ai 7.0.116, Anthropic 4.0.65, Gateway 4.0.94), particularly the provider tool/result types, stream-language-model-call and UI chunk conversion, Anthropic request options, and Gateway client serialization.
 
 ## Goals / Non-Goals
 
@@ -16,13 +16,13 @@ Behavior follows the registered reference `4e8c387622ee1bb0d55841664416d38754d5c
 - Retain the parent's presence-aware unary and streaming marker fields. Absent and false preliminary markers both mean final; input-start explicitly false overrides definition-based text-stream inference. UI conversion independently classifies known application tools as the registered frontend does; tests cover both outputs rather than assuming they agree.
 - Extend the client's closed unary/SSE output union with provider calls/results while reusing its independent opaque metadata decoder rather than sharing server DTOs or introducing metadata inventories. Preserve byte/event bounds, cancellation, client-owned response fields, and valid warning order. Do not require a current-response call for deferred results or add an independent server lifecycle validator.
 - Use pointers for Anthropic MCP token/enabled options so omission differs from empty/false. For unary Anthropic calls, supply a future context deadline as the default SDK timeout before its large-token check; an explicit request timeout still wins. Neither streaming nor the no-deadline SDK guard changes.
-- Keep Apache SDK modules independent of Gateway code. The Gateway service consumes published immutable module versions, migrates its existing field uses, and retains rejection of capabilities it does not yet validate or route.
+- Keep Apache SDK modules independent of Gateway code. The Gateway service consumes published immutable module versions and retains its actual unsupported request capabilities. Native Anthropic MCP consumption remains unsupported; unused foreign options and opaque metadata remain transported without activating MCP.
 
 ## Risks / Trade-offs
 
 - Changed Go field types can break consumers → migrate compiled callers and test isolated modules without workspace replacements.
 - A client can decode responses the service does not yet emit → keep service rejection tests and describe SDK decoding separately from service support.
-- Accepting new tool variants prematurely could enable effects → reject unsupported service inputs before invocation.
+- New SDK decoding does not activate service execution. Reject unsupported request capabilities at the appropriate contract or native consuming boundary, not by inspecting inert metadata.
 - Synthetic transport tests cannot prove provider behavior → retain fixture provenance and report live-provider gaps separately.
 
 ## Migration Plan
