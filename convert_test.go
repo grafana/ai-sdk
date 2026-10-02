@@ -1132,6 +1132,14 @@ func TestProviderMetadataToOptions(t *testing.T) {
 		assert.Empty(t, opts)
 	})
 
+	t.Run("metadata presence", func(t *testing.T) {
+		assert.Nil(t, providerMetadataToOptions(nil))
+		assert.NotNil(t, providerMetadataToOptions(provider.ProviderMetadata{}))
+		assert.Nil(t, optionsToProviderMetadata(nil))
+		assert.NotNil(t, optionsToProviderMetadata(provider.ProviderOptions{}))
+		assert.Nil(t, optionsToProviderMetadata(provider.ProviderOptions{"future": nil}))
+	})
+
 	t.Run("round-trip through ConvertToModelMessages", func(t *testing.T) {
 		meta := provider.ProviderMetadata{
 			"anthropic": json.RawMessage(`{"cacheControl":{"type":"ephemeral"}}`),

@@ -102,32 +102,20 @@ private logs. Public model names do not identify which backend served a request.
 See [Gateway observability](../../ai-gateway/docs/text-observability.md#inspect-fallback-attempts)
 for operator diagnostics and log access requirements.
 
-## Preserve provider metadata across calls
+## Continue conversations with provider metadata
 
-The Gateway preserves opaque provider metadata on supported results and content,
-including text, reasoning, sources and function tools. Unknown object-valued
-provider namespaces and nested values survive; an omitted metadata object stays
-omitted, while an explicit empty object stays present. During stream assembly,
-later metadata replaces earlier metadata rather than merging into it. Raw-event
-capture is not required.
+Some models return information that they need on later calls, such as Claude
+thinking signatures or OpenAI encrypted reasoning. The Gateway returns this
+provider metadata with the response so your application can continue the conversation.
 
-Build follow-up history from actual returned content, retaining its provider
-metadata. The high-level tool loops preserve supported Anthropic caller/thinking
-metadata, OpenAI item references, phase and encrypted reasoning. Metadata remains
-in its native namespace; it is not translated for a different fallback provider.
-Choose compatible models for conversations that depend on those values.
+Use the SDK's [agent loops](../guides/agent-loops.md) to manage tool calls and
+conversation history. If you build follow-up messages yourself, keep the returned
+provider metadata with its content; reconstructing messages from text alone can
+lose information the model needs.
 
-Go `GenerateText` collects `StreamText`, so both use the streaming Gateway path.
-Direct `DoGenerate` is the low-level non-streaming path; its consumer is responsible
-for adapting returned content into continuation messages without dropping metadata.
-Compatible Google thought-signature continuation requires the `google` namespace;
-streaming signatures must arrive in the initial tool-call delta. Arbitrary compatible
-namespace consumption and late streaming signatures are not established.
-
-Metadata is bounded application data, not routing or account authorization. Operator
-capture settings do not control what the caller receives. Malformed or oversized
-metadata fails explicitly rather than returning a selectively stripped response;
-a selected response is not replayed through another fallback candidate.
+Provider metadata is specific to the model that returned it. When configuring
+fallback, choose models that can use the conversation history you send. The
+Gateway does not translate one provider's metadata for another provider.
 
 ## Bound work and handle errors
 

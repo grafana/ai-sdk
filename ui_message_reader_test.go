@@ -637,3 +637,43 @@ func requireDynamicToolPart(t *testing.T, msg UIMessage, idx int) DynamicToolUIP
 	require.True(t, ok, "expected DynamicToolUIPart at %d, got %T", idx, msg.Parts[idx])
 	return part
 }
+
+func TestUIMessageMetadata_AssemblyAndModelHistory(t *testing.T) {
+	old := provider.ProviderMetadata{"future": json.RawMessage(`{"old":true}`)}
+	empty := provider.ProviderMetadata{}
+	input := []UIMessageChunk{
+		{Type: ChunkStart, MessageID: "metadata"},
+		{Type: ChunkTextStart, ID: "text", ProviderMetadata: old},
+		{Type: ChunkTextDelta, ID: "text", Delta: "answer"},
+		{Type: ChunkTextDelta, ID: "text", ProviderMetadata: empty},
+		{Type: ChunkTextEnd, ID: "text"},
+		{Type: ChunkToolInputStart, ToolCallID: "call", ToolName: "weather", ProviderMetadata: old},
+		{Type: ChunkToolInputAvailable, ToolCallID: "call", ToolName: "weather", Input: json.RawMessage(`{}`), ProviderMetadata: empty},
+		{Type: ChunkToolOutputAvailable, ToolCallID: "call", Output: json.RawMessage(`"sunny"`), ProviderMetadata: old},
+		{Type: ChunkToolOutputAvailable, ToolCallID: "call", Output: json.RawMessage(`"sunny"`), ProviderMetadata: empty},
+		{Type: ChunkFinish},
+	}
+	for i, chunk := range input {
+		raw, err := json.Marshal(chunk)
+		require.NoError(t, err)
+		require.NoError(t, json.Unmarshal(raw, &input[i]))
+	}
+	message, err := AssembleUIMessage(chunks(input...))
+	require.NoError(t, err)
+	raw, err := json.Marshal(message)
+	require.NoError(t, err)
+	var persisted UIMessage
+	require.NoError(t, json.Unmarshal(raw, &persisted))
+	assert.Equal(t, message.Parts, persisted.Parts)
+	history, err := ConvertToModelMessages([]UIMessage{persisted})
+	require.NoError(t, err)
+	require.Len(t, history, 2)
+	require.Len(t, history[0].Content, 2)
+	for _, part := range history[0].Content {
+		assert.NotNil(t, part.ProviderOptions)
+		assert.Empty(t, part.ProviderOptions)
+	}
+	require.Len(t, history[1].Content, 1)
+	assert.NotNil(t, history[1].Content[0].ProviderOptions)
+	assert.Empty(t, history[1].Content[0].ProviderOptions)
+}

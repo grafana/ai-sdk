@@ -12,19 +12,24 @@ func metadataFits(metadata provider.ProviderMetadata, remaining *int64) bool {
 	if metadata == nil {
 		return true
 	}
-	if *remaining < 2 || int64(len(metadata)) > (*remaining-1)/6 {
+	const objectBytes = int64(len("{}"))
+	const entryBytes = int64(len(`"":,`))
+	namespaces := int64(len(metadata))
+	if *remaining < objectBytes || namespaces > (*remaining-1)/(entryBytes+objectBytes) {
 		return false
 	}
-	*remaining -= 2
-	separator := int64(3)
+	overhead := objectBytes
+	if namespaces > 0 {
+		overhead += namespaces*entryBytes - 1
+	}
+	*remaining -= overhead
 	for key, raw := range metadata {
-		for _, cost := range []int64{separator, int64(len(key)), int64(len(raw))} {
-			if cost > *remaining {
+		for _, size := range []int{len(key), len(raw)} {
+			if int64(size) > *remaining {
 				return false
 			}
-			*remaining -= cost
+			*remaining -= int64(size)
 		}
-		separator = 4
 	}
 	return true
 }
