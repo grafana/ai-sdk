@@ -94,11 +94,12 @@ func TestFallbackAcceptance_MappedPrecommitAndCommitment(t *testing.T) {
 					case provider.PartToolInputStart:
 						assert.JSONEq(t, `{"type":"tool-input-start","id":"call","toolName":"lookup"}`, payload)
 					case provider.PartToolCall:
-						if tc.name == "opaque MCP call then error" {
+						switch tc.name {
+						case "opaque MCP call then error":
 							assert.JSONEq(t, `{"type":"tool-call","toolCallId":"call","toolName":"lookup","input":"{}","providerExecuted":true,"providerMetadata":{"anthropic":{"type":"mcp-tool-use","serverName":"unconfigured","caller":null}}}`, payload)
-						} else if tc.name == "provider call then error" {
+						case "provider call then error":
 							assert.JSONEq(t, `{"type":"tool-call","toolCallId":"call","toolName":"lookup","input":"{}","providerExecuted":true}`, payload)
-						} else {
+						default:
 							assert.JSONEq(t, `{"type":"tool-call","toolCallId":"call","toolName":"lookup","input":"{}"}`, payload)
 						}
 					case provider.PartReasoningStart:
