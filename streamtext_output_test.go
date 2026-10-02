@@ -393,9 +393,15 @@ func TestStructuredOutputRepair_PreservesStreamData(t *testing.T) {
 
 	result := newResult()
 	var full []aisdk.TextStreamPart
+	var textDeltas []string
 	for part := range result.FullStream() {
 		full = append(full, part)
+		switch p := part.(type) {
+		case aisdk.StreamTextDelta:
+			textDeltas = append(textDeltas, p.Text)
+		}
 	}
+	require.Equal(t, []string{original}, textDeltas)
 	assert.Equal(t, original, result.Text())
 	require.Len(t, result.Steps(), 1)
 	assert.Equal(t, original, result.Steps()[0].Text)
@@ -409,9 +415,13 @@ func TestStructuredOutputRepair_PreservesStreamData(t *testing.T) {
 		Name string `json:"name"`
 	})[0].Name)
 	assert.NotContains(t, fmt.Sprint(full), "fixed")
+	var partials []json.RawMessage
 	for partial := range result.PartialOutputStream() {
+		partials = append(partials, partial)
 		assert.NotContains(t, string(partial), "fixed")
 	}
+	require.Len(t, partials, 1)
+	assert.JSONEq(t, `[{"name":"raw"}]`, string(partials[0]))
 	var elements []json.RawMessage
 	for element := range result.ElementStream() {
 		elements = append(elements, element)
