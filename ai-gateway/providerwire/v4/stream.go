@@ -44,24 +44,27 @@ type streamWarning struct {
 }
 
 type streamEvent struct {
-	typeName     provider.StreamPartType
-	warnings     []streamWarning
-	id           string
-	modelID      string
-	delta        string
-	timestamp    time.Time
-	finishReason provider.FinishReason
-	inputUsage   unaryInputTokenUsage
-	outputUsage  unaryOutputTokenUsage
-	rawUsage     json.RawMessage
-	toolName     string
-	input        string
-	result       json.RawMessage
-	isError      bool
-	metadata     provider.ProviderMetadata
-	mediaType    string
-	fileData     *provider.StreamFileData
-	source       any
+	typeName         provider.StreamPartType
+	warnings         []streamWarning
+	id               string
+	modelID          string
+	delta            string
+	timestamp        time.Time
+	finishReason     provider.FinishReason
+	inputUsage       unaryInputTokenUsage
+	outputUsage      unaryOutputTokenUsage
+	rawUsage         json.RawMessage
+	toolName         string
+	input            string
+	result           json.RawMessage
+	isError          bool
+	metadata         provider.ProviderMetadata
+	mediaType        string
+	fileData         *provider.StreamFileData
+	source           any
+	providerExecuted bool
+	dynamic          *bool
+	preliminary      *bool
 }
 
 type streamStartEvent struct {
@@ -143,15 +146,15 @@ func encodeStreamFrame(value streamEvent, limit int64) ([]byte, bool) {
 	case provider.PartTextDelta:
 		payload, err = json.Marshal(streamTextEvent{Type: value.typeName, ID: value.id, Delta: &value.delta, Metadata: value.metadata})
 	case provider.PartToolInputStart:
-		payload, err = json.Marshal(streamToolStartEvent{Type: value.typeName, ID: value.id, ToolName: value.toolName, Metadata: value.metadata})
+		payload, err = json.Marshal(streamToolStartEvent{Type: value.typeName, ID: value.id, ToolName: value.toolName, ProviderExecuted: value.providerExecuted, Dynamic: value.dynamic, Metadata: value.metadata})
 	case provider.PartToolInputDelta:
-		payload, err = json.Marshal(streamTextEvent{Type: value.typeName, ID: value.id, Delta: &value.delta, Metadata: value.metadata})
+		payload, err = json.Marshal(streamToolDeltaEvent{Type: value.typeName, ID: value.id, Delta: value.delta, Metadata: value.metadata})
 	case provider.PartToolInputEnd:
-		payload, err = json.Marshal(streamTextEvent{Type: value.typeName, ID: value.id, Metadata: value.metadata})
+		payload, err = json.Marshal(streamToolEndEvent{Type: value.typeName, ID: value.id, Metadata: value.metadata})
 	case provider.PartToolCall:
-		payload, err = json.Marshal(streamToolCallEvent{Type: value.typeName, ToolCallID: value.id, ToolName: value.toolName, Input: value.input, Metadata: value.metadata})
+		payload, err = json.Marshal(streamToolCallEvent{Type: value.typeName, ToolCallID: value.id, ToolName: value.toolName, Input: value.input, ProviderExecuted: value.providerExecuted, Dynamic: value.dynamic, Metadata: value.metadata})
 	case provider.PartToolResult:
-		payload, err = json.Marshal(streamToolResultEvent{Type: value.typeName, ToolCallID: value.id, ToolName: value.toolName, Result: value.result, IsError: value.isError, Metadata: value.metadata})
+		payload, err = json.Marshal(streamToolResultEvent{Type: value.typeName, ToolCallID: value.id, ToolName: value.toolName, Result: value.result, IsError: value.isError, Dynamic: value.dynamic, Preliminary: value.preliminary, Metadata: value.metadata})
 	case provider.PartFinish:
 		payload, err = json.Marshal(streamFinishEvent{
 			Type:         value.typeName,
@@ -320,7 +323,7 @@ func newStreamPartCounter(limit int) *streamPartCounter {
 func (c *streamPartCounter) take() bool     { return c.count.Add(1) <= c.limit }
 func (c *streamPartCounter) exceeded() bool { return c.count.Load() > c.limit }
 
-func (h *handler) serveStream(w http.ResponseWriter, requestContext context.Context, model provider.LanguageModel, options provider.CallOptions, modelID string) {
+func (h *handler) serveStream(w http.ResponseWriter, requestContext context.Context, model provider.LanguageModel, options provider.CallOptions, modelID string, history map[string]string) {
 	if err := requestContext.Err(); err != nil {
 		h.writeSafeError(w, safeErrorFromProvider(err))
 		return
@@ -371,7 +374,7 @@ func (h *handler) serveStream(w http.ResponseWriter, requestContext context.Cont
 	if !commitStreamResponse(w) {
 		return
 	}
-	h.runStream(w, requestContext, modelContext, cancel, outcome.result.Stream, counter, idleTimer, modelID)
+	h.runStream(w, requestContext, modelContext, cancel, outcome.result.Stream, counter, idleTimer, modelID, history)
 }
 
 func callStream(ctx context.Context, model provider.LanguageModel, options provider.CallOptions) (outcome streamOutcome) {
@@ -475,20 +478,25 @@ type streamState struct {
 	activeID         string
 	usedIDs          map[string]struct{}
 	tools            map[string]toolStreamState
+	history          map[string]toolStreamState
 	reasoningIDs     map[string]struct{}
 	usedReasoningIDs map[string]struct{}
 	sources          sourceIDs
 }
 
-func newStreamState(limit int) *streamState {
+func newStreamState(limit int, history map[string]string) *streamState {
 	capacity := limit
 	if capacity > 64 {
 		capacity = 64
 	}
-	return &streamState{usedIDs: make(map[string]struct{}, capacity), tools: make(map[string]toolStreamState, capacity), reasoningIDs: make(map[string]struct{}, capacity), usedReasoningIDs: make(map[string]struct{}, capacity), sources: make(sourceIDs)}
+	state := &streamState{usedIDs: make(map[string]struct{}, capacity), tools: make(map[string]toolStreamState, capacity), history: make(map[string]toolStreamState, len(history)), reasoningIDs: make(map[string]struct{}, capacity), usedReasoningIDs: make(map[string]struct{}, capacity), sources: make(sourceIDs)}
+	for id, name := range history {
+		state.history[id] = toolStreamState{name: name, phase: toolCallEmitted}
+	}
+	return state
 }
 
-func (h *handler) runStream(w http.ResponseWriter, requestContext, modelContext context.Context, cancel context.CancelFunc, stream <-chan provider.StreamPart, counter *streamPartCounter, idleTimer *time.Timer, modelID string) {
+func (h *handler) runStream(w http.ResponseWriter, requestContext, modelContext context.Context, cancel context.CancelFunc, stream <-chan provider.StreamPart, counter *streamPartCounter, idleTimer *time.Timer, modelID string, history map[string]string) {
 	part, waitResult := waitStreamPart(requestContext, modelContext, stream, counter, idleTimer.C)
 	if waitResult != streamWaitPart {
 		cancel()
@@ -532,7 +540,7 @@ func (h *handler) runStream(w http.ResponseWriter, requestContext, modelContext 
 		if h.emitStreamEvent(w, streamEvent{typeName: provider.PartStreamStart}) != streamWriteSuccess {
 			return
 		}
-		state := newStreamState(h.limits.StreamParts)
+		state := newStreamState(h.limits.StreamParts, history)
 		result := h.processStreamPart(w, state, part, modelID)
 		if h.handleStreamPartResult(w, cancel, result) {
 			return
@@ -542,7 +550,7 @@ func (h *handler) runStream(w http.ResponseWriter, requestContext, modelContext 
 		return
 	}
 
-	h.consumeStreamParts(w, requestContext, modelContext, cancel, stream, counter, idleTimer, modelID, newStreamState(h.limits.StreamParts))
+	h.consumeStreamParts(w, requestContext, modelContext, cancel, stream, counter, idleTimer, modelID, newStreamState(h.limits.StreamParts, history))
 }
 
 func (h *handler) consumeStreamParts(w http.ResponseWriter, requestContext, modelContext context.Context, cancel context.CancelFunc, stream <-chan provider.StreamPart, counter *streamPartCounter, idleTimer *time.Timer, modelID string, state *streamState) {
@@ -712,7 +720,12 @@ func (h *handler) processStreamPart(w http.ResponseWriter, state *streamState, p
 		return streamPartContinue
 	case provider.PartFinish:
 		for _, tool := range state.tools {
-			if tool.phase == toolInputOpen {
+			if tool.phase == toolInputOpen || tool.phase == toolResultPreliminary {
+				return streamPartAdapterFailure
+			}
+		}
+		for _, tool := range state.history {
+			if tool.phase == toolResultPreliminary {
 				return streamPartAdapterFailure
 			}
 		}

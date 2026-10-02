@@ -45,7 +45,7 @@ func TestReasoningUnary(t *testing.T) {
 
 func TestReasoningConcurrentLifecycle(t *testing.T) {
 	h := &handler{limits: Limits{StreamFrameBytes: 1 << 20}}
-	state := newStreamState(100)
+	state := newStreamState(100, nil)
 	w := httptest.NewRecorder()
 	parts := []provider.StreamPart{
 		{Type: provider.PartReasoningStart, ID: "1"},
@@ -161,7 +161,7 @@ func TestReasoningFrameBoundsAndLifecycle(t *testing.T) {
 		{{Type: provider.PartReasoningStart, ID: "r"}, {Type: provider.PartReasoningEnd, ID: "r"}, {Type: provider.PartReasoningStart, ID: "r"}},
 	} {
 		h := &handler{limits: Limits{StreamFrameBytes: 1024}}
-		state := newStreamState(100)
+		state := newStreamState(100, nil)
 		w := httptest.NewRecorder()
 		for i, part := range parts {
 			want := streamPartContinue

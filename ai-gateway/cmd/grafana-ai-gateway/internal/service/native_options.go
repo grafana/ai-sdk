@@ -43,7 +43,7 @@ func validateAnthropicOptions(options provider.CallOptions) error {
 			continue
 		}
 		for _, part := range message.Content {
-			if part.Type != provider.ContentPartTypeToolCall {
+			if part.Type != provider.ContentPartTypeToolCall || !part.ProviderExecuted {
 				continue
 			}
 			if raw, ok := part.ProviderOptions["anthropic"].(provider.RawProviderOption); ok {

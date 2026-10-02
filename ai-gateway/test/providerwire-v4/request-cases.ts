@@ -398,6 +398,27 @@ async function headersCapture(): Promise<SemanticRequest[]> {
   }
 }
 
+async function providerToolsCapture(): Promise<SemanticRequest[]> {
+  return captureCalls({
+    modelId: "grafana/provider-tools",
+    calls: async (model) => {
+      await generate(model, {
+        prompt: [{ role: "user", content: [{ type: "text", text: "weather" }] }],
+        tools: [
+          { type: "provider", id: "anthropic.code_execution_20260120", name: "python", args: {} },
+          { type: "provider", id: "provider.search", name: "search", args: { limit: 0, enabled: false, nested: { value: null } } },
+        ],
+      });
+      await stream(model, {
+        prompt: [{ role: "assistant", content: [
+          { type: "tool-call", toolCallId: "call-code", toolName: "python", input: { code: "print(0)" }, providerExecuted: true },
+          { type: "tool-result", toolCallId: "call-code", toolName: "python", output: { type: "json", value: { stdout: "0" } } },
+        ] }],
+      });
+    },
+  });
+}
+
 async function sequenceCapture(): Promise<SemanticRequest[]> {
   return captureCalls({
     modelId: "grafana/sequence",
@@ -437,6 +458,11 @@ export const headersGoldenCase: RequestGoldenCase = {
   fileName: "headers.json",
   capture: headersCapture,
 };
+export const providerToolsGoldenCase: RequestGoldenCase = {
+  name: "provider tools and continuation",
+  fileName: "provider-tools.json",
+  capture: providerToolsCapture,
+};
 export const sequenceGoldenCase: RequestGoldenCase = {
   name: "ordered sequence",
   fileName: "sequence.json",
@@ -447,6 +473,7 @@ export const requestGoldenCases: RequestGoldenCase[] = [
   scalarGoldenCase,
   comprehensiveGoldenCase,
   fileInputGoldenCase,
+  providerToolsGoldenCase,
   streamingGoldenCase,
   headersGoldenCase,
   sequenceGoldenCase,
