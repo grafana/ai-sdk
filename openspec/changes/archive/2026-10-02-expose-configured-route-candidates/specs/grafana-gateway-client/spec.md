@@ -3,7 +3,7 @@
 ### Requirement: Authenticated public discovery
 `Provider.ListModels(ctx)` SHALL issue authenticated `GET /config`, read within the configured discovery limit, and return public ID, name, optional description and the specification version/provider/model-ID triple, plus optional typed `ModelInfo.Gateway *ConfiguredRoute`. `ConfiguredRoute` SHALL expose canonical model ID, aliases and ordered configured candidates; each `ConfiguredCandidate` SHALL expose provider-instance, provider and configured model ID. This SHALL remain the existing discovery method, without a second client or AGPL module dependency.
 
-The client SHALL validate required values, registered `v4` and `grafana` identity, model-ID consistency, valid public IDs, duplicate IDs and every recognized configured-route field, including route-group consistency and duplicate aliases/candidate tuples. It SHALL independently enforce the gateway-configured-discovery row/candidate/alias/string limits and existing configurable document-byte limit. It SHALL preserve response order and aliases as independent rows exactly as served. Missing gateway SHALL remain nil; present null/incomplete/malformed gateway SHALL invalidate the whole response. Unknown additive members accepted by the registered client SHALL remain ignored. Configured mappings SHALL be retained only when supplied by the server, never inferred from responses, models or inventories; credentials and arbitrary configuration SHALL NOT be exposed.
+The client SHALL validate required values, registered `v4` and `grafana` identity, model-ID consistency, valid public IDs, duplicate IDs and every recognized configured-route field, including route-group consistency and duplicate aliases/candidate tuples. It SHALL independently enforce the existing configurable document-byte limit without duplicating server row/candidate/alias/string policy ceilings. Strings SHALL use standard Go JSON decoding, including U+FFFD normalization of escaped lone UTF-16 surrogates; semantic validation SHALL apply to decoded values. It SHALL preserve response order and aliases as independent rows exactly as served. Missing gateway SHALL remain nil; present null/incomplete/malformed gateway SHALL invalidate the whole response. Unknown additive members accepted by the registered client SHALL remain ignored. Configured mappings SHALL be retained only when supplied by the server, never inferred from responses, models or inventories; credentials and arbitrary configuration SHALL NOT be exposed.
 
 #### Scenario: Canonical and alias rows are discovered
 - **WHEN** the authenticated service returns a canonical model and alias row with configured route facts
@@ -15,7 +15,7 @@ The client SHALL validate required values, registered `v4` and `grafana` identit
 - **AND** a recognized gateway extension SHALL be validated and retained rather than discarded
 
 #### Scenario: Discovery is structurally unsafe
-- **WHEN** the document is oversized, malformed, duplicated, contains an invalid ID, mismatched specification model ID, non-v4 specification, non-grafana provider, malformed gateway facts, over-limit collections/strings or inconsistent configured groups
+- **WHEN** the document is oversized, malformed, duplicated, contains an invalid ID, mismatched specification model ID, non-v4 specification, non-grafana provider, malformed gateway facts or inconsistent configured groups
 - **THEN** discovery SHALL fail atomically with no partial catalog result
 
 #### Scenario: Server has no configured extension

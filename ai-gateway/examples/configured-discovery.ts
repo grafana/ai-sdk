@@ -20,14 +20,8 @@ export interface ConfiguredModel {
 
 const maxDocumentBytes = 4_194_304;
 const initialReadBufferBytes = 4096;
-const maxRows = 1024;
-const maxAliases = 128;
-const maxCandidates = 16;
-const maxStringBytes = 2048;
 const publicID = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/;
-const encoder = new TextEncoder();
 const blank = /^\p{White_Space}*$/u;
-const unpairedSurrogate = /[\uD800-\uDFFF]/u;
 
 function invalid(): never {
   throw new Error("configured discovery: invalid catalog");
@@ -39,7 +33,7 @@ function object(value: unknown): Record<string, unknown> {
 }
 
 function text(value: unknown, allowEmpty = false): string {
-  if (typeof value !== "string" || value.length > maxStringBytes || unpairedSurrogate.test(value) || encoder.encode(value).length > maxStringBytes || (!allowEmpty && blank.test(value))) invalid();
+  if (typeof value !== "string" || (!allowEmpty && blank.test(value))) invalid();
   return value;
 }
 
@@ -48,17 +42,17 @@ function id(value: unknown): string {
   return value;
 }
 
-function collection(value: unknown, maximum: number): unknown[] {
-  if (!Array.isArray(value) || value.length > maximum) invalid();
+function collection(value: unknown): unknown[] {
+  if (!Array.isArray(value)) invalid();
   return value;
 }
 
 function route(value: unknown): ConfiguredRoute {
   const source = object(value);
   const canonicalModelId = id(source.canonicalModelId);
-  const aliases = collection(source.aliases, maxAliases).map(id);
+  const aliases = collection(source.aliases).map(id);
   if (new Set(aliases).size !== aliases.length || aliases.includes(canonicalModelId)) invalid();
-  const candidates = collection(source.candidates, maxCandidates).map(value => {
+  const candidates = collection(source.candidates).map(value => {
     const candidate = object(value);
     return { providerInstance: text(candidate.providerInstance), provider: text(candidate.provider), modelId: text(candidate.modelId) };
   });
@@ -68,7 +62,7 @@ function route(value: unknown): ConfiguredRoute {
 }
 
 function catalog(value: unknown): { models: ConfiguredModel[] } {
-  const rows = collection(object(value).models, maxRows);
+  const rows = collection(object(value).models);
   const models: ConfiguredModel[] = rows.map(value => {
     const source = object(value);
     const modelId = id(source.id);

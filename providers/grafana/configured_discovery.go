@@ -6,18 +6,7 @@ import (
 	"slices"
 )
 
-const (
-	maxDiscoveryRows        = 1024
-	maxDiscoveryCandidates  = 16
-	maxDiscoveryAliases     = 128
-	maxDiscoveryStringBytes = 2048
-)
-
 var errConfiguredRoute = errors.New("grafana: invalid configured route")
-
-func validDiscoveryString(value string) bool {
-	return len(value) <= maxDiscoveryStringBytes && validPublicText(value)
-}
 
 func decodeConfiguredRoute(raw json.RawMessage) (*ConfiguredRoute, error) {
 	var fields struct {
@@ -25,14 +14,14 @@ func decodeConfiguredRoute(raw json.RawMessage) (*ConfiguredRoute, error) {
 		Aliases          *[]json.RawMessage `json:"aliases"`
 		Candidates       *[]json.RawMessage `json:"candidates"`
 	}
-	if decodeDiscoveryFields(raw, &fields, "canonicalModelId", "aliases", "candidates") != nil || !publicModelID.MatchString(fields.CanonicalModelID) || fields.Aliases == nil || fields.Candidates == nil || len(*fields.Aliases) > maxDiscoveryAliases || len(*fields.Candidates) == 0 || len(*fields.Candidates) > maxDiscoveryCandidates {
+	if decodeFields(raw, &fields, "canonicalModelId", "aliases", "candidates") != nil || !publicModelID.MatchString(fields.CanonicalModelID) || fields.Aliases == nil || fields.Candidates == nil || len(*fields.Candidates) == 0 {
 		return nil, errConfiguredRoute
 	}
 	route := &ConfiguredRoute{CanonicalModelID: fields.CanonicalModelID, Aliases: make([]string, 0, len(*fields.Aliases)), Candidates: make([]ConfiguredCandidate, 0, len(*fields.Candidates))}
 	aliases := make(map[string]struct{}, len(*fields.Aliases))
 	for _, rawAlias := range *fields.Aliases {
 		var alias string
-		if !validDiscoveryStringJSON(rawAlias) || json.Unmarshal(rawAlias, &alias) != nil || !publicModelID.MatchString(alias) || alias == route.CanonicalModelID {
+		if json.Unmarshal(rawAlias, &alias) != nil || !publicModelID.MatchString(alias) || alias == route.CanonicalModelID {
 			return nil, errConfiguredRoute
 		}
 		if _, duplicate := aliases[alias]; duplicate {
@@ -44,7 +33,7 @@ func decodeConfiguredRoute(raw json.RawMessage) (*ConfiguredRoute, error) {
 	candidates := make(map[[2]string]struct{}, len(*fields.Candidates))
 	for _, rawCandidate := range *fields.Candidates {
 		var candidate ConfiguredCandidate
-		if decodeDiscoveryFields(rawCandidate, &candidate, "providerInstance", "provider", "modelId") != nil || !validDiscoveryString(candidate.ProviderInstance) || !validDiscoveryString(candidate.Provider) || !validDiscoveryString(candidate.ModelID) {
+		if decodeFields(rawCandidate, &candidate, "providerInstance", "provider", "modelId") != nil || !validPublicText(candidate.ProviderInstance) || !validPublicText(candidate.Provider) || !validPublicText(candidate.ModelID) {
 			return nil, errConfiguredRoute
 		}
 		key := [2]string{candidate.ProviderInstance, candidate.ModelID}

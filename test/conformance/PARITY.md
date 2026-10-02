@@ -90,11 +90,15 @@ evidence boundary changes, not merely because the pinned versions change.
 - Captured provider inputs, synthetic failures and provider-independent UI parts
   are distinct evidence sources; passing one does not establish the others.
 - Configured Gateway discovery is an intentional Grafana extension, not upstream
-  private-service behavior. Independent server/Go/helper tests cover atomic
-  cardinality, UTF-8 string and encoded-byte limits, canonical/alias agreement,
-  defensive copies and scoped listing/resolution. Recognized discovery strings
-  reject unpaired JSON surrogate escapes rather than silently repairing identity;
-  valid pairs and genuine replacement characters remain ordinary data. Exact-pinned real-command
+  private-service behavior. Config/server tests cover cardinality and UTF-8 string
+  policy; independent server/Go/helper tests cover document-byte bounds, atomic
+  semantic validation, canonical/alias agreement, defensive copies and scoped
+  listing/resolution. Clients do not duplicate numeric config policy ceilings.
+  Standard JSON string decoding applies: Go replaces escaped lone UTF-16
+  surrogates with U+FFFD while TS retains them. This accepted Go adaptation does
+  not establish lossless cross-client identity agreement for those escapes;
+  semantic checks apply to decoded values. Valid pairs and genuine replacement
+  characters remain ordinary data. Exact-pinned real-command
   witnesses compare raw HTTP, Go retention and the copyable TypeScript helper
   against stock `getAvailableModels()` stripping, without native inference.
   Command catalogs are static; dummy CAP-edge/scoped tests do not establish

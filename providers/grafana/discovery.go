@@ -50,8 +50,8 @@ type ModelInfo struct {
 
 // ListModels returns the authenticated catalog in server order, without caching.
 // The complete document, including configured canonical/alias consistency, must
-// fit Limits.DiscoveryBytes. Expanded rows, aliases, candidates and strings have
-// independent ceilings of 1024, 128, 16 and 2048 UTF-8 bytes respectively.
+// fit Limits.DiscoveryBytes. Route cardinality and string-size policy belongs
+// to server configuration; strings use standard Go JSON decoding.
 // Malformed or oversized catalogs return no partial results.
 func (p *Provider) ListModels(ctx context.Context) ([]ModelInfo, error) {
 	req, err := p.request(ctx, http.MethodGet, "/config")
@@ -77,7 +77,7 @@ func (p *Provider) ListModels(ctx context.Context) ([]ModelInfo, error) {
 	var document struct {
 		Models *[]json.RawMessage `json:"models"`
 	}
-	if err := decodeFields(body, &document, "models"); err != nil || document.Models == nil || len(*document.Models) > maxDiscoveryRows {
+	if err := decodeFields(body, &document, "models"); err != nil || document.Models == nil {
 		return nil, protocolError("grafana: invalid discovery document", resp.StatusCode, nil)
 	}
 	rows := make([]ModelInfo, 0, len(*document.Models))
@@ -91,7 +91,7 @@ func (p *Provider) ListModels(ctx context.Context) ([]ModelInfo, error) {
 			Specification json.RawMessage `json:"specification"`
 			Gateway       json.RawMessage `json:"gateway"`
 		}
-		if decodeDiscoveryFields(raw, &fields, "id", "name", "description", "specification", "gateway") != nil || decodeDiscoveryFields(fields.Specification, &row.Specification, "specificationVersion", "provider", "modelId") != nil {
+		if decodeFields(raw, &fields, "id", "name", "description", "specification", "gateway") != nil || decodeFields(fields.Specification, &row.Specification, "specificationVersion", "provider", "modelId") != nil {
 			return nil, protocolError("grafana: invalid discovery model", resp.StatusCode, nil)
 		}
 		row.ID, row.Name = fields.ID, fields.Name
@@ -103,7 +103,7 @@ func (p *Provider) ListModels(ctx context.Context) ([]ModelInfo, error) {
 			row.Description = description
 		}
 		_, duplicate := seen[row.ID]
-		if !publicModelID.MatchString(row.ID) || !validDiscoveryString(row.Name) || row.Description != nil && (len(*row.Description) > maxDiscoveryStringBytes || !utf8.ValidString(*row.Description)) || row.Specification.SpecificationVersion != "v4" || row.Specification.Provider != "grafana" || row.Specification.ModelID != row.ID || duplicate {
+		if !publicModelID.MatchString(row.ID) || !validPublicText(row.Name) || row.Description != nil && !utf8.ValidString(*row.Description) || row.Specification.SpecificationVersion != "v4" || row.Specification.Provider != "grafana" || row.Specification.ModelID != row.ID || duplicate {
 			return nil, protocolError("grafana: invalid discovery model", resp.StatusCode, nil)
 		}
 		if len(fields.Gateway) != 0 {

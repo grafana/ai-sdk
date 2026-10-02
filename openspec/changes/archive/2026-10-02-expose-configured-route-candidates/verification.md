@@ -51,12 +51,9 @@ remain. Reviewers inspected source and logs; the parent executed the checks.
 
 Corrections:
 
-- Reject escaped unpaired surrogates in recognized discovery strings before Go
-  silently repairs identity or TS retains ill-formed UTF-16. Independent tests
-  preserve valid pairs, genuine U+FFFD, escaped backslashes, ignored additions,
-  standard last-member behavior and response cleanup. The inherited Go name-
-  normalization test now asserts rejection under the stricter Grafana contract;
-  stock upstream normalization and generic runtime JSON codecs remain unchanged.
+- Initially rejected escaped unpaired surrogates in recognized discovery strings.
+  The approved client-policy simplification below supersedes that stricter rule
+  with standard JSON decoding; generic runtime codecs remain unchanged.
 - Replace retained TS chunk references with immediately copied, owned, bounded
   storage. A recycled-buffer stream reproduced valid JSON corruption before the
   fix; fragmented, empty and split-multibyte chunk regressions now pass.
@@ -90,6 +87,35 @@ race checks, ProviderWire typecheck/schema/client tests, all 41 command tests,
 parity, lint/docs/build/vet and all 83 strict main-spec validations passed.
 Bounded discovery fuzzing passed with 99,444 executions. Logs:
 `/tmp/gw324-cleanup-{go,parity,quality}.log`.
+
+## Approved client-policy simplification
+
+Removed duplicated Go/TS row, alias, candidate and string-size policy ceilings.
+Config loading and server projection retain their existing ceilings, startup
+validation, raw preflight and final encoded-byte protection. Clients retain
+independent bounded reads, atomic structural/route consistency checks, credential
+exclusions and resource cleanup. Server and client byte defaults are unchanged.
+
+Deleted the Go raw-string scanner and its duplicate object parsing; discovery
+now uses the existing selected-field decoder. Standard JSON semantics apply:
+Go normalizes escaped lone UTF-16 surrogates to U+FFFD, while TS retains the
+standard decoded UTF-16 value. This accepted Go adaptation does not establish
+lossless cross-client identity agreement for those escapes. Semantic validation
+still rejects duplicate tuples after normalization. Valid Unicode pairs, genuine
+U+FFFD, ignored additives and last-member behavior remain covered.
+
+Updated independent Go/TS tests first and confirmed failures before the changes.
+Both clients now accept documents beyond each server policy ceiling within their
+byte budgets; byte overflow still fails atomically. Main specs, archived artifacts,
+client guidance and PARITY.md reflect the approved contract. The upstream baseline
+and effective 16-candidate server ceiling remain unchanged.
+
+Passed full Grafana race/vet, Gateway tests, ProviderWire typecheck/schema/client
+checks, all 41 command tests, parity, vet/build/lint/docs, module/boundary/pin checks
+and all 83 strict main-spec validations. Logs:
+`/tmp/gw324-client-simplify-{go,parity,quality}.log`. Provider-shape reporting retains
+the previously documented advisory skip. Checks on the preceding `71ae78a5` PR
+revision passed; image validation/publication/deployment were skipped by CI.
 
 ## Spec synchronization and archive
 

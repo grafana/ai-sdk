@@ -59,16 +59,15 @@ describe("configured discovery companion", () => {
     assert.deepEqual(await read(document), document);
   });
 
-  it("rejects unpaired surrogates in recognized strings without repairing identities", async () => {
+  it("retains standard JSON Unicode strings without repairing identities", async () => {
     const fields = ["name", "description", "providerInstance", "provider", "modelId"] as const;
     for (const field of fields) {
-      for (const [value, valid] of [["\ud800", false], ["\udc00", false], ["\udc00\ud800", false], ["\ud800x", false], ["🚀\ud800", false], ["🚀", true], ["�", true], ["\\ud800", true], ["\\/", true]] as const) {
+      for (const value of ["\ud800", "\udc00", "\udc00\ud800", "\ud800x", "🚀\ud800", "🚀", "�", "\\ud800", "\\/"]) {
         const gateway = { canonicalModelId: "public", aliases: [], candidates: [{ providerInstance: "primary", provider: "anthropic", modelId: "native", ...(["providerInstance", "provider", "modelId"].includes(field) ? { [field]: value } : {}) }] };
         const row = { id: "public", name: "Model", description: "Description", specification: { specificationVersion: "v4", provider: "grafana", modelId: "public" }, gateway, ...(field === "name" || field === "description" ? { [field]: value } : {}) };
         const response = Response.json({ models: [row] });
         const pending = fetchConfiguredModels({ baseURL, headers, fetch: async () => response });
-        if (!valid) await assert.rejects(() => pending, /invalid catalog/);
-        else assert.deepEqual(await pending, { models: [row] });
+        assert.deepEqual(await pending, { models: [row] });
         assert.equal(response.body?.locked, false);
       }
     }
@@ -78,11 +77,13 @@ describe("configured discovery companion", () => {
     const document = fixture({ ...configuredRoute(), future: "\ud800", candidates: configuredRoute().candidates.map(candidate => ({ ...candidate, future: "\udc00" })) });
     assert.deepEqual(await read({ ...document, future: "\ud800", models: document.models.map(row => ({ ...row, future: "\udc00" })) }), fixture());
     const body = JSON.stringify(fixture());
-    for (const [replacement, valid] of [[`"modelId":"\\ud800","modelId":"native"`, true], [`"modelId":"native","modelId":"\\ud800"`, false]] as const) {
+    for (const [replacement, expected] of [[`"modelId":"\\ud800","modelId":"native"`, "native"], [`"modelId":"native","modelId":"\\ud800"`, "\ud800"]] as const) {
       const modified = body.replaceAll(`"modelId":"native"`, replacement);
       assert.notEqual(modified, body);
       const pending = fetchConfiguredModels({ baseURL, headers, fetch: async () => new Response(modified, { headers: { "content-type": "application/json" } }) });
-      if (valid) assert.deepEqual(await pending, fixture()); else await assert.rejects(() => pending);
+      const gateway = configuredRoute();
+      gateway.candidates[0].modelId = expected;
+      assert.deepEqual(await pending, fixture(gateway));
     }
   });
 
@@ -125,14 +126,14 @@ describe("configured discovery companion", () => {
   });
 
   for (const dimension of ["rows", "aliases", "candidates", "name", "description", "providerInstance", "provider", "modelId"] as const) {
-    it(`independently bounds ${dimension} at exact and one-over`, async () => {
+    it(`does not duplicate server policy for ${dimension}`, async () => {
       for (const extra of [0, 1]) {
         const gateway = configuredRoute();
         gateway.aliases = [];
         let models = [{ id: "public", name: "Model", specification: { specificationVersion: "v4", provider: "grafana", modelId: "public" }, gateway }];
         if (dimension === "rows") {
           const rows = Array.from({ length: 1024 + extra }, (_, i) => ({ id: `row-${i}`, name: "Model", specification: { specificationVersion: "v4", provider: "grafana", modelId: `row-${i}` } }));
-          if (extra) await assert.rejects(() => read({ models: rows })); else assert.equal((await read({ models: rows })).models.length, 1024);
+          assert.deepEqual(await read({ models: rows }), { models: rows });
           continue;
         }
         if (dimension === "aliases") {
@@ -142,7 +143,7 @@ describe("configured discovery companion", () => {
         else if (dimension === "name") models[0].name = "a".repeat(2048 + extra);
         else if (dimension === "description") Object.assign(models[0], { description: "a".repeat(2048 + extra) });
         else gateway.candidates[0][dimension] = "é".repeat(1024) + "a".repeat(extra);
-        if (extra) await assert.rejects(() => read({ models })); else assert.equal((await read({ models })).models.length, models.length);
+        assert.deepEqual(await read({ models }), { models });
       }
     });
   }

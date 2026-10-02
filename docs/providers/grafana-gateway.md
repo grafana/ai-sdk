@@ -106,7 +106,13 @@ may be absent, so keep the optional access shown above.
 Discovery returns a complete catalog or an error, never a partial list. The Go
 client accepts up to 4 MiB by default; adjust its discovery limit through
 `grafana.DefaultLimits()` if needed. The TypeScript helper also accepts up to
-4 MiB; use `maxBytes` to set a smaller limit.
+4 MiB; use `maxBytes` to set a smaller limit. Clients validate structure and
+route consistency but do not impose the server's route-count or string-size
+policy ceilings.
+
+Strings use standard JSON decoding. For escaped lone UTF-16 surrogates, Go
+returns U+FFFD while TypeScript retains the decoded surrogate. Do not rely on
+identical candidate strings across clients for such malformed Unicode.
 
 The Gateway command defaults to a 1 MiB discovery response budget. If the server
 rejects a large catalog, increasing your client limit alone will not help. Ask

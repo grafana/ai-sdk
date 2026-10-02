@@ -61,23 +61,23 @@ Alternative rejected: publish a TS package or modify pinned `getAvailableModels`
 
 ### 4. Enforce the approved budgets before expensive expansion/copying
 
-Keep the existing independent server/client byte limits and use the approved helper/cardinality/string ceilings:
+Keep the existing independent server/client byte limits. Config loading and server projection own cardinality/string policy; clients enforce byte bounds and structural/route consistency without duplicating numeric policy ceilings:
 
 | Dimension | Default / ceiling |
 | --- | ---: |
 | Server complete document, configurable default | 1,048,576 bytes (1 MiB) |
 | Go complete document, configurable default | 4,194,304 bytes (4 MiB) |
 | TS helper complete document, default and maximum | 4,194,304 bytes (4 MiB) |
-| Expanded HTTP rows, including aliases | 1,024 |
-| Candidates per configured route | 16 |
-| Aliases per canonical route | 128 |
-| Each identity/display string | 2,048 UTF-8 bytes |
+| Config/server expanded HTTP rows, including aliases | 1,024 |
+| Config/server candidates per configured route | 16 |
+| Config/server aliases per canonical route | 128 |
+| Config/server identity/display string | 2,048 UTF-8 bytes |
 
 The server default is defined by `discovery.response-bytes` in `ai-gateway/cmd/grafana-ai-gateway/internal/config/settings.go`; the Go default is `DiscoveryBytes` in `providers/grafana.DefaultLimits()`. The approved #321 decision retains existing configurable server/client limits; its 4 MiB discovery allowance does not authorize changing the server's 1 MiB default. Enforce each path's byte limit independently and test that a document accepted within a client allowance can still exceed the configured server budget.
 
-The public-ID grammar remains stricter at 128 ASCII bytes. Candidate strings are opaque nonblank valid UTF-8, preserved without trimming/rewriting; display description may be empty. Count and raw-length checks precede allocations, UTF-8 scans and per-row expansion; overflow-safe byte preflight accounts for repeated alias/candidate projections and escaping. The final encoded complete response must independently fit the configured limit, including wrappers and escaping. Startup rejects invalid/over-limit configured catalogs before readiness, without inference; dynamic/custom listing fails precommit. Server/client return no partial catalogs and never slice first-N candidates or rows to fit.
+The public-ID grammar remains stricter at 128 ASCII bytes. Configured candidate strings are opaque nonblank valid UTF-8, preserved without trimming/rewriting; display description may be empty. Server count and raw-length checks precede allocations, UTF-8 scans and per-row expansion; overflow-safe byte preflight accounts for repeated alias/candidate projections and escaping. The final encoded complete response must independently fit the configured limit, including wrappers and escaping. Startup rejects invalid/over-limit configured catalogs before readiness, without inference; dynamic/custom listing fails precommit. Server/client return no partial catalogs and never slice first-N candidates or rows to fit.
 
-Consumers first bound received bytes, then count raw row/collection members before allocating typed results; structural validation and cross-row consistency stay inside those bounds. Boundary tests exercise exact and one-over for each dimension separately, multiple dimensions together, escape growth, invalid strings and failure cleanup. A document can fit bytes but violate cardinality, or fit cardinality but exceed encoded bytes; neither check substitutes for the other.
+Consumers first bound received bytes, then decode with standard JSON and validate structure and cross-row consistency. Go normalizes escaped lone UTF-16 surrogates to U+FFFD; TS retains the decoded UTF-16 value. This accepted Go adaptation removes the custom raw-string scanner and does not promise lossless agreement for those escapes. Semantic validation uses decoded values. Raw malformed UTF-8 remains rejected. Config/server boundary tests exercise exact and one-over policy dimensions; client tests accept catalogs beyond those ceilings within the byte budget while preserving atomic errors and failure cleanup. Client byte limits are not a substitute for server config policy or its encoded-byte cap.
 
 ### 5. Reuse the deployed visibility boundary, without manufacturing BYOK isolation
 

@@ -23,7 +23,7 @@ func TestListModels_AtomicValidation(t *testing.T) {
 		{"valid", discoveryFixture, "application/json", true},
 		{"nullable description", strings.Replace(discoveryFixture, `"description":"public description"`, `"description":null`, 1), "application/json", true},
 		{"wrong property casing", strings.Replace(discoveryFixture, `"models"`, `"Models"`, 1), "application/json", false},
-		{"escaped lone surrogate", strings.Replace(discoveryFixture, `"name":"Assistant"`, `"name":"\ud800"`, 1), "application/json", false},
+		{"escaped lone surrogate", strings.Replace(discoveryFixture, `"name":"Assistant"`, `"name":"\ud800"`, 1), "application/json", true},
 		{"empty", `{"models":[]}`, "application/json", true},
 		{"additive", strings.Replace(discoveryFixture, `"name":"Assistant"`, `"private":{"backend":"do-not-expose"},"name":"Assistant"`, 1), "application/json", true},
 		{"missing models", `{}`, "application/json", false},
@@ -249,9 +249,16 @@ func TestListModels_ConfiguredAtomicValidation(t *testing.T) {
 		{"null model", `"modelId":"native-primary"`, `"modelId":null`},
 		{"missing model", `,"modelId":"native-primary"`, ""},
 		{"wrong candidate shape", `"providerInstance":"primary"`, `"providerInstance":2`},
+		{"wrong candidate casing", `"providerInstance":"primary"`, `"ProviderInstance":"primary"`},
+		{"wrong route casing", `"canonicalModelId":"public"`, `"CanonicalModelId":"public"`},
+		{"normalized duplicate tuple", `"modelId":"native-primary"`, `"modelId":"\ud800"`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			changed := strings.ReplaceAll(body, tc.old, tc.replacement)
+			if tc.name == "normalized duplicate tuple" {
+				changed = strings.ReplaceAll(changed, `"providerInstance":"backup"`, `"providerInstance":"primary"`)
+				changed = strings.ReplaceAll(changed, `"modelId":"native-backup"`, `"modelId":"\ufffd"`)
+			}
 			require.NotEqual(t, body, changed)
 			p := testProvider(t, func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
@@ -283,7 +290,7 @@ func TestListModels_ConfiguredUnknownAdditionsAreNotPromoted(t *testing.T) {
 
 func TestListModels_ClientAllowanceDoesNotSetServerCapacity(t *testing.T) {
 	route := ConfiguredRoute{CanonicalModelID: "public", Aliases: []string{}, Candidates: []ConfiguredCandidate{}}
-	for i := range maxDiscoveryCandidates {
+	for i := range 16 {
 		route.Candidates = append(route.Candidates, ConfiguredCandidate{ProviderInstance: "instance", Provider: "anthropic", ModelID: fmt.Sprintf("%d-", i) + strings.Repeat("a", 1048)})
 	}
 	for i := range 64 {
@@ -309,7 +316,7 @@ func TestListModels_ClientAllowanceDoesNotSetServerCapacity(t *testing.T) {
 	assert.Nil(t, rows)
 }
 
-func TestListModels_ConfiguredCardinalityAndStringBounds(t *testing.T) {
+func TestListModels_ClientDoesNotDuplicateServerPolicy(t *testing.T) {
 	for _, dimension := range []string{"rows", "aliases", "candidates", "name", "description", "instance", "provider", "model"} {
 		t.Run(dimension, func(t *testing.T) {
 			for _, extra := range []int{0, 1} {
@@ -318,32 +325,32 @@ func TestListModels_ConfiguredCardinalityAndStringBounds(t *testing.T) {
 				switch dimension {
 				case "rows":
 					rows = nil
-					for i := range maxDiscoveryRows + extra {
+					for i := range 1024 + extra {
 						id := fmt.Sprintf("row-%04d", i)
 						rows = append(rows, ModelInfo{ID: id, Name: "Model", Specification: ModelSpecification{SpecificationVersion: "v4", Provider: "grafana", ModelID: id}})
 					}
 				case "aliases":
-					for i := range maxDiscoveryAliases + extra {
+					for i := range 128 + extra {
 						id := fmt.Sprintf("alias-%d", i)
 						route.Aliases = append(route.Aliases, id)
 						rows = append(rows, ModelInfo{ID: id, Name: "Model", Specification: ModelSpecification{SpecificationVersion: "v4", Provider: "grafana", ModelID: id}, Gateway: &route})
 					}
 				case "candidates":
 					route.Candidates = nil
-					for i := range maxDiscoveryCandidates + extra {
+					for i := range 16 + extra {
 						route.Candidates = append(route.Candidates, ConfiguredCandidate{ProviderInstance: "p", Provider: "anthropic", ModelID: fmt.Sprintf("model-%d", i)})
 					}
 				case "name":
-					rows[0].Name = strings.Repeat("a", maxDiscoveryStringBytes+extra)
+					rows[0].Name = strings.Repeat("a", 2048+extra)
 				case "description":
-					value := strings.Repeat("a", maxDiscoveryStringBytes+extra)
+					value := strings.Repeat("a", 2048+extra)
 					rows[0].Description = &value
 				case "instance":
-					route.Candidates[0].ProviderInstance = strings.Repeat("a", maxDiscoveryStringBytes+extra)
+					route.Candidates[0].ProviderInstance = strings.Repeat("a", 2048+extra)
 				case "provider":
-					route.Candidates[0].Provider = strings.Repeat("a", maxDiscoveryStringBytes+extra)
+					route.Candidates[0].Provider = strings.Repeat("a", 2048+extra)
 				case "model":
-					route.Candidates[0].ModelID = strings.Repeat("é", maxDiscoveryStringBytes/2) + strings.Repeat("a", extra)
+					route.Candidates[0].ModelID = strings.Repeat("é", 1024) + strings.Repeat("a", extra)
 				}
 				body := discoveryBody(t, rows)
 				p := testProvider(t, func(w http.ResponseWriter, _ *http.Request) {
@@ -351,13 +358,8 @@ func TestListModels_ConfiguredCardinalityAndStringBounds(t *testing.T) {
 					_, _ = io.WriteString(w, body)
 				}, nil)
 				got, err := p.ListModels(context.Background())
-				if extra == 0 {
-					require.NoError(t, err)
-					require.Len(t, got, len(rows))
-				} else {
-					require.Error(t, err)
-					assert.Nil(t, got)
-				}
+				require.NoError(t, err)
+				assert.Equal(t, rows, got)
 			}
 		})
 	}
@@ -377,7 +379,7 @@ func listUnicodeDiscovery(t *testing.T, document string) ([]ModelInfo, error) {
 	return rows, err
 }
 
-func TestListModels_DiscoveryUnicodeScalars(t *testing.T) {
+func TestListModels_DiscoveryStandardJSONUnicode(t *testing.T) {
 	fields := []struct {
 		name, old string
 		value     func(ModelInfo) string
@@ -390,19 +392,18 @@ func TestListModels_DiscoveryUnicodeScalars(t *testing.T) {
 	}
 	values := []struct {
 		name, raw, expected string
-		valid               bool
 	}{
-		{"lone high", `"\ud800"`, "", false},
-		{"lone low", `"\udc00"`, "", false},
-		{"reversed pair", `"\udc00\ud800"`, "", false},
-		{"unmatched before text", `"\ud800x"`, "", false},
-		{"unmatched after pair", `"\ud83d\ude80\ud800"`, "", false},
-		{"valid pair", `"\ud83d\ude80"`, "🚀", true},
-		{"literal replacement", `"�"`, "�", true},
-		{"escaped replacement", `"\ufffd"`, "�", true},
-		{"escaped backslash", `"\\ud800"`, `\ud800`, true},
-		{"escaped backslash and slash", `"\\/"`, `\/`, true},
-		{"Unicode escaped backslash", `"\u005cud800"`, `\ud800`, true},
+		{"lone high", `"\ud800"`, "�"},
+		{"lone low", `"\udc00"`, "�"},
+		{"reversed pair", `"\udc00\ud800"`, "��"},
+		{"unmatched before text", `"\ud800x"`, "�x"},
+		{"unmatched after pair", `"\ud83d\ude80\ud800"`, "🚀�"},
+		{"valid pair", `"\ud83d\ude80"`, "🚀"},
+		{"literal replacement", `"�"`, "�"},
+		{"escaped replacement", `"\ufffd"`, "�"},
+		{"escaped backslash", `"\\ud800"`, `\ud800`},
+		{"escaped backslash and slash", `"\\/"`, `\/`},
+		{"Unicode escaped backslash", `"\u005cud800"`, `\ud800`},
 	}
 	for _, field := range fields {
 		t.Run(field.name, func(t *testing.T) {
@@ -412,14 +413,9 @@ func TestListModels_DiscoveryUnicodeScalars(t *testing.T) {
 					document := strings.Replace(unicodeDiscoveryFixture, field.old, key+":"+tc.raw, 1)
 					require.NotEqual(t, unicodeDiscoveryFixture, document)
 					rows, err := listUnicodeDiscovery(t, document)
-					if tc.valid {
-						require.NoError(t, err)
-						require.Len(t, rows, 1)
-						assert.Equal(t, tc.expected, field.value(rows[0]))
-					} else {
-						require.Error(t, err)
-						assert.Nil(t, rows)
-					}
+					require.NoError(t, err)
+					require.Len(t, rows, 1)
+					assert.Equal(t, tc.expected, field.value(rows[0]))
 				})
 			}
 		})
@@ -436,22 +432,17 @@ func TestListModels_DiscoveryUnicodeIgnoredAndDuplicateMembers(t *testing.T) {
 	require.Len(t, rows, 1)
 	assert.Equal(t, "native", rows[0].Gateway.Candidates[0].ModelID)
 	for _, tc := range []struct {
-		name, replacement string
-		valid             bool
+		name, replacement, expected string
 	}{
-		{"last valid", `"modelId":"\ud800","modelId":"native"`, true},
-		{"last malformed", `"modelId":"native","modelId":"\ud800"`, false},
+		{"last ordinary", `"modelId":"\ud800","modelId":"native"`, "native"},
+		{"last normalized", `"modelId":"native","modelId":"\ud800"`, "�"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			document := strings.Replace(unicodeDiscoveryFixture, `"modelId":"native"`, tc.replacement, 1)
 			rows, err := listUnicodeDiscovery(t, document)
-			if tc.valid {
-				require.NoError(t, err)
-				assert.Equal(t, "native", rows[0].Gateway.Candidates[0].ModelID)
-			} else {
-				require.Error(t, err)
-				assert.Nil(t, rows)
-			}
+			require.NoError(t, err)
+			require.Len(t, rows, 1)
+			assert.Equal(t, tc.expected, rows[0].Gateway.Candidates[0].ModelID)
 		})
 	}
 }

@@ -41,15 +41,26 @@ Discovery SHALL authenticate before listing and SHALL pass the request context t
 - **THEN** no catalog listing or provider work SHALL occur and the existing bounded authentication response SHALL apply
 
 ### Requirement: Atomic discovery resource and consistency limits
-Server projection and both configured-discovery consumers SHALL independently enforce at most 1,024 expanded rows including aliases, 16 candidates per route, 128 aliases per route and 2,048 UTF-8 bytes per identity/display string. The existing stricter 1–128 ASCII public-ID grammar SHALL remain unchanged. Required identities and names SHALL remain nonblank and all recognized strings SHALL be valid UTF-8; optional description SHALL preserve existing empty/absent semantics. Complete discovery documents SHALL remain independently bounded by the existing server configurable byte limit, defaulting to 1,048,576 bytes (1 MiB), and the existing Go configurable byte limit, defaulting to 4,194,304 bytes (4 MiB). The TS helper SHALL default to and support at most 4,194,304 bytes (4 MiB), allowing smaller positive safe-integer maxBytes values. This feature SHALL NOT increase the server's existing default or treat either client's larger allowance as server capacity.
+Configuration loading and server projection SHALL enforce at most 1,024 expanded rows including aliases, 16 candidates per route, 128 aliases per route and 2,048 UTF-8 bytes per identity/display string. Consumers SHALL NOT duplicate these numeric policy ceilings; their resource limit SHALL be the complete document-byte budget. The existing 1–128 ASCII public-ID grammar SHALL remain unchanged. Required identities and names SHALL remain nonblank; optional description SHALL preserve existing empty/absent semantics. Server strings and raw consumer documents SHALL be valid UTF-8. Consumer strings SHALL use standard JSON decoding: Go normalizes escaped lone UTF-16 surrogates to U+FFFD, while TS retains the decoded UTF-16 value. Lossless cross-client identity agreement SHALL NOT be claimed for such escapes. Semantic checks SHALL apply to the decoded values. Complete discovery documents SHALL remain independently bounded by the existing server configurable byte limit, defaulting to 1,048,576 bytes (1 MiB), and the existing Go configurable byte limit, defaulting to 4,194,304 bytes (4 MiB). The TS helper SHALL default to and support at most 4,194,304 bytes (4 MiB), allowing smaller positive safe-integer maxBytes values. This feature SHALL NOT increase the server's existing default or treat either client's larger allowance as server capacity.
 
-Counts and raw string sizes SHALL be preflighted before row expansion, typed collection allocation and UTF-8 scanning as applicable; server encoding SHALL independently check the final complete encoded size including escaping and wrappers before HTTP 200. Configured startup catalogs violating these bounds SHALL fail before readiness; invalid dynamic/custom lister output SHALL fail before success commitment. Malformed documents, duplicate IDs/aliases/candidate tuples, canonical/alias collisions, specification contradictions and inconsistent/incomplete configured route groups SHALL invalidate the entire result. Candidate tuple uniqueness SHALL use provider-instance plus model ID; distinct instances of the same provider/model SHALL remain valid. No path SHALL return a partial catalog or truncate strings/collections to fit. Standard JSON duplicate-member handling SHALL remain distinct from duplicate semantic entries.
+Server counts and raw string sizes SHALL be preflighted before row expansion, typed collection allocation and UTF-8 scanning; server encoding SHALL independently check the final complete encoded size including escaping and wrappers before HTTP 200. Consumers SHALL bound raw document reads before decoding and allocating typed results. Configured startup catalogs violating these bounds SHALL fail before readiness; invalid dynamic/custom lister output SHALL fail before success commitment. Malformed documents, duplicate IDs/aliases/candidate tuples, canonical/alias collisions, specification contradictions and inconsistent/incomplete configured route groups SHALL invalidate the entire result. Candidate tuple uniqueness SHALL use provider-instance plus model ID; distinct instances of the same provider/model SHALL remain valid. No path SHALL return a partial catalog or truncate strings/collections to fit. Standard JSON duplicate-member handling SHALL remain distinct from duplicate semantic entries.
 
-#### Scenario: Independent dimensions reach their boundaries
-- **WHEN** a valid complete discovery document reaches an exact row, candidate, alias, string or encoded-byte ceiling
-- **THEN** it SHALL be accepted if every other applicable bound and semantic constraint holds
-- **WHEN** any dimension exceeds its ceiling by one
-- **THEN** the server SHALL fail precommit or the consumer SHALL fail without returning any rows
+#### Scenario: Server policy dimensions reach their boundaries
+- **WHEN** a valid configured catalog reaches an exact row, candidate, alias or string ceiling
+- **THEN** configuration loading and server projection SHALL accept it if the byte budget and semantic constraints hold
+- **WHEN** any policy dimension exceeds its ceiling by one
+- **THEN** configuration loading or server projection SHALL fail before readiness or success commitment
+
+#### Scenario: Consumers do not duplicate configuration policy
+- **WHEN** a structurally valid and consistent document fits the consumer byte budget but exceeds a server row, candidate, alias or string policy ceiling
+- **THEN** the consumer SHALL return the complete catalog without imposing that policy ceiling
+- **WHEN** the document exceeds the consumer byte budget by one
+- **THEN** the consumer SHALL fail without returning any rows
+
+#### Scenario: Escaped lone surrogates use standard JSON semantics
+- **WHEN** a nonblank display or candidate string contains an escaped lone UTF-16 surrogate
+- **THEN** Go SHALL decode it as U+FFFD and TS SHALL retain its standard decoded UTF-16 value
+- **AND** invalid public IDs, duplicate candidate tuples and inconsistent route groups SHALL still fail based on each consumer's decoded values
 
 #### Scenario: Client allowance exceeds the server budget
 - **WHEN** a configured discovery document exceeds the server's existing 1 MiB default but fits the Go or TS helper's 4 MiB default allowance
@@ -65,7 +76,7 @@ Counts and raw string sizes SHALL be preflighted before row expansion, typed col
 - **THEN** discovery SHALL reject the complete listing using the existing fixed internal-error response without exposing invalid data
 
 #### Scenario: Client receives a late malformed row
-- **WHEN** a bounded document contains valid initial rows followed by malformed, duplicated, over-limit or contradictory configured facts
+- **WHEN** a bounded document contains valid initial rows followed by malformed, duplicated or contradictory configured facts
 - **THEN** Go and TS configured access SHALL fail atomically without exposing the initial rows
 
 ### Requirement: Bounded TS companion access on the existing route
