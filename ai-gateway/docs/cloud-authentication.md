@@ -83,10 +83,21 @@ Supported client calls include `getAvailableModels`, `doGenerate`, and
 `doStream`. Calls to `doGenerate` and `doStream` must set
 `maxOutputTokens` explicitly.
 
-`generateText` and `streamText` both set `toolChoice` to `auto`. The unary mapper
-accepts that choice, while streaming and fallback routes reject it. `generateText`
-also adds unsupported body headers, and `streamText` only forwards supplied headers.
-Setting `maxOutputTokens` does not make either high-level call compatible.
+`generateText` and `streamText` both set `toolChoice` to `auto`; unary,
+streaming and configured-fallback routes preserve supported choices. Equivalent
+high-level Go `StreamText` and registered TypeScript `streamText` text-only calls
+are tested through the dummy edge with supported options. Ordinary body headers
+and scoped native options are mapped on direct and fallback routes; protected
+header overrides remain rejected. High-level unary TypeScript tests use an
+explicit host user-agent adaptation, not unrestricted header acceptance. Default
+unary token limits remain a compatibility gap.
+
+Both clients also exercise mapped local-function, file and reasoning requests
+through direct and fallback routes with fake native providers. Native acceptance
+remains backend-specific. These tests do not activate provider-executed/MCP
+codecs, establish live Cloud acceptance or prove full output-derived continuation.
+See [Gateway behavior](../../docs/providers/grafana-gateway.md#bound-work-and-handle-errors)
+for first-part commitment and paid-generation risk.
 
 Bring-your-own-key (BYOK) requests and native OpenAI/Anthropic API adapters
 are not supported.

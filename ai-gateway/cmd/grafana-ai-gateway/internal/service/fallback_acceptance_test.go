@@ -349,8 +349,12 @@ func newFallbackAcceptance(t *testing.T, primary, secondary *observabilityTestMo
 	return h
 }
 
-func (h *fallbackAcceptance) request(ctx context.Context, stream bool) *http.Request {
-	request := httptest.NewRequest(http.MethodPost, providerv4.LanguageModelPath, strings.NewReader(`{"prompt":[{"role":"user","content":[{"type":"text","text":"private-prompt"}]}]}`)).WithContext(h.context(ctx))
+func (h *fallbackAcceptance) request(ctx context.Context, stream bool, bodies ...string) *http.Request {
+	body := `{"prompt":[{"role":"user","content":[{"type":"text","text":"private-prompt"}]}]}`
+	if len(bodies) > 0 {
+		body = bodies[0]
+	}
+	request := httptest.NewRequest(http.MethodPost, providerv4.LanguageModelPath, strings.NewReader(body)).WithContext(h.context(ctx))
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Authorization", "private-credential")
 	request.Header.Set(providerv4.HeaderSpecificationVersion, providerv4.SpecificationVersion)

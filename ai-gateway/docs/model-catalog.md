@@ -136,7 +136,10 @@ namespace; the host applies request-specific visibility.
 
 `ModelInfo.Capabilities` contains labels defined by the public API. A route
 backed by fallback models should advertise capabilities supported by every
-candidate.
+candidate. This discovery guarantee does not define a request-option intersection:
+configured fallback forwards the same supported mapped options to each attempted
+native adapter without filtering or translation. Actual native acceptance remains
+backend-specific.
 
 An unknown public ID returns an error matching `catalog.ErrUnknownModel` and
 records the requested ID in `*catalog.UnknownModelError`. The error does not
