@@ -49,15 +49,30 @@ type providerWireV4Model struct {
 	stats *providerWireV4Stats
 }
 
-func hostedMetadata() provider.ProviderMetadata {
+func hasHostedMCP(options provider.CallOptions) bool {
+	value, ok := options.ProviderOptions["anthropic"].(provider.RawProviderOption)
+	if !ok {
+		return false
+	}
+	var root struct {
+		MCPServers []json.RawMessage `json:"mcpServers"`
+	}
+	return json.Unmarshal(value.Raw, &root) == nil && len(root.MCPServers) > 0
+}
+
+func hostedMetadata(options provider.CallOptions) provider.ProviderMetadata {
+	if hasHostedMCP(options) {
+		return provider.ProviderMetadata{"anthropic": json.RawMessage(`{"type":"mcp-tool-use","serverName":"echo","private":"hidden"}`)}
+	}
 	return provider.ProviderMetadata{"anthropic": json.RawMessage(`{"caller":{"type":"direct"},"private":"hidden"}`)}
 }
 
 func hostedStage(options provider.CallOptions) (int, error) {
-	if len(options.Tools) != 1 || options.Tools[0].Type != provider.ToolTypeProvider || options.Tools[0].ID != "anthropic.code_execution_20260120" || options.Tools[0].Args == nil || len(options.ProviderOptions) != 0 {
+	if len(options.Tools) != 1 || options.Tools[0].Type != provider.ToolTypeProvider || options.Tools[0].ID != "anthropic.code_execution_20260120" || options.Tools[0].Args == nil || len(options.ProviderOptions) > 1 {
 		return 0, errors.New("invalid hosted tool request")
 	}
 	stage := 0
+	mcp := hasHostedMCP(options)
 	for _, message := range options.Prompt {
 		if message.Role != provider.RoleAssistant {
 			continue
@@ -74,9 +89,18 @@ func hostedStage(options provider.CallOptions) (int, error) {
 				Caller struct {
 					Type string `json:"type"`
 				} `json:"caller"`
+				Type       string `json:"type"`
+				ServerName string `json:"serverName"`
 			}
-			if json.Unmarshal(metadata.Raw, &fields) != nil || fields.Caller.Type != "direct" || part.ToolCallID != "call" || part.ToolName != "echo" {
+			if json.Unmarshal(metadata.Raw, &fields) != nil || part.ToolCallID != "call" || part.ToolName != "echo" {
 				return 0, errors.New("invalid hosted tool history")
+			}
+			if !mcp {
+				if fields.Caller.Type != "direct" {
+					return 0, errors.New("invalid hosted caller metadata")
+				}
+			} else if fields.Type != "mcp-tool-use" || fields.ServerName != "echo" {
+				return 0, errors.New("invalid hosted MCP metadata")
 			}
 			if part.Type == provider.ContentPartTypeToolCall {
 				if !part.ProviderExecuted || stage != 0 {
@@ -94,21 +118,21 @@ func hostedStage(options provider.CallOptions) (int, error) {
 	return stage, nil
 }
 
-func hostedCallContent() provider.GenerateContentPart {
-	return provider.GenerateContentPart{Type: provider.ContentToolCall, ToolCallID: "call", ToolName: "echo", Input: json.RawMessage(`{}`), ProviderExecuted: true, Dynamic: new(true), ProviderMetadata: hostedMetadata()}
+func hostedCallContent(options provider.CallOptions) provider.GenerateContentPart {
+	return provider.GenerateContentPart{Type: provider.ContentToolCall, ToolCallID: "call", ToolName: "echo", Input: json.RawMessage(`{}`), ProviderExecuted: true, Dynamic: new(true), ProviderMetadata: hostedMetadata(options)}
 }
 
-func hostedResultContent(isError bool) provider.GenerateContentPart {
-	return provider.GenerateContentPart{Type: provider.ContentToolResult, ToolCallID: "call", ToolName: "echo", Result: json.RawMessage(`{"result":"done"}`), IsError: isError, ProviderMetadata: hostedMetadata()}
+func hostedResultContent(isError bool, options provider.CallOptions) provider.GenerateContentPart {
+	return provider.GenerateContentPart{Type: provider.ContentToolResult, ToolCallID: "call", ToolName: "echo", Result: json.RawMessage(`{"result":"done"}`), IsError: isError, ProviderMetadata: hostedMetadata(options)}
 }
 
-func hostedCallStreamPart() provider.StreamPart {
+func hostedCallStreamPart(options provider.CallOptions) provider.StreamPart {
 	yes := true
-	return provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "call", ToolName: "echo", Input: `{}`, ProviderExecuted: true, Dynamic: &yes, ProviderMetadata: hostedMetadata()}
+	return provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "call", ToolName: "echo", Input: `{}`, ProviderExecuted: true, Dynamic: &yes, ProviderMetadata: hostedMetadata(options)}
 }
 
-func hostedResultStreamPart(isError bool) provider.StreamPart {
-	return provider.StreamPart{Type: provider.PartToolResult, ToolCallID: "call", ToolName: "echo", Result: json.RawMessage(`{"result":"done"}`), IsError: isError, ProviderMetadata: hostedMetadata()}
+func hostedResultStreamPart(isError bool, options provider.CallOptions) provider.StreamPart {
+	return provider.StreamPart{Type: provider.PartToolResult, ToolCallID: "call", ToolName: "echo", Result: json.RawMessage(`{"result":"done"}`), IsError: isError, ProviderMetadata: hostedMetadata(options)}
 }
 
 func (*providerWireV4Model) SpecificationVersion() string               { return "v4" }
@@ -159,9 +183,9 @@ func (m *providerWireV4Model) DoStream(ctx context.Context, options provider.Cal
 		}
 		switch stage {
 		case 0:
-			return &provider.StreamResult{Stream: scenarioStream(hostedCallStreamPart(), provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonToolCalls}, Usage: &provider.Usage{}})}, nil
+			return &provider.StreamResult{Stream: scenarioStream(hostedCallStreamPart(options), provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonToolCalls}, Usage: &provider.Usage{}})}, nil
 		case 1:
-			return &provider.StreamResult{Stream: scenarioStream(hostedResultStreamPart(m.kind == "hosted-deferred-error"), provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: &provider.Usage{}})}, nil
+			return &provider.StreamResult{Stream: scenarioStream(hostedResultStreamPart(m.kind == "hosted-deferred-error", options), provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: &provider.Usage{}})}, nil
 		default:
 			return &provider.StreamResult{Stream: scenarioStream(provider.StreamPart{Type: provider.PartTextStart, ID: "final"}, provider.StreamPart{Type: provider.PartTextDelta, ID: "final", Delta: "finished"}, provider.StreamPart{Type: provider.PartTextEnd, ID: "final"}, provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: &provider.Usage{}})}, nil
 		}
@@ -287,10 +311,10 @@ func (m *providerWireV4Model) DoGenerate(ctx context.Context, options provider.C
 		result := &provider.GenerateResult{FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}
 		switch stage {
 		case 0:
-			result.Content = []provider.GenerateContentPart{hostedCallContent()}
+			result.Content = []provider.GenerateContentPart{hostedCallContent(options)}
 			result.FinishReason.Unified = provider.FinishReasonToolCalls
 		case 1:
-			result.Content = []provider.GenerateContentPart{hostedResultContent(m.kind == "hosted-deferred-error")}
+			result.Content = []provider.GenerateContentPart{hostedResultContent(m.kind == "hosted-deferred-error", options)}
 		default:
 			result.Content = []provider.GenerateContentPart{{Type: provider.ContentText, Text: "finished"}}
 		}

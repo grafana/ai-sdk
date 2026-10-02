@@ -36,7 +36,7 @@ Gateway does not store them for you. Tool metadata is preserved as opaque
 provider data, including extension fields and explicit empty objects. Returning
 that data does not enable telemetry capture.
 
-Anthropic-hosted MCP requires separate Gateway support. Tool approvals, custom
+Anthropic-hosted MCP is configured through native Anthropic provider options, including on configured fallback routes. Validation follows the actual native consuming adapter; foreign namespaces and returned metadata do not determine routing or execution authority. Tool approvals, custom
 tool results and generated media responses are not yet supported.
 
 ## Configure provider-specific settings
