@@ -139,10 +139,8 @@ request. Provider retries × candidate count × SDK attempts can multiply physic
 calls. A failed attempt may still be billable, so fallback does not guarantee that
 a request incurs model costs only once. See [Retry and timeout](retry-and-timeout.md).
 
-When using Grafana AI Gateway, your application still executes function tools,
-even if the Gateway is configured with fallback models. Choose models that all
-support your request's tools and inputs. See the [Gateway client guide](../providers/grafana-gateway.md)
-for supported workflows and fallback behavior.
+To configure fallback behind a public Grafana AI Gateway model, see
+[Configure Gateway fallback](../providers/grafana-gateway.md#configure-fallback).
 
 ## Account for usage
 

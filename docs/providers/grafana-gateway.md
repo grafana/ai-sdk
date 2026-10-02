@@ -14,18 +14,19 @@ model; unsupported requests return an invalid-request error.
 
 ## Function tools
 
-Use application-defined function tools with non-streaming or streaming calls,
-including models configured with fallback. Define and execute the functions in
-your application; the Gateway returns tool calls but never runs your code.
+Define function tools in your application to let a model request actions such as
+looking up data or calling an API. Your application executes the functions and
+returns their results to the model. Function tools work with both non-streaming
+and streaming calls.
 
 For a multi-step conversation, include previous tool calls and their results in
 the next request. The Go and Vercel SDKs can manage this tool loop for you. See
 [Tools](../guides/tools.md) and [Agent loops](../guides/agent-loops.md) for setup.
 The Gateway does not retain conversation state between requests.
 
-Tool approval workflows, dynamic tools, and preliminary or custom tool results
-are not supported. The Gateway also does not support provider-executed tools,
-provider-hosted MCP, or generated media responses.
+Provider-executed tools, including provider-hosted MCP, are not yet available
+through the Gateway. Tool approvals, dynamic tools, preliminary or custom tool
+results, and generated media responses are also not yet supported.
 
 ## Configure provider-specific settings
 
@@ -34,8 +35,7 @@ such as Claude thinking or OpenAI reasoning effort. See the [Anthropic](anthropi
 and [OpenAI](openai.md#configure-a-call) guides for examples.
 
 Choose a model that supports the file formats and reasoning settings your
-application needs. These capabilities vary by provider and model. Requests
-cannot override the Gateway's provider credentials, accounts, or routing.
+application needs. These capabilities vary by provider and model.
 
 ## Native response values
 
@@ -169,9 +169,9 @@ included in discovery; your deployment controls who may see the model list.
 To compose the client with other providers, register it as a `registry.Provider`;
 see [Fallback and registry](../guides/fallback-and-registry.md).
 
-## Bound work and handle errors
+## Configure fallback
 
-Operators can configure ordered fallback using direct provider references:
+Configure a primary model and ordered backups under the same public model ID:
 
 ```yaml
 models:
@@ -192,12 +192,9 @@ Each call starts with the primary model and tries backups in configuration order
 after an eligible failure. Follow-up calls in a tool loop also start with the
 primary; a backup used for one step does not become the default for later steps.
 
-You can use function tools, conversation history, files, and reasoning with or
-without fallback. Choose candidates that all support your request's inputs and
-tools. The same request settings are used for each attempt, so check that your
-provider-specific settings work with the providers you configure. The Gateway
-does not convert one provider's settings into another's or accept API keys from
-callers.
+Choose fallback models that support your tools, file formats, and reasoning
+needs. Provider-specific settings are passed unchanged, so configure the settings
+for each provider in the chain.
 
 Once a model returns a result or sends its first stream event, the Gateway will
 not switch to another model for that call. This includes start and error events,
@@ -217,6 +214,8 @@ For troubleshooting, ask your Gateway operator to inspect fallback attempts in
 private logs. Public model names do not identify which backend served a request.
 See [Gateway observability](../../ai-gateway/docs/text-observability.md#inspect-fallback-attempts)
 for operator diagnostics and log access requirements.
+
+## Bound work and handle errors
 
 Use a cancelable context for each generation or stream. Cancel it when a
 consumer stops reading. The client closes its response body and stream channel
@@ -239,9 +238,8 @@ Warnings and public error messages remain server-provided text. Unknown private
 metadata is not promoted into model identity or Gateway error fields. A unary
 response's bounded raw HTTP body remains available in `Response.Body`.
 
-You can send application headers with a call, but cannot override headers used
-for authentication, provider credentials, or the model protocol. These
-restrictions also apply when fallback is configured. See the
+Use call headers for application metadata. Credential-bearing call headers are
+rejected; configure authentication on the client instead. See the
 [package reference](https://pkg.go.dev/github.com/grafana/ai-sdk/providers/grafana)
 for configuration and result types.
 
