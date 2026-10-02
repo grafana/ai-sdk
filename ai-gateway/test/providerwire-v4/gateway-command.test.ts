@@ -2163,26 +2163,90 @@ describe("authenticated OpenAI-compatible Gateway command", () => {
     } finally { await gateway.stop(); await fake.stop(); }
   });
 
-  it("rejects Anthropic MCP configuration before compatible backend invocation", async () => {
-    const [fake, gateway] = await startCompatibleGateway();
+  it("ignores foreign MCP settings without changing compatible inference or credentials", async () => {
+    const observer = await FakeAgentObservability.start();
+    let resources: [FakeCompatible, GatewayProcess] | undefined;
+    let mcpInvocations = 0;
+    const mcp = createServer((request, response) => {
+      mcpInvocations++;
+      request.resume();
+      response.writeHead(503);
+      response.end();
+    });
     try {
-      const options = { prompt: [], providerOptions: { anthropic: { mcpServers: [{ type: "url", name: "echo", url: "https://mcp.example.test", authorizationToken: "compatible-private-token" }] } } };
+      await new Promise<void>(resolve => mcp.listen(0, "127.0.0.1", resolve));
+      const address = mcp.address();
+      assert.ok(address != null && typeof address !== "string");
+      const mcpURL = `http://127.0.0.1:${address.port}/mcp`;
+      const mcpToken = "compatible-foreign-mcp-token";
+      resources = await startCompatibleGateway([
+        "--agento11y.enabled", "--agento11y.protocol=http", `--agento11y.endpoint=${observer.url}`,
+        "--no-agento11y.tls", "--agento11y.auth-secret-env=GATEWAY_TEST_AGENTO11Y_KEY",
+        "--agento11y.batch-size=1", "--agento11y.flush-interval=1ms",
+        "--agento11y.flush-timeout=2s", "--agento11y.shutdown-timeout=2s",
+      ], { GATEWAY_TEST_AGENTO11Y_KEY: "integration-agento11y-key" });
+      const [fake, gateway] = resources;
       for (const mode of ["generate", "stream"] as const) {
-        const go = await captureGoClient(goClientBinaryPath, { baseURL: `${gateway.url}/api/v1/aisdk`, accessToken: TEST_TOKEN, modelID: "compatible", mode, options });
-        assert.equal(go.error?.statusCode, 400);
-        assert.equal(go.error?.code, "invalid_request");
-        await assert.rejects(async () => {
-          if (mode === "generate") await gateway.client()("compatible").doGenerate(options);
-          else await gateway.client()("compatible").doStream(options);
-        }, (error: any) => error.statusCode === 400 && error.message === "protected provider option");
-        assert.equal(fake.requests.length, 0);
-        assert.ok(!JSON.stringify(go.error).includes("compatible-private-token"));
+        for (const implementation of ["go", "vercel"] as const) {
+          const options: LanguageModelV4CallOptions = {
+            prompt: [{ role: "user", content: [{ type: "text", text: mode === "stream" ? "normal-stream" : "unary" }] }],
+            maxOutputTokens: 32,
+            providerOptions: { anthropic: { mcpServers: [{ type: "url", name: "foreign-mcp", url: mcpURL, authorizationToken: mcpToken }] } },
+          };
+          const before = fake.requests.length;
+          let publicResponse: unknown;
+          if (implementation === "go") {
+            const go = await captureGoClient(goClientBinaryPath, { baseURL: `${gateway.url}/api/v1/aisdk`, accessToken: TEST_TOKEN, modelID: "compatible", mode, options });
+            assert.equal(go.error, undefined);
+            if (mode === "generate") {
+              assert.deepEqual(go.result.content, [{ type: "text", text: "hello from fake compatible" }]);
+              publicResponse = { content: go.result.content, finishReason: go.result.finishReason, usage: go.result.usage, warnings: go.result.warnings, providerMetadata: go.result.providerMetadata, response: go.result.response };
+            } else {
+              assert.equal(go.canceled, false);
+              assertNativeOptionStream(go.parts);
+              assert.equal(go.parts.filter((part: any) => part.type === "text-delta").map((part: any) => part.delta).join(""), "hello from fake compatible stream");
+              publicResponse = go.parts;
+            }
+          } else if (mode === "generate") {
+            const result = await gateway.client()("compatible").doGenerate(options);
+            assert.deepEqual(result.content, [{ type: "text", text: "hello from fake compatible" }]);
+            publicResponse = { content: result.content, finishReason: result.finishReason, usage: result.usage, warnings: result.warnings, providerMetadata: result.providerMetadata, response: result.response };
+          } else {
+            const parts = await collectGatewayStream((await gateway.client()("compatible").doStream(options)).stream);
+            assertNativeOptionStream(parts);
+            assert.equal(parts.filter(part => part.type === "text-delta").map(part => part.delta).join(""), "hello from fake compatible stream");
+            publicResponse = parts;
+          }
+          assert.equal(fake.requests.length, before + 1, `${implementation} ${mode} invokes compatible inference once`);
+          const native = fake.requests.at(-1)!;
+          assert.equal(native.body.model, "backend-private");
+          assert.equal(native.body.stream ?? false, mode === "stream");
+          assert.equal(singleHeader(native.headers.authorization), "Bearer integration-compatible-key");
+          for (const value of [mcpURL, mcpToken, "foreign-mcp", "mcpServers", "mcp_servers", "authorizationToken"]) {
+            assert.ok(!JSON.stringify({ native, publicResponse }).includes(value));
+          }
+          assert.equal(mcpInvocations, 0);
+        }
       }
+      await observer.waitForGenerations(4);
+      const metrics = await gateway.metrics();
+      await gateway.stop();
+      const captured = JSON.stringify({ metrics, logs: gateway.stderr, generations: observer.generations });
+      for (const value of [mcpURL, mcpToken, "foreign-mcp", "mcpServers", "mcp_servers", "authorizationToken"]) {
+        assert.ok(!captured.includes(value));
+      }
+      assert.equal(observer.generations.length, 4);
+      assert.deepEqual(observer.violations, []);
+      assert.deepEqual(fake.violations, []);
+      assert.equal(mcpInvocations, 0);
     } finally {
-      await settleCleanup(() => gateway.stop(), () => fake.stop());
+      await settleCleanup(
+        ...(resources ? [() => resources![1].stop(), () => resources![0].stop()] : []),
+        () => observer.stop(),
+        async () => { mcp.closeAllConnections(); await new Promise<void>((resolve, reject) => mcp.close(error => error ? reject(error) : resolve())); },
+      );
     }
   });
-
   it("discovers, invokes, and streams usage without exposing private configuration", async () => {
     const [fake, gateway] = await startCompatibleGateway();
     try {
@@ -2603,10 +2667,10 @@ async function startGateway(extraArgs: string[] = [], extraEnv: Record<string, s
   }
 }
 
-async function startCompatibleGateway(): Promise<[FakeCompatible, GatewayProcess]> {
+async function startCompatibleGateway(extraArgs: string[] = [], extraEnv: Record<string, string> = {}): Promise<[FakeCompatible, GatewayProcess]> {
   const fake = await FakeCompatible.start();
   try {
-    return [fake, await GatewayProcess.start(binaryPath, "", [], {}, "access-token", compatibleConfig(fake.url))];
+    return [fake, await GatewayProcess.start(binaryPath, "", extraArgs, extraEnv, "access-token", compatibleConfig(fake.url))];
   } catch (error) {
     await settleCleanup(() => fake.stop());
     throw error;

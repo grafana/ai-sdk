@@ -23,8 +23,8 @@ func TestStreamingProviderTools_MarkersPreviewsAndMetadata(t *testing.T) {
 			provider.StreamPart{Type: provider.PartToolInputDelta, ID: "a", Delta: ""},
 			provider.StreamPart{Type: provider.PartToolInputEnd, ID: "a"},
 			provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "a", ToolName: "search", Input: `{}`, ProviderExecuted: true, Dynamic: &yes, ProviderMetadata: metadata},
-			provider.StreamPart{Type: provider.PartToolResult, ToolCallID: "a", ToolName: "search", Result: json.RawMessage(`{"preview":1}`), Preliminary: true, Dynamic: &yes, ProviderExecuted: true, ProviderMetadata: metadata},
-			provider.StreamPart{Type: provider.PartToolResult, ToolCallID: "a", ToolName: "search", Result: json.RawMessage(`{"preview":2}`), Preliminary: true},
+			provider.StreamPart{Type: provider.PartToolResult, ToolCallID: "a", ToolName: "search", Result: json.RawMessage(`{"preview":1}`), Preliminary: new(true), Dynamic: &yes, ProviderExecuted: true, ProviderMetadata: metadata},
+			provider.StreamPart{Type: provider.PartToolResult, ToolCallID: "a", ToolName: "search", Result: json.RawMessage(`{"preview":2}`), Preliminary: new(true)},
 			provider.StreamPart{Type: provider.PartToolResult, ToolCallID: "a", ToolName: "search", Result: json.RawMessage(`{"final":true}`)},
 			finishPart(),
 		)}, nil
@@ -35,7 +35,7 @@ func TestStreamingProviderTools_MarkersPreviewsAndMetadata(t *testing.T) {
 	assert.Contains(t, body, `"type":"tool-call","toolCallId":"a","toolName":"search","input":"{}","providerExecuted":true,"dynamic":true`)
 	assert.Equal(t, 2, strings.Count(body, `"preliminary":true`))
 	assert.Contains(t, body, `"itemId":"item-1"`)
-	assert.NotContains(t, body, `"private"`)
+	assert.Contains(t, body, `"private":"secret"`)
 	for _, frame := range strings.Split(body, "\n\n") {
 		if !strings.Contains(frame, `"type":"tool-result"`) {
 			continue
@@ -106,7 +106,7 @@ func TestStreamingProviderTools_DeferredResultOnly(t *testing.T) {
 	assert.Contains(t, output, `"isError":true`)
 	assert.Contains(t, output, `"caller":{"type":"direct"}`)
 	assert.NotContains(t, output, "private-token")
-	assert.NotContains(t, output, "discard")
+	assert.Contains(t, output, `"private":"discard"`)
 	assert.Equal(t, 1, strings.Count(output, `"type":"finish"`))
 	requireStreamBodyMatchesSchema(t, output)
 }
@@ -137,7 +137,7 @@ func TestStreamingProviderTools_PreviewsAndErrorsPreserveLifecycle(t *testing.T)
 	harness.model.stream = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
 		return &provider.StreamResult{Stream: makeStream(
 			provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "call", ToolName: "echo", Input: `{}`, ProviderExecuted: true},
-			provider.StreamPart{Type: provider.PartToolResult, ToolCallID: "call", ToolName: "echo", Result: json.RawMessage(`{"preview":true}`), Preliminary: true},
+			provider.StreamPart{Type: provider.PartToolResult, ToolCallID: "call", ToolName: "echo", Result: json.RawMessage(`{"preview":true}`), Preliminary: new(true)},
 			provider.StreamPart{Type: provider.PartError},
 			provider.StreamPart{Type: provider.PartToolResult, ToolCallID: "call", ToolName: "echo", Result: json.RawMessage(`{"final":true}`)},
 			finishPart(),
@@ -160,8 +160,8 @@ func TestStreamingProviderTools_BoundedPreviewAndMetadata(t *testing.T) {
 	}{
 		{name: "preview exceeds provider part budget", limits: func() Limits { limits := testLimits(); limits.StreamParts = 3; return limits }(), parts: []provider.StreamPart{
 			{Type: provider.PartToolCall, ToolCallID: "call", ToolName: "echo", Input: `{}`},
-			{Type: provider.PartToolResult, ToolCallID: "call", ToolName: "echo", Result: json.RawMessage(`0`), Preliminary: true},
-			{Type: provider.PartToolResult, ToolCallID: "call", ToolName: "echo", Result: json.RawMessage(`1`), Preliminary: true},
+			{Type: provider.PartToolResult, ToolCallID: "call", ToolName: "echo", Result: json.RawMessage(`0`), Preliminary: new(true)},
+			{Type: provider.PartToolResult, ToolCallID: "call", ToolName: "echo", Result: json.RawMessage(`1`), Preliminary: new(true)},
 			{Type: provider.PartToolResult, ToolCallID: "call", ToolName: "echo", Result: json.RawMessage(`2`)},
 			finishPart(),
 		}},
@@ -199,7 +199,7 @@ func TestStreamingProviderTools_CancelDuringPreliminaryResult(t *testing.T) {
 			defer close(parts)
 			for _, part := range []provider.StreamPart{
 				{Type: provider.PartToolCall, ToolCallID: "call", ToolName: "echo", Input: `{}`},
-				{Type: provider.PartToolResult, ToolCallID: "call", ToolName: "echo", Result: json.RawMessage(`false`), Preliminary: true},
+				{Type: provider.PartToolResult, ToolCallID: "call", ToolName: "echo", Result: json.RawMessage(`false`), Preliminary: new(true)},
 			} {
 				select {
 				case parts <- part:
@@ -233,7 +233,7 @@ func TestStreamingProviderTools_WriterFailureAfterPreliminaryResult(t *testing.T
 	harness.model.stream = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
 		return &provider.StreamResult{Stream: makeStream(
 			provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "call", ToolName: "echo", Input: `{}`},
-			provider.StreamPart{Type: provider.PartToolResult, ToolCallID: "call", ToolName: "echo", Result: json.RawMessage(`false`), Preliminary: true},
+			provider.StreamPart{Type: provider.PartToolResult, ToolCallID: "call", ToolName: "echo", Result: json.RawMessage(`false`), Preliminary: new(true)},
 			provider.StreamPart{Type: provider.PartToolResult, ToolCallID: "call", ToolName: "echo", Result: json.RawMessage(`true`)},
 			finishPart(),
 		)}, nil
@@ -271,7 +271,7 @@ func TestStreamingProviderTools_DeferredSourceFailsSafely(t *testing.T) {
 
 func TestStreamingProviderTools_InvalidFinalization(t *testing.T) {
 	call := provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "call", ToolName: "echo", Input: `{}`}
-	preview := provider.StreamPart{Type: provider.PartToolResult, ToolCallID: "call", ToolName: "echo", Result: json.RawMessage(`false`), Preliminary: true}
+	preview := provider.StreamPart{Type: provider.PartToolResult, ToolCallID: "call", ToolName: "echo", Result: json.RawMessage(`false`), Preliminary: new(true)}
 	final := provider.StreamPart{Type: provider.PartToolResult, ToolCallID: "call", ToolName: "echo", Result: json.RawMessage(`false`)}
 	for _, tc := range []struct {
 		name    string

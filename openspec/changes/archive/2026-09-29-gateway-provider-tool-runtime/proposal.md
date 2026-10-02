@@ -5,7 +5,7 @@ The SDK prerequisite in #238 can represent provider tools, but the Gateway still
 ## What Changes
 
 - Accept strict provider definitions and assistant provider-call/result history without changing function-tool validation.
-- Encode ordered unary/SSE calls, results and execution markers with reviewed non-MCP metadata.
+- Encode ordered unary/SSE calls, results and execution markers with bounded opaque non-MCP metadata and separate semantic correlation validation.
 - Correlate deferred results with unresolved provider-owned history; permit previews only before a final result.
 - Prove both-client behavior through the real handler and authenticated native Anthropic code-execution transport.
 - Keep protected MCP root options, MCP metadata, effectful fallback and later output families rejected; preserve the base PR's ordinary root provider options.

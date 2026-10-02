@@ -95,7 +95,7 @@ func hostedStage(options provider.CallOptions) (int, error) {
 }
 
 func hostedCallContent() provider.GenerateContentPart {
-	return provider.GenerateContentPart{Type: provider.ContentToolCall, ToolCallID: "call", ToolName: "echo", Input: json.RawMessage(`{}`), ProviderExecuted: true, Dynamic: true, ProviderMetadata: hostedMetadata()}
+	return provider.GenerateContentPart{Type: provider.ContentToolCall, ToolCallID: "call", ToolName: "echo", Input: json.RawMessage(`{}`), ProviderExecuted: true, Dynamic: new(true), ProviderMetadata: hostedMetadata()}
 }
 
 func hostedResultContent(isError bool) provider.GenerateContentPart {

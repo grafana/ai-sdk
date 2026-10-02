@@ -34,7 +34,7 @@ type streamToolCallEvent struct {
 	ToolName         string                    `json:"toolName"`
 	Input            string                    `json:"input"`
 	ProviderExecuted bool                      `json:"providerExecuted,omitempty"`
-	Dynamic          bool                      `json:"dynamic,omitempty"`
+	Dynamic          *bool                     `json:"dynamic,omitempty"`
 	Metadata         provider.ProviderMetadata `json:"providerMetadata,omitzero"`
 }
 type streamToolResultEvent struct {
@@ -43,8 +43,8 @@ type streamToolResultEvent struct {
 	ToolName    string                    `json:"toolName"`
 	Result      json.RawMessage           `json:"result"`
 	IsError     bool                      `json:"isError,omitempty"`
-	Dynamic     bool                      `json:"dynamic,omitempty"`
-	Preliminary bool                      `json:"preliminary,omitempty"`
+	Dynamic     *bool                     `json:"dynamic,omitempty"`
+	Preliminary *bool                     `json:"preliminary,omitempty"`
 	Metadata    provider.ProviderMetadata `json:"providerMetadata,omitzero"`
 }
 type toolStreamPhase uint8
@@ -79,6 +79,9 @@ func (h *handler) processToolStreamPart(w http.ResponseWriter, state *streamStat
 	}
 	next := current
 	event := streamEvent{typeName: part.Type, id: id, toolName: part.ToolName, delta: part.Delta, input: part.Input, result: part.Result, isError: part.IsError, metadata: part.ProviderMetadata}
+	if !streamEventPreflight(event, h.limits.StreamFrameBytes) || validateToolMetadata(part.ProviderMetadata) != nil {
+		return streamPartAdapterFailure
+	}
 	switch part.Type {
 	case provider.PartToolInputStart:
 		if exists || seenInHistory || part.ToolName == "" || (part.Preliminary != nil && *part.Preliminary) {
@@ -111,7 +114,7 @@ func (h *handler) processToolStreamPart(w http.ResponseWriter, state *streamStat
 		} else {
 			next.phase = toolResultEmitted
 		}
-		event.dynamic, event.preliminary = part.Dynamic, part.Preliminary != nil && *part.Preliminary
+		event.dynamic, event.preliminary = part.Dynamic, part.Preliminary
 	}
 	if !exists && len(state.tools) >= h.limits.StreamParts {
 		return streamPartAdapterFailure

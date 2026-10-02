@@ -7,7 +7,7 @@ Define bounded provider-tool execution and continuation on direct Gateway routes
 ## Requirements
 
 ### Requirement: Distinct registered provider definitions
-Unary and streaming direct routes SHALL map provider tools with only registered type, ID, name and required object args. Empty/nested args and aliases SHALL survive. Function-only fields, including explicit empty/false fields and definition-level providerOptions, SHALL fail complete validation before resolution or invocation. Native providers SHALL retain tool support and conversion authority.
+Unary and streaming routes SHALL map provider tools with only registered type, ID, name and required object args. Empty/nested args and aliases SHALL survive. Function-only fields, including explicit empty/false fields and definition-level providerOptions, SHALL fail complete validation before resolution or invocation. Native providers SHALL retain tool support and conversion authority.
 
 #### Scenario: Mixed definitions
 - **WHEN** function and provider definitions are supplied with aliases and empty or nested args
@@ -18,7 +18,7 @@ Unary and streaming direct routes SHALL map provider tools with only registered 
 - **THEN** both HTTP modes SHALL fail before model invocation
 
 ### Requirement: Registered execution markers
-Calls/input-start SHALL preserve providerExecuted true. Dynamic SHALL survive on registered arms and input-start SHALL preserve absent/false/true. Results SHALL preserve preliminary but SHALL NOT emit providerExecuted. Definition type alone SHALL NOT imply execution ownership.
+Calls/input-start SHALL preserve providerExecuted true. Dynamic and preliminary SHALL preserve absent/false/true on their registered arms; absent and false retain disabled/final semantics. Results SHALL preserve preliminary but SHALL NOT emit providerExecuted. Definition type alone SHALL NOT imply execution ownership.
 
 #### Scenario: Hosted and client-owned calls
 - **WHEN** provider-defined tools emit hosted or client-owned calls
@@ -29,7 +29,7 @@ Calls/input-start SHALL preserve providerExecuted true. Dynamic SHALL survive on
 - **THEN** the encoded SSE and Go client SHALL preserve each state for subsequent inference
 
 ### Requirement: Provider result and continuation transport
-Unary/SSE output SHALL preserve ordered calls and non-null JSON results, including error, dynamic and preliminary semantics. Assistant provider calls and basic assistant-side results SHALL map into continuation. Ordinary tool-part options SHALL retain object namespaces while rejecting host-reserved controls and protected fields that could override validated tool identity, shape or request policy. Nested output/content options and deferred content families SHALL remain unsupported.
+Unary/SSE output SHALL preserve ordered calls and non-null JSON results, including error, dynamic and preliminary semantics. Assistant provider calls and basic assistant-side results SHALL map into continuation. Ordinary tool-part options SHALL retain opaque object namespaces while rejecting host-reserved controls. Native-consuming adapters SHALL reject fields that could override validated tool identity, shape or request authority at their actual consuming scopes; unknown extension fields SHALL NOT be projected away. Nested output/content options and deferred content families SHALL remain unsupported.
 
 #### Scenario: Selected result values
 - **WHEN** output results contain empty string, false, zero, empty object or array
@@ -54,16 +54,20 @@ Output results SHALL match current-response calls or unresolved provider-owned a
 - **WHEN** bounded request history seeds deferred state
 - **THEN** its entries SHALL NOT consume the current provider stream-part budget or retain history payloads
 
-### Requirement: Reviewed non-MCP tool metadata
-Public metadata SHALL project reviewed Anthropic caller type/toolId and OpenAI/Azure itemId, namespace and caller type/callerId shapes. Unknown/private fields SHALL be omitted; malformed supported fields SHALL fail. Metadata bytes and cardinality SHALL be bounded before copying. This capability SHALL NOT enable MCP: protected MCP root options and explicit MCP continuation/output metadata SHALL remain rejected until separately enabled by gateway-anthropic-mcp. Ordinary root provider options accepted by the base Gateway runtime SHALL remain supported.
+### Requirement: Opaque non-MCP tool metadata
+Tool metadata SHALL use gateway-provider-metadata's shared bounded opaque transport, preserving unknown namespace objects, nested extension fields and omission versus explicit empty objects. Known caller/item correlation fields SHALL be validated separately without projecting metadata. Aggregate original bytes/cardinality and complete encoded response/frame sizes SHALL remain bounded. This capability SHALL NOT activate hosted MCP: consumed Anthropic MCP configuration and explicit MCP continuation/output metadata SHALL remain unsupported until separately enabled by gateway-anthropic-mcp. Foreign namespaces not consumed by a native adapter SHALL retain the base runtime's forwarding semantics without gaining execution or routing authority. Returned metadata SHALL NOT authorize telemetry capture.
 
-#### Scenario: Correlation metadata with private fields
-- **WHEN** reviewed metadata includes arbitrary secret-bearing fields
-- **THEN** only reviewed fields SHALL reach both clients and subsequent native continuation
+#### Scenario: Correlation metadata with extensions
+- **WHEN** tool metadata contains valid caller correlation alongside unknown object namespaces and nested fields
+- **THEN** both clients SHALL receive all metadata unchanged, including omitted/empty presence, independently of operator telemetry capture
 
 #### Scenario: MCP remains deferred
-- **WHEN** a request supplies mcpServers or MCP tool-part options, or output contains MCP metadata
-- **THEN** this runtime boundary SHALL reject it safely rather than treat it as ordinary provider-tool metadata
+- **WHEN** the selected native Anthropic adapter consumes non-empty mcpServers, a request supplies explicit MCP tool-part history, or output contains explicit MCP tool metadata
+- **THEN** the unsupported consuming boundary SHALL reject it safely rather than activate hosted MCP
+
+#### Scenario: Foreign MCP settings are inert
+- **WHEN** compatible inference uses a configured namespace other than anthropic and receives foreign anthropic.mcpServers settings
+- **THEN** ordinary inference SHALL use the configured compatible credential without forwarding the MCP URL/token or mcp_servers to the backend, invoking the MCP endpoint or capturing those values in server observations; caller-owned request metadata MAY retain the submitted body
 
 ### Requirement: Bounded preliminary lifecycle
 Streaming SHALL allow multiple correlated previews followed by exactly one final result. Complete calls without results MAY finish for deferred execution, but unfinished previews and post-final results SHALL fail. Existing frame/part limits, cancellation, ordered errors, authoritative finish and bounded cleanup SHALL remain. Pre-call image previews SHALL remain unsupported under WP16 (#110).
@@ -76,20 +80,20 @@ Streaming SHALL allow multiple correlated previews followed by exactly one final
 - **WHEN** finish arrives during a preview series or output/metadata exceeds a configured bound
 - **THEN** oversized bytes SHALL NOT be committed and cleanup SHALL remain bounded
 
-### Requirement: Stateless direct execution and private observation
-The Gateway SHALL execute no local tools and retain no cross-request state. Fallback routes SHALL reject definitions, choices and tool history before any candidate. Each HTTP invocation SHALL have one canonical logical generation; tool payloads, names, IDs, metadata and physical attribution SHALL remain absent from metadata-only exports, logs and metric labels.
+### Requirement: Stateless execution and private observation
+The Gateway SHALL execute no local tools and retain no cross-request state. Configured fallback SHALL retain gateway-fallback's native option interpretation, candidate order, retry decisions, cancellation and successful-result/first-provider-part selection boundary without a blanket tool/history refusal. Post-selection provider, encoding or lifecycle failures SHALL NOT advance to another candidate. Native work before an eligible pre-selection failure may be repeated; no exactly-once provider generation or effect guarantee is made. Each HTTP invocation SHALL have one canonical logical generation; tool payloads, names, IDs, metadata and physical attribution SHALL remain absent from metadata-only exports, logs and metric labels.
 
 #### Scenario: Authenticated native round trip
 - **WHEN** both clients execute direct Anthropic code-execution call/result continuation in unary and streaming modes
 - **THEN** native requests SHALL preserve aliases and results, logical generation counts SHALL match requests, and exported observations SHALL exclude private tool values
 
-#### Scenario: Fallback effects
-- **WHEN** provider definitions or tool history target fallback
-- **THEN** both candidate invocation counts SHALL remain zero
+#### Scenario: Fallback selection boundary
+- **WHEN** a candidate returns a successful result or its first provider part, including a tool, start or error part
+- **THEN** it SHALL remain selected through later provider, encoding and lifecycle failures without replay on another candidate
 
 ### Requirement: Independent acceptance evidence
 Both registered clients SHALL exercise real-handler and authenticated-command scenarios without requiring MCP. Request goldens SHALL be captured from the pinned client. Provider fixtures SHALL retain authentic provenance and Apache modules SHALL NOT import Gateway code. Candidate-source checks SHALL select `go.gateway.work` explicitly; standalone Gateway builds SHALL use published pins with GOWORK disabled.
 
 #### Scenario: Intermediate PR validation
 - **WHEN** this change is validated before MCP support lands
-- **THEN** provider-tool contract, native continuation, lifecycle, privacy and module checks SHALL pass with MCP still rejected
+- **THEN** provider-tool contract, native continuation, lifecycle, privacy and module checks SHALL pass with consumed hosted-MCP configuration still unsupported

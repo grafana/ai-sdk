@@ -217,14 +217,15 @@ func TestRuntimeUnaryFunctionOutput_OpaqueArguments(t *testing.T) {
 				require.Equal(t, http.StatusOK, response.Code)
 				var decoded struct {
 					Content []struct {
-						Input string `json:"input"`
+						Input   string `json:"input"`
+						Dynamic *bool  `json:"dynamic"`
 					} `json:"content"`
 				}
 				require.NoError(t, json.Unmarshal(response.Body.Bytes(), &decoded))
 				require.Len(t, decoded.Content, 1)
 				assert.Equal(t, input, decoded.Content[0].Input)
 				assert.Contains(t, response.Body.String(), `"providerMetadata":{"private":{"secret":"private-sentinel"}}`)
-				assert.NotContains(t, response.Body.String(), "dynamic")
+				assert.Equal(t, disabled, decoded.Content[0].Dynamic)
 			}
 		})
 	}

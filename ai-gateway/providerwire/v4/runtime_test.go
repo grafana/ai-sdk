@@ -646,7 +646,6 @@ func TestRuntimeProviderToolDefinitions(t *testing.T) {
 		{"missing args", `{"prompt":[],"tools":[{"type":"provider","id":"provider.search","name":"search"}]}`},
 		{"null args", `{"prompt":[],"tools":[{"type":"provider","id":"provider.search","name":"search","args":null}]}`},
 		{"function-only field", `{"prompt":[],"tools":[{"type":"provider","id":"provider.search","name":"search","args":{},"strict":false}]}`},
-		{"MCP remains deferred", `{"prompt":[],"providerOptions":{"anthropic":{"mcpServers":[{"type":"url","name":"echo","url":"https://mcp.example.test","authorizationToken":"secret"}]}}}`},
 		{"MCP continuation remains deferred", `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"echo","input":{},"providerExecuted":true,"providerOptions":{"anthropic":{"type":"mcp-tool-use","serverName":"echo"}}}]}]}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

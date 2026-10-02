@@ -10,41 +10,38 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestMapToolMetadata_ReviewedProjection(t *testing.T) {
+func TestToolMetadata_OpaqueTransport(t *testing.T) {
 	metadata := provider.ProviderMetadata{
 		"anthropic": json.RawMessage(`{"caller":{"type":"code_execution_20260120","toolId":"parent","secret":"private"},"secret":"private"}`),
 		"openai":    json.RawMessage(`{"itemId":"item-1","namespace":"tools","caller":{"type":"program","callerId":"parent","private":"hidden"},"backendModel":"private"}`),
 		"private":   json.RawMessage(`{"credential":"private"}`),
 	}
-	mapped, err := mapToolMetadata(metadata, 1024)
+	mapped, err := mapToolMetadataForTest(metadata, 1024)
 	require.NoError(t, err)
-	require.Len(t, mapped, 2)
-	assert.JSONEq(t, `{"caller":{"type":"code_execution_20260120","toolId":"parent"}}`, string(mapped["anthropic"]))
-	assert.JSONEq(t, `{"itemId":"item-1","namespace":"tools","caller":{"type":"program","callerId":"parent"}}`, string(mapped["openai"]))
-	assert.NotContains(t, string(mapped["openai"]), "private")
+	require.Len(t, mapped, 3)
+	assert.Equal(t, metadata, mapped)
 }
 
-func TestMapToolMetadata_OptionalFieldsAndPrivacy(t *testing.T) {
+func TestToolMetadata_OptionalFieldsAndExtensions(t *testing.T) {
 	metadata := provider.ProviderMetadata{
 		"anthropic": json.RawMessage(`{"type":"other","caller":{"type":"direct","callerId":"private"},"credential":"private"}`),
 		"openai":    json.RawMessage(`{"itemId":"","namespace":"","caller":{"type":"direct","toolId":"private"},"credential":"private"}`),
 		"azure":     json.RawMessage(`{"private":"hidden"}`),
 	}
-	mapped, err := mapToolMetadata(metadata, 1024)
+	mapped, err := mapToolMetadataForTest(metadata, 1024)
 	require.NoError(t, err)
-	require.Len(t, mapped, 2)
-	assert.JSONEq(t, `{"caller":{"type":"direct"}}`, string(mapped["anthropic"]))
-	assert.JSONEq(t, `{"itemId":"","namespace":"","caller":{"type":"direct"}}`, string(mapped["openai"]))
+	require.Len(t, mapped, 3)
+	assert.Equal(t, metadata, mapped)
 }
 
 func TestMapToolMetadata_RequiresExactFieldNames(t *testing.T) {
-	mapped, err := mapToolMetadata(provider.ProviderMetadata{
+	mapped, err := mapToolMetadataForTest(provider.ProviderMetadata{
 		"openai": json.RawMessage(`{"ItemId":"private","namespace":"public"}`),
 	}, 1024)
 	require.NoError(t, err)
-	assert.JSONEq(t, `{"namespace":"public"}`, string(mapped["openai"]))
+	assert.JSONEq(t, `{"ItemId":"private","namespace":"public"}`, string(mapped["openai"]))
 
-	_, err = mapToolMetadata(provider.ProviderMetadata{
+	_, err = mapToolMetadataForTest(provider.ProviderMetadata{
 		"anthropic": json.RawMessage(`{"caller":{"TYPE":"direct"}}`),
 	}, 1024)
 	require.Error(t, err)
@@ -77,8 +74,30 @@ func TestMapToolMetadata_RejectsUnconfiguredOrOversizedValues(t *testing.T) {
 		{name: "excess cardinality", metadata: provider.ProviderMetadata{"one": nil, "two": nil}, limit: 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := mapToolMetadata(tc.metadata, tc.limit)
+			_, err := mapToolMetadataForTest(tc.metadata, tc.limit)
 			require.Error(t, err)
 		})
 	}
+}
+
+func mapToolMetadataForTest(metadata provider.ProviderMetadata, limit int64) (provider.ProviderMetadata, error) {
+	result := validGenerateResult()
+	result.Content = []provider.GenerateContentPart{{Type: provider.ContentToolCall, ToolCallID: "call", ToolName: "echo", Input: json.RawMessage("{}"), ProviderMetadata: metadata}}
+	mapped, err := mapUnarySuccess(result, limit)
+	if err != nil {
+		return nil, err
+	}
+	body, ok := encodeUnarySuccess(mapped, limit)
+	if !ok {
+		return nil, errInvalidUnarySuccess
+	}
+	var response struct {
+		Content []struct {
+			Metadata provider.ProviderMetadata `json:"providerMetadata"`
+		} `json:"content"`
+	}
+	if err := json.Unmarshal(body, &response); err != nil {
+		return nil, err
+	}
+	return response.Content[0].Metadata, nil
 }

@@ -77,7 +77,7 @@ func TestProviderMetadata_StreamScopes(t *testing.T) {
 			finish,
 		}
 		h := &handler{limits: Limits{StreamFrameBytes: 1 << 20, StreamParts: 100}}
-		state := newStreamState(100)
+		state := newStreamState(100, nil)
 		w := httptest.NewRecorder()
 		for i, part := range parts {
 			before := w.Body.Len()
