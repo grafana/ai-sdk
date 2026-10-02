@@ -1034,7 +1034,7 @@ func convertAssistantContent(v *cacheControlValidator, mapping toolNameMapping, 
 			}
 		case provider.ContentPartTypeToolCall:
 			cc := v.resolveCacheControl(p.ProviderOptions, msgOpts, isLast, true)
-			if isMCPToolUse(p.ProviderOptions) {
+			if p.ProviderExecuted && isMCPToolUse(p.ProviderOptions) {
 				serverName, ok := extractMCPServerName(p.ProviderOptions)
 				if !ok {
 					*warnings = append(*warnings, provider.Warning{

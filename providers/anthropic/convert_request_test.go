@@ -3024,10 +3024,11 @@ func TestBuildParams_MCPToolCallRoundTrip(t *testing.T) {
 			Prompt: []provider.Message{
 				provider.NewAssistantMessage(
 					provider.ContentPart{Type: provider.ContentPartTypeToolCall,
-						ToolCallID:      "tc_1",
-						ToolName:        "remote_search",
-						Input:           json.RawMessage(`{"q":"hello"}`),
-						ProviderOptions: mcpOpts,
+						ToolCallID:       "tc_1",
+						ToolName:         "remote_search",
+						Input:            json.RawMessage(`{"q":"hello"}`),
+						ProviderOptions:  mcpOpts,
+						ProviderExecuted: true,
 					},
 				),
 			},
@@ -3052,10 +3053,11 @@ func TestBuildParams_MCPToolCallRoundTrip(t *testing.T) {
 			Prompt: []provider.Message{
 				provider.NewAssistantMessage(
 					provider.ContentPart{Type: provider.ContentPartTypeToolCall,
-						ToolCallID:      "tc_1",
-						ToolName:        "remote_search",
-						Input:           json.RawMessage(`{"q":"hello"}`),
-						ProviderOptions: mcpOpts,
+						ToolCallID:       "tc_1",
+						ToolName:         "remote_search",
+						Input:            json.RawMessage(`{"q":"hello"}`),
+						ProviderOptions:  mcpOpts,
+						ProviderExecuted: true,
 					},
 				),
 			},
@@ -3075,10 +3077,11 @@ func TestBuildParams_MCPToolCallRoundTrip(t *testing.T) {
 			Prompt: []provider.Message{
 				provider.NewAssistantMessage(
 					provider.ContentPart{Type: provider.ContentPartTypeToolCall,
-						ToolCallID:      "tc_1",
-						ToolName:        "remote_search",
-						Input:           json.RawMessage(`{"q":"hello"}`),
-						ProviderOptions: mcpOpts,
+						ToolCallID:       "tc_1",
+						ToolName:         "remote_search",
+						Input:            json.RawMessage(`{"q":"hello"}`),
+						ProviderOptions:  mcpOpts,
+						ProviderExecuted: true,
 					},
 				),
 				provider.NewToolMessage(provider.ToolResultPart("tc_1", "remote_search", &provider.ToolResultOutput{Type: provider.ToolOutputJSON, JSON: json.RawMessage(`"result data"`)})),
@@ -3153,10 +3156,11 @@ func TestBuildParams_MCPToolCallRoundTrip(t *testing.T) {
 				provider.NewAssistantMessage(
 					provider.ToolCallPart("call_1", "local_search", json.RawMessage(`{}`)),
 					provider.ContentPart{Type: provider.ContentPartTypeToolCall,
-						ToolCallID:      "tc_1",
-						ToolName:        "remote_tool",
-						Input:           json.RawMessage(`{}`),
-						ProviderOptions: mcpOpts,
+						ToolCallID:       "tc_1",
+						ToolName:         "remote_tool",
+						Input:            json.RawMessage(`{}`),
+						ProviderOptions:  mcpOpts,
+						ProviderExecuted: true,
 					},
 				),
 				provider.NewToolMessage(
@@ -5689,11 +5693,12 @@ func TestBuildParams_MCPToolResultInUserMessage(t *testing.T) {
 	opts := provider.CallOptions{
 		Prompt: []provider.Message{
 			provider.NewAssistantMessage(provider.ContentPart{
-				Type:            provider.ContentPartTypeToolCall,
-				ToolCallID:      "mcp-1",
-				ToolName:        "echo",
-				Input:           json.RawMessage(`{}`),
-				ProviderOptions: mcpOpts,
+				Type:             provider.ContentPartTypeToolCall,
+				ToolCallID:       "mcp-1",
+				ToolName:         "echo",
+				Input:            json.RawMessage(`{}`),
+				ProviderOptions:  mcpOpts,
+				ProviderExecuted: true,
 			}),
 			provider.NewUserMessage(
 				provider.ToolResultPart("mcp-1", "echo", &provider.ToolResultOutput{Type: provider.ToolOutputJSON, JSON: json.RawMessage(`"out"`)}),
