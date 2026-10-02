@@ -27,8 +27,8 @@ The Go Gateway client SHALL decode tool metadata through its independent object-
 - **THEN** the client SHALL decode it without importing server correlation state
 
 ### Requirement: Client decoding does not activate Gateway capabilities
-The Gateway service SHALL continue to reject provider tools, provider-owned results and hosted MCP configuration until it validates and routes those capabilities. Existing consumers SHALL compile against the updated SDK types without introducing a dependency from Apache modules to Gateway code. Isolated module checks SHALL pass without local Gateway replacements.
+The Gateway service SHALL retain its unsupported provider-tool request capabilities until separately enabled. Actual native Anthropic MCP configuration and continuation SHALL remain unsupported; foreign options and opaque returned metadata SHALL NOT activate MCP or become grounds for blanket rejection. Existing consumers SHALL compile against the updated SDK types without introducing a dependency from Apache modules to Gateway code. Isolated module checks SHALL pass without local Gateway replacements.
 
 #### Scenario: Existing service rejection is preserved
-- **WHEN** provider definitions, enabled provider output markers or MCP root options reach the existing Gateway runtime
+- **WHEN** unsupported provider-tool request capabilities or actual native Anthropic MCP consumption reach the existing Gateway runtime
 - **THEN** the service SHALL safely reject the unsupported capability before invocation
