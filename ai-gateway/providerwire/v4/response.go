@@ -30,7 +30,7 @@ type unaryToolCall struct {
 	ToolName         string                       `json:"toolName"`
 	Input            string                       `json:"input"`
 	ProviderExecuted bool                         `json:"providerExecuted,omitempty"`
-	Dynamic          bool                         `json:"dynamic,omitempty"`
+	Dynamic          *bool                        `json:"dynamic,omitempty"`
 	Metadata         provider.ProviderMetadata    `json:"providerMetadata,omitzero"`
 }
 
@@ -40,8 +40,8 @@ type unaryToolResult struct {
 	ToolName    string                       `json:"toolName"`
 	Result      json.RawMessage              `json:"result"`
 	IsError     bool                         `json:"isError,omitempty"`
-	Dynamic     bool                         `json:"dynamic,omitempty"`
-	Preliminary bool                         `json:"preliminary,omitempty"`
+	Dynamic     *bool                        `json:"dynamic,omitempty"`
+	Preliminary *bool                        `json:"preliminary,omitempty"`
 	Metadata    provider.ProviderMetadata    `json:"providerMetadata,omitzero"`
 }
 
@@ -145,24 +145,22 @@ func mapUnarySuccess(result *provider.GenerateResult, limit int64, contexts ...u
 				return unarySuccess{}, errInvalidUnarySuccess
 			}
 			states[part.ToolCallID] = unaryToolState{name: part.ToolName}
-			metadata, err := mapToolMetadata(part.ProviderMetadata, limit)
-			if err != nil {
+			if err := validateToolMetadata(part.ProviderMetadata); err != nil {
 				return unarySuccess{}, errInvalidUnarySuccess
 			}
-			mapped.Content = append(mapped.Content, unaryToolCall{Type: provider.ContentToolCall, ToolCallID: part.ToolCallID, ToolName: part.ToolName, Input: string(part.Input), ProviderExecuted: part.ProviderExecuted, Dynamic: part.Dynamic != nil && *part.Dynamic, Metadata: metadata})
+			mapped.Content = append(mapped.Content, unaryToolCall{Type: provider.ContentToolCall, ToolCallID: part.ToolCallID, ToolName: part.ToolName, Input: string(part.Input), ProviderExecuted: part.ProviderExecuted, Dynamic: part.Dynamic, Metadata: part.ProviderMetadata})
 		case provider.ContentToolResult:
 			state, exists := states[part.ToolCallID]
 			if !exists || state.name != part.ToolName || state.final || part.ToolCallID == "" || part.ToolName == "" || !utf8.ValidString(part.ToolCallID) || !utf8.ValidString(part.ToolName) || len(part.Result) == 0 || !utf8.Valid(part.Result) || !json.Valid(part.Result) || bytes.Equal(bytes.TrimSpace(part.Result), []byte("null")) {
 				return unarySuccess{}, errInvalidUnarySuccess
 			}
-			metadata, err := mapToolMetadata(part.ProviderMetadata, limit)
-			if err != nil {
+			if err := validateToolMetadata(part.ProviderMetadata); err != nil {
 				return unarySuccess{}, errInvalidUnarySuccess
 			}
 			state.preview = part.Preliminary != nil && *part.Preliminary
 			state.final = !state.preview
 			states[part.ToolCallID] = state
-			mapped.Content = append(mapped.Content, unaryToolResult{Type: provider.ContentToolResult, ToolCallID: part.ToolCallID, ToolName: part.ToolName, Result: part.Result, IsError: part.IsError, Dynamic: part.Dynamic != nil && *part.Dynamic, Preliminary: part.Preliminary != nil && *part.Preliminary, Metadata: metadata})
+			mapped.Content = append(mapped.Content, unaryToolResult{Type: provider.ContentToolResult, ToolCallID: part.ToolCallID, ToolName: part.ToolName, Result: part.Result, IsError: part.IsError, Dynamic: part.Dynamic, Preliminary: part.Preliminary, Metadata: part.ProviderMetadata})
 		default:
 			return unarySuccess{}, errInvalidUnarySuccess
 		}

@@ -103,10 +103,17 @@ so a stream can fail without producing visible text and still not try a backup.
 This boundary avoids mixing responses from different models or replaying tool
 calls after a response has started.
 
-A failed attempt may still incur provider charges. Account for both Gateway
-fallback and SDK retries when setting your latency and cost budgets; neither
-guarantees that provider work happens only once. The Gateway disables retries in
-its native provider clients.
+A failed attempt may still incur charges or perform provider-hosted effects.
+For example, an MCP tool could create a ticket and lose its response before the
+Gateway observes a result or stream event; a backup could create another ticket.
+Decide whether your workflow is fallback-safe. Use application idempotency or
+deduplication, or avoid fallback for workflows that cannot tolerate duplicates.
+
+Application-local functions run after selected calls are returned; that boundary
+does not establish whether a provider-hosted tool already ran. Application and
+SDK retries are separate and can also repeat work. Account for them when setting
+latency and cost budgets. The Gateway disables native-client retries, but does
+not guarantee exactly-once generation or effects.
 
 For troubleshooting, ask your Gateway operator to inspect fallback attempts in
 private logs. Public model names do not identify which backend served a request.

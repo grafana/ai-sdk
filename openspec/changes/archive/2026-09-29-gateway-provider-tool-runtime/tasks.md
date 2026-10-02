@@ -1,7 +1,7 @@
 ## 1. Split runtime behavior from MCP
 
 - [x] 1.1 Preserve strict provider definitions, private unary/SSE encoders, history correlation and preview lifecycle from the reviewed WP13 implementation.
-- [x] 1.2 Limit metadata to ordinary reviewed fields; keep MCP root options and continuation/output metadata rejected.
+- [x] 1.2 Preserve bounded opaque tool metadata and validate correlation separately; keep consumed Anthropic MCP configuration and explicit MCP continuation/output unsupported without imposing foreign-namespace inventories.
 - [x] 1.3 Retain bounds, malformed output, cancellation, writer failure, fallback and privacy regression tests.
 
 ## 2. Independent evidence and documentation

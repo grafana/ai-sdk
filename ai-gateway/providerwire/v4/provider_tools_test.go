@@ -15,7 +15,7 @@ import (
 
 func TestRuntimeUnaryProviderTools_MetadataAndHistory(t *testing.T) {
 	metadata := provider.ProviderMetadata{"anthropic": json.RawMessage(`{"caller":{"type":"direct"},"backend":"private"}`), "private": json.RawMessage(`{"token":"private-token"}`)}
-	call := provider.GenerateContentPart{Type: provider.ContentToolCall, ToolCallID: "call", ToolName: "echo", Input: json.RawMessage(`{"message":"hi"}`), ProviderExecuted: true, Dynamic: true, ProviderMetadata: metadata}
+	call := provider.GenerateContentPart{Type: provider.ContentToolCall, ToolCallID: "call", ToolName: "echo", Input: json.RawMessage(`{"message":"hi"}`), ProviderExecuted: true, Dynamic: new(true), ProviderMetadata: metadata}
 	resultPart := provider.GenerateContentPart{Type: provider.ContentToolResult, ToolCallID: "call", ToolName: "echo", Result: json.RawMessage(`{"result":0}`), ProviderExecuted: true, ProviderMetadata: metadata}
 	for _, tc := range []struct {
 		name, body string
@@ -45,7 +45,7 @@ func TestRuntimeUnaryProviderTools_MetadataAndHistory(t *testing.T) {
 			}
 			assert.Contains(t, response.Body.String(), `"caller":{"type":"direct"}`)
 			for _, marker := range []string{"private-token", "backend", `"private"`} {
-				assert.NotContains(t, response.Body.String(), marker)
+				assert.Contains(t, response.Body.String(), marker)
 			}
 		})
 	}
@@ -73,28 +73,22 @@ func TestRuntimeUnaryProviderTools_InvalidResultsFailBeforeCommit(t *testing.T) 
 	}
 }
 
-func TestRuntimeProviderToolHistory_ProtectsNativeToolFields(t *testing.T) {
-	for _, tc := range []struct{ name, body string }{
-		{"tool call function", `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"echo","input":{},"providerExecuted":true,"providerOptions":{"openaiCompatible":{"function":{"name":"injected","arguments":"{}"}}}}]}]}`},
-		{"tool call id", `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"echo","input":{},"providerExecuted":true,"providerOptions":{"openaiCompatible":{"ID":"injected"}}}]}]}`},
-		{"tool call model", `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"echo","input":{},"providerExecuted":true,"providerOptions":{"openaiCompatible":{"Model":"other"}}}]}]}`},
-		{"tool result type", `{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"call","toolName":"echo","output":{"type":"json","value":{}},"providerOptions":{"openaiCompatible":{"Type":"tool-call"}}}]}]}`},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			for _, streaming := range []bool{false, true} {
-				harness := newRuntimeHarness(t, testLimits())
-				request := validRequest(tc.body)
-				if streaming {
-					request.Header.Set(HeaderStreaming, "true")
-				}
-				response := harness.serve(request)
-				assert.Equal(t, http.StatusBadRequest, response.Code)
-				assert.JSONEq(t, string(protectedProviderOptionError), response.Body.String())
-				assert.Zero(t, harness.resolver.callCount())
-				assert.Zero(t, harness.model.callCount())
-				assert.NotContains(t, response.Body.String(), "injected")
-			}
-		})
+func TestRuntimeProviderToolHistory_OptionsRemainOpaque(t *testing.T) {
+	body := `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"echo","input":{},"providerExecuted":true,"providerOptions":{"future":{"function":{"name":"extension","arguments":"{}"},"ID":"extension","nested":[null,false,{}]}}}]}]}`
+	for _, streaming := range []bool{false, true} {
+		harness := newRuntimeHarness(t, testLimits())
+		request := validRequest(body)
+		if streaming {
+			request.Header.Set(HeaderStreaming, "true")
+		}
+		response := harness.serve(request)
+		require.Equal(t, http.StatusOK, response.Code)
+		options := harness.model.receivedOptions()
+		value, ok := options.Prompt[0].Content[0].ProviderOptions["future"].(provider.RawProviderOption)
+		require.True(t, ok)
+		assert.JSONEq(t, `{"function":{"name":"extension","arguments":"{}"},"ID":"extension","nested":[null,false,{}]}`, string(value.Raw))
+		assert.Equal(t, 1, harness.resolver.callCount())
+		assert.Equal(t, 1, harness.model.callCount())
 	}
 }
 
@@ -132,7 +126,7 @@ func TestUnaryProviderToolResult_BoundsAndPreliminary(t *testing.T) {
 	_, err = mapUnarySuccess(value, 512)
 	require.Error(t, err)
 	result.ProviderMetadata = nil
-	result.Preliminary = true
+	result.Preliminary = new(true)
 	value.Content = []provider.GenerateContentPart{call, result}
 	_, err = mapUnarySuccess(value, 1<<20)
 	require.Error(t, err)

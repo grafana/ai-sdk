@@ -64,7 +64,7 @@ type streamEvent struct {
 	source           any
 	providerExecuted bool
 	dynamic          *bool
-	preliminary      bool
+	preliminary      *bool
 }
 
 type streamStartEvent struct {
@@ -152,9 +152,9 @@ func encodeStreamFrame(value streamEvent, limit int64) ([]byte, bool) {
 	case provider.PartToolInputEnd:
 		payload, err = json.Marshal(streamToolEndEvent{Type: value.typeName, ID: value.id, Metadata: value.metadata})
 	case provider.PartToolCall:
-		payload, err = json.Marshal(streamToolCallEvent{Type: value.typeName, ToolCallID: value.id, ToolName: value.toolName, Input: value.input, ProviderExecuted: value.providerExecuted, Dynamic: value.dynamic != nil && *value.dynamic, Metadata: value.metadata})
+		payload, err = json.Marshal(streamToolCallEvent{Type: value.typeName, ToolCallID: value.id, ToolName: value.toolName, Input: value.input, ProviderExecuted: value.providerExecuted, Dynamic: value.dynamic, Metadata: value.metadata})
 	case provider.PartToolResult:
-		payload, err = json.Marshal(streamToolResultEvent{Type: value.typeName, ToolCallID: value.id, ToolName: value.toolName, Result: value.result, IsError: value.isError, Dynamic: value.dynamic != nil && *value.dynamic, Preliminary: value.preliminary, Metadata: value.metadata})
+		payload, err = json.Marshal(streamToolResultEvent{Type: value.typeName, ToolCallID: value.id, ToolName: value.toolName, Result: value.result, IsError: value.isError, Dynamic: value.dynamic, Preliminary: value.preliminary, Metadata: value.metadata})
 	case provider.PartFinish:
 		payload, err = json.Marshal(streamFinishEvent{
 			Type:         value.typeName,

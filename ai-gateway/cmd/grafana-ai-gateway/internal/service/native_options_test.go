@@ -46,6 +46,15 @@ func TestNativeOptions_ConsumedRequests(t *testing.T) {
 					},
 				},
 				{
+					name: "anthropic provider definitions", backend: "anthropic",
+					body: `{"prompt":[],"tools":[{"type":"provider","id":"anthropic.code_execution_20260120","name":"python","args":{}}]}`,
+					check: func(t *testing.T, body map[string]any) {
+						tools := body["tools"].([]any)
+						require.Len(t, tools, 1)
+						assert.Equal(t, map[string]any{"type": "code_execution_20260120", "name": "code_execution"}, tools[0])
+					},
+				},
+				{
 					name: "compatible nested extensions", backend: "openai-compatible",
 					body: `{"providerOptions":{"my-vllm":{"user":"raw","extension":{"ignored":true}},"openaiCompatible":{"user":"fixed"},"myVllm":{"user":"camel","extension":{"null":null,"false":false,"zero":0,"empty":"","array":[],"object":{}},"headers":{"Authorization":"ordinary"}},"anthropic":{"model":"irrelevant"}},"prompt":[{"role":"user","providerOptions":{"openaiCompatible":{"priority":"high"}},"content":[{"type":"text","text":"one","providerOptions":{"openaiCompatible":{"sentiment":"positive","nested":{}}}},{"type":"text","text":"two"}]}]}`,
 					check: func(t *testing.T, body map[string]any) {

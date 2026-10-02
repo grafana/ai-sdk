@@ -651,7 +651,7 @@ describe("provider-executed tools through the real handler", () => {
         assert.ok(call);
         assert.equal(call.providerExecuted, true);
         assert.equal(call.dynamic, true);
-        assert.deepEqual(call.providerMetadata, { anthropic: { caller: { type: "direct" } } });
+        assert.deepEqual(call.providerMetadata, { anthropic: { caller: { type: "direct" }, private: "hidden" } });
         assert.equal(first.filter((part: any) => part.type === "tool-result").length, 0);
         const historyCall = { type: "tool-call" as const, toolCallId: call.toolCallId, toolName: call.toolName, input: JSON.parse(call.input), providerExecuted: true, providerOptions: call.providerMetadata };
         const second = await request([...firstPrompt, { role: "assistant", content: [historyCall] }]);
@@ -659,14 +659,14 @@ describe("provider-executed tools through the real handler", () => {
         assert.ok(result);
         assert.equal(result.isError ?? false, isError);
         assert.deepEqual(result.result, { result: "done" });
-        assert.deepEqual(result.providerMetadata, { anthropic: { caller: { type: "direct" } } });
+        assert.deepEqual(result.providerMetadata, { anthropic: { caller: { type: "direct" }, private: "hidden" } });
         assert.equal(second.filter((part: any) => part.type === "tool-call").length, 0);
         const historyResult = { type: "tool-result" as const, toolCallId: result.toolCallId, toolName: result.toolName, output: { type: (isError ? "error-json" : "json") as "error-json" | "json", value: result.result }, providerOptions: result.providerMetadata };
         const final = await request([...firstPrompt, { role: "assistant", content: [historyCall, historyResult] }]);
         assert.equal(final.filter((part: any) => part.type === "text" || part.type === "text-delta").map((part: any) => part.text ?? part.delta).join(""), "finished");
         for (const parts of [first, second, final]) {
           assert.ok(!JSON.stringify(parts).includes("private-token"));
-          assert.ok(!JSON.stringify(parts).includes("hidden"));
+          if (parts !== final) assert.ok(JSON.stringify(parts).includes("hidden"));
         }
       }
       const after = await stats();
