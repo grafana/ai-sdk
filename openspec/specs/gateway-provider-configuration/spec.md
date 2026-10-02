@@ -1,7 +1,7 @@
 # gateway-provider-configuration Specification
 
 ## Purpose
-Define how the authenticated Gateway command configures named provider instances that back public models, keeping explicit configuration authoritative, outbound model traffic bounded, and backend identity private.
+Define how the authenticated Gateway command configures named provider instances that back public models, keeping explicit configuration authoritative, outbound model traffic bounded, and runtime backend identity private.
 
 ## Requirements
 
@@ -32,12 +32,12 @@ Each public model backed by an `openai` provider SHALL be constructed once throu
 - **AND** the client SHALL receive a fixed safe error
 
 ### Requirement: OpenAI Responses backend identity stays private
-Discovery responses, public error responses, access logs and metrics SHALL NOT contain an OpenAI provider's instance key, `baseURL`, API key, `apiKeyEnv` name or backend model ID. Discovery SHALL keep publishing provider `grafana` with only public model IDs, names, descriptions and aliases.
+Authenticated discovery SHALL publish one canonical row per configured model with its name, description and specification provider grafana, plus authorized aliases/primary/fallbacks and provider-instance/provider/providerModelId facts through the gateway-configured-discovery projection. It SHALL NOT contain an OpenAI provider's API key, apiKeyEnv name, baseURL or unrelated configuration. Authorized provider-instance and configured model identifiers SHALL NOT be treated as credentials. Public runtime error responses, access logs and metrics SHALL retain their existing credential/backend-detail exclusions; this feature SHALL NOT expand those surfaces.
 
 #### Scenario: Discovery lists OpenAI models
-- **WHEN** an authenticated client requests `/api/v1/aisdk/config`
-- **THEN** the response SHALL list the OpenAI canonical and alias IDs
-- **AND** SHALL NOT contain any private OpenAI provider configuration
+- **WHEN** an authorized authenticated client requests /api/v1/aisdk/config
+- **THEN** the response SHALL list the OpenAI canonical and alias IDs with explicit ordered configured candidate facts
+- **AND** it SHALL NOT contain provider credentials, secret references, baseURL or unrelated account/provider configuration
 
 ### Requirement: OpenAI-compatible provider configuration
 The Gateway command model configuration SHALL accept `providers.<name>` instances with `type: openai-compatible`. Each instance SHALL require a non-empty `apiKeyEnv` and a non-empty `baseURL`, and SHALL accept an optional `providerName`. `providerName` SHALL be rejected for `anthropic` providers. An unsupported `type` SHALL fail with `providers.<name>.type` and the list of supported types. Configuration SHALL remain strict YAML, so unknown keys still fail. Every failure SHALL occur during startup before readiness, and a non-empty compatible `baseURL` SHALL pass the same credential-free endpoint validation as other provider endpoints, including HTTPS in production deployment mode.
@@ -96,13 +96,14 @@ When a client cancels an established stream from a compatible public model, the 
 - **AND** `/ready` SHALL continue to succeed
 
 ### Requirement: Compatible backend identity stays private
-Discovery responses, public error responses, access logs and metrics SHALL NOT contain a compatible provider's instance key, `providerName`, `baseURL`, API key, `apiKeyEnv` name, backend model ID, or backend error body. Discovery SHALL keep publishing provider `grafana` with only public model IDs, names, descriptions and aliases.
+Authenticated discovery SHALL publish one canonical row per configured model with its name, description and specification provider grafana, plus authorized aliases/primary/fallbacks and provider-instance/effective-provider/providerModelId facts through the gateway-configured-discovery projection. The effective provider SHALL reflect the configured providerName or existing constructor default. It SHALL NOT contain API keys, apiKeyEnv names, baseURL, backend error bodies or unrelated configuration. Authorized provider-instance/providerName/model identifiers SHALL NOT be categorically concealed. Public runtime error responses, access logs and metrics SHALL retain their existing credential/backend-detail exclusions; discovery SHALL NOT enable additional operator capture or runtime diagnostic transport.
 
 #### Scenario: Discovery lists compatible models
-- **WHEN** an authenticated client requests `/api/v1/aisdk/config`
-- **THEN** the response SHALL list the compatible canonical and alias IDs
-- **AND** SHALL NOT contain any private compatible provider configuration
+- **WHEN** an authorized authenticated client requests /api/v1/aisdk/config
+- **THEN** the response SHALL list the compatible canonical and alias IDs with explicit ordered configured candidate facts
+- **AND** it SHALL NOT contain credentials, secret references, baseURL, error bodies or unrelated account/provider configuration
 
 #### Scenario: Backend failure carries a secret
-- **WHEN** a compatible backend returns `502` with a secret marker in its error body
-- **THEN** the client error, access logs and metrics SHALL NOT contain the marker or any private provider configuration
+- **WHEN** a compatible backend returns 502 with a secret marker in its error body
+- **THEN** the client error, access logs and metrics SHALL retain their existing exclusions for that marker and private provider configuration
+- **AND** discovery SHALL NOT reflect the runtime error or turn configured candidates into attempted/selected facts

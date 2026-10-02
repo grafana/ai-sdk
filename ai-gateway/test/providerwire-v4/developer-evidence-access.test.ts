@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { fetchConfiguredModels } from "../../examples/configured-discovery";
 import { describe, it } from "node:test";
 import { createGateway, GatewayError, GatewayResponseError, type GatewayProviderSettings } from "@ai-sdk/gateway";
 import { APICallError, type LanguageModelV4StreamPart } from "@ai-sdk/provider";
@@ -81,31 +82,6 @@ async function collect<T>(stream: ReadableStream<T>): Promise<T[]> {
   }
 }
 
-async function boundedJSON(response: Response, maxBytes: number): Promise<unknown> {
-  assert.equal(response.ok, true);
-  const reader = response.body!.getReader();
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  try {
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      size += value.byteLength;
-      if (size > maxBytes) throw new Error("discovery byte limit");
-      chunks.push(value);
-    }
-    return JSON.parse(Buffer.concat(chunks).toString("utf8"));
-  } finally {
-    await reader.cancel();
-    reader.releaseLock();
-  }
-}
-
-async function configuredRoutes(fetch: NonNullable<GatewayProviderSettings["fetch"]>, maxBytes: number) {
-  return boundedJSON(await fetch("https://contract.invalid/api/v1/aisdk/config", {
-    method: "GET", headers: { "x-access-token": "dummy-access-token" }, redirect: "error",
-  }), maxBytes);
-}
 
 describe("#321 pinned developer access witnesses (current baseline, not permanent losses)", () => {
   it("unary preserves metadata/collision provenance but replaces native transport", async () => {
@@ -234,11 +210,11 @@ describe("#321 pinned developer access witnesses (current baseline, not permanen
     }
   });
 
-  it("stock discovery strips candidates; proposed bounded authenticated access preserves them without inference", async () => {
-    const configured = { canonicalModelId: "grafana/assistant", aliases: ["assistant"], candidates: [{ providerInstance: "anthropic-primary", provider: "anthropic", modelId: "primary" }, { providerInstance: "openai-secondary", provider: "openai", modelId: "native-model" }] };
-    const document = { models: ["assistant", "grafana/assistant"].map(id => ({ id, name: "Assistant", specification: { specificationVersion: "v4", provider: "grafana", modelId: id }, gateway: configured })) };
+  it("stock discovery strips candidates; supported companion access preserves them without inference", async () => {
+    const configured = { aliases: ["assistant"], primary: { providerInstance: "anthropic-primary", provider: "anthropic", providerModelId: "primary" }, fallbacks: [{ providerInstance: "openai-secondary", provider: "openai", providerModelId: "native-model" }] };
+    const document = { models: [{ id: "grafana/assistant", name: "Assistant", specification: { specificationVersion: "v4", provider: "grafana", modelId: "grafana/assistant" }, gateway: configured }] };
     const stock = await gateway(async () => Response.json(document)).getAvailableModels();
-    assert.deepEqual(stock.models.map(row => row.id), ["assistant", "grafana/assistant"]);
+    assert.deepEqual(stock.models.map(row => row.id), ["grafana/assistant"]);
     assert.equal("gateway" in stock.models[0], false);
     let calls = 0;
     const fetch: NonNullable<GatewayProviderSettings["fetch"]> = async (url, init) => {
@@ -250,8 +226,9 @@ describe("#321 pinned developer access witnesses (current baseline, not permanen
       return Response.json(document);
     };
     const bytes = Buffer.byteLength(JSON.stringify(document));
-    assert.deepEqual(await configuredRoutes(fetch, bytes), document);
-    await assert.rejects(() => configuredRoutes(fetch, bytes - 1), /discovery byte limit/);
+    const options = { baseURL: "https://contract.invalid/api/v1/aisdk", headers: { "x-access-token": "dummy-access-token" }, fetch };
+    assert.deepEqual(await fetchConfiguredModels({ ...options, maxBytes: bytes }), document);
+    await assert.rejects(() => fetchConfiguredModels({ ...options, maxBytes: bytes - 1 }), /byte limit exceeded/);
     assert.equal(calls, 2);
   });
 });

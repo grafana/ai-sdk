@@ -48,6 +48,7 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 		configured := file.Models[id]
 		descriptors := append([]config.Primary{configured.Primary}, configured.Fallback...)
 		candidates := make([]provider.LanguageModel, 0, len(descriptors))
+		configuredCandidates := make([]catalog.ConfiguredCandidate, 0, len(descriptors))
 		policies := make([]catalog.ProviderOptionPolicy, 0, len(descriptors))
 		for _, descriptor := range descriptors {
 			providerConfig, ok := providers[descriptor.Provider]
@@ -100,6 +101,13 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 			if candidate == nil {
 				return nil, fmt.Errorf("gateway service: constructing model %q returned nil", id)
 			}
+			providerName := providerConfig.Type
+			if providerConfig.Type == "openai-compatible" && providerConfig.ProviderName != "" {
+				providerName = providerConfig.ProviderName
+			}
+			configuredCandidates = append(configuredCandidates, catalog.ConfiguredCandidate{
+				ProviderInstance: descriptor.Provider, Provider: providerName, ModelID: descriptor.Model,
+			})
 			candidates = append(candidates, candidate)
 			policies = append(policies, policy)
 		}
@@ -129,6 +137,7 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 				Name:        configured.Name,
 				Description: configured.Description,
 				Aliases:     append([]string(nil), configured.Aliases...),
+				Candidates:  configuredCandidates,
 			},
 			Model:           model,
 			ProviderOptions: sharedOptionPolicy(policies),

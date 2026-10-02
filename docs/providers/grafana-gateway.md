@@ -46,13 +46,88 @@ environment.
 
 ## Discover and select public models
 
-`client.ListModels(ctx)` returns public model IDs, names, optional descriptions,
-and their specification identifiers. Aliases remain ordinary independent rows
-in server order. The client neither caches this catalog nor infers backend or
-fallback topology. A malformed or oversized response returns no partial catalog.
+Use `client.ListModels(ctx)` to build a model picker or find an ID to pass to
+`client.LanguageModel(id)`. It returns one row per configured model, with its
+name, description and canonical public ID. `Gateway.Aliases` lists other valid
+selection IDs; aliases do not create duplicate rows.
 
-Use the returned ID with `client.LanguageModel(id)`, or register the client as a
-`registry.Provider`; see [Fallback and registry](../guides/fallback-and-registry.md).
+When available, `ModelInfo.Gateway` also tells you which providers and models are
+configured behind each public ID. Check for nil because some catalogs provide
+only public names:
+
+```go
+rows, err := client.ListModels(ctx)
+if err != nil {
+	return err
+}
+for _, row := range rows {
+	if row.Gateway == nil {
+		continue
+	}
+	fmt.Println(row.ID, row.Gateway.Aliases)
+	primary := row.Gateway.Primary
+	fmt.Println(primary.ProviderInstance, primary.Provider, primary.ProviderModelID)
+	for _, fallback := range row.Gateway.Fallbacks {
+		fmt.Println(fallback.ProviderInstance, fallback.Provider, fallback.ProviderModelID)
+	}
+}
+```
+
+Use `Primary` and ordered `Fallbacks` to explain configured provider choices,
+not to identify which provider served a previous request. Direct models have an
+empty fallback list. Listing does not call providers or check availability.
+Make requests with the public row ID or one of its aliases, not a target's
+`ProviderModelID`.
+
+### Access from TypeScript
+
+`@ai-sdk/gateway`'s `getAvailableModels()` lists canonical public IDs but discards
+`gateway`, including aliases and configured provider choices. Alias IDs remain
+callable when you already know them. To discover them and provider choices, copy the
+[`configured-discovery.ts` helper](../../ai-gateway/examples/configured-discovery.ts)
+into your application and call it separately:
+
+```ts
+import { fetchConfiguredModels } from "./configured-discovery";
+
+const { models } = await fetchConfiguredModels({
+  baseURL,
+  headers: { "X-Access-Token": accessToken },
+  signal,
+});
+const route = models[0]?.gateway;
+const aliases = route?.aliases;
+const primary = route?.primary;
+const fallbacks = route?.fallbacks;
+```
+
+For Grafana Cloud, select `headers: { Authorization: \`Bearer ${stackID}:${capToken}\` }`
+instead; see the [authentication guide](../guides/gateway-authentication.md).
+Run this on your server and use HTTPS. Pass the same API-prefix URL and credentials
+as your Gateway client; the helper refuses redirects. If you supply a custom
+`fetch`, it must honor redirect and cancellation options. Candidate information
+may be absent, so keep the optional access shown above.
+
+### Handle large catalogs
+
+Discovery returns a complete catalog or an error, never a partial list. The Go
+client accepts up to 4 MiB by default; adjust its discovery limit through
+`grafana.DefaultLimits()` if needed. The TypeScript helper also accepts up to
+4 MiB; use `maxBytes` to set a smaller limit. Clients decode typed metadata without
+revalidating IDs, candidate uniqueness or route consistency. Those rules belong
+to server startup validation.
+
+Strings use standard JSON decoding. For escaped lone UTF-16 surrogates, Go
+returns U+FFFD while TypeScript retains the decoded surrogate. Do not rely on
+identical candidate strings across clients for such malformed Unicode.
+
+The Gateway serves its complete visible configured catalog without a discovery
+response-size cap. If your client's read limit rejects it, raise the Go discovery
+limit or ask your operator to reduce the catalog. Provider credentials are never
+included in discovery; your deployment controls who may see the model list.
+
+To compose the client with other providers, register it as a `registry.Provider`;
+see [Fallback and registry](../guides/fallback-and-registry.md).
 
 ## Bound work and handle errors
 
