@@ -10,7 +10,7 @@ import nodeProcess from "node:process";
 import { after, before, describe, it } from "node:test";
 import { createGateway, GatewayInvalidRequestError } from "@ai-sdk/gateway";
 import type { JSONValue, LanguageModelV4, LanguageModelV4CallOptions, LanguageModelV4StreamPart } from "@ai-sdk/provider";
-import { generateText, isStepCount, jsonSchema, streamText, tool, wrapLanguageModel } from "ai";
+import { generateText, isStepCount, jsonSchema, streamText, tool } from "ai";
 import { buildGoClientCapture, buildGoStreamTextCapture, captureGoClient } from "./go-client-capture";
 
 const AI_GATEWAY_ROOT = resolve(import.meta.dirname, "../..");
@@ -46,6 +46,32 @@ after(() => {
 
 describe("native option forwarding through the authenticated command", () => {
   for (const family of ["anthropic", "openai", "compatible"] as const) {
+    it(`uses ${family} defaults when clients omit output-token limits`, async () => {
+      const [fake, gateway] = family === "anthropic" ? await startGateway() : family === "openai" ? await startOpenAIGateway() : await startCompatibleGateway();
+      const modelID = family === "anthropic" ? "assistant" : family;
+      const options: LanguageModelV4CallOptions = { prompt: [{ role: "user", content: [{ type: "text", text: "normal-stream" }] }] };
+      try {
+        const model = gateway.client()(modelID);
+        for (const mode of ["generate", "stream"] as const) {
+          const go = await captureGoClient(goClientBinaryPath, { baseURL: `${gateway.url}/api/v1/aisdk`, accessToken: TEST_TOKEN, modelID, mode, options });
+          await assertNativeOptionClientResults(go, model, options, mode);
+          assert.deepEqual(fake.requests.at(-2)!.body, fake.requests.at(-1)!.body);
+        }
+        const result = await generateText({ model, prompt: "normal-stream", maxRetries: 0, abortSignal: AbortSignal.timeout(10_000) });
+        assert.equal(result.finishReason, "stop");
+        assert.equal(result.text, family === "anthropic" ? "hello from fake Anthropic" : family === "openai" ? "hello from fake openai" : "hello from fake compatible");
+        assert.equal(fake.requests.length, 5);
+        assert.match(singleHeader(fake.requests.at(-1)!.headers["user-agent"])!, /(?:^|\s)ai\/7\.0\.116(?:\s|$)/);
+        for (const request of fake.requests) {
+          if (family === "anthropic") assert.equal(request.body.max_tokens, 4096);
+          else assert.equal(Object.hasOwn(request.body, family === "openai" ? "max_output_tokens" : "max_tokens"), false);
+        }
+        assert.deepEqual(fake.violations, []);
+      } finally {
+        await settleCleanup(() => gateway.stop(), () => fake.stop());
+      }
+    });
+
     it(`preserves ${family} consumed scopes and ordinary values in both clients and modes`, async () => {
       const [fake, gateway] = family === "anthropic" ? await startGateway() : family === "openai" ? await startOpenAIGateway() : await startCompatibleGateway();
       const modelID = family === "anthropic" ? "assistant" : family;
@@ -1297,46 +1323,68 @@ describe("authenticated Anthropic Gateway command", () => {
 });
 
 describe("Trusted-proxy composition (dummy credentials, not production authentication)", () => {
-  for (const client of ["go", "typescript"] as const) {
-    it(`preserves ${client} high-level text-only automatic choice through the edge`, async () => {
-      const [fake, gateway, edge] = await startCloudGateway();
-      try {
-        const prompt = "normal-stream";
-        let text: string;
-        if (client === "go") {
-          const result = await captureGoClient(goStreamTextBinaryPath, {
-            baseURL: `${edge.url}/api/v1/aisdk`, accessToken: TEST_TOKEN,
-            headers: { Authorization: [`Bearer ${EDGE_WRITE_KEY}`] },
-            mode: "stream-text", modelID: "assistant",
-            options: { prompt: [{ role: "user", content: [{ type: "text", text: prompt }] }], maxOutputTokens: 32 },
-          });
-          assert.equal(result.error, undefined);
-          text = result.text;
-        } else {
-          text = await streamText({ model: edge.client(EDGE_WRITE_KEY)("assistant"), prompt, maxOutputTokens: 32, maxRetries: 0 }).text;
+  for (const { client, mode } of [
+    { client: "go", mode: "stream" },
+    { client: "typescript", mode: "generate" },
+    { client: "typescript", mode: "stream" },
+  ] as const) {
+    for (const maxOutputTokens of [undefined, 32]) {
+      it(`preserves ${client} high-level ${mode} calls through the edge with ${maxOutputTokens === undefined ? "default" : "explicit"} token limits`, async () => {
+        const [fake, gateway, edge] = await startCloudGateway();
+        try {
+          const prompt = "normal-stream";
+          let text: string;
+          if (client === "go") {
+            const result = await captureGoClient(goStreamTextBinaryPath, {
+              baseURL: `${edge.url}/api/v1/aisdk`, accessToken: TEST_TOKEN,
+              headers: { Authorization: [`Bearer ${EDGE_WRITE_KEY}`] },
+              mode: "stream-text", modelID: "assistant",
+              options: { prompt: [{ role: "user", content: [{ type: "text", text: prompt }] }], maxOutputTokens },
+            });
+            assert.equal(result.error, undefined);
+            text = result.text;
+          } else {
+            const options = { model: edge.client(EDGE_WRITE_KEY)("assistant"), prompt, maxOutputTokens, maxRetries: 0 };
+            if (mode === "generate") {
+              const result = await generateText(options);
+              assert.equal(result.finishReason, "stop");
+              text = result.text;
+            } else {
+              const result = streamText(options);
+              text = await result.text;
+              assert.equal(await result.finishReason, "stop");
+            }
+          }
+          assert.equal(edge.received.length, 1);
+          const request = edge.received[0]!;
+          const body = JSON.parse(request.body);
+          assert.deepEqual(body.toolChoice, { type: "auto" });
+          assert.deepEqual(body.prompt, [{ role: "user", content: [{ type: "text", text: prompt }] }]);
+          assert.equal(body.maxOutputTokens, maxOutputTokens);
+          assert.equal(Object.hasOwn(body, "maxOutputTokens"), maxOutputTokens !== undefined);
+          assert.ok(body.tools === undefined || body.tools.length === 0);
+          assert.equal(request.headers["ai-language-model-streaming"], String(mode === "stream"));
+          assert.equal(edge.forwarded.length, 1);
+          assert.equal(fake.requests.length, 1);
+          assert.equal(text, mode === "stream" ? "hello from fake Anthropic stream" : "hello from fake Anthropic");
+          assert.equal(fake.requests[0]!.body.tool_choice, undefined);
+          assert.equal(fake.requests[0]!.body.max_tokens, maxOutputTokens ?? 4096);
+          if (client === "typescript" && mode === "generate") {
+            assert.match(body.headers["user-agent"], /^ai\/7\.0\.116(?:\s|$)/);
+            assert.equal(singleHeader(fake.requests[0]!.headers["user-agent"]), body.headers["user-agent"]);
+          }
+          assert.equal(fake.requests[0]!.apiKey, "integration-anthropic-key");
+          assert.deepEqual(fake.violations, []);
+          const metrics = await gateway.metrics();
+          await gateway.stop();
+          assertCloudPrivateValuesAbsent(JSON.stringify([text, metrics, gateway.stderr, fake.requests]), [
+            ...CLOUD_PRIVATE_VALUES,
+          ]);
+        } finally {
+          await settleCleanup(() => edge.stop(), () => gateway.stop(), () => fake.stop());
         }
-        assert.equal(edge.received.length, 1);
-        const request = edge.received[0]!;
-        const body = JSON.parse(request.body);
-        assert.deepEqual(body.toolChoice, { type: "auto" });
-        assert.deepEqual(body.prompt, [{ role: "user", content: [{ type: "text", text: prompt }] }]);
-        assert.ok(body.tools === undefined || body.tools.length === 0);
-        assert.equal(request.headers["ai-language-model-streaming"], "true");
-        assert.equal(edge.forwarded.length, 1);
-        assert.equal(fake.requests.length, 1);
-        assert.equal(text, "hello from fake Anthropic stream");
-        assert.equal(fake.requests[0]!.body.tool_choice, undefined);
-        assert.equal(fake.requests[0]!.apiKey, "integration-anthropic-key");
-        assert.deepEqual(fake.violations, []);
-        const metrics = await gateway.metrics();
-        await gateway.stop();
-        assertCloudPrivateValuesAbsent(JSON.stringify([text, metrics, gateway.stderr, fake.requests]), [
-          ...CLOUD_PRIVATE_VALUES,
-        ]);
-      } finally {
-        await settleCleanup(() => edge.stop(), () => gateway.stop(), () => fake.stop());
-      }
-    });
+      });
+    }
   }
 
   it("authenticates Go and pinned Vercel clients with stack-scoped CAP credentials through the Cloud edge", async () => {
@@ -1793,14 +1841,7 @@ describe("authenticated OpenAI-compatible Gateway command", () => {
     const [fake, gateway] = await startCompatibleGateway();
     try {
       const model = gateway.client()("compatible");
-      // Deliberate host transport adaptation; never enable native body headers.
-      const unaryModel = wrapLanguageModel({ model, middleware: { specificationVersion: "v4", wrapGenerate: async ({params}) => {
-        const {headers,...options}=params;
-        assert.deepEqual(Object.keys(headers ?? {}),["user-agent"]);
-        assert.match(headers!["user-agent"]!,/^ai\/7\.0\.116(?:\s|$)/);
-        return createGateway({apiKey:"ignored",baseURL:`${gateway.url}/api/v1/aisdk`,headers:{"X-Access-Token":TEST_TOKEN,"user-agent":headers!["user-agent"]!}})("compatible").doGenerate(options);
-      } } });
-      const unary = await generateText({model:unaryModel,prompt:"wp17-reasoning",maxOutputTokens:64});
+      const unary = await generateText({model,prompt:"wp17-reasoning"});
       assert.equal(fake.requests.length,1);
       assert.equal(unary.reasoningText,"private thought");
       const first=streamText({model,prompt:"wp17-reasoning",maxOutputTokens:64});

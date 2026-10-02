@@ -79,19 +79,18 @@ Clients must not bypass the proxy and send those credentials directly to
 the application's `cloud-gateway` listener. Keep provider credentials in server-side
 configuration; never place them in browser code or logs.
 
-Discover models with `getAvailableModels`, then call `doGenerate` or `doStream`
-with an explicit `maxOutputTokens` limit. The shared authentication guide includes
-Go and TypeScript examples for generating a response.
+Discover models with Go `ListModels` or TypeScript `getAvailableModels`, then
+call a model with Go `GenerateText` or `StreamText`, or TypeScript `generateText`
+or `streamText`. The TypeScript client also exposes `doGenerate` and `doStream`
+for lower-level model calls. The shared authentication guide includes Go and
+TypeScript examples.
 
-For streaming text, use Go `StreamText` or TypeScript `streamText` and set an
-explicit output-token limit. For TypeScript non-streaming calls, use `doGenerate`;
-`generateText` does not work out of the box because its default User-Agent header
-is rejected as a request-level override. Do not rely on default output-token limits.
+An output-token limit is optional. Set one to control response length and costs;
+when omitted, the provider/model default applies.
 
-Function tools, file inputs, and reasoning can be used with or without configured
-fallback, provided the selected models support them. Your application runs the
-functions, not the Gateway. See the [Gateway client guide](../../docs/providers/grafana-gateway.md)
-for tool workflows, model requirements, and fallback costs.
+Choose models that support the function tools, file inputs, and reasoning your
+application needs. See the [Gateway client guide](../../docs/providers/grafana-gateway.md)
+for tool workflows, model requirements, and fallback behavior.
 
 Bring-your-own-key (BYOK) requests and native OpenAI/Anthropic API adapters
 are not supported.
