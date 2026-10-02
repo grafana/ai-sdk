@@ -11,14 +11,14 @@ import (
 type reasoningTextPart struct {
 	Type     provider.GenerateContentType `json:"type"`
 	Text     string                       `json:"text"`
-	Metadata *provider.ProviderMetadata   `json:"providerMetadata,omitempty"`
+	Metadata provider.ProviderMetadata    `json:"providerMetadata,omitzero"`
 }
 
 type reasoningFilePart struct {
-	Type      string                     `json:"type"`
-	MediaType string                     `json:"mediaType"`
-	Data      reasoningWireFileData      `json:"data"`
-	Metadata  *provider.ProviderMetadata `json:"providerMetadata,omitempty"`
+	Type      string                    `json:"type"`
+	MediaType string                    `json:"mediaType"`
+	Data      reasoningWireFileData     `json:"data"`
+	Metadata  provider.ProviderMetadata `json:"providerMetadata,omitzero"`
 }
 
 type reasoningWireFileData struct {

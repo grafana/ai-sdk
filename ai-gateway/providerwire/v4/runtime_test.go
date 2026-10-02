@@ -860,7 +860,7 @@ func TestSafeErrorReduction(t *testing.T) {
 }
 
 func TestProviderMetadata_RuntimeFailureAndFinishAuthority(t *testing.T) {
-	for _, metadata := range []provider.ProviderMetadata{{"future": json.RawMessage(`null`)}, {"future": json.RawMessage(strings.Repeat(" ", 1<<20) + `{}`)}} {
+	for _, metadata := range []provider.ProviderMetadata{{"future": json.RawMessage(`null`)}, {"future": json.RawMessage(`{"incomplete":`)}, {"future": json.RawMessage(strings.Repeat(" ", 1<<20) + `{}`)}} {
 		h := newRuntimeHarness(t, testLimits())
 		h.model.generate = func(_ context.Context, _ provider.CallOptions) (*provider.GenerateResult, error) {
 			result := validGenerateResult()

@@ -226,7 +226,7 @@ Before output allocation, UTF-8 scanning or encoding, the handler SHALL reject c
 
 The handler SHALL count raw-usage bytes before parsing/marshaling and reject raw usage longer than 1,048,576 bytes or the unary limit, including whitespace. After size preflight it SHALL validate original UTF-8 and any present raw as one JSON object. Standard encoding SHALL preserve valid raw JSON escapes, including lone and paired UTF-16 surrogates. The complete private DTO SHALL then encode through standard Go JSON and SHALL receive HTTP 200 only after the final bytes fit. Provider-domain JSON marshalers SHALL NOT control public output. Encoding MAY allocate a bounded constant multiple of the configured limit for worst-case escaping; no value SHALL be truncated to fit.
 
-Metadata SHALL share the result/content budget under gateway-provider-metadata, accounting original namespace bytes including whitespace and cardinality before scanning or allocation. Namespace UTF-8/object shape and JSON syntax SHALL be validated without projection within those bounds.
+Metadata SHALL share the result/content budget under gateway-provider-metadata, accounting original namespace bytes including whitespace and cardinality before scanning or allocation. Namespace UTF-8/object shape SHALL be checked in preflight, and standard JSON encoding SHALL reject malformed namespace syntax before HTTP 200, without projection within those bounds.
 
 #### Scenario: Preflight rejects oversized provider values
 - **WHEN** content/warning count or aggregate represented bytes exceed the unary budget, or raw usage exceeds 1,048,576 bytes

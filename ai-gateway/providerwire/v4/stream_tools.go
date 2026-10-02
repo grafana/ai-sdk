@@ -10,25 +10,25 @@ import (
 )
 
 type streamToolStartEvent struct {
-	Type     provider.StreamPartType    `json:"type"`
-	ID       string                     `json:"id"`
-	ToolName string                     `json:"toolName"`
-	Metadata *provider.ProviderMetadata `json:"providerMetadata,omitempty"`
+	Type     provider.StreamPartType   `json:"type"`
+	ID       string                    `json:"id"`
+	ToolName string                    `json:"toolName"`
+	Metadata provider.ProviderMetadata `json:"providerMetadata,omitzero"`
 }
 type streamToolCallEvent struct {
-	Type       provider.StreamPartType    `json:"type"`
-	ToolCallID string                     `json:"toolCallId"`
-	ToolName   string                     `json:"toolName"`
-	Input      string                     `json:"input"`
-	Metadata   *provider.ProviderMetadata `json:"providerMetadata,omitempty"`
+	Type       provider.StreamPartType   `json:"type"`
+	ToolCallID string                    `json:"toolCallId"`
+	ToolName   string                    `json:"toolName"`
+	Input      string                    `json:"input"`
+	Metadata   provider.ProviderMetadata `json:"providerMetadata,omitzero"`
 }
 type streamToolResultEvent struct {
-	Type       provider.StreamPartType    `json:"type"`
-	ToolCallID string                     `json:"toolCallId"`
-	ToolName   string                     `json:"toolName"`
-	Result     json.RawMessage            `json:"result"`
-	IsError    bool                       `json:"isError,omitempty"`
-	Metadata   *provider.ProviderMetadata `json:"providerMetadata,omitempty"`
+	Type       provider.StreamPartType   `json:"type"`
+	ToolCallID string                    `json:"toolCallId"`
+	ToolName   string                    `json:"toolName"`
+	Result     json.RawMessage           `json:"result"`
+	IsError    bool                      `json:"isError,omitempty"`
+	Metadata   provider.ProviderMetadata `json:"providerMetadata,omitzero"`
 }
 type toolStreamPhase uint8
 
