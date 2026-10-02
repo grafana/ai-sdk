@@ -11,7 +11,7 @@
 - [x] 2.2 Cover resolved missing/empty/null/case/duplicate configuration, actual native projection and history.
 - [x] 2.3 Verify both-client response-derived native continuation and synthetic deferred transport.
 - [x] 2.4 Verify actual mixed-candidate consumption, pre-selection retry and no post-selection replay.
-- [ ] 2.5 Run cumulative tests, race, parity, client/schema/integration/command, static, docs and boundary checks on this slice's immediate parent.
+- [x] 2.5 Run cumulative tests, race, parity, client/schema/integration/command, static, docs and boundary checks on this slice's immediate parent.
 - [ ] 2.6 Complete the all-three-slice principle audit and update PR descriptions to actual baseline/evidence.
 
 ## 3. Documentation and risk
