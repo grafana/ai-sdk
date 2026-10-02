@@ -153,8 +153,7 @@ func (m *model) DoGenerate(ctx context.Context, params provider.CallOptions) (*p
 	citDocs := extractCitationDocuments(params.Prompt)
 	var requestBody json.RawMessage
 	var response *http.Response
-	requestOpts := m.requestOptions(br, params.Headers)
-	requestOpts = append(requestOpts, option.WithMiddleware(captureRequestBody(&requestBody)), option.WithResponseInto(&response))
+	var requestOpts []option.RequestOption
 	if deadline, ok := ctx.Deadline(); ok {
 		remaining := time.Until(deadline)
 		if remaining <= 0 {
@@ -162,6 +161,8 @@ func (m *model) DoGenerate(ctx context.Context, params provider.CallOptions) (*p
 		}
 		requestOpts = append(requestOpts, option.WithRequestTimeout(remaining))
 	}
+	requestOpts = append(requestOpts, m.requestOptions(br, params.Headers)...)
+	requestOpts = append(requestOpts, option.WithMiddleware(captureRequestBody(&requestBody)), option.WithResponseInto(&response))
 
 	msg, err := m.client.Beta.Messages.New(ctx, p, requestOpts...)
 	if err != nil {

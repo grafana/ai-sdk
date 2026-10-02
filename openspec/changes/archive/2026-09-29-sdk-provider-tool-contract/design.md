@@ -13,8 +13,8 @@ Behavior follows the registered reference `4e8c387622ee1bb0d55841664416d38754d5c
 ## Decisions
 
 - Validate the existing flat Go `Tool` at each direct entry point rather than imposing the HTTP schema on Go callers. This catches incompatible populated fields before I/O. Nil Go provider args become `{}` at conversion, matching upstream defaults; HTTP callers still must supply an object.
-- Use bool for unary dynamic and preliminary markers, where absence and false mean the same thing. Retain `*bool` for streaming dynamic, because input-start explicitly false overrides definition-based text-stream inference. UI conversion independently classifies known application tools as the registered frontend does; tests cover both outputs rather than assuming they agree.
-- Extend the client's closed unary/SSE readers with explicit provider-call/result and metadata allowlists rather than sharing server DTOs. Preserve byte/event bounds, cancellation, client-owned response fields, and valid warning order. Do not require a current-response call for deferred results or add an independent server lifecycle validator.
+- Retain the parent's presence-aware unary and streaming marker fields. Absent and false preliminary markers both mean final; input-start explicitly false overrides definition-based text-stream inference. UI conversion independently classifies known application tools as the registered frontend does; tests cover both outputs rather than assuming they agree.
+- Extend the client's closed unary/SSE output union with provider calls/results while reusing its independent opaque metadata decoder rather than sharing server DTOs or introducing metadata inventories. Preserve byte/event bounds, cancellation, client-owned response fields, and valid warning order. Do not require a current-response call for deferred results or add an independent server lifecycle validator.
 - Use pointers for Anthropic MCP token/enabled options so omission differs from empty/false. For unary Anthropic calls, supply a future context deadline as the default SDK timeout before its large-token check; an explicit request timeout still wins. Neither streaming nor the no-deadline SDK guard changes.
 - Keep Apache SDK modules independent of Gateway code. The Gateway service consumes published immutable module versions, migrates its existing field uses, and retains rejection of capabilities it does not yet validate or route.
 
@@ -27,7 +27,7 @@ Behavior follows the registered reference `4e8c387622ee1bb0d55841664416d38754d5c
 
 ## Migration Plan
 
-Update compiled consumers together with published module dependencies, leaving existing service behavior unchanged. Verify direct provider calls, both stream projections, client decoding, isolated module resolution, and Gateway rejection. Roll back the corresponding module set if needed; no persistent state is introduced.
+Validate compiled consumers against candidate source while retaining merged-main module pins. Leave existing native option forwarding, reusable fallback and opaque metadata transport unchanged; client decoding alone does not activate service-side provider tools or MCP. Verify direct provider calls, both stream projections, client decoding, isolated module resolution, and Gateway rejection. Roll back the corresponding module set if needed; no persistent state is introduced.
 
 ## Open Questions
 

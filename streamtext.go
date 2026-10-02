@@ -1517,7 +1517,7 @@ func (r *StreamTextResult) handleToolResult(
 	step *StepResult,
 	cfg *streamConfig,
 ) error {
-	preliminary := part.Preliminary
+	preliminary := part.Preliminary != nil && *part.Preliminary
 	dynamic := part.Dynamic
 	var input json.RawMessage
 	for _, toolCall := range step.ToolCalls {

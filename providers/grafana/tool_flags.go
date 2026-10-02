@@ -17,4 +17,3 @@ func validToolFlags(raw json.RawMessage) bool {
 	}
 	return true
 }
-

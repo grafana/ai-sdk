@@ -292,7 +292,7 @@ func TestConverseParity_ParallelAndSchema(t *testing.T) {
 func TestConverseParity_ProviderToolsAndBetaPrecedence(t *testing.T) {
 	choice := provider.ToolChoice{Type: provider.ToolChoiceNone}
 	tools := []provider.Tool{
-		{Type: provider.ToolTypeProvider, ID: "anthropic.code_execution_20250522", Name: "code_execution", InputSchema: json.RawMessage(`{"type":"string"}`)},
+		{Type: provider.ToolTypeProvider, ID: "anthropic.code_execution_20250522", Name: "code_execution"},
 		{Type: provider.ToolTypeFunction, Name: "weather", InputSchema: json.RawMessage(`{"type":"object"}`)},
 	}
 	bo := BedrockOptions{AnthropicBeta: []string{"caller-beta"}, AdditionalModelRequestFields: map[string]any{"anthropic_beta": []string{"raw-beta"}}}
