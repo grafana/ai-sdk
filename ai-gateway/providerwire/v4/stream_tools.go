@@ -10,22 +10,25 @@ import (
 )
 
 type streamToolStartEvent struct {
-	Type     provider.StreamPartType `json:"type"`
-	ID       string                  `json:"id"`
-	ToolName string                  `json:"toolName"`
+	Type     provider.StreamPartType    `json:"type"`
+	ID       string                     `json:"id"`
+	ToolName string                     `json:"toolName"`
+	Metadata *provider.ProviderMetadata `json:"providerMetadata,omitempty"`
 }
 type streamToolCallEvent struct {
-	Type       provider.StreamPartType `json:"type"`
-	ToolCallID string                  `json:"toolCallId"`
-	ToolName   string                  `json:"toolName"`
-	Input      string                  `json:"input"`
+	Type       provider.StreamPartType    `json:"type"`
+	ToolCallID string                     `json:"toolCallId"`
+	ToolName   string                     `json:"toolName"`
+	Input      string                     `json:"input"`
+	Metadata   *provider.ProviderMetadata `json:"providerMetadata,omitempty"`
 }
 type streamToolResultEvent struct {
-	Type       provider.StreamPartType `json:"type"`
-	ToolCallID string                  `json:"toolCallId"`
-	ToolName   string                  `json:"toolName"`
-	Result     json.RawMessage         `json:"result"`
-	IsError    bool                    `json:"isError,omitempty"`
+	Type       provider.StreamPartType    `json:"type"`
+	ToolCallID string                     `json:"toolCallId"`
+	ToolName   string                     `json:"toolName"`
+	Result     json.RawMessage            `json:"result"`
+	IsError    bool                       `json:"isError,omitempty"`
+	Metadata   *provider.ProviderMetadata `json:"providerMetadata,omitempty"`
 }
 type toolStreamPhase uint8
 
@@ -54,7 +57,7 @@ func (h *handler) processToolStreamPart(w http.ResponseWriter, state *streamStat
 	}
 	current, exists := state.tools[id]
 	next := current
-	event := streamEvent{typeName: part.Type, id: id, toolName: part.ToolName, delta: part.Delta, input: part.Input, result: part.Result, isError: part.IsError}
+	event := streamEvent{typeName: part.Type, id: id, toolName: part.ToolName, delta: part.Delta, input: part.Input, result: part.Result, isError: part.IsError, metadata: part.ProviderMetadata}
 	switch part.Type {
 	case provider.PartToolInputStart:
 		if exists || part.ToolName == "" {

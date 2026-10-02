@@ -10,7 +10,6 @@ import (
 )
 
 const maxSourceIDBytes = 1024
-const maxSourceMetadataBytes = 8192
 
 type sourceKey struct {
 	kind provider.SourceType
@@ -24,7 +23,7 @@ type urlSource struct {
 	ID               string                       `json:"id"`
 	URL              string                       `json:"url"`
 	Title            string                       `json:"title,omitempty"`
-	ProviderMetadata provider.ProviderMetadata    `json:"providerMetadata,omitempty"`
+	ProviderMetadata *provider.ProviderMetadata   `json:"providerMetadata,omitempty"`
 }
 
 type documentSource struct {
@@ -34,7 +33,7 @@ type documentSource struct {
 	MediaType        string                       `json:"mediaType"`
 	Title            string                       `json:"title"`
 	Filename         string                       `json:"filename,omitempty"`
-	ProviderMetadata provider.ProviderMetadata    `json:"providerMetadata,omitempty"`
+	ProviderMetadata *provider.ProviderMetadata   `json:"providerMetadata,omitempty"`
 }
 
 func unarySource(part provider.GenerateContentPart) provider.SourceInfo {
@@ -55,14 +54,7 @@ func sourcePreflight(source provider.SourceInfo, limit int64) bool {
 		}
 		limit -= int64(len(value))
 	}
-	for _, namespace := range []string{"anthropic", "openai", "azure"} {
-		raw := source.ProviderMetadata[namespace]
-		if len(raw) > maxSourceMetadataBytes || int64(len(raw)) > limit {
-			return false
-		}
-		limit -= int64(len(raw))
-	}
-	return limit >= 0
+	return metadataFits(source.ProviderMetadata, &limit)
 }
 
 func mapSource(source provider.SourceInfo, ids sourceIDs, limit int64) (any, error) {
@@ -77,8 +69,11 @@ func mapSource(source provider.SourceInfo, ids sourceIDs, limit int64) (any, err
 	if source.SourceType != provider.SourceTypeURL && source.SourceType != provider.SourceTypeDocument {
 		return nil, errInvalidUnarySuccess
 	}
-	metadata, filePath := publicSourceMetadata(source.ProviderMetadata)
-	if filePath && source.SourceType == provider.SourceTypeDocument {
+	metadata, err := mapMetadata(source.ProviderMetadata)
+	if err != nil {
+		return nil, err
+	}
+	if sourceFilePath(source.ProviderMetadata) && source.SourceType == provider.SourceTypeDocument {
 		source.Title, source.Filename = "Document", ""
 	}
 	key := sourceKey{source.SourceType, source.ID}
@@ -103,32 +98,14 @@ func mapSource(source provider.SourceInfo, ids sourceIDs, limit int64) (any, err
 	return mapped, nil
 }
 
-func publicSourceMetadata(metadata provider.ProviderMetadata) (provider.ProviderMetadata, bool) {
-	approved := make(map[string]int64)
-	filePath := false
-	for _, namespace := range []string{"anthropic", "openai", "azure"} {
-		var fields map[string]json.RawMessage
-		raw := metadata[namespace]
-		if !utf8.Valid(raw) || json.Unmarshal(raw, &fields) != nil {
-			continue
+func sourceFilePath(metadata provider.ProviderMetadata) bool {
+	for _, namespace := range []string{"openai", "azure"} {
+		var value struct {
+			Type string `json:"type"`
 		}
-		keys := []string{"startPageNumber", "endPageNumber", "startCharIndex", "endCharIndex"}
-		if namespace == "openai" || namespace == "azure" {
-			var kind string
-			_ = json.Unmarshal(fields["type"], &kind)
-			filePath = filePath || kind == "file_path"
-			keys = []string{"index"}
-		}
-		for _, key := range keys {
-			var n int64
-			if raw, ok := fields[key]; ok && string(raw) != "null" && json.Unmarshal(raw, &n) == nil && n >= 0 && n <= 1000000000 {
-				approved[key] = n
-			}
+		if json.Unmarshal(metadata[namespace], &value) == nil && value.Type == "file_path" {
+			return true
 		}
 	}
-	if len(approved) == 0 {
-		return nil, filePath
-	}
-	raw, _ := json.Marshal(approved)
-	return provider.ProviderMetadata{"citation": raw}, filePath
+	return false
 }

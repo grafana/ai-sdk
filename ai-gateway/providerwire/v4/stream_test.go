@@ -218,7 +218,7 @@ func TestStreamingRuntimeHappyPathPrivacyAndOrder(t *testing.T) {
 		`{"type":"stream-start","warnings":[{"type":"other","message":"the model reported a warning"}]}`,
 		`{"type":"response-metadata","id":"response-id","modelId":"canonical/model","timestamp":"2026-08-22T23:02:03.456Z"}`,
 		`{"type":"error","error":{"message":"rate limit exceeded","type":"rate_limit_exceeded","param":null,"code":"rate_limit_exceeded","statusCode":429,"retryable":true}}`,
-		`{"type":"text-start","id":"text-1"}`,
+		`{"type":"text-start","id":"text-1","providerMetadata":{"private":{"secret":true}}}`,
 		`{"type":"text-delta","id":"text-1","delta":""}`,
 		`{"type":"error","error":{"message":"internal error","type":"internal_server_error","param":null,"code":"internal_error","statusCode":500,"retryable":true}}`,
 		`{"type":"text-delta","id":"text-1","delta":"hello"}`,
@@ -233,7 +233,7 @@ func TestStreamingRuntimeHappyPathPrivacyAndOrder(t *testing.T) {
 		position += next + len(frame)
 	}
 	assert.Equal(t, position, len(body))
-	for _, private := range []string{"credential", "secret", "private-model", "private-provider", "private.invalid", "Authorization", "request"} {
+	for _, private := range []string{"credential", "private-model", "private-provider", "private.invalid", "Authorization", "request"} {
 		assert.NotContains(t, body, private)
 	}
 	assert.NotContains(t, body, "event:")

@@ -16,6 +16,7 @@ import { buildGoClientCapture, captureGoClient } from "./go-client-capture";
 import { fileInputGoldenCase } from "./request-cases";
 import { validateStreamEvent, validateUnarySuccess } from "./schema";
 import { generateText, jsonSchema, stepCountIs, streamText, tool } from "ai";
+import { buildTools, loadConfig, mockId, normalizeRequestSnapshot, writeRequestSnapshots } from "../../../test/conformance/tools/common.mts";
 
 const TEST_DIR = dirname(fileURLToPath(import.meta.url));
 const SERVER_DIR = resolve(TEST_DIR, "testserver");
@@ -352,13 +353,13 @@ describe("reasoning continuation through the authenticated real handler", () => 
 });
 
 describe("sources through the authenticated handler", () => {
-  it("preserves registered URL/document fields and normalizes privacy in both clients", async () => {
+  it("preserves registered URL/document metadata independently of baseline scalar projection", async () => {
     const client = createGateway({apiKey:"test",baseURL:`${baseURL}/function-tools`,headers:{"x-access-token":"function-test-token"}})("sources");
     const options = {prompt:[]};
     const expected = [
       {type:"source",sourceType:"url",id:"source-1",url:"https://example.com",title:"URL"},
-      {type:"source",sourceType:"document",id:"source-2",mediaType:"text/plain",title:"",providerMetadata:{citation:{startPageNumber:1,endPageNumber:2}}},
-      {type:"source",sourceType:"document",id:"source-3",mediaType:"application/octet-stream",title:"Document",providerMetadata:{citation:{index:0}}},
+      {type:"source",sourceType:"document",id:"source-2",mediaType:"text/plain",title:"",providerMetadata:{anthropic:{startPageNumber:1,endPageNumber:2,citedText:"private"}}},
+      {type:"source",sourceType:"document",id:"source-3",mediaType:"application/octet-stream",title:"Document",providerMetadata:{openai:{type:"file_path",fileId:"file-private",index:0}}},
     ];
     assert.deepEqual((await client.doGenerate(options)).content, expected);
     assert.deepEqual((await collect((await client.doStream(options)).stream)).filter(p=>p.type==="source"),expected);
@@ -387,7 +388,7 @@ describe("unary function tools through the authenticated real handler", () => {
     assert.ok(call && call.type === "tool-call");
     const value = execute(JSON.parse(call.input));
     const continuation = [...prompt,
-      { role: "assistant" as const, content: [{ type: "tool-call" as const, toolCallId: call.toolCallId, toolName: call.toolName, input: JSON.parse(call.input) }] },
+      { role: "assistant" as const, content: [{ type: "tool-call" as const, toolCallId: call.toolCallId, toolName: call.toolName, input: JSON.parse(call.input), providerOptions: call.providerMetadata }] },
       { role: "tool" as const, content: [{ type: "tool-result" as const, toolCallId: call.toolCallId, toolName: call.toolName, output: { type: "text" as const, value } }] }];
     const final = await gateway("unary-tools").doGenerate({ prompt: continuation, tools });
     assert.deepEqual(final.content, [{ type: "text", text: "It is sunny." }]);
@@ -397,13 +398,13 @@ describe("unary function tools through the authenticated real handler", () => {
     const goFirst = await captureGoClient(goClientBinary, { ...config, options: { prompt, tools } });
     assert.equal(goFirst.error, undefined);
     const goCall = goFirst.result.content.find((part: any) => part.type === "tool-call");
-    assert.deepEqual(goCall, { type: "tool-call", toolCallId: call.toolCallId, toolName: call.toolName, input: call.input });
+    assert.deepEqual(goCall, call);
     assert.deepEqual(goFirst.result.finishReason, first.finishReason);
     assert.deepEqual(goFirst.result.usage, first.usage);
     assert.equal(first.finishReason.unified, "tool-calls");
     const goValue = execute(JSON.parse(goCall.input));
     const goFinal = await captureGoClient(goClientBinary, { ...config, options: { prompt: [...prompt,
-      { role: "assistant", content: [{ type: "tool-call", toolCallId: goCall.toolCallId, toolName: goCall.toolName, input: JSON.parse(goCall.input) }] },
+      { role: "assistant", content: [{ type: "tool-call", toolCallId: goCall.toolCallId, toolName: goCall.toolName, input: JSON.parse(goCall.input), providerOptions: goCall.providerMetadata }] },
       { role: "tool", content: [{ type: "tool-result", toolCallId: goCall.toolCallId, toolName: goCall.toolName, output: { type: "text", value: goValue } }] }], tools } });
     assert.equal(goFinal.error, undefined);
     assert.deepEqual(goFinal.result.content, final.content);
@@ -555,6 +556,50 @@ describe("bounded provider raw usage through the real handler", () => {
       const frames = (await http.text()).trim().split("\n\n").map(frame => JSON.parse(frame.slice("data: ".length))) as Array<{ usage?: { raw?: unknown } }>;
       assert.ok(frames.every(frame => validateStreamEvent(frame)));
       assert.deepEqual(frames.at(-1)?.usage?.raw, raw);
+    });
+  }
+});
+
+describe("authentic metadata replay with unchanged direct expectations", () => {
+  for (const fixture of [
+    { id: "simple-text", family: "anthropic", path: "anthropic/recorded/simple-text" },
+    { id: "tool-call", family: "anthropic", path: "anthropic/recorded/tool-call" },
+    { id: "thinking-tool-signature-roundtrip", family: "anthropic", path: "anthropic/recorded/thinking-tool-signature-roundtrip" },
+    { id: "openai-reasoning-text", family: "openai", path: "openai/recorded/reasoning-text" },
+  ]) {
+    it(`replays ${fixture.path} through both clients without rewriting inputs or expectations`, async () => {
+      const dir = resolve(TEST_DIR, `../../../test/conformance/${fixture.path}`);
+      const cfg = loadConfig(dir);
+      const lines = (name: string) => readFileSync(join(dir, name), "utf8").trim().split("\n").map(line => JSON.parse(line));
+      const expectedChunks = lines("expected.jsonl");
+      const expectedRequests = lines("expected-requests.jsonl");
+      const captured = async () => await (await fetch(`${baseURL}/recorded-usage/${fixture.id}/requests`)).json() as { count: number; requests: Array<{ method: string; url: string; headers: Record<string, string[]>; body: string }> };
+      const before = (await captured()).count;
+      const result = streamText({ model: createGateway({ apiKey: "runtime-test-key", baseURL: `${baseURL}/recorded-usage` })(fixture.id), prompt: cfg.prompt!, ...(cfg.system ? { instructions: cfg.system } : {}), tools: buildTools(cfg.tools, cfg.providerTools), providerOptions: cfg.providerOptions as LanguageModelV4CallOptions["providerOptions"], stopWhen: stepCountIs(cfg.stopWhenStepCount ?? 1), maxRetries: 0, _internal: { generateId: mockId("id") } });
+      const actualChunks = [];
+      for await (const chunk of result.toUIMessageStream()) actualChunks.push(JSON.parse(JSON.stringify(chunk)));
+      assert.deepEqual(actualChunks, expectedChunks);
+      const definitions = Object.entries(cfg.tools ?? {}).map(([name, definition]) => ({ type: "function", name, description: definition.description, inputSchema: definition.inputSchema, ...(definition.strict != null ? { strict: definition.strict } : {}), ...(definition.providerOptions ? { providerOptions: definition.providerOptions } : {}) }));
+      const go = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/recorded-usage`, accessToken: "runtime-test-key", modelID: fixture.id, mode: "recorded-ui", instructions: cfg.system ?? "", steps: cfg.stopWhenStepCount ?? 1, toolResults: Object.fromEntries(Object.entries(cfg.tools ?? {}).map(([name, definition]) => [name, definition.mockResults ?? []])), options: { prompt: [{ role: "user", content: [{ type: "text", text: cfg.prompt }] }], providerOptions: cfg.providerOptions, tools: definitions } });
+      assert.equal(go.error, undefined);
+      assert.deepEqual(go.chunks, expectedChunks);
+      const requests = (await captured()).requests.slice(before);
+      assert.equal(requests.length, expectedRequests.length * 2);
+      const normalized = requests.map(request => normalizeRequestSnapshot(fixture.family, request, request.body));
+      const snapshotDir = mkdtempSync(join(tmpdir(), "gateway-metadata-replay-"));
+      try {
+        const expected = readFileSync(join(dir, "expected-requests.jsonl"), "utf8");
+        for (const [client, snapshots] of [
+          ["typescript", normalized.slice(0, expectedRequests.length)],
+          ["go", normalized.slice(expectedRequests.length)],
+        ] as const) {
+          const path = join(snapshotDir, `${client}.jsonl`);
+          writeRequestSnapshots(path, snapshots);
+          assert.equal(readFileSync(path, "utf8"), expected, `${client} native request snapshots`);
+        }
+      } finally {
+        rmSync(snapshotDir, { recursive: true, force: true });
+      }
     });
   }
 });

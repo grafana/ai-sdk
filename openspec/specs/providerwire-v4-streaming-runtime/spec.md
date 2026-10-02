@@ -100,11 +100,11 @@ Every committed writable stream SHALL emit exactly one public `stream-start` as 
 - **THEN** `DoStream` SHALL return that error before any `StreamResult` or provider start is exposed
 
 ### Requirement: Canonical metadata and text block state
-After the public start and within the configured provider-part count, the state machine SHALL accept at most one response-metadata part before the first text or tool event, zero or more sequential text blocks and independently tracked function-tool input/call/result events governed by gateway-streaming-function-tools, non-terminal provider error parts at any pre-finish point, and exactly one finish. Response metadata SHALL preserve an optional valid response ID and timestamp, SHALL always set `modelId` to the resolver's canonical public ID, and SHALL omit provider identity, backend model ID, response headers, and provider metadata. Each text start ID SHALL be valid UTF-8, non-empty, globally unique within the stream, and SHALL open the only active block. Text deltas and ends SHALL use the active ID; an end SHALL close it. Required empty deltas SHALL be preserved. Provider errors SHALL not open, close, or otherwise change text or metadata state.
+After the public start and within the configured provider-part count, the state machine SHALL accept at most one response-metadata part before the first text or tool event, zero or more sequential text blocks and independently tracked function-tool input/call/result events governed by gateway-streaming-function-tools, non-terminal provider error parts at any pre-finish point, and exactly one finish. Response identity/scalar values SHALL follow the separately owned #320/PR #325 contract; this metadata-only change SHALL NOT override integrated native response identity behavior. The current base substitutes the canonical modelId and omits backend identity, but that is baseline context rather than renewed policy. Response headers and unregistered providerMetadata SHALL NOT be added to the response-metadata part. Copied requirement blocks and tests SHALL be reconciled on rebase/merge without restoring canonical-only identity or taking over #320. Each text start ID SHALL be valid UTF-8, non-empty, globally unique within the stream, and SHALL open the only active block. Text deltas and ends SHALL use the active ID; an end SHALL close it. Required empty deltas SHALL be preserved. Each text-start, text-delta and text-end SHALL retain supplied bounded opaque providerMetadata at its original event position under gateway-provider-metadata; absent metadata SHALL remain absent and an explicit empty object SHALL remain present. This content metadata SHALL NOT be moved into response-metadata. Provider errors SHALL not open, close, or otherwise change text or metadata state.
 
 #### Scenario: Canonical metadata precedes text
 - **WHEN** a provider emits one valid response-metadata part before text or tool events
-- **THEN** the public metadata SHALL preserve only allowlisted ID and timestamp values and SHALL use the canonical public model ID
+- **THEN** its placement SHALL remain valid and response identity SHALL follow the separately owned scalar contract, preserving #320/PR #325 native identity behavior when integrated rather than restoring the current base's canonical substitution
 
 #### Scenario: Sequential text blocks are valid
 - **WHEN** a provider emits multiple non-overlapping text start/delta/end blocks with unique IDs
@@ -118,15 +118,19 @@ After the public start and within the configured provider-part count, the state 
 - **WHEN** response metadata is duplicated or appears after a text or tool event has started
 - **THEN** the handler SHALL terminate with at most one synthetic safe error rather than forwarding the invalid metadata
 
+#### Scenario: Text metadata changes at end
+- **WHEN** text-start supplies an object, text-delta omits metadata and text-end supplies an empty or replacement object
+- **THEN** those exact metadata positions and presence states SHALL reach both clients in order, with no deep merge or relocation
+
 ### Requirement: Finish validation and terminal authority
-A finish part SHALL be valid only when no text or tool-input block is active, its warnings are empty, and it contains a non-nil registered finish reason and non-nil usage. Known usage counts SHALL be non-negative JavaScript-safe integers and SHALL use the registered input/output groups; `usage.raw` SHALL contain a supplied valid bounded provider JSON object, or be omitted when Raw is absent; other provider metadata SHALL be omitted. A valid finish SHALL be written once as the final public event and SHALL be authoritative. The handler SHALL then cancel provider work, begin bounded asynchronous drain, and return clean EOF immediately without waiting for provider channel closure or emitting `[DONE]`. Provider parts observed after a written finish SHALL be suppressed during drain, treated as provider lifecycle defects for later operational reporting, and SHALL never produce a second public terminal event.
+A finish part SHALL be valid only when no text or tool-input block is active, its warnings are empty, and it contains a non-nil registered finish reason and non-nil usage. Known usage counts SHALL be non-negative JavaScript-safe integers and SHALL use the registered input/output groups; `usage.raw` SHALL contain a supplied valid bounded provider JSON object, or be omitted when Raw is absent; finish providerMetadata SHALL be preserved as bounded opaque object-valued namespaces under gateway-provider-metadata. A valid finish SHALL be written once as the final public event and SHALL be authoritative. The handler SHALL then cancel provider work, begin bounded asynchronous drain, and return clean EOF immediately without waiting for provider channel closure or emitting `[DONE]`. Provider parts observed after a written finish SHALL be suppressed during drain, treated as provider lifecycle defects for later operational reporting, and SHALL never produce a second public terminal event.
 
 #### Scenario: Finish closes a valid stream
 - **WHEN** a valid finish is emitted with no active text or tool-input block
-- **THEN** the finish SHALL preserve normalized usage and finish reason, other provider-private fields SHALL be omitted, and the response SHALL end at clean EOF without `[DONE]`
+- **THEN** the finish SHALL preserve normalized usage, finish reason and supplied ordinary providerMetadata, unrelated transport fields SHALL remain omitted, and the response SHALL end at clean EOF without `[DONE]`
 
 #### Scenario: Finish is invalid
-- **WHEN** finish arrives with an active block, warnings, nil or invalid usage, nil or invalid finish reason, unsafe token counts, or invalid or over-limit supplied raw usage
+- **WHEN** finish arrives with an active block, warnings, nil or invalid usage, nil or invalid finish reason, unsafe token counts, invalid or over-limit supplied raw usage, or invalid or over-limit finish metadata
 - **THEN** finish SHALL not be written and the handler SHALL attempt at most one synthetic terminal internal error
 
 #### Scenario: Provider emits after finish
@@ -144,6 +148,10 @@ A finish part SHALL be valid only when no text or tool-input block is active, it
 #### Scenario: Raw usage fails after stream commitment
 - **WHEN** finish usage supplies malformed, null, scalar, array, or more than 1,048,576 bytes of raw JSON, or its encoded finish exceeds the configured complete-frame limit
 - **THEN** the finish SHALL NOT be written and the handler SHALL attempt at most one fixed complete terminal internal-error SSE frame, without reflecting the offending value or issuing normalized-only finish
+
+#### Scenario: Finish metadata is ordinary output
+- **WHEN** valid finish metadata contains unknown namespaces or an explicit empty object and IncludeRawChunks is false
+- **THEN** both clients SHALL receive that metadata on finish before clean EOF without any synthesized raw event
 
 ### Requirement: Bounded raw-usage finish representation
 The handler SHALL count supplied raw-usage bytes, including whitespace, before JSON validation or encoding. It SHALL reject raw usage exceeding the smaller of 1,048,576 bytes and configured `StreamFrameBytes`, validate one complete JSON object when present, and reject invalid UTF-8 in any raw string key or nested value on the original bytes. Valid JSON escapes, including lone and paired UTF-16 surrogate escapes, SHALL be preserved in the raw object. It SHALL only write a finish after the entire `data: <json>\n\n` frame fits `StreamFrameBytes`. Existing `StreamParts` and complete-frame limits SHALL continue to bound aggregate represented stream output; validation and encoding SHALL use memory bounded by a constant multiple of the configured frame limit.
@@ -204,7 +212,7 @@ Before valid finish, unsupported families, lifecycle violations, invalid output,
 - **THEN** family-specific active state SHALL preserve each block independently and IDs SHALL not be rewritten
 
 ### Requirement: Complete bounded SSE framing and flushing
-Committed responses SHALL use HTTP 200, `Content-Type: text/event-stream`, and `Cache-Control: no-cache, no-transform`; connection-specific keep-alive headers SHALL not be protocol requirements. The handler SHALL flush commitment headers and every fully written event. Unsupported flushing SHALL not fail the stream; every other header or frame flush error or panic SHALL be a writer failure. Every public event SHALL contain only its registered allowlisted fields and SHALL be framed as exactly `data: <json>\n\n`. Encoding work and temporary memory SHALL remain bounded by a constant multiple of the configured frame limit, and the complete frame SHALL fit that limit before any of its bytes are written. Synthetic terminal errors SHALL use fixed complete frames. The server SHALL never emit SSE `event:` fields or `[DONE]`. A write error, short write, writer panic, or supported flush failure SHALL cancel provider work and end immediately without another write.
+Committed responses SHALL use HTTP 200, `Content-Type: text/event-stream`, and `Cache-Control: no-cache, no-transform`; connection-specific keep-alive headers SHALL not be protocol requirements. The handler SHALL flush commitment headers and every fully written event. Unsupported flushing SHALL not fail the stream; every other header or frame flush error or panic SHALL be a writer failure. Every public event SHALL contain only its registered outer fields, with supported providerMetadata treated as opaque object-valued namespaces rather than a namespace/key allowlist and SHALL be framed as exactly `data: <json>\n\n`. Aggregate metadata key/original raw bytes and cardinality SHALL participate with other event values in overflow-safe preflight before UTF-8/JSON validation or metadata allocation. Encoding work and temporary memory SHALL remain bounded by a constant multiple of the configured frame limit, and the complete frame SHALL fit that limit before any of its bytes are written. Synthetic terminal errors SHALL use fixed complete frames. The server SHALL never emit SSE `event:` fields or `[DONE]`. A write error, short write, writer panic, or supported flush failure SHALL cancel provider work and end immediately without another write.
 
 #### Scenario: Event is written and flushed
 - **WHEN** a valid event fits the complete-frame limit and the writer supports flushing
@@ -225,6 +233,10 @@ Committed responses SHALL use HTTP 200, `Content-Type: text/event-stream`, and `
 #### Scenario: Writer fails
 - **WHEN** writing or flushing an event fails, writes short, or panics
 - **THEN** provider work SHALL be canceled and no synthetic event or second write SHALL be attempted on that writer
+
+#### Scenario: Invalid metadata cannot become partial event
+- **WHEN** registered metadata is malformed JSON, invalid UTF-8, non-object at a namespace, or passes input preflight but pushes the encoded complete frame over its limit
+- **THEN** no bytes of that event SHALL be written, existing terminal cancellation/cleanup SHALL apply and no selected fallback candidate SHALL be replayed
 
 ### Requirement: Cancellation and timeouts
 The configured total timeout SHALL begin immediately before `DoStream` invocation and cover setup and consumption. After stream commitment, the configured idle timeout SHALL restart after each accepted provider part is successfully represented, including a consumed start and a written provider error. Request cancellation, total timeout, or idle timeout SHALL cancel provider work before the corresponding safe terminal response or event is written. A valid finish written before another terminal outcome SHALL remain authoritative. When provider output, cancellation, and timeout become ready concurrently before terminal output, any applicable safe bounded outcome MAY win; the protocol does not define scheduler-level precedence. Writer failure SHALL terminate immediately without another write.

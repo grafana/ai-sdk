@@ -491,7 +491,7 @@ func toolSetToProviderTools(tools ToolSet) ([]provider.Tool, []provider.Warning)
 }
 
 func providerMetadataToOptions(meta provider.ProviderMetadata) provider.ProviderOptions {
-	if len(meta) == 0 {
+	if meta == nil {
 		return nil
 	}
 	opts := make(provider.ProviderOptions, len(meta))
@@ -502,7 +502,7 @@ func providerMetadataToOptions(meta provider.ProviderMetadata) provider.Provider
 }
 
 func optionsToProviderMetadata(opts provider.ProviderOptions) provider.ProviderMetadata {
-	if len(opts) == 0 {
+	if opts == nil {
 		return nil
 	}
 	meta := make(provider.ProviderMetadata, len(opts))
@@ -511,7 +511,7 @@ func optionsToProviderMetadata(opts provider.ProviderOptions) provider.ProviderM
 			meta[k] = raw.Raw
 		}
 	}
-	if len(meta) == 0 {
+	if len(meta) == 0 && len(opts) > 0 {
 		return nil
 	}
 	return meta
