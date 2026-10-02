@@ -1,6 +1,7 @@
 package v4
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -76,17 +77,17 @@ type streamMetadataEvent struct {
 }
 
 type streamTextEvent struct {
-	Type     provider.StreamPartType    `json:"type"`
-	ID       string                     `json:"id"`
-	Delta    *string                    `json:"delta,omitempty"`
-	Metadata *provider.ProviderMetadata `json:"providerMetadata,omitempty"`
+	Type     provider.StreamPartType   `json:"type"`
+	ID       string                    `json:"id"`
+	Delta    *string                   `json:"delta,omitempty"`
+	Metadata provider.ProviderMetadata `json:"providerMetadata,omitzero"`
 }
 
 type streamFinishEvent struct {
-	Type         provider.StreamPartType    `json:"type"`
-	Usage        unaryUsage                 `json:"usage"`
-	FinishReason unaryFinishReason          `json:"finishReason"`
-	Metadata     *provider.ProviderMetadata `json:"providerMetadata,omitempty"`
+	Type         provider.StreamPartType   `json:"type"`
+	Usage        unaryUsage                `json:"usage"`
+	FinishReason unaryFinishReason         `json:"finishReason"`
+	Metadata     provider.ProviderMetadata `json:"providerMetadata,omitzero"`
 }
 
 func encodeStreamFrame(value streamEvent, limit int64) ([]byte, bool) {
@@ -109,21 +110,20 @@ func encodeStreamFrame(value streamEvent, limit int64) ([]byte, bool) {
 			}
 		}
 	}
-	metadata, err := mapMetadata(value.metadata)
-	if err != nil {
-		return nil, false
-	}
-	var payload []byte
+	var (
+		payload []byte
+		err     error
+	)
 	switch value.typeName {
 	case provider.PartReasoningStart, provider.PartReasoningEnd:
-		payload, err = json.Marshal(streamTextEvent{Type: value.typeName, ID: value.id, Metadata: metadata})
+		payload, err = json.Marshal(streamTextEvent{Type: value.typeName, ID: value.id, Metadata: value.metadata})
 	case provider.PartReasoningDelta:
-		payload, err = json.Marshal(streamTextEvent{Type: value.typeName, ID: value.id, Delta: &value.delta, Metadata: metadata})
+		payload, err = json.Marshal(streamTextEvent{Type: value.typeName, ID: value.id, Delta: &value.delta, Metadata: value.metadata})
 	case provider.PartReasoningFile:
 		if !validReasoningFile(value.fileData, value.mediaType) {
 			return nil, false
 		}
-		payload, err = json.Marshal(reasoningFilePart{Type: string(value.typeName), MediaType: value.mediaType, Data: projectReasoningFile(value.fileData), Metadata: metadata})
+		payload, err = json.Marshal(reasoningFilePart{Type: string(value.typeName), MediaType: value.mediaType, Data: projectReasoningFile(value.fileData), Metadata: value.metadata})
 	case provider.PartSource:
 		payload, err = json.Marshal(value.source)
 	case provider.PartStreamStart:
@@ -139,25 +139,25 @@ func encodeStreamFrame(value streamEvent, limit int64) ([]byte, bool) {
 		}
 		payload, err = json.Marshal(streamMetadataEvent{Type: value.typeName, ID: value.id, ModelID: value.modelID, Timestamp: timestamp})
 	case provider.PartTextStart, provider.PartTextEnd:
-		payload, err = json.Marshal(streamTextEvent{Type: value.typeName, ID: value.id, Metadata: metadata})
+		payload, err = json.Marshal(streamTextEvent{Type: value.typeName, ID: value.id, Metadata: value.metadata})
 	case provider.PartTextDelta:
-		payload, err = json.Marshal(streamTextEvent{Type: value.typeName, ID: value.id, Delta: &value.delta, Metadata: metadata})
+		payload, err = json.Marshal(streamTextEvent{Type: value.typeName, ID: value.id, Delta: &value.delta, Metadata: value.metadata})
 	case provider.PartToolInputStart:
-		payload, err = json.Marshal(streamToolStartEvent{Type: value.typeName, ID: value.id, ToolName: value.toolName, Metadata: metadata})
+		payload, err = json.Marshal(streamToolStartEvent{Type: value.typeName, ID: value.id, ToolName: value.toolName, Metadata: value.metadata})
 	case provider.PartToolInputDelta:
-		payload, err = json.Marshal(streamTextEvent{Type: value.typeName, ID: value.id, Delta: &value.delta, Metadata: metadata})
+		payload, err = json.Marshal(streamTextEvent{Type: value.typeName, ID: value.id, Delta: &value.delta, Metadata: value.metadata})
 	case provider.PartToolInputEnd:
-		payload, err = json.Marshal(streamTextEvent{Type: value.typeName, ID: value.id, Metadata: metadata})
+		payload, err = json.Marshal(streamTextEvent{Type: value.typeName, ID: value.id, Metadata: value.metadata})
 	case provider.PartToolCall:
-		payload, err = json.Marshal(streamToolCallEvent{Type: value.typeName, ToolCallID: value.id, ToolName: value.toolName, Input: value.input, Metadata: metadata})
+		payload, err = json.Marshal(streamToolCallEvent{Type: value.typeName, ToolCallID: value.id, ToolName: value.toolName, Input: value.input, Metadata: value.metadata})
 	case provider.PartToolResult:
-		payload, err = json.Marshal(streamToolResultEvent{Type: value.typeName, ToolCallID: value.id, ToolName: value.toolName, Result: value.result, IsError: value.isError, Metadata: metadata})
+		payload, err = json.Marshal(streamToolResultEvent{Type: value.typeName, ToolCallID: value.id, ToolName: value.toolName, Result: value.result, IsError: value.isError, Metadata: value.metadata})
 	case provider.PartFinish:
 		payload, err = json.Marshal(streamFinishEvent{
 			Type:         value.typeName,
 			Usage:        unaryUsage{InputTokens: value.inputUsage, OutputTokens: value.outputUsage, Raw: value.rawUsage},
 			FinishReason: unaryFinishReason{Unified: value.finishReason.Unified, Raw: value.finishReason.Raw},
-			Metadata:     metadata,
+			Metadata:     value.metadata,
 		})
 	default:
 		return nil, false
@@ -178,8 +178,17 @@ func streamEventPreflight(value streamEvent, limit int64) bool {
 		return false
 	}
 	remaining := limit
-	if !metadataFits(value.metadata, &remaining) {
+	if int64(len(value.metadata)) > remaining {
 		return false
+	}
+	remaining -= int64(len(value.metadata))
+	for key, raw := range value.metadata {
+		for _, size := range []int{len(key), len(raw)} {
+			if int64(size) > remaining {
+				return false
+			}
+			remaining -= int64(size)
+		}
 	}
 	check := func(values ...string) bool {
 		for _, value := range values {
@@ -194,13 +203,14 @@ func streamEventPreflight(value streamEvent, limit int64) bool {
 	if !check(string(value.typeName)) {
 		return false
 	}
+	var fits bool
 	switch value.typeName {
 	case provider.PartReasoningStart, provider.PartReasoningEnd, provider.PartReasoningDelta:
-		return check(value.id, value.delta)
+		fits = check(value.id, value.delta)
 	case provider.PartReasoningFile:
-		return reasoningFileFits(value.fileData, value.mediaType, &remaining)
+		fits = reasoningFileFits(value.fileData, value.mediaType, &remaining)
 	case provider.PartSource:
-		return value.source != nil
+		fits = value.source != nil
 	case provider.PartStreamStart:
 		if !streamWarningCountFits(len(value.warnings), limit) {
 			return false
@@ -210,28 +220,37 @@ func streamEventPreflight(value streamEvent, limit int64) bool {
 				return false
 			}
 		}
-		return true
+		fits = true
 	case provider.PartResponseMeta:
-		return check(value.id, value.modelID)
+		fits = check(value.id, value.modelID)
 	case provider.PartTextStart, provider.PartTextEnd:
-		return check(value.id)
+		fits = check(value.id)
 	case provider.PartTextDelta:
-		return check(value.id, value.delta)
+		fits = check(value.id, value.delta)
 	case provider.PartToolInputStart:
-		return check(value.id, value.toolName)
+		fits = check(value.id, value.toolName)
 	case provider.PartToolInputDelta:
-		return check(value.id, value.delta)
+		fits = check(value.id, value.delta)
 	case provider.PartToolInputEnd:
-		return check(value.id)
+		fits = check(value.id)
 	case provider.PartToolCall:
-		return check(value.id, value.toolName, value.input)
+		fits = check(value.id, value.toolName, value.input)
 	case provider.PartToolResult:
-		return check(value.id, value.toolName) && int64(len(value.result)) <= remaining
+		fits = check(value.id, value.toolName) && int64(len(value.result)) <= remaining
 	case provider.PartFinish:
-		return check(string(value.finishReason.Unified), value.finishReason.Raw) && validRawUsage(value.rawUsage, remaining)
+		fits = check(string(value.finishReason.Unified), value.finishReason.Raw) && validRawUsage(value.rawUsage, remaining)
 	default:
 		return false
 	}
+	if !fits {
+		return false
+	}
+	for key, raw := range value.metadata {
+		if !utf8.ValidString(key) || !utf8.Valid(raw) || !bytes.HasPrefix(bytes.TrimSpace(raw), []byte("{")) {
+			return false
+		}
+	}
+	return true
 }
 
 func streamWarningCountFits(count int, limit int64) bool {

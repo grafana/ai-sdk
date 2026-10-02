@@ -118,22 +118,24 @@ func TestReasoningMetadata_Opaque(t *testing.T) {
 		{name: "invalid utf8", input: provider.ProviderMetadata{"openai": json.RawMessage{'"', 255, '"'}}, invalid: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			mapped, err := mapMetadata(tc.input)
+			frame, ok := encodeStreamFrame(streamEvent{typeName: provider.PartReasoningStart, id: "reasoning", metadata: tc.input}, 4096)
 			if tc.invalid {
-				require.Error(t, err)
+				assert.False(t, ok)
+				assert.Empty(t, frame)
 				return
 			}
-			require.NoError(t, err)
-			encoded, err := json.Marshal(mapped)
-			require.NoError(t, err)
-			assert.JSONEq(t, tc.want, string(encoded))
+			require.True(t, ok)
+			var event map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal([]byte(strings.TrimSuffix(strings.TrimPrefix(string(frame), "data: "), "\n\n")), &event))
+			assert.JSONEq(t, tc.want, string(event["providerMetadata"]))
 		})
 	}
-	mapped, err := mapMetadata(nil)
-	require.NoError(t, err)
-	assert.Nil(t, mapped)
-	remaining := int64(1024)
-	assert.False(t, metadataFits(provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":"` + strings.Repeat("x", 1024) + `"}`)}, &remaining))
+	frame, ok := encodeStreamFrame(streamEvent{typeName: provider.PartReasoningStart, id: "reasoning"}, 4096)
+	require.True(t, ok)
+	assert.NotContains(t, string(frame), "providerMetadata")
+	frame, ok = encodeStreamFrame(streamEvent{typeName: provider.PartReasoningStart, id: "reasoning", metadata: provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":"` + strings.Repeat("x", 1024) + `"}`)}}, 1024)
+	assert.False(t, ok)
+	assert.Empty(t, frame)
 }
 
 func TestReasoningFrameBoundsAndLifecycle(t *testing.T) {

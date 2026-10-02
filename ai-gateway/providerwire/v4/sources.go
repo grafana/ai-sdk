@@ -1,6 +1,7 @@
 package v4
 
 import (
+	"bytes"
 	"encoding/json"
 	"strconv"
 	"strings"
@@ -23,7 +24,7 @@ type urlSource struct {
 	ID               string                       `json:"id"`
 	URL              string                       `json:"url"`
 	Title            string                       `json:"title,omitempty"`
-	ProviderMetadata *provider.ProviderMetadata   `json:"providerMetadata,omitempty"`
+	ProviderMetadata provider.ProviderMetadata    `json:"providerMetadata,omitzero"`
 }
 
 type documentSource struct {
@@ -33,7 +34,7 @@ type documentSource struct {
 	MediaType        string                       `json:"mediaType"`
 	Title            string                       `json:"title"`
 	Filename         string                       `json:"filename,omitempty"`
-	ProviderMetadata *provider.ProviderMetadata   `json:"providerMetadata,omitempty"`
+	ProviderMetadata provider.ProviderMetadata    `json:"providerMetadata,omitzero"`
 }
 
 func unarySource(part provider.GenerateContentPart) provider.SourceInfo {
@@ -54,7 +55,24 @@ func sourcePreflight(source provider.SourceInfo, limit int64) bool {
 		}
 		limit -= int64(len(value))
 	}
-	return metadataFits(source.ProviderMetadata, &limit)
+	if int64(len(source.ProviderMetadata)) > limit {
+		return false
+	}
+	limit -= int64(len(source.ProviderMetadata))
+	for key, raw := range source.ProviderMetadata {
+		for _, size := range []int{len(key), len(raw)} {
+			if int64(size) > limit {
+				return false
+			}
+			limit -= int64(size)
+		}
+	}
+	for key, raw := range source.ProviderMetadata {
+		if !utf8.ValidString(key) || !utf8.Valid(raw) || !bytes.HasPrefix(bytes.TrimSpace(raw), []byte("{")) {
+			return false
+		}
+	}
+	return true
 }
 
 func mapSource(source provider.SourceInfo, ids sourceIDs, limit int64) (any, error) {
@@ -69,10 +87,6 @@ func mapSource(source provider.SourceInfo, ids sourceIDs, limit int64) (any, err
 	if source.SourceType != provider.SourceTypeURL && source.SourceType != provider.SourceTypeDocument {
 		return nil, errInvalidUnarySuccess
 	}
-	metadata, err := mapMetadata(source.ProviderMetadata)
-	if err != nil {
-		return nil, err
-	}
 	if sourceFilePath(source.ProviderMetadata) && source.SourceType == provider.SourceTypeDocument {
 		source.Title, source.Filename = "Document", ""
 	}
@@ -83,9 +97,9 @@ func mapSource(source provider.SourceInfo, ids sourceIDs, limit int64) (any, err
 	}
 	var mapped any
 	if source.SourceType == provider.SourceTypeURL {
-		mapped = urlSource{Type: provider.ContentSource, SourceType: source.SourceType, ID: id, URL: source.URL, Title: source.Title, ProviderMetadata: metadata}
+		mapped = urlSource{Type: provider.ContentSource, SourceType: source.SourceType, ID: id, URL: source.URL, Title: source.Title, ProviderMetadata: source.ProviderMetadata}
 	} else {
-		mapped = documentSource{Type: provider.ContentSource, SourceType: source.SourceType, ID: id, MediaType: source.MediaType, Title: source.Title, Filename: source.Filename, ProviderMetadata: metadata}
+		mapped = documentSource{Type: provider.ContentSource, SourceType: source.SourceType, ID: id, MediaType: source.MediaType, Title: source.Title, Filename: source.Filename, ProviderMetadata: source.ProviderMetadata}
 	}
 	encoded, err := json.Marshal(mapped)
 	if err != nil || int64(len(encoded)) > limit {

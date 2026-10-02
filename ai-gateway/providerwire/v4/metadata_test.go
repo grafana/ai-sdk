@@ -112,40 +112,56 @@ func TestProviderMetadata_InvalidUnary(t *testing.T) {
 				case "tool":
 					result.Content = []provider.GenerateContentPart{{Type: provider.ContentToolCall, ToolCallID: "call", ToolName: "weather", Input: json.RawMessage(`{}`), ProviderMetadata: metadata}}
 				}
-				_, err := mapUnarySuccess(result, 1<<20)
-				require.Error(t, err)
+				w := httptest.NewRecorder()
+				h := &handler{limits: Limits{UnaryResponseBytes: 1 << 20}}
+				assert.False(t, h.writeUnarySuccess(w, result))
+				assert.Empty(t, w.Body.String())
 			})
 		}
 	}
 }
 
-func TestMetadataFits_OriginalBytesAndCardinality(t *testing.T) {
+func TestProviderMetadata_OriginalBytesAndCardinality(t *testing.T) {
 	many := make(provider.ProviderMetadata)
 	for i := range 100 {
-		many[strconv.Itoa(i)] = json.RawMessage(`{}`)
+		many[strconv.Itoa(i)] = json.RawMessage("{}")
 	}
-	for _, metadata := range []provider.ProviderMetadata{
-		{}, {"": json.RawMessage(`{}`)},
-		{strings.Repeat("key", 100): json.RawMessage("  {\"value\":0}  ")}, many,
+	for _, tc := range []struct {
+		name     string
+		metadata provider.ProviderMetadata
+	}{
+		{name: "omitted"},
+		{name: "empty", metadata: provider.ProviderMetadata{}},
+		{name: "empty namespace", metadata: provider.ProviderMetadata{"": json.RawMessage("{}")}},
+		{name: "long key and whitespace", metadata: provider.ProviderMetadata{strings.Repeat("key", 100): json.RawMessage("  {\"value\":0}  ")}},
+		{name: "many namespaces", metadata: many},
 	} {
-		budget := int64(2)
-		for key, raw := range metadata {
-			budget += int64(len(key) + len(raw) + 4)
-		}
-		if len(metadata) > 0 {
-			budget--
-		}
-		for _, delta := range []int64{-1, 0, 1} {
-			remaining := budget + delta
-			assert.Equal(t, delta >= 0, metadataFits(metadata, &remaining))
-			if delta >= 0 {
-				assert.Equal(t, delta, remaining)
+		t.Run(tc.name, func(t *testing.T) {
+			budget := int64(len(tc.metadata))
+			for key, raw := range tc.metadata {
+				budget += int64(len(key)) + int64(len(raw))
 			}
-		}
+			for _, delta := range []int64{-1, 0, 1} {
+				limit := budget + delta + int64(len("native"))
+				result := validGenerateResult()
+				result.Content = nil
+				result.FinishReason.Raw = "native"
+				result.ProviderMetadata = tc.metadata
+				assert.Equal(t, delta >= 0, unarySuccessPreflight(result, limit))
+
+				event := streamEvent{typeName: provider.PartTextStart, id: "native", metadata: tc.metadata}
+				assert.Equal(t, delta >= 0, streamEventPreflight(event, limit+int64(len(provider.PartTextStart))))
+
+				source := provider.SourceInfo{SourceType: provider.SourceTypeURL, ID: "native", ProviderMetadata: tc.metadata}
+				assert.Equal(t, delta >= 0, sourcePreflight(source, limit))
+			}
+		})
 	}
-	remaining := int64(1)
-	assert.False(t, metadataFits(many, &remaining))
-	assert.True(t, metadataFits(nil, &remaining))
+	result := validGenerateResult()
+	result.ProviderMetadata = many
+	assert.False(t, unarySuccessPreflight(result, 1))
+	assert.False(t, streamEventPreflight(streamEvent{typeName: provider.PartTextStart, metadata: many}, 1))
+	assert.False(t, sourcePreflight(provider.SourceInfo{ID: "native", ProviderMetadata: many}, 1))
 }
 
 func TestProviderMetadata_AggregateAndEncodingBounds(t *testing.T) {
