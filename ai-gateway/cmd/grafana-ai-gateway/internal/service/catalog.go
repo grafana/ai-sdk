@@ -3,7 +3,6 @@ package service
 import (
 	"fmt"
 	"net/http"
-	"reflect"
 	"sort"
 
 	"github.com/anthropics/anthropic-sdk-go/option"
@@ -48,7 +47,6 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 		configured := file.Models[id]
 		descriptors := append([]config.Primary{configured.Primary}, configured.Fallback...)
 		candidates := make([]provider.LanguageModel, 0, len(descriptors))
-		policies := make([]catalog.ProviderOptionPolicy, 0, len(descriptors))
 		for _, descriptor := range descriptors {
 			providerConfig, ok := providers[descriptor.Provider]
 			if !ok {
@@ -58,7 +56,7 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 				return nil, fmt.Errorf("gateway service: provider %q is invalid", descriptor.Provider)
 			}
 			var candidate provider.LanguageModel
-			var policy catalog.ProviderOptionPolicy
+			var validateOptions func(provider.CallOptions) error
 			switch providerConfig.Type {
 			case "anthropic":
 				requestOptions := []option.RequestOption{option.WithHTTPClient(client), option.WithMaxRetries(0)}
@@ -66,7 +64,7 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 					requestOptions = append(requestOptions, option.WithBaseURL(providerConfig.BaseURL))
 				}
 				candidate = construct(providerConfig.APIKey, descriptor.Model, anthropicprovider.WithRequestOptions(requestOptions...))
-				policy = anthropicOptionPolicy
+				validateOptions = validateAnthropicOptions
 			case "openai-compatible":
 				if providerConfig.BaseURL == "" {
 					return nil, fmt.Errorf("gateway service: provider %q is invalid", descriptor.Provider)
@@ -79,7 +77,10 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 					// ProviderWire finish parts carry usage, so streams must request it.
 					openaicompatible.WithIncludeUsage(true),
 				)
-				policy = openAICompatibleOptionPolicy(providerConfig.ProviderName)
+				providerName := candidate.Provider()
+				validateOptions = func(options provider.CallOptions) error {
+					return validateCompatibleOptions(options, providerName)
+				}
 			case "openai":
 				baseURL := providerConfig.BaseURL
 				if baseURL == "" {
@@ -93,15 +94,16 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 					openaioption.WithMaxRetries(0),
 				)
 				candidate = openaiprovider.NewResponsesWithClient(openaisdk.Client{Responses: responsesService}, descriptor.Model)
-				policy = openAIOptionPolicy
 			default:
 				return nil, fmt.Errorf("gateway service: provider %q is invalid", descriptor.Provider)
 			}
 			if candidate == nil {
 				return nil, fmt.Errorf("gateway service: constructing model %q returned nil", id)
 			}
+			if validateOptions != nil {
+				candidate = nativeOptionsModel{LanguageModel: candidate, validate: validateOptions}
+			}
 			candidates = append(candidates, candidate)
-			policies = append(policies, policy)
 		}
 		lower := candidates[0]
 		if len(candidates) > 1 {
@@ -130,26 +132,10 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 				Description: configured.Description,
 				Aliases:     append([]string(nil), configured.Aliases...),
 			},
-			Model:           model,
-			ProviderOptions: sharedOptionPolicy(policies),
+			Model: model,
 		})
 	}
 	return catalog.NewStatic(entries)
-}
-
-// sharedOptionPolicy returns the policy every candidate agrees on. A model whose
-// fallbacks use another provider type has no single safe policy, so it forwards
-// no caller provider options until the runtime can pick one per attempt.
-func sharedOptionPolicy(policies []catalog.ProviderOptionPolicy) catalog.ProviderOptionPolicy {
-	if len(policies) == 0 {
-		return catalog.ProviderOptionPolicy{}
-	}
-	for _, policy := range policies[1:] {
-		if !reflect.DeepEqual(policy, policies[0]) {
-			return catalog.ProviderOptionPolicy{}
-		}
-	}
-	return policies[0]
 }
 
 func identityModelFactory(canonicalID string, lower provider.LanguageModel) (provider.LanguageModel, error) {

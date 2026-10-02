@@ -32,6 +32,12 @@ Vercel and Go clients own the multi-step orchestration; each HTTP generation
 remains stateless. Ordered fallback routes continue rejecting tool definitions,
 choice and history before any physical invocation.
 
+## Configure provider-specific settings
+
+Use `aisdk.WithProviderOptions` to configure settings for your selected model,
+such as Claude thinking or OpenAI reasoning effort. See the [Anthropic](anthropic.md#enable-reasoning-deliberately)
+and [OpenAI](openai.md#configure-a-call) guides for examples.
+
 ## Authenticate the client
 
 Choose the constructor for your Gateway URL. Use `NewWithCloudCredentials`
@@ -76,12 +82,10 @@ route; removing it restores direct routing without changing the public model ID.
 Candidates retain configuration order and each new call starts at primary.
 Models without fallback accept supported file inputs. Models configured with
 fallback are text-only: files, nonempty tools, tool-call/result history,
-backend-relevant active provider options, and tool choices other than plain
-auto are rejected before any
-candidate, including primary, runs. Message-level namespaces containing only
-empty objects retain text fallback eligibility without losing their original
-representation. A stream's
-first part commits its candidate, including an error part. No later failure
+active provider options, and tool choices other than plain auto are rejected
+before any candidate, including primary, runs. Empty message-level provider
+option objects are accepted. A stream's first part commits its candidate,
+including an error part. No later failure
 restarts on another provider. Client retries can multiply physical attempts;
 the Gateway disables native-provider retries.
 
