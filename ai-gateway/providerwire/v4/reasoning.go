@@ -2,7 +2,6 @@ package v4
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"net/http"
 	"unicode/utf8"
 
@@ -39,62 +38,6 @@ func projectReasoningFile(data *provider.StreamFileData) reasoningWireFileData {
 		encoded = base64.StdEncoding.EncodeToString(data.Bytes)
 	}
 	return reasoningWireFileData{Type: "data", Data: &encoded}
-}
-
-func reasoningMetadataFits(metadata provider.ProviderMetadata, remaining *int64) bool {
-	if int64(len(metadata)) > *remaining/2 {
-		return false
-	}
-	for key, raw := range metadata {
-		cost := int64(len(key)) + int64(len(raw))
-		if cost > *remaining {
-			return false
-		}
-		*remaining -= cost
-	}
-	return true
-}
-
-func projectReasoningMetadata(metadata provider.ProviderMetadata, limit int64) (*provider.ProviderMetadata, error) {
-	if metadata == nil {
-		return nil, nil
-	}
-	if !reasoningMetadataFits(metadata, &limit) {
-		return nil, errInvalidUnarySuccess
-	}
-	projected := make(provider.ProviderMetadata)
-	for namespace, raw := range metadata {
-		if !utf8.ValidString(namespace) || !utf8.Valid(raw) {
-			return nil, errInvalidUnarySuccess
-		}
-		if namespace != "anthropic" && namespace != "bedrock" && namespace != "amazonBedrock" && namespace != "openai" {
-			continue
-		}
-		var fields map[string]json.RawMessage
-		if json.Unmarshal(raw, &fields) != nil || fields == nil {
-			return nil, errInvalidUnarySuccess
-		}
-		selected := make(map[string]json.RawMessage)
-		for key, value := range fields {
-			allowed := (namespace == "anthropic" && (key == "signature" || key == "redactedData")) ||
-				((namespace == "bedrock" || namespace == "amazonBedrock") && (key == "signature" || key == "redactedData" || key == "redactedContent")) ||
-				(namespace == "openai" && (key == "itemId" || key == "reasoningEncryptedContent"))
-			if !allowed {
-				continue
-			}
-			var text *string
-			if json.Unmarshal(value, &text) != nil || (text == nil && (namespace != "openai" || key != "reasoningEncryptedContent")) {
-				return nil, errInvalidUnarySuccess
-			}
-			selected[key] = value
-		}
-		encoded, err := json.Marshal(selected)
-		if err != nil {
-			return nil, errInvalidUnarySuccess
-		}
-		projected[namespace] = encoded
-	}
-	return &projected, nil
 }
 
 func reasoningFileFits(data *provider.StreamFileData, mediaType string, remaining *int64) bool {
@@ -136,7 +79,7 @@ func validReasoningFile(data *provider.StreamFileData, mediaType string) bool {
 }
 
 func (h *handler) processReasoningPart(w http.ResponseWriter, state *streamState, part provider.StreamPart) streamPartResult {
-	event := streamEvent{typeName: part.Type, id: part.ID, delta: part.Delta, reasoningMetadata: part.ProviderMetadata, mediaType: part.MediaType, fileData: part.Data}
+	event := streamEvent{typeName: part.Type, id: part.ID, delta: part.Delta, metadata: part.ProviderMetadata, mediaType: part.MediaType, fileData: part.Data}
 	switch part.Type {
 	case provider.PartReasoningStart:
 		if part.ID == "" {

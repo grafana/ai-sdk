@@ -36,7 +36,7 @@ func TestReasoningUnary(t *testing.T) {
 	assert.Contains(t, string(body), `"text":""`)
 	assert.Contains(t, string(body), `"reasoningEncryptedContent":null`)
 	assert.Contains(t, string(body), `"data":{"type":"data","data":""}`)
-	assert.NotContains(t, string(body), "secret")
+	assert.Contains(t, string(body), `"backend":"secret"`)
 	compiled := compileWireSchema(t, unarySuccessSchemaJSON)
 	require.NoError(t, compiled.Validate(body))
 }
@@ -98,7 +98,7 @@ func TestReasoningRequestRejectsBeforeResolution(t *testing.T) {
 	}
 }
 
-func TestReasoningMetadataProjection(t *testing.T) {
+func TestReasoningMetadata_Opaque(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		input   provider.ProviderMetadata
@@ -106,17 +106,17 @@ func TestReasoningMetadataProjection(t *testing.T) {
 		invalid bool
 	}{
 		{name: "empty", input: provider.ProviderMetadata{}, want: `{}`},
-		{name: "unknown", input: provider.ProviderMetadata{"backend": json.RawMessage(`{"credentials":"private"}`)}, want: `{}`},
+		{name: "unknown", input: provider.ProviderMetadata{"backend": json.RawMessage(`{"credentials":"private"}`)}, want: `{"backend":{"credentials":"private"}}`},
 		{name: "empty namespace", input: provider.ProviderMetadata{"anthropic": json.RawMessage(`{}`)}, want: `{"anthropic":{}}`},
-		{name: "redacted", input: provider.ProviderMetadata{"bedrock": json.RawMessage(`{"signature":"","redactedData":"redacted","redactedContent":"opaque","headers":{"secret":"private"}}`)}, want: `{"bedrock":{"signature":"","redactedData":"redacted","redactedContent":"opaque"}}`},
+		{name: "redacted", input: provider.ProviderMetadata{"bedrock": json.RawMessage(`{"signature":"","redactedData":"redacted","redactedContent":"opaque","headers":{"secret":"private"}}`)}, want: `{"bedrock":{"signature":"","redactedData":"redacted","redactedContent":"opaque","headers":{"secret":"private"}}}`},
 		{name: "null encrypted", input: provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":"r1","reasoningEncryptedContent":null}`)}, want: `{"openai":{"itemId":"r1","reasoningEncryptedContent":null}}`},
-		{name: "bad signature", input: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"signature":false}`)}, invalid: true},
-		{name: "null signature", input: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"signature":null}`)}, invalid: true},
+		{name: "opaque signature", input: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"signature":false}`)}, want: `{"anthropic":{"signature":false}}`},
+		{name: "null signature", input: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"signature":null}`)}, want: `{"anthropic":{"signature":null}}`},
 		{name: "null namespace", input: provider.ProviderMetadata{"openai": json.RawMessage(`null`)}, invalid: true},
 		{name: "invalid utf8", input: provider.ProviderMetadata{"openai": json.RawMessage{'"', 255, '"'}}, invalid: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			mapped, err := projectReasoningMetadata(tc.input, 1024)
+			mapped, err := mapMetadata(tc.input)
 			if tc.invalid {
 				require.Error(t, err)
 				return
@@ -127,11 +127,11 @@ func TestReasoningMetadataProjection(t *testing.T) {
 			assert.JSONEq(t, tc.want, string(encoded))
 		})
 	}
-	mapped, err := projectReasoningMetadata(nil, 1024)
+	mapped, err := mapMetadata(nil)
 	require.NoError(t, err)
 	assert.Nil(t, mapped)
-	_, err = projectReasoningMetadata(provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":"` + strings.Repeat("x", 1024) + `"}`)}, 1024)
-	require.Error(t, err)
+	remaining := int64(1024)
+	assert.False(t, metadataFits(provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":"` + strings.Repeat("x", 1024) + `"}`)}, &remaining))
 }
 
 func TestReasoningFrameBoundsAndLifecycle(t *testing.T) {
@@ -139,7 +139,7 @@ func TestReasoningFrameBoundsAndLifecycle(t *testing.T) {
 		{Type: provider.PartReasoningDelta, ID: "r", Delta: "\"<>&☃", ProviderMetadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"signature":"signed"}`)}},
 		{Type: provider.PartReasoningFile, MediaType: "image/png", Data: &provider.StreamFileData{Bytes: []byte{1, 2, 3}}},
 	} {
-		event := streamEvent{typeName: part.Type, id: part.ID, delta: part.Delta, reasoningMetadata: part.ProviderMetadata, mediaType: part.MediaType, fileData: part.Data}
+		event := streamEvent{typeName: part.Type, id: part.ID, delta: part.Delta, metadata: part.ProviderMetadata, mediaType: part.MediaType, fileData: part.Data}
 		frame, ok := encodeStreamFrame(event, 1<<20)
 		require.True(t, ok)
 		for _, offset := range []int64{-1, 0, 1} {

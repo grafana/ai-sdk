@@ -207,13 +207,37 @@ fallback and SDK retries when setting your latency and cost budgets; neither
 guarantees that provider work happens only once. The Gateway disables retries in
 its native provider clients.
 
-The Gateway does not return all provider-specific response metadata. Workflows
-that depend on that metadata for follow-up calls may not work.
-
 For troubleshooting, ask your Gateway operator to inspect fallback attempts in
 private logs. Public model names do not identify which backend served a request.
 See [Gateway observability](../../ai-gateway/docs/text-observability.md#inspect-fallback-attempts)
 for operator diagnostics and log access requirements.
+
+## Preserve provider metadata across calls
+
+The Gateway preserves opaque provider metadata on supported results and content,
+including text, reasoning, sources and function tools. Unknown object-valued
+provider namespaces and nested values survive; an omitted metadata object stays
+omitted, while an explicit empty object stays present. During stream assembly,
+later metadata replaces earlier metadata rather than merging into it. Raw-event
+capture is not required.
+
+Build follow-up history from actual returned content, retaining its provider
+metadata. The high-level tool loops preserve supported Anthropic caller/thinking
+metadata, OpenAI item references, phase and encrypted reasoning. Metadata remains
+in its native namespace; it is not translated for a different fallback provider.
+Choose compatible models for conversations that depend on those values.
+
+Go `GenerateText` collects `StreamText`, so both use the streaming Gateway path.
+Direct `DoGenerate` is the low-level non-streaming path; its consumer is responsible
+for adapting returned content into continuation messages without dropping metadata.
+Compatible Google thought-signature continuation requires the `google` namespace;
+streaming signatures must arrive in the initial tool-call delta. Arbitrary compatible
+namespace consumption and late streaming signatures are not established.
+
+Metadata is bounded application data, not routing or account authorization. Operator
+capture settings do not control what the caller receives. Malformed or oversized
+metadata fails explicitly rather than returning a selectively stripped response;
+a selected response is not replayed through another fallback candidate.
 
 ## Bound work and handle errors
 

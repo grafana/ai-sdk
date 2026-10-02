@@ -24,17 +24,17 @@
   "$defs": {
     "reasoningBoundary": {
       "type": "object", "required": ["type", "id"],
-      "properties": {"type": {"enum": ["reasoning-start", "reasoning-end"]}, "id": {"type": "string", "minLength": 1}, "providerMetadata": {"$ref": "#/$defs/reasoningMetadata"}},
+      "properties": {"type": {"enum": ["reasoning-start", "reasoning-end"]}, "id": {"type": "string", "minLength": 1}, "providerMetadata": {"$ref": "#/$defs/providerMetadata"}},
       "additionalProperties": false
     },
     "reasoningDelta": {
       "type": "object", "required": ["type", "id", "delta"],
-      "properties": {"type": {"const": "reasoning-delta"}, "id": {"type": "string", "minLength": 1}, "delta": {"type": "string"}, "providerMetadata": {"$ref": "#/$defs/reasoningMetadata"}},
+      "properties": {"type": {"const": "reasoning-delta"}, "id": {"type": "string", "minLength": 1}, "delta": {"type": "string"}, "providerMetadata": {"$ref": "#/$defs/providerMetadata"}},
       "additionalProperties": false
     },
     "reasoningFile": {
       "type": "object", "required": ["type", "mediaType", "data"],
-      "properties": {"type": {"const": "reasoning-file"}, "mediaType": {"type": "string"}, "data": {"$ref": "#/$defs/reasoningFileData"}, "providerMetadata": {"$ref": "#/$defs/reasoningMetadata"}},
+      "properties": {"type": {"const": "reasoning-file"}, "mediaType": {"type": "string"}, "data": {"$ref": "#/$defs/reasoningFileData"}, "providerMetadata": {"$ref": "#/$defs/providerMetadata"}},
       "additionalProperties": false
     },
     "reasoningFileData": {
@@ -43,52 +43,9 @@
         {"type": "object", "required": ["type", "url"], "properties": {"type": {"const": "url"}, "url": {"type": "string", "minLength": 1}}, "additionalProperties": false}
       ]
     },
-    "reasoningMetadata": {
+    "providerMetadata": {
       "type": "object",
-      "properties": {
-        "anthropic": {"type": "object", "properties": {"signature": {"type": "string"}, "redactedData": {"type": "string"}}, "additionalProperties": false},
-        "bedrock": {"type": "object", "properties": {"signature": {"type": "string"}, "redactedData": {"type": "string"}, "redactedContent": {"type": "string"}}, "additionalProperties": false},
-        "amazonBedrock": {"type": "object", "properties": {"signature": {"type": "string"}, "redactedData": {"type": "string"}, "redactedContent": {"type": "string"}}, "additionalProperties": false},
-        "openai": {"type": "object", "properties": {"itemId": {"type": "string"}, "reasoningEncryptedContent": {"type": ["string", "null"]}}, "additionalProperties": false}
-      },
-      "additionalProperties": false
-    },
-    "sourceMetadata": {
-      "type": "object",
-      "properties": {
-        "citation": {
-          "type": "object",
-          "properties": {
-            "index": {
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 1000000000
-            },
-            "startPageNumber": {
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 1000000000
-            },
-            "endPageNumber": {
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 1000000000
-            },
-            "startCharIndex": {
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 1000000000
-            },
-            "endCharIndex": {
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 1000000000
-            }
-          },
-          "additionalProperties": false
-        }
-      },
-      "additionalProperties": false
+      "additionalProperties": { "type": "object" }
     },
     "urlSource": {
       "type": "object",
@@ -116,7 +73,7 @@
           "minLength": 1
         },
         "providerMetadata": {
-          "$ref": "#/$defs/sourceMetadata"
+          "$ref": "#/$defs/providerMetadata"
         }
       },
       "additionalProperties": false
@@ -151,34 +108,34 @@
           "minLength": 1
         },
         "providerMetadata": {
-          "$ref": "#/$defs/sourceMetadata"
+          "$ref": "#/$defs/providerMetadata"
         }
       },
       "additionalProperties": false
     },
     "toolInputStart": {
       "type": "object", "required": ["type", "id", "toolName"],
-      "properties": {"type": {"const": "tool-input-start"}, "id": {"type": "string", "minLength": 1}, "toolName": {"type": "string", "minLength": 1}},
+      "properties": {"type": {"const": "tool-input-start"}, "id": {"type": "string", "minLength": 1}, "toolName": {"type": "string", "minLength": 1}, "providerMetadata": {"$ref": "#/$defs/providerMetadata"}},
       "additionalProperties": false
     },
     "toolInputDelta": {
       "type": "object", "required": ["type", "id", "delta"],
-      "properties": {"type": {"const": "tool-input-delta"}, "id": {"type": "string", "minLength": 1}, "delta": {"type": "string"}},
+      "properties": {"type": {"const": "tool-input-delta"}, "id": {"type": "string", "minLength": 1}, "delta": {"type": "string"}, "providerMetadata": {"$ref": "#/$defs/providerMetadata"}},
       "additionalProperties": false
     },
     "toolInputEnd": {
       "type": "object", "required": ["type", "id"],
-      "properties": {"type": {"const": "tool-input-end"}, "id": {"type": "string", "minLength": 1}},
+      "properties": {"type": {"const": "tool-input-end"}, "id": {"type": "string", "minLength": 1}, "providerMetadata": {"$ref": "#/$defs/providerMetadata"}},
       "additionalProperties": false
     },
     "toolCall": {
       "type": "object", "required": ["type", "toolCallId", "toolName", "input"],
-      "properties": {"type": {"const": "tool-call"}, "toolCallId": {"type": "string", "minLength": 1}, "toolName": {"type": "string", "minLength": 1}, "input": {"type": "string"}},
+      "properties": {"type": {"const": "tool-call"}, "toolCallId": {"type": "string", "minLength": 1}, "toolName": {"type": "string", "minLength": 1}, "input": {"type": "string"}, "providerMetadata": {"$ref": "#/$defs/providerMetadata"}},
       "additionalProperties": false
     },
     "toolResult": {
       "type": "object", "required": ["type", "toolCallId", "toolName", "result"],
-      "properties": {"type": {"const": "tool-result"}, "toolCallId": {"type": "string", "minLength": 1}, "toolName": {"type": "string", "minLength": 1}, "result": {"not": {"type": "null"}}, "isError": {"type": "boolean"}},
+      "properties": {"type": {"const": "tool-result"}, "toolCallId": {"type": "string", "minLength": 1}, "toolName": {"type": "string", "minLength": 1}, "result": {"not": {"type": "null"}}, "isError": {"type": "boolean"}, "providerMetadata": {"$ref": "#/$defs/providerMetadata"}},
       "additionalProperties": false
     },
     "streamStart": {
@@ -210,6 +167,7 @@
       "required": ["type", "id"],
       "properties": {
         "type": { "const": "text-start" },
+        "providerMetadata": { "$ref": "#/$defs/providerMetadata" },
         "id": { "type": "string", "minLength": 1 }
       },
       "additionalProperties": false
@@ -219,6 +177,7 @@
       "required": ["type", "id", "delta"],
       "properties": {
         "type": { "const": "text-delta" },
+        "providerMetadata": { "$ref": "#/$defs/providerMetadata" },
         "id": { "type": "string", "minLength": 1 },
         "delta": { "type": "string" }
       },
@@ -229,6 +188,7 @@
       "required": ["type", "id"],
       "properties": {
         "type": { "const": "text-end" },
+        "providerMetadata": { "$ref": "#/$defs/providerMetadata" },
         "id": { "type": "string", "minLength": 1 }
       },
       "additionalProperties": false
@@ -238,6 +198,7 @@
       "required": ["type", "usage", "finishReason"],
       "properties": {
         "type": { "const": "finish" },
+        "providerMetadata": { "$ref": "#/$defs/providerMetadata" },
         "usage": {
           "type": "object",
           "required": ["inputTokens", "outputTokens"],

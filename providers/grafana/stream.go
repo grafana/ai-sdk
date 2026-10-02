@@ -220,8 +220,12 @@ func decodeStreamPart(data []byte) (provider.StreamPart, error) {
 		return invalid()
 	}
 	part := provider.StreamPart{Type: value.Type}
-	if value.Type == provider.PartReasoningStart || value.Type == provider.PartReasoningDelta || value.Type == provider.PartReasoningEnd || value.Type == provider.PartReasoningFile {
-		metadata, err := decodeReasoningMetadata(value.Metadata)
+	switch value.Type {
+	case provider.PartTextStart, provider.PartTextDelta, provider.PartTextEnd,
+		provider.PartReasoningStart, provider.PartReasoningDelta, provider.PartReasoningEnd, provider.PartReasoningFile,
+		provider.PartToolInputStart, provider.PartToolInputDelta, provider.PartToolInputEnd,
+		provider.PartToolCall, provider.PartToolResult, provider.PartFinish:
+		metadata, err := decodeProviderMetadata(value.Metadata)
 		if err != nil {
 			return invalid()
 		}
