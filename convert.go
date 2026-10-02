@@ -202,13 +202,13 @@ func ConvertToModelMessages(messages []UIMessage, opts ...ConvertOption) ([]prov
 						IsAutomatic: tp.Approval.IsAutomatic,
 					})
 				}
-				// Upstream falls back to callProviderMetadata when the
-				// result-side metadata is absent (convert-to-model-messages.ts:231-232).
-				resultOpts := providerMetadataToOptions(tp.ResultProviderMetadata)
-				if tp.ResultProviderMetadata == nil {
-					resultOpts = providerMetadataToOptions(tp.CallProviderMetadata)
-				}
 				if tp.ProviderExecuted {
+					// Upstream falls back to callProviderMetadata when the
+					// result-side metadata is absent (convert-to-model-messages.ts:231-232).
+					resultOpts := providerMetadataToOptions(tp.ResultProviderMetadata)
+					if tp.ResultProviderMetadata == nil {
+						resultOpts = providerMetadataToOptions(tp.CallProviderMetadata)
+					}
 					r, err := providerExecutedToolResult(tp, resultOpts, opt.tools)
 					if err != nil {
 						return err
