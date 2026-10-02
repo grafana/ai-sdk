@@ -1026,8 +1026,9 @@ describe("authenticated Anthropic Gateway command", () => {
         }
       }
       assert.deepEqual(fake.violations, []);
-      await observer.waitForGenerations(8);
-      assert.equal(observer.generations.length, 8);
+      const expectedGenerations = mcpEnabled ? 16 : 8;
+      await observer.waitForGenerations(expectedGenerations);
+      assert.equal(observer.generations.length, expectedGenerations);
       for (const generation of observer.generations) {
         assert.deepEqual(generation.model, { provider: "grafana", name: "grafana/assistant" });
       }
