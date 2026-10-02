@@ -58,6 +58,8 @@ type unarySuccess struct {
 	Content      []any             `json:"content"`
 	FinishReason unaryFinishReason `json:"finishReason"`
 	Usage        unaryUsage        `json:"usage"`
+	Warnings     []responseWarning `json:"warnings"`
+	Response     *responseIdentity `json:"response,omitempty"`
 }
 
 func mapUnarySuccess(result *provider.GenerateResult, limit int64) (unarySuccess, error) {
@@ -72,14 +74,25 @@ func mapUnarySuccess(result *provider.GenerateResult, limit int64) (unarySuccess
 			Raw:     result.FinishReason.Raw,
 		},
 	}
-	ids := make(sourceIDs)
+	warnings, err := mapWarnings(result.Warnings)
+	if err != nil {
+		return unarySuccess{}, err
+	}
+	mapped.Warnings = warnings
+	if result.Response != nil {
+		identity, err := mapResponseIdentity(result.Response.ID, result.Response.ModelID, result.Response.Timestamp)
+		if err != nil {
+			return unarySuccess{}, err
+		}
+		mapped.Response = &identity
+	}
 	for _, part := range result.Content {
 		if part.ProviderExecuted || (part.Dynamic != nil && *part.Dynamic) || (part.Preliminary != nil && *part.Preliminary) {
 			return unarySuccess{}, errInvalidUnarySuccess
 		}
 		switch part.Type {
 		case provider.ContentSource:
-			source, err := mapSource(unarySource(part), ids, limit)
+			source, err := mapSource(unarySource(part), limit)
 			if err != nil {
 				return unarySuccess{}, err
 			}
@@ -150,6 +163,12 @@ func unarySuccessPreflight(result *provider.GenerateResult, limit int64) bool {
 		return false
 	}
 	remaining := limit
+	if !warningsPreflight(result.Warnings, &remaining) {
+		return false
+	}
+	if result.Response != nil && !responseIdentityFits(result.Response.ID, result.Response.ModelID, result.Response.Timestamp, &remaining) {
+		return false
+	}
 	for _, part := range result.Content {
 		if part.Type == provider.ContentReasoning || part.Type == provider.ContentReasoningFile {
 			if !reasoningMetadataFits(part.ProviderMetadata, &remaining) {

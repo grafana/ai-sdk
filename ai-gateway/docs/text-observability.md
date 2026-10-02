@@ -114,6 +114,30 @@ shutdown then each receive a fresh independent timeout. The
 `process_shutdown_completed` lifecycle event is logged only after this bounded
 finalizer returns.
 
+## Returned values and consumer observation
+
+Operator capture restrictions do not censor supported normal response values.
+Native warnings, source ID/display and registered response identity remain
+caller-visible within protocol bounds. Requested/canonical routing and logical
+operator identity stay separate; arbitrary warning/source/identity strings do
+not become operator attributes or metric labels.
+
+Consumers can wrap `providers/grafana` with existing
+[provider middleware](../../docs/middleware/overview.md) independently of server
+capture. `WrapGenerate` receives warnings, source content and the bounded
+Gateway response body; `WrapStream` receives stream-start warnings, sources and
+native response metadata. Hook access does not imply automatic capture/export
+by every built-in middleware. The pinned TS and Go clients replace typed unary
+response identity with Gateway-hop information; native identity survives inside
+that raw body, not typed ID/model/timestamp fields.
+
+Opt-in consumer logger response-body capture can log this Gateway body to a
+consumer-owned destination within its capture/redaction budget. Tests assert
+actual destination records, not merely raw-body access. This is not native
+provider transport capture. The logger does not automatically export every
+stream warning/source field, and Agent Observability has no generic source
+capture representation. No middleware API or diagnostic carrier is added.
+
 ## Work-package boundaries
 
 URL and document source output is passed through unchanged by observers.
@@ -125,7 +149,9 @@ first output. The Gateway image uses same-revision modules through
 `go.gateway.work` and still requires its image build gate. Currently pinned
 published middleware revisions predate this behavior; standalone middleware
 consumers need later module releases.
-See the [source guide](sources.md) for the public response privacy policy.
+See the [source guide](sources.md) for native source values and remaining
+metadata gaps, and the [Go client guide](../../docs/providers/grafana-gateway.md#native-response-values)
+for response identity and presence adaptations.
 
 - WP6 image capacity/distribution does not use this text-model chain.
 - WP7's Go client and ProviderWire contract are unchanged; correlation is

@@ -6,7 +6,7 @@ const schemaPath = fileURLToPath(
   new URL("../../providerwire/v4/schema/request.json", import.meta.url),
 );
 const schema = JSON.parse(readFileSync(schemaPath, "utf8")) as object;
-const ajv = new Ajv2020({ allErrors: true, strict: true });
+const ajv = new Ajv2020({ allErrors: true, strict: true, formats: { "date-time": true } });
 
 export const validateRequest: ValidateFunction<unknown> = ajv.compile(schema);
 export const validateUnarySuccess: ValidateFunction<unknown> = ajv.compile(JSON.parse(readFileSync(fileURLToPath(new URL("../../providerwire/v4/schema/unary_success.json", import.meta.url)), "utf8")) as object);

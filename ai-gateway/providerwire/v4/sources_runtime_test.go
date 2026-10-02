@@ -13,35 +13,33 @@ import (
 )
 
 func TestSourcesProjectionPrivacyAndBounds(t *testing.T) {
-	base := provider.SourceInfo{SourceType: provider.SourceTypeDocument, ID: "private-id", Title: "Public title", MediaType: "text/plain", Filename: "public.txt", ProviderMetadata: provider.ProviderMetadata{
+	base := provider.SourceInfo{SourceType: provider.SourceTypeDocument, ID: "native-id", Title: "Public title", MediaType: "text/plain", Filename: "public.txt", ProviderMetadata: provider.ProviderMetadata{
 		"anthropic": json.RawMessage(`{"startPageNumber":1,"endPageNumber":2,"startCharIndex":-1,"endCharIndex":"bad","citedText":"secret","encryptedIndex":"secret"}`),
 		"openai":    json.RawMessage(`{"type":"file_citation","fileId":"secret","index":3}`),
 		"private":   json.RawMessage(`{"token":"secret"}`),
 	}}
-	ids := make(sourceIDs)
-	mapped, err := mapSource(base, ids, 4096)
+	mapped, err := mapSource(base, 4096)
 	require.NoError(t, err)
 	encoded, err := json.Marshal(mapped)
 	require.NoError(t, err)
 	assert.NotContains(t, string(encoded), "secret")
-	assert.NotContains(t, string(encoded), "private-id")
+	assert.Contains(t, string(encoded), `"id":"native-id"`)
 	assert.Contains(t, string(encoded), `"citation":{"endPageNumber":2,"index":3,"startPageNumber":1}`)
 	for _, delta := range []int64{-1, 0, 1} {
 		source := provider.SourceInfo{SourceType: provider.SourceTypeURL, ID: "id", URL: strings.Repeat("<", 80)}
-		mapped, err := mapSource(source, make(sourceIDs), 4096)
+		mapped, err := mapSource(source, 4096)
 		require.NoError(t, err)
-		b, _ := json.Marshal(mapped)
-		_, err = mapSource(source, make(sourceIDs), int64(len(b))+delta)
+		b, err := json.Marshal(mapped)
+		require.NoError(t, err)
+		_, err = mapSource(source, int64(len(b))+delta)
 		assert.Equal(t, delta < 0, err != nil)
 	}
 	for _, tc := range []struct {
 		name   string
 		mutate func(*provider.SourceInfo)
 	}{
-		{"empty id", func(s *provider.SourceInfo) { s.ID = "" }},
-		{"long id", func(s *provider.SourceInfo) { s.ID = strings.Repeat("a", 1025) }},
 		{"utf8", func(s *provider.SourceInfo) { s.Title = string([]byte{255}) }},
-		{"unknown", func(s *provider.SourceInfo) { s.SourceType = "other" }},
+		{"unknown", func(s *provider.SourceInfo) { s.SourceType = provider.SourceType("other") }},
 		{"huge metadata", func(s *provider.SourceInfo) {
 			s.ProviderMetadata = provider.ProviderMetadata{"openai": json.RawMessage(strings.Repeat(" ", 8193))}
 		}},
@@ -49,62 +47,39 @@ func TestSourcesProjectionPrivacyAndBounds(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			source := base
 			tc.mutate(&source)
-			ids := make(sourceIDs)
-			_, err := mapSource(source, ids, 16384)
+			_, err := mapSource(source, 16384)
 			require.Error(t, err)
-			assert.Empty(t, ids)
 		})
 	}
-	document := base
-	document.ProviderMetadata = provider.ProviderMetadata{"openai": json.RawMessage(`{"type":"file_path","fileId":"file-secret","index":0}`)}
-	document.Title, document.Filename = "file-secret", "file-secret"
-	mapped, err = mapSource(document, make(sourceIDs), 4096)
-	require.NoError(t, err)
-	encoded, _ = json.Marshal(mapped)
-	assert.Contains(t, string(encoded), `"title":"Document"`)
-	assert.NotContains(t, string(encoded), "file-secret")
-	assert.NotContains(t, string(encoded), "filename")
-	document.SourceType = provider.SourceTypeURL
-	_, err = mapSource(document, ids, 4096)
-	require.NoError(t, err)
-	assert.Len(t, ids, 2)
 	compiled, err := schema.CompileSchema(streamEventSchemaJSON)
 	require.NoError(t, err)
 	require.NoError(t, compiled.Validate(json.RawMessage(encoded)))
 }
 
 func TestSourcesOpenAIAndAzureMetadata(t *testing.T) {
-	for _, tc := range []struct {
-		name, namespace, metadata, wantTitle, wantCitation string
-	}{
-		{"openai file citation", "openai", `{"type":"file_citation","fileId":"secret","index":4,"unapproved":"secret"}`, "Public title", `"citation":{"index":4}`},
-		{"azure file citation", "azure", `{"type":"file_citation","fileId":"secret","index":4,"unapproved":"secret"}`, "Public title", `"citation":{"index":4}`},
-		{"openai file path", "openai", `{"type":"file_path","fileId":"secret","index":0}`, "Document", `"citation":{"index":0}`},
-		{"azure file path", "azure", `{"type":"file_path","fileId":"secret","index":0}`, "Document", `"citation":{"index":0}`},
+	for _, tc := range []struct{ name, namespace, metadata, wantCitation string }{
+		{"openai file citation", "openai", `{"type":"file_citation","fileId":"secret","index":4,"unapproved":"secret"}`, `"citation":{"index":4}`},
+		{"azure file citation", "azure", `{"type":"file_citation","fileId":"secret","index":4,"unapproved":"secret"}`, `"citation":{"index":4}`},
+		{"openai file path", "openai", `{"type":"file_path","fileId":"secret","index":0}`, `"citation":{"index":0}`},
+		{"azure file path", "azure", `{"type":"file_path","fileId":"secret","index":0}`, `"citation":{"index":0}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			filename := "public.txt"
-			if strings.Contains(tc.name, "file path") {
-				filename = "file-secret"
-			}
-			source := provider.SourceInfo{SourceType: provider.SourceTypeDocument, ID: "private-id", Title: "Public title", Filename: filename, MediaType: "text/plain", ProviderMetadata: provider.ProviderMetadata{tc.namespace: json.RawMessage(tc.metadata)}}
-			mapped, err := mapSource(source, make(sourceIDs), 4096)
+			source := provider.SourceInfo{SourceType: provider.SourceTypeDocument, ID: "native-id", Title: "Native title", Filename: "native.txt", MediaType: "text/plain", ProviderMetadata: provider.ProviderMetadata{tc.namespace: json.RawMessage(tc.metadata)}}
+			mapped, err := mapSource(source, 4096)
 			require.NoError(t, err)
 			encoded, err := json.Marshal(mapped)
 			require.NoError(t, err)
-			assert.Contains(t, string(encoded), `"title":"`+tc.wantTitle+`"`)
+			assert.Contains(t, string(encoded), `"title":"Native title"`)
+			assert.Contains(t, string(encoded), `"filename":"native.txt"`)
+			assert.Contains(t, string(encoded), `"id":"native-id"`)
 			assert.Contains(t, string(encoded), tc.wantCitation)
-			assert.NotContains(t, string(encoded), "private-id")
 			assert.NotContains(t, string(encoded), "secret")
 			assert.NotContains(t, string(encoded), `"azure"`)
 			assert.NotContains(t, string(encoded), `"openai"`)
-			if strings.Contains(tc.name, "file path") {
-				assert.NotContains(t, string(encoded), `"filename"`)
-			}
 		})
 	}
 	oversize := provider.SourceInfo{SourceType: provider.SourceTypeURL, ID: "id", URL: "https://example.com", ProviderMetadata: provider.ProviderMetadata{"azure": json.RawMessage(strings.Repeat(" ", maxSourceMetadataBytes+1))}}
-	_, err := mapSource(oversize, make(sourceIDs), 16384)
+	_, err := mapSource(oversize, 16384)
 	require.ErrorIs(t, err, errInvalidUnarySuccess)
 }
 
@@ -127,22 +102,16 @@ func TestSourcesStreamingLifecycle(t *testing.T) {
 			harness.model.stream = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
 				return &provider.StreamResult{Stream: makeStream(tc.parts...)}, nil
 			}
-			response := harness.serve(streamRequest(`{"prompt":[]}`))
-			body := response.Body.String()
+			body := harness.serve(streamRequest(`{"prompt":[]}`)).Body.String()
 			requireStreamBodyMatchesSchema(t, body)
 			assert.Equal(t, tc.failure, strings.Contains(body, `"type":"error"`))
-			assert.NotContains(t, body, "native-id")
 			assert.NotContains(t, body, "secret")
-			if tc.name == "interleaved" {
-				assert.Equal(t, 2, strings.Count(body, `"id":"source-1"`))
+			if tc.name == "interleaved" || tc.name == "error continuation" {
+				assert.Equal(t, 2, strings.Count(body, `"id":"native-id"`))
 				assert.Contains(t, body, `"type":"finish"`)
 			}
 			if tc.name == "post finish" {
 				assert.NotContains(t, body, `"type":"source"`)
-			}
-			if tc.name == "error continuation" {
-				assert.Equal(t, 2, strings.Count(body, `"type":"source"`))
-				assert.Contains(t, body, `"type":"finish"`)
 			}
 		})
 	}
@@ -150,7 +119,7 @@ func TestSourcesStreamingLifecycle(t *testing.T) {
 
 func TestSourcesCompleteFrameAndAggregateBounds(t *testing.T) {
 	source := provider.SourceInfo{SourceType: provider.SourceTypeURL, ID: "id", URL: strings.Repeat("<", 80)}
-	mapped, err := mapSource(source, make(sourceIDs), 4096)
+	mapped, err := mapSource(source, 4096)
 	require.NoError(t, err)
 	frame, ok := encodeStreamFrame(streamEvent{typeName: provider.PartSource, source: mapped}, 4096)
 	require.True(t, ok)
@@ -165,16 +134,13 @@ func TestSourcesCompleteFrameAndAggregateBounds(t *testing.T) {
 	result.Content = result.Content[:1]
 	_, err = mapUnarySuccess(result, 1024)
 	require.NoError(t, err)
-	for _, raw := range []string{
-		`{"type":"source","sourceType":"document","id":"source-1","mediaType":"","title":""}`,
-		`{"type":"source","sourceType":"url","id":"source-1","url":""}`,
-	} {
+	for _, raw := range []string{`{"type":"source","sourceType":"document","id":"","mediaType":"","title":""}`, `{"type":"source","sourceType":"url","id":"","url":""}`} {
 		for _, schemaJSON := range [][]byte{streamEventSchemaJSON, unarySuccessSchemaJSON} {
 			compiled, err := schema.CompileSchema(schemaJSON)
 			require.NoError(t, err)
 			wrap := func(value string) string {
 				if string(schemaJSON) == string(unarySuccessSchemaJSON) {
-					return `{"content":[` + value + `],"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}}}`
+					return `{"content":[` + value + `],"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}},"warnings":[]}`
 				}
 				return value
 			}

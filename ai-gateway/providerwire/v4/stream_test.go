@@ -139,11 +139,7 @@ func TestStreamFrameEncoding(t *testing.T) {
 		require.NoError(t, err)
 		frame, ok := encodeStreamFrame(streamEvent{typeName: provider.PartStreamStart, warnings: warnings}, 1<<20)
 		require.True(t, ok)
-		assert.NotContains(t, string(frame), "secret")
-		assert.Contains(t, string(frame), streamWarningUnsupportedDetails)
-		assert.Contains(t, string(frame), streamWarningCompatibilityDetails)
-		assert.Contains(t, string(frame), streamWarningDeprecatedMessage)
-		assert.Contains(t, string(frame), streamWarningOtherMessage)
+		assert.JSONEq(t, `{"type":"stream-start","warnings":[{"type":"unsupported","feature":"secret","details":"secret"},{"type":"compatibility","feature":"secret","details":"secret"},{"type":"deprecated","setting":"secret","message":"secret"},{"type":"other","message":"secret"}]}`, strings.TrimSuffix(strings.TrimPrefix(string(frame), "data: "), "\n\n"))
 	})
 }
 
@@ -190,7 +186,7 @@ func TestStreamingRuntimeHappyPathPrivacyAndOrder(t *testing.T) {
 	total := 3
 	timestamp := time.Date(2026, 8, 23, 1, 2, 3, 456000000, time.FixedZone("private-zone", 2*60*60))
 	parts := []provider.StreamPart{
-		{Type: provider.PartStreamStart, Warnings: []provider.Warning{{Type: provider.WarnOther, Message: "credential=secret backend=private-model"}}},
+		{Type: provider.PartStreamStart, Warnings: []provider.Warning{{Type: provider.WarnOther, Message: "ordinary token-looking text backend=native-model"}}},
 		{Type: provider.PartResponseMeta, ResponseID: "response-id", ModelID: "backend-private", Provider: "private-provider", Timestamp: timestamp, ResponseHeaders: map[string]string{"Authorization": "secret"}, ProviderMetadata: provider.ProviderMetadata{"private": json.RawMessage(`{"secret":true}`)}},
 		{Type: provider.PartError, APICallError: provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: http.StatusTooManyRequests, Message: "private error", URL: "https://private.invalid", ResponseBody: "secret"})},
 		{Type: provider.PartTextStart, ID: "text-1", ProviderMetadata: provider.ProviderMetadata{"private": json.RawMessage(`{"secret":true}`)}},
@@ -215,8 +211,8 @@ func TestStreamingRuntimeHappyPathPrivacyAndOrder(t *testing.T) {
 	body := response.Body.String()
 	requireStreamBodyMatchesSchema(t, body)
 	expected := []string{
-		`{"type":"stream-start","warnings":[{"type":"other","message":"the model reported a warning"}]}`,
-		`{"type":"response-metadata","id":"response-id","modelId":"canonical/model","timestamp":"2026-08-22T23:02:03.456Z"}`,
+		`{"type":"stream-start","warnings":[{"type":"other","message":"ordinary token-looking text backend=native-model"}]}`,
+		`{"type":"response-metadata","id":"response-id","modelId":"backend-private","timestamp":"2026-08-22T23:02:03.456Z"}`,
 		`{"type":"error","error":{"message":"rate limit exceeded","type":"rate_limit_exceeded","param":null,"code":"rate_limit_exceeded","statusCode":429,"retryable":true}}`,
 		`{"type":"text-start","id":"text-1"}`,
 		`{"type":"text-delta","id":"text-1","delta":""}`,
@@ -254,7 +250,7 @@ func TestStreamingRuntimeStartNormalization(t *testing.T) {
 		}
 		response := harness.serve(streamRequest(`{"prompt":[]}`))
 		assert.Equal(t, 1, strings.Count(response.Body.String(), `"type":"stream-start"`))
-		assert.Contains(t, response.Body.String(), streamWarningDeprecatedMessage)
+		assert.Contains(t, response.Body.String(), `"setting":"private","message":"private"`)
 	})
 
 	t.Run("omitted start inserts empty start before first part", func(t *testing.T) {

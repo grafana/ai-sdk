@@ -32,6 +32,41 @@ Vercel and Go clients own the multi-step orchestration; each HTTP generation
 remains stateless. Ordered fallback routes continue rejecting tool definitions,
 choice and history before any physical invocation.
 
+## Native response values
+
+Supported unary/stream warnings preserve their registered variants, active
+fields, order and multiplicity. Required empty strings remain meaningful;
+optional absent/empty details normalize to the same Go empty string. Native
+warning text is no longer replaced with generic prose.
+
+URL/document sources preserve native IDs/title/filename without sequential ID
+rewriting, deduplication or `file_path` display substitution. Required IDs and
+document titles may be empty; optional empty title/filename values are omitted
+by Go-produced responses. See the [source guide](../../ai-gateway/docs/sources.md)
+for display semantics, bounds and the separately outstanding metadata gap.
+
+Raw unary `response` and streaming `response-metadata` carry supplied native
+ID/modelId/timestamp, not requested/canonical route defaults. Native model IDs
+need not match public route syntax. Go-produced optional empty identity strings
+and zero timestamps are omitted; present identity-free unary responses emit
+`{}`, while a nil native response omits the object. Nonzero timestamps preserve
+their instant as UTC RFC3339Nano.
+
+Both the registered TS and Go clients replace typed unary request/response with
+Gateway-hop transport information. Native unary identity remains nested inside
+the bounded `Response.Body`; typed response ID/model/timestamp remain unset.
+Streaming identity survives in provider parts. Do not use returned native
+identity for route resolution: requested model selection and canonical operator
+metrics remain separate.
+
+Independently configured consumer middleware can observe these contracted
+values and opt into bounded Gateway response-body logging at its own
+destination. Raw-body access alone is not capture, and neither provides full
+native transport diagnostics. Central Gateway observations remain metadata-only;
+see [text observability](../../ai-gateway/docs/text-observability.md#returned-values-and-consumer-observation).
+Response identity/warnings are not universal UI fields; UI message metadata
+requires an explicitly configured mapping.
+
 ## Authenticate the client
 
 Choose the constructor for your Gateway URL. Use `NewWithCloudCredentials`
