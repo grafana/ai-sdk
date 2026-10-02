@@ -145,21 +145,32 @@ after(async () => { await stopServer(); });
 
 describe("opaque native options through the production handler", () => {
   it("preserves every supported scope in both independent clients and modes", async () => {
-    const scoped = { futureNamespace: { model: "ordinary", type: "ordinary", nested: { null: null, false: false, zero: 0, empty: "", array: [], object: {} } }, empty: {}, FutureNamespace: { case: true } };
+    const providerOptionsFor = (scope: string) => ({ futureNamespace: { scope, model: "ordinary", type: "ordinary", nested: { null: null, false: false, zero: 0, empty: "", array: [], object: {} } }, empty: {}, FutureNamespace: { case: true } });
+    const scoped = {
+      call: providerOptionsFor("call"), functionTool: providerOptionsFor("function-tool"),
+      system: providerOptionsFor("system"), user: providerOptionsFor("user"),
+      text: providerOptionsFor("text"), file: providerOptionsFor("file"),
+      reasoning: providerOptionsFor("reasoning"), toolCall: providerOptionsFor("tool-call"),
+      toolResult: providerOptionsFor("tool-result"), resultFile: providerOptionsFor("result-file"),
+    };
     const options: LanguageModelV4CallOptions = {
-      providerOptions: scoped,
-      tools: [{ type: "function", name: "lookup", inputSchema: {}, providerOptions: scoped }],
+      providerOptions: scoped.call,
+      tools: [{ type: "function", name: "lookup", inputSchema: {}, providerOptions: scoped.functionTool }, { type: "function", name: "optionless", inputSchema: {} }],
       prompt: [
-        { role: "system", content: "system", providerOptions: scoped },
-        { role: "user", providerOptions: scoped, content: [
-          { type: "text", text: "hi", providerOptions: scoped },
-          { type: "file", mediaType: "application/pdf", data: { type: "data", data: "" }, providerOptions: scoped },
+        { role: "system", content: "system", providerOptions: scoped.system },
+        { role: "user", providerOptions: scoped.user, content: [
+          { type: "text", text: "hi", providerOptions: scoped.text },
+          { type: "file", mediaType: "application/pdf", data: { type: "data", data: "" }, providerOptions: scoped.file },
+          { type: "text", text: "optionless" },
         ] },
         { role: "assistant", content: [
-          { type: "reasoning", text: "thought", providerOptions: scoped },
-          { type: "tool-call", toolCallId: "call", toolName: "lookup", input: {}, providerOptions: scoped },
+          { type: "reasoning", text: "thought", providerOptions: scoped.reasoning },
+          { type: "tool-call", toolCallId: "call", toolName: "lookup", input: {}, providerOptions: scoped.toolCall },
         ] },
-        { role: "tool", content: [{ type: "tool-result", toolCallId: "call", toolName: "lookup", providerOptions: scoped, output: { type: "content", value: [{ type: "file", mediaType: "application/pdf", data: { type: "data", data: "" }, providerOptions: scoped }] } }] },
+        { role: "tool", content: [{ type: "tool-result", toolCallId: "call", toolName: "lookup", providerOptions: scoped.toolResult, output: { type: "content", value: [
+          { type: "file", mediaType: "application/pdf", data: { type: "data", data: "" }, providerOptions: scoped.resultFile },
+          { type: "file", mediaType: "application/pdf", data: { type: "data", data: "" } },
+        ] } }] },
       ],
     };
     const original = JSON.stringify(options);
@@ -169,13 +180,30 @@ describe("opaque native options through the production handler", () => {
         if (language === "go") {
           const result = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/function-tools`, accessToken: "function-test-token", modelID: "success", mode, options });
           assert.equal(result.error, undefined);
+          if (mode === "stream") {
+            assert.equal(result.canceled, false);
+            assert.equal(result.parts.filter((part: { type: string }) => part.type === "finish").length, 1);
+            assert.equal(result.parts.at(-1).type, "finish");
+            assert.ok(result.parts.every((part: { type: string }) => part.type !== "error"));
+          }
         } else if (mode === "generate") await client.doGenerate(options);
-        else await collect((await client.doStream(options)).stream);
+        else {
+          const parts = await collect((await client.doStream(options)).stream);
+          assert.equal(parts.filter(part => part.type === "finish").length, 1);
+          assert.equal(parts.at(-1)?.type, "finish");
+          assert.ok(parts.every(part => part.type !== "error"));
+        }
         const captured = await (await fetch(`${baseURL}/providerwire-v4/options`)).json();
-        const scopes = [captured.providerOptions, captured.tools[0].providerOptions, captured.prompt[0].providerOptions, captured.prompt[1].providerOptions,
-          ...captured.prompt[1].content.map((part: any) => part.providerOptions), ...captured.prompt[2].content.map((part: any) => part.providerOptions),
-          captured.prompt[3].content[0].providerOptions, captured.prompt[3].content[0].output.value[0].providerOptions];
-        for (const value of scopes) assert.deepEqual(value, scoped, `${language}/${mode}`);
+        assert.deepEqual({
+          call: captured.providerOptions, functionTool: captured.tools[0].providerOptions,
+          system: captured.prompt[0].providerOptions, user: captured.prompt[1].providerOptions,
+          text: captured.prompt[1].content[0].providerOptions, file: captured.prompt[1].content[1].providerOptions,
+          reasoning: captured.prompt[2].content[0].providerOptions, toolCall: captured.prompt[2].content[1].providerOptions,
+          toolResult: captured.prompt[3].content[0].providerOptions, resultFile: captured.prompt[3].content[0].output.value[0].providerOptions,
+        }, scoped, `${language}/${mode}`);
+        assert.equal(captured.tools[1].providerOptions, undefined);
+        assert.equal(captured.prompt[1].content[2].providerOptions, undefined);
+        assert.equal(captured.prompt[3].content[0].output.value[1].providerOptions, undefined);
       }
       assert.equal(JSON.stringify(options), original);
     }

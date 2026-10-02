@@ -16,6 +16,7 @@ import (
 
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/config"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
+	"github.com/grafana/ai-sdk/provider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -155,9 +156,44 @@ func nativeOptionsRequest(t *testing.T, backend, body string, streaming bool, fa
 	request.Header.Set(providerv4.HeaderStreaming, fmt.Sprint(streaming))
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
+	if response.Code == http.StatusOK && streaming {
+		assertNativeOptionsStream(t, response.Body.String())
+	}
 	mu.Lock()
 	defer mu.Unlock()
 	return response, append([]map[string]any(nil), requests...)
+}
+
+func assertNativeOptionsStream(t *testing.T, body string) {
+	t.Helper()
+	finishes := 0
+	var last provider.StreamPartType
+	for _, line := range strings.Split(body, "\n") {
+		data, ok := strings.CutPrefix(line, "data: ")
+		if !ok {
+			continue
+		}
+		var part struct {
+			Type         provider.StreamPartType `json:"type"`
+			FinishReason *provider.FinishReason  `json:"finishReason"`
+			Usage        *provider.Usage         `json:"usage"`
+		}
+		require.NoError(t, json.Unmarshal([]byte(data), &part))
+		assert.NotEqual(t, provider.PartError, part.Type, data)
+		last = part.Type
+		if part.Type == provider.PartFinish {
+			finishes++
+			require.NotNil(t, part.FinishReason)
+			assert.Equal(t, provider.FinishReasonStop, part.FinishReason.Unified)
+			require.NotNil(t, part.Usage)
+			require.NotNil(t, part.Usage.InputTokens.Total)
+			require.NotNil(t, part.Usage.OutputTokens.Total)
+			assert.Equal(t, 1, *part.Usage.InputTokens.Total)
+			assert.Equal(t, 1, *part.Usage.OutputTokens.Total)
+		}
+	}
+	assert.Equal(t, 1, finishes)
+	assert.Equal(t, provider.PartFinish, last)
 }
 
 func TestNativeOptions_CaptureIndependence(t *testing.T) {
