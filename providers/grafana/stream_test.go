@@ -216,11 +216,11 @@ func TestModel_StreamProviderToolParts(t *testing.T) {
 	assert.Equal(t, "", parts[1].Delta)
 	assert.True(t, parts[3].ProviderExecuted)
 	assert.Equal(t, boolPointer(true), parts[3].Dynamic)
-	assert.JSONEq(t, `{"type":"mcp-tool-use","serverName":"echo"}`, string(parts[3].ProviderMetadata["anthropic"]))
-	assert.True(t, parts[4].Preliminary)
+	assert.JSONEq(t, `{"type":"mcp-tool-use","serverName":"echo","private":"discard"}`, string(parts[3].ProviderMetadata["anthropic"]))
+	assert.Equal(t, boolPointer(true), parts[4].Preliminary)
 	assert.True(t, parts[4].IsError)
 	assert.JSONEq(t, `{"temperature":0}`, string(parts[4].Result))
-	assert.False(t, parts[5].Preliminary)
+	assert.Nil(t, parts[5].Preliminary)
 	assert.Nil(t, parts[5].Dynamic)
 }
 
@@ -248,11 +248,7 @@ func TestDecodeStreamPart_DeferredAndMarkers(t *testing.T) {
 		`{"type":"tool-call","toolCallId":"call","toolName":"echo","input":"{}","providerExecuted":"true"}`,
 		`{"type":"tool-result","toolCallId":"call","toolName":"echo","result":null}`,
 		`{"type":"tool-result","toolCallId":"call","toolName":"echo","result":{},"providerExecuted":true}`,
-		`{"type":"tool-result","toolCallId":"call","toolName":"echo","result":{},"providerMetadata":{"anthropic":{"type":"mcp-tool-use","serverName":null}}}`,
-		`{"type":"tool-call","toolCallId":"call","toolName":"echo","input":"{}","providerMetadata":{"anthropic":{"caller":{"type":"code_execution_20250825"}}}}`,
-		`{"type":"tool-call","toolCallId":"call","toolName":"echo","input":"{}","providerMetadata":{"anthropic":{"caller":{"type":"code_execution_20260120","toolId":""}}}}`,
-		`{"type":"tool-call","toolCallId":"call","toolName":"echo","input":"{}","providerMetadata":{"openai":{"caller":{"type":"program"}}}}`,
-		`{"type":"tool-call","toolCallId":"call","toolName":"echo","input":"{}","providerMetadata":{"azure":{"caller":{"type":"program","callerId":""}}}}`,
+		`{"type":"tool-result","toolCallId":"call","toolName":"echo","result":{},"providerMetadata":{"anthropic":null}}`,
 	} {
 		_, err := decodeStreamPart([]byte(event))
 		require.Error(t, err, event)

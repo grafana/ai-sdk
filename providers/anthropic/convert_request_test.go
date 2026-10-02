@@ -330,7 +330,7 @@ func TestBuildParams_MixedFunctionAndWebTools(t *testing.T) {
 		InputExamples:   []provider.InputExample{{Input: json.RawMessage(`{"query":"Go"}`)}},
 		ProviderOptions: provider.BuildProviderOptions(AnthropicToolOptions{DeferLoading: &deferLoading}),
 	}
-	server := provider.Tool{Type: provider.ToolTypeProvider, ID: "anthropic.web_fetch_20260318", Name: "fetch_latest", Args: map[string]json.RawMessage{"useCache": json.RawMessage(`false`)}, Strict: &strict, InputExamples: function.InputExamples, ProviderOptions: function.ProviderOptions}
+	server := provider.Tool{Type: provider.ToolTypeProvider, ID: "anthropic.web_fetch_20260318", Name: "fetch_latest", Args: map[string]json.RawMessage{"useCache": json.RawMessage(`false`)}}
 	for _, tc := range []struct {
 		name, modelID string
 		caps          providerCapabilities
