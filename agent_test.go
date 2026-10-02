@@ -619,7 +619,7 @@ func TestToolLoopAgent_InheritedOrchestrationBehavior(t *testing.T) {
 		assert.Equal(t, "done", result.Text)
 
 		denied := false
-		messages[0].Parts = []Part{ToolInvocationPart{ToolCallID: "c1", ToolName: "danger", State: ToolStateApprovalResponded, Input: json.RawMessage(`{}`), Approval: &ToolApproval{ID: "approval-1", Approved: &denied, Reason: "no"}}}
+		messages[0].Parts = []Part{ToolInvocationPart{ToolCallID: "c1", ToolName: "danger", State: ToolStateApprovalResponded, Input: json.RawMessage(`{}`), Approval: &ToolApproval{ID: "approval-1", Approved: &denied, Reason: new("no")}}}
 		executed = false
 		_, err = agent.Generate(context.Background(), WithAgentMessages(messages...))
 		require.NoError(t, err)

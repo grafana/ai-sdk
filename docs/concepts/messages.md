@@ -61,7 +61,11 @@ result := aisdk.StreamText(ctx, model,
 Pass the applicable tool set when persisted messages can contain completed tool
 results. Conversion then applies each tool's `ToModelOutput` hook before sending
 the result to the provider. Add `WithIgnoreIncompleteToolCalls` when incomplete
-tool calls should be omitted during explicit conversion.
+tool calls and preliminary results should be omitted during explicit conversion.
+Input-streaming tools are always excluded; errors and denials bypass `ToModelOutput`.
+Data parts are skipped unless you supply
+[`WithConvertDataPart`](https://pkg.go.dev/github.com/grafana/ai-sdk#WithConvertDataPart)
+for text/file projection.
 
 If both message options are supplied, `WithModelMessages` takes precedence.
 
@@ -102,12 +106,24 @@ whether persisted history should retain reasoning, files, tool payloads, and
 metadata under the application's data policy. Tool approvals use the same
 persisted history; see [Tool approval](../guides/tool-approval.md).
 
+### Retain tool field presence
+
+Store UI history, not model projections, to retain tool presentation and approval
+state. Tool `ErrorText` and `ToolApproval.Reason` are now string pointers: nil is
+absent; `new("")` is explicitly empty. Output errors require a non-nil error;
+denials use `Tool call execution denied.` only when the reason is absent.
+See the [tool part API](https://pkg.go.dev/github.com/grafana/ai-sdk#ToolInvocationPart)
+for field semantics and [parity boundaries](../../test/conformance/PARITY.md#retained-deviations-without-issue-ownership)
+for the remaining scalar/optional-value normalization.
+
 ## Continue Go-only model conversations
 
 When building lower-level loops, `ToResponseMessages` converts collected model
 response content into assistant and tool messages suitable for a later call. It
 preserves provider information required by reasoning and tool round trips.
 `StreamText` handles this conversation loop automatically for most applications.
+Provider prompt preparation combines consecutive tool messages in order;
+direct UI-to-model conversion retains its step-block grouping.
 
 ## Reference
 
