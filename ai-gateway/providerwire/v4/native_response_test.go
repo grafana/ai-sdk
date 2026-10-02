@@ -15,7 +15,6 @@ import (
 	"github.com/grafana/ai-sdk/middleware/logger"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/grafana/ai-sdk/providers/grafana"
-	"github.com/grafana/ai-sdk/schema"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -313,8 +312,7 @@ func TestNativeResponse_Schema(t *testing.T) {
 		if unary {
 			data = unarySuccessSchemaJSON
 		}
-		compiled, err := schema.CompileSchema(data)
-		require.NoError(t, err)
+		compiled := compileWireSchema(t, data)
 		wrap := func(warnings, identity string) string {
 			if unary {
 				return `{"content":[],"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}},"warnings":` + warnings + `,"response":` + identity + `}`
@@ -325,7 +323,7 @@ func TestNativeResponse_Schema(t *testing.T) {
 		for _, warning := range []string{`{"type":"other"}`, `{"type":"other","message":null}`, `{"type":"other","message":"","feature":"inactive"}`, `{"type":"deprecated","message":""}`, `{"type":"unsupported","feature":1}`, `{"type":"compatibility","feature":"","details":null}`, `{"type":"unknown"}`} {
 			assert.Error(t, compiled.Validate(json.RawMessage(wrap("["+warning+"]", `{}`))), warning)
 		}
-		for _, identity := range []string{`{}`, `{"id":"","modelId":""}`, `{"id":"native","modelId":"native model ☃","timestamp":"2026-01-01T00:00:00.123456789Z"}`} {
+		for _, identity := range []string{`{}`, `{"id":"","modelId":""}`, `{"id":"native","modelId":"native model ☃","timestamp":"2026-01-01T00:00:00.123456789Z"}`, `{"timestamp":"2024-02-29T00:00:00.123456789Z"}`} {
 			value := wrap(`[]`, identity)
 			if !unary {
 				value = `{"type":"response-metadata",` + strings.TrimPrefix(identity, "{")
@@ -335,7 +333,7 @@ func TestNativeResponse_Schema(t *testing.T) {
 			}
 			require.NoError(t, compiled.Validate(json.RawMessage(value)))
 		}
-		for _, identity := range []string{`{"id":null}`, `{"modelId":1}`, `{"timestamp":null}`, `{"timestamp":"bad"}`, `{"timestamp":"2026-01-01T00:00:00,123Z"}`, `{"provider":"inactive"}`} {
+		for _, identity := range []string{`{"id":null}`, `{"modelId":1}`, `{"timestamp":null}`, `{"timestamp":"bad"}`, `{"timestamp":"2026-01-01T00:00:00,123Z"}`, `{"timestamp":"2026-02-29T00:00:00Z"}`, `{"timestamp":"2026-02-31T00:00:00Z"}`, `{"timestamp":"2026-04-31T00:00:00Z"}`, `{"timestamp":"2026-13-01T00:00:00Z"}`, `{"provider":"inactive"}`} {
 			value := wrap(`[]`, identity)
 			if !unary {
 				value = `{"type":"response-metadata",` + strings.TrimPrefix(identity, "{")

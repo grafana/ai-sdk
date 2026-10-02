@@ -1,11 +1,12 @@
 package v4
 
 import (
+	"bytes"
 	_ "embed"
 	"encoding/json"
 	"testing"
 
-	"github.com/grafana/ai-sdk/schema"
+	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -19,9 +20,33 @@ var (
 	streamEventSchemaJSON []byte
 )
 
-func TestUnarySuccessSchema(t *testing.T) {
-	compiled, err := schema.CompileSchema(unarySuccessSchemaJSON)
+type wireSchemaValidator struct {
+	schema *jsonschema.Schema
+}
+
+func compileWireSchema(t *testing.T, data []byte) *wireSchemaValidator {
+	t.Helper()
+	compiler := jsonschema.NewCompiler()
+	compiler.DefaultDraft(jsonschema.Draft2020)
+	compiler.AssertFormat()
+	document, err := jsonschema.UnmarshalJSON(bytes.NewReader(data))
 	require.NoError(t, err)
+	require.NoError(t, compiler.AddResource("schema.json", document))
+	compiled, err := compiler.Compile("schema.json")
+	require.NoError(t, err)
+	return &wireSchemaValidator{schema: compiled}
+}
+
+func (v *wireSchemaValidator) Validate(data json.RawMessage) error {
+	document, err := jsonschema.UnmarshalJSON(bytes.NewReader(data))
+	if err != nil {
+		return err
+	}
+	return v.schema.Validate(document)
+}
+
+func TestUnarySuccessSchema(t *testing.T) {
+	compiled := compileWireSchema(t, unarySuccessSchemaJSON)
 
 	valid := []byte(`{"content":[{"type":"text","text":""}],"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}},"warnings":[]}`)
 	require.NoError(t, compiled.Validate(json.RawMessage(valid)))
@@ -41,8 +66,7 @@ func TestUnarySuccessSchema(t *testing.T) {
 }
 
 func TestStreamEventSchema(t *testing.T) {
-	compiled, err := schema.CompileSchema(streamEventSchemaJSON)
-	require.NoError(t, err)
+	compiled := compileWireSchema(t, streamEventSchemaJSON)
 	valid := []string{
 		`{"type":"stream-start","warnings":[]}`,
 		`{"type":"stream-start","warnings":[{"type":"unsupported","feature":"model capability","details":"a requested model capability is unsupported"},{"type":"compatibility","feature":"model compatibility","details":"a requested setting was adjusted for model compatibility"},{"type":"deprecated","setting":"model setting","message":"a requested model setting is deprecated"},{"type":"other","message":"the model reported a warning"}]}`,
@@ -88,8 +112,7 @@ func TestStreamEventSchema(t *testing.T) {
 }
 
 func TestErrorSchema(t *testing.T) {
-	compiled, err := schema.CompileSchema(errorSchemaJSON)
-	require.NoError(t, err)
+	compiled := compileWireSchema(t, errorSchemaJSON)
 
 	documents := [][]byte{
 		canonicalInvalidRequestError,

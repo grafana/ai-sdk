@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/grafana/ai-sdk/provider"
-	"github.com/grafana/ai-sdk/schema"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -51,8 +50,7 @@ func minimumStreamFrameBytes() int {
 
 func requireStreamBodyMatchesSchema(t *testing.T, body string) {
 	t.Helper()
-	compiled, err := schema.CompileSchema(streamEventSchemaJSON)
-	require.NoError(t, err)
+	compiled := compileWireSchema(t, streamEventSchemaJSON)
 	frames := strings.Split(strings.TrimSuffix(body, "\n\n"), "\n\n")
 	require.NotEmpty(t, frames)
 	for _, frame := range frames {

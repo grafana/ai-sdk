@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/grafana/ai-sdk/provider"
-	"github.com/grafana/ai-sdk/schema"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -51,8 +50,7 @@ func TestSourcesProjectionPrivacyAndBounds(t *testing.T) {
 			require.Error(t, err)
 		})
 	}
-	compiled, err := schema.CompileSchema(streamEventSchemaJSON)
-	require.NoError(t, err)
+	compiled := compileWireSchema(t, streamEventSchemaJSON)
 	require.NoError(t, compiled.Validate(json.RawMessage(encoded)))
 }
 
@@ -136,8 +134,7 @@ func TestSourcesCompleteFrameAndAggregateBounds(t *testing.T) {
 	require.NoError(t, err)
 	for _, raw := range []string{`{"type":"source","sourceType":"document","id":"","mediaType":"","title":""}`, `{"type":"source","sourceType":"url","id":"","url":""}`} {
 		for _, schemaJSON := range [][]byte{streamEventSchemaJSON, unarySuccessSchemaJSON} {
-			compiled, err := schema.CompileSchema(schemaJSON)
-			require.NoError(t, err)
+			compiled := compileWireSchema(t, schemaJSON)
 			wrap := func(value string) string {
 				if string(schemaJSON) == string(unarySuccessSchemaJSON) {
 					return `{"content":[` + value + `],"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}},"warnings":[]}`

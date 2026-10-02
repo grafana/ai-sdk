@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/grafana/ai-sdk/provider"
-	"github.com/grafana/ai-sdk/schema"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -46,8 +45,7 @@ func TestUnarySuccessMapping(t *testing.T) {
 	body, ok := encodeUnarySuccess(mapped, 1<<20)
 	require.True(t, ok)
 	require.True(t, json.Valid(body))
-	compiled, err := schema.CompileSchema(unarySuccessSchemaJSON)
-	require.NoError(t, err)
+	compiled := compileWireSchema(t, unarySuccessSchemaJSON)
 	require.NoError(t, compiled.Validate(body))
 	assert.JSONEq(t, `{
 		"content":[{"type":"text","text":""},{"type":"text","text":"quote=\" slash=\\ newline=\n snowman=☃ html=<>&"}],

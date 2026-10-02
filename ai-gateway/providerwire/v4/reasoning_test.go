@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/grafana/ai-sdk/provider"
-	"github.com/grafana/ai-sdk/schema"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -38,8 +37,7 @@ func TestReasoningUnary(t *testing.T) {
 	assert.Contains(t, string(body), `"reasoningEncryptedContent":null`)
 	assert.Contains(t, string(body), `"data":{"type":"data","data":""}`)
 	assert.NotContains(t, string(body), "secret")
-	compiled, err := schema.CompileSchema(unarySuccessSchemaJSON)
-	require.NoError(t, err)
+	compiled := compileWireSchema(t, unarySuccessSchemaJSON)
 	require.NoError(t, compiled.Validate(body))
 }
 
