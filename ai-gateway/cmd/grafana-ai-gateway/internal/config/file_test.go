@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/discovery"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -64,6 +63,7 @@ func TestLoadFile_StrictBoundedDocument(t *testing.T) {
 		{name: "openai-compatible without base URL", yaml: strings.Replace(minimalConfigYAML, "type: anthropic", "type: openai-compatible", 1)},
 		{name: "provider name on anthropic", yaml: strings.Replace(minimalConfigYAML, "    apiKeyEnv: ANTHROPIC_API_KEY\n", "    apiKeyEnv: ANTHROPIC_API_KEY\n    providerName: other\n", 1)},
 		{name: "provider name on openai", yaml: strings.Replace(strings.Replace(minimalConfigYAML, "type: anthropic", "type: openai", 1), "    apiKeyEnv: ANTHROPIC_API_KEY\n", "    apiKeyEnv: ANTHROPIC_API_KEY\n    providerName: other\n", 1)},
+		{name: "blank compatible provider name", yaml: strings.Replace(minimalConfigYAML, "    type: anthropic", "    type: openai-compatible\n    baseURL: https://backend.invalid\n    providerName: ' '", 1)},
 		{name: "missing api key reference", yaml: strings.Replace(minimalConfigYAML, "    apiKeyEnv: ANTHROPIC_API_KEY\n", "", 1)},
 		{name: "missing model name", yaml: strings.Replace(minimalConfigYAML, "    name: Grafana Assistant\n", "", 1)},
 		{name: "unknown provider reference", yaml: strings.Replace(minimalConfigYAML, "provider: anthropic-primary", "provider: missing", 1)},
@@ -247,7 +247,7 @@ func TestFile_ConfiguredDiscoveryLimits(t *testing.T) {
 				switch field {
 				case "rows":
 					file.Models = map[string]Model{}
-					for i := range discovery.MaxModelRows + extra {
+					for i := range maxModelRows + extra {
 						file.Models[fmt.Sprintf("model-%d", i)] = model
 					}
 				case "expanded rows":
@@ -264,25 +264,25 @@ func TestFile_ConfiguredDiscoveryLimits(t *testing.T) {
 						file.Models[fmt.Sprintf("route-%d", i)] = route
 					}
 				case "aliases":
-					for i := range discovery.MaxAliases + extra {
+					for i := range maxAliases + extra {
 						model.Aliases = append(model.Aliases, fmt.Sprintf("alias-%d", i))
 					}
 				case "candidates":
-					for i := range discovery.MaxCandidates - 1 + extra {
+					for i := range maxCandidates - 1 + extra {
 						model.Fallback = append(model.Fallback, Primary{Provider: "provider", Model: fmt.Sprintf("native-%d", i)})
 					}
 				case "name":
-					model.Name = strings.Repeat("a", discovery.MaxStringBytes+extra)
+					model.Name = strings.Repeat("a", maxStringBytes+extra)
 				case "description":
-					model.Description = strings.Repeat("a", discovery.MaxStringBytes+extra)
+					model.Description = strings.Repeat("a", maxStringBytes+extra)
 				case "instance":
 					value := file.Providers["provider"]
-					model.Primary.Provider = strings.Repeat("a", discovery.MaxStringBytes+extra)
+					model.Primary.Provider = strings.Repeat("a", maxStringBytes+extra)
 					file.Providers = map[string]Provider{model.Primary.Provider: value}
 				case "provider":
-					file.Providers["provider"] = Provider{Type: "openai-compatible", APIKeyEnv: "DUMMY_SECRET_REFERENCE", BaseURL: "https://backend.invalid", ProviderName: strings.Repeat("a", discovery.MaxStringBytes+extra)}
+					file.Providers["provider"] = Provider{Type: "openai-compatible", APIKeyEnv: "DUMMY_SECRET_REFERENCE", BaseURL: "https://backend.invalid", ProviderName: strings.Repeat("a", maxStringBytes+extra)}
 				case "model":
-					model.Primary.Model = strings.Repeat("a", discovery.MaxStringBytes+extra)
+					model.Primary.Model = strings.Repeat("a", maxStringBytes+extra)
 				}
 				if field != "rows" && field != "expanded rows" {
 					file.Models["canonical"] = model
@@ -299,7 +299,7 @@ func TestFile_ConfiguredDiscoveryLimits(t *testing.T) {
 	}
 	t.Run("unrelated provider has no discovery string budget", func(t *testing.T) {
 		file := testModelConfig()
-		file.Providers["unused-account"] = Provider{Type: "openai-compatible", APIKeyEnv: "DUMMY_SECRET_REFERENCE", BaseURL: "https://backend.invalid", ProviderName: strings.Repeat("a", discovery.MaxStringBytes+1)}
+		file.Providers["unused-account"] = Provider{Type: "openai-compatible", APIKeyEnv: "DUMMY_SECRET_REFERENCE", BaseURL: "https://backend.invalid", ProviderName: strings.Repeat("a", maxStringBytes+1)}
 		require.NoError(t, file.Validate())
 	})
 }

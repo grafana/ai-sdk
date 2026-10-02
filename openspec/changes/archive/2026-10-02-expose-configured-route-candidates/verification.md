@@ -88,7 +88,10 @@ parity, lint/docs/build/vet and all 83 strict main-spec validations passed.
 Bounded discovery fuzzing passed with 99,444 executions. Logs:
 `/tmp/gw324-cleanup-{go,parity,quality}.log`.
 
-## Approved client-policy simplification
+## Approved client-policy simplification (prior revision)
+
+This records revision 6cbca02e; the startup-owned validation follow-up below
+supersedes its remaining client semantic checks and server byte gating.
 
 Removed duplicated Go/TS row, alias, candidate and string-size policy ceilings.
 Config loading and server projection retain their existing ceilings, startup
@@ -117,6 +120,40 @@ and all 83 strict main-spec validations. Logs:
 the previously documented advisory skip. Checks on the preceding `71ae78a5` PR
 revision passed; image validation/publication/deployment were skipped by CI.
 
+## Startup-owned validation and complete projection
+
+Owner feedback makes route rules startup requirements, not client or response-
+building requirements. Config loading now owns the existing ID/nonblank/UTF-8,
+cardinality, alias-collision, provider-reference and candidate-uniqueness policy.
+The limits live in config rather than discovery. Blank compatible providerName
+is rejected there too. Process tests prove invalid routes fail before secrets or
+listener creation; config boundary coverage remains in the existing file suite.
+
+Deleted configured_discovery.go and the client's per-row selected-field/route
+validation. Go ListModels uses ordinary encoding/json into []ModelInfo, including
+normal missing/null/case behavior. The TS helper checks recognized JSON shapes
+and field types, not IDs, uniqueness or cross-row agreement. Tests explicitly
+accept server-owned semantic inconsistencies; byte overflow, malformed UTF-8/JSON,
+late type errors, credential exclusions and transport cleanup remain covered.
+This Go decoding adaptation does not promise identical malformed-shape handling
+or lone-surrogate identities across languages.
+
+Removed discovery.response-bytes, its environment binding, startup encoded-size
+feasibility checks and the handler's semantic/size preflight and custom assembly.
+The handler now projects and sorts the complete visible metadata, then performs
+one standard JSON encoding before HTTP success. It does not reject or truncate a
+valid configured catalog based on response size. Hosts providing custom listers
+own catalog validity before serving; authentication and request scoping remain.
+
+The real-command suite now proves a complete response above the former 1 MiB cap
+through raw HTTP, Go and the helper, with zero inference; all 42 command tests pass.
+Go/TS policy-ownership regressions failed before their decoder simplification.
+Full Grafana race/vet, Gateway tests and config/process/discovery/service race,
+ProviderWire typecheck/schema/client, parity, build/vet/lint/docs, module/boundary/
+pin checks, image-source checks and all 83 strict main specs passed. Logs:
+`/tmp/gw324-startup-policy-{go,parity,quality}.log`. The exact registered upstream
+baseline is unchanged; the advisory provider-shape skip remains documented above.
+
 ## Spec synchronization and archive
 
 Synced five added configured-discovery requirements and nine modified requirements
@@ -127,9 +164,10 @@ no active changes remain.
 
 ## Delivery and evidence boundaries
 
-The server default remains independently configurable at 1 MiB, Go defaults to
-4 MiB, and the TS helper defaults to/maxes out at 4 MiB. A larger client allowance
-does not enlarge server capacity; configured projection must fit before readiness.
+The server serves its complete visible startup-configured catalog without a
+discovery response-byte cap. Go reads default to a configurable 4 MiB; the TS
+helper defaults to/maxes out at 4 MiB. Clients can reject a large served document
+at their independent read boundary without changing server catalog validity.
 
 The current command exposes one static catalog to accepted identities. Scoped
 fakes and the dummy Cloud edge do not prove customer-account construction,

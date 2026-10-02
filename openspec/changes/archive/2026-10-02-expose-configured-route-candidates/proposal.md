@@ -7,7 +7,7 @@ Authorized developers cannot currently inspect configured route candidates throu
 - Extend existing authenticated `/config` rows with `gateway: {canonicalModelId, aliases, candidates: [{providerInstance, provider, modelId}]}` from explicit route configuration, preserving candidate order and existing normalized row/specification behavior.
 - Preserve those facts through optional `ModelInfo.Gateway *ConfiguredRoute` and typed candidate values on the existing Go `Provider.ListModels` API.
 - Supply the approved documented, typechecked `fetchConfiguredModels({baseURL, headers, fetch, signal, maxBytes})` TS consumer helper against the same route. Stock pinned `getAvailableModels()` still strips the extension; no new endpoint or published TS package is introduced.
-- Enforce row, alias, candidate and UTF-8 string policy in config/server validation; independently bound complete documents and validate structure/consistency in both access paths without duplicating numeric policy ceilings. Use standard JSON string decoding and reject malformed or duplicate catalogs without partial results.
+- Validate row, alias, candidate, identity and UTF-8 string policy at server startup. Serve the complete configured catalog without response-size gating or repeated route validation. Consumers retain typed decoding and independent transport read safeguards, not server business rules.
 - Keep listing at the same authenticated account/visibility boundary as resolution, exposing authorized provider/model identifiers but never provider credentials, secret references or unrelated account state.
 - Update obsolete discovery-concealment requirements, actual access examples and evidence boundaries without changing operator telemetry capture or runtime response/error behavior.
 

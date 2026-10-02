@@ -50,9 +50,10 @@ describe("configured discovery companion", () => {
     assert.deepEqual(await read(nullDescription), nullDescription);
   });
 
-  it("preserves nonblank opaque strings using the same Unicode whitespace boundary", async () => {
+  it("leaves nonblank-string policy to the server", async () => {
     for (const name of ["", " ", "\u0085", "\u00a0"]) {
-      await assert.rejects(() => read({ models: [{ id: "public", name, specification: { specificationVersion: "v4", provider: "grafana", modelId: "public" } }] }));
+      const models = [{ id: "public", name, specification: { specificationVersion: "v4", provider: "grafana", modelId: "public" } }];
+      assert.deepEqual(await read({ models }), { models });
     }
     const document = fixture();
     document.models[0].name = "\ufeff";
@@ -105,24 +106,29 @@ describe("configured discovery companion", () => {
     assert.equal(stream.locked, false);
   });
 
-  it("keeps the full public-ID grammar, including end-of-line rejection", async () => {
+  it("leaves public-ID grammar to the server", async () => {
     for (const id of ["bad id", "public\n", "public\r", "public\u2028", "public\u2029", "grafaná", "a" + "-".repeat(128)]) {
-      await assert.rejects(() => read({ models: [{ id, name: "Model", specification: { specificationVersion: "v4", provider: "grafana", modelId: id } }] }));
-    }
-    for (const alias of ["alias\n", "alias\u2028"]) {
-      const gateway = { ...configuredRoute(), aliases: [alias] };
-      await assert.rejects(() => read({ models: [gateway.canonicalModelId, alias].map(id => ({ id, name: "Model", specification: { specificationVersion: "v4", provider: "grafana", modelId: id }, gateway })) }));
+      const models = [{ id, name: "Model", specification: { specificationVersion: "v4", provider: "grafana", modelId: id } }];
+      assert.deepEqual(await read({ models }), { models });
     }
   });
 
-  it("rejects malformed and inconsistent complete documents atomically", async () => {
+  it("leaves route consistency and uniqueness to the server", async () => {
     const route = configuredRoute();
     const doc = fixture();
-    const badGateway: unknown[] = [null, [], {}, { ...route, canonicalModelId: "bad id" }, { ...route, aliases: null }, { ...route, aliases: ["alias", "alias"] }, { ...route, aliases: ["public"] }, { ...route, candidates: [] }, { ...route, candidates: null }, { ...route, candidates: [null] }, { ...route, candidates: [{ providerInstance: "p", provider: "anthropic" }] }, { ...route, candidates: [{ ...route.candidates[0], provider: null }] }, { ...route, candidates: [{ ...route.candidates[0], providerInstance: " " }] }, { ...route, candidates: [route.candidates[0], { ...route.candidates[0], provider: "different" }] }];
-    const invalid: unknown[] = [null, {}, { models: null }, { models: [null] }, { models: [doc.models[0]] }, { models: [doc.models[1]] }, { models: [...doc.models, doc.models[0]] }, { models: [doc.models[0], { ...doc.models[1], gateway: { ...route, candidates: [route.candidates[0]] } }] }, { models: [{ ...doc.models[0], id: "undeclared", specification: { ...doc.models[0].specification, modelId: "undeclared" } }, doc.models[1]] }, { models: [doc.models[0], { ...doc.models[1], name: "" }] }, { models: [doc.models[0], { ...doc.models[1], description: 2 }] }, { models: doc.models.map(row => ({ ...row, specification: { ...row.specification, modelId: "contradiction" } })) }, ...badGateway.map(value => fixture(value))];
-    for (const value of invalid) {
-      await assert.rejects(() => read(value), /configured discovery: invalid catalog/);
-    }
+    const gateways = [{ ...route, canonicalModelId: "bad id" }, { ...route, aliases: ["alias", "alias"] }, { ...route, aliases: ["public"] }, { ...route, candidates: [] }, { ...route, candidates: [{ ...route.candidates[0], providerInstance: " " }] }, { ...route, candidates: [route.candidates[0], { ...route.candidates[0], provider: "different" }] }];
+    const documents = [{ models: [doc.models[0]] }, { models: [doc.models[1]] }, { models: [...doc.models, doc.models[0]] }, { models: [doc.models[0], { ...doc.models[1], gateway: { ...route, candidates: [route.candidates[0]] } }] }, { models: doc.models.map(row => ({ ...row, specification: { ...row.specification, specificationVersion: "other", provider: "other", modelId: "contradiction" } })) }, ...gateways.map(value => fixture(value))];
+    for (const document of documents) assert.deepEqual(await read(document), document);
+    const { gateway: _gateway, ...withoutGateway } = doc.models[0];
+    assert.deepEqual(await read({ models: [{ ...withoutGateway, gateway: null }] }), { models: [withoutGateway] });
+  });
+
+  it("rejects JSON shape and type errors without returning a partial catalog", async () => {
+    const route = configuredRoute();
+    const doc = fixture();
+    const badGateway: unknown[] = [[], {}, { ...route, aliases: null }, { ...route, aliases: [2] }, { ...route, candidates: null }, { ...route, candidates: [null] }, { ...route, candidates: [{ providerInstance: "p", provider: "anthropic" }] }, { ...route, candidates: [{ ...route.candidates[0], provider: null }] }];
+    const invalid: unknown[] = [null, {}, { models: null }, { models: [null] }, { models: [doc.models[0], { ...doc.models[1], name: 2 }] }, { models: [doc.models[0], { ...doc.models[1], description: 2 }] }, ...badGateway.map(value => fixture(value))];
+    for (const value of invalid) await assert.rejects(() => read(value), /configured discovery: invalid catalog/);
   });
 
   for (const dimension of ["rows", "aliases", "candidates", "name", "description", "providerInstance", "provider", "modelId"] as const) {
@@ -158,7 +164,7 @@ describe("configured discovery companion", () => {
     assert.deepEqual(await read({ models: [] }, { maxBytes: 4_194_304 }), { models: [] });
   });
 
-  it("accepts within the independent 4 MiB allowance, not the server's 1 MiB default", async () => {
+  it("accepts large complete catalogs when the read allowance permits", async () => {
     const gateway: ConfiguredRoute = { canonicalModelId: "public", aliases: Array.from({ length: 64 }, (_, i) => `alias-${i}`), candidates: Array.from({ length: 16 }, (_, i) => ({ providerInstance: "instance", provider: "anthropic", modelId: `${i}-` + "a".repeat(1048) })) };
     const models = [gateway.canonicalModelId, ...gateway.aliases].map(id => ({ id, name: "Model", specification: { specificationVersion: "v4", provider: "grafana", modelId: id }, gateway }));
     const bytes = Buffer.byteLength(JSON.stringify({ models }));

@@ -9,10 +9,16 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/discovery"
 	v4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 
 	"go.yaml.in/yaml/v4"
+)
+
+const (
+	maxModelRows   = 1024
+	maxCandidates  = 16
+	maxAliases     = 128
+	maxStringBytes = 2048
 )
 
 var publicIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$`)
@@ -114,6 +120,9 @@ func (file File) Validate() error {
 				return fmt.Errorf("config: providers.%s.providerName is only supported for openai-compatible providers", name)
 			}
 		case "openai-compatible":
+			if provider.ProviderName != "" && strings.TrimSpace(provider.ProviderName) == "" {
+				return fmt.Errorf("config: providers.%s.providerName must not be blank", name)
+			}
 			if strings.TrimSpace(provider.BaseURL) == "" {
 				return fmt.Errorf("config: providers.%s.baseURL is required for openai-compatible providers", name)
 			}
@@ -139,7 +148,7 @@ func (file File) Validate() error {
 	}
 	rowCount := 0
 	for _, model := range file.Models {
-		if len(model.Aliases) > discovery.MaxAliases || len(model.Fallback) >= discovery.MaxCandidates || len(model.Aliases)+1 > discovery.MaxModelRows-rowCount {
+		if len(model.Aliases) > maxAliases || len(model.Fallback) >= maxCandidates || len(model.Aliases)+1 > maxModelRows-rowCount {
 			return fmt.Errorf("config: configured discovery cardinality exceeds limit")
 		}
 		rowCount += len(model.Aliases) + 1
@@ -229,7 +238,7 @@ func (file File) ResolveProviderSecrets(lookupEnv LookupEnv) (map[string]Resolve
 }
 
 func validDiscoveryText(value string) bool {
-	return len(value) <= discovery.MaxStringBytes && utf8.ValidString(value)
+	return len(value) <= maxStringBytes && utf8.ValidString(value)
 }
 
 func validatePublicID(value string) error {

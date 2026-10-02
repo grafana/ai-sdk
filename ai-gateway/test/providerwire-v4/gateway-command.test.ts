@@ -76,6 +76,32 @@ describe("authenticated Anthropic Gateway command", () => {
       } finally { await settleCleanup(...(edge ? [() => edge!.stop()] : []), ...(gateway ? [() => gateway!.stop()] : []), () => fake.stop()); }
     });
   }
+  it("serves the complete configured catalog above the former response cap without inference", async () => {
+    const fake = await FakeAnthropic.start();
+    let gateway: GatewayProcess | undefined;
+    try {
+      const candidates = Array.from({ length: 16 }, (_, i) => ({ providerInstance: "anthropic-primary", provider: "anthropic", modelId: `${i}-` + "a".repeat(1048) }));
+      const aliases = Array.from({ length: 64 }, (_, i) => `alias-${i}`);
+      const config = `providers:\n  anthropic-primary:\n    type: anthropic\n    apiKeyEnv: GATEWAY_TEST_ANTHROPIC_KEY\n    baseURL: ${fake.url}\nmodels:\n  public:\n    name: Model\n    primary:\n      provider: anthropic-primary\n      model: ${candidates[0].modelId}\n    fallback:\n${candidates.slice(1).map(candidate => `      - provider: anthropic-primary\n        model: ${candidate.modelId}\n`).join("")}    aliases:\n${aliases.map(alias => `      - ${alias}\n`).join("")}`;
+      gateway = await GatewayProcess.start(binaryPath, fake.url, [], {}, "access-token", config);
+      const baseURL = `${gateway.url}/api/v1/aisdk`;
+      const headers = { "x-access-token": TEST_TOKEN };
+      const response = await fetch(`${baseURL}/config`, { headers });
+      assert.equal(response.status, 200);
+      const body = await response.text();
+      assert.ok(Buffer.byteLength(body) > 1_048_576);
+      const document = JSON.parse(body);
+      assert.equal(document.models.length, 65);
+      for (const model of document.models) assert.deepEqual(model.gateway, { canonicalModelId: "public", aliases, candidates });
+      assert.deepEqual(await fetchConfiguredModels({ baseURL, headers }), document);
+      const go = await captureGoClient(goClientBinaryPath, { baseURL, accessToken: TEST_TOKEN, mode: "discovery" });
+      assert.equal(go.error, undefined);
+      assert.deepEqual(go.models, document.models);
+      assert.equal(fake.requests.length, 0);
+      assert.deepEqual(fake.violations, []);
+    } finally { await settleCleanup(...(gateway ? [() => gateway!.stop()] : []), () => fake.stop()); }
+  });
+
   for (const family of ["anthropic", "openai"] as const) {
     it(`replays assembled ${family} reasoning through authenticated native requests in both clients`, async () => {
       const [fake,gateway] = family === "anthropic" ? await startGateway() : await startOpenAIGateway();
@@ -458,8 +484,7 @@ describe("authenticated Anthropic Gateway command", () => {
     } finally { await settleCleanup(() => gateway.stop(), () => fake.stop()); }
   });
 
-  it("rejects incomplete discovery at startup and preserves shutdown cancellation", async () => {
-    await assert.rejects(() => startGateway(["--discovery.response-bytes=256"]), /gateway exited unsuccessfully/);
+  it("preserves shutdown cancellation after discovery", async () => {
     const [fake, gateway] = await startGateway();
     const base = { baseURL: `${gateway.url}/api/v1/aisdk`, accessToken: TEST_TOKEN };
     try {

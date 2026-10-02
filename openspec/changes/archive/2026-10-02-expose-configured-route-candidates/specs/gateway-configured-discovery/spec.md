@@ -35,48 +35,45 @@ Discovery SHALL authenticate before listing and SHALL pass the request context t
 - **THEN** no catalog listing or provider work SHALL occur and the existing bounded authentication response SHALL apply
 
 ### Requirement: Atomic discovery resource and consistency limits
-Configuration loading and server projection SHALL enforce at most 1,024 expanded rows including aliases, 16 candidates per route, 128 aliases per route and 2,048 UTF-8 bytes per identity/display string. Consumers SHALL NOT duplicate these numeric policy ceilings; their resource limit SHALL be the complete document-byte budget. The existing 1–128 ASCII public-ID grammar SHALL remain unchanged. Required identities and names SHALL remain nonblank; optional description SHALL preserve existing empty/absent semantics. Server strings and raw consumer documents SHALL be valid UTF-8. Consumer strings SHALL use standard JSON decoding: Go normalizes escaped lone UTF-16 surrogates to U+FFFD, while TS retains the decoded UTF-16 value. Lossless cross-client identity agreement SHALL NOT be claimed for such escapes. Semantic checks SHALL apply to the decoded values. Complete discovery documents SHALL remain independently bounded by the existing server configurable byte limit, defaulting to 1,048,576 bytes (1 MiB), and the existing Go configurable byte limit, defaulting to 4,194,304 bytes (4 MiB). The TS helper SHALL default to and support at most 4,194,304 bytes (4 MiB), allowing smaller positive safe-integer maxBytes values. This feature SHALL NOT increase the server's existing default or treat either client's larger allowance as server capacity.
+Configuration loading SHALL validate route semantics before readiness: at most 1,024 expanded rows including aliases, 16 candidates per route, 128 aliases per route and 2,048 UTF-8 bytes per identity/display string. The existing 1–128 ASCII public-ID grammar SHALL remain unchanged. Required identities and names SHALL be nonblank; strings SHALL be valid UTF-8; optional description SHALL preserve existing empty/absent semantics. Duplicate IDs/aliases/candidate tuples, canonical/alias collisions and unknown provider references SHALL fail startup. Candidate tuple uniqueness SHALL use provider-instance plus model ID; distinct instances of the same provider/model SHALL remain valid.
 
-Server counts and raw string sizes SHALL be preflighted before row expansion, typed collection allocation and UTF-8 scanning; server encoding SHALL independently check the final complete encoded size including escaping and wrappers before HTTP 200. Consumers SHALL bound raw document reads before decoding and allocating typed results. Configured startup catalogs violating these bounds SHALL fail before readiness; invalid dynamic/custom lister output SHALL fail before success commitment. Malformed documents, duplicate IDs/aliases/candidate tuples, canonical/alias collisions, specification contradictions and inconsistent/incomplete configured route groups SHALL invalidate the entire result. Candidate tuple uniqueness SHALL use provider-instance plus model ID; distinct instances of the same provider/model SHALL remain valid. No path SHALL return a partial catalog or truncate strings/collections to fit. Standard JSON duplicate-member handling SHALL remain distinct from duplicate semantic entries.
+The discovery handler SHALL project the complete visible configured catalog without revalidating route semantics or imposing a discovery response-byte cap. Hosts supplying custom listers SHALL own catalog validity before serving. The response SHALL retain closed credential-safe fields and consistent canonical/alias specifications by construction. No path SHALL truncate strings or collections.
+
+Consumers SHALL decode typed metadata without duplicating server ID, nonblank-string, cardinality, uniqueness or route-consistency policy. They SHALL independently bound raw UTF-8 JSON reads before decoding: Go defaults to a configurable 4,194,304 bytes (4 MiB); the TS helper defaults to and supports at most 4,194,304 bytes (4 MiB), allowing smaller positive safe-integer maxBytes values. Byte overflow, malformed JSON and type-decoding errors SHALL return no partial catalog. Standard JSON string and duplicate-member semantics SHALL apply: Go normalizes escaped lone UTF-16 surrogates to U+FFFD, while TS retains the decoded UTF-16 value. Lossless cross-client identity agreement SHALL NOT be claimed for such escapes.
 
 #### Scenario: Server policy dimensions reach their boundaries
-- **WHEN** a valid configured catalog reaches an exact row, candidate, alias or string ceiling
-- **THEN** configuration loading and server projection SHALL accept it if the byte budget and semantic constraints hold
+- **WHEN** a configured catalog reaches an exact row, candidate, alias or string ceiling
+- **THEN** configuration loading SHALL accept it if semantic constraints hold
 - **WHEN** any policy dimension exceeds its ceiling by one
-- **THEN** configuration loading or server projection SHALL fail before readiness or success commitment
+- **THEN** configuration loading SHALL fail before readiness
+
+#### Scenario: Invalid routes fail startup
+- **WHEN** configuration contains invalid IDs, duplicate aliases/candidate tuples, canonical/alias collisions or blank required identifiers
+- **THEN** startup SHALL fail before listener creation or provider inference
+- **AND** response building SHALL NOT repeat those checks
+
+#### Scenario: Configured catalog exceeds the former response budget
+- **WHEN** a valid configured discovery document exceeds 1 MiB after alias expansion and JSON escaping
+- **THEN** the server SHALL serve every visible configured row without a discovery response-size rejection
 
 #### Scenario: Consumers do not duplicate configuration policy
-- **WHEN** a structurally valid and consistent document fits the consumer byte budget but exceeds a server row, candidate, alias or string policy ceiling
-- **THEN** the consumer SHALL return the complete catalog without imposing that policy ceiling
+- **WHEN** a document fits the consumer byte budget and decodes into its typed metadata
+- **THEN** the consumer SHALL retain supplied facts without checking route semantics, uniqueness or numeric configuration policy
 - **WHEN** the document exceeds the consumer byte budget by one
 - **THEN** the consumer SHALL fail without returning any rows
 
 #### Scenario: Escaped lone surrogates use standard JSON semantics
-- **WHEN** a nonblank display or candidate string contains an escaped lone UTF-16 surrogate
+- **WHEN** a display or candidate string contains an escaped lone UTF-16 surrogate
 - **THEN** Go SHALL decode it as U+FFFD and TS SHALL retain its standard decoded UTF-16 value
-- **AND** invalid public IDs, duplicate candidate tuples and inconsistent route groups SHALL still fail based on each consumer's decoded values
 
-#### Scenario: Client allowance exceeds the server budget
-- **WHEN** a configured discovery document exceeds the server's existing 1 MiB default but fits the Go or TS helper's 4 MiB default allowance
-- **THEN** the server SHALL reject the document atomically before success commitment unless its existing configurable limit was explicitly raised
-- **AND** the client allowance SHALL NOT change the server limit
-
-#### Scenario: Escaping expands the document
-- **WHEN** individually bounded route facts fit raw-string preflight but repeated aliases and escaping push the final document over its byte limit
-- **THEN** no HTTP 200 partial document SHALL be emitted
-
-#### Scenario: Custom listing bypasses startup validation
-- **WHEN** a custom lister returns duplicate public IDs, colliding aliases, malformed candidate facts or inconsistent configured groups
-- **THEN** discovery SHALL reject the complete listing using the existing fixed internal-error response without exposing invalid data
-
-#### Scenario: Client receives a late malformed row
-- **WHEN** a bounded document contains valid initial rows followed by malformed, duplicated or contradictory configured facts
-- **THEN** Go and TS configured access SHALL fail atomically without exposing the initial rows
+#### Scenario: Client receives a late type error
+- **WHEN** a bounded document contains valid initial rows followed by a field that cannot decode into its declared type
+- **THEN** configured access SHALL fail atomically without exposing the initial rows
 
 ### Requirement: Bounded TS companion access on the existing route
 The repository SHALL provide a documented, typechecked and deterministically tested copyable `fetchConfiguredModels({baseURL, headers, fetch, signal, maxBytes})` consumer helper retaining typed configured-route facts from the existing authenticated `/config` document. It SHALL NOT be a new published TS package or endpoint. The helper SHALL preserve an HTTP(S) API-prefix base URL, reject URL credentials/query/fragment, use explicit selected JWT or CAP outer headers, issue one GET, refuse redirects, honor abort, check success and JSON media type, bound reads incrementally and validate the entire raw UTF-8 JSON document and recognized model/extension fields before return. It SHALL ignore unrelated unknown additive fields rather than expose arbitrary configuration. It SHALL release/cancel reader resources on success or failure and SHALL NOT embed auth headers or arbitrary response bodies in errors, cache catalogs, switch credentials or invoke inference.
 
-Stock exact-pinned `getAvailableModels()` SHALL remain tested as compatible normalized discovery that strips the extension, not as an access path for candidate facts. The helper SHALL accept ordinary rows with no gateway extension; a present null, incomplete or malformed extension SHALL fail the complete document.
+Stock exact-pinned `getAvailableModels()` SHALL remain tested as compatible normalized discovery that strips the extension, not as an access path for candidate facts. The helper SHALL accept ordinary rows with absent/null gateway; a non-null extension with a JSON shape or field type incompatible with ConfiguredRoute SHALL fail the complete document. It SHALL NOT check route semantics.
 
 #### Scenario: Both TS discovery surfaces are demonstrated
 - **WHEN** the registered Gateway client and shipped helper read the same configured response
@@ -92,7 +89,7 @@ Stock exact-pinned `getAvailableModels()` SHALL remain tested as compatible norm
 - **THEN** the helper SHALL refuse the redirect without sending credentials to the redirect target
 
 ### Requirement: Independent evidence and honest support guidance
-This feature SHALL ship independent server and Go/TS malformed/duplicate/oversized/boundary tests, immutable catalog tests, raw HTTP/schema tests and exact-pinned client/real-command discovery tests. Successful and denied discovery tests SHALL assert zero native inference requests. The TS example SHALL be registered in the existing ProviderWire workspace's typecheck/test commands, and Go client tests SHALL remain independent of AGPL implementation imports.
+This feature SHALL ship startup route-policy tests, server complete-projection tests and independent Go/TS malformed/type-error/oversized/boundary tests, immutable catalog tests, raw HTTP/schema tests and exact-pinned client/real-command discovery tests. Successful and denied discovery tests SHALL assert zero native inference requests. The TS example SHALL be registered in the existing ProviderWire workspace's typecheck/test commands, and Go client tests SHALL remain independent of AGPL implementation imports.
 
 Guidance SHALL distinguish configured candidates from actual attempts/response identity, stock TS normalized discovery from helper access, and current startup-configured/internal-account visibility from future request-scoped Cloud/BYOK construction. Scoped fakes and dummy Cloud edges SHALL NOT be presented as deployed customer isolation or live CAP authorization proof. Operator telemetry configuration SHALL remain independent of developer discovery; no discovery feature SHALL enable payload capture or new topology labels. Applicable catalog/discovery/client specs, docs/navigation, parity and module checks SHALL ship with the feature.
 

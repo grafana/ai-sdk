@@ -188,11 +188,10 @@ Before exposing it, check that those callers may see the provider choices. For
 request-specific visibility, apply the same access rules to listing and resolution
 as described above.
 
-Large catalogs can exceed the discovery response budget, especially when many
-aliases repeat the same provider choices. The command checks the catalog at
-startup and defaults to a 1 MiB response limit. Reduce the catalog or raise
-`discovery.response-bytes` if needed, and ensure your clients accept the resulting
-size. A larger client limit does not increase the server's limit.
+The command validates route configuration at startup, before accepting requests.
+Discovery then returns the complete visible configured catalog; it does not
+revalidate routes or impose a response-size cap. Aliases repeat provider choices,
+so ensure your clients' read limits accommodate the resulting document.
 
 ## Reference
 

@@ -49,9 +49,8 @@ type ModelInfo struct {
 }
 
 // ListModels returns the authenticated catalog in server order, without caching.
-// The complete document, including configured canonical/alias consistency, must
-// fit Limits.DiscoveryBytes. Route cardinality and string-size policy belongs
-// to server configuration; strings use standard Go JSON decoding.
+// The complete document must fit Limits.DiscoveryBytes and decode into ModelInfo.
+// Catalog policy and route consistency belong to server startup validation.
 // Malformed or oversized catalogs return no partial results.
 func (p *Provider) ListModels(ctx context.Context) ([]ModelInfo, error) {
 	req, err := p.request(ctx, http.MethodGet, "/config")
@@ -75,50 +74,12 @@ func (p *Provider) ListModels(ctx context.Context) ([]ModelInfo, error) {
 		return nil, protocolError("grafana: invalid discovery response", resp.StatusCode, err)
 	}
 	var document struct {
-		Models *[]json.RawMessage `json:"models"`
+		Models []ModelInfo `json:"models"`
 	}
-	if err := decodeFields(body, &document, "models"); err != nil || document.Models == nil {
+	if json.Unmarshal(body, &document) != nil || document.Models == nil {
 		return nil, protocolError("grafana: invalid discovery document", resp.StatusCode, nil)
 	}
-	rows := make([]ModelInfo, 0, len(*document.Models))
-	seen := make(map[string]struct{}, len(*document.Models))
-	for _, raw := range *document.Models {
-		var row ModelInfo
-		var fields struct {
-			ID            string          `json:"id"`
-			Name          string          `json:"name"`
-			Description   json.RawMessage `json:"description"`
-			Specification json.RawMessage `json:"specification"`
-			Gateway       json.RawMessage `json:"gateway"`
-		}
-		if decodeFields(raw, &fields, "id", "name", "description", "specification", "gateway") != nil || decodeFields(fields.Specification, &row.Specification, "specificationVersion", "provider", "modelId") != nil {
-			return nil, protocolError("grafana: invalid discovery model", resp.StatusCode, nil)
-		}
-		row.ID, row.Name = fields.ID, fields.Name
-		if len(fields.Description) > 0 {
-			var description *string
-			if json.Unmarshal(fields.Description, &description) != nil {
-				return nil, protocolError("grafana: invalid discovery description", resp.StatusCode, nil)
-			}
-			row.Description = description
-		}
-		_, duplicate := seen[row.ID]
-		if !publicModelID.MatchString(row.ID) || !validPublicText(row.Name) || row.Description != nil && !utf8.ValidString(*row.Description) || row.Specification.SpecificationVersion != "v4" || row.Specification.Provider != "grafana" || row.Specification.ModelID != row.ID || duplicate {
-			return nil, protocolError("grafana: invalid discovery model", resp.StatusCode, nil)
-		}
-		if len(fields.Gateway) != 0 {
-			row.Gateway, err = decodeConfiguredRoute(fields.Gateway)
-			if err != nil {
-				return nil, protocolError("grafana: invalid configured route", resp.StatusCode, nil)
-			}
-		}
-		seen[row.ID] = struct{}{}
-		rows = append(rows, row)
-	}
-	if !validConfiguredGroups(rows) {
-		return nil, protocolError("grafana: inconsistent configured catalog", resp.StatusCode, nil)
-	}
-	return rows, nil
+	return document.Models, nil
 }
 
 func validPublicText(value string) bool {

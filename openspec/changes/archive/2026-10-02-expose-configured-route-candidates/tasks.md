@@ -8,21 +8,21 @@
 
 - [x] 2.1 Add minimal safe catalog candidate metadata and populate it from the command's existing primary/fallback descriptors and effective provider configuration before canonical wrapping, without retaining credentials, secret references or whole config objects.
 - [x] 2.2 Extend static/registry metadata defensive copies; test source/list mutation, repeated listing, aliases, context non-retention and concurrent reads. Keep generic entries without supplied candidates unextended and never infer inventories or response-derived identities.
-- [x] 2.3 Enforce approved configured row/alias/candidate/string ceilings at startup before readiness and inference, preserving existing public-ID grammar, namespace/reference/candidate validation and safe errors. Verify exact and one-over cases and the full-document feasibility check under configured discovery limits.
+- [x] 2.3 Enforce approved configured row/alias/candidate/string ceilings at startup before readiness and inference, preserving existing public-ID grammar, namespace/reference/candidate validation and safe errors. Verify exact and one-over cases and rejection before listener creation; discovery serialization does not impose a separate response-size cap.
 
-## 3. Project and bound the complete authenticated discovery document
+## 3. Project the complete authenticated discovery document
 
 - [x] 3.1 Extend discovery's private DTO/encoder and closed test schema with the approved gateway object, preserving outer row identity, names/descriptions, canonical/alias sorting and explicit candidate/alias order. Complete encoding must precede HTTP 200.
-- [x] 3.2 Add overflow-safe count/raw-string/encoding preflight and final byte checks, including repeated alias projections and escaping; independently reject invalid UTF-8, duplicate/colliding IDs or aliases, invalid/duplicate candidate tuples and malformed custom-lister facts atomically.
-- [x] 3.3 Test exact/one-over dimensions, combined limits, escaping growth, invalid limit configuration, late errors/panics and no partial HTTP catalog. Independently preserve/test the configurable server default of 1 MiB, configurable Go default of 4 MiB and approved TS helper default/max of 4 MiB; client allowance must not silently raise server capacity. Prove bounded expansion/work with focused allocation checks and bounded fuzz inputs rather than only schema acceptance.
+- [x] 3.2 Keep configuration policy in startup validation, not response building. Serialize typed credential-safe metadata with standard JSON, without a response-byte cap or custom preflight/assembly machinery.
+- [x] 3.3 Test complete large-catalog responses, alias expansion, escaping, listing errors/panics and absence of response-policy checks. Preserve client read safeguards independently: configurable Go default of 4 MiB and TS helper default/max of 4 MiB.
 - [x] 3.4 Prove authenticated request-context propagation and paired listing/resolution visibility using scoped decorators; verify source credentials/references and unrelated provider/account entries are excluded while authorized identities/key-looking application strings survive. Label scoped fixtures honestly and leave operator capture unchanged.
 
 ## 4. Implement independent bounded client access
 
 - [x] 4.1 Add Go ModelInfo.Gateway, ConfiguredRoute and ConfiguredCandidate types and independent decoding on existing ListModels. Preserve auth/error handling, server order, missing-extension nil behavior and ignored unrelated additives without importing AGPL types/validators.
-- [x] 4.2 Add Go hostile-response tests for complete-document bounds, acceptance beyond server collection/string policy ceilings, missing/null/malformed fields, duplicate tuples/aliases/rows, canonical/alias group contradictions, late invalid rows, UTF-8, media types and trailing JSON. Prove atomic results, bounded reads, cancellation, redirects, body closure and no implicit inference/cache/retry.
+- [x] 4.2 Add Go tests for ordinary typed decoding, acceptance of server-owned route semantics, standard missing/null/casing behavior, late type errors, UTF-8, media types, trailing JSON and complete-document read bounds. Prove atomic results, bounded reads, cancellation, redirects, body closure and no implicit inference/cache/retry.
 - [x] 4.3 Ship the copyable fetchConfiguredModels({baseURL, headers, fetch, signal, maxBytes}) example under ai-gateway/examples and register its source in the existing exact-pinned ProviderWire typecheck/tests. Preserve the API prefix, validate URL/limits, use explicit JWT/CAP headers and incrementally bounded UTF-8/JSON reads with abort and redirect refusal.
-- [x] 4.4 Independently test the TS helper's recognized fields, route-group consistency, document-byte limits, acceptance beyond server policy ceilings, standard JSON string decoding, duplicate/malformed/late invalid rows, unextended catalogs, additive unknowns, read failures, abort/body cleanup, redirect credential protection and bounded local errors. Do not reuse server validation as the client oracle.
+- [x] 4.4 Independently test the TS helper's recognized field types, document-byte limits, absence of route-policy checks, standard JSON string decoding, late type errors, unextended catalogs, additive unknowns, read failures, abort/body cleanup, redirect credential protection and bounded local errors. Do not reuse server validation as the client oracle.
 - [x] 4.5 Update #321 discovery witnesses only for delivered Go/helper retention; retain stock TS normalized-loss assertions and unrelated metadata/error current-loss probes.
 
 ## 5. Prove command behavior and document actual access
@@ -30,7 +30,7 @@
 - [x] 5.1 Extend real-command tests for raw HTTP, pinned normalized TS, the shipped TS helper and Go ListModels across direct/mixed-fallback canonical/alias rows; verify matching configured facts, normalized compatibility, zero native inference calls and existing JWT authentication rejection before listing.
 - [x] 5.2 Exercise explicit CAP headers through the existing dummy Cloud edge, including credential/scope denials and no exchange/inference. Document the current static command visibility and distinguish this evidence from customer account construction, deployed CAP enforcement and BYOK isolation.
 - [x] 5.3 Update docs/providers/grafana-gateway.md and applicable shared client guidance with tested Go field access and TS helper recipes, stock normalization limits and missing-extension handling. Keep exhaustive Go API reference in godoc; link the actual tested helper rather than an untested prose variant.
-- [x] 5.4 Update Gateway catalog/operator guidance with candidate vocabulary/order, visibility/credential exclusions, atomic budgets and deployment/rollback boundaries. Update applicable discovery-concealment delta specs without changing runtime evidence/execution/telemetry requirements, and update PARITY.md only for durable evidence/support changes.
+- [x] 5.4 Update Gateway catalog/operator guidance with candidate vocabulary/order, visibility/credential exclusions, startup policy, client read safeguards and deployment/rollback boundaries. Update applicable discovery-concealment delta specs without changing runtime evidence/execution/telemetry requirements, and update PARITY.md only for durable evidence/support changes.
 
 ## 6. Validate and review the bounded delivery
 

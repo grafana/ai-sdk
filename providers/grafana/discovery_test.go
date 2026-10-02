@@ -22,24 +22,27 @@ func TestListModels_AtomicValidation(t *testing.T) {
 	}{
 		{"valid", discoveryFixture, "application/json", true},
 		{"nullable description", strings.Replace(discoveryFixture, `"description":"public description"`, `"description":null`, 1), "application/json", true},
-		{"wrong property casing", strings.Replace(discoveryFixture, `"models"`, `"Models"`, 1), "application/json", false},
+		{"standard property casing", strings.Replace(discoveryFixture, `"models"`, `"Models"`, 1), "application/json", true},
 		{"escaped lone surrogate", strings.Replace(discoveryFixture, `"name":"Assistant"`, `"name":"\ud800"`, 1), "application/json", true},
 		{"empty", `{"models":[]}`, "application/json", true},
 		{"additive", strings.Replace(discoveryFixture, `"name":"Assistant"`, `"private":{"backend":"do-not-expose"},"name":"Assistant"`, 1), "application/json", true},
 		{"missing models", `{}`, "application/json", false},
 		{"null models", `{"models":null}`, "application/json", false},
-		{"null row", `{"models":[null]}`, "application/json", false},
+		{"null row", `{"models":[null]}`, "application/json", true},
 		{"malformed", `{"models":[`, "application/json", false},
 		{"trailing", discoveryFixture + ` {}`, "application/json", false},
-		{"duplicate", strings.ReplaceAll(discoveryFixture, "grafana/assistant", "assistant"), "application/json", false},
-		{"empty name", strings.Replace(discoveryFixture, `"name":"Assistant"`, `"name":""`, 1), "application/json", false},
-		{"missing name", strings.Replace(discoveryFixture, `"name":"Assistant",`, "", 1), "application/json", false},
-		{"null name", strings.Replace(discoveryFixture, `"name":"Assistant"`, `"name":null`, 1), "application/json", false},
-		{"invalid ID", strings.ReplaceAll(discoveryFixture, "grafana/assistant", "has space"), "application/json", false},
-		{"wrong spec", strings.Replace(discoveryFixture, `"v4"`, `"v3"`, 1), "application/json", false},
-		{"wrong provider", strings.Replace(discoveryFixture, `"provider":"grafana"`, `"provider":"private-backend"`, 1), "application/json", false},
-		{"mismatched ID", strings.Replace(discoveryFixture, `"modelId":"assistant"`, `"modelId":"private-backend"`, 1), "application/json", false},
+		{"duplicate", strings.ReplaceAll(discoveryFixture, "grafana/assistant", "assistant"), "application/json", true},
+		{"empty name", strings.Replace(discoveryFixture, `"name":"Assistant"`, `"name":""`, 1), "application/json", true},
+		{"missing name", strings.Replace(discoveryFixture, `"name":"Assistant",`, "", 1), "application/json", true},
+		{"null name", strings.Replace(discoveryFixture, `"name":"Assistant"`, `"name":null`, 1), "application/json", true},
+		{"opaque ID", strings.ReplaceAll(discoveryFixture, "grafana/assistant", "has space"), "application/json", true},
+		{"opaque spec", strings.Replace(discoveryFixture, `"v4"`, `"v3"`, 1), "application/json", true},
+		{"opaque provider", strings.Replace(discoveryFixture, `"provider":"grafana"`, `"provider":"other"`, 1), "application/json", true},
+		{"mismatched ID", strings.Replace(discoveryFixture, `"modelId":"assistant"`, `"modelId":"other"`, 1), "application/json", true},
 		{"wrong description", strings.Replace(discoveryFixture, `"description":"public description"`, `"description":2`, 1), "application/json", false},
+		{"wrong late name type", strings.Replace(discoveryFixture, `"name":"Grafana Assistant"`, `"name":2`, 1), "application/json", false},
+		{"wrong candidate type", strings.Replace(unicodeDiscoveryFixture, `"providerInstance":"primary"`, `"providerInstance":2`, 1), "application/json", false},
+		{"wrong aliases type", strings.Replace(unicodeDiscoveryFixture, `"aliases":[]`, `"aliases":[2]`, 1), "application/json", false},
 		{"invalid UTF8", strings.Replace(discoveryFixture, "Assistant", string([]byte{255}), 1), "application/json", false},
 		{"wrong media", discoveryFixture, "text/html", false},
 		{"missing media", discoveryFixture, "", false},
@@ -189,7 +192,7 @@ func TestListModels_ConfiguredRetention(t *testing.T) {
 	assert.EqualValues(t, 4<<20, DefaultLimits().DiscoveryBytes)
 }
 
-func TestListModels_ConfiguredAtomicValidation(t *testing.T) {
+func TestListModels_ServerOwnsRouteSemantics(t *testing.T) {
 	tests := []struct {
 		name   string
 		mutate func([]ModelInfo) []ModelInfo
@@ -225,20 +228,15 @@ func TestListModels_ConfiguredAtomicValidation(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			body := discoveryBody(t, tc.mutate(configuredRows(t)))
+			expected := tc.mutate(configuredRows(t))
+			body := discoveryBody(t, expected)
 			p := testProvider(t, func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				_, _ = io.WriteString(w, body)
 			}, nil)
 			rows, err := p.ListModels(context.Background())
-			if tc.name == "absent extension" {
-				require.NoError(t, err)
-				assert.Nil(t, rows[0].Gateway)
-			} else {
-				require.Error(t, err)
-				assert.Nil(t, rows)
-				assert.NotContains(t, err.Error(), "native-primary")
-			}
+			require.NoError(t, err)
+			assert.Equal(t, expected, rows)
 		})
 	}
 	body := discoveryBody(t, configuredRows(t))
@@ -248,9 +246,8 @@ func TestListModels_ConfiguredAtomicValidation(t *testing.T) {
 		{"null candidate", `{"providerInstance":"primary","provider":"anthropic","modelId":"native-primary"}`, "null"},
 		{"null model", `"modelId":"native-primary"`, `"modelId":null`},
 		{"missing model", `,"modelId":"native-primary"`, ""},
-		{"wrong candidate shape", `"providerInstance":"primary"`, `"providerInstance":2`},
-		{"wrong candidate casing", `"providerInstance":"primary"`, `"ProviderInstance":"primary"`},
-		{"wrong route casing", `"canonicalModelId":"public"`, `"CanonicalModelId":"public"`},
+		{"standard candidate casing", `"providerInstance":"primary"`, `"ProviderInstance":"primary"`},
+		{"standard route casing", `"canonicalModelId":"public"`, `"CanonicalModelId":"public"`},
 		{"normalized duplicate tuple", `"modelId":"native-primary"`, `"modelId":"\ud800"`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -265,8 +262,12 @@ func TestListModels_ConfiguredAtomicValidation(t *testing.T) {
 				_, _ = io.WriteString(w, changed)
 			}, nil)
 			rows, err := p.ListModels(context.Background())
-			require.Error(t, err)
-			assert.Nil(t, rows)
+			require.NoError(t, err)
+			var expected struct {
+				Models []ModelInfo `json:"models"`
+			}
+			require.NoError(t, json.Unmarshal([]byte(changed), &expected))
+			assert.Equal(t, expected.Models, rows)
 		})
 	}
 }
@@ -288,7 +289,7 @@ func TestListModels_ConfiguredUnknownAdditionsAreNotPromoted(t *testing.T) {
 	assert.NotContains(t, string(encoded), "ignored-dummy-secret")
 }
 
-func TestListModels_ClientAllowanceDoesNotSetServerCapacity(t *testing.T) {
+func TestListModels_LargeCatalogReadAllowance(t *testing.T) {
 	route := ConfiguredRoute{CanonicalModelID: "public", Aliases: []string{}, Candidates: []ConfiguredCandidate{}}
 	for i := range 16 {
 		route.Candidates = append(route.Candidates, ConfiguredCandidate{ProviderInstance: "instance", Provider: "anthropic", ModelID: fmt.Sprintf("%d-", i) + strings.Repeat("a", 1048)})

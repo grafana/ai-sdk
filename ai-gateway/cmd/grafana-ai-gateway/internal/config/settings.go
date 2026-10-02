@@ -81,7 +81,6 @@ type Settings struct {
 	MaxHeaderBytes                 int
 	ResponseGrace                  time.Duration
 	ShutdownTimeout                time.Duration
-	DiscoveryResponseBytes         int64
 	ObservationRegion              string
 	ObservationApplication         string
 	AgentObservability             AgentObservabilitySettings
@@ -122,7 +121,6 @@ func ParseSettings(args []string, lookupEnv LookupEnv) (Settings, error) {
 	app.Flag("server.max-header-bytes", "Go HTTP maximum header parser bytes.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_SERVER_MAX_HEADER_BYTES", "65536")).IntVar(&settings.MaxHeaderBytes)
 	app.Flag("server.response-grace", "Response completion grace.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_SERVER_RESPONSE_GRACE", "5s")).DurationVar(&settings.ResponseGrace)
 	app.Flag("server.shutdown-timeout", "Graceful shutdown timeout.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_SERVER_SHUTDOWN_TIMEOUT", "15s")).DurationVar(&settings.ShutdownTimeout)
-	app.Flag("discovery.response-bytes", "Maximum discovery response bytes.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_DISCOVERY_RESPONSE_BYTES", "1048576")).Int64Var(&settings.DiscoveryResponseBytes)
 	app.Flag("observation.region", "Trusted static observation region.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_OBSERVATION_REGION", "")).StringVar(&settings.ObservationRegion)
 	app.Flag("observation.application", "Trusted static observation application.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_OBSERVATION_APPLICATION", "")).StringVar(&settings.ObservationApplication)
 	app.Flag("agento11y.enabled", "Enable Agent Observability generation export.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_AGENTO11Y_ENABLED", "false")).BoolVar(&settings.AgentObservability.Enabled)
@@ -232,7 +230,6 @@ func (settings Settings) Validate() error {
 		value int64
 	}{
 		{name: "config max bytes", value: settings.ConfigMaxBytes},
-		{name: "discovery response bytes", value: settings.DiscoveryResponseBytes},
 		{name: "anthropic response bytes", value: settings.AnthropicResponseBytes},
 		{name: "providerwire request bytes", value: settings.ProviderWire.RequestBytes},
 		{name: "providerwire unary response bytes", value: settings.ProviderWire.UnaryResponseBytes},

@@ -90,20 +90,22 @@ evidence boundary changes, not merely because the pinned versions change.
 - Captured provider inputs, synthetic failures and provider-independent UI parts
   are distinct evidence sources; passing one does not establish the others.
 - Configured Gateway discovery is an intentional Grafana extension, not upstream
-  private-service behavior. Config/server tests cover cardinality and UTF-8 string
-  policy; independent server/Go/helper tests cover document-byte bounds, atomic
-  semantic validation, canonical/alias agreement, defensive copies and scoped
-  listing/resolution. Clients do not duplicate numeric config policy ceilings.
-  Standard JSON string decoding applies: Go replaces escaped lone UTF-16
-  surrogates with U+FFFD while TS retains them. This accepted Go adaptation does
-  not establish lossless cross-client identity agreement for those escapes;
-  semantic checks apply to decoded values. Valid pairs and genuine replacement
-  characters remain ordinary data. Exact-pinned real-command
+  private-service behavior. Startup config tests cover route semantics and
+  cardinality/UTF-8 string policy. Discovery projects the complete visible
+  catalog without revalidation or a response-size cap. Server/Go/helper tests
+  cover full large-catalog projection, typed retention, defensive copies and
+  scoped listing/resolution. Clients retain independent read limits and atomic
+  JSON/type errors, not server route-policy checks. Go uses standard encoding/json
+  missing/null/case behavior; the TS helper checks runtime JSON shapes/types.
+  This accepted Go adaptation is not identical malformed-shape acceptance.
+  Go replaces escaped lone UTF-16 surrogates with U+FFFD while TS retains them,
+  so no lossless cross-client identity agreement is claimed for those escapes.
+  Valid pairs and genuine replacement characters remain ordinary data. Exact-pinned real-command
   witnesses compare raw HTTP, Go retention and the copyable TypeScript helper
   against stock `getAvailableModels()` stripping, without native inference.
   Command catalogs are static; dummy CAP-edge/scoped tests do not establish
   customer-account construction, deployed authorization or BYOK tenant isolation.
-  The server's 1 MiB default and clients' 4 MiB allowances are independent.
+  Client reads default to 4 MiB independently of server configuration.
 - Gateway privacy assertions cover protocol metadata, errors, logs and metrics.
   Authorized configured provider/model identities are retained only in discovery;
   credentials, source references and unrelated account state are excluded.
