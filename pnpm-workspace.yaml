@@ -3,6 +3,7 @@ packages:
   - test/cli
   - test/conformance/tools
   - ai-gateway/test/providerwire-v4
+  - ai-gateway/test/openai-chat-completions-adapter
 
 # Supply-chain hardening
 blockExoticSubdeps: true

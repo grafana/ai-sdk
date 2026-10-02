@@ -88,7 +88,7 @@ accepts that choice, while streaming and fallback routes reject it. `generateTex
 also adds unsupported body headers, and `streamText` only forwards supplied headers.
 Setting `maxOutputTokens` does not make either high-level call compatible.
 
-Bring-your-own-key (BYOK) requests and native OpenAI/Anthropic API adapters
+Bring-your-own-key (BYOK) requests and public OpenAI/Anthropic API adapters
 are not supported.
 
 Local integration tests use a dummy proxy and fake provider responses.

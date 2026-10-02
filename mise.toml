@@ -23,6 +23,7 @@ sources = [
   "test/conformance/tools/package.json",
   "test/integration/package.json",
   "ai-gateway/test/providerwire-v4/package.json",
+  "ai-gateway/test/openai-chat-completions-adapter/package.json",
 ]
 outputs = ["node_modules/.modules.yaml"]
 run = "pnpm install --frozen-lockfile"
@@ -345,6 +346,7 @@ mise deps install --only test
 (cd test/integration/testserver && go test ./...)
 (cd test && pnpm --filter @ai-sdk/test-integration test)
 mise run test-ai-gateway-command
+mise run test-openai-chat-completions-adapter
 """
 
 [tasks.test-cli]
@@ -387,6 +389,17 @@ mise run verify-gateway-workspace
 mise deps install --only test
 export GATEWAY_TEST_GOWORK="$workspace_file"
 cd test && pnpm --filter @ai-sdk/providerwire-v4-contract test:command
+"""
+
+[tasks.test-openai-chat-completions-adapter]
+description = "Run the OpenAI Chat Completions adapter and official SDK contracts"
+run = """
+workspace_file="$PWD/go.gateway.work"
+mise run verify-gateway-workspace
+export GATEWAY_TEST_GOWORK="$workspace_file"
+(cd ai-gateway && GOWORK="$workspace_file" GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" go test -race -count=1 ./openai/chatcompletions ./test/openai-chat-completions-adapter)
+mise deps install --only test
+pnpm --filter @ai-sdk/openai-chat-completions-adapter-contract typecheck && pnpm --filter @ai-sdk/openai-chat-completions-adapter-contract test
 """
 
 [tasks.test-ai-gateway-source-integration]
