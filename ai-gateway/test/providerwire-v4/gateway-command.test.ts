@@ -201,7 +201,8 @@ describe("authenticated Anthropic Gateway command", () => {
           if (row.count) {
             assert.deepEqual(primary.requests.at(-1)?.body, secondary.requests.at(-1)?.body);
           }
-          assertPrivateValuesAbsent([result, failure, go, discovery, models], primary, [secondary.url, "anthropic-secondary", token]);
+          assertPrivateValuesAbsent([discovery, models], primary, [secondary.url, "anthropic-secondary", token]);
+          assertPrivateValuesAbsent([result, failure, go], primary, [secondary.url, "anthropic-secondary", token], row.status === undefined);
         }
       }
       assert.ok(keyRequests > 0);
@@ -461,7 +462,8 @@ describe("authenticated Anthropic Gateway command", () => {
         assert.equal(result.error, undefined);
         assert.deepEqual(result.result.content, [{ type: "text", text: "hello from fake Anthropic" }]);
         assert.equal(result.result.response.modelId, undefined);
-        assertPrivateValuesAbsent(result, fake);
+        assertPrivateValuesAbsent(result, fake, [], true);
+        assert.deepEqual(result.result.response.body.response, { id: "msg_test", modelId: "backend-private" });
       }
       const stream = await captureGoClient(goClientBinaryPath, { ...base, mode: "stream", modelID: "assistant", options: { prompt: [{ role: "user", content: [{ type: "text", text: "normal-stream" }] }], maxOutputTokens: 32 } });
       assert.equal(stream.error, undefined);
@@ -481,7 +483,9 @@ describe("authenticated Anthropic Gateway command", () => {
       assert.deepEqual(fake.violations, []); assert.equal(await gateway.ready(), true);
       const metrics = await (await fetch(`${gateway.url}/metrics`)).text();
       await gateway.stop();
-      assertPrivateValuesAbsent([discovery, actingUser, invalidUser, stream, abort, missing, invalid, unauthorized, metrics, gateway.stderr], fake, ["invalid-user-token", "invalid-token"]);
+      assertPrivateValuesAbsent([stream, abort], fake, [], true);
+      assert.equal(stream.parts.find((part: any) => part.type === "response-metadata").modelId, "backend-private");
+      assertPrivateValuesAbsent([discovery, actingUser, invalidUser, missing, invalid, unauthorized, metrics, gateway.stderr], fake, ["invalid-user-token", "invalid-token"]);
     } finally { await settleCleanup(() => gateway.stop(), () => fake.stop()); }
   });
 
@@ -613,7 +617,8 @@ describe("authenticated Anthropic Gateway command", () => {
       const rawUnaryResponse = await rawProviderWireRequest(gateway.url, "unary");
       assert.equal(rawUnaryResponse.status, 200);
       const rawUnary = await rawUnaryResponse.json() as Record<string, unknown>;
-      assert.deepEqual(Object.keys(rawUnary).sort(), ["content", "finishReason", "usage"]);
+      assert.deepEqual(Object.keys(rawUnary).sort(), ["content", "finishReason", "response", "usage", "warnings"]);
+      assert.deepEqual(rawUnary.response, { id: "msg_test", modelId: "backend-private" });
 
       assert.equal(fake.requests.length, 3);
       for (const request of fake.requests) {
@@ -842,7 +847,7 @@ describe("authenticated Anthropic Gateway command", () => {
       const response = await rawProviderWireRequest(gateway.url, "outage-private-input");
       assert.equal(response.status, 200);
       const body = await response.json() as Record<string, unknown>;
-      assert.deepEqual(Object.keys(body).sort(), ["content", "finishReason", "usage"]);
+      assert.deepEqual(Object.keys(body).sort(), ["content", "finishReason", "response", "usage", "warnings"]);
       let metrics = "";
       await poll(async () => {
         metrics = await (await fetch(`${gateway.url}/metrics`)).text();
@@ -1602,31 +1607,41 @@ describe("authenticated OpenAI-compatible Gateway command", () => {
 });
 
 describe("authenticated OpenAI Responses Gateway command", () => {
-  it("projects native URL and file-path sources without private identity in both clients", async () => {
+  it("preserves native source/display and response identity separately from canonical operator identity", async () => {
     const [fake,gateway]=await startOpenAIGateway();
     fake.sources=true;
     try {
       const options={prompt:[{role:"user" as const,content:[{type:"text" as const,text:"sources"}]}],maxOutputTokens:32};
       const expected=[
-        {type:"source",sourceType:"url",id:"source-1",url:"https://public.example",title:"Public citation"},
-        {type:"source",sourceType:"document",id:"source-2",mediaType:"application/octet-stream",title:"Document",providerMetadata:{citation:{index:0}}},
+        {type:"source",sourceType:"url",url:"https://public.example",title:"Public citation"},
+        {type:"source",sourceType:"document",mediaType:"application/octet-stream",title:"native-file-sk-application",filename:"native-file-sk-application",providerMetadata:{citation:{index:0}}},
       ];
+      const nativeSources = (parts: any[]) => parts.filter(part => part.type === "source").map(({ id, text, ...part }) => {
+        assert.match(id, /^aitxt-[0-9a-f]{24}$/);
+        return part;
+      });
       const unary=await gateway.client()("openai").doGenerate(options);
-      assert.deepEqual(unary.content.filter(part=>part.type==="source"),expected);
+      assert.deepEqual(nativeSources(unary.content),expected);
+      assert.deepEqual((unary.response?.body as any).response, { id: "resp_test", modelId: "backend-private", timestamp: "1970-01-01T00:00:01Z" });
+      assert.equal(unary.response?.id, undefined); assert.equal(unary.response?.modelId, undefined);
       const streamed=await gateway.client()("openai").doStream(options);
       const parts:unknown[]=[];
       const reader=streamed.stream.getReader();
       for (;;) {const next=await reader.read();if(next.done)break;parts.push(next.value);}
-      assert.deepEqual(parts.filter((part:any)=>part.type==="source"),expected);
+      assert.deepEqual(nativeSources(parts),expected);
+      assert.deepEqual(parts.find((part:any)=>part.type==="response-metadata"), { type: "response-metadata", id: "resp_test", modelId: "backend-private", timestamp: new Date("1970-01-01T00:00:01Z") });
       const config={baseURL:`${gateway.url}/api/v1/aisdk`,accessToken:TEST_TOKEN,modelID:"openai",options};
       const goUnary=await captureGoClient(goClientBinaryPath,{...config,mode:"generate"});
       assert.equal(goUnary.error,undefined);
-      assert.deepEqual(goUnary.result.content.filter((part:any)=>part.type==="source").map((part:any)=>({...part,text:undefined})),expected.map(part=>({...part,text:undefined})));
+      assert.deepEqual(nativeSources(goUnary.result.content),expected);
+      assert.deepEqual(goUnary.result.response.body.response, (unary.response?.body as any).response);
+      assert.equal(goUnary.result.response.modelId, undefined);
       const goStream=await captureGoClient(goClientBinaryPath,{...config,mode:"stream"});
       assert.equal(goStream.error,undefined);
-      assert.deepEqual(goStream.parts.filter((part:any)=>part.type==="source"),expected);
+      assert.deepEqual(nativeSources(goStream.parts),expected);
+      assert.deepEqual(goStream.parts.find((part:any)=>part.type==="response-metadata"), { type: "response-metadata", id: "resp_test", modelId: "backend-private", timestamp: "1970-01-01T00:00:01Z" });
       const metrics=await (await fetch(`${gateway.url}/metrics`)).text();
-      for (const privateValue of ["native-file-private","Public citation","https://public.example"]) {
+      for (const privateValue of ["native-file-sk-application","Public citation","https://public.example", "backend-private", "resp_test"]) {
         assert.ok(!gateway.stderr.includes(privateValue));
         assert.ok(!metrics.includes(privateValue));
       }
@@ -1943,10 +1958,10 @@ function anthropicFallbackConfig(primaryURL: string, fallbackURL: string, backen
   return `providers:\n  anthropic-primary:\n    type: anthropic\n    apiKeyEnv: GATEWAY_TEST_ANTHROPIC_KEY\n    baseURL: ${primaryURL}\n  anthropic-secondary:\n    type: anthropic\n    apiKeyEnv: GATEWAY_TEST_ANTHROPIC_KEY\n    baseURL: ${fallbackURL}\nmodels:\n  grafana/assistant:\n    name: Grafana Assistant\n    description: Integration model\n    primary:\n      provider: anthropic-primary\n      model: ${backendModel}\n    fallback:\n      - provider: anthropic-secondary\n        model: ${backendModel}\n    aliases:\n      - assistant\n`;
 }
 
-function assertPrivateValuesAbsent(value: unknown, fake: FakeAnthropic, extra: string[] = []): void {
+function assertPrivateValuesAbsent(value: unknown, fake: FakeAnthropic, extra: string[] = [], nativeResponse = false): void {
   const serialized = JSON.stringify(value);
-  for (const secret of [TEST_TOKEN, TEST_USER_TOKEN, "integration-cap", "integration-anthropic-key", "GATEWAY_TEST_ANTHROPIC_KEY", "anthropic-primary", "backend-private", "provider-secret-response", fake.url, ...extra]) {
-    assert.ok(!serialized.includes(secret), "private value escaped into a client/service surface");
+  for (const secret of [TEST_TOKEN, TEST_USER_TOKEN, "integration-cap", "integration-anthropic-key", "GATEWAY_TEST_ANTHROPIC_KEY", "anthropic-primary", ...(nativeResponse ? [] : ["backend-private"]), "provider-secret-response", fake.url, ...extra]) {
+    assert.ok(!serialized.includes(secret), `private test marker escaped into a client/service surface: ${secret}`);
   }
 }
 
@@ -2412,7 +2427,7 @@ class FakeOpenAI {
     const text = stream ? "hello from fake openai stream" : "hello from fake openai";
     const annotations=this.sources ? [
       {type:"url_citation",url:"https://public.example",title:"Public citation",start_index:0,end_index:5},
-      {type:"file_path",file_id:"native-file-private",index:0},
+      {type:"file_path",file_id:"native-file-sk-application",index:0},
     ] : [];
     const message = { id: "msg_test", type: "message", status: "completed", role: "assistant", content: [{ type: "output_text", annotations, logprobs: [], text }] };
     const completed = (outputTokens: number) => ({

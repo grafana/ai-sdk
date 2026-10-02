@@ -12,12 +12,14 @@ require (
 	github.com/grafana/ai-sdk/middleware/logger v0.0.0-20260928202004-dd43c6dff058
 	github.com/grafana/ai-sdk/middleware/prometheus v0.0.0-20260928202004-dd43c6dff058
 	github.com/grafana/ai-sdk/providers/anthropic v0.0.0-20260928202004-dd43c6dff058
+	github.com/grafana/ai-sdk/providers/grafana v0.0.0-20260928202004-dd43c6dff058
 	github.com/grafana/ai-sdk/providers/openai v0.0.0-20260928202004-dd43c6dff058
 	github.com/grafana/ai-sdk/providers/openai-compatible v0.0.0-20260928202004-dd43c6dff058
 	github.com/grafana/authlib v0.0.0-20260814184937-0d62418c2815
 	github.com/grafana/authlib/types v0.0.0-20260814184937-0d62418c2815
 	github.com/openai/openai-go/v3 v3.66.0
 	github.com/prometheus/client_golang v1.24.1
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/stretchr/testify v1.12.1
 	go.yaml.in/yaml/v4 v4.0.0-rc.6
 	golang.org/x/sys v0.48.0
@@ -49,7 +51,6 @@ require (
 	github.com/prometheus/client_model v0.6.3 // indirect
 	github.com/prometheus/common v0.71.0 // indirect
 	github.com/prometheus/procfs v0.22.0 // indirect
-	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3 // indirect
 	github.com/standard-webhooks/standard-webhooks/libraries v0.0.1 // indirect
 	github.com/tidwall/gjson v1.19.0 // indirect
 	github.com/tidwall/match v1.2.0 // indirect
