@@ -21,15 +21,15 @@ type model struct {
 }
 
 type configuredRoute struct {
-	CanonicalModelID string                `json:"canonicalModelId"`
-	Aliases          []string              `json:"aliases"`
-	Candidates       []configuredCandidate `json:"candidates"`
+	Aliases   []string              `json:"aliases"`
+	Primary   configuredCandidate   `json:"primary"`
+	Fallbacks []configuredCandidate `json:"fallbacks"`
 }
 
 type configuredCandidate struct {
 	ProviderInstance string `json:"providerInstance"`
 	Provider         string `json:"provider"`
-	ModelID          string `json:"modelId"`
+	ProviderModelID  string `json:"providerModelId"`
 }
 
 type specification struct {
@@ -77,13 +77,7 @@ func (handler *handler) safeList(ctx context.Context) (models []catalog.ModelInf
 func (handler *handler) encode(infos []catalog.ModelInfo) ([]byte, error) {
 	rows := make([]model, 0, len(infos))
 	for _, info := range infos {
-		value := discoveryModel(info)
-		rows = append(rows, value)
-		for _, alias := range info.Aliases {
-			value.ID = alias
-			value.Specification.ModelID = alias
-			rows = append(rows, value)
-		}
+		rows = append(rows, discoveryModel(info))
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].ID < rows[j].ID })
 	var buffer bytes.Buffer
@@ -115,9 +109,9 @@ func discoveryModel(info catalog.ModelInfo) model {
 		}
 		candidates := make([]configuredCandidate, len(info.Candidates))
 		for index, candidate := range info.Candidates {
-			candidates[index] = configuredCandidate{ProviderInstance: candidate.ProviderInstance, Provider: candidate.Provider, ModelID: candidate.ModelID}
+			candidates[index] = configuredCandidate{ProviderInstance: candidate.ProviderInstance, Provider: candidate.Provider, ProviderModelID: candidate.ModelID}
 		}
-		value.Gateway = &configuredRoute{CanonicalModelID: info.ID, Aliases: aliases, Candidates: candidates}
+		value.Gateway = &configuredRoute{Aliases: aliases, Primary: candidates[0], Fallbacks: candidates[1:]}
 	}
 	return value
 }

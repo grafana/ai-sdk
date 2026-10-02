@@ -1,13 +1,13 @@
 export interface ConfiguredCandidate {
   providerInstance: string;
   provider: string;
-  modelId: string;
+  providerModelId: string;
 }
 
 export interface ConfiguredRoute {
-  canonicalModelId: string;
   aliases: string[];
-  candidates: ConfiguredCandidate[];
+  primary: ConfiguredCandidate;
+  fallbacks: ConfiguredCandidate[];
 }
 
 export interface ConfiguredModel {
@@ -40,15 +40,14 @@ function collection(value: unknown): unknown[] {
   return value;
 }
 
+function candidate(value: unknown): ConfiguredCandidate {
+  const source = object(value);
+  return { providerInstance: text(source.providerInstance), provider: text(source.provider), providerModelId: text(source.providerModelId) };
+}
+
 function route(value: unknown): ConfiguredRoute {
   const source = object(value);
-  const canonicalModelId = text(source.canonicalModelId);
-  const aliases = collection(source.aliases).map(text);
-  const candidates = collection(source.candidates).map(value => {
-    const candidate = object(value);
-    return { providerInstance: text(candidate.providerInstance), provider: text(candidate.provider), modelId: text(candidate.modelId) };
-  });
-  return { canonicalModelId, aliases, candidates };
+  return { aliases: collection(source.aliases).map(text), primary: candidate(source.primary), fallbacks: collection(source.fallbacks).map(candidate) };
 }
 
 function catalog(value: unknown): { models: ConfiguredModel[] } {

@@ -47,8 +47,9 @@ environment.
 ## Discover and select public models
 
 Use `client.ListModels(ctx)` to build a model picker or find an ID to pass to
-`client.LanguageModel(id)`. It returns model names, descriptions and public IDs;
-aliases are valid selection IDs too.
+`client.LanguageModel(id)`. It returns one row per configured model, with its
+name, description and canonical public ID. `Gateway.Aliases` lists other valid
+selection IDs; aliases do not create duplicate rows.
 
 When available, `ModelInfo.Gateway` also tells you which providers and models are
 configured behind each public ID. Check for nil because some catalogs provide
@@ -63,23 +64,26 @@ for _, row := range rows {
 	if row.Gateway == nil {
 		continue
 	}
-	fmt.Println(row.ID, row.Gateway.CanonicalModelID)
-	for _, candidate := range row.Gateway.Candidates {
-		fmt.Println(candidate.ProviderInstance, candidate.Provider, candidate.ModelID)
+	fmt.Println(row.ID, row.Gateway.Aliases)
+	primary := row.Gateway.Primary
+	fmt.Println(primary.ProviderInstance, primary.Provider, primary.ProviderModelID)
+	for _, fallback := range row.Gateway.Fallbacks {
+		fmt.Println(fallback.ProviderInstance, fallback.Provider, fallback.ProviderModelID)
 	}
 }
 ```
 
-Use the candidates to explain provider choices to users, not to identify which
-provider served a previous request. Direct models have one candidate. Models
-with fallback list the primary first, followed by alternatives in configured
-order. Listing does not call those providers or check their availability.
-Continue using the public row ID when making requests.
+Use `Primary` and ordered `Fallbacks` to explain configured provider choices,
+not to identify which provider served a previous request. Direct models have an
+empty fallback list. Listing does not call providers or check availability.
+Make requests with the public row ID or one of its aliases, not a target's
+`ProviderModelID`.
 
 ### Access from TypeScript
 
-`@ai-sdk/gateway`'s `getAvailableModels()` returns public model information but
-omits configured provider choices. To read those choices, copy the
+`@ai-sdk/gateway`'s `getAvailableModels()` lists canonical public IDs but discards
+`gateway`, including aliases and configured provider choices. Alias IDs remain
+callable when you already know them. To discover them and provider choices, copy the
 [`configured-discovery.ts` helper](../../ai-gateway/examples/configured-discovery.ts)
 into your application and call it separately:
 
@@ -91,7 +95,10 @@ const { models } = await fetchConfiguredModels({
   headers: { "X-Access-Token": accessToken },
   signal,
 });
-const candidates = models[0]?.gateway?.candidates;
+const route = models[0]?.gateway;
+const aliases = route?.aliases;
+const primary = route?.primary;
+const fallbacks = route?.fallbacks;
 ```
 
 For Grafana Cloud, select `headers: { Authorization: \`Bearer ${stackID}:${capToken}\` }`

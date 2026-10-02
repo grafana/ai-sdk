@@ -8,10 +8,10 @@ const baseURL = "https://configured.invalid/api/v1/aisdk";
 const headers = { "x-access-token": "dummy-access-token" };
 
 function fixture(gateway: unknown = configuredRoute()) {
-  return { models: ["alias", "public"].map(id => ({ id, name: "sk-ordinary-display", specification: { specificationVersion: "v4", provider: "grafana", modelId: id }, gateway })) };
+  return { models: [{ id: "public", name: "sk-ordinary-display", specification: { specificationVersion: "v4", provider: "grafana", modelId: "public" }, gateway }] };
 }
 function configuredRoute(): ConfiguredRoute {
-  return { canonicalModelId: "public", aliases: ["alias"], candidates: [{ providerInstance: "primary", provider: "anthropic", modelId: "native" }, { providerInstance: "backup", provider: "openai", modelId: "backup" }] };
+  return { aliases: ["alias"], primary: { providerInstance: "primary", provider: "anthropic", providerModelId: "native" }, fallbacks: [{ providerInstance: "backup", provider: "openai", providerModelId: "backup" }] };
 }
 function read(value: unknown, options: { maxBytes?: number } = {}) {
   return fetchConfiguredModels({ baseURL, headers, fetch: async () => Response.json(value), ...options });
@@ -34,7 +34,7 @@ describe("configured discovery companion", () => {
         return Response.json(document);
       } });
       assert.deepEqual(result, document);
-      assert.equal(result.models[0].gateway?.candidates[1].providerInstance, "backup");
+      assert.equal(result.models[0].gateway?.fallbacks[0].providerInstance, "backup");
       assert.equal(calls, 1);
     }
   });
@@ -44,7 +44,7 @@ describe("configured discovery companion", () => {
     const rows = fixture().models.map(({ gateway: _gateway, ...row }) => row);
     assert.deepEqual(await read({ models: rows, future: "ignored" }), { models: rows });
     const document = fixture();
-    const augmented = { future: "ignored", models: document.models.map(row => ({ ...row, future: { credential: "do-not-promote" }, gateway: { ...configuredRoute(), future: { credential: "do-not-promote" }, candidates: configuredRoute().candidates.map(candidate => ({ ...candidate, future: "ignored" })) } })) };
+    const augmented = { future: "ignored", models: document.models.map(row => ({ ...row, future: { credential: "do-not-promote" }, gateway: { ...configuredRoute(), future: { credential: "do-not-promote" }, primary: { ...configuredRoute().primary, future: "ignored" }, fallbacks: configuredRoute().fallbacks.map(candidate => ({ ...candidate, future: "ignored" })) } })) };
     assert.deepEqual(await read(augmented), document);
     const nullDescription = { models: rows.map(row => ({ ...row, description: null })) };
     assert.deepEqual(await read(nullDescription), nullDescription);
@@ -61,10 +61,10 @@ describe("configured discovery companion", () => {
   });
 
   it("retains standard JSON Unicode strings without repairing identities", async () => {
-    const fields = ["name", "description", "providerInstance", "provider", "modelId"] as const;
+    const fields = ["name", "description", "providerInstance", "provider", "providerModelId"] as const;
     for (const field of fields) {
       for (const value of ["\ud800", "\udc00", "\udc00\ud800", "\ud800x", "🚀\ud800", "🚀", "�", "\\ud800", "\\/"]) {
-        const gateway = { canonicalModelId: "public", aliases: [], candidates: [{ providerInstance: "primary", provider: "anthropic", modelId: "native", ...(["providerInstance", "provider", "modelId"].includes(field) ? { [field]: value } : {}) }] };
+        const gateway = { aliases: [], primary: { providerInstance: "primary", provider: "anthropic", providerModelId: "native", ...(["providerInstance", "provider", "providerModelId"].includes(field) ? { [field]: value } : {}) }, fallbacks: [] };
         const row = { id: "public", name: "Model", description: "Description", specification: { specificationVersion: "v4", provider: "grafana", modelId: "public" }, gateway, ...(field === "name" || field === "description" ? { [field]: value } : {}) };
         const response = Response.json({ models: [row] });
         const pending = fetchConfiguredModels({ baseURL, headers, fetch: async () => response });
@@ -75,15 +75,15 @@ describe("configured discovery companion", () => {
   });
 
   it("keeps malformed ignored additions and standard last-member semantics", async () => {
-    const document = fixture({ ...configuredRoute(), future: "\ud800", candidates: configuredRoute().candidates.map(candidate => ({ ...candidate, future: "\udc00" })) });
+    const document = fixture({ ...configuredRoute(), future: "\ud800", primary: { ...configuredRoute().primary, future: "\udc00" }, fallbacks: configuredRoute().fallbacks.map(candidate => ({ ...candidate, future: "\udc00" })) });
     assert.deepEqual(await read({ ...document, future: "\ud800", models: document.models.map(row => ({ ...row, future: "\udc00" })) }), fixture());
     const body = JSON.stringify(fixture());
-    for (const [replacement, expected] of [[`"modelId":"\\ud800","modelId":"native"`, "native"], [`"modelId":"native","modelId":"\\ud800"`, "\ud800"]] as const) {
-      const modified = body.replaceAll(`"modelId":"native"`, replacement);
+    for (const [replacement, expected] of [[`"providerModelId":"\\ud800","providerModelId":"native"`, "native"], [`"providerModelId":"native","providerModelId":"\\ud800"`, "\ud800"]] as const) {
+      const modified = body.replaceAll(`"providerModelId":"native"`, replacement);
       assert.notEqual(modified, body);
       const pending = fetchConfiguredModels({ baseURL, headers, fetch: async () => new Response(modified, { headers: { "content-type": "application/json" } }) });
       const gateway = configuredRoute();
-      gateway.candidates[0].modelId = expected;
+      gateway.primary.providerModelId = expected;
       assert.deepEqual(await pending, fixture(gateway));
     }
   });
@@ -116,8 +116,8 @@ describe("configured discovery companion", () => {
   it("leaves route consistency and uniqueness to the server", async () => {
     const route = configuredRoute();
     const doc = fixture();
-    const gateways = [{ ...route, canonicalModelId: "bad id" }, { ...route, aliases: ["alias", "alias"] }, { ...route, aliases: ["public"] }, { ...route, candidates: [] }, { ...route, candidates: [{ ...route.candidates[0], providerInstance: " " }] }, { ...route, candidates: [route.candidates[0], { ...route.candidates[0], provider: "different" }] }];
-    const documents = [{ models: [doc.models[0]] }, { models: [doc.models[1]] }, { models: [...doc.models, doc.models[0]] }, { models: [doc.models[0], { ...doc.models[1], gateway: { ...route, candidates: [route.candidates[0]] } }] }, { models: doc.models.map(row => ({ ...row, specification: { ...row.specification, specificationVersion: "other", provider: "other", modelId: "contradiction" } })) }, ...gateways.map(value => fixture(value))];
+    const gateways = [{ ...route, aliases: ["alias", "alias"] }, { ...route, aliases: ["public"] }, { ...route, aliases: [], fallbacks: [] }, { ...route, primary: { ...route.primary, providerInstance: " " } }, { ...route, fallbacks: [{ ...route.primary, provider: "different" }] }, { ...route, fallbacks: [route.fallbacks[0], route.fallbacks[0]] }];
+    const documents = [{ models: [] }, { models: [...doc.models, doc.models[0]] }, { models: doc.models.map(row => ({ ...row, specification: { ...row.specification, specificationVersion: "other", provider: "other", modelId: "contradiction" } })) }, ...gateways.map(value => fixture(value))];
     for (const document of documents) assert.deepEqual(await read(document), document);
     const { gateway: _gateway, ...withoutGateway } = doc.models[0];
     assert.deepEqual(await read({ models: [{ ...withoutGateway, gateway: null }] }), { models: [withoutGateway] });
@@ -126,17 +126,17 @@ describe("configured discovery companion", () => {
   it("rejects JSON shape and type errors without returning a partial catalog", async () => {
     const route = configuredRoute();
     const doc = fixture();
-    const badGateway: unknown[] = [[], {}, { ...route, aliases: null }, { ...route, aliases: [2] }, { ...route, candidates: null }, { ...route, candidates: [null] }, { ...route, candidates: [{ providerInstance: "p", provider: "anthropic" }] }, { ...route, candidates: [{ ...route.candidates[0], provider: null }] }];
-    const invalid: unknown[] = [null, {}, { models: null }, { models: [null] }, { models: [doc.models[0], { ...doc.models[1], name: 2 }] }, { models: [doc.models[0], { ...doc.models[1], description: 2 }] }, ...badGateway.map(value => fixture(value))];
+    const badGateway: unknown[] = [[], {}, { ...route, aliases: null }, { ...route, aliases: [2] }, { ...route, primary: undefined }, { ...route, primary: null }, { ...route, primary: [] }, { ...route, primary: { providerInstance: "p", provider: "anthropic" } }, { ...route, primary: { ...route.primary, provider: null } }, { ...route, fallbacks: null }, { ...route, fallbacks: [null] }, { ...route, fallbacks: [{ providerInstance: "p", provider: "anthropic" }] }, { ...route, fallbacks: [{ ...route.fallbacks[0], providerModelId: 2 }] }];
+    const invalid: unknown[] = [null, {}, { models: null }, { models: [null] }, { models: [doc.models[0], { ...doc.models[0], name: 2 }] }, { models: [doc.models[0], { ...doc.models[0], description: 2 }] }, ...badGateway.map(value => fixture(value))];
     for (const value of invalid) await assert.rejects(() => read(value), /configured discovery: invalid catalog/);
   });
 
-  for (const dimension of ["rows", "aliases", "candidates", "name", "description", "providerInstance", "provider", "modelId"] as const) {
+  for (const dimension of ["rows", "aliases", "candidates", "name", "description", "providerInstance", "provider", "providerModelId"] as const) {
     it(`does not duplicate server policy for ${dimension}`, async () => {
       for (const extra of [0, 1]) {
         const gateway = configuredRoute();
         gateway.aliases = [];
-        let models = [{ id: "public", name: "Model", specification: { specificationVersion: "v4", provider: "grafana", modelId: "public" }, gateway }];
+        const models = [{ id: "public", name: "Model", specification: { specificationVersion: "v4", provider: "grafana", modelId: "public" }, gateway }];
         if (dimension === "rows") {
           const rows = Array.from({ length: 1024 + extra }, (_, i) => ({ id: `row-${i}`, name: "Model", specification: { specificationVersion: "v4", provider: "grafana", modelId: `row-${i}` } }));
           assert.deepEqual(await read({ models: rows }), { models: rows });
@@ -144,11 +144,10 @@ describe("configured discovery companion", () => {
         }
         if (dimension === "aliases") {
           gateway.aliases = Array.from({ length: 128 + extra }, (_, i) => `alias-${i}`);
-          models = [models[0], ...gateway.aliases.map(id => ({ ...models[0], id, specification: { ...models[0].specification, modelId: id } }))];
-        } else if (dimension === "candidates") gateway.candidates = Array.from({ length: 16 + extra }, (_, i) => ({ providerInstance: "p", provider: "anthropic", modelId: `native-${i}` }));
+        } else if (dimension === "candidates") gateway.fallbacks = Array.from({ length: 15 + extra }, (_, i) => ({ providerInstance: "p", provider: "anthropic", providerModelId: `native-${i}` }));
         else if (dimension === "name") models[0].name = "a".repeat(2048 + extra);
         else if (dimension === "description") Object.assign(models[0], { description: "a".repeat(2048 + extra) });
-        else gateway.candidates[0][dimension] = "é".repeat(1024) + "a".repeat(extra);
+        else gateway.primary[dimension] = "é".repeat(1024) + "a".repeat(extra);
         assert.deepEqual(await read({ models }), { models });
       }
     });
@@ -165,8 +164,9 @@ describe("configured discovery companion", () => {
   });
 
   it("accepts large complete catalogs when the read allowance permits", async () => {
-    const gateway: ConfiguredRoute = { canonicalModelId: "public", aliases: Array.from({ length: 64 }, (_, i) => `alias-${i}`), candidates: Array.from({ length: 16 }, (_, i) => ({ providerInstance: "instance", provider: "anthropic", modelId: `${i}-` + "a".repeat(1048) })) };
-    const models = [gateway.canonicalModelId, ...gateway.aliases].map(id => ({ id, name: "Model", specification: { specificationVersion: "v4", provider: "grafana", modelId: id }, gateway }));
+    const candidates = Array.from({ length: 16 }, (_, i) => ({ providerInstance: "instance", provider: "anthropic", providerModelId: `${i}-` + '"'.repeat(512) }));
+    const gateway: ConfiguredRoute = { aliases: ["alias"], primary: candidates[0], fallbacks: candidates.slice(1) };
+    const models = Array.from({ length: 65 }, (_, i) => { const id = `public-${i}`; return { id, name: "Model", specification: { specificationVersion: "v4", provider: "grafana", modelId: id }, gateway }; });
     const bytes = Buffer.byteLength(JSON.stringify({ models }));
     assert.ok(bytes > 1_048_576 && bytes < 4_194_304);
     assert.equal((await read({ models })).models.length, models.length);

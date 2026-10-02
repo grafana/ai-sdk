@@ -16,5 +16,5 @@ Public model resolution errors, ProviderWire unary/SSE runtime output, HTTP acce
 
 #### Scenario: Discovery lists fallback route
 - **WHEN** authorized authenticated discovery lists a route backed by multiple configured candidates
-- **THEN** it SHALL emit canonical and alias public rows with matching configured canonical/alias/candidate facts in declared candidate order
+- **THEN** it SHALL emit one canonical public row with aliases, primary and configured fallbacks in declared order
 - **AND** it SHALL exclude credentials, secret references and unrelated account state without invoking any candidate

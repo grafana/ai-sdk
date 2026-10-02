@@ -211,10 +211,10 @@ describe("#321 pinned developer access witnesses (current baseline, not permanen
   });
 
   it("stock discovery strips candidates; supported companion access preserves them without inference", async () => {
-    const configured = { canonicalModelId: "grafana/assistant", aliases: ["assistant"], candidates: [{ providerInstance: "anthropic-primary", provider: "anthropic", modelId: "primary" }, { providerInstance: "openai-secondary", provider: "openai", modelId: "native-model" }] };
-    const document = { models: ["assistant", "grafana/assistant"].map(id => ({ id, name: "Assistant", specification: { specificationVersion: "v4", provider: "grafana", modelId: id }, gateway: configured })) };
+    const configured = { aliases: ["assistant"], primary: { providerInstance: "anthropic-primary", provider: "anthropic", providerModelId: "primary" }, fallbacks: [{ providerInstance: "openai-secondary", provider: "openai", providerModelId: "native-model" }] };
+    const document = { models: [{ id: "grafana/assistant", name: "Assistant", specification: { specificationVersion: "v4", provider: "grafana", modelId: "grafana/assistant" }, gateway: configured }] };
     const stock = await gateway(async () => Response.json(document)).getAvailableModels();
-    assert.deepEqual(stock.models.map(row => row.id), ["assistant", "grafana/assistant"]);
+    assert.deepEqual(stock.models.map(row => row.id), ["grafana/assistant"]);
     assert.equal("gateway" in stock.models[0], false);
     let calls = 0;
     const fetch: NonNullable<GatewayProviderSettings["fetch"]> = async (url, init) => {

@@ -239,7 +239,7 @@ func testModelConfig() File {
 }
 
 func TestFile_ConfiguredDiscoveryLimits(t *testing.T) {
-	for _, field := range []string{"rows", "expanded rows", "aliases", "candidates", "name", "description", "instance", "provider", "model"} {
+	for _, field := range []string{"rows", "public IDs", "aliases", "candidates", "name", "description", "instance", "provider", "model"} {
 		t.Run(field, func(t *testing.T) {
 			for _, extra := range []int{0, 1} {
 				file := testModelConfig()
@@ -250,7 +250,7 @@ func TestFile_ConfiguredDiscoveryLimits(t *testing.T) {
 					for i := range maxModelRows + extra {
 						file.Models[fmt.Sprintf("model-%d", i)] = model
 					}
-				case "expanded rows":
+				case "public IDs":
 					file.Models = map[string]Model{}
 					for i := range 8 {
 						route := model
@@ -284,7 +284,7 @@ func TestFile_ConfiguredDiscoveryLimits(t *testing.T) {
 				case "model":
 					model.Primary.Model = strings.Repeat("a", maxStringBytes+extra)
 				}
-				if field != "rows" && field != "expanded rows" {
+				if field != "rows" && field != "public IDs" {
 					file.Models["canonical"] = model
 				}
 				err := file.Validate()

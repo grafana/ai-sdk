@@ -60,10 +60,11 @@ describe("authenticated Anthropic Gateway command", () => {
         const raw = await fetch(`${baseURL}/config`, { headers });
         assert.equal(raw.status, 200);
         const document = await raw.json();
-        assert.deepEqual(document.models.map((row: { id: string }) => row.id), ["assistant", "grafana/assistant"]);
-        const configured = { canonicalModelId: "grafana/assistant", aliases: ["assistant"], candidates: [{ providerInstance: "anthropic-primary", provider: "anthropic", modelId: "configured-primary" }, { providerInstance: "openai-backup", provider: "openai", modelId: "configured-backup" }] };
-        assert.deepEqual(document.models.map((row: { gateway: unknown }) => row.gateway), [configured, configured]);
+        assert.deepEqual(document.models.map((row: { id: string }) => row.id), ["grafana/assistant"]);
+        const configured = { aliases: ["assistant"], primary: { providerInstance: "anthropic-primary", provider: "anthropic", providerModelId: "configured-primary" }, fallbacks: [{ providerInstance: "openai-backup", provider: "openai", providerModelId: "configured-backup" }] };
+        assert.deepEqual(document.models.map((row: { gateway: unknown }) => row.gateway), [configured]);
         const stock = await createGateway({ baseURL, apiKey: mode === "cloud-gateway" ? EDGE_READ_KEY : "dummy", headers }).getAvailableModels();
+        assert.deepEqual(stock.models.map(row => row.id), ["grafana/assistant"]);
         assert.equal("gateway" in stock.models[0], false);
         const companion = await fetchConfiguredModels({ baseURL, headers });
         assert.deepEqual(companion, document);
@@ -80,9 +81,9 @@ describe("authenticated Anthropic Gateway command", () => {
     const fake = await FakeAnthropic.start();
     let gateway: GatewayProcess | undefined;
     try {
-      const candidates = Array.from({ length: 16 }, (_, i) => ({ providerInstance: "anthropic-primary", provider: "anthropic", modelId: `${i}-` + "a".repeat(1048) }));
-      const aliases = Array.from({ length: 64 }, (_, i) => `alias-${i}`);
-      const config = `providers:\n  anthropic-primary:\n    type: anthropic\n    apiKeyEnv: GATEWAY_TEST_ANTHROPIC_KEY\n    baseURL: ${fake.url}\nmodels:\n  public:\n    name: Model\n    primary:\n      provider: anthropic-primary\n      model: ${candidates[0].modelId}\n    fallback:\n${candidates.slice(1).map(candidate => `      - provider: anthropic-primary\n        model: ${candidate.modelId}\n`).join("")}    aliases:\n${aliases.map(alias => `      - ${alias}\n`).join("")}`;
+      const candidates = Array.from({ length: 16 }, (_, i) => ({ providerInstance: "anthropic-primary", provider: "anthropic", providerModelId: `${i}-` + '"'.repeat(512) }));
+      const routes = Array.from({ length: 65 }, (_, i) => ({ id: `public-${String(i).padStart(3, "0")}`, aliases: [`alias-${i}`] }));
+      const config = `providers:\n  anthropic-primary:\n    type: anthropic\n    apiKeyEnv: GATEWAY_TEST_ANTHROPIC_KEY\n    baseURL: ${fake.url}\nmodels:\n` + routes.map(route => `  ${route.id}:\n    name: Model\n    primary:\n      provider: anthropic-primary\n      model: '${candidates[0].providerModelId}'\n    fallback:\n${candidates.slice(1).map(candidate => `      - provider: anthropic-primary\n        model: '${candidate.providerModelId}'\n`).join("")}    aliases: [${route.aliases[0]}]\n`).join("");
       gateway = await GatewayProcess.start(binaryPath, fake.url, [], {}, "access-token", config);
       const baseURL = `${gateway.url}/api/v1/aisdk`;
       const headers = { "x-access-token": TEST_TOKEN };
@@ -92,7 +93,8 @@ describe("authenticated Anthropic Gateway command", () => {
       assert.ok(Buffer.byteLength(body) > 1_048_576);
       const document = JSON.parse(body);
       assert.equal(document.models.length, 65);
-      for (const model of document.models) assert.deepEqual(model.gateway, { canonicalModelId: "public", aliases, candidates });
+      assert.deepEqual(document.models.map((model: { id: string }) => model.id), routes.map(route => route.id));
+      for (const [i, model] of document.models.entries()) assert.deepEqual(model.gateway, { aliases: routes[i].aliases, primary: candidates[0], fallbacks: candidates.slice(1) });
       assert.deepEqual(await fetchConfiguredModels({ baseURL, headers }), document);
       const go = await captureGoClient(goClientBinaryPath, { baseURL, accessToken: TEST_TOKEN, mode: "discovery" });
       assert.equal(go.error, undefined);
@@ -509,9 +511,9 @@ describe("authenticated Anthropic Gateway command", () => {
     try {
       const discovery = await captureGoClient(goClientBinaryPath, { ...base, mode: "discovery" });
       assert.equal(discovery.error, undefined);
-      assert.deepEqual(discovery.models.map((model: { id: string }) => model.id), ["assistant", "grafana/assistant"]);
+      assert.deepEqual(discovery.models.map((model: { id: string }) => model.id), ["grafana/assistant"]);
       const actingUser = await captureGoClient(goClientBinaryPath, { ...base, mode: "discovery", userIDToken: TEST_USER_TOKEN });
-      assert.equal(actingUser.error, undefined); assert.equal(actingUser.models.length, 2);
+      assert.equal(actingUser.error, undefined); assert.equal(actingUser.models.length, 1);
       const invalidUser = await captureGoClient(goClientBinaryPath, { ...base, mode: "discovery", userIDToken: "invalid-user-token" });
       assert.equal(invalidUser.error.category, "authentication_error");
       for (const modelID of ["assistant", "grafana/assistant"]) {
@@ -631,7 +633,7 @@ describe("authenticated Anthropic Gateway command", () => {
     try {
       const address = exchange.address(); assert.ok(address && typeof address !== "string");
       const result = await captureGoClient(goClientBinaryPath, { mode: "discovery", tokenExchange: { CAPToken: "integration-cap", Namespace: "stack-integration", BaseURL: `${gateway.url}/api/v1/aisdk`, TokenExchangeURL: `http://127.0.0.1:${address.port}/exchange/` } });
-      assert.equal(result.error, undefined); assert.equal(result.models.length, 2); assert.equal(exchanges, 1);
+      assert.equal(result.error, undefined); assert.equal(result.models.length, 1); assert.equal(exchanges, 1);
       assert.equal(fake.requests.length, 0);
       const metrics = await (await fetch(`${gateway.url}/metrics`)).text();
       await gateway.stop();
@@ -654,7 +656,7 @@ describe("authenticated Anthropic Gateway command", () => {
       for (const privateValue of ["GATEWAY_TEST_ANTHROPIC_KEY", "integration-anthropic-key", fake.url]) {
         assert.ok(!rawDiscovery.includes(privateValue));
       }
-      assert.deepEqual(JSON.parse(rawDiscovery).models[0].gateway.candidates, [{ providerInstance: "anthropic-primary", provider: "anthropic", modelId: "backend-private" }]);
+      assert.deepEqual(JSON.parse(rawDiscovery).models[0].gateway, { aliases: ["assistant"], primary: { providerInstance: "anthropic-primary", provider: "anthropic", providerModelId: "backend-private" }, fallbacks: [] });
       const baseURL = `${gateway.url}/api/v1/aisdk`;
       const companion = await fetchConfiguredModels({ baseURL, headers: { "X-Access-Token": TEST_TOKEN } });
       assert.deepEqual(companion, JSON.parse(rawDiscovery));
@@ -664,7 +666,7 @@ describe("authenticated Anthropic Gateway command", () => {
       assert.equal(fake.requests.length, 0);
       const client = gateway.client();
       const metadata = await client.getAvailableModels();
-      assert.deepEqual(metadata.models.map((model) => model.id), ["assistant", "grafana/assistant"]);
+      assert.deepEqual(metadata.models.map((model) => model.id), ["grafana/assistant"]);
       assert.equal("gateway" in metadata.models[0], false);
       for (const row of metadata.models) {
         assert.deepEqual(row.specification, {
@@ -672,7 +674,9 @@ describe("authenticated Anthropic Gateway command", () => {
           provider: "grafana",
           modelId: row.id,
         });
-        const result = await client(row.id).doGenerate({
+      }
+      for (const id of companion.models.flatMap(row => [row.id, ...(row.gateway?.aliases ?? [])])) {
+        const result = await client(id).doGenerate({
           prompt: [{ role: "user", content: [{ type: "text", text: "unary" }] }],
           maxOutputTokens: 32,
           temperature: 0.2,
@@ -1107,7 +1111,7 @@ describe("Trusted-proxy composition (dummy credentials, not production authentic
       assert.equal(edge.received.length, 0);
       const catalog = await go(EDGE_READ_KEY, "discovery");
       assert.ok(catalog.models, JSON.stringify(catalog));
-      assert.deepEqual(catalog.models.map((model: { id: string }) => model.id), ["assistant", "grafana/assistant"]);
+      assert.deepEqual(catalog.models.map((model: { id: string }) => model.id), ["grafana/assistant"]);
       const tsCatalog = await edge.client(EDGE_READ_KEY).getAvailableModels();
       assert.deepEqual(tsCatalog.models.map((model) => model.id), catalog.models.map((model: { id: string }) => model.id));
       const generated = await go(EDGE_WRITE_KEY, "generate");
@@ -1177,7 +1181,7 @@ describe("Trusted-proxy composition (dummy credentials, not production authentic
         Object.entries(spoofed).filter(([name]) => !["X-Access-Token", "X-Grafana-Id"].includes(name)));
       assertAppAuthenticationFailure(direct);
       const metadata = await edge.client(EDGE_READ_KEY, spoofed).getAvailableModels();
-      assert.deepEqual(metadata.models.map((model) => model.id), ["assistant", "grafana/assistant"]);
+      assert.deepEqual(metadata.models.map((model) => model.id), ["grafana/assistant"]);
       const client = edge.client(EDGE_WRITE_KEY, spoofed);
       const unary = await client("assistant").doGenerate(cloudCall("unary"));
       assert.deepEqual(unary.content, [{ type: "text", text: "hello from fake Anthropic" }]);
@@ -1579,10 +1583,10 @@ describe("authenticated OpenAI-compatible Gateway command", () => {
       for (const privateValue of ["GATEWAY_TEST_COMPATIBLE_KEY", "integration-compatible-key", fake.url]) {
         assert.ok(!rawDiscovery.includes(privateValue));
       }
-      assert.deepEqual(JSON.parse(rawDiscovery).models[0].gateway.candidates, [{ providerInstance: "compatible-primary", provider: "compatible-backend", modelId: "backend-private" }]);
+      assert.deepEqual(JSON.parse(rawDiscovery).models[0].gateway, { aliases: ["compatible"], primary: { providerInstance: "compatible-primary", provider: "compatible-backend", providerModelId: "backend-private" }, fallbacks: [] });
       const client = gateway.client();
       const metadata = await client.getAvailableModels();
-      assert.deepEqual(metadata.models.map((model) => model.id), ["compatible", "grafana/compatible"]);
+      assert.deepEqual(metadata.models.map((model) => model.id), ["grafana/compatible"]);
       const result = await client("grafana/compatible").doGenerate({
         prompt: [{ role: "user", content: [{ type: "text", text: "unary" }] }],
         maxOutputTokens: 32,
@@ -1714,7 +1718,7 @@ describe("authenticated OpenAI Responses Gateway command", () => {
       for (const privateValue of ["GATEWAY_TEST_OPENAI_KEY", "integration-openai-key", fake.url]) {
         assert.ok(!rawDiscovery.includes(privateValue));
       }
-      assert.deepEqual(JSON.parse(rawDiscovery).models[0].gateway.candidates, [{ providerInstance: "openai-primary", provider: "openai", modelId: "backend-private" }]);
+      assert.deepEqual(JSON.parse(rawDiscovery).models[0].gateway, { aliases: ["openai"], primary: { providerInstance: "openai-primary", provider: "openai", providerModelId: "backend-private" }, fallbacks: [] });
       const client = gateway.client();
       const result = await client("grafana/openai").doGenerate({
         prompt: [{ role: "user", content: [{ type: "text", text: "unary" }] }],

@@ -24,7 +24,7 @@ import (
 //go:embed schema.json
 var discoverySchemaJSON []byte
 
-func TestHandler_ClosedSortedCanonicalAndAliasProjection(t *testing.T) {
+func TestHandler_ClosedSortedCanonicalProjection(t *testing.T) {
 	lister := &testLister{models: []catalog.ModelInfo{
 		{ID: "zeta", Name: "Zeta", Description: "Private-safe description", Aliases: []string{"alpha"}},
 		{ID: "middle", Name: "Middle"},
@@ -37,7 +37,6 @@ func TestHandler_ClosedSortedCanonicalAndAliasProjection(t *testing.T) {
 	assert.Equal(t, "application/json", response.Header().Get("Content-Type"))
 	assert.JSONEq(t, `{
 		"models":[
-			{"id":"alpha","name":"Zeta","description":"Private-safe description","specification":{"specificationVersion":"v4","provider":"grafana","modelId":"alpha"}},
 			{"id":"middle","name":"Middle","specification":{"specificationVersion":"v4","provider":"grafana","modelId":"middle"}},
 			{"id":"zeta","name":"Zeta","description":"Private-safe description","specification":{"specificationVersion":"v4","provider":"grafana","modelId":"zeta"}}
 		]
@@ -129,18 +128,28 @@ func TestHandler_ConfiguredProjection(t *testing.T) {
 		Models []model `json:"models"`
 	}
 	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &document))
-	require.Len(t, document.Models, 3)
-	for i, id := range []string{"a-alias", "public", "z-alias"} {
-		row := document.Models[i]
-		assert.Equal(t, id, row.ID)
-		assert.Equal(t, id, row.Specification.ModelID)
-		assert.Equal(t, "grafana", row.Specification.Provider)
-		require.NotNil(t, row.Gateway)
-		assert.Equal(t, "public", row.Gateway.CanonicalModelID)
-		assert.Equal(t, []string{"z-alias", "a-alias"}, row.Gateway.Aliases)
-		assert.Equal(t, []configuredCandidate{{ProviderInstance: "primary", Provider: "anthropic", ModelID: "native-primary"}, {ProviderInstance: "backup", Provider: "openai", ModelID: "native-backup"}}, row.Gateway.Candidates)
-	}
+	assert.JSONEq(t, `{"models":[{"id":"public","name":"sk-ordinary-display","specification":{"specificationVersion":"v4","provider":"grafana","modelId":"public"},"gateway":{"aliases":["z-alias","a-alias"],"primary":{"providerInstance":"primary","provider":"anthropic","providerModelId":"native-primary"},"fallbacks":[{"providerInstance":"backup","provider":"openai","providerModelId":"native-backup"}]}}]}`, response.Body.String())
+	require.Len(t, document.Models, 1)
+	row := document.Models[0]
+	assert.Equal(t, "public", row.ID)
+	assert.Equal(t, "public", row.Specification.ModelID)
+	assert.Equal(t, "grafana", row.Specification.Provider)
+	require.NotNil(t, row.Gateway)
+	assert.Equal(t, []string{"z-alias", "a-alias"}, row.Gateway.Aliases)
+	assert.Equal(t, configuredCandidate{ProviderInstance: "primary", Provider: "anthropic", ProviderModelID: "native-primary"}, row.Gateway.Primary)
+	assert.Equal(t, []configuredCandidate{{ProviderInstance: "backup", Provider: "openai", ProviderModelID: "native-backup"}}, row.Gateway.Fallbacks)
 	assert.Contains(t, response.Body.String(), "sk-ordinary-display")
+	compiled, err := schema.CompileSchema(discoverySchemaJSON)
+	require.NoError(t, err)
+	require.NoError(t, compiled.Validate(json.RawMessage(response.Body.Bytes())))
+
+	t.Run("direct route has empty collections", func(t *testing.T) {
+		response := httptest.NewRecorder()
+		newTestHandler(t, &testLister{models: []catalog.ModelInfo{configuredInfo()}}).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/config", nil))
+		require.Equal(t, http.StatusOK, response.Code)
+		assert.JSONEq(t, `{"models":[{"id":"public","name":"Model","specification":{"specificationVersion":"v4","provider":"grafana","modelId":"public"},"gateway":{"aliases":[],"primary":{"providerInstance":"instance","provider":"anthropic","providerModelId":"native"},"fallbacks":[]}}]}`, response.Body.String())
+		require.NoError(t, compiled.Validate(json.RawMessage(response.Body.Bytes())))
+	})
 }
 
 func TestHandler_ProjectsWithoutRevalidatingCatalog(t *testing.T) {
@@ -155,26 +164,27 @@ func TestHandler_ProjectsWithoutRevalidatingCatalog(t *testing.T) {
 		Models []model `json:"models"`
 	}
 	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &document))
-	require.Len(t, document.Models, 4)
-	for _, row := range document.Models {
-		assert.Equal(t, " ", row.Name)
-		assert.Equal(t, info.Aliases, row.Gateway.Aliases)
-		assert.Len(t, row.Gateway.Candidates, 2)
-	}
+	require.Len(t, document.Models, 1)
+	row := document.Models[0]
+	assert.Equal(t, " ", row.Name)
+	assert.Equal(t, info.Aliases, row.Gateway.Aliases)
+	assert.Equal(t, row.Gateway.Primary, row.Gateway.Fallbacks[0])
 }
 
 func TestHandler_EncodesCompleteCatalogWithoutResponseLimit(t *testing.T) {
 	info := configuredInfo()
-	info.Aliases = []string{}
-	for i := range 64 {
-		info.Aliases = append(info.Aliases, fmt.Sprintf("alias-%d", i))
-	}
 	info.Candidates = nil
 	for i := range 16 {
-		info.Candidates = append(info.Candidates, catalog.ConfiguredCandidate{ProviderInstance: "instance", Provider: "anthropic", ModelID: fmt.Sprintf("%d-", i) + strings.Repeat("a", 1048)})
+		info.Candidates = append(info.Candidates, catalog.ConfiguredCandidate{ProviderInstance: "instance", Provider: "anthropic", ModelID: fmt.Sprintf("%d-", i) + strings.Repeat(`"`, 512)})
+	}
+	infos := make([]catalog.ModelInfo, 65)
+	for i := range infos {
+		infos[i] = info
+		infos[i].ID = fmt.Sprintf("public-%03d", i)
+		infos[i].Aliases = []string{fmt.Sprintf("alias-%d", i)}
 	}
 	response := httptest.NewRecorder()
-	newTestHandler(t, &testLister{models: []catalog.ModelInfo{info}}).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/config", nil))
+	newTestHandler(t, &testLister{models: infos}).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/config", nil))
 	require.Equal(t, http.StatusOK, response.Code)
 	require.Greater(t, response.Body.Len(), 1<<20)
 	var document struct {
@@ -182,9 +192,11 @@ func TestHandler_EncodesCompleteCatalogWithoutResponseLimit(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &document))
 	require.Len(t, document.Models, 65)
-	for _, row := range document.Models {
-		assert.Len(t, row.Gateway.Candidates, 16)
-		assert.Equal(t, info.Aliases, row.Gateway.Aliases)
+	for i, row := range document.Models {
+		assert.Equal(t, infos[i].ID, row.ID)
+		assert.Len(t, row.Gateway.Fallbacks, 15)
+		assert.Equal(t, info.Candidates[0].ModelID, row.Gateway.Primary.ProviderModelID)
+		assert.Equal(t, infos[i].Aliases, row.Gateway.Aliases)
 	}
 }
 
@@ -204,11 +216,12 @@ func TestHandler_StandardJSONEscaping(t *testing.T) {
 			Models []model `json:"models"`
 		}
 		require.NoError(t, json.Unmarshal(data, &document))
-		require.Len(t, document.Models, 3)
+		require.Len(t, document.Models, 1)
 		for _, row := range document.Models {
 			assert.Equal(t, text, row.Name)
 			assert.Equal(t, text, row.Description)
-			assert.Equal(t, text, row.Gateway.Candidates[0].ModelID)
+			assert.Equal(t, text, row.Gateway.Primary.ProviderModelID)
+			assert.Equal(t, []configuredCandidate{}, row.Gateway.Fallbacks)
 		}
 	}
 }
@@ -242,10 +255,10 @@ func (m *discoveryOnlyModel) DoStream(context.Context, provider.CallOptions) (*p
 }
 
 func TestHandler_ScopedListingMatchesResolution(t *testing.T) {
-	model := &discoveryOnlyModel{}
+	backend := &discoveryOnlyModel{}
 	scoped := scopedTestCatalog{scopes: map[string]catalog.Catalog{}}
 	for _, scope := range []string{"first", "second"} {
-		created, err := catalog.NewStatic([]catalog.StaticEntry{{Info: catalog.ModelInfo{ID: scope, Name: "sk-ordinary-" + scope, Aliases: []string{scope + "-alias"}, Candidates: []catalog.ConfiguredCandidate{{ProviderInstance: scope + "-instance", Provider: "anthropic", ModelID: scope + "-native"}}}, Model: model}})
+		created, err := catalog.NewStatic([]catalog.StaticEntry{{Info: catalog.ModelInfo{ID: scope, Name: "sk-ordinary-" + scope, Aliases: []string{scope + "-alias"}, Candidates: []catalog.ConfiguredCandidate{{ProviderInstance: scope + "-instance", Provider: "anthropic", ModelID: scope + "-native"}}}, Model: backend}})
 		require.NoError(t, err)
 		scoped.scopes[scope] = created
 	}
@@ -263,11 +276,18 @@ func TestHandler_ScopedListingMatchesResolution(t *testing.T) {
 		}
 		assert.NotContains(t, response.Body.String(), other+"-instance")
 		assert.NotContains(t, response.Body.String(), "response-model-not-configured")
+		var document struct {
+			Models []model `json:"models"`
+		}
+		require.NoError(t, json.Unmarshal(response.Body.Bytes(), &document))
+		require.Len(t, document.Models, 1)
+		assert.Equal(t, scope, document.Models[0].ID)
+		assert.Equal(t, []string{scope + "-alias"}, document.Models[0].Gateway.Aliases)
 		resolved, err := scoped.ResolveModel(ctx, scope+"-alias")
 		require.NoError(t, err)
 		assert.Equal(t, scope, resolved.ID)
 		_, err = scoped.ResolveModel(ctx, other)
 		require.ErrorIs(t, err, catalog.ErrUnknownModel)
 	}
-	assert.Zero(t, model.calls.Load())
+	assert.Zero(t, backend.calls.Load())
 }

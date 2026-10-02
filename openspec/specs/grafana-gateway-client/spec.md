@@ -321,13 +321,14 @@ Every non-2xx model or discovery response SHALL be read within the configured er
 - **THEN** it SHALL become an ordered `PartError` with the equivalent bounded `APICallError`, preserving the Go provider contract without ending later valid parts by itself
 
 ### Requirement: Authenticated public discovery
-`Provider.ListModels(ctx)` SHALL issue authenticated `GET /config`, read within the configured discovery limit, and return public ID, name, optional description and the specification version/provider/model-ID triple, plus optional typed `ModelInfo.Gateway *ConfiguredRoute`. `ConfiguredRoute` SHALL expose canonical model ID, aliases and ordered configured candidates; each `ConfiguredCandidate` SHALL expose provider-instance, provider and configured model ID. This SHALL remain the existing discovery method, without a second client or AGPL module dependency.
+`Provider.ListModels(ctx)` SHALL issue authenticated `GET /config`, read within the configured discovery limit, and return public ID, name, optional description and the specification version/provider/model-ID triple, plus optional typed `ModelInfo.Gateway *ConfiguredRoute`. `ConfiguredRoute` SHALL expose `Aliases`, `Primary` and ordered `Fallbacks`; each `ConfiguredCandidate` SHALL expose `ProviderInstance`, `Provider` and `ProviderModelID`. This SHALL remain the existing discovery method, without a second client or AGPL module dependency.
 
-The client SHALL use ordinary Go JSON decoding into typed ModelInfo values after enforcing the existing configurable document-byte limit and raw UTF-8 JSON validity. It SHALL NOT revalidate server-owned public-ID grammar, nonblank strings, specification/model-ID agreement, route cardinality, duplicate IDs/aliases/candidate tuples or route-group consistency. Standard Go JSON behavior SHALL apply, including case-insensitive field matching, zero/nil values for missing/null fields and U+FFFD normalization of escaped lone UTF-16 surrogates. A missing/null models collection, malformed JSON, byte overflow or type-decoding error SHALL invalidate the complete result. It SHALL preserve response order and aliases as independent rows exactly as served. Missing/null gateway SHALL remain nil. Unknown additive members SHALL remain ignored. Configured mappings SHALL be retained only when supplied by the server, never inferred from responses, models or inventories; credentials and arbitrary configuration SHALL NOT be exposed.
+The client SHALL use ordinary Go JSON decoding into typed ModelInfo values after enforcing the existing configurable document-byte limit and raw UTF-8 JSON validity. It SHALL NOT revalidate server-owned public-ID grammar, nonblank strings, specification/model-ID agreement, route cardinality, duplicate IDs/aliases/candidate tuples or route-group consistency. Standard Go JSON behavior SHALL apply, including case-insensitive field matching, zero/nil values for missing/null fields and U+FFFD normalization of escaped lone UTF-16 surrogates. A missing/null models collection, malformed JSON, byte overflow or type-decoding error SHALL invalidate the complete result. It SHALL preserve response order and configured alias/fallback order exactly as served, without expanding aliases into extra rows. Missing/null gateway SHALL remain nil. Unknown additive members SHALL remain ignored. Configured mappings SHALL be retained only when supplied by the server, never inferred from responses, models or inventories; credentials and arbitrary configuration SHALL NOT be exposed.
 
-#### Scenario: Canonical and alias rows are discovered
-- **WHEN** the authenticated service returns a canonical model and alias row with configured route facts
-- **THEN** both rows SHALL be returned in server order with their public specification fields and matching typed gateway facts
+#### Scenario: Configured models and aliases are discovered
+- **WHEN** the authenticated service returns canonical model rows with configured route facts
+- **THEN** each row SHALL be returned in server order with its public specification fields, typed aliases, primary and ordered fallbacks
+- **AND** aliases SHALL remain available as selection IDs without duplicating rows
 
 #### Scenario: Discovery contains additive metadata
 - **WHEN** otherwise valid discovery rows or the root document contain unrelated unknown members
@@ -343,7 +344,7 @@ The client SHALL use ordinary Go JSON decoding into typed ModelInfo values after
 - **THEN** existing public rows SHALL remain consumable and each corresponding Gateway field SHALL be nil, with no inferred topology
 
 #### Scenario: Caller inspects candidates without generation
-- **WHEN** an authorized Go caller reads ListModels rows and inspects Gateway.Candidates
+- **WHEN** an authorized Go caller reads ListModels rows and inspects Gateway.Primary and Gateway.Fallbacks
 - **THEN** configured order and provider-instance/provider/model facts SHALL be available without any model or inventory request
 
 ### Requirement: No implicit client retry or backend selection
@@ -384,7 +385,7 @@ Configured-discovery tests SHALL additionally prove Go typed retention and the a
 - **AND** authorized configured topology SHALL be available only through its approved discovery projection, with runtime behavior unchanged by this feature
 
 #### Scenario: Configured discovery consumers are compared
-- **WHEN** Go ListModels, pinned TS getAvailableModels and the shipped TS helper inspect a configured canonical/alias catalog
+- **WHEN** Go ListModels, pinned TS getAvailableModels and the shipped TS helper inspect canonical model rows with configured alias metadata
 - **THEN** normalized public fields SHALL remain compatible, Go and the helper SHALL retain matching configured facts, stock TS SHALL still strip the extension and provider inference counts SHALL remain zero
 
 ### Requirement: Source response consumption

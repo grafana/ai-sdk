@@ -43,6 +43,9 @@ func TestListModels_AtomicValidation(t *testing.T) {
 		{"wrong late name type", strings.Replace(discoveryFixture, `"name":"Grafana Assistant"`, `"name":2`, 1), "application/json", false},
 		{"wrong candidate type", strings.Replace(unicodeDiscoveryFixture, `"providerInstance":"primary"`, `"providerInstance":2`, 1), "application/json", false},
 		{"wrong aliases type", strings.Replace(unicodeDiscoveryFixture, `"aliases":[]`, `"aliases":[2]`, 1), "application/json", false},
+		{"wrong primary shape", strings.Replace(unicodeDiscoveryFixture, `"primary":{"providerInstance":"primary","provider":"anthropic","providerModelId":"native"}`, `"primary":[]`, 1), "application/json", false},
+		{"wrong fallbacks shape", strings.Replace(unicodeDiscoveryFixture, `"fallbacks":[]`, `"fallbacks":{}`, 1), "application/json", false},
+		{"wrong fallback type", strings.Replace(configuredDiscoveryFixture(t), `"providerModelId":"native-backup"`, `"providerModelId":2`, 1), "application/json", false},
 		{"invalid UTF8", strings.Replace(discoveryFixture, "Assistant", string([]byte{255}), 1), "application/json", false},
 		{"wrong media", discoveryFixture, "text/html", false},
 		{"missing media", discoveryFixture, "", false},
@@ -133,19 +136,11 @@ type errorReader struct{ err error }
 
 func (r errorReader) Read([]byte) (int, error) { return 0, r.err }
 
-const configuredGatewayFixture = `{"canonicalModelId":"public","aliases":["alias"],"candidates":[{"providerInstance":"primary","provider":"anthropic","modelId":"native-primary"},{"providerInstance":"backup","provider":"openai","modelId":"native-backup"}]}`
+const configuredGatewayFixture = `{"aliases":["alias"],"primary":{"providerInstance":"primary","provider":"anthropic","providerModelId":"native-primary"},"fallbacks":[{"providerInstance":"backup","provider":"openai","providerModelId":"native-backup"}]}`
 
 func configuredDiscoveryFixture(t *testing.T) string {
 	t.Helper()
-	var gateway any
-	require.NoError(t, json.Unmarshal([]byte(configuredGatewayFixture), &gateway))
-	rows := []any{}
-	for _, id := range []string{"alias", "public"} {
-		rows = append(rows, map[string]any{"id": id, "name": "Model", "specification": map[string]any{"specificationVersion": "v4", "provider": "grafana", "modelId": id}, "gateway": gateway})
-	}
-	data, err := json.Marshal(map[string]any{"models": rows})
-	require.NoError(t, err)
-	return string(data)
+	return `{"models":[{"id":"public","name":"Model","specification":{"specificationVersion":"v4","provider":"grafana","modelId":"public"},"gateway":` + configuredGatewayFixture + `}]}`
 }
 
 func configuredRows(t *testing.T) []ModelInfo {
@@ -177,18 +172,17 @@ func TestListModels_ConfiguredRetention(t *testing.T) {
 	}, nil)
 	rows, err := p.ListModels(context.Background())
 	require.NoError(t, err)
-	require.Len(t, rows, 2)
+	require.Len(t, rows, 1)
 	data, err := json.Marshal(rows)
 	require.NoError(t, err)
 	assert.Contains(t, string(data), `"gateway":`)
 	assert.Contains(t, string(data), `"providerInstance":"backup"`)
 	assert.Equal(t, 1, calls)
 	require.NotNil(t, rows[0].Gateway)
-	assert.Equal(t, "public", rows[0].Gateway.CanonicalModelID)
+	assert.Equal(t, "public", rows[0].ID)
 	assert.Equal(t, []string{"alias"}, rows[0].Gateway.Aliases)
-	assert.Equal(t, "backup", rows[0].Gateway.Candidates[1].ProviderInstance)
-	rows[0].Gateway.Candidates[0].ModelID = "caller mutation"
-	assert.Equal(t, "native-primary", rows[1].Gateway.Candidates[0].ModelID)
+	assert.Equal(t, ConfiguredCandidate{ProviderInstance: "primary", Provider: "anthropic", ProviderModelID: "native-primary"}, rows[0].Gateway.Primary)
+	assert.Equal(t, []ConfiguredCandidate{{ProviderInstance: "backup", Provider: "openai", ProviderModelID: "native-backup"}}, rows[0].Gateway.Fallbacks)
 	assert.EqualValues(t, 4<<20, DefaultLimits().DiscoveryBytes)
 }
 
@@ -203,9 +197,7 @@ func TestListModels_ServerOwnsRouteSemantics(t *testing.T) {
 			}
 			return rows
 		}},
-		{"missing canonical", func(rows []ModelInfo) []ModelInfo { return rows[:1] }},
-		{"missing alias", func(rows []ModelInfo) []ModelInfo { return rows[1:] }},
-		{"contradictory projection", func(rows []ModelInfo) []ModelInfo { rows[1].Gateway.Candidates[0].ModelID = "other"; return rows }},
+		{"empty catalog", func(rows []ModelInfo) []ModelInfo { return rows[:0] }},
 		{"undeclared row", func(rows []ModelInfo) []ModelInfo {
 			rows[0].ID = "other"
 			rows[0].Specification.ModelID = "other"
@@ -214,15 +206,19 @@ func TestListModels_ServerOwnsRouteSemantics(t *testing.T) {
 		{"duplicate rows", func(rows []ModelInfo) []ModelInfo { return append(rows, rows[0]) }},
 		{"duplicate aliases", func(rows []ModelInfo) []ModelInfo { rows[0].Gateway.Aliases = []string{"alias", "alias"}; return rows }},
 		{"canonical alias collision", func(rows []ModelInfo) []ModelInfo { rows[0].Gateway.Aliases = []string{"public"}; return rows }},
-		{"invalid canonical", func(rows []ModelInfo) []ModelInfo { rows[0].Gateway.CanonicalModelID = "bad id"; return rows }},
-		{"empty candidates", func(rows []ModelInfo) []ModelInfo { rows[0].Gateway.Candidates = []ConfiguredCandidate{}; return rows }},
+		{"invalid canonical", func(rows []ModelInfo) []ModelInfo { rows[0].ID = "bad id"; return rows }},
+		{"empty fallbacks", func(rows []ModelInfo) []ModelInfo { rows[0].Gateway.Fallbacks = []ConfiguredCandidate{}; return rows }},
 		{"null aliases", func(rows []ModelInfo) []ModelInfo { rows[0].Gateway.Aliases = nil; return rows }},
-		{"null candidates", func(rows []ModelInfo) []ModelInfo { rows[0].Gateway.Candidates = nil; return rows }},
-		{"blank identity", func(rows []ModelInfo) []ModelInfo { rows[0].Gateway.Candidates[0].ProviderInstance = " "; return rows }},
+		{"null fallbacks", func(rows []ModelInfo) []ModelInfo { rows[0].Gateway.Fallbacks = nil; return rows }},
+		{"blank identity", func(rows []ModelInfo) []ModelInfo { rows[0].Gateway.Primary.ProviderInstance = " "; return rows }},
 		{"duplicate tuple", func(rows []ModelInfo) []ModelInfo {
-			candidate := rows[0].Gateway.Candidates[0]
+			candidate := rows[0].Gateway.Primary
 			candidate.Provider = "other"
-			rows[0].Gateway.Candidates = append(rows[0].Gateway.Candidates, candidate)
+			rows[0].Gateway.Fallbacks = append(rows[0].Gateway.Fallbacks, candidate)
+			return rows
+		}},
+		{"duplicate fallbacks", func(rows []ModelInfo) []ModelInfo {
+			rows[0].Gateway.Fallbacks = append(rows[0].Gateway.Fallbacks, rows[0].Gateway.Fallbacks[0])
 			return rows
 		}},
 	}
@@ -243,18 +239,19 @@ func TestListModels_ServerOwnsRouteSemantics(t *testing.T) {
 	for _, tc := range []struct{ name, old, replacement string }{
 		{"null gateway", configuredGatewayFixture, "null"},
 		{"missing aliases", `"aliases":["alias"],`, ""},
-		{"null candidate", `{"providerInstance":"primary","provider":"anthropic","modelId":"native-primary"}`, "null"},
-		{"null model", `"modelId":"native-primary"`, `"modelId":null`},
-		{"missing model", `,"modelId":"native-primary"`, ""},
+		{"null primary", `{"providerInstance":"primary","provider":"anthropic","providerModelId":"native-primary"}`, "null"},
+		{"null fallback", `{"providerInstance":"backup","provider":"openai","providerModelId":"native-backup"}`, "null"},
+		{"null model", `"providerModelId":"native-primary"`, `"providerModelId":null`},
+		{"missing model", `,"providerModelId":"native-primary"`, ""},
 		{"standard candidate casing", `"providerInstance":"primary"`, `"ProviderInstance":"primary"`},
-		{"standard route casing", `"canonicalModelId":"public"`, `"CanonicalModelId":"public"`},
-		{"normalized duplicate tuple", `"modelId":"native-primary"`, `"modelId":"\ud800"`},
+		{"standard route casing", `"aliases":["alias"]`, `"Aliases":["alias"]`},
+		{"normalized duplicate tuple", `"providerModelId":"native-primary"`, `"providerModelId":"\ud800"`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			changed := strings.ReplaceAll(body, tc.old, tc.replacement)
 			if tc.name == "normalized duplicate tuple" {
 				changed = strings.ReplaceAll(changed, `"providerInstance":"backup"`, `"providerInstance":"primary"`)
-				changed = strings.ReplaceAll(changed, `"modelId":"native-backup"`, `"modelId":"\ufffd"`)
+				changed = strings.ReplaceAll(changed, `"providerModelId":"native-backup"`, `"providerModelId":"\ufffd"`)
 			}
 			require.NotEqual(t, body, changed)
 			p := testProvider(t, func(w http.ResponseWriter, _ *http.Request) {
@@ -290,15 +287,14 @@ func TestListModels_ConfiguredUnknownAdditionsAreNotPromoted(t *testing.T) {
 }
 
 func TestListModels_LargeCatalogReadAllowance(t *testing.T) {
-	route := ConfiguredRoute{CanonicalModelID: "public", Aliases: []string{}, Candidates: []ConfiguredCandidate{}}
-	for i := range 16 {
-		route.Candidates = append(route.Candidates, ConfiguredCandidate{ProviderInstance: "instance", Provider: "anthropic", ModelID: fmt.Sprintf("%d-", i) + strings.Repeat("a", 1048)})
+	candidates := make([]ConfiguredCandidate, 16)
+	for i := range candidates {
+		candidates[i] = ConfiguredCandidate{ProviderInstance: "instance", Provider: "anthropic", ProviderModelID: fmt.Sprintf("%d-", i) + strings.Repeat(`"`, 512)}
 	}
-	for i := range 64 {
-		route.Aliases = append(route.Aliases, fmt.Sprintf("alias-%d", i))
-	}
+	route := ConfiguredRoute{Aliases: []string{"alias"}, Primary: candidates[0], Fallbacks: candidates[1:]}
 	var models []ModelInfo
-	for _, id := range append([]string{route.CanonicalModelID}, route.Aliases...) {
+	for i := range 65 {
+		id := fmt.Sprintf("public-%03d", i)
 		models = append(models, ModelInfo{ID: id, Name: "Model", Specification: ModelSpecification{SpecificationVersion: "v4", Provider: "grafana", ModelID: id}, Gateway: &route})
 	}
 	body := discoveryBody(t, models)
@@ -321,7 +317,7 @@ func TestListModels_ClientDoesNotDuplicateServerPolicy(t *testing.T) {
 	for _, dimension := range []string{"rows", "aliases", "candidates", "name", "description", "instance", "provider", "model"} {
 		t.Run(dimension, func(t *testing.T) {
 			for _, extra := range []int{0, 1} {
-				route := ConfiguredRoute{CanonicalModelID: "public", Aliases: []string{}, Candidates: []ConfiguredCandidate{{ProviderInstance: "p", Provider: "anthropic", ModelID: "native"}}}
+				route := ConfiguredRoute{Aliases: []string{}, Primary: ConfiguredCandidate{ProviderInstance: "p", Provider: "anthropic", ProviderModelID: "native"}, Fallbacks: []ConfiguredCandidate{}}
 				rows := []ModelInfo{{ID: "public", Name: "Model", Specification: ModelSpecification{SpecificationVersion: "v4", Provider: "grafana", ModelID: "public"}, Gateway: &route}}
 				switch dimension {
 				case "rows":
@@ -334,12 +330,10 @@ func TestListModels_ClientDoesNotDuplicateServerPolicy(t *testing.T) {
 					for i := range 128 + extra {
 						id := fmt.Sprintf("alias-%d", i)
 						route.Aliases = append(route.Aliases, id)
-						rows = append(rows, ModelInfo{ID: id, Name: "Model", Specification: ModelSpecification{SpecificationVersion: "v4", Provider: "grafana", ModelID: id}, Gateway: &route})
 					}
 				case "candidates":
-					route.Candidates = nil
-					for i := range 16 + extra {
-						route.Candidates = append(route.Candidates, ConfiguredCandidate{ProviderInstance: "p", Provider: "anthropic", ModelID: fmt.Sprintf("model-%d", i)})
+					for i := range 15 + extra {
+						route.Fallbacks = append(route.Fallbacks, ConfiguredCandidate{ProviderInstance: "p", Provider: "anthropic", ProviderModelID: fmt.Sprintf("model-%d", i)})
 					}
 				case "name":
 					rows[0].Name = strings.Repeat("a", 2048+extra)
@@ -347,11 +341,11 @@ func TestListModels_ClientDoesNotDuplicateServerPolicy(t *testing.T) {
 					value := strings.Repeat("a", 2048+extra)
 					rows[0].Description = &value
 				case "instance":
-					route.Candidates[0].ProviderInstance = strings.Repeat("a", 2048+extra)
+					route.Primary.ProviderInstance = strings.Repeat("a", 2048+extra)
 				case "provider":
-					route.Candidates[0].Provider = strings.Repeat("a", 2048+extra)
+					route.Primary.Provider = strings.Repeat("a", 2048+extra)
 				case "model":
-					route.Candidates[0].ModelID = strings.Repeat("é", 1024) + strings.Repeat("a", extra)
+					route.Primary.ProviderModelID = strings.Repeat("é", 1024) + strings.Repeat("a", extra)
 				}
 				body := discoveryBody(t, rows)
 				p := testProvider(t, func(w http.ResponseWriter, _ *http.Request) {
@@ -366,7 +360,7 @@ func TestListModels_ClientDoesNotDuplicateServerPolicy(t *testing.T) {
 	}
 }
 
-const unicodeDiscoveryFixture = `{"models":[{"id":"public","name":"Model","description":"Description","specification":{"specificationVersion":"v4","provider":"grafana","modelId":"public"},"gateway":{"canonicalModelId":"public","aliases":[],"candidates":[{"providerInstance":"primary","provider":"anthropic","modelId":"native"}]}}]}`
+const unicodeDiscoveryFixture = `{"models":[{"id":"public","name":"Model","description":"Description","specification":{"specificationVersion":"v4","provider":"grafana","modelId":"public"},"gateway":{"aliases":[],"primary":{"providerInstance":"primary","provider":"anthropic","providerModelId":"native"},"fallbacks":[]}}]}`
 
 func listUnicodeDiscovery(t *testing.T, document string) ([]ModelInfo, error) {
 	t.Helper()
@@ -387,9 +381,9 @@ func TestListModels_DiscoveryStandardJSONUnicode(t *testing.T) {
 	}{
 		{"name", `"name":"Model"`, func(row ModelInfo) string { return row.Name }},
 		{"description", `"description":"Description"`, func(row ModelInfo) string { return *row.Description }},
-		{"instance", `"providerInstance":"primary"`, func(row ModelInfo) string { return row.Gateway.Candidates[0].ProviderInstance }},
-		{"provider", `"provider":"anthropic"`, func(row ModelInfo) string { return row.Gateway.Candidates[0].Provider }},
-		{"model", `"modelId":"native"`, func(row ModelInfo) string { return row.Gateway.Candidates[0].ModelID }},
+		{"instance", `"providerInstance":"primary"`, func(row ModelInfo) string { return row.Gateway.Primary.ProviderInstance }},
+		{"provider", `"provider":"anthropic"`, func(row ModelInfo) string { return row.Gateway.Primary.Provider }},
+		{"model", `"providerModelId":"native"`, func(row ModelInfo) string { return row.Gateway.Primary.ProviderModelID }},
 	}
 	values := []struct {
 		name, raw, expected string
@@ -431,19 +425,19 @@ func TestListModels_DiscoveryUnicodeIgnoredAndDuplicateMembers(t *testing.T) {
 	rows, err := listUnicodeDiscovery(t, document)
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
-	assert.Equal(t, "native", rows[0].Gateway.Candidates[0].ModelID)
+	assert.Equal(t, "native", rows[0].Gateway.Primary.ProviderModelID)
 	for _, tc := range []struct {
 		name, replacement, expected string
 	}{
-		{"last ordinary", `"modelId":"\ud800","modelId":"native"`, "native"},
-		{"last normalized", `"modelId":"native","modelId":"\ud800"`, "�"},
+		{"last ordinary", `"providerModelId":"\ud800","providerModelId":"native"`, "native"},
+		{"last normalized", `"providerModelId":"native","providerModelId":"\ud800"`, "�"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			document := strings.Replace(unicodeDiscoveryFixture, `"modelId":"native"`, tc.replacement, 1)
+			document := strings.Replace(unicodeDiscoveryFixture, `"providerModelId":"native"`, tc.replacement, 1)
 			rows, err := listUnicodeDiscovery(t, document)
 			require.NoError(t, err)
 			require.Len(t, rows, 1)
-			assert.Equal(t, tc.expected, rows[0].Gateway.Candidates[0].ModelID)
+			assert.Equal(t, tc.expected, rows[0].Gateway.Primary.ProviderModelID)
 		})
 	}
 }

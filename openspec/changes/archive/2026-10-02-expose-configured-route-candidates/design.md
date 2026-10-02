@@ -1,8 +1,8 @@
 ## Context
 
-This delivers [#324](https://github.com/grafana/ai-sdk/issues/324), following proposal.md, the revised Gateway plan's work package 37, and the [approved #321 decision](../archive/2026-10-02-define-gateway-developer-evidence-contract/decision.md). The decision authorizes the exact configured-discovery shape, small Go public addition and TS companion helper. Subsequent owner feedback places route policy solely at startup, removes server discovery response-size gating and uses ordinary client decoding. This does not authorize a new discovery dialect or customer account system.
+This delivers [#324](https://github.com/grafana/ai-sdk/issues/324), following proposal.md, the revised Gateway plan's work package 37, and the [approved #321 decision](../archive/2026-10-02-define-gateway-developer-evidence-contract/decision.md). The decision authorizes the exact configured-discovery shape, small Go public addition and TS companion helper. Subsequent owner feedback places route policy solely at startup, removes server discovery response-size gating, uses ordinary client decoding and adopts one canonical discovery row with aliases, primary and fallbacks. This does not authorize a new discovery dialect or customer account system.
 
-Current flow is strict YAML → resolved provider configuration → `service.BuildCatalog` → immutable `catalog.ModelInfo` → authenticated discovery handler. Catalog listing has one sorted canonical entry with aliases; HTTP discovery expands aliases and sorts all rows lexicographically. Every row's specification remains `v4`/`grafana`/that row's public ID. Configured candidate descriptors are retained with listing metadata; `namespace.go` copies candidates with aliases/capabilities. Route policy belongs to strict startup configuration, not discovery response building. Go `ListModels` uses ordinary typed JSON decoding after bounding received bytes.
+Current flow is strict YAML → resolved provider configuration → `service.BuildCatalog` → immutable `catalog.ModelInfo` → authenticated discovery handler. Catalog listing and HTTP discovery each return one sorted canonical entry per model with aliases retained as metadata. Every row's specification remains `v4`/`grafana`/that row's public ID. Configured candidate descriptors are retained with listing metadata; `namespace.go` copies candidates with aliases/capabilities. Route policy belongs to strict startup configuration, not discovery response building. Go `ListModels` uses ordinary typed JSON decoding after bounding received bytes.
 
 Pinned reference is `@ai-sdk/gateway` 4.0.94, `ai` 7.0.116, provider 4.0.18 and provider-utils 5.0.49, commit `ee3169b3c4880e2abe4d0d7c781243bb81822ec4`. Matching [gateway-fetch-metadata.ts](https://github.com/vercel/ai/blob/ee3169b3c4880e2abe4d0d7c781243bb81822ec4/packages/gateway/src/gateway-fetch-metadata.ts) and [tests](https://github.com/vercel/ai/blob/ee3169b3c4880e2abe4d0d7c781243bb81822ec4/packages/gateway/src/gateway-fetch-metadata.test.ts) use authenticated `GET /config`, a stripping object schema, optional/null description, optional pricing transforms and model-type filtering. Our additive `gateway` object therefore remains compatible but is not available from stock normalized discovery. #321's TS/Go access probes confirm both current losses; its test-only raw helper is not a complete production validator. This is a Grafana extension, not a Vercel private-service parity claim.
 
@@ -13,7 +13,7 @@ Pinned reference is `@ai-sdk/gateway` 4.0.94, `ai` 7.0.116, provider 4.0.18 and 
 **Goals:**
 
 - Inspect explicit canonical routes, aliases and ordered configured provider/model candidates through authenticated discovery without generation or provider inventory calls.
-- Preserve normalized rows, public-ID grammar, row ordering, specification identity, existing Go discovery method and immutable catalog behavior.
+- Preserve canonical normalized fields, public-ID grammar, canonical row ordering, specification identity, existing Go discovery method and immutable catalog behavior. Keep aliases callable without duplicating discovery rows.
 - Validate route semantics and cardinality/string policy at startup; serve the complete catalog without a discovery response cap, while clients retain transport read safeguards.
 - Document actual access and current account boundaries, with targeted credential exclusions and independently configured operator capture.
 
@@ -35,13 +35,13 @@ Alternative rejected: reflect provider models/configuration or reuse operator at
 
 ### 2. One additive projection on the existing authenticated route
 
-For command-configured routes, each canonical and alias row receives the same `gateway` value:
+For command-configured routes, one canonical row receives this `gateway` value:
 
 ```json
-{"canonicalModelId":"grafana/assistant","aliases":["assistant"],"candidates":[{"providerInstance":"primary","provider":"anthropic","modelId":"native-primary"},{"providerInstance":"secondary","provider":"openai","modelId":"native-secondary"}]}
+{"aliases":["assistant"],"primary":{"providerInstance":"primary","provider":"anthropic","providerModelId":"native-primary"},"fallbacks":[{"providerInstance":"secondary","provider":"openai","providerModelId":"native-secondary"}]}
 ```
 
-`canonicalModelId` is the catalog ID; `aliases` preserves explicit alias order, including an empty array; candidates preserve primary followed by fallback order. The outer `id` and `specification.modelId` remain the individual row ID, never the native ID. No configured route is synthesized from response identity. Generic entries lacking candidate metadata omit `gateway` rather than emit incomplete or fabricated facts.
+The outer `id` and `specification.modelId` identify the canonical public model, never the native destination. Aliases remain callable but do not create rows. `aliases` and `fallbacks` preserve configuration order, including empty arrays; `primary` is the initial destination. `providerModelId` is the configured native invocation ID. There is no redundant canonicalModelId field. No configured route is synthesized from response identity. Generic entries lacking candidate metadata omit `gateway` rather than emit incomplete or fabricated facts.
 
 Server projection uses explicit private DTO fields and standard JSON encoding, with the updated closed discovery test schema as output evidence. Encode the complete projected catalog before HTTP 200; listing errors/panics use the existing fixed internal error. Do not revalidate route semantics or gate discovery on encoded size. Configuration loading owns policy before listener creation; custom host owners must supply valid metadata.
 
@@ -49,13 +49,13 @@ Alternatives rejected: new endpoint, display-string encoding, or assumed stock T
 
 ### 3. Independent Go retention and a tested copyable TS helper
 
-Go adds `ModelInfo.Gateway *ConfiguredRoute`, with `CanonicalModelID`, `Aliases` and `Candidates []ConfiguredCandidate`; the candidate type contains `ProviderInstance`, `Provider`, and `ModelID`. `Provider.ListModels(ctx)` remains the sole discovery method and uses the existing auth/request/error handling. Missing/null `gateway` remains nil for ordinary rows. Use ordinary Go JSON decoding into typed values, including normal field-case, missing/null and surrogate semantics. Type-decoding errors fail the whole result; unrelated additive fields remain ignored rather than exposed. No server types, validators or AGPL imports enter this module.
+Go adds `ModelInfo.Gateway *ConfiguredRoute`, with `Aliases`, `Primary ConfiguredCandidate` and `Fallbacks []ConfiguredCandidate`; the candidate type contains `ProviderInstance`, `Provider`, and `ProviderModelID`. `Provider.ListModels(ctx)` remains the sole discovery method and uses the existing auth/request/error handling. Missing/null `gateway` remains nil for ordinary rows. Use ordinary Go JSON decoding into typed values, including normal field-case, missing/null and surrogate semantics. Type-decoding errors fail the whole result; unrelated additive fields remain ignored rather than exposed. No server types, validators or AGPL imports enter this module.
 
 Supply a copyable TS consumer example under `ai-gateway/examples/`, imported/typechecked and exercised by the registered ProviderWire workspace: `fetchConfiguredModels({baseURL, headers, fetch, signal, maxBytes})`, returning a typed `{models}` document retaining the recognized route extension. It accepts explicit JWT or CAP outer headers; it neither exchanges tokens nor selects/falls back between authentication modes. Base URL is the existing HTTP(S) API prefix, without userinfo/query/fragment, and `/config` is appended without losing that prefix. Use HTTPS in deployment guidance.
 
 The helper performs one GET with redirect refusal, checks status and JSON media type, reads incrementally under the approved byte cap, validates raw UTF-8 and one complete JSON document, and checks the JSON shape/types of recognized metadata before return, without route-policy validation. Abort cancels pending network/read work; rejected or completed reads release/cancel the body reader. Non-2xx and validation errors do not embed credential headers or arbitrary response bodies. No unbounded `response.json()`/`text()` path, caching or inference is introduced. `maxBytes` defaults to 4,194,304 and must be a positive safely represented integer no greater than that approved helper cap; lower values are supported. Go retains its configurable read limit, defaulting to 4,194,304 bytes (4 MiB). The server has no discovery response-size cap; accepted configuration determines what is served.
 
-Consumers retain supplied metadata rather than checking public-ID grammar, nonblank strings, specification agreement, route groups or duplicate entries. These are server configuration rules, with canonical/alias consistency guaranteed by projection. Candidate uniqueness at startup is by `(providerInstance, modelId)`; different instances of the same adapter/model remain valid. Standard JSON last-member behavior remains unchanged. TS checks runtime JSON shape/types; Go uses encoding/json's typed decoding, including zero/nil values for missing/null fields. This accepted Go adaptation does not imply identical handling of malformed shapes across languages.
+Consumers retain supplied metadata rather than checking public-ID grammar, nonblank strings, specification agreement, route groups or duplicate entries. These are server configuration rules, with canonical public specifications guaranteed by projection. Candidate uniqueness at startup is by `(providerInstance, modelId)`; different instances of the same adapter/model remain valid. Standard JSON last-member behavior remains unchanged. TS checks runtime JSON shape/types; Go uses encoding/json's typed decoding, including zero/nil values for missing/null fields. This accepted Go adaptation does not imply identical handling of malformed shapes across languages.
 
 Alternative rejected: publish a TS package or modify pinned `getAvailableModels`. A tested companion example gives explicit access without a new distribution/API surface. Shared HTTP fixtures may prove agreement, but each client validator remains independent of production server validation.
 
@@ -65,7 +65,7 @@ Config loading owns route policy, before readiness or inference:
 
 | Dimension | Ceiling |
 | --- | ---: |
-| Configured expanded HTTP rows, including aliases | 1,024 |
+| Configured callable public IDs, including aliases | 1,024 |
 | Configured candidates per route | 16 |
 | Configured aliases per route | 128 |
 | Configured identity/display string | 2,048 UTF-8 bytes |
@@ -90,7 +90,8 @@ Update catalog, client, provider-configuration and fallback concealment requirem
 
 ## Risks / Trade-offs
 
-- [Every alias repeats route data and can expand encoded bytes] → Serve the complete configured catalog; document independent client read limits and test large discovery without inference.
+- [Stock TS strips alias metadata as well as provider choices] → List canonical IDs through stock discovery, document helper access for aliases and keep known aliases callable.
+- [Large configured catalogs can exceed client read budgets] → Serve the complete configured catalog; document independent client read limits and test large discovery without inference.
 - [A future scoped lister bypasses visibility by rebuilding global facts] → Populate/project only explicit visible metadata and test paired listing/resolution decorators.
 - [Compatible provider name differs from configured type or wrapped identity] → Use effective constructor configuration and verify default/custom provider identifiers before middleware wrapping.
 - [Stock normalized TS still drops candidates] → Document helper access and keep executable stock-loss tests; do not claim permissive parsing exposes discarded fields.

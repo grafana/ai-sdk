@@ -154,6 +154,35 @@ pin checks, image-source checks and all 83 strict main specs passed. Logs:
 `/tmp/gw324-startup-policy-{go,parity,quality}.log`. The exact registered upstream
 baseline is unchanged; the advisory provider-shape skip remains documented above.
 
+## Canonical-only configured discovery
+
+Owner-approved payload redesign returns one sorted canonical row per model with
+`gateway.aliases`, `gateway.primary` and ordered `gateway.fallbacks`. Destinations
+use `providerModelId`, distinguishing native invocation IDs from public selection
+IDs; redundant canonicalModelId and alias rows are removed. Alias invocation,
+startup route policy (including the combined public-ID/alias budget), authentication,
+credential exclusions, full server projection and client read safeguards are
+unchanged. Generic entries without supplied candidate metadata remain unextended.
+
+Updated Go types, the TS helper, closed schema, guides and main/archived contracts.
+Independent golden JSON failed against the preceding handler before implementation.
+Tests retain configured alias order, empty alias/fallback arrays and destination
+facts, and prove canonical-only stock discovery. Stock TS strips the entire gateway
+extension, so aliases are discoverable through raw HTTP, Go or the helper, not stock
+getAvailableModels; known aliases remain callable through all clients. Existing
+real-command tests still invoke canonical and alias IDs. The large-response witness
+now uses 65 distinct configured models with escaping, rather than duplicated alias
+rows, and proves complete raw/Go/helper agreement above 1 MiB without inference.
+
+Passed full Gateway tests; Grafana/catalog/config/discovery/process/service race;
+ProviderWire typecheck/schema/client; all 42 command tests; parity; vet/build/lint/
+docs; workspace/boundary/pin/standalone-client checks; image-source checks; all 83
+strict main specs and archived/main requirement agreement. Logs:
+`/tmp/gw324-shape-{go,command,parity,quality,specs}.log`. The registered upstream
+baseline is unchanged; the advisory provider-shape reporting skip remains. Required
+CI on the preceding cced8c08 revision passed; image/deployment jobs were skipped.
+These shape changes received parent review, not a new independent review workflow.
+
 ## Spec synchronization and archive
 
 Synced five added configured-discovery requirements and nine modified requirements

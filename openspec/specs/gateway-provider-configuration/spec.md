@@ -32,7 +32,7 @@ Each public model backed by an `openai` provider SHALL be constructed once throu
 - **AND** the client SHALL receive a fixed safe error
 
 ### Requirement: OpenAI Responses backend identity stays private
-Authenticated discovery SHALL publish public model IDs, names, descriptions and alias rows with specification provider grafana, plus authorized configured provider-instance/provider/model facts through the gateway-configured-discovery projection. It SHALL NOT contain an OpenAI provider's API key, apiKeyEnv name, baseURL or unrelated configuration. Authorized provider-instance and configured model identifiers SHALL NOT be treated as credentials. Public runtime error responses, access logs and metrics SHALL retain their existing credential/backend-detail exclusions; this feature SHALL NOT expand those surfaces.
+Authenticated discovery SHALL publish one canonical row per configured model with its name, description and specification provider grafana, plus authorized aliases/primary/fallbacks and provider-instance/provider/providerModelId facts through the gateway-configured-discovery projection. It SHALL NOT contain an OpenAI provider's API key, apiKeyEnv name, baseURL or unrelated configuration. Authorized provider-instance and configured model identifiers SHALL NOT be treated as credentials. Public runtime error responses, access logs and metrics SHALL retain their existing credential/backend-detail exclusions; this feature SHALL NOT expand those surfaces.
 
 #### Scenario: Discovery lists OpenAI models
 - **WHEN** an authorized authenticated client requests /api/v1/aisdk/config
@@ -96,7 +96,7 @@ When a client cancels an established stream from a compatible public model, the 
 - **AND** `/ready` SHALL continue to succeed
 
 ### Requirement: Compatible backend identity stays private
-Authenticated discovery SHALL publish public model IDs, names, descriptions and alias rows with specification provider grafana, plus authorized configured provider-instance/effective-provider/model facts through the gateway-configured-discovery projection. The effective provider SHALL reflect the configured providerName or existing constructor default. It SHALL NOT contain API keys, apiKeyEnv names, baseURL, backend error bodies or unrelated configuration. Authorized provider-instance/providerName/model identifiers SHALL NOT be categorically concealed. Public runtime error responses, access logs and metrics SHALL retain their existing credential/backend-detail exclusions; discovery SHALL NOT enable additional operator capture or runtime diagnostic transport.
+Authenticated discovery SHALL publish one canonical row per configured model with its name, description and specification provider grafana, plus authorized aliases/primary/fallbacks and provider-instance/effective-provider/providerModelId facts through the gateway-configured-discovery projection. The effective provider SHALL reflect the configured providerName or existing constructor default. It SHALL NOT contain API keys, apiKeyEnv names, baseURL, backend error bodies or unrelated configuration. Authorized provider-instance/providerName/model identifiers SHALL NOT be categorically concealed. Public runtime error responses, access logs and metrics SHALL retain their existing credential/backend-detail exclusions; discovery SHALL NOT enable additional operator capture or runtime diagnostic transport.
 
 #### Scenario: Discovery lists compatible models
 - **WHEN** an authorized authenticated client requests /api/v1/aisdk/config

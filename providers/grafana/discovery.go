@@ -22,24 +22,24 @@ type ModelSpecification struct {
 
 // ConfiguredCandidate is an explicitly configured invocation destination.
 // ProviderInstance is a configuration key; Provider is its effective namespace.
-// ModelID is the configured invocation ID, never a provider-reported response ID.
+// ProviderModelID is the configured invocation ID, never a provider-reported response ID.
 type ConfiguredCandidate struct {
 	ProviderInstance string `json:"providerInstance"`
 	Provider         string `json:"provider"`
-	ModelID          string `json:"modelId"`
+	ProviderModelID  string `json:"providerModelId"`
 }
 
 // ConfiguredRoute contains authorized configured facts, not runtime attempt results.
-// Aliases retain configured order; Candidates lists primary before fallbacks.
+// Aliases and Fallbacks retain configured order; Primary is the initial destination.
 type ConfiguredRoute struct {
-	CanonicalModelID string                `json:"canonicalModelId"`
-	Aliases          []string              `json:"aliases"`
-	Candidates       []ConfiguredCandidate `json:"candidates"`
+	Aliases   []string              `json:"aliases"`
+	Primary   ConfiguredCandidate   `json:"primary"`
+	Fallbacks []ConfiguredCandidate `json:"fallbacks"`
 }
 
 // ModelInfo is a public catalog row with optional configured-route facts.
 // Gateway is nil when the server omits the extension; absence is not an empty route.
-// Specifications always identify the public row, even for aliases.
+// Specifications identify the canonical public row; Gateway.Aliases remain callable.
 type ModelInfo struct {
 	ID            string             `json:"id"`
 	Name          string             `json:"name"`

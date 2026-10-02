@@ -171,8 +171,10 @@ configured behind a public name without generating a response. For example,
 `balanced` might use an Anthropic model first and an OpenAI model as a fallback.
 Clients still select `balanced` or one of its aliases, not a candidate's model ID.
 
-Discovery lists the primary candidate first, followed by fallbacks in your
-configured order. Aliases show the same provider choices as their canonical name.
+Discovery returns one row per configured model. Its `gateway` metadata lists
+`aliases`, a `primary` destination and ordered `fallbacks`. Each destination's
+`providerModelId` is the native invocation ID, not a public selection ID. Aliases
+remain callable but do not create duplicate discovery rows.
 These choices describe what the Gateway can try, not which provider handled a
 previous request. Listing models does not check provider availability or verify
 that provider credentials work, and it never returns those credentials.
@@ -190,8 +192,10 @@ as described above.
 
 The command validates route configuration at startup, before accepting requests.
 Discovery then returns the complete visible configured catalog; it does not
-revalidate routes or impose a response-size cap. Aliases repeat provider choices,
-so ensure your clients' read limits accommodate the resulting document.
+revalidate routes or impose a response-size cap. Ensure your clients' read limits
+accommodate the resulting document. Stock TypeScript discovery discards the
+`gateway` metadata, so use the companion helper to discover aliases and provider
+choices.
 
 ## Reference
 
