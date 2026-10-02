@@ -6,14 +6,36 @@
   "properties": {
     "models": {
       "type": "array",
+      "maxItems": 1024,
       "items": {
         "type": "object",
         "additionalProperties": false,
         "required": ["id", "name", "specification"],
         "properties": {
           "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$" },
-          "name": { "type": "string", "minLength": 1 },
-          "description": { "type": "string" },
+          "name": { "type": "string", "minLength": 1, "maxLength": 2048 },
+          "description": { "type": "string", "maxLength": 2048 },
+          "gateway": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["canonicalModelId", "aliases", "candidates"],
+            "properties": {
+              "canonicalModelId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$" },
+              "aliases": { "type": "array", "maxItems": 128, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$" } },
+              "candidates": {
+                "type": "array", "minItems": 1, "maxItems": 16,
+                "items": {
+                  "type": "object", "additionalProperties": false,
+                  "required": ["providerInstance", "provider", "modelId"],
+                  "properties": {
+                    "providerInstance": { "type": "string", "minLength": 1, "maxLength": 2048 },
+                    "provider": { "type": "string", "minLength": 1, "maxLength": 2048 },
+                    "modelId": { "type": "string", "minLength": 1, "maxLength": 2048 }
+                  }
+                }
+              }
+            }
+          },
           "specification": {
             "type": "object",
             "additionalProperties": false,

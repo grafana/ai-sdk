@@ -20,16 +20,39 @@ type ModelSpecification struct {
 	ModelID              string `json:"modelId"`
 }
 
-// ModelInfo is a public catalog row. Unknown server metadata is not exposed.
+// ConfiguredCandidate is an explicitly configured invocation destination.
+// ProviderInstance is a configuration key; Provider is its effective namespace.
+// ModelID is the configured invocation ID, never a provider-reported response ID.
+type ConfiguredCandidate struct {
+	ProviderInstance string `json:"providerInstance"`
+	Provider         string `json:"provider"`
+	ModelID          string `json:"modelId"`
+}
+
+// ConfiguredRoute contains authorized configured facts, not runtime attempt results.
+// Aliases retain configured order; Candidates lists primary before fallbacks.
+type ConfiguredRoute struct {
+	CanonicalModelID string                `json:"canonicalModelId"`
+	Aliases          []string              `json:"aliases"`
+	Candidates       []ConfiguredCandidate `json:"candidates"`
+}
+
+// ModelInfo is a public catalog row with optional configured-route facts.
+// Gateway is nil when the server omits the extension; absence is not an empty route.
+// Specifications always identify the public row, even for aliases.
 type ModelInfo struct {
 	ID            string             `json:"id"`
 	Name          string             `json:"name"`
 	Description   *string            `json:"description,omitempty"`
 	Specification ModelSpecification `json:"specification"`
+	Gateway       *ConfiguredRoute   `json:"gateway,omitempty"`
 }
 
 // ListModels returns the authenticated catalog in server order, without caching.
-// A malformed row or response invalidates the entire result.
+// The complete document, including configured canonical/alias consistency, must
+// fit Limits.DiscoveryBytes. Expanded rows, aliases, candidates and strings have
+// independent ceilings of 1024, 128, 16 and 2048 UTF-8 bytes respectively.
+// Malformed or oversized catalogs return no partial results.
 func (p *Provider) ListModels(ctx context.Context) ([]ModelInfo, error) {
 	req, err := p.request(ctx, http.MethodGet, "/config")
 	if err != nil {
@@ -54,7 +77,7 @@ func (p *Provider) ListModels(ctx context.Context) ([]ModelInfo, error) {
 	var document struct {
 		Models *[]json.RawMessage `json:"models"`
 	}
-	if err := decodeFields(body, &document, "models"); err != nil || document.Models == nil {
+	if err := decodeFields(body, &document, "models"); err != nil || document.Models == nil || len(*document.Models) > maxDiscoveryRows {
 		return nil, protocolError("grafana: invalid discovery document", resp.StatusCode, nil)
 	}
 	rows := make([]ModelInfo, 0, len(*document.Models))
@@ -66,8 +89,9 @@ func (p *Provider) ListModels(ctx context.Context) ([]ModelInfo, error) {
 			Name          string          `json:"name"`
 			Description   json.RawMessage `json:"description"`
 			Specification json.RawMessage `json:"specification"`
+			Gateway       json.RawMessage `json:"gateway"`
 		}
-		if decodeFields(raw, &fields, "id", "name", "description", "specification") != nil || decodeFields(fields.Specification, &row.Specification, "specificationVersion", "provider", "modelId") != nil {
+		if decodeDiscoveryFields(raw, &fields, "id", "name", "description", "specification", "gateway") != nil || decodeDiscoveryFields(fields.Specification, &row.Specification, "specificationVersion", "provider", "modelId") != nil {
 			return nil, protocolError("grafana: invalid discovery model", resp.StatusCode, nil)
 		}
 		row.ID, row.Name = fields.ID, fields.Name
@@ -79,11 +103,20 @@ func (p *Provider) ListModels(ctx context.Context) ([]ModelInfo, error) {
 			row.Description = description
 		}
 		_, duplicate := seen[row.ID]
-		if !publicModelID.MatchString(row.ID) || !validPublicText(row.Name) || row.Description != nil && !utf8.ValidString(*row.Description) || row.Specification.SpecificationVersion != "v4" || row.Specification.Provider != "grafana" || row.Specification.ModelID != row.ID || duplicate {
+		if !publicModelID.MatchString(row.ID) || !validDiscoveryString(row.Name) || row.Description != nil && (len(*row.Description) > maxDiscoveryStringBytes || !utf8.ValidString(*row.Description)) || row.Specification.SpecificationVersion != "v4" || row.Specification.Provider != "grafana" || row.Specification.ModelID != row.ID || duplicate {
 			return nil, protocolError("grafana: invalid discovery model", resp.StatusCode, nil)
+		}
+		if len(fields.Gateway) != 0 {
+			row.Gateway, err = decodeConfiguredRoute(fields.Gateway)
+			if err != nil {
+				return nil, protocolError("grafana: invalid configured route", resp.StatusCode, nil)
+			}
 		}
 		seen[row.ID] = struct{}{}
 		rows = append(rows, row)
+	}
+	if !validConfiguredGroups(rows) {
+		return nil, protocolError("grafana: inconsistent configured catalog", resp.StatusCode, nil)
 	}
 	return rows, nil
 }

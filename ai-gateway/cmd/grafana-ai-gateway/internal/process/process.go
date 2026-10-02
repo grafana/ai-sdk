@@ -129,6 +129,14 @@ func Run(ctx context.Context, args []string, lookupEnv config.LookupEnv, listen 
 		agentRuntime.Close()
 		return err
 	}
+	infos, err := modelCatalog.ListModels(ctx)
+	if err == nil {
+		err = discovery.Validate(infos, settings.DiscoveryResponseBytes)
+	}
+	if err != nil {
+		agentRuntime.Close()
+		return fmt.Errorf("gateway process: validating configured discovery: %w", err)
+	}
 	errorWriter := providerv4.NewHostErrorWriter()
 	discoveryHandler, err := discovery.New(modelCatalog, errorWriter, settings.DiscoveryResponseBytes)
 	if err != nil {

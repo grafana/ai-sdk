@@ -82,8 +82,11 @@ the canonical ID.
 available, err := models.ListModels(ctx)
 ```
 
-Aliases and capabilities appear as metadata on the canonical row. Catalog
-construction and listing use defensive copies, keeping the namespace immutable.
+Aliases, capabilities and explicitly supplied configured candidates appear as
+metadata on the canonical row. Catalog construction and listing use defensive
+copies of all slices, keeping the namespace immutable. Generic entries without
+candidates remain unextended; a catalog never derives candidates from a model's
+`Provider()` or `ModelID()` methods.
 
 ## Construct models through a registry
 
@@ -162,6 +165,44 @@ When resolution returns an error matching `catalog.ErrUnknownModel`, map it to
 the transport's not-found response. Other catalog or registry failures pass
 through to the host's normal error handling. The catalog does not own HTTP
 status codes, response envelopes, or another transport's lifecycle.
+
+## Configured discovery and deployment
+
+The command captures safe candidate facts from its validated configuration before
+canonical model wrapping. A candidate identifies the provider-instance key, the
+effective provider namespace and configured invocation model ID. Compatible
+providers use their configured `providerName`, or `openai-compatible` when omitted.
+Primary precedes fallback candidates; configured alias order is retained.
+
+Authenticated `/config` expands canonical and alias IDs into lexicographically
+sorted public rows. Their `v4`/`grafana` specifications still identify each public
+row, not a native model. Rows with configured facts share the same
+`gateway.canonicalModelId`, `gateway.aliases` and `gateway.candidates` projection.
+This is not a runtime winner, response identity, provider inventory or guarantee
+that credentials can invoke a candidate. Discovery invokes no provider.
+
+The projection is allowlisted: credentials, environment-variable secret
+references, endpoints and unrelated provider/account entries are not copied.
+Candidate identities and application names/descriptions are authorized facts,
+not strings to redact by key-like spelling. Apply the same visibility wrapper to
+listing and resolution; the command currently exposes one static catalog to all
+accepted identities. Local scoped decorators and the dummy Cloud edge are not
+proof of deployed customer/BYOK isolation.
+
+Before deployment, review that every accepted identity may discover these facts.
+Startup validates the complete projection before readiness: no more than 1,024
+expanded rows, 128 aliases per route, 16 candidates per route and 2,048 UTF-8 bytes
+per recognized string, alongside the existing public-ID grammar. Encoded bytes
+include escaping and repeated alias projections. The independently configurable
+server default remains 1 MiB; clients accepting 4 MiB cannot increase it.
+Runtime custom-lister failures return an error rather than a partial catalog.
+
+Roll back the service artifact to remove the extension; public IDs and resolution
+remain unchanged. Consumers must accept an absent extension. There is no new
+runtime evidence switch or change to private operator capture. See
+[client access](../../docs/providers/grafana-gateway.md#discover-and-select-public-models)
+for Go retention and the tested TypeScript companion; stock TypeScript discovery
+still discards the extension.
 
 ## Reference
 

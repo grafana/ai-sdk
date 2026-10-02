@@ -89,7 +89,20 @@ evidence boundary changes, not merely because the pinned versions change.
   rejection and retained completion data, not live provider adherence to choice.
 - Captured provider inputs, synthetic failures and provider-independent UI parts
   are distinct evidence sources; passing one does not establish the others.
+- Configured Gateway discovery is an intentional Grafana extension, not upstream
+  private-service behavior. Independent server/Go/helper tests cover atomic
+  cardinality, UTF-8 string and encoded-byte limits, canonical/alias agreement,
+  defensive copies and scoped listing/resolution. Recognized discovery strings
+  reject unpaired JSON surrogate escapes rather than silently repairing identity;
+  valid pairs and genuine replacement characters remain ordinary data. Exact-pinned real-command
+  witnesses compare raw HTTP, Go retention and the copyable TypeScript helper
+  against stock `getAvailableModels()` stripping, without native inference.
+  Command catalogs are static; dummy CAP-edge/scoped tests do not establish
+  customer-account construction, deployed authorization or BYOK tenant isolation.
+  The server's 1 MiB default and clients' 4 MiB allowances are independent.
 - Gateway privacy assertions cover protocol metadata, errors, logs and metrics.
+  Authorized configured provider/model identities are retained only in discovery;
+  credentials, source references and unrelated account state are excluded.
   Arbitrary application text and bounded raw responses remain caller-visible.
 - Linux FIFO deadline tests are platform-specific; socket checks on another
   platform do not establish Linux runtime behavior.

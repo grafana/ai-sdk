@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,6 +16,37 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestBuildCatalog_ConfiguredCandidateFacts(t *testing.T) {
+	for _, tc := range []struct{ name, providerType, providerName, expected string }{
+		{"openai", "openai", "", "openai"},
+		{"compatible default", "openai-compatible", "", "openai-compatible"},
+		{"compatible custom", "openai-compatible", "custom.chat", "custom.chat"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			file := testCatalogFile()
+			route := file.Models["grafana/assistant"]
+			route.Fallback = []config.Primary{{Provider: "backup", Model: "native-backup"}}
+			file.Models["grafana/assistant"] = route
+			created, err := BuildCatalog(file, map[string]config.ResolvedProvider{
+				"anthropic-primary": {Type: "anthropic", APIKey: "secret-primary"},
+				"backup":            {Type: tc.providerType, ProviderName: tc.providerName, APIKey: "secret-backup", BaseURL: "https://backend.invalid/v1"},
+				"unrelated-account": {Type: "anthropic", APIKey: "unrelated-secret", BaseURL: "https://unrelated.invalid"},
+			}, http.DefaultClient, identityModelFactory)
+			require.NoError(t, err)
+			rows, err := created.ListModels(context.Background())
+			require.NoError(t, err)
+			raw, err := json.Marshal(rows[0])
+			require.NoError(t, err)
+			assert.Contains(t, string(raw), `"ProviderInstance":"backup"`)
+			assert.Contains(t, string(raw), `"Provider":"`+tc.expected+`"`)
+			assert.Contains(t, string(raw), `"ModelID":"native-backup"`)
+			for _, secret := range []string{"secret-primary", "secret-backup", "backend.invalid", "unrelated-account", "unrelated-secret", "unrelated.invalid", "ANTHROPIC_SECRET"} {
+				assert.NotContains(t, string(raw), secret)
+			}
+		})
+	}
+}
 
 func TestBuildCatalog_ConstructsImmutableCanonicalAndAliasModelsOnce(t *testing.T) {
 	file := testCatalogFile()

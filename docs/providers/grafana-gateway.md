@@ -48,8 +48,80 @@ environment.
 
 `client.ListModels(ctx)` returns public model IDs, names, optional descriptions,
 and their specification identifiers. Aliases remain ordinary independent rows
-in server order. The client neither caches this catalog nor infers backend or
-fallback topology. A malformed or oversized response returns no partial catalog.
+in server order. When the server supplies configured-route facts, the optional
+`ModelInfo.Gateway` retains the canonical public ID, configured aliases and ordered
+invocation candidates. The client neither caches this catalog nor infers missing
+facts. An older server or a generic catalog may omit the extension:
+
+```go
+rows, err := client.ListModels(ctx)
+if err != nil {
+	return err
+}
+for _, row := range rows {
+	if row.Gateway == nil {
+		continue
+	}
+	fmt.Println(row.ID, row.Gateway.CanonicalModelID)
+	for _, candidate := range row.Gateway.Candidates {
+		fmt.Println(candidate.ProviderInstance, candidate.Provider, candidate.ModelID)
+	}
+}
+```
+
+These are authorized configuration facts, not the provider that won a request,
+a live inventory or a model's response-derived identity. Provider instances are
+configuration keys; provider names are their effective configured namespaces;
+model IDs are configured invocation destinations. Direct routes have one
+candidate; fallback routes list primary first, then fallback order.
+
+### Access from TypeScript
+
+The registered `@ai-sdk/gateway` discovery method `getAvailableModels()` normalizes
+rows and discards `gateway`. For configured facts, copy the tested
+[`configured-discovery.ts` helper](../../ai-gateway/examples/configured-discovery.ts)
+into your application and call it separately:
+
+```ts
+import { fetchConfiguredModels } from "./configured-discovery";
+
+const { models } = await fetchConfiguredModels({
+  baseURL,
+  headers: { "X-Access-Token": accessToken },
+  signal,
+});
+const candidates = models[0]?.gateway?.candidates;
+```
+
+For Grafana Cloud, select `headers: { Authorization: \`Bearer ${stackID}:${capToken}\` }`
+instead; see the [authentication guide](../guides/gateway-authentication.md).
+The helper preserves the API prefix, refuses redirects and never discovers
+credentials. It returns optional typed facts without changing stock provider
+normalization or introducing a routing API. Use HTTPS outside local tests. An
+injected `fetch` is caller-owned and must honor standard redirect and abort options.
+
+### Atomic discovery budgets and visibility
+
+Server and clients validate the complete catalog before returning it, including
+canonical/alias agreement. Malformed or oversized documents yield no partial
+rows. Both clients independently bound expanded rows to 1,024, aliases to 128 per
+route, candidates to 16 per route and recognized strings to 2,048 UTF-8 bytes;
+public IDs retain their stricter 1–128 ASCII-byte grammar.
+
+The command's configurable `discovery.response-bytes` default remains 1 MiB.
+Go's independently configurable discovery-byte default is 4 MiB; the companion
+helper defaults to and cannot exceed 4 MiB (`maxBytes` can lower it). Larger client
+allowances do not increase server capacity. Complete configured projection must
+fit the server budget before readiness. Runtime custom catalogs fail atomically
+if their projection no longer fits.
+
+Discovery includes authorized provider/model facts but never credentials,
+credential-source references or unrelated provider/account configuration. Names
+and descriptions remain ordinary application text, even when they look like keys.
+The command currently shares one static configured catalog among accepted
+identities. Scoped-decorator tests and the dummy Cloud edge establish only local
+visibility/authentication composition: they do not prove customer-account model
+construction, deployed CAP validation or BYOK tenant isolation.
 
 Use the returned ID with `client.LanguageModel(id)`, or register the client as a
 `registry.Provider`; see [Fallback and registry](../guides/fallback-and-registry.md).

@@ -21,7 +21,7 @@ func TestListModels_AtomicValidation(t *testing.T) {
 		{"valid", discoveryFixture, "application/json", true},
 		{"nullable description", strings.Replace(discoveryFixture, `"description":"public description"`, `"description":null`, 1), "application/json", true},
 		{"wrong property casing", strings.Replace(discoveryFixture, `"models"`, `"Models"`, 1), "application/json", false},
-		{"escaped lone surrogate normalizes", strings.Replace(discoveryFixture, `"name":"Assistant"`, `"name":"\ud800"`, 1), "application/json", true},
+		{"escaped lone surrogate", strings.Replace(discoveryFixture, `"name":"Assistant"`, `"name":"\ud800"`, 1), "application/json", false},
 		{"empty", `{"models":[]}`, "application/json", true},
 		{"additive", strings.Replace(discoveryFixture, `"name":"Assistant"`, `"private":{"backend":"do-not-expose"},"name":"Assistant"`, 1), "application/json", true},
 		{"missing models", `{}`, "application/json", false},
@@ -52,9 +52,6 @@ func TestListModels_AtomicValidation(t *testing.T) {
 			if tc.valid {
 				require.NoError(t, err)
 				require.NotNil(t, rows)
-				if tc.name == "escaped lone surrogate normalizes" {
-					assert.Equal(t, "\ufffd", rows[0].Name)
-				}
 			} else {
 				require.Error(t, err)
 				assert.Nil(t, rows)

@@ -7,7 +7,9 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
+	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/discovery"
 	v4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 
 	"go.yaml.in/yaml/v4"
@@ -135,6 +137,21 @@ func (file File) Validate() error {
 	if len(file.Models) == 0 {
 		return fmt.Errorf("config: at least one model is required")
 	}
+	rowCount := 0
+	for _, model := range file.Models {
+		if len(model.Aliases) > discovery.MaxAliases || len(model.Fallback) >= discovery.MaxCandidates || len(model.Aliases)+1 > discovery.MaxModelRows-rowCount {
+			return fmt.Errorf("config: configured discovery cardinality exceeds limit")
+		}
+		rowCount += len(model.Aliases) + 1
+		if !validDiscoveryText(model.Name) || !validDiscoveryText(model.Description) || !validDiscoveryText(model.Primary.Provider) || !validDiscoveryText(model.Primary.Model) || !validDiscoveryText(file.Providers[model.Primary.Provider].ProviderName) {
+			return fmt.Errorf("config: configured discovery text is invalid or exceeds limit")
+		}
+		for _, candidate := range model.Fallback {
+			if !validDiscoveryText(candidate.Provider) || !validDiscoveryText(candidate.Model) || !validDiscoveryText(file.Providers[candidate.Provider].ProviderName) {
+				return fmt.Errorf("config: configured candidate text is invalid or exceeds limit")
+			}
+		}
+	}
 	publicIDs := make(map[string]string, len(file.Models))
 	for id, model := range file.Models {
 		if err := validatePublicID(id); err != nil {
@@ -209,6 +226,10 @@ func (file File) ResolveProviderSecrets(lookupEnv LookupEnv) (map[string]Resolve
 		resolved[name] = ResolvedProvider{Type: provider.Type, APIKey: value, BaseURL: provider.BaseURL, ProviderName: provider.ProviderName}
 	}
 	return resolved, nil
+}
+
+func validDiscoveryText(value string) bool {
+	return len(value) <= discovery.MaxStringBytes && utf8.ValidString(value)
 }
 
 func validatePublicID(value string) error {

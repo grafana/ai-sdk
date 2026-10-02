@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
@@ -19,6 +20,13 @@ type model struct {
 	Name          string
 	Description   string
 	Specification specification
+	Gateway       *configuredRoute
+}
+
+type configuredRoute struct {
+	CanonicalModelID string
+	Aliases          []string
+	Candidates       []catalog.ConfiguredCandidate
 }
 
 type specification struct {
@@ -84,7 +92,11 @@ func (handler *handler) encode(infos []catalog.ModelInfo) ([]byte, error) {
 			buffer.append(",")
 		}
 		info := infos[row.infoIndex]
-		encodeModel(&buffer, discoveryModel(row.id, info.Name, info.Description))
+		value := discoveryModel(row.id, info.Name, info.Description)
+		if len(info.Candidates) != 0 {
+			value.Gateway = &configuredRoute{CanonicalModelID: info.ID, Aliases: info.Aliases, Candidates: info.Candidates}
+		}
+		encodeModel(&buffer, value)
 		if buffer.overflow || buffer.invalid {
 			return nil, errResponseLimit
 		}
@@ -98,21 +110,65 @@ func (handler *handler) encode(infos []catalog.ModelInfo) ([]byte, error) {
 
 func prepareRows(infos []catalog.ModelInfo, limit int64) ([]modelRow, error) {
 	minimumSize := int64(len(`{"models":[]}`))
+	if minimumSize > limit || len(infos) > MaxModelRows {
+		return nil, errResponseLimit
+	}
 	rowCount := 0
+	for _, info := range infos {
+		if len(info.Aliases) > MaxAliases || len(info.Candidates) > MaxCandidates || len(info.ID) > MaxStringBytes || len(info.Name) > MaxStringBytes || len(info.Description) > MaxStringBytes || len(info.Aliases)+1 > MaxModelRows-rowCount {
+			return nil, errResponseLimit
+		}
+		for _, alias := range info.Aliases {
+			if len(alias) > MaxStringBytes {
+				return nil, errResponseLimit
+			}
+		}
+		for _, candidate := range info.Candidates {
+			if len(candidate.ProviderInstance) > MaxStringBytes || len(candidate.Provider) > MaxStringBytes || len(candidate.ModelID) > MaxStringBytes {
+				return nil, errResponseLimit
+			}
+		}
+		extra := int64(0)
+		if info.Description != "" {
+			extra += int64(len(`,"description":`)) + jsonStringSize(info.Description)
+		}
+		if len(info.Candidates) != 0 {
+			extra += configuredSize(info)
+		}
+		if !addMinimumRow(&minimumSize, &rowCount, info.ID, info.Name, extra, limit) {
+			return nil, errResponseLimit
+		}
+		for _, alias := range info.Aliases {
+			if !addMinimumRow(&minimumSize, &rowCount, alias, info.Name, extra, limit) {
+				return nil, errResponseLimit
+			}
+		}
+	}
+	seen := make(map[string]struct{}, rowCount)
 	for _, info := range infos {
 		if !validPublicID(info.ID) || !validString(info.Name) || !utf8.ValidString(info.Description) {
 			return nil, fmt.Errorf("gateway discovery: invalid model text")
 		}
-		if !addMinimumRow(&minimumSize, &rowCount, info.ID, info.Name, limit) {
-			return nil, errResponseLimit
+		ids := append([]string{info.ID}, info.Aliases...)
+		for _, id := range ids {
+			if !validPublicID(id) {
+				return nil, fmt.Errorf("gateway discovery: invalid public ID")
+			}
+			if _, duplicate := seen[id]; duplicate {
+				return nil, fmt.Errorf("gateway discovery: duplicate public ID")
+			}
+			seen[id] = struct{}{}
 		}
-		for _, alias := range info.Aliases {
-			if !validPublicID(alias) {
-				return nil, fmt.Errorf("gateway discovery: invalid alias")
+		candidates := make(map[[2]string]struct{}, len(info.Candidates))
+		for _, candidate := range info.Candidates {
+			if !validString(candidate.ProviderInstance) || !validString(candidate.Provider) || !validString(candidate.ModelID) {
+				return nil, fmt.Errorf("gateway discovery: invalid candidate")
 			}
-			if !addMinimumRow(&minimumSize, &rowCount, alias, info.Name, limit) {
-				return nil, errResponseLimit
+			key := [2]string{candidate.ProviderInstance, candidate.ModelID}
+			if _, duplicate := candidates[key]; duplicate {
+				return nil, fmt.Errorf("gateway discovery: duplicate candidate")
 			}
+			candidates[key] = struct{}{}
 		}
 	}
 	rows := make([]modelRow, 0, rowCount)
@@ -126,8 +182,8 @@ func prepareRows(infos []catalog.ModelInfo, limit int64) ([]modelRow, error) {
 	return rows, nil
 }
 
-func addMinimumRow(total *int64, count *int, id, name string, limit int64) bool {
-	rowSize := minimumModelSize(id, name)
+func addMinimumRow(total *int64, count *int, id, name string, extra, limit int64) bool {
+	rowSize := minimumModelSize(id, name) + extra
 	if *count > 0 {
 		rowSize++
 	}
@@ -142,6 +198,23 @@ func addMinimumRow(total *int64, count *int, id, name string, limit int64) bool 
 func minimumModelSize(id, name string) int64 {
 	return int64(len(`{"id":`)+len(`,"name":`)+len(`,"specification":{"specificationVersion":"v4","provider":"grafana","modelId":`)+len(`}}`)) +
 		jsonStringSize(id)*2 + jsonStringSize(name)
+}
+
+func configuredSize(info catalog.ModelInfo) int64 {
+	size := int64(len(`,"gateway":{"canonicalModelId":`)+len(`,"aliases":[]`)+len(`,"candidates":[]}`)) + jsonStringSize(info.ID)
+	for i, alias := range info.Aliases {
+		if i > 0 {
+			size++
+		}
+		size += jsonStringSize(alias)
+	}
+	for i, candidate := range info.Candidates {
+		if i > 0 {
+			size++
+		}
+		size += int64(len(`{"providerInstance":`)+len(`,"provider":`)+len(`,"modelId":`)+len(`}`)) + jsonStringSize(candidate.ProviderInstance) + jsonStringSize(candidate.Provider) + jsonStringSize(candidate.ModelID)
+	}
+	return size
 }
 
 func jsonStringSize(value string) int64 {
@@ -180,7 +253,7 @@ func discoveryModel(id, name, description string) model {
 }
 
 func validString(value string) bool {
-	return value != "" && utf8.ValidString(value)
+	return strings.TrimSpace(value) != "" && utf8.ValidString(value)
 }
 
 func validPublicID(value string) bool {
@@ -215,7 +288,37 @@ func encodeModel(buffer *boundedBuffer, value model) {
 	buffer.appendJSONString(value.Specification.Provider)
 	buffer.append(`,"modelId":`)
 	buffer.appendJSONString(value.Specification.ModelID)
-	buffer.append(`}}`)
+	buffer.append(`}`)
+	if value.Gateway != nil {
+		encodeConfiguredRoute(buffer, value.Gateway)
+	}
+	buffer.append(`}`)
+}
+
+func encodeConfiguredRoute(buffer *boundedBuffer, route *configuredRoute) {
+	buffer.append(`,"gateway":{"canonicalModelId":`)
+	buffer.appendJSONString(route.CanonicalModelID)
+	buffer.append(`,"aliases":[`)
+	for i, alias := range route.Aliases {
+		if i > 0 {
+			buffer.append(",")
+		}
+		buffer.appendJSONString(alias)
+	}
+	buffer.append(`],"candidates":[`)
+	for i, candidate := range route.Candidates {
+		if i > 0 {
+			buffer.append(",")
+		}
+		buffer.append(`{"providerInstance":`)
+		buffer.appendJSONString(candidate.ProviderInstance)
+		buffer.append(`,"provider":`)
+		buffer.appendJSONString(candidate.Provider)
+		buffer.append(`,"modelId":`)
+		buffer.appendJSONString(candidate.ModelID)
+		buffer.append(`}`)
+	}
+	buffer.append(`]}`)
 }
 
 type boundedBuffer struct {

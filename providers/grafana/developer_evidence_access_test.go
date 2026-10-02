@@ -226,8 +226,8 @@ func TestDeveloperEvidenceAccess_CurrentBaseline(t *testing.T) {
 		}
 	})
 
-	t.Run("DiscoveryStockLossAndProposedAccess", func(t *testing.T) {
-		body := `{"models":[{"id":"assistant","name":"Assistant","specification":{"specificationVersion":"v4","provider":"grafana","modelId":"assistant"},"gateway":{"canonicalModelId":"grafana/assistant","aliases":["assistant"],"candidates":[{"providerInstance":"anthropic-primary","provider":"anthropic","modelId":"primary"},{"providerInstance":"openai-secondary","provider":"openai","modelId":"native-model"}]}}]}`
+	t.Run("DiscoveryConfiguredRetention", func(t *testing.T) {
+		body := configuredDiscoveryFixture(t)
 		var calls atomic.Int32
 		p := testProvider(t, func(w http.ResponseWriter, r *http.Request) {
 			calls.Add(1)
@@ -239,32 +239,16 @@ func TestDeveloperEvidenceAccess_CurrentBaseline(t *testing.T) {
 		}, nil)
 		rows, err := p.ListModels(context.Background())
 		require.NoError(t, err)
-		require.Len(t, rows, 1)
+		require.Len(t, rows, 2)
 		stock, err := json.Marshal(rows)
 		require.NoError(t, err)
-		assert.NotContains(t, string(stock), "candidates")
-		raw, err := developerConfiguredRoutes(context.Background(), p, int64(len(body)))
-		require.NoError(t, err)
-		assert.JSONEq(t, body, string(raw))
-		_, err = developerConfiguredRoutes(context.Background(), p, int64(len(body)-1))
+		assert.Contains(t, string(stock), "candidates")
+		assert.Equal(t, "public", rows[0].Gateway.CanonicalModelID)
+		assert.JSONEq(t, body, `{"models":`+string(stock)+`}`)
+		p.limits.DiscoveryBytes = int64(len(body) - 1)
+		rows, err = p.ListModels(context.Background())
 		require.Error(t, err)
-		assert.EqualValues(t, 3, calls.Load())
+		assert.Nil(t, rows)
+		assert.EqualValues(t, 2, calls.Load())
 	})
-}
-
-func developerConfiguredRoutes(ctx context.Context, p *Provider, maxBytes int64) (json.RawMessage, error) {
-	req, err := p.request(ctx, http.MethodGet, "/config")
-	if err != nil {
-		return nil, err
-	}
-	resp, err := p.client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("discovery status %d", resp.StatusCode)
-	}
-	body, _, err := readJSON(ctx, resp, maxBytes)
-	return body, err
 }
