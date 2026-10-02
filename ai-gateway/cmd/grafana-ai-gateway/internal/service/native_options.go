@@ -32,11 +32,37 @@ func (m nativeOptionsModel) DoStream(ctx context.Context, options provider.CallO
 func validateAnthropicOptions(options provider.CallOptions) error {
 	call, _, err := provider.ResolveOption[anthropicprovider.AnthropicOptions](options.ProviderOptions, "anthropic")
 	if err != nil {
-		return err
+		return catalog.ErrUnsupportedRequest
 	}
 	if (call.Container != nil && len(call.Container.Skills) > 0) ||
 		(call.Fallbacks != nil && (call.Fallbacks.Default || len(call.Fallbacks.Chain) > 0)) {
 		return catalog.ErrUnsupportedRequest
+	}
+	servers, err := validateMCPServers(call.MCPServers)
+	if err != nil {
+		return err
+	}
+	for _, message := range options.Prompt {
+		if message.Role != provider.RoleAssistant {
+			continue
+		}
+		for _, part := range message.Content {
+			if part.Type != provider.ContentPartTypeToolCall || !part.ProviderExecuted {
+				continue
+			}
+			if raw, ok := part.ProviderOptions["anthropic"].(provider.RawProviderOption); ok {
+				var history struct {
+					Type string `json:"type"`
+				}
+				if json.Unmarshal(raw.Raw, &history) == nil && history.Type == "mcp-tool-use" {
+					var fields map[string]json.RawMessage
+					var serverName string
+					if json.Unmarshal(raw.Raw, &fields) != nil || json.Unmarshal(fields["serverName"], &serverName) != nil || !servers[serverName] {
+						return catalog.ErrUnsupportedRequest
+					}
+				}
+			}
+		}
 	}
 	return nil
 }
