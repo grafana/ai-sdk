@@ -91,14 +91,14 @@ func (o *ArrayOutput[T]) ResponseFormat() *provider.ResponseFormat {
 func (o *ArrayOutput[T]) ParseComplete(text string) (any, error) {
 	data := json.RawMessage(text)
 	if err := o.wrappedSchema.Validate(data); err != nil {
-		return nil, fmt.Errorf("%w: %v", aisdk.ErrNoObjectGenerated, err)
+		return nil, fmt.Errorf("%w: %w: %w", aisdk.ErrNoObjectGenerated, aisdk.ErrInvalidOutputText, err)
 	}
 
 	var wrapper struct {
 		Elements []T `json:"elements"`
 	}
 	if err := json.Unmarshal([]byte(text), &wrapper); err != nil {
-		return nil, fmt.Errorf("%w: unmarshaling: %v", aisdk.ErrNoObjectGenerated, err)
+		return nil, fmt.Errorf("%w: unmarshaling: %w", aisdk.ErrNoObjectGenerated, err)
 	}
 	return wrapper.Elements, nil
 }

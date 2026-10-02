@@ -780,6 +780,15 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 			if cfg.output != nil && (cfg.parseOutputOnAllFinishes || step.FinishReason.Unified == provider.FinishReasonStop ||
 				(step.FinishReason.Unified != provider.FinishReasonToolCalls && step.Text != "")) {
 				outputVal, outputErr := cfg.output.ParseComplete(step.Text)
+				if outputErr != nil && cfg.repairText != nil && errors.Is(outputErr, ErrNoObjectGenerated) && errors.Is(outputErr, ErrInvalidOutputText) {
+					repaired, accepted, repairErr := cfg.repairText(step.Text, outputErr)
+					switch {
+					case repairErr != nil:
+						outputErr = repairErr
+					case accepted:
+						outputVal, outputErr = cfg.output.ParseComplete(repaired)
+					}
+				}
 				r.mu.Lock()
 				r.outputValue = outputVal
 				r.outputErr = outputErr

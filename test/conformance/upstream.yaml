@@ -128,10 +128,3 @@ knownGaps:
       rather than the former experimental language-model batch extension. Go scopes
       this baseline to synchronous LanguageModel generate/stream calls and does not
       expose durable batch APIs or batch conformance coverage.
-  - id: structured-output-repair-text
-    surface: core-orchestration
-    status: gap
-    description: Upstream ai exposes stable repairText callbacks on its legacy
-      generateObject and streamObject APIs. The Go port uses the Output abstraction
-      and typed output wrappers and does not currently expose a repair callback for
-      invalid-but-repairable structured output.
