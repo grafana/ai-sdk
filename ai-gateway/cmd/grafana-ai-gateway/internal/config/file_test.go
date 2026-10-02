@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/discovery"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -107,12 +108,7 @@ func TestValidatePublicID(t *testing.T) {
 }
 
 func TestFileValidate_PublicIDCollisions(t *testing.T) {
-	base := File{
-		Providers: map[string]Provider{"provider": {Type: "anthropic", APIKeyEnv: "KEY"}},
-		Models: map[string]Model{
-			"canonical": {Name: "Canonical", Primary: Primary{Provider: "provider", Model: "backend"}},
-		},
-	}
+	base := testModelConfig()
 	tests := []struct {
 		name   string
 		mutate func(*File)
@@ -231,4 +227,79 @@ func TestLoadFile_ProviderErrorsNameTheField(t *testing.T) {
 			require.ErrorContains(t, err, tc.want)
 		})
 	}
+}
+
+func testModelConfig() File {
+	return File{
+		Providers: map[string]Provider{"provider": {Type: "anthropic", APIKeyEnv: "DUMMY_SECRET_REFERENCE"}},
+		Models: map[string]Model{
+			"canonical": {Name: "Canonical", Primary: Primary{Provider: "provider", Model: "native"}},
+		},
+	}
+}
+
+func TestFile_ConfiguredDiscoveryLimits(t *testing.T) {
+	for _, field := range []string{"rows", "expanded rows", "aliases", "candidates", "name", "description", "instance", "provider", "model"} {
+		t.Run(field, func(t *testing.T) {
+			for _, extra := range []int{0, 1} {
+				file := testModelConfig()
+				model := file.Models["canonical"]
+				switch field {
+				case "rows":
+					file.Models = map[string]Model{}
+					for i := range discovery.MaxModelRows + extra {
+						file.Models[fmt.Sprintf("model-%d", i)] = model
+					}
+				case "expanded rows":
+					file.Models = map[string]Model{}
+					for i := range 8 {
+						route := model
+						aliases := 127
+						if i == 0 {
+							aliases += extra
+						}
+						for j := range aliases {
+							route.Aliases = append(route.Aliases, fmt.Sprintf("alias-%d-%03d", i, j))
+						}
+						file.Models[fmt.Sprintf("route-%d", i)] = route
+					}
+				case "aliases":
+					for i := range discovery.MaxAliases + extra {
+						model.Aliases = append(model.Aliases, fmt.Sprintf("alias-%d", i))
+					}
+				case "candidates":
+					for i := range discovery.MaxCandidates - 1 + extra {
+						model.Fallback = append(model.Fallback, Primary{Provider: "provider", Model: fmt.Sprintf("native-%d", i)})
+					}
+				case "name":
+					model.Name = strings.Repeat("a", discovery.MaxStringBytes+extra)
+				case "description":
+					model.Description = strings.Repeat("a", discovery.MaxStringBytes+extra)
+				case "instance":
+					value := file.Providers["provider"]
+					model.Primary.Provider = strings.Repeat("a", discovery.MaxStringBytes+extra)
+					file.Providers = map[string]Provider{model.Primary.Provider: value}
+				case "provider":
+					file.Providers["provider"] = Provider{Type: "openai-compatible", APIKeyEnv: "DUMMY_SECRET_REFERENCE", BaseURL: "https://backend.invalid", ProviderName: strings.Repeat("a", discovery.MaxStringBytes+extra)}
+				case "model":
+					model.Primary.Model = strings.Repeat("a", discovery.MaxStringBytes+extra)
+				}
+				if field != "rows" && field != "expanded rows" {
+					file.Models["canonical"] = model
+				}
+				err := file.Validate()
+				if extra == 0 {
+					require.NoError(t, err)
+				} else {
+					require.Error(t, err)
+					assert.NotContains(t, err.Error(), "DUMMY_SECRET_REFERENCE")
+				}
+			}
+		})
+	}
+	t.Run("unrelated provider has no discovery string budget", func(t *testing.T) {
+		file := testModelConfig()
+		file.Providers["unused-account"] = Provider{Type: "openai-compatible", APIKeyEnv: "DUMMY_SECRET_REFERENCE", BaseURL: "https://backend.invalid", ProviderName: strings.Repeat("a", discovery.MaxStringBytes+1)}
+		require.NoError(t, file.Validate())
+	})
 }

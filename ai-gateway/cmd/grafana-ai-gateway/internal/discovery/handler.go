@@ -1,9 +1,12 @@
 package discovery
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"sort"
 	"strings"
@@ -13,20 +16,37 @@ import (
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 )
 
+const (
+	// MaxModelRows bounds canonical and alias rows in one document.
+	MaxModelRows = 1024
+	// MaxCandidates bounds configured primary and fallback destinations per route.
+	MaxCandidates = 16
+	// MaxAliases bounds aliases configured for one route.
+	MaxAliases = 128
+	// MaxStringBytes bounds each recognized UTF-8 identity or display value.
+	MaxStringBytes = 2048
+)
+
 var errResponseLimit = errors.New("gateway discovery: response exceeds byte limit")
 
 type model struct {
-	ID            string
-	Name          string
-	Description   string
-	Specification specification
-	Gateway       *configuredRoute
+	ID            string           `json:"id"`
+	Name          string           `json:"name"`
+	Description   string           `json:"description,omitempty"`
+	Specification specification    `json:"specification"`
+	Gateway       *configuredRoute `json:"gateway,omitempty"`
 }
 
 type configuredRoute struct {
-	CanonicalModelID string
-	Aliases          []string
-	Candidates       []catalog.ConfiguredCandidate
+	CanonicalModelID string                `json:"canonicalModelId"`
+	Aliases          []string              `json:"aliases"`
+	Candidates       []configuredCandidate `json:"candidates"`
+}
+
+type configuredCandidate struct {
+	ProviderInstance string `json:"providerInstance"`
+	Provider         string `json:"provider"`
+	ModelID          string `json:"modelId"`
 }
 
 type specification struct {
@@ -43,7 +63,7 @@ type handler struct {
 
 // New constructs a closed bounded discovery handler.
 func New(lister catalog.ModelLister, errorWriter *providerv4.HostErrorWriter, limit int64) (http.Handler, error) {
-	if limit <= 0 || limit == int64(^uint64(0)>>1) {
+	if limit <= 0 || limit == math.MaxInt64 {
 		return nil, fmt.Errorf("gateway discovery: response limit is unsafe")
 	}
 	return &handler{lister: lister, errors: errorWriter, limit: limit}, nil
@@ -75,9 +95,13 @@ func (handler *handler) safeList(ctx context.Context) (models []catalog.ModelInf
 	return handler.lister.ListModels(ctx)
 }
 
-type modelRow struct {
-	id        string
-	infoIndex int
+// Validate checks complete configured discovery feasibility before readiness.
+func Validate(infos []catalog.ModelInfo, limit int64) error {
+	if limit <= 0 || limit == math.MaxInt64 {
+		return errResponseLimit
+	}
+	_, err := prepareRows(infos, limit)
+	return err
 }
 
 func (handler *handler) encode(infos []catalog.ModelInfo) ([]byte, error) {
@@ -85,79 +109,46 @@ func (handler *handler) encode(infos []catalog.ModelInfo) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	buffer := newBoundedBuffer(handler.limit + 1)
-	buffer.append(`{"models":[`)
+	document := []byte(`{"models":[`)
 	for index, row := range rows {
+		encoded, err := encodeModel(row)
+		if err != nil {
+			return nil, err
+		}
+		size := int64(len(encoded))
 		if index > 0 {
-			buffer.append(",")
+			size++
 		}
-		info := infos[row.infoIndex]
-		value := discoveryModel(row.id, info.Name, info.Description)
-		if len(info.Candidates) != 0 {
-			value.Gateway = &configuredRoute{CanonicalModelID: info.ID, Aliases: info.Aliases, Candidates: info.Candidates}
-		}
-		encodeModel(&buffer, value)
-		if buffer.overflow || buffer.invalid {
+		if size > handler.limit-int64(len(document))-2 {
 			return nil, errResponseLimit
 		}
+		if index > 0 {
+			document = append(document, ',')
+		}
+		document = append(document, encoded...)
 	}
-	buffer.append(`]}`)
-	if buffer.overflow || buffer.invalid || int64(len(buffer.data)) > handler.limit {
-		return nil, errResponseLimit
-	}
-	return buffer.data, nil
+	return append(document, ']', '}'), nil
 }
 
-func prepareRows(infos []catalog.ModelInfo, limit int64) ([]modelRow, error) {
-	minimumSize := int64(len(`{"models":[]}`))
-	if minimumSize > limit || len(infos) > MaxModelRows {
-		return nil, errResponseLimit
-	}
-	rowCount := 0
-	for _, info := range infos {
-		if len(info.Aliases) > MaxAliases || len(info.Candidates) > MaxCandidates || len(info.ID) > MaxStringBytes || len(info.Name) > MaxStringBytes || len(info.Description) > MaxStringBytes || len(info.Aliases)+1 > MaxModelRows-rowCount {
-			return nil, errResponseLimit
-		}
-		for _, alias := range info.Aliases {
-			if len(alias) > MaxStringBytes {
-				return nil, errResponseLimit
-			}
-		}
-		for _, candidate := range info.Candidates {
-			if len(candidate.ProviderInstance) > MaxStringBytes || len(candidate.Provider) > MaxStringBytes || len(candidate.ModelID) > MaxStringBytes {
-				return nil, errResponseLimit
-			}
-		}
-		extra := int64(0)
-		if info.Description != "" {
-			extra += int64(len(`,"description":`)) + jsonStringSize(info.Description)
-		}
-		if len(info.Candidates) != 0 {
-			extra += configuredSize(info)
-		}
-		if !addMinimumRow(&minimumSize, &rowCount, info.ID, info.Name, extra, limit) {
-			return nil, errResponseLimit
-		}
-		for _, alias := range info.Aliases {
-			if !addMinimumRow(&minimumSize, &rowCount, alias, info.Name, extra, limit) {
-				return nil, errResponseLimit
-			}
-		}
+func prepareRows(infos []catalog.ModelInfo, limit int64) ([]model, error) {
+	rowCount, err := preflight(infos, limit)
+	if err != nil {
+		return nil, err
 	}
 	seen := make(map[string]struct{}, rowCount)
+	models := make([]model, 0, len(infos))
+	size := int64(len(`{"models":[]}`) + max(rowCount-1, 0))
 	for _, info := range infos {
-		if !validPublicID(info.ID) || !validString(info.Name) || !utf8.ValidString(info.Description) {
+		if !validString(info.Name) || !utf8.ValidString(info.Description) {
 			return nil, fmt.Errorf("gateway discovery: invalid model text")
 		}
-		ids := append([]string{info.ID}, info.Aliases...)
-		for _, id := range ids {
-			if !validPublicID(id) {
-				return nil, fmt.Errorf("gateway discovery: invalid public ID")
+		if err := addPublicID(seen, info.ID); err != nil {
+			return nil, err
+		}
+		for _, alias := range info.Aliases {
+			if err := addPublicID(seen, alias); err != nil {
+				return nil, err
 			}
-			if _, duplicate := seen[id]; duplicate {
-				return nil, fmt.Errorf("gateway discovery: duplicate public ID")
-			}
-			seen[id] = struct{}{}
 		}
 		candidates := make(map[[2]string]struct{}, len(info.Candidates))
 		for _, candidate := range info.Candidates {
@@ -170,86 +161,129 @@ func prepareRows(infos []catalog.ModelInfo, limit int64) ([]modelRow, error) {
 			}
 			candidates[key] = struct{}{}
 		}
-	}
-	rows := make([]modelRow, 0, rowCount)
-	for infoIndex, info := range infos {
-		rows = append(rows, modelRow{id: info.ID, infoIndex: infoIndex})
+		value := discoveryModel(info)
+		encoded, err := encodeModel(value)
+		if err != nil {
+			return nil, err
+		}
+		groupSize := int64(len(encoded)) * int64(1+len(info.Aliases))
 		for _, alias := range info.Aliases {
-			rows = append(rows, modelRow{id: alias, infoIndex: infoIndex})
+			groupSize += 2 * int64(len(alias)-len(info.ID))
+		}
+		if groupSize > limit-size {
+			return nil, errResponseLimit
+		}
+		size += groupSize
+		models = append(models, value)
+	}
+	rows := make([]model, 0, rowCount)
+	for index, value := range models {
+		rows = append(rows, value)
+		for _, alias := range infos[index].Aliases {
+			value.ID = alias
+			value.Specification.ModelID = alias
+			rows = append(rows, value)
 		}
 	}
-	sort.Slice(rows, func(i, j int) bool { return rows[i].id < rows[j].id })
+	sort.Slice(rows, func(i, j int) bool { return rows[i].ID < rows[j].ID })
 	return rows, nil
 }
 
-func addMinimumRow(total *int64, count *int, id, name string, extra, limit int64) bool {
-	rowSize := minimumModelSize(id, name) + extra
-	if *count > 0 {
-		rowSize++
+func preflight(infos []catalog.ModelInfo, limit int64) (int, error) {
+	minimumSize := int64(len(`{"models":[]}`))
+	if minimumSize > limit || len(infos) > MaxModelRows {
+		return 0, errResponseLimit
 	}
-	if rowSize > limit-*total {
-		return false
-	}
-	*total += rowSize
-	*count++
-	return true
-}
-
-func minimumModelSize(id, name string) int64 {
-	return int64(len(`{"id":`)+len(`,"name":`)+len(`,"specification":{"specificationVersion":"v4","provider":"grafana","modelId":`)+len(`}}`)) +
-		jsonStringSize(id)*2 + jsonStringSize(name)
-}
-
-func configuredSize(info catalog.ModelInfo) int64 {
-	size := int64(len(`,"gateway":{"canonicalModelId":`)+len(`,"aliases":[]`)+len(`,"candidates":[]}`)) + jsonStringSize(info.ID)
-	for i, alias := range info.Aliases {
-		if i > 0 {
-			size++
+	rowCount := 0
+	for _, info := range infos {
+		if len(info.Aliases) > MaxAliases || len(info.Candidates) > MaxCandidates {
+			return 0, errResponseLimit
 		}
-		size += jsonStringSize(alias)
-	}
-	for i, candidate := range info.Candidates {
-		if i > 0 {
-			size++
+		count := 1 + len(info.Aliases)
+		if count > MaxModelRows-rowCount {
+			return 0, errResponseLimit
 		}
-		size += int64(len(`{"providerInstance":`)+len(`,"provider":`)+len(`,"modelId":`)+len(`}`)) + jsonStringSize(candidate.ProviderInstance) + jsonStringSize(candidate.Provider) + jsonStringSize(candidate.ModelID)
-	}
-	return size
-}
-
-func jsonStringSize(value string) int64 {
-	size := int64(2)
-	for index := 0; index < len(value); {
-		character := value[index]
-		switch character {
-		case '"', '\\', '\b', '\f', '\n', '\r', '\t':
-			size += 2
-			index++
-		default:
-			if character < 0x20 {
-				size += 6
-				index++
-				continue
+		for _, value := range []string{info.ID, info.Name, info.Description} {
+			if len(value) > MaxStringBytes {
+				return 0, errResponseLimit
 			}
-			_, width := utf8.DecodeRuneInString(value[index:])
-			size += int64(width)
-			index += width
 		}
+		commonSize := int64(len(info.Name) + len(info.Description))
+		idSize := int64(2 * len(info.ID))
+		if len(info.Candidates) != 0 {
+			commonSize += int64(len(info.ID))
+		}
+		for _, alias := range info.Aliases {
+			if len(alias) > MaxStringBytes {
+				return 0, errResponseLimit
+			}
+			idSize += int64(2 * len(alias))
+			if len(info.Candidates) != 0 {
+				commonSize += int64(len(alias))
+			}
+		}
+		for _, candidate := range info.Candidates {
+			for _, value := range []string{candidate.ProviderInstance, candidate.Provider, candidate.ModelID} {
+				if len(value) > MaxStringBytes {
+					return 0, errResponseLimit
+				}
+				commonSize += int64(len(value))
+			}
+		}
+		groupSize := commonSize*int64(count) + idSize
+		if groupSize > limit-minimumSize {
+			return 0, errResponseLimit
+		}
+		minimumSize += groupSize
+		rowCount += count
 	}
-	return size
+	return rowCount, nil
 }
 
-func discoveryModel(id, name, description string) model {
-	return model{
-		ID:          id,
-		Name:        name,
-		Description: description,
+func addPublicID(seen map[string]struct{}, id string) error {
+	if !validPublicID(id) {
+		return fmt.Errorf("gateway discovery: invalid public ID")
+	}
+	if _, duplicate := seen[id]; duplicate {
+		return fmt.Errorf("gateway discovery: duplicate public ID")
+	}
+	seen[id] = struct{}{}
+	return nil
+}
+
+func discoveryModel(info catalog.ModelInfo) model {
+	value := model{
+		ID:          info.ID,
+		Name:        info.Name,
+		Description: info.Description,
 		Specification: specification{
 			SpecificationVersion: "v4",
 			Provider:             "grafana",
-			ModelID:              id,
+			ModelID:              info.ID,
 		},
 	}
+	if len(info.Candidates) != 0 {
+		aliases := info.Aliases
+		if aliases == nil {
+			aliases = []string{}
+		}
+		candidates := make([]configuredCandidate, len(info.Candidates))
+		for index, candidate := range info.Candidates {
+			candidates[index] = configuredCandidate{ProviderInstance: candidate.ProviderInstance, Provider: candidate.Provider, ModelID: candidate.ModelID}
+		}
+		value.Gateway = &configuredRoute{CanonicalModelID: info.ID, Aliases: aliases, Candidates: candidates}
+	}
+	return value
+}
+
+func encodeModel(value model) ([]byte, error) {
+	var buffer bytes.Buffer
+	encoder := json.NewEncoder(&buffer)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(value); err != nil {
+		return nil, fmt.Errorf("gateway discovery: encoding model: %w", err)
+	}
+	return bytes.TrimSuffix(buffer.Bytes(), []byte("\n")), nil
 }
 
 func validString(value string) bool {
@@ -271,146 +305,4 @@ func validPublicID(value string) bool {
 
 func isASCIIAlphanumeric(value byte) bool {
 	return (value >= 'a' && value <= 'z') || (value >= 'A' && value <= 'Z') || (value >= '0' && value <= '9')
-}
-
-func encodeModel(buffer *boundedBuffer, value model) {
-	buffer.append(`{"id":`)
-	buffer.appendJSONString(value.ID)
-	buffer.append(`,"name":`)
-	buffer.appendJSONString(value.Name)
-	if value.Description != "" {
-		buffer.append(`,"description":`)
-		buffer.appendJSONString(value.Description)
-	}
-	buffer.append(`,"specification":{"specificationVersion":`)
-	buffer.appendJSONString(value.Specification.SpecificationVersion)
-	buffer.append(`,"provider":`)
-	buffer.appendJSONString(value.Specification.Provider)
-	buffer.append(`,"modelId":`)
-	buffer.appendJSONString(value.Specification.ModelID)
-	buffer.append(`}`)
-	if value.Gateway != nil {
-		encodeConfiguredRoute(buffer, value.Gateway)
-	}
-	buffer.append(`}`)
-}
-
-func encodeConfiguredRoute(buffer *boundedBuffer, route *configuredRoute) {
-	buffer.append(`,"gateway":{"canonicalModelId":`)
-	buffer.appendJSONString(route.CanonicalModelID)
-	buffer.append(`,"aliases":[`)
-	for i, alias := range route.Aliases {
-		if i > 0 {
-			buffer.append(",")
-		}
-		buffer.appendJSONString(alias)
-	}
-	buffer.append(`],"candidates":[`)
-	for i, candidate := range route.Candidates {
-		if i > 0 {
-			buffer.append(",")
-		}
-		buffer.append(`{"providerInstance":`)
-		buffer.appendJSONString(candidate.ProviderInstance)
-		buffer.append(`,"provider":`)
-		buffer.appendJSONString(candidate.Provider)
-		buffer.append(`,"modelId":`)
-		buffer.appendJSONString(candidate.ModelID)
-		buffer.append(`}`)
-	}
-	buffer.append(`]}`)
-}
-
-type boundedBuffer struct {
-	data     []byte
-	limit    int64
-	overflow bool
-	invalid  bool
-}
-
-func newBoundedBuffer(limit int64) boundedBuffer {
-	capacity := 256
-	if limit < int64(capacity) {
-		capacity = int(limit)
-	}
-	return boundedBuffer{data: make([]byte, 0, capacity), limit: limit}
-}
-
-func (buffer *boundedBuffer) append(value string) {
-	if buffer.overflow || buffer.invalid {
-		return
-	}
-	remaining := buffer.limit - int64(len(buffer.data))
-	if remaining < 0 {
-		buffer.overflow = true
-		return
-	}
-	if int64(len(value)) <= remaining {
-		buffer.data = append(buffer.data, value...)
-		return
-	}
-	buffer.data = append(buffer.data, value[:remaining]...)
-	buffer.overflow = true
-}
-
-func (buffer *boundedBuffer) appendBytes(value []byte) {
-	if buffer.overflow || buffer.invalid {
-		return
-	}
-	remaining := buffer.limit - int64(len(buffer.data))
-	if remaining < 0 {
-		buffer.overflow = true
-		return
-	}
-	if int64(len(value)) <= remaining {
-		buffer.data = append(buffer.data, value...)
-		return
-	}
-	buffer.data = append(buffer.data, value[:remaining]...)
-	buffer.overflow = true
-}
-
-func (buffer *boundedBuffer) appendJSONString(value string) {
-	if buffer.overflow || buffer.invalid {
-		return
-	}
-	if !utf8.ValidString(value) {
-		buffer.invalid = true
-		return
-	}
-	buffer.append(`"`)
-	const hex = "0123456789abcdef"
-	for index := 0; index < len(value) && !buffer.overflow; {
-		character := value[index]
-		switch character {
-		case '"', '\\':
-			buffer.appendBytes([]byte{'\\', character})
-			index++
-		case '\b':
-			buffer.append(`\b`)
-			index++
-		case '\f':
-			buffer.append(`\f`)
-			index++
-		case '\n':
-			buffer.append(`\n`)
-			index++
-		case '\r':
-			buffer.append(`\r`)
-			index++
-		case '\t':
-			buffer.append(`\t`)
-			index++
-		default:
-			if character < 0x20 {
-				buffer.appendBytes([]byte{'\\', 'u', '0', '0', hex[character>>4], hex[character&0x0f]})
-				index++
-				continue
-			}
-			_, size := utf8.DecodeRuneInString(value[index:])
-			buffer.append(value[index : index+size])
-			index += size
-		}
-	}
-	buffer.append(`"`)
 }

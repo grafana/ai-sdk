@@ -69,6 +69,28 @@ validation passed. Final parity, module and strict OpenSpec checks were refreshe
 Review reports: `/tmp/gw324-review/r1-*.md` and `/tmp/gw324-review/r2-*.md`;
 workflow receipt: `/tmp/pi-subagents-uid-1000/async-subagent-runs/de78cb46-a1bf-42f0-8502-dabaf31ec6f6/workflow-receipt.json`.
 
+## PR feedback cleanup
+
+Merged the eight added Go test files into existing config, discovery, process,
+catalog and client suites. Candidate copying now extends the existing static and
+registry tests; shared config fixtures and existing settings-default assertions
+replace redundant setup/coverage. The separate TS suite tests the new companion.
+
+Replaced discovery's handwritten string/route encoder and bounded-buffer state
+with typed JSON projection and per-row `encoding/json`. Raw collection/string
+preflight and exact encoded-size checks still precede alias expansion; assembly
+independently checks the final byte budget before HTTP success. Standard JSON
+escaping preserves string values, including line separators, and its actual bytes
+count toward the limit. Moved discovery limits/startup validation into the handler.
+Rewrote both new guide sections around model selection, provider choices and
+large-catalog handling; evidence limitations remain in this record and PARITY.md.
+
+After cleanup, Gateway tests, Grafana race/vet, catalog/config/discovery/process
+race checks, ProviderWire typecheck/schema/client tests, all 41 command tests,
+parity, lint/docs/build/vet and all 83 strict main-spec validations passed.
+Bounded discovery fuzzing passed with 99,444 executions. Logs:
+`/tmp/gw324-cleanup-{go,parity,quality}.log`.
+
 ## Spec synchronization and archive
 
 Synced five added configured-discovery requirements and nine modified requirements

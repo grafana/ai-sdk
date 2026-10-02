@@ -46,12 +46,13 @@ environment.
 
 ## Discover and select public models
 
-`client.ListModels(ctx)` returns public model IDs, names, optional descriptions,
-and their specification identifiers. Aliases remain ordinary independent rows
-in server order. When the server supplies configured-route facts, the optional
-`ModelInfo.Gateway` retains the canonical public ID, configured aliases and ordered
-invocation candidates. The client neither caches this catalog nor infers missing
-facts. An older server or a generic catalog may omit the extension:
+Use `client.ListModels(ctx)` to build a model picker or find an ID to pass to
+`client.LanguageModel(id)`. It returns model names, descriptions and public IDs;
+aliases are valid selection IDs too.
+
+When available, `ModelInfo.Gateway` also tells you which providers and models are
+configured behind each public ID. Check for nil because some catalogs provide
+only public names:
 
 ```go
 rows, err := client.ListModels(ctx)
@@ -69,16 +70,16 @@ for _, row := range rows {
 }
 ```
 
-These are authorized configuration facts, not the provider that won a request,
-a live inventory or a model's response-derived identity. Provider instances are
-configuration keys; provider names are their effective configured namespaces;
-model IDs are configured invocation destinations. Direct routes have one
-candidate; fallback routes list primary first, then fallback order.
+Use the candidates to explain provider choices to users, not to identify which
+provider served a previous request. Direct models have one candidate. Models
+with fallback list the primary first, followed by alternatives in configured
+order. Listing does not call those providers or check their availability.
+Continue using the public row ID when making requests.
 
 ### Access from TypeScript
 
-The registered `@ai-sdk/gateway` discovery method `getAvailableModels()` normalizes
-rows and discards `gateway`. For configured facts, copy the tested
+`@ai-sdk/gateway`'s `getAvailableModels()` returns public model information but
+omits configured provider choices. To read those choices, copy the
 [`configured-discovery.ts` helper](../../ai-gateway/examples/configured-discovery.ts)
 into your application and call it separately:
 
@@ -95,36 +96,26 @@ const candidates = models[0]?.gateway?.candidates;
 
 For Grafana Cloud, select `headers: { Authorization: \`Bearer ${stackID}:${capToken}\` }`
 instead; see the [authentication guide](../guides/gateway-authentication.md).
-The helper preserves the API prefix, refuses redirects and never discovers
-credentials. It returns optional typed facts without changing stock provider
-normalization or introducing a routing API. Use HTTPS outside local tests. An
-injected `fetch` is caller-owned and must honor standard redirect and abort options.
+Run this on your server and use HTTPS. Pass the same API-prefix URL and credentials
+as your Gateway client; the helper refuses redirects. If you supply a custom
+`fetch`, it must honor redirect and cancellation options. Candidate information
+may be absent, so keep the optional access shown above.
 
-### Atomic discovery budgets and visibility
+### Handle large catalogs
 
-Server and clients validate the complete catalog before returning it, including
-canonical/alias agreement. Malformed or oversized documents yield no partial
-rows. Both clients independently bound expanded rows to 1,024, aliases to 128 per
-route, candidates to 16 per route and recognized strings to 2,048 UTF-8 bytes;
-public IDs retain their stricter 1–128 ASCII-byte grammar.
+Discovery returns a complete catalog or an error, never a partial list. The Go
+client accepts up to 4 MiB by default; adjust its discovery limit through
+`grafana.DefaultLimits()` if needed. The TypeScript helper also accepts up to
+4 MiB; use `maxBytes` to set a smaller limit.
 
-The command's configurable `discovery.response-bytes` default remains 1 MiB.
-Go's independently configurable discovery-byte default is 4 MiB; the companion
-helper defaults to and cannot exceed 4 MiB (`maxBytes` can lower it). Larger client
-allowances do not increase server capacity. Complete configured projection must
-fit the server budget before readiness. Runtime custom catalogs fail atomically
-if their projection no longer fits.
+The Gateway command defaults to a 1 MiB discovery response budget. If the server
+rejects a large catalog, increasing your client limit alone will not help. Ask
+your Gateway operator to reduce the catalog or increase the server's
+`discovery.response-bytes` setting. Provider credentials are never included in
+discovery; your deployment controls who may see the configured model list.
 
-Discovery includes authorized provider/model facts but never credentials,
-credential-source references or unrelated provider/account configuration. Names
-and descriptions remain ordinary application text, even when they look like keys.
-The command currently shares one static configured catalog among accepted
-identities. Scoped-decorator tests and the dummy Cloud edge establish only local
-visibility/authentication composition: they do not prove customer-account model
-construction, deployed CAP validation or BYOK tenant isolation.
-
-Use the returned ID with `client.LanguageModel(id)`, or register the client as a
-`registry.Provider`; see [Fallback and registry](../guides/fallback-and-registry.md).
+To compose the client with other providers, register it as a `registry.Provider`;
+see [Fallback and registry](../guides/fallback-and-registry.md).
 
 ## Bound work and handle errors
 

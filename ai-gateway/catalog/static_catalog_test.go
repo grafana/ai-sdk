@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"regexp"
+	"sync"
 	"testing"
 
 	"github.com/grafana/ai-sdk/provider"
@@ -205,12 +206,15 @@ func TestStaticCatalog_Empty(t *testing.T) {
 func TestStaticCatalog_DefensiveCopying(t *testing.T) {
 	aliases := []string{"default"}
 	capabilities := []ModelCapability{"tools"}
+	candidates := []ConfiguredCandidate{{ProviderInstance: "primary", Provider: "anthropic", ModelID: "configured-not-reported"}, {ProviderInstance: "backup", Provider: "openai", ModelID: "backup"}}
+	expectedCandidates := append([]ConfiguredCandidate(nil), candidates...)
 	entries := []StaticEntry{{
 		Info: ModelInfo{
 			ID:           "balanced",
 			Name:         "Balanced",
 			Aliases:      aliases,
 			Capabilities: capabilities,
+			Candidates:   candidates,
 		},
 		Model: &catalogTestModel{modelID: "native"},
 	}}
@@ -222,6 +226,7 @@ func TestStaticCatalog_DefensiveCopying(t *testing.T) {
 	entries[0].Info.Name = "Changed"
 	aliases[0] = "changed-alias"
 	capabilities[0] = "changed-capability"
+	candidates[0].ModelID = "changed-model"
 
 	models, err := catalog.ListModels(context.Background())
 	require.NoError(t, err)
@@ -231,11 +236,13 @@ func TestStaticCatalog_DefensiveCopying(t *testing.T) {
 		Name:         "Balanced",
 		Aliases:      []string{"default"},
 		Capabilities: []ModelCapability{"tools"},
+		Candidates:   expectedCandidates,
 	}, models[0])
 
 	models[0].ID = "mutated"
 	models[0].Aliases[0] = "mutated-alias"
 	models[0].Capabilities[0] = "mutated-capability"
+	models[0].Candidates[0].ProviderInstance = "mutated-instance"
 	models = append(models, ModelInfo{ID: "extra"})
 	assert.Len(t, models, 2)
 
@@ -246,6 +253,7 @@ func TestStaticCatalog_DefensiveCopying(t *testing.T) {
 		Name:         "Balanced",
 		Aliases:      []string{"default"},
 		Capabilities: []ModelCapability{"tools"},
+		Candidates:   expectedCandidates,
 	}}, again)
 
 	resolved, err := catalog.ResolveModel(context.Background(), "default")
@@ -280,4 +288,38 @@ func TestUnknownModelError_Unwrap(t *testing.T) {
 	require.True(t, errors.As(err, &target))
 	assert.Same(t, err, target)
 	assert.Equal(t, "requested", target.ModelID)
+}
+
+func TestCatalog_ConcurrentListing(t *testing.T) {
+	for _, kind := range []string{"static", "registry"} {
+		t.Run(kind, func(t *testing.T) {
+			info := ModelInfo{ID: "public", Aliases: []string{"alias"}, Candidates: []ConfiguredCandidate{{ProviderInstance: "primary", Provider: "anthropic", ModelID: "configured-not-reported"}, {ProviderInstance: "backup", Provider: "openai", ModelID: "backup"}}}
+			expected := append([]ConfiguredCandidate(nil), info.Candidates...)
+			model := &catalogTestModel{modelID: "response-not-configured"}
+			var created Catalog
+			var err error
+			if kind == "static" {
+				created, err = NewStatic([]StaticEntry{{Info: info, Model: model}})
+			} else {
+				created, err = NewRegistry(&catalogTestProvider{resolve: func(string) (provider.LanguageModel, error) { return model, nil }}, []RegistryRoute{{Info: info, ProviderModelID: "registry-destination"}})
+			}
+			require.NoError(t, err)
+			var wg sync.WaitGroup
+			for range 8 {
+				wg.Go(func() {
+					for range 10 {
+						listed, err := created.ListModels(context.Background())
+						if !assert.NoError(t, err) || !assert.Len(t, listed, 1) {
+							return
+						}
+						assert.Equal(t, expected, listed[0].Candidates)
+						assert.Equal(t, []string{"alias"}, listed[0].Aliases)
+						listed[0].Candidates[0].ModelID = "local mutation"
+						listed[0].Aliases[0] = "local alias mutation"
+					}
+				})
+			}
+			wg.Wait()
+		})
+	}
 }
