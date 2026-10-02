@@ -79,31 +79,25 @@ Clients must not bypass the proxy and send those credentials directly to
 the application's `cloud-gateway` listener. Keep provider credentials in server-side
 configuration; never place them in browser code or logs.
 
-Supported client calls include `getAvailableModels`, `doGenerate`, and
-`doStream`. Calls to `doGenerate` and `doStream` must set
-`maxOutputTokens` explicitly.
+Discover models with `getAvailableModels`, then call `doGenerate` or `doStream`
+with an explicit `maxOutputTokens` limit. The shared authentication guide includes
+Go and TypeScript examples for generating a response.
 
-`generateText` and `streamText` both set `toolChoice` to `auto`; unary,
-streaming and configured-fallback routes preserve supported choices. Equivalent
-high-level Go `StreamText` and registered TypeScript `streamText` text-only calls
-are tested through the dummy edge with supported options. Ordinary body headers
-and scoped native options are mapped on direct and fallback routes; protected
-header overrides remain rejected. High-level unary TypeScript tests use an
-explicit host user-agent adaptation, not unrestricted header acceptance. Default
-unary token limits remain a compatibility gap.
+For streaming text, use Go `StreamText` or TypeScript `streamText` and set an
+explicit output-token limit. For TypeScript non-streaming calls, use `doGenerate`;
+`generateText` does not work out of the box because its default User-Agent header
+is rejected as a request-level override. Do not rely on default output-token limits.
 
-Both clients also exercise mapped local-function, file and reasoning requests
-through direct and fallback routes with fake native providers. Native acceptance
-remains backend-specific. These tests do not activate provider-executed/MCP
-codecs, establish live Cloud acceptance or prove full output-derived continuation.
-See [Gateway behavior](../../docs/providers/grafana-gateway.md#bound-work-and-handle-errors)
-for first-part commitment and paid-generation risk.
+Function tools, file inputs, and reasoning can be used with or without configured
+fallback, provided the selected models support them. Your application runs the
+functions, not the Gateway. See the [Gateway client guide](../../docs/providers/grafana-gateway.md)
+for tool workflows, model requirements, and fallback costs.
 
 Bring-your-own-key (BYOK) requests and native OpenAI/Anthropic API adapters
 are not supported.
 
-Local integration tests use a dummy proxy and fake provider responses.
-The test proxy replaces `X-Scope-OrgID` with its stack assertion and strips other client identity headers and credentials.
-These tests cover application behavior, not a deployed proxy's authentication or network isolation.
+Before exposing the API, verify that your deployed proxy rejects unauthenticated
+requests and requests without the required stack permissions, replaces identity
+headers, and prevents clients from reaching the API listener directly.
 
 [Up: Grafana AI Gateway](../README.md)
