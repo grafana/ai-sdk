@@ -15,22 +15,23 @@ public invalid-request error for unsupported calls.
 
 ## Function tools
 
-Direct routes support unary client-executed function tools. Definitions preserve
+Direct and configured-fallback routes support unary client-executed function tools. Definitions preserve
 `strict: false`, examples, object schemas, and ordinary provider options;
 Gateway-reserved option namespaces remain rejected. History accepts assistant
 calls and text, JSON (including null), error-text, error-JSON, and content
 results with text or supported file entries, preserving selected empty values.
 The application executes tools and supplies call/result history on a later independent request.
 The Gateway never executes a tool. Provider-executed/dynamic tools, approvals,
-preliminary results, custom tool-result content, generated media responses, and
-reasoning-file input remain unsupported. Logical telemetry
+preliminary results, custom tool-result content and generated media responses
+remain unsupported. Supported reasoning text/file inputs retain their mapped
+values; native acceptance depends on the backend. Logical telemetry
 removes tool-bearing definitions, choices, inputs and outputs before export.
 
-Streaming direct routes additionally support input start/delta/end, calls and
-matching non-null JSON results. IDs, ordering and empty deltas are preserved.
-Vercel and Go clients own the multi-step orchestration; each HTTP generation
-remains stateless. Ordered fallback routes continue rejecting tool definitions,
-choice and history before any physical invocation.
+Streaming direct and configured-fallback routes additionally support input
+start/delta/end, calls and matching non-null JSON results. IDs, ordering and empty
+deltas are preserved. Vercel and Go clients own the multi-step orchestration;
+each HTTP generation remains stateless and each continuation restarts at primary.
+Fallback never replays selected tool output or executes application functions.
 
 ## Configure provider-specific settings
 
@@ -172,7 +173,7 @@ see [Fallback and registry](../guides/fallback-and-registry.md).
 
 ## Bound work and handle errors
 
-Operators can configure ordered text fallback using direct provider references:
+Operators can configure ordered fallback using direct provider references:
 
 ```yaml
 models:
@@ -190,14 +191,23 @@ Both provider instances must be declared in `providers` using the existing
 environment-variable credential references. Omitting `fallback` creates a direct
 route; removing it restores direct routing without changing the public model ID.
 Candidates retain configuration order and each new call starts at primary.
-Models without fallback accept supported file inputs. Models configured with
-fallback are text-only: files, nonempty tools, tool-call/result history,
-active provider options, and tool choices other than plain auto are rejected
-before any candidate, including primary, runs. Empty message-level provider
-option objects are accepted. A stream's first part commits its candidate,
-including an error part. No later failure
-restarts on another provider. Client retries can multiply physical attempts;
-the Gateway disables native-provider retries.
+Both direct and fallback routes accept currently mapped function definitions,
+choices and history, file inputs, reasoning controls/content, ordinary headers
+and scoped provider options, including empty and active namespaces. Each attempted
+candidate receives the same mapped options. Native adapters interpret their own
+namespaces; the Gateway does not translate settings or restrict requests to a
+candidate-wide option intersection. A mapped request is not a guarantee that every
+backend accepts it. Strict unsupported-feature and credential/account/execution
+protections still apply; provider-tool/MCP codecs and BYOK are not enabled.
+
+A successful unary result or a stream's first provider part commits its candidate,
+including stream-start or an error part. Later provider, encoding or lifecycle
+failures never restart on another provider. A failed attempt may already have
+performed paid provider work; pre-commit failover is not an exactly-once provider
+guarantee. Client retries can multiply physical attempts; the Gateway disables
+native-provider retries. Response metadata and full output-derived continuation
+remain separate [#280](https://github.com/grafana/ai-sdk/issues/280) work; mapped
+history forwarding alone does not establish that coverage.
 
 Private physical attribution writes newline-delimited `gateway_physical_attempt`
 records to the existing operator stderr destination through a separate bounded
@@ -245,8 +255,9 @@ response's bounded raw HTTP body remains available in `Response.Body`.
 
 Configured headers are applied before call headers, then client-owned auth,
 content negotiation, and model protocol headers. Call headers also remain in
-the request body, matching the registered client; a text-only Gateway may reject
-them. See [package reference](https://pkg.go.dev/github.com/grafana/ai-sdk/providers/grafana)
+the request body, matching the registered client. Ordinary mapped headers reach
+native adapters on direct and fallback routes; protected header overrides remain
+rejected. See [package reference](https://pkg.go.dev/github.com/grafana/ai-sdk/providers/grafana)
 for configuration and result types.
 
 ---

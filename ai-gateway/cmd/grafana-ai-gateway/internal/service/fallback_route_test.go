@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/grafana/ai-sdk/ai-gateway/catalog"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/config"
 	"github.com/grafana/ai-sdk/provider"
 	anthropicprovider "github.com/grafana/ai-sdk/providers/anthropic"
@@ -150,74 +149,6 @@ func TestFallbackRoute_EmptyMessageOptionsPreserveTextFailover(t *testing.T) {
 			assert.Equal(t, []string{"backend-primary", "backend-secondary"}, calls)
 		})
 	}
-}
-
-func TestFallbackRoute_RejectsEffectsBeforeAnyCandidate(t *testing.T) {
-	for _, opts := range []provider.CallOptions{
-		{Tools: []provider.Tool{{Type: provider.ToolTypeFunction, Name: "secret"}}},
-		{ToolChoice: &provider.ToolChoice{Type: provider.ToolChoiceNone}},
-		{ToolChoice: &provider.ToolChoice{Type: provider.ToolChoiceRequired}},
-		{ToolChoice: &provider.ToolChoice{Type: provider.ToolChoiceTool, ToolName: "f"}},
-		{ToolChoice: &provider.ToolChoice{Type: provider.ToolChoiceType("future")}},
-		{ToolChoice: &provider.ToolChoice{Type: provider.ToolChoiceAuto, ToolName: "f"}},
-		{Headers: map[string]string{"x-test": "value"}},
-		{IncludeRawChunks: true},
-		{ResponseFormat: &provider.ResponseFormat{Type: provider.ResponseFormatJSON}},
-		{Prompt: []provider.Message{provider.NewAssistantMessage(provider.ContentPart{Type: provider.ContentPartTypeToolCall})}},
-		{Prompt: []provider.Message{provider.NewToolMessage()}},
-		{Prompt: []provider.Message{provider.NewUserMessage(provider.ContentPart{Type: "future-effect"})}},
-		{ProviderOptions: provider.ProviderOptions{"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: []byte(`{"secret":true}`)}}},
-		fallbackMessageOptions("vendor", `{"flag":false}`),
-		fallbackMessageOptions("vendor", `{"value":null}`),
-		fallbackMessageOptions("vendor", `{"nested":{}}`),
-		fallbackMessageOptions("grafana", `{}`),
-		fallbackMessageOptions("vendor", `{}`, provider.FilePart("text/plain", provider.TextDataContent(""))),
-		fallbackMessageOptions("vendor", `null`),
-		fallbackMessageOptions("vendor", `[]`),
-		fallbackMessageOptions("vendor", `{"flag":true}`),
-		fallbackMessageOptions("vendor", `{}`, provider.ToolCallPart("id", "tool", nil)),
-		fallbackMessageOptions("vendor", `{}`, provider.ReasoningPart("private")),
-		{Prompt: []provider.Message{func() provider.Message {
-			m := provider.UserText("hello")
-			m.ProviderOptions = provider.ProviderOptions{"vendor": provider.RawProviderOption{Raw: []byte(`{}`)}}
-			m.Content[0].ProviderOptions = provider.ProviderOptions{"vendor": provider.RawProviderOption{Raw: []byte(`{}`)}}
-			return m
-		}()}},
-		fallbackMessageOptions("vendor", `{}`, provider.FilePart("image/png", provider.BytesDataContent(nil))),
-		fallbackMessageOptions("vendor", `{}`, provider.ToolResultPart("c", "tool", &provider.ToolResultOutput{Type: provider.ToolOutputText})),
-	} {
-		lower := &observabilityTestModel{
-			generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
-				t.Fatal("candidate invoked")
-				return nil, nil
-			},
-			stream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
-				t.Fatal("candidate invoked")
-				return nil, nil
-			},
-		}
-		guarded := fallbackTextModel{LanguageModel: lower}
-		variants := []provider.CallOptions{opts}
-		if opts.ToolChoice == nil {
-			opts.ToolChoice = &provider.ToolChoice{Type: provider.ToolChoiceAuto}
-			variants = append(variants, opts)
-		}
-		for _, variant := range variants {
-			_, err := guarded.DoGenerate(context.Background(), variant)
-			require.ErrorIs(t, err, catalog.ErrUnsupportedRequest)
-			_, err = guarded.DoStream(context.Background(), variant)
-			require.ErrorIs(t, err, catalog.ErrUnsupportedRequest)
-		}
-	}
-}
-
-func fallbackMessageOptions(namespace, raw string, parts ...provider.ContentPart) provider.CallOptions {
-	if len(parts) == 0 {
-		parts = []provider.ContentPart{provider.TextPart("hello")}
-	}
-	message := provider.NewUserMessage(parts...)
-	message.ProviderOptions = provider.ProviderOptions{namespace: provider.RawProviderOption{Key: namespace, Raw: []byte(raw)}}
-	return provider.CallOptions{Prompt: []provider.Message{message}}
 }
 
 func fallbackCatalogFile() config.File {

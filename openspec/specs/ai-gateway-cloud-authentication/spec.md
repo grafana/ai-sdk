@@ -236,7 +236,9 @@ Inbound credentials and assertions MUST NOT become provider credentials or appea
 
 - **WHEN** command coverage is recorded after implementation
 - **THEN** the parity map identifies the registered baseline, low-level calls with explicit output-token limits, and the proven high-level text-only streaming cases
-- **AND** it records high-level TypeScript `generateText` body headers, default unary token limits, and effectful fallback as remaining compatibility work
+- **AND** it records high-level TypeScript `generateText` body headers and default unary token limits as remaining compatibility work
+- **AND** it SHALL distinguish newly proved configured-fallback coverage for mapped local-function tools/history/choices, files and reasoning from still-missing provider-executed/MCP codecs and actual Cloud/BYOK support, rather than list all effectful fallback as remaining work
+- **AND** configured-route and dummy-edge evidence SHALL NOT establish production CAP verification, deployed access-policy enforcement, request-scoped BYOK or account-mode support beyond the tested boundary
 - **AND** fake-provider fixtures are not presented as recorded provider conformance evidence
 
 #### Scenario: High-level text-only streaming through the edge
