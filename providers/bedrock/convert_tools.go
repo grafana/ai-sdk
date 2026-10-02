@@ -68,6 +68,24 @@ func prepareTools(tools []provider.Tool, toolChoice *provider.ToolChoice, modelI
 		return res, nil
 	}
 
+	// Models that reject forced tool use get auto, and a named-tool choice
+	// sends only that tool. Mirrors upstream amazon-bedrock-prepare-tools.ts
+	// (@ai-sdk/amazon-bedrock 5.0.99).
+	if isAnthropic && rejectsForcedToolUse(modelID) && toolChoice != nil &&
+		(toolChoice.Type == provider.ToolChoiceRequired || toolChoice.Type == provider.ToolChoiceTool) {
+		res.warnings = append(res.warnings, forcedToolChoiceWarning(*toolChoice))
+		if toolChoice.Type == provider.ToolChoiceTool {
+			named := supported[:0:0]
+			for _, t := range supported {
+				if t.Name == toolChoice.ToolName {
+					named = append(named, t)
+				}
+			}
+			supported = named
+		}
+		toolChoice = &provider.ToolChoice{Type: provider.ToolChoiceAuto}
+	}
+
 	providerTools := make([]provider.Tool, 0)
 	functionTools := make([]provider.Tool, 0)
 	for _, t := range supported {
@@ -216,4 +234,14 @@ func jsonOrEmptyObject(raw json.RawMessage) json.RawMessage {
 		return json.RawMessage(`{"type":"object","properties":{}}`)
 	}
 	return raw
+}
+
+// forcedToolChoiceWarning reports a required or named tool choice sent as auto
+// to a model that rejects forced tool use.
+func forcedToolChoiceWarning(tc provider.ToolChoice) provider.Warning {
+	details := "toolChoice 'required' is not supported by this model because it rejects forced tool use. Using 'auto' instead. Instruct the model to use a tool in the prompt and verify that a tool call was made."
+	if tc.Type == provider.ToolChoiceTool {
+		details = fmt.Sprintf("toolChoice 'tool' is not supported by this model because it rejects forced tool use. Only the '%s' tool is sent with 'auto' tool choice. Instruct the model to use the tool in the prompt and verify that a tool call was made.", tc.ToolName)
+	}
+	return provider.Warning{Type: provider.WarnUnsupported, Feature: "toolChoice", Details: details}
 }
