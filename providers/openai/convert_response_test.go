@@ -87,7 +87,8 @@ func TestConvertResponse_TextAndURLCitation(t *testing.T) {
 	assert.Equal(t, provider.ContentSource, res.Content[1].Type)
 	assert.Equal(t, provider.SourceTypeURL, res.Content[1].SourceType)
 	assert.Equal(t, "https://x.com", res.Content[1].URL)
-	assert.Equal(t, "X", res.Content[1].Text)
+	assert.Equal(t, "X", res.Content[1].Title)
+	assert.Empty(t, res.Content[1].Text, "a source carries its title in Title, not in the text field")
 	assert.Equal(t, provider.FinishReasonStop, res.FinishReason.Unified)
 }
 

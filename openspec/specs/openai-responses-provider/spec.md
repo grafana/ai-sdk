@@ -534,7 +534,10 @@ inputs SHALL preserve optional execution constraints while translating API
 snake_case fields to the provider content model's camelCase fields so later
 turns can reconstruct equivalent request items. The conversion SHALL map usage
 and finish reason, set provider metadata (`responseId`, logprobs,
-`serviceTier`), and carry warnings. When logprobs were requested and an output-text
+`serviceTier`), and carry warnings. Annotation-derived `source` parts SHALL carry
+their display text in the canonical `Title` field: a URL citation's title, and
+a document's filename, or its file id when the annotation carries no filename.
+The legacy `Text` field SHALL NOT carry a source title. When logprobs were requested and an output-text
 content part returns a non-null logprobs array, including an empty array,
 `ProviderMetadata["openai"].logprobs` SHALL contain one outer entry for that
 content part in response order. Each entry SHALL preserve token order and contain
@@ -557,7 +560,12 @@ entries, and unrequested logprobs SHALL NOT add a `logprobs` metadata field.
 
 #### Scenario: Text and url citation
 - **WHEN** the response contains a `message` item with text and a `url_citation` annotation
-- **THEN** the result contains a text content part and a `source` content part of type `url`
+- **THEN** the result contains a text content part and a `source` content part of type `url` whose `Title` is the annotation title and whose `Text` is empty
+
+#### Scenario: Document annotations carry display titles
+- **WHEN** the response contains `file_citation`, `container_file_citation` or `file_path` annotations
+- **THEN** each `source` content part is of type `document` with `Title` and `Filename` taken from the annotation filename, or from the file id for `file_path`, alongside its media type and provider metadata
+- **AND** no `source` content part carries its title in the `Text` field
 
 #### Scenario: Provider-executed web search
 - **WHEN** the response contains a `web_search_call` item
