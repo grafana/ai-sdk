@@ -66,6 +66,7 @@ type streamAdapter struct {
 	br                  buildResult
 	requestBody         responses.ResponseNewParams
 	response            *http.Response
+	responseHeaders     map[string]string
 	generateID          func() string
 	providerOptionsName string // response-metadata namespace consumed on later calls
 	providerIdentity    string // model identity used for response attribution
@@ -93,11 +94,16 @@ func newStreamAdapter(warnings []provider.Warning, br buildResult, requestBody r
 	if providerOptionsName == "" {
 		providerOptionsName = providerIdentity
 	}
+	var responseHeaders map[string]string
+	if response != nil {
+		responseHeaders = flattenHeaders(response.Header)
+	}
 	return &streamAdapter{
 		warnings:                  warnings,
 		br:                        br,
 		requestBody:               requestBody,
 		response:                  response,
+		responseHeaders:           responseHeaders,
 		generateID:                generateID,
 		providerOptionsName:       providerOptionsName,
 		providerIdentity:          providerIdentity,
@@ -119,11 +125,12 @@ func (a *streamAdapter) handleEvent(event responses.ResponseStreamEventUnion, ch
 	case responses.ResponseCreatedEvent:
 		a.responseID = e.Response.ID
 		ch <- provider.StreamPart{
-			Type:       provider.PartResponseMeta,
-			ResponseID: e.Response.ID,
-			ModelID:    e.Response.Model,
-			Provider:   a.providerIdentity,
-			Timestamp:  time.Unix(int64(e.Response.CreatedAt), 0).UTC(),
+			Type:            provider.PartResponseMeta,
+			ResponseID:      e.Response.ID,
+			ModelID:         e.Response.Model,
+			Provider:        a.providerIdentity,
+			Timestamp:       time.Unix(int64(e.Response.CreatedAt), 0).UTC(),
+			ResponseHeaders: a.responseHeaders,
 		}
 
 	case responses.ResponseOutputItemAddedEvent:

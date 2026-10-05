@@ -199,6 +199,11 @@ PRs must pass candidate-source CI. See
 [What to validate](CONTRIBUTING.md#what-to-validate) for PR checks, Go module
 releases, and Gateway image checks.
 
+For release intent, use the PR title rules in
+[Releases and independent modules](CONTRIBUTING.md#releases-and-independent-modules).
+Release automation remains inactive until #245; do not manually edit generated
+versions or changelogs, create tags, or publish a release while preparing a PR.
+
 ## Project Structure
 
 ```text

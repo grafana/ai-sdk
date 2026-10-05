@@ -1,6 +1,7 @@
 package openai
 
 import (
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
@@ -37,14 +38,14 @@ type buildResult struct {
 // It returns the request body, accumulated warnings, conversion metadata, and
 // an error.
 func buildParams(modelID string, opts provider.CallOptions) (responses.ResponseNewParams, []provider.Warning, buildResult, error) {
-	return buildParamsWithConfig(modelID, opts, "", true)
+	return buildParamsWithConfig(modelID, opts, "", true, "detailed")
 }
 
 func buildParamsForProvider(modelID string, opts provider.CallOptions, providerOptionsName string) (responses.ResponseNewParams, []provider.Warning, buildResult, error) {
-	return buildParamsWithConfig(modelID, opts, providerOptionsName, true)
+	return buildParamsWithConfig(modelID, opts, providerOptionsName, true, "detailed")
 }
 
-func buildParamsWithConfig(modelID string, opts provider.CallOptions, providerOptionsName string, webSearchSourcesIncludeSupported bool) (responses.ResponseNewParams, []provider.Warning, buildResult, error) {
+func buildParamsWithConfig(modelID string, opts provider.CallOptions, providerOptionsName string, webSearchSourcesIncludeSupported bool, defaultReasoningSummary string) (responses.ResponseNewParams, []provider.Warning, buildResult, error) {
 	if providerOptionsName == "" {
 		_, name, err := resolveProviderOptions(opts)
 		if err != nil {
@@ -152,7 +153,7 @@ func buildParamsWithConfig(modelID string, opts provider.CallOptions, providerOp
 	warnings = append(warnings, applyProviderOptions(&body, popts, isReasoning, caps)...)
 
 	// include auto-population + reasoning block.
-	warnings = append(warnings, applyIncludeAndReasoning(&body, popts, resolvedEffort, isReasoning, store, webSearchSourcesIncludeSupported, caps, &br)...)
+	warnings = append(warnings, applyIncludeAndReasoning(&body, popts, resolvedEffort, isReasoning, store, webSearchSourcesIncludeSupported, defaultReasoningSummary, caps, &br)...)
 
 	return body, warnings, br, nil
 }
@@ -224,6 +225,12 @@ func resolveProviderOptionsForName(opts provider.CallOptions, name string) (Open
 }
 
 func validateOpenAIResponsesOptions(options OpenAIResponsesOptions) error {
+	if len(options.ReasoningSummary) > 0 {
+		var summary *string
+		if err := json.Unmarshal(options.ReasoningSummary, &summary); err != nil {
+			return fmt.Errorf("openai: invalid reasoningSummary: %w", err)
+		}
+	}
 	switch options.ReasoningEffortUpdate {
 	case "", OpenAIReasoningEffortUpdateLow, OpenAIReasoningEffortUpdateMedium, OpenAIReasoningEffortUpdateHigh, OpenAIReasoningEffortUpdateXHigh, OpenAIReasoningEffortUpdateMax:
 	default:

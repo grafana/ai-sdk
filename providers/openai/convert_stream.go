@@ -41,6 +41,9 @@ func consumeStreamParts(items <-chan responseStreamItem, buffered []responseStre
 	ch <- provider.StreamPart{Type: provider.PartStreamStart, Warnings: warnings}
 
 	handle := func(item responseStreamItem) {
+		if item.hasRaw {
+			ch <- provider.StreamPart{Type: provider.PartRaw, RawValue: item.rawValue}
+		}
 		if item.recoverable {
 			retryable := false
 			adapter.recordStreamError("")

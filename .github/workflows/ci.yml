@@ -18,7 +18,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+      - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
         with:
           cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           version: "2026.5.4"
@@ -43,6 +43,9 @@ jobs:
       - name: Check formatting
         run: mise run fmt-check
 
+      - name: Validate release configuration
+        run: mise run release-check
+
       - name: Vet
         run: mise run vet
 
@@ -64,7 +67,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+      - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
         with:
           cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           version: "2026.5.4"
@@ -82,7 +85,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+      - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
         with:
           cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           version: "2026.5.4"
@@ -115,7 +118,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+      - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
         with:
           cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           version: "2026.5.4"
@@ -151,7 +154,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+      - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
         with:
           cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           version: "2026.5.4"
@@ -202,7 +205,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+      - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
         with:
           cache: false
           version: "2026.5.4"
@@ -299,7 +302,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+      - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
         with:
           cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           version: "2026.5.4"

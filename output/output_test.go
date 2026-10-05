@@ -302,7 +302,10 @@ func TestOutputRepairErrorClassification(t *testing.T) {
 		{"object schema", obj, `{"wrong":"value"}`},
 		{"array JSON", array, `{"elements":`},
 		{"array schema", array, `{"elements":[{"wrong":"value"}]}`},
+		{"array missing elements", array, `{}`},
+		{"array invalid elements", array, `{"elements":null}`},
 		{"choice schema", choice, `{"result":"rainy"}`},
+		{"choice missing result", choice, `{}`},
 		{"JSON syntax", JSON(), `{"name":`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -367,3 +370,84 @@ var (
 	_ aisdk.Output = (*JSONOutput)(nil)
 	_ aisdk.Output = (*TextOutput)(nil)
 )
+
+func TestChoiceOutput_ParsePartial_RequiresStringResult(t *testing.T) {
+	// A single option exposes the bug a multi-option set masks: an absent
+	// result read as the empty string prefix-matches the only option.
+	out, err := Choice("yes")
+	require.NoError(t, err)
+
+	for _, text := range []string{`{`, `{"other":`, `{"result":null,`, `{"result":null}`, `{"result":1}`, `{"other":"yes"}`, `{}`} {
+		t.Run(text, func(t *testing.T) {
+			_, ok := out.ParsePartial(text)
+			assert.False(t, ok, "no choice has been generated yet")
+		})
+	}
+
+	v, ok := out.ParsePartial(`{"result":"ye`)
+	require.True(t, ok, "a unique prefix still resolves")
+	assert.Equal(t, "yes", v)
+
+	_, ok = out.ParsePartial(`{"result":""}`)
+	assert.False(t, ok, "an empty string is not one of the options")
+}
+
+func TestChoiceOutput_ParseComplete_WrapperExtraction(t *testing.T) {
+	out, err := Choice("yes", "no")
+	require.NoError(t, err)
+
+	result, err := out.ParseComplete(`{"result":"yes","extra":true}`)
+	require.NoError(t, err, "an unrelated wrapper property is not the caller's schema")
+	assert.Equal(t, "yes", result)
+
+	for _, text := range []string{`{}`, `{"result":null}`, `{"result":1}`, `{"result":"maybe"}`, `null`, `"yes"`, `["yes"]`, `not json`} {
+		t.Run(text, func(t *testing.T) {
+			_, err := out.ParseComplete(text)
+			assert.ErrorIs(t, err, aisdk.ErrNoObjectGenerated)
+		})
+	}
+}
+
+func TestArrayOutput_ParseComplete_WrapperExtraction(t *testing.T) {
+	elemSchema := mustSchema(t, `{"type":"object","properties":{"name":{"type":"string"},"population":{"type":"integer"}},"required":["name","population"]}`)
+	out, err := Array[city](elemSchema)
+	require.NoError(t, err)
+
+	result, err := out.ParseComplete(`{"elements":[{"name":"Paris","population":2161000}],"extra":true}`)
+	require.NoError(t, err, "an unrelated wrapper property is not the caller's schema")
+	assert.Equal(t, []city{{Name: "Paris", Population: 2161000}}, result)
+
+	result, err = out.ParseComplete(`{"elements":[]}`)
+	require.NoError(t, err, "an empty array is a complete value")
+	assert.Empty(t, result)
+
+	for _, text := range []string{`{}`, `{"elements":null}`, `{"elements":{"name":"Paris"}}`, `{"elements":[{"name":"bad"}]}`, `null`, `[]`} {
+		t.Run(text, func(t *testing.T) {
+			_, err := out.ParseComplete(text)
+			assert.ErrorIs(t, err, aisdk.ErrNoObjectGenerated)
+		})
+	}
+}
+
+func TestWrappedOutputs_RequestSchemasStayStrict(t *testing.T) {
+	choice, err := Choice("yes", "no")
+	require.NoError(t, err)
+	array, err := Array[city](mustSchema(t, `{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}`))
+	require.NoError(t, err)
+
+	for _, tc := range []struct {
+		name     string
+		schema   json.RawMessage
+		required string
+	}{
+		{"choice", choice.ResponseFormat().Schema, "result"},
+		{"array", array.ResponseFormat().Schema, "elements"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var s map[string]any
+			require.NoError(t, json.Unmarshal(tc.schema, &s))
+			assert.Equal(t, false, s["additionalProperties"], "runtime extraction is permissive, the request is not")
+			assert.Equal(t, []any{tc.required}, s["required"])
+		})
+	}
+}
