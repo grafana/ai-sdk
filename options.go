@@ -87,6 +87,7 @@ type baseConfig struct {
 
 type streamConfig struct {
 	baseConfig
+	uiTools                  ToolSet
 	onChunk                  func(OnChunkState)
 	onAbort                  func(OnAbortState)
 	includeRawChunks         bool
@@ -371,7 +372,7 @@ func OnStepEnd(fn func(OnStepFinishState)) Option {
 	return OnStepFinish(fn)
 }
 
-// OnFinish sets a callback invoked once after all steps complete successfully.
+// OnFinish sets a callback invoked once after the final completed step is recorded.
 func OnFinish(fn func(OnFinishState)) Option {
 	return sharedOption{fn: func(c *baseConfig) { c.onFinish = fn }}
 }

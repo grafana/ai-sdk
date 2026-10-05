@@ -21,14 +21,15 @@ evidence boundary changes, not merely because the pinned versions change.
 
 | Surface | Status | Evidence | Boundary |
 | --- | --- | --- | --- |
-| Core orchestration and tools | mixed | Root tests, provider-independent UI fixtures and HTTP/core integration tests exercise lifecycle, tool execution, approvals, continuation, ordering, cancellation and URL-backed generated-file resolution with deterministic network policy tests. | Provider replay covers configured scenarios, not every core option or scheduling interleaving. Deterministic generated-file HTTP tests do not prove live provider-hosted downloads. |
+| Core orchestration and tools | mixed | Root tests, provider-independent UI fixtures and HTTP/core integration tests exercise lifecycle, tool execution, approvals, continuation, ordering, cancellation and URL-backed generated-file resolution with deterministic network policy tests. Pinned core mock request/UI snapshots cover direct and nested deferred discovery and next-step activation; root race tests cover search state isolation. | Provider replay covers configured scenarios, not every core option or scheduling interleaving. Deferred discovery mock evidence does not establish live provider acceptance. Deterministic generated-file HTTP tests do not prove live provider-hosted downloads. |
 | Structured output | mixed | Object snapshots and unit tests exercise schemas, partial values, array elements and parsing. | Final-value snapshots do not establish partial-delivery or failure behavior; those require focused tests. |
 | UI messages and SSE | mixed | Chunk snapshots, framing tests and schema-parsed frontend tests exercise conversion, ordering and assembly. | Reader/writer tests do not establish all browser or hook lifecycle behavior. |
 | React hooks | mixed | Actual useChat, useCompletion and useObject tests exercise selected success, error, stop, tool, approval and generated-file delivery flows. | Other lifecycle paths are not established by these tests or by chunk snapshots alone. |
 | Agent, middleware and registry | mixed | Root tests exercise configuration, wrapping, provider resolution, simulated generated-content projection and cancellation; a schema-parsed frontend scenario checks simulated UI chunks and assembly. | Synthetic simulated generation does not prove real provider emissions; delegation to another implementation does not independently prove every entry point. |
 | Agent Observability integration | mixed | Tests against the agento11y versions in the middleware's `go.mod` cover cached unary/streaming usage, inclusive export/span/metric semantics, and hook fixtures replayed through the real HTTP decoder. Gateway tests cover cached unary/streaming inclusive exports with both source and published middleware, bounded HTTP/gRPC export attempts, and ambient configuration rejection. | Hook validation starts after SDK normalization; discarded wire fields cannot be validated, and lost provider-tool discriminators fail reconstruction. Local HTTP servers do not prove deployed hook-service compatibility. Experimental OTel generation export is outside this evidence. |
 | LanguageModelV4 contract | mixed | Discriminator checks, finite ProviderWire witnesses and provider request snapshots exercise represented types and mappings. | Shape checks are not complete semantic interface verification. |
-| Provider adapters | mixed | `recorded/` and `upstream/` fixtures exercise represented requests, stream events, usage and outputs; provider tests cover synthetic failures and local invariants, including OpenAI capability-gated reasoning/configuration controls, async tool metadata and continuation, multipart function-result conversion, and immutable Responses schema normalization. | No recorded/imported OpenAI request fixture exercises multipart result references, cache breakpoints or `propertyNames` normalization; focused request tests do not prove live acceptance. Request capture does not prove returned SDK metadata. Volatile SigV4 headers are excluded from snapshots. |
+| Provider adapters | mixed | `recorded/` and `upstream/` fixtures exercise represented requests, stream events, usage and outputs; provider tests cover synthetic failures and local invariants, including native Anthropic default Messages targets and caller-option precedence, OpenAI capability-gated reasoning/configuration controls, async tool metadata and continuation, multipart function-result conversion, immutable Responses schema normalization, and synthetic forced-choice HTTP request assertions for shell, local-shell and tool-search against registered upstream shapes. | No recorded/imported OpenAI request fixture exercises multipart result references, cache breakpoints or `propertyNames` normalization; focused request tests do not prove live acceptance. Request capture does not prove returned SDK metadata. Volatile SigV4 headers are excluded from snapshots. |
+| SDK provider transport context | mixed | Anthropic/OpenAI deterministic HTTP tests compare returned JSON with actual outbound bodies, including overrides, retries, concurrency, Vertex transformation and preconfigured clients. Core/Agent tests cover step and final metadata; frame tests cover opt-in raw ordering, unknown fields, ignored events, errors and cancellation. [Mantle transport tests](mantle_transport_test.go) cover source-workspace SigV4 retries and returned metadata. | Synthetic transports do not prove live acceptance, full upstream event-schema validation, or published Mantle adoption of the local OpenAI producer change. |
 | Bedrock Mantle Responses continuation | mixed | [Mantle assistant-history request tests](../../providers/bedrock/mantle/provider_test.go) capture unary and streaming reconstruction, phase, empty text and stored references; standalone readonly Bedrock tests with a publicly resolved OpenAI dependency exercise [#207](https://github.com/grafana/ai-sdk/issues/207)'s consumer boundary. | Fake transport validates request encoding, not live Mantle acceptance or a provider recording. OpenAI producer tests or workspace substitutions alone do not establish Bedrock consumer adoption. Mantle Chat remains unsupported. |
 | ProviderWire request projection | automated | Registered-client HTTP goldens, type/schema witnesses and mapping mutation tests are replayed through Go handlers. | This establishes the public client projection, not Vercel's private service behavior. |
 | Gateway runtime and Go client | mixed | Handler, differential and command tests exercise supported text/function-tool/file-input paths, framing, bounds, privacy, cancellation and ownership. | Schema acceptance and runtime support differ. Permissive client parsing does not prove strict server output, privacy or resource bounds. |
@@ -55,11 +56,37 @@ evidence boundary changes, not merely because the pinned versions change.
   delivery gate. The merged published pins predate this behavior, so standalone
   middleware consumers require later module releases.
 
+- Shared synthetic request-target cases and TypeScript-generated snapshots under
+  `testdata/request-snapshots/` validate escaped paths and raw query spelling/order
+  through the Go loader, capture and comparator, including query-only rejection
+  witnesses. They prove harness sensitivity, not provider response provenance or
+  live acceptance. Header redaction does not protect query credentials;
+  query-authenticated recordings require an explicit secret/volatility policy.
 - Conformance comparisons ignore ordering only between adjacent locally executed
   sibling tool outputs. Provider-executed outputs and rejected-input errors remain
   ordered; the comparator deviation is registered in `upstream.yaml`.
+- SDK-backed providers return the final outbound JSON after SDK transformations,
+  rather than upstream's sometimes-logical pre-transform request body. Non-JSON
+  outbound bodies omit JSON request metadata. Frame-level raw evidence does not
+  replace SDK typed decoding; existing permissive union decoding and OpenAI
+  malformed-event recovery are not proof of upstream schema/recovery parity.
+  Anthropic preserves SDK event-name filtering even for malformed ignored
+  payloads. Both adapters apply a Go resource-safety adaptation: startup is
+  limited to 64 data frames and 1 MiB before handoff, independent of raw selection;
+  overflow fails setup without truncating evidence or enabling retries.
+- Deferred discovery uses sorted tool names for equal-score matches because Go
+  ToolSet maps have no insertion order; upstream ties preserve object insertion
+  order. Context-dependent descriptions use the existing shared Go runtime
+  context, not upstream's per-tool context or sandbox-session surface. Paired
+  `ui/deferred-tool-discovery` core request/UI snapshots and schema-parsed frontend
+  assembly cover discovery, early static-call errors and next-step execution,
+  not provider-hosted search or live adapter acceptance.
 - GenerateText and Agent.Generate collect StreamText. Provider DoGenerate tests
-  therefore do not prove those high-level paths.
+  therefore do not prove those high-level paths. Effective required/named choice
+  enforcement has direct entry-point tests,
+  [provider-independent UI snapshots](ui/effective-tool-choice/) and schema-parsed
+  frontend assembly tests. These establish completed-response
+  rejection and retained completion data, not live provider adherence to choice.
 - Captured provider inputs, synthetic failures and provider-independent UI parts
   are distinct evidence sources; passing one does not establish the others.
 - Gateway privacy assertions cover protocol metadata, errors, logs and metrics.
@@ -73,10 +100,14 @@ These notes prevent matching tests from being mistaken for upstream equivalence.
 If a deviation becomes tracked work, its rationale and disposition belong in the
 issue rather than being maintained in both places.
 
-- Core batches local approval handling after provider streaming. ToUIMessageStream
-  supplies a default ID generator with original messages and avoids an unused
-  generation on continuation. Timeout warnings are returned on successful results
-  rather than logged globally before invocation.
+- Core batches local approval handling after provider streaming. Completed
+  tool-choice violations bypass new local approvals and execution; already streamed
+  provider events and prior-message approvals keep their existing handling.
+  Upstream resolves streaming approvals before completed-response validation, so
+  approval suppression is a Go batching safety boundary, not identical timing.
+  ToUIMessageStream supplies a default ID generator with original messages and
+  avoids an unused generation on continuation. Timeout warnings are returned on
+  successful results rather than logged globally before invocation.
 - Anthropic uses explicit credentials/options rather than ambient SDK defaults.
   With no tools, required/named choices are retained. Its api_error/overloaded_error
   retry classification is broader than upstream's initial-overload rule; the full

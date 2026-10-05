@@ -69,7 +69,7 @@ func TestOpenAIResponsesOptions_MarshalRoundTrip(t *testing.T) {
 		ReasoningEffort:         "high",
 		ReasoningMode:           "pro",
 		ReasoningContext:        "all_turns",
-		ReasoningSummary:        "auto",
+		ReasoningSummary:        json.RawMessage(`"auto"`),
 		Truncation:              "auto",
 		Store:                   &store,
 		ParallelToolCalls:       &parallel,
@@ -175,4 +175,15 @@ func TestResolveProviderOptions_RawRoundTrip(t *testing.T) {
 	assert.Equal(t, "resp_x", got.PreviousResponseID)
 	require.NotNil(t, got.Store)
 	assert.False(t, *got.Store)
+}
+
+func TestResolveProviderOptions_RejectsInvalidReasoningSummary(t *testing.T) {
+	for _, raw := range []string{`true`, `42`, `{}`, `[]`} {
+		t.Run(raw, func(t *testing.T) {
+			_, _, _, err := buildParams("gpt-6-luna", provider.CallOptions{
+				ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{ReasoningSummary: json.RawMessage(raw)}),
+			})
+			require.ErrorContains(t, err, "reasoningSummary")
+		})
+	}
 }

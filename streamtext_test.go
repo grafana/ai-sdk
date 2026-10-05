@@ -511,7 +511,11 @@ func TestStreamText_ToolChoice(t *testing.T) {
 					result := StreamText(t.Context(), model, opts...)
 					for range result.FullStream() {
 					}
-					require.NoError(t, result.Err())
+					if want.Type == provider.ToolChoiceRequired || want.Type == provider.ToolChoiceTool {
+						require.ErrorContains(t, result.Err(), "tool choice")
+					} else {
+						require.NoError(t, result.Err())
+					}
 					assert.Equal(t, &want, got.ToolChoice)
 					assert.Len(t, got.Tools, tc.toolCount)
 					assert.Equal(t, 1, model.callCount)
@@ -555,7 +559,11 @@ func TestStreamText_ToolChoiceStepPrecedence(t *testing.T) {
 			result := StreamText(t.Context(), model, opts...)
 			for range result.FullStream() {
 			}
-			require.NoError(t, result.Err())
+			if configured != nil {
+				require.ErrorContains(t, result.Err(), "tool choice")
+			} else {
+				require.NoError(t, result.Err())
+			}
 			assert.Equal(t, []*provider.ToolChoice{want, &override, want}, choices)
 		})
 	}

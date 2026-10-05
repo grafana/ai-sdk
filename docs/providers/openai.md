@@ -51,6 +51,11 @@ Set request-scoped headers with `aisdk.WithHeaders`. Headers configured through
 `openai.WithRequestOptions` apply to every request; a per-call header overrides
 a configured header with the same name.
 
+Native call results retain final outbound JSON and HTTP response headers for
+diagnostics. Raw streaming events are opt-in and precede their normalized
+content or errors. Treat these values as sensitive; they are not automatically
+projected into frontend UI streams or the Gateway's public transport.
+
 Use typed OpenAI options for behavior that is not part of the common model
 contract:
 
@@ -60,10 +65,14 @@ result := aisdk.StreamText(ctx, model,
 	aisdk.WithProviderOptions(openai.OpenAIResponsesOptions{
 		Store:            &store,
 		ReasoningEffort:  "high",
-		ReasoningSummary: "auto",
+		ReasoningSummary: json.RawMessage(`"auto"`),
 	}),
 )
 ```
+
+Leave `ReasoningSummary` nil to use the endpoint default, or set it to
+``json.RawMessage(`null`)`` to omit the summary while retaining reasoning effort.
+Mantle Luna 6 defaults to omission; explicit values such as `"auto"` take precedence.
 
 Not every option applies to every model. Provider options cover conversation
 IDs, response continuation, reasoning, storage, metadata, service tier, tool

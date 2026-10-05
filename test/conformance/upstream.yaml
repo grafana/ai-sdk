@@ -21,6 +21,15 @@ verification:
     conformance: mise run test-conformance
     regenerate: mise run generate-conformance
 knownGaps:
+  - id: mantle-luna-reasoning-summary
+    surface: provider-openai
+    status: intentional-deviation
+    description: Mantle Luna 6 defaults to omitting reasoning summaries while
+      preserving effort and explicit per-call summary overrides. Direct OpenAI
+      retains the registered upstream default; explicit null omits the summary
+      on both endpoints. Automatic adaptation remains Luna-only. Synthetic HTTP
+      tests cover unary and streaming requests; no live SDK Mantle conformance
+      recording is claimed.
   - id: astra-model-catalog
     surface: provider-openai
     status: gap

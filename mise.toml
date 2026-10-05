@@ -7,7 +7,7 @@ experimental = true
 go = "1.27.1"
 jq = "1.8.2"
 node = "24"
-pnpm = "12.6.0"
+pnpm = "12.8.2"
 python = "3.14.7"
 golangci-lint = "2.14.0"
 "npm:@fission-ai/openspec" = "1"
@@ -185,6 +185,26 @@ run = "bash scripts/module-policy.sh standalone \"${MODULE:?set MODULE to a publ
 [tasks.verify-merged-pins]
 description = "Verify published internal pins descend from canonical merged main"
 run = "bash scripts/module-policy.sh pins"
+
+[tasks.release-check]
+description = "Validate the release-please configuration against published modules"
+run = """
+go test ./internal/releasecheck
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts -p 'test_release_readiness.py'
+"""
+
+[tasks.release-preview]
+description = "Dry-run the next release pull request against GitHub"
+run = """
+npx --yes --ignore-scripts release-please@17.6.0 release-pr \
+  --repo-url=grafana/ai-sdk \
+  --target-branch=main \
+  --config-file=release-please-config.json \
+  --manifest-file=.release-please-manifest.json \
+  --token="$(gh auth token)" \
+  --dry-run \
+  --debug
+"""
 
 [tasks.verify-ai-gateway-boundary]
 description = "Verify the one-way AI Gateway module and license boundary"
