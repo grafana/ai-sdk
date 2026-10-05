@@ -3,6 +3,8 @@ package output
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
+	"strings"
 
 	aisdk "github.com/grafana/ai-sdk"
 	"github.com/grafana/ai-sdk/provider"
@@ -83,19 +85,20 @@ func (o *ChoiceOutput) ResponseFormat() *provider.ResponseFormat {
 	}
 }
 
+// ParseComplete extracts the choice from the generated wrapper object. It
+// checks the required field and its value rather than the whole request
+// schema, so a wrapper property the model added is ignored, which is how the
+// registered upstream runtime reads the same response.
 func (o *ChoiceOutput) ParseComplete(text string) (any, error) {
-	data := json.RawMessage(text)
-	if err := o.wrappedSchema.Validate(data); err != nil {
-		return nil, fmt.Errorf("%w: %v", aisdk.ErrNoObjectGenerated, err)
-	}
-
-	var wrapper struct {
-		Result string `json:"result"`
-	}
-	if err := json.Unmarshal([]byte(text), &wrapper); err != nil {
+	wrapper, err := unmarshalWrapperObject(text)
+	if err != nil {
 		return nil, fmt.Errorf("%w: unmarshaling: %v", aisdk.ErrNoObjectGenerated, err)
 	}
-	return wrapper.Result, nil
+	result, ok := wrapperString(wrapper, "result")
+	if !ok || !slices.Contains(o.options, result) {
+		return nil, fmt.Errorf("%w: response must be an object that contains a choice value", aisdk.ErrNoObjectGenerated)
+	}
+	return result, nil
 }
 
 func (o *ChoiceOutput) ParsePartial(text string) (any, bool) {
@@ -104,24 +107,27 @@ func (o *ChoiceOutput) ParsePartial(text string) (any, bool) {
 		return nil, false
 	}
 
-	var wrapper struct {
-		Result string `json:"result"`
-	}
+	var wrapper map[string]json.RawMessage
 	if err := json.Unmarshal(parsed, &wrapper); err != nil {
+		return nil, false
+	}
+	// A missing, null or non-string result is not a choice the model has made
+	// yet. Treating it as the empty string would prefix-match every option and
+	// publish a choice from a partial object that carries none.
+	result, ok := wrapperString(wrapper, "result")
+	if !ok {
 		return nil, false
 	}
 
 	matches := make([]string, 0, len(o.options))
 	for _, option := range o.options {
-		if len(wrapper.Result) <= len(option) && option[:len(wrapper.Result)] == wrapper.Result {
+		if strings.HasPrefix(option, result) {
 			matches = append(matches, option)
 		}
 	}
 	if state == partialParseSuccessful {
-		for _, match := range matches {
-			if match == wrapper.Result {
-				return wrapper.Result, true
-			}
+		if slices.Contains(matches, result) {
+			return result, true
 		}
 		return nil, false
 	}
@@ -129,4 +135,32 @@ func (o *ChoiceOutput) ParsePartial(text string) (any, bool) {
 		return matches[0], true
 	}
 	return nil, false
+}
+
+// unmarshalWrapperObject decodes the generated text as the JSON object the
+// wrapped outputs require. A non-object document fails here.
+func unmarshalWrapperObject(text string) (map[string]json.RawMessage, error) {
+	var wrapper map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(text), &wrapper); err != nil {
+		return nil, err
+	}
+	if wrapper == nil {
+		return nil, fmt.Errorf("response is null")
+	}
+	return wrapper, nil
+}
+
+// wrapperString reports the named field when it is present and holds a JSON
+// string. A null value unmarshals into a string without error, so presence is
+// checked through a pointer.
+func wrapperString(wrapper map[string]json.RawMessage, field string) (string, bool) {
+	raw, ok := wrapper[field]
+	if !ok {
+		return "", false
+	}
+	var value *string
+	if err := json.Unmarshal(raw, &value); err != nil || value == nil {
+		return "", false
+	}
+	return *value, true
 }
