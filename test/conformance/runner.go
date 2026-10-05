@@ -38,27 +38,32 @@ const (
 )
 
 type Config struct {
-	Operation         Operation                     `yaml:"operation,omitempty"`
-	Model             string                        `yaml:"model"`
-	System            string                        `yaml:"system,omitempty"`
-	Prompt            string                        `yaml:"prompt,omitempty"`
-	Messages          []MessageConfig               `yaml:"messages,omitempty"`
-	UIMessages        []UIMessageConfig             `yaml:"uiMessages,omitempty"`
-	StopWhenStepCount int                           `yaml:"stopWhenStepCount,omitempty"`
-	ToolChoice        *ToolChoiceConfig             `yaml:"toolChoice,omitempty"`
-	ActiveTools       []string                      `yaml:"activeTools,omitempty"`
-	Reasoning         provider.ReasoningEffort      `yaml:"reasoning,omitempty"`
-	Headers           map[string]string             `yaml:"headers,omitempty"`
-	StreamOptions     *StreamOptionsConfig          `yaml:"streamOptions,omitempty"`
-	ProviderOptions   map[string]any                `yaml:"providerOptions,omitempty"`
-	Tools             map[string]ToolConfig         `yaml:"tools,omitempty"`
-	ProviderTools     map[string]ProviderToolConfig `yaml:"providerTools,omitempty"`
-	ResponseFormat    *ResponseFormatConfig         `yaml:"responseFormat,omitempty"`
-	AssertOutputValue bool                          `yaml:"assertOutputValue,omitempty"`
-	Approval          *ApprovalConfig               `yaml:"approval,omitempty"`
-	Approvals         []ApprovalConfig              `yaml:"approvals,omitempty"`
-	ExpectStreamError bool                          `yaml:"expectStreamError,omitempty"`
-	MaxRetries        *int                          `yaml:"maxRetries,omitempty"`
+	Operation Operation       `yaml:"operation,omitempty"`
+	Model     string          `yaml:"model"`
+	System    string          `yaml:"system,omitempty"`
+	Prompt    string          `yaml:"prompt,omitempty"`
+	Messages  []MessageConfig `yaml:"messages,omitempty"`
+	// AllowSystemInMessages is read by the generation tools, where upstream
+	// rejects system messages in messages unless it is set. Go replay accepts
+	// them without the opt-in, so the field is declared only to keep the
+	// accepted keys aligned with the tools.
+	AllowSystemInMessages bool                          `yaml:"allowSystemInMessages,omitempty"`
+	UIMessages            []UIMessageConfig             `yaml:"uiMessages,omitempty"`
+	StopWhenStepCount     int                           `yaml:"stopWhenStepCount,omitempty"`
+	ToolChoice            *ToolChoiceConfig             `yaml:"toolChoice,omitempty"`
+	ActiveTools           []string                      `yaml:"activeTools,omitempty"`
+	Reasoning             provider.ReasoningEffort      `yaml:"reasoning,omitempty"`
+	Headers               map[string]string             `yaml:"headers,omitempty"`
+	StreamOptions         *StreamOptionsConfig          `yaml:"streamOptions,omitempty"`
+	ProviderOptions       map[string]any                `yaml:"providerOptions,omitempty"`
+	Tools                 map[string]ToolConfig         `yaml:"tools,omitempty"`
+	ProviderTools         map[string]ProviderToolConfig `yaml:"providerTools,omitempty"`
+	ResponseFormat        *ResponseFormatConfig         `yaml:"responseFormat,omitempty"`
+	AssertOutputValue     bool                          `yaml:"assertOutputValue,omitempty"`
+	Approval              *ApprovalConfig               `yaml:"approval,omitempty"`
+	Approvals             []ApprovalConfig              `yaml:"approvals,omitempty"`
+	ExpectStreamError     bool                          `yaml:"expectStreamError,omitempty"`
+	MaxRetries            *int                          `yaml:"maxRetries,omitempty"`
 }
 
 type UIMessageConfig struct {
@@ -146,7 +151,7 @@ func (mc *MessageConfig) UnmarshalYAML(value *yaml.Node) error {
 		Content         yaml.Node      `yaml:"content"`
 		ProviderOptions map[string]any `yaml:"providerOptions,omitempty"`
 	}
-	if err := value.Decode(&aux); err != nil {
+	if err := decodeKnownFields(value, &aux); err != nil {
 		return err
 	}
 	mc.Role = aux.Role
@@ -156,12 +161,31 @@ func (mc *MessageConfig) UnmarshalYAML(value *yaml.Node) error {
 		mc.ContentText = aux.Content.Value
 	case yaml.SequenceNode:
 		var parts []MessagePartConfig
-		if err := aux.Content.Decode(&parts); err != nil {
+		if err := decodeKnownFields(&aux.Content, &parts); err != nil {
 			return err
 		}
 		mc.ContentParts = parts
 	default:
 		return fmt.Errorf("unsupported message content node kind %d", aux.Content.Kind)
+	}
+	return nil
+}
+
+// decodeKnownFields decodes node into out and rejects mapping keys that out
+// does not declare. A custom UnmarshalYAML receives a node whose Decode method
+// ignores the KnownFields setting of the decoder that called it, so the strict
+// check has to be repeated for anything decoded inside one. The node is
+// re-encoded for a strict decoder, which reports positions relative to that
+// node, so the error names the node's own line in the fixture.
+func decodeKnownFields(node *yaml.Node, out any) error {
+	data, err := yaml.Marshal(node)
+	if err != nil {
+		return fmt.Errorf("line %d: %w", node.Line, err)
+	}
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(out); err != nil {
+		return fmt.Errorf("value at line %d: %w", node.Line, err)
 	}
 	return nil
 }
@@ -182,14 +206,20 @@ type ResponseFormatConfig struct {
 	Description string   `yaml:"description,omitempty"`
 }
 
+// LoadConfig reads a fixture configuration and rejects any key that no config
+// type declares, so a misspelled option fails here instead of silently leaving
+// both the generated snapshot and the Go replay without the behavior it named.
+// Payload values such as provider options, schemas and tool inputs stay open.
 func LoadConfig(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("reading config: %w", err)
 	}
 	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("parsing config: %w", err)
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&cfg); err != nil {
+		return nil, fmt.Errorf("parsing config %s: %w", path, err)
 	}
 	if cfg.Reasoning == wireReasoningProviderDefault {
 		cfg.Reasoning = provider.ReasoningProviderDefault

@@ -1,0 +1,6 @@
+# unknown: argz
+model: test
+providerTools:
+  search:
+    id: anthropic.web_search_20250305
+    argz: {}

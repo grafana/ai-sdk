@@ -1,0 +1,107 @@
+# Every key the fixture loaders accept, at every level. The Go loader and the
+# TypeScript tools must both accept this file, and tests on each side check
+# that every declared key appears here, which keeps the two key sets aligned.
+# Payload maps carry made-up keys to show they stay open.
+operation: stream
+model: test
+system: be brief
+prompt: hello
+allowSystemInMessages: true
+stopWhenStepCount: 2
+activeTools: [weather]
+reasoning: high
+headers:
+  x-anything: value
+maxRetries: 0
+assertOutputValue: false
+expectStreamError: false
+providerOptions:
+  anyProvider:
+    anyOption: { nested: true }
+messages:
+  - role: user
+    content: plain text content
+  - role: user
+    providerOptions:
+      anyProvider: { anyOption: 1 }
+    content:
+      - type: text
+        text: hi
+        data: aGk=
+        url: https://example.com/a.png
+        mediaType: image/png
+        filename: a.png
+        reference: { anyProvider: ref-1 }
+        toolCallId: call-1
+        toolName: weather
+        approvalId: approval-1
+        input: { anyInputKey: 1 }
+        output: { anyOutputKey: 2 }
+        approved: true
+        reason: ok
+        isAutomatic: false
+        providerExecuted: false
+        providerOptions:
+          anyProvider: { anyOption: 2 }
+uiMessages:
+  - id: ui-1
+    role: user
+    parts:
+      - type: text
+        text: hi
+        anyPartKey: kept
+tools:
+  weather:
+    description: weather
+    inputSchema: { type: object, anySchemaKey: 1 }
+    mockResults: [{ anyResultKey: 1 }]
+    mockError: ""
+    needsApproval: false
+    strict: true
+    providerOptions:
+      anyProvider: { anyOption: 3 }
+    modelOutput:
+      type: content
+      text: unused
+      content:
+        - type: text
+          text: hi
+          data: aGk=
+          mediaType: text/plain
+          filename: a.txt
+providerTools:
+  search:
+    id: anyProvider.search
+    args: { anyArg: 1 }
+    inputSchema: { type: object }
+    providerOptions:
+      anyProvider: { anyOption: 4 }
+toolChoice:
+  type: tool
+  toolName: weather
+streamOptions:
+  sendReasoning: true
+  sendSources: true
+  sendFinish: true
+  sendStart: true
+responseFormat:
+  type: json
+  outputMode: object
+  schema: { type: object }
+  choices: [a]
+  name: answer
+  description: an answer
+approval:
+  toolCallId: call-1
+  toolName: weather
+  approvalId: approval-1
+  approved: true
+  reason: ok
+  input: { anyInputKey: 1 }
+approvals:
+  - toolCallId: call-1
+    toolName: weather
+    approvalId: approval-1
+    approved: true
+    reason: ok
+    input: { anyInputKey: 1 }
