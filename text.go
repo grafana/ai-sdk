@@ -2,6 +2,7 @@ package aisdk
 
 import (
 	"encoding/json"
+	"slices"
 
 	"github.com/grafana/ai-sdk/provider"
 )
@@ -246,15 +247,17 @@ func StepCountIs(n int) StopCondition {
 	}
 }
 
-// HasToolCall returns a StopCondition that stops when the named tool is called.
-func HasToolCall(toolName string) StopCondition {
+// HasToolCall returns a StopCondition that stops when the most recent step
+// called any of the named tools. Calls in earlier steps do not count, and with
+// no names it never stops.
+func HasToolCall(toolNames ...string) StopCondition {
 	return func(state StopConditionState) bool {
 		if len(state.Steps) == 0 {
 			return false
 		}
 		last := state.Steps[len(state.Steps)-1]
 		for _, tc := range last.ToolCalls {
-			if tc.ToolName == toolName {
+			if slices.Contains(toolNames, tc.ToolName) {
 				return true
 			}
 		}
