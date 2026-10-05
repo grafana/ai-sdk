@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
+	"strings"
 	"testing"
 
 	aisdk "github.com/grafana/ai-sdk"
@@ -418,4 +420,81 @@ messages:
 	require.NotNil(t, part.Data)
 	assert.Equal(t, "s3://bucket/image.png", part.Data.URL)
 	assert.Empty(t, part.Data.Base64)
+}
+
+const fixtureConfigDir = "testdata/fixture-config"
+
+func TestLoadConfig_RejectsUnknownFields(t *testing.T) {
+	paths, err := filepath.Glob(filepath.Join(fixtureConfigDir, "invalid", "*.yaml"))
+	require.NoError(t, err)
+	require.NotEmpty(t, paths)
+	for _, path := range paths {
+		t.Run(filepath.Base(path), func(t *testing.T) {
+			data, err := os.ReadFile(path)
+			require.NoError(t, err)
+			// The first line names the misspelled key: "# unknown: <key>".
+			first, _, _ := strings.Cut(string(data), "\n")
+			unknown := strings.TrimPrefix(first, "# unknown: ")
+			require.NotEqual(t, first, unknown, "invalid fixture must start with '# unknown: <key>'")
+
+			_, err = LoadConfig(path)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "field "+unknown+" not found")
+		})
+	}
+}
+
+func TestLoadConfig_AcceptsEveryAlignedKey(t *testing.T) {
+	path := filepath.Join(fixtureConfigDir, "all-keys.yaml")
+	_, err := LoadConfig(path)
+	require.NoError(t, err, "every key the TypeScript tools accept must load in Go")
+
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	var doc map[string]any
+	require.NoError(t, yaml.Unmarshal(data, &doc))
+
+	at := func(value any, keys ...any) map[string]any {
+		for _, key := range keys {
+			switch k := key.(type) {
+			case string:
+				value = value.(map[string]any)[k]
+			case int:
+				value = value.([]any)[k]
+			}
+		}
+		return value.(map[string]any)
+	}
+	// Every Go key must appear in all-keys.yaml, which the TypeScript tools
+	// also accept, so Go cannot declare a key the tools would reject.
+	for _, tc := range []struct {
+		name  string
+		typ   any
+		level map[string]any
+	}{
+		{"Config", Config{}, doc},
+		{"MessageConfig", MessageConfig{}, at(doc, "messages", 1)},
+		{"MessagePartConfig", MessagePartConfig{}, at(doc, "messages", 1, "content", 0)},
+		{"UIMessageConfig", UIMessageConfig{}, at(doc, "uiMessages", 0)},
+		{"ToolConfig", ToolConfig{}, at(doc, "tools", "weather")},
+		{"ToolModelOutputConfig", ToolModelOutputConfig{}, at(doc, "tools", "weather", "modelOutput")},
+		{"ToolModelOutputContent", ToolModelOutputContent{}, at(doc, "tools", "weather", "modelOutput", "content", 0)},
+		{"ProviderToolConfig", ProviderToolConfig{}, at(doc, "providerTools", "search")},
+		{"ToolChoiceConfig", ToolChoiceConfig{}, at(doc, "toolChoice")},
+		{"StreamOptionsConfig", StreamOptionsConfig{}, at(doc, "streamOptions")},
+		{"ResponseFormatConfig", ResponseFormatConfig{}, at(doc, "responseFormat")},
+		{"ApprovalConfig", ApprovalConfig{}, at(doc, "approval")},
+		{"ApprovalConfig in approvals", ApprovalConfig{}, at(doc, "approvals", 0)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			typ := reflect.TypeOf(tc.typ)
+			for i := range typ.NumField() {
+				name, _, _ := strings.Cut(typ.Field(i).Tag.Get("yaml"), ",")
+				if name == "" || name == "-" {
+					continue
+				}
+				assert.Contains(t, tc.level, name, "%s.%s is missing from all-keys.yaml", typ.Name(), name)
+			}
+		})
+	}
 }

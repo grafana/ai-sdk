@@ -1,0 +1,7 @@
+# unknown: metadata
+model: test
+uiMessages:
+  - id: ui-1
+    role: user
+    metadata: { anything: true }
+    parts: []
