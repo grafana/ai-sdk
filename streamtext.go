@@ -1,10 +1,12 @@
 package aisdk
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -1380,6 +1382,7 @@ loop:
 				return step, stepStreamOutcome{hasOutput: hasOutput}, err
 			}
 		}
+		sortToolResultsByCall(&step)
 		step.Content = buildContent(step)
 		// Populate Response.Messages with the next-call message tail
 		// (mirrors upstream result.response.messages). The same ordering
@@ -1580,6 +1583,35 @@ func (r *StreamTextResult) handleToolResult(
 	}
 	step.ToolResults = append(step.ToolResults, tr)
 	return nil
+}
+
+// sortToolResultsByCall puts step.ToolResults in step.ToolCalls order. Results
+// are appended as each kind is handled: provider-executed and rejected calls
+// while the model stream is read, denied approvals before any tool starts, and
+// executed calls after they all finish, so a step mixing them otherwise lists
+// results in handling order. Upstream keeps arrival order here; Go keeps call
+// order, as recorded in test/conformance/upstream.yaml. A result for a call
+// outside this step keeps its relative position ahead of this step's results,
+// and results for the same call keep their order.
+func sortToolResultsByCall(step *StepResult) {
+	if len(step.ToolResults) < 2 {
+		return
+	}
+	position := make(map[string]int, len(step.ToolCalls))
+	for i, tc := range step.ToolCalls {
+		if _, seen := position[tc.ToolCallID]; !seen {
+			position[tc.ToolCallID] = i
+		}
+	}
+	rank := func(tr ToolResult) int {
+		if i, ok := position[tr.ToolCallID]; ok {
+			return i
+		}
+		return -1
+	}
+	slices.SortStableFunc(step.ToolResults, func(a, b ToolResult) int {
+		return cmp.Compare(rank(a), rank(b))
+	})
 }
 
 // toolExecOutcome holds the result of a single tool execution, including
