@@ -8,7 +8,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.6
 	github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260928202004-dd43c6dff058
 	github.com/grafana/ai-sdk/providers/openai v0.0.0-20260928202004-dd43c6dff058
-	github.com/openai/openai-go/v3 v3.66.0
+	github.com/openai/openai-go/v3 v3.71.1
 	github.com/stretchr/testify v1.12.1
 )
 
