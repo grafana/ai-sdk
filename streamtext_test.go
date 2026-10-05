@@ -4803,6 +4803,81 @@ func TestIsDynamic_UnknownToolPreservesProviderValue(t *testing.T) {
 	})
 }
 
+func TestStreamText_UIClassificationUsesOriginalTools(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		toolType UserToolType
+		deferred bool
+		unknown  bool
+		want     *bool
+	}{
+		{name: "ordinary", toolType: UserToolFunction},
+		{name: "provider", toolType: UserToolProvider},
+		{name: "dynamic", toolType: UserToolDynamic, want: boolPtr(true)},
+		{name: "deferred ordinary", toolType: UserToolFunction, deferred: true},
+		{name: "deferred dynamic", toolType: UserToolDynamic, deferred: true, want: boolPtr(true)},
+		{name: "unknown", unknown: true, want: boolPtr(false)},
+	} {
+		for _, isError := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/error=%t", tc.name, isError), func(t *testing.T) {
+				tools := ToolSet{"echo": {Type: tc.toolType, DeferLoading: tc.deferred}}
+				if tc.unknown {
+					tools = ToolSet{}
+				}
+				model := &mockModel{streamFunc: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+					return &provider.StreamResult{Stream: discoveryParts(
+						provider.StreamPart{Type: provider.PartToolInputStart, ID: "call", ToolName: "echo", Dynamic: boolPtr(false), ProviderExecuted: true},
+						provider.StreamPart{Type: provider.PartToolInputEnd, ID: "call"},
+						provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "call", ToolName: "echo", Input: `{}`, Dynamic: boolPtr(false), ProviderExecuted: true},
+						provider.StreamPart{Type: provider.PartToolResult, ToolCallID: "call", ToolName: "echo", Result: json.RawMessage(`"done"`), Dynamic: boolPtr(false), IsError: isError, ProviderExecuted: true},
+					)}, nil
+				}}
+				result := StreamText(t.Context(), model, WithTools(tools))
+				require.NoError(t, result.Err())
+				tools["echo"] = Tool{Type: UserToolDynamic}
+				if tc.toolType == UserToolDynamic {
+					tools["echo"] = Tool{Type: UserToolFunction}
+				}
+				seen := 0
+				for chunk := range result.ToUIMessageStream() {
+					switch chunk.Type {
+					case ChunkToolInputStart, ChunkToolInputAvailable, ChunkToolOutputAvailable, ChunkToolOutputError:
+						seen++
+						assert.Equal(t, tc.want, chunk.Dynamic)
+					}
+				}
+				assert.Equal(t, 3, seen)
+			})
+		}
+	}
+}
+
+func TestUIToolDynamic_UsesConversionContext(t *testing.T) {
+	toolTypes := map[string]UserToolType{"ordinary": UserToolFunction, "dynamic": UserToolDynamic}
+	for _, toolName := range []string{"ordinary", "dynamic", "unknown"} {
+		for _, dynamic := range []*bool{nil, boolPtr(false), boolPtr(true)} {
+			want := dynamic
+			switch toolName {
+			case "ordinary":
+				want = nil
+			case "dynamic":
+				want = boolPtr(true)
+			}
+			for _, part := range []TextStreamPart{
+				StreamToolInputStart{ToolName: toolName, Dynamic: dynamic},
+				StreamToolCall{ToolName: toolName, Dynamic: dynamic},
+				StreamToolCall{ToolName: toolName, Dynamic: dynamic, Invalid: true},
+				StreamToolResult{ToolName: toolName, Dynamic: dynamic},
+				StreamToolError{ToolName: toolName, Dynamic: dynamic, Error: errors.New("failure")},
+			} {
+				chunks := translateToChunks(part, uiMessageStreamConfig{toolTypes: toolTypes})
+				require.Len(t, chunks, 1)
+				assert.Equal(t, want, chunks[0].Dynamic)
+			}
+		}
+	}
+}
+
 func TestIsInputStartDynamic_PreservesExplicitValue(t *testing.T) {
 	tools := map[string]Tool{"dynamic_tool": {Type: UserToolDynamic}}
 	for _, tc := range []struct {
@@ -4844,11 +4919,12 @@ func TestInputStartDynamic_TextAndUIProjection(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			part := StreamToolInputStart{
 				ID: "call", ToolName: tc.toolName,
-				Dynamic:   isInputStartDynamic(tc.toolName, tc.providerDynamic, tools),
-				uiDynamic: isDynamic(tc.toolName, tc.providerDynamic, tools), useUIDynamic: true,
+				Dynamic: isInputStartDynamic(tc.toolName, tc.providerDynamic, tools),
 			}
 			assert.Equal(t, tc.textDynamic, part.Dynamic)
-			chunks := translateToChunks(part, uiMessageStreamConfig{})
+			chunks := translateToChunks(part, uiMessageStreamConfig{toolTypes: map[string]UserToolType{
+				"dynamic": UserToolDynamic, "ordinary": UserToolFunction,
+			}})
 			require.Len(t, chunks, 1)
 			assert.Equal(t, tc.uiDynamic, chunks[0].Dynamic)
 		})

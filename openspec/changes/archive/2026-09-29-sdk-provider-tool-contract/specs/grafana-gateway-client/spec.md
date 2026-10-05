@@ -1,6 +1,8 @@
 ## MODIFIED Requirements
 
 ### Requirement: Bounded normalized unary consumption
+For text/reasoning blocks and tool input/call/result variants, the client SHALL decode only fields consumed by the selected variant and SHALL ignore unrelated variant fields rather than enforce the server's strict output union. Ordinary typed decoding SHALL reject unrepresentable consumed values. Optional null tool flags SHALL normalize to Go absence/zero; explicit false Dynamic and Preliminary values SHALL retain pointer presence. Required payload checks, opaque metadata structure and transport resource bounds SHALL remain unchanged.
+
 For a successful unary response, the client SHALL require a JSON media type, read no more than the configured unary-response byte limit, accept one complete JSON document, and map the currently supported registered content, including provider calls and results, finish reason, usage and supplied result/content providerMetadata into provider.GenerateResult. It SHALL reject malformed required fields, unknown content or finish discriminators, negative or non-JavaScript-safe known usage, trailing JSON, and oversized input. The client SHALL replace server-supplied request and response: Request.Body SHALL be the locally encoded request, and Response.Headers and Response.Body SHALL come from the bounded HTTP response. Warnings SHALL preserve valid server warning fields in order, defaulting to a non-nil empty slice when absent or null. Warning decoding SHALL use the same registered types and validation as streaming. Server response identity SHALL retain the registered Gateway-hop replacement behavior. Ordinary providerMetadata SHALL be decoded independently as opaque object-valued namespaces under gateway-provider-metadata without Gateway imports, namespace/key inventories, or IncludeRawChunks gating. Present null, scalar, array, malformed or invalid-UTF-8 metadata SHALL fail explicitly under the existing bounded protocol-error path rather than being selectively omitted.
 
 #### Scenario: Minimal unary success is consumed
@@ -27,6 +29,14 @@ For a successful unary response, the client SHALL require a JSON media type, rea
 - **WHEN** ordered content contains a hosted call and its result
 - **THEN** the client SHALL preserve call ownership, IDs, names, input, result and supported markers/metadata without requiring or emitting a result-level providerExecuted wire member
 
+#### Scenario: Unrelated variant fields do not reject valid payloads
+- **WHEN** a bounded text, call or result contains unrelated fields, including values not representable by those other variants
+- **THEN** the client SHALL decode its relevant payload and ignore the unrelated fields, matching the pinned client at the supported typed projection
+
+#### Scenario: Optional flag normalization
+- **WHEN** call/result flags are omitted, null, false or true
+- **THEN** null SHALL normalize to absence/zero, false SHALL retain Dynamic/Preliminary pointer presence and true SHALL remain enabled
+
 ### Requirement: Incremental bounded SSE consumption
 A successful streaming setup SHALL require SSE media type and return a `StreamResult` whose request body and response headers are client-owned. One goroutine SHALL own the body, parse incrementally under configured cumulative-byte, complete-event-byte and event-count limits, send mapped parts with context-aware backpressure, close the body and close the output channel exactly once. It SHALL not buffer the full response or an unbounded line/event. The mapper SHALL accept supported text, function-tool and provider-tool calls/results, safe error parts and bounded raw parts needed for registered filtering behavior. Supported execution/dynamic/preliminary markers and opaque tool metadata SHALL be preserved under gateway-provider-metadata. Input-start dynamic SHALL retain absent, explicit false and true independently through decoding; it SHALL NOT be eagerly defaulted. A deferred result SHALL NOT require a repeated call in the same response. Every unsupported, malformed or oversized event SHALL emit at most one terminal non-retryable protocol PartError and close. Server lifecycle validation SHALL NOT be imported into the client as a new independent protocol dialect.
 
@@ -48,7 +58,7 @@ A successful streaming setup SHALL require SSE media type and return a `StreamRe
 
 #### Scenario: Hosted dynamic call with preview results
 - **WHEN** valid tool input, a provider-owned dynamic call, preliminary results and a final result arrive before finish
-- **THEN** all parts and enabled markers SHALL be delivered in order, with equivalent absent/false markers normalized, input-start dynamic presence retained and final-event-before-EOF behavior unchanged
+- **THEN** all parts and enabled markers SHALL be delivered in order, with false Dynamic/Preliminary pointer presence and input-start dynamic presence retained and final-event-before-EOF behavior unchanged
 
 #### Scenario: Input-start dynamic is presence-sensitive
 - **WHEN** otherwise equivalent input-start events omit dynamic or contain false or true

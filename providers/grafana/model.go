@@ -256,7 +256,7 @@ func decodeGenerate(body []byte) (*provider.GenerateResult, error) {
 			Data             json.RawMessage              `json:"data"`
 			Metadata         json.RawMessage              `json:"providerMetadata"`
 		}
-		if !validToolFlags(raw) || decodeFields(raw, &part, "type", "text", "toolCallId", "toolName", "input", "result", "isError", "preliminary", "providerExecuted", "dynamic", "mediaType", "data", "providerMetadata") != nil {
+		if decodeFields(raw, &part, "type", "providerMetadata") != nil {
 			return nil, errors.New("grafana: invalid unary content")
 		}
 		metadata, err := decodeProviderMetadata(part.Metadata)
@@ -267,11 +267,14 @@ func decodeGenerate(body []byte) (*provider.GenerateResult, error) {
 		case provider.ContentReasoning, provider.ContentReasoningFile:
 			mapped := provider.GenerateContentPart{Type: part.Type, ProviderMetadata: metadata}
 			if part.Type == provider.ContentReasoning {
-				if part.Text == nil {
+				if decodeFields(raw, &part, "text") != nil || part.Text == nil {
 					return nil, errors.New("grafana: missing reasoning text")
 				}
 				mapped.Text = *part.Text
 			} else {
+				if decodeFields(raw, &part, "data", "mediaType") != nil {
+					return nil, errors.New("grafana: invalid reasoning file")
+				}
 				data, err := decodeReasoningFile(part.Data)
 				if err != nil || part.MediaType == nil {
 					return nil, errors.New("grafana: invalid reasoning file")
@@ -290,23 +293,28 @@ func decodeGenerate(body []byte) (*provider.GenerateResult, error) {
 			}
 			content = append(content, provider.GenerateContentPart{Type: provider.ContentSource, SourceType: source.SourceType, ID: source.ID, URL: source.URL, Title: source.Title, Text: source.Title, MediaType: source.MediaType, Filename: source.Filename, ProviderMetadata: source.ProviderMetadata})
 		case provider.ContentText:
-			if part.Text == nil || part.ProviderExecuted || (part.Dynamic != nil && *part.Dynamic) || (part.Preliminary != nil && *part.Preliminary) || part.IsError || len(part.Result) != 0 {
+			if decodeFields(raw, &part, "text") != nil || part.Text == nil {
 				return nil, errors.New("grafana: missing unary text")
 			}
 			content = append(content, provider.GenerateContentPart{Type: provider.ContentText, Text: *part.Text, ProviderMetadata: metadata})
 		case provider.ContentToolCall, provider.ContentToolResult:
-			if part.ToolCallID == nil || *part.ToolCallID == "" || part.ToolName == nil || *part.ToolName == "" {
+			fields := []string{"toolCallId", "toolName", "dynamic"}
+			if part.Type == provider.ContentToolCall {
+				fields = append(fields, "input", "providerExecuted")
+			} else {
+				fields = append(fields, "result", "isError", "preliminary")
+			}
+			if decodeFields(raw, &part, fields...) != nil || part.ToolCallID == nil || *part.ToolCallID == "" || part.ToolName == nil || *part.ToolName == "" {
 				return nil, errors.New("grafana: invalid unary tool content")
 			}
-			mapped := provider.GenerateContentPart{Type: part.Type, ToolCallID: *part.ToolCallID, ToolName: *part.ToolName, ProviderExecuted: part.ProviderExecuted, Dynamic: part.Dynamic, Preliminary: part.Preliminary}
-			mapped.ProviderMetadata = metadata
+			mapped := provider.GenerateContentPart{Type: part.Type, ToolCallID: *part.ToolCallID, ToolName: *part.ToolName, ProviderExecuted: part.ProviderExecuted, Dynamic: part.Dynamic, Preliminary: part.Preliminary, ProviderMetadata: metadata}
 			if part.Type == provider.ContentToolCall {
-				if part.Input == nil || len(part.Result) != 0 || (part.Preliminary != nil && *part.Preliminary) || part.IsError {
+				if part.Input == nil {
 					return nil, errors.New("grafana: invalid unary tool call")
 				}
 				mapped.Input = json.RawMessage(*part.Input)
 			} else {
-				if part.Input != nil || part.ProviderExecuted || len(part.Result) == 0 || string(bytes.TrimSpace(part.Result)) == "null" || !json.Valid(part.Result) {
+				if len(part.Result) == 0 || string(bytes.TrimSpace(part.Result)) == "null" {
 					return nil, errors.New("grafana: invalid unary tool result")
 				}
 				mapped.Result, mapped.IsError = part.Result, part.IsError

@@ -271,6 +271,46 @@ describe("Go and exact-pinned Gateway differential", () => {
     } finally { await server.stop(); }
   });
 
+  it("decodes relevant variant fields without rejecting unrelated fields", async () => {
+    const tools = [
+      { type: "tool-call", toolCallId: "call", toolName: "echo", input: "{}", providerExecuted: true, dynamic: false, result: false, preliminary: {}, isError: [] },
+      { type: "tool-result", toolCallId: "call", toolName: "echo", result: false, dynamic: false, preliminary: false, isError: false, input: {}, providerExecuted: "ignored" },
+      { type: "tool-call", toolCallId: "null-call", toolName: "echo", input: "{}", dynamic: null, providerExecuted: null },
+      { type: "tool-result", toolCallId: "null-call", toolName: "echo", result: 0, dynamic: null, preliminary: null, isError: null },
+    ];
+    const project = (part: any) => {
+      switch (part.type) {
+        case "text": return { type: part.type, text: part.text };
+        case "text-delta": return { type: part.type, id: part.id, delta: part.delta };
+        case "tool-call": return { type: part.type, toolCallId: part.toolCallId, toolName: part.toolName, input: part.input, providerExecuted: part.providerExecuted ?? false, dynamic: part.dynamic ?? null };
+        case "tool-result": return { type: part.type, toolCallId: part.toolCallId, toolName: part.toolName, result: part.result, isError: part.isError ?? false, preliminary: part.preliminary ?? null, dynamic: part.dynamic ?? null };
+        default: throw new Error(`unexpected part ${part.type}`);
+      }
+    };
+    for (const streaming of [false, true]) {
+      const text = streaming ? { type: "text-delta", id: "text", delta: "hello" } : { type: "text", text: "hello" };
+      const values = [{ ...text, dynamic: {}, providerExecuted: "ignored", result: [], toolName: false }, ...tools];
+      const payload = streaming ? values.map(value => `data: ${JSON.stringify(value)}\n\n`).join("") : JSON.stringify({ ...unary, content: values });
+      const server = await endpoint(payload, 200, streaming ? "text/event-stream" : "application/json");
+      try {
+        const model = createGateway({ apiKey: "test", baseURL: server.baseURL })("assistant");
+        const parts: unknown[] = [];
+        if (streaming) {
+          for await (const part of (await model.doStream({ prompt: [] })).stream) parts.push(part);
+        } else {
+          parts.push(...(await model.doGenerate({ prompt: [] })).content);
+        }
+        const go = await captureGoClient(binary, { baseURL: server.baseURL, accessToken: "token", modelID: "assistant", mode: streaming ? "stream" : "generate", options: { prompt: [] } });
+        assert.equal(go.error, undefined);
+        const got = streaming ? go.parts : go.result.content;
+        assert.deepEqual(got.map(project), parts.map(project));
+        assert.equal(got[1].dynamic, false);
+        assert.equal(got[2].dynamic, false);
+        assert.equal(got[2].preliminary, false);
+      } finally { await server.stop(); }
+    }
+  });
+
   it("matches public discovery and alias order", async () => {
     const models = [{ id: "assistant", name: "Assistant", description: null, specification: { specificationVersion: "v4", provider: "grafana", modelId: "assistant" } }, { id: "grafana/assistant", name: "Alias", specification: { specificationVersion: "v4", provider: "grafana", modelId: "grafana/assistant" } }];
     const server = await endpoint(JSON.stringify({ models, private: "ignored" }));

@@ -19,6 +19,30 @@ import (
 
 const unaryFixture = `{"content":[{"type":"text","text":"hello"},{"type":"text","text":""}],"finishReason":{"unified":"stop","raw":"end_turn"},"usage":{"inputTokens":{"total":2,"noCache":2,"cacheRead":0,"cacheWrite":0},"outputTokens":{"total":1,"text":1,"reasoning":0}}}`
 
+func TestDecodeGenerate_VariantLocalFields(t *testing.T) {
+	for _, tc := range []struct {
+		name, content, extra string
+	}{
+		{"text ignores tool fields", `{"type":"text","text":"hello"}`, `"providerExecuted":"not-a-boolean","dynamic":{},"preliminary":true,"isError":true,"result":[],"input":{},"toolName":[]`},
+		{"reasoning ignores text-unrelated fields", `{"type":"reasoning","text":"thought"}`, `"dynamic":"not-a-boolean","input":{},"mediaType":false`},
+		{"call ignores result fields", `{"type":"tool-call","toolCallId":"call","toolName":"echo","input":"{}"}`, `"result":false,"preliminary":{},"isError":[]`},
+		{"result ignores call fields", `{"type":"tool-result","toolCallId":"call","toolName":"echo","result":false}`, `"input":{},"providerExecuted":"not-a-boolean","text":[]`},
+		{"null call markers normalize", `{"type":"tool-call","toolCallId":"call","toolName":"echo","input":"{}"}`, `"dynamic":null,"providerExecuted":null`},
+		{"null result markers normalize", `{"type":"tool-result","toolCallId":"call","toolName":"echo","result":0}`, `"dynamic":null,"preliminary":null,"isError":null`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			decode := func(content string) *provider.GenerateResult {
+				result, err := decodeGenerate([]byte(`{"content":[` + content + `],"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}}}`))
+				require.NoError(t, err)
+				return result
+			}
+			want := decode(tc.content)
+			got := decode(strings.TrimSuffix(tc.content, "}") + "," + tc.extra + "}")
+			assert.Equal(t, want, got)
+		})
+	}
+}
+
 func TestDecodeGenerate_FunctionCalls(t *testing.T) {
 	for _, input := range []string{"", "{}", "{\"city\":\"Rio\"}"} {
 		encoded, err := json.Marshal(input)
@@ -112,7 +136,7 @@ func TestDecodeGenerate_ToolMetadataAndMarkerValidation(t *testing.T) {
 	assert.JSONEq(t, `{"url":"hidden"}`, string(decoded.Content[0].ProviderMetadata["private"]))
 	assert.JSONEq(t, `{"itemId":"output-1"}`, string(decoded.Content[1].ProviderMetadata["openai"]))
 	for _, value := range []string{
-		`{"providerExecuted":null}`, `{"dynamic":"false"}`, `{"preliminary":null}`,
+		`{"providerExecuted":"true"}`, `{"dynamic":"false"}`,
 		`{"providerMetadata":null}`, `{"providerMetadata":[]}`,
 		`{"providerMetadata":{"anthropic":null}}`, `{"providerMetadata":{"future":[]}}`,
 	} {

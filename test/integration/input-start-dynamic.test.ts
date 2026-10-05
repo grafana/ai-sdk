@@ -8,7 +8,7 @@ const tools = {
   ordinary: { inputSchema: jsonSchema({ type: "object" as const }) },
 };
 
-function pinnedModel(name: string, dynamic: boolean | undefined) {
+function pinnedModel(name: string, dynamic: boolean | undefined, complete = false, isError = false) {
   const start = { type: "tool-input-start", id: "call-1", toolName: name, ...(dynamic === undefined ? {} : { dynamic }) };
   return {
     specificationVersion: "v4",
@@ -21,6 +21,10 @@ function pinnedModel(name: string, dynamic: boolean | undefined) {
         controller.enqueue({ type: "stream-start", warnings: [] });
         controller.enqueue(start);
         controller.enqueue({ type: "tool-input-end", id: "call-1" });
+        if (complete) {
+          controller.enqueue({ type: "tool-call", toolCallId: "call-1", toolName: name, input: "{}", providerExecuted: true, dynamic });
+          controller.enqueue({ type: "tool-result", toolCallId: "call-1", toolName: name, result: "done", isError, dynamic });
+        }
         controller.enqueue({ type: "finish", finishReason: { unified: "stop" }, usage: { inputTokens: {}, outputTokens: {} } });
         controller.close();
       },
@@ -38,8 +42,8 @@ async function pinnedStart(name: string, dynamic: boolean | undefined, ui: boole
   return parts[0] as { dynamic?: boolean };
 }
 
-async function goChunks(name: string, dynamic: boolean | undefined) {
-  const query = new URLSearchParams({ tool: name, ...(dynamic === undefined ? {} : { dynamic: String(dynamic) }) });
+async function goChunks(name: string, dynamic: boolean | undefined, complete = false, isError = false) {
+  const query = new URLSearchParams({ tool: name, complete: String(complete), error: String(isError), ...(dynamic === undefined ? {} : { dynamic: String(dynamic) }) });
   const response = await fetch(`${getServerUrl()}/scenario/input-start-dynamic?${query}`, { method: "POST" });
   expect(response.status).toBe(200);
   const parsed = parseJsonEventStream({ stream: response.body!, schema: uiMessageChunkSchema });
@@ -60,12 +64,34 @@ async function goChunks(name: string, dynamic: boolean | undefined) {
   return chunks;
 }
 
+describe("UI tool classification at conversion", () => {
+  for (const tc of [
+    { name: "dynamic", marker: false, ui: true },
+    { name: "ordinary", marker: true, ui: undefined },
+    { name: "unknown", marker: true, ui: true },
+  ]) for (const isError of [false, true]) {
+    it(`${tc.name} call and ${isError ? "error" : "result"} match pinned UI classification`, async () => {
+      const result = streamText({ model: pinnedModel(tc.name, tc.marker, true, isError), prompt: "test", tools });
+      const pinned: UIMessageChunk[] = [];
+      for await (const chunk of result.toUIMessageStream()) pinned.push(chunk);
+      const go = await goChunks(tc.name, tc.marker, true, isError);
+      const project = (chunks: UIMessageChunk[]) => chunks
+        .filter(chunk => ["tool-input-start", "tool-input-available", "tool-output-available", "tool-output-error"].includes(chunk.type))
+        .map(chunk => ({ type: chunk.type, ...("dynamic" in chunk ? { dynamic: chunk.dynamic } : {}) }));
+      expect(project(pinned)).toHaveLength(3);
+      expect(project(go)).toEqual(project(pinned));
+      for (const chunk of project(go)) expect("dynamic" in chunk ? chunk.dynamic : undefined).toBe(tc.ui);
+    });
+  }
+});
+
 describe("input-start dynamic across text and UI streams", () => {
   for (const tc of [
     { name: "dynamic", marker: undefined, text: true, ui: true },
     { name: "dynamic", marker: false, text: false, ui: true },
     { name: "dynamic", marker: true, text: true, ui: true },
     { name: "ordinary", marker: undefined, text: false, ui: undefined },
+    { name: "ordinary", marker: true, text: true, ui: undefined },
     { name: "unknown", marker: false, text: false, ui: false },
     { name: "unknown", marker: true, text: true, ui: true },
   ]) {

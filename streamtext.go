@@ -33,9 +33,10 @@ type StreamTextResult struct {
 	// ctxDone is the run context's cancellation channel, read by emit so a
 	// cancelled or timed-out run is not held open by a consumer that stopped
 	// reading. run sets it before its first emit.
-	ctxDone  <-chan struct{}
-	consumed atomic.Bool
-	mu       sync.Mutex
+	ctxDone   <-chan struct{}
+	consumed  atomic.Bool
+	mu        sync.Mutex
+	toolTypes map[string]UserToolType
 
 	steps        []StepResult
 	totalUsage   provider.Usage
@@ -70,6 +71,11 @@ func streamTextWithConfig(ctx context.Context, model provider.LanguageModel, cfg
 	result := &StreamTextResult{
 		fullStream: make(chan TextStreamPart, defaultStreamBuffer),
 		done:       make(chan struct{}),
+		toolTypes:  make(map[string]UserToolType, len(cfg.tools)),
+	}
+
+	for name, tool := range cfg.tools {
+		result.toolTypes[name] = tool.Type
 	}
 
 	result.partialOutputStream = newLosslessStream[json.RawMessage]()
@@ -175,6 +181,7 @@ func (r *StreamTextResult) Stream() <-chan TextStreamPart {
 // events suitable for SSE output to @ai-sdk/react hooks.
 func (r *StreamTextResult) ToUIMessageStream(opts ...UIMessageStreamOption) <-chan UIMessageChunk {
 	cfg := buildUIMessageStreamConfig(opts)
+	cfg.toolTypes = r.toolTypes
 	out := make(chan UIMessageChunk, defaultStreamBuffer)
 	go func() {
 		defer close(out)
@@ -331,20 +338,14 @@ func translateToChunksWithMetadata(part TextStreamPart, cfg uiMessageStreamConfi
 	case StreamReasoningEnd:
 		return []UIMessageChunk{{Type: ChunkReasoningEnd, ID: p.ID, ProviderMetadata: p.ProviderMetadata}}
 	case StreamToolInputStart:
-		dynamic := p.Dynamic
-		if p.useUIDynamic {
-			dynamic = p.uiDynamic
-		}
+		dynamic := uiToolDynamic(p.ToolName, p.Dynamic, cfg.toolTypes)
 		return []UIMessageChunk{{Type: ChunkToolInputStart, ToolCallID: p.ID, ToolName: p.ToolName, ProviderExecuted: p.ProviderExecuted, Dynamic: dynamic, Title: p.Title, ProviderMetadata: p.ProviderMetadata, ToolMetadata: toolMetadataFromProviderMetadata(p.ProviderMetadata)}}
 	case StreamToolInputDelta:
 		return []UIMessageChunk{{Type: ChunkToolInputDelta, ToolCallID: p.ID, InputTextDelta: p.Delta}}
 	case StreamToolInputEnd:
 		return nil // not sent to wire
 	case StreamToolCall:
-		dynamic := p.Dynamic
-		if p.useUIDynamic {
-			dynamic = p.uiDynamic
-		}
+		dynamic := uiToolDynamic(p.ToolName, p.Dynamic, cfg.toolTypes)
 		if p.Invalid {
 			return []UIMessageChunk{{Type: ChunkToolInputError, ToolCallID: p.ToolCallID, ToolName: p.ToolName, Input: p.Input, ErrorText: errorText(p.Error, cfg), ProviderExecuted: p.ProviderExecuted, Dynamic: dynamic, Title: p.Title, ProviderMetadata: p.ProviderMetadata, ToolMetadata: toolMetadataFromProviderMetadata(p.ProviderMetadata)}}
 		}
@@ -357,16 +358,13 @@ func translateToChunksWithMetadata(part TextStreamPart, cfg uiMessageStreamConfi
 	case StreamToolOutputDenied:
 		return []UIMessageChunk{{Type: ChunkToolOutputDenied, ToolCallID: p.ToolCallID}}
 	case StreamToolResult:
-		return []UIMessageChunk{{Type: ChunkToolOutputAvailable, ToolCallID: p.ToolCallID, Output: p.Output, ProviderExecuted: p.ProviderExecuted, Dynamic: p.Dynamic, Preliminary: p.Preliminary, ProviderMetadata: p.ProviderMetadata}}
+		return []UIMessageChunk{{Type: ChunkToolOutputAvailable, ToolCallID: p.ToolCallID, Output: p.Output, ProviderExecuted: p.ProviderExecuted, Dynamic: uiToolDynamic(p.ToolName, p.Dynamic, cfg.toolTypes), Preliminary: p.Preliminary, ProviderMetadata: p.ProviderMetadata}}
 	case StreamToolError:
 		errText := errorText(p.Error, cfg)
 		if p.ProviderExecuted {
 			errText = p.Error.Error()
 		}
-		dynamic := p.Dynamic
-		if p.useUIDynamic {
-			dynamic = p.uiDynamic
-		}
+		dynamic := uiToolDynamic(p.ToolName, p.Dynamic, cfg.toolTypes)
 		return []UIMessageChunk{{Type: ChunkToolOutputError, ToolCallID: p.ToolCallID, ErrorText: errText, ProviderExecuted: p.ProviderExecuted, Dynamic: dynamic, ProviderMetadata: p.ProviderMetadata}}
 	case StreamSource:
 		src := p.Source
@@ -705,9 +703,6 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 		stepCfg := *cfg
 		stepCfg.tools = executionTools
 		stepCfg.toolChoice = toolChoice
-		if toolSearch != nil {
-			stepCfg.uiTools = cfg.tools
-		}
 		step, outcome, err := r.processStep(ctx, stepNum, stepModel, streamResult, &stepCfg, stepContext, currentMsgs, opCancel)
 		if stepTimer != nil {
 			stepTimer.Stop()
@@ -1110,7 +1105,6 @@ loop:
 			tsp := StreamToolInputStart{
 				ID: part.ID, ToolName: part.ToolName,
 				ProviderExecuted: part.ProviderExecuted, Dynamic: isInputStartDynamic(part.ToolName, part.Dynamic, cfg.tools),
-				uiDynamic: toolUIDynamic(part.ToolName, part.Dynamic, cfg), useUIDynamic: true,
 				Title: part.Title, ProviderMetadata: part.ProviderMetadata,
 			}
 			r.emit(tsp)
@@ -1522,7 +1516,6 @@ func (r *StreamTextResult) handleToolCall(
 		ToolCallID: part.ToolCallID, ToolName: part.ToolName,
 		Input: parsedInput, ProviderExecuted: part.ProviderExecuted,
 		Dynamic: dynamic, Title: title, ProviderMetadata: part.ProviderMetadata,
-		uiDynamic: toolUIDynamic(part.ToolName, part.Dynamic, cfg), useUIDynamic: cfg.uiTools != nil,
 	}
 	r.emit(tsp)
 	r.callOnChunk(cfg, tsp)
@@ -1649,7 +1642,6 @@ func (r *StreamTextResult) rejectToolCall(
 		title = toolTitleByID[part.ToolCallID]
 	}
 	dynamicTrue := true
-	uiDynamic := toolUIDynamic(part.ToolName, &dynamicTrue, cfg)
 
 	tc := ToolCall{
 		ToolCallID:       part.ToolCallID,
@@ -1673,8 +1665,6 @@ func (r *StreamTextResult) rejectToolCall(
 		Dynamic:          &dynamicTrue,
 		Title:            title,
 		ProviderMetadata: part.ProviderMetadata,
-		uiDynamic:        uiDynamic,
-		useUIDynamic:     true,
 	}
 	r.emit(toolCallPart)
 	r.callOnChunk(cfg, toolCallPart)
@@ -1697,14 +1687,12 @@ func (r *StreamTextResult) rejectToolCall(
 	})
 
 	toolErrorPart := StreamToolError{
-		ToolCallID:   part.ToolCallID,
-		ToolName:     part.ToolName,
-		Input:        input,
-		Error:        err,
-		Dynamic:      &dynamicTrue,
-		Title:        title,
-		uiDynamic:    uiDynamic,
-		useUIDynamic: true,
+		ToolCallID: part.ToolCallID,
+		ToolName:   part.ToolName,
+		Input:      input,
+		Error:      err,
+		Dynamic:    &dynamicTrue,
+		Title:      title,
 	}
 	r.emit(toolErrorPart)
 	r.callOnChunk(cfg, toolErrorPart)
@@ -3072,11 +3060,16 @@ func isJSONObject(data json.RawMessage) bool {
 	return false
 }
 
-func toolUIDynamic(toolName string, providerDynamic *bool, cfg *streamConfig) *bool {
-	if cfg.uiTools != nil {
-		return isDynamic(toolName, providerDynamic, cfg.uiTools)
+func uiToolDynamic(toolName string, dynamic *bool, toolTypes map[string]UserToolType) *bool {
+	toolType, known := toolTypes[toolName]
+	if !known {
+		return dynamic
 	}
-	return isDynamic(toolName, providerDynamic, cfg.tools)
+	if toolType == UserToolDynamic {
+		value := true
+		return &value
+	}
+	return nil
 }
 
 func isInputStartDynamic(toolName string, providerDynamic *bool, tools map[string]Tool) *bool {

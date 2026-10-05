@@ -224,6 +224,57 @@ func TestModel_StreamProviderToolParts(t *testing.T) {
 	assert.Nil(t, parts[5].Dynamic)
 }
 
+func TestDecodeStreamPart_VariantLocalFields(t *testing.T) {
+	for _, tc := range []struct {
+		name, event, extra string
+	}{
+		{"text ignores tool fields", `{"type":"text-delta","id":"text","delta":"hello"}`, `"dynamic":{},"preliminary":true,"providerExecuted":"not-a-boolean","isError":[],"input":{},"result":false`},
+		{"start ignores result fields", `{"type":"tool-input-start","id":"call","toolName":"echo"}`, `"preliminary":{},"isError":[],"result":false`},
+		{"delta ignores start flags", `{"type":"tool-input-delta","id":"call","delta":""}`, `"providerExecuted":true,"dynamic":"not-a-boolean","preliminary":true,"toolName":[]`},
+		{"end ignores start fields", `{"type":"tool-input-end","id":"call"}`, `"providerExecuted":true,"dynamic":true,"toolName":{},"delta":[]`},
+		{"call ignores result fields", `{"type":"tool-call","toolCallId":"call","toolName":"echo","input":"{}"}`, `"preliminary":{},"isError":[],"result":false`},
+		{"result ignores call fields", `{"type":"tool-result","toolCallId":"call","toolName":"echo","result":false}`, `"input":{},"providerExecuted":"not-a-boolean","delta":[]`},
+		{"null start markers normalize", `{"type":"tool-input-start","id":"call","toolName":"echo"}`, `"dynamic":null,"providerExecuted":null`},
+		{"null result markers normalize", `{"type":"tool-result","toolCallId":"call","toolName":"echo","result":0}`, `"dynamic":null,"preliminary":null,"isError":null`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			want, err := decodeStreamPart([]byte(tc.event))
+			require.NoError(t, err)
+			got, err := decodeStreamPart([]byte(strings.TrimSuffix(tc.event, "}") + "," + tc.extra + "}"))
+			require.NoError(t, err)
+			assert.Equal(t, want, got)
+		})
+	}
+}
+
+func TestDecodeStreamPart_ToolMarkerPresence(t *testing.T) {
+	for _, event := range []string{
+		`{"type":"tool-input-start","id":"call","toolName":"echo"}`,
+		`{"type":"tool-call","toolCallId":"call","toolName":"echo","input":"{}"}`,
+		`{"type":"tool-result","toolCallId":"call","toolName":"echo","result":false}`,
+	} {
+		for _, tc := range []struct {
+			value string
+			want  *bool
+		}{
+			{value: "null"}, {value: "false", want: boolPointer(false)}, {value: "true", want: boolPointer(true)},
+		} {
+			part, err := decodeStreamPart([]byte(strings.TrimSuffix(event, "}") + `,"dynamic":` + tc.value + "}"))
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, part.Dynamic)
+			if part.Type == provider.PartToolResult {
+				part, err = decodeStreamPart([]byte(strings.TrimSuffix(event, "}") + `,"preliminary":` + tc.value + "}"))
+				require.NoError(t, err)
+				assert.Equal(t, tc.want, part.Preliminary)
+			}
+		}
+	}
+	for _, field := range []string{"dynamic", "preliminary", "isError"} {
+		_, err := decodeStreamPart([]byte(`{"type":"tool-result","toolCallId":"call","toolName":"echo","result":false,"` + field + `":"not-a-boolean"}`))
+		require.Error(t, err)
+	}
+}
+
 func TestDecodeStreamPart_DeferredAndMarkers(t *testing.T) {
 	for _, tc := range []struct {
 		name, event string
@@ -244,10 +295,8 @@ func TestDecodeStreamPart_DeferredAndMarkers(t *testing.T) {
 	assert.Equal(t, "history-call", result.ToolCallID)
 	assert.True(t, result.IsError)
 	for _, event := range []string{
-		`{"type":"tool-input-start","id":"call","toolName":"echo","dynamic":null}`,
 		`{"type":"tool-call","toolCallId":"call","toolName":"echo","input":"{}","providerExecuted":"true"}`,
 		`{"type":"tool-result","toolCallId":"call","toolName":"echo","result":null}`,
-		`{"type":"tool-result","toolCallId":"call","toolName":"echo","result":{},"providerExecuted":true}`,
 		`{"type":"tool-result","toolCallId":"call","toolName":"echo","result":{},"providerMetadata":{"anthropic":null}}`,
 	} {
 		_, err := decodeStreamPart([]byte(event))
@@ -502,11 +551,8 @@ func TestDecodeStreamPart_FunctionTools(t *testing.T) {
 		assert.NotEmpty(t, part.Type)
 	}
 	for _, raw := range []string{
-		`{"type":"tool-input-start","id":"a","toolName":"f","preliminary":true}`,
 		`{"type":"tool-call","toolCallId":"a","toolName":"f"}`,
-		`{"type":"tool-call","toolCallId":"a","toolName":"f","input":"{}","preliminary":true}`,
 		`{"type":"tool-result","toolCallId":"a","toolName":"f","result":null}`,
-		`{"type":"tool-result","toolCallId":"a","toolName":"f","result":{},"providerExecuted":true}`,
 		`{"type":"tool-input-delta","id":"a"}`,
 	} {
 		_, err := decodeStreamPart([]byte(raw))
