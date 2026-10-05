@@ -4760,3 +4760,94 @@ func TestIsDynamic_UnknownToolPreservesProviderValue(t *testing.T) {
 }
 
 func boolPtr(b bool) *bool { return &b }
+
+// manyTextDeltaParts streams more text deltas than the FullStream buffer holds,
+// so a consumer that stops reading leaves the run goroutine mid-step.
+func manyTextDeltaParts(ctx context.Context, count int) <-chan provider.StreamPart {
+	ch := make(chan provider.StreamPart, 8)
+	go func() {
+		defer close(ch)
+		send := func(part provider.StreamPart) bool {
+			select {
+			case ch <- part:
+				return true
+			case <-ctx.Done():
+				return false
+			}
+		}
+		if !send(provider.StreamPart{Type: provider.PartTextStart, ID: "t1"}) {
+			return
+		}
+		for i := 0; i < count; i++ {
+			if !send(provider.StreamPart{Type: provider.PartTextDelta, ID: "t1", Delta: "x"}) {
+				return
+			}
+		}
+		if !send(provider.StreamPart{Type: provider.PartTextEnd, ID: "t1"}) {
+			return
+		}
+		send(provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}})
+	}()
+	return ch
+}
+
+func TestStreamText_CancelFinishesAbandonedFullStream(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		opts []StreamOption
+		// abort releases the run once the buffer is full.
+		abort func(cancel context.CancelFunc)
+	}{
+		{
+			name:  "caller cancels the context",
+			abort: func(cancel context.CancelFunc) { cancel() },
+		},
+		{
+			// The total timeout cancels a context derived inside run, not the
+			// caller's, so emit has to watch the run's own context.
+			name:  "total timeout fires",
+			opts:  []StreamOption{WithTimeout(TimeoutConfig{Total: time.Second})},
+			abort: func(context.CancelFunc) {},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			model := &mockModel{streamFunc: func(ctx context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+				return &provider.StreamResult{Stream: manyTextDeltaParts(ctx, defaultStreamBuffer*2)}, nil
+			}}
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			opts := append([]StreamOption{WithModelMessages(provider.UserText("go"))}, tc.opts...)
+			result := StreamText(ctx, model, opts...)
+
+			stream := result.FullStream()
+			_, ok := <-stream
+			require.True(t, ok, "the stream should deliver at least one part")
+
+			// Stop reading and wait until the buffer is full, which is the state
+			// that parks the run goroutine inside emit. Aborting before that leaves
+			// room for the remaining parts, and the run finishes for the ordinary
+			// reason.
+			require.Eventually(t, func() bool {
+				return len(result.fullStream) == cap(result.fullStream)
+			}, 10*time.Second, 5*time.Millisecond, "the run goroutine should fill the FullStream buffer")
+			tc.abort(cancel)
+
+			waited := make(chan struct{})
+			go func() {
+				result.Wait()
+				close(waited)
+			}()
+			select {
+			case <-waited:
+			case <-time.After(10 * time.Second):
+				t.Fatal("Wait() is still blocked after the run was aborted")
+			}
+
+			for range stream {
+				// Drain whatever the run goroutine managed to buffer; the channel
+				// is closed, so this returns.
+			}
+		})
+	}
+}
