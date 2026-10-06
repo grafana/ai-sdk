@@ -45,6 +45,8 @@ Use the model IDs supported by the selected Anthropic or Vertex endpoint. The
 package exposes model-ID helpers for discovery; availability still depends on
 your account and region.
 
+For Claude on Microsoft Azure, use the [Azure provider](azure.md).
+
 ## Enable reasoning deliberately
 
 ```go

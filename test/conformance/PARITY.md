@@ -29,6 +29,7 @@ evidence boundary changes, not merely because the pinned versions change.
 | Agent Observability integration | mixed | Tests against the agento11y versions in the middleware's `go.mod` cover cached unary/streaming usage, inclusive export/span/metric semantics, and hook fixtures replayed through the real HTTP decoder. Gateway tests cover cached unary/streaming inclusive exports with both source and published middleware, bounded HTTP/gRPC export attempts, and ambient configuration rejection. | Hook validation starts after SDK normalization; discarded wire fields cannot be validated, and lost provider-tool discriminators fail reconstruction. Local HTTP servers do not prove deployed hook-service compatibility. Experimental OTel generation export is outside this evidence. |
 | LanguageModelV4 contract | mixed | Discriminator checks, finite ProviderWire witnesses and provider request snapshots exercise represented types and mappings. | Shape checks are not complete semantic interface verification. |
 | Provider adapters | mixed | `recorded/` and `upstream/` fixtures exercise represented requests, stream events, usage and outputs; provider tests cover synthetic failures and local invariants, including OpenAI multipart function-result conversion and immutable Responses schema normalization. | No recorded/imported OpenAI request fixture exercises multipart result references, cache breakpoints or `propertyNames` normalization; focused request tests do not prove live acceptance. Request capture does not prove returned SDK metadata. Volatile SigV4 headers are excluded from snapshots. |
+| Anthropic on Microsoft Foundry | mixed | Synthetic HTTP tests exercise endpoint/authentication, retry credential refresh, deployment-name request mapping, canonical generation/stream identity, tools, reasoning and usage through the shared Anthropic adapter. | The registered `@ai-sdk/anthropic` baseline has no Foundry constructor. This Go extension follows the native Foundry contract and composes an older published Anthropic adapter for consumer compatibility; no live Foundry recording or hosting-version capability proof is claimed. |
 | Bedrock Mantle Responses continuation | mixed | [Mantle assistant-history request tests](../../providers/bedrock/mantle/provider_test.go) capture unary and streaming reconstruction, phase, empty text and stored references; standalone readonly Bedrock tests with a publicly resolved OpenAI dependency exercise [#207](https://github.com/grafana/ai-sdk/issues/207)'s consumer boundary. | Fake transport validates request encoding, not live Mantle acceptance or a provider recording. OpenAI producer tests or workspace substitutions alone do not establish Bedrock consumer adoption. Mantle Chat remains unsupported. |
 | ProviderWire request projection | automated | Registered-client HTTP goldens, type/schema witnesses and mapping mutation tests are replayed through Go handlers. | This establishes the public client projection, not Vercel's private service behavior. |
 | Gateway runtime and Go client | mixed | Handler, differential and command tests exercise supported text/function-tool/file-input paths, framing, bounds, privacy, cancellation and ownership. | Schema acceptance and runtime support differ. Permissive client parsing does not prove strict server output, privacy or resource bounds. |
@@ -64,6 +65,14 @@ issue rather than being maintained in both places.
   With no tools, required/named choices are retained. Its api_error/overloaded_error
   retry classification is broader than upstream's initial-overload rule; the full
   error envelope and inner response error are retained separately.
+- Foundry keeps canonical model IDs for capability selection and response
+  identity while transmitting Azure deployment names. Its endpoint/auth facade
+  deliberately preempts ambient authentication in the compatible published
+  adapter and additionally supports per-attempt API-key rotation. Native
+  Anthropic Messages conversion, beta handling and wire decoding are shared;
+  a provider-owned forwarding stage adjusts existing response metadata without
+  adding frontend stream-part types. Hosting-specific capability
+  restrictions, approved deployments and residency policy belong to consumers.
 - OpenAI resolves configured apply-patch aliases. Legacy nested-error envelopes
   terminate consumption. Plain EOF without a terminal/error does not synthesize a
   provider finish, preserving Go's incomplete-stream distinction; that is not a
