@@ -24,20 +24,21 @@ the next request. The Go and Vercel SDKs can manage this tool loop for you. See
 [Tools](../guides/tools.md) and [Agent loops](../guides/agent-loops.md) for setup.
 The Gateway does not retain conversation state between requests.
 
-Provider-defined tools are selected by the model provider. A returned call with
-`providerExecuted: true` belongs to the provider; do not execute it in your
-application. Provider-defined tools can also return client-executed calls, so use
-the returned ownership marker rather than the definition to decide who runs them.
+## Provider-defined tools
 
-Provider calls and correlated results work with unary and streaming requests.
-Preliminary results must be followed by a final result. Include unresolved
-provider calls in assistant history when continuing on a later request; the
-Gateway does not store them for you. Tool metadata is preserved as opaque
-provider data, including extension fields and explicit empty objects. Returning
-that data does not enable telemetry capture.
+Provider-defined tools expose capabilities supplied by the model provider.
+Some run on the provider; others ask your application to execute a call. When a
+returned call has `providerExecuted: true`, do not execute it in your application.
+Use that marker, not the tool definition, to decide who runs each call.
 
-Anthropic-hosted MCP requires separate Gateway support. Tool approvals, custom
-tool results and generated media responses are not yet supported.
+These tools work with both non-streaming and streaming requests. A preliminary
+result is a preview, not a completed call; wait for the final result. When
+continuing the conversation, retain previous calls and results, including
+unresolved provider-executed calls. Keep their provider metadata unchanged, as
+explained in [Continue conversations with provider metadata](#continue-conversations-with-provider-metadata).
+
+Hosted MCP servers, tool approvals, custom tool-result formats and generated
+media responses are not supported.
 
 ## Configure provider-specific settings
 
@@ -214,16 +215,16 @@ This boundary avoids mixing responses from different models or replaying tool
 calls after a response has started.
 
 A failed attempt may still incur charges or perform provider-hosted effects.
-For example, an MCP tool could create a ticket and lose its response before the
-Gateway observes a result or stream event; a backup could create another ticket.
+For example, a provider-hosted tool could complete an action but lose its
+response before the Gateway receives it; a backup could repeat that action.
 Decide whether your workflow is fallback-safe. Use application idempotency or
 deduplication, or avoid fallback for workflows that cannot tolerate duplicates.
 
 Application-local functions run after selected calls are returned; that boundary
 does not establish whether a provider-hosted tool already ran. Application and
 SDK retries are separate and can also repeat work. Account for them when setting
-latency and cost budgets. The Gateway disables native-client retries, but does
-not guarantee exactly-once generation or effects.
+latency and cost budgets. Neither fallback nor retries guarantee that generation
+or side effects happen only once.
 
 For troubleshooting, ask your Gateway operator to inspect fallback attempts in
 private logs. Public model names do not identify which backend served a request.
