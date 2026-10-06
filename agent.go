@@ -723,24 +723,27 @@ func findHeaderKey(headers map[string]string, name string) string {
 
 // CreateAgentUIStream creates a UIMessageChunk stream from an Agent and UI message history.
 //
-// The helper validates the current Go UI message model before starting the
-// provider stream, converts UI messages to model messages, calls Agent.Stream,
-// and returns the existing ToUIMessageStream output with original messages
-// preserved for response assembly.
+// The helper validates represented states and configured static tool schemas
+// on an isolated clone before calling Agent.Stream. Obsolete terminal static
+// tools normalize to dynamic tools. That same normalized history is converted
+// to model messages and preserved for response assembly.
+// Application metadata/data schemas and unrepresented provider-tool schemas
+// are not validated; Tool.ValidateInput is not a history validation callback.
 func CreateAgentUIStream(ctx context.Context, agent Agent, messages []UIMessage, opts ...UIMessageStreamOption) (<-chan UIMessageChunk, error) {
 	if agent == nil {
 		return nil, fmt.Errorf("aisdk: agent is nil")
 	}
-	if err := validateAgentUIMessages(messages, agent.Tools()); err != nil {
+	normalized, err := validateAgentUIMessages(messages, agent.Tools())
+	if err != nil {
 		return nil, err
 	}
-	modelMessages, err := ConvertToModelMessages(messages, WithTools(agent.Tools()))
+	modelMessages, err := ConvertToModelMessages(normalized, WithTools(agent.Tools()))
 	if err != nil {
 		return nil, err
 	}
 	result := agent.Stream(ctx, WithAgentModelMessages(modelMessages...))
 	streamOpts := append([]UIMessageStreamOption{}, opts...)
-	streamOpts = append(streamOpts, WithUIMessageStreamOriginalMessages(messages...))
+	streamOpts = append(streamOpts, WithUIMessageStreamOriginalMessages(normalized...))
 	return result.ToUIMessageStream(streamOpts...), nil
 }
 
@@ -756,65 +759,6 @@ func WriteAgentUIStream(w http.ResponseWriter, ctx context.Context, agent Agent,
 // PipeAgentUIStreamToResponse writes an already-created Agent UI stream as SSE.
 func PipeAgentUIStreamToResponse(w http.ResponseWriter, stream <-chan UIMessageChunk) error {
 	return PipeUIMessageStreamToResponse(w, stream)
-}
-
-func validateAgentUIMessages(messages []UIMessage, tools ToolSet) error {
-	for msgIdx, msg := range messages {
-		for partIdx, part := range msg.Parts {
-			switch p := part.(type) {
-			case ToolInvocationPart:
-				if err := validateAgentToolInvocation(toolPartFields(p), false, tools); err != nil {
-					return fmt.Errorf("aisdk: validating UI message %d part %d: %w", msgIdx, partIdx, err)
-				}
-			case DynamicToolUIPart:
-				if err := validateAgentToolInvocation(toolPartFields(p), true, tools); err != nil {
-					return fmt.Errorf("aisdk: validating UI message %d part %d: %w", msgIdx, partIdx, err)
-				}
-			}
-		}
-	}
-	return nil
-}
-
-func validateAgentToolInvocation(part toolPartFields, dynamic bool, tools ToolSet) error {
-	if part.ToolCallID == "" {
-		return fmt.Errorf("tool invocation has empty tool call ID")
-	}
-	if part.ToolName == "" {
-		return fmt.Errorf("tool invocation has empty tool name")
-	}
-	if !dynamic && !part.ProviderExecuted {
-		if _, ok := tools[part.ToolName]; !ok {
-			return fmt.Errorf("tool %q is not configured on agent", part.ToolName)
-		}
-	}
-	if !isKnownToolInvocationState(part.State) {
-		return fmt.Errorf("unknown tool invocation state %q", part.State)
-	}
-	if toolInvocationStateRequiresInput(part.State) && len(part.Input) == 0 {
-		return fmt.Errorf("tool invocation %q in state %q is missing input", part.ToolCallID, part.State)
-	}
-	switch part.State {
-	case ToolStateOutputAvailable:
-		if len(part.Output) == 0 {
-			return fmt.Errorf("tool invocation %q in state %q is missing output", part.ToolCallID, part.State)
-		}
-	case ToolStateOutputError:
-		if part.ErrorText == "" {
-			return fmt.Errorf("tool invocation %q in state %q is missing error text", part.ToolCallID, part.State)
-		}
-	case ToolStateOutputDenied:
-		// No extra fields are required by the current Go model.
-	case ToolStateApprovalResponded:
-		if part.Approval == nil || part.Approval.ID == "" || part.Approval.Approved == nil {
-			return fmt.Errorf("tool invocation %q in state %q is missing approval response", part.ToolCallID, part.State)
-		}
-	case ToolStateApprovalRequested:
-		if part.Approval == nil || part.Approval.ID == "" {
-			return fmt.Errorf("tool invocation %q in state %q is missing approval request", part.ToolCallID, part.State)
-		}
-	}
-	return nil
 }
 
 func toolInvocationStateRequiresInput(state ToolInvocationState) bool {

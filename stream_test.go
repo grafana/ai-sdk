@@ -562,7 +562,7 @@ func TestAssembleResponseMessage(t *testing.T) {
 		tip, ok := msg.Parts[0].(ToolInvocationPart)
 		require.True(t, ok, "expected ToolInvocationPart")
 		assert.Equal(t, ToolStateOutputError, tip.State)
-		assert.Equal(t, "invalid input", tip.ErrorText)
+		assert.Equal(t, new("invalid input"), tip.ErrorText)
 	})
 }
 

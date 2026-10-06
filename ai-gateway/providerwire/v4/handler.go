@@ -192,7 +192,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if validated.mode == executionStreaming {
-		h.serveStream(w, r.Context(), resolved.Model, options, resolved.ID)
+		h.serveStream(w, r.Context(), resolved.Model, options)
 		return
 	}
 	result, err := h.invokeModel(r.Context(), resolved.Model, options)

@@ -6,18 +6,19 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test:schema": "tsx --test schema.test.ts schema-definitions.test.ts request-goldens.test.ts update-goldens.test.ts",
-    "test:client": "tsx --test client-consumption.test.ts runtime-integration.test.ts go-client-differential.test.ts go-client-request-mutations.test.ts",
+    "test:client": "tsx --test configured-discovery.test.ts client-consumption.test.ts developer-evidence-access.test.ts developer-evidence-bounds.test.ts runtime-integration.test.ts go-client-differential.test.ts go-client-request-mutations.test.ts",
     "test:contract": "pnpm run typecheck && pnpm run test:schema && pnpm run test:client",
     "test:command": "tsx --test gateway-command.test.ts",
     "test": "pnpm run test:contract && pnpm run test:command",
     "update-goldens": "tsx update-goldens.ts"
   },
   "dependencies": {
-    "ai": "7.0.116",
-    "@ai-sdk/gateway": "4.0.94",
+    "ai": "7.0.118",
+    "@ai-sdk/gateway": "4.0.96",
     "@ai-sdk/provider": "4.0.18",
     "@ai-sdk/provider-utils": "5.0.49",
-    "ajv": "8.20.0"
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1"
   },
   "devDependencies": {
     "@types/node": "25.9.9",

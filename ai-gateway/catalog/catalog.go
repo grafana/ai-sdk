@@ -37,6 +37,13 @@ type ResolvedModel struct {
 // ModelCapability identifies behavior guaranteed by a public model route.
 type ModelCapability string
 
+// ConfiguredCandidate describes an explicitly configured invocation destination.
+type ConfiguredCandidate struct {
+	ProviderInstance string
+	Provider         string
+	ModelID          string
+}
+
 // ModelInfo describes a canonical public model route.
 type ModelInfo struct {
 	// ID is the required canonical public model ID.
@@ -49,6 +56,8 @@ type ModelInfo struct {
 	Aliases []string
 	// Capabilities are behaviors guaranteed by this public route.
 	Capabilities []ModelCapability
+	// Candidates are explicit configured destinations in primary/fallback order.
+	Candidates []ConfiguredCandidate
 }
 
 // StaticEntry configures one model in a static catalog.

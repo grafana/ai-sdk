@@ -1,0 +1,39 @@
+## 1. Confirm prerequisites and establish failing discovery contracts
+
+- [x] 1.1 Implement/review on the existing authorized parent stack: nrbrd/gw-routing already contains approved #321/#327 at 7b0b35cf. Reconfirm parent ancestry/changes/approval, `test/conformance/upstream.yaml`, matching Gateway discovery source/tests and installed workspace versions; validate cumulative source without a merge-first implementation gate or stopped #303/#309 reuse. Classify Gateway runtime/client and host-composition evidence in PARITY.md and recheck concurrent catalog/spec changes. When PR delivery is authorized, target nrbrd/gw-contract while #327 is open, merge the child after the parent, then rebase/retarget main after parent merge; do not imply #321 is already merged.
+- [x] 1.2 Add failing independent server and Go discovery tests for the approved row extension, canonical row/specification and alias/fallback ordering, direct/mixed-fallback facts and default/custom compatible provider identity. Use explicit synthetic HTTP/catalog data, not invented provider recordings.
+- [x] 1.3 Add registered TS access/command witnesses demonstrating stock getAvailableModels stripping versus the required helper access, with zero native inference requests; establish current failure/loss before feature changes.
+
+## 2. Preserve explicit configured facts in the catalog
+
+- [x] 2.1 Add minimal safe catalog candidate metadata and populate it from the command's existing primary/fallback descriptors and effective provider configuration before canonical wrapping, without retaining credentials, secret references or whole config objects.
+- [x] 2.2 Extend static/registry metadata defensive copies; test source/list mutation, repeated listing, aliases, context non-retention and concurrent reads. Keep generic entries without supplied candidates unextended and never infer inventories or response-derived identities.
+- [x] 2.3 Enforce approved configured row/alias/candidate/string ceilings at startup before readiness and inference, preserving existing public-ID grammar, namespace/reference/candidate validation and safe errors. Verify exact and one-over cases and rejection before listener creation; discovery serialization does not impose a separate response-size cap.
+
+## 3. Project the complete authenticated discovery document
+
+- [x] 3.1 Extend discovery's private DTO/encoder and closed test schema with the approved gateway object, preserving outer row identity, names/descriptions, canonical-ID sorting and explicit alias/primary/fallback facts. Complete encoding must precede HTTP 200.
+- [x] 3.2 Keep configuration policy in startup validation, not response building. Serialize typed credential-safe metadata with standard JSON, without a response-byte cap or custom preflight/assembly machinery.
+- [x] 3.3 Test complete large-catalog responses, canonical-only rows, alias retention, escaping, listing errors/panics and absence of response-policy checks. Preserve client read safeguards independently: configurable Go default of 4 MiB and TS helper default/max of 4 MiB.
+- [x] 3.4 Prove authenticated request-context propagation and paired listing/resolution visibility using scoped decorators; verify source credentials/references and unrelated provider/account entries are excluded while authorized identities/key-looking application strings survive. Label scoped fixtures honestly and leave operator capture unchanged.
+
+## 4. Implement independent bounded client access
+
+- [x] 4.1 Add Go ModelInfo.Gateway, ConfiguredRoute and ConfiguredCandidate types and independent decoding on existing ListModels. Preserve auth/error handling, server order, missing-extension nil behavior and ignored unrelated additives without importing AGPL types/validators.
+- [x] 4.2 Add Go tests for ordinary typed decoding, acceptance of server-owned route semantics, standard missing/null/casing behavior, late type errors, UTF-8, media types, trailing JSON and complete-document read bounds. Prove atomic results, bounded reads, cancellation, redirects, body closure and no implicit inference/cache/retry.
+- [x] 4.3 Ship the copyable fetchConfiguredModels({baseURL, headers, fetch, signal, maxBytes}) example under ai-gateway/examples and register its source in the existing exact-pinned ProviderWire typecheck/tests. Preserve the API prefix, validate URL/limits, use explicit JWT/CAP headers and incrementally bounded UTF-8/JSON reads with abort and redirect refusal.
+- [x] 4.4 Independently test the TS helper's recognized field types, document-byte limits, absence of route-policy checks, standard JSON string decoding, late type errors, unextended catalogs, additive unknowns, read failures, abort/body cleanup, redirect credential protection and bounded local errors. Do not reuse server validation as the client oracle.
+- [x] 4.5 Update #321 discovery witnesses only for delivered Go/helper retention; retain stock TS normalized-loss assertions and unrelated metadata/error current-loss probes.
+
+## 5. Prove command behavior and document actual access
+
+- [x] 5.1 Extend real-command tests for raw HTTP, pinned normalized TS, the shipped TS helper and Go ListModels across direct/mixed-fallback canonical rows with alias metadata; verify matching configured facts, normalized compatibility, zero native inference calls and existing JWT authentication rejection before listing.
+- [x] 5.2 Exercise explicit CAP headers through the existing dummy Cloud edge, including credential/scope denials and no exchange/inference. Document the current static command visibility and distinguish this evidence from customer account construction, deployed CAP enforcement and BYOK isolation.
+- [x] 5.3 Update docs/providers/grafana-gateway.md and applicable shared client guidance with tested Go field access and TS helper recipes, stock normalization limits and missing-extension handling. Keep exhaustive Go API reference in godoc; link the actual tested helper rather than an untested prose variant.
+- [x] 5.4 Update Gateway catalog/operator guidance with candidate vocabulary/order, visibility/credential exclusions, startup policy, client read safeguards and deployment/rollback boundaries. Update applicable discovery-concealment delta specs without changing runtime evidence/execution/telemetry requirements, and update PARITY.md only for durable evidence/support changes.
+
+## 6. Validate and review the bounded delivery
+
+- [x] 6.1 Validate cumulative parent-plus-child source with focused catalog/config/discovery/service tests, full providers/grafana tests with race/vet, and candidate-source Gateway tests via go.gateway.work. Run `mise run test-providerwire-v4`, `mise run test-ai-gateway-command`, applicable formatting/build/vet/lint and docs-navigation checks.
+- [x] 6.2 Run `mise run validate-parity-baseline`, `mise run parity-check`, `mise run verify-gateway-workspace`, `mise run verify-ai-gateway-boundary` and `mise run verify-merged-pins`; validate the Apache client standalone with `MODULE=providers/grafana mise run verify-published-module`. Use the current candidate-source Gateway image gate when required by CI, not an obsolete standalone-Gateway publication/pin policy.
+- [x] 6.3 Run strict OpenSpec validation and compare implementation against pinned discovery behavior, the approved #321 decision and every #324 acceptance criterion. Record checks and residual deployment/evidence limits; verify no new endpoint/package, provider recordings, runtime codecs, routing/BYOK implementation, capture policy or unsupported provider activation entered the diff.

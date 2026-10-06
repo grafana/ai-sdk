@@ -70,7 +70,7 @@ function assertInvalidRequest(error: unknown): boolean {
 }
 
 describe("registered Gateway client consumption", () => {
-  it("consumes unary output while replacing client-owned fields", async () => {
+  it("combines server warnings with currently empty local warnings while replacing request/response", async () => {
     const serverBody = {
       content: [{ type: "text", text: "hello" }],
       finishReason: { unified: "stop", raw: "end_turn" },
@@ -79,7 +79,13 @@ describe("registered Gateway client consumption", () => {
         outputTokens: { total: 1, text: 1, reasoning: 0 },
         raw: { input_tokens: 2, service_tier: "standard", nested: { tokens: [1] } },
       },
-      warnings: [{ type: "other", message: "server warning" }],
+      warnings: [
+        { type: "unsupported", feature: "native model ☃", details: "native details" },
+        { type: "compatibility", feature: "", details: "" },
+        { type: "deprecated", setting: "", message: "native replacement" },
+        { type: "other", message: "" },
+        { type: "other", message: "server warning" },
+      ],
       request: { body: "server request" },
       response: {
         id: "server-id",

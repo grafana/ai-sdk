@@ -283,8 +283,14 @@ func decodeStreamPart(data []byte) (provider.StreamPart, error) {
 		}
 		part.Warnings = warnings
 	case provider.PartResponseMeta:
-		if value.ModelID == nil || !publicModelID.MatchString(*value.ModelID) {
+		var fields map[string]json.RawMessage
+		if json.Unmarshal(data, &fields) != nil {
 			return invalid()
+		}
+		for _, name := range []string{"id", "modelId", "timestamp"} {
+			if bytes.Equal(bytes.TrimSpace(fields[name]), []byte("null")) {
+				return invalid()
+			}
 		}
 		if value.ID != nil {
 			part.ResponseID = *value.ID

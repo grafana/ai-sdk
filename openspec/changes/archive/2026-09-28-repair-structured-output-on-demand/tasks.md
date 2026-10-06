@@ -1,0 +1,17 @@
+## 1. Regression contract
+
+- [x] 1.1 Add focused failing tests in `output/value_test.go` and `streamtext_output_test.go` for both wrappers and direct `GenerateText`/`StreamText`: malformed JSON and schema-invalid JSON repaired once; assert original text and error passed to callback and typed final value returned.
+- [x] 1.2 Add failing tests for no option, decline, callback error, still-invalid accepted repair, original valid output, non-validation errors and non-stop `GenerateText` parse gate. Explicitly cover Object/Array schema-valid JSON failing typed unmarshaling (including a custom unmarshaler failure): preserve `ErrNoObjectGenerated`, exclude the repair marker, and never call the callback. Verify callback/parse counts and resulting `OutputError`, without a second model call.
+- [x] 1.3 Test representative Array, Choice, JSON and custom `Output` repairs; custom outputs must wrap both eligibility sentinels to trigger repair, while a custom error wrapping only `ErrNoObjectGenerated` does not. Verify inspectable JSON syntax/schema-validation causes (`errors.As`) and both `ErrNoObjectGenerated` and `ErrInvalidOutputText` (`errors.Is`) on repairable failures.
+
+## 2. Implement single-attempt repair
+
+- [x] 2.1 Add documented `RepairTextFunc`, `WithRepairText` as an `aisdk.Option`, and `ErrInvalidOutputText` as the exported repair-eligibility sentinel for JSON syntax/schema failure; store callback on shared config for both generation operations without changing wrapper or `Output` signatures.
+- [x] 2.2 At `streamtext.go`'s existing eligible terminal `ParseComplete` call, invoke the callback only for errors wrapping both `ErrNoObjectGenerated` and `ErrInvalidOutputText`; add exactly one validation of accepted text, preserve original error on decline, return callback error or repaired parse error as `OutputError`, and leave raw response/chunks/usage untouched.
+- [x] 2.3 Preserve parser/schema/unmarshal causes in `output/object.go`, `array.go`, `choice.go`, `json.go` errors while retaining `ErrNoObjectGenerated` identity and diagnostic context; mark JSON/schema failures with `ErrInvalidOutputText`, but leave typed-conversion errors unmarked.
+
+## 3. Verify parity and observable boundaries
+
+- [x] 3.1 Extend focused stream tests to assert raw `Text`/`Content`/`Steps`, `Usage`/`TotalUsage`, response metadata, and full/UI chunks and partial/element streams do not contain repaired text, while `OutputValue`/typed accessors do; confirm provider request `ResponseFormat` unchanged.
+- [x] 3.2 Run root tests and `mise run parity-check`; compare cases to pinned `ai@7.0.109` tests and confirm #226 parse eligibility and #114 Gateway transport remain unchanged. If any UI chunk/framing behavior is modified, add provider-independent UI fixture plus cross-language schema-parsed integration scenario and run `mise run test-integration`; never label synthetic provider chunks as recorded.
+- [x] 3.3 Update public godoc for the new callback/option and the applicable structured-output guide if needed. Once implementation and tests establish that the gap is closed, remove or update `structured-output-repair-text` in `test/conformance/upstream.yaml` so it no longer claims no callback exists; retain the gap if implementation or proof remains incomplete. Update `test/conformance/PARITY.md` only if its stable coverage or evidence statement changes. Issue #260 retains actionable ownership until merged.

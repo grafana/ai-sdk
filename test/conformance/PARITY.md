@@ -22,10 +22,10 @@ evidence boundary changes, not merely because the pinned versions change.
 | Surface | Status | Evidence | Boundary |
 | --- | --- | --- | --- |
 | Core orchestration and tools | mixed | Root tests, provider-independent UI fixtures and HTTP/core integration tests exercise lifecycle, tool execution, approvals, continuation, ordering, cancellation and URL-backed generated-file resolution with deterministic network policy tests. Pinned core mock request/UI snapshots cover direct and nested deferred discovery and next-step activation; root race tests cover search state isolation. | Provider replay covers configured scenarios, not every core option or scheduling interleaving. Deferred discovery mock evidence does not establish live provider acceptance. Deterministic generated-file HTTP tests do not prove live provider-hosted downloads. |
-| Structured output | mixed | Object snapshots and unit tests exercise schemas, partial values, array elements and parsing. | Final-value snapshots do not establish partial-delivery or failure behavior; those require focused tests. |
-| UI messages and SSE | mixed | Chunk snapshots, framing tests and schema-parsed frontend tests exercise conversion, ordering and assembly. | Reader/writer tests do not establish all browser or hook lifecycle behavior. |
-| React hooks | mixed | Actual useChat, useCompletion and useObject tests exercise selected success, error, stop, tool, approval and generated-file delivery flows. | Other lifecycle paths are not established by these tests or by chunk snapshots alone. |
-| Agent, middleware and registry | mixed | Root tests exercise configuration, wrapping, provider resolution, simulated generated-content projection and cancellation; a schema-parsed frontend scenario checks simulated UI chunks and assembly. | Synthetic simulated generation does not prove real provider emissions; delegation to another implementation does not independently prove every entry point. |
+| Structured output | mixed | Object snapshots and focused unit tests exercise schemas, partial values, array elements, parsing, repair failure paths and raw-response preservation. | Final-value snapshots alone do not establish partial-delivery or failure behavior; those require focused tests. |
+| UI messages and SSE | mixed | Chunk snapshots, framing tests and schema-parsed frontend tests exercise conversion, ordering and assembly. Pinned differentials cover seven static/dynamic tool states through persistence, resume and conversion. | Reader/writer tests do not establish all browser or hook lifecycle behavior; scalar construction and provider-domain optional-empty representations remain bounded adaptations. |
+| React hooks | mixed | Actual useChat, useCompletion and useObject tests exercise selected success, error, stop, tool, approval and generated-file delivery flows. Tool-state tests persist/remount/resume preliminary and approval history through Go and compare the fake provider prompt with the pinned Agent. | Other lifecycle paths are not established by these tests or by chunk snapshots alone; the deterministic model does not prove live provider acceptance. |
+| Agent, middleware and registry | mixed | Root tests exercise configuration, wrapping, provider resolution, simulated generated-content projection and cancellation; schema-parsed frontend tests check simulated UI chunks, isolated history validation/normalization and zero provider calls on invalid history. | Dynamic tools skip static schemas; application metadata/data schemas, unrepresented provider-tool schemas, approval input-schema provenance and transforms/refinements remain outside validation proof. Shared schema cases are not exhaustive. Synthetic generation does not prove real provider emissions; delegation to another implementation does not independently prove every entry point. |
 | Agent Observability integration | mixed | Tests against the agento11y versions in the middleware's `go.mod` cover cached unary/streaming usage, inclusive export/span/metric semantics, and hook fixtures replayed through the real HTTP decoder. Gateway tests cover cached unary/streaming inclusive exports with both source and published middleware, bounded HTTP/gRPC export attempts, and ambient configuration rejection. | Hook validation starts after SDK normalization; discarded wire fields cannot be validated, and lost provider-tool discriminators fail reconstruction. Local HTTP servers do not prove deployed hook-service compatibility. Experimental OTel generation export is outside this evidence. |
 | LanguageModelV4 contract | mixed | Discriminator checks, finite ProviderWire witnesses and provider request snapshots exercise represented types and mappings. | Shape checks are not complete semantic interface verification. |
 | Provider adapters | mixed | `recorded/` and `upstream/` fixtures exercise represented requests, stream events, usage and outputs; provider tests cover synthetic failures and local invariants, including native Anthropic default Messages targets and caller-option precedence, OpenAI capability-gated reasoning/configuration controls, async tool metadata and continuation, multipart function-result conversion, immutable Responses schema normalization, and synthetic forced-choice HTTP request assertions for shell, local-shell and tool-search against registered upstream shapes. | No recorded/imported OpenAI request fixture exercises multipart result references, cache breakpoints or `propertyNames` normalization; focused request tests do not prove live acceptance. Request capture does not prove returned SDK metadata. Volatile SigV4 headers are excluded from snapshots. |
@@ -40,14 +40,22 @@ evidence boundary changes, not merely because the pinned versions change.
 
 ## Evidence boundaries
 
-- Gateway sources have explicit URL/document DTO and schema checks, pinned-client
-  differential and synthetic native OpenAI command tests. Source IDs are
-  response-local; only bounded numeric citation positions are retained under
-  `citation`. Native OpenAI/Azure `file_path` display identity is replaced by
-  `Document` with no filename. These are intentional Gateway privacy adaptations,
-  not native-provider parity. Unknown metadata and cited text are omitted.
+- Gateway native warning/source/response identity mapping has closed raw/schema,
+  pinned TS/independent Go and synthetic authenticated command evidence. Native
+  source IDs/display/order and optional registered response identity survive;
+  required empty source/warning fields are covered. Optional empty Go strings
+  normalize presence where the domain API cannot distinguish absence/empty.
+  Unary clients replace typed request/response with Gateway-hop information;
+  native identity remains in the raw body. Only bounded numeric citation
+  positions are currently retained under `citation`; unknown metadata/namespaces
+  and cited text loss remain an opaque-metadata implementation gap, not an
+  accepted privacy adaptation or complete native parity.
 - Provider-independent `ui/sources` snapshots and schema-parsed frontend tests
   cover URL/document assembly, required empty document titles and metadata.
+  The native-source-identity frontend scenario additionally preserves repeated
+  and equal-cross-variant IDs/display, and explicitly maps supplied response
+  identity through a test-only message-metadata callback. It does not establish
+  automatic UI identity/warning fields or Gateway absent-value semantics.
   Synthetic command responses do not establish live provider acceptance.
 - Reusable observers treat source as first output without adding an unsupported
   Agent Observability capture representation. Candidate-source Gateway tests
@@ -89,10 +97,40 @@ evidence boundary changes, not merely because the pinned versions change.
   rejection and retained completion data, not live provider adherence to choice.
 - Captured provider inputs, synthetic failures and provider-independent UI parts
   are distinct evidence sources; passing one does not establish the others.
-- Gateway privacy assertions cover protocol metadata, errors, logs and metrics.
-  Arbitrary application text and bounded raw responses remain caller-visible.
+- Configured Gateway discovery is an intentional Grafana extension, not upstream
+  private-service behavior. Startup config tests cover route semantics and
+  cardinality/UTF-8 string policy. Discovery returns one canonical row per model
+  with configured aliases, primary and ordered fallbacks; native destination IDs
+  use providerModelId. Aliases remain callable without duplicate rows. Discovery
+  projects the complete visible catalog without revalidation or a response-size cap. Server/Go/helper tests
+  cover full large-catalog projection, typed retention, defensive copies and
+  scoped listing/resolution. Clients retain independent read limits and atomic
+  JSON/type errors, not server route-policy checks. Go uses standard encoding/json
+  missing/null/case behavior; the TS helper checks runtime JSON shapes/types.
+  This accepted Go adaptation is not identical malformed-shape acceptance.
+  Go replaces escaped lone UTF-16 surrogates with U+FFFD while TS retains them,
+  so no lossless cross-client identity agreement is claimed for those escapes.
+  Valid pairs and genuine replacement characters remain ordinary data. Exact-pinned real-command
+  witnesses compare raw HTTP, Go retention and the copyable TypeScript helper
+  against stock `getAvailableModels()` listing canonical IDs and stripping the
+  gateway extension (including aliases), without native inference.
+  Command catalogs are static; dummy CAP-edge/scoped tests do not establish
+  customer-account construction, deployed authorization or BYOK tenant isolation.
+  Client reads default to 4 MiB independently of server configuration.
+- Gateway privacy assertions cover configured-secret structures, safe errors
+  and metadata-only canonical operator logs/metrics/exports without censoring
+  supported native warning/source/response identity. Consumer WrapGenerate and
+  WrapStream tests prove contracted hook access; separate consumer logger tests
+  assert actual opt-in Gateway body capture at its own destination. Hook access
+  does not imply universal built-in stream-warning/source capture or an Agent
+  Observability source representation, nor full native diagnostic access.
 - Linux FIFO deadline tests are platform-specific; socket checks on another
   platform do not establish Linux runtime behavior.
+
+- Tool-state fixtures are provider-independent core chunks, not recordings.
+  Pinned UI/Agent APIs own expectations; comparisons preserve grouping, required
+  empty text and metadata selection. Prompt coalescing tests cover deep precedence
+  and caller isolation.
 
 ## Retained deviations without issue ownership
 
@@ -100,6 +138,12 @@ These notes prevent matching tests from being mistaken for upstream equivalence.
 If a deviation becomes tracked work, its rationale and disposition belong in the
 issue rather than being maintained in both places.
 
+- UI tool presence is bounded: persisted provider-executed/automatic scalars and
+  signatures omit false/empty, as do direct chunk optional scalar zero values.
+  Decoded chunks retain selected empty/false values; false clears prior true.
+  Static tool JSON includes redundant toolName. Provider projections may omit
+  empty options and optional approval reasons/signatures/false flags, but never
+  required denied/text content or presence-based metadata selection.
 - Core batches local approval handling after provider streaming. Completed
   tool-choice violations bypass new local approvals and execution; already streamed
   provider events and prior-message approvals keep their existing handling.
@@ -118,8 +162,7 @@ issue rather than being maintained in both places.
   claim of complete upstream EOF parity.
 - Bedrock warns and omits unsupported tool-result file URLs instead of failing.
 - Gateway is a Grafana extension with no private-service oracle. It deliberately
-  uses strict response families, protected auth/protocol headers and fixed server
-  warning prose. The client retains bounded public error prose without upstream
+  uses strict response families and protected auth/protocol headers. The client retains bounded public error prose without upstream
   auth guidance or generation-ID suffixes; Go cancellation preserves context
   identity. The [client contract](../../openspec/specs/grafana-gateway-client/spec.md)
   defines the detailed boundary.
@@ -128,8 +171,8 @@ issue rather than being maintained in both places.
 
 Vertex enables the Anthropic adapter's native JSON output capability, following
 Google Cloud's documented `output_config.format` support. This is a
-provider-configuration adaptation of the registered `@ai-sdk/anthropic` 4.0.59
-capability gate, not a change to response mapping or the upstream baseline.
+provider-configuration adaptation of the Anthropic capability gate, not a change
+to response mapping or the upstream baseline.
 Strict tool capability remains separate. Synthetic request-serialization tests
 cover supported models (including Sonnet 5.5), streaming and non-streaming
 requests, and the absence of forced tool choice and synthetic tools. Existing

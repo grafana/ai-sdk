@@ -1,18 +1,18 @@
 upstream:
   repository: https://github.com/vercel/ai
-  commit: ee3169b3c4880e2abe4d0d7c781243bb81822ec4
+  commit: 5d12eaa6caa193d3901cbab98a734403eb6bf622
   packageSource: npm
-  verifiedAt: "2026-09-29"
+  verifiedAt: "2026-10-01"
 packages:
-  ai: 7.0.116
+  ai: 7.0.118
   "@ai-sdk/anthropic": 4.0.65
   "@ai-sdk/amazon-bedrock": 5.0.97
-  "@ai-sdk/gateway": 4.0.94
+  "@ai-sdk/gateway": 4.0.96
   "@ai-sdk/openai": 4.0.78
   "@ai-sdk/openai-compatible": 3.0.57
   "@ai-sdk/provider": 4.0.18
   "@ai-sdk/provider-utils": 5.0.49
-  "@ai-sdk/react": 4.0.119
+  "@ai-sdk/react": 4.0.121
 verification:
   status: enforced
   conformanceScope: full
@@ -148,10 +148,3 @@ knownGaps:
       rather than the former experimental language-model batch extension. Go scopes
       this baseline to synchronous LanguageModel generate/stream calls and does not
       expose durable batch APIs or batch conformance coverage.
-  - id: structured-output-repair-text
-    surface: core-orchestration
-    status: gap
-    description: Upstream ai exposes stable repairText callbacks on its legacy
-      generateObject and streamObject APIs. The Go port uses the Output abstraction
-      and typed output wrappers and does not currently expose a repair callback for
-      invalid-but-repairable structured output.
