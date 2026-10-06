@@ -12,6 +12,7 @@ import { createGateway, GatewayInvalidRequestError } from "@ai-sdk/gateway";
 import type { JSONValue, LanguageModelV4CallOptions } from "@ai-sdk/provider";
 import { generateText, isStepCount, jsonSchema, streamText, tool, wrapLanguageModel } from "ai";
 import { buildGoClientCapture, buildGoStreamTextCapture, captureGoClient } from "./go-client-capture";
+import packageManifest from "./package.json" with { type: "json" };
 
 const AI_GATEWAY_ROOT = resolve(import.meta.dirname, "../..");
 const COMMAND_DIR = resolve(AI_GATEWAY_ROOT, "cmd/grafana-ai-gateway");
@@ -1479,7 +1480,7 @@ describe("authenticated OpenAI-compatible Gateway command", () => {
       const unaryModel = wrapLanguageModel({ model, middleware: { specificationVersion: "v4", wrapGenerate: async ({params}) => {
         const {headers,...options}=params;
         assert.deepEqual(Object.keys(headers ?? {}),["user-agent"]);
-        assert.match(headers!["user-agent"]!,/^ai\/7\.0\.116(?:\s|$)/);
+        assert.equal(headers!["user-agent"]!.split(/\s/,1)[0],`ai/${packageManifest.dependencies.ai}`);
         return createGateway({apiKey:"ignored",baseURL:`${gateway.url}/api/v1/aisdk`,headers:{"X-Access-Token":TEST_TOKEN,"user-agent":headers!["user-agent"]!}})("compatible").doGenerate(options);
       } } });
       const unary = await generateText({model:unaryModel,prompt:"wp17-reasoning",maxOutputTokens:64});

@@ -61,13 +61,19 @@ It listens on `http://localhost:8080`.
 ## Create the React application
 
 In another terminal, create a React application and install the AI SDK frontend
-packages:
+packages. Set `AI_SDK_ROOT` to your Go SDK checkout; the command reads its
+[frontend test manifest](../../test/integration/package.json) to install the
+registered package versions rather than unverified latest releases:
 
 ```bash
+AI_SDK_ROOT=/absolute/path/to/ai-sdk
 npm create vite@latest ai-chat-web -- --template react-ts
 cd ai-chat-web
 npm install
-npm install ai@7.0.37 @ai-sdk/react@4.0.40
+npm install $(node -p '
+  const { devDependencies } = require(process.argv[1]);
+  ["ai", "@ai-sdk/react"].map(name => `${name}@${devDependencies[name]}`).join(" ")
+' "$AI_SDK_ROOT/test/integration/package.json")
 ```
 
 Replace `src/App.tsx` with:
