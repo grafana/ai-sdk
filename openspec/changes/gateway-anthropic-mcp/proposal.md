@@ -1,10 +1,10 @@
 ## Why
 
-Provider-tool transport needs native Anthropic server configuration and consumed continuation to support hosted MCP. The original design's direct-only gates and metadata inventories are unnecessary under the revised Gateway principle.
+The provider-tool runtime already forwards native Anthropic MCP configuration and supplied history. This change adds request-local resource and destination bounds, validates server names only when native Anthropic consumes continuation, and proves response-derived continuation without restoring capability gates or metadata inventories.
 
 ## What Changes
 
-- Enable bounded resolved MCP configuration at native Anthropic consumption, including configured fallback attempts.
+- Bound resolved MCP configuration at native Anthropic consumption, including configured fallback attempts.
 - Validate consumed continuation names while preserving generic ownership, ID/name and lifecycle protections.
 - Preserve opaque response and foreign-option transport without metadata classification, projection, configured-response membership or policy intersections.
 - Retain current fallback mechanics and document unknown-outcome billing/effect duplication.

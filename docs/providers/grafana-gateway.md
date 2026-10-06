@@ -43,6 +43,10 @@ or call settings; see [Anthropic options](anthropic.md#enable-reasoning-delibera
 and [OpenAI tools](openai.md#use-built-in-tools). Keep returned tool calls,
 results and metadata when continuing the conversation.
 
+For Anthropic MCP, use HTTPS server URLs without embedded credentials or
+fragments and distinct server names. Include the current server configuration
+when continuing a conversation; returned MCP calls must name a configured server.
+
 Tool approvals, custom tool-result formats and generated media responses are
 not supported.
 

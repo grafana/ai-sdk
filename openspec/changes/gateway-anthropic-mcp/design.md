@@ -1,10 +1,10 @@
 ## Context
 
-This slice layers on SDK readiness (#238) and provider-tool transport (#239). Source and tests use registered commit `ee3169b3c4880e2abe4d0d7c781243bb81822ec4`: Anthropic 4.0.65, Gateway 4.0.94, provider 4.0.18 and ai 7.0.116. The reference covers native MCP options, prompt conversion and producer result correlation, not Vercel's private hosted-service policy.
+This slice layers on SDK readiness (#238) and provider-tool transport (#239). Source and tests use registered commit `ee3169b3c4880e2abe4d0d7c781243bb81822ec4`: Anthropic 4.0.65, Gateway 4.0.94, provider 4.0.18 and ai 7.0.116. The reference covers native MCP options, prompt conversion and producer result correlation, not Vercel's private hosted-service policy. The predecessor runtime already forwards native MCP configuration and supplied history; this slice adds consuming-boundary validation and response-derived continuation evidence.
 
 ## Goals / Non-Goals
 
-Enable bounded native Anthropic MCP configuration and continuation without inventing Gateway execution, option inventories, metadata authority or fallback safety policy. Keep credentials, destinations, tenant authority, generic ownership and lifecycle protected. Do not add sessions, provenance frameworks, another stream reader or public SDK contracts.
+Bound native Anthropic MCP configuration and validate consumed continuation without inventing Gateway execution, option inventories, metadata authority or fallback safety policy. Keep credentials, destinations, tenant authority, generic ownership and lifecycle protected. Do not add sessions, provenance frameworks, another stream reader or public SDK contracts.
 
 ## Decisions
 
