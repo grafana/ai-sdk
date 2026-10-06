@@ -115,7 +115,7 @@ func TestRuntimeUnaryProviderTools_DeferredCompoundOutputFailsBeforeCommit(t *te
 		result := validGenerateResult()
 		result.Content = []provider.GenerateContentPart{
 			{Type: provider.ContentToolCall, ToolCallID: "call", ToolName: "search", Input: json.RawMessage(`{}`), ProviderExecuted: true},
-			{Type: provider.ContentSource, SourceType: provider.SourceTypeURL, URL: "https://private-source.example"},
+			{Type: provider.ContentSource, SourceType: provider.SourceTypeURL, ID: "\xff", URL: "https://private-source.example"},
 		}
 		return result, nil
 	}

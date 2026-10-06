@@ -411,7 +411,7 @@ func TestStreamingProviderTools_DeferredSourceFailsSafely(t *testing.T) {
 	harness.model.stream = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
 		return &provider.StreamResult{Stream: makeStream(
 			provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "call", ToolName: "search", Input: `{}`, ProviderExecuted: true},
-			provider.StreamPart{Type: provider.PartSource, Source: &provider.SourceInfo{SourceType: provider.SourceTypeURL, URL: "https://private-source.example"}},
+			provider.StreamPart{Type: provider.PartSource, Source: &provider.SourceInfo{SourceType: provider.SourceTypeURL, ID: "\xff", URL: "https://private-source.example"}},
 			finishPart(),
 		)}, nil
 	}
