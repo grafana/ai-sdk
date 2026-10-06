@@ -22,4 +22,4 @@ None. Generic provider-tool and fallback contracts remain unchanged.
 
 ## Impact
 
-Depends on #238 and #239. Changes AGPL native option validation and tests/docs; Apache modules remain independent. Registered baseline: `ee3169b3c4880e2abe4d0d7c781243bb81822ec4` (Anthropic 4.0.65, Gateway 4.0.94, provider 4.0.18, ai 7.0.116). No upstream pins or authentic provider recordings change. Live MCP egress, deployment and published-module adoption remain unverified by deterministic candidate-source checks.
+Depends on #238 and #239. Changes AGPL native option validation and tests/docs; Apache modules remain independent. Registered baseline: `5d12eaa6caa193d3901cbab98a734403eb6bf622` (Anthropic 4.0.65, Gateway 4.0.96, provider 4.0.18, ai 7.0.118). No upstream pins or authentic provider recordings change. Live MCP egress, deployment and published-module adoption remain unverified by deterministic candidate-source checks.
