@@ -44,23 +44,25 @@ WP9 SHALL define and own the private physical record type, bounded sink/queue, n
 - **THEN** the Gateway SHALL drop that private telemetry event without changing candidate selection, extending request latency, or creating one goroutine per event
 
 ### Requirement: Configured topology and operator identity boundaries
+Authenticated configured discovery SHALL expose authorized candidate count/order, provider-instance/provider identifiers and configured model IDs through the gateway-configured-discovery projection at the same visibility boundary as resolution. Credentials, secret references and unrelated account configuration SHALL remain excluded. Discovery SHALL describe configured possibilities, not whether fallback actually occurred or which candidate completed a request.
 
-Discovery and public model resolution errors SHALL retain their existing requested/canonical public identity projection without adding candidate count/order, provider-instance names, configured backend mappings, raw provider failures or fallback-occurrence facts. HTTP access logs and WP8 logical logs/metrics/metadata-only Agent Observability SHALL retain their existing canonical identity and payload exclusions.
+Public model resolution errors SHALL retain their requested/canonical public identity projection without listing candidates or configured backend mappings. HTTP access logs and WP8 logical logs/metrics/metadata-only Agent Observability SHALL retain their canonical identity and payload exclusions. Operator capture restrictions SHALL NOT suppress authorized discovery facts or require payload capture to be enabled.
 
-Successful ProviderWire JSON/SSE and client-visible normal output SHALL preserve supported native warnings, source IDs/display and registered native response id/modelId/timestamp as defined by their runtime/client contracts. A provider-reported modelId that names a backend SHALL NOT be replaced or withheld merely because configured backend mappings remain outside this delivery. Requested/canonical route identity SHALL remain separate and authoritative for resolution/operator metrics. This change SHALL NOT add selected-candidate/attempt/failure evidence or configured topology/discovery fields; those remain separately owned. Configured credentials and another tenant's state SHALL remain protected.
+Successful ProviderWire JSON/SSE and client-visible normal output SHALL preserve supported native warnings, source IDs/display and registered native response id/modelId/timestamp as defined by their runtime/client contracts. A provider-reported modelId that names a backend SHALL NOT be replaced or withheld merely because it identifies a configured backend. Requested/canonical route identity SHALL remain separate and authoritative for resolution/operator metrics. Runtime output SHALL NOT add selected-candidate/attempt/failure evidence or configured topology fields; discovery remains separately owned. Configured credentials and another tenant's state SHALL remain protected.
 
 #### Scenario: Primary and secondary produce equivalent success
 - **WHEN** otherwise equivalent eligible calls are served by different physical candidates
 - **THEN** both SHALL use the same registered protocol shape and preserve the actual selected provider's supported returned warning/source/response identity values
-- **AND** no candidate-order/count, provider-instance or attempt/fallback-occurrence field SHALL be introduced by this scalar/display change
+- **AND** normal inference output SHALL NOT introduce candidate-order/count, provider-instance or attempt/fallback-occurrence fields
 
 #### Scenario: Fallback chain is exhausted
 - **WHEN** every candidate fails before commitment
-- **THEN** existing safe fixed public aggregate-error mapping SHALL apply without listing candidates or copying provider error text
+- **THEN** the existing safe fixed public error mapping SHALL continue to apply to the aggregate error without listing candidates or copying provider error text as a consequence of this discovery feature
 
 #### Scenario: Discovery lists fallback route
-- **WHEN** authenticated discovery lists a route backed by multiple candidates
-- **THEN** it SHALL retain only its existing public row, aliases and guaranteed capabilities without adding configured topology/backend mappings
+- **WHEN** authorized authenticated discovery lists a route backed by multiple configured candidates
+- **THEN** it SHALL emit one canonical public row with aliases, primary and configured fallbacks in declared order
+- **AND** it SHALL exclude credentials, secret references and unrelated account state without invoking any candidate
 
 ### Requirement: Text-only effect boundary
 WP9 SHALL enable ordered fallback only for the strict text surface that rejects effectful tools before model invocation. The reusable commitment rule SHALL reserve any escaped effect as irrevocable selection, but this change SHALL NOT define replay or idempotency for tools or other effectful capability packages.

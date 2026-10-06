@@ -72,6 +72,7 @@ func cloneModelInfo(info ModelInfo) ModelInfo {
 	cloned := info
 	cloned.Aliases = append([]string(nil), info.Aliases...)
 	cloned.Capabilities = append([]ModelCapability(nil), info.Capabilities...)
+	cloned.Candidates = append([]ConfiguredCandidate(nil), info.Candidates...)
 	return cloned
 }
 

@@ -32,18 +32,18 @@ Each public model backed by an `openai` provider SHALL be constructed once throu
 - **AND** the client SHALL receive a fixed safe error
 
 ### Requirement: OpenAI Responses configuration and operator identity boundaries
+Authenticated discovery SHALL publish one canonical row per configured model with its name, description and specification provider grafana, plus authorized aliases/primary/fallbacks and provider-instance/provider/providerModelId facts through the gateway-configured-discovery projection. It SHALL NOT contain an OpenAI provider's API key, apiKeyEnv name, baseURL or unrelated configuration. Authorized provider-instance and configured model identifiers SHALL NOT be treated as credentials. Public runtime error responses, access logs and metrics SHALL retain their existing credential/backend-detail exclusions; this feature SHALL NOT expand those surfaces.
 
-Discovery, public error responses, access logs and metadata-only operator metrics SHALL retain their existing exclusions for OpenAI instance keys, baseURL, API key, apiKeyEnv names and configured backend mappings/model IDs. Discovery SHALL continue publishing provider grafana and only its existing public model IDs/names/descriptions/aliases; this change SHALL NOT add configured visibility fields.
-
-Those surface-specific restrictions SHALL NOT censor supported normal inference warnings/source ID/display or provider-reported response identity. Registered native id/modelId/timestamp SHALL survive in raw unary and stream output under their runtime contracts; typed unary response replacement SHALL remain explicitly documented. Native response modelId is distinct from configured discovery mappings and canonical operator identity. Configured secrets and another tenant's state SHALL remain protected. Attempt/failure evidence and configured discovery remain separately owned and SHALL NOT be introduced here.
+Those surface-specific restrictions SHALL NOT censor supported normal inference warnings/source ID/display or provider-reported response identity. Registered native id/modelId/timestamp SHALL survive in raw unary and stream output under their runtime contracts; typed unary response replacement SHALL remain explicitly documented. Native response modelId is distinct from configured discovery mappings and canonical operator identity. Configured secrets and another tenant's state SHALL remain protected. Configured discovery SHALL NOT introduce attempt/failure evidence.
 
 #### Scenario: Discovery lists OpenAI models
-- **WHEN** an authenticated caller requests config
-- **THEN** discovery SHALL retain the canonical/alias public rows without private configuration or new backend mappings
+- **WHEN** an authorized authenticated client requests /api/v1/aisdk/config
+- **THEN** the response SHALL list one canonical row per OpenAI model with explicit aliases, primary and ordered fallback facts
+- **AND** it SHALL NOT contain provider credentials, secret references, baseURL or unrelated account/provider configuration
 
 #### Scenario: OpenAI returns native identity
 - **WHEN** an OpenAI backend reports identity different from its requested/canonical route
-- **THEN** registered normal response identity SHALL preserve it while discovery, public errors and operator metadata-only surfaces retain their existing exclusions
+- **THEN** registered normal response identity SHALL preserve it while discovery retains authorized configured facts and public errors/operator metadata-only surfaces keep their exclusions
 
 ### Requirement: OpenAI-compatible provider configuration
 The Gateway command model configuration SHALL accept `providers.<name>` instances with `type: openai-compatible`. Each instance SHALL require a non-empty `apiKeyEnv` and a non-empty `baseURL`, and SHALL accept an optional `providerName`. `providerName` SHALL be rejected for `anthropic` providers. An unsupported `type` SHALL fail with `providers.<name>.type` and the list of supported types. Configuration SHALL remain strict YAML, so unknown keys still fail. Every failure SHALL occur during startup before readiness, and a non-empty compatible `baseURL` SHALL pass the same credential-free endpoint validation as other provider endpoints, including HTTPS in production deployment mode.
@@ -102,18 +102,19 @@ When a client cancels an established stream from a compatible public model, the 
 - **AND** `/ready` SHALL continue to succeed
 
 ### Requirement: Compatible configuration and operator identity boundaries
+Authenticated discovery SHALL publish one canonical row per configured model with its name, description and specification provider grafana, plus authorized aliases/primary/fallbacks and provider-instance/effective-provider/providerModelId facts through the gateway-configured-discovery projection. The effective provider SHALL reflect the configured providerName or existing constructor default. It SHALL NOT contain API keys, apiKeyEnv names, baseURL, backend error bodies or unrelated configuration. Authorized provider-instance/providerName/model identifiers SHALL NOT be categorically concealed. Public runtime error responses, access logs and metrics SHALL retain their existing credential/backend-detail exclusions; discovery SHALL NOT enable additional operator capture or runtime diagnostic transport.
 
-Discovery, public error responses, access logs and metadata-only operator metrics SHALL retain their existing exclusions for compatible instance keys, providerName, baseURL, API key, apiKeyEnv names, configured backend model IDs/mappings and backend error bodies. Discovery SHALL continue publishing provider grafana and only its existing public model IDs/names/descriptions/aliases.
-
-Supported normal inference warnings/source ID/display and provider-reported response identity SHALL remain caller-visible under their runtime contracts despite those surface-specific configuration/operator restrictions. Returned native modelId SHALL NOT be replaced with canonical route identity. Native bodies/headers, provider identity, attempt/failure evidence and configured discovery are not added by this change. Secrets and another tenant's state SHALL remain protected independently of ordinary scalar/display strings.
+Supported normal inference warnings/source ID/display and provider-reported response identity SHALL remain caller-visible under their runtime contracts despite those surface-specific configuration/operator restrictions. Returned native modelId SHALL NOT be replaced with canonical route identity. Configured discovery SHALL NOT add native bodies/headers, runtime provider identity or attempt/failure evidence. Secrets and another tenant's state SHALL remain protected independently of ordinary scalar/display strings.
 
 #### Scenario: Discovery lists compatible models
-- **WHEN** an authenticated caller requests config
-- **THEN** discovery SHALL retain canonical/alias rows without private configuration or new configured mappings
+- **WHEN** an authorized authenticated client requests /api/v1/aisdk/config
+- **THEN** the response SHALL list one canonical row per compatible model with explicit aliases, primary and ordered fallback facts
+- **AND** it SHALL NOT contain credentials, secret references, baseURL, error bodies or unrelated account/provider configuration
 
 #### Scenario: Backend failure carries a secret
-- **WHEN** a compatible backend returns a 502 with a secret marker in its error body
-- **THEN** existing client error, access logs and metrics SHALL exclude the marker and private configuration
+- **WHEN** a compatible backend returns 502 with a secret marker in its error body
+- **THEN** the client error, access logs and metrics SHALL retain their existing exclusions for that marker and private provider configuration
+- **AND** discovery SHALL NOT reflect the runtime error or turn configured candidates into attempted/selected facts
 
 #### Scenario: Compatible backend returns native identity
 - **WHEN** a successful compatible response supplies native response identity

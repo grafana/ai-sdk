@@ -344,22 +344,34 @@ Every non-2xx model or discovery response SHALL be read within the configured er
 - **THEN** it SHALL become an ordered `PartError` with the equivalent bounded `APICallError`, preserving the Go provider contract without ending later valid parts by itself
 
 ### Requirement: Authenticated public discovery
-`Provider.ListModels(ctx)` SHALL issue authenticated `GET /config`, read within the configured discovery limit, and return only public ID, name, optional description, and the specification version/provider/model-ID triple. It SHALL validate required values, registered `v4` and `grafana` identity, model-ID consistency, valid public IDs, and duplicate IDs; it SHALL ignore unknown additive members accepted by the registered client. It SHALL preserve response order, represent aliases as independent rows exactly as served, and MUST NOT infer or expose canonical-to-backend mappings, credentials, provider instances, or fallback topology.
+`Provider.ListModels(ctx)` SHALL issue authenticated `GET /config`, read within the configured discovery limit, and return public ID, name, optional description and the specification version/provider/model-ID triple, plus optional typed `ModelInfo.Gateway *ConfiguredRoute`. `ConfiguredRoute` SHALL expose `Aliases`, `Primary` and ordered `Fallbacks`; each `ConfiguredCandidate` SHALL expose `ProviderInstance`, `Provider` and `ProviderModelID`. This SHALL remain the existing discovery method, without a second client or AGPL module dependency.
 
-#### Scenario: Canonical and alias rows are discovered
-- **WHEN** the authenticated service returns a canonical model and alias row
-- **THEN** both rows SHALL be returned in server order with only their public discovery fields
+The client SHALL use ordinary Go JSON decoding into typed ModelInfo values after enforcing the existing configurable document-byte limit and raw UTF-8 JSON validity. It SHALL NOT revalidate server-owned public-ID grammar, nonblank strings, specification/model-ID agreement, route cardinality, duplicate IDs/aliases/candidate tuples or route-group consistency. Standard Go JSON behavior SHALL apply, including case-insensitive field matching, zero/nil values for missing/null fields and U+FFFD normalization of escaped lone UTF-16 surrogates. A missing/null models collection, malformed JSON, byte overflow or type-decoding error SHALL invalidate the complete result. It SHALL preserve response order and configured alias/fallback order exactly as served, without expanding aliases into extra rows. Missing/null gateway SHALL remain nil. Unknown additive members SHALL remain ignored. Configured mappings SHALL be retained only when supplied by the server, never inferred from responses, models or inventories; credentials and arbitrary configuration SHALL NOT be exposed.
+
+#### Scenario: Configured models and aliases are discovered
+- **WHEN** the authenticated service returns canonical model rows with configured route facts
+- **THEN** each row SHALL be returned in server order with its public specification fields, typed aliases, primary and ordered fallbacks
+- **AND** aliases SHALL remain available as selection IDs without duplicating rows
 
 #### Scenario: Discovery contains additive metadata
-- **WHEN** otherwise valid discovery rows or the root document contain unknown members
-- **THEN** the client SHALL ignore those members without exposing them through `ModelInfo`
+- **WHEN** otherwise valid discovery rows or the root document contain unrelated unknown members
+- **THEN** the client SHALL ignore those members without exposing them through ModelInfo
+- **AND** a recognized gateway extension SHALL be decoded into typed fields and retained rather than discarded
 
 #### Scenario: Discovery is structurally unsafe
-- **WHEN** the document is oversized, malformed, duplicated, contains an invalid ID, mismatched specification model ID, non-`v4` specification, or non-`grafana` provider
+- **WHEN** the document exceeds the read budget, is malformed JSON, has no models collection or contains a field that cannot decode into its declared Go type
 - **THEN** discovery SHALL fail atomically with no partial catalog result
 
+#### Scenario: Server has no configured extension
+- **WHEN** a public discovery response omits gateway or supplies null
+- **THEN** existing public rows SHALL remain consumable and each corresponding Gateway field SHALL be nil, with no inferred topology
+
+#### Scenario: Caller inspects candidates without generation
+- **WHEN** an authorized Go caller reads ListModels rows and inspects Gateway.Primary and Gateway.Fallbacks
+- **THEN** configured order and provider-instance/provider/model facts SHALL be available without any model or inventory request
+
 ### Requirement: No implicit client retry or backend selection
-The client SHALL issue at most one Gateway model request per DoGenerate/DoStream invocation after token acquisition. It SHALL preserve existing retryability for caller orchestration but SHALL NOT select physical providers, traverse server candidates, retry through retired transport or retry after response/events. Native source and streaming response identity SHALL be retained; retaining those values SHALL NOT enable client backend selection. This change SHALL NOT add fallback topology, attempt evidence or provider failure-detail transport.
+The Grafana client SHALL issue at most one Gateway model request per `DoGenerate` or `DoStream` invocation after token acquisition. It SHALL preserve retryability for existing SDK retry/fallback orchestration but MUST NOT select physical providers, traverse Gateway candidates, retry through the retired endpoint, or retry after any response or stream event. Discovery SHALL retain authorized configured facts only through the approved optional gateway field; inspecting them SHALL NOT implement backend selection. This discovery exception SHALL NOT change runtime public result/error projection, which remains governed by its separate contracts. Native source and streaming response identity SHALL be retained under their runtime contracts without enabling client backend selection.
 
 #### Scenario: Retryable setup error occurs
 - **WHEN** the Gateway returns a retryable non-2xx response
@@ -369,10 +381,16 @@ The client SHALL issue at most one Gateway model request per DoGenerate/DoStream
 - **WHEN** an error event or transport failure occurs after a stream part has been delivered
 - **THEN** the client SHALL not issue another HTTP request or change model identity
 
+#### Scenario: Configured candidates are inspected
+- **WHEN** ListModels exposes more than one configured candidate
+- **THEN** the client SHALL not contact, select or probe any of them
+
 ### Requirement: Exact-pinned differential and black-box evidence
 Tests SHALL compare Go and the exact Gateway version registered in test/conformance/upstream.yaml for semantic method/path/headers/body, supported result normalization, errors/retryability, cancellation, discovery, DONE, raw filtering, timestamp conversion and EOF. Native-value cases SHALL cover all warning variants/order/required empties, URL/document IDs/display/order and optional native stream identity. Unary tests SHALL prove warning preservation, raw native response identity and typed transport replacement rather than comparing only permissively parsed success. Raw HTTP/schema assertions SHALL independently establish strict server correctness.
 
 A baseline change SHALL update pins/lockfiles/captures/classification/client behavior coherently. Hostile fake-server tests SHALL prove bounded reads and cleanup independently of Gateway implementation. Authenticated black-box command tests SHALL run over HTTP without Apache production imports of Gateway code. Synthetic responses SHALL NOT establish live provider or private Vercel-service parity, and authentic provider fixture inputs SHALL NOT be rewritten.
+
+Configured-discovery tests SHALL additionally prove Go typed retention and the approved TS helper against the same command, while explicitly preserving stock normalized TS extension loss. Configured facts SHALL be available without inference and without credentials or unrelated account state; this SHALL NOT imply new runtime response/error identity retention.
 
 #### Scenario: Equivalent text calls are compared
 - **WHEN** the differential suite issues representable unary and streaming text/scalar calls through both clients
@@ -387,9 +405,14 @@ A baseline change SHALL update pins/lockfiles/captures/classification/client beh
 - **THEN** tests SHALL prove bounded allocation/read behavior, body closure, channel closure, and absence of retained client goroutines
 
 #### Scenario: Authenticated command is exercised
-- **WHEN** deterministic provider/auth fakes serve supported native-value output through the real command
+- **WHEN** the repository integration suite starts the command with deterministic auth and provider fakes serving supported native values
 - **THEN** both clients SHALL preserve contracted values while configured credentials and cross-tenant state remain absent
-- **AND** canonical operator identity and metadata-only capture SHALL remain independent of returned native values
+- **AND** the Go client SHALL complete discovery, unary text, streaming text, acting-user propagation, cancellation and registered errors
+- **AND** canonical operator identity and metadata-only capture SHALL remain independent of returned native values and authorized configured discovery
+
+#### Scenario: Configured discovery consumers are compared
+- **WHEN** Go ListModels, pinned TS getAvailableModels and the shipped TS helper inspect canonical model rows with configured alias metadata
+- **THEN** normalized public fields SHALL remain compatible, Go and the helper SHALL retain matching configured facts, stock TS SHALL still strip the extension and provider inference counts SHALL remain zero
 
 ### Requirement: Source response consumption
 

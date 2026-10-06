@@ -97,6 +97,26 @@ evidence boundary changes, not merely because the pinned versions change.
   rejection and retained completion data, not live provider adherence to choice.
 - Captured provider inputs, synthetic failures and provider-independent UI parts
   are distinct evidence sources; passing one does not establish the others.
+- Configured Gateway discovery is an intentional Grafana extension, not upstream
+  private-service behavior. Startup config tests cover route semantics and
+  cardinality/UTF-8 string policy. Discovery returns one canonical row per model
+  with configured aliases, primary and ordered fallbacks; native destination IDs
+  use providerModelId. Aliases remain callable without duplicate rows. Discovery
+  projects the complete visible catalog without revalidation or a response-size cap. Server/Go/helper tests
+  cover full large-catalog projection, typed retention, defensive copies and
+  scoped listing/resolution. Clients retain independent read limits and atomic
+  JSON/type errors, not server route-policy checks. Go uses standard encoding/json
+  missing/null/case behavior; the TS helper checks runtime JSON shapes/types.
+  This accepted Go adaptation is not identical malformed-shape acceptance.
+  Go replaces escaped lone UTF-16 surrogates with U+FFFD while TS retains them,
+  so no lossless cross-client identity agreement is claimed for those escapes.
+  Valid pairs and genuine replacement characters remain ordinary data. Exact-pinned real-command
+  witnesses compare raw HTTP, Go retention and the copyable TypeScript helper
+  against stock `getAvailableModels()` listing canonical IDs and stripping the
+  gateway extension (including aliases), without native inference.
+  Command catalogs are static; dummy CAP-edge/scoped tests do not establish
+  customer-account construction, deployed authorization or BYOK tenant isolation.
+  Client reads default to 4 MiB independently of server configuration.
 - Gateway privacy assertions cover configured-secret structures, safe errors
   and metadata-only canonical operator logs/metrics/exports without censoring
   supported native warning/source/response identity. Consumer WrapGenerate and

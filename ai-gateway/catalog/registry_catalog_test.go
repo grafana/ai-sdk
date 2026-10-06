@@ -135,6 +135,7 @@ func TestRegistryCatalog_NestedProviderRegistry(t *testing.T) {
 }
 
 func TestRegistryCatalog_ListModels(t *testing.T) {
+	candidates := []ConfiguredCandidate{{ProviderInstance: "primary", Provider: "anthropic", ModelID: "configured-not-reported"}, {ProviderInstance: "backup", Provider: "openai", ModelID: "backup"}}
 	provider := &catalogTestProvider{resolve: func(string) (provider.LanguageModel, error) {
 		return &catalogTestModel{modelID: "native"}, nil
 	}}
@@ -148,6 +149,7 @@ func TestRegistryCatalog_ListModels(t *testing.T) {
 				ID:           "alpha",
 				Aliases:      []string{"default"},
 				Capabilities: []ModelCapability{"tools"},
+				Candidates:   append([]ConfiguredCandidate(nil), candidates...),
 			},
 			ProviderModelID: "provider:alpha",
 		},
@@ -158,19 +160,22 @@ func TestRegistryCatalog_ListModels(t *testing.T) {
 	routes[1].Info.ID = "changed"
 	routes[1].Info.Aliases[0] = "changed-alias"
 	routes[1].Info.Capabilities[0] = "changed-capability"
+	routes[1].Info.Candidates[0].ModelID = "changed-model"
 	routes[1].ProviderModelID = "changed-target"
 
 	models, err := catalog.ListModels(context.Background())
 	require.NoError(t, err)
 	assert.Equal(t, []ModelInfo{
-		{ID: "alpha", Aliases: []string{"default"}, Capabilities: []ModelCapability{"tools"}},
+		{ID: "alpha", Aliases: []string{"default"}, Capabilities: []ModelCapability{"tools"}, Candidates: candidates},
 		{ID: "zeta"},
 	}, models)
 
 	models[0].Aliases[0] = "mutated"
+	models[0].Candidates[0].ProviderInstance = "mutated-instance"
 	again, err := catalog.ListModels(context.Background())
 	require.NoError(t, err)
 	assert.Equal(t, []string{"default"}, again[0].Aliases)
+	assert.Equal(t, candidates, again[0].Candidates)
 
 	_, err = catalog.ResolveModel(context.Background(), "default")
 	require.NoError(t, err)

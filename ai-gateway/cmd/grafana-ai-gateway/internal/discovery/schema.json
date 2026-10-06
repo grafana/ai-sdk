@@ -1,19 +1,41 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "configuredCandidate": {
+      "type": "object", "additionalProperties": false,
+      "required": ["providerInstance", "provider", "providerModelId"],
+      "properties": {
+        "providerInstance": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "provider": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "providerModelId": { "type": "string", "minLength": 1, "maxLength": 2048 }
+      }
+    }
+  },
   "type": "object",
   "additionalProperties": false,
   "required": ["models"],
   "properties": {
     "models": {
       "type": "array",
+      "maxItems": 1024,
       "items": {
         "type": "object",
         "additionalProperties": false,
         "required": ["id", "name", "specification"],
         "properties": {
           "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$" },
-          "name": { "type": "string", "minLength": 1 },
-          "description": { "type": "string" },
+          "name": { "type": "string", "minLength": 1, "maxLength": 2048 },
+          "description": { "type": "string", "maxLength": 2048 },
+          "gateway": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["aliases", "primary", "fallbacks"],
+            "properties": {
+              "aliases": { "type": "array", "maxItems": 128, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$" } },
+              "primary": { "$ref": "#/$defs/configuredCandidate" },
+              "fallbacks": { "type": "array", "maxItems": 15, "items": { "$ref": "#/$defs/configuredCandidate" } }
+            }
+          },
           "specification": {
             "type": "object",
             "additionalProperties": false,
