@@ -4895,3 +4895,66 @@ func TestStreamText_CancelFinishesAbandonedFullStream(t *testing.T) {
 		})
 	}
 }
+
+func TestStreamText_ToolResultsFollowCallOrderInMixedSteps(t *testing.T) {
+	okTool := Tool{
+		Description: "ok",
+		InputSchema: testMustSchema(t, `{"type":"object"}`),
+		Execute: func(context.Context, json.RawMessage, ToolExecutionOptions) (json.RawMessage, error) {
+			return json.RawMessage(`"ok"`), nil
+		},
+	}
+	for _, tc := range []struct {
+		name  string
+		calls []string
+		tools ToolSet
+		opts  []StreamOption
+	}{
+		{
+			// The missing tool is rejected while the model stream is read, before
+			// good executes, so handling order lists it first.
+			name:  "rejected call after an executed call",
+			calls: []string{"good", "missing"},
+			tools: ToolSet{"good": okTool},
+		},
+		{
+			// The denied result is recorded before any tool starts.
+			name:  "denied approval after an executed call",
+			calls: []string{"good", "dangerous"},
+			tools: ToolSet{"good": okTool, "dangerous": okTool},
+			opts:  []StreamOption{WithToolApproval(ToolApprovalMap{"dangerous": ApprovalPolicy(ToolApprovalDenied, "policy denied")})},
+		},
+		{
+			name:  "executed call between rejected and denied calls",
+			calls: []string{"missing", "good", "dangerous"},
+			tools: ToolSet{"good": okTool, "dangerous": okTool},
+			opts:  []StreamOption{WithToolApproval(ToolApprovalMap{"dangerous": ApprovalPolicy(ToolApprovalDenied, "policy denied")})},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			parts := make([]struct{ name, input string }, len(tc.calls))
+			for i, name := range tc.calls {
+				parts[i] = struct{ name, input string }{name, `{}`}
+			}
+			n := 0
+			model := &mockModel{streamFunc: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+				n++
+				if n == 1 {
+					return &provider.StreamResult{Stream: multiToolCallStreamParts(parts...)}, nil
+				}
+				return &provider.StreamResult{Stream: textStreamParts("done")}, nil
+			}}
+			opts := append([]StreamOption{WithModelMessages(provider.UserText("go")), WithTools(tc.tools), WithStopWhen(StepCountIs(3))}, tc.opts...)
+			result := StreamText(context.Background(), model, opts...)
+			for range result.FullStream() {
+			}
+			require.NotEmpty(t, result.Steps())
+
+			var got []string
+			for _, r := range result.Steps()[0].ToolResults {
+				got = append(got, r.ToolName)
+			}
+			assert.Equal(t, tc.calls, got)
+		})
+	}
+}
