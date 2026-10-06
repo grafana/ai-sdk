@@ -10,6 +10,8 @@ import (
 
 func TestSourcesDecode(t *testing.T) {
 	for _, raw := range []string{
+		`{"type":"source","sourceType":"url","id":"","url":"","title":""}`,
+		`{"type":"source","sourceType":"document","id":"","mediaType":"","title":""}`,
 		`{"type":"source","sourceType":"url","id":"u","url":"","title":""}`,
 		`{"type":"source","sourceType":"url","id":"u","url":"https://example.com"}`,
 		`{"type":"source","sourceType":"document","id":"d","mediaType":"text/plain","title":"","filename":"","providerMetadata":{"citation":{"index":0}}}`,
@@ -30,6 +32,8 @@ func TestSourcesDecode(t *testing.T) {
 		})
 	}
 	for _, raw := range []string{
+		`{"type":"source","sourceType":"url","url":""}`,
+		`{"type":"source","sourceType":"document","mediaType":"","title":""}`,
 		`{"type":"source","sourceType":"other","id":"x"}`,
 		`{"type":"source","sourceType":"url","id":"x"}`,
 		`{"type":"source","sourceType":"url","id":"x","url":null}`,

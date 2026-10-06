@@ -106,8 +106,7 @@
           "const": "url"
         },
         "id": {
-          "type": "string",
-          "minLength": 1
+          "type": "string"
         },
         "url": {
           "type": "string"
@@ -139,8 +138,7 @@
           "const": "document"
         },
         "id": {
-          "type": "string",
-          "minLength": 1
+          "type": "string"
         },
         "mediaType": {
           "type": "string"
@@ -194,11 +192,11 @@
     },
     "responseMetadata": {
       "type": "object",
-      "required": ["type", "modelId"],
+      "required": ["type"],
       "properties": {
         "type": { "const": "response-metadata" },
         "id": { "type": "string" },
-        "modelId": { "type": "string", "minLength": 1 },
+        "modelId": { "type": "string" },
         "timestamp": {
           "type": "string",
           "format": "date-time",
@@ -327,21 +325,21 @@
     },
     "unsupportedWarning": {
       "type": "object",
-      "required": ["type", "feature", "details"],
+      "required": ["type", "feature"],
       "properties": {
         "type": { "const": "unsupported" },
-        "feature": { "const": "model capability" },
-        "details": { "const": "a requested model capability is unsupported" }
+        "feature": { "type": "string" },
+        "details": { "type": "string" }
       },
       "additionalProperties": false
     },
     "compatibilityWarning": {
       "type": "object",
-      "required": ["type", "feature", "details"],
+      "required": ["type", "feature"],
       "properties": {
         "type": { "const": "compatibility" },
-        "feature": { "const": "model compatibility" },
-        "details": { "const": "a requested setting was adjusted for model compatibility" }
+        "feature": { "type": "string" },
+        "details": { "type": "string" }
       },
       "additionalProperties": false
     },
@@ -350,8 +348,8 @@
       "required": ["type", "setting", "message"],
       "properties": {
         "type": { "const": "deprecated" },
-        "setting": { "const": "model setting" },
-        "message": { "const": "a requested model setting is deprecated" }
+        "setting": { "type": "string" },
+        "message": { "type": "string" }
       },
       "additionalProperties": false
     },
@@ -360,7 +358,7 @@
       "required": ["type", "message"],
       "properties": {
         "type": { "const": "other" },
-        "message": { "const": "the model reported a warning" }
+        "message": { "type": "string" }
       },
       "additionalProperties": false
     }

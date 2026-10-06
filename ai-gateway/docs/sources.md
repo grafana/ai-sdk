@@ -1,33 +1,50 @@
 # Sources
 
-Unary and streaming responses support registered URL and document sources.
-Document titles are always present, including an empty string. Empty optional
-URL titles and document filenames are omitted. The Go client exposes unary
-titles in both Title and the legacy Text field.
+Use sources to show readers which web pages or documents a model referenced in
+its answer. The Gateway returns sources when the selected model provides them;
+not every model or request produces citations.
 
-The Gateway replaces native source identifiers with response-local IDs. Repeated
-references to the same source type and native ID retain one public ID. IDs are
-not persistent identifiers across requests.
+## Display citations
 
-Only bounded numeric citation positions are public metadata: OpenAI index and
-Anthropic start/end page or character positions under the citation namespace.
-Unknown fields, native file/container IDs, encrypted indexes and cited text are
-omitted. Malformed positions are omitted; oversized recognized metadata fails
-safely. OpenAI file_path sources use title Document and omit filename so native
-file IDs used as display text do not leak. Other titles, filenames and URLs are
-application content; this policy does not redact arbitrary document content.
+A web source points to a URL. Show its title when available, or use the URL as
+its label. A document source identifies a file or document rather than a web
+page. Its title or filename may be a provider-assigned identifier, so choose a
+readable fallback label when neither is useful. A document reference does not
+provide a download link.
 
-Sources may appear between text/tool events without closing their blocks.
-Sources commit a fallback candidate; a subsequent failure cannot replay the
-generation on another backend. Source output does not enable provider tools,
-reasoning, generated files or raw output.
+Keep source IDs as reference values, not display labels or permanent document
+keys. IDs can be empty or repeated, including across web and document sources.
+If your citation list needs unique UI keys, assign those separately rather than
+assuming every source ID is unique.
 
-Deterministic command and client tests establish mapping, framing and privacy,
-not live provider acceptance. Candidate-source Gateway tests exercise the
-logger and Agent Observability changes that count source-only responses as
-first output while continuing to omit source content from capture. The Gateway
-image builds from this same-revision source through `go.gateway.work`; image
-readiness still requires its build gate. Published middleware revisions remain
-older and require later module releases for standalone module consumers.
+Treat source URLs and labels as untrusted content. Escape labels when rendering
+and validate links before making them clickable; see the
+[security guide](../../docs/best-practices/security.md).
 
-See [text observability](text-observability.md) for telemetry privacy.
+## Include sources in a chat UI
+
+When your application forwards a response to a chat frontend, enable source
+forwarding and render the source parts alongside the answer. See
+[Streaming over HTTP](../../docs/guides/streaming-http.md#control-client-visible-content)
+for a Go server example. Returning sources from the Gateway alone does not make
+them visible in your UI.
+
+## Understand the limits
+
+Some sources include page or character positions that can help readers locate
+the reference. The Gateway currently returns limited citation metadata, not all
+provider annotations or cited passages. Design your citation UI to work without
+those extra details.
+
+A citation is a model-provided reference, not verification that the answer is
+correct or that the linked content is still available. The Gateway does not
+retrieve source URLs for you.
+
+Sources returned to your application are not automatically captured in Gateway
+logs or telemetry. See [text observability](text-observability.md#returned-values-and-consumer-observation)
+for the distinction and the [Go client guide](../../docs/providers/grafana-gateway.md)
+for accessing response data.
+
+---
+
+← [Model catalog](model-catalog.md) · [Docs index](../../docs/README.md) · [Text observability →](text-observability.md)
