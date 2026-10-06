@@ -237,7 +237,8 @@ func TestConvertResponse_WebSearchToolResult(t *testing.T) {
 	assert.Equal(t, provider.ContentSource, source1.Type)
 	assert.Equal(t, provider.SourceTypeURL, source1.SourceType)
 	assert.Equal(t, "https://example.com", source1.URL)
-	assert.Equal(t, "Test", source1.Text)
+	assert.Equal(t, "Test", source1.Title)
+	assert.Empty(t, source1.Text, "a source carries its title in Title, not in the text field")
 	assert.NotEmpty(t, source1.ID, "web search source should have non-empty ID")
 
 	source2 := result.Content[2]
@@ -647,7 +648,8 @@ func TestConvertResponse_TextCitations(t *testing.T) {
 		assert.NotEmpty(t, src.ID, "citation source should have non-empty ID")
 		assert.Equal(t, provider.SourceTypeURL, src.SourceType)
 		assert.Equal(t, "https://example.com", src.URL)
-		assert.Equal(t, "Example", src.Text)
+		assert.Equal(t, "Example", src.Title)
+		assert.Empty(t, src.Text, "a source carries its title in Title, not in the text field")
 	})
 
 	t.Run("document citations produce source entries", func(t *testing.T) {
@@ -681,7 +683,8 @@ func TestConvertResponse_TextCitations(t *testing.T) {
 		assert.NotEmpty(t, src.ID, "citation source should have non-empty ID")
 		assert.Equal(t, provider.SourceTypeDocument, src.SourceType)
 		assert.Equal(t, "application/pdf", src.MediaType)
-		assert.Equal(t, "Report", src.Text)
+		assert.Equal(t, "Report", src.Title)
+		assert.Empty(t, src.Text, "a source carries its title in Title, not in the text field")
 		assert.Equal(t, "report.pdf", src.Filename)
 	})
 

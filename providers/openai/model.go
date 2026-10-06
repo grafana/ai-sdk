@@ -27,6 +27,7 @@ type model struct {
 	requestOpts                      []option.RequestOption
 	generateID                       func() string
 	webSearchSourcesIncludeSupported bool
+	defaultReasoningSummary          string
 }
 
 // NewResponses creates a [provider.LanguageModel] for the OpenAI Responses API.
@@ -54,6 +55,7 @@ func newModel(modelID string, opts ...Option) *model {
 		provider:                         providerName,
 		generateID:                       defaultGenerateID,
 		webSearchSourcesIncludeSupported: true,
+		defaultReasoningSummary:          "detailed",
 	}
 	for _, o := range opts {
 		o(m)
@@ -170,7 +172,7 @@ func (m *model) DoStream(ctx context.Context, params provider.CallOptions) (*pro
 }
 
 func (m *model) buildParams(params provider.CallOptions) (responses.ResponseNewParams, []provider.Warning, buildResult, error) {
-	return buildParamsWithConfig(m.modelID, params, m.providerOptionsName, m.webSearchSourcesIncludeSupported)
+	return buildParamsWithConfig(m.modelID, params, m.providerOptionsName, m.webSearchSourcesIncludeSupported, m.defaultReasoningSummary)
 }
 
 func (m *model) requestOptions(headers map[string]string) []option.RequestOption {

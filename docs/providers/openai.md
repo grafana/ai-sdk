@@ -65,10 +65,14 @@ result := aisdk.StreamText(ctx, model,
 	aisdk.WithProviderOptions(openai.OpenAIResponsesOptions{
 		Store:            &store,
 		ReasoningEffort:  "high",
-		ReasoningSummary: "auto",
+		ReasoningSummary: json.RawMessage(`"auto"`),
 	}),
 )
 ```
+
+Leave `ReasoningSummary` nil to use the endpoint default, or set it to
+``json.RawMessage(`null`)`` to omit the summary while retaining reasoning effort.
+Mantle Luna 6 defaults to omission; explicit values such as `"auto"` take precedence.
 
 Not every option applies to every model. Provider options cover conversation
 IDs, response continuation, reasoning, storage, metadata, service tier, tool

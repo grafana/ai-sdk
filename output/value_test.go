@@ -3,6 +3,7 @@ package output_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"regexp"
 	"testing"
 
@@ -157,6 +158,110 @@ func TestGenerateObject_OutputError(t *testing.T) {
 	_, err = result.Object()
 	require.Error(t, err)
 	assert.ErrorIs(t, err, aisdk.ErrNoObjectGenerated)
+}
+
+func TestObjectRepair(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		stream   bool
+		text     string
+		repaired string
+	}{
+		{name: "generate malformed JSON", text: `{"name":`, repaired: `{"name":"Lasagna"}`},
+		{name: "generate schema failure", text: `{"wrong":"data"}`, repaired: `{"name":"Lasagna"}`},
+		{name: "stream malformed JSON", stream: true, text: `{"name":`, repaired: `{"name":"Lasagna"}`},
+		{name: "stream schema failure", stream: true, text: `{"wrong":"data"}`, repaired: `{"name":"Lasagna"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			model := &valTestModel{streamFunc: func(_ context.Context, opts provider.CallOptions) (*provider.StreamResult, error) {
+				assert.Equal(t, provider.ResponseFormatJSON, opts.ResponseFormat.Type)
+				return &provider.StreamResult{Stream: valTextStream(tc.text)}, nil
+			}}
+			out, err := output.Object[valRecipe](valNameSchema(t))
+			require.NoError(t, err)
+			repair := aisdk.WithRepairText(func(text string, parseErr error) (string, bool, error) {
+				calls++
+				assert.Equal(t, tc.text, text)
+				assert.ErrorIs(t, parseErr, aisdk.ErrNoObjectGenerated)
+				assert.ErrorIs(t, parseErr, aisdk.ErrInvalidOutputText)
+				return tc.repaired, true, nil
+			})
+			if tc.stream {
+				result := output.StreamObject[valRecipe](context.Background(), model, out, aisdk.WithModelMessages(provider.UserText("recipe")), repair)
+				for range result.FullStream() {
+				}
+				value, err := result.Object()
+				require.NoError(t, err)
+				assert.Equal(t, "Lasagna", value.Name)
+				assert.Equal(t, tc.text, result.Text())
+			} else {
+				result, err := output.GenerateObject[valRecipe](context.Background(), model, out, aisdk.WithModelMessages(provider.UserText("recipe")), repair)
+				require.NoError(t, err)
+				value, err := result.Object()
+				require.NoError(t, err)
+				assert.Equal(t, "Lasagna", value.Name)
+				assert.Equal(t, tc.text, result.Text)
+			}
+			assert.Equal(t, 1, calls)
+		})
+	}
+}
+
+func TestObjectRepair_FailurePaths(t *testing.T) {
+	out, err := output.Object[valRecipe](valNameSchema(t))
+	require.NoError(t, err)
+	callbackErr := errors.New("repair unavailable")
+	for _, tc := range []struct {
+		name, original, repaired string
+		stream                   bool
+		useRepair                bool
+		accepted                 bool
+		callbackErr              error
+		wantErr                  error
+		wantCalls                int
+	}{
+		{name: "generate without repair", original: `{"wrong":1}`, wantErr: aisdk.ErrNoObjectGenerated},
+		{name: "stream without repair", original: `{"wrong":1}`, stream: true, wantErr: aisdk.ErrNoObjectGenerated},
+		{name: "declined", original: `{"wrong":1}`, repaired: `{"name":"valid"}`, useRepair: true, wantErr: aisdk.ErrInvalidOutputText, wantCalls: 1},
+		{name: "callback error", original: `{"wrong":1}`, repaired: `{"name":"valid"}`, useRepair: true, accepted: true, callbackErr: callbackErr, wantErr: callbackErr, wantCalls: 1},
+		{name: "invalid accepted repair", original: `{"name":`, repaired: `{"wrong":1}`, useRepair: true, accepted: true, wantErr: aisdk.ErrInvalidOutputText, wantCalls: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			model := &valTestModel{streamFunc: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+				return &provider.StreamResult{Stream: valTextStream(tc.original)}, nil
+			}}
+			calls := 0
+			repair := aisdk.WithRepairText(func(text string, err error) (string, bool, error) {
+				calls++
+				assert.Equal(t, tc.original, text)
+				return tc.repaired, tc.accepted, tc.callbackErr
+			})
+			var got error
+			if tc.stream {
+				opts := []aisdk.StreamOption{aisdk.WithModelMessages(provider.UserText("recipe"))}
+				if tc.useRepair {
+					opts = append(opts, repair)
+				}
+				result := output.StreamObject[valRecipe](context.Background(), model, out, opts...)
+				for range result.FullStream() {
+				}
+				_, got = result.Object()
+				assert.Equal(t, tc.original, result.Text())
+			} else {
+				opts := []aisdk.GenerateOption{aisdk.WithModelMessages(provider.UserText("recipe"))}
+				if tc.useRepair {
+					opts = append(opts, repair)
+				}
+				result, err := output.GenerateObject[valRecipe](context.Background(), model, out, opts...)
+				require.NoError(t, err)
+				_, got = result.Object()
+				assert.Equal(t, tc.original, result.Text)
+			}
+			assert.ErrorIs(t, got, tc.wantErr)
+			assert.Equal(t, tc.wantCalls, calls)
+		})
+	}
 }
 
 func TestTypedElementStream(t *testing.T) {

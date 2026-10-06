@@ -22,7 +22,7 @@ evidence boundary changes, not merely because the pinned versions change.
 | Surface | Status | Evidence | Boundary |
 | --- | --- | --- | --- |
 | Core orchestration and tools | mixed | Root tests, provider-independent UI fixtures and HTTP/core integration tests exercise lifecycle, tool execution, approvals, continuation, ordering, cancellation and URL-backed generated-file resolution with deterministic network policy tests. Pinned core mock request/UI snapshots cover direct and nested deferred discovery and next-step activation; root race tests cover search state isolation. | Provider replay covers configured scenarios, not every core option or scheduling interleaving. Deferred discovery mock evidence does not establish live provider acceptance. Deterministic generated-file HTTP tests do not prove live provider-hosted downloads. |
-| Structured output | mixed | Object snapshots and unit tests exercise schemas, partial values, array elements and parsing. | Final-value snapshots do not establish partial-delivery or failure behavior; those require focused tests. |
+| Structured output | mixed | Object snapshots and focused unit tests exercise schemas, partial values, array elements, parsing, repair failure paths and raw-response preservation. | Final-value snapshots alone do not establish partial-delivery or failure behavior; those require focused tests. |
 | UI messages and SSE | mixed | Chunk snapshots, framing tests and schema-parsed frontend tests exercise conversion, ordering and assembly. Pinned differentials cover seven static/dynamic tool states through persistence, resume and conversion. | Reader/writer tests do not establish all browser or hook lifecycle behavior; scalar construction and provider-domain optional-empty representations remain bounded adaptations. |
 | React hooks | mixed | Actual useChat, useCompletion and useObject tests exercise selected success, error, stop, tool, approval and generated-file delivery flows. Tool-state tests persist/remount/resume preliminary and approval history through Go and compare the fake provider prompt with the pinned Agent. | Other lifecycle paths are not established by these tests or by chunk snapshots alone; the deterministic model does not prove live provider acceptance. |
 | Agent, middleware and registry | mixed | Root tests exercise configuration, wrapping, provider resolution, simulated generated-content projection and cancellation; schema-parsed frontend tests check simulated UI chunks, isolated history validation/normalization and zero provider calls on invalid history. | Dynamic tools skip static schemas; application metadata/data schemas, unrepresented provider-tool schemas, approval input-schema provenance and transforms/refinements remain outside validation proof. Shared schema cases are not exhaustive. Synthetic generation does not prove real provider emissions; delegation to another implementation does not independently prove every entry point. |
@@ -139,8 +139,8 @@ issue rather than being maintained in both places.
 
 Vertex enables the Anthropic adapter's native JSON output capability, following
 Google Cloud's documented `output_config.format` support. This is a
-provider-configuration adaptation of the registered `@ai-sdk/anthropic` 4.0.59
-capability gate, not a change to response mapping or the upstream baseline.
+provider-configuration adaptation of the Anthropic capability gate, not a change
+to response mapping or the upstream baseline.
 Strict tool capability remains separate. Synthetic request-serialization tests
 cover supported models (including Sonnet 5.5), streaming and non-streaming
 requests, and the absence of forced tool choice and synthetic tools. Existing

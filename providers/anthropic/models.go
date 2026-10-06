@@ -30,6 +30,7 @@ var directAnthropicModelIDs = []string{
 	"claude-sonnet-4-5-20250929",
 	"claude-sonnet-4-6",
 	"claude-sonnet-5",
+	"claude-sonnet-5-5",
 }
 
 // vertexModelMap maps direct Anthropic model IDs and short aliases used for
@@ -64,6 +65,7 @@ var vertexModelMap = map[string]string{
 	"claude-sonnet-4-5-20250929": "claude-sonnet-4-5@20250929",
 	"claude-sonnet-4-6":          "claude-sonnet-4-6",
 	"claude-sonnet-5":            "claude-sonnet-5",
+	"claude-sonnet-5-5":          "claude-sonnet-5-5",
 }
 
 // ModelIDs returns the curated list of model IDs accepted by the direct
@@ -139,7 +141,16 @@ type modelCapabilities struct {
 	rejectsSamplingParams                  bool
 	supportsXHighEffort                    bool
 	rejectsThinkingDisabledAboveHighEffort bool
-	isKnownModel                           bool
+	// rejectsThinkingDisabled marks models that reject thinking type
+	// "disabled" and budget-based "enabled" with a 400.
+	rejectsThinkingDisabled bool
+	// rejectsForcedToolUse marks models that reject tool_choice "any" and
+	// named-tool choices with a 400.
+	rejectsForcedToolUse bool
+	// supportsBetweenToolsThinking marks models that accept thinking type
+	// "between_tools", their lowest thinking setting.
+	supportsBetweenToolsThinking bool
+	isKnownModel                 bool
 }
 
 var legacyClaudeModelPattern = regexp.MustCompile(`claude-(instant($|-)|v?2($|[-.:])|3($|[-.]))`)
@@ -148,6 +159,8 @@ var legacyClaudeModelPattern = regexp.MustCompile(`claude-(instant($|-)|v?2($|[-
 // known Claude families (substring checks, most specific first).
 func getModelCapabilities(modelID string) modelCapabilities {
 	switch {
+	case strings.Contains(modelID, "claude-sonnet-5-5"):
+		return modelCapabilities{maxOutputTokens: 128000, supportsAdaptiveThinking: true, supportsStructuredOutput: true, rejectsSamplingParams: true, supportsXHighEffort: true, rejectsThinkingDisabledAboveHighEffort: true, rejectsThinkingDisabled: true, rejectsForcedToolUse: true, supportsBetweenToolsThinking: true, isKnownModel: true}
 	case strings.Contains(modelID, "claude-opus-5"):
 		return modelCapabilities{maxOutputTokens: 128000, supportsAdaptiveThinking: true, supportsStructuredOutput: true, rejectsSamplingParams: true, supportsXHighEffort: true, rejectsThinkingDisabledAboveHighEffort: true, isKnownModel: true}
 	case strings.Contains(modelID, "claude-opus-4-8") ||

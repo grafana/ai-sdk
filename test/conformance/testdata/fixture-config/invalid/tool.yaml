@@ -1,0 +1,7 @@
+# unknown: needsAproval
+model: test
+tools:
+  weather:
+    description: weather
+    inputSchema: { type: object }
+    needsAproval: true

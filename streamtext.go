@@ -29,8 +29,12 @@ var ErrNoOutputGenerated = errors.New("aisdk: no output generated")
 type StreamTextResult struct {
 	fullStream chan TextStreamPart
 	done       chan struct{}
-	consumed   atomic.Bool
-	mu         sync.Mutex
+	// ctxDone is the run context's cancellation channel, read by emit so a
+	// cancelled or timed-out run is not held open by a consumer that stopped
+	// reading. run sets it before its first emit.
+	ctxDone  <-chan struct{}
+	consumed atomic.Bool
+	mu       sync.Mutex
 
 	steps        []StepResult
 	totalUsage   provider.Usage
@@ -435,6 +439,10 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 	var opCancel context.CancelFunc
 	ctx, opCancel = context.WithCancel(ctx)
 	defer opCancel()
+	// The total, step, first-chunk and chunk timeouts all cancel this context
+	// rather than the caller's, so emit has to watch it to release a run those
+	// timeouts abort.
+	r.ctxDone = ctx.Done()
 
 	r.usedTextIDs = make(map[string]struct{})
 	r.usedReasoningIDs = make(map[string]struct{})
@@ -781,6 +789,15 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 			if cfg.output != nil && (cfg.parseOutputOnAllFinishes || step.FinishReason.Unified == provider.FinishReasonStop ||
 				(step.FinishReason.Unified != provider.FinishReasonToolCalls && step.Text != "")) {
 				outputVal, outputErr := cfg.output.ParseComplete(step.Text)
+				if outputErr != nil && cfg.repairText != nil && errors.Is(outputErr, ErrNoObjectGenerated) && errors.Is(outputErr, ErrInvalidOutputText) {
+					repaired, accepted, repairErr := cfg.repairText(step.Text, outputErr)
+					switch {
+					case repairErr != nil:
+						outputErr = repairErr
+					case accepted:
+						outputVal, outputErr = cfg.output.ParseComplete(repaired)
+					}
+				}
 				r.mu.Lock()
 				r.outputValue = outputVal
 				r.outputErr = outputErr
@@ -2009,8 +2026,26 @@ func (r *StreamTextResult) executeSingleTool(
 	}
 }
 
+// emit publishes one part to FullStream. A consumer that stops reading leaves
+// the buffer full, which parked the run goroutine for good: Wait and every
+// blocking accessor then waited on a goroutine that could no longer finish.
+// Once the run's context is cancelled, by the caller or by a configured
+// timeout, the part is dropped instead, which is the escape hatch the streaming
+// guide documents.
+//
+// The non-blocking attempt comes first so a part that still fits is always
+// delivered. Without it, select would pick at random between a ready send and a
+// cancelled context, and a live consumer would lose abort and finish parts.
 func (r *StreamTextResult) emit(part TextStreamPart) {
-	r.fullStream <- part
+	select {
+	case r.fullStream <- part:
+		return
+	default:
+	}
+	select {
+	case r.fullStream <- part:
+	case <-r.ctxDone:
+	}
 }
 
 func (r *StreamTextResult) abort(ctx context.Context, cfg *streamConfig) {

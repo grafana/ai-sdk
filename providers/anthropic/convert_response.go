@@ -49,7 +49,7 @@ func convertResponse(msg *anthropic.BetaMessage, mapping toolNameMapping, usesJs
 							ID:               src.ID,
 							SourceType:       src.SourceType,
 							URL:              src.URL,
-							Text:             src.Title,
+							Title:            src.Title,
 							MediaType:        src.MediaType,
 							Filename:         src.Filename,
 							ProviderMetadata: src.ProviderMetadata,
@@ -220,7 +220,7 @@ func convertResponse(msg *anthropic.BetaMessage, mapping toolNameMapping, usesJs
 						ID:         generateID(),
 						SourceType: provider.SourceTypeURL,
 						URL:        result.URL,
-						Text:       result.Title,
+						Title:      result.Title,
 						ProviderMetadata: provider.ProviderMetadata{
 							"anthropic": pageAgeMeta,
 						},

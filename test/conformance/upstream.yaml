@@ -1,18 +1,18 @@
 upstream:
   repository: https://github.com/vercel/ai
-  commit: ee3169b3c4880e2abe4d0d7c781243bb81822ec4
+  commit: 5d12eaa6caa193d3901cbab98a734403eb6bf622
   packageSource: npm
-  verifiedAt: "2026-09-29"
+  verifiedAt: "2026-10-01"
 packages:
-  ai: 7.0.116
+  ai: 7.0.118
   "@ai-sdk/anthropic": 4.0.65
   "@ai-sdk/amazon-bedrock": 5.0.97
-  "@ai-sdk/gateway": 4.0.94
+  "@ai-sdk/gateway": 4.0.96
   "@ai-sdk/openai": 4.0.78
   "@ai-sdk/openai-compatible": 3.0.57
   "@ai-sdk/provider": 4.0.18
   "@ai-sdk/provider-utils": 5.0.49
-  "@ai-sdk/react": 4.0.119
+  "@ai-sdk/react": 4.0.121
 verification:
   status: enforced
   conformanceScope: full
@@ -21,6 +21,15 @@ verification:
     conformance: mise run test-conformance
     regenerate: mise run generate-conformance
 knownGaps:
+  - id: mantle-luna-reasoning-summary
+    surface: provider-openai
+    status: intentional-deviation
+    description: Mantle Luna 6 defaults to omitting reasoning summaries while
+      preserving effort and explicit per-call summary overrides. Direct OpenAI
+      retains the registered upstream default; explicit null omits the summary
+      on both endpoints. Automatic adaptation remains Luna-only. Synthetic HTTP
+      tests cover unary and streaming requests; no live SDK Mantle conformance
+      recording is claimed.
   - id: astra-model-catalog
     surface: provider-openai
     status: gap
@@ -60,6 +69,26 @@ knownGaps:
       base URLs during provider creation. The Go provider exposes raw openai-go request
       options through an error-free constructor, so invalid base URLs fail later when
       a request is made rather than at construction time.
+  - id: anthropic-sonnet-5-5-ahead-of-baseline
+    surface: provider-anthropic
+    status: gap
+    description: claude-sonnet-5-5 capabilities (between_tools as the lowest
+      thinking setting, disabled and budget thinking rejected, forced tool use
+      rejected) are ported from @ai-sdk/anthropic 4.0.67 and @ai-sdk/amazon-bedrock
+      5.0.99, ahead of the registered targets. The recorder drives the registered
+      packages, which send disabled thinking to this model, so coverage is focused
+      unit tests plus manual live checks; no recorded fixture is claimed until the
+      baseline reaches those versions. Tracked by grafana/ai-sdk#278.
+  - id: bedrock-sonnet-5-5-reasoning-none
+    surface: provider-bedrock
+    status: documented-deviation
+    description: Upstream @ai-sdk/amazon-bedrock 5.0.99 maps reasoning none to
+      disabled, which omits the thinking field, so claude-sonnet-5-5 runs adaptive
+      thinking at its default effort. Go sends thinking type between_tools, the
+      model's lowest setting, matching the Anthropic provider; Bedrock Converse
+      accepts it at low, medium, and high effort. Go also accepts
+      reasoningConfig.type between_tools, which upstream does not, and lowers
+      xhigh or max effort to high for it, as the Anthropic provider does.
   - id: bedrock-anthropic-invoke-surface
     surface: provider-bedrock
     status: gap
@@ -119,10 +148,3 @@ knownGaps:
       rather than the former experimental language-model batch extension. Go scopes
       this baseline to synchronous LanguageModel generate/stream calls and does not
       expose durable batch APIs or batch conformance coverage.
-  - id: structured-output-repair-text
-    surface: core-orchestration
-    status: gap
-    description: Upstream ai exposes stable repairText callbacks on its legacy
-      generateObject and streamObject APIs. The Go port uses the Output abstraction
-      and typed output wrappers and does not currently expose a repair callback for
-      invalid-but-repairable structured output.
