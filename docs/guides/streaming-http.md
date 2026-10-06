@@ -126,6 +126,15 @@ Use `r.Context()` so client disconnects stop provider calls and tools. Configure
 total, step, and chunk timeouts for stalled connections. Verify streaming in the
 deployed path, including reverse proxies that may buffer SSE.
 
+## Resume an assembled message
+
+Pass [`WithUIMessageReaderInitialMessage`](https://pkg.go.dev/github.com/grafana/ai-sdk#WithUIMessageReaderInitialMessage)
+to either reader to resume an isolated copy of persisted assistant state.
+Tool/approval continuations update matching parts without duplicates; new deltas
+still require start chunks. Non-assistant seeds contribute only their ID.
+Reader error contracts are unchanged; lifecycle/error API work remains in
+[#181](https://github.com/grafana/ai-sdk/issues/181).
+
 ## Reference
 
 - [`WriteUIMessageStream`](https://pkg.go.dev/github.com/grafana/ai-sdk#WriteUIMessageStream)

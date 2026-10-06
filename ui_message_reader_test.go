@@ -3,6 +3,7 @@ package aisdk
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http/httptest"
 	"testing"
 
@@ -10,6 +11,238 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestUIMessageReader_PersistedToolFields(t *testing.T) {
+	for _, dynamic := range []bool{false, true} {
+		t.Run(fmt.Sprint(dynamic), func(t *testing.T) {
+			var input []UIMessageChunk
+			for _, raw := range []string{
+				fmt.Sprintf(`{"type":"tool-input-start","toolCallId":"c","toolName":"lookup","dynamic":%t,"title":"","toolMetadata":{},"providerExecuted":true}`, dynamic),
+				`{"type":"tool-input-available","toolCallId":"c","toolName":"lookup","input":{},"dynamic":` + fmt.Sprint(dynamic) + `}`,
+				`{"type":"tool-approval-request","toolCallId":"c","approvalId":"a","approvalDescriptor":{"scope":"test"},"reason":"","signature":"sig"}`,
+				`{"type":"tool-approval-response","approvalId":"a","approved":true,"reason":"","providerExecuted":false}`,
+				`{"type":"tool-output-available","toolCallId":"c","output":null,"preliminary":false}`,
+			} {
+				var chunk UIMessageChunk
+				require.NoError(t, json.Unmarshal([]byte(raw), &chunk))
+				encoded, err := json.Marshal(chunk)
+				require.NoError(t, err)
+				assert.JSONEq(t, raw, string(encoded))
+				input = append(input, chunk)
+			}
+			message, err := AssembleUIMessage(chunks(input...))
+			require.NoError(t, err)
+			encoded, err := json.Marshal(message)
+			require.NoError(t, err)
+			var envelope struct {
+				Parts []map[string]json.RawMessage `json:"parts"`
+			}
+			require.NoError(t, json.Unmarshal(encoded, &envelope))
+			require.Len(t, envelope.Parts, 1)
+			part := envelope.Parts[0]
+			assert.Equal(t, `""`, string(part["title"]))
+			assert.Equal(t, `{}`, string(part["toolMetadata"]))
+			assert.Equal(t, `false`, string(part["preliminary"]))
+			assert.JSONEq(t, `{"id":"a","approved":true,"descriptor":{"scope":"test"},"requestReason":"","reason":"","signature":"sig"}`, string(part["approval"]))
+			models, err := ConvertToModelMessages([]UIMessage{message})
+			require.NoError(t, err)
+			require.Len(t, models, 2)
+			assert.Equal(t, provider.RoleTool, models[1].Role)
+		})
+	}
+}
+
+func TestUIMessageReader_ProviderExecutionPresence(t *testing.T) {
+	for _, dynamic := range []bool{false, true} {
+		for _, kind := range []ChunkType{ChunkToolApprovalResponse, ChunkToolOutputAvailable, ChunkToolOutputError} {
+			for _, supplied := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%t/%s/false-supplied-%t", dynamic, kind, supplied), func(t *testing.T) {
+					initial := toolPartFields{ToolCallID: "c", ToolName: "lookup", State: ToolStateApprovalRequested, Input: json.RawMessage(`{}`), ProviderExecuted: true, Approval: &ToolApproval{ID: "a", Descriptor: json.RawMessage(`{"scope":"all"}`), RequestReason: new("request"), Signature: "sig", IsAutomatic: true}}
+					var part Part = ToolInvocationPart(initial)
+					if dynamic {
+						part = DynamicToolUIPart(initial)
+					}
+					fields := `"toolCallId":"c","approvalId":"a","approved":true,"output":"ok","errorText":""`
+					if supplied {
+						fields += `,"providerExecuted":false`
+					}
+					var chunk UIMessageChunk
+					require.NoError(t, json.Unmarshal([]byte(`{"type":"`+string(kind)+`",`+fields+`}`), &chunk))
+					input := []UIMessageChunk{chunk}
+					if kind == ChunkToolApprovalResponse {
+						input = append(input, UIMessageChunk{Type: ChunkToolOutputAvailable, ToolCallID: "c", Output: json.RawMessage(`"ok"`)})
+					}
+					message, err := AssembleUIMessage(chunks(input...), WithUIMessageReaderInitialMessage(UIMessage{ID: "m", Role: RoleAssistant, Parts: []Part{part}}))
+					require.NoError(t, err)
+					var got toolPartFields
+					switch p := message.Parts[0].(type) {
+					case ToolInvocationPart:
+						got = toolPartFields(p)
+					case DynamicToolUIPart:
+						got = toolPartFields(p)
+					}
+					assert.Equal(t, !supplied, got.ProviderExecuted)
+					assert.Equal(t, "sig", got.Approval.Signature)
+					models, err := ConvertToModelMessages([]UIMessage{message})
+					require.NoError(t, err)
+					if supplied {
+						require.Len(t, models, 2)
+						assert.Equal(t, provider.RoleTool, models[1].Role)
+					} else {
+						assert.Equal(t, provider.ContentPartTypeToolResult, models[0].Content[len(models[0].Content)-1].Type)
+						if kind == ChunkToolApprovalResponse {
+							require.Len(t, models, 2)
+							assert.Equal(t, provider.ContentPartTypeToolApprovalResponse, models[1].Content[0].Type)
+						} else {
+							require.Len(t, models, 1)
+						}
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestUIMessageReader_StaticErrorContinuation(t *testing.T) {
+	for _, seeded := range []bool{false, true} {
+		for _, raw := range []json.RawMessage{json.RawMessage(`"legacy"`), json.RawMessage(`{"q":"legacy"}`), json.RawMessage(`null`)} {
+			t.Run(fmt.Sprintf("seeded-%t/%s", seeded, raw), func(t *testing.T) {
+				var options []UIMessageReaderOption
+				var updates []UIMessageChunk
+				if seeded {
+					options = append(options, WithUIMessageReaderInitialMessage(UIMessage{ID: "m", Role: RoleAssistant, Parts: []Part{ToolInvocationPart{ToolCallID: "c", ToolName: "lookup", State: ToolStateOutputError, RawInput: raw, ErrorText: new("old")}}}))
+				} else {
+					updates = append(updates, UIMessageChunk{Type: ChunkToolInputError, ToolCallID: "c", ToolName: "lookup", Input: raw, ErrorText: "old"})
+				}
+				updates = append(updates, UIMessageChunk{Type: ChunkToolOutputError, ToolCallID: "c"})
+				snapshots := collectMessages(StreamUIMessage(chunks(updates...), options...))
+				require.NotEmpty(t, snapshots)
+				for _, snapshot := range snapshots {
+					part := snapshot.Parts[0].(ToolInvocationPart)
+					assert.JSONEq(t, string(raw), string(part.RawInput))
+				}
+				message, err := AssembleUIMessage(chunks(updates...), options...)
+				require.NoError(t, err)
+				part := message.Parts[0].(ToolInvocationPart)
+				assert.JSONEq(t, string(raw), string(part.RawInput))
+				assert.Nil(t, part.Input)
+				models, err := ConvertToModelMessages([]UIMessage{message})
+				require.NoError(t, err)
+				assert.JSONEq(t, string(raw), string(models[0].Content[0].Input))
+			})
+		}
+	}
+}
+
+func TestUIMessageReader_InitialMessageIsolation(t *testing.T) {
+	initial := UIMessage{ID: "m", Role: RoleAssistant, Parts: []Part{ToolInvocationPart{ToolCallID: "c", ToolName: "lookup", State: ToolStateOutputError, Title: new("title"), Input: json.RawMessage(`{}`), RawInput: json.RawMessage(`"raw"`), ErrorText: new("error"), ToolMetadata: map[string]json.RawMessage{"scope": json.RawMessage(`{"name":"all"}`)}, Approval: &ToolApproval{ID: "a", Approved: new(true), Reason: new("reason"), Descriptor: json.RawMessage(`{"scope":"all"}`)}}}}
+	before, err := json.Marshal(initial)
+	require.NoError(t, err)
+	option := WithUIMessageReaderInitialMessage(initial)
+	part := initial.Parts[0].(ToolInvocationPart)
+	*part.Title = "mutated"
+	part.ToolMetadata["scope"][0] = 'x'
+	part.Approval.Descriptor[0] = 'x'
+	message, err := AssembleUIMessage(chunks(), option)
+	require.NoError(t, err)
+	encoded, err := json.Marshal(message)
+	require.NoError(t, err)
+	assert.JSONEq(t, string(before), string(encoded))
+	part = message.Parts[0].(ToolInvocationPart)
+	*part.ErrorText = "changed"
+	*part.Approval.Reason = "changed"
+	part.RawInput[0] = 'x'
+	again, err := AssembleUIMessage(chunks(), option)
+	require.NoError(t, err)
+	encoded, err = json.Marshal(again)
+	require.NoError(t, err)
+	assert.JSONEq(t, string(before), string(encoded))
+	assert.Empty(t, collectMessages(StreamUIMessage(chunks(), option)))
+	_, err = AssembleUIMessage(chunks(TextDeltaChunk("t", "invalid")), option)
+	require.Error(t, err)
+	for _, id := range []string{"user-id", ""} {
+		seed := WithUIMessageReaderInitialMessage(UIMessage{ID: id, Role: RoleUser, Metadata: json.RawMessage(`{"ignored":true}`), Parts: []Part{TextPart{Text: "ignored"}}})
+		got, err := AssembleUIMessage(chunks(), seed, WithUIMessageReaderGenerateID(func() string { return "generated" }))
+		require.NoError(t, err)
+		want := id
+		if want == "" {
+			want = "generated"
+		}
+		assert.Equal(t, want, got.ID)
+		assert.Empty(t, got.Parts)
+		assert.Empty(t, got.Metadata)
+		got, err = AssembleUIMessage(chunks(UIMessageChunk{Type: ChunkStart, MessageID: "replacement"}), seed)
+		require.NoError(t, err)
+		assert.Equal(t, "replacement", got.ID)
+	}
+	t.Run("data replacement", func(t *testing.T) {
+		seed := WithUIMessageReaderInitialMessage(UIMessage{ID: "m", Role: RoleAssistant, Parts: []Part{DataPart{DataName: "status", ID: "d", Data: json.RawMessage(`1`)}}})
+		got, err := AssembleUIMessage(chunks(UIMessageChunk{Type: ChunkData, DataName: "status", ID: "d", Data: json.RawMessage(`2`)}), seed)
+		require.NoError(t, err)
+		require.Len(t, got.Parts, 1)
+		assert.JSONEq(t, `2`, string(got.Parts[0].(DataPart).Data))
+	})
+}
+
+func TestUIMessageReader_FileCloneIsolation(t *testing.T) {
+	for i, references := range []map[string]string{nil, {}, {"test": "file"}} {
+		t.Run(fmt.Sprint(i), func(t *testing.T) {
+			original := FilePart{Filename: new("original"), ProviderReference: references}
+			cloned := clonePart(original).(FilePart)
+			assert.Equal(t, original, cloned)
+			*cloned.Filename = "changed"
+			assert.Equal(t, "original", *original.Filename)
+			if references != nil {
+				before := references["test"]
+				cloned.ProviderReference["test"] = "changed"
+				assert.Equal(t, before, original.ProviderReference["test"])
+			}
+		})
+	}
+}
+
+func TestUIMessageReader_ToolSnapshotIsolation(t *testing.T) {
+	for _, dynamic := range []bool{false, true} {
+		t.Run(map[bool]string{false: "static", true: "dynamic"}[dynamic], func(t *testing.T) {
+			fields := toolPartFields{ToolCallID: "c", ToolName: "lookup", State: ToolStateOutputError, Title: new("title"), Input: json.RawMessage(`{"q":"test"}`), RawInput: json.RawMessage(`"raw"`), Output: json.RawMessage(`null`), ErrorText: new(""), Preliminary: new(false), ToolMetadata: map[string]json.RawMessage{"key": json.RawMessage(`1`)}, CallProviderMetadata: provider.ProviderMetadata{"test": json.RawMessage(`{"call":1}`)}, ResultProviderMetadata: provider.ProviderMetadata{"test": json.RawMessage(`{"result":1}`)}, Approval: &ToolApproval{ID: "a", Approved: new(true), Descriptor: json.RawMessage(`{"scope":1}`), RequestReason: new("request"), Reason: new("reason")}}
+			var part Part = ToolInvocationPart(fields)
+			if dynamic {
+				part = DynamicToolUIPart(fields)
+			}
+			state := newUIMessageReaderState(buildUIMessageReaderConfig([]UIMessageReaderOption{WithUIMessageReaderInitialMessage(UIMessage{ID: "m", Role: RoleAssistant, Parts: []Part{part}})}))
+			first := state.snapshot()
+			before, err := json.Marshal(first)
+			require.NoError(t, err)
+			var mutated toolPartFields
+			switch p := first.Parts[0].(type) {
+			case ToolInvocationPart:
+				mutated = toolPartFields(p)
+			case DynamicToolUIPart:
+				mutated = toolPartFields(p)
+			}
+			*mutated.Title = "changed"
+			*mutated.ErrorText = "changed"
+			*mutated.Preliminary = true
+			for _, raw := range []json.RawMessage{mutated.Input, mutated.RawInput, mutated.Output, mutated.ToolMetadata["key"], mutated.CallProviderMetadata["test"], mutated.ResultProviderMetadata["test"], mutated.Approval.Descriptor} {
+				raw[0] = 'x'
+			}
+			*mutated.Approval.Approved = false
+			*mutated.Approval.RequestReason = "changed"
+			*mutated.Approval.Reason = "changed"
+			after, err := json.Marshal(state.snapshot())
+			require.NoError(t, err)
+			assert.JSONEq(t, string(before), string(after))
+			write, err := state.apply(UIMessageChunk{Type: ChunkToolOutputAvailable, ToolCallID: "c", Output: json.RawMessage(`"final"`)})
+			require.NoError(t, err)
+			assert.True(t, write)
+			later := state.snapshot()
+			encoded, err := json.Marshal(later)
+			require.NoError(t, err)
+			assert.Contains(t, string(encoded), `"title":"title"`)
+			assert.Contains(t, string(encoded), `"requestReason":"request"`)
+		})
+	}
+}
 
 func TestUtilityFunctionalOptions(t *testing.T) {
 	t.Run("default calls compile and nil options are ignored", func(t *testing.T) {
@@ -368,7 +601,7 @@ func TestStreamUIMessage_ProgressiveToolLifecycle(t *testing.T) {
 
 	dyn := requireDynamicToolPart(t, messages[8], 1)
 	assert.Equal(t, ToolStateOutputError, dyn.State)
-	assert.Equal(t, "failed", dyn.ErrorText)
+	assert.Equal(t, new("failed"), dyn.ErrorText)
 }
 
 func TestStreamUIMessage_RepeatedToolCallIDAcrossSteps(t *testing.T) {
@@ -398,7 +631,7 @@ func TestStreamUIMessage_RepeatedToolCallIDAcrossSteps(t *testing.T) {
 	assert.JSONEq(t, `{"itemId":"fc-step-2"}`, string(second.CallProviderMetadata["openai"]))
 }
 
-func TestStreamUIMessage_ToolApprovalResponseDropsRequestSignature(t *testing.T) {
+func TestStreamUIMessage_ToolApprovalResponsePreservesRequestSignature(t *testing.T) {
 	messages := collectMessages(StreamUIMessage(chunks(
 		UIMessageChunk{Type: ChunkToolInputAvailable, ToolCallID: "c1", ToolName: "weather", Input: json.RawMessage(`{}`)},
 		UIMessageChunk{Type: ChunkToolApprovalRequest, ToolCallID: "c1", ApprovalID: "apr", Signature: "sig", IsAutomatic: true},
@@ -410,7 +643,7 @@ func TestStreamUIMessage_ToolApprovalResponseDropsRequestSignature(t *testing.T)
 	require.NotNil(t, part.Approval)
 	assert.Equal(t, "apr", part.Approval.ID)
 	assert.True(t, part.Approval.IsAutomatic)
-	assert.Empty(t, part.Approval.Signature)
+	assert.Equal(t, "sig", part.Approval.Signature)
 	require.NotNil(t, part.Approval.Approved)
 	assert.True(t, *part.Approval.Approved)
 }
@@ -425,8 +658,9 @@ func TestStreamUIMessage_ToolInputErrorAndOutputDenied(t *testing.T) {
 	require.Len(t, messages, 3)
 	inputErr := requireToolInvocationPart(t, messages[0], 0)
 	assert.Equal(t, ToolStateOutputError, inputErr.State)
-	assert.Equal(t, "bad input", inputErr.ErrorText)
-	assert.JSONEq(t, `{"city":1}`, string(inputErr.Input))
+	assert.Equal(t, new("bad input"), inputErr.ErrorText)
+	assert.Nil(t, inputErr.Input)
+	assert.JSONEq(t, `{"city":1}`, string(inputErr.RawInput))
 
 	denied := requireToolInvocationPart(t, messages[2], 1)
 	assert.Equal(t, ToolStateOutputDenied, denied.State)

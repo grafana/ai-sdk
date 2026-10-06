@@ -23,9 +23,9 @@ evidence boundary changes, not merely because the pinned versions change.
 | --- | --- | --- | --- |
 | Core orchestration and tools | mixed | Root tests, provider-independent UI fixtures and HTTP/core integration tests exercise lifecycle, tool execution, approvals, continuation, ordering, cancellation and URL-backed generated-file resolution with deterministic network policy tests. Pinned core mock request/UI snapshots cover direct and nested deferred discovery and next-step activation; root race tests cover search state isolation. | Provider replay covers configured scenarios, not every core option or scheduling interleaving. Deferred discovery mock evidence does not establish live provider acceptance. Deterministic generated-file HTTP tests do not prove live provider-hosted downloads. |
 | Structured output | mixed | Object snapshots and focused unit tests exercise schemas, partial values, array elements, parsing, repair failure paths and raw-response preservation. | Final-value snapshots alone do not establish partial-delivery or failure behavior; those require focused tests. |
-| UI messages and SSE | mixed | Chunk snapshots, framing tests and schema-parsed frontend tests exercise conversion, ordering and assembly. | Reader/writer tests do not establish all browser or hook lifecycle behavior. |
-| React hooks | mixed | Actual useChat, useCompletion and useObject tests exercise selected success, error, stop, tool, approval and generated-file delivery flows. | Other lifecycle paths are not established by these tests or by chunk snapshots alone. |
-| Agent, middleware and registry | mixed | Root tests exercise configuration, wrapping, provider resolution, simulated generated-content projection and cancellation; a schema-parsed frontend scenario checks simulated UI chunks and assembly. | Synthetic simulated generation does not prove real provider emissions; delegation to another implementation does not independently prove every entry point. |
+| UI messages and SSE | mixed | Chunk snapshots, framing tests and schema-parsed frontend tests exercise conversion, ordering and assembly. Pinned differentials cover seven static/dynamic tool states through persistence, resume and conversion. | Reader/writer tests do not establish all browser or hook lifecycle behavior; scalar construction and provider-domain optional-empty representations remain bounded adaptations. |
+| React hooks | mixed | Actual useChat, useCompletion and useObject tests exercise selected success, error, stop, tool, approval and generated-file delivery flows. Tool-state tests persist/remount/resume preliminary and approval history through Go and compare the fake provider prompt with the pinned Agent. | Other lifecycle paths are not established by these tests or by chunk snapshots alone; the deterministic model does not prove live provider acceptance. |
+| Agent, middleware and registry | mixed | Root tests exercise configuration, wrapping, provider resolution, simulated generated-content projection and cancellation; schema-parsed frontend tests check simulated UI chunks, isolated history validation/normalization and zero provider calls on invalid history. | Dynamic tools skip static schemas; application metadata/data schemas, unrepresented provider-tool schemas, approval input-schema provenance and transforms/refinements remain outside validation proof. Shared schema cases are not exhaustive. Synthetic generation does not prove real provider emissions; delegation to another implementation does not independently prove every entry point. |
 | Agent Observability integration | mixed | Tests against the agento11y versions in the middleware's `go.mod` cover cached unary/streaming usage, inclusive export/span/metric semantics, and hook fixtures replayed through the real HTTP decoder. Gateway tests cover cached unary/streaming inclusive exports with both source and published middleware, bounded HTTP/gRPC export attempts, and ambient configuration rejection. | Hook validation starts after SDK normalization; discarded wire fields cannot be validated, and lost provider-tool discriminators fail reconstruction. Local HTTP servers do not prove deployed hook-service compatibility. Experimental OTel generation export is outside this evidence. |
 | LanguageModelV4 contract | mixed | Discriminator checks, finite ProviderWire witnesses and provider request snapshots exercise represented types and mappings. | Shape checks are not complete semantic interface verification. |
 | Provider adapters | mixed | `recorded/` and `upstream/` fixtures exercise represented requests, stream events, usage and outputs; provider tests cover synthetic failures and local invariants, including native Anthropic default Messages targets and caller-option precedence, OpenAI capability-gated reasoning/configuration controls, async tool metadata and continuation, multipart function-result conversion, immutable Responses schema normalization, and synthetic forced-choice HTTP request assertions for shell, local-shell and tool-search against registered upstream shapes. | No recorded/imported OpenAI request fixture exercises multipart result references, cache breakpoints or `propertyNames` normalization; focused request tests do not prove live acceptance. Request capture does not prove returned SDK metadata. Volatile SigV4 headers are excluded from snapshots. |
@@ -127,12 +127,23 @@ evidence boundary changes, not merely because the pinned versions change.
 - Linux FIFO deadline tests are platform-specific; socket checks on another
   platform do not establish Linux runtime behavior.
 
+- Tool-state fixtures are provider-independent core chunks, not recordings.
+  Pinned UI/Agent APIs own expectations; comparisons preserve grouping, required
+  empty text and metadata selection. Prompt coalescing tests cover deep precedence
+  and caller isolation.
+
 ## Retained deviations without issue ownership
 
 These notes prevent matching tests from being mistaken for upstream equivalence.
 If a deviation becomes tracked work, its rationale and disposition belong in the
 issue rather than being maintained in both places.
 
+- UI tool presence is bounded: persisted provider-executed/automatic scalars and
+  signatures omit false/empty, as do direct chunk optional scalar zero values.
+  Decoded chunks retain selected empty/false values; false clears prior true.
+  Static tool JSON includes redundant toolName. Provider projections may omit
+  empty options and optional approval reasons/signatures/false flags, but never
+  required denied/text content or presence-based metadata selection.
 - Core batches local approval handling after provider streaming. Completed
   tool-choice violations bypass new local approvals and execution; already streamed
   provider events and prior-message approvals keep their existing handling.
