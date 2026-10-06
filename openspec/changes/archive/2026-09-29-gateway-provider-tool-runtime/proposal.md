@@ -1,6 +1,6 @@
 ## Why
 
-The SDK prerequisite in #238 can represent provider tools, but the Gateway still rejects them. This second WP13 slice enables bounded provider-tool transport independently of native hosted-MCP support.
+The SDK prerequisite in #238 can represent provider tools, but the Gateway still rejects them. This second WP13 slice enables bounded provider-tool transport and the existing native providers' hosted-MCP request semantics.
 
 ## What Changes
 
@@ -8,7 +8,7 @@ The SDK prerequisite in #238 can represent provider tools, but the Gateway still
 - Encode ordered unary/SSE calls, results and execution markers with bounded opaque metadata and generic tool correlation and native-only provider interpretation.
 - Correlate deferred results with unresolved provider-owned history; permit previews only before a final result.
 - Prove both-client behavior through the real handler and authenticated native Anthropic code-execution transport.
-- Keep actual native Anthropic MCP configuration and continuation unsupported until the successor slice enables them. Preserve opaque foreign options and metadata, native authority guards and reusable fallback; document possible repeated billing and remote effects.
+- Forward native Anthropic MCP configuration/history and OpenAI MCP tool definitions without a Gateway hosted-MCP capability gate. Preserve opaque foreign options and metadata, native authority guards and reusable fallback; document possible repeated billing and remote effects.
 
 ## Capabilities
 
@@ -23,4 +23,4 @@ The SDK prerequisite in #238 can represent provider tools, but the Gateway still
 
 ## Impact
 
-Depends on `sdk-provider-tool-contract`; uses its already-published Apache pins with `GOWORK=off`. Changes AGPL request/output mapping, test-only schemas, deterministic transport tests, docs and parity coverage. Registered upstream versions and authentic provider fixture inputs remain unchanged. The subsequent `gateway-anthropic-mcp` change owns remote MCP support. The completed runtime change is archived.
+Depends on `sdk-provider-tool-contract`; uses its already-published Apache pins with `GOWORK=off`. Changes AGPL request/output mapping, test-only schemas, deterministic transport tests, docs and parity coverage. Registered upstream versions and authentic provider fixture inputs remain unchanged. The subsequent `gateway-anthropic-mcp` change retains separately scoped native configuration validation and continuation evidence. The completed runtime change is archived.

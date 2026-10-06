@@ -34,27 +34,9 @@ func validateAnthropicOptions(options provider.CallOptions) error {
 	if err != nil {
 		return err
 	}
-	if len(call.MCPServers) > 0 || (call.Container != nil && len(call.Container.Skills) > 0) ||
+	if (call.Container != nil && len(call.Container.Skills) > 0) ||
 		(call.Fallbacks != nil && (call.Fallbacks.Default || len(call.Fallbacks.Chain) > 0)) {
 		return catalog.ErrUnsupportedRequest
-	}
-	for _, message := range options.Prompt {
-		if message.Role != provider.RoleAssistant {
-			continue
-		}
-		for _, part := range message.Content {
-			if part.Type != provider.ContentPartTypeToolCall || !part.ProviderExecuted {
-				continue
-			}
-			if raw, ok := part.ProviderOptions["anthropic"].(provider.RawProviderOption); ok {
-				var history struct {
-					Type string `json:"type"`
-				}
-				if json.Unmarshal(raw.Raw, &history) == nil && history.Type == "mcp-tool-use" {
-					return catalog.ErrUnsupportedRequest
-				}
-			}
-		}
 	}
 	return nil
 }

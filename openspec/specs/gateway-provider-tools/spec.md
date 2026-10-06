@@ -54,16 +54,17 @@ Output results SHALL match current-response calls or unresolved provider-owned a
 - **WHEN** bounded request history seeds deferred state
 - **THEN** its entries SHALL NOT consume the current provider stream-part budget or retain history payloads
 
-### Requirement: Opaque non-MCP tool metadata
-Tool metadata SHALL use gateway-provider-metadata's shared bounded opaque transport, preserving unknown namespace objects, nested extension fields and omission versus explicit empty objects. Provider-specific metadata interpretation SHALL belong to the actual native consuming boundary; the codec SHALL retain generic tool ownership, ID/name, deferred-result and lifecycle checks without interpreting namespace fields as routing or execution authority. Aggregate original bytes/cardinality and complete encoded response/frame sizes SHALL remain bounded. This capability SHALL NOT activate hosted MCP: consumed Anthropic MCP configuration and native MCP continuation SHALL remain unsupported until separately enabled by gateway-anthropic-mcp. Foreign namespaces not consumed by a native adapter SHALL retain the base runtime's forwarding semantics without gaining execution or routing authority. Returned metadata SHALL NOT authorize telemetry capture.
+### Requirement: Opaque tool metadata
+Tool metadata SHALL use gateway-provider-metadata's shared bounded opaque transport, preserving unknown namespace objects, nested extension fields and omission versus explicit empty objects. Provider-specific metadata interpretation SHALL belong to the actual native consuming boundary; the codec SHALL retain generic tool ownership, ID/name, deferred-result and lifecycle checks without interpreting namespace fields as routing or execution authority. Aggregate original bytes/cardinality and complete encoded response/frame sizes SHALL remain bounded. Hosted MCP configuration, provider tool definitions and continuation metadata SHALL follow the selected native provider's existing conversion semantics without a Gateway hosted-MCP capability gate. Foreign namespaces not consumed by a native adapter SHALL retain the base runtime's forwarding semantics without gaining execution or routing authority. Returned metadata SHALL NOT authorize telemetry capture.
 
 #### Scenario: Correlation metadata with extensions
 - **WHEN** tool metadata contains valid caller correlation alongside unknown object namespaces and nested fields
 - **THEN** both clients SHALL receive all metadata unchanged, including omitted/empty presence, independently of operator telemetry capture
 
-#### Scenario: MCP remains deferred
-- **WHEN** the selected native Anthropic adapter consumes non-empty mcpServers or native MCP tool-part history
-- **THEN** the unsupported native consuming boundary SHALL reject it safely rather than activate hosted MCP; opaque returned metadata SHALL NOT trigger codec-level configured-server classification or membership rejection
+#### Scenario: Native hosted MCP consumption
+- **WHEN** the selected native adapter consumes Anthropic mcpServers and provider-owned MCP history or an OpenAI MCP tool definition
+- **THEN** the native request SHALL preserve the provider's MCP settings and history semantics without a Gateway capability rejection; opaque returned metadata SHALL NOT trigger codec-level configured-server classification or membership rejection
+- **AND** MCP authorization and headers SHALL remain distinct from the configured inference credential and metadata-only operator capture
 
 #### Scenario: Foreign MCP settings are inert
 - **WHEN** compatible inference uses a configured namespace other than anthropic and receives foreign anthropic.mcpServers settings
@@ -95,5 +96,5 @@ The Gateway SHALL execute no local tools and retain no cross-request state. Conf
 Both registered clients SHALL exercise real-handler and authenticated-command scenarios without requiring MCP. Request goldens SHALL be captured from the pinned client. Provider fixtures SHALL retain authentic provenance and Apache modules SHALL NOT import Gateway code. Candidate-source checks SHALL select `go.gateway.work` explicitly; standalone Gateway builds SHALL use published pins with GOWORK disabled.
 
 #### Scenario: Intermediate PR validation
-- **WHEN** this change is validated before MCP support lands
-- **THEN** provider-tool contract, native continuation, lifecycle, privacy and module checks SHALL pass with consumed hosted-MCP configuration still unsupported
+- **WHEN** this change is validated independently of its successor change
+- **THEN** provider-tool contract, native MCP request conversion, supplied-history continuation, lifecycle, privacy and module checks SHALL pass independently; synthetic provider tests SHALL NOT claim live MCP effects or deployed readiness

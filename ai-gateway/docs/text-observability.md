@@ -110,6 +110,7 @@ equivalent `GRAFANA_AI_GATEWAY_` environment binding shown below.
 | `--agento11y.max-retries` | `GRAFANA_AI_GATEWAY_AGENTO11Y_MAX_RETRIES` | `5`; 1–10 |
 | `--agento11y.initial-backoff` | `GRAFANA_AI_GATEWAY_AGENTO11Y_INITIAL_BACKOFF` | `100ms`; positive, at most 5m |
 | `--agento11y.max-backoff` | `GRAFANA_AI_GATEWAY_AGENTO11Y_MAX_BACKOFF` | `5s`; initial–5m |
+| `--agento11y.export-timeout` | `GRAFANA_AI_GATEWAY_AGENTO11Y_EXPORT_TIMEOUT` | `10s`; per HTTP/gRPC export attempt, positive, at most 5m |
 | `--agento11y.flush-interval` | `GRAFANA_AI_GATEWAY_AGENTO11Y_FLUSH_INTERVAL` | `1s`; positive, at most 5m |
 | `--agento11y.flush-timeout` | `GRAFANA_AI_GATEWAY_AGENTO11Y_FLUSH_TIMEOUT` | `5s`; independent positive bound, at most 5m |
 | `--agento11y.shutdown-timeout` | `GRAFANA_AI_GATEWAY_AGENTO11Y_SHUTDOWN_TIMEOUT` | `5s`; independent positive bound, at most 5m |
@@ -117,6 +118,9 @@ equivalent `GRAFANA_AI_GATEWAY_` environment binding shown below.
 The secret reference is resolved once before the listener binds; neither its
 name nor value is logged. Ambient `AGENTO11Y_*` and legacy `SIGIL_*` SDK
 configuration is rejected so it cannot bypass validated Gateway policy.
+
+Use `--agento11y.export-timeout` to bound each export attempt independently of
+flush and shutdown timeouts.
 
 Queue pressure, validation failures, exporter rejection/outage, and bounded
 flush or shutdown failure are fail-open for model traffic. Diagnostics and

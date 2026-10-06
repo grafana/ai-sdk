@@ -126,7 +126,7 @@ func TestToolMetadata_OpaqueSemanticFields(t *testing.T) {
 		metadata provider.ProviderMetadata
 		limit    int64
 	}{
-		{name: "unsupported MCP metadata", metadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"type":"mcp-tool-use","serverName":"other"}`)}, limit: 1024},
+		{name: "opaque MCP metadata", metadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"type":"mcp-tool-use","serverName":"other"}`)}, limit: 1024},
 		{name: "unsupported caller", metadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"caller":{"type":"unknown"}}`)}, limit: 1024},
 		{name: "null caller", metadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"caller":null}`)}, limit: 1024},
 		{name: "null type", metadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"type":null}`)}, limit: 1024},

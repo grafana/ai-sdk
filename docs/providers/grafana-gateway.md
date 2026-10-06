@@ -37,8 +37,14 @@ continuing the conversation, retain previous calls and results, including
 unresolved provider-executed calls. Keep their provider metadata unchanged, as
 explained in [Continue conversations with provider metadata](#continue-conversations-with-provider-metadata).
 
-Hosted MCP servers, tool approvals, custom tool-result formats and generated
-media responses are not supported.
+Provider-hosted MCP tools run on the selected model provider, not in your
+application or the Gateway. Configure them using the selected provider's tool
+or call settings; see [Anthropic options](anthropic.md#enable-reasoning-deliberately)
+and [OpenAI tools](openai.md#use-built-in-tools). Keep returned tool calls,
+results and metadata when continuing the conversation.
+
+Tool approvals, custom tool-result formats and generated media responses are
+not supported.
 
 ## Configure provider-specific settings
 
