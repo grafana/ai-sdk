@@ -1,7 +1,8 @@
 # anthropic-foundry-provider Specification
 
 ## Purpose
-TBD - created by archiving change anthropic-foundry-provider. Update Purpose after archive.
+Define Azure Foundry endpoint, authentication, deployment routing and canonical
+model identity while preserving compatibility with published SDK modules.
 
 ## Requirements
 
