@@ -88,19 +88,37 @@ func (o *ArrayOutput[T]) ResponseFormat() *provider.ResponseFormat {
 	}
 }
 
+// ParseComplete extracts the elements from the generated wrapper object. It
+// checks the required field and validates each element against the element
+// schema rather than validating the whole request schema, so a wrapper
+// property the model added is ignored, which is how the registered upstream
+// runtime reads the same response.
 func (o *ArrayOutput[T]) ParseComplete(text string) (any, error) {
-	data := json.RawMessage(text)
-	if err := o.wrappedSchema.Validate(data); err != nil {
-		return nil, fmt.Errorf("%w: %v", aisdk.ErrNoObjectGenerated, err)
-	}
-
-	var wrapper struct {
-		Elements []T `json:"elements"`
-	}
-	if err := json.Unmarshal([]byte(text), &wrapper); err != nil {
+	wrapper, err := unmarshalWrapperObject(text)
+	if err != nil {
 		return nil, fmt.Errorf("%w: unmarshaling: %v", aisdk.ErrNoObjectGenerated, err)
 	}
-	return wrapper.Elements, nil
+	raw, ok := wrapper["elements"]
+	if !ok {
+		return nil, fmt.Errorf("%w: response must be an object with an elements array", aisdk.ErrNoObjectGenerated)
+	}
+	var rawElements []json.RawMessage
+	if err := json.Unmarshal(raw, &rawElements); err != nil || rawElements == nil {
+		return nil, fmt.Errorf("%w: response must be an object with an elements array", aisdk.ErrNoObjectGenerated)
+	}
+
+	elements := make([]T, 0, len(rawElements))
+	for _, rawElement := range rawElements {
+		if err := o.elementSchema.Validate(rawElement); err != nil {
+			return nil, fmt.Errorf("%w: %v", aisdk.ErrNoObjectGenerated, err)
+		}
+		var element T
+		if err := json.Unmarshal(rawElement, &element); err != nil {
+			return nil, fmt.Errorf("%w: unmarshaling: %v", aisdk.ErrNoObjectGenerated, err)
+		}
+		elements = append(elements, element)
+	}
+	return elements, nil
 }
 
 func (o *ArrayOutput[T]) ParsePartial(text string) (any, bool) {

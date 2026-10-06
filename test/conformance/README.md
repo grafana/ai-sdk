@@ -189,6 +189,15 @@ snapshots; raw provider response events are never rewritten.
 Each test case directory has a `config.yaml` with replay metadata.
 The provider is inferred from the directory path, not from the YAML.
 
+Both the TypeScript tools and the Go replay loader reject a key that no config
+type declares, and name its path, so a misspelled option fails before any
+snapshot is generated, recorded or replayed. Values that are payloads, such as
+`providerOptions`, JSON schemas, tool inputs and UI message parts, accept any
+keys. [`testdata/fixture-config/all-keys.yaml`](testdata/fixture-config/all-keys.yaml)
+lists every accepted key at every level; adding a key means declaring it in
+both `runner.go` and `tools/common.mts` and adding it to that file, or the
+alignment tests on either side fail.
+
 ```yaml
 # Minimal streaming fixture
 model: claude-sonnet-4-5-20250929

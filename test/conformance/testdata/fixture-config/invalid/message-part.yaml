@@ -1,0 +1,9 @@
+# unknown: toolCallID
+model: test
+messages:
+  - role: assistant
+    content:
+      - type: tool-call
+        toolCallID: call-1
+        toolName: weather
+        input: {}
