@@ -21,8 +21,9 @@ result := aisdk.StreamText(ctx, model,
 ```
 
 A step limit is a safety boundary, not a quality target. Choose the smallest
-limit that supports the workflow. You can also stop when a named tool is called
-or supply another `StopCondition`.
+limit that supports the workflow. `HasToolCall("finalAnswer", "handoff")` stops
+once the latest step calls any of the named tools, or you can supply another
+`StopCondition`.
 
 Use `WithPrepareStep` when later steps need different active tools, messages,
 model settings, or runtime context. Keep ordinary loops simple; step preparation

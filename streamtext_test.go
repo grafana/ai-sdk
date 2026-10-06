@@ -3395,15 +3395,59 @@ func TestStopConditions(t *testing.T) {
 	})
 
 	t.Run("HasToolCall", func(t *testing.T) {
-		cond := HasToolCall("finalAnswer")
-		assert.False(t, cond(StopConditionState{}), "should not match empty steps")
-
-		steps := []StepResult{{ToolCalls: []ToolCall{{ToolName: "weather"}}}}
-		assert.False(t, cond(StopConditionState{Steps: steps}), "should not match wrong tool")
-
-		steps = []StepResult{{ToolCalls: []ToolCall{{ToolName: "finalAnswer"}}}}
-		assert.True(t, cond(StopConditionState{Steps: steps}), "should match finalAnswer")
+		step := func(names ...string) StepResult {
+			var calls []ToolCall
+			for _, name := range names {
+				calls = append(calls, ToolCall{ToolName: name})
+			}
+			return StepResult{ToolCalls: calls}
+		}
+		for _, tc := range []struct {
+			name  string
+			tools []string
+			steps []StepResult
+			want  bool
+		}{
+			{name: "no steps", tools: []string{"finalAnswer"}},
+			{name: "named tool in the last step", tools: []string{"finalAnswer"}, steps: []StepResult{step("finalAnswer")}, want: true},
+			{name: "other tool in the last step", tools: []string{"finalAnswer"}, steps: []StepResult{step("weather")}},
+			{name: "named tool only in an earlier step", tools: []string{"finalAnswer"}, steps: []StepResult{step("finalAnswer"), step("weather")}},
+			{name: "any of several names", tools: []string{"search", "finalAnswer"}, steps: []StepResult{step("weather", "finalAnswer")}, want: true},
+			{name: "none of several names", tools: []string{"search", "finalAnswer"}, steps: []StepResult{step("weather")}},
+			{name: "no names never stops", steps: []StepResult{step("finalAnswer")}},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				assert.Equal(t, tc.want, HasToolCall(tc.tools...)(StopConditionState{Steps: tc.steps}))
+			})
+		}
 	})
+}
+
+func TestStreamText_StopWhenAnyNamedToolIsCalled(t *testing.T) {
+	calls := 0
+	model := &mockModel{streamFunc: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+		calls++
+		if calls == 1 {
+			return &provider.StreamResult{Stream: toolCallStreamParts("search", `{}`)}, nil
+		}
+		return &provider.StreamResult{Stream: textStreamParts("should not run")}, nil
+	}}
+	result := StreamText(context.Background(), model,
+		WithModelMessages(provider.UserText("go")),
+		WithTools(ToolSet{"search": Tool{
+			Description: "search",
+			InputSchema: testMustSchema(t, `{"type":"object"}`),
+			Execute: func(context.Context, json.RawMessage, ToolExecutionOptions) (json.RawMessage, error) {
+				return json.RawMessage(`"found"`), nil
+			},
+		}}),
+		WithStopWhen(StepCountIs(5), HasToolCall("finalAnswer", "search")),
+	)
+	for range result.FullStream() {
+	}
+	require.NoError(t, result.Err())
+	assert.Len(t, result.Steps(), 1, "the loop stops after the step that called search")
+	assert.Equal(t, 1, calls, "no second model call after the stop condition matched")
 }
 
 func TestStreamTextToolErrorProducesToolResult(t *testing.T) {
