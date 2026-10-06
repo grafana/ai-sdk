@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
@@ -153,6 +154,9 @@ func (m *model) DoGenerate(ctx context.Context, params provider.CallOptions) (*p
 	var requestBody json.RawMessage
 	var response *http.Response
 	requestOpts := m.requestOptions(br, params.Headers)
+	if timeout, ok := nonStreamingTimeout(ctx, p, requestOpts); ok {
+		requestOpts = append(requestOpts, timeout)
+	}
 	requestOpts = append(requestOpts, option.WithMiddleware(captureRequestBody(&requestBody)), option.WithResponseInto(&response))
 
 	msg, err := m.client.Beta.Messages.New(ctx, p, requestOpts...)
@@ -169,6 +173,31 @@ func (m *model) DoGenerate(ctx context.Context, params provider.CallOptions) (*p
 	result.Response.Headers = flattenHeaders(response.Header)
 	result.Response.Body = json.RawMessage(msg.RawJSON())
 	return result, nil
+}
+
+// nonStreamingTimeout returns a request timeout for DoGenerate when
+// anthropic-sdk-go would otherwise refuse the call. The SDK rejects a
+// non-streaming request, before sending it, when it expects max_tokens to take
+// longer than ten minutes or to exceed the model's non-streaming token limit,
+// unless a request timeout is set. The default max_tokens of current models
+// trips that check. The registered @ai-sdk/anthropic posts such requests
+// directly, so the provider supplies a timeout instead of failing: the caller's
+// deadline when the context has one, otherwise the SDK's own estimate for the
+// request, at least ten minutes. A timeout set through WithRequestOptions
+// passes the check, so it is never replaced.
+func nonStreamingTimeout(ctx context.Context, p anthropic.BetaMessageNewParams, opts []option.RequestOption) (option.RequestOption, bool) {
+	if _, err := anthropic.CalculateNonStreamingTimeout(int(p.MaxTokens), p.Model, opts); err == nil {
+		return nil, false
+	}
+	if deadline, ok := ctx.Deadline(); ok {
+		if remaining := time.Until(deadline); remaining > 0 {
+			// The SDK sends the timeout in whole seconds, so a sub-second
+			// remainder would go out as 0. The context still ends the request.
+			return option.WithRequestTimeout(max(remaining, time.Second)), true
+		}
+	}
+	estimate := time.Duration(float64(time.Hour) * float64(p.MaxTokens) / 128000)
+	return option.WithRequestTimeout(max(10*time.Minute, estimate)), true
 }
 
 func (m *model) requestOptions(br buildResult, headers map[string]string) []option.RequestOption {
