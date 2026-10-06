@@ -28,8 +28,13 @@ func TestGenerateText_ToolChoice(t *testing.T) {
 				want = choice
 			}
 			result, err := GenerateText(t.Context(), model, opts...)
-			require.NoError(t, err)
-			assert.Equal(t, "done", result.Text)
+			if want.Type == provider.ToolChoiceRequired || want.Type == provider.ToolChoiceTool {
+				require.ErrorContains(t, err, "tool choice")
+				assert.Nil(t, result)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, "done", result.Text)
+			}
 			assert.Empty(t, got.Tools)
 			assert.Equal(t, want, got.ToolChoice)
 			assert.Equal(t, 1, model.callCount)

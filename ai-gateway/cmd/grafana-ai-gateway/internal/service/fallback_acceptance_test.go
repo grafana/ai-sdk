@@ -44,6 +44,7 @@ func TestFallbackAcceptance_UnarySelectionAndPrivacy(t *testing.T) {
 					}
 					return &provider.GenerateResult{
 						Content:          []provider.GenerateContentPart{{Type: provider.ContentText, Text: "public-answer", ProviderMetadata: hostileFallbackMetadata()}},
+						Usage:            provider.Usage{Raw: json.RawMessage(`{"native_usage_marker":true}`)},
 						FinishReason:     provider.FinishReason{Unified: provider.FinishReasonStop, Raw: "end_turn"},
 						ProviderMetadata: hostileFallbackMetadata(),
 						Request:          &provider.RequestMetadata{Body: json.RawMessage(`{"secret":"private-request-body"}`)},
@@ -57,6 +58,7 @@ func TestFallbackAcceptance_UnarySelectionAndPrivacy(t *testing.T) {
 			assert.Equal(t, tc.status, response.Code)
 			if tc.status == http.StatusOK {
 				assert.Contains(t, response.Body.String(), "public-answer")
+				assert.Contains(t, response.Body.String(), `"raw":{"native_usage_marker":true}`)
 			}
 			h.verify(t, "generate", response.Body.String(), tc.outcomes)
 		})
@@ -105,10 +107,13 @@ func TestFallbackAcceptance_StreamCommitmentAndPrivacy(t *testing.T) {
 				require.NoError(t, json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &event))
 				types = append(types, event.Type)
 				if event.Type == "response-metadata" {
-					assert.Equal(t, "public", event.ModelID)
+					assert.Equal(t, "backend-primary", event.ModelID)
 				}
 				if event.Type == "text-delta" {
 					assert.Equal(t, "public-answer", event.Delta)
+				}
+				if event.Type == "finish" {
+					assert.Contains(t, line, `"raw":{"native_usage_marker":true}`)
 				}
 			}
 			assert.Equal(t, tc.types, types)
@@ -309,10 +314,10 @@ func newFallbackAcceptance(t *testing.T, primary, secondary *observabilityTestMo
 		metrics := testMetrics(t, telemetry)
 		assert.Equal(t, 1, strings.Count(metrics, "aisdk_model_requests_total{"))
 		logical := string(encoded) + logs.String() + metrics
-		for _, private := range []string{"private-prompt", "private-output", "public-answer", "primary-instance", "secondary-instance", "backend-primary", "backend-secondary"} {
+		for _, private := range []string{"private-prompt", "private-output", "public-answer", "primary-instance", "secondary-instance", "backend-primary", "backend-secondary", "native_usage_marker"} {
 			assert.NotContains(t, logical, private)
 		}
-		for _, private := range []string{"primary-instance", "secondary-instance", "backend-primary", "backend-secondary"} {
+		for _, private := range []string{"primary-instance", "secondary-instance"} {
 			assert.NotContains(t, public, private)
 		}
 		for _, private := range []string{"private-credential", "private.example", "private-header", "private-request-body", "private-response-body", "private-error", "private-data", "private-metadata"} {
@@ -371,7 +376,7 @@ func hostileFallbackParts() []provider.StreamPart {
 		{Type: provider.PartTextStart, ID: "text"},
 		{Type: provider.PartTextDelta, ID: "text", Delta: "public-answer", ProviderMetadata: hostileFallbackMetadata()},
 		{Type: provider.PartTextEnd, ID: "text"},
-		{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop, Raw: "end_turn"}, Usage: &provider.Usage{Raw: json.RawMessage(`{"private":"private-metadata"}`)}, ProviderMetadata: hostileFallbackMetadata()},
+		{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop, Raw: "end_turn"}, Usage: &provider.Usage{Raw: json.RawMessage(`{"native_usage_marker":true}`)}, ProviderMetadata: hostileFallbackMetadata()},
 	}
 }
 

@@ -24,6 +24,162 @@ var (
 	_ provider.ProviderOption = AnthropicCacheControl{}
 )
 
+func TestSafeguardsSDKOverlayTransport(t *testing.T) {
+	for _, vertex := range []bool{false, true} {
+		for _, stream := range []bool{false, true} {
+			t.Run(fmt.Sprintf("vertex=%t/stream=%t", vertex, stream), func(t *testing.T) {
+				type capturedRequest struct {
+					body  map[string]json.RawMessage
+					betas string
+				}
+				requests := make(chan capturedRequest, 1)
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					var body map[string]json.RawMessage
+					if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+						http.Error(w, err.Error(), http.StatusBadRequest)
+						return
+					}
+					requests <- capturedRequest{body: body, betas: r.Header.Get("anthropic-beta")}
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusBadRequest)
+					_, _ = w.Write([]byte(`{"type":"error","error":{"type":"invalid_request_error","message":"captured"}}`))
+				}))
+				defer server.Close()
+
+				caps := directProviderCapabilities
+				if vertex {
+					caps = vertexProviderCapabilities
+				}
+				p, _, _, br, err := buildParamsWithCapabilities("claude-sonnet-4-6", provider.CallOptions{
+					Prompt: []provider.Message{provider.UserText("hello")},
+				}, stream, caps)
+				require.NoError(t, err)
+				p.MaxTokens = 1024
+				p.Betas = appendBetaUnique(p.Betas, "dangerous-tool-use-2026-09-03")
+				requestOpts := append(br.requestOptions, option.WithJSONSet("safeguards", []map[string]any{
+					{"type": "dangerous_tool_use", "classifier_context": map[string]any{"v": 1, "nested": []any{true, nil}}},
+				}))
+				requestOpts = append(requestOpts, option.WithJSONSet("metadata.user_id", "probe"), option.WithBaseURL(server.URL), option.WithHTTPClient(server.Client()), option.WithMaxRetries(0))
+				client := sdk.NewClient(option.WithoutEnvironmentDefaults(), option.WithAPIKey("test-key"))
+				var callErr error
+				if stream {
+					s := client.Beta.Messages.NewStreaming(context.Background(), p, requestOpts...)
+					_ = s.Next()
+					callErr = s.Err()
+					_ = s.Close()
+				} else {
+					_, callErr = client.Beta.Messages.New(context.Background(), p, requestOpts...)
+				}
+				var captured capturedRequest
+				select {
+				case captured = <-requests:
+				default:
+					require.FailNow(t, "SDK did not send a request", "%v", callErr)
+				}
+				assert.JSONEq(t, `[{"type":"dangerous_tool_use","classifier_context":{"v":1,"nested":[true,null]}}]`, string(captured.body["safeguards"]))
+				assert.JSONEq(t, `{"user_id":"probe"}`, string(captured.body["metadata"]))
+				assert.Contains(t, captured.betas, "dangerous-tool-use-2026-09-03")
+			})
+		}
+	}
+}
+
+func TestSafeguardsRequest(t *testing.T) {
+	classifierContext := map[string]json.RawMessage{
+		"v": json.RawMessage(`1`), "nested": json.RawMessage(`{"values":[true,null]}`),
+	}
+	empty := map[string]json.RawMessage{}
+	var nilContext map[string]json.RawMessage
+	roundTrip := func(opts provider.ProviderOptions) provider.ProviderOptions {
+		data, err := json.Marshal(opts)
+		require.NoError(t, err)
+		var decoded provider.ProviderOptions
+		require.NoError(t, json.Unmarshal(data, &decoded))
+		return decoded
+	}
+	raw := func(data string) provider.ProviderOptions {
+		return provider.ProviderOptions{"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(data)}}
+	}
+	cases := []struct {
+		name           string
+		options        provider.ProviderOptions
+		wantSafeguards string
+		wantBeta       int
+		wantOtherBeta  bool
+		invalid        bool
+	}{
+		{name: "omitted"},
+		{name: "empty", options: provider.BuildProviderOptions(AnthropicOptions{Safeguards: []AnthropicSafeguard{}})},
+		{name: "configured", options: provider.BuildProviderOptions(AnthropicOptions{Safeguards: []AnthropicSafeguard{{Type: AnthropicSafeguardDangerousToolUse, ClassifierContext: &classifierContext}}}), wantSafeguards: `[{"type":"dangerous_tool_use","classifier_context":{"v":1,"nested":{"values":[true,null]}}}]`, wantBeta: 1},
+		{name: "round trip", options: roundTrip(provider.BuildProviderOptions(AnthropicOptions{Safeguards: []AnthropicSafeguard{{Type: AnthropicSafeguardDangerousToolUse, ClassifierContext: &classifierContext}}})), wantSafeguards: `[{"type":"dangerous_tool_use","classifier_context":{"v":1,"nested":{"values":[true,null]}}}]`, wantBeta: 1},
+		{name: "empty context round trip", options: roundTrip(provider.BuildProviderOptions(AnthropicOptions{Safeguards: []AnthropicSafeguard{{Type: AnthropicSafeguardDangerousToolUse, ClassifierContext: &empty}}})), wantSafeguards: `[{"type":"dangerous_tool_use","classifier_context":{}}]`, wantBeta: 1},
+		{name: "absent context", options: provider.BuildProviderOptions(AnthropicOptions{Safeguards: []AnthropicSafeguard{{Type: AnthropicSafeguardDangerousToolUse}}}), wantSafeguards: `[{"type":"dangerous_tool_use"}]`, wantBeta: 1},
+		{name: "deduplicated beta", options: provider.BuildProviderOptions(AnthropicOptions{Betas: []string{"other-beta", "dangerous-tool-use-2026-09-03"}, Safeguards: []AnthropicSafeguard{{Type: AnthropicSafeguardDangerousToolUse}}}), wantSafeguards: `[{"type":"dangerous_tool_use"}]`, wantBeta: 1, wantOtherBeta: true},
+		{name: "explicit beta without safeguards", options: provider.BuildProviderOptions(AnthropicOptions{Betas: []string{"dangerous-tool-use-2026-09-03"}}), wantBeta: 1},
+		{name: "raw null safeguards", options: raw(`{"safeguards":null}`), invalid: true},
+		{name: "raw null context", options: raw(`{"safeguards":[{"type":"dangerous_tool_use","classifierContext":null}]}`), invalid: true},
+		{name: "typed nil context map", options: provider.BuildProviderOptions(AnthropicOptions{Safeguards: []AnthropicSafeguard{{Type: AnthropicSafeguardDangerousToolUse, ClassifierContext: &nilContext}}}), invalid: true},
+		{name: "unsupported type", options: provider.BuildProviderOptions(AnthropicOptions{Safeguards: []AnthropicSafeguard{{Type: AnthropicSafeguardType("other")}}}), invalid: true},
+		{name: "missing type", options: raw(`{"safeguards":[{}]}`), invalid: true},
+		{name: "non-object context", options: raw(`{"safeguards":[{"type":"dangerous_tool_use","classifierContext":1}]}`), invalid: true},
+		{name: "invalid context JSON", options: provider.BuildProviderOptions(AnthropicOptions{Safeguards: []AnthropicSafeguard{{Type: AnthropicSafeguardDangerousToolUse, ClassifierContext: &map[string]json.RawMessage{"bad": json.RawMessage(`{`)}}}}), invalid: true},
+		{name: "empty raw context value", options: provider.BuildProviderOptions(AnthropicOptions{Safeguards: []AnthropicSafeguard{{Type: AnthropicSafeguardDangerousToolUse, ClassifierContext: &map[string]json.RawMessage{"bad": nil}}}}), invalid: true},
+	}
+	for _, tc := range cases {
+		for _, vertex := range []bool{false, true} {
+			for _, stream := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/vertex=%t/stream=%t", tc.name, vertex, stream), func(t *testing.T) {
+					type capturedRequest struct {
+						body  map[string]json.RawMessage
+						betas string
+					}
+					requests := make(chan capturedRequest, 1)
+					var count atomic.Int32
+					server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+						count.Add(1)
+						var body map[string]json.RawMessage
+						if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+							http.Error(w, err.Error(), http.StatusBadRequest)
+							return
+						}
+						requests <- capturedRequest{body: body, betas: strings.Join(r.Header.Values("anthropic-beta"), ",")}
+						w.Header().Set("Content-Type", "application/json")
+						w.WriteHeader(http.StatusBadRequest)
+						_, _ = w.Write([]byte(`{"type":"error","error":{"type":"invalid_request_error","message":"captured"}}`))
+					}))
+					defer server.Close()
+					m := New("test-key", "claude-sonnet-4-6", WithRequestOptions(option.WithBaseURL(server.URL), option.WithHTTPClient(server.Client()), option.WithMaxRetries(0))).(*model)
+					if vertex {
+						m.capabilities = vertexProviderCapabilities
+					}
+					maxTokens := 1024
+					opts := provider.CallOptions{Prompt: []provider.Message{provider.UserText("hello")}, MaxOutputTokens: &maxTokens, ProviderOptions: tc.options}
+					var err error
+					if stream {
+						_, err = m.DoStream(context.Background(), opts)
+					} else {
+						_, err = m.DoGenerate(context.Background(), opts)
+					}
+					require.Error(t, err)
+					if tc.invalid {
+						assert.Zero(t, count.Load())
+						return
+					}
+					require.EqualValues(t, 1, count.Load())
+					captured := <-requests
+					if tc.wantSafeguards == "" {
+						assert.NotContains(t, captured.body, "safeguards")
+					} else {
+						assert.JSONEq(t, tc.wantSafeguards, string(captured.body["safeguards"]))
+					}
+					assert.Equal(t, tc.wantBeta, strings.Count(captured.betas, "dangerous-tool-use-2026-09-03"))
+					assert.Equal(t, tc.wantOtherBeta, strings.Contains(captured.betas, "other-beta"))
+				})
+			}
+		}
+	}
+}
+
 func warningFeatures(warnings []provider.Warning) []string {
 	features := make([]string, 0, len(warnings))
 	for _, w := range warnings {
@@ -996,25 +1152,57 @@ func TestBuildParams_AssistantPrefillWhitespace(t *testing.T) {
 }
 
 func TestBuildParams_AssistantCompaction(t *testing.T) {
-	part := provider.TextPart("Compaction summary  \n")
-	part.ProviderOptions = makeProviderOpts(`{"type":"compaction","cacheControl":{"type":"ephemeral"}}`)
+	t.Run("preserves nonempty block", func(t *testing.T) {
+		part := provider.TextPart("Compaction summary  \n")
+		part.ProviderOptions = makeProviderOpts(`{"type":"compaction","cacheControl":{"type":"ephemeral"}}`)
 
-	p, _, _, _, err := buildParams("claude-sonnet-4-6", provider.CallOptions{
-		Prompt: []provider.Message{
-			provider.UserText("Continue"),
-			provider.NewAssistantMessage(part),
-		},
-	}, false)
-	require.NoError(t, err)
+		p, _, _, _, err := buildParams("claude-sonnet-4-6", provider.CallOptions{
+			Prompt: []provider.Message{
+				provider.UserText("Continue"),
+				provider.NewAssistantMessage(part),
+			},
+		}, false)
+		require.NoError(t, err)
+		require.Len(t, p.Messages, 2)
+		require.Len(t, p.Messages[1].Content, 1)
+		block := p.Messages[1].Content[0]
+		require.NotNil(t, block.OfCompaction)
+		assert.Nil(t, block.OfText)
+		assert.True(t, block.OfCompaction.Content.Valid())
+		assert.Equal(t, "Compaction summary  \n", block.OfCompaction.Content.Value)
+		assert.EqualValues(t, "ephemeral", block.OfCompaction.CacheControl.Type)
+	})
 
-	require.Len(t, p.Messages, 2)
-	require.Len(t, p.Messages[1].Content, 1)
-	block := p.Messages[1].Content[0]
-	require.NotNil(t, block.OfCompaction)
-	assert.Nil(t, block.OfText)
-	assert.True(t, block.OfCompaction.Content.Valid())
-	assert.Equal(t, "Compaction summary  \n", block.OfCompaction.Content.Value)
-	assert.EqualValues(t, "ephemeral", block.OfCompaction.CacheControl.Type)
+	t.Run("omits empty block among text", func(t *testing.T) {
+		empty := provider.TextPart("")
+		empty.ProviderOptions = makeProviderOpts(`{"type":"compaction"}`)
+		p, _, _, _, err := buildParams("claude-sonnet-4-6", provider.CallOptions{
+			Prompt: []provider.Message{
+				provider.UserText("Continue"),
+				provider.NewAssistantMessage(empty, provider.TextPart("Summary")),
+			},
+		}, false)
+		require.NoError(t, err)
+		require.Len(t, p.Messages, 2)
+		require.Len(t, p.Messages[1].Content, 1)
+		assert.Equal(t, "Summary", p.Messages[1].Content[0].OfText.Text)
+	})
+
+	t.Run("omits assistant message with only empty compaction", func(t *testing.T) {
+		empty := provider.TextPart("")
+		empty.ProviderOptions = makeProviderOpts(`{"type":"compaction"}`)
+		p, _, _, _, err := buildParams("claude-sonnet-4-6", provider.CallOptions{
+			Prompt: []provider.Message{
+				provider.UserText("First"),
+				provider.NewAssistantMessage(empty),
+				provider.UserText("Second"),
+			},
+		}, false)
+		require.NoError(t, err)
+		require.Len(t, p.Messages, 2)
+		assert.Equal(t, "user", string(p.Messages[0].Role))
+		assert.Equal(t, "user", string(p.Messages[1].Role))
+	})
 }
 
 func TestBuildParams_AssistantTextCitations(t *testing.T) {
@@ -1446,11 +1634,13 @@ func TestBuildParams_VertexExplicitStructuredOutputBeta(t *testing.T) {
 	tests := []struct {
 		name           string
 		responseFormat *provider.ResponseFormat
+		mode           StructuredOutputMode
 		wantFallback   bool
 	}{
 		{name: "function tool"},
 		{
-			name: "JSON tool fallback",
+			name: "explicit JSON tool fallback",
+			mode: StructuredOutputJSONTool,
 			responseFormat: &provider.ResponseFormat{
 				Type:   provider.ResponseFormatJSON,
 				Schema: testSchema,
@@ -1468,12 +1658,10 @@ func TestBuildParams_VertexExplicitStructuredOutputBeta(t *testing.T) {
 					InputSchema: json.RawMessage(`{"type":"object"}`),
 				}},
 				ResponseFormat: tc.responseFormat,
-				ProviderOptions: provider.ProviderOptions{
-					"anthropic": provider.RawProviderOption{
-						Key: "anthropic",
-						Raw: json.RawMessage(`{"betas":["structured-outputs-2025-11-13"]}`),
-					},
-				},
+				ProviderOptions: provider.BuildProviderOptions(AnthropicOptions{
+					Betas:                []string{"structured-outputs-2025-11-13"},
+					StructuredOutputMode: tc.mode,
+				}),
 			}, false, vertexProviderCapabilities)
 			require.NoError(t, err)
 			assert.Equal(t, tc.wantFallback, br.usesJsonResponseTool)
@@ -2836,8 +3024,7 @@ func TestBuildParams_MCPToolCallRoundTrip(t *testing.T) {
 
 		p, _, warnings, _, err := buildParams("claude-sonnet-4-6", opts, false)
 		require.NoError(t, err)
-		require.Len(t, p.Messages, 1)
-		assert.Empty(t, p.Messages[0].Content)
+		assert.Empty(t, p.Messages)
 		require.Len(t, warnings, 1)
 		assert.Equal(t, provider.WarnOther, warnings[0].Type)
 		assert.Contains(t, warnings[0].Message, "server name is required")
@@ -3372,7 +3559,7 @@ func TestBuildParams_StructuredOutput(t *testing.T) {
 			"structured outputs beta should be added when native mode + tools")
 	})
 
-	t.Run("VertexUsesToolFallback", func(t *testing.T) {
+	t.Run("VertexUsesNativeOutput", func(t *testing.T) {
 		opts := provider.CallOptions{
 			ResponseFormat: &provider.ResponseFormat{
 				Type:   provider.ResponseFormatJSON,
@@ -3388,14 +3575,13 @@ func TestBuildParams_StructuredOutput(t *testing.T) {
 		p, _, warnings, br, err := buildParamsWithCapabilities("claude-sonnet-4-6", opts, false, vertexProviderCapabilities)
 		require.NoError(t, err)
 
-		assert.True(t, br.usesJsonResponseTool)
+		assert.False(t, br.usesJsonResponseTool)
 		assert.Empty(t, warnings)
-		assert.Empty(t, p.OutputConfig.Format.Schema)
-		require.Len(t, p.Tools, 2)
+		assert.NotEmpty(t, p.OutputConfig.Format.Schema)
+		require.Len(t, p.Tools, 1)
 		assert.Equal(t, "search", p.Tools[0].OfTool.Name)
-		assert.Equal(t, jsonResponseToolName, p.Tools[1].OfTool.Name)
-		require.NotNil(t, p.ToolChoice.OfAny)
-		assert.True(t, p.ToolChoice.OfAny.DisableParallelToolUse.Value)
+		assert.Nil(t, p.ToolChoice.OfAny)
+		assert.Nil(t, p.ToolChoice.OfTool)
 		assert.NotContains(t, p.Betas, sdk.AnthropicBeta("structured-outputs-2025-11-13"))
 	})
 
@@ -4845,6 +5031,9 @@ func TestBuildParams_InvalidDirectFileInputs(t *testing.T) {
 	bad.URL = "https://example.test/file"
 	for _, prompt := range [][]provider.Message{
 		{provider.NewUserMessage(provider.FilePart("image/png", bad))},
+		{provider.NewAssistantMessage(provider.ReasoningFilePart("image/png", bad))},
+		{provider.NewAssistantMessage(provider.ReasoningFilePart("image/png", provider.TextDataContent("")))},
+		{provider.NewAssistantMessage(provider.ContentPart{Type: provider.ContentPartTypeReasoningFile, MediaType: "image/png"})},
 		{provider.NewToolMessage(provider.ToolResultPart("call-1", "tool", &provider.ToolResultOutput{
 			Type:    provider.ToolOutputContent,
 			Content: []provider.ToolResultContentValue{{Type: provider.ToolContentFile, Data: &bad, MediaType: "image/png"}},
@@ -5715,4 +5904,28 @@ func TestConvertResponse_CodeExecutionDynamic(t *testing.T) {
 		require.Len(t, result.Content, 1)
 		assert.Nil(t, result.Content[0].Dynamic)
 	})
+}
+
+func TestBuildParams_VertexJSONOutput(t *testing.T) {
+	for _, modelID := range []string{"claude-sonnet-4-5", "claude-sonnet-4-6", "claude-sonnet-5-5"} {
+		for _, stream := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/stream=%t", modelID, stream), func(t *testing.T) {
+				schema := json.RawMessage(`{"type":"object","properties":{"actions":{"type":"array","items":{"type":"string"}}},"required":["actions"],"additionalProperties":false}`)
+				p, _, warnings, br, err := buildParamsWithCapabilities(modelID, provider.CallOptions{
+					ResponseFormat: &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Schema: schema},
+				}, stream, vertexProviderCapabilities)
+				require.NoError(t, err)
+				assert.Empty(t, warnings)
+				assert.False(t, br.usesJsonResponseTool)
+				body, err := json.Marshal(p)
+				require.NoError(t, err)
+				var request map[string]json.RawMessage
+				require.NoError(t, json.Unmarshal(body, &request))
+				assert.JSONEq(t, `{"format":{"type":"json_schema","schema":`+string(schema)+`}}`, string(request["output_config"]))
+				assert.NotContains(t, request, "tool_choice")
+				assert.NotContains(t, request, "tools")
+				assert.NotContains(t, p.Betas, sdk.AnthropicBeta("structured-outputs-2025-11-13"))
+			})
+		}
+	}
 }

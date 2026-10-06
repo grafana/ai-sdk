@@ -21,6 +21,8 @@ const responsesProviderName = "bedrock-mantle.responses"
 // Access endpoint and update TestNewResponses_DefaultRoutes with the same ID.
 var openAICompatibilityPathModels = map[string]struct{}{
 	"openai.gpt-6-astra":               {},
+	"openai.gpt-6-sol":                 {},
+	"openai.gpt-6-luna":                {},
 	"google.gemma-4-26b-a4b":           {},
 	"google.gemma-4-31b":               {},
 	"google.gemma-4-e2b":               {},
@@ -67,11 +69,17 @@ func NewResponses(ctx context.Context, modelID string, cfg Config, clientOpts ..
 	if err != nil {
 		return nil, fmt.Errorf("bedrock mantle: create client: %w", err)
 	}
+	opts := []openaiprovider.Option{
+		openaiprovider.WithProviderName(responsesProviderName),
+		openaiprovider.WithWebSearchSourcesIncludeSupport(false),
+	}
+	if modelID == "openai.gpt-6-luna" {
+		opts = append(opts, openaiprovider.WithDefaultReasoningSummary(""))
+	}
 	return openaiprovider.NewResponsesWithClient(
 		client,
 		modelID,
-		openaiprovider.WithProviderName(responsesProviderName),
-		openaiprovider.WithWebSearchSourcesIncludeSupport(false),
+		opts...,
 	), nil
 }
 

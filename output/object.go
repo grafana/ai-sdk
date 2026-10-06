@@ -77,12 +77,12 @@ func (o *ObjectOutput[T]) ResponseFormat() *provider.ResponseFormat {
 func (o *ObjectOutput[T]) ParseComplete(text string) (any, error) {
 	data := json.RawMessage(text)
 	if err := o.schema.Validate(data); err != nil {
-		return nil, fmt.Errorf("%w: %v", aisdk.ErrNoObjectGenerated, err)
+		return nil, fmt.Errorf("%w: %w: %w", aisdk.ErrNoObjectGenerated, aisdk.ErrInvalidOutputText, err)
 	}
 
 	var result T
 	if err := json.Unmarshal([]byte(text), &result); err != nil {
-		return nil, fmt.Errorf("%w: unmarshaling: %v", aisdk.ErrNoObjectGenerated, err)
+		return nil, fmt.Errorf("%w: unmarshaling: %w", aisdk.ErrNoObjectGenerated, err)
 	}
 	return result, nil
 }

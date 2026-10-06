@@ -1,9 +1,7 @@
 ## Purpose
 
 Define the AWS Bedrock provider module, its `provider.LanguageModel` implementation driving the Bedrock Converse API, request/response conversion, authentication, streaming, error semantics, and registry integration.
-
 ## Requirements
-
 ### Requirement: Module location and naming
 
 The Bedrock provider SHALL be implemented as a separate Go module located at `providers/bedrock/` with module path `github.com/grafana/ai-sdk/providers/bedrock`. It MUST NOT be a subpackage of the root `aisdk` module and MUST NOT depend on `providers/anthropic`.
@@ -114,7 +112,7 @@ The provider SHALL resolve the SigV4 credential-scope service name per request a
 
 ### Requirement: Request conversion to Converse format
 
-The provider SHALL translate `provider.CallOptions` into the AWS Bedrock Converse request shape (`system`, `messages`, `inferenceConfig`, `toolConfig`, `additionalModelRequestFields`, `additionalModelResponseFieldPaths`) before each call.
+The provider SHALL translate `provider.CallOptions` into the AWS Bedrock Converse request shape (`system`, `messages`, `inferenceConfig`, `toolConfig`, `additionalModelRequestFields`, `additionalModelResponseFieldPaths`) before each call. When a user text or inline image part opts into selective guard content, its guarded form SHALL replace only that part's ordinary Converse content block.
 
 #### Scenario: System messages
 
@@ -123,7 +121,7 @@ The provider SHALL translate `provider.CallOptions` into the AWS Bedrock Convers
 
 #### Scenario: User text message
 
-- **WHEN** the prompt contains a `UserMessage` with a text part
+- **WHEN** the prompt contains a `UserMessage` with a text part without an enabled per-part `guardContent` option
 - **THEN** the request includes `{role: "user", content: [{text: "<content>"}]}`
 
 #### Scenario: Supported user document media type
@@ -158,7 +156,7 @@ The provider SHALL translate `provider.CallOptions` into the AWS Bedrock Convers
 
 #### Scenario: Unsupported user file data source
 
-- **WHEN** a user file part carries URL data or a provider reference
+- **WHEN** a user file part carries unsupported URL data (for example, a non-S3 URL) or a provider reference
 - **THEN** request conversion returns an unsupported-functionality error before issuing an HTTP request
 - **AND** the provider MUST NOT silently drop the file or degrade the error to a warning
 
@@ -210,8 +208,86 @@ The provider SHALL translate `provider.CallOptions` into the AWS Bedrock Convers
 
 #### Scenario: Temperature clamping
 
-- **WHEN** the consumer sets `Temperature` outside `[0, 1]`
+- **WHEN** the consumer sets `Temperature` outside `[0, 1]` for a model that accepts it and requires Bedrock temperature normalization
 - **THEN** the request body clamps the value to the nearest bound and emits a `Warning{Type: "unsupported", Feature: "temperature", Details: "...clamped..."}`
+
+#### Scenario: Newer Claude models reject sampling parameters
+
+- **WHEN** a supported Claude model that rejects sampling parameters is called with temperature, topK, and topP, even with thinking disabled
+- **THEN** the request omits all three and emits a model-specific unsupported warning for each; older models retain supported sampling settings
+
+#### Scenario: OpenAI Converse models reject unsupported inference settings
+
+- **WHEN** an OpenAI model is called with stop sequences, temperature, and topP
+- **THEN** the request omits stop sequences for all OpenAI models and omits temperature and topP for non-GPT-OSS OpenAI models, with an unsupported warning per omitted field
+
+### Requirement: Selective Converse guard-content per-part options
+
+The Bedrock adapter SHALL accept typed user text and inline image part `guardContent` controls under `amazonBedrock` or legacy `bedrock`. Enabled text parts SHALL serialize as `{guardContent:{text:{text:<part text>,qualifiers:<optional array>}}}` and enabled inline image parts as `{guardContent:{image:{format,source}}}`. Only the enabled part SHALL change; option absence or `false` SHALL preserve ordinary conversion. Qualifier values SHALL be restricted to `grounding_source`, `query`, and `guard_content` and SHALL be accepted on text parts only. Both DoGenerate and DoStream SHALL use this same request conversion.
+
+#### Scenario: Mixed protected and unprotected user text
+
+- **WHEN** a user message has `guardContent:true` text with two valid qualifiers, followed by ordinary text and `guardContent:false` text, followed by guarded text with an explicitly empty qualifier array
+- **THEN** the Converse request contains corresponding guarded, ordinary, ordinary and guarded text blocks in that order, with both qualifier arrays (including `[]`) retained and with no qualifiers on ordinary blocks
+
+#### Scenario: Guarded inline image among ordinary image and text
+
+- **WHEN** a user message contains an inline image with `guardContent:true`, an inline image with `guardContent:false` and an ordinary text part
+- **THEN** the first image alone is wrapped under `guardContent.image` with identical format/base64 bytes, while the other image and text remain ordinary blocks in original order
+
+#### Scenario: Legacy part options
+
+- **WHEN** a user text or inline image part has `guardContent:true` under legacy `bedrock` only, or modern `amazonBedrock:null` with legacy `bedrock.guardContent:true`
+- **THEN** that part is guarded
+
+#### Scenario: Modern part options take precedence
+
+- **WHEN** modern non-null `amazonBedrock.guardContent:false` and legacy `bedrock.guardContent:true` coexist on a user text or inline image part
+- **THEN** the ordinary block is emitted without merging legacy controls
+- **AND** a modern object containing only unrelated keys likewise suppresses legacy fallback
+
+#### Scenario: Unrelated typed Bedrock options on target parts
+
+- **WHEN** a user text or inline image part carries typed `FilePartOptions` with citations in its Bedrock namespace, or an inline image carries typed text-part qualifier options without an enabled image guard flag
+- **THEN** conversion ignores controls unrelated to that part and emits its ordinary text or image block without a typed-option mismatch error
+- **AND** recognized guard controls, if also present for that part, retain strict validation and modern/legacy precedence
+
+#### Scenario: Typed guard controls on a non-target document
+
+- **WHEN** a user document part carries typed image- or text-part guard options in its Bedrock namespace
+- **THEN** it remains an ordinary document, with no `guardContent` and no typed-option mismatch error
+- **AND** typed `FilePartOptions.Citations` on a document continue to enable citations
+
+#### Scenario: Validate text controls even when guard flag is false
+
+- **WHEN** a text part's recognized raw or typed guard control is not boolean, is explicitly null, or has non-array, non-string, null or unknown qualifier values (including when `guardContent:false`)
+- **THEN** request conversion returns an error before either endpoint issues an HTTP request rather than silently emitting ordinary or guarded content
+
+#### Scenario: Validate image controls without applying text qualifiers
+
+- **WHEN** an inline image's recognized raw or typed guard control is not boolean or is explicitly null
+- **THEN** request conversion returns an error before an HTTP request
+- **AND** text-only qualifier properties do not turn image, document, video, S3 URL image, or tool-result image content into guarded content
+
+#### Scenario: Existing non-user content and default shape
+
+- **WHEN** selective controls are absent or false, or the prompt contains system, assistant, tool-result, document, video or S3 URL image parts
+- **THEN** the existing request content/ordering and top-level `guardrailConfig` passthrough remain unchanged and no `guardContent` member is emitted for those parts, including when an image/text guard option is attached to a non-target part
+
+#### Scenario: Both Converse endpoints
+
+- **WHEN** the same guarded user prompt is sent via DoGenerate and DoStream
+- **THEN** `/converse` and `/converse-stream` each receive the equivalent `messages[*].content[*].guardContent` shape before decoding the response
+
+### Requirement: Unary guarded-input intervention fidelity
+
+When a non-streaming Converse response reports `stopReason: guardrail_intervened` and a trace and usage, the provider SHALL expose the content-filter finish reason while preserving the provider trace and reported usage. An authentic upstream response fixture SHALL be used for parity verification; a recorded stream guardrail event SHALL NOT be treated as proof of selective guarded input.
+
+#### Scenario: Registered upstream intervention response
+
+- **WHEN** the exact registered `amazon-bedrock-guard-content-intervened.json` unary fixture is replayed for a guarded query text request with trace-enabled top-level guardrailConfig
+- **THEN** the result has raw finish reason `guardrail_intervened`, unified `content-filter`, the reported response text, `providerMetadata.bedrock.trace.guardrail.inputAssessment` including the blocked topic policy, and the fixture's input/output/cache/total and raw usage values
+- **AND** the provider request snapshot contains guarded query text and unchanged top-level guardrailConfig
 
 ### Requirement: Top-level Converse provider option pass-through
 
@@ -282,7 +358,7 @@ When `provider.CallOptions.Reasoning` is a custom level other than `none` and th
 
 For adaptive models, reasoning levels SHALL map to `additionalModelRequestFields.output_config.effort` as follows: `minimal` to `low`, `low` to `low`, `medium` to `medium`, `high` to `high`, and `xhigh` to `max`. A mapping that changes the level name SHALL emit a compatibility warning. For budget-based models, the provider SHALL derive a token budget from the model's maximum output tokens and increase `inferenceConfig.maxTokens` by that budget.
 
-For custom reasoning other than `none`, non-zero fields from an explicit provider `reasoningConfig` SHALL override the corresponding derived fields while unspecified fields remain derived. A raw JSON `budgetTokens` field explicitly set to zero SHALL also override a derived budget and produce `thinking.budget_tokens = 0`; the zero-valued typed Go field with `omitempty` represents omission. If the merged type is `disabled`, derived budget and effort SHALL be removed. Anthropic root reasoning `none` SHALL replace an explicit partial reasoning config with disabled thinking.
+For custom reasoning other than `none`, non-zero fields from an explicit provider `reasoningConfig` SHALL override the corresponding derived fields while unspecified fields remain derived. A raw JSON `budgetTokens` field explicitly set to zero SHALL also override a derived budget and produce `thinking.budget_tokens = 0`; the zero-valued typed Go field with `omitempty` represents omission. If the merged type is `disabled`, derived budget and effort SHALL be removed. Anthropic root reasoning `none` SHALL replace an explicit partial reasoning config with disabled thinking, except on models that support `between_tools` thinking (IDs containing `claude-sonnet-5-5`), where it SHALL use `between_tools` thinking. This is an intentional deviation from `@ai-sdk/amazon-bedrock` 5.0.99, recorded in `test/conformance/upstream.yaml`: upstream sends disabled thinking, which omits `thinking` and lets the model run adaptive thinking at its default effort.
 
 #### Scenario: Adaptive-capable model receives adaptive thinking and effort
 
@@ -358,7 +434,7 @@ For custom reasoning other than `none`, non-zero fields from an explicit provide
 
 #### Scenario: Reasoning none disables Anthropic thinking
 
-- **WHEN** root reasoning is `none` for an Anthropic Bedrock model
+- **WHEN** root reasoning is `none` for an Anthropic Bedrock model that does not support `between_tools` thinking
 - **THEN** the derived reasoning configuration SHALL disable thinking
 - **AND** the request SHALL NOT include a derived reasoning budget or effort
 
@@ -383,6 +459,12 @@ For custom reasoning other than `none`, non-zero fields from an explicit provide
 
 - **WHEN** root reasoning is `none` for an Anthropic model and provider reasoning config only sets display
 - **THEN** the request SHALL omit thinking and effort fields
+
+#### Scenario: Reasoning none on Sonnet 5.5 uses between_tools thinking
+
+- **WHEN** root reasoning is `none` for `global.anthropic.claude-sonnet-5-5`, with or without a partial provider reasoning config
+- **THEN** `additionalModelRequestFields.thinking` SHALL equal `{type: "between_tools"}`
+- **AND** the request SHALL NOT include a derived reasoning budget or effort
 
 ### Requirement: Native structured output for supported Anthropic models
 
@@ -489,7 +571,7 @@ The Bedrock Converse adapter SHALL keep strict-tool support independent of nativ
 
 ### Requirement: Converse OpenAI effort routing
 
-The Bedrock provider SHALL classify OpenAI model IDs with an optional regional prefix and an `openai.` segment at the start (not by arbitrary substring). GPT-OSS IDs SHALL use flat `additionalModelRequestFields.reasoning_effort`; other OpenAI IDs SHALL use nested `additionalModelRequestFields.reasoning.effort` while preserving unrelated reasoning fields. Non-OpenAI models SHALL retain their existing family-specific routing.
+The Bedrock provider SHALL classify OpenAI model IDs with an optional regional prefix and an `openai.` segment at the start (not by arbitrary substring). GPT-OSS IDs SHALL use flat `additionalModelRequestFields.reasoning_effort`; other OpenAI IDs SHALL use nested `additionalModelRequestFields.reasoning.effort` while preserving unrelated reasoning fields. Anthropic models SHALL retain their family-specific routing; Nova 2 Lite SHALL use `reasoningConfig` with `type: enabled`. For other non-OpenAI, non-Anthropic models, portable reasoning without an explicit provider `reasoningConfig` SHALL emit an unsupported warning and SHALL NOT add a reasoning field. An explicit provider `reasoningConfig` SHALL still be forwarded and merged with portable reasoning.
 
 #### Scenario: GPT-OSS versus newer regional OpenAI
 
@@ -499,7 +581,17 @@ The Bedrock provider SHALL classify OpenAI model IDs with an optional regional p
 #### Scenario: Embedded OpenAI substring is not an OpenAI ID
 
 - **WHEN** a custom model ID embeds `openai.` away from the anchored vendor position
-- **THEN** effort uses non-OpenAI routing instead of either OpenAI-specific shape
+- **THEN** portable reasoning is ignored with an unsupported warning rather than using an OpenAI-specific shape or an unrequested `reasoningConfig`
+
+#### Scenario: Nova 2 Lite receives portable reasoning
+
+- **WHEN** `us.amazon.nova-2-lite-v1:0` receives portable reasoning `medium`
+- **THEN** the additional request fields contain `reasoningConfig: {type: "enabled", maxReasoningEffort: "medium"}`
+
+#### Scenario: Other Nova models require explicit reasoning configuration
+
+- **WHEN** `amazon.nova-micro-v1:0` receives portable reasoning `high` without an explicit `reasoningConfig`
+- **THEN** no reasoning field is sent and an unsupported warning is returned; with an explicit config its fields are forwarded and merged
 
 ### Requirement: Converse option merge preserves cache and beta precedence
 
@@ -517,7 +609,7 @@ Converse prompt conversion SHALL preserve cache-point placement on system and us
 
 ### Requirement: Mistral tool call id normalization
 
-For Mistral models on Bedrock, the provider SHALL normalize tool call IDs to match Mistral's expectations (no underscores, length-bounded numeric form) before emitting them downstream.
+For Mistral models on Bedrock, the provider SHALL preserve valid 9-character alphanumeric tool call IDs and deterministically hash incompatible IDs into 9-character base62 values before sending or emitting them. Different IDs sharing an initial prefix SHALL not collapse to the same normalized value in the tested cases.
 
 #### Scenario: Mistral tool call id
 
@@ -653,3 +745,45 @@ The provider's `Provider()` method SHALL return `"amazon-bedrock"`. Its `ModelID
 
 - **WHEN** a consumer constructs `bedrock.New("amazon.nova-lite-v1:0")`
 - **THEN** `ModelID()` returns `"amazon.nova-lite-v1:0"` verbatim
+
+### Requirement: Converse Claude models that reject disabled thinking and forced tool use
+
+For Anthropic Bedrock model IDs containing `claude-sonnet-5-5`, the Converse adapter SHALL avoid request shapes the model rejects, following `@ai-sdk/amazon-bedrock` 5.0.99 unless noted. A `required` tool choice SHALL be sent as `auto`, and a named tool choice SHALL be sent as `auto` with only the named tool, each with an unsupported `toolChoice` warning. A JSON schema response SHALL use the system-prompt JSON instruction instead of the forced JSON tool, whatever the structured-output mode, unless native `outputFormat` output is selected.
+
+As a Go extension, `reasoningConfig.type` SHALL also accept `between_tools`. It SHALL be sent as `thinking: {type: "between_tools"}` without `display` or `budget_tokens`, SHALL count as active thinking for sampling-parameter removal, and SHALL lower `maxReasoningEffort` `xhigh` or `max` to `high` with an unsupported warning for feature `providerOptions.amazonBedrock.reasoningConfig.maxReasoningEffort`. Upstream 5.0.99 has no `between_tools` type.
+
+#### Scenario: Required tool choice on Sonnet 5.5
+
+- **WHEN** `global.anthropic.claude-sonnet-5-5` is called with two function tools and tool choice `required`
+- **THEN** `toolConfig.toolChoice` SHALL be `auto` and both tools SHALL be sent
+- **AND** an unsupported `toolChoice` warning SHALL be emitted
+
+#### Scenario: Named tool choice on Sonnet 5.5
+
+- **WHEN** `global.anthropic.claude-sonnet-5-5` is called with tools `weather` and `search` and tool choice `tool` named `search`
+- **THEN** `toolConfig.toolChoice` SHALL be `auto` and only `search` SHALL be sent
+
+#### Scenario: JSON response without native output on Sonnet 5.5
+
+- **WHEN** `global.anthropic.claude-sonnet-5-5` receives a JSON schema response with no caller tools and `structuredOutputMode` `jsonTool`
+- **THEN** the JSON schema instruction SHALL be injected into the system prompt and no `json` tool or forced tool choice SHALL be sent
+
+#### Scenario: between_tools effort limit
+
+- **WHEN** provider options set `reasoningConfig: {type: "between_tools", maxReasoningEffort: "max"}` for `global.anthropic.claude-sonnet-5-5`
+- **THEN** `additionalModelRequestFields.thinking` SHALL equal `{type: "between_tools"}` and `output_config.effort` SHALL equal `high`
+- **AND** an unsupported warning for `providerOptions.amazonBedrock.reasoningConfig.maxReasoningEffort` SHALL be emitted
+
+#### Scenario: Claude Sonnet 5 keeps forced tool use
+
+- **WHEN** `anthropic.claude-sonnet-5` is called with tool choice `required`
+- **THEN** `toolConfig.toolChoice` SHALL be `any`
+
+### Requirement: Redacted reasoning continuation
+
+The provider SHALL preserve native redactedContent as reasoning metadata under both amazonBedrock and bedrock. Streaming fragments SHALL accumulate per native block and be published as the complete opaque value on reasoning-end. Assistant replay SHALL select signature, then redactedContent, then legacy redactedData, preserving present empty raw values and signed whitespace. Existing public typed string options SHALL remain compatible.
+
+#### Scenario: Fragmented opaque continuation
+- **WHEN** one native reasoning block emits multiple redactedContent fragments
+- **THEN** its final metadata SHALL contain their concatenation, not merely the last fragment
+- **AND** replay SHALL reconstruct the native redactedContent value

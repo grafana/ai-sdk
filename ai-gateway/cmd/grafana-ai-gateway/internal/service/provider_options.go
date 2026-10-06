@@ -17,7 +17,7 @@ var anthropicOptionPolicy = catalog.ProviderOptionPolicy{
 	Namespaces: []string{"anthropic"},
 	Fields: map[string][]string{"anthropic": {
 		// AnthropicOptions, read at call level.
-		"thinking", "structuredOutputMode", "disableParallelToolUse", "effort", "betas", "taskBudget", "toolStreaming",
+		"thinking", "structuredOutputMode", "disableParallelToolUse", "effort", "betas", "taskBudget", "toolStreaming", "safeguards",
 		// AnthropicSystemMessageOptions, read on system messages. cacheControl
 		// is also read on messages and parts, under either spelling.
 		"toolChanges", "cacheControl",
@@ -43,13 +43,13 @@ var openAIOptionFields = []string{
 	// OpenAIResponsesOptions, read at call level.
 	"conversation", "include", "includeWebSearchSources", "instructions", "logprobs", "maxToolCalls", "metadata",
 	"parallelToolCalls", "previousResponseId", "promptCacheKey", "promptCacheRetention",
-	"promptCacheOptions", "reasoningEffort", "reasoningMode", "reasoningContext",
-	"reasoningSummary", "safetyIdentifier", "serviceTier", "store",
+	"promptCacheOptions", "reasoningEffort", "reasoningEffortUpdate", "compactionTrigger",
+	"reasoningMode", "reasoningContext", "reasoningSummary", "safetyIdentifier", "serviceTier", "store",
 	"passThroughUnsupportedFiles", "strictJsonSchema", "textVerbosity", "truncation",
 	"user", "systemMessageMode", "forceReasoning", "allowedTools", "contextManagement",
 	// OpenAIPartOptions, read on message parts.
-	"itemId", "reasoningEncryptedContent", "approvalRequestId", "approvalId",
-	"imageDetail", "promptCacheBreakpoint", "namespace", "caller", "phase",
+	"itemId", "reasoningEncryptedContent", "encryptedContent", "approvalRequestId", "approvalId",
+	"imageDetail", "promptCacheBreakpoint", "namespace", "async", "caller", "phase",
 }
 
 // openAICompatibleOptionPolicy forwards the namespaces providers/openai-compatible

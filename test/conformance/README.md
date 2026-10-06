@@ -102,8 +102,12 @@ test/conformance/
   tools/                         # TypeScript tooling
     generate.mts                 # regenerate expected.jsonl from fixtures (no API keys)
     record.mts                   # capture new fixtures from real APIs (needs API keys)
+    request-snapshots.mts         # check/regenerate synthetic request-target goldens
     validate-baseline.mts        # validate manifest/package version consistency
     package.json
+  testdata/request-snapshots/     # synthetic harness-only request cases and TS golden
+    cases.json
+    expected-requests.jsonl
   ui/                            # provider-independent core UI goldens
     <test-name>/
       input.jsonl                # LanguageModelV4 stream parts
@@ -185,6 +189,15 @@ snapshots; raw provider response events are never rewritten.
 Each test case directory has a `config.yaml` with replay metadata.
 The provider is inferred from the directory path, not from the YAML.
 
+Both the TypeScript tools and the Go replay loader reject a key that no config
+type declares, and name its path, so a misspelled option fails before any
+snapshot is generated, recorded or replayed. Values that are payloads, such as
+`providerOptions`, JSON schemas, tool inputs and UI message parts, accept any
+keys. [`testdata/fixture-config/all-keys.yaml`](testdata/fixture-config/all-keys.yaml)
+lists every accepted key at every level; adding a key means declaring it in
+both `runner.go` and `tools/common.mts` and adding it to that file, or the
+alignment tests on either side fail.
+
 ```yaml
 # Minimal streaming fixture
 model: claude-sonnet-4-5-20250929
@@ -263,6 +276,8 @@ against these snapshots after the stream completes.
 
 Comparison rules:
 
+- `path` is the escaped request target: pathname plus any nonempty query, without scheme, authority or fragment. Empty paths become `/`; a bare empty `?` is omitted.
+- Query spelling and all parameter ordering are compared exactly, including repeated values, percent escaping, `+` versus `%20`, empty values and key-only parameters. Queries are not sorted, decoded or re-encoded.
 - JSON request bodies are decoded and compared semantically, so object field ordering does not matter.
 - Array order remains significant for messages, content blocks, stop sequences, and multi-step request order.
 - Tool declaration arrays are sorted by tool name/type before comparison because Go exposes tools as a map.
@@ -273,6 +288,32 @@ Comparison rules:
 - Anthropic `tool_result` JSON content is compared semantically across SDK serialization shapes.
 - Anthropic `web_search_result.page_age: null` is treated the same as an omitted `page_age`.
 - Bedrock authenticates via SigV4, so only `content-type` is asserted; `authorization`, `x-amz-*`, `host`, `user-agent`, `content-length`, and `accept` are excluded as volatile or non-behavioral. The request path preserves percent-encoding (model-ID colons become `%3A`) so the captured path matches the upstream `encodeURIComponent` form on the wire.
+
+### Request-target harness regression
+
+`testdata/request-snapshots/` contains controlled nonsecret synthetic URL cases
+and a TypeScript-generated `expected-requests.jsonl`. TypeScript asserts explicit
+targets and checks golden freshness without rewriting it; Go loads the same
+snapshot through the production loader and capture/comparison functions.
+Isolated comparator tests reject query-only version, duplicate-order, presence
+and escape-spelling mismatches. This proves harness sensitivity, not provider
+response provenance, live acceptance, or Azure provider support.
+
+```bash
+cd test/conformance/tools
+pnpm exec tsx request-snapshots.mts --write # explicitly regenerate the harness golden
+pnpm exec tsx request-snapshots.mts         # check without rewriting it
+pnpm exec tsx --test common.test.mts
+cd ..
+GOWORK=off GOFLAGS=-mod=readonly go test -tags conformance -run TestRequestSnapshot ./...
+```
+
+Existing queryless provider snapshots remain unchanged. Regenerate any
+query-bearing provider expectations with registered tooling alongside a capture
+change; do not accept legacy path-only matching or alter provider response
+inputs. Header redaction does not redact query credentials. Query-authenticated
+recordings require an explicit provider-specific secret/volatility policy before
+committing their snapshots; review generated targets for secrets.
 
 ### Extending config.yaml
 

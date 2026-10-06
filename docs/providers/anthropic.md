@@ -24,6 +24,18 @@ Pass the model to [Generate text from Go](../getting-started/backend-only.md) or
 appear on the first model call. Create the model once and reuse its underlying
 HTTP resources across requests.
 
+## Configure call headers
+
+Use `aisdk.WithHeaders` for request-scoped headers. Ordinary call headers override
+configured headers with the same name. Anthropic beta headers instead combine
+configured, per-call, and feature-required tokens into a normalized, deduplicated
+union. The same behavior applies to direct API and Vertex calls.
+
+Native call results retain outbound JSON and response headers for diagnostics.
+These can contain sensitive prompt or backend data; do not automatically log or
+forward them. Raw streaming events are opt-in and remain separate from normalized
+content and frontend UI streams.
+
 ## Use Vertex AI
 
 `NewVertex` resolves Google Application Default Credentials and can fail during
@@ -45,6 +57,14 @@ Use the model IDs supported by the selected Anthropic or Vertex endpoint. The
 package exposes model-ID helpers for discovery; availability still depends on
 your account and region.
 
+Vertex uses native `output_config.format` for JSON-schema responses on models
+that support structured output, rather than forcing a synthetic tool call.
+Your Google Cloud organization must allow the `structured_outputs` feature in
+`constraints/vertexai.allowedPartnerModelFeatures`; see
+[Google Cloud's structured-output guide](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/partner-models/claude/structured-outputs).
+The explicit `StructuredOutputJSONTool` mode remains available for models that
+support forced tool choice.
+
 For Claude on Microsoft Azure, use the [Azure provider](azure.md).
 
 ## Enable reasoning deliberately
@@ -63,6 +83,13 @@ result := aisdk.StreamText(ctx, model,
 Reasoning increases token usage and latency. Decide whether reasoning content
 should be forwarded to a frontend; UI streams include it by default unless
 configured otherwise.
+
+Some models always think and reject forced tool use. On `claude-sonnet-5-5`,
+disabled and budget-based thinking, a `required` tool choice, and a named tool
+choice all fail at the API. The provider rewrites them instead: root reasoning
+`none` sends `between_tools` thinking, the model's lowest setting, and a forced
+tool choice is sent as `auto` with an `unsupported` warning. Tell the model in
+the prompt to call the tool, and check the result for the tool call.
 
 Anthropic-specific options also cover effort, beta features, remote MCP servers,
 containers, task budgets, and tool streaming. Enable only options supported by

@@ -113,3 +113,52 @@ already-started recorders and refuses new recorder acquisition. Flush and
 shutdown then each receive a fresh independent timeout. The
 `process_shutdown_completed` lifecycle event is logged only after this bounded
 finalizer returns.
+
+## Returned values and consumer observation
+
+Gateway telemetry helps you monitor usage, latency and failures without
+collecting response content. Your application can still receive model warnings,
+citations and response details; making those available to the caller does not
+add them to Gateway logs or metrics.
+
+The model named in a response may differ from the public model you selected.
+Gateway telemetry continues to identify calls by their configured public model,
+so aliases share the same operational view. Use response details for inspecting
+a particular generation, not as a replacement for the model ID your application
+uses to select a model. See the [Go client guide](../../docs/providers/grafana-gateway.md#native-response-values)
+for accessing those details in generated and streamed responses.
+
+If you need response content for application diagnostics, configure logging in
+your application separately. This does not enable content capture on the
+Gateway. Capture only what you need, restrict access and retention, and account
+for sensitive content in warnings, citations and response bodies. The
+[structured logging guide](../../docs/middleware/structured-logging.md)
+explains how to choose capture settings and redact application logs.
+
+## Work-package boundaries
+
+URL and document source output is passed through unchanged by observers.
+Metadata-only logs, metrics and Agent Observability omit source identifiers,
+URLs, titles, filenames and metadata. Agent Observability has no source-content
+representation, so sources are not converted into fabricated text or media.
+Candidate-source Gateway tests verify that reusable observers count sources as
+first output. The Gateway image uses same-revision modules through
+`go.gateway.work` and still requires its image build gate. Currently pinned
+published middleware revisions predate this behavior; standalone middleware
+consumers need later module releases.
+See the [source guide](sources.md) for native source values and remaining
+metadata gaps, and the [Go client guide](../../docs/providers/grafana-gateway.md#native-response-values)
+for response identity and presence adaptations.
+
+- WP6 image capacity/distribution does not use this text-model chain.
+- WP7's Go client and ProviderWire contract are unchanged; correlation is
+  server-internal and is neither accepted from nor returned to clients.
+- WP9 owns physical fallback attempts, candidate identity, and retry topology
+  below the unchanged logical wrapper.
+- WP10 owns production endpoint, credential, region/application values,
+  rollout, and environment smoke verification.
+- WP27 owns any later per-request Agent Observability control or richer content
+  capture decision.
+- Tools, reasoning, files, images, raw output, hooks, and later event families
+  remain with their owning capability work; WP8 observes the current text
+  surface only and does not change ProviderWire schemas or events.

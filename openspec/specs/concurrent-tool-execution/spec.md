@@ -8,7 +8,7 @@ Concurrent execution of multiple tool calls within a single step, matching upstr
 
 When a model returns multiple tool calls in a single step, `executeTools()` SHALL execute all eligible tool calls concurrently using goroutines. Each tool call SHALL run in its own goroutine. The function SHALL wait for all goroutines to complete before returning.
 
-Eligible tool calls are those where `ProviderExecuted` is false AND the tool exists in `params.Tools` with a non-nil `Execute` function.
+Eligible tool calls are those where `ProviderExecuted` is false AND the tool exists in the effective step execution tool set with either a non-nil `Execute` function or a configured streaming execution function. The existing allowed-finish and approval gates SHALL continue to apply.
 
 #### Scenario: Multiple tool calls execute concurrently
 
@@ -22,8 +22,13 @@ Eligible tool calls are those where `ProviderExecuted` is false AND the tool exi
 
 #### Scenario: No eligible tool calls
 
-- **WHEN** a step contains tool calls that are all provider-executed or have no Execute function
+- **WHEN** a step contains tool calls that are all provider-executed or have neither an Execute function nor a streaming execution function
 - **THEN** `executeTools()` returns immediately without spawning any goroutines
+
+#### Scenario: Streaming and single-result tools execute together
+
+- **WHEN** a step contains one streaming tool and one single-result tool that are both eligible
+- **THEN** both SHALL execute concurrently and finish independently
 
 ### Requirement: Independent error handling per tool
 
@@ -92,7 +97,7 @@ Each tool goroutine SHALL report its completion to the goroutine that started th
 
 ### Requirement: Tool results preserve call order
 
-The `step.ToolResults` slice SHALL contain results in the same order as the original `step.ToolCalls` entries, regardless of completion order. This ensures deterministic message construction for subsequent steps.
+The `step.ToolResults` slice SHALL contain results in the same order as the original `step.ToolCalls` entries, regardless of completion order and of how each result arose: provider-executed, rejected as invalid, denied by an approval policy, or executed. This ensures deterministic message construction for subsequent steps. Upstream lists `step.toolResults` in arrival order; Go keeps call order, and `test/conformance/upstream.yaml` records the difference. A result for a call that is not in the step SHALL keep its relative position ahead of the step's own results, and results for the same call SHALL keep their order.
 
 #### Scenario: Results ordered by call position
 
@@ -103,6 +108,11 @@ The `step.ToolResults` slice SHALL contain results in the same order as the orig
 
 - **WHEN** a step has tool calls [A, B, C] where B is provider-executed
 - **THEN** `step.ToolResults` contains results for [A, C] only, in that order
+
+#### Scenario: Rejected and denied calls keep their call position
+
+- **WHEN** a step has tool calls [A, B, C] where A names a tool missing from the tool set, B executes, and C is denied by an approval policy
+- **THEN** `step.ToolResults` contains results in order [A, B, C], although A was handled while the model stream was read and C before any tool started
 
 ### Requirement: Callback invocation from concurrent goroutines
 

@@ -188,7 +188,8 @@ func (BedrockOptions) ProviderKey() string { return "amazonBedrock" }
 type ReasoningConfig struct {
 	budgetTokensPresent bool
 
-	// Type is one of "enabled", "adaptive", or empty when only
+	// Type is one of "enabled", "adaptive", "between_tools" (claude-sonnet-5-5
+	// only; low, medium, or high effort), or empty when only
 	// MaxReasoningEffort is set.
 	Type string `json:"type,omitempty"`
 	// BudgetTokens is the thinking budget for Type="enabled". Required when
@@ -213,6 +214,32 @@ type CachePoint struct {
 	TTL string `json:"ttl,omitempty"`
 }
 
+// GuardContentQualifier selects a Bedrock text guardrail qualifier.
+type GuardContentQualifier string
+
+const (
+	GuardContentQualifierGroundingSource GuardContentQualifier = "grounding_source"
+	GuardContentQualifierQuery           GuardContentQualifier = "query"
+	GuardContentQualifierGuardContent    GuardContentQualifier = "guard_content"
+)
+
+// TextPartOptions controls selective protection of a user text part.
+type TextPartOptions struct {
+	GuardContent           *bool                    `json:"guardContent,omitempty"`
+	GuardContentQualifiers *[]GuardContentQualifier `json:"guardContentQualifiers,omitempty"`
+}
+
+// ProviderKey returns the per-part Bedrock option namespace.
+func (TextPartOptions) ProviderKey() string { return "amazonBedrock" }
+
+// ImagePartOptions controls selective protection of an inline user image part.
+type ImagePartOptions struct {
+	GuardContent *bool `json:"guardContent,omitempty"`
+}
+
+// ProviderKey returns the per-part Bedrock option namespace.
+func (ImagePartOptions) ProviderKey() string { return "amazonBedrock" }
+
 // FilePartOptions carries per-file-part Bedrock configuration from
 // `ContentPart.ProviderOptions["amazonBedrock"]`. Mirrors upstream
 // amazonBedrockFilePartProviderOptions, which only exposes citations at the
@@ -234,8 +261,9 @@ func (FilePartOptions) ProviderKey() string { return "amazonBedrock" }
 // ReasoningMetadata carries Bedrock reasoning provider metadata round-trips.
 // Mirrors upstream amazonBedrockReasoningMetadata.
 type ReasoningMetadata struct {
-	Signature    string `json:"signature,omitempty"`
-	RedactedData string `json:"redactedData,omitempty"`
+	Signature       string `json:"signature,omitempty"`
+	RedactedData    string `json:"redactedData,omitempty"`
+	RedactedContent string `json:"redactedContent,omitempty"`
 }
 
 // ProviderKey returns the reasoning metadata namespace.

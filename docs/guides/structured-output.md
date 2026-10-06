@@ -62,6 +62,30 @@ Handle both the generation error and the output-access error.
 Run [`examples/structured-extraction`](../../examples/structured-extraction)
 for a complete alert-triage workflow.
 
+## Repair invalid model text
+
+Pass `aisdk.WithRepairText` when invalid JSON or a schema mismatch can be
+repaired locally. The callback receives the original model text and the parse
+error. Return repaired text and `true` to validate it once more, `false` with
+no error to keep the original failure, or an error to return that failure.
+
+```go
+result, err := output.GenerateObject[AlertTriage](ctx, model, objectOutput,
+    aisdk.WithModelMessages(provider.UserText(alertText)),
+    aisdk.WithRepairText(func(text string, parseErr error) (string, bool, error) {
+        repaired, err := repairLocally(text, parseErr)
+        return repaired, err == nil, err
+    }),
+)
+```
+
+The same option works with `StreamObject` and direct `GenerateText`/`StreamText`
+calls using `WithOutput`. Repair does not call the model again or rewrite raw
+text, UI chunks, partial results, response metadata, or usage. Schema-valid
+text that fails Go typed conversion is not repairable by this option. The
+callback runs synchronously at final parsing; keep it bounded. Handle output
+errors through `Object()` or `OutputError` as usual.
+
 ## Stream structured output
 
 Use `StreamObject` when the caller benefits from incremental progress. The final

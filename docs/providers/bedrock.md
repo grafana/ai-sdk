@@ -99,6 +99,17 @@ the `bedrock-mantle` signing service for a Mantle host, it still emits
 Converse-shaped requests and must not be used for the Mantle OpenAI-compatible
 surface.
 
+## Protect selected Converse content
+
+When a guardrail should inspect only selected input, attach Bedrock provider
+options to individual user text or inline image parts. Enable `guardContent`
+on those parts; text parts can also specify qualifiers such as `query` or
+`grounding_source`. Other parts stay ordinary. Configure the guardrail itself
+with the request-level `guardrailConfig`; selecting content does not replace
+that configuration. This applies to both Converse and ConverseStream, but not
+to document, video, or S3 URL image parts. See the [Bedrock package reference](https://pkg.go.dev/github.com/grafana/ai-sdk/providers/bedrock)
+for the typed part options. Gateway provider-option transport is separate.
+
 ## Account for model-family differences
 
 The provider translates common AI SDK messages and tools into Converse requests,
@@ -109,6 +120,12 @@ use automatic, native output-format, or synthetic JSON-tool routing; automatic
 routing accounts for Bedrock's model-specific native-output reliability.
 Reasoning, structured output, cache controls, and other provider options may be
 supported by one family and ignored with a warning by another.
+
+Claude Sonnet 5.5 rejects disabled thinking and forced tool use. For
+`claude-sonnet-5-5` IDs, root reasoning `none` sends `between_tools` thinking,
+a `required` or named tool choice is sent as `auto` with a warning, and a JSON
+schema response uses a system-prompt instruction instead of the forced JSON
+tool.
 
 Validate the capabilities required by your workflow before putting unlike model
 families in the same fallback chain.

@@ -10,6 +10,13 @@ import (
 // Option configures an OpenAI Responses model instance at construction time.
 type Option func(*model)
 
+// WithDefaultReasoningSummary overrides the summary requested when reasoning
+// effort is enabled and the call leaves ReasoningSummary unset. An empty value
+// omits the summary. Explicit per-call values, including null, take precedence.
+func WithDefaultReasoningSummary(summary string) Option {
+	return func(m *model) { m.defaultReasoningSummary = summary }
+}
+
 // WithRequestOptions appends raw SDK request options (e.g., custom headers,
 // base URL, HTTP client). Per-call CallOptions.Headers override configured
 // headers with the same name. Used by tests to point the model at a
@@ -101,13 +108,18 @@ type OpenAIResponsesOptions struct {
 	// ReasoningEffort controls reasoning effort ("none","minimal","low",
 	// "medium","high","xhigh","max"). Validated server-side.
 	ReasoningEffort string `json:"reasoningEffort,omitempty"`
+	// ReasoningEffortUpdate changes the reasoning effort for this response without changing the request-level effort.
+	ReasoningEffortUpdate OpenAIReasoningEffortUpdate `json:"reasoningEffortUpdate,omitempty"`
+	// CompactionTrigger requests explicit server-side compaction of the current input.
+	CompactionTrigger *bool `json:"compactionTrigger,omitempty"`
 	// ReasoningMode controls GPT-5.6 reasoning work mode ("standard","pro").
 	ReasoningMode string `json:"reasoningMode,omitempty"`
 	// ReasoningContext controls GPT-5.6 access to prior reasoning items.
 	ReasoningContext string `json:"reasoningContext,omitempty"`
 	// ReasoningSummary controls reasoning summary output ("auto","concise",
-	// "detailed").
-	ReasoningSummary string `json:"reasoningSummary,omitempty"`
+	// "detailed"). Nil uses the endpoint default; JSON null omits the summary
+	// without disabling reasoning effort.
+	ReasoningSummary json.RawMessage `json:"reasoningSummary,omitempty"`
 	// SafetyIdentifier is a stable identifier for end users.
 	SafetyIdentifier string `json:"safetyIdentifier,omitempty"`
 	// ServiceTier is "auto","flex","priority","fast","default".
@@ -139,6 +151,22 @@ type OpenAIResponsesOptions struct {
 
 // ProviderKey returns the provider namespace key.
 func (OpenAIResponsesOptions) ProviderKey() string { return "openai" }
+
+// OpenAIReasoningEffortUpdate is a capability-gated reasoning configuration update.
+type OpenAIReasoningEffortUpdate string
+
+const (
+	// OpenAIReasoningEffortUpdateLow selects low reasoning effort.
+	OpenAIReasoningEffortUpdateLow OpenAIReasoningEffortUpdate = "low"
+	// OpenAIReasoningEffortUpdateMedium selects medium reasoning effort.
+	OpenAIReasoningEffortUpdateMedium OpenAIReasoningEffortUpdate = "medium"
+	// OpenAIReasoningEffortUpdateHigh selects high reasoning effort.
+	OpenAIReasoningEffortUpdateHigh OpenAIReasoningEffortUpdate = "high"
+	// OpenAIReasoningEffortUpdateXHigh selects xhigh reasoning effort.
+	OpenAIReasoningEffortUpdateXHigh OpenAIReasoningEffortUpdate = "xhigh"
+	// OpenAIReasoningEffortUpdateMax selects maximum reasoning effort.
+	OpenAIReasoningEffortUpdateMax OpenAIReasoningEffortUpdate = "max"
+)
 
 // LogprobsOption accepts either a boolean or an integer count. A bare boolean
 // true requests the maximum number of top logprobs; an integer sets the count.
@@ -208,6 +236,8 @@ const (
 // OpenAIToolOptions carries per-tool OpenAI options attached to a
 // provider.Tool via ProviderOptions["openai"].
 type OpenAIToolOptions struct {
+	// Async controls whether the tool may run asynchronously; nil leaves it unspecified.
+	Async *bool `json:"async,omitempty"`
 	// DeferLoading defers function tool loading.
 	DeferLoading *bool `json:"deferLoading,omitempty"`
 	// AllowedCallers controls direct and programmatic invocation contexts.
@@ -248,9 +278,10 @@ type OpenAIToolCaller struct {
 type OpenAIPartOptions struct {
 	// ItemID is the OpenAI output item id used to emit item references.
 	ItemID string `json:"itemId,omitempty"`
-	// ReasoningEncryptedContent is the encrypted reasoning blob for stateless
-	// continuation.
+	// ReasoningEncryptedContent is the encrypted reasoning blob for stateless continuation.
 	ReasoningEncryptedContent *string `json:"reasoningEncryptedContent,omitempty"`
+	// EncryptedContent is the encrypted compaction blob for stateless continuation.
+	EncryptedContent *string `json:"encryptedContent,omitempty"`
 	// ApprovalRequestID maps an MCP approval request to a tool call.
 	ApprovalRequestID string `json:"approvalRequestId,omitempty"`
 	// ApprovalID identifies an approval response.
@@ -261,6 +292,8 @@ type OpenAIPartOptions struct {
 	PromptCacheBreakpoint *PromptCacheBreakpoint `json:"promptCacheBreakpoint,omitempty"`
 	// Namespace is the function-call namespace.
 	Namespace string `json:"namespace,omitempty"`
+	// Async preserves the explicitly present async setting of a returned tool call.
+	Async *bool `json:"async,omitempty"`
 	// Caller identifies the direct or hosted-program invocation context.
 	Caller *OpenAIToolCaller `json:"caller,omitempty"`
 	// Phase is the message phase ("commentary","final_answer").

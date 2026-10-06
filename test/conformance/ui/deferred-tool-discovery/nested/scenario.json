@@ -1,0 +1,28 @@
+{
+  "mode": "nested",
+  "steps": [
+    [
+      {
+        "id": "search",
+        "name": "code",
+        "input": {
+          "name": "search",
+          "input": {
+            "query": "weather"
+          }
+        }
+      }
+    ],
+    [
+      {
+        "id": "weather",
+        "name": "code",
+        "input": {
+          "name": "getWeather",
+          "input": {}
+        }
+      }
+    ],
+    []
+  ]
+}

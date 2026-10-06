@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import nodeProcess from "node:process";
@@ -11,9 +11,11 @@ import {
   GatewayInvalidRequestError,
   GatewayModelNotFoundError,
 } from "@ai-sdk/gateway";
-import type { LanguageModelV4StreamPart } from "@ai-sdk/provider";
+import type { LanguageModelV4StreamPart, LanguageModelV4CallOptions } from "@ai-sdk/provider";
 import { buildGoClientCapture, captureGoClient } from "./go-client-capture";
-import { jsonSchema, stepCountIs, streamText, tool } from "ai";
+import { validateStreamEvent, validateUnarySuccess } from "./schema";
+import { generateText, jsonSchema, stepCountIs, streamText, tool, wrapLanguageModel } from "ai";
+import packageManifest from "./package.json" with { type: "json" };
 
 const TEST_DIR = dirname(fileURLToPath(import.meta.url));
 const SERVER_DIR = resolve(TEST_DIR, "testserver");
@@ -48,7 +50,7 @@ async function startServer(): Promise<string> {
     },
   });
 
-  const process = spawn(binary, [], { cwd: SERVER_DIR, stdio: ["ignore", "pipe", "pipe"] });
+  const process = spawn(binary, [], { cwd: SERVER_DIR, stdio: ["ignore", "pipe", "pipe"], env: { ...nodeProcess.env, PROVIDERWIRE_RECORDED_USAGE_DIR: resolve(TEST_DIR, "../../../test/conformance/anthropic/recorded") } });
   serverProcess = process;
   let stdout = "";
   let stderr = "";
@@ -98,6 +100,23 @@ function model(modelID: string) {
   })(modelID);
 }
 
+// Host composition for the strict service: ai.generateText adds an SDK
+// user-agent to provider call options. That identifies this HTTP client, not a
+// native-provider forwarding request. Move precisely that SDK-owned value to
+// the outer transport; arbitrary call/body headers remain unsupported (WP21).
+function reasoningHostModel() {
+  const settings = { apiKey: "test", baseURL: `${baseURL}/function-tools`, headers: { "x-access-token": "function-test-token" } };
+  return wrapLanguageModel({ model: createGateway(settings)("reasoning"), middleware: {
+    specificationVersion: "v4",
+    wrapGenerate: async ({ params }) => {
+      const { headers, ...options } = params;
+      assert.deepEqual(Object.keys(headers ?? {}), ["user-agent"]);
+      assert.equal(headers!["user-agent"]!.split(/\s/, 1)[0], `ai/${packageManifest.dependencies.ai}`);
+      return createGateway({ ...settings, headers: { ...settings.headers, "user-agent": headers!["user-agent"]! } })("reasoning").doGenerate(options);
+    },
+  } });
+}
+
 type RuntimeStats = {
   successCalls: number;
   streamCalls: number;
@@ -124,6 +143,148 @@ async function collect(stream: ReadableStream<LanguageModelV4StreamPart>): Promi
 
 before(async () => { baseURL = await startServer(); goClientBinary = buildGoClientCapture(temporaryDirectory); });
 after(async () => { await stopServer(); });
+
+describe("reasoning continuation through the authenticated real handler", () => {
+  it("admits pinned-client reasoning history and matches independent file data/URL/usage in both modes", async () => {
+    const client = createGateway({ apiKey: "test", baseURL: `${baseURL}/function-tools`, headers: { "x-access-token": "function-test-token" } });
+    const prompt: LanguageModelV4CallOptions["prompt"] = [{ role: "assistant" as const, content: [
+      { type: "reasoning" as const, text: "", providerOptions: { anthropic: { signature: "" } } },
+      { type: "reasoning-file" as const, mediaType: "image/png", data: { type: "data" as const, data: new Uint8Array([]) }, providerOptions: { openai: { itemId: "r", reasoningEncryptedContent: null } } },
+      { type: "reasoning-file" as const, mediaType: "image/png", data: { type: "url" as const, url: new URL("https://example.test/input") } },
+    ] }];
+    const goPrompt = [{ role: "assistant", content: [
+      { type: "reasoning", text: "", providerOptions: { anthropic: { signature: "" } } },
+      { type: "reasoning-file", mediaType: "image/png", data: { type: "data", data: "" }, providerOptions: { openai: { itemId: "r", reasoningEncryptedContent: null } } },
+      { type: "reasoning-file", mediaType: "image/png", data: { type: "url", url: "https://example.test/input" } },
+    ] }];
+    const config = { baseURL: `${baseURL}/function-tools`, accessToken: "function-test-token", modelID: "reasoning-files", options: { prompt: goPrompt } };
+    const first = await client("reasoning-files").doGenerate({ prompt });
+    const captured = await (await fetch(`${baseURL}/providerwire-v4/options`)).json();
+    // CallOptions' diagnostic JSON omits zero text; the mapper's required
+    // wire-field presence is asserted by the successful strict admission.
+    assert.equal(captured.prompt[0].content[0].text ?? "", "");
+    assert.deepEqual(captured.prompt[0].content[0].providerOptions, goPrompt[0].content[0].providerOptions);
+    assert.deepEqual(captured.prompt[0].content.slice(1), goPrompt[0].content.slice(1));
+    const goFirst = await captureGoClient(goClientBinary, { ...config, mode: "generate" });
+    assert.equal(goFirst.error, undefined);
+    const capturedContent = goFirst.result.content.map((part: any, index: number) => goFirst.contentMetadata[index] === null ? part : { ...part, providerMetadata: goFirst.contentMetadata[index] });
+    assert.deepEqual(capturedContent, first.content);
+    assert.deepEqual(goFirst.result.usage, first.usage);
+    assert.deepEqual(first.content.map(part => part.type === "reasoning-file" ? part.data : null), [
+      { type: "data", data: "" }, { type: "data", data: "AQID" }, { type: "url", url: "https://example.test/reasoning" },
+    ]);
+    const stream = await client("reasoning-files").doStream({ prompt });
+    const tsParts = await collect(stream.stream);
+    const goStream = await captureGoClient(goClientBinary, { ...config, mode: "stream" });
+    assert.equal(goStream.error, undefined);
+    const capturedParts = goStream.parts.map((part: any, index: number) => goStream.partMetadata[index] === null ? part : { ...part, providerMetadata: goStream.partMetadata[index] });
+    assert.equal(capturedParts[0].type, "stream-start");
+    assert.deepEqual(tsParts[0], { type: "stream-start", warnings: [] });
+    assert.deepEqual(capturedParts.slice(1), tsParts.slice(1));
+    assert.deepEqual(tsParts.filter(part => part.type === "reasoning-file"), first.content);
+  });
+
+  it("accepts paid unary reasoning with default retries and one provider invocation", async () => {
+    const before = await stats();
+    const result = await generateText({ model: reasoningHostModel(), prompt: "think" });
+    assert.equal((await stats()).successCalls - before.successCalls, 1);
+    assert.equal(result.reasoning.length, 1);
+    assert.deepEqual(result.reasoning[0].providerMetadata, { anthropic: { signature: "end-signature" } });
+  });
+
+  it("keeps concurrent reasoning separate, replaces final metadata and replays assembled history", async () => {
+    const result = streamText({ model: model("reasoning"), prompt: "think" });
+    const response = await result.response;
+    assert.equal(await result.text, "answer");
+    const reasoning = (await result.reasoning).filter(part => part.type === "reasoning");
+    assert.deepEqual(reasoning.map(part => part.text), ["first ", "second"]);
+    assert.deepEqual(reasoning.map(part => part.providerMetadata), [
+      { openai: { itemId: "final", reasoningEncryptedContent: "opaque" } },
+      { anthropic: { signature: "end-signature" } },
+    ]);
+    await generateText({ model: reasoningHostModel(), messages: response.messages });
+    const options = await (await fetch(`${baseURL}/providerwire-v4/options`)).json();
+    const parts = options.prompt[0].content.filter((part: any) => part.type === "reasoning");
+    assert.deepEqual(parts.map((part: any) => part.providerOptions), reasoning.map(part => part.providerMetadata));
+    assert.deepEqual(parts.map((part: any) => part.text), ["first ", "second"]);
+    const raw = await model("reasoning").doStream({ prompt: [] });
+    const rawParts = await collect(raw.stream);
+    assert.equal(rawParts.filter(part => part.type === "reasoning-start" && part.id === "1").length, 1);
+    assert.equal(rawParts.filter(part => part.type === "text-start" && part.id === "1").length, 1);
+  });
+});
+
+describe("sources through the authenticated handler", () => {
+  it("preserves native URL/document IDs and display in both clients", async () => {
+    const client = createGateway({apiKey:"test",baseURL:`${baseURL}/function-tools`,headers:{"x-access-token":"function-test-token"}})("sources");
+    const options = {prompt:[]};
+    const expected = [
+      {type:"source",sourceType:"url",id:"backend-secret",url:"https://example.com",title:"URL"},
+      {type:"source",sourceType:"document",id:"backend-secret",mediaType:"text/plain",title:"",providerMetadata:{citation:{startPageNumber:1,endPageNumber:2}}},
+      {type:"source",sourceType:"document",id:"file-native",mediaType:"application/octet-stream",title:"file-private",filename:"file-private",providerMetadata:{citation:{index:0}}},
+    ];
+    assert.deepEqual((await client.doGenerate(options)).content, expected);
+    assert.deepEqual((await collect((await client.doStream(options)).stream)).filter(p=>p.type==="source"),expected);
+    const config={baseURL:`${baseURL}/function-tools`,accessToken:"function-test-token",modelID:"sources",options};
+    const unary=await captureGoClient(goClientBinary,{...config,mode:"generate"});
+    assert.equal(unary.error,undefined);
+    const normalized=unary.result.content.map((p:any)=>({...p,title:p.title??"",text:undefined}));
+    assert.deepEqual(normalized,expected.map(p=>({...p,text:undefined})));
+    const stream=await captureGoClient(goClientBinary,{...config,mode:"stream"});
+    assert.equal(stream.error,undefined);
+    const sources=stream.parts.filter((p:any)=>p.type==="source").map((p:any)=>({...p,title:p.title??""}));
+    assert.deepEqual(sources,expected);
+  });
+});
+
+describe("native response values through the real handler", () => {
+  for (const [name, identity] of Object.entries({
+    "native-values": { id: "native-response", modelId: "native model ☃ /", timestamp: "2026-09-30T12:00:00.123Z" },
+    "native-empty": {}, "native-partial": { id: "native-response" }, "native-absent": undefined,
+  })) {
+    it(`preserves ${name} with independent raw/schema and both-client evidence`, async () => {
+      const options = { prompt: [] };
+      const warnings = [
+        { type: "unsupported", feature: "native model ☃", details: "limit=42" },
+        { type: "compatibility", feature: "" }, { type: "deprecated", setting: "", message: "use native setting" },
+        { type: "other", message: "" }, { type: "other", message: "ordinary token-looking text sk-application" },
+      ];
+      const fetchWire = (streaming: boolean) => fetch(`${baseURL}/providerwire-v4/language-model`, { method: "POST", headers: { "content-type": "application/json", "ai-language-model-specification-version": "4", "ai-language-model-id": name, "ai-language-model-streaming": String(streaming) }, body: JSON.stringify(options) });
+      const raw = await (await fetchWire(false)).json();
+      assert.equal(validateUnarySuccess(raw), true, JSON.stringify(validateUnarySuccess.errors));
+      assert.deepEqual(raw.warnings, warnings); assert.deepEqual(raw.response, identity);
+      assert.deepEqual(raw.content.map((part: any) => part.id), ["backend-secret", "backend-secret", "file-native", "backend-secret", ""]);
+      assert.equal(raw.content[2].filename, "file-private"); assert.equal(raw.content[4].title, "");
+      const ts = await model(name).doGenerate(options);
+      const config = { baseURL: `${baseURL}/providerwire-v4`, accessToken: "runtime-test-key", modelID: name, options };
+      const go = await captureGoClient(goClientBinary, { ...config, mode: "generate" });
+      assert.equal(go.error, undefined);
+      assert.deepEqual(ts.warnings, warnings); assert.deepEqual(go.result.warnings, warnings.map(w => Object.fromEntries(Object.entries(w).filter(([, value]) => value !== ""))));
+      assert.deepEqual(ts.response?.body, raw); assert.deepEqual(go.result.response.body, raw);
+      assert.equal(ts.response?.id, undefined); assert.equal(go.result.response.id, undefined);
+      assert.equal(ts.response?.modelId, undefined); assert.equal(go.result.response.modelId, undefined);
+      assert.equal(ts.response?.timestamp, undefined); assert.equal(go.result.response.timestamp, "0001-01-01T00:00:00Z");
+      const rawFrames = (await (await fetchWire(true)).text()).split("\n\n").filter(Boolean).map(frame => JSON.parse(frame.slice("data: ".length)));
+      for (const frame of rawFrames) assert.equal(validateStreamEvent(frame), true, JSON.stringify(validateStreamEvent.errors));
+      assert.deepEqual(rawFrames[0], { type: "stream-start", warnings });
+      assert.deepEqual(rawFrames.find(p => p.type === "response-metadata"), identity === undefined ? undefined : { type: "response-metadata", ...identity });
+      assert.deepEqual(rawFrames.filter(p => p.type === "source"), raw.content);
+      const tsParts = await collect((await model(name).doStream(options)).stream);
+      assert.deepEqual(tsParts.map(part => part.type === "response-metadata" && part.timestamp ? { ...part, timestamp: part.timestamp.toISOString() } : part), rawFrames);
+      const goStream = await captureGoClient(goClientBinary, { ...config, mode: "stream" });
+      assert.equal(goStream.error, undefined);
+      assert.deepEqual(tsParts[0], { type: "stream-start", warnings });
+      assert.deepEqual(goStream.parts[0].warnings, go.result.warnings);
+      const meta = tsParts.find(p => p.type === "response-metadata");
+      assert.deepEqual(meta, identity === undefined ? undefined : { type: "response-metadata", ...identity, ...("timestamp" in identity ? { timestamp: new Date(identity.timestamp!) } : {}) });
+      const goMeta = goStream.parts.find((p: any) => p.type === "response-metadata");
+      assert.deepEqual(goMeta, identity === undefined ? undefined : { type: "response-metadata", ...identity });
+      const sources = tsParts.filter(p => p.type === "source");
+      assert.deepEqual(sources, raw.content);
+      assert.deepEqual(goStream.parts.filter((p: any) => p.type === "source").map((p: any) => ({ ...p, id: p.id ?? "", title: p.title ?? "" })), sources.map((p: any) => ({ ...p, title: p.title ?? "" })));
+    });
+  }
+});
 
 describe("unary function tools through the authenticated real handler", () => {
   const tools = [{ type: "function" as const, name: "weather", inputSchema: { type: "object" as const }, strict: false }];
@@ -267,6 +428,80 @@ describe("streaming function tools through the authenticated real handler", () =
   });
 });
 
+describe("bounded provider raw usage through the real handler", () => {
+  const native = { input_tokens: 32, cache_read_input_tokens: 18, service_tier: "standard", inference_geo: "us", nested: { tokens: [1, 2] } };
+  for (const { id, raw } of [{ id: "raw-usage", raw: native }, { id: "raw-usage-empty", raw: {} }, { id: "success", raw: undefined }]) {
+    it(`returns ${id} unary raw usage to both clients and validates the HTTP body`, async () => {
+      const ts = await model(id).doGenerate({ prompt: [] });
+      const go = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/providerwire-v4`, accessToken: "runtime-test-key", modelID: id, mode: "generate", options: { prompt: [] } });
+      assert.equal(go.error, undefined);
+      assert.deepEqual(go.result.usage, ts.usage);
+      assert.deepEqual(ts.usage.raw, raw);
+      const http = await fetch(`${baseURL}/providerwire-v4/language-model`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "ai-language-model-specification-version": "4", "ai-language-model-id": id, "ai-language-model-streaming": "false" },
+        body: JSON.stringify({ prompt: [] }),
+      });
+      assert.equal(http.status, 200);
+      const body = await http.json();
+      assert.equal(validateUnarySuccess(body), true, JSON.stringify(validateUnarySuccess.errors));
+      assert.deepEqual(body.usage.raw, raw);
+      assert.deepEqual(Object.keys(body).sort(), id === "success" ? ["content", "finishReason", "response", "usage", "warnings"] : ["content", "finishReason", "usage", "warnings"]);
+    });
+
+    it(`returns ${id} streaming finish raw usage to both clients and validates SSE frames`, async () => {
+      const tsParts = await collect((await model(id).doStream({ prompt: [], includeRawChunks: false })).stream);
+      const go = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/providerwire-v4`, accessToken: "runtime-test-key", modelID: id, mode: "stream", options: { prompt: [] } });
+      assert.equal(go.error, undefined);
+      const tsFinish = tsParts.find(part => part.type === "finish");
+      const goFinish = go.parts.find((part: { type: string }) => part.type === "finish") as { usage: { raw?: unknown } } | undefined;
+      assert.ok(tsFinish?.type === "finish" && goFinish);
+      assert.deepEqual(tsFinish.usage.raw, raw);
+      assert.deepEqual(goFinish.usage, tsFinish.usage);
+      const http = await fetch(`${baseURL}/providerwire-v4/language-model`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "ai-language-model-specification-version": "4", "ai-language-model-id": id, "ai-language-model-streaming": "true" },
+        body: JSON.stringify({ prompt: [] }),
+      });
+      assert.equal(http.status, 200);
+      const frames = (await http.text()).trim().split("\n\n").map(frame => JSON.parse(frame.slice("data: ".length))) as Array<{ usage?: { raw?: unknown } }>;
+      assert.ok(frames.every(frame => validateStreamEvent(frame)));
+      assert.deepEqual(frames.at(-1)?.usage?.raw, raw);
+    });
+  }
+});
+
+describe("unchanged recorded Anthropic usage through the real Gateway streaming handler", () => {
+  for (const name of ["usage-compaction-advisor", "usage-fallback"]) {
+    it(`preserves ${name} per-step usage for both clients`, async () => {
+      const dir = resolve(TEST_DIR, `../../../test/conformance/anthropic/recorded/${name}`);
+      const config = readFileSync(join(dir, "config.yaml"), "utf8");
+      const prompt = config.match(/^prompt: (.+)$/m)?.[1];
+      assert.ok(prompt);
+      const originalPrompt = JSON.parse(prompt) as string;
+      const expected = JSON.parse(readFileSync(join(dir, "expected-usage.json"), "utf8")) as unknown[];
+      const readCount = async () => (await (await fetch(`${baseURL}/recorded-usage/${name}/requests`)).json() as { count: number }).count;
+      const countBefore = await readCount();
+      const result = streamText({ model: createGateway({ apiKey: "runtime-test-key", baseURL: `${baseURL}/recorded-usage` })(name), prompt: originalPrompt, maxRetries: 0 });
+      for await (const part of result.fullStream) if (part.type === "error") throw part.error;
+      assert.deepEqual((await result.steps).map(step => ({
+        inputTokens: {
+          total: step.usage.inputTokens,
+          noCache: step.usage.inputTokenDetails.noCacheTokens,
+          cacheRead: step.usage.inputTokenDetails.cacheReadTokens,
+          cacheWrite: step.usage.inputTokenDetails.cacheWriteTokens,
+        },
+        outputTokens: { total: step.usage.outputTokens },
+        raw: step.usage.raw,
+      })), expected);
+      const go = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/recorded-usage`, accessToken: "runtime-test-key", modelID: name, mode: "stream", options: { prompt: [{ role: "user", content: [{ type: "text", text: originalPrompt }] }] } });
+      assert.equal(go.error, undefined);
+      assert.deepEqual(go.parts.filter((part: { type: string }) => part.type === "finish").map((part: { usage: unknown }) => part.usage), expected);
+      assert.equal(await readCount(), countBefore + 2);
+    });
+  }
+});
+
 describe("real ProviderWire V4 streaming runtime", () => {
   it("consumes normalized text, metadata, warnings, finish, and clean EOF", async () => {
     const result = await model("success").doStream({ prompt: [] });
@@ -283,7 +518,7 @@ describe("real ProviderWire V4 streaming runtime", () => {
     ]);
     assert.deepEqual(parts[0], {
       type: "stream-start",
-      warnings: [{ type: "other", message: "the model reported a warning" }],
+      warnings: [{ type: "other", message: "private warning" }],
     });
     assert.deepEqual(parts.filter((part) => part.type === "text-delta").map((part) => part.delta), [
       "",
@@ -293,7 +528,7 @@ describe("real ProviderWire V4 streaming runtime", () => {
     assert.equal(metadata?.type, "response-metadata");
     if (metadata?.type === "response-metadata") {
       assert.equal(metadata.id, "stream-response-1");
-      assert.equal(metadata.modelId, "success");
+      assert.equal(metadata.modelId, "private-backend");
       assert.equal(metadata.timestamp instanceof Date, true);
     }
   });
@@ -354,8 +589,10 @@ describe("real ProviderWire V4 unary runtime", () => {
       inputTokens: { total: 2, noCache: 1, cacheRead: 1, cacheWrite: 0 },
       outputTokens: { total: 1, text: 1, reasoning: 0 },
     });
-    assert.deepEqual(result.warnings, []);
+    assert.deepEqual(result.warnings, [{ type: "other", message: "server warning" }]);
     assert.deepEqual(result.response?.body, {
+      warnings: [{ type: "other", message: "server warning" }],
+      response: { id: "private-response", modelId: "private-backend-model" },
       content: [{ type: "text", text: "hello from Go" }],
       finishReason: { unified: "stop", raw: "test-stop" },
       usage: {

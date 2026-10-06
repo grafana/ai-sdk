@@ -1,10 +1,12 @@
 package aisdk
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -28,8 +30,12 @@ var ErrNoOutputGenerated = errors.New("aisdk: no output generated")
 type StreamTextResult struct {
 	fullStream chan TextStreamPart
 	done       chan struct{}
-	consumed   atomic.Bool
-	mu         sync.Mutex
+	// ctxDone is the run context's cancellation channel, read by emit so a
+	// cancelled or timed-out run is not held open by a consumer that stopped
+	// reading. run sets it before its first emit.
+	ctxDone  <-chan struct{}
+	consumed atomic.Bool
+	mu       sync.Mutex
 
 	steps        []StepResult
 	totalUsage   provider.Usage
@@ -331,14 +337,14 @@ func translateToChunksWithMetadata(part TextStreamPart, cfg uiMessageStreamConfi
 	case StreamToolInputEnd:
 		return nil // not sent to wire
 	case StreamToolCall:
+		dynamic := p.Dynamic
+		if p.useUIDynamic {
+			dynamic = p.uiDynamic
+		}
 		if p.Invalid {
-			dynamic := p.Dynamic
-			if p.useUIDynamic {
-				dynamic = p.uiDynamic
-			}
 			return []UIMessageChunk{{Type: ChunkToolInputError, ToolCallID: p.ToolCallID, ToolName: p.ToolName, Input: p.Input, ErrorText: errorText(p.Error, cfg), ProviderExecuted: p.ProviderExecuted, Dynamic: dynamic, Title: p.Title, ProviderMetadata: p.ProviderMetadata, ToolMetadata: toolMetadataFromProviderMetadata(p.ProviderMetadata)}}
 		}
-		return []UIMessageChunk{{Type: ChunkToolInputAvailable, ToolCallID: p.ToolCallID, ToolName: p.ToolName, Input: p.Input, ProviderExecuted: p.ProviderExecuted, Dynamic: p.Dynamic, Title: p.Title, ProviderMetadata: p.ProviderMetadata, ToolMetadata: toolMetadataFromProviderMetadata(p.ProviderMetadata)}}
+		return []UIMessageChunk{{Type: ChunkToolInputAvailable, ToolCallID: p.ToolCallID, ToolName: p.ToolName, Input: p.Input, ProviderExecuted: p.ProviderExecuted, Dynamic: dynamic, Title: p.Title, ProviderMetadata: p.ProviderMetadata, ToolMetadata: toolMetadataFromProviderMetadata(p.ProviderMetadata)}}
 	case StreamToolApprovalRequest:
 		return []UIMessageChunk{{Type: ChunkToolApprovalRequest, ApprovalID: p.ApprovalID, ToolCallID: p.ToolCallID, IsAutomatic: p.IsAutomatic, Signature: p.Signature}}
 	case StreamToolApprovalResponse:
@@ -434,6 +440,10 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 	var opCancel context.CancelFunc
 	ctx, opCancel = context.WithCancel(ctx)
 	defer opCancel()
+	// The total, step, first-chunk and chunk timeouts all cancel this context
+	// rather than the caller's, so emit has to watch it to release a run those
+	// timeouts abort.
+	r.ctxDone = ctx.Done()
 
 	r.usedTextIDs = make(map[string]struct{})
 	r.usedReasoningIDs = make(map[string]struct{})
@@ -441,6 +451,21 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 
 	if cfg.onStart != nil {
 		cfg.onStart(OnStartState{})
+	}
+
+	if err := validateToolRoutes(cfg.tools, cfg.toolRoutes); err != nil {
+		r.emitError(err, cfg.onError)
+		return
+	}
+	if err := validateToolExecutors(cfg.tools); err != nil {
+		r.emitError(err, cfg.onError)
+		return
+	}
+
+	toolSearch, err := newToolSearchState(cfg.tools, cfg.toolRoutes)
+	if err != nil {
+		r.emitError(err, cfg.onError)
+		return
 	}
 
 	// Convert messages
@@ -465,7 +490,6 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 	}
 
 	preApprovalMessageCount := len(msgs)
-	var err error
 	msgs, err = r.resolveToolApprovals(ctx, cfg, msgs)
 	if err != nil {
 		r.emitError(err, cfg.onError)
@@ -603,9 +627,18 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 		}
 
 		// Build provider tools (sorted for deterministic order)
-		provTools, toolWarnings := toolSetToProviderTools(cfg.tools)
+		stepTools := toolSearch.prepare(cfg.tools, activeTools, activeToolsSet, stepContext)
+		stepTools = resolveToolDescriptions(stepTools, stepContext, activeTools, activeToolsSet)
+		executionTools, modelTools, callerMessages := prepareToolsForCallers(stepTools, cfg.toolRoutes, activeTools, activeToolsSet)
+		modelTools = resolveToolDescriptions(modelTools, stepContext, activeTools, activeToolsSet)
+		if err := validateToolExecutors(executionTools); err != nil {
+			r.emitError(err, cfg.onError)
+			return
+		}
+		currentMsgs = appendToolCallerMessages(currentMsgs, callerMessages)
+		provTools, toolWarnings := toolSetToProviderTools(modelTools)
 		r.allWarnings = append(r.allWarnings, toolWarnings...)
-		if activeToolsSet {
+		if cfg.toolRoutes == nil && activeToolsSet {
 			provTools = filterProviderTools(provTools, activeTools)
 		}
 		if toolChoice == nil {
@@ -665,11 +698,17 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 			return
 		}
 
-		step, stepCompleted, stepTerminated, stepHasOutput, err := r.processStep(ctx, stepNum, stepModel, streamResult, cfg, stepContext, currentMsgs, opCancel)
+		stepCfg := *cfg
+		stepCfg.tools = executionTools
+		stepCfg.toolChoice = toolChoice
+		if toolSearch != nil {
+			stepCfg.uiTools = cfg.tools
+		}
+		step, outcome, err := r.processStep(ctx, stepNum, stepModel, streamResult, &stepCfg, stepContext, currentMsgs, opCancel)
 		if stepTimer != nil {
 			stepTimer.Stop()
 		}
-		if err != nil {
+		if err != nil && ctx.Err() == nil {
 			r.emitError(err, cfg.onError)
 			return
 		}
@@ -678,7 +717,7 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 		// the provider stream. Fire onAbort, and only fire onFinish if
 		// earlier steps completed (matching upstream recordedSteps semantics).
 		if ctx.Err() != nil {
-			if stepCompleted {
+			if outcome.completed {
 				r.mu.Lock()
 				r.steps = append(r.steps, step)
 				r.lastStep = &r.steps[len(r.steps)-1]
@@ -703,7 +742,7 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 			return
 		}
 
-		if !stepTerminated && !stepHasOutput {
+		if !outcome.terminated && !outcome.hasOutput {
 			r.emitStreamError(fmt.Errorf("%w: model stream ended without a finish chunk", ErrNoOutputGenerated), cfg.onError)
 			return
 		}
@@ -747,9 +786,19 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 			}
 		}
 
-		if !hasClientToolCalls || stopped || hasUnresolvedClientToolCalls {
-			if cfg.output != nil && (cfg.parseOutputOnNonStop || step.FinishReason.Unified == provider.FinishReasonStop) {
+		if outcome.toolChoiceViolated || !hasClientToolCalls || stopped || hasUnresolvedClientToolCalls {
+			if cfg.output != nil && (cfg.parseOutputOnAllFinishes || step.FinishReason.Unified == provider.FinishReasonStop ||
+				(step.FinishReason.Unified != provider.FinishReasonToolCalls && step.Text != "")) {
 				outputVal, outputErr := cfg.output.ParseComplete(step.Text)
+				if outputErr != nil && cfg.repairText != nil && errors.Is(outputErr, ErrNoObjectGenerated) && errors.Is(outputErr, ErrInvalidOutputText) {
+					repaired, accepted, repairErr := cfg.repairText(step.Text, outputErr)
+					switch {
+					case repairErr != nil:
+						outputErr = repairErr
+					case accepted:
+						outputVal, outputErr = cfg.output.ParseComplete(repaired)
+					}
+				}
 				r.mu.Lock()
 				r.outputValue = outputVal
 				r.outputErr = outputErr
@@ -809,6 +858,13 @@ func remapStreamPartID(part provider.StreamPart, active map[string]string, used 
 	return id
 }
 
+type stepStreamOutcome struct {
+	completed          bool
+	terminated         bool
+	hasOutput          bool
+	toolChoiceViolated bool
+}
+
 func (r *StreamTextResult) processStep(
 	ctx context.Context,
 	stepNum int,
@@ -818,7 +874,7 @@ func (r *StreamTextResult) processStep(
 	stepContext any,
 	currentMsgs []provider.Message,
 	opCancel context.CancelFunc,
-) (StepResult, bool, bool, bool, error) {
+) (StepResult, stepStreamOutcome, error) {
 	step := StepResult{
 		StepNumber: stepNum,
 		StepType:   StepTypeInitial,
@@ -842,6 +898,7 @@ func (r *StreamTextResult) processStep(
 	var completed bool
 	var terminated bool
 	var hasOutput bool
+	var providerFailed bool
 	toolNameByID := make(map[string]string)
 	toolTitleByID := make(map[string]string)
 	responseTextIndex := make(map[string]int)
@@ -1048,7 +1105,7 @@ loop:
 			}
 			tsp := StreamToolInputStart{
 				ID: part.ID, ToolName: part.ToolName,
-				ProviderExecuted: part.ProviderExecuted, Dynamic: isDynamic(part.ToolName, part.Dynamic, cfg.tools),
+				ProviderExecuted: part.ProviderExecuted, Dynamic: toolUIDynamic(part.ToolName, part.Dynamic, cfg),
 				Title: part.Title, ProviderMetadata: part.ProviderMetadata,
 			}
 			r.emit(tsp)
@@ -1094,7 +1151,7 @@ loop:
 
 		case provider.PartToolResult:
 			if err := r.handleToolResult(part, &step, cfg); err != nil {
-				return step, false, false, hasOutput, err
+				return step, stepStreamOutcome{hasOutput: hasOutput}, err
 			}
 			preliminary := part.Preliminary != nil && *part.Preliminary
 			if !preliminary && len(step.ToolResults) > 0 {
@@ -1139,7 +1196,10 @@ loop:
 			}
 
 		case provider.PartFile:
-			gf := generatedFileFromStreamData(part.Data, part.MediaType)
+			gf, err := resolveGeneratedFile(ctx, part.Data, part.MediaType)
+			if err != nil {
+				return step, stepStreamOutcome{hasOutput: hasOutput}, err
+			}
 			step.Files = append(step.Files, gf)
 			step.responseContent = append(step.responseContent, provider.ContentPart{
 				Type:            provider.ContentPartTypeFile,
@@ -1152,7 +1212,10 @@ loop:
 			r.callOnChunk(cfg, tsp)
 
 		case provider.PartReasoningFile:
-			gf := generatedFileFromStreamData(part.Data, part.MediaType)
+			gf, err := resolveGeneratedFile(ctx, part.Data, part.MediaType)
+			if err != nil {
+				return step, stepStreamOutcome{hasOutput: hasOutput}, err
+			}
 			reasoningBlocks = append(reasoningBlocks, ReasoningFileOutput{File: gf, ProviderMetadata: part.ProviderMetadata})
 			step.responseContent = append(step.responseContent, provider.ContentPart{
 				Type:            provider.ContentPartTypeReasoningFile,
@@ -1214,7 +1277,7 @@ loop:
 			}
 			if req.Signature == "" {
 				if err := maybeSignToolApproval(cfg.toolApprovalSecret, &req); err != nil {
-					return step, false, false, hasOutput, err
+					return step, stepStreamOutcome{hasOutput: hasOutput}, err
 				}
 			}
 			step.ToolApprovalRequests = append(step.ToolApprovalRequests, req)
@@ -1243,6 +1306,7 @@ loop:
 
 		case provider.PartError:
 			terminated = true
+			providerFailed = true
 			// Synthesize a non-retryable APICallError when a producer emits
 			// a PartError without a populated APICallError. Wire boundaries
 			// MUST always carry an *APICallError so the orchestration layer
@@ -1309,10 +1373,25 @@ loop:
 			ProviderMetadata: step.ProviderMetadata,
 		})
 	}
-	if completed || partialCompleted {
-		if err := r.executeTools(ctx, &step, cfg, stepContext, currentMsgs); err != nil {
-			return step, false, false, hasOutput, err
+	var choiceViolation error
+	if completed && !providerFailed && ctx.Err() == nil {
+		choiceViolation = validateToolChoice(*cfg.toolChoice, step.ToolCalls)
+		if choiceViolation != nil {
+			step.FinishReason.Unified = provider.FinishReasonError
+			r.emitStreamError(choiceViolation, nil)
+			r.callOnChunk(cfg, StreamError{Error: choiceViolation})
+			if cfg.onError != nil {
+				cfg.onError(choiceViolation)
+			}
 		}
+	}
+	if completed || partialCompleted {
+		if choiceViolation == nil {
+			if err := r.executeTools(ctx, &step, cfg, stepContext, currentMsgs); err != nil {
+				return step, stepStreamOutcome{hasOutput: hasOutput}, err
+			}
+		}
+		sortToolResultsByCall(&step)
 		step.Content = buildContent(step)
 		// Populate Response.Messages with the next-call message tail
 		// (mirrors upstream result.response.messages). The same ordering
@@ -1327,7 +1406,33 @@ loop:
 		})
 	}
 
-	return step, completed, terminated, hasOutput, nil
+	return step, stepStreamOutcome{
+		completed: completed, terminated: terminated, hasOutput: hasOutput,
+		toolChoiceViolated: choiceViolation != nil,
+	}, nil
+}
+
+func validateToolChoice(choice provider.ToolChoice, calls []ToolCall) error {
+	switch choice.Type {
+	case provider.ToolChoiceRequired:
+		if len(calls) == 0 {
+			return errors.New("aisdk: tool choice required but model response did not contain a tool call")
+		}
+	case provider.ToolChoiceTool:
+		seen := make(map[string]bool, len(calls))
+		for i := len(calls) - 1; i >= 0; i-- {
+			call := calls[i]
+			if seen[call.ToolCallID] {
+				continue
+			}
+			seen[call.ToolCallID] = true
+			if call.ToolName == choice.ToolName {
+				return nil
+			}
+		}
+		return fmt.Errorf("aisdk: tool choice requires %q but model response did not contain a call to that tool", choice.ToolName)
+	}
+	return nil
 }
 
 func isSemanticOutputStreamPart(part provider.StreamPart) bool {
@@ -1412,6 +1517,7 @@ func (r *StreamTextResult) handleToolCall(
 		ToolCallID: part.ToolCallID, ToolName: part.ToolName,
 		Input: parsedInput, ProviderExecuted: part.ProviderExecuted,
 		Dynamic: dynamic, Title: title, ProviderMetadata: part.ProviderMetadata,
+		uiDynamic: toolUIDynamic(part.ToolName, part.Dynamic, cfg), useUIDynamic: cfg.uiTools != nil,
 	}
 	r.emit(tsp)
 	r.callOnChunk(cfg, tsp)
@@ -1488,6 +1594,35 @@ func (r *StreamTextResult) handleToolResult(
 	return nil
 }
 
+// sortToolResultsByCall puts step.ToolResults in step.ToolCalls order. Results
+// are appended as each kind is handled: provider-executed and rejected calls
+// while the model stream is read, denied approvals before any tool starts, and
+// executed calls after they all finish, so a step mixing them otherwise lists
+// results in handling order. Upstream keeps arrival order here; Go keeps call
+// order, as recorded in test/conformance/upstream.yaml. A result for a call
+// outside this step keeps its relative position ahead of this step's results,
+// and results for the same call keep their order.
+func sortToolResultsByCall(step *StepResult) {
+	if len(step.ToolResults) < 2 {
+		return
+	}
+	position := make(map[string]int, len(step.ToolCalls))
+	for i, tc := range step.ToolCalls {
+		if _, seen := position[tc.ToolCallID]; !seen {
+			position[tc.ToolCallID] = i
+		}
+	}
+	rank := func(tr ToolResult) int {
+		if i, ok := position[tr.ToolCallID]; ok {
+			return i
+		}
+		return -1
+	}
+	slices.SortStableFunc(step.ToolResults, func(a, b ToolResult) int {
+		return cmp.Compare(rank(a), rank(b))
+	})
+}
+
 // toolExecOutcome holds the result of a single tool execution, including
 // the stream event to emit when that tool completes.
 type toolExecOutcome struct {
@@ -1509,7 +1644,7 @@ func (r *StreamTextResult) rejectToolCall(
 		title = toolTitleByID[part.ToolCallID]
 	}
 	dynamicTrue := true
-	uiDynamic := isDynamic(part.ToolName, &dynamicTrue, cfg.tools)
+	uiDynamic := toolUIDynamic(part.ToolName, &dynamicTrue, cfg)
 
 	tc := ToolCall{
 		ToolCallID:       part.ToolCallID,
@@ -1660,7 +1795,7 @@ func (r *StreamTextResult) executeTools(
 		default:
 			return fmt.Errorf("aisdk: unsupported tool approval status %q", decision.Status)
 		}
-		if tc.ProviderExecuted || tool.Execute == nil {
+		if tc.ProviderExecuted || !isExecutableTool(tool) {
 			continue
 		}
 		executable = append(executable, executableTool{
@@ -1676,9 +1811,9 @@ func (r *StreamTextResult) executeTools(
 	}
 
 	outcomes := make([]toolExecOutcome, len(executable))
-	r.runToolsEmitOnCompletion(cfg, outcomes, func(i int) {
+	r.runToolsEmitOnCompletion(ctx, cfg, outcomes, func(i int, emit func(TextStreamPart) error) {
 		et := executable[i]
-		r.executeSingleTool(ctx, step, cfg, et.tc, et.tool, stepContext, currentMsgs, outcomes, et.index)
+		r.executeSingleTool(ctx, step, cfg, et.tc, et.tool, stepContext, currentMsgs, outcomes, et.index, emit)
 	})
 
 	// Events went out as each tool completed; results stay in call order.
@@ -1688,21 +1823,40 @@ func (r *StreamTextResult) executeTools(
 	return nil
 }
 
-// runToolsEmitOnCompletion runs exec for every outcome index in its own
-// goroutine and emits each outcome's event as that tool completes. Only the
-// calling goroutine emits, so OnChunk is never invoked concurrently.
-func (r *StreamTextResult) runToolsEmitOnCompletion(cfg *streamConfig, outcomes []toolExecOutcome, exec func(i int)) {
-	done := make(chan int, len(outcomes))
+// runToolsEmitOnCompletion serializes tool events and OnChunk calls while
+// tools execute concurrently.
+func (r *StreamTextResult) runToolsEmitOnCompletion(ctx context.Context, cfg *streamConfig, outcomes []toolExecOutcome, exec func(int, func(TextStreamPart) error)) {
+	type toolEvent struct {
+		index int
+		part  TextStreamPart
+		final bool
+	}
+	events := make(chan toolEvent, len(outcomes))
 	for i := range outcomes {
 		go func(i int) {
-			exec(i)
-			done <- i
+			exec(i, func(part TextStreamPart) error {
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+				select {
+				case events <- toolEvent{part: part}:
+					return nil
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			})
+			events <- toolEvent{index: i, final: true}
 		}(i)
 	}
-	for range outcomes {
-		if ev := outcomes[<-done].event; ev != nil {
-			r.emit(ev)
-			r.callOnChunk(cfg, ev)
+	for completed := 0; completed < len(outcomes); {
+		event := <-events
+		if event.final {
+			completed++
+			event.part = outcomes[event.index].event
+		}
+		if event.part != nil {
+			r.emit(event.part)
+			r.callOnChunk(cfg, event.part)
 		}
 	}
 }
@@ -1757,6 +1911,7 @@ func (r *StreamTextResult) executeSingleTool(
 	currentMsgs []provider.Message,
 	outcomes []toolExecOutcome,
 	index int,
+	emit func(TextStreamPart) error,
 ) {
 	if cfg.onToolCallStart != nil {
 		cfg.onToolCallStart(OnToolCallStartState{
@@ -1767,11 +1922,28 @@ func (r *StreamTextResult) executeSingleTool(
 	}
 
 	start := time.Now()
-	output, err := tool.Execute(ctx, tc.Input, ToolExecutionOptions{
-		ToolCallID: tc.ToolCallID,
-		Messages:   currentMsgs,
-		Context:    stepContext,
-	})
+	opts := ToolExecutionOptions{ToolCallID: tc.ToolCallID, Messages: currentMsgs, Context: stepContext}
+	var output json.RawMessage
+	var err error
+	if tool.ExecuteStream != nil {
+		err = tool.ExecuteStream(ctx, tc.Input, opts, func(value json.RawMessage) error {
+			preliminary := append(json.RawMessage(nil), value...)
+			if emitErr := emit(StreamToolResult{
+				ToolCallID: tc.ToolCallID, ToolName: tc.ToolName, Input: tc.Input,
+				Output: preliminary, Preliminary: true, Dynamic: tc.Dynamic,
+				Title: tc.Title, ProviderMetadata: tc.ProviderMetadata,
+			}); emitErr != nil {
+				return emitErr
+			}
+			output = preliminary
+			return nil
+		})
+		if err == nil {
+			err = ctx.Err()
+		}
+	} else {
+		output, err = tool.Execute(ctx, tc.Input, opts)
+	}
 	durationMs := time.Since(start).Milliseconds()
 
 	if err != nil {
@@ -1868,7 +2040,8 @@ func (r *StreamTextResult) executeSingleTool(
 		},
 		event: StreamToolResult{
 			ToolCallID: tc.ToolCallID, ToolName: tc.ToolName,
-			Input: tc.Input, Output: output, ProviderMetadata: tc.ProviderMetadata,
+			Input: tc.Input, Output: output, Dynamic: tc.Dynamic,
+			Title: tc.Title, ProviderMetadata: tc.ProviderMetadata,
 		},
 	}
 
@@ -1884,8 +2057,26 @@ func (r *StreamTextResult) executeSingleTool(
 	}
 }
 
+// emit publishes one part to FullStream. A consumer that stops reading leaves
+// the buffer full, which parked the run goroutine for good: Wait and every
+// blocking accessor then waited on a goroutine that could no longer finish.
+// Once the run's context is cancelled, by the caller or by a configured
+// timeout, the part is dropped instead, which is the escape hatch the streaming
+// guide documents.
+//
+// The non-blocking attempt comes first so a part that still fits is always
+// delivered. Without it, select would pick at random between a ready send and a
+// cancelled context, and a live consumer would lose abort and finish parts.
 func (r *StreamTextResult) emit(part TextStreamPart) {
-	r.fullStream <- part
+	select {
+	case r.fullStream <- part:
+		return
+	default:
+	}
+	select {
+	case r.fullStream <- part:
+	case <-r.ctxDone:
+	}
 }
 
 func (r *StreamTextResult) abort(ctx context.Context, cfg *streamConfig) {
@@ -2006,7 +2197,7 @@ func (r *StreamTextResult) resolveToolApprovals(ctx context.Context, cfg *stream
 			continue
 		}
 		tool, ok := cfg.tools[approval.toolCall.ToolName]
-		if !ok || tool.Execute == nil {
+		if !ok || !isExecutableTool(tool) {
 			return nil, &ToolNotExecutableError{ToolName: approval.toolCall.ToolName}
 		}
 		tc := ToolCall{
@@ -2031,9 +2222,9 @@ func (r *StreamTextResult) resolveToolApprovals(ctx context.Context, cfg *stream
 	// model step (which uses StepNumber 1).
 	outcomes := make([]toolExecOutcome, len(executable))
 	resumeStep := &StepResult{StepNumber: 0, Model: StepModel{}}
-	r.runToolsEmitOnCompletion(cfg, outcomes, func(i int) {
+	r.runToolsEmitOnCompletion(ctx, cfg, outcomes, func(i int, emit func(TextStreamPart) error) {
 		et := executable[i]
-		r.executeSingleTool(ctx, resumeStep, cfg, et.tc, et.tool, nil, msgs, outcomes, et.index)
+		r.executeSingleTool(ctx, resumeStep, cfg, et.tc, et.tool, nil, msgs, outcomes, et.index, emit)
 	})
 
 	approvedToolParts := make([]provider.ContentPart, 0, len(executable))
@@ -2081,7 +2272,7 @@ func validateApprovedToolApprovals(cfg *streamConfig, msgs []provider.Message, a
 		}
 
 		tool, ok := cfg.tools[approval.toolCall.ToolName]
-		if ok && tool.Execute != nil {
+		if ok && isExecutableTool(tool) {
 			if tool.InputSchema.Compiled() != nil && isJSONObject(approval.toolCall.Input) {
 				if err := tool.InputSchema.Validate(approval.toolCall.Input); err != nil {
 					return nil, nil, fmt.Errorf("invalid input for tool %s: %w", approval.toolCall.ToolName, err)
@@ -2273,7 +2464,19 @@ func sanitizePromptForProvider(msgs []provider.Message) ([]provider.Message, err
 			}
 			filtered.Content = append(filtered.Content, part)
 		}
-		if msg.Role != provider.RoleTool || len(filtered.Content) > 0 {
+		if msg.Role == provider.RoleTool && len(result) > 0 && result[len(result)-1].Role == provider.RoleTool {
+			previous := &result[len(result)-1]
+			if len(previous.Content) > 0 && previous.ProviderOptions != nil {
+				last := &previous.Content[len(previous.Content)-1]
+				merged, err := mergeStepProviderOptions(previous.ProviderOptions, last.ProviderOptions)
+				if err != nil {
+					return nil, fmt.Errorf("aisdk: merging tool message provider options: %w", err)
+				}
+				last.ProviderOptions = merged
+			}
+			previous.Content = append(previous.Content, filtered.Content...)
+			previous.ProviderOptions = filtered.ProviderOptions
+		} else {
 			result = append(result, filtered)
 		}
 	}
@@ -2337,7 +2540,9 @@ func sanitizePromptForProvider(msgs []provider.Message) ([]provider.Message, err
 	if err := missingResultsError(); err != nil {
 		return nil, err
 	}
-	return result, nil
+	return slices.DeleteFunc(result, func(message provider.Message) bool {
+		return message.Role == provider.RoleTool && len(message.Content) == 0
+	}), nil
 }
 
 func (r *StreamTextResult) callOnChunk(cfg *streamConfig, tsp TextStreamPart) {
@@ -2861,6 +3066,13 @@ func isJSONObject(data json.RawMessage) bool {
 		}
 	}
 	return false
+}
+
+func toolUIDynamic(toolName string, providerDynamic *bool, cfg *streamConfig) *bool {
+	if cfg.uiTools != nil {
+		return isDynamic(toolName, providerDynamic, cfg.uiTools)
+	}
+	return isDynamic(toolName, providerDynamic, cfg.tools)
 }
 
 func isDynamic(toolName string, providerDynamic *bool, tools map[string]Tool) *bool {

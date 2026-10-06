@@ -29,6 +29,7 @@ for AI coding agents but is the most complete reference for humans too.
 - [Testing](#testing)
 - [Documentation: where things go](#documentation-where-things-go)
 - [Submitting a pull request](#submitting-a-pull-request)
+- [Releases and independent modules](#releases-and-independent-modules)
 - [Dependency management](#dependency-management)
 - [Reporting security issues](#reporting-security-issues)
 - [License](#license)
@@ -133,21 +134,6 @@ mise run build          # build all modules, including examples
 mise run test           # all Go tests across all modules
 mise run test-short     # skip integration/E2E tests
 mise run check          # fmt + vet + lint + docs + tests
-mise run verify-ai-gateway-boundary
-                        # structural one-way Gateway dependency boundary
-mise run verify-sdk-gateway-isolation
-                        # SDK and Grafana client without Gateway source
-mise run test-module-policy
-                        # deterministic Bash fixtures for module checks
-mise run verify-merged-pins
-                        # published internal pins descend from canonical main
-mise run verify-module-resolution
-                        # all published modules, fresh public-proxy cache, GOWORK=off
-MODULE=providers/openai mise run verify-published-module
-                        # same standalone checks for one published module
-mise run test-ai-gateway-source
-mise run test-ai-gateway-source-integration
-                        # explicitly selected candidate-source Gateway checks
 ```
 
 To run a single test, invoke `go test` in the right module directory:
@@ -265,8 +251,7 @@ Process each registered parity work package independently afterward, with its ow
 behavioral outcome, design and regression proof. Update or close its issue when
 it is delivered, and update the coverage map only when its stable facts change.
 Packages and PRs need not map one-to-one, but every PR must pass
-required checks independently. Account for published Go module dependencies;
-workspace success can hide an older consumer dependency. A failing upgrade check
+required checks independently against candidate source. A failing upgrade check
 or an incompatibility that prevents a supported integration from working cannot
 be made acceptable merely by registering a follow-up.
 
@@ -465,9 +450,11 @@ mise run build      # verify modules and examples compile
 Checklist:
 
 1. **Commits are signed.** See [Before you contribute](#before-you-contribute).
-2. **Title uses a conventional commit prefix** (`feat:`, `fix:`, `docs:`,
-   `refactor:`, `test:`, `chore:`, `ci:`, `build:`, `perf:`, `style:`). Write it
-   for a reader with no other context.
+2. **Title is a Conventional Commit** (`feat:`, `fix:`, `docs:`, `refactor:`,
+   `test:`, `chore:`, `ci:`, `build:`, `perf:`, `style:`). Pull requests are
+   squash-merged with the title as the subject, so it becomes the released
+   changelog entry. Write it for a reader with no other context. See
+   [Releases and independent modules](#releases-and-independent-modules).
 3. **Description** explains what changed, why, and how you validated it. For
    parity-sensitive work, name the upstream package and version you compared
    against.
@@ -478,11 +465,50 @@ Checklist:
    evidence, support boundaries or accepted deviations change.
 6. **OpenSpec change is archived** if the pull request touches `openspec/`.
 7. **Docs** are updated for any user-visible change, in the right surface.
-8. **Branch is synced** with `main`.
+8. **Release intent** is carried by the title's type, and is verifiably correct
+   for the modules the pull request touches.
+9. **Branch is synced** with `main`.
 
 Reviewers are assigned automatically from
 [`.github/CODEOWNERS`](.github/CODEOWNERS). Community pull requests need a
 maintainer to trigger CI.
+
+## Releases and independent modules
+
+Core, providers, and middleware are released independently as Go libraries.
+Gateway is an independently versioned Docker application with workspace source.
+After #245 activates release automation, versions, changelogs, tags, and GitHub
+Releases will be produced by
+[release-please](https://github.com/googleapis/release-please) from the
+Conventional Commits that land on `main`. Pull requests are squash-merged with
+their title as the subject, so a pull request records its release intent by
+using the right type in its title:
+
+- `fix:` and `perf:` produce a patch release.
+- `feat:` produces a minor release.
+- `feat!:` or a `BREAKING CHANGE:` footer produces a major release.
+- `chore:`, `ci:`, `docs:`, `refactor:`, `test:`, and `build:` produce no
+  release.
+
+A library change is attributed to its module by the files it touches. #245 will
+also attribute relevant SDK, provider, and middleware changes to the
+workspace-built Gateway image release. While the modules are in the `alpha`
+channel, each release advances the prerelease counter
+(`v0.1.0-alpha.1` to `v0.1.0-alpha.2`).
+
+Validate the configuration after adding a module or changing tag settings:
+
+```bash
+mise run release-check      # configuration and readiness policy tests
+mise run release-preview    # dry-run of the next release pull request
+```
+
+Release automation is inactive until #245 readiness and Gateway attribution/image
+gates are implemented and reviewed. No release PRs or tags are created by #21 alone.
+After activation, each library gets its own release pull request. Maintainers merge the root one
+first, let Renovate carry the new core version into the nested `go.mod` files,
+then merge the rest. The complete workflow is in the
+[release runbook](release/README.md).
 
 ## Dependency management
 
@@ -491,27 +517,29 @@ pnpm workspace for TypeScript-side harnesses. The workspace includes the Gateway
 contract tests under `ai-gateway/`; it does not change their AGPL license or the
 SDK's Go module dependency graph.
 
-`ai-gateway/` is intentionally absent from the root `go.work`. The separate
-`go.gateway.work` selects local SDK, provider, and middleware source for Gateway
-source checks and image builds. Standalone Go-module validation still uses
-declared versions with `GOWORK=off`. Gateway code may import explicitly pinned
-SDK modules, but no module outside `ai-gateway/` may import, require, or replace
-`github.com/grafana/ai-sdk/ai-gateway`. The structural check
-rejects reverse source and module references; standalone validation builds and tests
-published modules with `GOWORK=off`, and a separate check builds the candidate SDK
-and Grafana client with Gateway source absent. These checks share `scripts/module-policy.sh`.
-None replaces license review for copied code or third-party dependencies.
+### What to validate
 
-Every real internal pin in a published module must refer to a commit already
-merged into canonical `grafana/ai-sdk` `main`. Merged pseudo-versions are valid;
-local-only example/test replacements are not published pins. A green workspace
-integration test proves candidate-source behavior, not standalone consumability.
-All-module standalone validation is available on demand, not a source-PR gate.
-Gateway is released as an image built from same-revision workspace source,
-not as a standalone Go module. Image success does not authorize SDK, provider,
-or middleware Go-module releases; validate those with `GOWORK=off` before
-publication (#245/#21). Do not use a workspace or an unmerged pin to make a
-standalone module check pass.
+- **Source PRs:** CI builds and tests the SDK, providers, middleware, Grafana
+  client, and Gateway from the proposed source. It also verifies module-pin
+  ancestry and dependency and license boundaries. See
+  [CI](.github/workflows/ci.yml) for the required checks.
+- **Go module releases:** Before tagging an SDK, provider, or middleware version
+  for external Go consumers, validate that module against its declared `go.mod`
+  dependencies with `MODULE=providers/anthropic mise run verify-published-module`
+  (substitute the module being released). This check remains manual pending
+  release automation (#245/#21). For a broader diagnostic,
+  `mise run verify-module-resolution` checks all published modules.
+- **Gateway images:** Gateway uses the separate `go.gateway.work` to build from
+  same-revision local source. Push-only image validation checks the Gateway
+  artifact at the checkout revision before publication or deployment. Gateway
+  is not published as a standalone Go module.
+
+The root `go.work` excludes `ai-gateway/`. Gateway may depend on SDK modules,
+but SDK modules must not import, require, or replace Gateway. Real published
+module pins must refer to commits merged on canonical `grafana/ai-sdk` `main`;
+merged pseudo-versions are valid, while local example/test replacements are not
+published pins. `scripts/module-policy.sh` implements the module checks. These
+checks do not replace license review for copied code or third-party dependencies.
 
 ```bash
 mise run tidy        # go mod tidy across all modules

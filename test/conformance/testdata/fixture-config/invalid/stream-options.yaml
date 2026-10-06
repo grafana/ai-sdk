@@ -1,0 +1,4 @@
+# unknown: sendReasonings
+model: test
+streamOptions:
+  sendReasonings: false

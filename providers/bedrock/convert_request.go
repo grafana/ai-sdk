@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"strings"
 
 	"github.com/grafana/ai-sdk/internal/anthropicschema"
 	"github.com/grafana/ai-sdk/provider"
@@ -80,7 +81,7 @@ func buildRequestWithFamily(modelID string, family ModelFamily, opts provider.Ca
 	// Whether extended thinking is enabled (Anthropic only). Used both for the
 	// native-structured-output gate and inference-config adjustments below.
 	isThinkingEnabled := bo.ReasoningConfig != nil &&
-		(bo.ReasoningConfig.Type == "enabled" || bo.ReasoningConfig.Type == "adaptive")
+		(bo.ReasoningConfig.Type == "enabled" || bo.ReasoningConfig.Type == "adaptive" || bo.ReasoningConfig.Type == reasoningTypeBetweenTools)
 
 	// ResponseFormat handling. Some Anthropic models reject native
 	// output_config.format even when their model family otherwise supports it.
@@ -96,7 +97,10 @@ func buildRequestWithFamily(modelID string, family ModelFamily, opts provider.Ca
 			})
 		} else if isAnthropic && (mode == StructuredOutputModeOutputFormat || (mode == StructuredOutputModeAuto && !rejectsNativeStructuredOutput(modelID) && (supportsStructuredOutputCapability(modelID) || isThinkingEnabled || family == ModelFamilyAnthropic))) {
 			useNativeStructuredOutput = true
-		} else if mode != StructuredOutputModeJSONTool && isAnthropic && usesJSONInstructionForStructuredOutput(modelID) && len(opts.Tools) > 0 {
+		} else if isAnthropic && (rejectsForcedToolUse(modelID) || (mode != StructuredOutputModeJSONTool && usesJSONInstructionForStructuredOutput(modelID) && len(opts.Tools) > 0)) {
+			// The JSON response tool needs forced tool use, so models that
+			// reject it always get the instruction (upstream
+			// amazon-bedrock-chat-language-model.ts, 5.0.99).
 			converted.System = injectJSONInstruction(converted.System, opts.ResponseFormat.Schema)
 			meta.usesJSONInstruction = true
 		} else {
@@ -126,7 +130,7 @@ func buildRequestWithFamily(modelID string, family ModelFamily, opts provider.Ca
 	warnings = append(warnings, pt.warnings...)
 
 	// Inference config (scalar sampling params).
-	inf, infWarnings := buildInferenceConfig(opts, isAnthropic, bo)
+	inf, infWarnings := buildInferenceConfig(modelID, opts, isAnthropic, bo)
 	warnings = append(warnings, infWarnings...)
 
 	// additionalModelRequestFields construction.
@@ -243,24 +247,42 @@ func mergeAdditionalModelRequestField(dst map[string]any, key string, value any)
 // buildInferenceConfig maps scalar CallOptions params to Converse
 // inferenceConfig, with clamping and warnings for out-of-range values and
 // unsupported params (frequency/presence penalties, seed).
-func buildInferenceConfig(opts provider.CallOptions, isAnthropic bool, bo BedrockOptions) (*inferenceConfig, []provider.Warning) {
+func buildInferenceConfig(modelID string, opts provider.CallOptions, isAnthropic bool, bo BedrockOptions) (*inferenceConfig, []provider.Warning) {
 	var warnings []provider.Warning
 	inf := &inferenceConfig{}
+	rejectsSampling := isAnthropic && rejectsSamplingParameters(modelID)
+	if rejectsSampling {
+		for _, feature := range []struct {
+			name    string
+			present bool
+		}{
+			{"temperature", opts.Temperature != nil},
+			{"topK", opts.TopK != nil},
+			{"topP", opts.TopP != nil},
+		} {
+			if feature.present {
+				warnings = append(warnings, provider.Warning{
+					Type: provider.WarnUnsupported, Feature: feature.name,
+					Details: fmt.Sprintf("%s is not supported by %s and will be ignored", feature.name, modelID),
+				})
+			}
+		}
+	}
 
 	if opts.MaxOutputTokens != nil {
 		v := *opts.MaxOutputTokens
 		inf.MaxTokens = &v
 	}
-	if opts.Temperature != nil {
+	if opts.Temperature != nil && !rejectsSampling {
 		t := *opts.Temperature
-		if t > 1 {
+		if t > 1 && (!isOpenAIModel(modelID) || isOpenAIGptOSSModel(modelID)) {
 			warnings = append(warnings, provider.Warning{
 				Type:    provider.WarnUnsupported,
 				Feature: "temperature",
 				Details: fmt.Sprintf("%v exceeds bedrock maximum of 1.0. clamped to 1.0", t),
 			})
 			t = 1
-		} else if t < 0 {
+		} else if t < 0 && (!isOpenAIModel(modelID) || isOpenAIGptOSSModel(modelID)) {
 			warnings = append(warnings, provider.Warning{
 				Type:    provider.WarnUnsupported,
 				Feature: "temperature",
@@ -270,11 +292,11 @@ func buildInferenceConfig(opts provider.CallOptions, isAnthropic bool, bo Bedroc
 		}
 		inf.Temperature = &t
 	}
-	if opts.TopP != nil {
+	if opts.TopP != nil && !rejectsSampling {
 		v := *opts.TopP
 		inf.TopP = &v
 	}
-	if opts.TopK != nil {
+	if opts.TopK != nil && !rejectsSampling {
 		v := *opts.TopK
 		inf.TopK = &v
 	}
@@ -294,7 +316,7 @@ func buildInferenceConfig(opts provider.CallOptions, isAnthropic bool, bo Bedroc
 
 	// When thinking is enabled (Anthropic only), drop temperature/topP/topK
 	// with warnings.
-	if bo.ReasoningConfig != nil && (bo.ReasoningConfig.Type == "enabled" || bo.ReasoningConfig.Type == "adaptive") && isAnthropic {
+	if bo.ReasoningConfig != nil && (bo.ReasoningConfig.Type == "enabled" || bo.ReasoningConfig.Type == "adaptive" || bo.ReasoningConfig.Type == reasoningTypeBetweenTools) && isAnthropic {
 		if inf.Temperature != nil {
 			warnings = append(warnings, provider.Warning{
 				Type: provider.WarnUnsupported, Feature: "temperature",
@@ -315,6 +337,26 @@ func buildInferenceConfig(opts provider.CallOptions, isAnthropic bool, bo Bedroc
 				Details: "topK is not supported when thinking is enabled",
 			})
 			inf.TopK = nil
+		}
+	}
+
+	if isOpenAIModel(modelID) {
+		for _, feature := range []struct {
+			name    string
+			present bool
+			clear   func()
+		}{
+			{"temperature", !isOpenAIGptOSSModel(modelID) && inf.Temperature != nil, func() { inf.Temperature = nil }},
+			{"topP", !isOpenAIGptOSSModel(modelID) && inf.TopP != nil, func() { inf.TopP = nil }},
+			{"stopSequences", len(inf.StopSequences) > 0, func() { inf.StopSequences = nil }},
+		} {
+			if feature.present {
+				feature.clear()
+				warnings = append(warnings, provider.Warning{
+					Type: provider.WarnUnsupported, Feature: feature.name,
+					Details: fmt.Sprintf("%s is not supported by this OpenAI model on the Converse API", feature.name),
+				})
+			}
 		}
 	}
 
@@ -369,6 +411,18 @@ func applyAnthropicPassThroughs(addFields map[string]any, inf **inferenceConfig,
 				m["display"] = rc.Display
 			}
 			addFields["thinking"] = m
+		} else if rc.Type == reasoningTypeBetweenTools {
+			// between_tools accepts no display or budget, and only low,
+			// medium, and high effort.
+			addFields["thinking"] = map[string]any{"type": reasoningTypeBetweenTools}
+			if rc.MaxReasoningEffort == "xhigh" || rc.MaxReasoningEffort == "max" {
+				warnings = append(warnings, provider.Warning{
+					Type:    provider.WarnUnsupported,
+					Feature: "providerOptions.amazonBedrock.reasoningConfig.maxReasoningEffort",
+					Details: fmt.Sprintf("effort '%s' is not supported with 'between_tools' thinking. The effort has been lowered to 'high'.", rc.MaxReasoningEffort),
+				})
+				rc.MaxReasoningEffort = "high"
+			}
 		}
 
 		if rc.MaxReasoningEffort != "" && isAnth {
@@ -387,12 +441,23 @@ func resolveReasoningConfig(modelID string, isAnthropic bool, reasoning provider
 	var resolved *ReasoningConfig
 	if reasoning == provider.ReasoningNone {
 		if isAnthropic {
-			resolved = &ReasoningConfig{Type: "disabled"}
+			resolved = &ReasoningConfig{Type: anthropicNoneReasoningType(modelID)}
 		} else {
 			resolved = cloneReasoningConfig(explicit)
 		}
 	} else {
+		if !isAnthropic && !isOpenAIModel(modelID) && !strings.Contains(modelID, "amazon.nova-2-lite-v1:0") && explicit == nil {
+			*warnings = append(*warnings, provider.Warning{
+				Type:    provider.WarnUnsupported,
+				Feature: "reasoning",
+				Details: "Portable reasoning is not supported for this model and will be ignored. If the model supports a provider-specific reasoning configuration, use providerOptions.amazonBedrock.reasoningConfig.",
+			})
+			return nil
+		}
 		resolved = mergeReasoningConfig(deriveReasoningConfig(modelID, isAnthropic, reasoning, warnings), explicit)
+		if !isAnthropic && strings.Contains(modelID, "amazon.nova-2-lite-v1:0") && resolved != nil && resolved.Type == "" {
+			resolved.Type = "enabled"
+		}
 	}
 	if resolved != nil && resolved.Type == "disabled" {
 		resolved.BudgetTokens = 0
@@ -400,6 +465,22 @@ func resolveReasoningConfig(modelID string, isAnthropic bool, reasoning provider
 		resolved.MaxReasoningEffort = ""
 	}
 	return resolved
+}
+
+// reasoningTypeBetweenTools is the lowest thinking setting on models that
+// reject disabled thinking; see supportsBetweenToolsThinking.
+const reasoningTypeBetweenTools = "between_tools"
+
+// anthropicNoneReasoningType returns the thinking type for reasoning "none".
+// Upstream @ai-sdk/amazon-bedrock 5.0.99 uses "disabled", which omits the
+// thinking field and runs claude-sonnet-5-5 at its default adaptive effort.
+// This intentionally sends between_tools instead so "none" keeps up-front
+// thinking off, as the Anthropic provider does.
+func anthropicNoneReasoningType(modelID string) string {
+	if supportsBetweenToolsThinking(modelID) {
+		return reasoningTypeBetweenTools
+	}
+	return "disabled"
 }
 
 func cloneReasoningConfig(config *ReasoningConfig) *ReasoningConfig {
@@ -440,7 +521,7 @@ func deriveReasoningConfig(modelID string, isAnthropic bool, reasoning provider.
 	}
 	if reasoning == provider.ReasoningNone {
 		if isAnthropic {
-			return &ReasoningConfig{Type: "disabled"}
+			return &ReasoningConfig{Type: anthropicNoneReasoningType(modelID)}
 		}
 		return nil
 	}

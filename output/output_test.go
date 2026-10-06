@@ -2,11 +2,13 @@ package output
 
 import (
 	"encoding/json"
+	"errors"
 	"testing"
 
 	aisdk "github.com/grafana/ai-sdk"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/grafana/ai-sdk/schema"
+	jsonschema "github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -272,6 +274,95 @@ func TestTextOutput_ParsePartial(t *testing.T) {
 	assert.Equal(t, "partial text", v)
 }
 
+type failingUnmarshaler struct{}
+
+var errTypedConversion = errors.New("typed conversion failed")
+
+func (*failingUnmarshaler) UnmarshalJSON([]byte) error { return errTypedConversion }
+
+func TestOutputRepairErrorClassification(t *testing.T) {
+	objectSchema := mustSchema(t, `{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}`)
+	obj, err := Object[struct {
+		Name int `json:"name"`
+	}](objectSchema)
+	require.NoError(t, err)
+	array, err := Array[struct {
+		Name int `json:"name"`
+	}](objectSchema)
+	require.NoError(t, err)
+	choice, err := Choice("sunny")
+	require.NoError(t, err)
+
+	for _, tc := range []struct {
+		name string
+		out  aisdk.Output
+		text string
+	}{
+		{"object JSON", obj, `{"name":`},
+		{"object schema", obj, `{"wrong":"value"}`},
+		{"array JSON", array, `{"elements":`},
+		{"array schema", array, `{"elements":[{"wrong":"value"}]}`},
+		{"array missing elements", array, `{}`},
+		{"array invalid elements", array, `{"elements":null}`},
+		{"choice schema", choice, `{"result":"rainy"}`},
+		{"choice missing result", choice, `{}`},
+		{"JSON syntax", JSON(), `{"name":`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := tc.out.ParseComplete(tc.text)
+			require.Error(t, err)
+			assert.ErrorIs(t, err, aisdk.ErrNoObjectGenerated)
+			assert.ErrorIs(t, err, aisdk.ErrInvalidOutputText)
+			if json.Valid([]byte(tc.text)) {
+				var validationErr *jsonschema.ValidationError
+				assert.ErrorAs(t, err, &validationErr)
+			} else {
+				var syntaxErr *json.SyntaxError
+				assert.ErrorAs(t, err, &syntaxErr)
+			}
+		})
+	}
+
+	for _, tc := range []struct {
+		name  string
+		out   aisdk.Output
+		text  string
+		cause error
+	}{
+		{"object type mismatch", obj, `{"name":"valid"}`, nil},
+		{"array type mismatch", array, `{"elements":[{"name":"valid"}]}`, nil},
+		{"object custom unmarshaler", mustObject[failingUnmarshaler](t, objectSchema), `{"name":"valid"}`, errTypedConversion},
+		{"array custom unmarshaler", mustArray[failingUnmarshaler](t, mustSchema(t, `{"type":"object"}`)), `{"elements":[{}]}`, errTypedConversion},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := tc.out.ParseComplete(tc.text)
+			require.Error(t, err)
+			assert.ErrorIs(t, err, aisdk.ErrNoObjectGenerated)
+			assert.NotErrorIs(t, err, aisdk.ErrInvalidOutputText)
+			if tc.cause != nil {
+				assert.ErrorIs(t, err, tc.cause)
+			} else {
+				var typeErr *json.UnmarshalTypeError
+				assert.ErrorAs(t, err, &typeErr)
+			}
+		})
+	}
+}
+
+func mustObject[T any](t *testing.T, s schema.Schema) aisdk.Output {
+	t.Helper()
+	out, err := Object[T](s)
+	require.NoError(t, err)
+	return out
+}
+
+func mustArray[T any](t *testing.T, s schema.Schema) aisdk.Output {
+	t.Helper()
+	out, err := Array[T](s)
+	require.NoError(t, err)
+	return out
+}
+
 var (
 	_ aisdk.Output = (*ObjectOutput[recipe])(nil)
 	_ aisdk.Output = (*ArrayOutput[city])(nil)
@@ -279,3 +370,84 @@ var (
 	_ aisdk.Output = (*JSONOutput)(nil)
 	_ aisdk.Output = (*TextOutput)(nil)
 )
+
+func TestChoiceOutput_ParsePartial_RequiresStringResult(t *testing.T) {
+	// A single option exposes the bug a multi-option set masks: an absent
+	// result read as the empty string prefix-matches the only option.
+	out, err := Choice("yes")
+	require.NoError(t, err)
+
+	for _, text := range []string{`{`, `{"other":`, `{"result":null,`, `{"result":null}`, `{"result":1}`, `{"other":"yes"}`, `{}`} {
+		t.Run(text, func(t *testing.T) {
+			_, ok := out.ParsePartial(text)
+			assert.False(t, ok, "no choice has been generated yet")
+		})
+	}
+
+	v, ok := out.ParsePartial(`{"result":"ye`)
+	require.True(t, ok, "a unique prefix still resolves")
+	assert.Equal(t, "yes", v)
+
+	_, ok = out.ParsePartial(`{"result":""}`)
+	assert.False(t, ok, "an empty string is not one of the options")
+}
+
+func TestChoiceOutput_ParseComplete_WrapperExtraction(t *testing.T) {
+	out, err := Choice("yes", "no")
+	require.NoError(t, err)
+
+	result, err := out.ParseComplete(`{"result":"yes","extra":true}`)
+	require.NoError(t, err, "an unrelated wrapper property is not the caller's schema")
+	assert.Equal(t, "yes", result)
+
+	for _, text := range []string{`{}`, `{"result":null}`, `{"result":1}`, `{"result":"maybe"}`, `null`, `"yes"`, `["yes"]`, `not json`} {
+		t.Run(text, func(t *testing.T) {
+			_, err := out.ParseComplete(text)
+			assert.ErrorIs(t, err, aisdk.ErrNoObjectGenerated)
+		})
+	}
+}
+
+func TestArrayOutput_ParseComplete_WrapperExtraction(t *testing.T) {
+	elemSchema := mustSchema(t, `{"type":"object","properties":{"name":{"type":"string"},"population":{"type":"integer"}},"required":["name","population"]}`)
+	out, err := Array[city](elemSchema)
+	require.NoError(t, err)
+
+	result, err := out.ParseComplete(`{"elements":[{"name":"Paris","population":2161000}],"extra":true}`)
+	require.NoError(t, err, "an unrelated wrapper property is not the caller's schema")
+	assert.Equal(t, []city{{Name: "Paris", Population: 2161000}}, result)
+
+	result, err = out.ParseComplete(`{"elements":[]}`)
+	require.NoError(t, err, "an empty array is a complete value")
+	assert.Empty(t, result)
+
+	for _, text := range []string{`{}`, `{"elements":null}`, `{"elements":{"name":"Paris"}}`, `{"elements":[{"name":"bad"}]}`, `null`, `[]`} {
+		t.Run(text, func(t *testing.T) {
+			_, err := out.ParseComplete(text)
+			assert.ErrorIs(t, err, aisdk.ErrNoObjectGenerated)
+		})
+	}
+}
+
+func TestWrappedOutputs_RequestSchemasStayStrict(t *testing.T) {
+	choice, err := Choice("yes", "no")
+	require.NoError(t, err)
+	array, err := Array[city](mustSchema(t, `{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}`))
+	require.NoError(t, err)
+
+	for _, tc := range []struct {
+		name     string
+		schema   json.RawMessage
+		required string
+	}{
+		{"choice", choice.ResponseFormat().Schema, "result"},
+		{"array", array.ResponseFormat().Schema, "elements"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var s map[string]any
+			require.NoError(t, json.Unmarshal(tc.schema, &s))
+			assert.Equal(t, false, s["additionalProperties"], "runtime extraction is permissive, the request is not")
+			assert.Equal(t, []any{tc.required}, s["required"])
+		})
+	}
+}

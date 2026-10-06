@@ -130,11 +130,7 @@ func Run(ctx context.Context, args []string, lookupEnv config.LookupEnv, listen 
 		return err
 	}
 	errorWriter := providerv4.NewHostErrorWriter()
-	discoveryHandler, err := discovery.New(modelCatalog, errorWriter, settings.DiscoveryResponseBytes)
-	if err != nil {
-		agentRuntime.Close()
-		return err
-	}
+	discoveryHandler := discovery.New(modelCatalog, errorWriter)
 	languageHandler, err := providerv4.New(providerv4.Config{Resolver: modelCatalog, Limits: settings.ProviderWire})
 	if err != nil {
 		agentRuntime.Close()

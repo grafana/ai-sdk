@@ -20,6 +20,14 @@ When `CallOptions.ResponseFormat` has `Type: "json"` and a non-nil `Schema`, and
 - **WHEN** `buildParams` is called with both `ResponseFormat` (json + schema) and provider options that set `effort`
 - **THEN** `OutputConfig` SHALL include both `Effort` and `Format` fields
 
+#### Scenario: Native Vertex output without forced tool choice
+
+- **WHEN** the Vertex provider receives a JSON-schema response format on a native-capable model, including `claude-sonnet-5-5`, for generation or streaming
+- **THEN** `OutputConfig.Format` SHALL contain the sanitized JSON schema
+- **AND** no synthetic tool or forced tool choice SHALL be introduced
+- **AND** existing user tools SHALL be preserved
+- **AND** the automatic `structured-outputs-2025-11-13` beta SHALL NOT be added
+
 ### Requirement: Tool-based JSON fallback
 
 When `CallOptions.ResponseFormat` has `Type: "json"` and a non-nil `Schema`, and either the model or provider transport does not support native structured output, `buildParams` SHALL synthesize a tool named `"json"` with `description: "Respond with a JSON object."` and the `ResponseFormat.Schema` as `inputSchema`. The tool SHALL be appended to the existing tools list (after any user-defined tools).
@@ -30,13 +38,6 @@ When `CallOptions.ResponseFormat` has `Type: "json"` and a non-nil `Schema`, and
 - **THEN** the returned `BetaMessageNewParams.Tools` SHALL include the user's tools plus a synthetic tool with name `"json"`, description `"Respond with a JSON object."`, and `InputSchema` matching the provided schema
 - **AND** `OutputConfig.Format` SHALL NOT be set
 
-#### Scenario: Vertex tool injection on a native-capable model
-
-- **WHEN** the Vertex provider calls `buildParams` with `ResponseFormat` having `Type: "json"`, a valid JSON schema, a function tool, and the model ID is `claude-sonnet-4-6`
-- **THEN** the returned `BetaMessageNewParams.Tools` SHALL include the user's function tool plus the synthetic `"json"` tool
-- **AND** `OutputConfig.Format` SHALL NOT be set
-- **AND** the automatic `structured-outputs-2025-11-13` beta SHALL NOT be added
-
 #### Scenario: Tool injection with no existing user tools
 
 - **WHEN** `buildParams` is called with `ResponseFormat` (json + schema), no user tools, and a model that does not support native structured output
@@ -44,7 +45,7 @@ When `CallOptions.ResponseFormat` has `Type: "json"` and a non-nil `Schema`, and
 
 ### Requirement: Tool choice override in fallback mode
 
-When the tool-based fallback is active, `buildParams` SHALL override `ToolChoice` to `required` (OfAny) with `DisableParallelToolUse` set to `true`, regardless of the caller's original `ToolChoice` setting.
+When the tool-based fallback is active, `buildParams` SHALL override `ToolChoice` to `required` (OfAny) with `DisableParallelToolUse` set to `true`, regardless of the caller's original `ToolChoice` setting. On a model that rejects forced tool use, the override SHALL instead be `auto` (OfAuto) with `DisableParallelToolUse` set to `true`, with one unsupported `toolChoice` warning for `required`, as `@ai-sdk/anthropic` 4.0.67 does. The caller's original tool choice SHALL NOT filter tools or add a warning of its own.
 
 #### Scenario: Tool choice forced to required
 
@@ -56,11 +57,21 @@ When the tool-based fallback is active, `buildParams` SHALL override `ToolChoice
 - **WHEN** the tool-based fallback is active and the caller set `ToolChoice` to `none`
 - **THEN** `ToolChoice` SHALL be overridden to `OfAny` with `DisableParallelToolUse: true`
 
+#### Scenario: Tool choice auto on a model that rejects forced tool use
+- **WHEN** the tool-based fallback is active for `claude-sonnet-5-5` on a provider transport without native structured output
+- **THEN** `ToolChoice` SHALL be `OfAuto` with `DisableParallelToolUse: true`
+- **AND** one unsupported warning with feature `toolChoice` SHALL be emitted
+
+#### Scenario: Caller forced choice with the fallback on Sonnet 5.5
+- **WHEN** the tool-based fallback is active for `claude-sonnet-5-5` and the caller set `ToolChoice` to `tool` for one of several tools
+- **THEN** all caller tools and the `json` tool SHALL be sent
+- **AND** exactly one `toolChoice` warning, for `required`, SHALL be emitted
+
 ### Requirement: Provider transport capability gating
 
-The direct Anthropic provider SHALL enable native structured output and strict function tools. The Vertex provider SHALL disable both capabilities. Each provider capability SHALL be combined with the selected model's structured-output capability, so a feature is effective only when both the provider transport and model support it.
+The direct Anthropic provider SHALL enable native structured output and strict function tools. The Vertex provider SHALL enable native structured output and keep strict function tools disabled. Each provider capability SHALL be combined with the selected model's structured-output capability, so a feature is effective only when both the provider transport and model support it.
 
-When effective native structured-output support is enabled and the caller supplies any function tool, `buildParams` SHALL automatically add the `structured-outputs-2025-11-13` beta unless the JSON response-tool fallback is active. This automatic beta SHALL be independent of whether the function tool's `Strict` value is absent, `false`, or `true`. Provider-defined tools alone SHALL NOT trigger it. Explicit caller-supplied betas SHALL remain unaffected.
+When the transport supports direct beta features, effective native structured-output support is enabled, and the caller supplies any function tool, `buildParams` SHALL automatically add the `structured-outputs-2025-11-13` beta unless the JSON response-tool fallback is active. This automatic beta SHALL be independent of whether the function tool's `Strict` value is absent, `false`, or `true`. Provider-defined tools alone SHALL NOT trigger it. Explicit caller-supplied betas SHALL remain unaffected.
 
 When effective strict-tool support is enabled, an explicit `Strict` value SHALL be sent unchanged. When it is disabled, explicit `true` and `false` values SHALL both be omitted and SHALL produce an unsupported warning for feature `strict`; an absent value SHALL be omitted without a warning.
 
@@ -272,3 +283,19 @@ The sanitizer SHALL retain `format` values from the supported set
 - **WHEN** `applyResponseFormat` runs sanitization on a caller-provided schema
 - **THEN** the caller's schema (e.g., as later used by orchestration-layer
   result validation) SHALL be byte-identical to what it was before the call
+
+### Requirement: JSON tool mode on models that reject forced tool use
+When `structuredOutputMode` is `jsonTool` and the model rejects forced tool use while the model and provider transport both support native structured output, `buildParams` SHALL use native JSON schema mode instead, as `@ai-sdk/anthropic` 4.0.67 does. It SHALL emit an `unsupported` warning with feature `providerOptions.anthropic.structuredOutputMode` and details `structuredOutputMode 'jsonTool' is not supported by <modelID> because it rejects forced tool use. Using 'outputFormat' instead.`
+
+#### Scenario: jsonTool mode on direct Sonnet 5.5
+- **WHEN** the direct Anthropic provider calls `claude-sonnet-5-5` with a JSON schema response and `structuredOutputMode: jsonTool`
+- **THEN** `OutputConfig.Format` SHALL contain the sanitized schema and no `json` tool SHALL be added
+- **AND** the warning SHALL name `claude-sonnet-5-5`
+
+#### Scenario: jsonTool mode on Vertex Sonnet 5.5
+- **WHEN** the Vertex provider calls `claude-sonnet-5-5` with a JSON schema response and `structuredOutputMode: jsonTool`
+- **THEN** `OutputConfig.Format` SHALL contain the sanitized schema, no `json` tool SHALL be added, and the same warning SHALL be emitted
+
+#### Scenario: jsonTool mode without native transport support
+- **WHEN** a provider transport without native structured output calls `claude-sonnet-5-5` with a JSON schema response
+- **THEN** the tool-based fallback SHALL be used with an `auto` tool choice

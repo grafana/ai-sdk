@@ -1,6 +1,7 @@
 package anthropic
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -37,6 +38,7 @@ type streamAdapter struct {
 	isJsonResponseFromTool bool
 	usage                  anthropicUsage
 	metadataFields         map[string]json.RawMessage
+	safeguardResults       json.RawMessage
 	messageOpen            bool
 	activeMessageID        string
 	invalidMessageSequence bool
@@ -51,6 +53,7 @@ type streamAdapter struct {
 	citationDocuments []citationDocument
 	generateID        func() string
 	providerName      string
+	responseHeaders   map[string]string
 }
 
 func blockID(idx int64) string {
@@ -78,13 +81,16 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 			return err
 		}
 		a.metadataFields = messageMetadataFields(msg.RawJSON())
+		delete(a.metadataFields, "safeguard_results")
+		a.safeguardResults = nil
 		usage := convertAnthropicUsage(a.usage)
 		ch <- provider.StreamPart{
-			Type:       provider.PartResponseMeta,
-			ResponseID: msg.ID,
-			ModelID:    string(msg.Model),
-			Provider:   a.providerName,
-			Usage:      &usage,
+			Type:            provider.PartResponseMeta,
+			ResponseID:      msg.ID,
+			ModelID:         string(msg.Model),
+			Provider:        a.providerName,
+			ResponseHeaders: a.responseHeaders,
+			Usage:           &usage,
 		}
 
 		for _, block := range msg.Content {
@@ -462,6 +468,18 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 			return err
 		}
 		a.metadataFields = mergeMessageDeltaMetadata(a.metadataFields, e.RawJSON())
+		var envelope struct {
+			Delta map[string]json.RawMessage `json:"delta"`
+		}
+		if err := json.Unmarshal([]byte(e.RawJSON()), &envelope); err != nil {
+			return fmt.Errorf("decoding safeguard delta: %w", err)
+		}
+		if value := envelope.Delta["safeguard_results"]; len(value) > 0 && !bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+			a.safeguardResults = value
+		}
+		if len(a.safeguardResults) > 0 {
+			a.metadataFields["safeguard_results"] = a.safeguardResults
+		}
 		usage := convertAnthropicUsage(a.usage)
 		fr := mapFinishReason(e.Delta.StopReason)
 		if a.isJsonResponseFromTool && e.Delta.StopReason == anthropic.BetaStopReasonToolUse {

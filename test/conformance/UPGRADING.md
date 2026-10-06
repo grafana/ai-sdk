@@ -36,6 +36,29 @@ and `git show` between the registered and target references. Verify package
 manifests: the `ai` tag alone does not establish every package's source version.
 Changelogs identify leads; implementation and tests establish semantics.
 
+## Avoid duplicated current-version references
+
+Canonical versions belong in `upstream.yaml` and the consumer manifests maintained
+by `parity-apply`; `parity-upgrade` also refreshes the lockfile and generated
+provider expectations. Baseline validation checks consumer pins and reviewed
+Gateway evidence for drift.
+
+In guides and fixture documentation, link to the registered baseline or consumer
+manifest instead of spelling out current package versions. Test assertions and
+installation commands should derive exact versions from those validated manifests,
+not use copied literals or unverified latest releases.
+
+Keep exact versions and source commits when they establish historical fixture
+provenance, explain a version-specific behavior, or form deliberate test data.
+Label historical references explicitly; do not automatically rewrite them during
+an upgrade. Verification claims and Gateway attestations require actual reviewed
+evidence, not automatic version substitution.
+
+Regenerate provider-independent UI fixtures with their documented generators too;
+`generate-conformance` regenerates provider fixtures, not every UI fixture family.
+Confirm byte-identical regeneration before retaining that claim, and review any
+changed expectations without modifying provider input provenance.
+
 ## Choose evidence for the finding
 
 | Tool / source | What it establishes | Limit |

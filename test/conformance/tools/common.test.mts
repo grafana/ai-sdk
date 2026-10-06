@@ -1,14 +1,69 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, it } from "node:test";
 import { safeValidateTypes } from "@ai-sdk/provider-utils";
 import {
+  APPROVAL_KEYS,
+  CONFIG_KEYS,
+  MESSAGE_KEYS,
+  MESSAGE_PART_KEYS,
+  PROVIDER_TOOL_KEYS,
+  RESPONSE_FORMAT_KEYS,
+  STREAM_OPTIONS_KEYS,
+  TOOL_CHOICE_KEYS,
+  TOOL_KEYS,
+  TOOL_MODEL_OUTPUT_CONTENT_KEYS,
+  TOOL_MODEL_OUTPUT_KEYS,
+  UI_MESSAGE_KEYS,
   buildMessages,
   buildStreamTextOptions,
   buildToolChoice,
   buildTools,
   createSourceIdNormalizer,
+  normalizeRequestSnapshot,
+  parseConfig,
   unsupportedGenerateFields,
 } from "./common.mts";
+import { checkRequestSnapshots, requestTargetCases } from "./request-snapshots.mts";
+
+describe("request snapshot targets", () => {
+  for (const tc of requestTargetCases) {
+    it(tc.name, () => {
+      const snapshot = normalizeRequestSnapshot(
+        "anthropic",
+        { method: "POST", url: tc.url, headers: { "content-type": "application/json" } },
+        "{}",
+      );
+      assert.equal(snapshot.path, tc.expectedPath);
+    });
+  }
+
+  it("uses the root path when url is absent", () => {
+    assert.equal(normalizeRequestSnapshot("anthropic", { headers: {} }, "{}").path, "/");
+  });
+
+  it("matches the committed TypeScript snapshots without rewriting them", () => {
+    const path = new URL("../testdata/request-snapshots/expected-requests.jsonl", import.meta.url);
+    const before = readFileSync(path);
+    checkRequestSnapshots();
+    assert.deepEqual(readFileSync(path), before);
+  });
+
+  it("rejects stale snapshots without rewriting them", () => {
+    const dir = mkdtempSync(join(tmpdir(), "aisdk-stale-snapshots-"));
+    try {
+      const path = join(dir, "expected-requests.jsonl");
+      const stale = '{"path":"/v1/messages"}\n';
+      writeFileSync(path, stale);
+      assert.throws(() => checkRequestSnapshots(path), /stale request snapshots/);
+      assert.equal(readFileSync(path, "utf8"), stale);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
 
 describe("conformance common config", () => {
   it("normalizes source IDs consistently", () => {
@@ -299,5 +354,45 @@ describe("conformance common config", () => {
     );
     const file = (urlMessages?.[0] as { content: Array<{ data: URL }> }).content[0];
     assert.equal(file.data.href, "s3://bucket/image.png");
+  });
+});
+
+describe("fixture config keys", () => {
+  const dir = new URL("../testdata/fixture-config/", import.meta.url);
+  const read = (name: string) => readFileSync(new URL(name, dir), "utf8");
+
+  for (const name of readdirSync(new URL("invalid/", dir))) {
+    it(`rejects the unknown field in ${name}`, () => {
+      const raw = read(`invalid/${name}`);
+      // The first line names the misspelled key: "# unknown: <key>".
+      const unknown = raw.split("\n")[0].replace("# unknown: ", "");
+      assert.throws(() => parseConfig(raw, name), (err: Error) => err.message.includes(`unknown field "${unknown}"`));
+    });
+  }
+
+  it("accepts every key and keeps payload maps open", () => {
+    // Every TypeScript key must appear in all-keys.yaml, which the Go loader
+    // also accepts, so the tools cannot accept a key Go replay would drop.
+    const cfg = parseConfig(read("all-keys.yaml"), "all-keys.yaml") as any;
+    const levels: [string, readonly string[], Record<string, unknown>][] = [
+      ["config", CONFIG_KEYS, cfg],
+      ["message", MESSAGE_KEYS, cfg.messages[1]],
+      ["message part", MESSAGE_PART_KEYS, cfg.messages[1].content[0]],
+      ["UI message", UI_MESSAGE_KEYS, cfg.uiMessages[0]],
+      ["tool", TOOL_KEYS, cfg.tools.weather],
+      ["tool model output", TOOL_MODEL_OUTPUT_KEYS, cfg.tools.weather.modelOutput],
+      ["tool model output content", TOOL_MODEL_OUTPUT_CONTENT_KEYS, cfg.tools.weather.modelOutput.content[0]],
+      ["provider tool", PROVIDER_TOOL_KEYS, cfg.providerTools.search],
+      ["tool choice", TOOL_CHOICE_KEYS, cfg.toolChoice],
+      ["stream options", STREAM_OPTIONS_KEYS, cfg.streamOptions],
+      ["response format", RESPONSE_FORMAT_KEYS, cfg.responseFormat],
+      ["approval", APPROVAL_KEYS, cfg.approval],
+      ["approvals entry", APPROVAL_KEYS, cfg.approvals[0]],
+    ];
+    for (const [name, keys, level] of levels) {
+      assert.deepEqual(keys.filter((key) => !(key in level)), [], `${name} keys missing from all-keys.yaml`);
+    }
+    assert.equal(cfg.uiMessages[0].parts[0].anyPartKey, "kept");
+    assert.deepEqual(cfg.providerOptions.anyProvider.anyOption, { nested: true });
   });
 });

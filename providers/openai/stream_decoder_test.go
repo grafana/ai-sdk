@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -15,6 +16,7 @@ import (
 	openaisdk "github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
 	"github.com/openai/openai-go/v3/packages/ssestream"
+	"github.com/openai/openai-go/v3/responses"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -30,6 +32,62 @@ func (d *countingStreamDecoder) Close() error {
 	d.closes.Add(1)
 	defer d.once.Do(func() { close(d.closed) })
 	return d.Decoder.Close()
+}
+
+func TestDoStream_CancelWithoutConsumer(t *testing.T) {
+	reader, writer := io.Pipe()
+	writerDone := make(chan struct{})
+	go func() {
+		defer close(writerDone)
+		defer func() { _ = writer.Close() }()
+		for range 512 {
+			if _, err := io.WriteString(writer, transportSSE([]string{transportEvents[1]})); err != nil {
+				return
+			}
+		}
+	}()
+	m := NewResponses("test-key", "gpt-4o", WithRequestOptions(option.WithMaxRetries(0), option.WithHTTPClient(&http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		response := transportResponse(r, true)
+		response.Body = reader
+		return response, nil
+	})})))
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	result, err := m.DoStream(ctx, provider.CallOptions{IncludeRawChunks: true})
+	require.NoError(t, err)
+	require.Eventually(t, func() bool { return len(result.Stream) == cap(result.Stream) }, time.Second, time.Millisecond)
+	cancel()
+	select {
+	case <-writerDone:
+	case <-time.After(5 * time.Second):
+		require.FailNow(t, "cancel did not close the response body")
+	}
+}
+
+func TestConsumeStream_CancelStalledConsumer(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	events := append([]string(nil), transportEvents[:1]...)
+	for range 512 {
+		events = append(events, transportEvents[1])
+	}
+	body := &startupBody{ReadCloser: io.NopCloser(strings.NewReader(transportSSE(events)))}
+	response := &http.Response{Header: http.Header{"Content-Type": {"text/event-stream"}}, Body: body}
+	items := pumpResponseStream(ctx, response, nil, true)
+	output := make(chan provider.StreamPart, 64)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		consumeStream(ctx, items, nil, output, nil, buildResult{}, responses.ResponseNewParams{}, response, func() string { return "id" }, "openai")
+	}()
+	require.Eventually(t, func() bool { return len(output) == cap(output) }, time.Second, time.Millisecond)
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		require.FailNow(t, "producer required output reads after cancellation")
+	}
+	require.Eventually(t, func() bool { return body.closes.Load() == 1 }, time.Second, time.Millisecond)
 }
 
 func TestDoStream_SDKDecoderOwnership(t *testing.T) {
@@ -77,7 +135,7 @@ func TestDoStream_SDKDecoderOwnership(t *testing.T) {
 			model := NewResponsesWithClient(client, "gpt-4o")
 			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 			defer cancel()
-			result, err := model.DoStream(ctx, provider.CallOptions{Headers: map[string]string{"X-SDK-Call": "call"}})
+			result, err := model.DoStream(ctx, provider.CallOptions{Headers: map[string]string{"X-SDK-Call": "call"}, IncludeRawChunks: true})
 			require.NoError(t, err)
 			var text string
 			for part := range result.Stream {

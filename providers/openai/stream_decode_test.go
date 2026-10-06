@@ -2,9 +2,12 @@ package openai
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -35,6 +38,128 @@ func collectHTTPStream(t *testing.T, events []string, opts provider.CallOptions)
 	}
 	assert.Equal(t, int32(1), requests.Load())
 	return parts
+}
+
+func TestDoStream_RawTransportEvents(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		events     []string
+		raw        []string
+		errorFrame bool
+	}{
+		{name: "normal", events: transportEvents, raw: transportEvents},
+		{name: "ignored", events: []string{transportEvents[0], `{"type":"future.event","extra":42}`, transportEvents[2]}, raw: []string{transportEvents[0], `{"type":"future.event","extra":42}`, transportEvents[2]}},
+		{name: "invalid JSON", events: []string{transportEvents[1], `not JSON`}, raw: []string{transportEvents[1], ""}, errorFrame: true},
+		{name: "typed failure", events: []string{transportEvents[1], `"not an event"`}, raw: []string{transportEvents[1], `"not an event"`}, errorFrame: true},
+		{name: "null", events: []string{transportEvents[1], `null`}, raw: []string{transportEvents[1], `null`}},
+		{name: "error", events: []string{transportEvents[1], `{"error":{"message":"failed","type":"server_error"}}`}, raw: []string{transportEvents[1], `{"error":{"message":"failed","type":"server_error"}}`}, errorFrame: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var normalizedJSON []byte
+			for _, includeRaw := range []bool{false, true} {
+				m := NewResponses("test-key", "gpt-4o", WithRequestOptions(option.WithMaxRetries(0), option.WithHTTPClient(&http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+					response := transportResponse(r, true)
+					response.Body = io.NopCloser(strings.NewReader(": comment\n\n" + transportSSE(tc.events) + "data: [DONE]\n\n"))
+					return response, nil
+				})})))
+				result, err := m.DoStream(t.Context(), provider.CallOptions{IncludeRawChunks: includeRaw})
+				require.NoError(t, err)
+				var raws []json.RawMessage
+				var parts, normalized []provider.StreamPart
+				var errorCount int
+				var latestRaw json.RawMessage
+				for part := range result.Stream {
+					if includeRaw && tc.name == "normal" && part.Type != provider.PartRaw {
+						if want := map[provider.StreamPartType]string{provider.PartResponseMeta: transportEvents[0], provider.PartTextStart: transportEvents[1], provider.PartTextDelta: transportEvents[1], provider.PartTextEnd: transportEvents[2], provider.PartFinish: transportEvents[2]}[part.Type]; want != "" {
+							assert.JSONEq(t, want, string(latestRaw))
+						}
+					}
+					parts = append(parts, part)
+					if part.Type == provider.PartRaw {
+						raws = append(raws, part.RawValue)
+						latestRaw = part.RawValue
+					} else {
+						normalized = append(normalized, part)
+					}
+					if part.Type == provider.PartError {
+						errorCount++
+					}
+					if includeRaw && tc.errorFrame && part.Type == provider.PartError {
+						require.GreaterOrEqual(t, len(parts), 2)
+						assert.Equal(t, provider.PartRaw, parts[len(parts)-2].Type)
+					}
+				}
+				if tc.errorFrame {
+					assert.Positive(t, errorCount)
+				}
+				encoded, err := json.Marshal(normalized)
+				require.NoError(t, err)
+				if !includeRaw {
+					normalizedJSON = encoded
+				} else {
+					assert.JSONEq(t, string(normalizedJSON), string(encoded))
+				}
+				require.NotEmpty(t, parts)
+				assert.Equal(t, provider.PartStreamStart, parts[0].Type)
+				if !includeRaw {
+					assert.Empty(t, raws)
+					continue
+				}
+				require.Len(t, raws, len(tc.raw))
+				for i, want := range tc.raw {
+					if want == "" {
+						assert.Nil(t, raws[i])
+					} else {
+						assert.JSONEq(t, want, string(raws[i]))
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestDoStream_WhitespaceData(t *testing.T) {
+	for _, data := range []string{"   ", ""} {
+		for _, before := range []bool{false, true} {
+			for _, raw := range []bool{false, true} {
+				t.Run(fmt.Sprintf("data=%q/before=%t/raw=%t", data, before, raw), func(t *testing.T) {
+					frame := fmt.Sprintf("data: %s\n\n", data)
+					payload := transportSSE(transportEvents[:2]) + frame + transportSSE(transportEvents[2:])
+					if before {
+						payload = frame + transportSSE(transportEvents)
+					}
+					m := NewResponses("test-key", "gpt-4o", WithRequestOptions(option.WithMaxRetries(0), option.WithHTTPClient(&http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+						response := transportResponse(r, true)
+						response.Body = io.NopCloser(strings.NewReader(payload))
+						return response, nil
+					})})))
+					result, err := m.DoStream(t.Context(), provider.CallOptions{IncludeRawChunks: raw})
+					require.NoError(t, err)
+					var last provider.StreamPart
+					var errors, nilRaws int
+					for part := range result.Stream {
+						if part.Type == provider.PartRaw && part.RawValue == nil {
+							nilRaws++
+						}
+						if part.Type == provider.PartError {
+							errors++
+							if raw {
+								assert.Equal(t, provider.PartRaw, last.Type)
+								assert.Nil(t, last.RawValue)
+							}
+						}
+						last = part
+					}
+					assert.Equal(t, 1, errors)
+					if raw {
+						assert.Equal(t, 1, nilRaws)
+					} else {
+						assert.Zero(t, nilRaws)
+					}
+				})
+			}
+		}
+	}
 }
 
 func TestDoStream_RecoversMalformedEvents(t *testing.T) {

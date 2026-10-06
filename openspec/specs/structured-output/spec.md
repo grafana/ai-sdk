@@ -47,7 +47,7 @@ The system SHALL provide an `ObjectOutput[T]` implementation that accepts a `sch
 
 ### Requirement: Array output mode
 
-The system SHALL provide an `ArrayOutput[T]` implementation that accepts a `schema.Schema` for the element type. The element schema's `.JSON()` SHALL be wrapped in an outer object (`{"elements": [...]}`) for the provider. The wrapper schema SHALL be constructed as a new `schema.Schema` internally via `schema.SchemaFromJSON` for validation. Each element SHALL be validated against the element schema.
+The system SHALL provide an `ArrayOutput[T]` implementation that accepts a `schema.Schema` for the element type. The element schema's `.JSON()` SHALL be wrapped in an outer object (`{"elements": [...]}`) for the provider. The wrapper schema SHALL be constructed as a new `schema.Schema` internally via `schema.SchemaFromJSON` and SHALL remain the strict response format, with `additionalProperties` false and `elements` required. Complete parsing SHALL extract the value at runtime instead of validating the wrapper schema: the response SHALL be a JSON object that contains an `elements` array, and each element SHALL be validated against the element schema. A wrapper property beyond `elements` SHALL NOT fail parsing. A response that is not an object, that omits `elements`, or whose `elements` value is null or not an array SHALL return an error wrapping `ErrNoObjectGenerated`.
 
 #### Scenario: Generate an array of typed elements
 
@@ -59,9 +59,19 @@ The system SHALL provide an `ArrayOutput[T]` implementation that accepts a `sche
 - **WHEN** the LLM returns JSON where one element does not match the element schema
 - **THEN** the result SHALL return an error wrapping `ErrNoObjectGenerated`
 
+#### Scenario: LLM adds an unrelated wrapper property
+
+- **WHEN** the LLM returns `{"elements":[{"name":"Paris","population":2161000}],"extra":true}`
+- **THEN** parsing SHALL succeed and return the single `City` element
+
+#### Scenario: LLM omits the elements array
+
+- **WHEN** the LLM returns `{}`, `{"elements":null}`, `{"elements":{"name":"Paris"}}` or a document that is not a JSON object
+- **THEN** the result SHALL return an error wrapping `ErrNoObjectGenerated`
+
 ### Requirement: Choice output mode
 
-The system SHALL provide a `ChoiceOutput` implementation that wraps the options in an outer object (`{"result": "..."}`) with an enum constraint, and unwraps the response to return the selected string.
+The system SHALL provide a `ChoiceOutput` implementation that wraps the options in an outer object (`{"result": "..."}`) with an enum constraint, and unwraps the response to return the selected string. The wrapper schema SHALL remain the strict response format, with `additionalProperties` false and `result` required. Complete parsing SHALL extract the value at runtime instead of validating the wrapper schema: the response SHALL be a JSON object whose `result` is a string within the option set, and a wrapper property beyond `result` SHALL NOT fail parsing. Partial parsing SHALL publish nothing unless the parsed snapshot is an object whose `result` is present and holds a string; a missing, null or non-string `result` SHALL NOT be read as the empty string. Given a present string, a successfully parsed snapshot SHALL publish only an exact option and a repaired snapshot SHALL publish only a unique prefix match.
 
 #### Scenario: Generate a choice from options
 
@@ -73,14 +83,35 @@ The system SHALL provide a `ChoiceOutput` implementation that wraps the options 
 - **WHEN** the LLM returns `{"result": "cloudy"}` which is not in the option set
 - **THEN** the result SHALL return an error wrapping `ErrNoObjectGenerated`
 
+#### Scenario: LLM adds an unrelated wrapper property
+
+- **WHEN** the LLM returns `{"result":"sunny","extra":true}`
+- **THEN** parsing SHALL succeed and return `"sunny"`
+
+#### Scenario: Partial snapshot carries no choice yet
+
+- **WHEN** a single-option choice receives the partial snapshots `{`, `{"other":`, `{"result":null,` or `{"result":1}`
+- **THEN** partial parsing SHALL publish no value
+
+#### Scenario: Partial snapshot carries a unique prefix
+
+- **WHEN** `output.Choice("sunny", "rainy", "snowy")` receives the partial snapshot `{"result":"rai`
+- **THEN** partial parsing SHALL publish `"rainy"`
+
 ### Requirement: JSON output mode
 
 The system SHALL provide a `JSONOutput` implementation that requests JSON mode from the provider without a schema constraint. The response SHALL be validated as parseable JSON but not against any schema.
 
-#### Scenario: Generate unstructured JSON
+#### Scenario: Generate unstructured non-null JSON
 
-- **WHEN** `Output` is set to `output.JSON()` and the LLM returns valid JSON
-- **THEN** `output.Value[any](result)` SHALL return the parsed JSON value (map, slice, string, number, bool, or nil)
+- **WHEN** `Output` is set to `output.JSON()` and the LLM returns valid non-null JSON
+- **THEN** `output.Value[any](result)` through an `OutputAccessor` wrapper SHALL return the parsed JSON value (map, slice, string, number, or bool)
+
+#### Scenario: Generate JSON null
+
+- **WHEN** `Output` is set to `output.JSON()` and the final generated response is `null` with a `stop` finish
+- **THEN** `ParseComplete("null")` SHALL succeed with a nil value and the generated result SHALL have nil `Output` and nil `OutputError`
+- **AND** `output.Value[any]` through an `OutputAccessor` wrapper of the generated result SHALL report missing output
 
 #### Scenario: LLM returns invalid JSON in JSON mode
 
@@ -89,7 +120,7 @@ The system SHALL provide a `JSONOutput` implementation that requests JSON mode f
 
 ### Requirement: Final output parsing follows operation semantics
 
-When `Output` is set, `StreamText` SHALL run `Output.ParseComplete()` on the final step's accumulated text independently of its finish reason. Successful parsing SHALL populate `OutputValue`; parse or validation failure SHALL populate `OutputError`. `GenerateText` SHALL run final output parsing only when the final step's unified finish reason is `stop`, matching the upstream non-streaming operation.
+When `Output` is set, `StreamText` SHALL run `Output.ParseComplete()` on the final step's accumulated text independently of its finish reason. Successful parsing SHALL populate `OutputValue`; parse or validation failure SHALL populate `OutputError`. `GenerateText` and `ToolLoopAgent.Generate` SHALL run `Output.ParseComplete()` on the final step's accumulated text if the unified finish reason is `stop`, or if it is not `tool-calls` and the accumulated text is nonempty. Generated calls SHALL NOT parse an empty non-`stop` response or any `tool-calls` response. For generated calls, successful parsing SHALL populate `GenerateTextResult.Output` with the parsed value and leave `OutputError` nil; parse or validation failure SHALL leave `Output` nil and populate `OutputError`, without failing the generated call itself. For the built-in object, array, choice, and JSON modes, that failure SHALL wrap `ErrNoObjectGenerated`. If parsing is skipped, `Output` and `OutputError` SHALL both remain nil. The final text and unified finish reason SHALL remain available in all cases. Through an `output.OutputAccessor` wrapper of the generated result (such as `output.ObjectResult[T]`), `output.Value[T]` SHALL return a non-nil typed output when one is available and an explicit error on parse failure or missing output; `GenerateTextResult` itself has fields, not the accessor methods. Raw JSON `null` is a successful parse with nil `Output` and nil `OutputError`, but the existing typed accessor reports it as missing output. This applies to object, array, choice, and JSON output modes.
 
 #### Scenario: StreamText parses valid output after a length finish
 
@@ -105,15 +136,44 @@ When `Output` is set, `StreamText` SHALL run `Output.ParseComplete()` on the fin
 - **AND** `OutputError()` SHALL return an error wrapping `ErrNoObjectGenerated`
 - **AND** `Text()` SHALL retain the raw accumulated response
 
-#### Scenario: GenerateText parses output after a stop finish
+#### Scenario: Generated stop finish attempts complete parsing even with empty text
 
-- **WHEN** the final `GenerateText` step completes with `FinishReasonStop` and `Output` is set
-- **THEN** the system SHALL call `ParseComplete` on the accumulated text and store the result
+- **WHEN** the final `GenerateText` or `ToolLoopAgent.Generate` step finishes `stop` with built-in object, array, choice, or JSON output configured, whether its text is valid, invalid, or empty
+- **THEN** the system SHALL call `ParseComplete` on that text
+- **AND** valid text (non-null for JSON mode) SHALL yield the complete output with nil `OutputError`, while invalid or empty text SHALL yield nil output and an `OutputError` wrapping `ErrNoObjectGenerated`
 
-#### Scenario: GenerateText does not parse output after a non-stop finish
+#### Scenario: Generated non-tool-call non-stop finish parses nonempty valid text
 
-- **WHEN** the final `GenerateText` step completes with a unified finish reason other than `stop` and `Output` is set
-- **THEN** `Output` and `OutputError` on `GenerateTextResult` SHALL both be nil
+- **WHEN** the final `GenerateText` or `ToolLoopAgent.Generate` step finishes `length`, `content-filter`, `error`, or `other` with nonempty valid object, array, or choice output text, or non-null valid JSON output text
+- **THEN** the system SHALL call `ParseComplete` on that text
+- **AND** `Output` SHALL contain the validated value and `OutputError` SHALL be nil
+- **AND** `output.Value[T]` through a generated-result `OutputAccessor` wrapper SHALL return the value without error
+
+#### Scenario: Generated non-tool-call non-stop finish reports invalid text
+
+- **WHEN** the final `GenerateText` or `ToolLoopAgent.Generate` step finishes `length`, `content-filter`, `error`, or `other` with nonempty malformed JSON or JSON invalid for the configured object, array, or choice schema
+- **THEN** the system SHALL call `ParseComplete` on that text
+- **AND** `Output` SHALL be nil and both `OutputError` and the error from `output.Value[T]` through a generated-result `OutputAccessor` wrapper SHALL wrap `ErrNoObjectGenerated`
+- **AND** the generated call SHALL still return its result, including its raw text and finish reason
+
+#### Scenario: Generated non-stop finish with empty text skips complete parsing
+
+- **WHEN** the final `GenerateText` or `ToolLoopAgent.Generate` step finishes `length`, `content-filter`, `error`, or `other` with empty text
+- **THEN** the system SHALL NOT call `ParseComplete`
+- **AND** `Output` and `OutputError` SHALL both be nil
+- **AND** `output.Value[T]` through a generated-result `OutputAccessor` wrapper SHALL report missing output
+
+#### Scenario: Generated tool-calls finish skips complete parsing regardless of text
+
+- **WHEN** the final `GenerateText` or `ToolLoopAgent.Generate` step finishes `tool-calls` with valid, invalid, or empty text
+- **THEN** the system SHALL NOT call `ParseComplete`
+- **AND** `Output` and `OutputError` SHALL both be nil
+- **AND** `output.Value[T]` through a generated-result `OutputAccessor` wrapper SHALL report missing output
+
+#### Scenario: Generated output comes from the final step
+
+- **WHEN** a generated call continues after an earlier tool step and its final step contains structured output
+- **THEN** complete output parsing SHALL use the final step's accumulated text and finish reason, not the earlier step's
 
 ### Requirement: Structured output with tools
 
@@ -211,3 +271,66 @@ The system SHALL define `ErrNoObjectGenerated` as a sentinel error in the root `
 - **WHEN** structured output validation fails
 - **THEN** `errors.Is(err, aisdk.ErrNoObjectGenerated)` SHALL return true
 - **AND** the raw LLM text SHALL be accessible from the result via `result.Text()`
+
+### Requirement: Opt-in repair of invalid complete structured output
+
+The system SHALL expose an optional `aisdk.WithRepairText` option usable with both `GenerateText` and `StreamText`, including their `output.GenerateObject` and `output.StreamObject` wrappers. The callback SHALL receive the original generated text and the error returned by `Output.ParseComplete` and SHALL return repaired text, an acceptance indicator, and an error. Only when an eligible final complete parse returns an error wrapping both `aisdk.ErrNoObjectGenerated` and `aisdk.ErrInvalidOutputText` SHALL the system invoke a configured callback, exactly once. `ErrInvalidOutputText` SHALL indicate JSON syntax or schema-validation failure of generated text, not a Go typed-conversion failure after schema validation succeeds. If accepted, it SHALL call the configured `Output.ParseComplete` again on the returned text, once, without invoking repair again. This SHALL apply to schema and JSON validation of Object, Array, Choice, and JSON output modes, as well as custom `Output` implementations that wrap both sentinels for repairable text failures; it SHALL NOT require changing the three-method `Output` interface or the existing stop/non-stop parse eligibility.
+
+#### Scenario: Repair malformed JSON through GenerateObject
+- **WHEN** `output.GenerateObject[T]` is passed `aisdk.WithRepairText` and the model returns malformed JSON for an `output.Object[T]` that the callback repairs to schema-valid JSON
+- **THEN** the callback SHALL receive exactly the original generated text and the original parse error wrapping both `ErrNoObjectGenerated` and `ErrInvalidOutputText`
+- **AND** `Object()` SHALL return the typed value from validated repaired text without an output error
+
+#### Scenario: Repair schema-invalid JSON through StreamObject
+- **WHEN** `output.StreamObject[T]` is passed `aisdk.WithRepairText` and the model returns valid JSON that fails the configured object schema but the callback returns schema-valid JSON
+- **THEN** the callback SHALL receive exactly the original text and schema validation error wrapping both `ErrNoObjectGenerated` and `ErrInvalidOutputText`
+- **AND** `Object()` SHALL return the typed validated repaired value without an output error
+
+#### Scenario: Shared option on direct calls and other output modes
+- **WHEN** direct `GenerateText` or `StreamText` configures `WithOutput` with Object, Array, Choice, JSON, or a custom `Output` wrapping both `ErrNoObjectGenerated` and `ErrInvalidOutputText`, along with `WithRepairText`, and the callback accepts repaired text valid for that output
+- **THEN** `Output` or `OutputValue()` SHALL contain the parsed and validated repaired value
+- **AND** the same output's `ResponseFormat` and normal parse/validation rules SHALL be used for the original and repaired text
+
+#### Scenario: No repair configured
+- **WHEN** `output.GenerateObject` or `output.StreamObject` is called without `WithRepairText` and its configured output rejects the model text
+- **THEN** `Object()` SHALL return the original output error wrapping `ErrNoObjectGenerated` without an extra parse attempt
+
+#### Scenario: Declined repair
+- **WHEN** the callback returns `accepted == false` with no callback error after a validation failure
+- **THEN** `OutputError` and the typed accessor SHALL return the original parse/validation error
+- **AND** the system SHALL NOT parse returned text
+
+#### Scenario: Repair callback fails
+- **WHEN** the callback returns an error after an eligible parse/validation failure
+- **THEN** `OutputError` and the typed accessor SHALL return the callback error
+- **AND** the system SHALL NOT parse returned text again
+
+#### Scenario: Accepted repaired output remains invalid
+- **WHEN** the callback accepts text that fails the configured output's complete parser or schema validation
+- **THEN** `OutputError` and the typed accessor SHALL return the repaired text's parse/validation error wrapping `ErrNoObjectGenerated`
+- **AND** the callback SHALL NOT run a second time
+
+#### Scenario: Schema-valid text fails Go typed conversion
+- **WHEN** Object or Array schema validation succeeds but typed `json.Unmarshal` into `T` fails (including a custom unmarshaler failure), with `WithRepairText` configured
+- **THEN** `OutputError` SHALL still wrap `ErrNoObjectGenerated` but SHALL NOT wrap `ErrInvalidOutputText`
+- **AND** the callback SHALL NOT run and the original typed-conversion error SHALL be returned
+
+#### Scenario: No eligible validation error
+- **WHEN** original complete parsing succeeds, the output is nil, a custom output returns an error lacking either required sentinel, or complete parsing is not eligible under existing finish-reason rules
+- **THEN** the callback SHALL NOT run
+- **AND** original result behavior SHALL remain unchanged
+
+### Requirement: Repair preserves original model response and inspectable errors
+
+The system SHALL preserve original generated model text, content, full/UI message stream chunks, partial and array-element streams, response metadata, and usage when attempting repair; only final structured `OutputValue` and `OutputError` SHALL be affected. Builtin output parse/validation failures SHALL retain the underlying parse or schema error in the Go error chain while still wrapping `ErrNoObjectGenerated`; repairable JSON/schema failures SHALL also wrap `ErrInvalidOutputText`, so callers can inspect the failure cause and eligibility separately.
+
+#### Scenario: Repaired output does not rewrite raw result
+- **WHEN** a callback repairs generated text to a valid final value
+- **THEN** the final typed value SHALL reflect the repaired text
+- **AND** `Text`, `Content`, `Steps`, `Response`, `Usage` and `TotalUsage` SHALL reflect the original provider response
+- **AND** text, partial-output and UI chunks SHALL NOT be replaced with repaired text or synthesized from it
+
+#### Scenario: Inspect original failure cause
+- **WHEN** a builtin structured output rejects malformed JSON or schema-invalid JSON
+- **THEN** the callback's error SHALL satisfy `errors.Is(err, aisdk.ErrNoObjectGenerated)` and `errors.Is(err, aisdk.ErrInvalidOutputText)`
+- **AND** the underlying JSON parse or schema validation error SHALL be discoverable with `errors.As`

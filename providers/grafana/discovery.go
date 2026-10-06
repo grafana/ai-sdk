@@ -20,16 +20,38 @@ type ModelSpecification struct {
 	ModelID              string `json:"modelId"`
 }
 
-// ModelInfo is a public catalog row. Unknown server metadata is not exposed.
+// ConfiguredCandidate is an explicitly configured invocation destination.
+// ProviderInstance is a configuration key; Provider is its effective namespace.
+// ProviderModelID is the configured invocation ID, never a provider-reported response ID.
+type ConfiguredCandidate struct {
+	ProviderInstance string `json:"providerInstance"`
+	Provider         string `json:"provider"`
+	ProviderModelID  string `json:"providerModelId"`
+}
+
+// ConfiguredRoute contains authorized configured facts, not runtime attempt results.
+// Aliases and Fallbacks retain configured order; Primary is the initial destination.
+type ConfiguredRoute struct {
+	Aliases   []string              `json:"aliases"`
+	Primary   ConfiguredCandidate   `json:"primary"`
+	Fallbacks []ConfiguredCandidate `json:"fallbacks"`
+}
+
+// ModelInfo is a public catalog row with optional configured-route facts.
+// Gateway is nil when the server omits the extension; absence is not an empty route.
+// Specifications identify the canonical public row; Gateway.Aliases remain callable.
 type ModelInfo struct {
 	ID            string             `json:"id"`
 	Name          string             `json:"name"`
 	Description   *string            `json:"description,omitempty"`
 	Specification ModelSpecification `json:"specification"`
+	Gateway       *ConfiguredRoute   `json:"gateway,omitempty"`
 }
 
 // ListModels returns the authenticated catalog in server order, without caching.
-// A malformed row or response invalidates the entire result.
+// The complete document must fit Limits.DiscoveryBytes and decode into ModelInfo.
+// Catalog policy and route consistency belong to server startup validation.
+// Malformed or oversized catalogs return no partial results.
 func (p *Provider) ListModels(ctx context.Context) ([]ModelInfo, error) {
 	req, err := p.request(ctx, http.MethodGet, "/config")
 	if err != nil {
@@ -52,40 +74,12 @@ func (p *Provider) ListModels(ctx context.Context) ([]ModelInfo, error) {
 		return nil, protocolError("grafana: invalid discovery response", resp.StatusCode, err)
 	}
 	var document struct {
-		Models *[]json.RawMessage `json:"models"`
+		Models []ModelInfo `json:"models"`
 	}
-	if err := decodeFields(body, &document, "models"); err != nil || document.Models == nil {
+	if json.Unmarshal(body, &document) != nil || document.Models == nil {
 		return nil, protocolError("grafana: invalid discovery document", resp.StatusCode, nil)
 	}
-	rows := make([]ModelInfo, 0, len(*document.Models))
-	seen := make(map[string]struct{}, len(*document.Models))
-	for _, raw := range *document.Models {
-		var row ModelInfo
-		var fields struct {
-			ID            string          `json:"id"`
-			Name          string          `json:"name"`
-			Description   json.RawMessage `json:"description"`
-			Specification json.RawMessage `json:"specification"`
-		}
-		if decodeFields(raw, &fields, "id", "name", "description", "specification") != nil || decodeFields(fields.Specification, &row.Specification, "specificationVersion", "provider", "modelId") != nil {
-			return nil, protocolError("grafana: invalid discovery model", resp.StatusCode, nil)
-		}
-		row.ID, row.Name = fields.ID, fields.Name
-		if len(fields.Description) > 0 {
-			var description *string
-			if json.Unmarshal(fields.Description, &description) != nil {
-				return nil, protocolError("grafana: invalid discovery description", resp.StatusCode, nil)
-			}
-			row.Description = description
-		}
-		_, duplicate := seen[row.ID]
-		if !publicModelID.MatchString(row.ID) || !validPublicText(row.Name) || row.Description != nil && !utf8.ValidString(*row.Description) || row.Specification.SpecificationVersion != "v4" || row.Specification.Provider != "grafana" || row.Specification.ModelID != row.ID || duplicate {
-			return nil, protocolError("grafana: invalid discovery model", resp.StatusCode, nil)
-		}
-		seen[row.ID] = struct{}{}
-		rows = append(rows, row)
-	}
-	return rows, nil
+	return document.Models, nil
 }
 
 func validPublicText(value string) bool {

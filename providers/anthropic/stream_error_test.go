@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 
 	"github.com/anthropics/anthropic-sdk-go/option"
@@ -29,6 +30,76 @@ var streamErrorCases = []streamErrorCase{
 	{name: "invalid request", errorType: "invalid_request_error", initialStatus: 500},
 }
 
+func TestSafeguardsTransportFailure(t *testing.T) {
+	for _, stream := range []bool{false, true} {
+		t.Run(fmt.Sprintf("stream=%t", stream), func(t *testing.T) {
+			var calls atomic.Int32
+			type capturedRequest struct {
+				body  map[string]json.RawMessage
+				betas []string
+			}
+			requests := make(chan capturedRequest, 1)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				var body map[string]json.RawMessage
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+				requests <- capturedRequest{body: body, betas: r.Header.Values("anthropic-beta")}
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusInternalServerError)
+				_, _ = w.Write([]byte(`{"type":"error","error":{"type":"api_error","message":"provider failed"}}`))
+			}))
+			defer server.Close()
+			model := New("test-key", "claude-sonnet-4-6", WithRequestOptions(option.WithBaseURL(server.URL), option.WithHTTPClient(server.Client()), option.WithMaxRetries(0)))
+			maxTokens := 1024
+			opts := provider.CallOptions{
+				Prompt: []provider.Message{provider.UserText("hello")}, MaxOutputTokens: &maxTokens,
+				ProviderOptions: provider.BuildProviderOptions(AnthropicOptions{Safeguards: []AnthropicSafeguard{{Type: AnthropicSafeguardDangerousToolUse}}}),
+			}
+			if stream {
+				result, err := model.DoStream(context.Background(), opts)
+				assert.Nil(t, result)
+				require.Error(t, err)
+			} else {
+				result, err := model.DoGenerate(context.Background(), opts)
+				assert.Nil(t, result)
+				require.Error(t, err)
+			}
+			require.EqualValues(t, 1, calls.Load())
+			captured := <-requests
+			assert.JSONEq(t, `[{"type":"dangerous_tool_use"}]`, string(captured.body["safeguards"]))
+			assert.Contains(t, captured.betas, "dangerous-tool-use-2026-09-03")
+		})
+	}
+}
+
+func TestSafeguardsMalformedStreamPartError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = fmt.Fprint(w, "event: message_start\ndata: "+`{"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","model":"claude-sonnet-4-6","content":[],"usage":{"input_tokens":1,"output_tokens":0}}}`+"\n\n")
+		_, _ = fmt.Fprint(w, "event: message_delta\ndata: "+`{"type":"message_delta","delta":{"stop_reason":"end_turn","safeguard_results":[{"type":"dangerous_tool_use","status":{"type":"available","tool_uses":{"toolu_01":{"type":1,"explanation":"private-verdict"}}}}]},"usage":{"output_tokens":1}}`+"\n\n")
+	}))
+	defer server.Close()
+	model := New("test-key", "claude-sonnet-4-6", WithRequestOptions(option.WithBaseURL(server.URL), option.WithHTTPClient(server.Client()), option.WithMaxRetries(0)))
+	result, err := model.DoStream(context.Background(), provider.CallOptions{Prompt: []provider.Message{provider.UserText("hello")}})
+	require.NoError(t, err)
+	var errors, finishes int
+	for part := range result.Stream {
+		switch part.Type {
+		case provider.PartError:
+			errors++
+			require.NotNil(t, part.APICallError)
+			assert.NotContains(t, part.APICallError.Message, "private-verdict")
+		case provider.PartFinish:
+			finishes++
+		}
+	}
+	assert.Equal(t, 1, errors)
+	assert.Zero(t, finishes)
+}
+
 func TestDoStream_InitialSSEError(t *testing.T) {
 	for _, tc := range streamErrorCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -47,6 +118,21 @@ func TestDoStream_InitialSSEError(t *testing.T) {
 			assert.Equal(t, "failed", apiErr.Message)
 			assert.JSONEq(t, fmt.Sprintf(`{"type":%q,"message":"failed"}`, tc.errorType), apiErr.ResponseBody)
 			assert.Contains(t, apiErr.URL, "/v1/messages")
+		})
+	}
+}
+
+func TestDoStream_RawInitialError(t *testing.T) {
+	for _, tc := range streamErrorCases {
+		t.Run(tc.name, func(t *testing.T) {
+			m, closeServer := newSSEErrorModel(t, tc.errorType, false)
+			defer closeServer()
+			result, err := m.DoStream(t.Context(), provider.CallOptions{IncludeRawChunks: true})
+			require.Error(t, err)
+			assert.Nil(t, result)
+			apiErr := requireAPICallError(t, err, tc.errorType)
+			assert.Equal(t, tc.initialStatus, apiErr.StatusCode)
+			assert.Equal(t, tc.initialRetry, apiErr.IsRetryable)
 		})
 	}
 }

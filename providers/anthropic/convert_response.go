@@ -49,7 +49,7 @@ func convertResponse(msg *anthropic.BetaMessage, mapping toolNameMapping, usesJs
 							ID:               src.ID,
 							SourceType:       src.SourceType,
 							URL:              src.URL,
-							Text:             src.Title,
+							Title:            src.Title,
 							MediaType:        src.MediaType,
 							Filename:         src.Filename,
 							ProviderMetadata: src.ProviderMetadata,
@@ -94,7 +94,7 @@ func convertResponse(msg *anthropic.BetaMessage, mapping toolNameMapping, usesJs
 				Type: provider.ContentReasoning,
 				Text: block.Thinking,
 			}
-			if block.Signature != "" {
+			if block.JSON.Signature.Valid() {
 				meta, err := json.Marshal(map[string]string{"signature": block.Signature})
 				if err != nil {
 					return nil, fmt.Errorf("marshaling thinking signature: %w", err)
@@ -220,7 +220,7 @@ func convertResponse(msg *anthropic.BetaMessage, mapping toolNameMapping, usesJs
 						ID:         generateID(),
 						SourceType: provider.SourceTypeURL,
 						URL:        result.URL,
-						Text:       result.Title,
+						Title:      result.Title,
 						ProviderMetadata: provider.ProviderMetadata{
 							"anthropic": pageAgeMeta,
 						},

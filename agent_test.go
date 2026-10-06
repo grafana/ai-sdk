@@ -99,10 +99,19 @@ func TestToolLoopAgent_ToolChoice(t *testing.T) {
 					result := agent.Stream(t.Context(), WithAgentPrompt("hello"), WithAgentOptions(tc.call...))
 					for range result.FullStream() {
 					}
-					require.NoError(t, result.Err())
+					if tc.want.Type == provider.ToolChoiceRequired || tc.want.Type == provider.ToolChoiceTool {
+						require.ErrorContains(t, result.Err(), "tool choice")
+					} else {
+						require.NoError(t, result.Err())
+					}
 				} else {
-					_, err := agent.Generate(t.Context(), WithAgentPrompt("hello"), WithAgentOptions(tc.call...))
-					require.NoError(t, err)
+					result, err := agent.Generate(t.Context(), WithAgentPrompt("hello"), WithAgentOptions(tc.call...))
+					if tc.want.Type == provider.ToolChoiceRequired || tc.want.Type == provider.ToolChoiceTool {
+						require.ErrorContains(t, err, "tool choice")
+						assert.Nil(t, result)
+					} else {
+						require.NoError(t, err)
+					}
 				}
 				assert.Empty(t, got.Tools)
 				assert.Equal(t, &tc.want, got.ToolChoice)
@@ -610,7 +619,7 @@ func TestToolLoopAgent_InheritedOrchestrationBehavior(t *testing.T) {
 		assert.Equal(t, "done", result.Text)
 
 		denied := false
-		messages[0].Parts = []Part{ToolInvocationPart{ToolCallID: "c1", ToolName: "danger", State: ToolStateApprovalResponded, Input: json.RawMessage(`{}`), Approval: &ToolApproval{ID: "approval-1", Approved: &denied, Reason: "no"}}}
+		messages[0].Parts = []Part{ToolInvocationPart{ToolCallID: "c1", ToolName: "danger", State: ToolStateApprovalResponded, Input: json.RawMessage(`{}`), Approval: &ToolApproval{ID: "approval-1", Approved: &denied, Reason: new("no")}}}
 		executed = false
 		_, err = agent.Generate(context.Background(), WithAgentMessages(messages...))
 		require.NoError(t, err)

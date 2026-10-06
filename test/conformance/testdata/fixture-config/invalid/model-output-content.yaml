@@ -1,0 +1,12 @@
+# unknown: mimeType
+model: test
+tools:
+  weather:
+    description: weather
+    inputSchema: { type: object }
+    modelOutput:
+      type: content
+      content:
+        - type: file-data
+          data: aGk=
+          mimeType: text/plain

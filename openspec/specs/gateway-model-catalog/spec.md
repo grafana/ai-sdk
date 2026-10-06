@@ -33,10 +33,10 @@ A successful resolution SHALL return both the canonical public catalog ID and a 
 - **THEN** the result SHALL contain the canonical entry ID rather than the alias
 
 ### Requirement: Immutable static catalog
-The package SHALL provide a static catalog constructor that copies its entries and nested metadata slices, stores only non-nil models, and exposes no mutation API.
+The package SHALL provide a static catalog constructor that copies its entries and nested metadata slices, including explicitly supplied configured candidate facts, stores only non-nil models, and exposes no mutation API.
 
 #### Scenario: Source entries are mutated after construction
-- **WHEN** the caller mutates the input entries, aliases, or capabilities after successful construction
+- **WHEN** the caller mutates the input entries, aliases, capabilities or configured candidates after successful construction
 - **THEN** subsequent catalog resolution and listing SHALL remain unchanged
 
 #### Scenario: Static model resolves
@@ -71,26 +71,30 @@ Catalog constructors SHALL reject empty canonical IDs, empty aliases, duplicate 
 - **THEN** construction SHALL fail with an error identifying the route's canonical public ID
 
 ### Requirement: Stable model listing
-Listing SHALL return one `ModelInfo` per canonical entry in ascending canonical-ID order. Each entry SHALL include its canonical ID and SHALL preserve optional name, description, aliases, and capabilities supplied at construction.
+Listing SHALL return one `ModelInfo` per canonical entry in ascending canonical-ID order. Each entry SHALL include its canonical ID and SHALL preserve optional name, description, aliases, capabilities and configured candidate facts supplied at construction, including candidate and alias order. Each returned nested slice SHALL be independently copied.
 
 #### Scenario: Catalog contains aliases
 - **WHEN** models are listed
-- **THEN** aliases SHALL appear as metadata on their canonical entry and SHALL NOT appear as separate model rows
+- **THEN** aliases SHALL appear as metadata on their canonical entry and SHALL NOT appear as separate catalog model rows
 
 #### Scenario: Listing result is mutated
-- **WHEN** a caller mutates the returned list, aliases, or capabilities
+- **WHEN** a caller mutates the returned list, aliases, capabilities or configured candidate facts
 - **THEN** later listing and resolution SHALL remain unchanged
 
 #### Scenario: Empty catalog is listed
 - **WHEN** a valid catalog has no entries
 - **THEN** listing SHALL return an empty list without an error
 
+#### Scenario: Registry route supplies configured facts
+- **WHEN** a registry-backed catalog explicitly receives ordered candidate metadata
+- **THEN** construction/listing SHALL preserve and defensively copy those facts without deriving additional candidates from registry lookup
+
 ### Requirement: Public model metadata semantics
-`ModelInfo` SHALL require a canonical public ID and SHALL support optional presentation name, description, explicit aliases, and typed model capabilities. Metadata SHALL describe the public route rather than exposing or inferring provider-specific invocation or routing details. Canonical IDs, aliases, and capabilities SHALL be supplied by the catalog owner; the catalog SHALL NOT derive them from `LanguageModel.ModelID()`, provider `ModelIDs()` inventories, or built-in public-name policy.
+`ModelInfo` SHALL require a canonical public ID and SHALL support optional presentation name, description, explicit aliases, typed model capabilities and explicitly supplied configured candidates. Each candidate SHALL contain only provider-instance reference, effective adapter/provider identifier and configured invocation model ID. Metadata SHALL describe the authorized configured public route, not selected/completed attempts or provider-reported response identity. Canonical IDs, aliases, capabilities and candidates SHALL be supplied by the catalog owner; the catalog SHALL NOT derive them from `LanguageModel.ModelID()`, provider `ModelIDs()` inventories, built-in public-name policy or runtime responses. Missing configured candidate metadata SHALL remain missing rather than be invented. Credentials and secret references SHALL NOT be represented by candidate metadata.
 
 #### Scenario: Provider inventories do not create public routes
 - **WHEN** provider packages expose supported model ID inventories
-- **THEN** the catalog SHALL NOT register those IDs or infer public names unless the catalog owner supplies explicit entries
+- **THEN** the catalog SHALL NOT register those IDs or infer public names or candidate mappings unless the catalog owner supplies explicit entries
 
 #### Scenario: Fallback route declares capabilities
 - **WHEN** a public route can select more than one backend model
@@ -102,7 +106,11 @@ Listing SHALL return one `ModelInfo` per canonical entry in ascending canonical-
 
 #### Scenario: Model-reported identity differs
 - **WHEN** the resolved model reports a provider-specific identity
-- **THEN** listing metadata SHALL remain the explicitly configured public metadata
+- **THEN** listing metadata SHALL remain the explicitly configured public metadata and candidate facts
+
+#### Scenario: Configured fallback candidates are inspected
+- **WHEN** the catalog owner supplies primary and fallback candidate facts in explicit order
+- **THEN** listing SHALL retain that order without executing candidates or identifying any as selected or successful
 
 ### Requirement: Structured unknown-model errors
 The package SHALL expose an `ErrUnknownModel` sentinel and return a pointer `*UnknownModelError` that contains the requested public ID and unwraps to the sentinel. Unknown-model errors SHALL NOT enumerate available catalog entries.

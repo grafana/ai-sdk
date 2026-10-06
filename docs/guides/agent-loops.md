@@ -21,8 +21,9 @@ result := aisdk.StreamText(ctx, model,
 ```
 
 A step limit is a safety boundary, not a quality target. Choose the smallest
-limit that supports the workflow. You can also stop when a named tool is called
-or supply another `StopCondition`.
+limit that supports the workflow. `HasToolCall("finalAnswer", "handoff")` stops
+once the latest step calls any of the named tools, or you can supply another
+`StopCondition`.
 
 Use `WithPrepareStep` when later steps need different active tools, messages,
 model settings, or runtime context. Keep ordinary loops simple; step preparation
@@ -70,6 +71,20 @@ if err := aisdk.WriteAgentUIStream(
 The helper validates and converts UI message history, runs the Agent, and writes
 the UI message SSE stream. The [full-stack chat guide](../getting-started/full-stack-chat.md)
 shows the corresponding direct `StreamText` endpoint.
+
+## Load persisted tool history safely
+
+The UI helper validates nonempty history on a clone before invoking the Agent.
+It checks tool states and configured static schemas, normalizes obsolete or
+incompatible terminal history at the supported gates, and uses that clone for
+conversion and response assembly. Caller history is unchanged.
+
+Dynamic tools skip static schemas; application metadata/data and unrepresented
+provider-tool schemas are not validated. History validation does not call
+`Tool.ValidateInput`, and direct conversion/`StreamText` do not acquire these gates.
+See [`CreateAgentUIStream`](https://pkg.go.dev/github.com/grafana/ai-sdk#CreateAgentUIStream)
+and the [validation contract](../../openspec/specs/agent-tool-loop/spec.md#requirement-static-tool-schemas-use-pinned-agent-normalization-gates)
+for terminal-state rules.
 
 ## Design bounded agents
 

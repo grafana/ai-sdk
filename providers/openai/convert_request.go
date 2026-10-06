@@ -1,7 +1,10 @@
 package openai
 
 import (
+	"encoding/json"
 	"fmt"
+	"slices"
+	"strings"
 
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/openai/openai-go/v3/packages/param"
@@ -35,14 +38,14 @@ type buildResult struct {
 // It returns the request body, accumulated warnings, conversion metadata, and
 // an error.
 func buildParams(modelID string, opts provider.CallOptions) (responses.ResponseNewParams, []provider.Warning, buildResult, error) {
-	return buildParamsWithConfig(modelID, opts, "", true)
+	return buildParamsWithConfig(modelID, opts, "", true, "detailed")
 }
 
 func buildParamsForProvider(modelID string, opts provider.CallOptions, providerOptionsName string) (responses.ResponseNewParams, []provider.Warning, buildResult, error) {
-	return buildParamsWithConfig(modelID, opts, providerOptionsName, true)
+	return buildParamsWithConfig(modelID, opts, providerOptionsName, true, "detailed")
 }
 
-func buildParamsWithConfig(modelID string, opts provider.CallOptions, providerOptionsName string, webSearchSourcesIncludeSupported bool) (responses.ResponseNewParams, []provider.Warning, buildResult, error) {
+func buildParamsWithConfig(modelID string, opts provider.CallOptions, providerOptionsName string, webSearchSourcesIncludeSupported bool, defaultReasoningSummary string) (responses.ResponseNewParams, []provider.Warning, buildResult, error) {
 	if providerOptionsName == "" {
 		_, name, err := resolveProviderOptions(opts)
 		if err != nil {
@@ -98,10 +101,39 @@ func buildParamsWithConfig(modelID string, opts provider.CallOptions, providerOp
 		return responses.ResponseNewParams{}, nil, buildResult{}, err
 	}
 	warnings = append(warnings, inputWarnings...)
+	if popts.ReasoningEffortUpdate != "" {
+		if !caps.supportsConfigurationUpdate || popts.ReasoningMode == "pro" || popts.ContextManagement != nil || popts.Truncation == "auto" {
+			details := "reasoningEffortUpdate requires standard reasoning mode without automatic compaction or automatic truncation"
+			if !caps.supportsConfigurationUpdate {
+				details = "reasoningEffortUpdate is only supported by GPT-6 and later models"
+			}
+			warnings = append(warnings, provider.Warning{Type: provider.WarnUnsupported, Feature: "reasoningEffortUpdate", Details: details})
+		} else {
+			update := responses.ResponseInputItemUnionParam{OfConfigurationUpdate: &responses.ResponseConfigurationUpdateItemParam{
+				Reasoning: responses.ResponseConfigurationUpdateItemParamReasoning{Effort: shared.ReasoningEffort(popts.ReasoningEffortUpdate)},
+			}}
+			input = append(responses.ResponseInputParam{update}, input...)
+		}
+	}
+	if popts.CompactionTrigger != nil && *popts.CompactionTrigger {
+		input = append(input, responses.ResponseInputItemUnionParam{OfCompactionTrigger: &responses.ResponseInputItemCompactionTriggerParam{}})
+	}
 	body.Input = responses.ResponseNewParamsInputUnion{OfInputItemList: input}
 
+	resolvedEffort := popts.ReasoningEffort
+	if resolvedEffort == "" && opts.Reasoning != provider.ReasoningProviderDefault {
+		resolvedEffort = string(opts.Reasoning)
+	}
+	if resolvedEffort != "" && caps.supportedReasoningEfforts != nil && !slices.Contains(caps.supportedReasoningEfforts, resolvedEffort) {
+		warnings = append(warnings, provider.Warning{
+			Type: provider.WarnUnsupported, Feature: "reasoningEffort",
+			Details: fmt.Sprintf("%s only supports the following reasoning efforts: %s", modelID, strings.Join(caps.supportedReasoningEfforts, ", ")),
+		})
+		resolvedEffort = ""
+	}
+
 	// Scalar params + unsupported-param warnings.
-	warnings = append(warnings, applyScalarParams(&body, opts, caps, isReasoning, popts)...)
+	warnings = append(warnings, applyScalarParams(&body, opts, caps, isReasoning, resolvedEffort)...)
 
 	// Structured output.
 	formatWarnings, err := applyResponseFormat(&body, opts, popts)
@@ -111,7 +143,7 @@ func buildParamsWithConfig(modelID string, opts provider.CallOptions, providerOp
 	warnings = append(warnings, formatWarnings...)
 
 	// Tools + tool choice.
-	toolWarnings, err := prepareTools(&body, opts, popts, &br)
+	toolWarnings, err := prepareTools(&body, opts, popts, caps, &br)
 	if err != nil {
 		return responses.ResponseNewParams{}, nil, buildResult{}, err
 	}
@@ -121,7 +153,7 @@ func buildParamsWithConfig(modelID string, opts provider.CallOptions, providerOp
 	warnings = append(warnings, applyProviderOptions(&body, popts, isReasoning, caps)...)
 
 	// include auto-population + reasoning block.
-	applyIncludeAndReasoning(&body, opts, popts, isReasoning, store, webSearchSourcesIncludeSupported, &br)
+	warnings = append(warnings, applyIncludeAndReasoning(&body, popts, resolvedEffort, isReasoning, store, webSearchSourcesIncludeSupported, defaultReasoningSummary, caps, &br)...)
 
 	return body, warnings, br, nil
 }
@@ -193,6 +225,17 @@ func resolveProviderOptionsForName(opts provider.CallOptions, name string) (Open
 }
 
 func validateOpenAIResponsesOptions(options OpenAIResponsesOptions) error {
+	if len(options.ReasoningSummary) > 0 {
+		var summary *string
+		if err := json.Unmarshal(options.ReasoningSummary, &summary); err != nil {
+			return fmt.Errorf("openai: invalid reasoningSummary: %w", err)
+		}
+	}
+	switch options.ReasoningEffortUpdate {
+	case "", OpenAIReasoningEffortUpdateLow, OpenAIReasoningEffortUpdateMedium, OpenAIReasoningEffortUpdateHigh, OpenAIReasoningEffortUpdateXHigh, OpenAIReasoningEffortUpdateMax:
+	default:
+		return fmt.Errorf("openai: invalid reasoningEffortUpdate %q", options.ReasoningEffortUpdate)
+	}
 	switch options.ServiceTier {
 	case "", "auto", "flex", "priority", "fast", "default":
 		return nil
@@ -218,7 +261,7 @@ func resolveSystemMessageMode(popts OpenAIResponsesOptions, caps modelCapabiliti
 
 // applyScalarParams maps temperature/topP/maxOutputTokens and emits warnings for
 // unsupported sampling parameters and capability-gated parameters.
-func applyScalarParams(body *responses.ResponseNewParams, opts provider.CallOptions, caps modelCapabilities, isReasoning bool, popts OpenAIResponsesOptions) []provider.Warning {
+func applyScalarParams(body *responses.ResponseNewParams, opts provider.CallOptions, caps modelCapabilities, isReasoning bool, resolvedEffort string) []provider.Warning {
 	var warnings []provider.Warning
 
 	if opts.TopK != nil {
@@ -242,10 +285,6 @@ func applyScalarParams(body *responses.ResponseNewParams, opts provider.CallOpti
 	}
 
 	// Capability gating for temperature/topP on reasoning models.
-	resolvedEffort := popts.ReasoningEffort
-	if resolvedEffort == "" && opts.Reasoning != provider.ReasoningProviderDefault {
-		resolvedEffort = string(opts.Reasoning)
-	}
 	allowNonReasoning := resolvedEffort == "none" && caps.supportsNonReasoningParameters
 
 	if opts.Temperature != nil {

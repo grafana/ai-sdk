@@ -34,8 +34,8 @@ func isOpenAIGptOSSModel(modelID string) bool {
 
 // isMistralModel returns true when the Bedrock model ID refers to a Mistral
 // model on Bedrock (e.g. `mistral.mistral-large-2407-v1:0`). Cross-region
-// prefixes (`us.mistral.`) also match. Mistral models require numeric-only
-// 9-char tool call IDs (see normalize_tool_call_id.go).
+// prefixes (`us.mistral.`) also match. Mistral models require
+// 9-character alphanumeric tool call IDs (see normalize_tool_call_id.go).
 func isMistralModel(modelID string) bool {
 	return strings.Contains(modelID, "mistral.")
 }
@@ -82,12 +82,41 @@ func rejectsNewerSchemaFields(modelID string) bool {
 	return false
 }
 
+func rejectsSamplingParameters(modelID string) bool {
+	if rejectsNewerSchemaFields(modelID) || strings.Contains(modelID, "claude-opus-5-5") || strings.Contains(modelID, "claude-fable-5-1") {
+		return true
+	}
+	if !strings.Contains(modelID, "claude-") || legacyClaudeModelPattern.MatchString(modelID) {
+		return false
+	}
+	for _, marker := range []string{"claude-sonnet-4-5", "claude-sonnet-4-6", "claude-opus-4-1", "claude-opus-4-5", "claude-opus-4-6", "claude-haiku-4-5"} {
+		if strings.Contains(modelID, marker) {
+			return false
+		}
+	}
+	return !olderClaude4ModelPattern.MatchString(modelID)
+}
+
 func rejectsNativeStructuredOutput(modelID string) bool {
 	return rejectsNewerSchemaFields(modelID) || strings.Contains(modelID, "claude-sonnet-4-6") || strings.Contains(modelID, "claude-haiku-4-5")
 }
 
 func usesJSONInstructionForStructuredOutput(modelID string) bool {
 	return rejectsNewerSchemaFields(modelID)
+}
+
+// rejectsForcedToolUse reports Anthropic models that reject tool_choice
+// "any" and named-tool choices with a 400. Mirrors @ai-sdk/anthropic 4.0.67
+// getModelCapabilities, which upstream @ai-sdk/amazon-bedrock 5.0.99 reuses.
+func rejectsForcedToolUse(modelID string) bool {
+	return strings.Contains(modelID, "claude-sonnet-5-5")
+}
+
+// supportsBetweenToolsThinking reports Anthropic models that accept thinking
+// type "between_tools", their lowest thinking setting. These models reject
+// thinking type "disabled".
+func supportsBetweenToolsThinking(modelID string) bool {
+	return strings.Contains(modelID, "claude-sonnet-5-5")
 }
 
 type anthropicReasoningCapabilities struct {

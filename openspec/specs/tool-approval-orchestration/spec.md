@@ -12,6 +12,8 @@ The `Tool` API SHALL expose a `NeedsApproval` approval configuration for local t
 
 `StreamText` and `GenerateText` SHALL also expose a call-level tool approval policy equivalent to upstream `toolApproval`. The call-level policy SHALL support a generic function for all tool calls and a per-tool policy map. Policy results SHALL support the upstream statuses: not applicable, user approval, approved, and denied, with optional reasons for approved and denied statuses. When both call-level policy and tool-defined `NeedsApproval` are present, call-level policy SHALL take precedence.
 
+New local approval configuration SHALL be evaluated only for steps that do not violate their effective required/named tool choice. The local processing scenarios below SHALL be subject to this condition; provider-originated events and approval responses from prior input messages SHALL retain their existing handling.
+
 If the dynamic approval function returns an error, orchestration SHALL surface that error through the normal stream error path and SHALL NOT execute the tool.
 
 #### Scenario: Tool without approval executes normally
@@ -54,7 +56,7 @@ If the dynamic approval function returns an error, orchestration SHALL surface t
 
 ### Requirement: Approval request emission for blocked local tools
 
-When a completed step contains a non-provider-executed tool call whose tool exists, has an `Execute` function, and requires user approval, `StreamText` SHALL generate an approval ID, emit a tool approval request stream part, and record a tool approval request content part in the step content. The approval request SHALL reference the approval ID and the full tool call identity needed to resume later.
+When a completed step does not violate its effective required/named tool choice and contains a non-provider-executed tool call whose tool exists, has an `Execute` function, and requires user approval, `StreamText` SHALL generate an approval ID, emit a tool approval request stream part, and record a tool approval request content part in the step content. The approval request SHALL reference the approval ID and the full tool call identity needed to resume later.
 
 Blocked local tools SHALL NOT produce a tool result during the request-emitting call. Non-blocked local tools in the same step SHALL continue to execute normally.
 
@@ -194,3 +196,60 @@ The multi-step loop SHALL continue only when all non-provider-executed tool call
 - **WHEN** `GenerateText` is called with messages containing an approved approval response
 - **THEN** it SHALL execute the approved local tool before the model call
 - **AND** the returned steps SHALL include the resumed tool result before any subsequent model response content
+
+### Requirement: Approved streaming local tools use final results for approval continuation
+
+For a streaming local tool requiring approval, both same-invocation automatic approval and later approved approval-response resumption SHALL use the same streamed execution semantics as an unblocked call. A pending or denied request SHALL not execute the streaming function. On approval, preliminary outputs SHALL be emitted to the stream but SHALL not be appended to the model prompt; only the final output or final error SHALL resolve the call. Existing approval response correlation and provider-executed handling SHALL remain unchanged.
+
+#### Scenario: Pending streaming tool waits for user approval
+- **WHEN** a streaming local tool requires user approval
+- **THEN** its execution function SHALL not run during the request-emitting invocation
+- **AND** no preliminary or final tool result SHALL be emitted for it
+
+#### Scenario: Automatically approved streaming tool
+- **WHEN** a streaming local tool receives automatic approval
+- **THEN** preliminary outputs SHALL be visible after the approval events
+- **AND** only its final result SHALL satisfy tool-result completion
+
+#### Scenario: Resumed approved streaming tool
+- **WHEN** an approved response to a prior streaming-tool approval is supplied in the input messages
+- **THEN** preliminary outputs SHALL be visible before the next model call
+- **AND** only the final result SHALL be appended to the continuation prompt
+
+#### Scenario: Denied streaming tool
+- **WHEN** approval is denied for a streaming local tool
+- **THEN** the streaming execution function SHALL not run
+- **AND** existing execution-denied prompt behavior SHALL apply
+
+### Requirement: Choice violations create no new local approval effects
+
+A completed model response violating effective required/named tool choice SHALL bypass the whole new local approval/execution phase for that step. Shared StreamText orchestration, including GenerateText and both ToolLoopAgent entry points, SHALL NOT invoke call-level approval policies or dynamic NeedsApproval, allocate or sign new locally generated approvals, create automatic approval responses or synthetic denial results, or dispatch local Execute/ExecuteStream and execution callbacks for that step. This exception SHALL take precedence over the normal local approval configuration, request emission and continuation rules.
+
+Already received provider-originated calls, results and approval events SHALL retain their existing stream/content handling, including existing provider-event signing behavior. This gate SHALL NOT undo provider effects or alter approval resolution/execution from prior input messages before the current model call. Steps satisfying tool choice and other disallowed-finish approval behavior SHALL retain existing semantics.
+
+#### Scenario: Unrelated tool requiring user approval
+- **WHEN** named choice selects lookup but a completed response contains only another configured local call requiring static or dynamic user approval
+- **THEN** its NeedsApproval function SHALL not run and no new local approval ID/request SHALL be created
+- **AND** no local execution/result SHALL occur
+- **AND** the received call SHALL remain visible alongside the terminal semantic failure
+
+#### Scenario: Automatic approval or denial policy on a violating step
+- **WHEN** a completed named-choice violation contains an unrelated tool with a generic or per-tool policy returning approved or denied
+- **THEN** no approval policy SHALL run for that step
+- **AND** no locally generated approval request/response, signing work or synthetic denial result SHALL occur
+- **AND** no Execute, ExecuteStream or execution callback SHALL run
+
+#### Scenario: Provider-originated events remain visible
+- **WHEN** provider-executed unrelated calls, results or approval requests were received before a completed named-choice violation
+- **THEN** their existing stream and recorded content handling SHALL remain observable
+- **AND** the SDK SHALL not claim to undo those provider effects
+- **AND** no additional local approval phase SHALL be entered
+
+#### Scenario: Prior-message approvals are unaffected
+- **WHEN** a submitted prior-message approval response resolves a local tool before the provider call and that call later violates tool choice
+- **THEN** the prior-message approval execution and generated prompt results SHALL remain unchanged
+- **AND** the new gate SHALL apply only to the violating response's new local approval/execution phase
+
+#### Scenario: Valid choice retains ordinary approval behavior
+- **WHEN** a completed response satisfies its effective named or required choice and contains eligible approval-requiring calls
+- **THEN** ordinary pending, automatic approved and automatic denied handling SHALL remain unchanged

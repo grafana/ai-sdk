@@ -57,6 +57,10 @@ Known curated direct model IDs SHALL resolve to their curated Vertex IDs. Alread
 - **WHEN** `ResolveVertexModelID` is called with `claude-sonnet-4-5`
 - **THEN** it SHALL return `claude-sonnet-4-5@20250929`
 
+#### Scenario: Resolve undated Vertex model ID
+- **WHEN** `ResolveVertexModelID` is called with `claude-sonnet-5-5`
+- **THEN** it SHALL return `claude-sonnet-5-5`, because Vertex serves that model without a date suffix, and SHALL NOT append `@latest`
+
 #### Scenario: Preserve already pinned Vertex model ID
 - **WHEN** `ResolveVertexModelID` is called with `claude-sonnet-4-5@20250929`
 - **THEN** it SHALL return `claude-sonnet-4-5@20250929`

@@ -155,16 +155,26 @@ func TestProviderOptions_ReservedNamespaceIsCaseSignificant(t *testing.T) {
 	}, harness.model.receivedOptions().ProviderOptions, "namespaces are compared exactly")
 }
 
-func TestProviderOptions_UnsupportedPartReportsItsOwnFamily(t *testing.T) {
-	for name, body := range map[string]string{
-		"reserved options": `{"prompt":[{"role":"assistant","content":[{"type":"reasoning-file","data":{"type":"data","data":""},"mediaType":"image/png","providerOptions":{"grafana":{}}}]}]}`,
-		"ordinary options": `{"prompt":[{"role":"assistant","content":[{"type":"reasoning-file","data":{"type":"data","data":""},"mediaType":"image/png","providerOptions":{"ns":{}}}]}]}`,
+func TestProviderOptions_ReasoningFileScopes(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		options string
+		status  int
+		failure []byte
+	}{
+		{name: "protected", options: `{"anthropic":{"model":"private"}}`, status: http.StatusBadRequest, failure: protectedProviderOptionError},
+		{name: "reserved", options: `{"grafana":{}}`, status: http.StatusBadRequest, failure: reservedProviderOptionsError},
+		{name: "ordinary", options: `{"anthropic":{"signature":""}}`, status: http.StatusOK},
 	} {
-		t.Run(name, func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			harness := newRuntimeHarness(t, testLimits())
+			body := `{"prompt":[{"role":"assistant","content":[{"type":"reasoning-file","data":{"type":"data","data":""},"mediaType":"image/png","providerOptions":` + tc.options + `}]}]}`
 			response := harness.serve(validRequest(body))
-			require.Equal(t, http.StatusBadRequest, response.Code)
-			assert.JSONEq(t, string(unsupportedReasoningContentError), response.Body.String())
+			require.Equal(t, tc.status, response.Code, response.Body.String())
+			if tc.failure != nil {
+				assert.JSONEq(t, string(tc.failure), response.Body.String())
+				assert.Zero(t, harness.model.calls)
+			}
 		})
 	}
 }
@@ -274,4 +284,28 @@ func TestProviderOptionPolicy_FieldAllowlistRemovesOtherFields(t *testing.T) {
 	assert.Equal(t, `{"cache_control":{"type":"ephemeral"}}`,
 		string(options.Prompt[0].Content[0].ProviderOptions["anthropic"].(provider.RawProviderOption).Raw),
 		"an allowed field under another spelling is kept, and an untouched namespace keeps its bytes")
+}
+
+func TestProviderOptionPolicy_ReasoningContinuation(t *testing.T) {
+	for _, kind := range []string{"reasoning", "reasoning-file"} {
+		t.Run(kind, func(t *testing.T) {
+			harness := newRuntimeHarness(t, testLimits())
+			harness.resolver.resolved.ProviderOptions = catalog.ProviderOptionPolicy{
+				Namespaces: []string{"anthropic"},
+				Fields:     map[string][]string{"anthropic": {"signature"}},
+			}
+			fields := `"text":""`
+			if kind == "reasoning-file" {
+				fields = `"mediaType":"image/png","data":{"type":"data","data":""}`
+			}
+			body := `{"prompt":[{"role":"assistant","content":[{"type":"` + kind + `",` + fields + `,"providerOptions":{"anthropic":{"signature":"","other":"private"},"openai":{"itemId":"private"}}}]}]}`
+			response := harness.serve(validRequest(body))
+			require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+			options := harness.model.receivedOptions().Prompt[0].Content[0].ProviderOptions
+			require.Len(t, options, 1)
+			value, ok := options["anthropic"].(provider.RawProviderOption)
+			require.True(t, ok)
+			assert.JSONEq(t, `{"signature":""}`, string(value.Raw))
+		})
+	}
 }
