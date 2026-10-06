@@ -92,11 +92,11 @@ func (o *ChoiceOutput) ResponseFormat() *provider.ResponseFormat {
 func (o *ChoiceOutput) ParseComplete(text string) (any, error) {
 	wrapper, err := unmarshalWrapperObject(text)
 	if err != nil {
-		return nil, fmt.Errorf("%w: unmarshaling: %v", aisdk.ErrNoObjectGenerated, err)
+		return nil, fmt.Errorf("%w: %w: unmarshaling: %w", aisdk.ErrNoObjectGenerated, aisdk.ErrInvalidOutputText, err)
 	}
 	result, ok := wrapperString(wrapper, "result")
 	if !ok || !slices.Contains(o.options, result) {
-		return nil, fmt.Errorf("%w: response must be an object that contains a choice value", aisdk.ErrNoObjectGenerated)
+		return nil, fmt.Errorf("%w: %w: response must be an object that contains a choice value: %w", aisdk.ErrNoObjectGenerated, aisdk.ErrInvalidOutputText, o.wrappedSchema.Validate(json.RawMessage(text)))
 	}
 	return result, nil
 }

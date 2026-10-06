@@ -10,6 +10,15 @@ import (
 // The LLM's raw text response is still available via result.Text().
 var ErrNoObjectGenerated = errors.New("aisdk: no object generated")
 
+// ErrInvalidOutputText marks generated JSON text that fails syntax or schema
+// validation. Typed conversion errors after successful validation do not wrap it.
+var ErrInvalidOutputText = errors.New("aisdk: invalid output text")
+
+// RepairTextFunc receives the original generated text and complete parse error.
+// Return accepted=false to keep the original error, or accepted=true to validate
+// the returned text once. A callback error takes precedence over acceptance.
+type RepairTextFunc func(text string, parseErr error) (repaired string, accepted bool, err error)
+
 // Output defines a structured output specification that controls how
 // LLM responses are formatted, parsed, and validated.
 //

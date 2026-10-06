@@ -38,7 +38,7 @@ func (o *JSONOutput) ResponseFormat() *provider.ResponseFormat {
 func (o *JSONOutput) ParseComplete(text string) (any, error) {
 	var v any
 	if err := json.Unmarshal([]byte(text), &v); err != nil {
-		return nil, fmt.Errorf("%w: invalid JSON: %v", aisdk.ErrNoObjectGenerated, err)
+		return nil, fmt.Errorf("%w: %w: invalid JSON: %w", aisdk.ErrNoObjectGenerated, aisdk.ErrInvalidOutputText, err)
 	}
 	return v, nil
 }

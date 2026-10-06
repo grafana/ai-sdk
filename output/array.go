@@ -96,25 +96,22 @@ func (o *ArrayOutput[T]) ResponseFormat() *provider.ResponseFormat {
 func (o *ArrayOutput[T]) ParseComplete(text string) (any, error) {
 	wrapper, err := unmarshalWrapperObject(text)
 	if err != nil {
-		return nil, fmt.Errorf("%w: unmarshaling: %v", aisdk.ErrNoObjectGenerated, err)
+		return nil, fmt.Errorf("%w: %w: unmarshaling: %w", aisdk.ErrNoObjectGenerated, aisdk.ErrInvalidOutputText, err)
 	}
 	raw, ok := wrapper["elements"]
-	if !ok {
-		return nil, fmt.Errorf("%w: response must be an object with an elements array", aisdk.ErrNoObjectGenerated)
-	}
 	var rawElements []json.RawMessage
-	if err := json.Unmarshal(raw, &rawElements); err != nil || rawElements == nil {
-		return nil, fmt.Errorf("%w: response must be an object with an elements array", aisdk.ErrNoObjectGenerated)
+	if !ok || json.Unmarshal(raw, &rawElements) != nil || rawElements == nil {
+		return nil, fmt.Errorf("%w: %w: response must be an object with an elements array: %w", aisdk.ErrNoObjectGenerated, aisdk.ErrInvalidOutputText, o.wrappedSchema.Validate(json.RawMessage(text)))
 	}
 
 	elements := make([]T, 0, len(rawElements))
 	for _, rawElement := range rawElements {
 		if err := o.elementSchema.Validate(rawElement); err != nil {
-			return nil, fmt.Errorf("%w: %v", aisdk.ErrNoObjectGenerated, err)
+			return nil, fmt.Errorf("%w: %w: %w", aisdk.ErrNoObjectGenerated, aisdk.ErrInvalidOutputText, err)
 		}
 		var element T
 		if err := json.Unmarshal(rawElement, &element); err != nil {
-			return nil, fmt.Errorf("%w: unmarshaling: %v", aisdk.ErrNoObjectGenerated, err)
+			return nil, fmt.Errorf("%w: unmarshaling: %w", aisdk.ErrNoObjectGenerated, err)
 		}
 		elements = append(elements, element)
 	}
