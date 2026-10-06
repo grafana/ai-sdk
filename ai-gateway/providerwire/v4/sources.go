@@ -2,21 +2,12 @@ package v4
 
 import (
 	"encoding/json"
-	"strconv"
-	"strings"
 	"unicode/utf8"
 
 	"github.com/grafana/ai-sdk/provider"
 )
 
-const maxSourceIDBytes = 1024
 const maxSourceMetadataBytes = 8192
-
-type sourceKey struct {
-	kind provider.SourceType
-	id   string
-}
-type sourceIDs map[sourceKey]string
 
 type urlSource struct {
 	Type             provider.GenerateContentType `json:"type"`
@@ -46,9 +37,6 @@ func unarySource(part provider.GenerateContentPart) provider.SourceInfo {
 }
 
 func sourcePreflight(source provider.SourceInfo, limit int64) bool {
-	if source.ID == "" || len(source.ID) > maxSourceIDBytes {
-		return false
-	}
 	for _, value := range []string{source.ID, source.URL, source.Title, source.MediaType, source.Filename} {
 		if int64(len(value)) > limit {
 			return false
@@ -65,7 +53,7 @@ func sourcePreflight(source provider.SourceInfo, limit int64) bool {
 	return limit >= 0
 }
 
-func mapSource(source provider.SourceInfo, ids sourceIDs, limit int64) (any, error) {
+func mapSource(source provider.SourceInfo, limit int64) (any, error) {
 	if !sourcePreflight(source, limit) {
 		return nil, errInvalidUnarySuccess
 	}
@@ -77,35 +65,22 @@ func mapSource(source provider.SourceInfo, ids sourceIDs, limit int64) (any, err
 	if source.SourceType != provider.SourceTypeURL && source.SourceType != provider.SourceTypeDocument {
 		return nil, errInvalidUnarySuccess
 	}
-	metadata, filePath := publicSourceMetadata(source.ProviderMetadata)
-	if filePath && source.SourceType == provider.SourceTypeDocument {
-		source.Title, source.Filename = "Document", ""
-	}
-	key := sourceKey{source.SourceType, source.ID}
-	id, exists := ids[key]
-	if !exists {
-		id = "source-" + strconv.Itoa(len(ids)+1)
-	}
+	metadata := publicSourceMetadata(source.ProviderMetadata)
 	var mapped any
 	if source.SourceType == provider.SourceTypeURL {
-		mapped = urlSource{Type: provider.ContentSource, SourceType: source.SourceType, ID: id, URL: source.URL, Title: source.Title, ProviderMetadata: metadata}
+		mapped = urlSource{Type: provider.ContentSource, SourceType: source.SourceType, ID: source.ID, URL: source.URL, Title: source.Title, ProviderMetadata: metadata}
 	} else {
-		mapped = documentSource{Type: provider.ContentSource, SourceType: source.SourceType, ID: id, MediaType: source.MediaType, Title: source.Title, Filename: source.Filename, ProviderMetadata: metadata}
+		mapped = documentSource{Type: provider.ContentSource, SourceType: source.SourceType, ID: source.ID, MediaType: source.MediaType, Title: source.Title, Filename: source.Filename, ProviderMetadata: metadata}
 	}
 	encoded, err := json.Marshal(mapped)
 	if err != nil || int64(len(encoded)) > limit {
 		return nil, errInvalidUnarySuccess
 	}
-	if !exists {
-		key.id = strings.Clone(key.id)
-		ids[key] = id
-	}
 	return mapped, nil
 }
 
-func publicSourceMetadata(metadata provider.ProviderMetadata) (provider.ProviderMetadata, bool) {
+func publicSourceMetadata(metadata provider.ProviderMetadata) provider.ProviderMetadata {
 	approved := make(map[string]int64)
-	filePath := false
 	for _, namespace := range []string{"anthropic", "openai", "azure"} {
 		var fields map[string]json.RawMessage
 		raw := metadata[namespace]
@@ -114,9 +89,6 @@ func publicSourceMetadata(metadata provider.ProviderMetadata) (provider.Provider
 		}
 		keys := []string{"startPageNumber", "endPageNumber", "startCharIndex", "endCharIndex"}
 		if namespace == "openai" || namespace == "azure" {
-			var kind string
-			_ = json.Unmarshal(fields["type"], &kind)
-			filePath = filePath || kind == "file_path"
 			keys = []string{"index"}
 		}
 		for _, key := range keys {
@@ -127,8 +99,8 @@ func publicSourceMetadata(metadata provider.ProviderMetadata) (provider.Provider
 		}
 	}
 	if len(approved) == 0 {
-		return nil, filePath
+		return nil
 	}
 	raw, _ := json.Marshal(approved)
-	return provider.ProviderMetadata{"citation": raw}, filePath
+	return provider.ProviderMetadata{"citation": raw}
 }

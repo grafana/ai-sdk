@@ -238,7 +238,7 @@ func TestModel_StreamFramingAndWarnings(t *testing.T) {
 	require.Len(t, part.Warnings, 3)
 	assert.Equal(t, "model setting", part.Warnings[0].Setting)
 	assert.Equal(t, "use another setting", part.Warnings[0].Message)
-	for _, event := range []string{`{"type":"response-metadata"}`, `{"type":"response-metadata","modelId":""}`, `{"type":"response-metadata","modelId":"assistant","timestamp":"2026-08-22T00:00:00,123Z"}`} {
+	for _, event := range []string{`{"type":"response-metadata","modelId":null}`, `{"type":"response-metadata","modelId":1}`, `{"type":"response-metadata","modelId":"assistant","timestamp":"2026-08-22T00:00:00,123Z"}`} {
 		_, err := decodeStreamPart([]byte(event))
 		require.Error(t, err)
 	}
