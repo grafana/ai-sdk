@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -1877,4 +1878,78 @@ func TestDoStreamProviderOptionsCannotReplaceStreamFields(t *testing.T) {
 	require.Equal(t, true, got["stream"], "an option must not turn streaming off")
 	require.Equal(t, map[string]any{"include_usage": true}, got["stream_options"], "an option must not drop usage reporting")
 	require.Equal(t, map[string]any{"1": float64(100)}, got["logit_bias"], "other fields still extend the request")
+}
+
+func TestDoStream_EndsWithoutFinishReason(t *testing.T) {
+	const hel = `{"id":"r1","model":"m","created":1,"choices":[{"index":0,"delta":{"role":"assistant","content":"Hel"}}]}`
+	const lo = `{"id":"r1","model":"m","created":1,"choices":[{"index":0,"delta":{"content":"lo"}}]}`
+	const stop = `{"id":"r1","model":"m","created":1,"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`
+	const namelessTool = `{"id":"r1","model":"m","created":1,"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"arguments":"{}"}}]}}]}`
+	const missingFinish = "openai: response stream ended without a finish reason"
+	serve := func(contentType, body string) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			_, _ = io.ReadAll(r.Body)
+			w.Header().Set("Content-Type", contentType)
+			_, _ = io.WriteString(w, body)
+		}
+	}
+	for _, tc := range []struct {
+		name    string
+		handler http.HandlerFunc
+		// wantError is a substring of the single error part the stream must
+		// carry; empty means no error part.
+		wantError  string
+		wantFinish provider.UnifiedFinishReason
+	}{
+		{name: "cut before finish_reason without DONE", handler: serve("text/event-stream", "data: "+hel+"\n\ndata: "+lo+"\n\n"), wantError: missingFinish, wantFinish: provider.FinishReasonError},
+		{name: "DONE without finish_reason", handler: serve("text/event-stream", "data: "+hel+"\n\ndata: "+lo+"\n\ndata: [DONE]\n\n"), wantError: missingFinish, wantFinish: provider.FinishReasonError},
+		{name: "HTTP 200 HTML body", handler: serve("text/html", "<html><body>proxy login</body></html>"), wantError: missingFinish, wantFinish: provider.FinishReasonError},
+		{name: "finish_reason present", handler: serve("text/event-stream", "data: "+hel+"\n\ndata: "+stop+"\n\ndata: [DONE]\n\n"), wantFinish: provider.FinishReasonStop},
+		// An error that already decided the finish reason is the only error part.
+		{name: "tool call without a name then EOF", handler: serve("text/event-stream", "data: "+namelessTool+"\n\n"), wantError: "openai: stream tool call missing function name", wantFinish: provider.FinishReasonError},
+		{
+			name: "connection dropped mid-stream",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				_, _ = io.ReadAll(r.Body)
+				conn, buf, err := w.(http.Hijacker).Hijack()
+				if err != nil {
+					return
+				}
+				defer func() { _ = conn.Close() }()
+				body := "data: " + hel + "\n\n"
+				_, _ = buf.WriteString("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: 4096\r\n\r\n" + body)
+				_ = buf.Flush()
+			},
+			wantError:  "stream decode failure",
+			wantFinish: provider.FinishReasonError,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(tc.handler)
+			defer srv.Close()
+			m := New("m", WithBaseURL(srv.URL))
+
+			res, err := m.DoStream(context.Background(), provider.CallOptions{Prompt: []provider.Message{provider.UserText("hi")}})
+			require.NoError(t, err)
+			var errs []string
+			var finish *provider.FinishReason
+			for part := range res.Stream {
+				switch part.Type {
+				case provider.PartError:
+					require.NotNil(t, part.APICallError)
+					errs = append(errs, part.APICallError.Message)
+				case provider.PartFinish:
+					finish = part.FinishReason
+				}
+			}
+			require.NotNil(t, finish)
+			assert.Equal(t, tc.wantFinish, finish.Unified)
+			if tc.wantError == "" {
+				assert.Empty(t, errs)
+				return
+			}
+			require.Len(t, errs, 1, "exactly one error part: %q", errs)
+			assert.Contains(t, errs[0], tc.wantError)
+		})
+	}
 }
