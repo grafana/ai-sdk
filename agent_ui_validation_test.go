@@ -200,6 +200,68 @@ func TestCreateAgentUIStream_DynamicRawInputContinuation(t *testing.T) {
 	assert.JSONEq(t, string(encoded), string(after))
 }
 
+func TestCreateAgentUIStream_ResumedCallMetadata(t *testing.T) {
+	for _, dynamic := range []bool{false, true} {
+		for _, tc := range []struct {
+			name     string
+			metadata provider.ProviderMetadata
+		}{
+			{"omitted", nil},
+			{"empty", provider.ProviderMetadata{}},
+			{"opaque", provider.ProviderMetadata{"future": json.RawMessage(`{"nested":[null,false,{}]}`)}},
+		} {
+			t.Run(fmt.Sprintf("dynamic-%t/%s", dynamic, tc.name), func(t *testing.T) {
+				fields := toolPartFields{
+					ToolCallID: "c", ToolName: "lookup", State: ToolStateApprovalResponded,
+					Input: json.RawMessage(`{"q":"test"}`), Approval: &ToolApproval{ID: "a", Approved: new(true)},
+					CallProviderMetadata: tc.metadata,
+				}
+				var part Part = ToolInvocationPart(fields)
+				if dynamic {
+					part = DynamicToolUIPart(fields)
+				}
+				initial := UIMessage{ID: "m", Role: RoleAssistant, Parts: []Part{part}}
+				before, err := json.Marshal(initial)
+				require.NoError(t, err)
+				model := &mockModel{streamFunc: func(_ context.Context, options provider.CallOptions) (*provider.StreamResult, error) {
+					assert.Equal(t, tc.metadata, optionsToProviderMetadata(options.Prompt[0].Content[0].ProviderOptions))
+					return &provider.StreamResult{Stream: finishStreamParts()}, nil
+				}}
+				executions := 0
+				agent := NewToolLoopAgent(model, WithToolLoopAgentOptions(WithTools(ToolSet{"lookup": {Execute: func(context.Context, json.RawMessage, ToolExecutionOptions) (json.RawMessage, error) {
+					executions++
+					return json.RawMessage(`"approved"`), nil
+				}}})))
+				var finished UIMessageStreamOnFinishState
+				stream, err := CreateAgentUIStream(t.Context(), agent, []UIMessage{initial}, OnUIMessageStreamFinish(func(state UIMessageStreamOnFinishState) { finished = state }))
+				require.NoError(t, err)
+				outputs := 0
+				for chunk := range stream {
+					if chunk.Type == ChunkToolOutputAvailable {
+						outputs++
+						assert.Nil(t, chunk.ProviderMetadata)
+					}
+				}
+				assert.Equal(t, 1, executions)
+				assert.Equal(t, 1, outputs)
+				var result toolPartFields
+				switch p := finished.ResponseMessage.Parts[0].(type) {
+				case ToolInvocationPart:
+					result = toolPartFields(p)
+				case DynamicToolUIPart:
+					result = toolPartFields(p)
+				}
+				assert.Equal(t, ToolStateOutputAvailable, result.State)
+				assert.Equal(t, tc.metadata, result.CallProviderMetadata)
+				assert.Nil(t, result.ResultProviderMetadata)
+				after, err := json.Marshal(initial)
+				require.NoError(t, err)
+				assert.JSONEq(t, string(before), string(after))
+			})
+		}
+	}
+}
+
 func TestCreateAgentUIStream_PersistedValidation(t *testing.T) {
 	inputSchema := testMustSchema(t, `{"type":"object","properties":{"q":{"type":"string"}},"required":["q"]}`)
 	outputSchema := testMustSchema(t, `{"type":"string"}`)

@@ -127,8 +127,9 @@ evidence boundary changes, not merely because the pinned versions change.
 
 - Tool-state fixtures are provider-independent core chunks, not recordings.
   Pinned UI/Agent APIs own expectations; comparisons preserve grouping, required
-  empty text and metadata selection. Prompt coalescing tests cover deep precedence
-  and caller isolation.
+  empty text and metadata selection. Approval resumption retains call-scoped
+  provider options in history without projecting them onto local result metadata.
+  Prompt coalescing tests cover deep precedence and caller isolation.
 
 ## Retained deviations without issue ownership
 
