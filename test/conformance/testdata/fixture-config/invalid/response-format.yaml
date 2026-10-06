@@ -1,0 +1,6 @@
+# unknown: schemaName
+model: test
+responseFormat:
+  type: json
+  schema: { type: object }
+  schemaName: answer

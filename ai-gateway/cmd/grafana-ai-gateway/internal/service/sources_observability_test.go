@@ -36,12 +36,16 @@ func testSourcesMetadataOnlyObservation(t *testing.T, requireAdoption bool) {
 			factory, err := NewModelObservabilityFactory(telemetry, logger, runtime, 10*time.Millisecond)
 			require.NoError(t, err)
 			source := provider.SourceInfo{SourceType: provider.SourceTypeDocument, ID: "native-private", Title: "title-private", MediaType: "text/plain", Filename: "filename-private", ProviderMetadata: provider.ProviderMetadata{"openai": json.RawMessage(`{"fileId":"metadata-private"}`)}}
+			warnings := []provider.Warning{{Type: provider.WarnUnsupported, Feature: "warning-feature-private", Details: "warning-details-private"}, {Type: provider.WarnOther, Message: "warning-message-private"}}
+			identity := provider.ResponseMetadata{ID: "response-private", ModelID: "model-private", Timestamp: time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)}
 			lower := &observabilityTestModel{
 				generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
-					return &provider.GenerateResult{Content: []provider.GenerateContentPart{{Type: provider.ContentSource, SourceType: source.SourceType, ID: source.ID, Text: source.Title, MediaType: source.MediaType, Filename: source.Filename, ProviderMetadata: source.ProviderMetadata}}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}, nil
+					return &provider.GenerateResult{Content: []provider.GenerateContentPart{{Type: provider.ContentSource, SourceType: source.SourceType, ID: source.ID, Text: source.Title, MediaType: source.MediaType, Filename: source.Filename, ProviderMetadata: source.ProviderMetadata}}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}, Warnings: warnings, Response: &provider.GenerateResponse{ResponseMetadata: identity}}, nil
 				},
 				stream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
-					parts := make(chan provider.StreamPart, 2)
+					parts := make(chan provider.StreamPart, 4)
+					parts <- provider.StreamPart{Type: provider.PartStreamStart, Warnings: warnings}
+					parts <- provider.StreamPart{Type: provider.PartResponseMeta, ResponseID: identity.ID, ModelID: identity.ModelID, Timestamp: identity.Timestamp}
 					parts <- provider.StreamPart{Type: provider.PartSource, Source: &source}
 					parts <- provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: &provider.Usage{}}
 					close(parts)
@@ -57,13 +61,19 @@ func testSourcesMetadataOnlyObservation(t *testing.T, requireAdoption bool) {
 				for part := range result.Stream {
 					parts = append(parts, part)
 				}
-				require.Len(t, parts, 2)
-				assert.Equal(t, source, *parts[0].Source)
+				require.Len(t, parts, 4)
+				assert.Equal(t, warnings, parts[0].Warnings)
+				assert.Equal(t, identity.ID, parts[1].ResponseID)
+				assert.Equal(t, identity.ModelID, parts[1].ModelID)
+				assert.Equal(t, source, *parts[2].Source)
 			} else {
 				result, err := model.DoGenerate(context.Background(), provider.CallOptions{})
 				require.NoError(t, err)
 				require.Len(t, result.Content, 1)
 				assert.Equal(t, source.ID, result.Content[0].ID)
+				assert.Equal(t, warnings, result.Warnings)
+				require.NotNil(t, result.Response)
+				assert.Equal(t, identity, result.Response.ResponseMetadata)
 			}
 			require.Eventually(t, func() bool { return env.RequestCount() == 1 }, time.Second, time.Millisecond)
 			if streaming && requireAdoption {
@@ -90,7 +100,7 @@ func testSourcesMetadataOnlyObservation(t *testing.T, requireAdoption bool) {
 			encoded, err := json.Marshal(generation)
 			require.NoError(t, err)
 			public := string(encoded) + logs.String() + testMetrics(t, telemetry)
-			for _, private := range []string{"native-private", "title-private", "filename-private", "metadata-private"} {
+			for _, private := range []string{"native-private", "title-private", "filename-private", "metadata-private", "warning-feature-private", "warning-details-private", "warning-message-private", "response-private", "model-private"} {
 				assert.NotContains(t, public, private)
 			}
 		})

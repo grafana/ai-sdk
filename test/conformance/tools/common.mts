@@ -177,8 +177,115 @@ export function createSourceIdNormalizer(prefix: string = "src"): (chunk: unknow
 // --- Config ---
 
 export function loadConfig(dir: string): Config {
-  const raw = readFileSync(join(dir, "config.yaml"), "utf8");
-  return parseYaml(raw) as Config;
+  const path = join(dir, "config.yaml");
+  return parseConfig(readFileSync(path, "utf8"), path);
+}
+
+// parseConfig parses fixture YAML and rejects any key no config type declares,
+// so a misspelled option fails before generation or recording instead of
+// silently leaving both the snapshot and the Go replay without the behavior it
+// named. Payload values such as provider options, schemas, tool inputs and UI
+// message parts stay open. The Go loader applies the same rule, and
+// testdata/fixture-config/all-keys.yaml keeps the two key sets aligned.
+export function parseConfig(raw: string, source: string): Config {
+  const value: unknown = parseYaml(raw);
+  if (!isRecord(value)) {
+    throw new Error(`${source}: fixture config must be a mapping`);
+  }
+  assertKnownKeys(value, CONFIG_KEYS, source);
+  for (const [i, message] of entries(value.messages)) {
+    assertKnownKeys(message, MESSAGE_KEYS, `${source}: messages[${i}]`);
+    if (isRecord(message)) {
+      for (const [j, part] of entries(message.content)) {
+        assertKnownKeys(part, MESSAGE_PART_KEYS, `${source}: messages[${i}].content[${j}]`);
+      }
+    }
+  }
+  for (const [i, message] of entries(value.uiMessages)) {
+    assertKnownKeys(message, UI_MESSAGE_KEYS, `${source}: uiMessages[${i}]`);
+  }
+  for (const [name, tool] of entries(value.tools)) {
+    assertKnownKeys(tool, TOOL_KEYS, `${source}: tools.${name}`);
+    const modelOutput = isRecord(tool) ? tool.modelOutput : undefined;
+    assertKnownKeys(modelOutput, TOOL_MODEL_OUTPUT_KEYS, `${source}: tools.${name}.modelOutput`);
+    const content = isRecord(modelOutput) ? modelOutput.content : undefined;
+    for (const [i, item] of entries(content)) {
+      assertKnownKeys(item, TOOL_MODEL_OUTPUT_CONTENT_KEYS, `${source}: tools.${name}.modelOutput.content[${i}]`);
+    }
+  }
+  for (const [name, tool] of entries(value.providerTools)) {
+    assertKnownKeys(tool, PROVIDER_TOOL_KEYS, `${source}: providerTools.${name}`);
+  }
+  assertKnownKeys(value.toolChoice, TOOL_CHOICE_KEYS, `${source}: toolChoice`);
+  assertKnownKeys(value.streamOptions, STREAM_OPTIONS_KEYS, `${source}: streamOptions`);
+  assertKnownKeys(value.responseFormat, RESPONSE_FORMAT_KEYS, `${source}: responseFormat`);
+  assertKnownKeys(value.approval, APPROVAL_KEYS, `${source}: approval`);
+  for (const [i, approval] of entries(value.approvals)) {
+    assertKnownKeys(approval, APPROVAL_KEYS, `${source}: approvals[${i}]`);
+  }
+  return value as unknown as Config;
+}
+
+// keyList returns the keys of a config type. Record<keyof T, true> makes the
+// compiler reject a missing or extra key, so each list tracks its interface.
+function keyList<T>(keys: Record<keyof T, true>): readonly string[] {
+  return Object.keys(keys);
+}
+
+export const CONFIG_KEYS = keyList<Config>({
+  operation: true, model: true, system: true, prompt: true, messages: true, uiMessages: true,
+  allowSystemInMessages: true, stopWhenStepCount: true, toolChoice: true, activeTools: true,
+  reasoning: true, headers: true, streamOptions: true, providerOptions: true, tools: true,
+  providerTools: true, responseFormat: true, assertOutputValue: true, approval: true,
+  approvals: true, expectStreamError: true, maxRetries: true,
+});
+export const MESSAGE_KEYS = keyList<MessageConfig>({ role: true, content: true, providerOptions: true });
+export const MESSAGE_PART_KEYS = keyList<MessagePartConfig>({
+  type: true, text: true, data: true, url: true, mediaType: true, filename: true, reference: true,
+  toolCallId: true, toolName: true, approvalId: true, input: true, output: true, approved: true,
+  reason: true, isAutomatic: true, providerExecuted: true, providerOptions: true,
+});
+// UI messages are upstream UIMessage values, but replay reads only these keys.
+export const UI_MESSAGE_KEYS = keyList<Pick<UIMessage, "id" | "role" | "parts">>({ id: true, role: true, parts: true });
+export const TOOL_KEYS = keyList<ToolConfig>({
+  description: true, inputSchema: true, mockResults: true, mockError: true, modelOutput: true,
+  providerOptions: true, needsApproval: true, strict: true,
+});
+export const TOOL_MODEL_OUTPUT_KEYS = keyList<ToolModelOutputConfig>({ type: true, text: true, content: true });
+// Content items are upstream tool-result content, but replay reads only these keys.
+export const TOOL_MODEL_OUTPUT_CONTENT_KEYS: readonly string[] = ["type", "text", "data", "mediaType", "filename"];
+export const PROVIDER_TOOL_KEYS = keyList<ProviderToolConfig>({ id: true, args: true, inputSchema: true, providerOptions: true });
+export const TOOL_CHOICE_KEYS = keyList<ToolChoiceConfig>({ type: true, toolName: true });
+export const STREAM_OPTIONS_KEYS = keyList<StreamOptionsConfig>({
+  sendReasoning: true, sendSources: true, sendFinish: true, sendStart: true,
+});
+export const RESPONSE_FORMAT_KEYS = keyList<ResponseFormatConfig>({
+  type: true, outputMode: true, schema: true, choices: true, name: true, description: true,
+});
+export const APPROVAL_KEYS = keyList<ApprovalConfig>({
+  toolCallId: true, toolName: true, approvalId: true, approved: true, reason: true, input: true,
+});
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+// entries yields the items of a sequence or the named values of a mapping, and
+// nothing for an absent or scalar value, which the typed builders reject later.
+function entries(value: unknown): [string | number, unknown][] {
+  if (Array.isArray(value)) return value.map((item, i) => [i, item]);
+  if (isRecord(value)) return Object.entries(value);
+  return [];
+}
+
+function assertKnownKeys(value: unknown, allowed: readonly string[], path: string): void {
+  if (!isRecord(value)) return;
+  const unknown = Object.keys(value).filter((key) => !allowed.includes(key));
+  if (unknown.length > 0) {
+    throw new Error(
+      `${path}: unknown field ${unknown.map((key) => JSON.stringify(key)).join(", ")}; expected one of ${allowed.join(", ")}`,
+    );
+  }
 }
 
 // --- Tool Builder ---

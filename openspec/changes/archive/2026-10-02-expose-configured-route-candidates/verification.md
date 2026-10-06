@@ -208,3 +208,23 @@ Validation ran on `nrbrd/gw-routing` above the approved parent `7b0b35cf`, with
 the child merges after it, then rebases/retargets main after parent merge.
 Full revision-clean multi-platform image publication/deployment smoke is the
 existing push-only CI gate, not established by the local checks above.
+
+## Main synchronization
+
+Merged origin/main at 46316941 after #327 merged. Conflict resolutions retain
+canonical-only configured discovery, shipped helper access and credential-source
+exclusions while preserving main's native warning/source/response identity and
+metadata-only operator boundaries. The older test-only discovery helpers and
+Go discovery-loss expectations remain superseded by the delivered access paths.
+
+The registered reference now comes from main: commit
+5d12eaa6caa193d3901cbab98a734403eb6bf622, Gateway 4.0.96, ai 7.0.118 and React
+4.0.121; provider 4.0.18 and provider-utils 5.0.49 are unchanged. Exact-commit
+comparison confirms discovery implementation/tests are unchanged from the prior
+reference. No independent baseline selection or provider fixture rewrite occurred.
+
+Passed all-module tests, parity, 42 command tests, 65 frontend integration tests,
+Grafana/Gateway race checks, vet/build/lint/docs, module/boundary/pin and standalone
+client checks, image-source validation and all 85 strict main specs. Logs:
+`/tmp/gw324-merge-{go,parity,race,quality,image}.log`. The advisory provider-shape
+reporting skip and deployed account/image evidence limits remain as above.

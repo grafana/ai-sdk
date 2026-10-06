@@ -1,6 +1,8 @@
 ## Purpose
 Defines the Anthropic provider's effort-level configuration, model capability detection, and reasoning-to-thinking mapping.
+
 ## Requirements
+
 ### Requirement: Effort level provider option
 The Anthropic provider SHALL accept an `effort` field in `AnthropicOptions` with values `low`, `medium`, `high`, `xhigh`, or `max`. When set, the provider SHALL include `output_config.effort` in the Anthropic API request body with the specified value.
 
@@ -127,13 +129,19 @@ No `output_config.effort` SHALL be set for budget-based models.
 - **THEN** `budget_tokens` SHALL be `1024` (clamp minimum), not `82` (round(4096 * 0.02))
 
 ### Requirement: Reasoning none disables thinking
-When `CallOptions.Reasoning` is `"none"`, the Anthropic provider SHALL set `thinking: disabled`. No `output_config.effort` SHALL be set.
+When `CallOptions.Reasoning` is `"none"`, the Anthropic provider SHALL set `thinking: disabled`, except on models that support `between_tools` thinking. Those models reject disabled thinking, so the provider SHALL set `thinking: between_tools`, their lowest setting, without a warning, as `@ai-sdk/anthropic` 4.0.67 does. No `output_config.effort` SHALL be set in either case.
 
 #### Scenario: Reasoning none on any model
-- **WHEN** `CallOptions.Reasoning` is `"none"`
+- **WHEN** `CallOptions.Reasoning` is `"none"` and the model does not support `between_tools` thinking
 - **THEN** the request SHALL contain `thinking.type` set to `"disabled"`
 - **AND** no `output_config.effort` SHALL be present
 - **AND** no effort beta header SHALL be added
+
+#### Scenario: Reasoning none on Sonnet 5.5
+- **WHEN** `CallOptions.Reasoning` is `"none"` and the model is `claude-sonnet-5-5`
+- **THEN** the request SHALL contain `thinking.type` set to `"between_tools"`
+- **AND** no `output_config.effort` SHALL be present
+- **AND** no warning SHALL be emitted
 
 ### Requirement: Reasoning nil and provider-default are no-ops
 When `CallOptions.Reasoning` is the zero-valued `ReasoningProviderDefault`, the Anthropic provider SHALL NOT set any thinking or effort configuration from the reasoning field. A strict wire adapter receiving explicit `"provider-default"` SHALL normalize it to the same zero value. Existing provider-option-based configuration is unaffected.
@@ -202,7 +210,7 @@ The Anthropic provider SHALL NOT append any beta header related to the `effort` 
 - **AND** no `output_config.effort` SHALL be present
 
 ### Requirement: Adaptive thinking display
-The Anthropic provider SHALL accept a `display` field in `ThinkingConfig` with values `"summarized"` or `"omitted"`. When set and the configured `type` is `"adaptive"`, the provider SHALL include `thinking.display` in the Anthropic API request body with the specified value. The `display` field SHALL be ignored when `type` is `"enabled"` or `"disabled"`.
+The Anthropic provider SHALL accept a `display` field in `ThinkingConfig` with values `"summarized"` or `"omitted"`. When set and the configured `type` is `"adaptive"`, the provider SHALL include `thinking.display` in the Anthropic API request body with the specified value. The `display` field SHALL be ignored when `type` is `"enabled"`, `"disabled"` or `"between_tools"`.
 
 #### Scenario: Display set on adaptive thinking
 - **WHEN** caller sets `ProviderOptions["anthropic"]` with `{"thinking":{"type":"adaptive","display":"summarized"}}`
@@ -215,6 +223,10 @@ The Anthropic provider SHALL accept a `display` field in `ThinkingConfig` with v
 #### Scenario: Display ignored on enabled thinking
 - **WHEN** caller sets `ProviderOptions["anthropic"]` with `{"thinking":{"type":"enabled","budgetTokens":5000,"display":"omitted"}}`
 - **THEN** the built request params SHALL NOT contain `thinking.display`
+
+#### Scenario: Display ignored on between_tools thinking
+- **WHEN** caller sets `ProviderOptions["anthropic"]` with `{"thinking":{"type":"between_tools","display":"summarized"}}`
+- **THEN** the built request params SHALL contain `thinking.type` set to `"between_tools"` and SHALL NOT contain `thinking.display`
 
 ### Requirement: Task budget provider option
 The Anthropic provider SHALL accept a `taskBudget` field in `AnthropicOptions` containing `type` (literal `"tokens"`), `total` (int64), and optional `remaining` (int64). When set, the provider SHALL include `output_config.task_budget` in the Anthropic API request body with `type`, `total`, and (when provided) `remaining`. The provider SHALL append the `task-budgets-2026-03-13` beta header when `taskBudget` is set.

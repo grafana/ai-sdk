@@ -1,0 +1,7 @@
+# unknown: approve
+model: test
+approvals:
+  - toolCallId: call-1
+    toolName: weather
+    approvalId: approval-1
+    approve: true

@@ -107,7 +107,7 @@ func TestFallbackAcceptance_StreamCommitmentAndPrivacy(t *testing.T) {
 				require.NoError(t, json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &event))
 				types = append(types, event.Type)
 				if event.Type == "response-metadata" {
-					assert.Equal(t, "public", event.ModelID)
+					assert.Equal(t, "backend-primary", event.ModelID)
 				}
 				if event.Type == "text-delta" {
 					assert.Equal(t, "public-answer", event.Delta)
@@ -317,7 +317,7 @@ func newFallbackAcceptance(t *testing.T, primary, secondary *observabilityTestMo
 		for _, private := range []string{"private-prompt", "private-output", "public-answer", "primary-instance", "secondary-instance", "backend-primary", "backend-secondary", "native_usage_marker"} {
 			assert.NotContains(t, logical, private)
 		}
-		for _, private := range []string{"primary-instance", "secondary-instance", "backend-primary", "backend-secondary"} {
+		for _, private := range []string{"primary-instance", "secondary-instance"} {
 			assert.NotContains(t, public, private)
 		}
 		for _, private := range []string{"private-credential", "private.example", "private-header", "private-request-body", "private-response-body", "private-error", "private-data", "private-metadata"} {

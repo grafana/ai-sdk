@@ -3,8 +3,10 @@
   "$id": "https://grafana.com/ai-sdk/providerwire/v4/unary-success.schema.json",
   "title": "ProviderWire V4 unary text and function-call response",
   "type": "object",
-  "required": ["content", "finishReason", "usage"],
+  "required": ["content", "finishReason", "usage", "warnings"],
   "properties": {
+    "warnings": { "type": "array", "items": { "$ref": "#/$defs/warning" } },
+    "response": { "$ref": "#/$defs/responseIdentity" },
     "content": {
       "type": "array",
       "items": {
@@ -60,6 +62,27 @@
   },
   "additionalProperties": false,
   "$defs": {
+    "responseIdentity": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "modelId": { "type": "string" },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\\.[0-9]+)?(Z|[+-]([01][0-9]|2[0-3]):[0-5][0-9])$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "warning": {
+      "oneOf": [
+        { "type": "object", "required": ["type", "feature"], "properties": { "type": {"const": "unsupported"}, "feature": {"type": "string"}, "details": {"type": "string"} }, "additionalProperties": false },
+        { "type": "object", "required": ["type", "feature"], "properties": { "type": {"const": "compatibility"}, "feature": {"type": "string"}, "details": {"type": "string"} }, "additionalProperties": false },
+        { "type": "object", "required": ["type", "setting", "message"], "properties": { "type": {"const": "deprecated"}, "setting": {"type": "string"}, "message": {"type": "string"} }, "additionalProperties": false },
+        { "type": "object", "required": ["type", "message"], "properties": { "type": {"const": "other"}, "message": {"type": "string"} }, "additionalProperties": false }
+      ]
+    },
     "reasoning": {
       "type": "object", "required": ["type", "text"],
       "properties": { "type": {"const": "reasoning"}, "text": {"type": "string"}, "providerMetadata": {"$ref": "#/$defs/reasoningMetadata"} },
@@ -139,8 +162,7 @@
           "const": "url"
         },
         "id": {
-          "type": "string",
-          "minLength": 1
+          "type": "string"
         },
         "url": {
           "type": "string"
@@ -172,8 +194,7 @@
           "const": "document"
         },
         "id": {
-          "type": "string",
-          "minLength": 1
+          "type": "string"
         },
         "mediaType": {
           "type": "string"
