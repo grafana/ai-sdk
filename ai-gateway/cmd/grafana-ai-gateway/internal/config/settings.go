@@ -84,6 +84,7 @@ type Settings struct {
 	ObservationRegion              string
 	ObservationApplication         string
 	AgentObservability             AgentObservabilitySettings
+	Guards                         GuardSettings
 	AuthMode                       AuthMode
 	AuthUnsafe                     bool
 	JWKSURL                        string
@@ -108,6 +109,7 @@ func ParseSettings(args []string, lookupEnv LookupEnv) (Settings, error) {
 	var authMode string
 	var audiences string
 	var agentObservabilityProtocol string
+	var guardAuthMode string
 	app := kingpin.New("grafana-ai-gateway", "Authenticated Grafana AI Gateway")
 	app.Flag("config.file", "Model configuration YAML file.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_CONFIG_FILE", "")).StringVar(&settings.ConfigFile)
 	app.Flag("config.max-bytes", "Maximum model configuration bytes.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_CONFIG_MAX_BYTES", "1048576")).Int64Var(&settings.ConfigMaxBytes)
@@ -138,6 +140,7 @@ func ParseSettings(args []string, lookupEnv LookupEnv) (Settings, error) {
 	app.Flag("agento11y.flush-interval", "Agent Observability asynchronous batch flush interval.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_AGENTO11Y_FLUSH_INTERVAL", "1s")).DurationVar(&settings.AgentObservability.FlushInterval)
 	app.Flag("agento11y.flush-timeout", "Maximum Agent Observability explicit flush duration.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_AGENTO11Y_FLUSH_TIMEOUT", "5s")).DurationVar(&settings.AgentObservability.FlushTimeout)
 	app.Flag("agento11y.shutdown-timeout", "Maximum Agent Observability shutdown duration.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_AGENTO11Y_SHUTDOWN_TIMEOUT", "5s")).DurationVar(&settings.AgentObservability.ShutdownTimeout)
+	settings.Guards.bindFlags(app, lookupEnv, &guardAuthMode)
 	app.Flag("auth.mode", "Authentication mode: access-token or cloud-gateway.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_AUTH_MODE", string(AuthModeAccessToken))).StringVar(&authMode)
 	app.Flag("auth.unsafe", "Enable unsafe development authentication.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_AUTH_UNSAFE", "false")).BoolVar(&settings.AuthUnsafe)
 	app.Flag("auth.jwks-url", "JWKS endpoint URL.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_AUTH_JWKS_URL", "")).StringVar(&settings.JWKSURL)
@@ -163,6 +166,7 @@ func ParseSettings(args []string, lookupEnv LookupEnv) (Settings, error) {
 	settings.DeploymentMode = DeploymentMode(deploymentMode)
 	settings.AgentObservability.Protocol = AgentObservabilityProtocol(agentObservabilityProtocol)
 	settings.AuthMode = AuthMode(authMode)
+	settings.Guards.AuthMode = GuardAuthMode(guardAuthMode)
 	if settings.AuthMode == AuthModeAccessToken {
 		parsedAudiences, err := parseAudiences(audiences)
 		if err != nil {
@@ -191,6 +195,9 @@ func (settings Settings) Validate() error {
 		return err
 	}
 	if err := settings.AgentObservability.validate(settings.DeploymentMode); err != nil {
+		return err
+	}
+	if err := settings.Guards.validate(settings.DeploymentMode, settings.ProviderWire.ModelDuration); err != nil {
 		return err
 	}
 	switch settings.AuthMode {

@@ -48,7 +48,7 @@ type Limits struct {
 	StreamParts int
 	// StreamFrameBytes is the maximum complete SSE frame size.
 	StreamFrameBytes int64
-	// ModelDuration bounds selection and the complete logical model call.
+	// ModelDuration bounds selection and the complete logical model call, including guard phases when enabled.
 	ModelDuration time.Duration
 	// StreamIdleDuration is the maximum time between represented provider parts.
 	StreamIdleDuration time.Duration
@@ -61,12 +61,18 @@ type Config struct {
 	Selector RequestSelector
 	// Limits bounds request processing, responses, and model execution.
 	Limits Limits
+	// Guard optionally evaluates both phases before successful response release.
+	Guard Guard
+	// GuardRetainedBytes limits additional retained data for a guarded operation.
+	GuardRetainedBytes int64
 }
 
 type handler struct {
-	selector      RequestSelector
-	limits        Limits
-	requestSchema *schema.CompiledSchema
+	selector           RequestSelector
+	limits             Limits
+	requestSchema      *schema.CompiledSchema
+	guard              Guard
+	guardRetainedBytes int64
 }
 
 // New constructs an immutable strict ProviderWire V4 HTTP handler.
@@ -77,15 +83,20 @@ func New(config Config) (http.Handler, error) {
 	if err := validateLimits(config.Limits); err != nil {
 		return nil, err
 	}
+	if !isNilInterface(config.Guard) && (config.GuardRetainedBytes <= 0 || config.GuardRetainedBytes > 64<<20) {
+		return nil, fmt.Errorf("providerwire v4: guard retained bytes must be between 1 and 67108864")
+	}
 
 	requestSchema, err := schema.CompileSchema(requestSchemaJSON)
 	if err != nil {
 		return nil, fmt.Errorf("providerwire v4: compiling request schema: %w", err)
 	}
 	return &handler{
-		selector:      config.Selector,
-		limits:        config.Limits,
-		requestSchema: requestSchema,
+		selector:           config.Selector,
+		limits:             config.Limits,
+		requestSchema:      requestSchema,
+		guard:              config.Guard,
+		guardRetainedBytes: config.GuardRetainedBytes,
 	}, nil
 }
 
@@ -197,6 +208,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	resolved, err := h.selectModel(ctx, validated.modelID, options, gateway)
 	if err != nil {
 		h.writeSafeError(w, safeErrorFromResolution(err))
+		return
+	}
+	if !isNilInterface(h.guard) {
+		h.serveGuarded(w, ctx, resolved, options, validated.mode)
 		return
 	}
 	if validated.mode == executionStreaming {

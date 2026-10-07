@@ -390,20 +390,29 @@ func TestRequestSelection_RequestByteLimit(t *testing.T) {
 }
 
 func TestRequestSelection_Deadline(t *testing.T) {
-	for _, streaming := range []bool{false, true} {
-		t.Run("late/"+strconv.FormatBool(streaming), func(t *testing.T) {
+	for _, tc := range []struct {
+		streaming, guarded bool
+	}{
+		{}, {streaming: true}, {guarded: true}, {streaming: true, guarded: true},
+	} {
+		name := fmt.Sprintf("streaming=%t/guarded=%t", tc.streaming, tc.guarded)
+		t.Run("late/"+name, func(t *testing.T) {
 			limits := testLimits()
 			limits.ModelDuration = 30 * time.Millisecond
 			model := &recordingModel{}
 			release, selected := make(chan struct{}), make(chan struct{})
-			h, err := New(Config{Limits: limits, Selector: func(_ context.Context, id string, options provider.CallOptions, _ json.RawMessage) (Selection, error) {
+			var guard Guard
+			if tc.guarded {
+				guard = &testGuard{}
+			}
+			h, err := New(Config{Limits: limits, Guard: guard, GuardRetainedBytes: 1 << 20, Selector: func(_ context.Context, id string, options provider.CallOptions, _ json.RawMessage) (Selection, error) {
 				defer close(selected)
 				<-release
 				return Selection{ID: id, Model: model}, nil
 			}})
 			require.NoError(t, err)
 			r := validRequest(`{"prompt":[]}`)
-			r.Header.Set(HeaderStreaming, strconv.FormatBool(streaming))
+			r.Header.Set(HeaderStreaming, strconv.FormatBool(tc.streaming))
 			w := httptest.NewRecorder()
 			done := make(chan struct{})
 			go func() { defer close(done); h.ServeHTTP(w, r) }()
@@ -420,28 +429,42 @@ func TestRequestSelection_Deadline(t *testing.T) {
 			<-selected
 			assert.Zero(t, model.callCount())
 		})
-		t.Run("shared/"+strconv.FormatBool(streaming), func(t *testing.T) {
+		t.Run("shared/"+name, func(t *testing.T) {
 			limits := testLimits()
 			limits.ModelDuration = 150 * time.Millisecond
 			var selectionDeadline time.Time
+			checkDeadline := func(ctx context.Context) {
+				deadline, ok := ctx.Deadline()
+				assert.True(t, ok)
+				assert.Equal(t, selectionDeadline, deadline)
+			}
+			var guard Guard
+			if tc.guarded {
+				guard = &testGuard{
+					pre: func(ctx context.Context, _ string, options provider.CallOptions) (provider.CallOptions, error) {
+						checkDeadline(ctx)
+						return options, nil
+					},
+					post: func(ctx context.Context, _ string, _ provider.CallOptions, _ []provider.ContentPart) error {
+						checkDeadline(ctx)
+						return nil
+					},
+				}
+			}
 			model := &recordingModel{
 				generate: func(ctx context.Context, _ provider.CallOptions) (*provider.GenerateResult, error) {
-					deadline, ok := ctx.Deadline()
-					assert.True(t, ok)
-					assert.Equal(t, selectionDeadline, deadline)
+					checkDeadline(ctx)
 					return validGenerateResult(), nil
 				},
 				stream: func(ctx context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
-					deadline, ok := ctx.Deadline()
-					assert.True(t, ok)
-					assert.Equal(t, selectionDeadline, deadline)
+					checkDeadline(ctx)
 					parts := make(chan provider.StreamPart, 1)
 					parts <- finishPart()
 					close(parts)
 					return &provider.StreamResult{Stream: parts}, nil
 				},
 			}
-			h, err := New(Config{Limits: limits, Selector: func(ctx context.Context, id string, options provider.CallOptions, _ json.RawMessage) (Selection, error) {
+			h, err := New(Config{Limits: limits, Guard: guard, GuardRetainedBytes: 1 << 20, Selector: func(ctx context.Context, id string, options provider.CallOptions, _ json.RawMessage) (Selection, error) {
 				var ok bool
 				selectionDeadline, ok = ctx.Deadline()
 				assert.True(t, ok)
@@ -455,7 +478,7 @@ func TestRequestSelection_Deadline(t *testing.T) {
 			}})
 			require.NoError(t, err)
 			r := validRequest(`{"prompt":[]}`)
-			r.Header.Set(HeaderStreaming, strconv.FormatBool(streaming))
+			r.Header.Set(HeaderStreaming, strconv.FormatBool(tc.streaming))
 			ctx, cancel := context.WithTimeout(r.Context(), 500*time.Millisecond)
 			defer cancel()
 			w := httptest.NewRecorder()

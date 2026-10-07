@@ -1,0 +1,111 @@
+{
+  "phase": "preflight",
+  "context": {
+    "agent_name": "conformance-agent",
+    "agent_version": "1.2.3",
+    "model": {
+      "provider": "anthropic",
+      "name": "claude-sonnet-4"
+    },
+    "tags": {
+      "env": "test",
+      "team": "agent-observability"
+    },
+    "conversation_id": "conv-hooks-conformance",
+    "trace_id": "0123456789abcdef0123456789abcdef",
+    "span_id": "0123456789abcdef"
+  },
+  "input": {
+    "system_prompt": "You are a careful assistant.",
+    "messages": [
+      {
+        "role": "user",
+        "parts": [
+          {
+            "kind": "text",
+            "text": "Delete the cache directory under /tmp."
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "parts": [
+          {
+            "kind": "thinking",
+            "thinking": "The request is destructive, so inspect the directory first."
+          },
+          {
+            "kind": "tool_call",
+            "tool_call": {
+              "id": "call-read",
+              "name": "read_file",
+              "input_json": {
+                "path": "/tmp/cache/manifest.json"
+              }
+            }
+          },
+          {
+            "kind": "tool_call",
+            "tool_call": {
+              "id": "call-bash",
+              "name": "Bash",
+              "input_json": {
+                "command": "rm -rf /tmp/cache"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "name": "read_file",
+        "parts": [
+          {
+            "kind": "tool_result",
+            "tool_result": {
+              "tool_call_id": "call-read",
+              "name": "read_file",
+              "content": "3 entries",
+              "content_json": {
+                "entries": 3
+              }
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "name": "Bash",
+        "parts": [
+          {
+            "kind": "tool_result",
+            "tool_result": {
+              "tool_call_id": "call-bash",
+              "name": "Bash",
+              "is_error": true,
+              "content": "rm: cannot remove '/tmp/cache': Permission denied",
+              "content_json": {
+                "exit_code": 1
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "tools": [
+      {
+        "name": "Bash",
+        "description": "Run a shell command.",
+        "type": "function",
+        "input_schema_json": "eyJ0eXBlIjoib2JqZWN0IiwicHJvcGVydGllcyI6eyJjb21tYW5kIjp7InR5cGUiOiJzdHJpbmciLCJkZXNjcmlwdGlvbiI6IlNoZWxsIGNvbW1hbmQgdG8gcnVuLiJ9fSwicmVxdWlyZWQiOlsiY29tbWFuZCJdfQ=="
+      },
+      {
+        "name": "read_file",
+        "description": "Read a file from disk.",
+        "type": "function",
+        "input_schema_json": "eyJ0eXBlIjoib2JqZWN0IiwicHJvcGVydGllcyI6eyJwYXRoIjp7InR5cGUiOiJzdHJpbmcifX0sInJlcXVpcmVkIjpbInBhdGgiXX0="
+      }
+    ],
+    "conversation_preview": "user: Delete the cache directory under /tmp."
+  }
+}

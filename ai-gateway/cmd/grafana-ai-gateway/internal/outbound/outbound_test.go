@@ -36,6 +36,7 @@ func TestValidateEndpoint(t *testing.T) {
 		{name: "query", raw: "https://auth.example/jwks?secret=value", mode: config.DeploymentDevelopment},
 		{name: "forced query", raw: "https://auth.example/jwks?", mode: config.DeploymentDevelopment},
 		{name: "fragment", raw: "https://auth.example/jwks#fragment", mode: config.DeploymentDevelopment},
+		{name: "surrounding whitespace", raw: "https://auth.example/prefix ", mode: config.DeploymentDevelopment},
 		{name: "unsupported scheme", raw: "ftp://auth.example/jwks", mode: config.DeploymentDevelopment},
 		{name: "invalid mode", raw: "https://auth.example/jwks", mode: config.DeploymentMode("other")},
 	}
@@ -122,7 +123,10 @@ func TestClients_RejectRedirectsBeforeCredentialForwarding(t *testing.T) {
 			require.NoError(t, err)
 			anthropic, err := NewAnthropicClient(time.Second, 1024)
 			require.NoError(t, err)
-			for _, client := range []*http.Client{jwks, anthropic} {
+			guard, err := NewGuardClient(time.Second, 1024)
+			require.NoError(t, err)
+			for _, client := range []*http.Client{jwks, anthropic, guard} {
+				defer client.CloseIdleConnections()
 				request, err := http.NewRequest(http.MethodGet, source.URL, nil)
 				require.NoError(t, err)
 				request.Header.Set("X-Access-Token", "secret-access")
@@ -173,7 +177,7 @@ func TestBoundedTransport_DecompressedResponseBoundaries(t *testing.T) {
 
 				for _, delta := range []int64{1, 0, -1} {
 					limit := int64(len(payload.payload)) + delta
-					for _, newClient := range []func(time.Duration, int64) (*http.Client, error){NewJWKSClient, NewAnthropicClient} {
+					for _, newClient := range []func(time.Duration, int64) (*http.Client, error){NewJWKSClient, NewAnthropicClient, NewGuardClient} {
 						client, err := newClient(time.Second, limit)
 						require.NoError(t, err)
 						response, err := client.Get(server.URL)
@@ -268,6 +272,7 @@ func TestNewClients_InvalidLimits(t *testing.T) {
 	}{
 		{name: "jwks", newClient: NewJWKSClient},
 		{name: "anthropic", newClient: NewAnthropicClient},
+		{name: "guards", newClient: NewGuardClient},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			for _, limits := range []struct {
@@ -285,6 +290,105 @@ func TestNewClients_InvalidLimits(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGuardClientIndependentAndHeaderIsolation(t *testing.T) {
+	guard, err := NewGuardClient(time.Second, 1024)
+	require.NoError(t, err)
+	defer guard.CloseIdleConnections()
+	other, err := NewGuardClient(2*time.Second, 2048)
+	require.NoError(t, err)
+	defer other.CloseIdleConnections()
+	assert.NotSame(t, requireBoundedTransport(t, guard).base, requireBoundedTransport(t, other).base)
+	assert.Equal(t, time.Second, guard.Timeout)
+	assert.Equal(t, time.Second, requireBoundedTransport(t, guard).base.(*http.Transport).ResponseHeaderTimeout)
+	assert.Equal(t, int64(1024), requireBoundedTransport(t, guard).limit)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/authenticated" {
+			assert.Equal(t, "Bearer operator-secret", r.Header.Get("Authorization"))
+			assert.Equal(t, "operator-tenant", r.Header.Get("X-Scope-OrgID"))
+		} else {
+			assert.Empty(t, r.Header.Get("Authorization"))
+			assert.Empty(t, r.Header.Get("X-Scope-OrgID"))
+		}
+		assert.Empty(t, r.Header.Get("X-Access-Token"))
+		_, _ = io.WriteString(w, "ok")
+	}))
+	defer server.Close()
+	request, err := http.NewRequest(http.MethodPost, server.URL+"/authenticated", nil)
+	require.NoError(t, err)
+	request.Header.Set("Authorization", "Bearer operator-secret")
+	request.Header.Set("X-Scope-OrgID", "operator-tenant")
+	response, err := guard.Do(request)
+	require.NoError(t, err)
+	_, err = io.Copy(io.Discard, response.Body)
+	require.NoError(t, err)
+	require.NoError(t, response.Body.Close())
+	for _, client := range []*http.Client{guard, other} {
+		response, err := client.Get(server.URL)
+		require.NoError(t, err)
+		require.NoError(t, response.Body.Close())
+	}
+}
+
+func TestGuardClientTimeoutAndCancellation(t *testing.T) {
+	for _, stalledBody := range []bool{false, true} {
+		for _, cancelCaller := range []bool{false, true} {
+			t.Run(fmt.Sprintf("body=%v/caller=%v", stalledBody, cancelCaller), func(t *testing.T) {
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if stalledBody {
+						w.WriteHeader(http.StatusOK)
+						_ = http.NewResponseController(w).Flush()
+					}
+					<-r.Context().Done()
+				}))
+				defer server.Close()
+				timeout := 50 * time.Millisecond
+				if cancelCaller {
+					timeout = time.Second
+				}
+				client, err := NewGuardClient(timeout, 1024)
+				require.NoError(t, err)
+				defer client.CloseIdleConnections()
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+				if cancelCaller {
+					timer := time.AfterFunc(50*time.Millisecond, cancel)
+					defer timer.Stop()
+				}
+				request, err := http.NewRequestWithContext(ctx, http.MethodPost, server.URL, nil)
+				require.NoError(t, err)
+				response, err := client.Do(request)
+				if stalledBody {
+					require.NoError(t, err)
+					_, err = io.ReadAll(response.Body)
+					_ = response.Body.Close()
+				}
+				require.Error(t, err)
+				if cancelCaller {
+					require.ErrorIs(t, err, context.Canceled)
+				} else {
+					var timeoutError net.Error
+					require.ErrorAs(t, err, &timeoutError)
+					assert.True(t, timeoutError.Timeout())
+				}
+			})
+		}
+	}
+}
+
+type closeTrackingTransport struct{ closed bool }
+
+func (transport *closeTrackingTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, errors.New("unused")
+}
+func (transport *closeTrackingTransport) CloseIdleConnections() { transport.closed = true }
+
+func TestBoundedTransportCloseIdleConnections(t *testing.T) {
+	base := &closeTrackingTransport{}
+	client := &http.Client{Transport: &boundedTransport{base: base, limit: 1024}}
+	client.CloseIdleConnections()
+	assert.True(t, base.closed)
 }
 
 func requireBoundedTransport(t *testing.T, client *http.Client) *boundedTransport {

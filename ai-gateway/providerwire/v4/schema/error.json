@@ -16,7 +16,8 @@
             "model_not_found",
             "rate_limit_exceeded",
             "internal_server_error",
-            "failed_dependency"
+            "failed_dependency",
+            "forbidden"
           ]
         },
         "param": { "type": "null" },
@@ -30,12 +31,20 @@
             "upstream_error",
             "timeout",
             "canceled",
-            "internal_error"
+            "internal_error",
+            "forbidden"
           ]
         }
       },
       "additionalProperties": false,
       "oneOf": [
+        {
+          "properties": {
+            "message": { "const": "forbidden" },
+            "type": { "const": "forbidden" },
+            "code": { "const": "forbidden" }
+          }
+        },
         {
           "properties": {
             "message": {

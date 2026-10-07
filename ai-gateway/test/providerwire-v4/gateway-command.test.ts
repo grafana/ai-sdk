@@ -8,8 +8,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import nodeProcess from "node:process";
 import { after, before, describe, it } from "node:test";
-import { createGateway, GatewayInvalidRequestError } from "@ai-sdk/gateway";
-import type { JSONValue, LanguageModelV4, LanguageModelV4CallOptions, LanguageModelV4StreamPart } from "@ai-sdk/provider";
+import { createGateway, GatewayError, GatewayInvalidRequestError } from "@ai-sdk/gateway";
+import { APICallError, type JSONValue, type LanguageModelV4, type LanguageModelV4CallOptions, type LanguageModelV4StreamPart } from "@ai-sdk/provider";
 import { generateText, isStepCount, jsonSchema, streamText, tool } from "ai";
 import { buildGoClientCapture, buildGoStreamTextCapture, captureGoClient } from "./go-client-capture";
 import packageManifest from "./package.json" with { type: "json" };
@@ -132,6 +132,139 @@ ${fallback ? `    fallback:\n      - provider: ${family}\n        model: backend
         });
       }
     }
+  }
+});
+
+describe("operator guards through the authenticated command", () => {
+  const cases: Array<{
+    name: string;
+    preflight?: "deny" | "transform";
+    postflight?: "deny" | "failure";
+    terminalStreamError?: FakeAnthropic["terminalStreamError"];
+    error?: { status: number; type: string; code: string; message: string };
+  }> = [
+    { name: "preflight deny prevents native calls", preflight: "deny", error: { status: 403, type: "forbidden", code: "forbidden", message: "forbidden" } },
+    { name: "postflight deny withholds generated content", postflight: "deny", error: { status: 403, type: "forbidden", code: "forbidden", message: "forbidden" } },
+    { name: "postflight service failure withholds generated content", postflight: "failure", error: { status: 424, type: "failed_dependency", code: "failed_dependency", message: "failed dependency" } },
+    { name: "allow releases generated content" },
+    { name: "preflight transform changes native input", preflight: "transform" },
+    { name: "terminal native rate limit plus EOF stays retryable", terminalStreamError: "rate_limit_error", error: { status: 429, type: "rate_limit_exceeded", code: "rate_limit_exceeded", message: "rate limit exceeded" } },
+    { name: "terminal native overload plus EOF stays retryable", terminalStreamError: "overloaded_error", error: { status: 503, type: "internal_server_error", code: "overloaded", message: "service overloaded" } },
+    { name: "terminal native API error plus EOF stays retryable", terminalStreamError: "api_error", error: { status: 502, type: "internal_server_error", code: "upstream_error", message: "upstream failure" } },
+  ];
+  for (const tc of cases) {
+    it(tc.name, async () => {
+      const original = "guard-original-input normal-stream";
+      const transformed = "guard-redacted-input normal-stream";
+      const messages = (text: string) => [{ role: "user", parts: [{ kind: "text", text }] }];
+      const hooks: Array<{
+        method?: string;
+        path?: string;
+        headers: IncomingMessage["headers"];
+        body: { phase: string; context: unknown; input: { messages: unknown; output?: unknown } };
+      }> = [];
+      const sigil = createServer(async (request, response) => {
+        const chunks: Buffer[] = [];
+        for await (const chunk of request) chunks.push(Buffer.from(chunk));
+        const body = JSON.parse(Buffer.concat(chunks).toString()) as (typeof hooks)[number]["body"];
+        hooks.push({ method: request.method, path: request.url, headers: { ...request.headers }, body });
+        const verdict = body.phase === "preflight" ? tc.preflight : tc.postflight;
+        response.writeHead(verdict === "failure" ? 503 : 200, { "Content-Type": "application/json" });
+        response.end(JSON.stringify(verdict === "transform"
+          ? { action: "allow", transformed_input: { messages: messages(transformed) } }
+          : { action: verdict === "deny" ? "deny" : "allow", reason: "guard-private-reason integration-guard-key", rule_id: "guard-private-rule" }));
+      });
+      let resources: [FakeAnthropic, GatewayProcess] | undefined;
+      try {
+        await new Promise<void>(resolve => sigil.listen(0, "127.0.0.1", resolve));
+        const address = sigil.address();
+        assert.ok(address != null && typeof address !== "string");
+        const endpoint = `http://127.0.0.1:${address.port}/sigil`;
+        resources = await startGateway([
+          "--guards.enabled",
+          `--guards.endpoint=${endpoint}`,
+          "--guards.tenant-id=operator-guard-tenant",
+          "--guards.auth-mode=bearer",
+          "--guards.auth-secret-env=GATEWAY_TEST_GUARD_KEY",
+        ], { GATEWAY_TEST_GUARD_KEY: "integration-guard-key" });
+        const [fake, gateway] = resources;
+        fake.terminalStreamError = tc.terminalStreamError;
+        const privateGuardValues = [endpoint, "integration-guard-key", "GATEWAY_TEST_GUARD_KEY", "operator-guard-tenant", "guard-private-reason", "guard-private-rule"];
+        const options: LanguageModelV4CallOptions = { prompt: [{ role: "user", content: [{ type: "text", text: original }] }], maxOutputTokens: 32 };
+        const model = gateway.client()("assistant");
+        const modes: Array<"generate" | "stream"> = tc.terminalStreamError ? ["stream"] : ["generate", "stream"];
+        for (const mode of modes) {
+          const nativeStart = fake.requests.length;
+          const hookStart = hooks.length;
+          const go = await captureGoClient(goClientBinaryPath, { baseURL: `${gateway.url}/api/v1/aisdk`, accessToken: TEST_TOKEN, modelID: "assistant", mode, options });
+          const tsOptions = { ...options, abortSignal: AbortSignal.timeout(10_000) };
+          if (tc.error) {
+            const expected = tc.error;
+            const errorBody = { error: { message: expected.message, type: expected.type, param: null, code: expected.code } };
+            assert.equal(go.error?.statusCode, expected.status, mode);
+            assert.equal(go.error.isRetryable, tc.terminalStreamError != null);
+            assert.equal(go.error.message, expected.message);
+            assert.equal(go.error.code, expected.code);
+            assert.deepEqual(JSON.parse(go.error.apiError.responseBody), errorBody);
+            assert.equal(go.result, undefined);
+            assert.equal(go.parts, undefined);
+            assertPrivateValuesAbsent(go, fake, [...privateGuardValues, "hello from fake Anthropic"]);
+            await assert.rejects(async () => mode === "generate" ? model.doGenerate(tsOptions) : model.doStream(tsOptions), (error: unknown) => {
+              assert.ok(GatewayError.isInstance(error));
+              assert.equal(error.statusCode, expected.status);
+              assert.equal(error.isRetryable, tc.terminalStreamError != null);
+              assert.equal(error.message, expected.message);
+              assert.ok(APICallError.isInstance(error.cause));
+              assert.deepEqual(JSON.parse(error.cause.responseBody!), errorBody);
+              assertPrivateValuesAbsent([error, String(error), error.cause], fake, [...privateGuardValues, "hello from fake Anthropic"]);
+              return true;
+            });
+          } else {
+            await assertNativeOptionClientResults(go, model, tsOptions, mode);
+            if (mode === "generate") assert.deepEqual(go.result.content, [{ type: "text", text: "hello from fake Anthropic" }]);
+            else assert.equal(assertNativeOptionStream(go.parts).text, "hello from fake Anthropic stream");
+            assertPrivateValuesAbsent(go, fake, privateGuardValues, true);
+          }
+          const native = fake.requests.slice(nativeStart);
+          assert.equal(native.length, tc.preflight === "deny" ? 0 : 2, `${mode}: native calls`);
+          const effective = tc.preflight === "transform" ? transformed : original;
+          for (const request of native) {
+            assert.equal(request.body.stream ?? false, mode === "stream");
+            assert.deepEqual(request.body.messages, [{ role: "user", content: [{ type: "text", text: effective }] }]);
+            assert.equal(request.headers["x-scope-orgid"], undefined);
+            assert.ok(!JSON.stringify(request).includes("integration-guard-key"));
+          }
+          const calls = hooks.slice(hookStart);
+          const phases = tc.preflight === "deny" || tc.terminalStreamError ? ["preflight"] : ["preflight", "postflight"];
+          assert.deepEqual(calls.map(call => call.body.phase), [...phases, ...phases], `${mode}: guard phases`);
+          for (const call of calls) {
+            assert.equal(call.method, "POST");
+            assert.equal(call.path, "/sigil/api/v1/hooks:evaluate");
+            assert.equal(singleHeader(call.headers.authorization), "Bearer integration-guard-key");
+            assert.equal(singleHeader(call.headers["x-scope-orgid"]), "operator-guard-tenant");
+            assert.equal(singleHeader(call.headers["content-type"]), "application/json");
+            const timeout = Number(singleHeader(call.headers["x-agento11y-hook-timeout-ms"]));
+            assert.ok(Number.isInteger(timeout) && timeout > 0 && timeout <= 5_000);
+            assert.equal(call.headers["x-access-token"], undefined);
+            assert.equal(call.headers["x-grafana-id"], undefined);
+            assert.deepEqual(call.body.context, { agent_name: "grafana-ai-gateway", model: { provider: "grafana", name: "grafana/assistant" } });
+            assert.deepEqual(call.body.input.messages, messages(call.body.phase === "preflight" ? original : effective));
+            assert.deepEqual(call.body.input.output, call.body.phase === "preflight" ? undefined : [{ role: "assistant", parts: [{ kind: "text", text: mode === "generate" ? "hello from fake Anthropic" : "hello from fake Anthropic stream" }] }]);
+            assertPrivateValuesAbsent(call.body, fake);
+          }
+        }
+        assert.deepEqual(options.prompt, [{ role: "user", content: [{ type: "text", text: original }] }]);
+        assert.deepEqual(fake.violations, []);
+        const metrics = await gateway.metrics();
+        await gateway.stop();
+        assertPrivateValuesAbsent([metrics, gateway.stderr], fake, [...privateGuardValues, original, transformed, "hello from fake Anthropic"]);
+      } finally {
+        await settleCleanup(
+          ...(resources ? [() => resources![1].stop(), () => resources![0].stop()] : []),
+          async () => { sigil.closeAllConnections(); await new Promise<void>(resolve => sigil.close(() => resolve())); },
+        );
+      }
+    });
   }
 });
 
@@ -3006,6 +3139,7 @@ class FakeAnthropic {
   redirectTo?: string;
   oversizedErrors = false;
   failureStatus?: number;
+  terminalStreamError?: "rate_limit_error" | "overloaded_error" | "api_error";
   functionTools = false;
   providerTools = false;
   providerToolCaller = false;
@@ -3165,6 +3299,10 @@ class FakeAnthropic {
       response.write(`event: content_block_start\ndata: ${JSON.stringify({ type: "content_block_start", index: 0, content_block: { type: "text", text: "" } })}\n\n`);
       response.write(`event: content_block_delta\ndata: ${JSON.stringify({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "hello from fake Anthropic stream" } })}\n\n`);
       response.write(`event: content_block_stop\ndata: ${JSON.stringify({ type: "content_block_stop", index: 0 })}\n\n`);
+      if (this.terminalStreamError != null) {
+        response.end(`event: error\ndata: ${JSON.stringify({ type: "error", error: { type: this.terminalStreamError, message: "provider-secret-response integration-anthropic-key backend-private" } })}\n\n`);
+        return;
+      }
       response.write(`event: message_delta\ndata: ${JSON.stringify({ type: "message_delta", delta: { stop_reason: "end_turn", stop_sequence: null }, usage: { input_tokens: 2, output_tokens: 6 } })}\n\n`);
       response.end(`event: message_stop\ndata: {"type":"message_stop"}\n\n`);
       return;

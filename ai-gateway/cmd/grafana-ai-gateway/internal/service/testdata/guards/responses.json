@@ -1,0 +1,90 @@
+{
+  "allow": {
+    "action": "allow",
+    "evaluations": [
+      {
+        "rule_id": "pii-detect",
+        "evaluator_id": "evaluator-pii",
+        "evaluator_kind": "regex",
+        "passed": true,
+        "latency_ms": 12,
+        "explanation": "no PII matches"
+      }
+    ]
+  },
+  "deny": {
+    "action": "deny",
+    "rule_id": "block-destructive-bash",
+    "reason": "Bash(*rm*) is not allowed in this environment",
+    "evaluations": [
+      {
+        "rule_id": "block-destructive-bash",
+        "evaluator_id": "evaluator-tool-filter",
+        "evaluator_kind": "tool_filter",
+        "passed": false,
+        "latency_ms": 3,
+        "reason": "blocked tool Bash"
+      }
+    ]
+  },
+  "allow_with_transformed_input": {
+    "action": "allow",
+    "transformed_input": {
+      "messages": [
+        {
+          "role": "user",
+          "parts": [
+            {
+              "kind": "text",
+              "text": "Delete the cache directory under [REDACTED]."
+            }
+          ]
+        },
+        {
+          "role": "assistant",
+          "parts": [
+            {
+              "kind": "thinking",
+              "thinking": "The request is destructive, so inspect the directory first."
+            },
+            {
+              "kind": "tool_call",
+              "tool_call": {
+                "id": "call-bash",
+                "name": "Bash",
+                "input_json": "eyJjb21tYW5kIjoicm0gLXJmIC90bXAvY2FjaGUifQ=="
+              }
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "name": "Bash",
+          "parts": [
+            {
+              "kind": "tool_result",
+              "tool_result": {
+                "tool_call_id": "call-bash",
+                "name": "Bash",
+                "content": "rm: cannot remove '/tmp/cache': Permission denied",
+                "content_json": "eyJleGl0X2NvZGUiOjF9",
+                "is_error": true
+              }
+            }
+          ]
+        }
+      ],
+      "tools": [
+        {
+          "name": "Bash",
+          "description": "Run a shell command.",
+          "type": "function",
+          "input_schema_json": "eyJ0eXBlIjoib2JqZWN0IiwicHJvcGVydGllcyI6eyJjb21tYW5kIjp7InR5cGUiOiJzdHJpbmciLCJkZXNjcmlwdGlvbiI6IlNoZWxsIGNvbW1hbmQgdG8gcnVuLiJ9fSwicmVxdWlyZWQiOlsiY29tbWFuZCJdfQ=="
+        }
+      ],
+      "system_prompt": "You are a careful assistant.",
+      "conversation_preview": "user: Delete the cache directory under [REDACTED]."
+    },
+    "evaluations": []
+  }
+}
