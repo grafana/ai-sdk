@@ -2059,7 +2059,8 @@ func (r *StreamTextResult) executeSingleTool(
 //
 // The non-blocking attempt comes first so a part that still fits is always
 // delivered. Without it, select would pick at random between a ready send and a
-// cancelled context, and a live consumer would lose abort and finish parts.
+// cancelled context, and a live consumer could lose the abort part that ends
+// the stream.
 func (r *StreamTextResult) emit(part TextStreamPart) {
 	select {
 	case r.fullStream <- part:
