@@ -2,7 +2,9 @@
 
 ## Validation
 
-Validated on this branch, independently of later stack changes:
+Validated on this branch after rebasing onto main at `d863b86e` (#326/#328).
+All listed gates were rerun on each stack branch; the final command suite passes
+60 cases, including main's mapped fallback and high-level default-token coverage:
 
 - `mise run test-short`, `build`, `vet`, `lint`, `parity-check`.
 - `mise run test-ai-gateway-source-integration` and `test-integration`,
@@ -23,23 +25,31 @@ Vercel hosted-service behavior or deployed Cloud/network authorization.
 
 ## Stack preservation
 
-- Base: `69bdfa02503c96256c0f23594ad396542de3c374`.
+- Original split base: `69bdfa02503c96256c0f23594ad396542de3c374`.
+- Rebased stack base: `d863b86e` (main, including #326/#328).
 - Backup: `nrbrd/byok-before-stack` (`19cb6a09`), including the public
   test-only TLS certificate/key that were previously hidden by the PEM ignore rule.
 - Stack: `nrbrd/byok-client-safety` → `nrbrd/byok-runtime` → `nrbrd/byok`.
-- The final non-OpenSpec tree matches the backup exactly.
-- Every original requirement is retained across the three changes. Caller-owned
-  capture guidance moves from gateway-request-byok to grafana-gateway-client;
-  the client's transport selector bound is now an explicit requirement.
+- Before rebasing, the final non-OpenSpec tree matched the backup exactly.
+  The rebase preserves main's opaque native options and mapped fallback behavior
+  rather than restoring deleted policy inventories or text-only wrappers.
+- Original requirements are accounted for across the three changes. Caller-owned
+  capture guidance moves to grafana-gateway-client; the transport selector bound
+  is explicit. The obsolete selected-backend policy delta is dropped in favor of
+  main's gateway-native-provider-options contract.
 - Client and engine changes are complete. Deployment task 4.1 remains externally
   owned; no environment activation or deployed network proof is claimed.
 
-## Publishing status
+## Rebase evidence
 
-The split was validated on its original base, not a merge with newer main.
-Main has since advanced with #326 (native provider options) and #328 (fallback
-capabilities). A non-mutating merge check of the first branch against origin/main
-reports conflicts in gateway-command.test.ts, docs/providers/grafana-gateway.md
-and test/conformance/PARITY.md. Publishing/rebasing is paused for operator direction;
-no merged-candidate CI success is claimed. A rebase must preserve those newer
-contracts and rerun each slice's gates.
+The operator authorized rebasing before draft PR publication. Conflict resolution
+preserves main's native-option/fallback tests, documentation and coverage map,
+including unwrapped high-level TypeScript calls and native token defaults.
+
+BYOK Anthropic composition reuses the existing consumption guard for MCP
+servers/history, container skills and provider-side fallback. A failing regression
+first demonstrated native I/O without that guard; unary/streaming tests now prove
+zero attempts for consumed bypasses and retain ordinary-field negative controls.
+Configured guard implementations and native converters remain unchanged.
+
+Local gates passed; GitHub CI is separate evidence and is not claimed here.

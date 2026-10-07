@@ -13,7 +13,7 @@
 ## 3. Independent validation and preservation
 
 - [x] 3.1 Run Go/race, parity, command/integration, build/vet/lint, docs, module-policy and image gates on this branch.
-- [x] 3.2 Validate all three scoped changes and prove the final non-OpenSpec tree matches the preserved implementation.
+- [x] 3.2 Validate all three scoped changes, preserve the original split snapshot, and account for the rebase onto #326/#328 without reverting their contracts.
 
 ## 4. External activation gate
 

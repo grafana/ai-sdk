@@ -124,7 +124,7 @@ Tests SHALL run the real unified command with both listeners, independent Go cli
 
 Configured discovery SHALL succeed only on configured access; authenticated Cloud discovery SHALL return the explicit BYOK unsupported-operation response. Both populations SHALL support represented unary and streaming calls with explicit or omitted output-token limits; omitted limits SHALL use native defaults. High-level Go StreamText and registered TypeScript generateText/streamText SHALL preserve SDK-generated automatic choice and ordinary body headers, including User-Agent, without rewriting SDK bodies. Tests SHALL separate Gateway-authentication failures from provider-credential failures.
 
-Automatic server diagnostics SHALL exclude credentials and customer-ID metric labels. Authentication observations SHALL use bounded entry-point/source/outcome values per request, never a process-wide mode override. Streaming middleware SHALL preserve Unwrap and cancellation. Consumer request metadata exposure and structural capture protection SHALL follow gateway-request-byok and structured-logging-middleware.
+Automatic server diagnostics SHALL exclude credentials and customer-ID metric labels. Authentication observations SHALL use bounded entry-point/source/outcome values per request, never a process-wide mode override. Streaming middleware SHALL preserve Unwrap and cancellation. Consumer request metadata exposure and structural capture protection SHALL follow grafana-gateway-client and structured-logging-middleware.
 
 #### Scenario: Equivalent inference through both clients
 - **WHEN** Go and pinned Vercel issue supported private/configured and Cloud/BYOK unary and streaming calls
