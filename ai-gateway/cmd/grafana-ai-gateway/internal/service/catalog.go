@@ -15,7 +15,7 @@ import (
 	openaicompatible "github.com/grafana/ai-sdk/providers/openai-compatible"
 )
 
-type modelConstructor func(apiKey, modelID, baseURL string, client *http.Client) provider.LanguageModel
+type modelConstructor func(config nativemodel.Config, modelID string, client *http.Client) provider.LanguageModel
 
 // ModelFactory composes one canonical logical model around its unchanged lower
 // model. WP8 observers use this seam; WP9 may replace the lower model with a
@@ -54,7 +54,7 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 			var validateOptions func(provider.CallOptions) error
 			switch providerConfig.Type {
 			case "anthropic":
-				candidate = construct(providerConfig.APIKey, descriptor.Model, providerConfig.BaseURL, client)
+				candidate = construct(nativemodel.Config{APIKey: providerConfig.APIKey, BaseURL: providerConfig.BaseURL}, descriptor.Model, client)
 				validateOptions = nativeoptions.Anthropic
 			case "openai-compatible":
 				if providerConfig.BaseURL == "" {
@@ -73,7 +73,7 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 					return nativeoptions.Compatible(options, providerName)
 				}
 			case "openai":
-				candidate = nativemodel.NewOpenAI(providerConfig.APIKey, descriptor.Model, providerConfig.BaseURL, client)
+				candidate = nativemodel.NewOpenAI(nativemodel.Config{APIKey: providerConfig.APIKey, BaseURL: providerConfig.BaseURL}, descriptor.Model, client)
 			default:
 				return nil, fmt.Errorf("gateway service: provider %q is invalid", descriptor.Provider)
 			}

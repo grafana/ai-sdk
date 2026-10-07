@@ -177,7 +177,7 @@ func TestCloudCredentials_ConcurrentAndRedirect(t *testing.T) {
 }
 
 func TestModel_BYOKProjection(t *testing.T) {
-	const gatewayOptions = `{"byok":{"anthropic":[{"apiKey":"dummy-anthropic"}],"openai":[{"apiKey":"dummy-openai-first"},{"apiKey":"dummy-openai-second"}]}}`
+	const gatewayOptions = `{"byok":{"anthropic":[{"apiKey":"dummy-anthropic","baseURL":"https://approved.example/anthropic"}],"openai":[{"apiKey":"dummy-openai-first","baseURL":"https://approved.example/v1","organization":"org-customer","project":"proj-customer"},{"apiKey":"dummy-openai-second"}]}}`
 	const expected = `{"prompt":[],"providerOptions":{"gateway":` + gatewayOptions + `,"openai":{"store":false}}}`
 	for _, streaming := range []bool{false, true} {
 		t.Run(strconv.FormatBool(streaming), func(t *testing.T) {

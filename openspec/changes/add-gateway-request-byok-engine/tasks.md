@@ -15,3 +15,9 @@
 - [x] 3.1 Separate wire decoding from typed request-only construction, retaining strict credential validation.
 - [x] 3.2 Share explicit native constructors with configured execution without sharing configuration or account lookup.
 - [x] 3.3 Preserve regression coverage and rerun independent validation before pushing PR #368.
+
+## 4. Account configuration review
+
+- [x] 4.1 Replace opaque request/custom credential decoding with schema validation and plain account configs.
+- [x] 4.2 Support service-approved base URLs and OpenAI organization/project overrides while retaining service-owned transport and retries.
+- [x] 4.3 Add native/client boundary regressions, document the extension and run independent gates.

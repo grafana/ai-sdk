@@ -10,8 +10,17 @@ import (
 	"github.com/grafana/ai-sdk/provider"
 )
 
-func New(request Request, client *http.Client) (provider.LanguageModel, error) {
-	if len(request.credentials) == 0 {
+func New(name Provider, modelID string, accounts []nativemodel.Config, client *http.Client) (provider.LanguageModel, error) {
+	var construct func(nativemodel.Config, string, *http.Client) provider.LanguageModel
+	switch name {
+	case Anthropic:
+		construct = nativemodel.NewAnthropic
+	case OpenAI:
+		construct = nativemodel.NewOpenAI
+	default:
+		return nil, ErrInvalidSelector
+	}
+	if modelID == "" || len(accounts) == 0 || len(accounts) > maxCredentials {
 		return nil, ErrInvalidRequest
 	}
 	if client == nil {
@@ -19,22 +28,15 @@ func New(request Request, client *http.Client) (provider.LanguageModel, error) {
 	}
 	ownedClient := *client
 	ownedClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	candidates := make([]provider.LanguageModel, 0, len(request.credentials))
-	for _, credential := range request.credentials {
-		var model provider.LanguageModel
-		switch request.provider {
-		case anthropic:
-			model = nativemodel.NewAnthropic(credential.apiKey, request.model, "", &ownedClient)
-		case openai:
-			model = nativemodel.NewOpenAI(credential.apiKey, request.model, "", &ownedClient)
-		}
-		candidates = append(candidates, model)
+	candidates := make([]provider.LanguageModel, 0, len(accounts))
+	for _, account := range accounts {
+		candidates = append(candidates, construct(account, modelID, &ownedClient))
 	}
 	model, err := fallback.New(candidates...)
 	if err != nil {
 		return nil, err
 	}
-	if request.provider == anthropic {
+	if name == Anthropic {
 		return nativeoptions.Model{LanguageModel: model, Validate: nativeoptions.Anthropic}, nil
 	}
 	return model, nil

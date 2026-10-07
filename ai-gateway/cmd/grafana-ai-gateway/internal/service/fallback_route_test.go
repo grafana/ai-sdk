@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/config"
+	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/nativemodel"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -19,7 +20,7 @@ func TestFallbackRoute_OrderAndSingleComposition(t *testing.T) {
 	constructed, wrapped := 0, 0
 	var calls []string
 	options := provider.CallOptions{Prompt: []provider.Message{provider.UserText("hello")}}
-	created, err := buildCatalog(file, fallbackProviders(), http.DefaultClient, func(_ string, id string, _ string, _ *http.Client) provider.LanguageModel {
+	created, err := buildCatalog(file, fallbackProviders(), http.DefaultClient, func(_ nativemodel.Config, id string, _ *http.Client) provider.LanguageModel {
 		constructed++
 		return &observabilityTestModel{generate: func(_ context.Context, got provider.CallOptions) (*provider.GenerateResult, error) {
 			calls = append(calls, id)
@@ -59,7 +60,7 @@ func TestFallbackRoute_AutomaticToolChoice(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			options := provider.CallOptions{Prompt: []provider.Message{provider.UserText("hello")}, ToolChoice: &provider.ToolChoice{Type: provider.ToolChoiceAuto}}
 			var calls []string
-			created, err := buildCatalog(fallbackCatalogFile(), fallbackProviders(), http.DefaultClient, func(_ string, id string, _ string, _ *http.Client) provider.LanguageModel {
+			created, err := buildCatalog(fallbackCatalogFile(), fallbackProviders(), http.DefaultClient, func(_ nativemodel.Config, id string, _ *http.Client) provider.LanguageModel {
 				return &observabilityTestModel{
 					generate: func(_ context.Context, got provider.CallOptions) (*provider.GenerateResult, error) {
 						calls = append(calls, id)
@@ -112,7 +113,7 @@ func TestFallbackRoute_EmptyMessageOptionsPreserveTextFailover(t *testing.T) {
 			message.ProviderOptions = provider.ProviderOptions{"vendor": provider.RawProviderOption{Key: "vendor", Raw: []byte(` { } `)}}
 			options := provider.CallOptions{Prompt: []provider.Message{message}}
 			var calls []string
-			created, err := buildCatalog(fallbackCatalogFile(), fallbackProviders(), http.DefaultClient, func(_ string, id string, _ string, _ *http.Client) provider.LanguageModel {
+			created, err := buildCatalog(fallbackCatalogFile(), fallbackProviders(), http.DefaultClient, func(_ nativemodel.Config, id string, _ *http.Client) provider.LanguageModel {
 				return &observabilityTestModel{
 					generate: func(_ context.Context, got provider.CallOptions) (*provider.GenerateResult, error) {
 						calls = append(calls, id)
@@ -178,7 +179,7 @@ func TestFallbackRoute_MappedOptions(t *testing.T) {
 				original, err := json.Marshal(tc.opts)
 				require.NoError(t, err)
 				var calls []string
-				created, err := buildCatalog(fallbackCatalogFile(), fallbackProviders(), http.DefaultClient, func(_ string, id string, _ string, _ *http.Client) provider.LanguageModel {
+				created, err := buildCatalog(fallbackCatalogFile(), fallbackProviders(), http.DefaultClient, func(_ nativemodel.Config, id string, _ *http.Client) provider.LanguageModel {
 					invoke := func(got provider.CallOptions) error {
 						calls = append(calls, id)
 						assert.Equal(t, tc.opts, got)

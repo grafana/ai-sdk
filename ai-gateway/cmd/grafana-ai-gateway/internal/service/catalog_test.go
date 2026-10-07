@@ -56,10 +56,10 @@ func TestBuildCatalog_ConstructsImmutableCanonicalAndAliasModelsOnce(t *testing.
 	}
 	calls := 0
 	models := make(map[string]*catalogTestModel)
-	created, err := buildCatalog(file, resolved, http.DefaultClient, func(apiKey, modelID, baseURL string, client *http.Client) provider.LanguageModel {
+	created, err := buildCatalog(file, resolved, http.DefaultClient, func(account nativemodel.Config, modelID string, client *http.Client) provider.LanguageModel {
 		calls++
-		assert.Equal(t, "secret", apiKey)
-		assert.Equal(t, "https://provider.example", baseURL)
+		assert.Equal(t, "secret", account.APIKey)
+		assert.Equal(t, "https://provider.example", account.BaseURL)
 		assert.Same(t, http.DefaultClient, client)
 		model := &catalogTestModel{id: modelID}
 		models[modelID] = model
@@ -91,7 +91,7 @@ func TestBuildCatalog_ModelFactoryReceivesCanonicalAndProtectedLowerOnce(t *test
 	direct := make(map[string]provider.LanguageModel)
 	constructed := 0
 	factoryCalls := 0
-	created, err := buildCatalog(file, resolved, http.DefaultClient, func(_ string, modelID string, _ string, _ *http.Client) provider.LanguageModel {
+	created, err := buildCatalog(file, resolved, http.DefaultClient, func(_ nativemodel.Config, modelID string, _ *http.Client) provider.LanguageModel {
 		constructed++
 		model := &catalogTestModel{id: modelID}
 		direct[modelID] = model
@@ -131,7 +131,7 @@ func TestBuildCatalog_ModelFactoryFailureIsFailFast(t *testing.T) {
 		func(string, provider.LanguageModel) (provider.LanguageModel, error) { return nil, assert.AnError },
 		func(string, provider.LanguageModel) (provider.LanguageModel, error) { return nil, nil },
 	} {
-		created, err := buildCatalog(file, resolved, http.DefaultClient, func(_ string, modelID string, _ string, _ *http.Client) provider.LanguageModel {
+		created, err := buildCatalog(file, resolved, http.DefaultClient, func(_ nativemodel.Config, modelID string, _ *http.Client) provider.LanguageModel {
 			return &catalogTestModel{id: modelID}
 		}, factory)
 		require.Error(t, err)
@@ -193,7 +193,7 @@ func TestBuildCatalog_FallbackConstructionFailsOpenWithoutPrivateSink(t *testing
 	model.Fallback = []config.Primary{{Provider: "anthropic-primary", Model: "backup"}}
 	file.Models["grafana/assistant"] = model
 	calls := 0
-	_, err := buildCatalog(file, map[string]config.ResolvedProvider{"anthropic-primary": {Type: "anthropic", APIKey: "secret"}}, http.DefaultClient, func(string, string, string, *http.Client) provider.LanguageModel {
+	_, err := buildCatalog(file, map[string]config.ResolvedProvider{"anthropic-primary": {Type: "anthropic", APIKey: "secret"}}, http.DefaultClient, func(nativemodel.Config, string, *http.Client) provider.LanguageModel {
 		calls++
 		return &catalogTestModel{}
 	}, identityModelFactory)

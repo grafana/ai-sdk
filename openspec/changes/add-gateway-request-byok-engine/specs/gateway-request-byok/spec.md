@@ -3,7 +3,7 @@
 ### Requirement: Catalog-independent request destination
 When invoked by a host selector, the internal BYOK engine SHALL require a provider/model selector in the existing ai-language-model-id header. The selector SHALL be valid UTF-8, at most 2,048 bytes, have a supported case-sensitive provider prefix before the first slash and a nonempty native-model suffix without whitespace or control characters. The suffix SHALL be preserved, including additional slashes, as model data rather than a URL. Initial providers SHALL be anthropic and openai, using the native Messages and Responses adapters respectively.
 
-The selector SHALL NOT resolve configured models, aliases, provider instances, endpoints, defaults or fallback routes. Advisory native model lists SHALL NOT act as a configured-catalog allowlist. Unknown native models SHALL be decided by the selected native provider without unsolicited inventory or validation calls.
+The selector SHALL NOT resolve configured models, aliases, provider instances, endpoints, defaults or fallback routes. A separate service-owned destination approval map MAY authorize an explicitly submitted baseURL; it SHALL NOT supply a default endpoint or account. Advisory native model lists SHALL NOT act as a configured-catalog allowlist. Unknown native models SHALL be decided by the selected native provider without unsolicited inventory or validation calls.
 
 #### Scenario: Native model absent from configured catalog
 - **WHEN** a valid anthropic/model-name selector and Anthropic request credentials are supplied
@@ -18,9 +18,17 @@ The selector SHALL NOT resolve configured models, aliases, provider instances, e
 - **THEN** the request SHALL fail with a bounded capability/field diagnostic before provider construction
 
 ### Requirement: Vercel-shaped credential ingestion
-The host SHALL accept only call-level providerOptions.gateway.byok, shaped as a provider-name map of ordered nonempty credential-object arrays. Initial credential objects SHALL contain only apiKey. Multiple supported provider entries SHALL be accepted and validated, but only the header-selected provider's credentials SHALL be eligible. Empty/missing BYOK or missing credentials for that provider SHALL fail before provider I/O.
+The host SHALL accept only call-level providerOptions.gateway.byok, shaped as a provider-name map of ordered nonempty credential-object arrays. Account objects SHALL require apiKey and MAY contain baseURL. OpenAI accounts MAY also contain organization and project; Anthropic accounts SHALL NOT accept OpenAI account fields. Unknown fields and null optional values SHALL fail. Omitted/empty baseURL SHALL select the native default; omitted/empty organization/project SHALL remain unset without ambient defaults. Multiple supported provider entries SHALL be accepted and validated, but only the header-selected provider's credentials SHALL be eligible. Empty/missing BYOK or missing credentials for that provider SHALL fail before provider I/O.
 
-The entire supplied BYOK map SHALL be validated before execution, including unused entries. Supported keys SHALL be exactly anthropic and openai. Each array SHALL contain at most 8 credentials; each decoded key SHALL be nonempty, at most 4,096 bytes and a valid credential header value without whitespace/control characters. The raw BYOK subtree SHALL be at most 65,536 bytes and remain within the existing complete request bound. Standard request JSON duplicate-member semantics SHALL remain unchanged.
+The entire supplied BYOK map SHALL be validated before execution, including unused entries. Supported keys SHALL be exactly anthropic and openai. Each array SHALL contain at most 8 credentials; each decoded key SHALL be nonempty, at most 4,096 bytes and a valid credential header value without whitespace/control characters. The raw BYOK subtree SHALL be at most 65,536 bytes and remain within the existing complete request bound. Standard request JSON duplicate-member semantics SHALL remain unchanged. JSON-schema validation SHALL enforce exact field names and provider-specific account shape before ordinary typed decoding; raw duplicate members SHALL normalize before typed decoding so replaced malformed members do not introduce stricter struct-decoding behavior. Decoded baseURL SHALL be at most 2,048 bytes; organization/project SHALL be at most 256 bytes and valid nonempty header values when set.
+
+#### Scenario: Native account defaults
+- **WHEN** an account omits optional configuration or supplies empty optional strings
+- **THEN** native endpoint defaults SHALL apply and OpenAI organization/project headers SHALL remain unset, without reading environment variables
+
+#### Scenario: OpenAI account overrides
+- **WHEN** an OpenAI account supplies valid organization and project
+- **THEN** only that account's native headers SHALL carry them in unary and streaming attempts, not the inference JSON body
 
 #### Scenario: Multiple providers and ordered keys
 - **WHEN** the map contains two OpenAI credentials and one Anthropic credential and the header selects openai/model
@@ -51,16 +59,30 @@ Unknown credential fields/providers, modelMappings, Azure/Vertex/Bedrock/compati
 - **WHEN** valid credentials accompany an unsupported gateway.order or gateway.providerTimeouts control
 - **THEN** the request SHALL fail before I/O without suggesting that the control was applied
 
-### Requirement: Request-scoped provider construction and control removal
-Host selection SHALL decode and validate Gateway controls before passing a typed request to model construction. Construction SHALL NOT parse the raw Gateway JSON or accept caller-supplied endpoint overrides. Shared native constructors MAY serve configured and request-only execution, but SHALL receive explicit inputs without performing catalog, configuration or secret lookup. A zero/unvalidated request SHALL fail before native construction.
+### Requirement: Service-approved account destinations
+A supplied nonempty baseURL SHALL be an absolute HTTPS URL with a host and without userinfo, query, forced query or fragment delimiter. It SHALL match the native provider default or an exact service-owned approval for that provider before construction. Approval SHALL NOT use host/path prefixes, wildcards or implicit port/trailing-slash normalization, supply account data or come from client controls. Approvals SHALL be independent of configured accounts/catalogs and SHALL NOT select an endpoint when the account omits it.
 
-The BYOK selector SHALL construct account-bound models for the request using only the selected supplied keys and supported fixed native destinations. It SHALL NOT inherit configured instances or ambient SDK key/base-URL/account defaults. Shared transports SHALL be credential-independent; redirects SHALL NOT forward credentials. The host SHALL remove gateway controls before generic model middleware and native provider options see them, and forward supported matching native options/content/history without using configured-catalog field allowlists or cross-provider intersections.
+This is explicit destination authorization, not proof of public-address enforcement, DNS pinning or deployed proxy/network isolation. Service owners SHALL approve only intended destinations and control their DNS/proxy/network boundary. Transport and redirects SHALL remain service-owned. Approval/configuration activation belongs to the subsequent service change; the engine SHALL NOT expose BYOK HTTP admission in this change.
+
+#### Scenario: Approved account endpoint
+- **WHEN** an account supplies a valid exact service-approved baseURL for its provider
+- **THEN** its native attempt SHALL use that endpoint with only its own key and account headers
+
+#### Scenario: Unapproved or malformed endpoint
+- **WHEN** any supplied account, including an unused provider, names an unapproved or malformed baseURL
+- **THEN** host selection SHALL fail before native I/O with a non-secret diagnostic
+- **AND** client-supplied approval controls SHALL NOT grant destination access
+
+### Requirement: Request-scoped provider construction and control removal
+Host selection SHALL decode and validate Gateway controls before passing the provider, native model and plain account configs to construction. Construction SHALL NOT parse raw Gateway JSON. Shared native constructors MAY serve configured and request-only execution, but SHALL receive explicit inputs without performing catalog, configuration or secret lookup. Missing model/accounts or an unsupported provider SHALL fail before native construction.
+
+The BYOK selector SHALL construct account-bound models for the request using only the selected supplied accounts and native-default or service-approved destinations. It SHALL NOT inherit configured instances or ambient SDK key/base-URL/account defaults. Shared transports SHALL be credential-independent; redirects SHALL NOT forward credentials. The host SHALL remove gateway controls before generic model middleware and native provider options see them, and forward supported matching native options/content/history without using configured-catalog field allowlists or cross-provider intersections.
 
 No key-bearing model, credential collection, raw request or request observer SHALL be stored in a global cache, catalog or background refresh service. Models and credential data SHALL follow bounded request execution/cleanup ownership; garbage-collection lifetime SHALL NOT be described as cryptographic zeroization.
 
 #### Scenario: Decoded request owns credentials
 - **WHEN** raw Gateway controls are discarded or modified after successful decoding
-- **THEN** construction SHALL use the validated request's selected credentials and fixed native destination without rereading those controls
+- **THEN** construction SHALL use the validated request's selected account configuration and authorized destination without rereading those controls
 
 #### Scenario: Native endpoints observe selected credentials
 - **WHEN** both provider entries contain distinct dummy keys and the request selects Anthropic

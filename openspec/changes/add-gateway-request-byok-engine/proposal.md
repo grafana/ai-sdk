@@ -9,6 +9,7 @@ selection boundary are needed before the service exposes a BYOK endpoint.
 - **BREAKING:** replace ProviderWire's catalog resolver dependency with a host selector.
 - Start one execution deadline before selection and retain it through invocation and streaming.
 - Add bounded request-only native Anthropic/OpenAI construction and ordered default fallback.
+- Support account-scoped baseURL overrides only for service-approved destinations, plus OpenAI organization/project; retain native defaults and service-owned transport/retry policy.
 - Consume host controls before native middleware, retaining credential/destination protections.
 - Keep the command on catalog selection; no new auth policy or listener is activated.
 

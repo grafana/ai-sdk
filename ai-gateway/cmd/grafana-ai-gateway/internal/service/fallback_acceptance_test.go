@@ -15,6 +15,7 @@ import (
 
 	"github.com/grafana/agento11y/go/agento11y"
 	"github.com/grafana/agento11y/go/agento11y/testkit"
+	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/nativemodel"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/provider"
@@ -452,7 +453,7 @@ func newFallbackAcceptance(t *testing.T, primary, secondary *observabilityTestMo
 	t.Cleanup(sink.Close)
 	h := &fallbackAcceptance{}
 	h.logText = logs.String
-	catalog, err := buildCatalog(fallbackCatalogFile(), fallbackProviders(), http.DefaultClient, func(_ string, id string, _ string, _ *http.Client) provider.LanguageModel {
+	catalog, err := buildCatalog(fallbackCatalogFile(), fallbackProviders(), http.DefaultClient, func(_ nativemodel.Config, id string, _ *http.Client) provider.LanguageModel {
 		index, model := 0, primary
 		if id == "backend-secondary" {
 			index, model = 1, secondary

@@ -4,9 +4,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
+	"slices"
 	"strings"
+	"sync"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/nativemodel"
+	"github.com/grafana/ai-sdk/schema"
 )
 
 const (
@@ -14,6 +20,8 @@ const (
 	maxCredentialBytes = 4096
 	maxCredentials     = 8
 	maxBYOKBytes       = 65536
+	maxBaseURLBytes    = 2048
+	maxAccountIDBytes  = 256
 )
 
 var (
@@ -22,40 +30,45 @@ var (
 	ErrUnsupportedControl = fmt.Errorf("%w: unsupported gateway control", ErrInvalidRequest)
 )
 
-type providerName string
+type Provider string
 
 const (
-	anthropic providerName = "anthropic"
-	openai    providerName = "openai"
+	Anthropic Provider = "anthropic"
+	OpenAI    Provider = "openai"
 )
 
 type Request struct {
-	provider    providerName
-	model       string
-	credentials []credential
+	Provider Provider
+	Model    string
+	Accounts []nativemodel.Config
 }
 
-type credential struct {
-	apiKey string
-}
-
-func (c *credential) UnmarshalJSON(data []byte) error {
-	var fields map[string]json.RawMessage
-	var key string
-	if json.Unmarshal(data, &fields) != nil || len(fields) != 1 ||
-		json.Unmarshal(fields["apiKey"], &key) != nil ||
-		len(key) > maxCredentialBytes || !validHeaderValue(key) {
-		return fmt.Errorf("%w: credential requires only a bounded nonempty apiKey", ErrInvalidRequest)
+const accountSchema = `{
+	"type":"object","minProperties":1,"additionalProperties":false,
+	"properties":{
+		"anthropic":{"type":"array","minItems":1,"maxItems":8,"items":{
+			"type":"object","required":["apiKey"],"additionalProperties":false,
+			"properties":{"apiKey":{"type":"string","minLength":1},"baseURL":{"type":"string"}}
+		}},
+		"openai":{"type":"array","minItems":1,"maxItems":8,"items":{
+			"type":"object","required":["apiKey"],"additionalProperties":false,
+			"properties":{
+				"apiKey":{"type":"string","minLength":1},"baseURL":{"type":"string"},
+				"organization":{"type":"string"},"project":{"type":"string"}
+			}
+		}}
 	}
-	c.apiKey = key
-	return nil
-}
+}`
 
-func DecodeRequest(selector string, gateway json.RawMessage) (Request, error) {
+var compileAccountSchema = sync.OnceValues(func() (*schema.CompiledSchema, error) {
+	return schema.CompileSchema(json.RawMessage(accountSchema))
+})
+
+func DecodeRequest(selector string, gateway json.RawMessage, approvedBaseURLs map[Provider][]string) (Request, error) {
 	name, model, ok := strings.Cut(selector, "/")
-	selected := providerName(name)
+	selected := Provider(name)
 	if !ok || model == "" || len(selector) > MaxSelectorBytes || !validHeaderValue(selector) ||
-		(selected != anthropic && selected != openai) {
+		(selected != Anthropic && selected != OpenAI) {
 		return Request{}, ErrInvalidSelector
 	}
 	var controls map[string]json.RawMessage
@@ -65,39 +78,69 @@ func DecodeRequest(selector string, gateway json.RawMessage) (Request, error) {
 	if len(controls) != 1 || controls["byok"] == nil {
 		return Request{}, ErrUnsupportedControl
 	}
-	credentials, err := decodeCredentials(controls["byok"])
+	raw := controls["byok"]
+	if len(raw) > maxBYOKBytes {
+		return Request{}, fmt.Errorf("%w: gateway.byok exceeds byte limit", ErrInvalidRequest)
+	}
+	var value any
+	if json.Unmarshal(raw, &value) != nil {
+		return Request{}, ErrInvalidRequest
+	}
+	normalized, err := json.Marshal(value)
 	if err != nil {
-		return Request{}, err
+		return Request{}, ErrInvalidRequest
 	}
-	if len(credentials[selected]) == 0 {
-		return Request{}, fmt.Errorf("%w: gateway.byok requires credentials for selected provider", ErrInvalidRequest)
+	validator, err := compileAccountSchema()
+	if err != nil {
+		return Request{}, fmt.Errorf("gateway byok: compiling account schema: %w", err)
 	}
-	return Request{provider: selected, model: model, credentials: credentials[selected]}, nil
+	if validator.Validate(normalized) != nil {
+		return Request{}, fmt.Errorf("%w: gateway.byok has an unsupported provider or invalid account fields", ErrInvalidRequest)
+	}
+	var accounts map[Provider][]nativemodel.Config
+	if json.Unmarshal(normalized, &accounts) != nil {
+		return Request{}, ErrInvalidRequest
+	}
+	for name, entries := range accounts {
+		for _, account := range entries {
+			if err := validateAccount(name, account, approvedBaseURLs[name]); err != nil {
+				return Request{}, err
+			}
+		}
+	}
+	if len(accounts[selected]) == 0 {
+		return Request{}, fmt.Errorf("%w: gateway.byok requires accounts for selected provider", ErrInvalidRequest)
+	}
+	return Request{Provider: selected, Model: model, Accounts: accounts[selected]}, nil
 }
 
-func decodeCredentials(raw json.RawMessage) (map[providerName][]credential, error) {
-	if len(raw) > maxBYOKBytes {
-		return nil, fmt.Errorf("%w: gateway.byok exceeds byte limit", ErrInvalidRequest)
+func validateAccount(name Provider, account nativemodel.Config, approvedBaseURLs []string) error {
+	if len(account.APIKey) > maxCredentialBytes || !validHeaderValue(account.APIKey) {
+		return fmt.Errorf("%w: apiKey must be a bounded nonempty header value", ErrInvalidRequest)
 	}
-	var providers map[providerName]json.RawMessage
-	if json.Unmarshal(raw, &providers) != nil || len(providers) == 0 {
-		return nil, fmt.Errorf("%w: gateway.byok must be a nonempty provider map", ErrInvalidRequest)
+	for _, value := range []string{account.Organization, account.Project} {
+		if len(value) > maxAccountIDBytes || (value != "" && !validHeaderValue(value)) {
+			return fmt.Errorf("%w: organization and project must be bounded header values", ErrInvalidRequest)
+		}
 	}
-	credentials := make(map[providerName][]credential, len(providers))
-	for name, raw := range providers {
-		if name != anthropic && name != openai {
-			return nil, fmt.Errorf("%w: gateway.byok provider is unsupported", ErrInvalidRequest)
-		}
-		var entries []credential
-		if err := json.Unmarshal(raw, &entries); err != nil {
-			return nil, fmt.Errorf("%w: gateway.byok.%s contains invalid credentials", ErrInvalidRequest, name)
-		}
-		if len(entries) == 0 || len(entries) > maxCredentials {
-			return nil, fmt.Errorf("%w: gateway.byok.%s must contain 1 to %d credentials", ErrInvalidRequest, name, maxCredentials)
-		}
-		credentials[name] = entries
+	if account.BaseURL == "" {
+		return nil
 	}
-	return credentials, nil
+	endpoint, err := url.Parse(account.BaseURL)
+	if err != nil || len(account.BaseURL) > maxBaseURLBytes || !validHeaderValue(account.BaseURL) ||
+		endpoint.Scheme != "https" || endpoint.Hostname() == "" || endpoint.Opaque != "" ||
+		endpoint.User != nil || endpoint.RawQuery != "" || endpoint.ForceQuery ||
+		strings.Contains(account.BaseURL, "#") {
+		return fmt.Errorf("%w: baseURL must be an absolute HTTPS URL without credentials, query or fragment", ErrInvalidRequest)
+	}
+	defaultURL := nativemodel.AnthropicBaseURL
+	if name == OpenAI {
+		defaultURL = nativemodel.OpenAIBaseURL
+	}
+	if account.BaseURL != defaultURL && !slices.Contains(approvedBaseURLs, account.BaseURL) {
+		return fmt.Errorf("%w: baseURL is not service-approved for this provider", ErrInvalidRequest)
+	}
+	return nil
 }
 
 func validHeaderValue(value string) bool {

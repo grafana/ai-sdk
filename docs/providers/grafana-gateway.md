@@ -198,6 +198,40 @@ native `provider/model` selectors without discovery. This is client support, not
 a claim that the configured Gateway service accepts BYOK. Server capabilities
 and account authorization still decide which requests execute.
 
+For BYOK-capable hosts, account configuration belongs inside each
+`gateway.byok` entry, separate from ordinary inference options:
+
+```ts
+providerOptions: {
+  gateway: {
+    byok: {
+      openai: [{
+        apiKey: process.env.OPENAI_API_KEY!,
+        baseURL: "https://approved.example/v1",
+        organization: "org-customer",
+        project: "proj-customer",
+      }],
+    },
+  },
+  openai: { store: false },
+}
+```
+
+Omit `baseURL` to use the native provider endpoint. OpenAI organization/project
+default to unset; Anthropic entries accept only the key and optional base URL.
+Empty optional strings use these defaults; null and unknown account fields fail.
+Custom base URLs require an exact service approval for that provider, including
+path and port, and must use HTTPS without embedded credentials, query or fragment.
+Approval never supplies credentials or changes the endpoint when it is omitted.
+Ask your operator which destinations are approved; clients cannot grant approval.
+
+These account fields are a Grafana service extension that the registered Vercel
+client can serialize, not a guarantee of Vercel hosted-service support. The
+internal engine implements the policy, but the command in this change still uses
+configured selection; activation and operator approval configuration come later.
+Clients cannot override native retry counts, redirects, HTTP transport/TLS or
+service deadlines through account configuration.
+
 Returned caller-owned request metadata retains submitted keys. Opt-in Go logger
 capture applies its configured field redactor to structured copies, including
 `apiKey` and authentication headers. Use `DefaultRedactorWithExtraKeys` or

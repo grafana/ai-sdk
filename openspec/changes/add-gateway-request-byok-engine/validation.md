@@ -79,7 +79,9 @@ PR #369 remains at `4e5bd486`; it has not been rebased or pushed.
 
 ## Typed construction review
 
-DecodeRequest now returns an opaque validated Request; New receives no raw JSON.
+The first construction cleanup returned an opaque validated Request from
+DecodeRequest; New received no raw JSON. The account-configuration review below
+supersedes that opaque type and keys-only policy.
 Credential decoding retains exact case-sensitive fields, byte/count bounds,
 last-member-wins semantics and validation of unused entries. Added regressions
 cover replaced malformed duplicates, credential endpoint/header rejection,
@@ -97,9 +99,52 @@ All listed validation gates passed again, including 74 command tests, full SDK
 and Gateway race suites, parity and image checks. Exact OpenSpec 1.14.0 validation
 passed for this existing change; no new OpenSpec change was created.
 
-When PR #369 is later rebased, its BYOK selector must call DecodeRequest and then
-New with the validated request. Its account policy and observation wrapper still
-belong to activation; that branch remains untouched.
+That cleanup required a later PR #369 selector migration; the account review
+below records the current API and destination-policy integration requirements.
+
+## Account configuration review
+
+Removed the opaque request and custom credential unmarshaler. JSON-schema
+validation now owns provider-specific shape/exact names, plain Config values
+carry accounts, and construction accepts provider/model/ordered accounts.
+Duplicate normalization preserves replaced malformed members before typed
+decoding; raw BYOK bytes and all unused accounts remain validated.
+
+Accounts accept baseURL with native defaults and exact provider-scoped service
+approval for custom destinations. Only OpenAI accepts organization/project;
+empty/omitted optional values retain native endpoint/unset account defaults.
+The approval map supplies permission only, never endpoints/accounts/defaults.
+It is a separate host argument, not request metadata or configured provider
+lookup. Clients cannot set retries, transport/TLS, redirects, arbitrary account
+headers or deadlines.
+
+A red regression first demonstrated rejection of explicit native baseURL,
+organization/project and empty optional defaults. Green unary/stream tests
+verify native headers and body separation, per-account endpoint/header changes
+through ordinary fallback, zero native retries, and concurrent account isolation.
+Policy tests cover provider-specific approvals, absent approval, path/port/prefix
+mismatches, forbidden URL forms, null/unknown/case-variant fields, byte ceilings,
+invalid unused entries and last-member-wins behavior. Native-default and approved
+endpoint redirect tests both reject redirect following without mutating clients.
+
+Pinned @ai-sdk/gateway 4.0.96 and independent Go-client capture tests preserve
+extended account fields/order and caller metadata. Actual logger sinks redact
+the entire extended account subtree across generate/stream/error and truncation.
+This establishes client projection, not Vercel hosted-service configuration
+semantics. Native OpenAI field names/defaults match registered @ai-sdk/openai
+4.0.78; no ambient account defaults are inherited.
+
+All independent gates above passed, including all 74 command tests, SDK/Gateway
+race suites, parity, integration, typechecks, provider-shape and image checks.
+Strict OpenSpec 1.14.0 validation passed for the existing change.
+
+PR #369 must later pass a service-owned approval map to DecodeRequest, call New
+with the resulting Provider/Model/Accounts, and expose/validate operator approvals
+separately from configured accounts. That activation/config/deployment work is
+not implemented here. Approval is trust in an exact endpoint, not a claim of
+DNS pinning, public-IP enforcement or deployed proxy/network isolation. The
+deployment owner must control approved destinations and their network boundary.
+PR #367 and PR #369 remain unchanged.
 
 No module pins, upstream baseline or authentic provider fixture inputs changed.
 Local fake services and image tests do not establish live native acceptance,

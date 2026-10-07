@@ -13,30 +13,46 @@ import (
 )
 
 const (
-	defaultAnthropicBaseURL = "https://api.anthropic.com"
-	defaultOpenAIBaseURL    = "https://api.openai.com/v1"
+	AnthropicBaseURL = "https://api.anthropic.com"
+	OpenAIBaseURL    = "https://api.openai.com/v1"
 )
 
-func NewAnthropic(apiKey, modelID, baseURL string, client *http.Client) provider.LanguageModel {
+type Config struct {
+	APIKey       string `json:"apiKey"`
+	BaseURL      string `json:"baseURL,omitempty"`
+	Organization string `json:"organization,omitempty"`
+	Project      string `json:"project,omitempty"`
+}
+
+func NewAnthropic(config Config, modelID string, client *http.Client) provider.LanguageModel {
+	baseURL := config.BaseURL
 	if baseURL == "" {
-		baseURL = defaultAnthropicBaseURL
+		baseURL = AnthropicBaseURL
 	}
-	return anthropicprovider.New(apiKey, modelID, anthropicprovider.WithRequestOptions(
+	return anthropicprovider.New(config.APIKey, modelID, anthropicprovider.WithRequestOptions(
 		anthropicoption.WithBaseURL(baseURL),
 		anthropicoption.WithHTTPClient(client),
 		anthropicoption.WithMaxRetries(0),
 	))
 }
 
-func NewOpenAI(apiKey, modelID, baseURL string, client *http.Client) provider.LanguageModel {
+func NewOpenAI(config Config, modelID string, client *http.Client) provider.LanguageModel {
+	baseURL := config.BaseURL
 	if baseURL == "" {
-		baseURL = defaultOpenAIBaseURL
+		baseURL = OpenAIBaseURL
 	}
-	service := responses.NewResponseService(
-		openaioption.WithAPIKey(apiKey),
+	options := []openaioption.RequestOption{
+		openaioption.WithAPIKey(config.APIKey),
 		openaioption.WithBaseURL(baseURL),
 		openaioption.WithHTTPClient(client),
 		openaioption.WithMaxRetries(0),
-	)
+	}
+	if config.Organization != "" {
+		options = append(options, openaioption.WithOrganization(config.Organization))
+	}
+	if config.Project != "" {
+		options = append(options, openaioption.WithProject(config.Project))
+	}
+	service := responses.NewResponseService(options...)
 	return openaiprovider.NewResponsesWithClient(openaisdk.Client{Responses: service}, modelID)
 }
