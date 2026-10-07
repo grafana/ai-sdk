@@ -37,12 +37,13 @@ type choice struct {
 	Logprobs any           `json:"logprobs"`
 }
 type completion struct {
-	ID      string   `json:"id"`
-	Object  string   `json:"object"`
-	Created int64    `json:"created"`
-	Model   string   `json:"model"`
-	Choices []choice `json:"choices"`
-	Usage   *usage   `json:"usage,omitempty"`
+	ID      string       `json:"id"`
+	Object  string       `json:"object"`
+	Created int64        `json:"created"`
+	Model   string       `json:"model"`
+	Choices []choice     `json:"choices"`
+	Usage   *usage       `json:"usage,omitempty"`
+	Grafana *diagnostics `json:"grafana,omitempty"`
 }
 
 func mapUsage(u provider.Usage) (*usage, error) {
@@ -132,10 +133,19 @@ func mapGenerate(result *provider.GenerateResult, r mappedRequest, id, model str
 	if len(result.Content) > 1024 {
 		return out, errOutput
 	}
-	for _, warning := range result.Warnings {
-		if warning.Type == provider.WarnUnsupported {
-			return out, errOutput
+	warnings, err := mapWarnings(result.Warnings, max)
+	if err != nil {
+		return out, err
+	}
+	if len(warnings) > 0 {
+		out.Grafana = &diagnostics{Warnings: warnings}
+	}
+	if result.Response != nil {
+		native, err := mapNativeResponse(result.Response.ID, result.Response.ModelID, result.Response.Timestamp, max)
+		if err != nil {
+			return out, err
 		}
+		native.apply(&out.ID, &out.Model, &out.Created)
 	}
 	finish, err := finishReason(result.FinishReason)
 	if err != nil {

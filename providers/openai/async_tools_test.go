@@ -68,15 +68,15 @@ func TestBuildParams_CustomToolAsyncValidation(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
 		value     json.RawMessage
-		wantError bool
+		wantError string
 	}{
 		{name: "absent"},
 		{name: "true", value: json.RawMessage(`true`)},
 		{name: "false", value: json.RawMessage(`false`)},
-		{name: "string", value: json.RawMessage(`"true"`), wantError: true},
-		{name: "null", value: json.RawMessage(`null`), wantError: true},
-		{name: "object", value: json.RawMessage(`{}`), wantError: true},
-		{name: "malformed", value: json.RawMessage(`{`), wantError: true},
+		{name: "string", value: json.RawMessage(`"true"`), wantError: `custom tool "write_sql" async must be a boolean`},
+		{name: "null", value: json.RawMessage(`null`), wantError: `custom tool "write_sql" async must be a boolean`},
+		{name: "object", value: json.RawMessage(`{}`), wantError: `custom tool "write_sql" async must be a boolean`},
+		{name: "malformed", value: json.RawMessage(`{`), wantError: `invalid argument "async"`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			args := map[string]json.RawMessage{}
@@ -87,8 +87,8 @@ func TestBuildParams_CustomToolAsyncValidation(t *testing.T) {
 				Prompt: []provider.Message{provider.UserText("hi")},
 				Tools:  []provider.Tool{{Type: provider.ToolTypeProvider, ID: toolIDCustom, Name: "write_sql", Args: args}},
 			})
-			if tc.wantError {
-				require.ErrorContains(t, err, `custom tool "write_sql" async must be a boolean`)
+			if tc.wantError != "" {
+				require.ErrorContains(t, err, tc.wantError)
 			} else {
 				require.NoError(t, err)
 			}

@@ -511,7 +511,11 @@ func TestStreamText_ToolChoice(t *testing.T) {
 					result := StreamText(t.Context(), model, opts...)
 					for range result.FullStream() {
 					}
-					require.NoError(t, result.Err())
+					if want.Type == provider.ToolChoiceRequired || want.Type == provider.ToolChoiceTool {
+						require.ErrorContains(t, result.Err(), "tool choice")
+					} else {
+						require.NoError(t, result.Err())
+					}
 					assert.Equal(t, &want, got.ToolChoice)
 					assert.Len(t, got.Tools, tc.toolCount)
 					assert.Equal(t, 1, model.callCount)
@@ -555,7 +559,11 @@ func TestStreamText_ToolChoiceStepPrecedence(t *testing.T) {
 			result := StreamText(t.Context(), model, opts...)
 			for range result.FullStream() {
 			}
-			require.NoError(t, result.Err())
+			if configured != nil {
+				require.ErrorContains(t, result.Err(), "tool choice")
+			} else {
+				require.NoError(t, result.Err())
+			}
 			assert.Equal(t, []*provider.ToolChoice{want, &override, want}, choices)
 		})
 	}
@@ -3387,15 +3395,59 @@ func TestStopConditions(t *testing.T) {
 	})
 
 	t.Run("HasToolCall", func(t *testing.T) {
-		cond := HasToolCall("finalAnswer")
-		assert.False(t, cond(StopConditionState{}), "should not match empty steps")
-
-		steps := []StepResult{{ToolCalls: []ToolCall{{ToolName: "weather"}}}}
-		assert.False(t, cond(StopConditionState{Steps: steps}), "should not match wrong tool")
-
-		steps = []StepResult{{ToolCalls: []ToolCall{{ToolName: "finalAnswer"}}}}
-		assert.True(t, cond(StopConditionState{Steps: steps}), "should match finalAnswer")
+		step := func(names ...string) StepResult {
+			var calls []ToolCall
+			for _, name := range names {
+				calls = append(calls, ToolCall{ToolName: name})
+			}
+			return StepResult{ToolCalls: calls}
+		}
+		for _, tc := range []struct {
+			name  string
+			tools []string
+			steps []StepResult
+			want  bool
+		}{
+			{name: "no steps", tools: []string{"finalAnswer"}},
+			{name: "named tool in the last step", tools: []string{"finalAnswer"}, steps: []StepResult{step("finalAnswer")}, want: true},
+			{name: "other tool in the last step", tools: []string{"finalAnswer"}, steps: []StepResult{step("weather")}},
+			{name: "named tool only in an earlier step", tools: []string{"finalAnswer"}, steps: []StepResult{step("finalAnswer"), step("weather")}},
+			{name: "any of several names", tools: []string{"search", "finalAnswer"}, steps: []StepResult{step("weather", "finalAnswer")}, want: true},
+			{name: "none of several names", tools: []string{"search", "finalAnswer"}, steps: []StepResult{step("weather")}},
+			{name: "no names never stops", steps: []StepResult{step("finalAnswer")}},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				assert.Equal(t, tc.want, HasToolCall(tc.tools...)(StopConditionState{Steps: tc.steps}))
+			})
+		}
 	})
+}
+
+func TestStreamText_StopWhenAnyNamedToolIsCalled(t *testing.T) {
+	calls := 0
+	model := &mockModel{streamFunc: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+		calls++
+		if calls == 1 {
+			return &provider.StreamResult{Stream: toolCallStreamParts("search", `{}`)}, nil
+		}
+		return &provider.StreamResult{Stream: textStreamParts("should not run")}, nil
+	}}
+	result := StreamText(context.Background(), model,
+		WithModelMessages(provider.UserText("go")),
+		WithTools(ToolSet{"search": Tool{
+			Description: "search",
+			InputSchema: testMustSchema(t, `{"type":"object"}`),
+			Execute: func(context.Context, json.RawMessage, ToolExecutionOptions) (json.RawMessage, error) {
+				return json.RawMessage(`"found"`), nil
+			},
+		}}),
+		WithStopWhen(StepCountIs(5), HasToolCall("finalAnswer", "search")),
+	)
+	for range result.FullStream() {
+	}
+	require.NoError(t, result.Err())
+	assert.Len(t, result.Steps(), 1, "the loop stops after the step that called search")
+	assert.Equal(t, 1, calls, "no second model call after the stop condition matched")
 }
 
 func TestStreamTextToolErrorProducesToolResult(t *testing.T) {
@@ -4751,4 +4803,286 @@ func TestIsDynamic_UnknownToolPreservesProviderValue(t *testing.T) {
 	})
 }
 
+func TestStreamText_UIClassificationUsesOriginalTools(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		toolType UserToolType
+		deferred bool
+		unknown  bool
+		want     *bool
+	}{
+		{name: "ordinary", toolType: UserToolFunction},
+		{name: "provider", toolType: UserToolProvider},
+		{name: "dynamic", toolType: UserToolDynamic, want: boolPtr(true)},
+		{name: "deferred ordinary", toolType: UserToolFunction, deferred: true},
+		{name: "deferred dynamic", toolType: UserToolDynamic, deferred: true, want: boolPtr(true)},
+		{name: "unknown", unknown: true, want: boolPtr(false)},
+	} {
+		for _, isError := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/error=%t", tc.name, isError), func(t *testing.T) {
+				tools := ToolSet{"echo": {Type: tc.toolType, DeferLoading: tc.deferred}}
+				if tc.unknown {
+					tools = ToolSet{}
+				}
+				model := &mockModel{streamFunc: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+					return &provider.StreamResult{Stream: discoveryParts(
+						provider.StreamPart{Type: provider.PartToolInputStart, ID: "call", ToolName: "echo", Dynamic: boolPtr(false), ProviderExecuted: true},
+						provider.StreamPart{Type: provider.PartToolInputEnd, ID: "call"},
+						provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "call", ToolName: "echo", Input: `{}`, Dynamic: boolPtr(false), ProviderExecuted: true},
+						provider.StreamPart{Type: provider.PartToolResult, ToolCallID: "call", ToolName: "echo", Result: json.RawMessage(`"done"`), Dynamic: boolPtr(false), IsError: isError, ProviderExecuted: true},
+					)}, nil
+				}}
+				result := StreamText(t.Context(), model, WithTools(tools))
+				require.NoError(t, result.Err())
+				tools["echo"] = Tool{Type: UserToolDynamic}
+				if tc.toolType == UserToolDynamic {
+					tools["echo"] = Tool{Type: UserToolFunction}
+				}
+				seen := 0
+				for chunk := range result.ToUIMessageStream() {
+					switch chunk.Type {
+					case ChunkToolInputStart, ChunkToolInputAvailable, ChunkToolOutputAvailable, ChunkToolOutputError:
+						seen++
+						assert.Equal(t, tc.want, chunk.Dynamic)
+					}
+				}
+				assert.Equal(t, 3, seen)
+			})
+		}
+	}
+}
+
+func TestUIToolDynamic_UsesConversionContext(t *testing.T) {
+	toolTypes := map[string]UserToolType{"ordinary": UserToolFunction, "dynamic": UserToolDynamic}
+	for _, toolName := range []string{"ordinary", "dynamic", "unknown"} {
+		for _, dynamic := range []*bool{nil, boolPtr(false), boolPtr(true)} {
+			want := dynamic
+			switch toolName {
+			case "ordinary":
+				want = nil
+			case "dynamic":
+				want = boolPtr(true)
+			}
+			for _, part := range []TextStreamPart{
+				StreamToolInputStart{ToolName: toolName, Dynamic: dynamic},
+				StreamToolCall{ToolName: toolName, Dynamic: dynamic},
+				StreamToolCall{ToolName: toolName, Dynamic: dynamic, Invalid: true},
+				StreamToolResult{ToolName: toolName, Dynamic: dynamic},
+				StreamToolError{ToolName: toolName, Dynamic: dynamic, Error: errors.New("failure")},
+			} {
+				chunks := translateToChunks(part, uiMessageStreamConfig{toolTypes: toolTypes})
+				require.Len(t, chunks, 1)
+				assert.Equal(t, want, chunks[0].Dynamic)
+			}
+		}
+	}
+}
+
+func TestIsInputStartDynamic_PreservesExplicitValue(t *testing.T) {
+	tools := map[string]Tool{"dynamic_tool": {Type: UserToolDynamic}}
+	for _, tc := range []struct {
+		name  string
+		value *bool
+		want  bool
+	}{
+		{name: "absent infers dynamic", want: true},
+		{name: "explicit false overrides", value: boolPtr(false)},
+		{name: "explicit true", value: boolPtr(true), want: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, boolPtr(tc.want), isInputStartDynamic("dynamic_tool", tc.value, tools))
+		})
+	}
+}
+
+func TestInputStartDynamic_TextAndUIProjection(t *testing.T) {
+	tools := map[string]Tool{
+		"dynamic":  {Type: UserToolDynamic},
+		"ordinary": {Type: UserToolFunction},
+	}
+	for _, tc := range []struct {
+		name            string
+		toolName        string
+		providerDynamic *bool
+		textDynamic     *bool
+		uiDynamic       *bool
+	}{
+		{name: "known dynamic absent", toolName: "dynamic", textDynamic: boolPtr(true), uiDynamic: boolPtr(true)},
+		{name: "known dynamic explicit false", toolName: "dynamic", providerDynamic: boolPtr(false), textDynamic: boolPtr(false), uiDynamic: boolPtr(true)},
+		{name: "known dynamic explicit true", toolName: "dynamic", providerDynamic: boolPtr(true), textDynamic: boolPtr(true), uiDynamic: boolPtr(true)},
+		{name: "known ordinary absent", toolName: "ordinary", textDynamic: boolPtr(false)},
+		{name: "known ordinary explicit true", toolName: "ordinary", providerDynamic: boolPtr(true), textDynamic: boolPtr(true)},
+		{name: "unknown absent", toolName: "unknown", textDynamic: boolPtr(false), uiDynamic: boolPtr(false)},
+		{name: "unknown explicit false", toolName: "unknown", providerDynamic: boolPtr(false), textDynamic: boolPtr(false), uiDynamic: boolPtr(false)},
+		{name: "unknown explicit true", toolName: "unknown", providerDynamic: boolPtr(true), textDynamic: boolPtr(true), uiDynamic: boolPtr(true)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			part := StreamToolInputStart{
+				ID: "call", ToolName: tc.toolName,
+				Dynamic: isInputStartDynamic(tc.toolName, tc.providerDynamic, tools),
+			}
+			assert.Equal(t, tc.textDynamic, part.Dynamic)
+			chunks := translateToChunks(part, uiMessageStreamConfig{toolTypes: map[string]UserToolType{
+				"dynamic": UserToolDynamic, "ordinary": UserToolFunction,
+			}})
+			require.Len(t, chunks, 1)
+			assert.Equal(t, tc.uiDynamic, chunks[0].Dynamic)
+		})
+	}
+}
+
 func boolPtr(b bool) *bool { return &b }
+
+// manyTextDeltaParts streams more text deltas than the FullStream buffer holds,
+// so a consumer that stops reading leaves the run goroutine mid-step.
+func manyTextDeltaParts(ctx context.Context, count int) <-chan provider.StreamPart {
+	ch := make(chan provider.StreamPart, 8)
+	go func() {
+		defer close(ch)
+		send := func(part provider.StreamPart) bool {
+			select {
+			case ch <- part:
+				return true
+			case <-ctx.Done():
+				return false
+			}
+		}
+		if !send(provider.StreamPart{Type: provider.PartTextStart, ID: "t1"}) {
+			return
+		}
+		for i := 0; i < count; i++ {
+			if !send(provider.StreamPart{Type: provider.PartTextDelta, ID: "t1", Delta: "x"}) {
+				return
+			}
+		}
+		if !send(provider.StreamPart{Type: provider.PartTextEnd, ID: "t1"}) {
+			return
+		}
+		send(provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}})
+	}()
+	return ch
+}
+
+func TestStreamText_CancelFinishesAbandonedFullStream(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		opts []StreamOption
+		// abort releases the run once the buffer is full.
+		abort func(cancel context.CancelFunc)
+	}{
+		{
+			name:  "caller cancels the context",
+			abort: func(cancel context.CancelFunc) { cancel() },
+		},
+		{
+			// The total timeout cancels a context derived inside run, not the
+			// caller's, so emit has to watch the run's own context.
+			name:  "total timeout fires",
+			opts:  []StreamOption{WithTimeout(TimeoutConfig{Total: time.Second})},
+			abort: func(context.CancelFunc) {},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			model := &mockModel{streamFunc: func(ctx context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+				return &provider.StreamResult{Stream: manyTextDeltaParts(ctx, defaultStreamBuffer*2)}, nil
+			}}
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			opts := append([]StreamOption{WithModelMessages(provider.UserText("go"))}, tc.opts...)
+			result := StreamText(ctx, model, opts...)
+
+			stream := result.FullStream()
+			_, ok := <-stream
+			require.True(t, ok, "the stream should deliver at least one part")
+
+			// Stop reading and wait until the buffer is full, which is the state
+			// that parks the run goroutine inside emit. Aborting before that leaves
+			// room for the remaining parts, and the run finishes for the ordinary
+			// reason.
+			require.Eventually(t, func() bool {
+				return len(result.fullStream) == cap(result.fullStream)
+			}, 10*time.Second, 5*time.Millisecond, "the run goroutine should fill the FullStream buffer")
+			tc.abort(cancel)
+
+			waited := make(chan struct{})
+			go func() {
+				result.Wait()
+				close(waited)
+			}()
+			select {
+			case <-waited:
+			case <-time.After(10 * time.Second):
+				t.Fatal("Wait() is still blocked after the run was aborted")
+			}
+
+			for range stream {
+				// Drain whatever the run goroutine managed to buffer; the channel
+				// is closed, so this returns.
+			}
+		})
+	}
+}
+
+func TestStreamText_ToolResultsFollowCallOrderInMixedSteps(t *testing.T) {
+	okTool := Tool{
+		Description: "ok",
+		InputSchema: testMustSchema(t, `{"type":"object"}`),
+		Execute: func(context.Context, json.RawMessage, ToolExecutionOptions) (json.RawMessage, error) {
+			return json.RawMessage(`"ok"`), nil
+		},
+	}
+	for _, tc := range []struct {
+		name  string
+		calls []string
+		tools ToolSet
+		opts  []StreamOption
+	}{
+		{
+			// The missing tool is rejected while the model stream is read, before
+			// good executes, so handling order lists it first.
+			name:  "rejected call after an executed call",
+			calls: []string{"good", "missing"},
+			tools: ToolSet{"good": okTool},
+		},
+		{
+			// The denied result is recorded before any tool starts.
+			name:  "denied approval after an executed call",
+			calls: []string{"good", "dangerous"},
+			tools: ToolSet{"good": okTool, "dangerous": okTool},
+			opts:  []StreamOption{WithToolApproval(ToolApprovalMap{"dangerous": ApprovalPolicy(ToolApprovalDenied, "policy denied")})},
+		},
+		{
+			name:  "executed call between rejected and denied calls",
+			calls: []string{"missing", "good", "dangerous"},
+			tools: ToolSet{"good": okTool, "dangerous": okTool},
+			opts:  []StreamOption{WithToolApproval(ToolApprovalMap{"dangerous": ApprovalPolicy(ToolApprovalDenied, "policy denied")})},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			parts := make([]struct{ name, input string }, len(tc.calls))
+			for i, name := range tc.calls {
+				parts[i] = struct{ name, input string }{name, `{}`}
+			}
+			n := 0
+			model := &mockModel{streamFunc: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+				n++
+				if n == 1 {
+					return &provider.StreamResult{Stream: multiToolCallStreamParts(parts...)}, nil
+				}
+				return &provider.StreamResult{Stream: textStreamParts("done")}, nil
+			}}
+			opts := append([]StreamOption{WithModelMessages(provider.UserText("go")), WithTools(tc.tools), WithStopWhen(StepCountIs(3))}, tc.opts...)
+			result := StreamText(context.Background(), model, opts...)
+			for range result.FullStream() {
+			}
+			require.NotEmpty(t, result.Steps())
+
+			var got []string
+			for _, r := range result.Steps()[0].ToolResults {
+				got = append(got, r.ToolName)
+			}
+			assert.Equal(t, tc.calls, got)
+		})
+	}
+}

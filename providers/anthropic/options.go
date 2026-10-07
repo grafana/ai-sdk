@@ -208,13 +208,13 @@ type ToolChange struct {
 type MCPServer struct {
 	Name               string                `json:"name"`
 	URL                string                `json:"url"`
-	AuthorizationToken string                `json:"authorizationToken,omitempty"`
+	AuthorizationToken *string               `json:"authorizationToken,omitempty"`
 	ToolConfiguration  *MCPToolConfiguration `json:"toolConfiguration,omitempty"`
 }
 
 // MCPToolConfiguration controls which tools are available from an MCP server.
 type MCPToolConfiguration struct {
-	Enabled      bool     `json:"enabled,omitempty"`
+	Enabled      *bool    `json:"enabled,omitempty"`
 	AllowedTools []string `json:"allowedTools,omitempty"`
 }
 
@@ -238,6 +238,12 @@ const (
 	ThinkingEnabled  ThinkingType = "enabled"
 	ThinkingDisabled ThinkingType = "disabled"
 	ThinkingAdaptive ThinkingType = "adaptive"
+	// ThinkingBetweenTools runs without up-front thinking but returns short
+	// progress notes between tool calls as thinking blocks. It is the lowest
+	// thinking setting on claude-sonnet-5-5, which rejects ThinkingDisabled,
+	// and is accepted only at low, medium, and high effort. Display and
+	// BudgetTokens must be unset.
+	ThinkingBetweenTools ThinkingType = "between_tools"
 )
 
 // ThinkingDisplay controls whether thinking content is included in the

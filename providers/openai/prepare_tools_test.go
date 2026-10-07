@@ -1,13 +1,30 @@
 package openai
 
 import (
+	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/grafana/ai-sdk/provider"
+	"github.com/openai/openai-go/v3/option"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestModel_InvalidToolDoesNotInvokeProvider(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { requests++ }))
+	defer server.Close()
+	model := NewResponses("key", "gpt-4o", WithRequestOptions(option.WithBaseURL(server.URL), option.WithHTTPClient(server.Client())))
+	options := provider.CallOptions{Prompt: []provider.Message{provider.UserText("hello")}, Tools: []provider.Tool{{Type: provider.ToolTypeProvider, ID: "openai.web_search", Name: "search", Args: map[string]json.RawMessage{"limit": json.RawMessage(`{`)}}}}
+	_, err := model.DoGenerate(context.Background(), options)
+	require.Error(t, err)
+	_, err = model.DoStream(context.Background(), options)
+	require.Error(t, err)
+	assert.Zero(t, requests)
+}
 
 func toolsArray(t *testing.T, body map[string]any) []map[string]any {
 	t.Helper()
@@ -532,52 +549,61 @@ func TestPrepareTools_HostedToolChoiceUsesProviderName(t *testing.T) {
 			Args: map[string]json.RawMessage{"vectorStoreIds": json.RawMessage(`["vs_1"]`)},
 		}},
 	})
-	tc := body["tool_choice"].(map[string]any)
-	assert.Equal(t, "file_search", tc["type"])
+	assert.Equal(t, map[string]any{"type": "file_search"}, body["tool_choice"])
 }
 
 func TestPrepareTools_ProviderToolChoiceVariants(t *testing.T) {
 	tests := []struct {
-		name     string
-		tool     provider.Tool
-		choice   string
-		wantType string
+		tool      provider.Tool
+		canonical string
+		want      map[string]any
 	}{
-		{
-			name:     "custom provider tool",
-			tool:     provider.Tool{Type: provider.ToolTypeProvider, ID: toolIDCustom, Name: "freeform"},
-			choice:   "freeform",
-			wantType: "custom",
-		},
-		{
-			name:     "shell provider tool",
-			tool:     provider.Tool{Type: provider.ToolTypeProvider, ID: toolIDShell, Name: "terminal"},
-			choice:   "terminal",
-			wantType: "shell",
-		},
-		{
-			name:     "apply patch provider tool",
-			tool:     provider.Tool{Type: provider.ToolTypeProvider, ID: toolIDApplyPatch, Name: "patch"},
-			choice:   "patch",
-			wantType: "apply_patch",
-		},
-		{
-			name:     "computer provider tool",
-			tool:     provider.Tool{Type: provider.ToolTypeProvider, ID: toolIDComputer, Name: "browser"},
-			choice:   "browser",
-			wantType: "computer",
-		},
+		{provider.Tool{Type: provider.ToolTypeProvider, ID: toolIDShell, Name: "terminal"}, "shell", map[string]any{"type": "function", "name": "shell"}},
+		{provider.Tool{Type: provider.ToolTypeProvider, ID: toolIDLocalShell, Name: "localTerminal"}, "local_shell", map[string]any{"type": "function", "name": "local_shell"}},
+		{provider.Tool{Type: provider.ToolTypeProvider, ID: toolIDToolSearch, Name: "discover"}, "tool_search", map[string]any{"type": "function", "name": "tool_search"}},
+		{provider.Tool{Type: provider.ToolTypeProvider, ID: toolIDCodeInterpreter, Name: "python"}, "code_interpreter", map[string]any{"type": "code_interpreter"}},
+		{provider.Tool{Type: provider.ToolTypeProvider, ID: toolIDFileSearch, Name: "docs"}, "file_search", map[string]any{"type": "file_search"}},
+		{provider.Tool{Type: provider.ToolTypeProvider, ID: toolIDImageGeneration, Name: "draw"}, "image_generation", map[string]any{"type": "image_generation"}},
+		{provider.Tool{Type: provider.ToolTypeProvider, ID: toolIDWebSearchPreview, Name: "preview"}, "web_search_preview", map[string]any{"type": "web_search_preview"}},
+		{provider.Tool{Type: provider.ToolTypeProvider, ID: toolIDWebSearch, Name: "search"}, "web_search", map[string]any{"type": "web_search"}},
+		{provider.Tool{Type: provider.ToolTypeProvider, ID: toolIDMCP, Name: "server"}, "mcp", map[string]any{"type": "mcp"}},
+		{provider.Tool{Type: provider.ToolTypeProvider, ID: toolIDApplyPatch, Name: "patch"}, "apply_patch", map[string]any{"type": "apply_patch"}},
+		{provider.Tool{Type: provider.ToolTypeProvider, ID: toolIDComputer, Name: "browser"}, "computer", map[string]any{"type": "computer"}},
+		{provider.Tool{Type: provider.ToolTypeProvider, ID: toolIDProgrammatic, Name: "program"}, "programmatic_tool_calling", map[string]any{"type": "programmatic_tool_calling"}},
+		{provider.Tool{Type: provider.ToolTypeProvider, ID: toolIDCustom, Name: "freeform"}, "freeform", map[string]any{"type": "custom", "name": "freeform"}},
 	}
 
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			body, _ := buildBody(t, "gpt-4o", provider.CallOptions{
-				Prompt:     []provider.Message{provider.UserText("hi")},
-				ToolChoice: &provider.ToolChoice{Type: provider.ToolChoiceTool, ToolName: tc.choice},
-				Tools:      []provider.Tool{tc.tool},
-			})
-			toolChoice := body["tool_choice"].(map[string]any)
-			assert.Equal(t, tc.wantType, toolChoice["type"])
+		t.Run(tc.canonical, func(t *testing.T) {
+			for _, selection := range []struct {
+				name     string
+				declared string
+				selected string
+			}{
+				{"canonical declaration", tc.canonical, tc.canonical},
+				{"canonical selection", tc.tool.Name, tc.canonical},
+				{"alias selection", tc.tool.Name, tc.tool.Name},
+			} {
+				t.Run(selection.name, func(t *testing.T) {
+					tool := tc.tool
+					tool.Name = selection.declared
+					body, warnings := buildBody(t, "gpt-4o", provider.CallOptions{
+						Prompt:     []provider.Message{provider.UserText("hi")},
+						ToolChoice: &provider.ToolChoice{Type: provider.ToolChoiceTool, ToolName: selection.selected},
+						Tools:      []provider.Tool{tool},
+					})
+					assert.Empty(t, warnings)
+					assert.Equal(t, tc.want, body["tool_choice"])
+					declarations := toolsArray(t, body)
+					require.Len(t, declarations, 1)
+					if tool.ID == toolIDCustom {
+						assert.Equal(t, "custom", declarations[0]["type"])
+						assert.Equal(t, tool.Name, declarations[0]["name"])
+					} else {
+						assert.Equal(t, tc.canonical, declarations[0]["type"])
+					}
+				})
+			}
 		})
 	}
 }
@@ -635,15 +661,21 @@ func TestPrepareTools_ToolChoiceVariants(t *testing.T) {
 		body := mk(&provider.ToolChoice{Type: provider.ToolChoiceAuto})
 		assert.Equal(t, "auto", body["tool_choice"])
 	})
+	t.Run("none", func(t *testing.T) {
+		body := mk(&provider.ToolChoice{Type: provider.ToolChoiceNone})
+		assert.Equal(t, "none", body["tool_choice"])
+	})
 	t.Run("required", func(t *testing.T) {
 		body := mk(&provider.ToolChoice{Type: provider.ToolChoiceRequired})
 		assert.Equal(t, "required", body["tool_choice"])
 	})
 	t.Run("specific function tool", func(t *testing.T) {
 		body := mk(&provider.ToolChoice{Type: provider.ToolChoiceTool, ToolName: "getWeather"})
-		tc := body["tool_choice"].(map[string]any)
-		assert.Equal(t, "function", tc["type"])
-		assert.Equal(t, "getWeather", tc["name"])
+		assert.Equal(t, map[string]any{"type": "function", "name": "getWeather"}, body["tool_choice"])
+	})
+	t.Run("unmapped name", func(t *testing.T) {
+		body := mk(&provider.ToolChoice{Type: provider.ToolChoiceTool, ToolName: "absent"})
+		assert.Equal(t, map[string]any{"type": "function", "name": "absent"}, body["tool_choice"])
 	})
 	t.Run("allowedTools overrides tool choice", func(t *testing.T) {
 		body := mk(&provider.ToolChoice{Type: provider.ToolChoiceAuto}, OpenAIResponsesOptions{

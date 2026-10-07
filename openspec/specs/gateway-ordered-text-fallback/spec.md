@@ -2,12 +2,12 @@
 
 ## Purpose
 
-Define ordered text fallback beneath one logical Gateway observation chain, with first-part commitment, bounded lifecycle ownership, private physical-attempt attribution, public topology confidentiality, and rejection of effectful requests.
+Define configured fallback for mapped Gateway capabilities beneath one logical observation chain, with first-part commitment, bounded lifecycle ownership and existing physical-attempt attribution.
 
 ## Requirements
 
 ### Requirement: Ordered direct text routes
-The Gateway SHALL construct each public text route from one required primary and zero or more ordered direct provider/backend candidates. Every invocation SHALL begin at the primary and consider later candidates only in configured order; no prior winner, request value, health signal, or concurrent call SHALL reorder or skip candidates.
+The Gateway SHALL construct each public route from one required primary and zero or more ordered direct provider/backend candidates. Every invocation SHALL begin at the primary and consider later candidates only in configured order; no prior winner, request value, health signal, or concurrent call SHALL reorder or skip candidates. Configured fallback SHALL admit every request capability already supported by the strict mapper for that invocation mode, subject to the existing protocol and consumption-backed native protections, without an additional text-only eligibility policy.
 
 #### Scenario: Later call follows original order
 - **WHEN** one call is served by a fallback candidate and a later call uses the same canonical route
@@ -16,6 +16,10 @@ The Gateway SHALL construct each public text route from one required primary and
 #### Scenario: Client attempts to select a backend
 - **WHEN** a request carries an unrecognized or reserved provider/fallback selection control
 - **THEN** existing strict validation or host policy SHALL reject or ignore it according to its owning contract and SHALL NOT alter candidate order
+
+#### Scenario: Mapped capability does not change ordering
+- **WHEN** a supported function-tool, file, reasoning or ordinary-options request encounters eligible pre-commit failures in a three-candidate route
+- **THEN** invoked candidates SHALL follow configured order with no capability-based reordering, silent primary-only execution or request mutation
 
 ### Requirement: Fallback remains beneath one logical middleware chain
 Each canonical route SHALL have exactly one WP8 logical chain ordered as approved enrichment → Agent Observability → structured logging/Prometheus → canonical public identity → direct or fallback model. A fallback route SHALL place all physical candidates beneath that chain and SHALL NOT wrap individual candidates with any logical middleware.
@@ -43,82 +47,80 @@ WP9 SHALL define and own the private physical record type, bounded sink/queue, n
 - **WHEN** the bounded attempt-record sink cannot accept an event immediately
 - **THEN** the Gateway SHALL drop that private telemetry event without changing candidate selection, extending request latency, or creating one goroutine per event
 
-### Requirement: Public topology confidentiality
-Discovery, public model resolution errors, ProviderWire JSON/SSE, HTTP access logs, WP8 logical logs/metrics/Agent Observability, and client-visible metadata SHALL expose only the requested identity where required and canonical public identity where authoritative. They SHALL NOT expose candidate count/order, provider-instance names, backend model IDs, raw provider failures, or whether fallback occurred.
+### Requirement: Configured topology and operator identity boundaries
+Authenticated configured discovery SHALL expose authorized candidate count/order, provider-instance/provider identifiers and configured model IDs through the gateway-configured-discovery projection at the same visibility boundary as resolution. Credentials, secret references and unrelated account configuration SHALL remain excluded. Discovery SHALL describe configured possibilities, not whether fallback actually occurred or which candidate completed a request.
+
+Public model resolution errors SHALL retain their requested/canonical public identity projection without listing candidates or configured backend mappings. HTTP access logs and WP8 logical logs/metrics/metadata-only Agent Observability SHALL retain their canonical identity and payload exclusions. Operator capture restrictions SHALL NOT suppress authorized discovery facts or require payload capture to be enabled.
+
+Successful ProviderWire JSON/SSE and client-visible normal output SHALL preserve supported native warnings, source IDs/display and registered native response id/modelId/timestamp as defined by their runtime/client contracts. A provider-reported modelId that names a backend SHALL NOT be replaced or withheld merely because it identifies a configured backend. Requested/canonical route identity SHALL remain separate and authoritative for resolution/operator metrics. Runtime output SHALL NOT add selected-candidate/attempt/failure evidence or configured topology fields; discovery remains separately owned. Configured credentials and another tenant's state SHALL remain protected.
 
 #### Scenario: Primary and secondary produce equivalent success
-- **WHEN** otherwise equivalent calls are served by different physical candidates
-- **THEN** their public identity and protocol shape SHALL remain indistinguishable except for provider-independent generated content, usage, timing, and finish behavior
+- **WHEN** otherwise equivalent eligible calls are served by different physical candidates
+- **THEN** both SHALL use the same registered protocol shape and preserve the actual selected provider's supported returned warning/source/response identity values
+- **AND** normal inference output SHALL NOT introduce candidate-order/count, provider-instance or attempt/fallback-occurrence fields
 
 #### Scenario: Fallback chain is exhausted
 - **WHEN** every candidate fails before commitment
-- **THEN** the existing safe fixed public error mapping SHALL apply to the aggregate error without listing candidates or copying provider error text
+- **THEN** the existing safe fixed public error mapping SHALL continue to apply to the aggregate error without listing candidates or copying provider error text as a consequence of this discovery feature
 
 #### Scenario: Discovery lists fallback route
-- **WHEN** authenticated discovery lists a route backed by multiple candidates
-- **THEN** it SHALL emit only the route's canonical public row, aliases, and guaranteed capabilities and SHALL not emit topology or backend identity
-
-### Requirement: Text-only effect boundary
-WP9 SHALL enable ordered fallback only for the strict text surface that rejects effectful tools before model invocation. The reusable commitment rule SHALL reserve any escaped effect as irrevocable selection, but this change SHALL NOT define replay or idempotency for tools or other effectful capability packages.
-
-#### Scenario: Effectful tool request reaches WP9 service
-- **WHEN** a request activates a tool or other unsupported effectful capability
-- **THEN** the strict mapper SHALL reject it before catalog resolution while tools remain globally unsupported; after WP11/12 enables tools on direct routes, the fallback-route execution guard SHALL reject it before any physical candidate invocation
-
-#### Scenario: Later capability introduces an effect
-- **WHEN** a later package proposes fallback for effectful calls
-- **THEN** that package SHALL define and test its replay/idempotency boundary before enabling candidate changes
+- **WHEN** authorized authenticated discovery lists a route backed by multiple configured candidates
+- **THEN** it SHALL emit one canonical public row with aliases, primary and configured fallbacks in declared order
+- **AND** it SHALL exclude credentials, secret references and unrelated account state without invoking any candidate
 
 ### Requirement: Deterministic fallback and privacy evidence
-Automated evidence SHALL cover unary setup selection, streaming setup selection, premature EOF, leading and later provider error parts, multiple ordered error parts, non-retryable failures, cancellation races, nil/invalid results, blocked downstream consumers, silent and continuously ready abandoned providers, observer panic/saturation, recursion-shaped YAML rejection, duplicate/missing references, one logical record, physical winner correlation, and public privacy. Tests SHALL use deterministic fake models/transports and focused race tests; they SHALL not present synthetic provider inputs as recorded conformance evidence.
+Automated evidence SHALL cover unary setup selection, streaming setup selection, premature EOF, leading and later provider error parts, multiple ordered error parts, non-retryable failures, cancellation races, nil/invalid results, result-plus-error and late setup, blocked downstream consumers, silent and continuously ready abandoned providers, time/part-bounded cleanup, observer panic/saturation, recursion-shaped YAML rejection, duplicate/missing references, one logical record, physical winner correlation, and the existing credential/observation protections. Both registered TypeScript and independent Go clients SHALL exercise direct and configured-fallback unary and streaming requests for representative supported function definitions/history/choices, file arms/presence, reasoning and headers/options. Fake native requests SHALL prove candidate-specific option consumption without cross-provider translation or route-wide intersections. Tests SHALL use deterministic fake models/transports and focused race tests; they SHALL NOT present synthetic provider inputs as recorded conformance evidence or claim live acceptance or full output-derived continuation.
 
 #### Scenario: Fallback verification runs
 - **WHEN** the root and isolated Gateway verification suites run with the committed module boundary
-- **THEN** focused tests SHALL prove selection, ordering, lifecycle bounds, logical/physical separation, and privacy without changing the registered upstream baseline or public fixtures unnecessarily
+- **THEN** focused tests SHALL prove selection, ordering, lifecycle bounds, logical/physical separation and applicable privacy without changing the registered upstream baseline or public fixtures unnecessarily
 
-### Requirement: Direct tools do not enable effectful fallback
-Enabling function tools on direct routes in WP11 or WP12 SHALL NOT enable them on fallback-configured routes. Non-empty tools, tool-call/result history, and any tool choice other than an absent choice or pure automatic choice with no tools SHALL activate the route guard even when no tool is selected by the model. A pure automatic choice SHALL have type auto and no tool name. Otherwise supported text-only requests with absent or empty tools and an automatic choice SHALL pass the guard, and every attempted physical candidate SHALL receive the original choice unchanged. All other unsupported-effect checks SHALL remain in force. The guard SHALL use a fixed safe non-retryable unsupported-request error and SHALL NOT reveal topology or silently route to primary only. This exception SHALL NOT change fallback ordering, retry eligibility, or commitment semantics.
+#### Scenario: Both clients reach native candidates
+- **WHEN** equivalent representative mapped requests run through both clients, both invocation modes and direct/configured-fallback routes
+- **THEN** model-boundary assertions SHALL retain supported selections/presence/scopes and fake native requests SHALL prove existing adapter-specific consumption
+- **AND** unrelated namespaces SHALL NOT be translated, intersected or promoted by the Gateway
 
-#### Scenario: Unary or streaming tool request after WP11 and WP12
-- **WHEN** a schema-valid supported function-tool request targets a fallback-configured public model
-- **THEN** no physical candidate SHALL run and the client SHALL receive a fixed safe unsupported-request error
+#### Scenario: Concurrent requests share immutable models
+- **WHEN** concurrent requests with distinct scoped options/history use the same constructed candidates and logical chain
+- **THEN** their values and correlation SHALL remain isolated, original mapped inputs SHALL remain unchanged and each invocation SHALL have one logical observation
 
-#### Scenario: Text-only automatic choice reaches a candidate
-- **WHEN** an otherwise supported text request with absent or empty tools and pure automatic choice targets a fallback-configured route through either unary or streaming invocation
-- **THEN** the guard SHALL allow the call and the physical candidate SHALL receive the same automatic choice
+### Requirement: Mapped capability fallback boundary
+Configured candidates SHALL compose directly through reusable fallback beneath the single logical middleware chain. Every attempted candidate SHALL receive the same supported mapped CallOptions, retaining function definitions/history/choices, ordinary file selections and filename presence, reasoning content/controls, ordinary headers and opaque options at their original supported scopes. Empty namespace objects and active members including null, false, zero, empty strings, arrays and nested objects SHALL NOT create a separate fallback restriction. Native adapters SHALL retain their own namespace interpretation and concrete consumption-backed protections; mapped eligibility SHALL NOT imply acceptance by every backend. The Gateway SHALL NOT filter to a candidate intersection, translate native options or replace option loss with blanket refusal.
 
-#### Scenario: Failover preserves automatic choice
-- **WHEN** a permitted text-only automatic-choice request encounters a retry-eligible primary failure before commitment
-- **THEN** the next configured candidate SHALL receive the same original automatic choice and other call options
-- **AND** the ordinary ordering, retry, and commitment rules SHALL still apply
+Existing fallback ordering, decider eligibility, cancellation, attempt observation and bounded lifecycle ownership SHALL remain unchanged. Unary successful results SHALL select the candidate. Any first provider stream part, including stream-start, error or tool events, SHALL irrevocably select the candidate and SHALL be relayed exactly once in original order. No read-ahead beyond that part, post-selection codec failure, later provider error or unfinished output SHALL trigger another candidate. The Gateway SHALL NOT add a local function executor, parallel channel owner or stream replay. Consumer execution counts SHALL NOT imply an exactly-once provider guarantee.
 
-#### Scenario: Other choices remain guarded
-- **WHEN** a direct unary or streaming guard call supplies none, required, named, an unknown choice type, or an automatic choice carrying a tool name
-- **THEN** it SHALL return the fixed unsupported-request error before any physical candidate executes
+#### Scenario: Scoped native options reach all attempts
+- **WHEN** a mapped request carries options for multiple ordinary native namespaces at supported call/message/content/function-tool/file-result scopes and a primary fails eligibly before commitment
+- **THEN** each attempted candidate SHALL receive those options unchanged at the same scopes and consume only according to its existing native namespace rules
 
-#### Scenario: Automatic choice does not bypass effect guards
-- **WHEN** a unary or streaming call combines automatic choice with nonempty tools, tool history, or another unsupported control
-- **THEN** it SHALL fail before any physical candidate executes rather than selecting a fallback or silently removing those options
+#### Scenario: Empty and active ordinary namespaces remain eligible
+- **WHEN** an otherwise supported request carries empty namespace objects or nested ordinary JSON containing null, false, zero, empty strings, arrays or objects
+- **THEN** configured fallback SHALL NOT reject the request on semantic-emptiness or namespace-inventory grounds
 
-### Requirement: Empty message options retain text fallback eligibility
-Otherwise eligible text requests SHALL remain eligible for fallback when ordinary message-level provider-option namespaces retained by the selected-backend policy contain only empty JSON objects. The guard SHALL assess semantic emptiness rather than namespace-map length, without removing or mutating the options it receives. A retained namespace with any member, including null, false, zero, empty strings, arrays, or nested objects, SHALL count as active and remain rejected. Namespaces removed by the backend policy do not make text fallback ineligible; invalid options and reserved host namespaces SHALL fail before that policy runs. File content, effectful history, tools, and all other existing route restrictions SHALL remain enforced.
+#### Scenario: Setup failure and empty pre-part EOF
+- **WHEN** setup fails eligibly or a candidate channel closes before any part while the request remains live
+- **THEN** reusable fallback SHALL evaluate the failure using its existing decider and advance only to the next configured candidate when eligible
 
-#### Scenario: Authenticated text failover preserves empty namespaces
-- **WHEN** an authenticated unary or streaming text request carries message options `{"anthropic":{}}` for an Anthropic fallback route and the primary fails under existing retry rules before commitment
-- **THEN** the request SHALL retain its prior text fallback eligibility
-- **AND** each attempted candidate SHALL receive the same empty namespace object without removal or promotion to call options
+#### Scenario: Noneligible failure or cancellation
+- **WHEN** a mapped request encounters a noneligible failure or cancellation before selection
+- **THEN** no later candidate SHALL be invoked and cancellation SHALL preserve the existing context cause and bounded cleanup
 
-#### Scenario: Active values are not recursively treated as empty
-- **WHEN** retained Anthropic message options contain `{"anthropic":{"cacheControl":false}}`, `{"anthropic":{"cacheControl":null}}`, or `{"anthropic":{"cacheControl":{}}}`
-- **THEN** the fallback route guard SHALL reject the request before physical invocation rather than recursively treating the namespace as empty
+#### Scenario: Stream-start or error commits the candidate
+- **WHEN** a candidate emits stream-start or a provider error as its first part and later fails or closes
+- **THEN** that first part SHALL select the candidate without looking ahead and no later candidate SHALL run
 
-#### Scenario: Irrelevant options do not block text fallback
-- **WHEN** an authenticated text request carries active options only under a namespace outside every candidate's selected-backend policy
-- **THEN** that namespace SHALL be removed before the guard, no candidate SHALL receive it, and ordinary text fallback SHALL remain eligible
+#### Scenario: Selected tool output cannot be replayed
+- **WHEN** a selected unary result or streaming candidate supplies a function call and response adaptation subsequently fails or later provider output errors
+- **THEN** configured fallback SHALL NOT re-enter selection or replay the call on another candidate
 
-#### Scenario: Empty options do not enable file fallback
-- **WHEN** a request combines an empty retained message-option namespace with files or disallowed tool history
-- **THEN** the existing route restriction SHALL fail safely before any physical candidate is invoked
+#### Scenario: Deferred or protected request remains refused
+- **WHEN** a request activates an unsupported provider-tool, provider-executed history, approval, raw/custom/generated/structured codec, unconsumed host control or concrete native bypass
+- **THEN** its existing owning validation/protection boundary SHALL remain effective before prohibited native I/O
+- **AND** removal of the text guard SHALL NOT enable the deferred feature
+
+#### Scenario: Capture policy does not govern admission
+- **WHEN** a supported tool/file/reasoning/options request runs through configured fallback under metadata-only operator capture
+- **THEN** capture policy SHALL NOT reject the mapped content or alter supported responses and one logical observation SHALL cover the physical attempts
 
 ### Requirement: Strict model configuration and public IDs
 A bounded strict YAML document SHALL own named providers and public model routes. YAML decoding SHALL reject unknown fields, duplicate mapping keys, and trailing documents. Configuration SHALL reject empty names, unknown provider types, missing provider or backend model references, duplicate or colliding canonical IDs and aliases, missing required presentation names, an empty model set, an empty effective route, and duplicate candidate tuples within a route.
@@ -149,7 +151,9 @@ Every canonical public ID and alias SHALL be 1-128 ASCII bytes and SHALL match `
 - **AND** logs and errors SHALL NOT contain any environment-variable value
 
 ### Requirement: Immutable direct-Anthropic construction
-The service SHALL construct each configured provider/backend candidate once with the hardened HTTP client and build one immutable static catalog once at startup. Direct provider construction SHALL use the `anthropic-provider-construction` contract so ambient Anthropic SDK environment defaults cannot alter the service-owned endpoint, credential, auth mechanism, profile/federation behavior, or headers. A route with no fallback entries SHALL use its direct primary model; a route with fallback entries SHALL compose those already constructed candidates in declared order through the Apache fallback primitive and one private attempt hook. Repeated resolution of a canonical ID or alias SHALL return the same final composed model instance and canonical catalog identity. ProviderWire streaming metadata SHALL use canonical public identity when that stream part is emitted; minimal unary output SHALL not add response metadata that registered clients replace.
+The service SHALL construct each configured provider/backend candidate once with the hardened HTTP client and build one immutable static catalog once at startup. Direct construction SHALL follow anthropic-provider-construction so ambient SDK environment defaults cannot alter service-owned endpoint, credential, auth mechanism, profile/federation behavior or headers. A route with no fallback SHALL use its direct primary; a fallback route SHALL compose constructed candidates in declared order through the Apache fallback primitive and one private attempt hook. Repeated canonical/alias resolution SHALL return the same final composed model and canonical catalog identity.
+
+ProviderWire output SHALL preserve supported native warnings/source display and registered response identity from the selected provider. Stream response-metadata SHALL NOT substitute canonical route modelId. Unary raw response SHALL retain registered native response identity even though pinned TS/Go clients replace typed response with Gateway-hop information. This output correction SHALL NOT change construction, fallback eligibility, commitment or private attempt observation.
 
 #### Scenario: Alias and canonical ID share a composed model
 - **WHEN** a canonical ID and one of its aliases are resolved repeatedly for a fallback route
@@ -165,26 +169,32 @@ The service SHALL construct each configured provider/backend candidate once with
 - **THEN** requests from every candidate using that instance SHALL use that URL through the hardened transport
 - **AND** discovery, public logs, logical metrics, logical Agent Observability, and public errors SHALL NOT expose it
 
+#### Scenario: Native response identity differs from the composed route
+- **WHEN** an eligible selected provider returns response identity different from its canonical route
+- **THEN** registered raw unary/stream identity SHALL retain provider values while the composed model/resolution/operator identity stays canonical
+
 ### Requirement: Authenticated direct-Anthropic text execution
-An authenticated registered Gateway client SHALL complete the strict runtime's supported unary and streaming text requests through either a configured direct Anthropic route or its ordered Anthropic fallback candidates. The service SHALL preserve the existing ProviderWire validation/mapping order after authentication, forward supported mapped scalar and text options unchanged to every attempted candidate, normalize successful output to canonical public identity, and preserve bounded safe unary and SSE behavior. Fallback SHALL occur only before unary success or the first provider stream part; all public behavior after selection SHALL remain the existing strict adapter behavior.
+
+An authenticated registered Gateway client SHALL complete supported unary/stream text calls through configured direct Anthropic routes or currently eligible ordered fallback routes. The service SHALL preserve validation/mapping order after authentication, forward supported mapped scalar/text options unchanged to each attempted candidate and preserve bounded safe unary/SSE behavior. Successful output SHALL preserve supported native warnings, source ID/display and registered native response identity without normalizing them to canonical route identity. Fallback SHALL occur only before unary success or the first provider stream part; behavior after selection SHALL retain the existing strict adapter lifecycle. No fallback eligibility expansion, new routing or attempt transport SHALL follow from preserving these response values.
 
 #### Scenario: Direct unary alias call remains valid
-- **WHEN** an authenticated client invokes an alias for a direct-only route with a supported text request
-- **THEN** the configured primary SHALL receive the mapped request exactly once and the minimal unary result SHALL expose no backend identity or redundant response metadata
+- **WHEN** an authenticated alias call targets a direct route with a supported text request
+- **THEN** the primary SHALL receive it exactly once and raw unary output SHALL retain supported native warnings/source/response identity
+- **AND** client typed response replacement SHALL remain unchanged without candidate/topology fields
 
 #### Scenario: Unary alias call reaches a fallback candidate
-- **WHEN** an authenticated client invokes an alias, the primary returns an eligible pre-commit error, and the secondary succeeds
-- **THEN** each candidate SHALL receive the same mapped supported request in configured order exactly once
-- **AND** the minimal unary result SHALL expose no backend identity, candidate count, or redundant response metadata
+- **WHEN** an eligible alias call encounters an eligible primary precommit error and secondary success
+- **THEN** candidates SHALL receive the same supported mapped request once each in configured order
+- **AND** raw unary output SHALL retain the successful provider's supported native values without adding attempt count/order or topology
 
 #### Scenario: Streaming premature EOF reaches next candidate
-- **WHEN** an authenticated streaming call's primary channel closes before any provider part and the secondary produces a valid text stream
-- **THEN** the registered client SHALL consume only the secondary's normalized start, text, finish, and clean EOF
+- **WHEN** an eligible stream's primary closes before any part and the secondary produces a valid stream
+- **THEN** clients SHALL consume only the secondary's normalized start, native warning/identity values, text, finish and clean EOF
 
 #### Scenario: Streaming provider error commits candidate
-- **WHEN** a selected candidate's first or later part is a provider `PartError`
-- **THEN** the registered client SHALL receive the adapter's safe error part in order and no later candidate SHALL be invoked
+- **WHEN** a selected candidate's first or later part is PartError
+- **THEN** clients SHALL receive the safe error in order and no later candidate SHALL run
 
 #### Scenario: Normal direct stream remains valid
-- **WHEN** a direct-only route's Anthropic provider produces a valid text stream
-- **THEN** the registered client SHALL consume the existing normalized start, text, finish, and clean EOF lifecycle unchanged
+- **WHEN** a direct Anthropic route emits a valid stream
+- **THEN** clients SHALL consume native warning/identity values through the unchanged normalized-start/content/finish/clean-EOF lifecycle

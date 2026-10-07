@@ -40,70 +40,15 @@ func (f *fakeModel) DoStream(ctx context.Context, o provider.CallOptions) (*prov
 }
 func testHandler(t *testing.T, f *fakeModel, change func(*Limits)) *handler {
 	t.Helper()
-	c, err := catalog.NewStatic([]catalog.StaticEntry{{Info: catalog.ModelInfo{ID: "canonical", Aliases: []string{"alias"}}, Model: f}})
+	c, err := catalog.NewStatic([]catalog.StaticEntry{{Info: catalog.ModelInfo{ID: "canonical", Aliases: []string{"alias"}}, Model: WithChatDefaults(f, BackendResponses, "")}})
 	require.NoError(t, err)
 	l := Limits{RequestBytes: 1 << 20, ResponseBytes: 1 << 20, FrameBytes: 1 << 16, StreamParts: 1024, ModelDuration: time.Second, IdleDuration: 200 * time.Millisecond, DrainDuration: 10 * time.Millisecond}
 	if change != nil {
 		change(&l)
 	}
-	h, err := New(Config{Resolver: c, Policies: map[string]RequestPolicy{"canonical": testPolicy(testResponses)}, Limits: l})
+	h, err := New(Config{Resolver: c, Limits: l})
 	require.NoError(t, err)
 	return h
-}
-
-type testBackend string
-
-const (
-	testAnthropic  testBackend = "anthropic"
-	testResponses  testBackend = "responses"
-	testReasoning  testBackend = "reasoning"
-	testCompatible testBackend = "compatible"
-	testFallback   testBackend = "fallback"
-)
-
-func testPolicy(backend testBackend) RequestPolicy {
-	return func(options *provider.CallOptions, requirements Requirements) error {
-		if backend == testFallback && (len(options.Tools) > 0 || requirements.History || requirements.HasParallelTools || requirements.JSONOutput || options.Reasoning != "" || options.ToolChoice != nil && options.ToolChoice.Type != provider.ToolChoiceAuto) {
-			return errRequest
-		}
-		if (backend == testAnthropic || backend == testFallback) && (options.FrequencyPenalty != nil || options.PresencePenalty != nil || options.Seed != nil || requirements.HasParallelTools || requirements.JSONOutput || options.Reasoning != "") {
-			return errRequest
-		}
-		if backend == testAnthropic || backend == testFallback {
-			if options.MaxOutputTokens == nil {
-				options.MaxOutputTokens = ptr(4096)
-			} else if *options.MaxOutputTokens > 4096 {
-				return errRequest
-			}
-			if options.Temperature != nil && *options.Temperature > 1 {
-				return errRequest
-			}
-			for i, tool := range options.Tools {
-				if boolValue(tool.Strict) {
-					return errRequest
-				}
-				options.Tools[i].Strict = nil
-			}
-		}
-		if backend == testCompatible && (requirements.HasParallelTools || options.Reasoning != "" || requirements.JSONOutput) {
-			return errRequest
-		}
-		if backend == testReasoning && (len(options.Tools) > 0 || requirements.History || options.Temperature != nil || options.TopP != nil) {
-			return errRequest
-		}
-		if backend == testResponses || backend == testReasoning {
-			if options.Seed != nil || options.PresencePenalty != nil || options.FrequencyPenalty != nil || len(options.StopSequences) > 0 || options.Reasoning != "" && backend != testReasoning {
-				return errRequest
-			}
-			values := map[string]any{"store": false, "strictJsonSchema": requirements.StrictJSONOutput}
-			if requirements.HasParallelTools {
-				values["parallelToolCalls"] = requirements.ParallelToolCalls
-			}
-			encoded, _ := json.Marshal(values)
-			options.ProviderOptions = provider.ProviderOptions{"openai": provider.RawProviderOption{Key: "openai", Raw: encoded}}
-		}
-		return nil
-	}
 }
 
 const basic = `{"model":"alias","messages":[{"role":"user","content":"hello"}]}`
@@ -136,7 +81,10 @@ func TestRequestDefaultsAndRejections(t *testing.T) {
 			raw := strings.Replace(tool, `"parameters"`, `"parameters"`, 1)
 			raw = strings.Replace(raw, `"type":"object"}}}]`, `"type":"object"}`+strict+`}}]`, 1)
 			r := requestWith(t, raw)
-			require.NoError(t, testPolicy(testResponses)(&r.options, r.requirements()))
+			m := defaultsModel{backend: BackendResponses}
+			var err error
+			r.options, err = m.options(context.WithValue(context.Background(), defaultsKey{}, requestDefaults{strict: r.strictOutput, parallel: r.Parallel}), r.options)
+			require.NoError(t, err)
 			require.NotNil(t, r.options.Tools[0].Strict)
 			assert.Equal(t, strings.Contains(strict, "true"), *r.options.Tools[0].Strict)
 			b, err := json.Marshal(r.options.ProviderOptions)
@@ -144,7 +92,7 @@ func TestRequestDefaultsAndRejections(t *testing.T) {
 			assert.JSONEq(t, `{"openai":{"store":false,"strictJsonSchema":false}}`, string(b))
 		})
 	}
-	for _, extra := range []string{`,"n":2`, `,"store":true`, `,"temperature":3`, `,"max_tokens":0`, `,"max_tokens":1,"max_completion_tokens":2`, `,"audio":{}`, `,"stream_options":{}`, `,"tool_choice":"required"`, `,"response_format":{"type":"json_schema","json_schema":{"name":"x","schema":{"type":"object","$ref":"https://private/"}}}}`, `,"Model":"other"`, `,"model":"other"`} {
+	for _, extra := range []string{`,"n":2`, `,"store":true`, `,"temperature":3`, `,"max_tokens":0`, `,"max_tokens":1,"max_completion_tokens":2`, `,"audio":{}`, `,"stream_options":{}`, `,"tool_choice":"required"`, `,"response_format":{"type":"json_schema","json_schema":{"name":"x","schema":{"type":"object","$ref":"https://private/"}}}}`, `,"Model":"other"`} {
 		t.Run(extra, func(t *testing.T) {
 			_, err := mapRequest([]byte(strings.TrimSuffix(basic, "}") + extra + "}"))
 			require.Error(t, err)
@@ -154,22 +102,14 @@ func TestRequestDefaultsAndRejections(t *testing.T) {
 		_, err := mapRequest([]byte(body))
 		require.Error(t, err)
 	}
-	for _, backend := range []testBackend{testAnthropic, testCompatible, testFallback} {
-		r := requestWith(t, `,"reasoning_effort":"high"`)
-		require.Error(t, testPolicy(backend)(&r.options, r.requirements()))
-	}
-	r := requestWith(t, tool)
-	require.Error(t, testPolicy(testFallback)(&r.options, r.requirements()))
-	r = requestWith(t, `,"reasoning_effort":"high"`)
-	require.NoError(t, testPolicy(testReasoning)(&r.options, r.requirements()))
+
 }
 
 func TestContinuationAndStructuredValidation(t *testing.T) {
 	raw := `{"model":"alias","messages":[{"role":"assistant","content":null,"tool_calls":[{"id":"call","type":"function","function":{"name":"weather","arguments":"{}"}}]},{"role":"tool","tool_call_id":"call","content":"sunny"},{"role":"user","content":[{"type":"text","text":"thanks"}]}]}`
 	r, err := mapRequest([]byte(raw))
 	require.NoError(t, err)
-	require.NoError(t, testPolicy(testResponses)(&r.options, r.requirements()))
-	assert.True(t, r.history)
+
 	require.Len(t, r.options.Prompt, 3)
 	assert.Equal(t, "weather", r.options.Prompt[1].Content[0].ToolName)
 	_, err = mapRequest([]byte(strings.Replace(raw, `"tool_call_id":"call"`, `"tool_call_id":"bad"`, 1)))
@@ -271,27 +211,20 @@ func TestStreamFunctionState(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestUnsupportedProfilesDoNotInvokeModel(t *testing.T) {
-	for _, tc := range []struct {
-		backend testBackend
-		extra   string
-	}{
-		{testAnthropic, `,"temperature":2`}, {testAnthropic, `,"max_tokens":4097`}, {testCompatible, `,"response_format":{"type":"json_object"}`}, {testReasoning, `,"temperature":0`}, {testResponses, `,"seed":1`}, {testResponses, `,"reasoning_effort":"high"`}, {testFallback, `,"tool_choice":"none"`},
-	} {
-		t.Run(string(tc.backend)+tc.extra, func(t *testing.T) {
+func TestMappedSettingsReachModel(t *testing.T) {
+	for _, extra := range []string{`,"temperature":2`, `,"max_tokens":4097`, `,"seed":1`, `,"reasoning_effort":"high"`, `,"tool_choice":"none"`} {
+		t.Run(extra, func(t *testing.T) {
 			calls := 0
-			f := &fakeModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
+			h := testHandler(t, &fakeModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
 				calls++
 				return textResult(), nil
-			}}
-			h := testHandler(t, f, nil)
-			h.policies["canonical"] = testPolicy(tc.backend)
+			}}, nil)
 			w := httptest.NewRecorder()
-			req := httptest.NewRequest("POST", Path, strings.NewReader(strings.TrimSuffix(basic, "}")+tc.extra+"}"))
+			req := httptest.NewRequest("POST", Path, strings.NewReader(strings.TrimSuffix(basic, "}")+extra+"}"))
 			req.Header.Set("Content-Type", "application/json")
 			h.ServeHTTP(w, req)
-			assert.Equal(t, 400, w.Code)
-			assert.Zero(t, calls)
+			assert.Equal(t, 200, w.Code)
+			assert.Equal(t, 1, calls)
 		})
 	}
 }

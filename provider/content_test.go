@@ -183,6 +183,28 @@ func TestContentPart_AllTypes_RoundTrip(t *testing.T) {
 	}
 }
 
+func TestContentPart_TextFieldPresence(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		part ContentPart
+		wire string
+	}{
+		{name: "empty text", part: TextPart(""), wire: `{"type":"text","text":""}`},
+		{name: "nonempty text", part: TextPart("hello"), wire: `{"type":"text","text":"hello"}`},
+		{name: "custom unchanged", part: CustomPart("test.kind"), wire: `{"type":"custom","kind":"test.kind"}`},
+		{name: "tool unchanged", part: ToolCallPart("c", "lookup", json.RawMessage(`{}`)), wire: `{"type":"tool-call","toolCallId":"c","toolName":"lookup","input":{}}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			encoded, err := json.Marshal(tc.part)
+			require.NoError(t, err)
+			assert.JSONEq(t, tc.wire, string(encoded))
+			var decoded ContentPart
+			require.NoError(t, json.Unmarshal(encoded, &decoded))
+			assert.Equal(t, tc.part, decoded)
+		})
+	}
+}
+
 func TestSourcePartFilenameNormalization(t *testing.T) {
 	for _, tc := range []struct {
 		name     string

@@ -6,7 +6,7 @@ Define progressive and blocking helpers for consuming UI message chunk streams w
 ## Requirements
 
 ### Requirement: StreamUIMessage emits upstream write-point snapshots
-`StreamUIMessage` SHALL expose the signature `func StreamUIMessage(stream <-chan UIMessageChunk, opts ...UIMessageReaderOption) <-chan UIMessage`. It SHALL consume `UIMessageChunk` values in input order and emit isolated `UIMessage` snapshots only for the state update write points that match upstream `ai@7.0.37` `readUIMessageStream` behavior as represented by Go `UIMessage` and `Part` types. It SHALL NOT emit a synthetic final snapshot solely because the input channel closes.
+`StreamUIMessage` SHALL expose the signature `func StreamUIMessage(stream <-chan UIMessageChunk, opts ...UIMessageReaderOption) <-chan UIMessage`. It SHALL consume `UIMessageChunk` values in input order and emit isolated `UIMessage` snapshots only for the state update write points that match upstream `ai@7.0.116` `readUIMessageStream` behavior as represented by Go `UIMessage` and `Part` types. It SHALL NOT emit a synthetic final snapshot solely because the input channel closes.
 
 #### Scenario: Progressive text snapshots
 - **WHEN** `StreamUIMessage` receives a start chunk followed by text start, text delta, another text delta, and text end chunks for the same text part
@@ -35,7 +35,7 @@ Define progressive and blocking helpers for consuming UI message chunk streams w
 
 #### Scenario: Progressive non-text parts
 - **WHEN** `StreamUIMessage` receives file, reasoning file, source URL, source document, step start, non-transient data, or message metadata chunks
-- **THEN** the output channel yields snapshots that include the corresponding Go message part or metadata update whenever upstream `ai@7.0.37` would write a message snapshot for that chunk type
+- **THEN** the output channel yields snapshots that include the corresponding Go message part or metadata update whenever upstream `ai@7.0.116` would write a message snapshot for that chunk type
 
 #### Scenario: Transient data is not assembled
 - **WHEN** `StreamUIMessage` receives a data chunk with `Transient` set to true
@@ -133,3 +133,80 @@ The reader split SHALL NOT change `UIMessageChunk` JSON serialization, SSE event
 #### Scenario: Frontend hook compatibility is preserved
 - **WHEN** upstream frontend hooks consume Go-produced UI message streams
 - **THEN** the wire protocol remains compatible with the registered `@ai-sdk/react` baseline
+
+### Requirement: Reader tool updates preserve pinned lifecycle semantics
+
+Both readers SHALL carry title/tool metadata across partial input updates, preserve supplied empty values, and follow the registered static/dynamic updater field-clearing rules for output, error, preliminary and raw input. Static tool-input-error SHALL store rejected input in RawInput with Input omitted; dynamic tool-input-error SHALL store it in Input. Preliminary and final outputs SHALL replace one matching tool part. Approval responses SHALL merge supported prior approval data. Static/dynamic tool updaters and approval responses SHALL apply supplied providerExecuted values, including decoded false clearing prior true, while an absent field SHALL inherit the prior value. Existing step-local identity matching, partial JSON repair and split progressive/blocking error contracts SHALL remain in force.
+
+#### Scenario: Static and dynamic input errors retain different input arms
+- **WHEN** otherwise equivalent tool-input-error chunks target static and dynamic tools
+- **THEN** the static output-error part SHALL retain RawInput with absent Input
+- **AND** the dynamic output-error part SHALL retain Input
+- **AND** title, tool metadata and result-provider metadata SHALL remain associated with that part
+
+#### Scenario: Static error continuations preserve rejected input
+- **WHEN** a static tool-input-error or seeded static output-error part with RawInput receives a tool-output-error continuation
+- **THEN** reader snapshots SHALL retain RawInput separately from absent Input
+- **AND** conversion SHALL still use that retained input through its nullish fallback
+
+#### Scenario: Final output replaces preliminary output
+- **WHEN** a tool receives a preliminary available output followed by a final available output
+- **THEN** snapshots SHALL contain one tool part with the respective current output and preliminary presence
+- **AND** a subsequent output-error transition SHALL clear stale output and preliminary as the pinned updater does
+
+#### Scenario: Partial input retains supplied presentation metadata
+- **WHEN** input-start includes title and toolMetadata, followed by input deltas and input-available without replacements
+- **THEN** reader snapshots SHALL retain the earlier title/toolMetadata
+- **AND** an explicitly supplied empty replacement SHALL replace rather than disappear
+
+#### Scenario: Explicit false changes provider execution while omission inherits
+- **WHEN** a static or dynamic tool whose providerExecuted is true receives a decoded approval response, output-available or output-error chunk
+- **THEN** supplied providerExecuted false SHALL clear that prior true value, while an omitted providerExecuted SHALL retain it
+- **AND** subsequent model conversion SHALL place the applicable output in the local tool-role message after false, versus provider-inline after inherited true
+
+### Requirement: Readers resume from an isolated initial assistant message
+
+The root package SHALL add `WithUIMessageReaderInitialMessage(message UIMessage) UIMessageReaderOption`. It SHALL clone the supplied message when the option is built and clone it for each reader invocation. Readers SHALL seed contents only from assistant messages; a supplied non-assistant message SHALL initialize an empty assistant with that supplied ID while ignoring its parts/metadata. Initial IDs and assistant tool/data identities SHALL be retained unless later chunks replace them according to the pinned rules. Active text, reasoning and partial-input maps SHALL start empty; initial persisted state SHALL NOT make an unstarted delta sequence valid. No initial progressive snapshot SHALL be emitted merely because an initial message was supplied. Generated-ID fallback SHALL apply only when the supplied ID is absent; without an initial message existing generated-ID and empty-stream behavior SHALL remain unchanged.
+
+#### Scenario: Persisted tool output resumes without duplicates
+- **WHEN** an initial assistant message contains a persisted tool call and the stream supplies an output or approval continuation for it
+- **THEN** snapshots and blocking assembly SHALL update the existing matching part rather than append a duplicate
+- **AND** unchanged parts, metadata, approval data and message ID SHALL be retained
+
+#### Scenario: Initial-message option reuse and mutation are isolated
+- **WHEN** a caller mutates its original message after constructing the option or reuses the option for independent readers
+- **THEN** those readers SHALL start from isolated clones of the option's original state
+- **AND** consumer mutation SHALL NOT affect another reader or later snapshot
+
+#### Scenario: Empty resumed stream respects helper contracts
+- **WHEN** an initial assistant message is supplied and the input channel closes without chunks
+- **THEN** StreamUIMessage SHALL emit no snapshots
+- **AND** AssembleUIMessage SHALL return the isolated initial message with nil error
+
+#### Scenario: Non-assistant seed contents are ignored but its ID is retained
+- **WHEN** an initial non-assistant message with a supplied ID is provided
+- **THEN** readers SHALL initialize an empty assistant with that ID and no seed parts/metadata
+- **AND** a later start chunk with a new messageId SHALL replace it
+
+#### Scenario: Non-assistant seed without an ID uses the existing fallback
+- **WHEN** an initial non-assistant message has no supplied ID
+- **THEN** readers SHALL initialize empty assistant contents and use the existing generated-ID fallback when an ID is needed
+
+#### Scenario: Active deltas still require starts
+- **WHEN** a text/reasoning/input delta arrives without an active start
+- **THEN** readers SHALL retain the existing malformed-transition behavior even when an initial assistant contains related persisted parts
+
+#### Scenario: Persisted data identities and start IDs are respected
+- **WHEN** an initial assistant contains an identified data part and receives a replacement data chunk for that ID
+- **THEN** the existing data part SHALL be updated according to the target matching rules
+- **AND** a later start chunk with a new messageId SHALL replace the initial message ID without mutating the caller's message
+
+### Requirement: Pinned clients prove persistence and hook resume
+
+Regression coverage SHALL compare Go persistence/assembly and conversion with registered TypeScript APIs and exercise a real useChat persisted-message remount/resume. SSE in those scenarios SHALL be parsed by parseJsonEventStream and uiMessageChunkSchema before asserting fields and assembled messages. Passing initial chunk schema parsing alone SHALL NOT satisfy persistence/resumption acceptance.
+
+#### Scenario: Hook remount retains tool state through resumed Agent input
+- **WHEN** useChat assembles tool/approval history, persists it through Go JSON, remounts from that history and resumes to a final result
+- **THEN** supported metadata/raw-input/preliminary/approval values SHALL survive the supported lifecycle
+- **AND** the deterministic Go fake provider SHALL receive the expected converted resumed history
+- **AND** filtered preliminary results SHALL NOT replace the final result or cause duplicate tool parts

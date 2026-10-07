@@ -40,6 +40,7 @@ type chunk struct {
 	Model   string        `json:"model"`
 	Choices []chunkChoice `json:"choices"`
 	Usage   *usage        `json:"usage"`
+	Grafana *diagnostics  `json:"grafana,omitempty"`
 }
 type toolState struct {
 	call         toolCall
@@ -62,14 +63,7 @@ func (s *streamState) consume(p provider.StreamPart, r mappedRequest, max int64)
 		return nil, errOutput
 	}
 	switch p.Type {
-	case provider.PartStreamStart:
-		for _, warning := range p.Warnings {
-			if warning.Type == provider.WarnUnsupported {
-				return nil, errOutput
-			}
-		}
-		return nil, nil
-	case provider.PartResponseMeta, provider.PartReasoningStart, provider.PartReasoningDelta, provider.PartReasoningEnd:
+	case provider.PartStreamStart, provider.PartResponseMeta, provider.PartReasoningStart, provider.PartReasoningDelta, provider.PartReasoningEnd:
 		return nil, nil
 	case provider.PartTextStart:
 		if p.ID == "" || len(s.textIDs) >= 1024 {
@@ -258,18 +252,28 @@ func (h *handler) serveStream(ctx context.Context, cancel context.CancelFunc, w 
 		}
 		return controller.Flush() == nil
 	}
+	var pending *diagnostics
+	diagnosticBytes := int64(0)
+	opened := false
 	emit := func(d delta, finish *string, u *usage, empty bool) bool {
-		c := chunk{ID: id, Object: "chat.completion.chunk", Created: created, Model: modelID, Choices: []chunkChoice{{Delta: d, Finish: finish}}, Usage: u}
+		c := chunk{ID: id, Object: "chat.completion.chunk", Created: created, Model: modelID, Choices: []chunkChoice{{Delta: d, Finish: finish}}, Usage: u, Grafana: pending}
 		if empty {
 			c.Choices = []chunkChoice{}
 		}
 		b, err := json.Marshal(c)
-		return err == nil && write(b)
+		if err != nil || !write(b) {
+			return false
+		}
+		pending = nil
+		return true
 	}
 	fail := func(status int) { _ = write(errorBody(status)) }
-	if !emit(delta{Role: roleAssistant}, nil, nil, false) {
-		fail(502)
-		return
+	open := func() bool {
+		if opened {
+			return true
+		}
+		opened = true
+		return emit(delta{Role: roleAssistant}, nil, nil, false)
 	}
 	state := streamState{textIDs: map[string]bool{}, tools: map[string]*toolState{}}
 	idle := time.NewTimer(h.limits.IdleDuration)
@@ -301,6 +305,54 @@ func (h *handler) serveStream(ctx context.Context, cancel context.CancelFunc, w 
 			if parts > h.limits.StreamParts {
 				fail(502)
 				return
+			}
+			if part.Type == provider.PartStreamStart || part.Type == provider.PartResponseMeta {
+				diagnosticBytes += int64(len(part.ResponseID)) + int64(len(part.ModelID)) + 64
+				for _, warning := range part.Warnings {
+					diagnosticBytes += int64(len(warning.Feature)) + int64(len(warning.Setting)) + int64(len(warning.Message)) + int64(len(warning.Details)) + 64
+				}
+				if diagnosticBytes > h.limits.ResponseBytes {
+					fail(502)
+					return
+				}
+			}
+			if part.Type == provider.PartStreamStart {
+				warnings, err := mapWarnings(part.Warnings, h.limits.FrameBytes)
+				if err != nil {
+					fail(502)
+					return
+				}
+				if len(warnings) > 0 {
+					if pending == nil {
+						pending = &diagnostics{}
+					}
+					if len(pending.Warnings)+len(warnings) > 1024 {
+						fail(502)
+						return
+					}
+					pending.Warnings = append(pending.Warnings, warnings...)
+				}
+				continue
+			}
+			if part.Type == provider.PartResponseMeta {
+				native, err := mapNativeResponse(part.ResponseID, part.ModelID, part.Timestamp, h.limits.FrameBytes)
+				if err != nil {
+					fail(502)
+					return
+				}
+				if !opened {
+					native.apply(&id, &modelID, &created)
+				} else {
+					if pending == nil {
+						pending = &diagnostics{}
+					}
+					pending.NativeResponse = native
+					if !emit(delta{}, nil, nil, false) {
+						fail(502)
+						return
+					}
+				}
+				continue
 			}
 			if part.Type == provider.PartError {
 				status := 502
@@ -339,6 +391,10 @@ func (h *handler) serveStream(ctx context.Context, cancel context.CancelFunc, w 
 					fail(504)
 					return
 				}
+				if !open() {
+					fail(502)
+					return
+				}
 				if !emit(delta{}, &f, nil, false) {
 					fail(502)
 					return
@@ -360,6 +416,10 @@ func (h *handler) serveStream(ctx context.Context, cancel context.CancelFunc, w 
 				return
 			}
 			if d != nil {
+				if !open() {
+					fail(502)
+					return
+				}
 				if !emit(*d, nil, nil, false) {
 					fail(502)
 					return

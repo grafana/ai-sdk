@@ -235,7 +235,8 @@ func TestPrepareTools_AllowedToolsEmptyAndNoDeclarations(t *testing.T) {
 		call provider.CallOptions
 	}{
 		{"allowed restriction", provider.CallOptions{ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{AllowedTools: &AllowedToolsOption{ToolNames: []string{"absent"}}})}},
-		{"forced choice", provider.CallOptions{ToolChoice: &provider.ToolChoice{Type: provider.ToolChoiceRequired}}},
+		{"required choice", provider.CallOptions{ToolChoice: &provider.ToolChoice{Type: provider.ToolChoiceRequired}}},
+		{"forced shell choice", provider.CallOptions{ToolChoice: &provider.ToolChoice{Type: provider.ToolChoiceTool, ToolName: "shell"}}},
 	} {
 		t.Run("no tools "+tc.name, func(t *testing.T) {
 			tc.call.Prompt = []provider.Message{provider.UserText("hi")}

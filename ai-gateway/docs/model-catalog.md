@@ -82,8 +82,9 @@ the canonical ID.
 available, err := models.ListModels(ctx)
 ```
 
-Aliases and capabilities appear as metadata on the canonical row. Catalog
-construction and listing use defensive copies, keeping the namespace immutable.
+Use each row's aliases and capabilities to build a model picker. If you want
+users to inspect provider choices, supply candidate metadata when creating the
+catalog. You can modify a returned listing without changing the catalog.
 
 ## Construct models through a registry
 
@@ -134,9 +135,13 @@ Both interfaces receive `context.Context`, allowing a host wrapper to read
 request-scoped identity and policy. The built-in catalogs expose the configured
 namespace; the host applies request-specific visibility.
 
-`ModelInfo.Capabilities` contains labels defined by the public API. A route
-backed by fallback models should advertise capabilities supported by every
-candidate.
+Use `ModelInfo.Capabilities` to tell callers what they can do with a public model.
+If that model has fallbacks, advertise only features that every candidate supports,
+such as function tools or file inputs. Otherwise, a request that works on the
+primary model may fail when a backup is needed.
+
+Choose provider-specific settings that are valid for the models in the route.
+Fallback does not adapt those settings for a different provider.
 
 An unknown public ID returns an error matching `catalog.ErrUnknownModel` and
 records the requested ID in `*catalog.UnknownModelError`. The error does not
@@ -162,6 +167,39 @@ When resolution returns an error matching `catalog.ErrUnknownModel`, map it to
 the transport's not-found response. Other catalog or registry failures pass
 through to the host's normal error handling. The catalog does not own HTTP
 status codes, response envelopes, or another transport's lifecycle.
+
+## Let users inspect provider choices
+
+The Gateway command lets authenticated clients inspect the providers and models
+configured behind a public name without generating a response. For example,
+`balanced` might use an Anthropic model first and an OpenAI model as a fallback.
+Clients still select `balanced` or one of its aliases, not a candidate's model ID.
+
+Discovery returns one row per configured model. Its `gateway` metadata lists
+`aliases`, a `primary` destination and ordered `fallbacks`. Each destination's
+`providerModelId` is the native invocation ID, not a public selection ID. Aliases
+remain callable but do not create duplicate discovery rows.
+These choices describe what the Gateway can try, not which provider handled a
+previous request. Listing models does not check provider availability or verify
+that provider credentials work, and it never returns those credentials.
+
+If you build your own catalog, provide candidate metadata explicitly to make
+these details available. Models without that metadata can still be discovered
+and selected; clients should handle missing candidate information. See
+[discovering models from Go and TypeScript](../../docs/providers/grafana-gateway.md#discover-and-select-public-models)
+for client examples.
+
+The command shares its configured model list with all authenticated callers.
+Before exposing it, check that those callers may see the provider choices. For
+request-specific visibility, apply the same access rules to listing and resolution
+as described above.
+
+The command validates route configuration at startup, before accepting requests.
+Discovery then returns the complete visible configured catalog; it does not
+revalidate routes or impose a response-size cap. Ensure your clients' read limits
+accommodate the resulting document. Stock TypeScript discovery discards the
+`gateway` metadata, so use the companion helper to discover aliases and provider
+choices.
 
 ## Reference
 

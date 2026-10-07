@@ -10,7 +10,6 @@ import (
 type staticCatalog struct {
 	namespace modelNamespace
 	models    map[string]provider.LanguageModel
-	policies  map[string]ProviderOptionPolicy
 }
 
 // NewStatic creates an immutable catalog from fully constructed models.
@@ -19,7 +18,6 @@ type staticCatalog struct {
 func NewStatic(entries []StaticEntry) (Catalog, error) {
 	infos := make([]ModelInfo, len(entries))
 	models := make(map[string]provider.LanguageModel, len(entries))
-	policies := make(map[string]ProviderOptionPolicy, len(entries))
 
 	for i, entry := range entries {
 		if isNilInterface(entry.Model) {
@@ -27,7 +25,6 @@ func NewStatic(entries []StaticEntry) (Catalog, error) {
 		}
 		infos[i] = entry.Info
 		models[entry.Info.ID] = entry.Model
-		policies[entry.Info.ID] = entry.ProviderOptions.clone()
 	}
 
 	namespace, err := newModelNamespace(infos)
@@ -38,7 +35,6 @@ func NewStatic(entries []StaticEntry) (Catalog, error) {
 	return &staticCatalog{
 		namespace: namespace,
 		models:    models,
-		policies:  policies,
 	}, nil
 }
 
@@ -47,7 +43,7 @@ func (c *staticCatalog) ResolveModel(_ context.Context, modelID string) (Resolve
 	if !exists {
 		return ResolvedModel{}, &UnknownModelError{ModelID: modelID}
 	}
-	return ResolvedModel{ID: canonicalID, Model: c.models[canonicalID], ProviderOptions: c.policies[canonicalID].clone()}, nil
+	return ResolvedModel{ID: canonicalID, Model: c.models[canonicalID]}, nil
 }
 
 func (c *staticCatalog) ListModels(_ context.Context) ([]ModelInfo, error) {

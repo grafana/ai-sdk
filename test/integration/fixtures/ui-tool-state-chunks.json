@@ -1,0 +1,21 @@
+[
+  {"type":"start","messageId":"persisted"},
+  {"type":"tool-input-start","toolCallId":"c","toolName":"lookup","title":"","toolMetadata":{},"providerExecuted":true,"providerMetadata":{"test":{"source":"call"}}},
+  {"type":"tool-input-delta","toolCallId":"c","inputTextDelta":"{\"q\":\"test\"}"},
+  {"type":"tool-input-available","toolCallId":"c","toolName":"lookup","input":{"q":"test"},"providerMetadata":{}},
+  {"type":"tool-approval-request","toolCallId":"c","approvalId":"a","approvalDescriptor":{"scope":"all"},"reason":"","signature":"sig","isAutomatic":true},
+  {"type":"tool-approval-response","approvalId":"a","approved":true,"reason":"","providerExecuted":false},
+  {"type":"tool-output-available","toolCallId":"c","output":null,"preliminary":true,"providerMetadata":{"test":{"source":"result"}}},
+  {"type":"tool-output-available","toolCallId":"c","output":{"value":1},"preliminary":false,"providerMetadata":{}},
+  {"type":"tool-input-error","toolCallId":"bad","toolName":"lookup","input":"legacy","errorText":"","title":"ignored","providerMetadata":{"test":{"source":"error"}}},
+  {"type":"tool-input-start","toolCallId":"d","toolName":"lookup","dynamic":true,"title":"","toolMetadata":{},"providerExecuted":true},
+  {"type":"tool-input-available","toolCallId":"d","toolName":"lookup","dynamic":true,"input":{"q":"test"}},
+  {"type":"tool-output-available","toolCallId":"d","output":"partial","preliminary":true,"providerExecuted":false},
+  {"type":"tool-output-error","toolCallId":"d","errorText":"","providerMetadata":{}},
+  {"type":"data-status","id":"status","data":{"value":1}},
+  {"type":"data-status","id":"status","data":{"value":2}},
+  {"type":"data-status","data":{"value":3},"transient":true},
+  {"type":"source-document","sourceId":"source","mediaType":"text/plain","title":"source"},
+  {"type":"custom","kind":"retained","providerMetadata":{"test":{"value":1}}},
+  {"type":"finish","finishReason":"stop"}
+]

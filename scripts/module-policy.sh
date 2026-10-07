@@ -219,7 +219,7 @@ isolation() (
     selected=$(cd "$dir/$root" && GOWORK="$workspace_file" GOFLAGS="$readonly_flags" go list -m -json "$module")
     directory=$(cd "$dir/$root" && pwd -P)
     [[ $(jq -r '.Main' <<<"$selected") == true && $(jq -r '.Dir' <<<"$selected") == "$directory" ]] || fail "isolated copy did not select candidate $module"
-    (cd "$dir/$root" && GOWORK="$workspace_file" GOFLAGS="$readonly_flags" go build ./... && GOWORK="$workspace_file" GOFLAGS="$readonly_flags" go test ./...)
+    (cd "$dir/$root" && GOWORK="$workspace_file" GOFLAGS="$readonly_flags" go build ./... && SDK_GATEWAY_ISOLATION=1 GOWORK="$workspace_file" GOFLAGS="$readonly_flags" go test ./...)
   done
 )
 

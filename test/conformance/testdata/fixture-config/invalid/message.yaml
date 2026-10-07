@@ -1,0 +1,6 @@
+# unknown: providerOption
+model: test
+messages:
+  - role: user
+    content: hi
+    providerOption: { anthropic: {} }

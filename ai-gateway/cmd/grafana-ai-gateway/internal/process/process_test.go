@@ -1013,3 +1013,36 @@ func (listener *failingListener) Accept() (net.Conn, error) {
 func testLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
+
+func TestRun_RejectsInvalidRoutesBeforeSecretsOrListener(t *testing.T) {
+	for _, tc := range []struct{ name, old, replacement string }{
+		{"invalid ID", "  public:", "  bad id:"},
+		{"blank name", "name: Public", "name: ' '"},
+		{"blank native model", "model: backend-private", "model: ' '"},
+		{"duplicate candidate", "model: backend-private", "model: backend-private\n    fallback:\n      - provider: anthropic-primary\n        model: backend-private"},
+		{"duplicate alias", "model: backend-private", "model: backend-private\n    aliases: [alias, alias]"},
+		{"canonical alias collision", "model: backend-private", "model: backend-private\n    aliases: [public]"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := writeProcessConfig(t, "http://127.0.0.1:1")
+			data, err := os.ReadFile(path)
+			require.NoError(t, err)
+			changed := strings.Replace(string(data), tc.old, tc.replacement, 1)
+			require.NotEqual(t, string(data), changed)
+			require.NoError(t, os.WriteFile(path, []byte(changed), 0o600))
+			listeners, secrets := 0, 0
+			err = Run(context.Background(), []string{"--config.file=" + path, "--deployment.mode=development", "--auth.unsafe", "--server.listen-address=127.0.0.1:0"}, func(name string) (string, bool) {
+				if name == "ANTHROPIC_SECRET" {
+					secrets++
+					return "dummy-api-key", true
+				}
+				return "", false
+			}, func(string, string) (net.Listener, error) { listeners++; return nil, assert.AnError }, testLogger())
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "config:")
+			assert.NotContains(t, err.Error(), "dummy-api-key")
+			assert.Zero(t, listeners)
+			assert.Zero(t, secrets)
+		})
+	}
+}

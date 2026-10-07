@@ -211,13 +211,17 @@ func decodeUsage(value *wireUsage) (provider.Usage, error) {
 }
 
 func decodeGenerate(body []byte) (*provider.GenerateResult, error) {
+	if !validJSON(body) {
+		return nil, errors.New("grafana: malformed unary result")
+	}
 	var value struct {
+		Metadata     json.RawMessage    `json:"providerMetadata"`
 		Content      *[]json.RawMessage `json:"content"`
 		FinishReason *wireFinish        `json:"finishReason"`
 		Usage        *wireUsage         `json:"usage"`
 		Warnings     []wireWarning      `json:"warnings"`
 	}
-	if err := decodeFields(body, &value, "content", "finishReason", "usage", "warnings"); err != nil {
+	if err := decodeFields(body, &value, "content", "finishReason", "usage", "warnings", "providerMetadata"); err != nil {
 		return nil, errors.New("grafana: malformed unary result")
 	}
 	if value.Content == nil {
@@ -231,6 +235,10 @@ func decodeGenerate(body []byte) (*provider.GenerateResult, error) {
 	if err != nil {
 		return nil, err
 	}
+	metadata, err := decodeProviderMetadata(value.Metadata)
+	if err != nil {
+		return nil, err
+	}
 	content := make([]provider.GenerateContentPart, 0, len(*value.Content))
 	for _, raw := range *value.Content {
 		var part struct {
@@ -239,28 +247,34 @@ func decodeGenerate(body []byte) (*provider.GenerateResult, error) {
 			ToolCallID       *string                      `json:"toolCallId"`
 			ToolName         *string                      `json:"toolName"`
 			Input            *string                      `json:"input"`
+			Result           json.RawMessage              `json:"result"`
+			IsError          bool                         `json:"isError"`
 			ProviderExecuted bool                         `json:"providerExecuted"`
-			Dynamic          bool                         `json:"dynamic"`
+			Dynamic          *bool                        `json:"dynamic"`
+			Preliminary      *bool                        `json:"preliminary"`
 			MediaType        *string                      `json:"mediaType"`
 			Data             json.RawMessage              `json:"data"`
 			Metadata         json.RawMessage              `json:"providerMetadata"`
 		}
-		if decodeFields(raw, &part, "type", "text", "toolCallId", "toolName", "input", "providerExecuted", "dynamic", "mediaType", "data", "providerMetadata") != nil || part.ProviderExecuted || part.Dynamic {
+		if decodeFields(raw, &part, "type", "providerMetadata") != nil {
 			return nil, errors.New("grafana: invalid unary content")
+		}
+		metadata, err := decodeProviderMetadata(part.Metadata)
+		if err != nil {
+			return nil, err
 		}
 		switch part.Type {
 		case provider.ContentReasoning, provider.ContentReasoningFile:
-			metadata, err := decodeReasoningMetadata(part.Metadata)
-			if err != nil {
-				return nil, err
-			}
 			mapped := provider.GenerateContentPart{Type: part.Type, ProviderMetadata: metadata}
 			if part.Type == provider.ContentReasoning {
-				if part.Text == nil {
+				if decodeFields(raw, &part, "text") != nil || part.Text == nil {
 					return nil, errors.New("grafana: missing reasoning text")
 				}
 				mapped.Text = *part.Text
 			} else {
+				if decodeFields(raw, &part, "data", "mediaType") != nil {
+					return nil, errors.New("grafana: invalid reasoning file")
+				}
 				data, err := decodeReasoningFile(part.Data)
 				if err != nil || part.MediaType == nil {
 					return nil, errors.New("grafana: invalid reasoning file")
@@ -279,15 +293,33 @@ func decodeGenerate(body []byte) (*provider.GenerateResult, error) {
 			}
 			content = append(content, provider.GenerateContentPart{Type: provider.ContentSource, SourceType: source.SourceType, ID: source.ID, URL: source.URL, Title: source.Title, Text: source.Title, MediaType: source.MediaType, Filename: source.Filename, ProviderMetadata: source.ProviderMetadata})
 		case provider.ContentText:
-			if part.Text == nil {
+			if decodeFields(raw, &part, "text") != nil || part.Text == nil {
 				return nil, errors.New("grafana: missing unary text")
 			}
-			content = append(content, provider.GenerateContentPart{Type: provider.ContentText, Text: *part.Text})
-		case provider.ContentToolCall:
-			if part.ToolCallID == nil || *part.ToolCallID == "" || part.ToolName == nil || *part.ToolName == "" || part.Input == nil {
-				return nil, errors.New("grafana: invalid unary tool call")
+			content = append(content, provider.GenerateContentPart{Type: provider.ContentText, Text: *part.Text, ProviderMetadata: metadata})
+		case provider.ContentToolCall, provider.ContentToolResult:
+			fields := []string{"toolCallId", "toolName", "dynamic"}
+			if part.Type == provider.ContentToolCall {
+				fields = append(fields, "input", "providerExecuted")
+			} else {
+				fields = append(fields, "result", "isError", "preliminary")
 			}
-			content = append(content, provider.GenerateContentPart{Type: provider.ContentToolCall, ToolCallID: *part.ToolCallID, ToolName: *part.ToolName, Input: json.RawMessage(*part.Input)})
+			if decodeFields(raw, &part, fields...) != nil || part.ToolCallID == nil || *part.ToolCallID == "" || part.ToolName == nil || *part.ToolName == "" {
+				return nil, errors.New("grafana: invalid unary tool content")
+			}
+			mapped := provider.GenerateContentPart{Type: part.Type, ToolCallID: *part.ToolCallID, ToolName: *part.ToolName, ProviderExecuted: part.ProviderExecuted, Dynamic: part.Dynamic, Preliminary: part.Preliminary, ProviderMetadata: metadata}
+			if part.Type == provider.ContentToolCall {
+				if part.Input == nil {
+					return nil, errors.New("grafana: invalid unary tool call")
+				}
+				mapped.Input = json.RawMessage(*part.Input)
+			} else {
+				if len(part.Result) == 0 || string(bytes.TrimSpace(part.Result)) == "null" {
+					return nil, errors.New("grafana: invalid unary tool result")
+				}
+				mapped.Result, mapped.IsError = part.Result, part.IsError
+			}
+			content = append(content, mapped)
 		default:
 			return nil, errors.New("grafana: unsupported unary content")
 		}
@@ -296,5 +328,5 @@ func decodeGenerate(body []byte) (*provider.GenerateResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &provider.GenerateResult{Content: content, FinishReason: finish, Usage: usage, Warnings: warnings}, nil
+	return &provider.GenerateResult{Content: content, FinishReason: finish, Usage: usage, Warnings: warnings, ProviderMetadata: metadata}, nil
 }

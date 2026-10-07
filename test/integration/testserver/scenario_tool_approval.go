@@ -113,7 +113,10 @@ func findApprovalResponse(messages []aisdk.UIMessage) (responded bool, approved 
 			if !ok || toolPart.ToolName != approvalToolName || toolPart.Approval == nil || toolPart.Approval.ID == "" || toolPart.Approval.Approved == nil {
 				continue
 			}
-			return true, *toolPart.Approval.Approved, toolPart.Approval.Reason
+			if toolPart.Approval.Reason != nil {
+				reason = *toolPart.Approval.Reason
+			}
+			return true, *toolPart.Approval.Approved, reason
 		}
 	}
 	return false, false, ""

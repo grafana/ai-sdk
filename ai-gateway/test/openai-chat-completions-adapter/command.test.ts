@@ -32,6 +32,10 @@ test('official JavaScript SDK against real command: compatible and Anthropic pro
         const upstream=createServer(async(req,res)=>{
           const chunks: Buffer[]=[];for await(const chunk of req)chunks.push(Buffer.from(chunk));
           const body=JSON.parse(Buffer.concat(chunks).toString());requests.push(body);
+          if(req.url==='/fail/v1/responses'){
+            assert.equal(body.store,false);assert.equal(body.parallel_tool_calls,false);
+            res.writeHead(503,{'Content-Type':'application/json'});res.end(JSON.stringify({error:{type:'server_error',message:'retry'}}));return;
+          }
           if(failNext){failNext=false;res.writeHead(503,{'Content-Type':'application/json'});res.end(JSON.stringify({type:'error',error:{type:'overloaded_error',message:'synthetic retryable'}}));return;}
           const isAnthropic=backend==='anthropic';
           const emptyArguments=emptyArgumentsNext;emptyArgumentsNext=false;
@@ -64,7 +68,7 @@ test('official JavaScript SDK against real command: compatible and Anthropic pro
         const address=`127.0.0.1:${await port()}`;const baseURL=`http://127.0.0.1:${addr.port}${backend==='anthropic'?'':'/v1'}`;
         const config=join(directory,`${backend}.yaml`);
         const fallbackConfig=backend==='anthropic'?'  public/fallback:\n    name: Fallback\n    primary:\n      provider: local\n      model: claude-sonnet-4-20250514\n    fallback:\n      - provider: local\n        model: claude-3-5-haiku-20241022\n':'';
-        writeFileSync(config,`providers:\n  local:\n    type: ${backend}\n    apiKeyEnv: CHAT_COMPLETIONS_ADAPTER_JS_KEY\n    baseURL: ${baseURL}\nmodels:\n  public/chat:\n    name: Chat\n    primary:\n      provider: local\n      model: ${backend==='anthropic'?'claude-sonnet-4-20250514':'gpt-4o-mini'}\n    aliases: [chat]\n${fallbackConfig}`);
+        writeFileSync(config,`providers:\n  failing:\n    type: openai\n    apiKeyEnv: CHAT_COMPLETIONS_ADAPTER_JS_KEY\n    baseURL: http://127.0.0.1:${addr.port}/fail/v1\n  local:\n    type: ${backend}\n${backend==='openai-compatible'?'    providerName: custom-vendor\n':''}    apiKeyEnv: CHAT_COMPLETIONS_ADAPTER_JS_KEY\n    baseURL: ${baseURL}\nmodels:\n  public/chat:\n    name: Chat\n    primary:\n      provider: local\n      model: ${backend==='anthropic'?'claude-sonnet-4-20250514':'gpt-4o-mini'}\n    aliases: [chat]\n  public/mixed:\n    name: Mixed\n    primary:\n      provider: failing\n      model: gpt-4.1\n    fallback:\n      - provider: local\n        model: ${backend==='anthropic'?'claude-sonnet-4-20250514':'gpt-4o-mini'}\n${fallbackConfig}`);
         const env=Object.fromEntries(Object.entries(process.env).filter(([key])=>!['GRAFANA_AI_GATEWAY_','AGENTO11Y_','SIGIL_'].some(prefix=>key.startsWith(prefix))));
         const proc=spawn(binary,[`--config.file=${config}`,'--deployment.mode=development','--auth.unsafe',`--server.listen-address=${address}`,'--server.shutdown-timeout=2s'],{env:{...env,CHAT_COMPLETIONS_ADAPTER_JS_KEY:'fake-key'},stdio:['ignore','ignore','pipe']});
         let stderr='';proc.stderr.on('data',chunk=>stderr+=chunk);const exited=new Promise<number|null>(r=>proc.once('exit',r));
@@ -72,8 +76,37 @@ test('official JavaScript SDK against real command: compatible and Anthropic pro
           let ready=false;for(let i=0;i<400;i++){try{const response=await fetch(`http://${address}/ready`);ready=response.ok;await response.text();if(ready)break}catch{}await new Promise(r=>setTimeout(r,25))}assert.ok(ready,stderr);
           const client=new OpenAI({apiKey:token(),baseURL:`http://${address}/v1`,maxRetries:0});
           const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[]=[{role:'user',content:'hello'}];
-          const unary=await client.chat.completions.create({model:'chat',messages});assert.equal(unary.model,'public/chat');assert.equal(unary.choices[0].message.content,'hello');assert.equal(unary.usage?.total_tokens,5);
+          const unary=await client.chat.completions.create({model:'chat',messages});assert.equal(unary.model,backend==='anthropic'?'claude-sonnet-4-20250514':'gpt-4o-mini');assert.equal(unary.id,backend==='anthropic'?'msg_private':'private');assert.equal(unary.choices[0].message.content,'hello');assert.equal(unary.usage?.total_tokens,5);
+          if(backend==='anthropic') {
+            const warned=await client.chat.completions.create({model:'chat',messages,seed:7});
+            const ext=(warned as typeof warned & {grafana:{warnings:{type:string;feature:string}[]}}).grafana;
+            assert.ok(ext.warnings.some(w=>w.type==='unsupported' && w.feature==='seed'));
+            let seen=false;
+            const warningStream=await client.chat.completions.create({model:'chat',messages,seed:7,stream:true});
+            for await(const chunk of warningStream){
+              assert.equal(chunk.id,'msg_private');assert.equal(chunk.model,'claude-sonnet-4-20250514');
+              const extension=(chunk as typeof chunk & {grafana?:{warnings?:{feature:string}[]}}).grafana;
+              if(extension?.warnings?.some(w=>w.feature==='seed'))seen=true;
+            }
+            assert.ok(seen);
+          }
           const tools: OpenAI.Chat.Completions.ChatCompletionTool[]=[{type:'function',function:{name:'weather',parameters:{type:'object',properties:{city:{type:'string'}},required:['city']}}}];
+          for(const streaming of [false,true] as const){
+            const before=requests.length;
+            if(streaming){
+              const mixed=await client.chat.completions.create({model:'public/mixed',messages,tools,parallel_tool_calls:false,stream:true});
+              let finished=false;
+              for await(const chunk of mixed){assert.equal(chunk.id,backend==='anthropic'?'msg_private':'private');if(chunk.choices[0]?.finish_reason==='tool_calls')finished=true}
+              assert.ok(finished);
+            } else {
+              const mixed=await client.chat.completions.create({model:'public/mixed',messages,tools,parallel_tool_calls:false});
+              assert.equal(mixed.choices[0].finish_reason,'tool_calls');
+            }
+            assert.equal(requests.length,before+2);
+            const native=requests.at(-1)!;
+            if(backend==='anthropic')assert.equal(native.tool_choice.disable_parallel_tool_use,true);
+            else {assert.equal(native.parallel_tool_calls,false);assert.equal(native.store,false);assert.ok(!('parallelToolCalls' in native))}
+          }
           const called=await client.chat.completions.create({model:'chat',messages,tools});assert.equal(called.choices[0].finish_reason,'tool_calls');assert.equal(called.choices[0].message.tool_calls?.[0].id,'call_weather');
           const continued=await client.chat.completions.create({model:'chat',messages:[...messages,called.choices[0].message,{role:'tool',tool_call_id:'call_weather',content:'sunny'}],tools});assert.equal(continued.choices[0].message.content,'hello');
           for(const withTools of [false,true]){
@@ -88,10 +121,10 @@ test('official JavaScript SDK against real command: compatible and Anthropic pro
             const fragments:string[]=[];let emptyFinishes=0;
             for await(const chunk of emptyStream){for(const choice of chunk.choices){for(const call of choice.delta.tool_calls??[]){if(call.function?.arguments)fragments.push(call.function.arguments)}if(choice.finish_reason){assert.equal(choice.finish_reason,'tool_calls');emptyFinishes++}}}
             assert.deepEqual(fragments,['{}']);assert.equal(emptyFinishes,1);
-            failNext=true;const count=requests.length;const recovered=await client.chat.completions.create({model:'public/fallback',messages});assert.equal(recovered.model,'public/fallback');assert.equal(recovered.choices[0].message.content,'hello');assert.equal(requests.length,count+2);
-            const after=requests.length;await assert.rejects(()=>client.chat.completions.create({model:'public/fallback',messages,tools}),error=>error instanceof OpenAI.APIError && error.status===400);assert.equal(requests.length,after);
+            failNext=true;const count=requests.length;const recovered=await client.chat.completions.create({model:'public/fallback',messages});assert.equal(recovered.model,'claude-3-5-haiku-20241022');assert.equal(recovered.choices[0].message.content,'hello');assert.equal(requests.length,count+2);
+            const toolFallback=await client.chat.completions.create({model:'public/fallback',messages,tools});assert.equal(toolFallback.choices[0].finish_reason,'tool_calls');
           }
-          assert.ok(!JSON.stringify(unary).includes('private'));
+          assert.ok(!JSON.stringify(unary).includes('fake-key'));
         } finally {
           proc.kill('SIGINT');const timer=setTimeout(()=>proc.kill('SIGKILL'),5000);const code=await exited;clearTimeout(timer);assert.equal(code,0,stderr);upstream.closeAllConnections();await new Promise<void>(r=>upstream.close(()=>r()));
         }

@@ -29,6 +29,43 @@ func systemText(m provider.Message) string {
 	return m.Content[0].Text
 }
 
+func TestConvertToModelMessages_PersistedToolSemantics(t *testing.T) {
+	for _, tc := range []struct {
+		name, fields string
+		ignore       bool
+		count        int
+		input, text  string
+	}{
+		{"streaming default", `"state":"input-streaming","input":{}`, false, 0, "", ""},
+		{"preliminary filtered", `"state":"output-available","input":{},"output":1,"preliminary":true`, true, 0, "", ""},
+		{"final retained", `"state":"output-available","input":{},"output":1,"preliminary":false`, true, 2, `{}`, ""},
+		{"legacy error", `"state":"output-error","input":null,"rawInput":"legacy","errorText":""`, false, 2, `"legacy"`, ""},
+		{"denied absent reason", `"state":"output-denied","input":{},"approval":{"id":"a","approved":false}`, false, 2, `{}`, "Tool call execution denied."},
+		{"denied empty reason", `"state":"output-denied","input":{},"approval":{"id":"a","approved":false,"reason":""}`, false, 2, `{}`, ""},
+	} {
+		for _, typeName := range []string{"tool-lookup", "dynamic-tool"} {
+			t.Run(typeName+"/"+tc.name, func(t *testing.T) {
+				var message UIMessage
+				require.NoError(t, json.Unmarshal([]byte(`{"id":"m","role":"assistant","parts":[{"type":"`+typeName+`","toolName":"lookup","toolCallId":"c",`+tc.fields+`}]}`), &message))
+				var opts []ConvertOption
+				if tc.ignore {
+					opts = append(opts, WithIgnoreIncompleteToolCalls())
+				}
+				got, err := ConvertToModelMessages([]UIMessage{message}, opts...)
+				require.NoError(t, err)
+				require.Len(t, got, tc.count)
+				if tc.count == 0 {
+					return
+				}
+				assert.JSONEq(t, tc.input, string(got[0].Content[0].Input))
+				if tc.name == "denied absent reason" || tc.name == "denied empty reason" {
+					assert.Equal(t, tc.text, got[1].Content[len(got[1].Content)-1].Output.Text)
+				}
+			})
+		}
+	}
+}
+
 func TestConvertToModelMessages_FileFilenamePresence(t *testing.T) {
 	for _, role := range []string{"user", "assistant"} {
 		for _, tc := range []struct {
@@ -386,7 +423,7 @@ func TestConvertToModelMessages_Tools(t *testing.T) {
 			name: "dynamic tool output error",
 			parts: []Part{DynamicToolUIPart{
 				ToolCallID: "c1", ToolName: "mcp_search", State: ToolStateOutputError,
-				ErrorText: "connection timeout",
+				ErrorText: new("connection timeout"),
 			}},
 			check: func(t *testing.T, result []provider.Message) {
 				require.Len(t, result, 2)
@@ -435,7 +472,7 @@ func TestConvertToModelMessages_Tools(t *testing.T) {
 			parts: []Part{ToolInvocationPart{
 				ToolCallID: "c1", ToolName: "weather", State: ToolStateApprovalResponded,
 				Input:    json.RawMessage(`{"city":"NYC"}`),
-				Approval: &ToolApproval{ID: "apr_1", Approved: &approved, Reason: "ok"},
+				Approval: &ToolApproval{ID: "apr_1", Approved: &approved, Reason: new("ok")},
 			}},
 			opts: []ConvertOption{WithIgnoreIncompleteToolCalls()},
 			check: func(t *testing.T, result []provider.Message) {
@@ -593,7 +630,7 @@ func TestConvertToModelMessages_ProviderExecutedTools(t *testing.T) {
 			name: "error uses error-json format",
 			parts: []Part{ToolInvocationPart{
 				ToolCallID: "c1", ToolName: "computer", State: ToolStateOutputError,
-				Input: json.RawMessage(`{"action":"click"}`), ErrorText: "element not found",
+				Input: json.RawMessage(`{"action":"click"}`), ErrorText: new("element not found"),
 				ProviderExecuted: true,
 			}},
 			check: func(t *testing.T, result []provider.Message) {
@@ -674,7 +711,7 @@ func TestConvertToModelMessages_OutputDenied(t *testing.T) {
 				tr := result[1].Content[0]
 				require.NotNil(t, tr.Output)
 				assert.Equal(t, provider.ToolOutputErrorText, tr.Output.Type)
-				assert.Equal(t, "Tool execution denied.", tr.Output.Text)
+				assert.Equal(t, "Tool call execution denied.", tr.Output.Text)
 			},
 		},
 		{
@@ -682,7 +719,7 @@ func TestConvertToModelMessages_OutputDenied(t *testing.T) {
 			parts: []Part{ToolInvocationPart{
 				ToolCallID: "c1", ToolName: "dangerous", State: ToolStateOutputDenied,
 				Input:    json.RawMessage(`{}`),
-				Approval: &ToolApproval{Reason: "User rejected this action"},
+				Approval: &ToolApproval{Reason: new("User rejected this action")},
 			}},
 			check: func(t *testing.T, result []provider.Message) {
 				tr := result[1].Content[0]
@@ -732,7 +769,7 @@ func TestConvertToModelMessages_ApprovalResponses(t *testing.T) {
 				State:    ToolStateOutputAvailable,
 				Input:    json.RawMessage(`{"q":"go"}`),
 				Output:   json.RawMessage(`["result"]`),
-				Approval: &ToolApproval{ID: "apr_1", Approved: &approved, Reason: "ok"},
+				Approval: &ToolApproval{ID: "apr_1", Approved: &approved, Reason: new("ok")},
 			}},
 			check: func(t *testing.T, result []provider.Message) {
 				require.Len(t, result, 2)
@@ -759,7 +796,7 @@ func TestConvertToModelMessages_ApprovalResponses(t *testing.T) {
 				State:            ToolStateApprovalResponded,
 				ProviderExecuted: true,
 				Input:            json.RawMessage(`{}`),
-				Approval:         &ToolApproval{ID: "apr_2", Approved: &denied, Reason: "user denied"},
+				Approval:         &ToolApproval{ID: "apr_2", Approved: &denied, Reason: new("user denied")},
 			}},
 			check: func(t *testing.T, result []provider.Message) {
 				require.Len(t, result, 2)
@@ -1126,9 +1163,18 @@ func TestProviderMetadataToOptions(t *testing.T) {
 		assert.Nil(t, opts)
 	})
 
-	t.Run("empty metadata returns nil", func(t *testing.T) {
+	t.Run("empty metadata remains present", func(t *testing.T) {
 		opts := providerMetadataToOptions(provider.ProviderMetadata{})
-		assert.Nil(t, opts)
+		assert.NotNil(t, opts)
+		assert.Empty(t, opts)
+	})
+
+	t.Run("metadata presence", func(t *testing.T) {
+		assert.Nil(t, providerMetadataToOptions(nil))
+		assert.NotNil(t, providerMetadataToOptions(provider.ProviderMetadata{}))
+		assert.Nil(t, optionsToProviderMetadata(nil))
+		assert.NotNil(t, optionsToProviderMetadata(provider.ProviderOptions{}))
+		assert.Nil(t, optionsToProviderMetadata(provider.ProviderOptions{"future": nil}))
 	})
 
 	t.Run("round-trip through ConvertToModelMessages", func(t *testing.T) {

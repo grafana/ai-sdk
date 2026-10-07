@@ -79,20 +79,24 @@ Clients must not bypass the proxy and send those credentials directly to
 the application's `cloud-gateway` listener. Keep provider credentials in server-side
 configuration; never place them in browser code or logs.
 
-Supported client calls include `getAvailableModels`, `doGenerate`, and
-`doStream`. Calls to `doGenerate` and `doStream` must set
-`maxOutputTokens` explicitly.
+Discover models with Go `ListModels` or TypeScript `getAvailableModels`, then
+call a model with Go `GenerateText` or `StreamText`, or TypeScript `generateText`
+or `streamText`. The TypeScript client also exposes `doGenerate` and `doStream`
+for lower-level model calls. The shared authentication guide includes Go and
+TypeScript examples.
 
-`generateText` and `streamText` both set `toolChoice` to `auto`. The unary mapper
-accepts that choice, while streaming and fallback routes reject it. `generateText`
-also adds unsupported body headers, and `streamText` only forwards supplied headers.
-Setting `maxOutputTokens` does not make either high-level call compatible.
+An output-token limit is optional. Set one to control response length and costs;
+when omitted, the provider/model default applies.
+
+Choose models that support the function tools, file inputs, and reasoning your
+application needs. See the [Gateway client guide](../../docs/providers/grafana-gateway.md)
+for tool workflows, model requirements, and fallback behavior.
 
 Bring-your-own-key (BYOK) requests and public OpenAI/Anthropic API adapters
 are not supported.
 
-Local integration tests use a dummy proxy and fake provider responses.
-The test proxy replaces `X-Scope-OrgID` with its stack assertion and strips other client identity headers and credentials.
-These tests cover application behavior, not a deployed proxy's authentication or network isolation.
+Before exposing the API, verify that your deployed proxy rejects unauthenticated
+requests and requests without the required stack permissions, replaces identity
+headers, and prevents clients from reaching the API listener directly.
 
 [Up: Grafana AI Gateway](../README.md)

@@ -8,8 +8,10 @@ import (
 )
 
 // convertAnnotations converts text output annotations into source content
-// parts. generateID provides deterministic source IDs. The source title is
-// carried in the Text field, matching the repo's source-part convention.
+// parts. generateID provides deterministic source IDs. Titles go in the
+// canonical Title field, the same field the streaming adapter and the V4
+// source contract use; a document source takes its filename as its title, as
+// the registered upstream conversion does.
 func convertAnnotations(annotations []responses.ResponseOutputTextAnnotationUnion, generateID func() string, providerName string) []provider.GenerateContentPart {
 	var parts []provider.GenerateContentPart
 	for _, ann := range annotations {
@@ -20,7 +22,7 @@ func convertAnnotations(annotations []responses.ResponseOutputTextAnnotationUnio
 				ID:         generateID(),
 				SourceType: provider.SourceTypeURL,
 				URL:        a.URL,
-				Text:       a.Title,
+				Title:      a.Title,
 			})
 
 		case responses.ResponseOutputTextAnnotationFileCitation:
@@ -29,8 +31,8 @@ func convertAnnotations(annotations []responses.ResponseOutputTextAnnotationUnio
 				ID:               generateID(),
 				SourceType:       provider.SourceTypeDocument,
 				MediaType:        "text/plain",
+				Title:            a.Filename,
 				Filename:         a.Filename,
-				Text:             a.Filename,
 				ProviderMetadata: sourceMeta(providerName, "file_citation", a.FileID, a.Index),
 			})
 
@@ -40,8 +42,8 @@ func convertAnnotations(annotations []responses.ResponseOutputTextAnnotationUnio
 				ID:               generateID(),
 				SourceType:       provider.SourceTypeDocument,
 				MediaType:        "text/plain",
+				Title:            a.Filename,
 				Filename:         a.Filename,
-				Text:             a.Filename,
 				ProviderMetadata: containerSourceMeta(providerName, a.FileID, a.ContainerID),
 			})
 
@@ -51,8 +53,8 @@ func convertAnnotations(annotations []responses.ResponseOutputTextAnnotationUnio
 				ID:               generateID(),
 				SourceType:       provider.SourceTypeDocument,
 				MediaType:        "application/octet-stream",
+				Title:            a.FileID,
 				Filename:         a.FileID,
-				Text:             a.FileID,
 				ProviderMetadata: sourceMeta(providerName, "file_path", a.FileID, a.Index),
 			})
 		}

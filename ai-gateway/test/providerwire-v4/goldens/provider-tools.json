@@ -1,0 +1,88 @@
+[
+  {
+    "method": "POST",
+    "path": "/language-model",
+    "headers": {
+      "ai-language-model-id": "grafana/provider-tools",
+      "ai-language-model-specification-version": "4",
+      "ai-language-model-streaming": "false",
+      "content-type": "application/json"
+    },
+    "streaming": false,
+    "hasSignal": false,
+    "body": {
+      "prompt": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "weather"
+            }
+          ]
+        }
+      ],
+      "tools": [
+        {
+          "type": "provider",
+          "id": "anthropic.code_execution_20260120",
+          "name": "python",
+          "args": {}
+        },
+        {
+          "type": "provider",
+          "id": "provider.search",
+          "name": "search",
+          "args": {
+            "limit": 0,
+            "enabled": false,
+            "nested": {
+              "value": null
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/language-model",
+    "headers": {
+      "ai-language-model-id": "grafana/provider-tools",
+      "ai-language-model-specification-version": "4",
+      "ai-language-model-streaming": "true",
+      "content-type": "application/json"
+    },
+    "streaming": true,
+    "hasSignal": false,
+    "body": {
+      "prompt": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "tool-call",
+              "toolCallId": "call-code",
+              "toolName": "python",
+              "input": {
+                "code": "print(0)"
+              },
+              "providerExecuted": true
+            },
+            {
+              "type": "tool-result",
+              "toolCallId": "call-code",
+              "toolName": "python",
+              "output": {
+                "type": "json",
+                "value": {
+                  "stdout": "0"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+]

@@ -65,11 +65,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		WriteError(w, 500)
 		return
 	}
-	policy := h.policies[model.ID]
-	if policy == nil || policy(&r.options, r.requirements()) != nil {
-		WriteError(w, 400)
-		return
-	}
+	ctx = context.WithValue(ctx, defaultsKey{}, requestDefaults{strict: r.strictOutput, parallel: r.Parallel})
 	random := make([]byte, 16)
 	if _, err = rand.Read(random); err != nil {
 		WriteError(w, 500)

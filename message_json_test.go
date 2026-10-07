@@ -9,6 +9,44 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestToolStatePersistence(t *testing.T) {
+	states := []struct {
+		state  ToolInvocationState
+		fields string
+	}{
+		{ToolStateInputStreaming, `"input":{}`},
+		{ToolStateInputAvailable, `"input":{}`},
+		{ToolStateApprovalRequested, `"input":{},"approval":{"id":"a","descriptor":null,"requestReason":"","signature":"sig","isAutomatic":true}`},
+		{ToolStateApprovalResponded, `"input":{},"approval":{"id":"a","approved":false,"descriptor":{},"requestReason":"why","reason":""}`},
+		{ToolStateOutputAvailable, `"input":null,"output":null,"preliminary":false,"resultProviderMetadata":{}`},
+		{ToolStateOutputError, `"rawInput":null,"errorText":"","resultProviderMetadata":{}`},
+		{ToolStateOutputDenied, `"input":{},"approval":{"id":"a","approved":false,"reason":""}`},
+	}
+	for _, dynamic := range []bool{false, true} {
+		for _, tc := range states {
+			typeName := "tool-lookup"
+			if dynamic {
+				typeName = "dynamic-tool"
+			}
+			t.Run(typeName+"/"+string(tc.state), func(t *testing.T) {
+				raw := `{"id":"m","role":"assistant","parts":[{"type":"` + typeName + `","toolName":"lookup","toolCallId":"c","state":"` + string(tc.state) + `","title":"","toolMetadata":{},"callProviderMetadata":{},` + tc.fields + `}]}`
+				var message UIMessage
+				require.NoError(t, json.Unmarshal([]byte(raw), &message))
+				encoded, err := json.Marshal(message)
+				require.NoError(t, err)
+				assert.JSONEq(t, raw, string(encoded))
+			})
+		}
+	}
+	t.Run("invalid optional values", func(t *testing.T) {
+		for _, field := range []string{`"title":null`, `"preliminary":null`, `"toolMetadata":null`, `"callProviderMetadata":null`, `"approval":{"id":"a","reason":null}`} {
+			var message UIMessage
+			err := json.Unmarshal([]byte(`{"id":"m","role":"assistant","parts":[{"type":"tool-lookup","toolCallId":"c","state":"output-error","errorText":"",`+field+`}]}`), &message)
+			assert.Error(t, err, field)
+		}
+	})
+}
+
 func TestPartRoundTrip(t *testing.T) {
 	t.Run("text part", func(t *testing.T) {
 		msg := UIMessage{
@@ -333,4 +371,23 @@ func extractPartType(t *testing.T, msgJSON []byte) string {
 	var typStr string
 	require.NoError(t, json.Unmarshal(parts[0]["type"], &typStr))
 	return typStr
+}
+
+func TestUIMessage_MetadataPresence(t *testing.T) {
+	for _, part := range []Part{
+		TextPart{Text: "answer", ProviderMetadata: provider.ProviderMetadata{}},
+		ReasoningPart{Text: "thought", ProviderMetadata: provider.ProviderMetadata{}},
+		ReasoningFilePart{MediaType: "image/png", URL: "data:image/png;base64,", ProviderMetadata: provider.ProviderMetadata{}},
+		SourceURLPart{SourceID: "source", URL: "https://example.test", ProviderMetadata: provider.ProviderMetadata{}},
+		SourceDocumentPart{SourceID: "document", MediaType: "text/plain", Title: "Document", ProviderMetadata: provider.ProviderMetadata{}},
+		FilePart{MediaType: "image/png", URL: "data:image/png;base64,", ProviderMetadata: provider.ProviderMetadata{}},
+		DynamicToolUIPart{ToolName: "weather", ToolCallID: "dynamic", CallProviderMetadata: provider.ProviderMetadata{}, ResultProviderMetadata: provider.ProviderMetadata{}},
+		ToolInvocationPart{ToolName: "weather", ToolCallID: "call", CallProviderMetadata: provider.ProviderMetadata{}, ResultProviderMetadata: provider.ProviderMetadata{}},
+	} {
+		raw, err := json.Marshal(UIMessage{ID: "message", Role: RoleAssistant, Parts: []Part{part}})
+		require.NoError(t, err)
+		var persisted UIMessage
+		require.NoError(t, json.Unmarshal(raw, &persisted))
+		assert.Equal(t, part, persisted.Parts[0])
+	}
 }

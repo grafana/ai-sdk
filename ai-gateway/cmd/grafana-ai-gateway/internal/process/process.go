@@ -131,17 +131,13 @@ func Run(ctx context.Context, args []string, lookupEnv config.LookupEnv, listen 
 		return err
 	}
 	errorWriter := providerv4.NewHostErrorWriter()
-	discoveryHandler, err := discovery.New(modelCatalog, errorWriter, settings.DiscoveryResponseBytes)
-	if err != nil {
-		agentRuntime.Close()
-		return err
-	}
+	discoveryHandler := discovery.New(modelCatalog, errorWriter)
 	languageHandler, err := providerv4.New(providerv4.Config{Resolver: modelCatalog, Limits: settings.ProviderWire})
 	if err != nil {
 		agentRuntime.Close()
 		return err
 	}
-	chatHandler, err := chatcompletions.New(chatcompletions.Config{Resolver: modelCatalog, Policies: service.ChatCompletionsPolicies(file), Limits: chatcompletions.Limits{
+	chatHandler, err := chatcompletions.New(chatcompletions.Config{Resolver: modelCatalog, Limits: chatcompletions.Limits{
 		RequestBytes: settings.ProviderWire.RequestBytes, ResponseBytes: settings.ProviderWire.UnaryResponseBytes, FrameBytes: settings.ProviderWire.StreamFrameBytes, StreamParts: settings.ProviderWire.StreamParts,
 		ModelDuration: settings.ProviderWire.ModelDuration, IdleDuration: settings.ProviderWire.StreamIdleDuration, DrainDuration: settings.ProviderWire.StreamDrainDuration,
 	}})

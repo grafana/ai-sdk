@@ -2,11 +2,12 @@ package chatcompletions
 
 import (
 	"bytes"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"io"
-	"reflect"
 	"regexp"
+	"sync"
 
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/grafana/ai-sdk/schema"
@@ -93,14 +94,16 @@ type mappedRequest struct {
 	toolValidators map[string]*schema.CompiledSchema
 	jsonOutput     bool
 	strictOutput   bool
-	history        bool
 }
 
+//go:embed request_schema.json
+var requestSchemaJSON []byte
+var compileRequestSchema = sync.OnceValues(func() (*schema.CompiledSchema, error) {
+	return schema.CompileSchema(requestSchemaJSON)
+})
+
 func decodeStrict(data []byte, dst any) error {
-	if len(bytes.TrimSpace(data)) == 0 || bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
-		return errRequest
-	}
-	if !uniqueJSON(data) || !exactFields(data, reflect.TypeOf(dst).Elem()) {
+	if !present(data) {
 		return errRequest
 	}
 	d := json.NewDecoder(bytes.NewReader(data))
@@ -114,96 +117,6 @@ func decodeStrict(data []byte, dst any) error {
 	return nil
 }
 
-// The standard decoder accepts duplicate/case-insensitive fields. OpenAI JSON
-// deliberately does not, so proxy/client interpretations cannot disagree.
-func uniqueJSON(data []byte) bool {
-	d := json.NewDecoder(bytes.NewReader(data))
-	var visit func(int) bool
-	visit = func(depth int) bool {
-		if depth > 64 {
-			return false
-		}
-		token, err := d.Token()
-		if err != nil {
-			return false
-		}
-		delimiter, ok := token.(json.Delim)
-		if !ok {
-			return true
-		}
-		switch delimiter {
-		case '{':
-			seen := map[string]bool{}
-			for d.More() {
-				k, err := d.Token()
-				if err != nil {
-					return false
-				}
-				key, ok := k.(string)
-				if !ok || seen[key] {
-					return false
-				}
-				seen[key] = true
-				if !visit(depth + 1) {
-					return false
-				}
-			}
-			end, err := d.Token()
-			return err == nil && end == json.Delim('}')
-		case '[':
-			for d.More() {
-				if !visit(depth + 1) {
-					return false
-				}
-			}
-			end, err := d.Token()
-			return err == nil && end == json.Delim(']')
-		}
-		return false
-	}
-	if !visit(0) {
-		return false
-	}
-	_, err := d.Token()
-	return err == io.EOF
-}
-func exactFields(data []byte, t reflect.Type) bool {
-	if t == reflect.TypeFor[json.RawMessage]() || bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
-		return true
-	}
-	if t.Kind() == reflect.Pointer {
-		return exactFields(data, t.Elem())
-	}
-	if t.Kind() == reflect.Struct {
-		var values map[string]json.RawMessage
-		if json.Unmarshal(data, &values) != nil {
-			return false
-		}
-		allowed := map[string]reflect.Type{}
-		for i := 0; i < t.NumField(); i++ {
-			f := t.Field(i)
-			allowed[f.Tag.Get("json")] = f.Type
-		}
-		for key, value := range values {
-			ft, ok := allowed[key]
-			if !ok || !exactFields(value, ft) {
-				return false
-			}
-		}
-	}
-	if t.Kind() == reflect.Slice {
-		var values []json.RawMessage
-		if json.Unmarshal(data, &values) != nil {
-			return false
-		}
-		for _, v := range values {
-			if !exactFields(v, t.Elem()) {
-				return false
-			}
-		}
-	}
-	return true
-}
 func present(raw json.RawMessage) bool {
 	return len(raw) > 0 && !bytes.Equal(bytes.TrimSpace(raw), []byte("null"))
 }
@@ -212,6 +125,20 @@ func ptr[T any](v T) *T      { return &v }
 
 func mapRequest(data []byte) (mappedRequest, error) {
 	var r mappedRequest
+	var document any
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	if decoder.Decode(&document) != nil || decoder.Decode(new(any)) != io.EOF {
+		return r, errRequest
+	}
+	data, err := json.Marshal(document)
+	if err != nil {
+		return r, errRequest
+	}
+	validator, err := compileRequestSchema()
+	if err != nil || validator.Validate(data) != nil {
+		return r, errRequest
+	}
 	if decodeStrict(data, &r.request) != nil || r.Model == "" || len(r.Model) > 256 || len(r.Messages) == 0 || len(r.Messages) > 1024 || len(r.Tools) > 128 || (r.N != nil && *r.N != 1) || boolValue(r.Store) || (r.StreamOptions != nil && !boolValue(r.Stream)) {
 		return r, errRequest
 	}
@@ -292,7 +219,6 @@ func mapRequest(data []byte) (mappedRequest, error) {
 				}
 				used[call.ID] = true
 				pending[call.ID] = call.Function.Name
-				r.history = true
 				p.Content = append(p.Content, provider.ToolCallPart(call.ID, call.Function.Name, json.RawMessage(call.Function.Arguments)))
 			}
 		case roleTool:
@@ -305,7 +231,6 @@ func mapRequest(data []byte) (mappedRequest, error) {
 			}
 			p.Content = []provider.ContentPart{provider.ToolResultPart(*m.ToolCallID, pending[*m.ToolCallID], &provider.ToolResultOutput{Type: provider.ToolOutputText, Text: text})}
 			delete(pending, *m.ToolCallID)
-			r.history = true
 		default:
 			return r, errRequest
 		}
@@ -401,7 +326,7 @@ func jsonObject(raw []byte) bool {
 	return json.Unmarshal(raw, &object) == nil && object != nil
 }
 func compileSchema(raw []byte) (*schema.CompiledSchema, error) {
-	if len(raw) > 32768 || !jsonObject(raw) || !uniqueJSON(raw) {
+	if len(raw) > 32768 || !jsonObject(raw) {
 		return nil, errRequest
 	}
 	var value any
@@ -473,13 +398,4 @@ func schemaVocabulary(obj map[string]any) bool {
 		}
 	}
 	return true
-}
-
-func (r mappedRequest) requirements() Requirements {
-	requirements := Requirements{History: r.history, JSONOutput: r.jsonOutput, StrictJSONOutput: r.strictOutput}
-	if r.Parallel != nil {
-		requirements.HasParallelTools = true
-		requirements.ParallelToolCalls = *r.Parallel
-	}
-	return requirements
 }

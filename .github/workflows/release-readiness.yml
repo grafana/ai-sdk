@@ -1,0 +1,32 @@
+name: Release readiness
+
+on:
+  pull_request:
+
+permissions: {}
+
+jobs:
+  release-readiness:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+        with:
+          version: "2026.5.4"
+          experimental: true
+
+      - name: Read live release candidate metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: gh api "repos/grafana/ai-sdk/pulls/$PR_NUMBER" > "$RUNNER_TEMP/release-pr.json"
+
+      - name: Validate selected library publication readiness
+        run: python3 scripts/release_readiness.py --pull-request "$RUNNER_TEMP/release-pr.json"

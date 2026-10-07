@@ -7,10 +7,18 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	v4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 
 	"go.yaml.in/yaml/v4"
+)
+
+const (
+	maxModelRows   = 1024
+	maxCandidates  = 16
+	maxAliases     = 128
+	maxStringBytes = 2048
 )
 
 var publicIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$`)
@@ -112,6 +120,9 @@ func (file File) Validate() error {
 				return fmt.Errorf("config: providers.%s.providerName is only supported for openai-compatible providers", name)
 			}
 		case "openai-compatible":
+			if provider.ProviderName != "" && strings.TrimSpace(provider.ProviderName) == "" {
+				return fmt.Errorf("config: providers.%s.providerName must not be blank", name)
+			}
 			if strings.TrimSpace(provider.BaseURL) == "" {
 				return fmt.Errorf("config: providers.%s.baseURL is required for openai-compatible providers", name)
 			}
@@ -134,6 +145,21 @@ func (file File) Validate() error {
 	}
 	if len(file.Models) == 0 {
 		return fmt.Errorf("config: at least one model is required")
+	}
+	rowCount := 0
+	for _, model := range file.Models {
+		if len(model.Aliases) > maxAliases || len(model.Fallback) >= maxCandidates || len(model.Aliases)+1 > maxModelRows-rowCount {
+			return fmt.Errorf("config: configured discovery cardinality exceeds limit")
+		}
+		rowCount += len(model.Aliases) + 1
+		if !validDiscoveryText(model.Name) || !validDiscoveryText(model.Description) || !validDiscoveryText(model.Primary.Provider) || !validDiscoveryText(model.Primary.Model) || !validDiscoveryText(file.Providers[model.Primary.Provider].ProviderName) {
+			return fmt.Errorf("config: configured discovery text is invalid or exceeds limit")
+		}
+		for _, candidate := range model.Fallback {
+			if !validDiscoveryText(candidate.Provider) || !validDiscoveryText(candidate.Model) || !validDiscoveryText(file.Providers[candidate.Provider].ProviderName) {
+				return fmt.Errorf("config: configured candidate text is invalid or exceeds limit")
+			}
+		}
 	}
 	publicIDs := make(map[string]string, len(file.Models))
 	for id, model := range file.Models {
@@ -209,6 +235,10 @@ func (file File) ResolveProviderSecrets(lookupEnv LookupEnv) (map[string]Resolve
 		resolved[name] = ResolvedProvider{Type: provider.Type, APIKey: value, BaseURL: provider.BaseURL, ProviderName: provider.ProviderName}
 	}
 	return resolved, nil
+}
+
+func validDiscoveryText(value string) bool {
+	return len(value) <= maxStringBytes && utf8.ValidString(value)
 }
 
 func validatePublicID(value string) error {

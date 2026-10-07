@@ -26,7 +26,7 @@ func TestSourcesUnaryTitleAndIdentity(t *testing.T) {
 			require.NoError(t, json.Unmarshal(encoded, &value))
 			assert.Equal(t, tc.want, value.Content[0]["title"])
 			assert.Equal(t, value.Content[0]["id"], value.Content[1]["id"])
-			assert.NotContains(t, string(encoded), "private-id")
+			assert.Equal(t, "private-id", value.Content[0]["id"])
 			assert.NotContains(t, value.Content[0], "filename")
 		})
 	}

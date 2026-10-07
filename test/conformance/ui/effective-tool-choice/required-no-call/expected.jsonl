@@ -1,0 +1,11 @@
+{"type":"start","messageId":"message-1"}
+{"type":"start-step"}
+{"type":"reasoning-start","id":"1"}
+{"type":"reasoning-delta","id":"1","delta":"I will not call the tool."}
+{"type":"reasoning-end","id":"1"}
+{"type":"text-start","id":"2"}
+{"type":"text-delta","id":"2","delta":"No tool call."}
+{"type":"text-end","id":"2"}
+{"type":"error","errorText":"tool choice violated"}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"error"}

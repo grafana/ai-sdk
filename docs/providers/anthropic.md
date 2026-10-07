@@ -24,6 +24,18 @@ Pass the model to [Generate text from Go](../getting-started/backend-only.md) or
 appear on the first model call. Create the model once and reuse its underlying
 HTTP resources across requests.
 
+## Configure call headers
+
+Use `aisdk.WithHeaders` for request-scoped headers. Ordinary call headers override
+configured headers with the same name. Anthropic beta headers instead combine
+configured, per-call, and feature-required tokens into a normalized, deduplicated
+union. The same behavior applies to direct API and Vertex calls.
+
+Native call results retain outbound JSON and response headers for diagnostics.
+These can contain sensitive prompt or backend data; do not automatically log or
+forward them. Raw streaming events are opt-in and remain separate from normalized
+content and frontend UI streams.
+
 ## Use Vertex AI
 
 `NewVertex` resolves Google Application Default Credentials and can fail during
@@ -70,9 +82,23 @@ Reasoning increases token usage and latency. Decide whether reasoning content
 should be forwarded to a frontend; UI streams include it by default unless
 configured otherwise.
 
+Some models always think and reject forced tool use. On `claude-sonnet-5-5`,
+disabled and budget-based thinking, a `required` tool choice, and a named tool
+choice all fail at the API. The provider rewrites them instead: root reasoning
+`none` sends `between_tools` thinking, the model's lowest setting, and a forced
+tool choice is sent as `auto` with an `unsupported` warning. Tell the model in
+the prompt to call the tool, and check the result for the tool call.
+
 Anthropic-specific options also cover effort, beta features, remote MCP servers,
 containers, task budgets, and tool streaming. Enable only options supported by
-the chosen model.
+the chosen model. Large-default-output unary calls need a context deadline or
+an explicit Anthropic request timeout; otherwise the underlying client may
+require streaming. See [Retry and timeout](../guides/retry-and-timeout.md).
+
+When configuring remote MCP servers, use pointer fields to distinguish omitted
+authorization tokens and `enabled` from explicit empty strings or false. A
+non-nil empty `allowedTools` slice sends an empty list. Configure servers only
+for authorized callers and models, and protect tokens in request metadata.
 
 ## Avoid duplicate retry policy
 

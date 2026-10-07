@@ -30,6 +30,9 @@ func main() {
 		AbortBetweenSteps bool                            `json:"abortBetweenSteps"`
 		CancelAfterMS     int                             `json:"cancelAfterMs"`
 		PreferBytes       bool                            `json:"preferBytes"`
+		ToolResults       map[string][]json.RawMessage    `json:"toolResults"`
+		Steps             int                             `json:"steps"`
+		Instructions      string                          `json:"instructions"`
 	}
 	if err := json.NewDecoder(io.LimitReader(os.Stdin, 1<<20)).Decode(&input); err != nil {
 		emit(map[string]any{"error": map[string]any{"message": "invalid capture input"}})
@@ -102,6 +105,24 @@ func main() {
 	model, err := client.LanguageModel(input.ModelID)
 	if err != nil {
 		emitError(err)
+		return
+	}
+	if input.Mode == "recorded-ui" {
+		if err := captureRecordedUI(ctx, model, input.Options, input.Instructions, input.ToolResults, input.Steps); err != nil {
+			emitError(err)
+		}
+		return
+	}
+	if input.Mode == "metadata-observe" {
+		if err := captureMetadataObservation(ctx, model, input.Options); err != nil {
+			emitError(err)
+		}
+		return
+	}
+	if input.Mode == "metadata-unary-replay" || input.Mode == "metadata-stream-replay" {
+		if err := captureMetadataReplay(ctx, model, input.Options, input.Mode == "metadata-stream-replay"); err != nil {
+			emitError(err)
+		}
 		return
 	}
 	if input.Mode == "stream" {

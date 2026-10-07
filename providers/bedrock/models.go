@@ -32,6 +32,7 @@ var knownModelIDs = []string{
 	"anthropic.claude-sonnet-4-5-20250929-v1:0",
 	"anthropic.claude-sonnet-4-6-v1",
 	"anthropic.claude-sonnet-5",
+	"anthropic.claude-sonnet-5-5",
 	"anthropic.claude-v2",
 	"anthropic.claude-v2:1",
 	"cohere.command-light-text-v14",

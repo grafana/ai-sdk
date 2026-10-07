@@ -189,7 +189,7 @@ The process SHALL construct dependencies and bind every configured listener befo
 
 The registered low-level Gateway client MUST work through a test-only edge shim with the real command. The shim MUST use fixed dummy credentials and scope outcomes, not production CAP verification or policy evaluation. It SHALL strip Cloud and internal credentials, replace `X-Scope-OrgID` with its stack assertion, and strip other client identity headers. It SHALL forward the unchanged path.
 
-Low-level model-call evidence SHALL continue to use `doGenerate` and `doStream` with explicit `maxOutputTokens`. Equivalent high-level Go `StreamText` and registered TypeScript `streamText` text-only calls with no tools or explicit choice SHALL also work through the test-only edge shim and real command when their remaining options are within the supported subset. Each incoming request SHALL preserve the automatic choice prepared by its SDK. Default unary token limits SHALL remain documented as a separate compatibility gap; body headers a high-level TypeScript call adds are mapped. Tests SHALL NOT rewrite client requests to conceal body headers or tool-choice defaults.
+Low-level `doGenerate` and `doStream` calls SHALL support both explicit `maxOutputTokens` and an omitted limit, using provider/model defaults when omitted. High-level Go `StreamText` and registered TypeScript `generateText` and `streamText` text-only calls with no tools or explicit choice SHALL also work through the test-only edge shim and real command when their remaining options are within the supported subset. Each incoming request SHALL preserve the automatic choice and supported body headers prepared by its SDK, including TypeScript `generateText`'s User-Agent header. Tests SHALL NOT rewrite client requests to conceal body headers or tool-choice defaults.
 
 Inbound credentials and assertions MUST NOT become provider credentials or appear in public application diagnostics. Application authentication failures SHALL use the fixed ProviderWire authentication document. Telemetry SHALL retain one registry, existing HTTP metrics, and fixed authentication source/outcome values without credential or customer-ID labels. Middleware SHALL preserve `responseWriter.Unwrap` for streaming flush support.
 
@@ -201,7 +201,7 @@ Inbound credentials and assertions MUST NOT become provider credentials or appea
 | Case | Expected result |
 | --- | --- |
 | Valid dummy credentials and read scope | Discovery returns the configured public catalog without a token exchange. |
-| Valid dummy credentials and write scope | Unary generation and streaming return the fake provider's expected results with explicit `maxOutputTokens`. |
+| Valid dummy credentials and write scope | Unary generation and streaming return the fake provider's expected results using an explicit output-token limit or provider/model defaults. |
 | Invalid dummy credentials | The shim rejects the request; application and provider call counts remain zero. |
 | Read-only inference or write-only discovery | The shim rejects the configured scope denial; application and provider call counts remain zero. |
 | Spoofed client assertions with valid dummy credentials | The application receives the shim's stack assertion; the shim strips other client identity headers. |
@@ -235,8 +235,10 @@ Inbound credentials and assertions MUST NOT become provider credentials or appea
 #### Scenario: Compatibility claims match test evidence
 
 - **WHEN** command coverage is recorded after implementation
-- **THEN** the parity map identifies the registered baseline, low-level calls with explicit output-token limits, and the proven high-level text-only streaming cases
-- **AND** it records high-level TypeScript `generateText` body headers, default unary token limits, and effectful fallback as remaining compatibility work
+- **THEN** the parity map identifies the registered baseline, low-level calls with explicit and omitted output-token limits, and the proven high-level text-only unary and streaming cases
+- **AND** it records unwrapped TypeScript `generateText` User-Agent forwarding and provider/model default output-token behavior as supported paths
+- **AND** it SHALL distinguish newly proved configured-fallback coverage for mapped local-function tools/history/choices, files and reasoning from still-missing provider-executed/MCP codecs and actual Cloud/BYOK support, rather than list all effectful fallback as remaining work
+- **AND** configured-route and dummy-edge evidence SHALL NOT establish production CAP verification, deployed access-policy enforcement, request-scoped BYOK or account-mode support beyond the tested boundary
 - **AND** fake-provider fixtures are not presented as recorded provider conformance evidence
 
 #### Scenario: High-level text-only streaming through the edge
@@ -244,4 +246,12 @@ Inbound credentials and assertions MUST NOT become provider credentials or appea
 - **WHEN** Go `StreamText` and registered TypeScript `streamText` send equivalent text prompts through the shim and real command with no tools or explicit choice
 - **THEN** each observed inbound model request SHALL contain automatic tool choice without request rewriting
 - **AND** each call SHALL reach the fake provider and return the expected text
+- **AND** the existing authentication, credential stripping, identity, and telemetry privacy guarantees SHALL remain intact
+
+#### Scenario: High-level text-only unary generation through the edge
+
+- **WHEN** registered TypeScript `generateText` sends a text prompt through the shim and real command with an explicit or omitted output-token limit
+- **THEN** the observed inbound model request SHALL preserve its SDK-generated automatic tool choice and User-Agent body header without request rewriting
+- **AND** the fake provider SHALL receive that User-Agent and the explicit limit or its model default
+- **AND** the call SHALL return the expected text with one provider invocation
 - **AND** the existing authentication, credential stripping, identity, and telemetry privacy guarantees SHALL remain intact

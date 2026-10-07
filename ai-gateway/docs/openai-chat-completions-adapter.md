@@ -21,7 +21,7 @@ Gateway intentionally rejects persistence even if an upstream account defaults
 to storing completions.
 
 Provider-domain conversion remains on the registered Vercel baseline in
-`test/conformance/upstream.yaml`: commit `ee3169b3c4880e2abe4d0d7c781243bb81822ec4`.
+`test/conformance/upstream.yaml`: commit `5d12eaa6caa193d3901cbab98a734403eb6bf622`.
 Gateway source tests and the container build use the explicit `go.gateway.work`
 workspace so the adapter runs with candidate SDK/provider source. Standalone
 module checks separately verify the immutable published dependency versions. Synthetic local upstreams in `test/openai-chat-completions-adapter` prove mappings and SDK
@@ -43,32 +43,31 @@ Bearer credentials must go through the credential-stripping edge.
 Unknown adapter routes (including `/v1/models`) receive a safe JSON 404. Wrong
 Chat methods receive JSON 405 plus Allow: POST. Raw-path aliases, query strings,
 non-JSON bodies and encoded request bodies are not accepted. Authentication
-precedes body decoding. Error bodies never include upstream messages, request
-content, credentials or backend identity. Organization/project headers are not
+precedes body decoding. Fixed error envelopes do not include upstream messages, request
+content or credentials. Native response identity and warnings are developer-visible. Organization/project headers are not
 forwarded or interpreted as authorization.
 
-## Finite route capability matrix
+## Configured routes and native capabilities
 
-Route policies are frozen by host composition before middleware wraps backend
-identity, then supplied to the adapter as provider-agnostic canonical request
-policies. The adapter does not inspect provider type or backend model identity.
-Public aliases resolve to canonical public response model IDs. Other configured
-backend IDs remain usable through ProviderWire but receive adapter 400.
+Every configured OpenAI Responses, Anthropic or OpenAI-compatible model is eligible,
+including new model IDs and custom compatible provider names. Aliases select the
+canonical route; returned identity comes from the provider where available.
+The catalog composes its ordinary ordered fallback for every mapped request,
+including function tools/history, structured output and reasoning. It does not
+intersect candidate options or require matching provider families.
 
-| Profile / exact model IDs | Text/scalars | Functions/history | Structured output | Reasoning |
-| --- | --- | --- | --- | --- |
-| `openai`: `gpt-4.1`, `gpt-4.1-mini`, `gpt-4o`, `gpt-4o-mini` | temperature, top_p, token bound; no seed/penalties/stop | non-strict or strict, auto/none/required/named; parallel bool | json_object, json_schema | rejected |
-| `openai`: `o3`, `o3-mini`, `o4-mini` | token bound; no temperature/top_p/seed/penalties/stop | rejected, including history | json_object, json_schema | omitted provider default; low/medium/high |
-| `anthropic`: `claude-sonnet-4-20250514`, `claude-3-5-haiku-20241022` | temperature 0..1, top_p, stop; tokens 1..4096 | non-strict only, auto/none/required/named; no parallel bool | rejected | rejected |
-| `openai-compatible`: `gpt-4o`, `gpt-4o-mini`, default providerName only | temperature 0..2, top_p, penalties, seed, stop, token bound | strict/non-strict, auto/none/required/named; no parallel bool | rejected | rejected |
-| Ordered fallback containing only the above Anthropic profiles | common text/scalars; tokens 1..4096 | rejected, including history and non-auto choice | rejected | rejected |
+Chat defaults are translated at each candidate's native boundary before invocation.
+Only Chat requests activate this translation; ProviderWire options remain unchanged.
+Responses receives `store: false`, the Chat schema strictness and `parallelToolCalls`.
+Compatible receives storage and `parallel_tool_calls` in its configured namespace,
+including names that coincide with another provider's namespace. Anthropic receives
+`disableParallelToolUse` when requested. Each call gets its own option map.
 
-Compatible providerName must be empty or `openai-compatible`; custom namespaces
-are not certified. An arbitrary compatible endpoint still must implement the
-documented protocol; a model name alone is not provider attestation. Fallbacks
-containing Responses or compatible candidates are rejected before invocation:
-their explicit storage override cannot pass the shared text-only fallback guard.
-That guard is not weakened.
+Native adapters own model capability checks and defaults. Unsupported native settings
+can produce warnings rather than fail a successful generation. The adapter still
+rejects unsupported Chat protocol fields and output shapes it cannot represent.
+Selected output or encoding failure never triggers another fallback attempt.
+Functions execute in the consumer application; continuation starts a new request.
 
 ## Defaults and request boundaries
 
@@ -76,13 +75,10 @@ That guard is not weakened.
 - `store`: omitted/null/false only. Responses and compatible requests explicitly
   send false; the adapter has no persistence. This does not waive upstream abuse
   monitoring or retention policies outside the store parameter.
-- Function `strict`: omitted/null/false means non-strict. Responses and compatible
-  receive false explicitly; Anthropic omits its unsupported strict setting.
+- Function `strict`: omitted/null/false means non-strict. Native adapters receive explicit false and apply their own capability handling.
 - Tools absent: no tool choice is generated. Tools present: choice defaults auto.
-  Explicit none, required, or one declared function is supported where listed.
-- Sampling scalars are omitted when absent/null; backend defaults apply. Anthropic
-  and fallback use explicit max output tokens 4096 when absent/null; other profiles
-  leave it unset. `max_tokens` and `max_completion_tokens` cannot appear together;
+  Explicit none, required, or one declared function maps to the provider contract.
+- Sampling scalars are omitted when absent/null; backend defaults apply. Native token defaults apply when the bound is absent/null; there is no adapter-specific 4096-token cap. `max_tokens` and `max_completion_tokens` cannot appear together;
   either maps to the provider output-token bound (including reasoning where supported).
 - JSON schema strict omitted/null/false remains false. Only explicit true enforces
   the schema locally on stop. JSON syntax is checked for successful JSON output;
@@ -98,8 +94,10 @@ results are strings, paired by unique call IDs with a preceding assistant call;
 all pending calls must be resolved before another assistant/user/system message.
 Functions require object parameters and JSON-object arguments. Limits include
 1024 messages, 128 tools, 256-byte IDs, and names matching `[A-Za-z0-9_-]{1,64}`.
-Stop is one string or 1..4 strings. Unknown fields, duplicate JSON object keys and
-case-altered field names are rejected instead of ignored.
+Stop is one string or 1..4 strings. A closed explicit request schema rejects unknown and case-altered protocol fields.
+Standard JSON decoding uses the last duplicate key, including nested objects; escaped
+lone surrogates follow Go replacement semantics. Schema validation and typed mapping
+consume the same normalized document. Raw invalid UTF-8 and trailing JSON fail.
 Explicit strict function outputs are checked against the supplied schema before
 unary success or streaming terminal success; streamed argument fragments can
 precede a terminal validation error.
@@ -112,8 +110,7 @@ keywords are rejected. This is narrower than general JSON Schema by design.
 
 Unsupported: developer messages, named messages, multimodal/file/audio content,
 refusals, hosted/custom tools and execution, approvals, logprobs/logit_bias,
-prediction, metadata, user, service_tier, response retrieval/deletion, seed on
-Responses/Anthropic, and streaming obfuscation. Unsupported provider-domain output arms fail
+prediction, metadata, user, service_tier, response retrieval/deletion and streaming obfuscation. Unsupported provider-domain output arms fail
 safely rather than disappear. Private reasoning content is deliberately not
 exposed as assistant text; signed reasoning tool replay is not supported.
 Successful stop without represented nonempty text or function calls is rejected,
@@ -123,7 +120,13 @@ provider-domain result.
 
 ## Streaming and lifecycle
 
-One opaque chatcmpl ID, creation timestamp and canonical model remain stable.
+The first content/finish opens the stream after consuming preceding metadata.
+Available native ID, model and timestamp are used. Missing fields use one generated
+`chatcmpl-` ID, request timestamp or resolved route model, respectively; a route
+fallback is not a claim of actual selected backend identity. These three values
+remain stable for all chunks. Later identity is retained in the extension below.
+This adds no wait after content arrives and does not change fallback selection at
+the first provider part.
 The first chunk declares assistant role; text follows immediately. Tool indices
 follow first-seen order; IDs/type/name are emitted once, argument fragments once.
 The final provider call must match accumulated fragments. A finish chunk, optional
@@ -150,6 +153,38 @@ or throughput guarantees. Deployments need edge/process admission policies for
 aggregate load. Tests exercise finite 16-way real-command load and 32-way adapter
 load, eight concurrent ProviderWire calls with operational endpoint checks, and
 a 32-client streaming cancellation storm, not an unbounded-load claim.
+
+## Grafana diagnostics extension
+
+Successful responses can include the optional Grafana-owned `grafana` object:
+
+```json
+{
+  "grafana": {
+    "warnings": [{"type":"unsupported","feature":"seed","details":"..."}],
+    "native_response": {"id":"late-id","model":"actual-model","created":123}
+  }
+}
+```
+
+`warnings` preserves native warning type, feature/setting, message/details and order.
+Warnings are returned with unary output or the next stream chunk after they arrive;
+they do not convert a successful generation into HTTP 502. `native_response` is
+stream-only and carries metadata received after public identity was fixed, without
+rewriting earlier chunks. Its absent fields remain absent. These fields are an
+extension of the Chat contract, not an OpenAI feature or a complete attempt history.
+
+Go clients read `result.JSON.ExtraFields["grafana"].Raw()` or the equivalent field
+on each `stream.Current()` chunk. JavaScript clients can access `result.grafana`
+through a local extension type and inspect every streamed chunk. Ordinary SDK
+accumulators are used for text/tools; preservation of extension fields in their
+final assembled result is not promised, so collect diagnostics during iteration.
+
+Diagnostics obey response/frame budgets and UTF-8 validation. At most 1024 pending
+warnings are retained; aggregate diagnostic input and encoded output are bounded.
+Oversized or malformed diagnostics fail explicitly without truncation. Raw transport
+bodies/headers and credentials are not added by this extension. Operator capture
+settings do not control whether these ordinary developer diagnostics are returned.
 
 ## Verification ownership
 

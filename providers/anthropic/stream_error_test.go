@@ -122,6 +122,21 @@ func TestDoStream_InitialSSEError(t *testing.T) {
 	}
 }
 
+func TestDoStream_RawInitialError(t *testing.T) {
+	for _, tc := range streamErrorCases {
+		t.Run(tc.name, func(t *testing.T) {
+			m, closeServer := newSSEErrorModel(t, tc.errorType, false)
+			defer closeServer()
+			result, err := m.DoStream(t.Context(), provider.CallOptions{IncludeRawChunks: true})
+			require.Error(t, err)
+			assert.Nil(t, result)
+			apiErr := requireAPICallError(t, err, tc.errorType)
+			assert.Equal(t, tc.initialStatus, apiErr.StatusCode)
+			assert.Equal(t, tc.initialRetry, apiErr.IsRetryable)
+		})
+	}
+}
+
 func TestDoStream_PostOutputSSEError(t *testing.T) {
 	for _, tc := range streamErrorCases {
 		t.Run(tc.name, func(t *testing.T) {

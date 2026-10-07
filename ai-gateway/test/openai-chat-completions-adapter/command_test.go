@@ -127,7 +127,7 @@ func (u *upstream) last() map[string]any {
 }
 func (u *upstream) count() int { u.mu.Lock(); defer u.mu.Unlock(); return len(u.requests) }
 
-func startCommand(t *testing.T, backend, jwks string) (string, func()) {
+func startCommand(t *testing.T, backend, jwks string, customConfig ...string) (string, func()) {
 	t.Helper()
 	dir := t.TempDir()
 	binary := filepath.Join(dir, "gateway")
@@ -143,6 +143,9 @@ func startCommand(t *testing.T, backend, jwks string) (string, func()) {
 	output, err := build.CombinedOutput()
 	require.NoError(t, err, string(output))
 	config := fmt.Sprintf("providers:\n  test:\n    type: openai\n    apiKeyEnv: CHAT_COMPLETIONS_ADAPTER_TEST_KEY\n    baseURL: %s/v1\nmodels:\n  public/chat:\n    name: Chat\n    primary:\n      provider: test\n      model: gpt-4.1\n    aliases: [chat]\n  public/reasoning:\n    name: Reasoning\n    primary:\n      provider: test\n      model: o3-mini\n", backend)
+	if len(customConfig) > 0 {
+		config = customConfig[0]
+	}
 	configPath := filepath.Join(dir, "models.yaml")
 	require.NoError(t, os.WriteFile(configPath, []byte(config), 0600))
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -255,14 +258,41 @@ func TestOfficialSDKRealCommand(t *testing.T) {
 		}
 		assert.Equal(t, before, fake.count())
 	})
-	t.Run("unary and canonical identity", func(t *testing.T) {
+	t.Run("unary and native identity", func(t *testing.T) {
 		result, err := client.Chat.Completions.New(context.Background(), sdkParams(t, ""))
 		require.NoError(t, err)
-		assert.Equal(t, "public/chat", result.Model)
+		assert.Equal(t, "gpt-4.1", result.Model)
+		assert.Equal(t, "resp_private", result.ID)
+		assert.Equal(t, int64(1), result.Created)
 		assert.Equal(t, "hello", result.Choices[0].Message.Content)
 		assert.Equal(t, int64(5), result.Usage.TotalTokens)
 		assert.Equal(t, false, fake.last()["store"])
 		assert.Equal(t, "gpt-4.1", fake.last()["model"])
+	})
+	t.Run("warning extension through official SDK", func(t *testing.T) {
+		params := sdkParams(t, `,"seed":7`)
+		response, err := client.Chat.Completions.New(context.Background(), params)
+		require.NoError(t, err)
+		field, ok := response.JSON.ExtraFields["grafana"]
+		require.True(t, ok)
+		var extension struct {
+			Warnings []struct{ Type, Feature string }
+		}
+		require.NoError(t, json.Unmarshal([]byte(field.Raw()), &extension))
+		require.NotEmpty(t, extension.Warnings)
+		assert.Equal(t, "seed", extension.Warnings[0].Feature)
+		stream := client.Chat.Completions.NewStreaming(context.Background(), params)
+		seen := false
+		for stream.Next() {
+			chunk := stream.Current()
+			if field, ok := chunk.JSON.ExtraFields["grafana"]; ok {
+				require.NoError(t, json.Unmarshal([]byte(field.Raw()), &extension))
+				seen = true
+			}
+		}
+		require.NoError(t, stream.Err())
+		require.NoError(t, stream.Close())
+		assert.True(t, seen)
 	})
 	tools := `,"tools":[{"type":"function","function":{"name":"weather","parameters":{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}}}]`
 	t.Run("raw semantic defaults across modes", func(t *testing.T) {
@@ -525,4 +555,78 @@ func TestOfficialSDKCloudCommand(t *testing.T) {
 	}
 	require.NoError(t, stream.Err())
 	assert.Equal(t, "hello", text)
+}
+
+func TestOfficialSDK_HeterogeneousFallback(t *testing.T) {
+	var mu sync.Mutex
+	var requests []map[string]any
+	var paths []string
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+		mu.Lock()
+		requests = append(requests, body)
+		paths = append(paths, r.URL.Path)
+		mu.Unlock()
+		if r.URL.Path == "/v1/responses" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(503)
+			_, _ = io.WriteString(w, `{"error":{"message":"retry","type":"server_error"}}`)
+			return
+		}
+		call := map[string]any{"id": "call_weather", "type": "function", "function": map[string]any{"name": "weather", "arguments": `{"city":"Rio"}`}}
+		base := map[string]any{"id": "compatible-native", "model": "new-custom-model", "created": 123}
+		w.Header().Set("Content-Type", "application/json")
+		if body["stream"] != true {
+			base["object"] = "chat.completion"
+			base["choices"] = []any{map[string]any{"index": 0, "message": map[string]any{"role": "assistant", "tool_calls": []any{call}}, "finish_reason": "tool_calls"}}
+			_ = json.NewEncoder(w).Encode(base)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		call["index"] = 0
+		for _, choice := range []any{map[string]any{"index": 0, "delta": map[string]any{"tool_calls": []any{call}}}, map[string]any{"index": 0, "delta": map[string]any{}, "finish_reason": "tool_calls"}} {
+			base["object"] = "chat.completion.chunk"
+			base["choices"] = []any{choice}
+			b, _ := json.Marshal(base)
+			_, _ = fmt.Fprintf(w, "data: %s\n\n", b)
+		}
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer backend.Close()
+	token, _, jwks := verifiedToken(t)
+	config := fmt.Sprintf("providers:\n  first:\n    type: openai\n    apiKeyEnv: CHAT_COMPLETIONS_ADAPTER_TEST_KEY\n    baseURL: %s/v1\n  second:\n    type: openai-compatible\n    providerName: openai\n    apiKeyEnv: CHAT_COMPLETIONS_ADAPTER_TEST_KEY\n    baseURL: %s/v1\nmodels:\n  public/chat:\n    name: Chat\n    primary:\n      provider: first\n      model: gpt-4.1\n    fallback:\n      - provider: second\n        model: new-custom-model\n    aliases: [chat]\n", backend.URL, backend.URL)
+	address, _ := startCommand(t, backend.URL, jwks.URL, config)
+	client := openai.NewClient(option.WithBaseURL(address+"/v1"), option.WithAPIKey(token), option.WithMaxRetries(0))
+	for _, streaming := range []bool{false, true} {
+		params := sdkParams(t, `,"parallel_tool_calls":false,"tools":[{"type":"function","function":{"name":"weather","parameters":{"type":"object","properties":{"city":{"type":"string"}}}}}]`)
+		if !streaming {
+			result, err := client.Chat.Completions.New(context.Background(), params)
+			require.NoError(t, err)
+			assert.Equal(t, "compatible-native", result.ID)
+			assert.Equal(t, "new-custom-model", result.Model)
+			require.Len(t, result.Choices[0].Message.ToolCalls, 1)
+		} else {
+			stream := client.Chat.Completions.NewStreaming(context.Background(), params)
+			var acc openai.ChatCompletionAccumulator
+			for stream.Next() {
+				chunk := stream.Current()
+				assert.Equal(t, "compatible-native", chunk.ID)
+				assert.Equal(t, int64(123), chunk.Created)
+				acc.AddChunk(chunk)
+			}
+			require.NoError(t, stream.Err())
+			require.NoError(t, stream.Close())
+			require.Len(t, acc.Choices[0].Message.ToolCalls, 1)
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	require.Len(t, requests, 4)
+	assert.Equal(t, []string{"/v1/responses", "/v1/chat/completions", "/v1/responses", "/v1/chat/completions"}, paths)
+	for _, body := range requests {
+		assert.Equal(t, false, body["store"])
+		assert.Equal(t, false, body["parallel_tool_calls"])
+		assert.NotContains(t, body, "parallelToolCalls")
+	}
 }
