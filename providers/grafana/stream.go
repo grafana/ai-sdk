@@ -342,7 +342,7 @@ func decodeStreamPart(data []byte) (provider.StreamPart, error) {
 		}
 		part.RawValue = value.RawValue
 	case provider.PartError:
-		failure, err := decodeStreamError(fields["error"])
+		failure, err := decodeStreamError(data)
 		if err != nil {
 			return invalid()
 		}

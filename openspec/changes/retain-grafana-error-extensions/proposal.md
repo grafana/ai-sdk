@@ -1,12 +1,12 @@
 ## Why
 
-The independent Grafana client currently discards additive Gateway failure data, preventing callers from inspecting diagnostics already present in a valid response. This is the client-only first part of #322 under the approved #321 contract, stacked on #332.
+The independent Grafana client currently discards additive Gateway failure data, preventing callers from inspecting diagnostics already present in a valid response. This is the client-only first part of #322 under the approved #321 contract, based on main after #332 merged.
 
 ## What Changes
 
 - Retain complete bounded valid HTTP error envelopes in the existing API-call cause's Data and ResponseBody.
 - Retain exact committed SSE error.data in Data, leaving ResponseBody empty instead of manufacturing an HTTP response.
-- Simplify exact-name decoding with private named DTOs while preserving classification, status-derived retryability, bounds and ordered consumption.
+- Decode HTTP and SSE error envelopes directly into private DTOs with standard Go JSON member matching, preserving classification, status-derived retryability, bounds and ordered consumption.
 - Add focused regression tests and client guidance without implementing Gateway evidence production.
 
 ## Capabilities

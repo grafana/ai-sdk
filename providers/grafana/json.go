@@ -16,22 +16,6 @@ func decodeObject(data []byte) (map[string]json.RawMessage, error) {
 	return object, nil
 }
 
-type jsonField struct {
-	name   string
-	target any
-}
-
-func decodeObjectMembers(object map[string]json.RawMessage, fields ...jsonField) error {
-	for _, field := range fields {
-		if raw, ok := object[field.name]; ok {
-			if err := json.Unmarshal(raw, field.target); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
 func decodeFields(data []byte, target any, names ...string) error {
 	object, err := decodeObject(data)
 	if err != nil {

@@ -2,16 +2,16 @@
 
 ## Scope and reference
 
-First PR of #322, based on #332 at c32f3f6d. This change owns only independent client error retention and its documentation/tests. Collection/schema and production emission belong to the next two changes; this PR does not claim those are implemented.
+First PR of #322, initially based on #332 at c32f3f6d and subsequently rebased onto main at 1be616c3 after #332 merged. This change owns only independent client error retention and its documentation/tests. Collection/schema and production emission belong to the next two changes; this PR does not claim those are implemented.
 
 Reference: ai 7.0.118, Gateway 4.0.96, Provider 4.0.18, Provider Utils 5.0.49, upstream 5d12eaa6caa193d3901cbab98a734403eb6bf622. Pinned cause-data extraction and status-derived retry semantics were rechecked during the split.
 
 ## Regression evidence
 
 - Complete valid HTTP error envelopes survive in Data and ResponseBody; malformed/bounded responses remain protocol errors.
-- Committed data is byte-exact, including whitespace, escapes and absent/null/empty distinctions; exact-case member selection and retryability mismatch rejection remain covered.
+- Committed data is byte-exact, including whitespace, escapes, numeric lexemes and absent/null/empty distinctions; standard Go error-member casing and retryability mismatch rejection are covered.
 - Existing injected error/content/finish and high-level access tests pass without Gateway production changes.
-- Client production and test files were extracted unchanged from reviewed commit 39354e21. Original pre-fix failures and review receipts belong to the combined implementation; this split reruns tests on its own base rather than claiming a new independent review.
+- Client production and test files were initially extracted unchanged from reviewed commit 39354e21. Original pre-fix failures and review receipts belong to that combined implementation, not the later simplification. Retention tests were consolidated into errors_test.go during PR review.
 
 ## Passed on this branch
 
@@ -22,6 +22,14 @@ Reference: ai 7.0.118, Gateway 4.0.96, Provider 4.0.18, Provider Utils 5.0.49, u
 - mise run test-ai-gateway-command: 66 tests, no skips; existing server behavior remains unchanged.
 - Documentation lint, Gateway boundary, SDK/Gateway isolation and candidate-workspace checks.
 - Strict OpenSpec validation and git diff --check.
+
+## Owner-approved error decoder simplification
+
+The owner approved standard Go JSON member matching instead of maintaining exact-name error filtering. HTTP and SSE errors now decode directly into private typed envelopes; SSE data remains json.RawMessage from the original event. Removed decodeWireError, jsonField and decodeObjectMembers without changing the other response-family decoders.
+
+HTTP and SSE noncanonical-casing regressions failed against the previous decoder and pass after the change. Raw retained data, malformed/missing/null envelopes, classification, retry consistency, bounds and ordered consumption remain covered. Case-insensitive error member acceptance is documented as an intentional Go adaptation in PARITY.md and the client delta; it does not change the server's canonical output or claim identical handling of noncanonical input by the pinned TS client.
+
+All checks above were rerun after simplification: full client races/vet/lint, Go 1.26.8 and published-dependency checks, parity (108 schema / 96 client-runtime tests), 66 command tests, docs and isolation/boundary/workspace checks. No provider input fixture changed.
 
 ## Limits
 

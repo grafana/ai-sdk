@@ -1,11 +1,16 @@
 ## MODIFIED Requirements
 
 ### Requirement: Closed Gateway error classification
-Every non-2xx model or discovery response SHALL be read within the configured error-body limit and mapped only from the registered public error envelope into the closed categories authentication, forbidden, invalid request, model not found, rate limit, failed dependency, and internal server. The resulting `GatewayError` SHALL expose category, public code, public message, HTTP status, and status-derived retryability and SHALL unwrap to a bounded `*provider.APICallError`. For a valid registered envelope it SHALL retain the complete bounded JSON document in that cause's Data and ResponseBody, including additive providerMetadata.gateway.evidence, rather than reconstructing only the registered error fields. Decoding SHALL remain independent of Gateway imports and SHALL NOT introduce a new public error API or interpret every opaque evidence member. Unknown or malformed error bodies, wrong media types, and transport failures SHALL use local bounded error text rather than copying arbitrary response bytes into the primary message. Context cancellation and deadlines SHALL remain discoverable with `errors.Is`.
+Every non-2xx model or discovery response SHALL be read within the configured error-body limit and mapped only from the registered public error envelope into the closed categories authentication, forbidden, invalid request, model not found, rate limit, failed dependency, and internal server. The resulting `GatewayError` SHALL expose category, public code, public message, HTTP status, and status-derived retryability and SHALL unwrap to a bounded `*provider.APICallError`. For a valid registered envelope it SHALL retain the complete bounded JSON document in that cause's Data and ResponseBody, including additive providerMetadata.gateway.evidence, rather than reconstructing only the registered error fields. Decoding SHALL remain independent of Gateway imports and SHALL NOT introduce a new public error API or interpret every opaque evidence member. Unknown or malformed error bodies, wrong media types, and transport failures SHALL use local bounded error text rather than copying arbitrary response bytes into the primary message. Context cancellation and deadlines SHALL remain discoverable with `errors.Is`. HTTP error envelopes and committed error payloads SHALL use standard Go JSON struct-member matching, including case-insensitive matches and standard duplicate-member processing, rather than a custom exact-name filter. Opaque raw data SHALL remain unmodified by that typed decoding.
 
 #### Scenario: Registered error is returned
 - **WHEN** the server returns one of the registered error type/status/code documents
 - **THEN** `errors.As` SHALL find the matching `GatewayError` category and underlying `*provider.APICallError`, and retryability SHALL match the Gateway version registered in test/conformance/upstream.yaml, independently of nested native retry facts
+
+#### Scenario: Error members use noncanonical property casing
+- **WHEN** an otherwise valid HTTP error envelope or committed error payload uses case-insensitive Go matches for its member names
+- **THEN** typed error decoding SHALL accept those members using standard encoding/json behavior
+- **AND** retained HTTP documents and selected SSE data SHALL preserve their original JSON bytes without changing classification or retryability rules
 
 #### Scenario: Error body is malformed or oversized
 - **WHEN** a non-2xx body is malformed, has a wrong media type, or exceeds the error limit

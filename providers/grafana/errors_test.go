@@ -93,16 +93,35 @@ func TestStreamError_EvidenceRetention(t *testing.T) {
 			assert.Empty(t, part.APICallError.ResponseBody)
 		})
 	}
-	part, err := decodeStreamPart([]byte(`{"type":"error","error":{"message":"safe","type":"internal_server_error","code":"upstream_error","param":null,"statusCode":502,"retryable":true,"data":{ "correct": "<" },"Data":{"wrong":true}},"Error":{"data":{"wrong":true}}}`))
+	part, err := decodeStreamPart([]byte(`{"type":"error","Error":{"Message":"safe","Type":"internal_server_error","Code":"upstream_error","Param":null,"StatusCode":502,"Retryable":true,"Data":{ "detail": "\u0061<&", "value": 1e2 }}}`))
 	require.NoError(t, err)
-	assert.Equal(t, json.RawMessage(`{ "correct": "<" }`), part.APICallError.Data)
+	require.NotNil(t, part.APICallError)
+	assert.Equal(t, json.RawMessage(`{ "detail": "\u0061<&", "value": 1e2 }`), part.APICallError.Data)
 	for _, body := range []string{
+		`{"type":"error"}`,
+		`{"type":"error","error":null}`,
+		`{"type":"error","error":[]}`,
+		`{"type":"error","error":{"message":"safe"}`,
 		`{"type":"error","error":{"message":"safe","type":"failed_dependency","code":"failed_dependency","param":null,"statusCode":424,"retryable":true,"data":{}}}`,
 		strings.Replace(developerEvidenceStream(true), "native account rejected", string([]byte{0xff}), 1),
 	} {
 		_, err := decodeStreamPart([]byte(body))
 		require.Error(t, err)
 	}
+}
+
+func TestGatewayError_StandardJSONDecoding(t *testing.T) {
+	body := `{"Error":{"Message":"safe","Type":"internal_server_error","Code":"upstream_error","Param":null},"future":{"value":1e2}}`
+	model := developerEvidenceModel(t, http.StatusBadGateway, "application/json", body)
+	_, err := model.DoGenerate(t.Context(), provider.CallOptions{Prompt: []provider.Message{}})
+	var gateway *GatewayError
+	var api *provider.APICallError
+	require.ErrorAs(t, err, &gateway)
+	require.ErrorAs(t, err, &api)
+	assert.Equal(t, GatewayInternalServer, gateway.Category)
+	assert.True(t, api.IsRetryable)
+	assert.Equal(t, body, string(api.Data))
+	assert.Equal(t, body, api.ResponseBody)
 }
 
 func stringMode(streaming bool) string {
