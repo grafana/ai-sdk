@@ -536,7 +536,8 @@ func TestMiddlewareIntegration_GenerateStreamNoMutationRegistryAndOrdering(t *te
 			Tools:   []provider.Tool{{Type: provider.ToolTypeFunction, Name: "tool"}},
 			Headers: map[string]string{"Existing": "true"},
 			ProviderOptions: provider.ProviderOptions{
-				"other": testProviderOption{Existing: "keep"},
+				"other":   testProviderOption{Existing: "keep"},
+				"gateway": provider.RawProviderOption{Key: "gateway", Raw: json.RawMessage(`{"byok":{"openai":[{"apiKey":"dummy-credential","future":"dummy-unfamiliar"}]}}`)},
 			},
 		}
 		original := params

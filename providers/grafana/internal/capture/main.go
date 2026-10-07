@@ -146,7 +146,11 @@ func main() {
 		return
 	}
 	if input.Mode == "stream-text" {
-		opts := []aisdk.StreamOption{aisdk.WithModelMessages(input.Options.Prompt...), aisdk.WithMaxRetries(0)}
+		var providerOptions []provider.ProviderOption
+		for _, option := range input.Options.ProviderOptions {
+			providerOptions = append(providerOptions, option)
+		}
+		opts := []aisdk.StreamOption{aisdk.WithModelMessages(input.Options.Prompt...), aisdk.WithMaxRetries(0), aisdk.WithProviderOptions(providerOptions...)}
 		if input.Options.MaxOutputTokens != nil {
 			opts = append(opts, aisdk.WithMaxOutputTokens(*input.Options.MaxOutputTokens))
 		}

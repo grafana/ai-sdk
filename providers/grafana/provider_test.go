@@ -92,7 +92,7 @@ func TestNewWithAccessToken_Validation(t *testing.T) {
 
 func TestProvider_ImmutableConfigurationAndRegistry(t *testing.T) {
 	limits := DefaultLimits()
-	headers := http.Header{"x-config": {"original"}, "x-access-token": {"fake"}, "X-Grafana-Id": {"fake-user"}}
+	headers := http.Header{"x-config": {"original"}}
 	var calls atomic.Int32
 	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		calls.Add(1)

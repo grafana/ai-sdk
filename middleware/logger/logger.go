@@ -517,6 +517,15 @@ func appendJSONAttr(attrs []slog.Attr, key string, value any, capture CaptureOpt
 }
 
 func jsonAttr(key string, value any, capture CaptureOptions) (slog.Attr, bool) {
+	value, err := normalizeCapture(value)
+	if err != nil {
+		return slog.Attr{}, false
+	}
+	if value != nil && (key == "ai_sdk.request.body" || key == "ai_sdk.request.provider_options") {
+		if _, ok := value.(map[string]any); !ok {
+			return slog.Attr{}, false
+		}
+	}
 	data, err := json.Marshal(value)
 	if err != nil {
 		return slog.Attr{}, false
