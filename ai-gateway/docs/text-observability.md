@@ -5,11 +5,9 @@ streaming text-model call. Logs, Prometheus, and Agent Observability identify
 the call as provider `grafana` and the canonical public catalog model ID. An
 alias therefore has the same telemetry identity as its canonical model.
 
-The fixed logical chain is request-observation context, Agent Observability
-recording, structured logging, Prometheus, canonical identity, and then the
-current lower model. The lower model is direct in WP8. It is an explicit seam
-for WP9 fallback; physical candidates and attempts must remain below the
-logical chain.
+A request produces one logical observation even when fallback tries several
+models. Use the public model ID to monitor application traffic and private
+fallback logs to investigate individual provider attempts.
 
 ## Trusted metadata and privacy
 
@@ -42,6 +40,27 @@ may add its fixed `agento11y.sdk.*` metadata markers and a closed `call_error`
 category after the Gateway filter; no arbitrary exporter or provider error is
 exported. The Gateway marks normalized input usage as cache-inclusive at its
 export filter without adding cache-read or cache-write buckets again.
+
+## Inspect fallback attempts
+
+Use private stderr logs to investigate which models were attempted for a request.
+Each `gateway_physical_attempt` record includes the request correlation ID when
+available, candidate index, configured provider and backend model, timing,
+outcome, and whether fallback was planned. These records are separate from the
+logical generation observation and exclude payloads, credentials, headers,
+endpoint URLs, and raw errors. Restrict access because they reveal provider
+configuration that is not exposed to callers.
+
+Verify your runtime's stderr transport before relying on these diagnostics.
+Supported destinations are Linux sockets and pipes, plus sockets already
+configured as nonblocking on other Unix platforms. Blocking macOS sockets,
+ordinary files, and terminals disable this output without interrupting model
+calls. The Gateway does not change the shared stderr descriptor's flags.
+
+Attempt logging uses a 256-record queue, a 100 ms write deadline, a 4096-byte
+record limit, and a one-second shutdown budget. Queue saturation or write failures
+can drop records; monitor `grafana_ai_gateway_physical_attempt_dropped_total`
+before treating the logs as a complete account of provider attempts.
 
 ## Prometheus
 

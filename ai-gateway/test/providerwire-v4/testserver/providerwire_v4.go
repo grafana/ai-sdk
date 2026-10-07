@@ -12,6 +12,7 @@ import (
 
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
 	providerwirev4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
+	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -271,6 +272,11 @@ func newProviderWireV4Scenario() (*providerWireV4Scenario, error) {
 			Model: &providerWireV4Model{kind: id, stats: stats},
 		})
 	}
+	ordered, err := fallback.New(&providerWireV4Model{kind: "setup-failure", stats: stats}, &providerWireV4Model{kind: "success", stats: stats})
+	if err != nil {
+		return nil, err
+	}
+	entries = append(entries, catalog.StaticEntry{Info: catalog.ModelInfo{ID: "mapped-fallback"}, Model: ordered})
 	resolver, err := catalog.NewStatic(entries)
 	if err != nil {
 		return nil, err

@@ -2,11 +2,12 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"testing"
 
-	"github.com/grafana/ai-sdk/ai-gateway/catalog"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/config"
 	"github.com/grafana/ai-sdk/provider"
 	anthropicprovider "github.com/grafana/ai-sdk/providers/anthropic"
@@ -152,72 +153,101 @@ func TestFallbackRoute_EmptyMessageOptionsPreserveTextFailover(t *testing.T) {
 	}
 }
 
-func TestFallbackRoute_RejectsEffectsBeforeAnyCandidate(t *testing.T) {
-	for _, opts := range []provider.CallOptions{
-		{Tools: []provider.Tool{{Type: provider.ToolTypeFunction, Name: "secret"}}},
-		{ToolChoice: &provider.ToolChoice{Type: provider.ToolChoiceNone}},
-		{ToolChoice: &provider.ToolChoice{Type: provider.ToolChoiceRequired}},
-		{ToolChoice: &provider.ToolChoice{Type: provider.ToolChoiceTool, ToolName: "f"}},
-		{ToolChoice: &provider.ToolChoice{Type: provider.ToolChoiceType("future")}},
-		{ToolChoice: &provider.ToolChoice{Type: provider.ToolChoiceAuto, ToolName: "f"}},
-		{Headers: map[string]string{"x-test": "value"}},
-		{IncludeRawChunks: true},
-		{ResponseFormat: &provider.ResponseFormat{Type: provider.ResponseFormatJSON}},
-		{Prompt: []provider.Message{provider.NewAssistantMessage(provider.ContentPart{Type: provider.ContentPartTypeToolCall})}},
-		{Prompt: []provider.Message{provider.NewToolMessage()}},
-		{Prompt: []provider.Message{provider.NewUserMessage(provider.ContentPart{Type: "future-effect"})}},
-		{ProviderOptions: provider.ProviderOptions{"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: []byte(`{"secret":true}`)}}},
-		fallbackMessageOptions("vendor", `{"flag":false}`),
-		fallbackMessageOptions("vendor", `{"value":null}`),
-		fallbackMessageOptions("vendor", `{"nested":{}}`),
-		fallbackMessageOptions("grafana", `{}`),
-		fallbackMessageOptions("vendor", `{}`, provider.FilePart("text/plain", provider.TextDataContent(""))),
-		fallbackMessageOptions("vendor", `null`),
-		fallbackMessageOptions("vendor", `[]`),
-		fallbackMessageOptions("vendor", `{"flag":true}`),
-		fallbackMessageOptions("vendor", `{}`, provider.ToolCallPart("id", "tool", nil)),
-		fallbackMessageOptions("vendor", `{}`, provider.ReasoningPart("private")),
-		{Prompt: []provider.Message{func() provider.Message {
-			m := provider.UserText("hello")
-			m.ProviderOptions = provider.ProviderOptions{"vendor": provider.RawProviderOption{Raw: []byte(`{}`)}}
-			m.Content[0].ProviderOptions = provider.ProviderOptions{"vendor": provider.RawProviderOption{Raw: []byte(`{}`)}}
-			return m
-		}()}},
-		fallbackMessageOptions("vendor", `{}`, provider.FilePart("image/png", provider.BytesDataContent(nil))),
-		fallbackMessageOptions("vendor", `{}`, provider.ToolResultPart("c", "tool", &provider.ToolResultOutput{Type: provider.ToolOutputText})),
-	} {
-		lower := &observabilityTestModel{
-			generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
-				t.Fatal("candidate invoked")
-				return nil, nil
-			},
-			stream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
-				t.Fatal("candidate invoked")
-				return nil, nil
-			},
-		}
-		guarded := fallbackTextModel{LanguageModel: lower}
-		variants := []provider.CallOptions{opts}
-		if opts.ToolChoice == nil {
-			opts.ToolChoice = &provider.ToolChoice{Type: provider.ToolChoiceAuto}
-			variants = append(variants, opts)
-		}
-		for _, variant := range variants {
-			_, err := guarded.DoGenerate(context.Background(), variant)
-			require.ErrorIs(t, err, catalog.ErrUnsupportedRequest)
-			_, err = guarded.DoStream(context.Background(), variant)
-			require.ErrorIs(t, err, catalog.ErrUnsupportedRequest)
+func TestFallbackRoute_MappedOptions(t *testing.T) {
+	for _, streaming := range []bool{false, true} {
+		for _, tc := range []struct {
+			name string
+			opts provider.CallOptions
+		}{
+			{"functions", provider.CallOptions{Tools: []provider.Tool{{Type: provider.ToolTypeFunction, Name: "lookup", InputSchema: json.RawMessage(`{}`), ProviderOptions: mappedFallbackOptions()}}}},
+			{"auto", provider.CallOptions{ToolChoice: &provider.ToolChoice{Type: provider.ToolChoiceAuto}}},
+			{"none", provider.CallOptions{ToolChoice: &provider.ToolChoice{Type: provider.ToolChoiceNone}}},
+			{"required", provider.CallOptions{ToolChoice: &provider.ToolChoice{Type: provider.ToolChoiceRequired}}},
+			{"named", provider.CallOptions{ToolChoice: &provider.ToolChoice{Type: provider.ToolChoiceTool, ToolName: "lookup"}}},
+			{"history", provider.CallOptions{Prompt: []provider.Message{provider.NewAssistantMessage(provider.ToolCallPart("call", "lookup", json.RawMessage(`{}`))), provider.NewToolMessage(provider.ToolResultPart("call", "lookup", &provider.ToolResultOutput{Type: provider.ToolOutputJSON, JSON: json.RawMessage(`null`)}))}}},
+			{"files", mappedFallbackFiles()},
+			{"reasoning", provider.CallOptions{Reasoning: provider.ReasoningHigh, Prompt: []provider.Message{provider.NewAssistantMessage(provider.ReasoningPart("thought"), provider.ReasoningFilePart("image/png", provider.BytesDataContent(nil)), provider.ReasoningFilePart("image/png", provider.URLDataContent("https://example.test/reasoning")))}}},
+			{"headers", provider.CallOptions{Headers: map[string]string{"x-ordinary": "value"}}},
+			{"scoped options", provider.CallOptions{ProviderOptions: mappedFallbackOptions(), Prompt: []provider.Message{func() provider.Message {
+				message := provider.UserText("request")
+				message.ProviderOptions = mappedFallbackOptions()
+				message.Content[0].ProviderOptions = mappedFallbackOptions()
+				return message
+			}()}}},
+		} {
+			t.Run(fmt.Sprintf("%s/stream=%t", tc.name, streaming), func(t *testing.T) {
+				original, err := json.Marshal(tc.opts)
+				require.NoError(t, err)
+				var calls []string
+				created, err := buildCatalog(fallbackCatalogFile(), fallbackProviders(), http.DefaultClient, func(_ string, id string, _ ...anthropicprovider.Option) provider.LanguageModel {
+					invoke := func(got provider.CallOptions) error {
+						calls = append(calls, id)
+						assert.Equal(t, tc.opts, got)
+						if id == "backend-primary" {
+							return hostileFallbackError(http.StatusServiceUnavailable)
+						}
+						return nil
+					}
+					return &observabilityTestModel{
+						generate: func(_ context.Context, got provider.CallOptions) (*provider.GenerateResult, error) {
+							if err := invoke(got); err != nil {
+								return nil, err
+							}
+							return &provider.GenerateResult{}, nil
+						},
+						stream: func(_ context.Context, got provider.CallOptions) (*provider.StreamResult, error) {
+							if err := invoke(got); err != nil {
+								return nil, err
+							}
+							return fallbackParts(provider.StreamPart{Type: provider.PartStreamStart}), nil
+						},
+					}
+				}, identityModelFactory)
+				require.NoError(t, err)
+				resolved, err := created.ResolveModel(t.Context(), "alias")
+				require.NoError(t, err)
+				for range 2 {
+					if streaming {
+						result, err := resolved.Model.DoStream(t.Context(), tc.opts)
+						require.NoError(t, err)
+						for range result.Stream {
+						}
+					} else {
+						_, err := resolved.Model.DoGenerate(t.Context(), tc.opts)
+						require.NoError(t, err)
+					}
+				}
+				assert.Equal(t, []string{"backend-primary", "backend-secondary", "backend-primary", "backend-secondary"}, calls)
+				after, err := json.Marshal(tc.opts)
+				require.NoError(t, err)
+				assert.Equal(t, original, after)
+			})
 		}
 	}
 }
 
-func fallbackMessageOptions(namespace, raw string, parts ...provider.ContentPart) provider.CallOptions {
-	if len(parts) == 0 {
-		parts = []provider.ContentPart{provider.TextPart("hello")}
+func mappedFallbackOptions() provider.ProviderOptions {
+	return provider.ProviderOptions{
+		"vendor": provider.RawProviderOption{Key: "vendor", Raw: json.RawMessage(`{"null":null,"false":false,"zero":0,"empty":"","array":[],"object":{}}`)},
+		"other":  provider.RawProviderOption{Key: "other", Raw: json.RawMessage(`{}`)},
 	}
-	message := provider.NewUserMessage(parts...)
-	message.ProviderOptions = provider.ProviderOptions{namespace: provider.RawProviderOption{Key: namespace, Raw: []byte(raw)}}
-	return provider.CallOptions{Prompt: []provider.Message{message}}
+}
+
+func mappedFallbackFiles() provider.CallOptions {
+	var parts []provider.ContentPart
+	for index, data := range []provider.DataContent{provider.BytesDataContent(nil), provider.TextDataContent(""), provider.URLDataContent("https://example.test/file"), provider.ReferenceDataContent(json.RawMessage(`{"openai":"file-id"}`))} {
+		part := provider.FilePart("text/plain", data)
+		if index > 0 {
+			filename := ""
+			if index > 1 {
+				filename = "file.txt"
+			}
+			part.Filename = &filename
+		}
+		part.ProviderOptions = mappedFallbackOptions()
+		parts = append(parts, part)
+	}
+	return provider.CallOptions{Prompt: []provider.Message{provider.NewUserMessage(parts...)}}
 }
 
 func fallbackCatalogFile() config.File {

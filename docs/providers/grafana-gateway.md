@@ -8,35 +8,34 @@ go get github.com/grafana/ai-sdk/providers/grafana
 ```
 
 The client module is Apache-2.0 and does not depend on the Gateway service
-module. Its executable response family includes text and unary/streaming function calls. Requests preserve
-representable provider options, files, tools, and structured-output settings;
-the deployed Gateway decides which capabilities it can execute and returns a
-public invalid-request error for unsupported calls.
+module. Use it to generate text and make function-tool calls, with or without
+streaming. Available features depend on your Gateway deployment and selected
+model; unsupported requests return an invalid-request error.
 
 ## Function tools
 
-Direct routes support unary client-executed function tools. Definitions preserve
-`strict: false`, examples, object schemas, and ordinary provider options;
-Gateway-reserved option namespaces remain rejected. History accepts assistant
-calls and text, JSON (including null), error-text, error-JSON, and content
-results with text or supported file entries, preserving selected empty values.
-The application executes tools and supplies call/result history on a later independent request.
-The Gateway never executes a tool. Provider-executed/dynamic tools, approvals,
-preliminary results, custom tool-result content, generated media responses, and
-reasoning-file input remain unsupported. Logical telemetry
-removes tool-bearing definitions, choices, inputs and outputs before export.
+Define function tools in your application to let a model request actions such as
+looking up data or calling an API. Your application executes the functions and
+returns their results to the model. Function tools work with both non-streaming
+and streaming calls.
 
-Streaming direct routes additionally support input start/delta/end, calls and
-matching non-null JSON results. IDs, ordering and empty deltas are preserved.
-Vercel and Go clients own the multi-step orchestration; each HTTP generation
-remains stateless. Ordered fallback routes continue rejecting tool definitions,
-choice and history before any physical invocation.
+For a multi-step conversation, include previous tool calls and their results in
+the next request. The Go and Vercel SDKs can manage this tool loop for you. See
+[Tools](../guides/tools.md) and [Agent loops](../guides/agent-loops.md) for setup.
+The Gateway does not retain conversation state between requests.
+
+Provider-executed tools, including provider-hosted MCP, are not yet available
+through the Gateway. Tool approvals, dynamic tools, preliminary or custom tool
+results, and generated media responses are also not yet supported.
 
 ## Configure provider-specific settings
 
 Use `aisdk.WithProviderOptions` to configure settings for your selected model,
 such as Claude thinking or OpenAI reasoning effort. See the [Anthropic](anthropic.md#enable-reasoning-deliberately)
 and [OpenAI](openai.md#configure-a-call) guides for examples.
+
+Choose a model that supports the file formats and reasoning settings your
+application needs. These capabilities vary by provider and model.
 
 ## Native response values
 
@@ -170,9 +169,9 @@ included in discovery; your deployment controls who may see the model list.
 To compose the client with other providers, register it as a `registry.Provider`;
 see [Fallback and registry](../guides/fallback-and-registry.md).
 
-## Bound work and handle errors
+## Configure fallback
 
-Operators can configure ordered text fallback using direct provider references:
+Configure a primary model and ordered backups under the same public model ID:
 
 ```yaml
 models:
@@ -189,38 +188,34 @@ models:
 Both provider instances must be declared in `providers` using the existing
 environment-variable credential references. Omitting `fallback` creates a direct
 route; removing it restores direct routing without changing the public model ID.
-Candidates retain configuration order and each new call starts at primary.
-Models without fallback accept supported file inputs. Models configured with
-fallback are text-only: files, nonempty tools, tool-call/result history,
-active provider options, and tool choices other than plain auto are rejected
-before any candidate, including primary, runs. Empty message-level provider
-option objects are accepted. A stream's first part commits its candidate,
-including an error part. No later failure
-restarts on another provider. Client retries can multiply physical attempts;
-the Gateway disables native-provider retries.
+Each call starts with the primary model and tries backups in configuration order
+after an eligible failure. Follow-up calls in a tool loop also start with the
+primary; a backup used for one step does not become the default for later steps.
 
-Private physical attribution writes newline-delimited `gateway_physical_attempt`
-records to the existing operator stderr destination through a separate bounded
-worker. Records contain the logical correlation ID when available, candidate
-index, configured provider instance/backend model, start/decision timestamps,
-selected/failed/canceled outcome, decision-time fallback intent, and winner.
-They exclude payloads, credentials, headers, endpoint URLs, and raw errors.
-These private records are separate from the canonical logical generation export.
+Choose fallback models that support your tools, file formats, and reasoning
+needs. Provider-specific settings are passed unchanged, so configure the settings
+for each provider in the chain.
 
-The worker has a 256-record queue, 100 ms write deadline, 4096-byte record limit,
-and one-second shutdown budget. It supports Linux stderr sockets and pipes,
-plus sockets already configured nonblocking on other Unix platforms. A blocking
-macOS socket is rejected because its send operation can ignore the per-call
-nonblocking flag. The sink never changes the shared stderr descriptor flags;
-unsupported destinations (including ordinary files or terminals) disable this
-output while calls continue. Queue saturation and output failures drop records
-and increment `grafana_ai_gateway_physical_attempt_dropped_total` with a closed
-class label. Operators must verify their runtime stderr transport and private
-log access policy before activation. Production enablement and rollback smoke
-remain WP10 work; local fallback tests do not establish deployment acceptance.
-FIFO deadline tests run only on Linux, matching the production output policy;
-macOS tests verify nonblocking sockets, rejection of blocking sockets without
-descriptor mutation, and portable queue/worker bounds.
+Once a model returns a result or sends its first stream event, the Gateway will
+not switch to another model for that call. This includes start and error events,
+so a stream can fail without producing visible text and still not try a backup.
+This boundary avoids mixing responses from different models or replaying tool
+calls after a response has started.
+
+A failed attempt may still incur provider charges. Account for both Gateway
+fallback and SDK retries when setting your latency and cost budgets; neither
+guarantees that provider work happens only once. The Gateway disables retries in
+its native provider clients.
+
+The Gateway does not return all provider-specific response metadata. Workflows
+that depend on that metadata for follow-up calls may not work.
+
+For troubleshooting, ask your Gateway operator to inspect fallback attempts in
+private logs. Public model names do not identify which backend served a request.
+See [Gateway observability](../../ai-gateway/docs/text-observability.md#inspect-fallback-attempts)
+for operator diagnostics and log access requirements.
+
+## Bound work and handle errors
 
 Use a cancelable context for each generation or stream. Cancel it when a
 consumer stops reading. The client closes its response body and stream channel
@@ -243,10 +238,9 @@ Warnings and public error messages remain server-provided text. Unknown private
 metadata is not promoted into model identity or Gateway error fields. A unary
 response's bounded raw HTTP body remains available in `Response.Body`.
 
-Configured headers are applied before call headers, then client-owned auth,
-content negotiation, and model protocol headers. Call headers also remain in
-the request body, matching the registered client; a text-only Gateway may reject
-them. See [package reference](https://pkg.go.dev/github.com/grafana/ai-sdk/providers/grafana)
+Use call headers for application metadata. Credential-bearing call headers are
+rejected; configure authentication on the client instead. See the
+[package reference](https://pkg.go.dev/github.com/grafana/ai-sdk/providers/grafana)
 for configuration and result types.
 
 ---
