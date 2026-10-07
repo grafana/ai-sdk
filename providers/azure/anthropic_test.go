@@ -444,3 +444,41 @@ func TestNewAnthropic_IgnoresAmbientCredentialChains(t *testing.T) {
 		}
 	}
 }
+
+func TestNewAnthropic_AmbientHeadersPreserveProtocolDefaults(t *testing.T) {
+	for _, tc := range []struct {
+		name, version, contentType string
+		options                    []option.RequestOption
+	}{
+		{name: "protocol defaults", version: "2023-06-01", contentType: "application/json"},
+		{
+			name: "explicit caller overrides", version: "caller-version", contentType: "application/vnd.caller+json",
+			options: []option.RequestOption{
+				option.WithHeader("anthropic-version", "caller-version"),
+				option.WithHeader("Content-Type", "application/vnd.caller+json"),
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, key := range []string{"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_PROFILE", "ANTHROPIC_FEDERATION_RULE_ID", "ANTHROPIC_ORGANIZATION_ID", "ANTHROPIC_IDENTITY_TOKEN_FILE", "ANTHROPIC_IDENTITY_TOKEN"} {
+				t.Setenv(key, "")
+				require.NoError(t, os.Unsetenv(key))
+			}
+			t.Setenv("ANTHROPIC_CONFIG_DIR", t.TempDir())
+			t.Setenv("ANTHROPIC_CUSTOM_HEADERS", " anthropic-VERSION : ambient-version\ncOnTeNt-TyPe: ambient-content-type\nX-Ambient-Secret: ambient-secret")
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, tc.version, r.Header.Get("anthropic-version"))
+				assert.Equal(t, tc.contentType, r.Header.Get("Content-Type"))
+				assert.Empty(t, r.Header.Get("X-Ambient-Secret"))
+				w.Header().Set("Content-Type", "application/json")
+				_, err := fmt.Fprint(w, foundrySyntheticResponse)
+				assert.NoError(t, err)
+			}))
+			t.Cleanup(server.Close)
+			model, err := NewAnthropic(foundry.Config{BaseURL: server.URL, APIKey: "key"}, "claude-sonnet-4-6", "sweden-sonnet", anthropic.WithRequestOptions(tc.options...))
+			require.NoError(t, err)
+			_, err = model.DoGenerate(t.Context(), foundryCallOptions())
+			require.NoError(t, err)
+		})
+	}
+}

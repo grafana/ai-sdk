@@ -28,6 +28,7 @@ type Config struct {
 	AuthToken string
 	// Credential is called for every HTTP attempt, including retries. It must be
 	// safe for concurrent use. Token caching and refresh belong to the callback.
+	// Callback errors and invalid credentials fail without an SDK retry.
 	Credential func(context.Context) (Credential, error)
 }
 
@@ -109,13 +110,13 @@ func (c Config) RequestOptions() ([]option.RequestOption, error) {
 				var err error
 				credential, err = c.Credential(r.Context())
 				if err != nil {
-					return nil, fmt.Errorf("foundry: resolving credential: %w", err)
+					return credentialFailure(r, fmt.Errorf("foundry: resolving credential: %w", err))
 				}
 			}
 			credential.APIKey = strings.TrimSpace(credential.APIKey)
 			credential.AuthToken = strings.TrimSpace(credential.AuthToken)
 			if (credential.APIKey == "") == (credential.AuthToken == "") {
-				return nil, fmt.Errorf("foundry: credential must contain exactly one API key or auth token")
+				return credentialFailure(r, fmt.Errorf("foundry: credential must contain exactly one API key or auth token"))
 			}
 			r.Header.Del("Authorization")
 			r.Header.Del("x-api-key")
@@ -128,6 +129,17 @@ func (c Config) RequestOptions() ([]option.RequestOption, error) {
 			return next(r)
 		}),
 	}, nil
+}
+
+func credentialFailure(r *http.Request, err error) (*http.Response, error) {
+	// The native SDK retries transport errors without a response. A local
+	// non-retryable response prevents that retry while preserving the cause.
+	return &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Header:     http.Header{"X-Should-Retry": {"false"}},
+		Body:       http.NoBody,
+		Request:    r,
+	}, err
 }
 
 // LogValue omits credentials when Config is logged with slog.

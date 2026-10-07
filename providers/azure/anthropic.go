@@ -26,10 +26,19 @@ func NewAnthropic(config foundry.Config, modelID, deploymentName string, opts ..
 		return nil, err
 	}
 	// The compatible published adapter loads native SDK defaults at construction.
-	// Remove ambient custom headers before explicit caller options are applied.
+	// Remove ambient custom headers, restoring required Messages headers before
+	// explicit caller options are applied.
 	for line := range strings.SplitSeq(os.Getenv("ANTHROPIC_CUSTOM_HEADERS"), "\n") {
 		if name, _, ok := strings.Cut(line, ":"); ok {
-			requestOpts = append(requestOpts, option.WithHeaderDel(strings.TrimSpace(name)))
+			name = strings.TrimSpace(name)
+			switch strings.ToLower(name) {
+			case "anthropic-version":
+				requestOpts = append(requestOpts, option.WithHeader(name, "2023-06-01"))
+			case "content-type":
+				requestOpts = append(requestOpts, option.WithHeader(name, "application/json"))
+			default:
+				requestOpts = append(requestOpts, option.WithHeaderDel(name))
+			}
 		}
 	}
 	modelOpts := []anthropic.Option{anthropic.WithRequestOptions(requestOpts...)}
