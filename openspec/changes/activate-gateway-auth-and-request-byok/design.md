@@ -4,8 +4,9 @@ This is stack 3/3. Client capture and request-only engine contracts are owned by
 `protect-gateway-client-byok-capture` and `add-gateway-request-byok-engine`.
 The original combined proposal is preserved on `nrbrd/byok-before-stack`;
 the three scoped changes replace it, not three copies of the same umbrella plan.
-Archive/sync the changes in stack order: the authenticated destination requirement
-here modifies the engine capability introduced by the preceding change.
+Archive/sync the changes in stack order. This change adds authenticated-service
+requirements alongside the preceding change's engine requirements; it does not
+modify a requirement that has not yet been synchronized into the main specs.
 
 The upstream reference remains Gateway 4.0.96 / ai 7.0.118 / Provider 4.0.18 at
 `5d12eaa6caa193d3901cbab98a734403eb6bf622`. Client projection is not an oracle
