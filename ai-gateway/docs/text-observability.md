@@ -1,7 +1,8 @@
 # Text observability
 
 The Gateway emits one logical observation for each authenticated unary or
-streaming text-model call. Logs, Prometheus, and Agent Observability identify
+streaming text-model invocation. Guard rejection before inference creates no
+provider-generation observation. Logs, Prometheus, and Agent Observability identify
 the call as provider `grafana` and the canonical public catalog model ID. An
 alias therefore has the same telemetry identity as its canonical model.
 
@@ -40,6 +41,53 @@ may add its fixed `agento11y.sdk.*` metadata markers and a closed `call_error`
 category after the Gateway filter; no arbitrary exporter or provider error is
 exported. The Gateway marks normalized input usage as cache-inclusive at its
 export filter without adding cache-read or cache-write buckets again.
+
+## Guard evaluation is separate from recording
+
+Optional operator-owned Sigil guards use an independent strict HTTP client.
+The generation-export client keeps SDK hooks disabled and recording
+metadata-only. Enabling guards does not enable prompt or output capture in
+Gateway logs, metrics, traces, or generation exports.
+
+Guard evaluation does disclose content to the configured operator Sigil service:
+full supported prompts, tool definitions, history, represented thinking, and
+complete supported output. Postflight includes the effective request after any
+safe preflight transform. See [Gateway guards](../../docs/guides/gateway-guards.md)
+for configuration, evaluator coverage, and deployment limitations.
+
+The guard policy tenant and credentials are server-owned, not selected by caller
+identity or headers. Both phases use provider `grafana`, the resolved public model
+ID, and fixed agent name `grafana-ai-gateway`. Request correlation is not a
+conversation ID. Without genuine conversation correlation, Sigil does not persist
+its conversation guard-decision row.
+
+Preflight runs before the logical model invocation. A preflight denial creates
+no provider-generation record. Postflight runs after complete validated output
+and before successful HTTP commitment, including for streaming. A postflight
+denial does not erase provider usage already incurred or undo provider side
+effects. Model time-to-first-output measures provider output, not the delayed
+first byte delivered to a guarded caller. HTTP duration includes guard work.
+
+The service registry exposes `grafana_ai_gateway_guard_evaluations_total` and
+`grafana_ai_gateway_guard_evaluation_duration_seconds`. Their only labels are
+`phase` and `outcome`. Phase is `preflight` or `postflight`; outcome is `allow`,
+`deny`, `fail_open`, `service_failure`, `transform_failure`, `unsupported`,
+`canceled`, or `resource_failure`. No prompt, rule ID, raw diagnostic, endpoint,
+tenant, or caller value becomes a guard label.
+
+Guard service failures are closed by default, independently of the fail-open
+exporter. Operator fail-open never overrides explicit deny, unsafe transforms,
+unsupported input, cancellation, or local resource exhaustion. For an active
+operation, an explicit postflight deny returns fixed HTTP 403, even with
+`transformed_input` or malformed optional diagnostics. With explicit allow, every
+present postflight `transformed_input` returns fixed HTTP 424 under both failure
+policies, even when unchanged. Neither releases original output or tool-argument
+deltas.
+
+The additional guard budget is not a heap cap. Existing metadata-only recorders
+accumulate content before filtering exports. Conservative guard accounting can
+reject content below configured byte limits. Measure total memory with recording
+enabled rather than adding the guard budget to an assumed content-free baseline.
 
 ## Inspect fallback attempts
 
@@ -178,6 +226,8 @@ for response identity and presence adaptations.
   rollout, and environment smoke verification.
 - WP27 owns any later per-request Agent Observability control or richer content
   capture decision.
-- Tools, reasoning, files, images, raw output, hooks, and later event families
-  remain with their owning capability work; WP8 observes the current text
-  surface only and does not change ProviderWire schemas or events.
+- Tools, reasoning, files, images, raw output, and later event families remain
+  with their owning capability work; WP8 does not expand content recording.
+- Gateway guards independently change admission and response commitment when
+  enabled. They do not turn the WP8 observer chain into a policy engine or
+  change its metadata-only export contract.

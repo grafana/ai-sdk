@@ -213,6 +213,56 @@ func TestRun_ValidatesScalarsAndEndpointsBeforeSecretsOrListener(t *testing.T) {
 	})
 }
 
+func TestRun_GuardRuntimeBeforeListener(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		enabled  bool
+		secret   string
+		wantBind int
+	}{
+		{name: "disabled", wantBind: 1},
+		{name: "missing credential", enabled: true},
+		{name: "invalid credential", enabled: true, secret: "private\r\n"},
+		{name: "enabled bind failure", enabled: true, secret: "guard-private", wantBind: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := writeProcessConfig(t, "https://provider.example")
+			calls, secrets := 0, 0
+			args := []string{"--config.file=" + path, "--deployment.mode=development", "--auth.mode=cloud-gateway", "--server.listen-address=127.0.0.1:0", "--server.operational-listen-address=127.0.0.1:0"}
+			if tc.enabled {
+				args = append(args, "--guards.enabled", "--guards.endpoint=http://127.0.0.1:1/prefix", "--guards.tenant-id=operator", "--guards.auth-mode=bearer", "--guards.auth-secret-env=GUARD_SECRET")
+			}
+			var logs bytes.Buffer
+			err := Run(context.Background(), args, func(name string) (string, bool) {
+				switch name {
+				case "ANTHROPIC_SECRET":
+					return "provider-private", true
+				case "GUARD_SECRET":
+					secrets++
+					return tc.secret, tc.secret != ""
+				}
+				return "", false
+			}, func(string, string) (net.Listener, error) { calls++; return nil, assert.AnError }, slog.New(slog.NewJSONHandler(&logs, nil)))
+			require.Error(t, err)
+			assert.Equal(t, tc.wantBind, calls)
+			if tc.enabled {
+				assert.Equal(t, 1, secrets)
+			} else {
+				assert.Zero(t, secrets)
+			}
+			if tc.wantBind == 0 {
+				assert.Contains(t, err.Error(), "guards auth secret")
+			} else {
+				assert.Contains(t, err.Error(), "binding listener")
+			}
+			for _, private := range []string{"provider-private", "guard-private", "GUARD_SECRET", "127.0.0.1:1/prefix"} {
+				assert.NotContains(t, err.Error(), private)
+				assert.NotContains(t, logs.String(), private)
+			}
+		})
+	}
+}
+
 func TestRun_ResolvesAgentCredentialOnceBeforeListener(t *testing.T) {
 	unsetAmbientAgentObservabilityEnvironment(t)
 	path := writeProcessConfig(t, "https://provider.example")
@@ -320,8 +370,10 @@ func TestRun_LocalReadinessDoesNotProbeProvider(t *testing.T) {
 		name     string
 		authArgs []string
 		split    bool
+		guard    bool
 	}{
 		{name: "internal unsafe", authArgs: []string{"--auth.unsafe"}},
+		{name: "guarded internal unsafe", guard: true, authArgs: []string{"--auth.unsafe"}},
 		{name: "internal split", split: true, authArgs: []string{"--auth.unsafe", "--server.operational-listen-address=127.0.0.1:0"}},
 		{name: "cloud without JWKS", split: true, authArgs: []string{"--server.operational-listen-address=127.0.0.1:0", "--auth.mode=cloud-gateway", "--auth.jwks-timeout=0s", "--auth.jwks-response-bytes=0", "--auth.jwks-max-keys=0", "--auth.jwks-max-age=0s", "--auth.jwks-refresh-interval=0s", "--server.write-timeout=155s"}},
 	} {
@@ -332,6 +384,10 @@ func TestRun_LocalReadinessDoesNotProbeProvider(t *testing.T) {
 			}))
 			defer providerServer.Close()
 			path := writeProcessConfig(t, providerServer.URL)
+			if tc.guard {
+				tc.authArgs = append(tc.authArgs, "--guards.enabled", "--guards.endpoint="+providerServer.URL, "--guards.tenant-id=operator", "--guards.auth-mode=bearer", "--guards.auth-secret-env=GUARD_SECRET")
+			}
+			var guardSecretCalls atomic.Int64
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			addresses := make(chan string, 2)
@@ -348,6 +404,9 @@ func TestRun_LocalReadinessDoesNotProbeProvider(t *testing.T) {
 							return path, true
 						case "ANTHROPIC_SECRET":
 							return "secret-value", true
+						case "GUARD_SECRET":
+							guardSecretCalls.Add(1)
+							return "guard-secret-value", true
 						default:
 							return "", false
 						}
@@ -408,6 +467,11 @@ func TestRun_LocalReadinessDoesNotProbeProvider(t *testing.T) {
 			}
 			cancel()
 			require.NoError(t, <-result)
+			if tc.guard {
+				assert.Equal(t, int64(1), guardSecretCalls.Load())
+			} else {
+				assert.Zero(t, guardSecretCalls.Load())
+			}
 			assert.Equal(t, []string{processEventStarting, processEventReady, processEventShutdownStarted, processEventShutdownCompleted}, processLifecycleEvents(t, logs.String()))
 			for _, private := range []string{"secret-value", providerServer.URL, "backend-private", "ANTHROPIC_SECRET"} {
 				assert.NotContains(t, logs.String(), private)

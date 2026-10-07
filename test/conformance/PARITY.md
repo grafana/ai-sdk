@@ -33,6 +33,7 @@ evidence boundary changes, not merely because the pinned versions change.
 | Bedrock Mantle Responses continuation | mixed | [Mantle assistant-history request tests](../../providers/bedrock/mantle/provider_test.go) capture unary and streaming reconstruction, phase, empty text and stored references; standalone readonly Bedrock tests with a publicly resolved OpenAI dependency exercise [#207](https://github.com/grafana/ai-sdk/issues/207)'s consumer boundary. | Fake transport validates request encoding, not live Mantle acceptance or a provider recording. OpenAI producer tests or workspace substitutions alone do not establish Bedrock consumer adoption. Mantle Chat remains unsupported. |
 | ProviderWire request projection | automated | Registered-client HTTP goldens, type/schema witnesses and mapping mutation tests are replayed through Go handlers. | This establishes the public client projection, not Vercel's private service behavior. |
 | Gateway runtime and Go client | mixed | Handler, differential and command tests exercise supported text/function-tool/file-input paths, framing, bounds, privacy, cancellation and ownership. Both-client direct and configured-fallback unary/streaming tests preserve mapped function definitions/history/choices, file arms/filename presence, reasoning, headers and opaque options at supported scopes without Gateway inventories. Synthetic Anthropic/OpenAI/compatible chains cover configured order, per-candidate consumption, namespace precedence, scoped bypass/ordinary controls, supplied local assistant-call caller, capture independence and shared-handler race isolation. Both-client unary/streaming witnesses preserve omitted output-token limits through direct/fallback mapping; native Anthropic/OpenAI/compatible command tests verify provider defaults. Consumer-owned function loops restart primary on continuation; composed and reusable tests cover first-part commitment, no replay after selected encoding failure, bounded cleanup and one logical observation over physical attempts. | Schema acceptance and runtime support differ. Permissive client parsing does not prove strict server output, privacy or resource bounds. Synthetic native requests do not prove live acceptance or output-derived continuation; ordinary Anthropic tool-role result caller is forwarded to the adapter but not consumed. Mapped fallback does not activate provider-executed/MCP codecs, BYOK or request-directed routing, and pre-commit failover does not guarantee exactly-once provider work. |
+| Gateway operator guards | mixed | Focused source-checked Sigil codec/mapping tests and synthetic command, handler, and schema-parsed frontend tests target the guarded text, represented-reasoning, and function-tool boundary. | This is a narrower opt-in support boundary, not recorded/live Sigil or provider parity. The registered Vercel clients supply protocol/error evidence, not a private-service policy oracle. No upstream baseline upgrade or deployed ingress/rule/capacity proof is claimed. |
 | Gateway reasoning transport | mixed | Strict runtime and pinned TS/Go differential tests cover reasoning-file data/URL, usage and metadata; authenticated command tests replay both clients' assembled Anthropic/OpenAI/compatible history. Schema-parsed frontend SSE covers concurrency, replacement and files; native Anthropic/Bedrock HTTP tests cover empty/opaque continuation. | Synthetic native requests are not recordings. Unwrapped high-level unary TypeScript calls forward their SDK-generated User-Agent; ordinary mapped body headers are forwarded while credential-bearing overrides remain rejected. Command Bedrock configuration is not provided. Workspace/conformance success does not establish published adoption of local producer fixes. |
 | Gateway host composition | mixed | Real-command tests use fake providers/JWKS for identity separation, routing, fallback, tool continuation and shutdown; a dummy Cloud edge exercises Go and pinned Vercel stack/CAP bearer headers, credential stripping and scope outcomes. Go StreamText and unwrapped TypeScript generateText/streamText calls cover explicit and default output-token limits without rewriting SDK headers or choices. | The dummy edge does not prove production CAP validation, expiry/revocation, policy realms or deployed ingress isolation. Generic HTTP error coverage is broader than errors reachable through the command's configured policies. |
 | Baseline and fixture inventory | automated | Baseline validation covers registered consumers; generation and INDEX checks verify source existence, streaming inventory and byte-identical imports. | Generation does not establish input provenance. Unimported operations remain explicit in INDEX files. |
@@ -131,6 +132,32 @@ evidence boundary changes, not merely because the pinned versions change.
   Pinned UI/Agent APIs own expectations; comparisons preserve grouping, required
   empty text and metadata selection. Prompt coalescing tests cover deep precedence
   and caller isolation.
+
+### Gateway guarded support boundary
+
+Operator-owned guards intentionally narrow the otherwise supported Gateway
+surface to text, represented reasoning, and function-tool payloads. Media,
+input examples, stored references, and options introducing hidden input are
+rejected rather than silently omitted from evaluation. The strict guard
+allowlist is not the unguarded opaque-options contract.
+
+Both guard phases surround one logical model/fallback invocation. Successful
+unary and streaming output remains withheld until complete validation and
+postflight approval. For an active operation, an explicit postflight deny returns
+fixed HTTP 403, even with `transformed_input` or malformed optional diagnostics.
+With explicit allow, every present postflight `transformed_input` returns fixed
+HTTP 424 under both failure policies, even when unchanged. Neither releases
+original output or tool-argument deltas. Buffered streaming latency is an
+intentional support boundary, not equivalent upstream streaming timing. These
+fixed error families are represented by the registered `@ai-sdk/gateway` client.
+
+Sigil wire witnesses checked against the referenced server codec establish the
+embedded request JSON and base64 response/tool-schema conventions. Synthetic
+handler, command, and frontend evidence does not establish live evaluator
+coverage, provider acceptance, or deployed rule execution. It does not create
+provider recordings or strengthen the baseline's provider parity claim. Guard
+content disclosure is separate from metadata-only generation export; see the
+[operator guide](../../docs/guides/gateway-guards.md) for limitations.
 
 ## Retained deviations without issue ownership
 

@@ -38,6 +38,13 @@ func NewJWKSClient(timeout time.Duration, responseBytes int64) (*http.Client, er
 	return client, nil
 }
 
+// NewGuardClient returns an independent, redirect-rejecting client with a total
+// timeout and decompressed response limit. The guard adapter sets credentials
+// and tenant headers, not this client.
+func NewGuardClient(timeout time.Duration, responseBytes int64) (*http.Client, error) {
+	return NewJWKSClient(timeout, responseBytes)
+}
+
 // NewAnthropicClient returns a streaming client that rejects redirects and limits response bytes and response-header wait time.
 func NewAnthropicClient(headerTimeout time.Duration, responseBytes int64) (*http.Client, error) {
 	if headerTimeout <= 0 {
@@ -54,6 +61,9 @@ func NewAnthropicClient(headerTimeout time.Duration, responseBytes int64) (*http
 
 // ValidateEndpoint validates a credential-free hierarchical endpoint URL.
 func ValidateEndpoint(raw string, mode config.DeploymentMode) (*url.URL, error) {
+	if strings.TrimSpace(raw) != raw {
+		return nil, fmt.Errorf("gateway outbound: endpoint must not contain surrounding whitespace")
+	}
 	parsed, err := url.Parse(raw)
 	if err != nil {
 		return nil, fmt.Errorf("gateway outbound: parsing endpoint: %w", err)
@@ -102,6 +112,12 @@ func rejectRedirect(*http.Request, []*http.Request) error {
 type boundedTransport struct {
 	base  http.RoundTripper
 	limit int64
+}
+
+func (transport *boundedTransport) CloseIdleConnections() {
+	if closer, ok := transport.base.(interface{ CloseIdleConnections() }); ok {
+		closer.CloseIdleConnections()
+	}
 }
 
 func (transport *boundedTransport) RoundTrip(request *http.Request) (*http.Response, error) {

@@ -89,6 +89,9 @@ the service your application calls:
 - [Run AI Gateway in a container](guides/ai-gateway-container.md) — build and
   test the standalone Gateway image and configure models, secrets,
   authentication, and network access.
+- [Gateway guards](guides/gateway-guards.md): enforce operator-owned Sigil
+  policy before and after inference, with explicit content disclosure and
+  buffered streaming.
 - [Production checklist](best-practices/production.md) — bound work, secure the
   request boundary, and verify the deployed streaming path.
 - [Error handling](best-practices/error-handling.md) — handle failures before,

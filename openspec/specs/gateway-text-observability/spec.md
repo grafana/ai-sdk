@@ -2,13 +2,13 @@
 
 ## Purpose
 
-Define privacy-safe, bounded-cardinality, once-per-logical-call observability for Gateway text generation across logs, Prometheus metrics, and Agent Observability.
+Define privacy-safe, bounded-cardinality, once-per-logical-call observability for Gateway text generation across logs, Prometheus metrics, and Agent Observability. Define the separate operator-owned guard boundary without changing metadata-only recording.
 
 ## Requirements
 ### Requirement: One startup-composed logical middleware chain
 The Gateway SHALL wrap each configured canonical catalog entry's logical text model exactly once at startup with approved context enrichment, Agent Observability recording, structured logging, Prometheus model metrics, canonical public identity, and then the inner model in that request order. In WP8 the inner model SHALL be the direct provider; WP9 MAY replace it with fallback beneath the unchanged logical wrapper and SHALL NOT wrap physical candidates with WP8 observers. Response observation SHALL occur in reverse order. Alias and canonical resolution SHALL return the same composed model instance, and one invocation SHALL traverse each logical observer exactly once.
 
-The chain SHALL be shared service behavior below public API adapters. It SHALL NOT be constructed in ProviderWire request handling and SHALL NOT change ProviderWire validation, public bytes, error mapping, commitment, stream ordering, timeout, or cancellation precedence.
+The observer chain SHALL be shared service behavior below public API adapters. It SHALL NOT be constructed in ProviderWire request handling and SHALL NOT change ProviderWire validation, public bytes, error mapping, commitment, stream ordering, timeout, or cancellation precedence. Separately enabled Gateway guards SHALL own policy admission and delayed commitment outside the logical model invocation; those changes SHALL NOT be attributed to recording middleware.
 
 #### Scenario: Alias uses one canonical chain
 - **WHEN** an authenticated text request resolves an alias for a configured canonical model
@@ -91,9 +91,9 @@ Labels SHALL be limited to operation, canonical configured public model identity
 - **THEN** startup SHALL fail before listener binding and readiness
 
 ### Requirement: Metadata-only Agent Observability recording
-When Agent Observability export is enabled, the Gateway SHALL use one process-wide client configured for metadata-only content capture, recording middleware only, requested canonical identity, and an allowlisted context provider. Hooks, experimental SDK features, and request-controlled capture changes SHALL remain disabled.
+When Agent Observability export is enabled, the Gateway SHALL use one process-wide client configured for metadata-only content capture, recording middleware only, requested canonical identity, and an allowlisted context provider. Hooks on that export client, experimental SDK features, and request-controlled capture changes SHALL remain disabled. Optional Gateway guards SHALL use an independent strict HTTP client; guard enablement SHALL NOT enable content recording.
 
-Each authenticated unary or streaming text call SHALL produce one generation containing canonical public model identity, generation mode, approved trusted metadata, normalized usage marked as cache-inclusive without adding cache buckets again, unified finish reason, timing including streaming first output when available, and a closed error classification when applicable. It SHALL omit input/output content, system prompts, detailed errors, response/provider IDs, backend identity, provider options/metadata, raw artifacts, credentials, and topology.
+Each logical model invocation for an authenticated unary or streaming text call SHALL produce one generation containing canonical public model identity, generation mode, approved trusted metadata, normalized usage marked as cache-inclusive without adding cache buckets again, unified finish reason, timing including streaming first output when available, and a closed error classification when applicable. It SHALL omit input/output content, system prompts, detailed errors, response/provider IDs, backend identity, provider options/metadata, raw artifacts, credentials, and topology.
 
 The Agent Observability client MAY add only its fixed SDK provenance/content-capture metadata markers and a mirrored closed error category after the Gateway filter. These fixed client-owned fields SHALL NOT carry request input, provider detail, exporter configuration, or arbitrary error text.
 
@@ -202,3 +202,111 @@ A separately configured consumer logger.Middleware with CaptureOptions.ResponseB
 - **AND** tests SHALL prove typed unary identity remains replaced while native identity is present in the Gateway response body
 - **AND** neither observation location SHALL mutate responses to satisfy the other's capture settings
 - **AND** hook access SHALL NOT imply automatic source/warning capture by every built-in middleware
+
+### Requirement: Operator-owned policy is separate from caller input
+
+Guards SHALL default to disabled. When enabled, Gateway SHALL run both preflight and postflight for unary and streaming inference. Authentication, request validation, and canonical public model resolution SHALL precede evaluation. Caller identity, headers, provider options, and bypass values SHALL NOT select the endpoint, policy tenant, credentials, or enablement. Disabled guards SHALL preserve existing unguarded behavior and SHALL send no hook requests.
+
+The guard runtime SHALL use an explicit operator endpoint base and preserve its path prefix when joining `api/v1/hooks:evaluate`. Production SHALL require HTTPS. Gateway SHALL require explicit `basic` or `bearer` authentication, without a default mode. Basic SHALL require `guards.auth-username`; bearer SHALL reject a username. `guards.auth-secret-env` SHALL reference a runtime environment secret resolved before listener binding. Gateway SHALL refuse redirects and SHALL NOT retry hook RPCs internally.
+
+Both phases SHALL identify provider as `grafana`, model as the resolved public catalog ID, and agent as `grafana-ai-gateway`. Gateway SHALL NOT reevaluate policy per fallback candidate or derive a conversation ID from request correlation.
+
+#### Scenario: Caller attempts to replace operator policy
+- **WHEN** an authenticated caller supplies tenant, authorization, endpoint, or bypass values
+- **THEN** those values SHALL NOT change operator policy configuration
+- **AND** protected or unsupported request values SHALL retain their validation rejection
+
+#### Scenario: Alias request is denied before fallback
+- **WHEN** preflight denies a request using a model alias
+- **THEN** Sigil SHALL receive the resolved public model identity
+- **AND** no provider candidate SHALL receive an inference call
+- **AND** no provider-generation observation SHALL start
+
+### Requirement: Guard disclosure does not enable recording
+
+Preflight SHALL disclose the full supported prompt, system messages, history, tool definitions, arguments/results, and represented thinking to the configured Sigil service. Postflight SHALL disclose the effective request plus complete supported output in `input.output`. Gateway documentation SHALL state this disclosure even when recording is metadata-only. Guard evaluation SHALL NOT add payloads or raw rule diagnostics to Gateway logs, metrics, traces, or generation exports.
+
+Guard metrics SHALL expose evaluation count and duration with only fixed phase and outcome labels. Phase SHALL be `preflight` or `postflight`. Outcome SHALL be `allow`, `deny`, `fail_open`, `service_failure`, `transform_failure`, `unsupported`, `canceled`, or `resource_failure`. HTTP duration SHALL include guard work. Logical provider observation SHALL remain around actual inference; postflight denial SHALL NOT erase incurred usage.
+
+#### Scenario: Guarded request contains a prompt canary
+- **WHEN** an allowed guarded request contains a unique prompt canary and generation export is enabled
+- **THEN** the guard payload SHALL contain the supported content
+- **AND** Gateway logs, metrics, traces, and generation exports SHALL omit the canary and raw guard diagnostics
+
+### Requirement: Guarded input has a strict supported boundary
+
+Guarded input SHALL support only text, represented reasoning, and function-tool payloads under a strict option allowlist. Gateway SHALL reject media, nested media, tool input examples, provider-defined tools, stored-history references, and provider options introducing hidden input with HTTP 400. Other options outside the guarded allowlist SHALL NOT pass through merely because the unguarded runtime supports opaque options.
+
+Supported preflight transforms SHALL update the provider request atomically. Gateway SHALL reject unusable transforms with fixed HTTP 424 under both failure policies, without replaying original input. Required roles, part kinds, tool identity, unredacted numeric values, and reasoning integrity SHALL be preserved. Signed reasoning SHALL NOT change while retaining its signature.
+
+#### Scenario: Hidden input is unsupported
+- **WHEN** a guarded request uses media, stored response/item references, hidden instructions, or unsupported request options
+- **THEN** Gateway SHALL return HTTP 400 without calling a provider
+- **AND** it SHALL NOT silently omit that input from policy evaluation
+
+#### Scenario: Safe redaction reaches every fallback candidate
+- **WHEN** preflight transforms supported text and the logical model later selects fallback
+- **THEN** preflight SHALL execute once
+- **AND** each attempted candidate SHALL receive the effective transformed request
+
+#### Scenario: Transform changes reasoning or rounds JSON numbers
+- **WHEN** a returned preflight snapshot changes reasoning, required identity, or numeric values through canonicalization
+- **THEN** Gateway SHALL return fixed HTTP 424 even with fail-open enabled
+- **AND** no provider SHALL receive original input as a substitute
+
+### Requirement: Strict verdicts and explicit failure policy
+
+Gateway SHALL accept only explicit `allow` and `deny` from a successful hook response. Missing, null, unknown, duplicate, or malformed verdict fields SHALL be response failures, not normalized allow. A valid explicit deny SHALL remain authoritative despite malformed optional diagnostics and SHALL return fixed HTTP 403 `forbidden`. Closed guard failures SHALL return fixed HTTP 424 `failed_dependency`. Both envelopes SHALL keep `param:null` and omit rule IDs, reasons, endpoint details, and raw errors.
+
+`guards.fail-open` SHALL default to `false`. Enabled fail-open MAY continue eligible guard-service transport or response failures and SHALL record fixed outcome `fail_open`. It SHALL NOT override explicit deny, unsafe transforms, unsupported input, caller cancellation, or local resource exhaustion. Admission and guard body/buffer exhaustion SHALL return local HTTP 424 under both policies.
+
+#### Scenario: Guard service response is unavailable or invalid
+- **WHEN** a hook times out, returns non-200, or returns an invalid verdict while the parent operation remains active
+- **THEN** fail-closed SHALL return HTTP 424
+- **AND** fail-open MAY continue eligible work with outcome `fail_open`
+
+#### Scenario: Valid deny contains malformed optional diagnostics
+- **WHEN** Sigil returns a valid explicit deny with malformed optional fields
+- **THEN** Gateway SHALL return HTTP 403 under either failure policy
+- **AND** no successful inference body SHALL be released
+
+### Requirement: Complete output precedes successful release
+
+Gateway SHALL validate and withhold successful unary output and streaming headers/frames until a complete selected output passes postflight. Streaming SHALL require a valid finish; EOF alone SHALL NOT approve partial output. Valid finish SHALL permit postflight without waiting for provider channel close. Canceling completed model work SHALL NOT cancel the active postflight context. Postflight denial or failure SHALL NOT restart fallback.
+
+For an active operation, an explicit postflight deny SHALL return fixed HTTP 403, even with `transformed_input` or malformed optional diagnostics. With explicit allow, every present postflight `transformed_input` SHALL return fixed HTTP 424 under both failure policies, even when unchanged. Neither SHALL release original output or tool-argument deltas. Unsupported generated content SHALL fail closed instead of disappearing from the evaluated output.
+
+#### Scenario: Completed tool call is denied
+- **WHEN** postflight denies completed function-tool output
+- **THEN** Gateway SHALL return HTTP 403 before committing SSE success
+- **AND** a consumer-owned tool loop SHALL receive no executable call
+
+#### Scenario: Unchanged postflight snapshot is present
+- **WHEN** an allow response includes `transformed_input` identical to the effective request and output
+- **THEN** Gateway SHALL return HTTP 424 under either failure policy
+- **AND** no original text or tool delta SHALL reach the caller
+
+#### Scenario: Stream finishes without channel closure
+- **WHEN** validated provider output contains a valid finish but the provider channel remains open
+- **THEN** Gateway SHALL proceed to postflight under the active operation context
+- **AND** it SHALL release validated frames only after approval without a transform
+
+### Requirement: Guard resources and deployment limits remain explicit
+
+One `providerwire.model-duration` deadline SHALL bound both guard phases and inference, defaulting to 120 seconds. Each hook SHALL have a separate maximum timeout, defaulting to five seconds within the remaining operation budget. Existing stream idle, part, frame, cancellation, and finite drain bounds SHALL still apply. Guard timeout headers SHALL use the remaining phase budget within Sigil's accepted 1–119999 millisecond range.
+
+Guard defaults SHALL limit request/decompressed-response bodies to 4 MiB, additional retained guard data to 8 MiB per operation, and active guarded operations to eight. Body configuration SHALL NOT exceed 4 MiB. Retained data accounting SHALL include projections, serialization, transforms, and buffered frames; conservative charges MAY reject content below nominal limits. The guard budget SHALL NOT be described as a heap cap. Documentation SHALL explain that metadata-only recorders retain content before export filtering and require production memory/latency measurement with recording enabled.
+
+Documentation SHALL state that a strict verdict client cannot prove rule execution. No matching rules, disabled evaluators/policy services, and server-side transform-failure continuation can produce allow. Evaluator coverage of thinking and tool results, input versus output targets, and judge truncation below HTTP limits SHALL remain deployment checks. Gateway SHALL NOT claim that postflight undoes provider-executed side effects.
+
+Guard judges SHALL use a direct or separately isolated inference route until recursion prevention is designed. Untrusted bypass headers SHALL NOT solve recursion. Source-checked codecs and synthetic command/handler/frontend tests SHALL NOT be described as live Sigil/provider parity or deployed ingress authorization proof. Cloud Basic instance-ID and `sigil:write` token guidance SHALL NOT imply that the configured hook ingress is deployed or accepts those credentials.
+
+#### Scenario: Local guard capacity is exhausted
+- **WHEN** admission or retained-output capacity is exhausted with fail-open enabled
+- **THEN** Gateway SHALL return local HTTP 424 and release no successful content
+- **AND** it SHALL NOT select another fallback candidate
+
+#### Scenario: Caller cancels during evaluation
+- **WHEN** the caller cancels during preflight or postflight with fail-open enabled
+- **THEN** Gateway SHALL cancel the hook request and stop the operation
+- **AND** it SHALL NOT start provider work or release buffered output after cancellation

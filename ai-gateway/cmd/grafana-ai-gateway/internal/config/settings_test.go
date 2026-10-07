@@ -49,6 +49,7 @@ func TestParseSettings_Defaults(t *testing.T) {
 			FlushTimeout:    5 * time.Second,
 			ShutdownTimeout: 5 * time.Second,
 		},
+		Guards:                         GuardSettings{Timeout: 5 * time.Second, BodyBytes: 4 << 20, RetainedBytes: 8 << 20, MaxConcurrent: 8},
 		AuthMode:                       AuthModeAccessToken,
 		AuthUnsafe:                     false,
 		JWKSURL:                        "https://auth.example/jwks",

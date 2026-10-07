@@ -45,8 +45,9 @@ func (s *providerWireV4Stats) options() provider.CallOptions {
 }
 
 type providerWireV4Model struct {
-	kind  string
-	stats *providerWireV4Stats
+	kind                 string
+	stats                *providerWireV4Stats
+	representedReasoning bool
 }
 
 func (*providerWireV4Model) SpecificationVersion() string               { return "v4" }
@@ -72,6 +73,10 @@ func (m *providerWireV4Model) DoStream(ctx context.Context, options provider.Cal
 		)}, nil
 	case "reasoning":
 		m.stats.recordSuccess(options)
+		finalMetadata := json.RawMessage(`{"itemId":"final","reasoningEncryptedContent":"opaque"}`)
+		if m.representedReasoning {
+			finalMetadata = json.RawMessage(`{"itemId":"final","reasoningEncryptedContent":null}`)
+		}
 		return &provider.StreamResult{Stream: scenarioStream(
 			provider.StreamPart{Type: provider.PartReasoningStart, ID: "1", ProviderMetadata: provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":"old","reasoningEncryptedContent":null}`)}},
 			provider.StreamPart{Type: provider.PartReasoningStart, ID: "2"},
@@ -80,7 +85,7 @@ func (m *providerWireV4Model) DoStream(ctx context.Context, options provider.Cal
 			provider.StreamPart{Type: provider.PartReasoningDelta, ID: "2", Delta: "second"},
 			provider.StreamPart{Type: provider.PartTextDelta, ID: "1", Delta: "answer"},
 			provider.StreamPart{Type: provider.PartReasoningEnd, ID: "2", ProviderMetadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"signature":"end-signature"}`)}},
-			provider.StreamPart{Type: provider.PartReasoningEnd, ID: "1", ProviderMetadata: provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":"final","reasoningEncryptedContent":"opaque"}`)}},
+			provider.StreamPart{Type: provider.PartReasoningEnd, ID: "1", ProviderMetadata: provider.ProviderMetadata{"openai": finalMetadata}},
 			provider.StreamPart{Type: provider.PartTextEnd, ID: "1"},
 			provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: &provider.Usage{}},
 		)}, nil
@@ -258,9 +263,62 @@ func (m *providerWireV4Model) DoGenerate(ctx context.Context, options provider.C
 	}
 }
 
+type providerWireV4GuardEvaluation struct {
+	Decision string                 `json:"decision"`
+	Phase    string                 `json:"phase"`
+	ModelID  string                 `json:"modelID"`
+	Options  provider.CallOptions   `json:"options"`
+	Output   []provider.ContentPart `json:"output,omitempty"`
+}
+
+type providerWireV4GuardCapture struct {
+	mu          sync.Mutex
+	evaluations []providerWireV4GuardEvaluation
+}
+
+func (capture *providerWireV4GuardCapture) record(evaluation providerWireV4GuardEvaluation) {
+	capture.mu.Lock()
+	defer capture.mu.Unlock()
+	capture.evaluations = append(capture.evaluations, evaluation)
+}
+
+type providerWireV4Guard struct {
+	decision string
+	capture  *providerWireV4GuardCapture
+}
+
+func (*providerWireV4Guard) Acquire(ctx context.Context) (func(), error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return func() {}, nil
+}
+
+func (guard *providerWireV4Guard) Preflight(_ context.Context, id string, options provider.CallOptions) (provider.CallOptions, error) {
+	guard.capture.record(providerWireV4GuardEvaluation{Decision: guard.decision, Phase: "preflight", ModelID: id, Options: options})
+	if guard.decision == "preflight-deny" {
+		return options, providerwirev4.ErrGuardDenied
+	}
+	return options, nil
+}
+
+func (guard *providerWireV4Guard) Postflight(_ context.Context, id string, options provider.CallOptions, output []provider.ContentPart) error {
+	guard.capture.record(providerWireV4GuardEvaluation{Decision: guard.decision, Phase: "postflight", ModelID: id, Options: options, Output: output})
+	switch guard.decision {
+	case "postflight-deny":
+		return providerwirev4.ErrGuardDenied
+	case "postflight-failed":
+		return providerwirev4.ErrGuardFailed
+	default:
+		return nil
+	}
+}
+
 type providerWireV4Scenario struct {
 	runtime http.Handler
 	stats   *providerWireV4Stats
+	guards  map[string]http.Handler
+	capture *providerWireV4GuardCapture
 }
 
 func newProviderWireV4Scenario() (*providerWireV4Scenario, error) {
@@ -296,7 +354,35 @@ func newProviderWireV4Scenario() (*providerWireV4Scenario, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &providerWireV4Scenario{runtime: runtime, stats: stats}, nil
+	guardResolver, err := catalog.NewStatic([]catalog.StaticEntry{
+		{Info: catalog.ModelInfo{ID: "guarded/success", Aliases: []string{"success"}}, Model: &providerWireV4Model{kind: "success", stats: stats}},
+		{Info: catalog.ModelInfo{ID: "guarded/reasoning", Aliases: []string{"reasoning"}}, Model: &providerWireV4Model{kind: "reasoning", stats: stats, representedReasoning: true}},
+		{Info: catalog.ModelInfo{ID: "guarded/tools", Aliases: []string{"stream-tools"}}, Model: &providerWireV4Model{kind: "stream-tools", stats: stats}},
+		{Info: catalog.ModelInfo{ID: "guarded/fallback", Aliases: []string{"mapped-fallback"}}, Model: ordered},
+	})
+	if err != nil {
+		return nil, err
+	}
+	capture := &providerWireV4GuardCapture{}
+	guards := make(map[string]http.Handler)
+	for _, decision := range []string{"allow", "preflight-deny", "postflight-deny", "postflight-failed"} {
+		guarded, err := providerwirev4.New(providerwirev4.Config{
+			Resolver:           guardResolver,
+			Guard:              &providerWireV4Guard{decision: decision, capture: capture},
+			GuardRetainedBytes: 8 << 20,
+			Limits: providerwirev4.Limits{
+				RequestBytes: 1 << 20, UnaryResponseBytes: 1 << 20,
+				StreamParts: 1_000, StreamFrameBytes: 1 << 20,
+				ModelDuration: 5 * time.Second, StreamIdleDuration: 200 * time.Millisecond,
+				StreamDrainDuration: 100 * time.Millisecond,
+			},
+		})
+		if err != nil {
+			return nil, err
+		}
+		guards[decision] = guarded
+	}
+	return &providerWireV4Scenario{runtime: runtime, stats: stats, guards: guards, capture: capture}, nil
 }
 
 func scenarioStream(parts ...provider.StreamPart) <-chan provider.StreamPart {
@@ -326,6 +412,22 @@ func (s *providerWireV4Scenario) register(mux *http.ServeMux) {
 		}
 		http.StripPrefix("/function-tools", s.runtime).ServeHTTP(w, r)
 	}))
+	for decision, guarded := range s.guards {
+		prefix := "/guarded/" + decision
+		mux.Handle("POST "+prefix+providerwirev4.LanguageModelPath, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get("X-Access-Token") != "function-test-token" {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			http.StripPrefix(prefix, guarded).ServeHTTP(w, r)
+		}))
+	}
+	mux.HandleFunc("GET /guarded/evaluations", func(w http.ResponseWriter, _ *http.Request) {
+		s.capture.mu.Lock()
+		defer s.capture.mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(s.capture.evaluations)
+	})
 	mux.HandleFunc("GET "+providerWireV4Prefix+"/stats", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]int64{

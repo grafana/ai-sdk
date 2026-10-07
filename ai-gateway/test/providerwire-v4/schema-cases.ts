@@ -262,6 +262,11 @@ export const validRequests: SchemaCase[] = [
   },
 ];
 
+export const validGuardErrors: SchemaCase[] = [
+  { name: "fixed policy forbidden", value: { error: { message: "forbidden", type: "forbidden", param: null, code: "forbidden" } } },
+  { name: "fixed guard failed dependency", value: { error: { message: "failed dependency", type: "failed_dependency", param: null, code: "failed_dependency" } } },
+];
+
 export const invalidRequests: SchemaCase[] = [
   { name: "missing prompt", value: {} },
   { name: "unknown root member", value: { prompt: [], unknown: true } },

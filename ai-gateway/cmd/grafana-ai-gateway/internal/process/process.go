@@ -113,6 +113,11 @@ func Run(ctx context.Context, args []string, lookupEnv config.LookupEnv, listen 
 	if err != nil {
 		return err
 	}
+	guardRuntime, err := service.NewGuardRuntime(settings.Guards, settings.DeploymentMode, lookupEnv, telemetry)
+	if err != nil {
+		return err
+	}
+	defer guardRuntime.Close()
 	agentRuntime, err := service.NewAgentObservabilityRuntime(settings.AgentObservability, lookupEnv, telemetry)
 	if err != nil {
 		return err
@@ -131,7 +136,15 @@ func Run(ctx context.Context, args []string, lookupEnv config.LookupEnv, listen 
 	}
 	errorWriter := providerv4.NewHostErrorWriter()
 	discoveryHandler := discovery.New(modelCatalog, errorWriter)
-	languageHandler, err := providerv4.New(providerv4.Config{Resolver: modelCatalog, Limits: settings.ProviderWire})
+	languageConfig := providerv4.Config{Resolver: modelCatalog, Limits: settings.ProviderWire}
+	// Do not place a typed nil *GuardRuntime in the optional Guard interface.
+	if guardRuntime != nil {
+		languageConfig.Guard = guardRuntime
+		// Reserve half for ProviderWire's withheld response and half for the
+		// runtime's policy projection, serialization, and transformation work.
+		languageConfig.GuardRetainedBytes = settings.Guards.RetainedBytes / 2
+	}
+	languageHandler, err := providerv4.New(languageConfig)
 	if err != nil {
 		agentRuntime.Close()
 		return err
@@ -181,6 +194,7 @@ func Run(ctx context.Context, args []string, lookupEnv config.LookupEnv, listen 
 	return Serve(ctx, cancelProcess, servers, readiness, telemetry, logger, settings.ShutdownTimeout, func() {
 		physicalSink.Close()
 		agentRuntime.Close()
+		guardRuntime.Close()
 	})
 }
 

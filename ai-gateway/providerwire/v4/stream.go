@@ -345,6 +345,9 @@ func flushStreamResponse(w http.ResponseWriter) (ok bool) {
 }
 
 func writeCompleteStreamFrame(w http.ResponseWriter, frame []byte) (ok bool) {
+	if sink, ok := w.(streamFrameSink); ok {
+		return sink.writeFrame(frame)
+	}
 	defer func() {
 		if recover() != nil {
 			ok = false
@@ -686,6 +689,9 @@ func (h *handler) emitStreamEvent(w http.ResponseWriter, event streamEvent) stre
 	frame, ok := encodeStreamFrame(event, h.limits.StreamFrameBytes)
 	if !ok {
 		return streamWriteEncodingFailure
+	}
+	if sink, ok := w.(streamEventSink); ok {
+		return sink.writeEvent(event, frame)
 	}
 	if !writeCompleteStreamFrame(w, frame) {
 		return streamWriteWriterFailure

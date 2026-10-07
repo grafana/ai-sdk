@@ -1,0 +1,31 @@
+{
+  "phase": "postflight",
+  "context": {
+    "agent_name": "conformance-guard",
+    "agent_version": "1.2.3",
+    "conversation_id": "conv-hooks-conformance",
+    "model": {
+      "provider": "anthropic",
+      "name": "claude-sonnet-4"
+    }
+  },
+  "input": {
+    "output": [
+      {
+        "role": "assistant",
+        "parts": [
+          {
+            "kind": "tool_call",
+            "tool_call": {
+              "id": "call-bash",
+              "name": "Bash",
+              "input_json": {
+                "command": "rm -rf /tmp/cache"
+              }
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

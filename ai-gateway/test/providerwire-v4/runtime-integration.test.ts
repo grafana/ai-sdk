@@ -10,6 +10,8 @@ import {
   createGateway,
   GatewayInvalidRequestError,
   GatewayModelNotFoundError,
+  GatewayForbiddenError,
+  GatewayFailedDependencyError,
 } from "@ai-sdk/gateway";
 import type { LanguageModelV4StreamPart, LanguageModelV4CallOptions } from "@ai-sdk/provider";
 import { buildGoClientCapture, captureGoClient } from "./go-client-capture";
@@ -17,6 +19,10 @@ import { fileInputGoldenCase } from "./request-cases";
 import { validateStreamEvent, validateUnarySuccess } from "./schema";
 import { generateText, jsonSchema, stepCountIs, streamText, tool } from "ai";
 import packageManifest from "./package.json" with { type: "json" };
+import Ajv2020 from "ajv/dist/2020.js";
+import { validGuardErrors } from "./schema-cases";
+
+const validateGuardError = new Ajv2020({ strict: true, allErrors: true }).compile(JSON.parse(readFileSync(new URL("../../providerwire/v4/schema/error.json", import.meta.url), "utf8")));
 
 const TEST_DIR = dirname(fileURLToPath(import.meta.url));
 const SERVER_DIR = resolve(TEST_DIR, "testserver");
@@ -135,6 +141,108 @@ async function collect(stream: ReadableStream<LanguageModelV4StreamPart>): Promi
 
 before(async () => { baseURL = await startServer(); goClientBinary = buildGoClientCapture(temporaryDirectory); });
 after(async () => { await stopServer(); });
+
+describe("guarded production handler with independent clients", () => {
+  const options: LanguageModelV4CallOptions = { prompt: [{ role: "user", content: [{ type: "text", text: "runtime-guard-canary" }] }] };
+  type Evaluation = { decision: string; phase: string; modelID: string; options: LanguageModelV4CallOptions; output?: Array<{ type: string; text?: string; toolCallId?: string; toolName?: string; input?: unknown }> };
+  const evaluations = async (): Promise<Evaluation[]> => (await (await fetch(`${baseURL}/guarded/evaluations`)).json()) ?? [];
+  const client = (decision: string, modelID = "success") => createGateway({ apiKey: "ignored", baseURL: `${baseURL}/guarded/${decision}`, headers: { "x-access-token": "function-test-token" } })(modelID);
+
+  it("validates positive forbidden/dependency branches and rejects diagnostic or mismatched envelopes", () => {
+    for (const specimen of validGuardErrors) {
+      assert.equal(validateGuardError(specimen.value), true, JSON.stringify(validateGuardError.errors));
+      const value = specimen.value as { error: Record<string, unknown> };
+      assert.equal(validateGuardError({ error: { ...value.error, ruleId: "private-rule" } }), false);
+      assert.equal(validateGuardError({ error: { ...value.error, param: { ruleId: "private-rule" } } }), false);
+      assert.equal(validateGuardError({ error: { ...value.error, message: "private-diagnostic" } }), false);
+      assert.equal(validateGuardError({ error: { ...value.error, code: value.error.code === "forbidden" ? "failed_dependency" : "forbidden" } }), false);
+    }
+  });
+
+  for (const decision of ["preflight-deny", "postflight-deny", "postflight-failed"]) {
+    it(`${decision} releases only fixed nonretryable HTTP errors, never unary content or SSE`, async () => {
+      for (const mode of ["generate", "stream"] as const) {
+        const before = await evaluations();
+        const callsBefore = await stats();
+        const status = decision === "postflight-failed" ? 424 : 403;
+        const expected = validGuardErrors[status === 403 ? 0 : 1]!.value;
+        const raw = await fetch(`${baseURL}/guarded/${decision}/language-model`, {
+          method: "POST", headers: { "content-type": "application/json", "x-access-token": "function-test-token", "ai-language-model-specification-version": "4", "ai-language-model-id": "success", "ai-language-model-streaming": String(mode === "stream") }, body: JSON.stringify(options),
+        });
+        assert.equal(raw.status, status);
+        assert.match(raw.headers.get("content-type") ?? "", /application\/json/);
+        const body = await raw.json();
+        assert.deepEqual(body, expected);
+        assert.equal(validateGuardError(body), true, JSON.stringify(validateGuardError.errors));
+        await assert.rejects(async () => mode === "generate" ? await client(decision).doGenerate(options) : await client(decision).doStream(options), (error: any) => {
+          assert.equal(error.statusCode, status);
+          assert.equal(error.isRetryable, false);
+          assert.equal(error.type, status === 403 ? "forbidden" : "failed_dependency");
+          if (status === 403) { assert.ok(GatewayForbiddenError.isInstance(error)); assert.equal(error.ruleId, undefined); }
+          else assert.ok(GatewayFailedDependencyError.isInstance(error));
+          return true;
+        });
+        const go = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/guarded/${decision}`, accessToken: "function-test-token", modelID: "success", mode, options });
+        assert.equal(go.error?.statusCode, status);
+        assert.equal(go.error.isRetryable, false);
+        assert.equal(go.error.code, status === 403 ? "forbidden" : "failed_dependency");
+        assert.equal(go.result, undefined);
+        assert.equal(go.parts, undefined);
+        const calls = (await evaluations()).slice(before.length);
+        assert.deepEqual(calls.map(call => call.phase), Array.from({ length: 3 }, () => decision === "preflight-deny" ? ["preflight"] : ["preflight", "postflight"]).flat());
+        assert.ok(calls.every(call => call.modelID === "guarded/success"));
+        const callsAfter = await stats();
+        assert.equal(callsAfter.successCalls - callsBefore.successCalls, decision === "preflight-deny" ? 0 : 3);
+        for (const call of calls.filter(call => call.phase === "postflight")) assert.deepEqual(call.output, [{ type: "text", text: mode === "generate" ? "hello from Go" : "hello from Go stream" }]);
+      }
+    });
+  }
+
+  it("approves represented reasoning and fallback output once per logical request in both clients", async () => {
+    for (const modelID of ["success", "reasoning", "mapped-fallback"]) {
+      for (const mode of ["generate", "stream"] as const) {
+        for (const language of ["typescript", "go"] as const) {
+          const before = (await evaluations()).length;
+          const callsBefore = await stats();
+          if (language === "go") {
+            const go = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/guarded/allow`, accessToken: "function-test-token", modelID, mode, options });
+            assert.equal(go.error, undefined);
+            if (mode === "stream") { assert.equal(go.parts.at(-1).type, "finish"); assert.ok(go.parts.every((part: { type: string }) => part.type !== "error")); }
+          } else if (mode === "generate") assert.equal((await client("allow", modelID).doGenerate(options)).finishReason.unified, "stop");
+          else assert.equal((await collect((await client("allow", modelID).doStream(options)).stream)).at(-1)?.type, "finish");
+          const calls = (await evaluations()).slice(before);
+          assert.deepEqual(calls.map(call => call.phase), ["preflight", "postflight"]);
+          assert.ok(calls.every(call => call.modelID === `guarded/${modelID === "mapped-fallback" ? "fallback" : modelID}`));
+          assert.equal((await stats()).successCalls - callsBefore.successCalls, 1);
+          assert.deepEqual(calls[0]!.options.prompt, options.prompt);
+          assert.deepEqual(calls[1]!.options.prompt, options.prompt);
+          assert.ok(calls[1]!.output);
+          if (modelID === "reasoning") assert.deepEqual(calls[1]!.output!.filter(part => part.type === "reasoning").map(part => part.text ?? ""), mode === "generate" ? [""] : ["first ", "second"]);
+        }
+      }
+    }
+  });
+
+  it("captures complete streaming function arguments before denying consumer-owned execution", async () => {
+    const before = (await evaluations()).length;
+    const callsBefore = await stats();
+    let executions = 0;
+    const result = streamText({ model: client("postflight-deny", "stream-tools"), prompt: "Weather in Rio?", maxRetries: 0, onError: () => {}, stopWhen: stepCountIs(2), tools: {
+      weather: tool({ inputSchema: jsonSchema<{ city: string }>({ type: "object", properties: { city: { type: "string" } }, required: ["city"] }), execute: async () => { executions++; return "sunny"; } }),
+    } });
+    const errors: unknown[] = [];
+    for await (const part of result.fullStream) { if (part.type === "error") errors.push(part.error); assert.notEqual(part.type, "tool-call"); }
+    assert.equal(errors.length, 1);
+    assert.ok(GatewayForbiddenError.isInstance(errors[0]));
+    assert.equal(executions, 0);
+    const go = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/guarded/postflight-deny`, accessToken: "function-test-token", modelID: "stream-tools", mode: "stream-loop", abortBetweenSteps: true });
+    assert.deepEqual(go, { canceled: false, executions: 0 });
+    assert.equal((await stats()).streamCalls - callsBefore.streamCalls, 2);
+    const calls = (await evaluations()).slice(before);
+    assert.deepEqual(calls.map(call => call.phase), ["preflight", "postflight", "preflight", "postflight"]);
+    for (const call of calls.filter(call => call.phase === "postflight")) assert.deepEqual(call.output, [{ type: "tool-call", toolCallId: "call-weather", toolName: "weather", input: { city: "Rio" } }]);
+  });
+});
 
 describe("opaque native options through the production handler", () => {
   it("preserves omitted output-token limits in direct and fallback calls from both clients", async () => {

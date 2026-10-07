@@ -76,12 +76,34 @@ For client credentials and endpoint selection, see [Authenticate to Grafana AI
 Gateway](gateway-authentication.md). For the trusted-proxy server mode, see the
 [Cloud authentication contract](../../ai-gateway/docs/cloud-authentication.md).
 
+## Enable operator-owned guards
+
+Guards are disabled by default. Set `GRAFANA_AI_GATEWAY_GUARDS_ENABLED=true`
+only after configuring the operator's Sigil endpoint, policy tenant, explicit
+Basic or bearer authentication, and secret environment reference. The guard
+base URL preserves its path prefix when Gateway joins `api/v1/hooks:evaluate`.
+Guard credentials are separate from caller authentication and generation export.
+
+Enabling guards sends full supported prompts, tool definitions, history,
+represented thinking, and complete output to Sigil despite metadata-only
+recording. Both preflight and postflight are mandatory. Guarded streams deliver
+no tokens until generation and postflight finish. The default 120-second
+`providerwire.model-duration` includes both phases; each hook defaults to five
+seconds. Verify proxy and client timeouts, and measure memory with recording
+enabled before rollout.
+
+Guarded requests accept less input than unguarded requests. Postflight can
+reject a complete response before releasing text or tool-argument deltas. See
+[Gateway guards](gateway-guards.md) for the exact 403/424 behavior, supported
+content, settings, resource limits, and deployment checks. Local tests do not
+prove deployed hook ingress authorization or policy enablement.
+
 ## Use production endpoints
 
-Production mode requires HTTPS for the JSON Web Key Set (JWKS) URL and every
-custom provider base URL. Gateway startup rejects URLs with user information,
-a query string, or a fragment. Configure the final endpoint because the
-Gateway does not follow outbound redirects.
+Production mode requires HTTPS for the JSON Web Key Set (JWKS) URL, every
+custom provider base URL, and the enabled guard endpoint. Gateway startup rejects
+URLs with user information, a query string, or a fragment. Configure the final
+endpoint because Gateway does not follow outbound redirects.
 
 By default, the command listens on port 8080. The model discovery and
 language-model routes require Gateway authentication. These operational routes

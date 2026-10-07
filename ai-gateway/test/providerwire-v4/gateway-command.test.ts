@@ -8,12 +8,13 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import nodeProcess from "node:process";
 import { after, before, describe, it } from "node:test";
-import { createGateway, GatewayInvalidRequestError } from "@ai-sdk/gateway";
+import { createGateway, GatewayFailedDependencyError, GatewayForbiddenError, GatewayInvalidRequestError } from "@ai-sdk/gateway";
 import type { JSONValue, LanguageModelV4, LanguageModelV4CallOptions, LanguageModelV4StreamPart } from "@ai-sdk/provider";
 import { generateText, isStepCount, jsonSchema, streamText, tool } from "ai";
 import { buildGoClientCapture, buildGoStreamTextCapture, captureGoClient } from "./go-client-capture";
 import packageManifest from "./package.json" with { type: "json" };
 import { fetchConfiguredModels } from "../../examples/configured-discovery";
+import { validGuardErrors } from "./schema-cases";
 
 const AI_GATEWAY_ROOT = resolve(import.meta.dirname, "../..");
 const COMMAND_DIR = resolve(AI_GATEWAY_ROOT, "cmd/grafana-ai-gateway");
@@ -44,6 +45,388 @@ before(() => {
 
 after(() => {
   rmSync(buildDirectory, { recursive: true, force: true });
+});
+
+describe("operator-owned Sigil guards through the actual command", () => {
+  for (const family of ["anthropic", "openai"] as const) {
+    for (const policy of ["closed", "open", "disabled"] as const) {
+      it(`rejects native opaque reasoning before release (${family}, ${policy}) with signed and disabled controls`, async () => {
+        const guard = await FakeSigilGuard.start();
+        const primary = family === "anthropic" ? await FakeAnthropic.start() : await FakeOpenAI.start();
+        const fallback = await FakeAnthropic.start();
+        let gateway: GatewayProcess | undefined;
+        try {
+          const config = `providers:\n  primary:\n    type: ${family}\n    apiKeyEnv: ${family === "anthropic" ? "GATEWAY_TEST_ANTHROPIC_KEY" : "GATEWAY_TEST_OPENAI_KEY"}\n    baseURL: ${primary.url}${family === "openai" ? "/v1" : ""}\n  fallback:\n    type: anthropic\n    apiKeyEnv: GATEWAY_TEST_ANTHROPIC_KEY\n    baseURL: ${fallback.url}\nmodels:\n  grafana/assistant:\n    name: Guard boundary\n    primary:\n      provider: primary\n      model: backend-private\n    fallback:\n      - provider: fallback\n        model: backend-private\n    aliases: [assistant]\n`;
+          gateway = await GatewayProcess.start(binaryPath, "", policy === "disabled" ? [] : guard.args(policy === "open"), { GUARD_TOKEN: GUARD_SECRET }, "access-token", config);
+          for (const output of family === "anthropic" ? ["opaque-start", "represented"] as const : ["opaque-start", "opaque-end", "represented"] as const) {
+            primary.reasoningOutput = output;
+            const rejected = policy !== "disabled" && output !== "represented";
+            const marker = family === "anthropic" ? output === "represented" ? "signed-control" : "hidden-output-canary" : output === "represented" ? "rs_guard" : "hidden-output-canary";
+            for (const mode of ["generate", "stream"] as const) {
+              const options: LanguageModelV4CallOptions = { prompt: [{ role: "user", content: [{ type: "text", text: "guard-output-boundary" }] }], maxOutputTokens: 64 };
+              const before = [primary.requests.length, guard.requests.length];
+              const raw: Response = await fetch(`${gateway.url}/api/v1/aisdk/language-model`, {
+                method: "POST", headers: { "content-type": "application/json", "x-access-token": TEST_TOKEN, "ai-language-model-specification-version": "4", "ai-language-model-id": "assistant", "ai-language-model-streaming": String(mode === "stream") }, body: JSON.stringify(options),
+              });
+              const rawBody = await raw.text();
+              assert.equal(raw.status, rejected ? 424 : 200, rawBody);
+              if (rejected) {
+                assert.equal(raw.headers.get("content-type"), "application/json");
+                assert.deepEqual(JSON.parse(rawBody), { error: { message: "failed dependency", type: "failed_dependency", param: null, code: "failed_dependency" } });
+                assert.ok(!rawBody.includes("data: ") && !rawBody.includes("output-canary") && !rawBody.includes("represented thought"));
+              } else {
+                assert.ok(rawBody.includes(marker), rawBody);
+                assert.ok(rawBody.includes("represented thought"), rawBody);
+              }
+              const go = await captureGoClient(goClientBinaryPath, { baseURL: `${gateway.url}/api/v1/aisdk`, accessToken: TEST_TOKEN, modelID: "assistant", mode, options });
+              const client = gateway.client()("assistant");
+              if (rejected) {
+                assert.deepEqual({ status: go.error?.statusCode, retryable: go.error?.isRetryable, category: go.error?.category, code: go.error?.code, message: go.error?.message }, { status: 424, retryable: false, category: "failed_dependency", code: "failed_dependency", message: "failed dependency" });
+                assert.equal(go.result, undefined);
+                assert.equal(go.parts, undefined);
+                await assert.rejects(async () => mode === "generate" ? await client.doGenerate(options) : await client.doStream(options), (error: any) => {
+                  assert.ok(GatewayFailedDependencyError.isInstance(error));
+                  assert.equal(error.statusCode, 424);
+                  assert.equal(error.isRetryable, false);
+                  assert.equal(error.message, "failed dependency");
+                  return true;
+                });
+              } else {
+                assert.equal(go.error, undefined, JSON.stringify(go));
+                assert.ok(JSON.stringify(go).includes(marker), JSON.stringify(go));
+                const ts = mode === "generate" ? await client.doGenerate(options) : await collectGatewayStream((await client.doStream(options)).stream);
+                assert.ok(JSON.stringify(ts).includes(marker), JSON.stringify(ts));
+                assert.ok(JSON.stringify(ts).includes("represented thought"), JSON.stringify(ts));
+              }
+              assert.equal(primary.requests.length - before[0]!, 3);
+              assert.deepEqual(guard.requests.slice(before[1]).map(request => request.body.phase), policy === "disabled" ? [] : rejected ? ["preflight", "preflight", "preflight"] : ["preflight", "postflight", "preflight", "postflight", "preflight", "postflight"]);
+              assert.equal(fallback.requests.length, 0);
+            }
+          }
+          assert.deepEqual([primary.violations, fallback.violations, guard.violations], [[], [], []]);
+          assert.ok(!gateway.stderr.includes("hidden-output-canary"));
+        } finally { await settleCleanup(...(gateway ? [() => gateway!.stop()] : []), () => primary.stop(), () => fallback.stop(), () => guard.stop()); }
+      });
+    }
+  }
+  for (const failOpen of [false, true]) {
+    it(`enforces both phases with strict verdicts (${failOpen ? "open" : "closed"}) in both registered clients`, async () => {
+      const guard = await FakeSigilGuard.start();
+      let resources: [FakeAnthropic, GatewayProcess] | undefined;
+      try {
+        resources = await startGateway(guard.args(failOpen), { GUARD_TOKEN: GUARD_SECRET });
+        const [fake, gateway] = resources;
+        const failures = [
+          { body: JSON.stringify({ action: "deny", reason: GUARD_DIAGNOSTIC, rule_id: GUARD_DIAGNOSTIC, evaluations: "malformed", transformed_input: 42 }), status: 403, outcome: "deny" },
+          { body: '{"action":"deny","reason":[],"reason":42}', status: 403, outcome: "deny" },
+          { body: '{"action":"deny","transformed_input":null,"transformed_input":42}', status: 403, outcome: "deny" },
+          { body: "{", status: failOpen ? 200 : 424, outcome: failOpen ? "fail_open" : "service_failure" },
+          { body: '{"action":"unknown"}', status: failOpen ? 200 : 424, outcome: failOpen ? "fail_open" : "service_failure" },
+          { body: '{}', status: failOpen ? 200 : 424, outcome: failOpen ? "fail_open" : "service_failure" },
+          { body: '{"action":null}', status: failOpen ? 200 : 424, outcome: failOpen ? "fail_open" : "service_failure" },
+          { body: '{"action":"allow","action":"deny"}', status: failOpen ? 200 : 424, outcome: failOpen ? "fail_open" : "service_failure" },
+          { body: GUARD_DIAGNOSTIC, httpStatus: 503, status: failOpen ? 200 : 424, outcome: failOpen ? "fail_open" : "service_failure" },
+        ];
+        for (const phase of ["preflight", "postflight"] as const) {
+          for (const failure of failures) {
+            guard.replies = { [phase]: { status: failure.httpStatus ?? 200, body: failure.body } };
+            for (const mode of ["generate", "stream"] as const) {
+              for (const language of ["go", "typescript"] as const) {
+                const before = [guard.requests.length, fake.requests.length];
+                await assertGuardCommandResult(gateway, language, mode, guardTextOptions(), failure.status);
+                const expectedPhases = phase === "preflight" && failure.status !== 200 ? ["preflight"] : ["preflight", "postflight"];
+                assert.deepEqual(guard.requests.slice(before[0]).map(request => request.body.phase), expectedPhases);
+                assert.equal(fake.requests.length - before[1]!, failure.status !== 200 && phase === "preflight" ? 0 : 1);
+              }
+            }
+            const metrics = await gateway.metrics();
+            assert.ok(sumPrometheusSamples(metrics, "grafana_ai_gateway_guard_evaluations_total", [`phase="${phase}"`, `outcome="${failure.outcome}"`]) >= 4);
+          }
+        }
+        assert.deepEqual(guard.violations, []);
+        assert.deepEqual(fake.violations, []);
+        assertGuardPrivacy([gateway.stderr, await gateway.metrics()], guard);
+      } finally {
+        await settleCleanup(...(resources ? [() => resources![1].stop(), () => resources![0].stop()] : []), () => guard.stop());
+      }
+    });
+
+    it(`rejects every postflight transform, never releasing original unary or SSE (${failOpen ? "open" : "closed"})`, async () => {
+      const guard = await FakeSigilGuard.start();
+      let resources: [FakeAnthropic, GatewayProcess] | undefined;
+      try {
+        resources = await startGateway(guard.args(failOpen), { GUARD_TOKEN: GUARD_SECRET });
+        const [fake, gateway] = resources;
+        for (const transformed_input of [null, {}, { output: [{ role: "assistant", parts: [{ kind: "text", text: "rewritten" }] }] }, { messages: [{ role: "user", parts: [{ kind: "text", text: "normal-stream" }] }], output: [{ role: "assistant", parts: [{ kind: "text", text: "hello from fake Anthropic" }] }] }]) {
+          guard.replies = { postflight: { status: 200, body: JSON.stringify({ action: "allow", transformed_input }) } };
+          for (const mode of ["generate", "stream"] as const) {
+            for (const language of ["go", "typescript"] as const) await assertGuardCommandResult(gateway, language, mode, guardTextOptions(), 424);
+          }
+        }
+        assert.equal(fake.requests.length, 16);
+        assert.equal(guard.requests.filter(request => request.body.phase === "postflight").length, 16);
+        assert.equal(sumPrometheusSamples(await gateway.metrics(), "grafana_ai_gateway_guard_evaluations_total", ['phase="postflight"', 'outcome="transform_failure"']), 16);
+        guard.replies = { preflight: { status: 200, body: '{"action":"allow","transformed_input":null}' } };
+        for (const language of ["go", "typescript"] as const) await assertGuardCommandResult(gateway, language, "generate", guardTextOptions(), 424);
+        assert.equal(fake.requests.length, 16);
+        assert.deepEqual(guard.violations, []);
+      } finally { await settleCleanup(...(resources ? [() => resources![1].stop(), () => resources![0].stop()] : []), () => guard.stop()); }
+    });
+  }
+
+  it("allows unwrapped high-level text calls through both guard phases", async () => {
+    const guard = await FakeSigilGuard.start();
+    let resources: [FakeAnthropic, GatewayProcess] | undefined;
+    try {
+      resources = await startGateway(guard.args(), { GUARD_TOKEN: GUARD_SECRET });
+      const model = resources[1].client()("assistant");
+      const generated = await generateText({ model, prompt: "normal-stream", maxOutputTokens: 64, maxRetries: 0 });
+      assert.equal(generated.text, "hello from fake Anthropic");
+      const streamed = streamText({ model, prompt: "normal-stream", maxOutputTokens: 64, maxRetries: 0 });
+      assert.equal(await streamed.text, "hello from fake Anthropic stream");
+      assert.deepEqual(guard.requests.map(request => request.body.phase), ["preflight", "postflight", "preflight", "postflight"]);
+      assert.deepEqual(guard.violations, []);
+    } finally { await settleCleanup(...(resources ? [() => resources![1].stop(), () => resources![0].stop()] : []), () => guard.stop()); }
+  });
+
+  it("uses operator-owned Basic authentication without borrowing caller credentials", async () => {
+    const guard = await FakeSigilGuard.start();
+    let resources: [FakeAnthropic, GatewayProcess] | undefined;
+    try {
+      guard.authHeader = `Basic ${Buffer.from(`operator-instance:${GUARD_SECRET}`).toString("base64")}`;
+      resources = await startGateway([...guard.args().filter(arg => !arg.startsWith("--guards.auth-mode=")), "--guards.auth-mode=basic", "--guards.auth-username=operator-instance"], { GUARD_TOKEN: GUARD_SECRET });
+      for (const mode of ["generate", "stream"] as const) for (const language of ["go", "typescript"] as const) await assertGuardCommandResult(resources[1], language, mode, guardTextOptions(), 200);
+      assert.equal(guard.requests.length, 8);
+      assert.deepEqual(guard.violations, []);
+      assertGuardPrivacy([resources[1].stderr, await resources[1].metrics()], guard);
+    } finally { await settleCleanup(...(resources ? [() => resources![1].stop(), () => resources![0].stop()] : []), () => guard.stop()); }
+  });
+
+  for (const failOpen of [false, true]) {
+    it(`refuses redirects and bounds hook timeouts without retries (${failOpen ? "open" : "closed"})`, async () => {
+      const guard = await FakeSigilGuard.start();
+      const redirectTarget = await FakeSigilGuard.start();
+      let release = () => {};
+      let resources: [FakeAnthropic, GatewayProcess] | undefined;
+      try {
+        resources = await startGateway(guard.args(failOpen).map(arg => arg.startsWith("--guards.timeout=") ? "--guards.timeout=100ms" : arg), { GUARD_TOKEN: GUARD_SECRET });
+        const [fake, gateway] = resources;
+        for (const failure of ["redirect", "timeout"]) {
+          guard.replies = failure === "redirect" ? { preflight: { status: 307, body: GUARD_DIAGNOSTIC, headers: { Location: `${redirectTarget.url}/operator/api/v1/hooks:evaluate` } } } : {};
+          if (failure === "timeout") guard.preflightGate = new Promise<void>(resolve => { release = resolve; });
+          for (const mode of ["generate", "stream"] as const) {
+            for (const language of ["go", "typescript"] as const) {
+              const before = [guard.requests.length, fake.requests.length];
+              await assertGuardCommandResult(gateway, language, mode, guardTextOptions(), failOpen ? 200 : 424);
+              assert.deepEqual(guard.requests.slice(before[0]).map(request => request.body.phase), failOpen ? ["preflight", "postflight"] : ["preflight"]);
+              assert.equal(fake.requests.length - before[1]!, failOpen ? 1 : 0);
+            }
+          }
+          release();
+          guard.preflightGate = undefined;
+        }
+        assert.equal(redirectTarget.requests.length, 0);
+        assert.deepEqual(guard.violations, []);
+        assertGuardPrivacy([gateway.stderr, await gateway.metrics()], guard);
+      } finally { release(); await settleCleanup(...(resources ? [() => resources![1].stop(), () => resources![0].stop()] : []), () => guard.stop(), () => redirectTarget.stop()); }
+    });
+  }
+
+  it("applies source-shaped base64 response transforms to text, reasoning and function history before ordered fallback", async () => {
+    const guard = await FakeSigilGuard.start();
+    const primary = await FakeAnthropic.start();
+    const secondary = await FakeAnthropic.start();
+    let gateway: GatewayProcess | undefined;
+    try {
+      gateway = await GatewayProcess.start(binaryPath, primary.url, guard.args(), { GUARD_TOKEN: GUARD_SECRET }, "access-token", undefined, secondary.url);
+      primary.failureStatus = 503;
+      guard.replies = { preflight: { status: 200, body: JSON.stringify({ action: "allow", transformed_input: redactedGuardInput() }) } };
+      const options = guardHistoryOptions();
+      const original = JSON.stringify(options);
+      for (const mode of ["generate", "stream"] as const) {
+        for (const language of ["go", "typescript"] as const) {
+          const before = guard.requests.length;
+          await assertGuardCommandResult(gateway, language, mode, options, 200);
+          const phases = guard.requests.slice(before).map(request => request.body);
+          assert.deepEqual(phases.map(request => request.phase), ["preflight", "postflight"]);
+          assert.ok(JSON.stringify(phases[0]!.input).includes(GUARD_CANARY));
+          assert.ok(!JSON.stringify(phases[1]!.input).includes(GUARD_CANARY));
+          assert.deepEqual(phases[1]!.input.messages, redactedGuardRequestMessages());
+          assert.deepEqual(phases[1]!.input.output, [{ role: "assistant", parts: [{ kind: "text", text: mode === "generate" ? "hello from fake Anthropic" : "hello from fake Anthropic stream" }] }]);
+          assert.equal(JSON.stringify(options), original);
+          for (const fake of [primary, secondary]) {
+            const request = fake.requests.at(-1)!;
+            assert.ok(!JSON.stringify(request).includes(GUARD_CANARY));
+            assert.ok(JSON.stringify(request.body).includes("redacted"));
+            assert.ok(JSON.stringify(request.body).includes("supplied-signature"));
+          }
+          assert.deepEqual(primary.requests.at(-1)!.body, secondary.requests.at(-1)!.body);
+        }
+      }
+      assert.deepEqual([primary.requests.length, secondary.requests.length], [4, 4]);
+      primary.failureStatus = undefined;
+      for (const phase of ["preflight", "postflight"] as const) {
+        guard.replies = { [phase]: { status: 200, body: '{"action":"deny"}' } };
+        const before = primary.requests.length;
+        for (const mode of ["generate", "stream"] as const) for (const language of ["go", "typescript"] as const) await assertGuardCommandResult(gateway, language, mode, guardTextOptions(), 403);
+        assert.equal(primary.requests.length - before, phase === "preflight" ? 0 : 4);
+        assert.equal(secondary.requests.length, 4, "policy failure must not start another provider candidate");
+      }
+      assert.deepEqual([primary.violations, secondary.violations, guard.violations], [[], [], []]);
+    } finally { await settleCleanup(...(gateway ? [() => gateway!.stop()] : []), () => primary.stop(), () => secondary.stop(), () => guard.stop()); }
+  });
+
+  it("withholds successful HTTP headers until the postflight decision in both modes", async () => {
+    const guard = await FakeSigilGuard.start();
+    let release = () => {};
+    let resources: [FakeAnthropic, GatewayProcess] | undefined;
+    try {
+      resources = await startGateway(guard.args(), { GUARD_TOKEN: GUARD_SECRET });
+      const [fake, gateway] = resources;
+      for (const streaming of [false, true]) {
+        guard.postflightGate = new Promise<void>(resolve => { release = resolve; });
+        guard.replies = { postflight: { status: 200, body: '{"action":"deny"}' } };
+        const before = guard.requests.length;
+        let settled = false;
+        const pending = fetch(`${gateway.url}/api/v1/aisdk/language-model`, {
+          method: "POST", headers: { "content-type": "application/json", "x-access-token": TEST_TOKEN, "ai-language-model-specification-version": "4", "ai-language-model-id": "assistant", "ai-language-model-streaming": String(streaming) }, body: JSON.stringify(guardTextOptions()), signal: AbortSignal.timeout(10_000),
+        }).then(response => { settled = true; return response; });
+        await poll(async () => guard.requests.length === before + 2, 2_000, "held postflight request");
+        await new Promise(resolve => setTimeout(resolve, 30));
+        assert.equal(settled, false, "no successful headers may be sent while postflight is pending");
+        release();
+        const response = await pending;
+        assert.equal(response.status, 403);
+        assert.match(response.headers.get("content-type") ?? "", /application\/json/);
+        assert.deepEqual(await response.json(), validGuardErrors[0]!.value);
+      }
+      assert.equal(fake.requests.length, 2);
+      assert.deepEqual(guard.violations, []);
+    } finally { release(); await settleCleanup(...(resources ? [() => resources![1].stop(), () => resources![0].stop()] : []), () => guard.stop()); }
+  });
+
+  it("denies a completed streaming function call before either consumer-owned tool loop can execute", async () => {
+    const guard = await FakeSigilGuard.start();
+    let resources: [FakeAnthropic, GatewayProcess] | undefined;
+    try {
+      resources = await startGateway(guard.args(true), { GUARD_TOKEN: GUARD_SECRET });
+      const [fake, gateway] = resources;
+      fake.functionTools = true;
+      guard.replies = { postflight: { status: 200, body: '{"action":"deny"}' } };
+      let executions = 0;
+      const result = streamText({ model: gateway.client()("assistant"), prompt: "Weather in Rio?", maxRetries: 0, onError: () => {}, stopWhen: isStepCount(2), abortSignal: AbortSignal.timeout(10_000), tools: {
+        weather: tool({ inputSchema: jsonSchema<{ city: string }>({ type: "object", properties: { city: { type: "string" } }, required: ["city"] }), execute: async () => { executions++; return "sunny"; } }),
+      } });
+      const errors: unknown[] = [];
+      for await (const part of result.fullStream) {
+        if (part.type === "error") errors.push(part.error);
+        assert.ok(!["tool-call", "tool-input-delta", "text-delta", "tool-result"].includes(part.type));
+      }
+      assert.equal(errors.length, 1);
+      assert.ok(GatewayForbiddenError.isInstance(errors[0]));
+      assert.equal(executions, 0);
+      const config = { baseURL: `${gateway.url}/api/v1/aisdk`, accessToken: TEST_TOKEN, modelID: "assistant", mode: "stream-loop" };
+      const go = await captureGoClient(goClientBinaryPath, config);
+      assert.equal(go.error?.statusCode, 403);
+      const counted = await captureGoClient(goClientBinaryPath, { ...config, abortBetweenSteps: true });
+      assert.deepEqual(counted, { canceled: false, executions: 0 });
+      assert.equal(fake.requests.length, 3);
+      assert.equal(guard.requests.length, 6);
+      for (const request of guard.requests.filter(request => request.body.phase === "postflight")) assert.deepEqual(request.body.input.output, [{ role: "assistant", parts: [{ kind: "tool_call", tool_call: { id: "call-weather", name: "weather", input_json: { city: "Rio" } } }] }]);
+      assert.deepEqual(guard.violations, []);
+    } finally { await settleCleanup(...(resources ? [() => resources![1].stop(), () => resources![0].stop()] : []), () => guard.stop()); }
+  });
+
+  it("never calls guards for disabled, unauthenticated, invalid or unsupported requests", async () => {
+    const guard = await FakeSigilGuard.start();
+    let resources: [FakeAnthropic, GatewayProcess] | undefined;
+    try {
+      resources = await startGateway([`--guards.endpoint=${guard.url}/operator`, "--guards.auth-secret-env=ABSENT_GUARD_SECRET"], { ABSENT_GUARD_SECRET: "" });
+      for (const mode of ["generate", "stream"] as const) for (const language of ["go", "typescript"] as const) await assertGuardCommandResult(resources[1], language, mode, guardTextOptions(), 200);
+      assert.equal(guard.requests.length, 0);
+      await settleCleanup(() => resources![1].stop(), () => resources![0].stop());
+      resources = undefined;
+      resources = await startGateway(guard.args(true), { GUARD_TOKEN: GUARD_SECRET });
+      const [fake, gateway] = resources;
+      for (const mode of ["generate", "stream"] as const) {
+        const go = await captureGoClient(goClientBinaryPath, { baseURL: `${gateway.url}/api/v1/aisdk`, accessToken: "invalid", modelID: "assistant", mode, options: guardTextOptions() });
+        assert.equal(go.error?.statusCode, 401);
+        await assert.rejects(async () => mode === "generate" ? await gateway.client("invalid")("assistant").doGenerate(guardTextOptions()) : await gateway.client("invalid")("assistant").doStream(guardTextOptions()), (error: any) => error.statusCode === 401);
+      }
+      const malformed = await fetch(`${gateway.url}/api/v1/aisdk/language-model`, { method: "POST", headers: { "content-type": "application/json", "x-access-token": TEST_TOKEN, "ai-language-model-specification-version": "4", "ai-language-model-id": "assistant", "ai-language-model-streaming": "false" }, body: '{"prompt":[],"unknown":true}' });
+      assert.equal(malformed.status, 400);
+      await malformed.arrayBuffer();
+      const unsupported: LanguageModelV4CallOptions[] = [
+        { prompt: [], headers: { authorization: "Bearer caller-secret" } },
+        { prompt: [], providerOptions: { gateway: { bypass: true } } },
+        { prompt: [{ role: "user", content: [{ type: "file", mediaType: "text/plain", data: { type: "text", text: "hidden" } }] }] },
+        { prompt: [], providerOptions: { openai: { instructions: "hidden", previousResponseId: "stored" } } },
+        { prompt: [], tools: [{ type: "function", name: "weather", inputSchema: {}, inputExamples: [{ input: { city: "hidden" } }] }] },
+      ];
+      for (const options of unsupported) for (const mode of ["generate", "stream"] as const) for (const language of ["go", "typescript"] as const) await assertGuardCommandResult(gateway, language, mode, options, 400);
+      assert.equal(guard.requests.length, 0);
+      assert.equal(fake.requests.length, 0);
+    } finally { await settleCleanup(...(resources ? [() => resources![1].stop(), () => resources![0].stop()] : []), () => guard.stop()); }
+  });
+
+  it("isolates caller headers and concurrent policy inputs, keeping export hooks disabled and metadata-only", async () => {
+    const guard = await FakeSigilGuard.start();
+    const observer = await FakeAgentObservability.start();
+    let resources: [FakeAnthropic, GatewayProcess] | undefined;
+    try {
+      resources = await startGateway([...guard.args(), "--agento11y.enabled", "--agento11y.protocol=http", `--agento11y.endpoint=${observer.url}`, "--no-agento11y.tls", "--agento11y.auth-secret-env=GATEWAY_TEST_AGENTO11Y_KEY", "--agento11y.batch-size=1", "--agento11y.flush-interval=1ms", "--agento11y.flush-timeout=2s", "--agento11y.shutdown-timeout=2s"], { GUARD_TOKEN: GUARD_SECRET, GATEWAY_TEST_AGENTO11Y_KEY: "integration-agento11y-key" });
+      const [fake, gateway] = resources;
+      const inputs = Array.from({ length: 6 }, (_, index) => guardTextOptions(`${GUARD_CANARY}-${index} normal-stream`));
+      const original = JSON.stringify(inputs);
+      await Promise.all(inputs.map(async (options, index) => {
+        const headers = { "X-Scope-OrgID": `caller-${index}`, "X-Agento11y-Hook-Timeout-Ms": "1", "X-Guard-Bypass": "true", "X-Guard-Endpoint": "http://caller.invalid", "Authorization": `Bearer caller-${index}` };
+        if (index % 2 === 0) {
+          const go = await captureGoClient(goClientBinaryPath, { baseURL: `${gateway.url}/api/v1/aisdk`, accessToken: TEST_TOKEN, modelID: "assistant", mode: "stream", options, headers: Object.fromEntries(Object.entries(headers).map(([name, value]) => [name, [value]])) });
+          assert.equal(go.error, undefined);
+          assert.equal(go.parts.at(-1).type, "finish");
+        } else {
+          const client = createGateway({ apiKey: "ignored", baseURL: `${gateway.url}/api/v1/aisdk`, headers: { ...headers, "X-Access-Token": TEST_TOKEN } })("assistant");
+          assert.equal((await client.doGenerate(options)).finishReason.unified, "stop");
+        }
+      }));
+      assert.equal(JSON.stringify(inputs), original);
+      assert.equal(fake.requests.length, 6);
+      assert.equal(guard.requests.length, 12);
+      for (let index = 0; index < inputs.length; index++) {
+        const calls = guard.requests.filter(request => JSON.stringify(request.body.input.messages).includes(`${GUARD_CANARY}-${index}`));
+        assert.deepEqual(calls.map(request => request.body.phase), ["preflight", "postflight"]);
+      }
+      await observer.waitForGenerations(6);
+      for (const phase of ["preflight", "postflight"] as const) {
+        guard.replies = { [phase]: { status: 200, body: JSON.stringify({ action: "deny", reason: GUARD_DIAGNOSTIC, rule_id: GUARD_DIAGNOSTIC }) } };
+        for (const mode of ["generate", "stream"] as const) for (const language of ["go", "typescript"] as const) await assertGuardCommandResult(gateway, language, mode, guardTextOptions(`${GUARD_CANARY} normal-stream`), 403);
+        if (phase === "preflight") assert.equal(fake.requests.length, 6);
+      }
+      await observer.waitForGenerations(10);
+      assert.deepEqual([guard.violations, observer.violations, fake.violations], [[], [], []]);
+      assert.equal(fake.requests.length, 10);
+      assert.equal(observer.generations.length, 10);
+      for (const request of fake.requests) {
+        assert.ok(!JSON.stringify(request.headers).includes(GUARD_SECRET));
+        assert.equal(request.headers["x-scope-orgid"], undefined);
+        assert.equal(request.headers["x-agento11y-hook-timeout-ms"], undefined);
+      }
+      for (const generation of observer.generations) {
+        assert.deepEqual(generation.model, { provider: "grafana", name: "grafana/assistant" });
+        assert.ok(!generation.input && !generation.output && !generation.tools && !generation.system_prompt);
+        assert.equal((generation.usage as Record<string, unknown>).input_tokens, "2");
+        assert.ok(["3", "6"].includes((generation.usage as Record<string, unknown>).output_tokens as string));
+        assert.equal((generation.metadata as Record<string, unknown>)["agento11y.sdk.content_capture_mode"], "metadata_only");
+      }
+      const metrics = await gateway.metrics();
+      assert.equal(sumPrometheusSamples(metrics, "grafana_ai_gateway_guard_evaluations_total", ['phase="preflight"', 'outcome="deny"']), 4);
+      assert.equal(sumPrometheusSamples(metrics, "grafana_ai_gateway_guard_evaluations_total", ['phase="postflight"', 'outcome="deny"']), 4);
+      assert.equal(sumPrometheusSamples(metrics, "aisdk_model_requests_total", ['provider="grafana"', 'model="grafana/assistant"']), 10);
+      assertGuardPrivacy([gateway.stderr, metrics, observer.generations], guard);
+      await gateway.stop();
+      assertGuardPrivacy([gateway.stderr, observer.generations], guard);
+    } finally { await settleCleanup(...(resources ? [() => resources![1].stop(), () => resources![0].stop()] : []), () => guard.stop(), () => observer.stop()); }
+  });
 });
 
 describe("native option forwarding through the authenticated command", () => {
@@ -2580,6 +2963,7 @@ class FakeAnthropic {
   oversizedErrors = false;
   failureStatus?: number;
   functionTools = false;
+  reasoningOutput?: "opaque-start" | "opaque-end" | "represented";
   backendModel = "backend-private";
   private readonly server: ReturnType<typeof createServer>;
 
@@ -2619,6 +3003,34 @@ class FakeAnthropic {
     if (singleHeader(request.headers["x-api-key"]) !== "integration-anthropic-key") this.violations.push("api-key");
     if (body.model !== this.backendModel) this.violations.push(`model=${String(body.model)}`);
     if (request.headers["x-access-token"] != null || request.headers["x-grafana-id"] != null) this.violations.push("forwarded-caller-credential");
+
+    if (this.reasoningOutput != null) {
+      const content = [
+        { type: "thinking", thinking: "represented thought", signature: "signed-control" },
+        ...(this.reasoningOutput === "represented" ? [] : [{ type: "redacted_thinking", data: "hidden-output-canary" }]),
+      ];
+      const message = { id: "msg_guard", type: "message", role: "assistant", model: this.backendModel, content, stop_reason: "end_turn", stop_sequence: null, usage: { input_tokens: 2, output_tokens: 3 } };
+      if (body.stream !== true) {
+        response.writeHead(200, { "Content-Type": "application/json" });
+        response.end(JSON.stringify(message));
+        return;
+      }
+      response.writeHead(200, { "Content-Type": "text/event-stream" });
+      const event = (value: { type: string; [key: string]: unknown }) => response.write(`event: ${value.type}\ndata: ${JSON.stringify(value)}\n\n`);
+      event({ type: "message_start", message: { ...message, content: [], stop_reason: null, usage: { input_tokens: 2, output_tokens: 0 } } });
+      event({ type: "content_block_start", index: 0, content_block: { type: "thinking", thinking: "", signature: "" } });
+      event({ type: "content_block_delta", index: 0, delta: { type: "thinking_delta", thinking: "represented thought" } });
+      event({ type: "content_block_delta", index: 0, delta: { type: "signature_delta", signature: "signed-control" } });
+      event({ type: "content_block_stop", index: 0 });
+      if (this.reasoningOutput !== "represented") {
+        event({ type: "content_block_start", index: 1, content_block: content[1] });
+        event({ type: "content_block_stop", index: 1 });
+      }
+      event({ type: "message_delta", delta: { stop_reason: "end_turn", stop_sequence: null }, usage: { output_tokens: 3 } });
+      event({ type: "message_stop" });
+      response.end();
+      return;
+    }
 
     if (serialized.includes("wp17-reasoning")) {
       response.writeHead(200,{"Content-Type":"text/event-stream"});
@@ -2808,6 +3220,7 @@ class FakeOpenAI {
   redirectTo?: string;
   failWithSecret = false;
   sources = false;
+  reasoningOutput?: "opaque-start" | "opaque-end" | "represented";
   private readonly server: ReturnType<typeof createServer>;
 
   private constructor(server: ReturnType<typeof createServer>, url: string) {
@@ -2839,6 +3252,27 @@ class FakeOpenAI {
     if (request.url !== "/v1/responses") this.violations.push(`path=${request.url}`);
     if (authorization !== "Bearer integration-openai-key") this.violations.push("authorization");
     if (body.model !== "backend-private") this.violations.push(`model=${String(body.model)}`);
+
+    if (this.reasoningOutput != null) {
+      const item = { type: "reasoning", id: "rs_guard", summary: [{ type: "summary_text", text: "represented thought" }], encrypted_content: this.reasoningOutput === "represented" ? null : "hidden-output-canary" };
+      const completed = { id: "resp_guard", object: "response", created_at: 1, status: "completed", model: "backend-private", output: [item], usage: { input_tokens: 2, output_tokens: 3, total_tokens: 5 } };
+      if (body.stream !== true) {
+        response.writeHead(200, { "Content-Type": "application/json" });
+        response.end(JSON.stringify(completed));
+        return;
+      }
+      response.writeHead(200, { "Content-Type": "text/event-stream" });
+      const events = [
+        { type: "response.created", response: { ...completed, output: [], status: "in_progress", usage: null } },
+        { type: "response.output_item.added", output_index: 0, item: { ...item, summary: [], encrypted_content: this.reasoningOutput === "opaque-start" ? "hidden-output-canary" : null } },
+        { type: "response.reasoning_summary_text.delta", output_index: 0, item_id: "rs_guard", summary_index: 0, delta: "represented thought" },
+        { type: "response.output_item.done", output_index: 0, item: { ...item, encrypted_content: this.reasoningOutput === "opaque-start" ? null : item.encrypted_content } },
+        { type: "response.completed", response: completed },
+      ];
+      events.forEach((event, index) => response.write(`event: ${event.type}\ndata: ${JSON.stringify({ ...event, sequence_number: index })}\n\n`));
+      response.end();
+      return;
+    }
 
     if (JSON.stringify(body).includes("wp17-reasoning")) {
       response.writeHead(200,{"Content-Type":"text/event-stream"});
@@ -2891,6 +3325,180 @@ class FakeOpenAI {
     ];
     events.forEach((event, index) => response.write(`event: ${String(event.type)}\ndata: ${JSON.stringify({ ...event, sequence_number: index })}\n\n`));
     response.end();
+  }
+}
+
+const GUARD_SECRET = "integration-operator-guard-secret";
+const GUARD_CANARY = "guard-input-canary-7f9d";
+const GUARD_DIAGNOSTIC = "private-guard-reason-rule-89c1";
+
+type SigilGuardMessage = { role: string; parts?: Array<{ kind: string; text?: string; thinking?: string; tool_call?: { id?: string; name: string; input_json?: JSONValue }; tool_result?: { tool_call_id?: string; name?: string; content?: string; content_json?: JSONValue; is_error?: boolean } }> };
+type SigilGuardRequest = { phase: "preflight" | "postflight"; context: { agent_name: string; model: { provider: string; name: string } }; input: { messages?: SigilGuardMessage[]; tools?: Array<{ name: string; description?: string; type?: string; input_schema_json?: string }>; output?: SigilGuardMessage[]; system_prompt?: string } };
+
+function guardTextOptions(text = "normal-stream"): LanguageModelV4CallOptions {
+  return { prompt: [{ role: "user", content: [{ type: "text", text }] }], maxOutputTokens: 64 };
+}
+
+function guardHistoryOptions(): LanguageModelV4CallOptions {
+  return {
+    maxOutputTokens: 64,
+    tools: [{ type: "function", name: "weather", description: "weather lookup", inputSchema: { type: "object", properties: { city: { type: "string" } } } }],
+    prompt: [
+      { role: "system", content: "system policy" },
+      { role: "user", content: [{ type: "text", text: `${GUARD_CANARY} normal-stream` }] },
+      { role: "assistant", content: [
+        { type: "reasoning", text: "represented thought", providerOptions: { anthropic: { signature: "supplied-signature" } } },
+        { type: "tool-call", toolCallId: "prior-call", toolName: "weather", input: { city: GUARD_CANARY, count: 1 } },
+      ] },
+      { role: "tool", content: [{ type: "tool-result", toolCallId: "prior-call", toolName: "weather", output: { type: "json", value: { forecast: GUARD_CANARY, count: 1 } } }] },
+    ],
+  };
+}
+
+function redactedGuardRequestMessages(): SigilGuardMessage[] {
+  return [
+    { role: "system", parts: [{ kind: "text", text: "system policy" }] },
+    { role: "user", parts: [{ kind: "text", text: "redacted normal-stream" }] },
+    { role: "assistant", parts: [{ kind: "thinking", thinking: "represented thought" }, { kind: "tool_call", tool_call: { id: "prior-call", name: "weather", input_json: { city: "redacted", count: 1 } } }] },
+    { role: "tool", parts: [{ kind: "tool_result", tool_result: { tool_call_id: "prior-call", name: "weather", content_json: { forecast: "redacted", count: 1 } } }] },
+  ];
+}
+
+function redactedGuardInput(): unknown {
+  const jsonBytes = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64");
+  return {
+    tools: [{ name: "weather", description: "weather lookup", type: "function", input_schema_json: jsonBytes({ type: "object", properties: { city: { type: "string" } } }) }],
+    messages: [
+      { role: "system", parts: [{ kind: "text", text: "system policy" }] },
+      { role: "user", parts: [{ kind: "text", text: "redacted normal-stream" }] },
+      { role: "assistant", parts: [{ kind: "thinking", thinking: "represented thought" }, { kind: "tool_call", tool_call: { id: "prior-call", name: "weather", input_json: jsonBytes({ city: "redacted", count: 1 }) } }] },
+      { role: "tool", parts: [{ kind: "tool_result", tool_result: { tool_call_id: "prior-call", name: "weather", content_json: jsonBytes({ forecast: "redacted", count: 1 }) } }] },
+    ],
+  };
+}
+
+async function assertGuardCommandResult(gateway: GatewayProcess, language: "go" | "typescript", mode: "generate" | "stream", options: LanguageModelV4CallOptions, status: number): Promise<void> {
+  if (language === "go") {
+    const result = await captureGoClient(goClientBinaryPath, { baseURL: `${gateway.url}/api/v1/aisdk`, accessToken: TEST_TOKEN, modelID: "assistant", mode, options });
+    if (status === 200) {
+      assert.equal(result.error, undefined);
+      if (mode === "generate") assert.deepEqual(result.result.content, [{ type: "text", text: "hello from fake Anthropic" }]);
+      else {
+        assert.equal(result.parts.at(-1).type, "finish");
+        assert.ok(result.parts.every((part: { type: string }) => part.type !== "error"));
+        assert.equal(result.parts.filter((part: { type: string }) => part.type === "text-delta").map((part: { delta: string }) => part.delta).join(""), "hello from fake Anthropic stream");
+      }
+    } else {
+      assert.equal(result.error?.statusCode, status, JSON.stringify(result));
+      assert.equal(result.error.isRetryable, false);
+      assert.equal(result.result, undefined);
+      assert.equal(result.parts, undefined);
+      if (status !== 400) {
+        const expected = status === 403 ? "forbidden" : "failed_dependency";
+        assert.deepEqual({ category: result.error.category, code: result.error.code, message: result.error.message }, { category: expected, code: expected, message: expected === "forbidden" ? "forbidden" : "failed dependency" });
+      }
+    }
+    return;
+  }
+  const client = gateway.client()("assistant");
+  if (status === 200) {
+    if (mode === "generate") assert.deepEqual((await client.doGenerate(options)).content, [{ type: "text", text: "hello from fake Anthropic" }]);
+    else {
+      const parts = await collectGatewayStream((await client.doStream(options)).stream);
+      assert.equal(parts.at(-1)?.type, "finish");
+      assert.equal(parts.filter(part => part.type === "text-delta").map(part => part.delta).join(""), "hello from fake Anthropic stream");
+    }
+  } else {
+    await assert.rejects(async () => mode === "generate" ? await client.doGenerate(options) : await client.doStream(options), (error: any) => {
+      assert.equal(error.statusCode, status);
+      assert.equal(error.isRetryable, false);
+      if (status === 403) { assert.ok(GatewayForbiddenError.isInstance(error)); assert.equal(error.ruleId, undefined); assert.equal(error.message, "forbidden"); }
+      else if (status === 424) { assert.ok(GatewayFailedDependencyError.isInstance(error)); assert.equal(error.message, "failed dependency"); }
+      else assert.ok(GatewayInvalidRequestError.isInstance(error));
+      return true;
+    });
+  }
+}
+
+function assertGuardPrivacy(surfaces: unknown, guard: FakeSigilGuard): void {
+  const serialized = JSON.stringify(surfaces);
+  for (const value of [GUARD_CANARY, GUARD_SECRET, guard.authHeader, GUARD_DIAGNOSTIC, guard.url, TEST_TOKEN, "integration-anthropic-key", "integration-agento11y-key", "represented thought", "supplied-signature", "hello from fake Anthropic"]) assert.ok(!serialized.includes(value), `private guard value leaked: ${value}`);
+}
+
+class FakeSigilGuard {
+  readonly requests: Array<{ headers: IncomingMessage["headers"]; body: SigilGuardRequest }> = [];
+  readonly violations: string[] = [];
+  replies: Partial<Record<"preflight" | "postflight", { status: number; body: string; headers?: Record<string, string> }>> = {};
+  preflightGate?: Promise<void>;
+  postflightGate?: Promise<void>;
+  authHeader = `Bearer ${GUARD_SECRET}`;
+
+  private constructor(private readonly server: ReturnType<typeof createServer>, readonly url: string) {}
+
+  static async start(): Promise<FakeSigilGuard> {
+    let fake: FakeSigilGuard;
+    const server = createServer((request, response) => void fake.handle(request, response));
+    await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    assert.ok(address && typeof address !== "string");
+    fake = new FakeSigilGuard(server, `http://127.0.0.1:${address.port}`);
+    return fake;
+  }
+
+  args(failOpen = false): string[] {
+    return ["--guards.enabled", `--guards.endpoint=${this.url}/operator`, "--guards.tenant-id=operator", "--guards.auth-mode=bearer", "--guards.auth-secret-env=GUARD_TOKEN", ...(failOpen ? ["--guards.fail-open"] : []), "--guards.timeout=5s", "--guards.body-bytes=4194304", "--guards.retained-bytes=8388608", "--guards.max-concurrent=8"];
+  }
+
+  async stop(): Promise<void> {
+    this.server.closeAllConnections();
+    await new Promise<void>(resolve => this.server.close(() => resolve()));
+  }
+
+  private async handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
+    try {
+      const chunks: Buffer[] = [];
+      for await (const chunk of request) chunks.push(Buffer.from(chunk));
+      const body = JSON.parse(Buffer.concat(chunks).toString()) as SigilGuardRequest;
+      this.requests.push({ headers: { ...request.headers }, body });
+      assert.equal(request.method, "POST");
+      assert.equal(request.url, "/operator/api/v1/hooks:evaluate");
+      assert.equal(singleHeader(request.headers.authorization), this.authHeader);
+      assert.equal(singleHeader(request.headers["x-scope-orgid"]), "operator");
+      assert.equal(singleHeader(request.headers["content-type"]), "application/json");
+      const timeout = Number(singleHeader(request.headers["x-agento11y-hook-timeout-ms"]));
+      assert.ok(Number.isInteger(timeout) && timeout >= 1 && timeout <= 5_000);
+      for (const header of ["x-access-token", "x-grafana-id", "x-guard-bypass", "x-guard-endpoint", "x-api-key"]) assert.equal(request.headers[header], undefined);
+      assert.deepEqual(Object.keys(body).sort(), ["context", "input", "phase"]);
+      assert.deepEqual(body.context, { agent_name: "grafana-ai-gateway", model: { provider: "grafana", name: "grafana/assistant" } });
+      assert.ok(body.phase === "preflight" || body.phase === "postflight");
+      assert.ok(Array.isArray(body.input.messages));
+      if (body.phase === "preflight") assert.equal(body.input.output, undefined);
+      else { assert.equal(body.input.output?.length, 1); assert.equal(body.input.output[0]!.role, "assistant"); }
+      for (const message of [...(body.input.messages ?? []), ...(body.input.output ?? [])]) {
+        assert.ok(["system", "user", "assistant", "tool"].includes(message.role));
+        for (const part of message.parts ?? []) {
+          assert.ok(["text", "thinking", "tool_call", "tool_result"].includes(part.kind));
+          if (part.kind === "tool_call") { assert.ok(part.tool_call); assert.equal(typeof part.tool_call.name, "string"); assert.equal(typeof part.tool_call.input_json, "object"); assert.ok(part.tool_call.input_json && !Array.isArray(part.tool_call.input_json)); }
+          if (part.kind === "tool_result") { assert.ok(part.tool_result); if (part.tool_result.tool_call_id === "prior-call") assert.deepEqual(part.tool_result.content_json, { forecast: body.phase === "preflight" ? GUARD_CANARY : "redacted", count: 1 }); }
+        }
+      }
+      for (const tool of body.input.tools ?? []) {
+        assert.equal(tool.type, "function");
+        assert.equal(typeof tool.input_schema_json, "string");
+        const bytes = Buffer.from(tool.input_schema_json!, "base64");
+        assert.equal(bytes.toString("base64"), tool.input_schema_json);
+        assert.equal(typeof JSON.parse(bytes.toString()), "object");
+      }
+      if (body.phase === "preflight") await this.preflightGate;
+      else await this.postflightGate;
+      const reply = this.replies[body.phase] ?? { status: 200, body: '{"action":"allow"}' };
+      response.writeHead(reply.status, { "Content-Type": "application/json", ...reply.headers });
+      response.end(reply.body);
+    } catch (error) {
+      this.violations.push(String(error));
+      response.writeHead(500);
+      response.end();
+    }
   }
 }
 

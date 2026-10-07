@@ -15,6 +15,7 @@ type safeErrorCategory uint8
 
 const (
 	safeInvalidRequest safeErrorCategory = iota + 1
+	safeForbidden
 	safeModelNotFound
 	safeRateLimit
 	safeOverload
@@ -72,6 +73,8 @@ func documentForSafeError(value safeError) safeErrorDocument {
 			body = canonicalInvalidRequestError
 		}
 		return safeErrorDocument{status: http.StatusBadRequest, body: body}
+	case safeForbidden:
+		return safeErrorDocument{status: http.StatusForbidden, body: canonicalPermissionError}
 	case safeModelNotFound:
 		return safeErrorDocument{status: http.StatusNotFound, body: canonicalModelNotFoundError}
 	case safeRateLimit:

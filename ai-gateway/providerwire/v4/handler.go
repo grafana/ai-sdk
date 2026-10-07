@@ -49,7 +49,7 @@ type Limits struct {
 	StreamParts int
 	// StreamFrameBytes is the maximum complete SSE frame size.
 	StreamFrameBytes int64
-	// ModelDuration is the maximum total duration of one model call.
+	// ModelDuration is the maximum total duration of one model call, including guard phases when enabled.
 	ModelDuration time.Duration
 	// StreamIdleDuration is the maximum time between represented provider parts.
 	StreamIdleDuration time.Duration
@@ -63,12 +63,18 @@ type Config struct {
 	Resolver catalog.ModelResolver
 	// Limits bounds request processing, responses, and model execution.
 	Limits Limits
+	// Guard optionally evaluates both phases before successful response release.
+	Guard Guard
+	// GuardRetainedBytes limits additional retained data for a guarded operation.
+	GuardRetainedBytes int64
 }
 
 type handler struct {
-	resolver      catalog.ModelResolver
-	limits        Limits
-	requestSchema *schema.CompiledSchema
+	resolver           catalog.ModelResolver
+	limits             Limits
+	requestSchema      *schema.CompiledSchema
+	guard              Guard
+	guardRetainedBytes int64
 }
 
 // New constructs an immutable strict ProviderWire V4 HTTP handler.
@@ -80,14 +86,19 @@ func New(config Config) (http.Handler, error) {
 		return nil, err
 	}
 
+	if !isNilInterface(config.Guard) && (config.GuardRetainedBytes <= 0 || config.GuardRetainedBytes > 64<<20) {
+		return nil, fmt.Errorf("providerwire v4: guard retained bytes must be between 1 and 67108864")
+	}
 	requestSchema, err := schema.CompileSchema(requestSchemaJSON)
 	if err != nil {
 		return nil, fmt.Errorf("providerwire v4: compiling request schema: %w", err)
 	}
 	return &handler{
-		resolver:      config.Resolver,
-		limits:        config.Limits,
-		requestSchema: requestSchema,
+		resolver:           config.Resolver,
+		limits:             config.Limits,
+		requestSchema:      requestSchema,
+		guard:              config.Guard,
+		guardRetainedBytes: config.GuardRetainedBytes,
 	}, nil
 }
 
@@ -189,6 +200,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if !validResolvedModel(resolved) {
 		h.writeSafeError(w, safeError{category: safeInternal})
+		return
+	}
+	if !isNilInterface(h.guard) {
+		h.serveGuarded(w, r.Context(), resolved, options, validated.mode)
 		return
 	}
 	if validated.mode == executionStreaming {
