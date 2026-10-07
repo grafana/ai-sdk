@@ -2205,7 +2205,6 @@ func (r *StreamTextResult) resolveToolApprovals(ctx context.Context, cfg *stream
 			ToolName:         approval.toolCall.ToolName,
 			Input:            approval.toolCall.Input,
 			ProviderExecuted: approval.toolCall.ProviderExecuted,
-			ProviderMetadata: optionsToProviderMetadata(approval.toolCall.ProviderOptions),
 		}
 		executable = append(executable, executableApproval{
 			index: len(executable),

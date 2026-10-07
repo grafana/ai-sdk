@@ -207,13 +207,25 @@ fallback and SDK retries when setting your latency and cost budgets; neither
 guarantees that provider work happens only once. The Gateway disables retries in
 its native provider clients.
 
-The Gateway does not return all provider-specific response metadata. Workflows
-that depend on that metadata for follow-up calls may not work.
-
 For troubleshooting, ask your Gateway operator to inspect fallback attempts in
 private logs. Public model names do not identify which backend served a request.
 See [Gateway observability](../../ai-gateway/docs/text-observability.md#inspect-fallback-attempts)
 for operator diagnostics and log access requirements.
+
+## Continue conversations with provider metadata
+
+Some models return information that they need on later calls, such as Claude
+thinking signatures or OpenAI encrypted reasoning. The Gateway returns this
+provider metadata with the response so your application can continue the conversation.
+
+Use the SDK's [agent loops](../guides/agent-loops.md) to manage tool calls and
+conversation history. If you build follow-up messages yourself, keep the returned
+provider metadata with its content; reconstructing messages from text alone can
+lose information the model needs.
+
+Provider metadata is specific to the model that returned it. When configuring
+fallback, choose models that can use the conversation history you send. The
+Gateway does not translate one provider's metadata for another provider.
 
 ## Bound work and handle errors
 

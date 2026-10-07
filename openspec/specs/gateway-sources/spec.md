@@ -26,7 +26,7 @@ The Gateway SHALL emit atomic flat source parts in unary content and streams. UR
 
 The Gateway SHALL preserve each native source ID exactly in its response rather than assigning a sequential, hashed or generated replacement. Source ID SHALL be a required valid-UTF-8 string, including an empty value permitted by the registered contract. Repeated IDs and equal IDs across URL/document variants SHALL remain unchanged and SHALL NOT cause deduplication or collision repair. Identity-map state and its 1024-byte key cap SHALL be removed; source identity is not public route identity.
 
-Unary preflight SHALL bound aggregate source strings and currently inspected metadata with other represented values by UnaryResponseBytes; content cardinality SHALL bound mapping work. Streaming SHALL use StreamParts and complete-frame bounds, including source strings, current metadata and SSE framing. Size preflight SHALL precede UTF-8 scanning and encoding; exact final-byte checks SHALL prevent partial output. No source-specific ID cap SHALL reject a value that otherwise fits these containing-document bounds.
+Unary preflight SHALL bound aggregate source strings and all original metadata namespace key/value bytes with other represented values by UnaryResponseBytes; content/metadata cardinality SHALL bound mapping work. Streaming SHALL use StreamParts and complete-frame bounds, including source strings, current metadata and SSE framing. Size preflight SHALL precede UTF-8 scanning and encoding; exact final-byte checks SHALL prevent partial output. No source-specific ID cap SHALL reject a value that otherwise fits these containing-document bounds.
 
 #### Scenario: Repeated source
 - **WHEN** the same URL ID appears twice and a document has the same ID
@@ -40,20 +40,19 @@ Unary preflight SHALL bound aggregate source strings and currently inspected met
 - **WHEN** raw strings exceed aggregate preflight, UTF-8 is invalid or escaping makes the complete response/frame one byte too large
 - **THEN** the existing bounded unary or streaming safe error path SHALL apply without partial source output
 
-### Requirement: Closed public source metadata
+### Requirement: Opaque public source metadata
 
-This scalar/display delivery SHALL leave the existing bounded numeric citation projection unexpanded. Its current citation fields are index, startPageNumber, endPageNumber, startCharIndex and endCharIndex, integers from 0 through 1000000000. index originates from openai/azure; page/character fields originate from anthropic. Invalid, null, fractional, negative or out-of-range values are omitted. Current inspected namespaces remain bounded to 8192 bytes and the response/frame budget before decoding; oversize fails safely and malformed namespace JSON is omitted. Empty projected metadata remains absent.
+Source providerMetadata SHALL preserve all supplied native object-valued namespaces and nested JSON under gateway-provider-metadata, with no synthetic citation namespace, numeric-only projection, recognized-namespace byte cap or key inventory. Absence SHALL remain absent and an explicit empty object SHALL remain present. All original namespace bytes including whitespace, namespace key bytes and cardinality SHALL participate in aggregate unary or complete-frame preflight before validation and encoding. Malformed JSON, invalid UTF-8, null/non-object namespaces or excess budget SHALL fail the response/event explicitly rather than selectively omitting fields. Useful native IDs, cited text and unknown fields inside ordinary provider metadata SHALL NOT be discarded merely because operator capture excludes them. Concrete credential and tenant-source protections SHALL remain independent from ordinary metadata transport.
 
-Loss of native namespaces, unknown fields and cited-text metadata SHALL be documented as an outstanding implementation gap separately owned by opaque metadata work, not an accepted privacy/concealment contract or complete parity. This change SHALL NOT introduce an opaque codec or general metadata helper. Recognized file_path metadata SHALL NOT influence display or identity. Credentials and another tenant's state remain protected independently; native IDs and ordinary display content SHALL NOT be classified as credentials merely by their appearance.
-
-#### Scenario: Current metadata projection remains scoped
-- **WHEN** a native source includes current supported citation positions and other native metadata
-- **THEN** this delivery SHALL retain its existing numeric projection without adding a metadata codec
-- **AND** docs/coverage SHALL identify remaining native metadata loss as a gap rather than a privacy feature
+Recognized file_path metadata SHALL NOT alter native source identity, title or filename.
 
 #### Scenario: Native file path
-- **WHEN** file_path supplies native source ID, title, filename and a valid index
-- **THEN** source ID/title/filename SHALL survive unchanged and index SHALL retain its current citation projection
+- **WHEN** file_path supplies native source ID, title, filename and index
+- **THEN** native identity/title/filename and opaque metadata SHALL survive unchanged, including index in its original namespace
+
+#### Scenario: Malformed unknown namespace fails explicitly
+- **WHEN** a source has a previously unknown namespace with malformed or non-object JSON
+- **THEN** the unary response SHALL fail before HTTP success or the committed stream SHALL reject the event through its existing terminal adaptation path, without numeric-only or metadata-free success
 
 ### Requirement: Atomic source lifecycle and observation
 

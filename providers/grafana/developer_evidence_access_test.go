@@ -54,13 +54,13 @@ func developerEvidenceModel(t *testing.T, status int, contentType, body string) 
 }
 
 func TestDeveloperEvidenceAccess_CurrentBaseline(t *testing.T) {
-	t.Run("UnaryTransportAndMetadataLoss", func(t *testing.T) {
+	t.Run("UnaryTransportAndOpaqueMetadata", func(t *testing.T) {
 		body := developerEvidenceUnary()
 		model := developerEvidenceModel(t, 200, "application/json", body)
 		result, err := model.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{}})
 		require.NoError(t, err)
 		assert.Equal(t, "hello", result.Content[0].Text)
-		assert.Nil(t, result.ProviderMetadata)
+		assertDecodedMetadata(t, developerEvidenceMetadata, result.ProviderMetadata)
 		assert.Empty(t, result.Response.ModelID)
 		assert.Equal(t, "hop", result.Response.Headers["X-Gateway"])
 		assert.JSONEq(t, body, string(result.Response.Body))
@@ -72,7 +72,7 @@ func TestDeveloperEvidenceAccess_CurrentBaseline(t *testing.T) {
 		assert.JSONEq(t, jsonMember(t, []byte(developerEvidenceMetadata), "gateway"), string(raw.ProviderMetadata["gateway"]))
 	})
 
-	t.Run("StreamSetupFinishAndCommittedErrorLoss", func(t *testing.T) {
+	t.Run("StreamSetupFinishAndCommittedErrorBoundary", func(t *testing.T) {
 		for _, withError := range []bool{false, true} {
 			t.Run(fmt.Sprint(withError), func(t *testing.T) {
 				model := developerEvidenceModel(t, 200, "text/event-stream", developerEvidenceStream(withError))
@@ -84,7 +84,7 @@ func TestDeveloperEvidenceAccess_CurrentBaseline(t *testing.T) {
 				assert.Equal(t, "native-model", parts[1].ModelID)
 				last := parts[len(parts)-1]
 				assert.Equal(t, provider.PartFinish, last.Type)
-				assert.Nil(t, last.ProviderMetadata)
+				assertDecodedMetadata(t, developerEvidenceMetadata, last.ProviderMetadata)
 				if withError {
 					require.Equal(t, provider.PartError, parts[4].Type)
 					require.NotNil(t, parts[4].APICallError)
@@ -159,7 +159,7 @@ func TestDeveloperEvidenceAccess_CurrentBaseline(t *testing.T) {
 						for range result.FullStream() {
 						}
 						result.Wait()
-						assert.Nil(t, result.ProviderMetadata())
+						assertDecodedMetadata(t, developerEvidenceMetadata, result.ProviderMetadata())
 						if withError {
 							require.Error(t, result.Err())
 							var apiErr *provider.APICallError
@@ -175,7 +175,8 @@ func TestDeveloperEvidenceAccess_CurrentBaseline(t *testing.T) {
 						mu.Lock()
 						if capture {
 							assert.Equal(t, "hop", hop)
-							assert.NotEmpty(t, observed)
+							require.NotEmpty(t, observed)
+							assertDecodedMetadata(t, developerEvidenceMetadata, observed[len(observed)-1].ProviderMetadata)
 						} else {
 							assert.Empty(t, hop)
 							assert.Empty(t, observed)
@@ -189,7 +190,7 @@ func TestDeveloperEvidenceAccess_CurrentBaseline(t *testing.T) {
 		generated, err := aisdk.GenerateText(context.Background(), model, aisdk.WithModelMessages(provider.UserText("hi")), aisdk.WithMaxRetries(0))
 		require.NoError(t, err)
 		assert.Equal(t, "beforeafter", generated.Text)
-		assert.Nil(t, generated.ProviderMetadata)
+		assertDecodedMetadata(t, developerEvidenceMetadata, generated.ProviderMetadata)
 		failed := developerEvidenceModel(t, 200, "text/event-stream", developerEvidenceStream(true))
 		generated, err = aisdk.GenerateText(context.Background(), failed, aisdk.WithModelMessages(provider.UserText("hi")), aisdk.WithMaxRetries(0))
 		require.Error(t, err)

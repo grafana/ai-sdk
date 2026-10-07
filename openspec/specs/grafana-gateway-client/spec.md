@@ -193,11 +193,11 @@ The client SHALL explicitly map the complete current `provider.CallOptions` shap
 - **THEN** client encoding SHALL fail before authentication or network I/O
 
 ### Requirement: Bounded normalized unary consumption
-For successful unary responses, the client SHALL require JSON media type, read within its unary limit, accept one complete valid document and map its supported registered content, finishReason, usage and warnings into provider.GenerateResult. It SHALL reject malformed required fields, unknown content/finish/warning discriminators, invalid usage, trailing JSON and oversized input. Supported source and reasoning families SHALL remain governed by their capabilities.
+For successful unary responses, the client SHALL require JSON media type, read within its unary limit, accept one complete valid document and map its supported registered content, finishReason, usage, warnings and ordinary result/content providerMetadata into provider.GenerateResult. It SHALL reject malformed required fields, unknown content/finish/warning discriminators, invalid usage, trailing JSON and oversized input. Supported source and reasoning families SHALL remain governed by their capabilities.
 
 The client SHALL replace server request/response: Request.Body SHALL be the locally encoded request; Response.Headers/Body SHALL be the bounded Gateway HTTP response. Native response id/modelId/timestamp SHALL remain available inside that raw body but SHALL NOT populate typed Response identity, matching the registered TS client's replacement. No native diagnostic access carrier SHALL be introduced by this behavior.
 
-Warnings SHALL preserve active registered fields, required empty strings, order and multiplicity, defaulting to a non-nil empty slice when absent/null. Unary/stream decoding SHALL share warning validation. Optional absent/empty details SHALL decode to the same empty Go string as a documented representation adaptation. This change SHALL NOT expand unrelated provider metadata decoding or claim that existing metadata loss is a privacy policy.
+Warnings SHALL preserve active registered fields, required empty strings, order and multiplicity, defaulting to a non-nil empty slice when absent/null. Unary/stream decoding SHALL share warning validation. Optional absent/empty details SHALL decode to the same empty Go string as a documented representation adaptation. Ordinary providerMetadata SHALL be independently decoded as opaque object-valued namespaces under gateway-provider-metadata, without Gateway imports, inventories or IncludeRawChunks gating. Present null, scalar, array, malformed or invalid-UTF-8 metadata SHALL fail explicitly under the bounded protocol-error path.
 
 #### Scenario: Minimal unary success is consumed
 - **WHEN** the server returns valid ordered text content, registered finish reason, and valid usage
@@ -205,7 +205,7 @@ Warnings SHALL preserve active registered fields, required empty strings, order 
 
 #### Scenario: Server supplies client-owned fields
 - **WHEN** a body contains native nested response identity, transport fields and ordered warnings
-- **THEN** the client SHALL preserve warnings and the raw body while replacing typed request/response with Gateway-hop information
+- **THEN** the client SHALL preserve warnings, ordinary result/content providerMetadata and the raw body while replacing typed request/response with Gateway-hop information
 - **AND** typed Response id/modelId/timestamp SHALL remain unset rather than falsely exposing native typed identity
 
 #### Scenario: Unary response exceeds its bound
@@ -300,7 +300,7 @@ Native response-metadata id/modelId/timestamp SHALL be optional. Supplied identi
 - **THEN** the client SHALL close cleanly to match the registered client's observable EOF behavior
 
 ### Requirement: Optional bounded provider raw usage consumption
-On a successful unary result and a streaming finish, the Grafana client SHALL preserve a supplied `usage.raw` as a `provider.Usage.Raw` JSON object, including nested provider-native fields and `{}`; absent raw SHALL remain absent. The client SHALL reject present null, scalar, array, malformed or incomplete JSON, and a retained raw object larger than 1,048,576 bytes. This raw-object limit applies to the retained representation after JSON decoding/compaction removes insignificant whitespace around and inside the value; the original complete unary response or event SHALL remain bounded by its configured `UnaryBytes` or `StreamEventBytes`. The client SHALL validate those original bounded documents for UTF-8 and JSON syntax before Go decoding can normalize invalid bytes. Valid JSON with lone or paired escaped surrogates SHALL be accepted, with raw-object escapes preserved in `provider.Usage.Raw`. The existing cumulative-stream and event-count limits SHALL still apply, and intermediate `decodeFields`/usage-map copies SHALL remain bounded by the full-response or event limits. The client SHALL continue to validate known normalized token counts and filter all unrelated unknown usage and server-owned metadata; distinct `type: "raw"` stream-part filtering SHALL remain governed by `IncludeRawChunks` and SHALL NOT filter `usage.raw`.
+On a successful unary result and a streaming finish, the Grafana client SHALL preserve a supplied `usage.raw` as a `provider.Usage.Raw` JSON object, including nested provider-native fields and `{}`; absent raw SHALL remain absent. The client SHALL reject present null, scalar, array, malformed or incomplete JSON, and a retained raw object larger than 1,048,576 bytes. This raw-object limit applies to the retained representation after JSON decoding/compaction removes insignificant whitespace around and inside the value; the original complete unary response or event SHALL remain bounded by its configured `UnaryBytes` or `StreamEventBytes`. The client SHALL validate those original bounded documents for UTF-8 and JSON syntax before Go decoding can normalize invalid bytes. Valid JSON with lone or paired escaped surrogates SHALL be accepted, with raw-object escapes preserved in `provider.Usage.Raw`. The existing cumulative-stream and event-count limits SHALL still apply, and intermediate `decodeFields`/usage-map copies SHALL remain bounded by the full-response or event limits. The client SHALL continue to validate known normalized token counts and filter unrelated unknown usage and unrepresented transport fields without filtering ordinary registered providerMetadata; distinct `type: "raw"` stream-part filtering SHALL remain governed by `IncludeRawChunks` and SHALL NOT filter `usage.raw`.
 
 #### Scenario: Unary and finish have present or absent raw
 - **WHEN** a bounded valid unary result or finish contains nested raw usage, `{}`, or no raw member
@@ -426,3 +426,13 @@ The independent Go client SHALL decode URL/document sources in unary/stream resp
 #### Scenario: Equal and repeated source IDs
 - **WHEN** repeated URL sources and a document share a native ID
 - **THEN** all SHALL retain the supplied ID and relative order without deduplication
+### Requirement: Independent opaque stream metadata consumption
+The Grafana client SHALL independently decode providerMetadata on supported text/reasoning start/delta/end, reasoning-file, source, tool-input start/delta/end, function call, basic result and finish parts. It SHALL preserve namespace objects, nested values, original event order and absent versus empty presence without IncludeRawChunks. Original accepted events, retained copies and metadata cardinality SHALL remain bounded by the existing event, cumulative byte and count limits. Invalid metadata SHALL use the bounded terminal non-retryable protocol-error path without reflecting the value or delivering the invalid part. Gateway lifecycle and raw filtering SHALL remain unchanged.
+
+#### Scenario: Unknown namespace survives all supported placements
+- **WHEN** valid events carry future object-valued namespaces with nested null/false/zero/empty values and explicit empty metadata at supported positions
+- **THEN** the independent Go client SHALL preserve those values and positions under existing limits without importing server code
+
+#### Scenario: Malformed metadata on finish
+- **WHEN** a bounded finish contains a null namespace or malformed metadata shape
+- **THEN** the client SHALL emit at most one bounded protocol PartError and close without delivering the invalid finish or metadata-free success

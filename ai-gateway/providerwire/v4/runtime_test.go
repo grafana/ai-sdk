@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -856,4 +857,71 @@ func TestSafeErrorReduction(t *testing.T) {
 		assert.Equal(t, string(canonicalUpstreamError), response.Body.String())
 		assert.NotContains(t, response.Body.String(), "secret")
 	})
+}
+
+func TestProviderMetadata_RuntimeFailureAndFinishAuthority(t *testing.T) {
+	for _, metadata := range []provider.ProviderMetadata{{"future": json.RawMessage(`null`)}, {"future": json.RawMessage(`{"incomplete":`)}, {"future": json.RawMessage(strings.Repeat(" ", 1<<20) + `{}`)}} {
+		h := newRuntimeHarness(t, testLimits())
+		h.model.generate = func(_ context.Context, _ provider.CallOptions) (*provider.GenerateResult, error) {
+			result := validGenerateResult()
+			result.ProviderMetadata = metadata
+			return result, nil
+		}
+		response := h.serve(validRequest(`{"prompt":[]}`))
+		assert.Equal(t, http.StatusInternalServerError, response.Code)
+		assert.NotContains(t, response.Body.String(), "future")
+		h.model.stream = func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+			return &provider.StreamResult{Stream: makeStream(provider.StreamPart{Type: provider.PartTextStart, ID: "text", ProviderMetadata: metadata}, finishPart())}, nil
+		}
+		response = h.serve(streamRequest(`{"prompt":[]}`))
+		assert.NotContains(t, response.Body.String(), `"type":"text-start"`)
+		assert.Equal(t, 1, strings.Count(response.Body.String(), `"type":"error"`))
+		assert.NotContains(t, response.Body.String(), "future")
+	}
+	h := newRuntimeHarness(t, testLimits())
+	finish := finishPart()
+	finish.ProviderMetadata = provider.ProviderMetadata{"future": json.RawMessage(`{"final":true}`)}
+	h.model.stream = func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+		return &provider.StreamResult{Stream: makeStream(finish, provider.StreamPart{Type: provider.PartTextStart, ID: "late", ProviderMetadata: provider.ProviderMetadata{"future": json.RawMessage(`null`)}})}, nil
+	}
+	body := h.serve(streamRequest(`{"prompt":[]}`)).Body.String()
+	assert.Contains(t, body, `"future":{"final":true}`)
+	assert.NotContains(t, body, `"type":"error"`)
+	assert.NotContains(t, body, "late")
+}
+
+func TestProviderMetadata_SharedModelIsolation(t *testing.T) {
+	h := newRuntimeHarness(t, testLimits())
+	h.model.generate = func(_ context.Context, options provider.CallOptions) (*provider.GenerateResult, error) {
+		marker := options.Prompt[0].Content[0].Text
+		raw, err := json.Marshal(map[string]any{"tenantMarker": marker, "routing": "ignored", "apiKey": "sk-application-data"})
+		if err != nil {
+			return nil, err
+		}
+		result := validGenerateResult()
+		result.ProviderMetadata = provider.ProviderMetadata{"future": raw}
+		result.Content[0].ProviderMetadata = result.ProviderMetadata
+		return result, nil
+	}
+	var wg sync.WaitGroup
+	const requests = 20
+	for i := range requests {
+		wg.Go(func() {
+			marker := fmt.Sprintf("tenant-%d", i)
+			w := httptest.NewRecorder()
+			h.handler.ServeHTTP(w, validRequest(`{"prompt":[{"role":"user","content":[{"type":"text","text":"`+marker+`"}]}]}`))
+			assert.Equal(t, 200, w.Code)
+			var decoded struct {
+				Metadata provider.ProviderMetadata `json:"providerMetadata"`
+			}
+			if assert.NoError(t, json.Unmarshal(w.Body.Bytes(), &decoded)) {
+				raw := string(decoded.Metadata["future"])
+				assert.Contains(t, raw, `"tenantMarker":"`+marker+`"`)
+				assert.Contains(t, raw, `"routing":"ignored"`)
+				assert.Contains(t, raw, "sk-application-data")
+			}
+		})
+	}
+	wg.Wait()
+	assert.Equal(t, requests, h.resolver.callCount())
 }
