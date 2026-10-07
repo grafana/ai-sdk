@@ -89,7 +89,7 @@ func TestDeveloperEvidenceAccess_CurrentBaseline(t *testing.T) {
 					require.Equal(t, provider.PartError, parts[4].Type)
 					require.NotNil(t, parts[4].APICallError)
 					assert.Equal(t, 424, parts[4].APICallError.StatusCode)
-					assert.Nil(t, parts[4].APICallError.Data)
+					assert.Contains(t, string(parts[4].APICallError.Data), "nativeError")
 					assert.NotContains(t, parts[4].APICallError.ResponseBody, "nativeError")
 					assert.Equal(t, "after", parts[5].Delta)
 				}
@@ -97,7 +97,7 @@ func TestDeveloperEvidenceAccess_CurrentBaseline(t *testing.T) {
 		}
 	})
 
-	t.Run("DirectSetupAndAllFailedEnvelopeLoss", func(t *testing.T) {
+	t.Run("DirectSetupAndAllFailedEnvelopeRetention", func(t *testing.T) {
 		for _, attempts := range []string{
 			`[{"index":1,"provider":"anthropic","modelId":"primary","selection":"failed","nativeError":{"statusCode":401,"isRetryable":false}}]`,
 			`[{"index":1,"provider":"anthropic","modelId":"primary","selection":"failed","nativeError":{"statusCode":429,"isRetryable":true}},{"index":2,"provider":"openai","modelId":"native-model","selection":"failed","nativeError":{"statusCode":401,"isRetryable":false}}]`,
@@ -113,8 +113,8 @@ func TestDeveloperEvidenceAccess_CurrentBaseline(t *testing.T) {
 				require.ErrorAs(t, err, &apiErr)
 				assert.Equal(t, 424, gatewayErr.StatusCode)
 				assert.False(t, gatewayErr.IsRetryable)
-				assert.Nil(t, apiErr.Data)
-				assert.NotContains(t, apiErr.ResponseBody, "attempts")
+				assert.JSONEq(t, body, string(apiErr.Data))
+				assert.Equal(t, body, apiErr.ResponseBody)
 			}
 		}
 		model := developerEvidenceModel(t, 424, "application/json", `{"error":{"message":12}}`)
@@ -165,7 +165,7 @@ func TestDeveloperEvidenceAccess_CurrentBaseline(t *testing.T) {
 							var apiErr *provider.APICallError
 							require.ErrorAs(t, result.Err(), &apiErr)
 							assert.Equal(t, 424, apiErr.StatusCode)
-							assert.Nil(t, apiErr.Data)
+							assert.Contains(t, string(apiErr.Data), "nativeError")
 							assert.Equal(t, "beforeafter", result.Text())
 						} else {
 							require.NoError(t, result.Err())
@@ -210,7 +210,7 @@ func TestDeveloperEvidenceAccess_CurrentBaseline(t *testing.T) {
 						assert.ErrorAs(t, err, &gatewayErr)
 						assert.ErrorAs(t, err, &apiErr)
 						if apiErr != nil {
-							assert.Nil(t, apiErr.Data)
+							assert.JSONEq(t, body, string(apiErr.Data))
 						}
 						captures.Add(1)
 					}

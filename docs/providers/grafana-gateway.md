@@ -250,6 +250,13 @@ Warnings and public error messages remain server-provided text. Unknown private
 metadata is not promoted into model identity or Gateway error fields. A unary
 response's bounded raw HTTP body remains available in `Response.Body`.
 
+For a valid HTTP error, `APICallError.Data` and `ResponseBody` retain the complete
+bounded response, including any additive diagnostics supplied by the server.
+For a committed SSE error, `APICallError.Data` retains exactly the supplied
+`error.data`; `ResponseBody` is empty because an SSE event is not an HTTP error
+response. These extensions remain opaque and do not change classification or
+status-derived retryability. Later valid stream parts remain consumable.
+
 Use call headers for application metadata. Credential-bearing call headers are
 rejected; configure authentication on the client instead. See the
 [package reference](https://pkg.go.dev/github.com/grafana/ai-sdk/providers/grafana)

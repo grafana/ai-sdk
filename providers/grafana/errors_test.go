@@ -43,7 +43,8 @@ func TestGatewayError_RegisteredMatrix(t *testing.T) {
 			var api *provider.APICallError
 			require.ErrorAs(t, err, &api)
 			assert.Equal(t, tc.retryable, api.IsRetryable)
-			assert.NotContains(t, api.ResponseBody, "private")
+			assert.Contains(t, api.ResponseBody, "private")
+			assert.JSONEq(t, api.ResponseBody, string(api.Data))
 			assert.NotContains(t, err.Error(), "private")
 			assert.Equal(t, 1, calls)
 		})

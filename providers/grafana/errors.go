@@ -55,25 +55,67 @@ func readGatewayError(ctx context.Context, resp *http.Response, limit int64) err
 	if err != nil {
 		return protocolError("grafana: invalid Gateway error response", resp.StatusCode, err)
 	}
-	var envelope struct {
-		Error json.RawMessage `json:"error"`
+	envelope, err := decodeObject(body)
+	if err != nil {
+		return protocolError("grafana: invalid Gateway error envelope", resp.StatusCode, err)
 	}
-	var value wireError
-	if decodeFields(body, &envelope, "error") != nil || decodeFields(envelope.Error, &value, "message", "type", "code", "param") != nil {
-		return protocolError("grafana: invalid Gateway error envelope", resp.StatusCode, nil)
+	fields, err := decodeObject(envelope["error"])
+	if err != nil {
+		return protocolError("grafana: invalid Gateway error envelope", resp.StatusCode, err)
 	}
-	return mapGatewayError(&value, resp.StatusCode)
+	value, err := decodeWireError(fields)
+	if err != nil {
+		return protocolError("grafana: invalid Gateway error envelope", resp.StatusCode, err)
+	}
+	return mapGatewayError(&value, resp.StatusCode, string(body), body)
 }
 
-func mapGatewayError(value *wireError, status int) error {
+func mapGatewayError(value *wireError, status int, responseBody string, data json.RawMessage) error {
 	if value.Message == nil || !validPublicText(*value.Message) || string(value.Param) != "null" || !registeredError(value.Type, value.Code, status) {
 		return protocolError("grafana: invalid Gateway error fields", status, nil)
 	}
-	publicBody, _ := json.Marshal(struct {
-		Error *wireError `json:"error"`
-	}{value})
-	cause := provider.NewAPICallError(provider.APICallErrorOptions{Message: *value.Message, StatusCode: status, ResponseBody: string(publicBody)})
+	cause := provider.NewAPICallError(provider.APICallErrorOptions{Message: *value.Message, StatusCode: status, ResponseBody: responseBody, Data: data})
 	return &GatewayError{Category: value.Type, Code: value.Code, Message: *value.Message, StatusCode: status, IsRetryable: cause.IsRetryable, cause: cause}
+}
+
+type wireStreamError struct {
+	wireError
+	StatusCode int
+	Retryable  *bool
+}
+
+func decodeWireError(fields map[string]json.RawMessage) (wireError, error) {
+	var value wireError
+	err := decodeObjectMembers(fields,
+		jsonField{"message", &value.Message},
+		jsonField{"type", &value.Type},
+		jsonField{"code", &value.Code},
+		jsonField{"param", &value.Param},
+	)
+	return value, err
+}
+
+func decodeStreamError(data json.RawMessage) (*provider.APICallError, error) {
+	fields, err := decodeObject(data)
+	if err != nil {
+		return nil, err
+	}
+	value, err := decodeWireError(fields)
+	if err != nil {
+		return nil, err
+	}
+	event := wireStreamError{wireError: value}
+	if err := decodeObjectMembers(fields, jsonField{"statusCode", &event.StatusCode}, jsonField{"retryable", &event.Retryable}); err != nil {
+		return nil, err
+	}
+	if event.Retryable == nil {
+		return nil, protocolError("grafana: missing stream error retryability", event.StatusCode, nil)
+	}
+	gateway, ok := mapGatewayError(&event.wireError, event.StatusCode, "", fields["data"]).(*GatewayError)
+	if !ok || gateway.IsRetryable != *event.Retryable {
+		return nil, protocolError("grafana: invalid stream error fields", event.StatusCode, nil)
+	}
+	return gateway.cause, nil
 }
 
 func registeredError(category GatewayErrorCategory, code string, status int) bool {
