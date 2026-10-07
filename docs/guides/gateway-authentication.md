@@ -1,53 +1,59 @@
 # Authenticate to Grafana AI Gateway
 
-For the public Grafana Cloud URL, authenticate your application server with
-your stack ID and a Cloud Access Policy (CAP) token. These credentials are
-separate from how users sign in to your app. Grafana AI Gateway manages the
-underlying model-provider API keys.
+One Gateway process serves two disjoint account policies:
 
-## Choose the URL and credential
+- **Private API:** a short-lived access JWT authorizes configured models, aliases,
+  provider accounts and discovery. This endpoint stays on private networking.
+- **Public Cloud edge:** a stack-scoped Cloud Access Policy (CAP) authenticates
+  the caller; each inference request supplies its own provider credentials (BYOK).
+  This path never uses configured accounts, catalogs, aliases or fallback routes.
 
-| Gateway URL | Go client | Server-side Vercel client | What you need |
-| --- | --- | --- | --- |
-| Public Grafana Cloud URL | `NewWithCloudCredentials` | `createGateway({ apiKey })` | Stack ID and Cloud Access Policy (CAP) token |
-| Separately provided JWT-enabled URL | `NewWithTokenExchange` or `NewWithAccessToken` | No built-in Grafana JWT configuration | Short-lived access token or credentials to obtain one |
+Use the URL supplied for the intended policy, ending in `/api/v1/aisdk`.
+A JWT is not a credential for the public Cloud edge. Private networking does not
+replace JWT verification. The operational listener is separate from both APIs.
 
-Use the public Grafana Cloud URL provided for your stack. It requires a CAP
-with access to that stack. If your deployment provides a separate JWT-enabled
-Gateway URL, use that URL for JWT-based Go clients; a JWT is not a credential
-for the public Cloud URL.
+## Cloud calls with request-scoped provider credentials
 
-## Use a Cloud policy from Go
+Provision a CAP with `ai-gateway:write` for the stacks your application needs.
+Keep both the CAP and provider keys on your application server, never in browser
+code. The edge validates the CAP, scope, stack/realm and applicable IP restrictions,
+then replaces identity assertions and strips caller authentication credentials.
+The application listener must only be reachable by that edge.
 
-Provision a CAP for your stack with `ai-gateway:read` to discover models and
-`ai-gateway:write` to invoke them. Limit the policy to the stacks your app
-needs; avoid granting access to all stacks by default.
+Select an explicit `anthropic/<native-model>` or `openai/<native-model>` ID;
+OpenAI uses the Responses API. There is no catalog lookup or default model.
+Customer discovery is unsupported: `ListModels` and `getAvailableModels` return
+HTTP 400 with `catalog discovery is unsupported for BYOK`, even with read scope.
+Do not discover configured models before making BYOK calls.
 
-On your Go server, use the [Grafana provider](../providers/grafana-gateway.md)
-with the public Gateway URL ending in `/api/v1/aisdk`:
+### Go
 
 ```go
 client, err := grafana.NewWithCloudCredentials(grafana.CloudCredentialsConfig{
-    StackID:  stackID,
-    CAPToken: capToken,
-    BaseURL:  "https://gateway.example.com/api/v1/aisdk",
+    StackID: stackID, CAPToken: capToken, BaseURL: cloudGatewayURL,
 })
 if err != nil {
     return err
 }
-models, err := client.ListModels(ctx)
+model, err := client.LanguageModel("anthropic/claude-sonnet-4-6")
 if err != nil {
     return err
 }
-_ = models
-model, err := client.LanguageModel("assistant")
+credentials, err := json.Marshal(map[string]any{
+    "byok": map[string]any{
+        "anthropic": []map[string]string{{"apiKey": providerKey}},
+    },
+})
 if err != nil {
     return err
 }
 maxTokens := 32
 result, err := model.DoGenerate(ctx, provider.CallOptions{
-    Prompt:          []provider.Message{provider.UserText("Summarize this incident.")},
+    Prompt: []provider.Message{provider.UserText("Summarize this incident.")},
     MaxOutputTokens: &maxTokens,
+    ProviderOptions: provider.ProviderOptions{
+        "gateway": provider.RawProviderOption{Key: "gateway", Raw: credentials},
+    },
 })
 if err != nil {
     return err
@@ -55,51 +61,100 @@ if err != nil {
 _ = result
 ```
 
-## Use a Cloud policy from a Vercel server
+For high-level Go calls, pass the same `RawProviderOption` through
+`aisdk.WithProviderOptions`. The client does not retry accounts or require
+catalog membership. See the [package reference](https://pkg.go.dev/github.com/grafana/ai-sdk/providers/grafana)
+for constructors and bounded response handling.
 
-On your application server (not in a browser), configure the Vercel Gateway
-client with your stack ID and CAP token:
+### Server-side Vercel client
 
 ```ts
 import { createGateway } from '@ai-sdk/gateway';
 
 const gateway = createGateway({
-  baseURL: 'https://gateway.example.com/api/v1/aisdk',
+  baseURL: cloudGatewayURL,
   apiKey: `${stackID}:${capToken}`,
 });
-const catalog = await gateway.getAvailableModels();
-const result = await gateway('assistant').doGenerate({
+const result = await gateway('anthropic/claude-sonnet-4-6').doGenerate({
   prompt: [{ role: 'user', content: [{ type: 'text', text: 'Summarize this incident.' }] }],
   maxOutputTokens: 32,
+  providerOptions: { gateway: { byok: { anthropic: [{ apiKey: providerKey }] } } },
 });
 ```
 
-## JWT-enabled Gateway URLs (Go)
+The same BYOK object accompanies streaming and subsequent tool/continuation
+requests. Ordinary application content and matching native provider options are
+preserved within the Gateway's supported ProviderWire capabilities.
 
-If your deployment provides a JWT-enabled Gateway URL and token-exchange
-service, ask its operator for the Gateway URL, token-exchange URL and namespace.
-The Go client can then obtain a short-lived access token:
+## Credential selection and limits
+
+Only API-key credentials for native Anthropic and OpenAI are supported. Arrays
+retain caller order. Every entry, including unused provider entries, is validated.
+Custom endpoints, organization/project overrides, alternate credential families
+and Gateway routing controls are rejected rather than silently ignored.
+
+The server permits at most eight credentials per provider, 4,096 UTF-8 bytes per
+key, 65,536 raw JSON bytes for the BYOK map, and 2,048 UTF-8 bytes for the complete
+model selector. These are local resource controls, not Vercel hosted-service limits.
+
+Ordered credentials use the existing Go fallback module's default policy, with
+native retries disabled. Classified retryable failures (such as eligible 429/5xx)
+and unknown pre-commit failures may advance; non-retryable errors, including typical
+401/403 responses, stop. Any first stream part commits the selected candidate,
+including metadata, warnings or an error. There is no replay after commitment and
+no configured-account fallback. One execution deadline covers selection and all
+attempts. A pre-commit failure can follow provider-side work: duplicate execution
+or charging cannot be ruled out. Caller-level retries can multiply attempts.
+
+## Private configured-account calls
+
+Use `NewWithAccessToken` or `NewWithTokenExchange` against the private API. Token
+exchange requires `access-token:sign` authority for the target namespace and
+`ai-sdk` audience; ask the operator for the regional token-exchange endpoint.
+Refresh short-lived JWTs before expiry.
+
+The server verifies signature, token type, expiry, audience and namespace.
+Concrete `stacks-<positive-int64>` namespaces and `*` are accepted; a service-identity
+claim is optional and there is no service allowlist. Wildcard callers remain
+service-level unless a verified acting-user token supplies an authorized concrete
+namespace. Untrusted headers cannot choose a tenant.
+
+Go sends `X-Access-Token`. Vercel can use the JWT directly:
+
+```ts
+const privateGateway = createGateway({ baseURL: privateGatewayURL, apiKey: accessJWT });
+const catalog = await privateGateway.getAvailableModels();
+```
+
+Send exactly one access credential: `X-Access-Token` or bearer `Authorization`,
+never both. Go constructors and call options reject reserved authentication-header
+overrides. `grafana.WithUserIDToken(ctx, userIDToken)` adds separately verified
+acting-user context; an ID token alone does not authenticate. Private calls reject
+BYOK controls and use configured model IDs or aliases.
+
+## Capture safely
+
+Returned Go and Vercel request metadata is caller-owned and still contains the
+submitted BYOK credentials. Never log `request.body` directly. Default Go logger
+capture structurally redacts the entire BYOK subtree, including unfamiliar fields:
 
 ```go
-client, err := grafana.NewWithTokenExchange(grafana.TokenExchangeConfig{
-    CAPToken:         capToken,
-    TokenExchangeURL: tokenExchangeURL,
-    Namespace:        namespace,
-    BaseURL:          accessTokenGatewayURL,
+model = logmiddleware.Wrap(model, logmiddleware.Options{
+    Logger: logger,
+    Capture: logmiddleware.CaptureOptions{ProviderOptions: true, RequestBody: true},
 })
 ```
 
-For token exchange, your policy must allow `access-token:sign` for the target
-namespace and audience. If you already have a short-lived JWT, use
-`NewWithAccessToken` and refresh it before expiry. JWT-enabled setups can
-attach an acting-user token with `grafana.WithUserIDToken(ctx, userIDToken)`.
+Copy the tested [TypeScript capture helper](../../ai-gateway/examples/redact-byok.ts)
+for equivalent bounded, fail-closed request-body capture. It sanitizes a copy;
+it does not change the request sent to the provider. These protections are not
+substring scrubbers for arbitrary application text, custom metadata or opaque
+error messages. Keep custom capture destinations and access controls independent
+from the central Gateway's metadata-only observations.
 
-## Keep credentials secure
-
-Use HTTPS, store CAPs in a server-side secret manager, grant only the scopes
-and stacks your app needs, and rotate tokens regularly. Avoid logging request
-headers or errors that may contain credentials. Never include a CAP in browser
-code or distribute it to untrusted workers.
+Use HTTPS and server-side secret storage; rotate both CAP and provider credentials.
+Deployment activation additionally requires the operator's
+[listener and network-isolation proof](../../ai-gateway/docs/cloud-authentication.md).
 
 ---
 

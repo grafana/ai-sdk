@@ -155,7 +155,7 @@ func TestNewModelObservabilityFactory_CloseWaitsForAbandonedStreamRecording(t *t
 		flushTimeout:    time.Second,
 		shutdownTimeout: time.Second,
 	}
-	factory, err := NewModelObservabilityFactory(telemetry, logger, runtime, 10*time.Millisecond)
+	factory, _, err := NewModelObservabilityFactories(telemetry, logger, runtime, 10*time.Millisecond)
 	require.NoError(t, err)
 	upstream := make(chan provider.StreamPart)
 	model, err := factory("grafana/assistant", &observabilityTestModel{stream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
@@ -283,7 +283,7 @@ func TestNewAgentObservabilityRuntime_HTTPExportUsesOneResolvedSecretAndSafePayl
 		return "", false
 	}, telemetry)
 	require.NoError(t, err)
-	factory, err := NewModelObservabilityFactory(telemetry, logger, runtime, 10*time.Millisecond)
+	factory, _, err := NewModelObservabilityFactories(telemetry, logger, runtime, 10*time.Millisecond)
 	require.NoError(t, err)
 	model, err := factory("grafana/assistant", &observabilityTestModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
 		return &provider.GenerateResult{
@@ -357,7 +357,7 @@ func TestNewAgentObservabilityRuntime_RejectedHTTPBatchIsOneFailOpenFailure(t *t
 	}, telemetry)
 	require.NoError(t, err)
 	defer runtime.Close()
-	factory, err := NewModelObservabilityFactory(telemetry, logger, runtime, 10*time.Millisecond)
+	factory, _, err := NewModelObservabilityFactories(telemetry, logger, runtime, 10*time.Millisecond)
 	require.NoError(t, err)
 	expected := &provider.GenerateResult{Content: []provider.GenerateContentPart{{Type: provider.ContentText, Text: "model-private"}}}
 	model, err := factory("grafana/assistant", &observabilityTestModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
@@ -513,9 +513,9 @@ func TestNewModelObservabilityFactory_SharedRegistryAndPassThrough(t *testing.T)
 	logger := slog.New(slog.NewJSONHandler(&logs, nil))
 	telemetry, err := NewTelemetry(logger)
 	require.NoError(t, err)
-	factory, err := NewModelObservabilityFactory(telemetry, logger, nil, 10*time.Millisecond)
+	factory, _, err := NewModelObservabilityFactories(telemetry, logger, nil, 10*time.Millisecond)
 	require.NoError(t, err)
-	_, err = NewModelObservabilityFactory(telemetry, logger, nil, 10*time.Millisecond)
+	_, _, err = NewModelObservabilityFactories(telemetry, logger, nil, 10*time.Millisecond)
 	require.Error(t, err, "duplicate model collector registration must fail")
 
 	result := &provider.GenerateResult{
@@ -597,7 +597,7 @@ func TestModelObservationChain_ExactRequestAndResponseOrder(t *testing.T) {
 func TestModelObservationChain_WP9LowerModelSeamStaysBelowOneLogicalWrapper(t *testing.T) {
 	telemetry, err := NewTelemetry(slog.New(slog.NewTextHandler(io.Discard, nil)))
 	require.NoError(t, err)
-	factory, err := NewModelObservabilityFactory(telemetry, slog.New(slog.NewTextHandler(io.Discard, nil)), nil, 10*time.Millisecond)
+	factory, _, err := NewModelObservabilityFactories(telemetry, slog.New(slog.NewTextHandler(io.Discard, nil)), nil, 10*time.Millisecond)
 	require.NoError(t, err)
 
 	var lowerCalls atomic.Int64
@@ -634,7 +634,7 @@ func TestNewModelObservabilityFactory_AgentExportIsCanonicalMetadataOnly(t *test
 	telemetry, err := NewTelemetry(logger)
 	require.NoError(t, err)
 	runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry, flushTimeout: time.Second, shutdownTimeout: time.Second}
-	factory, err := NewModelObservabilityFactory(telemetry, logger, runtime, 10*time.Millisecond)
+	factory, _, err := NewModelObservabilityFactories(telemetry, logger, runtime, 10*time.Millisecond)
 	require.NoError(t, err)
 
 	inputTokens, outputTokens := 60, 3
@@ -712,7 +712,7 @@ func TestNewModelObservabilityFactory_UnaryProviderFailureIsSafeAndFailThrough(t
 	telemetry, err := NewTelemetry(logger)
 	require.NoError(t, err)
 	runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry, flushTimeout: time.Second, shutdownTimeout: time.Second}
-	factory, err := NewModelObservabilityFactory(telemetry, logger, runtime, 10*time.Millisecond)
+	factory, _, err := NewModelObservabilityFactories(telemetry, logger, runtime, 10*time.Millisecond)
 	require.NoError(t, err)
 	providerError := provider.NewAPICallError(provider.APICallErrorOptions{
 		Message:      "error-private bearer-private",
@@ -764,7 +764,7 @@ func TestNewModelObservabilityFactory_RecorderFailureDoesNotFailModelCall(t *tes
 	telemetry, err := NewTelemetry(logger)
 	require.NoError(t, err)
 	runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry, flushTimeout: time.Second, shutdownTimeout: time.Second}
-	factory, err := NewModelObservabilityFactory(telemetry, logger, runtime, 10*time.Millisecond)
+	factory, _, err := NewModelObservabilityFactories(telemetry, logger, runtime, 10*time.Millisecond)
 	require.NoError(t, err)
 	expected := &provider.GenerateResult{FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}
 	model, err := factory("grafana/assistant", &observabilityTestModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
@@ -791,7 +791,7 @@ func TestNewModelObservabilityFactory_StreamIsObservedOnceAndPassesThrough(t *te
 	telemetry, err := NewTelemetry(logger)
 	require.NoError(t, err)
 	runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry, flushTimeout: time.Second, shutdownTimeout: time.Second}
-	factory, err := NewModelObservabilityFactory(telemetry, logger, runtime, 10*time.Millisecond)
+	factory, _, err := NewModelObservabilityFactories(telemetry, logger, runtime, 10*time.Millisecond)
 	require.NoError(t, err)
 
 	inputTokens, outputTokens := 60, 6
@@ -881,7 +881,7 @@ func TestNewModelObservabilityFactory_CanceledStreamsCloseWithinBoundedDrain(t *
 			require.NoError(t, err)
 			runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry, flushTimeout: time.Second, shutdownTimeout: time.Second}
 			const drainTimeout = 10 * time.Millisecond
-			factory, err := NewModelObservabilityFactory(telemetry, logger, runtime, drainTimeout)
+			factory, _, err := NewModelObservabilityFactories(telemetry, logger, runtime, drainTimeout)
 			require.NoError(t, err)
 
 			stream := make(chan provider.StreamPart)
@@ -961,7 +961,7 @@ func TestNewModelObservabilityFactory_NormalAndPrematureStreamsFinalizeOnce(t *t
 			telemetry, err := NewTelemetry(logger)
 			require.NoError(t, err)
 			runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry, flushTimeout: time.Second, shutdownTimeout: time.Second}
-			factory, err := NewModelObservabilityFactory(telemetry, logger, runtime, 10*time.Millisecond)
+			factory, _, err := NewModelObservabilityFactories(telemetry, logger, runtime, 10*time.Millisecond)
 			require.NoError(t, err)
 
 			inputLow, inputHigh, outputLow, outputHigh := 2, 5, 1, 3

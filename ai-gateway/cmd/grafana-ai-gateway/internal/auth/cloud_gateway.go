@@ -26,7 +26,7 @@ func (cloudGatewayAuthenticator) Authenticate(_ context.Context, headers http.He
 	if err != nil {
 		return Caller{}, err
 	}
-	return Caller{Source: SourceCloudGateway, Namespace: types.CloudNamespaceFormatter(stackID), stackID: stackID}, nil
+	return Caller{Source: SourceCloudGateway, Namespace: types.CloudNamespaceFormatter(stackID), stackID: stackID, access: RequestBYOK}, nil
 }
 
 type cloudProviderWireAuthenticator struct{}

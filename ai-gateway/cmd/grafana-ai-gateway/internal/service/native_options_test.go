@@ -449,7 +449,7 @@ func TestNativeOptions_CaptureIndependence(t *testing.T) {
 				telemetry, err := NewTelemetry(logger)
 				require.NoError(t, err)
 				runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry, flushTimeout: time.Second, shutdownTimeout: time.Second}
-				factory, err := NewModelObservabilityFactory(telemetry, logger, runtime, 10*time.Millisecond)
+				factory, _, err := NewModelObservabilityFactories(telemetry, logger, runtime, 10*time.Millisecond)
 				require.NoError(t, err)
 				body := `{"providerOptions":{"myVllm":{"option_marker":{"opaque":"private-option-marker"}}},"prompt":[{"role":"user","content":[{"type":"text","text":"request","providerOptions":{"openaiCompatible":{"scope_marker":"private-scope-marker"}}}]}]}`
 				plain, plainRequests := nativeOptionsRequest(t, "openai-compatible", body, streaming, configuredFallback)

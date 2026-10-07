@@ -112,13 +112,19 @@ it("builds a local SDK/provider change into the Gateway image with honest source
     await once(portReservation, "listening");
     const gatewayPort = (portReservation.address() as { port: number }).port;
     portReservation.close();
+    const token = [
+      Buffer.from(JSON.stringify({ alg: "ES256", typ: "at+jwt" })).toString("base64url"),
+      Buffer.from(JSON.stringify({ sub: "access-policy:fixture", aud: ["ai-sdk"], exp: Math.floor(Date.now() / 1000) + 300, namespace: "stacks-1" })).toString("base64url"),
+      Buffer.alloc(64).toString("base64url"),
+    ].join(".");
     const run = spawn("docker", [
       "run", "--rm", "--name", containerName, "--network", "host",
       "--mount", `type=bind,source=${config},target=/etc/gateway/models.yaml,readonly`,
       "-e", "TEST_API_KEY=fixture", image,
-      "--deployment.mode=development", "--auth.mode=cloud-gateway",
+      "--deployment.mode=development", "--auth.unsafe",
       "--config.file=/etc/gateway/models.yaml",
-      `--server.listen-address=127.0.0.1:${gatewayPort}`,
+      `--server.private-listen-address=127.0.0.1:${gatewayPort}`,
+      "--server.cloud-listen-address=127.0.0.1:0",
       "--server.operational-listen-address=127.0.0.1:0",
     ], { stdio: ["ignore", "pipe", "pipe"] });
     run.stdout.on("data", (chunk) => { logs += chunk; });
@@ -128,7 +134,7 @@ it("builds a local SDK/provider change into the Gateway image with honest source
     for (let attempt = 0; attempt < 60; attempt++) {
       if (processExited) break;
       try {
-        ready = (await fetch(`http://127.0.0.1:${gatewayPort}/api/v1/aisdk/config`, { headers: { "x-scope-orgid": "1" } })).ok;
+        ready = (await fetch(`http://127.0.0.1:${gatewayPort}/api/v1/aisdk/config`, { headers: { Authorization: `Bearer ${token}` } })).ok;
       } catch {}
       if (ready) break;
       await new Promise((done) => setTimeout(done, 250));
@@ -141,7 +147,7 @@ it("builds a local SDK/provider change into the Gateway image with honest source
         "ai-language-model-specification-version": "4",
         "ai-language-model-id": "public/model",
         "ai-language-model-streaming": "false",
-        "x-scope-orgid": "1",
+        authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({ prompt: [{ role: "user", content: [{ type: "text", text: "hello" }] }] }),
     });

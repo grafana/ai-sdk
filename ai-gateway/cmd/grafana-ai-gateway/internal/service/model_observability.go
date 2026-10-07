@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/grafana/agento11y/go/agento11y"
+	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/auth"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/config"
 	"github.com/grafana/ai-sdk/middleware"
 	agentmiddleware "github.com/grafana/ai-sdk/middleware/agentobservability"
@@ -210,29 +211,35 @@ func (writer agentDiagnosticWriter) Write(message []byte) (int, error) {
 
 // NewModelObservabilityFactory constructs shared middleware once and returns a
 // catalog factory that adds the fixed logical chain around each lower model.
-func NewModelObservabilityFactory(telemetry *Telemetry, logger *slog.Logger, runtime *AgentObservabilityRuntime, drainTimeout time.Duration) (ModelFactory, error) {
+func NewModelObservabilityFactories(telemetry *Telemetry, logger *slog.Logger, runtime *AgentObservabilityRuntime, drainTimeout time.Duration) (ModelFactory, ModelFactory, error) {
 	if telemetry == nil || logger == nil || drainTimeout <= 0 {
-		return nil, fmt.Errorf("gateway service: invalid model observability dependency")
+		return nil, nil, fmt.Errorf("gateway service: invalid model observability dependency")
 	}
 	metrics, err := metricsmiddleware.Middleware(metricsmiddleware.Options{
 		Registerer:                telemetry.Registerer(),
 		IdentitySource:            metricsmiddleware.IdentityRequested,
 		StreamDrainTimeout:        drainTimeout,
 		DisableStreamChunkMetrics: false,
+		NormalizeModel: func(provider, model string) string {
+			if provider != "grafana" {
+				return "byok"
+			}
+			return model
+		},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("gateway service: registering model metrics: %w", err)
+		return nil, nil, fmt.Errorf("gateway service: registering model metrics: %w", err)
 	}
-	structuredLogger := logmiddleware.Middleware(logmiddleware.Options{
+	loggerOptions := logmiddleware.Options{
 		Logger:             logger,
 		DynamicAttrs:       observationLogAttrs,
-		Redactor:           closedModelLogRedactor(logmiddleware.DefaultRedactor()),
+		Redactor:           closedModelLogRedactor(logmiddleware.DefaultRedactor(), gatewayauth.ConfiguredAccounts),
 		IdentitySource:     logmiddleware.IdentityRequested,
 		StreamDrainTimeout: drainTimeout,
-	})
+	}
 	chain := modelObservationChain{
 		contextBridge:    observationBridgeMiddleware(),
-		structuredLogger: structuredLogger,
+		structuredLogger: logmiddleware.Middleware(loggerOptions),
 		prometheus:       metrics,
 	}
 	if runtime != nil && runtime.client != nil {
@@ -251,9 +258,17 @@ func NewModelObservabilityFactory(telemetry *Telemetry, logger *slog.Logger, run
 		chain.agentRecording = &recording
 	}
 
-	return func(canonicalID string, lower provider.LanguageModel) (provider.LanguageModel, error) {
+	configured := func(canonicalID string, lower provider.LanguageModel) (provider.LanguageModel, error) {
 		return chain.wrap(canonicalID, lower)
-	}, nil
+	}
+	byokChain := chain
+	loggerOptions.Redactor = closedModelLogRedactor(logmiddleware.DefaultRedactor(), gatewayauth.RequestBYOK)
+	byokChain.structuredLogger = logmiddleware.Middleware(loggerOptions)
+	byok := func(requestID string, lower provider.LanguageModel) (provider.LanguageModel, error) {
+		identity := middleware.Wrap(middleware.WrapOptions{Model: lower, ProviderID: lower.Provider(), ModelID: requestID})
+		return byokChain.observe(identity), nil
+	}
+	return configured, byok, nil
 }
 
 type modelObservationChain struct {
@@ -268,13 +283,17 @@ func (chain modelObservationChain) wrap(canonicalID string, lower provider.Langu
 	if err != nil {
 		return nil, err
 	}
+	return chain.observe(identity), nil
+}
+
+func (chain modelObservationChain) observe(identity provider.LanguageModel) provider.LanguageModel {
 	observers := make([]middleware.Middleware, 0, 4)
 	observers = append(observers, chain.contextBridge)
 	if chain.agentRecording != nil {
 		observers = append(observers, *chain.agentRecording)
 	}
 	observers = append(observers, chain.structuredLogger, chain.prometheus)
-	return middleware.Wrap(middleware.WrapOptions{Model: identity, Middleware: observers}), nil
+	return middleware.Wrap(middleware.WrapOptions{Model: identity, Middleware: observers})
 }
 
 var allowedAgentMetadataKeys = map[string]struct{}{

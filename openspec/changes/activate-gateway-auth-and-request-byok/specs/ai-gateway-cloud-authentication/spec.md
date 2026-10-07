@@ -1,0 +1,151 @@
+## REMOVED Requirements
+
+### Requirement: Startup-selected authentication
+**Reason**: Authentication is selected by isolated entry point, not a mutually exclusive process-wide mode.
+**Migration**: Replace auth.mode configuration and mode-specific tests directly. The Gateway is WIP; no compatibility aliases or migration period are required.
+
+### Requirement: Listener compatibility and coordinated lifecycle
+**Reason**: The new deployment requires two isolated API listeners and a separate operational listener, without a legacy combined-listener configuration.
+**Migration**: Replace listener settings and deployment manifests with the three-listener contract below.
+
+## ADDED Requirements
+
+### Requirement: Simultaneous isolated authentication entry points
+One Gateway process SHALL expose a private JWT API listener, a trusted-Cloud API listener and an operational listener. API listeners SHALL serve the existing exact ProviderWire paths with method and encoded-path checks. Operational routes SHALL exist only on the operational listener. The command SHALL remove exclusive startup authentication modes and SHALL NOT fall back between authenticators.
+
+The private listener SHALL accept exactly one access-token credential, through X-Access-Token or Authorization Bearer, and SHALL reject both together, duplicate/case-colliding/coalesced credentials and supplied Cloud identity assertions. It SHALL verify access-token type, signature, expiry, audience ai-sdk and supported namespace before protected body reads. No service-identity allowlist or mandatory serviceIdentity claim SHALL apply; verified service/subject attributes SHALL be retained when available without inventing an identity. Optional X-Grafana-Id SHALL verify and bind to the access-token namespace; an ID token alone SHALL NOT authenticate.
+
+#### Scenario: Both client populations use one process
+- **WHEN** valid private JWT and trusted Cloud requests arrive concurrently
+- **THEN** both SHALL authenticate on their respective listeners without changing process configuration or each other's principal
+
+#### Scenario: Internal callers use different JWT header forms
+- **WHEN** Go sends X-Access-Token or pinned Vercel sends the same valid access token as an Authorization bearer credential to the private listener
+- **THEN** each SHALL receive configured-account access without a Cloud token or stack assertion
+
+#### Scenario: Wrong or ambiguous credentials
+- **WHEN** a private request supplies both access-token headers, duplicated credentials, an ID token alone, an invalid access JWT or Cloud identity assertions
+- **THEN** it SHALL fail before body reads, discovery, selection or provider work
+- **AND** it SHALL NOT try Cloud authentication
+
+### Requirement: Request-level account access and namespace context
+The host SHALL derive an immutable account-access policy from verified authentication provenance. Private JWTs SHALL grant configured-account access; trusted Cloud requests SHALL grant request-BYOK access. Neither request parameters, the namespace's customer identity nor supplied provider keys SHALL change this policy. Catalog code SHALL depend on configured-access authorization rather than a hard-coded JWT mechanism.
+
+JWT namespaces SHALL accept concrete stacks-<positive-int64> values and wildcard *. A wildcard SHALL remain service-level context unless a verified acting-user token supplies a concrete namespace within its authority. Untrusted headers SHALL NOT select a wildcard caller's stack. Unsupported or malformed namespaces SHALL fail before protected work.
+
+#### Scenario: Internal service acts for a customer
+- **WHEN** a valid ai-sdk access JWT names stacks-123
+- **THEN** the caller SHALL retain configured-account access and stack-123 tenant attribution
+
+#### Scenario: Wildcard service request
+- **WHEN** a valid access JWT names * without an acting-user token
+- **THEN** the request SHALL have configured-account access and service-level context without an invented stack
+
+#### Scenario: Acting user narrows wildcard context
+- **WHEN** a wildcard access JWT accompanies a valid concrete-stack ID token
+- **THEN** authlib namespace binding SHALL establish that acting-user context without granting a different account-access policy
+
+#### Scenario: Request attempts account-mode selection
+- **WHEN** any request parameter claims configured access for a Cloud caller
+- **THEN** the claim SHALL NOT influence authorization or make configured accounts available
+
+### Requirement: Coordinated multi-listener lifecycle
+All dependencies SHALL be constructed and all three listeners bound before readiness. Partial bind or unexpected serving failure SHALL close all listeners and withdraw readiness. Shutdown SHALL withdraw readiness before canceling active calls and SHALL use one shared deadline for all listeners and bounded cleanup. No legacy combined listener or unsafe production verifier SHALL be supported; any explicit development-only unsafe verification SHALL require loopback listeners.
+
+#### Scenario: Third listener fails to bind
+- **WHEN** two listeners bind and the third fails
+- **THEN** both earlier listeners SHALL close and readiness SHALL never become true
+
+#### Scenario: Shutdown with both populations active
+- **WHEN** shutdown occurs with private and Cloud streams active
+- **THEN** readiness SHALL be withdrawn, both requests canceled and all serving loops reaped under the shared deadline
+
+#### Scenario: Cross-listener routes
+- **WHEN** an API request reaches the operational listener or a health/metrics request reaches either API listener
+- **THEN** it SHALL NOT reach the other listener's handler
+
+## MODIFIED Requirements
+
+### Requirement: Trusted proxy contract
+The operator guide SHALL document the required X-Scope-OrgID assertion and proxy-only access to the Cloud application listener. The proxy MUST authenticate and authorize Cloud requests, enforce existing route scopes, replace client-supplied stack assertions and remove client authentication credentials. The application SHALL NOT verify CAP tokens or repeat CAP access-policy checks.
+
+The Cloud listener MUST grant only request-BYOK access. Configured provider accounts SHALL be available only through configured-access authorization on the private path. Native OpenAI/Anthropic HTTP endpoints SHALL remain unsupported; both paths use ProviderWire.
+
+#### Scenario: Public Cloud inference
+- **WHEN** the authenticating proxy authorizes a model request
+- **THEN** the application SHALL receive only trusted identity and request content, and SHALL require request-scoped provider credentials
+
+#### Scenario: Deployment documentation
+- **WHEN** operator guidance describes the deployment
+- **THEN** it SHALL distinguish proxy-only Cloud ingress, private authenticated ingress and operational ingress
+- **AND** it SHALL NOT claim header validation alone proves network isolation
+
+### Requirement: Distinct trusted Cloud identity
+Cloud activation MUST require deployment-verified proxy-only API ingress. The application SHALL validate exactly one X-Scope-OrgID value containing positive decimal digits fitting int64, derive its namespace through the pinned CloudNamespaceFormatter and retain typed authentication provenance. It SHALL reject missing, empty, duplicate, case-colliding, comma-coalesced, control-character and invalid-whitespace assertions.
+
+The Cloud listener SHALL reject surviving Authorization, X-Access-Token and X-Grafana-Id before body reads. It SHALL ignore X-Cloud-Org-ID and X-Access-Policy-ID rather than retaining or trusting them, and SHALL NOT manufacture a service identity or acting user. It SHALL NOT inspect cluster policies or issue authentication requests.
+
+#### Scenario: Trusted stack-only request
+- **WHEN** a proxy-only request supplies a valid stack assertion without surviving credentials
+- **THEN** it SHALL establish BYOK access and the corresponding stack namespace without a manufactured service identity
+
+#### Scenario: Invalid handoff
+- **WHEN** a Cloud request has a malformed stack assertion or any surviving authentication header
+- **THEN** it SHALL fail before protected body reads or provider work without trying JWT authentication
+
+#### Scenario: Ignored policy headers
+- **WHEN** valid trusted stack identity accompanies arbitrary policy organization or policy identifier headers
+- **THEN** the application SHALL ignore those headers without using them for account selection
+
+#### Scenario: Isolation evidence
+- **WHEN** deterministic tests accept a syntactically valid assertion
+- **THEN** the result SHALL NOT be described as deployed sender authentication
+- **AND** deployment evidence SHALL separately prove that internal client workloads cannot reach the Cloud application port
+
+### Requirement: Independent dependency construction
+The unified command SHALL construct explicit regional JWT verification and configured-account dependencies alongside credential-independent BYOK adapter factories. JWT trust SHALL be configured even when Cloud requests are being served. Client construction SHALL preserve bounded JWKS retrieval, endpoint validation, redirect refusal, model response bounds and timeouts.
+
+Configured secret resolution and catalog construction SHALL have no dependency path into the BYOK selector. Shared transports SHALL carry no mutable account headers or SDK-environment credential defaults. Listener timeout validation SHALL use overflow-safe accounting for the work each path performs, including JWT verification on the private path.
+
+#### Scenario: Concurrent authentication dependencies
+- **WHEN** the unified command starts
+- **THEN** the private listener SHALL have JWT verification while Cloud requests SHALL not perform a JWT lookup
+
+#### Scenario: BYOK isolation from configured state
+- **WHEN** configured providers contain distinctive keys and endpoint overrides
+- **THEN** BYOK selection SHALL have no access to them and SHALL use only explicit request credentials and supported native destinations
+
+#### Scenario: Invalid trust or timeout configuration
+- **WHEN** configured JWT trust, transport bounds or listener timeout arithmetic is invalid
+- **THEN** startup SHALL fail before readiness
+
+### Requirement: Client composition and credential privacy
+Tests SHALL run the real unified command with both listeners, independent Go clients and the exact registered Vercel client. A test-only Cloud edge SHALL use dummy credentials and predetermined scope/stack outcomes, replace assertions and strip credentials. It SHALL NOT claim production CAP verification. Private tests SHALL exercise both access-token header forms and concrete/wildcard namespaces.
+
+Configured discovery SHALL succeed only on configured access; authenticated Cloud discovery SHALL return the explicit BYOK unsupported-operation response. Both populations SHALL support represented unary and streaming calls with explicit or omitted output-token limits; omitted limits SHALL use native defaults. High-level Go StreamText and registered TypeScript generateText/streamText SHALL preserve SDK-generated automatic choice and ordinary body headers, including User-Agent, without rewriting SDK bodies. Tests SHALL separate Gateway-authentication failures from provider-credential failures.
+
+Automatic server diagnostics SHALL exclude credentials and customer-ID metric labels. Authentication observations SHALL use bounded entry-point/source/outcome values per request, never a process-wide mode override. Streaming middleware SHALL preserve Unwrap and cancellation. Consumer request metadata exposure and structural capture protection SHALL follow gateway-request-byok and structured-logging-middleware.
+
+#### Scenario: Equivalent inference through both clients
+- **WHEN** Go and pinned Vercel issue supported private/configured and Cloud/BYOK unary and streaming calls
+- **THEN** fake native providers SHALL observe the appropriate account source, matching content/options and no Gateway authentication credentials
+
+#### Scenario: High-level defaults survive authentication
+- **WHEN** Go StreamText or registered TypeScript generateText/streamText sends a supported text call with an explicit or omitted token limit
+- **THEN** both entry points SHALL preserve SDK-prepared headers and automatic choice while native defaults apply only to omitted limits
+
+#### Scenario: Cloud denial precedes application work
+- **WHEN** the test edge rejects a credential or inference scope
+- **THEN** no application handler or native provider work SHALL occur
+
+#### Scenario: Discovery populations differ
+- **WHEN** authenticated clients request discovery on each entry point
+- **THEN** private clients SHALL receive configured discovery and Cloud clients SHALL receive the fixed unsupported-operation response without catalog access
+
+#### Scenario: Streaming and privacy
+- **WHEN** either population streams through real authentication and telemetry
+- **THEN** events SHALL flush incrementally, cancellation SHALL reach the provider and dummy credential markers SHALL be absent from captured server sinks
+
+#### Scenario: Evidence boundaries
+- **WHEN** support is documented
+- **THEN** exact-client, fake-provider and test-edge evidence SHALL be distinguished from live provider acceptance, CAP enforcement and deployed NetworkPolicy proof

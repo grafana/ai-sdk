@@ -61,7 +61,7 @@ docker run --rm \
   --env GRAFANA_AI_GATEWAY_CONFIG_FILE=/etc/grafana-ai-gateway/models.yaml \
   --env GRAFANA_AI_GATEWAY_AUTH_JWKS_URL=https://identity.example.com/.well-known/jwks.json \
   --env ANTHROPIC_API_KEY \
-  --publish 8080:8080 \
+  --publish 127.0.0.1:8080:8080 \
   ai-gateway:local
 ```
 
@@ -71,9 +71,10 @@ by that identity.
 Gateway process settings use the `GRAFANA_AI_GATEWAY_*` environment prefix.
 Run the command with `--help` for the matching flags, defaults, and limits. The
 container does not change the command's production defaults. This example
-uses the default JWT-verifying mode; it is not the public Cloud deployment.
+publishes only the private JWT API on the host's loopback interface; it does not
+publish the Cloud application or operational listeners.
 For client credentials and endpoint selection, see [Authenticate to Grafana AI
-Gateway](gateway-authentication.md). For the trusted-proxy server mode, see the
+Gateway](gateway-authentication.md). For listener isolation and the trusted-proxy boundary, see the
 [Cloud authentication contract](../../ai-gateway/docs/cloud-authentication.md).
 
 ## Use production endpoints
@@ -83,16 +84,20 @@ custom provider base URL. Gateway startup rejects URLs with user information,
 a query string, or a fragment. Configure the final endpoint because the
 Gateway does not follow outbound redirects.
 
-By default, the command listens on port 8080. The model discovery and
-language-model routes require Gateway authentication. These operational routes
-do not require authentication:
+By default, private JWT requests use port 8080, trusted-Cloud BYOK requests use
+port 8081, and operational traffic uses port 8082. API routes require their
+listener's authentication policy. Only port 8082 serves these unauthenticated
+operational routes:
 
 - `GET /live`
 - `GET /ready`
 - `GET /metrics`
 
-Place the listener behind a trusted network boundary or apply network policy if
-those routes must not be public.
+Keep private JWT access private, permit only the authenticating Cloud edge on
+port 8081, and restrict port 8082 to monitoring and probes. Do not activate the
+Cloud path before deployed network-isolation checks pass. Configured model
+secrets in this example are available only through the private API; Cloud callers
+supply request-only provider credentials.
 
 The command's default graceful shutdown timeout is 15 seconds. Set the
 container stop timeout to more than 15 seconds so the process can finish before

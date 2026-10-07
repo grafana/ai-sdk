@@ -78,7 +78,7 @@ func TestAgentObservabilityRuntime_ExportAttemptTimeout(t *testing.T) {
 			t.Cleanup(runtime.Close)
 			t.Setenv("AGENTO11Y_ENABLE_EXPERIMENTAL_FEATURES", "true")
 			require.ErrorIs(t, runtime.client.RequireExperimental("test"), agento11y.ErrExperimentalFeatureDisabled)
-			factory, err := NewModelObservabilityFactory(telemetry, logger, runtime, time.Millisecond)
+			factory, _, err := NewModelObservabilityFactories(telemetry, logger, runtime, time.Millisecond)
 			require.NoError(t, err)
 			want := &provider.GenerateResult{Content: []provider.GenerateContentPart{{Type: provider.ContentText, Text: "private-output"}}}
 			model, err := factory("grafana/assistant", &observabilityTestModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) { return want, nil }})

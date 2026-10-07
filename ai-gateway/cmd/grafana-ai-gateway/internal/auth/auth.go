@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/grafana/authlib/authn"
 	"github.com/grafana/authlib/types"
@@ -39,14 +41,25 @@ const (
 	SourceCloudGateway Source = "cloud-gateway"
 )
 
+type AccountAccess uint8
+
+const (
+	ConfiguredAccounts AccountAccess = iota + 1
+	RequestBYOK
+)
+
 // Caller is the private normalized authenticated caller retained in context.
 type Caller struct {
 	Source     Source
 	Service    string
+	Subject    string
 	Namespace  string
 	ActingUser *ActingUser
 	stackID    int64
+	access     AccountAccess
 }
+
+func (caller Caller) AccountAccess() AccountAccess { return caller.access }
 
 // ActingUser is an optional verified non-access-policy identity.
 type ActingUser struct {
@@ -95,20 +108,10 @@ func NewUnsafeAuthenticator(audiences []string, warn func(string)) (authn.Authen
 }
 
 func newVerifierConfig(audiences []string) (authn.VerifierConfig, error) {
-	if len(audiences) == 0 {
-		return authn.VerifierConfig{}, fmt.Errorf("gateway auth: at least one audience is required")
+	if len(audiences) != 1 || audiences[0] != "ai-sdk" {
+		return authn.VerifierConfig{}, fmt.Errorf("gateway auth: audience must be ai-sdk")
 	}
-	seen := make(map[string]struct{}, len(audiences))
-	for _, audience := range audiences {
-		if strings.TrimSpace(audience) == "" {
-			return authn.VerifierConfig{}, fmt.Errorf("gateway auth: audiences must not be empty")
-		}
-		if _, exists := seen[audience]; exists {
-			return authn.VerifierConfig{}, fmt.Errorf("gateway auth: audiences must be unique")
-		}
-		seen[audience] = struct{}{}
-	}
-	return authn.VerifierConfig{AllowedAudiences: audiences}, nil
+	return authn.VerifierConfig{AllowedAudiences: []string{"ai-sdk"}}, nil
 }
 
 // RequestAuthenticator authenticates headers without access to the request body.
@@ -158,20 +161,46 @@ func CallerFromContext(ctx context.Context) (Caller, bool) {
 }
 
 func normalizeHeaders(headers http.Header) (tokenProvider, error) {
-	access, err := exactlyOneHeader(headers, "X-Access-Token", true)
+	for name := range headers {
+		if strings.EqualFold(name, "X-Scope-OrgID") || strings.EqualFold(name, "X-Cloud-Org-ID") || strings.EqualFold(name, "X-Access-Policy-ID") {
+			return tokenProvider{}, fmt.Errorf("gateway auth: private request contains a cloud assertion")
+		}
+	}
+	access, err := exactlyOneHeader(headers, "X-Access-Token", false)
 	if err != nil {
 		return tokenProvider{}, err
+	}
+	authorization, err := exactlyOneHeader(headers, "Authorization", false)
+	if err != nil {
+		return tokenProvider{}, err
+	}
+	if (access == "") == (authorization == "") {
+		return tokenProvider{}, fmt.Errorf("gateway auth: exactly one access credential is required")
+	}
+	if authorization != "" {
+		scheme, token, ok := strings.Cut(authorization, " ")
+		if !ok || !strings.EqualFold(scheme, "Bearer") {
+			return tokenProvider{}, fmt.Errorf("gateway auth: authorization must use bearer")
+		}
+		access = token
 	}
 	id, err := exactlyOneHeader(headers, "X-Grafana-Id", false)
 	if err != nil {
 		return tokenProvider{}, err
 	}
-	normalizedAccess := stripBearer(access)
+	normalizedAccess := access
+	if authorization == "" {
+		normalizedAccess = stripBearer(access)
+	}
 	normalizedID := stripBearer(id)
-	if normalizedAccess == "" || (id != "" && normalizedID == "") {
+	if !validTokenHeader(normalizedAccess) || (id != "" && !validTokenHeader(normalizedID)) {
 		return tokenProvider{}, fmt.Errorf("gateway auth: bearer token is empty")
 	}
 	return tokenProvider{accessToken: normalizedAccess, idToken: normalizedID}, nil
+}
+
+func validTokenHeader(value string) bool {
+	return value != "" && utf8.ValidString(value) && !strings.ContainsFunc(value, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) })
 }
 
 func exactlyOneHeader(headers http.Header, name string, required bool) (string, error) {
@@ -198,15 +227,31 @@ func stripBearer(value string) string {
 
 func callerFromAuthInfo(info types.AuthInfo) (Caller, error) {
 	identities := info.GetExtra()[authn.ServiceIdentityKey]
-	if len(identities) != 1 || strings.TrimSpace(identities[0]) == "" {
-		return Caller{}, fmt.Errorf("gateway auth: exactly one service identity is required")
+	if len(identities) > 1 {
+		return Caller{}, fmt.Errorf("gateway auth: ambiguous service identity")
+	}
+	var service string
+	if len(identities) == 1 {
+		service = identities[0]
+		if service != "" && strings.TrimSpace(service) == "" {
+			return Caller{}, fmt.Errorf("gateway auth: invalid service identity")
+		}
 	}
 	namespace := info.GetNamespace()
-	if strings.TrimSpace(namespace) == "" {
-		return Caller{}, fmt.Errorf("gateway auth: namespace is required")
+	if namespace != "*" {
+		stack, ok := strings.CutPrefix(namespace, "stacks-")
+		if !ok {
+			return Caller{}, fmt.Errorf("gateway auth: unsupported namespace")
+		}
+		if _, err := positiveDecimal(stack); err != nil {
+			return Caller{}, err
+		}
 	}
-	caller := Caller{Source: SourceAccessToken, Service: identities[0], Namespace: namespace}
+	caller := Caller{Source: SourceAccessToken, Service: service, Subject: info.GetSubject(), Namespace: namespace, access: ConfiguredAccounts}
 	if identityType := info.GetIdentityType(); identityType != types.TypeAccessPolicy {
+		if namespace == "*" {
+			return Caller{}, fmt.Errorf("gateway auth: acting user requires a concrete namespace")
+		}
 		caller.ActingUser = &ActingUser{Subject: info.GetSubject(), Type: identityType}
 	}
 	return caller, nil
