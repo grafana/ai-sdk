@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
-	"strings"
 	"testing"
 
 	"github.com/grafana/ai-sdk/provider"
@@ -13,18 +12,18 @@ import (
 )
 
 func TestJSONAttr_BYOKSanitization(t *testing.T) {
-	const options = `{"gateway":{"byok":{"openai":[{"unfamiliar":{"nested":"dummy-credential"}}]},"ordinary":true},"openai":{"store":false}}`
+	const rawOptions = `{"byok":{"openai":[{"unfamiliar":{"nested":"dummy-credential"}}]},"ordinary":true,"providerTimeouts":{"byok":{"openai":5000}}}`
+	options := provider.ProviderOptions{"gateway": provider.RawProviderOption{Raw: json.RawMessage(rawOptions)}}
 	for _, tc := range []struct {
 		name  string
 		value any
 	}{
-		{"raw options", json.RawMessage(options)},
-		{"typed options", provider.ProviderOptions{"gateway": provider.RawProviderOption{Key: "gateway", Raw: json.RawMessage(`{"byok":{"openai":[{"future":"dummy-credential"}]},"ordinary":true}`)}}},
-		{"byte options", []byte(options)},
-		{"malformed gateway array", map[string]any{"ordinary": true, "gateway": []any{"dummy-credential"}}},
-		{"raw body", json.RawMessage(`{"providerOptions":` + options + `,"prompt":"application gateway.byok dummy-application"}`)},
-		{"nested bytes", map[string]any{"providerOptions": []byte(options)}},
-		{"error request", map[string]any{"providerOptions": map[string]any{"gateway": json.RawMessage(`{"byok":[{"unknown":"dummy-credential"}],"ordinary":true}`)}}},
+		{"typed options", options},
+		{"raw body", json.RawMessage(`{"providerOptions":{"gateway":` + rawOptions + `},"prompt":"application gateway.byok dummy-application"}`)},
+		{"message options", []provider.Message{{Role: provider.RoleUser, ProviderOptions: options}}},
+		{"tool options", []provider.Tool{{ProviderOptions: options}}},
+		{"opaque options", json.RawMessage(`{"providerOptions":"dummy-credential","ordinary":true}`)},
+		{"malformed gateway", json.RawMessage(`{"providerOptions":{"gateway":["dummy-credential"]},"ordinary":true}`)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			before, err := json.Marshal(tc.value)
@@ -32,15 +31,14 @@ func TestJSONAttr_BYOKSanitization(t *testing.T) {
 			for _, limit := range []int{1, 8192} {
 				attr, ok := jsonAttr("capture", tc.value, CaptureOptions{MaxJSONBytes: limit})
 				require.True(t, ok)
-				data, err := json.Marshal(attr.Value.Any())
-				require.NoError(t, err)
-				assert.NotContains(t, string(data), "dummy-credential")
+				data := recordsJSONForAttrs(t, []slog.Attr{attr})
+				assert.NotContains(t, data, "dummy-credential")
 				if limit > 1 {
-					assert.Contains(t, string(data), "ordinary")
-					assert.NotContains(t, string(data), `"Raw"`)
-					assert.Contains(t, string(data), redactedValue)
+					assert.Contains(t, data, "ordinary")
+					assert.NotContains(t, data, `"Raw"`)
+					assert.Contains(t, data, redactedValue)
 					if tc.name == "raw body" {
-						assert.Contains(t, string(data), "application gateway.byok dummy-application")
+						assert.Contains(t, data, "application gateway.byok dummy-application")
 					}
 				}
 			}
@@ -49,6 +47,20 @@ func TestJSONAttr_BYOKSanitization(t *testing.T) {
 			assert.Equal(t, before, after)
 		})
 	}
+}
+
+func TestCapture_BYOKPreservesOrdinaryData(t *testing.T) {
+	capture := CaptureOptions{ToolOutputs: true, ProviderOptions: true, MaxJSONBytes: 8192}
+	attrs := streamPartCaptureAttrs(provider.StreamPart{
+		Type: provider.PartToolResult, Result: json.RawMessage(`{"gateway":"west","byok":"application-value"}`),
+	}, capture)
+	attrs = append(attrs, requestCaptureAttrs(provider.CallOptions{ProviderOptions: provider.ProviderOptions{
+		"gateway": provider.RawProviderOption{Raw: json.RawMessage(`{"providerTimeouts":{"byok":{"openai":5000}}}`)},
+	}}, capture)...)
+	data := recordsJSONForAttrs(t, DefaultRedactor().RedactAttrs(context.Background(), EventStreamPart, attrs))
+	assert.Contains(t, data, `"gateway":"west"`)
+	assert.Contains(t, data, `"byok":"application-value"`)
+	assert.Contains(t, data, `"byok":{"openai":5000}`)
 }
 
 func TestMiddleware_BYOKErrorBodyCapture(t *testing.T) {
@@ -61,7 +73,10 @@ func TestMiddleware_BYOKErrorBodyCapture(t *testing.T) {
 			model := Wrap(&mockModel{
 				generateFunc: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) { return nil, failure },
 				streamFunc:   func(context.Context, provider.CallOptions) (*provider.StreamResult, error) { return nil, failure },
-			}, Options{Logger: slog.New(handler), Capture: CaptureOptions{RequestBody: true, MaxJSONBytes: 8192}})
+			}, Options{
+				Logger: slog.New(handler), Capture: CaptureOptions{RequestBody: true, MaxJSONBytes: 8192},
+				Redactor: RedactorFunc(func(_ context.Context, _ EventKind, attrs []slog.Attr) []slog.Attr { return attrs }),
+			})
 			var err error
 			if mode == "stream" {
 				_, err = model.DoStream(context.Background(), provider.CallOptions{})
@@ -82,16 +97,21 @@ type panickingBYOKCapture struct{}
 
 func (panickingBYOKCapture) MarshalJSON() ([]byte, error) { panic("dummy-private-capture") }
 
-func TestJSONAttr_BYOKUnsafeRepresentations(t *testing.T) {
-	for _, key := range []string{"ai_sdk.request.body", "ai_sdk.request.provider_options"} {
-		for _, value := range []any{json.RawMessage(`"{\"gateway\":{\"byok\":\"dummy-key\"}}"`), json.RawMessage(`[{"gateway":{"byok":"dummy-key"}}]`)} {
-			_, ok := jsonAttr(key, value, CaptureOptions{MaxJSONBytes: 8192})
-			assert.False(t, ok)
-		}
+func TestRequestBodyCapture_UnsafeRepresentations(t *testing.T) {
+	for _, body := range []json.RawMessage{
+		json.RawMessage(`"{\"providerOptions\":{\"gateway\":{\"byok\":\"dummy-key\"}}}"`),
+		json.RawMessage(`[{"providerOptions":{"gateway":{"byok":"dummy-key"}}}]`),
+		json.RawMessage(`{"providerOptions":{"gateway":{"byok":"dummy-incomplete`),
+	} {
+		attrs := appendRequestBodyAttr(nil, body, CaptureOptions{MaxJSONBytes: 8192})
+		require.Equal(t, []slog.Attr{slog.String("ai_sdk.serialization_error", "ai_sdk.request.body")}, attrs)
 	}
+}
+
+func TestJSONAttr_UnsafeRepresentations(t *testing.T) {
 	cycle := map[string]any{}
 	cycle["self"] = cycle
-	for _, value := range []any{cycle, panickingBYOKCapture{}, json.RawMessage(`{"gateway":{"byok":"dummy-incomplete`), []byte(strings.Repeat("x", maxCaptureBytes+1))} {
+	for _, value := range []any{cycle, panickingBYOKCapture{}, json.RawMessage(`{"incomplete":`)} {
 		attr, ok := jsonAttr("capture", value, CaptureOptions{MaxJSONBytes: 8192})
 		assert.False(t, ok)
 		assert.Equal(t, slog.Attr{}, attr)

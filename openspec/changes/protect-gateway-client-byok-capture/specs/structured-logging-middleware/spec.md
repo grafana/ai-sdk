@@ -21,7 +21,7 @@ A custom `Redactor` SHALL receive the request context, event kind, and selected 
 - **WHEN** `Options.Redactor` removes an attr from the provided attr slice
 - **THEN** the removed attr SHALL NOT be emitted in the log record
 
-Default capture SHALL structurally redact the complete providerOptions.gateway.byok subtree and gateway.byok in provider-options-only attributes, including JSON RawMessage/byte representations, ordered arrays and request bodies attached to errors. Protection SHALL occur before serialization, truncation or fallback formatting can turn the structure into an opaque string. If bounded structural sanitization cannot be completed, the affected attribute SHALL be omitted or replaced with a non-payload marker, never raw or partially sanitized JSON. The original model parameters, results and request metadata SHALL not be mutated.
+Default SDK capture SHALL redact the complete providerOptions.gateway.byok credential subtree and gateway.byok in typed provider-options captures, including nested message/tool provider options, ordered credential arrays and JSON request bodies attached to errors. Protection SHALL operate on the decoded capture copy before sink emission, including before custom redactors receive it. Request-body capture SHALL accept JSON objects or null; malformed or opaque string/array bodies SHALL be omitted with a non-payload diagnostic. This contract does not promise recursive interpretation of arbitrary Go values or nested byte slices as serialized JSON. Existing JSON capture limits SHALL bound emitted values, not claim a hard allocation bound during normalization. Original parameters, results and request metadata SHALL remain unchanged. Ordinary gateway fields and gateway.providerTimeouts.byok SHALL retain their values.
 
 #### Scenario: Captured BYOK includes unfamiliar fields
 - **WHEN** provider-options or request-body capture encounters a gateway.byok subtree containing dummy credentials under known or unfamiliar nested keys
@@ -33,9 +33,13 @@ Default capture SHALL structurally redact the complete providerOptions.gateway.b
 - **AND** the provider SHALL still receive the original request credentials
 
 #### Scenario: Sanitization cannot safely serialize
-- **WHEN** a BYOK-bearing capture representation cannot be structurally sanitized within bounds
-- **THEN** capture SHALL omit or safely summarize it without logging raw fallback bytes or failing the model call
+- **WHEN** SDK capture encounters invalid JSON, a non-object request body or a failing/panicking JSON marshaler
+- **THEN** capture SHALL omit it without logging raw fallback bytes or failing the model call
 
 #### Scenario: Application content resembles credentials
 - **WHEN** an allowed prompt/output or ordinary metadata string resembles an API key or contains the text gateway.byok
 - **THEN** subtree protection SHALL NOT rewrite that application string
+
+#### Scenario: Ordinary gateway values survive
+- **WHEN** tool output contains a gateway string or provider options contain gateway.providerTimeouts.byok
+- **THEN** credential protection SHALL preserve those values rather than redact every gateway or byok key

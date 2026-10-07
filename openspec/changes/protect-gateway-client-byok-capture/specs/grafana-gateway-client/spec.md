@@ -50,7 +50,7 @@ The Go client SHALL emit representable provider/model IDs and providerOptions.ga
 ### Requirement: Caller-owned request metadata and capture guidance
 Both Go and exact-pinned Vercel requests SHALL emit the standard BYOK subtree in unary and streaming bodies. Their returned caller-owned request metadata SHALL retain the submitted arguments under the existing client contract; the server SHALL NOT claim it can sanitize those local objects. Guidance SHALL separate credential-aware automatic capture from direct application inspection.
 
-Default Go logger capture SHALL structurally protect known BYOK fields, and a tested TS example SHALL show redaction of options/request metadata before consumer logging or telemetry. Enrichment and Agent Observability capture paths SHALL be inspected and tested with dummy markers without enabling unsupported capture APIs or removing ordinary application content.
+Default Go logger capture SHALL structurally protect credentials in supported SDK capture representations. Direct application logging, including TypeScript logging, SHALL remain caller-owned; guidance SHALL warn against logging credential-bearing metadata and recommend omitting credentials from a copy. This change SHALL NOT provide a TypeScript redaction helper. Enrichment and Agent Observability capture paths SHALL be inspected and tested with dummy markers without enabling unsupported capture APIs or removing ordinary application content.
 
 #### Scenario: Actual consumer capture
 - **WHEN** Go logging enables provider-options and request-body capture for both unary and streaming BYOK calls
@@ -59,7 +59,7 @@ Default Go logger capture SHALL structurally protect known BYOK fields, and a te
 #### Scenario: Stock Vercel request metadata
 - **WHEN** the registered Vercel client returns request.body after BYOK submission
 - **THEN** evidence SHALL show the local BYOK subtree is present
-- **AND** the documented redaction example SHALL remove it from captured copies without changing the HTTP request or caller result
+- **AND** guidance SHALL identify direct logging of that metadata as caller-owned credential exposure, without changing the HTTP request or caller result
 
 ### Requirement: Transport-safe model selectors
 Model construction SHALL accept nonempty valid UTF-8 selectors up to 2,048 bytes

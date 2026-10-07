@@ -2,7 +2,6 @@ package logger
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
 	"reflect"
 	"strings"
@@ -100,12 +99,6 @@ func (r attrRedactor) redactAny(value any) any {
 	}
 
 	switch v := value.(type) {
-	case json.RawMessage, []byte:
-		normalized, err := normalizeCapture(value)
-		if err != nil {
-			return redactedValue
-		}
-		return r.redactAny(normalized)
 	case map[string]any:
 		out := make(map[string]any, len(v))
 		for key, item := range v {
@@ -186,9 +179,6 @@ func (r attrRedactor) redactReflect(value reflect.Value) (any, bool) {
 
 func (r attrRedactor) isSensitiveKey(key string) bool {
 	lower := strings.ToLower(key)
-	if lower == "byok" {
-		return true
-	}
 	for _, pattern := range r.patterns {
 		if lower == pattern {
 			return true

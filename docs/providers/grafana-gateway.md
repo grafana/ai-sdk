@@ -198,11 +198,12 @@ native `provider/model` selectors without discovery. This is client support, not
 a claim that the configured Gateway service accepts BYOK. Server capabilities
 and account authorization still decide which requests execute.
 
-Returned caller-owned request metadata retains submitted keys. Go logger capture
-structurally protects the known BYOK subtree before serialization or truncation;
-direct application logging remains your responsibility. For TypeScript capture,
-use the tested [copy-based helper](../../ai-gateway/examples/redact-byok.ts).
-Neither capture path should rewrite ordinary application text or original data.
+Returned caller-owned request metadata retains submitted keys. Opt-in Go logger
+capture redacts the credential subtree in typed provider options and JSON request
+bodies, including error-associated bodies, without changing the original data.
+Direct application logging, including TypeScript logging, remains your
+responsibility: omit credentials from a copy before sending it to logs or telemetry.
+Ordinary options such as `gateway.providerTimeouts.byok` are not credentials.
 
 ## Configure fallback
 

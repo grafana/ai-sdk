@@ -122,7 +122,10 @@ evidence boundary changes, not merely because the pinned versions change.
   and metadata-only canonical operator logs/metrics/exports without censoring
   supported native warning/source/response identity. Consumer WrapGenerate and
   WrapStream tests prove contracted hook access; separate consumer logger tests
-  assert actual opt-in Gateway body capture at its own destination. Hook access
+  assert actual opt-in Gateway body capture at its own destination. BYOK logger
+  protection covers typed SDK options and JSON request/error bodies, not arbitrary
+  opaque application captures; ordinary gateway fields and timeout options remain
+  intact. Direct application/TypeScript capture remains caller-owned. Hook access
   does not imply universal built-in stream-warning/source capture or an Agent
   Observability source representation, nor full native diagnostic access.
 - Linux FIFO deadline tests are platform-specific; socket checks on another
