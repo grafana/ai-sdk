@@ -44,7 +44,7 @@ func testRouterOpenStream(t *testing.T, build func(RouterDependencies) http.Hand
 	model := &openStreamModel{canceled: make(chan struct{})}
 	modelCatalog, err := catalog.NewStatic([]catalog.StaticEntry{{Info: catalog.ModelInfo{ID: "public"}, Model: model}})
 	require.NoError(t, err)
-	language, err := providerv4.New(providerv4.Config{Resolver: modelCatalog, Limits: serviceTestLimits()})
+	language, err := providerv4.New(providerv4.Config{Selector: providerv4.CatalogSelector(modelCatalog), Limits: serviceTestLimits()})
 	require.NoError(t, err)
 
 	var logs synchronizedBuffer

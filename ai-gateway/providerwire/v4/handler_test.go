@@ -40,7 +40,7 @@ func testLimits() Limits {
 
 func newTestHandler(t *testing.T, limits Limits) *handler {
 	t.Helper()
-	created, err := New(Config{Resolver: &resolverStub{}, Limits: limits})
+	created, err := New(Config{Selector: CatalogSelector(&resolverStub{}), Limits: limits})
 	require.NoError(t, err)
 	h, ok := created.(*handler)
 	require.True(t, ok)
@@ -59,7 +59,7 @@ func validRequest(body string) *http.Request {
 func TestNew(t *testing.T) {
 	t.Run("valid immutable configuration", func(t *testing.T) {
 		limits := testLimits()
-		created, err := New(Config{Resolver: &resolverStub{}, Limits: limits})
+		created, err := New(Config{Selector: CatalogSelector(&resolverStub{}), Limits: limits})
 		require.NoError(t, err)
 		h := created.(*handler)
 		require.NotNil(t, h.requestSchema)
@@ -83,13 +83,13 @@ func TestNew(t *testing.T) {
 		}
 		limits := testLimits()
 		limits.StreamFrameBytes = int64(largest)
-		_, err := New(Config{Resolver: &resolverStub{}, Limits: limits})
+		_, err := New(Config{Selector: CatalogSelector(&resolverStub{}), Limits: limits})
 		require.NoError(t, err)
 		limits.StreamFrameBytes--
-		_, err = New(Config{Resolver: &resolverStub{}, Limits: limits})
+		_, err = New(Config{Selector: CatalogSelector(&resolverStub{}), Limits: limits})
 		require.Error(t, err)
 		limits.StreamFrameBytes = math.MaxInt64
-		_, err = New(Config{Resolver: &resolverStub{}, Limits: limits})
+		_, err = New(Config{Selector: CatalogSelector(&resolverStub{}), Limits: limits})
 		require.NoError(t, err)
 	})
 
@@ -97,7 +97,7 @@ func TestNew(t *testing.T) {
 		_, err := New(Config{Limits: testLimits()})
 		require.Error(t, err)
 		var resolver *resolverStub
-		_, err = New(Config{Resolver: resolver, Limits: testLimits()})
+		_, err = New(Config{Selector: CatalogSelector(resolver), Limits: testLimits()})
 		require.Error(t, err)
 	})
 
@@ -124,7 +124,7 @@ func TestNew(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				limits := testLimits()
 				tc.mutate(&limits)
-				_, err := New(Config{Resolver: &resolverStub{}, Limits: limits})
+				_, err := New(Config{Selector: CatalogSelector(&resolverStub{}), Limits: limits})
 				require.Error(t, err)
 			})
 		}
@@ -156,7 +156,7 @@ func TestHandlerEnvelope(t *testing.T) {
 	}
 
 	resolver := &resolverStub{}
-	created, err := New(Config{Resolver: resolver, Limits: testLimits()})
+	created, err := New(Config{Selector: CatalogSelector(resolver), Limits: testLimits()})
 	require.NoError(t, err)
 	h := created.(*handler)
 	for _, tc := range tests {

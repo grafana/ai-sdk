@@ -85,6 +85,10 @@ func mapWireRequest(body []byte, modes ...executionMode) (provider.CallOptions, 
 		return provider.CallOptions{}, invalidMappingFailure()
 	}
 
+	return mapRequest(request, modes...)
+}
+
+func mapRequest(request wireRequest, modes ...executionMode) (provider.CallOptions, *requestFailure) {
 	options := provider.CallOptions{
 		MaxOutputTokens:  request.MaxOutputTokens,
 		Temperature:      request.Temperature,
@@ -345,6 +349,11 @@ var protectedCallHeaders = map[string]struct{}{
 	"api-key":             {},
 	"openai-api-key":      {},
 	"anthropic-api-key":   {},
+	"openai-organization": {},
+	"openai-project":      {},
+	"x-scope-orgid":       {},
+	"x-cloud-org-id":      {},
+	"x-access-policy-id":  {},
 }
 
 // mapWireHeaders copies body-carried call headers, preserving key case because

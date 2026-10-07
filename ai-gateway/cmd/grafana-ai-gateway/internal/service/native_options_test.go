@@ -458,7 +458,7 @@ func nativeOptionsRequest(t *testing.T, backend, body string, streaming, configu
 		"primary": {Type: backend, APIKey: "native-key", BaseURL: server.URL + "/primary", ProviderName: "my-vllm.chat"},
 	}, server.Client(), factory)
 	require.NoError(t, err)
-	handler, err := providerv4.New(providerv4.Config{Resolver: created, Limits: serviceTestLimits()})
+	handler, err := providerv4.New(providerv4.Config{Selector: providerv4.CatalogSelector(created), Limits: serviceTestLimits()})
 	require.NoError(t, err)
 	request := httptest.NewRequest(http.MethodPost, providerv4.LanguageModelPath, strings.NewReader(body))
 	request.Header.Set("Content-Type", "application/json")

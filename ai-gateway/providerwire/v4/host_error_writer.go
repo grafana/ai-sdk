@@ -12,6 +12,7 @@ const (
 	HostErrorPermission
 	// HostErrorInternal reports a host internal failure.
 	HostErrorInternal
+	HostErrorBYOKDiscovery
 )
 
 // HostErrorWriter writes fixed ProviderWire V4 documents for host failures.
@@ -29,6 +30,8 @@ func (*HostErrorWriter) Write(w http.ResponseWriter, category HostErrorCategory)
 	case HostErrorPermission:
 		document = safeErrorDocument{status: http.StatusForbidden, body: canonicalPermissionError}
 	case HostErrorInternal:
+	case HostErrorBYOKDiscovery:
+		document = safeErrorDocument{status: http.StatusBadRequest, body: byokDiscoveryError}
 	}
 	writeSafeErrorDocument(w, document)
 }
