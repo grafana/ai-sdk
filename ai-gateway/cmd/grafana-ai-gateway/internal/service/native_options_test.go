@@ -46,6 +46,32 @@ func TestNativeOptions_ConsumedRequests(t *testing.T) {
 					},
 				},
 				{
+					name: "anthropic provider definitions", backend: "anthropic",
+					body: `{"prompt":[],"tools":[{"type":"provider","id":"anthropic.code_execution_20260120","name":"python","args":{}}]}`,
+					check: func(t *testing.T, body map[string]any) {
+						tools := body["tools"].([]any)
+						require.Len(t, tools, 1)
+						assert.Equal(t, map[string]any{"type": "code_execution_20260120", "name": "code_execution"}, tools[0])
+					},
+				},
+				{
+					name: "anthropic hosted MCP configuration and history", backend: "anthropic",
+					body: `{"providerOptions":{"anthropic":{"mcpServers":[{"type":"url","name":"server","url":"https://mcp.example.test/tools","authorizationToken":"remote-token","toolConfiguration":{"enabled":true,"allowedTools":["lookup"]}}]}},"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"lookup","input":{},"providerExecuted":true,"providerOptions":{"anthropic":{"type":"mcp-tool-use","serverName":"server"}}},{"type":"tool-result","toolCallId":"call","toolName":"lookup","output":{"type":"json","value":"done"}}]}]}`,
+					check: func(t *testing.T, body map[string]any) {
+						assert.Equal(t, []any{map[string]any{"type": "url", "name": "server", "url": "https://mcp.example.test/tools", "authorization_token": "remote-token", "tool_configuration": map[string]any{"enabled": true, "allowed_tools": []any{"lookup"}}}}, body["mcp_servers"])
+						parts := body["messages"].([]any)[0].(map[string]any)["content"].([]any)
+						assert.Equal(t, map[string]any{"type": "mcp_tool_use", "id": "call", "name": "lookup", "input": map[string]any{}, "server_name": "server"}, parts[0])
+						assert.Equal(t, map[string]any{"type": "mcp_tool_result", "tool_use_id": "call", "content": "done", "is_error": false}, parts[1])
+					},
+				},
+				{
+					name: "openai hosted MCP definition", backend: "openai",
+					body: `{"prompt":[],"tools":[{"type":"provider","id":"openai.mcp","name":"remote","args":{"serverLabel":"server","serverUrl":"https://mcp.example.test/tools","authorization":"remote-token","headers":{"X-MCP-Key":"remote-header"},"allowedTools":["lookup"]}}]}`,
+					check: func(t *testing.T, body map[string]any) {
+						assert.Equal(t, []any{map[string]any{"type": "mcp", "server_label": "server", "server_url": "https://mcp.example.test/tools", "authorization": "remote-token", "headers": map[string]any{"X-MCP-Key": "remote-header"}, "allowed_tools": []any{"lookup"}, "require_approval": "never"}}, body["tools"])
+					},
+				},
+				{
 					name: "compatible nested extensions", backend: "openai-compatible",
 					body: `{"providerOptions":{"my-vllm":{"user":"raw","extension":{"ignored":true}},"openaiCompatible":{"user":"fixed"},"myVllm":{"user":"camel","extension":{"null":null,"false":false,"zero":0,"empty":"","array":[],"object":{}},"headers":{"Authorization":"ordinary"}},"anthropic":{"model":"irrelevant"}},"prompt":[{"role":"user","providerOptions":{"openaiCompatible":{"priority":"high"}},"content":[{"type":"text","text":"one","providerOptions":{"openaiCompatible":{"sentiment":"positive","nested":{}}}},{"type":"text","text":"two"}]}]}`,
 					check: func(t *testing.T, body map[string]any) {
@@ -95,10 +121,12 @@ func TestNativeOptions_BypassAndOrdinaryControls(t *testing.T) {
 				name, backend, body string
 				denied              bool
 			}{
-				{"MCP call", "anthropic", `{"prompt":[],"providerOptions":{"anthropic":{"MCPServers":[{"type":"url","url":"https://other.example","name":"server"}]}}}`, true},
+				{"MCP configuration case alias", "anthropic", `{"prompt":[],"providerOptions":{"anthropic":{"MCPServers":[{"type":"url","url":"https://other.example","name":"server"}]}}}`, false},
 				{"skills", "anthropic", `{"prompt":[],"providerOptions":{"anthropic":{"container":{"skills":[{"type":"anthropic","skillId":"skill"}]}}}}`, true},
 				{"fallback", "anthropic", `{"prompt":[],"providerOptions":{"anthropic":{"fallbacks":"default"}}}`, true},
-				{"MCP history", "anthropic", `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"lookup","input":{},"providerOptions":{"anthropic":{"Type":"mcp-tool-use","serverName":"server"}}}]}]}`, true},
+				{"MCP history type alias", "anthropic", `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"lookup","input":{},"providerExecuted":true,"providerOptions":{"anthropic":{"Type":"mcp-tool-use","serverName":"server"}}}]}]}`, false},
+				{"inert local-call MCP marker", "anthropic", `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"lookup","input":{},"providerOptions":{"anthropic":{"Type":"mcp-tool-use","serverName":"server"}}}]}]}`, false},
+				{"inert MCP result metadata", "anthropic", `{"prompt":[{"role":"assistant","content":[{"type":"tool-result","toolCallId":"call","toolName":"lookup","output":{"type":"json","value":{}},"providerOptions":{"anthropic":{"type":"mcp-tool-use","serverName":"server"}}}]}]}`, false},
 				{"noop execution", "anthropic", `{"prompt":[],"providerOptions":{"anthropic":{"mcpServers":[],"container":null,"fallbacks":null,"mcp_servers":[{"ordinary":true}]}}}`, false},
 				{"compaction", "anthropic", `{"prompt":[{"role":"assistant","content":[{"type":"text","text":"summary","providerOptions":{"anthropic":{"type":"compaction"}}}]}]}`, false},
 				{"irrelevant namespace", "anthropic", `{"prompt":[],"providerOptions":{"openaiCompatible":{"role":"tool","model":"ignored","content":[]}}}`, false},

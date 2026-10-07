@@ -94,6 +94,30 @@ func TestUnarySuccessValidation(t *testing.T) {
 	})
 }
 
+func TestUnaryProviderToolResult_BoundsAndPreliminary(t *testing.T) {
+	call := provider.GenerateContentPart{Type: provider.ContentToolCall, ToolCallID: "call", ToolName: "echo", Input: json.RawMessage(`{}`)}
+	result := provider.GenerateContentPart{Type: provider.ContentToolResult, ToolCallID: "call", ToolName: "echo", Result: json.RawMessage(`{"data":"` + strings.Repeat("a", 100) + `"}`)}
+	value := validGenerateResult()
+	value.Content = []provider.GenerateContentPart{call, result}
+	mapped, err := mapUnarySuccess(value, 1<<20)
+	require.NoError(t, err)
+	body, ok := encodeUnarySuccess(mapped, 1<<20)
+	require.True(t, ok)
+	_, err = mapUnarySuccess(value, int64(len(result.Result))-1)
+	require.Error(t, err)
+	_, ok = encodeUnarySuccess(mapped, int64(len(body))-1)
+	assert.False(t, ok)
+	result.ProviderMetadata = provider.ProviderMetadata{"private": json.RawMessage(`{"secret":"` + strings.Repeat("x", 1000) + `"}`)}
+	value.Content = []provider.GenerateContentPart{call, result}
+	_, err = mapUnarySuccess(value, 512)
+	require.Error(t, err)
+	result.ProviderMetadata = nil
+	result.Preliminary = new(true)
+	value.Content = []provider.GenerateContentPart{call, result}
+	_, err = mapUnarySuccess(value, 1<<20)
+	require.Error(t, err)
+}
+
 func TestUnarySuccessBoundaries(t *testing.T) {
 	result := validGenerateResult()
 	mapped, err := mapUnarySuccess(result, 1<<20)

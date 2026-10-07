@@ -24,9 +24,27 @@ the next request. The Go and Vercel SDKs can manage this tool loop for you. See
 [Tools](../guides/tools.md) and [Agent loops](../guides/agent-loops.md) for setup.
 The Gateway does not retain conversation state between requests.
 
-Provider-executed tools, including provider-hosted MCP, are not yet available
-through the Gateway. Tool approvals, dynamic tools, preliminary or custom tool
-results, and generated media responses are also not yet supported.
+## Provider-defined tools
+
+Provider-defined tools expose capabilities supplied by the model provider.
+Some run on the provider; others ask your application to execute a call. When a
+returned call has `providerExecuted: true`, do not execute it in your application.
+Use that marker, not the tool definition, to decide who runs each call.
+
+These tools work with both non-streaming and streaming requests. A preliminary
+result is a preview, not a completed call; wait for the final result. When
+continuing the conversation, retain previous calls and results, including
+unresolved provider-executed calls. Keep their provider metadata unchanged, as
+explained in [Continue conversations with provider metadata](#continue-conversations-with-provider-metadata).
+
+Provider-hosted MCP tools run on the selected model provider, not in your
+application or the Gateway. Configure them using the selected provider's tool
+or call settings; see [Anthropic options](anthropic.md#enable-reasoning-deliberately)
+and [OpenAI tools](openai.md#use-built-in-tools). Keep returned tool calls,
+results and metadata when continuing the conversation.
+
+Tool approvals, custom tool-result formats and generated media responses are
+not supported.
 
 ## Configure provider-specific settings
 
@@ -202,10 +220,17 @@ so a stream can fail without producing visible text and still not try a backup.
 This boundary avoids mixing responses from different models or replaying tool
 calls after a response has started.
 
-A failed attempt may still incur provider charges. Account for both Gateway
-fallback and SDK retries when setting your latency and cost budgets; neither
-guarantees that provider work happens only once. The Gateway disables retries in
-its native provider clients.
+A failed attempt may still incur charges or perform provider-hosted effects.
+For example, a provider-hosted tool could complete an action but lose its
+response before the Gateway receives it; a backup could repeat that action.
+Decide whether your workflow is fallback-safe. Use application idempotency or
+deduplication, or avoid fallback for workflows that cannot tolerate duplicates.
+
+Application-local functions run after selected calls are returned; that boundary
+does not establish whether a provider-hosted tool already ran. Application and
+SDK retries are separate and can also repeat work. Account for them when setting
+latency and cost budgets. Neither fallback nor retries guarantee that generation
+or side effects happen only once.
 
 For troubleshooting, ask your Gateway operator to inspect fallback attempts in
 private logs. Public model names do not identify which backend served a request.
