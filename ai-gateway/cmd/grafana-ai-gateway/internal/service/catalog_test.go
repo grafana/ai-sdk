@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/config"
+	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/nativeoptions"
 	"github.com/grafana/ai-sdk/provider"
 	anthropicprovider "github.com/grafana/ai-sdk/providers/anthropic"
 	"github.com/stretchr/testify/assert"
@@ -97,9 +98,9 @@ func TestBuildCatalog_ModelFactoryReceivesCanonicalAndProtectedLowerOnce(t *test
 		factoryCalls++
 		switch canonicalID {
 		case "grafana/assistant":
-			assert.Same(t, direct["claude-assistant"], lower.(nativeOptionsModel).LanguageModel)
+			assert.Same(t, direct["claude-assistant"], lower.(nativeoptions.Model).LanguageModel)
 		case "grafana/other":
-			assert.Same(t, direct["claude-other"], lower.(nativeOptionsModel).LanguageModel)
+			assert.Same(t, direct["claude-other"], lower.(nativeoptions.Model).LanguageModel)
 		default:
 			t.Fatalf("unexpected canonical ID %q", canonicalID)
 		}

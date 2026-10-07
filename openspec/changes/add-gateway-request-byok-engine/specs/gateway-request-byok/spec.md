@@ -73,6 +73,21 @@ No key-bearing model, credential collection, raw request or request observer SHA
 - **WHEN** cancellation occurs during native setup or stream delivery
 - **THEN** no later credential SHALL start, late results SHALL be cleaned up through bounded ownership/drain and no request credential SHALL be cached
 
+### Requirement: Shared native execution protections
+Configured and BYOK construction SHALL share the existing consumption-backed
+native-option checks. Anthropic BYOK invocation SHALL refuse MCP servers, container
+skills, native server-side fallback and MCP tool-use history before credential
+attempts in both unary and streaming modes. These checks SHALL NOT introduce a
+provider-field inventory or change the native SDK adapters.
+
+#### Scenario: Native execution control is rejected
+- **WHEN** an Anthropic BYOK call supplies a consumed MCP, skill or server-side fallback control
+- **THEN** the call SHALL return the existing unsupported-request error without native I/O or credential fallback
+
+#### Scenario: Harmless options are preserved
+- **WHEN** native options contain an ordinary container ID or protected-looking fields in non-consuming namespaces
+- **THEN** the adapter SHALL receive ordinary options without changing the selected model, account or destination
+
 ### Requirement: Ordered credentials reuse default fallback
 The host SHALL compose selected-provider credentials with the existing fallback module and its default decider, one request-scoped candidate per key for the same provider/model in array order. Each candidate SHALL be invoked at most once, with native SDK retries disabled and one shared execution deadline. No BYOK-specific rejection decider or HTTP-rejection provenance gate SHALL be introduced. Client SDKs SHALL NOT add an account-retry layer.
 

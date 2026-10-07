@@ -16,7 +16,9 @@ service observers, process modes or listener exposure in this PR.
 ## Decisions
 
 - Replace `Resolver` with `RequestSelector` and use `CatalogSelector` at all
-  current command call sites. Do not introduce a compatibility API.
+  current command call sites. Return only model and identity; the handler retains
+  mapped options instead of requiring selectors to echo them. Do not introduce a
+  compatibility API.
 - Extract call-level Gateway controls before ordinary mapping, then pass them to
   the host selector; the catalog adapter still rejects them.
 - Start the execution budget before selection, not again at invocation or stream
@@ -28,7 +30,9 @@ service observers, process modes or listener exposure in this PR.
   and the raw BYOK subtree at 65,536 bytes.
 - Reuse `fallback.New` with its default decider, not an additional Gateway
   wrapper or a credential-specific retry algorithm. Preserve native content,
-  options and continuation.
+  options and continuation. Share the existing native-option validator/wrapper
+  between configured construction and BYOK. Anthropic BYOK validation wraps the
+  logical fallback once, refusing MCP, skills and native fallback before attempts.
 
 ## Risks / Trade-offs
 
@@ -38,8 +42,9 @@ service observers, process modes or listener exposure in this PR.
 - A permanently non-cooperative selector can retain its worker; bounded response
   latency does not imply guaranteed worker reclamation or key zeroization.
 - Focused synthetic transports prove construction/isolation, not live acceptance.
-- Generic wire errors include prepared BYOK categories, but the command does not
-  install a BYOK selector or discovery handler in this slice.
+- Generic wire errors retain BYOK validation categories, but account-access and
+  BYOK-discovery errors belong to service activation. The command does not install
+  a BYOK selector or discovery handler in this slice.
 
 ## Rebase alignment
 

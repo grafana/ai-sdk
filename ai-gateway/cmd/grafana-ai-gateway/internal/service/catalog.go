@@ -8,6 +8,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/config"
+	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/nativeoptions"
 	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/middleware"
 	"github.com/grafana/ai-sdk/provider"
@@ -65,7 +66,7 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 					requestOptions = append(requestOptions, option.WithBaseURL(providerConfig.BaseURL))
 				}
 				candidate = construct(providerConfig.APIKey, descriptor.Model, anthropicprovider.WithRequestOptions(requestOptions...))
-				validateOptions = validateAnthropicOptions
+				validateOptions = nativeoptions.Anthropic
 			case "openai-compatible":
 				if providerConfig.BaseURL == "" {
 					return nil, fmt.Errorf("gateway service: provider %q is invalid", descriptor.Provider)
@@ -80,7 +81,7 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 				)
 				providerName := candidate.Provider()
 				validateOptions = func(options provider.CallOptions) error {
-					return validateCompatibleOptions(options, providerName)
+					return nativeoptions.Compatible(options, providerName)
 				}
 			case "openai":
 				baseURL := providerConfig.BaseURL
@@ -102,7 +103,7 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 				return nil, fmt.Errorf("gateway service: constructing model %q returned nil", id)
 			}
 			if validateOptions != nil {
-				candidate = nativeOptionsModel{LanguageModel: candidate, validate: validateOptions}
+				candidate = nativeoptions.Model{LanguageModel: candidate, Validate: validateOptions}
 			}
 			providerName := providerConfig.Type
 			if providerConfig.Type == "openai-compatible" && providerConfig.ProviderName != "" {

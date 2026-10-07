@@ -10,9 +10,8 @@ import (
 )
 
 type Selection struct {
-	ID      string
-	Model   provider.LanguageModel
-	Options provider.CallOptions
+	ID    string
+	Model provider.LanguageModel
 }
 
 type RequestSelector func(context.Context, string, provider.CallOptions, json.RawMessage) (Selection, error)
@@ -22,14 +21,13 @@ var (
 	ErrInvalidBYOK               = errors.New("providerwire v4: invalid BYOK credentials")
 	ErrInvalidBYOKSelector       = errors.New("providerwire v4: invalid BYOK model selector")
 	ErrUnsupportedGatewayControl = errors.New("providerwire v4: unsupported gateway control")
-	ErrAccountAccess             = errors.New("providerwire v4: account access denied")
 )
 
 func CatalogSelector(resolver catalog.ModelResolver) RequestSelector {
 	if isNilInterface(resolver) {
 		return nil
 	}
-	return func(ctx context.Context, modelID string, options provider.CallOptions, gateway json.RawMessage) (Selection, error) {
+	return func(ctx context.Context, modelID string, _ provider.CallOptions, gateway json.RawMessage) (Selection, error) {
 		if gateway != nil {
 			return Selection{}, ErrReservedProviderOptions
 		}
@@ -37,7 +35,7 @@ func CatalogSelector(resolver catalog.ModelResolver) RequestSelector {
 		if err != nil {
 			return Selection{}, err
 		}
-		return Selection{ID: resolved.ID, Model: resolved.Model, Options: options}, nil
+		return Selection{ID: resolved.ID, Model: resolved.Model}, nil
 	}
 }
 

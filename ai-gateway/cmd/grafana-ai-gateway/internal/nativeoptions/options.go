@@ -1,4 +1,4 @@
-package service
+package nativeoptions
 
 import (
 	"context"
@@ -20,26 +20,26 @@ const (
 	maxMCPAllowedTools = 128
 )
 
-type nativeOptionsModel struct {
+type Model struct {
 	provider.LanguageModel
-	validate func(provider.CallOptions) error
+	Validate func(provider.CallOptions) error
 }
 
-func (m nativeOptionsModel) DoGenerate(ctx context.Context, options provider.CallOptions) (*provider.GenerateResult, error) {
-	if err := m.validate(options); err != nil {
+func (m Model) DoGenerate(ctx context.Context, options provider.CallOptions) (*provider.GenerateResult, error) {
+	if err := m.Validate(options); err != nil {
 		return nil, err
 	}
 	return m.LanguageModel.DoGenerate(ctx, options)
 }
 
-func (m nativeOptionsModel) DoStream(ctx context.Context, options provider.CallOptions) (*provider.StreamResult, error) {
-	if err := m.validate(options); err != nil {
+func (m Model) DoStream(ctx context.Context, options provider.CallOptions) (*provider.StreamResult, error) {
+	if err := m.Validate(options); err != nil {
 		return nil, err
 	}
 	return m.LanguageModel.DoStream(ctx, options)
 }
 
-func validateAnthropicOptions(options provider.CallOptions) error {
+func Anthropic(options provider.CallOptions) error {
 	call, _, err := provider.ResolveOption[anthropicprovider.AnthropicOptions](options.ProviderOptions, "anthropic")
 	if err != nil {
 		return catalog.ErrUnsupportedRequest
@@ -130,7 +130,7 @@ func validAnthropicMCPDestination(rawURL string) bool {
 	return destination.Scheme == "https" && destination.Hostname() != "" && destination.User == nil
 }
 
-func validateCompatibleOptions(options provider.CallOptions, providerName string) error {
+func Compatible(options provider.CallOptions, providerName string) error {
 	name, _, _ := strings.Cut(providerName, ".")
 	name = strings.TrimSpace(name)
 	for _, namespace := range []string{name, compatibleCamelName(name)} {

@@ -12,7 +12,7 @@ The `ai-gateway/providerwire/v4` package SHALL provide one HTTP handler for rela
 - **WHEN** the selector is nil, a limit is non-positive, or a byte limit cannot safely use `limit+1`
 - **THEN** construction SHALL fail before serving traffic
 
-The selector SHALL consume validated call-level host controls under authenticated request policy and return a non-nil executable model, credential-free native options and logical identity. Configured catalog resolution and request-only BYOK selection SHALL be separate host implementations; the wire package SHALL NOT require BYOK to implement a catalog.
+The selector SHALL consume validated call-level host controls under authenticated request policy and return a non-nil executable model and logical identity. The handler SHALL retain its mapped native options after removing Gateway controls; model selection SHALL NOT require returning or replacing those options. Configured catalog resolution and request-only BYOK selection SHALL be separate host implementations; the wire package SHALL NOT require BYOK to implement a catalog.
 
 ### Requirement: Reserved provider options and protected call headers
 
@@ -50,10 +50,6 @@ These refusals SHALL use fixed documents that never echo the offending namespace
 #### Scenario: Reserved namespace in a different case
 - **WHEN** a request carries a provider-option namespace such as `Grafana`
 - **THEN** it SHALL be mapped like any other ordinary namespace, because namespace names are compared exactly
-
-
-[159 more lines in file. Use offset=138 to continue.]
-
 
 ### Requirement: Resolution and bounded model invocation
 For a supported request, the handler SHALL select execution once under authenticated request policy and invoke the resulting logical model once. Configured selection SHALL resolve the exact catalog ID/alias; BYOK selection SHALL use only request provider/model/credentials. Selection SHALL return a nonempty valid-UTF-8 logical identity and a non-nil V4 model. Logical identity SHALL NOT substitute for native response identity, including when a native modelId equals it.

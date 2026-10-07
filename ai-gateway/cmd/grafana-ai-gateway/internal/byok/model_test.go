@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/ai-sdk/ai-gateway/catalog"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -305,5 +306,61 @@ func TestNew_DoesNotFollowNativeRedirects(t *testing.T) {
 			assert.Equal(t, 1, calls)
 			assert.Nil(t, client.CheckRedirect)
 		})
+	}
+}
+
+func TestNew_AnthropicNativeOptionGuards(t *testing.T) {
+	for _, streaming := range []bool{false, true} {
+		for _, tc := range []struct {
+			name, options string
+			mcpHistory    bool
+			allowed       bool
+		}{
+			{name: "MCP servers", options: `{"anthropic":{"mcpServers":[{"name":"external","url":"https://example.invalid"}]}}`},
+			{name: "container skills", options: `{"anthropic":{"container":{"skills":[{"type":"custom","skillId":"external"}]}}}`},
+			{name: "native fallback", options: `{"anthropic":{"fallbacks":"default"}}`},
+			{name: "MCP history", options: `{}`, mcpHistory: true},
+			{name: "ordinary fields and namespaces", options: `{"anthropic":{"model":"ignored","mcp_servers":[],"container":{"id":"supplied-container"}},"other":{"mcpServers":[{"name":"ordinary"}]}}`, allowed: true},
+		} {
+			t.Run(fmt.Sprintf("%s/stream=%t", tc.name, streaming), func(t *testing.T) {
+				calls := 0
+				client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+					calls++
+					assert.Equal(t, "api.anthropic.com", r.URL.Host)
+					assert.Equal(t, "dummy-first", r.Header.Get("X-Api-Key"))
+					body, err := io.ReadAll(r.Body)
+					require.NoError(t, err)
+					assert.NotContains(t, string(body), "dummy-")
+					if tc.allowed {
+						assert.Contains(t, string(body), "supplied-container")
+						assert.NotContains(t, string(body), "ignored")
+						assert.Contains(t, string(body), "native-model")
+					}
+					return &http.Response{StatusCode: http.StatusUnauthorized, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"type":"error","error":{"type":"authentication_error","message":"rejected"}}`)), Request: r}, nil
+				})}
+				model, err := New("anthropic/native-model", json.RawMessage(`{"byok":{"anthropic":[{"apiKey":"dummy-first"},{"apiKey":"dummy-second"}]}}`), client)
+				require.NoError(t, err)
+				opts := provider.CallOptions{Prompt: []provider.Message{provider.UserText("hello")}}
+				require.NoError(t, json.Unmarshal([]byte(tc.options), &opts.ProviderOptions))
+				if tc.mcpHistory {
+					part := provider.ToolCallPart("call", "lookup", json.RawMessage(`{}`))
+					part.ProviderOptions = provider.ProviderOptions{"anthropic": provider.RawProviderOption{Raw: json.RawMessage(`{"type":"mcp-tool-use"}`)}}
+					opts.Prompt = append(opts.Prompt, provider.NewAssistantMessage(part))
+				}
+				if streaming {
+					_, err = model.DoStream(context.Background(), opts)
+				} else {
+					_, err = model.DoGenerate(context.Background(), opts)
+				}
+				if tc.allowed {
+					require.Error(t, err)
+					assert.NotErrorIs(t, err, catalog.ErrUnsupportedRequest)
+					assert.Equal(t, 1, calls)
+				} else {
+					require.ErrorIs(t, err, catalog.ErrUnsupportedRequest)
+					assert.Zero(t, calls)
+				}
+			})
+		}
 	}
 }

@@ -296,7 +296,7 @@ func TestRequestSelection_CatalogIndependent(t *testing.T) {
 				assert.JSONEq(t, `{"byok":{"openai":[{"apiKey":"dummy-key"}]}}`, string(gateway))
 				assert.NotContains(t, options.ProviderOptions, "gateway")
 				assert.Contains(t, options.ProviderOptions, "openai")
-				return Selection{ID: id, Model: model, Options: options}, nil
+				return Selection{ID: id, Model: model}, nil
 			}})
 			require.NoError(t, err)
 			r := validRequest(`{"prompt":[],"providerOptions":{"gateway":{"byok":{"openai":[{"apiKey":"dummy-key"}]}},"openai":{"store":false}}}`)
@@ -315,6 +315,7 @@ func TestRequestSelection_CatalogIndependent(t *testing.T) {
 				assert.Zero(t, stream)
 			}
 			assert.NotContains(t, model.receivedOptions().ProviderOptions, "gateway")
+			assert.Contains(t, model.receivedOptions().ProviderOptions, "openai")
 			assert.NotContains(t, w.Body.String(), "dummy-key")
 		})
 	}
@@ -330,7 +331,7 @@ func TestRequestSelection_Deadline(t *testing.T) {
 			h, err := New(Config{Limits: limits, Selector: func(_ context.Context, id string, options provider.CallOptions, _ json.RawMessage) (Selection, error) {
 				defer close(selected)
 				<-release
-				return Selection{ID: id, Model: model, Options: options}, nil
+				return Selection{ID: id, Model: model}, nil
 			}})
 			require.NoError(t, err)
 			r := validRequest(`{"prompt":[]}`)
@@ -382,7 +383,7 @@ func TestRequestSelection_Deadline(t *testing.T) {
 					return Selection{}, ctx.Err()
 				}
 				assert.LessOrEqual(t, time.Until(selectionDeadline), limits.ModelDuration-20*time.Millisecond)
-				return Selection{ID: id, Model: model, Options: options}, nil
+				return Selection{ID: id, Model: model}, nil
 			}})
 			require.NoError(t, err)
 			r := validRequest(`{"prompt":[]}`)

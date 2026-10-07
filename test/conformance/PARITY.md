@@ -118,6 +118,9 @@ evidence boundary changes, not merely because the pinned versions change.
   gateway extension (including aliases), without native inference.
   Command catalogs are static; dummy CAP-edge/scoped tests do not establish
   customer-account construction, deployed authorization or BYOK tenant isolation.
+  Focused BYOK engine tests reuse the configured Anthropic consumption guard and
+  prove zero native calls for MCP servers/history, skills and server-side fallback,
+  with ordinary-option controls. The command does not yet activate this engine.
   Client reads default to 4 MiB independently of server configuration.
 - Gateway privacy assertions cover configured-secret structures, safe errors
   and metadata-only canonical operator logs/metrics/exports without censoring

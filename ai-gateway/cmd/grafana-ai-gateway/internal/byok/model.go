@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	anthropicoption "github.com/anthropics/anthropic-sdk-go/option"
+	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/nativeoptions"
 	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/provider"
 	anthropicprovider "github.com/grafana/ai-sdk/providers/anthropic"
@@ -46,5 +47,12 @@ func New(selector string, gateway json.RawMessage, client *http.Client) (provide
 		}
 		candidates = append(candidates, model)
 	}
-	return fallback.New(candidates...)
+	model, err := fallback.New(candidates...)
+	if err != nil {
+		return nil, err
+	}
+	if selection.provider == anthropic {
+		return nativeoptions.Model{LanguageModel: model, Validate: nativeoptions.Anthropic}, nil
+	}
+	return model, nil
 }

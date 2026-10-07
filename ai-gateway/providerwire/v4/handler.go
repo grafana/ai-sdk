@@ -199,7 +199,6 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.writeSafeError(w, safeErrorFromResolution(err))
 		return
 	}
-	options = resolved.Options
 	if validated.mode == executionStreaming {
 		h.serveStream(w, r.Context(), ctx, resolved.Model, options, history)
 		return
@@ -336,9 +335,6 @@ func (h *handler) invokeModel(ctx context.Context, model provider.LanguageModel,
 	}
 	modelContext, cancel := context.WithCancel(ctx)
 	defer cancel()
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
 
 	outcomes := make(chan modelOutcome, 1)
 	go func() {
@@ -360,16 +356,8 @@ func (h *handler) invokeModel(ctx context.Context, model provider.LanguageModel,
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		if err := modelContext.Err(); err != nil {
-			return nil, err
-		}
 		return outcome.result, outcome.err
 	case <-ctx.Done():
 		return nil, ctx.Err()
-	case <-modelContext.Done():
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		return nil, context.DeadlineExceeded
 	}
 }
