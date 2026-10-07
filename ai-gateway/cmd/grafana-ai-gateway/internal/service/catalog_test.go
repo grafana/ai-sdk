@@ -11,9 +11,9 @@ import (
 	"testing"
 
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/config"
+	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/nativemodel"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/nativeoptions"
 	"github.com/grafana/ai-sdk/provider"
-	anthropicprovider "github.com/grafana/ai-sdk/providers/anthropic"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -56,9 +56,11 @@ func TestBuildCatalog_ConstructsImmutableCanonicalAndAliasModelsOnce(t *testing.
 	}
 	calls := 0
 	models := make(map[string]*catalogTestModel)
-	created, err := buildCatalog(file, resolved, http.DefaultClient, func(apiKey, modelID string, _ ...anthropicprovider.Option) provider.LanguageModel {
+	created, err := buildCatalog(file, resolved, http.DefaultClient, func(apiKey, modelID, baseURL string, client *http.Client) provider.LanguageModel {
 		calls++
 		assert.Equal(t, "secret", apiKey)
+		assert.Equal(t, "https://provider.example", baseURL)
+		assert.Same(t, http.DefaultClient, client)
 		model := &catalogTestModel{id: modelID}
 		models[modelID] = model
 		return model
@@ -89,7 +91,7 @@ func TestBuildCatalog_ModelFactoryReceivesCanonicalAndProtectedLowerOnce(t *test
 	direct := make(map[string]provider.LanguageModel)
 	constructed := 0
 	factoryCalls := 0
-	created, err := buildCatalog(file, resolved, http.DefaultClient, func(_ string, modelID string, _ ...anthropicprovider.Option) provider.LanguageModel {
+	created, err := buildCatalog(file, resolved, http.DefaultClient, func(_ string, modelID string, _ string, _ *http.Client) provider.LanguageModel {
 		constructed++
 		model := &catalogTestModel{id: modelID}
 		direct[modelID] = model
@@ -129,7 +131,7 @@ func TestBuildCatalog_ModelFactoryFailureIsFailFast(t *testing.T) {
 		func(string, provider.LanguageModel) (provider.LanguageModel, error) { return nil, assert.AnError },
 		func(string, provider.LanguageModel) (provider.LanguageModel, error) { return nil, nil },
 	} {
-		created, err := buildCatalog(file, resolved, http.DefaultClient, func(_ string, modelID string, _ ...anthropicprovider.Option) provider.LanguageModel {
+		created, err := buildCatalog(file, resolved, http.DefaultClient, func(_ string, modelID string, _ string, _ *http.Client) provider.LanguageModel {
 			return &catalogTestModel{id: modelID}
 		}, factory)
 		require.Error(t, err)
@@ -191,7 +193,7 @@ func TestBuildCatalog_FallbackConstructionFailsOpenWithoutPrivateSink(t *testing
 	model.Fallback = []config.Primary{{Provider: "anthropic-primary", Model: "backup"}}
 	file.Models["grafana/assistant"] = model
 	calls := 0
-	_, err := buildCatalog(file, map[string]config.ResolvedProvider{"anthropic-primary": {Type: "anthropic", APIKey: "secret"}}, http.DefaultClient, func(string, string, ...anthropicprovider.Option) provider.LanguageModel {
+	_, err := buildCatalog(file, map[string]config.ResolvedProvider{"anthropic-primary": {Type: "anthropic", APIKey: "secret"}}, http.DefaultClient, func(string, string, string, *http.Client) provider.LanguageModel {
 		calls++
 		return &catalogTestModel{}
 	}, identityModelFactory)
@@ -283,7 +285,7 @@ func TestBuildCatalog_InjectsOpenAICompatibleClientBaseURLAndBackendModel(t *tes
 	var lower provider.LanguageModel
 	created, err := buildCatalog(file, map[string]config.ResolvedProvider{
 		"local": {Type: "openai-compatible", APIKey: "explicit-key", BaseURL: server.URL + "/v1", ProviderName: "ollama"},
-	}, server.Client(), anthropicprovider.New, func(canonicalID string, model provider.LanguageModel) (provider.LanguageModel, error) {
+	}, server.Client(), nativemodel.NewAnthropic, func(canonicalID string, model provider.LanguageModel) (provider.LanguageModel, error) {
 		lower = model
 		return identityModelFactory(canonicalID, model)
 	})

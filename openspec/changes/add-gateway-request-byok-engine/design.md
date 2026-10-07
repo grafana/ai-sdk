@@ -23,6 +23,15 @@ service observers, process modes or listener exposure in this PR.
   the host selector; the catalog adapter still rejects them.
 - Start the execution budget before selection, not again at invocation or stream
   startup. Contain panics and bound handler latency even for late selection.
+- Decode Gateway controls at the host-selection boundary into an opaque validated
+  request before constructing models. Typed credential entries own their strict
+  field/key validation; constructor inputs contain no raw Gateway JSON. Keep
+  exact case-sensitive fields and last-member-wins semantics, including replaced
+  malformed duplicates, rather than relying on permissive struct field matching.
+- Share small native Anthropic/OpenAI constructors with configured execution.
+  They receive explicit key/model/endpoint/transport values and cannot access
+  configuration, catalogs or secret resolution. Only configured execution may
+  supply a custom endpoint; the BYOK request type has no endpoint field.
 - Construct request-local native Anthropic/OpenAI models from only supplied API
   keys, fixed endpoints and credential-independent transport; disable redirects
   and native retries. Validate all supplied entries, including unused providers.

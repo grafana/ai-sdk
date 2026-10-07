@@ -77,6 +77,30 @@ merge/rebase. Registered upstream package versions are unchanged.
 
 PR #369 remains at `4e5bd486`; it has not been rebased or pushed.
 
+## Typed construction review
+
+DecodeRequest now returns an opaque validated Request; New receives no raw JSON.
+Credential decoding retains exact case-sensitive fields, byte/count bounds,
+last-member-wins semantics and validation of unused entries. Added regressions
+cover replaced malformed duplicates, credential endpoint/header rejection,
+zero requests, missing transports and ownership after clearing raw input.
+
+Configured and BYOK paths share the small nativemodel constructors. That package
+imports only native adapters/SDKs, the provider contract and net/http, with no
+catalog, configuration or secret resolver. Configured endpoints remain explicit;
+BYOK still uses only fixed defaults. Existing native HTTP, environment poisoning,
+retry, redirect, content, MCP and concurrent-isolation tests pass through the
+shared construction path. Service factory tests also assert explicit endpoint
+and transport forwarding.
+
+All listed validation gates passed again, including 74 command tests, full SDK
+and Gateway race suites, parity and image checks. Exact OpenSpec 1.14.0 validation
+passed for this existing change; no new OpenSpec change was created.
+
+When PR #369 is later rebased, its BYOK selector must call DecodeRequest and then
+New with the validated request. Its account policy and observation wrapper still
+belong to activation; that branch remains untouched.
+
 No module pins, upstream baseline or authentic provider fixture inputs changed.
 Local fake services and image tests do not establish live native acceptance,
 Vercel hosted-service behavior or deployed Cloud/network authorization.

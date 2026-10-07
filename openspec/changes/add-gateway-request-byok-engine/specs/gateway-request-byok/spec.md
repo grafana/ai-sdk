@@ -52,9 +52,15 @@ Unknown credential fields/providers, modelMappings, Azure/Vertex/Bedrock/compati
 - **THEN** the request SHALL fail before I/O without suggesting that the control was applied
 
 ### Requirement: Request-scoped provider construction and control removal
+Host selection SHALL decode and validate Gateway controls before passing a typed request to model construction. Construction SHALL NOT parse the raw Gateway JSON or accept caller-supplied endpoint overrides. Shared native constructors MAY serve configured and request-only execution, but SHALL receive explicit inputs without performing catalog, configuration or secret lookup. A zero/unvalidated request SHALL fail before native construction.
+
 The BYOK selector SHALL construct account-bound models for the request using only the selected supplied keys and supported fixed native destinations. It SHALL NOT inherit configured instances or ambient SDK key/base-URL/account defaults. Shared transports SHALL be credential-independent; redirects SHALL NOT forward credentials. The host SHALL remove gateway controls before generic model middleware and native provider options see them, and forward supported matching native options/content/history without using configured-catalog field allowlists or cross-provider intersections.
 
 No key-bearing model, credential collection, raw request or request observer SHALL be stored in a global cache, catalog or background refresh service. Models and credential data SHALL follow bounded request execution/cleanup ownership; garbage-collection lifetime SHALL NOT be described as cryptographic zeroization.
+
+#### Scenario: Decoded request owns credentials
+- **WHEN** raw Gateway controls are discarded or modified after successful decoding
+- **THEN** construction SHALL use the validated request's selected credentials and fixed native destination without rereading those controls
 
 #### Scenario: Native endpoints observe selected credentials
 - **WHEN** both provider entries contain distinct dummy keys and the request selects Anthropic

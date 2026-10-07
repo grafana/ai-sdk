@@ -9,3 +9,9 @@
 
 - [x] 2.1 Run Go/race, parity, command/integration, build/vet/lint, docs, module-policy and image gates on this branch.
 - [x] 2.2 Validate this OpenSpec change and verify the new engine is not wired into the command.
+
+## 3. Review-driven construction cleanup
+
+- [x] 3.1 Separate wire decoding from typed request-only construction, retaining strict credential validation.
+- [x] 3.2 Share explicit native constructors with configured execution without sharing configuration or account lookup.
+- [x] 3.3 Preserve regression coverage and rerun independent validation before pushing PR #368.

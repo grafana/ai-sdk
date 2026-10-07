@@ -29,65 +29,75 @@ const (
 	openai    providerName = "openai"
 )
 
-type request struct {
-	provider providerName
-	model    string
-	keys     []string
+type Request struct {
+	provider    providerName
+	model       string
+	credentials []credential
 }
 
-func parseRequest(selector string, gateway json.RawMessage) (request, error) {
-	name, model, ok := strings.Cut(selector, "/")
-	if !ok || model == "" || len(selector) > MaxSelectorBytes || !validHeaderValue(selector) {
-		return request{}, ErrInvalidSelector
+type credential struct {
+	apiKey string
+}
+
+func (c *credential) UnmarshalJSON(data []byte) error {
+	var fields map[string]json.RawMessage
+	var key string
+	if json.Unmarshal(data, &fields) != nil || len(fields) != 1 ||
+		json.Unmarshal(fields["apiKey"], &key) != nil ||
+		len(key) > maxCredentialBytes || !validHeaderValue(key) {
+		return fmt.Errorf("%w: credential requires only a bounded nonempty apiKey", ErrInvalidRequest)
 	}
+	c.apiKey = key
+	return nil
+}
+
+func DecodeRequest(selector string, gateway json.RawMessage) (Request, error) {
+	name, model, ok := strings.Cut(selector, "/")
 	selected := providerName(name)
-	if selected != anthropic && selected != openai {
-		return request{}, ErrInvalidSelector
+	if !ok || model == "" || len(selector) > MaxSelectorBytes || !validHeaderValue(selector) ||
+		(selected != anthropic && selected != openai) {
+		return Request{}, ErrInvalidSelector
 	}
 	var controls map[string]json.RawMessage
 	if json.Unmarshal(gateway, &controls) != nil || len(controls) == 0 {
-		return request{}, fmt.Errorf("%w: gateway.byok is required", ErrInvalidRequest)
+		return Request{}, fmt.Errorf("%w: gateway.byok is required", ErrInvalidRequest)
 	}
 	if len(controls) != 1 || controls["byok"] == nil {
-		return request{}, ErrUnsupportedControl
+		return Request{}, ErrUnsupportedControl
 	}
-	raw := controls["byok"]
+	credentials, err := decodeCredentials(controls["byok"])
+	if err != nil {
+		return Request{}, err
+	}
+	if len(credentials[selected]) == 0 {
+		return Request{}, fmt.Errorf("%w: gateway.byok requires credentials for selected provider", ErrInvalidRequest)
+	}
+	return Request{provider: selected, model: model, credentials: credentials[selected]}, nil
+}
+
+func decodeCredentials(raw json.RawMessage) (map[providerName][]credential, error) {
 	if len(raw) > maxBYOKBytes {
-		return request{}, fmt.Errorf("%w: gateway.byok exceeds byte limit", ErrInvalidRequest)
+		return nil, fmt.Errorf("%w: gateway.byok exceeds byte limit", ErrInvalidRequest)
 	}
-	var credentials map[string]json.RawMessage
-	if json.Unmarshal(raw, &credentials) != nil || len(credentials) == 0 {
-		return request{}, fmt.Errorf("%w: gateway.byok must be a nonempty provider map", ErrInvalidRequest)
+	var providers map[providerName]json.RawMessage
+	if json.Unmarshal(raw, &providers) != nil || len(providers) == 0 {
+		return nil, fmt.Errorf("%w: gateway.byok must be a nonempty provider map", ErrInvalidRequest)
 	}
-	for name := range credentials {
-		if providerName(name) != anthropic && providerName(name) != openai {
-			return request{}, fmt.Errorf("%w: gateway.byok provider is unsupported", ErrInvalidRequest)
+	credentials := make(map[providerName][]credential, len(providers))
+	for name, raw := range providers {
+		if name != anthropic && name != openai {
+			return nil, fmt.Errorf("%w: gateway.byok provider is unsupported", ErrInvalidRequest)
 		}
-	}
-	var keys []string
-	for _, name := range []providerName{anthropic, openai} {
-		raw, exists := credentials[string(name)]
-		if !exists {
-			continue
+		var entries []credential
+		if err := json.Unmarshal(raw, &entries); err != nil {
+			return nil, fmt.Errorf("%w: gateway.byok.%s contains invalid credentials", ErrInvalidRequest, name)
 		}
-		var entries []map[string]json.RawMessage
-		if json.Unmarshal(raw, &entries) != nil || len(entries) == 0 || len(entries) > maxCredentials {
-			return request{}, fmt.Errorf("%w: gateway.byok.%s must contain 1 to %d credentials", ErrInvalidRequest, name, maxCredentials)
+		if len(entries) == 0 || len(entries) > maxCredentials {
+			return nil, fmt.Errorf("%w: gateway.byok.%s must contain 1 to %d credentials", ErrInvalidRequest, name, maxCredentials)
 		}
-		for index, entry := range entries {
-			var key string
-			if len(entry) != 1 || entry["apiKey"] == nil || json.Unmarshal(entry["apiKey"], &key) != nil || len(key) > maxCredentialBytes || !validHeaderValue(key) {
-				return request{}, fmt.Errorf("%w: gateway.byok.%s[%d] requires only a bounded nonempty apiKey", ErrInvalidRequest, name, index)
-			}
-			if name == selected {
-				keys = append(keys, key)
-			}
-		}
+		credentials[name] = entries
 	}
-	if len(keys) == 0 {
-		return request{}, fmt.Errorf("%w: gateway.byok requires credentials for selected provider", ErrInvalidRequest)
-	}
-	return request{provider: selected, model: model, keys: keys}, nil
+	return credentials, nil
 }
 
 func validHeaderValue(value string) bool {

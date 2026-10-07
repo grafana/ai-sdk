@@ -18,7 +18,6 @@ import (
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/provider"
-	anthropicprovider "github.com/grafana/ai-sdk/providers/anthropic"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -453,7 +452,7 @@ func newFallbackAcceptance(t *testing.T, primary, secondary *observabilityTestMo
 	t.Cleanup(sink.Close)
 	h := &fallbackAcceptance{}
 	h.logText = logs.String
-	catalog, err := buildCatalog(fallbackCatalogFile(), fallbackProviders(), http.DefaultClient, func(_ string, id string, _ ...anthropicprovider.Option) provider.LanguageModel {
+	catalog, err := buildCatalog(fallbackCatalogFile(), fallbackProviders(), http.DefaultClient, func(_ string, id string, _ string, _ *http.Client) provider.LanguageModel {
 		index, model := 0, primary
 		if id == "backend-secondary" {
 			index, model = 1, secondary
