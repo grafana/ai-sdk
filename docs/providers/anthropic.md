@@ -95,6 +95,11 @@ the chosen model. Large-default-output unary calls need a context deadline or
 an explicit Anthropic request timeout; otherwise the underlying client may
 require streaming. See [Retry and timeout](../guides/retry-and-timeout.md).
 
+When configuring remote MCP servers, use pointer fields to distinguish omitted
+authorization tokens and `enabled` from explicit empty strings or false. A
+non-nil empty `allowedTools` slice sends an empty list. Configure servers only
+for authorized callers and models, and protect tokens in request metadata.
+
 ## Avoid duplicate retry policy
 
 The underlying Anthropic Go client retries by default, and the core SDK has its

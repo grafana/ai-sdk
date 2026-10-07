@@ -50,6 +50,7 @@ func TestFallbackAcceptance_MappedPrecommitAndCommitment(t *testing.T) {
 		{"first error", fallbackParts(provider.StreamPart{Type: provider.PartError, APICallError: hostileFallbackError(503)}, finish), nil, 200, []fallback.AttemptOutcome{fallback.AttemptSelected}, []provider.StreamPartType{provider.PartStreamStart, provider.PartError, provider.PartFinish}, []string{"overloaded"}},
 		{"tool input then error", fallbackParts(provider.StreamPart{Type: provider.PartToolInputStart, ID: "call", ToolName: "lookup"}, provider.StreamPart{Type: provider.PartError, APICallError: hostileFallbackError(503)}), nil, 200, []fallback.AttemptOutcome{fallback.AttemptSelected}, []provider.StreamPartType{provider.PartStreamStart, provider.PartToolInputStart, provider.PartError, provider.PartError}, []string{"overloaded", "internal_error"}},
 		{"provider call then error", fallbackParts(provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "call", ToolName: "lookup", Input: `{}`, ProviderExecuted: true}, provider.StreamPart{Type: provider.PartError, APICallError: hostileFallbackError(503)}, finish), nil, 200, []fallback.AttemptOutcome{fallback.AttemptSelected}, []provider.StreamPartType{provider.PartStreamStart, provider.PartToolCall, provider.PartError, provider.PartFinish}, []string{"overloaded"}},
+		{"opaque MCP call then error", fallbackParts(provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "call", ToolName: "lookup", Input: `{}`, ProviderExecuted: true, ProviderMetadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"type":"mcp-tool-use","serverName":"unconfigured","caller":null}`)}}, provider.StreamPart{Type: provider.PartError, APICallError: hostileFallbackError(503)}, finish), nil, 200, []fallback.AttemptOutcome{fallback.AttemptSelected}, []provider.StreamPartType{provider.PartStreamStart, provider.PartToolCall, provider.PartError, provider.PartFinish}, []string{"overloaded"}},
 		{"tool call then error", fallbackParts(toolCall, provider.StreamPart{Type: provider.PartError, APICallError: hostileFallbackError(503)}, finish), nil, 200, []fallback.AttemptOutcome{fallback.AttemptSelected}, []provider.StreamPartType{provider.PartStreamStart, provider.PartToolCall, provider.PartError, provider.PartFinish}, []string{"overloaded"}},
 		{"reasoning then malformed finish", fallbackParts(provider.StreamPart{Type: provider.PartReasoningStart, ID: "r"}, finish), nil, 200, []fallback.AttemptOutcome{fallback.AttemptSelected}, []provider.StreamPartType{provider.PartStreamStart, provider.PartReasoningStart, provider.PartError}, []string{"internal_error"}},
 		{"unsupported selected output", fallbackParts(provider.StreamPart{Type: provider.PartFile}), nil, 200, []fallback.AttemptOutcome{fallback.AttemptSelected}, failed, []string{"internal_error"}},
@@ -93,9 +94,12 @@ func TestFallbackAcceptance_MappedPrecommitAndCommitment(t *testing.T) {
 					case provider.PartToolInputStart:
 						assert.JSONEq(t, `{"type":"tool-input-start","id":"call","toolName":"lookup"}`, payload)
 					case provider.PartToolCall:
-						if tc.name == "provider call then error" {
+						switch tc.name {
+						case "opaque MCP call then error":
+							assert.JSONEq(t, `{"type":"tool-call","toolCallId":"call","toolName":"lookup","input":"{}","providerExecuted":true,"providerMetadata":{"anthropic":{"type":"mcp-tool-use","serverName":"unconfigured","caller":null}}}`, payload)
+						case "provider call then error":
 							assert.JSONEq(t, `{"type":"tool-call","toolCallId":"call","toolName":"lookup","input":"{}","providerExecuted":true}`, payload)
-						} else {
+						default:
 							assert.JSONEq(t, `{"type":"tool-call","toolCallId":"call","toolName":"lookup","input":"{}"}`, payload)
 						}
 					case provider.PartReasoningStart:

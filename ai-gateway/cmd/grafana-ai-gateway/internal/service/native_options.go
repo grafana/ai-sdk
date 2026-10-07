@@ -3,11 +3,21 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"net/url"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
 	"github.com/grafana/ai-sdk/provider"
 	anthropicprovider "github.com/grafana/ai-sdk/providers/anthropic"
+)
+
+const (
+	maxMCPServers      = 16
+	maxMCPNameBytes    = 128
+	maxMCPURLBytes     = 4096
+	maxMCPTokenBytes   = 8192
+	maxMCPAllowedTools = 128
 )
 
 type nativeOptionsModel struct {
@@ -32,13 +42,92 @@ func (m nativeOptionsModel) DoStream(ctx context.Context, options provider.CallO
 func validateAnthropicOptions(options provider.CallOptions) error {
 	call, _, err := provider.ResolveOption[anthropicprovider.AnthropicOptions](options.ProviderOptions, "anthropic")
 	if err != nil {
-		return err
+		return catalog.ErrUnsupportedRequest
 	}
 	if (call.Container != nil && len(call.Container.Skills) > 0) ||
 		(call.Fallbacks != nil && (call.Fallbacks.Default || len(call.Fallbacks.Chain) > 0)) {
 		return catalog.ErrUnsupportedRequest
 	}
+	servers, err := validateAnthropicMCPServers(call.MCPServers)
+	if err != nil {
+		return err
+	}
+	for _, message := range options.Prompt {
+		if message.Role != provider.RoleAssistant {
+			continue
+		}
+		for _, part := range message.Content {
+			if part.Type != provider.ContentPartTypeToolCall || !part.ProviderExecuted {
+				continue
+			}
+			if raw, ok := part.ProviderOptions["anthropic"].(provider.RawProviderOption); ok {
+				var history struct {
+					Type string `json:"type"`
+				}
+				if json.Unmarshal(raw.Raw, &history) == nil && history.Type == "mcp-tool-use" {
+					var fields map[string]json.RawMessage
+					var serverName string
+					if json.Unmarshal(raw.Raw, &fields) != nil || json.Unmarshal(fields["serverName"], &serverName) != nil {
+						return catalog.ErrUnsupportedRequest
+					}
+					if _, configured := servers[serverName]; !configured {
+						return catalog.ErrUnsupportedRequest
+					}
+				}
+			}
+		}
+	}
 	return nil
+}
+
+func validateAnthropicMCPServers(servers []anthropicprovider.MCPServer) (map[string]struct{}, error) {
+	if len(servers) > maxMCPServers {
+		return nil, catalog.ErrUnsupportedRequest
+	}
+	names := make(map[string]struct{}, len(servers))
+	for _, server := range servers {
+		if !validAnthropicMCPName(server.Name) {
+			return nil, catalog.ErrUnsupportedRequest
+		}
+		if _, duplicate := names[server.Name]; duplicate {
+			return nil, catalog.ErrUnsupportedRequest
+		}
+		if !validAnthropicMCPDestination(server.URL) {
+			return nil, catalog.ErrUnsupportedRequest
+		}
+		if server.AuthorizationToken != nil && (len(*server.AuthorizationToken) > maxMCPTokenBytes || !utf8.ValidString(*server.AuthorizationToken)) {
+			return nil, catalog.ErrUnsupportedRequest
+		}
+		names[server.Name] = struct{}{}
+		if server.ToolConfiguration == nil {
+			continue
+		}
+		tools := server.ToolConfiguration.AllowedTools
+		if len(tools) > maxMCPAllowedTools {
+			return nil, catalog.ErrUnsupportedRequest
+		}
+		for _, tool := range tools {
+			if !validAnthropicMCPName(tool) {
+				return nil, catalog.ErrUnsupportedRequest
+			}
+		}
+	}
+	return names, nil
+}
+
+func validAnthropicMCPName(name string) bool {
+	return name != "" && len(name) <= maxMCPNameBytes && utf8.ValidString(name)
+}
+
+func validAnthropicMCPDestination(rawURL string) bool {
+	if len(rawURL) > maxMCPURLBytes || strings.Contains(rawURL, "#") {
+		return false
+	}
+	destination, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	return destination.Scheme == "https" && destination.Hostname() != "" && destination.User == nil
 }
 
 func validateCompatibleOptions(options provider.CallOptions, providerName string) error {

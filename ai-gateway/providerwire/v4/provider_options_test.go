@@ -24,6 +24,30 @@ func TestProviderOptions_OpaqueValuesSurvive(t *testing.T) {
 	assert.Equal(t, opaque, string(options.Prompt[0].Content[0].ProviderOptions["part"].(provider.RawProviderOption).Raw))
 }
 
+func TestRuntimeMCPOptions_AreOpaque(t *testing.T) {
+	for _, body := range []string{
+		`{"prompt":[],"providerOptions":{"anthropic":{"mcpServers":"not-interpreted","extension":{}}}}`,
+		`{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"mcp","toolName":"echo","input":{},"providerExecuted":true,"providerOptions":{"anthropic":{"Type":"mcp-tool-use","serverName":"unconfigured","caller":null,"extension":[]}}}]}],"providerOptions":{"anthropic":{"mcpServers":[null]}}}`,
+	} {
+		for _, streaming := range []bool{false, true} {
+			t.Run(body, func(t *testing.T) {
+				harness := newRuntimeHarness(t, testLimits())
+				request := validRequest(body)
+				if streaming {
+					request.Header.Set(HeaderStreaming, "true")
+				}
+				response := harness.serve(request)
+				require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+				require.Equal(t, 1, harness.model.callCount())
+				options := harness.model.receivedOptions()
+				value, ok := options.ProviderOptions["anthropic"].(provider.RawProviderOption)
+				require.True(t, ok)
+				assert.NotEmpty(t, value.Raw)
+			})
+		}
+	}
+}
+
 func TestProviderOptions_MalformedNamespaceIsInvalidRequest(t *testing.T) {
 	for name, raw := range map[string]string{"null": `null`, "array": `[]`, "scalar": `1`, "string": `"x"`} {
 		t.Run(name, func(t *testing.T) {
