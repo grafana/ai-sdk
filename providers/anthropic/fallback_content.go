@@ -14,8 +14,8 @@ const fallbackBlockType constant.Fallback = "fallback"
 
 func marshalFallbackMetadata(block anthropic.BetaFallbackBlock) (provider.ProviderMetadata, error) {
 	data, err := json.Marshal(anthropic.BetaFallbackBlockParam{
-		From: anthropic.BetaFallbackInfoParam{Model: block.From.Model},
-		To:   anthropic.BetaFallbackInfoParam{Model: block.To.Model},
+		From: fallbackInfo(block.From.Model),
+		To:   fallbackInfo(block.To.Model),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("marshaling fallback metadata: %w", err)
@@ -24,22 +24,39 @@ func marshalFallbackMetadata(block anthropic.BetaFallbackBlock) (provider.Provid
 }
 
 func convertFallbackContent(opts provider.ProviderOptions) (*anthropic.BetaFallbackBlockParam, bool) {
-	type modelInfo struct {
-		Model *string `json:"model"`
+	var metadata map[string]json.RawMessage
+	if err := json.Unmarshal(extractRawJSON(opts), &metadata); err != nil {
+		return nil, false
 	}
-	var metadata struct {
-		Type *constant.Fallback `json:"type"`
-		From *modelInfo         `json:"from"`
-		To   *modelInfo         `json:"to"`
+	var blockType constant.Fallback
+	if err := json.Unmarshal(metadata["type"], &blockType); err != nil || blockType != fallbackBlockType {
+		return nil, false
 	}
-	if err := json.Unmarshal(extractRawJSON(opts), &metadata); err != nil ||
-		metadata.Type == nil || *metadata.Type != fallbackBlockType ||
-		metadata.From == nil || metadata.From.Model == nil ||
-		metadata.To == nil || metadata.To.Model == nil {
+	from, fromValid := fallbackModel(metadata["from"])
+	to, toValid := fallbackModel(metadata["to"])
+	if !fromValid || !toValid {
 		return nil, false
 	}
 	return &anthropic.BetaFallbackBlockParam{
-		From: anthropic.BetaFallbackInfoParam{Model: *metadata.From.Model},
-		To:   anthropic.BetaFallbackInfoParam{Model: *metadata.To.Model},
+		From: fallbackInfo(from),
+		To:   fallbackInfo(to),
 	}, true
+}
+
+func fallbackModel(raw json.RawMessage) (string, bool) {
+	var info map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &info); err != nil {
+		return "", false
+	}
+	var model *string
+	if err := json.Unmarshal(info["model"], &model); err != nil || model == nil {
+		return "", false
+	}
+	return *model, true
+}
+
+func fallbackInfo(model string) anthropic.BetaFallbackInfoParam {
+	info := anthropic.BetaFallbackInfoParam{Model: model}
+	info.SetExtraFields(map[string]any{"model": model})
+	return info
 }

@@ -12,7 +12,7 @@ The selected coherent reference is ai 7.0.127. Exact Anthropic 4.0.71 source at 
 
 - Reuse existing provider/core/UI custom parts and Anthropic SDK fallback unions rather than add another event family.
 - Validate required type/from/to/model fields in continuation, warning and omitting invalid metadata as upstream does. Do not attach cache control to fallback markers.
-- Keep reasoning normalization within segments separated by fallback markers; sorting across a hop would corrupt model-specific signatures.
+- Preserve fallback markers and model-specific reasoning signatures in their original order. Go does not perform upstream's segmented tool-use reordering; that older normalization gap remains deferred rather than being claimed as implemented.
 - Preserve existing recorded/imported inputs; import the target mid-output fallback fixture byte-identically and regenerate expectations. Synthetic focused/frontend tests supplement rather than replace provenance.
 - Match ai 7.0.127 process-ui-message-stream.ts and convert-to-model-messages.ts: persist accumulated raw input strings, restore only last-step streaming tools, use Input for rejected calls, replace output tool metadata and remove superseded pending approvals.
 - Reuse reader initialization for finish-callback assembly; report malformed initial streaming input through the existing helper error/closure contracts. No public signature changes.

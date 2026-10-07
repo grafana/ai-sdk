@@ -13,6 +13,11 @@ import (
 func TestFallbackContent_Output(t *testing.T) {
 	block := `{"type":"fallback","from":{"model":"primary","extra":true},"to":{"model":"secondary"},"trigger":{"type":"refusal"}}`
 	metadata := `{"type":"fallback","from":{"model":"primary"},"to":{"model":"secondary"}}`
+	t.Run("empty models", func(t *testing.T) {
+		got, err := marshalFallbackMetadata(anthropic.BetaFallbackBlock{})
+		require.NoError(t, err)
+		assert.JSONEq(t, `{"type":"fallback","from":{"model":""},"to":{"model":""}}`, string(got["anthropic"]))
+	})
 	t.Run("unary", func(t *testing.T) {
 		msg := unmarshalMessage(t, `{"id":"msg_1","type":"message","role":"assistant","model":"secondary","content":[{"type":"thinking","thinking":"before","signature":"sig-1"},`+block+`,{"type":"thinking","thinking":"after","signature":"sig-2"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}`)
 		result, err := convertResponse(msg, toolNameMapping{}, false, nil, defaultGenerateID, "anthropic", false)
@@ -43,16 +48,22 @@ func TestFallbackContent_Output(t *testing.T) {
 
 func TestFallbackContent_Continuation(t *testing.T) {
 	for _, tc := range []struct {
-		name, metadata string
-		valid          bool
+		name, metadata, expected string
 	}{
-		{"valid", `{"type":"fallback","from":{"model":"primary"},"to":{"model":"secondary"},"trigger":{}}`, true},
-		{"empty models", `{"type":"fallback","from":{"model":""},"to":{"model":""}}`, true},
-		{"missing destination", `{"type":"fallback","from":{"model":"primary"}}`, false},
-		{"missing type", `{"from":{"model":"primary"},"to":{"model":"secondary"}}`, false},
-		{"wrong type", `{"type":"text","from":{"model":"primary"},"to":{"model":"secondary"}}`, false},
-		{"null model", `{"type":"fallback","from":{"model":null},"to":{"model":"secondary"}}`, false},
-		{"nonstring model", `{"type":"fallback","from":{"model":42},"to":{"model":"secondary"}}`, false},
+		{"valid", `{"type":"fallback","from":{"model":"primary"},"to":{"model":"secondary"},"trigger":{},"cacheControl":{"type":"ephemeral"}}`, `{"type":"fallback","from":{"model":"primary"},"to":{"model":"secondary"}}`},
+		{"empty models", `{"type":"fallback","from":{"model":""},"to":{"model":""}}`, `{"type":"fallback","from":{"model":""},"to":{"model":""}}`},
+		{"missing destination", `{"type":"fallback","from":{"model":"primary"}}`, ""},
+		{"missing type", `{"from":{"model":"primary"},"to":{"model":"secondary"}}`, ""},
+		{"wrong type", `{"type":"text","from":{"model":"primary"},"to":{"model":"secondary"}}`, ""},
+		{"null model", `{"type":"fallback","from":{"model":null},"to":{"model":"secondary"}}`, ""},
+		{"nonstring model", `{"type":"fallback","from":{"model":42},"to":{"model":"secondary"}}`, ""},
+		{"uppercase keys", `{"Type":"fallback","From":{"Model":"primary"},"To":{"Model":"secondary"}}`, ""},
+		{"uppercase type", `{"Type":"fallback","from":{"model":"primary"},"to":{"model":"secondary"}}`, ""},
+		{"uppercase from", `{"type":"fallback","From":{"model":"primary"},"to":{"model":"secondary"}}`, ""},
+		{"uppercase to", `{"type":"fallback","from":{"model":"primary"},"To":{"model":"secondary"}}`, ""},
+		{"uppercase source model", `{"type":"fallback","from":{"Model":"primary"},"to":{"model":"secondary"}}`, ""},
+		{"uppercase destination model", `{"type":"fallback","from":{"model":"primary"},"to":{"Model":"secondary"}}`, ""},
+		{"unrelated uppercase keys", `{"type":"fallback","from":{"model":"primary","Model":"ignored"},"to":{"model":"secondary"},"Type":"ignored"}`, `{"type":"fallback","from":{"model":"primary"},"to":{"model":"secondary"}}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			part := provider.CustomPart("anthropic.fallback")
@@ -65,12 +76,13 @@ func TestFallbackContent_Continuation(t *testing.T) {
 			require.NoError(t, err)
 			require.Len(t, p.Messages, 1)
 			content := p.Messages[0].Content
-			if tc.valid {
+			if tc.expected != "" {
 				require.Empty(t, warnings)
 				require.Len(t, content, 3)
 				require.NotNil(t, content[1].OfFallback)
 				wire, err := json.Marshal(content[1])
 				require.NoError(t, err)
+				assert.JSONEq(t, tc.expected, string(wire))
 				assert.NotContains(t, string(wire), "cache_control")
 				assert.NotContains(t, string(wire), "trigger")
 			} else {
