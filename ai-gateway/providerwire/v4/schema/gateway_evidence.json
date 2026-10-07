@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://grafana.com/ai-sdk/providerwire/v4/gateway-evidence.schema.json",
   "title": "Gateway-owned providerMetadata.gateway namespace",
-  "description": "Returned execution facts, not operator telemetry or replay guarantees. Native payloads remain opaque. Byte limits are enforced by the Gateway, not JSON Schema.",
+  "description": "Contract-test and documentation schema for returned execution facts, not a runtime validator, operator telemetry or replay guarantee. Native diagnostics use protected standard Go JSON normalization; nativeMetadata remains opaque. Byte limits are enforced by the Gateway, not JSON Schema.",
   "type": "object",
   "required": [
     "routing",

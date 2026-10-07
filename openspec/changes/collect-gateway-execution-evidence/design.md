@@ -1,36 +1,29 @@
 ## Context
 
-This is the internal foundation slice of #322, stacked above the independent client change and #332. It extracts unchanged code from 39354e21. It intentionally has no service catalog or ProviderWire handler call sites yet; package tests explicitly drive the observation seams. Production activation is owned by expose-gateway-attempts-and-failures.
+PR #373 is the dormant foundation for #322, above #372. The owner requested a full simplification after reviewing the JSON projector, allocation machinery and native error processing, and approved the revised design. No service or handler imports this package yet. Runtime activation remains #370.
 
-The approved #321 decision defines Grafana-specific evidence, not private Vercel-service parity. The unchanged baseline is ai 7.0.118, Gateway 4.0.96, Provider 4.0.18 and Provider Utils 5.0.49 at 5d12eaa6caa193d3901cbab98a734403eb6bf622. Existing pinned metadata and error carriers remain opaque. PARITY.md's Gateway runtime/provider-metadata boundaries apply; collection tests do not establish carrier delivery.
+The baseline remains ai 7.0.118, Gateway 4.0.96, Provider 4.0.18 and Provider Utils 5.0.49 at 5d12eaa6caa193d3901cbab98a734403eb6bf622. The evidence namespace is a Grafana extension, not a private-service parity claim. PARITY.md's Gateway runtime/provider-metadata boundaries apply.
 
 ## Goals / Non-Goals
 
-**Goals:** Review request-local attribution, source protection, bounded immutable snapshots and namespace shape independently of handler integration.
+**Goals:** Tell callers which candidates actually ran, which was selected and why attempts failed, using simple bounded facts and standard Go JSON.
 
-**Non-Goals:** Change fallback decisions, read provider streams, activate response fields, alter client retries, implement native success transport debugging or repair missing producer fields.
+**Non-Goals:** Change fallback decisions, retries, stream readers, cleanup ownership or operator capture; introduce a generalized redaction/configuration framework; implement native success transport debugging or producer fixes.
 
 ## Decisions
 
-- Model wrappers retain immutable configuration; request state lives in context behind a mutex. Candidate entry records actual work, not configured candidates. Existing fallback decisions supply selection/intent; direct part observation supplies selection and completion when invoked by a future handler.
-- Capture candidate-local structured errors before cancellation replacement. Do not infer attribution from joined errors or parse wrapper prose. Keep current event error separately without an unbounded error history.
-- Preserve identities separately and construct a normalized essential snapshot. Metadata assembly copies the map and relocates a native gateway namespace under nativeMetadata without trusting it.
-- Check source bytes before parsing, complete serialized components before retention, and aggregate/essential sizes before returning snapshots. Above 16 attempts retain the observed count, not a partial history. Sealing rejects late mutations.
-- Use standard jsontext for structure and duplicate detection; remove known-source credential fields and check surviving configured echoes. Preserve raw string/key and number lexemes instead of ordinary decode/re-encode normalization. Reject duplicate components, including discarded subtrees.
-- Require Go 1.27 only in the Gateway module/workspace, as already approved. The existing configured toolchain is Go 1.27.1. No external JSON dependency or client-baseline increase is needed.
-- Ship the namespace schema and strict acceptance/rejection tests here. The final PR validates actual emitted handler carriers; schema acceptance alone is not runtime support.
-
-## Risks / Trade-offs
-
-- Internal package temporarily has no production callers → make the activation dependency explicit; keep this PR independently compiling and tested.
-- Source protection cannot infer absent producer semantics → omit unavailable facts, preserve ordinary useful identifiers, and leave producer improvements to #299.
-- Essential evidence can overflow → return an assembly error; the later handler integration owns canonical emergency output.
-- Package/schema tests do not prove lifecycle wiring → reserve service, real-handler, both-client and frontend integration tests for the final PR.
+- Immutable model wrappers record actual entry and return. Request-local synchronized state records attempts, selection, fallback intent, completion, native identity and the current error. Sealing prevents late mutation. The collector does not encode metadata or whole snapshots on mutation.
+- Snapshot returns isolated facts. A separate metadata assembler owns typed output DTOs, namespace relocation and essential/optional allocation checks. It uses ordinary json.Marshal. Collection bounds attempt count and individual fact sizes; optional retention uses an incremental complete-component byte count rather than rescanning prior attempts.
+- Normalize attributable single-chain APICallError sources using encoding/json with UseNumber, then transform the decoded error data to remove known credential/tenant/signing fields and detect configured credential/endpoint echoes. Derive message/type/code and details from that same protected value. Do not traverse aggregate errors or serialize arbitrary causes, request bodies or headers as a native error struct.
+- Protection is limited to native error data. Ordinary URLs, endpoints, application request fields and token-looking strings are not rejected merely by generic names. Configured source echoes and actual credential fields remain protected. Opaque provider metadata uses the existing transport unchanged.
+- Owner approval supersedes the old lexical-preservation and duplicate-rejection rules for rewritten native diagnostics: standard Go duplicate-member processing applies, property/string escapes and lone surrogates normalize, and numeric precision is preserved with UseNumber. Only the normalized, protected representation is published; the original raw source is never reused after protection. Client HTTP/SSE byte retention and opaque metadata are unchanged.
+- Keep the approved numeric ceilings: 16 retained attempts, 1 MiB source, 128 KiB complete component, 256 KiB retained/success diagnostics, 32 KiB mandatory evidence and 24 KiB optional error diagnostics. Complete runtime error/frame/response limits remain the protocol adapter's responsibility. Overflow produces complete dispositions, not truncated messages or JSON.
+- Remove jsontext and restore the existing Go 1.26.3 Gateway/workspace minimum. Keep the Gateway namespace schema as documentation and contract-test evidence, not runtime validation or an independent client dependency.
 
 ## Migration Plan
 
-Introduce the dormant internal foundation and schema, then activate it in the next stack entry. No runtime response changes or data migration occur here. Rollback removes the unused package/schema and restores the Gateway baseline.
+Refactor the dormant package and update its tests/specs in #373. #370 must consume a facts snapshot through the metadata assembler rather than call metadata assembly on mutable state; its carriers, classification, emergency output and event ordering remain unchanged. Do not restack or edit that PR as part of this foundation update.
 
-## Open Questions
+## Risks / Trade-offs
 
-None. No new product or public API decision is introduced by the split.
+Standard normalization deliberately changes diagnostic JSON spellings and duplicate acceptance. Number precision and meaningful null/false/empty values remain intact. Unknown producer fields stay absent rather than inferred. Package/schema tests do not prove handler integration or live-provider safety. The original #321 decision remains historical; this scoped owner-approved revision supersedes its diagnostic lexical/duplicate policy, not attribution, credentials or bounds.

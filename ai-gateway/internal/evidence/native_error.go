@@ -3,128 +3,179 @@ package evidence
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"io"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/grafana/ai-sdk/provider"
 )
 
-func projectError(err error, protectedSources ...string) (*NativeError, bool) {
-	var api *provider.APICallError
-	for depth := 0; err != nil && depth < 16; depth++ {
-		if value, ok := err.(*provider.APICallError); ok {
-			api = value
-			break
-		}
-		wrapper, ok := err.(interface{ Unwrap() error })
-		if !ok {
-			break
-		}
-		err = wrapper.Unwrap()
-	}
+const (
+	maxSourceBytes    = 1 << 20
+	maxComponentBytes = 128 << 10
+)
+
+func normalizeError(err error, protectedSources []string) (*NativeError, error) {
+	api := singleAPICallError(err)
 	if api == nil {
-		return nil, false
+		return nil, nil
 	}
-	protectedSources = append(append([]string(nil), protectedSources...), api.URL)
+	sources := append(append([]string(nil), protectedSources...), api.URL)
 	value := &NativeError{IsRetryable: api.IsRetryable}
 	if api.StatusCode > 0 {
 		value.StatusCode = api.StatusCode
 	}
 	if api.URL == "" && api.Unwrap() == nil {
-		if len(api.Message) > EssentialBytes || !utf8.ValidString(api.Message) {
-			return nil, true
+		if !validFacts(api.Message) {
+			return nil, errors.New("gateway evidence: native error summary exceeds allocation or is malformed")
 		}
-		if !containsProtectedText(api.Message, protectedSources) {
+		if !containsProtectedText(api.Message, sources) {
 			value.Message = api.Message
 		}
 	}
-	source := api.Data
-	if len(source) == 0 {
-		if len(api.ResponseBody) > SourceBytes {
-			value.Details = &Component{State: OverLimit, Reason: SourceLimit}
-			return value, false
-		}
+	var source []byte
+	switch {
+	case len(api.Data) != 0:
+		source = api.Data
+	case len(api.ResponseBody) <= maxSourceBytes:
 		source = []byte(api.ResponseBody)
+	default:
+		value.Details = disposition(OverLimit, SourceLimit)
+		return checkedError(value)
 	}
 	if len(source) == 0 {
-		value.Details = &Component{State: Unavailable, Reason: ProducerDoesNotExpose}
-		return value, false
+		value.Details = disposition(Unavailable, ProducerDoesNotExpose)
+		return checkedError(value)
 	}
-	if len(source) > SourceBytes {
-		value.Details = &Component{State: OverLimit, Reason: SourceLimit}
-		return value, false
+	if len(source) > maxSourceBytes {
+		value.Details = disposition(OverLimit, SourceLimit)
+		return checkedError(value)
 	}
-	if !utf8.Valid(source) || !json.Valid(source) {
-		value.Details = &Component{State: Malformed, Reason: InvalidJSON}
-		return value, false
+	decoded, err := decodeErrorData(source)
+	if err != nil {
+		value.Details = disposition(Malformed, InvalidJSON)
+		return checkedError(value)
 	}
-	decoder := json.NewDecoder(bytes.NewReader(source))
-	decoder.UseNumber()
-	var decoded any
-	if decoder.Decode(&decoded) != nil {
-		value.Details = &Component{State: Malformed, Reason: InvalidJSON}
-		return value, false
-	}
+	redacted, echo := protectErrorData(decoded, sources)
 	if fields, ok := decoded.(map[string]any); ok {
 		if nested, ok := fields["error"].(map[string]any); ok {
 			fields = nested
 		}
-		if message, ok := fields["message"].(string); ok {
+		if message, ok := fields["message"].(string); ok && !containsProtectedText(message, sources) {
 			value.Message = message
 		}
-		if kind, ok := fields["type"].(string); ok {
+		if kind, ok := fields["type"].(string); ok && !containsProtectedText(kind, sources) {
 			value.Type = kind
 		}
 		switch code := fields["code"].(type) {
 		case string:
-			if !containsProtectedText(code, protectedSources) {
-				encoded, err := json.Marshal(code)
-				if err != nil {
-					return nil, true
-				}
-				value.Code = encoded
+			if !containsProtectedText(code, sources) {
+				value.Code, err = json.Marshal(code)
 			}
 		case json.Number:
-			value.Code = []byte(code)
+			value.Code, err = json.Marshal(code)
+		}
+		if err != nil {
+			return nil, err
 		}
 	}
-	if len(value.Message)+len(value.Type)+len(value.Code) > EssentialBytes {
-		return nil, true
+	fields, object := decoded.(map[string]any)
+	if echo || (redacted && object && len(fields) == 0) {
+		value.Details = disposition(Redacted, CredentialSource)
+		return checkedError(value)
 	}
-	if containsProtectedText(value.Message, protectedSources) {
-		value.Message = ""
-	}
-	if containsProtectedText(value.Type, protectedSources) {
-		value.Type = ""
-	}
-	projection, err := protectedErrorJSON(source, protectedSources)
+	body, err := json.Marshal(decoded)
 	if err != nil {
-		value.Details = &Component{State: Malformed, Reason: InvalidJSON}
-		return value, false
+		return nil, err
 	}
-	if projection.echo || (projection.redacted && bytes.Equal(projection.value, []byte("{}"))) {
-		value.Details = &Component{State: Redacted, Reason: CredentialSource}
-		return value, false
-	}
-	component := &Component{State: Available, Value: projection.value, Redacted: projection.redacted}
-	encodedComponent, err := json.Marshal(component)
+	value.Details, err = json.Marshal(Component{State: Available, Value: body, Redacted: redacted})
 	if err != nil {
-		value.Details = &Component{State: Malformed, Reason: InvalidJSON}
-		return value, false
+		return nil, err
 	}
-	if len(encodedComponent) > ComponentBytes {
-		value.Details = &Component{State: OverLimit, Reason: EncodedLimit}
-		return value, false
+	if len(value.Details) > maxComponentBytes {
+		value.Details = disposition(OverLimit, EncodedLimit)
 	}
-	component.encodedBytes = len(encodedComponent)
-	value.Details = component
-	return value, false
+	return checkedError(value)
+}
+
+func singleAPICallError(err error) *provider.APICallError {
+	for err != nil {
+		if api, ok := err.(*provider.APICallError); ok {
+			return api
+		}
+		err = errors.Unwrap(err)
+	}
+	return nil
+}
+
+func checkedError(value *NativeError) (*NativeError, error) {
+	if len(value.Message)+len(value.Type)+len(value.Code) > maxEssentialBytes || !utf8.ValidString(value.Message) || !utf8.ValidString(value.Type) {
+		return nil, errors.New("gateway evidence: native error summary exceeds allocation or is malformed")
+	}
+	return value, nil
+}
+
+func decodeErrorData(source []byte) (any, error) {
+	if !utf8.Valid(source) {
+		return nil, errors.New("gateway evidence: invalid error UTF-8")
+	}
+	decoder := json.NewDecoder(bytes.NewReader(source))
+	decoder.UseNumber()
+	var value any
+	if err := decoder.Decode(&value); err != nil {
+		return nil, err
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return nil, errors.New("gateway evidence: trailing error data")
+	}
+	return value, nil
+}
+
+func protectErrorData(value any, sources []string) (redacted, echo bool) {
+	switch value := value.(type) {
+	case map[string]any:
+		for key, child := range value {
+			if protectedErrorField(key) {
+				delete(value, key)
+				redacted = true
+				continue
+			}
+			removed, found := protectErrorData(child, sources)
+			redacted = redacted || removed
+			echo = echo || found || containsProtectedText(key, sources)
+		}
+	case []any:
+		for _, child := range value {
+			removed, found := protectErrorData(child, sources)
+			redacted = redacted || removed
+			echo = echo || found
+		}
+	case string:
+		echo = containsProtectedText(value, sources)
+	}
+	return redacted, echo
 }
 
 func protectedErrorField(key string) bool {
 	switch strings.ToLower(key) {
-	case "authorization", "proxy-authorization", "api-key", "api_key", "apikey", "x-api-key", "cookie", "set-cookie", "signature", "signingkey", "signing_key", "tenant", "tenantid", "tenant_id", "orgid", "org_id", "organizationid", "url", "baseurl", "endpoint", "request", "requestheaders", "requestbody", "responseheaders", "responsebody", "headers", "credentials", "credential", "secret", "secretkey", "accesskeyid", "sessiontoken", "private", "secretaccesskey", "privatekey", "googlecredentials", "x-goog-api-key", "x-amz-security-token", "x-amz-credential", "x-amz-signature", "x-access-token", "x-grafana-id", "apikeyenv", "apikeysecret", "apikeysecretref", "access_token", "refresh_token", "oauthtoken", "oauth_token":
+	case "authorization", "proxy-authorization", "api-key", "api_key", "apikey", "x-api-key", "cookie", "set-cookie", "signature", "signingkey", "signing_key", "tenant", "tenantid", "tenant_id", "orgid", "org_id", "organizationid", "credentials", "credential", "secret", "secretkey", "accesskeyid", "sessiontoken", "secretaccesskey", "privatekey", "googlecredentials", "x-goog-api-key", "x-amz-security-token", "x-amz-credential", "x-amz-signature", "x-access-token", "x-grafana-id", "apikeyenv", "apikeysecret", "apikeysecretref", "access_token", "refresh_token", "oauthtoken", "oauth_token":
 		return true
 	}
 	return false
+}
+
+func containsProtectedText(value string, sources []string) bool {
+	for _, source := range sources {
+		if source != "" && strings.Contains(value, source) {
+			return true
+		}
+	}
+	return false
+}
+
+func disposition(state DispositionState, reason Reason) json.RawMessage {
+	encoded, _ := json.Marshal(Component{State: state, Reason: reason})
+	return encoded
 }

@@ -17,7 +17,7 @@ import (
 
 func readFacts(t *testing.T, s *State, gateway *Gateway) snapshot {
 	t.Helper()
-	metadata, err := s.Metadata(nil, gateway, false)
+	metadata, err := Metadata(s.Snapshot(), nil, gateway, false)
 	require.NoError(t, err)
 	var value namespace
 	require.NoError(t, json.Unmarshal(metadata["gateway"], &value))
@@ -48,7 +48,7 @@ func TestState_AttemptBoundaries(t *testing.T) {
 			require.NoError(t, err)
 			if count == 17 {
 				assert.JSONEq(t, `{"state":"over-limit","reason":"attemptCount","count":17}`, string(encoded))
-				assert.Nil(t, s.attempts)
+				assert.Nil(t, s.facts.Attempts)
 			} else {
 				var attempts []Attempt
 				require.NoError(t, json.Unmarshal(encoded, &attempts))
@@ -77,14 +77,14 @@ func TestState_SealAndCancellationFacts(t *testing.T) {
 	retryable := true
 	s.returned(index, nil, provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 429, Message: "rate limited", IsRetryable: &retryable}), false, true)
 	ObserveDecision(ctx, fallback.Attempt{Index: 1, Outcome: fallback.AttemptFailed, WillFallback: true})
-	before, err := s.Metadata(nil, nil, false)
+	before, err := Metadata(s.Snapshot(), nil, nil, false)
 	require.NoError(t, err)
 	s.Seal()
 	assert.Zero(t, s.begin(catalog.ConfiguredCandidate{Provider: "anthropic", ModelID: "never invoked"}))
 	s.returned(1, &provider.GenerateResult{}, nil, false, false)
 	ObserveDecision(ctx, fallback.Attempt{Index: 1, Outcome: fallback.AttemptSelected})
 	s.ObservePart(provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}})
-	after, err := s.Metadata(nil, nil, false)
+	after, err := Metadata(s.Snapshot(), nil, nil, false)
 	require.NoError(t, err)
 	assert.Equal(t, before, after)
 	assert.Contains(t, string(after["gateway"]), `"willFallback":true`)
@@ -98,9 +98,9 @@ func TestState_MetadataImmutability(t *testing.T) {
 	original := provider.ProviderMetadata{"gateway": json.RawMessage(`{"routing":{"spoof":true},"nativeMetadata":{"null":null},"false":false}`), "vendor": json.RawMessage(`{"nested":[null,false,0,"",[],{}]}`)}
 	before, err := json.Marshal(original)
 	require.NoError(t, err)
-	first, err := s.Metadata(original, nil, false)
+	first, err := Metadata(s.Snapshot(), original, nil, false)
 	require.NoError(t, err)
-	second, err := s.Metadata(original, nil, true)
+	second, err := Metadata(s.Snapshot(), original, nil, true)
 	require.NoError(t, err)
 	after, err := json.Marshal(original)
 	require.NoError(t, err)
@@ -121,18 +121,18 @@ func TestState_OptionalRetentionBudget(t *testing.T) {
 	}
 	retained := 0
 	overLimit := 0
-	for _, a := range s.attempts {
+	for _, a := range s.facts.Attempts {
 		require.NotNil(t, a.NativeError.Details)
-		if a.NativeError.Details.State == Available {
+		if readDetails(t, a.NativeError).State == Available {
 			encoded, err := json.Marshal(a.NativeError.Details)
 			require.NoError(t, err)
 			retained += len(encoded)
 		} else {
 			overLimit++
-			assert.Equal(t, AggregateLimit, a.NativeError.Details.Reason)
+			assert.Equal(t, AggregateLimit, readDetails(t, a.NativeError).Reason)
 		}
 	}
-	assert.LessOrEqual(t, retained, SuccessDetailBytes)
+	assert.LessOrEqual(t, retained, maxSuccessDetailBytes)
 	assert.Positive(t, overLimit)
 	_ = readFacts(t, s, &Gateway{Phase: Unary})
 }
@@ -145,8 +145,8 @@ func TestState_ExactOptionalAllocations(t *testing.T) {
 		bytes, count int
 		gateway      *Gateway
 	}{
-		{"error", ErrorDetailBytes, 1, &Gateway{Phase: Unary}},
-		{"success", SuccessDetailBytes / 8, 8, nil},
+		{"error", maxErrorDetailBytes, 1, &Gateway{Phase: Unary}},
+		{"success", maxSuccessDetailBytes / 8, 8, nil},
 	} {
 		for _, over := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/over=%t", scope.name, over), func(t *testing.T) {
@@ -173,6 +173,67 @@ func TestState_ExactOptionalAllocations(t *testing.T) {
 	}
 }
 
+func TestState_UnrunDecision(t *testing.T) {
+	ctx, s := New(t.Context(), "alias", "canonical")
+	s.begin(catalog.ConfiguredCandidate{Provider: "native", ModelID: "configured"})
+	before := s.Snapshot()
+	for _, index := range []int{0, 2} {
+		ObserveDecision(ctx, fallback.Attempt{Index: index, Outcome: fallback.AttemptSelected})
+		assert.Equal(t, before, s.Snapshot())
+	}
+}
+
+func TestState_SnapshotIsolation(t *testing.T) {
+	ctx, s := New(t.Context(), "alias", "canonical")
+	index := s.begin(catalog.ConfiguredCandidate{Provider: "native", ModelID: "configured"})
+	s.returned(index, nil, provider.NewAPICallError(provider.APICallErrorOptions{Data: json.RawMessage(`{"message":"safe","code":"original","detail":"original"}`)}), false, true)
+	ObserveDecision(ctx, fallback.Attempt{Index: index, Outcome: fallback.AttemptFailed, WillFallback: true})
+	before := s.Snapshot()
+	first := s.Snapshot()
+	*first.Attempts[0].WillFallback = false
+	first.Attempts[0].NativeError.Code[1] = 'X'
+	first.Attempts[0].NativeError.Details[1] = 'X'
+	first.Attempts[0].Provider = "changed"
+	assert.Equal(t, before, s.Snapshot())
+	full, err := Metadata(before, nil, nil, false)
+	require.NoError(t, err)
+	minimal, err := Metadata(before, nil, nil, true)
+	require.NoError(t, err)
+	assert.Contains(t, string(full["gateway"]), "original")
+	assert.NotContains(t, string(minimal["gateway"]), `"detail":"original"`)
+	assert.Equal(t, before, s.Snapshot())
+}
+
+func TestState_ErrorReplacement(t *testing.T) {
+	_, s := New(t.Context(), "alias", "canonical")
+	s.begin(catalog.ConfiguredCandidate{Provider: "native", ModelID: "configured"})
+	for _, size := range []int{10000, 20000, 10000} {
+		s.ObservePart(provider.StreamPart{Type: provider.PartError, APICallError: provider.NewAPICallError(provider.APICallErrorOptions{Message: "current", Data: json.RawMessage(`{"detail":"` + strings.Repeat("x", size) + `"}`)})})
+		facts := s.Snapshot()
+		require.Len(t, facts.Attempts, 1)
+		assert.Equal(t, len(facts.Attempts[0].NativeError.Details), s.detailBytes)
+		assert.Empty(t, facts.CurrentError.Details)
+	}
+	s.ObservePart(provider.StreamPart{Type: provider.PartError})
+	assert.Nil(t, s.CurrentError())
+	assert.NotNil(t, s.Snapshot().Attempts[0].NativeError)
+}
+
+func TestMetadata_EssentialAllocation(t *testing.T) {
+	_, s := New(t.Context(), "alias", "canonical")
+	for i := 1; i <= maxAttempts; i++ {
+		index := s.begin(catalog.ConfiguredCandidate{Provider: "native", ModelID: strings.Repeat("<", 1000)})
+		s.returned(index, nil, provider.NewAPICallError(provider.APICallErrorOptions{Message: strings.Repeat("x", 1000)}), false, true)
+	}
+	facts := s.Snapshot()
+	require.Len(t, facts.Attempts, maxAttempts)
+	for _, minimal := range []bool{false, true} {
+		metadata, err := Metadata(facts, nil, &Gateway{Phase: Unary}, minimal)
+		require.ErrorContains(t, err, "essential encoded allocation")
+		assert.Nil(t, metadata)
+	}
+}
+
 func TestState_ConcurrentSnapshots(t *testing.T) {
 	var group sync.WaitGroup
 	for i := 0; i < 32; i++ {
@@ -181,7 +242,7 @@ func TestState_ConcurrentSnapshots(t *testing.T) {
 			s.begin(catalog.ConfiguredCandidate{Provider: "native", ModelID: fmt.Sprint(i)})
 			ObserveDecision(ctx, fallback.Attempt{Index: 1, Outcome: fallback.AttemptSelected})
 			for n := 0; n < 32; n++ {
-				metadata, err := s.Metadata(nil, nil, false)
+				metadata, err := Metadata(s.Snapshot(), nil, nil, false)
 				require.NoError(t, err)
 				assert.Contains(t, string(metadata["gateway"]), fmt.Sprintf(`"modelId":"%d"`, i))
 			}
