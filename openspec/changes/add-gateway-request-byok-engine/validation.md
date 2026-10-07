@@ -2,7 +2,9 @@
 
 ## Validation
 
-Validated on this branch, independently of later stack changes:
+Validated on this branch, independently of later stack changes. All gates were
+rerun after rebasing onto main at `d863b86e` (#326/#328). Catalog selection now
+retains opaque native options rather than restoring the deleted policy inventories:
 
 - `mise run test-short`, `build`, `vet`, `lint`, `parity-check`.
 - `mise run test-ai-gateway-source-integration` and `test-integration`,
