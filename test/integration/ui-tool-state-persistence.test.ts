@@ -205,17 +205,17 @@ describe("pinned UI tool state persistence", () => {
     for await (const message of readUIMessageStream({ message: initialMessage ? json(initialMessage) : undefined, stream: simulateReadableStream({ chunks: updates }), terminateOnError: true })) expected.push(json(message));
     const go = await persist({ initialMessage, chunks: updates });
     expect(canonicalUI(go.snapshots)).toEqual(canonicalUI(expected));
-    expect(go.uiMessages[0].parts[0].rawInput).toBe("legacy");
+    expect(go.uiMessages[0].parts[0][seeded ? "rawInput" : "input"]).toBe("legacy");
     expect(canonicalModel(go.modelMessages)).toEqual(canonicalModel(await convertToModelMessages([expected.at(-1)!])));
   });
 
-  it("normalizes reader-retained dynamic raw input on an isolated Agent history", async () => {
+  it("clears dynamic raw input on output before isolated Agent validation", async () => {
     const initialMessage = stateMessage("output-error", true, { input: { q: "old" } });
     const updates: UIMessageChunk[] = [{ type: "tool-output-available", toolCallId: "c", output: "final" }];
     const assembled = await persist({ initialMessage, chunks: updates });
     const messages = assembled.uiMessages as UIMessage[];
     const original = json(messages);
-    expect(assembled.uiMessages[0].parts[0].rawInput).toBe("legacy");
+    expect(assembled.uiMessages[0].parts[0]).not.toHaveProperty("rawInput");
     const normalized = await validateUIMessages({ messages });
     const model = referenceToolStateModel();
     const stream = await createAgentUIStream({ agent: new ToolLoopAgent({ model, tools: toolStateReferenceTools }), uiMessages: messages });

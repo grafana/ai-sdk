@@ -107,8 +107,9 @@ const (
 // Title, ErrorText and Preliminary use nil for absence and preserve explicit
 // empty strings or false. Output-error requires a non-nil ErrorText.
 // ToolMetadata and call/result metadata preserve non-nil empty objects.
-// RawInput retains rejected or legacy input separately from Input; opaque JSON
-// fields preserve JSON null, while nil means absent.
+// RawInput stores accumulated input-streaming text as a JSON string and retains
+// legacy output-error input separately from Input. Other opaque JSON fields
+// preserve JSON null, while nil means absent.
 type ToolInvocationPart struct {
 	ToolCallID             string                     `json:"toolCallId"`
 	ToolName               string                     `json:"toolName"`

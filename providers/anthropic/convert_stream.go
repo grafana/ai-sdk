@@ -140,6 +140,12 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 		idx := e.Index
 		cb := e.ContentBlock
 		switch cb.Type {
+		case "fallback":
+			metadata, err := marshalFallbackMetadata(cb.AsFallback())
+			if err != nil {
+				return err
+			}
+			ch <- provider.StreamPart{Type: provider.PartCustom, Kind: anthropicFallbackKind, ProviderMetadata: metadata}
 		case "text":
 			if a.usesJsonResponseTool {
 				return nil

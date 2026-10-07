@@ -119,16 +119,30 @@ func TestUIMessageReader_StaticErrorContinuation(t *testing.T) {
 				require.NotEmpty(t, snapshots)
 				for _, snapshot := range snapshots {
 					part := snapshot.Parts[0].(ToolInvocationPart)
-					assert.JSONEq(t, string(raw), string(part.RawInput))
+					if seeded {
+						assert.JSONEq(t, string(raw), string(part.RawInput))
+					} else {
+						assert.JSONEq(t, string(raw), string(part.Input))
+						assert.Nil(t, part.RawInput)
+					}
 				}
 				message, err := AssembleUIMessage(chunks(updates...), options...)
 				require.NoError(t, err)
 				part := message.Parts[0].(ToolInvocationPart)
-				assert.JSONEq(t, string(raw), string(part.RawInput))
-				assert.Nil(t, part.Input)
+				if seeded {
+					assert.JSONEq(t, string(raw), string(part.RawInput))
+					assert.Nil(t, part.Input)
+				} else {
+					assert.JSONEq(t, string(raw), string(part.Input))
+					assert.Nil(t, part.RawInput)
+				}
 				models, err := ConvertToModelMessages([]UIMessage{message})
 				require.NoError(t, err)
-				assert.JSONEq(t, string(raw), string(models[0].Content[0].Input))
+				if !seeded && isJSONNull(raw) {
+					assert.Nil(t, models[0].Content[0].Input)
+				} else {
+					assert.JSONEq(t, string(raw), string(models[0].Content[0].Input))
+				}
 			})
 		}
 	}
@@ -209,7 +223,8 @@ func TestUIMessageReader_ToolSnapshotIsolation(t *testing.T) {
 			if dynamic {
 				part = DynamicToolUIPart(fields)
 			}
-			state := newUIMessageReaderState(buildUIMessageReaderConfig([]UIMessageReaderOption{WithUIMessageReaderInitialMessage(UIMessage{ID: "m", Role: RoleAssistant, Parts: []Part{part}})}))
+			state, err := newUIMessageReaderState(buildUIMessageReaderConfig([]UIMessageReaderOption{WithUIMessageReaderInitialMessage(UIMessage{ID: "m", Role: RoleAssistant, Parts: []Part{part}})}))
+			require.NoError(t, err)
 			first := state.snapshot()
 			before, err := json.Marshal(first)
 			require.NoError(t, err)
@@ -659,8 +674,8 @@ func TestStreamUIMessage_ToolInputErrorAndOutputDenied(t *testing.T) {
 	inputErr := requireToolInvocationPart(t, messages[0], 0)
 	assert.Equal(t, ToolStateOutputError, inputErr.State)
 	assert.Equal(t, new("bad input"), inputErr.ErrorText)
-	assert.Nil(t, inputErr.Input)
-	assert.JSONEq(t, `{"city":1}`, string(inputErr.RawInput))
+	assert.JSONEq(t, `{"city":1}`, string(inputErr.Input))
+	assert.Nil(t, inputErr.RawInput)
 
 	denied := requireToolInvocationPart(t, messages[2], 1)
 	assert.Equal(t, ToolStateOutputDenied, denied.State)
