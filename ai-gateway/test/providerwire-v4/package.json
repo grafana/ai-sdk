@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test:schema": "tsx --test schema.test.ts schema-definitions.test.ts request-goldens.test.ts byok-request.test.ts update-goldens.test.ts",
+    "test:schema": "tsx --test schema.test.ts schema-definitions.test.ts request-goldens.test.ts update-goldens.test.ts",
     "test:client": "tsx --test configured-discovery.test.ts client-consumption.test.ts developer-evidence-access.test.ts developer-evidence-bounds.test.ts runtime-integration.test.ts go-client-differential.test.ts go-client-request-mutations.test.ts",
     "test:contract": "pnpm run typecheck && pnpm run test:schema && pnpm run test:client",
     "test:command": "tsx --test gateway-command.test.ts",

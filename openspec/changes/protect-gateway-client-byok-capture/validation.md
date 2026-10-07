@@ -34,6 +34,11 @@ arbitrary-object normalization or recursive byte decoding. Unused high-level
 BYOK test-harness plumbing is deferred to the activation slice. Other stack
 branches were not changed or rebased.
 
+All seven new test files were subsequently consolidated into existing suites;
+test bodies remain byte-for-byte unchanged. Grafana/logger/Agent Observability
+race tests, vet, lint, parity, source integration and CI workflow tests passed
+after consolidation. No production code or other stack branches changed.
+
 Strict OpenSpec validation also passed with exact CLI version 1.14.0. Active
 changes still require archiving before merge.
 
