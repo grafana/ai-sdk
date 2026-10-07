@@ -91,7 +91,9 @@ the prompt to call the tool, and check the result for the tool call.
 
 Anthropic-specific options also cover effort, beta features, remote MCP servers,
 containers, task budgets, and tool streaming. Enable only options supported by
-the chosen model.
+the chosen model. Large-default-output unary calls need a context deadline or
+an explicit Anthropic request timeout; otherwise the underlying client may
+require streaming. See [Retry and timeout](../guides/retry-and-timeout.md).
 
 ## Avoid duplicate retry policy
 

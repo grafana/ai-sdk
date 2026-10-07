@@ -247,13 +247,16 @@ func decodeGenerate(body []byte) (*provider.GenerateResult, error) {
 			ToolCallID       *string                      `json:"toolCallId"`
 			ToolName         *string                      `json:"toolName"`
 			Input            *string                      `json:"input"`
+			Result           json.RawMessage              `json:"result"`
+			IsError          bool                         `json:"isError"`
 			ProviderExecuted bool                         `json:"providerExecuted"`
-			Dynamic          bool                         `json:"dynamic"`
+			Dynamic          *bool                        `json:"dynamic"`
+			Preliminary      *bool                        `json:"preliminary"`
 			MediaType        *string                      `json:"mediaType"`
 			Data             json.RawMessage              `json:"data"`
 			Metadata         json.RawMessage              `json:"providerMetadata"`
 		}
-		if decodeFields(raw, &part, "type", "text", "toolCallId", "toolName", "input", "providerExecuted", "dynamic", "mediaType", "data", "providerMetadata") != nil || part.ProviderExecuted || part.Dynamic {
+		if decodeFields(raw, &part, "type", "providerMetadata") != nil {
 			return nil, errors.New("grafana: invalid unary content")
 		}
 		metadata, err := decodeProviderMetadata(part.Metadata)
@@ -264,11 +267,14 @@ func decodeGenerate(body []byte) (*provider.GenerateResult, error) {
 		case provider.ContentReasoning, provider.ContentReasoningFile:
 			mapped := provider.GenerateContentPart{Type: part.Type, ProviderMetadata: metadata}
 			if part.Type == provider.ContentReasoning {
-				if part.Text == nil {
+				if decodeFields(raw, &part, "text") != nil || part.Text == nil {
 					return nil, errors.New("grafana: missing reasoning text")
 				}
 				mapped.Text = *part.Text
 			} else {
+				if decodeFields(raw, &part, "data", "mediaType") != nil {
+					return nil, errors.New("grafana: invalid reasoning file")
+				}
 				data, err := decodeReasoningFile(part.Data)
 				if err != nil || part.MediaType == nil {
 					return nil, errors.New("grafana: invalid reasoning file")
@@ -287,15 +293,33 @@ func decodeGenerate(body []byte) (*provider.GenerateResult, error) {
 			}
 			content = append(content, provider.GenerateContentPart{Type: provider.ContentSource, SourceType: source.SourceType, ID: source.ID, URL: source.URL, Title: source.Title, Text: source.Title, MediaType: source.MediaType, Filename: source.Filename, ProviderMetadata: source.ProviderMetadata})
 		case provider.ContentText:
-			if part.Text == nil {
+			if decodeFields(raw, &part, "text") != nil || part.Text == nil {
 				return nil, errors.New("grafana: missing unary text")
 			}
 			content = append(content, provider.GenerateContentPart{Type: provider.ContentText, Text: *part.Text, ProviderMetadata: metadata})
-		case provider.ContentToolCall:
-			if part.ToolCallID == nil || *part.ToolCallID == "" || part.ToolName == nil || *part.ToolName == "" || part.Input == nil {
-				return nil, errors.New("grafana: invalid unary tool call")
+		case provider.ContentToolCall, provider.ContentToolResult:
+			fields := []string{"toolCallId", "toolName", "dynamic"}
+			if part.Type == provider.ContentToolCall {
+				fields = append(fields, "input", "providerExecuted")
+			} else {
+				fields = append(fields, "result", "isError", "preliminary")
 			}
-			content = append(content, provider.GenerateContentPart{Type: provider.ContentToolCall, ToolCallID: *part.ToolCallID, ToolName: *part.ToolName, Input: json.RawMessage(*part.Input), ProviderMetadata: metadata})
+			if decodeFields(raw, &part, fields...) != nil || part.ToolCallID == nil || *part.ToolCallID == "" || part.ToolName == nil || *part.ToolName == "" {
+				return nil, errors.New("grafana: invalid unary tool content")
+			}
+			mapped := provider.GenerateContentPart{Type: part.Type, ToolCallID: *part.ToolCallID, ToolName: *part.ToolName, ProviderExecuted: part.ProviderExecuted, Dynamic: part.Dynamic, Preliminary: part.Preliminary, ProviderMetadata: metadata}
+			if part.Type == provider.ContentToolCall {
+				if part.Input == nil {
+					return nil, errors.New("grafana: invalid unary tool call")
+				}
+				mapped.Input = json.RawMessage(*part.Input)
+			} else {
+				if len(part.Result) == 0 || string(bytes.TrimSpace(part.Result)) == "null" {
+					return nil, errors.New("grafana: invalid unary tool result")
+				}
+				mapped.Result, mapped.IsError = part.Result, part.IsError
+			}
+			content = append(content, mapped)
 		default:
 			return nil, errors.New("grafana: unsupported unary content")
 		}

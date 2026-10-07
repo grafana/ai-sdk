@@ -330,7 +330,7 @@ func TestBuildParams_MixedFunctionAndWebTools(t *testing.T) {
 		InputExamples:   []provider.InputExample{{Input: json.RawMessage(`{"query":"Go"}`)}},
 		ProviderOptions: provider.BuildProviderOptions(AnthropicToolOptions{DeferLoading: &deferLoading}),
 	}
-	server := provider.Tool{Type: provider.ToolTypeProvider, ID: "anthropic.web_fetch_20260318", Name: "fetch_latest", Args: map[string]json.RawMessage{"useCache": json.RawMessage(`false`)}, Strict: &strict, InputExamples: function.InputExamples, ProviderOptions: function.ProviderOptions}
+	server := provider.Tool{Type: provider.ToolTypeProvider, ID: "anthropic.web_fetch_20260318", Name: "fetch_latest", Args: map[string]json.RawMessage{"useCache": json.RawMessage(`false`)}}
 	for _, tc := range []struct {
 		name, modelID string
 		caps          providerCapabilities
@@ -2870,6 +2870,45 @@ func TestConvertTools_FunctionToolProducesOfTool(t *testing.T) {
 }
 
 func TestBuildParams_ProviderOptions_MCPServers(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		server string
+		want   string
+	}{
+		{name: "minimal", server: `{"type":"url","name":"echo","url":"https://mcp.example.com"}`, want: `{"type":"url","name":"echo","url":"https://mcp.example.com"}`},
+		{name: "allowed tools only", server: `{"type":"url","name":"echo","url":"https://mcp.example.com","toolConfiguration":{"allowedTools":[]}}`, want: `{"type":"url","name":"echo","url":"https://mcp.example.com","tool_configuration":{"allowed_tools":[]}}`},
+		{name: "explicit disabled", server: `{"type":"url","name":"echo","url":"https://mcp.example.com","toolConfiguration":{"enabled":false}}`, want: `{"type":"url","name":"echo","url":"https://mcp.example.com","tool_configuration":{"enabled":false}}`},
+		{name: "explicit empty token", server: `{"type":"url","name":"echo","url":"https://mcp.example.com","authorizationToken":""}`, want: `{"type":"url","name":"echo","url":"https://mcp.example.com","authorization_token":""}`},
+	} {
+		t.Run(tc.name+" native request", func(t *testing.T) {
+			options := provider.CallOptions{ProviderOptions: provider.ProviderOptions{"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(`{"mcpServers":[` + tc.server + `]}`)}}}
+			params, _, _, _, err := buildParams("claude-sonnet-4-6", options, false)
+			require.NoError(t, err)
+			encoded, err := json.Marshal(params)
+			require.NoError(t, err)
+			var request map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal(encoded, &request))
+			assert.JSONEq(t, `[`+tc.want+`]`, string(request["mcp_servers"]))
+		})
+	}
+
+	t.Run("code execution and MCP together", func(t *testing.T) {
+		options := provider.CallOptions{
+			Prompt:          []provider.Message{provider.UserText("Use tools")},
+			Tools:           []provider.Tool{{Type: provider.ToolTypeProvider, ID: "anthropic.code_execution_20260120", Name: "python", Args: map[string]json.RawMessage{}}},
+			ProviderOptions: provider.ProviderOptions{"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(`{"mcpServers":[{"type":"url","name":"echo","url":"https://mcp.example.test/tools","authorizationToken":"mcp-private-token","toolConfiguration":{"enabled":false,"allowedTools":[]}}]}`)}},
+		}
+		params, _, warnings, _, err := buildParams("claude-sonnet-4-6", options, false)
+		require.NoError(t, err)
+		assert.Empty(t, warnings)
+		encoded, err := json.Marshal(params)
+		require.NoError(t, err)
+		var body map[string]json.RawMessage
+		require.NoError(t, json.Unmarshal(encoded, &body))
+		assert.JSONEq(t, `[{"type":"code_execution_20260120","name":"code_execution"}]`, string(body["tools"]))
+		assert.JSONEq(t, `[{"type":"url","name":"echo","url":"https://mcp.example.test/tools","authorization_token":"mcp-private-token","tool_configuration":{"enabled":false,"allowed_tools":[]}}]`, string(body["mcp_servers"]))
+	})
+
 	t.Run("single_server_all_fields", func(t *testing.T) {
 		opts := provider.CallOptions{
 			ProviderOptions: provider.ProviderOptions{
@@ -2978,6 +3017,28 @@ func TestBuildParams_ProviderOptions_MCPServers(t *testing.T) {
 	})
 }
 
+func TestBuildParams_MCPMarkerRequiresProviderOwnership(t *testing.T) {
+	for _, owned := range []bool{false, true} {
+		t.Run(map[bool]string{false: "local", true: "provider"}[owned], func(t *testing.T) {
+			call := provider.ToolCallPart("call", "echo", json.RawMessage(`{}`))
+			call.ProviderExecuted = owned
+			call.ProviderOptions = makeProviderOpts(`{"type":"mcp-tool-use","serverName":"echo"}`)
+			params, _, _, _, err := buildParams("claude-sonnet-4-6", provider.CallOptions{Prompt: []provider.Message{provider.NewAssistantMessage(call)}}, false)
+			require.NoError(t, err)
+			require.Len(t, params.Messages, 1)
+			require.Len(t, params.Messages[0].Content, 1)
+			block := params.Messages[0].Content[0]
+			if owned {
+				require.NotNil(t, block.OfMCPToolUse)
+				assert.Equal(t, "echo", block.OfMCPToolUse.ServerName)
+			} else {
+				require.NotNil(t, block.OfToolUse)
+				assert.Nil(t, block.OfMCPToolUse)
+			}
+		})
+	}
+}
+
 func TestBuildParams_MCPToolCallRoundTrip(t *testing.T) {
 	t.Run("mcp_tool_call_in_assistant_message", func(t *testing.T) {
 		mcpOpts := makeProviderOpts(`{"type": "mcp-tool-use", "serverName": "my-server"}`)
@@ -2985,10 +3046,11 @@ func TestBuildParams_MCPToolCallRoundTrip(t *testing.T) {
 			Prompt: []provider.Message{
 				provider.NewAssistantMessage(
 					provider.ContentPart{Type: provider.ContentPartTypeToolCall,
-						ToolCallID:      "tc_1",
-						ToolName:        "remote_search",
-						Input:           json.RawMessage(`{"q":"hello"}`),
-						ProviderOptions: mcpOpts,
+						ToolCallID:       "tc_1",
+						ToolName:         "remote_search",
+						Input:            json.RawMessage(`{"q":"hello"}`),
+						ProviderOptions:  mcpOpts,
+						ProviderExecuted: true,
 					},
 				),
 			},
@@ -3013,10 +3075,11 @@ func TestBuildParams_MCPToolCallRoundTrip(t *testing.T) {
 			Prompt: []provider.Message{
 				provider.NewAssistantMessage(
 					provider.ContentPart{Type: provider.ContentPartTypeToolCall,
-						ToolCallID:      "tc_1",
-						ToolName:        "remote_search",
-						Input:           json.RawMessage(`{"q":"hello"}`),
-						ProviderOptions: mcpOpts,
+						ToolCallID:       "tc_1",
+						ToolName:         "remote_search",
+						Input:            json.RawMessage(`{"q":"hello"}`),
+						ProviderOptions:  mcpOpts,
+						ProviderExecuted: true,
 					},
 				),
 			},
@@ -3036,10 +3099,11 @@ func TestBuildParams_MCPToolCallRoundTrip(t *testing.T) {
 			Prompt: []provider.Message{
 				provider.NewAssistantMessage(
 					provider.ContentPart{Type: provider.ContentPartTypeToolCall,
-						ToolCallID:      "tc_1",
-						ToolName:        "remote_search",
-						Input:           json.RawMessage(`{"q":"hello"}`),
-						ProviderOptions: mcpOpts,
+						ToolCallID:       "tc_1",
+						ToolName:         "remote_search",
+						Input:            json.RawMessage(`{"q":"hello"}`),
+						ProviderOptions:  mcpOpts,
+						ProviderExecuted: true,
 					},
 				),
 				provider.NewToolMessage(provider.ToolResultPart("tc_1", "remote_search", &provider.ToolResultOutput{Type: provider.ToolOutputJSON, JSON: json.RawMessage(`"result data"`)})),
@@ -3056,6 +3120,33 @@ func TestBuildParams_MCPToolCallRoundTrip(t *testing.T) {
 		require.NotNil(t, block.OfMCPToolResult, "expected OfMCPToolResult block")
 		assert.Nil(t, block.OfToolResult, "should NOT emit OfToolResult for MCP")
 		assert.Equal(t, "tc_1", block.OfMCPToolResult.ToolUseID)
+	})
+
+	t.Run("assistant inline MCP continuation with configured server", func(t *testing.T) {
+		mcpOpts := makeProviderOpts(`{"type":"mcp-tool-use","serverName":"echo"}`)
+		call := provider.ContentPart{
+			Type: provider.ContentPartTypeToolCall, ToolCallID: "tc_1", ToolName: "echo",
+			Input: json.RawMessage(`{"message":"hello"}`), ProviderExecuted: true,
+			ProviderOptions: mcpOpts,
+		}
+		result := provider.ToolResultPart("tc_1", "echo", &provider.ToolResultOutput{Type: provider.ToolOutputJSON, JSON: json.RawMessage(`"hello"`)})
+		result.ProviderOptions = mcpOpts
+		for _, stream := range []bool{false, true} {
+			p, _, warnings, _, err := buildParams("claude-sonnet-4-6", provider.CallOptions{
+				Prompt:          []provider.Message{provider.NewAssistantMessage(call, result)},
+				ProviderOptions: provider.ProviderOptions{"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(`{"mcpServers":[{"type":"url","name":"echo","url":"https://mcp.example.test/tools","authorizationToken":"dummy"}]}`)}},
+			}, stream)
+			require.NoError(t, err)
+			assert.Empty(t, warnings)
+			require.Len(t, p.MCPServers, 1)
+			assert.Equal(t, "echo", p.MCPServers[0].Name)
+			assert.Equal(t, "https://mcp.example.test/tools", p.MCPServers[0].URL)
+			assert.Equal(t, "dummy", p.MCPServers[0].AuthorizationToken.Value)
+			require.Len(t, p.Messages, 1)
+			require.Len(t, p.Messages[0].Content, 2)
+			assert.Equal(t, "echo", p.Messages[0].Content[0].OfMCPToolUse.ServerName)
+			assert.Equal(t, "tc_1", p.Messages[0].Content[1].OfMCPToolResult.ToolUseID)
+		}
 	})
 
 	t.Run("regular_tools_unaffected", func(t *testing.T) {
@@ -3087,10 +3178,11 @@ func TestBuildParams_MCPToolCallRoundTrip(t *testing.T) {
 				provider.NewAssistantMessage(
 					provider.ToolCallPart("call_1", "local_search", json.RawMessage(`{}`)),
 					provider.ContentPart{Type: provider.ContentPartTypeToolCall,
-						ToolCallID:      "tc_1",
-						ToolName:        "remote_tool",
-						Input:           json.RawMessage(`{}`),
-						ProviderOptions: mcpOpts,
+						ToolCallID:       "tc_1",
+						ToolName:         "remote_tool",
+						Input:            json.RawMessage(`{}`),
+						ProviderOptions:  mcpOpts,
+						ProviderExecuted: true,
 					},
 				),
 				provider.NewToolMessage(
@@ -5623,11 +5715,12 @@ func TestBuildParams_MCPToolResultInUserMessage(t *testing.T) {
 	opts := provider.CallOptions{
 		Prompt: []provider.Message{
 			provider.NewAssistantMessage(provider.ContentPart{
-				Type:            provider.ContentPartTypeToolCall,
-				ToolCallID:      "mcp-1",
-				ToolName:        "echo",
-				Input:           json.RawMessage(`{}`),
-				ProviderOptions: mcpOpts,
+				Type:             provider.ContentPartTypeToolCall,
+				ToolCallID:       "mcp-1",
+				ToolName:         "echo",
+				Input:            json.RawMessage(`{}`),
+				ProviderOptions:  mcpOpts,
+				ProviderExecuted: true,
 			}),
 			provider.NewUserMessage(
 				provider.ToolResultPart("mcp-1", "echo", &provider.ToolResultOutput{Type: provider.ToolOutputJSON, JSON: json.RawMessage(`"out"`)}),
@@ -5864,8 +5957,7 @@ func TestConvertResponse_CodeExecutionDynamic(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, result.Content, 1)
 		part := result.Content[0]
-		require.NotNil(t, part.Dynamic, "Dynamic must be set when markCodeExecutionDynamic=true")
-		assert.True(t, *part.Dynamic)
+		assert.Equal(t, boolPtr(true), part.Dynamic)
 		assert.True(t, part.ProviderExecuted)
 	})
 
@@ -5887,8 +5979,7 @@ func TestConvertResponse_CodeExecutionDynamic(t *testing.T) {
 		result, err := convertResponse(bash, toolNameMapping{}, false, nil, defaultGenerateID, "anthropic", true)
 		require.NoError(t, err)
 		require.Len(t, result.Content, 1)
-		require.NotNil(t, result.Content[0].Dynamic)
-		assert.True(t, *result.Content[0].Dynamic)
+		assert.Equal(t, boolPtr(true), result.Content[0].Dynamic)
 	})
 
 	t.Run("does not mark non-code_execution server tool", func(t *testing.T) {
