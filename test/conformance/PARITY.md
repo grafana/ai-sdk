@@ -119,8 +119,9 @@ evidence boundary changes, not merely because the pinned versions change.
   Command catalogs are static; dummy CAP-edge/scoped tests do not establish
   customer-account construction, deployed authorization or BYOK tenant isolation.
   Focused BYOK engine tests reuse the configured Anthropic consumption guard and
-  prove zero native calls for MCP servers/history, skills and server-side fallback,
-  with ordinary-option controls. The command does not yet activate this engine.
+  prove zero native calls for invalid consumed MCP configuration/history, skills
+  and server-side fallback. Valid MCP configuration/history, inert local markers
+  and ordinary options remain accepted. The command does not yet activate this engine.
   Client reads default to 4 MiB independently of server configuration.
 - Gateway privacy assertions cover configured-secret structures, safe errors
   and metadata-only canonical operator logs/metrics/exports without censoring

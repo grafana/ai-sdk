@@ -32,7 +32,8 @@ service observers, process modes or listener exposure in this PR.
   wrapper or a credential-specific retry algorithm. Preserve native content,
   options and continuation. Share the existing native-option validator/wrapper
   between configured construction and BYOK. Anthropic BYOK validation wraps the
-  logical fallback once, refusing MCP, skills and native fallback before attempts.
+  logical fallback once, preserving bounded MCP configuration/history validation
+  from main while refusing skills and native fallback before attempts.
 
 ## Risks / Trade-offs
 

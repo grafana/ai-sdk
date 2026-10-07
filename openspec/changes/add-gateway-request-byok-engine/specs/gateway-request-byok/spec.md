@@ -75,17 +75,23 @@ No key-bearing model, credential collection, raw request or request observer SHA
 
 ### Requirement: Shared native execution protections
 Configured and BYOK construction SHALL share the existing consumption-backed
-native-option checks. Anthropic BYOK invocation SHALL refuse MCP servers, container
-skills, native server-side fallback and MCP tool-use history before credential
-attempts in both unary and streaming modes. These checks SHALL NOT introduce a
+native-option checks. Anthropic BYOK invocation SHALL validate consumed MCP
+configuration and provider-owned history under gateway-anthropic-mcp, and refuse
+container skills and native server-side fallback before credential attempts in
+both unary and streaming modes. Valid MCP configuration/history and inert local
+markers SHALL retain their native semantics. These checks SHALL NOT introduce a
 provider-field inventory or change the native SDK adapters.
 
 #### Scenario: Native execution control is rejected
-- **WHEN** an Anthropic BYOK call supplies a consumed MCP, skill or server-side fallback control
+- **WHEN** an Anthropic BYOK call supplies invalid consumed MCP configuration/history, container skills or native server-side fallback
 - **THEN** the call SHALL return the existing unsupported-request error without native I/O or credential fallback
 
+#### Scenario: Valid MCP configuration and history
+- **WHEN** an Anthropic BYOK call supplies valid MCP configuration and matching provider-owned history
+- **THEN** the native request SHALL preserve them without changing the inference endpoint, model or credential
+
 #### Scenario: Harmless options are preserved
-- **WHEN** native options contain an ordinary container ID or protected-looking fields in non-consuming namespaces
+- **WHEN** native options contain an ordinary container ID, inert local MCP markers or protected-looking fields in non-consuming namespaces
 - **THEN** the adapter SHALL receive ordinary options without changing the selected model, account or destination
 
 ### Requirement: Ordered credentials reuse default fallback

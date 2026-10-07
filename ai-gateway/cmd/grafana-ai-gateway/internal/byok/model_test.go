@@ -310,17 +310,22 @@ func TestNew_DoesNotFollowNativeRedirects(t *testing.T) {
 }
 
 func TestNew_AnthropicNativeOptionGuards(t *testing.T) {
+	const mcpOptions = `{"anthropic":{"mcpServers":[{"name":"external","url":"https://example.invalid"}]}}`
 	for _, streaming := range []bool{false, true} {
 		for _, tc := range []struct {
-			name, options string
-			mcpHistory    bool
-			allowed       bool
+			name, options, nativeField string
+			mcpHistory                 bool
+			providerExecuted           bool
+			allowed                    bool
 		}{
-			{name: "MCP servers", options: `{"anthropic":{"mcpServers":[{"name":"external","url":"https://example.invalid"}]}}`},
+			{name: "MCP servers", options: mcpOptions, nativeField: "mcp_servers", allowed: true},
+			{name: "invalid MCP destination", options: `{"anthropic":{"mcpServers":[{"name":"external","url":"http://example.invalid"}]}}`},
 			{name: "container skills", options: `{"anthropic":{"container":{"skills":[{"type":"custom","skillId":"external"}]}}}`},
 			{name: "native fallback", options: `{"anthropic":{"fallbacks":"default"}}`},
-			{name: "MCP history", options: `{}`, mcpHistory: true},
-			{name: "ordinary fields and namespaces", options: `{"anthropic":{"model":"ignored","mcp_servers":[],"container":{"id":"supplied-container"}},"other":{"mcpServers":[{"name":"ordinary"}]}}`, allowed: true},
+			{name: "unconfigured MCP history", options: `{}`, mcpHistory: true, providerExecuted: true},
+			{name: "configured MCP history", options: mcpOptions, mcpHistory: true, providerExecuted: true, nativeField: "mcp_tool_use", allowed: true},
+			{name: "local MCP marker", options: `{}`, mcpHistory: true, nativeField: "tool_use", allowed: true},
+			{name: "ordinary fields and namespaces", options: `{"anthropic":{"model":"ignored","mcp_servers":[],"container":{"id":"supplied-container"}},"other":{"mcpServers":[{"name":"ordinary"}]}}`, nativeField: "supplied-container", allowed: true},
 		} {
 			t.Run(fmt.Sprintf("%s/stream=%t", tc.name, streaming), func(t *testing.T) {
 				calls := 0
@@ -332,7 +337,7 @@ func TestNew_AnthropicNativeOptionGuards(t *testing.T) {
 					require.NoError(t, err)
 					assert.NotContains(t, string(body), "dummy-")
 					if tc.allowed {
-						assert.Contains(t, string(body), "supplied-container")
+						assert.Contains(t, string(body), tc.nativeField)
 						assert.NotContains(t, string(body), "ignored")
 						assert.Contains(t, string(body), "native-model")
 					}
@@ -344,7 +349,8 @@ func TestNew_AnthropicNativeOptionGuards(t *testing.T) {
 				require.NoError(t, json.Unmarshal([]byte(tc.options), &opts.ProviderOptions))
 				if tc.mcpHistory {
 					part := provider.ToolCallPart("call", "lookup", json.RawMessage(`{}`))
-					part.ProviderOptions = provider.ProviderOptions{"anthropic": provider.RawProviderOption{Raw: json.RawMessage(`{"type":"mcp-tool-use"}`)}}
+					part.ProviderExecuted = tc.providerExecuted
+					part.ProviderOptions = provider.ProviderOptions{"anthropic": provider.RawProviderOption{Raw: json.RawMessage(`{"type":"mcp-tool-use","serverName":"external"}`)}}
 					opts.Prompt = append(opts.Prompt, provider.NewAssistantMessage(part))
 				}
 				if streaming {
