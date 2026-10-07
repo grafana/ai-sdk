@@ -40,7 +40,7 @@ func Run(ctx context.Context, args []string, lookupEnv config.LookupEnv, listen 
 		return err
 	}
 	jwksURL := ""
-	if settings.AuthMode == config.AuthModeAccessToken && !settings.AuthUnsafe {
+	if !settings.AuthUnsafe {
 		parsed, err := outbound.ValidateEndpoint(settings.JWKSURL, settings.DeploymentMode)
 		if err != nil {
 			return fmt.Errorf("gateway process: validating JWKS endpoint: %w", err)
@@ -73,39 +73,28 @@ func Run(ctx context.Context, args []string, lookupEnv config.LookupEnv, listen 
 
 	processContext, cancelProcess := context.WithCancel(context.WithoutCancel(ctx))
 	defer cancelProcess()
-	var authenticator gatewayauth.RequestAuthenticator
-	switch settings.AuthMode {
-	case config.AuthModeCloudGateway:
-		authenticator = gatewayauth.NewCloudProviderWireAuthenticator()
-	case config.AuthModeAccessToken:
-		var verifier authn.Authenticator
-		if settings.AuthUnsafe {
-			verifier, err = gatewayauth.NewUnsafeAuthenticator(settings.Audiences, func(message string) {
-				logger.Warn(message)
-			})
-		} else {
-			jwksClient, clientErr := outbound.NewJWKSClient(settings.JWKSRequestTimeout, settings.JWKSResponseBytes)
-			if clientErr != nil {
-				return clientErr
-			}
-			var keys *gatewayauth.JWKS
-			keys, err = gatewayauth.NewJWKS(processContext, jwksClient, time.Now, gatewayauth.JWKSConfig{
-				URL:             jwksURL,
-				RequestTimeout:  settings.JWKSRequestTimeout,
-				MaxKeys:         settings.JWKSMaxKeys,
-				RefreshInterval: settings.JWKSRefreshInterval,
-				MaxAge:          settings.JWKSMaxAge,
-			})
-			if err != nil {
-				return err
-			}
-			verifier, err = gatewayauth.NewAuthenticator(keys, settings.Audiences)
+	var verifier authn.Authenticator
+	if settings.AuthUnsafe {
+		verifier, err = gatewayauth.NewUnsafeAuthenticator(settings.Audiences, func(message string) { logger.Warn(message) })
+	} else {
+		jwksClient, clientErr := outbound.NewJWKSClient(settings.JWKSRequestTimeout, settings.JWKSResponseBytes)
+		if clientErr != nil {
+			return clientErr
 		}
-		authenticator = gatewayauth.NewAccessTokenAuthenticator(verifier)
+		var keys *gatewayauth.JWKS
+		keys, err = gatewayauth.NewJWKS(processContext, jwksClient, time.Now, gatewayauth.JWKSConfig{
+			URL: jwksURL, RequestTimeout: settings.JWKSRequestTimeout, MaxKeys: settings.JWKSMaxKeys,
+			RefreshInterval: settings.JWKSRefreshInterval, MaxAge: settings.JWKSMaxAge,
+		})
+		if err != nil {
+			return err
+		}
+		verifier, err = gatewayauth.NewAuthenticator(keys, settings.Audiences)
 	}
 	if err != nil {
 		return err
 	}
+	authenticator := gatewayauth.NewAccessTokenAuthenticator(verifier)
 	telemetry, err := service.NewTelemetry(logger, service.TelemetryOptions{
 		Region:      settings.ObservationRegion,
 		Application: settings.ObservationApplication,
@@ -117,7 +106,7 @@ func Run(ctx context.Context, args []string, lookupEnv config.LookupEnv, listen 
 	if err != nil {
 		return err
 	}
-	modelFactory, err := service.NewModelObservabilityFactory(telemetry, logger, agentRuntime, settings.ProviderWire.StreamDrainDuration)
+	modelFactory, byokFactory, err := service.NewModelObservabilityFactories(telemetry, logger, agentRuntime, settings.ProviderWire.StreamDrainDuration)
 	if err != nil {
 		agentRuntime.Close()
 		return err
@@ -130,8 +119,13 @@ func Run(ctx context.Context, args []string, lookupEnv config.LookupEnv, listen 
 		return err
 	}
 	errorWriter := providerv4.NewHostErrorWriter()
-	discoveryHandler := discovery.New(modelCatalog, errorWriter)
-	languageHandler, err := providerv4.New(providerv4.Config{Selector: providerv4.CatalogSelector(modelCatalog), Limits: settings.ProviderWire})
+	discoveryHandler := service.ConfiguredDiscovery(discovery.New(modelCatalog, errorWriter), errorWriter)
+	languageHandler, err := providerv4.New(providerv4.Config{Selector: service.NewConfiguredSelector(modelCatalog), Limits: settings.ProviderWire})
+	if err != nil {
+		agentRuntime.Close()
+		return err
+	}
+	byokHandler, err := providerv4.New(providerv4.Config{Selector: service.NewBYOKSelector(anthropicClient, byokFactory), Limits: settings.ProviderWire})
 	if err != nil {
 		agentRuntime.Close()
 		return err
@@ -141,19 +135,18 @@ func Run(ctx context.Context, args []string, lookupEnv config.LookupEnv, listen 
 		Readiness:     readiness,
 		Telemetry:     telemetry,
 		Authenticator: authenticator,
-		AuthSource:    gatewayauth.Source(settings.AuthMode),
+		AuthSource:    gatewayauth.SourceAccessToken,
 		ErrorWriter:   errorWriter,
 		Discovery:     discoveryHandler,
 		LanguageModel: languageHandler,
 	}
-	var handlers []http.Handler
-	addresses := []string{settings.ListenAddress}
-	if settings.OperationalListenAddress != "" {
-		handlers = []http.Handler{service.NewAPIRouter(deps), service.NewOperationalRouter(deps)}
-		addresses = append(addresses, settings.OperationalListenAddress)
-	} else {
-		handlers = []http.Handler{service.NewRouter(deps)}
-	}
+	cloudDeps := deps
+	cloudDeps.Authenticator = gatewayauth.NewCloudProviderWireAuthenticator()
+	cloudDeps.AuthSource = gatewayauth.SourceCloudGateway
+	cloudDeps.Discovery = service.BYOKDiscovery(errorWriter)
+	cloudDeps.LanguageModel = byokHandler
+	handlers := []http.Handler{service.NewAPIRouter(deps), service.NewAPIRouter(cloudDeps), service.NewOperationalRouter(deps)}
+	addresses := []string{settings.PrivateListenAddress, settings.CloudListenAddress, settings.OperationalListenAddress}
 	var servers []boundServer
 	for i, address := range addresses {
 		listener, err := listen("tcp", address)

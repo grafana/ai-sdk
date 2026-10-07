@@ -61,8 +61,8 @@ func TestRun_ValidatesScalarsAndEndpointsBeforeSecretsOrListener(t *testing.T) {
 	}{
 		{name: "scalar failure", args: []string{"--server.write-timeout=1s"}, message: "write timeout"},
 		{name: "unknown auth mode", args: []string{"--auth.mode=invalid"}, message: "auth"},
-		{name: "cloud with JWKS", args: []string{"--auth.mode=cloud-gateway"}, message: "jwks"},
-		{name: "cloud with unsafe", args: []string{"--auth.mode=cloud-gateway", "--auth.unsafe", "--auth.jwks-url="}, message: "unsafe"},
+		{name: "removed cloud mode", args: []string{"--auth.mode=cloud-gateway"}, message: "unknown long flag"},
+		{name: "JWT trust required", args: []string{"--auth.jwks-url="}, message: "jwks"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			secretCalls := 0
@@ -132,7 +132,7 @@ func TestRun_ValidatesScalarsAndEndpointsBeforeSecretsOrListener(t *testing.T) {
 		listenCalls := 0
 		err := Run(
 			context.Background(),
-			[]string{"--server.listen-address=not-a-tcp-address"},
+			[]string{"--server.private-listen-address=not-a-tcp-address"},
 			func(name string) (string, bool) {
 				if name == "ANTHROPIC_SECRET" {
 					secretCalls++
@@ -192,7 +192,7 @@ func TestRun_ValidatesScalarsAndEndpointsBeforeSecretsOrListener(t *testing.T) {
 		listenCalls := 0
 		err := Run(
 			context.Background(),
-			[]string{"--deployment.mode=development", "--auth.unsafe", "--server.listen-address=127.0.0.1:0"},
+			[]string{"--deployment.mode=development", "--auth.unsafe", "--server.private-listen-address=127.0.0.1:0", "--server.cloud-listen-address=127.0.0.1:0", "--server.operational-listen-address=127.0.0.1:0"},
 			func(name string) (string, bool) {
 				if name == "ANTHROPIC_SECRET" {
 					secretCalls++
@@ -224,7 +224,7 @@ func TestRun_ResolvesAgentCredentialOnceBeforeListener(t *testing.T) {
 		[]string{
 			"--deployment.mode=development",
 			"--auth.unsafe",
-			"--server.listen-address=127.0.0.1:0",
+			"--server.private-listen-address=127.0.0.1:0", "--server.cloud-listen-address=127.0.0.1:0", "--server.operational-listen-address=127.0.0.1:0",
 			"--agento11y.enabled",
 			"--agento11y.protocol=grpc",
 			"--agento11y.endpoint=127.0.0.1:1",
@@ -277,7 +277,7 @@ func TestRun_HTTPAgentObservabilityConfigurationReachesListener(t *testing.T) {
 		[]string{
 			"--deployment.mode=development",
 			"--auth.unsafe",
-			"--server.listen-address=127.0.0.1:0",
+			"--server.private-listen-address=127.0.0.1:0", "--server.cloud-listen-address=127.0.0.1:0", "--server.operational-listen-address=127.0.0.1:0",
 			"--agento11y.enabled",
 			"--agento11y.protocol=http",
 			"--agento11y.endpoint=" + collector.URL,
@@ -316,103 +316,87 @@ func TestRun_HTTPAgentObservabilityConfigurationReachesListener(t *testing.T) {
 }
 
 func TestRun_LocalReadinessDoesNotProbeProvider(t *testing.T) {
-	for _, tc := range []struct {
-		name     string
-		authArgs []string
-		split    bool
-	}{
-		{name: "internal unsafe", authArgs: []string{"--auth.unsafe"}},
-		{name: "internal split", split: true, authArgs: []string{"--auth.unsafe", "--server.operational-listen-address=127.0.0.1:0"}},
-		{name: "cloud without JWKS", split: true, authArgs: []string{"--server.operational-listen-address=127.0.0.1:0", "--auth.mode=cloud-gateway", "--auth.jwks-timeout=0s", "--auth.jwks-response-bytes=0", "--auth.jwks-max-keys=0", "--auth.jwks-max-age=0s", "--auth.jwks-refresh-interval=0s", "--server.write-timeout=155s"}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			var providerCalls atomic.Int64
-			providerServer := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
-				providerCalls.Add(1)
-			}))
-			defer providerServer.Close()
-			path := writeProcessConfig(t, providerServer.URL)
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-			addresses := make(chan string, 2)
-			result := make(chan error, 1)
-			var logs bytes.Buffer
-			logger := slog.New(slog.NewJSONHandler(&logs, nil))
-			go func() {
-				result <- Run(
-					ctx,
-					append([]string{"--deployment.mode=development", "--server.listen-address=127.0.0.1:0"}, tc.authArgs...),
-					func(name string) (string, bool) {
-						switch name {
-						case "GRAFANA_AI_GATEWAY_CONFIG_FILE":
-							return path, true
-						case "ANTHROPIC_SECRET":
-							return "secret-value", true
-						default:
-							return "", false
-						}
-					},
-					func(network, address string) (net.Listener, error) {
-						listener, err := net.Listen(network, address)
-						if err == nil {
-							addresses <- listener.Addr().String()
-						}
-						return listener, err
-					},
-					logger,
-				)
-			}()
-			var address string
-			select {
-			case address = <-addresses:
-			case err := <-result:
-				require.FailNow(t, "process exited before binding", "%v", err)
-			case <-time.After(2 * time.Second):
-				require.FailNow(t, "process did not bind")
+	var providerCalls atomic.Int64
+	providerServer := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { providerCalls.Add(1) }))
+	defer providerServer.Close()
+	path := writeProcessConfig(t, providerServer.URL)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	addresses := make(chan string, 3)
+	result := make(chan error, 1)
+	var logs bytes.Buffer
+	go func() {
+		result <- Run(ctx, []string{
+			"--deployment.mode=development", "--auth.unsafe",
+			"--server.private-listen-address=127.0.0.1:0", "--server.cloud-listen-address=127.0.0.1:0", "--server.operational-listen-address=127.0.0.1:0",
+		}, func(name string) (string, bool) {
+			switch name {
+			case "GRAFANA_AI_GATEWAY_CONFIG_FILE":
+				return path, true
+			case "ANTHROPIC_SECRET":
+				return "secret-value", true
+			default:
+				return "", false
 			}
-			operationalAddress := address
-			if tc.split {
-				select {
-				case operationalAddress = <-addresses:
-				case err := <-result:
-					require.FailNow(t, "process exited before operational bind", "%v", err)
-				case <-time.After(2 * time.Second):
-					require.FailNow(t, "operational listener did not bind")
-				}
+		}, func(network, address string) (net.Listener, error) {
+			listener, err := net.Listen(network, address)
+			if err == nil {
+				addresses <- listener.Addr().String()
 			}
-			require.Eventually(t, func() bool {
-				response, err := http.Get("http://" + operationalAddress + "/ready")
-				if err != nil {
-					return false
-				}
-				defer func() { _ = response.Body.Close() }()
-				return response.StatusCode == http.StatusOK
-			}, 2*time.Second, 10*time.Millisecond)
-			assert.Zero(t, providerCalls.Load())
-			if tc.split {
-				for _, url := range []string{"http://" + address + "/ready", "http://" + operationalAddress + "/api/v1/aisdk/config"} {
-					response, err := http.Get(url)
-					require.NoError(t, err)
-					_ = response.Body.Close()
-					assert.Equal(t, http.StatusNotFound, response.StatusCode)
-				}
+			return listener, err
+		}, slog.New(slog.NewJSONHandler(&logs, nil)))
+	}()
+	bound := make([]string, 0, 3)
+	for range 3 {
+		select {
+		case address := <-addresses:
+			bound = append(bound, address)
+		case err := <-result:
+			require.FailNow(t, "process exited before binding", "%v", err)
+		case <-time.After(2 * time.Second):
+			require.FailNow(t, "process did not bind all listeners")
+		}
+	}
+	require.Eventually(t, func() bool {
+		response, err := http.Get("http://" + bound[2] + "/ready")
+		if err != nil {
+			return false
+		}
+		defer func() { _ = response.Body.Close() }()
+		return response.StatusCode == http.StatusOK
+	}, 2*time.Second, 10*time.Millisecond)
+	for i, address := range bound {
+		for _, path := range []string{"/ready", "/api/v1/aisdk/config"} {
+			req, err := http.NewRequest(http.MethodGet, "http://"+address+path, nil)
+			require.NoError(t, err)
+			if i == 1 {
+				req.Header.Set("X-Scope-OrgID", "123")
 			}
-			if tc.name == "cloud without JWKS" {
-				request, err := http.NewRequest(http.MethodGet, "http://"+address+"/api/v1/aisdk/config", nil)
-				require.NoError(t, err)
-				request.Header.Set("X-Scope-OrgID", "123")
-				response, err := http.DefaultClient.Do(request)
-				require.NoError(t, err)
-				_ = response.Body.Close()
-				assert.Equal(t, http.StatusOK, response.StatusCode)
+			response, err := http.DefaultClient.Do(req)
+			require.NoError(t, err)
+			body, err := io.ReadAll(response.Body)
+			require.NoError(t, err)
+			_ = response.Body.Close()
+			want := http.StatusNotFound
+			if path == "/ready" && i == 2 {
+				want = http.StatusOK
 			}
-			cancel()
-			require.NoError(t, <-result)
-			assert.Equal(t, []string{processEventStarting, processEventReady, processEventShutdownStarted, processEventShutdownCompleted}, processLifecycleEvents(t, logs.String()))
-			for _, private := range []string{"secret-value", providerServer.URL, "backend-private", "ANTHROPIC_SECRET"} {
-				assert.NotContains(t, logs.String(), private)
+			if path != "/ready" && i == 0 {
+				want = http.StatusUnauthorized
 			}
-		})
+			if path != "/ready" && i == 1 {
+				want = http.StatusBadRequest
+				assert.Contains(t, string(body), "catalog discovery is unsupported for BYOK")
+			}
+			assert.Equal(t, want, response.StatusCode)
+		}
+	}
+	assert.Zero(t, providerCalls.Load())
+	cancel()
+	require.NoError(t, <-result)
+	assert.Equal(t, []string{processEventStarting, processEventReady, processEventShutdownStarted, processEventShutdownCompleted}, processLifecycleEvents(t, logs.String()))
+	for _, private := range []string{"secret-value", providerServer.URL, "backend-private", "ANTHROPIC_SECRET"} {
+		assert.NotContains(t, logs.String(), private)
 	}
 }
 
@@ -631,13 +615,13 @@ func processLifecycleEvents(t *testing.T, output string) []string {
 }
 
 func TestRun_BindFailures(t *testing.T) {
-	for _, failAt := range []int{1, 2} {
+	for _, failAt := range []int{1, 2, 3} {
 		t.Run(fmt.Sprintf("listener %d", failAt), func(t *testing.T) {
 			path := writeProcessConfig(t, "https://provider.example")
 			var listeners []net.Listener
 			calls := 0
 			var logs bytes.Buffer
-			err := Run(context.Background(), []string{"--config.file=" + path, "--deployment.mode=development", "--auth.mode=cloud-gateway", "--server.listen-address=127.0.0.1:0", "--server.operational-listen-address=127.0.0.1:0"}, func(name string) (string, bool) { return "secret", name == "ANTHROPIC_SECRET" }, func(network, address string) (net.Listener, error) {
+			err := Run(context.Background(), []string{"--config.file=" + path, "--deployment.mode=development", "--auth.unsafe", "--server.private-listen-address=127.0.0.1:0", "--server.cloud-listen-address=127.0.0.1:0", "--server.operational-listen-address=127.0.0.1:0"}, func(name string) (string, bool) { return "secret", name == "ANTHROPIC_SECRET" }, func(network, address string) (net.Listener, error) {
 				calls++
 				if calls == failAt {
 					return nil, assert.AnError
@@ -680,7 +664,7 @@ func unsetAmbientAgentObservabilityEnvironment(t *testing.T) {
 	}
 }
 
-func TestServe_DualLifecycle(t *testing.T) {
+func TestServe_ThreeListenerLifecycle(t *testing.T) {
 	for _, tc := range []struct {
 		name              string
 		failAt            int
@@ -689,9 +673,11 @@ func TestServe_DualLifecycle(t *testing.T) {
 		failAfterStartup  bool
 	}{
 		{name: "API failure", failAt: 1},
-		{name: "operational failure", failAt: 2},
+		{name: "Cloud failure", failAt: 2},
+		{name: "operational failure", failAt: 3},
 		{name: "API failure after startup", failAt: 1, failAfterStartup: true},
-		{name: "operational failure after startup", failAt: 2, failAfterStartup: true},
+		{name: "Cloud failure after startup", failAt: 2, failAfterStartup: true},
+		{name: "operational failure after startup", failAt: 3, failAfterStartup: true},
 		{name: "already canceled", cancelBeforeStart: true},
 		{name: "shared forced shutdown", ignoreCancel: true},
 		{name: "cancel-first graceful shutdown"},
@@ -704,12 +690,12 @@ func TestServe_DualLifecycle(t *testing.T) {
 			readiness := &service.Readiness{}
 			telemetry, err := service.NewTelemetry(testLogger())
 			require.NoError(t, err)
-			started := make(chan struct{}, 2)
-			completed := make(chan struct{}, 2)
+			started := make(chan struct{}, 3)
+			completed := make(chan struct{}, 3)
 			release := make(chan struct{})
 			defer close(release)
 			var servers []boundServer
-			for i := range 2 {
+			for i := range 3 {
 				listener, err := net.Listen("tcp", "127.0.0.1:0")
 				require.NoError(t, err)
 				defer func() { _ = listener.Close() }()
@@ -747,7 +733,7 @@ func TestServe_DualLifecycle(t *testing.T) {
 						completed <- struct{}{}
 					}()
 				}
-				for range 2 {
+				for range 3 {
 					select {
 					case <-started:
 					case <-time.After(2 * time.Second):
@@ -768,7 +754,7 @@ func TestServe_DualLifecycle(t *testing.T) {
 				require.FailNow(t, "servers did not stop under shared deadline")
 			}
 			if tc.ignoreCancel {
-				assert.Less(t, time.Since(shutdownStarted), 350*time.Millisecond, "both servers share one deadline")
+				assert.Less(t, time.Since(shutdownStarted), 350*time.Millisecond, "all servers share one deadline")
 			}
 			if tc.failAfterStartup {
 				assert.Contains(t, logs.String(), `"stage":"serve"`)
@@ -790,7 +776,7 @@ func TestServe_DualLifecycle(t *testing.T) {
 				require.Error(t, err)
 			}
 			if tc.failAt == 0 && !tc.cancelBeforeStart {
-				for range 2 {
+				for range 3 {
 					select {
 					case <-completed:
 					case <-time.After(time.Second):
@@ -816,7 +802,8 @@ func TestServe_ListenerStartup(t *testing.T) {
 	}{
 		{name: "combined", count: 1, pauseAt: 1, address: "127.0.0.1:0"},
 		{name: "API pending", count: 2, pauseAt: 1, address: "127.0.0.1:0"},
-		{name: "operational pending", count: 2, pauseAt: 2, address: "127.0.0.1:0"},
+		{name: "Cloud pending", count: 3, pauseAt: 2, address: "127.0.0.1:0"},
+		{name: "operational pending", count: 3, pauseAt: 3, address: "127.0.0.1:0"},
 		{name: "IPv4 wildcard", count: 1, pauseAt: 1, address: "0.0.0.0:0"},
 		{name: "IPv6 wildcard", count: 1, pauseAt: 1, address: "[::]:0"},
 		{name: "IPv4-only wildcard", count: 2, pauseAt: 1, network: "tcp4", address: "0.0.0.0:0"},
@@ -1031,7 +1018,7 @@ func TestRun_RejectsInvalidRoutesBeforeSecretsOrListener(t *testing.T) {
 			require.NotEqual(t, string(data), changed)
 			require.NoError(t, os.WriteFile(path, []byte(changed), 0o600))
 			listeners, secrets := 0, 0
-			err = Run(context.Background(), []string{"--config.file=" + path, "--deployment.mode=development", "--auth.unsafe", "--server.listen-address=127.0.0.1:0"}, func(name string) (string, bool) {
+			err = Run(context.Background(), []string{"--config.file=" + path, "--deployment.mode=development", "--auth.unsafe", "--server.private-listen-address=127.0.0.1:0", "--server.cloud-listen-address=127.0.0.1:0", "--server.operational-listen-address=127.0.0.1:0"}, func(name string) (string, bool) {
 				if name == "ANTHROPIC_SECRET" {
 					secrets++
 					return "dummy-api-key", true

@@ -15,6 +15,10 @@ import { buildGoClientCapture, buildGoStreamTextCapture, captureGoClient } from 
 import packageManifest from "./package.json" with { type: "json" };
 import { fetchConfiguredModels } from "../../examples/configured-discovery";
 import { nativeMetadataReply } from "./native-metadata";
+import { nativeProxyCertificate, startNativeProviderProxy } from "./native-provider-proxy";
+
+const BYOK_MODEL = "anthropic/request-only-native";
+const BYOK_OPTIONS = { gateway: { byok: { anthropic: [{ apiKey: "request-only-key" }] } } };
 
 const AI_GATEWAY_ROOT = resolve(import.meta.dirname, "../..");
 const COMMAND_DIR = resolve(AI_GATEWAY_ROOT, "cmd/grafana-ai-gateway");
@@ -613,7 +617,7 @@ models:
 
 describe("authenticated Anthropic Gateway command", () => {
   for (const mode of ["access-token", "cloud-gateway"] as const) {
-    it(`exposes configured discovery through ${mode} without inference while stock TS strips candidates`, async () => {
+    it(`enforces ${mode} discovery policy without inference`, async () => {
       const fake = await FakeAnthropic.start();
       let gateway: GatewayProcess | undefined;
       let edge: DummyCloudEdge | undefined;
@@ -624,12 +628,21 @@ describe("authenticated Anthropic Gateway command", () => {
         const baseURL = `${edge?.url ?? gateway.url}/api/v1/aisdk`;
         const headers: Record<string, string> = mode === "access-token" ? { "x-access-token": TEST_TOKEN } : { Authorization: `Bearer ${EDGE_READ_KEY}` };
         const raw = await fetch(`${baseURL}/config`, { headers });
+        if (mode === "cloud-gateway") {
+          assert.equal(raw.status, 400);
+          assert.equal((await raw.json()).error.message, "catalog discovery is unsupported for BYOK");
+          await assert.rejects(edge!.client(EDGE_READ_KEY).getAvailableModels(), GatewayInvalidRequestError.isInstance);
+          const go = await captureGoClient(goClientBinaryPath, { baseURL, cloudCredentials: { StackID: 27038, CAPToken: "dummy-read-key", BaseURL: baseURL }, mode: "discovery" });
+          assert.equal(go.error?.statusCode, 400);
+          assert.equal(fake.requests.length, 0);
+          return;
+        }
         assert.equal(raw.status, 200);
         const document = await raw.json();
         assert.deepEqual(document.models.map((row: { id: string }) => row.id), ["grafana/assistant"]);
         const configured = { aliases: ["assistant"], primary: { providerInstance: "anthropic-primary", provider: "anthropic", providerModelId: "configured-primary" }, fallbacks: [{ providerInstance: "openai-backup", provider: "openai", providerModelId: "configured-backup" }] };
         assert.deepEqual(document.models.map((row: { gateway: unknown }) => row.gateway), [configured]);
-        const stock = await createGateway({ baseURL, apiKey: mode === "cloud-gateway" ? EDGE_READ_KEY : "dummy", headers }).getAvailableModels();
+        const stock = await createGateway({ baseURL, apiKey: TEST_TOKEN }).getAvailableModels();
         assert.deepEqual(stock.models.map(row => row.id), ["grafana/assistant"]);
         assert.equal("gateway" in stock.models[0], false);
         const companion = await fetchConfiguredModels({ baseURL, headers });
@@ -862,7 +875,7 @@ describe("authenticated Anthropic Gateway command", () => {
       assert.ok(keyRequests > 0);
       assert.deepEqual(primary.violations, []);
       assert.deepEqual(secondary.violations, []);
-      const metrics = await (await fetch(`${gateway.url}/metrics`)).text();
+      const metrics = await (await fetch(`${gateway.operationalURL}/metrics`)).text();
       await gateway.stop();
       const logicalLogs = gateway.stderr.split("\n").filter(line => !line.includes('"event":"gateway_physical_attempt"')).join("\n");
       assertPrivateValuesAbsent([logicalLogs, metrics], primary, [secondary.url, "anthropic-secondary", token]);
@@ -956,7 +969,7 @@ describe("authenticated Anthropic Gateway command", () => {
       fake.failureStatus = 500;
       await assert.rejects(async () => client("assistant").doGenerate(options), (error: any) => error.statusCode === 502);
       await observer.waitForGenerations(9);
-      const metrics = await (await fetch(`${gateway.url}/metrics`)).text();
+      const metrics = await (await fetch(`${gateway.operationalURL}/metrics`)).text();
       await gateway.stop();
       assert.equal(observer.generations.length, 9, "each unary or streaming invocation finalizes one independent generation");
       assert.deepEqual(observer.violations, []);
@@ -1210,7 +1223,7 @@ describe("authenticated Anthropic Gateway command", () => {
         }
       }
       assert.equal(fake.requests.length, rows.length * 4, "neither client nor service should retry model calls");
-      const metrics = await (await fetch(`${gateway.url}/metrics`)).text();
+      const metrics = await (await fetch(`${gateway.operationalURL}/metrics`)).text();
       await gateway.stop();
       assertPrivateValuesAbsent([gateway.stderr, metrics], fake);
       assert.deepEqual(fake.violations, []);
@@ -1272,7 +1285,7 @@ describe("authenticated Anthropic Gateway command", () => {
       const unauthorized = await captureGoClient(goClientBinaryPath, { ...base, accessToken: "invalid-token", mode: "discovery" });
       assert.equal(unauthorized.error.category, "authentication_error"); assert.equal(unauthorized.error.statusCode, 401);
       assert.deepEqual(fake.violations, []); assert.equal(await gateway.ready(), true);
-      const metrics = await (await fetch(`${gateway.url}/metrics`)).text();
+      const metrics = await (await fetch(`${gateway.operationalURL}/metrics`)).text();
       await gateway.stop();
       assertDiscoverySecretsAbsent([discovery, actingUser], fake);
       assertConsumerSecretsAbsent([stream, abort]);
@@ -1361,16 +1374,16 @@ describe("authenticated Anthropic Gateway command", () => {
       exchanges++; assert.equal(request.headers.authorization, "Bearer integration-cap");
       assert.equal(request.url, "/exchange/");
       const chunks: Buffer[] = []; for await (const chunk of request) chunks.push(Buffer.from(chunk));
-      assert.deepEqual(JSON.parse(Buffer.concat(chunks).toString()), { namespace: "stack-integration", audiences: ["ai-sdk"] });
+      assert.deepEqual(JSON.parse(Buffer.concat(chunks).toString()), { namespace: "stacks-27038", audiences: ["ai-sdk"] });
       response.writeHead(200, { "content-type": "application/json" }); response.end(JSON.stringify({ data: { token: TEST_TOKEN } }));
     });
     await new Promise<void>((resolve) => exchange.listen(0, "127.0.0.1", resolve));
     try {
       const address = exchange.address(); assert.ok(address && typeof address !== "string");
-      const result = await captureGoClient(goClientBinaryPath, { mode: "discovery", tokenExchange: { CAPToken: "integration-cap", Namespace: "stack-integration", BaseURL: `${gateway.url}/api/v1/aisdk`, TokenExchangeURL: `http://127.0.0.1:${address.port}/exchange/` } });
+      const result = await captureGoClient(goClientBinaryPath, { mode: "discovery", tokenExchange: { CAPToken: "integration-cap", Namespace: "stacks-27038", BaseURL: `${gateway.url}/api/v1/aisdk`, TokenExchangeURL: `http://127.0.0.1:${address.port}/exchange/` } });
       assert.equal(result.error, undefined); assert.equal(result.models.length, 1); assert.equal(exchanges, 1);
       assert.equal(fake.requests.length, 0);
-      const metrics = await (await fetch(`${gateway.url}/metrics`)).text();
+      const metrics = await (await fetch(`${gateway.operationalURL}/metrics`)).text();
       await gateway.stop();
       assertDiscoverySecretsAbsent(result, fake, [`http://127.0.0.1:${address.port}/exchange/`]);
       assertPrivateValuesAbsent([metrics, gateway.stderr], fake, [`http://127.0.0.1:${address.port}/exchange/`]);
@@ -1577,7 +1590,7 @@ describe("authenticated Anthropic Gateway command", () => {
       assert.equal(shutdownStart.value?.type, "stream-start");
 
       await observer.waitForGenerations(4);
-      const metrics = await (await fetch(`${gateway.url}/metrics`)).text();
+      const metrics = await (await fetch(`${gateway.operationalURL}/metrics`)).text();
       const canonicalLabels = ['provider="grafana"', 'model="grafana/assistant"'];
       assert.equal(sumPrometheusSamples(metrics, "aisdk_model_requests_total", canonicalLabels), 4);
       assert.equal(sumPrometheusSamples(metrics, "aisdk_model_inflight_requests", canonicalLabels), 1);
@@ -1607,7 +1620,7 @@ describe("authenticated Anthropic Gateway command", () => {
         const metadata = generation.metadata as Record<string, unknown>;
         assert.equal(metadata["gateway.application"], "test-application");
         assert.equal(metadata["gateway.caller_service"], "integration-service");
-        assert.equal(metadata["gateway.namespace"], "stack-integration");
+        assert.equal(metadata["gateway.namespace"], "stacks-27038");
         assert.equal(metadata["gateway.region"], "test-region");
         assert.equal(typeof metadata["gateway.correlation_id"], "string");
         assert.ok(Object.keys(metadata).every((key) => allowedMetadata.has(key)));
@@ -1654,7 +1667,7 @@ describe("authenticated Anthropic Gateway command", () => {
       assert.deepEqual(Object.keys(body).sort(), ["content", "finishReason", "providerMetadata", "response", "usage", "warnings"]);
       let metrics = "";
       await poll(async () => {
-        metrics = await (await fetch(`${gateway.url}/metrics`)).text();
+        metrics = await (await fetch(`${gateway.operationalURL}/metrics`)).text();
         return metrics.includes('grafana_ai_gateway_agento11y_export_failures_total{class="transport"} 1');
       }, 5_000, "Agent Observability transport failure metric");
       assert.equal(await gateway.ready(), true);
@@ -1671,7 +1684,7 @@ describe("authenticated Anthropic Gateway command", () => {
     }
   });
 
-  it("rejects alternate auth, duplicate tokens, redirects, and private telemetry", async () => {
+  it("accepts bearer JWT and rejects duplicate tokens, redirects, and private telemetry", async () => {
     const redirectTarget = await FakeAnthropic.start();
     let resources: [FakeAnthropic, GatewayProcess] | undefined;
     try {
@@ -1680,7 +1693,7 @@ describe("authenticated Anthropic Gateway command", () => {
       const authorizationOnly = await fetch(`${gateway.url}/api/v1/aisdk/config`, {
         headers: { Authorization: `Bearer ${TEST_TOKEN}` },
       });
-      assert.equal(authorizationOnly.status, 401);
+      assert.equal(authorizationOnly.status, 200);
 
       const duplicateHeaders = new Headers();
       duplicateHeaders.append("X-Access-Token", TEST_TOKEN);
@@ -1708,7 +1721,7 @@ describe("authenticated Anthropic Gateway command", () => {
       assert.equal(redirectTarget.requests.length, 0);
       assert.deepEqual(fake.violations, []);
 
-      const metrics = await (await fetch(`${gateway.url}/metrics`)).text();
+      const metrics = await (await fetch(`${gateway.operationalURL}/metrics`)).text();
       assert.equal(await gateway.ready(), true);
       await gateway.stop();
       const logs = gateway.stderr;
@@ -1742,7 +1755,7 @@ describe("authenticated Anthropic Gateway command", () => {
     try {
       let failure = "";
       try {
-        await GatewayProcess.start(binaryPath, fake.url, ["--server.listen-address=not-a-tcp-address"]);
+        await GatewayProcess.start(binaryPath, fake.url, ["--server.private-listen-address=not-a-tcp-address"]);
       } catch (error) {
         failure = String(error);
       }
@@ -1773,7 +1786,7 @@ describe("authenticated Anthropic Gateway command", () => {
       const response = await rawProviderWireRequest(gateway.url, "oversized");
       assert.ok(response.status >= 500);
       const publicError = await response.text();
-      const metrics = await (await fetch(`${gateway.url}/metrics`)).text();
+      const metrics = await (await fetch(`${gateway.operationalURL}/metrics`)).text();
       assert.equal(await gateway.ready(), true);
       assert.deepEqual(fake.violations, []);
       await gateway.stop();
@@ -1790,6 +1803,162 @@ describe("authenticated Anthropic Gateway command", () => {
 });
 
 describe("Trusted-proxy composition (dummy credentials, not production authentication)", () => {
+  it("distinguishes native credential rejection from Gateway authentication without rotating keys or echoing them", async () => {
+    const [native, gateway, edge] = await startCloudGateway();
+    native.failureStatus = 401;
+    try {
+      const options = { ...cloudCall("unary"), providerOptions: { gateway: { byok: { anthropic: [{ apiKey: "request-only-key" }, { apiKey: "unused-second-key" }] } } } };
+      for (const mode of ["generate", "stream"] as const) {
+        const go = await captureGoClient(goClientBinaryPath, {
+          mode, modelID: BYOK_MODEL, options,
+          cloudCredentials: { StackID: 27038, CAPToken: "dummy-write-key", BaseURL: `${edge.url}/api/v1/aisdk` },
+        });
+        assert.equal(go.error?.statusCode, 424);
+        assert.equal(go.error?.category, "failed_dependency");
+        assertCloudPrivateValuesAbsent(JSON.stringify(go.error), ["request-only-key", "unused-second-key"]);
+        const model = edge.client(EDGE_WRITE_KEY)(BYOK_MODEL);
+        await assert.rejects(async () => mode === "generate" ? model.doGenerate(options) : model.doStream(options), (error: unknown) => {
+          const failure = error as { statusCode?: number; message: string };
+          assert.equal(failure.statusCode, 424);
+          assertCloudPrivateValuesAbsent(failure.message, ["request-only-key", "unused-second-key"]);
+          return true;
+        });
+      }
+      assert.equal(native.requests.length, 4);
+      assert.ok(native.requests.every(request => request.apiKey === "request-only-key"));
+      const metrics = await gateway.metrics();
+      assert.equal(authenticationCount(metrics, "authenticated"), 4);
+      assert.equal(authenticationCount(metrics, "authentication_failed"), 0);
+      await gateway.stop();
+      assertCloudPrivateValuesAbsent(gateway.stderr + metrics, ["request-only-key", "unused-second-key"]);
+    } finally { await settleCleanup(() => edge.stop(), () => gateway.stop(), () => native.stop()); }
+  });
+
+  it("executes request-only OpenAI Responses with both clients and no configured account", async () => {
+    const configured = await FakeAnthropic.start();
+    const native = await FakeOpenAI.start();
+    native.apiKey = "request-only-openai";
+    native.backendModel = "request-only-native@revision+" + "x".repeat(140);
+    const proxy = await startNativeProviderProxy(native.url, "api.openai.com:443");
+    let gateway: GatewayProcess | undefined;
+    let edge: DummyCloudEdge | undefined;
+    try {
+      gateway = await GatewayProcess.start(binaryPath, configured.url, [], {
+        HTTPS_PROXY: proxy.url, NO_PROXY: "127.0.0.1,localhost", SSL_CERT_FILE: nativeProxyCertificate,
+        OPENAI_API_KEY: "ambient-private-key", OPENAI_BASE_URL: configured.url,
+        OPENAI_ORG_ID: "ambient-private-org", OPENAI_PROJECT_ID: "ambient-private-project",
+      }, "cloud-gateway");
+      gateway.nativeProxy = proxy;
+      edge = await DummyCloudEdge.start(gateway.cloudURL);
+      const modelID = `openai/${native.backendModel}`;
+      const options: LanguageModelV4CallOptions = {
+        prompt: [
+          { role: "user", content: [{ type: "text", text: "previous question" }] },
+          { role: "assistant", content: [{ type: "text", text: "previous answer" }] },
+          { role: "user", content: [{ type: "text", text: "continue" }] },
+        ],
+        maxOutputTokens: 32,
+        providerOptions: {
+          gateway: { byok: { openai: [{ apiKey: "request-only-openai" }, { apiKey: "unused-openai-second" }], anthropic: [{ apiKey: "unused-private-key" }] } },
+          openai: { store: false },
+        },
+      };
+      for (const mode of ["generate", "stream"] as const) {
+        const go = await captureGoClient(goClientBinaryPath, {
+          mode, modelID, options,
+          cloudCredentials: { StackID: 27038, CAPToken: "dummy-write-key", BaseURL: `${edge.url}/api/v1/aisdk` },
+        });
+        assert.equal(go.error, undefined);
+        const model = edge.client(EDGE_WRITE_KEY)(modelID);
+        if (mode === "generate") {
+          const ts = await model.doGenerate(options);
+          assert.deepEqual(go.result.content, ts.content);
+        } else {
+          const ts = await collectStream((await model.doStream(options)).stream);
+          assert.ok(ts.some(part => part.type === "finish"));
+          assert.equal(go.parts.filter((part: { type: string }) => part.type === "text-delta").map((part: { delta: string }) => part.delta).join(""),
+            ts.filter(part => part.type === "text-delta").map(part => part.delta).join(""));
+        }
+      }
+      const reasoningOptions: LanguageModelV4CallOptions = { ...options, prompt: [...options.prompt.slice(0, 2), { role: "user", content: [{ type: "text", text: "wp17-reasoning" }] }] };
+      const goReasoning = await captureGoClient(goClientBinaryPath, {
+        mode: "stream", modelID, options: reasoningOptions,
+        cloudCredentials: { StackID: 27038, CAPToken: "dummy-write-key", BaseURL: `${edge.url}/api/v1/aisdk` },
+      });
+      assert.equal(goReasoning.error, undefined);
+      const tsReasoning = await collectStream((await edge.client(EDGE_WRITE_KEY)(modelID).doStream(reasoningOptions)).stream);
+      assert.equal(goReasoning.parts.filter((part: { type: string }) => part.type === "reasoning-delta").map((part: { delta: string }) => part.delta).join(""), "private thought");
+      assert.equal(tsReasoning.filter(part => part.type === "reasoning-delta").map(part => part.delta).join(""), "private thought");
+      assert.equal(configured.requests.length, 0);
+      assert.equal(native.requests.length, 6);
+      for (const request of native.requests) {
+        assert.equal(request.body.store, false);
+        assert.equal(request.headers["openai-organization"], undefined);
+        assert.equal(request.headers["openai-project"], undefined);
+        assert.ok(JSON.stringify(request.body).includes("previous answer"));
+        assert.ok(!JSON.stringify(request.body).includes("byok"));
+      }
+      assert.deepEqual(native.violations, []);
+      await gateway.stop();
+      assertCloudPrivateValuesAbsent(gateway.stderr, ["request-only-openai", "unused-private-key", "ambient-private-key", "ambient-private-org", "ambient-private-project"]);
+    } finally {
+      await settleCleanup(...(edge ? [() => edge!.stop()] : []), ...(gateway ? [() => gateway!.stop()] : [() => proxy.stop()]), () => native.stop(), () => configured.stop());
+    }
+  });
+
+  it("isolates simultaneous configured and BYOK accounts and cancels both populations on shutdown", async () => {
+    const configured = await FakeAnthropic.start();
+    const [native, gateway, edge] = await startCloudGateway([], configured.url);
+    try {
+      const privateClient = createGateway({ baseURL: `${gateway.privateURL}/api/v1/aisdk`, apiKey: TEST_TOKEN });
+      const cloudClient = edge.client(EDGE_WRITE_KEY);
+      const [privateResult, cloudResult] = await Promise.all([
+        privateClient("assistant").doGenerate({ prompt: [{ role: "user", content: [{ type: "text", text: "unary" }] }], maxOutputTokens: 32 }),
+        cloudClient(BYOK_MODEL).doGenerate(cloudCall("unary")),
+      ]);
+      assert.deepEqual(privateResult.content, cloudResult.content);
+      assert.equal(configured.requests.length, 1);
+      assert.equal(native.requests.length, 1);
+      assert.equal(configured.requests[0]!.apiKey, "integration-anthropic-key");
+      assert.equal(native.requests[0]!.apiKey, "request-only-key");
+      assert.equal(configured.requests[0]!.body.model, "backend-private");
+      assert.equal(native.requests[0]!.body.model, "request-only-native");
+      assert.deepEqual((await privateClient.getAvailableModels()).models.map(row => row.id), ["grafana/assistant"]);
+      await assert.rejects(edge.client(EDGE_READ_KEY).getAvailableModels(), GatewayInvalidRequestError.isInstance);
+      await assert.rejects(async () => privateClient("assistant").doGenerate(cloudCall("unary")), GatewayInvalidRequestError.isInstance);
+      for (const id of ["assistant", "grafana/assistant", "unsupported/model"]) {
+        await assert.rejects(async () => cloudClient(id).doGenerate(cloudCall("unary")), GatewayInvalidRequestError.isInstance);
+      }
+      await assert.rejects(async () => cloudClient(BYOK_MODEL).doGenerate({ prompt: [] }), GatewayInvalidRequestError.isInstance);
+      const wrongPrivate = await rawHTTPRequest(`${gateway.privateURL}/api/v1/aisdk/config`, "GET", EDGE_ASSERTIONS);
+      const wrongCloud = await rawHTTPRequest(`${gateway.cloudURL}/api/v1/aisdk/config`, "GET", [["Authorization", `Bearer ${TEST_TOKEN}`]]);
+      assertAppAuthenticationFailure(wrongPrivate);
+      assertAppAuthenticationFailure(wrongCloud);
+      assert.equal(configured.requests.length, 1);
+      assert.equal(native.requests.length, 1);
+      const metrics = await gateway.metrics();
+      assert.match(metrics, /source="access-token"/);
+      assert.match(metrics, /source="cloud-gateway"/);
+      assert.match(metrics, /model="byok"/);
+      assert.ok(!metrics.includes(BYOK_MODEL));
+      const streams = await Promise.all([
+        privateClient("assistant").doStream({ prompt: [{ role: "user", content: [{ type: "text", text: "silent-shutdown" }] }], maxOutputTokens: 32 }),
+        cloudClient(BYOK_MODEL).doStream(cloudCall("silent-shutdown")),
+      ]);
+      const readers = streams.map(result => result.stream.getReader());
+      for (const reader of readers) assert.equal((await withTimeout(reader.read(), 2_000, "first native part")).value?.type, "stream-start");
+      const stopping = gateway.stop();
+      await Promise.all([configured.waitForCancellation("silent-shutdown"), native.waitForCancellation("silent-shutdown"), stopping]);
+      await Promise.all(readers.map(reader => reader.cancel().catch(() => {})));
+      assertCloudPrivateValuesAbsent(gateway.stderr + metrics, ["integration-anthropic-key", "request-only-key"]);
+      assert.ok(gateway.stderr.includes(`"ai_sdk.model":"${BYOK_MODEL}"`));
+      assert.deepEqual(configured.violations, []);
+      assert.deepEqual(native.violations, []);
+    } finally {
+      await settleCleanup(() => edge.stop(), () => gateway.stop(), () => native.stop(), () => configured.stop());
+    }
+  });
+
   for (const { client, mode } of [
     { client: "go", mode: "stream" },
     { client: "typescript", mode: "generate" },
@@ -1804,13 +1973,13 @@ describe("Trusted-proxy composition (dummy credentials, not production authentic
           if (client === "go") {
             const result = await captureGoClient(goStreamTextBinaryPath, {
               cloudCredentials: { StackID: 27038, CAPToken: "dummy-write-key", BaseURL: `${edge.url}/api/v1/aisdk` },
-              mode: "stream-text", modelID: "assistant",
-              options: { prompt: [{ role: "user", content: [{ type: "text", text: prompt }] }], maxOutputTokens },
+              mode: "stream-text", modelID: BYOK_MODEL,
+              options: { prompt: [{ role: "user", content: [{ type: "text", text: prompt }] }], maxOutputTokens, providerOptions: BYOK_OPTIONS },
             });
             assert.equal(result.error, undefined);
             text = result.text;
           } else {
-            const options = { model: edge.client(EDGE_WRITE_KEY)("assistant"), prompt, maxOutputTokens, maxRetries: 0 };
+            const options = { model: edge.client(EDGE_WRITE_KEY)(BYOK_MODEL), prompt, maxOutputTokens, maxRetries: 0, providerOptions: BYOK_OPTIONS };
             if (mode === "generate") {
               const result = await generateText(options);
               assert.equal(result.finishReason, "stop");
@@ -1839,7 +2008,7 @@ describe("Trusted-proxy composition (dummy credentials, not production authentic
             assert.equal(body.headers["user-agent"].split(/\s/, 1)[0], `ai/${packageManifest.dependencies.ai}`);
             assert.equal(singleHeader(fake.requests[0]!.headers["user-agent"]), body.headers["user-agent"]);
           }
-          assert.equal(fake.requests[0]!.apiKey, "integration-anthropic-key");
+          assert.equal(fake.requests[0]!.apiKey, "request-only-key");
           assert.deepEqual(fake.violations, []);
           const metrics = await gateway.metrics();
           await gateway.stop();
@@ -1858,7 +2027,7 @@ describe("Trusted-proxy composition (dummy credentials, not production authentic
     const baseURL = `${edge.url}/api/v1/aisdk`;
     const go = (apiKey: string, mode: "discovery" | "generate" | "stream") => captureGoClient(goClientBinaryPath, {
       mode, cloudCredentials: { StackID: 27038, CAPToken: apiKey.split(":")[1], BaseURL: baseURL },
-      modelID: "assistant", options: { prompt: [{ role: "user", content: [{ type: "text", text: mode === "stream" ? "normal-stream" : "unary" }] }], maxOutputTokens: 32 },
+      modelID: BYOK_MODEL, options: { prompt: [{ role: "user", content: [{ type: "text", text: mode === "stream" ? "normal-stream" : "unary" }] }], maxOutputTokens: 32, providerOptions: BYOK_OPTIONS },
     });
     try {
       const ambiguous = await captureGoClient(goClientBinaryPath, {
@@ -1867,19 +2036,18 @@ describe("Trusted-proxy composition (dummy credentials, not production authentic
       assert.equal(ambiguous.error?.message, "select exactly one authentication method");
       assert.equal(edge.received.length, 0);
       const catalog = await go(EDGE_READ_KEY, "discovery");
-      assert.ok(catalog.models, JSON.stringify(catalog));
-      assert.deepEqual(catalog.models.map((model: { id: string }) => model.id), ["grafana/assistant"]);
-      const tsCatalog = await edge.client(EDGE_READ_KEY).getAvailableModels();
-      assert.deepEqual(tsCatalog.models.map((model) => model.id), catalog.models.map((model: { id: string }) => model.id));
+      assert.equal(catalog.error?.statusCode, 400);
+      assert.equal(catalog.error?.message, "catalog discovery is unsupported for BYOK");
+      await assert.rejects(edge.client(EDGE_READ_KEY).getAvailableModels(), GatewayInvalidRequestError.isInstance);
       const generated = await go(EDGE_WRITE_KEY, "generate");
       assert.equal(generated.result.content[0].text, "hello from fake Anthropic");
-      const tsGenerated = await edge.client(EDGE_WRITE_KEY)("assistant").doGenerate(cloudCall("unary"));
+      const tsGenerated = await edge.client(EDGE_WRITE_KEY)(BYOK_MODEL).doGenerate(cloudCall("unary"));
       assert.deepEqual(tsGenerated.content, [{ type: "text", text: "hello from fake Anthropic" }]);
       const streamed = await go(EDGE_WRITE_KEY, "stream");
       assert.ok(streamed.parts.some((part: { type: string }) => part.type === "finish"));
       assert.equal(streamed.parts.filter((part: { type: string }) => part.type === "text-delta")
         .map((part: { delta: string }) => part.delta).join(""), "hello from fake Anthropic stream");
-      const tsStream = await edge.client(EDGE_WRITE_KEY)("assistant").doStream(cloudCall("normal-stream"));
+      const tsStream = await edge.client(EDGE_WRITE_KEY)(BYOK_MODEL).doStream(cloudCall("normal-stream"));
       const tsParts = await collectStream(tsStream.stream);
       assert.ok(tsParts.some((part) => part.type === "finish"));
       assert.equal(tsParts.filter((part) => part.type === "text-delta").map((part) => part.delta).join(""),
@@ -1923,7 +2091,7 @@ describe("Trusted-proxy composition (dummy credentials, not production authentic
     }
   });
 
-  it("uses only the edge stack assertion for read discovery and write unary/stream, never forwarding customer credentials to Anthropic", async () => {
+  it("uses only the edge stack assertion, rejects discovery, and forwards only request BYOK credentials to Anthropic", async () => {
     const [fake, gateway, edge] = await startCloudGateway();
     const spoofed = {
       "X-Scope-OrgID": "client-invalid-stack",
@@ -1937,12 +2105,11 @@ describe("Trusted-proxy composition (dummy credentials, not production authentic
       const direct = await rawHTTPRequest(`${gateway.url}/api/v1/aisdk/config`, "GET",
         Object.entries(spoofed).filter(([name]) => !["X-Access-Token", "X-Grafana-Id"].includes(name)));
       assertAppAuthenticationFailure(direct);
-      const metadata = await edge.client(EDGE_READ_KEY, spoofed).getAvailableModels();
-      assert.deepEqual(metadata.models.map((model) => model.id), ["grafana/assistant"]);
+      await assert.rejects(edge.client(EDGE_READ_KEY, spoofed).getAvailableModels(), GatewayInvalidRequestError.isInstance);
       const client = edge.client(EDGE_WRITE_KEY, spoofed);
-      const unary = await client("assistant").doGenerate(cloudCall("unary"));
+      const unary = await client(BYOK_MODEL).doGenerate(cloudCall("unary"));
       assert.deepEqual(unary.content, [{ type: "text", text: "hello from fake Anthropic" }]);
-      const stream = await client("grafana/assistant").doStream(cloudCall("normal-stream"));
+      const stream = await client(BYOK_MODEL).doStream(cloudCall("normal-stream"));
       const parts = await withTimeout(collectStream(stream.stream), 5_000, "Cloud stream EOF");
       assert.equal(parts[0]?.type, "stream-start");
       assert.equal(parts.at(-1)?.type, "finish");
@@ -1967,7 +2134,7 @@ describe("Trusted-proxy composition (dummy credentials, not production authentic
       assert.equal(edge.received[1]?.headers["x-api-key"], spoofed["x-api-key"]);
       assert.equal(fake.requests.length, 2);
       for (const request of fake.requests) {
-        assert.equal(request.apiKey, "integration-anthropic-key");
+        assert.equal(request.apiKey, "request-only-key");
         assert.equal(request.body.max_tokens, 32);
         for (const name of [...PROHIBITED_HEADERS, ...EDGE_ASSERTIONS.map(([name]) => name.toLowerCase()), "x-cloud-org-id", "x-access-policy-id"]) {
           assert.equal(request.headers[name], undefined);
@@ -1982,15 +2149,15 @@ describe("Trusted-proxy composition (dummy credentials, not production authentic
         ["X-Cloud-Org-ID", spoofed["X-Cloud-Org-ID"]],
         ["X-Access-Policy-ID", spoofed["X-Access-Policy-ID"]],
       ]);
-      assert.equal(ignoredHeadersDiscovery.status, 200);
+      assert.equal(ignoredHeadersDiscovery.status, 400);
       assert.equal(fake.requests.length, 2);
       const metrics = await gateway.metrics();
       assert.equal(authenticationCount(metrics, "authenticated"), 4);
       assert.equal(authenticationCount(metrics, "authentication_failed"), 1);
       await gateway.stop();
-      assertCloudPrivateValuesAbsent(ignoredHeadersDiscovery.body, [...CLOUD_PRIVATE_VALUES, ...Object.values(spoofed), fake.url, "integration-anthropic-key"]);
+      assertCloudPrivateValuesAbsent(ignoredHeadersDiscovery.body, [...CLOUD_PRIVATE_VALUES, ...Object.values(spoofed), fake.url, "request-only-key"]);
       assertCloudPrivateValuesAbsent([direct.body, metrics, gateway.stderr].join("\n"), [
-        ...CLOUD_PRIVATE_VALUES, ...Object.values(spoofed), fake.url, "backend-private", "integration-anthropic-key",
+        ...CLOUD_PRIVATE_VALUES, ...Object.values(spoofed), fake.url, "backend-private", "request-only-key",
       ]);
     } finally {
       await settleCleanup(() => edge.stop(), () => gateway.stop(), () => fake.stop());
@@ -2008,8 +2175,8 @@ describe("Trusted-proxy composition (dummy credentials, not production authentic
         const client = edge.client(key);
         await assert.rejects(withTimeout(
           Promise.resolve<unknown>(operation === "discovery" ? client.getAvailableModels()
-            : operation === "unary" ? client("assistant").doGenerate(cloudCall("unary"))
-              : client("assistant").doStream(cloudCall("normal-stream"))),
+            : operation === "unary" ? client(BYOK_MODEL).doGenerate(cloudCall("unary"))
+              : client(BYOK_MODEL).doStream(cloudCall("normal-stream"))),
           5_000, "edge denial",
         ), (error: unknown) => {
           const failure = error as { statusCode?: number; type?: string; isRetryable?: boolean };
@@ -2086,10 +2253,8 @@ describe("Trusted-proxy composition (dummy credentials, not production authentic
     }
   });
 
-  it("starts without JWKS, separates operational routes, flushes, cancels, and exits both listeners on SIGTERM", async () => {
-    const [fake, gateway, edge] = await startCloudGateway([
-      "--auth.jwks-timeout=0s", "--auth.jwks-response-bytes=0", "--auth.jwks-max-keys=0", "--auth.audiences=",
-    ]);
+  it("separates all three listeners, flushes, cancels, and exits on SIGTERM", async () => {
+    const [fake, gateway, edge] = await startCloudGateway();
     try {
       assert.notEqual(gateway.url, gateway.operationalURL);
       assert.equal(fake.requests.length, 0);
@@ -2101,7 +2266,7 @@ describe("Trusted-proxy composition (dummy credentials, not production authentic
         assert.equal((await rawHTTPRequest(`${gateway.operationalURL}${path}`, method!, EDGE_ASSERTIONS)).status, 404);
       }
       for (const marker of ["silent-abort", "silent-shutdown"]) {
-        const result = await withTimeout(Promise.resolve(edge.client(EDGE_WRITE_KEY)("assistant").doStream({
+        const result = await withTimeout(Promise.resolve(edge.client(EDGE_WRITE_KEY)(BYOK_MODEL).doStream({
           ...cloudCall(marker), abortSignal: AbortSignal.timeout(15_000),
         })), 2_000, "Cloud stream setup");
         const reader = result.stream.getReader();
@@ -2120,7 +2285,7 @@ describe("Trusted-proxy composition (dummy credentials, not production authentic
         }
       }
       assert.equal(await gateway.ready(), false);
-      for (const url of [gateway.url, gateway.operationalURL]) {
+      for (const url of [gateway.privateURL, gateway.cloudURL, gateway.operationalURL]) {
         await assert.rejects(fetch(`${url}/ready`, { signal: AbortSignal.timeout(500) }));
       }
       assert.deepEqual(processLifecycleEvents(gateway.stderr), [
@@ -2139,11 +2304,11 @@ describe("Trusted-proxy composition (dummy credentials, not production authentic
       const samePort = await availablePort();
       for (const args of [
         ["--auth.mode=invalid-private-mode"],
-        ["--auth.unsafe"],
-        [`--auth.jwks-url=${fake.url}/private-jwks`],
+        ["--auth.audiences=other"],
+        ["--auth.jwks-url=private-jwks"],
         ["--server.operational-listen-address="],
         ["--server.operational-listen-address=private-invalid-address"],
-        [`--server.listen-address=127.0.0.1:${samePort}`, `--server.operational-listen-address=127.0.0.1:${samePort}`],
+        [`--server.private-listen-address=127.0.0.1:${samePort}`, `--server.operational-listen-address=127.0.0.1:${samePort}`],
       ]) {
         let unexpected: GatewayProcess | undefined;
         try {
@@ -2193,7 +2358,7 @@ describe("authenticated OpenAI-compatible Gateway command", () => {
 
       for (const [rejected, message] of [
         [{ providerOptions: { grafana: { tenant: "other" } } }, "reserved provider option namespace"],
-        [{ headers: { authorization: "Bearer caller-controlled" } }, "protected call header"],
+        [{ headers: { "x-api-key": "caller-controlled" } }, "protected call header"],
         [{ providerOptions: { compatibleBackend: { model: "someone-elses-model" } } }, "invalid request"],
       ] as const) {
         await assert.rejects(
@@ -2477,7 +2642,7 @@ describe("authenticated OpenAI-compatible Gateway command", () => {
       assert.equal(redirectTarget.requests.length, 0);
       assert.deepEqual(fake.violations, []);
 
-      const metrics = await (await fetch(`${gateway.url}/metrics`)).text();
+      const metrics = await (await fetch(`${gateway.operationalURL}/metrics`)).text();
       assert.equal(await gateway.ready(), true);
       await gateway.stop();
       const logs = gateway.stderr;
@@ -2546,7 +2711,7 @@ describe("authenticated OpenAI Responses Gateway command", () => {
       assert.equal(goStream.error,undefined);
       assert.deepEqual(nativeSources(goStream.parts),expected);
       assert.deepEqual(goStream.parts.find((part:any)=>part.type==="response-metadata"), { type: "response-metadata", id: "resp_test", modelId: "backend-private", timestamp: "1970-01-01T00:00:01Z" });
-      const metrics=await (await fetch(`${gateway.url}/metrics`)).text();
+      const metrics=await (await fetch(`${gateway.operationalURL}/metrics`)).text();
       for (const privateValue of ["native-file-sk-application","Public citation","https://public.example", "backend-private", "resp_test"]) {
         assert.ok(!gateway.stderr.includes(privateValue));
         assert.ok(!metrics.includes(privateValue));
@@ -2615,7 +2780,7 @@ describe("authenticated OpenAI Responses Gateway command", () => {
       assert.equal(redirectTarget.requests.length, 0);
       assert.deepEqual(fake.violations, []);
 
-      const metrics = await (await fetch(`${gateway.url}/metrics`)).text();
+      const metrics = await (await fetch(`${gateway.operationalURL}/metrics`)).text();
       assert.equal(await gateway.ready(), true);
       await gateway.stop();
       const logs = gateway.stderr;
@@ -2647,6 +2812,7 @@ function cloudCall(text: string) {
   return {
     prompt: [{ role: "user" as const, content: [{ type: "text" as const, text }] }],
     maxOutputTokens: 32,
+    providerOptions: BYOK_OPTIONS,
     abortSignal: AbortSignal.timeout(5_000),
   };
 }
@@ -2719,14 +2885,18 @@ function edgeRawRequest(edge: DummyCloudEdge, operation: "discovery" | "unary" |
   ], body);
 }
 
-async function startCloudGateway(extraArgs: string[] = []): Promise<[FakeAnthropic, GatewayProcess, DummyCloudEdge]> {
+async function startCloudGateway(extraArgs: string[] = [], configuredURL?: string): Promise<[FakeAnthropic, GatewayProcess, DummyCloudEdge]> {
   const fake = await FakeAnthropic.start();
+  fake.backendModel = "request-only-native";
+  fake.apiKey = "request-only-key";
+  const proxy = await startNativeProviderProxy(fake.url);
   let gateway: GatewayProcess | undefined;
   try {
-    gateway = await GatewayProcess.start(binaryPath, fake.url, extraArgs, {}, "cloud-gateway");
+    gateway = await GatewayProcess.start(binaryPath, configuredURL ?? fake.url, extraArgs, { HTTPS_PROXY: proxy.url, NO_PROXY: "127.0.0.1,localhost", SSL_CERT_FILE: nativeProxyCertificate }, "cloud-gateway");
+    gateway.nativeProxy = proxy;
     return [fake, gateway, await DummyCloudEdge.start(gateway.url)];
   } catch (error) {
-    await settleCleanup(() => fake.stop(), ...(gateway == null ? [] : [() => gateway!.stop()]));
+    await settleCleanup(() => fake.stop(), () => proxy.stop(), ...(gateway == null ? [] : [() => gateway!.stop()]));
     throw error;
   }
 }
@@ -2909,15 +3079,20 @@ class GatewayProcess {
 
   readonly process: ChildProcess;
   readonly url: string;
+  readonly privateURL: string;
+  readonly cloudURL: string;
   readonly operationalURL: string;
   readonly directory: string;
   stderr = "";
+  nativeProxy?: Awaited<ReturnType<typeof startNativeProviderProxy>>;
   private stopped = false;
   private readonly exited: Promise<{ code: number | null; signal: NodeJS.Signals | null }>;
 
-  private constructor(proc: ChildProcess, url: string, operationalURL: string, directory: string) {
+  private constructor(proc: ChildProcess, privateURL: string, cloudURL: string, operationalURL: string, directory: string, mode: "access-token" | "cloud-gateway") {
     this.process = proc;
-    this.url = url;
+    this.privateURL = privateURL;
+    this.cloudURL = cloudURL;
+    this.url = mode === "access-token" ? privateURL : cloudURL;
     this.operationalURL = operationalURL;
     this.directory = directory;
     proc.stderr?.on("data", (chunk: Buffer) => { this.stderr += chunk.toString(); });
@@ -2938,19 +3113,18 @@ class GatewayProcess {
         : configYAML ?? anthropicConfig(anthropicURL, backendModel));
       const port = await availablePort();
       const url = `http://127.0.0.1:${port}`;
-      let operationalPort = port;
-      if (mode === "cloud-gateway") {
-        do { operationalPort = await availablePort(); } while (operationalPort === port);
-      }
+      let cloudPort: number;
+      do { cloudPort = await availablePort(); } while (cloudPort === port);
+      let operationalPort: number;
+      do { operationalPort = await availablePort(); } while (operationalPort === port || operationalPort === cloudPort);
       const operationalURL = `http://127.0.0.1:${operationalPort}`;
       const args = [
         `--config.file=${configPath}`,
         "--deployment.mode=development",
-        ...(mode === "cloud-gateway" ? [
-          "--auth.mode=cloud-gateway",
-          `--server.operational-listen-address=127.0.0.1:${operationalPort}`,
-        ] : extraArgs.some(arg => arg.startsWith("--auth.jwks-url=")) ? [] : ["--auth.unsafe"]),
-        `--server.listen-address=127.0.0.1:${port}`,
+        ...(extraArgs.some(arg => arg.startsWith("--auth.jwks-url=")) ? [] : ["--auth.unsafe"]),
+        `--server.cloud-listen-address=127.0.0.1:${cloudPort}`,
+        `--server.operational-listen-address=127.0.0.1:${operationalPort}`,
+        `--server.private-listen-address=127.0.0.1:${port}`,
         "--server.shutdown-timeout=2s",
         ...extraArgs,
       ];
@@ -2965,7 +3139,7 @@ class GatewayProcess {
           ...extraEnv,
         },
       });
-      gateway = new GatewayProcess(proc, url, operationalURL, directory);
+      gateway = new GatewayProcess(proc, url, `http://127.0.0.1:${cloudPort}`, operationalURL, directory, mode);
       const deadline = Date.now() + READY_TIMEOUT_MS;
       while (Date.now() < deadline) {
         const outcome = await Promise.race([
@@ -2992,9 +3166,8 @@ class GatewayProcess {
 
   client(token = TEST_TOKEN) {
     return createGateway({
-      apiKey: "authorization-is-ignored",
+      apiKey: token,
       baseURL: `${this.url}/api/v1/aisdk`,
-      headers: { "X-Access-Token": token },
     });
   }
 
@@ -3043,6 +3216,9 @@ class GatewayProcess {
         throw new Error(`gateway exited unsuccessfully: code=${exit.code} signal=${exit.signal}\n${this.stderr}`);
       }
     } finally {
+      const proxy = this.nativeProxy;
+      this.nativeProxy = undefined;
+      await proxy?.stop();
       rmSync(this.directory, { recursive: true, force: true });
     }
   }
@@ -3063,6 +3239,7 @@ class FakeAnthropic {
   providerTools = false;
   providerToolCaller = false;
   backendModel = "backend-private";
+  apiKey = "integration-anthropic-key";
   private readonly server: ReturnType<typeof createServer>;
 
   private constructor(server: ReturnType<typeof createServer>, url: string) {
@@ -3098,7 +3275,7 @@ class FakeAnthropic {
       .find((value) => serialized.includes(value));
     this.requests.push({ path: request.url ?? "", apiKey: singleHeader(request.headers["x-api-key"]), headers: { ...request.headers }, body });
     if (request.url !== "/v1/messages") this.violations.push(`path=${request.url}`);
-    if (singleHeader(request.headers["x-api-key"]) !== "integration-anthropic-key") this.violations.push("api-key");
+    if (singleHeader(request.headers["x-api-key"]) !== this.apiKey) this.violations.push("api-key");
     if (body.model !== this.backendModel) this.violations.push(`model=${String(body.model)}`);
     if (request.headers["x-access-token"] != null || request.headers["x-grafana-id"] != null) this.violations.push("forwarded-caller-credential");
 
@@ -3119,7 +3296,7 @@ class FakeAnthropic {
 
     if (this.failureStatus != null) {
       response.writeHead(this.failureStatus, { "Content-Type": "application/json", "x-private-provider": "backend-private" });
-      response.end(JSON.stringify({ type: "error", error: { type: "api_error", message: "provider-secret-response integration-anthropic-key backend-private" }, request_id: "backend-private-request" }));
+      response.end(JSON.stringify({ type: "error", error: { type: "api_error", message: `provider-secret-response ${this.apiKey} backend-private` }, request_id: "backend-private-request" }));
       return;
     }
     if (this.metadata) { nativeMetadataReply("anthropic", body, response); return; }
@@ -3328,6 +3505,8 @@ class FakeOpenAI {
   redirectTo?: string;
   failWithSecret = false;
   sources = false;
+  apiKey = "integration-openai-key";
+  backendModel = "backend-private";
   private readonly server: ReturnType<typeof createServer>;
 
   private constructor(server: ReturnType<typeof createServer>, url: string) {
@@ -3357,8 +3536,8 @@ class FakeOpenAI {
     const authorization = singleHeader(request.headers.authorization);
     this.requests.push({ path: request.url ?? "", apiKey: authorization, headers: { ...request.headers }, body });
     if (request.url !== "/v1/responses") this.violations.push(`path=${request.url}`);
-    if (authorization !== "Bearer integration-openai-key") this.violations.push("authorization");
-    if (body.model !== "backend-private") this.violations.push(`model=${String(body.model)}`);
+    if (authorization !== `Bearer ${this.apiKey}`) this.violations.push("authorization");
+    if (body.model !== this.backendModel) this.violations.push(`model=${String(body.model)}`);
 
     if (JSON.stringify(body).includes("wp17-reasoning")) {
       response.writeHead(200,{"Content-Type":"text/event-stream"});
@@ -3507,7 +3686,7 @@ function unsafeAccessToken(): string {
     sub: "access-policy:integration",
     aud: ["ai-sdk"],
     exp: Math.floor(Date.now() / 1000) + 24 * 60 * 60,
-    namespace: "stack-integration",
+    namespace: "stacks-27038",
     serviceIdentity: "integration-service",
   })).toString("base64url");
   return `${header}.${payload}.${Buffer.alloc(64).toString("base64url")}`;
@@ -3515,7 +3694,7 @@ function unsafeAccessToken(): string {
 
 function unsafeUserIDToken(): string {
   const header = Buffer.from(JSON.stringify({ alg: "ES256", typ: "jwt" })).toString("base64url");
-  const payload = Buffer.from(JSON.stringify({ sub: "user:42", identifier: "42", type: "user", namespace: "stack-integration", aud: ["ai-sdk"], exp: Math.floor(Date.now() / 1000) + 3600 })).toString("base64url");
+  const payload = Buffer.from(JSON.stringify({ sub: "user:42", identifier: "42", type: "user", namespace: "stacks-27038", aud: ["ai-sdk"], exp: Math.floor(Date.now() / 1000) + 3600 })).toString("base64url");
   return `${header}.${payload}.${Buffer.alloc(64).toString("base64url")}`;
 }
 

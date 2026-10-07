@@ -102,6 +102,7 @@ func TestCloudGatewayAuthenticator_Assertions(t *testing.T) {
 			assert.Equal(t, SourceCloudGateway, caller.Source)
 			assert.Equal(t, "stacks-"+strconv.FormatInt(caller.stackID, 10), caller.Namespace)
 			assert.Positive(t, caller.stackID)
+			assert.Equal(t, RequestBYOK, caller.AccountAccess())
 			assert.Empty(t, caller.Service)
 			assert.Nil(t, caller.ActingUser)
 		})

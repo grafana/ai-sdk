@@ -29,9 +29,21 @@ func TestNormalizeHeaders(t *testing.T) {
 		{name: "exact access", headers: http.Header{"X-Access-Token": {"access"}}, access: "access"},
 		{name: "case variant", headers: http.Header{"x-access-token": {"access"}}, access: "access"},
 		{name: "bearer stripping", headers: http.Header{"X-Access-Token": {"Bearer access"}, "X-Grafana-Id": {"Bearer id"}}, access: "access", id: "id"},
-		{name: "authorization ignored with access", headers: http.Header{"Authorization": {"Bearer other"}, "X-Access-Token": {"access"}}, access: "access"},
+		{name: "mixed credentials", headers: http.Header{"Authorization": {"Bearer other"}, "X-Access-Token": {"access"}}, shouldFail: true},
 		{name: "missing access", headers: http.Header{}, shouldFail: true},
-		{name: "authorization only", headers: http.Header{"Authorization": {"Bearer access"}}, shouldFail: true},
+		{name: "authorization only", headers: http.Header{"Authorization": {"Bearer access"}}, access: "access"},
+		{name: "case insensitive scheme", headers: http.Header{"Authorization": {"bearer access"}}, access: "access"},
+		{name: "authorization without scheme", headers: http.Header{"Authorization": {"access"}}, shouldFail: true},
+		{name: "double bearer", headers: http.Header{"Authorization": {"Bearer Bearer access"}}, shouldFail: true},
+		{name: "authorization duplicate", headers: http.Header{"Authorization": {"Bearer access", "Bearer other"}}, shouldFail: true},
+		{name: "authorization case collision", headers: http.Header{"Authorization": {"Bearer access"}, "authorization": {"Bearer other"}}, shouldFail: true},
+		{name: "authorization comma", headers: http.Header{"Authorization": {"Bearer access,other"}}, shouldFail: true},
+		{name: "authorization space", headers: http.Header{"Authorization": {"Bearer  access"}}, shouldFail: true},
+		{name: "access whitespace", headers: http.Header{"X-Access-Token": {"access secret"}}, shouldFail: true},
+		{name: "access control", headers: http.Header{"X-Access-Token": {"access\tsecret"}}, shouldFail: true},
+		{name: "stack assertion", headers: http.Header{"X-Access-Token": {"access"}, "x-scope-orgid": {"1"}}, shouldFail: true},
+		{name: "org assertion", headers: http.Header{"X-Access-Token": {"access"}, "X-Cloud-Org-ID": {""}}, shouldFail: true},
+		{name: "policy assertion", headers: http.Header{"X-Access-Token": {"access"}, "X-Access-Policy-ID": nil}, shouldFail: true},
 		{name: "empty access", headers: http.Header{"X-Access-Token": {""}}, shouldFail: true},
 		{name: "empty bearer access", headers: http.Header{"X-Access-Token": {"Bearer "}}, shouldFail: true},
 		{name: "multiple access values", headers: http.Header{"X-Access-Token": {"one", "two"}}, shouldFail: true},
@@ -69,12 +81,12 @@ func TestCallerFromAuthInfo_StrictIdentitySeparation(t *testing.T) {
 		info       *fakeAuthInfo
 		shouldFail bool
 	}{
-		{name: "service", info: &fakeAuthInfo{extra: map[string][]string{authn.ServiceIdentityKey: {"service"}}, namespace: "stack-1", identityType: types.TypeAccessPolicy, subject: "acting-user"}},
-		{name: "acting user separate", info: &fakeAuthInfo{extra: map[string][]string{authn.ServiceIdentityKey: {"service"}}, namespace: "stack-1", identityType: types.TypeUser, subject: "user:42"}},
-		{name: "missing service", info: &fakeAuthInfo{extra: map[string][]string{}, namespace: "stack-1", subject: "must-not-fallback"}, shouldFail: true},
-		{name: "empty service", info: &fakeAuthInfo{extra: map[string][]string{authn.ServiceIdentityKey: {""}}, namespace: "stack-1", subject: "must-not-fallback"}, shouldFail: true},
-		{name: "blank service", info: &fakeAuthInfo{extra: map[string][]string{authn.ServiceIdentityKey: {"  "}}, namespace: "stack-1"}, shouldFail: true},
-		{name: "multiple services", info: &fakeAuthInfo{extra: map[string][]string{authn.ServiceIdentityKey: {"one", "two"}}, namespace: "stack-1"}, shouldFail: true},
+		{name: "service", info: &fakeAuthInfo{extra: map[string][]string{authn.ServiceIdentityKey: {"service"}}, namespace: "stacks-1", identityType: types.TypeAccessPolicy, subject: "acting-user"}},
+		{name: "acting user separate", info: &fakeAuthInfo{extra: map[string][]string{authn.ServiceIdentityKey: {"service"}}, namespace: "stacks-1", identityType: types.TypeUser, subject: "user:42"}},
+		{name: "missing service", info: &fakeAuthInfo{extra: map[string][]string{}, namespace: "stacks-1", identityType: types.TypeAccessPolicy, subject: "must-not-fallback"}},
+		{name: "empty service", info: &fakeAuthInfo{extra: map[string][]string{authn.ServiceIdentityKey: {""}}, namespace: "stacks-1", identityType: types.TypeAccessPolicy, subject: "must-not-fallback"}},
+		{name: "blank service", info: &fakeAuthInfo{extra: map[string][]string{authn.ServiceIdentityKey: {"  "}}, namespace: "stacks-1"}, shouldFail: true},
+		{name: "multiple services", info: &fakeAuthInfo{extra: map[string][]string{authn.ServiceIdentityKey: {"one", "two"}}, namespace: "stacks-1"}, shouldFail: true},
 		{name: "empty namespace", info: &fakeAuthInfo{extra: map[string][]string{authn.ServiceIdentityKey: {"service"}}}, shouldFail: true},
 	}
 	for _, tc := range tests {
@@ -86,8 +98,13 @@ func TestCallerFromAuthInfo_StrictIdentitySeparation(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
-			assert.Equal(t, "service", caller.Service)
-			assert.Equal(t, "stack-1", caller.Namespace)
+			if len(tc.info.extra[authn.ServiceIdentityKey]) == 1 {
+				assert.Equal(t, tc.info.extra[authn.ServiceIdentityKey][0], caller.Service)
+			} else {
+				assert.Empty(t, caller.Service)
+			}
+			assert.Equal(t, ConfiguredAccounts, caller.AccountAccess())
+			assert.Equal(t, "stacks-1", caller.Namespace)
 			if tc.info.identityType == types.TypeUser {
 				require.NotNil(t, caller.ActingUser)
 				assert.Equal(t, "user:42", caller.ActingUser.Subject)
@@ -125,7 +142,7 @@ func TestMiddleware_AuthenticationOrderingAndPrivateContext(t *testing.T) {
 			token      string
 			wantStatus int
 		}{
-			{name: "authorization ignored", token: signAccessToken(t, private, "key", []string{"ai-sdk"}), wantStatus: http.StatusNoContent},
+			{name: "valid access", token: signAccessToken(t, private, "key", []string{"ai-sdk"}), wantStatus: http.StatusNoContent},
 			{name: "wrong audience", token: signAccessToken(t, private, "key", []string{"other"}), wantStatus: http.StatusUnauthorized},
 			{name: "wrong signature", token: signAccessToken(t, generateSigningKey(t), "key", []string{"ai-sdk"}), wantStatus: http.StatusUnauthorized},
 			{name: "invalid token with cloud assertions", token: "invalid", wantStatus: http.StatusUnauthorized},
@@ -135,12 +152,12 @@ func TestMiddleware_AuthenticationOrderingAndPrivateContext(t *testing.T) {
 					caller, ok := CallerFromContext(request.Context())
 					require.True(t, ok)
 					assert.Equal(t, "service", caller.Service)
-					assert.Equal(t, "stack-1", caller.Namespace)
+					assert.Equal(t, "stacks-1", caller.Namespace)
 					w.WriteHeader(http.StatusNoContent)
 				}))
 				body := &unreadBody{}
 				request := httptest.NewRequest(http.MethodPost, "/protected", body)
-				request.Header = http.Header{"X-Access-Token": {tc.token}, "Authorization": {"Bearer ignored-secret"}, "X-Scope-OrgID": {"123"}, "X-Cloud-Org-ID": {"456"}, "X-Access-Policy-ID": {"id-ap-private"}}
+				request.Header = http.Header{"X-Access-Token": {tc.token}}
 				response := httptest.NewRecorder()
 				handler.ServeHTTP(response, request)
 				assert.Equal(t, tc.wantStatus, response.Code)
@@ -152,7 +169,7 @@ func TestMiddleware_AuthenticationOrderingAndPrivateContext(t *testing.T) {
 	t.Run("success retains only normalized caller", func(t *testing.T) {
 		info := &fakeAuthInfo{
 			extra:        map[string][]string{authn.ServiceIdentityKey: {"service"}, "id-token": {"raw-secret"}},
-			namespace:    "stack-1",
+			namespace:    "stacks-1",
 			identityType: types.TypeUser,
 			subject:      "user:42",
 			email:        "private@example.com",
@@ -178,7 +195,7 @@ func TestMiddleware_AuthenticationOrderingAndPrivateContext(t *testing.T) {
 		request := httptest.NewRequest(http.MethodGet, "/protected", nil)
 		request.Header.Set("X-Access-Token", "Bearer access")
 		request.Header.Set("X-Grafana-Id", "Bearer id")
-		request.Header.Set("Authorization", "Bearer ignored-secret")
+
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, request)
 
@@ -187,7 +204,7 @@ func TestMiddleware_AuthenticationOrderingAndPrivateContext(t *testing.T) {
 		assert.Equal(t, "id", authenticator.idToken)
 		assert.Equal(t, 1, observations)
 		assert.Equal(t, 1, nextCalls)
-		assert.Equal(t, Caller{Source: SourceAccessToken, Service: "service", Namespace: "stack-1", ActingUser: &ActingUser{Subject: "user:42", Type: types.TypeUser}}, retained)
+		assert.Equal(t, Caller{Source: SourceAccessToken, Service: "service", Subject: "user:42", access: ConfiguredAccounts, Namespace: "stacks-1", ActingUser: &ActingUser{Subject: "user:42", Type: types.TypeUser}}, retained)
 		assert.Zero(t, retained.stackID)
 		assert.NotContains(t, assertableCaller(retained), "raw-secret")
 		assert.NotContains(t, assertableCaller(retained), "private@example.com")
@@ -200,10 +217,10 @@ func TestMiddleware_AuthenticationOrderingAndPrivateContext(t *testing.T) {
 		headers       http.Header
 		authenticator *fakeAuthenticator
 	}{
-		{name: "invalid headers", headers: http.Header{"Authorization": {"Bearer access"}}, authenticator: &fakeAuthenticator{info: validFakeAuthInfo()}},
+		{name: "invalid headers", headers: http.Header{"Authorization": {"Basic access"}}, authenticator: &fakeAuthenticator{info: validFakeAuthInfo()}},
 		{name: "verifier failure", headers: http.Header{"X-Access-Token": {"access"}}, authenticator: &fakeAuthenticator{err: errors.New("private verifier detail")}},
 		{name: "no cloud fallback", headers: http.Header{"X-Access-Token": {"invalid"}, "X-Scope-OrgID": {"123"}, "X-Cloud-Org-ID": {"456"}, "X-Access-Policy-ID": {"id-ap-private"}}, authenticator: &fakeAuthenticator{err: errors.New("private verifier detail")}},
-		{name: "identity failure", headers: http.Header{"X-Access-Token": {"access"}}, authenticator: &fakeAuthenticator{info: &fakeAuthInfo{subject: "must-not-fallback", namespace: "stack-1"}}},
+		{name: "identity failure", headers: http.Header{"X-Access-Token": {"access"}}, authenticator: &fakeAuthenticator{info: &fakeAuthInfo{subject: "must-not-fallback", namespace: "orgs-1"}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			nextCalls := 0
@@ -238,7 +255,7 @@ func (body *unreadBody) Read([]byte) (int, error) {
 }
 
 func validFakeAuthInfo() *fakeAuthInfo {
-	return &fakeAuthInfo{extra: map[string][]string{authn.ServiceIdentityKey: {"service"}}, namespace: "stack-1", identityType: types.TypeAccessPolicy}
+	return &fakeAuthInfo{extra: map[string][]string{authn.ServiceIdentityKey: {"service"}}, namespace: "stacks-1", identityType: types.TypeAccessPolicy}
 }
 
 type fakeAuthenticator struct {

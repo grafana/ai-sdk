@@ -61,8 +61,9 @@ deliberately selected values for your frontend.
 
 Ask your Gateway operator for the URL and credentials your application should
 use. Include the API prefix in the URL, for example
-`https://gateway.example.com/api/v1/aisdk`. For Grafana Cloud, create a client with
-your stack ID and Cloud Access Policy (CAP) token:
+`https://gateway.example.com/api/v1/aisdk`. Cloud access uses request-supplied
+provider keys, not configured accounts. Create its client with your stack ID and
+Cloud Access Policy (CAP) token:
 
 ```go
 client, err := grafana.NewWithCloudCredentials(grafana.CloudCredentialsConfig{
@@ -75,7 +76,7 @@ if err != nil {
 }
 ```
 
-For a separately provided JWT-enabled URL, use `NewWithTokenExchange` or
+For the private configured-account URL, use `NewWithTokenExchange` or
 `NewWithAccessToken`. See [Authenticate to Grafana AI Gateway](../guides/gateway-authentication.md)
 for credential setup and Go/Vercel examples. Use HTTPS and configure
 credentials through the client rather than adding authentication headers to
@@ -83,7 +84,10 @@ individual calls.
 
 ## Generate or stream a response
 
-Choose a public model ID from your operator or the model list below:
+For private configured-account calls, choose a public model ID from your operator
+or the model list below. This example assumes a private JWT client. Cloud calls
+use a native `provider/model` ID and provider keys; see
+[Use your own provider credentials](#use-your-own-provider-credentials).
 
 ```go
 model, err := client.LanguageModel(modelID)
@@ -105,6 +109,9 @@ for the stream-consumption pattern, or [Full-stack chat](../getting-started/full
 to connect a streaming response to your frontend. Consume or cancel every stream.
 
 ## Discover and select public models
+
+Discovery is private configured-account functionality. Cloud/BYOK discovery
+returns an explicit HTTP 400 invalid-request error, not an empty list.
 
 Use `client.ListModels(ctx)` to build a model picker:
 
@@ -149,9 +156,10 @@ const { models } = await fetchConfiguredModels({
 const aliases = models[0]?.gateway?.aliases;
 ```
 
-For Grafana Cloud, use `headers: { Authorization: \`Bearer ${stackID}:${capToken}\` }`
-instead. Use the same Gateway URL and credentials as your client; see the
-[authentication guide](../guides/gateway-authentication.md).
+A private access JWT may alternatively use bearer `Authorization`; never send
+both access headers. Use the same private Gateway URL and credentials as your
+client; see the [authentication guide](../guides/gateway-authentication.md).
+This helper does not support Cloud/BYOK discovery.
 
 ### Handle large catalogs
 
@@ -203,10 +211,10 @@ not supported.
 
 ## Use your own provider credentials
 
-Bring your own key (BYOK) requires a deployment that accepts request-supplied
-provider credentials. The bundled Gateway currently accepts configured models
-only. Confirm BYOK availability with your operator before using these examples;
-Gateway authentication is still required.
+Cloud calls use bring your own key (BYOK): send your provider credentials with
+each request. Confirm the Cloud/BYOK URL and availability with your operator;
+Gateway authentication is still required. These calls never use configured
+accounts, aliases or discovery; native providers decide model availability.
 
 For BYOK, select the provider's native model using a `provider/model` ID rather
 than a configured model or alias. For example, pass an OpenAI key with an
@@ -259,9 +267,9 @@ Supply credentials on each call, including follow-up conversation steps. If you
 provide multiple accounts, put them in priority order. Account fallback may
 advance after an eligible failure, but authentication failures stop the chain.
 
-Omit an account's `baseURL` to use the native provider endpoint. If you need a
-custom endpoint, ask your operator to approve the exact URL before adding it to
-the account. This is separate from the client URL, which points to your Gateway.
+Omit an account's `baseURL` to use the native provider endpoint. The bundled
+service does not configure custom endpoint approvals, so other URLs are rejected.
+This is separate from the client URL, which points to your Gateway.
 OpenAI accounts can also specify `organization` and `project`; leave them out
 when you do not need them. Anthropic accounts use the key and optional base URL.
 
@@ -281,9 +289,9 @@ Start with metadata-only logs and avoid unnecessary payload/error-message captur
 
 ## Configure fallback
 
-Your Gateway operator can configure a primary model and ordered backups behind
-one public model ID. Your application keeps using that ID; it does not need to
-select backups itself.
+For private configured-account calls, your Gateway operator can configure a
+primary model and ordered backups behind one public model ID. Your application
+keeps using that ID; it does not need to select backups itself.
 
 Choose backups that support your required tools, file types, reasoning settings
 and conversation history. Each call starts with the primary again, including
