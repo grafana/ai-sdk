@@ -60,7 +60,7 @@ For a supported request, the handler SHALL select execution once under authentic
 
 One request execution deadline SHALL begin immediately before host selection, after bounded protocol input validation, and SHALL cover selection/construction, logical invocation and all underlying credential attempts; streaming consumption SHALL use the same deadline. Selection, invocation and attempt boundaries SHALL NOT reset or extend it. An earlier request-context deadline SHALL remain effective. Selection and invocation SHALL retain context cancellation, panic containment, buffered completion and bounded handler latency when work ignores cancellation. Late selection completion SHALL NOT invoke a model and SHALL retain bounded request-owned cleanup. A permanently blocked selection or native function may retain its worker; no exactly-once or guaranteed-zeroization claim SHALL be made.
 
-#### Scenario: Configured execution
+#### Scenario: Supported execution
 - **WHEN** configured selection returns a valid model
 - **THEN** catalog resolution and logical DoGenerate SHALL each run once
 
@@ -68,7 +68,7 @@ One request execution deadline SHALL begin immediately before host selection, af
 - **WHEN** BYOK selection returns a valid credential-attempt model
 - **THEN** the logical invocation SHALL run once, the catalog SHALL not run and bounded physical attempts SHALL follow the BYOK contract
 
-#### Scenario: Invalid selection
+#### Scenario: Invalid resolution
 - **WHEN** selection fails, panics or returns invalid identity/model values
 - **THEN** the handler SHALL return a safe error without invoking an invalid model
 

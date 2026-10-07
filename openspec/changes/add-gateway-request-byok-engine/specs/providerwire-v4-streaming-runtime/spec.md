@@ -38,7 +38,7 @@ The handler SHALL accept `ai-language-model-streaming` only when its single exac
 
 A supported streaming request SHALL invoke the selected logical model's `DoStream` exactly once and SHALL NOT invoke `DoGenerate`. The selected logical model MAY own bounded credential attempts under gateway-request-byok; these SHALL NOT cause repeated host selection or bypass existing logical SSE commitment and single-owner cleanup. Any failure before stream invocation SHALL select a bounded privacy-safe non-2xx JSON document and SHALL produce no SSE commitment.
 
-#### Scenario: Configured streaming envelope executes once
+#### Scenario: Supported streaming envelope executes once
 - **WHEN** a valid configured-access request uses streaming value `true` and passes mapping and selection
 - **THEN** host selection, configured resolution and logical `DoStream` SHALL each run once, and `DoGenerate` SHALL not run
 
