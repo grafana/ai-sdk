@@ -31,6 +31,14 @@ HTTP and SSE noncanonical-casing regressions failed against the previous decoder
 
 All checks above were rerun after simplification: full client races/vet/lint, Go 1.26.8 and published-dependency checks, parity (108 schema / 96 client-runtime tests), 66 command tests, docs and isolation/boundary/workspace checks. No provider input fixture changed.
 
+## Main merge and archive verification
+
+Merged origin/main at 8d36b82d after provider-tool/MCP delivery. Resolved stream.go by retaining main's variant-local decoding and new tool markers alongside this change's original-byte error decoder. Workspace root/Gateway/client tests, client races/vet/lint, source integration, parity and frontend checks pass: 120 schema tests, 110 client/runtime tests, 74 command tests and 23 frontend files / 132 tests.
+
+The merge exposed an inherited standalone dependency failure: provider.ValidateTools was referenced by the client but absent from its old SDK pin. With owner approval, providers/grafana now requires the merged, remotely resolved SDK version v0.1.0-alpha.1.0.20261007173843-8d36b82dfd52. Go 1.26.8 standalone race tests, standalone vet, the published-client gate and merged-pin ancestry checks pass with the updated go.mod/go.sum. No replace directive or Go baseline increase was introduced.
+
+The owner authorized syncing the client delta into openspec/specs/grafana-gateway-client/spec.md and archiving this completed change on 2026-10-07. This archives only the client-retention change, not the downstream collection/runtime changes.
+
 ## Limits
 
-Injected responses prove client retention, not live-provider or private-service parity. The optional provider-shape report skips unavailable registered package source. No provider fixture inputs were modified. No Gateway producer, SDK retry policy, public error accessor or module baseline change is included. OpenSpec sync/archive remains pending review and separate approval.
+Injected responses prove client retention, not live-provider or private-service parity. The optional provider-shape report skips unavailable registered package source. No provider fixture inputs were modified. No Gateway producer, SDK retry policy, public error accessor or module baseline change is included. OpenSpec sync/archive is owner-approved; downstream PR delivery and release remain separate.
