@@ -1,6 +1,6 @@
-## MODIFIED Requirements
+## ADDED Requirements
 
-### Requirement: Catalog-independent request destination
+### Requirement: Authenticated request-only destination
 Authenticated BYOK inference SHALL require a provider/model selector in the existing ai-language-model-id header. The selector SHALL be valid UTF-8, at most 2,048 bytes, have a supported case-sensitive provider prefix before the first slash and a nonempty native-model suffix without whitespace or control characters. The suffix SHALL be preserved, including additional slashes, as model data rather than a URL. Initial providers SHALL be anthropic and openai, using the native Messages and Responses adapters respectively.
 
 The selector SHALL NOT resolve configured models, aliases, provider instances, endpoints, defaults or fallback routes. Advisory native model lists SHALL NOT act as a configured-catalog allowlist. Unknown native models SHALL be decided by the selected native provider without unsolicited inventory or validation calls.
@@ -16,8 +16,6 @@ The selector SHALL NOT resolve configured models, aliases, provider instances, e
 #### Scenario: Selector boundaries
 - **WHEN** a selector has an empty provider/model component, an unsupported provider, forbidden characters or exceeds the byte ceiling
 - **THEN** the request SHALL fail with a bounded capability/field diagnostic before provider construction
-
-## ADDED Requirements
 
 ### Requirement: Request-only native consumption guards
 BYOK invocation SHALL retain gateway-native-provider-options protections at the

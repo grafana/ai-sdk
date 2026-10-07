@@ -1,5 +1,9 @@
 ## REMOVED Requirements
 
+### Requirement: Independent dependency construction
+**Reason**: The mode-specific construction contract is replaced by simultaneous private JWT and Cloud construction; Cloud no longer removes the process's JWT dependency.
+**Migration**: Use the unified dependency construction requirement, configure JWT trust and isolate BYOK factories from configured accounts.
+
 ### Requirement: Startup-selected authentication
 **Reason**: Authentication is selected by isolated entry point, not a mutually exclusive process-wide mode.
 **Migration**: Replace auth.mode configuration and mode-specific tests directly. The Gateway is WIP; no compatibility aliases or migration period are required.
@@ -9,6 +13,24 @@
 **Migration**: Replace listener settings and deployment manifests with the three-listener contract below.
 
 ## ADDED Requirements
+
+### Requirement: Unified dependency construction
+The unified command SHALL construct explicit regional JWT verification and configured-account dependencies alongside credential-independent BYOK adapter factories. JWT trust SHALL be configured even when Cloud requests are being served. Client construction SHALL preserve bounded JWKS retrieval, endpoint validation, redirect refusal, model response bounds and timeouts.
+
+Configured secret resolution and catalog construction SHALL have no dependency path into the BYOK selector. Shared transports SHALL carry no mutable account headers or SDK-environment credential defaults. Listener timeout validation SHALL use overflow-safe accounting for the work each path performs, including JWT verification on the private path.
+
+#### Scenario: Concurrent authentication dependencies
+- **WHEN** the unified command starts
+- **THEN** the private listener SHALL have JWT verification while Cloud requests SHALL not perform a JWT lookup
+
+#### Scenario: BYOK isolation from configured state
+- **WHEN** configured providers contain distinctive keys and endpoint overrides
+- **THEN** BYOK selection SHALL have no access to them and SHALL use only explicit request credentials and supported native destinations
+
+#### Scenario: Invalid trust or timeout configuration
+- **WHEN** configured JWT trust, transport bounds or listener timeout arithmetic is invalid
+- **THEN** startup SHALL fail before readiness
+
 
 ### Requirement: Simultaneous isolated authentication entry points
 One Gateway process SHALL expose a private JWT API listener, a trusted-Cloud API listener and an operational listener. API listeners SHALL serve the existing exact ProviderWire paths with method and encoded-path checks. Operational routes SHALL exist only on the operational listener. The command SHALL remove exclusive startup authentication modes and SHALL NOT fall back between authenticators.
@@ -75,7 +97,7 @@ The Cloud listener MUST grant only request-BYOK access. Configured provider acco
 - **WHEN** the authenticating proxy authorizes a model request
 - **THEN** the application SHALL receive only trusted identity and request content, and SHALL require request-scoped provider credentials
 
-#### Scenario: Deployment documentation
+#### Scenario: Documentation scope
 - **WHEN** operator guidance describes the deployment
 - **THEN** it SHALL distinguish proxy-only Cloud ingress, private authenticated ingress and operational ingress
 - **AND** it SHALL NOT claim header validation alone proves network isolation
@@ -85,39 +107,30 @@ Cloud activation MUST require deployment-verified proxy-only API ingress. The ap
 
 The Cloud listener SHALL reject surviving Authorization, X-Access-Token and X-Grafana-Id before body reads. It SHALL ignore X-Cloud-Org-ID and X-Access-Policy-ID rather than retaining or trusting them, and SHALL NOT manufacture a service identity or acting user. It SHALL NOT inspect cluster policies or issue authentication requests.
 
-#### Scenario: Trusted stack-only request
+#### Scenario: Stack-only identity
 - **WHEN** a proxy-only request supplies a valid stack assertion without surviving credentials
 - **THEN** it SHALL establish BYOK access and the corresponding stack namespace without a manufactured service identity
 
-#### Scenario: Invalid handoff
-- **WHEN** a Cloud request has a malformed stack assertion or any surviving authentication header
+#### Scenario: Invalid post-edge stack assertion
+- **WHEN** a Cloud request has a missing, empty, duplicated, coalesced or malformed stack assertion
+- **THEN** it SHALL fail before protected body reads or provider work without trying JWT authentication
+
+#### Scenario: Invalid numeric identity
+- **WHEN** a Cloud stack assertion is zero, negative, nondecimal or outside positive int64
+- **THEN** it SHALL fail before protected work without coercing or truncating the identity
+
+#### Scenario: Incorrect edge credential handoff
+- **WHEN** a Cloud request retains Authorization, X-Access-Token or X-Grafana-Id
 - **THEN** it SHALL fail before protected body reads or provider work without trying JWT authentication
 
 #### Scenario: Ignored policy headers
 - **WHEN** valid trusted stack identity accompanies arbitrary policy organization or policy identifier headers
 - **THEN** the application SHALL ignore those headers without using them for account selection
 
-#### Scenario: Isolation evidence
+#### Scenario: Deployment prerequisite remains external
 - **WHEN** deterministic tests accept a syntactically valid assertion
 - **THEN** the result SHALL NOT be described as deployed sender authentication
 - **AND** deployment evidence SHALL separately prove that internal client workloads cannot reach the Cloud application port
-
-### Requirement: Independent dependency construction
-The unified command SHALL construct explicit regional JWT verification and configured-account dependencies alongside credential-independent BYOK adapter factories. JWT trust SHALL be configured even when Cloud requests are being served. Client construction SHALL preserve bounded JWKS retrieval, endpoint validation, redirect refusal, model response bounds and timeouts.
-
-Configured secret resolution and catalog construction SHALL have no dependency path into the BYOK selector. Shared transports SHALL carry no mutable account headers or SDK-environment credential defaults. Listener timeout validation SHALL use overflow-safe accounting for the work each path performs, including JWT verification on the private path.
-
-#### Scenario: Concurrent authentication dependencies
-- **WHEN** the unified command starts
-- **THEN** the private listener SHALL have JWT verification while Cloud requests SHALL not perform a JWT lookup
-
-#### Scenario: BYOK isolation from configured state
-- **WHEN** configured providers contain distinctive keys and endpoint overrides
-- **THEN** BYOK selection SHALL have no access to them and SHALL use only explicit request credentials and supported native destinations
-
-#### Scenario: Invalid trust or timeout configuration
-- **WHEN** configured JWT trust, transport bounds or listener timeout arithmetic is invalid
-- **THEN** startup SHALL fail before readiness
 
 ### Requirement: Client composition and credential privacy
 Tests SHALL run the real unified command with both listeners, independent Go clients and the exact registered Vercel client. A test-only Cloud edge SHALL use dummy credentials and predetermined scope/stack outcomes, replace assertions and strip credentials. It SHALL NOT claim production CAP verification. Private tests SHALL exercise both access-token header forms and concrete/wildcard namespaces.
@@ -126,15 +139,27 @@ Configured discovery SHALL succeed only on configured access; authenticated Clou
 
 Automatic server diagnostics SHALL exclude credentials and customer-ID metric labels. Authentication observations SHALL use bounded entry-point/source/outcome values per request, never a process-wide mode override. Streaming middleware SHALL preserve Unwrap and cancellation. Consumer request metadata exposure and structural capture protection SHALL follow grafana-gateway-client and structured-logging-middleware.
 
-#### Scenario: Equivalent inference through both clients
+#### Scenario: Client-to-edge outcomes
 - **WHEN** Go and pinned Vercel issue supported private/configured and Cloud/BYOK unary and streaming calls
 - **THEN** fake native providers SHALL observe the appropriate account source, matching content/options and no Gateway authentication credentials
 
-#### Scenario: High-level defaults survive authentication
+#### Scenario: High-level text-only streaming through the edge
 - **WHEN** Go StreamText or registered TypeScript generateText/streamText sends a supported text call with an explicit or omitted token limit
 - **THEN** both entry points SHALL preserve SDK-prepared headers and automatic choice while native defaults apply only to omitted limits
 
-#### Scenario: Cloud denial precedes application work
+#### Scenario: High-level text-only unary generation through the edge
+- **WHEN** registered TypeScript generateText sends an explicit or omitted output-token limit
+- **THEN** both entry points SHALL preserve its automatic choice and SDK-prepared headers, applying native defaults only to omitted limits
+
+#### Scenario: Outbound authentication
+- **WHEN** either population reaches a native provider
+- **THEN** only the selected configured or BYOK account SHALL authenticate that request, without Gateway credentials or trusted Cloud assertions
+
+#### Scenario: Application authentication diagnostics
+- **WHEN** the application rejects JWT credentials or a Cloud assertion
+- **THEN** it SHALL emit fixed credential-free diagnostics and bounded authentication metrics without customer-ID labels
+
+#### Scenario: Edge denials are separate evidence
 - **WHEN** the test edge rejects a credential or inference scope
 - **THEN** no application handler or native provider work SHALL occur
 
@@ -142,10 +167,10 @@ Automatic server diagnostics SHALL exclude credentials and customer-ID metric la
 - **WHEN** authenticated clients request discovery on each entry point
 - **THEN** private clients SHALL receive configured discovery and Cloud clients SHALL receive the fixed unsupported-operation response without catalog access
 
-#### Scenario: Streaming and privacy
+#### Scenario: Streaming through authentication and telemetry
 - **WHEN** either population streams through real authentication and telemetry
 - **THEN** events SHALL flush incrementally, cancellation SHALL reach the provider and dummy credential markers SHALL be absent from captured server sinks
 
-#### Scenario: Evidence boundaries
+#### Scenario: Compatibility claims match test evidence
 - **WHEN** support is documented
 - **THEN** exact-client, fake-provider and test-edge evidence SHALL be distinguished from live provider acceptance, CAP enforcement and deployed NetworkPolicy proof

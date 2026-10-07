@@ -13,11 +13,11 @@ No rejected values, arbitrary member names, raw bodies, authentication material 
 - **WHEN** authenticated BYOK access requests catalog discovery
 - **THEN** the host SHALL emit HTTP 400, invalid_request_error, invalid_request, param null and a fixed unsupported-discovery message
 
-#### Scenario: Generic provider API failure
+#### Scenario: Provider API failure
 - **WHEN** a provider returns an arbitrary unclassified API/transport/internal failure
 - **THEN** the runtime SHALL preserve existing safe classification without serializing unrestricted causes
 
-#### Scenario: Unknown configured model
+#### Scenario: Unknown model
 - **WHEN** configured catalog resolution reports an unknown public model
 - **THEN** the handler SHALL return the fixed model-not-found document
 

@@ -53,3 +53,10 @@ zero attempts for consumed bypasses and retain ordinary-field negative controls.
 Configured guard implementations and native converters remain unchanged.
 
 Local gates passed; GitHub CI is separate evidence and is not claimed here.
+
+CI resolved the floating OpenSpec major to 1.14.0, while local mise had 1.6.0.
+All three changes also pass strict validation with exact OpenSpec 1.14.0 after
+preserving inherited scenario identities, explicitly replacing the obsolete
+mode-specific dependency requirement and expressing authenticated-service BYOK
+requirements as additions rather than modifications of an unsynchronized spec.
+The workflow's archive-before-merge gate remains pending while changes are active.

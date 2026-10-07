@@ -74,7 +74,7 @@ Guidance SHALL distinguish configured candidates from actual attempts/response i
 - **WHEN** raw HTTP, pinned TS normalized discovery, the TS helper and Go ListModels exercise configured direct and fallback aliases against the real test command
 - **THEN** normalized row compatibility and configured access SHALL be proven with intended authentication and zero native inference calls
 
-#### Scenario: Cloud fixtures no longer list configured models
+#### Scenario: Current Cloud fixture is documented
 - **WHEN** deterministic Cloud-auth command tests run against the unified service
 - **THEN** discovery SHALL be rejected without catalog access and inference SHALL require BYOK
 - **AND** no fixture SHALL preserve the retired Cloud-to-configured-account behavior as a compatibility requirement

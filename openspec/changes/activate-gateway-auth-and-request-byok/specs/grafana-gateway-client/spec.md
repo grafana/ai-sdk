@@ -7,7 +7,7 @@ The Cloud-credential flow SHALL send exactly one outer `Authorization: Bearer <s
 
 The token-exchange and pre-minted access-token flows SHALL obtain one access token using the constructor's context-aware token source and place it in `X-Access-Token`. For these JWT flows, `WithUserIDToken` SHALL attach an optional acting-user token to a context and the client SHALL place a non-empty attached token in `X-Grafana-Id`. The Go token source SHALL remain authoritative; unrelated caller-supplied Authorization SHALL NOT replace it. The client MUST NOT mint tokens locally or implement an additional CAP-token cache. Authentication failures and cancellation SHALL occur before Gateway network I/O when detected during request preparation.
 
-#### Scenario: CAP authenticates inference and discovery rejection
+#### Scenario: CAP authenticates every supported operation
 - **WHEN** `ListModels`, `DoGenerate` or `DoStream` is invoked with Cloud credentials
 - **THEN** the request SHALL carry the same configured stack/CAP bearer credential only in the outer Authorization header; inference SHALL require BYOK and authenticated discovery SHALL return the unsupported-operation error
 - **AND** no token-exchange request SHALL occur
@@ -47,13 +47,13 @@ The token-exchange and pre-minted access-token flows SHALL obtain one access tok
 ### Requirement: Cloud credential client evidence
 Automated tests SHALL compare the Go Cloud flow with the exact registered Vercel client configured with apiKey "<stack-id>:<CAP-token>". Both SHALL issue catalog-independent BYOK unary/streaming requests through a deterministic dummy authenticating edge and one unified command also serving private JWT requests. Successful configured discovery SHALL use private JWT access; Cloud discovery SHALL prove authenticated unsupported-operation handling. Dummy edges SHALL NOT be described as production CAP verification.
 
-#### Scenario: Both clients emit request credentials
+#### Scenario: Both clients use the Cloud edge contract
 - **WHEN** Go and pinned Vercel send equivalent supported BYOK calls
 - **THEN** the edge SHALL observe equivalent Cloud bearer credentials and standard providerOptions.gateway.byok bodies
 - **AND** the application SHALL receive the edge's stack assertion without Gateway auth credentials
 - **AND** native providers SHALL receive only selected BYOK authentication and matching content/options
 
-#### Scenario: Scope or credential rejection
+#### Scenario: Edge rejects credentials or scope
 - **WHEN** the test edge rejects Cloud credentials or inference scope
 - **THEN** no application/provider work SHALL occur and neither client SHALL switch authentication methods
 
@@ -61,32 +61,40 @@ Automated tests SHALL compare the Go Cloud flow with the exact registered Vercel
 - **WHEN** private JWT and Cloud clients concurrently call the same process
 - **THEN** their configured and BYOK accounts SHALL remain isolated and only the private clients SHALL receive configured discovery
 
-#### Scenario: Capture and evidence limits
+#### Scenario: Privacy and isolation remain intact
 - **WHEN** request emission and capture are inspected
 - **THEN** Gateway authentication credentials SHALL be absent from request bodies, provider requests and automatic server capture
 - **AND** local BYOK request metadata SHALL retain its submitted subtree while credential-aware consumer capture excludes it
 - **AND** synthetic edge/provider evidence SHALL not establish live policy or network isolation
 
+#### Scenario: Evidence is described accurately
+- **WHEN** client compatibility is documented
+- **THEN** exact-client captures and dummy edge/provider tests SHALL be distinguished from deployed CAP enforcement, network isolation and live provider acceptance
+
 ### Requirement: Shared Go and Vercel authentication guidance
 The shared user-facing guide under docs SHALL explain the public Cloud/BYOK endpoint and private JWT/configured endpoint of one deployment. It SHALL distinguish application-user identity, Gateway authentication and provider credentials, with tested Go and exact-pinned Vercel examples and no legacy-mode or migration guidance. Exhaustive API reference SHALL remain in godoc; network/JWKS/listener configuration SHALL remain in operator guidance.
 
-#### Scenario: Customer uses BYOK
+#### Scenario: User chooses a Cloud client
 - **WHEN** a Go or server-side Vercel caller follows the public setup
 - **THEN** the example SHALL use stack/CAP Gateway credentials, inference scope, provider/model selection and request-scoped API keys
 - **AND** it SHALL explicitly state that configured discovery and configured-account fallback are unavailable
 
-#### Scenario: Internal service uses configured accounts
+#### Scenario: User chooses a separately provided JWT-enabled URL
 - **WHEN** an internal caller follows the private setup
 - **THEN** Go SHALL use its access-token or token-exchange constructor and Vercel SHALL use apiKey with an explicit short-lived JWT
 - **AND** the example SHALL use configured discovery/model names without BYOK
 - **AND** audience ai-sdk, concrete/wildcard namespace context and caller-owned token refresh SHALL be explained
 
-#### Scenario: Credentials stay in trusted applications
+#### Scenario: User provisions least privilege
 - **WHEN** guidance describes token/key handling and telemetry
 - **THEN** it SHALL require appropriate trusted execution, HTTPS or the documented protected internal transport, least privilege and rotation
 - **AND** it SHALL explain that caller-owned request metadata contains BYOK and demonstrate structural capture redaction
 
-#### Scenario: Examples are verified
+#### Scenario: Guide remains external-facing
+- **WHEN** the shared guide describes client setup
+- **THEN** it SHALL use public client APIs and documentation links, leaving internal deployment/JWKS/listener configuration in operator guidance
+
+#### Scenario: Documentation examples are verified
 - **WHEN** documentation examples are accepted
 - **THEN** Go examples SHALL build, TypeScript examples SHALL typecheck against the registered baseline, demonstrated behavior SHALL have deterministic tests and documentation navigation SHALL remain valid
 
