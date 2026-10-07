@@ -193,7 +193,9 @@ The client SHALL explicitly map the complete current `provider.CallOptions` shap
 - **THEN** client encoding SHALL fail before authentication or network I/O
 
 ### Requirement: Bounded normalized unary consumption
-For successful unary responses, the client SHALL require JSON media type, read within its unary limit, accept one complete valid document and map its supported registered content, finishReason, usage, warnings and ordinary result/content providerMetadata into provider.GenerateResult. It SHALL reject malformed required fields, unknown content/finish/warning discriminators, invalid usage, trailing JSON and oversized input. Supported source and reasoning families SHALL remain governed by their capabilities.
+For text/reasoning blocks and tool input/call/result variants, the client SHALL decode only fields consumed by the selected variant and SHALL ignore unrelated variant fields rather than enforce the server's strict output union. Ordinary typed decoding SHALL reject unrepresentable consumed values. Optional null tool flags SHALL normalize to Go absence/zero; explicit false Dynamic and Preliminary values SHALL retain pointer presence. Required payload checks, opaque metadata structure and transport resource bounds SHALL remain unchanged.
+
+For successful unary responses, the client SHALL require JSON media type, read within its unary limit, accept one complete valid document and map its supported registered content, including provider calls and results, finishReason, usage, warnings and ordinary result/content providerMetadata into provider.GenerateResult. It SHALL reject malformed required fields, unknown content/finish/warning discriminators, invalid usage, trailing JSON and oversized input. Supported source and reasoning families SHALL remain governed by their capabilities.
 
 The client SHALL replace server request/response: Request.Body SHALL be the locally encoded request; Response.Headers/Body SHALL be the bounded Gateway HTTP response. Native response id/modelId/timestamp SHALL remain available inside that raw body but SHALL NOT populate typed Response identity, matching the registered TS client's replacement. No native diagnostic access carrier SHALL be introduced by this behavior.
 
@@ -224,15 +226,27 @@ Warnings SHALL preserve active registered fields, required empty strings, order 
 - **WHEN** known variants supply present empty required strings and absent or explicitly empty details
 - **THEN** decoding SHALL preserve required values/order and normalize details to empty Go strings
 
+#### Scenario: Provider-owned unary result
+- **WHEN** ordered content contains a hosted call and its result
+- **THEN** the client SHALL preserve call ownership, IDs, names, input, result and supported markers/metadata without requiring or emitting a result-level providerExecuted wire member
+
+#### Scenario: Unrelated variant fields do not reject valid payloads
+- **WHEN** a bounded text, call or result contains unrelated fields, including values not representable by those other variants
+- **THEN** the client SHALL decode its relevant payload and ignore the unrelated fields, matching the pinned client at the supported typed projection
+
+#### Scenario: Optional flag normalization
+- **WHEN** call/result flags are omitted, null, false or true
+- **THEN** null SHALL normalize to absence/zero, false SHALL retain Dynamic/Preliminary pointer presence and true SHALL remain enabled
+
 ### Requirement: Successful unary transport read failures retain retryability
-When a successful HTTP 200 `DoGenerate` response body fails to read because of transport I/O after headers, the Grafana client SHALL return a retryable `*provider.APICallError` with HTTP status 200, a bounded locally worded primary message, and a discoverable underlying read cause, without returning a partial result or making another model request. Wrong media type, malformed JSON, strict output-schema violations, and unary byte-limit violations SHALL remain non-retryable protocol failures. Context cancellation or deadline expiry SHALL remain discoverable with `errors.Is` and SHALL NOT be classified as a retryable transport failure. Non-2xx Gateway error responses and discovery retain their existing classification; this requirement does not add any new public service-error category.
+When a successful HTTP 200 `DoGenerate` response body fails to read because of transport I/O after headers, the Grafana client SHALL return a retryable `*provider.APICallError` with HTTP status 200, a bounded locally worded primary message, and a discoverable underlying read cause, without returning a partial result or making another model request. Wrong media type, malformed JSON, malformed consumed fields, and unary byte-limit violations SHALL remain non-retryable protocol failures. Context cancellation or deadline expiry SHALL remain discoverable with `errors.Is` and SHALL NOT be classified as a retryable transport failure. Non-2xx Gateway error responses and discovery retain their existing classification; this requirement does not add any new public service-error category.
 
 #### Scenario: HTTP 200 response body is interrupted after headers
 - **WHEN** the real HTTP handler sends JSON headers and a partial, below-limit body with a declared longer `Content-Length`, then closes the connection before the body completes
 - **THEN** `DoGenerate` SHALL return no result and one retryable `*provider.APICallError` with status 200, a locally bounded primary message that does not disclose the response body, and the underlying body-read failure discoverable through its cause chain, after exactly one model request
 
 #### Scenario: Successful unary body cannot be accepted for protocol reasons
-- **WHEN** a successful unary response has a wrong media type, malformed JSON, invalid registered result schema, or exceeds the configured unary byte limit, including when an over-limit partial body and a transport read error occur together
+- **WHEN** a successful unary response has a wrong media type, malformed JSON, invalid consumed result fields, or exceeds the configured unary byte limit, including when an over-limit partial body and a transport read error occur together
 - **THEN** `DoGenerate` SHALL return no partial result and a non-retryable bounded protocol error after exactly one model request; the unary byte limit SHALL take precedence over the read error, except that context cancellation or deadline expiry SHALL retain highest precedence
 
 #### Scenario: Unary read is canceled
@@ -244,7 +258,7 @@ When a successful HTTP 200 `DoGenerate` response body fails to read because of t
 - **THEN** the client SHALL NOT issue another HTTP request or replay any previously delivered part
 
 ### Requirement: Incremental bounded SSE consumption
-A successful streaming setup SHALL require SSE media type and return a `StreamResult` whose request body and response headers are client-owned. One goroutine SHALL own the body, parse incrementally under configured cumulative-byte, complete-event-byte, and event-count limits, send mapped parts with context-aware backpressure, close the body, and close the output channel exactly once. It SHALL not buffer the full response or an unbounded line/event. The initial WP7 mapper SHALL accept the WP5 text stream family, safe error parts, and bounded raw parts needed for pinned filtering parity; every unsupported, malformed, or oversized event SHALL emit at most one terminal non-retryable protocol `PartError` and close.
+A successful streaming setup SHALL require SSE media type and return a `StreamResult` whose request body and response headers are client-owned. One goroutine SHALL own the body, parse incrementally under configured cumulative-byte, complete-event-byte, and event-count limits, send mapped parts with context-aware backpressure, close the body, and close the output channel exactly once. It SHALL not buffer the full response or an unbounded line/event. The mapper SHALL accept supported text, function-tool and provider-tool calls/results, safe error parts and bounded raw parts needed for registered filtering behavior. Supported execution/dynamic/preliminary markers and opaque tool metadata SHALL be preserved under gateway-provider-metadata. Input-start dynamic SHALL retain absent, explicit false and true independently through decoding; it SHALL NOT be eagerly defaulted. A deferred result SHALL NOT require a repeated call in the same response. Every unsupported, malformed or oversized event SHALL emit at most one terminal non-retryable protocol PartError and close. Server lifecycle validation SHALL NOT be imported into the client as a new independent protocol dialect.
 
 #### Scenario: Text stream completes
 - **WHEN** the server emits valid start, metadata, sequential text parts, safe errors, and finish frames
@@ -259,8 +273,20 @@ A successful streaming setup SHALL require SSE media type and return a `StreamRe
 - **THEN** the client SHALL stop reading, emit at most one bounded protocol error when delivery remains possible, and close all owned resources
 
 #### Scenario: Unsupported response family is received
-- **WHEN** the WP5 text client receives a reasoning, tool, file, source, custom, approval, or other later-package stream part
+- **WHEN** the client receives file, custom, approval or another unsupported later-package stream part
 - **THEN** it SHALL produce an explicit protocol error rather than decoding through provider-domain JSON accidentally
+
+#### Scenario: Hosted dynamic call with preview results
+- **WHEN** valid tool input, a provider-owned dynamic call, preliminary results and a final result arrive before finish
+- **THEN** all parts and enabled markers SHALL be delivered in order, with false Dynamic/Preliminary pointer presence and input-start dynamic presence retained and final-event-before-EOF behavior unchanged
+
+#### Scenario: Input-start dynamic is presence-sensitive
+- **WHEN** otherwise equivalent input-start events omit dynamic or contain false or true
+- **THEN** the client SHALL preserve nil, false and true respectively for subsequent core inference
+
+#### Scenario: Deferred result is consumed
+- **WHEN** the current request carries an unresolved provider-owned call in history and the response contains only its result and finish
+- **THEN** the client SHALL deliver the success or error result without demanding a repeated call or adding a result-level providerExecuted wire member
 
 ### Requirement: Registered stream normalization
 The client SHALL ignore an SSE data payload exactly equal to `[DONE]`, SHALL treat transport clean EOF as clean completion with or without a preceding finish, SHALL filter `raw` parts unless `IncludeRawChunks` is true, SHALL convert valid response-metadata timestamps into `time.Time`, and SHALL preserve response order. Context cancellation SHALL end the stream without manufacturing a provider error. A finish received before EOF SHALL be delivered before channel closure; the client SHALL not create a synthetic finish or require the server to emit `[DONE]`.

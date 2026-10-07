@@ -49,9 +49,11 @@ func TestFallbackAcceptance_MappedPrecommitAndCommitment(t *testing.T) {
 		{"start then premature end", fallbackParts(provider.StreamPart{Type: provider.PartStreamStart}), nil, 200, []fallback.AttemptOutcome{fallback.AttemptSelected}, failed, []string{"internal_error"}},
 		{"first error", fallbackParts(provider.StreamPart{Type: provider.PartError, APICallError: hostileFallbackError(503)}, finish), nil, 200, []fallback.AttemptOutcome{fallback.AttemptSelected}, []provider.StreamPartType{provider.PartStreamStart, provider.PartError, provider.PartFinish}, []string{"overloaded"}},
 		{"tool input then error", fallbackParts(provider.StreamPart{Type: provider.PartToolInputStart, ID: "call", ToolName: "lookup"}, provider.StreamPart{Type: provider.PartError, APICallError: hostileFallbackError(503)}), nil, 200, []fallback.AttemptOutcome{fallback.AttemptSelected}, []provider.StreamPartType{provider.PartStreamStart, provider.PartToolInputStart, provider.PartError, provider.PartError}, []string{"overloaded", "internal_error"}},
+		{"provider call then error", fallbackParts(provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "call", ToolName: "lookup", Input: `{}`, ProviderExecuted: true}, provider.StreamPart{Type: provider.PartError, APICallError: hostileFallbackError(503)}, finish), nil, 200, []fallback.AttemptOutcome{fallback.AttemptSelected}, []provider.StreamPartType{provider.PartStreamStart, provider.PartToolCall, provider.PartError, provider.PartFinish}, []string{"overloaded"}},
+		{"opaque MCP call then error", fallbackParts(provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "call", ToolName: "lookup", Input: `{}`, ProviderExecuted: true, ProviderMetadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"type":"mcp-tool-use","serverName":"unconfigured","caller":null}`)}}, provider.StreamPart{Type: provider.PartError, APICallError: hostileFallbackError(503)}, finish), nil, 200, []fallback.AttemptOutcome{fallback.AttemptSelected}, []provider.StreamPartType{provider.PartStreamStart, provider.PartToolCall, provider.PartError, provider.PartFinish}, []string{"overloaded"}},
 		{"tool call then error", fallbackParts(toolCall, provider.StreamPart{Type: provider.PartError, APICallError: hostileFallbackError(503)}, finish), nil, 200, []fallback.AttemptOutcome{fallback.AttemptSelected}, []provider.StreamPartType{provider.PartStreamStart, provider.PartToolCall, provider.PartError, provider.PartFinish}, []string{"overloaded"}},
 		{"reasoning then malformed finish", fallbackParts(provider.StreamPart{Type: provider.PartReasoningStart, ID: "r"}, finish), nil, 200, []fallback.AttemptOutcome{fallback.AttemptSelected}, []provider.StreamPartType{provider.PartStreamStart, provider.PartReasoningStart, provider.PartError}, []string{"internal_error"}},
-		{"unsupported selected output", fallbackParts(provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "call", ToolName: "lookup", Input: `{}`, ProviderExecuted: true}), nil, 200, []fallback.AttemptOutcome{fallback.AttemptSelected}, failed, []string{"internal_error"}},
+		{"unsupported selected output", fallbackParts(provider.StreamPart{Type: provider.PartFile}), nil, 200, []fallback.AttemptOutcome{fallback.AttemptSelected}, failed, []string{"internal_error"}},
 		{"oversized selected call", fallbackParts(provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "call", ToolName: "lookup", Input: strings.Repeat("x", 1<<20)}), nil, 200, []fallback.AttemptOutcome{fallback.AttemptSelected}, failed, []string{"internal_error"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -92,7 +94,14 @@ func TestFallbackAcceptance_MappedPrecommitAndCommitment(t *testing.T) {
 					case provider.PartToolInputStart:
 						assert.JSONEq(t, `{"type":"tool-input-start","id":"call","toolName":"lookup"}`, payload)
 					case provider.PartToolCall:
-						assert.JSONEq(t, `{"type":"tool-call","toolCallId":"call","toolName":"lookup","input":"{}"}`, payload)
+						switch tc.name {
+						case "opaque MCP call then error":
+							assert.JSONEq(t, `{"type":"tool-call","toolCallId":"call","toolName":"lookup","input":"{}","providerExecuted":true,"providerMetadata":{"anthropic":{"type":"mcp-tool-use","serverName":"unconfigured","caller":null}}}`, payload)
+						case "provider call then error":
+							assert.JSONEq(t, `{"type":"tool-call","toolCallId":"call","toolName":"lookup","input":"{}","providerExecuted":true}`, payload)
+						default:
+							assert.JSONEq(t, `{"type":"tool-call","toolCallId":"call","toolName":"lookup","input":"{}"}`, payload)
+						}
 					case provider.PartReasoningStart:
 						assert.JSONEq(t, `{"type":"reasoning-start","id":"r"}`, payload)
 					case provider.PartError:
@@ -183,18 +192,18 @@ func TestFallbackAcceptance_MappedSelection(t *testing.T) {
 func TestFallbackAcceptance_MappedUnaryEncodingDoesNotReplay(t *testing.T) {
 	for _, tc := range []struct {
 		name        string
-		unsupported bool
+		contentType provider.GenerateContentType
 		input       json.RawMessage
 		status      int
 	}{
-		{"selected call", false, json.RawMessage(`{}`), http.StatusOK},
-		{"unsupported output", true, json.RawMessage(`{}`), http.StatusInternalServerError},
-		{"oversized selected call", false, json.RawMessage(`{"payload":"` + strings.Repeat("x", 1<<20) + `"}`), http.StatusInternalServerError},
+		{"selected call", provider.ContentToolCall, json.RawMessage(`{}`), http.StatusOK},
+		{"unsupported output", provider.ContentFile, json.RawMessage(`{}`), http.StatusInternalServerError},
+		{"oversized selected call", provider.ContentToolCall, json.RawMessage(`{"payload":"` + strings.Repeat("x", 1<<20) + `"}`), http.StatusInternalServerError},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newFallbackAcceptance(t, &observabilityTestModel{generate: func(_ context.Context, opts provider.CallOptions) (*provider.GenerateResult, error) {
 				assert.Len(t, opts.Tools, 1)
-				return &provider.GenerateResult{Content: []provider.GenerateContentPart{{Type: provider.ContentToolCall, ToolCallID: "call", ToolName: "lookup", Input: tc.input, ProviderExecuted: tc.unsupported}}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonToolCalls}}, nil
+				return &provider.GenerateResult{Content: []provider.GenerateContentPart{{Type: tc.contentType, ToolCallID: "call", ToolName: "lookup", Input: tc.input}}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonToolCalls}}, nil
 			}}, &observabilityTestModel{})
 			response := httptest.NewRecorder()
 			h.handler.ServeHTTP(response, h.request(t.Context(), false, mappedFallbackBody))

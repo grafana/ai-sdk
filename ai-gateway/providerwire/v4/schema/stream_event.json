@@ -115,7 +115,7 @@
     },
     "toolInputStart": {
       "type": "object", "required": ["type", "id", "toolName"],
-      "properties": {"type": {"const": "tool-input-start"}, "id": {"type": "string", "minLength": 1}, "toolName": {"type": "string", "minLength": 1}, "providerMetadata": {"$ref": "#/$defs/providerMetadata"}},
+      "properties": {"type": {"const": "tool-input-start"}, "id": {"type": "string", "minLength": 1}, "toolName": {"type": "string", "minLength": 1}, "providerExecuted": {"type": "boolean"}, "dynamic": {"type": "boolean"}, "providerMetadata": {"$ref": "#/$defs/providerMetadata"}},
       "additionalProperties": false
     },
     "toolInputDelta": {
@@ -130,12 +130,12 @@
     },
     "toolCall": {
       "type": "object", "required": ["type", "toolCallId", "toolName", "input"],
-      "properties": {"type": {"const": "tool-call"}, "toolCallId": {"type": "string", "minLength": 1}, "toolName": {"type": "string", "minLength": 1}, "input": {"type": "string"}, "providerMetadata": {"$ref": "#/$defs/providerMetadata"}},
+      "properties": {"type": {"const": "tool-call"}, "toolCallId": {"type": "string", "minLength": 1}, "toolName": {"type": "string", "minLength": 1}, "input": {"type": "string"}, "providerExecuted": {"type": "boolean"}, "dynamic": {"type": "boolean"}, "providerMetadata": {"$ref": "#/$defs/providerMetadata"}},
       "additionalProperties": false
     },
     "toolResult": {
       "type": "object", "required": ["type", "toolCallId", "toolName", "result"],
-      "properties": {"type": {"const": "tool-result"}, "toolCallId": {"type": "string", "minLength": 1}, "toolName": {"type": "string", "minLength": 1}, "result": {"not": {"type": "null"}}, "isError": {"type": "boolean"}, "providerMetadata": {"$ref": "#/$defs/providerMetadata"}},
+      "properties": {"type": {"const": "tool-result"}, "toolCallId": {"type": "string", "minLength": 1}, "toolName": {"type": "string", "minLength": 1}, "result": {"not": {"type": "null"}}, "isError": {"type": "boolean"}, "dynamic": {"type": "boolean"}, "preliminary": {"type": "boolean"}, "providerMetadata": {"$ref": "#/$defs/providerMetadata"}},
       "additionalProperties": false
     },
     "streamStart": {

@@ -31,15 +31,13 @@ options, and none of these request-scoped fields becomes a metric label.
 Model logging disables prompt, output, and per-stream-part capture and applies
 a fixed attribute allowlist followed by the default secret redactor. Agent
 Observability always uses metadata-only content capture, provided-only context,
-requested identity, a final Gateway allowlist, and no hooks or experimental SDK
-features. It retains
+requested identity, a final Gateway allowlist, and no hooks. It retains
 lifecycle, structural part types, normalized usage and unified finish/error
 classes, but not text, detailed errors, credentials, response IDs, backend
 model IDs, provider topology, arbitrary tags, or request controls. The client
 may add its fixed `agento11y.sdk.*` metadata markers and a closed `call_error`
 category after the Gateway filter; no arbitrary exporter or provider error is
-exported. The Gateway marks normalized input usage as cache-inclusive at its
-export filter without adding cache-read or cache-write buckets again.
+exported.
 
 ## Inspect fallback attempts
 
@@ -119,10 +117,10 @@ equivalent `GRAFANA_AI_GATEWAY_` environment binding shown below.
 
 The secret reference is resolved once before the listener binds; neither its
 name nor value is logged. Ambient `AGENTO11Y_*` and legacy `SIGIL_*` SDK
-configuration is rejected so it cannot bypass validated Gateway policy. This
-includes timeout, retry, queue, and experimental-feature settings. Export-attempt
-timeouts are independent of flush and shutdown deadlines; the explicit 10-second
-default avoids inheriting SDK timeout changes.
+configuration is rejected so it cannot bypass validated Gateway policy.
+
+Use `--agento11y.export-timeout` to bound each export attempt independently of
+flush and shutdown timeouts.
 
 Queue pressure, validation failures, exporter rejection/outage, and bounded
 flush or shutdown failure are fail-open for model traffic. Diagnostics and
@@ -154,30 +152,12 @@ for sensitive content in warnings, citations and response bodies. The
 [structured logging guide](../../docs/middleware/structured-logging.md)
 explains how to choose capture settings and redact application logs.
 
-## Work-package boundaries
+## Source and tool privacy
 
-URL and document source output is passed through unchanged by observers.
-Metadata-only logs, metrics and Agent Observability omit source identifiers,
-URLs, titles, filenames and metadata. Agent Observability has no source-content
-representation, so sources are not converted into fabricated text or media.
-Candidate-source Gateway tests verify that reusable observers count sources as
-first output. The Gateway image uses same-revision modules through
-`go.gateway.work` and still requires its image build gate. Currently pinned
-published middleware revisions predate this behavior; standalone middleware
-consumers need later module releases.
-See the [source guide](sources.md) for native source values and remaining
-metadata gaps, and the [Go client guide](../../docs/providers/grafana-gateway.md#native-response-values)
-for response identity and presence adaptations.
+Sources and tool calls remain available in model responses, but their content
+is not captured in logs, metrics or Agent Observability. Source identifiers,
+URLs, titles, filenames and metadata are omitted, as are tool names, IDs,
+arguments, results and provider metadata. Returning provider metadata to an
+application does not authorize telemetry capture.
 
-- WP6 image capacity/distribution does not use this text-model chain.
-- WP7's Go client and ProviderWire contract are unchanged; correlation is
-  server-internal and is neither accepted from nor returned to clients.
-- WP9 owns physical fallback attempts, candidate identity, and retry topology
-  below the unchanged logical wrapper.
-- WP10 owns production endpoint, credential, region/application values,
-  rollout, and environment smoke verification.
-- WP27 owns any later per-request Agent Observability control or richer content
-  capture decision.
-- Tools, reasoning, files, images, raw output, hooks, and later event families
-  remain with their owning capability work; WP8 observes the current text
-  surface only and does not change ProviderWire schemas or events.
+See the [source guide](sources.md) for the public response privacy policy.

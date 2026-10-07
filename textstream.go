@@ -189,8 +189,6 @@ type StreamToolCall struct {
 	Dynamic          *bool
 	Title            string
 	ProviderMetadata provider.ProviderMetadata
-	uiDynamic        *bool
-	useUIDynamic     bool
 }
 
 func (StreamToolCall) textStreamPart() {}
@@ -260,8 +258,6 @@ type StreamToolError struct {
 	Dynamic          *bool
 	Title            string
 	ProviderMetadata provider.ProviderMetadata
-	uiDynamic        *bool
-	useUIDynamic     bool
 }
 
 func (StreamToolError) textStreamPart() {}
