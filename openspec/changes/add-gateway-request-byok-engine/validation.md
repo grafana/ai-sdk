@@ -23,6 +23,11 @@ This engine change remains active for review; the activation branch is untouched
   `@ai-sdk/provider@4.0.18` source; all discriminator families match.
 - Strict OpenSpec validation and `git diff --check`.
 
+Review consolidation keeps the new BYOK package's tests in model_test.go and
+moves selection cases into the existing handler suite. Test bodies are unchanged.
+BYOK/ProviderWire race tests, vet, lint, parity and source integration passed after
+consolidation; production code and other stack branches were untouched.
+
 No module pins, upstream baseline or authentic provider fixture inputs changed.
 Local fake services and image tests do not establish live native acceptance,
 Vercel hosted-service behavior or deployed Cloud/network authorization.
