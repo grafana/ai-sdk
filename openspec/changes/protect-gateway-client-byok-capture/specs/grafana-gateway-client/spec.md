@@ -17,11 +17,11 @@ For every authentication flow, `Authorization`, `X-Access-Token`, `X-Grafana-Id`
 - **WHEN** configured or call-level headers attempt to set client-owned headers and are not rejected by the authentication reserved-header rule
 - **THEN** the client-owned effective values SHALL win and no duplicate client-owned protocol value SHALL be emitted
 
-#### Scenario: Authentication reserved headers are configured
+#### Scenario: Cloud reserved headers are configured
 - **WHEN** configured headers contain a reserved credential or identity header under any casing
 - **THEN** construction SHALL fail without network I/O or echoing its value in the error
 
-#### Scenario: Authentication reserved headers are supplied per call
+#### Scenario: Cloud reserved headers are supplied per call
 - **WHEN** call-level headers contain a reserved credential or identity header under any casing
 - **THEN** the call SHALL fail before serializing that value into request metadata or issuing an HTTP request
 
