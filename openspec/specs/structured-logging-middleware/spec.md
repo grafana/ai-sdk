@@ -135,6 +135,36 @@ By default the logger SHALL NOT log prompt/message content, generated or reasoni
 - **THEN** the default redactor SHALL NOT rely on brittle substring rewriting
 - **AND** it SHALL redact only fields represented as structured attrs or typed values
 
+### Requirement: BYOK capture protection
+Default SDK capture SHALL redact the complete providerOptions.gateway.byok subtree and gateway.byok in typed captures, including nested message/tool options, ordered accounts and JSON request bodies attached to errors. Sanitization SHALL occur on a decoded copy before sink emission or custom redactors.
+
+#### Scenario: Captured BYOK includes unfamiliar fields
+- **WHEN** provider-options or request-body capture encounters a gateway.byok subtree containing dummy credentials under known or unfamiliar nested keys
+- **THEN** default capture SHALL redact the complete subtree while retaining ordinary sibling options
+
+#### Scenario: Actual unary and streaming request capture
+- **WHEN** logger middleware wraps a Grafana provider with request-body/provider-options capture enabled
+- **THEN** captured unary, streaming and error-associated request records SHALL contain no BYOK dummy markers even at truncation boundaries
+- **AND** the provider SHALL still receive the original request credentials
+
+### Requirement: Request-body capture failures and limits
+Request-body capture SHALL accept JSON objects or null and omit malformed or opaque string/array bodies with a non-payload diagnostic. Capture SHALL NOT promise recursive interpretation of arbitrary Go values or nested byte slices. JSON limits SHALL bound emitted values, not assert a hard normalization allocation bound.
+
+#### Scenario: Sanitization cannot safely serialize
+- **WHEN** SDK capture encounters invalid JSON, a non-object request body or a failing/panicking JSON marshaler
+- **THEN** capture SHALL omit it without logging raw fallback bytes or failing the model call
+
+### Requirement: Capture ownership and ordinary Gateway values
+Sanitization SHALL preserve original parameters, results and request metadata. Ordinary gateway fields and gateway.providerTimeouts.byok SHALL retain their values; credential protection SHALL NOT censor key-looking application content.
+
+#### Scenario: Application content resembles credentials
+- **WHEN** an allowed prompt/output or ordinary metadata string resembles an API key or contains the text gateway.byok
+- **THEN** subtree protection SHALL NOT rewrite that application string
+
+#### Scenario: Ordinary gateway values survive
+- **WHEN** tool output contains a gateway string or provider options contain gateway.providerTimeouts.byok
+- **THEN** credential protection SHALL preserve those values rather than redact every gateway or byok key
+
 ### Requirement: Generate call logging
 
 `WrapGenerate` SHALL observe without mutating requests/results, build start attrs from `middleware.WrapGenerateParams` (call type, provider/model, safe request summary, opted-in captures), log `EventGenerateStart` before calling `p.DoGenerate(ctx)` exactly once, then log error or finish and return the original error/result unchanged. Serialization, capture, redaction, and logging failures SHALL NOT fail the call; serialization failures SHALL add `ai_sdk.serialization_error` when possible.

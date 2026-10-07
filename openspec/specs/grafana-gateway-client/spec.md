@@ -130,6 +130,10 @@ Authentication failures and cancellation SHALL occur before Gateway network I/O 
 
 The configured base URL SHALL be treated as the ProviderWire API prefix and the client SHALL append exactly `/config` for discovery and `/language-model` for calls without discarding an existing path prefix. Every model call SHALL use `POST`, JSON content type, the requested model ID, specification version `4`, exact streaming value `true` or `false`, and the matching JSON or SSE accept type.
 
+#### Scenario: Header ownership applies to every authentication flow
+- **WHEN** constructor or call-level authentication headers are supplied
+- **THEN** For every authentication flow, `Authorization`, `X-Access-Token`, `X-Grafana-Id`, `X-Scope-OrgID`, `X-Cloud-Org-ID`, and `X-Access-Policy-ID` SHALL be reserved case-insensitively. Supplying any reserved name in configured headers SHALL fail construction. Supplying any reserved name in call-level headers SHALL fail before request serialization and network I/O, including when its value is empty. JWT constructors SHALL own X-Access-Token and optional acting-user header composition; unrelated configured/call headers SHALL NOT add a competing Authorization credential or trusted Cloud assertion.
+
 #### Scenario: Unary request is emitted
 - **WHEN** `DoGenerate` is invoked for model `assistant`
 - **THEN** the request SHALL be `POST <base-prefix>/language-model` with streaming `false`, model ID `assistant`, specification `4`, JSON content and accept types, and exactly one value for each client-owned header
@@ -139,7 +143,7 @@ The configured base URL SHALL be treated as the ProviderWire API prefix and the 
 - **THEN** the request SHALL use the same method, route, model, and specification headers with streaming `true` and SSE accept type
 
 #### Scenario: Header names collide
-- **WHEN** configured or call-level headers attempt to set client-owned headers and are not rejected by the Cloud reserved-header rule
+- **WHEN** configured or call-level headers attempt to set client-owned headers and are not rejected by the authentication reserved-header rule
 - **THEN** the client-owned effective values SHALL win and no duplicate client-owned protocol value SHALL be emitted
 
 #### Scenario: Cloud reserved headers are configured
@@ -733,7 +737,6 @@ Unknown source discriminators and malformed metadata SHALL use the existing boun
 #### Scenario: Source decoder errors legacy fields and evidence limits
 - **WHEN** a unary source has valid display fields and a later source has an unknown discriminator
 - **THEN** the valid source SHALL populate Title and legacy Text, and the invalid source SHALL use bounded protocol failure without claiming the server metadata gap is solved
-
 ### Requirement: Independent opaque stream metadata consumption
 
 The Grafana client SHALL independently decode providerMetadata on supported text/reasoning start/delta/end, reasoning-file, source, tool-input start/delta/end, function call, basic result and finish parts. It SHALL preserve namespace objects, nested values, original event order and absent versus empty presence without IncludeRawChunks. Original accepted events, retained copies and metadata cardinality SHALL remain bounded by the existing event, cumulative byte and count limits.
@@ -753,3 +756,46 @@ Invalid metadata SHALL use the bounded terminal non-retryable protocol-error pat
 #### Scenario: Malformed stream metadata terminal behavior
 - **WHEN** finish contains a null metadata namespace
 - **THEN** the client SHALL emit a bounded non-retryable terminal error without reflecting the value or delivering invalid finish, leaving lifecycle and raw filtering unchanged
+
+### Requirement: BYOK request projection without catalog coupling
+The Go client SHALL emit representable provider/model IDs and providerOptions.gateway.byok using the same outer model header and JSON provider-options namespace as the registered Vercel client. It SHALL preserve multiple-provider maps and ordered credential arrays for unary and streaming calls without client-side catalog lookup, automatic discovery, endpoint changes or native account selection. Gateway host controls SHALL remain ordinary representable client options, with service-owned capability validation.
+
+#### Scenario: Ordered credentials are serialized
+- **WHEN** CallOptions contains multiple provider entries and ordered credentials
+- **THEN** unary and streaming request captures SHALL match equivalent pinned-client semantic bodies and preserve credential order
+
+#### Scenario: BYOK model is not configured
+- **WHEN** a caller constructs a model for a valid provider/model string absent from configured discovery
+- **THEN** the client SHALL issue inference directly without requiring a catalog entry
+
+#### Scenario: Request metadata is caller-owned
+- **WHEN** either client returns metadata for a BYOK request
+- **THEN** its submitted credential subtree SHALL remain part of the local request representation
+- **AND** documentation and tests SHALL distinguish that representation from server reflection and redacted consumer capture
+
+### Requirement: Caller-owned request metadata and capture guidance
+Both Go and exact-pinned Vercel requests SHALL emit the standard BYOK subtree in unary and streaming bodies. Their returned caller-owned request metadata SHALL retain the submitted arguments under the existing client contract; the server SHALL NOT claim it can sanitize those local objects. Guidance SHALL separate credential-aware automatic capture from direct application inspection.
+
+Default Go logger capture SHALL structurally protect credentials in supported SDK capture representations. Direct application logging, including TypeScript logging, SHALL remain caller-owned; guidance SHALL warn against logging credential-bearing metadata and recommend omitting credentials from a copy. This change SHALL NOT provide a TypeScript redaction helper. Enrichment and Agent Observability capture paths SHALL be inspected and tested with dummy markers without enabling unsupported capture APIs or removing ordinary application content.
+
+#### Scenario: Actual consumer capture
+- **WHEN** Go logging enables provider-options and request-body capture for both unary and streaming BYOK calls
+- **THEN** its real capture sink SHALL contain no dummy BYOK markers while retaining allowed non-secret request content
+
+#### Scenario: Stock Vercel request metadata
+- **WHEN** the registered Vercel client returns request.body after BYOK submission
+- **THEN** evidence SHALL show the local BYOK subtree is present
+- **AND** guidance SHALL identify direct logging of that metadata as caller-owned credential exposure, without changing the HTTP request or caller result
+
+### Requirement: Transport-safe model selectors
+Model construction SHALL accept nonempty valid UTF-8 selectors up to 2,048 bytes
+without whitespace or control characters, independently of configured-catalog
+grammar. The server SHALL remain responsible for selector capability validation.
+
+#### Scenario: Native suffix exceeds catalog grammar
+- **WHEN** a valid selector contains native punctuation or exceeds the former 128-byte catalog limit
+- **THEN** the client SHALL preserve it without discovery or rewriting
+
+#### Scenario: Invalid transport selector
+- **WHEN** a selector is empty, invalid UTF-8, over 2,048 bytes or contains whitespace/control characters
+- **THEN** model construction SHALL fail before I/O

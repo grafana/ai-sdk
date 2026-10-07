@@ -39,8 +39,9 @@ test bodies remain byte-for-byte unchanged. Grafana/logger/Agent Observability
 race tests, vet, lint, parity, source integration and CI workflow tests passed
 after consolidation. No production code or other stack branches changed.
 
-Strict OpenSpec validation also passed with exact CLI version 1.14.0. Active
-changes still require archiving before merge.
+Strict OpenSpec validation passed with exact CLI version 1.14.0. The completed
+change was synchronized into the client and logger main specs and archived on
+2026-10-07 after review approval.
 
 No module pins, upstream baseline or authentic provider fixture inputs changed.
 Local fake services and image tests do not establish live native acceptance,
