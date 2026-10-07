@@ -191,7 +191,6 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.writeSafeError(w, safeError{category: safeInternal})
 		return
 	}
-	options = applyProviderOptionPolicy(options, resolved.ProviderOptions)
 	if validated.mode == executionStreaming {
 		h.serveStream(w, r.Context(), resolved.Model, options)
 		return

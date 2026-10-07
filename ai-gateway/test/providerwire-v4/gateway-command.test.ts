@@ -9,7 +9,7 @@ import { join, resolve } from "node:path";
 import nodeProcess from "node:process";
 import { after, before, describe, it } from "node:test";
 import { createGateway, GatewayInvalidRequestError } from "@ai-sdk/gateway";
-import type { JSONValue, LanguageModelV4CallOptions } from "@ai-sdk/provider";
+import type { JSONValue, LanguageModelV4, LanguageModelV4CallOptions, LanguageModelV4StreamPart } from "@ai-sdk/provider";
 import { generateText, isStepCount, jsonSchema, streamText, tool, wrapLanguageModel } from "ai";
 import { buildGoClientCapture, buildGoStreamTextCapture, captureGoClient } from "./go-client-capture";
 import packageManifest from "./package.json" with { type: "json" };
@@ -45,6 +45,216 @@ before(() => {
 after(() => {
   rmSync(buildDirectory, { recursive: true, force: true });
 });
+
+describe("native option forwarding through the authenticated command", () => {
+  for (const family of ["anthropic", "openai", "compatible"] as const) {
+    it(`preserves ${family} consumed scopes and ordinary values in both clients and modes`, async () => {
+      const [fake, gateway] = family === "anthropic" ? await startGateway() : family === "openai" ? await startOpenAIGateway() : await startCompatibleGateway();
+      const modelID = family === "anthropic" ? "assistant" : family;
+      const nested = { null: null, false: false, zero: 0, empty: "", array: [], object: {} };
+      const options: LanguageModelV4CallOptions = family === "anthropic" ? {
+        maxOutputTokens: 64,
+        tools: [{ type: "function", name: "lookup", inputSchema: {}, providerOptions: { anthropic: { allowedCallers: [], eagerInputStreaming: false } } }],
+        providerOptions: { anthropic: { container: { id: "supplied-container" }, unknown: nested, model: "ignored" }, other: { role: "ordinary" } },
+        prompt: [
+          { role: "assistant", content: [{ type: "tool-call", toolCallId: "call", toolName: "lookup", input: {}, providerOptions: { anthropic: { caller: { type: "direct" } } } }] },
+          { role: "tool", content: [{ type: "tool-result", toolCallId: "call", toolName: "lookup", output: { type: "text", value: "done normal-stream" }, providerOptions: { anthropic: { caller: { type: "direct" } } } }] },
+        ],
+      } : family === "openai" ? {
+        maxOutputTokens: 64,
+        providerOptions: { azure: { store: false, model: "ignored", reasoningEffort: "low" }, irrelevant: nested },
+        prompt: [{ role: "assistant", content: [
+          { type: "text", text: "answer", providerOptions: { azure: { phase: "final_answer", itemId: "msg_supplied" } } },
+          { type: "reasoning", text: "thought", providerOptions: { azure: { itemId: "rs_supplied", reasoningEncryptedContent: "supplied-encrypted" } } },
+        ] }],
+      } : {
+        maxOutputTokens: 64,
+        providerOptions: { "compatible-backend": { user: "raw", extension: { ignored: true } }, openaiCompatible: { user: "fixed" }, compatibleBackend: { user: "camel", extension: nested, headers: { Authorization: "ordinary-body-value" }, messages: [], tools: [], stream: false }, anthropic: { model: "ignored" } },
+        prompt: [{ role: "user", providerOptions: { openaiCompatible: { priority: "high" } }, content: [
+          { type: "text", text: "normal-stream", providerOptions: { openaiCompatible: { sentiment: "positive", nested } } },
+          { type: "text", text: "two" },
+        ] }],
+      };
+      const original = JSON.stringify(options);
+      try {
+        for (const mode of ["generate", "stream"] as const) {
+          const go = await captureGoClient(goClientBinaryPath, { baseURL: `${gateway.url}/api/v1/aisdk`, accessToken: TEST_TOKEN, modelID, mode, options });
+          await assertNativeOptionClientResults(go, gateway.client()(modelID), options, mode);
+          const goBody = fake.requests.at(-2)!.body;
+          const tsBody = fake.requests.at(-1)!.body;
+          assert.deepEqual(tsBody, goBody);
+          assert.equal(tsBody.model, "backend-private");
+          if (family === "anthropic") {
+            assert.deepEqual(tsBody.container, { id: "supplied-container" });
+            const definitions = tsBody.tools as Array<Record<string, unknown>>;
+            assert.deepEqual(definitions[0]!.allowed_callers, []);
+            assert.equal(definitions[0]!.eager_input_streaming, undefined);
+            const messages = tsBody.messages as Array<{ content: Array<Record<string, unknown>> }>;
+            assert.deepEqual(messages[0]!.content[0]!.caller, { type: "direct" });
+            assert.equal(messages[1]!.content[0]!.caller, undefined);
+          } else if (family === "openai") {
+            const input = tsBody.input as Array<Record<string, unknown>>;
+            assert.equal(input[0]!.phase, "final_answer");
+            assert.equal(input[1]!.id, "rs_supplied");
+            assert.equal(input[1]!.encrypted_content, "supplied-encrypted");
+          } else {
+            assert.equal(tsBody.user, "camel");
+            assert.deepEqual(tsBody.extension, nested);
+            const messages = tsBody.messages as Array<{ priority: string; content: Array<Record<string, unknown>> }>;
+            assert.equal(messages[0]!.priority, "high");
+            assert.equal(messages[0]!.content[0]!.sentiment, "positive");
+            assert.deepEqual(messages[0]!.content[0]!.nested, nested);
+          }
+          assert.equal(JSON.stringify(options), original);
+        }
+        assert.equal(fake.requests.length, 4);
+        assert.deepEqual(fake.violations, []);
+      } finally { await settleCleanup(() => gateway.stop(), () => fake.stop()); }
+    });
+  }
+
+  it("preserves OpenAI-first and Azure-fallback item-reference semantics", async () => {
+    const [fake, gateway] = await startOpenAIGateway();
+    try {
+      for (const namespace of ["openai", "azure"] as const) {
+        const options: LanguageModelV4CallOptions = {
+          providerOptions: namespace === "openai" ? { openai: { store: true }, azure: { store: false } } : { azure: { store: true } },
+          prompt: [{ role: "assistant", content: [{ type: "text", text: "history", providerOptions: { openai: { itemId: "msg_openai" }, azure: { itemId: "msg_azure" } } }] }],
+        };
+        for (const mode of ["generate", "stream"] as const) {
+          const go = await captureGoClient(goClientBinaryPath, { baseURL: `${gateway.url}/api/v1/aisdk`, accessToken: TEST_TOKEN, modelID: "openai", mode, options });
+          await assertNativeOptionClientResults(go, gateway.client()("openai"), options, mode);
+          assert.deepEqual(fake.requests.at(-1)!.body, fake.requests.at(-2)!.body);
+          assert.deepEqual(fake.requests.at(-1)!.body.input, [{ type: "item_reference", id: `msg_${namespace}` }]);
+          assert.equal(fake.requests.at(-1)!.body.store, true);
+        }
+      }
+      assert.deepEqual(fake.violations, []);
+    } finally { await settleCleanup(() => gateway.stop(), () => fake.stop()); }
+  });
+
+  it("rejects concrete bypasses but not ignored scope values in both clients and modes", async () => {
+    const [fake, gateway] = await startCompatibleGateway();
+    try {
+      const attempts: LanguageModelV4CallOptions[] = [
+        { prompt: [], providerOptions: { compatibleBackend: { model: "other" } } },
+        { prompt: [], providerOptions: { compatibleBackend: { response_format: { type: "json_object" } } } },
+        { prompt: [{ role: "system", content: "system", providerOptions: { openaiCompatible: { role: "tool" } } }] },
+        { prompt: [{ role: "assistant", content: [{ type: "tool-call", toolCallId: "call", toolName: "lookup", input: {}, providerOptions: { openaiCompatible: { function: { name: "other", arguments: "{}" } } } }] }] },
+      ];
+      for (const mode of ["generate", "stream"] as const) {
+        for (const options of attempts) {
+          const go = await captureGoClient(goClientBinaryPath, { baseURL: `${gateway.url}/api/v1/aisdk`, accessToken: TEST_TOKEN, modelID: "compatible", mode, options });
+          assert.equal(go.error?.statusCode, 400);
+          const model = gateway.client()("compatible");
+          await assert.rejects(async () => mode === "generate" ? await model.doGenerate(options) : await model.doStream(options), (error: unknown) => GatewayInvalidRequestError.isInstance(error));
+        }
+      }
+      assert.equal(fake.requests.length, 0);
+      const options: LanguageModelV4CallOptions = { prompt: [{ role: "assistant", content: [{ type: "text", text: "normal-stream", providerOptions: { openaiCompatible: { role: "tool", type: "ignored" } } }] }], providerOptions: { CompatibleBackend: { model: "ignored" } } };
+      for (const mode of ["generate", "stream"] as const) {
+        const go = await captureGoClient(goClientBinaryPath, { baseURL: `${gateway.url}/api/v1/aisdk`, accessToken: TEST_TOKEN, modelID: "compatible", mode, options });
+        await assertNativeOptionClientResults(go, gateway.client()("compatible"), options, mode);
+      }
+      assert.equal(fake.requests.length, 4);
+      assert.deepEqual(fake.violations, []);
+    } finally { await settleCleanup(() => gateway.stop(), () => fake.stop()); }
+  });
+
+  it("protects Anthropic execution controls without rejecting safe contextual history", async () => {
+    const [fake, gateway] = await startGateway();
+    try {
+      const attempts: LanguageModelV4CallOptions[] = [
+        { prompt: [], providerOptions: { anthropic: { MCPServers: [{ type: "url", name: "server", url: "https://other.example" }] } } },
+        { prompt: [], providerOptions: { anthropic: { container: { skills: [{ type: "anthropic", skillId: "skill" }] } } } },
+        { prompt: [], providerOptions: { anthropic: { fallbacks: "default" } } },
+        { prompt: [{ role: "assistant", content: [{ type: "tool-call", toolCallId: "call", toolName: "lookup", input: {}, providerOptions: { anthropic: { Type: "mcp-tool-use", serverName: "server" } } }] }] },
+      ];
+      for (const mode of ["generate", "stream"] as const) {
+        for (const options of attempts) {
+          const go = await captureGoClient(goClientBinaryPath, { baseURL: `${gateway.url}/api/v1/aisdk`, accessToken: TEST_TOKEN, modelID: "assistant", mode, options });
+          assert.equal(go.error?.statusCode, 400);
+          const model = gateway.client()("assistant");
+          await assert.rejects(async () => mode === "generate" ? await model.doGenerate(options) : await model.doStream(options), (error: unknown) => GatewayInvalidRequestError.isInstance(error));
+        }
+      }
+      assert.equal(fake.requests.length, 0);
+      const options: LanguageModelV4CallOptions = { prompt: [{ role: "assistant", content: [{ type: "text", text: "normal-stream", providerOptions: { anthropic: { type: "compaction" } } }] }], providerOptions: { anthropic: { mcpServers: [], container: null, fallbacks: null }, irrelevant: { type: "mcp-tool-use" } } };
+      for (const mode of ["generate", "stream"] as const) {
+        const go = await captureGoClient(goClientBinaryPath, { baseURL: `${gateway.url}/api/v1/aisdk`, accessToken: TEST_TOKEN, modelID: "assistant", mode, options });
+        await assertNativeOptionClientResults(go, gateway.client()("assistant"), options, mode);
+      }
+      assert.equal(fake.requests.length, 4);
+      for (const { body } of fake.requests) {
+        const messages = body.messages as Array<{ content: Array<Record<string, unknown>> }>;
+        assert.equal(messages[0]!.content[0]!.type, "compaction");
+      }
+      assert.deepEqual(fake.violations, []);
+    } finally { await settleCleanup(() => gateway.stop(), () => fake.stop()); }
+  });
+
+  it("keeps concurrent scoped extensions isolated and caller options immutable", async () => {
+    const [fake, gateway] = await startCompatibleGateway();
+    try {
+      const inputs: LanguageModelV4CallOptions[] = Array.from({ length: 12 }, (_, index) => ({
+        prompt: [{ role: "user", content: [{ type: "text", text: `request-${index} normal-stream`, providerOptions: { openaiCompatible: { scoped_marker: index } } }] }],
+        providerOptions: { compatibleBackend: { call_marker: index } },
+      }));
+      const original = JSON.stringify(inputs);
+      await Promise.all(inputs.map(async (options, index) => {
+        if (index % 2 === 0) {
+          const go = await captureGoClient(goClientBinaryPath, { baseURL: `${gateway.url}/api/v1/aisdk`, accessToken: TEST_TOKEN, modelID: "compatible", mode: index % 4 === 0 ? "generate" : "stream", options });
+          assert.equal(go.error, undefined);
+          if (index % 4 !== 0) {
+            assert.equal(go.canceled, false);
+            assertNativeOptionStream(go.parts);
+          }
+        } else {
+          const model = gateway.client()("compatible");
+          if (index % 4 === 1) await model.doGenerate(options);
+          else assertNativeOptionStream(await collectGatewayStream((await model.doStream(options)).stream));
+        }
+      }));
+      assert.equal(JSON.stringify(inputs), original);
+      assert.equal(fake.requests.length, inputs.length);
+      for (const { body } of fake.requests) {
+        const message = (body.messages as Array<Record<string, unknown>>)[0]!;
+        assert.equal(message.content, `request-${body.call_marker} normal-stream`);
+        assert.equal(message.scoped_marker, body.call_marker);
+      }
+      assert.deepEqual(fake.violations, []);
+    } finally { await settleCleanup(() => gateway.stop(), () => fake.stop()); }
+  });
+});
+
+async function assertNativeOptionClientResults(go: Awaited<ReturnType<typeof captureGoClient>>, model: LanguageModelV4, options: LanguageModelV4CallOptions, mode: "generate" | "stream") {
+  assert.equal(go.error, undefined);
+  if (mode === "generate") {
+    const result = await model.doGenerate(options);
+    assert.equal(result.finishReason.unified, "stop");
+    assert.deepEqual(go.result.content, result.content);
+    assert.deepEqual(go.result.finishReason, result.finishReason);
+    assert.deepEqual(go.result.usage, result.usage);
+  } else {
+    assert.equal(go.canceled, false);
+    const parts = await collectGatewayStream((await model.doStream(options)).stream);
+    assert.deepEqual(assertNativeOptionStream(go.parts), assertNativeOptionStream(parts));
+  }
+}
+
+function assertNativeOptionStream(parts: Array<{ type: string; delta?: string }>) {
+  assert.ok(parts.every(part => part.type !== "error"));
+  const finishes = parts.filter(part => part.type === "finish");
+  assert.equal(finishes.length, 1);
+  assert.equal(parts.at(-1)?.type, "finish");
+  const finish = finishes[0] as Extract<LanguageModelV4StreamPart, { type: "finish" }>;
+  assert.equal(finish.finishReason.unified, "stop");
+  return {
+    text: parts.filter(part => part.type === "text-delta").map(part => part.delta).join(""),
+    finishReason: finish.finishReason,
+    usage: finish.usage,
+  };
+}
 
 describe("authenticated Anthropic Gateway command", () => {
   for (const mode of ["access-token", "cloud-gateway"] as const) {
@@ -169,6 +379,7 @@ describe("authenticated Anthropic Gateway command", () => {
         { prompt: [call, result] },
         { prompt: [{ role: "user", content: [{ type: "file", data: { type: "text", text: "private-file" }, mediaType: "text/plain" }] }] },
         { prompt: [{ role: "user", content: [{ type: "text", text: "hello" }], providerOptions: { anthropic: { cacheControl: { type: "ephemeral" } } } }] },
+        { prompt: [{ role: "user", content: [{ type: "text", text: "hello" }], providerOptions: { vendor: { flag: false } } }] },
       ];
       for (const options of effectRequests) {
         const counts: [number, number] = [primary.requests.length, secondary.requests.length];
@@ -194,6 +405,7 @@ describe("authenticated Anthropic Gateway command", () => {
         { prompt: [], tools: [{ type: "function" as const, name: "private-tool", inputSchema: {} }] },
         { prompt: [], toolChoice: { type: "none" as const } },
         { prompt: history },
+        { prompt: [{ role: "user" as const, content: [{ type: "text" as const, text: "hello" }], providerOptions: { vendor: { flag: false } } }] },
         { prompt: [...history, { role: "tool" as const, content: [{ type: "tool-result" as const, toolCallId: streamCall.toolCallId, toolName: streamCall.toolName, output: { type: "text" as const, value: "private-result" } }] }] },
       ]) {
         const go = await captureGoClient(goClientBinaryPath, { ...base, mode: "stream", options });
@@ -215,7 +427,7 @@ describe("authenticated Anthropic Gateway command", () => {
       secondary.failureStatus = undefined;
       const textRequests: LanguageModelV4CallOptions[] = [
         { prompt: [{ role: "user", content: [{ type: "text", text: "normal-stream" }], providerOptions: { anthropic: {} } }] },
-        { prompt: [{ role: "user", content: [{ type: "text", text: "normal-stream" }], providerOptions: { vendor: { flag: false } } }] },
+        { prompt: [{ role: "user", content: [{ type: "text", text: "normal-stream" }], providerOptions: { vendor: {} } }] },
       ];
       for (const mode of ["generate", "stream"] as const) {
         for (const options of textRequests) {
@@ -1418,7 +1630,7 @@ describe("Trusted-proxy composition (dummy credentials, not production authentic
 });
 
 describe("authenticated OpenAI-compatible Gateway command", () => {
-  it("forwards the selected backend's provider options and refuses host and credential values", async () => {
+  it("forwards native provider options and refuses host and credential values", async () => {
     const [fake, gateway] = await startCompatibleGateway();
     try {
       const client = gateway.client();
@@ -1442,7 +1654,7 @@ describe("authenticated OpenAI-compatible Gateway command", () => {
       for (const [rejected, message] of [
         [{ providerOptions: { grafana: { tenant: "other" } } }, "reserved provider option namespace"],
         [{ headers: { authorization: "Bearer caller-controlled" } }, "protected call header"],
-        [{ providerOptions: { openaiCompatible: { Model: "someone-elses-model" } } }, "protected provider option"],
+        [{ providerOptions: { compatibleBackend: { model: "someone-elses-model" } } }, "invalid request"],
       ] as const) {
         await assert.rejects(
           async () => await client("compatible").doGenerate({
@@ -1481,8 +1693,11 @@ describe("authenticated OpenAI-compatible Gateway command", () => {
           const options = {
             prompt: [{
               role: "user" as const,
-              content: [{ type: "text" as const, text: "unary" }],
-              providerOptions: { openaiCompatible: { [field]: value } },
+              content: [
+                { type: "text" as const, text: "unary", ...(field === "type" || field === "image_url" ? { providerOptions: { openaiCompatible: { [field]: value } } } : {}) },
+                { type: "text" as const, text: "tail" },
+              ],
+              ...(field === "type" || field === "image_url" ? {} : { providerOptions: { openaiCompatible: { [field]: value } } }),
             }],
             maxOutputTokens: 32,
           };
@@ -1490,8 +1705,8 @@ describe("authenticated OpenAI-compatible Gateway command", () => {
             async () => mode === "generate"
               ? await client("compatible").doGenerate(options)
               : await collectGatewayStream((await client("compatible").doStream(options)).stream),
-            (error: unknown) => GatewayInvalidRequestError.isInstance(error) && error.message === "protected provider option",
-            `${field} in ${mode} mode is refused as a protected provider option`,
+            (error: unknown) => GatewayInvalidRequestError.isInstance(error) && error.message === "invalid request",
+            `${field} in ${mode} mode is refused at its consuming scope`,
           );
         }
       }
