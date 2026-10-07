@@ -4,7 +4,11 @@
 
 Validated on this branch, independently of later stack changes. All gates were
 rerun after rebasing onto main at `d863b86e` (#326/#328). Catalog selection now
-retains opaque native options rather than restoring the deleted policy inventories:
+retains opaque native options rather than restoring the deleted policy inventories.
+All gates below also passed after rebasing onto reviewed PR #367 at `58487635`,
+including its capture simplification, consolidated tests and synchronized/archived
+client specs. Range-diff confirmed the three engine commits reapplied unchanged.
+This engine change remains active for review; the activation branch is untouched:
 
 - `mise run test-short`, `build`, `vet`, `lint`, `parity-check`.
 - `mise run test-ai-gateway-source-integration` and `test-integration`,
