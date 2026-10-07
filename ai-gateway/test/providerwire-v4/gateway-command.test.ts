@@ -904,8 +904,8 @@ describe("authenticated Anthropic Gateway command", () => {
         assert.ok(fake.requests.every(request => request.body.stream === true));
         assert.deepEqual(fake.requests[0]!.body.tool_choice, { type: "any" });
         const continuation = fake.requests[1]!.body;
-        assert.equal(continuation.tools, undefined);
-        assert.equal(continuation.tool_choice, undefined);
+        assert.deepEqual(continuation.tools, fake.requests[0]!.body.tools);
+        assert.deepEqual(continuation.tool_choice, { type: "none" });
         assert.deepEqual(continuation.messages, [
           { role: "user", content: [{ type: "text", text: "Weather in Rio?" }] },
           { role: "assistant", content: [{ type: "tool_use", id: "call-weather", name: "weather", input: { city: "Rio" } }] },

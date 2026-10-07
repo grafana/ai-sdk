@@ -2797,20 +2797,39 @@ func normalizeToolApprovalDecision(decision ToolApprovalDecision) ToolApprovalDe
 	return decision
 }
 
+// aggregateUsage always sets the totals; breakdowns stay nil when no step
+// reported them.
 func aggregateUsage(steps []StepResult) provider.Usage {
-	var totalInput, totalOutput int
+	var inputTotal, outputTotal int
+	total := provider.Usage{
+		InputTokens:  provider.InputTokenUsage{Total: &inputTotal},
+		OutputTokens: provider.OutputTokenUsage{Total: &outputTotal},
+	}
 	for _, s := range steps {
-		if s.Usage.InputTokens.Total != nil {
-			totalInput += *s.Usage.InputTokens.Total
-		}
-		if s.Usage.OutputTokens.Total != nil {
-			totalOutput += *s.Usage.OutputTokens.Total
-		}
+		in, out := s.Usage.InputTokens, s.Usage.OutputTokens
+		total.InputTokens.Total = addTokenCounts(total.InputTokens.Total, in.Total)
+		total.InputTokens.NoCache = addTokenCounts(total.InputTokens.NoCache, in.NoCache)
+		total.InputTokens.CacheRead = addTokenCounts(total.InputTokens.CacheRead, in.CacheRead)
+		total.InputTokens.CacheWrite = addTokenCounts(total.InputTokens.CacheWrite, in.CacheWrite)
+		total.OutputTokens.Total = addTokenCounts(total.OutputTokens.Total, out.Total)
+		total.OutputTokens.Text = addTokenCounts(total.OutputTokens.Text, out.Text)
+		total.OutputTokens.Reasoning = addTokenCounts(total.OutputTokens.Reasoning, out.Reasoning)
 	}
-	return provider.Usage{
-		InputTokens:  provider.InputTokenUsage{Total: &totalInput},
-		OutputTokens: provider.OutputTokenUsage{Total: &totalOutput},
+	return total
+}
+
+func addTokenCounts(a, b *int) *int {
+	if a == nil && b == nil {
+		return nil
 	}
+	var sum int
+	if a != nil {
+		sum += *a
+	}
+	if b != nil {
+		sum += *b
+	}
+	return &sum
 }
 
 // appendToolResults appends the messages produced from the given step onto

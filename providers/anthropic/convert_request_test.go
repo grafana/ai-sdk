@@ -199,7 +199,7 @@ func TestWebTool_HTTPNumberProjection(t *testing.T) {
 		{"older fractional fetch", "anthropic.web_fetch_20250910", `{"maxContentTokens":3.5}`, "", "", `[{"type":"web_fetch_20250910","name":"web_fetch","max_content_tokens":3.5}]`, false},
 		{"large content tokens", "anthropic.web_fetch_20260318", `{"maxContentTokens":100000000000000000000}`, "", "", `[{"type":"web_fetch_20260318","name":"web_fetch","max_content_tokens":100000000000000000000}]`, false},
 		{"zero uses", "anthropic.web_search_20260318", `{"maxUses":0}`, "", "", `[{"type":"web_search_20260318","name":"web_search","max_uses":0}]`, false},
-		{"none removes web tool", "anthropic.web_fetch_20260318", `{"maxUses":1.5}`, "none", "", `[]`, false},
+		{"none keeps web tool", "anthropic.web_fetch_20260318", `{"maxUses":1.5}`, "none", "", `[{"type":"web_fetch_20260318","name":"web_fetch","max_uses":1.5}]`, false},
 		{"none followed by JSON fallback", "anthropic.web_fetch_20260318", `{"maxUses":1.5}`, "none", `{"type":"object"}`, `[{"name":"json","description":"Respond with a JSON object.","input_schema":{"type":"object"}}]`, false},
 	}
 	for _, tc := range cases {
@@ -244,8 +244,9 @@ func TestWebTool_HTTPNumberProjection(t *testing.T) {
 				}
 				body := <-requests
 				if tc.choice == "none" && tc.schema == "" {
-					assert.NotContains(t, body, "tools")
-				} else if tc.schema != "" && stream {
+					assert.JSONEq(t, `{"type":"none"}`, string(body["tool_choice"]))
+				}
+				if tc.schema != "" && stream {
 					assert.JSONEq(t, `[{"name":"json","description":"Respond with a JSON object.","input_schema":{"type":"object"},"eager_input_streaming":true}]`, string(body["tools"]))
 				} else {
 					assert.JSONEq(t, tc.wantTools, string(body["tools"]))
@@ -1492,27 +1493,45 @@ func TestBuildParams_ToolChoice(t *testing.T) {
 	}
 }
 
-func TestBuildParams_ToolChoiceNoneDropsTools(t *testing.T) {
-	opts := provider.CallOptions{
-		Tools: []provider.Tool{
-			{
-				Type:        provider.ToolTypeFunction,
-				Name:        "search",
-				Description: "Search the web",
-				InputSchema: json.RawMessage(`{"type":"object"}`),
-			},
-		},
-		ToolChoice: &provider.ToolChoice{Type: provider.ToolChoiceNone},
+func TestBuildParams_ToolChoiceNoneKeepsTools(t *testing.T) {
+	disableParallelToolUse := true
+	tests := []struct {
+		name string
+		caps providerCapabilities
+		opts AnthropicOptions
+	}{
+		{name: "direct", caps: directProviderCapabilities},
+		{name: "vertex", caps: vertexProviderCapabilities},
+		{name: "disable parallel tool use", caps: directProviderCapabilities, opts: AnthropicOptions{DisableParallelToolUse: &disableParallelToolUse}},
 	}
 
-	p, _, _, _, err := buildParams("claude-sonnet-4-6", opts, false)
-	require.NoError(t, err)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := provider.CallOptions{
+				Tools: []provider.Tool{
+					{
+						Type:        provider.ToolTypeFunction,
+						Name:        "search",
+						Description: "Search the web",
+						InputSchema: json.RawMessage(`{"type":"object"}`),
+					},
+				},
+				ToolChoice:      &provider.ToolChoice{Type: provider.ToolChoiceNone},
+				ProviderOptions: provider.BuildProviderOptions(tc.opts),
+			}
 
-	assert.Empty(t, p.Tools)
-	assert.Nil(t, p.ToolChoice.OfNone)
-	assert.Nil(t, p.ToolChoice.OfAuto)
-	assert.Nil(t, p.ToolChoice.OfAny)
-	assert.Nil(t, p.ToolChoice.OfTool)
+			p, _, _, _, err := buildParamsWithCapabilities("claude-sonnet-4-6", opts, false, tc.caps)
+			require.NoError(t, err)
+
+			require.Len(t, p.Tools, 1)
+			require.NotNil(t, p.Tools[0].OfTool)
+			assert.Equal(t, "search", p.Tools[0].OfTool.Name)
+			assert.NotNil(t, p.ToolChoice.OfNone)
+			assert.Nil(t, p.ToolChoice.OfAuto)
+			assert.Nil(t, p.ToolChoice.OfAny)
+			assert.Nil(t, p.ToolChoice.OfTool)
+		})
+	}
 }
 
 func TestBuildParams_StrictFunctionTool(t *testing.T) {
@@ -3771,6 +3790,9 @@ func TestBuildParams_StructuredOutput(t *testing.T) {
 				Type:   provider.ResponseFormatJSON,
 				Schema: testSchema,
 			},
+			Tools: []provider.Tool{
+				{Type: provider.ToolTypeFunction, Name: "search", InputSchema: json.RawMessage(`{"type":"object"}`)},
+			},
 			ToolChoice: &provider.ToolChoice{Type: provider.ToolChoiceNone},
 		}
 
@@ -3779,6 +3801,9 @@ func TestBuildParams_StructuredOutput(t *testing.T) {
 
 		assert.True(t, br.usesJsonResponseTool)
 		require.NotNil(t, p.ToolChoice.OfAny, "none should be overridden to required")
+		require.Len(t, p.Tools, 1, "only the JSON response tool should be sent")
+		require.NotNil(t, p.Tools[0].OfTool)
+		assert.Equal(t, "json", p.Tools[0].OfTool.Name)
 	})
 
 	t.Run("SchemalessJSON_Warning", func(t *testing.T) {
