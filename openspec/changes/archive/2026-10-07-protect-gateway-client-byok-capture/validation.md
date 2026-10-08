@@ -51,3 +51,34 @@ The command still uses the pre-existing authentication modes and configured
 catalog. Two command-test expectations move with the client change: reserved
 headers fail locally, and Cloud calls use the Cloud constructor rather than
 an access-token constructor with an overriding Authorization header.
+
+## Current-main conflict resolution
+
+Merged origin/main ddaa841a, preserving additive Gateway HTTP/SSE error data,
+aggregate usage and Anthropic tool-choice behavior alongside client authentication
+and BYOK capture protections. The sole conflict was in the client guide; it now
+retains both bounded error-extension guidance and reserved authentication-header
+ownership. The registered upstream package versions remain unchanged.
+
+All gates listed above passed again, including fresh SDK/Gateway races, explicit
+provider-shape comparison and the source/image checks. The command suite passed
+74 tests with no skips. Logs are under /tmp/byok-stack-pr1-restack-20261008/.
+The client/capture archive remains complete; later stack slices retain their own
+validation and service-activation ownership.
+
+## Standalone client test dependency repair
+
+Readonly standalone Grafana tests exposed an undeclared logger import in the
+client/logger composition witness. Moved all six capture cases and assertions to
+`test/integration/testserver/grafana_logger_capture_test.go`, already exercised by
+`mise run test-integration`. The local-only SDK harness uses explicit source
+replacements; published Grafana/logger manifests and runtime code are unchanged.
+The synthetic unary fixture and test body are identical apart from public client
+qualification and fixture scope. No capture coverage or provider input was removed.
+
+Grafana standalone readonly races pass on Go 1.26.8 and the current toolchain;
+`MODULE=providers/grafana mise run verify-published-module` passes from a fresh
+public-proxy cache. The local-only harness passed ten readonly race repetitions,
+and workspace Grafana/logger/harness races and all full gates above passed.
+Logs: `/tmp/pr367-{grafana-standalone-green,grafana-go126-standalone,grafana-published-module,capture-local-module,capture-workspace}.log`
+and `/tmp/byok-stack-pr1-test-module-repair-20261008/`.
