@@ -61,17 +61,9 @@ gap and avoid substituting another version silently.
 
 ### Canonical Request Casing
 
-- Match the canonical request field names, namespace keys and discriminator
-  values emitted by the supported Go client and the registered upstream client.
-  Do not add casing aliases, case-folding or case-insensitive acceptance unless
-  the protocol requires it or the operator explicitly approves it.
-- Parser permissiveness (such as `encoding/json` matching struct fields without
-  case sensitivity) is not an API requirement. Do not turn it into supported
-  behavior through tests, specs or documentation. Prefer canonical client
-  requests and straightforward decoding over normalization machinery.
-- Keep request and response contracts separate. Permissive response decoding
-  does not justify permissive request handling. Preserve protocol-mandated
-  exceptions, such as case-insensitive HTTP header names.
+Match request casing emitted by the supported clients. Do not turn parser or
+response-decoding permissiveness into request API policy. Case-insensitive
+matching requires a protocol rule (e.g. HTTP header names) or explicit approval.
 
 ### Parity Governance
 
