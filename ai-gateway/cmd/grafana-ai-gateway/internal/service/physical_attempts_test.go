@@ -17,10 +17,10 @@ import (
 	"time"
 
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/config"
+	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/nativemodel"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/provider"
-	anthropicprovider "github.com/grafana/ai-sdk/providers/anthropic"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -156,7 +156,7 @@ func TestPhysicalAttempts_SaturationDoesNotSuppressConsumerEvidence(t *testing.T
 		sink.enqueue(physicalAttemptRecord{})
 	}
 	require.Contains(t, testMetrics(t, telemetry), `class="queue_full"`)
-	created, err := buildCatalog(fallbackCatalogFile(), fallbackProviders(), http.DefaultClient, func(_ string, id string, _ ...anthropicprovider.Option) provider.LanguageModel {
+	created, err := buildCatalog(fallbackCatalogFile(), fallbackProviders(), http.DefaultClient, func(_ nativemodel.Config, id string, _ *http.Client) provider.LanguageModel {
 		return &observabilityTestModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
 			if id == "backend-primary" {
 				return nil, provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 503, Message: "source failure"})
@@ -165,7 +165,7 @@ func TestPhysicalAttempts_SaturationDoesNotSuppressConsumerEvidence(t *testing.T
 		}}
 	}, identityModelFactory, sink)
 	require.NoError(t, err)
-	handler, err := providerv4.New(providerv4.Config{Resolver: created, Limits: serviceTestLimits()})
+	handler, err := providerv4.New(providerv4.Config{Selector: providerv4.CatalogSelector(created), Limits: serviceTestLimits()})
 	require.NoError(t, err)
 	request := httptest.NewRequest(http.MethodPost, providerv4.LanguageModelPath, strings.NewReader(`{"prompt":[]}`))
 	request.Header.Set("Content-Type", "application/json")

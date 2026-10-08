@@ -846,7 +846,7 @@ func TestPublicError_OptionalEncoding(t *testing.T) {
 		for _, attribution := range []string{"none", "selected", "malformed"} {
 			t.Run(map[bool]string{false: "HTTP", true: "SSE"}[streaming]+"/"+attribution, func(t *testing.T) {
 				h := invocationHarness(t, testLimits(), &recordingModel{})
-				request := newExecutionRequest("alias", h.resolver.resolved, nil, provider.CallOptions{}, h.handler.limits.UnaryResponseBytes)
+				request := newExecutionRequest("alias", selectConfiguredModel(t, h.resolver.resolved), nil, provider.CallOptions{}, h.handler.limits.UnaryResponseBytes)
 				capture := &attemptCapture{}
 				if attribution != "none" {
 					capture.enter()
@@ -1365,7 +1365,7 @@ func TestInvocation_RejectedUnaryOutcomeBeforePublication(t *testing.T) {
 	}
 	parent, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	request := newExecutionRequest("alias", h.resolver.resolved, nil, provider.CallOptions{}, h.handler.limits.UnaryResponseBytes)
+	request := newExecutionRequest("alias", selectConfiguredModel(t, h.resolver.resolved), nil, provider.CallOptions{}, h.handler.limits.UnaryResponseBytes)
 	capture := &attemptCapture{}
 	ctx := fallback.WithAttemptObserver(parent, capture.observe)
 	results := make(chan error, 1)
@@ -1414,7 +1414,7 @@ func TestInvocation_RejectRecordedFallbackOutcome(t *testing.T) {
 	}}
 	second := &recordingModel{}
 	h := invocationHarness(t, testLimits(), first, second)
-	request := newExecutionRequest("alias", h.resolver.resolved, nil, provider.CallOptions{}, h.handler.limits.UnaryResponseBytes)
+	request := newExecutionRequest("alias", selectConfiguredModel(t, h.resolver.resolved), nil, provider.CallOptions{}, h.handler.limits.UnaryResponseBytes)
 	capture := &attemptCapture{}
 	ctx := fallback.WithAttemptObserver(parent, capture.observe)
 	_, err := h.resolver.resolved.Model.DoGenerate(ctx, provider.CallOptions{})
@@ -1427,6 +1427,112 @@ func TestInvocation_RejectRecordedFallbackOutcome(t *testing.T) {
 	assert.Empty(t, capture.attempts)
 	assert.True(t, capture.sealed)
 	assert.Zero(t, second.callCount())
+}
+
+func selectConfiguredModel(t *testing.T, resolved catalog.ResolvedModel) Selection {
+	t.Helper()
+	selected, err := CatalogSelector(&recordingResolver{resolved: resolved})(t.Context(), "alias", provider.CallOptions{}, nil)
+	require.NoError(t, err)
+	return selected
+}
+
+func TestRequestSelection_ConfiguredExecution(t *testing.T) {
+	resolved := catalog.ResolvedModel{
+		ID:               "canonical",
+		Model:            &recordingModel{},
+		Candidates:       []catalog.ConfiguredCandidate{{Provider: "native", ModelID: "backend", ProviderInstance: "configured"}},
+		ProtectedSources: []string{"configured-secret"},
+	}
+	selected := selectConfiguredModel(t, resolved)
+	resolved.Candidates[0].ModelID = "mutated"
+	resolved.ProtectedSources[0] = "mutated"
+	request := newExecutionRequest("alias", selected, nil, provider.CallOptions{}, 4096)
+	selected.configured.candidates[0].ModelID = "mutated-again"
+	selected.configured.sources[0] = "mutated-again"
+	assert.Equal(t, "canonical", request.canonical)
+	assert.Equal(t, "backend", request.candidates[0].ModelID)
+	assert.Equal(t, []string{"configured-secret"}, request.sources)
+	encoded, err := json.Marshal(selected)
+	require.NoError(t, err)
+	assert.NotContains(t, string(encoded), "configured")
+	assert.NotContains(t, string(encoded), "secret")
+	assert.NotContains(t, fmt.Sprintf("%+v", selected), "configured-secret")
+	capture := &attemptCapture{}
+	capture.enter()
+	view := request.snapshot(capture, nil)
+	require.NotNil(t, view.overview)
+	assert.Equal(t, "alias", view.overview.RequestedModelID)
+	assert.Equal(t, "canonical", view.overview.CanonicalModelID)
+	assert.Equal(t, "configured", view.overview.Attempts[0].ProviderInstance)
+	assert.Nil(t, view.current(provider.NewAPICallError(provider.APICallErrorOptions{Message: "configured-secret"})))
+}
+
+func TestRequestSelection_UnconfiguredExecutionOmitted(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		streaming bool
+		failSetup bool
+	}{
+		{name: "unary success"},
+		{name: "unary failure", failSetup: true},
+		{name: "committed error", streaming: true},
+		{name: "stream setup failure", streaming: true, failSetup: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			native := provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 503, Message: "unconfigured-native-detail"})
+			metadata := provider.ProviderMetadata{"gateway": json.RawMessage(`{"opaque":"native-value"}`)}
+			model := &recordingModel{
+				generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
+					if tc.failSetup {
+						return nil, native
+					}
+					result := validGenerateResult()
+					result.ProviderMetadata = metadata
+					return result, nil
+				},
+				stream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+					if tc.failSetup {
+						return nil, native
+					}
+					finish := finishPart()
+					finish.ProviderMetadata = metadata
+					parts := make(chan provider.StreamPart, 2)
+					parts <- provider.StreamPart{Type: provider.PartError, APICallError: native}
+					parts <- finish
+					close(parts)
+					return &provider.StreamResult{Stream: parts}, nil
+				},
+			}
+			ordered, err := fallback.New(model)
+			require.NoError(t, err)
+			h, err := New(Config{Limits: testLimits(), Selector: func(context.Context, string, provider.CallOptions, json.RawMessage) (Selection, error) {
+				return Selection{ID: "request/model", Model: ordered}, nil
+			}})
+			require.NoError(t, err)
+			var observed int
+			ctx := fallback.WithAttemptObserver(t.Context(), func(context.Context, fallback.Attempt) { observed++ })
+			request := validRequest(`{"prompt":[]}`).WithContext(ctx)
+			request.Header.Set(HeaderStreaming, fmt.Sprint(tc.streaming))
+			response := httptest.NewRecorder()
+			h.ServeHTTP(response, request)
+			assert.Equal(t, 1, observed)
+			assert.Equal(t, 1, model.callCount())
+			assert.NotContains(t, response.Body.String(), "unconfigured-native-detail")
+			assert.NotContains(t, response.Body.String(), "execution")
+			assert.NotContains(t, response.Body.String(), "nativeError")
+			assert.NotContains(t, response.Body.String(), "nativeMetadata")
+			if tc.failSetup {
+				assert.Equal(t, http.StatusServiceUnavailable, response.Code)
+			} else {
+				assert.Equal(t, http.StatusOK, response.Code)
+				assert.Contains(t, response.Body.String(), `"gateway":{"opaque":"native-value"}`)
+				if tc.streaming {
+					assert.Contains(t, response.Body.String(), `"type":"error"`)
+					assert.Contains(t, response.Body.String(), `"type":"finish"`)
+				}
+			}
+		})
+	}
 }
 
 func TestExecutionRequest_Snapshot(t *testing.T) {
@@ -1458,7 +1564,7 @@ func TestExecutionRequest_Snapshot(t *testing.T) {
 			for i := range tc.candidates {
 				resolved.Candidates = append(resolved.Candidates, catalog.ConfiguredCandidate{Provider: "native", ModelID: fmt.Sprint(i)})
 			}
-			request := newExecutionRequest("alias", resolved, nil, provider.CallOptions{}, 4096)
+			request := newExecutionRequest("alias", selectConfiguredModel(t, resolved), nil, provider.CallOptions{}, 4096)
 			resolved.Candidates[0].ModelID = "mutated"
 			resolved.ProtectedSources[0] = "changed"
 			capture := &attemptCapture{}
@@ -1516,7 +1622,7 @@ func (err projectionError) Error() string {
 func TestExecutionRequest_ProjectionAfterSeal(t *testing.T) {
 	for _, panics := range []bool{false, true} {
 		t.Run(fmt.Sprint(panics), func(t *testing.T) {
-			request := newExecutionRequest("alias", catalog.ResolvedModel{ID: "canonical", Candidates: []catalog.ConfiguredCandidate{{Provider: "native", ModelID: "model"}}}, nil, provider.CallOptions{}, 4096)
+			request := newExecutionRequest("alias", selectConfiguredModel(t, catalog.ResolvedModel{ID: "canonical", Candidates: []catalog.ConfiguredCandidate{{Provider: "native", ModelID: "model"}}}), nil, provider.CallOptions{}, 4096)
 			capture := &attemptCapture{}
 			capture.enter()
 			inspected := make(chan struct{})
