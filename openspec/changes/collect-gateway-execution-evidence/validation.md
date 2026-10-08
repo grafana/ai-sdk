@@ -1,38 +1,57 @@
-# Collection foundation validation
+# Validation
 
-## Scope and reference
+## Scope and decisions
 
-PR #373 remains stacked above #372 at 4e254ca0. The owner approved a full simplification after reviewing the original collector/JSON/budget design. The foundation still has no production service/handler callers; #370 owns public carrier delivery.
+This single PR-owned OpenSpec change covers the Apache shared fallback capture stage and the AGPL compact Gateway projection. The temporary `capture-fallback-attempts` change has been merged into this change and removed.
 
-Reference: ai 7.0.118, Gateway 4.0.96, Provider 4.0.18 and Provider Utils 5.0.49 at 5d12eaa6caa193d3901cbab98a734403eb6bf622. Reviewed the pinned APICallError and Gateway error mapping together with current Go native producer wrappers. Attribution is a Grafana extension, not a private Vercel-service parity claim. The original #321 decision used an earlier baseline and remains historical; this scoped owner-approved diagnostic normalization policy supersedes its lexical/duplicate policy.
+The original Gateway evidence subsystem is removed: no collector, model wrappers, selected index, diagnostic count/byte allocations, retention accounting, raw details, disposition taxonomy, completion/replay-risk claims or post-selection error history remains. The foundation is still dormant; service/handler activation and #370 restacking are not included.
 
-## Refactor
+Reference: ai 7.0.118, Gateway 4.0.96, Provider 4.0.18 and Provider Utils 5.0.49 at `5d12eaa6caa193d3901cbab98a734403eb6bf622`. Pinned APICallError sources keep native data separate from causes. No matching upstream fallback implementation exists: observation is a Go adaptation and the overview is a Grafana extension, not private-service parity. No provider fixture inputs or recordings changed.
 
-- Removed error_json.go, essential.go, retention.go and protected_sources.go. No jsontext, token-level codec, complete-state encoding on mutation or prior-attempt retention rescan remains.
-- State records synchronized request-local facts; Snapshot returns isolated copies. Metadata is a separate assembler operating on those facts with ordinary typed JSON encoding.
-- Native normalization uses standard encoding/json with UseNumber and a decoded-data credential transformation. Summary and details use the same protected value. Completed diagnostic components are retained as RawMessage so their encoded byte size is directly measurable, without an encoded-size cache.
-- Standard duplicate-member processing and normalized string/key escapes (including lone surrogates) are intentional owner-approved adaptations. Numeric precision, null/false/empty values, immutable source data and known-source credential protections remain covered. Ordinary URL/endpoint/request/header/private-named application values survive unless they actually contain a protected source.
-- Attempt/source/component/retained-detail bounds apply before retention; mandatory aggregate/encoding and success/error output allocations apply at assembly. Mandatory memory is bounded by the capped attempt count and per-fact limits, rather than repeated whole-state marshaling. The final complete protocol document/frame budget remains the adapter's responsibility.
-- Removed the Go 1.27 increase from ai-gateway/go.mod and go.gateway.work. Both keep their existing Go 1.26.3 minimum. The namespace schema remains a contract-test/documentation artifact, not a runtime validator or client dependency.
+Owner-approved policy: optional enrichment that cannot fit existing complete-response/frame limits preserves original metadata, including an opaque native gateway namespace when relocation alone cannot fit. Namespace presence alone is not provenance or authority, and omitted overview is not evidence of no attempts. Original primary validation must pass before enrichment is accepted.
 
-## Proof and passed checks
+## Shared SDK evidence
 
-Package regressions cover 16/17 attempts, observed selection beyond the history limit, cancellation/sealing, current-versus-retained failures, optional-detail replacement accounting, isolated snapshots (including raw JSON and optional booleans), namespace collision immutability, and assembly rejection of escaped/aggregate mandatory overflow.
+Implemented in `f8dffbfe`. Tests first failed because context observation and SourceErr did not exist (`/tmp/373-overview-design/sdk-red.log`).
 
-Native-error regressions cover ordinary and protected nested data, configured credential echoes, escaped/duplicate credential names, last-value normalization, trailing documents/malformed input, original invalid UTF-8, normalized surrogate strings/keys, large integer and numeric-lexeme precision, source/component limits, HTML expansion and exact optional allocations. All inputs are focused synthetic unit-test data, not provider recordings.
+- Request/model observers receive the same ordered snapshots, with independent panic recovery and child observer replacement/disablement.
+- Twenty-four independent request contexts share one fallback model under races without callback leakage.
+- Cancellation/deadline during a decider preserves SourceErr while existing decision/returned errors preserve the context cause.
+- Leading error parts remain selected stream content; setup/validation/EOF and exclusion of unowned late native setup results preserve existing ownership.
+- GenerateText/StreamText provide callback access to preceding failures while preserving selected provider metadata and isolating a panicking operator observer.
+- Root tests/races/vet/lint, full root Go 1.26.8 races, Gateway tests/races, parity, docs and module boundaries passed for this stage. Logs: `/tmp/373-overview-design/sdk-{root-race,gateway,go126,parity,boundaries}.log`.
 
-Passed after the refactor:
+## Gateway projection evidence
 
-- Full Gateway tests; collector, ProviderWire and service race tests.
-- Gateway vet and golangci-lint: zero issues.
-- Full Gateway tests with Go 1.26.8, local toolchain and readonly dependencies in the candidate workspace. This proves minimum-toolchain source compilation, not standalone published Gateway adoption.
-- mise run parity-check: typecheck, 133 schema tests and 110 client/runtime tests.
-- mise run test-ai-gateway-command: 74 tests, no skips; the dormant package does not change production output.
-- Docs lint, Gateway boundary, SDK/Gateway isolation, candidate workspace, merged-pin ancestry and independent published-client gates.
-- Strict OpenSpec validation: 93 items; whitespace checks.
+Tests first failed because the pure projector/assembler did not exist (`/tmp/373-overview-design/projection-red.log`).
 
-## Downstream migration and limits
+- Complete ordered actual decisions, configured candidate/account identity and selected/failed/canceled outcomes are projected. Unrun candidates, mixed indices, impossible progression and unfinished advancement are omitted.
+- Thirty-two observed attempts remain a full array; no diagnostic attempt cap erases history.
+- Safe messages survive API URL/cause presence. Bare/enveloped errors, standard duplicate/escape handling, precise large numeric codes, empty string codes and body fallback are covered.
+- Known credential/other-tenant scalar echoes and supplied actual sources are protected field-by-field. Raw body/header/request/cause trees never become output. Native inputs remain unchanged.
+- Malformed/invalid UTF-8/oversized diagnostic sources under the caller's existing read bound degrade to available safe status; there is no new allocation or normalization error.
+- Shared fallback-to-projector composition preserves setup failure attribution and exact error/text/finish order with disabled, record-dropping or panicking model observers. The record-dropping callback is a unit witness, not a saturated production queue proof.
+- Metadata inputs/other namespaces are isolated. Fitting native namespace collisions relocate intact; exact complete-response and SSE-frame boundaries, one-byte overflow and original-size-only fit preserve original metadata and successful content. Optional encoding failures and originally invalid namespaces cannot become successful primary responses through relocation.
+- Go-produced namespaces validate against the compact schema; strict TypeScript schema tests reject selected-error history, selected indices, completion claims, details and dispositions. Schema validation alone does not establish invocation order, complete observation or production delivery.
 
-#370 must replace State.Metadata(original, gateway, minimal) with evidence.Metadata(state.Snapshot(), original, gateway, minimal), and use one consistent snapshot when assembling multiple fields of an envelope. NativeError.Details is now a complete encoded component, not a mutable Component pointer. Essential and complete error-document limits belong at the protocol boundary; the old exported ErrorBytes/EssentialBytes implementation constants are no longer collector API. Update downstream tests for standard diagnostic normalization. Do not change error classification, client retry policy, event ordering, cleanup or fallback commitment.
+## Passed final commands
 
-This PR does not modify or restack #370. Package/schema tests do not establish real-handler carrier assembly, operator-sink independence or frontend interoperability. Original combined review receipts predate this refactor and are not a fresh independent review. The optional provider-shape report still lacks registered package source. No provider fixture inputs changed. Sync/archive and release remain outside this operation.
+- Full Gateway source-workspace `go test ./...`.
+- Gateway execution/ProviderWire/service `go test -race`, full `go vet` and golangci-lint: zero issues.
+- Full Gateway source-workspace tests on Go 1.26.8 with readonly dependencies.
+- Full root races/vet/golangci-lint: zero issues; prior full root Go 1.26.8 races remain applicable to the unchanged SDK stage.
+- ProviderWire TypeScript typecheck and strict schema tests: 134 tests, no failures.
+- `mise run parity-check`: registered schema/client/runtime checks and provider replays.
+- `mise run test-ai-gateway-command`: 74 tests, no skips; production output remains unchanged.
+- Docs lint, Gateway workspace/module/license boundary, SDK isolation and merged-pin gates.
+- `MODULE=providers/grafana mise run verify-published-module`: readonly public dependencies pass; the independent client is unchanged.
+- `openspec validate --all --strict`: 93 items, zero failures.
+- Whitespace checks and byte-for-byte preservation of the unrelated `go.work.sum` patch.
+
+Final logs: `/tmp/373-overview-design/projection-{gateway,root,go126,schema,parity,command,boundaries}.log`. A final source-protection check also covers credentials in a single-chain URL cause; execution/ProviderWire races, Gateway vet/lint and Go 1.26 focused tests passed again in `projection-final-focus.log`.
+
+## Migration and remaining proof
+
+#370 must replace the removed evidence wrapper/state with finalized call-local fallback observation, feed one invocation's decisions/descriptors/actual protected sources into `execution.Project`, and call `execution.Metadata` with existing complete-envelope primary validation/fit checks. Direct routes retain their own lifecycle, not one-candidate fallback. Current committed errors stay in existing event payloads; no finish history duplicates them. Existing error/content/finish ordering, operator independence and no replay after first-part commitment require fresh runtime/both-client/frontend proof in that activation change.
+
+No production overview delivery, live-provider acceptance or fresh independent implementation review is claimed. The optional provider-shape report skips unavailable registered provider package source; passing parity does not establish that drift report. Source-workspace tests establish same-revision Gateway adoption, not a newly published SDK dependency. No Go minimum or module pin changed. OpenSpec sync/archive and PR merge remain pending owner approval.

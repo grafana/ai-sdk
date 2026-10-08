@@ -1,25 +1,27 @@
 ## Why
 
-Gateway attribution and diagnostic protection need a focused review before they are connected to public runtime carriers. This second part of #322 extracts the bounded internal collector, projection and namespace schema from the approved implementation; it does not activate Gateway output.
+Callers need a compact explanation of which fallback candidate was selected and why preceding candidates failed. The original dormant evidence subsystem duplicated errors and execution state, added diagnostic-specific allocations, and could turn successful generation into an attribution failure.
 
 ## What Changes
 
-- Add request-local candidate/decision/part observation, sealing and immutable bounded snapshots.
-- Normalize candidate-local native errors with standard Go JSON, known-source protection, numeric precision and complete-component/aggregate budgets; no token-level JSON transformer.
-- Define and validate the Gateway-owned namespace schema with focused package and schema tests.
-- Separate execution facts from metadata assembly; remove repeated whole-state encoding, retention rescans and jsontext. Gateway/workspace and independent client minimums remain Go 1.26.3.
-- With owner approval, use standard duplicate-member processing and string/key normalization for rewritten native diagnostics instead of the earlier lexical-preservation requirement. Opaque metadata and exact client HTTP/SSE retention are unchanged.
+- Improve reusable Apache SDK fallback capture with request-scoped observation and `Attempt.SourceErr`, without changing fallback policy or lifecycle.
+- Replace the dormant AGPL evidence collector, wrappers and allocation machinery with a pure Gateway execution overview projection.
+- Represent ordered observed attempts, configured candidate identity, outcomes and protected failure summaries. Remove selected indexes, completion/replay claims, fallback-intent flags, duplicated routing identity, raw diagnostic trees and disposition taxonomies.
+- Use standard shallow JSON decoding for native message/type/string-or-number code; retain precise numeric codes without publishing original error bodies, arbitrary causes or request/header data.
+- Make metadata enrichment best-effort under the caller's existing complete response/frame limits. If native namespace relocation cannot fit, preserve the original response and leave the native namespace opaque.
+- Update the compact namespace schema and focused tests without activating production handlers or restacking #370.
 
 ## Capabilities
 
 ### New Capabilities
 
-- `gateway-evidence-collection`: Internal request-local attribution, protected bounded snapshots and their schema, without runtime activation.
+- `fallback-attempt-capture`: Request-scoped observation with candidate-local source errors and independent observer isolation.
+- `gateway-execution-overview`: Compact configured-identity projection and best-effort namespace enrichment without runtime activation.
 
 ### Modified Capabilities
 
-None. Existing ProviderWire and fallback behavior remain unchanged until the integration change.
+None. Existing fallback selection and ProviderWire runtime requirements remain unchanged.
 
 ## Impact
 
-Adds ai-gateway/internal/evidence, the namespace schema and schema tests; keeps the existing Go baseline unchanged. Stacked above retain-grafana-error-extensions and #332. The separate expose-gateway-attempts-and-failures change owns service/handler wiring, public emission, cross-client/frontend proof and consumer documentation. Native transport debugging (#323) and producer fixes (#299) remain outside this change.
+Shared `fallback` API/tests/guide and AGPL `ai-gateway/internal/execution`, namespace schema and tests. No dependency, LanguageModelV4, minimum Go version or published-module pin changes. This single OpenSpec change owns the entire PR, including the already implemented SDK capture stage. Production delivery and both-client/frontend overview proof remain #370; fuller native transport diagnostics remain #323.
