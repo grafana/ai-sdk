@@ -199,17 +199,19 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.writeSafeError(w, safeErrorFromResolution(err))
 		return
 	}
+	ctx, call := newInvocation(ctx, validated.modelID, resolved, r.Header, options, h.limits.UnaryResponseBytes)
+	defer func() { call.finish(ctx.Err()) }()
 	if validated.mode == executionStreaming {
 		h.serveStream(w, r.Context(), ctx, resolved.Model, options, history)
 		return
 	}
 	result, err := h.invokeModel(ctx, resolved.Model, options)
 	if err != nil {
-		h.writeSafeError(w, safeErrorFromProvider(err))
+		h.writeSafeError(w, safeErrorFromProvider(err).withInvocation(call, err))
 		return
 	}
-	if result == nil || !h.writeUnarySuccess(w, result, unaryMappingContext{history: history}) {
-		h.writeSafeError(w, safeError{category: safeInternal})
+	if result == nil || !h.writeUnarySuccess(w, result, unaryMappingContext{history: history, overview: call.finish(nil)}) {
+		h.writeSafeError(w, (safeError{category: safeInternal}).withInvocation(call, nil))
 	}
 }
 
@@ -348,6 +350,7 @@ func (h *handler) invokeModel(ctx context.Context, model provider.LanguageModel,
 			}
 			outcomes <- outcome
 		}()
+		invocationFromContext(ctx).enter()
 		outcome.result, outcome.err = model.DoGenerate(modelContext, options)
 	}()
 

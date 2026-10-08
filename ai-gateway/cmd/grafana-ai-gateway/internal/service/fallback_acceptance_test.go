@@ -114,9 +114,15 @@ func TestFallbackAcceptance_MappedPrecommitAndCommitment(t *testing.T) {
 						errorCodes = append(errorCodes, errorEvent.Error.Code)
 						switch errorEvent.Error.Code {
 						case "overloaded":
-							assert.JSONEq(t, `{"type":"error","error":{"message":"service overloaded","type":"internal_server_error","param":null,"code":"overloaded","statusCode":503,"retryable":true}}`, payload)
+							assert.Contains(t, payload, `"message":"service overloaded"`)
+							assert.Contains(t, payload, `"statusCode":503,"retryable":true`)
+							assert.Contains(t, payload, `"outcome":"selected"`)
+							assert.NotContains(t, payload, `"completion"`)
+							assert.NotContains(t, payload, `"selectedAttempt"`)
 						case "internal_error":
-							assert.JSONEq(t, `{"type":"error","error":{"message":"internal error","type":"internal_server_error","param":null,"code":"internal_error","statusCode":500,"retryable":true}}`, payload)
+							assert.Contains(t, payload, `"message":"internal error"`)
+							assert.Contains(t, payload, `"statusCode":500,"retryable":true`)
+							assert.Contains(t, payload, `"outcome":"selected"`)
 						}
 					}
 				}
@@ -511,9 +517,6 @@ func newFallbackAcceptance(t *testing.T, primary, secondary *observabilityTestMo
 		logical := string(encoded) + logs.String() + metrics
 		for _, private := range []string{"private-prompt", "private-output", "public-answer", "primary-instance", "secondary-instance", "backend-primary", "backend-secondary", "native_usage_marker"} {
 			assert.NotContains(t, logical, private)
-		}
-		for _, private := range []string{"primary-instance", "secondary-instance"} {
-			assert.NotContains(t, public, private)
 		}
 		for _, private := range []string{"private-credential", "private.example", "private-header", "private-request-body", "private-response-body", "private-error", "private-data"} {
 			assert.NotContains(t, public+logical+output.String(), private)

@@ -23,6 +23,7 @@ var syntheticRawUsage = json.RawMessage(`{"input_tokens":32,"cache_read_input_to
 type providerWireV4Stats struct {
 	successCalls        atomic.Int64
 	streamCalls         atomic.Int64
+	executionFailures   atomic.Int64
 	blockingCalls       atomic.Int64
 	streamBlockingCalls atomic.Int64
 	cancellations       atomic.Int64
@@ -145,6 +146,9 @@ func (m *providerWireV4Model) DoStream(ctx context.Context, options provider.Cal
 	one := 1
 	two := 2
 	switch m.kind {
+	case "execution-failure":
+		m.stats.executionFailures.Add(1)
+		return nil, provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 503, Message: "native unavailable"})
 	case "native-values", "native-empty", "native-partial", "native-absent":
 		return scenarioNativeStream(m.kind), nil
 	case "reasoning-files":
@@ -290,6 +294,9 @@ func (m *providerWireV4Model) DoStream(ctx context.Context, options provider.Cal
 
 func (m *providerWireV4Model) DoGenerate(ctx context.Context, options provider.CallOptions) (*provider.GenerateResult, error) {
 	switch m.kind {
+	case "execution-failure":
+		m.stats.executionFailures.Add(1)
+		return nil, provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 503, Message: "native unavailable"})
 	case "native-values", "native-empty", "native-partial", "native-absent":
 		return scenarioNativeValues(m.kind), nil
 	case "reasoning-files":
@@ -390,11 +397,17 @@ func newProviderWireV4Scenario() (*providerWireV4Scenario, error) {
 		})
 
 	}
+	entries = append(entries, catalog.StaticEntry{Info: catalog.ModelInfo{ID: "execution-errors", Candidates: []catalog.ConfiguredCandidate{{Provider: "test", ProviderInstance: "configured", ModelID: "errors"}}}, Model: &providerWireV4Model{kind: "stream-errors", stats: stats}})
 	ordered, err := fallback.New(&providerWireV4Model{kind: "setup-failure", stats: stats}, &providerWireV4Model{kind: "success", stats: stats})
 	if err != nil {
 		return nil, err
 	}
 	entries = append(entries, catalog.StaticEntry{Info: catalog.ModelInfo{ID: "mapped-fallback"}, Model: ordered})
+	executionModel, err := fallback.New(&providerWireV4Model{kind: "execution-failure", stats: stats}, &providerWireV4Model{kind: "success", stats: stats})
+	if err != nil {
+		return nil, err
+	}
+	entries = append(entries, catalog.StaticEntry{Info: catalog.ModelInfo{ID: "execution-fallback", Candidates: []catalog.ConfiguredCandidate{{Provider: "test", ProviderInstance: "primary", ModelID: "execution-failure"}, {Provider: "test", ProviderInstance: "secondary", ModelID: "success"}}}, Model: executionModel})
 	resolver, err := catalog.NewStatic(entries)
 	if err != nil {
 		return nil, err
@@ -449,6 +462,7 @@ func (s *providerWireV4Scenario) register(mux *http.ServeMux) {
 		_ = json.NewEncoder(w).Encode(map[string]int64{
 			"successCalls":        s.stats.successCalls.Load(),
 			"streamCalls":         s.stats.streamCalls.Load(),
+			"executionFailures":   s.stats.executionFailures.Load(),
 			"blockingCalls":       s.stats.blockingCalls.Load(),
 			"streamBlockingCalls": s.stats.streamBlockingCalls.Load(),
 			"cancellations":       s.stats.cancellations.Load(),
