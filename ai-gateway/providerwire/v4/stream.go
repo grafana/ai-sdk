@@ -704,16 +704,11 @@ func (h *handler) processStreamPart(w http.ResponseWriter, state *streamState, p
 		if !ok {
 			return streamPartAdapterFailure
 		}
-		if state.execution.overview != nil {
-			execution.Metadata(state.execution.overview, event.metadata, func(metadata provider.ProviderMetadata) bool {
-				candidate := event
-				candidate.metadata = metadata
-				enriched, fits := encodeStreamFrame(candidate, h.limits.StreamFrameBytes)
-				if fits {
-					frame = enriched
-				}
-				return fits
-			})
+		if metadata := execution.Metadata(state.execution.overview, event.metadata); metadata != nil {
+			event.metadata = metadata
+			if enriched, fits := encodeStreamFrame(event, h.limits.StreamFrameBytes); fits {
+				frame = enriched
+			}
 		}
 		if !writeCompleteStreamFrame(w, frame) {
 			return streamPartWriterFailure

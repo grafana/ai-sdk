@@ -426,7 +426,8 @@ func readOverview(t *testing.T, body []byte) *execution.Overview {
 func TestInvocation_OptionalLimitsAndNamespace(t *testing.T) {
 	for _, streaming := range []bool{false, true} {
 		t.Run(map[bool]string{false: "unary", true: "finish"}[streaming], func(t *testing.T) {
-			native := provider.ProviderMetadata{"gateway": json.RawMessage(`{"opaque":"native namespace"}`)}
+			native := provider.ProviderMetadata{"gateway": json.RawMessage(`{"opaque":"native namespace","padding":"` + strings.Repeat("x", 128) + `"}`)}
+			before := append(json.RawMessage(nil), native["gateway"]...)
 			first := &recordingModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
 				result := validGenerateResult()
 				result.ProviderMetadata = native
@@ -446,28 +447,30 @@ func TestInvocation_OptionalLimitsAndNamespace(t *testing.T) {
 			}
 			original := baseline.serve(request()).Body.Bytes()
 			full := invocationHarness(t, testLimits(), first).serve(request()).Body.Bytes()
-			size := len(full)
+			size, originalSize := len(full), len(original)
 			if streaming {
 				frames := strings.Split(strings.TrimSuffix(string(full), "\n\n"), "\n\n")
 				size = len(frames[len(frames)-1]) + 2
+				frames = strings.Split(strings.TrimSuffix(string(original), "\n\n"), "\n\n")
+				originalSize = len(frames[len(frames)-1]) + 2
 			}
-			for _, delta := range []int{0, -1} {
+			for _, limit := range []int{size, size - 1, originalSize} {
 				limits := testLimits()
 				if streaming {
-					limits.StreamFrameBytes = int64(size + delta)
+					limits.StreamFrameBytes = int64(limit)
 				} else {
-					limits.UnaryResponseBytes = int64(size + delta)
+					limits.UnaryResponseBytes = int64(limit)
 				}
 				response := invocationHarness(t, limits, first).serve(request())
 				assert.Equal(t, 200, response.Code)
-				if delta == 0 {
+				if limit == size {
 					assert.Equal(t, full, response.Body.Bytes())
-					assert.Contains(t, response.Body.String(), `"nativeMetadata":{"opaque":"native namespace"}`)
+					assert.Contains(t, response.Body.String(), `"nativeMetadata":`+string(before))
 				} else {
 					assert.Equal(t, original, response.Body.Bytes())
 				}
 			}
-			assert.JSONEq(t, `{"opaque":"native namespace"}`, string(native["gateway"]))
+			assert.Equal(t, before, native["gateway"])
 		})
 	}
 	first := &recordingModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
@@ -477,6 +480,15 @@ func TestInvocation_OptionalLimitsAndNamespace(t *testing.T) {
 	}}
 	response := invocationHarness(t, testLimits(), first).serve(validRequest(`{"prompt":[]}`))
 	assert.Equal(t, 500, response.Code)
+	assert.NotContains(t, response.Body.String(), "nativeMetadata")
+	first.stream = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+		finish := finishPart()
+		finish.ProviderMetadata = provider.ProviderMetadata{"gateway": json.RawMessage(`true`)}
+		return &provider.StreamResult{Stream: makeStream(finish)}, nil
+	}
+	response = invocationHarness(t, testLimits(), first).serve(streamRequest(`{"prompt":[]}`))
+	assert.Contains(t, response.Body.String(), `"code":"internal_error"`)
+	assert.NotContains(t, response.Body.String(), `"type":"finish"`)
 	assert.NotContains(t, response.Body.String(), "nativeMetadata")
 }
 
