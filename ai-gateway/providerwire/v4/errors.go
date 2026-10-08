@@ -2,12 +2,14 @@ package v4
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net"
 	"net/http"
 	"net/url"
 
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
+	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -35,9 +37,32 @@ type safeError struct {
 	nativeError *provider.APICallError
 }
 
+const maxErrorResponseBytes = 64 << 10
+
+type errorType string
+type errorCode string
+
 type safeErrorDocument struct {
-	status int
-	body   []byte
+	status   int
+	body     []byte
+	Type     provider.StreamPartType   `json:"type,omitempty"`
+	Error    safeErrorFields           `json:"error"`
+	Metadata provider.ProviderMetadata `json:"providerMetadata,omitzero"`
+}
+
+type safeErrorFields struct {
+	Message    string          `json:"message"`
+	Type       errorType       `json:"type"`
+	Param      json.RawMessage `json:"param"`
+	Code       errorCode       `json:"code"`
+	StatusCode int             `json:"statusCode,omitempty"`
+	Retryable  *bool           `json:"retryable,omitempty"`
+	Data       *safeErrorData  `json:"data,omitempty"`
+}
+
+type safeErrorData struct {
+	Metadata    provider.ProviderMetadata `json:"providerMetadata,omitzero"`
+	NativeError *execution.Failure        `json:"nativeError,omitempty"`
 }
 
 var (
@@ -229,8 +254,53 @@ func safeErrorFromTransport(err error) (safeError, bool) {
 
 func (h *handler) writeSafeError(w http.ResponseWriter, value safeError) {
 	document := documentForSafeError(value)
-	document.body = enrichErrorDocument(document.body, false, value, min(h.limits.UnaryResponseBytes, maxErrorResponseBytes))
+	document.body = document.encode(value, min(h.limits.UnaryResponseBytes, maxErrorResponseBytes))
 	writeSafeErrorDocument(w, document)
+}
+
+func (document safeErrorDocument) encode(value safeError, limit int64) []byte {
+	original := document.body
+	if value.invocation == nil || int64(len(original)) > limit {
+		return original
+	}
+	call := value.invocation
+	if json.Unmarshal(original, &document) != nil {
+		return original
+	}
+	var current *execution.Failure
+	if document.Type == provider.PartError {
+		current = call.current(value.nativeError)
+	}
+	if call.overview == nil && current == nil {
+		return original
+	}
+	if document.Type == provider.PartError {
+		document.Error.Data = &safeErrorData{NativeError: current}
+	}
+	var body []byte
+	checked := false
+	encodeMetadata := func(metadata provider.ProviderMetadata) bool {
+		checked = true
+		if document.Type == provider.PartError {
+			document.Error.Data.Metadata = metadata
+		} else {
+			document.Metadata = metadata
+		}
+		candidate, err := json.Marshal(document)
+		if err != nil || int64(len(candidate)) > limit {
+			return false
+		}
+		body = candidate
+		return true
+	}
+	metadata := execution.Metadata(call.overview, nil, encodeMetadata)
+	if !checked {
+		encodeMetadata(nil)
+	}
+	if body == nil || len(metadata) == 0 && current == nil {
+		return original
+	}
+	return body
 }
 
 func writeSafeErrorDocument(w http.ResponseWriter, document safeErrorDocument) {
