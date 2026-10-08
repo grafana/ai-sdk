@@ -836,7 +836,7 @@ type testAddr string
 func (a testAddr) Network() string { return "tcp" }
 func (a testAddr) String() string  { return string(a) }
 
-func TestSafeErrorDocument_OptionalEncoding(t *testing.T) {
+func TestPublicError_OptionalEncoding(t *testing.T) {
 	for _, streaming := range []bool{false, true} {
 		for _, attribution := range []string{"none", "selected", "malformed"} {
 			t.Run(map[bool]string{false: "HTTP", true: "SSE"}[streaming]+"/"+attribution, func(t *testing.T) {
@@ -849,20 +849,36 @@ func TestSafeErrorDocument_OptionalEncoding(t *testing.T) {
 						call.overview.Attempts[0].Error = &execution.Failure{Code: json.RawMessage("invalid")}
 					}
 				}
-				value := safeError{category: safeOverload, invocation: call, nativeError: provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 503, Message: "current failure"})}
-				document := documentForSafeError(value)
-				if streaming {
-					frame := streamErrorFrameForSafeError(value)
-					document.body = frame[len("data: ") : len(frame)-len("\n\n")]
+				value := safeError{category: safeOverload}
+				current := call.current(provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 503, Message: "current failure"}))
+				metadata := call.metadata()
+				encode := func(limit int64) []byte {
+					if streaming {
+						frame, ok := encodeStreamError(value, metadata, current, limit)
+						require.True(t, ok)
+						return frame
+					}
+					status, body := encodeHTTPError(value, metadata, limit)
+					assert.Equal(t, 503, status)
+					return body
 				}
-				original := append([]byte(nil), document.body...)
-				full := document.encode(value, h.handler.limits.UnaryResponseBytes)
+				original := canonicalOverloadError
+				if streaming {
+					original = canonicalOverloadStreamErrorFrame
+				}
+				full := encode(h.handler.limits.UnaryResponseBytes)
 				for _, limit := range []int{len(full), max(len(original), len(full)-1), len(original)} {
-					body := document.encode(value, int64(limit))
+					body := encode(int64(limit))
 					assert.LessOrEqual(t, len(body), limit)
-					var decoded, baseline safeErrorDocument
-					require.NoError(t, json.Unmarshal(body, &decoded))
-					require.NoError(t, json.Unmarshal(original, &baseline))
+					decode := func(body []byte) errorResponse {
+						if streaming {
+							body = body[len("data: ") : len(body)-len("\n\n")]
+						}
+						var response errorResponse
+						require.NoError(t, json.Unmarshal(body, &response))
+						return response
+					}
+					decoded, baseline := decode(body), decode(original)
 					assert.Equal(t, baseline.Error.Message, decoded.Error.Message)
 					assert.Equal(t, baseline.Error.Type, decoded.Error.Type)
 					assert.Equal(t, baseline.Error.Code, decoded.Error.Code)
@@ -886,9 +902,105 @@ func TestSafeErrorDocument_OptionalEncoding(t *testing.T) {
 						assert.Equal(t, original, body)
 					}
 				}
-				assert.Equal(t, original, document.body)
+				assert.Equal(t, metadata, call.metadata())
 			})
 		}
+	}
+}
+
+func TestPublicError_FixedBytes(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		value  safeError
+		status int
+		body   []byte
+		frame  []byte
+	}{
+		{"invalid request", safeError{category: safeInvalidRequest}, 400, canonicalInvalidRequestError, canonicalInternalStreamErrorFrame},
+		{"model not found", safeError{category: safeModelNotFound}, 404, canonicalModelNotFoundError, canonicalInternalStreamErrorFrame},
+		{"rate limit", safeError{category: safeRateLimit}, 429, canonicalRateLimitError, canonicalRateLimitStreamErrorFrame},
+		{"overload", safeError{category: safeOverload}, 503, canonicalOverloadError, canonicalOverloadStreamErrorFrame},
+		{"dependency", safeError{category: safeFailedDependency}, 424, canonicalDependencyError, canonicalDependencyStreamErrorFrame},
+		{"upstream", safeError{category: safeUpstream}, 502, canonicalUpstreamError, canonicalUpstreamStreamErrorFrame},
+		{"timeout", safeError{category: safeTimeout}, 504, canonicalTimeoutError, canonicalTimeoutStreamErrorFrame},
+		{"canceled", safeError{category: safeCancellation}, 499, canonicalCancellationError, canonicalCancellationStreamErrorFrame},
+		{"internal", safeError{category: safeInternal}, 500, canonicalInternalError, canonicalInternalStreamErrorFrame},
+		{"authentication", safeError{category: safeAuthentication}, 401, canonicalAuthenticationError, canonicalInternalStreamErrorFrame},
+		{"permission", safeError{category: safePermission}, 403, canonicalPermissionError, canonicalInternalStreamErrorFrame},
+		{"zero", safeError{}, 500, canonicalInternalError, canonicalInternalStreamErrorFrame},
+		{"unknown", safeError{category: 255}, 500, canonicalInternalError, canonicalInternalStreamErrorFrame},
+		{"reasoning", safeError{category: safeInvalidRequest, capability: capabilityReasoningContent}, 400, unsupportedReasoningContentError, canonicalInternalStreamErrorFrame},
+		{"custom", safeError{category: safeInvalidRequest, capability: capabilityCustomContent}, 400, unsupportedCustomContentError, canonicalInternalStreamErrorFrame},
+		{"tools", safeError{category: safeInvalidRequest, capability: capabilityTools}, 400, unsupportedToolsError, canonicalInternalStreamErrorFrame},
+		{"approval", safeError{category: safeInvalidRequest, capability: capabilityToolApprovals}, 400, unsupportedToolApprovalsError, canonicalInternalStreamErrorFrame},
+		{"output", safeError{category: safeInvalidRequest, capability: capabilityStructuredOutput}, 400, unsupportedStructuredOutputError, canonicalInternalStreamErrorFrame},
+		{"raw", safeError{category: safeInvalidRequest, capability: capabilityRawOutput}, 400, unsupportedRawOutputError, canonicalInternalStreamErrorFrame},
+		{"options", safeError{category: safeInvalidRequest, capability: capabilityProviderOptions}, 400, unsupportedProviderOptionsError, canonicalInternalStreamErrorFrame},
+		{"reserved", safeError{category: safeInvalidRequest, capability: capabilityReservedProviderOptions}, 400, reservedProviderOptionsError, canonicalInternalStreamErrorFrame},
+		{"header", safeError{category: safeInvalidRequest, capability: capabilityProtectedCallHeader}, 400, protectedCallHeaderError, canonicalInternalStreamErrorFrame},
+		{"unknown capability", safeError{category: safeInvalidRequest, capability: unsupportedCapability("unknown")}, 400, canonicalInvalidRequestError, canonicalInternalStreamErrorFrame},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newTestHandler(t, testLimits())
+			response := httptest.NewRecorder()
+			h.writeSafeError(response, tc.value, nil)
+			assert.Equal(t, tc.status, response.Code)
+			assert.Equal(t, tc.body, response.Body.Bytes())
+			assert.Equal(t, tc.frame, streamErrorFrameForSafeError(tc.value))
+		})
+	}
+}
+
+func TestPublicError_InvalidOptionalFields(t *testing.T) {
+	value := safeError{category: safeOverload}
+	validMetadata := provider.ProviderMetadata{"gateway": json.RawMessage(`{"execution":{"requestedModelId":"alias"}}`)}
+	malformedMetadata := provider.ProviderMetadata{"gateway": json.RawMessage("invalid")}
+	current := &execution.Failure{Message: "current failure", StatusCode: 503}
+	currentOnly, ok := encodeStreamError(value, nil, current, 1<<20)
+	require.True(t, ok)
+	for _, tc := range []struct {
+		name     string
+		metadata provider.ProviderMetadata
+		current  *execution.Failure
+		expected []byte
+	}{
+		{"malformed metadata", malformedMetadata, nil, canonicalOverloadStreamErrorFrame},
+		{"current survives malformed metadata", malformedMetadata, current, currentOnly},
+		{"malformed current does not publish overview", validMetadata, &execution.Failure{Code: json.RawMessage("invalid")}, canonicalOverloadStreamErrorFrame},
+		{"oversized current does not publish overview", validMetadata, &execution.Failure{Message: strings.Repeat("x", 1<<20)}, canonicalOverloadStreamErrorFrame},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			frame, ok := encodeStreamError(value, tc.metadata, tc.current, 1024)
+			require.True(t, ok)
+			assert.Equal(t, tc.expected, frame)
+			requireStreamBodyMatchesSchema(t, string(frame))
+		})
+	}
+	status, body := encodeHTTPError(value, malformedMetadata, 1024)
+	assert.Equal(t, 503, status)
+	assert.Equal(t, canonicalOverloadError, body)
+	_, ok = encodeStreamError(value, validMetadata, current, int64(len(canonicalOverloadStreamErrorFrame)-1))
+	assert.False(t, ok)
+}
+
+func TestPublicError_ClassificationBoundaries(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		err    error
+		unary  safeErrorCategory
+		stream safeErrorCategory
+	}{
+		{"wrapped cancellation", provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 401, Cause: context.Canceled}), safeCancellation, safeFailedDependency},
+		{"wrapped timeout", provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 401, Cause: context.DeadlineExceeded}), safeTimeout, safeFailedDependency},
+		{"invalid status", provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 700}), safeUpstream, safeInternal},
+		{"zero status", provider.NewAPICallError(provider.APICallErrorOptions{}), safeUpstream, safeUpstream},
+		{"zero canceled status", provider.NewAPICallError(provider.APICallErrorOptions{Cause: context.Canceled}), safeCancellation, safeCancellation},
+		{"nil API error", (*provider.APICallError)(nil), safeInternal, safeInternal},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.unary, safeErrorFromProvider(tc.err).category)
+			assert.Equal(t, tc.stream, safeErrorFromStreamProvider(tc.err).category)
+		})
 	}
 }
 
@@ -911,10 +1023,9 @@ func TestSafeErrorReduction(t *testing.T) {
 		} {
 			h := newTestHandler(t, testLimits())
 			response := httptest.NewRecorder()
-			h.writeSafeError(response, tc.value)
-			document := documentForSafeError(tc.value)
+			h.writeSafeError(response, tc.value, nil)
 			assert.Equal(t, tc.status, response.Code)
-			assert.Equal(t, string(document.body), response.Body.String())
+			require.NoError(t, compileWireSchema(t, errorSchemaJSON).Validate(response.Body.Bytes()))
 		}
 	})
 

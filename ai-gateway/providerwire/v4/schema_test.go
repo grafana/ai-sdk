@@ -27,6 +27,55 @@ var (
 	executionSchemaJSON []byte
 )
 
+var (
+	canonicalInvalidRequestError = []byte(`{"error":{"message":"invalid request","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
+	canonicalAuthenticationError = []byte(`{"error":{"message":"authentication failed","type":"authentication_error","param":null,"code":"authentication_error"}}`)
+	canonicalPermissionError     = []byte(`{"error":{"message":"forbidden","type":"forbidden","param":null,"code":"forbidden"}}`)
+	canonicalModelNotFoundError  = []byte(`{"error":{"message":"model not found","type":"model_not_found","param":null,"code":"model_not_found"}}`)
+	canonicalRateLimitError      = []byte(`{"error":{"message":"rate limit exceeded","type":"rate_limit_exceeded","param":null,"code":"rate_limit_exceeded"}}`)
+	canonicalOverloadError       = []byte(`{"error":{"message":"service overloaded","type":"internal_server_error","param":null,"code":"overloaded"}}`)
+	canonicalDependencyError     = []byte(`{"error":{"message":"failed dependency","type":"failed_dependency","param":null,"code":"failed_dependency"}}`)
+	canonicalUpstreamError       = []byte(`{"error":{"message":"upstream failure","type":"internal_server_error","param":null,"code":"upstream_error"}}`)
+	canonicalTimeoutError        = []byte(`{"error":{"message":"request timed out","type":"internal_server_error","param":null,"code":"timeout"}}`)
+	canonicalCancellationError   = []byte(`{"error":{"message":"request canceled","type":"internal_server_error","param":null,"code":"canceled"}}`)
+	canonicalInternalError       = []byte(`{"error":{"message":"internal error","type":"internal_server_error","param":null,"code":"internal_error"}}`)
+
+	unsupportedReasoningContentError = []byte(`{"error":{"message":"unsupported capability: reasoning-content","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
+	unsupportedCustomContentError    = []byte(`{"error":{"message":"unsupported capability: custom-content","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
+	unsupportedToolsError            = []byte(`{"error":{"message":"unsupported capability: tools","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
+	unsupportedToolApprovalsError    = []byte(`{"error":{"message":"unsupported capability: tool-approvals","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
+	unsupportedStructuredOutputError = []byte(`{"error":{"message":"unsupported capability: structured-output","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
+	unsupportedRawOutputError        = []byte(`{"error":{"message":"unsupported capability: raw-output","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
+	unsupportedProviderOptionsError  = []byte(`{"error":{"message":"unsupported capability: provider-options","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
+
+	reservedProviderOptionsError = []byte(`{"error":{"message":"reserved provider option namespace","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
+	protectedCallHeaderError     = []byte(`{"error":{"message":"protected call header","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
+)
+
+var (
+	canonicalRateLimitStreamErrorFrame    = []byte("data: {\"type\":\"error\",\"error\":{\"message\":\"rate limit exceeded\",\"type\":\"rate_limit_exceeded\",\"param\":null,\"code\":\"rate_limit_exceeded\",\"statusCode\":429,\"retryable\":true}}\n\n")
+	canonicalOverloadStreamErrorFrame     = []byte("data: {\"type\":\"error\",\"error\":{\"message\":\"service overloaded\",\"type\":\"internal_server_error\",\"param\":null,\"code\":\"overloaded\",\"statusCode\":503,\"retryable\":true}}\n\n")
+	canonicalDependencyStreamErrorFrame   = []byte("data: {\"type\":\"error\",\"error\":{\"message\":\"failed dependency\",\"type\":\"failed_dependency\",\"param\":null,\"code\":\"failed_dependency\",\"statusCode\":424,\"retryable\":false}}\n\n")
+	canonicalUpstreamStreamErrorFrame     = []byte("data: {\"type\":\"error\",\"error\":{\"message\":\"upstream failure\",\"type\":\"internal_server_error\",\"param\":null,\"code\":\"upstream_error\",\"statusCode\":502,\"retryable\":true}}\n\n")
+	canonicalTimeoutStreamErrorFrame      = []byte("data: {\"type\":\"error\",\"error\":{\"message\":\"request timed out\",\"type\":\"internal_server_error\",\"param\":null,\"code\":\"timeout\",\"statusCode\":504,\"retryable\":true}}\n\n")
+	canonicalCancellationStreamErrorFrame = []byte("data: {\"type\":\"error\",\"error\":{\"message\":\"request canceled\",\"type\":\"internal_server_error\",\"param\":null,\"code\":\"canceled\",\"statusCode\":499,\"retryable\":false}}\n\n")
+	canonicalInternalStreamErrorFrame     = []byte("data: {\"type\":\"error\",\"error\":{\"message\":\"internal error\",\"type\":\"internal_server_error\",\"param\":null,\"code\":\"internal_error\",\"statusCode\":500,\"retryable\":true}}\n\n")
+)
+
+func unsupportedCapabilityDocument(capability unsupportedCapability) []byte {
+	return map[unsupportedCapability][]byte{
+		capabilityReasoningContent:        unsupportedReasoningContentError,
+		capabilityCustomContent:           unsupportedCustomContentError,
+		capabilityTools:                   unsupportedToolsError,
+		capabilityToolApprovals:           unsupportedToolApprovalsError,
+		capabilityStructuredOutput:        unsupportedStructuredOutputError,
+		capabilityRawOutput:               unsupportedRawOutputError,
+		capabilityProviderOptions:         unsupportedProviderOptionsError,
+		capabilityReservedProviderOptions: reservedProviderOptionsError,
+		capabilityProtectedCallHeader:     protectedCallHeaderError,
+	}[capability]
+}
+
 type wireSchemaValidator struct {
 	schema *jsonschema.Schema
 }

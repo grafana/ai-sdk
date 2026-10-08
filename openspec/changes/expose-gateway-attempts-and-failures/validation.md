@@ -52,6 +52,14 @@ Rechecked the implementation against the higher-level Gateway plan: this deliver
 
 HTTP/SSE regression cases cover selected, absent and malformed optional attribution, current-error-only delivery, exact fit/no room, unchanged classification/retry fields, original-byte fallback and input isolation. Full Gateway races/vet/lint, Go 1.26.8 focused Gateway races/vet and standalone client races/vet, frontend/schema/runtime and 74 authenticated command tests, registered parity, docs/license/isolation/workspace/pins and strict OpenSpec checks pass. No independent review beyond the previously recorded three-round loop is claimed; the unrelated go.work.sum patch remains untouched.
 
+## Typed public-error design
+
+The subsequent owner-approved structural refactor supersedes the earlier document consolidation: errors.go now holds classification only; error_response.go defines each public error once and builds typed HTTP/SSE payloads directly. Encoded bytes are not stored alongside mutable wire fields, self-generated JSON is not decoded, and optional error encoding no longer depends on fit-callback state. Execution boundaries finalize and project context before writing; classification carries neither invocation state nor native errors. HTTP and committed-stream classification remain intentionally distinct.
+
+Before changing production code, frozen HTTP/SSE byte and classification-boundary regressions passed on the prior implementation. Original literal response/frame catalogs are retained only as test expectations. Tests preserve all public category/capability bytes, host responses, status/retry fields and unknown-category fallback, plus wrapped cancellation/timeout and invalid/native-zero status differences. Optional-field tests cover malformed metadata, surviving current-only output, malformed/oversized current summaries retaining canonical output, complete-frame bounds and primary-response stability.
+
+Full Gateway races/vet/lint, Go 1.26.8 Gateway/client compatibility, frontend 24 files/133 tests, strict schemas and runtime scenarios, 74 authenticated command tests without skips, registered parity, docs/boundary/isolation/workspace/pins and strict OpenSpec pass. These remain deterministic synthetic witnesses, not live-provider/private-service proof or a new independent review. The unrelated go.work.sum diff is preserved.
+
 ## Limits and disposition
 
 No provider input fixture was added or changed; synthetic endpoints/UI scenarios are scoped behavior witnesses, not recorded inputs, live-provider acceptance or deployed/private-service parity. The independent reviews and the final unreviewed fix are bounded as described above. Native transport diagnostics #323, discovery #324, routing #316, BYOK #317, producer/core fixes #299 and broader client acceptance #375 remain separate.
