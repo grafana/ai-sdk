@@ -2,88 +2,40 @@
 
 ## Scope and reference
 
-Runtime rewrite based on #373 at ea668bef, not the historical 4d0f9bfc collector implementation. The old branch is retained as backup/failure-visibility-before-overview-rewrite. This PR owns one active OpenSpec change; the foundation remains synced/archived.
+#370 activates #373's compact execution overview for configured routes. Stack #379 orders #367 → #368 → #373 → #370 → #369; changes to #370 require a coordinated #369 rebase. This PR owns one synced/archived OpenSpec change, not the historical collector/budget design.
 
-Registered reference: ai 7.0.118, Gateway 4.0.96, Provider 4.0.18 and Provider Utils 5.0.49 at 5d12eaa6caa193d3901cbab98a734403eb6bf622. Matching upstream Gateway/model/error source informed carrier/access behavior. Shared capture and private Gateway overview serialization are Go adaptations, not a private-service parity claim.
+Registered reference: ai 7.0.118, Gateway 4.0.96, Provider 4.0.18 and Provider Utils 5.0.49 at 5d12eaa6caa193d3901cbab98a734403eb6bf622. Matching upstream Gateway source/tests establish client carrier preservation. Request capture and private overview serialization are Go adaptations, not private-service parity.
 
-## Publication
+## Current implementation and regression evidence
 
-Runtime commit 6399d319 was pushed to nrbrd/failure-visibility with an explicit lease against historical 4d0f9bfc. Draft #370 remains based on #373; its description/title now reflect this rewrite, not the obsolete collector or historical equivalence. Exactly one active PR-owned OpenSpec change was verified. The unrelated four-line go.work.sum patch remains unchanged and uncommitted.
+- Catalog selection supplies copied private configured identity/credentials. Plain request selections install no Gateway attempt observer and omit both overview/current summaries, preserving opaque native metadata and independently registered SDK observers.
+- Explicit request inputs, a synchronized short-lived capture and finalized views separate collection from projection. Projection inspects native errors after releasing the capture lock. Tests cover concurrent isolation, late callbacks, reentrant/panicking inspection and stable finalized output.
+- Existing invocation ownership determines direct/fallback outcomes. Rejected unary outcomes discard unowned fallback history; locally owned direct cancellation remains observable. First error parts establish selection, not completion. Physical counts, fallback policy and error/content/finish order remain unchanged.
+- Protection covers actual configured/inbound/body credentials, case-distinct and mixed-type MCP headers, known MCP URL credentials and native other-tenant fields. Ordinary URLs/application data remain useful; no raw diagnostic trees or token-pattern DLP are introduced.
+- Adapter-local typed public errors preserve canonical HTTP/SSE classifications, retry fields and fixed bytes. Current stream summaries remain event-local and take priority over optional overview metadata.
+- Namespace assembly only builds candidate metadata. Transports validate/encode primary output first, independently check enrichment and write accepted bytes. Production-handler tests cover exact enriched fit, one-byte shortage, exact-original fit, native namespace preservation and invalid primary metadata/encoding in unary and finish paths. HTTP errors retain the existing 64 KiB complete-read bound.
+- Encoder tests use direct metadata/failure inputs; handler tests prove lifecycle integration. Namespace tests retain input isolation and malformed-candidate coverage rather than implementing synthetic transport envelopes.
+- Authenticated native-fake command tests compare both clients' configured direct/fallback delivery and actual invocation counts. Low/high-level/middleware access and schema-parsed frontend tests preserve ordered error/content/finish assembly without automatic diagnostic forwarding. Go GenerateText uses streaming.
 
-## Regression evidence
+## Validation of the simplification
 
-- Catalog copies configured candidates and private sources on construction/resolution; credentials are excluded from discovery/serialized resolution.
-- Direct/fallback result and failure carriers, noneligible/exhausted failures, leading error selection and error/content/finish ordering preserve invocation counts and no replay.
-- Request isolation, direct cancellation/late native failure exclusion and saturated operator-output independence pass under races.
-- Exact fitting response/frame enrichment succeeds; one-byte-short optional enrichment preserves the original native namespace/output. Primary-invalid JSON metadata and complete encoded primary failures remain adaptation failures.
-- Configured credentials, protected request headers, explicit Anthropic/OpenAI MCP credentials and native other-tenant fields are protected without raw diagnostics, token-pattern DLP or general application-data scanning.
-- Complete HTTP error enrichment stays within the existing Go-client default 64 KiB read bound; oversized optional information preserves the original classified error.
-- Go-produced namespace and unary/setup/committed carriers validate against strict Gateway-owned schemas.
-- Native-fake authenticated command tests compare Go/registered TypeScript carriers with actual candidate counts, public classifications, request conversion, cancellation and operator privacy.
-- Real-handler low/high-level/middleware tests cover streaming errors followed by content/finish and both generation APIs. Go GenerateText uses streaming, not unary DoGenerate.
-- Frontend scenario parses UI chunks with parseJsonEventStream/uiMessageChunkSchema and verifies ordered errors/content/finish and assembled text without automatic raw-diagnostic forwarding.
+All checks passed with readonly dependencies where applicable:
 
-## Checks
+- Full Gateway `go test -race ./...`, `go vet ./...` and `golangci-lint run ./...` (zero issues).
+- Go 1.26.8 full Gateway races/vet and standalone Grafana-client races/vet.
+- `mise run test-providerwire-v4` and `mise run test-integration`: strict schemas, runtime/client interoperability and frontend assembly.
+- `mise run test-ai-gateway-command`: 74 tests, no skips.
+- `mise run parity-check`: registered replay checks; the optional provider-shape report still skips unavailable registered source.
+- Docs, Gateway boundary, SDK isolation, source workspace, merged-pin, strict OpenSpec and whitespace checks.
 
-- Root/Gateway/Grafana-client tests and races; root/Gateway/client vet and lint.
-- Go 1.26.8 root/Gateway races and standalone readonly Grafana-client races/vet; minimums and dependency pins unchanged.
-- mise run test-providerwire-v4: 134 schema and 112 contract/runtime tests.
-- mise run test-ai-gateway-command: 74 authenticated command tests, no skips.
-- mise run test-integration: 24 frontend files, 133 tests, plus Gateway dependency suites.
-- mise run parity-check: registered replays pass; optional provider-shape drift reporting skips unavailable registered package source.
-- Docs, module/license boundaries, SDK/Gateway isolation, source workspace, merged pins and published Grafana module gates.
-- Strict OpenSpec: 95 items, zero failures. Whitespace and unrelated go.work.sum checksum preservation checked.
+The pre-refactor execution/ProviderWire race suites also passed. The new exact-original finish boundary initially used a frame smaller than the handler's mandatory canonical-error minimum; its native fixture was expanded so the test exercises a valid configured limit. No production limit was relaxed.
 
-## Review-fix loop
+The preceding restack additionally passed root and isolated-foundation races/vet on Go 1.26.8. An inherited standalone client/logger test dependency was repaired by #367/#368's owner, moving the composition witness into the existing SDK-only integration harness without changing published manifests. Both foundation and activation replay ranges were patch-equivalent after that repair.
 
-Three fresh review rounds covered correctness, maintainability and regression evidence; a forked oracle checked the approved design in round one. The oracle found no architectural drift; its heterogeneous delivery proof gap was closed without a product/API redesign. The workflow reached its three-round cap, not a clean final review.
+## Review and disposition
 
-- Round one fixed accepted body credentials, explicit provider API-key headers, case-distinct MCP header values and valid mixed-type siblings. It removed repeated unary content mapping and strengthened actual late-callback, shared-fallback, heterogeneous both-client and frontend metadata/ordering proof.
-- Round two fixed known credential values in named MCP destination URLs, reusing the existing URL extractor. Six unary/committed regressions failed before the fix and passed after; ordinary URLs remain unprotected application data. Added exact-fit, one-byte-short and canonical-only committed-error bounds plus configured direct invalid/EOF setup proof.
-- Round three's simplicity and validation reviews found no actionable issues. Correctness found a pre-publication cancellation ownership race: the Gateway rejected a unary worker outcome but could publish its late native fallback SourceErr. Parent reproduced it, then sealed/discarded unverifiable history at the existing rejection boundary. Regression covers observations before and after rejection, preserves the SDK observer's native SourceErr, cancellation classification and zero secondary calls.
+The historical independent review loop reached its three-round cap, not a clean verdict. It fixed credential-source gaps and a pre-publication cancellation ownership race. The last ownership fix and subsequent owner-approved refactors have parent regression validation but no fresh independent follow-up; no clean or merge-ready claim is made.
 
-After the last fix, full Gateway races/vet/lint, Go 1.26.8 focused Gateway races/vet and fallback races, schema/runtime/frontend and 74 authenticated command tests pass. Root/full Gateway/standalone client Go 1.26.8 checks and registered parity passed after the second batch; SDK/client/provider adapters and fixtures did not change in the last batch. Docs/boundary/workspace/pin/OpenSpec checks are recorded above.
+No provider input fixtures, wire shapes, SDK contracts, dependency pins or workspace checksums changed in this simplification. Synthetic/schema evidence does not establish live-provider acceptance or deployed/private-service parity. Overview absence does not prove no attempts; a native gateway namespace does not establish provenance. Selection and caller retries do not establish completion, exactly-once generation or replay safety.
 
-All verified in-scope findings were fixed; no owner-level decision or known actionable finding remains. The final ownership fix has parent red/green/source verification but **has not received a fresh independent follow-up review**, because the round cap was reached. No clean or merge-ready verdict is claimed.
-
-## Owner-requested simplification
-
-Rechecked the implementation against the higher-level Gateway plan: this delivery remains configured-route attribution and protected failure delivery, not a tracing, routing/BYOK or native-transport framework. Optional encoding now belongs to the existing safeErrorDocument in errors.go; the separate invocation-error document/helper file is removed. Accepted error, unary and finish encodings are reused for writing rather than encoded again. The operator documentation now states the response-versus-telemetry distinction directly.
-
-HTTP/SSE regression cases cover selected, absent and malformed optional attribution, current-error-only delivery, exact fit/no room, unchanged classification/retry fields, original-byte fallback and input isolation. Full Gateway races/vet/lint, Go 1.26.8 focused Gateway races/vet and standalone client races/vet, frontend/schema/runtime and 74 authenticated command tests, registered parity, docs/license/isolation/workspace/pins and strict OpenSpec checks pass. No independent review beyond the previously recorded three-round loop is claimed; the unrelated go.work.sum patch remains untouched.
-
-## Typed public-error design
-
-The subsequent owner-approved structural refactor supersedes the earlier document consolidation: errors.go now holds classification only; error_response.go defines each public error once and builds typed HTTP/SSE payloads directly. Encoded bytes are not stored alongside mutable wire fields, self-generated JSON is not decoded, and optional error encoding no longer depends on fit-callback state. Execution boundaries finalize and project context before writing; classification carries neither invocation state nor native errors. HTTP and committed-stream classification remain intentionally distinct.
-
-Before changing production code, frozen HTTP/SSE byte and classification-boundary regressions passed on the prior implementation. Original literal response/frame catalogs are retained only as test expectations. Tests preserve all public category/capability bytes, host responses, status/retry fields and unknown-category fallback, plus wrapped cancellation/timeout and invalid/native-zero status differences. Optional-field tests cover malformed metadata, surviving current-only output, malformed/oversized current summaries retaining canonical output, complete-frame bounds and primary-response stability.
-
-Full Gateway races/vet/lint, Go 1.26.8 Gateway/client compatibility, frontend 24 files/133 tests, strict schemas and runtime scenarios, 74 authenticated command tests without skips, registered parity, docs/boundary/isolation/workspace/pins and strict OpenSpec pass. These remain deterministic synthetic witnesses, not live-provider/private-service proof or a new independent review. The unrelated go.work.sum diff is preserved.
-
-The follow-up cleanup removes the unreachable reasoning refusal, its fixtures and obsolete tool-mode gating. Public definitions use named fields; request-failure reasons distinguish capability gaps from policy refusals without changing reachable response bytes or adding shared protocol abstractions. The expanded request-rejection suite passed before and after production changes, checks schema-valid inputs and exact existing responses for every remaining reason in both invocation modes, and proves rejection precedes resolution/invocation. Reasoning coverage now exercises both production handler modes and verifies mapped content reaches the model. The Gateway/compatibility/integration/parity/docs/boundary/OpenSpec gates above were rerun successfully for this cleanup; no new independent review is claimed.
-
-## Explicit capture and finalized views
-
-The owner-approved rewrite removes invocation.go/invocation_sources.go and the Gateway context key. execution_capture.go separates copied request identity/credentials, a short-lived synchronized attempt buffer, and a finalized view. The existing SDK observer remains context-scoped; model helpers receive the buffer explicitly. Projection detaches observations before inspecting native errors, and established-stream code receives no collector. Existing rejection boundaries discard unowned observations while preserving locally owned direct cancellation. Direct projection does not write synthetic fallback events into the buffer. Credential extraction now lives in internal/execution/credentials.go with separate Anthropic/OpenAI MCP handling; no new credential policy, provider wrapper or cleanup owner was added.
-
-The pre-rewrite Gateway execution/ProviderWire race suites passed. Existing HTTP/SSE, ownership, late-callback, protection, no-replay and exact-fit tests pass after the rewrite. Focused tests additionally prove detached observations remain empty after concurrent late entry/callback attempts, finalized output is stable, request inputs are copied, rejected direct/fallback outcomes remain distinct, and reentrant/panicking error inspection runs after sealing without holding the capture lock. The former context-introspection test now checks the actual canceled HTTP result and physical candidate count; explicit-buffer tests retain the sealed-state/late-mutation proof.
-
-Full Gateway races/vet/lint (zero issues), Go 1.26.8 focused Gateway and standalone-client races/vet, frontend/schema/runtime integration, 74 authenticated command tests without skips, registered parity, docs/boundary/isolation/workspace/pins and strict OpenSpec pass. No provider fixtures, SDK contracts, wire shapes, dependency pins or go.work.sum changes were made. No fresh independent review or live-provider/private-service proof is claimed.
-
-## Request-selection restack
-
-The authorized stack is #367 → #368 → #373 → #370, with #369 owned separately. The foundation and activation were rebased onto repaired #368 at 1c2eae838c1db50d65a9c8a22c295a1828d24185. Saved pre-restack refs and parent boundaries preserve the original ranges; the second replay after the dependency repair is patch-equivalent for all five foundation and ten activation commits. The other owner's branches were not rewritten by this PR.
-
-CatalogSelector now copies private configured candidates and credential sources into Selection without expanding its public ID/Model contract. Request capture consumes that private context explicitly. Plain request selections start with a sealed collector and install no Gateway attempt observer; they omit both overviews and current native summaries while preserving independently registered SDK observers and opaque native metadata. Configured direct/fallback attribution remains enabled. Selection and invocation retain the same deadline. The existing BYOK validation categories were incorporated into the adapter's typed public definitions without changing their response contract.
-
-Focused race tests cover configured identity/source copying, private serialization boundaries, and plain-selector unary success/failure plus setup/committed errors. Full root/Gateway races and vet, Gateway lint, standalone Go 1.26.8 Grafana-client races/vet, standalone SDK integration-harness races, frontend/ProviderWire integration, 74 authenticated command tests without skips, parity, docs, module/license/isolation/workspace/pin checks and strict OpenSpec (96 items) pass. The isolated foundation also passes root/Gateway races and vet on Go 1.26.8.
-
-The first standalone-client run exposed an inherited test dependency on middleware/logger. The owning agent repaired #367/#368 by moving the real-client/logger composition witness into the existing SDK-only integration harness; this PR did not alter published manifests or bypass the failing check. The standalone check now passes on the repaired base. These restack checks do not constitute a fresh independent review or live-provider/private-service evidence.
-
-## Limits and disposition
-
-No provider input fixture was added or changed; synthetic endpoints/UI scenarios are scoped behavior witnesses, not recorded inputs, live-provider acceptance or deployed/private-service parity. The independent reviews and the final unreviewed fix are bounded as described above. Native transport diagnostics #323, discovery #324, routing #316, BYOK #317, producer/core fixes #299 and broader client acceptance #375 remain separate.
-
-Overview absence does not prove no attempts; native namespace presence does not establish Gateway provenance. Mixed/incomplete capture can be omitted, selection is commitment rather than completion, and caller retries/preselection fallback do not establish exactly-once generation or remote effects.
-
-The owner authorized sync/archive on 2026-10-08. The six capability specs are synchronized, including reconciliation of legacy precomputed-only error wording and blanket error-detail suppression with the approved typed encoding/protected optional carriers. All 15 implementation tasks are complete; strict OpenSpec and documentation checks cover the synchronized archive. Merge remains pending separate approval.
+The owner authorized spec sync/archive on 2026-10-08; all 15 implementation tasks are complete. Merge requires separate approval. Native transport diagnostics #323, discovery #324, routing #316, BYOK #317, producer/core #299 and broader client acceptance #375 remain separate.

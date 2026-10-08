@@ -228,7 +228,7 @@ func TestExecutionSchema_ProducedNamespace(t *testing.T) {
 				{Index: 2, Provider: "native", ModelID: "second", Outcome: outcome},
 			}, nil, nil, 4096)
 			require.NotNil(t, overview)
-			metadata := execution.Metadata(overview, provider.ProviderMetadata{"gateway": json.RawMessage(`{"execution":{"native":true},"null":null}`)}, func(provider.ProviderMetadata) bool { return true })
+			metadata := execution.Metadata(overview, provider.ProviderMetadata{"gateway": json.RawMessage(`{"execution":{"native":true},"null":null}`)})
 			require.NoError(t, compiled.Validate(metadata["gateway"]))
 		})
 	}

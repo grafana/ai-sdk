@@ -348,20 +348,16 @@ func (h *handler) writeUnarySuccess(w http.ResponseWriter, result *provider.Gene
 		return false
 	}
 	if len(contexts) > 0 && contexts[0].overview != nil {
-		execution.Metadata(contexts[0].overview, mapped.Metadata, func(metadata provider.ProviderMetadata) bool {
+		if metadata := execution.Metadata(contexts[0].overview, mapped.Metadata); metadata != nil {
 			candidate := *result
 			candidate.ProviderMetadata = metadata
-			if !unarySuccessPreflight(&candidate, h.limits.UnaryResponseBytes) {
-				return false
+			if unarySuccessPreflight(&candidate, h.limits.UnaryResponseBytes) {
+				mapped.Metadata = metadata
+				if enriched, fits := encodeUnarySuccess(mapped, h.limits.UnaryResponseBytes); fits {
+					body = enriched
+				}
 			}
-			projected := mapped
-			projected.Metadata = metadata
-			enriched, fits := encodeUnarySuccess(projected, h.limits.UnaryResponseBytes)
-			if fits {
-				body = enriched
-			}
-			return fits
-		})
+		}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
