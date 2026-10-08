@@ -261,3 +261,28 @@ another oracle. Initial and follow-up reports are retained in the managed review
 outputs for workflows f1708fd5 and 2ad9c708. The first workflow's report-serialization
 failure was corrected through a same-protocol retry reusing completed reports;
 it did not change source or discard evidence. PR #367 and PR #369 remain unchanged.
+
+## Spec synchronization and archive
+
+With owner approval, synchronized the seven reviewed BYOK requirements into
+openspec/specs/gateway-request-byok/spec.md and the three unary/two streaming
+modifications into their existing main specs. Structural checks proved every
+inherited scenario, untouched requirement and existing main-spec preamble was
+preserved; archived artifacts, including .openspec.yaml, remain byte-for-byte
+unchanged except for this appended validation evidence.
+
+Archived to openspec/changes/archive/2026-10-08-add-gateway-request-byok-engine/
+with all 18 tasks complete. The three synchronized specs pass strict OpenSpec
+1.14.0 validation; archive task auditing reports this change valid. Baseline
+validation passed 109 tests, docs lint and git diff --check passed, and the active
+change list is empty. No runtime, pins, recordings or other stack branches changed.
+
+Whole-repository strict validation still flags the unchanged Purpose placeholders
+in gateway-reasoning-content and provider-v4-core-types. Bulk archive task auditing
+also flags two incomplete tasks in each of three historical archives:
+2026-05-14-add-sigil-middleware, 2026-07-27-complete-agento11y-rename and
+2026-09-24-gateway-reasoning-content. All five affected files match the PR base
+and integrated main byte-for-byte; these are existing findings, not this archive.
+Logs are /tmp/byok-engine-archive-{specs,tasks}.json and
+/tmp/byok-engine-archive-{baseline,docs}.log. Authentication/admission and
+service-policy activation remain separately owned by PR #369.
